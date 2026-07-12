@@ -24,10 +24,10 @@ jobs:
       matrix:
         include:
           - name: Windows x64
-            os: windows-latest
+            os: windows-2025
             artifact: khdays-port-windows-x64
           - name: Linux x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             artifact: khdays-port-linux-x64
 
     steps:
@@ -41,13 +41,53 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install SDL3 build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            ninja-build \
+            libasound2-dev \
+            libpulse-dev \
+            libx11-dev \
+            libxext-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxfixes-dev \
+            libxi-dev \
+            libxss-dev \
+            libxtst-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdecor-0-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            libegl1-mesa-dev \
+            libdbus-1-dev \
+            libudev-dev
+
       - name: Configure Windows
         if: runner.os == 'Windows'
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 18 2026" `
+            -A x64 `
+            -DBUILD_TESTING=ON
 
       - name: Configure Linux
         if: runner.os == 'Linux'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel
