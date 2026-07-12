@@ -1,0 +1,44 @@
+# Build output
+/build/
+/out/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# IDE and editor files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+
+# Local game data — never commit
+/data/
+/roms/
+/assets-extracted/
+/generated/
+*.nds
+*.srl
+*.rom
+*.sav
+
+# Proprietary tools and SDKs — never commit
+/NitroSDK/
+/CodeWarrior/
+mwccarm.exe
+mwldarm.exe
+
+# Platform files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
