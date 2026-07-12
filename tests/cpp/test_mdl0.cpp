@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -153,7 +154,14 @@ std::vector<std::uint8_t> make_test_bmd0() {
     write_magic(file, 0U, "BMD0");
     write_u16(file, 4U, 0xFEFFU);
     write_u16(file, 6U, 2U);
-    write_u32(file, 8U, file_size);
+    if (file_size > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error("synthetic BMD0 file is too large");
+    }
+
+    write_u32(
+        file,
+        8U,
+        static_cast<std::uint32_t>(file_size));
     write_u16(file, 0x0CU, 0x10U);
     write_u16(file, 0x0EU, 1U);
     write_u32(file, 0x10U, mdl0_offset_in_file);
