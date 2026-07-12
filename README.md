@@ -26,13 +26,13 @@ The port should consume a pinned revision of the decompilation rather than turni
 - [x] Project structure
 - [x] Portable CMake build
 - [x] Legal and contribution policy
-- [ ] Pin `khdays-decomp` as a submodule
-- [ ] Add automated builds
-- [ ] Verify and identify a supported ROM
-- [ ] Extract required data locally
-- [ ] Open a window and initialize the platform runtime
-- [ ] Load the first game-owned resource from user-provided data
-- [ ] Port and test the first self-contained game subsystem
+- [x] Pin `khdays-decomp` as a submodule
+- [x] Add automated builds
+- [x] Verify and identify a supported ROM
+- [x] Extract required data locally
+- [x] Open a window and initialize the platform runtime
+- [x] Load the first game-owned resource from user-provided data
+- [x] Port and test the first self-contained game subsystem
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the proposed milestones.
 
@@ -83,9 +83,9 @@ The directories beyond the current bootstrap files should be added when they con
 
 Requirements:
 
-- CMake 3.24 or newer
+- CMake 4.2 or newer
 - A C++20 compiler:
-  - Visual Studio 2022 on Windows
+  - Visual Studio 2026 on Windows
   - Clang or GCC on Linux
   - Apple Clang on macOS
 
