@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(
     khdays_port
-    VERSION 0.0.2
+    VERSION 0.0.3
     DESCRIPTION "Experimental native PC runtime for Kingdom Hearts 358/2 Days"
     LANGUAGES C CXX
 )
@@ -17,8 +17,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
-# Build a pinned, static SDL3 dependency so Windows does not need a separately
-# copied SDL3.dll next to khdays-port.exe.
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
@@ -34,6 +32,24 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(SDL3)
+
+add_library(
+    khdays-assets
+    STATIC
+        src/assets/tex0.cpp
+)
+
+target_include_directories(
+    khdays-assets
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+if(MSVC)
+    target_compile_options(khdays-assets PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(khdays-assets PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_executable(
     khdays-port
@@ -56,6 +72,7 @@ target_compile_definitions(
 target_link_libraries(
     khdays-port
     PRIVATE
+        khdays-assets
         SDL3::SDL3
 )
 
@@ -68,8 +85,30 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(
+        khdays-tex0-test
+        tests/cpp/test_tex0.cpp
+    )
+
+    target_link_libraries(
+        khdays-tex0-test
+        PRIVATE
+            khdays-assets
+    )
+
+    if(MSVC)
+        target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
     add_test(
         NAME khdays-port-version
         COMMAND khdays-port --version
+    )
+
+    add_test(
+        NAME khdays-tex0-parser
+        COMMAND khdays-tex0-test
     )
 endif()

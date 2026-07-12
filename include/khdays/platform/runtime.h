@@ -1,9 +1,16 @@
 #pragma once
 
+#include <filesystem>
+#include <optional>
+#include <string>
+
 namespace khdays::platform {
 
-// Initializes the native platform runtime and runs the window/event loop.
-// Returns EXIT_SUCCESS on a clean exit and EXIT_FAILURE after an SDL error.
-int run_application();
+struct ApplicationOptions final {
+    std::optional<std::filesystem::path> resource_path;
+    std::optional<std::string> texture_name;
+};
+
+int run_application(const ApplicationOptions& options);
 
 }  // namespace khdays::platform
