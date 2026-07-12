@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(
     khdays_port
-    VERSION 0.0.3
+    VERSION 0.0.4
     DESCRIPTION "Experimental native PC runtime for Kingdom Hearts 358/2 Days"
     LANGUAGES C CXX
 )
@@ -36,6 +36,7 @@ FetchContent_MakeAvailable(SDL3)
 add_library(
     khdays-assets
     STATIC
+        src/assets/mdl0.cpp
         src/assets/tex0.cpp
 )
 
@@ -96,10 +97,23 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-mdl0-test
+        tests/cpp/test_mdl0.cpp
+    )
+
+    target_link_libraries(
+        khdays-mdl0-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_test(
@@ -110,5 +124,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-tex0-parser
         COMMAND khdays-tex0-test
+    )
+
+    add_test(
+        NAME khdays-mdl0-parser
+        COMMAND khdays-mdl0-test
     )
 endif()
