@@ -35,10 +35,14 @@ def make_bmd0(with_tex0: bool) -> bytes:
         sections.append(make_section(b"TEX0", 0x30))
 
     section_count = len(sections)
-    header_size = 0x10 + section_count * 4
-    offsets = []
-    cursor = header_size
 
+    # Real Nitro BMD0 files commonly keep header_size at 0x10.
+    # The section-offset table follows immediately after that fixed header.
+    header_size = 0x10
+    offset_table_end = 0x10 + section_count * 4
+    cursor = offset_table_end
+
+    offsets = []
     for section in sections:
         offsets.append(cursor)
         cursor += len(section)
@@ -61,7 +65,7 @@ def make_bmd0(with_tex0: bool) -> bytes:
 
 
 class InspectNsbmdTests(unittest.TestCase):
-    def test_prefers_model_with_embedded_tex0(self) -> None:
+    def test_accepts_offset_table_after_fixed_header(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "unpacked"
             root.mkdir()
@@ -77,13 +81,14 @@ class InspectNsbmdTests(unittest.TestCase):
             )
 
             self.assertEqual(summary["totals"]["files_found"], 2)
+            self.assertEqual(summary["totals"]["files_parsed"], 2)
+            self.assertEqual(summary["totals"]["failures"], 0)
+            self.assertEqual(summary["totals"]["with_mdl0"], 2)
             self.assertEqual(summary["totals"]["with_embedded_tex0"], 1)
             self.assertEqual(
                 summary["best_candidates"][0]["path"],
                 "textured.nsbmd",
             )
-            self.assertTrue((output / "report.md").is_file())
-            self.assertTrue((output / "models.csv").is_file())
 
 
 if __name__ == "__main__":

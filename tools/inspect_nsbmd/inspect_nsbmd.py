@@ -72,9 +72,12 @@ def parse_sections(path: Path, root: Path) -> ModelFileInfo:
         )
 
     # Nitro files use an offset table after the fixed header.
+    # In Nitro container files such as BMD0, header_size is commonly 0x10.
+    # The section-offset table begins at 0x10 and is not included in that
+    # fixed header-size value.
     table_end = NITRO_HEADER_SIZE + section_count * 4
-    if table_end > header_size or table_end > len(data):
-        raise ValueError("section-offset table exceeds the Nitro header")
+    if table_end > len(data):
+        raise ValueError("section-offset table exceeds the file")
 
     offsets = [
         read_u32(data, NITRO_HEADER_SIZE + index * 4, f"section {index} offset")

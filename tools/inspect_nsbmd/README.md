@@ -1,19 +1,25 @@
-# NSBMD section inspector
+# NSBMD section inspector — corrected version
 
-The previous container report counts top-level Nitro files only. An `.nsbmd`
-file can contain both:
+This version fixes the parser assumption that caused every real NSBMD to fail.
+
+## The mistake
+
+The previous parser assumed that the section-offset table had to fit inside
+the Nitro `header_size` field.
+
+For BMD0 files, `header_size` is commonly `0x10`, while the section-offset
+table begins at `0x10` and follows that fixed header. Therefore, a file with
+one section can have:
 
 ```text
-MDL0 — model data
-TEX0 — texture and palette data
+0x00-0x0F  fixed Nitro header
+0x10-0x13  section 0 offset
+0x14...    first section
 ```
 
-Therefore, a container does not need a separate `.nsbtx` to be self-contained.
+The offset table is valid even though its end is greater than `header_size`.
 
-This tool scans every `.nsbmd`, reads its Nitro section-offset table, and ranks
-models that already contain an embedded `TEX0`.
-
-## Run
+## Run again
 
 ```powershell
 py .\tools\inspect_nsbmd\inspect_nsbmd.py `
@@ -30,5 +36,5 @@ unpacked/
     └── models.csv
 ```
 
-Upload `report.md` after running it. The best first-viewer candidate should be a
-small file with both `MDL0` and `TEX0`.
+The report should now list parsed `MDL0` and, where present, embedded `TEX0`
+sections instead of reporting 533 identical failures.
