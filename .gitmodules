@@ -1,0 +1,3 @@
+[submodule "external/khdays-decomp"]
+	path = external/khdays-decomp
+	url = https://github.com/Yokimitsuro/khdays-decomp
