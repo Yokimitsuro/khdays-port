@@ -15,6 +15,20 @@ Files copied or adapted from `khdays-decomp` should retain a clear source note c
 - the pinned source commit;
 - substantial port-specific modifications.
 
+## SDL3
+
+Project: Simple DirectMedia Layer
+
+Upstream repository: <https://github.com/libsdl-org/SDL>
+
+Pinned release: **3.4.12** (`release-3.4.12`)
+
+Usage: downloaded by CMake with `FetchContent`, compiled as a static library, and linked into the native runtime.
+
+License: **zlib License**.
+
+SDL3 is used for the native window, renderer, events, timing, and future platform abstractions.
+
 ## Original game
 
 No license in this repository applies to the original game or to copyrighted material extracted from it.
