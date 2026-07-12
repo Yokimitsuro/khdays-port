@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "roms": [
+	{
+	  "name": "358/2 DAYS (Europe)",
+	  "game_code": "YKGP",
+	  "rom_version": 0,
+	  "sha256": "1ecf5e7a41a2ae48e7c5fd3f678e5a79e854d843f1a1fa3a952a41b14e51ec4f"
+	}
+  ]
+}
