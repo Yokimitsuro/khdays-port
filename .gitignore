@@ -38,6 +38,10 @@ mwldarm.exe
 .DS_Store
 Thumbs.db
 
+# Python caches
+__pycache__/
+*.pyc
+
 # Logs and temporary files
 *.log
 *.tmp

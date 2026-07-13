@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -8,6 +9,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "khdays/assets/mdl0.h"
+#include "khdays/assets/mesh.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
 
@@ -30,6 +32,7 @@ void print_help() {
         << "Usage:\n"
         << "  khdays-port [--resource FILE] [--texture NAME]\n"
         << "  khdays-port --model-info FILE\n"
+        << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
         << '\n'
@@ -37,6 +40,7 @@ void print_help() {
         << "  --resource FILE   Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
         << "  --texture NAME    Select a texture by name; defaults to the first.\n"
         << "  --model-info FILE Inspect MDL0 models, materials, meshes, and GPU commands.\n"
+        << "  --export-obj FILE Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
         << "  --version         Print version information without opening a window.\n"
         << "  --help            Show this help text.\n";
 }
@@ -106,6 +110,57 @@ int main(int argc, char* argv[]) {
                         std::filesystem::path{argv[2]});
                 std::cout
                     << khdays::assets::format_model_report(information);
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--export-obj") {
+            if (argc != 3 && argc != 4) {
+                std::cerr
+                    << "ERROR: --export-obj requires an input file and an "
+                       "optional output path\n";
+                return EXIT_FAILURE;
+            }
+
+            const std::filesystem::path input{argv[2]};
+            const std::filesystem::path output =
+                argc == 4
+                    ? std::filesystem::path{argv[3]}
+                    : std::filesystem::path{input}.replace_extension(".obj");
+
+            try {
+                const auto model =
+                    khdays::assets::decode_model_geometry(input);
+                const auto obj = khdays::assets::to_wavefront_obj(model);
+
+                std::ofstream stream{output, std::ios::binary};
+                if (!stream) {
+                    std::cerr
+                        << "ERROR: cannot write OBJ to " << output.string()
+                        << '\n';
+                    return EXIT_FAILURE;
+                }
+                stream.write(
+                    obj.data(),
+                    static_cast<std::streamsize>(obj.size()));
+
+                std::size_t total_vertices = 0U;
+                std::size_t total_triangles = 0U;
+                for (const auto& mesh : model.meshes) {
+                    total_vertices += mesh.vertices.size();
+                    total_triangles += mesh.indices.size() / 3U;
+                }
+
+                std::cout
+                    << "Decoded model '" << model.name << "' with "
+                    << model.meshes.size() << " meshes, "
+                    << total_vertices << " vertices ("
+                    << model.header_vertex_count << " expected), "
+                    << total_triangles << " triangles\n"
+                    << "Wrote " << output.string() << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

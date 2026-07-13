@@ -37,6 +37,7 @@ add_library(
     khdays-assets
     STATIC
         src/assets/mdl0.cpp
+        src/assets/mesh.cpp
         src/assets/tex0.cpp
 )
 
@@ -108,12 +109,25 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-mesh-test
+        tests/cpp/test_mesh.cpp
+    )
+
+    target_link_libraries(
+        khdays-mesh-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-mesh-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_test(
@@ -129,5 +143,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-mdl0-parser
         COMMAND khdays-mdl0-test
+    )
+
+    add_test(
+        NAME khdays-mesh-decoder
+        COMMAND khdays-mesh-test
     )
 endif()
