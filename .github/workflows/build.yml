@@ -115,3 +115,43 @@ jobs:
           path: build/khdays-port
           if-no-files-found: error
           retention-days: 7
+
+  sanitizers:
+    name: Sanitizers (Linux x64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The parser tests link only khdays-assets, so SDL3 is never built here.
+      # Only the toolchain and generator are required to compile them.
+      - name: Install build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config
+
+      - name: Configure with sanitizers
+        shell: bash
+        run: |
+          cmake -S . -B build-san \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTING=ON \
+            -DKHDAYS_ENABLE_SANITIZERS=ON
+
+      - name: Build sanitized asset tests
+        run: >-
+          cmake --build build-san --target
+          khdays-tex0-test khdays-mdl0-test khdays-mesh-test
+
+      # Exclude the SDL-linked version smoke test; only the asset parsers and
+      # the mesh decoder are built and exercised here.
+      - name: Run asset tests under ASan and UBSan
+        env:
+          ASAN_OPTIONS: abort_on_error=1:halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-san -E port-version --output-on-failure

@@ -15,6 +15,31 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(KHDAYS_ENABLE_SANITIZERS
+    "Build khdays targets with AddressSanitizer + UndefinedBehaviorSanitizer (Clang/GCC only)"
+    OFF)
+
+if(KHDAYS_ENABLE_SANITIZERS AND MSVC)
+    message(WARNING
+        "KHDAYS_ENABLE_SANITIZERS is only wired for Clang/GCC; it will be ignored under MSVC.")
+endif()
+
+# Apply ASan+UBSan to a single target. Sanitizers are scoped to the project's
+# own targets so the fetched SDL3 build is left uninstrumented, which keeps the
+# build fast and avoids third-party diagnostics we cannot act on.
+function(khdays_enable_sanitizers target)
+    if(NOT KHDAYS_ENABLE_SANITIZERS OR MSVC)
+        return()
+    endif()
+
+    target_compile_options(${target} PRIVATE
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -fno-sanitize-recover=all)
+    target_link_options(${target} PRIVATE
+        -fsanitize=address,undefined)
+endfunction()
+
 include(FetchContent)
 
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -53,6 +78,8 @@ else()
     target_compile_options(khdays-assets PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+khdays_enable_sanitizers(khdays-assets)
+
 add_executable(
     khdays-port
     src/main.cpp
@@ -83,6 +110,8 @@ if(MSVC)
 else()
     target_compile_options(khdays-port PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+khdays_enable_sanitizers(khdays-port)
 
 include(CTest)
 
@@ -129,6 +158,10 @@ if(BUILD_TESTING)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
+
+    khdays_enable_sanitizers(khdays-tex0-test)
+    khdays_enable_sanitizers(khdays-mdl0-test)
+    khdays_enable_sanitizers(khdays-mesh-test)
 
     add_test(
         NAME khdays-port-version
