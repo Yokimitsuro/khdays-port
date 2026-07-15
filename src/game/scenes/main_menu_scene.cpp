@@ -40,6 +40,18 @@ void MainMenuScene::on_enter(SceneManager& manager) {
 void MainMenuScene::update(SceneManager& manager) {
     ++frame_;
     const auto& in = manager.input();
+
+    // Confirm executor (ov008 func_ov008_0204dc48): a confirm starts a 30-frame
+    // fade, then action 8 enters gameplay (scene 2 = ov002). The action code and
+    // the save-slot config it copies to ov002 live in ov008's menu handlers,
+    // still being decompiled; the transition itself is matched.
+    if (confirm_fade_ > 0) {
+        if (--confirm_fade_ == 0) {
+            manager.change_scene(kSceneGameplay, selected_);
+        }
+        return;
+    }
+
     const int n = static_cast<int>(portraits_.size());
     if (n > 0) {
         if (in.just_pressed(Button::Right)) {
@@ -54,6 +66,9 @@ void MainMenuScene::update(SceneManager& manager) {
         if (in.just_pressed(Button::Up)) {
             selected_ = std::max(0, selected_ - kCols);
         }
+    }
+    if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
+        confirm_fade_ = kConfirmFadeFrames;  // action 8 -> gameplay
     }
     // B returns to the title (the menu's cancel path).
     if (in.just_pressed(Button::B)) {
@@ -106,6 +121,12 @@ void MainMenuScene::render(SceneManager&, Renderer& r) {
     if (selected_ >= 0 && selected_ < static_cast<int>(names_.size())
         && names_[selected_]) {
         blit(*names_[selected_], (256 - names_[selected_]->width) / 2, 172);
+    }
+
+    // Fade to black while confirming (the ov008 30-frame confirm fade).
+    if (confirm_fade_ > 0) {
+        const int a = 255 * (kConfirmFadeFrames - confirm_fade_) / kConfirmFadeFrames;
+        r.fill_overlay(Color{0, 0, 0, static_cast<std::uint8_t>(a)});
     }
 }
 

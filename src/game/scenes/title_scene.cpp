@@ -37,11 +37,10 @@ void TitleScene::update(SceneManager& manager) {
         selected_ = 0;
     }
     if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
-        // MODO MISION → the Mission Mode menu (scene 0x13, ov08). MODO HISTORIA
-        // (New Game / Load) is a later scene, so it stays for now.
-        if (selected_ == 1) {
-            manager.change_scene(kSceneMainMenu);
-        }
+        // Both options request the menu overlay (scene 0x13, ov08), which shows
+        // the mode's sub-panel (Story: New Game/Load; Mission: character select)
+        // — func_02020a78(0x13, arg). The selected mode rides along as the arg.
+        manager.change_scene(kSceneMainMenu, selected_);
     }
 }
 

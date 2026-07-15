@@ -162,6 +162,7 @@ add_library(
         src/game/scenes/boot_logo_scene.cpp
         src/game/scenes/title_scene.cpp
         src/game/scenes/main_menu_scene.cpp
+        src/game/scenes/gameplay_scene.cpp
 )
 
 target_include_directories(

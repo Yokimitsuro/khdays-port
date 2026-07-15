@@ -24,6 +24,7 @@
 #include "khdays/assets/sequence.h"
 #include "khdays/game/game.h"
 #include "khdays/game/scenes/boot_logo_scene.h"
+#include "khdays/game/scenes/gameplay_scene.h"
 #include "khdays/game/scenes/main_menu_scene.h"
 #include "khdays/game/scenes/title_scene.h"
 #include "khdays/game/software_renderer.h"
@@ -407,6 +408,9 @@ int main(int argc, char* argv[]) {
             });
             game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
                 return std::make_unique<khdays::game::scenes::MainMenuScene>();
+            });
+            game.scenes().register_scene(khdays::game::kSceneGameplay, [] {
+                return std::make_unique<khdays::game::scenes::GameplayScene>();
             });
             game.boot(0);
             std::cout << "Running the game frame loop (Esc to quit, "

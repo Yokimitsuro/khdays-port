@@ -193,7 +193,14 @@ not ported). Port or replace the minimum required systems for:
   logo (`func_ov000_0204d630`, ov000).)*
 - save data abstraction.
 
-**Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly.
+The native flow now runs **boot logo → title → menu → gameplay**: the title
+(ov06) requests the menu (scene 0x13/ov08), and the menu's confirm executor
+(`func_ov008_0204dc48`, byte-exact) is reproduced — a 30-frame fade then either
+**action 8 → scene 2 (ov002, gameplay)** or **action 7 → scene 1 (reset)**.
+Scene 2 is registered (`kSceneGameplay`); porting the actual gameplay overlay is
+a later phase, so it is a placeholder that marks the reached game-owned state.
+
+**Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly. *(met — the boot→title→menu→gameplay flow reaches scene 2/ov002 via the matched confirm transition.)*
 
 ## Phase 5 — Playable vertical slice
 

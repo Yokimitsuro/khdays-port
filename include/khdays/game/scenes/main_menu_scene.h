@@ -31,6 +31,7 @@ private:
     static constexpr int kGridX = 16;
     static constexpr int kGridY = 26;
     static constexpr std::size_t kRosterMax = 14;
+    static constexpr int kConfirmFadeFrames = 30;  // ov008 confirm fade (0x1e)
 
     void load_labels();
 
@@ -42,6 +43,7 @@ private:
     std::optional<khdays::assets::DecodedTexture> header_;
     int selected_ = 0;
     int frame_ = 0;
+    int confirm_fade_ = 0;  // counts down the confirm fade; 0 = not confirming
 };
 
 }  // namespace khdays::game::scenes

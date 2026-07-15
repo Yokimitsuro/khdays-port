@@ -32,6 +32,7 @@ class SceneManager;
 using SceneId = int;
 inline constexpr SceneId kSceneNone = 0;
 inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the intro/logo scene (ov000)
+inline constexpr SceneId kSceneGameplay = 2;   // gameplay (ov002); the menu enters it on confirm
 inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
 inline constexpr SceneId kSceneMainMenu = 19;  // Mission Mode main menu (ov08); title requests it on Start
