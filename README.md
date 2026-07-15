@@ -42,7 +42,7 @@ The port should consume a pinned revision of the decompilation rather than turni
 - [x] SDL3 GPU renderer (depth-tested, textured, orbit camera) for models and environment maps
 - [x] Modding: texture and rigged-model overrides via a `mods/` folder (see [Modding](#modding))
 - [x] Message text extracted from the `db_<lang>.p2` container (`--message-info` / `--dump-messages`)
-- [x] SDAT audio inventory (sequences, banks, wave archives) — *metadata only; no playback yet*
+- [x] Audio: SDAT wave archives decoded to PCM (PCM8/PCM16/IMA-ADPCM) and played through SDL3 (`--play-sound`, `--extract-wav`) — *sampled waveforms; sequenced music not yet*
 
 Still ahead: audio playback, game boot flow, overlays, and gameplay. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full milestone plan.
@@ -174,6 +174,8 @@ resolves them ahead of the original DS asset:
 - **Text** — a `mods/<Mod>/text/<name>.txt` file retranslates or rewords the
   game's decoded UTF-8 strings (`db_<lang>.p2` story/menu text and `UI/**/*.s.z`
   tables), one `key = value` line per string.
+- **Sound** — a WAV at `mods/<Mod>/sounds/<wave_archive>_<swav>.wav` replaces a
+  decoded game waveform (sound effects / voice clips).
 
 Mods only ever contain your own edits — never copyrighted game data — and
 `mods/` is git-ignored. See [`docs/MODDING.md`](docs/MODDING.md) for the folder

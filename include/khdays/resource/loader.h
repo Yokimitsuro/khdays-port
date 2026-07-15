@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "khdays/assets/animation.h"
+#include "khdays/assets/audio.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
 #include "khdays/assets/tex0.h"
@@ -67,5 +68,13 @@ khdays::assets::MessageArchive load_message_archive(
 // "<mods>/<any-mod>/text/**/<name>.txt" with lines "index = text".
 std::vector<std::u16string> load_string_table(
     const std::filesystem::path& path);
+
+// Decode a waveform from an SDAT, or a mod override if present: a WAV at
+// "<mods>/<any-mod>/sounds/**/<wave_archive>_<swav>.wav" (e.g. 0_5.wav)
+// replaces that waveform. Use --play-sound to preview the indices to override.
+khdays::assets::DecodedAudio load_sound(
+    const khdays::assets::Sdat& sdat,
+    std::size_t wave_archive_index,
+    std::size_t swav_index);
 
 }  // namespace khdays::resource

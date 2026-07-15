@@ -1,5 +1,7 @@
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -108,6 +110,28 @@ int main() {
                    "wav WAVE tag");
             expect(std::string(wav.begin() + 36, wav.begin() + 40) == "data",
                    "wav data tag");
+        }
+
+        // WAV round-trip: to_wav -> file -> load_wav reproduces the samples.
+        {
+            khdays::assets::DecodedAudio audio;
+            audio.sample_rate = 32000U;
+            audio.channels = 1U;
+            audio.samples = {0, 1000, -1000, 32767, -32768, 42};
+            const auto wav = khdays::assets::to_wav(audio);
+            const auto wav_path =
+                std::filesystem::temp_directory_path() / "khdays_wav_test.wav";
+            {
+                std::ofstream out{wav_path, std::ios::binary};
+                out.write(
+                    reinterpret_cast<const char*>(wav.data()),
+                    static_cast<std::streamsize>(wav.size()));
+            }
+            const auto back = khdays::assets::load_wav(wav_path);
+            std::filesystem::remove(wav_path);
+            expect(back.sample_rate == 32000U, "wav round-trip rate");
+            expect(back.channels == 1U, "wav round-trip channels");
+            expect(back.samples == audio.samples, "wav round-trip samples");
         }
 
         std::cout << "Audio decoder test passed\n";

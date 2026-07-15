@@ -46,4 +46,9 @@ DecodedAudio sdat_waveform(
 // testing).
 std::vector<std::uint8_t> to_wav(const DecodedAudio& audio);
 
+// Load a canonical PCM WAV file (8- or 16-bit, mono or stereo) into neutral
+// PCM16. Used by the modding layer to replace a game waveform. Throws
+// std::runtime_error on a non-PCM or malformed file.
+DecodedAudio load_wav(const std::filesystem::path& path);
+
 }  // namespace khdays::assets

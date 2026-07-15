@@ -244,7 +244,7 @@ int main(int argc, char* argv[]) {
             try {
                 const auto sdat =
                     khdays::assets::open_sdat(std::filesystem::path{argv[2]});
-                const auto audio = khdays::assets::sdat_waveform(
+                const auto audio = khdays::resource::load_sound(
                     *sdat,
                     static_cast<std::size_t>(std::stoul(argv[3])),
                     static_cast<std::size_t>(std::stoul(argv[4])));

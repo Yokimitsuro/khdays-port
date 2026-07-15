@@ -85,8 +85,13 @@ Implement isolated tools or debug modes for:
   from the decompiled loader and byte-checked — see
   [docs/MESSAGE_DATA_P2.md](MESSAGE_DATA_P2.md). UI strings in `UI/*/str/*.s.z`
   are still to be decoded)*
-- audio metadata. *(done — SDAT inventory: sequences, banks, wave archives,
-  streams, by name via --audio-info)*
+- audio metadata *(done — SDAT inventory: sequences, banks, wave archives,
+  streams, by name via --audio-info)*; and **waveform playback** *(done — SWAR
+  wave archives decode to PCM (PCM8/PCM16/IMA-ADPCM) via
+  `khdays::assets::open_sdat`/`decode_swav`, play through an SDL3 audio backend
+  (`--play-sound`), and export to WAV (`--extract-wav`); byte-verified against an
+  independent decoder. Sequenced music (the SSEQ synth reading SBNK/SWAR) is a
+  later step.)*
 
 **Exit condition:** a real model loads from user-generated data and renders,
 textured and animated, in the native window. *(met)*
@@ -103,10 +108,12 @@ mods — they never distribute copyrighted assets.
   skinning, plus PNG texture dumps.
 - **Asset-override loader:** the runtime resolves each asset through a search
   path (`mods/…` before the extracted DS asset). This is the foundation.
-  *(done for textures and models — `khdays::resource` (see
+  *(done for textures, models, text, and sound — `khdays::resource` (see
   `docs/ARCHITECTURE.md`) resolves `mods/<Mod>/textures/**/<name>.{png,bmp}`
-  before the DS TEX0, and `mods/<Mod>/models/<ds_name>.gltf` before the DS
-  model; the engine only sees neutral formats.)*
+  before the DS TEX0, `mods/<Mod>/models/<ds_name>.gltf` before the DS model,
+  `mods/<Mod>/text/<name>.txt` string overrides, and
+  `mods/<Mod>/sounds/<wave_archive>_<swav>.wav` waveform replacements; the engine
+  only sees neutral formats.)*
 - **Import:** load glTF / PNG into the neutral mesh and textures at runtime.
   *(done — rigged glTF import with per-skin palettes; PNG/BMP textures.)*
 - **Higher-poly model mods:** a rigged glTF whose joints are named like the DS

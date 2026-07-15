@@ -111,6 +111,26 @@ khdays-port --dump-strings  magic.s.z     # a UI table, keyed [index]
 > language-suffixed tables (`status_es`, …) and the P2 databases are already
 > language-specific.
 
+## Sound overrides
+
+Game waveforms live inside the SDAT sound archive (`snd/sound_data.sdat`), decoded
+to PCM on load. A sound override is a **WAV** file at
+`mods/<Mod>/sounds/**/<wave_archive>_<swav>.wav`, where the two numbers are the
+wave archive and waveform indices (e.g. `0_5.wav`). A canonical 8- or 16-bit PCM
+WAV of any sample rate works.
+
+Preview the originals to find the pair you want to replace:
+
+```
+khdays-port --extract-wav snd/sound_data.sdat 0 5 out.wav   # decode one to WAV
+khdays-port --play-sound   snd/sound_data.sdat 0 5           # or play it
+```
+
+Then drop your replacement at `mods/<Mod>/sounds/0_5.wav`; `--play-sound 0 5`
+(and, later, the game) uses it instead. Sequenced music (the SSEQ synth) is not
+played yet, so this currently covers sampled waveforms — sound effects and voice
+clips.
+
 ## Trying it
 
 With the DS data extracted under `data/` and a mod prepared as above:

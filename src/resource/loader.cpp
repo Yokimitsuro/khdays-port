@@ -316,4 +316,19 @@ std::vector<std::u16string> load_string_table(
     return table;
 }
 
+khdays::assets::DecodedAudio load_sound(
+    const khdays::assets::Sdat& sdat,
+    const std::size_t wave_archive_index,
+    const std::size_t swav_index) {
+    const auto key = std::to_string(wave_archive_index) + "_"
+        + std::to_string(swav_index) + ".wav";
+    if (const auto override_path = find_override("sounds", key)) {
+        std::cout << "override: sound " << wave_archive_index << ':'
+                  << swav_index << " <- " << override_path->string()
+                  << std::endl;
+        return khdays::assets::load_wav(*override_path);
+    }
+    return khdays::assets::sdat_waveform(sdat, wave_archive_index, swav_index);
+}
+
 }  // namespace khdays::resource

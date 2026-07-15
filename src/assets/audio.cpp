@@ -301,4 +301,64 @@ std::vector<std::uint8_t> to_wav(const DecodedAudio& audio) {
     return wav;
 }
 
+DecodedAudio load_wav(const std::filesystem::path& path) {
+    const auto d = read_file(path);
+    const auto has_tag = [&](const std::size_t off, const char* tag) {
+        return off + 4U <= d.size() && d[off] == tag[0] && d[off + 1U] == tag[1]
+            && d[off + 2U] == tag[2] && d[off + 3U] == tag[3];
+    };
+    if (d.size() < 12U || !has_tag(0U, "RIFF") || !has_tag(8U, "WAVE")) {
+        throw std::runtime_error("not a WAV file: " + path.string());
+    }
+
+    std::uint16_t format = 0U;
+    std::uint16_t channels = 1U;
+    std::uint16_t bits = 16U;
+    std::uint32_t rate = 0U;
+    std::size_t data_off = 0U;
+    std::size_t data_size = 0U;
+
+    std::size_t p = 12U;
+    while (p + 8U <= d.size()) {
+        const auto chunk_size = static_cast<std::size_t>(read_u32(d, p + 4U));
+        const std::size_t body = p + 8U;
+        if (has_tag(p, "fmt ") && body + 16U <= d.size()) {
+            format = read_u16(d, body);
+            channels = read_u16(d, body + 2U);
+            rate = read_u32(d, body + 4U);
+            bits = read_u16(d, body + 14U);
+        } else if (has_tag(p, "data")) {
+            data_off = body;
+            data_size = chunk_size <= d.size() - body ? chunk_size
+                                                      : d.size() - body;
+        }
+        p = body + chunk_size + (chunk_size & 1U);  // chunks are word-aligned
+    }
+
+    if (format != 1U) {
+        throw std::runtime_error("WAV is not PCM: " + path.string());
+    }
+
+    DecodedAudio audio;
+    audio.sample_rate = rate;
+    audio.channels = channels == 0U ? 1U : channels;
+    if (bits == 16U) {
+        const std::size_t count = data_size / 2U;
+        audio.samples.reserve(count);
+        for (std::size_t i = 0U; i < count; ++i) {
+            audio.samples.push_back(static_cast<std::int16_t>(
+                d[data_off + i * 2U] | (d[data_off + i * 2U + 1U] << 8U)));
+        }
+    } else if (bits == 8U) {
+        audio.samples.reserve(data_size);
+        for (std::size_t i = 0U; i < data_size; ++i) {
+            audio.samples.push_back(static_cast<std::int16_t>(
+                (static_cast<int>(d[data_off + i]) - 128) << 8));
+        }
+    } else {
+        throw std::runtime_error("unsupported WAV bit depth");
+    }
+    return audio;
+}
+
 }  // namespace khdays::assets
