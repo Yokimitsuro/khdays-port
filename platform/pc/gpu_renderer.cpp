@@ -17,6 +17,7 @@
 #include "khdays/assets/animation.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/tex0.h"
+#include "khdays/resource/loader.h"
 
 namespace {
 
@@ -391,7 +392,7 @@ int render_model(
     const std::optional<std::filesystem::path>& animation_path) {
     khdays::assets::NeutralModel model;
     try {
-        model = khdays::assets::decode_model_geometry(model_path);
+        model = khdays::resource::load_model(model_path);
     } catch (const std::exception& error) {
         std::cerr << "ERROR: " << error.what() << '\n';
         return EXIT_FAILURE;
@@ -408,7 +409,7 @@ int render_model(
         try {
             decoded_textures.emplace(
                 m.texture_name,
-                khdays::assets::load_tex0_texture(model_path, m.texture_name));
+                khdays::resource::load_texture(m.texture_name, model_path));
         } catch (const std::exception& error) {
             std::cerr << "texture '" << m.texture_name << "': "
                       << error.what() << '\n';
@@ -433,7 +434,7 @@ int render_model(
             : model_path.parent_path().parent_path() / "slot_0" / "0000.nsbca";
         if (std::filesystem::exists(anim_path)) {
             try {
-                animation = khdays::assets::load_nsbca(anim_path);
+                animation = khdays::resource::load_animation(anim_path);
                 std::cout << "Loaded animation: " << animation->frame_count
                           << " frames, " << animation->bones.size() << " bones\n";
             } catch (const std::exception& error) {

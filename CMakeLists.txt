@@ -62,6 +62,7 @@ add_library(
     khdays-assets
     STATIC
         src/assets/animation.cpp
+        src/assets/bmp.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
         src/assets/sdat.cpp
@@ -81,6 +82,24 @@ else()
 endif()
 
 khdays_enable_sanitizers(khdays-assets)
+
+# The resource layer resolves neutral assets (from DS formats or user overrides)
+# so the engine never depends on Nintendo DS formats directly.
+add_library(
+    khdays-resource
+    STATIC
+        src/resource/loader.cpp
+)
+
+target_link_libraries(khdays-resource PUBLIC khdays-assets)
+
+if(MSVC)
+    target_compile_options(khdays-resource PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(khdays-resource PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+khdays_enable_sanitizers(khdays-resource)
 
 add_executable(
     khdays-port
@@ -104,7 +123,7 @@ target_compile_definitions(
 target_link_libraries(
     khdays-port
     PRIVATE
-        khdays-assets
+        khdays-resource
         SDL3::SDL3
 )
 
