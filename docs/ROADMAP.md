@@ -78,12 +78,13 @@ Implement isolated tools or debug modes for:
   *(done for individual environment models — maps are NSBMD, e.g. mi/ob/*
   "tt_map"/"TTL_town", and render with the existing renderer; assembling a full
   mission scene from placed objects needs layout data and is a later step)*
-- message data; *(located via Ghidra — the game's text is in `db/db_<lang>.p2`
-  (a "P2" container of UTF-16LE strings with embedded control codes, loaded from
-  `/db/db_&.p2`) plus UI strings in `UI/*/str/*.s.z`. The P2 header + directory
-  format is confirmed from the decompiled loader and byte-checked against
-  `db_en` — see [docs/MESSAGE_DATA_P2.md](MESSAGE_DATA_P2.md); the sub-file
-  locator (`func_0201ef9c`) is the remaining piece before an extractor)*
+- message data; *(done — the game's text in `db/db_<lang>.p2` (a "P2" container
+  of LZ11-packed UTF-16LE sub-files) is fully decoded by
+  `khdays::assets::load_p2_archive`: 3480 strings across 23 sub-databases in each
+  of `db_en`/`db_es`, via `--message-info` / `--dump-messages`. Format confirmed
+  from the decompiled loader and byte-checked — see
+  [docs/MESSAGE_DATA_P2.md](MESSAGE_DATA_P2.md). UI strings in `UI/*/str/*.s.z`
+  are still to be decoded)*
 - audio metadata. *(done — SDAT inventory: sequences, banks, wave archives,
   streams, by name via --audio-info)*
 

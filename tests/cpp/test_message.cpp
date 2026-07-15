@@ -1,0 +1,135 @@
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "khdays/assets/message.h"
+
+namespace {
+
+using Bytes = std::vector<std::uint8_t>;
+
+void put_u16(Bytes& b, std::uint16_t v) {
+    b.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    b.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+}
+
+void put_u32(Bytes& b, std::uint32_t v) {
+    b.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+    b.push_back(static_cast<std::uint8_t>((v >> 8U) & 0xFFU));
+    b.push_back(static_cast<std::uint8_t>((v >> 16U) & 0xFFU));
+    b.push_back(static_cast<std::uint8_t>((v >> 24U) & 0xFFU));
+}
+
+// Build a sub-database blob {u32 count; u32 offsets[count]; u16 data[]} from a
+// list of ASCII strings (each stored as UTF-16LE plus a NUL terminator).
+Bytes build_blob(const std::vector<std::string>& strings) {
+    Bytes data;
+    std::vector<std::uint32_t> offsets;
+    for (const auto& s : strings) {
+        for (char c : s) {
+            put_u16(data, static_cast<std::uint16_t>(c));
+        }
+        put_u16(data, 0U);  // terminator
+        offsets.push_back(static_cast<std::uint32_t>(data.size()));
+    }
+    Bytes blob;
+    put_u32(blob, static_cast<std::uint32_t>(strings.size()));
+    for (auto o : offsets) {
+        put_u32(blob, o);
+    }
+    blob.insert(blob.end(), data.begin(), data.end());
+    return blob;
+}
+
+// Wrap bytes in an all-literal LZ11 stream (valid input for lz_decompress).
+Bytes lz11_store(const Bytes& data) {
+    Bytes out;
+    out.push_back(0x11U);
+    out.push_back(static_cast<std::uint8_t>(data.size() & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((data.size() >> 8U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((data.size() >> 16U) & 0xFFU));
+    for (std::size_t i = 0U; i < data.size(); i += 8U) {
+        out.push_back(0x00U);  // flag: next 8 are literals
+        for (std::size_t j = i; j < i + 8U && j < data.size(); ++j) {
+            out.push_back(data[j]);
+        }
+    }
+    return out;
+}
+
+void expect(bool ok, const char* what) {
+    if (!ok) {
+        throw std::runtime_error(what);
+    }
+}
+
+}  // namespace
+
+int main() {
+    const auto path =
+        std::filesystem::temp_directory_path() / "khdays_message_test.p2";
+    try {
+        // Two sub-files: one raw, one LZ11-compressed.
+        const Bytes blob0 = build_blob({"Hi", "Bye"});
+        const Bytes blob1 = lz11_store(build_blob({"A", "BB", "Ccc"}));
+
+        constexpr std::size_t base = 0x200U;  // data-region base
+        constexpr std::size_t sector = 0x200U;
+
+        Bytes file;
+        put_u16(file, 0x3250U);  // 'P2'
+        put_u16(file, 0x0002U);  // count = 2, no wide flag
+        put_u32(file, 0U);
+        put_u32(file, 0U);
+        put_u32(file, static_cast<std::uint32_t>(base));  // base_offset @0x0C
+        // sizes[] @0x10: two u16 (start sectors 0 and 1)
+        put_u16(file, 0U);
+        put_u16(file, 1U);
+        // desc[] @0x14: size + compression flag
+        put_u32(file, static_cast<std::uint32_t>(blob0.size()));  // raw
+        put_u32(file, 0x80000000U | static_cast<std::uint32_t>(blob1.size()));
+
+        // Sub-file 0 at base + 0*sector, sub-file 1 at base + 1*sector.
+        file.resize(base, 0U);
+        file.insert(file.end(), blob0.begin(), blob0.end());
+        file.resize(base + sector, 0U);
+        file.insert(file.end(), blob1.begin(), blob1.end());
+
+        {
+            std::ofstream stream{path, std::ios::binary};
+            stream.write(
+                reinterpret_cast<const char*>(file.data()),
+                static_cast<std::streamsize>(file.size()));
+        }
+
+        const auto archive = khdays::assets::load_p2_archive(path);
+        expect(archive.subdbs.size() == 2U, "sub-database count");
+        expect(archive.string_count() == 5U, "total string count");
+
+        expect(archive.subdbs[0].size() == 2U, "sub-db 0 size");
+        expect(archive.subdbs[0][0] == u"Hi", "sub-db 0 string 0");
+        expect(archive.subdbs[0][1] == u"Bye", "sub-db 0 string 1");
+
+        expect(archive.subdbs[1].size() == 3U, "sub-db 1 size");
+        expect(archive.subdbs[1][0] == u"A", "sub-db 1 string 0 (LZ11)");
+        expect(archive.subdbs[1][1] == u"BB", "sub-db 1 string 1 (LZ11)");
+        expect(archive.subdbs[1][2] == u"Ccc", "sub-db 1 string 2 (LZ11)");
+
+        expect(
+            khdays::assets::message_to_utf8(u"A\nB") == "A\nB",
+            "utf8 newline passthrough");
+
+        std::filesystem::remove(path);
+        std::cout << "Message container test passed\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::filesystem::remove(path);
+        std::cerr << "Message container test failed: " << error.what() << '\n';
+        return 1;
+    }
+}

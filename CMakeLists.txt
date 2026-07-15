@@ -91,6 +91,7 @@ add_library(
         src/assets/bmp.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
+        src/assets/message.cpp
         src/assets/sdat.cpp
         src/assets/tex0.cpp
 )
@@ -209,19 +210,33 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-message-test
+        tests/cpp/test_message.cpp
+    )
+
+    target_link_libraries(
+        khdays-message-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mesh-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-message-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-message-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
     khdays_enable_sanitizers(khdays-mdl0-test)
     khdays_enable_sanitizers(khdays-mesh-test)
+    khdays_enable_sanitizers(khdays-message-test)
 
     add_test(
         NAME khdays-port-version
@@ -241,5 +256,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-mesh-decoder
         COMMAND khdays-mesh-test
+    )
+
+    add_test(
+        NAME khdays-message-container
+        COMMAND khdays-message-test
     )
 endif()
