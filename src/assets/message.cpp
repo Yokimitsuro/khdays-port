@@ -216,6 +216,44 @@ MessageArchive load_p2_archive(const std::filesystem::path& path) {
     return archive;
 }
 
+std::vector<std::u16string> load_string_table(
+    const std::filesystem::path& path) {
+    ByteVector data = read_file(path);
+    if (!data.empty() && (data[0] == 0x10U || data[0] == 0x11U)) {
+        data = lz_decompress(data);  // ".s.z" is an LZ-packed ".s"
+    }
+    if (data.size() < 8U) {
+        throw std::runtime_error("string table too small: " + path.string());
+    }
+
+    const auto header_size = static_cast<std::size_t>(read_u32(data, 0U));
+    const auto count = read_u32(data, 4U);
+    if (header_size > data.size()) {
+        throw std::runtime_error("string table header is invalid");
+    }
+
+    std::vector<std::u16string> strings;
+    strings.reserve(count);
+    std::size_t pos = header_size;
+    for (std::uint32_t i = 0U; i < count; ++i) {
+        const auto record_length = static_cast<std::size_t>(read_u32(data, pos));
+        if (record_length < 4U || pos + record_length > data.size()) {
+            throw std::runtime_error("string table record exceeds the file");
+        }
+        std::u16string text;
+        text.reserve((record_length - 4U) / 2U);
+        for (std::size_t b = pos + 4U; b + 2U <= pos + record_length; b += 2U) {
+            text.push_back(static_cast<char16_t>(read_u16(data, b)));
+        }
+        if (!text.empty() && text.back() == u'\0') {
+            text.pop_back();
+        }
+        strings.push_back(std::move(text));
+        pos += record_length;
+    }
+    return strings;
+}
+
 std::string message_to_utf8(const std::u16string& text) {
     std::string out;
     out.reserve(text.size());

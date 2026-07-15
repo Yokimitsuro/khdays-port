@@ -124,6 +124,37 @@ int main() {
             khdays::assets::message_to_utf8(u"A\nB") == "A\nB",
             "utf8 newline passthrough");
 
+        // A UI string table (.s): header {u32 =8; u32 count}, then records
+        // {u32 record_length incl. field; u16 utf16le[]}. Shipped LZ11-packed.
+        {
+            Bytes s;
+            put_u32(s, 8U);   // header size
+            put_u32(s, 2U);   // count
+            for (const std::string str : {std::string{"Nv."}, std::string{"OK"}}) {
+                Bytes rec;
+                for (char c : str) {
+                    put_u16(rec, static_cast<std::uint16_t>(c));
+                }
+                put_u16(rec, 0U);  // terminator
+                put_u32(s, static_cast<std::uint32_t>(rec.size() + 4U));
+                s.insert(s.end(), rec.begin(), rec.end());
+            }
+            const Bytes packed = lz11_store(s);
+            const auto spath =
+                std::filesystem::temp_directory_path() / "khdays_str_test.s.z";
+            {
+                std::ofstream stream{spath, std::ios::binary};
+                stream.write(
+                    reinterpret_cast<const char*>(packed.data()),
+                    static_cast<std::streamsize>(packed.size()));
+            }
+            const auto table = khdays::assets::load_string_table(spath);
+            std::filesystem::remove(spath);
+            expect(table.size() == 2U, "string table size");
+            expect(table[0] == u"Nv.", "string table entry 0");
+            expect(table[1] == u"OK", "string table entry 1");
+        }
+
         std::filesystem::remove(path);
         std::cout << "Message container test passed\n";
         return 0;

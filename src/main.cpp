@@ -40,6 +40,7 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
+        << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
@@ -54,6 +55,7 @@ void print_help() {
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
+        << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
         << "  --version           Print version information without opening a window.\n"
         << "  --help              Show this help text.\n";
@@ -244,6 +246,27 @@ int main(int argc, char* argv[]) {
                                          archive.subdbs[d][s])
                                   << '\n';
                     }
+                }
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--dump-strings") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --dump-strings requires one file path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto strings = khdays::assets::load_string_table(
+                    std::filesystem::path{argv[2]});
+                std::cout << strings.size() << " strings\n";
+                for (std::size_t i = 0; i < strings.size(); ++i) {
+                    std::cout << '[' << i << "] "
+                              << khdays::assets::message_to_utf8(strings[i])
+                              << '\n';
                 }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {

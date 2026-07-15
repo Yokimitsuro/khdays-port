@@ -71,13 +71,33 @@ UTF-16LE with a trailing NUL and embedded control codes. In `db_en` each of the
 `"Ashes"`, `"Your most basic weapon.\nNothing really sets it apart."`,
 `"Doldrums"`, … (weapon names and descriptions).
 
+## UI string tables (`.s` / `.s.z`)
+
+Menu and battle UI text lives separately, in `UI/**/*.s` files — usually shipped
+LZ-compressed with a `.s.z` extension. Once decompressed the layout is a flat
+list:
+
+```
+u32 header_size (= 8)
+u32 count
+count * { u32 record_length (includes this field); u16 utf16le[] }  // NUL-terminated
+```
+
+`khdays::assets::load_string_table()` decodes these (auto-detecting compression),
+returning a flat vector of UTF-16 strings. All 136 shipped `.s.z` files parse
+cleanly — 5007 UI strings — e.g. `UI/btl/es/magic.s.z` = `"Piro"`, `"Piro+"`,
+`"Hielo"`, …; `UI/cm/str/status_es.s.z` = `"Nv."`, `"Habilidades"`,
+`"Vínculos"`, …
+
 ## Using it
 
 ```
-khdays-port --message-info   db_es.p2        # sub-db count, string totals, samples
-khdays-port --dump-messages  db_es.p2 [SUBDB] # decoded UTF-8 text
+khdays-port --message-info   db_es.p2         # P2: sub-db count, totals, samples
+khdays-port --dump-messages  db_es.p2 [SUBDB] # P2: decoded UTF-8 text
+khdays-port --dump-strings   status_es.s.z    # UI table: decoded UTF-8 text
 ```
 
-`load_p2_archive()` returns a `MessageArchive` of sub-databases, each a list of
-UTF-16 strings; `message_to_utf8()` renders one for display. The LZ11 decoder is
-exposed as `lz_decompress()` for other packed assets.
+`load_p2_archive()` returns a `MessageArchive` of sub-databases and
+`load_string_table()` a flat UI list; both are UTF-16 strings that
+`message_to_utf8()` renders for display. The LZ11/LZ10 decoder is exposed as
+`lz_decompress()` for other packed assets.

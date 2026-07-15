@@ -34,6 +34,13 @@ struct MessageArchive final {
 // malformed header, directory, compression stream, or string blob.
 MessageArchive load_p2_archive(const std::filesystem::path& path);
 
+// Load a UI string table: the game's `UI/**/*.s` files, a flat list of UTF-16LE
+// strings, usually shipped LZ-compressed as `.s.z`. Compression is auto-detected
+// from the leading type byte. The on-disk layout is `u32 header_size (=8);
+// u32 count; count * { u32 record_length (incl. this field); u16 utf16le[] }`.
+// Throws std::runtime_error on malformed data.
+std::vector<std::u16string> load_string_table(const std::filesystem::path& path);
+
 // Decompress a Nintendo DS LZ11 (type 0x11) stream. Also accepts LZ10 (0x10).
 // Throws std::runtime_error on a malformed stream. Exposed for reuse by other
 // packed assets.
