@@ -169,11 +169,13 @@ not ported). Port or replace the minimum required systems for:
   per-frame object update (`func_02023adc`): each object runs a state-machine
   coroutine whose initial state is its constructor's result and which returns
   the next state, walked once per frame.)*
-- scene transitions; *(skeleton — `khdays::game::SceneManager` holds the current
-  scene id, applies pending transitions (the `StoreGlobalPairAt10` / pending-id
-  latch), and drives update/render per frame. The exact DS consumer that turns a
-  pending id into a loaded scene overlay is the remaining decomp piece; real
-  per-scene logic is filled in as each scene is named.)*
+- scene transitions; *(done — the DS dispatcher (`func_0202099c`) is matched: a
+  pending scene id indexes `g_SceneTable` ({overlay, class} per id), tears down
+  the old scene once it reports ended, then loads the new one.
+  `khdays::game::SceneManager` reproduces this natively — an id→scene table, a
+  pending-id latch, and teardown-gated transitions. Real per-scene logic is
+  filled in as each scene's constructor is decompiled, starting with the boot
+  logo (`func_ov000_0204d630`, ov000).)*
 - save data abstraction.
 
 **Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly.

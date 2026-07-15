@@ -21,12 +21,17 @@ namespace khdays::game {
 
 class SceneManager;
 
-// Stable scene identifiers, mirroring the DS scene ids (see the decompiled
-// BootTask_Construct). More are added as khdays-decomp names each scene.
+// Stable scene identifiers, mirroring the DS `g_SceneTable` (@0x02042548,
+// {overlayId, classDesc} per id) that the scene dispatcher (func_0202099c)
+// indexes. The port's scene factory is the native form of a table entry; the DS
+// overlay a scene lived in is noted for reference:
+//   1 → ov000 (boot/logo)   2 → ov02    3 → ov03    5 → ov04    6 → ov05
+//   7 → ov06   8 → ov11   9 → ov09   10 → ov07   11 → ov12   12 → ov10   19 → ov08
+// Semantic names are filled in as each scene is decompiled.
 using SceneId = int;
 inline constexpr SceneId kSceneNone = 0;
-inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the logo scene
-inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path
+inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the logo scene (ov000)
+inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
 
 // One game state. Override the hooks that matter; the default is a no-op.
 class Scene {
@@ -51,8 +56,17 @@ public:
     // Enter the first scene directly (the boot task instantiating scene 1).
     void start(SceneId first, int arg = 0);
 
-    // Request a transition to `id`; applied after the current frame finishes.
+    // Request scene `id` and end the current one now — the common "switch to
+    // scene X" (the DS request-then-teardown, collapsed). The switch applies at
+    // the end of the frame.
     void change_scene(SceneId id, int arg = 0);
+
+    // Latch a pending scene without ending the current one: it keeps running
+    // (e.g. playing an exit fade) until it calls end_scene(); only then does the
+    // dispatcher tear it down and load the pending id (mirrors func_0202099c
+    // gating teardown on func_02023bbc "scene ended").
+    void request_scene(SceneId id, int arg = 0);
+    void end_scene() { ended_ = true; }
 
     // Advance the current scene's logic one frame, then apply any pending
     // transition (no drawing — used headless and in tests).
@@ -86,6 +100,7 @@ private:
     SceneId current_id_ = kSceneNone;
     int current_arg_ = 0;
     std::optional<std::pair<SceneId, int>> pending_;
+    bool ended_ = false;
     std::uint64_t frame_ = 0;
     Input input_;
     std::function<void(SceneId, int)> observer_;

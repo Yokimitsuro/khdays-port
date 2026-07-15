@@ -21,6 +21,7 @@ void SceneManager::enter(SceneId id, int arg) {
     current_ = make(id);
     current_id_ = id;
     current_arg_ = arg;
+    ended_ = false;
     if (observer_) {
         observer_(id, arg);
     }
@@ -32,8 +33,13 @@ void SceneManager::start(SceneId first, int arg) {
     enter(first, arg);
 }
 
-void SceneManager::change_scene(SceneId id, int arg) {
+void SceneManager::request_scene(SceneId id, int arg) {
     pending_ = std::make_pair(id, arg);
+}
+
+void SceneManager::change_scene(SceneId id, int arg) {
+    request_scene(id, arg);
+    ended_ = true;
 }
 
 void SceneManager::step() {
@@ -41,7 +47,20 @@ void SceneManager::step() {
     if (current_) {
         current_->update(*this);
     }
-    if (pending_) {
+
+    // A scene that ended with nowhere to go tears down: the flow has no scene
+    // (the DS Game_PollSceneAlive-returns-0 path).
+    if (current_ && ended_ && !pending_) {
+        current_->on_exit(*this);
+        current_.reset();
+        current_id_ = kSceneNone;
+        ended_ = false;
+        return;
+    }
+
+    // Apply a pending transition only once the current scene has ended (or there
+    // is none) — the dispatcher's teardown-then-load gate.
+    if (pending_ && (!current_ || ended_)) {
         const auto [id, arg] = *pending_;
         pending_.reset();
         if (current_) {
