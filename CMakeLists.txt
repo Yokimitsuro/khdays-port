@@ -58,6 +58,20 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3)
 
+# Optional PNG texture overrides via stb_image. When off, the build needs no
+# network for stb and PNG overrides are simply unavailable (BMP still works).
+option(KHDAYS_ENABLE_PNG "Support PNG texture overrides (fetches stb)" ON)
+if(KHDAYS_ENABLE_PNG)
+    FetchContent_Declare(
+        stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        # Header-only; track master. Pin to a commit for fully reproducible builds.
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(stb)
+endif()
+
 add_library(
     khdays-assets
     STATIC
@@ -74,6 +88,12 @@ target_include_directories(
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
+
+if(KHDAYS_ENABLE_PNG)
+    target_sources(khdays-assets PRIVATE src/assets/png.cpp)
+    target_include_directories(khdays-assets PRIVATE "${stb_SOURCE_DIR}")
+    target_compile_definitions(khdays-assets PUBLIC KHDAYS_HAS_PNG)
+endif()
 
 if(MSVC)
     target_compile_options(khdays-assets PRIVATE /W4 /permissive-)

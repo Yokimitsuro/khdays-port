@@ -7,6 +7,9 @@
 #include <vector>
 
 #include "khdays/assets/bmp.h"
+#ifdef KHDAYS_HAS_PNG
+#include "khdays/assets/png.h"
+#endif
 
 namespace khdays::resource {
 
@@ -75,14 +78,22 @@ LoadedTexture load_texture(
     // override of any resolution samples correctly.
     const auto ds_texture = khdays::assets::load_tex0_texture(ds_source, name);
 
-    const auto override_path = find_override("textures", name + ".bmp");
-    if (override_path.has_value()) {
-        std::cout << "override: texture '" << name << "' <- "
-                  << override_path->string() << std::endl;
-        auto image = khdays::assets::load_bmp(*override_path);
+    const auto use_override = [&](const std::filesystem::path& path,
+                                  khdays::assets::DecodedTexture image) {
+        std::cout << "override: texture '" << name << "' <- " << path.string()
+                  << std::endl;
         image.name = name;
         return LoadedTexture{
             std::move(image), ds_texture.width, ds_texture.height};
+    };
+
+#ifdef KHDAYS_HAS_PNG
+    if (const auto png_path = find_override("textures", name + ".png")) {
+        return use_override(*png_path, khdays::assets::load_png(*png_path));
+    }
+#endif
+    if (const auto bmp_path = find_override("textures", name + ".bmp")) {
+        return use_override(*bmp_path, khdays::assets::load_bmp(*bmp_path));
     }
 
     return LoadedTexture{ds_texture, ds_texture.width, ds_texture.height};

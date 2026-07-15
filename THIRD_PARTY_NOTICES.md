@@ -44,6 +44,18 @@ MDL0 binary layout (bones, inverse-bind matrices, render commands, and GPU
 vertex commands). The decoder in `src/assets/mesh.cpp` is an independent
 reimplementation; no apicula code was copied.
 
+## stb_image
+
+Project: stb — `stb_image.h`
+
+Upstream: <https://github.com/nothings/stb>
+
+License: public domain (Unlicense) or MIT, at your option.
+
+Usage: compiled into `khdays-assets` (via `src/assets/png.cpp`) to decode PNG
+texture overrides. Fetched by CMake when `KHDAYS_ENABLE_PNG` is on (the
+default); with it off, PNG support is dropped and no fetch occurs.
+
 ## Vulkan SDK (build tool)
 
 Project: LunarG Vulkan SDK — `glslc` (shaderc)

@@ -51,8 +51,9 @@ mods/
 
 The resource layer searches every mod's category tree recursively for a file
 matching the DS resource name (mods are visited in sorted order; first match
-wins). Dropping `textures/<ds_name>.bmp` replaces that DS texture in the
-renderer with no code change.
+wins). Dropping `textures/<ds_name>.png` (or `.bmp`) replaces that DS texture in
+the renderer with no code change. PNG (with alpha) is preferred over BMP when
+both exist; PNG support is optional (CMake `KHDAYS_ENABLE_PNG`, on by default).
 
 **Textures may be any resolution.** UVs are normalized by the *original DS
 texture size*, so a 4x BMP is a valid HD replacement — it samples correctly
