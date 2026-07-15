@@ -64,6 +64,7 @@ add_library(
         src/assets/animation.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
+        src/assets/sdat.cpp
         src/assets/tex0.cpp
 )
 

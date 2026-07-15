@@ -11,6 +11,7 @@
 #include "khdays/assets/animation.h"
 #include "khdays/assets/mdl0.h"
 #include "khdays/assets/mesh.h"
+#include "khdays/assets/sdat.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
 
@@ -35,6 +36,7 @@ void print_help() {
         << "  khdays-port --render-model FILE [--anim FILE]\n"
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --anim-info FILE\n"
+        << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
@@ -46,6 +48,7 @@ void print_help() {
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
+        << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
         << "  --version           Print version information without opening a window.\n"
         << "  --help              Show this help text.\n";
@@ -137,6 +140,41 @@ int main(int argc, char* argv[]) {
                         std::filesystem::path{argv[2]});
                 std::cout
                     << khdays::assets::format_model_report(information);
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--audio-info") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --audio-info requires one file path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto sdat = khdays::assets::read_sdat_inventory(
+                    std::filesystem::path{argv[2]});
+                const auto show = [](const char* label,
+                                     const std::vector<std::string>& items) {
+                    std::cout << label << ": " << items.size() << '\n';
+                    for (std::size_t i = 0; i < items.size() && i < 8; ++i) {
+                        if (!items[i].empty()) {
+                            std::cout << "    " << items[i] << '\n';
+                        }
+                    }
+                    if (items.size() > 8) {
+                        std::cout << "    ... (" << (items.size() - 8)
+                                  << " more)\n";
+                    }
+                };
+                std::cout << "SDAT inventory:\n";
+                show("  Sequences", sdat.sequences);
+                show("  Sequence archives", sdat.sequence_archives);
+                show("  Banks", sdat.banks);
+                show("  Wave archives", sdat.wave_archives);
+                show("  Stream players", sdat.stream_players);
+                show("  Streams", sdat.streams);
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

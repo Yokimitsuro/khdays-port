@@ -78,11 +78,14 @@ Implement isolated tools or debug modes for:
   *(done for individual environment models — maps are NSBMD, e.g. mi/ob/*
   "tt_map"/"TTL_town", and render with the existing renderer; assembling a full
   mission scene from placed objects needs layout data and is a later step)*
-- message data;
-- audio metadata.
+- message data; *(format not yet located — the `text/` files are only fonts,
+  so the game's strings likely live in overlays or compressed archives and may
+  need decompilation knowledge to find)*
+- audio metadata. *(done — SDAT inventory: sequences, banks, wave archives,
+  streams, by name via --audio-info)*
 
 **Exit condition:** a real model loads from user-generated data and renders,
-textured and animated, in the native window.
+textured and animated, in the native window. *(met)*
 
 ## Modding & content pipeline (decomp-independent)
 
