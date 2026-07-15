@@ -9,24 +9,26 @@
 
 namespace khdays::assets {
 
-// A single decoded vertex in a neutral, engine-independent form. Positions are
-// in the model's local command space (skinning matrices are not yet applied),
-// texture coordinates are normalized to 0..1 when the texture size is known,
-// and colors are expanded to 8 bits per channel.
+// A single decoded vertex in a neutral, engine-independent form.
+//
+// The position is the *raw* coordinate emitted by the GPU command stream, in
+// the local space of whichever matrix applies to it. To get the final rest-pose
+// position, multiply it by the model's palette matrix selected by
+// `matrix_index`. Keeping the raw position plus the palette index (instead of
+// baking the transform in) is what lets the runtime re-pose the model for
+// animation, exactly as the Nintendo DS does.
 struct NeutralVertex final {
     std::array<float, 3> position{0.0F, 0.0F, 0.0F};
     std::array<float, 2> texcoord{0.0F, 0.0F};
     std::array<std::uint8_t, 4> color{255U, 255U, 255U, 255U};
 
-    // Index of the matrix restored by the most recent MTX_RESTORE command, or
-    // -1 when no matrix was selected. Retained for future skinning; it does not
-    // affect the emitted position yet.
-    int matrix_id = -1;
+    // Index into NeutralModel::palette of the matrix that transforms this
+    // vertex from its local space to model space.
+    std::uint32_t matrix_index = 0;
 };
 
 // One decoded mesh: a flat vertex list plus triangle indices. Vertices are not
-// deduplicated; each GPU vertex command appends exactly one entry, so
-// vertices.size() equals the mesh's vertex-command count.
+// deduplicated; each GPU vertex command appends exactly one entry.
 struct NeutralMesh final {
     std::string name;
     std::vector<NeutralVertex> vertices;
@@ -37,20 +39,36 @@ struct NeutralModel final {
     std::string name;
     std::vector<NeutralMesh> meshes;
 
-    // Vertex count reported by the MDL0 model header, for cross-checking the
-    // decoded geometry.
+    // The rest-pose matrix palette produced by executing the model's render
+    // command stream (SBC). Each matrix is column-major (m[col * 4 + row]).
+    // Vertices reference a palette entry through NeutralVertex::matrix_index.
+    std::vector<std::array<float, 16>> palette;
+
+    // Vertex count reported by the MDL0 model header, for cross-checking.
     std::uint16_t header_vertex_count = 0;
 };
 
 // Decode the geometry of one model inside a BMD0/NSBMD file into neutral
-// meshes. Throws std::runtime_error on malformed data.
+// meshes, executing the render command stream so bones and skinning are
+// applied. Throws std::runtime_error on malformed data.
 NeutralModel decode_model_geometry(
     const std::filesystem::path& input_path,
     std::size_t model_index = 0);
 
-// Serialize a decoded model as a Wavefront OBJ document. Each mesh becomes a
-// named group. UVs are written as decoded; vertex colors are not part of the
-// core OBJ format and are omitted.
+// Apply a column-major 4x4 matrix to a point (affine; the bottom row is assumed
+// to be 0 0 0 1). Convenience for consumers that want rest-pose positions.
+std::array<float, 3> transform_point(
+    const std::array<float, 16>& matrix,
+    const std::array<float, 3>& point);
+
+// Rest-pose position of a vertex: palette[matrix_index] applied to the raw
+// position.
+std::array<float, 3> posed_position(
+    const NeutralModel& model,
+    const NeutralVertex& vertex);
+
+// Serialize a decoded model as a Wavefront OBJ document, writing rest-pose
+// positions. Each mesh becomes a named group.
 std::string to_wavefront_obj(const NeutralModel& model);
 
 }  // namespace khdays::assets

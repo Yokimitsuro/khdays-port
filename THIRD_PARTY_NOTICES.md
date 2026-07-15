@@ -29,6 +29,21 @@ License: **zlib License**.
 
 SDL3 is used for the native window, renderer, events, timing, and future platform abstractions.
 
+## apicula (format reference and validation tool)
+
+Project: apicula — Nintendo DS model tooling
+
+Upstream repository: <https://github.com/scurest/apicula>
+
+License: **0BSD** (BSD Zero Clause License).
+
+Usage: **not linked or embedded**. apicula is used as an external command-line
+tool to convert user-provided NSBMD models to glTF for cross-checking the native
+mesh decoder, and its public source was read as a reference for the Nintendo DS
+MDL0 binary layout (bones, inverse-bind matrices, render commands, and GPU
+vertex commands). The decoder in `src/assets/mesh.cpp` is an independent
+reimplementation; no apicula code was copied.
+
 ## Original game
 
 No license in this repository applies to the original game or to copyrighted material extracted from it.

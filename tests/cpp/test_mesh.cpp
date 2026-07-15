@@ -63,14 +63,18 @@ std::vector<std::uint8_t> make_dictionary(
     return data;
 }
 
-// Synthesize a BMD0 with one model and one mesh whose command stream draws a
-// single triangle from three VTX_16 vertices at (1,0,0), (0,1,0), (0,0,1).
+// Synthesize a BMD0 with one model whose render command stream draws a single
+// piece: a triangle from three VTX_16 vertices at (1,0,0), (0,1,0), (0,0,1).
+// The model has no bones, so the matrix palette is the identity and rest-pose
+// positions equal the raw positions.
 std::vector<std::uint8_t> make_triangle_bmd0() {
     constexpr std::size_t mdl0_offset_in_file = 0x14U;
-    constexpr std::size_t model_offset = 0x30U;   // within the MDL0 section
-    constexpr std::size_t meshes_offset = 0x40U;  // relative to the model
-    constexpr std::size_t mesh_relative = 0x40U;  // relative to the mesh list
-    constexpr std::size_t mesh_list_offset = model_offset + meshes_offset;
+    constexpr std::size_t model_offset = 0x30U;    // within the MDL0 section
+    constexpr std::size_t render_off = 0x80U;      // relative to the model
+    constexpr std::size_t materials_off = 0x90U;
+    constexpr std::size_t pieces_off = 0xB0U;
+    constexpr std::size_t mesh_relative = 0x30U;   // relative to the mesh list
+    constexpr std::size_t mesh_list_offset = model_offset + pieces_off;
     constexpr std::size_t mesh_offset = mesh_list_offset + mesh_relative;
     constexpr std::size_t command_relative = 0x10U;
     constexpr std::size_t command_offset = mesh_offset + command_relative;
@@ -85,9 +89,18 @@ std::vector<std::uint8_t> make_triangle_bmd0() {
         make_dictionary("tri_model", static_cast<std::uint32_t>(model_offset));
     std::copy(model_dictionary.begin(), model_dictionary.end(), mdl0.begin() + 8);
 
-    write_u32(mdl0, model_offset + 0x0CU, static_cast<std::uint32_t>(meshes_offset));
+    write_u32(mdl0, model_offset + 0x04U, static_cast<std::uint32_t>(render_off));
+    write_u32(mdl0, model_offset + 0x08U, static_cast<std::uint32_t>(materials_off));
+    write_u32(mdl0, model_offset + 0x0CU, static_cast<std::uint32_t>(pieces_off));
+    write_u32(mdl0, model_offset + 0x10U, 0U);       // inverse binds (unused)
+    mdl0[model_offset + 0x17U] = 0U;                 // num objects (bones)
     write_u32(mdl0, model_offset + 0x1CU, 0x1000U);  // up scale = 1.0 (20.12)
     write_u16(mdl0, model_offset + 0x24U, 3U);       // header vertex count
+
+    // Render commands: Draw piece 0, then End.
+    mdl0[model_offset + render_off + 0U] = 0x05U;
+    mdl0[model_offset + render_off + 1U] = 0x00U;
+    mdl0[model_offset + render_off + 2U] = 0x01U;
 
     const auto mesh_dictionary =
         make_dictionary("tri_mesh", static_cast<std::uint32_t>(mesh_relative));
@@ -194,6 +207,18 @@ int main() {
             || !close_to(v[1].position[1], 1.0F)
             || !close_to(v[2].position[2], 1.0F)) {
             throw std::runtime_error("decoded positions are incorrect");
+        }
+
+        // With no bones the palette is the identity, so rest-pose positions
+        // equal the raw positions.
+        if (model.palette.empty()) {
+            throw std::runtime_error("model palette is empty");
+        }
+        const auto posed = khdays::assets::posed_position(model, v[0]);
+        if (!close_to(posed[0], 1.0F)
+            || !close_to(posed[1], 0.0F)
+            || !close_to(posed[2], 0.0F)) {
+            throw std::runtime_error("posed position is incorrect");
         }
 
         const auto obj = khdays::assets::to_wavefront_obj(model);
