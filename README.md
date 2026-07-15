@@ -21,18 +21,9 @@ The port should consume a pinned revision of the decompilation rather than turni
 
 ## Current status
 
-**Phase 0 — Repository bootstrap**
-
-- [x] Project structure
-- [x] Portable CMake build
-- [x] Legal and contribution policy
-- [x] Pin `khdays-decomp` as a submodule
-- [x] Add automated builds
-- [x] Verify and identify a supported ROM
-- [x] Extract required data locally
-- [x] Open a window and initialize the platform runtime
-- [x] Load the first game-owned resource from user-provided data
-- [x] Port and test the first self-contained game subsystem
+Phases 0–3 are complete — the bootstrap, the user-data pipeline, the platform
+runtime, and the full asset/rendering pipeline. Work is now on **Phase 4 — game
+flow**. What runs today:
 
 **Asset pipeline** — every asset type decodes to a neutral, engine-independent form:
 
@@ -53,14 +44,16 @@ The port should consume a pinned revision of the decompilation rather than turni
 
 - [x] Textures (PNG/BMP, HD), rigged models (glTF, animated by the DS skeleton), text, sound effects, music samples, 2D graphics, fonts, and raw files
 
-**Game filesystem**
+**Phase 4 — game flow (in progress)**
 
-- [x] `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
+- [x] Game filesystem: `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
+- [ ] Boot loop and scene/task state machine
+- [ ] First scenes (boot → title → menus) and gameplay
 
-**Still ahead** — the game-flow layer (the boot loop, scene/task state machine, and
-gameplay). This is *decomp-gated*: it reimplements understood game behavior as
+Phase 4 is *decomp-gated*: it reimplements understood game behavior as
 [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp) names each
-subsystem. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full plan.
+subsystem, so it advances subsystem by subsystem. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for the full plan.
 
 ## Documentation
 
