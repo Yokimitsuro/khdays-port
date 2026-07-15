@@ -72,8 +72,8 @@ int main() {
                 khdays::assets::decode_swav(swav.data(), swav.size());
             expect(audio.samples.size() == 4U, "pcm8 sample count");
             expect(audio.samples[0] == 0, "pcm8 sample 0");
-            expect(audio.samples[1] == (127 << 8), "pcm8 sample 1");
-            expect(audio.samples[2] == static_cast<std::int16_t>(-128 << 8),
+            expect(audio.samples[1] == (127 * 256), "pcm8 sample 1");
+            expect(audio.samples[2] == static_cast<std::int16_t>(-128 * 256),
                    "pcm8 sample 2");
         }
 

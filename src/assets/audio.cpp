@@ -119,8 +119,10 @@ DecodedAudio decode_swav(const std::uint8_t* swav, const std::size_t size) {
         case 0: {  // PCM8
             audio.samples.reserve(data_len);
             for (std::size_t i = 0U; i < data_len; ++i) {
+                // Scale 8-bit to 16-bit with a multiply; shifting a negative
+                // value left is undefined behavior.
                 audio.samples.push_back(static_cast<std::int16_t>(
-                    static_cast<std::int8_t>(data[i]) << 8));
+                    static_cast<int>(static_cast<std::int8_t>(data[i])) * 256));
             }
             audio.loop_start = loop_start_words * 4U;
             break;
@@ -454,7 +456,7 @@ DecodedAudio load_wav(const std::filesystem::path& path) {
         audio.samples.reserve(data_size);
         for (std::size_t i = 0U; i < data_size; ++i) {
             audio.samples.push_back(static_cast<std::int16_t>(
-                (static_cast<int>(d[data_off + i]) - 128) << 8));
+                (static_cast<int>(d[data_off + i]) - 128) * 256));
         }
     } else {
         throw std::runtime_error("unsupported WAV bit depth");
