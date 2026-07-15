@@ -61,6 +61,10 @@ struct NeutralModel final {
     // animated matrices and call compute_palette() to re-pose the model.
     std::vector<std::array<float, 16>> object_matrices;
 
+    // Name of each bone (object), aligned with object_matrices. Used to map a
+    // glTF skin's joints onto this skeleton by name for animation retargeting.
+    std::vector<std::string> object_names;
+
     // The program that rebuilds the palette from bone matrices (for animation).
     std::shared_ptr<const SkinningProgram> skinning;
 
@@ -74,6 +78,36 @@ struct NeutralModel final {
 std::vector<std::array<float, 16>> compute_palette(
     const SkinningProgram& program,
     const std::vector<std::array<float, 16>>& object_matrices);
+
+// Compute each bone (object)'s world matrix by replaying the model's render
+// program with the given bone matrices. The result is aligned index-for-index
+// with NeutralModel::object_names / object_matrices (unreached bones stay
+// identity). Use it to drive a glTF skin's joints (jointGlobal = bone world) so
+// DS animations retarget onto glTF geometry.
+std::vector<std::array<float, 16>> compute_bone_world_matrices(
+    const SkinningProgram& program,
+    const std::vector<std::array<float, 16>>& object_matrices);
+
+// One glTF skin joint bound to a DS bone, for animation retargeting. The glTF
+// geometry then animates from DS bone matrices: its palette entry becomes
+// bone_world[ds_bone] * inverse_bind. An unmatched joint (ds_bone < 0) keeps
+// its authored `rest` value.
+struct RetargetJoint final {
+    std::uint32_t palette_index;
+    int ds_bone = -1;
+    std::array<float, 16> inverse_bind{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    std::array<float, 16> rest{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+};
+
+// Build a skinning program that re-poses a glTF palette from a DS skeleton.
+// `ds_program` supplies the DS render stream (used to compute bone worlds from
+// animated bone matrices); `joints` binds each glTF joint to a DS bone.
+// compute_palette() on the result yields the glTF palette for a given set of DS
+// bone matrices, so the same animation path drives DS and glTF geometry alike.
+std::shared_ptr<const SkinningProgram> make_retarget_program(
+    const SkinningProgram& ds_program,
+    std::vector<RetargetJoint> joints,
+    std::size_t palette_size);
 
 // Decode the geometry of one model inside a BMD0/NSBMD file into neutral
 // meshes, executing the render command stream so bones and skinning are

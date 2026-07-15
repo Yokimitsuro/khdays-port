@@ -479,7 +479,8 @@ Matrix read_object_matrix(const ByteVector& data, const std::size_t offset) {
 
 std::vector<Matrix> read_objects(
     const ByteVector& mdl0,
-    const std::size_t objects_offset) {
+    const std::size_t objects_offset,
+    std::vector<std::string>& names) {
     const auto dictionary = parse_dictionary(mdl0, objects_offset, "object");
     std::vector<Matrix> objects;
     objects.reserve(dictionary.entries.size());
@@ -488,6 +489,7 @@ std::vector<Matrix> read_objects(
             read_entry_u32(entry, "object"));
         objects.push_back(read_object_matrix(mdl0, objects_offset + relative));
     }
+    names = dictionary.names;
     return objects;
 }
 
@@ -1122,6 +1124,66 @@ std::vector<Matrix> build_palette(
     return palette;
 }
 
+// Replay the render program's matrix ops and record each bone's world matrix:
+// the accumulated transform reached right after the MulObject that introduces
+// the bone. Bones never reached by the stream keep the identity. This is the
+// same accumulation the palette build performs, exposed per-bone so a glTF
+// skin can be posed with jointGlobal = bone world.
+std::vector<Matrix> build_bone_world(
+    const std::vector<RenderOp>& ops,
+    const std::vector<Matrix>& objects,
+    const float up_scale,
+    const float down_scale) {
+    std::vector<Matrix> palette{matrix_identity()};
+    std::vector<Matrix> bone_world(objects.size(), matrix_identity());
+    std::uint32_t current = 0U;
+    std::array<int, 32> stack{};
+    stack.fill(-1);
+
+    const auto fetch = [&](const std::uint8_t pos) -> std::uint32_t {
+        if (stack[pos] < 0) {
+            stack[pos] = static_cast<int>(current);
+        }
+        return static_cast<std::uint32_t>(stack[pos]);
+    };
+    const auto add = [&](const Matrix& m) -> std::uint32_t {
+        palette.push_back(m);
+        return static_cast<std::uint32_t>(palette.size() - 1U);
+    };
+
+    for (const auto& op : ops) {
+        switch (op.kind) {
+            case OpKind::LoadMatrix:
+                current = fetch(op.index);
+                break;
+            case OpKind::StoreMatrix:
+                stack[op.index] = static_cast<int>(current);
+                break;
+            case OpKind::MulObject:
+                if (op.index < objects.size()) {
+                    current = add(
+                        matrix_multiply(palette[current], objects[op.index]));
+                    bone_world[op.index] = palette[current];
+                }
+                break;
+            case OpKind::ScaleUp:
+                current = add(matrix_multiply(
+                    palette[current], matrix_scale(up_scale, up_scale, up_scale)));
+                break;
+            case OpKind::ScaleDown:
+                current = add(matrix_multiply(
+                    palette[current],
+                    matrix_scale(down_scale, down_scale, down_scale)));
+                break;
+            case OpKind::Skin:
+            case OpKind::BindMaterial:
+            case OpKind::Draw:
+                break;
+        }
+    }
+    return bone_world;
+}
+
 }  // namespace
 
 namespace khdays::assets {
@@ -1131,15 +1193,64 @@ struct SkinningProgram final {
     std::vector<Matrix> inv_binds;
     float up_scale = 1.0F;
     float down_scale = 1.0F;
+
+    // Optional glTF retargeting. When non-empty, compute_palette drives a glTF
+    // palette from DS bone worlds instead of producing the DS palette.
+    std::vector<RetargetJoint> gltf_joints;
+    std::size_t gltf_palette_size = 0U;
 };
 
 std::vector<std::array<float, 16>> compute_palette(
     const SkinningProgram& program,
     const std::vector<std::array<float, 16>>& object_matrices) {
+    if (!program.gltf_joints.empty()) {
+        // Retarget: compute DS bone worlds, then jointGlobal = bone world for
+        // each glTF joint so the DS animation drives the glTF geometry.
+        const auto bone_world = build_bone_world(
+            program.render_ops,
+            object_matrices,
+            program.up_scale,
+            program.down_scale);
+        std::vector<Matrix> palette(program.gltf_palette_size, matrix_identity());
+        for (const auto& joint : program.gltf_joints) {
+            if (joint.palette_index >= palette.size()) {
+                continue;
+            }
+            if (joint.ds_bone >= 0
+                && static_cast<std::size_t>(joint.ds_bone) < bone_world.size()) {
+                palette[joint.palette_index] = matrix_multiply(
+                    bone_world[static_cast<std::size_t>(joint.ds_bone)],
+                    joint.inverse_bind);
+            } else {
+                palette[joint.palette_index] = joint.rest;
+            }
+        }
+        return palette;
+    }
     return build_palette(
         program.render_ops,
         object_matrices,
         program.inv_binds,
+        program.up_scale,
+        program.down_scale);
+}
+
+std::shared_ptr<const SkinningProgram> make_retarget_program(
+    const SkinningProgram& ds_program,
+    std::vector<RetargetJoint> joints,
+    const std::size_t palette_size) {
+    auto program = std::make_shared<SkinningProgram>(ds_program);
+    program->gltf_joints = std::move(joints);
+    program->gltf_palette_size = palette_size;
+    return program;
+}
+
+std::vector<std::array<float, 16>> compute_bone_world_matrices(
+    const SkinningProgram& program,
+    const std::vector<std::array<float, 16>>& object_matrices) {
+    return build_bone_world(
+        program.render_ops,
+        object_matrices,
         program.up_scale,
         program.down_scale);
 }
@@ -1193,7 +1304,9 @@ NeutralModel decode_model_geometry(
     result.name = model_dictionary.names[model_index];
     result.header_vertex_count = read_u16(mdl0, model_offset + 0x24U, "vertex count");
 
-    const auto objects = read_objects(mdl0, model_offset + 0x40U);
+    std::vector<std::string> object_names;
+    const auto objects =
+        read_objects(mdl0, model_offset + 0x40U, object_names);
     const auto inv_binds =
         read_inverse_binds(mdl0, model_offset + inv_binds_off, num_objects);
     const auto material_count =
@@ -1238,6 +1351,7 @@ NeutralModel decode_model_geometry(
 
     result.palette = builder.palette;
     result.object_matrices = objects;
+    result.object_names = object_names;
     result.skinning = std::make_shared<SkinningProgram>(SkinningProgram{
         render_ops, inv_binds, builder.up_scale, builder.down_scale});
     return result;

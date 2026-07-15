@@ -151,6 +151,15 @@ GltfModel import_gltf(const std::filesystem::path& input_path) {
                 cgltf_accessor_read_float(
                     skin.inverse_bind_matrices, j, inverse_bind.data(), 16);
             }
+            GltfSkinJoint joint;
+            joint.palette_index =
+                static_cast<std::uint32_t>(result.model.palette.size());
+            const cgltf_node* joint_node = skin.joints[j];
+            if (joint_node != nullptr && joint_node->name != nullptr) {
+                joint.name = joint_node->name;
+            }
+            joint.inverse_bind = inverse_bind;
+            result.joints.push_back(std::move(joint));
             result.model.palette.push_back(
                 matrix_multiply(world, inverse_bind.data()));
         }

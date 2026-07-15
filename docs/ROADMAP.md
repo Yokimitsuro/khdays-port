@@ -100,11 +100,19 @@ mods — they never distribute copyrighted assets.
   skinning, plus PNG texture dumps.
 - **Asset-override loader:** the runtime resolves each asset through a search
   path (`mods/…` before the extracted DS asset). This is the foundation.
-  *(done for textures — `khdays::resource` (see `docs/ARCHITECTURE.md`) resolves
-  `mods/textures/<name>.bmp` before the DS TEX0; the engine only sees neutral
-  formats. Model/animation overrides plug into the same layer as their importers
-  are added.)*
+  *(done for textures and models — `khdays::resource` (see
+  `docs/ARCHITECTURE.md`) resolves `mods/<Mod>/textures/**/<name>.{png,bmp}`
+  before the DS TEX0, and `mods/<Mod>/models/<ds_name>.gltf` before the DS
+  model; the engine only sees neutral formats.)*
 - **Import:** load glTF / PNG into the neutral mesh and textures at runtime.
+  *(done — rigged glTF import with per-skin palettes; PNG/BMP textures.)*
+- **Higher-poly model mods:** a rigged glTF whose joints are named like the DS
+  bones replaces the DS geometry and is **animated by the DS skeleton** — the
+  DS NSBCA drives the glTF via name-matched bone-world retargeting, so a modder
+  can subdivide/sculpt a model in Blender (keeping the skeleton and weights) and
+  it animates natively. *(done — validated against an apicula-exported Vexen:
+  DS and retargeted-glTF posed geometry match to fixed-point rounding across
+  animation frames.)*
 - **Hot-reload:** reload overridden assets on file change for fast iteration.
 - **In-app asset browser:** list, preview, and swap assets from a debug overlay.
 - **Mod packaging and load order** (later): a manifest plus multi-mod handling.
