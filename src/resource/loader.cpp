@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "khdays/assets/message.h"
+#include "khdays/assets/sequence.h"
 
 #include "khdays/assets/bmp.h"
 #ifdef KHDAYS_HAS_PNG
@@ -329,6 +330,27 @@ khdays::assets::DecodedAudio load_sound(
         return khdays::assets::load_wav(*override_path);
     }
     return khdays::assets::sdat_waveform(sdat, wave_archive_index, swav_index);
+}
+
+khdays::assets::DecodedAudio render_music(
+    const khdays::assets::Sdat& sdat,
+    const std::size_t sequence_index,
+    const std::uint32_t sample_rate,
+    const double max_seconds) {
+    const auto override_sample =
+        [](int wave_archive, int swav)
+        -> std::optional<khdays::assets::DecodedAudio> {
+        const auto key = std::to_string(wave_archive) + "_"
+            + std::to_string(swav) + ".wav";
+        if (const auto path = find_override("sounds", key)) {
+            std::cout << "override: music sample " << wave_archive << ':'
+                      << swav << " <- " << path->string() << std::endl;
+            return khdays::assets::load_wav(*path);
+        }
+        return std::nullopt;
+    };
+    return khdays::assets::render_sequence(
+        sdat, sequence_index, sample_rate, max_seconds, override_sample);
 }
 
 }  // namespace khdays::resource

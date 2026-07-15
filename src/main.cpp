@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) {
                 const double seconds = argc > seconds_arg
                     ? std::stod(argv[seconds_arg])
                     : (render ? 180.0 : 30.0);
-                const auto audio = khdays::assets::render_sequence(
+                const auto audio = khdays::resource::render_music(
                     *sdat, seq, 32768U, seconds);
                 std::cout << "Synthesized sequence " << seq << ": "
                           << audio.samples.size() / 2U << " frames @ "

@@ -204,7 +204,8 @@ DecodedAudio render_sequence(
     const Sdat& sdat,
     const std::size_t sequence_index,
     const std::uint32_t sample_rate,
-    const double max_seconds) {
+    const double max_seconds,
+    const SampleOverride& sample_override) {
     const auto seq = sdat_sequence(sdat, sequence_index);
     if (seq.bank < 0) {
         throw std::runtime_error("sequence has no bank");
@@ -238,6 +239,12 @@ DecodedAudio render_sequence(
         auto it = sample_cache.find(key);
         if (it == sample_cache.end()) {
             try {
+                if (sample_override) {
+                    if (auto replaced = sample_override(wave_archive, swav)) {
+                        it = sample_cache.emplace(key, std::move(*replaced)).first;
+                        return &it->second;
+                    }
+                }
                 it = sample_cache
                          .emplace(key, sdat_waveform(
                                            sdat,

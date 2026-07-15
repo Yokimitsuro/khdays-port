@@ -127,9 +127,12 @@ khdays-port --play-sound   snd/sound_data.sdat 0 5           # or play it
 ```
 
 Then drop your replacement at `mods/<Mod>/sounds/0_5.wav`; `--play-sound 0 5`
-(and, later, the game) uses it instead. Sequenced music (the SSEQ synth) is not
-played yet, so this currently covers sampled waveforms — sound effects and voice
-clips.
+(and, later, the game) uses it instead.
+
+The **same override also feeds the music synthesizer**: sequenced tracks
+(`--render-sequence` / `--play-sequence`) play their instruments from these wave
+archives, so replacing a waveform with a cleaner WAV swaps that instrument in the
+music too — a way to sidestep the source samples' 4-bit ADPCM grain.
 
 ## Trying it
 

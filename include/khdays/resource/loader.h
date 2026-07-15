@@ -77,4 +77,12 @@ khdays::assets::DecodedAudio load_sound(
     std::size_t wave_archive_index,
     std::size_t swav_index);
 
+// Render an SDAT sequence to PCM, applying the same "sounds/" WAV overrides to
+// its instrument waveforms, so a mod can swap the samples the music plays.
+khdays::assets::DecodedAudio render_music(
+    const khdays::assets::Sdat& sdat,
+    std::size_t sequence_index,
+    std::uint32_t sample_rate = 32768U,
+    double max_seconds = 180.0);
+
 }  // namespace khdays::resource
