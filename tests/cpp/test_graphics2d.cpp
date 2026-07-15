@@ -230,6 +230,46 @@ int main() {
                    "screen back BG visible");
         }
 
+        // compose_flat_model: one white-textured triangle tinted red by the
+        // vertex colour, over an identity palette.
+        {
+            khdays::assets::DecodedTexture white_tex;
+            white_tex.width = 1;
+            white_tex.height = 1;
+            white_tex.rgba = {255U, 255U, 255U, 255U};
+
+            khdays::assets::NeutralModel m;
+            m.palette.push_back(
+                {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});  // identity
+            khdays::assets::NeutralMesh nmesh;
+            nmesh.texture_name = "t";
+            const auto mk = [](float x, float y) {
+                khdays::assets::NeutralVertex v;
+                v.position = {x, y, 0.0F};
+                v.color = {255U, 0U, 0U, 255U};  // red tint
+                v.texcoord = {0.0F, 0.0F};
+                return v;
+            };
+            nmesh.vertices = {mk(-1.0F, -1.0F), mk(1.0F, -1.0F), mk(0.0F, 1.0F)};
+            nmesh.indices = {0U, 1U, 2U};
+            m.meshes.push_back(nmesh);
+
+            std::map<std::string, khdays::assets::DecodedTexture> texs;
+            texs["t"] = white_tex;
+            const auto img =
+                khdays::assets::compose_flat_model(m, texs, 32, 32, 0.9F, 0.05F);
+            expect(img.width == 32 && img.height == 32, "flat-model size");
+            bool red = false;
+            for (std::size_t k = 0; k + 4U <= img.rgba.size(); k += 4U) {
+                if (img.rgba[k] > 200 && img.rgba[k + 1] < 60
+                    && img.rgba[k + 3] > 0) {
+                    red = true;
+                    break;
+                }
+            }
+            expect(red, "flat-model draws a tinted textured triangle");
+        }
+
         for (const auto& p : temps) {
             std::filesystem::remove(p);
         }

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "khdays/assets/graphics2d.h"  // Tilemap, TileGraphics, Palette2D
+#include "khdays/assets/mesh.h"        // NeutralModel
 #include "khdays/assets/tex0.h"        // DecodedTexture
 
 // A DS-style 2D screen compositor: the native form of how the hardware builds a
@@ -43,5 +46,20 @@ DecodedTexture compose_screen(
     const std::vector<ScreenObj>& objects,
     int width = 256,
     int height = 192);
+
+// Composite a flat (2D-in-3D) model — e.g. the title logo, which is a handful of
+// textured quads facing the camera — to a `width`x`height` RGBA image. The
+// model's rest-pose XY is scaled to fill `fill` of the canvas (preserving aspect,
+// centred horizontally, top-aligned by `top_margin` fraction), each triangle is
+// textured from `textures` (keyed by mesh texture name) and modulated by the
+// vertex colour, and meshes are drawn back-to-front by depth. Transparent
+// backdrop.
+DecodedTexture compose_flat_model(
+    const NeutralModel& model,
+    const std::map<std::string, DecodedTexture>& textures,
+    int width = 256,
+    int height = 192,
+    float fill = 0.86F,
+    float top_margin = 0.06F);
 
 }  // namespace khdays::assets

@@ -32,6 +32,12 @@ std::optional<SpriteSet> load_sprite_set(const char* game_path,
 // NCLR + NCGR + NSCR full-screen image).
 std::optional<khdays::assets::DecodedTexture> load_boot_logo();
 
+// Compose the real title logo: ttl.p2 sub-file 0 is a KAPH pack holding the
+// "title" 3D model — a few flat textured quads (KINGDOM HEARTS, 358/2 Days, the
+// heart and crown). This decodes the model and its textures and composites them
+// to a 2D image, so the title shows the actual logo instead of a flat backdrop.
+std::optional<khdays::assets::DecodedTexture> load_title_logo();
+
 // Compose one background layer from a D2KP UI pack: extract the P2 sub-file,
 // parse the typed pack, and compose screen[screen] with tiles[tiles_index] and
 // palette[palette_index] into an opaque RGBA image.

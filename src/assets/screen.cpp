@@ -1,8 +1,12 @@
 #include "khdays/assets/screen.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace khdays::assets {
 
@@ -138,6 +142,149 @@ DecodedTexture compose_screen(const std::vector<ScreenBgLayer>& bg_layers,
         for (const auto& obj : objects) {
             if (obj.priority == p) {
                 draw_obj(frame, obj);
+            }
+        }
+    }
+    return frame;
+}
+
+namespace {
+
+struct Vec2 {
+    float x = 0.0F;
+    float y = 0.0F;
+};
+
+// Twice the signed area of triangle (a, b, c).
+float edge(const Vec2 a, const Vec2 b, const Vec2 c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+}  // namespace
+
+DecodedTexture compose_flat_model(
+    const NeutralModel& model,
+    const std::map<std::string, DecodedTexture>& textures, const int width,
+    const int height, const float fill, const float top_margin) {
+    DecodedTexture frame;
+    frame.name = "flat-model";
+    frame.width = width;
+    frame.height = height;
+    frame.rgba.assign(static_cast<std::size_t>(width) * height * 4U, 0U);
+
+    // Rest-pose XY bounding box over every vertex.
+    float min_x = 1e9F;
+    float max_x = -1e9F;
+    float min_y = 1e9F;
+    float max_y = -1e9F;
+    bool any = false;
+    for (const auto& mesh : model.meshes) {
+        for (const auto& v : mesh.vertices) {
+            const auto p = posed_position(model, v);
+            min_x = std::min(min_x, p[0]);
+            max_x = std::max(max_x, p[0]);
+            min_y = std::min(min_y, p[1]);
+            max_y = std::max(max_y, p[1]);
+            any = true;
+        }
+    }
+    if (!any || max_x <= min_x || max_y <= min_y) {
+        return frame;
+    }
+
+    const float model_w = max_x - min_x;
+    const float scale = static_cast<float>(width) * fill / model_w;
+    const float off_x = (static_cast<float>(width) - model_w * scale) * 0.5F;
+    const float off_y = static_cast<float>(height) * top_margin;
+    const auto to_screen = [&](const std::array<float, 3>& p) {
+        return Vec2{off_x + (p[0] - min_x) * scale,
+                    off_y + (max_y - p[1]) * scale};  // flip Y (up is +Y)
+    };
+
+    // Draw meshes back-to-front by mean depth (Z ascending = furthest first).
+    std::vector<std::pair<float, const NeutralMesh*>> order;
+    order.reserve(model.meshes.size());
+    for (const auto& mesh : model.meshes) {
+        float z_sum = 0.0F;
+        for (const auto& v : mesh.vertices) {
+            z_sum += posed_position(model, v)[2];
+        }
+        const float z_avg =
+            mesh.vertices.empty() ? 0.0F : z_sum / mesh.vertices.size();
+        order.emplace_back(z_avg, &mesh);
+    }
+    std::sort(order.begin(), order.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    for (const auto& [z_avg, mesh_ptr] : order) {
+        const NeutralMesh& mesh = *mesh_ptr;
+        const auto tex_it = textures.find(mesh.texture_name);
+        const DecodedTexture* tex =
+            tex_it != textures.end() ? &tex_it->second : nullptr;
+        for (std::size_t i = 0; i + 3U <= mesh.indices.size(); i += 3U) {
+            const NeutralVertex& a = mesh.vertices[mesh.indices[i]];
+            const NeutralVertex& b = mesh.vertices[mesh.indices[i + 1U]];
+            const NeutralVertex& c = mesh.vertices[mesh.indices[i + 2U]];
+            const Vec2 sa = to_screen(posed_position(model, a));
+            const Vec2 sb = to_screen(posed_position(model, b));
+            const Vec2 sc = to_screen(posed_position(model, c));
+            const float area = edge(sa, sb, sc);
+            if (std::fabs(area) < 1e-4F) {
+                continue;
+            }
+            const int lo_x = std::max(0, static_cast<int>(std::floor(
+                                             std::min({sa.x, sb.x, sc.x}))));
+            const int hi_x = std::min(width - 1, static_cast<int>(std::ceil(
+                                                     std::max({sa.x, sb.x, sc.x}))));
+            const int lo_y = std::max(0, static_cast<int>(std::floor(
+                                             std::min({sa.y, sb.y, sc.y}))));
+            const int hi_y = std::min(height - 1, static_cast<int>(std::ceil(
+                                                      std::max({sa.y, sb.y, sc.y}))));
+            for (int py = lo_y; py <= hi_y; ++py) {
+                for (int px = lo_x; px <= hi_x; ++px) {
+                    const Vec2 pc{static_cast<float>(px) + 0.5F,
+                                  static_cast<float>(py) + 0.5F};
+                    const float w0 = edge(sb, sc, pc) / area;
+                    const float w1 = edge(sc, sa, pc) / area;
+                    const float w2 = edge(sa, sb, pc) / area;
+                    if (w0 < 0.0F || w1 < 0.0F || w2 < 0.0F) {
+                        continue;
+                    }
+                    // Interpolate texel coords and vertex colour.
+                    const float u = w0 * a.texcoord[0] + w1 * b.texcoord[0]
+                        + w2 * c.texcoord[0];
+                    const float v = w0 * a.texcoord[1] + w1 * b.texcoord[1]
+                        + w2 * c.texcoord[1];
+                    std::uint8_t tr = 255;
+                    std::uint8_t tg = 255;
+                    std::uint8_t tb = 255;
+                    std::uint8_t ta = 255;
+                    if (tex != nullptr && tex->width > 0 && tex->height > 0) {
+                        const int tx = std::clamp(
+                            static_cast<int>(u + 0.5F), 0, tex->width - 1);
+                        const int ty = std::clamp(
+                            static_cast<int>(v + 0.5F), 0, tex->height - 1);
+                        const std::size_t o =
+                            (static_cast<std::size_t>(ty) * tex->width + tx) * 4U;
+                        tr = tex->rgba[o];
+                        tg = tex->rgba[o + 1U];
+                        tb = tex->rgba[o + 2U];
+                        ta = tex->rgba[o + 3U];
+                    }
+                    const float cr =
+                        (w0 * a.color[0] + w1 * b.color[0] + w2 * c.color[0]) / 255.0F;
+                    const float cg =
+                        (w0 * a.color[1] + w1 * b.color[1] + w2 * c.color[1]) / 255.0F;
+                    const float cb =
+                        (w0 * a.color[2] + w1 * b.color[2] + w2 * c.color[2]) / 255.0F;
+                    const std::uint8_t src[4] = {
+                        static_cast<std::uint8_t>(tr * cr),
+                        static_cast<std::uint8_t>(tg * cg),
+                        static_cast<std::uint8_t>(tb * cb), ta};
+                    blend_pixel(
+                        &frame.rgba[(static_cast<std::size_t>(py) * width + px) * 4U],
+                        src);
+                }
             }
         }
     }

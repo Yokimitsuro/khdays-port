@@ -577,8 +577,7 @@ struct Tex0Data final {
     std::vector<Palette> palettes;
 };
 
-Tex0Data load_tex0(const std::filesystem::path& input_path) {
-    const auto file = read_file(input_path);
+Tex0Data load_tex0(const ByteVector& file) {
     const auto sections = parse_sections(file);
     const auto iterator = sections.find("TEX0");
 
@@ -662,15 +661,12 @@ Tex0Data load_tex0(const std::filesystem::path& input_path) {
 
 namespace khdays::assets {
 
-std::vector<std::string> list_tex0_textures(
-    const std::filesystem::path& input_path) {
-    return load_tex0(input_path).texture_dictionary.names;
-}
+namespace {
 
-DecodedTexture load_tex0_texture(
-    const std::filesystem::path& input_path,
+DecodedTexture load_tex0_texture_from(
+    const ByteVector& file,
     const std::optional<std::string_view> requested_name) {
-    const auto tex0 = load_tex0(input_path);
+    const auto tex0 = load_tex0(file);
 
     if (
         tex0.texture_dictionary.names.size()
@@ -784,6 +780,30 @@ DecodedTexture load_tex0_texture(
         parameter.color_zero_transparent);
 
     return result;
+}
+
+}  // namespace
+
+std::vector<std::string> list_tex0_textures(
+    const std::filesystem::path& input_path) {
+    return load_tex0(read_file(input_path)).texture_dictionary.names;
+}
+
+std::vector<std::string> list_tex0_textures(
+    const std::uint8_t* data, const std::size_t size) {
+    return load_tex0(ByteVector{data, data + size}).texture_dictionary.names;
+}
+
+DecodedTexture load_tex0_texture(
+    const std::filesystem::path& input_path,
+    const std::optional<std::string_view> requested_name) {
+    return load_tex0_texture_from(read_file(input_path), requested_name);
+}
+
+DecodedTexture load_tex0_texture(
+    const std::uint8_t* data, const std::size_t size,
+    const std::optional<std::string_view> requested_name) {
+    return load_tex0_texture_from(ByteVector{data, data + size}, requested_name);
 }
 
 }  // namespace khdays::assets

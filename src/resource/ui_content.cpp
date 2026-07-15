@@ -1,7 +1,11 @@
 #include "khdays/resource/ui_content.h"
 
 #include <exception>
+#include <map>
+#include <string>
 
+#include "khdays/assets/mesh.h"
+#include "khdays/assets/screen.h"
 #include "khdays/resource/loader.h"
 #include "khdays/vfs/filesystem.h"
 
@@ -60,6 +64,57 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo() {
         const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
         const auto map = khdays::assets::decode_nscr(scr.data, scr.size);
         return khdays::assets::compose_background(map, tiles, palette, false);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<khdays::assets::DecodedTexture> load_title_logo() {
+    try {
+        const auto container = khdays::vfs::read("ttl/ttl.p2");
+        const auto kaph = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 0);
+        // The KAPH pack embeds a standard BMD0/NSBMD (BOM at +4), so the generic
+        // Nitro-resource scan carves it out.
+        const auto bmd0 = khdays::assets::find_nitro_resource(
+            kaph.data(), kaph.size(), "BMD0");
+        if (!bmd0) {
+            return std::nullopt;
+        }
+        const auto model =
+            khdays::assets::decode_model_geometry(bmd0.data, bmd0.size);
+        std::map<std::string, khdays::assets::DecodedTexture> textures;
+        for (const auto& mesh : model.meshes) {
+            if (mesh.texture_name.empty()
+                || textures.count(mesh.texture_name) != 0U) {
+                continue;
+            }
+            textures.emplace(
+                mesh.texture_name,
+                khdays::assets::load_tex0_texture(bmd0.data, bmd0.size,
+                                                  mesh.texture_name));
+        }
+        // The logo sits on the white top screen; composite it over white so the
+        // scene can draw it as the whole top screen.
+        const auto logo = khdays::assets::compose_flat_model(
+            model, textures, 256, 192, 0.80F, 0.20F);
+        khdays::assets::DecodedTexture out;
+        out.width = 256;
+        out.height = 192;
+        out.rgba.assign(static_cast<std::size_t>(256) * 192 * 4, 255);
+        for (std::size_t i = 0; i + 4U <= logo.rgba.size(); i += 4U) {
+            const std::uint8_t a = logo.rgba[i + 3U];
+            if (a == 0U) {
+                continue;
+            }
+            out.rgba[i] = static_cast<std::uint8_t>(
+                (logo.rgba[i] * a + out.rgba[i] * (255 - a)) / 255);
+            out.rgba[i + 1U] = static_cast<std::uint8_t>(
+                (logo.rgba[i + 1U] * a + out.rgba[i + 1U] * (255 - a)) / 255);
+            out.rgba[i + 2U] = static_cast<std::uint8_t>(
+                (logo.rgba[i + 2U] * a + out.rgba[i + 2U] * (255 - a)) / 255);
+        }
+        return out;
     } catch (const std::exception&) {
         return std::nullopt;
     }

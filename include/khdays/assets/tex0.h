@@ -21,9 +21,15 @@ struct DecodedTexture final {
 
 std::vector<std::string> list_tex0_textures(
     const std::filesystem::path& input_path);
+std::vector<std::string> list_tex0_textures(
+    const std::uint8_t* data, std::size_t size);
 
 DecodedTexture load_tex0_texture(
     const std::filesystem::path& input_path,
+    std::optional<std::string_view> requested_name = std::nullopt);
+// Decode a TEX0 texture from an in-memory NSBMD/NSBTX (e.g. carved from a pack).
+DecodedTexture load_tex0_texture(
+    const std::uint8_t* data, std::size_t size,
     std::optional<std::string_view> requested_name = std::nullopt);
 
 }  // namespace khdays::assets

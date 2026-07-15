@@ -1259,10 +1259,10 @@ std::vector<std::array<float, 16>> compute_bone_world_matrices(
 
 namespace khdays::assets {
 
-NeutralModel decode_model_geometry(
-    const std::filesystem::path& input_path,
-    const std::size_t model_index) {
-    const auto file = read_file(input_path);
+namespace {
+
+NeutralModel decode_model_from_bytes(
+    const ByteVector& file, const std::size_t model_index) {
     const auto sections = parse_sections(file);
     const auto iterator = sections.find("MDL0");
     if (iterator == sections.end()) {
@@ -1355,6 +1355,19 @@ NeutralModel decode_model_geometry(
     result.skinning = std::make_shared<SkinningProgram>(SkinningProgram{
         render_ops, inv_binds, builder.up_scale, builder.down_scale});
     return result;
+}
+
+}  // namespace
+
+NeutralModel decode_model_geometry(
+    const std::filesystem::path& input_path, const std::size_t model_index) {
+    return decode_model_from_bytes(read_file(input_path), model_index);
+}
+
+NeutralModel decode_model_geometry(
+    const std::uint8_t* data, const std::size_t size,
+    const std::size_t model_index) {
+    return decode_model_from_bytes(ByteVector{data, data + size}, model_index);
 }
 
 std::array<float, 3> transform_point(

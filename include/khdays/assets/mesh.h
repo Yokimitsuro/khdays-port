@@ -115,6 +115,9 @@ std::shared_ptr<const SkinningProgram> make_retarget_program(
 NeutralModel decode_model_geometry(
     const std::filesystem::path& input_path,
     std::size_t model_index = 0);
+// Decode from an in-memory BMD0/NSBMD (e.g. carved out of a KAPH/pack).
+NeutralModel decode_model_geometry(
+    const std::uint8_t* data, std::size_t size, std::size_t model_index = 0);
 
 // Apply a column-major 4x4 matrix to a point (affine; the bottom row is assumed
 // to be 0 0 0 1). Convenience for consumers that want rest-pose positions.

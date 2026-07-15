@@ -20,7 +20,7 @@ public:
     void render(SceneManager& manager, Renderer& renderer) override;
 
 private:
-    std::optional<khdays::assets::DecodedTexture> logo_;          // top screen
+    std::optional<khdays::assets::DecodedTexture> logo3d_;        // top: white+logo
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
     std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
     int selected_ = 0;  // 0 = MODO HISTORIA, 1 = MODO MISION

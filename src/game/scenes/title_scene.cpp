@@ -19,7 +19,7 @@ void TitleScene::on_enter(SceneManager& manager) {
     // screen 7 / tiles 3 / palette 0 = the KINGDOM HEARTS logo, and screen 3 /
     // tiles 1 / palette 1 = the character illustration. The MODO HISTORIA / MODO
     // MISION options are the real localized OBJ textures from ttl_<lang>.p2.
-    logo_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 7, 3, 0);
+    logo3d_ = khdays::resource::load_title_logo();  // real KH logo on white
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     buttons_ = khdays::resource::load_sprite_set("ttl/ttl_es.p2", 1);
     if (auto* music = manager.music()) {
@@ -49,8 +49,8 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     r.clear(Color{0, 0, 0, 255});
     const auto layout = dual_screen_layout(r);
 
-    if (logo_) {
-        draw_screen(r, layout, *logo_, /*bottom=*/false);
+    if (logo3d_) {
+        draw_screen(r, layout, *logo3d_, /*bottom=*/false);  // top: white + logo
     }
     if (illustration_) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true);
