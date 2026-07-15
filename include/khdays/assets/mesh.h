@@ -17,6 +17,9 @@ namespace khdays::assets {
 // `matrix_index`. Keeping the raw position plus the palette index (instead of
 // baking the transform in) is what lets the runtime re-pose the model for
 // animation, exactly as the Nintendo DS does.
+//
+// Texture coordinates are in *texels* (not normalized): divide by the bound
+// texture's width and height to get 0..1 UVs.
 struct NeutralVertex final {
     std::array<float, 3> position{0.0F, 0.0F, 0.0F};
     std::array<float, 2> texcoord{0.0F, 0.0F};
@@ -31,6 +34,9 @@ struct NeutralVertex final {
 // deduplicated; each GPU vertex command appends exactly one entry.
 struct NeutralMesh final {
     std::string name;
+    // Name of the TEX0 texture bound by the mesh's material, or empty if the
+    // material has no texture. Resolve it with the TEX0 loader on the same file.
+    std::string texture_name;
     std::vector<NeutralVertex> vertices;
     std::vector<std::uint32_t> indices;  // 3 per triangle
 };

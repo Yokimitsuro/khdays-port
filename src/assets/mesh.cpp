@@ -525,33 +525,45 @@ std::vector<Matrix> read_inverse_binds(
 
 // ----- Materials (only the texture size, for UV normalization) -------------
 
-struct MaterialInfo final {
-    float width = 0.0F;
-    float height = 0.0F;
-};
-
-std::vector<MaterialInfo> read_materials(
+// Returns the TEX0 texture name bound to each material (empty when none). UVs
+// are decoded in texels and normalized by the real texture size at render time,
+// so the material's own size fields are not needed here.
+std::vector<std::string> read_material_textures(
     const ByteVector& mdl0,
-    const std::size_t materials_offset) {
-    // The materials block starts with two u16 pairing offsets; the material
-    // dictionary follows.
-    const auto dictionary =
-        parse_dictionary(mdl0, materials_offset + 4U, "material");
-    std::vector<MaterialInfo> materials;
-    materials.reserve(dictionary.entries.size());
-    for (const auto& entry : dictionary.entries) {
-        const auto relative = static_cast<std::size_t>(
-            read_entry_u32(entry, "material"));
-        const auto material_offset = materials_offset + relative;
-        const auto teximage_param =
-            read_u32(mdl0, material_offset + 0x14U, "teximage param");
-        const auto s_size = (teximage_param >> 20U) & 0x07U;
-        const auto t_size = (teximage_param >> 23U) & 0x07U;
-        materials.push_back(MaterialInfo{
-            static_cast<float>(8U << s_size),
-            static_cast<float>(8U << t_size)});
+    const std::size_t materials_offset,
+    const std::size_t material_count) {
+    std::vector<std::string> textures(material_count);
+
+    // The materials block starts with two u16 pairing offsets. The texture
+    // pairing is an info block whose names are texture names and whose entries
+    // point to the list of material ids that use each texture.
+    const auto texture_pairing_off = static_cast<std::size_t>(
+        read_u16(mdl0, materials_offset, "texture pairing offset"));
+    const auto pairing = parse_dictionary(
+        mdl0, materials_offset + texture_pairing_off, "texture pairing");
+
+    for (std::size_t i = 0U; i < pairing.names.size(); ++i) {
+        const auto& entry = pairing.entries[i];
+        if (entry.size() < 3U) {
+            continue;
+        }
+        const auto list_offset = materials_offset
+            + static_cast<std::size_t>(entry[0])
+            + (static_cast<std::size_t>(entry[1]) << 8U);
+        const auto count = static_cast<std::size_t>(entry[2]);
+        for (std::size_t j = 0U; j < count; ++j) {
+            if (list_offset + j >= mdl0.size()) {
+                break;
+            }
+            const auto material_id =
+                static_cast<std::size_t>(mdl0[list_offset + j]);
+            if (material_id < textures.size()) {
+                textures[material_id] = pairing.names[i];
+            }
+        }
     }
-    return materials;
+
+    return textures;
 }
 
 // ----- Render command stream (SBC) -----------------------------------------
@@ -780,7 +792,7 @@ struct Builder final {
     const ByteVector& mdl0;
     const std::vector<Matrix>& objects;
     const std::vector<Matrix>& inv_binds;
-    const std::vector<MaterialInfo>& materials;
+    const std::vector<std::string>& materials;  // texture name per material
     float up_scale = 1.0F;
     float down_scale = 1.0F;
 
@@ -794,8 +806,7 @@ struct Builder final {
     std::uint32_t current_matrix = 0U;
     std::array<int, 32> stack{};  // palette index per stack slot, -1 = unset
 
-    float texture_width = 0.0F;
-    float texture_height = 0.0F;
+    int current_material = -1;
 
     khdays::assets::NeutralModel& out;
 
@@ -803,7 +814,7 @@ struct Builder final {
         const ByteVector& mdl0_,
         const std::vector<Matrix>& objects_,
         const std::vector<Matrix>& inv_binds_,
-        const std::vector<MaterialInfo>& materials_,
+        const std::vector<std::string>& materials_,
         khdays::assets::NeutralModel& out_)
         : mdl0(mdl0_),
           objects(objects_),
@@ -869,10 +880,7 @@ struct Builder final {
                         matrix_scale(down_scale, down_scale, down_scale)));
                     break;
                 case OpKind::BindMaterial:
-                    if (op.index < materials.size()) {
-                        texture_width = materials[op.index].width;
-                        texture_height = materials[op.index].height;
-                    }
+                    current_material = static_cast<int>(op.index);
                     break;
                 case OpKind::Draw:
                     draw_piece(op.index);
@@ -888,6 +896,11 @@ struct Builder final {
 
         khdays::assets::NeutralMesh mesh;
         mesh.name = piece_names[piece_idx];
+        if (current_material >= 0
+            && static_cast<std::size_t>(current_material) < materials.size()) {
+            mesh.texture_name =
+                materials[static_cast<std::size_t>(current_material)];
+        }
 
         std::array<float, 3> position{0.0F, 0.0F, 0.0F};
         std::array<float, 2> texel{0.0F, 0.0F};
@@ -897,9 +910,9 @@ struct Builder final {
         const auto emit_vertex = [&]() {
             khdays::assets::NeutralVertex vertex;
             vertex.position = position;
-            vertex.texcoord = {
-                texture_width > 0.0F ? texel[0] / texture_width : texel[0],
-                texture_height > 0.0F ? texel[1] / texture_height : texel[1]};
+            // Texture coordinates stay in texels; the renderer normalizes them
+            // by the real decoded texture size.
+            vertex.texcoord = {texel[0], texel[1]};
             vertex.color = color;
             vertex.matrix_index = current_matrix;
             const auto index = static_cast<std::uint32_t>(mesh.vertices.size());
@@ -958,14 +971,6 @@ struct Builder final {
                         texel[1] = static_cast<float>(
                             sign_extend((param(0U) >> 16U) & 0xFFFFU, 16U)) / 16.0F;
                         break;
-                    case 0x2A: {  // TEXIMAGE_PARAM (per-piece override)
-                        const auto value = param(0U);
-                        texture_width =
-                            static_cast<float>(8U << ((value >> 20U) & 0x07U));
-                        texture_height =
-                            static_cast<float>(8U << ((value >> 23U) & 0x07U));
-                        break;
-                    }
                     case 0x23: {  // VTX_16
                         const auto p0 = param(0U);
                         const auto p1 = param(1U);
@@ -1096,7 +1101,10 @@ NeutralModel decode_model_geometry(
     const auto objects = read_objects(mdl0, model_offset + 0x40U);
     const auto inv_binds =
         read_inverse_binds(mdl0, model_offset + inv_binds_off, num_objects);
-    const auto materials = read_materials(mdl0, model_offset + materials_off);
+    const auto material_count =
+        static_cast<std::size_t>(mdl0[model_offset + 0x18U]);
+    const auto materials = read_material_textures(
+        mdl0, model_offset + materials_off, material_count);
 
     Builder builder{mdl0, objects, inv_binds, materials, result};
     builder.up_scale = fix_1_x_12(static_cast<std::int32_t>(

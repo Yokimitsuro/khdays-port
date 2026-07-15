@@ -5,11 +5,14 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <map>
+#include <string>
 #include <vector>
 
 #include <SDL3/SDL.h>
 
 #include "khdays/assets/mesh.h"
+#include "khdays/assets/tex0.h"
 
 namespace {
 
@@ -102,28 +105,53 @@ void log_sdl(const char* what) {
 
 // Build an interleaved vertex/index buffer from the decoded model, using
 // rest-pose positions and smooth per-vertex normals.
+// A contiguous run of indices sharing one texture (one decoded mesh).
+struct SubMesh final {
+    std::uint32_t first_index = 0;
+    std::uint32_t index_count = 0;
+    std::string texture_name;
+};
+
 struct MeshData final {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
+    std::vector<SubMesh> submeshes;
     std::array<float, 3> center{0, 0, 0};
     float radius = 1.0F;
 };
 
-MeshData build_mesh(const khdays::assets::NeutralModel& model) {
+MeshData build_mesh(
+    const khdays::assets::NeutralModel& model,
+    const std::map<std::string, khdays::assets::DecodedTexture>& textures) {
     MeshData data;
     std::array<float, 3> lo{1e30F, 1e30F, 1e30F};
     std::array<float, 3> hi{-1e30F, -1e30F, -1e30F};
 
     for (const auto& mesh : model.meshes) {
         const auto base = static_cast<std::uint32_t>(data.vertices.size());
+        const auto first_index = static_cast<std::uint32_t>(data.indices.size());
+
+        // Normalize texel coordinates by the real texture size.
+        float tex_w = 1.0F;
+        float tex_h = 1.0F;
+        const auto tex_it = textures.find(mesh.texture_name);
+        if (tex_it != textures.end()) {
+            if (tex_it->second.width > 0) {
+                tex_w = static_cast<float>(tex_it->second.width);
+            }
+            if (tex_it->second.height > 0) {
+                tex_h = static_cast<float>(tex_it->second.height);
+            }
+        }
+
         for (const auto& v : mesh.vertices) {
             const auto p = khdays::assets::posed_position(model, v);
             Vertex vertex;
             vertex.px = p[0];
             vertex.py = p[1];
             vertex.pz = p[2];
-            vertex.u = v.texcoord[0];
-            vertex.v = v.texcoord[1];
+            vertex.u = v.texcoord[0] / tex_w;
+            vertex.v = v.texcoord[1] / tex_h;
             vertex.r = static_cast<float>(v.color[0]) / 255.0F;
             vertex.g = static_cast<float>(v.color[1]) / 255.0F;
             vertex.b = static_cast<float>(v.color[2]) / 255.0F;
@@ -139,6 +167,10 @@ MeshData build_mesh(const khdays::assets::NeutralModel& model) {
         for (const auto index : mesh.indices) {
             data.indices.push_back(base + index);
         }
+        data.submeshes.push_back(SubMesh{
+            first_index,
+            static_cast<std::uint32_t>(mesh.indices.size()),
+            mesh.texture_name});
     }
 
     // Smooth normals: accumulate face normals into each vertex, then normalize.
@@ -187,7 +219,8 @@ SDL_GPUShader* create_shader(
     const std::uint32_t* code,
     const std::size_t size_bytes,
     const SDL_GPUShaderStage stage,
-    const std::uint32_t num_uniform_buffers) {
+    const std::uint32_t num_uniform_buffers,
+    const std::uint32_t num_samplers = 0) {
     SDL_GPUShaderCreateInfo info{};
     info.code = reinterpret_cast<const std::uint8_t*>(code);
     info.code_size = size_bytes;
@@ -195,6 +228,7 @@ SDL_GPUShader* create_shader(
     info.format = SDL_GPU_SHADERFORMAT_SPIRV;
     info.stage = stage;
     info.num_uniform_buffers = num_uniform_buffers;
+    info.num_samplers = num_samplers;
     return SDL_CreateGPUShader(device, &info);
 }
 
@@ -240,6 +274,58 @@ SDL_GPUBuffer* upload_buffer(
     return buffer;
 }
 
+SDL_GPUTexture* create_texture_rgba(
+    SDL_GPUDevice* device,
+    const std::uint8_t* rgba,
+    const std::uint32_t width,
+    const std::uint32_t height) {
+    SDL_GPUTextureCreateInfo tci{};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tci.width = width;
+    tci.height = height;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    tci.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &tci);
+    if (texture == nullptr) {
+        return nullptr;
+    }
+
+    const std::uint32_t size = width * height * 4U;
+    SDL_GPUTransferBufferCreateInfo tbci{};
+    tbci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbci.size = size;
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device, &tbci);
+    if (transfer == nullptr) {
+        SDL_ReleaseGPUTexture(device, texture);
+        return nullptr;
+    }
+
+    void* mapped = SDL_MapGPUTransferBuffer(device, transfer, false);
+    std::memcpy(mapped, rgba, size);
+    SDL_UnmapGPUTransferBuffer(device, transfer);
+
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
+    SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src{};
+    src.transfer_buffer = transfer;
+    src.offset = 0;
+    src.pixels_per_row = width;
+    src.rows_per_layer = height;
+    SDL_GPUTextureRegion dst{};
+    dst.texture = texture;
+    dst.w = width;
+    dst.h = height;
+    dst.d = 1;
+    SDL_UploadToGPUTexture(pass, &src, &dst, false);
+    SDL_EndGPUCopyPass(pass);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(device, transfer);
+    return texture;
+}
+
 SDL_GPUTextureFormat choose_depth_format(SDL_GPUDevice* device) {
     if (SDL_GPUTextureSupportsFormat(
             device,
@@ -281,7 +367,25 @@ int render_model(const std::filesystem::path& model_path) {
         return EXIT_FAILURE;
     }
 
-    const auto mesh = build_mesh(model);
+    // Decode each material's TEX0 texture once (CPU). Sizes are needed to
+    // normalize UVs; the RGBA is reused to upload the GPU textures below.
+    std::map<std::string, khdays::assets::DecodedTexture> decoded_textures;
+    for (const auto& m : model.meshes) {
+        if (m.texture_name.empty()
+            || decoded_textures.count(m.texture_name) != 0U) {
+            continue;
+        }
+        try {
+            decoded_textures.emplace(
+                m.texture_name,
+                khdays::assets::load_tex0_texture(model_path, m.texture_name));
+        } catch (const std::exception& error) {
+            std::cerr << "texture '" << m.texture_name << "': "
+                      << error.what() << '\n';
+        }
+    }
+
+    const auto mesh = build_mesh(model, decoded_textures);
     if (mesh.vertices.empty() || mesh.indices.empty()) {
         std::cerr << "ERROR: model has no drawable geometry\n";
         return EXIT_FAILURE;
@@ -326,7 +430,7 @@ int render_model(const std::filesystem::path& model_path) {
         SDL_GPU_SHADERSTAGE_VERTEX, 1);
     SDL_GPUShader* fragment_shader = create_shader(
         device, kModelFragSpirv, sizeof(kModelFragSpirv),
-        SDL_GPU_SHADERSTAGE_FRAGMENT, 0);
+        SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
     if (vertex_shader == nullptr || fragment_shader == nullptr) {
         log_sdl("SDL_CreateGPUShader");
         return EXIT_FAILURE;
@@ -387,6 +491,33 @@ int render_model(const std::filesystem::path& model_path) {
         SDL_GPU_BUFFERUSAGE_INDEX);
     if (vertex_buffer == nullptr || index_buffer == nullptr) {
         log_sdl("upload_buffer");
+        return EXIT_FAILURE;
+    }
+
+    // Upload one GPU texture per decoded texture, plus a white 1x1 fallback for
+    // meshes with no or unresolved texture.
+    std::map<std::string, SDL_GPUTexture*> textures;
+    for (const auto& [name, decoded] : decoded_textures) {
+        textures[name] = create_texture_rgba(
+            device, decoded.rgba.data(),
+            static_cast<std::uint32_t>(decoded.width),
+            static_cast<std::uint32_t>(decoded.height));
+    }
+
+    const std::uint8_t white_pixel[4] = {255U, 255U, 255U, 255U};
+    SDL_GPUTexture* fallback_texture =
+        create_texture_rgba(device, white_pixel, 1, 1);
+
+    SDL_GPUSamplerCreateInfo sampler_info{};
+    sampler_info.min_filter = SDL_GPU_FILTER_NEAREST;
+    sampler_info.mag_filter = SDL_GPU_FILTER_NEAREST;
+    sampler_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    sampler_info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    sampler_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    sampler_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    SDL_GPUSampler* sampler = SDL_CreateGPUSampler(device, &sampler_info);
+    if (sampler == nullptr || fallback_texture == nullptr) {
+        log_sdl("texture setup");
         return EXIT_FAILURE;
     }
 
@@ -489,8 +620,20 @@ int render_model(const std::filesystem::path& model_path) {
         SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
         SDL_PushGPUVertexUniformData(cmd, 0, &uniforms, sizeof(uniforms));
-        SDL_DrawGPUIndexedPrimitives(
-            pass, static_cast<std::uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+
+        for (const auto& sub : mesh.submeshes) {
+            SDL_GPUTexture* tex = fallback_texture;
+            const auto it = textures.find(sub.texture_name);
+            if (it != textures.end() && it->second != nullptr) {
+                tex = it->second;
+            }
+            SDL_GPUTextureSamplerBinding binding{};
+            binding.texture = tex;
+            binding.sampler = sampler;
+            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+            SDL_DrawGPUIndexedPrimitives(
+                pass, sub.index_count, 1, sub.first_index, 0, 0);
+        }
 
         SDL_EndGPURenderPass(pass);
         SDL_SubmitGPUCommandBuffer(cmd);
@@ -499,6 +642,13 @@ int render_model(const std::filesystem::path& model_path) {
     if (depth_texture != nullptr) {
         SDL_ReleaseGPUTexture(device, depth_texture);
     }
+    for (const auto& [name, tex] : textures) {
+        if (tex != nullptr) {
+            SDL_ReleaseGPUTexture(device, tex);
+        }
+    }
+    SDL_ReleaseGPUTexture(device, fallback_texture);
+    SDL_ReleaseGPUSampler(device, sampler);
     SDL_ReleaseGPUBuffer(device, vertex_buffer);
     SDL_ReleaseGPUBuffer(device, index_buffer);
     SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
