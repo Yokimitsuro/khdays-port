@@ -915,7 +915,7 @@ struct Builder final {
             // by the real decoded texture size.
             vertex.texcoord = {texel[0], texel[1]};
             vertex.color = color;
-            vertex.matrix_index = current_matrix;
+            vertex.joints[0] = current_matrix;  // one bone, weight 1 (DS)
             const auto index = static_cast<std::uint32_t>(mesh.vertices.size());
             mesh.vertices.push_back(vertex);
             group.vertices.push_back(index);
@@ -1252,10 +1252,21 @@ std::array<float, 3> transform_point(
 std::array<float, 3> posed_position(
     const NeutralModel& model,
     const NeutralVertex& vertex) {
-    if (vertex.matrix_index >= model.palette.size()) {
-        return vertex.position;
+    std::array<float, 3> result{0.0F, 0.0F, 0.0F};
+    bool posed = false;
+    for (std::size_t i = 0U; i < 4U; ++i) {
+        if (vertex.weights[i] == 0.0F
+            || vertex.joints[i] >= model.palette.size()) {
+            continue;
+        }
+        const auto p =
+            matrix_transform_point(model.palette[vertex.joints[i]], vertex.position);
+        for (std::size_t k = 0U; k < 3U; ++k) {
+            result[k] += vertex.weights[i] * p[k];
+        }
+        posed = true;
     }
-    return matrix_transform_point(model.palette[vertex.matrix_index], vertex.position);
+    return posed ? result : vertex.position;
 }
 
 std::string to_wavefront_obj(const NeutralModel& model) {

@@ -38,7 +38,8 @@ struct Vertex final {
     float u = 0.0F, v = 0.0F;
     float r = 1.0F, g = 1.0F, b = 1.0F, a = 1.0F;
     float nx = 0.0F, ny = 0.0F, nz = 0.0F;  // raw, bone-local
-    std::uint32_t matrix_index = 0U;
+    std::uint32_t joints[4] = {0U, 0U, 0U, 0U};
+    float weights[4] = {1.0F, 0.0F, 0.0F, 0.0F};
 };
 
 struct Uniforms final {
@@ -201,7 +202,10 @@ MeshData build_mesh(
             vertex.px = v.position[0];
             vertex.py = v.position[1];
             vertex.pz = v.position[2];
-            vertex.matrix_index = v.matrix_index;
+            for (int j = 0; j < 4; ++j) {
+                vertex.joints[j] = v.joints[static_cast<std::size_t>(j)];
+                vertex.weights[j] = v.weights[static_cast<std::size_t>(j)];
+            }
             vertex.u = v.texcoord[0] / tex_w;
             vertex.v = v.texcoord[1] / tex_h;
             vertex.r = static_cast<float>(v.color[0]) / 255.0F;
@@ -500,13 +504,13 @@ int render_model(
     vbuf_desc.pitch = sizeof(Vertex);
     vbuf_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 
-    std::array<SDL_GPUVertexAttribute, 5> attributes{};
+    std::array<SDL_GPUVertexAttribute, 6> attributes{};
     attributes[0] = {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, px)};
     attributes[1] = {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, u)};
     attributes[2] = {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(Vertex, r)};
     attributes[3] = {3, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, nx)};
-    attributes[4] = {4, 0, SDL_GPU_VERTEXELEMENTFORMAT_UINT,
-                     offsetof(Vertex, matrix_index)};
+    attributes[4] = {4, 0, SDL_GPU_VERTEXELEMENTFORMAT_UINT4, offsetof(Vertex, joints)};
+    attributes[5] = {5, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(Vertex, weights)};
 
     SDL_GPUColorTargetDescription color_target{};
     color_target.format = SDL_GetGPUSwapchainTextureFormat(device, window);
@@ -518,7 +522,7 @@ int render_model(
     pci.vertex_input_state.vertex_buffer_descriptions = &vbuf_desc;
     pci.vertex_input_state.num_vertex_buffers = 1;
     pci.vertex_input_state.vertex_attributes = attributes.data();
-    pci.vertex_input_state.num_vertex_attributes = 5;
+    pci.vertex_input_state.num_vertex_attributes = 6;
     pci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     pci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;

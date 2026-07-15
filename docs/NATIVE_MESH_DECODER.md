@@ -18,16 +18,18 @@ then draws each piece's packed GPU command stream.
   `BEGIN_VTXS` primitive modes (triangles, quads, triangle/quad strips).
 - `khdays::assets::NeutralModel` / `NeutralMesh` / `NeutralVertex` types.
 - A rest-pose matrix palette on the model; each vertex keeps its raw local
-  position plus a palette index, so the runtime can re-pose the model for
-  animation instead of relying on a baked-in rest pose.
+  position plus up to four palette indices and weights, so the runtime can
+  re-pose the model for animation instead of relying on a baked-in rest pose.
 - Wavefront OBJ export (rest-pose positions) and a `--export-obj` option.
 
 ## Animation-ready design
 
 Vertices are stored in their raw local space, not baked into the rest pose.
-The final position is `palette[matrix_index] * position`. To animate, the same
-render command stream is re-executed with animated bone matrices to rebuild the
-palette — exactly how the Nintendo DS produces each frame.
+The final position is `(Σ weights[i] * palette[joints[i]]) * position`. A DS
+vertex uses a single bone (one weight); glTF imports can blend up to four. To
+animate, the same render command stream is re-executed with animated bone
+matrices to rebuild the palette — exactly how the Nintendo DS produces each
+frame.
 
 ## Validation
 

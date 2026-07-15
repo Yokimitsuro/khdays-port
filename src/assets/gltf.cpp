@@ -186,7 +186,8 @@ GltfModel import_gltf(const std::filesystem::path& input_path) {
                     static_cast<std::uint8_t>(color[2] * 255.0F),
                     static_cast<std::uint8_t>(color[3] * 255.0F)};
 
-                vertex.matrix_index = 0U;
+                // Static import: single identity matrix (joints/weights default
+                // to {0} / {1,0,0,0}).
                 out_mesh.vertices.push_back(vertex);
             }
 

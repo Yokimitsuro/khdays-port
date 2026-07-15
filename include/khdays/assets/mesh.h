@@ -18,10 +18,10 @@ struct SkinningProgram;
 //
 // The position is the *raw* coordinate emitted by the GPU command stream, in
 // the local space of whichever matrix applies to it. To get the final rest-pose
-// position, multiply it by the model's palette matrix selected by
-// `matrix_index`. Keeping the raw position plus the palette index (instead of
-// baking the transform in) is what lets the runtime re-pose the model for
-// animation, exactly as the Nintendo DS does.
+// position, blend the model's palette matrices selected by `joints` with their
+// `weights` and apply the result. Keeping the raw position plus the palette
+// indices (instead of baking the transform in) is what lets the runtime re-pose
+// the model for animation, exactly as the Nintendo DS does.
 //
 // Texture coordinates are in *texels* (not normalized): divide by the bound
 // texture's width and height to get 0..1 UVs.
@@ -30,9 +30,11 @@ struct NeutralVertex final {
     std::array<float, 2> texcoord{0.0F, 0.0F};
     std::array<std::uint8_t, 4> color{255U, 255U, 255U, 255U};
 
-    // Index into NeutralModel::palette of the matrix that transforms this
-    // vertex from its local space to model space.
-    std::uint32_t matrix_index = 0;
+    // Skinning: up to four palette matrices with weights. The final position is
+    // sum(weights[i] * palette[joints[i]]) * position. A DS vertex uses a single
+    // matrix (joints[0], weight 1); glTF vertices can blend up to four bones.
+    std::array<std::uint32_t, 4> joints{0U, 0U, 0U, 0U};
+    std::array<float, 4> weights{1.0F, 0.0F, 0.0F, 0.0F};
 };
 
 // One decoded mesh: a flat vertex list plus triangle indices. Vertices are not
@@ -52,7 +54,7 @@ struct NeutralModel final {
 
     // The rest-pose matrix palette produced by executing the model's render
     // command stream (SBC). Each matrix is column-major (m[col * 4 + row]).
-    // Vertices reference a palette entry through NeutralVertex::matrix_index.
+    // Vertices reference palette entries through NeutralVertex::joints.
     std::vector<std::array<float, 16>> palette;
 
     // Rest-pose bone (object) matrices, column-major. Replace entries with
@@ -68,7 +70,7 @@ struct NeutralModel final {
 
 // Recompute the matrix palette from a set of bone (object) matrices, e.g. from
 // an animation. The result lines up index-for-index with NeutralModel::palette,
-// so NeutralVertex::matrix_index stays valid.
+// so NeutralVertex::joints stays valid.
 std::vector<std::array<float, 16>> compute_palette(
     const SkinningProgram& program,
     const std::vector<std::array<float, 16>>& object_matrices);
@@ -86,8 +88,8 @@ std::array<float, 3> transform_point(
     const std::array<float, 16>& matrix,
     const std::array<float, 3>& point);
 
-// Rest-pose position of a vertex: palette[matrix_index] applied to the raw
-// position.
+// Rest-pose position of a vertex: the weighted blend of palette[joints[i]]
+// applied to the raw position.
 std::array<float, 3> posed_position(
     const NeutralModel& model,
     const NeutralVertex& vertex);

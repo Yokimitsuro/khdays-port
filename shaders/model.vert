@@ -15,18 +15,22 @@ layout(set = 1, binding = 0) uniform UBO {
     vec4 light_dir;  // world-space light direction (xyz)
 } ubo;
 
-layout(location = 0) in vec3 in_position;      // raw, bone-local
+layout(location = 0) in vec3 in_position;   // raw, bone-local
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
-layout(location = 3) in vec3 in_normal;        // raw, bone-local
-layout(location = 4) in uint in_matrix_index;  // index into palette[]
+layout(location = 3) in vec3 in_normal;     // raw, bone-local
+layout(location = 4) in uvec4 in_joints;    // up to 4 palette indices
+layout(location = 5) in vec4 in_weights;    // their weights
 
 layout(location = 0) out vec2 out_uv;
 layout(location = 1) out vec4 out_color;
 layout(location = 2) out float out_shade;
 
 void main() {
-    mat4 skin = palette[in_matrix_index];
+    mat4 skin = in_weights.x * palette[in_joints.x]
+              + in_weights.y * palette[in_joints.y]
+              + in_weights.z * palette[in_joints.z]
+              + in_weights.w * palette[in_joints.w];
     vec4 world = skin * vec4(in_position, 1.0);
     gl_Position = ubo.mvp * world;
 
