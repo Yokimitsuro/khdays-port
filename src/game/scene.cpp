@@ -40,7 +40,6 @@ void SceneManager::step() {
     ++frame_;
     if (current_) {
         current_->update(*this);
-        current_->render(*this);
     }
     if (pending_) {
         const auto [id, arg] = *pending_;
@@ -49,6 +48,12 @@ void SceneManager::step() {
             current_->on_exit(*this);
         }
         enter(id, arg);
+    }
+}
+
+void SceneManager::render(Renderer& renderer) {
+    if (current_) {
+        current_->render(*this, renderer);
     }
 }
 

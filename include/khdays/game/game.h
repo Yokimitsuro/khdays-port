@@ -24,6 +24,9 @@ public:
     // Advance one frame: tasks first, then the scene (the DS frame order).
     void step();
 
+    // Draw the current scene (after step()).
+    void render(Renderer& renderer) { scenes_.render(renderer); }
+
     std::uint64_t frame() const { return scenes_.frame(); }
 
 private:

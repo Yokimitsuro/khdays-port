@@ -155,7 +155,9 @@ hardware init, VBlank sync, and overlay loading are the platform layer's job,
 not ported). Port or replace the minimum required systems for:
 
 - startup; *(skeleton — `khdays::game::Game::boot` mirrors BootTask_Construct
-  (fresh boot → the logo scene), then runs the frame loop; `--game-demo`.)*
+  (fresh boot → the logo scene), then runs the frame loop in a native SDL window
+  that maps input and draws each scene through a neutral `Renderer`; `--game`
+  (windowed) / `--game-demo` (headless).)*
 - memory arenas;
 - archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
   path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted

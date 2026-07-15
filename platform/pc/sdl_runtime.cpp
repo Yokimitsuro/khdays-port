@@ -318,4 +318,101 @@ int run_application(const ApplicationOptions& options) {
     return EXIT_SUCCESS;
 }
 
+namespace {
+
+// Bridges the neutral Renderer scenes draw through onto the SDL 2D renderer.
+class SdlFrameRenderer final : public khdays::game::Renderer {
+public:
+    explicit SdlFrameRenderer(SDL_Renderer* renderer) : renderer_(renderer) {}
+    void clear(khdays::game::Color color) override {
+        SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
+        SDL_RenderClear(renderer_);
+    }
+
+private:
+    SDL_Renderer* renderer_;
+};
+
+// Map the keyboard onto the neutral pad buttons.
+std::uint16_t poll_buttons() {
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    using B = khdays::game::Button;
+    std::uint16_t down = 0;
+    const auto set = [&](SDL_Scancode code, B button) {
+        if (keys[code]) {
+            down |= static_cast<std::uint16_t>(button);
+        }
+    };
+    set(SDL_SCANCODE_Z, B::A);
+    set(SDL_SCANCODE_SPACE, B::A);
+    set(SDL_SCANCODE_X, B::B);
+    set(SDL_SCANCODE_RETURN, B::Start);
+    set(SDL_SCANCODE_RSHIFT, B::Select);
+    set(SDL_SCANCODE_UP, B::Up);
+    set(SDL_SCANCODE_DOWN, B::Down);
+    set(SDL_SCANCODE_LEFT, B::Left);
+    set(SDL_SCANCODE_RIGHT, B::Right);
+    return down;
+}
+
+}  // namespace
+
+int run_game(khdays::game::Game& game) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        log_sdl_error("SDL_Init");
+        return EXIT_FAILURE;
+    }
+
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    const std::string title =
+        std::string{khdays::port::Version::name} + " " + KHDAYS_PORT_VERSION;
+    if (!SDL_CreateWindowAndRenderer(
+            title.c_str(),
+            kInitialWindowWidth,
+            kInitialWindowHeight,
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY,
+            &window,
+            &renderer)) {
+        log_sdl_error("SDL_CreateWindowAndRenderer");
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+
+    SdlFrameRenderer frame_renderer{renderer};
+    std::uint16_t previous = 0;
+    bool running = true;
+
+    // Run until a scene ends the flow (no current scene) or the window closes.
+    while (running && game.scenes().has_scene()) {
+        SDL_Event event{};
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                running = false;
+            }
+            if (event.type == SDL_EVENT_KEY_DOWN
+                && event.key.key == SDLK_ESCAPE) {
+                running = false;
+            }
+        }
+
+        const std::uint16_t down = poll_buttons();
+        khdays::game::Input input;
+        input.down = down;
+        input.pressed = static_cast<std::uint16_t>(down & ~previous);
+        previous = down;
+
+        game.scenes().set_input(input);
+        game.step();
+        game.render(frame_renderer);
+        SDL_RenderPresent(renderer);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return EXIT_SUCCESS;
+}
+
 }  // namespace khdays::platform

@@ -47,7 +47,7 @@ flow**. What runs today:
 **Phase 4 — game flow (in progress)**
 
 - [x] Game filesystem: `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
-- [x] Scene/task frame loop skeleton (`khdays::game`) mirroring the decompiled backbone (`--game-demo`)
+- [x] Scene/task frame loop skeleton (`khdays::game`) mirroring the decompiled backbone, running in a native SDL window with input (`--game`; `--game-demo` for the headless flow)
 - [ ] Real scene logic (boot → title → menus) and gameplay, filled in as `khdays-decomp` names each subsystem
 
 Phase 4 is *decomp-gated*: it reimplements understood game behavior as

@@ -61,6 +61,35 @@ private:
     int frames_ = 0;
 };
 
+// Windowed placeholder scenes for --game: each clears the frame to a distinct
+// colour so the boot → title transition is visible on screen. The logo hands
+// off on A/Start (Z/Space/Enter) or after ~2 seconds.
+class WindowLogoScene final : public khdays::game::Scene {
+public:
+    void update(khdays::game::SceneManager& manager) override {
+        ++frames_;
+        const auto& in = manager.input();
+        if (in.just_pressed(khdays::game::Button::A)
+            || in.just_pressed(khdays::game::Button::Start)
+            || frames_ >= 120) {
+            manager.change_scene(khdays::game::kSceneContinue);
+        }
+    }
+    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
+        r.clear(khdays::game::Color{20, 24, 48, 255});  // dark blue
+    }
+
+private:
+    int frames_ = 0;
+};
+
+class WindowTitleScene final : public khdays::game::Scene {
+public:
+    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
+        r.clear(khdays::game::Color{16, 40, 24, 255});  // dark green
+    }
+};
+
 int run_game_demo() {
     khdays::game::Game game;
     game.scenes().on_scene_entered([](khdays::game::SceneId id, int arg) {
@@ -107,6 +136,7 @@ void print_help() {
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
+        << "  khdays-port --game\n"
         << "  khdays-port --game-demo\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
@@ -130,7 +160,8 @@ void print_help() {
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
-        << "  --game-demo         Run the scene/task frame loop with placeholder scenes.\n"
+        << "  --game              Run the scene/task frame loop in a window (placeholder scenes).\n"
+        << "  --game-demo         Run the scene/task frame loop headless (logs the flow).\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
         << "  --render-text NFTR TEXT OUT.bmp  Render TEXT with an NFTR font to BMP.\n"
@@ -277,6 +308,20 @@ int main(int argc, char* argv[]) {
 
         if (first == "--game-demo") {
             return run_game_demo();
+        }
+
+        if (first == "--game") {
+            khdays::game::Game game;
+            game.scenes().register_scene(
+                khdays::game::kSceneBootLogo,
+                [] { return std::make_unique<WindowLogoScene>(); });
+            game.scenes().register_scene(
+                khdays::game::kSceneContinue,
+                [] { return std::make_unique<WindowTitleScene>(); });
+            game.boot(0);
+            std::cout << "Running the game frame loop (Esc to quit, "
+                         "Enter/Z/Space to advance)...\n";
+            return khdays::platform::run_game(game);
         }
 
         if (first == "--vfs-resolve") {

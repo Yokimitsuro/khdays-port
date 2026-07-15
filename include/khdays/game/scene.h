@@ -8,6 +8,9 @@
 #include <unordered_map>
 #include <utility>
 
+#include "khdays/game/input.h"
+#include "khdays/game/renderer.h"
+
 // The game-flow state machine — the native equivalent of the DS backbone traced
 // in khdays-decomp (main @0x02000bcc → frame loop → scene/task framework). A
 // Scene is a game state (boot logo, title, menu, mission); the SceneManager
@@ -30,8 +33,8 @@ class Scene {
 public:
     virtual ~Scene() = default;
     virtual void on_enter(SceneManager&) {}
-    virtual void update(SceneManager&) {}   // per-frame logic
-    virtual void render(SceneManager&) {}    // per-frame draw
+    virtual void update(SceneManager&) {}                 // per-frame logic
+    virtual void render(SceneManager&, Renderer&) {}       // per-frame draw
     virtual void on_exit(SceneManager&) {}
 };
 
@@ -51,9 +54,16 @@ public:
     // Request a transition to `id`; applied after the current frame finishes.
     void change_scene(SceneId id, int arg = 0);
 
-    // Advance one frame: update + render the current scene, then apply any
-    // pending transition.
+    // Advance the current scene's logic one frame, then apply any pending
+    // transition (no drawing — used headless and in tests).
     void step();
+
+    // Draw the current scene through the platform renderer.
+    void render(Renderer& renderer);
+
+    // The current frame's input, updated by the platform before step().
+    void set_input(const Input& input) { input_ = input; }
+    const Input& input() const { return input_; }
 
     SceneId current_id() const { return current_id_; }
     int current_arg() const { return current_arg_; }
@@ -77,6 +87,7 @@ private:
     int current_arg_ = 0;
     std::optional<std::pair<SceneId, int>> pending_;
     std::uint64_t frame_ = 0;
+    Input input_;
     std::function<void(SceneId, int)> observer_;
 };
 
