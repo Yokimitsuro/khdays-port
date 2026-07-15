@@ -36,6 +36,17 @@ The port should consume a pinned revision of the decompilation rather than turni
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the proposed milestones.
 
+## Documentation
+
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones and phase plan.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the neutral-format layering (importers → resource layer → engine).
+- [`docs/MODDING.md`](docs/MODDING.md) — replacing textures and models via the `mods/` folder.
+- [`docs/NATIVE_MESH_DECODER.md`](docs/NATIVE_MESH_DECODER.md) — MDL0 geometry/skinning decode to the neutral mesh.
+- [`docs/NATIVE_TEX0_RUNTIME.md`](docs/NATIVE_TEX0_RUNTIME.md) — TEX0 texture decoding.
+- [`docs/NATIVE_MDL0_INSPECTOR.md`](docs/NATIVE_MDL0_INSPECTOR.md) — the `--model-info` inspector.
+- [`docs/PLATFORM_RUNTIME.md`](docs/PLATFORM_RUNTIME.md) — the SDL3 platform runtime.
+- [`docs/MESSAGE_DATA_P2.md`](docs/MESSAGE_DATA_P2.md) — the `db_<lang>.p2` message-container format.
+
 ## Goals
 
 - Build a native, portable runtime for the game.
@@ -134,6 +145,25 @@ The first useful milestone is not “boot the entire game.” It is:
 7. Port one self-contained function or subsystem and compare its behavior against the original game.
 
 This creates a legal, testable pipeline before attempting the boot flow, overlays, graphics emulation, audio, or gameplay.
+
+## Modding
+
+Because the runtime decodes DS assets into neutral, open formats before anything
+reaches the engine, replacing content is a supported feature rather than byte
+hacking. Drop open-format files into a `mods/` folder and the resource layer
+resolves them ahead of the original DS asset:
+
+- **Textures** — a PNG/BMP under `mods/<Mod>/textures/**/<name>.png` overrides a
+  DS texture. UVs are normalized by the original DS size, so higher-resolution
+  (HD) replacements map correctly and are not downscaled.
+- **Models** — a rigged glTF at `mods/<Mod>/models/<ds_name>.gltf` replaces a DS
+  model's geometry and is **animated by the DS skeleton**: joints are matched to
+  DS bones by name, so existing DS animations play on higher-poly geometry with
+  no animation authoring.
+
+Mods only ever contain your own edits — never copyrighted game data — and
+`mods/` is git-ignored. See [`docs/MODDING.md`](docs/MODDING.md) for the folder
+layout and the export/edit workflow.
 
 ## Contributing
 
