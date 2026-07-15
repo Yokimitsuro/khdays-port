@@ -71,6 +71,8 @@ Implement isolated tools or debug modes for:
 - a native 3D renderer that draws decoded models with their textures;
   *(done — SDL3 GPU renderer, depth-tested, per-material TEX0 textures)*
 - animations (NSBCA), re-posing the palette per frame;
+  *(done — NSBCA decode + per-frame CPU skinning; the viewer auto-detects a
+  model's sibling animation)*
 - maps;
 - message data;
 - audio metadata.
