@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 
 #include "khdays/assets/tex0.h"
+#include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
 
 #ifndef KHDAYS_PORT_VERSION
@@ -251,6 +252,10 @@ void render_frame(
 namespace khdays::platform {
 
 int run_application(const ApplicationOptions& options) {
+    if (options.model_path.has_value()) {
+        return render_model(*options.model_path);
+    }
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         log_sdl_error("SDL_Init");
         return EXIT_FAILURE;

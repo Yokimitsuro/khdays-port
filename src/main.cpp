@@ -31,18 +31,20 @@ void print_help() {
         << '\n'
         << "Usage:\n"
         << "  khdays-port [--resource FILE] [--texture NAME]\n"
+        << "  khdays-port --render-model FILE\n"
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
         << '\n'
         << "Options:\n"
-        << "  --resource FILE   Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
-        << "  --texture NAME    Select a texture by name; defaults to the first.\n"
-        << "  --model-info FILE Inspect MDL0 models, materials, meshes, and GPU commands.\n"
-        << "  --export-obj FILE Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
-        << "  --version         Print version information without opening a window.\n"
-        << "  --help            Show this help text.\n";
+        << "  --resource FILE     Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
+        << "  --texture NAME      Select a texture by name; defaults to the first.\n"
+        << "  --render-model FILE Render an MDL0 model in 3D in the native window.\n"
+        << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
+        << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
+        << "  --version           Print version information without opening a window.\n"
+        << "  --help              Show this help text.\n";
 }
 
 khdays::platform::ApplicationOptions parse_runtime_options(
@@ -66,6 +68,14 @@ khdays::platform::ApplicationOptions parse_runtime_options(
                 throw std::invalid_argument("--texture requires a texture name");
             }
             options.texture_name = std::string{argv[++index]};
+            continue;
+        }
+
+        if (argument == "--render-model") {
+            if (index + 1 >= argc) {
+                throw std::invalid_argument("--render-model requires a file path");
+            }
+            options.model_path = std::filesystem::path{argv[++index]};
             continue;
         }
 

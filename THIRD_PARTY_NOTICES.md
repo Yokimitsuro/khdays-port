@@ -44,6 +44,18 @@ MDL0 binary layout (bones, inverse-bind matrices, render commands, and GPU
 vertex commands). The decoder in `src/assets/mesh.cpp` is an independent
 reimplementation; no apicula code was copied.
 
+## Vulkan SDK (build tool)
+
+Project: LunarG Vulkan SDK — `glslc` (shaderc)
+
+Upstream: <https://vulkan.lunarg.com/>
+
+Usage: **build tool only, not linked or redistributed**. `glslc` compiles the
+GLSL shaders in `shaders/` to SPIR-V, which is committed under
+`platform/pc/generated/*.spv.inc` and embedded into the executable. Regenerate
+with `tools/build_shaders/build_shaders.py`. At runtime the renderer uses SDL3's
+GPU API, which targets the system's Vulkan driver.
+
 ## Original game
 
 No license in this repository applies to the original game or to copyrighted material extracted from it.

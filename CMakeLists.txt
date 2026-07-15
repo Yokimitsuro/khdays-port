@@ -84,6 +84,7 @@ add_executable(
     khdays-port
     src/main.cpp
     platform/pc/sdl_runtime.cpp
+    platform/pc/gpu_renderer.cpp
 )
 
 target_include_directories(
