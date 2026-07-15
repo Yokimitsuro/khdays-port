@@ -10,6 +10,7 @@
 
 #include "khdays/assets/animation.h"
 #include "khdays/assets/audio.h"
+#include "khdays/assets/graphics2d.h"
 #include "khdays/assets/mdl0.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
@@ -42,6 +43,8 @@ void print_help() {
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --audio-info FILE\n"
+        << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
+        << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
         << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
@@ -60,6 +63,8 @@ void print_help() {
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
+        << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
+        << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav  Decode a SWAV waveform to WAV.\n"
         << "  --play-sound SDAT WAVEARCHIVE SWAV  Decode and play a SWAV waveform.\n"
@@ -194,6 +199,75 @@ int main(int argc, char* argv[]) {
                 show("  Wave archives", sdat.wave_archives);
                 show("  Stream players", sdat.stream_players);
                 show("  Streams", sdat.streams);
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-tiles") {
+            if (argc != 5 && argc != 6) {
+                std::cerr << "ERROR: --render-tiles requires NCGR, NCLR, an "
+                             "output BMP, and an optional palette index\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto tiles =
+                    khdays::assets::decode_ncgr(std::filesystem::path{argv[2]});
+                const auto palette =
+                    khdays::assets::decode_nclr(std::filesystem::path{argv[3]});
+                const int palette_index = argc == 6 ? std::stoi(argv[5]) : 0;
+                const auto image = khdays::assets::render_tile_sheet(
+                    tiles, palette, palette_index);
+                const auto bmp = khdays::assets::to_bmp(image);
+                std::ofstream out{argv[4], std::ios::binary};
+                out.write(
+                    reinterpret_cast<const char*>(bmp.data()),
+                    static_cast<std::streamsize>(bmp.size()));
+                std::cout << "Decoded " << tiles.tile_count << " tiles ("
+                          << tiles.bpp << "bpp), " << palette.colors.size()
+                          << " palette colors -> " << image.width << 'x'
+                          << image.height << " BMP: " << argv[4] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-bg") {
+            if (argc < 6) {
+                std::cerr << "ERROR: --render-bg requires NSCR, NCLR, an output "
+                             "BMP, and one or more NCGR\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto map =
+                    khdays::assets::decode_nscr(std::filesystem::path{argv[2]});
+                const auto palette =
+                    khdays::assets::decode_nclr(std::filesystem::path{argv[3]});
+                khdays::assets::TileGraphics tiles;
+                for (int i = 5; i < argc; ++i) {
+                    auto part =
+                        khdays::assets::decode_ncgr(std::filesystem::path{argv[i]});
+                    if (tiles.indices.empty()) {
+                        tiles.bpp = part.bpp;
+                    }
+                    tiles.tile_count += part.tile_count;
+                    tiles.indices.insert(
+                        tiles.indices.end(), part.indices.begin(), part.indices.end());
+                }
+                const auto image =
+                    khdays::assets::compose_background(map, tiles, palette);
+                const auto bmp = khdays::assets::to_bmp(image);
+                std::ofstream out{argv[4], std::ios::binary};
+                out.write(
+                    reinterpret_cast<const char*>(bmp.data()),
+                    static_cast<std::streamsize>(bmp.size()));
+                std::cout << "Composed " << image.width << 'x' << image.height
+                          << " background from " << tiles.tile_count
+                          << " tiles -> BMP: " << argv[4] << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

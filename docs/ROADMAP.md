@@ -66,6 +66,11 @@ Do not mirror every NitroSDK function one-to-one unless behavior requires it. Se
 Implement isolated tools or debug modes for:
 
 - textures and palettes; *(done — native TEX0 decoding)*
+- 2D/UI graphics; *(done — NCLR palettes, NCGR tile graphics, and NSCR tilemaps
+  decode and compose to RGBA (`khdays::assets::decode_nclr`/`decode_ncgr`/
+  `decode_nscr`/`compose_background`), auto-decompressing `.z` blobs;
+  `--render-tiles` / `--render-bg` export BMP. Verified against real battle-UI
+  graphics)*
 - models and skeletons; *(done — MDL0 decode with bones and skinning to a
   neutral, animation-ready mesh, validated against apicula)*
 - a native 3D renderer that draws decoded models with their textures;
