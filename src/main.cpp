@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -61,11 +62,41 @@ private:
     int frames_ = 0;
 };
 
-// Windowed placeholder scenes for --game: each clears the frame to a distinct
-// colour so the boot → title transition is visible on screen. The logo hands
-// off on A/Start (Z/Space/Enter) or after ~2 seconds.
+// Render a string in the real game font (resolved through the VFS) to an RGBA
+// image, or nullopt if the font isn't available.
+std::optional<khdays::assets::DecodedTexture> render_game_text(
+    const std::u16string& text) {
+    const auto font_path = khdays::vfs::resolve("text/font_eu_10.nftr");
+    if (!font_path) {
+        return std::nullopt;
+    }
+    try {
+        const auto font = khdays::assets::decode_nftr(*font_path);
+        return khdays::assets::render_text(font, text);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+// Draw an image centered, scaled by `scale`.
+void draw_centered(khdays::game::Renderer& r,
+                   const khdays::assets::DecodedTexture& image, int scale,
+                   int y_offset = 0) {
+    const int w = image.width * scale;
+    const int h = image.height * scale;
+    r.draw_image(image.rgba.data(), image.width, image.height,
+                 (r.width() - w) / 2, (r.height() - h) / 2 + y_offset, w, h);
+}
+
+// Windowed scenes for --game. Instead of flat colours they draw real game
+// assets — text rendered in the game's own NFTR font — so the boot → title flow
+// shows recreated content on screen. (The exact boot-logo composition still
+// awaits the decomp; this proves the pipeline end to end.)
 class WindowLogoScene final : public khdays::game::Scene {
 public:
+    void on_enter(khdays::game::SceneManager&) override {
+        text_ = render_game_text(u"KINGDOM HEARTS");
+    }
     void update(khdays::game::SceneManager& manager) override {
         ++frames_;
         const auto& in = manager.input();
@@ -76,18 +107,41 @@ public:
         }
     }
     void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
-        r.clear(khdays::game::Color{20, 24, 48, 255});  // dark blue
+        r.clear(khdays::game::Color{10, 12, 24, 255});
+        if (text_) {
+            draw_centered(r, *text_, 4);
+        }
     }
 
 private:
+    std::optional<khdays::assets::DecodedTexture> text_;
     int frames_ = 0;
 };
 
 class WindowTitleScene final : public khdays::game::Scene {
 public:
-    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
-        r.clear(khdays::game::Color{16, 40, 24, 255});  // dark green
+    void on_enter(khdays::game::SceneManager&) override {
+        title_ = render_game_text(u"KINGDOM HEARTS");
+        subtitle_ = render_game_text(u"358/2 Days");
+        prompt_ = render_game_text(u"Press Start");
     }
+    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
+        r.clear(khdays::game::Color{12, 20, 40, 255});
+        if (title_) {
+            draw_centered(r, *title_, 5, -70);
+        }
+        if (subtitle_) {
+            draw_centered(r, *subtitle_, 4, 0);
+        }
+        if (prompt_) {
+            draw_centered(r, *prompt_, 2, 120);
+        }
+    }
+
+private:
+    std::optional<khdays::assets::DecodedTexture> title_;
+    std::optional<khdays::assets::DecodedTexture> subtitle_;
+    std::optional<khdays::assets::DecodedTexture> prompt_;
 };
 
 int run_game_demo() {
@@ -311,6 +365,10 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--game") {
+            if (!khdays::vfs::autodetect_data_root()) {
+                std::cerr << "note: no extracted data under data/extracted; "
+                             "scenes will show without game assets\n";
+            }
             khdays::game::Game game;
             game.scenes().register_scene(
                 khdays::game::kSceneBootLogo,

@@ -1,11 +1,13 @@
 #include "khdays/platform/runtime.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 #include <SDL3/SDL.h>
 
@@ -321,16 +323,74 @@ int run_application(const ApplicationOptions& options) {
 namespace {
 
 // Bridges the neutral Renderer scenes draw through onto the SDL 2D renderer.
+// Uploaded images are cached by their pixel pointer (scenes hold static images),
+// so each is turned into an SDL texture once.
 class SdlFrameRenderer final : public khdays::game::Renderer {
 public:
     explicit SdlFrameRenderer(SDL_Renderer* renderer) : renderer_(renderer) {}
+    ~SdlFrameRenderer() override {
+        for (auto& [key, texture] : cache_) {
+            SDL_DestroyTexture(texture);
+        }
+    }
+
     void clear(khdays::game::Color color) override {
         SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
         SDL_RenderClear(renderer_);
     }
 
+    void draw_image(
+        const std::uint8_t* rgba, int width, int height, int x, int y,
+        int dst_width, int dst_height) override {
+        if (rgba == nullptr || width <= 0 || height <= 0) {
+            return;
+        }
+        SDL_Texture* texture = upload(rgba, width, height);
+        if (texture == nullptr) {
+            return;
+        }
+        SDL_FRect dst{
+            static_cast<float>(x),
+            static_cast<float>(y),
+            static_cast<float>(dst_width > 0 ? dst_width : width),
+            static_cast<float>(dst_height > 0 ? dst_height : height)};
+        SDL_RenderTexture(renderer_, texture, nullptr, &dst);
+    }
+
+    int width() const override {
+        int w = 0;
+        int h = 0;
+        SDL_GetCurrentRenderOutputSize(renderer_, &w, &h);
+        return w;
+    }
+    int height() const override {
+        int w = 0;
+        int h = 0;
+        SDL_GetCurrentRenderOutputSize(renderer_, &w, &h);
+        return h;
+    }
+
 private:
+    SDL_Texture* upload(const std::uint8_t* rgba, int width, int height) {
+        const auto it = cache_.find(rgba);
+        if (it != cache_.end()) {
+            return it->second;
+        }
+        SDL_Texture* texture = SDL_CreateTexture(
+            renderer_, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC,
+            width, height);
+        if (texture == nullptr) {
+            return nullptr;
+        }
+        SDL_UpdateTexture(texture, nullptr, rgba, width * 4);
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+        cache_.emplace(rgba, texture);
+        return texture;
+    }
+
     SDL_Renderer* renderer_;
+    std::unordered_map<const void*, SDL_Texture*> cache_;
 };
 
 // Map the keyboard onto the neutral pad buttons.
