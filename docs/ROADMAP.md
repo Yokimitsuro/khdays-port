@@ -80,8 +80,10 @@ Implement isolated tools or debug modes for:
   mission scene from placed objects needs layout data and is a later step)*
 - message data; *(located via Ghidra — the game's text is in `db/db_<lang>.p2`
   (a "P2" container of UTF-16LE strings with embedded control codes, loaded from
-  `/db/db_&.p2`) plus UI strings in `UI/*/str/*.s.z`. A parser for the P2
-  container format is still to be written)*
+  `/db/db_&.p2`) plus UI strings in `UI/*/str/*.s.z`. The P2 header + directory
+  format is confirmed from the decompiled loader and byte-checked against
+  `db_en` — see [docs/MESSAGE_DATA_P2.md](MESSAGE_DATA_P2.md); the sub-file
+  locator (`func_0201ef9c`) is the remaining piece before an extractor)*
 - audio metadata. *(done — SDAT inventory: sequences, banks, wave archives,
   streams, by name via --audio-info)*
 
