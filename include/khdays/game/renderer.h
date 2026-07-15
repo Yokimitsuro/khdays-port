@@ -20,8 +20,12 @@ class Renderer {
 public:
     virtual ~Renderer() = default;
 
-    // Fill the whole frame.
+    // Fill the whole frame (opaque).
     virtual void clear(Color color) = 0;
+
+    // Draw a full-target rectangle of `color` over the current frame, blended by
+    // `color.a` (used for fades to/from black or white).
+    virtual void fill_overlay(Color color) = 0;
 
     // Draw an RGBA8888 image (row-major, `width`*`height`*4 bytes) at (x, y),
     // alpha-blended. `dst_width`/`dst_height` of 0 use the source size; other

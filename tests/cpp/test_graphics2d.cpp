@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "khdays/assets/graphics2d.h"
+#include "khdays/assets/screen.h"
 
 namespace {
 
@@ -165,6 +166,68 @@ int main() {
             expect(none.palettes.empty() && none.tiles.empty()
                        && none.cells.empty(),
                    "pk2d rejects non-D2KP");
+        }
+
+        // compose_screen: priority ordering + OBJ over BG. A back BG layer (all
+        // red) and a front BG layer (a green tile at 0,0) plus one OBJ pixel.
+        {
+            khdays::assets::Palette2D pal;
+            pal.colors_per_palette = 16;
+            pal.colors.assign(16, {0U, 0U, 0U, 255U});
+            pal.colors[1] = {255U, 0U, 0U, 255U};    // red
+            pal.colors[2] = {0U, 255U, 0U, 255U};    // green
+
+            khdays::assets::TileGraphics red_tiles;  // one tile, all index 1
+            red_tiles.bpp = 4;
+            red_tiles.tile_count = 1;
+            red_tiles.indices.assign(64U, 1U);
+
+            khdays::assets::TileGraphics green_tiles;  // tile 1 all index 2
+            green_tiles.bpp = 4;
+            green_tiles.tile_count = 2;
+            green_tiles.indices.assign(128U, 0U);
+            for (std::size_t k = 64; k < 128; ++k) {
+                green_tiles.indices[k] = 2U;
+            }
+
+            khdays::assets::Tilemap back;  // 1x1 tilemap, tile 0 (-> red)
+            back.width_tiles = 1;
+            back.height_tiles = 1;
+            back.cells.push_back({0U, 0U, false, false});
+
+            khdays::assets::Tilemap front;  // 1x1 tilemap, tile 1 (-> green)
+            front.width_tiles = 1;
+            front.height_tiles = 1;
+            front.cells.push_back({1U, 0U, false, false});
+
+            khdays::assets::DecodedTexture dot;  // one opaque blue OBJ pixel
+            dot.width = 1;
+            dot.height = 1;
+            dot.rgba = {0U, 0U, 255U, 255U};
+
+            std::vector<khdays::assets::ScreenBgLayer> layers = {
+                {&back, &red_tiles, &pal, 3, 0, 0},   // back: red
+                {&front, &green_tiles, &pal, 1, 0, 0},  // front: green
+            };
+            std::vector<khdays::assets::ScreenObj> objs = {{&dot, 0, 0, 0}};
+
+            const auto screen = khdays::assets::compose_screen(layers, objs, 8, 8);
+            expect(screen.width == 8 && screen.height == 8, "screen size");
+            // Pixel (0,0): OBJ (priority 0) wins -> blue.
+            expect(screen.rgba[0] == 0 && screen.rgba[1] == 0
+                       && screen.rgba[2] == 255,
+                   "screen OBJ on top");
+            // Pixel (4,4): front green BG (priority 1) over back red.
+            const std::size_t mid = (4U * 8U + 4U) * 4U;
+            expect(screen.rgba[mid] == 0 && screen.rgba[mid + 1] == 255
+                       && screen.rgba[mid + 2] == 0,
+                   "screen front BG over back");
+
+            // With only the back layer, (4,4) is red.
+            const auto only_back = khdays::assets::compose_screen(
+                {{&back, &red_tiles, &pal, 3, 0, 0}}, {}, 8, 8);
+            expect(only_back.rgba[mid] == 255 && only_back.rgba[mid + 1] == 0,
+                   "screen back BG visible");
         }
 
         for (const auto& p : temps) {

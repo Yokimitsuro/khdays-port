@@ -96,6 +96,7 @@ add_library(
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
         src/assets/message.cpp
+        src/assets/screen.cpp
         src/assets/sdat.cpp
         src/assets/sequence.cpp
         src/assets/tex0.cpp

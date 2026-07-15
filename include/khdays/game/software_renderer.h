@@ -17,6 +17,7 @@ public:
     SoftwareRenderer(int width, int height);
 
     void clear(Color color) override;
+    void fill_overlay(Color color) override;
     void draw_image(const std::uint8_t* rgba, int width, int height, int x,
                     int y, int dst_width, int dst_height) override;
     int width() const override { return width_; }

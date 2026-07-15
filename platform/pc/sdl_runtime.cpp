@@ -341,6 +341,15 @@ public:
         SDL_RenderClear(renderer_);
     }
 
+    void fill_overlay(khdays::game::Color color) override {
+        if (color.a == 0) {
+            return;
+        }
+        SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
+        SDL_RenderFillRect(renderer_, nullptr);
+    }
+
     void draw_image(
         const std::uint8_t* rgba, int width, int height, int x, int y,
         int dst_width, int dst_height) override {

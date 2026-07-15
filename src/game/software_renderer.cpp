@@ -18,6 +18,19 @@ void SoftwareRenderer::clear(const Color color) {
     }
 }
 
+void SoftwareRenderer::fill_overlay(const Color color) {
+    if (color.a == 0U) {
+        return;
+    }
+    const int a = color.a;
+    for (std::size_t i = 0; i + 4U <= rgba_.size(); i += 4U) {
+        rgba_[i] = static_cast<std::uint8_t>((color.r * a + rgba_[i] * (255 - a)) / 255);
+        rgba_[i + 1U] = static_cast<std::uint8_t>((color.g * a + rgba_[i + 1U] * (255 - a)) / 255);
+        rgba_[i + 2U] = static_cast<std::uint8_t>((color.b * a + rgba_[i + 2U] * (255 - a)) / 255);
+        rgba_[i + 3U] = 255U;
+    }
+}
+
 void SoftwareRenderer::draw_image(const std::uint8_t* src, int sw, int sh,
                                   const int x, const int y, int dw, int dh) {
     if (src == nullptr || sw <= 0 || sh <= 0) {

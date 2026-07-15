@@ -327,6 +327,68 @@ int main(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
+        if (first == "--title-shot") {
+            // Headless snapshot of the title/main-menu scene (two DS screens
+            // stacked). Optional 2nd arg = how many times to press Down first.
+            if (argc < 3) {
+                std::cerr << "ERROR: --title-shot requires an output BMP "
+                             "[down-steps]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int steps = argc > 3 ? std::stoi(argv[3]) : 0;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneTitle, [] {
+                return std::make_unique<khdays::game::scenes::TitleScene>();
+            });
+            manager.start(khdays::game::kSceneTitle);
+            for (int i = 0; i < steps; ++i) {
+                khdays::game::Input in;
+                in.pressed = static_cast<std::uint16_t>(khdays::game::Button::Down);
+                manager.set_input(in);
+                manager.step();
+            }
+            manager.set_input(khdays::game::Input{});
+            manager.step();
+            khdays::game::SoftwareRenderer sw{544, 816};  // two 256x192 @ scale 2
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "Title snapshot (down step " << steps << ") -> BMP: "
+                      << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
+        if (first == "--boot-shot") {
+            // Headless snapshot of the boot logo sequence at a given frame.
+            if (argc < 3) {
+                std::cerr << "ERROR: --boot-shot requires an output BMP [frame]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int frames = argc > 3 ? std::stoi(argv[3]) : 0;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneBootLogo, [] {
+                return std::make_unique<khdays::game::scenes::BootLogoScene>();
+            });
+            manager.start(khdays::game::kSceneBootLogo);
+            for (int i = 0; i < frames; ++i) {
+                manager.set_input(khdays::game::Input{});
+                manager.step();
+            }
+            khdays::game::SoftwareRenderer sw{544, 816};
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "Boot snapshot (frame " << frames << ") -> BMP: "
+                      << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
         if (first == "--game") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
