@@ -39,10 +39,27 @@ Engine                       renderer (platform/pc), and later
 
 ## Modding, concretely
 
-Today the resource layer resolves **texture overrides**: dropping
-`mods/textures/<name>.bmp` next to the executable replaces the DS texture of
-that name in the renderer, with no code change. Model (glTF) and animation
-overrides plug into the same layer as their importers are added.
+Each mod is a folder under `mods/`, with one subfolder per resource category:
+
+```text
+mods/
+  MyHDTextures/
+    textures/vexen/ve_00.bmp     # any depth under textures/ is fine
+  MyOtherMod/
+    textures/e_axe_hb.bmp
+```
+
+The resource layer searches every mod's category tree recursively for a file
+matching the DS resource name (mods are visited in sorted order; first match
+wins). Dropping `textures/<ds_name>.bmp` replaces that DS texture in the
+renderer with no code change.
+
+**Textures may be any resolution.** UVs are normalized by the *original DS
+texture size*, so a 4x BMP is a valid HD replacement — it samples correctly
+without retiling.
+
+Model (glTF) and animation overrides, and other categories (e.g. `sounds/`),
+plug into the same layer as their importers are added.
 
 The command-line inspectors (`--model-info`, `--anim-info`, `--audio-info`,
 `--export-obj`) are tools, not the engine, and may call `khdays::assets`

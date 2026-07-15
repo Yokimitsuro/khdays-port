@@ -16,7 +16,9 @@
 namespace khdays::resource {
 
 // Set the directory searched for overrides (default: "mods", relative to the
-// working directory).
+// working directory). Each mod is a subfolder, e.g.
+// "mods/<ModName>/textures/<anything>/<ds_name>.bmp"; the tree under a category
+// (textures/, and later sounds/) is searched recursively by file name.
 void set_mods_root(const std::filesystem::path& root);
 
 // Load a model as a neutral, engine-independent mesh.
@@ -27,9 +29,19 @@ khdays::assets::NeutralModel load_model(
 khdays::assets::SkeletalAnimation load_animation(
     const std::filesystem::path& ds_path);
 
-// Load a texture by name. `ds_source` is the DS file that embeds the TEX0 used
-// as the fallback; an override at "<mods>/textures/<name>.bmp" wins.
-khdays::assets::DecodedTexture load_texture(
+// A texture ready for the engine: the image to upload (override or original DS)
+// plus the *original DS texture size*. Texture coordinates are always normalized
+// by the DS size, so a higher-resolution override maps correctly (HD textures).
+struct LoadedTexture final {
+    khdays::assets::DecodedTexture image;
+    int reference_width = 0;
+    int reference_height = 0;
+};
+
+// Load a texture by its DS name. `ds_source` is the DS file that embeds the
+// TEX0. A "<mods>/<any-mod>/textures/**/<name>.bmp" override wins; the DS
+// texture still provides the reference size for UV mapping.
+LoadedTexture load_texture(
     const std::string& name,
     const std::filesystem::path& ds_source);
 

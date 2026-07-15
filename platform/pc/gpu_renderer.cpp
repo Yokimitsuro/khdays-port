@@ -172,7 +172,7 @@ void compute_normals(MeshData& data) {
 
 MeshData build_mesh(
     const khdays::assets::NeutralModel& model,
-    const std::map<std::string, khdays::assets::DecodedTexture>& textures) {
+    const std::map<std::string, khdays::resource::LoadedTexture>& textures) {
     MeshData data;
     std::array<float, 3> lo{1e30F, 1e30F, 1e30F};
     std::array<float, 3> hi{-1e30F, -1e30F, -1e30F};
@@ -181,16 +181,17 @@ MeshData build_mesh(
         const auto base = static_cast<std::uint32_t>(data.vertices.size());
         const auto first_index = static_cast<std::uint32_t>(data.indices.size());
 
-        // Normalize texel coordinates by the real texture size.
+        // Normalize texel coordinates by the original DS texture size, so an
+        // override of any resolution samples correctly.
         float tex_w = 1.0F;
         float tex_h = 1.0F;
         const auto tex_it = textures.find(mesh.texture_name);
         if (tex_it != textures.end()) {
-            if (tex_it->second.width > 0) {
-                tex_w = static_cast<float>(tex_it->second.width);
+            if (tex_it->second.reference_width > 0) {
+                tex_w = static_cast<float>(tex_it->second.reference_width);
             }
-            if (tex_it->second.height > 0) {
-                tex_h = static_cast<float>(tex_it->second.height);
+            if (tex_it->second.reference_height > 0) {
+                tex_h = static_cast<float>(tex_it->second.reference_height);
             }
         }
 
@@ -400,7 +401,7 @@ int render_model(
 
     // Decode each material's TEX0 texture once (CPU). Sizes are needed to
     // normalize UVs; the RGBA is reused to upload the GPU textures below.
-    std::map<std::string, khdays::assets::DecodedTexture> decoded_textures;
+    std::map<std::string, khdays::resource::LoadedTexture> decoded_textures;
     for (const auto& m : model.meshes) {
         if (m.texture_name.empty()
             || decoded_textures.count(m.texture_name) != 0U) {
@@ -568,11 +569,11 @@ int render_model(
     // Upload one GPU texture per decoded texture, plus a white 1x1 fallback for
     // meshes with no or unresolved texture.
     std::map<std::string, SDL_GPUTexture*> textures;
-    for (const auto& [name, decoded] : decoded_textures) {
+    for (const auto& [name, loaded] : decoded_textures) {
         textures[name] = create_texture_rgba(
-            device, decoded.rgba.data(),
-            static_cast<std::uint32_t>(decoded.width),
-            static_cast<std::uint32_t>(decoded.height));
+            device, loaded.image.rgba.data(),
+            static_cast<std::uint32_t>(loaded.image.width),
+            static_cast<std::uint32_t>(loaded.image.height));
     }
 
     const std::uint8_t white_pixel[4] = {255U, 255U, 255U, 255U};
