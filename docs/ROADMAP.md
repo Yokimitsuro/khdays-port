@@ -99,8 +99,11 @@ mods — they never distribute copyrighted assets.
 - **Open-format export** (extract to edit): OBJ *(done)* → glTF with skeleton and
   skinning, plus PNG texture dumps.
 - **Asset-override loader:** the runtime resolves each asset through a search
-  path (`mods/…` before the extracted DS asset). This is the foundation. First
-  concrete step: texture override via `mods/textures/<name>.png`.
+  path (`mods/…` before the extracted DS asset). This is the foundation.
+  *(done for textures — `khdays::resource` (see `docs/ARCHITECTURE.md`) resolves
+  `mods/textures/<name>.bmp` before the DS TEX0; the engine only sees neutral
+  formats. Model/animation overrides plug into the same layer as their importers
+  are added.)*
 - **Import:** load glTF / PNG into the neutral mesh and textures at runtime.
 - **Hot-reload:** reload overridden assets on file change for fast iteration.
 - **In-app asset browser:** list, preview, and swap assets from a debug overlay.
