@@ -422,9 +422,10 @@ int main(int argc, char* argv[]) {
             });
             game.boot(0);
             std::cout << "Running the game frame loop:\n"
-                         "  Enter/Z/Space confirm, X back, arrows move\n"
-                         "  -/= volume, M mute, Tab stacked/side-by-side, Esc "
-                         "quit\n";
+                         "  Z/Enter confirm, X back, arrows move (remap in "
+                         "Config > Controls)\n"
+                         "  Menu bar: Config (volume/controls/layout), View; "
+                         "F10 hide bar, F11 fullscreen, Esc quit\n";
             return khdays::platform::run_game(game);
         }
 

@@ -84,6 +84,32 @@ if(KHDAYS_ENABLE_GLTF AND KHDAYS_ENABLE_PNG)
     FetchContent_MakeAvailable(cgltf)
 endif()
 
+# Dear ImGui for the in-window options menu bar (Config/View). Cross-platform;
+# rendered through the SDL renderer. When off, the runtime falls back to keyboard
+# hotkeys only.
+option(KHDAYS_ENABLE_UI "In-window options menu bar via Dear ImGui" ON)
+if(KHDAYS_ENABLE_UI)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.91.6
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(imgui)
+    add_library(
+        imgui STATIC
+            "${imgui_SOURCE_DIR}/imgui.cpp"
+            "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+            "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+            "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+            "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
+            "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp"
+    )
+    target_include_directories(
+        imgui PUBLIC "${imgui_SOURCE_DIR}" "${imgui_SOURCE_DIR}/backends")
+    target_link_libraries(imgui PUBLIC SDL3::SDL3)
+endif()
+
 add_library(
     khdays-assets
     STATIC
@@ -189,6 +215,7 @@ add_executable(
     platform/pc/gpu_renderer.cpp
     platform/pc/audio_backend.cpp
     platform/pc/music_backend.cpp
+    platform/pc/overlay_ui.cpp
 )
 
 target_include_directories(
@@ -202,6 +229,11 @@ target_compile_definitions(
     PRIVATE
         KHDAYS_PORT_VERSION="${PROJECT_VERSION}"
 )
+
+if(KHDAYS_ENABLE_UI)
+    target_link_libraries(khdays-port PRIVATE imgui)
+    target_compile_definitions(khdays-port PRIVATE KHDAYS_HAS_UI)
+endif()
 
 target_link_libraries(
     khdays-port

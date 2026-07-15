@@ -12,11 +12,11 @@
 #include <SDL3/SDL.h>
 
 #include "khdays/assets/tex0.h"
-#include "khdays/game/settings.h"
 #include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
 #include "khdays/vfs/filesystem.h"
 #include "music_backend.h"
+#include "overlay_ui.h"
 
 #ifndef KHDAYS_PORT_VERSION
 #define KHDAYS_PORT_VERSION "unknown"
@@ -416,28 +416,6 @@ private:
     std::unordered_map<const void*, SDL_Texture*> cache_;
 };
 
-// Map the keyboard onto the neutral pad buttons.
-std::uint16_t poll_buttons() {
-    const bool* keys = SDL_GetKeyboardState(nullptr);
-    using B = khdays::game::Button;
-    std::uint16_t down = 0;
-    const auto set = [&](SDL_Scancode code, B button) {
-        if (keys[code]) {
-            down |= static_cast<std::uint16_t>(button);
-        }
-    };
-    set(SDL_SCANCODE_Z, B::A);
-    set(SDL_SCANCODE_SPACE, B::A);
-    set(SDL_SCANCODE_X, B::B);
-    set(SDL_SCANCODE_RETURN, B::Start);
-    set(SDL_SCANCODE_RSHIFT, B::Select);
-    set(SDL_SCANCODE_UP, B::Up);
-    set(SDL_SCANCODE_DOWN, B::Down);
-    set(SDL_SCANCODE_LEFT, B::Left);
-    set(SDL_SCANCODE_RIGHT, B::Right);
-    return down;
-}
-
 }  // namespace
 
 int run_game(khdays::game::Game& game) {
@@ -463,25 +441,17 @@ int run_game(khdays::game::Game& game) {
     }
 
     SdlFrameRenderer frame_renderer{renderer};
+    OverlayUi overlay{window, renderer};  // options menu bar (volume/layout/keys)
 
     // Music: render the game's SSEQ tracks and stream them for scenes that
     // request a BGM. Absent SDAT (no game data) → scenes simply run silent.
     std::optional<SdlMusicPlayer> music;
-    float volume = 0.7F;
     if (const auto sdat_path = khdays::vfs::resolve("snd/sound_data.sdat")) {
         music.emplace(*sdat_path);
         if (music->ok()) {
-            music->set_volume(volume);
             game.scenes().set_music_player(&*music);
         }
     }
-    const auto apply_volume = [&](float v) {
-        volume = std::clamp(v, 0.0F, 1.0F);
-        if (music) {
-            music->set_volume(volume);
-        }
-        std::cout << "volume: " << static_cast<int>(volume * 100) << "%\n";
-    };
 
     std::uint16_t previous = 0;
     bool running = true;
@@ -491,42 +461,27 @@ int run_game(khdays::game::Game& game) {
     while (running && game.scenes().has_scene()) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            overlay.process_event(event);
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
-            if (event.type == SDL_EVENT_KEY_DOWN) {
-                switch (event.key.key) {
-                    case SDLK_ESCAPE:
-                        running = false;
-                        break;
-                    case SDLK_MINUS:  // '-' : volume down
-                        apply_volume(volume - 0.1F);
-                        break;
-                    case SDLK_EQUALS:  // '=' : volume up
-                        apply_volume(volume + 0.1F);
-                        break;
-                    case SDLK_M:  // mute / unmute
-                        apply_volume(volume > 0.0F ? 0.0F : 0.7F);
-                        break;
-                    case SDLK_TAB:  // toggle stacked / side-by-side screens
-                        khdays::game::toggle_screen_layout();
-                        std::cout << "screen layout: "
-                                  << (khdays::game::screen_layout()
-                                              == khdays::game::ScreenLayout::Horizontal
-                                          ? "side by side\n"
-                                          : "stacked\n");
-                        break;
-                    default:
-                        break;
-                }
+            // Esc quits, unless the overlay is capturing keys (e.g. rebinding).
+            if (event.type == SDL_EVENT_KEY_DOWN
+                && event.key.key == SDLK_ESCAPE && !overlay.wants_keyboard()) {
+                running = false;
             }
         }
 
-        const std::uint16_t down = poll_buttons();
+        // Suppress game input while the UI has the keyboard.
+        const std::uint16_t down =
+            overlay.wants_keyboard() ? 0 : poll_buttons(overlay.bindings());
         khdays::game::Input input;
         input.down = down;
         input.pressed = static_cast<std::uint16_t>(down & ~previous);
         previous = down;
+        if (music) {
+            music->set_volume(overlay.volume());
+        }
 
         game.scenes().set_input(input);
         game.step();
@@ -537,6 +492,7 @@ int run_game(khdays::game::Game& game) {
             last_scene = game.scenes().current_id();
         }
         game.render(frame_renderer);
+        overlay.render();  // draw the menu bar / windows over the frame
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
