@@ -44,6 +44,23 @@ Palette2D decode_nclr(const std::filesystem::path& path);
 TileGraphics decode_ncgr(const std::filesystem::path& path);
 Tilemap decode_nscr(const std::filesystem::path& path);
 
+// Decode from an in-memory (already decompressed) resource — e.g. a Nitro
+// resource carved out of a pack.
+Palette2D decode_nclr(const std::uint8_t* data, std::size_t size);
+TileGraphics decode_ncgr(const std::uint8_t* data, std::size_t size);
+Tilemap decode_nscr(const std::uint8_t* data, std::size_t size);
+
+// Locate a Nitro resource by its little-endian magic (e.g. "RLCN", "RGCN",
+// "RCSN") inside a larger pack blob, returning a view of it (its declared file
+// size from the Nitro header @0x08). Empty if not found.
+struct ResourceView final {
+    const std::uint8_t* data = nullptr;
+    std::size_t size = 0;
+    explicit operator bool() const { return data != nullptr; }
+};
+ResourceView find_nitro_resource(
+    const std::uint8_t* pack, std::size_t size, const char magic[4]);
+
 // Lay every tile out into a single RGBA image (a tile sheet), `tiles_per_row`
 // wide, colored with sub-palette `palette_index`. Index 0 renders opaque here so
 // the sheet is easy to see.
@@ -54,12 +71,14 @@ DecodedTexture render_tile_sheet(
     int tiles_per_row = 16);
 
 // Compose a full background image from a tilemap, its tile graphics, and the
-// palette (each cell selects tile, sub-palette, and flip). Palette index 0 is
-// treated as transparent.
+// palette (each cell selects tile, sub-palette, and flip). With
+// `color_zero_transparent` (the default), palette index 0 is transparent;
+// pass false for an opaque background (e.g. a full-screen logo).
 DecodedTexture compose_background(
     const Tilemap& map,
     const TileGraphics& tiles,
-    const Palette2D& palette);
+    const Palette2D& palette,
+    bool color_zero_transparent = true);
 
 // Serialize an RGBA texture as a 32-bit BMP (for export and viewing).
 std::vector<std::uint8_t> to_bmp(const DecodedTexture& image);

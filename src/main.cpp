@@ -78,6 +78,33 @@ std::optional<khdays::assets::DecodedTexture> render_game_text(
     }
 }
 
+// Compose the real boot/publisher logo the game shows first: /ttl/ttl.p2 is a
+// P2 container whose sub-file 1 is a resource pack holding the logo screen's
+// NCLR palette + NCGR tiles + NSCR tilemap (this is exactly what the ov000 boot
+// scene loads). Returns nullopt if the data isn't available.
+std::optional<khdays::assets::DecodedTexture> load_boot_logo() {
+    try {
+        const auto container = khdays::vfs::read("ttl/ttl.p2");
+        const auto pack = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 1);
+        const auto pal = khdays::assets::find_nitro_resource(
+            pack.data(), pack.size(), "RLCN");
+        const auto chr = khdays::assets::find_nitro_resource(
+            pack.data(), pack.size(), "RGCN");
+        const auto scr = khdays::assets::find_nitro_resource(
+            pack.data(), pack.size(), "RCSN");
+        if (!pal || !chr || !scr) {
+            return std::nullopt;
+        }
+        const auto palette = khdays::assets::decode_nclr(pal.data, pal.size);
+        const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
+        const auto map = khdays::assets::decode_nscr(scr.data, scr.size);
+        return khdays::assets::compose_background(map, tiles, palette, false);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 // Draw an image centered, scaled by `scale`.
 void draw_centered(khdays::game::Renderer& r,
                    const khdays::assets::DecodedTexture& image, int scale,
@@ -95,26 +122,32 @@ void draw_centered(khdays::game::Renderer& r,
 class WindowLogoScene final : public khdays::game::Scene {
 public:
     void on_enter(khdays::game::SceneManager&) override {
-        text_ = render_game_text(u"KINGDOM HEARTS");
+        logo_ = load_boot_logo();
     }
     void update(khdays::game::SceneManager& manager) override {
         ++frames_;
         const auto& in = manager.input();
         if (in.just_pressed(khdays::game::Button::A)
             || in.just_pressed(khdays::game::Button::Start)
-            || frames_ >= 120) {
+            || frames_ >= 180) {
             manager.change_scene(khdays::game::kSceneContinue);
         }
     }
     void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
-        r.clear(khdays::game::Color{10, 12, 24, 255});
-        if (text_) {
-            draw_centered(r, *text_, 4);
+        r.clear(khdays::game::Color{0, 0, 0, 255});
+        if (logo_) {
+            const int sw = r.width() / logo_->width;
+            const int sh = r.height() / logo_->height;
+            int scale = sw < sh ? sw : sh;
+            if (scale < 1) {
+                scale = 1;
+            }
+            draw_centered(r, *logo_, scale);
         }
     }
 
 private:
-    std::optional<khdays::assets::DecodedTexture> text_;
+    std::optional<khdays::assets::DecodedTexture> logo_;
     int frames_ = 0;
 };
 

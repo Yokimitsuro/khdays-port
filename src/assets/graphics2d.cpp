@@ -78,10 +78,10 @@ std::array<std::uint8_t, 4> rgb555_to_rgba(const std::uint16_t c) {
 
 }  // namespace
 
-Palette2D decode_nclr(const std::filesystem::path& path) {
-    const auto d = load_resource(path);
+Palette2D decode_nclr(const std::uint8_t* data, std::size_t size) {
+    const ByteVector d(data, data + size);
     if (!has_magic(d, "RLCN")) {
-        throw std::runtime_error("not an NCLR palette: " + path.string());
+        throw std::runtime_error("not an NCLR palette");
     }
     // TTLP section at 0x10: bitDepth @0x18, dataSize @0x20, palette @0x28.
     const auto bit_depth = read_u32(d, 0x18U);
@@ -97,10 +97,10 @@ Palette2D decode_nclr(const std::filesystem::path& path) {
     return palette;
 }
 
-TileGraphics decode_ncgr(const std::filesystem::path& path) {
-    const auto d = load_resource(path);
+TileGraphics decode_ncgr(const std::uint8_t* data, std::size_t size) {
+    const ByteVector d(data, data + size);
     if (!has_magic(d, "RGCN")) {
-        throw std::runtime_error("not an NCGR graphic: " + path.string());
+        throw std::runtime_error("not an NCGR graphic");
     }
     // RAHC section at 0x10: bpp @0x1C, dataSize @0x28, dataOffset @0x2C.
     const auto bpp_flag = read_u32(d, 0x1CU);
@@ -136,10 +136,10 @@ TileGraphics decode_ncgr(const std::filesystem::path& path) {
     return tiles;
 }
 
-Tilemap decode_nscr(const std::filesystem::path& path) {
-    const auto d = load_resource(path);
+Tilemap decode_nscr(const std::uint8_t* data, std::size_t size) {
+    const ByteVector d(data, data + size);
     if (!has_magic(d, "RCSN")) {
-        throw std::runtime_error("not an NSCR screen: " + path.string());
+        throw std::runtime_error("not an NSCR screen");
     }
     // NRCS section at 0x10: widthPx @0x18, heightPx @0x1A, dataSize @0x20.
     Tilemap map;
@@ -158,6 +158,41 @@ Tilemap decode_nscr(const std::filesystem::path& path) {
         map.cells.push_back(cell);
     }
     return map;
+}
+
+Palette2D decode_nclr(const std::filesystem::path& path) {
+    const auto d = load_resource(path);
+    return decode_nclr(d.data(), d.size());
+}
+TileGraphics decode_ncgr(const std::filesystem::path& path) {
+    const auto d = load_resource(path);
+    return decode_ncgr(d.data(), d.size());
+}
+Tilemap decode_nscr(const std::filesystem::path& path) {
+    const auto d = load_resource(path);
+    return decode_nscr(d.data(), d.size());
+}
+
+ResourceView find_nitro_resource(
+    const std::uint8_t* pack, const std::size_t size, const char magic[4]) {
+    if (pack == nullptr || size < 12U) {
+        return {};
+    }
+    for (std::size_t i = 0; i + 12U <= size; ++i) {
+        if (pack[i] == static_cast<std::uint8_t>(magic[0])
+            && pack[i + 1U] == static_cast<std::uint8_t>(magic[1])
+            && pack[i + 2U] == static_cast<std::uint8_t>(magic[2])
+            && pack[i + 3U] == static_cast<std::uint8_t>(magic[3])) {
+            const std::size_t file_size = static_cast<std::size_t>(pack[i + 8U])
+                | (static_cast<std::size_t>(pack[i + 9U]) << 8U)
+                | (static_cast<std::size_t>(pack[i + 10U]) << 16U)
+                | (static_cast<std::size_t>(pack[i + 11U]) << 24U);
+            if (file_size >= 16U && i + file_size <= size) {
+                return ResourceView{pack + i, file_size};
+            }
+        }
+    }
+    return {};
 }
 
 namespace {
@@ -218,11 +253,12 @@ DecodedTexture render_tile_sheet(
 DecodedTexture compose_background(
     const Tilemap& map,
     const TileGraphics& tiles,
-    const Palette2D& palette) {
+    const Palette2D& palette,
+    const bool color_zero_transparent) {
     DecodedTexture image;
     image.name = "background";
     image.format_name = "NSCR";
-    image.color_zero_transparent = true;
+    image.color_zero_transparent = color_zero_transparent;
     image.width = map.width_tiles * 8;
     image.height = map.height_tiles * 8;
     image.rgba.assign(
@@ -243,7 +279,7 @@ DecodedTexture compose_background(
                         static_cast<std::size_t>(cell.tile) * 64U
                         + static_cast<std::size_t>(sy) * 8U
                         + static_cast<std::size_t>(sx)];
-                    if (index == 0) {
+                    if (index == 0 && color_zero_transparent) {
                         continue;  // transparent
                     }
                     const auto color = palette_color(palette, cell.palette, index);

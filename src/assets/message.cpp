@@ -216,6 +216,41 @@ MessageArchive load_p2_archive(const std::filesystem::path& path) {
     return archive;
 }
 
+std::vector<std::uint8_t> extract_p2_subfile(
+    const std::uint8_t* container, const std::size_t size, const std::size_t index) {
+    const ByteVector data(container, container + size);
+    if (data.size() < 0x10U || data[0] != 'P' || data[1] != '2') {
+        throw std::runtime_error("not a P2 container");
+    }
+    const auto count = static_cast<std::size_t>(read_u16(data, 0x02U) & 0x1FFU);
+    if (index >= count) {
+        throw std::runtime_error("P2 sub-file index out of range");
+    }
+    const auto base = static_cast<std::size_t>(read_u32(data, 0x0CU));
+    constexpr std::size_t sizes_offset = 0x10U;
+    const std::size_t desc_offset = sizes_offset + ((count + 1U) / 2U) * 4U;
+
+    const auto sector = read_u16(data, sizes_offset + index * 2U);
+    const auto desc = read_u32(data, desc_offset + index * 4U);
+    const bool compressed = (desc & 0x80000000U) != 0U;
+    const auto sub_size = static_cast<std::size_t>(desc & 0x7FFFFFFFU);
+    const std::size_t start =
+        base + static_cast<std::size_t>(sector) * 0x200U;
+    if (start + sub_size > data.size()) {
+        throw std::runtime_error("P2 sub-file exceeds the container");
+    }
+    ByteVector raw{
+        data.begin() + static_cast<std::ptrdiff_t>(start),
+        data.begin() + static_cast<std::ptrdiff_t>(start + sub_size)};
+    return compressed ? lz_decompress(raw) : raw;
+}
+
+std::vector<std::uint8_t> extract_p2_subfile(
+    const std::filesystem::path& path, const std::size_t index) {
+    const auto data = read_file(path);
+    return extract_p2_subfile(data.data(), data.size(), index);
+}
+
 std::vector<std::u16string> load_string_table(
     const std::filesystem::path& path) {
     ByteVector data = read_file(path);

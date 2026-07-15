@@ -47,8 +47,9 @@ flow**. What runs today:
 **Phase 4 — game flow (in progress)**
 
 - [x] Game filesystem: `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
-- [x] Scene/task frame loop (`khdays::game`) reproducing the decompiled backbone — object state machines, an id→scene table with pending-id transitions (the matched DS dispatcher), running in a native SDL window with input and drawing real game assets (`--game`; `--game-demo` headless)
-- [ ] Real per-scene logic (boot logo → title → menus) and gameplay, filled in as `khdays-decomp` names each scene's constructor (next: the ov000 boot-logo scene)
+- [x] Scene/task frame loop (`khdays::game`) reproducing the decompiled backbone — object state machines, an id→scene table with pending-id transitions (the matched DS dispatcher), running in a native SDL window with input (`--game`; `--game-demo` headless)
+- [x] The boot scene (id 1) composes and shows the game's real first screen, decoded from `ttl/ttl.p2` (P2 → resource pack → NCLR/NCGR/NSCR) exactly as the ov000 boot scene loads it
+- [ ] The rest of the per-scene logic (title → menus) and gameplay, filled in as `khdays-decomp` names each scene's constructor
 
 Phase 4 is *decomp-gated*: it reimplements understood game behavior as
 [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp) names each

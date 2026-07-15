@@ -34,6 +34,15 @@ struct MessageArchive final {
 // malformed header, directory, compression stream, or string blob.
 MessageArchive load_p2_archive(const std::filesystem::path& path);
 
+// Extract one raw sub-file from a P2 container (e.g. `ttl/ttl.p2`) by index:
+// locate it via the directory and LZ-decompress it if flagged, returning the raw
+// bytes with no text interpretation (a sub-file may be a nested resource pack).
+// Throws std::runtime_error on a bad index or container.
+std::vector<std::uint8_t> extract_p2_subfile(
+    const std::uint8_t* container, std::size_t size, std::size_t index);
+std::vector<std::uint8_t> extract_p2_subfile(
+    const std::filesystem::path& path, std::size_t index);
+
 // Load a UI string table: the game's `UI/**/*.s` files, a flat list of UTF-16LE
 // strings, usually shipped LZ-compressed as `.s.z`. Compression is auto-detected
 // from the leading type byte. The on-disk layout is `u32 header_size (=8);
