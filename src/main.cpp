@@ -130,7 +130,7 @@ public:
         if (in.just_pressed(khdays::game::Button::A)
             || in.just_pressed(khdays::game::Button::Start)
             || frames_ >= 180) {
-            manager.change_scene(khdays::game::kSceneContinue);
+            manager.change_scene(khdays::game::kSceneTitle);
         }
     }
     void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
@@ -410,7 +410,7 @@ int main(int argc, char* argv[]) {
                 khdays::game::kSceneBootLogo,
                 [] { return std::make_unique<WindowLogoScene>(); });
             game.scenes().register_scene(
-                khdays::game::kSceneContinue,
+                khdays::game::kSceneTitle,
                 [] { return std::make_unique<WindowTitleScene>(); });
             game.boot(0);
             std::cout << "Running the game frame loop (Esc to quit, "

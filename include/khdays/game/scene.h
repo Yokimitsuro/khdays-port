@@ -30,7 +30,8 @@ class SceneManager;
 // Semantic names are filled in as each scene is decompiled.
 using SceneId = int;
 inline constexpr SceneId kSceneNone = 0;
-inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the logo scene (ov000)
+inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the intro/logo scene (ov000)
+inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
 
 // One game state. Override the hooks that matter; the default is a no-op.
