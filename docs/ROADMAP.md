@@ -90,8 +90,12 @@ Implement isolated tools or debug modes for:
   wave archives decode to PCM (PCM8/PCM16/IMA-ADPCM) via
   `khdays::assets::open_sdat`/`decode_swav`, play through an SDL3 audio backend
   (`--play-sound`), and export to WAV (`--extract-wav`); byte-verified against an
-  independent decoder. Sequenced music (the SSEQ synth reading SBNK/SWAR) is a
-  later step.)*
+  independent decoder)*; and **sequenced music** *(done — a software synthesizer
+  (`khdays::assets::render_sequence`) runs an SSEQ's multi-track bytecode,
+  resolves notes to SBNK instrument regions (ADSR + pan), and mixes pitched
+  voices with cubic resampling to stereo PCM; `--render-sequence` /
+  `--play-sequence`. First-version quality — the residual grain is the source
+  ADPCM's 4-bit fidelity; the exact DS envelope curves are approximated.)*
 
 **Exit condition:** a real model loads from user-generated data and renders,
 textured and animated, in the native window. *(met)*

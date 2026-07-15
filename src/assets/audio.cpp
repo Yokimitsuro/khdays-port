@@ -166,6 +166,19 @@ struct Sdat final {
     ByteVector data;
     std::vector<std::uint32_t> wave_archive_file_ids;  // per wave archive
     std::vector<std::pair<std::uint32_t, std::uint32_t>> fat;  // offset, size
+
+    struct SeqInfo final {
+        std::uint32_t file_id = 0xFFFFFFFFU;
+        int bank = -1;
+        std::uint8_t volume = 127;
+    };
+    std::vector<SeqInfo> sequences;
+
+    struct BankInfo final {
+        std::uint32_t file_id = 0xFFFFFFFFU;
+        std::array<int, 4> wave_archives{-1, -1, -1, -1};
+    };
+    std::vector<BankInfo> banks;
 };
 
 std::shared_ptr<Sdat> open_sdat(const std::filesystem::path& path) {
@@ -203,7 +216,95 @@ std::shared_ptr<Sdat> open_sdat(const std::filesystem::path& path) {
         const auto rec = fat_off + 0x0CU + static_cast<std::size_t>(i) * 16U;
         sdat->fat.emplace_back(read_u32(d, rec), read_u32(d, rec + 4U));
     }
+
+    const auto category_record = [&](const std::size_t category) {
+        return info_off
+            + static_cast<std::size_t>(
+                  read_u32(d, info_off + 0x08U + category * 4U));
+    };
+
+    // INFO category 0 = sequences: u16 file_id, u16 unk, u16 bank, u8 volume.
+    const auto seq_record = category_record(0);
+    const auto seq_count = read_u32(d, seq_record);
+    sdat->sequences.reserve(seq_count);
+    for (std::uint32_t i = 0U; i < seq_count; ++i) {
+        const auto entry_rel = read_u32(d, seq_record + 4U + i * 4U);
+        Sdat::SeqInfo seq;
+        if (entry_rel != 0U) {
+            const auto e = info_off + entry_rel;
+            seq.file_id = read_u16(d, e);
+            seq.bank = static_cast<int>(read_u16(d, e + 4U));
+            seq.volume = d[e + 6U];
+        }
+        sdat->sequences.push_back(seq);
+    }
+
+    // INFO category 2 = banks: u16 file_id, u16 unk, u16 wave_archive[4].
+    const auto bank_record = category_record(2);
+    const auto bank_count = read_u32(d, bank_record);
+    sdat->banks.reserve(bank_count);
+    for (std::uint32_t i = 0U; i < bank_count; ++i) {
+        const auto entry_rel = read_u32(d, bank_record + 4U + i * 4U);
+        Sdat::BankInfo bank;
+        if (entry_rel != 0U) {
+            const auto e = info_off + entry_rel;
+            bank.file_id = read_u16(d, e);
+            for (int s = 0; s < 4; ++s) {
+                const auto wa = read_u16(d, e + 4U + static_cast<std::size_t>(s) * 2U);
+                bank.wave_archives[static_cast<std::size_t>(s)] =
+                    wa == 0xFFFFU ? -1 : static_cast<int>(wa);
+            }
+        }
+        sdat->banks.push_back(bank);
+    }
     return sdat;
+}
+
+std::size_t sdat_sequence_count(const Sdat& sdat) {
+    return sdat.sequences.size();
+}
+
+SdatSequence sdat_sequence(const Sdat& sdat, const std::size_t index) {
+    if (index >= sdat.sequences.size()) {
+        throw std::runtime_error("sequence index out of range");
+    }
+    const auto& info = sdat.sequences[index];
+    if (info.file_id >= sdat.fat.size()) {
+        throw std::runtime_error("sequence has no file");
+    }
+    const auto& [offset, size] = sdat.fat[info.file_id];
+    if (static_cast<std::size_t>(offset) + size > sdat.data.size()
+        || size < 0x1CU || sdat.data[offset] != 'S' || sdat.data[offset + 1U] != 'S'
+        || sdat.data[offset + 2U] != 'E' || sdat.data[offset + 3U] != 'Q') {
+        throw std::runtime_error("sequence is not a valid SSEQ");
+    }
+    SdatSequence seq;
+    seq.data = sdat.data.data() + offset;
+    seq.size = size;
+    seq.bank = info.bank;
+    seq.volume = info.volume;
+    return seq;
+}
+
+SdatBank sdat_bank(const Sdat& sdat, const std::size_t index) {
+    if (index >= sdat.banks.size()) {
+        throw std::runtime_error("bank index out of range");
+    }
+    const auto& info = sdat.banks[index];
+    if (info.file_id >= sdat.fat.size()) {
+        throw std::runtime_error("bank has no file");
+    }
+    const auto& [offset, size] = sdat.fat[info.file_id];
+    if (static_cast<std::size_t>(offset) + size > sdat.data.size()
+        || size < 0x3CU || sdat.data[offset] != 'S' || sdat.data[offset + 1U] != 'B'
+        || sdat.data[offset + 2U] != 'N' || sdat.data[offset + 3U] != 'K') {
+        throw std::runtime_error("bank is not a valid SBNK");
+    }
+    SdatBank bank;
+    bank.data = sdat.data.data() + offset;
+    bank.size = size;
+    bank.wave_archives = info.wave_archives;
+    return bank;
 }
 
 std::size_t sdat_wave_archive_count(const Sdat& sdat) {

@@ -14,6 +14,7 @@
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
 #include "khdays/assets/sdat.h"
+#include "khdays/assets/sequence.h"
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
@@ -43,6 +44,8 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
+        << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
+        << "  khdays-port --play-sequence SDAT SEQ [SECONDS]\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
@@ -60,6 +63,8 @@ void print_help() {
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav  Decode a SWAV waveform to WAV.\n"
         << "  --play-sound SDAT WAVEARCHIVE SWAV  Decode and play a SWAV waveform.\n"
+        << "  --render-sequence SDAT SEQ OUT.wav [SECONDS]  Synthesize an SSEQ to WAV.\n"
+        << "  --play-sequence SDAT SEQ [SECONDS]  Synthesize and play an SSEQ.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
@@ -251,6 +256,54 @@ int main(int argc, char* argv[]) {
                 std::cout << "Playing SWAV " << argv[3] << ':' << argv[4]
                           << " (" << audio.samples.size() << " samples @ "
                           << audio.sample_rate << " Hz)" << std::endl;
+                return khdays::platform::play_audio_blocking(audio);
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-sequence" || first == "--play-sequence") {
+            const bool render = first == "--render-sequence";
+            const int min_args = render ? 5 : 4;
+            if (argc < min_args) {
+                std::cerr << "ERROR: " << first << " requires an SDAT and a "
+                             "sequence index"
+                          << (render ? ", and an output path\n" : "\n");
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto sdat =
+                    khdays::assets::open_sdat(std::filesystem::path{argv[2]});
+                const auto seq =
+                    static_cast<std::size_t>(std::stoul(argv[3]));
+                const int seconds_arg = render ? 5 : 4;
+                const double seconds = argc > seconds_arg
+                    ? std::stod(argv[seconds_arg])
+                    : (render ? 180.0 : 30.0);
+                const auto audio = khdays::assets::render_sequence(
+                    *sdat, seq, 32768U, seconds);
+                std::cout << "Synthesized sequence " << seq << ": "
+                          << audio.samples.size() / 2U << " frames @ "
+                          << audio.sample_rate << " Hz ("
+                          << (audio.sample_rate > 0
+                                  ? static_cast<double>(audio.samples.size() / 2U)
+                                      / audio.sample_rate
+                                  : 0.0)
+                          << " s)" << std::endl;
+                if (render) {
+                    const auto wav = khdays::assets::to_wav(audio);
+                    std::ofstream out{argv[4], std::ios::binary};
+                    if (!out) {
+                        std::cerr << "ERROR: cannot write " << argv[4] << '\n';
+                        return EXIT_FAILURE;
+                    }
+                    out.write(
+                        reinterpret_cast<const char*>(wav.data()),
+                        static_cast<std::streamsize>(wav.size()));
+                    std::cout << "Wrote " << argv[4] << '\n';
+                    return EXIT_SUCCESS;
+                }
                 return khdays::platform::play_audio_blocking(audio);
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

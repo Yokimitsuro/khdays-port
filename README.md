@@ -42,7 +42,7 @@ The port should consume a pinned revision of the decompilation rather than turni
 - [x] SDL3 GPU renderer (depth-tested, textured, orbit camera) for models and environment maps
 - [x] Modding: texture and rigged-model overrides via a `mods/` folder (see [Modding](#modding))
 - [x] Message text extracted from the `db_<lang>.p2` container (`--message-info` / `--dump-messages`)
-- [x] Audio: SDAT wave archives decoded to PCM (PCM8/PCM16/IMA-ADPCM) and played through SDL3 (`--play-sound`, `--extract-wav`) — *sampled waveforms; sequenced music not yet*
+- [x] Audio: SDAT wave archives decoded to PCM (PCM8/PCM16/IMA-ADPCM) and played through SDL3 (`--play-sound`, `--extract-wav`), plus a software synthesizer that renders SSEQ sequenced music (`--render-sequence`, `--play-sequence`)
 
 Still ahead: audio playback, game boot flow, overlays, and gameplay. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full milestone plan.

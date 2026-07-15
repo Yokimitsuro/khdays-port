@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -29,6 +30,29 @@ struct Sdat;
 
 // Open and index an SDAT sound archive. Throws std::runtime_error on failure.
 std::shared_ptr<Sdat> open_sdat(const std::filesystem::path& path);
+
+// A sequence (SSEQ) entry: a pointer to its bytecode plus the bank it uses.
+struct SdatSequence final {
+    const std::uint8_t* data = nullptr;
+    std::size_t size = 0;
+    int bank = -1;
+    std::uint8_t volume = 127;
+};
+
+// A bank (SBNK) entry: a pointer to its instrument table plus the up-to-four
+// wave archives it draws samples from (-1 = unused).
+struct SdatBank final {
+    const std::uint8_t* data = nullptr;
+    std::size_t size = 0;
+    std::array<int, 4> wave_archives{-1, -1, -1, -1};
+};
+
+// Number of sequences, and access to one.
+std::size_t sdat_sequence_count(const Sdat& sdat);
+SdatSequence sdat_sequence(const Sdat& sdat, std::size_t index);
+
+// Access a bank by index.
+SdatBank sdat_bank(const Sdat& sdat, std::size_t index);
 
 // Number of wave archives (SWAR) in the SDAT.
 std::size_t sdat_wave_archive_count(const Sdat& sdat);
