@@ -149,9 +149,13 @@ see it in the running native game without touching Nintendo DS formats.
 
 ## Phase 4 — Core game flow
 
-Port or replace the minimum required systems for:
+The DS backbone (`main` @0x02000bcc → frame loop → scene/task framework) is
+traced and named in khdays-decomp; the port reproduces the *flow* natively (DS
+hardware init, VBlank sync, and overlay loading are the platform layer's job,
+not ported). Port or replace the minimum required systems for:
 
-- startup;
+- startup; *(skeleton — `khdays::game::Game::boot` mirrors BootTask_Construct
+  (fresh boot → the logo scene), then runs the frame loop; `--game-demo`.)*
 - memory arenas;
 - archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
   path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted
@@ -159,8 +163,12 @@ Port or replace the minimum required systems for:
   decompressed, and raw NitroFS views; `--vfs-resolve`. Container-by-index
   access is a later refinement.)*
 - overlay/module registration;
-- task scheduling;
-- scene transitions;
+- task scheduling; *(done — `khdays::game::TaskQueue` is the neutral per-frame
+  task queue mirroring FrameStep_UpdateTaskQueue.)*
+- scene transitions; *(skeleton — `khdays::game::SceneManager` holds the current
+  scene, applies pending transitions, and drives update/render per frame,
+  mirroring the DS scene id / poll-alive / transition step. Real per-scene logic
+  is filled in as khdays-decomp names each scene.)*
 - save data abstraction.
 
 **Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly.

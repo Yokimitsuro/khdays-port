@@ -145,6 +145,31 @@ endif()
 
 khdays_enable_sanitizers(khdays-resource)
 
+# The game-flow state machine (scenes/tasks/frame loop). Pure logic — no DS
+# formats, no platform deps — so gameplay code depends only on this and the
+# neutral resource layer.
+add_library(
+    khdays-game
+    STATIC
+        src/game/scene.cpp
+        src/game/task.cpp
+        src/game/game.cpp
+)
+
+target_include_directories(
+    khdays-game
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+if(MSVC)
+    target_compile_options(khdays-game PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(khdays-game PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+khdays_enable_sanitizers(khdays-game)
+
 add_executable(
     khdays-port
     src/main.cpp
@@ -169,6 +194,7 @@ target_link_libraries(
     khdays-port
     PRIVATE
         khdays-resource
+        khdays-game
         SDL3::SDL3
 )
 
@@ -271,6 +297,17 @@ if(BUILD_TESTING)
             khdays-resource
     )
 
+    add_executable(
+        khdays-game-test
+        tests/cpp/test_game.cpp
+    )
+
+    target_link_libraries(
+        khdays-game-test
+        PRIVATE
+            khdays-game
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -280,6 +317,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-graphics2d-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-font-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -289,6 +327,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-graphics2d-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-font-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -299,6 +338,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-graphics2d-test)
     khdays_enable_sanitizers(khdays-font-test)
     khdays_enable_sanitizers(khdays-vfs-test)
+    khdays_enable_sanitizers(khdays-game-test)
 
     add_test(
         NAME khdays-port-version
@@ -343,5 +383,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-vfs
         COMMAND khdays-vfs-test
+    )
+
+    add_test(
+        NAME khdays-game-flow
+        COMMAND khdays-game-test
     )
 endif()

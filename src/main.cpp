@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@
 #include "khdays/assets/message.h"
 #include "khdays/assets/sdat.h"
 #include "khdays/assets/sequence.h"
+#include "khdays/game/game.h"
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
@@ -29,6 +31,64 @@
 #endif
 
 namespace {
+
+// Placeholder scenes for the --game-demo: they only log, standing in for the
+// real boot/logo and title scenes until khdays-decomp names their logic. They
+// exercise the same scene/task framework the game will use.
+class DemoLogoScene final : public khdays::game::Scene {
+public:
+    void update(khdays::game::SceneManager& manager) override {
+        ++frames_;
+        std::cout << "  [logo] frame " << frames_ << '\n';
+        if (frames_ == 3) {
+            std::cout << "  [logo] done -> requesting title\n";
+            manager.change_scene(khdays::game::kSceneContinue);
+        }
+    }
+
+private:
+    int frames_ = 0;
+};
+
+class DemoTitleScene final : public khdays::game::Scene {
+public:
+    void update(khdays::game::SceneManager&) override {
+        ++frames_;
+        std::cout << "  [title] frame " << frames_ << '\n';
+    }
+
+private:
+    int frames_ = 0;
+};
+
+int run_game_demo() {
+    khdays::game::Game game;
+    game.scenes().on_scene_entered([](khdays::game::SceneId id, int arg) {
+        std::cout << "== enter scene " << id << " (arg " << arg << ") ==\n";
+    });
+    game.scenes().register_scene(
+        khdays::game::kSceneBootLogo,
+        [] { return std::make_unique<DemoLogoScene>(); });
+    game.scenes().register_scene(
+        khdays::game::kSceneContinue,
+        [] { return std::make_unique<DemoTitleScene>(); });
+
+    // A background task that ticks for a few frames alongside the scenes.
+    int ticks = 0;
+    game.tasks().add([&ticks] {
+        std::cout << "  (task tick " << ++ticks << ")\n";
+        return ticks < 4;
+    });
+
+    std::cout << "boot (fresh) ...\n";
+    game.boot(0);
+    for (int i = 0; i < 8; ++i) {
+        game.step();
+    }
+    std::cout << "ran " << game.frame() << " frames; final scene "
+              << game.scenes().current_id() << '\n';
+    return EXIT_SUCCESS;
+}
 
 void print_version() {
     std::cout
@@ -47,6 +107,7 @@ void print_help() {
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
+        << "  khdays-port --game-demo\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
         << "  khdays-port --render-text NFTR TEXT OUT.bmp\n"
@@ -69,6 +130,7 @@ void print_help() {
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
+        << "  --game-demo         Run the scene/task frame loop with placeholder scenes.\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
         << "  --render-text NFTR TEXT OUT.bmp  Render TEXT with an NFTR font to BMP.\n"
@@ -211,6 +273,10 @@ int main(int argc, char* argv[]) {
                 std::cerr << "ERROR: " << error.what() << '\n';
                 return EXIT_FAILURE;
             }
+        }
+
+        if (first == "--game-demo") {
+            return run_game_demo();
         }
 
         if (first == "--vfs-resolve") {
