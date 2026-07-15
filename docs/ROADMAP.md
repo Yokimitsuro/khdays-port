@@ -69,6 +69,7 @@ Implement isolated tools or debug modes for:
 - models and skeletons; *(done — MDL0 decode with bones and skinning to a
   neutral, animation-ready mesh, validated against apicula)*
 - a native 3D renderer that draws decoded models with their textures;
+  *(done — SDL3 GPU renderer, depth-tested, per-material TEX0 textures)*
 - animations (NSBCA), re-posing the palette per frame;
 - maps;
 - message data;
@@ -76,6 +77,29 @@ Implement isolated tools or debug modes for:
 
 **Exit condition:** a real model loads from user-generated data and renders,
 textured and animated, in the native window.
+
+## Modding & content pipeline (decomp-independent)
+
+A core reason to build a native port is first-class modding: because the runtime
+already decodes assets to neutral, open forms (neutral mesh with a skinning
+palette, RGBA textures), replacing content can be a supported feature instead of
+byte hacking. These tools operate only on the user's own data and user-created
+mods — they never distribute copyrighted assets.
+
+- **Open-format export** (extract to edit): OBJ *(done)* → glTF with skeleton and
+  skinning, plus PNG texture dumps.
+- **Asset-override loader:** the runtime resolves each asset through a search
+  path (`mods/…` before the extracted DS asset). This is the foundation. First
+  concrete step: texture override via `mods/textures/<name>.png`.
+- **Import:** load glTF / PNG into the neutral mesh and textures at runtime.
+- **Hot-reload:** reload overridden assets on file change for fast iteration.
+- **In-app asset browser:** list, preview, and swap assets from a debug overlay.
+- **Mod packaging and load order** (later): a manifest plus multi-mod handling.
+- **Enhancements as mods:** HD textures, widescreen, and other quality-of-life
+  options enabled by the clean runtime.
+
+**Exit condition:** a user can drop a replacement asset into a mods folder and
+see it in the running native game without touching Nintendo DS formats.
 
 ## Phase 4 — Core game flow
 
