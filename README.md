@@ -3,7 +3,7 @@
 Experimental native PC runtime and source port for **Kingdom Hearts 358/2 Days**, developed alongside [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp).
 
 > [!WARNING]
-> This project is in the bootstrap stage. It is **not playable** and does not currently boot the game.
+> This project is in early development. The native asset pipeline (textures, models, animation, text) works, but it is **not playable** and does not yet boot the game.
 
 > [!IMPORTANT]
 > This repository does not contain a ROM, game assets, audio, video, text dumps, proprietary SDK files, or copyrighted game binaries. Users will be required to provide their own legally obtained copy of the game.
@@ -34,7 +34,18 @@ The port should consume a pinned revision of the decompilation rather than turni
 - [x] Load the first game-owned resource from user-provided data
 - [x] Port and test the first self-contained game subsystem
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the proposed milestones.
+**What works now (native asset pipeline)**
+
+- [x] TEX0 textures decoded to RGBA
+- [x] MDL0 models decoded with bones and skinning to a neutral, animation-ready mesh
+- [x] NSBCA skeletal animation, GPU-skinned per frame
+- [x] SDL3 GPU renderer (depth-tested, textured, orbit camera) for models and environment maps
+- [x] Modding: texture and rigged-model overrides via a `mods/` folder (see [Modding](#modding))
+- [x] Message text extracted from the `db_<lang>.p2` container (`--message-info` / `--dump-messages`)
+- [x] SDAT audio inventory (sequences, banks, wave archives) — *metadata only; no playback yet*
+
+Still ahead: audio playback, game boot flow, overlays, and gameplay. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for the full milestone plan.
 
 ## Documentation
 
