@@ -228,21 +228,35 @@ std::vector<std::uint8_t> extract_p2_subfile(
     }
     const auto base = static_cast<std::size_t>(read_u32(data, 0x0CU));
     constexpr std::size_t sizes_offset = 0x10U;
-    const std::size_t desc_offset = sizes_offset + ((count + 1U) / 2U) * 4U;
 
-    const auto sector = read_u16(data, sizes_offset + index * 2U);
-    const auto desc = read_u32(data, desc_offset + index * 4U);
-    const bool compressed = (desc & 0x80000000U) != 0U;
-    const auto sub_size = static_cast<std::size_t>(desc & 0x7FFFFFFFU);
+    // Sub-file bytes span from this entry's start sector to the next sub-file's
+    // start sector (or the container end). This is robust across P2 variants:
+    // the descriptor's size/compression field is encoded differently in the
+    // localized containers (e.g. ttl_es.p2), so it is not relied upon.
     const std::size_t start =
-        base + static_cast<std::size_t>(sector) * 0x200U;
-    if (start + sub_size > data.size()) {
+        base + static_cast<std::size_t>(read_u16(data, sizes_offset + index * 2U))
+                   * 0x200U;
+    std::size_t end = data.size();
+    for (std::size_t j = 0; j < count; ++j) {
+        const std::size_t s = base
+            + static_cast<std::size_t>(read_u16(data, sizes_offset + j * 2U))
+                  * 0x200U;
+        if (s > start && s < end) {
+            end = s;
+        }
+    }
+    if (start >= end || end > data.size()) {
         throw std::runtime_error("P2 sub-file exceeds the container");
     }
-    ByteVector raw{
-        data.begin() + static_cast<std::ptrdiff_t>(start),
-        data.begin() + static_cast<std::ptrdiff_t>(start + sub_size)};
-    return compressed ? lz_decompress(raw) : raw;
+    ByteVector raw{data.begin() + static_cast<std::ptrdiff_t>(start),
+                   data.begin() + static_cast<std::ptrdiff_t>(end)};
+    // Decompress if the sub-file is an LZ10/LZ11 blob (Nintendo header byte
+    // 0x10/0x11); Nitro resource magics all start with a letter, so there is no
+    // ambiguity.
+    if (!raw.empty() && (raw[0] == 0x10U || raw[0] == 0x11U)) {
+        return lz_decompress(raw);
+    }
+    return raw;
 }
 
 std::vector<std::uint8_t> extract_p2_subfile(

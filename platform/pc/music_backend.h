@@ -44,13 +44,16 @@ private:
     void render_track(std::string track, std::uint64_t generation);
 
     std::shared_ptr<khdays::assets::Sdat> sdat_;
-    std::unordered_map<std::string, std::size_t> track_index_;
+    std::unordered_map<std::string, std::size_t> track_index_;   // SSEQ
+    std::unordered_map<std::string, std::size_t> stream_index_;  // STRM
     SDL_AudioStream* stream_ = nullptr;
     bool audio_inited_ = false;
 
-    std::mutex mutex_;               // guards pcm_/pos_/ready_
-    std::vector<std::int16_t> pcm_;  // interleaved stereo, looped as a whole
+    std::mutex mutex_;               // guards pcm_/pos_/ready_/loop fields
+    std::vector<std::int16_t> pcm_;  // interleaved stereo
     std::size_t pos_ = 0;
+    std::size_t loop_start_ = 0;     // sample index to loop back to
+    bool loops_ = true;
     bool ready_ = false;
 
     std::string current_;  // track currently requested (main thread only)

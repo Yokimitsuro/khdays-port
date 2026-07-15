@@ -381,6 +381,17 @@ public:
         return h;
     }
 
+    // Drop all cached textures. The cache is keyed by the source pixel pointer,
+    // which is only unique while a scene's images stay alive; across a scene
+    // change a freed buffer can be reallocated at the same address, so the cache
+    // must be invalidated on transition or it would serve the old scene's image.
+    void clear_cache() {
+        for (auto& [key, texture] : cache_) {
+            SDL_DestroyTexture(texture);
+        }
+        cache_.clear();
+    }
+
 private:
     SDL_Texture* upload(const std::uint8_t* rgba, int width, int height) {
         const auto it = cache_.find(rgba);
@@ -464,6 +475,7 @@ int run_game(khdays::game::Game& game) {
 
     std::uint16_t previous = 0;
     bool running = true;
+    khdays::game::SceneId last_scene = game.scenes().current_id();
 
     // Run until a scene ends the flow (no current scene) or the window closes.
     while (running && game.scenes().has_scene()) {
@@ -486,6 +498,12 @@ int run_game(khdays::game::Game& game) {
 
         game.scenes().set_input(input);
         game.step();
+        // A scene transition frees the old scene's images; drop cached textures
+        // so the new scene's (possibly same-address) buffers upload fresh.
+        if (game.scenes().current_id() != last_scene) {
+            frame_renderer.clear_cache();
+            last_scene = game.scenes().current_id();
+        }
         game.render(frame_renderer);
         SDL_RenderPresent(renderer);
         SDL_Delay(16);

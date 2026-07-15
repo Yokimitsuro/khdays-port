@@ -5,21 +5,23 @@
 namespace khdays::game::scenes {
 
 namespace {
-constexpr char kTitleFont[] = "text/font_eu_10all.nftr";
-constexpr char kTitleTheme[] = "ThemeXIII";  // SDAT sequence for the title BGM
-constexpr int kOptionBarRed = 2;   // res.p2 pack 1: red (selected) option bar
-constexpr int kOptionBarGray = 6;  // res.p2 pack 1: gray (unselected) option bar
+constexpr char kTitleTheme[] = "Title_BGM_PCM8";  // the title BGM (SDAT stream)
+// Localized option textures in ttl_<lang>.p2 sub-file 1 (red = selected):
+// cell 4/5 = MODO HISTORIA, cell 6/7 = MODO MISION.
+constexpr int kBtnStorySel = 4;
+constexpr int kBtnStoryOff = 5;
+constexpr int kBtnMissionSel = 6;
+constexpr int kBtnMissionOff = 7;
 }  // namespace
 
 void TitleScene::on_enter(SceneManager& manager) {
     // The title's two screens live in ttl.p2 sub-file 1 (a D2KP background pack):
     // screen 7 / tiles 3 / palette 0 = the KINGDOM HEARTS logo, and screen 3 /
-    // tiles 1 / palette 1 = the character illustration.
+    // tiles 1 / palette 1 = the character illustration. The MODO HISTORIA / MODO
+    // MISION options are the real localized OBJ textures from ttl_<lang>.p2.
     logo_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 7, 3, 0);
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
-    bars_ = khdays::resource::load_sprite_set("UI/mlt/res.p2", 1);
-    label_story_ = khdays::resource::render_ui_text(kTitleFont, u"MODO HISTORIA");
-    label_mission_ = khdays::resource::render_ui_text(kTitleFont, u"MODO MISION");
+    buttons_ = khdays::resource::load_sprite_set("ttl/ttl_es.p2", 1);
     if (auto* music = manager.music()) {
         music->play_music(kTitleTheme);
     }
@@ -54,23 +56,19 @@ void TitleScene::render(SceneManager&, Renderer& r) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true);
     }
 
-    // MODO HISTORIA / MODO MISION on the bottom screen: the selected option on a
-    // red bar, the other on a gray bar, with the label text on top.
-    const khdays::assets::DecodedTexture* labels[2] = {
-        label_story_ ? &*label_story_ : nullptr,
-        label_mission_ ? &*label_mission_ : nullptr};
-    for (int i = 0; i < 2; ++i) {
-        const int bar_y = 150 + i * 20;
-        if (bars_) {
-            const int cell = (i == selected_) ? kOptionBarRed : kOptionBarGray;
+    // MODO HISTORIA / MODO MISION on the bottom screen: the real localized OBJ
+    // textures, red for the selected option and gray for the other.
+    if (buttons_) {
+        const int cells[2] = {
+            selected_ == 0 ? kBtnStorySel : kBtnStoryOff,
+            selected_ == 1 ? kBtnMissionSel : kBtnMissionOff};
+        for (int i = 0; i < 2; ++i) {
+            const int cell = cells[i];
             if (cell >= 0
-                && static_cast<std::size_t>(cell) < bars_->cells.size()) {
-                draw_overlay(r, layout, bars_->cells[cell], 4, bar_y,
+                && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
+                draw_overlay(r, layout, buttons_->cells[cell], 2, 150 + i * 22,
                              /*bottom=*/true);
             }
-        }
-        if (labels[i] != nullptr) {
-            draw_overlay(r, layout, *labels[i], 24, bar_y + 4, /*bottom=*/true);
         }
     }
 

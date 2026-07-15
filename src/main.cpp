@@ -342,6 +342,10 @@ int main(int argc, char* argv[]) {
                 return std::make_unique<khdays::game::scenes::TitleScene>();
             });
             manager.start(khdays::game::kSceneTitle);
+            for (int i = 0; i < 30; ++i) {  // settle past the fade-in
+                manager.set_input(khdays::game::Input{});
+                manager.step();
+            }
             for (int i = 0; i < steps; ++i) {
                 khdays::game::Input in;
                 in.pressed = static_cast<std::uint16_t>(khdays::game::Button::Down);
@@ -666,6 +670,38 @@ int main(int argc, char* argv[]) {
                                       / audio.sample_rate
                                   : 0.0)
                           << " s), wrote " << argv[5] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--extract-stream") {
+            if (argc != 5) {
+                std::cerr << "ERROR: --extract-stream requires SDAT, stream "
+                             "index, and an output WAV\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto sdat =
+                    khdays::assets::open_sdat(std::filesystem::path{argv[2]});
+                const auto index = static_cast<std::size_t>(std::stoul(argv[3]));
+                const auto audio = khdays::assets::decode_stream(*sdat, index);
+                const auto wav = khdays::assets::to_wav(audio);
+                std::ofstream out{argv[4], std::ios::binary};
+                if (!out) {
+                    std::cerr << "ERROR: cannot write " << argv[4] << '\n';
+                    return EXIT_FAILURE;
+                }
+                out.write(reinterpret_cast<const char*>(wav.data()),
+                          static_cast<std::streamsize>(wav.size()));
+                std::cout << "Decoded stream " << index << " -> "
+                          << audio.samples.size() / (audio.channels ? audio.channels : 1)
+                          << " frames, " << audio.channels << " ch @ "
+                          << audio.sample_rate << " Hz, loop="
+                          << (audio.loops ? "yes" : "no") << " wrote " << argv[4]
+                          << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

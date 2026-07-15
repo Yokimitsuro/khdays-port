@@ -54,6 +54,12 @@ SdatSequence sdat_sequence(const Sdat& sdat, std::size_t index);
 // Access a bank by index.
 SdatBank sdat_bank(const Sdat& sdat, std::size_t index);
 
+// Number of streams (STRM) in the SDAT, and decode one to PCM16. A stream is a
+// pre-recorded track (PCM8/PCM16/IMA-ADPCM, mono or stereo, in interleaved
+// blocks) — e.g. the title BGM. Loop info comes from the STRM header.
+std::size_t sdat_stream_count(const Sdat& sdat);
+DecodedAudio decode_stream(const Sdat& sdat, std::size_t stream_index);
+
 // Number of wave archives (SWAR) in the SDAT.
 std::size_t sdat_wave_archive_count(const Sdat& sdat);
 

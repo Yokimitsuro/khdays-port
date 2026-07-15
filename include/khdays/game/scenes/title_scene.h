@@ -22,9 +22,7 @@ public:
 private:
     std::optional<khdays::assets::DecodedTexture> logo_;          // top screen
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
-    std::optional<khdays::resource::SpriteSet> bars_;             // option bars
-    std::optional<khdays::assets::DecodedTexture> label_story_;
-    std::optional<khdays::assets::DecodedTexture> label_mission_;
+    std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
     int selected_ = 0;  // 0 = MODO HISTORIA, 1 = MODO MISION
     int frame_ = 0;     // for the fade-in
 };

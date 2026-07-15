@@ -23,6 +23,11 @@ SdlMusicPlayer::SdlMusicPlayer(const std::filesystem::path& sdat_path) {
                 track_index_.emplace(inventory.sequences[i], i);
             }
         }
+        for (std::size_t i = 0; i < inventory.streams.size(); ++i) {
+            if (!inventory.streams[i].empty()) {
+                stream_index_.emplace(inventory.streams[i], i);
+            }
+        }
     } catch (const std::exception& error) {
         std::cerr << "music: SDAT unavailable (" << error.what()
                   << "); running silent\n";
@@ -82,7 +87,8 @@ void SdlMusicPlayer::play_music(const std::string_view track) {
         pcm_.clear();
         pos_ = 0;
     }
-    if (track_index_.find(current_) == track_index_.end()) {
+    if (track_index_.find(current_) == track_index_.end()
+        && stream_index_.find(current_) == stream_index_.end()) {
         std::cerr << "music: no track named '" << current_ << "'\n";
         return;  // unknown track: stay silent
     }
@@ -106,18 +112,33 @@ void SdlMusicPlayer::render_track(std::string track,
                                   const std::uint64_t generation) {
     khdays::assets::DecodedAudio audio;
     try {
-        const auto it = track_index_.find(track);
-        if (it == track_index_.end()) {
-            return;
+        const auto stream = stream_index_.find(track);
+        if (stream != stream_index_.end()) {
+            // A pre-recorded STRM track (e.g. the title BGM): decode it whole.
+            audio = khdays::assets::decode_stream(*sdat_, stream->second);
+        } else {
+            // An SSEQ sequence: synthesize it (rendered whole and looped).
+            audio = khdays::resource::render_music(
+                *sdat_, track_index_.at(track),
+                static_cast<std::uint32_t>(kSampleRate), kLoopSeconds);
         }
-        audio = khdays::resource::render_music(*sdat_, it->second,
-                                               static_cast<std::uint32_t>(kSampleRate),
-                                               kLoopSeconds);
     } catch (const std::exception& error) {
         std::cerr << "music: render failed for '" << track << "': "
                   << error.what() << '\n';
         return;
     }
+    const std::uint16_t channels = audio.channels == 0U ? 2U : audio.channels;
+    // The output device is stereo; expand a mono track so channels stay aligned.
+    if (channels == 1U) {
+        std::vector<std::int16_t> stereo;
+        stereo.reserve(audio.samples.size() * 2U);
+        for (const auto s : audio.samples) {
+            stereo.push_back(s);
+            stereo.push_back(s);
+        }
+        audio.samples = std::move(stereo);
+    }
+    const std::uint16_t out_channels = channels == 1U ? 2U : channels;
     // Commit only if no newer request arrived while we were rendering.
     std::lock_guard<std::mutex> lock(mutex_);
     if (generation != generation_.load()) {
@@ -125,6 +146,12 @@ void SdlMusicPlayer::render_track(std::string track,
     }
     pcm_ = std::move(audio.samples);
     pos_ = 0;
+    loops_ = audio.loops;
+    // loop_start is in sample frames; pcm_ is interleaved by channel.
+    loop_start_ = static_cast<std::size_t>(audio.loop_start) * out_channels;
+    if (loop_start_ >= pcm_.size()) {
+        loop_start_ = 0;
+    }
     ready_ = !pcm_.empty();
 }
 
@@ -142,10 +169,13 @@ void SDLCALL SdlMusicPlayer::feed(void* userdata, SDL_AudioStream* stream,
         std::lock_guard<std::mutex> lock(self->mutex_);
         if (self->ready_ && !self->pcm_.empty()) {
             for (std::size_t i = 0; i < want_samples; ++i) {
-                chunk[i] = self->pcm_[self->pos_];
-                if (++self->pos_ >= self->pcm_.size()) {
-                    self->pos_ = 0;  // loop the whole track
+                if (self->pos_ >= self->pcm_.size()) {
+                    if (!self->loops_) {
+                        break;  // one-shot finished: rest is silence
+                    }
+                    self->pos_ = self->loop_start_;  // loop from the loop point
                 }
+                chunk[i] = self->pcm_[self->pos_++];
             }
         }
     }

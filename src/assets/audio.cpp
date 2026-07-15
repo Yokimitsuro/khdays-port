@@ -1,5 +1,6 @@
 #include "khdays/assets/audio.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -181,6 +182,8 @@ struct Sdat final {
         std::array<int, 4> wave_archives{-1, -1, -1, -1};
     };
     std::vector<BankInfo> banks;
+
+    std::vector<std::uint32_t> stream_file_ids;  // per stream (STRM)
 };
 
 std::shared_ptr<Sdat> open_sdat(const std::filesystem::path& path) {
@@ -259,7 +262,109 @@ std::shared_ptr<Sdat> open_sdat(const std::filesystem::path& path) {
         }
         sdat->banks.push_back(bank);
     }
+
+    // INFO category 7 = streams (STRM): each entry begins with a u16 file id.
+    const auto stream_record = category_record(7);
+    if (stream_record + 4U <= d.size()) {
+        const auto stream_count = read_u32(d, stream_record);
+        sdat->stream_file_ids.reserve(stream_count);
+        for (std::uint32_t i = 0U; i < stream_count; ++i) {
+            const auto entry_rel = read_u32(d, stream_record + 4U + i * 4U);
+            sdat->stream_file_ids.push_back(
+                entry_rel == 0U ? 0xFFFFFFFFU : read_u16(d, info_off + entry_rel));
+        }
+    }
     return sdat;
+}
+
+std::size_t sdat_stream_count(const Sdat& sdat) {
+    return sdat.stream_file_ids.size();
+}
+
+DecodedAudio decode_stream(const Sdat& sdat, const std::size_t index) {
+    if (index >= sdat.stream_file_ids.size()) {
+        throw std::runtime_error("stream index out of range");
+    }
+    const auto file_id = sdat.stream_file_ids[index];
+    if (file_id >= sdat.fat.size()) {
+        throw std::runtime_error("stream has no file");
+    }
+    const auto& [offset, size] = sdat.fat[file_id];
+    const auto& d = sdat.data;
+    if (static_cast<std::size_t>(offset) + size > d.size() || size < 0x68U
+        || d[offset] != 'S' || d[offset + 1U] != 'T' || d[offset + 2U] != 'R'
+        || d[offset + 3U] != 'M') {
+        throw std::runtime_error("stream is not a valid STRM");
+    }
+    const std::size_t s = offset;  // STRM base
+    // HEAD block fields (see docs/AUDIO or the format notes).
+    const auto format = d[s + 0x18U];
+    const auto loop_flag = d[s + 0x19U];
+    const int channels = std::max(1, static_cast<int>(read_u16(d, s + 0x1AU)));
+    const auto rate = static_cast<std::uint32_t>(read_u16(d, s + 0x1CU));
+    const auto loop_start = read_u32(d, s + 0x20U);
+    const auto num_samples = read_u32(d, s + 0x24U);
+    const auto data_offset = read_u32(d, s + 0x28U);
+    const auto num_blocks = read_u32(d, s + 0x2CU);
+    const auto block_len = read_u32(d, s + 0x30U);
+    const auto last_block_len = read_u32(d, s + 0x38U);
+    const std::size_t data_start = s + data_offset;
+
+    // Decode each channel (walking its per-block runs), then interleave.
+    std::vector<std::vector<std::int16_t>> per_channel(
+        static_cast<std::size_t>(channels));
+    for (int c = 0; c < channels; ++c) {
+        auto& out = per_channel[static_cast<std::size_t>(c)];
+        int predictor = 0;
+        int adpcm_index = 0;
+        for (std::uint32_t b = 0U; b < num_blocks; ++b) {
+            const bool last = b == num_blocks - 1U;
+            const std::size_t len = last ? last_block_len : block_len;
+            const std::size_t base = data_start
+                + static_cast<std::size_t>(b) * channels * block_len
+                + static_cast<std::size_t>(c) * len;
+            if (base + len > d.size()) {
+                break;
+            }
+            if (format == 0U) {  // PCM8
+                for (std::size_t i = 0U; i < len; ++i) {
+                    out.push_back(static_cast<std::int16_t>(
+                        static_cast<int>(static_cast<std::int8_t>(d[base + i])) * 256));
+                }
+            } else if (format == 1U) {  // PCM16
+                for (std::size_t i = 0U; i + 1U < len; i += 2U) {
+                    out.push_back(static_cast<std::int16_t>(
+                        d[base + i] | (d[base + i + 1U] << 8U)));
+                }
+            } else {  // IMA-ADPCM: each block restarts with a 4-byte header
+                if (len < 4U) {
+                    continue;
+                }
+                predictor = static_cast<std::int16_t>(d[base] | (d[base + 1U] << 8U));
+                adpcm_index = clamp_int(d[base + 2U], 0, 88);
+                for (std::size_t i = 4U; i < len; ++i) {
+                    const auto byte = d[base + i];
+                    out.push_back(decode_adpcm_nibble(predictor, adpcm_index, byte & 0x0FU));
+                    out.push_back(decode_adpcm_nibble(predictor, adpcm_index, byte >> 4U));
+                }
+            }
+        }
+    }
+
+    DecodedAudio audio;
+    audio.sample_rate = rate;
+    audio.channels = static_cast<std::uint16_t>(channels);
+    audio.loops = loop_flag != 0U;
+    audio.loop_start = loop_start;
+    const std::size_t frames = per_channel.empty() ? 0U
+        : std::min(static_cast<std::size_t>(num_samples), per_channel[0].size());
+    audio.samples.reserve(frames * static_cast<std::size_t>(channels));
+    for (std::size_t f = 0U; f < frames; ++f) {
+        for (int c = 0; c < channels; ++c) {
+            audio.samples.push_back(per_channel[static_cast<std::size_t>(c)][f]);
+        }
+    }
+    return audio;
 }
 
 std::size_t sdat_sequence_count(const Sdat& sdat) {
