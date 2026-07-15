@@ -197,6 +197,80 @@ ResourceView find_nitro_resource(
 
 namespace {
 
+// Read a little-endian u32 straight from a raw pointer + offset (bounds-checked
+// by the caller).
+std::uint32_t raw_u32(const std::uint8_t* p, const std::size_t o) {
+    return static_cast<std::uint32_t>(p[o])
+        | (static_cast<std::uint32_t>(p[o + 1U]) << 8U)
+        | (static_cast<std::uint32_t>(p[o + 2U]) << 16U)
+        | (static_cast<std::uint32_t>(p[o + 3U]) << 24U);
+}
+
+// Route a resource into the pack by its own Nitro magic.
+void classify_pk2d_resource(Pk2dPack& out, const ResourceView view) {
+    if (view.size < 4U) {
+        return;
+    }
+    const char m0 = static_cast<char>(view.data[0]);
+    const char m1 = static_cast<char>(view.data[1]);
+    const char m2 = static_cast<char>(view.data[2]);
+    const char m3 = static_cast<char>(view.data[3]);
+    const auto is = [&](const char* magic) {
+        return m0 == magic[0] && m1 == magic[1] && m2 == magic[2] && m3 == magic[3];
+    };
+    if (is("RLCN")) {
+        out.palettes.push_back(view);
+    } else if (is("RGCN")) {
+        out.tiles.push_back(view);
+    } else if (is("RCSN")) {
+        out.screens.push_back(view);
+    } else if (is("RECN")) {
+        out.cells.push_back(view);
+    } else if (is("RNAN")) {
+        out.anims.push_back(view);
+    }
+}
+
+}  // namespace
+
+Pk2dPack parse_pk2d(const std::uint8_t* data, const std::size_t size) {
+    Pk2dPack out;
+    if (data == nullptr || size < 0x28U
+        || data[0] != 'D' || data[1] != '2' || data[2] != 'K' || data[3] != 'P') {
+        return out;
+    }
+    // Fixed type-section pointer slots live at header +0x08..+0x24. Each points
+    // at a section: {u32 count; u32 offsets[count]; u32 sizes[count]}. We read
+    // every non-empty slot and classify each listed resource by its own magic,
+    // so the slot→type assignment does not need to be hard-coded.
+    for (std::size_t slot = 0x08U; slot + 4U <= 0x28U; slot += 4U) {
+        const std::uint32_t section = raw_u32(data, slot);
+        if (section == 0xFFFFFFFFU || section == 0U
+            || static_cast<std::size_t>(section) + 4U > size) {
+            continue;
+        }
+        const std::uint32_t count = raw_u32(data, section);
+        if (count == 0U || count > 0x1000U) {
+            continue;
+        }
+        const std::size_t offsets = static_cast<std::size_t>(section) + 4U;
+        const std::size_t sizes = offsets + static_cast<std::size_t>(count) * 4U;
+        if (sizes + static_cast<std::size_t>(count) * 4U > size) {
+            continue;
+        }
+        for (std::uint32_t i = 0U; i < count; ++i) {
+            const std::size_t off = raw_u32(data, offsets + i * 4U);
+            const std::size_t len = raw_u32(data, sizes + i * 4U);
+            if (off < size && len >= 4U && off + len <= size) {
+                classify_pk2d_resource(out, ResourceView{data + off, len});
+            }
+        }
+    }
+    return out;
+}
+
+namespace {
+
 // Look up a palette colour, guarding out-of-range indices.
 std::array<std::uint8_t, 4> palette_color(
     const Palette2D& palette, const int sub, const int index) {

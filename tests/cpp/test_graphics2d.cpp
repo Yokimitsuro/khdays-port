@@ -113,6 +113,60 @@ int main() {
         expect(bmp.size() == 54U + 8U * 8U * 4U, "bmp size");
         expect(bmp[0] == 'B' && bmp[1] == 'M', "bmp magic");
 
+        // parse_pk2d: a synthetic D2KP with type-section pointers at +0x08
+        // (NCLR), +0x0C (NCGR) and +0x14 (NCER), each a {count, offsets[],
+        // sizes[]} section listing one resource. Classification is by the
+        // resource's own magic, so a resource lands in the right vector even
+        // though the header slots do not encode the type directly.
+        {
+            const auto put_magic = [](Bytes& b, std::size_t o, const char* m) {
+                for (int i = 0; i < 4; ++i) {
+                    b.at(o + static_cast<std::size_t>(i)) =
+                        static_cast<std::uint8_t>(m[i]);
+                }
+            };
+            Bytes pk(0x130U, 0xFFU);  // 0xFF fill = "empty slot" for unused ptrs
+            put_magic(pk, 0x00U, "D2KP");
+            set_u32(pk, 0x04U, 0U);
+            set_u32(pk, 0x08U, 0x28U);  // NCLR section
+            set_u32(pk, 0x0CU, 0x34U);  // NCGR section
+            set_u32(pk, 0x10U, 0xFFFFFFFFU);
+            set_u32(pk, 0x14U, 0x40U);  // NCER section
+            set_u32(pk, 0x18U, 0xFFFFFFFFU);
+            set_u32(pk, 0x1CU, 0xFFFFFFFFU);
+            set_u32(pk, 0x20U, 0xFFFFFFFFU);
+            set_u32(pk, 0x24U, 0xFFFFFFFFU);
+            // Sections: {count=1, offset, size}
+            set_u32(pk, 0x28U, 1U);
+            set_u32(pk, 0x2CU, 0x100U);
+            set_u32(pk, 0x30U, 16U);
+            set_u32(pk, 0x34U, 1U);
+            set_u32(pk, 0x38U, 0x110U);
+            set_u32(pk, 0x3CU, 16U);
+            set_u32(pk, 0x40U, 1U);
+            set_u32(pk, 0x44U, 0x120U);
+            set_u32(pk, 0x48U, 16U);
+            put_magic(pk, 0x100U, "RLCN");
+            put_magic(pk, 0x110U, "RGCN");
+            put_magic(pk, 0x120U, "RECN");
+
+            const auto pack = khdays::assets::parse_pk2d(pk.data(), pk.size());
+            expect(pack.palettes.size() == 1U, "pk2d NCLR count");
+            expect(pack.tiles.size() == 1U, "pk2d NCGR count");
+            expect(pack.cells.size() == 1U, "pk2d NCER count");
+            expect(pack.screens.empty() && pack.anims.empty(), "pk2d empties");
+            expect(pack.palettes[0].data == pk.data() + 0x100U
+                       && pack.palettes[0].size == 16U,
+                   "pk2d NCLR view");
+
+            // A non-D2KP blob yields an all-empty pack.
+            Bytes junk(64U, 0U);
+            const auto none = khdays::assets::parse_pk2d(junk.data(), junk.size());
+            expect(none.palettes.empty() && none.tiles.empty()
+                       && none.cells.empty(),
+                   "pk2d rejects non-D2KP");
+        }
+
         for (const auto& p : temps) {
             std::filesystem::remove(p);
         }

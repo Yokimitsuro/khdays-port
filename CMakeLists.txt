@@ -133,6 +133,7 @@ add_library(
     khdays-resource
     STATIC
         src/resource/loader.cpp
+        src/resource/ui_content.cpp
         src/vfs/filesystem.cpp
 )
 
@@ -146,15 +147,20 @@ endif()
 
 khdays_enable_sanitizers(khdays-resource)
 
-# The game-flow state machine (scenes/tasks/frame loop). Pure logic — no DS
-# formats, no platform deps — so gameplay code depends only on this and the
-# neutral resource layer.
+# The game-flow state machine (scenes/tasks/frame loop) and the concrete game
+# scenes. Depends only on the neutral resource layer (never on DS formats or the
+# platform), so gameplay code draws through the Renderer and loads through
+# khdays-resource, which yields neutral forms.
 add_library(
     khdays-game
     STATIC
         src/game/scene.cpp
         src/game/object.cpp
         src/game/game.cpp
+        src/game/software_renderer.cpp
+        src/game/scenes/boot_logo_scene.cpp
+        src/game/scenes/title_scene.cpp
+        src/game/scenes/main_menu_scene.cpp
 )
 
 target_include_directories(
@@ -162,6 +168,8 @@ target_include_directories(
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
+
+target_link_libraries(khdays-game PUBLIC khdays-resource)
 
 if(MSVC)
     target_compile_options(khdays-game PRIVATE /W4 /permissive-)
@@ -177,6 +185,7 @@ add_executable(
     platform/pc/sdl_runtime.cpp
     platform/pc/gpu_renderer.cpp
     platform/pc/audio_backend.cpp
+    platform/pc/music_backend.cpp
 )
 
 target_include_directories(

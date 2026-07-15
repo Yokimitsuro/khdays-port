@@ -61,6 +61,26 @@ struct ResourceView final {
 ResourceView find_nitro_resource(
     const std::uint8_t* pack, std::size_t size, const char magic[4]);
 
+// A parsed D2KP ("PK2D") pack — the game's UI containers (e.g. the sub-files of
+// UI/mlt/res.p2). A D2KP is a typed bank: a small header points at per-type
+// sections ({count, offsets[], sizes[]}), each listing Nitro resources. Every
+// vector holds raw (already decompressed) resource bytes, indexed as the game
+// indexes that type; decode with decode_nclr/decode_ncgr/decode_nscr (and the
+// NCER/NANR decoders in cell.h).
+struct Pk2dPack final {
+    std::vector<ResourceView> palettes;  // NCLR (RLCN)
+    std::vector<ResourceView> tiles;     // NCGR (RGCN)
+    std::vector<ResourceView> screens;   // NSCR (RCSN)
+    std::vector<ResourceView> cells;     // NCER (RECN)
+    std::vector<ResourceView> anims;     // NANR (RNAN)
+};
+
+// Parse a D2KP pack (views point into `data`, which must outlive the result).
+// Resources are classified by their own magic, so a resource lands in the right
+// vector regardless of which header slot referenced it. Absent types stay empty;
+// a non-D2KP blob yields an all-empty pack.
+Pk2dPack parse_pk2d(const std::uint8_t* data, std::size_t size);
+
 // Lay every tile out into a single RGBA image (a tile sheet), `tiles_per_row`
 // wide, colored with sub-palette `palette_index`. Index 0 renders opaque here so
 // the sheet is easy to see.

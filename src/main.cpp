@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +23,10 @@
 #include "khdays/assets/sdat.h"
 #include "khdays/assets/sequence.h"
 #include "khdays/game/game.h"
+#include "khdays/game/scenes/boot_logo_scene.h"
+#include "khdays/game/scenes/main_menu_scene.h"
+#include "khdays/game/scenes/title_scene.h"
+#include "khdays/game/software_renderer.h"
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
@@ -61,121 +66,6 @@ public:
 
 private:
     int frames_ = 0;
-};
-
-// Render a string in the real game font (resolved through the VFS) to an RGBA
-// image, or nullopt if the font isn't available.
-std::optional<khdays::assets::DecodedTexture> render_game_text(
-    const std::u16string& text) {
-    const auto font_path = khdays::vfs::resolve("text/font_eu_10.nftr");
-    if (!font_path) {
-        return std::nullopt;
-    }
-    try {
-        const auto font = khdays::assets::decode_nftr(*font_path);
-        return khdays::assets::render_text(font, text);
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-}
-
-// Compose the real boot/publisher logo the game shows first: /ttl/ttl.p2 is a
-// P2 container whose sub-file 1 is a resource pack holding the logo screen's
-// NCLR palette + NCGR tiles + NSCR tilemap (this is exactly what the ov000 boot
-// scene loads). Returns nullopt if the data isn't available.
-std::optional<khdays::assets::DecodedTexture> load_boot_logo() {
-    try {
-        const auto container = khdays::vfs::read("ttl/ttl.p2");
-        const auto pack = khdays::assets::extract_p2_subfile(
-            container.data(), container.size(), 1);
-        const auto pal = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RLCN");
-        const auto chr = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RGCN");
-        const auto scr = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RCSN");
-        if (!pal || !chr || !scr) {
-            return std::nullopt;
-        }
-        const auto palette = khdays::assets::decode_nclr(pal.data, pal.size);
-        const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
-        const auto map = khdays::assets::decode_nscr(scr.data, scr.size);
-        return khdays::assets::compose_background(map, tiles, palette, false);
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-}
-
-// Draw an image centered, scaled by `scale`.
-void draw_centered(khdays::game::Renderer& r,
-                   const khdays::assets::DecodedTexture& image, int scale,
-                   int y_offset = 0) {
-    const int w = image.width * scale;
-    const int h = image.height * scale;
-    r.draw_image(image.rgba.data(), image.width, image.height,
-                 (r.width() - w) / 2, (r.height() - h) / 2 + y_offset, w, h);
-}
-
-// Windowed scenes for --game. Instead of flat colours they draw real game
-// assets — text rendered in the game's own NFTR font — so the boot → title flow
-// shows recreated content on screen. (The exact boot-logo composition still
-// awaits the decomp; this proves the pipeline end to end.)
-class WindowLogoScene final : public khdays::game::Scene {
-public:
-    void on_enter(khdays::game::SceneManager&) override {
-        logo_ = load_boot_logo();
-    }
-    void update(khdays::game::SceneManager& manager) override {
-        ++frames_;
-        const auto& in = manager.input();
-        if (in.just_pressed(khdays::game::Button::A)
-            || in.just_pressed(khdays::game::Button::Start)
-            || frames_ >= 180) {
-            manager.change_scene(khdays::game::kSceneTitle);
-        }
-    }
-    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
-        r.clear(khdays::game::Color{0, 0, 0, 255});
-        if (logo_) {
-            const int sw = r.width() / logo_->width;
-            const int sh = r.height() / logo_->height;
-            int scale = sw < sh ? sw : sh;
-            if (scale < 1) {
-                scale = 1;
-            }
-            draw_centered(r, *logo_, scale);
-        }
-    }
-
-private:
-    std::optional<khdays::assets::DecodedTexture> logo_;
-    int frames_ = 0;
-};
-
-class WindowTitleScene final : public khdays::game::Scene {
-public:
-    void on_enter(khdays::game::SceneManager&) override {
-        title_ = render_game_text(u"KINGDOM HEARTS");
-        subtitle_ = render_game_text(u"358/2 Days");
-        prompt_ = render_game_text(u"Press Start");
-    }
-    void render(khdays::game::SceneManager&, khdays::game::Renderer& r) override {
-        r.clear(khdays::game::Color{12, 20, 40, 255});
-        if (title_) {
-            draw_centered(r, *title_, 5, -70);
-        }
-        if (subtitle_) {
-            draw_centered(r, *subtitle_, 4, 0);
-        }
-        if (prompt_) {
-            draw_centered(r, *prompt_, 2, 120);
-        }
-    }
-
-private:
-    std::optional<khdays::assets::DecodedTexture> title_;
-    std::optional<khdays::assets::DecodedTexture> subtitle_;
-    std::optional<khdays::assets::DecodedTexture> prompt_;
 };
 
 int run_game_demo() {
@@ -402,18 +292,56 @@ int main(int argc, char* argv[]) {
             return run_game_demo();
         }
 
+        if (first == "--menu-shot") {
+            // Headless snapshot of the main-menu scene (for previewing the
+            // layout without opening a window). Optional 2nd arg = how many
+            // times to move the cursor right before capturing.
+            if (argc < 3) {
+                std::cerr << "ERROR: --menu-shot requires an output BMP "
+                             "[cursor-steps]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int steps = argc > 3 ? std::stoi(argv[3]) : 0;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneMainMenu, [] {
+                return std::make_unique<khdays::game::scenes::MainMenuScene>();
+            });
+            manager.start(khdays::game::kSceneMainMenu);
+            for (int i = 0; i < steps; ++i) {
+                khdays::game::Input in;
+                in.pressed = static_cast<std::uint16_t>(khdays::game::Button::Right);
+                manager.set_input(in);
+                manager.step();
+            }
+            manager.set_input(khdays::game::Input{});
+            manager.step();
+            khdays::game::SoftwareRenderer sw{512, 384};
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "Main-menu snapshot (cursor step " << steps
+                      << ") -> BMP: " << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
         if (first == "--game") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
                              "scenes will show without game assets\n";
             }
             khdays::game::Game game;
-            game.scenes().register_scene(
-                khdays::game::kSceneBootLogo,
-                [] { return std::make_unique<WindowLogoScene>(); });
-            game.scenes().register_scene(
-                khdays::game::kSceneTitle,
-                [] { return std::make_unique<WindowTitleScene>(); });
+            game.scenes().register_scene(khdays::game::kSceneBootLogo, [] {
+                return std::make_unique<khdays::game::scenes::BootLogoScene>();
+            });
+            game.scenes().register_scene(khdays::game::kSceneTitle, [] {
+                return std::make_unique<khdays::game::scenes::TitleScene>();
+            });
+            game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
+                return std::make_unique<khdays::game::scenes::MainMenuScene>();
+            });
             game.boot(0);
             std::cout << "Running the game frame loop (Esc to quit, "
                          "Enter/Z/Space to advance)...\n";
@@ -543,6 +471,72 @@ int main(int argc, char* argv[]) {
                           << bank.tile_boundary << "), cell " << index << " -> "
                           << image.width << 'x' << image.height << " BMP: "
                           << argv[5] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--dump-ui") {
+            // Exploration aid: parse a D2KP UI pack (a P2 sub-file) and dump
+            // every non-blank screen x tile-sheet composition, to identify which
+            // tilemap/tiles/palette form each background layer.
+            if (argc != 5) {
+                std::cerr << "ERROR: --dump-ui requires a P2 file, sub-file "
+                             "index, and an output directory\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto blob = khdays::assets::extract_p2_subfile(
+                    std::filesystem::path{argv[2]},
+                    static_cast<std::size_t>(std::stoul(argv[3])));
+                const auto pack =
+                    khdays::assets::parse_pk2d(blob.data(), blob.size());
+                std::cout << "D2KP: " << pack.palettes.size() << " NCLR, "
+                          << pack.tiles.size() << " NCGR, " << pack.screens.size()
+                          << " NSCR, " << pack.cells.size() << " NCER, "
+                          << pack.anims.size() << " NANR\n";
+                const std::filesystem::path out_dir{argv[4]};
+                std::filesystem::create_directories(out_dir);
+                for (std::size_t s = 0; s < pack.screens.size(); ++s) {
+                    const auto map = khdays::assets::decode_nscr(
+                        pack.screens[s].data, pack.screens[s].size);
+                    for (std::size_t t = 0; t < pack.tiles.size(); ++t) {
+                        const auto tiles = khdays::assets::decode_ncgr(
+                            pack.tiles[t].data, pack.tiles[t].size);
+                        for (std::size_t p = 0; p < pack.palettes.size(); ++p) {
+                            const auto palette = khdays::assets::decode_nclr(
+                                pack.palettes[p].data, pack.palettes[p].size);
+                            const auto image = khdays::assets::compose_background(
+                                map, tiles, palette, true);
+                            std::size_t opaque = 0;
+                            for (std::size_t k = 3; k < image.rgba.size(); k += 4) {
+                                if (image.rgba[k] != 0) {
+                                    ++opaque;
+                                }
+                            }
+                            const double frac = image.rgba.empty() ? 0.0
+                                : static_cast<double>(opaque)
+                                    / (image.rgba.size() / 4.0);
+                            if (frac < 0.02) {
+                                continue;  // essentially blank pairing
+                            }
+                            const auto bmp = khdays::assets::to_bmp(image);
+                            const auto path = out_dir
+                                / ("s" + std::to_string(s) + "_t"
+                                   + std::to_string(t) + "_p" + std::to_string(p)
+                                   + ".bmp");
+                            std::ofstream f{path, std::ios::binary};
+                            f.write(reinterpret_cast<const char*>(bmp.data()),
+                                    static_cast<std::streamsize>(bmp.size()));
+                            std::cout << "  s" << s << " t" << t << " p" << p
+                                      << "  " << image.width << 'x' << image.height
+                                      << "  opaque=" << static_cast<int>(frac * 100)
+                                      << "%\n";
+                        }
+                    }
+                }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

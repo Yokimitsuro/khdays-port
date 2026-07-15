@@ -14,6 +14,8 @@
 #include "khdays/assets/tex0.h"
 #include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
+#include "khdays/vfs/filesystem.h"
+#include "music_backend.h"
 
 #ifndef KHDAYS_PORT_VERSION
 #define KHDAYS_PORT_VERSION "unknown"
@@ -440,6 +442,17 @@ int run_game(khdays::game::Game& game) {
     }
 
     SdlFrameRenderer frame_renderer{renderer};
+
+    // Music: render the game's SSEQ tracks and stream them for scenes that
+    // request a BGM. Absent SDAT (no game data) → scenes simply run silent.
+    std::optional<SdlMusicPlayer> music;
+    if (const auto sdat_path = khdays::vfs::resolve("snd/sound_data.sdat")) {
+        music.emplace(*sdat_path);
+        if (music->ok()) {
+            game.scenes().set_music_player(&*music);
+        }
+    }
+
     std::uint16_t previous = 0;
     bool running = true;
 
@@ -468,6 +481,9 @@ int run_game(khdays::game::Game& game) {
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
+
+    // Detach the music player before it is destroyed at scope exit.
+    game.scenes().set_music_player(nullptr);
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

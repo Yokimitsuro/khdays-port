@@ -157,10 +157,22 @@ traced and named in khdays-decomp; the port reproduces the *flow* natively (DS
 hardware init, VBlank sync, and overlay loading are the platform layer's job,
 not ported). Port or replace the minimum required systems for:
 
-- startup; *(skeleton — `khdays::game::Game::boot` mirrors BootTask_Construct
-  (fresh boot → the logo scene), then runs the frame loop in a native SDL window
-  that maps input and draws each scene through a neutral `Renderer`; `--game`
-  (windowed) / `--game-demo` (headless).)*
+- startup; *(the boot flow runs natively end to end: `khdays::game::Game::boot`
+  mirrors BootTask_Construct (fresh boot → the logo scene), then the frame loop
+  advances **boot logo (scene 1, ov000) → title (scene 7, ov06) → main menu
+  (scene 0x13/19, ov08)** — the real DS scene ids and Start transition
+  (ov06 polls Start → requests scene 0x13). Each scene draws its real decoded
+  assets: the title's boot logo, and the Mission Mode character-select menu with
+  the roster portraits, cursor, and real names from `UI/mlt/res.p2` +
+  `mlt_<lang>.s.z` in the game font, and each **plays its real SSEQ music**
+  streamed from the SDAT (title `ThemeXIII`, menu `Entrymulti`) through the
+  neutral `game::MusicPlayer`. The DS OBJ cell engine (`func_02032xxx`) that
+  positions the sprites is not ported — this is a native reconstruction of the
+  same content and interaction. The scenes live in `khdays::game::scenes`
+  (`boot_logo`/`title`/`main_menu`), loading through `khdays::resource`
+  (`ui_content` — neutral UI textures, D2KP packs via
+  `khdays::assets::parse_pk2d`). `--game` (windowed), `--game-demo` (headless),
+  `--menu-shot` (menu snapshot).)*
 - memory arenas;
 - archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
   path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted

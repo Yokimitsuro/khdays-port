@@ -61,4 +61,40 @@ struct AnimBank final {
 // Decode an NANR animation bank from an in-memory (decompressed) resource.
 AnimBank decode_nanr(const std::uint8_t* data, std::size_t size);
 
+// Plays one NANR animation: advance it by game frames and read back which cell
+// should be shown, looping at the end.
+class Animator final {
+public:
+    Animator() = default;
+    Animator(const AnimBank& bank, std::size_t animation)
+        : animation_(animation < bank.animations.size()
+                         ? &bank.animations[animation]
+                         : nullptr) {}
+
+    // Advance the animation by `frames` game frames.
+    void tick(int frames = 1) {
+        if (animation_ == nullptr || animation_->steps.empty()) {
+            return;
+        }
+        timer_ += frames;
+        while (timer_ >= animation_->steps[step_].duration) {
+            timer_ -= animation_->steps[step_].duration;
+            step_ = (step_ + 1U) % animation_->steps.size();
+        }
+    }
+
+    // The cell index to draw this frame (-1 if the animation is empty).
+    int current_cell() const {
+        if (animation_ == nullptr || animation_->steps.empty()) {
+            return -1;
+        }
+        return animation_->steps[step_].cell;
+    }
+
+private:
+    const Animation* animation_ = nullptr;
+    std::size_t step_ = 0;
+    int timer_ = 0;
+};
+
 }  // namespace khdays::assets
