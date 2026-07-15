@@ -19,6 +19,8 @@ struct KeyBindings final {
     SDL_Scancode b = SDL_SCANCODE_X;
     SDL_Scancode x = SDL_SCANCODE_S;
     SDL_Scancode y = SDL_SCANCODE_A;
+    SDL_Scancode l = SDL_SCANCODE_Q;
+    SDL_Scancode r = SDL_SCANCODE_E;
     SDL_Scancode start = SDL_SCANCODE_RETURN;
     SDL_Scancode select = SDL_SCANCODE_RSHIFT;
 };

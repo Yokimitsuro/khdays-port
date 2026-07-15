@@ -17,6 +17,8 @@ enum class Button : std::uint16_t {
     Down = 1u << 7,
     Left = 1u << 8,
     Right = 1u << 9,
+    L = 1u << 10,
+    R = 1u << 11,
 };
 
 // One frame's input snapshot: which buttons are held, and which became pressed

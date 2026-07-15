@@ -30,6 +30,8 @@ std::uint16_t poll_buttons(const KeyBindings& b) {
     set(b.b, Btn::B);
     set(b.x, Btn::X);
     set(b.y, Btn::Y);
+    set(b.l, Btn::L);
+    set(b.r, Btn::R);
     set(b.start, Btn::Start);
     set(b.select, Btn::Select);
     return down;
@@ -41,7 +43,7 @@ struct BindRow {
     const char* label;
     SDL_Scancode KeyBindings::* field;
 };
-const std::array<BindRow, 10> kBindRows = {{
+const std::array<BindRow, 12> kBindRows = {{
     {"Up", &KeyBindings::up},
     {"Down", &KeyBindings::down},
     {"Left", &KeyBindings::left},
@@ -50,6 +52,8 @@ const std::array<BindRow, 10> kBindRows = {{
     {"B", &KeyBindings::b},
     {"X", &KeyBindings::x},
     {"Y", &KeyBindings::y},
+    {"L", &KeyBindings::l},
+    {"R", &KeyBindings::r},
     {"Start", &KeyBindings::start},
     {"Select", &KeyBindings::select},
 }};
