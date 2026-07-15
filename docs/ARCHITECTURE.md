@@ -59,8 +59,12 @@ both exist; PNG support is optional (CMake `KHDAYS_ENABLE_PNG`, on by default).
 texture size*, so a 4x BMP is a valid HD replacement — it samples correctly
 without retiling.
 
-Model (glTF) and animation overrides, and other categories (e.g. `sounds/`),
-plug into the same layer as their importers are added.
+**Models** can be glTF: `--render-model file.gltf` imports a glTF (geometry plus
+its own textures) through the same neutral pipeline, so a higher-poly model
+shows more geometry than the low-poly DS original. This is static import for now
+(no skinning); rigging a glTF to the DS skeleton so it animates with the game's
+NSBCA data is the next step. Animation overrides and other categories (e.g.
+`sounds/`) plug into the same layer as their importers are added.
 
 The command-line inspectors (`--model-info`, `--anim-info`, `--audio-info`,
 `--export-obj`) are tools, not the engine, and may call `khdays::assets`

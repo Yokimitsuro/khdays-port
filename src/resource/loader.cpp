@@ -6,9 +6,14 @@
 #include <system_error>
 #include <vector>
 
+#include <cctype>
+
 #include "khdays/assets/bmp.h"
 #ifdef KHDAYS_HAS_PNG
 #include "khdays/assets/png.h"
+#endif
+#ifdef KHDAYS_HAS_GLTF
+#include "khdays/assets/gltf.h"
 #endif
 
 namespace khdays::resource {
@@ -59,11 +64,31 @@ void set_mods_root(const std::filesystem::path& root) {
     g_mods_root = root;
 }
 
-khdays::assets::NeutralModel load_model(
-    const std::filesystem::path& ds_path) {
-    // Model overrides (glTF from mods/) are a future importer; for now the DS
-    // model is the only source, but the engine already goes through this layer.
-    return khdays::assets::decode_model_geometry(ds_path);
+LoadedModel load_model(const std::filesystem::path& path) {
+    auto ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (ext == ".gltf" || ext == ".glb") {
+#ifdef KHDAYS_HAS_GLTF
+        auto imported = khdays::assets::import_gltf(path);
+        LoadedModel loaded;
+        loaded.model = std::move(imported.model);
+        for (auto& [name, texture] : imported.textures) {
+            const int w = texture.width;
+            const int h = texture.height;
+            loaded.textures.emplace(
+                name, LoadedTexture{std::move(texture), w, h});
+        }
+        return loaded;
+#else
+        throw std::runtime_error(
+            "glTF support was not built (enable KHDAYS_ENABLE_GLTF)");
+#endif
+    }
+
+    return LoadedModel{khdays::assets::decode_model_geometry(path), {}};
 }
 
 khdays::assets::SkeletalAnimation load_animation(

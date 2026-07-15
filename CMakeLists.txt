@@ -72,6 +72,18 @@ if(KHDAYS_ENABLE_PNG)
     FetchContent_MakeAvailable(stb)
 endif()
 
+# Optional glTF model overrides via cgltf (needs PNG for glTF textures).
+option(KHDAYS_ENABLE_GLTF "Support glTF model overrides (fetches cgltf)" ON)
+if(KHDAYS_ENABLE_GLTF AND KHDAYS_ENABLE_PNG)
+    FetchContent_Declare(
+        cgltf
+        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(cgltf)
+endif()
+
 add_library(
     khdays-assets
     STATIC
@@ -93,6 +105,12 @@ if(KHDAYS_ENABLE_PNG)
     target_sources(khdays-assets PRIVATE src/assets/png.cpp)
     target_include_directories(khdays-assets PRIVATE "${stb_SOURCE_DIR}")
     target_compile_definitions(khdays-assets PUBLIC KHDAYS_HAS_PNG)
+endif()
+
+if(KHDAYS_ENABLE_GLTF AND KHDAYS_ENABLE_PNG)
+    target_sources(khdays-assets PRIVATE src/assets/gltf.cpp)
+    target_include_directories(khdays-assets PRIVATE "${cgltf_SOURCE_DIR}")
+    target_compile_definitions(khdays-assets PUBLIC KHDAYS_HAS_GLTF)
 endif()
 
 if(MSVC)

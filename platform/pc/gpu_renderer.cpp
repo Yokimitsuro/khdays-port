@@ -391,29 +391,35 @@ namespace khdays::platform {
 int render_model(
     const std::filesystem::path& model_path,
     const std::optional<std::filesystem::path>& animation_path) {
-    khdays::assets::NeutralModel model;
+    khdays::resource::LoadedModel loaded;
     try {
-        model = khdays::resource::load_model(model_path);
+        loaded = khdays::resource::load_model(model_path);
     } catch (const std::exception& error) {
         std::cerr << "ERROR: " << error.what() << '\n';
         return EXIT_FAILURE;
     }
+    const auto& model = loaded.model;
 
     // Decode each material's TEX0 texture once (CPU). Sizes are needed to
     // normalize UVs; the RGBA is reused to upload the GPU textures below.
     std::map<std::string, khdays::resource::LoadedTexture> decoded_textures;
-    for (const auto& m : model.meshes) {
-        if (m.texture_name.empty()
-            || decoded_textures.count(m.texture_name) != 0U) {
-            continue;
-        }
-        try {
-            decoded_textures.emplace(
-                m.texture_name,
-                khdays::resource::load_texture(m.texture_name, model_path));
-        } catch (const std::exception& error) {
-            std::cerr << "texture '" << m.texture_name << "': "
-                      << error.what() << '\n';
+    if (!loaded.textures.empty()) {
+        // A glTF model ships its own textures.
+        decoded_textures = loaded.textures;
+    } else {
+        for (const auto& m : model.meshes) {
+            if (m.texture_name.empty()
+                || decoded_textures.count(m.texture_name) != 0U) {
+                continue;
+            }
+            try {
+                decoded_textures.emplace(
+                    m.texture_name,
+                    khdays::resource::load_texture(m.texture_name, model_path));
+            } catch (const std::exception& error) {
+                std::cerr << "texture '" << m.texture_name << "': "
+                          << error.what() << '\n';
+            }
         }
     }
 
@@ -424,7 +430,7 @@ int render_model(
     }
     std::cout << "Rendering '" << model.name << "': "
               << mesh.vertices.size() << " vertices, "
-              << mesh.indices.size() / 3U << " triangles\n";
+              << mesh.indices.size() / 3U << " triangles" << std::endl;
 
     // Auto-detect a sibling animation: the model is <container>/slot_7/0000.nsbmd
     // and its animation, if any, is <container>/slot_0/0000.nsbca.

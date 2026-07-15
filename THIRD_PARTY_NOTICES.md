@@ -56,6 +56,19 @@ Usage: compiled into `khdays-assets` (via `src/assets/png.cpp`) to decode PNG
 texture overrides. Fetched by CMake when `KHDAYS_ENABLE_PNG` is on (the
 default); with it off, PNG support is dropped and no fetch occurs.
 
+## cgltf
+
+Project: cgltf — single-file glTF loader
+
+Upstream: <https://github.com/jkuhlmann/cgltf>
+
+License: MIT.
+
+Usage: compiled into `khdays-assets` (via `src/assets/gltf.cpp`) to import glTF
+model overrides. Fetched by CMake when `KHDAYS_ENABLE_GLTF` is on (the default,
+which also requires `KHDAYS_ENABLE_PNG`); with it off, glTF support is dropped
+and no fetch occurs.
+
 ## Vulkan SDK (build tool)
 
 Project: LunarG Vulkan SDK — `glslc` (shaderc)
