@@ -246,31 +246,21 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
             try {
-                const auto map =
-                    khdays::assets::decode_nscr(std::filesystem::path{argv[2]});
-                const auto palette =
-                    khdays::assets::decode_nclr(std::filesystem::path{argv[3]});
-                khdays::assets::TileGraphics tiles;
+                std::vector<std::filesystem::path> ncgr_paths;
                 for (int i = 5; i < argc; ++i) {
-                    auto part =
-                        khdays::assets::decode_ncgr(std::filesystem::path{argv[i]});
-                    if (tiles.indices.empty()) {
-                        tiles.bpp = part.bpp;
-                    }
-                    tiles.tile_count += part.tile_count;
-                    tiles.indices.insert(
-                        tiles.indices.end(), part.indices.begin(), part.indices.end());
+                    ncgr_paths.emplace_back(argv[i]);
                 }
-                const auto image =
-                    khdays::assets::compose_background(map, tiles, palette);
+                const auto image = khdays::resource::load_background(
+                    std::filesystem::path{argv[2]},
+                    std::filesystem::path{argv[3]},
+                    ncgr_paths);
                 const auto bmp = khdays::assets::to_bmp(image);
                 std::ofstream out{argv[4], std::ios::binary};
                 out.write(
                     reinterpret_cast<const char*>(bmp.data()),
                     static_cast<std::streamsize>(bmp.size()));
                 std::cout << "Composed " << image.width << 'x' << image.height
-                          << " background from " << tiles.tile_count
-                          << " tiles -> BMP: " << argv[4] << '\n';
+                          << " background -> BMP: " << argv[4] << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';
@@ -286,7 +276,7 @@ int main(int argc, char* argv[]) {
             }
             try {
                 const auto font =
-                    khdays::assets::decode_nftr(std::filesystem::path{argv[2]});
+                    khdays::resource::load_font(std::filesystem::path{argv[2]});
                 const auto text = khdays::assets::message_from_utf8(argv[3]);
                 const auto image = khdays::assets::render_text(font, text);
                 const auto bmp = khdays::assets::to_bmp(image);

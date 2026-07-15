@@ -134,6 +134,26 @@ The **same override also feeds the music synthesizer**: sequenced tracks
 archives, so replacing a waveform with a cleaner WAV swaps that instrument in the
 music too — a way to sidestep the source samples' 4-bit ADPCM grain.
 
+## 2D graphic overrides
+
+The UI backgrounds and menus compose from DS tile graphics (NCLR palette + NCGR
+tiles + NSCR tilemap). A **PNG or BMP** at
+`mods/<Mod>/graphics/**/<screen>.{png,bmp}` replaces the composed image whole —
+an HD redraw of a UI screen. `<screen>` is the NSCR's base name (e.g. a
+`bm_lo_TT08.NSCR` screen is overridden by `bm_lo_TT08.png`). Preview the
+original first:
+
+```
+khdays-port --render-bg bm_lo_TT08.NSCR.z bm_lo_bg000.NCLR.z out.bmp bm_lo_bg002.NCGR.z ...
+```
+
+## Font overrides
+
+Fonts are NFTR bitmap fonts. A replacement font at
+`mods/<Mod>/fonts/**/<name>.nftr` (e.g. `font_eu_10.nftr`) is used instead of
+the game's — swap in a different typeface or a custom-drawn one. Preview a font
+with `--render-text <font.nftr> "some text" out.bmp`.
+
 ## Trying it
 
 With the DS data extracted under `data/` and a mod prepared as above:

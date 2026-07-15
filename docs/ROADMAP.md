@@ -120,12 +120,15 @@ mods — they never distribute copyrighted assets.
   skinning, plus PNG texture dumps.
 - **Asset-override loader:** the runtime resolves each asset through a search
   path (`mods/…` before the extracted DS asset). This is the foundation.
-  *(done for textures, models, text, and sound — `khdays::resource` (see
-  `docs/ARCHITECTURE.md`) resolves `mods/<Mod>/textures/**/<name>.{png,bmp}`
-  before the DS TEX0, `mods/<Mod>/models/<ds_name>.gltf` before the DS model,
-  `mods/<Mod>/text/<name>.txt` string overrides, and
-  `mods/<Mod>/sounds/<wave_archive>_<swav>.wav` waveform replacements; the engine
-  only sees neutral formats.)*
+  *(done for textures, models, text, sound, 2D graphics, and fonts —
+  `khdays::resource` (see `docs/ARCHITECTURE.md`) resolves
+  `mods/<Mod>/textures/**/<name>.{png,bmp}` before the DS TEX0,
+  `mods/<Mod>/models/<ds_name>.gltf` before the DS model,
+  `mods/<Mod>/text/<name>.txt` string overrides,
+  `mods/<Mod>/sounds/<wave_archive>_<swav>.wav` waveform replacements,
+  `mods/<Mod>/graphics/<screen>.{png,bmp}` UI-background redraws, and
+  `mods/<Mod>/fonts/<name>.nftr` font swaps; the engine only sees neutral
+  formats.)*
 - **Import:** load glTF / PNG into the neutral mesh and textures at runtime.
   *(done — rigged glTF import with per-skin palettes; PNG/BMP textures.)*
 - **Higher-poly model mods:** a rigged glTF whose joints are named like the DS

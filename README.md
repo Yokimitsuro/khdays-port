@@ -178,6 +178,9 @@ resolves them ahead of the original DS asset:
   tables), one `key = value` line per string.
 - **Sound** — a WAV at `mods/<Mod>/sounds/<wave_archive>_<swav>.wav` replaces a
   decoded game waveform (sound effects / voice clips).
+- **2D graphics & fonts** — a PNG/BMP at `mods/<Mod>/graphics/<screen>.png`
+  redraws a UI background, and an NFTR at `mods/<Mod>/fonts/<name>.nftr` swaps a
+  font.
 
 Mods only ever contain your own edits — never copyrighted game data — and
 `mods/` is git-ignored. See [`docs/MODDING.md`](docs/MODDING.md) for the folder

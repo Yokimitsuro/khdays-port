@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "khdays/assets/font.h"
+#include "khdays/assets/graphics2d.h"
 #include "khdays/assets/message.h"
 #include "khdays/assets/sequence.h"
 
@@ -351,6 +353,52 @@ khdays::assets::DecodedAudio render_music(
     };
     return khdays::assets::render_sequence(
         sdat, sequence_index, sample_rate, max_seconds, override_sample);
+}
+
+khdays::assets::DecodedTexture load_background(
+    const std::filesystem::path& nscr_path,
+    const std::filesystem::path& nclr_path,
+    const std::vector<std::filesystem::path>& ncgr_paths) {
+    const auto key = base_name(nscr_path);
+    const auto use_override = [&](const std::filesystem::path& path,
+                                  khdays::assets::DecodedTexture image) {
+        std::cout << "override: graphic '" << key << "' <- " << path.string()
+                  << std::endl;
+        image.name = key;
+        return image;
+    };
+#ifdef KHDAYS_HAS_PNG
+    if (const auto png = find_override("graphics", key + ".png")) {
+        return use_override(*png, khdays::assets::load_png(*png));
+    }
+#endif
+    if (const auto bmp = find_override("graphics", key + ".bmp")) {
+        return use_override(*bmp, khdays::assets::load_bmp(*bmp));
+    }
+
+    const auto map = khdays::assets::decode_nscr(nscr_path);
+    const auto palette = khdays::assets::decode_nclr(nclr_path);
+    khdays::assets::TileGraphics tiles;
+    for (const auto& ncgr : ncgr_paths) {
+        auto part = khdays::assets::decode_ncgr(ncgr);
+        if (tiles.indices.empty()) {
+            tiles.bpp = part.bpp;
+        }
+        tiles.tile_count += part.tile_count;
+        tiles.indices.insert(
+            tiles.indices.end(), part.indices.begin(), part.indices.end());
+    }
+    return khdays::assets::compose_background(map, tiles, palette);
+}
+
+khdays::assets::Font load_font(const std::filesystem::path& nftr_path) {
+    const auto override_path = find_override("fonts", base_name(nftr_path) + ".nftr");
+    if (override_path) {
+        std::cout << "override: font '" << base_name(nftr_path) << "' <- "
+                  << override_path->string() << std::endl;
+        return khdays::assets::decode_nftr(*override_path);
+    }
+    return khdays::assets::decode_nftr(nftr_path);
 }
 
 }  // namespace khdays::resource

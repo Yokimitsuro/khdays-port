@@ -9,6 +9,7 @@
 
 #include "khdays/assets/animation.h"
 #include "khdays/assets/audio.h"
+#include "khdays/assets/font.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
 #include "khdays/assets/tex0.h"
@@ -84,5 +85,18 @@ khdays::assets::DecodedAudio render_music(
     std::size_t sequence_index,
     std::uint32_t sample_rate = 32768U,
     double max_seconds = 180.0);
+
+// Compose a 2D background (NSCR tilemap + NCGR tiles + NCLR palette) to RGBA, or
+// a mod override if present: a PNG/BMP at
+// "<mods>/<any-mod>/graphics/**/<nscr_name>.{png,bmp}" replaces the whole image
+// (e.g. an HD redraw). Pass the tile graphics in draw order.
+khdays::assets::DecodedTexture load_background(
+    const std::filesystem::path& nscr_path,
+    const std::filesystem::path& nclr_path,
+    const std::vector<std::filesystem::path>& ncgr_paths);
+
+// Load an NFTR font, or a mod override if present: a replacement font at
+// "<mods>/<any-mod>/fonts/**/<name>.nftr" wins.
+khdays::assets::Font load_font(const std::filesystem::path& nftr_path);
 
 }  // namespace khdays::resource
