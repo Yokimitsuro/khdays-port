@@ -155,6 +155,23 @@ int main() {
             expect(table[1] == u"OK", "string table entry 1");
         }
 
+        // Text override escapes: message_from_utf8 decodes what
+        // message_to_utf8 emits, and both round-trip control codes/newlines.
+        expect(
+            khdays::assets::message_from_utf8("Piro\\nPlus") == u"Piro\nPlus",
+            "from_utf8 newline escape");
+        expect(
+            khdays::assets::message_from_utf8("A\\x01B")
+                == std::u16string{u'A', u'\x01', u'B'},
+            "from_utf8 hex escape");
+        {
+            const std::u16string original{u'H', u'i', u'\n', u'\x03', u'!'};
+            const auto round =
+                khdays::assets::message_from_utf8(
+                    khdays::assets::message_to_utf8(original));
+            expect(round == original, "utf8 round-trip");
+        }
+
         std::filesystem::remove(path);
         std::cout << "Message container test passed\n";
         return 0;

@@ -51,4 +51,9 @@ std::vector<std::uint8_t> lz_decompress(const std::vector<std::uint8_t>& input);
 // \xNN escapes.
 std::string message_to_utf8(const std::u16string& text);
 
+// Parse a UTF-8 string back into a UTF-16 message, decoding the escapes that
+// message_to_utf8 emits (\n, \t, \\, \xNN) plus \uNNNN. The inverse used by the
+// modding layer so an edited dump round-trips into the game's string form.
+std::u16string message_from_utf8(const std::string& text);
+
 }  // namespace khdays::assets

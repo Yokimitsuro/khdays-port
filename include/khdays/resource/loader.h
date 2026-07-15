@@ -4,8 +4,12 @@
 #include <map>
 #include <string>
 
+#include <string>
+#include <vector>
+
 #include "khdays/assets/animation.h"
 #include "khdays/assets/mesh.h"
+#include "khdays/assets/message.h"
 #include "khdays/assets/tex0.h"
 
 // The resource layer sits between the Nintendo DS format importers and the
@@ -52,5 +56,16 @@ khdays::assets::SkeletalAnimation load_animation(
 LoadedTexture load_texture(
     const std::string& name,
     const std::filesystem::path& ds_source);
+
+// Load a P2 message container and apply text overrides. A modder edits strings
+// in "<mods>/<any-mod>/text/**/<db_name>.txt" (e.g. db_es.txt) with lines
+// "subdb:index = text" (\n, \t, \xNN escapes); each replaces one string.
+khdays::assets::MessageArchive load_message_archive(
+    const std::filesystem::path& path);
+
+// Load a UI string table (.s/.s.z) and apply text overrides from
+// "<mods>/<any-mod>/text/**/<name>.txt" with lines "index = text".
+std::vector<std::u16string> load_string_table(
+    const std::filesystem::path& path);
 
 }  // namespace khdays::resource

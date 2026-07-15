@@ -15,6 +15,7 @@
 #include "khdays/assets/sdat.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
+#include "khdays/resource/loader.h"
 
 #ifndef KHDAYS_PORT_VERSION
 #define KHDAYS_PORT_VERSION "unknown"
@@ -195,7 +196,7 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
             try {
-                const auto archive = khdays::assets::load_p2_archive(
+                const auto archive = khdays::resource::load_message_archive(
                     std::filesystem::path{argv[2]});
                 std::cout << "P2 message container: "
                           << archive.subdbs.size() << " sub-databases, "
@@ -225,7 +226,7 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
             try {
-                const auto archive = khdays::assets::load_p2_archive(
+                const auto archive = khdays::resource::load_message_archive(
                     std::filesystem::path{argv[2]});
                 const bool one = argc == 4;
                 const auto only = one
@@ -260,7 +261,7 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
             try {
-                const auto strings = khdays::assets::load_string_table(
+                const auto strings = khdays::resource::load_string_table(
                     std::filesystem::path{argv[2]});
                 std::cout << strings.size() << " strings\n";
                 for (std::size_t i = 0; i < strings.size(); ++i) {

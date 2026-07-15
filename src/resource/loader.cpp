@@ -3,12 +3,16 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <fstream>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "khdays/assets/message.h"
 
 #include "khdays/assets/bmp.h"
 #ifdef KHDAYS_HAS_PNG
@@ -58,6 +62,48 @@ std::optional<std::filesystem::path> find_override(
         }
     }
     return std::nullopt;
+}
+
+// The asset's base name: its filename up to the first '.', so both
+// "db_es.p2" and "magic.s.z" reduce to the key a text override is named after
+// ("db_es", "magic").
+std::string base_name(const std::filesystem::path& path) {
+    const auto filename = path.filename().string();
+    const auto dot = filename.find('.');
+    return dot == std::string::npos ? filename : filename.substr(0, dot);
+}
+
+// Parse a text-override file: '#' comments and blank lines are ignored; each
+// "key = value" line maps a key to a decoded UTF-16 string (value may use the
+// \n, \t, \\, \xNN, \uNNNN escapes that message_to_utf8 emits).
+std::unordered_map<std::string, std::u16string> parse_text_override(
+    const std::filesystem::path& file) {
+    std::unordered_map<std::string, std::u16string> overrides;
+    std::ifstream stream{file};
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        const auto start = line.find_first_not_of(" \t");
+        if (start == std::string::npos || line[start] == '#') {
+            continue;
+        }
+        const auto equals = line.find('=', start);
+        if (equals == std::string::npos) {
+            continue;
+        }
+        auto key = line.substr(start, equals - start);
+        while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) {
+            key.pop_back();
+        }
+        auto value = line.substr(equals + 1U);
+        const auto value_start = value.find_first_not_of(" \t");
+        value = value_start == std::string::npos ? std::string{}
+                                                 : value.substr(value_start);
+        overrides[key] = khdays::assets::message_from_utf8(value);
+    }
+    return overrides;
 }
 
 #ifdef KHDAYS_HAS_GLTF
@@ -206,6 +252,68 @@ LoadedTexture load_texture(
     }
 
     return LoadedTexture{ds_texture, ds_texture.width, ds_texture.height};
+}
+
+khdays::assets::MessageArchive load_message_archive(
+    const std::filesystem::path& path) {
+    auto archive = khdays::assets::load_p2_archive(path);
+
+    const auto override_path = find_override("text", base_name(path) + ".txt");
+    if (!override_path) {
+        return archive;
+    }
+    const auto overrides = parse_text_override(*override_path);
+    std::size_t applied = 0;
+    for (const auto& [key, value] : overrides) {
+        const auto colon = key.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+        try {
+            const auto sub =
+                static_cast<std::size_t>(std::stoul(key.substr(0, colon)));
+            const auto index =
+                static_cast<std::size_t>(std::stoul(key.substr(colon + 1U)));
+            if (sub < archive.subdbs.size()
+                && index < archive.subdbs[sub].size()) {
+                archive.subdbs[sub][index] = value;
+                ++applied;
+            }
+        } catch (const std::exception&) {
+            // Malformed key (non-numeric): skip it.
+        }
+    }
+    std::cout << "override: text '" << base_name(path) << "' <- "
+              << override_path->string() << " (" << applied << " strings)"
+              << std::endl;
+    return archive;
+}
+
+std::vector<std::u16string> load_string_table(
+    const std::filesystem::path& path) {
+    auto table = khdays::assets::load_string_table(path);
+
+    const auto override_path = find_override("text", base_name(path) + ".txt");
+    if (!override_path) {
+        return table;
+    }
+    const auto overrides = parse_text_override(*override_path);
+    std::size_t applied = 0;
+    for (const auto& [key, value] : overrides) {
+        try {
+            const auto index = static_cast<std::size_t>(std::stoul(key));
+            if (index < table.size()) {
+                table[index] = value;
+                ++applied;
+            }
+        } catch (const std::exception&) {
+            // Malformed key: skip it.
+        }
+    }
+    std::cout << "override: strings '" << base_name(path) << "' <- "
+              << override_path->string() << " (" << applied << " strings)"
+              << std::endl;
+    return table;
 }
 
 }  // namespace khdays::resource

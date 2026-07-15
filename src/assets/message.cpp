@@ -289,4 +289,80 @@ std::string message_to_utf8(const std::u16string& text) {
     return out;
 }
 
+std::u16string message_from_utf8(const std::string& text) {
+    std::u16string out;
+    const auto emit = [&](char32_t cp) {
+        if (cp < 0x10000U) {
+            out.push_back(static_cast<char16_t>(cp));
+        } else {
+            cp -= 0x10000U;
+            out.push_back(static_cast<char16_t>(0xD800U + (cp >> 10U)));
+            out.push_back(static_cast<char16_t>(0xDC00U + (cp & 0x3FFU)));
+        }
+    };
+    const auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+
+    std::size_t i = 0U;
+    while (i < text.size()) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        if (c == '\\' && i + 1U < text.size()) {
+            const char e = text[i + 1U];
+            if (e == 'n') { emit(u'\n'); i += 2U; continue; }
+            if (e == 't') { emit(u'\t'); i += 2U; continue; }
+            if (e == '\\') { emit(u'\\'); i += 2U; continue; }
+            if (e == 'x' && i + 3U < text.size()) {
+                const int h1 = hex(text[i + 2U]);
+                const int h2 = hex(text[i + 3U]);
+                if (h1 >= 0 && h2 >= 0) {
+                    emit(static_cast<char32_t>((h1 << 4) | h2));
+                    i += 4U;
+                    continue;
+                }
+            }
+            if (e == 'u' && i + 5U < text.size()) {
+                const int h1 = hex(text[i + 2U]);
+                const int h2 = hex(text[i + 3U]);
+                const int h3 = hex(text[i + 4U]);
+                const int h4 = hex(text[i + 5U]);
+                if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
+                    emit(static_cast<char32_t>(
+                        (h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
+                    i += 6U;
+                    continue;
+                }
+            }
+            emit(u'\\');  // unknown escape: keep the backslash
+            i += 1U;
+            continue;
+        }
+
+        // Decode one UTF-8 code point.
+        char32_t cp = 0xFFFDU;
+        std::size_t n = 1U;
+        if (c < 0x80U) {
+            cp = c;
+        } else if ((c >> 5U) == 0x6U) {
+            cp = c & 0x1FU;
+            n = 2U;
+        } else if ((c >> 4U) == 0xEU) {
+            cp = c & 0x0FU;
+            n = 3U;
+        } else if ((c >> 3U) == 0x1EU) {
+            cp = c & 0x07U;
+            n = 4U;
+        }
+        for (std::size_t k = 1U; k < n && i + k < text.size(); ++k) {
+            cp = (cp << 6U) | (static_cast<unsigned char>(text[i + k]) & 0x3FU);
+        }
+        emit(cp);
+        i += n;
+    }
+    return out;
+}
+
 }  // namespace khdays::assets

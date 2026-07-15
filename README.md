@@ -171,6 +171,9 @@ resolves them ahead of the original DS asset:
   model's geometry and is **animated by the DS skeleton**: joints are matched to
   DS bones by name, so existing DS animations play on higher-poly geometry with
   no animation authoring.
+- **Text** — a `mods/<Mod>/text/<name>.txt` file retranslates or rewords the
+  game's decoded UTF-8 strings (`db_<lang>.p2` story/menu text and `UI/**/*.s.z`
+  tables), one `key = value` line per string.
 
 Mods only ever contain your own edits — never copyrighted game data — and
 `mods/` is git-ignored. See [`docs/MODDING.md`](docs/MODDING.md) for the folder

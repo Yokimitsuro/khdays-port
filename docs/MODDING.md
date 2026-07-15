@@ -73,6 +73,44 @@ bone-world matrices agree with the glTF's joint transforms to fixed-point
 rounding). A modder's higher-poly rebind to the same skeleton therefore animates
 identically to the original.
 
+## Text overrides
+
+All in-game text is decoded to editable UTF-8, so you can retranslate or reword
+it. A text override lives at `mods/<Mod>/text/**/<name>.txt`, where `<name>` is
+the asset's base name (its filename up to the first dot):
+
+- **Story/menu text** — `db_<lang>.p2` → `db_es.txt`, `db_en.txt`, …
+- **UI tables** — `UI/**/<name>.s.z` → `magic.txt`, `status_es.txt`, …
+
+Each line is `key = value`. Blank lines and `#` comments are ignored. The value
+uses the same escapes the dumpers print — `\n` (newline), `\t`, `\\`, `\xNN`,
+`\uNNNN` — so a dumped string edits and round-trips cleanly. The key selects
+which string to replace:
+
+- P2 databases: `subdb:index` (e.g. `0:1`) — the `[subdb:index]` shown by
+  `--dump-messages`.
+- UI tables: `index` (e.g. `3`) — the `[index]` shown by `--dump-strings`.
+
+```
+# mods/MyMod/text/db_es.txt
+0:0 = Cenizas HD
+0:1 = Tu arma personalizada.\nAhora con dos líneas.
+```
+
+Only the listed strings change; everything else falls through to the original.
+A key that is out of range or not numeric is skipped. To find the numbers,
+dump the originals:
+
+```
+khdays-port --dump-messages db_es.p2      # story/menu text, keyed [subdb:index]
+khdays-port --dump-strings  magic.s.z     # a UI table, keyed [index]
+```
+
+> One base name can match several files (the per-language `UI/btl/<lang>/magic.s.z`
+> all reduce to `magic`); such an override applies to every language's copy. The
+> language-suffixed tables (`status_es`, …) and the P2 databases are already
+> language-specific.
+
 ## Trying it
 
 With the DS data extracted under `data/` and a mod prepared as above:
