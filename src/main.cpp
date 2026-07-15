@@ -32,7 +32,7 @@ void print_help() {
         << '\n'
         << "Usage:\n"
         << "  khdays-port [--resource FILE] [--texture NAME]\n"
-        << "  khdays-port --render-model FILE\n"
+        << "  khdays-port --render-model FILE [--anim FILE]\n"
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
@@ -43,6 +43,7 @@ void print_help() {
         << "  --resource FILE     Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
         << "  --texture NAME      Select a texture by name; defaults to the first.\n"
         << "  --render-model FILE Render an MDL0 model in 3D in the native window.\n"
+        << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
@@ -82,6 +83,14 @@ khdays::platform::ApplicationOptions parse_runtime_options(
             continue;
         }
 
+        if (argument == "--anim") {
+            if (index + 1 >= argc) {
+                throw std::invalid_argument("--anim requires a file path");
+            }
+            options.animation_path = std::filesystem::path{argv[++index]};
+            continue;
+        }
+
         throw std::invalid_argument(
             "unknown argument: " + std::string{argument});
     }
@@ -89,6 +98,11 @@ khdays::platform::ApplicationOptions parse_runtime_options(
     if (options.texture_name.has_value() && !options.resource_path.has_value()) {
         throw std::invalid_argument(
             "--texture can only be used together with --resource");
+    }
+
+    if (options.animation_path.has_value() && !options.model_path.has_value()) {
+        throw std::invalid_argument(
+            "--anim can only be used together with --render-model");
     }
 
     return options;

@@ -13,6 +13,10 @@ struct ApplicationOptions final {
     // When set, the runtime renders this MDL0 model in 3D instead of showing
     // the placeholder screens.
     std::optional<std::filesystem::path> model_path;
+
+    // Optional NSBCA animation to play on the model. When unset, the runtime
+    // auto-detects the model's sibling animation.
+    std::optional<std::filesystem::path> animation_path;
 };
 
 int run_application(const ApplicationOptions& options);

@@ -1,5 +1,6 @@
 #include "khdays/platform/gpu_renderer.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -82,6 +83,17 @@ Mat rotation_y(const float radians) {
     m[0] = c;
     m[2] = -s;
     m[8] = s;
+    m[10] = c;
+    return m;
+}
+
+Mat rotation_x(const float radians) {
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    Mat m = identity();
+    m[5] = c;
+    m[6] = s;
+    m[9] = -s;
     m[10] = c;
     return m;
 }
@@ -391,7 +403,9 @@ SDL_GPUTexture* create_depth_texture(
 
 namespace khdays::platform {
 
-int render_model(const std::filesystem::path& model_path) {
+int render_model(
+    const std::filesystem::path& model_path,
+    const std::optional<std::filesystem::path>& animation_path) {
     khdays::assets::NeutralModel model;
     try {
         model = khdays::assets::decode_model_geometry(model_path);
@@ -431,8 +445,9 @@ int render_model(const std::filesystem::path& model_path) {
     // and its animation, if any, is <container>/slot_0/0000.nsbca.
     std::optional<khdays::assets::SkeletalAnimation> animation;
     if (model.skinning && !model.object_matrices.empty()) {
-        const auto anim_path = model_path.parent_path().parent_path()
-            / "slot_0" / "0000.nsbca";
+        const auto anim_path = animation_path.has_value()
+            ? *animation_path
+            : model_path.parent_path().parent_path() / "slot_0" / "0000.nsbca";
         if (std::filesystem::exists(anim_path)) {
             try {
                 animation = khdays::assets::load_nsbca(anim_path);
@@ -586,9 +601,14 @@ int render_model(const std::filesystem::path& model_path) {
     SDL_GPUTexture* depth_texture = nullptr;
     std::uint32_t depth_w = 0, depth_h = 0;
 
-    const float distance = mesh.radius * 2.8F;
+    const float base_distance = mesh.radius * 2.8F;
     const auto projection_near = std::max(0.01F, mesh.radius * 0.02F);
-    const auto projection_far = mesh.radius * 20.0F;
+    const auto projection_far = mesh.radius * 40.0F;
+
+    // Orbit camera: drag with the left mouse button to rotate, wheel to zoom.
+    float camera_yaw = 0.0F;
+    float camera_pitch = 0.15F;
+    float camera_zoom = 1.0F;
 
     bool running = true;
     std::uint64_t start = SDL_GetTicks();
@@ -602,6 +622,16 @@ int render_model(const std::filesystem::path& model_path) {
             if (event.type == SDL_EVENT_KEY_DOWN
                 && event.key.key == SDLK_ESCAPE) {
                 running = false;
+            }
+            if (event.type == SDL_EVENT_MOUSE_MOTION
+                && (event.motion.state & SDL_BUTTON_LMASK) != 0U) {
+                camera_yaw -= event.motion.xrel * 0.01F;
+                camera_pitch += event.motion.yrel * 0.01F;
+                camera_pitch = std::clamp(camera_pitch, -1.5F, 1.5F);
+            }
+            if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                camera_zoom *= std::pow(0.9F, event.wheel.y);
+                camera_zoom = std::clamp(camera_zoom, 0.2F, 5.0F);
             }
         }
 
@@ -668,12 +698,14 @@ int render_model(const std::filesystem::path& model_path) {
         }
 
         // Camera and model transforms.
-        // No auto-spin: the animation should be the only motion in the viewer.
-        const Mat model_rot = rotation_y(0.0F);
+        // Orbit camera driven by the mouse (drag to rotate, wheel to zoom).
+        const Mat model_rot =
+            multiply(rotation_x(camera_pitch), rotation_y(camera_yaw));
         const Mat model_mat = multiply(
             model_rot,
             translation(-mesh.center[0], -mesh.center[1], -mesh.center[2]));
-        const Mat view = translation(0.0F, 0.0F, -distance);
+        const Mat view =
+            translation(0.0F, 0.0F, -base_distance * camera_zoom);
         const float aspect = height > 0U
             ? static_cast<float>(width) / static_cast<float>(height)
             : 1.0F;
