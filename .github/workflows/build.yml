@@ -141,7 +141,8 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DBUILD_TESTING=ON \
-            -DKHDAYS_ENABLE_SANITIZERS=ON
+            -DKHDAYS_ENABLE_SANITIZERS=ON \
+            -DSDL_UNIX_CONSOLE_BUILD=ON
 
       - name: Build sanitized asset tests
         run: >-
