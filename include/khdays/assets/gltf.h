@@ -11,8 +11,11 @@
 namespace khdays::assets {
 
 // A model imported from glTF: neutral geometry plus the textures it ships with,
-// keyed by the name each mesh references. Static import for now (no skinning):
-// every vertex uses the identity palette entry. Texture coordinates are in
+// keyed by the name each mesh references. Rigged meshes are supported: each
+// skin contributes a block of palette matrices (jointGlobal * inverseBind) and
+// its vertices carry up to four bone indices and weights, so the model renders
+// in its authored pose and can be re-posed. Static meshes bake their node
+// transform and use the identity palette entry. Texture coordinates are in
 // texels relative to each texture, matching the DS convention, so the renderer
 // normalizes both the same way.
 struct GltfModel final {
