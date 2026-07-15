@@ -13,6 +13,7 @@
 
 #include "khdays/assets/animation.h"
 #include "khdays/assets/audio.h"
+#include "khdays/assets/cell.h"
 #include "khdays/assets/font.h"
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/mdl0.h"
@@ -231,6 +232,7 @@ void print_help() {
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
         << "  khdays-port --render-text NFTR TEXT OUT.bmp\n"
+        << "  khdays-port --render-cell P2 SUBFILE CELL OUT.bmp\n"
         << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
@@ -494,6 +496,53 @@ int main(int argc, char* argv[]) {
                     static_cast<std::streamsize>(bmp.size()));
                 std::cout << "Composed " << image.width << 'x' << image.height
                           << " background -> BMP: " << argv[4] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-cell") {
+            if (argc != 6) {
+                std::cerr << "ERROR: --render-cell requires a P2 file, sub-file "
+                             "index, cell index, and an output BMP\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto pack = khdays::assets::extract_p2_subfile(
+                    std::filesystem::path{argv[2]},
+                    static_cast<std::size_t>(std::stoul(argv[3])));
+                const auto pal = khdays::assets::find_nitro_resource(
+                    pack.data(), pack.size(), "RLCN");
+                const auto chr = khdays::assets::find_nitro_resource(
+                    pack.data(), pack.size(), "RGCN");
+                const auto cer = khdays::assets::find_nitro_resource(
+                    pack.data(), pack.size(), "RECN");
+                if (!pal || !chr || !cer) {
+                    std::cerr << "ERROR: pack has no NCLR/NCGR/NCER sprites\n";
+                    return EXIT_FAILURE;
+                }
+                const auto palette = khdays::assets::decode_nclr(pal.data, pal.size);
+                const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
+                const auto bank = khdays::assets::decode_ncer(cer.data, cer.size);
+                const auto index = static_cast<std::size_t>(std::stoul(argv[4]));
+                if (index >= bank.cells.size()) {
+                    std::cerr << "ERROR: cell " << index << " out of range ("
+                              << bank.cells.size() << ")\n";
+                    return EXIT_FAILURE;
+                }
+                const auto image = khdays::assets::render_cell(
+                    bank.cells[index], tiles, palette, bank.tile_boundary);
+                const auto bmp = khdays::assets::to_bmp(image);
+                std::ofstream out{argv[5], std::ios::binary};
+                out.write(
+                    reinterpret_cast<const char*>(bmp.data()),
+                    static_cast<std::streamsize>(bmp.size()));
+                std::cout << bank.cells.size() << " cells (boundary "
+                          << bank.tile_boundary << "), cell " << index << " -> "
+                          << image.width << 'x' << image.height << " BMP: "
+                          << argv[5] << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

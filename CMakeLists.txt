@@ -90,6 +90,7 @@ add_library(
         src/assets/animation.cpp
         src/assets/audio.cpp
         src/assets/bmp.cpp
+        src/assets/cell.cpp
         src/assets/font.cpp
         src/assets/graphics2d.cpp
         src/assets/mdl0.cpp
@@ -308,6 +309,17 @@ if(BUILD_TESTING)
             khdays-game
     )
 
+    add_executable(
+        khdays-cell-test
+        tests/cpp/test_cell.cpp
+    )
+
+    target_link_libraries(
+        khdays-cell-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -318,6 +330,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-font-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -328,6 +341,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-font-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -339,6 +353,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-font-test)
     khdays_enable_sanitizers(khdays-vfs-test)
     khdays_enable_sanitizers(khdays-game-test)
+    khdays_enable_sanitizers(khdays-cell-test)
 
     add_test(
         NAME khdays-port-version
@@ -388,5 +403,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-game-flow
         COMMAND khdays-game-test
+    )
+
+    add_test(
+        NAME khdays-cell
+        COMMAND khdays-cell-test
     )
 endif()
