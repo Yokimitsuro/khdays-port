@@ -146,6 +146,7 @@ add_executable(
     src/main.cpp
     platform/pc/sdl_runtime.cpp
     platform/pc/gpu_renderer.cpp
+    platform/pc/audio_backend.cpp
 )
 
 target_include_directories(
