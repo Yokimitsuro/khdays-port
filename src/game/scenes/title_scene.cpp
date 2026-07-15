@@ -66,7 +66,8 @@ void TitleScene::render(SceneManager&, Renderer& r) {
             const int cell = cells[i];
             if (cell >= 0
                 && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
-                draw_overlay(r, layout, buttons_->cells[cell], 2, 150 + i * 22,
+                // Bottom-left, both buttons fully on-screen (24px tall each).
+                draw_overlay(r, layout, buttons_->cells[cell], 0, 142 + i * 24,
                              /*bottom=*/true);
             }
         }

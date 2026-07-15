@@ -677,6 +677,36 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        if (first == "--dump-textures") {
+            // Headless: export every TEX0 texture in an NSBMD/NSBTX to BMP.
+            if (argc != 4) {
+                std::cerr << "ERROR: --dump-textures requires a model file and "
+                             "an output directory\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const std::filesystem::path model{argv[2]};
+                const std::filesystem::path out_dir{argv[3]};
+                std::filesystem::create_directories(out_dir);
+                const auto names = khdays::assets::list_tex0_textures(model);
+                std::cout << names.size() << " textures\n";
+                for (const auto& name : names) {
+                    const auto tex = khdays::assets::load_tex0_texture(model, name);
+                    const auto bmp = khdays::assets::to_bmp(tex);
+                    const auto path = out_dir / (name + ".bmp");
+                    std::ofstream f{path, std::ios::binary};
+                    f.write(reinterpret_cast<const char*>(bmp.data()),
+                            static_cast<std::streamsize>(bmp.size()));
+                    std::cout << "  " << name << ' ' << tex.width << 'x'
+                              << tex.height << ' ' << tex.format_name << '\n';
+                }
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
         if (first == "--extract-stream") {
             if (argc != 5) {
                 std::cerr << "ERROR: --extract-stream requires SDAT, stream "
