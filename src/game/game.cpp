@@ -10,7 +10,7 @@ void Game::boot(int boot_state) {
 }
 
 void Game::step() {
-    tasks_.update();
+    objects_.update();
     scenes_.step();
 }
 

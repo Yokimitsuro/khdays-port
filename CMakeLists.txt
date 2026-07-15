@@ -152,7 +152,7 @@ add_library(
     khdays-game
     STATIC
         src/game/scene.cpp
-        src/game/task.cpp
+        src/game/object.cpp
         src/game/game.cpp
 )
 

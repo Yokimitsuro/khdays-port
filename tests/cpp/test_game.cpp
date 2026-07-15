@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "khdays/game/game.h"
+#include "khdays/game/object.h"
 #include "khdays/game/scene.h"
-#include "khdays/game/task.h"
 
 namespace {
 
@@ -87,29 +87,40 @@ int main() {
         expect(cont.scenes().current_id() == kSceneContinue,
                "non-fresh boot skips to continue");
 
-        // --- task queue ---
-        TaskQueue queue;
-        int runs = 0;
-        queue.add([&] { return ++runs < 3; });  // finishes on the third run
-        queue.update();
-        queue.update();
-        queue.update();
-        expect(runs == 3 && queue.empty(), "task removed when finished");
-
-        // A task added during update runs on the next frame, not this one.
-        int child = 0;
-        bool spawned = false;
-        queue.add([&] {
-            if (!spawned) {
-                spawned = true;
-                queue.add([&] { ++child; return false; });
-            }
-            return false;
+        // --- object state machine (the func_02023adc model) ---
+        ObjectList objects;
+        int a_runs = 0;
+        int b_runs = 0;
+        // State A runs once then hands off to state B; B runs once then ends.
+        Object::State state_b = [&](Object& self) {
+            ++b_runs;
+            self.finish();
+        };
+        objects.spawn([&, state_b](Object& self) {
+            ++a_runs;
+            self.go_to(state_b);
         });
-        queue.update();
-        expect(child == 0 && queue.size() == 1U, "child staged for next frame");
-        queue.update();
-        expect(child == 1 && queue.empty(), "child ran next frame");
+        objects.update();  // A runs -> switches to B
+        expect(a_runs == 1 && b_runs == 0 && objects.size() == 1U, "state A");
+        objects.update();  // B runs -> finishes
+        expect(b_runs == 1, "state B");
+        objects.update();  // B was removed
+        expect(objects.empty(), "finished object removed");
+
+        // An object spawned during update first runs next frame.
+        int child_runs = 0;
+        bool spawned_child = false;
+        objects.spawn([&](Object& self) {
+            if (!spawned_child) {
+                spawned_child = true;
+                objects.spawn([&](Object& c) { ++child_runs; c.finish(); });
+            }
+            self.finish();
+        });
+        objects.update();
+        expect(child_runs == 0 && objects.size() == 1U, "child staged");
+        objects.update();
+        expect(child_runs == 1 && objects.empty(), "child ran next frame");
 
         std::cout << "Game-flow test passed\n";
         return 0;

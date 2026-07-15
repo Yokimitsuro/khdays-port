@@ -156,11 +156,14 @@ int run_game_demo() {
         khdays::game::kSceneContinue,
         [] { return std::make_unique<DemoTitleScene>(); });
 
-    // A background task that ticks for a few frames alongside the scenes.
+    // A background object whose state-machine ticks a few frames (the game's
+    // object model) alongside the scenes.
     int ticks = 0;
-    game.tasks().add([&ticks] {
-        std::cout << "  (task tick " << ++ticks << ")\n";
-        return ticks < 4;
+    game.objects().spawn([&ticks](khdays::game::Object& self) {
+        std::cout << "  (object tick " << ++ticks << ")\n";
+        if (ticks >= 4) {
+            self.finish();
+        }
     });
 
     std::cout << "boot (fresh) ...\n";

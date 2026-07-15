@@ -165,12 +165,15 @@ not ported). Port or replace the minimum required systems for:
   decompressed, and raw NitroFS views; `--vfs-resolve`. Container-by-index
   access is a later refinement.)*
 - overlay/module registration;
-- task scheduling; *(done — `khdays::game::TaskQueue` is the neutral per-frame
-  task queue mirroring FrameStep_UpdateTaskQueue.)*
+- task scheduling; *(done — `khdays::game::Object`/`ObjectList` model the DS
+  per-frame object update (`func_02023adc`): each object runs a state-machine
+  coroutine whose initial state is its constructor's result and which returns
+  the next state, walked once per frame.)*
 - scene transitions; *(skeleton — `khdays::game::SceneManager` holds the current
-  scene, applies pending transitions, and drives update/render per frame,
-  mirroring the DS scene id / poll-alive / transition step. Real per-scene logic
-  is filled in as khdays-decomp names each scene.)*
+  scene id, applies pending transitions (the `StoreGlobalPairAt10` / pending-id
+  latch), and drives update/render per frame. The exact DS consumer that turns a
+  pending id into a loaded scene overlay is the remaining decomp piece; real
+  per-scene logic is filled in as each scene is named.)*
 - save data abstraction.
 
 **Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly.
