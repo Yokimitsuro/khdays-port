@@ -33,10 +33,11 @@ constexpr int kInitialWidth = 1280;
 constexpr int kInitialHeight = 720;
 
 struct Vertex final {
-    float px = 0.0F, py = 0.0F, pz = 0.0F;
+    float px = 0.0F, py = 0.0F, pz = 0.0F;  // raw, bone-local
     float u = 0.0F, v = 0.0F;
     float r = 1.0F, g = 1.0F, b = 1.0F, a = 1.0F;
-    float nx = 0.0F, ny = 0.0F, nz = 0.0F;
+    float nx = 0.0F, ny = 0.0F, nz = 0.0F;  // raw, bone-local
+    std::uint32_t matrix_index = 0U;
 };
 
 struct Uniforms final {
@@ -131,15 +132,12 @@ struct MeshData final {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<SubMesh> submeshes;
-    // Raw local positions and palette indices, kept so the mesh can be re-posed
-    // each frame for animation.
-    std::vector<std::array<float, 3>> raw_positions;
-    std::vector<std::uint32_t> matrix_index;
     std::array<float, 3> center{0, 0, 0};
     float radius = 1.0F;
 };
 
-// Recompute smooth per-vertex normals from the current vertex positions.
+// Compute smooth per-vertex normals from the (raw, bone-local) vertex positions.
+// GPU skinning transforms these by the palette matrix in the vertex shader.
 void compute_normals(MeshData& data) {
     for (auto& v : data.vertices) {
         v.nx = 0.0F;
@@ -171,25 +169,6 @@ void compute_normals(MeshData& data) {
     }
 }
 
-// Re-pose every vertex with a matrix palette (palette[matrix_index] * raw) and
-// refresh normals. Used for animation.
-void pose_mesh(
-    MeshData& data,
-    const std::vector<std::array<float, 16>>& palette) {
-    for (std::size_t i = 0U; i < data.vertices.size(); ++i) {
-        const auto mi = data.matrix_index[i];
-        const auto& raw = data.raw_positions[i];
-        std::array<float, 3> p = raw;
-        if (mi < palette.size()) {
-            p = khdays::assets::transform_point(palette[mi], raw);
-        }
-        data.vertices[i].px = p[0];
-        data.vertices[i].py = p[1];
-        data.vertices[i].pz = p[2];
-    }
-    compute_normals(data);
-}
-
 MeshData build_mesh(
     const khdays::assets::NeutralModel& model,
     const std::map<std::string, khdays::assets::DecodedTexture>& textures) {
@@ -215,11 +194,12 @@ MeshData build_mesh(
         }
 
         for (const auto& v : mesh.vertices) {
-            const auto p = khdays::assets::posed_position(model, v);
             Vertex vertex;
-            vertex.px = p[0];
-            vertex.py = p[1];
-            vertex.pz = p[2];
+            // Store the raw bone-local position; the shader skins it.
+            vertex.px = v.position[0];
+            vertex.py = v.position[1];
+            vertex.pz = v.position[2];
+            vertex.matrix_index = v.matrix_index;
             vertex.u = v.texcoord[0] / tex_w;
             vertex.v = v.texcoord[1] / tex_h;
             vertex.r = static_cast<float>(v.color[0]) / 255.0F;
@@ -227,13 +207,14 @@ MeshData build_mesh(
             vertex.b = static_cast<float>(v.color[2]) / 255.0F;
             vertex.a = static_cast<float>(v.color[3]) / 255.0F;
             data.vertices.push_back(vertex);
-            data.raw_positions.push_back(v.position);
-            data.matrix_index.push_back(v.matrix_index);
+
+            // The camera fit uses the rest-pose bounding box.
+            const auto p = khdays::assets::posed_position(model, v);
             for (int i = 0; i < 3; ++i) {
-                lo[static_cast<std::size_t>(i)] =
-                    std::min(lo[static_cast<std::size_t>(i)], p[static_cast<std::size_t>(i)]);
-                hi[static_cast<std::size_t>(i)] =
-                    std::max(hi[static_cast<std::size_t>(i)], p[static_cast<std::size_t>(i)]);
+                lo[static_cast<std::size_t>(i)] = std::min(
+                    lo[static_cast<std::size_t>(i)], p[static_cast<std::size_t>(i)]);
+                hi[static_cast<std::size_t>(i)] = std::max(
+                    hi[static_cast<std::size_t>(i)], p[static_cast<std::size_t>(i)]);
             }
         }
         for (const auto index : mesh.indices) {
@@ -265,7 +246,8 @@ SDL_GPUShader* create_shader(
     const std::size_t size_bytes,
     const SDL_GPUShaderStage stage,
     const std::uint32_t num_uniform_buffers,
-    const std::uint32_t num_samplers = 0) {
+    const std::uint32_t num_samplers = 0,
+    const std::uint32_t num_storage_buffers = 0) {
     SDL_GPUShaderCreateInfo info{};
     info.code = reinterpret_cast<const std::uint8_t*>(code);
     info.code_size = size_bytes;
@@ -274,6 +256,7 @@ SDL_GPUShader* create_shader(
     info.stage = stage;
     info.num_uniform_buffers = num_uniform_buffers;
     info.num_samplers = num_samplers;
+    info.num_storage_buffers = num_storage_buffers;
     return SDL_CreateGPUShader(device, &info);
 }
 
@@ -492,7 +475,7 @@ int render_model(
 
     SDL_GPUShader* vertex_shader = create_shader(
         device, kModelVertSpirv, sizeof(kModelVertSpirv),
-        SDL_GPU_SHADERSTAGE_VERTEX, 1);
+        SDL_GPU_SHADERSTAGE_VERTEX, 1, 0, 1);
     SDL_GPUShader* fragment_shader = create_shader(
         device, kModelFragSpirv, sizeof(kModelFragSpirv),
         SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
@@ -509,11 +492,13 @@ int render_model(
     vbuf_desc.pitch = sizeof(Vertex);
     vbuf_desc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 
-    std::array<SDL_GPUVertexAttribute, 4> attributes{};
+    std::array<SDL_GPUVertexAttribute, 5> attributes{};
     attributes[0] = {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, px)};
     attributes[1] = {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, u)};
     attributes[2] = {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(Vertex, r)};
     attributes[3] = {3, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, nx)};
+    attributes[4] = {4, 0, SDL_GPU_VERTEXELEMENTFORMAT_UINT,
+                     offsetof(Vertex, matrix_index)};
 
     SDL_GPUColorTargetDescription color_target{};
     color_target.format = SDL_GetGPUSwapchainTextureFormat(device, window);
@@ -525,7 +510,7 @@ int render_model(
     pci.vertex_input_state.vertex_buffer_descriptions = &vbuf_desc;
     pci.vertex_input_state.num_vertex_buffers = 1;
     pci.vertex_input_state.vertex_attributes = attributes.data();
-    pci.vertex_input_state.num_vertex_attributes = 4;
+    pci.vertex_input_state.num_vertex_attributes = 5;
     pci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     pci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
@@ -559,16 +544,24 @@ int render_model(
         return EXIT_FAILURE;
     }
 
-    // A persistent transfer buffer so animated vertices can be re-uploaded each
-    // frame without reallocating.
-    const std::uint32_t vertex_bytes =
-        static_cast<std::uint32_t>(mesh.vertices.size() * sizeof(Vertex));
-    SDL_GPUTransferBuffer* vertex_transfer = nullptr;
+    // Skinning matrix palette as a storage buffer read by the vertex shader.
+    // Uploaded once for the rest pose; re-uploaded each frame when animating.
+    const std::uint32_t palette_bytes = static_cast<std::uint32_t>(
+        std::max<std::size_t>(model.palette.size(), 1U)
+        * sizeof(std::array<float, 16>));
+    SDL_GPUBuffer* palette_buffer = upload_buffer(
+        device, model.palette.data(), palette_bytes,
+        SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
+    if (palette_buffer == nullptr) {
+        log_sdl("palette upload");
+        return EXIT_FAILURE;
+    }
+    SDL_GPUTransferBuffer* palette_transfer = nullptr;
     if (animation.has_value()) {
         SDL_GPUTransferBufferCreateInfo tci{};
         tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tci.size = vertex_bytes;
-        vertex_transfer = SDL_CreateGPUTransferBuffer(device, &tci);
+        tci.size = palette_bytes;
+        palette_transfer = SDL_CreateGPUTransferBuffer(device, &tci);
     }
 
     // Upload one GPU texture per decoded texture, plus a white 1x1 fallback for
@@ -642,8 +635,9 @@ int render_model(
         }
 
         // Animate: sample the bones at the current frame, rebuild the palette,
-        // re-pose the mesh on the CPU, and re-upload the vertex buffer.
-        if (animation.has_value() && vertex_transfer != nullptr) {
+        // and re-upload just the (small) palette storage buffer. The vertex
+        // shader does the skinning, so the vertex buffer never changes.
+        if (animation.has_value() && palette_transfer != nullptr) {
             const float anim_seconds =
                 static_cast<float>(SDL_GetTicks() - start) / 1000.0F;
             constexpr float kFramesPerSecond = 30.0F;  // Nintendo DS animations
@@ -657,21 +651,23 @@ int render_model(
                 *animation, frame, model.object_matrices);
             const auto palette =
                 khdays::assets::compute_palette(*model.skinning, objects);
-            pose_mesh(mesh, palette);
 
             void* mapped =
-                SDL_MapGPUTransferBuffer(device, vertex_transfer, true);
-            std::memcpy(mapped, mesh.vertices.data(), vertex_bytes);
-            SDL_UnmapGPUTransferBuffer(device, vertex_transfer);
+                SDL_MapGPUTransferBuffer(device, palette_transfer, true);
+            std::memcpy(
+                mapped, palette.data(),
+                std::min<std::size_t>(
+                    palette_bytes, palette.size() * sizeof(std::array<float, 16>)));
+            SDL_UnmapGPUTransferBuffer(device, palette_transfer);
 
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
             SDL_GPUTransferBufferLocation src{};
-            src.transfer_buffer = vertex_transfer;
+            src.transfer_buffer = palette_transfer;
             src.offset = 0;
             SDL_GPUBufferRegion dst{};
-            dst.buffer = vertex_buffer;
+            dst.buffer = palette_buffer;
             dst.offset = 0;
-            dst.size = vertex_bytes;
+            dst.size = palette_bytes;
             SDL_UploadToGPUBuffer(copy, &src, &dst, true);
             SDL_EndGPUCopyPass(copy);
         }
@@ -738,6 +734,7 @@ int render_model(
         SDL_GPURenderPass* pass =
             SDL_BeginGPURenderPass(cmd, &color_info, 1, &depth_info);
         SDL_BindGPUGraphicsPipeline(pass, pipeline);
+        SDL_BindGPUVertexStorageBuffers(pass, 0, &palette_buffer, 1);
 
         SDL_GPUBufferBinding vertex_binding{};
         vertex_binding.buffer = vertex_buffer;
@@ -777,9 +774,10 @@ int render_model(
     }
     SDL_ReleaseGPUTexture(device, fallback_texture);
     SDL_ReleaseGPUSampler(device, sampler);
-    if (vertex_transfer != nullptr) {
-        SDL_ReleaseGPUTransferBuffer(device, vertex_transfer);
+    if (palette_transfer != nullptr) {
+        SDL_ReleaseGPUTransferBuffer(device, palette_transfer);
     }
+    SDL_ReleaseGPUBuffer(device, palette_buffer);
     SDL_ReleaseGPUBuffer(device, vertex_buffer);
     SDL_ReleaseGPUBuffer(device, index_buffer);
     SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
