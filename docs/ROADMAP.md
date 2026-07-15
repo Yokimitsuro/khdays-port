@@ -69,11 +69,15 @@ Implement isolated tools or debug modes for:
 - models and skeletons; *(done — MDL0 decode with bones and skinning to a
   neutral, animation-ready mesh, validated against apicula)*
 - a native 3D renderer that draws decoded models with their textures;
-  *(done — SDL3 GPU renderer, depth-tested, per-material TEX0 textures)*
+  *(done — SDL3 GPU renderer, depth-tested, per-material TEX0 textures, an orbit
+  camera, and a --anim override for playing any NSBCA, incl. battle animations)*
 - animations (NSBCA), re-posing the palette per frame;
   *(done — NSBCA decode + per-frame CPU skinning; the viewer auto-detects a
   model's sibling animation)*
 - maps;
+  *(done for individual environment models — maps are NSBMD, e.g. mi/ob/*
+  "tt_map"/"TTL_town", and render with the existing renderer; assembling a full
+  mission scene from placed objects needs layout data and is a later step)*
 - message data;
 - audio metadata.
 
