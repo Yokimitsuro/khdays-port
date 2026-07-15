@@ -27,6 +27,7 @@
 #include "khdays/game/scenes/gameplay_scene.h"
 #include "khdays/game/scenes/main_menu_scene.h"
 #include "khdays/game/scenes/title_scene.h"
+#include "khdays/game/settings.h"
 #include "khdays/game/software_renderer.h"
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
@@ -355,7 +356,14 @@ int main(int argc, char* argv[]) {
             }
             manager.set_input(khdays::game::Input{});
             manager.step();
-            khdays::game::SoftwareRenderer sw{544, 816};  // two 256x192 @ scale 2
+            // Optional last arg "h" = side-by-side layout (wider canvas).
+            const bool horizontal = argc > 4 && std::string{argv[4]} == "h";
+            if (horizontal) {
+                khdays::game::set_screen_layout(
+                    khdays::game::ScreenLayout::Horizontal);
+            }
+            khdays::game::SoftwareRenderer sw{horizontal ? 1056 : 544,
+                                              horizontal ? 400 : 816};
             manager.render(sw);
             const auto bmp = khdays::assets::to_bmp(sw.snapshot());
             std::ofstream out{argv[2], std::ios::binary};
@@ -413,8 +421,10 @@ int main(int argc, char* argv[]) {
                 return std::make_unique<khdays::game::scenes::GameplayScene>();
             });
             game.boot(0);
-            std::cout << "Running the game frame loop (Esc to quit, "
-                         "Enter/Z/Space to advance)...\n";
+            std::cout << "Running the game frame loop:\n"
+                         "  Enter/Z/Space confirm, X back, arrows move\n"
+                         "  -/= volume, M mute, Tab stacked/side-by-side, Esc "
+                         "quit\n";
             return khdays::platform::run_game(game);
         }
 

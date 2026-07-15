@@ -35,6 +35,10 @@ public:
     void play_music(std::string_view track) override;
     void stop_music() override;
 
+    // Output volume in [0, 1]; applied to the streamed samples.
+    void set_volume(float volume);
+    float volume() const { return volume_.load(); }
+
     // True if the SDAT opened and the audio device is streaming.
     bool ok() const { return stream_ != nullptr && sdat_ != nullptr; }
 
@@ -58,6 +62,7 @@ private:
 
     std::string current_;  // track currently requested (main thread only)
     std::atomic<std::uint64_t> generation_{0};
+    std::atomic<float> volume_{1.0F};
     std::thread worker_;
 };
 

@@ -158,6 +158,7 @@ add_library(
         src/game/scene.cpp
         src/game/object.cpp
         src/game/game.cpp
+        src/game/settings.cpp
         src/game/software_renderer.cpp
         src/game/scenes/boot_logo_scene.cpp
         src/game/scenes/title_scene.cpp

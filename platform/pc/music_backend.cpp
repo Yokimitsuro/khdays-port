@@ -99,6 +99,10 @@ void SdlMusicPlayer::play_music(const std::string_view track) {
                           generation);
 }
 
+void SdlMusicPlayer::set_volume(const float volume) {
+    volume_.store(volume < 0.0F ? 0.0F : (volume > 1.0F ? 1.0F : volume));
+}
+
 void SdlMusicPlayer::stop_music() {
     generation_.fetch_add(1);
     current_.clear();
@@ -164,6 +168,7 @@ void SDLCALL SdlMusicPlayer::feed(void* userdata, SDL_AudioStream* stream,
     const std::size_t want_samples =
         static_cast<std::size_t>(additional_amount) / sizeof(std::int16_t);
     std::vector<std::int16_t> chunk(want_samples, 0);
+    const float volume = self->volume_.load();
 
     {
         std::lock_guard<std::mutex> lock(self->mutex_);
@@ -175,7 +180,8 @@ void SDLCALL SdlMusicPlayer::feed(void* userdata, SDL_AudioStream* stream,
                     }
                     self->pos_ = self->loop_start_;  // loop from the loop point
                 }
-                chunk[i] = self->pcm_[self->pos_++];
+                chunk[i] = static_cast<std::int16_t>(
+                    self->pcm_[self->pos_++] * volume);
             }
         }
     }

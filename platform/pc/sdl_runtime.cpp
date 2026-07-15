@@ -12,6 +12,7 @@
 #include <SDL3/SDL.h>
 
 #include "khdays/assets/tex0.h"
+#include "khdays/game/settings.h"
 #include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
 #include "khdays/vfs/filesystem.h"
@@ -466,12 +467,21 @@ int run_game(khdays::game::Game& game) {
     // Music: render the game's SSEQ tracks and stream them for scenes that
     // request a BGM. Absent SDAT (no game data) → scenes simply run silent.
     std::optional<SdlMusicPlayer> music;
+    float volume = 0.7F;
     if (const auto sdat_path = khdays::vfs::resolve("snd/sound_data.sdat")) {
         music.emplace(*sdat_path);
         if (music->ok()) {
+            music->set_volume(volume);
             game.scenes().set_music_player(&*music);
         }
     }
+    const auto apply_volume = [&](float v) {
+        volume = std::clamp(v, 0.0F, 1.0F);
+        if (music) {
+            music->set_volume(volume);
+        }
+        std::cout << "volume: " << static_cast<int>(volume * 100) << "%\n";
+    };
 
     std::uint16_t previous = 0;
     bool running = true;
@@ -484,9 +494,31 @@ int run_game(khdays::game::Game& game) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
-            if (event.type == SDL_EVENT_KEY_DOWN
-                && event.key.key == SDLK_ESCAPE) {
-                running = false;
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                switch (event.key.key) {
+                    case SDLK_ESCAPE:
+                        running = false;
+                        break;
+                    case SDLK_MINUS:  // '-' : volume down
+                        apply_volume(volume - 0.1F);
+                        break;
+                    case SDLK_EQUALS:  // '=' : volume up
+                        apply_volume(volume + 0.1F);
+                        break;
+                    case SDLK_M:  // mute / unmute
+                        apply_volume(volume > 0.0F ? 0.0F : 0.7F);
+                        break;
+                    case SDLK_TAB:  // toggle stacked / side-by-side screens
+                        khdays::game::toggle_screen_layout();
+                        std::cout << "screen layout: "
+                                  << (khdays::game::screen_layout()
+                                              == khdays::game::ScreenLayout::Horizontal
+                                          ? "side by side\n"
+                                          : "stacked\n");
+                        break;
+                    default:
+                        break;
+                }
             }
         }
 
