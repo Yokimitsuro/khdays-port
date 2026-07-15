@@ -3,7 +3,7 @@
 Experimental native PC runtime and source port for **Kingdom Hearts 358/2 Days**, developed alongside [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp).
 
 > [!WARNING]
-> This project is in early development. The native asset pipeline (textures, models, animation, text) works, but it is **not playable** and does not yet boot the game.
+> This project is in early development. The native asset pipeline — textures, 2D/UI graphics, fonts, models, animation, text, and audio — works, along with a mod-override system and a game filesystem. It is **not playable** yet: the game-flow layer (boot, scenes, gameplay) is the next milestone.
 
 > [!IMPORTANT]
 > This repository does not contain a ROM, game assets, audio, video, text dumps, proprietary SDK files, or copyrighted game binaries. Users will be required to provide their own legally obtained copy of the game.
@@ -34,26 +34,39 @@ The port should consume a pinned revision of the decompilation rather than turni
 - [x] Load the first game-owned resource from user-provided data
 - [x] Port and test the first self-contained game subsystem
 
-**What works now (native asset pipeline)**
+**Asset pipeline** — every asset type decodes to a neutral, engine-independent form:
 
-- [x] TEX0 textures decoded to RGBA
+- [x] TEX0 textures → RGBA
 - [x] 2D/UI graphics: NCLR palettes + NCGR tiles + NSCR tilemaps composed to RGBA (`--render-tiles`, `--render-bg`)
-- [x] Fonts: NFTR bitmap fonts decoded and text rendered to RGBA (`--render-text`)
-- [x] MDL0 models decoded with bones and skinning to a neutral, animation-ready mesh
-- [x] NSBCA skeletal animation, GPU-skinned per frame
-- [x] SDL3 GPU renderer (depth-tested, textured, orbit camera) for models and environment maps
-- [x] Modding: texture and rigged-model overrides via a `mods/` folder (see [Modding](#modding))
-- [x] Message text extracted from the `db_<lang>.p2` container (`--message-info` / `--dump-messages`)
-- [x] Audio: SDAT wave archives decoded to PCM (PCM8/PCM16/IMA-ADPCM) and played through SDL3 (`--play-sound`, `--extract-wav`), plus a software synthesizer that renders SSEQ sequenced music (`--render-sequence`, `--play-sequence`)
+- [x] NFTR bitmap fonts, with text rendering (`--render-text`)
+- [x] MDL0 models with bones and skinning → a neutral, animation-ready mesh
+- [x] NSBCA skeletal animation, GPU-skinned per frame; environment maps (NSBMD)
+- [x] Message text from the `db_<lang>.p2` container and the UI `.s`/`.s.z` string tables (`--message-info`, `--dump-messages`, `--dump-strings`)
+- [x] Audio: SDAT wave archives → PCM (PCM8/PCM16/IMA-ADPCM), and an SSEQ software synthesizer for sequenced music
 
-Still ahead: audio playback, game boot flow, overlays, and gameplay. See
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for the full milestone plan.
+**Rendering & audio (SDL3)**
+
+- [x] GPU renderer: depth-tested, textured, GPU-skinned, orbit camera, plays any NSBCA
+- [x] Audio output: sound effects (`--play-sound`) and synthesized music (`--play-sequence`)
+
+**Modding** — drop-in overrides resolved before the DS asset (see [Modding](#modding)):
+
+- [x] Textures (PNG/BMP, HD), rigged models (glTF, animated by the DS skeleton), text, sound effects, music samples, 2D graphics, fonts, and raw files
+
+**Game filesystem**
+
+- [x] `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
+
+**Still ahead** — the game-flow layer (the boot loop, scene/task state machine, and
+gameplay). This is *decomp-gated*: it reimplements understood game behavior as
+[`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp) names each
+subsystem. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full plan.
 
 ## Documentation
 
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones and phase plan.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the neutral-format layering (importers → resource layer → engine).
-- [`docs/MODDING.md`](docs/MODDING.md) — replacing textures and models via the `mods/` folder.
+- [`docs/MODDING.md`](docs/MODDING.md) — replacing textures, models, text, sound, 2D graphics, fonts, and raw files via the `mods/` folder.
 - [`docs/NATIVE_MESH_DECODER.md`](docs/NATIVE_MESH_DECODER.md) — MDL0 geometry/skinning decode to the neutral mesh.
 - [`docs/NATIVE_TEX0_RUNTIME.md`](docs/NATIVE_TEX0_RUNTIME.md) — TEX0 texture decoding.
 - [`docs/NATIVE_MDL0_INSPECTOR.md`](docs/NATIVE_MDL0_INSPECTOR.md) — the `--model-info` inspector.
