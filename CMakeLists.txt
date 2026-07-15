@@ -88,6 +88,7 @@ add_library(
     khdays-assets
     STATIC
         src/assets/animation.cpp
+        src/assets/audio.cpp
         src/assets/bmp.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
@@ -221,22 +222,36 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-audio-test
+        tests/cpp/test_audio.cpp
+    )
+
+    target_link_libraries(
+        khdays-audio-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mesh-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-message-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-audio-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-message-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-audio-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
     khdays_enable_sanitizers(khdays-mdl0-test)
     khdays_enable_sanitizers(khdays-mesh-test)
     khdays_enable_sanitizers(khdays-message-test)
+    khdays_enable_sanitizers(khdays-audio-test)
 
     add_test(
         NAME khdays-port-version
@@ -261,5 +276,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-message-container
         COMMAND khdays-message-test
+    )
+
+    add_test(
+        NAME khdays-audio-decoder
+        COMMAND khdays-audio-test
     )
 endif()

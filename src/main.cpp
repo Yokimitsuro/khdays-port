@@ -9,6 +9,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "khdays/assets/animation.h"
+#include "khdays/assets/audio.h"
 #include "khdays/assets/mdl0.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
@@ -39,6 +40,7 @@ void print_help() {
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --audio-info FILE\n"
+        << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
@@ -54,6 +56,7 @@ void print_help() {
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
+        << "  --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav  Decode a SWAV waveform to WAV.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
@@ -183,6 +186,45 @@ int main(int argc, char* argv[]) {
                 show("  Wave archives", sdat.wave_archives);
                 show("  Stream players", sdat.stream_players);
                 show("  Streams", sdat.streams);
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--extract-wav") {
+            if (argc != 6) {
+                std::cerr << "ERROR: --extract-wav requires SDAT, wave-archive "
+                             "index, SWAV index, and an output path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto sdat =
+                    khdays::assets::open_sdat(std::filesystem::path{argv[2]});
+                const auto wave_archive =
+                    static_cast<std::size_t>(std::stoul(argv[3]));
+                const auto swav =
+                    static_cast<std::size_t>(std::stoul(argv[4]));
+                const auto audio =
+                    khdays::assets::sdat_waveform(*sdat, wave_archive, swav);
+                const auto wav = khdays::assets::to_wav(audio);
+                std::ofstream out{argv[5], std::ios::binary};
+                if (!out) {
+                    std::cerr << "ERROR: cannot write " << argv[5] << '\n';
+                    return EXIT_FAILURE;
+                }
+                out.write(
+                    reinterpret_cast<const char*>(wav.data()),
+                    static_cast<std::streamsize>(wav.size()));
+                std::cout << "Decoded SWAV " << wave_archive << ':' << swav
+                          << " -> " << audio.samples.size() << " samples @ "
+                          << audio.sample_rate << " Hz ("
+                          << (audio.sample_rate > 0
+                                  ? static_cast<double>(audio.samples.size())
+                                      / audio.sample_rate
+                                  : 0.0)
+                          << " s), wrote " << argv[5] << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';
