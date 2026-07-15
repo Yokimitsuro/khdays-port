@@ -78,9 +78,10 @@ Implement isolated tools or debug modes for:
   *(done for individual environment models — maps are NSBMD, e.g. mi/ob/*
   "tt_map"/"TTL_town", and render with the existing renderer; assembling a full
   mission scene from placed objects needs layout data and is a later step)*
-- message data; *(format not yet located — the `text/` files are only fonts,
-  so the game's strings likely live in overlays or compressed archives and may
-  need decompilation knowledge to find)*
+- message data; *(located via Ghidra — the game's text is in `db/db_<lang>.p2`
+  (a "P2" container of UTF-16LE strings with embedded control codes, loaded from
+  `/db/db_&.p2`) plus UI strings in `UI/*/str/*.s.z`. A parser for the P2
+  container format is still to be written)*
 - audio metadata. *(done — SDAT inventory: sequences, banks, wave archives,
   streams, by name via --audio-info)*
 
