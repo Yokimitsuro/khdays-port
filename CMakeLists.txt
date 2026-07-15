@@ -90,6 +90,7 @@ add_library(
         src/assets/animation.cpp
         src/assets/audio.cpp
         src/assets/bmp.cpp
+        src/assets/font.cpp
         src/assets/graphics2d.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
@@ -247,6 +248,17 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-font-test
+        tests/cpp/test_font.cpp
+    )
+
+    target_link_libraries(
+        khdays-font-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -254,6 +266,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-message-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-audio-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-graphics2d-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-font-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -261,6 +274,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-message-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-audio-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-graphics2d-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-font-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -269,6 +283,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-message-test)
     khdays_enable_sanitizers(khdays-audio-test)
     khdays_enable_sanitizers(khdays-graphics2d-test)
+    khdays_enable_sanitizers(khdays-font-test)
 
     add_test(
         NAME khdays-port-version
@@ -303,5 +318,10 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-graphics2d
         COMMAND khdays-graphics2d-test
+    )
+
+    add_test(
+        NAME khdays-font
+        COMMAND khdays-font-test
     )
 endif()

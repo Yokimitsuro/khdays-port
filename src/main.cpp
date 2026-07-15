@@ -10,6 +10,7 @@
 
 #include "khdays/assets/animation.h"
 #include "khdays/assets/audio.h"
+#include "khdays/assets/font.h"
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/mdl0.h"
 #include "khdays/assets/mesh.h"
@@ -45,6 +46,7 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
+        << "  khdays-port --render-text NFTR TEXT OUT.bmp\n"
         << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
@@ -65,6 +67,7 @@ void print_help() {
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
+        << "  --render-text NFTR TEXT OUT.bmp  Render TEXT with an NFTR font to BMP.\n"
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav  Decode a SWAV waveform to WAV.\n"
         << "  --play-sound SDAT WAVEARCHIVE SWAV  Decode and play a SWAV waveform.\n"
@@ -268,6 +271,34 @@ int main(int argc, char* argv[]) {
                 std::cout << "Composed " << image.width << 'x' << image.height
                           << " background from " << tiles.tile_count
                           << " tiles -> BMP: " << argv[4] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-text") {
+            if (argc != 5) {
+                std::cerr << "ERROR: --render-text requires NFTR, text, and an "
+                             "output BMP\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto font =
+                    khdays::assets::decode_nftr(std::filesystem::path{argv[2]});
+                const auto text = khdays::assets::message_from_utf8(argv[3]);
+                const auto image = khdays::assets::render_text(font, text);
+                const auto bmp = khdays::assets::to_bmp(image);
+                std::ofstream out{argv[4], std::ios::binary};
+                out.write(
+                    reinterpret_cast<const char*>(bmp.data()),
+                    static_cast<std::streamsize>(bmp.size()));
+                std::cout << "Font: " << font.glyphs.size() << " glyphs, "
+                          << font.char_to_glyph.size() << " mapped, "
+                          << font.cell_width << 'x' << font.cell_height << ' '
+                          << font.bpp << "bpp -> " << image.width << 'x'
+                          << image.height << " BMP: " << argv[4] << '\n';
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

@@ -38,6 +38,7 @@ The port should consume a pinned revision of the decompilation rather than turni
 
 - [x] TEX0 textures decoded to RGBA
 - [x] 2D/UI graphics: NCLR palettes + NCGR tiles + NSCR tilemaps composed to RGBA (`--render-tiles`, `--render-bg`)
+- [x] Fonts: NFTR bitmap fonts decoded and text rendered to RGBA (`--render-text`)
 - [x] MDL0 models decoded with bones and skinning to a neutral, animation-ready mesh
 - [x] NSBCA skeletal animation, GPU-skinned per frame
 - [x] SDL3 GPU renderer (depth-tested, textured, orbit camera) for models and environment maps

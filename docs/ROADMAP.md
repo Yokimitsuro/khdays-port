@@ -71,6 +71,9 @@ Implement isolated tools or debug modes for:
   `decode_nscr`/`compose_background`), auto-decompressing `.z` blobs;
   `--render-tiles` / `--render-bg` export BMP. Verified against real battle-UI
   graphics)*
+- fonts; *(done — NFTR bitmap fonts decode to glyphs with proportional widths
+  and a character map (`khdays::assets::decode_nftr`), and `render_text` draws a
+  UTF-16 string to RGBA; `--render-text`. Verified rendering real game text)*
 - models and skeletons; *(done — MDL0 decode with bones and skinning to a
   neutral, animation-ready mesh, validated against apicula)*
 - a native 3D renderer that draws decoded models with their textures;
