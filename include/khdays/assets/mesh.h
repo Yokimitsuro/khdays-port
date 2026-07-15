@@ -4,10 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace khdays::assets {
+
+// Opaque render program (the model's SBC plus inverse binds and scales) that
+// rebuilds the matrix palette from a set of bone matrices. Defined in mesh.cpp.
+struct SkinningProgram;
 
 // A single decoded vertex in a neutral, engine-independent form.
 //
@@ -50,9 +55,23 @@ struct NeutralModel final {
     // Vertices reference a palette entry through NeutralVertex::matrix_index.
     std::vector<std::array<float, 16>> palette;
 
+    // Rest-pose bone (object) matrices, column-major. Replace entries with
+    // animated matrices and call compute_palette() to re-pose the model.
+    std::vector<std::array<float, 16>> object_matrices;
+
+    // The program that rebuilds the palette from bone matrices (for animation).
+    std::shared_ptr<const SkinningProgram> skinning;
+
     // Vertex count reported by the MDL0 model header, for cross-checking.
     std::uint16_t header_vertex_count = 0;
 };
+
+// Recompute the matrix palette from a set of bone (object) matrices, e.g. from
+// an animation. The result lines up index-for-index with NeutralModel::palette,
+// so NeutralVertex::matrix_index stays valid.
+std::vector<std::array<float, 16>> compute_palette(
+    const SkinningProgram& program,
+    const std::vector<std::array<float, 16>>& object_matrices);
 
 // Decode the geometry of one model inside a BMD0/NSBMD file into neutral
 // meshes, executing the render command stream so bones and skinning are

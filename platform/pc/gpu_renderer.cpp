@@ -4,13 +4,16 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <SDL3/SDL.h>
 
+#include "khdays/assets/animation.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/tex0.h"
 
@@ -116,9 +119,64 @@ struct MeshData final {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<SubMesh> submeshes;
+    // Raw local positions and palette indices, kept so the mesh can be re-posed
+    // each frame for animation.
+    std::vector<std::array<float, 3>> raw_positions;
+    std::vector<std::uint32_t> matrix_index;
     std::array<float, 3> center{0, 0, 0};
     float radius = 1.0F;
 };
+
+// Recompute smooth per-vertex normals from the current vertex positions.
+void compute_normals(MeshData& data) {
+    for (auto& v : data.vertices) {
+        v.nx = 0.0F;
+        v.ny = 0.0F;
+        v.nz = 0.0F;
+    }
+    for (std::size_t i = 0U; i + 2U < data.indices.size(); i += 3U) {
+        auto& a = data.vertices[data.indices[i]];
+        auto& b = data.vertices[data.indices[i + 1U]];
+        auto& c = data.vertices[data.indices[i + 2U]];
+        const float ux = b.px - a.px, uy = b.py - a.py, uz = b.pz - a.pz;
+        const float vx = c.px - a.px, vy = c.py - a.py, vz = c.pz - a.pz;
+        const float nx = uy * vz - uz * vy;
+        const float ny = uz * vx - ux * vz;
+        const float nz = ux * vy - uy * vx;
+        for (auto* vert : {&a, &b, &c}) {
+            vert->nx += nx;
+            vert->ny += ny;
+            vert->nz += nz;
+        }
+    }
+    for (auto& v : data.vertices) {
+        const float len = std::sqrt(v.nx * v.nx + v.ny * v.ny + v.nz * v.nz);
+        if (len > 1e-8F) {
+            v.nx /= len;
+            v.ny /= len;
+            v.nz /= len;
+        }
+    }
+}
+
+// Re-pose every vertex with a matrix palette (palette[matrix_index] * raw) and
+// refresh normals. Used for animation.
+void pose_mesh(
+    MeshData& data,
+    const std::vector<std::array<float, 16>>& palette) {
+    for (std::size_t i = 0U; i < data.vertices.size(); ++i) {
+        const auto mi = data.matrix_index[i];
+        const auto& raw = data.raw_positions[i];
+        std::array<float, 3> p = raw;
+        if (mi < palette.size()) {
+            p = khdays::assets::transform_point(palette[mi], raw);
+        }
+        data.vertices[i].px = p[0];
+        data.vertices[i].py = p[1];
+        data.vertices[i].pz = p[2];
+    }
+    compute_normals(data);
+}
 
 MeshData build_mesh(
     const khdays::assets::NeutralModel& model,
@@ -157,6 +215,8 @@ MeshData build_mesh(
             vertex.b = static_cast<float>(v.color[2]) / 255.0F;
             vertex.a = static_cast<float>(v.color[3]) / 255.0F;
             data.vertices.push_back(vertex);
+            data.raw_positions.push_back(v.position);
+            data.matrix_index.push_back(v.matrix_index);
             for (int i = 0; i < 3; ++i) {
                 lo[static_cast<std::size_t>(i)] =
                     std::min(lo[static_cast<std::size_t>(i)], p[static_cast<std::size_t>(i)]);
@@ -173,34 +233,7 @@ MeshData build_mesh(
             mesh.texture_name});
     }
 
-    // Smooth normals: accumulate face normals into each vertex, then normalize.
-    for (std::size_t i = 0U; i + 2U < data.indices.size(); i += 3U) {
-        const auto ia = data.indices[i];
-        const auto ib = data.indices[i + 1U];
-        const auto ic = data.indices[i + 2U];
-        auto& a = data.vertices[ia];
-        auto& b = data.vertices[ib];
-        auto& c = data.vertices[ic];
-        const float ux = b.px - a.px, uy = b.py - a.py, uz = b.pz - a.pz;
-        const float vx = c.px - a.px, vy = c.py - a.py, vz = c.pz - a.pz;
-        const float nx = uy * vz - uz * vy;
-        const float ny = uz * vx - ux * vz;
-        const float nz = ux * vy - uy * vx;
-        for (auto* vert : {&a, &b, &c}) {
-            vert->nx += nx;
-            vert->ny += ny;
-            vert->nz += nz;
-        }
-    }
-    for (auto& vert : data.vertices) {
-        const float len =
-            std::sqrt(vert.nx * vert.nx + vert.ny * vert.ny + vert.nz * vert.nz);
-        if (len > 1e-8F) {
-            vert.nx /= len;
-            vert.ny /= len;
-            vert.nz /= len;
-        }
-    }
+    compute_normals(data);
 
     for (int i = 0; i < 3; ++i) {
         data.center[static_cast<std::size_t>(i)] =
@@ -385,7 +418,7 @@ int render_model(const std::filesystem::path& model_path) {
         }
     }
 
-    const auto mesh = build_mesh(model, decoded_textures);
+    auto mesh = build_mesh(model, decoded_textures);
     if (mesh.vertices.empty() || mesh.indices.empty()) {
         std::cerr << "ERROR: model has no drawable geometry\n";
         return EXIT_FAILURE;
@@ -393,6 +426,23 @@ int render_model(const std::filesystem::path& model_path) {
     std::cout << "Rendering '" << model.name << "': "
               << mesh.vertices.size() << " vertices, "
               << mesh.indices.size() / 3U << " triangles\n";
+
+    // Auto-detect a sibling animation: the model is <container>/slot_7/0000.nsbmd
+    // and its animation, if any, is <container>/slot_0/0000.nsbca.
+    std::optional<khdays::assets::SkeletalAnimation> animation;
+    if (model.skinning && !model.object_matrices.empty()) {
+        const auto anim_path = model_path.parent_path().parent_path()
+            / "slot_0" / "0000.nsbca";
+        if (std::filesystem::exists(anim_path)) {
+            try {
+                animation = khdays::assets::load_nsbca(anim_path);
+                std::cout << "Loaded animation: " << animation->frame_count
+                          << " frames, " << animation->bones.size() << " bones\n";
+            } catch (const std::exception& error) {
+                std::cerr << "animation: " << error.what() << '\n';
+            }
+        }
+    }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         log_sdl("SDL_Init");
@@ -494,6 +544,18 @@ int render_model(const std::filesystem::path& model_path) {
         return EXIT_FAILURE;
     }
 
+    // A persistent transfer buffer so animated vertices can be re-uploaded each
+    // frame without reallocating.
+    const std::uint32_t vertex_bytes =
+        static_cast<std::uint32_t>(mesh.vertices.size() * sizeof(Vertex));
+    SDL_GPUTransferBuffer* vertex_transfer = nullptr;
+    if (animation.has_value()) {
+        SDL_GPUTransferBufferCreateInfo tci{};
+        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tci.size = vertex_bytes;
+        vertex_transfer = SDL_CreateGPUTransferBuffer(device, &tci);
+    }
+
     // Upload one GPU texture per decoded texture, plus a white 1x1 fallback for
     // meshes with no or unresolved texture.
     std::map<std::string, SDL_GPUTexture*> textures;
@@ -549,6 +611,41 @@ int render_model(const std::filesystem::path& model_path) {
             break;
         }
 
+        // Animate: sample the bones at the current frame, rebuild the palette,
+        // re-pose the mesh on the CPU, and re-upload the vertex buffer.
+        if (animation.has_value() && vertex_transfer != nullptr) {
+            const float anim_seconds =
+                static_cast<float>(SDL_GetTicks() - start) / 1000.0F;
+            constexpr float kFramesPerSecond = 30.0F;  // Nintendo DS animations
+            float frame = 0.0F;
+            if (animation->frame_count > 1U) {
+                frame = std::fmod(
+                    anim_seconds * kFramesPerSecond,
+                    static_cast<float>(animation->frame_count));
+            }
+            const auto objects = khdays::assets::sample_animation(
+                *animation, frame, model.object_matrices);
+            const auto palette =
+                khdays::assets::compute_palette(*model.skinning, objects);
+            pose_mesh(mesh, palette);
+
+            void* mapped =
+                SDL_MapGPUTransferBuffer(device, vertex_transfer, true);
+            std::memcpy(mapped, mesh.vertices.data(), vertex_bytes);
+            SDL_UnmapGPUTransferBuffer(device, vertex_transfer);
+
+            SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+            SDL_GPUTransferBufferLocation src{};
+            src.transfer_buffer = vertex_transfer;
+            src.offset = 0;
+            SDL_GPUBufferRegion dst{};
+            dst.buffer = vertex_buffer;
+            dst.offset = 0;
+            dst.size = vertex_bytes;
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+            SDL_EndGPUCopyPass(copy);
+        }
+
         SDL_GPUTexture* swapchain = nullptr;
         std::uint32_t width = 0, height = 0;
         if (!SDL_WaitAndAcquireGPUSwapchainTexture(
@@ -571,9 +668,8 @@ int render_model(const std::filesystem::path& model_path) {
         }
 
         // Camera and model transforms.
-        const float seconds =
-            static_cast<float>(SDL_GetTicks() - start) / 1000.0F;
-        const Mat model_rot = rotation_y(seconds * 0.6F);
+        // No auto-spin: the animation should be the only motion in the viewer.
+        const Mat model_rot = rotation_y(0.0F);
         const Mat model_mat = multiply(
             model_rot,
             translation(-mesh.center[0], -mesh.center[1], -mesh.center[2]));
@@ -649,6 +745,9 @@ int render_model(const std::filesystem::path& model_path) {
     }
     SDL_ReleaseGPUTexture(device, fallback_texture);
     SDL_ReleaseGPUSampler(device, sampler);
+    if (vertex_transfer != nullptr) {
+        SDL_ReleaseGPUTransferBuffer(device, vertex_transfer);
+    }
     SDL_ReleaseGPUBuffer(device, vertex_buffer);
     SDL_ReleaseGPUBuffer(device, index_buffer);
     SDL_ReleaseGPUGraphicsPipeline(device, pipeline);

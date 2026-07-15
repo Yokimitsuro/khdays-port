@@ -61,6 +61,7 @@ FetchContent_MakeAvailable(SDL3)
 add_library(
     khdays-assets
     STATIC
+        src/assets/animation.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
         src/assets/tex0.cpp

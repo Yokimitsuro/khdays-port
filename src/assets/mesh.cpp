@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -1049,7 +1050,101 @@ struct Builder final {
     }
 };
 
+// Rebuild the matrix palette by replaying the render program's matrix ops with
+// the given bone matrices. Draw/BindMaterial ops add nothing to the palette, so
+// this reproduces exactly the palette (and index assignment) built during decode
+// while allowing animated bone matrices to be substituted.
+std::vector<Matrix> build_palette(
+    const std::vector<RenderOp>& ops,
+    const std::vector<Matrix>& objects,
+    const std::vector<Matrix>& inv_binds,
+    const float up_scale,
+    const float down_scale) {
+    std::vector<Matrix> palette{matrix_identity()};
+    std::uint32_t current = 0U;
+    std::array<int, 32> stack{};
+    stack.fill(-1);
+
+    const auto fetch = [&](const std::uint8_t pos) -> std::uint32_t {
+        if (stack[pos] < 0) {
+            stack[pos] = static_cast<int>(current);
+        }
+        return static_cast<std::uint32_t>(stack[pos]);
+    };
+    const auto add = [&](const Matrix& m) -> std::uint32_t {
+        palette.push_back(m);
+        return static_cast<std::uint32_t>(palette.size() - 1U);
+    };
+
+    for (const auto& op : ops) {
+        switch (op.kind) {
+            case OpKind::LoadMatrix:
+                current = fetch(op.index);
+                break;
+            case OpKind::StoreMatrix:
+                stack[op.index] = static_cast<int>(current);
+                break;
+            case OpKind::MulObject:
+                if (op.index < objects.size()) {
+                    current = add(
+                        matrix_multiply(palette[current], objects[op.index]));
+                }
+                break;
+            case OpKind::Skin: {
+                Matrix acc = matrix_zero();
+                for (const auto& term : op.terms) {
+                    if (term.inv_bind_idx >= inv_binds.size()) {
+                        continue;
+                    }
+                    const auto slot = fetch(term.stack_pos);
+                    matrix_add_scaled(
+                        acc,
+                        matrix_multiply(palette[slot], inv_binds[term.inv_bind_idx]),
+                        term.weight);
+                }
+                current = add(acc);
+                break;
+            }
+            case OpKind::ScaleUp:
+                current = add(matrix_multiply(
+                    palette[current], matrix_scale(up_scale, up_scale, up_scale)));
+                break;
+            case OpKind::ScaleDown:
+                current = add(matrix_multiply(
+                    palette[current],
+                    matrix_scale(down_scale, down_scale, down_scale)));
+                break;
+            case OpKind::BindMaterial:
+            case OpKind::Draw:
+                break;
+        }
+    }
+    return palette;
+}
+
 }  // namespace
+
+namespace khdays::assets {
+
+struct SkinningProgram final {
+    std::vector<RenderOp> render_ops;
+    std::vector<Matrix> inv_binds;
+    float up_scale = 1.0F;
+    float down_scale = 1.0F;
+};
+
+std::vector<std::array<float, 16>> compute_palette(
+    const SkinningProgram& program,
+    const std::vector<std::array<float, 16>>& object_matrices) {
+    return build_palette(
+        program.render_ops,
+        object_matrices,
+        program.inv_binds,
+        program.up_scale,
+        program.down_scale);
+}
+
+}  // namespace khdays::assets
 
 namespace khdays::assets {
 
@@ -1142,6 +1237,9 @@ NeutralModel decode_model_geometry(
     builder.run(render_ops);
 
     result.palette = builder.palette;
+    result.object_matrices = objects;
+    result.skinning = std::make_shared<SkinningProgram>(SkinningProgram{
+        render_ops, inv_binds, builder.up_scale, builder.down_scale});
     return result;
 }
 
