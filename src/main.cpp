@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <SDL3/SDL_main.h>
 
@@ -21,6 +22,7 @@
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
 #include "khdays/resource/loader.h"
+#include "khdays/vfs/filesystem.h"
 
 #ifndef KHDAYS_PORT_VERSION
 #define KHDAYS_PORT_VERSION "unknown"
@@ -44,6 +46,7 @@ void print_help() {
         << "  khdays-port --model-info FILE\n"
         << "  khdays-port --anim-info FILE\n"
         << "  khdays-port --audio-info FILE\n"
+        << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
         << "  khdays-port --render-text NFTR TEXT OUT.bmp\n"
@@ -65,6 +68,7 @@ void print_help() {
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
+        << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
         << "  --render-text NFTR TEXT OUT.bmp  Render TEXT with an NFTR font to BMP.\n"
@@ -207,6 +211,30 @@ int main(int argc, char* argv[]) {
                 std::cerr << "ERROR: " << error.what() << '\n';
                 return EXIT_FAILURE;
             }
+        }
+
+        if (first == "--vfs-resolve") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --vfs-resolve requires a game path\n";
+                return EXIT_FAILURE;
+            }
+            if (!khdays::vfs::autodetect_data_root()) {
+                std::cerr << "ERROR: could not find extracted data under "
+                             "data/extracted (run the extractor first)\n";
+                return EXIT_FAILURE;
+            }
+            std::cout << "data root: " << khdays::vfs::data_root().string()
+                      << '\n';
+            const auto resolved = khdays::vfs::resolve(argv[2]);
+            if (!resolved) {
+                std::cerr << "not found: " << argv[2] << '\n';
+                return EXIT_FAILURE;
+            }
+            std::error_code ec;
+            const auto size = std::filesystem::file_size(*resolved, ec);
+            std::cout << argv[2] << " -> " << resolved->string() << " ("
+                      << size << " bytes)\n";
+            return EXIT_SUCCESS;
         }
 
         if (first == "--render-tiles") {

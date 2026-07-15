@@ -154,6 +154,14 @@ Fonts are NFTR bitmap fonts. A replacement font at
 the game's — swap in a different typeface or a custom-drawn one. Preview a font
 with `--render-text <font.nftr> "some text" out.bmp`.
 
+## Raw file overrides
+
+Beyond the typed overrides above, a file at `mods/<Mod>/files/<game_path>`
+shadows any game file the runtime reads through its filesystem, by its NitroFS
+path (e.g. `mods/<Mod>/files/db/db_es.p2`). This is the lowest-level hook — a
+raw byte-for-byte replacement — and wins over the extracted data. Check what a
+game path resolves to with `--vfs-resolve <game_path>`.
+
 ## Trying it
 
 With the DS data extracted under `data/` and a mod prepared as above:

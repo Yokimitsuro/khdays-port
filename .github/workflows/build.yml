@@ -149,7 +149,7 @@ jobs:
           cmake --build build-san --target
           khdays-tex0-test khdays-mdl0-test khdays-mesh-test
           khdays-message-test khdays-audio-test khdays-graphics2d-test
-          khdays-font-test
+          khdays-font-test khdays-vfs-test
 
       # Exclude the SDL-linked version smoke test; only the asset parsers and
       # the mesh decoder are built and exercised here.

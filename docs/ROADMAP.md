@@ -153,7 +153,11 @@ Port or replace the minimum required systems for:
 
 - startup;
 - memory arenas;
-- archives and filesystem;
+- archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
+  path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted
+  data, searching mod overrides (`mods/<Mod>/files/`) then the unpacked,
+  decompressed, and raw NitroFS views; `--vfs-resolve`. Container-by-index
+  access is a later refinement.)*
 - overlay/module registration;
 - task scheduling;
 - scene transitions;
