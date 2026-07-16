@@ -1,33 +1,33 @@
 # Game data extractor
 
-Extrae localmente NitroFS y varios bloques de sistema desde una ROM de Nintendo DS proporcionada por el usuario.
+Extracts NitroFS and several system blocks locally from a Nintendo DS ROM provided by the user.
 
-La herramienta no descarga ni distribuye contenido del juego. El resultado se guarda bajo `data/`, que debe permanecer ignorado por Git.
+The tool neither downloads nor distributes game content. The output is written under `data/`, which must stay ignored by Git.
 
-## Requisito previo
+## Prerequisite
 
-Ejecuta primero el verificador:
-
-```powershell
-py .\tools\verify_rom\verify_rom.py "E:\ruta\game.nds"
-```
-
-Añade a `supported_roms.json` únicamente el SHA-256 de una ROM limpia y confirmada.
-
-## Extraer
-
-Desde la raíz del repositorio:
+Run the verifier first:
 
 ```powershell
-py .\tools\extract_data\extract_data.py "E:\ruta\game.nds"
+py .\tools\verify_rom\verify_rom.py "E:\path\game.nds"
 ```
 
-La salida se crea en:
+Add to `supported_roms.json` only the SHA-256 of a clean, confirmed ROM.
+
+## Extract
+
+From the repository root:
+
+```powershell
+py .\tools\extract_data\extract_data.py "E:\path\game.nds"
+```
+
+The output is created in:
 
 ```text
 data/
 └── extracted/
-    └── <16 primeros caracteres del SHA-256>/
+    └── <first 16 characters of the SHA-256>/
         ├── metadata.json
         ├── manifest.json
         ├── system/
@@ -41,50 +41,50 @@ data/
             └── ...
 ```
 
-Algunos bloques pueden no existir en determinadas ROMs y se omitirán cuando su tamaño sea cero.
+Some blocks may not exist in certain ROMs and are skipped when their size is zero.
 
-## ROM no registrada
+## Unregistered ROM
 
-Cuando `supported_roms.json` contiene ROMs pero el hash no coincide, la extracción se detiene.
+When `supported_roms.json` contains ROMs but the hash does not match, extraction stops.
 
-Para investigar temporalmente una ROM desconocida:
-
-```powershell
-py .\tools\extract_data\extract_data.py "E:\ruta\game.nds" --allow-unknown
-```
-
-No registres ni publiques resultados de una ROM modificada o de procedencia desconocida.
-
-## Repetir una extracción
-
-La herramienta no sobrescribe una extracción previa de forma silenciosa:
+To investigate an unknown ROM temporarily:
 
 ```powershell
-py .\tools\extract_data\extract_data.py "E:\ruta\game.nds" --force
+py .\tools\extract_data\extract_data.py "E:\path\game.nds" --allow-unknown
 ```
 
-## Archivos generados
+Do not register or publish results from a modified ROM or one of unknown provenance.
+
+## Repeating an extraction
+
+The tool does not silently overwrite a previous extraction:
+
+```powershell
+py .\tools\extract_data\extract_data.py "E:\path\game.nds" --force
+```
+
+## Generated files
 
 ### `metadata.json`
 
-Contiene:
+Contains:
 
-- SHA-256 y tamaño de la ROM;
-- estado de compatibilidad;
-- datos principales de la cabecera;
-- recuento de archivos NitroFS.
+- SHA-256 and size of the ROM;
+- support status;
+- the main header data;
+- NitroFS file count.
 
 ### `manifest.json`
 
-Contiene:
+Contains:
 
-- ruta, posición, tamaño y SHA-256 de cada archivo extraído;
-- información equivalente para ARM9, ARM7 y tablas de overlays.
+- path, position, size and SHA-256 of each extracted file;
+- equivalent information for ARM9, ARM7 and the overlay tables.
 
-El manifiesto permitirá que las siguientes herramientas localicen recursos sin depender de rutas codificadas manualmente.
+The manifest will let the following tools locate resources without relying on manually hard-coded paths.
 
-## Códigos de salida
+## Exit codes
 
-- `0`: extracción correcta.
-- `1`: error de lectura, estructura o escritura.
-- `2`: ROM no registrada.
+- `0`: extraction successful.
+- `1`: read, structure or write error.
+- `2`: ROM not registered.

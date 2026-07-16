@@ -76,14 +76,14 @@ def sha256_bytes(data: bytes) -> str:
 
 def read_exact(stream: BinaryIO, offset: int, size: int, label: str) -> bytes:
     if offset < 0 or size < 0:
-        raise ValueError(f"{label}: offset o tamaño negativo.")
+        raise ValueError(f"{label}: negative offset or size.")
 
     stream.seek(offset)
     data = stream.read(size)
     if len(data) != size:
         raise ValueError(
-            f"{label}: se esperaban {size} bytes en 0x{offset:X}, "
-            f"pero solo se pudieron leer {len(data)}."
+            f"{label}: expected {size} bytes at 0x{offset:X}, "
+            f"but only {len(data)} could be read."
         )
     return data
 
@@ -93,7 +93,7 @@ def unpack_u32(header: bytes, offset: int) -> int:
 
 
 def read_header(stream: BinaryIO, rom_size: int) -> RomHeader:
-    header = read_exact(stream, 0, HEADER_MIN_SIZE, "Cabecera NDS")
+    header = read_exact(stream, 0, HEADER_MIN_SIZE, "NDS header")
 
     parsed = RomHeader(
         title=decode_ascii(header[0x00:0x0C]),
@@ -135,12 +135,12 @@ def read_header(stream: BinaryIO, rom_size: int) -> RomHeader:
             continue
         if offset + size > rom_size:
             raise ValueError(
-                f"{label}: rango fuera de la ROM "
+                f"{label}: range outside the ROM "
                 f"(offset=0x{offset:X}, size=0x{size:X}, rom=0x{rom_size:X})."
             )
 
     if parsed.fat_size % 8 != 0:
-        raise ValueError("La FAT no tiene un tamaño múltiplo de 8 bytes.")
+        raise ValueError("The FAT size is not a multiple of 8 bytes.")
 
     return parsed
 
@@ -152,11 +152,11 @@ def load_supported_database(path: Path) -> list[dict[str, Any]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON inválido en {path}: {exc}") from exc
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
 
     roms = payload.get("roms", [])
     if not isinstance(roms, list):
-        raise ValueError(f"{path} debe contener una lista llamada 'roms'.")
+        raise ValueError(f"{path} must contain a list named 'roms'.")
     return roms
 
 
@@ -180,11 +180,11 @@ def parse_fat(fat: bytes, rom_size: int) -> list[FatEntry]:
 
         if end < start:
             raise ValueError(
-                f"FAT[{file_id}]: final 0x{end:X} anterior al inicio 0x{start:X}."
+                f"FAT[{file_id}]: end 0x{end:X} precedes start 0x{start:X}."
             )
         if end > rom_size:
             raise ValueError(
-                f"FAT[{file_id}]: final 0x{end:X} fuera de la ROM "
+                f"FAT[{file_id}]: end 0x{end:X} outside the ROM "
                 f"(0x{rom_size:X})."
             )
 
@@ -201,18 +201,18 @@ def safe_component(name: str, fallback: str) -> str:
 
 def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
     if len(fnt) < 8:
-        raise ValueError("La FNT es demasiado pequeña.")
+        raise ValueError("The FNT is too small.")
 
     root_subtable_offset, root_first_file_id, directory_count = struct.unpack_from(
         "<IHH", fnt, 0
     )
 
     if directory_count == 0:
-        raise ValueError("La FNT indica cero directorios.")
+        raise ValueError("The FNT declares zero directories.")
     if directory_count * 8 > len(fnt):
-        raise ValueError("La tabla principal de directorios excede la FNT.")
+        raise ValueError("The main directory table exceeds the FNT.")
     if root_subtable_offset >= len(fnt):
-        raise ValueError("El subdirectorio raíz apunta fuera de la FNT.")
+        raise ValueError("The root subdirectory points outside the FNT.")
 
     main_entries: dict[int, tuple[int, int, int]] = {}
     for index in range(directory_count):
@@ -224,7 +224,7 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
 
         if subtable_offset >= len(fnt):
             raise ValueError(
-                f"Directorio 0x{directory_id:04X}: subtabla fuera de la FNT."
+                f"Directory 0x{directory_id:04X}: subtable outside the FNT."
             )
 
         main_entries[directory_id] = (
@@ -239,11 +239,11 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
     def walk(directory_id: int, parent_path: PurePosixPath) -> None:
         if directory_id in visited:
             raise ValueError(
-                f"Ciclo detectado en el directorio 0x{directory_id:04X}."
+                f"Cycle detected in directory 0x{directory_id:04X}."
             )
         if directory_id not in main_entries:
             raise ValueError(
-                f"Referencia a directorio inexistente 0x{directory_id:04X}."
+                f"Reference to nonexistent directory 0x{directory_id:04X}."
             )
 
         visited.add(directory_id)
@@ -252,7 +252,7 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
         while True:
             if cursor >= len(fnt):
                 raise ValueError(
-                    f"Directorio 0x{directory_id:04X}: subtabla sin terminador."
+                    f"Directory 0x{directory_id:04X}: subtable without terminator."
                 )
 
             descriptor = fnt[cursor]
@@ -266,11 +266,11 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
 
             if name_length == 0:
                 raise ValueError(
-                    f"Directorio 0x{directory_id:04X}: nombre de longitud cero."
+                    f"Directory 0x{directory_id:04X}: zero-length name."
                 )
             if cursor + name_length > len(fnt):
                 raise ValueError(
-                    f"Directorio 0x{directory_id:04X}: nombre fuera de la FNT."
+                    f"Directory 0x{directory_id:04X}: name outside the FNT."
                 )
 
             raw_name = fnt[cursor:cursor + name_length]
@@ -279,7 +279,7 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
 
             if is_directory:
                 if cursor + 2 > len(fnt):
-                    raise ValueError("ID de subdirectorio truncado.")
+                    raise ValueError("Truncated subdirectory ID.")
 
                 child_id = struct.unpack_from("<H", fnt, cursor)[0]
                 cursor += 2
@@ -291,8 +291,8 @@ def parse_fnt(fnt: bytes, fat_count: int) -> dict[int, PurePosixPath]:
             else:
                 if file_id >= fat_count:
                     raise ValueError(
-                        f"La FNT referencia file_id {file_id}, "
-                        f"pero la FAT solo contiene {fat_count} entradas."
+                        f"The FNT references file_id {file_id}, "
+                        f"but the FAT only contains {fat_count} entries."
                     )
 
                 file_name = safe_component(
@@ -325,7 +325,7 @@ def copy_range(
             chunk = source.read(min(1024 * 1024, remaining))
             if not chunk:
                 raise ValueError(
-                    f"Lectura truncada al extraer {destination}."
+                    f"Truncated read while extracting {destination}."
                 )
             output.write(chunk)
             digest.update(chunk)
@@ -356,8 +356,8 @@ def ensure_empty_output(path: Path, force: bool) -> None:
     if path.exists():
         if not force:
             raise FileExistsError(
-                f"La carpeta de salida ya existe: {path}\n"
-                "Usa --force para sustituirla."
+                f"The output folder already exists: {path}\n"
+                "Use --force to replace it."
             )
         shutil.rmtree(path)
 
@@ -372,7 +372,7 @@ def extract_rom(
     force: bool,
 ) -> Path:
     if not rom_path.is_file():
-        raise FileNotFoundError(f"No existe la ROM: {rom_path}")
+        raise FileNotFoundError(f"ROM does not exist: {rom_path}")
 
     rom_size = rom_path.stat().st_size
     rom_sha256 = sha256_file(rom_path)
@@ -381,8 +381,8 @@ def extract_rom(
 
     if database and matched is None and not allow_unknown:
         raise PermissionError(
-            "La ROM no está registrada en supported_roms.json. "
-            "Verifícala primero o usa --allow-unknown únicamente para desarrollo."
+            "The ROM is not registered in supported_roms.json. "
+            "Verify it first, or use --allow-unknown for development only."
         )
 
     output_dir = output_root / rom_sha256[:16]
@@ -517,28 +517,28 @@ def parse_args() -> argparse.Namespace:
             "Nintendo DS ROM."
         )
     )
-    parser.add_argument("rom", type=Path, help="Ruta a la ROM .nds")
+    parser.add_argument("rom", type=Path, help="Path to the .nds ROM")
     parser.add_argument(
         "--output",
         type=Path,
         default=default_output,
-        help=f"Directorio de salida (por defecto: {default_output})",
+        help=f"Output directory (default: {default_output})",
     )
     parser.add_argument(
         "--database",
         type=Path,
         default=default_database,
-        help=f"Base de ROMs soportadas (por defecto: {default_database})",
+        help=f"Supported ROM database (default: {default_database})",
     )
     parser.add_argument(
         "--allow-unknown",
         action="store_true",
-        help="Permite extraer una ROM no registrada. Solo para desarrollo.",
+        help="Allow extracting an unregistered ROM. Development only.",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Sustituye una extracción previa con el mismo SHA-256.",
+        help="Replace a previous extraction with the same SHA-256.",
     )
     return parser.parse_args()
 
@@ -561,9 +561,9 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Extracción completada: {output}")
-    print(f"Metadatos: {output / 'metadata.json'}")
-    print(f"Manifiesto: {output / 'manifest.json'}")
+    print(f"Extraction complete: {output}")
+    print(f"Metadata: {output / 'metadata.json'}")
+    print(f"Manifest: {output / 'manifest.json'}")
     return 0
 
 

@@ -482,4 +482,25 @@ if(BUILD_TESTING)
         NAME khdays-cell
         COMMAND khdays-cell-test
     )
+
+    # Everything ctest runs under the sanitizers job, as one target. CI builds
+    # this instead of naming each test, so adding a test here is the only place
+    # it has to be added -- a hand-written list in the workflow silently drifts,
+    # and the build then fails with "Unable to find executable" at ctest time.
+    # The SDL-linked smoke test is deliberately absent; ctest excludes it too.
+    add_custom_target(
+        khdays-asset-tests
+        DEPENDS
+            khdays-tex0-test
+            khdays-mdl0-test
+            khdays-mesh-test
+            khdays-message-test
+            khdays-mobiclip-test
+            khdays-audio-test
+            khdays-graphics2d-test
+            khdays-font-test
+            khdays-vfs-test
+            khdays-game-test
+            khdays-cell-test
+    )
 endif()

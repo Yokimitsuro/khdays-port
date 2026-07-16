@@ -50,17 +50,17 @@ class ContainerSummary:
 def load_manifest(unpacked_root: Path) -> dict[str, Any]:
     path = unpacked_root / "unpacked_manifest.json"
     if not path.is_file():
-        raise FileNotFoundError(f"No existe: {path}")
+        raise FileNotFoundError(f"Does not exist: {path}")
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON inválido en {path}: {exc}") from exc
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
 
     containers = payload.get("containers")
     if not isinstance(containers, list):
         raise ValueError(
-            "unpacked_manifest.json debe contener una lista llamada 'containers'."
+            "unpacked_manifest.json must contain a list named 'containers'."
         )
     return payload
 
@@ -95,37 +95,37 @@ def score_candidate(
 
     if has_model and has_texture:
         score += 100
-        reasons.append("modelo y texturas en el mismo contenedor")
+        reasons.append("model and textures in the same container")
     elif has_model:
         score += 65
-        reasons.append("contiene modelo")
+        reasons.append("contains a model")
     elif has_texture:
         score += 40
-        reasons.append("contiene texturas")
+        reasons.append("contains textures")
 
     if has_animation:
         score += 10
-        reasons.append("incluye animaciones")
+        reasons.append("includes animations")
 
     lowered = source_path.lower()
     if "/mi/ch/" in f"/{lowered}" or lowered.startswith("mi/ch/"):
         score += 20
-        reasons.append("ruta de personaje mi/ch")
+        reasons.append("character path mi/ch")
     if "/ba/ch/" in f"/{lowered}" or lowered.startswith("ba/ch/"):
         score += 8
-        reasons.append("ruta de batalla ba/ch")
+        reasons.append("battle path ba/ch")
 
     # Prefer manageable packages for a first viewer.
     if 1 <= entry_count <= 8:
         score += 12
-        reasons.append("pocas entradas")
+        reasons.append("few entries")
     elif entry_count <= 32:
         score += 6
 
     if 1_024 <= container_size <= 2_000_000:
         score += 5
 
-    recommendation = ", ".join(reasons) if reasons else "sin prioridad especial"
+    recommendation = ", ".join(reasons) if reasons else "no special priority"
     return score, recommendation
 
 

@@ -54,7 +54,7 @@ except ImportError:  # pragma: no cover
 # Paths
 # --------------------------------------------------------------------------
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]  # tools/build_preview/ -> repo root
 DATA = REPO / "data" / "extracted" / "1ecf5e7a41a2ae48"
 NITRO = DATA / "nitrofs"
 DEC = DATA / "decompressed"

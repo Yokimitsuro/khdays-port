@@ -181,7 +181,7 @@ def classify_file(
     disk_path = extraction_root / Path(relative_path)
 
     if not disk_path.is_file():
-        raise FileNotFoundError(f"No existe el archivo del manifiesto: {disk_path}")
+        raise FileNotFoundError(f"Manifest file does not exist: {disk_path}")
 
     with disk_path.open("rb") as stream:
         prefix = stream.read(READ_PREFIX_SIZE)
@@ -232,16 +232,16 @@ def classify_file(
 def load_manifest(extraction_root: Path) -> dict[str, Any]:
     manifest_path = extraction_root / "manifest.json"
     if not manifest_path.is_file():
-        raise FileNotFoundError(f"No existe: {manifest_path}")
+        raise FileNotFoundError(f"Does not exist: {manifest_path}")
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON inválido en {manifest_path}: {exc}") from exc
+        raise ValueError(f"Invalid JSON in {manifest_path}: {exc}") from exc
 
     files = manifest.get("files")
     if not isinstance(files, list):
-        raise ValueError("manifest.json debe contener una lista llamada 'files'.")
+        raise ValueError("manifest.json must contain a list named 'files'.")
 
     return manifest
 
@@ -414,13 +414,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "extraction",
         type=Path,
-        help="Carpeta que contiene manifest.json y nitrofs/",
+        help="Folder containing manifest.json and nitrofs/",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Directorio de salida. Por defecto: <extraction>/analysis",
+        help="Output directory. Default: <extraction>/analysis",
     )
     return parser.parse_args()
 
@@ -434,10 +434,10 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Análisis completado: {output}")
-    print(f"Inventario CSV: {output / 'asset_inventory.csv'}")
-    print(f"Resumen JSON:   {output / 'summary.json'}")
-    print(f"Informe:        {output / 'report.md'}")
+    print(f"Analysis complete: {output}")
+    print(f"CSV inventory:  {output / 'asset_inventory.csv'}")
+    print(f"JSON summary:   {output / 'summary.json'}")
+    print(f"Report:         {output / 'report.md'}")
     return 0
 
 

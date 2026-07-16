@@ -145,11 +145,9 @@ jobs:
             -DSDL_UNIX_CONSOLE_BUILD=ON
 
       - name: Build sanitized asset tests
-        run: >-
-          cmake --build build-san --target
-          khdays-tex0-test khdays-mdl0-test khdays-mesh-test
-          khdays-message-test khdays-audio-test khdays-graphics2d-test
-          khdays-font-test khdays-vfs-test khdays-game-test khdays-cell-test
+        # One aggregate target defined in CMakeLists.txt next to the tests, so a
+        # new test never needs a matching edit here.
+        run: cmake --build build-san --target khdays-asset-tests
 
       # Exclude the SDL-linked version smoke test; only the asset parsers and
       # the mesh decoder are built and exercised here.

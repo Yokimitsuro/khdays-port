@@ -49,14 +49,14 @@ def sha256_file(path: Path) -> str:
 
 def read_rom_info(path: Path) -> RomInfo:
     if not path.is_file():
-        raise FileNotFoundError(f"No existe el archivo: {path}")
+        raise FileNotFoundError(f"File does not exist: {path}")
 
     with path.open("rb") as stream:
         header = stream.read(HEADER_MIN_SIZE)
 
     if len(header) < HEADER_MIN_SIZE:
         raise ValueError(
-            f"El archivo es demasiado pequeño para ser una ROM NDS válida "
+            f"The file is too small to be a valid NDS ROM "
             f"({len(header)} bytes)."
         )
 
@@ -84,16 +84,16 @@ def read_rom_info(path: Path) -> RomInfo:
 
 def load_database(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
-        raise FileNotFoundError(f"No existe la base de datos: {path}")
+        raise FileNotFoundError(f"Database does not exist: {path}")
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON inválido en {path}: {exc}") from exc
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
 
     roms = data.get("roms")
     if not isinstance(roms, list):
-        raise ValueError("supported_roms.json debe contener una lista llamada 'roms'.")
+        raise ValueError("supported_roms.json must contain a list named 'roms'.")
 
     return roms
 
@@ -128,7 +128,7 @@ def print_database_entry(info: RomInfo) -> None:
         "rom_version": info.rom_version,
         "sha256": info.sha256,
     }
-    print("\nEntrada candidata para supported_roms.json:")
+    print("\nCandidate entry for supported_roms.json:")
     print(json.dumps(entry, indent=2, ensure_ascii=False))
 
 
@@ -138,22 +138,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Inspect and verify a user-provided Nintendo DS ROM."
     )
-    parser.add_argument("rom", type=Path, help="Ruta al archivo .nds")
+    parser.add_argument("rom", type=Path, help="Path to the .nds file")
     parser.add_argument(
         "--database",
         type=Path,
         default=default_db,
-        help=f"Base de ROMs soportadas (por defecto: {default_db})",
+        help=f"Supported ROM database (default: {default_db})",
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Imprime la información de la ROM como JSON.",
+        help="Print the ROM information as JSON.",
     )
     parser.add_argument(
         "--print-entry",
         action="store_true",
-        help="Imprime una entrada candidata para supported_roms.json.",
+        help="Print a candidate entry for supported_roms.json.",
     )
     return parser.parse_args()
 
@@ -179,7 +179,7 @@ def main() -> int:
         print(f"\nSUPPORTED: {supported.get('name', 'Known ROM')}")
         return 0
 
-    print("\nUNSUPPORTED: el SHA-256 no está registrado.")
+    print("\nUNSUPPORTED: the SHA-256 is not registered.")
     if args.print_entry:
         print_database_entry(info)
 

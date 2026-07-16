@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Compila los shaders GLSL a arrays C embebidos (SPIR-V).
+"""Compile the GLSL shaders into embedded C arrays (SPIR-V).
 
-Reejecuta esto tras editar cualquier archivo de `shaders/`. Los `.inc`
-resultantes se commitean para que el build y el CI no necesiten el Vulkan SDK.
+Re-run this after editing any file under `shaders/`. The resulting `.inc`
+files are committed so that the build and CI do not need the Vulkan SDK.
 
-Requiere `glslc` (parte del Vulkan SDK). Se busca en el PATH y, si no, en
-`$VULKAN_SDK/Bin`.
+Requires `glslc` (part of the Vulkan SDK). It is looked up on the PATH and,
+failing that, in `$VULKAN_SDK/Bin`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 SHADERS = REPO / "shaders"
 OUT = REPO / "platform" / "pc" / "generated"
 
-# (archivo fuente, nombre del .inc de salida)
+# (source file, output .inc name)
 STAGES = [
     ("model.vert", "model.vert.spv.inc"),
     ("model.frag", "model.frag.spv.inc"),
@@ -37,7 +37,7 @@ def find_glslc() -> str:
         if candidate.exists():
             return str(candidate)
     print(
-        "ERROR: no se encontró 'glslc'. Instala el Vulkan SDK o añade glslc al PATH.",
+        "ERROR: 'glslc' not found. Install the Vulkan SDK or add glslc to the PATH.",
         file=sys.stderr,
     )
     sys.exit(1)

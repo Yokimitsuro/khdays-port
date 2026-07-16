@@ -1,38 +1,38 @@
 # ROM verifier
 
-Herramienta local para inspeccionar una ROM de Nintendo DS proporcionada por el usuario y comprobarla mediante SHA-256.
+Local tool to inspect a Nintendo DS ROM provided by the user and check it via SHA-256.
 
-No modifica, copia ni distribuye la ROM.
+It does not modify, copy or distribute the ROM.
 
-## Uso
+## Usage
 
-Desde la raíz de `khdays-port`:
-
-```powershell
-py .\tools\verify_rom\verify_rom.py "E:\ruta\Kingdom Hearts 358-2 Days.nds"
-```
-
-Para obtener una entrada candidata para la base de datos:
+From the `khdays-port` root:
 
 ```powershell
-py .\tools\verify_rom\verify_rom.py "E:\ruta\game.nds" --print-entry
+py .\tools\verify_rom\verify_rom.py "E:\path\Kingdom Hearts 358-2 Days.nds"
 ```
 
-Para obtener la salida completa en JSON:
+To obtain a candidate entry for the database:
 
 ```powershell
-py .\tools\verify_rom\verify_rom.py "E:\ruta\game.nds" --json
+py .\tools\verify_rom\verify_rom.py "E:\path\game.nds" --print-entry
 ```
 
-## Registrar una ROM compatible
+For the full output as JSON:
 
-1. Ejecuta el verificador sobre una copia conocida y limpia.
-2. Confirma manualmente la región y revisión.
-3. Ejecuta con `--print-entry`.
-4. Copia la entrada mostrada dentro de la lista `roms` de `supported_roms.json`.
-5. No registres dumps modificados, parcheados o de procedencia desconocida.
+```powershell
+py .\tools\verify_rom\verify_rom.py "E:\path\game.nds" --json
+```
 
-Ejemplo de estructura:
+## Registering a supported ROM
+
+1. Run the verifier against a known clean copy.
+2. Manually confirm the region and revision.
+3. Run with `--print-entry`.
+4. Copy the printed entry into the `roms` list in `supported_roms.json`.
+5. Do not register modified or patched dumps, or dumps of unknown provenance.
+
+Example structure:
 
 ```json
 {
@@ -42,16 +42,16 @@ Ejemplo de estructura:
       "name": "Kingdom Hearts 358/2 Days (Europe)",
       "game_code": "YKGP",
       "rom_version": 0,
-      "sha256": "HASH_REAL_DE_LA_ROM_LIMPIA"
+      "sha256": "REAL_HASH_OF_THE_CLEAN_ROM"
     }
   ]
 }
 ```
 
-El SHA-256 debe ser real. No inventes ni reutilices hashes de otra revisión.
+The SHA-256 must be real. Do not invent hashes or reuse them from another revision.
 
-## Códigos de salida
+## Exit codes
 
-- `0`: ROM reconocida y soportada.
-- `1`: error de lectura, ruta o JSON.
-- `2`: ROM no registrada.
+- `0`: ROM recognized and supported.
+- `1`: read, path or JSON error.
+- `2`: ROM not registered.
