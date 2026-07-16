@@ -50,6 +50,12 @@ public:
     float volume() const { return volume_; }
     const KeyBindings& bindings() const { return bindings_; }
 
+    // Persist / restore volume, screen layout and key bindings (a small ini in
+    // the user's pref dir). load_config runs on construction; call save_config
+    // on exit.
+    void load_config();
+    void save_config() const;
+
 private:
     void apply_fullscreen();
 

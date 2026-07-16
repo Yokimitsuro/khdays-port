@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdio>
+#include <fstream>
+#include <string>
 
 #include "khdays/game/settings.h"
 
@@ -57,6 +59,16 @@ const std::array<BindRow, 12> kBindRows = {{
     {"Start", &KeyBindings::start},
     {"Select", &KeyBindings::select},
 }};
+
+std::string config_path() {
+    char* pref = SDL_GetPrefPath("khdays", "port");
+    std::string path =
+        pref != nullptr ? std::string(pref) + "settings.ini" : "khdays-settings.ini";
+    if (pref != nullptr) {
+        SDL_free(pref);
+    }
+    return path;
+}
 }  // namespace
 
 OverlayUi::OverlayUi(SDL_Window* window, SDL_Renderer* renderer)
@@ -72,6 +84,60 @@ OverlayUi::OverlayUi(SDL_Window* window, SDL_Renderer* renderer)
     (void)window_;
     (void)renderer_;
 #endif
+    load_config();
+}
+
+void OverlayUi::load_config() {
+    std::ifstream file(config_path());
+    if (!file) {
+        return;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) {
+            continue;
+        }
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
+        try {
+            if (key == "volume") {
+                const float v = std::stof(value);
+                volume_ = v < 0.0F ? 0.0F : (v > 1.0F ? 1.0F : v);
+            } else if (key == "layout") {
+                khdays::game::set_screen_layout(
+                    value == "sidebyside" ? khdays::game::ScreenLayout::Horizontal
+                                          : khdays::game::ScreenLayout::Vertical);
+            } else if (key.rfind("key.", 0) == 0) {
+                const std::string button = key.substr(4);
+                for (const auto& row : kBindRows) {
+                    if (button == row.label) {
+                        bindings_.*(row.field) =
+                            static_cast<SDL_Scancode>(std::stoi(value));
+                    }
+                }
+            }
+        } catch (...) {
+            // ignore malformed lines
+        }
+    }
+}
+
+void OverlayUi::save_config() const {
+    std::ofstream file(config_path());
+    if (!file) {
+        return;
+    }
+    file << "volume=" << volume_ << '\n';
+    file << "layout="
+         << (khdays::game::screen_layout() == khdays::game::ScreenLayout::Horizontal
+                 ? "sidebyside"
+                 : "stacked")
+         << '\n';
+    for (const auto& row : kBindRows) {
+        file << "key." << row.label << '='
+             << static_cast<int>(bindings_.*(row.field)) << '\n';
+    }
 }
 
 OverlayUi::~OverlayUi() {

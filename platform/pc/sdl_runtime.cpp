@@ -497,6 +497,7 @@ int run_game(khdays::game::Game& game) {
         SDL_Delay(16);
     }
 
+    overlay.save_config();  // persist volume / layout / key bindings
     // Detach the music player before it is destroyed at scope exit.
     game.scenes().set_music_player(nullptr);
 
