@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "khdays/game/draw.h"
+#include "khdays/game/settings.h"
 
 namespace khdays::game::scenes {
 
@@ -23,7 +24,13 @@ void TitleScene::on_enter(SceneManager& manager) {
     // real localized OBJ textures from ttl_<lang>.p2.
     logo3d_ = khdays::resource::load_title_logo();  // real KH logo on white
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
-    buttons_ = khdays::resource::load_sprite_set("ttl/ttl_es.p2", 1);
+    // English is the odd one out: there is no ttl_en.p2 — the English option
+    // textures are the base file's sub-file 2, while the other four ship as
+    // ttl_<lang>.p2 sub-file 1.
+    buttons_ = language() == Language::English
+                   ? khdays::resource::load_sprite_set("ttl/ttl.p2", 2)
+                   : khdays::resource::load_sprite_set(
+                         localized_path("ttl/ttl_&.p2").c_str(), 1);
     if (auto* music = manager.music()) {
         music->play_music(kTitleTheme);
     }

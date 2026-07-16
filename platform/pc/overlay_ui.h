@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include "khdays/game/input.h"  // Button
+#include "khdays/game/settings.h"  // Language
 
 namespace khdays::platform {
 
@@ -67,6 +68,10 @@ private:
     bool applied_fullscreen_ = false;
     bool show_menu_bar_ = true;
     bool show_controls_ = false;
+    // The language the app started in. Scenes load their localized assets on
+    // entry, so a change only takes full effect on restart — this is what the
+    // menu compares against to say so.
+    khdays::game::Language language_at_start_ = khdays::game::Language::English;
     int remapping_ = -1;      // index of the binding being rebound, or -1
     float hint_timer_ = 0.0F;  // seconds left to show `hint_`
     std::string hint_;

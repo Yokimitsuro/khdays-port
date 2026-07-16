@@ -110,6 +110,14 @@ if(KHDAYS_ENABLE_UI)
     target_link_libraries(imgui PUBLIC SDL3::SDL3)
 endif()
 
+# Our own targets are UTF-8, source and execution. Without this MSVC reads
+# sources in the host's codepage and mangles non-ASCII literals — the interface
+# is localized, so that matters. Set after FetchContent so third-party targets
+# keep their own flags.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 add_library(
     khdays-assets
     STATIC

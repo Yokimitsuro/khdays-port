@@ -5,6 +5,7 @@
 #include <exception>
 
 #include "khdays/game/draw.h"
+#include "khdays/game/settings.h"
 #include "khdays/resource/loader.h"
 #include "khdays/vfs/filesystem.h"
 
@@ -151,7 +152,7 @@ void MainMenuScene::render(SceneManager&, Renderer& r) {
 }
 
 void MainMenuScene::load_labels() {
-    const auto table = khdays::vfs::resolve("UI/mlt/mlt_en.s.z");
+    const auto table = khdays::vfs::resolve(localized_path("UI/mlt/mlt_&.s.z"));
     if (!table) {
         return;
     }
