@@ -20,6 +20,7 @@
 #include "khdays/assets/mdl0.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/message.h"
+#include "khdays/assets/mods.h"
 #include "khdays/assets/sdat.h"
 #include "khdays/assets/sequence.h"
 #include "khdays/game/game.h"
@@ -129,6 +130,7 @@ void print_help() {
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
         << "  khdays-port --play-sequence SDAT SEQ [SECONDS]\n"
+        << "  khdays-port --mods-info FILE\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
@@ -154,6 +156,7 @@ void print_help() {
         << "  --play-sound SDAT WAVEARCHIVE SWAV  Decode and play a SWAV waveform.\n"
         << "  --render-sequence SDAT SEQ OUT.wav [SECONDS]  Synthesize an SSEQ to WAV.\n"
         << "  --play-sequence SDAT SEQ [SECONDS]  Synthesize and play an SSEQ.\n"
+        << "  --mods-info FILE    Summarize a MobiClip MODS cutscene container (mv/*.mods).\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
@@ -283,6 +286,31 @@ int main(int argc, char* argv[]) {
                 show("  Wave archives", sdat.wave_archives);
                 show("  Stream players", sdat.stream_players);
                 show("  Streams", sdat.streams);
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--mods-info") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --mods-info requires one file path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto info = khdays::assets::parse_mods_header(
+                    std::filesystem::path{argv[2]});
+                std::cout << "MobiClip MODS container:\n"
+                          << "  video: " << info.width << 'x' << info.height << ", "
+                          << info.frame_count << " frames\n";
+                if (info.has_audio()) {
+                    std::cout << "  audio: " << info.audio_channels << " ch @ "
+                              << info.audio_rate << " Hz (coding "
+                              << info.audio_coding << ")\n";
+                } else {
+                    std::cout << "  audio: none (video-only clip)\n";
+                }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

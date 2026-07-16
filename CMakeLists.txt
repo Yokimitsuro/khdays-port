@@ -122,6 +122,8 @@ add_library(
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
         src/assets/message.cpp
+        src/assets/mobiclip.cpp
+        src/assets/mods.cpp
         src/assets/screen.cpp
         src/assets/sdat.cpp
         src/assets/sequence.cpp
@@ -299,6 +301,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-mobiclip-test
+        tests/cpp/test_mobiclip.cpp
+    )
+
+    target_link_libraries(
+        khdays-mobiclip-test
+        PRIVATE
+            khdays-assets
+    )
+
+    add_executable(
         khdays-audio-test
         tests/cpp/test_audio.cpp
     )
@@ -369,6 +382,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mesh-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-message-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-mobiclip-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-audio-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-graphics2d-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-font-test PRIVATE /W4 /permissive-)
@@ -380,6 +394,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-message-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-mobiclip-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-audio-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-graphics2d-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-font-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -392,6 +407,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-mdl0-test)
     khdays_enable_sanitizers(khdays-mesh-test)
     khdays_enable_sanitizers(khdays-message-test)
+    khdays_enable_sanitizers(khdays-mobiclip-test)
     khdays_enable_sanitizers(khdays-audio-test)
     khdays_enable_sanitizers(khdays-graphics2d-test)
     khdays_enable_sanitizers(khdays-font-test)
@@ -422,6 +438,11 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-message-container
         COMMAND khdays-message-test
+    )
+
+    add_test(
+        NAME khdays-mobiclip-colour
+        COMMAND khdays-mobiclip-test
     )
 
     add_test(
