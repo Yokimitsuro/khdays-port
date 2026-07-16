@@ -28,6 +28,11 @@ compile_commands.json
 *.rom
 *.sav
 
+# Emulator savestates, RAM dumps and traces (derived from the user's own ROM)
+*.dst
+*.dsv
+*_state.bin
+
 # Proprietary tools and SDKs — never commit
 /NitroSDK/
 /CodeWarrior/
@@ -48,3 +53,4 @@ __pycache__/
 *.bak
 mods/
 title.bmp
+/menu.txt

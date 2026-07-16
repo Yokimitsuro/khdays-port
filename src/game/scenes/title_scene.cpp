@@ -1,24 +1,26 @@
 #include "khdays/game/scenes/title_scene.h"
 
+#include <algorithm>
+
 #include "khdays/game/draw.h"
 
 namespace khdays::game::scenes {
 
 namespace {
 constexpr char kTitleTheme[] = "Title_BGM_PCM8";  // the title BGM (SDAT stream)
-// Localized option textures in ttl_<lang>.p2 sub-file 1 (red = selected):
-// cell 4/5 = MODO HISTORIA, cell 6/7 = MODO MISION.
-constexpr int kBtnStorySel = 4;
-constexpr int kBtnStoryOff = 5;
-constexpr int kBtnMissionSel = 6;
-constexpr int kBtnMissionOff = 7;
+
+// The DS only offers CARGAR once a save file exists. The port has no save
+// system yet, so no save is present.
+bool has_save_data() {
+    return false;
+}
 }  // namespace
 
 void TitleScene::on_enter(SceneManager& manager) {
     // The title's two screens live in ttl.p2 sub-file 1 (a D2KP background pack):
     // screen 7 / tiles 3 / palette 0 = the KINGDOM HEARTS logo, and screen 3 /
-    // tiles 1 / palette 1 = the character illustration. The MODO HISTORIA / MODO
-    // MISION options are the real localized OBJ textures from ttl_<lang>.p2.
+    // tiles 1 / palette 1 = the character illustration. The menu options are the
+    // real localized OBJ textures from ttl_<lang>.p2.
     logo3d_ = khdays::resource::load_title_logo();  // real KH logo on white
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     buttons_ = khdays::resource::load_sprite_set("ttl/ttl_es.p2", 1);
@@ -27,20 +29,80 @@ void TitleScene::on_enter(SceneManager& manager) {
     }
 }
 
+std::size_t TitleScene::options(Option* out) const {
+    // ttl_<lang>.p2 sub-file 1 cells, as {selected (red bar), normal (gray bar)}.
+    constexpr Option kStoryMode{4, 5};       // MODO HISTORIA
+    constexpr Option kMissionMode{6, 7};     // MODO MISION
+    constexpr Option kNewGame{8, 9};         // NUEVA PARTIDA
+    constexpr Option kLoad{10, 11};          // CARGAR
+    constexpr Option kSinglePlayer{18, 19};  // UN JUGADOR
+    constexpr Option kMultiPlayer{20, 21};   // MULTIJUGADOR
+
+    switch (level_) {
+    case Level::Root:
+        out[0] = kStoryMode;
+        out[1] = kMissionMode;
+        return 2;
+    case Level::Story:
+        out[0] = kNewGame;
+        // With no save file the DS shows NUEVA PARTIDA alone, in the first slot.
+        if (has_save_data()) {
+            out[1] = kLoad;
+            return 2;
+        }
+        return 1;
+    case Level::Mission:
+        out[0] = kSinglePlayer;
+        out[1] = kMultiPlayer;
+        return 2;
+    }
+    return 0;
+}
+
+void TitleScene::confirm(SceneManager& manager) {
+    switch (level_) {
+    case Level::Root:
+        level_ = selected_ == 0 ? Level::Story : Level::Mission;
+        selected_ = 0;
+        break;
+    case Level::Story:
+        if (selected_ == 0) {
+            // NUEVA PARTIDA. The DS picks a difficulty (Principiante / Normal /
+            // Experto) before gameplay; that screen is not ported yet.
+            manager.change_scene(kSceneGameplay);
+        }
+        // CARGAR is unreachable while has_save_data() is false.
+        break;
+    case Level::Mission:
+        if (selected_ == 0) {
+            // UN JUGADOR. The DS shows the save-file screen ("Cargar" /
+            // "Seleccionar archivo.") before the character select; that screen
+            // is not ported yet, so this goes straight to the roster.
+            manager.change_scene(kSceneMainMenu);
+        }
+        // MULTIJUGADOR is DS local wireless — not ported.
+        break;
+    }
+}
+
 void TitleScene::update(SceneManager& manager) {
     ++frame_;
     const auto& in = manager.input();
+
+    Option opts[2];
+    const int count = static_cast<int>(options(opts));
     if (in.just_pressed(Button::Down)) {
-        selected_ = 1;
+        selected_ = std::min(count - 1, selected_ + 1);
     }
     if (in.just_pressed(Button::Up)) {
-        selected_ = 0;
+        selected_ = std::max(0, selected_ - 1);
     }
     if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
-        // Both options request the menu overlay (scene 0x13, ov08), which shows
-        // the mode's sub-panel (Story: New Game/Load; Mission: character select)
-        // — func_02020a78(0x13, arg). The selected mode rides along as the arg.
-        manager.change_scene(kSceneMainMenu, selected_);
+        confirm(manager);
+    }
+    if (in.just_pressed(Button::B) && level_ != Level::Root) {
+        level_ = Level::Root;
+        selected_ = 0;
     }
 }
 
@@ -55,19 +117,21 @@ void TitleScene::render(SceneManager&, Renderer& r) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true);
     }
 
-    // MODO HISTORIA / MODO MISION on the bottom screen: the real localized OBJ
-    // textures, red for the selected option and gray for the other.
+    // The current level's options on the bottom screen, red for the selected one
+    // and gray for the rest.
     if (buttons_) {
-        const int cells[2] = {
-            selected_ == 0 ? kBtnStorySel : kBtnStoryOff,
-            selected_ == 1 ? kBtnMissionSel : kBtnMissionOff};
-        for (int i = 0; i < 2; ++i) {
-            const int cell = cells[i];
+        Option opts[2];
+        const std::size_t count = options(opts);
+        for (std::size_t i = 0; i < count; ++i) {
+            const int cell = static_cast<int>(i) == selected_ ? opts[i].selected
+                                                              : opts[i].normal;
             if (cell >= 0
                 && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
-                // Bottom-left, both buttons fully on-screen (24px tall each).
-                draw_overlay(r, layout, buttons_->cells[cell], 0, 142 + i * 24,
-                             /*bottom=*/true);
+                // Real positions from the ov000 sub-engine OAM: the option slots
+                // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
+                // 28px row pitch.
+                draw_overlay(r, layout, buttons_->cells[cell], 0,
+                             116 + static_cast<int>(i) * 28, /*bottom=*/true);
             }
         }
     }

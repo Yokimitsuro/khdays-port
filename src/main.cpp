@@ -338,7 +338,11 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
             khdays::vfs::autodetect_data_root();
-            const int steps = argc > 3 ? std::stoi(argv[3]) : 0;
+            // Optional 2nd arg: a key sequence driving the menu before the
+            // capture — 'd'/'u' move, 'a' confirms (enters a submenu), 'b' goes
+            // back; a digit N means N x Down. e.g. "da" = MODO MISION -> its
+            // submenu.
+            const std::string keys = argc > 3 ? std::string{argv[3]} : std::string{};
             khdays::game::SceneManager manager;
             manager.register_scene(khdays::game::kSceneTitle, [] {
                 return std::make_unique<khdays::game::scenes::TitleScene>();
@@ -348,11 +352,29 @@ int main(int argc, char* argv[]) {
                 manager.set_input(khdays::game::Input{});
                 manager.step();
             }
-            for (int i = 0; i < steps; ++i) {
-                khdays::game::Input in;
-                in.pressed = static_cast<std::uint16_t>(khdays::game::Button::Down);
-                manager.set_input(in);
-                manager.step();
+            for (const char key : keys) {
+                auto button = khdays::game::Button::Down;
+                int repeat = 1;
+                switch (key) {
+                    case 'd': button = khdays::game::Button::Down; break;
+                    case 'u': button = khdays::game::Button::Up; break;
+                    case 'a': button = khdays::game::Button::A; break;
+                    case 'b': button = khdays::game::Button::B; break;
+                    default:
+                        if (key < '0' || key > '9') {
+                            continue;
+                        }
+                        repeat = key - '0';
+                        break;
+                }
+                for (int i = 0; i < repeat; ++i) {
+                    khdays::game::Input in;
+                    in.pressed = static_cast<std::uint16_t>(button);
+                    manager.set_input(in);
+                    manager.step();
+                    manager.set_input(khdays::game::Input{});
+                    manager.step();
+                }
             }
             manager.set_input(khdays::game::Input{});
             manager.step();
@@ -369,7 +391,7 @@ int main(int argc, char* argv[]) {
             std::ofstream out{argv[2], std::ios::binary};
             out.write(reinterpret_cast<const char*>(bmp.data()),
                       static_cast<std::streamsize>(bmp.size()));
-            std::cout << "Title snapshot (down step " << steps << ") -> BMP: "
+            std::cout << "Title snapshot (keys \"" << keys << "\") -> BMP: "
                       << argv[2] << '\n';
             return EXIT_SUCCESS;
         }

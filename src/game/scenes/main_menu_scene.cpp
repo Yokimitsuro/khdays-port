@@ -1,6 +1,7 @@
 #include "khdays/game/scenes/main_menu_scene.h"
 
 #include <algorithm>
+#include <array>
 #include <exception>
 
 #include "khdays/game/draw.h"
@@ -12,23 +13,52 @@ namespace khdays::game::scenes {
 namespace {
 constexpr char kMenuFont[] = "text/font_eu_08.nftr";
 constexpr char kMenuTheme[] = "Entrymulti";  // SDAT sequence for the menu BGM
+
+// The character-select grid, read straight from the live ov06 sub-engine OAM:
+// 13 portraits of 24x64 in two horizontally-centered rows (7 then 6), column
+// pitch 24. Each portrait is two stacked OBJ sprites on the DS; here it is one
+// 24x64 cell.
+constexpr int kCellW = 24;
+constexpr int kCellH = 64;
+constexpr std::array<int, 2> kRowY{32, 96};
+constexpr std::array<int, 2> kRowN{7, 6};
+constexpr std::array<int, 2> kRowX0{44, 56};  // (256 - N*24) / 2
+constexpr int kColPitch = 24;
+
+// Break a linear slot index into its (row, col) in the 7 + 6 grid.
+void slot_rowcol(int index, int& row, int& col) {
+    row = 0;
+    if (index >= kRowN[0]) {
+        index -= kRowN[0];
+        row = 1;
+    }
+    col = index;
+}
+
+int slot_index(int row, int col) {
+    return row == 0 ? col : kRowN[0] + col;
+}
+
+void slot_origin(int index, int& x, int& y) {
+    int row = 0;
+    int col = 0;
+    slot_rowcol(index, row, col);
+    x = kRowX0[static_cast<std::size_t>(row)] + col * kColPitch;
+    y = kRowY[static_cast<std::size_t>(row)];
+}
 }  // namespace
 
 void MainMenuScene::on_enter(SceneManager& manager) {
     background_ = khdays::resource::load_ui_background("UI/mlt/res.p2", 0, 1, 0, 0);
     roster_ = khdays::resource::load_sprite_set("UI/mlt/res.p2", 2);
     bars_ = khdays::resource::load_sprite_set("UI/mlt/res.p2", 1);
-    // The selectable portraits are the ~24x64 face cells of the roster pack; the
-    // playable roster is the 14 members named in mlt_<lang> (strings 11..24),
-    // which fill the 2x7 grid exactly.
+    // Slot i uses pack-2 cell (kPortraitGrey0 + i), or (kPortraitColour0 + i)
+    // when it is the selected one, so we need both to exist.
     if (roster_) {
-        for (std::size_t i = 0;
-             i < roster_->cells.size() && portraits_.size() < kRosterMax; ++i) {
-            const auto& c = roster_->cells[i];
-            if (c.width >= 16 && c.width <= 40 && c.height >= 48
-                && c.height <= 72) {
-                portraits_.push_back(i);
-            }
+        while (roster_count_ < kRosterMax
+               && kPortraitGrey0 + static_cast<std::size_t>(roster_count_)
+                      < roster_->cells.size()) {
+            ++roster_count_;
         }
     }
     load_labels();
@@ -41,10 +71,9 @@ void MainMenuScene::update(SceneManager& manager) {
     ++frame_;
     const auto& in = manager.input();
 
-    // Confirm executor (ov008 func_ov008_0204dc48): a confirm starts a 30-frame
-    // fade, then action 8 enters gameplay (scene 2 = ov002). The action code and
-    // the save-slot config it copies to ov002 live in ov008's menu handlers,
-    // still being decompiled; the transition itself is matched.
+    // Confirm executor: a confirm starts a 30-frame fade, then enters gameplay
+    // (scene 2 = ov002). The action code and save-slot config are still being
+    // decompiled; the transition itself is matched.
     if (confirm_fade_ > 0) {
         if (--confirm_fade_ == 0) {
             manager.change_scene(kSceneGameplay, selected_);
@@ -52,27 +81,29 @@ void MainMenuScene::update(SceneManager& manager) {
         return;
     }
 
-    const int n = static_cast<int>(portraits_.size());
-    if (n > 0) {
+    if (roster_count_ > 0) {
+        int row = 0;
+        int col = 0;
+        slot_rowcol(selected_, row, col);
         if (in.just_pressed(Button::Right)) {
-            selected_ = (selected_ + 1) % n;
+            selected_ = (selected_ + 1) % roster_count_;
         }
         if (in.just_pressed(Button::Left)) {
-            selected_ = (selected_ + n - 1) % n;
+            selected_ = (selected_ + roster_count_ - 1) % roster_count_;
         }
-        if (in.just_pressed(Button::Down)) {
-            selected_ = std::min(n - 1, selected_ + kCols);
+        if (in.just_pressed(Button::Down) && row == 0) {
+            const int nc = std::min(col, kRowN[1] - 1);
+            selected_ = std::min(roster_count_ - 1, slot_index(1, nc));
         }
-        if (in.just_pressed(Button::Up)) {
-            selected_ = std::max(0, selected_ - kCols);
+        if (in.just_pressed(Button::Up) && row == 1) {
+            selected_ = slot_index(0, std::min(col, kRowN[0] - 1));
         }
     }
     if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
-        confirm_fade_ = kConfirmFadeFrames;  // action 8 -> gameplay
+        confirm_fade_ = kConfirmFadeFrames;  // -> gameplay
     }
-    // B returns to the title (the menu's cancel path).
     if (in.just_pressed(Button::B)) {
-        manager.change_scene(kSceneTitle);
+        manager.change_scene(kSceneTitle);  // cancel -> title
     }
 }
 
@@ -87,43 +118,32 @@ void MainMenuScene::render(SceneManager&, Renderer& r) {
                      t.width * s, t.height * s);
     };
 
-    // Background layer (dark UI panel) scaled to the 256x192 virtual screen.
+    // Background layer scaled to the 256x192 virtual screen.
     if (background_) {
         r.draw_image(background_->rgba.data(), background_->width,
                      background_->height, ox, oy, 256 * s, 192 * s);
     }
-    // Header ("Select a character.").
+    // Header banner ("Select a character.") across the top.
     if (header_) {
-        blit(*header_, (256 - header_->width) / 2, 6);
+        blit(*header_, (256 - header_->width) / 2, 4);
     }
 
-    // Roster portraits in a grid, cursor over the selected one.
-    for (std::size_t i = 0; i < portraits_.size(); ++i) {
-        const auto& cell = roster_->cells[portraits_[i]];
-        const int col = static_cast<int>(i) % kCols;
-        const int row = static_cast<int>(i) / kCols;
-        const int px = kGridX + col * kColW + (kColW - cell.width) / 2;
-        const int py = kGridY + row * kRowH;
-        blit(cell, px, py);
-        if (static_cast<int>(i) == selected_ && bars_ && !bars_->cells.empty()) {
-            // A cursor arrow bobbing above the selected portrait — the native
-            // form of the ov008 cursor object whose frame tracks the highlighted
-            // option (func_ov008_0204da6c).
-            const int bob = (frame_ / 8) % 2;
-            blit(bars_->cells[0], px + (cell.width - 16) / 2, py - 14 - bob);
+    // The roster grid: every portrait greyscale except the selected one, which
+    // is drawn from the colour half of pack 2 — the DS does exactly this.
+    for (int i = 0; i < roster_count_; ++i) {
+        const std::size_t cell =
+            (i == selected_ ? kPortraitColour0 : kPortraitGrey0)
+            + static_cast<std::size_t>(i);
+        if (cell >= roster_->cells.size()) {
+            continue;
         }
+        int px = 0;
+        int py = 0;
+        slot_origin(i, px, py);
+        blit(roster_->cells[cell], px, py);
     }
 
-    // Selected character's name on a highlight bar at the bottom.
-    if (bars_ && bars_->cells.size() > 2) {
-        blit(bars_->cells[2], (256 - bars_->cells[2].width) / 2, 168);
-    }
-    if (selected_ >= 0 && selected_ < static_cast<int>(names_.size())
-        && names_[selected_]) {
-        blit(*names_[selected_], (256 - names_[selected_]->width) / 2, 172);
-    }
-
-    // Fade to black while confirming (the ov008 30-frame confirm fade).
+    // Fade to black while confirming (the 30-frame confirm fade).
     if (confirm_fade_ > 0) {
         const int a = 255 * (kConfirmFadeFrames - confirm_fade_) / kConfirmFadeFrames;
         r.fill_overlay(Color{0, 0, 0, static_cast<std::uint8_t>(a)});
@@ -137,15 +157,7 @@ void MainMenuScene::load_labels() {
     }
     try {
         const auto strings = khdays::resource::load_string_table(*table);
-        // Roster names live at strings[11..24] (Xemnas..Xion); the header
-        // "Select a character." is string 51.
-        for (std::size_t i = 0; i < portraits_.size(); ++i) {
-            const std::size_t si = 11 + i;
-            names_.push_back(
-                si < strings.size()
-                    ? khdays::resource::render_ui_text(kMenuFont, strings[si])
-                    : std::nullopt);
-        }
+        // The header "Select a character." is string 51.
         if (strings.size() > 51) {
             header_ = khdays::resource::render_ui_text(kMenuFont, strings[51]);
         }

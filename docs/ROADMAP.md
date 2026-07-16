@@ -158,21 +158,53 @@ hardware init, VBlank sync, and overlay loading are the platform layer's job,
 not ported). Port or replace the minimum required systems for:
 
 - startup; *(the boot flow runs natively end to end: `khdays::game::Game::boot`
-  mirrors BootTask_Construct (fresh boot → the logo scene), then the frame loop
-  advances **boot logo (scene 1, ov000) → title (scene 7, ov06) → main menu
-  (scene 0x13/19, ov08)** — the real DS scene ids and Start transition
-  (ov06 polls Start → requests scene 0x13). Each scene draws its real decoded
-  assets: the title's boot logo, and the Mission Mode character-select menu with
-  the roster portraits, cursor, and real names from `UI/mlt/res.p2` +
-  `mlt_<lang>.s.z` in the game font, and each **plays its real SSEQ music**
-  streamed from the SDAT (title `ThemeXIII`, menu `Entrymulti`) through the
-  neutral `game::MusicPlayer`. The DS OBJ cell engine (`func_02032xxx`) that
-  positions the sprites is not ported — this is a native reconstruction of the
-  same content and interaction. The scenes live in `khdays::game::scenes`
-  (`boot_logo`/`title`/`main_menu`), loading through `khdays::resource`
-  (`ui_content` — neutral UI textures, D2KP packs via
-  `khdays::assets::parse_pk2d`). `--game` (windowed), `--game-demo` (headless),
-  `--menu-shot` (menu snapshot).)*
+  mirrors `BootTask_Construct` exactly — the persisted state word selects **scene
+  1 (logo) on a fresh boot or -2, else scene 12** — then the frame loop advances
+  **boot logos → title/menus (scene 1, ov000) → character select (scene 7, ov06)
+  → gameplay (scene 2, ov002)**.
+
+  The scene→screen mapping was **confirmed against the running game** (DeSmuME
+  savestates, reading `curId` out of the scene-control record) rather than
+  guessed, and it corrected an earlier wrong model: **ov000 is the entire
+  front-end** — the boot logos, the title, *every* menu level, and the save-file
+  screen all live in it (the KH logo stays on the top screen throughout);
+  **ov06 is the Mission Mode character select**, not the title; **ov012 is the
+  movie/cutscene player**; **ov08 is still unidentified**.
+
+  Each screen draws its real decoded assets, positioned from values read out of
+  the live hardware state (the DS OBJ cell engine `func_02032xxx` is not ported —
+  this is a native reconstruction of the same content):
+
+  - **Boot logos** — three publisher/legal screen pairs from `ttl.p2`, with the
+    DS's own timings taken from ov000's fade-state chain: 91 frames per pair
+    (32 fade-in / 27 hold / 32 fade-out) driving both screens' **master
+    brightness**, which fades through **black** (a positive brightness darkens;
+    the title is the one that fades from white, via a negative value).
+  - **Title** — the real 3D KH logo (a `ttl.p2` KAPH/BMD0 model) over the
+    character illustration, hosting every menu level with the real localized
+    option textures from `ttl_<lang>.p2` (MODO HISTORIA / MODO MISIÓN →
+    NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR), at the exact OBJ
+    positions (0,116) and (0,144). CARGAR only appears when a save exists, as on
+    the DS. It **plays the real title BGM** — an SDAT **STRM stream**
+    (`Title_BGM_PCM8`), not a sequence — through the neutral
+    `game::MusicPlayer`.
+  - **Character select (ov06)** — its manager loads `UI/mlt/res.p2`; the bottom
+    screen is a grid of **13 portraits of 24×64** in two centred rows (7 then 6),
+    each drawn greyscale except the selected one, which is drawn in colour — the
+    layout and the greyscale/colour rule both read out of the live OBJ state.
+
+  Scenes live in `khdays::game::scenes` (`boot_logo`/`title`/`main_menu`/
+  `gameplay`), loading through `khdays::resource` (`ui_content` — neutral UI
+  textures, D2KP packs via `khdays::assets::parse_pk2d`). `--game` (windowed),
+  `--game-demo` (headless), `--boot-shot`/`--title-shot`/`--menu-shot`
+  (snapshots; `--title-shot` takes a key sequence to reach any menu level).
+
+  **Attract/demo — reverse-engineered, deliberately not implemented:** the title
+  stamps a tick on entry and re-stamps it on any activity; once idle for
+  **105 seconds** it loads **ov012** inline (not via a scene change) to play a
+  cutscene. The cutscenes are `mv/*.mods` = **MODSN3 (MobiClip)**, a proprietary
+  DS codec, so the timer is left unimplemented until a decoder exists — it would
+  otherwise only show a blank screen.)*
 - memory arenas;
 - archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
   path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted
@@ -184,23 +216,28 @@ not ported). Port or replace the minimum required systems for:
   per-frame object update (`func_02023adc`): each object runs a state-machine
   coroutine whose initial state is its constructor's result and which returns
   the next state, walked once per frame.)*
-- scene transitions; *(done — the DS dispatcher (`func_0202099c`) is matched: a
+- scene transitions; *(done — the DS dispatcher (`func_0202099c`) is traced: a
   pending scene id indexes `g_SceneTable` ({overlay, class} per id), tears down
   the old scene once it reports ended, then loads the new one.
   `khdays::game::SceneManager` reproduces this natively — an id→scene table, a
-  pending-id latch, and teardown-gated transitions. Real per-scene logic is
-  filled in as each scene's constructor is decompiled, starting with the boot
-  logo (`func_ov000_0204d630`, ov000).)*
+  pending-id latch, and teardown-gated transitions. Note that not every
+  transition goes through the dispatcher: ov000 loads the attract's movie player
+  (ov012) inline with `FS_LoadOverlay` + `InstantiateClass` instead.)*
 - save data abstraction.
 
-The native flow now runs **boot logo → title → menu → gameplay**: the title
-(ov06) requests the menu (scene 0x13/ov08), and the menu's confirm executor
-(`func_ov008_0204dc48`, byte-exact) is reproduced — a 30-frame fade then either
-**action 8 → scene 2 (ov002, gameplay)** or **action 7 → scene 1 (reset)**.
-Scene 2 is registered (`kSceneGameplay`); porting the actual gameplay overlay is
-a later phase, so it is a placeholder that marks the reached game-owned state.
+The native flow now runs **boot logos → title/menus → character select →
+gameplay**. Scene 2 is registered (`kSceneGameplay`); porting the actual gameplay
+overlay is a later phase, so it is a placeholder that marks the reached
+game-owned state.
 
-**Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly. *(met — the boot→title→menu→gameplay flow reaches scene 2/ov002 via the matched confirm transition.)*
+Two front-end screens are understood but **not** ported, on purpose:
+
+- the **save-file screen** ("Cargar": three file rows at Y=18/54/90 with the
+  selected row indented, plus a "JUEGO INVITADO" row in the Mission flow) — its
+  layout is known, but the port has no save system yet;
+- the **attract cutscene** — blocked on MobiClip (see above).
+
+**Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly. *(met — the boot→title→character-select→gameplay flow reaches scene 2/ov002.)*
 
 ## Phase 5 — Playable vertical slice
 

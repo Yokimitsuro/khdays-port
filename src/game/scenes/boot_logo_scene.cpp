@@ -39,15 +39,21 @@ void BootLogoScene::render(SceneManager&, Renderer& r) {
         draw_screen(r, layout, *bottom_[pair], /*bottom=*/true);
     }
 
-    // Fade to/from white at the ends of each pair's window.
-    int fade = 0;
-    if (local < kFadeFrames) {
-        fade = 255 * (kFadeFrames - local) / kFadeFrames;
-    } else if (local >= kPairFrames - kFadeFrames) {
-        fade = 255 * (local - (kPairFrames - kFadeFrames)) / kFadeFrames;
+    // The DS master brightness for this pair's frame, exactly as the ov000 fade
+    // states drive it (positive darkens: 0x10 = black, 0 = normal).
+    int bright;
+    if (local < kFadeInEnd) {
+        bright = kBrightMax - local / 2;
+    } else if (local <= kHoldEnd) {
+        bright = 0;
+    } else if (local <= kFadeOutEnd) {
+        bright = (local - kHoldEnd) / 2;
+    } else {
+        bright = kBrightMax;
     }
-    if (fade > 0) {
-        r.fill_overlay(Color{255, 255, 255, static_cast<std::uint8_t>(fade)});
+    if (bright > 0) {
+        const int a = std::min(255, bright * 255 / kBrightMax);
+        r.fill_overlay(Color{0, 0, 0, static_cast<std::uint8_t>(a)});
     }
 }
 

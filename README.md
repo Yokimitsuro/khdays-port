@@ -3,7 +3,7 @@
 Experimental native PC runtime and source port for **Kingdom Hearts 358/2 Days**, developed alongside [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp).
 
 > [!WARNING]
-> This project is in early development. The native asset pipeline — textures, 2D/UI graphics, fonts, models, animation, text, and audio — works, along with a mod-override system and a game filesystem. It is **not playable** yet: the game-flow layer (boot, scenes, gameplay) is the next milestone.
+> This project is in early development. The native asset pipeline — textures, 2D/UI graphics, fonts, models, animation, text, and audio — works, along with a mod-override system and a game filesystem. The game's **front-end now runs natively** (boot logos → title and menus → character select) with its real assets, music, and timings. It is **not playable** yet: gameplay itself is the next milestone.
 
 > [!IMPORTANT]
 > This repository does not contain a ROM, game assets, audio, video, text dumps, proprietary SDK files, or copyrighted game binaries. Users will be required to provide their own legally obtained copy of the game.
@@ -47,9 +47,15 @@ flow**. What runs today:
 **Phase 4 — game flow (in progress)**
 
 - [x] Game filesystem: `khdays::vfs` resolves NitroFS game paths (mods → unpacked → decompressed → raw) (`--vfs-resolve`)
-- [x] Scene/task frame loop (`khdays::game`) reproducing the decompiled backbone — object state machines, an id→scene table with pending-id transitions (the matched DS dispatcher), running in a native SDL window with input (`--game`; `--game-demo` headless)
-- [x] The boot scene (id 1) composes and shows the game's real first screen, decoded from `ttl/ttl.p2` (P2 → resource pack → NCLR/NCGR/NSCR) exactly as the ov000 boot scene loads it
-- [ ] The rest of the per-scene logic (title → menus) and gameplay, filled in as `khdays-decomp` names each scene's constructor
+- [x] Scene/task frame loop (`khdays::game`) reproducing the decompiled backbone — object state machines, an id→scene table with pending-id transitions, running in a native SDL window with input (`--game`; `--game-demo` headless). `Game::boot` mirrors the DS `BootTask_Construct` exactly.
+- [x] **Boot logos** (scene 1, ov000) — three real screen pairs from `ttl/ttl.p2`, with the DS's own timings (91 frames per pair: 32 fade-in / 27 hold / 32 fade-out) fading both screens through black via the master brightness
+- [x] **Title and menus** — the real 3D KH logo over the character illustration, hosting every menu level (MODO HISTORIA / MODO MISIÓN → NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR) with the real localized textures at the exact DS positions, playing the real title BGM (an SDAT STRM stream) through the neutral `game::MusicPlayer`
+- [x] **Character select** (scene 7, ov06) — the 13-portrait grid from `UI/mlt/res.p2`, laid out and shaded (greyscale, colour when selected) exactly as the DS does
+- [x] In-window options overlay (Dear ImGui): volume, remappable controls, stacked/side-by-side screen layout, fullscreen — persisted between runs
+- [ ] Gameplay (scene 2, ov002) — currently a placeholder marking the reached game-owned state
+- [ ] The save-file screen (layout known; needs a save system) and the attract cutscene (blocked on MobiClip)
+
+Scene identification is **verified against the running game** (emulator savestates) rather than assumed — which corrected an earlier wrong model: ov000 is the *entire* front-end (logos, title, all menu levels, save-file screen), ov06 is the character select, and ov012 is the movie player.
 
 Phase 4 is *decomp-gated*: it reimplements understood game behavior as
 [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp) names each
