@@ -6,7 +6,19 @@ The tool neither downloads nor distributes game content: it works on the data yo
 
 ## Prerequisites
 
-You need the data extracted from your own copy of the game. The full pipeline:
+Starting from nothing but a clone, you need four things.
+
+**1. Your own copy of the game**, as a `.nds` dump. It must be the **Europe** release (game code `YKGP`, SHA-256 starting `1ecf5e7a41a2ae48`) — `verify_rom.py` recognises no other. `extract_data.py` will happily extract a US or JP dump, but it names its output directory after the ROM's hash and this tool looks in the European one by name, so any other dump ends at `ERROR: extracted data not found`. Nothing here downloads or ships game content: the assets stay on your machine, under the git-ignored `data/`.
+
+**2. Pillow**, which converts the CLI's BMP output to PNG:
+
+```powershell
+python -m pip install pillow
+```
+
+Use the same interpreter for both this and the generator. (On the maintainer's machine that means `python`, not `python3`; only the former has it.)
+
+**3. The extracted data.** Four steps, in this order:
 
 ```powershell
 py .\tools\verify_rom\verify_rom.py "E:\path\game.nds"
@@ -15,12 +27,14 @@ py .\tools\decompress_data\decompress_data.py
 py .\tools\unpack_containers\unpack_containers.py
 ```
 
-And the built executable, which is what actually decodes each format:
+**4. The built executable**, which is what actually decodes every format — the Python here only orchestrates it. Needs CMake 4.2+ and a C++20 compiler, and fetches SDL3 on the first configure:
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
 ```
+
+**Build Release, not Debug.** The generator picks `build/Release/khdays-port.exe` over `build/Debug/…` when both exist, so a stale Release binary silently wins over a freshly built Debug one — which fails as several hundred unexplained per-asset errors in the log, not as anything obvious.
 
 ## Generate
 
@@ -30,7 +44,7 @@ python .\tools\build_preview\build_preview.py
 
 Open `data/preview/index.html` in a browser. It works from `file://`, no server needed.
 
-> **Use `python`, not `python3`.** On Windows only the former has PIL, which is required to convert to PNG.
+Expect roughly **2 minutes** and **~375 MB** under `data/preview/`. Re-running without `--force` takes ~20 s and redoes only what is missing.
 
 ## Options
 

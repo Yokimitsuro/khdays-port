@@ -69,8 +69,11 @@ try:
     from PIL import Image
 except ImportError:  # pragma: no cover
     sys.exit(
-        "ERROR: Pillow is required. On this machine use `python` (3.13), not "
-        "`python3`:\n    python tools/build_preview.py"
+        "ERROR: Pillow is required to convert the CLI's BMP output to PNG.\n"
+        "    pip install pillow\n"
+        "If several Pythons are installed, Pillow has to be in the one running "
+        "this script -- `python -m pip install pillow` installs it where it "
+        "will be found."
     )
 
 # --------------------------------------------------------------------------
