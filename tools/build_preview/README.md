@@ -91,11 +91,11 @@ That is cheap enough to leave on. `--no-viewers` turns it off, which keeps `3d/`
 
 ### Where the textures come from
 
-`--export-obj` writes `o`/`v`/`vt`/`f` and nothing else: no `usemtl`, so the OBJ alone never says which texture belongs to which mesh. The C++ decoder does resolve it (`NeutralMesh::texture_name`), but the OBJ format drops it on the way out, and `--model-info` only prints materials and meshes as two separate declaration-ordered lists that cannot be zipped together.
+`--export-obj` writes a `usemtl` per mesh, naming the **texture** its material binds; a mesh that binds none has no `usemtl`. So the tool reads the binding back out of the OBJ, and the CLI stays the only thing that decodes anything here.
 
-Guessing does not work either: material names are not texture names (`robe00a` and `robe00b` both bind `ax_robe00`), and although UVs are in texels — which hints at a texture's size — sizes repeat within a model and wrapped UVs overshoot the texture entirely.
+The material is named by its texture because that is the part a viewer has to bind, and because material names are not texture names anyway (`robe00a` and `robe00b` both bind `ax_robe00`).
 
-So `mdl0_materials.py` reads the binding straight out of the MDL0: the texture-pairing dictionary plus the `BindMaterial`/`Draw` opcodes of the render command stream. **This duplicates logic that lives in `src/assets/mesh.cpp`** and will drift if that file changes. It is checked on every model: the walk must reproduce the exact mesh order the exporter emitted, and if it does not, the textures are dropped and the model is shown untextured rather than painted with confidently wrong ones. Over all 530 models it currently matches every time.
+This used to be a second, independent walk of the MDL0 render commands, written in Python in `mdl0_materials.py`, because the exporter dropped the binding it had already resolved. That duplicated `src/assets/mesh.cpp`, and it drifted exactly as predicted: a missing `case 0x48` in the opcode table had to be fixed in both files at once — one bug in two places, found only because three models failed to export. Emitting the binding from the exporter deleted the duplicate walk, the drift risk, and the mesh-order tripwire that guarded against it. The change was verified against that walk's output first: identical bindings on all 533 models.
 
 ## Honest caveats
 

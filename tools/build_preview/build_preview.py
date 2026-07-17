@@ -62,7 +62,6 @@ import threading
 import time
 from pathlib import Path
 
-from mdl0_materials import Mdl0Error, mesh_texture_bindings
 
 try:
     from PIL import Image
@@ -514,34 +513,26 @@ def write_model_js(src: Path, outdir: Path, obj: Path) -> Path | None:
     for the same reason: a file:// <img> taints the WebGL upload in Chrome.
     See viewer.html for the full reasoning.
 
-    The CLI is still the only decoder here: the geometry is --export-obj's own
-    output, embedded verbatim. Only the mesh -> texture binding, which the OBJ
-    format drops on the floor, comes from mdl0_materials.
+    The CLI is the only decoder here: both the geometry and the mesh -> texture
+    binding are --export-obj's own output, read straight back out of the OBJ.
     """
     try:
         obj_text = obj.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
 
-    groups = [ln[2:].strip() for ln in obj_text.splitlines() if ln.startswith("o ")]
+    # `usemtl` names the mesh's texture (see to_wavefront_obj), and a mesh with
+    # no texture simply has no usemtl line.
+    groups: list[str] = []
+    binds: list[tuple[str, str]] = []
+    for line in obj_text.splitlines():
+        if line.startswith("o "):
+            groups.append(line[2:].strip())
+            binds.append((groups[-1], ""))
+        elif line.startswith("usemtl ") and binds:
+            binds[-1] = (binds[-1][0], line[7:].strip())
     if not groups:
         return None
-
-    try:
-        binds = mesh_texture_bindings(src)
-    except (Mdl0Error, OSError, struct.error) as exc:
-        log(f"    ! bindings {src.name}: {exc}", quiet=True)
-        _stats["3d_bind_fail"] += 1
-        binds = []
-
-    # The binding walk replays the same render command stream the exporter used,
-    # so its mesh order must equal the OBJ's `o` order. If it ever does not, the
-    # two have drifted apart: drop the textures rather than paint a model with
-    # confidently wrong ones. The viewer still shows it untextured.
-    if binds and [m for m, _ in binds] != groups:
-        log(f"    ! binding order != OBJ groups for {src.name}", quiet=True)
-        _stats["3d_bind_mismatch"] += 1
-        binds = []
 
     tex: dict[str, dict] = {}
     for name in sorted({t for _, t in binds if t}):

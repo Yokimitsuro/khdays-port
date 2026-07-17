@@ -1405,6 +1405,15 @@ std::string to_wavefront_obj(const NeutralModel& model) {
 
     for (const auto& mesh : model.meshes) {
         stream << "o " << mesh.name << '\n';
+        // Named by its texture rather than by its material: OBJ gives a mesh
+        // one material name, the texture is the part of the material a viewer
+        // has to bind, and material names are not texture names anyway
+        // (robe00a and robe00b both bind ax_robe00). Without this the binding
+        // resolved in decode_model_geometry dies here, and every consumer has
+        // to walk the MDL0 render commands again to recover it.
+        if (!mesh.texture_name.empty()) {
+            stream << "usemtl " << mesh.texture_name << '\n';
+        }
 
         for (const auto& vertex : mesh.vertices) {
             const auto p = posed_position(model, vertex);
