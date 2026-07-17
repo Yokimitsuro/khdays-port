@@ -10,7 +10,9 @@ Output layout (mirrors the source relative paths)::
 
     data/preview/
       index.html
+      viewer.html                            (shared WebGL model viewer)
       3d/<rel>/<texture>.png + model.obj     (BMD0 models / BTX0 texture sets)
+      3d/<rel>/model.js                      (viewer payload; --no-viewers omits)
       ui/p2/<rel>/sub<NNN>/...png            (D2KP packs nested in P2 containers)
       ui/d2kp/<rel>/...png                   (standalone D2KP packs, via slots)
       fonts/<rel>.png                        (NFTR sample sheets)
@@ -28,6 +30,7 @@ Requires Pillow. On this machine PIL lives in ``python`` (3.13), not ``python3``
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import concurrent.futures as futures
 import json
@@ -41,6 +44,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+
+from mdl0_materials import Mdl0Error, mesh_texture_bindings
 
 try:
     from PIL import Image
@@ -91,6 +96,15 @@ MAGIC_D2KP = b"D2KP"
 MAGIC_ANIMS = {b"BCA0", b"BMA0", b"BVA0", b"BTA0", b"BTP0"}
 MAGIC_KAPH = b"KAPH"
 MAGIC_NFTR = b"RTFN"
+
+# Write a viewer payload (3d/<rel>/model.js) next to each exported model.obj.
+# Measured over the 530 models in a full run: ~13 MB total (8.2 MB of OBJ text
+# plus ~4.9 MB of base64 textures), i.e. +5% on a ~254 MB preview, and a few
+# seconds. That is cheap enough to leave on by default - a gallery whose models
+# only open in Blender is the problem this solves - but --no-viewers turns it
+# off for a leaner 3d/ tree.
+VIEWERS = True
+VIEWER_TEMPLATE = Path(__file__).resolve().parent / "viewer.html"
 
 _print_lock = threading.Lock()
 _log_lines: list[str] = []
@@ -398,6 +412,79 @@ def item(cat: str, group: str, name: str, path: Path, kind: str,
     }
 
 
+_MODEL_NAME_RE = re.compile(r"^# model:\s*(.+)$", re.MULTILINE)
+
+
+def write_model_js(src: Path, outdir: Path, obj: Path) -> Path | None:
+    """Write the viewer payload for one model, or None if it has no geometry.
+
+    The payload is a *script* (``KH_MODEL({...});``) rather than a data file
+    because viewer.html is opened from file://, where fetch()/XHR cannot read a
+    sibling file but <script src> loads fine. Textures are inlined as data: URIs
+    for the same reason: a file:// <img> taints the WebGL upload in Chrome.
+    See viewer.html for the full reasoning.
+
+    The CLI is still the only decoder here: the geometry is --export-obj's own
+    output, embedded verbatim. Only the mesh -> texture binding, which the OBJ
+    format drops on the floor, comes from mdl0_materials.
+    """
+    try:
+        obj_text = obj.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    groups = [ln[2:].strip() for ln in obj_text.splitlines() if ln.startswith("o ")]
+    if not groups:
+        return None
+
+    try:
+        binds = mesh_texture_bindings(src)
+    except (Mdl0Error, OSError, struct.error) as exc:
+        log(f"    ! bindings {src.name}: {exc}", quiet=True)
+        _stats["3d_bind_fail"] += 1
+        binds = []
+
+    # The binding walk replays the same render command stream the exporter used,
+    # so its mesh order must equal the OBJ's `o` order. If it ever does not, the
+    # two have drifted apart: drop the textures rather than paint a model with
+    # confidently wrong ones. The viewer still shows it untextured.
+    if binds and [m for m, _ in binds] != groups:
+        log(f"    ! binding order != OBJ groups for {src.name}", quiet=True)
+        _stats["3d_bind_mismatch"] += 1
+        binds = []
+
+    tex: dict[str, dict] = {}
+    for name in sorted({t for _, t in binds if t}):
+        png = outdir / f"{name}.png"
+        if not png.exists():
+            # Materials can bind a texture that lives in a separate BTX0 file,
+            # which --dump-textures on this model never wrote.
+            _stats["3d_tex_unresolved"] += 1
+            continue
+        try:
+            blob = base64.b64encode(png.read_bytes()).decode("ascii")
+        except OSError:
+            continue
+        tex[name] = {"src": "data:image/png;base64," + blob}
+
+    name_match = _MODEL_NAME_RE.search(obj_text)
+    payload = {
+        "name": name_match.group(1).strip() if name_match else src.name,
+        "obj": obj_text,
+        "binds": [[m, t] for m, t in binds],
+        "tex": tex,
+    }
+    dst = outdir / "model.js"
+    dst.write_text(
+        "KH_MODEL(" + json.dumps(payload, separators=(",", ":")) + ");\n",
+        encoding="utf-8",
+    )
+    _stats["3d_viewers"] += 1
+    if not tex:
+        _stats["3d_viewers_untextured"] += 1
+    return dst
+
+
 def do_3d(kind: str, src: Path, force: bool) -> list[dict]:
     rel = src.relative_to(DEC)
     outdir = OUT / "3d" / rel.parent / rel.name.replace(".", "_")
@@ -419,14 +506,31 @@ def do_3d(kind: str, src: Path, force: bool) -> list[dict]:
                 _stats["3d_obj_fail"] += 1
 
     if outdir.is_dir():
-        for png in sorted(outdir.glob("*.png")):
+        pngs = sorted(outdir.glob("*.png"))
+        for png in pngs:
             items.append(item("3d", group, f"{rel.name} : {png.stem}", png,
                               "img", image_size(png)))
             _stats["3d_textures"] += 1
         obj = outdir / "model.obj"
         if obj.exists():
-            items.append(item("3d", group, f"{rel.name} : model.obj", obj, "obj",
-                              f"{obj.stat().st_size // 1024} KB"))
+            js = None
+            if VIEWERS:
+                js = outdir / "model.js"
+                if force or not js.exists():
+                    js = write_model_js(src, outdir, obj)
+            size = f"{obj.stat().st_size // 1024} KB"
+            if js is not None and js.exists():
+                # The card opens the in-browser viewer; the OBJ stays on disk
+                # for Blender either way.
+                # No thumbnail: the card gets the 3D icon instead. Using one of
+                # the model's textures here (pngs[0]) is worse than nothing --
+                # it is an arbitrary pick, so a character card would show an ear
+                # or a patch of skin as if that were the model.
+                items.append(item("3d", group, f"{rel.name} : model", js,
+                                  "model", size))
+            else:
+                items.append(item("3d", group, f"{rel.name} : model.obj", obj,
+                                  "obj", size))
             _stats["3d_models"] += 1
     return items
 
@@ -802,6 +906,15 @@ image-rendering:pixelated;background:
 linear-gradient(45deg,#8883 25%,transparent 25%,transparent 75%,#8883 75%),
 linear-gradient(45deg,#8883 25%,transparent 25%,transparent 75%,#8883 75%);
 background-size:12px 12px;background-position:0 0,6px 6px;border-radius:4px}
+.cell.model{display:block;text-decoration:none;color:inherit;border-color:var(--accent)}
+.cell.model:hover{background:var(--chip)}
+.cell.model .mt{color:var(--accent)}
+.noth{height:88px;display:flex;align-items:center;justify-content:center;
+color:var(--muted);font-size:11px;letter-spacing:.5px;border-radius:4px;
+background:var(--chip);margin-bottom:5px}
+.noth svg{width:44px;height:44px;stroke:var(--accent);stroke-width:1.5;fill:none;
+opacity:.75}
+.cell.model:hover .noth svg{opacity:1}
 .nm{font-size:10.5px;word-break:break-word;line-height:1.35}
 .mt{font-size:9.5px;color:var(--muted);margin-top:2px}
 .rows{padding:8px 12px 12px;border-top:1px solid var(--line);display:grid;gap:7px}
@@ -823,9 +936,13 @@ def build_html(items: list[dict], meta: dict) -> str:
     payload = []
     for (cat, group), its in sorted(groups.items()):
         its.sort(key=lambda x: x["n"])
-        payload.append({"c": cat, "g": group,
-                        "i": [{"n": x["n"], "p": x["p"], "t": x["t"],
-                               "m": x["m"]} for x in its]})
+        entries = []
+        for x in its:
+            e = {"n": x["n"], "p": x["p"], "t": x["t"], "m": x["m"]}
+            if x.get("th"):
+                e["th"] = x["th"]
+            entries.append(e)
+        payload.append({"c": cat, "g": group, "i": entries})
 
     counts = collections.Counter(it["c"] for it in items)
     summary = " &middot; ".join(
@@ -850,6 +967,15 @@ const main=document.getElementById('main');let filter='all',q='';
 function cell(it){{
   if(it.t==='img')return `<div class="cell"><img loading="lazy" src="${{it.p}}" alt="${{it.n}}">`+
     `<div class="nm">${{it.n}}</div><div class="mt">${{it.m||''}}</div></div>`;
+  if(it.t==='model'){{
+    const u=`viewer.html?m=${{encodeURIComponent(it.p)}}`;
+    const th=it.th?`<img loading="lazy" src="${{it.th}}" alt="">`
+                  :`<div class="noth" title="3D model"><svg viewBox="0 0 24 24">`+
+                   `<path d="M12 2 2 7v10l10 5 10-5V7L12 2z"/>`+
+                   `<path d="M2 7l10 5 10-5M12 12v10"/></svg></div>`;
+    return `<a class="cell model" href="${{u}}" target="_blank">${{th}}`+
+      `<div class="nm">${{it.n}}</div><div class="mt">view in 3D &middot; ${{it.m||''}}</div></a>`;
+  }}
   if(it.t==='audio')return `<div class="row"><div class="nm">${{it.n}}</div>`+
     `<audio controls preload="none" src="${{it.p}}"></audio><span class="mt">${{it.m||''}}</span></div>`;
   return `<div class="row"><div class="nm"><a href="${{it.p}}" target="_blank">${{it.n}}</a></div>`+
@@ -898,7 +1024,7 @@ render();
 # --------------------------------------------------------------------------
 
 def main() -> int:
-    global BG_PER_SCREEN, MAX_BG_PER_SUB  # noqa: PLW0603
+    global BG_PER_SCREEN, MAX_BG_PER_SUB, VIEWERS  # noqa: PLW0603
     ap = argparse.ArgumentParser(description="Build data/preview/ asset gallery.")
     ap.add_argument("--only", default="", help="comma list: " + ",".join(CATEGORIES))
     ap.add_argument("--limit", type=int, default=None,
@@ -910,9 +1036,14 @@ def main() -> int:
                     help="--dump-ui compositions kept per screen (default 4)")
     ap.add_argument("--max-bg-per-sub", type=int, default=MAX_BG_PER_SUB,
                     help="max --dump-ui compositions kept per sub-file")
+    ap.add_argument("--viewers", dest="viewers", action="store_true",
+                    default=True, help="write in-browser 3D viewers (default)")
+    ap.add_argument("--no-viewers", dest="viewers", action="store_false",
+                    help="skip model.js viewer payloads (~13 MB over 530 models)")
     args = ap.parse_args()
     BG_PER_SCREEN = args.bg_per_screen
     MAX_BG_PER_SUB = args.max_bg_per_sub
+    VIEWERS = args.viewers
 
     cats = [c.strip() for c in args.only.split(",") if c.strip()] or CATEGORIES
     bad = [c for c in cats if c not in CATEGORIES]
@@ -980,6 +1111,14 @@ def main() -> int:
 
     for sub in ("3d", "ui", "fonts", "text"):
         prune_empty_dirs(OUT / sub)
+
+    if VIEWERS and any(it["t"] == "model" for it in items):
+        # One shared viewer for every model; the per-model model.js carries the
+        # data. Copied rather than generated so it stays editable as real HTML.
+        if VIEWER_TEMPLATE.exists():
+            shutil.copyfile(VIEWER_TEMPLATE, OUT / "viewer.html")
+        else:
+            log(f"  ! viewer template missing at {VIEWER_TEMPLATE}")
 
     html = build_html(items, {
         "when": time.strftime("%Y-%m-%d %H:%M"),

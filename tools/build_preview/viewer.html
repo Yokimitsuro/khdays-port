@@ -1,0 +1,371 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Model viewer</title>
+<!--
+  Shared WebGL model viewer for the asset gallery. Copied verbatim to
+  data/preview/viewer.html by build_preview.py; it is not generated per model.
+
+  Loading a model from file://
+  ----------------------------
+  fetch()/XHR cannot read a sibling file from a file:// page, so the model is
+  delivered as a *script*: viewer.html?m=<path>/model.js injects that path as a
+  <script src> and the file calls back into KH_MODEL({...}) (a JSONP shape).
+  Script tags are not subject to the file:// origin restriction; that is the
+  whole reason for this indirection.
+
+  Textures are embedded in that .js as data: URIs rather than referenced as
+  sibling .png files. On a file:// page Chrome treats a file:// image as
+  cross-origin, so uploading it via texImage2D taints and throws SecurityError.
+  A data: URI has no such problem.
+-->
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--fg:#14161a;--muted:#5d6470;
+--card:#fff;--line:#e2e5ea;--accent:#3b6ea5}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e8ec;--muted:#98a0ad;
+--card:#171a21;--line:#272c36;--accent:#7aa7d9}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;
+font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;
+display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:14px;font-weight:600}
+.sp{flex:1}
+button{padding:6px 11px;border:1px solid var(--line);border-radius:7px;
+background:var(--bg);color:var(--fg);cursor:pointer;font-size:12.5px}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:hover{border-color:var(--accent)}
+a{color:var(--accent);font-size:12.5px}
+#wrap{flex:1;position:relative;min-height:0}
+canvas{width:100%;height:100%;display:block;cursor:grab}
+canvas:active{cursor:grabbing}
+#msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+color:var(--muted);text-align:center;padding:20px;font-size:13px}
+#hud{position:absolute;left:10px;bottom:8px;color:var(--muted);font-size:11px;
+pointer-events:none;text-shadow:0 1px 2px var(--bg)}
+</style>
+<header>
+  <h1 id="title">Model viewer</h1>
+  <button id="tex" class="on">Textured</button>
+  <button id="reset">Reset view</button>
+  <span class="sp"></span>
+  <a id="back" href="index.html">&larr; gallery</a>
+</header>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="msg">Loading&hellip;</div>
+  <div id="hud">drag = orbit &middot; wheel = zoom</div>
+</div>
+<script>
+"use strict";
+var MSG = document.getElementById('msg');
+function fail(t){ MSG.style.display='flex'; MSG.textContent = t; }
+
+// ---- tiny mat4 helpers (column-major, like GL wants) ----------------------
+function perspective(fovy, aspect, near, far){
+  var f = 1/Math.tan(fovy/2), nf = 1/(near-far);
+  return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
+}
+function mul(a,b){ // a*b
+  var o = new Array(16);
+  for(var c=0;c<4;c++) for(var r=0;r<4;r++){
+    o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+  }
+  return o;
+}
+function translation(x,y,z){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]; }
+function rotX(a){ var c=Math.cos(a),s=Math.sin(a);
+  return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; }
+function rotY(a){ var c=Math.cos(a),s=Math.sin(a);
+  return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; }
+
+// ---- OBJ parsing ---------------------------------------------------------
+// The exporter writes: o <name> / v x y z / vt u v / f a/a b/b c/c. UVs are in
+// TEXELS (see NeutralVertex in include/khdays/assets/mesh.h), so they are
+// divided by the bound texture's size here. No vn: normals are computed per
+// face below, which also suits the flat-shaded look of these models.
+function parseObj(text){
+  var V=[], VT=[], groups=[], cur=null;
+  var lines = text.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(!ln.length || ln.charCodeAt(0)===35) continue; // '#'
+    var p = ln.split(/\s+/);
+    var k = p[0];
+    if(k==='v'){ V.push([+p[1],+p[2],+p[3]]); }
+    else if(k==='vt'){ VT.push([+p[1],+p[2]]); }
+    else if(k==='o'){ cur={name:ln.slice(2).trim(), tris:[]}; groups.push(cur); }
+    else if(k==='f'){
+      if(!cur){ cur={name:'', tris:[]}; groups.push(cur); }
+      // Triangulate an n-gon as a fan (the exporter already writes triangles).
+      var idx=[];
+      for(var j=1;j<p.length;j++){
+        if(!p[j]) continue;
+        var s = p[j].split('/');
+        var vi = parseInt(s[0],10); var ti = s[1] ? parseInt(s[1],10) : vi;
+        if(vi<0) vi = V.length + 1 + vi;
+        if(ti<0) ti = VT.length + 1 + ti;
+        idx.push([vi-1, ti-1]);
+      }
+      for(var f=1;f+1<idx.length;f++) cur.tris.push(idx[0], idx[f], idx[f+1]);
+    }
+  }
+  return {V:V, VT:VT, groups:groups};
+}
+
+// Build non-indexed interleaved buffers: pos(3) uv(2) nrm(3). Non-indexed so
+// each triangle can carry its own face normal (flat shading) without splitting
+// shared vertices by hand.
+function buildGroup(o, g, texSize){
+  var n = g.tris.length, pos = new Float32Array(n*3), uv = new Float32Array(n*2),
+      nrm = new Float32Array(n*3);
+  var sx = texSize ? texSize[0] : 1, sy = texSize ? texSize[1] : 1;
+  for(var t=0;t+3<=n;t+=3){
+    var a=o.V[g.tris[t][0]]||[0,0,0], b=o.V[g.tris[t+1][0]]||[0,0,0], c=o.V[g.tris[t+2][0]]||[0,0,0];
+    var ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+    var vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    var L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
+    for(var k=0;k<3;k++){
+      var vi=g.tris[t+k][0], ti=g.tris[t+k][1];
+      var P=o.V[vi]||[0,0,0], T=o.VT[ti]||[0,0];
+      pos[(t+k)*3]=P[0]; pos[(t+k)*3+1]=P[1]; pos[(t+k)*3+2]=P[2];
+      // Texels -> 0..1. V is NOT flipped: DS texels count down from the top,
+      // which is also how the texture is uploaded (UNPACK_FLIP_Y_WEBGL false).
+      uv[(t+k)*2]=T[0]/sx; uv[(t+k)*2+1]=T[1]/sy;
+      nrm[(t+k)*3]=nx; nrm[(t+k)*3+1]=ny; nrm[(t+k)*3+2]=nz;
+    }
+  }
+  return {pos:pos, uv:uv, nrm:nrm, count:n};
+}
+
+var VS = [
+'attribute vec3 aPos; attribute vec2 aUV; attribute vec3 aNrm;',
+'uniform mat4 uProj, uMV;',
+'varying vec2 vUV; varying vec3 vNrm;',
+'void main(){ vUV=aUV; vNrm = mat3(uMV) * aNrm;',
+'  gl_Position = uProj * uMV * vec4(aPos,1.0); }'
+].join('\n');
+
+// The light is a headlight fixed to the camera and |N.L| is used, so a face is
+// lit whichever way its normal points. DS meshes have inconsistent winding and
+// are drawn double-sided; without abs() half the model reads as a black blob,
+// which is exactly what the untextured mode must not do.
+var FS = [
+'precision mediump float;',
+'uniform sampler2D uTex; uniform float uUseTex;',
+'varying vec2 vUV; varying vec3 vNrm;',
+'void main(){',
+'  vec3 n = normalize(vNrm);',
+'  float lam = abs(n.z);',
+'  if(uUseTex > 0.5){',
+'    vec4 t = texture2D(uTex, vUV);',
+'    if(t.a < 0.5) discard;',
+'    gl_FragColor = vec4(t.rgb * (0.75 + 0.25*lam), 1.0);',
+'  } else {',
+'    vec3 base = vec3(0.80, 0.81, 0.84);',
+'    gl_FragColor = vec4(base * (0.30 + 0.70*lam), 1.0);',
+'  }',
+'}'
+].join('\n');
+
+function compile(gl, type, src){
+  var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function isPOT(x){ return (x & (x-1)) === 0; }
+
+var state = { yaw:0.6, pitch:0.25, dist:3, textured:true, parts:[], center:[0,0,0] };
+
+function KH_MODEL(M){
+  try { boot(M); } catch(e){ fail('Viewer error: ' + e.message); }
+}
+window.KH_MODEL = KH_MODEL;
+
+function boot(M){
+  document.getElementById('title').textContent = M.name || 'model';
+  var cv = document.getElementById('cv');
+  var gl = cv.getContext('webgl', {antialias:true, alpha:false})
+        || cv.getContext('experimental-webgl');
+  if(!gl){ fail('WebGL is not available in this browser.'); return; }
+
+  var o = parseObj(M.obj);
+  if(!o.groups.length){ fail('This model has no geometry.'); return; }
+
+  var prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  var aPos=gl.getAttribLocation(prog,'aPos'), aUV=gl.getAttribLocation(prog,'aUV'),
+      aNrm=gl.getAttribLocation(prog,'aNrm');
+  var uProj=gl.getUniformLocation(prog,'uProj'), uMV=gl.getUniformLocation(prog,'uMV'),
+      uUseTex=gl.getUniformLocation(prog,'uUseTex'), uTex=gl.getUniformLocation(prog,'uTex');
+
+  // 1x1 white stand-in so meshes with no bound texture still draw in textured
+  // mode instead of vanishing.
+  var white = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, white);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,
+                new Uint8Array([255,255,255,255]));
+
+  var texs = {};   // name -> {tex, w, h}
+  var pending = 0, started = false;
+
+  function makeTex(name, rec){
+    var t = gl.createTexture();
+    var img = new Image();
+    pending++;
+    img.onload = function(){
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+      // DS UVs routinely run outside 0..1 and rely on repeat; that needs POT.
+      var pot = isPOT(img.width) && isPOT(img.height);
+      var wrap = pot ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+      // NEAREST keeps the DS pixel art crisp instead of smearing it.
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      texs[name] = {tex:t, w:img.width, h:img.height};
+      if(--pending === 0) ready();
+    };
+    img.onerror = function(){ if(--pending === 0) ready(); };
+    img.src = rec.src;
+  }
+
+  var binds = {};                       // o-group name -> texture name
+  (M.binds||[]).forEach(function(b){ binds[b[0]] = b[1]; });
+  for(var k in (M.tex||{})) makeTex(k, M.tex[k]);
+  if(pending === 0) ready();
+
+  function ready(){
+    if(started) return; started = true;
+    // Build one drawable per o-group, using the bound texture's real size to
+    // normalize the texel UVs.
+    var minv=[1e9,1e9,1e9], maxv=[-1e9,-1e9,-1e9];
+    o.groups.forEach(function(g, i){
+      var bindName = binds.hasOwnProperty(g.name) ? binds[g.name]
+                   : (M.binds && M.binds[i] ? M.binds[i][1] : '');
+      var rec = bindName ? texs[bindName] : null;
+      var built = buildGroup(o, g, rec ? [rec.w, rec.h] : null);
+      if(!built.count) return;
+      for(var v=0; v<built.count; v++){
+        for(var c=0;c<3;c++){
+          var val = built.pos[v*3+c];
+          if(val<minv[c]) minv[c]=val;
+          if(val>maxv[c]) maxv[c]=val;
+        }
+      }
+      function buf(data){
+        var b = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, b);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        return b;
+      }
+      state.parts.push({
+        pos:buf(built.pos), uv:buf(built.uv), nrm:buf(built.nrm),
+        count:built.count, tex: rec ? rec.tex : white
+      });
+    });
+    if(!state.parts.length){ fail('This model has no drawable geometry.'); return; }
+
+    state.center = [(minv[0]+maxv[0])/2, (minv[1]+maxv[1])/2, (minv[2]+maxv[2])/2];
+    var radius = Math.max(
+      Math.hypot(maxv[0]-minv[0], maxv[1]-minv[1], maxv[2]-minv[2])/2, 1e-3);
+    state.home = radius * 2.6;
+    state.dist = state.home;
+
+    MSG.style.display = 'none';
+    gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);   // DS meshes are authored double-sided
+    draw();
+  }
+
+  function draw(){
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    var w = Math.max(1, (cv.clientWidth*dpr)|0), h = Math.max(1, (cv.clientHeight*dpr)|0);
+    if(cv.width!==w || cv.height!==h){ cv.width=w; cv.height=h; }
+    gl.viewport(0,0,w,h);
+    var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    gl.clearColor.apply(gl, dark ? [0.06,0.07,0.09,1] : [0.90,0.91,0.93,1]);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    var proj = perspective(50*Math.PI/180, w/h, 0.01, 1000);
+    var mv = mul(translation(0,0,-state.dist),
+             mul(rotX(state.pitch),
+             mul(rotY(state.yaw),
+                 translation(-state.center[0], -state.center[1], -state.center[2]))));
+    gl.useProgram(prog);
+    gl.uniformMatrix4fv(uProj, false, new Float32Array(proj));
+    gl.uniformMatrix4fv(uMV, false, new Float32Array(mv));
+    gl.uniform1f(uUseTex, state.textured ? 1 : 0);
+    gl.uniform1i(uTex, 0);
+    gl.activeTexture(gl.TEXTURE0);
+
+    state.parts.forEach(function(p){
+      gl.bindTexture(gl.TEXTURE_2D, p.tex);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.pos);
+      gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.uv);
+      gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.nrm);
+      gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,0,0);
+      gl.drawArrays(gl.TRIANGLES, 0, p.count);
+    });
+  }
+  state.draw = draw;
+
+  // ---- orbit / zoom ------------------------------------------------------
+  var down=false, lx=0, ly=0;
+  cv.addEventListener('mousedown', function(e){ down=true; lx=e.clientX; ly=e.clientY; });
+  window.addEventListener('mouseup', function(){ down=false; });
+  window.addEventListener('mousemove', function(e){
+    if(!down) return;
+    state.yaw += (e.clientX-lx)*0.01;
+    state.pitch += (e.clientY-ly)*0.01;
+    var lim = Math.PI/2 - 0.01;
+    state.pitch = Math.max(-lim, Math.min(lim, state.pitch));
+    lx=e.clientX; ly=e.clientY; draw();
+  });
+  cv.addEventListener('wheel', function(e){
+    e.preventDefault();
+    state.dist *= Math.exp(e.deltaY * 0.0012);
+    state.dist = Math.max(state.home*0.05, Math.min(state.home*10, state.dist));
+    draw();
+  }, {passive:false});
+  window.addEventListener('resize', draw);
+
+  var tb = document.getElementById('tex');
+  tb.onclick = function(){
+    state.textured = !state.textured;
+    tb.textContent = state.textured ? 'Textured' : 'Untextured';
+    tb.classList.toggle('on', state.textured);
+    draw();
+  };
+  document.getElementById('reset').onclick = function(){
+    state.yaw=0.6; state.pitch=0.25; state.dist=state.home; draw();
+  };
+}
+
+// ---- load the model named by ?m= ----------------------------------------
+(function(){
+  var m = /[?&]m=([^&]+)/.exec(location.search);
+  if(!m){ fail('No model given. Open a model from the gallery.'); return; }
+  var src = decodeURIComponent(m[1]);
+  if(!/^[\w./ -]+\.js$/.test(src)){ fail('Refusing to load an unexpected path.'); return; }
+  var s = document.createElement('script');
+  s.src = src;
+  s.onerror = function(){ fail('Could not load ' + src + '.'); };
+  document.head.appendChild(s);
+  var back = document.getElementById('back');
+  back.href = 'index.html';
+})();
+</script>
