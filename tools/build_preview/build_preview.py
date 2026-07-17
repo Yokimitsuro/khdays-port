@@ -1194,6 +1194,7 @@ background:var(--chip);padding:1px 7px;border-radius:20px}
 gap:10px;padding:10px 12px 14px;border-top:1px solid var(--line)}
 .cell{background:var(--bg);border:1px solid var(--line);border-radius:7px;
 padding:7px;text-align:center;overflow:hidden}
+.cell:not(.model) img{cursor:zoom-in}
 .cell img{max-width:100%;height:88px;object-fit:contain;display:block;margin:0 auto 5px;
 image-rendering:pixelated;background:
 linear-gradient(45deg,#8883 25%,transparent 25%,transparent 75%,#8883 75%),
@@ -1217,6 +1218,30 @@ border:1px solid var(--line);border-radius:7px;padding:6px 9px}
 audio{height:32px;max-width:340px}
 a{color:var(--accent)}
 .empty{padding:30px;text-align:center;color:var(--muted)}
+/* Lightbox. These textures are 8x16 to 128x128, so the card's 88px box is the
+   whole problem: it shows them smaller than they are and there is nowhere to
+   look closer. The overlay scales by a whole number with nearest-neighbour, so
+   a texel stays a square instead of being smeared into its neighbours. Its
+   checkerboard sits on a solid mid-grey rather than on the scrim, so alpha
+   reads on either theme. */
+#lb{position:fixed;inset:0;z-index:20;display:none;background:#000000d0;
+align-items:center;justify-content:center;flex-direction:column;gap:14px;
+padding:26px;cursor:zoom-out}
+#lb.on{display:flex}
+#lb img{image-rendering:pixelated;border-radius:3px;cursor:default;
+background-color:#3a4048;
+background-image:linear-gradient(45deg,#0003 25%,transparent 25%,transparent 75%,#0003 75%),
+linear-gradient(45deg,#0003 25%,transparent 25%,transparent 75%,#0003 75%);
+background-size:16px 16px;background-position:0 0,8px 8px;
+box-shadow:0 10px 44px #000000b0}
+#lbc{color:#e6e8ec;font-size:12.5px;text-align:center;text-shadow:0 1px 3px #000}
+#lbc em{color:#98a0ad;font-style:normal;margin-left:9px}
+#lb .x{position:absolute;top:12px;right:18px;font-size:26px;line-height:1;
+color:#e6e8ec;opacity:.65;cursor:pointer;user-select:none}
+#lb .nav{position:absolute;top:50%;transform:translateY(-50%);font-size:34px;
+color:#e6e8ec;opacity:.45;cursor:pointer;padding:16px;user-select:none}
+#lb .x:hover,#lb .nav:hover{opacity:1}
+#lb .prev{left:4px}#lb .next{right:4px}
 </style>
 """
 
@@ -1254,6 +1279,8 @@ def build_html(items: list[dict], meta: dict) -> str:
 <button id="collapse">Collapse all</button>
 </div></header>
 <main id="main"></main>
+<div id="lb"><span class="x">&times;</span><span class="nav prev">&lsaquo;</span>
+<span class="nav next">&rsaquo;</span><img alt=""><div id="lbc"></div></div>
 <script>
 const DATA={json.dumps(payload, ensure_ascii=False, separators=(',', ':'))};
 const main=document.getElementById('main');let filter='all',q='';
@@ -1306,6 +1333,58 @@ document.getElementById('collapse').onclick=()=>
   document.querySelectorAll('details').forEach(d=>d.open=false);
 let t;document.getElementById('q').addEventListener('input',e=>{{
   clearTimeout(t);t=setTimeout(()=>{{q=e.target.value.trim().toLowerCase();render();}},180);}});
+
+// ---- lightbox: click a texture to see it at its real scale ----------------
+const lb=document.getElementById('lb'),lbi=lb.querySelector('img'),
+      lbc=document.getElementById('lbc');
+let shots=[],at=-1;
+
+// Whole-number scaling, so a texel stays a square. Only fall back to fitting
+// the viewport when even 1:1 does not fit, which no DS texture hits today.
+function place(){{
+  const w=lbi.naturalWidth,h=lbi.naturalHeight;
+  if(!w||!h)return;
+  const aw=innerWidth-56,ah=innerHeight-130;
+  const k=Math.floor(Math.min(aw/w,ah/h));
+  if(k>=1){{lbi.style.width=w*k+'px';lbi.style.height=h*k+'px';lbi.style.maxWidth='';}}
+  else{{lbi.style.width=lbi.style.height='';lbi.style.maxWidth=aw+'px';lbi.style.maxHeight=ah+'px';}}
+  const nm=shots[at]?shots[at].nm:'';
+  lbc.innerHTML=`<b>${{nm}}</b><em>${{w}}&times;${{h}}</em>`+
+    (k>=1?`<em>${{k}}&times; zoom</em>`:'<em>shrunk to fit</em>')+
+    (shots.length>1?`<em>${{at+1}} / ${{shots.length}}</em>`:'');
+}}
+function show(i){{
+  if(i<0||i>=shots.length)return;
+  at=i;lbi.src=shots[i].src;lb.classList.add('on');
+  lb.querySelectorAll('.nav').forEach(n=>n.style.display=shots.length>1?'':'none');
+  if(lbi.complete)place();
+}}
+function close_(){{lb.classList.remove('on');lbi.removeAttribute('src');}}
+lbi.addEventListener('load',place);
+addEventListener('resize',()=>{{if(lb.classList.contains('on'))place();}});
+
+main.addEventListener('click',e=>{{
+  const img=e.target.closest('.cell:not(.model) img');
+  if(!img)return;
+  // Step through the group the click came from, not the whole gallery: the
+  // neighbours are what you want to compare a texture against.
+  const box=img.closest('.grid');
+  const all=[...box.querySelectorAll('.cell:not(.model) img')];
+  shots=all.map(x=>({{src:x.getAttribute('src'),
+                     nm:x.closest('.cell').querySelector('.nm').textContent}}));
+  show(all.indexOf(img));
+}});
+lb.addEventListener('click',e=>{{
+  if(e.target.classList.contains('prev'))show((at-1+shots.length)%shots.length);
+  else if(e.target.classList.contains('next'))show((at+1)%shots.length);
+  else if(e.target!==lbi)close_();   // the scrim and the x close; the image does not
+}});
+addEventListener('keydown',e=>{{
+  if(!lb.classList.contains('on'))return;
+  if(e.key==='Escape')close_();
+  else if(e.key==='ArrowLeft')show((at-1+shots.length)%shots.length);
+  else if(e.key==='ArrowRight')show((at+1)%shots.length);
+}});
 render();
 </script>
 """

@@ -72,6 +72,8 @@ If `items.json` is missing or damaged while an `index.html` exists — an index 
 | **Text** | String tables and message databases as `.txt` |
 | **Audio** | Sequences, streams and SWAVs as `.wav`, with an in-page player, named from the SDAT's SYMB table |
 
+Clicking any image opens it full-size. The cards are 88px tall, which is smaller than some of these textures actually are and far too small to read a 16×32 one, so the overlay scales by a **whole number** with nearest-neighbour — a texel stays a square instead of being smeared into its neighbours — and reports the real size and the zoom it used (`ax_hair_b · 16×32 · 35× zoom`). Its checkerboard sits on a solid mid-grey, so alpha reads on either theme. Arrow keys step through the group the click came from, since the neighbours are what you usually want to compare against; `Esc`, the scrim or the `×` closes.
+
 ## The 3D viewer
 
 Clicking a model card in the gallery opens `viewer.html`, which draws the model with WebGL: drag to orbit, wheel to zoom, and a button toggles **Textured / Untextured**. Untextured is flat-shaded grey, so the topology is readable rather than a silhouette.
