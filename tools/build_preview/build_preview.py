@@ -261,35 +261,68 @@ _STP_RE = re.compile(r"s(\d+)_t(\d+)_p(\d+)")
 
 
 def convert_bg_dir(d: Path, per_screen: int, max_total: int) -> list[Path]:
-    """Convert --dump-ui output, keeping a representative spread per screen.
+    """Convert --dump-ui output, keeping a spread of tile-sheets per screen.
 
     --dump-ui writes every non-blank screen x tile-sheet x palette permutation
     (it is an exploration aid). A single pack can emit ~49k images that are the
-    same artwork paired with wrong tile sheets/palettes. We keep the first
-    `per_screen` combinations of each distinct screen - which preserves every
-    background that exists - and drop the rest unconverted.
+    same artwork paired with wrong tile sheets/palettes.
+
+    A screen is only right with the tile-sheet it was authored against, and the
+    gallery has no table telling it which -- for res.p2 the game does not even
+    store one; ov006/ov008 bind tile+palette explicitly and use pairs where the
+    palette index equals the tile index (verified in the ROM). So keep a spread
+    across *tile-sheets* per screen, one per sheet, preferring the palette whose
+    index matches the sheet. That guarantees the correct pairing is among the
+    kept variants -- the earlier "first `per_screen`" kept four palettes of
+    tile-sheet 0 and nothing else, so a screen belonging to sheet 1 only ever
+    appeared as sheet-0 garbage, which is what made res.p2 look broken.
     """
     if not d.is_dir():
         return []
-    bmps = sorted(d.glob("*.bmp"))
+    bmps = list(d.glob("*.bmp"))
 
     def key(p: Path):
         m = _STP_RE.search(p.name)
         return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
 
-    bmps.sort(key=key)
-    keep, seen = [], collections.Counter()
+    # Order each screen's variants so tile-sheet diversity comes first and
+    # palette diversity fills whatever slots remain, then take per_screen. A
+    # pack with several tile-sheets (res.p2) gets one per sheet, so the correct
+    # pairing is shown; a pack with a single tile-sheet falls back to its four
+    # palettes, exactly as before, instead of collapsing to one.
+    by_screen: dict[int, list] = collections.defaultdict(list)
     for b in bmps:
-        s = key(b)[0]
-        if seen[s] < per_screen and len(keep) < max_total:
-            keep.append(b)
-            seen[s] += 1
+        s, t, p = key(b)
+        by_screen[s].append((t, p, b))
+
+    keep: list[Path] = []
+    for s in sorted(by_screen):
+        entries = sorted(by_screen[s])  # by (tile, palette)
+        # Pass 1: the best variant of each tile-sheet (palette == tile index
+        # preferred, else the lowest), one per sheet.
+        first_of_tile: dict[int, tuple] = {}
+        for t, p, b in entries:
+            cur = first_of_tile.get(t)
+            rank = (0 if p == t else 1, p)
+            if cur is None or rank < cur[0]:
+                first_of_tile[t] = (rank, b)
+        ordered = [v[1] for _, v in sorted(first_of_tile.items())]
+        chosen = set(ordered)
+        # Pass 2: remaining variants (extra palettes), to fill the quota.
+        for _, _, b in entries:
+            if b not in chosen:
+                ordered.append(b)
+                chosen.add(b)
+        for b in ordered[:per_screen]:
+            if len(keep) < max_total:
+                keep.append(b)
+
     dropped = len(bmps) - len(keep)
     if dropped:
         _stats["ui_bg_variants_dropped"] += dropped
     keepset = set(keep)
     out = []
-    for b in bmps:
+    for b in sorted(bmps, key=key):
         if b in keepset:
             png = bmp_to_png(b)
             if png:
