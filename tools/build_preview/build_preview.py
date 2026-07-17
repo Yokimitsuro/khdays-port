@@ -13,7 +13,9 @@ Output layout (mirrors the source relative paths)::
       items.json                             (the index's payload; see MERGING)
       viewer.html                            (shared WebGL model viewer)
       3d/<rel>/<texture>.png + model.obj     (BMD0 models / BTX0 texture sets)
-      3d/<rel>/model.js                      (viewer payload; --no-viewers omits)
+      3d/<rel>/model.js                      (viewer payload, with the model's
+                                             skinning + animations folded in;
+                                             --no-viewers / --no-anims omit)
       ui/p2/<rel>/sub<NNN>/...png            (D2KP packs nested in P2 containers)
       ui/d2kp/<rel>/...png                   (standalone D2KP packs, via slots)
       fonts/<rel>.png                        (NFTR sample sheets)
@@ -144,6 +146,14 @@ MAGIC_NFTR = b"RTFN"
 # only open in Blender is the problem this solves - but --no-viewers turns it
 # off for a leaner 3d/ tree.
 VIEWERS = True
+
+# Fold each model's skinning data and its animations' baked matrix palettes
+# into that payload, so the viewer can play them (--export-skin; the OBJ alone
+# is a rest pose with the bones thrown away). This is the expensive half: the
+# palettes are a mat4 per palette entry per frame, which took Axel's model.js
+# from 40 KB to 581 KB. --no-anims turns it off and leaves the static viewers
+# behind.
+ANIMS = True
 VIEWER_TEMPLATE = Path(__file__).resolve().parent / "viewer.html"
 
 _print_lock = threading.Lock()
@@ -504,6 +514,91 @@ def unit_text(task: tuple) -> str:
 _MODEL_NAME_RE = re.compile(r"^# model:\s*(.+)$", re.MULTILINE)
 
 
+def find_animations(src: Path) -> list[Path]:
+    """Candidate NSBCA files for a model, for --export-skin to accept or reject.
+
+    Every model in the data sits at ``<container>/slot_7/0000.nsbmd`` and every
+    animation at ``<container>/slot_0/0000.nsbca`` (533/533 and 590/590), so
+    both sources below are exact, not pattern-matched:
+
+      - The model's own container. That animation is this model's by
+        construction, whatever its bone count.
+      - Anim-only containers beside it in the same folder, which is how a
+        character's extra animations ship: ba/ch/ax holds Axel's model in
+        def.p and six more animations for that same skeleton in it.p, li.p and
+        ma0-2.p. A container with its own model is left alone -- its animation
+        belongs to that model, not this one.
+
+    The folder is a weak signal (ba/ch/ax also holds 18- and 7-bone animations
+    for other things entirely), so these are candidates only; --export-skin
+    applies the bone-count evidence and reports what it drops.
+    """
+    container = src.parent.parent
+    folder = container.parent
+    found: list[Path] = []
+
+    sibling = container / "slot_0" / "0000.nsbca"
+    if sibling.is_file():
+        found.append(sibling)
+
+    for other in sorted(folder.iterdir()) if folder.is_dir() else []:
+        if other == container or not other.is_dir():
+            continue
+        anim = other / "slot_0" / "0000.nsbca"
+        if anim.is_file() and not (other / "slot_7" / "0000.nsbmd").is_file():
+            found.append(anim)
+    return found
+
+
+def export_skin(src: Path, outdir: Path, rel: Path) -> dict | None:
+    """Skinning data plus baked animation palettes for one model, or None.
+
+    None when there is nothing worth carrying: no candidates, no skeleton, or
+    every candidate rejected. The viewer hides its animation controls in that
+    case and behaves exactly as it did before this existed.
+    """
+    if not ANIMS or src.parent.name != "slot_7":
+        return None
+    anims = find_animations(src)
+    if not anims:
+        return None
+
+    tmp = outdir / "skin.json.tmp"
+    ok, out, err = run([EXE, "--export-skin", src, tmp] + anims)
+    try:
+        if not ok:
+            # A model with no skeleton is the ordinary case here, not a fault.
+            if "has no skeleton" not in err:
+                log(f"    ! export-skin {rel}: {err.strip()[:90]}", quiet=True)
+                _stats["3d_skin_fail"] += 1
+            return None
+        try:
+            data = json.loads(tmp.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            log(f"    ! export-skin {rel}: unreadable payload ({exc})", quiet=True)
+            _stats["3d_skin_fail"] += 1
+            return None
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    # Every rejection the CLI reported is logged, not swallowed: a dropped
+    # animation is a decision about the data and someone may want to argue
+    # with it later.
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("SKIP "):
+            log(f"    - {rel}: {stripped}", quiet=True)
+            _stats["3d_anims_skipped"] += 1
+        elif "(partial:" in stripped:
+            _stats["3d_anims_partial"] += 1
+
+    if not data.get("anims"):
+        return None
+    _stats["3d_skinned"] += 1
+    _stats["3d_anims"] += len(data["anims"])
+    return data
+
+
 def write_model_js(src: Path, outdir: Path, obj: Path) -> Path | None:
     """Write the viewer payload for one model, or None if it has no geometry.
 
@@ -555,6 +650,16 @@ def write_model_js(src: Path, outdir: Path, obj: Path) -> Path | None:
         "binds": [[m, t] for m, t in binds],
         "tex": tex,
     }
+
+    # The skin's vertices are emitted in the OBJ's own order, which is the whole
+    # reason the viewer can pair them; it re-checks the count before trusting it.
+    skin = export_skin(src, outdir, src.relative_to(DEC))
+    if skin:
+        payload["skin"] = {
+            k: skin[k] for k in ("paletteSize", "pos", "joints", "weights", "rest")
+        }
+        payload["anims"] = skin["anims"]
+
     dst = outdir / "model.js"
     dst.write_text(
         "KH_MODEL(" + json.dumps(payload, separators=(",", ":")) + ");\n",
@@ -1212,7 +1317,7 @@ render();
 # --------------------------------------------------------------------------
 
 def main() -> int:
-    global BG_PER_SCREEN, MAX_BG_PER_SUB, VIEWERS, _prev_meta  # noqa: PLW0603
+    global BG_PER_SCREEN, MAX_BG_PER_SUB, VIEWERS, ANIMS, _prev_meta  # noqa: PLW0603
     ap = argparse.ArgumentParser(description="Build data/preview/ asset gallery.")
     ap.add_argument("--only", default="", help="comma list: " + ",".join(CATEGORIES))
     ap.add_argument("--limit", type=int, default=None,
@@ -1228,10 +1333,17 @@ def main() -> int:
                     default=True, help="write in-browser 3D viewers (default)")
     ap.add_argument("--no-viewers", dest="viewers", action="store_false",
                     help="skip model.js viewer payloads (~13 MB over 530 models)")
+    ap.add_argument("--anims", dest="anims", action="store_true", default=True,
+                    help="fold skinning and animation palettes into the "
+                         "viewers (default)")
+    ap.add_argument("--no-anims", dest="anims", action="store_false",
+                    help="static viewers only; skips the baked animation "
+                         "palettes, which dominate a model.js")
     args = ap.parse_args()
     BG_PER_SCREEN = args.bg_per_screen
     MAX_BG_PER_SUB = args.max_bg_per_sub
     VIEWERS = args.viewers
+    ANIMS = args.anims
 
     cats = [c.strip() for c in args.only.split(",") if c.strip()] or CATEGORIES
     bad = [c for c in cats if c not in CATEGORIES]
@@ -1320,6 +1432,12 @@ def main() -> int:
             f"listed {_stats['anim_listed']} animations)")
         items += parallel("3d", "3d", tasks,
                           lambda t: do_3d(t[0], t[1], args.force), unit_3d)
+        if ANIMS:
+            log(f"[3d] {_stats['3d_anims']} animations on "
+                f"{_stats['3d_skinned']} models "
+                f"({_stats['3d_anims_partial']} drive only part of their "
+                f"skeleton; {_stats['3d_anims_skipped']} candidates rejected, "
+                f"see the log)")
 
     if "ui" in cats:
         d = collect_ui_d2kp()

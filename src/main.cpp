@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -6,10 +8,12 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 #include <SDL3/SDL_main.h>
 
@@ -104,6 +108,257 @@ int run_game_demo() {
     return EXIT_SUCCESS;
 }
 
+// --- viewer skin payload ---------------------------------------------------
+// Serializers for --export-skin. The gallery's WebGL viewer eats a Wavefront
+// OBJ, which to_wavefront_obj() writes in the *rest pose*; the bones are gone
+// by then, so the viewer cannot animate. This adds the missing half: the raw
+// vertex positions with their palette indices, plus one matrix palette per
+// animation frame, baked here exactly the way gpu_renderer.cpp bakes it live
+// (sample_animation -> compute_palette). The viewer then skins in its vertex
+// shader like the native renderer does.
+
+// A palette is mostly 0s and 1s, so trailing zeros are trimmed. Five decimals
+// resolves finer than the DS's own 20.12 fixed point (1/4096 ~= 0.00024), so
+// nothing is lost against the source data.
+std::string json_number(float value) {
+    std::array<char, 32> buffer{};
+    std::snprintf(
+        buffer.data(), buffer.size(), "%.5f", static_cast<double>(value));
+    std::string text{buffer.data()};
+    if (text.find('.') != std::string::npos) {
+        text.erase(text.find_last_not_of('0') + 1U);
+        if (!text.empty() && text.back() == '.') {
+            text.pop_back();
+        }
+    }
+    if (text == "-0") {
+        text = "0";
+    }
+    return text;
+}
+
+std::string json_string(const std::string& value) {
+    std::string out{"\""};
+    for (const char c : value) {
+        if (c == '"' || c == '\\') {
+            out.push_back('\\');
+            out.push_back(c);
+        } else if (static_cast<unsigned char>(c) < 0x20U) {
+            std::array<char, 8> esc{};
+            std::snprintf(esc.data(), esc.size(), "\\u%04x", c);
+            out += esc.data();
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+// All 16 floats of each matrix, column-major, exactly as compute_palette()
+// returns them.
+//
+// Dropping the bottom row would shrink a payload by 8% (measured), and these
+// matrices do look affine -- sample_animation builds TRS with a literal
+// 0 0 0 1 bottom row. They are not. A check written to justify the shortcut
+// found 9 of the 533 models whose palettes carry a w that is not 1 (ba/ch/ze,
+// mi/ch/03 and 7 others: 1.015625 and 0.996094, i.e. 1 +/- a DS fixed-point
+// step), and the port does not agree with itself about what that w means:
+// model.vert multiplies the full mat4 and lets the GPU divide by it, while
+// transform_point -- which is what to_wavefront_obj's rest pose goes through
+// -- computes three rows and ignores it. So for those 9, the OBJ and the
+// native render already disagree by ~1.5% on the affected bones.
+//
+// That is a real question about the port, not about this exporter, so the
+// exporter refuses to be the one that answers it by discarding the evidence.
+// All 16 go out; the viewer documents which convention it picked.
+void write_matrices(
+    std::ostringstream& out,
+    const std::vector<std::array<float, 16>>& matrices) {
+    bool first = true;
+    for (const auto& matrix : matrices) {
+        for (const float value : matrix) {
+            if (!first) {
+                out << ',';
+            }
+            first = false;
+            out << json_number(value);
+        }
+    }
+}
+
+// One animation already loaded and accepted for a model.
+struct SkinAnimationInput final {
+    std::string name;
+    khdays::assets::SkeletalAnimation animation;
+};
+
+std::string to_skin_json(
+    const khdays::assets::NeutralModel& model,
+    const std::vector<SkinAnimationInput>& animations) {
+    std::ostringstream out;
+    out << "{\"name\":" << json_string(model.name)
+        << ",\"paletteSize\":" << model.palette.size()
+        << ",\"boneCount\":" << model.object_matrices.size();
+
+    // Vertices are emitted in to_wavefront_obj()'s exact order (meshes in
+    // order, vertices within each mesh), so `pos`/`joints`/`weights` line up
+    // index-for-index with the OBJ's `v` list. The viewer re-checks that count
+    // and falls back to the static OBJ if it ever disagrees.
+    out << ",\"meshes\":[";
+    bool first_mesh = true;
+    for (const auto& mesh : model.meshes) {
+        if (!first_mesh) {
+            out << ',';
+        }
+        first_mesh = false;
+        out << "{\"name\":" << json_string(mesh.name)
+            << ",\"vertices\":" << mesh.vertices.size() << '}';
+    }
+    out << ']';
+
+    out << ",\"pos\":[";
+    bool first_value = true;
+    for (const auto& mesh : model.meshes) {
+        for (const auto& vertex : mesh.vertices) {
+            for (const float component : vertex.position) {
+                if (!first_value) {
+                    out << ',';
+                }
+                first_value = false;
+                out << json_number(component);
+            }
+        }
+    }
+    out << ']';
+
+    out << ",\"joints\":[";
+    first_value = true;
+    for (const auto& mesh : model.meshes) {
+        for (const auto& vertex : mesh.vertices) {
+            for (const std::uint32_t joint : vertex.joints) {
+                if (!first_value) {
+                    out << ',';
+                }
+                first_value = false;
+                out << joint;
+            }
+        }
+    }
+    out << ']';
+
+    out << ",\"weights\":[";
+    first_value = true;
+    for (const auto& mesh : model.meshes) {
+        for (const auto& vertex : mesh.vertices) {
+            for (const float weight : vertex.weights) {
+                if (!first_value) {
+                    out << ',';
+                }
+                first_value = false;
+                out << json_number(weight);
+            }
+        }
+    }
+    out << ']';
+
+    // The rest palette, so "no animation" re-poses from the same code path the
+    // animated frames use. Skinning with it must reproduce the OBJ positions.
+    out << ",\"rest\":[";
+    write_matrices(out, model.palette);
+    out << ']';
+
+    out << ",\"anims\":[";
+    bool first_anim = true;
+    for (const auto& input : animations) {
+        const auto& animation = input.animation;
+        if (!first_anim) {
+            out << ',';
+        }
+        first_anim = false;
+        out << "{\"name\":" << json_string(input.name)
+            << ",\"internalName\":" << json_string(animation.name)
+            << ",\"frames\":" << animation.frame_count
+            << ",\"matrices\":[";
+
+        // Bake one palette per frame, as gpu_renderer.cpp does per displayed
+        // frame. Frames are whole numbers here: these are the animation's own
+        // keys, and the viewer interpolates nothing between them.
+        bool first_frame = true;
+        for (std::uint16_t frame = 0U; frame < animation.frame_count; ++frame) {
+            const auto objects = khdays::assets::sample_animation(
+                animation, static_cast<float>(frame), model.object_matrices);
+            const auto palette =
+                khdays::assets::compute_palette(*model.skinning, objects);
+            if (!first_frame) {
+                out << ',';
+            }
+            first_frame = false;
+            write_matrices(out, palette);
+        }
+        out << "]}";
+    }
+    out << "]}";
+    return out.str();
+}
+
+// Decide whether an NSBCA may drive this model, and say why not when it may
+// not. The two cases are genuinely different:
+//
+//  - Same container (<c>/slot_0/0000.nsbca next to <c>/slot_7/0000.nsbmd):
+//    ownership is structural, so the animation IS this model's. It may drive
+//    fewer bones than the model has -- sample_animation() maps bone-by-index
+//    and leaves the rest at their rest matrix -- and 9 of the game's 374
+//    sibling pairs do exactly that (mi/ch/4C is a 27-bone model with a 3-bone
+//    animation). Accept it; only more bones than the model has is incoherent.
+//
+//  - Any other container: ownership is inferred, and an equal bone count is
+//    the only evidence there is. A character folder mixes skeletons freely
+//    (ba/ch/ax holds 26-bone Axel animations beside 18-bone li_ea2 and 7-bone
+//    effects), so require exact equality rather than pose a model with a
+//    stranger's animation.
+std::string skin_animation_rejection(
+    const khdays::assets::NeutralModel& model,
+    const khdays::assets::SkeletalAnimation& animation,
+    const bool same_container) {
+    const auto model_bones = model.object_matrices.size();
+    const auto anim_bones = animation.bones.size();
+
+    // An NSBCA whose bones carry no curves poses nothing: every frame of it is
+    // the rest pose (mi/ch/3B's sibling is one -- 2 frames, 1 bone, 0 curves).
+    // Baking identical palettes for it would put a name in the menu that does
+    // nothing when picked.
+    if (std::none_of(
+            animation.bones.begin(), animation.bones.end(),
+            [](const khdays::assets::BoneCurves& bone) { return bone.animated; })) {
+        return "drives no bones; every frame is the rest pose";
+    }
+
+    if (same_container) {
+        if (anim_bones > model_bones) {
+            return "sibling animation drives " + std::to_string(anim_bones)
+                + " bones but the model only has "
+                + std::to_string(model_bones);
+        }
+        return {};
+    }
+    if (anim_bones != model_bones) {
+        return "foreign container and " + std::to_string(anim_bones)
+            + " bones against the model's " + std::to_string(model_bones)
+            + "; not this skeleton";
+    }
+    return {};
+}
+
+// Both files live at <container>/slot_N/0000.ext, so the container is the
+// grandparent of each.
+bool same_container(
+    const std::filesystem::path& model_path,
+    const std::filesystem::path& animation_path) {
+    return model_path.parent_path().parent_path()
+        == animation_path.parent_path().parent_path();
+}
+
 void print_version() {
     std::cout
         << khdays::port::Version::name << ' ' << KHDAYS_PORT_VERSION << '\n'
@@ -136,6 +391,7 @@ void print_help() {
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
+        << "  khdays-port --export-skin FILE OUTPUT.json [ANIM.nsbca...]\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
         << '\n'
@@ -162,6 +418,11 @@ void print_help() {
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
+        << "  --export-skin FILE OUT.json [ANIM...]  Export skinning data plus a baked\n"
+        << "                      matrix palette per frame of each NSBCA, for a viewer\n"
+        << "                      that skins the OBJ itself. An NSBCA in the model's own\n"
+        << "                      container is accepted (it may drive fewer bones); one\n"
+        << "                      from elsewhere needs an exact bone count to be believed.\n"
         << "  --version           Print version information without opening a window.\n"
         << "  --help              Show this help text.\n";
 }
@@ -1086,6 +1347,97 @@ int main(int argc, char* argv[]) {
                     << model.header_vertex_count << " expected), "
                     << total_triangles << " triangles\n"
                     << "Wrote " << output.string() << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--export-skin") {
+            if (argc < 4) {
+                std::cerr << "ERROR: --export-skin requires a model file, an "
+                             "output path, and zero or more NSBCA files\n";
+                return EXIT_FAILURE;
+            }
+
+            const std::filesystem::path input{argv[2]};
+            const std::filesystem::path output{argv[3]};
+
+            try {
+                const auto model =
+                    khdays::assets::decode_model_geometry(input);
+                if (!model.skinning || model.object_matrices.empty()) {
+                    std::cerr << "ERROR: model '" << model.name
+                              << "' has no skeleton to animate\n";
+                    return EXIT_FAILURE;
+                }
+
+                std::size_t total_vertices = 0U;
+                for (const auto& mesh : model.meshes) {
+                    total_vertices += mesh.vertices.size();
+                }
+                std::cout
+                    << "Model '" << model.name << "': " << total_vertices
+                    << " vertices, " << model.object_matrices.size()
+                    << " bones, " << model.palette.size()
+                    << " palette matrices\n";
+
+                // Candidates are filtered here rather than in the serializer:
+                // rejecting one is a decision worth reporting, not a silent
+                // omission, so every candidate gets a line either way.
+                std::vector<SkinAnimationInput> animations;
+                for (int index = 4; index < argc; ++index) {
+                    const std::filesystem::path path{argv[index]};
+                    // Name an animation after the container that holds it
+                    // (ba/ch/ax/li.p/slot_0/0000.nsbca -> "li"): the NSBCA's
+                    // own name is the artist's and every file is called 0000,
+                    // so neither identifies it in a menu.
+                    std::string name =
+                        path.parent_path().parent_path().filename().string();
+                    if (name.size() > 2U
+                        && name.substr(name.size() - 2U) == ".p") {
+                        name.erase(name.size() - 2U);
+                    }
+                    if (name.empty()) {
+                        name = path.stem().string();
+                    }
+
+                    auto animation = khdays::assets::load_nsbca(path);
+                    const bool sibling = same_container(input, path);
+                    const auto rejection =
+                        skin_animation_rejection(model, animation, sibling);
+                    if (!rejection.empty()) {
+                        std::cout << "  SKIP '" << name << "': " << rejection
+                                  << '\n';
+                        continue;
+                    }
+                    std::cout << "  animation '" << name << "': "
+                              << animation.frame_count << " frames, "
+                              << animation.bones.size() << " bones";
+                    if (animation.bones.size() < model.object_matrices.size()) {
+                        std::cout << " (partial: the model has "
+                                  << model.object_matrices.size()
+                                  << ", the rest stay at rest)";
+                    }
+                    std::cout << '\n';
+                    animations.push_back({name, std::move(animation)});
+                }
+
+                const auto json = to_skin_json(model, animations);
+
+                std::ofstream stream{output, std::ios::binary};
+                if (!stream) {
+                    std::cerr << "ERROR: cannot write skin JSON to "
+                              << output.string() << '\n';
+                    return EXIT_FAILURE;
+                }
+                stream.write(
+                    json.data(), static_cast<std::streamsize>(json.size()));
+
+                std::cout << "Wrote " << output.string() << " ("
+                          << json.size() / 1024U << " KB, "
+                          << animations.size() << " animations)\n";
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

@@ -44,6 +44,7 @@ Open `data/preview/index.html` in a browser. It works from `file://`, no server 
 | `--bg-per-screen N` | Background compositions kept per screen (default 4) |
 | `--max-bg-per-sub N` | Cap on backgrounds per sub-file |
 | `--no-viewers` | Do not write the in-browser 3D viewers (see below) |
+| `--no-anims` | Keep the viewers, but leave the animation data out of them |
 
 `--bg-per-screen` and `--max-bg-per-sub` exist because `--dump-ui` has no limit of its own: one pack (`UI/cm/cm.p2` sub85) wrote **1.25 million BMPs** before it was bounded.
 
@@ -75,6 +76,8 @@ If `items.json` is missing or damaged while an `index.html` exists — an index 
 
 Clicking a model card in the gallery opens `viewer.html`, which draws the model with WebGL: drag to orbit, wheel to zoom, and a button toggles **Textured / Untextured**. Untextured is flat-shaded grey, so the topology is readable rather than a silhouette.
 
+A model that has animations also gets a picker, play/pause and a frame scrubber. See [Animation](#animation) — including why the frame rate is a question mark.
+
 There is no three.js and no CDN. The viewer is a few hundred lines of hand-written WebGL in `tools/build_preview/viewer.html`, copied verbatim into `data/preview/`. One copy is shared by every model.
 
 ### How the data reaches the page
@@ -85,9 +88,11 @@ Textures are inlined into that `.js` as `data:` URIs instead of being referenced
 
 ### Cost, and why it is on by default
 
-Measured over a full run of 530 models: **502 `model.js`, 13.1 MB total** (avg 25 KB, largest 172 KB), plus a 15 KB `viewer.html`. That is +5% on a ~254 MB preview (which is mostly audio), and about 3 s of extra work. The 28 models without one decode to no geometry at all; their card stays a plain `.obj` link.
+Measured over a full run of 533 models: **505 `model.js`, 118.5 MB total** (avg 240 KB, largest 5.1 MB, 27 over 1 MB), plus a 16 KB `viewer.html`. The 28 models without one decode to no geometry at all; their card stays a plain `.obj` link.
 
-That is cheap enough to leave on. `--no-viewers` turns it off, which keeps `3d/` at 18 MB instead of 32 MB.
+Almost all of that is the animation payload, and it is not small: the same run with `--no-anims` writes **13.1 MB**. The baked palettes are a `mat4` per palette entry per frame, so a model with several long animations dominates its own file — Axel's is 40 KB static and 581 KB with his six. Over the whole gallery that is `3d/` at 138 MB instead of 33 MB, and the preview at ~373 MB instead of ~262 MB (the rest is mostly audio). It costs a few seconds of extra work, not minutes.
+
+It is on by default because a gallery whose models only open in Blender is the problem this tool exists to solve, and the disk is git-ignored and regenerable. Two flags trade it back: `--no-anims` keeps the viewers but drops the animation data, and `--no-viewers` drops the payloads entirely.
 
 ### Where the textures come from
 
@@ -95,13 +100,49 @@ That is cheap enough to leave on. `--no-viewers` turns it off, which keeps `3d/`
 
 The material is named by its texture because that is the part a viewer has to bind, and because material names are not texture names anyway (`robe00a` and `robe00b` both bind `ax_robe00`).
 
+### Transparency, and the byte that used to eat it
+
+DS textures are translucent, not just cut out: `A3I5` and `A5I3` carry 3- and 5-bit alpha (8 and 32 levels), and the game uses them for effects and for character hair — Axel's `ax_hair_b` is A3I5 with 6 distinct alpha levels.
+
+None of it reached the gallery until 2026-07-17. `to_bmp` wrote a 32-bit BMP with the bare 40-byte `BITMAPINFOHEADER` and `BI_RGB`, a combination in which **the fourth byte of a pixel is undefined by the format**. The alpha was in the file, and readers were entitled to ignore it — Pillow opened them as `mode=RGB` and did, so every texture converted to an opaque PNG. All 3513 of them, silently. `to_bmp` now writes a `BITMAPV4HEADER` with explicit channel masks, which declares the alpha instead of hoping for it; `load_bmp` reads `BI_BITFIELDS` back and refuses masks that are not the BGRA layout it decodes, rather than quietly swapping channels.
+
+This was never only a viewer problem: a `--dump-textures` BMP is what a modder edits and feeds back through `mods/`, and that round trip lost the alpha the same way.
+
+### Animation
+
+`--export-obj` writes the **rest pose** (`to_wavefront_obj` bakes `posed_position`), so the bones are gone by the time the OBJ exists and no viewer could animate it. `--export-skin` supplies the missing half, which `build_preview.py` folds into the same `model.js`: the **raw** vertex positions with their palette indices and weights, the rest palette, and **one baked matrix palette per animation frame** — produced by the same `sample_animation` → `compute_palette` chain the native renderer runs per displayed frame.
+
+Its vertices come out in the OBJ's exact order, so `v[i]` and `skin.pos[i]` are the same vertex. The viewer re-checks that count and stays static if it ever disagrees, rather than draw a scrambled mesh.
+
+Skinning runs on the **CPU**, in JS, not in the shader. Axel's palette is 35 `mat4` = 140 `vec4` of uniforms and WebGL1 only guarantees 128, so a uniform array would break on real models. A few hundred vertices per frame costs nothing and has no such ceiling.
+
+#### Which animations a model gets
+
+Every model is at `<container>/slot_7/0000.nsbmd` and every animation at `<container>/slot_0/0000.nsbca` — 533/533 and 590/590, so the convention is exact rather than a guess. Two sources, and they are *not* equally trustworthy:
+
+- **The model's own container.** Ownership is structural, so it is accepted whatever its bone count. It may drive fewer bones than the model has — `sample_animation` maps bone-by-index and leaves the rest at their rest matrix — and 8 pairs in the game do exactly that (`mi/ch/4C`: a 27-bone model with a 3-bone animation).
+- **Anim-only containers in the same folder.** This is how a character's extra animations ship: `ba/ch/ax` holds Axel's model in `def.p` and six more animations for that skeleton in `it.p`, `li.p` and `ma0-2.p`. But ownership here is *inferred*, and a folder mixes skeletons freely — `ba/ch/ax` also holds 18-bone (`li_ea2`) and 7-bone (`li_e0`) animations for other things. So an exact bone count is required as evidence, and 571 candidates are rejected on it. A container that has its own model is never borrowed from.
+
+An NSBCA whose bones carry no curves is dropped too (8 of them): every frame of it is the rest pose, so it would be a name in the menu that does nothing.
+
+Every rejection is written to `build_preview_log.txt` with its reason. Nothing is dropped silently.
+
+#### Two things that are not settled
+
+- **The frame rate is unknown.** The viewer defaults to 30 and labels it `fps?`, with an input to change it. That 30 is inherited from `gpu_renderer.cpp`, where it is a bare `constexpr` commented "Nintendo DS animations" — nobody has measured it, and this project has already been wrong once by assuming 30 (the game's own loop runs at 60). Treat it as a viewing default, not the DS's cadence.
+- **A palette's `w` is not always 1.** 9 of the 533 models ship palettes whose `m[15]` is `1.015625` or `0.996094` (`ba/ch/ze`, `mi/ch/03` and 7 more) — 1 ± a DS fixed-point step. The port does not agree with itself about it: `model.vert` multiplies the full `mat4` and lets the GPU divide by `w`, while `transform_point` (which the OBJ's rest pose goes through) computes three rows and ignores it. For those 9 the OBJ and the native render already disagree by ~1.5% on the affected bones. **The viewer follows the OBJ**, since the OBJ is the geometry it draws. `--export-skin` exports all 16 floats of every matrix rather than discard the evidence.
+
 This used to be a second, independent walk of the MDL0 render commands, written in Python in `mdl0_materials.py`, because the exporter dropped the binding it had already resolved. That duplicated `src/assets/mesh.cpp`, and it drifted exactly as predicted: a missing `case 0x48` in the opcode table had to be fixed in both files at once — one bug in two places, found only because three models failed to export. Emitting the binding from the exporter deleted the duplicate walk, the drift risk, and the mesh-order tripwire that guarded against it. The change was verified against that walk's output first: identical bindings on all 533 models.
 
 ## Honest caveats
 
 - **Many `ui/p2` backgrounds are mispaired noise.** `--dump-ui` renders screen × tileset × palette combinations because it *cannot know* which belong together, so correct art sits beside garbage. Sprite cells and 3D textures are clean. The game stores the real pairing in tables (for example `data_ov000_0205a9d4` for `ttl.p2`); reading those is the correct fix, and it is not done yet.
 - **Three of the 533 models never produce a `model.obj`**, so they appear in the gallery as textures only: `ba/ch/de/li_e0.p` (`ef_de_Limit01`), `ba/ch/r2/li_e1.p` (`ef_ro2_Limit2`) and `mi/ob/08` (`E110_xx_000`), all `slot_7/0000.nsbmd`. `--export-obj` rejects each with `unknown render command opcode 72`. That is **not** a fault of this tool: `sbc_param_bytes()` in `src/assets/mesh.cpp` has no `case 0x48`, so the SBC walk throws. 0x48 is the Y-billboard command carrying its extra parameter, and it takes 2 parameter bytes exactly like 0x47 — which the table already has — so these three are the only models in the ROM that use it. `--model-info` reads them fine, because it never walks the render command stream.
-- **No decoder**: the 46 MobiClip videos (`mv/*.mods`) and the code in `.bin`. 3D animations are listed but not rendered — they cannot be drawn on their own, without a skeleton and a scene.
-- **The viewer shows the rest pose, unanimated.** The NSBCA animations are never applied, even for a model that has some.
-- **The viewer is not the DS.** It draws the diffuse texture with a headlight and nothing else: no vertex colours (`--export-obj` drops those too), no per-material polygon attributes, no translucency — texels below half alpha are cut out, and everything is drawn double-sided because DS meshes are authored that way. It is for looking at assets, not for judging how they will render in the port.
+- **No decoder**: the 46 MobiClip videos (`mv/*.mods`) and the code in `.bin`.
+- **163 of the 533 models never animate**, and the gallery cannot tell you whether that is right. 141 have no candidate animation anywhere near them, and the rest lose theirs to the bone-count rule. An animation that lives outside its model's folder is not looked for at all — nothing has traced how the game actually pairs the two, so the container and the folder are the only evidence used here.
+- **A played animation is only as right as that pairing.** For the model's own container it is structural and safe. For a folder-mate it rests on an equal bone count, which is evidence, not proof: two different 26-bone skeletons would pair happily.
+- **The viewer is not the DS.** It draws the diffuse texture with a headlight and nothing else: no vertex colours (`--export-obj` drops those too), no per-material polygon attributes, and everything is drawn double-sided because DS meshes are authored that way. It is for looking at assets, not for judging how they will render in the port.
+- **Translucent texels are composited in mesh order, and that is deliberate.** They are drawn in a second blended pass with depth writes off, so they no longer read as solid. Overlapping translucent surfaces then resolve in **mesh order**, which is the order the game submits geometry: `decode_model_geometry` appends meshes as the MDL0's render command stream executes them, and nothing in the path sorts. That order matters — reversing it visibly changes `mi/ob/1B`'s light beam (the spiral rings brighten, a magenta core appears) — so it is worth saying why it is left alone rather than depth-sorted.
+
+  The game's own `main` writes **`SWAP_BUFFERS` (0x04000540) = 1 every frame** when it presents (`func_02000bcc.c`, the decomp). Per the DS register documentation, bit 0 selects translucent-polygon Y-sorting and **1 means manual** — the hardware does *not* reorder translucent polygons; they composite in submission order. (The boot-time `func_ov001_0204cbb4` writes 2, i.e. auto-sort + W-buffer, but `main` overrides it at every swap.) So back-to-front sorting here would **diverge** from the DS, not correct it. The register write is read out of the game; the meaning of its bits is hardware documentation, not something measured in this repo — a savestate would settle it beyond doubt.
 - 26 models bind no texture at all, so their toggle does nothing. Models are still written as `.obj` plus their textures, so Blender remains the option for anything the viewer does not cover.

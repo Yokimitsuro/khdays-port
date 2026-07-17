@@ -18,6 +18,20 @@
   sibling .png files. On a file:// page Chrome treats a file:// image as
   cross-origin, so uploading it via texImage2D taints and throws SecurityError.
   A data: URI has no such problem.
+
+  Animation
+  ---------
+  The OBJ carries the rest pose only (to_wavefront_obj writes posed_position),
+  so animating needs the skinning data the OBJ drops. --export-skin supplies it
+  as payload.skin: the RAW vertex positions with their palette indices/weights,
+  the rest palette, and one baked matrix palette per animation frame. Its
+  vertices are emitted in the OBJ's exact order, so v[i] and skin.pos[i] are the
+  same vertex -- checked below, and the viewer stays static if it disagrees.
+
+  Skinning runs on the CPU, not in the shader. A palette is 35 mat4 on Axel =
+  140 vec4 of uniforms, and WebGL1 only guarantees 128, so a uniform array would
+  break on real models. These meshes are a few hundred vertices; skinning them
+  in JS costs nothing and has no such ceiling.
 -->
 <style>
 :root{color-scheme:light dark;--bg:#f6f7f9;--fg:#14161a;--muted:#5d6470;
@@ -36,6 +50,19 @@ button{padding:6px 11px;border:1px solid var(--line);border-radius:7px;
 background:var(--bg);color:var(--fg);cursor:pointer;font-size:12.5px}
 button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+select{padding:5px 7px;border:1px solid var(--line);border-radius:7px;
+background:var(--bg);color:var(--fg);font-size:12.5px}
+#anim{display:none;gap:8px;align-items:center}
+#anim.show{display:flex}
+#frame{width:130px;accent-color:var(--accent)}
+#fno{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;
+min-width:46px}
+#fps{width:46px;padding:5px 4px;border:1px solid var(--line);border-radius:7px;
+background:var(--bg);color:var(--fg);font-size:12.5px;
+font-variant-numeric:tabular-nums}
+#anim label{color:var(--muted);font-size:11.5px;display:flex;gap:4px;
+align-items:center}
 a{color:var(--accent);font-size:12.5px}
 #wrap{flex:1;position:relative;min-height:0}
 canvas{width:100%;height:100%;display:block;cursor:grab}
@@ -49,6 +76,16 @@ pointer-events:none;text-shadow:0 1px 2px var(--bg)}
   <h1 id="title">Model viewer</h1>
   <button id="tex" class="on">Textured</button>
   <button id="reset">Reset view</button>
+  <span id="anim">
+    <select id="pick"></select>
+    <button id="play">Play</button>
+    <input id="frame" type="range" min="0" max="0" step="1" value="0">
+    <span id="fno"></span>
+    <label title="The rate NSBCA frames advance at is not established; 30 is a
+default, not a measured DS cadence. Change it here.">
+      <input id="fps" type="number" min="1" max="120" step="1" value="30">fps
+    </label>
+  </span>
   <span class="sp"></span>
   <a id="back" href="index.html">&larr; gallery</a>
 </header>
@@ -117,27 +154,76 @@ function parseObj(text){
 // Build non-indexed interleaved buffers: pos(3) uv(2) nrm(3). Non-indexed so
 // each triangle can carry its own face normal (flat shading) without splitting
 // shared vertices by hand.
+//
+// `src` remembers which OBJ vertex each expanded corner came from, so a pose
+// can be scattered back into these buffers without re-parsing anything.
 function buildGroup(o, g, texSize){
   var n = g.tris.length, pos = new Float32Array(n*3), uv = new Float32Array(n*2),
-      nrm = new Float32Array(n*3);
+      nrm = new Float32Array(n*3), src = new Int32Array(n);
   var sx = texSize ? texSize[0] : 1, sy = texSize ? texSize[1] : 1;
   for(var t=0;t+3<=n;t+=3){
-    var a=o.V[g.tris[t][0]]||[0,0,0], b=o.V[g.tris[t+1][0]]||[0,0,0], c=o.V[g.tris[t+2][0]]||[0,0,0];
-    var ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
-    var vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
-    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
-    var L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
     for(var k=0;k<3;k++){
       var vi=g.tris[t+k][0], ti=g.tris[t+k][1];
       var P=o.V[vi]||[0,0,0], T=o.VT[ti]||[0,0];
+      src[t+k]=vi;
       pos[(t+k)*3]=P[0]; pos[(t+k)*3+1]=P[1]; pos[(t+k)*3+2]=P[2];
       // Texels -> 0..1. V is NOT flipped: DS texels count down from the top,
       // which is also how the texture is uploaded (UNPACK_FLIP_Y_WEBGL false).
       uv[(t+k)*2]=T[0]/sx; uv[(t+k)*2+1]=T[1]/sy;
+    }
+  }
+  var part = {pos:pos, uv:uv, nrm:nrm, count:n, src:src};
+  faceNormals(part);
+  return part;
+}
+
+// Flat shading: one face normal shared by a triangle's three corners, derived
+// from the positions currently in the buffer. Re-run after every re-pose, or
+// the lighting keeps describing the rest pose.
+function faceNormals(part){
+  var pos = part.pos, nrm = part.nrm, n = part.count;
+  for(var t=0;t+3<=n;t+=3){
+    var ax=pos[t*3], ay=pos[t*3+1], az=pos[t*3+2];
+    var ux=pos[(t+1)*3]-ax, uy=pos[(t+1)*3+1]-ay, uz=pos[(t+1)*3+2]-az;
+    var vx=pos[(t+2)*3]-ax, vy=pos[(t+2)*3+1]-ay, vz=pos[(t+2)*3+2]-az;
+    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    var L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
+    for(var k=0;k<3;k++){
       nrm[(t+k)*3]=nx; nrm[(t+k)*3+1]=ny; nrm[(t+k)*3+2]=nz;
     }
   }
-  return {pos:pos, uv:uv, nrm:nrm, count:n};
+}
+
+// Linear-blend skinning: p' = sum(w[i] * palette[j[i]] * p). `palette` is a
+// flat run of column-major mat4 (m[col*4+row]).
+//
+// Only three rows are computed, so a matrix's w (m[15]) is ignored. That is
+// deliberate and it is what transform_point() in mesh.cpp does -- the same
+// function to_wavefront_obj() poses the OBJ through, and the OBJ is the
+// geometry on screen here, so this keeps the two consistent.
+//
+// It is not free of doubt: model.vert instead multiplies the full mat4 and
+// lets the GPU divide by w, and 9 of the game's 533 models ship palettes whose
+// w is 1.015625 or 0.996094 rather than 1 (ba/ch/ze, mi/ch/03 and 7 more). For
+// those, the native render and the OBJ already disagree by ~1.5% on the
+// affected bones, and this viewer follows the OBJ. Resolving which is right is
+// a question about the port, not about the gallery.
+function skinVertices(skin, palette, base, out){
+  var pos = skin.pos, joints = skin.joints, weights = skin.weights;
+  var n = out.length/3;
+  for(var v=0; v<n; v++){
+    var px=pos[v*3], py=pos[v*3+1], pz=pos[v*3+2];
+    var ox=0, oy=0, oz=0;
+    for(var k=0;k<4;k++){
+      var w = weights[v*4+k];
+      if(w === 0) continue;
+      var m = base + joints[v*4+k]*16;
+      ox += w*(palette[m   ]*px + palette[m+4]*py + palette[m+ 8]*pz + palette[m+12]);
+      oy += w*(palette[m+ 1]*px + palette[m+5]*py + palette[m+ 9]*pz + palette[m+13]);
+      oz += w*(palette[m+ 2]*px + palette[m+6]*py + palette[m+10]*pz + palette[m+14]);
+    }
+    out[v*3]=ox; out[v*3+1]=oy; out[v*3+2]=oz;
+  }
 }
 
 var VS = [
@@ -152,18 +238,28 @@ var VS = [
 // lit whichever way its normal points. DS meshes have inconsistent winding and
 // are drawn double-sided; without abs() half the model reads as a black blob,
 // which is exactly what the untextured mode must not do.
+// uPass splits the model by texel alpha across two draws: 0 keeps only fully
+// opaque texels (depth-written, unblended), 1 keeps only the translucent ones
+// (blended, no depth write). The game leans on this -- A3I5 and A5I3 carry 3-
+// and 5-bit alpha, and Axel's own hair is A3I5 -- so a plain alpha cutout
+// renders those texels as if they were solid.
 var FS = [
 'precision mediump float;',
-'uniform sampler2D uTex; uniform float uUseTex;',
+'uniform sampler2D uTex; uniform float uUseTex; uniform float uPass;',
 'varying vec2 vUV; varying vec3 vNrm;',
 'void main(){',
 '  vec3 n = normalize(vNrm);',
 '  float lam = abs(n.z);',
 '  if(uUseTex > 0.5){',
 '    vec4 t = texture2D(uTex, vUV);',
-'    if(t.a < 0.5) discard;',
-'    gl_FragColor = vec4(t.rgb * (0.75 + 0.25*lam), 1.0);',
+'    if(uPass < 0.5){',
+'      if(t.a < 0.999) discard;',           // opaque pass
+'    } else {',
+'      if(t.a >= 0.999 || t.a <= 0.004) discard;',  // translucent pass
+'    }',
+'    gl_FragColor = vec4(t.rgb * (0.75 + 0.25*lam), t.a);',
 '  } else {',
+'    if(uPass > 0.5) discard;',   // untextured grey is opaque; one pass is all
 '    vec3 base = vec3(0.80, 0.81, 0.84);',
 '    gl_FragColor = vec4(base * (0.30 + 0.70*lam), 1.0);',
 '  }',
@@ -178,7 +274,13 @@ function compile(gl, type, src){
 }
 function isPOT(x){ return (x & (x-1)) === 0; }
 
-var state = { yaw:0.6, pitch:0.25, dist:3, textured:true, parts:[], center:[0,0,0] };
+// fps: the rate NSBCA frames advance at is NOT established. gpu_renderer.cpp
+// assumes 30 with the bare comment "Nintendo DS animations", and this project
+// has already been burned once by a confident 30 (the game's own loop runs at
+// 60). Treat it as a viewing default, not as the DS's cadence, hence the
+// user-visible speed control and the label on it.
+var state = { yaw:0.6, pitch:0.25, dist:3, textured:true, parts:[], center:[0,0,0],
+              skin:null, anims:[], anim:-1, frame:0, playing:false, fps:30 };
 
 function KH_MODEL(M){
   try { boot(M); } catch(e){ fail('Viewer error: ' + e.message); }
@@ -206,7 +308,8 @@ function boot(M){
   var aPos=gl.getAttribLocation(prog,'aPos'), aUV=gl.getAttribLocation(prog,'aUV'),
       aNrm=gl.getAttribLocation(prog,'aNrm');
   var uProj=gl.getUniformLocation(prog,'uProj'), uMV=gl.getUniformLocation(prog,'uMV'),
-      uUseTex=gl.getUniformLocation(prog,'uUseTex'), uTex=gl.getUniformLocation(prog,'uTex');
+      uUseTex=gl.getUniformLocation(prog,'uUseTex'), uTex=gl.getUniformLocation(prog,'uTex'),
+      uPass=gl.getUniformLocation(prog,'uPass');
 
   // 1x1 white stand-in so meshes with no bound texture still draw in textured
   // mode instead of vanishing.
@@ -248,6 +351,32 @@ function boot(M){
 
   function ready(){
     if(started) return; started = true;
+
+    // Take the skinning payload only if it describes THIS geometry. The
+    // exporter walks the model in to_wavefront_obj's order, so the counts
+    // agreeing is the contract; if they ever drift, stay static rather than
+    // draw a scrambled mesh.
+    var skin = M.skin || null;
+    if(skin && skin.pos.length/3 !== o.V.length){
+      console.warn('skin has ' + (skin.pos.length/3) + ' vertices, OBJ has ' +
+                   o.V.length + '; animation disabled');
+      skin = null;
+    }
+    if(skin){
+      // JSON hands these over as plain arrays; the skinning loop touches every
+      // one of them on every frame, so pay the conversion once here.
+      skin.pos = new Float32Array(skin.pos);
+      skin.weights = new Float32Array(skin.weights);
+      skin.joints = new Uint16Array(skin.joints);
+      skin.rest = new Float32Array(skin.rest);
+      state.skin = skin;
+      state.anims = (M.anims || []).map(function(a){
+        return {name:a.name, frames:a.frames, matrices:new Float32Array(a.matrices)};
+      });
+      state.scratch = new Float32Array(o.V.length*3);
+    }
+    var usage = skin ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
+
     // Build one drawable per o-group, using the bound texture's real size to
     // normalize the texel UVs.
     var minv=[1e9,1e9,1e9], maxv=[-1e9,-1e9,-1e9];
@@ -267,12 +396,12 @@ function boot(M){
       function buf(data){
         var b = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, b);
-        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, data, usage);
         return b;
       }
       state.parts.push({
         pos:buf(built.pos), uv:buf(built.uv), nrm:buf(built.nrm),
-        count:built.count, tex: rec ? rec.tex : white
+        count:built.count, tex: rec ? rec.tex : white, cpu:built
       });
     });
     if(!state.parts.length){ fail('This model has no drawable geometry.'); return; }
@@ -287,6 +416,7 @@ function boot(M){
     gl.enable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);   // DS meshes are authored double-sided
     draw();
+    setupAnimUi();
   }
 
   function draw(){
@@ -310,16 +440,38 @@ function boot(M){
     gl.uniform1i(uTex, 0);
     gl.activeTexture(gl.TEXTURE0);
 
-    state.parts.forEach(function(p){
-      gl.bindTexture(gl.TEXTURE_2D, p.tex);
-      gl.bindBuffer(gl.ARRAY_BUFFER, p.pos);
-      gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, p.uv);
-      gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, p.nrm);
-      gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,0,0);
-      gl.drawArrays(gl.TRIANGLES, 0, p.count);
-    });
+    function drawParts(){
+      state.parts.forEach(function(p){
+        gl.bindTexture(gl.TEXTURE_2D, p.tex);
+        gl.bindBuffer(gl.ARRAY_BUFFER, p.pos);
+        gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, p.uv);
+        gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, p.nrm);
+        gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,0,0);
+        gl.drawArrays(gl.TRIANGLES, 0, p.count);
+      });
+    }
+
+    // Opaque texels first, filling the depth buffer, then the translucent ones
+    // blended over them with depth writes off so they cannot hide each other.
+    // Nothing is sorted: translucent-over-translucent resolves in mesh order,
+    // whatever that happens to be. Sorting per triangle every frame is the real
+    // answer and this is a gallery, not the port's renderer.
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
+    gl.uniform1f(uPass, 0);
+    drawParts();
+
+    if(state.textured){
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.uniform1f(uPass, 1);
+      drawParts();
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
   }
   state.draw = draw;
 
@@ -353,6 +505,104 @@ function boot(M){
   document.getElementById('reset').onclick = function(){
     state.yaw=0.6; state.pitch=0.25; state.dist=state.home; draw();
   };
+
+  // ---- animation ---------------------------------------------------------
+  // Re-pose from a matrix palette: skin the unique vertices once, scatter them
+  // to the expanded triangle corners, refresh the face normals, re-upload.
+  function pose(palette, base){
+    skinVertices(state.skin, palette, base, state.scratch);
+    var s = state.scratch;
+    state.parts.forEach(function(p){
+      var c = p.cpu, src = c.src, pos = c.pos;
+      for(var i=0;i<c.count;i++){
+        var v = src[i]*3;
+        pos[i*3]=s[v]; pos[i*3+1]=s[v+1]; pos[i*3+2]=s[v+2];
+      }
+      faceNormals(c);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.pos);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);
+      gl.bindBuffer(gl.ARRAY_BUFFER, p.nrm);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, c.nrm);
+    });
+  }
+
+  // Whole frames only: these are the animation's own keys and nothing here
+  // interpolates between them.
+  function poseCurrent(){
+    if(!state.skin) return;
+    if(state.anim < 0){ pose(state.skin.rest, 0); return; }
+    var a = state.anims[state.anim];
+    var f = Math.min(Math.floor(state.frame), a.frames-1);
+    pose(a.matrices, f*state.skin.paletteSize*16);
+  }
+
+  var slider = document.getElementById('frame'), fno = document.getElementById('fno'),
+      playBtn = document.getElementById('play'), pick = document.getElementById('pick'),
+      fpsBox = document.getElementById('fps');
+
+  function syncUi(){
+    var a = state.anim < 0 ? null : state.anims[state.anim];
+    // A one-frame animation (ba/ch/ax/li.p is one) is a pose, not motion:
+    // there is nothing to play or scrub.
+    slider.disabled = playBtn.disabled = !a || a.frames < 2;
+    slider.max = a ? a.frames-1 : 0;
+    slider.value = a ? Math.floor(state.frame) : 0;
+    fno.textContent = a ? (Math.floor(state.frame)+1) + '/' + a.frames : 'rest';
+  }
+
+  // Called from ready(), not from boot(): the textures load asynchronously, so
+  // at the bottom of boot() state.skin is still null and there is nothing to
+  // wire up yet.
+  function setupAnimUi(){
+    if(!state.skin || !state.anims.length) return;
+    document.getElementById('anim').className = 'show';
+    pick.appendChild(new Option('Rest pose', '-1'));
+    state.anims.forEach(function(a, i){
+      pick.appendChild(new Option(a.name + ' (' + a.frames + 'f)', String(i)));
+    });
+
+    var raf = 0, last = 0;
+    function tick(now){
+      raf = 0;
+      if(!state.playing) return;
+      var a = state.anims[state.anim];
+      if(a){
+        state.frame = (state.frame + (now-last)/1000*state.fps) % a.frames;
+        last = now;
+        poseCurrent(); draw(); syncUi();
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    function play(on){
+      state.playing = on && state.anim >= 0;
+      playBtn.textContent = state.playing ? 'Pause' : 'Play';
+      playBtn.classList.toggle('on', state.playing);
+      if(state.playing && !raf){
+        last = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    }
+
+    pick.onchange = function(){
+      state.anim = parseInt(pick.value, 10);
+      state.frame = 0;
+      var a = state.anim < 0 ? null : state.anims[state.anim];
+      play(!!a && a.frames > 1);
+      poseCurrent(); draw(); syncUi();
+    };
+    playBtn.onclick = function(){ play(!state.playing); };
+    slider.oninput = function(){
+      play(false);
+      state.frame = parseInt(slider.value, 10);
+      poseCurrent(); draw(); syncUi();
+    };
+    fpsBox.oninput = function(){
+      var v = parseFloat(fpsBox.value);
+      // Ignore a half-typed or nonsense rate rather than stall the playhead.
+      if(isFinite(v) && v > 0) state.fps = v;
+    };
+    syncUi();
+  }
 }
 
 // ---- load the model named by ?m= ----------------------------------------
