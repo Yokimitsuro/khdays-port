@@ -602,7 +602,7 @@ std::size_t sbc_param_bytes(const std::uint8_t opcode) {
         case 0x03: case 0x04: case 0x05: case 0x07: case 0x08:
         case 0x24: case 0x44:
             return 1U;
-        case 0x02: case 0x0C: case 0x0D: case 0x47:
+        case 0x02: case 0x0C: case 0x0D: case 0x47: case 0x48:
             return 2U;
         case 0x06:
             return 3U;

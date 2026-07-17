@@ -10,6 +10,7 @@ Output layout (mirrors the source relative paths)::
 
     data/preview/
       index.html
+      items.json                             (the index's payload; see MERGING)
       viewer.html                            (shared WebGL model viewer)
       3d/<rel>/<texture>.png + model.obj     (BMD0 models / BTX0 texture sets)
       3d/<rel>/model.js                      (viewer payload; --no-viewers omits)
@@ -19,6 +20,22 @@ Output layout (mirrors the source relative paths)::
       text/<rel>.txt                         (.s string tables, P2 message DBs)
       audio/{sequences,streams,swav}/*.wav   (SSEQ / STRM / SWAV)
       build_preview_log.txt
+
+MERGING
+-------
+
+The gallery on disk is built up across runs, so the index must never be built
+from one run's results alone: ``--only 3d`` would rewrite it with just the 3D
+cards and drop every ui/fonts/text/audio card, even though those files are all
+still sitting in ``data/preview/``. That silent data loss is what ``items.json``
+prevents.
+
+Every run writes its full item payload to ``items.json`` next to ``index.html``,
+and starts by reading back the previous one. Each item carries a *unit* id (see
+``unit_*()``) naming the source it came from - one model, one P2 sub-file, one
+sequence. A run then replaces only the units it actually processed and carries
+everything else over verbatim, so a partial run adds to the gallery instead of
+truncating it. ``--clean`` still wipes the lot; that is its job.
 
 Requires Pillow. On this machine PIL lives in ``python`` (3.13), not ``python3``::
 
@@ -66,6 +83,13 @@ DEC = DATA / "decompressed"
 OUT = REPO / "data" / "preview"
 SDAT = NITRO / "snd" / "sound_data.sdat"
 
+# The index's payload, persisted so a later partial run can merge into it rather
+# than replace it. See MERGING in the module docstring.
+SIDECAR = OUT / "items.json"
+# 2: font cards record --render-text's own report rather than the PNG's size, so
+#    a v1 payload's font metadata is not in the form recorded_meta() promises.
+SIDECAR_VERSION = 2
+
 CATEGORIES = ["3d", "ui", "fonts", "text", "audio"]
 
 PANGRAM = ("The quick brown fox jumps over the lazy dog "
@@ -74,20 +98,37 @@ PANGRAM = ("The quick brown fox jumps over the lazy dog "
 # --dump-ui renders EVERY screen x tile-sheet x palette permutation of a D2KP
 # pack. Most permutations are one background paired with the wrong tile sheet or
 # palette, and the blow-up is multiplicative: UI/cm/cm.p2 sub-file 85 alone
-# writes over 1.2 million BMPs, unbounded. The CLI takes no cap and must not be
-# modified, so we bound it from the outside and keep BG_PER_SCREEN compositions
-# of each distinct screen afterwards.
+# writes over 1.2 million BMPs, unbounded. So we cap it, and keep BG_PER_SCREEN
+# compositions of each distinct screen afterwards.
 #
-# Both a file cap and a time cap are needed: the CLI only writes *non-blank*
-# compositions, so a pathological pack can burn minutes of CPU on combinations
-# that never produce a file. The time cap is what actually binds there; the file
-# cap catches packs that do write fast. Packs under both caps are unaffected
-# (e.g. UI/mlt/res.p2 sub 0 emits its 504 compositions in ~1s).
+# Both caps are passed to the CLI, which enforces them itself and exits. They
+# used to be applied out here, by watching the output directory and killing the
+# process - which meant the surviving output depended on how fast the machine
+# wrote, and the gallery was not reproducible: the same pack yielded 3574 items
+# on one run and 3578 on the next. A cap the CLI applies to its own
+# deterministic screen/tiles/palette walk depends only on the pack.
+#
+# Two caps, because they bound different things: only *non-blank* compositions
+# are written, so a pathological pack can also burn minutes on combinations that
+# never produce a file. FILE_CAP bounds the output; EXAMINE_CAP bounds the work,
+# and is the one that binds on a blank-heavy pack. Packs under both are
+# unaffected (e.g. UI/mlt/res.p2 sub 0 emits its 504 compositions in ~1s).
 DUMP_UI_FILE_CAP = 2000
-DUMP_UI_TIMEOUT = 150
+DUMP_UI_EXAMINE_CAP = 20000
+# Backstop for a hang only. The caps above are what bind normally; if this ever
+# fires the output is truncated at an arbitrary point, so it is reported loudly
+# rather than folded into the ordinary "capped" path.
+DUMP_UI_HANG_BACKSTOP = 300
 BG_PER_SCREEN = 4
 MAX_BG_PER_SUB = 64
 MAX_CELLS_PER_SUB = 256
+
+# The SWAV sample: the first SWAV_SAMPLES waves of the first N wave archives.
+# --limit takes the smaller slice. SWAV_ARCHIVES is what a full run covers, so
+# it is also the inventory a partial run merges back into.
+SWAV_ARCHIVES = 24
+SWAV_ARCHIVES_LIMITED = 12
+SWAV_SAMPLES = 6
 
 # Magics we classify by (never by extension - many files are extensionless).
 MAGIC_MODEL = b"BMD0"
@@ -109,6 +150,21 @@ VIEWER_TEMPLATE = Path(__file__).resolve().parent / "viewer.html"
 _print_lock = threading.Lock()
 _log_lines: list[str] = []
 _stats: collections.Counter = collections.Counter()
+
+# Metadata the previous run recorded, keyed by gallery-relative item path.
+#
+# Some of a card's subtitle is the CLI's own report and cannot be recovered from
+# the output file afterwards - a font's glyph count and cell size are gone once
+# the sheet is a PNG. A cached item must therefore *recall* what the fresh run
+# said, not re-derive a lookalike from the file: that is how a cached font card
+# came to read "306x8" where a fresh one read the CLI's full report for the same
+# input. Populated from items.json in main(); empty on the first run.
+_prev_meta: dict[str, str] = {}
+
+
+def recorded_meta(path: Path) -> str | None:
+    """The metadata a previous run recorded for this output file, if any."""
+    return _prev_meta.get(path.relative_to(OUT).as_posix()) or None
 
 
 def log(msg: str, quiet: bool = False) -> None:
@@ -412,6 +468,40 @@ def item(cat: str, group: str, name: str, path: Path, kind: str,
     }
 
 
+# --------------------------------------------------------------------------
+# Unit ids
+#
+# A "unit" is one source that a run either processes or does not: one model,
+# one P2 sub-file, one font, one sequence. Every item records the unit it came
+# from, which is what lets a partial run replace exactly what it rebuilt and
+# leave the rest of the gallery alone. Ids are built from paths *relative* to
+# the data root, so they survive the repo being moved; they are compared across
+# runs, so they must stay stable - changing one silently orphans the previous
+# run's items under the old id.
+# --------------------------------------------------------------------------
+
+def unit_3d(task: tuple) -> str:
+    return "3d:" + task[1].relative_to(DEC).as_posix()
+
+
+def unit_d2kp(task: tuple) -> str:
+    return "ui:d2kp:" + task[1].relative_to(DEC).as_posix()
+
+
+def unit_p2sub(task: tuple) -> str:
+    return f"ui:p2:{task[1].relative_to(NITRO).as_posix()}:{task[2]}"
+
+
+def unit_font(task: tuple) -> str:
+    tag = "nitrofs" if task[2] == NITRO else "decompressed"
+    return f"fonts:{tag}:" + task[1].relative_to(task[2]).as_posix()
+
+
+def unit_text(task: tuple) -> str:
+    base = DEC if task[0] == "strings" else NITRO
+    return f"text:{task[0]}:" + task[1].relative_to(base).as_posix()
+
+
 _MODEL_NAME_RE = re.compile(r"^# model:\s*(.+)$", re.MULTILINE)
 
 
@@ -536,43 +626,35 @@ def do_3d(kind: str, src: Path, force: bool) -> list[dict]:
 
 
 def dump_ui_bounded(p2: Path, sub: int, outdir: Path) -> tuple[bool, str, str, bool]:
-    """Run --dump-ui, killing it if it exceeds DUMP_UI_FILE_CAP output files.
+    """Run --dump-ui under the caps the CLI applies to itself.
 
-    Returns (ok, stdout, stderr, truncated). See DUMP_UI_FILE_CAP for why.
+    Returns (ok, stdout, stderr, truncated). See DUMP_UI_FILE_CAP for why the
+    caps are the CLI's job rather than ours.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     # stdout/stderr go to temp FILES, never pipes: --dump-ui prints one line per
     # composition, which overruns the (~4 KB) Windows pipe buffer and deadlocks
-    # the child while we poll. A file handle has no such limit.
+    # the child. A file handle has no such limit.
     with tempfile.TemporaryFile() as fout, tempfile.TemporaryFile() as ferr:
         try:
             proc = subprocess.Popen(
-                [str(EXE), "--dump-ui", str(p2), str(sub), str(outdir)],
+                [str(EXE), "--dump-ui", str(p2), str(sub), str(outdir),
+                 str(DUMP_UI_FILE_CAP), str(DUMP_UI_EXAMINE_CAP)],
                 stdout=fout, stderr=ferr,
             )
         except Exception as exc:  # noqa: BLE001
             return False, "", repr(exc), False
 
-        truncated = False
-        t0 = time.time()
-        while True:
+        hung = False
+        try:
+            proc.wait(timeout=DUMP_UI_HANG_BACKSTOP)
+        except subprocess.TimeoutExpired:
+            hung = True
+            proc.kill()
             try:
-                proc.wait(timeout=0.15)
-                break
-            except subprocess.TimeoutExpired:
+                proc.wait(timeout=30)
+            except Exception:  # noqa: BLE001
                 pass
-            try:
-                n = sum(1 for _ in os.scandir(outdir))
-            except OSError:
-                n = 0
-            if n > DUMP_UI_FILE_CAP or (time.time() - t0) > DUMP_UI_TIMEOUT:
-                truncated = True
-                proc.kill()
-                try:
-                    proc.wait(timeout=30)
-                except Exception:  # noqa: BLE001
-                    pass
-                break
 
         def read(f) -> str:
             try:
@@ -582,7 +664,14 @@ def dump_ui_bounded(p2: Path, sub: int, outdir: Path) -> tuple[bool, str, str, b
                 return ""
 
         out, err = read(fout), read(ferr)
-    return (proc.returncode == 0 and not truncated), out, err, truncated
+
+    if hung:
+        log(f"  !! --dump-ui {p2.name} sub{sub} ran past "
+            f"{DUMP_UI_HANG_BACKSTOP}s and was killed. Its caps should have "
+            f"bound first, so this output is truncated at an arbitrary point "
+            f"and is NOT reproducible.")
+        return False, out, err, True
+    return proc.returncode == 0, out, err, "capped:" in out
 
 
 _CELLS_RE = re.compile(r"^(\d+) cells")
@@ -619,8 +708,6 @@ def do_p2sub(p2: Path, sub: int, force: bool) -> list[dict]:
                 stray.unlink(missing_ok=True)
         return []
     if truncated:
-        # Killed mid-dump, so the buffered "D2KP:" line may be lost; the cell
-        # count is recovered from --render-cell's own output below.
         _stats["ui_dump_truncated"] += 1
         log(f"    ~ dump-ui capped: {rel} sub{sub}", quiet=True)
     nclr, ncgr, nscr, ncer, nanr = (
@@ -716,13 +803,36 @@ def do_d2kp(src: Path, slots: Path, force: bool) -> list[dict]:
     return items
 
 
+_FONT_META_RE = re.compile(r"^Font: (.+?) -> (\d+x\d+) BMP:")
+
+
+def font_meta(report: str) -> str:
+    """A font card's subtitle, from --render-text's own report.
+
+    Keeps the facts only the decoder knows (glyphs, mapped, cell size, bpp) plus
+    the rendered sheet size, and drops the trailing "BMP: <path>": an absolute
+    path on this machine, which is both noise in the gallery and what the old
+    [:70] truncation used to cut through the middle of.
+    """
+    m = _FONT_META_RE.search(report.strip())
+    return f"{m.group(1)} -> {m.group(2)}" if m else ""
+
+
 def do_font(src: Path, base: Path, force: bool) -> list[dict]:
     rel = src.relative_to(base)
     tag = "nitrofs" if base == NITRO else "decompressed"
     out_png = OUT / "fonts" / tag / rel.parent / (rel.name.replace(".", "_") + ".png")
     group = "fonts/" + tag
+
+    # Cached: recall the report the fresh run recorded for this very PNG. Most of
+    # it (glyph count, cell size, bpp) exists only in the CLI's stdout and is
+    # unrecoverable from the image, so with no record we re-render rather than
+    # answer with a lookalike derived from the PNG.
     if out_png.exists() and not force:
-        return [item("fonts", group, rel.name, out_png, "img", image_size(out_png))]
+        meta = recorded_meta(out_png)
+        if meta is not None:
+            return [item("fonts", group, rel.name, out_png, "img", meta)]
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
     bmp = out_png.with_suffix(".bmp")
     ok, out, err = run([EXE, "--render-text", src, PANGRAM, bmp])
@@ -733,8 +843,7 @@ def do_font(src: Path, base: Path, force: bool) -> list[dict]:
     if not png:
         return []
     _stats["fonts"] += 1
-    meta = out.strip().splitlines()[0][:70] if out.strip() else image_size(png)
-    return [item("fonts", group, rel.name, png, "img", meta)]
+    return [item("fonts", group, rel.name, png, "img", font_meta(out))]
 
 
 def do_text(kind: str, src: Path, force: bool) -> list[dict]:
@@ -764,19 +873,33 @@ def do_text(kind: str, src: Path, force: bool) -> list[dict]:
                  f"{out_txt.stat().st_size // 1024} KB")]
 
 
-def do_audio(force: bool, limit: int | None, jobs: int) -> list[dict]:
+def do_audio(force: bool, limit: int | None,
+             jobs: int) -> tuple[list[dict], set[str], set[str]]:
+    """Render the SDAT audio. Returns (items, discovered units, processed units).
+
+    Audio has no collector of its own - the SDAT's own counts are the inventory -
+    so it accounts for its units here instead of going through parallel().
+    """
     items: list[dict] = []
+    discovered: set[str] = set()
+    processed: set[str] = set()
     if not SDAT.exists():
+        # Nothing was scanned, so this run knows nothing about audio. Returning
+        # empty/empty (rather than "discovered nothing") keeps the merge from
+        # reading that as "the audio is gone" and dropping a good gallery's
+        # audio cards.
         log("  ! SDAT not found; skipping audio")
-        return items
+        return items, discovered, processed
 
     (OUT / "audio").mkdir(parents=True, exist_ok=True)
+    discovered.add("audio:info")
+    processed.add("audio:info")
     ok, out, _e = run([EXE, "--audio-info", SDAT])
     if ok:
         info = OUT / "audio" / "audio_info.txt"
         info.write_text(out, encoding="utf-8")
         items.append(item("audio", "audio", "audio_info.txt", info, "txt",
-                          "SDAT inventory"))
+                          "SDAT inventory") | {"u": "audio:info"})
 
     names = sdat_names(SDAT)
     seqs = names.get("sequences") or []
@@ -808,22 +931,29 @@ def do_audio(force: bool, limit: int | None, jobs: int) -> list[dict]:
             return (i, nm, dst, False)
         return (i, nm, dst, True)
 
+    discovered |= {f"audio:seq:{i}" for i in range(n_seq)}
+    discovered |= {f"audio:strm:{i}" for i in range(n_strm)}
+
     seq_idx = list(range(n_seq))[: limit or None]
     strm_idx = list(range(n_strm))[: limit or None]
+    processed |= {f"audio:seq:{i}" for i in seq_idx}
+    processed |= {f"audio:strm:{i}" for i in strm_idx}
 
     with futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         for i, nm, dst, ok_ in ex.map(seq_task, seq_idx):
             if ok_:
                 items.append(item("audio", "audio/sequences (SSEQ, 30s cap)",
                                   f"{i:03d} {nm}", dst, "audio",
-                                  f"{dst.stat().st_size // 1024} KB"))
+                                  f"{dst.stat().st_size // 1024} KB")
+                             | {"u": f"audio:seq:{i}"})
                 _stats["audio_sequences"] += 1
             else:
                 _stats["audio_seq_empty"] += 1
         for i, nm, dst, ok_ in ex.map(strm_task, strm_idx):
             if ok_:
                 items.append(item("audio", "audio/streams (STRM)", f"{i:03d} {nm}",
-                                  dst, "audio", f"{dst.stat().st_size // 1024} KB"))
+                                  dst, "audio", f"{dst.stat().st_size // 1024} KB")
+                             | {"u": f"audio:strm:{i}"})
                 _stats["audio_streams"] += 1
             else:
                 _stats["audio_strm_empty"] += 1
@@ -831,7 +961,11 @@ def do_audio(force: bool, limit: int | None, jobs: int) -> list[dict]:
     # SWAV sample: a modest slice of the 879 wave archives (all of them would be
     # tens of thousands of one-shot sfx).
     wa_names = names.get("wavearcs") or []
-    n_arch = 12 if limit else 24
+    n_arch = SWAV_ARCHIVES_LIMITED if limit else SWAV_ARCHIVES
+    discovered |= {f"audio:swav:{a}:{s}"
+                   for a in range(SWAV_ARCHIVES) for s in range(SWAV_SAMPLES)}
+    processed |= {f"audio:swav:{a}:{s}"
+                  for a in range(n_arch) for s in range(SWAV_SAMPLES)}
     swav_items = []
 
     def swav_task(args):
@@ -847,17 +981,80 @@ def do_audio(force: bool, limit: int | None, jobs: int) -> list[dict]:
             return (a, s, nm, dst, False)
         return (a, s, nm, dst, True)
 
-    pairs = [(a, s) for a in range(n_arch) for s in range(6)]
+    pairs = [(a, s) for a in range(n_arch) for s in range(SWAV_SAMPLES)]
     with futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         for a, s, nm, dst, ok_ in ex.map(swav_task, pairs):
             if ok_:
-                swav_items.append(item("audio", f"audio/swav (sfx sample)",
+                swav_items.append(item("audio", "audio/swav (sfx sample)",
                                        f"{nm} #{s}", dst, "audio",
-                                       f"{dst.stat().st_size // 1024} KB"))
+                                       f"{dst.stat().st_size // 1024} KB")
+                                  | {"u": f"audio:swav:{a}:{s}"})
                 _stats["audio_swav"] += 1
     items.extend(swav_items)
     prune_empty_dirs(OUT / "audio")
+    return items, discovered, processed
+
+
+# --------------------------------------------------------------------------
+# Merging (see MERGING in the module docstring)
+# --------------------------------------------------------------------------
+
+def load_sidecar() -> list[dict] | None:
+    """The previous run's items, or None if there is no usable payload.
+
+    None means "cannot merge" and is treated as a hard stop for a partial run -
+    never as an empty gallery, which is exactly the silent truncation this
+    whole mechanism exists to prevent.
+    """
+    if not SIDECAR.exists():
+        return None
+    try:
+        blob = json.loads(SIDECAR.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log(f"  ! items.json unreadable ({exc})")
+        return None
+    if not isinstance(blob, dict) or blob.get("version") != SIDECAR_VERSION:
+        log("  ! items.json has an unknown version; ignoring it")
+        return None
+    items = blob.get("items")
+    if not isinstance(items, list):
+        return None
     return items
+
+
+def merge_items(previous: list[dict], fresh: list[dict],
+                discovered: dict[str, set], processed: dict[str, set]) -> list[dict]:
+    """Fold this run's items into the previous run's, per unit.
+
+    A previous item survives unless this run is authoritative about it:
+
+    * its category was not processed at all  -> keep (a --only run).
+    * this run processed its unit            -> drop; `fresh` has the new truth,
+                                                or the unit produced nothing.
+    * its unit is no longer discovered       -> drop; the source is off disk.
+      (Collectors always do a full scan, so `discovered` is complete even under
+      --limit, which only truncates the task list afterwards.)
+    * otherwise                              -> keep (a --limit run skipped it).
+
+    Finally, an item whose file has gone is dropped whatever the units say: the
+    gallery would show it as a broken image.
+    """
+    kept: list[dict] = []
+    for it in previous:
+        cat, unit = it.get("c"), it.get("u")
+        if cat not in processed:
+            kept.append(it)
+            continue
+        if not unit or unit in processed[cat] or unit not in discovered[cat]:
+            continue
+        kept.append(it)
+
+    alive = [it for it in kept if (OUT / it["p"]).exists()]
+    gone = len(kept) - len(alive)
+    if gone:
+        _stats["carried_over_file_missing"] += gone
+    _stats["carried_over"] += len(alive)
+    return alive + fresh
 
 
 # --------------------------------------------------------------------------
@@ -951,7 +1148,7 @@ def build_html(items: list[dict], meta: dict) -> str:
     body = f"""<header>
 <h1>Kingdom Hearts 358/2 Days &mdash; asset preview</h1>
 <div class="sub">{len(items)} items &middot; {summary} &middot; generated {meta['when']}
-&middot; decoded by <code>{meta['exe']}</code></div>
+&middot; decoded by <code>{meta['exe']}</code>{meta.get('note', '')}</div>
 <div class="bar">
 <input type="search" id="q" placeholder="Filter by folder or item name (e.g. axel, pause, ThemeXIII)&hellip;">
 <button data-f="all" class="on">All</button>
@@ -1024,7 +1221,7 @@ render();
 # --------------------------------------------------------------------------
 
 def main() -> int:
-    global BG_PER_SCREEN, MAX_BG_PER_SUB, VIEWERS  # noqa: PLW0603
+    global BG_PER_SCREEN, MAX_BG_PER_SUB, VIEWERS, _prev_meta  # noqa: PLW0603
     ap = argparse.ArgumentParser(description="Build data/preview/ asset gallery.")
     ap.add_argument("--only", default="", help="comma list: " + ",".join(CATEGORIES))
     ap.add_argument("--limit", type=int, default=None,
@@ -1056,6 +1253,38 @@ def main() -> int:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True, exist_ok=True)
 
+    # A partial run only rebuilds part of the gallery, so it MUST merge into the
+    # previous index rather than replace it. Without a readable items.json there
+    # is nothing to merge into, and writing the index would silently drop every
+    # category this run does not touch - the bug this refusal exists to stop.
+    # (--clean has just removed index.html, so wiping-then-rebuilding is fine.)
+    partial = bool(args.only) or args.limit is not None
+    previous = load_sidecar()
+    if previous is None:
+        if partial and (OUT / "index.html").exists():
+            sys.exit(
+                "ERROR: refusing to rebuild the index from a partial run.\n\n"
+                f"  --only/--limit rebuild only part of the gallery, so their\n"
+                f"  results have to be merged into {SIDECAR.name}, which is\n"
+                "  missing or unreadable here (a sidecar written by an older\n"
+                "  version of this tool, an index built before merging existed,\n"
+                "  or a damaged sidecar).\n\n"
+                "  Writing the index now would drop every category this run\n"
+                "  does not process, even though their files are still on disk\n"
+                f"  under {OUT}.\n\n"
+                "  Do one of:\n"
+                "    - a full run once, which rebuilds the index and sidecar:\n"
+                "        python tools/build_preview/build_preview.py\n"
+                "    - --clean, if you did mean to discard the gallery first:\n"
+                "        python tools/build_preview/build_preview.py --clean"
+                " --only 3d"
+            )
+        previous = []
+
+    # What the previous run reported, for the cached paths that cannot re-derive
+    # it from their output file. See _prev_meta.
+    _prev_meta = {it["p"]: it["m"] for it in previous if it.get("p") and it.get("m")}
+
     t0 = time.time()
     log(f"CLI   : {EXE}")
     log(f"data  : {DATA}")
@@ -1064,10 +1293,18 @@ def main() -> int:
         + (f"   limit: {args.limit}" if args.limit else ""))
 
     items: list[dict] = []
+    # Per category: every unit the collectors found, and the subset this run
+    # actually rebuilt. merge_items() needs both to know what it may drop.
+    discovered: dict[str, set] = collections.defaultdict(set)
+    processed: dict[str, set] = collections.defaultdict(set)
 
-    def parallel(label, tasks, fn):
+    def parallel(cat, label, tasks, fn, unit):
+        # Collectors always scan everything; --limit truncates afterwards. So
+        # the full task list is the inventory and the truncated one is the work.
+        discovered[cat] |= {unit(t) for t in tasks}
         if args.limit:
             tasks = tasks[: args.limit]
+        processed[cat] |= {unit(t) for t in tasks}
         log(f"\n[{label}] {len(tasks)} tasks")
         done = 0
         got: list[dict] = []
@@ -1076,7 +1313,8 @@ def main() -> int:
             for f in futures.as_completed(futs):
                 done += 1
                 try:
-                    got.extend(f.result() or [])
+                    u = unit(futs[f])
+                    got.extend([it | {"u": u} for it in (f.result() or [])])
                 except Exception as exc:  # noqa: BLE001
                     log(f"    ! task {futs[f]}: {exc!r}", quiet=True)
                     _stats[label + "_errors"] += 1
@@ -1089,28 +1327,42 @@ def main() -> int:
         log(f"\n[3d] found {len(tasks)} BMD0/BTX0 "
             f"(skipped {_stats['kaph_skipped']} KAPH containers, "
             f"listed {_stats['anim_listed']} animations)")
-        items += parallel("3d", tasks, lambda t: do_3d(t[0], t[1], args.force))
+        items += parallel("3d", "3d", tasks,
+                          lambda t: do_3d(t[0], t[1], args.force), unit_3d)
 
     if "ui" in cats:
         d = collect_ui_d2kp()
-        items += parallel("ui-d2kp", d, lambda t: do_d2kp(t[1], t[2], args.force))
+        items += parallel("ui", "ui-d2kp", d,
+                          lambda t: do_d2kp(t[1], t[2], args.force), unit_d2kp)
         p = collect_ui_p2()
-        items += parallel("ui-p2", p, lambda t: do_p2sub(t[1], t[2], args.force))
+        items += parallel("ui", "ui-p2", p,
+                          lambda t: do_p2sub(t[1], t[2], args.force), unit_p2sub)
 
     if "fonts" in cats:
-        items += parallel("fonts", collect_fonts(),
-                          lambda t: do_font(t[1], t[2], args.force))
+        items += parallel("fonts", "fonts", collect_fonts(),
+                          lambda t: do_font(t[1], t[2], args.force), unit_font)
 
     if "text" in cats:
-        items += parallel("text", collect_text(),
-                          lambda t: do_text(t[0], t[1], args.force))
+        items += parallel("text", "text", collect_text(),
+                          lambda t: do_text(t[0], t[1], args.force), unit_text)
 
     if "audio" in cats:
         log("\n[audio] rendering sequences / streams / swav sample")
-        items += do_audio(args.force, args.limit, max(4, args.jobs // 2))
+        got, disc, proc = do_audio(args.force, args.limit, max(4, args.jobs // 2))
+        items += got
+        if proc:
+            # Only claim authority over the category if audio actually ran.
+            # do_audio returns empty sets when the SDAT is missing, and
+            # registering those here would read as "audio discovered nothing"
+            # -> drop every audio card the gallery already has.
+            discovered["audio"] |= disc
+            processed["audio"] |= proc
 
     for sub in ("3d", "ui", "fonts", "text"):
         prune_empty_dirs(OUT / sub)
+
+    rebuilt = len(items)
+    items = merge_items(previous, items, discovered, processed)
 
     if VIEWERS and any(it["t"] == "model" for it in items):
         # One shared viewer for every model; the per-model model.js carries the
@@ -1120,16 +1372,33 @@ def main() -> int:
         else:
             log(f"  ! viewer template missing at {VIEWER_TEMPLATE}")
 
+    # The payload first: an index whose sidecar is stale or missing is what
+    # breaks the next partial run.
+    SIDECAR.write_text(
+        json.dumps({"version": SIDECAR_VERSION, "items": items},
+                   ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    bits = []
+    if args.only:
+        bits.append("only " + ",".join(cats) + " rebuilt")
+    if args.limit:
+        bits.append(f"--limit {args.limit}")
     html = build_html(items, {
         "when": time.strftime("%Y-%m-%d %H:%M"),
         "exe": EXE.relative_to(REPO).as_posix(),
+        "note": (" &middot; partial run (" + "; ".join(bits)
+                 + "); everything else carried over from earlier runs")
+                if bits else "",
     })
     index = OUT / "index.html"
     index.write_text(html, encoding="utf-8")
 
     total = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file())
     log("\n" + "=" * 62)
-    log(f"items in gallery : {len(items)}")
+    log(f"items in gallery : {len(items)}  "
+        f"({rebuilt} rebuilt this run, {len(items) - rebuilt} carried over)")
     for k, v in sorted(_stats.items()):
         log(f"  {k:26s} {v}")
     log(f"preview size     : {total / 1e6:.1f} MB")

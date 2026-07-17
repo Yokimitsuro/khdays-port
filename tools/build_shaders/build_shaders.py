@@ -6,10 +6,14 @@ files are committed so that the build and CI do not need the Vulkan SDK.
 
 Requires `glslc` (part of the Vulkan SDK). It is looked up on the PATH and,
 failing that, in `$VULKAN_SDK/Bin`.
+
+Run with no arguments to compile every stage; `--help` describes the rest, and
+`--dry-run` reports what would be compiled without touching the tree.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -43,7 +47,35 @@ def find_glslc() -> str:
     sys.exit(1)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Compile shaders/*.vert|frag into committed SPIR-V C arrays.",
+        epilog=(
+            "With no arguments it compiles every stage, overwriting "
+            "platform/pc/generated/*.inc. Those files are committed, so a run "
+            "shows up in `git diff` whenever the SPIR-V changes. Requires glslc "
+            "(Vulkan SDK), found on the PATH or under $VULKAN_SDK/Bin."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report the stages that would be compiled and exit without "
+             "writing anything.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
+
+    if args.dry_run:
+        print(f"glslc : {find_glslc()}")
+        for source, output in STAGES:
+            print(f"would compile {source} -> "
+                  f"{(OUT / output).relative_to(REPO)}")
+        return 0
+
     glslc = find_glslc()
     OUT.mkdir(parents=True, exist_ok=True)
     for source, output in STAGES:

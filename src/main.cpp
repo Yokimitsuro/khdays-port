@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -613,12 +614,32 @@ int main(int argc, char* argv[]) {
             // Exploration aid: parse a D2KP UI pack (a P2 sub-file) and dump
             // every non-blank screen x tile-sheet composition, to identify which
             // tilemap/tiles/palette form each background layer.
-            if (argc != 5) {
+            if (argc < 5 || argc > 7) {
                 std::cerr << "ERROR: --dump-ui requires a P2 file, sub-file "
-                             "index, and an output directory\n";
+                             "index, and an output directory, plus optional "
+                             "caps on the compositions written and examined\n";
                 return EXIT_FAILURE;
             }
             try {
+                // Both caps are enforced here rather than by a caller watching
+                // the output directory, because a caller can only stop this by
+                // killing it, and then the output depends on where the process
+                // happened to be - i.e. on machine load. Stopping at a fixed
+                // count of the deterministic s/t/p walk below is reproducible.
+                //
+                // Two caps, because they bound different things: this pack has
+                // no bound of its own (one sub-file writes 1.25 million
+                // compositions), but only *non-blank* ones reach the disk, so a
+                // pack can also burn minutes on combinations that never write a
+                // file. max_written bounds the output; max_examined bounds the
+                // work, and is the one that binds on a blank-heavy pack.
+                const auto arg_cap = [&](const int i) {
+                    return i < argc
+                               ? static_cast<std::size_t>(std::stoul(argv[i]))
+                               : std::numeric_limits<std::size_t>::max();
+                };
+                const std::size_t max_written = arg_cap(5);
+                const std::size_t max_examined = arg_cap(6);
                 const auto blob = khdays::assets::extract_p2_subfile(
                     std::filesystem::path{argv[2]},
                     static_cast<std::size_t>(std::stoul(argv[3])));
@@ -630,13 +651,22 @@ int main(int argc, char* argv[]) {
                           << pack.anims.size() << " NANR\n";
                 const std::filesystem::path out_dir{argv[4]};
                 std::filesystem::create_directories(out_dir);
-                for (std::size_t s = 0; s < pack.screens.size(); ++s) {
+                std::size_t written = 0;
+                std::size_t examined = 0;
+                const auto capped = [&] {
+                    return written >= max_written || examined >= max_examined;
+                };
+                for (std::size_t s = 0; s < pack.screens.size() && !capped();
+                     ++s) {
                     const auto map = khdays::assets::decode_nscr(
                         pack.screens[s].data, pack.screens[s].size);
-                    for (std::size_t t = 0; t < pack.tiles.size(); ++t) {
+                    for (std::size_t t = 0; t < pack.tiles.size() && !capped();
+                         ++t) {
                         const auto tiles = khdays::assets::decode_ncgr(
                             pack.tiles[t].data, pack.tiles[t].size);
-                        for (std::size_t p = 0; p < pack.palettes.size(); ++p) {
+                        for (std::size_t p = 0;
+                             p < pack.palettes.size() && !capped(); ++p) {
+                            ++examined;
                             const auto palette = khdays::assets::decode_nclr(
                                 pack.palettes[p].data, pack.palettes[p].size);
                             const auto image = khdays::assets::compose_background(
@@ -665,8 +695,13 @@ int main(int argc, char* argv[]) {
                                       << "  " << image.width << 'x' << image.height
                                       << "  opaque=" << static_cast<int>(frac * 100)
                                       << "%\n";
+                            ++written;
                         }
                     }
+                }
+                if (capped()) {
+                    std::cout << "capped: wrote " << written << ", examined "
+                              << examined << '\n';
                 }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {

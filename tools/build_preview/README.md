@@ -36,8 +36,8 @@ Open `data/preview/index.html` in a browser. It works from `file://`, no server 
 
 | Flag | Purpose |
 |---|---|
-| `--only 3d,ui,fonts,text,audio` | Comma-separated list; only those categories |
-| `--limit N` | At most N items per category (quick testing) |
+| `--only 3d,ui,fonts,text,audio` | Comma-separated list; only those categories (merges — see below) |
+| `--limit N` | At most N items per category (quick testing; merges — see below) |
 | `--jobs N` | Parallel processes |
 | `--force` | Redo what already exists |
 | `--clean` | Wipe `data/preview` before starting |
@@ -48,6 +48,18 @@ Open `data/preview/index.html` in a browser. It works from `file://`, no server 
 `--bg-per-screen` and `--max-bg-per-sub` exist because `--dump-ui` has no limit of its own: one pack (`UI/cm/cm.p2` sub85) wrote **1.25 million BMPs** before it was bounded.
 
 A full pass takes ~2 min; re-running it without `--force` takes ~20 s.
+
+## Partial runs merge; they do not truncate
+
+The gallery is built up across runs, so `--only` and `--limit` **add to the existing index rather than replace it**. `--only 3d` rebuilds the 3D cards and leaves every ui/fonts/text/audio card in place.
+
+This used to be a trap, and it bit two people twice each: the index was written from whatever a single run happened to process, so using `--only`/`--limit` for exactly what they are for silently dropped every other category from the gallery — 856 KB down to 10 KB — while all of the files sat untouched on disk. Nothing warned you.
+
+Each run now writes its payload to `data/preview/items.json` beside `index.html`, and reads the previous one back on the next run. Every item records the *unit* it came from (one model, one P2 sub-file, one sequence), so a run replaces only the units it actually processed. A previous item is dropped only when this run is entitled to say so: its unit was reprocessed, or its source is no longer on disk (the collectors always scan everything, so a `--limit` run still knows the full inventory), or its file has gone from `data/preview/`. A partial run says so in the page header.
+
+`--clean` still wipes the lot — that is its job, and after it there is nothing left to preserve.
+
+If `items.json` is missing or damaged while an `index.html` exists — an index built before this mechanism, say — a partial run has nothing to merge into, so it **refuses and changes nothing** rather than quietly truncating the gallery. Do one full run to rebuild the sidecar, or pass `--clean` if discarding really is the intent.
 
 ## What it produces
 
@@ -88,6 +100,7 @@ So `mdl0_materials.py` reads the binding straight out of the MDL0: the texture-p
 ## Honest caveats
 
 - **Many `ui/p2` backgrounds are mispaired noise.** `--dump-ui` renders screen × tileset × palette combinations because it *cannot know* which belong together, so correct art sits beside garbage. Sprite cells and 3D textures are clean. The game stores the real pairing in tables (for example `data_ov000_0205a9d4` for `ttl.p2`); reading those is the correct fix, and it is not done yet.
+- **Three of the 533 models never produce a `model.obj`**, so they appear in the gallery as textures only: `ba/ch/de/li_e0.p` (`ef_de_Limit01`), `ba/ch/r2/li_e1.p` (`ef_ro2_Limit2`) and `mi/ob/08` (`E110_xx_000`), all `slot_7/0000.nsbmd`. `--export-obj` rejects each with `unknown render command opcode 72`. That is **not** a fault of this tool: `sbc_param_bytes()` in `src/assets/mesh.cpp` has no `case 0x48`, so the SBC walk throws. 0x48 is the Y-billboard command carrying its extra parameter, and it takes 2 parameter bytes exactly like 0x47 — which the table already has — so these three are the only models in the ROM that use it. `--model-info` reads them fine, because it never walks the render command stream.
 - **No decoder**: the 46 MobiClip videos (`mv/*.mods`) and the code in `.bin`. 3D animations are listed but not rendered — they cannot be drawn on their own, without a skeleton and a scene.
 - **The viewer shows the rest pose, unanimated.** The NSBCA animations are never applied, even for a model that has some.
 - **The viewer is not the DS.** It draws the diffuse texture with a headlight and nothing else: no vertex colours (`--export-obj` drops those too), no per-material polygon attributes, no translucency — texels below half alpha are cut out, and everything is drawn double-sided because DS meshes are authored that way. It is for looking at assets, not for judging how they will render in the port.
