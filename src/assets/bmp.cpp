@@ -66,11 +66,43 @@ DecodedTexture load_bmp(const std::filesystem::path& input_path) {
     if (width <= 0 || height_signed == 0) {
         throw std::runtime_error("BMP has invalid dimensions");
     }
-    if (compression != 0U) {
-        throw std::runtime_error("only uncompressed BMP is supported");
-    }
     if (bpp != 24U && bpp != 32U) {
         throw std::runtime_error("only 24- or 32-bit BMP is supported");
+    }
+
+    // BI_RGB (0) or BI_BITFIELDS (3). The latter is what to_bmp() writes and
+    // what an image editor produces when it saves a 32-bit BMP with alpha: the
+    // channel masks are what make that alpha part of the file's meaning rather
+    // than a byte readers may ignore. Everything below reads pixels as B,G,R,A,
+    // so masks describing any other layout are refused instead of silently
+    // decoded into the wrong channels.
+    constexpr std::uint32_t kBiRgb = 0U;
+    constexpr std::uint32_t kBiBitfields = 3U;
+    if (compression != kBiRgb && compression != kBiBitfields) {
+        throw std::runtime_error("only uncompressed BMP is supported");
+    }
+    if (compression == kBiBitfields) {
+        if (bpp != 32U) {
+            throw std::runtime_error(
+                "BI_BITFIELDS is only supported for 32-bit BMP");
+        }
+        // Masks sit right after the 40-byte core of the info header, whether
+        // the header is a BITMAPINFOHEADER with masks appended or a V4/V5.
+        if (data.size() < 0x42U) {
+            throw std::runtime_error("BMP is too small for its channel masks");
+        }
+        const auto red = read_u32(data, 0x36U);
+        const auto green = read_u32(data, 0x3AU);
+        const auto blue = read_u32(data, 0x3EU);
+        const auto header_size = read_u32(data, 0x0EU);
+        // A plain BITMAPINFOHEADER carries no alpha mask; only V4 and up do.
+        const auto alpha =
+            (header_size >= 108U && data.size() >= 0x46U) ? read_u32(data, 0x42U) : 0U;
+        if (red != 0x00FF0000U || green != 0x0000FF00U || blue != 0x000000FFU
+            || (alpha != 0xFF000000U && alpha != 0U)) {
+            throw std::runtime_error(
+                "BMP channel masks are not the supported BGRA layout");
+        }
     }
 
     const bool bottom_up = height_signed > 0;

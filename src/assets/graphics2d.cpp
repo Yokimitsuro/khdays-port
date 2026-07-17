@@ -371,11 +371,26 @@ DecodedTexture compose_background(
     return image;
 }
 
+// A 32-bit BMP written with the plain 40-byte BITMAPINFOHEADER and BI_RGB has
+// no alpha: the fourth byte of each pixel is undefined by the format, so
+// readers are entitled to ignore it, and they do -- Pillow opens such a file as
+// RGB and drops it on the floor. That silently flattened every A3I5/A5I3
+// texture in the game (3- and 5-bit alpha) to fully opaque on the way to the
+// preview gallery's PNGs.
+//
+// BITMAPV4HEADER carries explicit channel masks, so the alpha is part of the
+// file's declared meaning rather than a byte we hope survives. load_bmp() reads
+// it back, and so do image editors, which matters because a --dump-textures BMP
+// is exactly what a modder edits and feeds back through mods/.
+constexpr std::uint32_t kBmpV4HeaderSize = 108U;
+constexpr std::uint32_t kBmpPixelOffset = 14U + kBmpV4HeaderSize;  // 122
+constexpr std::uint32_t kBmpCompressionBitfields = 3U;             // BI_BITFIELDS
+
 std::vector<std::uint8_t> to_bmp(const DecodedTexture& image) {
     const int w = image.width;
     const int h = image.height;
     const std::uint32_t pixel_bytes = static_cast<std::uint32_t>(w) * h * 4U;
-    const std::uint32_t size = 54U + pixel_bytes;
+    const std::uint32_t size = kBmpPixelOffset + pixel_bytes;
 
     std::vector<std::uint8_t> bmp;
     bmp.reserve(size);
@@ -393,18 +408,31 @@ std::vector<std::uint8_t> to_bmp(const DecodedTexture& image) {
     put16(0x4D42);  // "BM"
     put32(size);
     put32(0);
-    put32(54);       // pixel data offset
-    put32(40);       // info header size
+    put32(kBmpPixelOffset);
+    put32(kBmpV4HeaderSize);
     put32(static_cast<std::uint32_t>(w));
     put32(static_cast<std::uint32_t>(h));
     put16(1);        // planes
     put16(32);       // bits per pixel
-    put32(0);        // no compression
+    put32(kBmpCompressionBitfields);
     put32(pixel_bytes);
     put32(2835);     // 72 DPI
     put32(2835);
     put32(0);
     put32(0);
+    // The masks that make the alpha official. Pixels are stored little-endian
+    // as B,G,R,A bytes, so as a u32 that is 0xAARRGGBB.
+    put32(0x00FF0000U);  // red
+    put32(0x0000FF00U);  // green
+    put32(0x000000FFU);  // blue
+    put32(0xFF000000U);  // alpha
+    put32(0x73524742U);  // colour space "sRGB", big-endian in the file
+    for (int i = 0; i < 9; ++i) {
+        put32(0);        // CIEXYZTRIPLE endpoints (3 x 3), unused for sRGB
+    }
+    put32(0);            // gamma red
+    put32(0);            // gamma green
+    put32(0);            // gamma blue
 
     // BMP rows are bottom-up; store BGRA.
     for (int y = h - 1; y >= 0; --y) {

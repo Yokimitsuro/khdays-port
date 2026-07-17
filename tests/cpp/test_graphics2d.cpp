@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "khdays/assets/bmp.h"
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/screen.h"
 
@@ -110,9 +111,50 @@ int main() {
             khdays::assets::render_tile_sheet(tiles, palette, 0, 16);
         expect(sheet.width == 128 && sheet.height == 8, "tile sheet size");
 
+        // to_bmp writes a BITMAPV4HEADER (14 + 108) rather than the bare
+        // 40-byte one, so that the alpha it stores is declared by channel
+        // masks. A 32-bit BI_RGB BMP leaves the fourth byte undefined and
+        // readers drop it -- which silently flattened every A3I5/A5I3 texture
+        // to opaque on the way to the preview gallery.
         const auto bmp = khdays::assets::to_bmp(image);
-        expect(bmp.size() == 54U + 8U * 8U * 4U, "bmp size");
+        expect(bmp.size() == 122U + 8U * 8U * 4U, "bmp size");
         expect(bmp[0] == 'B' && bmp[1] == 'M', "bmp magic");
+        {
+            const auto u32_at = [&bmp](std::size_t offset) {
+                return static_cast<std::uint32_t>(bmp[offset])
+                    | (static_cast<std::uint32_t>(bmp[offset + 1U]) << 8U)
+                    | (static_cast<std::uint32_t>(bmp[offset + 2U]) << 16U)
+                    | (static_cast<std::uint32_t>(bmp[offset + 3U]) << 24U);
+            };
+            expect(u32_at(0x0AU) == 122U, "bmp pixel offset");
+            expect(u32_at(0x0EU) == 108U, "bmp v4 header size");
+            expect(u32_at(0x1EU) == 3U, "bmp BI_BITFIELDS");
+            expect(u32_at(0x36U) == 0x00FF0000U, "bmp red mask");
+            expect(u32_at(0x3AU) == 0x0000FF00U, "bmp green mask");
+            expect(u32_at(0x3EU) == 0x000000FFU, "bmp blue mask");
+            expect(u32_at(0x42U) == 0xFF000000U, "bmp alpha mask");
+        }
+
+        // A translucent pixel must survive to_bmp -> load_bmp unchanged. This
+        // is the round trip a modder makes by editing a --dump-textures BMP.
+        {
+            khdays::assets::DecodedTexture translucent;
+            translucent.width = 2;
+            translucent.height = 1;
+            translucent.rgba = {10U, 20U, 30U, 128U, 40U, 50U, 60U, 0U};
+            const auto bytes = khdays::assets::to_bmp(translucent);
+            const auto path =
+                std::filesystem::temp_directory_path() / "khdays_alpha.bmp";
+            {
+                std::ofstream out{path, std::ios::binary};
+                out.write(reinterpret_cast<const char*>(bytes.data()),
+                          static_cast<std::streamsize>(bytes.size()));
+            }
+            const auto back = khdays::assets::load_bmp(path);
+            expect(back.width == 2 && back.height == 1, "alpha bmp size");
+            expect(back.rgba == translucent.rgba, "alpha survives the bmp round trip");
+            std::filesystem::remove(path);
+        }
 
         // parse_pk2d: a synthetic D2KP with type-section pointers at +0x08
         // (NCLR), +0x0C (NCGR) and +0x14 (NCER), each a {count, offsets[],
