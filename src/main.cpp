@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -28,6 +29,7 @@
 #include "khdays/assets/mods.h"
 #include "khdays/assets/sdat.h"
 #include "khdays/assets/sequence.h"
+#include "khdays/assets/ui_layout.h"
 #include "khdays/game/game.h"
 #include "khdays/game/scenes/boot_logo_scene.h"
 #include "khdays/game/scenes/gameplay_scene.h"
@@ -392,6 +394,7 @@ void print_help() {
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --export-skin FILE OUTPUT.json [ANIM.nsbca...]\n"
+        << "  khdays-port --ui-layout FILE.ui\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
         << '\n'
@@ -423,6 +426,7 @@ void print_help() {
         << "                      that skins the OBJ itself. An NSBCA in the model's own\n"
         << "                      container is accepted (it may drive fewer bones); one\n"
         << "                      from elsewhere needs an exact bone count to be believed.\n"
+        << "  --ui-layout FILE    Decode a .ui screen layout (element id/kind/position).\n"
         << "  --version           Print version information without opening a window.\n"
         << "  --help              Show this help text.\n";
 }
@@ -1249,6 +1253,38 @@ int main(int argc, char* argv[]) {
                     std::cout << '[' << i << "] "
                               << khdays::assets::message_to_utf8(strings[i])
                               << '\n';
+                }
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--ui-layout") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --ui-layout requires one .ui file path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto layout = khdays::assets::decode_ui_layout(
+                    std::filesystem::path{argv[2]});
+                std::cout << layout.elements.size()
+                          << " elements (0x58 bytes each)\n"
+                          << "  id  kind        x        y  slots\n";
+                for (const auto& element : layout.elements) {
+                    std::cout << "  " << std::setw(2) << element.id << "  "
+                              << std::setw(4) << element.kind << "  "
+                              << std::setw(7) << element.x << "  "
+                              << std::setw(7) << element.y << "  ";
+                    bool any = false;
+                    for (const auto& slot : element.slots) {
+                        if (slot.has_value()) {
+                            std::cout << *slot << ' ';
+                            any = true;
+                        }
+                    }
+                    std::cout << (any ? "" : "-") << '\n';
                 }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {

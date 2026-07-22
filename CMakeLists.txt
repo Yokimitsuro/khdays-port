@@ -136,6 +136,7 @@ add_library(
         src/assets/sdat.cpp
         src/assets/sequence.cpp
         src/assets/tex0.cpp
+        src/assets/ui_layout.cpp
 )
 
 target_include_directories(
@@ -385,6 +386,17 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-ui-layout-test
+        tests/cpp/test_ui_layout.cpp
+    )
+
+    target_link_libraries(
+        khdays-ui-layout-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -397,6 +409,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -409,6 +422,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -422,6 +436,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-vfs-test)
     khdays_enable_sanitizers(khdays-game-test)
     khdays_enable_sanitizers(khdays-cell-test)
+    khdays_enable_sanitizers(khdays-ui-layout-test)
 
     add_test(
         NAME khdays-port-version
@@ -479,6 +494,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-ui-layout
+        COMMAND khdays-ui-layout-test
+    )
+
+    add_test(
         NAME khdays-cell
         COMMAND khdays-cell-test
     )
@@ -502,5 +522,6 @@ if(BUILD_TESTING)
             khdays-vfs-test
             khdays-game-test
             khdays-cell-test
+            khdays-ui-layout-test
     )
 endif()
