@@ -1271,20 +1271,28 @@ int main(int argc, char* argv[]) {
                     std::filesystem::path{argv[2]});
                 std::cout << layout.elements.size()
                           << " elements (0x58 bytes each)\n"
-                          << "  id  kind        x        y  slots\n";
-                for (const auto& element : layout.elements) {
-                    std::cout << "  " << std::setw(2) << element.id << "  "
-                              << std::setw(4) << element.kind << "  "
-                              << std::setw(7) << element.x << "  "
-                              << std::setw(7) << element.y << "  ";
-                    bool any = false;
-                    for (const auto& slot : element.slots) {
-                        if (slot.has_value()) {
-                            std::cout << *slot << ' ';
-                            any = true;
-                        }
+                          << "  id  grp   keys        x       y  "
+                             "nav(U,D,L,R)  flags  prio\n";
+                const auto show =
+                    [](const std::optional<std::int32_t>& v) {
+                        return v.has_value() ? std::to_string(*v)
+                                             : std::string{"-"};
+                    };
+                for (const auto& e : layout.elements) {
+                    std::cout << "  " << std::setw(2) << e.id
+                              << "  " << std::setw(3) << e.group
+                              << "  " << std::setw(3) << show(e.keys_default[0])
+                              << ',' << std::setw(3) << show(e.keys_default[1])
+                              << "  " << std::setw(7) << e.x
+                              << ' ' << std::setw(7) << e.y << "  ";
+                    for (std::size_t n = 0; n < e.neighbours.size(); ++n) {
+                        std::cout << show(e.neighbours[n])
+                                  << (n + 1U < e.neighbours.size() ? "," : "");
                     }
-                    std::cout << (any ? "" : "-") << '\n';
+                    std::cout << "   0x" << std::hex << std::setw(4)
+                              << std::setfill('0') << e.flags << std::dec
+                              << std::setfill(' ') << "  " << e.priority
+                              << '\n';
                 }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {

@@ -42,8 +42,9 @@ int main() {
         const std::size_t base = i * kUiElementSize;
         put_u32(blob, base + 0x00U, static_cast<std::uint32_t>(i + 1U));
         put_u32(blob, base + 0x08U, 13U);
-        for (std::size_t s = 0U; s < 5U; ++s) {
-            put_u32(blob, base + 0x0cU + s * 4U, kUiUnset);
+        put_u32(blob, base + 0x0cU, kUiUnset);
+        for (std::size_t s = 0U; s < 4U; ++s) {
+            put_u32(blob, base + 0x40U + s * 4U, kUiUnset);
         }
         put_u32(blob, base + 0x30U, 29U << 12U);
         put_u32(blob, base + 0x34U, (i == 0U ? 26U : 62U) << 12U);
@@ -52,16 +53,39 @@ int main() {
     const auto layout =
         khdays::assets::decode_ui_layout(blob.data(), blob.size());
     expect(layout.elements.size() == 2U, "element count from blob length");
-    expect(layout.elements[0].id == 1U && layout.elements[1].id == 2U,
-           "ids decoded from +0x00");
-    expect(layout.elements[0].kind == 13U, "kind decoded from +0x08");
+    expect(layout.elements[0].id == 1 && layout.elements[1].id == 2,
+           "elementId decoded from +0x00");
+    expect(layout.elements[0].keys_default[0].has_value()
+               && *layout.elements[0].keys_default[0] == 13,
+           "keysDefault[0] decoded from +0x08");
+    expect(!layout.elements[0].keys_default[1].has_value(),
+           "a negative key decodes to no value");
     expect(layout.elements[0].x == 29.0F && layout.elements[0].y == 26.0F,
-           "row 0 position (20.12 fixed point)");
+           "row 0 position (point30, 20.12 fixed point)");
     expect(layout.elements[1].y == 62.0F, "row 1 y -- the game's 36px pitch");
-    for (const auto& slot : layout.elements[0].slots) {
-        expect(!slot.has_value(), "unset sentinel decodes to no value");
+    for (const auto& neighbour : layout.elements[0].neighbours) {
+        expect(!neighbour.has_value(),
+               "unset neighbour ids decode to no value");
     }
     expect(layout.elements[0].raw[21] == 0U, "raw words are preserved");
+
+    // Neighbours are read from +0x40..+0x4c, the words the linker
+    // (func_ov008_02053bcc) resolves into the widget's +0x88..+0x94 pointers.
+    {
+        std::vector<std::uint8_t> linked(kUiElementSize, 0U);
+        for (std::size_t s = 0U; s < 4U; ++s) {
+            put_u32(linked, 0x40U + s * 4U,
+                    static_cast<std::uint32_t>(10 + s));
+        }
+        const auto one =
+            khdays::assets::decode_ui_layout(linked.data(), linked.size());
+        for (std::size_t s = 0U; s < 4U; ++s) {
+            expect(one.elements[0].neighbours[s].has_value()
+                       && *one.elements[0].neighbours[s]
+                              == static_cast<std::int32_t>(10 + s),
+                   "neighbour id round-trips");
+        }
+    }
 
     // A negative coordinate must survive as negative: ov000 seeds the save
     // rows' off-screen start positions at -256 .. -512 in 20.12.

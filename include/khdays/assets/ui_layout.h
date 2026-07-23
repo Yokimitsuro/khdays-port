@@ -31,19 +31,41 @@ namespace khdays::assets {
 // "unset" and appears in the link/extra slots throughout the shipped files.
 inline constexpr std::uint32_t kUiUnset = 0xFFFFFFFFU;
 
+// Field names and offsets come from the decomp's own WidgetDescriptor, as read
+// by func_ov008_020543b0 (instantiate) and func_ov008_02053bcc (link).
 struct UiElement final {
-    std::uint32_t id = 0;      // +0x00 -- what FindEntryById(ctx, id) looks up
-    std::uint32_t kind = 0;    // +0x08 -- element type; what each value draws is NOT established
-    float x = 0.0F;            // +0x30, 20.12 fixed point
-    float y = 0.0F;            // +0x34, 20.12 fixed point
+    std::int32_t id = 0;        // +0x00 elementId -- what FindEntryById(ctx, id) looks up
+    std::int32_t group = 0;     // +0x04 groupId -- the nav walker refuses to wrap within a group
 
-    // The five slots at +0x0c..+0x1c. Every one of them is the unset sentinel in
-    // cm_save.ui, so their meaning cannot be read off the shipped data; they are
-    // exposed as raw words rather than guessed at. `none` when unset.
-    std::array<std::optional<std::uint32_t>, 5> slots{};
+    // +0x08/+0x0c and +0x18/+0x1c: two content keys each. The instantiator
+    // picks `alternate` when descriptor flag bit 0 is set and either alternate
+    // key is >= 0, else `def`; each non-negative key becomes an allocated slot.
+    // A key indexes the screen's graphics; which cell of which pack it selects
+    // is NOT established here.
+    std::array<std::optional<std::int32_t>, 2> keys_default{};
+    std::array<std::optional<std::int32_t>, 2> keys_alternate{};
+    std::array<std::optional<std::int32_t>, 2> values{};   // +0x10/+0x14
 
-    // All 22 words of the record, verbatim, for fields this decoder does not
-    // claim to understand.
+    // Position, 20.12 fixed point. `point30` is the resting position the
+    // instantiator always copies to the widget. When flag bit 2 is set the
+    // element instead tweens from `point20` toward point30 over 0x3e8, with
+    // `point28` as a second control point -- so a moving element has three.
+    float x = 0.0F;             // +0x30 point30.x
+    float y = 0.0F;             // +0x34 point30.y
+    std::array<float, 2> tween_from{};    // +0x20 point20
+    std::array<float, 2> tween_extra{};   // +0x28 point28
+
+    // +0x40..+0x4c: the ids of the Up/Down/Left/Right neighbours. The linker
+    // resolves each to a widget pointer at +0x88..+0x94, which is exactly what
+    // the nav walker (func_ov000_020552b4) follows. Unset (-1) throughout every
+    // shipped .ui, so these files carry positions, not the navigation graph.
+    std::array<std::optional<std::int32_t>, 4> neighbours{};
+
+    std::uint32_t flags = 0;    // +0x50 -- bit0 use-alternate, bit1 start hidden, bit2 tween
+    std::int32_t priority = 0;  // +0x54 priorityBase; slot i gets priority + 1 - i
+
+    // All 22 words of the record, verbatim, for anything above that is only
+    // partially understood.
     std::array<std::uint32_t, 22> raw{};
 };
 

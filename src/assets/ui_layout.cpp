@@ -47,16 +47,34 @@ UiLayout decode_ui_layout(const std::uint8_t* data, const std::size_t size) {
         for (std::size_t w = 0U; w < element.raw.size(); ++w) {
             element.raw[w] = read_u32(record, w * 4U);
         }
-        element.id = element.raw[0];
-        element.kind = element.raw[2];
-        element.x = from_fx20_12(element.raw[12]);   // +0x30
-        element.y = from_fx20_12(element.raw[13]);   // +0x34
-        for (std::size_t s = 0U; s < element.slots.size(); ++s) {
-            const std::uint32_t value = element.raw[3U + s];  // +0x0c..+0x1c
-            if (value != kUiUnset) {
-                element.slots[s] = value;
-            }
+        const auto signed_word = [&element](const std::size_t index) {
+            return static_cast<std::int32_t>(element.raw[index]);
+        };
+        // A key/value/neighbour is "unset" when negative: the instantiator
+        // tests `>= 0` rather than comparing against a sentinel, so anything
+        // negative means absent, not just -1.
+        const auto optional_word =
+            [&signed_word](const std::size_t index) -> std::optional<std::int32_t> {
+            const std::int32_t value = signed_word(index);
+            return value >= 0 ? std::optional<std::int32_t>{value} : std::nullopt;
+        };
+
+        element.id = signed_word(0);                  // +0x00
+        element.group = signed_word(1);               // +0x04
+        for (std::size_t k = 0U; k < 2U; ++k) {
+            element.keys_default[k] = optional_word(2U + k);    // +0x08/+0x0c
+            element.values[k] = optional_word(4U + k);          // +0x10/+0x14
+            element.keys_alternate[k] = optional_word(6U + k);  // +0x18/+0x1c
+            element.tween_from[k] = from_fx20_12(element.raw[8U + k]);   // +0x20
+            element.tween_extra[k] = from_fx20_12(element.raw[10U + k]); // +0x28
         }
+        element.x = from_fx20_12(element.raw[12]);    // +0x30
+        element.y = from_fx20_12(element.raw[13]);    // +0x34
+        for (std::size_t n = 0U; n < 4U; ++n) {
+            element.neighbours[n] = optional_word(16U + n);  // +0x40..+0x4c
+        }
+        element.flags = element.raw[20];              // +0x50
+        element.priority = signed_word(21);           // +0x54
         layout.elements.push_back(element);
     }
     return layout;
