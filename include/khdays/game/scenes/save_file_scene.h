@@ -45,6 +45,9 @@ private:
     // either way -- which is what makes this a reading and not a guess.
     static constexpr float kRowLift = 8.0F;
 
+    // ov000 is the whole front-end and keeps the KH logo on the top screen
+    // across all of it, this screen included (runtime-confirmed).
+    std::optional<khdays::assets::DecodedTexture> logo_;
     std::optional<khdays::assets::UiLayout> layout_;
     std::optional<khdays::resource::SpriteSet> sprites_;
     int selected_ = 0;

@@ -54,3 +54,6 @@ __pycache__/
 mods/
 title.bmp
 /menu.txt
+
+# Snapshot output from --save-shot / --title-shot / --boot-shot and friends.
+*.bmp

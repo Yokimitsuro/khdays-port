@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "khdays/assets/cell.h"
+#include "khdays/game/draw.h"
 #include "khdays/game/settings.h"
 #include "khdays/resource/loader.h"
 
@@ -37,6 +38,7 @@ bool SaveFileScene::hidden_on_entry(const std::int32_t id) {
 }
 
 void SaveFileScene::on_enter(SceneManager&) {
+    logo_ = khdays::resource::load_title_logo();
     layout_ = khdays::resource::load_ui_layout(kLayoutPath);
     sprites_ = khdays::resource::load_sprite_set(
         khdays::game::localized_path(kSpritePack).c_str(), kSpriteSubfile);
@@ -68,19 +70,21 @@ void SaveFileScene::update(SceneManager& manager) {
 }
 
 void SaveFileScene::render(SceneManager&, Renderer& r) {
-    r.clear(Color{8, 10, 24, 255});
-    const int s = std::max(1, std::min(r.width() / 256, r.height() / 192));
-    const int ox = (r.width() - 256 * s) / 2;
-    const int oy = (r.height() - 192 * s) / 2;
+    r.clear(Color{0, 0, 0, 255});
+    const auto layout = dual_screen_layout(r);
 
+    // The DS draws this on the touch screen, with the front-end's KH logo still
+    // on the top one.
+    if (logo_) {
+        draw_screen(r, layout, *logo_, /*bottom=*/false);
+    }
     if (!layout_ || !sprites_) {
         return;  // no game data: nothing invented to stand in for it
     }
 
     const auto blit = [&](const khdays::assets::DecodedTexture& t, int vx,
                           int vy) {
-        r.draw_image(t.rgba.data(), t.width, t.height, ox + vx * s, oy + vy * s,
-                     t.width * s, t.height * s);
+        draw_overlay(r, layout, t, vx, vy, /*bottom=*/true);
     };
 
     for (const auto& element : layout_->elements) {
