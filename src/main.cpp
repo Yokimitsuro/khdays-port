@@ -648,7 +648,7 @@ int main(int argc, char* argv[]) {
             }
             manager.set_input(khdays::game::Input{});
             manager.step();
-            khdays::game::SoftwareRenderer sw{512, 384};
+            khdays::game::SoftwareRenderer sw{512, 784};  // both DS screens stacked (192*2 + gap) at scale 2
             manager.render(sw);
             const auto bmp = khdays::assets::to_bmp(sw.snapshot());
             std::ofstream out{argv[2], std::ios::binary};
