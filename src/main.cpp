@@ -1301,6 +1301,61 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        if (first == "--ui-keys") {
+            // Resolve a .ui's content keys through the pack its screen binds.
+            // A key is an index into the pack's NANR animation bank (not the
+            // NCER cell bank -- func_02031af4 hands the key to the bank at
+            // node+0x10, which FUN_02031c58 fills from archive member 5, the
+            // NANR; the cell bank at node+0x0c is passed alongside so the
+            // animation's steps can name cells in it).
+            if (argc != 5) {
+                std::cerr << "ERROR: --ui-keys requires FILE.ui, a P2 pack and "
+                             "a sub-file index\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const auto layout = khdays::assets::decode_ui_layout(
+                    std::filesystem::path{argv[2]});
+                const auto blob = khdays::assets::extract_p2_subfile(
+                    std::filesystem::path{argv[3]},
+                    static_cast<std::size_t>(std::stoul(argv[4])));
+                const auto pack =
+                    khdays::assets::parse_pk2d(blob.data(), blob.size());
+                if (pack.anims.empty()) {
+                    std::cerr << "ERROR: that sub-file has no NANR bank\n";
+                    return EXIT_FAILURE;
+                }
+                const auto bank = khdays::assets::decode_nanr(
+                    pack.anims[0].data, pack.anims[0].size);
+                std::cout << bank.animations.size()
+                          << " NANR animations in the bank\n"
+                          << "  id  key -> animation steps (cell x frames)\n";
+                for (const auto& element : layout.elements) {
+                    for (const auto& key : element.keys_default) {
+                        if (!key.has_value()) {
+                            continue;
+                        }
+                        std::cout << "  " << std::setw(2) << element.id << "  "
+                                  << std::setw(3) << *key << " -> ";
+                        const auto index = static_cast<std::size_t>(*key);
+                        if (index >= bank.animations.size()) {
+                            std::cout << "OUT OF RANGE\n";
+                            continue;
+                        }
+                        for (const auto& step : bank.animations[index].steps) {
+                            std::cout << "cell " << step.cell << " x"
+                                      << step.duration << "  ";
+                        }
+                        std::cout << '\n';
+                    }
+                }
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
         if (first == "--anim-info") {
             if (argc != 3) {
                 std::cerr << "ERROR: --anim-info requires one file path\n";
