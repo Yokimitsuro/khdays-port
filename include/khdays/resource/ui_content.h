@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -8,6 +9,7 @@
 #include "khdays/assets/cell.h"       // AnimBank
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/tex0.h"       // DecodedTexture
+#include "khdays/assets/ui_layout.h"  // UiLayout
 
 // UI-content loaders: resolve a game path through the VFS, decode the DS 2D
 // resources it holds, and return neutral RGBA the engine can draw. These sit in
@@ -21,12 +23,25 @@ namespace khdays::resource {
 struct SpriteSet final {
     std::vector<khdays::assets::DecodedTexture> cells;
     khdays::assets::AnimBank animations;
+
+    // Where each rendered cell's top-left sits relative to the cell's own
+    // origin, i.e. the minimum (x, y) over its OAM pieces. render_cell()
+    // collapses the pieces into a bitmap anchored at that minimum, so the
+    // offset has to be carried separately: the DS places a piece at
+    // (cell_position + piece.x), and a cell whose pieces straddle the origin
+    // therefore starts left of / above where it is positioned. Aligned with
+    // `cells`; add it to a cell's screen position before drawing.
+    std::vector<std::array<int, 2>> cell_origins;
 };
 
 // Load one sprite pack: a P2 sub-file holding a single NCLR + NCGR + NCER (+
 // optional NANR), e.g. res.p2 sub-files 1..3 or ttl.p2 sub-file 2.
 std::optional<SpriteSet> load_sprite_set(const char* game_path,
                                          std::size_t subfile);
+
+// Load a screen's `.ui` element layout, resolved through the mod/vfs chain like
+// every other resource (so `mods/<Mod>/files/UI/cm/cm_save.ui.z` overrides it).
+std::optional<khdays::assets::UiLayout> load_ui_layout(const char* game_path);
 
 // Compose the boot/publisher logo the game shows first (ttl.p2 sub-file 1: an
 // NCLR + NCGR + NSCR full-screen image).

@@ -36,6 +36,10 @@ inline constexpr SceneId kSceneGameplay = 2;   // gameplay (ov002); the menu ent
 inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
 inline constexpr SceneId kSceneMainMenu = 19;  // Mission Mode main menu (ov08); title requests it on Start
+// The save-file screen ("Seleccionar archivo."), which the DS shows between
+// MODO MISION > UN JUGADOR and the character select. The id is the port's own:
+// this screen is part of ov000 rather than a scene the DS dispatches by id.
+inline constexpr SceneId kSceneSaveFile = 100;
 
 // One game state. Override the hooks that matter; the default is a no-op.
 class Scene {

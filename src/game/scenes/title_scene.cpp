@@ -82,10 +82,9 @@ void TitleScene::confirm(SceneManager& manager) {
         break;
     case Level::Mission:
         if (selected_ == 0) {
-            // UN JUGADOR. The DS shows the save-file screen ("Cargar" /
-            // "Seleccionar archivo.") before the character select; that screen
-            // is not ported yet, so this goes straight to the roster.
-            manager.change_scene(kSceneMainMenu);
+            // UN JUGADOR. The DS shows the save-file screen ("Seleccionar
+            // archivo.") before the character select, and so does this.
+            manager.change_scene(kSceneSaveFile);
         }
         // MULTIJUGADOR is DS local wireless — not ported.
         break;

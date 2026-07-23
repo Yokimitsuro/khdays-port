@@ -3,6 +3,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "khdays/assets/message.h"  // lz_decompress
 
@@ -29,6 +30,15 @@ float from_fx20_12(std::uint32_t value) {
 UiLayout decode_ui_layout(const std::uint8_t* data, const std::size_t size) {
     if (data == nullptr || size == 0U) {
         throw std::runtime_error("empty .ui resource");
+    }
+    // The game ships these LZ-compressed as `.ui.z`, and khdays::vfs::read
+    // hands back raw bytes by design, so decompression belongs here rather than
+    // only in the path overload -- otherwise a caller reading through the VFS
+    // gets a compressed blob and a confusing "not a whole number of records".
+    if (data[0] == 0x10U || data[0] == 0x11U) {
+        const std::vector<std::uint8_t> packed(data, data + size);
+        const auto unpacked = lz_decompress(packed);
+        return decode_ui_layout(unpacked.data(), unpacked.size());
     }
     if (size % kUiElementSize != 0U) {
         throw std::runtime_error(
@@ -95,9 +105,6 @@ UiLayout decode_ui_layout(const std::filesystem::path& input_path) {
         stream.read(
             reinterpret_cast<char*>(data.data()),
             static_cast<std::streamsize>(data.size()));
-    }
-    if (!data.empty() && (data[0] == 0x10U || data[0] == 0x11U)) {
-        data = lz_decompress(data);
     }
     return decode_ui_layout(data.data(), data.size());
 }

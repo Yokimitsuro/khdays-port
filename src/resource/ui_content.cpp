@@ -1,5 +1,8 @@
 #include "khdays/resource/ui_content.h"
 
+#include "khdays/assets/ui_layout.h"
+
+#include <algorithm>
 #include <exception>
 #include <map>
 #include <string>
@@ -10,6 +13,15 @@
 #include "khdays/vfs/filesystem.h"
 
 namespace khdays::resource {
+
+std::optional<khdays::assets::UiLayout> load_ui_layout(const char* game_path) {
+    try {
+        const auto blob = khdays::vfs::read(game_path);
+        return khdays::assets::decode_ui_layout(blob.data(), blob.size());
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
 
 std::optional<SpriteSet> load_sprite_set(const char* game_path,
                                          const std::size_t subfile) {
@@ -33,9 +45,27 @@ std::optional<SpriteSet> load_sprite_set(const char* game_path,
         const auto bank = khdays::assets::decode_ncer(cer.data, cer.size);
         SpriteSet set;
         set.cells.reserve(bank.cells.size());
+        set.cell_origins.reserve(bank.cells.size());
         for (const auto& cell : bank.cells) {
             set.cells.push_back(khdays::assets::render_cell(
                 cell, tiles, palette, bank.tile_boundary));
+            // Mirror render_cell's own anchor: it lays the pieces out starting
+            // at their minimum (x, y), so that minimum is the bitmap's offset
+            // from the cell origin the game positions.
+            int min_x = 0;
+            int min_y = 0;
+            bool first = true;
+            for (const auto& piece : cell.pieces) {
+                if (first) {
+                    min_x = piece.x;
+                    min_y = piece.y;
+                    first = false;
+                } else {
+                    min_x = std::min(min_x, piece.x);
+                    min_y = std::min(min_y, piece.y);
+                }
+            }
+            set.cell_origins.push_back({min_x, min_y});
         }
         if (nan) {
             set.animations = khdays::assets::decode_nanr(nan.data, nan.size);

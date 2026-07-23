@@ -34,6 +34,7 @@
 #include "khdays/game/scenes/boot_logo_scene.h"
 #include "khdays/game/scenes/gameplay_scene.h"
 #include "khdays/game/scenes/main_menu_scene.h"
+#include "khdays/game/scenes/save_file_scene.h"
 #include "khdays/game/scenes/title_scene.h"
 #include "khdays/game/settings.h"
 #include "khdays/game/software_renderer.h"
@@ -623,6 +624,40 @@ int main(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
+        if (first == "--save-shot") {
+            // Headless snapshot of the save-file screen, laid out entirely from
+            // the game's own UI/cm/cm_save.ui.
+            if (argc < 3) {
+                std::cerr << "ERROR: --save-shot requires an output BMP "
+                             "[cursor-steps]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int steps = argc > 3 ? std::stoi(argv[3]) : 0;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneSaveFile, [] {
+                return std::make_unique<khdays::game::scenes::SaveFileScene>();
+            });
+            manager.start(khdays::game::kSceneSaveFile);
+            for (int i = 0; i < steps; ++i) {
+                khdays::game::Input in;
+                in.pressed =
+                    static_cast<std::uint16_t>(khdays::game::Button::Down);
+                manager.set_input(in);
+                manager.step();
+            }
+            manager.set_input(khdays::game::Input{});
+            manager.step();
+            khdays::game::SoftwareRenderer sw{512, 384};
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "Save-file snapshot -> BMP: " << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
         if (first == "--title-shot") {
             // Headless snapshot of the title/main-menu scene (two DS screens
             // stacked). Optional 2nd arg = how many times to press Down first.
@@ -732,6 +767,9 @@ int main(int argc, char* argv[]) {
             });
             game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
                 return std::make_unique<khdays::game::scenes::MainMenuScene>();
+            });
+            game.scenes().register_scene(khdays::game::kSceneSaveFile, [] {
+                return std::make_unique<khdays::game::scenes::SaveFileScene>();
             });
             game.scenes().register_scene(khdays::game::kSceneGameplay, [] {
                 return std::make_unique<khdays::game::scenes::GameplayScene>();
