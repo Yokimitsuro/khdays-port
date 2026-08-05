@@ -169,7 +169,12 @@ not ported). Port or replace the minimum required systems for:
   front-end** — the boot logos, the title, *every* menu level, and the save-file
   screen all live in it (the KH logo stays on the top screen throughout);
   **ov06 is the Mission Mode character select**, not the title; **ov012 is the
-  movie/cutscene player**; **ov08 is still unidentified**.
+  movie/cutscene player**; **ov08 is the in-game menu overlay** — a generic
+  paged-panel menu framework whose top-level scene is **0x13** (`curId` 19),
+  driven by `Ov008_MainMenu_StateTick`, gated by game progression
+  (`GameState_GetField(0,9)` day counter, flag `0x200c`); its behaviour is now
+  decompiled in khdays-decomp, but it depends on game state the port does not yet
+  model, so it is documented rather than reproduced (see below).
 
   Each screen draws its real decoded assets, positioned from values read out of
   the live hardware state (the DS OBJ cell engine `func_02032xxx` is not ported —
