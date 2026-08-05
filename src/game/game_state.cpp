@@ -42,7 +42,8 @@ void GameState::clear_flag(const std::uint32_t bit) {
 
 std::uint32_t GameState::get_field(const FieldRef ref) const {
     // The bit at ref.offset is the value's MSB, matching the single-bit
-    // convention (get_field({n, 1}) == flag(n)).
+    // convention (get_field({n, 1}) == flag(n)) and the DS's own MSB-first
+    // BitArray_GetField (khdays-decomp func_020256b8).
     std::uint32_t value = 0U;
     for (std::uint32_t i = 0U; i < ref.width; ++i) {
         value = (value << 1U) | (flag(ref.offset + i) ? 1U : 0U);

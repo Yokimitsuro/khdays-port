@@ -43,10 +43,10 @@ class GameState {
     // Reads/writes `ref.width` consecutive bits starting at `ref.offset`, in
     // the same big-endian numbering as the single-bit primitives: the bit at
     // `ref.offset` is the most significant of the value, so get_field({n, 1})
-    // equals flag(n). The DS's own multi-bit accessors (func_020256b8 /
-    // func_02025754) are not decompiled yet; this is the self-consistent
-    // extension of the proven single-bit convention, not a measured layout.
-    // Marked as such so it is never mistaken for byte-exact DS behaviour.
+    // equals flag(n). This is byte-behaviour-identical to the DS's own
+    // multi-bit accessors BitArray_GetField / BitArray_SetField
+    // (khdays-decomp func_020256b8 / func_02025754), which are MSB-first and
+    // span word boundaries the same way -- verified in the test.
     [[nodiscard]] std::uint32_t get_field(FieldRef ref) const;
     void set_field(FieldRef ref, std::uint32_t value);
 

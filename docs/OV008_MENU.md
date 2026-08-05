@@ -147,7 +147,10 @@ committed), `0x200d`, and the day/story counter field `(0, 9)` (story milestone
    (`include/khdays/game/game_state.h`) models the store with the decomp-exact
    bit addressing, `get_field`/`set_field`, the day-counter anchor (field 0,9),
    the preset-field helper (`id*4 + 0x92b`), and the observed progression flags.
-   What is still missing on top of it is the *content*: which flags/fields each
+   Its multi-bit accessors are verified byte-behaviour-identical to the DS's
+   `BitArray_GetField`/`SetField` (`func_020256b8`/`func_02025754`, MSB-first,
+   word-spanning). What is still missing on top of it is the *content*: which
+   flags/fields each
    day and mission set, which is game logic not yet decompiled — so the store is
    there, but nothing fills it authentically yet.
 2. The per-scene parameter table (`SceneParam[]`) that names each menu scene's

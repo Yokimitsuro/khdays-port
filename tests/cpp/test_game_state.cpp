@@ -75,6 +75,13 @@ int main() {
         expect(s.get_field({30U, 4U}) == 0xBU, "field round-trips across words");
         expect(s.word_count() == 2U, "cross-word field touches two words");
 
+        // Exact bit placement, matching the DS BitArray_SetField
+        // (func_02025754) MSB-first: 0xB = 1011 -> bit30=1, bit31=0 (word 0's
+        // low 2 bits = 0b10 = 0x2) and bit32=1, bit33=1 (word 1's top 2 bits =
+        // 0xC0000000). Traced by hand against the decompiled algorithm.
+        expect(s.raw_word(0U) == 0x00000002U, "cross-word low half matches DS");
+        expect(s.raw_word(1U) == 0xC0000000U, "cross-word high half matches DS");
+
         s.set_field({30U, 4U}, 0x0U);  // set-then-clear clears every bit
         expect(s.get_field({30U, 4U}) == 0U, "field can be cleared to 0");
     }
