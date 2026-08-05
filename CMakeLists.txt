@@ -195,6 +195,7 @@ add_library(
         src/game/scene.cpp
         src/game/object.cpp
         src/game/game.cpp
+        src/game/game_state.cpp
         src/game/settings.cpp
         src/game/software_renderer.cpp
         src/game/scenes/boot_logo_scene.cpp
@@ -377,6 +378,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-game-state-test
+        tests/cpp/test_game_state.cpp
+    )
+
+    target_link_libraries(
+        khdays-game-state-test
+        PRIVATE
+            khdays-game
+    )
+
+    add_executable(
         khdays-cell-test
         tests/cpp/test_cell.cpp
     )
@@ -409,6 +421,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-font-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-game-state-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
     else()
@@ -422,6 +435,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-font-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-game-state-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
@@ -436,6 +450,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-font-test)
     khdays_enable_sanitizers(khdays-vfs-test)
     khdays_enable_sanitizers(khdays-game-test)
+    khdays_enable_sanitizers(khdays-game-state-test)
     khdays_enable_sanitizers(khdays-cell-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
 
@@ -495,6 +510,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-game-state
+        COMMAND khdays-game-state-test
+    )
+
+    add_test(
         NAME khdays-ui-layout
         COMMAND khdays-ui-layout-test
     )
@@ -522,6 +542,7 @@ if(BUILD_TESTING)
             khdays-font-test
             khdays-vfs-test
             khdays-game-test
+            khdays-game-state-test
             khdays-cell-test
             khdays-ui-layout-test
     )

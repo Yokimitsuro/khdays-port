@@ -143,10 +143,17 @@ committed), `0x200d`, and the day/story counter field `(0, 9)` (story milestone
 
 1. A neutral `GameState` (the packed bit store above, plus the day/story
    counter) — this is the true blocker; the grid, toolbar, and flag presets all
-   read it.
+   read it. **The foundation now exists**: `khdays::game::GameState`
+   (`include/khdays/game/game_state.h`) models the store with the decomp-exact
+   bit addressing, `get_field`/`set_field`, the day-counter anchor (field 0,9),
+   the preset-field helper (`id*4 + 0x92b`), and the observed progression flags.
+   What is still missing on top of it is the *content*: which flags/fields each
+   day and mission set, which is game logic not yet decompiled — so the store is
+   there, but nothing fills it authentically yet.
 2. The per-scene parameter table (`SceneParam[]`) that names each menu scene's
    resources and archive variants.
 3. The panel/layout archives resolved through the existing `.ui` loader
    (`load_ui_layout`) and sprite-set loader — both already in the port.
 
-Until (1) exists, this screen stays documented, not reproduced.
+Until the store is *populated* authentically (1's content), and (2) is mapped,
+this screen stays documented, not reproduced.
