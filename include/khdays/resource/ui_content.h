@@ -6,8 +6,12 @@
 #include <string>
 #include <vector>
 
+#include <map>
+
+#include "khdays/assets/animation.h"  // SkeletalAnimation
 #include "khdays/assets/cell.h"       // AnimBank
 #include "khdays/assets/graphics2d.h"
+#include "khdays/assets/mesh.h"       // NeutralModel
 #include "khdays/assets/tex0.h"       // DecodedTexture
 #include "khdays/assets/ui_layout.h"  // UiLayout
 
@@ -60,6 +64,19 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo();
 std::optional<khdays::assets::DecodedTexture> load_title_logo(
     bool over_white = true, float scale = 0.80F, float y_offset = 0.20F,
     const char* only_texture = "");
+
+// The title logo as an animatable 3D model plus its NSBCA. The DS renders this
+// model (ttl.p2 sub-file 0, a KAPH holding a BMD0 + a BCA0) and plays the
+// animation (func_ov000_0204d7c8 loads it, func_ov000_02059f50 renders 3D). A
+// scene poses `model` per frame with sample_animation + compute_palette, then
+// flattens it with compose_flat_model(model, textures, ...).
+struct TitleLogoModel {
+    khdays::assets::NeutralModel model;
+    std::map<std::string, khdays::assets::DecodedTexture> textures;
+    khdays::assets::SkeletalAnimation animation;  // frame_count == 0 if none
+};
+
+std::optional<TitleLogoModel> load_title_logo_model();
 
 // Compose one background layer from a D2KP UI pack: extract the P2 sub-file,
 // parse the typed pack, and compose screen[screen] with tiles[tiles_index] and

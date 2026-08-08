@@ -75,6 +75,16 @@ inline void draw_screen(Renderer& r, const DualScreenLayout& l,
                  DualScreenLayout::kScreenH * l.scale, alpha);
 }
 
+// draw_screen for an image whose pixels change every frame (a posed model).
+inline void draw_screen_dynamic(Renderer& r, const DualScreenLayout& l,
+                                const khdays::assets::DecodedTexture& image,
+                                const bool bottom, const int alpha = 255) {
+    r.draw_image_dynamic(image.rgba.data(), image.width, image.height,
+                         l.screen_x(bottom), l.screen_y(bottom),
+                         DualScreenLayout::kScreenW * l.scale,
+                         DualScreenLayout::kScreenH * l.scale, alpha);
+}
+
 // Draw an overlay image at virtual (vx, vy) within a screen, scaled to match.
 inline void draw_overlay(Renderer& r, const DualScreenLayout& l,
                          const khdays::assets::DecodedTexture& image,

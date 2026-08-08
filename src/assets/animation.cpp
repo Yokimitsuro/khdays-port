@@ -393,9 +393,9 @@ std::array<float, 9> sample_rotation_curve(
 namespace khdays::assets {
 
 SkeletalAnimation load_nsbca(
-    const std::filesystem::path& input_path,
+    const std::uint8_t* data, const std::size_t size,
     const std::size_t animation_index) {
-    const auto file = read_file(input_path);
+    const ByteVector file(data, data + size);
     const auto sections = parse_sections(file);
     const auto iterator = sections.find("JNT0");
     if (iterator == sections.end()) {
@@ -409,6 +409,13 @@ SkeletalAnimation load_nsbca(
     return read_animation(
         file, jnt0 + offsets[animation_index],
         "anim" + std::to_string(animation_index));
+}
+
+SkeletalAnimation load_nsbca(
+    const std::filesystem::path& input_path,
+    const std::size_t animation_index) {
+    const auto file = read_file(input_path);
+    return load_nsbca(file.data(), file.size(), animation_index);
 }
 
 std::vector<std::array<float, 16>> sample_animation(

@@ -39,6 +39,24 @@ not a guess.
 - **Selection pulse** (`func_ov000_0205157c`, already ported): a ping-pong alpha
   tween 2/16..8/16 over 500 ms on the selection highlight.
 
+## Correction (2026-08-08): the title logo IS the 3D model
+
+An earlier reading here concluded ov000 never loads the 3D KAPH model. That was
+wrong: `func_ov000_0204d7c8` line 95 loads **h[1] sub-file 0** (the KAPH, via
+`func_0202a634`) and `func_ov000_02059f50` renders 3D. So the title logo is the
+3D model, and its "358/2 Days" quad is animated by the model's own **BCA0**. The
+port already has the 3D animation path (`load_nsbca` + `sample_animation` +
+`compute_palette` + `compose_flat_model`, i.e. the `--render-model --anim`
+viewer), so the title logo animation is done by **reusing that animator** — not
+by the 2D-node primitives below. `load_title_logo_model` returns the model +
+textures + BCA0; the title scene poses the model per frame and flattens the
+"358/2 Days" quad (drawn through the renderer's new dynamic-image path, since its
+pixels change each frame).
+
+The `AnimChannel` and `draw_image_affine` primitives below remain for the parts
+of the menu that are genuine 2D nodes (ov008's in-game menu), which is a separate
+subsystem; they are not needed for the title logo's 3D-model animation.
+
 ## Key architectural fact
 
 Most title/menu node transforms are effectively **2D affine** (translation,

@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "khdays/assets/animation.h"  // sample_animation
+#include "khdays/assets/mesh.h"       // compute_palette
+#include "khdays/assets/screen.h"     // compose_flat_model
 #include "khdays/game/draw.h"
 #include "khdays/game/settings.h"
 
@@ -38,14 +41,13 @@ void TitleScene::on_enter(SceneManager& manager) {
     // "KINGDOM HEARTS 358/2 Days" reads over Disney/SQUARE ENIX and the scene.
     // A title savestate confirmed the top screen carries no OBJ, so the logo is
     // a BG/3D-layer element, not sprites.
-    // The s7 BG already carries KINGDOM HEARTS; only the "358/2 Days" subtitle is
-    // missing. It is a separate quad in the logo model (texture "title_006"), so
-    // render ONLY that quad -- with the full model's projection (fill 0.80,
-    // top_margin 0.20) so it lands in its place under the logo -- and overlay it.
-    // This adds the subtitle without a second KINGDOM HEARTS (no doubling).
-    logo_ = khdays::resource::load_title_logo(/*over_white=*/false,
-                                              /*scale=*/0.80F, /*y_offset=*/0.20F,
-                                              /*only_texture=*/"title_006");
+    // The s7 BG already carries KINGDOM HEARTS; the "358/2 Days" subtitle is a
+    // separate quad (texture "title_006") in the logo model, which the DS renders
+    // and animates via its BCA0 (func_ov000_0204d7c8 loads it,
+    // func_ov000_02059f50 renders 3D). Load the model + animation so the subtitle
+    // is posed per frame with the shared animator (sample_animation ->
+    // compute_palette -> compose_flat_model), instead of a static overlay.
+    logo_model_ = khdays::resource::load_title_logo_model();
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     // English is the odd one out: there is no ttl_en.p2 — the English option
     // textures are the base file's sub-file 2, while the other four ship as
@@ -200,8 +202,24 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     if (top_) {
         draw_screen(r, layout, *top_, /*bottom=*/false, top_a);
     }
-    if (logo_) {
-        draw_screen(r, layout, *logo_, /*bottom=*/false, top_a);
+    if (logo_model_ && logo_model_->model.skinning
+        && logo_model_->animation.frame_count > 0) {
+        // Pose the model at the current frame (one-shot: play once, then hold at
+        // the rest frame) and flatten just the "358/2 Days" quad over s7.
+        auto& lm = *logo_model_;
+        const float last = static_cast<float>(lm.animation.frame_count - 1);
+        const float f = static_cast<float>(frame_) < last
+                            ? static_cast<float>(frame_)
+                            : last;
+        const auto objects = khdays::assets::sample_animation(
+            lm.animation, f, lm.model.object_matrices);
+        lm.model.palette =
+            khdays::assets::compute_palette(*lm.model.skinning, objects);
+        logo_frame_ = khdays::assets::compose_flat_model(
+            lm.model, lm.textures, 256, 192, 0.80F, 0.20F, "title_006");
+        // logo_frame_'s pixels change every frame, so use the dynamic path (the
+        // SDL cache is keyed by pointer and would otherwise serve stale pixels).
+        draw_screen_dynamic(r, layout, logo_frame_, /*bottom=*/false, top_a);
     }
     if (illustration_) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true, bottom_a);

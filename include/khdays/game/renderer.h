@@ -65,6 +65,16 @@ public:
                    static_cast<int>(matrix[5]), dst_w, dst_h, alpha);
     }
 
+    // Like draw_image, but for an image whose PIXELS change every frame (e.g. a
+    // per-frame posed model). Backends that cache uploads by buffer pointer must
+    // re-upload here rather than serve a stale texture. The base default forwards
+    // to draw_image (correct for renderers that do not cache, e.g. software).
+    virtual void draw_image_dynamic(
+        const std::uint8_t* rgba, int width, int height, int x, int y,
+        int dst_width = 0, int dst_height = 0, int alpha = 255) {
+        draw_image(rgba, width, height, x, y, dst_width, dst_height, alpha);
+    }
+
     // Current output size in pixels (for centering/layout).
     virtual int width() const = 0;
     virtual int height() const = 0;

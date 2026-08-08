@@ -54,7 +54,10 @@ private:
                                int page_dx, int row_y, int alpha = 255) const;
 
     std::optional<khdays::assets::DecodedTexture> top_;    // top screen BG (s7)
-    std::optional<khdays::assets::DecodedTexture> logo_;   // KH 358/2 Days overlay
+    // The KH logo as an animatable model (its BCA0 plays the "358/2 Days"
+    // entry); logo_frame_ holds the flattened current frame.
+    std::optional<khdays::resource::TitleLogoModel> logo_model_;
+    khdays::assets::DecodedTexture logo_frame_;
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
     std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
     Level level_ = Level::Root;

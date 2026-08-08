@@ -155,6 +155,40 @@ std::optional<khdays::assets::DecodedTexture> load_title_logo(
     }
 }
 
+std::optional<TitleLogoModel> load_title_logo_model() {
+    try {
+        const auto container = khdays::vfs::read("ttl/ttl.p2");
+        const auto kaph = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 0);
+        const auto bmd0 = khdays::assets::find_nitro_resource(
+            kaph.data(), kaph.size(), "BMD0");
+        if (!bmd0) {
+            return std::nullopt;
+        }
+        TitleLogoModel out;
+        out.model = khdays::assets::decode_model_geometry(bmd0.data, bmd0.size);
+        for (const auto& mesh : out.model.meshes) {
+            if (mesh.texture_name.empty()
+                || out.textures.count(mesh.texture_name) != 0U) {
+                continue;
+            }
+            out.textures.emplace(
+                mesh.texture_name,
+                khdays::assets::load_tex0_texture(bmd0.data, bmd0.size,
+                                                  mesh.texture_name));
+        }
+        // The joint animation rides in the same KAPH as a BCA0.
+        const auto bca0 = khdays::assets::find_nitro_resource(
+            kaph.data(), kaph.size(), "BCA0");
+        if (bca0) {
+            out.animation = khdays::assets::load_nsbca(bca0.data, bca0.size, 0);
+        }
+        return out;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 std::optional<khdays::assets::DecodedTexture> load_ui_background(
     const char* game_path, const std::size_t subfile, const std::size_t screen,
     const std::size_t tiles_index, const std::size_t palette_index) {

@@ -335,6 +335,9 @@ public:
         for (auto& [key, texture] : cache_) {
             SDL_DestroyTexture(texture);
         }
+        if (dynamic_tex_ != nullptr) {
+            SDL_DestroyTexture(dynamic_tex_);
+        }
     }
 
     void clear(khdays::game::Color color) override {
@@ -422,6 +425,43 @@ public:
     // which is only unique while a scene's images stay alive; across a scene
     // change a freed buffer can be reallocated at the same address, so the cache
     // must be invalidated on transition or it would serve the old scene's image.
+    void draw_image_dynamic(
+        const std::uint8_t* rgba, int width, int height, int x, int y,
+        int dst_width, int dst_height, int alpha) override {
+        if (rgba == nullptr || width <= 0 || height <= 0) {
+            return;
+        }
+        // A per-frame texture: re-upload into a reused streaming texture instead
+        // of the pointer-keyed cache (which would serve stale pixels).
+        if (dynamic_tex_ == nullptr || dynamic_w_ != width
+            || dynamic_h_ != height) {
+            if (dynamic_tex_ != nullptr) {
+                SDL_DestroyTexture(dynamic_tex_);
+            }
+            dynamic_tex_ = SDL_CreateTexture(
+                renderer_, SDL_PIXELFORMAT_ABGR8888,
+                SDL_TEXTUREACCESS_STREAMING, width, height);
+            dynamic_w_ = width;
+            dynamic_h_ = height;
+            if (dynamic_tex_ != nullptr) {
+                SDL_SetTextureBlendMode(dynamic_tex_, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(dynamic_tex_, SDL_SCALEMODE_NEAREST);
+            }
+        }
+        if (dynamic_tex_ == nullptr) {
+            return;
+        }
+        SDL_UpdateTexture(dynamic_tex_, nullptr, rgba, width * 4);
+        SDL_SetTextureAlphaMod(
+            dynamic_tex_,
+            static_cast<Uint8>(alpha < 0 ? 0 : alpha > 255 ? 255 : alpha));
+        SDL_FRect dst{
+            static_cast<float>(x), static_cast<float>(y),
+            static_cast<float>(dst_width > 0 ? dst_width : width),
+            static_cast<float>(dst_height > 0 ? dst_height : height)};
+        SDL_RenderTexture(renderer_, dynamic_tex_, nullptr, &dst);
+    }
+
     void clear_cache() {
         for (auto& [key, texture] : cache_) {
             SDL_DestroyTexture(texture);
@@ -450,6 +490,9 @@ private:
 
     SDL_Renderer* renderer_;
     std::unordered_map<const void*, SDL_Texture*> cache_;
+    SDL_Texture* dynamic_tex_ = nullptr;  // reused for per-frame images
+    int dynamic_w_ = 0;
+    int dynamic_h_ = 0;
 };
 
 }  // namespace

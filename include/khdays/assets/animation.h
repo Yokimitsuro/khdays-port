@@ -49,6 +49,10 @@ SkeletalAnimation load_nsbca(
     const std::filesystem::path& input_path,
     std::size_t animation_index = 0);
 
+// Same, from an in-memory NSBCA (e.g. a BCA0 carved out of a KAPH archive).
+SkeletalAnimation load_nsbca(
+    const std::uint8_t* data, std::size_t size, std::size_t animation_index = 0);
+
 // Sample the animation at a (possibly fractional) frame, returning one bone
 // (object) matrix per bone, column-major. Bones the animation does not drive
 // keep their rest matrix; extra rest bones are passed through unchanged.
