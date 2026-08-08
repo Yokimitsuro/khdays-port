@@ -129,12 +129,17 @@ void SaveFileScene::render(SceneManager&, Renderer& r) {
 
     // Deliberately absent, because the game data does not say and nothing here
     // will guess:
-    //   - what marks the selected row (the DS draws it blue; the plate cells
-    //     are black and every palette index is 0, so the highlight comes from
-    //     somewhere not yet found).
+    //   - what marks the selected row: the DS draws it blue, and a savestate
+    //     OBJ-layer capture (tools/savestate_obj) settles where it comes from --
+    //     the selected slot is NOT blue in the OBJ layer, so the highlight is a
+    //     BG-layer effect, not a plate cell or palette (the plates are black,
+    //     every OBJ palette index 0). Reproducing it needs the BG layer, which
+    //     the port's front-end does not model here yet.
     //   - the per-row contents (day number, difficulty, play time). Those are
     //     filled from save data the port has no reader for; their elements are
-    //     laid out here but show their placeholder cell.
+    //     laid out here but show their placeholder cell. (A savestate with a
+    //     real file confirms the shape: header "DÍA <n>", the difficulty word in
+    //     yellow, and the character face -- all save-data-driven.)
 }
 
 }  // namespace khdays::game::scenes

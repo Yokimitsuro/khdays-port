@@ -74,8 +74,15 @@ void TitleScene::confirm(SceneManager& manager) {
         break;
     case Level::Story:
         if (selected_ == 0) {
-            // NUEVA PARTIDA. The DS picks a difficulty (Principiante / Normal /
-            // Experto) before gameplay; that screen is not ported yet.
+            // NUEVA PARTIDA. The DS shows a difficulty selector before gameplay.
+            // Partly measured (tools/savestate_obj): the option names are
+            // UI/cm/cmo_&.p2 sub-file 3 cells 40 PRINCIPIANTE / 41 NORMAL /
+            // 42 EXPERTO (43 CRITICAL), and the OBJ layer is three plates at
+            // Y=56/72/88 with the selected one red plus a cursor. Not ported
+            // yet: the plate art is a tile surface (not a clean cell) and the
+            // name label positions live on the BG layer, which the savestate's
+            // register mirror does not expose -- building it now would mean
+            // inventing those positions, so it waits for a BG-layer reading.
             manager.change_scene(kSceneGameplay);
         }
         // CARGAR is unreachable while has_save_data() is false.
