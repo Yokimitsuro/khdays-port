@@ -204,8 +204,12 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     }
     if (logo_model_ && logo_model_->model.skinning
         && logo_model_->animation.frame_count > 0) {
-        // Pose the model at the current frame (one-shot: play once, then hold at
-        // the rest frame) and flatten just the "358/2 Days" quad over s7.
+        // The DS renders the whole logo as this 3D model and plays its BCA0
+        // (func_ov000_02059f50). Pose the model at the current frame (one-shot:
+        // play once, then hold at the last frame) and flatten the FULL logo over
+        // s7. At rest the model's logo covers s7's baked one (same art), so there
+        // is no doubling; during the entry the whole logo animates in (masked by
+        // the two-stage fade), which is the animation the port was missing.
         auto& lm = *logo_model_;
         const float last = static_cast<float>(lm.animation.frame_count - 1);
         const float f = static_cast<float>(frame_) < last
@@ -216,7 +220,7 @@ void TitleScene::render(SceneManager&, Renderer& r) {
         lm.model.palette =
             khdays::assets::compute_palette(*lm.model.skinning, objects);
         logo_frame_ = khdays::assets::compose_flat_model(
-            lm.model, lm.textures, 256, 192, 0.80F, 0.20F, "title_006");
+            lm.model, lm.textures, 256, 192, 0.80F, 0.20F);
         // logo_frame_'s pixels change every frame, so use the dynamic path (the
         // SDL cache is keyed by pointer and would otherwise serve stale pixels).
         draw_screen_dynamic(r, layout, logo_frame_, /*bottom=*/false, top_a);
