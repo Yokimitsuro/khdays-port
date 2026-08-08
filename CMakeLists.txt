@@ -389,6 +389,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-anim-channel-test
+        tests/cpp/test_anim_channel.cpp
+    )
+
+    target_link_libraries(
+        khdays-anim-channel-test
+        PRIVATE
+            khdays-game
+    )
+
+    add_executable(
         khdays-cell-test
         tests/cpp/test_cell.cpp
     )
@@ -422,6 +433,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-state-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-anim-channel-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
     else()
@@ -436,6 +448,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-state-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-anim-channel-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
@@ -451,6 +464,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-vfs-test)
     khdays_enable_sanitizers(khdays-game-test)
     khdays_enable_sanitizers(khdays-game-state-test)
+    khdays_enable_sanitizers(khdays-anim-channel-test)
     khdays_enable_sanitizers(khdays-cell-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
 
@@ -515,6 +529,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-anim-channel
+        COMMAND khdays-anim-channel-test
+    )
+
+    add_test(
         NAME khdays-ui-layout
         COMMAND khdays-ui-layout-test
     )
@@ -543,6 +562,7 @@ if(BUILD_TESTING)
             khdays-vfs-test
             khdays-game-test
             khdays-game-state-test
+            khdays-anim-channel-test
             khdays-cell-test
             khdays-ui-layout-test
     )
