@@ -86,23 +86,38 @@ void TitleScene::begin_page_slide(const float from) {
 void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
                                        const int page_dx, const int row_y,
                                        const int alpha) const {
-    if (!buttons_ || buttons_->cells.size() < 4) {
+    if (!buttons_ || buttons_->cells.empty()) {
         return;
     }
-    // The selection square's four glow frames are cells 0..3 of the ttl option
-    // pack (ttl_<lang>.p2 sub1 / ttl.p2 sub2). The DS cycles the highlight over
-    // 500 ms (func_ov000_0205157c); at 60 fps that is a 60-frame ping-pong
-    // (30 up, 30 down) across the four frames.
-    const int cyc = frame_ % 60;
-    const int tri = cyc < 30 ? cyc : 60 - cyc;   // 0..30..0
-    const int idx = std::min(3, tri * 4 / 30);   // 0..3
+    // The DS pulses the highlight's *blend level*, not its cell. Read out of
+    // func_ov000_0205157c: a Tween ping-pongs Q12 0x2000 <-> 0x8000 over 500 ms
+    // per leg, self-restarting reversed at each end, and the sampled value >> 12
+    // is stored as the DS blend coefficient, clamped to 0..16 (func_020327e0).
+    // The tween is mode 0, which FUN_02035da8 computes as
+    // from + elapsed * (to - from) / duration -- linear. nDirection starts 0, so
+    // the first leg runs 2 -> 8.
+    //
+    // (This replaces a cell-cycle over cells 0..3, which was an inference from
+    // the same 500 ms and does not appear in the DS code.)
+    constexpr int kPulseLegFrames = 30;  // 500 ms at 60 fps
+    constexpr int kPulseMin = 2;         // 0x2000 >> 12
+    constexpr int kPulseMax = 8;         // 0x8000 >> 12
+    constexpr int kBlendRange = 16;      // the DS blend coefficient's range
+    const int leg = frame_ % (kPulseLegFrames * 2);
+    const int rise = leg < kPulseLegFrames ? leg : kPulseLegFrames * 2 - leg;
+    const int level =
+        kPulseMin + (kPulseMax - kPulseMin) * rise / kPulseLegFrames;
+    // Fold the blend level into the screen's own fade-in alpha.
+    const int pulse_alpha = alpha * level / kBlendRange;
     // Exact position from the title savestate's bottom OAM: the cursor square is
     // sprite #0 at (0, 124) while the first option row sits at Y=116, i.e. +8
     // down from the row's top and flush left.
     constexpr int kCursorX = 0;
     constexpr int kCursorY = 8;
-    draw_overlay(r, layout, buttons_->cells[static_cast<std::size_t>(idx)],
-                 page_dx + kCursorX, row_y + kCursorY, /*bottom=*/true, alpha);
+    // Which cell the cursor draws is unchanged and still unverified; only the
+    // pulse is measured. Cell 0 is the resting frame of the same group.
+    draw_overlay(r, layout, buttons_->cells[0], page_dx + kCursorX,
+                 row_y + kCursorY, /*bottom=*/true, pulse_alpha);
 }
 
 std::size_t TitleScene::options(Option* out) const {
