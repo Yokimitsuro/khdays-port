@@ -1,6 +1,7 @@
 #include "khdays/game/scenes/title_scene.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "khdays/game/draw.h"
 #include "khdays/game/settings.h"
@@ -10,6 +11,11 @@ namespace khdays::game::scenes {
 namespace {
 constexpr char kTitleTheme[] = "Title_BGM_PCM8";  // the title BGM (SDAT stream)
 
+// Distance the option block travels when the page/level changes: one screen
+// width (the DS lays the menu pages out one screen apart). Port rendition of the
+// measured page-scroll ease; see the header.
+constexpr float kPagePitch = 256.0F;
+
 // The DS only offers CARGAR once a save file exists. The port has no save
 // system yet, so no save is present.
 bool has_save_data() {
@@ -18,11 +24,15 @@ bool has_save_data() {
 }  // namespace
 
 void TitleScene::on_enter(SceneManager& manager) {
-    // The title's two screens live in ttl.p2 sub-file 1 (a D2KP background pack):
-    // screen 7 / tiles 3 / palette 0 = the KINGDOM HEARTS logo, and screen 3 /
-    // tiles 1 / palette 1 = the character illustration. The menu options are the
-    // real localized OBJ textures from ttl_<lang>.p2.
-    logo3d_ = khdays::resource::load_title_logo();  // real KH logo on white
+    // The title's two screens live in ttl.p2 sub-file 1 (a D2KP background pack),
+    // paired by data_ov000_0205a9d4: screen 7 / tiles 3 / palette 3 = the top
+    // screen (Disney + SQUARE ENIX + the KINGDOM HEARTS 358/2 Days logo), and
+    // screen 3 / tiles 1 / palette 1 = the bottom character illustration. The
+    // menu options are the real localized OBJ textures from ttl_<lang>.p2.
+    //
+    // (The port used to draw a 3D BMD0 logo on white here; that dropped the
+    // Disney/SQUARE ENIX logos and did not match the DS's 2D screen.)
+    top_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 7, 3, 3);
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     // English is the odd one out: there is no ttl_en.p2 — the English option
     // textures are the base file's sub-file 2, while the other four ship as
@@ -34,6 +44,11 @@ void TitleScene::on_enter(SceneManager& manager) {
     if (auto* music = manager.music()) {
         music->play_music(kTitleTheme);
     }
+    begin_page_slide(kPagePitch);  // the menu slides in as the title appears
+}
+
+void TitleScene::begin_page_slide(const float from) {
+    page_x_ = from;
 }
 
 std::size_t TitleScene::options(Option* out) const {
@@ -71,6 +86,7 @@ void TitleScene::confirm(SceneManager& manager) {
     case Level::Root:
         level_ = selected_ == 0 ? Level::Story : Level::Mission;
         selected_ = 0;
+        begin_page_slide(kPagePitch);  // deeper: new page slides in from the right
         break;
     case Level::Story:
         if (selected_ == 0) {
@@ -102,6 +118,13 @@ void TitleScene::update(SceneManager& manager) {
     ++frame_;
     const auto& in = manager.input();
 
+    // Page-scroll ease (func_ov000_02050ec4): close a quarter of the gap to the
+    // resting position each frame, snapping once the step is under 1/8 px.
+    page_x_ += (0.0F - page_x_) * 0.25F;
+    if (std::abs(page_x_) < 0.125F) {
+        page_x_ = 0.0F;
+    }
+
     Option opts[2];
     const int count = static_cast<int>(options(opts));
     if (in.just_pressed(Button::Down)) {
@@ -116,6 +139,7 @@ void TitleScene::update(SceneManager& manager) {
     if (in.just_pressed(Button::B) && level_ != Level::Root) {
         level_ = Level::Root;
         selected_ = 0;
+        begin_page_slide(-kPagePitch);  // back: page slides in from the left
     }
 }
 
@@ -123,12 +147,15 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     r.clear(Color{0, 0, 0, 255});
     const auto layout = dual_screen_layout(r);
 
-    if (logo3d_) {
-        draw_screen(r, layout, *logo3d_, /*bottom=*/false);  // top: white + logo
+    if (top_) {
+        draw_screen(r, layout, *top_, /*bottom=*/false);  // Disney/SE + KH logo
     }
     if (illustration_) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true);
     }
+
+    // The option block eases horizontally into place (see update()).
+    const int page_dx = static_cast<int>(std::lround(page_x_));
 
     // The current level's options on the bottom screen, red for the selected one
     // and gray for the rest.
@@ -142,8 +169,8 @@ void TitleScene::render(SceneManager&, Renderer& r) {
                 && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
                 // Real positions from the ov000 sub-engine OAM: the option slots
                 // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
-                // 28px row pitch.
-                draw_overlay(r, layout, buttons_->cells[cell], 0,
+                // 28px row pitch. page_dx applies the page-scroll ease.
+                draw_overlay(r, layout, buttons_->cells[cell], page_dx,
                              116 + static_cast<int>(i) * 28, /*bottom=*/true);
             }
         }
