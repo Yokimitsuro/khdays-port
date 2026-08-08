@@ -50,11 +50,15 @@ replacement:
 
 - `TitleScene::kPagePitch = 256.0F` — "port rendition" of the page scroll. ov000
   does not use a uniform pitch; see §3.
-- `TitleScene::draw_selection_cursor` cycles the highlight through **cells 0..3**
-  on a 60-frame ping-pong. `docs/RENDER_NODES.md` records the DS behaviour
-  (`func_ov000_0205157c`) as a **ping-pong alpha tween 2/16..8/16 over 500 ms**.
-  One of the two readings is wrong; neither has been checked against the running
-  game since.
+- ~~`TitleScene::draw_selection_cursor` cycles the highlight through cells 0..3~~
+  **Resolved.** `func_ov000_0205157c` pulses a **blend level**, not a cell: a
+  Tween ping-pongs Q12 `0x2000` ↔ `0x8000` over 500 ms per leg, restarting
+  reversed at each end, and the sample `>> 12` is stored as the DS blend
+  coefficient clamped to 0..16 (`func_020327e0`). Mode 0 is linear
+  (`FUN_02035da8` = `from + elapsed * (to - from) / duration`), and `nDirection`
+  starts 0 so the first leg runs 2 → 8. `RENDER_NODES.md` had it right; the cell
+  cycle was an inference from the same 500 ms. Now drawn as a linear 2/16..8/16
+  level on the resting cell. *Which* cell the cursor uses is still unverified.
 - `has_save_data()` is hard-coded `false`, so CARGAR is never reachable.
 - `BootLogoScene` skips the whole logo chain on A or Start. Whether the DS
   accepts a skip there, and on which button, is **not established**.
