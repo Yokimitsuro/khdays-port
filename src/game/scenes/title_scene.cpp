@@ -69,11 +69,11 @@ void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layo
     const int cyc = frame_ % 60;
     const int tri = cyc < 30 ? cyc : 60 - cyc;   // 0..30..0
     const int idx = std::min(3, tri * 4 / 30);   // 0..3
-    // The option bar (drawn just below this) carries a hollow square at its
-    // left; the glow frame sits over it. The offset aligns to that rendered
-    // square; a title-screen savestate would pin the exact OAM position.
+    // Exact position from the title savestate's bottom OAM: the cursor square is
+    // sprite #0 at (0, 124) while the first option row sits at Y=116, i.e. +8
+    // down from the row's top and flush left.
     constexpr int kCursorX = 0;
-    constexpr int kCursorY = 2;
+    constexpr int kCursorY = 8;
     draw_overlay(r, layout, buttons_->cells[static_cast<std::size_t>(idx)],
                  page_dx + kCursorX, row_y + kCursorY, /*bottom=*/true);
 }
