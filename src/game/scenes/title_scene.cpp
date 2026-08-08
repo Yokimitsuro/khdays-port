@@ -48,6 +48,23 @@ void TitleScene::on_enter(SceneManager& manager) {
     // is posed per frame with the shared animator (sample_animation ->
     // compute_palette -> compose_flat_model), instead of a static overlay.
     logo_model_ = khdays::resource::load_title_logo_model();
+    // The intro plays the logo's own animation once; its length is the BCA0's.
+    intro_len_ = (logo_model_ && logo_model_->animation.frame_count > 0)
+                     ? logo_model_->animation.frame_count
+                     : 0;
+    // The colour title (phase 2) shows the "358/2 Days" subtitle too, which s7
+    // lacks. Compose it once from the model's rest pose (last frame), just the
+    // title_006 quad, so it can be laid over s7 statically.
+    if (logo_model_ && logo_model_->model.skinning && intro_len_ > 0) {
+        auto& lm = *logo_model_;
+        const auto objects = khdays::assets::sample_animation(
+            lm.animation, static_cast<float>(intro_len_ - 1),
+            lm.model.object_matrices);
+        lm.model.palette =
+            khdays::assets::compute_palette(*lm.model.skinning, objects);
+        rest_358_ = khdays::assets::compose_flat_model(
+            lm.model, lm.textures, 256, 192, 0.80F, 0.20F, "title_006");
+    }
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     // English is the odd one out: there is no ttl_en.p2 — the English option
     // textures are the base file's sub-file 2, while the other four ship as
@@ -153,6 +170,10 @@ void TitleScene::confirm(SceneManager& manager) {
 
 void TitleScene::update(SceneManager& manager) {
     ++frame_;
+    // During the intro (the gray logo animation) the menu is not up yet.
+    if (frame_ < intro_len_) {
+        return;
+    }
     const auto& in = manager.input();
 
     // Page-scroll ease (func_ov000_02050ec4): close a quarter of the gap to the
@@ -184,46 +205,48 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     r.clear(Color{0, 0, 0, 255});
     const auto layout = dual_screen_layout(r);
 
-    // Title entry (func_ov000_0204e270): a two-stage fade from black. The top
-    // screen settles over frames 0..0x3c; the bottom stays black until 0x3c,
-    // then fades in over 0x3c..0x5c (the DS ramps the sub master brightness
-    // 0x10->0 there). The frame thresholds are the game's; the DS drives it via
-    // blend-brightness registers, reproduced here as a plain alpha fade.
+    // Phase 1 -- intro: the gray 3D logo animates ALONE on the top screen while
+    // the bottom stays black. When its animation ends the title takes over (the
+    // DS ticks the logo in func_ov000_0204ef34, then hands off to the title via
+    // func_ov000_0204ede0). Drawn with no s7 behind it, so the model reads gray
+    // as on the DS -- the colour comes later, from the 2D title.
+    if (logo_model_ && logo_model_->model.skinning
+        && logo_model_->animation.frame_count > 0 && frame_ < intro_len_) {
+        auto& lm = *logo_model_;
+        const auto objects = khdays::assets::sample_animation(
+            lm.animation, static_cast<float>(frame_), lm.model.object_matrices);
+        lm.model.palette =
+            khdays::assets::compute_palette(*lm.model.skinning, objects);
+        // The gray intro logo shows KINGDOM HEARTS + crown + heart, but NOT the
+        // "358/2 Days" subtitle (that appears only with the colour title), so
+        // exclude the title_006 quad here.
+        logo_frame_ = khdays::assets::compose_flat_model(
+            lm.model, lm.textures, 256, 192, 0.80F, 0.20F,
+            /*only_texture=*/"", /*exclude_texture=*/"title_006");
+        // Per-frame pixels -> dynamic path (the SDL cache is pointer-keyed).
+        draw_screen_dynamic(r, layout, logo_frame_, /*bottom=*/false, 255);
+        return;  // bottom black; the menu is not up during the intro
+    }
+
+    // Phase 2 -- the title on both screens, fading in (func_ov000_0204e270): a
+    // two-stage fade from black, timed from when the intro ended. The top settles
+    // over t=0..0x3c; the bottom stays black until 0x3c then fades over
+    // 0x3c..0x5c (the DS ramps sub master brightness 0x10->0 there).
+    const int t = frame_ - intro_len_;
     constexpr int kTopEnd = 0x3c;     // 60
     constexpr int kBottomEnd = 0x5c;  // 92
-    const int top_a = frame_ >= kTopEnd ? 255 : 255 * frame_ / kTopEnd;
+    const int top_a = t >= kTopEnd ? 255 : 255 * t / kTopEnd;
     const int bottom_a =
-        frame_ <= kTopEnd
+        t <= kTopEnd
             ? 0
-            : (frame_ >= kBottomEnd
-                   ? 255
-                   : 255 * (frame_ - kTopEnd) / (kBottomEnd - kTopEnd));
+            : (t >= kBottomEnd ? 255
+                               : 255 * (t - kTopEnd) / (kBottomEnd - kTopEnd));
 
     if (top_) {
         draw_screen(r, layout, *top_, /*bottom=*/false, top_a);
     }
-    if (logo_model_ && logo_model_->model.skinning
-        && logo_model_->animation.frame_count > 0) {
-        // The DS renders the whole logo as this 3D model and plays its BCA0
-        // (func_ov000_02059f50). Pose the model at the current frame (one-shot:
-        // play once, then hold at the last frame) and flatten the FULL logo over
-        // s7. At rest the model's logo covers s7's baked one (same art), so there
-        // is no doubling; during the entry the whole logo animates in (masked by
-        // the two-stage fade), which is the animation the port was missing.
-        auto& lm = *logo_model_;
-        const float last = static_cast<float>(lm.animation.frame_count - 1);
-        const float f = static_cast<float>(frame_) < last
-                            ? static_cast<float>(frame_)
-                            : last;
-        const auto objects = khdays::assets::sample_animation(
-            lm.animation, f, lm.model.object_matrices);
-        lm.model.palette =
-            khdays::assets::compute_palette(*lm.model.skinning, objects);
-        logo_frame_ = khdays::assets::compose_flat_model(
-            lm.model, lm.textures, 256, 192, 0.80F, 0.20F);
-        // logo_frame_'s pixels change every frame, so use the dynamic path (the
-        // SDL cache is keyed by pointer and would otherwise serve stale pixels).
-        draw_screen_dynamic(r, layout, logo_frame_, /*bottom=*/false, top_a);
+    if (!rest_358_.rgba.empty()) {
+        draw_screen(r, layout, rest_358_, /*bottom=*/false, top_a);
     }
     if (illustration_) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true, bottom_a);

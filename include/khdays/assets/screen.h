@@ -65,6 +65,7 @@ DecodedTexture compose_flat_model(
     int height = 192,
     float fill = 0.86F,
     float top_margin = 0.06F,
-    const std::string& only_texture = "");
+    const std::string& only_texture = "",
+    const std::string& exclude_texture = "");
 
 }  // namespace khdays::assets

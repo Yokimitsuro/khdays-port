@@ -103,7 +103,7 @@ int run_game_demo() {
 
     std::cout << "boot (fresh) ...\n";
     game.boot(0);
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 30; ++i) {
         game.step();
     }
     std::cout << "ran " << game.frame() << " frames; final scene "
@@ -536,7 +536,7 @@ int main(int argc, char* argv[]) {
                 const auto show = [](const char* label,
                                      const std::vector<std::string>& items) {
                     std::cout << label << ": " << items.size() << '\n';
-                    for (std::size_t i = 0; i < items.size() && i < 8; ++i) {
+                    for (std::size_t i = 0; i < items.size() && i < 30; ++i) {
                         if (!items[i].empty()) {
                             std::cout << "    " << items[i] << '\n';
                         }
@@ -677,7 +677,7 @@ int main(int argc, char* argv[]) {
                 return std::make_unique<khdays::game::scenes::TitleScene>();
             });
             manager.start(khdays::game::kSceneTitle);
-            for (int i = 0; i < 95; ++i) {  // settle past the fade-in
+            for (int i = 0; i < 240; ++i) {  // settle past the fade-in
                 manager.set_input(khdays::game::Input{});
                 manager.step();
             }

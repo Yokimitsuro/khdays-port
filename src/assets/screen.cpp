@@ -166,7 +166,7 @@ DecodedTexture compose_flat_model(
     const NeutralModel& model,
     const std::map<std::string, DecodedTexture>& textures, const int width,
     const int height, const float fill, const float top_margin,
-    const std::string& only_texture) {
+    const std::string& only_texture, const std::string& exclude_texture) {
     DecodedTexture frame;
     frame.name = "flat-model";
     frame.width = width;
@@ -221,6 +221,9 @@ DecodedTexture compose_flat_model(
         const NeutralMesh& mesh = *mesh_ptr;
         if (!only_texture.empty() && mesh.texture_name != only_texture) {
             continue;  // draw only the requested sub-part (keeps full-model bounds)
+        }
+        if (!exclude_texture.empty() && mesh.texture_name == exclude_texture) {
+            continue;  // draw everything except this sub-part
         }
         const auto tex_it = textures.find(mesh.texture_name);
         const DecodedTexture* tex =

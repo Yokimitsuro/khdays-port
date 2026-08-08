@@ -57,12 +57,14 @@ private:
     // The KH logo as an animatable model (its BCA0 plays the "358/2 Days"
     // entry); logo_frame_ holds the flattened current frame.
     std::optional<khdays::resource::TitleLogoModel> logo_model_;
-    khdays::assets::DecodedTexture logo_frame_;
+    khdays::assets::DecodedTexture logo_frame_;  // per-frame intro pose
+    khdays::assets::DecodedTexture rest_358_;    // static "358/2 Days" for the title
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
     std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
     Level level_ = Level::Root;
     int selected_ = 0;
-    int frame_ = 0;  // for the fade-in
+    int frame_ = 0;      // frames since the scene began
+    int intro_len_ = 0;  // frames the intro logo animation runs before the title
     // Horizontal ease of the option block when the page/level changes. The DS
     // eases each menu page toward its resting position (func_ov000_02050ec4:
     // close a quarter of the gap per frame, snap below 1/8 px). The easing math
