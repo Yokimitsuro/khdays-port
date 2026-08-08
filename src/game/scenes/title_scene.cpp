@@ -51,6 +51,27 @@ void TitleScene::begin_page_slide(const float from) {
     page_x_ = from;
 }
 
+void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
+                                       const int page_dx, const int row_y) const {
+    if (!buttons_ || buttons_->cells.size() < 4) {
+        return;
+    }
+    // The selection square's four glow frames are cells 0..3 of the ttl option
+    // pack (ttl_<lang>.p2 sub1 / ttl.p2 sub2). The DS cycles the highlight over
+    // 500 ms (func_ov000_0205157c); at 60 fps that is a 60-frame ping-pong
+    // (30 up, 30 down) across the four frames.
+    const int cyc = frame_ % 60;
+    const int tri = cyc < 30 ? cyc : 60 - cyc;   // 0..30..0
+    const int idx = std::min(3, tri * 4 / 30);   // 0..3
+    // The option bar (drawn just below this) carries a hollow square at its
+    // left; the glow frame sits over it. The offset aligns to that rendered
+    // square; a title-screen savestate would pin the exact OAM position.
+    constexpr int kCursorX = 0;
+    constexpr int kCursorY = 2;
+    draw_overlay(r, layout, buttons_->cells[static_cast<std::size_t>(idx)],
+                 page_dx + kCursorX, row_y + kCursorY, /*bottom=*/true);
+}
+
 std::size_t TitleScene::options(Option* out) const {
     // ttl_<lang>.p2 sub-file 1 cells, as {selected (red bar), normal (gray bar)}.
     constexpr Option kStoryMode{4, 5};       // MODO HISTORIA
@@ -163,23 +184,19 @@ void TitleScene::render(SceneManager&, Renderer& r) {
         Option opts[2];
         const std::size_t count = options(opts);
         for (std::size_t i = 0; i < count; ++i) {
-            const int cell = static_cast<int>(i) == selected_ ? opts[i].selected
-                                                              : opts[i].normal;
+            const bool sel = static_cast<int>(i) == selected_;
+            const int cell = sel ? opts[i].selected : opts[i].normal;
+            const int y = 116 + static_cast<int>(i) * 28;
             if (cell >= 0
                 && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
                 // Real positions from the ov000 sub-engine OAM: the option slots
                 // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
                 // 28px row pitch. page_dx applies the page-scroll ease.
-                //
-                // The DS pulses the selection's alpha between blend 2/16 and
-                // 8/16 over 500 ms (func_ov000_0205157c), but that pulse is on a
-                // separate cursor object, NOT the option bar. This localized
-                // cell bakes the bar and its "square" together, so pulsing it
-                // washes the whole bar out. The bar is kept solid until the
-                // cursor sprite is drawn as its own layer (then pulse only that,
-                // via draw_overlay's alpha argument, which now exists).
-                draw_overlay(r, layout, buttons_->cells[cell], page_dx,
-                             116 + static_cast<int>(i) * 28, /*bottom=*/true);
+                draw_overlay(r, layout, buttons_->cells[cell], page_dx, y,
+                             /*bottom=*/true);
+            }
+            if (sel) {
+                draw_selection_cursor(r, layout, page_dx, y);
             }
         }
     }

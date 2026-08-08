@@ -7,6 +7,10 @@
 #include "khdays/game/scene.h"
 #include "khdays/resource/ui_content.h"  // SpriteSet
 
+namespace khdays::game {
+struct DualScreenLayout;  // defined in draw.h
+}  // namespace khdays::game
+
 namespace khdays::game::scenes {
 
 // Scene 1 (ov000): the title screen — and the whole front-end menu. Two DS
@@ -45,6 +49,9 @@ private:
     void confirm(SceneManager& manager);
     // Start the option block sliding in from `from` px; it eases to rest (0).
     void begin_page_slide(float from);
+    // Draw the pulsing selection square over the selected option row at `row_y`.
+    void draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
+                               int page_dx, int row_y) const;
 
     std::optional<khdays::assets::DecodedTexture> top_;           // top screen BG
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
