@@ -373,6 +373,38 @@ public:
         SDL_RenderTexture(renderer_, texture, nullptr, &dst);
     }
 
+    void draw_image_affine(
+        const std::uint8_t* rgba, int width, int height, const float m[6],
+        int alpha) override {
+        if (rgba == nullptr || width <= 0 || height <= 0) {
+            return;
+        }
+        SDL_Texture* texture = upload(rgba, width, height);
+        if (texture == nullptr) {
+            return;
+        }
+        const float fa =
+            static_cast<float>(alpha < 0 ? 0 : alpha > 255 ? 255 : alpha) / 255.0F;
+        const SDL_FColor col{1.0F, 1.0F, 1.0F, fa};
+        // Source corners (TL, TR, BR, BL) mapped through the 2x3 to the screen.
+        const float sx[4] = {0.0F, static_cast<float>(width),
+                             static_cast<float>(width), 0.0F};
+        const float sy[4] = {0.0F, 0.0F, static_cast<float>(height),
+                             static_cast<float>(height)};
+        const float uv[4][2] = {{0.0F, 0.0F}, {1.0F, 0.0F}, {1.0F, 1.0F},
+                                {0.0F, 1.0F}};
+        SDL_Vertex v[4];
+        for (int k = 0; k < 4; ++k) {
+            v[k].position.x = m[0] * sx[k] + m[2] * sy[k] + m[4];
+            v[k].position.y = m[1] * sx[k] + m[3] * sy[k] + m[5];
+            v[k].color = col;
+            v[k].tex_coord.x = uv[k][0];
+            v[k].tex_coord.y = uv[k][1];
+        }
+        const int indices[6] = {0, 1, 2, 0, 2, 3};
+        SDL_RenderGeometry(renderer_, texture, v, 4, indices, 6);
+    }
+
     int width() const override {
         int w = 0;
         int h = 0;

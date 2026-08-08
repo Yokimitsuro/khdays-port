@@ -1,5 +1,7 @@
 #include "khdays/game/software_renderer.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace khdays::game {
@@ -64,6 +66,74 @@ void SoftwareRenderer::draw_image(const std::uint8_t* src, int sw, int sh,
                 src + (static_cast<std::size_t>(sy) * sw + sx) * 4U;
             const std::uint8_t a =
                 static_cast<std::uint8_t>(p[3] * alpha / 255);
+            if (a == 0U) {
+                continue;
+            }
+            std::uint8_t* d =
+                &rgba_[(static_cast<std::size_t>(dy) * width_ + dx) * 4U];
+            if (a == 255U) {
+                d[0] = p[0];
+                d[1] = p[1];
+                d[2] = p[2];
+            } else {
+                d[0] = static_cast<std::uint8_t>((p[0] * a + d[0] * (255 - a)) / 255);
+                d[1] = static_cast<std::uint8_t>((p[1] * a + d[1] * (255 - a)) / 255);
+                d[2] = static_cast<std::uint8_t>((p[2] * a + d[2] * (255 - a)) / 255);
+            }
+            d[3] = 255U;
+        }
+    }
+}
+
+void SoftwareRenderer::draw_image_affine(const std::uint8_t* src, int sw, int sh,
+                                         const float m[6], int alpha) {
+    if (src == nullptr || sw <= 0 || sh <= 0) {
+        return;
+    }
+    if (alpha < 0) {
+        alpha = 0;
+    } else if (alpha > 255) {
+        alpha = 255;
+    }
+    // screen = M * (sx, sy) + t; invert the 2x2 to map each screen pixel back.
+    const float det = m[0] * m[3] - m[1] * m[2];
+    if (det > -1e-6F && det < 1e-6F) {
+        return;  // degenerate
+    }
+    const float i00 = m[3] / det;
+    const float i01 = -m[2] / det;
+    const float i10 = -m[1] / det;
+    const float i11 = m[0] / det;
+
+    // Screen-space bounding box of the four source corners.
+    const float cx[4] = {0.0F, static_cast<float>(sw), 0.0F, static_cast<float>(sw)};
+    const float cy[4] = {0.0F, 0.0F, static_cast<float>(sh), static_cast<float>(sh)};
+    float min_x = 1e9F, max_x = -1e9F, min_y = 1e9F, max_y = -1e9F;
+    for (int k = 0; k < 4; ++k) {
+        const float px = m[0] * cx[k] + m[2] * cy[k] + m[4];
+        const float py = m[1] * cx[k] + m[3] * cy[k] + m[5];
+        min_x = std::min(min_x, px);
+        max_x = std::max(max_x, px);
+        min_y = std::min(min_y, py);
+        max_y = std::max(max_y, py);
+    }
+    const int lo_x = std::max(0, static_cast<int>(std::floor(min_x)));
+    const int hi_x = std::min(width_ - 1, static_cast<int>(std::ceil(max_x)));
+    const int lo_y = std::max(0, static_cast<int>(std::floor(min_y)));
+    const int hi_y = std::min(height_ - 1, static_cast<int>(std::ceil(max_y)));
+
+    for (int dy = lo_y; dy <= hi_y; ++dy) {
+        for (int dx = lo_x; dx <= hi_x; ++dx) {
+            const float rx = static_cast<float>(dx) + 0.5F - m[4];
+            const float ry = static_cast<float>(dy) + 0.5F - m[5];
+            const int sx = static_cast<int>(std::floor(i00 * rx + i01 * ry));
+            const int sy = static_cast<int>(std::floor(i10 * rx + i11 * ry));
+            if (sx < 0 || sx >= sw || sy < 0 || sy >= sh) {
+                continue;
+            }
+            const std::uint8_t* p =
+                src + (static_cast<std::size_t>(sy) * sw + sx) * 4U;
+            const std::uint8_t a = static_cast<std::uint8_t>(p[3] * alpha / 255);
             if (a == 0U) {
                 continue;
             }

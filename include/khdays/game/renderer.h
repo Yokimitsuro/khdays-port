@@ -42,6 +42,29 @@ public:
         int dst_height = 0,
         int alpha = 255) = 0;
 
+    // Draw an RGBA8888 image under a 2x3 affine transform mapping source pixel
+    // (sx, sy) to screen: screen_x = m[0]*sx + m[2]*sy + m[4];
+    // screen_y = m[1]*sx + m[3]*sy + m[5]. Covers translation, scale and
+    // rotation (the node-transform cases). `alpha` (0..255) modulates the image's
+    // own alpha. `rgba` must stay valid for the frame. The default implementation
+    // falls back to an axis-aligned draw when the matrix has no rotation/shear.
+    virtual void draw_image_affine(
+        const std::uint8_t* rgba,
+        int width,
+        int height,
+        const float matrix[6],
+        int alpha = 255) {
+        // Fallback for renderers without a true affine path: handle pure
+        // scale + translation (no rotation/shear) through the axis-aligned draw.
+        if (rgba == nullptr || width <= 0 || height <= 0) {
+            return;
+        }
+        const int dst_w = static_cast<int>(matrix[0] * static_cast<float>(width));
+        const int dst_h = static_cast<int>(matrix[3] * static_cast<float>(height));
+        draw_image(rgba, width, height, static_cast<int>(matrix[4]),
+                   static_cast<int>(matrix[5]), dst_w, dst_h, alpha);
+    }
+
     // Current output size in pixels (for centering/layout).
     virtual int width() const = 0;
     virtual int height() const = 0;

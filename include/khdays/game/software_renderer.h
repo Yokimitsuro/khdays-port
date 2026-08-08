@@ -21,6 +21,8 @@ public:
     void draw_image(const std::uint8_t* rgba, int width, int height, int x,
                     int y, int dst_width, int dst_height,
                     int alpha = 255) override;
+    void draw_image_affine(const std::uint8_t* rgba, int width, int height,
+                           const float matrix[6], int alpha = 255) override;
     int width() const override { return width_; }
     int height() const override { return height_; }
 
