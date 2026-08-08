@@ -214,6 +214,8 @@ void OverlayUi::save_config() const {
         return;
     }
     file << "volume=" << volume_ << '\n';
+    file << "language="
+         << khdays::game::language_code(khdays::game::language()) << '\n';
     file << "layout="
          << (khdays::game::screen_layout() == khdays::game::ScreenLayout::Horizontal
                  ? "sidebyside"
