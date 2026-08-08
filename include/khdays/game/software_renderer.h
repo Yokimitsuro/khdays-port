@@ -19,7 +19,8 @@ public:
     void clear(Color color) override;
     void fill_overlay(Color color) override;
     void draw_image(const std::uint8_t* rgba, int width, int height, int x,
-                    int y, int dst_width, int dst_height) override;
+                    int y, int dst_width, int dst_height,
+                    int alpha = 255) override;
     int width() const override { return width_; }
     int height() const override { return height_; }
 

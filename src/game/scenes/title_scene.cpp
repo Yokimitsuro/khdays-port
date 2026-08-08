@@ -170,6 +170,14 @@ void TitleScene::render(SceneManager&, Renderer& r) {
                 // Real positions from the ov000 sub-engine OAM: the option slots
                 // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
                 // 28px row pitch. page_dx applies the page-scroll ease.
+                //
+                // The DS pulses the selection's alpha between blend 2/16 and
+                // 8/16 over 500 ms (func_ov000_0205157c), but that pulse is on a
+                // separate cursor object, NOT the option bar. This localized
+                // cell bakes the bar and its "square" together, so pulsing it
+                // washes the whole bar out. The bar is kept solid until the
+                // cursor sprite is drawn as its own layer (then pulse only that,
+                // via draw_overlay's alpha argument, which now exists).
                 draw_overlay(r, layout, buttons_->cells[cell], page_dx,
                              116 + static_cast<int>(i) * 28, /*bottom=*/true);
             }

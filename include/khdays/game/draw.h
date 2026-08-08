@@ -78,11 +78,12 @@ inline void draw_screen(Renderer& r, const DualScreenLayout& l,
 // Draw an overlay image at virtual (vx, vy) within a screen, scaled to match.
 inline void draw_overlay(Renderer& r, const DualScreenLayout& l,
                          const khdays::assets::DecodedTexture& image,
-                         const int vx, const int vy, const bool bottom) {
+                         const int vx, const int vy, const bool bottom,
+                         const int alpha = 255) {
     r.draw_image(image.rgba.data(), image.width, image.height,
                  l.screen_x(bottom) + vx * l.scale,
                  l.screen_y(bottom) + vy * l.scale, image.width * l.scale,
-                 image.height * l.scale);
+                 image.height * l.scale, alpha);
 }
 
 }  // namespace khdays::game

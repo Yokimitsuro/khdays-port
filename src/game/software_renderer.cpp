@@ -32,9 +32,15 @@ void SoftwareRenderer::fill_overlay(const Color color) {
 }
 
 void SoftwareRenderer::draw_image(const std::uint8_t* src, int sw, int sh,
-                                  const int x, const int y, int dw, int dh) {
+                                  const int x, const int y, int dw, int dh,
+                                  int alpha) {
     if (src == nullptr || sw <= 0 || sh <= 0) {
         return;
+    }
+    if (alpha < 0) {
+        alpha = 0;
+    } else if (alpha > 255) {
+        alpha = 255;
     }
     if (dw <= 0) {
         dw = sw;
@@ -56,7 +62,8 @@ void SoftwareRenderer::draw_image(const std::uint8_t* src, int sw, int sh,
             const int sx = i * sw / dw;
             const std::uint8_t* p =
                 src + (static_cast<std::size_t>(sy) * sw + sx) * 4U;
-            const std::uint8_t a = p[3];
+            const std::uint8_t a =
+                static_cast<std::uint8_t>(p[3] * alpha / 255);
             if (a == 0U) {
                 continue;
             }

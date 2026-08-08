@@ -353,7 +353,7 @@ public:
 
     void draw_image(
         const std::uint8_t* rgba, int width, int height, int x, int y,
-        int dst_width, int dst_height) override {
+        int dst_width, int dst_height, int alpha) override {
         if (rgba == nullptr || width <= 0 || height <= 0) {
             return;
         }
@@ -361,6 +361,10 @@ public:
         if (texture == nullptr) {
             return;
         }
+        // Textures are cached and shared, so set the modulation every draw
+        // (it persists on the texture otherwise).
+        SDL_SetTextureAlphaMod(
+            texture, static_cast<Uint8>(alpha < 0 ? 0 : alpha > 255 ? 255 : alpha));
         SDL_FRect dst{
             static_cast<float>(x),
             static_cast<float>(y),
