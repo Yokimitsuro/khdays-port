@@ -677,7 +677,7 @@ int main(int argc, char* argv[]) {
                 return std::make_unique<khdays::game::scenes::TitleScene>();
             });
             manager.start(khdays::game::kSceneTitle);
-            for (int i = 0; i < 30; ++i) {  // settle past the fade-in
+            for (int i = 0; i < 95; ++i) {  // settle past the fade-in
                 manager.set_input(khdays::game::Input{});
                 manager.step();
             }

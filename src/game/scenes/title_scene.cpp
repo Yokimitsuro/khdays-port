@@ -65,7 +65,8 @@ void TitleScene::begin_page_slide(const float from) {
 }
 
 void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
-                                       const int page_dx, const int row_y) const {
+                                       const int page_dx, const int row_y,
+                                       const int alpha) const {
     if (!buttons_ || buttons_->cells.size() < 4) {
         return;
     }
@@ -82,7 +83,7 @@ void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layo
     constexpr int kCursorX = 0;
     constexpr int kCursorY = 8;
     draw_overlay(r, layout, buttons_->cells[static_cast<std::size_t>(idx)],
-                 page_dx + kCursorX, row_y + kCursorY, /*bottom=*/true);
+                 page_dx + kCursorX, row_y + kCursorY, /*bottom=*/true, alpha);
 }
 
 std::size_t TitleScene::options(Option* out) const {
@@ -181,19 +182,29 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     r.clear(Color{0, 0, 0, 255});
     const auto layout = dual_screen_layout(r);
 
+    // Title entry (func_ov000_0204e270): a two-stage fade from black. The top
+    // screen settles over frames 0..0x3c; the bottom stays black until 0x3c,
+    // then fades in over 0x3c..0x5c (the DS ramps the sub master brightness
+    // 0x10->0 there). The frame thresholds are the game's; the DS drives it via
+    // blend-brightness registers, reproduced here as a plain alpha fade.
+    constexpr int kTopEnd = 0x3c;     // 60
+    constexpr int kBottomEnd = 0x5c;  // 92
+    const int top_a = frame_ >= kTopEnd ? 255 : 255 * frame_ / kTopEnd;
+    const int bottom_a =
+        frame_ <= kTopEnd
+            ? 0
+            : (frame_ >= kBottomEnd
+                   ? 255
+                   : 255 * (frame_ - kTopEnd) / (kBottomEnd - kTopEnd));
+
     if (top_) {
-        draw_screen(r, layout, *top_, /*bottom=*/false);  // Disney/SE + scene BG
+        draw_screen(r, layout, *top_, /*bottom=*/false, top_a);
     }
     if (logo_) {
-        // The logo fades in over the settled background as the title appears.
-        // The DS transitions into the title with a fade (func_ov000_0204ede0);
-        // the exact per-element timing is not measured, so this is a plain fade.
-        constexpr int kLogoFade = 40;
-        const int a = frame_ >= kLogoFade ? 255 : 255 * frame_ / kLogoFade;
-        draw_screen(r, layout, *logo_, /*bottom=*/false, a);
+        draw_screen(r, layout, *logo_, /*bottom=*/false, top_a);
     }
     if (illustration_) {
-        draw_screen(r, layout, *illustration_, /*bottom=*/true);
+        draw_screen(r, layout, *illustration_, /*bottom=*/true, bottom_a);
     }
 
     // The option block eases horizontally into place (see update()).
@@ -212,21 +223,15 @@ void TitleScene::render(SceneManager&, Renderer& r) {
                 && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
                 // Real positions from the ov000 sub-engine OAM: the option slots
                 // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
-                // 28px row pitch. page_dx applies the page-scroll ease.
+                // 28px row pitch. page_dx applies the page-scroll ease; bottom_a
+                // fades the bottom screen in with the entry.
                 draw_overlay(r, layout, buttons_->cells[cell], page_dx, y,
-                             /*bottom=*/true);
+                             /*bottom=*/true, bottom_a);
             }
             if (sel) {
-                draw_selection_cursor(r, layout, page_dx, y);
+                draw_selection_cursor(r, layout, page_dx, y, bottom_a);
             }
         }
-    }
-
-    // Fade in from white on entry (the title enters by a fade in the game).
-    constexpr int kFadeIn = 24;
-    if (frame_ < kFadeIn) {
-        const int a = 255 * (kFadeIn - frame_) / kFadeIn;
-        r.fill_overlay(Color{255, 255, 255, static_cast<std::uint8_t>(a)});
     }
 }
 

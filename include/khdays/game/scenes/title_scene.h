@@ -51,7 +51,7 @@ private:
     void begin_page_slide(float from);
     // Draw the pulsing selection square over the selected option row at `row_y`.
     void draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
-                               int page_dx, int row_y) const;
+                               int page_dx, int row_y, int alpha = 255) const;
 
     std::optional<khdays::assets::DecodedTexture> top_;    // top screen BG (s7)
     std::optional<khdays::assets::DecodedTexture> logo_;   // KH 358/2 Days overlay
