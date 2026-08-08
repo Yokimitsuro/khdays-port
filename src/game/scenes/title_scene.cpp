@@ -38,7 +38,14 @@ void TitleScene::on_enter(SceneManager& manager) {
     // "KINGDOM HEARTS 358/2 Days" reads over Disney/SQUARE ENIX and the scene.
     // A title savestate confirmed the top screen carries no OBJ, so the logo is
     // a BG/3D-layer element, not sprites.
-    logo_ = khdays::resource::load_title_logo(/*over_white=*/false);
+    // The s7 BG already carries KINGDOM HEARTS; only the "358/2 Days" subtitle is
+    // missing. It is a separate quad in the logo model (texture "title_006"), so
+    // render ONLY that quad -- with the full model's projection (fill 0.80,
+    // top_margin 0.20) so it lands in its place under the logo -- and overlay it.
+    // This adds the subtitle without a second KINGDOM HEARTS (no doubling).
+    logo_ = khdays::resource::load_title_logo(/*over_white=*/false,
+                                              /*scale=*/0.80F, /*y_offset=*/0.20F,
+                                              /*only_texture=*/"title_006");
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     // English is the odd one out: there is no ttl_en.p2 — the English option
     // textures are the base file's sub-file 2, while the other four ship as

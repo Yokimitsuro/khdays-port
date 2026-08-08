@@ -165,7 +165,8 @@ float edge(const Vec2 a, const Vec2 b, const Vec2 c) {
 DecodedTexture compose_flat_model(
     const NeutralModel& model,
     const std::map<std::string, DecodedTexture>& textures, const int width,
-    const int height, const float fill, const float top_margin) {
+    const int height, const float fill, const float top_margin,
+    const std::string& only_texture) {
     DecodedTexture frame;
     frame.name = "flat-model";
     frame.width = width;
@@ -218,6 +219,9 @@ DecodedTexture compose_flat_model(
 
     for (const auto& [z_avg, mesh_ptr] : order) {
         const NeutralMesh& mesh = *mesh_ptr;
+        if (!only_texture.empty() && mesh.texture_name != only_texture) {
+            continue;  // draw only the requested sub-part (keeps full-model bounds)
+        }
         const auto tex_it = textures.find(mesh.texture_name);
         const DecodedTexture* tex =
             tex_it != textures.end() ? &tex_it->second : nullptr;

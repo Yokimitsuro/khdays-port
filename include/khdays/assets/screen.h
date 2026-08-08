@@ -54,12 +54,17 @@ DecodedTexture compose_screen(
 // textured from `textures` (keyed by mesh texture name) and modulated by the
 // vertex colour, and meshes are drawn back-to-front by depth. Transparent
 // backdrop.
+// `only_texture`, when non-empty, restricts drawing to meshes using that texture
+// name (the projection still uses the whole model's bounds, so the drawn subset
+// keeps its position within the full layout -- e.g. rendering just the "358/2
+// Days" subtitle quad of the title logo in the spot it occupies in the logo).
 DecodedTexture compose_flat_model(
     const NeutralModel& model,
     const std::map<std::string, DecodedTexture>& textures,
     int width = 256,
     int height = 192,
     float fill = 0.86F,
-    float top_margin = 0.06F);
+    float top_margin = 0.06F,
+    const std::string& only_texture = "");
 
 }  // namespace khdays::assets

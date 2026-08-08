@@ -58,7 +58,8 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo();
 // carries Disney/SQUARE ENIX and the illustration but not the "358/2 Days"
 // subtitle -- that subtitle lives in this model).
 std::optional<khdays::assets::DecodedTexture> load_title_logo(
-    bool over_white = true);
+    bool over_white = true, float scale = 0.80F, float y_offset = 0.20F,
+    const char* only_texture = "");
 
 // Compose one background layer from a D2KP UI pack: extract the P2 sub-file,
 // parse the typed pack, and compose screen[screen] with tiles[tiles_index] and
