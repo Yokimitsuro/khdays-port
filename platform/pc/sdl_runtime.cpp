@@ -460,6 +460,7 @@ int run_game(khdays::game::Game& game) {
     std::uint16_t previous = 0;
     bool running = true;
     khdays::game::SceneId last_scene = game.scenes().current_id();
+    Uint64 next_frame_ns = SDL_GetTicksNS();
 
     // Run until a scene ends the flow (no current scene) or the window closes.
     while (running && game.scenes().has_scene()) {
@@ -498,7 +499,17 @@ int run_game(khdays::game::Game& game) {
         game.render(frame_renderer);
         overlay.render();  // draw the menu bar / windows over the frame
         SDL_RenderPresent(renderer);
-        SDL_Delay(16);
+
+        // Pace to the selected frame rate (60 fps or the DS's 59.8261 Hz). Wait
+        // until the next frame deadline; if we fell behind, resync to now so the
+        // loop never spirals.
+        next_frame_ns += static_cast<Uint64>(khdays::game::frame_duration_ns());
+        const Uint64 now_ns = SDL_GetTicksNS();
+        if (now_ns < next_frame_ns) {
+            SDL_DelayNS(next_frame_ns - now_ns);
+        } else {
+            next_frame_ns = now_ns;
+        }
     }
 
     overlay.save_config();  // persist volume / layout / key bindings

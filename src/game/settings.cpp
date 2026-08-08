@@ -7,6 +7,7 @@ namespace khdays::game {
 namespace {
 ScreenLayout g_screen_layout = ScreenLayout::Vertical;
 Language g_language = Language::English;
+FrameRate g_frame_rate = FrameRate::Sixty;
 
 struct LanguageInfo {
     Language value;
@@ -38,6 +39,15 @@ void toggle_screen_layout() {
 Language language() { return g_language; }
 
 void set_language(const Language value) { g_language = value; }
+
+FrameRate frame_rate() { return g_frame_rate; }
+
+void set_frame_rate(const FrameRate value) { g_frame_rate = value; }
+
+long long frame_duration_ns() {
+    // 60.0 fps vs the DS's 59.8261 Hz.
+    return g_frame_rate == FrameRate::DsOriginal ? 16'713'678LL : 16'666'667LL;
+}
 
 std::string_view language_code(const Language value) {
     for (const auto& info : kLanguages) {

@@ -23,7 +23,7 @@ namespace {
 enum class Text {
     Config, View, Volume, Controls, Language, ScreensStacked, ScreensSideBySide,
     HideBar, Fullscreen, RebindHelp, PressKey, Unset, BarHint, FullscreenHint,
-    RestartNeeded,
+    RestartNeeded, FrameRate,
     Count
 };
 
@@ -61,6 +61,7 @@ const char* const kText[static_cast<int>(Text::Count)][5] = {
                        "Reinicia el juego para aplicar el cambio de idioma",
                        "Redémarrez le jeu pour appliquer le changement de langue",
                        "Riavvia il gioco per applicare il cambio di lingua"},
+    /* FrameRate   */ {"Bildrate", "Frame rate", "Fotogramas", "Fréquence", "Frequenza"},
 };
 
 const char* tr(Text key) {
@@ -188,6 +189,10 @@ void OverlayUi::load_config() {
                 volume_ = v < 0.0F ? 0.0F : (v > 1.0F ? 1.0F : v);
             } else if (key == "language") {
                 khdays::game::set_language(khdays::game::language_from_code(value));
+            } else if (key == "framerate") {
+                khdays::game::set_frame_rate(
+                    value == "ds" ? khdays::game::FrameRate::DsOriginal
+                                  : khdays::game::FrameRate::Sixty);
             } else if (key == "layout") {
                 khdays::game::set_screen_layout(
                     value == "sidebyside" ? khdays::game::ScreenLayout::Horizontal
@@ -216,6 +221,11 @@ void OverlayUi::save_config() const {
     file << "volume=" << volume_ << '\n';
     file << "language="
          << khdays::game::language_code(khdays::game::language()) << '\n';
+    file << "framerate="
+         << (khdays::game::frame_rate() == khdays::game::FrameRate::DsOriginal
+                 ? "ds"
+                 : "60")
+         << '\n';
     file << "layout="
          << (khdays::game::screen_layout() == khdays::game::ScreenLayout::Horizontal
                  ? "sidebyside"
@@ -338,6 +348,20 @@ void OverlayUi::render() {
             if (ImGui::MenuItem(tr(Text::ScreensSideBySide), nullptr, !stacked)) {
                 khdays::game::set_screen_layout(
                     khdays::game::ScreenLayout::Horizontal);
+            }
+            ImGui::Separator();
+            if (ImGui::BeginMenu(tr(Text::FrameRate))) {
+                const auto fr = khdays::game::frame_rate();
+                if (ImGui::MenuItem("60 FPS", nullptr,
+                                    fr == khdays::game::FrameRate::Sixty)) {
+                    khdays::game::set_frame_rate(khdays::game::FrameRate::Sixty);
+                }
+                if (ImGui::MenuItem("DS (59.83 Hz)", nullptr,
+                                    fr == khdays::game::FrameRate::DsOriginal)) {
+                    khdays::game::set_frame_rate(
+                        khdays::game::FrameRate::DsOriginal);
+                }
+                ImGui::EndMenu();
             }
             ImGui::EndMenu();
         }

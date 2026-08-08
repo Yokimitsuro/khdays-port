@@ -33,6 +33,20 @@ enum class Language {
 Language language();
 void set_language(Language value);
 
+// Frame pacing: the DS refreshes at 59.8261 Hz; "Sixty" rounds to a flat 60 for
+// monitors/round numbers. Drives the platform loop's target frame time only --
+// game logic is frame-based either way.
+enum class FrameRate {
+    Sixty,       // 60.0 fps
+    DsOriginal,  // 59.8261 fps (the DS's real refresh)
+};
+
+FrameRate frame_rate();
+void set_frame_rate(FrameRate value);
+
+// Target frame duration in nanoseconds for the current frame-rate setting.
+long long frame_duration_ns();
+
 // The game's two-letter code for a language ("de", "en", "es", "fr", "it") —
 // the suffix its localized files carry.
 std::string_view language_code(Language value);
