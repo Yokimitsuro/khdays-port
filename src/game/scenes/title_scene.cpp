@@ -33,6 +33,12 @@ void TitleScene::on_enter(SceneManager& manager) {
     // (The port used to draw a 3D BMD0 logo on white here; that dropped the
     // Disney/SQUARE ENIX logos and did not match the DS's 2D screen.)
     top_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 7, 3, 3);
+    // The "358/2 Days" subtitle is not in the s7 BG; it lives in the ttl.p2
+    // KAPH/BMD0 logo model, which we overlay (transparent) on top so the full
+    // "KINGDOM HEARTS 358/2 Days" reads over Disney/SQUARE ENIX and the scene.
+    // A title savestate confirmed the top screen carries no OBJ, so the logo is
+    // a BG/3D-layer element, not sprites.
+    logo_ = khdays::resource::load_title_logo(/*over_white=*/false);
     illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
     // English is the odd one out: there is no ttl_en.p2 — the English option
     // textures are the base file's sub-file 2, while the other four ship as
@@ -169,7 +175,15 @@ void TitleScene::render(SceneManager&, Renderer& r) {
     const auto layout = dual_screen_layout(r);
 
     if (top_) {
-        draw_screen(r, layout, *top_, /*bottom=*/false);  // Disney/SE + KH logo
+        draw_screen(r, layout, *top_, /*bottom=*/false);  // Disney/SE + scene BG
+    }
+    if (logo_) {
+        // The logo fades in over the settled background as the title appears.
+        // The DS transitions into the title with a fade (func_ov000_0204ede0);
+        // the exact per-element timing is not measured, so this is a plain fade.
+        constexpr int kLogoFade = 40;
+        const int a = frame_ >= kLogoFade ? 255 : 255 * frame_ / kLogoFade;
+        draw_screen(r, layout, *logo_, /*bottom=*/false, a);
     }
     if (illustration_) {
         draw_screen(r, layout, *illustration_, /*bottom=*/true);

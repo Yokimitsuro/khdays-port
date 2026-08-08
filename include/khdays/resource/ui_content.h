@@ -51,7 +51,14 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo();
 // "title" 3D model — a few flat textured quads (KINGDOM HEARTS, 358/2 Days, the
 // heart and crown). This decodes the model and its textures and composites them
 // to a 2D image, so the title shows the actual logo instead of a flat backdrop.
-std::optional<khdays::assets::DecodedTexture> load_title_logo();
+// The KINGDOM HEARTS 358/2 Days logo (the ttl.p2 KAPH/BMD0 model, flattened).
+// `over_white` composites it on an opaque white top screen (the default, as the
+// save screen uses it); false keeps the logo's own alpha so it can be overlaid
+// on another background (the title draws it over the s7 top-screen BG, which
+// carries Disney/SQUARE ENIX and the illustration but not the "358/2 Days"
+// subtitle -- that subtitle lives in this model).
+std::optional<khdays::assets::DecodedTexture> load_title_logo(
+    bool over_white = true);
 
 // Compose one background layer from a D2KP UI pack: extract the P2 sub-file,
 // parse the typed pack, and compose screen[screen] with tiles[tiles_index] and

@@ -99,7 +99,8 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo() {
     }
 }
 
-std::optional<khdays::assets::DecodedTexture> load_title_logo() {
+std::optional<khdays::assets::DecodedTexture> load_title_logo(
+    const bool over_white) {
     try {
         const auto container = khdays::vfs::read("ttl/ttl.p2");
         const auto kaph = khdays::assets::extract_p2_subfile(
@@ -128,6 +129,9 @@ std::optional<khdays::assets::DecodedTexture> load_title_logo() {
         // scene can draw it as the whole top screen.
         const auto logo = khdays::assets::compose_flat_model(
             model, textures, 256, 192, 0.80F, 0.20F);
+        if (!over_white) {
+            return logo;  // keep the logo's own alpha for overlaying
+        }
         khdays::assets::DecodedTexture out;
         out.width = 256;
         out.height = 192;

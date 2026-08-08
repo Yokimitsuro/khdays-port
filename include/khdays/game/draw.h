@@ -68,11 +68,11 @@ inline DualScreenLayout dual_screen_layout(const Renderer& r) {
 // Draw a full 256x192 screen image into the top or bottom slot.
 inline void draw_screen(Renderer& r, const DualScreenLayout& l,
                         const khdays::assets::DecodedTexture& image,
-                        const bool bottom) {
+                        const bool bottom, const int alpha = 255) {
     r.draw_image(image.rgba.data(), image.width, image.height,
                  l.screen_x(bottom), l.screen_y(bottom),
                  DualScreenLayout::kScreenW * l.scale,
-                 DualScreenLayout::kScreenH * l.scale);
+                 DualScreenLayout::kScreenH * l.scale, alpha);
 }
 
 // Draw an overlay image at virtual (vx, vy) within a screen, scaled to match.

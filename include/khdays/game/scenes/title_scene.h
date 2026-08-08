@@ -53,7 +53,8 @@ private:
     void draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
                                int page_dx, int row_y) const;
 
-    std::optional<khdays::assets::DecodedTexture> top_;           // top screen BG
+    std::optional<khdays::assets::DecodedTexture> top_;    // top screen BG (s7)
+    std::optional<khdays::assets::DecodedTexture> logo_;   // KH 358/2 Days overlay
     std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
     std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
     Level level_ = Level::Root;
