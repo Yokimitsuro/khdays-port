@@ -126,6 +126,11 @@ So a stage's walkable/blocking volumes are **named objects carried by the room
 data**, resolved by name at load time — not a separate collision file, which is
 why searching the filesystem for one never found anything.
 
+**The other half of this is now read**: which code resolves those names, and that
+`gate*` and `col_wall*` go to two *different* subsystems — see
+[GAMEPLAY_RUNTIME.md](GAMEPLAY_RUNTIME.md), together with the ground-contact ray
+and the camera-distance logic.
+
 ## Mission files
 
 `mi/mi/%04d` names 114 shipped 4-digit files, plus `10000` and `10001` (which the
