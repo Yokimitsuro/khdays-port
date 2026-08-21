@@ -17,7 +17,8 @@ this party slot have ground under it?":
   means the entry has no collision**, and the answer is no without casting;
 - otherwise the ray starts at the entry's position **raised by `0x1000`** (1.0 in
   20.12) and points **straight down by `0x32000`** (50.0) — `dir = (0, -0x32000, 0)`;
-- it is filtered by the mask word at `entry+0x20`;
+- the word at `entry+0x20` is passed as the cast's `pExtra` — **an exclusion key,
+  not a surface mask**; see the collision-world section;
 - the answer is simply whether the cast hit.
 
 `func_ov002_020692a8` calls it per slot and only refills that slot's defaults
@@ -25,8 +26,8 @@ this party slot have ground under it?":
 
 ### The cast itself
 
-`func_0202c268(handle, from, dir, mask)` fills a `CollCastParams`
-(`wDirIsUnit = 0`, `wFlagE = 0`, origin, dir, and the mask as `pExtra`) and calls
+`func_0202c268(handle, from, dir, key)` fills a `CollCastParams`
+(`wDirIsUnit = 0`, `wFlagE = 0`, origin, dir, and the key as `pExtra`) and calls
 `Collision_RunRayCast(ctx->aViewSlots + handle * 8, params)`.
 
 So a **collision handle is an index into an array of 8-byte "view slots"**, not a
@@ -129,8 +130,38 @@ touched by either function.
 | 9 | `0x5000` | `-0x400` | `0x1c00` |
 | 10 | `0x6800` | `-0x1800` | `0x2800` |
 | 11 | `0xa000` | `-0x2800` | `0x2800` |
+| 12 | `0x2400` | `-0x800` | `0x1000` |
+| 13 | `0x2800` | `-0x800` | `0x1000` |
+| 14 | `0x3000` | `-0x800` | `0x1000` |
+| 15 | `0x3800` | `-0x1000` | `0x1000` |
+| 16 | `0x3800` | `0x1000` | `0x1000` |
 
-The table's length is **not** established; these are the first twelve records.
+**The table is exactly 17 records.** It spans `0x0207e764`..`0x0207e82f` (0xcc
+bytes = 17 x 0xc), and the word right after it is `0x000f003f` followed by a
+pointer pair — the pattern breaks cleanly there. So there are **17 camera
+selectors, 0..16**.
+
+### Word 1 — who reads it
+
+`FUN_arm9_ov002__02050b68(selector)` returns `*(u32 *)(0x0207e768 + selector * 0xc)`,
+and `0x0207e768` is this table + 4, i.e. **word 1**. So all three words are
+per-selector camera values, each fetched by its own function.
+
+### The selector itself
+
+`Ov002_SetValueAndDerive(owner, value)` is what sets it. With
+`cam = *(owner + 0x20)` — the same camera pointer `func_ov002_02050b90` reads —
+it pushes the current selector to `cam+0x48` and stores the new one at
+**`cam+0x44`**, then derives three values from it twice over:
+
+```
+cam+0x54 / cam+0x7c  = Ov002_UpdateCameraDistance(sel)   // func_ov002_02050b90
+cam+0x5c / cam+0x84  = FUN_arm9_ov002__02050b68(sel)     // word 1
+cam+0x60 / cam+0x88  = Ov002_GetCameraDistance(sel)      // func_ov002_02050a54
+```
+
+What *picks* a selector is still unread: `Ov002_SetValueAndDerive` has no direct
+cross-references, so it is reached through a dispatch table.
 
 ## The collision world — what a handle actually is
 
@@ -188,11 +219,51 @@ There is a parallel sphere chain (`Collision_CastSphere` ->
 that it carries a radius at `state+0x74` and offsets all four query bounds by it
 before the broad phase — a swept cast.
 
+### Narrow phase — an eight-level quadtree
+
+`FUN_01ffdb54` (the vertical path) walks a **quadtree**. Each node has four
+children at `node + 8 + quadrant * 2`; the quadrant is picked by comparing the
+query point against the node centre on **two axes** (`state+0x34` vs `node+4`,
+`state+0x38` vs `node+8`), giving 0 = −−, 1 = +−, 2 = −+, 3 = ++. The child
+centre is offset by **a quarter of the node extent**, so the extent halves per
+level — which is exactly the eight-entry ladder `CollCast_TestModelRay` seeds.
+
+Per node it tests a run of **`0x88`-byte face records** based at `state+4`
+(`pModelDataA`), indexed by the node's second halfword when that is non-negative.
+Each record's flag halfword at `+0x10` carries **bit `0x4000` = skip this face**
+and **bit `0x8000` = end of run**.
+
+### `pExtra` is an exclusion key, and the real mask is unused here
+
+`CollCastState.pExtra` sits at **`+0x84`** (confirmed from the struct layout,
+size 140), and the traversal reads it as `state[0x21]`. A node also carries a
+linked list of dynamic objects (head at `node+4`, chained through `+4`), and an
+object is considered only when **both**:
+
+```
+obj+0x28 != state->pExtra            // exclusion by key
+(obj+0x22 & state->wFlag88) == 0     // bitmask reject
+```
+
+So the word ov002 passes at `entry+0x20` is the **first** test — it excludes the
+object whose key matches, which for the roster ground ray means the caster does
+not collide with itself. It is **not** a surface mask.
+
+The genuine bitmask is `wFlag88` (`state+0x88`), which `CollCast_InitRayState`
+copies from `CollCastParams.wFlagE` — and `func_0202c268` **hard-codes that to
+0**. With a zero mask the reject can never fire, so nothing is filtered out
+through this wrapper. Whatever selects `nohit` / `nocam` / `slide` / `nocatch`,
+it is not this path.
+
 ## Unknown
 
-1. What `entry+0x20` (the ray mask) selects, and whether it corresponds to the
-   `nohit` / `nocam` / `slide` / `nocatch` surface tags.
-2. What the camera selector is — how many there are and what picks one.
-3. Word 1 of the selector table.
+1. What selects the `nohit` / `nocam` / `slide` / `nocatch` surface tags. The ray
+   mask was the obvious candidate and has been **ruled out** (above), so this is
+   now an open search rather than a half-answered one.
+2. What picks a camera selector. There are 17 of them and `Ov002_SetValueAndDerive`
+   stores one at `cam+0x44`, but it is called through a dispatch table, so the
+   callers are not reachable by cross-reference.
+3. What word 1 of the selector table *means*. Its reader and its destinations
+   (`cam+0x5c`, `cam+0x84`) are known; the quantity is not.
 4. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
-   else.
+   else. ov022 owns these entries and is still almost entirely unnamed.
