@@ -67,9 +67,9 @@ through `FUN_02028e4c(owner, channel, entry, …, visible)` on **channels 2 and 
 
 So the two families of names in the room data are read by two different
 subsystems: `gate*` are collision records toggled by a byte, `col_wall*` are
-named scene entries toggled on two channels. Which of the two the ground ray
-actually tests is **not** established — the ray takes a view-slot handle, and
-nothing here shows how a name becomes that handle.
+named scene entries toggled on two channels. Both reach them through the **same**
+view-slot index the ground ray casts against — see the collision-world section
+below.
 
 ## Camera distance
 
@@ -132,13 +132,67 @@ touched by either function.
 
 The table's length is **not** established; these are the first twelve records.
 
+## The collision world — what a handle actually is
+
+The "name to handle" step this document previously listed as unread turned out
+to be a **malformed question**: the two are the same index space.
+
+- `func_0202c268` casts against `(*ctx)->aViewSlots + handle * 8`.
+- `GetTrackEntryBase(index)` — which `FUN_0202bfe8` (the `gate*` name lookup) and
+  `FUN_arm9_ov002__02072aa0` (the `col_wall*` lookup) both call — returns
+  **`(*ctx)->aViewSlots + index * 8`**.
+
+Both read `PTR_DAT_0202bfb4` and `PTR_DAT_0202c2a8`, and both hold the same
+address, `0x0204c208`. So the halfword at `entry+0x66` does not name a single
+collision object; it selects **which collision world** the entity tests against,
+and a name then selects a record *inside* the objects of that world.
+
+### View slot (8 bytes)
+
+```
++0x00 u16  ?
++0x02 u16  object count
++0x04 ptr  -> array of `count` object pointers
+```
+
+`Collision_RunRayCast` takes `**(u32**)(slot + 4)` — the first object — while the
+name lookups walk all `count` of them. Same record, read two ways.
+
+### Collision object
+
+```
++0x82 u16  named-record count
++0x84 int  bounding centre A
++0x88 int  bounding centre B
++0x8c int  bounding radius
++0x9c ptr  geometry tree root  (the narrow-phase walks this)
++0xa0 ptr  model data          (state->pModelDataA)
++0xac ptr  -> array of 0x14-byte named records; first 8 bytes are the name
+```
+
+### Broad phase, subdivision and the vertical fast path
+
+`CollCast_TestModelRay` rejects broad-phase with a bounding-sphere-vs-query-bounds
+test (centre `+0x84`/`+0x88`, radius `+0x8c`, against the four query bounds at
+`state+0x34..+0x40`). On acceptance it fills an **eight-entry ladder** (stride
+`0x10`) whose extent field **halves at each level**, seeded from the model's
+radius — a spatial subdivision, eight levels deep.
+
+Then it branches on the ray direction: when **`dir.x == 0` and `dir.z == 0`** it
+takes a separate, simpler traversal (`FUN_01ffdb54`) instead of the general one
+(`FUN_01ffd4a4`). The roster ground ray is `(0, -0x32000, 0)`, so **ground
+contact always takes that vertical fast path**.
+
+There is a parallel sphere chain (`Collision_CastSphere` ->
+`Collision_RunSphereCast` -> `CollCast_TestModelSphere`) identical in shape except
+that it carries a radius at `state+0x74` and offsets all four query bounds by it
+before the broad phase — a swept cast.
+
 ## Unknown
 
-1. **How a name becomes a collision handle.** The ground ray takes a view-slot
-   index; the room data carries names. The step between them is unread.
-2. What `entry+0x20` (the ray mask) selects, and whether it corresponds to the
+1. What `entry+0x20` (the ray mask) selects, and whether it corresponds to the
    `nohit` / `nocam` / `slide` / `nocatch` surface tags.
-3. What the camera selector is — how many there are and what picks one.
-4. Word 1 of the selector table.
-5. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
+2. What the camera selector is — how many there are and what picks one.
+3. Word 1 of the selector table.
+4. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
    else.
