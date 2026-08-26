@@ -45,7 +45,7 @@ from the ROM:
 | 7 | `zz` | yes |
 | 8 | `pp` | yes |
 | 9 | `bb` | yes |
-| 10 | `tw` | yes |
+| 10 | `tw` | yes — **Traverse Town** |
 | 11 | `pi` | **no file** |
 
 Ten of the twelve ids have an archive; `hb` and `pi` have none in the shipped
@@ -83,7 +83,7 @@ Then each room entry:
 +0x00  u8    unknown
 +0x01  u8    unknown
 +0x02  s8    sub_count         // loop bound in the relocation
-+0x03  u8    unknown
++0x03  u8    data sub-file index   // the room's data blob -- see below
 +0x04  u32   unknown  x6       // through +0x18
 +0x1c  u32   offset            // relocated: entry_base + value
 +0x20  u32   offset[sub_count] // relocated: entry_base + value
@@ -93,6 +93,35 @@ Verified against the data — `wd_pp` sub-file 0 (360 B) declares
 `room_count = 7` with offsets `0x20, 0x58, 0x88, 0xb0, 0xd8, 0x108, 0x140`,
 and each of those offsets does land on a well-formed entry; `wd_tw` declares 1
 room at `0x08` and `wd_zz` 2 rooms at `0x0c` and `0x34`.
+
+### `+0x03` binds a room to its data blob — and that blob *is* the collision world
+
+`FUN_arm9_ov002__02071ba4(viewSlot, roomIndex)` indexes the room table with
+`roomIndex`, reads **byte `+0x03`** of the entry, and folds it into an archive
+handle:
+
+```
+handle = ((container + 0x8000) & 0x00fffffc) << 7 | 0x80000000 | entry[0x03]
+```
+
+i.e. the low bits of the handle are the **sub-file index**. It hands that to
+`FUN_0202b820(viewSlot, handle, …)`, which `Archive_LoadFile`s the sub-file and
+installs it with `FUN_0202aff4` into **`ctx->aViewSlots + viewSlot * 8`** — the
+very array the ground ray casts against and the `gate*` / `col_wall*` name
+lookups walk (see [GAMEPLAY_RUNTIME.md](GAMEPLAY_RUNTIME.md)).
+
+So the chain is closed end to end:
+
+```
+room index -> table entry -> entry[0x03] -> data sub-file
+           -> aViewSlots[viewSlot] -> the collision world the ground ray uses
+           -> whose named records are col_wall* / gate* and the surface codes
+```
+
+**Verified exhaustively**: across all ten world archives, every room's `+0x03`
+lands on an untyped data sub-file — roughly 130 rooms, zero exceptions,
+including `wd_tt` whose layout starts with a `KAPH` at index 2 and whose first
+room correctly points at 3.
 
 ## Collision and triggers live in the room-data blobs
 
@@ -147,24 +176,35 @@ leading pair and the split select is **not** established.
 
 ## Unknown — do not fill these in without measuring
 
-1. **The room-data blob's record layout.** All that is measured is: a 0x70-byte
+1. **How the `KAPH` models bind to a room.** `+0x03` binds the *data*; the
+   geometry does not follow from it by any simple rule. A room's data blob is
+   usually followed by `KAPH` sub-files — `wd_tw` room 0 has its data at 2 and
+   its geometry at 3 and 4 (`tw_03_1` + `tw_03_2`), with 5 and 6 being props
+   shared with other archives — but that breaks down: `wd_bb` room 1 declares
+   `sub_count = 8` with only one `KAPH` before the next room's data, and
+   `wd_al` rooms 15..17 point at data blobs with no adjacent `KAPH` at all. The
+   `sub_count` entries at `+0x20` (values `0x380`, `0x480`, …) are the obvious
+   candidate and are still undecoded.
+2. **The room-data blob's record layout.** All that is measured is: a 0x70-byte
    zeroed prologue, then what looks like a section table (`wd_tw` sub-file 2 has
    ascending u32s `0xb0, 0xb0, 0xb0, 0xf0, 0x178, 0x40c, 0x40c` against a
    0x420-byte file), then data containing the names above. The record that binds
    a name to geometry, to a surface tag, and to a volume has **not** been
    decoded.
-2. **The six u32s at room entry `+0x04`..`+0x18`.** Their magnitudes
+3. **The six u32s at room entry `+0x04`..`+0x18`.** Their magnitudes
    (`0xfffffe96`, `0x2c000`, `0x7000`, `0x23000`, …) are consistent with
    fixed-point coordinates or extents, but nothing has confirmed that.
-3. **The values behind the relocated room pointers** — `0x380`, `0x480`,
+4. **The values behind the relocated room pointers** — `0x380`, `0x480`,
    `0x580`, `0x1180`, … Low 7 bits are always zero. They are not sub-file indices
    of the same container (`wd_tw` has 7 sub-files but stores `0x380`/`0x480`).
-4. **World code → world name.** `tt`, `aw`, `he`, `al`, `eh`, `nm`, `zz`, `pp`,
-   `bb`, `tw` are the shipped codes; which is Twilight Town, which is Agrabah,
-   etc. is a guess until a room is rendered or `mdb.z` is decoded.
-5. **Whether each `col_*` prefix is walk collision, camera collision, or battle
+5. **World code → world name**, for nine of the ten. `tw` is settled:
+   `wd_tw`'s only room renders as **Traverse Town, District 3** — recognised on
+   sight from the rendered geometry, which also explains the model naming
+   `tw_03_1` = world `tw`, area `03`, part `1`. The same method settles the rest
+   one archive at a time; `mdb.z` would settle them from data.
+6. **Whether each `col_*` prefix is walk collision, camera collision, or battle
    bounds.** `col_btl` living in ov013 rather than ov002 is a hint, not proof.
-6. `mi/mi/eid.z` and `mi/mi/evi` roles; the `CAKP` container format.
+7. `mi/mi/eid.z` and `mi/mi/evi` roles; the `CAKP` container format.
 
 ## Reading one with the port
 

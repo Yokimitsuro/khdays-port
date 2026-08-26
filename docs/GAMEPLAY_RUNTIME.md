@@ -180,6 +180,20 @@ address, `0x0204c208`. So the halfword at `entry+0x66` does not name a single
 collision object; it selects **which collision world** the entity tests against,
 and a name then selects a record *inside* the objects of that world.
 
+### Where a view slot's contents come from
+
+`FUN_arm9_ov002__02071ba4(viewSlot, roomIndex)` is the room loader. It reads the
+room table entry's byte `+0x03` — the index of the room's data sub-file inside
+the `mi/wd` world archive — folds it into an archive handle, and passes that to
+`FUN_0202b820`, which `Archive_LoadFile`s the sub-file and installs it into
+`ctx->aViewSlots + viewSlot * 8` via `FUN_0202aff4`.
+
+So **a room's data blob is the collision world**. Loading a room and populating
+the structure the ground ray casts against are the same act, and the named
+records below are simply what that blob carries. The binding is verified across
+every room of all ten world archives — see
+[MISSION_WORLD_DATA.md](MISSION_WORLD_DATA.md).
+
 ### View slot (8 bytes)
 
 ```
