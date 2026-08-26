@@ -55,9 +55,11 @@ The caller then writes `record[0xc] = 0` or `1`, which is how a gate is opened o
 closed, and on a change calls `FUN_0202c13c(scene, name, data, 4)` with a 4-byte
 payload built from the caller's own bytes.
 
-Note the 8-byte compare: `gate05` fits, but a 10-character `col_wall05` would not
-be distinguishable from `col_wall12` through this path — consistent with
-`col_wall*` **not** using it.
+Note the 8-byte compare is **deliberate prefix matching**, not truncation: the
+name field is `0xc` bytes wide (see the record layout below), so comparing only 8
+lets one call reach a whole family. `FUN_arm9_ov002__02071ba4` ends by calling
+`FUN_arm9_ov002__02072aa0("col_wall", 8, 0, scene)` — hiding **every**
+`col_wall*` entry at once through exactly that.
 
 ### `col_wall%02d` → named scene entries
 
@@ -255,15 +257,53 @@ copies from `CollCastParams.wFlagE` — and `func_0202c268` **hard-codes that to
 through this wrapper. Whatever selects `nohit` / `nocam` / `slide` / `nocatch`,
 it is not this path.
 
+## Surface tags — resolved
+
+The `nohit` / `nocam` / `slide` / `sicon` / `nocatch` tags are **surface-type
+codes written into the named records**, and there are seven of them, not five —
+`sea` and `sea2` belong to the same set.
+
+`FUN_arm9_ov002__02071ba4` walks a 7-entry table at `arm9_ov002::0207e640` of
+`{const char *name, u32 code}` pairs and calls
+`StoreValueInNamedEntry(scene, name, &code)` for each:
+
+| name | code |
+|---|---:|
+| `nohit` | 2 |
+| `nocatch` | 3 |
+| `sea` | 4 |
+| `nocam` | 5 |
+| `slide` | 6 |
+| `sea2` | 7 |
+| `sicon` | 8 |
+
+`StoreValueInNamedEntry` (`0x0202c0dc`) finds the entry by **exact** name
+(`FindEntryByExactName`, `0x02028df0`, `strncmp` over `0xc` bytes) and stores the
+value at **`record + 0xc`**.
+
+That is the *same* `+0xc` the gate toggle writes `0` or `1` into. So `+0xc` is a
+single **surface/type code** word: 0 and 1 are the gate's closed/open states, and
+2..8 are the surface types. The caller zeroes the upper three bytes, so only the
+low byte carries the code.
+
+### Named record layout
+
+```
++0x00  char name[0xc]      matched with strncmp -- 0xc for exact, 8 for prefix
++0x0c  u32  code           surface type 2..8, or a gate's 0/1
++0x10  ptr  payload        the gate path reads bytes [1] and [2] through it
+```
+
+`0x14` bytes, array at `object+0xac`, count at `object+0x82`. `FUN_0202c06c(n)`
+allocates the array as `n * 0x14`, which confirms the stride independently.
+
 ## Unknown
 
-1. What selects the `nohit` / `nocam` / `slide` / `nocatch` surface tags. The ray
-   mask was the obvious candidate and has been **ruled out** (above), so this is
-   now an open search rather than a half-answered one.
-2. What picks a camera selector. There are 17 of them and `Ov002_SetValueAndDerive`
+1. What picks a camera selector. There are 17 of them and `Ov002_SetValueAndDerive`
    stores one at `cam+0x44`, but it is called through a dispatch table, so the
    callers are not reachable by cross-reference.
-3. What word 1 of the selector table *means*. Its reader and its destinations
+2. What word 1 of the selector table *means*. Its reader and its destinations
    (`cam+0x5c`, `cam+0x84`) are known; the quantity is not.
+3. What the named record's `+0x10` payload pointer holds.
 4. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
-   else. ov022 owns these entries and is still almost entirely unnamed.
+   else. ov022 owns these entries and is only 65% named.
