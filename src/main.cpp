@@ -399,6 +399,7 @@ void print_help() {
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --export-skin FILE OUTPUT.json [ANIM.nsbca...]\n"
+        << "  khdays-port --gameplay-shot OUT.bmp [FRAMES]\n"
         << "  khdays-port --render-scene OUT.bmp YAW PITCH MODEL [MODEL...]\n"
         << "  khdays-port --world-info WORLD\n"
         << "  khdays-port --extract-world WORLD OUTDIR\n"
@@ -636,6 +637,36 @@ int main(int argc, char* argv[]) {
                       << ") -> BMP: " << argv[2] << '\n';
             return EXIT_SUCCESS;
         }
+
+        if (first == "--gameplay-shot") {
+            // Headless snapshot of the gameplay scene, which now draws a real
+            // stage room in 3D through the neutral scene rasterizer.
+            if (argc < 3) {
+                std::cerr << "ERROR: --gameplay-shot requires an output BMP "
+                             "[frames]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int frames = argc > 3 ? std::stoi(argv[3]) : 40;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneGameplay, [] {
+                return std::make_unique<khdays::game::scenes::GameplayScene>();
+            });
+            manager.start(khdays::game::kSceneGameplay);
+            for (int i = 0; i < frames; ++i) {
+                manager.set_input(khdays::game::Input{});
+                manager.step();
+            }
+            khdays::game::SoftwareRenderer sw{512, 784};
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "Gameplay snapshot -> BMP: " << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
 
         if (first == "--save-shot") {
             // Headless snapshot of the save-file screen, laid out entirely from

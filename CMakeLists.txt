@@ -173,6 +173,7 @@ add_library(
     STATIC
         src/resource/loader.cpp
         src/resource/ui_content.cpp
+        src/resource/world.cpp
         src/vfs/filesystem.cpp
 )
 
