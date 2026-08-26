@@ -166,6 +166,31 @@ leading pair and the split select is **not** established.
    bounds.** `col_btl` living in ov013 rather than ov002 is a hint, not proof.
 6. `mi/mi/eid.z` and `mi/mi/evi` roles; the `CAKP` container format.
 
+## Reading one with the port
+
+```
+khdays-port --world-info    mi/wd/wd_tw
+khdays-port --extract-world mi/wd/wd_tw OUTDIR
+khdays-port --render-model  OUTDIR/sub3/slot_7/0000.nsbmd
+```
+
+`--extract-world` writes each `KAPH` in the `slot_N/0000.ext` layout
+`tools/unpack_containers` produces, which is the layout `--render-model` already
+reads — so a room renders with no new rendering code, and its sibling animation
+in `slot_0` is picked up automatically. `wd_tw` yields `tw_03_1` (1402 vertices),
+`tw_03_2`, and the shared props `gate_lock2` and `lightwall`.
+
+Both commands go through `khdays::assets::parse_slot_container`, which handles
+the `KAPH` and `D2KP` magics with one implementation — they share a layout:
+eight slot pointers at `+0x08`, each addressing
+`{u32 count; u32 offsets[count]; u32 sizes[count]}`. **Slot 7 is the NSBMD and
+slot 0 the NSBCA**, the same convention `ba/ch/**` uses.
+
+One observation, unexplained: `--world-info` reports sub-file 1 as 512 bytes,
+while its directory entry declares 4. The KAPH sub-files are LZ-compressed and
+come out at their exact declared sizes, so this does not affect them, but the
+uncompressed-entry path is worth a look.
+
 ## Next steps this unblocks
 
 - Decode the room-data blob far enough to extract one room's collision volumes.

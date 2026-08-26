@@ -86,9 +86,18 @@ Implement isolated tools or debug modes for:
   *(done — NSBCA decode + per-frame CPU skinning; the viewer auto-detects a
   model's sibling animation)*
 - maps;
-  *(done for individual environment models — maps are NSBMD, e.g. mi/ob/*
-  "tt_map"/"TTL_town", and render with the existing renderer; assembling a full
-  mission scene from placed objects needs layout data and is a later step)*
+  *(done — the mission world archives `mi/wd/wd_<code>` are P2 containers whose
+  sub-file 0 is a room table and whose remaining sub-files alternate room-data
+  blobs and `KAPH` room geometry. `--world-info` lists one; `--extract-world`
+  writes every KAPH out in the same `slot_N/0000.ext` layout `--render-model`
+  already reads, so a room renders in 3D with the existing viewer — e.g.
+  `wd_tw` yields `tw_03_1` (1402 vertices) plus `gate_lock2` and `lightwall`.
+  Individual environment models under `mi/ob/**` render the same way.
+  **Assembling a full mission scene still needs the room-to-sub-file mapping,
+  which is not decoded** — see [MISSION_WORLD_DATA.md](MISSION_WORLD_DATA.md).
+  An earlier version of this entry named `tt_map` and `TTL_town` as the maps;
+  both were picked by name and neither is one — `tt_map` is a single quad of
+  4 vertices and `TTL_town` is title-screen scenery.)*
 - message data; *(done — the game's text in `db/db_<lang>.p2` (a "P2" container
   of LZ11-packed UTF-16LE sub-files) is fully decoded by
   `khdays::assets::load_p2_archive`: 3480 strings across 23 sub-databases in each

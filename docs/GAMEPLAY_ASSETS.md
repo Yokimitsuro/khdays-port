@@ -64,27 +64,41 @@ effect/magic set.
 - `mi/ob/` — 263 object archives. The largest model, `mi/ob/1B` = `B2END_A01`
   (50 bones, 44 materials, 1112 vertices), looks like a set piece, not a
   character.
+- `mi/wd/` — the ten **world archives**, `wd_<code>`; this is the stage. See
+  below.
+- `mi/mi/` — 114 numbered mission files plus `mdb.z`, `eid.z`, `evi`, `trbox`.
 - `mi/mo/`, `mi/se/` — not yet inspected here.
 
-## The gap: the walkable field / stage mesh is not cleanly identified
+## Resolved: the stage lives in `mi/wd/wd_<code>`
 
-There is **no folder that is obviously "the mission N field mesh you walk on."**
-`ba/ma` is effects; `mi/ob` is objects; `mi/ch` is characters. A mission's
-playable environment is most likely **assembled from `mi/ob` objects placed by
-mission data**, or loaded through the runtime-built archive handles that static
-analysis cannot name (the same opaque-handle problem noted in the project brief).
+This section used to record the walkable stage mesh as unidentified. It is
+identified now, and it was never going to be found by folder name — the answer
+is a container nobody had opened.
 
-Identifying it should use the project's proven method — read it out of the
-running game from a DeSmuME savestate of an in-mission frame (which archive
-handles are resident, what geometry is in VRAM) — **not** guessed from folder
-names. Until then, a gameplay slice has real characters and animations but no
-confirmed ground to stand them on.
+Each of the ten `mi/wd/wd_<code>` world archives is a P2 whose **sub-file 0 is a
+room table** and whose remaining sub-files alternate **room-data blobs** and
+**`KAPH` room geometry**. `wd_tw` decodes to `tw_03_1` (1402 vertices, 398
+polygons), a second layer `tw_03_2`, and the shared props `gate_lock2` and
+`lightwall` — the last of which corroborates the `gate*` collision names carried
+in the room data.
+
+`mi/ob` is **not** excluded by this: `mi/ob/F5` is also `tw_03_1` (1406
+vertices), so room geometry exists in both places. What `mi/wd` adds is the
+*organisation* — which models belong to which room, together with the room data
+that names the collision volumes and surface types.
+
+Full format, and the room-to-sub-file mapping that is still **not** decoded:
+[MISSION_WORLD_DATA.md](MISSION_WORLD_DATA.md). What consumes it at runtime:
+[GAMEPLAY_RUNTIME.md](GAMEPLAY_RUNTIME.md).
 
 ## What the engine can already do with these
 
 `--render-model FILE [--anim FILE]` renders any of the above in 3D with skinning
-and NSBCA playback (GPU path). This proves the renderer and animation systems
-work on real gameplay assets. It is a **CLI path**: the in-game frame loop draws
+and NSBCA playback (GPU path). For a world archive, `--world-info` lists its
+rooms and models and `--extract-world` writes each `KAPH` out in the
+`slot_N/0000.ext` layout that viewer already reads, so a room needs no new
+rendering code. This proves the renderer and animation systems work on real
+gameplay assets. It is a **CLI path**: the in-game frame loop draws
 through a 2D-only `Renderer` (`include/khdays/game/renderer.h`), so a gameplay
 scene that shows a 3D character would first need the 3D renderer wired into the
 game loop (or the model rendered offscreen to RGBA and blitted).
