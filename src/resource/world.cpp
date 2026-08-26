@@ -27,19 +27,14 @@ std::uint32_t read_u32(const std::vector<std::uint8_t>& data,
         | (static_cast<std::uint32_t>(data[offset + 3U]) << 24U);
 }
 
-// Sub-file 0 of a world archive: u8 room_count, three unknown bytes, then
-// u32 offsets[room_count] into the table itself.
-std::optional<std::size_t> room_entry_offset(
-    const std::vector<std::uint8_t>& table, const std::size_t room_index) {
-    if (table.empty() || room_index >= table[0]) {
-        return std::nullopt;
+// The low 9 bits of the P2 header word at 0x02.
+std::size_t subfile_count(const std::vector<std::uint8_t>& container) {
+    if (container.size() < 4U) {
+        return 0U;
     }
-    const std::size_t at = 4U + room_index * 4U;
-    const auto offset = static_cast<std::size_t>(read_u32(table, at));
-    if (offset + 4U > table.size()) {
-        return std::nullopt;
-    }
-    return offset;
+    return (static_cast<std::size_t>(container[2])
+            | (static_cast<std::size_t>(container[3]) << 8U))
+        & 0x1FFU;
 }
 
 }  // namespace
@@ -55,47 +50,73 @@ std::size_t world_room_count(const std::string& world_code) {
     }
 }
 
-std::optional<LoadedRoom> load_world_room(
+std::optional<std::size_t> room_data_subfile(
     const std::string& world_code, const std::size_t room_index) {
     try {
         const auto container = khdays::vfs::read(archive_path(world_code));
         const auto table = khdays::assets::extract_p2_subfile(
             container.data(), container.size(), 0);
-        const auto entry = room_entry_offset(table, room_index);
-        if (!entry.has_value()) {
+        if (table.empty() || room_index >= table[0]) {
             return std::nullopt;
         }
+        // Sub-file 0: u8 room_count, three unknown bytes, then
+        // u32 offsets[room_count] into the table itself.
+        const auto entry =
+            static_cast<std::size_t>(read_u32(table, 4U + room_index * 4U));
+        if (entry + 4U > table.size()) {
+            return std::nullopt;
+        }
+        return static_cast<std::size_t>(table[entry + 3U]);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
 
-        LoadedRoom room;
-        // Byte +0x03 of the entry names the room's data sub-file. This is
-        // established: it lands on an untyped sub-file for every room of all
-        // ten shipped archives.
-        room.data_subfile = table[*entry + 3U];
+std::vector<std::size_t> world_model_subfiles(const std::string& world_code) {
+    std::vector<std::size_t> out;
+    try {
+        const auto container = khdays::vfs::read(archive_path(world_code));
+        const std::size_t count = subfile_count(container);
+        for (std::size_t index = 1U; index < count; ++index) {
+            try {
+                const auto blob = khdays::assets::extract_p2_subfile(
+                    container.data(), container.size(), index);
+                const auto pack = khdays::assets::parse_slot_container(
+                    blob.data(), blob.size());
+                if (pack.valid && !pack.slots[7].empty()) {
+                    out.push_back(index);
+                }
+            } catch (const std::exception&) {
+                // Skip a sub-file that will not extract.
+            }
+        }
+    } catch (const std::exception&) {
+        out.clear();
+    }
+    return out;
+}
 
-        // The sub-file count lives in the low 9 bits of the P2 header word.
-        const std::size_t count = container.size() >= 4U
-            ? (static_cast<std::size_t>(container[2])
-               | (static_cast<std::size_t>(container[3]) << 8U))
-                & 0x1FFU
-            : 0U;
-
-        // PORT HEURISTIC, not the game's rule -- see world.h. Walk forward from
-        // the data blob and take KAPH sub-files until one is not a KAPH.
-        for (std::size_t index = room.data_subfile + 1U; index < count; ++index) {
+std::vector<RoomModel> load_world_models(
+    const std::string& world_code, const std::vector<std::size_t>& subfiles) {
+    std::vector<RoomModel> out;
+    try {
+        const auto container = khdays::vfs::read(archive_path(world_code));
+        for (const std::size_t index : subfiles) {
             std::vector<std::uint8_t> blob;
             try {
                 blob = khdays::assets::extract_p2_subfile(
                     container.data(), container.size(), index);
             } catch (const std::exception&) {
-                break;
+                continue;
             }
             const auto pack =
                 khdays::assets::parse_slot_container(blob.data(), blob.size());
             if (!pack.valid || pack.slots[7].empty()) {
-                break;
+                continue;
             }
             const auto& bmd0 = pack.slots[7].front();
             RoomModel piece;
+            piece.subfile = index;
             piece.model =
                 khdays::assets::decode_model_geometry(bmd0.data, bmd0.size);
             piece.name = piece.model.name;
@@ -111,19 +132,15 @@ std::optional<LoadedRoom> load_world_room(
                             bmd0.data, bmd0.size, mesh.texture_name));
                 } catch (const std::exception&) {
                     // A mesh may name a texture this file does not carry; it
-                    // draws untextured rather than failing the whole room.
+                    // draws untextured rather than failing the load.
                 }
             }
-            room.models.push_back(std::move(piece));
+            out.push_back(std::move(piece));
         }
-
-        if (room.models.empty()) {
-            return std::nullopt;
-        }
-        return room;
     } catch (const std::exception&) {
-        return std::nullopt;
+        out.clear();
     }
+    return out;
 }
 
 }  // namespace khdays::resource
