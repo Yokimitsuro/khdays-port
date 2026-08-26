@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <cstring>
+#include <map>
 #include <fstream>
 #include <iterator>
 #include <iomanip>
@@ -43,6 +44,7 @@
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
+#include "khdays/assets/scene3d.h"
 #include "khdays/resource/loader.h"
 #include "khdays/vfs/filesystem.h"
 
@@ -397,6 +399,7 @@ void print_help() {
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --export-skin FILE OUTPUT.json [ANIM.nsbca...]\n"
+        << "  khdays-port --render-scene OUT.bmp YAW PITCH MODEL [MODEL...]\n"
         << "  khdays-port --world-info WORLD\n"
         << "  khdays-port --extract-world WORLD OUTDIR\n"
         << "  khdays-port --ui-layout FILE.ui\n"
@@ -407,6 +410,8 @@ void print_help() {
         << "  --resource FILE     Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
         << "  --texture NAME      Select a texture by name; defaults to the first.\n"
         << "  --render-model FILE Render an MDL0 model in 3D in the native window.\n"
+        << "  --render-scene      Rasterize models together to a BMP, framed at\n"
+        << "                      YAW/PITCH degrees. Headless; no window.\n"
         << "  --world-info WORLD  List a mi/wd world archive: its room table\n"
         << "                      and the KAPH room models it carries.\n"
         << "  --extract-world W D Write each KAPH under D as slot_N/0000.ext,\n"
@@ -920,6 +925,83 @@ int main(int argc, char* argv[]) {
                 return EXIT_FAILURE;
             }
         }
+
+        if (first == "--render-scene") {
+            // Headless: rasterize one or more models together, sharing a depth
+            // buffer and a framed camera, to a BMP. A room's geometry sub-files
+            // are authored in one world space, so passing them all reassembles
+            // the room -- which is what the game loop will draw.
+            if (argc < 6) {
+                std::cerr << "ERROR: --render-scene requires an output BMP, a "
+                             "yaw and pitch in degrees, and at least one model\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                const std::filesystem::path out_path{argv[2]};
+                const float yaw = std::stof(argv[3]) * 3.14159265F / 180.0F;
+                const float pitch = std::stof(argv[4]) * 3.14159265F / 180.0F;
+
+                // Own the loaded data for as long as the instances point at it.
+                std::vector<khdays::resource::LoadedModel> loaded;
+                std::vector<std::map<std::string, khdays::assets::DecodedTexture>>
+                    texture_sets;
+                for (int i = 5; i < argc; ++i) {
+                    const std::filesystem::path path{argv[i]};
+                    loaded.push_back(khdays::resource::load_model(path));
+                    std::map<std::string, khdays::assets::DecodedTexture> set;
+                    for (const auto& mesh : loaded.back().model.meshes) {
+                        if (mesh.texture_name.empty()
+                            || set.count(mesh.texture_name) != 0) {
+                            continue;
+                        }
+                        try {
+                            set.emplace(
+                                mesh.texture_name,
+                                khdays::resource::load_texture(
+                                    mesh.texture_name, path)
+                                    .image);
+                        } catch (const std::exception&) {
+                            // A mesh may name a texture the file does not carry;
+                            // it draws untextured rather than failing the render.
+                        }
+                    }
+                    texture_sets.push_back(std::move(set));
+                }
+                std::vector<khdays::assets::ModelInstance> instances;
+                instances.reserve(loaded.size());
+                for (std::size_t i = 0; i < loaded.size(); ++i) {
+                    instances.push_back(khdays::assets::ModelInstance{
+                        &loaded[i].model, &texture_sets[i]});
+                    std::cout << "  " << loaded[i].model.name << "  meshes="
+                              << loaded[i].model.meshes.size() << "  textures="
+                              << texture_sets[i].size() << '\n';
+                }
+                const auto bounds = khdays::assets::scene_bounds(instances);
+                if (!bounds.valid) {
+                    std::cerr << "ERROR: the scene has no geometry\n";
+                    return EXIT_FAILURE;
+                }
+                std::cout << "scene radius " << bounds.radius << " centre ("
+                          << bounds.center[0] << ", " << bounds.center[1] << ", "
+                          << bounds.center[2] << ")\n";
+                const auto camera =
+                    khdays::assets::frame_scene(instances, yaw, pitch);
+                // The DS's own screen size; the port upscales for display.
+                const auto image =
+                    khdays::assets::render_scene(instances, camera, 256, 192);
+                const auto bmp = khdays::assets::to_bmp(image);
+                std::ofstream out{out_path, std::ios::binary};
+                out.write(reinterpret_cast<const char*>(bmp.data()),
+                          static_cast<std::streamsize>(bmp.size()));
+                std::cout << "wrote " << out_path.string() << ' ' << image.width
+                          << 'x' << image.height << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
 
         if (first == "--world-info" || first == "--extract-world") {
             // The mission world archives, mi/wd/wd_<code>: a P2 whose sub-file 0

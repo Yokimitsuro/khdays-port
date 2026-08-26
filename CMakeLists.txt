@@ -132,6 +132,7 @@ add_library(
         src/assets/message.cpp
         src/assets/mobiclip.cpp
         src/assets/mods.cpp
+        src/assets/scene3d.cpp
         src/assets/screen.cpp
         src/assets/sdat.cpp
         src/assets/sequence.cpp

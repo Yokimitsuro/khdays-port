@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "khdays/assets/mesh.h"
+#include "khdays/assets/scene3d.h"
 
 namespace {
 
@@ -226,6 +227,84 @@ int main() {
             || obj.find("tri_mesh") == std::string::npos) {
             throw std::runtime_error("OBJ export is missing geometry");
         }
+
+        {
+            // The 3D scene rasterizer: two unit quads facing the camera, the
+            // red one nearer than the blue one and covering it. A depth buffer
+            // must show red; a painter's-algorithm draw in submission order
+            // would show blue.
+            const auto quad = [](const float z,
+                                 const std::array<std::uint8_t, 4>& colour) {
+                khdays::assets::NeutralModel m;
+                m.name = "quad";
+                khdays::assets::NeutralMesh mesh;
+                for (int corner = 0; corner < 4; ++corner) {
+                    khdays::assets::NeutralVertex v;
+                    // Small enough that the quads do not fill the frame,
+                    // so the backdrop stays visible at the corners.
+                    const float sx = (corner == 0 || corner == 3) ? -0.3F : 0.3F;
+                    const float sy = (corner < 2) ? -0.3F : 0.3F;
+                    v.position = {sx, sy, z};
+                    v.color = colour;
+                    v.weights = {0.0F, 0.0F, 0.0F, 0.0F};  // no skinning
+                    mesh.vertices.push_back(v);
+                }
+                mesh.indices = {0U, 1U, 2U, 0U, 2U, 3U};
+                m.meshes.push_back(mesh);
+                return m;
+            };
+            const auto far_quad = quad(-4.0F, {0U, 0U, 255U, 255U});
+            const auto near_quad = quad(-2.0F, {255U, 0U, 0U, 255U});
+
+            // Submit the near one FIRST so submission order cannot explain a
+            // correct result.
+            std::vector<khdays::assets::ModelInstance> instances{
+                khdays::assets::ModelInstance{&near_quad, nullptr},
+                khdays::assets::ModelInstance{&far_quad, nullptr}};
+
+            khdays::assets::Camera3D camera;
+            camera.eye = {0.0F, 0.0F, 0.0F};
+            camera.target = {0.0F, 0.0F, -1.0F};
+            const auto image =
+                khdays::assets::render_scene(instances, camera, 64, 64);
+            if (image.width != 64 || image.height != 64) {
+                throw std::runtime_error("scene image has the wrong size");
+            }
+            const std::size_t middle =
+                (static_cast<std::size_t>(32) * 64U + 32U) * 4U;
+            if (image.rgba[middle] < 200U || image.rgba[middle + 2U] > 60U) {
+                throw std::runtime_error(
+                    "the nearer surface did not win the depth test");
+            }
+            if (image.rgba[middle + 3U] != 255U) {
+                throw std::runtime_error("the covered pixel is not opaque");
+            }
+            // A corner outside both quads stays transparent.
+            if (image.rgba[3U] != 0U) {
+                throw std::runtime_error("the backdrop is not transparent");
+            }
+
+            // Framing must put the geometry on screen from any angle.
+            const auto framed =
+                khdays::assets::frame_scene(instances, 0.7F, 0.3F);
+            const auto shot =
+                khdays::assets::render_scene(instances, framed, 64, 64);
+            std::size_t drawn = 0;
+            for (std::size_t k = 3U; k < shot.rgba.size(); k += 4U) {
+                if (shot.rgba[k] != 0U) {
+                    ++drawn;
+                }
+            }
+            if (drawn == 0U) {
+                throw std::runtime_error("frame_scene framed nothing on screen");
+            }
+
+            const auto bounds = khdays::assets::scene_bounds(instances);
+            if (!bounds.valid || bounds.radius <= 0.0F) {
+                throw std::runtime_error("scene bounds are not valid");
+            }
+        }
+
 
         std::filesystem::remove(path);
         std::cout << "Mesh decoder test passed" << '\n';
