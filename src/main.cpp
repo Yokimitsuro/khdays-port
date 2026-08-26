@@ -3,7 +3,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <cstring>
 #include <fstream>
+#include <iterator>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -395,6 +397,8 @@ void print_help() {
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
         << "  khdays-port --export-skin FILE OUTPUT.json [ANIM.nsbca...]\n"
+        << "  khdays-port --world-info WORLD\n"
+        << "  khdays-port --extract-world WORLD OUTDIR\n"
         << "  khdays-port --ui-layout FILE.ui\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
@@ -403,6 +407,10 @@ void print_help() {
         << "  --resource FILE     Load TEX0 data from a user-extracted NSBMD/NSBTX.\n"
         << "  --texture NAME      Select a texture by name; defaults to the first.\n"
         << "  --render-model FILE Render an MDL0 model in 3D in the native window.\n"
+        << "  --world-info WORLD  List a mi/wd world archive: its room table\n"
+        << "                      and the KAPH room models it carries.\n"
+        << "  --extract-world W D Write each KAPH under D as slot_N/0000.ext,\n"
+        << "                      the layout --render-model already reads.\n"
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
@@ -909,6 +917,133 @@ int main(int argc, char* argv[]) {
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--world-info" || first == "--extract-world") {
+            // The mission world archives, mi/wd/wd_<code>: a P2 whose sub-file 0
+            // is the room table and whose remaining sub-files alternate room
+            // data blobs and KAPH room geometry. See docs/MISSION_WORLD_DATA.md.
+            //
+            // --extract-world writes each KAPH out in the same slot_N/0000.ext
+            // layout tools/unpack_containers produces, so the result feeds
+            // --render-model unchanged (including its sibling-animation lookup).
+            const bool extracting = first == "--extract-world";
+            if (argc != (extracting ? 4 : 3)) {
+                std::cerr << "ERROR: " << first << " requires a world archive"
+                          << (extracting ? " and an output directory" : "")
+                          << "\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                std::ifstream in{argv[2], std::ios::binary};
+                if (!in) {
+                    std::cerr << "ERROR: cannot open " << argv[2] << "\n";
+                    return EXIT_FAILURE;
+                }
+                const std::vector<std::uint8_t> file{
+                    std::istreambuf_iterator<char>{in},
+                    std::istreambuf_iterator<char>{}};
+                if (file.size() < 0x10 || file[0] != 'P' || file[1] != '2') {
+                    std::cerr << "ERROR: not a P2 container\n";
+                    return EXIT_FAILURE;
+                }
+                const std::size_t count =
+                    static_cast<std::size_t>(file[2] | (file[3] << 8)) & 0x1FFU;
+                std::cout << argv[2] << ": " << count << " sub-files\n";
+
+                // Sub-file 0 is the room table: u8 room_count, 3 unknown bytes,
+                // then u32 offsets[room_count] relative to the table base.
+                const auto table =
+                    khdays::assets::extract_p2_subfile(file.data(), file.size(), 0);
+                if (!table.empty()) {
+                    const std::size_t rooms = table[0];
+                    std::cout << "  room table: " << rooms << " rooms\n";
+                    for (std::size_t r = 0; r < rooms; ++r) {
+                        const std::size_t at = 4 + r * 4;
+                        if (at + 4 > table.size()) {
+                            break;
+                        }
+                        std::uint32_t off = 0;
+                        for (int b = 3; b >= 0; --b) {
+                            off = (off << 8) | table[at + static_cast<std::size_t>(b)];
+                        }
+                        std::cout << "    room " << r << " @0x" << std::hex << off
+                                  << std::dec;
+                        if (off + 4 <= table.size()) {
+                            std::cout << "  sub_count=" << static_cast<int>(
+                                static_cast<std::int8_t>(table[off + 2]));
+                        }
+                        std::cout << "\n";
+                    }
+                }
+
+                std::filesystem::path out_dir;
+                if (extracting) {
+                    out_dir = std::filesystem::path{argv[3]};
+                    std::filesystem::create_directories(out_dir);
+                }
+                static const struct { const char* magic; const char* ext; } kExt[] = {
+                    {"BMD0", ".nsbmd"}, {"BTX0", ".nsbtx"}, {"BCA0", ".nsbca"},
+                    {"BTA0", ".nsbta"}, {"BTP0", ".nsbtp"}, {"BMA0", ".nsbma"},
+                    {"BVA0", ".nsbva"},
+                };
+                std::size_t models = 0;
+                for (std::size_t i = 1; i < count; ++i) {
+                    std::vector<std::uint8_t> blob;
+                    try {
+                        blob = khdays::assets::extract_p2_subfile(
+                            file.data(), file.size(), i);
+                    } catch (const std::exception&) {
+                        continue;
+                    }
+                    const auto pack = khdays::assets::parse_slot_container(
+                        blob.data(), blob.size());
+                    if (!pack.valid) {
+                        std::cout << "  [" << i << "] room data, " << blob.size()
+                                  << " bytes\n";
+                        continue;
+                    }
+                    std::cout << "  [" << i << "] KAPH";
+                    for (std::size_t sl = 0; sl < pack.slots.size(); ++sl) {
+                        for (const auto& e : pack.slots[sl]) {
+                            const char* ext = ".bin";
+                            for (const auto& k : kExt) {
+                                if (std::memcmp(e.data, k.magic, 4) == 0) {
+                                    ext = k.ext;
+                                    break;
+                                }
+                            }
+                            std::cout << "  slot" << sl << '='
+                                      << std::string{
+                                             reinterpret_cast<const char*>(e.data), 4}
+                                      << '(' << e.size << ')';
+                            if (sl == 7) {
+                                ++models;
+                            }
+                            if (extracting) {
+                                const auto dir = out_dir
+                                    / ("sub" + std::to_string(i))
+                                    / ("slot_" + std::to_string(sl));
+                                std::filesystem::create_directories(dir);
+                                std::ofstream f{dir / (std::string{"0000"} + ext),
+                                                std::ios::binary};
+                                f.write(reinterpret_cast<const char*>(e.data),
+                                        static_cast<std::streamsize>(e.size));
+                            }
+                        }
+                    }
+                    std::cout << "\n";
+                }
+                std::cout << models << " room model(s)";
+                if (extracting) {
+                    std::cout << " written under " << out_dir.string();
+                }
+                std::cout << "\n";
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << "\n";
                 return EXIT_FAILURE;
             }
         }

@@ -233,18 +233,24 @@ void classify_pk2d_resource(Pk2dPack& out, const ResourceView view) {
 
 }  // namespace
 
-Pk2dPack parse_pk2d(const std::uint8_t* data, const std::size_t size) {
-    Pk2dPack out;
-    if (data == nullptr || size < 0x28U
-        || data[0] != 'D' || data[1] != '2' || data[2] != 'K' || data[3] != 'P') {
+SlotContainer parse_slot_container(
+    const std::uint8_t* data, const std::size_t size) {
+    SlotContainer out;
+    if (data == nullptr || size < 0x28U) {
         return out;
     }
-    // Fixed type-section pointer slots live at header +0x08..+0x24. Each points
-    // at a section: {u32 count; u32 offsets[count]; u32 sizes[count]}. We read
-    // every non-empty slot and classify each listed resource by its own magic,
-    // so the slot→type assignment does not need to be hard-coded.
-    for (std::size_t slot = 0x08U; slot + 4U <= 0x28U; slot += 4U) {
-        const std::uint32_t section = raw_u32(data, slot);
+    const bool kaph = data[0] == 'K' && data[1] == 'A'
+        && data[2] == 'P' && data[3] == 'H';
+    const bool d2kp = data[0] == 'D' && data[1] == '2'
+        && data[2] == 'K' && data[3] == 'P';
+    if (!kaph && !d2kp) {
+        return out;
+    }
+    out.valid = true;
+    // Eight slot pointers at +0x08..+0x24. Each points at a section
+    // {u32 count; u32 offsets[count]; u32 sizes[count]}.
+    for (std::size_t slot = 0U; slot < 8U; ++slot) {
+        const std::uint32_t section = raw_u32(data, 0x08U + slot * 4U);
         if (section == 0xFFFFFFFFU || section == 0U
             || static_cast<std::size_t>(section) + 4U > size) {
             continue;
@@ -262,8 +268,25 @@ Pk2dPack parse_pk2d(const std::uint8_t* data, const std::size_t size) {
             const std::size_t off = raw_u32(data, offsets + i * 4U);
             const std::size_t len = raw_u32(data, sizes + i * 4U);
             if (off < size && len >= 4U && off + len <= size) {
-                classify_pk2d_resource(out, ResourceView{data + off, len});
+                out.slots[slot].push_back(ResourceView{data + off, len});
             }
+        }
+    }
+    return out;
+}
+
+Pk2dPack parse_pk2d(const std::uint8_t* data, const std::size_t size) {
+    Pk2dPack out;
+    // A D2KP is a slot container; classify every listed resource by its own
+    // magic, so the slot->type assignment does not need to be hard-coded.
+    if (data == nullptr || size < 0x28U
+        || data[0] != 'D' || data[1] != '2' || data[2] != 'K' || data[3] != 'P') {
+        return out;
+    }
+    const SlotContainer container = parse_slot_container(data, size);
+    for (const auto& slot : container.slots) {
+        for (const ResourceView& entry : slot) {
+            classify_pk2d_resource(out, entry);
         }
     }
     return out;

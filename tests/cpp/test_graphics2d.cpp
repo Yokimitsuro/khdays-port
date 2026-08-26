@@ -312,6 +312,59 @@ int main() {
             expect(red, "flat-model draws a tinted textured triangle");
         }
 
+        {
+            // A KAPH/D2KP slot container: eight slot pointers at +0x08, each
+            // addressing {u32 count; u32 offsets[count]; u32 sizes[count]}.
+            // The game puts the NSBMD in slot 7 and the NSBCA in slot 0.
+            Bytes kaph(0x60U, 0U);
+            kaph[0] = 'K';
+            kaph[1] = 'A';
+            kaph[2] = 'P';
+            kaph[3] = 'H';
+            set_u32(kaph, 0x08U + 7U * 4U, 0x28U);  // slot 7 -> section
+            set_u32(kaph, 0x28U, 1U);               // count
+            set_u32(kaph, 0x2CU, 0x38U);            // offsets[0]
+            set_u32(kaph, 0x30U, 8U);               // sizes[0]
+            kaph[0x38U] = 'B';
+            kaph[0x39U] = 'M';
+            kaph[0x3AU] = 'D';
+            kaph[0x3BU] = '0';
+
+            const auto pack =
+                khdays::assets::parse_slot_container(kaph.data(), kaph.size());
+            expect(pack.valid, "KAPH is recognised as a slot container");
+            expect(pack.slots[7].size() == 1U, "slot 7 holds one entry");
+            expect(pack.slots[7][0].size == 8U, "slot 7 entry keeps its size");
+            expect(pack.slots[7][0].data == kaph.data() + 0x38U,
+                   "slot 7 entry points into the container");
+            expect(pack.slots[0].empty(), "an unused slot stays empty");
+
+            // The same layout under the UI magic.
+            Bytes d2kp = kaph;
+            d2kp[0] = 'D';
+            d2kp[1] = '2';
+            d2kp[2] = 'K';
+            d2kp[3] = 'P';
+            expect(khdays::assets::parse_slot_container(d2kp.data(), d2kp.size())
+                       .slots[7]
+                       .size() == 1U,
+                   "D2KP shares the slot layout");
+
+            // Anything else is rejected rather than parsed as garbage.
+            const Bytes junk(0x40U, 0U);
+            expect(!khdays::assets::parse_slot_container(junk.data(), junk.size())
+                        .valid,
+                   "a blob with no container magic is rejected");
+
+            // A section pointing past the end must not be trusted.
+            Bytes bad = kaph;
+            set_u32(bad, 0x08U + 7U * 4U, 0xFFFF0000U);
+            expect(khdays::assets::parse_slot_container(bad.data(), bad.size())
+                       .slots[7]
+                       .empty(),
+                   "an out-of-range section is skipped");
+        }
+
         for (const auto& p : temps) {
             std::filesystem::remove(p);
         }

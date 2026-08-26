@@ -81,6 +81,22 @@ struct Pk2dPack final {
 // a non-D2KP blob yields an all-empty pack.
 Pk2dPack parse_pk2d(const std::uint8_t* data, std::size_t size);
 
+// A "KAPH" / "D2KP" slot container. Both magics share one layout: eight slot
+// pointers at header +0x08, each addressing a section
+// `{u32 count; u32 offsets[count]; u32 sizes[count]}` listing raw entries. The
+// game's 3D archives are KAPH (`ba/ch/**`, `mi/**`, and the rooms inside the
+// `mi/wd/wd_<code>` world archives); the UI packs are D2KP. By the game's own
+// convention **slot 7 holds the NSBMD model and slot 0 the NSBCA animation**
+// (slots 1..6 carry the material/texture/visibility animations).
+//
+// Views point into `data`, which must outlive the result. `valid` is false for
+// a blob that is neither magic; slots absent from the container stay empty.
+struct SlotContainer final {
+    std::array<std::vector<ResourceView>, 8> slots{};
+    bool valid = false;
+};
+SlotContainer parse_slot_container(const std::uint8_t* data, std::size_t size);
+
 // Lay every tile out into a single RGBA image (a tile sheet), `tiles_per_row`
 // wide, colored with sub-palette `palette_index`. Index 0 renders opaque here so
 // the sheet is easy to see.
