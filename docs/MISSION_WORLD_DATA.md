@@ -62,7 +62,9 @@ table at `0x10`; bit 31 of a descriptor = LZ11-compressed). Sizes range from
 Sub-file roles, as observed across all ten archives:
 
 - **sub-file 0** — the room table (below).
-- **sub-file 1** — 4 bytes, all zero, in every archive.
+- **sub-file 1** — a **keyed record table**, not padding (see below). An earlier
+  version of this document called it "4 bytes, all zero, in every archive";
+  that was true only of the two smallest worlds, which have an empty table.
 - **the rest** — alternating **room-data blobs** (untyped) and **`KAPH` models**
   (the room geometry; the port already decodes this model family).
 
@@ -122,6 +124,41 @@ room index -> table entry -> entry[0x03] -> data sub-file
 lands on an untyped data sub-file — roughly 130 rooms, zero exceptions,
 including `wd_tt` whose layout starts with a `KAPH` at index 2 and whose first
 room correctly points at 3.
+
+### Sub-file 1 — a keyed record table
+
+The world loader also loads **sub-file 1** — the handle it builds is
+`0x80000001 | (container << 7)` — and parks the result in a global that
+`ov002_FindEntryAddrByKey` searches:
+
+```
+u32 count
+count * { u8 key; ... }        // stride 0x90
+```
+
+`ov002_FindEntryAddrByKey(key)` walks the records comparing the **first byte** of
+each and returns the record. Verified against the shipped bytes: `4 + count *
+0x90` equals the sub-file length **exactly** in every archive checked —
+`wd_tt` count 26 → 3748 bytes, `wd_al` count 29 → 4180, and `wd_tw` / `wd_zz`
+count 0 → 4 bytes, which is why the small worlds looked like padding.
+
+`FUN_arm9_ov002__020715c4` is the consumer: it looks a record up by key, reads
+what are shaped like **two `Vec3` triples** plus a `u16` of flags out of it, and
+from there drives the `gate%02d` and `col_wall%02d` toggling and creates
+emitters. What the table *is* — placed objects, spawn points, something else —
+is **not** established, and the record counts do not match the room counts
+(`wd_tt` has 17 rooms against 26 records, `wd_al` 18 against 29), so it is not
+per-room.
+
+### A note on sub-file sizes
+
+`khdays::assets::extract_p2_subfile` deliberately spans **start sector to next
+start sector** rather than trusting the descriptor's size field, because that
+field is encoded differently in the localized containers. Compressed sub-files
+are therefore exact (the LZ header carries the true length) while **uncompressed
+ones come back padded to the 0x200 sector** — which is why `--world-info` reports
+`wd_tw` sub-file 1 as 512 bytes where the directory declares 4. Read the
+descriptor directly if an exact uncompressed length matters.
 
 ## Collision and triggers live in the room-data blobs
 
