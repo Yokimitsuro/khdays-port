@@ -211,6 +211,78 @@ The 4-digit names fall into leading-pair groups — `01xx`, `02xx`, `03xx`, `04x
 group the numbers split around 50 (`0101`…`0114`, then `0151`…`0161`). What the
 leading pair and the split select is **not** established.
 
+## The room-data blob decoded — it is a collision model
+
+A room's data sub-file is not a container: it **is** the collision model struct,
+stored with every pointer as a file-relative offset. `FUN_0202aff4` checks the
+first word against `"KAPH"`; a room blob does not match, so it takes the single
+-object branch and hands the blob straight to `func_02028bb4`, which relocates
+it in place.
+
+```
++0x00  u32 runtime[4]        zeroed on disk, filled at load
++0x10  u8  [0x64]
++0x74  u16 flags             bit 0x8000 = already relocated, bit 0x4000 set on load
++0x76  u16
++0x78  u16 pointerCount
++0x7a  u16 nodeCount         quadtree nodes, 0x20 bytes each
++0x7c  u16 face88Count
++0x7e  u16 face84CountA
++0x80  u16 face84CountB
++0x82  u16 namedRecordCount
++0x84  u8  [0x10]
++0x94  off field94
++0x98  off pointerTable       pointerCount further offsets, all relocated
++0x9c  off treeRoot
++0xa0  off faces88            face88Count records of 0x88
++0xa4  off faces84A           face84CountA records of 0x84
++0xa8  off faces84B           face84CountB records of 0x84
++0xac  off namedRecords       namedRecordCount records of 0x14
+```
+
+Field names follow the decomp's own `CollisionModelBlob`
+(`external/khdays-decomp/src/calls/func_02028bb4.c`).
+
+**Verified against `wd_tw` sub-file 2, and every section boundary lands on the
+next one:**
+
+```
+treeRoot     0x0b0 + 2 x 0x20 = 0x0f0 = faces88
+faces88      0x0f0 + 1 x 0x88 = 0x178 = faces84A
+faces84A     0x178 + 5 x 0x84 = 0x40c = faces84B = namedRecords
+namedRecords 0x40c + 1 x 0x14 = 0x420 = the file length
+```
+
+### The walkable surface — `CollisionFace88`
+
+```
++0x00  s32 bounds[4]         minX, minZ, maxX, maxZ (20.12)
++0x10  u16 flags             bit 0x4000 = skip, bit 0x8000 = last of the run
++0x12  u16 vertexCount       up to 4
++0x14  {s16 x,y,z; s16 pad; s32 distance}   the face plane
++0x20  {s16 x; s16 pad; s16 z; s16 pad; s32 distance} edges[4]   inside test
++0x50  VecFx32 vertices[4]   20.12
++0x80  u32 [2]
+```
+
+So a collision face is a **convex polygon of up to four corners with its own
+plane and four edge planes** — plane for the hit point, edge planes for the
+inside test, bounds for the broad phase. The `0x84` variant is the same idea
+without the plane's `y`.
+
+`wd_tw` sub-file 2's single `face88` decodes as the district's floor: plane
+normal `(0, 4096, 0)` — straight up in 20.12 — four corners at `y = 0.075`
+spanning `x = -15.29 .. 20.67` and `z = -17.49 .. 15.01`, and `flags = 0x8000`
+because it is the last of its run.
+
+### The tree
+
+`nodeCount` nodes of `0x20` bytes at `treeRoot`. Node `+0x0c` and `+0x10..+0x1c`
+hold **child indices**, which `func_02028bb4` multiplies by `0x20` and rebases;
+`-1` becomes null. Four children per node is the quadtree
+`FUN_01ffdb54` walks, choosing a quadrant on two axes and quartering the extent
+per level.
+
 ## Unknown — do not fill these in without measuring
 
 1. **How the `KAPH` models bind to a room.** `+0x03` binds the *data*; the
@@ -222,12 +294,9 @@ leading pair and the split select is **not** established.
    `wd_al` rooms 15..17 point at data blobs with no adjacent `KAPH` at all. The
    `sub_count` entries at `+0x20` (values `0x380`, `0x480`, …) are the obvious
    candidate and are still undecoded.
-2. **The room-data blob's record layout.** All that is measured is: a 0x70-byte
-   zeroed prologue, then what looks like a section table (`wd_tw` sub-file 2 has
-   ascending u32s `0xb0, 0xb0, 0xb0, 0xf0, 0x178, 0x40c, 0x40c` against a
-   0x420-byte file), then data containing the names above. The record that binds
-   a name to geometry, to a surface tag, and to a volume has **not** been
-   decoded.
+2. What a **named record's** `+0x10` payload points at, and how a name binds to
+   a particular face or region. The blob's own layout is decoded (above); this
+   last link is not.
 3. **The six u32s at room entry `+0x04`..`+0x18`.** Their magnitudes
    (`0xfffffe96`, `0x2c000`, `0x7000`, `0x23000`, …) are consistent with
    fixed-point coordinates or extents, but nothing has confirmed that.
