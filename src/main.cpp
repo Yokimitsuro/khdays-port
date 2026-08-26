@@ -44,8 +44,10 @@
 #include "khdays/platform/audio.h"
 #include "khdays/platform/runtime.h"
 #include "khdays/port.h"
+#include "khdays/assets/collision.h"
 #include "khdays/assets/scene3d.h"
 #include "khdays/resource/loader.h"
+#include "khdays/resource/world.h"
 #include "khdays/vfs/filesystem.h"
 
 #ifndef KHDAYS_PORT_VERSION
@@ -402,6 +404,7 @@ void print_help() {
         << "  khdays-port --render-scene OUT.bmp YAW PITCH MODEL [MODEL...]\n"
         << "  khdays-port --world-info WORLD\n"
         << "  khdays-port --extract-world WORLD OUTDIR\n"
+        << "  khdays-port --room-collision WORLD ROOM [X Z]\n"
         << "  khdays-port --ui-layout FILE.ui\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
@@ -416,6 +419,8 @@ void print_help() {
         << "                      and the KAPH room models it carries.\n"
         << "  --extract-world W D Write each KAPH under D as slot_N/0000.ext,\n"
         << "                      the layout --render-model already reads.\n"
+        << "  --room-collision    Decode a room's collision model; with X and Z,\n"
+        << "                      run the game's own downward ground query.\n"
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
         << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
@@ -995,6 +1000,84 @@ int main(int argc, char* argv[]) {
                           static_cast<std::streamsize>(bmp.size()));
                 std::cout << "wrote " << out_path.string() << ' ' << image.width
                           << 'x' << image.height << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+
+        if (first == "--room-collision") {
+            // Decode a room's collision model and, optionally, ask the game's
+            // own downward query what the ground height is at a point.
+            if (argc < 4) {
+                std::cerr << "ERROR: --room-collision requires a world code and "
+                             "a room index, plus optional X and Z in units\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                khdays::vfs::autodetect_data_root();
+                const std::string code{argv[2]};
+                const auto room =
+                    static_cast<std::size_t>(std::stoul(argv[3]));
+                const auto sub = khdays::resource::room_data_subfile(code, room);
+                if (!sub.has_value()) {
+                    std::cerr << "ERROR: no such room\n";
+                    return EXIT_FAILURE;
+                }
+                const auto container =
+                    khdays::vfs::read("mi/wd/wd_" + code);
+                const auto blob = khdays::assets::extract_p2_subfile(
+                    container.data(), container.size(), *sub);
+                const auto model = khdays::assets::decode_collision_model(
+                    blob.data(), blob.size());
+                if (!model.valid) {
+                    std::cerr << "ERROR: the blob's sections do not chain\n";
+                    return EXIT_FAILURE;
+                }
+                const auto fx = [](const std::int32_t v) {
+                    return static_cast<double>(v) / 4096.0;
+                };
+                std::cout << "wd_" << code << " room " << room << ": data "
+                          << "sub-file " << *sub << ", " << model.faces.size()
+                          << " faces, " << model.node_count << " tree nodes, "
+                          << model.named.size() << " named records ("
+                          << model.face84_count_a << '+' << model.face84_count_b
+                          << " faces of 0x84 not decoded)\n";
+                for (const auto& record : model.named) {
+                    std::cout << "  named: " << record.name << "  code="
+                              << record.code << '\n';
+                }
+                for (std::size_t i = 0; i < model.faces.size(); ++i) {
+                    const auto& f = model.faces[i];
+                    std::cout << "  face " << i << "  verts=" << f.vertex_count
+                              << "  flags=0x" << std::hex << f.flags << std::dec
+                              << "  n=(" << f.plane.x << ',' << f.plane.y << ','
+                              << f.plane.z << ") d=" << fx(f.plane.distance)
+                              << "  bounds x[" << fx(f.bounds[0]) << ','
+                              << fx(f.bounds[2]) << "] z[" << fx(f.bounds[1])
+                              << ',' << fx(f.bounds[3]) << "]\n";
+                }
+                if (argc >= 6) {
+                    const auto to_fx = [](const char* s) {
+                        return static_cast<std::int32_t>(
+                            std::stod(s) * 4096.0);
+                    };
+                    const std::int32_t x = to_fx(argv[4]);
+                    const std::int32_t z = to_fx(argv[5]);
+                    // The roster ground ray: start one unit up, cast 50 down.
+                    const auto hit = khdays::assets::ground_at(
+                        model, x, z, 0x1000, 0x1000 - 0x32000);
+                    std::cout << "ground at (" << fx(x) << ", " << fx(z)
+                              << "): ";
+                    if (hit.hit) {
+                        std::cout << "y=" << fx(hit.y) << "  face "
+                                  << hit.face_index << '\n';
+                    } else {
+                        std::cout << "no ground\n";
+                    }
+                }
                 return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';

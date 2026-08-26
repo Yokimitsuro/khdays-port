@@ -125,6 +125,7 @@ add_library(
         src/assets/audio.cpp
         src/assets/bmp.cpp
         src/assets/cell.cpp
+        src/assets/collision.cpp
         src/assets/font.cpp
         src/assets/graphics2d.cpp
         src/assets/mdl0.cpp
@@ -434,6 +435,17 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-collision-test
+        tests/cpp/test_collision.cpp
+    )
+
+    target_link_libraries(
+        khdays-collision-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -450,6 +462,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-affine-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-collision-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -466,6 +479,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-affine-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-collision-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -483,6 +497,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-affine-test)
     khdays_enable_sanitizers(khdays-cell-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
+    khdays_enable_sanitizers(khdays-collision-test)
 
     add_test(
         NAME khdays-port-version
@@ -560,6 +575,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-collision
+        COMMAND khdays-collision-test
+    )
+
+    add_test(
         NAME khdays-cell
         COMMAND khdays-cell-test
     )
@@ -587,5 +607,6 @@ if(BUILD_TESTING)
             khdays-affine-test
             khdays-cell-test
             khdays-ui-layout-test
+            khdays-collision-test
     )
 endif()
