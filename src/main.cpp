@@ -40,6 +40,7 @@
 #include "khdays/assets/ui_layout.h"
 #include "khdays/game/game.h"
 #include "khdays/game/scenes/boot_logo_scene.h"
+#include "khdays/game/scenes/day_transition_scene.h"
 #include "khdays/game/scenes/gameplay_scene.h"
 #include "khdays/game/scenes/main_menu_scene.h"
 #include "khdays/game/scenes/opening_scene.h"
@@ -127,6 +128,9 @@ int run_game_demo() {
 void register_native_scenes(khdays::game::Game& game) {
     game.scenes().register_scene(khdays::game::kSceneBootLogo, [] {
         return std::make_unique<khdays::game::scenes::BootLogoScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneDayTransition, [] {
+        return std::make_unique<khdays::game::scenes::DayTransitionScene>();
     });
     game.scenes().register_scene(khdays::game::kSceneOpening, [] {
         return std::make_unique<khdays::game::scenes::OpeningScene>();
@@ -415,6 +419,8 @@ void print_help() {
         << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --game\n"
         << "  khdays-port --opening-demo\n"
+        << "  khdays-port --day-transition-demo\n"
+        << "  khdays-port --day-transition-shot OUT.bmp [FRAME]\n"
         << "  khdays-port --playable-demo\n"
         << "  khdays-port --playable-shot OUT.bmp [FRAMES] [BUTTON]\n"
         << "  khdays-port --game-demo\n"
@@ -462,6 +468,8 @@ void print_help() {
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
         << "  --game              Run the native boot/title/menu/gameplay flow.\n"
         << "  --opening-demo      Start directly in ov012's movie/artwork sequence.\n"
+        << "  --day-transition-demo  Start in ov004's post-opening day transition.\n"
+        << "  --day-transition-shot  Render ov004's day-255 transition headlessly.\n"
         << "  --playable-demo     Start directly in the playable wd_zz room-0 slice.\n"
         << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
         << "                      u/d/l/r/q/e or press z for FRAMES.\n"
@@ -772,6 +780,36 @@ int main(int argc, char* argv[]) {
             return run_game_demo();
         }
 
+        if (first == "--day-transition-shot") {
+            if (argc < 3) {
+                std::cerr << "ERROR: --day-transition-shot requires an output "
+                             "BMP [frame]\n";
+                return EXIT_FAILURE;
+            }
+            khdays::vfs::autodetect_data_root();
+            const int frame = argc > 3
+                                  ? std::clamp(std::stoi(argv[3]), 0, 197)
+                                  : 80;
+            khdays::game::SceneManager manager;
+            manager.register_scene(khdays::game::kSceneDayTransition, [] {
+                return std::make_unique<
+                    khdays::game::scenes::DayTransitionScene>();
+            });
+            manager.start(khdays::game::kSceneDayTransition, 0x190);
+            for (int i = 0; i < frame; ++i) {
+                manager.step();
+            }
+            khdays::game::SoftwareRenderer sw{512, 784};
+            manager.render(sw);
+            const auto bmp = khdays::assets::to_bmp(sw.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            out.write(reinterpret_cast<const char*>(bmp.data()),
+                      static_cast<std::streamsize>(bmp.size()));
+            std::cout << "ov004 day-transition frame " << frame
+                      << " -> BMP: " << argv[2] << '\n';
+            return out ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
+
         if (first == "--menu-shot") {
             // Headless snapshot of the main-menu scene (for previewing the
             // layout without opening a window). Optional 2nd arg = how many
@@ -998,6 +1036,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--game" || first == "--opening-demo"
+            || first == "--day-transition-demo"
             || first == "--playable-demo") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
@@ -1007,6 +1046,8 @@ int main(int argc, char* argv[]) {
             register_native_scenes(game);
             if (first == "--opening-demo") {
                 game.scenes().start(khdays::game::kSceneOpening);
+            } else if (first == "--day-transition-demo") {
+                game.scenes().start(khdays::game::kSceneDayTransition, 0x190);
             } else if (first == "--playable-demo") {
                 game.scenes().start(khdays::game::kSceneGameplay);
             } else {

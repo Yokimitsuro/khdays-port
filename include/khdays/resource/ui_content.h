@@ -43,6 +43,15 @@ struct SpriteSet final {
 std::optional<SpriteSet> load_sprite_set(const char* game_path,
                                          std::size_t subfile);
 
+// Load a standalone KAPH/D2KP sprite container such as ov004's localized
+// `UI/cal/cl_hrt_&.pobj.z`. Nintendo LZ10/LZ11 compression is handled here.
+std::optional<SpriteSet> load_sprite_container(const char* game_path);
+
+// Load ov004's ten 16x32 textured digit quads from `UI/cal/[0-9]_a.pak.z`.
+// The scene projects these to the original approximately 4x8-pixel glyphs.
+std::optional<std::array<khdays::assets::DecodedTexture, 10>>
+load_calendar_digits();
+
 // Load a screen's `.ui` element layout, resolved through the mod/vfs chain like
 // every other resource (so `mods/<Mod>/files/UI/cm/cm_save.ui.z` overrides it).
 std::optional<khdays::assets::UiLayout> load_ui_layout(const char* game_path);

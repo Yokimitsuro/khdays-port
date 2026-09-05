@@ -101,7 +101,7 @@ void OpeningScene::on_enter(SceneManager& manager) {
 
 void OpeningScene::update(SceneManager& manager) {
     if (!playback_started_ || player_ == nullptr) {
-        manager.change_scene(kSceneTitle);
+        manager.change_scene(kSceneDayTransition, 0x190);
         return;
     }
 
@@ -115,12 +115,12 @@ void OpeningScene::update(SceneManager& manager) {
 
     if (exiting_) {
         if (++exit_fade_ >= 16) {
-            manager.change_scene(kSceneTitle);
+            manager.change_scene(kSceneDayTransition, 0x190);
         }
         return;
     }
     if (!player_->video_playing()) {
-        manager.change_scene(kSceneTitle);
+        manager.change_scene(kSceneDayTransition, 0x190);
     }
 }
 

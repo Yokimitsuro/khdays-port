@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "khdays/game/audio.h"
+#include "khdays/game/game_state.h"
 #include "khdays/game/input.h"
 #include "khdays/game/renderer.h"
 #include "khdays/game/video.h"
@@ -34,6 +35,7 @@ using SceneId = int;
 inline constexpr SceneId kSceneNone = 0;
 inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the intro/logo scene (ov000)
 inline constexpr SceneId kSceneGameplay = 2;   // gameplay (ov002); the menu enters it on confirm
+inline constexpr SceneId kSceneDayTransition = 5;  // calendar/day hand-off (ov004)
 inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
 inline constexpr SceneId kSceneOpening = 11;   // opening movie / illustration timeline (ov012)
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
@@ -100,6 +102,11 @@ public:
     void set_video_player(VideoPlayer* video) { video_ = video; }
     VideoPlayer* video() const { return video_; }
 
+    // Persistent bit-field store shared by scenes. ov004 writes the selected
+    // day here immediately before requesting scene 2.
+    GameState& state() { return state_; }
+    const GameState& state() const { return state_; }
+
     SceneId current_id() const { return current_id_; }
     int current_arg() const { return current_arg_; }
     bool has_scene() const { return current_ != nullptr; }
@@ -124,6 +131,7 @@ private:
     bool ended_ = false;
     std::uint64_t frame_ = 0;
     Input input_;
+    GameState state_;
     MusicPlayer* music_ = nullptr;
     VideoPlayer* video_ = nullptr;
     std::function<void(SceneId, int)> observer_;

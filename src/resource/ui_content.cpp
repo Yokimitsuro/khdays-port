@@ -8,11 +8,67 @@
 #include <string>
 
 #include "khdays/assets/mesh.h"
+#include "khdays/assets/message.h"
 #include "khdays/assets/screen.h"
 #include "khdays/resource/loader.h"
 #include "khdays/vfs/filesystem.h"
 
 namespace khdays::resource {
+
+namespace {
+
+std::vector<std::uint8_t> decompress_if_needed(
+    std::vector<std::uint8_t> bytes) {
+    if (!bytes.empty() && (bytes[0] == 0x10U || bytes[0] == 0x11U)) {
+        return khdays::assets::lz_decompress(bytes);
+    }
+    return bytes;
+}
+
+std::optional<SpriteSet> decode_sprite_set(
+    const std::vector<std::uint8_t>& pack) {
+    const auto pal = khdays::assets::find_nitro_resource(
+        pack.data(), pack.size(), "RLCN");
+    const auto chr = khdays::assets::find_nitro_resource(
+        pack.data(), pack.size(), "RGCN");
+    const auto cer = khdays::assets::find_nitro_resource(
+        pack.data(), pack.size(), "RECN");
+    const auto nan = khdays::assets::find_nitro_resource(
+        pack.data(), pack.size(), "RNAN");
+    if (!pal || !chr || !cer) {
+        return std::nullopt;
+    }
+    const auto palette = khdays::assets::decode_nclr(pal.data, pal.size);
+    const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
+    const auto bank = khdays::assets::decode_ncer(cer.data, cer.size);
+    SpriteSet set;
+    set.cells.reserve(bank.cells.size());
+    set.cell_origins.reserve(bank.cells.size());
+    for (const auto& cell : bank.cells) {
+        set.cells.push_back(khdays::assets::render_cell(
+            cell, tiles, palette, bank.tile_boundary));
+        int min_x = 0;
+        int min_y = 0;
+        bool first = true;
+        for (const auto& piece : cell.pieces) {
+            if (first) {
+                min_x = piece.x;
+                min_y = piece.y;
+                first = false;
+            } else {
+                min_x = std::min(min_x, piece.x);
+                min_y = std::min(min_y, piece.y);
+            }
+        }
+        set.cell_origins.push_back({min_x, min_y});
+    }
+    if (nan) {
+        set.animations = khdays::assets::decode_nanr(nan.data, nan.size);
+    }
+    return set;
+}
+
+}  // namespace
 
 std::optional<khdays::assets::UiLayout> load_ui_layout(const char* game_path) {
     try {
@@ -29,48 +85,46 @@ std::optional<SpriteSet> load_sprite_set(const char* game_path,
         const auto container = khdays::vfs::read(game_path);
         const auto pack = khdays::assets::extract_p2_subfile(
             container.data(), container.size(), subfile);
-        const auto pal = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RLCN");
-        const auto chr = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RGCN");
-        const auto cer = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RECN");
-        const auto nan = khdays::assets::find_nitro_resource(
-            pack.data(), pack.size(), "RNAN");
-        if (!pal || !chr || !cer) {
-            return std::nullopt;
-        }
-        const auto palette = khdays::assets::decode_nclr(pal.data, pal.size);
-        const auto tiles = khdays::assets::decode_ncgr(chr.data, chr.size);
-        const auto bank = khdays::assets::decode_ncer(cer.data, cer.size);
-        SpriteSet set;
-        set.cells.reserve(bank.cells.size());
-        set.cell_origins.reserve(bank.cells.size());
-        for (const auto& cell : bank.cells) {
-            set.cells.push_back(khdays::assets::render_cell(
-                cell, tiles, palette, bank.tile_boundary));
-            // Mirror render_cell's own anchor: it lays the pieces out starting
-            // at their minimum (x, y), so that minimum is the bitmap's offset
-            // from the cell origin the game positions.
-            int min_x = 0;
-            int min_y = 0;
-            bool first = true;
-            for (const auto& piece : cell.pieces) {
-                if (first) {
-                    min_x = piece.x;
-                    min_y = piece.y;
-                    first = false;
-                } else {
-                    min_x = std::min(min_x, piece.x);
-                    min_y = std::min(min_y, piece.y);
-                }
+        return decode_sprite_set(pack);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<SpriteSet> load_sprite_container(const char* game_path) {
+    try {
+        return decode_sprite_set(decompress_if_needed(
+            khdays::vfs::read(game_path)));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<std::array<khdays::assets::DecodedTexture, 10>>
+load_calendar_digits() {
+    try {
+        std::array<khdays::assets::DecodedTexture, 10> digits;
+        for (std::size_t digit = 0; digit < digits.size(); ++digit) {
+            const std::string path =
+                "UI/cal/" + std::to_string(digit) + "_a.pak.z";
+            const auto pack = decompress_if_needed(khdays::vfs::read(path));
+            const auto bmd0 = khdays::assets::find_nitro_resource(
+                pack.data(), pack.size(), "BMD0");
+            if (!bmd0) {
+                return std::nullopt;
             }
-            set.cell_origins.push_back({min_x, min_y});
+            const auto model = khdays::assets::decode_model_geometry(
+                bmd0.data, bmd0.size);
+            const auto mesh = std::find_if(
+                model.meshes.begin(), model.meshes.end(),
+                [](const auto& value) { return !value.texture_name.empty(); });
+            if (mesh == model.meshes.end()) {
+                return std::nullopt;
+            }
+            digits[digit] = khdays::assets::load_tex0_texture(
+                bmd0.data, bmd0.size, mesh->texture_name);
         }
-        if (nan) {
-            set.animations = khdays::assets::decode_nanr(nan.data, nan.size);
-        }
-        return set;
+        return digits;
     } catch (const std::exception&) {
         return std::nullopt;
     }

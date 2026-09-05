@@ -10,6 +10,7 @@
 #include "khdays/game/object.h"
 #include "khdays/game/playable_controller.h"
 #include "khdays/game/scene.h"
+#include "khdays/game/scenes/day_transition_scene.h"
 #include "khdays/game/scenes/opening_scene.h"
 
 namespace {
@@ -72,6 +73,8 @@ public:
     int frame_calls = 0;
 };
 
+class EmptyScene final : public Scene {};
+
 void expect(bool ok, const char* what) {
     if (!ok) {
         throw std::runtime_error(what);
@@ -120,8 +123,7 @@ int main() {
                "non-fresh boot skips to continue");
 
         // ov012 starts the real opening MobiClip and Start performs its
-        // 16-VBlank exit fade before entering the title scene.
-        FlowLog opening_log;
+        // 16-VBlank exit fade before entering ov004.
         FakeVideoPlayer opening_video;
         SceneManager opening;
         opening.set_video_player(&opening_video);
@@ -129,8 +131,8 @@ int main() {
             kSceneOpening,
             [] { return std::make_unique<scenes::OpeningScene>(); });
         opening.register_scene(
-            kSceneTitle,
-            [&] { return std::make_unique<TitleScene>(&opening_log); });
+            kSceneDayTransition,
+            [] { return std::make_unique<EmptyScene>(); });
         opening.start(kSceneOpening);
         expect(opening_video.play_calls == 1
                    && opening_video.path == "mv/802.mods",
@@ -144,12 +146,36 @@ int main() {
         for (int frame = 1; frame < 16; ++frame) {
             opening.step();
         }
-        expect(opening.current_id() == kSceneTitle,
-               "opening skip reaches title after fade");
+        expect(opening.current_id() == kSceneDayTransition
+                   && opening.current_arg() == 0x190,
+               "opening skip reaches ov004 with its native argument");
         expect(opening_video.frame_calls == 16,
                "opening advances video during exit fade");
         expect(opening_video.stop_calls == 1 && !opening_video.playing,
                "leaving opening stops its video");
+
+        // ov004 maps the opening sentinel to its special calendar transition,
+        // runs its fade-in/setup/hold/fade-out/completion phases, then requests
+        // scene 2.
+        SceneManager calendar;
+        calendar.register_scene(
+            kSceneDayTransition,
+            [] { return std::make_unique<scenes::DayTransitionScene>(); });
+        calendar.register_scene(
+            kSceneGameplay,
+            [] { return std::make_unique<EmptyScene>(); });
+        calendar.start(kSceneDayTransition, 0x190);
+        for (int frame = 0; frame < 197; ++frame) {
+            calendar.step();
+        }
+        expect(calendar.current_id() == kSceneDayTransition,
+               "ov004 remains active through its fade-out");
+        calendar.step();
+        expect(calendar.current_id() == kSceneGameplay
+                   && calendar.current_arg() == 0,
+               "ov004 completes into scene 2 with argument zero");
+        expect(calendar.state().day() == 0x190U,
+               "ov004 commits its selected day before scene 2");
 
         // --- object state machine (the func_02023adc model) ---
         ObjectList objects;
