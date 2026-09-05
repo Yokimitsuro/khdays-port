@@ -28,6 +28,25 @@ std::array<std::uint8_t, 4> pixel(
         image.rgba[offset + 3U]};
 }
 
+khdays::assets::DecodedTexture solid(
+    const int width,
+    const int height,
+    const std::uint8_t value,
+    const std::uint8_t alpha) {
+    khdays::assets::DecodedTexture image;
+    image.width = width;
+    image.height = height;
+    image.rgba.resize(
+        static_cast<std::size_t>(width) * height * 4U);
+    for (std::size_t offset = 0; offset < image.rgba.size(); offset += 4U) {
+        image.rgba[offset] = value;
+        image.rgba[offset + 1U] = value;
+        image.rgba[offset + 2U] = value;
+        image.rgba[offset + 3U] = alpha;
+    }
+    return image;
+}
+
 }  // namespace
 
 int main() {
@@ -74,6 +93,28 @@ int main() {
             khdays::assets::compose_ov002_player_gauge(source, 50U, 0U);
         expect(pixel(invalid, 78, 0)[3] == 0U,
                "zero maximum is handled without division");
+
+        khdays::assets::Ov002CommandMenuArtwork menu_source;
+        menu_source.header = solid(3, 1, 11U, 255U);
+        menu_source.idle_row = solid(4, 2, 22U, 255U);
+        menu_source.selected_row = solid(5, 2, 33U, 255U);
+        for (auto& label : menu_source.labels) {
+            label = solid(1, 1, 255U, 255U);
+        }
+        const auto menu = khdays::assets::compose_ov002_command_menu(
+            menu_source, 1U);
+        expect(menu.width == 96 && menu.height == 64,
+               "command menu retains ov002's 12x8-tile footprint");
+        expect(pixel(menu, 0, 0)[0] == 11U,
+               "command header starts at row 0");
+        expect(pixel(menu, 0, 16)[0] == 22U,
+               "first inactive row starts at y=16");
+        expect(pixel(menu, 0, 32)[0] == 33U,
+               "selected second row starts at y=32");
+        expect(pixel(menu, 8, 19)[0] == 107U,
+               "inactive label uses palette-14 grey and one-tile inset");
+        expect(pixel(menu, 16, 35)[0] == 255U,
+               "selected label uses palette-15 white and two-tile inset");
 
         std::cout << "battle HUD tests passed\n";
         return 0;

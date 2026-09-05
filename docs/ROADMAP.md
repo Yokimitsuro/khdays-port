@@ -269,8 +269,10 @@ The first narrow, reproducible target is in progress:
 - [x] a visible development goal and completion/reset state;
 - [x] reconstruct ov002's primary 77-cell 4bpp HP compositor and local-player
   cluster from `UI/btl/main.p2` (real Roxas portrait, `1P`, and `HP`);
-- [ ] reconstruct the remaining ov002 command, party, target, and mission HUD
-  tile layouts;
+- [x] reconstruct ov002's localized primary command page from its layout
+  records, language character sheet, `cmd.s.z`, and small battle font;
+- [ ] wire command selection/execution and reconstruct the expanded Magic/Items,
+  party, target, and mission HUD tile layouts;
 - [ ] one enemy;
 - [ ] one combat interaction.
 

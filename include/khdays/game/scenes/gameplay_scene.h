@@ -44,7 +44,10 @@ private:
     std::optional<khdays::assets::SkeletalAnimation> idle_animation_;
     std::optional<khdays::assets::SkeletalAnimation> walk_animation_;
     std::optional<khdays::resource::BattleHudArtwork> battle_hud_;
+    std::optional<khdays::assets::Ov002CommandMenuArtwork>
+        command_menu_artwork_;
     khdays::assets::DecodedTexture player_gauge_;
+    khdays::assets::DecodedTexture command_menu_;
     khdays::assets::CollisionModel collision_;
     khdays::assets::NeutralModel goal_model_;
     khdays::assets::DecodedTexture scene_frame_;

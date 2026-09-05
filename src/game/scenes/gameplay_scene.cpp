@@ -11,6 +11,7 @@
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/scene3d.h"
 #include "khdays/game/draw.h"
+#include "khdays/game/settings.h"
 #include "khdays/resource/ui_content.h"
 #include "khdays/resource/mission.h"
 #include "khdays/vfs/filesystem.h"
@@ -125,7 +126,9 @@ void GameplayScene::load_playable_harness() {
     frame_ = 0;
     ready_ = false;
     battle_hud_.reset();
+    command_menu_artwork_.reset();
     player_gauge_ = {};
+    command_menu_ = {};
     hud_hp_ = 0xffffU;
     hud_max_hp_ = 0xffffU;
     controls_text_ = khdays::resource::render_ui_text(
@@ -222,6 +225,14 @@ void GameplayScene::load_playable_harness() {
         };
         controller_.reset(probe);
         battle_hud_ = khdays::resource::load_battle_hud_artwork();
+        command_menu_artwork_ = khdays::resource::load_ov002_command_menu(
+            khdays::game::localized_path("UI/btl/&/main.p2").c_str(),
+            khdays::game::localized_path("UI/btl/&/cmd.s.z").c_str(),
+            "text/font_eu_08s.nftr");
+        if (command_menu_artwork_) {
+            command_menu_ = khdays::assets::compose_ov002_command_menu(
+                *command_menu_artwork_, 0U);
+        }
         update_battle_hud();
         ready_ = !player_->model.meshes.empty()
             && ground_height(
@@ -454,6 +465,12 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
         scene_frame_ =
             khdays::assets::render_scene(instances, camera, 256, 192);
         draw_screen_dynamic(renderer, layout, scene_frame_, false);
+
+        // func_ov002_0205ad5c anchors the default three-entry page to the
+        // lower-left: localized header at y=128, then rows at 144/160/176.
+        if (command_menu_artwork_) {
+            draw_overlay(renderer, layout, command_menu_, 0, 128, false);
+        }
 
         // The local-player cluster occupies ov002's original lower-right
         // 48x48 portrait slot. Its 80-pixel gauge overlaps the portrait's

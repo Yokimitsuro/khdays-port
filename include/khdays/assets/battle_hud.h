@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "khdays/assets/tex0.h"
@@ -15,6 +16,16 @@ struct Ov002PlayerGauge final {
     std::array<std::array<std::uint8_t, 4>, 16> palette{};
 };
 
+// Neutral source pieces for ov002's three-entry primary command list. The
+// localized header and row frames come from UI/btl/<lang>/main.p2; labels are
+// rendered from that language's cmd.s.z with the game's small battle font.
+struct Ov002CommandMenuArtwork final {
+    DecodedTexture header;
+    DecodedTexture idle_row;
+    DecodedTexture selected_row;
+    std::array<DecodedTexture, 3> labels;
+};
+
 // Reproduce ov002's 77-cell primary gauge. The game converts HP to cells with
 // integer division, keeps one cell for a non-zero value, and writes each cell
 // right-to-left with the six-pixel shade ramp {6,6,5,5,4,3}.
@@ -22,5 +33,13 @@ DecodedTexture compose_ov002_player_gauge(
     const Ov002PlayerGauge& source,
     std::uint16_t current,
     std::uint16_t maximum);
+
+// Assemble the default command page exactly where func_ov002_0205ad5c places
+// it: a 96x16 header followed by three 88x16 rows. Selected text is inset two
+// tiles and white (palette 15); inactive text is inset one tile and grey
+// (palette 14).
+DecodedTexture compose_ov002_command_menu(
+    const Ov002CommandMenuArtwork& source,
+    std::size_t selected);
 
 }  // namespace khdays::assets

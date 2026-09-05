@@ -110,6 +110,15 @@ struct BattleHudArtwork final {
 // present.
 std::optional<BattleHudArtwork> load_battle_hud_artwork();
 
+// Load ov002's localized primary command page. `localized_main_game_path` is
+// UI/btl/<lang>/main.p2, while `command_table_game_path` is the matching
+// cmd.s.z. The layout and palette still come from the base UI/btl/main.p2.
+std::optional<khdays::assets::Ov002CommandMenuArtwork>
+load_ov002_command_menu(
+    const char* localized_main_game_path,
+    const char* command_table_game_path,
+    const char* font_game_path);
+
 // `language_subfile` is the game's own language selector: 1=en, 2=fr, 3=de,
 // 4=it, 5=es. Returns null when op.p2 is absent or structurally incomplete.
 std::optional<OpeningArtwork> load_opening_artwork(

@@ -130,7 +130,18 @@ colour, while the `1P` and `HP` tiles come from sub-file 4. The resulting
 RGBA overlays remain driven by the neutral player HP state and do not expose DS
 formats to the game scene.
 
-The command list, party slots, target gauge, mission information, delayed damage
-tween, and limit-break row compositor remain to be reconstructed. Those should
-continue to follow ov002's tile and state tables rather than treating atlas
-regions as complete pre-rendered widgets.
+The default command page now follows the same rule. The base `main.p2` sub-file
+0 is ov002's layout program, not an atlas: sprite records `0x60`, `0x61`, and
+`0x63` select the inactive row, selected row, and localized header from its
+embedded NSCR. The English character sheet comes from base sub-file 4; the EU
+`de/es/fr/it/main.p2` files replace it with their localized sub-file 0. Labels
+0--2 from the matching `cmd.s.z` are drawn with `font_eu_08s.nftr`. The neutral
+compositor reproduces `func_ov002_0205ad5c`: header at screen y=128, rows at
+y=144/160/176, selected text white and inset 16 pixels, inactive text grey and
+inset 8 pixels.
+
+Command input/execution and expanded Magic/Items pages, party slots, target
+gauge, mission information, delayed damage tween, and limit-break row
+compositor remain to be reconstructed. Those should continue to follow
+ov002's tile and state tables rather than treating atlas regions as complete
+pre-rendered widgets.
