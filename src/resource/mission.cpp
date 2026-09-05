@@ -1,10 +1,12 @@
 #include "khdays/resource/mission.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
+#include "khdays/assets/cakp.h"
 #include "khdays/assets/message.h"
 #include "khdays/vfs/filesystem.h"
 
@@ -117,6 +119,60 @@ std::optional<std::string> story_movie_reference(
     const std::uint32_t day) {
     const auto bundle = story_day_bundle(mission_archive, day);
     return bundle ? find_movie(*bundle) : std::nullopt;
+}
+
+std::optional<StorySequence> story_sequence(
+    const std::vector<std::uint8_t>& mission_archive,
+    const std::uint32_t day) {
+    const auto bundle = story_day_bundle(mission_archive, day);
+    if (!bundle) {
+        return std::nullopt;
+    }
+
+    StorySequence sequence;
+    sequence.movie_path = find_movie(*bundle);
+    const auto archive = khdays::assets::decode_cakp(*bundle);
+    const auto init = std::find_if(
+        archive.scripts.begin(), archive.scripts.end(),
+        [](const khdays::assets::CakpScript& script) {
+            return script.name == "_i";
+        });
+    if (init == archive.scripts.end()) {
+        return sequence;
+    }
+
+    const auto commands = khdays::assets::decode_action_instructions(
+        init->bytes);
+    for (const auto& command : commands) {
+        // Game_ActionAssign (group 0, command 0): a mode-4 destination packs
+        // field id in its low half and width in its high half. Field 0,width 9
+        // is the persistent story day.
+        if (command.group == 0U && command.command == 0U
+            && command.operands.size() >= 2U
+            && command.operands[0].kind == 4U
+            && command.operands[0].value == 0x00090000U
+            && command.operands[1].kind == 1U) {
+            sequence.stored_day = command.operands[1].value;
+        }
+
+        // func_02022290 (group 0, command 12) stores the two resolved
+        // operands as the pending request kind and argument, then yields.
+        if (command.group == 0U && command.command == 12U
+            && command.operands.size() >= 2U
+            && command.operands[0].kind == 1U
+            && command.operands[1].kind == 1U) {
+            sequence.request_kind = command.operands[0].value;
+            sequence.request_argument = command.operands[1].value;
+        }
+    }
+    return sequence;
+}
+
+std::optional<StorySequence> load_story_sequence(
+    const std::uint16_t mission_id,
+    const std::uint32_t day) {
+    return story_sequence(
+        khdays::vfs::read("mi/mi/" + std::to_string(mission_id)), day);
 }
 
 std::optional<std::string> load_story_movie(

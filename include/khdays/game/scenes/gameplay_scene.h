@@ -62,6 +62,8 @@ private:
     int frame_ = 0;
     int movie_exit_fade_ = 0;
     std::uint32_t story_day_ = 0U;
+    std::optional<std::uint32_t> stored_day_after_movie_;
+    std::optional<int> calendar_request_after_movie_;
     bool animation_was_moving_ = false;
     bool weapon_attached_ = false;
     bool ready_ = false;

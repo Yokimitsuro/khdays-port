@@ -23,6 +23,24 @@ std::string read_string(const std::vector<std::uint8_t>& bytes) {
     return std::string(bytes.begin(), bytes.end());
 }
 
+void put_u16(
+    std::vector<std::uint8_t>& data,
+    const std::size_t offset,
+    const std::uint16_t value) {
+    data[offset] = static_cast<std::uint8_t>(value);
+    data[offset + 1U] = static_cast<std::uint8_t>(value >> 8U);
+}
+
+void put_u32(
+    std::vector<std::uint8_t>& data,
+    const std::size_t offset,
+    const std::uint32_t value) {
+    for (std::size_t byte = 0U; byte < 4U; ++byte) {
+        data[offset + byte] =
+            static_cast<std::uint8_t>(value >> (byte * 8U));
+    }
+}
+
 void expect(bool ok, const char* what) {
     if (!ok) {
         throw std::runtime_error(what);
@@ -77,7 +95,7 @@ int main() {
 
         // Mission P2 archives carry fixed eight-byte script names after their
         // descriptors. The selected `<day>.Z` CAKP contains the MobiClip path.
-        std::vector<std::uint8_t> mission(0x240U, 0U);
+        std::vector<std::uint8_t> mission(0x2c0U, 0U);
         mission[0] = 'P';
         mission[1] = '2';
         mission[2] = 1U;
@@ -86,15 +104,57 @@ int main() {
         const std::string script_name = "400.Z";
         std::copy(script_name.begin(), script_name.end(),
                   mission.begin() + 0x18);
+        // One real CAKP layout at the P2 payload base. Its `_i` script writes
+        // day 255 and requests kind 2,arg 0x191, exactly like 400.Z.
+        std::copy_n("CAKP", 4U, mission.begin() + 0x200U);
+        put_u32(mission, 0x208U, 0x28U);
+        put_u32(mission, 0x20cU, 0x30U);
+        for (std::size_t section = 2U; section < 8U; ++section) {
+            put_u32(mission, 0x208U + section * 4U, 0xffffffffU);
+        }
+        put_u32(mission, 0x228U, 1U);
+        put_u32(mission, 0x22cU, 0x38U);
+        put_u32(mission, 0x230U, 1U);
+        put_u32(mission, 0x234U, 0x50U);
+        put_u16(mission, 0x238U, 1U);
+        put_u16(mission, 0x23aU, 4U);
+        std::copy_n("_i", 3U, mission.begin() + 0x23cU);
+
+        put_u32(mission, 0x250U, 0x38U);
+        mission[0x254U] = 0U;
+        mission[0x255U] = 0U;
+        put_u16(mission, 0x256U, 5U);
+        put_u16(mission, 0x258U, 4U);
+        put_u32(mission, 0x25cU, 0x00090000U);
+        put_u16(mission, 0x260U, 1U);
+        put_u32(mission, 0x264U, 0xffU);
+        mission[0x268U] = 0U;
+        mission[0x269U] = 12U;
+        put_u16(mission, 0x26aU, 7U);
+        put_u16(mission, 0x26cU, 1U);
+        put_u32(mission, 0x270U, 2U);
+        put_u16(mission, 0x274U, 1U);
+        put_u32(mission, 0x278U, 0x191U);
+        put_u32(mission, 0x280U, 0x191U);
+        mission[0x284U] = 0U;
+        mission[0x285U] = 3U;
+        put_u16(mission, 0x286U, 1U);
+
         const std::string movie_path = "/mv/818.mods";
         std::copy(movie_path.begin(), movie_path.end(),
-                  mission.begin() + 0x210);
+                  mission.begin() + 0x290U);
         const auto movie = khdays::resource::story_movie_reference(
             mission, 400U);
         expect(movie && *movie == "mv/818.mods", "story movie lookup");
         const auto bundle = khdays::resource::story_day_bundle(mission, 400U);
-        expect(bundle && bundle->size() == 0x40U,
+        expect(bundle && bundle->size() == 0xc0U,
                "story CAKP bundle lookup");
+        const auto sequence = khdays::resource::story_sequence(mission, 400U);
+        expect(sequence && sequence->movie_path == "mv/818.mods"
+                   && sequence->stored_day == 0xffU
+                   && sequence->request_kind == 2U
+                   && sequence->request_argument == 0x191U,
+               "story CAKP semantic sequence");
         expect(!khdays::resource::story_movie_reference(mission, 7U),
                "missing story day");
 

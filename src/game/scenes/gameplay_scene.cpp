@@ -94,16 +94,22 @@ void GameplayScene::on_enter(SceneManager& manager) {
     story_day_ = manager.state().day();
     if (session.mission_id != 0U) {
         try {
-            const auto movie = khdays::resource::load_story_movie(
+            const auto sequence = khdays::resource::load_story_sequence(
                 session.mission_id, story_day_);
-            if (movie) {
+            if (sequence && sequence->movie_path) {
+                stored_day_after_movie_ = sequence->stored_day;
+                if (sequence->request_kind == 2U
+                    && sequence->request_argument == 0x191U) {
+                    calendar_request_after_movie_ = static_cast<int>(
+                        *sequence->request_argument);
+                }
                 story_movie_ = true;
                 if (auto* music = manager.music()) {
                     music->stop_music();
                 }
                 video_player_ = manager.video();
                 if (video_player_ != nullptr) {
-                    video_player_->play_video(*movie);
+                    video_player_->play_video(*sequence->movie_path);
                 }
                 return;
             }
@@ -234,11 +240,14 @@ void GameplayScene::finish_story_movie(SceneManager& manager) {
     movie_exiting_ = false;
     movie_exit_fade_ = 0;
 
-    if (story_day_ == 0x190U) {
-        // 400.Z writes 255 to field (0, 9) and requests ov004 with 0x191.
-        // ov004 then selects day 7 and re-enters mission 10000.
-        manager.state().set_day(0xffU);
-        manager.change_scene(kSceneDayTransition, 0x191);
+    if (stored_day_after_movie_) {
+        manager.state().set_day(*stored_day_after_movie_);
+    }
+    if (calendar_request_after_movie_) {
+        // 400.Z's `_i` issues pending request (2, 0x191); ov002 resolves it
+        // through ov004, which selects day 7 and re-enters mission 10000.
+        manager.change_scene(
+            kSceneDayTransition, *calendar_request_after_movie_);
         return;
     }
 

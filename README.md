@@ -33,6 +33,7 @@ flow**. What runs today:
 - [x] MDL0 models with bones and skinning → a neutral, animation-ready mesh
 - [x] NSBCA skeletal animation, GPU-skinned per frame; environment maps (NSBMD)
 - [x] Message text from the `db_<lang>.p2` container and the UI `.s`/`.s.z` string tables (`--message-info`, `--dump-messages`, `--dump-strings`)
+- [x] Mission CAKP action scripts: named members and packed commands/operands (`--mission-script-info MISSION DAY`)
 - [x] Audio: SDAT wave archives → PCM (PCM8/PCM16/IMA-ADPCM), and an SSEQ software synthesizer for sequenced music
 
 **Rendering & audio (SDL3)**
