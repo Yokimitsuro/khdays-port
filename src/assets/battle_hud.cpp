@@ -154,4 +154,17 @@ DecodedTexture compose_ov002_command_menu(
     return out;
 }
 
+std::size_t advance_ov002_command(
+    const std::size_t current,
+    const std::array<bool, 3>& available) {
+    const std::size_t from = current % available.size();
+    for (std::size_t step = 1U; step < available.size(); ++step) {
+        const std::size_t candidate = (from + step) % available.size();
+        if (available[candidate]) {
+            return candidate;
+        }
+    }
+    return from;
+}
+
 }  // namespace khdays::assets

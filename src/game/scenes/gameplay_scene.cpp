@@ -129,10 +129,11 @@ void GameplayScene::load_playable_harness() {
     command_menu_artwork_.reset();
     player_gauge_ = {};
     command_menu_ = {};
+    command_index_ = 0U;
     hud_hp_ = 0xffffU;
     hud_max_hp_ = 0xffffU;
     controls_text_ = khdays::resource::render_ui_text(
-        kFont, u"FLECHAS: MOVER  Q/E: CAMARA  X: VOLVER");
+        kFont, u"FLECHAS: MOVER  Q/E: CAMARA  S: ORDEN  X: VOLVER");
     complete_text_ = khdays::resource::render_ui_text(
         kFont, u"DEMO COMPLETADA - ENTER PARA REINICIAR");
 
@@ -230,8 +231,7 @@ void GameplayScene::load_playable_harness() {
             khdays::game::localized_path("UI/btl/&/cmd.s.z").c_str(),
             "text/font_eu_08s.nftr");
         if (command_menu_artwork_) {
-            command_menu_ = khdays::assets::compose_ov002_command_menu(
-                *command_menu_artwork_, 0U);
+            update_command_menu();
         }
         update_battle_hud();
         ready_ = !player_->model.meshes.empty()
@@ -348,6 +348,14 @@ void GameplayScene::update_battle_hud() {
         battle_hud_->player_gauge, state.hp, state.max_hp);
 }
 
+void GameplayScene::update_command_menu() {
+    if (!command_menu_artwork_) {
+        return;
+    }
+    command_menu_ = khdays::assets::compose_ov002_command_menu(
+        *command_menu_artwork_, command_index_);
+}
+
 void GameplayScene::update(SceneManager& manager) {
     ++frame_;
     const Input& input = manager.input();
@@ -378,6 +386,18 @@ void GameplayScene::update(SceneManager& manager) {
     }
     if (!ready_) {
         return;
+    }
+
+    // ov022 tests the DS X bit (0x400) before calling
+    // func_ov002_02056cc8 -> func_ov002_0205d658. That routine advances the
+    // primary command ring, skipping slot value 7 and wrapping at the end.
+    if (input.just_pressed(Button::X) && command_menu_artwork_) {
+        const std::size_t next = khdays::assets::advance_ov002_command(
+            command_index_, command_available_);
+        if (next != command_index_) {
+            command_index_ = next;
+            update_command_menu();
+        }
     }
 
     const auto probe = [this](const float x, const float z) {
@@ -469,7 +489,8 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
         // func_ov002_0205ad5c anchors the default three-entry page to the
         // lower-left: localized header at y=128, then rows at 144/160/176.
         if (command_menu_artwork_) {
-            draw_overlay(renderer, layout, command_menu_, 0, 128, false);
+            draw_overlay_dynamic(
+                renderer, layout, command_menu_, 0, 128, false);
         }
 
         // The local-player cluster occupies ov002's original lower-right

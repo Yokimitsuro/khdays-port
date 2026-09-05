@@ -476,7 +476,7 @@ void print_help() {
         << "  --day-transition-shot  Render ov004's day-255 transition headlessly.\n"
         << "  --playable-demo     Start directly in the playable wd_zz room-0 slice.\n"
         << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
-        << "                      u/d/l/r/q/e or press z for FRAMES.\n"
+        << "                      u/d/l/r/q/e or press z/s for FRAMES.\n"
         << "  --game-demo         Run the scene/task frame loop headless (logs the flow).\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
@@ -1022,6 +1022,7 @@ int main(int argc, char* argv[]) {
                 case 'q': button = khdays::game::Button::L; break;
                 case 'e': button = khdays::game::Button::R; break;
                 case 'z': button = khdays::game::Button::A; break;
+                case 's': button = khdays::game::Button::X; break;
                 default: valid_button = false; break;
             }
             for (int frame = 0; frame < input_frames; ++frame) {

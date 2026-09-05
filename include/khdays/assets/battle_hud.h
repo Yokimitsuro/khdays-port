@@ -42,4 +42,10 @@ DecodedTexture compose_ov002_command_menu(
     const Ov002CommandMenuArtwork& source,
     std::size_t selected);
 
+// Advance the primary cursor the way func_ov002_0205d658 does: inspect only
+// the other slots, skip entries marked unavailable, and wrap at three.
+std::size_t advance_ov002_command(
+    std::size_t current,
+    const std::array<bool, 3>& available);
+
 }  // namespace khdays::assets

@@ -271,8 +271,10 @@ The first narrow, reproducible target is in progress:
   cluster from `UI/btl/main.p2` (real Roxas portrait, `1P`, and `HP`);
 - [x] reconstruct ov002's localized primary command page from its layout
   records, language character sheet, `cmd.s.z`, and small battle font;
-- [ ] wire command selection/execution and reconstruct the expanded Magic/Items,
-  party, target, and mission HUD tile layouts;
+- [x] wire the original X-button primary-command cycle, including unavailable
+  slot skipping and wraparound;
+- [ ] wire command activation/execution and reconstruct the expanded
+  Magic/Items, party, target, and mission HUD tile layouts;
 - [ ] one enemy;
 - [ ] one combat interaction.
 

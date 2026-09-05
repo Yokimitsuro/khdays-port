@@ -54,7 +54,7 @@ flow**. What runs today:
 - [x] **Title and menus** — the real 3D KH logo over the character illustration, hosting every menu level (MODO HISTORIA / MODO MISIÓN → NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR) with the real localized textures at the exact DS positions, playing the real title BGM (an SDAT STRM stream) through the neutral `game::MusicPlayer`
 - [x] **Character select** (scene 7, ov06) — the 13-portrait grid from `UI/mlt/res.p2`, laid out and shaded (greyscale, colour when selected) exactly as the DS does
 - [x] In-window options overlay (Dear ImGui): volume, remappable controls, stacked/side-by-side screen layout, fullscreen — persisted between runs
-- [ ] Gameplay (scene 2, ov002) — an experimental `wd_tt` room-0 harness currently exercises the real Roxas model, distinct idle/locomotion clips, a Keyblade attached to `ro_w_tg_R`, floor and lateral room collision, movement, camera, ov002's runtime-composited local-player HP gauge, and its localized three-row primary command page; mission logic, enemies, combat, command execution, and the remaining party/enemy HUD remain in progress
+- [ ] Gameplay (scene 2, ov002) — an experimental `wd_tt` room-0 harness currently exercises the real Roxas model, distinct idle/locomotion clips, a Keyblade attached to `ro_w_tg_R`, floor and lateral room collision, movement, camera, ov002's runtime-composited local-player HP gauge, and its localized three-row primary command page with the original X-button selection cycle; mission logic, enemies, combat, command execution, and the remaining party/enemy HUD remain in progress
 - [ ] The save-file screen (layout known; needs a save system) and wiring the decoded attract MobiClip into the title flow
 
 Run the slice directly with:

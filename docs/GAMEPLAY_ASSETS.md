@@ -138,10 +138,15 @@ embedded NSCR. The English character sheet comes from base sub-file 4; the EU
 0--2 from the matching `cmd.s.z` are drawn with `font_eu_08s.nftr`. The neutral
 compositor reproduces `func_ov002_0205ad5c`: header at screen y=128, rows at
 y=144/160/176, selected text white and inset 16 pixels, inactive text grey and
-inset 8 pixels.
+inset 8 pixels. The primary cursor now follows the original input path as well:
+ov022's DS X-bit dispatch reaches `func_ov002_02056cc8` and then
+`func_ov002_0205d658`, which advances through the three slots, skips slot value
+7 (unavailable), and wraps at the end. On PC the default keyboard binding for
+the neutral X button is `S`.
 
-Command input/execution and expanded Magic/Items pages, party slots, target
-gauge, mission information, delayed damage tween, and limit-break row
-compositor remain to be reconstructed. Those should continue to follow
+Command activation/execution and expanded Magic/Items pages still need the
+player loadout that ov002 passes into the panel constructor. Party slots,
+target gauge, mission information, delayed damage tween, and limit-break row
+compositor also remain to be reconstructed. Those should continue to follow
 ov002's tile and state tables rather than treating atlas regions as complete
 pre-rendered widgets.

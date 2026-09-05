@@ -35,6 +35,7 @@ private:
     std::optional<float> ground_height(float x, float z) const;
     void update_animation();
     void update_battle_hud();
+    void update_command_menu();
 
     std::vector<khdays::resource::RoomModel> room_;
     std::optional<khdays::resource::LoadedModel> player_;
@@ -70,6 +71,8 @@ private:
     int movie_exit_fade_ = 0;
     std::uint16_t hud_hp_ = 0xffffU;
     std::uint16_t hud_max_hp_ = 0xffffU;
+    std::size_t command_index_ = 0U;
+    std::array<bool, 3> command_available_{true, true, true};
     std::uint32_t story_day_ = 0U;
     std::optional<std::uint32_t> stored_day_after_movie_;
     std::optional<int> calendar_request_after_movie_;

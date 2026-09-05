@@ -116,6 +116,19 @@ int main() {
         expect(pixel(menu, 16, 35)[0] == 255U,
                "selected label uses palette-15 white and two-tile inset");
 
+        expect(khdays::assets::advance_ov002_command(
+                   0U, {true, true, true}) == 1U,
+               "X advances to the next primary command");
+        expect(khdays::assets::advance_ov002_command(
+                   0U, {true, false, true}) == 2U,
+               "X skips unavailable command slots");
+        expect(khdays::assets::advance_ov002_command(
+                   2U, {true, true, true}) == 0U,
+               "X wraps the primary command ring");
+        expect(khdays::assets::advance_ov002_command(
+                   1U, {false, true, false}) == 1U,
+               "X stays put when no other command is available");
+
         std::cout << "battle HUD tests passed\n";
         return 0;
     } catch (const std::exception& error) {
