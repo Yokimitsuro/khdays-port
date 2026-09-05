@@ -121,7 +121,16 @@ that ov002 builds the gauges at runtime:
   styles; `Ov002_RedrawGaugeCells` updates only the changed cells.
 
 The previous `HP` / `LOCKED ON` rectangles were therefore unverified atlas
-crops and have been removed. The next correct implementation is a neutral 4bpp
-gauge compositor driven by these functions and the real player state, followed
-by the surrounding panel/cell layout; it must not reintroduce cropped labels as
-if they were the complete HUD.
+crops and were removed. The port now reconstructs the primary local-player
+cluster from the offsets ov002 actually uses: the empty ten-tile gauge begins at
+character byte `0x800`, HP is converted to 77 cells, and each filled cell is
+painted right-to-left with the original `6,6,5,5,4,3` shade ramp. Roxas's
+48x48 portrait is copied from icon 12 in sub-file 1 with the slot-0 palette
+colour, while the `1P` and `HP` tiles come from sub-file 4. The resulting
+RGBA overlays remain driven by the neutral player HP state and do not expose DS
+formats to the game scene.
+
+The command list, party slots, target gauge, mission information, delayed damage
+tween, and limit-break row compositor remain to be reconstructed. Those should
+continue to follow ov002's tile and state tables rather than treating atlas
+regions as complete pre-rendered widgets.

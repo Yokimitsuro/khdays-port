@@ -13,6 +13,7 @@
 #include "khdays/game/playable_controller.h"
 #include "khdays/game/scene.h"
 #include "khdays/resource/loader.h"
+#include "khdays/resource/ui_content.h"
 #include "khdays/resource/world.h"
 
 namespace khdays::game::scenes {
@@ -33,6 +34,7 @@ private:
     void finish_story_movie(SceneManager& manager);
     std::optional<float> ground_height(float x, float z) const;
     void update_animation();
+    void update_battle_hud();
 
     std::vector<khdays::resource::RoomModel> room_;
     std::optional<khdays::resource::LoadedModel> player_;
@@ -41,6 +43,8 @@ private:
     std::map<std::string, khdays::assets::DecodedTexture> weapon_textures_;
     std::optional<khdays::assets::SkeletalAnimation> idle_animation_;
     std::optional<khdays::assets::SkeletalAnimation> walk_animation_;
+    std::optional<khdays::resource::BattleHudArtwork> battle_hud_;
+    khdays::assets::DecodedTexture player_gauge_;
     khdays::assets::CollisionModel collision_;
     khdays::assets::NeutralModel goal_model_;
     khdays::assets::DecodedTexture scene_frame_;
@@ -61,6 +65,8 @@ private:
     float animation_frame_ = 0.0F;
     int frame_ = 0;
     int movie_exit_fade_ = 0;
+    std::uint16_t hud_hp_ = 0xffffU;
+    std::uint16_t hud_max_hp_ = 0xffffU;
     std::uint32_t story_day_ = 0U;
     std::optional<std::uint32_t> stored_day_after_movie_;
     std::optional<int> calendar_request_after_movie_;

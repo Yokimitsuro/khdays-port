@@ -96,4 +96,18 @@ inline void draw_overlay(Renderer& r, const DualScreenLayout& l,
                  image.height * l.scale, alpha);
 }
 
+// draw_overlay for an image whose pixels change while its dimensions and
+// backing object stay stable, such as ov002's runtime-composited HP gauge.
+inline void draw_overlay_dynamic(
+    Renderer& r, const DualScreenLayout& l,
+    const khdays::assets::DecodedTexture& image,
+    const int vx, const int vy, const bool bottom,
+    const int alpha = 255) {
+    r.draw_image_dynamic(
+        image.rgba.data(), image.width, image.height,
+        l.screen_x(bottom) + vx * l.scale,
+        l.screen_y(bottom) + vy * l.scale,
+        image.width * l.scale, image.height * l.scale, alpha);
+}
+
 }  // namespace khdays::game

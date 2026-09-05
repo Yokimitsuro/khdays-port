@@ -123,6 +123,7 @@ add_library(
     STATIC
         src/assets/animation.cpp
         src/assets/audio.cpp
+        src/assets/battle_hud.cpp
         src/assets/bmp.cpp
         src/assets/cakp.cpp
         src/assets/cell.cpp
@@ -467,6 +468,17 @@ if(BUILD_TESTING)
             khdays-assets
     )
 
+    add_executable(
+        khdays-battle-hud-test
+        tests/cpp/test_battle_hud.cpp
+    )
+
+    target_link_libraries(
+        khdays-battle-hud-test
+        PRIVATE
+            khdays-assets
+    )
+
     if(MSVC)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
@@ -485,6 +497,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-collision-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-battle-hud-test PRIVATE /W4 /permissive-)
     else()
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -503,6 +516,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-collision-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-battle-hud-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     khdays_enable_sanitizers(khdays-tex0-test)
@@ -522,6 +536,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-cell-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
     khdays_enable_sanitizers(khdays-collision-test)
+    khdays_enable_sanitizers(khdays-battle-hud-test)
 
     add_test(
         NAME khdays-port-version
@@ -613,6 +628,11 @@ if(BUILD_TESTING)
         COMMAND khdays-cell-test
     )
 
+    add_test(
+        NAME khdays-battle-hud
+        COMMAND khdays-battle-hud-test
+    )
+
     # Everything ctest runs under the sanitizers job, as one target. CI builds
     # this instead of naming each test, so adding a test here is the only place
     # it has to be added -- a hand-written list in the workflow silently drifts,
@@ -637,5 +657,6 @@ if(BUILD_TESTING)
             khdays-cell-test
             khdays-ui-layout-test
             khdays-collision-test
+            khdays-battle-hud-test
     )
 endif()

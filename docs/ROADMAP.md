@@ -267,7 +267,10 @@ The first narrow, reproducible target is in progress:
 - [x] room collision used for walkable ground and lateral sphere sweeps;
 - [x] near/far clipping and repeating room textures in the CPU path;
 - [x] a visible development goal and completion/reset state;
-- [ ] reconstruct ov002's HUD tile layout and dynamic gauge compositor;
+- [x] reconstruct ov002's primary 77-cell 4bpp HP compositor and local-player
+  cluster from `UI/btl/main.p2` (real Roxas portrait, `1P`, and `HP`);
+- [ ] reconstruct the remaining ov002 command, party, target, and mission HUD
+  tile layouts;
 - [ ] one enemy;
 - [ ] one combat interaction.
 

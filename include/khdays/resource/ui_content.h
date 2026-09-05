@@ -9,6 +9,7 @@
 #include <map>
 
 #include "khdays/assets/animation.h"  // SkeletalAnimation
+#include "khdays/assets/battle_hud.h"  // Ov002PlayerGauge
 #include "khdays/assets/cell.h"       // AnimBank
 #include "khdays/assets/graphics2d.h"
 #include "khdays/assets/mesh.h"       // NeutralModel
@@ -93,6 +94,21 @@ struct OpeningArtwork final {
     std::array<khdays::assets::DecodedTexture, 14> accent;
     std::array<khdays::assets::DecodedTexture, 13> localized;
 };
+
+// Neutral pieces of ov002's local-player HUD. The primary gauge is kept as an
+// empty strip plus its palette so the game can reproduce the original dynamic
+// 4bpp compositor. The remaining pieces are already-decoded RGBA overlays.
+struct BattleHudArtwork final {
+    khdays::assets::Ov002PlayerGauge player_gauge;
+    khdays::assets::DecodedTexture player_label;
+    khdays::assets::DecodedTexture hp_label;
+    khdays::assets::DecodedTexture roxas_portrait;
+};
+
+// Load the primary HUD pieces from UI/btl/main.p2. Returns null when the user
+// has not supplied the game data or the expected ov002 resource layout is not
+// present.
+std::optional<BattleHudArtwork> load_battle_hud_artwork();
 
 // `language_subfile` is the game's own language selector: 1=en, 2=fr, 3=de,
 // 4=it, 5=es. Returns null when op.p2 is absent or structurally incomplete.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 
@@ -19,6 +20,8 @@ public:
         float z = 0.0F;
         float facing = 0.0F;
         float camera_yaw = 0.0F;
+        std::uint16_t hp = 100U;
+        std::uint16_t max_hp = 100U;
         bool moving = false;
         bool completed = false;
     };

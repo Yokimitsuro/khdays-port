@@ -17,6 +17,44 @@ namespace khdays::resource {
 
 namespace {
 
+khdays::assets::TileGraphics tile_rectangle(
+    const khdays::assets::TileGraphics& source,
+    const int first,
+    const int width,
+    const int height,
+    const int source_stride) {
+    khdays::assets::TileGraphics out;
+    out.bpp = source.bpp;
+    out.tile_count = width * height;
+    out.indices.reserve(static_cast<std::size_t>(out.tile_count) * 64U);
+    for (int row = 0; row < height; ++row) {
+        for (int column = 0; column < width; ++column) {
+            const int tile = first + row * source_stride + column;
+            if (tile < 0 || tile >= source.tile_count) {
+                throw std::runtime_error(
+                    "battle HUD tile rectangle is out of range");
+            }
+            const auto begin = source.indices.begin()
+                + static_cast<std::ptrdiff_t>(tile) * 64;
+            out.indices.insert(out.indices.end(), begin, begin + 64);
+        }
+    }
+    return out;
+}
+
+std::array<std::uint8_t, 4> colour_bgr555(
+    const std::uint16_t value) {
+    const auto expand = [](const std::uint16_t channel) {
+        return static_cast<std::uint8_t>(
+            (channel * 255U + 15U) / 31U);
+    };
+    return {
+        expand(value & 31U),
+        expand((value >> 5U) & 31U),
+        expand((value >> 10U) & 31U),
+        255U};
+}
+
 std::vector<std::uint8_t> decompress_if_needed(
     std::vector<std::uint8_t> bytes) {
     if (!bytes.empty() && (bytes[0] == 0x10U || bytes[0] == 0x11U)) {
@@ -313,6 +351,84 @@ std::optional<OpeningArtwork> load_opening_artwork(
                     base.palettes[card]);
             }
         }
+        return out;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::optional<BattleHudArtwork> load_battle_hud_artwork() {
+    try {
+        const auto container = khdays::vfs::read("UI/btl/main.p2");
+
+        // Ov002_OpenPanelScreen selects sub-file 4 for the normal 4bpp battle
+        // HUD. Ov002_LoadPanelSlots takes the portrait sheets from sub-file 1.
+        const auto hud_blob = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 4U);
+        const auto portraits_blob = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 1U);
+        const auto hud_pack =
+            khdays::assets::parse_pk2d(hud_blob.data(), hud_blob.size());
+        const auto portraits_pack = khdays::assets::parse_pk2d(
+            portraits_blob.data(), portraits_blob.size());
+        if (hud_pack.tiles.empty() || hud_pack.palettes.empty()
+            || portraits_pack.tiles.empty()
+            || portraits_pack.palettes.empty()) {
+            return std::nullopt;
+        }
+
+        const auto hud_tiles = khdays::assets::decode_ncgr(
+            hud_pack.tiles[0].data, hud_pack.tiles[0].size);
+        const auto hud_palette = khdays::assets::decode_nclr(
+            hud_pack.palettes[0].data, hud_pack.palettes[0].size);
+        if (hud_palette.colors.size() < 16U) {
+            return std::nullopt;
+        }
+
+        BattleHudArtwork out;
+        // data_ov002_0207ddfc starts the local-player buffer at byte 0x800:
+        // tile 64, ten 4bpp tiles (0x140 bytes). The 1P and HP labels are the
+        // two-tile runs referenced by the same base character sheet.
+        const auto gauge_tiles = tile_rectangle(
+            hud_tiles, 64, 10, 1, 10);
+        out.player_gauge.empty = khdays::assets::render_tile_sheet(
+            gauge_tiles, hud_palette, 0, 10, true);
+        for (std::size_t i = 0; i < out.player_gauge.palette.size(); ++i) {
+            out.player_gauge.palette[i] = hud_palette.colors[i];
+        }
+        out.player_label = khdays::assets::render_tile_sheet(
+            tile_rectangle(hud_tiles, 1, 2, 1, 2),
+            hud_palette, 0, 2, true);
+        out.hp_label = khdays::assets::render_tile_sheet(
+            tile_rectangle(hud_tiles, 53, 2, 1, 2),
+            hud_palette, 0, 2, true);
+
+        auto portrait_tiles = khdays::assets::decode_ncgr(
+            portraits_pack.tiles[0].data, portraits_pack.tiles[0].size);
+        auto portrait_palette = khdays::assets::decode_nclr(
+            portraits_pack.palettes[0].data,
+            portraits_pack.palettes[0].size);
+        // The playable Roxas member kind maps through
+        // data_ov002_0207ef68 to icon 12. Slot 0 copies six tiles from each
+        // nine-tile row, beginning one source row into that icon. Palette
+        // entry 15 is replaced with slot-0 colour 0x7d00.
+        constexpr int roxas_icon = 12;
+        constexpr int icon_tiles = 54;
+        constexpr int portrait_first =
+            9 + roxas_icon * icon_tiles;
+        constexpr int portrait_palette_index = roxas_icon + 1;
+        if (portrait_palette.colors_per_palette != 16
+            || portrait_palette.colors.size()
+                < static_cast<std::size_t>(
+                    (portrait_palette_index + 1) * 16)) {
+            return std::nullopt;
+        }
+        portrait_palette.colors[
+            static_cast<std::size_t>(portrait_palette_index * 16 + 15)] =
+            colour_bgr555(0x7d00U);
+        out.roxas_portrait = khdays::assets::render_tile_sheet(
+            tile_rectangle(portrait_tiles, portrait_first, 6, 6, 9),
+            portrait_palette, portrait_palette_index, 6, true);
         return out;
     } catch (const std::exception&) {
         return std::nullopt;

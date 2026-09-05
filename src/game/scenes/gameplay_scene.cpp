@@ -124,6 +124,10 @@ void GameplayScene::on_enter(SceneManager& manager) {
 void GameplayScene::load_playable_harness() {
     frame_ = 0;
     ready_ = false;
+    battle_hud_.reset();
+    player_gauge_ = {};
+    hud_hp_ = 0xffffU;
+    hud_max_hp_ = 0xffffU;
     controls_text_ = khdays::resource::render_ui_text(
         kFont, u"FLECHAS: MOVER  Q/E: CAMARA  X: VOLVER");
     complete_text_ = khdays::resource::render_ui_text(
@@ -217,6 +221,8 @@ void GameplayScene::load_playable_harness() {
             return ground_height(x, z);
         };
         controller_.reset(probe);
+        battle_hud_ = khdays::resource::load_battle_hud_artwork();
+        update_battle_hud();
         ready_ = !player_->model.meshes.empty()
             && ground_height(
                    controller_.goal_x(), controller_.goal_z()).has_value();
@@ -317,6 +323,20 @@ void GameplayScene::update_animation() {
     }
 }
 
+void GameplayScene::update_battle_hud() {
+    if (!battle_hud_) {
+        return;
+    }
+    const auto& state = controller_.state();
+    if (state.hp == hud_hp_ && state.max_hp == hud_max_hp_) {
+        return;
+    }
+    hud_hp_ = state.hp;
+    hud_max_hp_ = state.max_hp;
+    player_gauge_ = khdays::assets::compose_ov002_player_gauge(
+        battle_hud_->player_gauge, state.hp, state.max_hp);
+}
+
 void GameplayScene::update(SceneManager& manager) {
     ++frame_;
     const Input& input = manager.input();
@@ -368,6 +388,7 @@ void GameplayScene::update(SceneManager& manager) {
     } else {
         controller_.update(input, probe, motion_probe);
     }
+    update_battle_hud();
     update_animation();
 }
 
@@ -433,6 +454,24 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
         scene_frame_ =
             khdays::assets::render_scene(instances, camera, 256, 192);
         draw_screen_dynamic(renderer, layout, scene_frame_, false);
+
+        // The local-player cluster occupies ov002's original lower-right
+        // 48x48 portrait slot. Its 80-pixel gauge overlaps the portrait's
+        // bottom row and the HP label completes the strip at the right edge.
+        if (battle_hud_) {
+            draw_overlay(
+                renderer, layout, battle_hud_->roxas_portrait,
+                208, 144, false);
+            draw_overlay(
+                renderer, layout, battle_hud_->player_label,
+                196, 176, false);
+            draw_overlay_dynamic(
+                renderer, layout, player_gauge_,
+                160, 184, false);
+            draw_overlay(
+                renderer, layout, battle_hud_->hp_label,
+                240, 184, false);
+        }
     }
 
     const auto draw_bottom_centered =
