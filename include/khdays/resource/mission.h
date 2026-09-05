@@ -7,6 +7,15 @@
 
 namespace khdays::resource {
 
+// Extract the named `<day>.Z` CAKP bundle from a mission P2 archive.
+std::optional<std::vector<std::uint8_t>> story_day_bundle(
+    const std::vector<std::uint8_t>& mission_archive,
+    std::uint32_t day);
+
+std::optional<std::vector<std::uint8_t>> load_story_day_bundle(
+    std::uint16_t mission_id,
+    std::uint32_t day);
+
 // Resolve the MobiClip referenced by `<day>.Z` inside a mission P2 archive.
 // Mission 10000 is the story dispatcher used by ov002: ov004 writes the
 // selected day, then the `_s` script selects the matching named CAKP bundle.

@@ -79,7 +79,7 @@ std::optional<std::string> find_movie(
 
 }  // namespace
 
-std::optional<std::string> story_movie_reference(
+std::optional<std::vector<std::uint8_t>> story_day_bundle(
     const std::vector<std::uint8_t>& mission_archive,
     const std::uint32_t day) {
     if (mission_archive.size() < 0x10U || mission_archive[0] != 'P'
@@ -99,17 +99,31 @@ std::optional<std::string> story_movie_reference(
         if (fixed_name(mission_archive, names_offset + index * 8U) != wanted) {
             continue;
         }
-        return find_movie(khdays::assets::extract_p2_subfile(
-            mission_archive.data(), mission_archive.size(), index));
+        return khdays::assets::extract_p2_subfile(
+            mission_archive.data(), mission_archive.size(), index);
     }
     return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> load_story_day_bundle(
+    const std::uint16_t mission_id,
+    const std::uint32_t day) {
+    return story_day_bundle(
+        khdays::vfs::read("mi/mi/" + std::to_string(mission_id)), day);
+}
+
+std::optional<std::string> story_movie_reference(
+    const std::vector<std::uint8_t>& mission_archive,
+    const std::uint32_t day) {
+    const auto bundle = story_day_bundle(mission_archive, day);
+    return bundle ? find_movie(*bundle) : std::nullopt;
 }
 
 std::optional<std::string> load_story_movie(
     const std::uint16_t mission_id,
     const std::uint32_t day) {
-    return story_movie_reference(
-        khdays::vfs::read("mi/mi/" + std::to_string(mission_id)), day);
+    const auto bundle = load_story_day_bundle(mission_id, day);
+    return bundle ? find_movie(*bundle) : std::nullopt;
 }
 
 }  // namespace khdays::resource

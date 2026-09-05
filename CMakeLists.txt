@@ -124,6 +124,7 @@ add_library(
         src/assets/animation.cpp
         src/assets/audio.cpp
         src/assets/bmp.cpp
+        src/assets/cakp.cpp
         src/assets/cell.cpp
         src/assets/collision.cpp
         src/assets/font.cpp
@@ -423,6 +424,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-cakp-test
+        tests/cpp/test_cakp.cpp
+    )
+
+    target_link_libraries(
+        khdays-cakp-test
+        PRIVATE
+            khdays-assets
+    )
+
+    add_executable(
         khdays-cell-test
         tests/cpp/test_cell.cpp
     )
@@ -469,6 +481,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-game-state-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-anim-channel-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-affine-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-cakp-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-collision-test PRIVATE /W4 /permissive-)
@@ -486,6 +499,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-game-state-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-anim-channel-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-affine-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-cakp-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-collision-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -504,6 +518,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-game-state-test)
     khdays_enable_sanitizers(khdays-anim-channel-test)
     khdays_enable_sanitizers(khdays-affine-test)
+    khdays_enable_sanitizers(khdays-cakp-test)
     khdays_enable_sanitizers(khdays-cell-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
     khdays_enable_sanitizers(khdays-collision-test)
@@ -586,6 +601,11 @@ if(BUILD_TESTING)
     add_test(
         NAME khdays-collision
         COMMAND khdays-collision-test
+    )
+
+    add_test(
+        NAME khdays-cakp
+        COMMAND khdays-cakp-test
     )
 
     add_test(

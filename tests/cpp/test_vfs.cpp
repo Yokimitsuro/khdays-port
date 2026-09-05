@@ -92,6 +92,9 @@ int main() {
         const auto movie = khdays::resource::story_movie_reference(
             mission, 400U);
         expect(movie && *movie == "mv/818.mods", "story movie lookup");
+        const auto bundle = khdays::resource::story_day_bundle(mission, 400U);
+        expect(bundle && bundle->size() == 0x40U,
+               "story CAKP bundle lookup");
         expect(!khdays::resource::story_movie_reference(mission, 7U),
                "missing story day");
 

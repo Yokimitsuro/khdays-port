@@ -28,6 +28,7 @@
 
 #include "khdays/assets/animation.h"
 #include "khdays/assets/audio.h"
+#include "khdays/assets/cakp.h"
 #include "khdays/assets/cell.h"
 #include "khdays/assets/font.h"
 #include "khdays/assets/graphics2d.h"
@@ -54,6 +55,7 @@
 #include "khdays/assets/collision.h"
 #include "khdays/assets/scene3d.h"
 #include "khdays/resource/loader.h"
+#include "khdays/resource/mission.h"
 #include "khdays/resource/video.h"
 #include "khdays/resource/world.h"
 #include "khdays/vfs/filesystem.h"
@@ -438,6 +440,7 @@ void print_help() {
         << "  khdays-port --extract-mods-audio GAMEPATH OUT.wav\n"
         << "  khdays-port --pipe-video-rgba GAMEPATH\n"
         << "  khdays-port --message-info FILE\n"
+        << "  khdays-port --mission-script-info MISSION DAY\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
@@ -489,6 +492,8 @@ void print_help() {
         << "  --extract-mods-audio PATH OUT.wav  Decode the movie's interleaved PCM16.\n"
         << "  --pipe-video-rgba PATH  Write every decoded RGBA frame to stdout.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
+        << "  --mission-script-info MISSION DAY  Decode the named CAKP scripts\n"
+        << "                      selected by ov002 from mi/mi/MISSION.\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
@@ -1797,6 +1802,71 @@ int main(int argc, char* argv[]) {
                     return EXIT_SUCCESS;
                 }
                 return khdays::platform::play_audio_blocking(audio);
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--mission-script-info") {
+            if (argc != 4) {
+                std::cerr << "ERROR: --mission-script-info requires a mission "
+                             "id and story day\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                if (!khdays::vfs::autodetect_data_root()) {
+                    throw std::runtime_error(
+                        "could not find extracted data under data/extracted");
+                }
+                const auto mission = static_cast<std::uint16_t>(
+                    std::stoul(argv[2]));
+                const auto day = static_cast<std::uint32_t>(
+                    std::stoul(argv[3]));
+                const auto bundle = khdays::resource::load_story_day_bundle(
+                    mission, day);
+                if (!bundle) {
+                    throw std::runtime_error(
+                        "mission has no " + std::to_string(day) + ".Z");
+                }
+                const auto archive = khdays::assets::decode_cakp(*bundle);
+                std::cout << "Mission " << mission << ", day " << day
+                          << ": " << archive.scripts.size()
+                          << " named CAKP scripts\n";
+                for (const auto& script : archive.scripts) {
+                    std::cout << "  " << script.name << ": "
+                              << script.bytes.size() << " bytes";
+                    try {
+                        const auto commands =
+                            khdays::assets::decode_action_instructions(
+                                script.bytes);
+                        std::cout << ", " << commands.size()
+                                  << " commands\n";
+                        for (const auto& command : commands) {
+                            std::cout << "    +0x" << std::hex
+                                      << command.offset << std::dec
+                                      << " group "
+                                      << static_cast<int>(command.group)
+                                      << " command "
+                                      << static_cast<int>(command.command)
+                                      << " words " << command.word_count
+                                      << " slot "
+                                      << static_cast<int>(
+                                             command.callback_slot);
+                            for (const auto& operand : command.operands) {
+                                std::cout << "  [" << operand.kind << ','
+                                          << operand.auxiliary << ",0x"
+                                          << std::hex << operand.value
+                                          << std::dec << ']';
+                            }
+                            std::cout << '\n';
+                        }
+                    } catch (const std::exception& error) {
+                        std::cout << " (command decode stopped: "
+                                  << error.what() << ")\n";
+                    }
+                }
+                return EXIT_SUCCESS;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';
                 return EXIT_FAILURE;
