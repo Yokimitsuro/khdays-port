@@ -1,10 +1,13 @@
 # Gameplay assets — what is on disk, and what is still unidentified
 
-Groundwork for a future gameplay slice. Everything here is **measured** from the
-extracted data with the port's own `--model-info`, not inferred. The gameplay
-*logic* (player movement, collision, camera, combat) is a separate matter: it is
-not decompiled, so this file deliberately stops at "which assets exist and load"
-and does not describe behaviour. See `ROADMAP.md` Phase 4.
+Everything here is **measured** from the extracted data with the port's own
+`--model-info`, not inferred. A small native technical harness now exercises the
+assets in `wd_tt` room 0. Its movement, camera, and goal are port-side
+scaffolding while the corresponding ov002 systems are reconstructed; room
+collision, Roxas animation, and the attached weapon come from the game data.
+The guessed HUD crop has been removed: reconstructing the retail HUD requires
+porting ov002's runtime tile/gauge compositor, not selecting rectangles from an
+atlas. See `ROADMAP.md` Phase 5.
 
 Paths below are under the unpacked data root
 (`data/extracted/<hash>/decompressed/unpacked/`, git-ignored).
@@ -96,9 +99,29 @@ Full format, and the room-to-sub-file mapping that is still **not** decoded:
 `--render-model FILE [--anim FILE]` renders any of the above in 3D with skinning
 and NSBCA playback (GPU path). For a world archive, `--world-info` lists its
 rooms and models and `--extract-world` writes each `KAPH` out in the
-`slot_N/0000.ext` layout that viewer already reads, so a room needs no new
-rendering code. This proves the renderer and animation systems work on real
-gameplay assets. It is a **CLI path**: the in-game frame loop draws
-through a 2D-only `Renderer` (`include/khdays/game/renderer.h`), so a gameplay
-scene that shows a 3D character would first need the 3D renderer wired into the
-game loop (or the model rendered offscreen to RGBA and blitted).
+`slot_N/0000.ext` layout that viewer already reads. The gameplay scene now uses
+that same neutral 3D data in the native frame loop: it renders `wd_tt` room 0,
+the real animated Roxas model, its `ro_w01000` Keyblade from `ba/ch/ro/w_.p2`,
+and a small goal ring offscreen to RGBA before blitting it through the game
+renderer. The room-data collision mesh supplies both the floor query and a
+lateral sphere sweep. Run the harness directly with `--playable-demo`.
+
+## HUD reconstruction status
+
+`UI/btl/main.p2` is an asset source, not a ready-made HUD bitmap. Ghidra shows
+that ov002 builds the gauges at runtime:
+
+- `Ov002_BuildGaugeRowMap` constructs 48 six-byte row records and publishes a
+  0xc0-byte display map;
+- `Ov002_DrawGaugeSpan` writes individual 4bpp pixel columns right-to-left,
+  using a seven-step shade ramp and the two measured layouts `4/46/0/2` and
+  `6/77/1/0`;
+- `Ov002_RebuildGaugeFillRows` converts total/current units into 46-cell rows;
+- `Ov002_UpdateGaugeRow` pairs rows and selects filled, empty, and terminal
+  styles; `Ov002_RedrawGaugeCells` updates only the changed cells.
+
+The previous `HP` / `LOCKED ON` rectangles were therefore unverified atlas
+crops and have been removed. The next correct implementation is a neutral 4bpp
+gauge compositor driven by these functions and the real player state, followed
+by the surrounding panel/cell layout; it must not reintroduce cropped labels as
+if they were the complete HUD.

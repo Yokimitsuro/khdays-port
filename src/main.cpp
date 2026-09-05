@@ -117,6 +117,24 @@ int run_game_demo() {
     return EXIT_SUCCESS;
 }
 
+void register_native_scenes(khdays::game::Game& game) {
+    game.scenes().register_scene(khdays::game::kSceneBootLogo, [] {
+        return std::make_unique<khdays::game::scenes::BootLogoScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneTitle, [] {
+        return std::make_unique<khdays::game::scenes::TitleScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
+        return std::make_unique<khdays::game::scenes::MainMenuScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneSaveFile, [] {
+        return std::make_unique<khdays::game::scenes::SaveFileScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneGameplay, [] {
+        return std::make_unique<khdays::game::scenes::GameplayScene>();
+    });
+}
+
 // --- viewer skin payload ---------------------------------------------------
 // Serializers for --export-skin. The gallery's WebGL viewer eats a Wavefront
 // OBJ, which to_wavefront_obj() writes in the *rest pose*; the bones are gone
@@ -382,10 +400,12 @@ void print_help() {
         << "  khdays-port [--resource FILE] [--texture NAME]\n"
         << "  khdays-port --render-model FILE [--anim FILE]\n"
         << "  khdays-port --model-info FILE\n"
-        << "  khdays-port --anim-info FILE\n"
+        << "  khdays-port --anim-info FILE [INDEX]\n"
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --game\n"
+        << "  khdays-port --playable-demo\n"
+        << "  khdays-port --playable-shot OUT.bmp [FRAMES] [BUTTON]\n"
         << "  khdays-port --game-demo\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
@@ -423,9 +443,12 @@ void print_help() {
         << "                      run the game's own downward ground query.\n"
         << "  --anim FILE         Play this NSBCA animation instead of the auto-detected one.\n"
         << "  --model-info FILE   Inspect MDL0 models, materials, meshes, and GPU commands.\n"
-        << "  --anim-info FILE    Inspect an NSBCA skeletal animation.\n"
+        << "  --anim-info FILE [INDEX]  Inspect one internal NSBCA animation.\n"
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
-        << "  --game              Run the scene/task frame loop in a window (placeholder scenes).\n"
+        << "  --game              Run the native boot/title/menu/gameplay flow.\n"
+        << "  --playable-demo     Start directly in the playable wd_zz room-0 slice.\n"
+        << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
+        << "                      u/d/l/r/q/e or press z for FRAMES.\n"
         << "  --game-demo         Run the scene/task frame loop headless (logs the flow).\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
@@ -771,31 +794,82 @@ int main(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (first == "--game") {
+        if (first == "--playable-shot") {
+            if (argc < 3 || argc > 5) {
+                std::cerr << "ERROR: --playable-shot requires an output BMP "
+                             "plus optional FRAMES and BUTTON\n";
+                return EXIT_FAILURE;
+            }
+            if (!khdays::vfs::autodetect_data_root()) {
+                std::cerr << "ERROR: no extracted data under data/extracted\n";
+                return EXIT_FAILURE;
+            }
+            khdays::game::Game game;
+            register_native_scenes(game);
+            game.scenes().start(khdays::game::kSceneGameplay);
+            for (int frame = 0; frame < 31; ++frame) {
+                game.step();
+            }
+            const int input_frames = argc >= 4 ? std::max(0, std::stoi(argv[3])) : 0;
+            const char key = argc >= 5 && argv[4][0] != '\0' ? argv[4][0] : '\0';
+            auto button = khdays::game::Button::Up;
+            bool valid_button = true;
+            switch (key) {
+                case 'u': button = khdays::game::Button::Up; break;
+                case 'd': button = khdays::game::Button::Down; break;
+                case 'l': button = khdays::game::Button::Left; break;
+                case 'r': button = khdays::game::Button::Right; break;
+                case 'q': button = khdays::game::Button::L; break;
+                case 'e': button = khdays::game::Button::R; break;
+                case 'z': button = khdays::game::Button::A; break;
+                default: valid_button = false; break;
+            }
+            for (int frame = 0; frame < input_frames; ++frame) {
+                khdays::game::Input input;
+                if (valid_button) {
+                    input.down = static_cast<std::uint16_t>(button);
+                    if (frame == 0) {
+                        input.pressed = input.down;
+                    }
+                }
+                game.scenes().set_input(input);
+                game.step();
+            }
+            game.scenes().set_input(khdays::game::Input{});
+            khdays::game::SoftwareRenderer renderer{544, 816};
+            game.render(renderer);
+            const auto bmp = khdays::assets::to_bmp(renderer.snapshot());
+            std::ofstream out{argv[2], std::ios::binary};
+            if (!out) {
+                std::cerr << "ERROR: cannot create " << argv[2] << '\n';
+                return EXIT_FAILURE;
+            }
+            out.write(
+                reinterpret_cast<const char*>(bmp.data()),
+                static_cast<std::streamsize>(bmp.size()));
+            if (!out) {
+                std::cerr << "ERROR: could not write " << argv[2] << '\n';
+                return EXIT_FAILURE;
+            }
+            std::cout << "Playable snapshot -> BMP: " << argv[2] << '\n';
+            return EXIT_SUCCESS;
+        }
+
+        if (first == "--game" || first == "--playable-demo") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
                              "scenes will show without game assets\n";
             }
             khdays::game::Game game;
-            game.scenes().register_scene(khdays::game::kSceneBootLogo, [] {
-                return std::make_unique<khdays::game::scenes::BootLogoScene>();
-            });
-            game.scenes().register_scene(khdays::game::kSceneTitle, [] {
-                return std::make_unique<khdays::game::scenes::TitleScene>();
-            });
-            game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
-                return std::make_unique<khdays::game::scenes::MainMenuScene>();
-            });
-            game.scenes().register_scene(khdays::game::kSceneSaveFile, [] {
-                return std::make_unique<khdays::game::scenes::SaveFileScene>();
-            });
-            game.scenes().register_scene(khdays::game::kSceneGameplay, [] {
-                return std::make_unique<khdays::game::scenes::GameplayScene>();
-            });
-            game.boot(0);
+            register_native_scenes(game);
+            if (first == "--playable-demo") {
+                game.scenes().start(khdays::game::kSceneGameplay);
+            } else {
+                game.boot(0);
+            }
             std::cout << "Running the game frame loop:\n"
-                         "  Z/Enter confirm, X back, arrows move (remap in "
-                         "Config > Controls)\n"
+                         "  Z/Enter confirm, X back, arrows move, Q/E camera "
+                         "(remap in Config > Controls)\n"
                          "  Menu bar: Config (volume/controls/layout), View; "
                          "F10 hide bar, F11 fullscreen, Esc quit\n";
             return khdays::platform::run_game(game);
@@ -1259,6 +1333,36 @@ int main(int argc, char* argv[]) {
                 const auto capped = [&] {
                     return written >= max_written || examined >= max_examined;
                 };
+                // Some battle-HUD packs are tile atlases without an NSCR
+                // tilemap. They are still meaningful UI resources, so emit
+                // every tiles/palette pairing instead of silently producing an
+                // empty directory.
+                if (pack.screens.empty()) {
+                    for (std::size_t t = 0;
+                         t < pack.tiles.size() && !capped(); ++t) {
+                        const auto tiles = khdays::assets::decode_ncgr(
+                            pack.tiles[t].data, pack.tiles[t].size);
+                        for (std::size_t p = 0;
+                             p < pack.palettes.size() && !capped(); ++p) {
+                            ++examined;
+                            const auto palette = khdays::assets::decode_nclr(
+                                pack.palettes[p].data, pack.palettes[p].size);
+                            const auto image = khdays::assets::render_tile_sheet(
+                                tiles, palette, 0, 16);
+                            const auto bmp = khdays::assets::to_bmp(image);
+                            const auto path = out_dir
+                                / ("atlas_t" + std::to_string(t) + "_p"
+                                   + std::to_string(p) + ".bmp");
+                            std::ofstream f{path, std::ios::binary};
+                            f.write(reinterpret_cast<const char*>(bmp.data()),
+                                    static_cast<std::streamsize>(bmp.size()));
+                            std::cout << "  atlas t" << t << " p" << p
+                                      << "  " << image.width << 'x'
+                                      << image.height << '\n';
+                            ++written;
+                        }
+                    }
+                }
                 for (std::size_t s = 0; s < pack.screens.size() && !capped();
                      ++s) {
                     const auto map = khdays::assets::decode_nscr(
@@ -1695,13 +1799,18 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--anim-info") {
-            if (argc != 3) {
-                std::cerr << "ERROR: --anim-info requires one file path\n";
+            if (argc < 3 || argc > 4) {
+                std::cerr << "ERROR: --anim-info requires a file path and "
+                             "optional animation index\n";
                 return EXIT_FAILURE;
             }
             try {
                 const auto animation =
-                    khdays::assets::load_nsbca(std::filesystem::path{argv[2]});
+                    khdays::assets::load_nsbca(
+                        std::filesystem::path{argv[2]},
+                        argc == 4
+                            ? static_cast<std::size_t>(std::stoul(argv[3]))
+                            : 0U);
                 std::size_t animated = 0;
                 std::size_t rot_samples = 0;
                 std::size_t rot_const = 0;

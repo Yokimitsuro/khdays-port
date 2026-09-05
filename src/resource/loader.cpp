@@ -225,8 +225,9 @@ LoadedModel load_model(const std::filesystem::path& path) {
 }
 
 khdays::assets::SkeletalAnimation load_animation(
-    const std::filesystem::path& ds_path) {
-    return khdays::assets::load_nsbca(ds_path);
+    const std::filesystem::path& ds_path,
+    const std::size_t animation_index) {
+    return khdays::assets::load_nsbca(ds_path, animation_index);
 }
 
 LoadedTexture load_texture(

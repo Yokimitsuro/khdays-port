@@ -213,6 +213,30 @@ std::optional<khdays::assets::DecodedTexture> load_ui_background(
     }
 }
 
+std::optional<khdays::assets::DecodedTexture> load_ui_tile_atlas(
+    const char* game_path, const std::size_t subfile,
+    const std::size_t tiles_index, const std::size_t palette_index) {
+    try {
+        const auto container = khdays::vfs::read(game_path);
+        const auto blob = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), subfile);
+        const auto pack = khdays::assets::parse_pk2d(blob.data(), blob.size());
+        if (tiles_index >= pack.tiles.size()
+            || palette_index >= pack.palettes.size()) {
+            return std::nullopt;
+        }
+        const auto tiles = khdays::assets::decode_ncgr(
+            pack.tiles[tiles_index].data, pack.tiles[tiles_index].size);
+        const auto palette = khdays::assets::decode_nclr(
+            pack.palettes[palette_index].data,
+            pack.palettes[palette_index].size);
+        return khdays::assets::render_tile_sheet(
+            tiles, palette, 0, 16, true);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 std::optional<khdays::assets::DecodedTexture> render_ui_text(
     const char* font_game_path, const std::u16string& text) {
     const auto font_path = khdays::vfs::resolve(font_game_path);

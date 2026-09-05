@@ -39,6 +39,14 @@ struct Camera3D final {
 struct ModelInstance final {
     const NeutralModel* model = nullptr;
     const std::map<std::string, DecodedTexture>* textures = nullptr;
+    // Column-major local-to-world transform. Room pieces use identity because
+    // their vertices are already authored in shared world coordinates; actors
+    // and debug markers use this to move independently inside that room.
+    std::array<float, 16> transform{
+        1.0F, 0.0F, 0.0F, 0.0F,
+        0.0F, 1.0F, 0.0F, 0.0F,
+        0.0F, 0.0F, 1.0F, 0.0F,
+        0.0F, 0.0F, 0.0F, 1.0F};
 };
 
 // Axis-aligned bounds over every instance's posed vertices. `valid` is false
@@ -64,11 +72,10 @@ Camera3D frame_scene(
 // Rasterize the scene to a `width` x `height` RGBA image with a transparent
 // backdrop.
 //
-// Perspective-correct in texture coordinates and depth-buffered, so instances
-// interpenetrate correctly. Two deliberate simplifications, both visible only
-// in edge cases: triangles crossing the near plane are dropped whole rather
-// than clipped, and a translucent pixel blends without writing depth, so
-// translucent surfaces are not sorted against each other.
+// Perspective-correct in texture coordinates, clipped at the near/far planes,
+// and depth-buffered, so instances interpenetrate correctly. A translucent
+// pixel blends without writing depth, so translucent surfaces are not sorted
+// against each other.
 DecodedTexture render_scene(
     const std::vector<ModelInstance>& instances,
     const Camera3D& camera,

@@ -312,7 +312,8 @@ DecodedTexture render_tile_sheet(
     const TileGraphics& tiles,
     const Palette2D& palette,
     const int palette_index,
-    const int tiles_per_row) {
+    const int tiles_per_row,
+    const bool color_zero_transparent) {
     const int per_row = tiles_per_row > 0 ? tiles_per_row : 16;
     const int rows = (tiles.tile_count + per_row - 1) / std::max(per_row, 1);
 
@@ -340,7 +341,8 @@ DecodedTexture render_tile_sheet(
                 image.rgba[dst] = color[0];
                 image.rgba[dst + 1U] = color[1];
                 image.rgba[dst + 2U] = color[2];
-                image.rgba[dst + 3U] = color[3];
+                image.rgba[dst + 3U] =
+                    color_zero_transparent && index == 0U ? 0U : color[3];
             }
         }
     }

@@ -98,13 +98,15 @@ struct SlotContainer final {
 SlotContainer parse_slot_container(const std::uint8_t* data, std::size_t size);
 
 // Lay every tile out into a single RGBA image (a tile sheet), `tiles_per_row`
-// wide, colored with sub-palette `palette_index`. Index 0 renders opaque here so
-// the sheet is easy to see.
+// wide, colored with sub-palette `palette_index`. Index 0 renders opaque by
+// default so an exported sheet is easy to inspect; runtime sprite atlases can
+// request it transparent.
 DecodedTexture render_tile_sheet(
     const TileGraphics& tiles,
     const Palette2D& palette,
     int palette_index = 0,
-    int tiles_per_row = 16);
+    int tiles_per_row = 16,
+    bool color_zero_transparent = false);
 
 // Compose a full background image from a tilemap, its tile graphics, and the
 // palette (each cell selects tile, sub-palette, and flip). With

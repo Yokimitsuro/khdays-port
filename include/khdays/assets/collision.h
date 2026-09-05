@@ -89,6 +89,17 @@ struct GroundHit final {
     std::int32_t fraction = 0;      // 0..0x08000000 along the segment
 };
 
+// Earliest contact made by a sphere moving through the decoded room faces.
+// Positions and radius use neutral world units (one DS fixed-point unit is
+// converted internally), which keeps the gameplay controller format-agnostic.
+struct SphereSweepHit final {
+    bool hit = false;
+    float fraction = 1.0F;
+    std::size_t face_index = 0;
+    std::array<float, 3> point{0.0F, 0.0F, 0.0F};
+    std::array<float, 3> normal{0.0F, 0.0F, 0.0F};
+};
+
 // Cast straight down from `from_y` to `to_y` at (x, z) and return the nearest
 // surface, exactly as `func_01ffd824` decides it: the face's 2D bound must
 // contain the point, the segment must cross the plane downward within the
@@ -104,5 +115,15 @@ GroundHit ground_at(
     std::int32_t z,
     std::int32_t from_y,
     std::int32_t to_y);
+
+// Sweep a sphere against the room's lateral collision faces. This is the
+// neutral equivalent of ov002's player sphere cast (whose original radius is
+// 0x500 in 20.12 fixed point). Floor/ceiling faces are deliberately excluded;
+// vertical placement remains the responsibility of ground_at().
+SphereSweepHit sweep_sphere(
+    const CollisionModel& model,
+    const std::array<float, 3>& from,
+    const std::array<float, 3>& to,
+    float radius);
 
 }  // namespace khdays::assets

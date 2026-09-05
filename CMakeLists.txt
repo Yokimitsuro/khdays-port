@@ -199,6 +199,7 @@ add_library(
         src/game/object.cpp
         src/game/game.cpp
         src/game/game_state.cpp
+        src/game/playable_controller.cpp
         src/game/settings.cpp
         src/game/software_renderer.cpp
         src/game/scenes/boot_logo_scene.cpp

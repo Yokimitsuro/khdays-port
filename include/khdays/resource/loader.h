@@ -50,7 +50,8 @@ LoadedModel load_model(const std::filesystem::path& path);
 
 // Load a skeletal animation.
 khdays::assets::SkeletalAnimation load_animation(
-    const std::filesystem::path& ds_path);
+    const std::filesystem::path& ds_path,
+    std::size_t animation_index = 0);
 
 // Load a texture by its DS name. `ds_source` is the DS file that embeds the
 // TEX0. A "<mods>/<any-mod>/textures/**/<name>.bmp" override wins; the DS

@@ -240,9 +240,12 @@ not ported). Port or replace the minimum required systems for:
 - save data abstraction.
 
 The native flow now runs **boot logos → title/menus → character select →
-gameplay**. Scene 2 is registered (`kSceneGameplay`); porting the actual gameplay
-overlay is a later phase, so it is a placeholder that marks the reached
-game-owned state.
+gameplay**. Scene 2 is registered (`kSceneGameplay`) and contains a deliberately
+narrow, non-canonical bring-up harness in `wd_tt` room 0: the real Roxas model,
+distinct idle/locomotion clips, a real Keyblade attached to the weapon target
+bone, floor and lateral room collision, camera-relative movement, a follow
+camera, and a goal ring. It exercises the native gameplay path while ov002
+mission, combat, and HUD behavior are reconstructed.
 
 Two front-end screens are understood but **not** ported, on purpose:
 
@@ -255,15 +258,22 @@ Two front-end screens are understood but **not** ported, on purpose:
 
 ## Phase 5 — Playable vertical slice
 
-Choose one narrow, reproducible target such as:
+The first narrow, reproducible target is in progress:
 
-- a debug room;
-- a single mission map;
-- player movement and camera;
-- one enemy;
-- one combat interaction.
+- [x] one real room: `mi/wd/wd_tt`, room 0;
+- [x] real Roxas model with distinct idle and locomotion skeletal clips;
+- [x] real `ro_w01000` Keyblade attached to Roxas's `ro_w_tg_R` bone;
+- [x] camera-relative player movement and follow camera;
+- [x] room collision used for walkable ground and lateral sphere sweeps;
+- [x] near/far clipping and repeating room textures in the CPU path;
+- [x] a visible development goal and completion/reset state;
+- [ ] reconstruct ov002's HUD tile layout and dynamic gauge compositor;
+- [ ] one enemy;
+- [ ] one combat interaction.
 
-**Exit condition:** the selected slice is playable from start to finish in the native runtime.
+**Exit condition:** the selected slice is playable from start to finish in the
+native runtime. The current harness is a bring-up tool and does not yet meet
+this condition.
 
 ## Phase 6 — Full-game bring-up
 

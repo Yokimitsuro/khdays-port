@@ -3,7 +3,7 @@
 Experimental native PC runtime and source port for **Kingdom Hearts 358/2 Days**, developed alongside [`khdays-decomp`](https://github.com/Yokimitsuro/khdays-decomp).
 
 > [!WARNING]
-> This project is in early development. The native asset pipeline — textures, 2D/UI graphics, fonts, models, animation, text, and audio — works, along with a mod-override system and a game filesystem. The game's **front-end now runs natively** (boot logos → title and menus → character select) with its real assets, music, and timings. It is **not playable** yet: gameplay itself is the next milestone.
+> This project is in early development. The native asset pipeline — textures, 2D/UI graphics, fonts, models, animation, text, and audio — works, along with a mod-override system and a game filesystem. The game's **front-end now runs natively** (boot logos → title and menus → character select) with its real assets, music, and timings. An **experimental gameplay harness** is available in Twilight Town (`wd_tt`, room 0); it is useful for bringing systems up, but is not yet a reconstructed mission or combat loop.
 
 > [!IMPORTANT]
 > This repository does not contain a ROM, game assets, audio, video, text dumps, proprietary SDK files, or copyrighted game binaries. Users will be required to provide their own legally obtained copy of the game.
@@ -52,8 +52,17 @@ flow**. What runs today:
 - [x] **Title and menus** — the real 3D KH logo over the character illustration, hosting every menu level (MODO HISTORIA / MODO MISIÓN → NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR) with the real localized textures at the exact DS positions, playing the real title BGM (an SDAT STRM stream) through the neutral `game::MusicPlayer`
 - [x] **Character select** (scene 7, ov06) — the 13-portrait grid from `UI/mlt/res.p2`, laid out and shaded (greyscale, colour when selected) exactly as the DS does
 - [x] In-window options overlay (Dear ImGui): volume, remappable controls, stacked/side-by-side screen layout, fullscreen — persisted between runs
-- [ ] Gameplay (scene 2, ov002) — currently a placeholder marking the reached game-owned state
+- [ ] Gameplay (scene 2, ov002) — an experimental `wd_tt` room-0 harness currently exercises the real Roxas model, distinct idle/locomotion clips, a Keyblade attached to `ro_w_tg_R`, floor and lateral room collision, movement, and camera; mission logic, enemies, combat, and the retail HUD remain in progress
 - [ ] The save-file screen (layout known; needs a save system) and the attract cutscene (blocked on MobiClip)
+
+Run the slice directly with:
+
+```powershell
+.\build\Release\khdays-port.exe --playable-demo
+```
+
+Use the arrow keys to move, Q/E to rotate the camera, X to return to the title,
+and Enter to reset after reaching the goal.
 
 Scene identification is **verified against the running game** (emulator savestates) rather than assumed — which corrected an earlier wrong model: ov000 is the *entire* front-end (logos, title, all menu levels, save-file screen), ov06 is the character select, and ov012 is the movie player.
 

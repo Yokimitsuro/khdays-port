@@ -1,10 +1,13 @@
+#include <cmath>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
 #include "khdays/game/game.h"
 #include "khdays/game/object.h"
+#include "khdays/game/playable_controller.h"
 #include "khdays/game/scene.h"
 
 namespace {
@@ -121,6 +124,62 @@ int main() {
         expect(child_runs == 0 && objects.size() == 1U, "child staged");
         objects.update();
         expect(child_runs == 1 && objects.empty(), "child ran next frame");
+
+        // --- first playable slice controller ---
+        const auto floor = [](const float x, const float z)
+            -> std::optional<float> {
+            if (std::fabs(x) <= 1.0F && std::fabs(z) <= 1.0F) {
+                return 2.0F;
+            }
+            return std::nullopt;
+        };
+        PlayableController controller{0.0F, 0.0F, 10.0F, 10.0F};
+        controller.reset(floor);
+        expect(controller.state().y == 2.0F,
+               "playable controller starts on the floor");
+
+        Input move_right;
+        move_right.down = static_cast<std::uint16_t>(Button::Right);
+        controller.update(move_right, floor);
+        expect(controller.state().x > 0.0F
+                   && std::fabs(controller.state().z) < 0.0001F,
+               "right moves in camera-relative world space");
+        expect(controller.state().moving,
+               "accepted movement marks the player moving");
+
+        Input turn_camera;
+        turn_camera.down = static_cast<std::uint16_t>(Button::R);
+        const float old_yaw = controller.state().camera_yaw;
+        controller.update(turn_camera, floor);
+        expect(controller.state().camera_yaw > old_yaw,
+               "R rotates the follow camera");
+
+        PlayableController blocked{0.96F, 0.0F, 10.0F, 10.0F};
+        blocked.reset(floor);
+        blocked.update(move_right, floor);
+        expect(std::fabs(blocked.state().x - 0.96F) < 0.0001F,
+               "movement cannot leave walkable collision");
+        expect(!blocked.state().moving,
+               "a rejected step is not reported as movement");
+
+        PlayableController wall_blocked{0.0F, 0.0F, 10.0F, 10.0F};
+        wall_blocked.reset(floor);
+        const auto wall = [](
+            const float, const float, const float,
+            const float to_x, const float, const float, const float) {
+            return to_x <= 0.04F;
+        };
+        wall_blocked.update(move_right, floor, wall);
+        expect(std::fabs(wall_blocked.state().x) < 0.0001F,
+               "lateral collision prevents crossing a wall");
+        expect(!wall_blocked.state().moving,
+               "a wall-blocked step is not reported as movement");
+
+        PlayableController finish{0.0F, 0.0F, 1.2F, 0.0F};
+        finish.reset(floor);
+        finish.update(move_right, floor);
+        expect(finish.state().completed,
+               "entering the goal radius completes the slice");
 
         std::cout << "Game-flow test passed\n";
         return 0;

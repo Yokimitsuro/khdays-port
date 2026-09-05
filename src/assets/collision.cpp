@@ -1,5 +1,8 @@
 #include "khdays/assets/collision.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -214,6 +217,110 @@ GroundHit ground_at(
         best.y = static_cast<std::int32_t>(
             from_y
             + ((static_cast<std::int64_t>(to_y - from_y) * fraction) >> 27));
+    }
+    return best;
+}
+
+SphereSweepHit sweep_sphere(
+    const CollisionModel& model,
+    const std::array<float, 3>& from,
+    const std::array<float, 3>& to,
+    const float radius) {
+    SphereSweepHit best;
+    if (!model.valid || radius <= 0.0F) {
+        return best;
+    }
+
+    constexpr float kInvFx = 1.0F / static_cast<float>(kFxOne);
+    constexpr float kWallNormalY = 0.75F;
+    constexpr float kInsideEpsilon = 0.002F;
+    for (std::size_t i = 0; i < model.faces.size(); ++i) {
+        const CollisionFace& face = model.faces[i];
+        if ((face.flags & kFaceFlagSkip) != 0U
+            || (face.vertex_count != 3U && face.vertex_count != 4U)) {
+            continue;
+        }
+
+        std::array<float, 3> normal{
+            static_cast<float>(face.plane.x) * kInvFx,
+            static_cast<float>(face.plane.y) * kInvFx,
+            static_cast<float>(face.plane.z) * kInvFx};
+        const float normal_length = std::sqrt(
+            normal[0] * normal[0] + normal[1] * normal[1]
+            + normal[2] * normal[2]);
+        if (normal_length < 0.0001F) {
+            continue;
+        }
+        for (float& component : normal) {
+            component /= normal_length;
+        }
+        if (std::fabs(normal[1]) >= kWallNormalY) {
+            continue;
+        }
+        const float plane_distance =
+            static_cast<float>(face.plane.distance) * kInvFx / normal_length;
+        const auto signed_distance = [&](const std::array<float, 3>& p) {
+            return normal[0] * p[0] + normal[1] * p[1]
+                + normal[2] * p[2] - plane_distance;
+        };
+        const float raw_start = signed_distance(from);
+        const float raw_end = signed_distance(to);
+        const float side = raw_start < 0.0F ? -1.0F : 1.0F;
+        const float start = raw_start * side;
+        const float end = raw_end * side;
+        if (end >= start || end > radius || start < radius - kInsideEpsilon) {
+            continue;
+        }
+        const float denominator = start - end;
+        if (denominator <= 0.000001F) {
+            continue;
+        }
+        const float fraction = std::clamp(
+            (start - radius) / denominator, 0.0F, 1.0F);
+        if (fraction >= best.fraction) {
+            continue;
+        }
+
+        std::array<float, 3> centre{};
+        std::array<float, 3> contact{};
+        for (std::size_t axis = 0; axis < 3U; ++axis) {
+            centre[axis] = from[axis] + (to[axis] - from[axis]) * fraction;
+            contact[axis] = centre[axis] - normal[axis] * side * radius;
+        }
+
+        bool has_positive = false;
+        bool has_negative = false;
+        const std::size_t count = face.vertex_count;
+        for (std::size_t vertex = 0; vertex < count; ++vertex) {
+            const auto& av = face.vertices[vertex];
+            const auto& bv = face.vertices[(vertex + 1U) % count];
+            const std::array<float, 3> a{
+                av[0] * kInvFx, av[1] * kInvFx, av[2] * kInvFx};
+            const std::array<float, 3> edge{
+                (bv[0] - av[0]) * kInvFx,
+                (bv[1] - av[1]) * kInvFx,
+                (bv[2] - av[2]) * kInvFx};
+            const std::array<float, 3> delta{
+                contact[0] - a[0], contact[1] - a[1], contact[2] - a[2]};
+            const std::array<float, 3> cross{
+                edge[1] * delta[2] - edge[2] * delta[1],
+                edge[2] * delta[0] - edge[0] * delta[2],
+                edge[0] * delta[1] - edge[1] * delta[0]};
+            const float orientation = cross[0] * normal[0]
+                + cross[1] * normal[1] + cross[2] * normal[2];
+            has_positive = has_positive || orientation > kInsideEpsilon;
+            has_negative = has_negative || orientation < -kInsideEpsilon;
+        }
+        if (has_positive && has_negative) {
+            continue;
+        }
+
+        best.hit = true;
+        best.fraction = fraction;
+        best.face_index = i;
+        best.point = contact;
+        best.normal = {
+            normal[0] * side, normal[1] * side, normal[2] * side};
     }
     return best;
 }

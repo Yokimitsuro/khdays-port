@@ -284,6 +284,40 @@ int main() {
                 throw std::runtime_error("the backdrop is not transparent");
             }
 
+            // A triangle crossing the near plane must be clipped, not dropped.
+            // Large room polygons routinely cross this plane as the gameplay
+            // camera moves; dropping one vertex made whole walls disappear.
+            khdays::assets::NeutralModel crossing;
+            crossing.name = "near_plane_crossing";
+            khdays::assets::NeutralMesh crossing_mesh;
+            for (const auto& position :
+                 std::array<std::array<float, 3>, 3>{
+                     std::array<float, 3>{-0.8F, -0.8F, -0.05F},
+                     std::array<float, 3>{0.8F, -0.8F, -1.0F},
+                     std::array<float, 3>{0.0F, 0.8F, -1.0F}}) {
+                khdays::assets::NeutralVertex vertex;
+                vertex.position = position;
+                vertex.color = {0U, 255U, 0U, 255U};
+                vertex.weights = {0.0F, 0.0F, 0.0F, 0.0F};
+                crossing_mesh.vertices.push_back(vertex);
+            }
+            crossing_mesh.indices = {0U, 1U, 2U};
+            crossing.meshes.push_back(std::move(crossing_mesh));
+            camera.near_z = 0.1F;
+            const auto clipped = khdays::assets::render_scene(
+                {khdays::assets::ModelInstance{&crossing, nullptr}},
+                camera, 64, 64);
+            std::size_t clipped_pixels = 0U;
+            for (std::size_t k = 3U; k < clipped.rgba.size(); k += 4U) {
+                if (clipped.rgba[k] != 0U) {
+                    ++clipped_pixels;
+                }
+            }
+            if (clipped_pixels == 0U) {
+                throw std::runtime_error(
+                    "near-plane crossing triangle was dropped");
+            }
+
             // Framing must put the geometry on screen from any angle.
             const auto framed =
                 khdays::assets::frame_scene(instances, 0.7F, 0.3F);
@@ -302,6 +336,17 @@ int main() {
             const auto bounds = khdays::assets::scene_bounds(instances);
             if (!bounds.valid || bounds.radius <= 0.0F) {
                 throw std::runtime_error("scene bounds are not valid");
+            }
+
+            auto translated = khdays::assets::ModelInstance{
+                &near_quad, nullptr};
+            translated.transform[12] = 5.0F;
+            const auto moved_bounds =
+                khdays::assets::scene_bounds({translated});
+            if (!moved_bounds.valid
+                || std::fabs(moved_bounds.center[0] - 5.0F) > 0.001F) {
+                throw std::runtime_error(
+                    "instance translation is absent from scene bounds");
             }
         }
 

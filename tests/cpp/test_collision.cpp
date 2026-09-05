@@ -149,6 +149,28 @@ int main() {
                     .valid,
                "an inconsistent header is rejected");
 
+        // The player query is a sphere sweep, not just a floor ray. A vertical
+        // quad at x=1 must stop a radius-0.25 body before its centre crosses it.
+        khdays::assets::CollisionModel walls;
+        walls.valid = true;
+        khdays::assets::CollisionFace wall;
+        wall.vertex_count = 4U;
+        wall.plane.x = -static_cast<std::int16_t>(kOne);
+        wall.plane.distance = -kOne;
+        wall.vertices = {{
+            {kOne, 0, -kOne}, {kOne, 2 * kOne, -kOne},
+            {kOne, 2 * kOne, kOne}, {kOne, 0, kOne}}};
+        walls.faces.push_back(wall);
+        const auto wall_hit = khdays::assets::sweep_sphere(
+            walls, {0.0F, 1.0F, 0.0F}, {2.0F, 1.0F, 0.0F}, 0.25F);
+        expect(wall_hit.hit, "a lateral sphere sweep hits a wall");
+        expect(wall_hit.fraction > 0.37F && wall_hit.fraction < 0.38F,
+               "the sphere stops one radius before the wall");
+        expect(!khdays::assets::sweep_sphere(
+                    walls, {0.0F, 3.0F, 0.0F}, {2.0F, 3.0F, 0.0F}, 0.25F)
+                    .hit,
+               "a sphere above the wall passes it");
+
         std::cout << "Collision test passed\n";
         return 0;
     } catch (const std::exception& error) {

@@ -76,6 +76,72 @@ struct Projected final {
     std::array<float, 4> color_over_z{0.0F, 0.0F, 0.0F, 0.0F};
 };
 
+struct ClipVertex final {
+    Vec3 view{0.0F, 0.0F, 0.0F};
+    std::array<float, 2> texcoord{0.0F, 0.0F};
+    std::array<float, 4> color{255.0F, 255.0F, 255.0F, 255.0F};
+};
+
+ClipVertex interpolate(
+    const ClipVertex& a,
+    const ClipVertex& b,
+    const float t) {
+    ClipVertex out;
+    for (std::size_t i = 0; i < 3U; ++i) {
+        out.view[i] = a.view[i] + (b.view[i] - a.view[i]) * t;
+    }
+    for (std::size_t i = 0; i < 2U; ++i) {
+        out.texcoord[i] =
+            a.texcoord[i] + (b.texcoord[i] - a.texcoord[i]) * t;
+    }
+    for (std::size_t i = 0; i < 4U; ++i) {
+        out.color[i] = a.color[i] + (b.color[i] - a.color[i]) * t;
+    }
+    return out;
+}
+
+// Clip in view space against z-distance planes before perspective division.
+// Retaining all attributes here avoids both disappearing room polygons and
+// texture seams where a polygon intersects the camera frustum.
+std::vector<ClipVertex> clip_distance_plane(
+    const std::vector<ClipVertex>& input,
+    const float plane,
+    const bool keep_greater) {
+    std::vector<ClipVertex> output;
+    if (input.empty()) {
+        return output;
+    }
+    output.reserve(input.size() + 1U);
+    const auto distance = [](const ClipVertex& vertex) {
+        return -vertex.view[2];
+    };
+    const auto inside = [&](const ClipVertex& vertex) {
+        return keep_greater ? distance(vertex) >= plane
+                            : distance(vertex) <= plane;
+    };
+
+    ClipVertex previous = input.back();
+    bool previous_inside = inside(previous);
+    for (const auto& current : input) {
+        const bool current_inside = inside(current);
+        if (previous_inside != current_inside) {
+            const float previous_distance = distance(previous);
+            const float denominator = distance(current) - previous_distance;
+            if (std::fabs(denominator) > 1.0e-8F) {
+                output.push_back(interpolate(
+                    previous, current,
+                    (plane - previous_distance) / denominator));
+            }
+        }
+        if (current_inside) {
+            output.push_back(current);
+        }
+        previous = current;
+        previous_inside = current_inside;
+    }
+    return output;
+}
+
 float edge(const Projected& a, const Projected& b, const float px, const float py) {
     return (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x);
 }
@@ -92,7 +158,9 @@ SceneBounds scene_bounds(const std::vector<ModelInstance>& instances) {
         }
         for (const auto& mesh : instance.model->meshes) {
             for (const auto& vertex : mesh.vertices) {
-                const auto p = posed_position(*instance.model, vertex);
+                const auto p = transform_point(
+                    instance.transform,
+                    posed_position(*instance.model, vertex));
                 for (int i = 0; i < 3; ++i) {
                     lo[i] = std::min(lo[i], p[static_cast<std::size_t>(i)]);
                     hi[i] = std::max(hi[i], p[static_cast<std::size_t>(i)]);
@@ -167,17 +235,17 @@ DecodedTexture render_scene(
     const float half_w = static_cast<float>(frame.width) * 0.5F;
     const float half_h = static_cast<float>(frame.height) * 0.5F;
 
-    const auto project = [&](const Vec3& view, const NeutralVertex& vertex) {
+    const auto project = [&](const ClipVertex& vertex) {
         Projected out;
-        const float z = -view[2];  // distance in front of the camera
+        const float z = -vertex.view[2];  // distance in front of the camera
         out.inv_z = 1.0F / z;
-        out.x = half_w + (view[0] * focal / aspect) * out.inv_z * half_w;
-        out.y = half_h - (view[1] * focal) * out.inv_z * half_h;
+        out.x = half_w
+            + (vertex.view[0] * focal / aspect) * out.inv_z * half_w;
+        out.y = half_h - (vertex.view[1] * focal) * out.inv_z * half_h;
         out.u_over_z = vertex.texcoord[0] * out.inv_z;
         out.v_over_z = vertex.texcoord[1] * out.inv_z;
         for (std::size_t i = 0; i < 4U; ++i) {
-            out.color_over_z[i] =
-                static_cast<float>(vertex.color[i]) * out.inv_z;
+            out.color_over_z[i] = vertex.color[i] * out.inv_z;
         }
         return out;
     };
@@ -200,23 +268,31 @@ DecodedTexture render_scene(
                     &mesh.vertices[mesh.indices[i]],
                     &mesh.vertices[mesh.indices[i + 1U]],
                     &mesh.vertices[mesh.indices[i + 2U]]};
-                Vec3 view[3];
-                bool behind = false;
+                std::vector<ClipVertex> polygon(3U);
                 for (int k = 0; k < 3; ++k) {
-                    view[k] = to_view(
-                        basis, posed_position(model, *corner[k]));
-                    // Dropped whole rather than clipped -- see the header.
-                    if (-view[k][2] <= camera.near_z
-                        || -view[k][2] >= camera.far_z) {
-                        behind = true;
+                    polygon[static_cast<std::size_t>(k)].view = to_view(
+                        basis,
+                        transform_point(
+                            instance.transform,
+                            posed_position(model, *corner[k])));
+                    for (std::size_t j = 0; j < 2U; ++j) {
+                        polygon[static_cast<std::size_t>(k)].texcoord[j] =
+                            corner[k]->texcoord[j];
+                    }
+                    for (std::size_t j = 0; j < 4U; ++j) {
+                        polygon[static_cast<std::size_t>(k)].color[j] =
+                            static_cast<float>(corner[k]->color[j]);
                     }
                 }
-                if (behind) {
-                    continue;
-                }
-                const Projected a = project(view[0], *corner[0]);
-                const Projected b = project(view[1], *corner[1]);
-                const Projected c = project(view[2], *corner[2]);
+                polygon = clip_distance_plane(
+                    polygon, std::max(camera.near_z, 1.0e-5F), true);
+                polygon = clip_distance_plane(
+                    polygon, std::max(camera.far_z, camera.near_z), false);
+                for (std::size_t triangle = 1U;
+                     triangle + 1U < polygon.size(); ++triangle) {
+                const Projected a = project(polygon[0]);
+                const Projected b = project(polygon[triangle]);
+                const Projected c = project(polygon[triangle + 1U]);
 
                 const float area = edge(a, b, c.x, c.y);
                 if (std::fabs(area) < 1e-6F) {
@@ -275,12 +351,18 @@ DecodedTexture render_scene(
                         float texel[4] = {255.0F, 255.0F, 255.0F, 255.0F};
                         if (texture != nullptr && texture->width > 0
                             && texture->height > 0) {
-                            const int tx = std::clamp(
-                                static_cast<int>(u + 0.5F), 0,
-                                texture->width - 1);
-                            const int ty = std::clamp(
-                                static_cast<int>(v + 0.5F), 0,
-                                texture->height - 1);
+                            const auto repeat = [](const float coordinate,
+                                                   const int extent) {
+                                int value = static_cast<int>(
+                                    std::floor(coordinate + 0.5F));
+                                value %= extent;
+                                return value < 0 ? value + extent : value;
+                            };
+                            // The native GPU path and the DS material default
+                            // both repeat. Clamping here stretched edge texels
+                            // across large room polygons as the camera moved.
+                            const int tx = repeat(u, texture->width);
+                            const int ty = repeat(v, texture->height);
                             const std::size_t o =
                                 (static_cast<std::size_t>(ty) * texture->width
                                  + tx)
@@ -321,6 +403,7 @@ DecodedTexture render_scene(
                             depth[pixel] = inv_z;
                         }
                     }
+                }
                 }
             }
         }

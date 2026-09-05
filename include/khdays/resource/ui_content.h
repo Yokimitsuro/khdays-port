@@ -88,6 +88,15 @@ std::optional<khdays::assets::DecodedTexture> load_ui_background(
     std::size_t tiles_index,
     std::size_t palette_index);
 
+// Decode a tile-only D2KP UI sub-file to a transparent atlas. Battle UI packs
+// such as UI/btl/main.p2 carry their CHR/PLT here and assemble the final HUD at
+// runtime rather than storing an NSCR tilemap.
+std::optional<khdays::assets::DecodedTexture> load_ui_tile_atlas(
+    const char* game_path,
+    std::size_t subfile,
+    std::size_t tiles_index = 0,
+    std::size_t palette_index = 0);
+
 // Render a UTF-16 (game-encoded) string in a named game font resolved through
 // the VFS (mod overrides applied by the resource font loader).
 std::optional<khdays::assets::DecodedTexture> render_ui_text(
