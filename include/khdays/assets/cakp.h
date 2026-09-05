@@ -38,6 +38,21 @@ struct CakpArchive final {
     std::vector<CakpScript> scripts;
 };
 
+// ov012's `op/scr.z` is a raw action-script member followed by a resource
+// pool. ScriptVm_ResolveOperand uses the end of that member as the base for
+// kind-2 pointers. The five conditional branches are the European language
+// variants in the game's order: English, French, German, Italian, Spanish.
+struct MovieSubtitleCue final {
+    std::uint32_t start_frame = 0U;
+    std::uint32_t end_frame = 0U;
+    std::string text;
+};
+
+struct Ov012MovieScript final {
+    std::string movie_path;
+    std::array<std::vector<MovieSubtitleCue>, 5> subtitles;
+};
+
 // Decode the named section-1 scripts of an on-disk CAKP/KAPH-style archive.
 // Its eight section tables store base-relative offsets until func_02025464
 // relocates them on DS; this reader resolves them without mutating the input.
@@ -50,6 +65,11 @@ CakpArchive decode_cakp(const std::filesystem::path& path);
 std::vector<ActionInstruction> decode_action_instructions(
     const std::uint8_t* data, std::size_t size);
 std::vector<ActionInstruction> decode_action_instructions(
+    const std::vector<std::uint8_t>& data);
+
+// Decode ov012's complete opening package. Both the shipped LZ10/LZ11 `.z`
+// form and an already decompressed buffer are accepted.
+Ov012MovieScript decode_ov012_movie_script(
     const std::vector<std::uint8_t>& data);
 
 }  // namespace khdays::assets

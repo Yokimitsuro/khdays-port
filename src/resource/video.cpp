@@ -211,4 +211,9 @@ khdays::assets::ModsVideoDecoder load_mods_video(
     return {khdays::vfs::read(game_path), load_mobiclip_coefficient_tables()};
 }
 
+khdays::assets::Ov012MovieScript load_opening_movie_script() {
+    return khdays::assets::decode_ov012_movie_script(
+        khdays::vfs::read("op/scr.z"));
+}
+
 }  // namespace khdays::resource

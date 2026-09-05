@@ -436,11 +436,12 @@ void print_help() {
         << "  khdays-port --play-sequence SDAT SEQ [SECONDS]\n"
         << "  khdays-port --mods-info FILE\n"
         << "  khdays-port --render-video-frame GAMEPATH FRAME OUT.bmp\n"
-        << "  khdays-port --play-video GAMEPATH\n"
+        << "  khdays-port --play-video GAMEPATH [LANG]\n"
         << "  khdays-port --extract-mods-audio GAMEPATH OUT.wav\n"
         << "  khdays-port --pipe-video-rgba GAMEPATH\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --mission-script-info MISSION DAY\n"
+        << "  khdays-port --opening-script-info [LANG]\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
         << "  khdays-port --export-obj FILE [OUTPUT.obj]\n"
@@ -488,12 +489,15 @@ void print_help() {
         << "  --mods-info FILE    Summarize a MobiClip MODS cutscene container (mv/*.mods).\n"
         << "  --render-video-frame PATH FRAME OUT.bmp  Decode a real MODS frame through\n"
         << "                      overlay 24's original VLC tables (FRAME is zero-based).\n"
-        << "  --play-video PATH   Play a MODS cutscene with synchronized audio.\n"
+        << "  --play-video PATH [LANG]  Play a MODS cutscene with synchronized audio;\n"
+        << "                      802 also uses ov012's timed subtitles (en/fr/de/it/es).\n"
         << "  --extract-mods-audio PATH OUT.wav  Decode the movie's interleaved PCM16.\n"
         << "  --pipe-video-rgba PATH  Write every decoded RGBA frame to stdout.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --mission-script-info MISSION DAY  Decode the named CAKP scripts\n"
         << "                      selected by ov002 from mi/mi/MISSION.\n"
+        << "  --opening-script-info [LANG]  Decode ov012's movie path and exact\n"
+        << "                      subtitle frame ranges (en/fr/de/it/es).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
         << "  --export-obj FILE   Decode the first MDL0 model to a Wavefront OBJ mesh.\n"
@@ -698,14 +702,25 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--play-video") {
-            if (argc != 3) {
-                std::cerr << "ERROR: --play-video requires a NitroFS game path\n";
+            if (argc != 3 && argc != 4) {
+                std::cerr << "ERROR: --play-video requires a NitroFS game path "
+                             "and optional language code\n";
                 return EXIT_FAILURE;
             }
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "ERROR: could not find extracted data under "
                              "data/extracted\n";
                 return EXIT_FAILURE;
+            }
+            if (argc == 4) {
+                const std::string_view code{argv[3]};
+                if (code != "en" && code != "fr" && code != "de"
+                    && code != "it" && code != "es") {
+                    std::cerr << "ERROR: video language must be en, fr, de, it, or es\n";
+                    return EXIT_FAILURE;
+                }
+                khdays::game::set_language(
+                    khdays::game::language_from_code(code));
             }
             return khdays::platform::play_mods_video(argv[2]);
         }
@@ -1832,7 +1847,13 @@ int main(int argc, char* argv[]) {
                 const auto archive = khdays::assets::decode_cakp(*bundle);
                 std::cout << "Mission " << mission << ", day " << day
                           << ": " << archive.scripts.size()
-                          << " named CAKP scripts\n";
+                          << " named CAKP scripts\n  sections:";
+                for (std::size_t section = 0U;
+                     section < archive.section_counts.size(); ++section) {
+                    std::cout << ' ' << section << '='
+                              << archive.section_counts[section];
+                }
+                std::cout << '\n';
                 for (const auto& script : archive.scripts) {
                     std::cout << "  " << script.name << ": "
                               << script.bytes.size() << " bytes";
@@ -1864,6 +1885,50 @@ int main(int argc, char* argv[]) {
                     } catch (const std::exception& error) {
                         std::cout << " (command decode stopped: "
                                   << error.what() << ")\n";
+                    }
+                }
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--opening-script-info") {
+            if (argc != 2 && argc != 3) {
+                std::cerr << "ERROR: --opening-script-info takes an optional "
+                             "language code\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                if (!khdays::vfs::autodetect_data_root()) {
+                    throw std::runtime_error(
+                        "could not find extracted data under data/extracted");
+                }
+                const std::array<std::string_view, 5> codes{
+                    "en", "fr", "de", "it", "es"};
+                std::size_t language = 0U;
+                if (argc == 3) {
+                    const auto found = std::find(
+                        codes.begin(), codes.end(), std::string_view{argv[2]});
+                    if (found == codes.end()) {
+                        throw std::runtime_error(
+                            "language must be en, fr, de, it, or es");
+                    }
+                    language = static_cast<std::size_t>(
+                        std::distance(codes.begin(), found));
+                }
+                const auto script =
+                    khdays::resource::load_opening_movie_script();
+                const auto& cues = script.subtitles[language];
+                std::cout << "ov012 opening script:\n  movie: "
+                          << script.movie_path << "\n  language: "
+                          << codes[language] << "\n  cues: " << cues.size()
+                          << '\n';
+                for (const auto& cue : cues) {
+                    if (!cue.text.empty()) {
+                        std::cout << "    [" << cue.start_frame << ','
+                                  << cue.end_frame << ") " << cue.text << '\n';
                     }
                 }
                 return EXIT_SUCCESS;
