@@ -72,7 +72,7 @@ private:
     std::uint16_t hud_hp_ = 0xffffU;
     std::uint16_t hud_max_hp_ = 0xffffU;
     std::size_t command_index_ = 0U;
-    std::array<bool, 3> command_available_{true, true, true};
+    std::array<bool, 3> command_available_{true, false, false};
     std::uint32_t story_day_ = 0U;
     std::optional<std::uint32_t> stored_day_after_movie_;
     std::optional<int> calendar_request_after_movie_;

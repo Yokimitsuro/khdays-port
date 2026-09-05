@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "khdays/assets/battle_hud.h"
 #include "khdays/game/audio.h"
 #include "khdays/game/game_state.h"
 #include "khdays/game/input.h"
@@ -65,6 +66,13 @@ struct MissionSession final {
     std::uint8_t state = 0;
     std::uint16_t mission_id = 0;
     std::uint16_t reset_word = 0;
+    // The exact profile-derived 0x7e loadout decoded at the scene boundary.
+    // A value is absent until the save/panel flow has supplied it; an absent
+    // profile therefore exposes Attack only, matching ov002's availability
+    // queries instead of fabricating spells or consumables.
+    std::optional<khdays::assets::Ov002PanelLoadout> panel_loadout;
+    std::optional<khdays::assets::Ov002CommandAvailabilityContext>
+        panel_availability;
 };
 
 // Owns the scene registry and the current scene, and applies transitions. A

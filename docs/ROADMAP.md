@@ -273,8 +273,10 @@ The first narrow, reproducible target is in progress:
   records, language character sheet, `cmd.s.z`, and small battle font;
 - [x] wire the original X-button primary-command cycle, including unavailable
   slot skipping and wraparound;
-- [ ] wire command activation/execution and reconstruct the expanded
-  Magic/Items, party, target, and mission HUD tile layouts;
+- [ ] complete command execution and reconstruct the expanded Magic/Items,
+  party, target, and mission HUD tile layouts; *(the exact 0x7e profile loadout
+  decoder, split availability inputs, and neutral A-button primary dispatch
+  are now reconstructed; current captured profiles are empty)*
 - [ ] one enemy;
 - [ ] one combat interaction.
 

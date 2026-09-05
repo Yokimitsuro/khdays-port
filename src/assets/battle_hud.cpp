@@ -13,6 +13,14 @@ constexpr int kGaugeRows = 6;
 constexpr std::array<std::uint8_t, kGaugeRows> kFilledShade{
     6U, 6U, 5U, 5U, 4U, 3U};
 
+std::uint16_t read_u16_le(
+    const std::span<const std::uint8_t> bytes,
+    const std::size_t offset) {
+    return static_cast<std::uint16_t>(bytes[offset])
+        | static_cast<std::uint16_t>(
+            static_cast<std::uint16_t>(bytes[offset + 1U]) << 8U);
+}
+
 void blit(
     DecodedTexture& destination,
     const DecodedTexture& source,
@@ -91,6 +99,70 @@ void draw_cell(
 }
 
 }  // namespace
+
+std::optional<Ov002PanelLoadout> decode_ov002_panel_loadout(
+    const std::span<const std::uint8_t> packed) {
+    if (packed.size() != Ov002PanelLoadout::kPackedSize) {
+        return std::nullopt;
+    }
+
+    Ov002PanelLoadout out;
+    std::size_t offset = 0U;
+    for (auto& entry : out.entries) {
+        entry.key = read_u16_le(packed, offset);
+        entry.quantity = read_u16_le(packed, offset + 2U);
+        offset += 4U;
+    }
+    for (auto& counter : out.magic) {
+        counter.current = packed[offset];
+        counter.secondary = packed[offset + 1U];
+        offset += 2U;
+    }
+    return out;
+}
+
+std::array<bool, 3> ov002_command_availability(
+    const Ov002PanelLoadout& loadout,
+    const Ov002CommandAvailabilityContext& context) {
+    bool magic = false;
+    for (std::size_t i = 0U; i < loadout.magic.size(); ++i) {
+        if ((context.visible_magic_mask & (1U << i)) != 0U
+            && loadout.magic[i].current != 0U) {
+            magic = true;
+            break;
+        }
+    }
+
+    bool items = context.supplemental_items_available;
+    for (const auto& entry : loadout.entries) {
+        if (items || entry.key == 0U || entry.key == 12U
+            || entry.quantity == 0U) {
+            continue;
+        }
+        for (std::size_t slot = 0U; slot < context.item_keys.size(); ++slot) {
+            if (context.item_keys[slot] == entry.key
+                && (context.enabled_item_mask & (1U << slot)) != 0U) {
+                items = true;
+                break;
+            }
+        }
+    }
+    return {true, magic, items};
+}
+
+Ov002CommandPage activate_ov002_command(
+    const std::size_t selected,
+    const std::array<bool, 3>& available) {
+    const std::size_t row = selected % available.size();
+    if (!available[row]) {
+        return Ov002CommandPage::Primary;
+    }
+    constexpr std::array<Ov002CommandPage, 3> pages{
+        Ov002CommandPage::Attack,
+        Ov002CommandPage::Magic,
+        Ov002CommandPage::Items};
+    return pages[row];
+}
 
 DecodedTexture compose_ov002_player_gauge(
     const Ov002PlayerGauge& source,

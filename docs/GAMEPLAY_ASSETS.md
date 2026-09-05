@@ -144,8 +144,18 @@ ov022's DS X-bit dispatch reaches `func_ov002_02056cc8` and then
 7 (unavailable), and wraps at the end. On PC the default keyboard binding for
 the neutral X button is `S`.
 
-Command activation/execution and expanded Magic/Items pages still need the
-player loadout that ov002 passes into the panel constructor. Party slots,
+The profile boundary for command activation is now reconstructed as well.
+`func_02035c28` allocates exactly `0x7e` bytes and `func_02035cac` copies that
+block as 24 little-endian `{key, quantity}` records followed by 15
+two-byte magic records. `Ov002PanelLoadout` decodes that contract. Availability
+also consumes the separate enabled-magic mask, item key/mask filter, and
+18-entry supplemental-list result used by `func_ov002_0205a638` and
+`func_ov002_0205a7b8`; the packed profile block is not incorrectly treated as
+self-contained. The neutral A-button primary dispatch follows
+`func_ov002_0205dae4`. The current savestates contain a new/empty profile, so
+the harness correctly exposes Attack only instead of seeding invented spells
+or consumables. Expanded page rendering and runtime A execution still need the
+save/panel flow to supply those inputs. Party slots,
 target gauge, mission information, delayed damage tween, and limit-break row
 compositor also remain to be reconstructed. Those should continue to follow
 ov002's tile and state tables rather than treating atlas regions as complete

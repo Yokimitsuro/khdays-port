@@ -92,6 +92,10 @@ khdays::assets::NeutralModel make_goal_model() {
 
 void GameplayScene::on_enter(SceneManager& manager) {
     const auto& session = manager.mission_session();
+    command_available_ = session.panel_loadout && session.panel_availability
+        ? khdays::assets::ov002_command_availability(
+            *session.panel_loadout, *session.panel_availability)
+        : std::array<bool, 3>{true, false, false};
     story_day_ = manager.state().day();
     if (session.mission_id != 0U) {
         try {

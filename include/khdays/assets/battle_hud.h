@@ -3,6 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 #include "khdays/assets/tex0.h"
 
@@ -25,6 +27,69 @@ struct Ov002CommandMenuArtwork final {
     DecodedTexture selected_row;
     std::array<DecodedTexture, 3> labels;
 };
+
+// Profile-derived command data consumed by ov002. func_02035cac copies a
+// 0x7e-byte block into the runtime player record: 24 little-endian
+// {key, quantity} entries followed by 15 two-byte magic records.
+// Keeping that byte contract here lets a future save/profile loader hand the
+// original data to gameplay without leaking the DS runtime record layout.
+struct Ov002LoadoutEntry final {
+    std::uint16_t key = 0U;
+    std::uint16_t quantity = 0U;
+};
+
+struct Ov002MagicCounter final {
+    std::uint8_t current = 0U;
+    std::uint8_t secondary = 0U;
+};
+
+struct Ov002PanelLoadout final {
+    static constexpr std::size_t kEntryCount = 24U;
+    static constexpr std::size_t kMagicCount = 15U;
+    static constexpr std::size_t kPackedSize =
+        kEntryCount * 4U + kMagicCount * 2U;
+
+    std::array<Ov002LoadoutEntry, kEntryCount> entries{};
+    std::array<Ov002MagicCounter, kMagicCount> magic{};
+};
+
+// State supplied beside the 0x7e profile block when func_ov002_02069d40
+// constructs the live panel. The profile block alone cannot answer command
+// availability: enabled magic comes from func_020358f4, while item keys are
+// filtered through the panel's slot table and enabled mask.
+struct Ov002CommandAvailabilityContext final {
+    std::uint16_t visible_magic_mask = 0U;
+    std::array<std::uint16_t, Ov002PanelLoadout::kEntryCount> item_keys{};
+    std::uint32_t enabled_item_mask = 0U;
+    // List 2 is populated from the separate 18-entry runtime table. Its exact
+    // predicate is evaluated by the session builder, outside the packed block.
+    bool supplemental_items_available = false;
+};
+
+enum class Ov002CommandPage : std::uint8_t {
+    Primary,
+    Attack,
+    Magic,
+    Items,
+};
+
+// Decode the block allocated by func_02035c28 and copied by func_02035cac.
+// Returns an empty optional for any size other than the exact 0x7e bytes.
+std::optional<Ov002PanelLoadout> decode_ov002_panel_loadout(
+    std::span<const std::uint8_t> packed);
+
+// Reproduce the single-player branches of func_ov002_0205a638 and
+// func_ov002_0205a7b8 from the profile block plus the runtime filters that
+// func_ov002_02069d40 supplies separately. Attack is always present.
+std::array<bool, 3> ov002_command_availability(
+    const Ov002PanelLoadout& loadout,
+    const Ov002CommandAvailabilityContext& context);
+
+// A-button activation from func_ov002_0205dae4, reduced to the primary page's
+// externally meaningful outcome. Unavailable rows remain on Primary.
+Ov002CommandPage activate_ov002_command(
+    std::size_t selected,
+    const std::array<bool, 3>& available);
 
 // Reproduce ov002's 77-cell primary gauge. The game converts HP to cells with
 // integer division, keeps one cell for a non-zero value, and writes each cell

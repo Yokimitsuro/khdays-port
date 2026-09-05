@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 #include "khdays/assets/battle_hud.h"
 
@@ -128,6 +129,64 @@ int main() {
         expect(khdays::assets::advance_ov002_command(
                    1U, {false, true, false}) == 1U,
                "X stays put when no other command is available");
+
+        std::vector<std::uint8_t> packed(
+            khdays::assets::Ov002PanelLoadout::kPackedSize, 0U);
+        packed[0] = 2U;
+        packed[2] = 3U;
+        packed[3] = 1U;
+        packed[96] = 1U;
+        packed[97] = 4U;
+        const auto loadout =
+            khdays::assets::decode_ov002_panel_loadout(packed);
+        expect(loadout.has_value(), "the exact 0x7e profile block decodes");
+        expect(loadout->entries[0].key == 2U
+                   && loadout->entries[0].quantity == 0x0103U,
+               "loadout entries are little-endian key/quantity pairs");
+        expect(loadout->magic[0].current == 1U
+                   && loadout->magic[0].secondary == 4U,
+               "magic counters follow the 24 entry records");
+        expect(!khdays::assets::decode_ov002_panel_loadout(
+                    std::span<const std::uint8_t>(packed).first(125U)),
+               "truncated profile blocks are rejected");
+
+        khdays::assets::Ov002CommandAvailabilityContext context;
+        context.visible_magic_mask = 1U;
+        context.item_keys[3] = 2U;
+        context.enabled_item_mask = 1U << 3U;
+        const auto available = khdays::assets::ov002_command_availability(
+            *loadout, context);
+        expect(available == std::array<bool, 3>{true, true, true},
+               "profile counters drive primary command availability");
+        expect(khdays::assets::activate_ov002_command(1U, available)
+                   == khdays::assets::Ov002CommandPage::Magic,
+               "A opens Magic when the profile provides charges");
+
+        khdays::assets::Ov002PanelLoadout empty_loadout;
+        const auto empty_available = khdays::assets::ov002_command_availability(
+            empty_loadout, context);
+        expect(empty_available == std::array<bool, 3>{true, false, false},
+               "an empty profile exposes Attack only");
+        expect(khdays::assets::activate_ov002_command(2U, empty_available)
+                   == khdays::assets::Ov002CommandPage::Primary,
+               "A ignores an unavailable primary row");
+
+        khdays::assets::Ov002PanelLoadout excluded_only;
+        excluded_only.entries[0] = {12U, 1U};
+        context.item_keys[3] = 12U;
+        expect(!khdays::assets::ov002_command_availability(
+                    excluded_only, context)[2],
+               "constructor-excluded key 12 does not enable Items");
+
+        context.item_keys[3] = 2U;
+        context.enabled_item_mask = 0U;
+        expect(!khdays::assets::ov002_command_availability(
+                    *loadout, context)[2],
+               "the live panel filter can disable a stocked item");
+        context.supplemental_items_available = true;
+        expect(khdays::assets::ov002_command_availability(
+                   empty_loadout, context)[2],
+               "the separate 18-entry runtime list can enable Items");
 
         std::cout << "battle HUD tests passed\n";
         return 0;
