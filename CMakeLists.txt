@@ -177,6 +177,7 @@ add_library(
     khdays-resource
     STATIC
         src/resource/loader.cpp
+        src/resource/mission.cpp
         src/resource/ui_content.cpp
         src/resource/video.cpp
         src/resource/world.cpp

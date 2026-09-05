@@ -57,6 +57,16 @@ public:
 
 using SceneFactory = std::function<std::unique_ptr<Scene>()>;
 
+// The six-byte descriptor copied by ov002's constructor from data_0204c240.
+// Keeping it separate from persistent GameState matters: 0x2710 is mission
+// 10000, not a timer, and ov004 rewrites it on every story-day hand-off.
+struct MissionSession final {
+    std::uint8_t flags = 0;
+    std::uint8_t state = 0;
+    std::uint16_t mission_id = 0;
+    std::uint16_t reset_word = 0;
+};
+
 // Owns the scene registry and the current scene, and applies transitions. A
 // scene requests the next state with change_scene(); the switch happens at the
 // end of the frame (mirroring the DS "poll scene alive → transition" step).
@@ -107,6 +117,9 @@ public:
     GameState& state() { return state_; }
     const GameState& state() const { return state_; }
 
+    MissionSession& mission_session() { return mission_session_; }
+    const MissionSession& mission_session() const { return mission_session_; }
+
     SceneId current_id() const { return current_id_; }
     int current_arg() const { return current_arg_; }
     bool has_scene() const { return current_ != nullptr; }
@@ -132,6 +145,7 @@ private:
     std::uint64_t frame_ = 0;
     Input input_;
     GameState state_;
+    MissionSession mission_session_;
     MusicPlayer* music_ = nullptr;
     VideoPlayer* video_ = nullptr;
     std::function<void(SceneId, int)> observer_;

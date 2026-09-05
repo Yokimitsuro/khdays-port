@@ -17,17 +17,20 @@
 
 namespace khdays::game::scenes {
 
-// Scene 2 (ov002): the first playable technical slice. It deliberately keeps
-// its objective separate from canonical mission logic: the room, collision,
-// Roxas model and animation are real game resources, while the reach-the-marker
-// goal is a development harness proving they work together natively.
+// Scene 2 (ov002): story mission entry plus the first playable technical slice.
+// Mission 10000 follows its named day bundles and MobiClips; after the currently
+// reconstructed script prefix, the room/collision/Roxas reach-the-marker goal
+// remains a deliberately separate development harness.
 class GameplayScene final : public Scene {
 public:
     void on_enter(SceneManager& manager) override;
     void update(SceneManager& manager) override;
     void render(SceneManager& manager, Renderer& renderer) override;
+    void on_exit(SceneManager& manager) override;
 
 private:
+    void load_playable_harness();
+    void finish_story_movie(SceneManager& manager);
     std::optional<float> ground_height(float x, float z) const;
     void update_animation();
 
@@ -41,6 +44,8 @@ private:
     khdays::assets::CollisionModel collision_;
     khdays::assets::NeutralModel goal_model_;
     khdays::assets::DecodedTexture scene_frame_;
+    VideoPlayer* video_player_ = nullptr;
+    VideoFrame video_frame_{};
 
     std::optional<khdays::assets::DecodedTexture> controls_text_;
     std::optional<khdays::assets::DecodedTexture> complete_text_;
@@ -55,9 +60,13 @@ private:
                                    3.14159265358979323846F};
     float animation_frame_ = 0.0F;
     int frame_ = 0;
+    int movie_exit_fade_ = 0;
+    std::uint32_t story_day_ = 0U;
     bool animation_was_moving_ = false;
     bool weapon_attached_ = false;
     bool ready_ = false;
+    bool story_movie_ = false;
+    bool movie_exiting_ = false;
 };
 
 }  // namespace khdays::game::scenes

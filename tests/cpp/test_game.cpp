@@ -176,6 +176,27 @@ int main() {
                "ov004 completes into scene 2 with argument zero");
         expect(calendar.state().day() == 0x190U,
                "ov004 commits its selected day before scene 2");
+        expect(calendar.mission_session().mission_id == 0x2710U
+                   && calendar.mission_session().state == 0U
+                   && calendar.mission_session().reset_word == 0U,
+               "ov004 seeds ov002 mission 10000");
+
+        SceneManager day_seven;
+        day_seven.register_scene(
+            kSceneDayTransition,
+            [] { return std::make_unique<scenes::DayTransitionScene>(); });
+        day_seven.register_scene(
+            kSceneGameplay,
+            [] { return std::make_unique<EmptyScene>(); });
+        day_seven.start(kSceneDayTransition, 0x191);
+        for (int frame = 0; frame < 198; ++frame) {
+            day_seven.step();
+        }
+        expect(day_seven.current_id() == kSceneGameplay
+                   && day_seven.state().day() == 7U,
+               "ov004 control 0x191 selects day 7");
+        expect(day_seven.mission_session().mission_id == 0x2710U,
+               "day 7 remains in story mission 10000");
 
         // --- object state machine (the func_02023adc model) ---
         ObjectList objects;

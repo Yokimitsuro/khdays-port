@@ -37,9 +37,11 @@ float ornament_scale(const int motion_frames) {
 
 void DayTransitionScene::on_enter(SceneManager& manager) {
     requested_day_ = manager.current_arg();
-    // func_ov004_02050174: 0x190 is a control value, not a day drawn on
-    // screen. Both ends of this special transition become 0xff.
-    displayed_day_ = requested_day_ == 0x190
+    // func_ov004_0204fa44 + func_ov004_02050174: these are control
+    // selectors. 0x190 draws 255 but keeps 400 as the mission script selector;
+    // 0x191 starts at 255 and commits 7 when the calendar finishes.
+    selected_day_ = requested_day_ == 0x191 ? 7 : requested_day_;
+    displayed_day_ = (requested_day_ == 0x190 || requested_day_ == 0x191)
                          ? 0xff
                          : std::clamp(requested_day_, 0, 999);
     digits_ = khdays::resource::load_calendar_digits();
@@ -64,7 +66,11 @@ void DayTransitionScene::update(SceneManager& manager) {
     if (frame_ >= kTotalFrames) {
         // func_ov004_0204fcb4 commits the selected day, resets the boot-mode
         // state and requests scene 2 with argument zero.
-        manager.state().set_day(static_cast<std::uint32_t>(requested_day_));
+        manager.state().set_day(static_cast<std::uint32_t>(selected_day_));
+        auto& session = manager.mission_session();
+        session.mission_id = selected_day_ == 0x165 ? 0x2711U : 0x2710U;
+        session.reset_word = 0U;
+        session.state = 0U;
         manager.change_scene(kSceneGameplay, 0);
     }
 }

@@ -12,6 +12,7 @@
 #include "khdays/assets/scene3d.h"
 #include "khdays/game/draw.h"
 #include "khdays/resource/ui_content.h"
+#include "khdays/resource/mission.h"
 #include "khdays/vfs/filesystem.h"
 
 namespace khdays::game::scenes {
@@ -88,7 +89,35 @@ khdays::assets::NeutralModel make_goal_model() {
 
 }  // namespace
 
-void GameplayScene::on_enter(SceneManager&) {
+void GameplayScene::on_enter(SceneManager& manager) {
+    const auto& session = manager.mission_session();
+    story_day_ = manager.state().day();
+    if (session.mission_id != 0U) {
+        try {
+            const auto movie = khdays::resource::load_story_movie(
+                session.mission_id, story_day_);
+            if (movie) {
+                story_movie_ = true;
+                if (auto* music = manager.music()) {
+                    music->stop_music();
+                }
+                video_player_ = manager.video();
+                if (video_player_ != nullptr) {
+                    video_player_->play_video(*movie);
+                }
+                return;
+            }
+        } catch (const std::exception&) {
+            // The regular error panel below remains available when extracted
+            // mission data is incomplete.
+        }
+    }
+    load_playable_harness();
+}
+
+void GameplayScene::load_playable_harness() {
+    frame_ = 0;
+    ready_ = false;
     controls_text_ = khdays::resource::render_ui_text(
         kFont, u"FLECHAS: MOVER  Q/E: CAMARA  X: VOLVER");
     complete_text_ = khdays::resource::render_ui_text(
@@ -195,6 +224,30 @@ void GameplayScene::on_enter(SceneManager&) {
     }
 }
 
+void GameplayScene::finish_story_movie(SceneManager& manager) {
+    if (video_player_ != nullptr) {
+        video_player_->stop_video();
+    }
+    video_player_ = nullptr;
+    video_frame_ = {};
+    story_movie_ = false;
+    movie_exiting_ = false;
+    movie_exit_fade_ = 0;
+
+    if (story_day_ == 0x190U) {
+        // 400.Z writes 255 to field (0, 9) and requests ov004 with 0x191.
+        // ov004 then selects day 7 and re-enters mission 10000.
+        manager.state().set_day(0xffU);
+        manager.change_scene(kSceneDayTransition, 0x191);
+        return;
+    }
+
+    // 7.Z begins with 803.mods. The next reconstruction slice is its CAKP
+    // command stream (room, actors, dialogue and retail HUD); until then the
+    // existing room harness remains reachable after that real intro.
+    load_playable_harness();
+}
+
 std::optional<float> GameplayScene::ground_height(
     const float x,
     const float z) const {
@@ -258,7 +311,28 @@ void GameplayScene::update_animation() {
 void GameplayScene::update(SceneManager& manager) {
     ++frame_;
     const Input& input = manager.input();
+    if (story_movie_) {
+        if (input.just_pressed(Button::Start) && !movie_exiting_) {
+            movie_exiting_ = true;
+            movie_exit_fade_ = 0;
+        }
+        if (video_player_ != nullptr) {
+            video_frame_ = video_player_->video_frame();
+        }
+        if (movie_exiting_) {
+            if (++movie_exit_fade_ >= 16) {
+                finish_story_movie(manager);
+            }
+        } else if (video_player_ == nullptr
+                   || !video_player_->video_playing()) {
+            finish_story_movie(manager);
+        }
+        return;
+    }
     if (input.just_pressed(Button::B)) {
+        // Returning from the development harness must not leak story mission
+        // 10000 into a later direct/menu launch of scene 2.
+        manager.mission_session() = {};
         manager.change_scene(kSceneTitle);
         return;
     }
@@ -291,6 +365,24 @@ void GameplayScene::update(SceneManager& manager) {
 void GameplayScene::render(SceneManager&, Renderer& renderer) {
     renderer.clear(Color{6, 8, 16, 255});
     const auto layout = dual_screen_layout(renderer);
+
+    if (story_movie_) {
+        renderer.clear(Color{0, 0, 0, 255});
+        if (video_frame_.rgba != nullptr && video_frame_.width > 0
+            && video_frame_.height > 0) {
+            renderer.draw_image_dynamic(
+                video_frame_.rgba, video_frame_.width, video_frame_.height,
+                layout.top_x, layout.top_y,
+                DualScreenLayout::kScreenW * layout.scale,
+                160 * layout.scale);
+        }
+        if (movie_exiting_) {
+            const int alpha = std::clamp(movie_exit_fade_, 0, 16) * 255 / 16;
+            renderer.fill_overlay(Color{
+                0, 0, 0, static_cast<std::uint8_t>(alpha)});
+        }
+        return;
+    }
 
     if (ready_ && player_) {
         std::vector<khdays::assets::ModelInstance> instances;
@@ -357,6 +449,14 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
         renderer.fill_overlay(
             Color{0, 0, 0, static_cast<std::uint8_t>(alpha)});
     }
+}
+
+void GameplayScene::on_exit(SceneManager&) {
+    if (video_player_ != nullptr) {
+        video_player_->stop_video();
+    }
+    video_player_ = nullptr;
+    video_frame_ = {};
 }
 
 }  // namespace khdays::game::scenes

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -5,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "khdays/resource/mission.h"
 #include "khdays/vfs/filesystem.h"
 
 namespace {
@@ -72,6 +74,26 @@ int main() {
             threw = true;
         }
         expect(threw, "read throws on missing");
+
+        // Mission P2 archives carry fixed eight-byte script names after their
+        // descriptors. The selected `<day>.Z` CAKP contains the MobiClip path.
+        std::vector<std::uint8_t> mission(0x240U, 0U);
+        mission[0] = 'P';
+        mission[1] = '2';
+        mission[2] = 1U;
+        mission[3] = 0x80U;
+        mission[0x0dU] = 2U;  // payload base = 0x200
+        const std::string script_name = "400.Z";
+        std::copy(script_name.begin(), script_name.end(),
+                  mission.begin() + 0x18);
+        const std::string movie_path = "/mv/818.mods";
+        std::copy(movie_path.begin(), movie_path.end(),
+                  mission.begin() + 0x210);
+        const auto movie = khdays::resource::story_movie_reference(
+            mission, 400U);
+        expect(movie && *movie == "mv/818.mods", "story movie lookup");
+        expect(!khdays::resource::story_movie_reference(mission, 7U),
+               "missing story day");
 
         fs::remove_all(base);
         std::cout << "VFS test passed\n";
