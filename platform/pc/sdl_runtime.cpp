@@ -496,6 +496,139 @@ private:
     int dynamic_h_ = 0;
 };
 
+// Streaming bridge used by game scenes. Decoding stays in the neutral MODS
+// decoder; this class contributes only the wall clock and SDL audio queue.
+class SdlVideoPlayer final : public khdays::game::VideoPlayer {
+public:
+    ~SdlVideoPlayer() override { stop_video(); }
+
+    void play_video(const std::string_view game_path) override {
+        stop_video();
+        try {
+            decoder_.emplace(khdays::resource::load_mods_video(game_path));
+            const double fps = decoder_->frames_per_second();
+            if (fps <= 0.0) {
+                throw std::runtime_error("MODS video has an invalid frame rate");
+            }
+            frame_duration_ns_ = static_cast<Uint64>(1000000000.0 / fps);
+            next_frame_ns_ = SDL_GetTicksNS();
+            playing_ = true;
+
+            if (decoder_->info().has_audio()) {
+                if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+                    std::cerr << "video: SDL audio init failed: "
+                              << SDL_GetError() << "; playing silent\n";
+                } else {
+                    audio_inited_ = true;
+                    SDL_AudioSpec spec{};
+                    spec.format = SDL_AUDIO_S16;
+                    spec.channels = decoder_->info().audio_channels;
+                    spec.freq = decoder_->info().audio_rate;
+                    audio_stream_ = SDL_OpenAudioDeviceStream(
+                        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr,
+                        nullptr);
+                    if (audio_stream_ == nullptr) {
+                        std::cerr << "video: audio device unavailable: "
+                                  << SDL_GetError() << "; playing silent\n";
+                    } else {
+                        SDL_SetAudioStreamGain(audio_stream_, volume_);
+                    }
+                }
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "video: cannot play '" << game_path
+                      << "': " << error.what() << '\n';
+            stop_video();
+        }
+    }
+
+    void stop_video() override {
+        if (audio_stream_ != nullptr) {
+            SDL_DestroyAudioStream(audio_stream_);
+            audio_stream_ = nullptr;
+        }
+        if (audio_inited_) {
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            audio_inited_ = false;
+        }
+        decoder_.reset();
+        current_ = {};
+        playing_ = false;
+        have_frame_ = false;
+        audio_started_ = false;
+        audio_flushed_ = false;
+        next_frame_ns_ = 0;
+    }
+
+    bool video_playing() const override { return playing_; }
+
+    khdays::game::VideoFrame video_frame() override {
+        if (!decoder_ || !playing_) {
+            return current_;
+        }
+
+        const Uint64 now = SDL_GetTicksNS();
+        while (!decoder_->finished()
+               && (!have_frame_ || now >= next_frame_ns_)) {
+            if (!decoder_->decode_next(/*ds_exact=*/true)) {
+                break;
+            }
+            const auto& decoded = decoder_->frame();
+            current_ = {decoded.width, decoded.height, decoded.rgba.data()};
+            have_frame_ = true;
+
+            if (audio_stream_ != nullptr) {
+                const auto& audio = decoder_->audio_chunk();
+                const int bytes = static_cast<int>(
+                    audio.samples.size() * sizeof(std::int16_t));
+                if (bytes > 0
+                    && !SDL_PutAudioStreamData(
+                        audio_stream_, audio.samples.data(), bytes)) {
+                    std::cerr << "video: audio queue failed: "
+                              << SDL_GetError() << '\n';
+                }
+                if (!audio_started_ && bytes > 0) {
+                    SDL_ResumeAudioStreamDevice(audio_stream_);
+                    audio_started_ = true;
+                }
+            }
+            next_frame_ns_ += frame_duration_ns_;
+        }
+
+        if (decoder_->finished()) {
+            if (audio_stream_ != nullptr && !audio_flushed_) {
+                SDL_FlushAudioStream(audio_stream_);
+                audio_flushed_ = true;
+            }
+            if (audio_stream_ == nullptr
+                || SDL_GetAudioStreamAvailable(audio_stream_) <= 0) {
+                playing_ = false;
+            }
+        }
+        return current_;
+    }
+
+    void set_video_volume(const float volume) override {
+        volume_ = std::clamp(volume, 0.0F, 1.0F);
+        if (audio_stream_ != nullptr) {
+            SDL_SetAudioStreamGain(audio_stream_, volume_);
+        }
+    }
+
+private:
+    std::optional<khdays::assets::ModsVideoDecoder> decoder_;
+    SDL_AudioStream* audio_stream_ = nullptr;
+    khdays::game::VideoFrame current_{};
+    Uint64 frame_duration_ns_ = 0;
+    Uint64 next_frame_ns_ = 0;
+    float volume_ = 1.0F;
+    bool playing_ = false;
+    bool have_frame_ = false;
+    bool audio_inited_ = false;
+    bool audio_started_ = false;
+    bool audio_flushed_ = false;
+};
+
 }  // namespace
 
 int play_mods_video(const std::string_view game_path) {
@@ -666,6 +799,9 @@ int run_game(khdays::game::Game& game) {
         }
     }
 
+    SdlVideoPlayer video;
+    game.scenes().set_video_player(&video);
+
     std::uint16_t previous = 0;
     bool running = true;
     khdays::game::SceneId last_scene = game.scenes().current_id();
@@ -696,6 +832,7 @@ int run_game(khdays::game::Game& game) {
         if (music) {
             music->set_volume(overlay.volume());
         }
+        video.set_video_volume(overlay.volume());
 
         game.scenes().set_input(input);
         game.step();
@@ -724,6 +861,8 @@ int run_game(khdays::game::Game& game) {
     overlay.save_config();  // persist volume / layout / key bindings
     // Detach the music player before it is destroyed at scope exit.
     game.scenes().set_music_player(nullptr);
+    game.scenes().set_video_player(nullptr);
+    video.stop_video();
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

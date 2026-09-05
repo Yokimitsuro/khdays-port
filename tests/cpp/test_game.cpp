@@ -3,12 +3,14 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "khdays/game/game.h"
 #include "khdays/game/object.h"
 #include "khdays/game/playable_controller.h"
 #include "khdays/game/scene.h"
+#include "khdays/game/scenes/opening_scene.h"
 
 namespace {
 
@@ -41,6 +43,33 @@ public:
 
 private:
     FlowLog* log_;
+};
+
+class FakeVideoPlayer final : public VideoPlayer {
+public:
+    void play_video(const std::string_view game_path) override {
+        path.assign(game_path);
+        playing = true;
+        ++play_calls;
+    }
+
+    void stop_video() override {
+        playing = false;
+        ++stop_calls;
+    }
+
+    bool video_playing() const override { return playing; }
+
+    VideoFrame video_frame() override {
+        ++frame_calls;
+        return {};
+    }
+
+    std::string path;
+    bool playing = false;
+    int play_calls = 0;
+    int stop_calls = 0;
+    int frame_calls = 0;
 };
 
 void expect(bool ok, const char* what) {
@@ -89,6 +118,38 @@ int main() {
         cont.boot(5);
         expect(cont.scenes().current_id() == kSceneContinue,
                "non-fresh boot skips to continue");
+
+        // ov012 starts the real opening MobiClip and Start performs its
+        // 16-VBlank exit fade before entering the title scene.
+        FlowLog opening_log;
+        FakeVideoPlayer opening_video;
+        SceneManager opening;
+        opening.set_video_player(&opening_video);
+        opening.register_scene(
+            kSceneOpening,
+            [] { return std::make_unique<scenes::OpeningScene>(); });
+        opening.register_scene(
+            kSceneTitle,
+            [&] { return std::make_unique<TitleScene>(&opening_log); });
+        opening.start(kSceneOpening);
+        expect(opening_video.play_calls == 1
+                   && opening_video.path == "mv/802.mods",
+               "opening starts the ov012 movie");
+
+        Input skip_opening;
+        skip_opening.pressed = static_cast<std::uint16_t>(Button::Start);
+        opening.set_input(skip_opening);
+        opening.step();
+        opening.set_input({});
+        for (int frame = 1; frame < 16; ++frame) {
+            opening.step();
+        }
+        expect(opening.current_id() == kSceneTitle,
+               "opening skip reaches title after fade");
+        expect(opening_video.frame_calls == 16,
+               "opening advances video during exit fade");
+        expect(opening_video.stop_calls == 1 && !opening_video.playing,
+               "leaving opening stops its video");
 
         // --- object state machine (the func_02023adc model) ---
         ObjectList objects;

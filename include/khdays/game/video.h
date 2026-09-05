@@ -41,6 +41,10 @@ public:
     // a frame with `rgba == nullptr` if none is ready. Timing follows the clip's
     // own rate, not the game's frame rate.
     virtual VideoFrame video_frame() = 0;
+
+    // Apply the same master volume used by music. Platforms without a volume
+    // control can keep the default no-op.
+    virtual void set_video_volume(float) {}
 };
 
 }  // namespace khdays::game

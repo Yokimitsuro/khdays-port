@@ -208,6 +208,7 @@ add_library(
         src/game/settings.cpp
         src/game/software_renderer.cpp
         src/game/scenes/boot_logo_scene.cpp
+        src/game/scenes/opening_scene.cpp
         src/game/scenes/title_scene.cpp
         src/game/scenes/main_menu_scene.cpp
         src/game/scenes/gameplay_scene.cpp

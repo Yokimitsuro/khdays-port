@@ -42,6 +42,7 @@
 #include "khdays/game/scenes/boot_logo_scene.h"
 #include "khdays/game/scenes/gameplay_scene.h"
 #include "khdays/game/scenes/main_menu_scene.h"
+#include "khdays/game/scenes/opening_scene.h"
 #include "khdays/game/scenes/save_file_scene.h"
 #include "khdays/game/scenes/title_scene.h"
 #include "khdays/game/settings.h"
@@ -126,6 +127,9 @@ int run_game_demo() {
 void register_native_scenes(khdays::game::Game& game) {
     game.scenes().register_scene(khdays::game::kSceneBootLogo, [] {
         return std::make_unique<khdays::game::scenes::BootLogoScene>();
+    });
+    game.scenes().register_scene(khdays::game::kSceneOpening, [] {
+        return std::make_unique<khdays::game::scenes::OpeningScene>();
     });
     game.scenes().register_scene(khdays::game::kSceneTitle, [] {
         return std::make_unique<khdays::game::scenes::TitleScene>();
@@ -410,6 +414,7 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --game\n"
+        << "  khdays-port --opening-demo\n"
         << "  khdays-port --playable-demo\n"
         << "  khdays-port --playable-shot OUT.bmp [FRAMES] [BUTTON]\n"
         << "  khdays-port --game-demo\n"
@@ -456,6 +461,7 @@ void print_help() {
         << "  --anim-info FILE [INDEX]  Inspect one internal NSBCA animation.\n"
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
         << "  --game              Run the native boot/title/menu/gameplay flow.\n"
+        << "  --opening-demo      Start directly in ov012's movie/artwork sequence.\n"
         << "  --playable-demo     Start directly in the playable wd_zz room-0 slice.\n"
         << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
         << "                      u/d/l/r/q/e or press z for FRAMES.\n"
@@ -991,14 +997,17 @@ int main(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (first == "--game" || first == "--playable-demo") {
+        if (first == "--game" || first == "--opening-demo"
+            || first == "--playable-demo") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
                              "scenes will show without game assets\n";
             }
             khdays::game::Game game;
             register_native_scenes(game);
-            if (first == "--playable-demo") {
+            if (first == "--opening-demo") {
+                game.scenes().start(khdays::game::kSceneOpening);
+            } else if (first == "--playable-demo") {
                 game.scenes().start(khdays::game::kSceneGameplay);
             } else {
                 game.boot(0);

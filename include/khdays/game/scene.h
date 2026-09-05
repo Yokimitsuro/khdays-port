@@ -11,6 +11,7 @@
 #include "khdays/game/audio.h"
 #include "khdays/game/input.h"
 #include "khdays/game/renderer.h"
+#include "khdays/game/video.h"
 
 // The game-flow state machine — the native equivalent of the DS backbone traced
 // in khdays-decomp (main @0x02000bcc → frame loop → scene/task framework). A
@@ -34,6 +35,7 @@ inline constexpr SceneId kSceneNone = 0;
 inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the intro/logo scene (ov000)
 inline constexpr SceneId kSceneGameplay = 2;   // gameplay (ov002); the menu enters it on confirm
 inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
+inline constexpr SceneId kSceneOpening = 11;   // opening movie / illustration timeline (ov012)
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
 inline constexpr SceneId kSceneMainMenu = 19;  // Mission Mode main menu (ov08); title requests it on Start
 // The save-file screen ("Seleccionar archivo."), which the DS shows between
@@ -93,6 +95,11 @@ public:
     void set_music_player(MusicPlayer* music) { music_ = music; }
     MusicPlayer* music() const { return music_; }
 
+    // Optional movie service. Like MusicPlayer, this is supplied by the
+    // platform and remains null in headless tests unless a fake is attached.
+    void set_video_player(VideoPlayer* video) { video_ = video; }
+    VideoPlayer* video() const { return video_; }
+
     SceneId current_id() const { return current_id_; }
     int current_arg() const { return current_arg_; }
     bool has_scene() const { return current_ != nullptr; }
@@ -118,6 +125,7 @@ private:
     std::uint64_t frame_ = 0;
     Input input_;
     MusicPlayer* music_ = nullptr;
+    VideoPlayer* video_ = nullptr;
     std::function<void(SceneId, int)> observer_;
 };
 

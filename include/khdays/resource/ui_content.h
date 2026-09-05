@@ -76,6 +76,20 @@ struct TitleLogoModel {
     khdays::assets::SkeletalAnimation animation;  // frame_count == 0 if none
 };
 
+// Neutral reconstruction of ov012's `op/op.p2` resources. The base archive
+// supplies fourteen palettes and two main-screen planes per card; the selected
+// language sub-file supplies a third, localized plane for the first thirteen.
+struct OpeningArtwork final {
+    std::array<khdays::assets::DecodedTexture, 14> base;
+    std::array<khdays::assets::DecodedTexture, 14> accent;
+    std::array<khdays::assets::DecodedTexture, 13> localized;
+};
+
+// `language_subfile` is the game's own language selector: 1=en, 2=fr, 3=de,
+// 4=it, 5=es. Returns null when op.p2 is absent or structurally incomplete.
+std::optional<OpeningArtwork> load_opening_artwork(
+    std::size_t language_subfile);
+
 std::optional<TitleLogoModel> load_title_logo_model();
 
 // Compose one background layer from a D2KP UI pack: extract the P2 sub-file,

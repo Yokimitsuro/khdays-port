@@ -213,6 +213,58 @@ std::optional<khdays::assets::DecodedTexture> load_ui_background(
     }
 }
 
+std::optional<OpeningArtwork> load_opening_artwork(
+    const std::size_t language_subfile) {
+    try {
+        const auto container = khdays::vfs::read("op/op.p2");
+        const auto base_blob = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), 0);
+        const auto localized_blob = khdays::assets::extract_p2_subfile(
+            container.data(), container.size(), language_subfile);
+        const auto base = khdays::assets::parse_pk2d(
+            base_blob.data(), base_blob.size());
+        const auto localized = khdays::assets::parse_pk2d(
+            localized_blob.data(), localized_blob.size());
+        if (base.palettes.size() < 14U || base.tiles.size() < 28U
+            || base.screens.size() < 28U || localized.tiles.size() < 13U
+            || localized.screens.size() < 13U) {
+            return std::nullopt;
+        }
+
+        const auto compose = [](
+            const khdays::assets::ResourceView& screen,
+            const khdays::assets::ResourceView& tiles,
+            const khdays::assets::ResourceView& palette) {
+            const auto map = khdays::assets::decode_nscr(
+                screen.data, screen.size);
+            const auto chars = khdays::assets::decode_ncgr(
+                tiles.data, tiles.size);
+            const auto colors = khdays::assets::decode_nclr(
+                palette.data, palette.size);
+            return khdays::assets::compose_background(
+                map, chars, colors, /*color_zero_transparent=*/true);
+        };
+
+        OpeningArtwork out;
+        for (std::size_t card = 0; card < out.base.size(); ++card) {
+            out.base[card] = compose(
+                base.screens[card * 2U], base.tiles[card * 2U],
+                base.palettes[card]);
+            out.accent[card] = compose(
+                base.screens[card * 2U + 1U], base.tiles[card * 2U + 1U],
+                base.palettes[card]);
+            if (card < out.localized.size()) {
+                out.localized[card] = compose(
+                    localized.screens[card], localized.tiles[card],
+                    base.palettes[card]);
+            }
+        }
+        return out;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 std::optional<khdays::assets::DecodedTexture> load_ui_tile_atlas(
     const char* game_path, const std::size_t subfile,
     const std::size_t tiles_index, const std::size_t palette_index) {
