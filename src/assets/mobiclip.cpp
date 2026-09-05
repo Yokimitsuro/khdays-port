@@ -1,5 +1,6 @@
 #include "khdays/assets/mobiclip.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace khdays::assets::mobiclip {
@@ -35,7 +36,46 @@ void check(const std::uint8_t* luma, const std::uint8_t* chroma, const int width
 constexpr int kChromaRowBytes = 256;
 constexpr int kChromaCgOffset = 0x80;
 constexpr int kLumaRowBytes = 256;
+
+constexpr int kImaSteps[89] = {
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31,
+    34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130,
+    143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449,
+    494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411,
+    1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026,
+    4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+    11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623,
+    27086, 29794, 32767};
+constexpr int kImaAdjust[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
+
+std::int16_t decode_ima_nibble(
+    ImaAdpcmState& state, const unsigned int code) {
+    const int step = kImaSteps[state.step_index];
+    int difference = step >> 3;
+    if ((code & 4U) != 0U) difference += step;
+    if ((code & 2U) != 0U) difference += step >> 1;
+    if ((code & 1U) != 0U) difference += step >> 2;
+    state.predictor += (code & 8U) != 0U ? -difference : difference;
+    state.predictor = std::clamp(state.predictor, -32768, 32767);
+    state.step_index = std::clamp(
+        state.step_index + kImaAdjust[code & 7U], 0, 88);
+    return static_cast<std::int16_t>(state.predictor);
+}
 }  // namespace
+
+void decode_ima_adpcm(const std::uint8_t* data, const std::size_t size,
+                      ImaAdpcmState& state, std::int16_t* output) {
+    if ((data == nullptr || output == nullptr) && size != 0U) {
+        throw std::invalid_argument("mobiclip audio: null buffer");
+    }
+    if (state.step_index < 0 || state.step_index > 88) {
+        throw std::invalid_argument("mobiclip audio: invalid IMA step index");
+    }
+    for (std::size_t i = 0; i < size; ++i) {
+        output[i * 2U] = decode_ima_nibble(state, data[i] & 0x0fU);
+        output[i * 2U + 1U] = decode_ima_nibble(state, data[i] >> 4U);
+    }
+}
 
 void frame_to_bgr555(const std::uint8_t* luma, const std::uint8_t* chroma,
                      const int width, const int height, std::uint16_t* dst,

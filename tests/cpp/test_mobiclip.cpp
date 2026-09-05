@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -5,6 +6,7 @@
 #include <vector>
 
 #include "khdays/assets/mobiclip.h"
+#include "khdays/assets/mods.h"
 
 namespace {
 
@@ -45,10 +47,61 @@ int saturate5(const int v) {
     return v < 0 ? 0 : (v > 248 ? 31 : (v >> 3));
 }
 
+void write16(std::uint8_t* out, const std::uint16_t value) {
+    out[0] = static_cast<std::uint8_t>(value);
+    out[1] = static_cast<std::uint8_t>(value >> 8U);
+}
+
+void write32(std::uint8_t* out, const std::uint32_t value) {
+    out[0] = static_cast<std::uint8_t>(value);
+    out[1] = static_cast<std::uint8_t>(value >> 8U);
+    out[2] = static_cast<std::uint8_t>(value >> 16U);
+    out[3] = static_cast<std::uint8_t>(value >> 24U);
+}
+
 }  // namespace
 
 int main() {
     try {
+        // Standard IMA, low nibble first. This tiny vector exercises positive
+        // deltas, the step-index rise and a negative pair.
+        {
+            constexpr std::array<std::uint8_t, 3> encoded{0x11, 0x72, 0x8f};
+            constexpr std::array<std::int16_t, 6> expected{
+                1, 2, 5, 16, -14, -18};
+            std::array<std::int16_t, 6> decoded{};
+            khdays::assets::mobiclip::ImaAdpcmState state{};
+            khdays::assets::mobiclip::decode_ima_adpcm(
+                encoded.data(), encoded.size(), state, decoded.data());
+            expect(decoded == expected, "MobiClip IMA low-nibble-first vector");
+            expect(state.predictor == -18 && state.step_index == 15,
+                   "MobiClip IMA state continues across blocks");
+        }
+
+        // N3's variable parameter list belongs to the header too. A path-only
+        // 0x30-byte read used to lose this terminator and reject valid clips.
+        {
+            std::array<std::uint8_t, 0x34> mods{};
+            mods[0] = 'M'; mods[1] = 'O'; mods[2] = 'D'; mods[3] = 'S';
+            mods[4] = 'N'; mods[5] = '3';
+            write16(mods.data() + 0x06, 0x0a);
+            write32(mods.data() + 0x08, 52);
+            write32(mods.data() + 0x0c, 256);
+            write32(mods.data() + 0x10, 160);
+            write32(mods.data() + 0x14, 0x0efc28f6U);
+            mods[0x30] = 'H'; mods[0x31] = 'E';
+            const auto info = khdays::assets::parse_mods_header(
+                mods.data(), mods.size());
+            expect(info.frame_count == 52 && info.width == 256
+                       && info.height == 160,
+                   "MODS fixed header fields");
+            expect(info.packet_data_offset == 0x34,
+                   "MODS N3 HE terminates parameters");
+            expect(info.frames_per_second() > 14.98
+                       && info.frames_per_second() < 14.99,
+                   "MODS 8.24 frame rate");
+        }
+
         // A neutral, mid-grey frame: Co = Cg = 0 means R = G = B = Y.
         {
             const auto p = make_planes(128, 128, 128);

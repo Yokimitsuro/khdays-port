@@ -16,6 +16,7 @@ struct ModsInfo final {
     std::uint32_t frame_count = 0;
     int width = 0;   // always 256 in this game
     int height = 0;  // always 160 (letterboxed inside the DS's 192)
+    std::uint32_t fps_fixed = 0;  // 8.24 fixed point
 
     // Audio is optional: 9 of the game's 46 clips are video-only and carry zero
     // in all three fields.
@@ -23,7 +24,16 @@ struct ModsInfo final {
     int audio_channels = 0;  // 2 (stereo) wherever audio exists
     int audio_rate = 0;      // 22050, or 32728 (the DS's native rate)
 
+    std::uint32_t largest_frame = 0;
+    std::uint32_t audio_info_offset = 0;
+    std::uint32_t key_table_offset = 0;
+    std::uint32_t key_frame_count = 0;
+    std::size_t packet_data_offset = 0;
+
     bool has_audio() const { return audio_channels > 0; }
+    double frames_per_second() const {
+        return static_cast<double>(fps_fixed) / 16777216.0;
+    }
 };
 
 // Decode a MODS header. Throws std::runtime_error if the data is too small or

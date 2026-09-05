@@ -19,6 +19,11 @@
 #include <system_error>
 #include <vector>
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include <SDL3/SDL_main.h>
 
 #include "khdays/assets/animation.h"
@@ -47,6 +52,7 @@
 #include "khdays/assets/collision.h"
 #include "khdays/assets/scene3d.h"
 #include "khdays/resource/loader.h"
+#include "khdays/resource/video.h"
 #include "khdays/resource/world.h"
 #include "khdays/vfs/filesystem.h"
 
@@ -416,6 +422,10 @@ void print_help() {
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
         << "  khdays-port --play-sequence SDAT SEQ [SECONDS]\n"
         << "  khdays-port --mods-info FILE\n"
+        << "  khdays-port --render-video-frame GAMEPATH FRAME OUT.bmp\n"
+        << "  khdays-port --play-video GAMEPATH\n"
+        << "  khdays-port --extract-mods-audio GAMEPATH OUT.wav\n"
+        << "  khdays-port --pipe-video-rgba GAMEPATH\n"
         << "  khdays-port --message-info FILE\n"
         << "  khdays-port --dump-messages FILE [SUBDB]\n"
         << "  khdays-port --dump-strings FILE\n"
@@ -459,6 +469,11 @@ void print_help() {
         << "  --render-sequence SDAT SEQ OUT.wav [SECONDS]  Synthesize an SSEQ to WAV.\n"
         << "  --play-sequence SDAT SEQ [SECONDS]  Synthesize and play an SSEQ.\n"
         << "  --mods-info FILE    Summarize a MobiClip MODS cutscene container (mv/*.mods).\n"
+        << "  --render-video-frame PATH FRAME OUT.bmp  Decode a real MODS frame through\n"
+        << "                      overlay 24's original VLC tables (FRAME is zero-based).\n"
+        << "  --play-video PATH   Play a MODS cutscene with synchronized audio.\n"
+        << "  --extract-mods-audio PATH OUT.wav  Decode the movie's interleaved PCM16.\n"
+        << "  --pipe-video-rgba PATH  Write every decoded RGBA frame to stdout.\n"
         << "  --message-info FILE Summarize a P2 message container (db_<lang>.p2).\n"
         << "  --dump-messages FILE [SUBDB]  Print decoded UTF-8 text (optionally one sub-db).\n"
         << "  --dump-strings FILE Print a UI string table (.s/.s.z) as UTF-8.\n"
@@ -611,7 +626,8 @@ int main(int argc, char* argv[]) {
                     std::filesystem::path{argv[2]});
                 std::cout << "MobiClip MODS container:\n"
                           << "  video: " << info.width << 'x' << info.height << ", "
-                          << info.frame_count << " frames\n";
+                          << info.frame_count << " frames @ "
+                          << info.frames_per_second() << " fps\n";
                 if (info.has_audio()) {
                     std::cout << "  audio: " << info.audio_channels << " ch @ "
                               << info.audio_rate << " Hz (coding "
@@ -620,6 +636,126 @@ int main(int argc, char* argv[]) {
                     std::cout << "  audio: none (video-only clip)\n";
                 }
                 return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--render-video-frame") {
+            if (argc != 5) {
+                std::cerr << "ERROR: --render-video-frame requires a NitroFS "
+                             "game path, frame index, and output BMP\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                if (!khdays::vfs::autodetect_data_root()) {
+                    throw std::runtime_error(
+                        "could not find extracted data under data/extracted");
+                }
+                const auto requested = static_cast<std::size_t>(std::stoull(argv[3]));
+                auto decoder = khdays::resource::load_mods_video(argv[2]);
+                if (requested >= decoder.info().frame_count) {
+                    throw std::out_of_range("requested frame exceeds MODS frame count");
+                }
+                for (std::size_t index = 0; index <= requested; ++index) {
+                    decoder.decode_next(/*ds_exact=*/true);
+                }
+                const auto bmp = khdays::assets::to_bmp(decoder.frame());
+                std::ofstream out{argv[4], std::ios::binary};
+                if (!out) {
+                    throw std::runtime_error("cannot write output BMP");
+                }
+                out.write(reinterpret_cast<const char*>(bmp.data()),
+                          static_cast<std::streamsize>(bmp.size()));
+                std::cout << "Decoded " << argv[2] << " frame " << requested
+                          << " (" << decoder.frame().width << 'x'
+                          << decoder.frame().height << ") -> " << argv[4] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--play-video") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --play-video requires a NitroFS game path\n";
+                return EXIT_FAILURE;
+            }
+            if (!khdays::vfs::autodetect_data_root()) {
+                std::cerr << "ERROR: could not find extracted data under "
+                             "data/extracted\n";
+                return EXIT_FAILURE;
+            }
+            return khdays::platform::play_mods_video(argv[2]);
+        }
+
+        if (first == "--extract-mods-audio") {
+            if (argc != 4) {
+                std::cerr << "ERROR: --extract-mods-audio requires a NitroFS "
+                             "game path and output WAV\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                if (!khdays::vfs::autodetect_data_root()) {
+                    throw std::runtime_error(
+                        "could not find extracted data under data/extracted");
+                }
+                auto decoder = khdays::resource::load_mods_video(argv[2]);
+                khdays::assets::DecodedAudio audio;
+                audio.sample_rate =
+                    static_cast<std::uint32_t>(decoder.info().audio_rate);
+                audio.channels =
+                    static_cast<std::uint16_t>(decoder.info().audio_channels);
+                if (!decoder.info().has_audio()) {
+                    throw std::runtime_error("MODS clip contains no audio");
+                }
+                while (decoder.decode_next(/*ds_exact=*/false)) {
+                    const auto& chunk = decoder.audio_chunk();
+                    audio.samples.insert(audio.samples.end(), chunk.samples.begin(),
+                                         chunk.samples.end());
+                }
+                const auto wav = khdays::assets::to_wav(audio);
+                std::ofstream out{argv[3], std::ios::binary};
+                if (!out) {
+                    throw std::runtime_error("cannot write output WAV");
+                }
+                out.write(reinterpret_cast<const char*>(wav.data()),
+                          static_cast<std::streamsize>(wav.size()));
+                std::cout << "Decoded " << argv[2] << " audio: "
+                          << audio.samples.size() / audio.channels << " frames @ "
+                          << audio.sample_rate << " Hz -> " << argv[3] << '\n';
+                return EXIT_SUCCESS;
+            } catch (const std::exception& error) {
+                std::cerr << "ERROR: " << error.what() << '\n';
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (first == "--pipe-video-rgba") {
+            if (argc != 3) {
+                std::cerr << "ERROR: --pipe-video-rgba requires a NitroFS game path\n";
+                return EXIT_FAILURE;
+            }
+            try {
+                if (!khdays::vfs::autodetect_data_root()) {
+                    throw std::runtime_error(
+                        "could not find extracted data under data/extracted");
+                }
+#ifdef _WIN32
+                if (_setmode(_fileno(stdout), _O_BINARY) == -1) {
+                    throw std::runtime_error("cannot switch stdout to binary mode");
+                }
+#endif
+                auto decoder = khdays::resource::load_mods_video(argv[2]);
+                while (decoder.decode_next(/*ds_exact=*/true)) {
+                    const auto& frame = decoder.frame();
+                    std::cout.write(
+                        reinterpret_cast<const char*>(frame.rgba.data()),
+                        static_cast<std::streamsize>(frame.rgba.size()));
+                }
+                return std::cout ? EXIT_SUCCESS : EXIT_FAILURE;
             } catch (const std::exception& error) {
                 std::cerr << "ERROR: " << error.what() << '\n';
                 return EXIT_FAILURE;

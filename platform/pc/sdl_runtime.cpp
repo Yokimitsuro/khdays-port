@@ -14,6 +14,7 @@
 #include "khdays/assets/tex0.h"
 #include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
+#include "khdays/resource/video.h"
 #include "khdays/vfs/filesystem.h"
 #include "music_backend.h"
 #include "overlay_ui.h"
@@ -496,6 +497,139 @@ private:
 };
 
 }  // namespace
+
+int play_mods_video(const std::string_view game_path) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+        log_sdl_error("SDL_Init");
+        return EXIT_FAILURE;
+    }
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    SDL_Texture* texture = nullptr;
+    SDL_AudioStream* audio_stream = nullptr;
+    const auto cleanup = [&] {
+        SDL_DestroyAudioStream(audio_stream);
+        SDL_DestroyTexture(texture);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    };
+    if (!SDL_CreateWindowAndRenderer(
+            "khdays-port - MobiClip", 1024, 640,
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window,
+            &renderer)) {
+        log_sdl_error("SDL_CreateWindowAndRenderer");
+        cleanup();
+        return EXIT_FAILURE;
+    }
+
+    try {
+        auto decoder = khdays::resource::load_mods_video(game_path);
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
+                                    SDL_TEXTUREACCESS_STREAMING,
+                                    decoder.info().width, decoder.info().height);
+        if (texture == nullptr) {
+            throw std::runtime_error(
+                std::string{"SDL_CreateTexture failed: "} + SDL_GetError());
+        }
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+        const double fps = decoder.frames_per_second();
+        if (fps <= 0.0) {
+            throw std::runtime_error("MODS video has an invalid frame rate");
+        }
+        const auto frame_ns = static_cast<Uint64>(1000000000.0 / fps);
+        if (decoder.info().has_audio()) {
+            SDL_AudioSpec spec{};
+            spec.format = SDL_AUDIO_S16;
+            spec.channels = decoder.info().audio_channels;
+            spec.freq = decoder.info().audio_rate;
+            audio_stream = SDL_OpenAudioDeviceStream(
+                SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+            if (audio_stream == nullptr) {
+                throw std::runtime_error(
+                    std::string{"SDL_OpenAudioDeviceStream failed: "}
+                    + SDL_GetError());
+            }
+        }
+        Uint64 next_frame_ns = SDL_GetTicksNS();
+        bool running = true;
+        bool have_frame = false;
+        std::cout << "Playing " << game_path << ": " << decoder.info().width
+                  << 'x' << decoder.info().height << ", "
+                  << decoder.info().frame_count << " frames @ " << fps
+                  << " fps (Esc to stop)\n";
+
+        while (running && !decoder.finished()) {
+            SDL_Event event{};
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT
+                    || (event.type == SDL_EVENT_KEY_DOWN
+                        && event.key.key == SDLK_ESCAPE)) {
+                    running = false;
+                }
+            }
+            const Uint64 now = SDL_GetTicksNS();
+            if (!have_frame || now >= next_frame_ns) {
+                if (decoder.decode_next(/*ds_exact=*/true)) {
+                    const auto& frame = decoder.frame();
+                    if (!SDL_UpdateTexture(texture, nullptr, frame.rgba.data(),
+                                           frame.width * 4)) {
+                        throw std::runtime_error(
+                            std::string{"SDL_UpdateTexture failed: "}
+                            + SDL_GetError());
+                    }
+                    if (audio_stream != nullptr) {
+                        const auto& audio = decoder.audio_chunk();
+                        const auto bytes = static_cast<int>(
+                            audio.samples.size() * sizeof(std::int16_t));
+                        if (bytes > 0
+                            && !SDL_PutAudioStreamData(
+                                audio_stream, audio.samples.data(), bytes)) {
+                            throw std::runtime_error(
+                                std::string{"SDL_PutAudioStreamData failed: "}
+                                + SDL_GetError());
+                        }
+                        if (decoder.frame_index() == 1U) {
+                            SDL_ResumeAudioStreamDevice(audio_stream);
+                        }
+                    }
+                    have_frame = true;
+                }
+                next_frame_ns = std::max(next_frame_ns + frame_ns, now);
+            }
+
+            int output_width = 0;
+            int output_height = 0;
+            SDL_GetCurrentRenderOutputSize(renderer, &output_width, &output_height);
+            const SDL_FRect bounds{0.0F, 0.0F, static_cast<float>(output_width),
+                                   static_cast<float>(output_height)};
+            const auto destination = fit_inside(
+                decoder.info().width, decoder.info().height, bounds);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, texture, nullptr, &destination);
+            SDL_RenderPresent(renderer);
+
+            const Uint64 after_render = SDL_GetTicksNS();
+            if (after_render < next_frame_ns) {
+                SDL_DelayNS(std::min<Uint64>(next_frame_ns - after_render,
+                                             2000000U));
+            }
+        }
+        if (running && audio_stream != nullptr) {
+            SDL_FlushAudioStream(audio_stream);
+            while (SDL_GetAudioStreamAvailable(audio_stream) > 0) {
+                SDL_Delay(5);
+            }
+        }
+        cleanup();
+        return EXIT_SUCCESS;
+    } catch (const std::exception& error) {
+        std::cerr << "Video playback failed: " << error.what() << '\n';
+        cleanup();
+        return EXIT_FAILURE;
+    }
+}
 
 int run_game(khdays::game::Game& game) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {

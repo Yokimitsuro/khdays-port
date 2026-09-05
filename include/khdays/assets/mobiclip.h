@@ -27,6 +27,17 @@ namespace khdays::assets {
 // out of the DS's VRAM.
 namespace mobiclip {
 
+struct ImaAdpcmState final {
+    int predictor = 0;
+    int step_index = 0;
+};
+
+// Decode `size` bytes of standard IMA ADPCM in the low-nibble-first order used
+// by MODS. `output` receives exactly size*2 PCM16 samples and state continues
+// across blocks until an I-frame supplies a new per-channel header.
+void decode_ima_adpcm(const std::uint8_t* data, std::size_t size,
+                      ImaAdpcmState& state, std::int16_t* output);
+
 // The DS's own output: BGR555, bit 15 set, written at `stride_pixels` per row.
 // `dst` must hold at least stride_pixels * height u16.
 void frame_to_bgr555(const std::uint8_t* luma, const std::uint8_t* chroma,

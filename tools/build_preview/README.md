@@ -1,12 +1,12 @@
 # Asset gallery
 
-Decodes **everything** extracted from your ROM into a browsable gallery at `data/preview/index.html`: images, models, audio and text.
+Decodes **everything** extracted from your ROM into a browsable gallery at `data/preview/index.html`: images, models, audio, MobiClip video and text.
 
 The tool neither downloads nor distributes game content: it works on the data you extracted yourself, and its output lives under `data/`, which Git ignores. The generator is what ships; the assets stay on your machine.
 
 ## Prerequisites
 
-Starting from nothing but a clone, you need four things.
+Starting from nothing but a clone, you need five things.
 
 **1. Your own copy of the game**, as a `.nds` dump. It must be the **Europe** release (game code `YKGP`, SHA-256 starting `1ecf5e7a41a2ae48`) — `verify_rom.py` recognises no other. `extract_data.py` will happily extract a US or JP dump, but it names its output directory after the ROM's hash and this tool looks in the European one by name, so any other dump ends at `ERROR: extracted data not found`. Nothing here downloads or ships game content: the assets stay on your machine, under the git-ignored `data/`.
 
@@ -36,6 +36,10 @@ cmake --build build --config Release
 
 **Build Release, not Debug.** The generator picks `build/Release/khdays-port.exe` over `build/Debug/…` when both exist, so a stale Release binary silently wins over a freshly built Debug one — which fails as several hundred unexplained per-asset errors in the log, not as anything obvious.
 
+**5. FFmpeg**, available on `PATH`. MobiClip frames are decoded by the port and
+streamed to FFmpeg as RGBA; FFmpeg only packages them as browser-compatible
+H.264/AAC MP4. No intermediate raw-frame file is written.
+
 ## Generate
 
 ```powershell
@@ -44,13 +48,13 @@ python .\tools\build_preview\build_preview.py
 
 Open `data/preview/index.html` in a browser. It works from `file://`, no server needed.
 
-Expect roughly **2 minutes** and **~375 MB** under `data/preview/`. Re-running without `--force` takes ~20 s and redoes only what is missing.
+Expect roughly **2 minutes** and **~745 MB** under `data/preview/`. Re-running without `--force` takes ~20 s and redoes only what is missing.
 
 ## Options
 
 | Flag | Purpose |
 |---|---|
-| `--only 3d,ui,fonts,text,audio` | Comma-separated list; only those categories (merges — see below) |
+| `--only 3d,ui,fonts,text,audio,video` | Comma-separated list; only those categories (merges — see below) |
 | `--limit N` | At most N items per category (quick testing; merges — see below) |
 | `--jobs N` | Parallel processes |
 | `--force` | Redo what already exists |
@@ -66,7 +70,7 @@ A full pass takes ~2 min; re-running it without `--force` takes ~20 s.
 
 ## Partial runs merge; they do not truncate
 
-The gallery is built up across runs, so `--only` and `--limit` **add to the existing index rather than replace it**. `--only 3d` rebuilds the 3D cards and leaves every ui/fonts/text/audio card in place.
+The gallery is built up across runs, so `--only` and `--limit` **add to the existing index rather than replace it**. `--only 3d` rebuilds the 3D cards and leaves every ui/fonts/text/audio/video card in place.
 
 This used to be a trap, and it bit two people twice each: the index was written from whatever a single run happened to process, so using `--only`/`--limit` for exactly what they are for silently dropped every other category from the gallery — 856 KB down to 10 KB — while all of the files sat untouched on disk. Nothing warned you.
 
@@ -85,6 +89,7 @@ If `items.json` is missing or damaged while an `index.html` exists — an index 
 | **Fonts** | A glyph sample per NFTR |
 | **Text** | String tables and message databases as `.txt` |
 | **Audio** | Sequences, streams and SWAVs as `.wav`, with an in-page player, named from the SDAT's SYMB table |
+| **Video** | All 46 MODS MobiClips as H.264 MP4, with decoded IMA audio where present, thumbnails and in-page controls |
 
 Clicking any image opens it full-size. The cards are 88px tall, which is smaller than some of these textures actually are and far too small to read a 16×32 one, so the overlay scales by a **whole number** with nearest-neighbour — a texel stays a square instead of being smeared into its neighbours — and reports the real size and the zoom it used (`ax_hair_b · 16×32 · 35× zoom`). Its checkerboard sits on a solid mid-grey, so alpha reads on either theme. Arrow keys step through the group the click came from, since the neighbours are what you usually want to compare against; `Esc`, the scrim or the `×` closes.
 

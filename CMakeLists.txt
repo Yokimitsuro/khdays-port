@@ -133,6 +133,8 @@ add_library(
         src/assets/message.cpp
         src/assets/mobiclip.cpp
         src/assets/mods.cpp
+        src/assets/mods_video.cpp
+        external/khdays-decomp/tools/mobiclip_reference.cpp
         src/assets/scene3d.cpp
         src/assets/screen.cpp
         src/assets/sdat.cpp
@@ -145,6 +147,8 @@ target_include_directories(
     khdays-assets
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/khdays-decomp/tools"
 )
 
 if(KHDAYS_ENABLE_PNG)
@@ -174,6 +178,7 @@ add_library(
     STATIC
         src/resource/loader.cpp
         src/resource/ui_content.cpp
+        src/resource/video.cpp
         src/resource/world.cpp
         src/vfs/filesystem.cpp
 )

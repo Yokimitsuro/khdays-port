@@ -21,6 +21,7 @@ Output layout (mirrors the source relative paths)::
       fonts/<rel>.png                        (NFTR sample sheets)
       text/<rel>.txt                         (.s string tables, P2 message DBs)
       audio/{sequences,streams,swav}/*.wav   (SSEQ / STRM / SWAV)
+      video/mobiclip/*.mp4                   (MODS video + audio)
       build_preview_log.txt
 
 MERGING
@@ -94,7 +95,7 @@ SIDECAR = OUT / "items.json"
 #    a v1 payload's font metadata is not in the form recorded_meta() promises.
 SIDECAR_VERSION = 2
 
-CATEGORIES = ["3d", "ui", "fonts", "text", "audio"]
+CATEGORIES = ["3d", "ui", "fonts", "text", "audio", "video"]
 
 PANGRAM = ("The quick brown fox jumps over the lazy dog "
            "0123456789 !?.,:;'\"()[]-+/&%#@")
@@ -501,6 +502,14 @@ def collect_text() -> list[tuple]:
     return tasks
 
 
+def collect_video() -> list[tuple]:
+    """Every MobiClip MODS stream in NitroFS."""
+    movie_dir = NITRO / "mv"
+    if not movie_dir.is_dir():
+        return []
+    return [("mods", path) for path in sorted(movie_dir.glob("*.mods"))]
+
+
 # --------------------------------------------------------------------------
 # Task handlers - each returns a list of manifest items
 # --------------------------------------------------------------------------
@@ -545,6 +554,10 @@ def unit_font(task: tuple) -> str:
 def unit_text(task: tuple) -> str:
     base = DEC if task[0] == "strings" else NITRO
     return f"text:{task[0]}:" + task[1].relative_to(base).as_posix()
+
+
+def unit_video(task: tuple) -> str:
+    return "video:mods:" + task[1].relative_to(NITRO).as_posix()
 
 
 _MODEL_NAME_RE = re.compile(r"^# model:\s*(.+)$", re.MULTILINE)
@@ -1005,6 +1018,127 @@ def do_text(kind: str, src: Path, force: bool) -> list[dict]:
                  f"{out_txt.stat().st_size // 1024} KB")]
 
 
+def mods_header(src: Path) -> dict:
+    data = src.read_bytes()[:0x30]
+    if len(data) < 0x30:
+        raise ValueError("short MODS header")
+    values = struct.unpack_from("<4s2sHIIIIHHIIIII", data)
+    if values[0] != b"MODS" or values[1] != b"N3" or values[2] != 0x0A:
+        raise ValueError("unsupported MODS container")
+    fps = values[6] / float(0x01000000)
+    return {
+        "frames": values[3], "width": values[4], "height": values[5],
+        "fps": fps, "codec": values[7], "channels": values[8],
+        "rate": values[9],
+    }
+
+
+def do_video(src: Path, force: bool) -> list[dict]:
+    """Stream decoded RGBA through FFmpeg and make one browser-native MP4."""
+    rel = src.relative_to(NITRO)
+    game_path = "/" + rel.as_posix()
+    header = mods_header(src)
+    stem = safe_name(src.stem)
+    outdir = OUT / "video" / "mobiclip"
+    dst = outdir / f"{stem}.mp4"
+    thumb = outdir / f"{stem}_thumb.png"
+    duration = header["frames"] / header["fps"] if header["fps"] else 0.0
+    sound = (f"{header['channels']} ch @ {header['rate']} Hz"
+             if header["channels"] else "video only")
+    meta = (f"{header['width']}x{header['height']} · {header['frames']} frames · "
+            f"{header['fps']:.3f} fps · {duration:.1f}s · {sound}")
+
+    if dst.exists() and dst.stat().st_size > 0 and not force:
+        return [item("video", "video/mobiclip (MODS)", src.name, dst,
+                     "video", meta) | ({"th": thumb.relative_to(OUT).as_posix()}
+                                       if thumb.exists() else {})]
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        log("  ! ffmpeg not found; MobiClip preview needs MP4 encoding")
+        _stats["video_no_ffmpeg"] += 1
+        return []
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # A still makes unopened cards useful and keeps browser video elements from
+    # showing an implementation-dependent black rectangle.
+    bmp = thumb.with_suffix(".bmp")
+    ok, _out, err = run([EXE, "--render-video-frame", game_path, 0, bmp],
+                        timeout=120)
+    if ok:
+        bmp_to_png(bmp, drop_1x1=False)
+    else:
+        bmp.unlink(missing_ok=True)
+        log(f"    ! MobiClip thumbnail {rel}: {err.strip()[:120]}", quiet=True)
+
+    audio_tmp = outdir / f".{stem}.tmp.wav"
+    output_tmp = outdir / f".{stem}.tmp.mp4"
+    audio_tmp.unlink(missing_ok=True)
+    output_tmp.unlink(missing_ok=True)
+    if header["channels"]:
+        ok, _out, err = run(
+            [EXE, "--extract-mods-audio", game_path, audio_tmp], timeout=1800)
+        if not ok:
+            log(f"    ! MobiClip audio {rel}: {err.strip()[:160]}", quiet=True)
+            audio_tmp.unlink(missing_ok=True)
+            return []
+
+    raw_cmd = [str(EXE), "--pipe-video-rgba", game_path]
+    encode_cmd = [
+        ffmpeg, "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pixel_format", "rgba",
+        "-video_size", f"{header['width']}x{header['height']}",
+        "-framerate", f"{header['fps']:.9f}", "-i", "pipe:0",
+    ]
+    if header["channels"]:
+        encode_cmd += ["-i", str(audio_tmp), "-map", "0:v:0", "-map", "1:a:0"]
+    encode_cmd += [
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+    ]
+    if header["channels"]:
+        encode_cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+    else:
+        encode_cmd += ["-an"]
+    encode_cmd += ["-movflags", "+faststart", str(output_tmp)]
+
+    raw = None
+    encoder = None
+    try:
+        raw = subprocess.Popen(raw_cmd, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+        encoder = subprocess.Popen(encode_cmd, stdin=raw.stdout,
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE)
+        assert raw.stdout is not None
+        raw.stdout.close()
+        _unused, encode_err = encoder.communicate(timeout=1800)
+        raw_err = raw.stderr.read() if raw.stderr is not None else b""
+        raw_rc = raw.wait(timeout=30)
+        if raw_rc != 0 or encoder.returncode != 0 or not output_tmp.exists():
+            detail = (raw_err + b"\n" + (encode_err or b"")).decode(
+                "utf-8", "replace").strip()
+            log(f"    ! MobiClip encode {rel}: {detail[:240]}", quiet=True)
+            output_tmp.unlink(missing_ok=True)
+            return []
+        output_tmp.replace(dst)
+    except subprocess.TimeoutExpired:
+        if encoder is not None:
+            encoder.kill()
+        if raw is not None:
+            raw.kill()
+        output_tmp.unlink(missing_ok=True)
+        log(f"    ! MobiClip encode {rel}: timeout", quiet=True)
+        return []
+    finally:
+        audio_tmp.unlink(missing_ok=True)
+
+    _stats["mobiclip_videos"] += 1
+    return [item("video", "video/mobiclip (MODS)", src.name, dst,
+                 "video", meta) | ({"th": thumb.relative_to(OUT).as_posix()}
+                                   if thumb.exists() else {})]
+
+
 def do_audio(force: bool, limit: int | None,
              jobs: int) -> tuple[list[dict], set[str], set[str]]:
     """Render the SDAT audio. Returns (items, discovered units, processed units).
@@ -1252,6 +1386,12 @@ opacity:.75}
 border:1px solid var(--line);border-radius:7px;padding:6px 9px}
 .row .nm{flex:1;text-align:left;font-size:12px}
 audio{height:32px;max-width:340px}
+.video{display:grid;gap:7px;background:var(--bg);border:1px solid var(--line);
+border-radius:7px;padding:8px;min-width:0}
+.video video{display:block;width:100%;max-height:360px;background:#000;border-radius:4px}
+.video .nm{text-align:left;font-size:12px}.video .mt{text-align:left}
+.video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+gap:12px;padding:12px;border-top:1px solid var(--line)}
 a{color:var(--accent)}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 /* Lightbox. These textures are 8x16 to 128x128, so the card's 88px box is the
@@ -1312,6 +1452,7 @@ def build_html(items: list[dict], meta: dict) -> str:
 <button data-f="3d">3D</button><button data-f="ui">UI</button>
 <button data-f="fonts">Fonts</button><button data-f="text">Text</button>
 <button data-f="audio">Audio</button>
+<button data-f="video">Video</button>
 <button id="collapse">Collapse all</button>
 </div></header>
 <main id="main"></main>
@@ -1334,14 +1475,18 @@ function cell(it){{
   }}
   if(it.t==='audio')return `<div class="row"><div class="nm">${{it.n}}</div>`+
     `<audio controls preload="none" src="${{it.p}}"></audio><span class="mt">${{it.m||''}}</span></div>`;
+  if(it.t==='video')return `<div class="video"><video controls preload="metadata" `+
+    `${{it.th?`poster="${{it.th}}"`:''}} src="${{it.p}}"></video>`+
+    `<div class="nm">${{it.n}}</div><div class="mt">${{it.m||''}}</div></div>`;
   return `<div class="row"><div class="nm"><a href="${{it.p}}" target="_blank">${{it.n}}</a></div>`+
     `<span class="mt">${{it.t}} ${{it.m||''}}</span></div>`;
 }}
 function fill(d,g){{
   if(d.dataset.done)return;d.dataset.done=1;
+  const video=g.i.some(x=>x.t==='video');
   const img=g.i.some(x=>x.t==='img');
   const box=document.createElement('div');
-  box.className=img?'grid':'rows';
+  box.className=video?'video-grid':img?'grid':'rows';
   box.innerHTML=g.i.map(cell).join('');
   d.appendChild(box);
 }}
@@ -1582,7 +1727,11 @@ def main() -> int:
             discovered["audio"] |= disc
             processed["audio"] |= proc
 
-    for sub in ("3d", "ui", "fonts", "text"):
+    if "video" in cats:
+        items += parallel("video", "video", collect_video(),
+                          lambda t: do_video(t[1], args.force), unit_video)
+
+    for sub in ("3d", "ui", "fonts", "text", "video"):
         prune_empty_dirs(OUT / sub)
 
     rebuilt = len(items)
