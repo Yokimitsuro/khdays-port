@@ -12,9 +12,12 @@
 #include <SDL3/SDL.h>
 
 #include "khdays/assets/tex0.h"
+#include "khdays/assets/message.h"
+#include "khdays/game/settings.h"
 #include "khdays/platform/gpu_renderer.h"
 #include "khdays/port.h"
 #include "khdays/resource/video.h"
+#include "khdays/resource/ui_content.h"
 #include "khdays/vfs/filesystem.h"
 #include "music_backend.h"
 #include "overlay_ui.h"
@@ -75,6 +78,27 @@ SDL_FRect fit_inside(
         width,
         height,
     };
+}
+
+std::size_t opening_subtitle_language() {
+    using khdays::game::Language;
+    switch (khdays::game::language()) {
+    case Language::English: return 0U;
+    case Language::French: return 1U;
+    case Language::German: return 2U;
+    case Language::Italian: return 3U;
+    case Language::Spanish: return 4U;
+    }
+    return 0U;
+}
+
+std::string normalized_game_path(const std::string_view path) {
+    std::string result{path};
+    std::replace(result.begin(), result.end(), '\\', '/');
+    while (!result.empty() && result.front() == '/') {
+        result.erase(result.begin());
+    }
+    return result;
 }
 
 std::optional<RuntimeResource> load_resource(
@@ -608,6 +632,13 @@ public:
         return current_;
     }
 
+    std::size_t video_frame_index() const override {
+        if (!decoder_ || decoder_->frame_index() == 0U) {
+            return 0U;
+        }
+        return decoder_->frame_index() - 1U;
+    }
+
     void set_video_volume(const float volume) override {
         volume_ = std::clamp(volume, 0.0F, 1.0F);
         if (audio_stream_ != nullptr) {
@@ -639,9 +670,11 @@ int play_mods_video(const std::string_view game_path) {
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
+    SDL_Texture* subtitle_texture = nullptr;
     SDL_AudioStream* audio_stream = nullptr;
     const auto cleanup = [&] {
         SDL_DestroyAudioStream(audio_stream);
+        SDL_DestroyTexture(subtitle_texture);
         SDL_DestroyTexture(texture);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -658,6 +691,16 @@ int play_mods_video(const std::string_view game_path) {
 
     try {
         auto decoder = khdays::resource::load_mods_video(game_path);
+        std::vector<khdays::assets::MovieSubtitleCue> subtitle_cues;
+        try {
+            const auto script = khdays::resource::load_opening_movie_script();
+            if (normalized_game_path(script.movie_path)
+                == normalized_game_path(game_path)) {
+                subtitle_cues = script.subtitles[opening_subtitle_language()];
+            }
+        } catch (const std::exception&) {
+            // Other MODS clips and partial extractions still preview normally.
+        }
         texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
                                     SDL_TEXTUREACCESS_STREAMING,
                                     decoder.info().width, decoder.info().height);
@@ -687,6 +730,7 @@ int play_mods_video(const std::string_view game_path) {
         Uint64 next_frame_ns = SDL_GetTicksNS();
         bool running = true;
         bool have_frame = false;
+        std::size_t active_subtitle = subtitle_cues.size();
         std::cout << "Playing " << game_path << ": " << decoder.info().width
                   << 'x' << decoder.info().height << ", "
                   << decoder.info().frame_count << " frames @ " << fps
@@ -731,16 +775,84 @@ int play_mods_video(const std::string_view game_path) {
                 next_frame_ns = std::max(next_frame_ns + frame_ns, now);
             }
 
+            const auto frame_index = decoder.frame_index() == 0U
+                ? 0U : decoder.frame_index() - 1U;
+            std::size_t next_subtitle = subtitle_cues.size();
+            for (std::size_t i = 0U; i < subtitle_cues.size(); ++i) {
+                if (frame_index >= subtitle_cues[i].start_frame
+                    && frame_index < subtitle_cues[i].end_frame) {
+                    next_subtitle = i;
+                    break;
+                }
+            }
+            if (next_subtitle != active_subtitle) {
+                SDL_DestroyTexture(subtitle_texture);
+                subtitle_texture = nullptr;
+                active_subtitle = next_subtitle;
+                if (active_subtitle < subtitle_cues.size()
+                    && !subtitle_cues[active_subtitle].text.empty()) {
+                    const auto rendered = khdays::resource::render_ui_text(
+                        "text/font_eu_10all.nftr",
+                        khdays::assets::message_from_utf8(
+                            subtitle_cues[active_subtitle].text));
+                    if (rendered) {
+                        subtitle_texture = SDL_CreateTexture(
+                            renderer, SDL_PIXELFORMAT_RGBA32,
+                            SDL_TEXTUREACCESS_STATIC,
+                            rendered->width, rendered->height);
+                        if (subtitle_texture != nullptr) {
+                            SDL_UpdateTexture(
+                                subtitle_texture, nullptr,
+                                rendered->rgba.data(), rendered->width * 4);
+                            SDL_SetTextureBlendMode(
+                                subtitle_texture, SDL_BLENDMODE_BLEND);
+                            SDL_SetTextureScaleMode(
+                                subtitle_texture, SDL_SCALEMODE_NEAREST);
+                        }
+                    }
+                }
+            }
+
             int output_width = 0;
             int output_height = 0;
             SDL_GetCurrentRenderOutputSize(renderer, &output_width, &output_height);
             const SDL_FRect bounds{0.0F, 0.0F, static_cast<float>(output_width),
                                    static_cast<float>(output_height)};
-            const auto destination = fit_inside(
-                decoder.info().width, decoder.info().height, bounds);
+            const bool scripted_opening = !subtitle_cues.empty();
+            const auto screen = fit_inside(
+                decoder.info().width,
+                scripted_opening ? 192 : decoder.info().height, bounds);
+            SDL_FRect destination = screen;
+            if (scripted_opening) {
+                destination.h = screen.w
+                    * static_cast<float>(decoder.info().height)
+                    / static_cast<float>(decoder.info().width);
+            }
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
             SDL_RenderTexture(renderer, texture, nullptr, &destination);
+            if (subtitle_texture != nullptr
+                && active_subtitle < subtitle_cues.size()) {
+                float text_width = 0.0F;
+                float text_height = 0.0F;
+                SDL_GetTextureSize(
+                    subtitle_texture, &text_width, &text_height);
+                const float scale = screen.w
+                    / static_cast<float>(decoder.info().width);
+                SDL_FRect text_destination{
+                    screen.x + (screen.w - text_width * scale) * 0.5F,
+                    screen.y + 160.0F * scale
+                        + (32.0F - text_height) * scale * 0.5F,
+                    text_width * scale, text_height * scale};
+                SDL_FRect shadow = text_destination;
+                shadow.x += scale;
+                shadow.y += scale;
+                SDL_SetTextureColorMod(subtitle_texture, 0, 0, 0);
+                SDL_RenderTexture(renderer, subtitle_texture, nullptr, &shadow);
+                SDL_SetTextureColorMod(subtitle_texture, 255, 255, 255);
+                SDL_RenderTexture(
+                    renderer, subtitle_texture, nullptr, &text_destination);
+            }
             SDL_RenderPresent(renderer);
 
             const Uint64 after_render = SDL_GetTicksNS();

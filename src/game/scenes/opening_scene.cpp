@@ -7,6 +7,8 @@
 
 #include "khdays/game/draw.h"
 #include "khdays/game/settings.h"
+#include "khdays/assets/message.h"
+#include "khdays/resource/video.h"
 
 namespace khdays::game::scenes {
 
@@ -60,6 +62,17 @@ int language_subfile() {
     return 1;
 }
 
+std::size_t subtitle_language() {
+    switch (language()) {
+    case Language::English: return 0U;
+    case Language::French: return 1U;
+    case Language::German: return 2U;
+    case Language::Italian: return 3U;
+    case Language::Spanish: return 4U;
+    }
+    return 0U;
+}
+
 int fade_step(const int frame, const int start, const int duration) {
     if (frame <= start) {
         return 0;
@@ -92,9 +105,27 @@ void OpeningScene::on_enter(SceneManager& manager) {
     if (auto* music = manager.music()) {
         music->stop_music();
     }
+    std::string movie_path = "mv/802.mods";
+    try {
+        const auto script = khdays::resource::load_opening_movie_script();
+        movie_path = script.movie_path;
+        subtitle_cues_ = script.subtitles[subtitle_language()];
+        subtitles_.reserve(subtitle_cues_.size());
+        for (const auto& cue : subtitle_cues_) {
+            if (cue.text.empty()) {
+                subtitles_.push_back(std::nullopt);
+            } else {
+                subtitles_.push_back(khdays::resource::render_ui_text(
+                    "text/font_eu_10all.nftr",
+                    khdays::assets::message_from_utf8(cue.text)));
+            }
+        }
+    } catch (const std::exception&) {
+        // The movie remains playable without its separate script package.
+    }
     player_ = manager.video();
     if (player_ != nullptr) {
-        player_->play_video("mv/802.mods");
+        player_->play_video(movie_path);
         playback_started_ = player_->video_playing();
     }
 }
@@ -111,6 +142,7 @@ void OpeningScene::update(SceneManager& manager) {
     }
 
     video_frame_ = player_->video_frame();
+    video_frame_index_ = player_->video_frame_index();
     ++timeline_frame_;
 
     if (exiting_) {
@@ -215,6 +247,19 @@ void OpeningScene::render(SceneManager&, Renderer& r) {
         draw_solid_screen(r, layout, /*bottom=*/true, /*white=*/true);
     }
 
+    for (std::size_t i = 0U; i < subtitle_cues_.size()
+         && i < subtitles_.size(); ++i) {
+        const auto& cue = subtitle_cues_[i];
+        if (video_frame_index_ < cue.start_frame
+            || video_frame_index_ >= cue.end_frame || !subtitles_[i]) {
+            continue;
+        }
+        const auto& text = *subtitles_[i];
+        draw_overlay(r, layout, text, (256 - text.width) / 2,
+                     160 + (32 - text.height) / 2, /*bottom=*/true);
+        break;
+    }
+
     if (exiting_) {
         const int alpha = std::clamp(exit_fade_, 0, 16) * 255 / 16;
         r.fill_overlay(Color{0, 0, 0, static_cast<std::uint8_t>(alpha)});
@@ -227,6 +272,8 @@ void OpeningScene::on_exit(SceneManager&) {
     }
     player_ = nullptr;
     video_frame_ = {};
+    subtitle_cues_.clear();
+    subtitles_.clear();
 }
 
 }  // namespace khdays::game::scenes

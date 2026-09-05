@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
@@ -41,6 +42,11 @@ public:
     // a frame with `rgba == nullptr` if none is ready. Timing follows the clip's
     // own rate, not the game's frame rate.
     virtual VideoFrame video_frame() = 0;
+
+    // Zero-based index of the frame most recently returned by video_frame().
+    // A platform without indexed video may keep the default; scripted movie
+    // overlays simply remain on their first cue in that case.
+    virtual std::size_t video_frame_index() const { return 0U; }
 
     // Apply the same master volume used by music. Platforms without a volume
     // control can keep the default no-op.

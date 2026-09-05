@@ -1,7 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
+#include "khdays/assets/cakp.h"
 #include "khdays/game/scene.h"
 #include "khdays/resource/ui_content.h"
 
@@ -19,8 +21,11 @@ public:
 
 private:
     std::optional<khdays::resource::OpeningArtwork> artwork_;
+    std::vector<khdays::assets::MovieSubtitleCue> subtitle_cues_;
+    std::vector<std::optional<khdays::assets::DecodedTexture>> subtitles_;
     VideoPlayer* player_ = nullptr;
     VideoFrame video_frame_{};
+    std::size_t video_frame_index_ = 0U;
     int timeline_frame_ = 0;
     int exit_fade_ = 0;
     bool playback_started_ = false;
