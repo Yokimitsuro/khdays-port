@@ -199,6 +199,14 @@ def find_exe() -> Path:
 EXE = find_exe()
 
 
+def output_is_current(output: Path, *inputs: Path) -> bool:
+    """Return whether a cached output was made from the current inputs."""
+    if not output.exists() or output.stat().st_size == 0:
+        return False
+    output_time = output.stat().st_mtime_ns
+    return all(output_time >= source.stat().st_mtime_ns for source in inputs)
+
+
 def run(args: list, timeout: int = 300) -> tuple[bool, str, str]:
     """Invoke the CLI. Never raises - failures are reported, not fatal."""
     try:
@@ -1048,7 +1056,11 @@ def do_video(src: Path, force: bool) -> list[dict]:
     meta = (f"{header['width']}x{header['height']} · {header['frames']} frames · "
             f"{header['fps']:.3f} fps · {duration:.1f}s · {sound}")
 
-    if dst.exists() and dst.stat().st_size > 0 and not force:
+    # Video is produced by the native decoder, not by this Python file.  A
+    # previously generated MP4 therefore becomes stale when either the MODS
+    # input or the decoder executable changes.  Reusing it solely because it
+    # exists kept visibly corrupted previews around after decoder fixes.
+    if not force and output_is_current(dst, src, EXE):
         return [item("video", "video/mobiclip (MODS)", src.name, dst,
                      "video", meta) | ({"th": thumb.relative_to(OUT).as_posix()}
                                        if thumb.exists() else {})]
