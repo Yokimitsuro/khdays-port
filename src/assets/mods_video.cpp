@@ -126,16 +126,18 @@ public:
 
         decode_audio(packet, result);
 
-        // The semantic decoder preserves bitstream order (Cg, Co); the colour
-        // converter mirrors the DS framebuffer layout (Co then Cg per row).
+        // Preserve the original decoder's native chroma order.  Its first and
+        // second compact planes are the first and second halves of each DS
+        // chroma row respectively; reinterpreting FFmpeg's plane labels here
+        // swaps Co/Cg and gives the whole movie a strong green cast.
         std::vector<std::uint8_t> packed_chroma(
             static_cast<std::size_t>(info.height / 2) * 256U);
         for (int y = 0; y < info.height / 2; ++y) {
             const auto source = static_cast<std::size_t>(y) * (info.width / 2);
             const auto target = static_cast<std::size_t>(y) * 256U;
-            std::copy_n(output.chroma_second.data() + source, info.width / 2,
-                        packed_chroma.data() + target);
             std::copy_n(output.chroma_first.data() + source, info.width / 2,
+                        packed_chroma.data() + target);
+            std::copy_n(output.chroma_second.data() + source, info.width / 2,
                         packed_chroma.data() + target + 128U);
         }
         current = khdays::assets::mobiclip::frame_to_rgba(
