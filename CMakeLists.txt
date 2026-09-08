@@ -657,6 +657,7 @@ if(BUILD_TESTING)
             khdays-cell-test
             khdays-ui-layout-test
             khdays-collision-test
+            khdays-cakp-test
             khdays-battle-hud-test
     )
 endif()

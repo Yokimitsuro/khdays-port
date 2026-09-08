@@ -8,11 +8,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "tools" / "build_preview" / "build_preview.py"
-SPEC = importlib.util.spec_from_file_location("build_preview", MODULE_PATH)
+MODULE_PATH = ROOT / "tools" / "build_preview" / "preview_cache.py"
+SPEC = importlib.util.spec_from_file_location("preview_cache", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
-build_preview = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(build_preview)
+preview_cache = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(preview_cache)
 
 
 class PreviewCacheTests(unittest.TestCase):
@@ -29,12 +29,12 @@ class PreviewCacheTests(unittest.TestCase):
             os.utime(decoder, ns=(200, 200))
             os.utime(output, ns=(300, 300))
             self.assertTrue(
-                build_preview.output_is_current(output, source, decoder)
+                preview_cache.output_is_current(output, source, decoder)
             )
 
             os.utime(decoder, ns=(400, 400))
             self.assertFalse(
-                build_preview.output_is_current(output, source, decoder)
+                preview_cache.output_is_current(output, source, decoder)
             )
 
     def test_empty_output_is_never_current(self) -> None:
@@ -44,7 +44,7 @@ class PreviewCacheTests(unittest.TestCase):
             output = root / "scene.mp4"
             source.write_bytes(b"x")
             output.write_bytes(b"")
-            self.assertFalse(build_preview.output_is_current(output, source))
+            self.assertFalse(preview_cache.output_is_current(output, source))
 
 
 if __name__ == "__main__":

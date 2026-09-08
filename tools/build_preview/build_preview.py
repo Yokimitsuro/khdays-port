@@ -65,6 +65,8 @@ import threading
 import time
 from pathlib import Path
 
+from preview_cache import output_is_current
+
 
 try:
     from PIL import Image
@@ -197,14 +199,6 @@ def find_exe() -> Path:
 
 
 EXE = find_exe()
-
-
-def output_is_current(output: Path, *inputs: Path) -> bool:
-    """Return whether a cached output was made from the current inputs."""
-    if not output.exists() or output.stat().st_size == 0:
-        return False
-    output_time = output.stat().st_mtime_ns
-    return all(output_time >= source.stat().st_mtime_ns for source in inputs)
 
 
 def run(args: list, timeout: int = 300) -> tuple[bool, str, str]:
