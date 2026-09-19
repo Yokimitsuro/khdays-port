@@ -23,6 +23,30 @@ Practically: push the decomp-independent track hard now to reach a rich asset
 viewer / renderer, and fold in game subsystems as their behavior becomes clear.
 The format understanding produced here also feeds back into the decompilation.
 
+### Opportunity map at decomp pin `9d41e6ab`
+
+The submodule update is substantially broader than ov022. The most immediately
+useful, semantically identifiable overlays are:
+
+- **ov008 (99.7%)**: the in-game paged menu; useful for the pause/camp UI and
+  already cross-referenced by `OV008_MENU.md`;
+- **ov023 (99.1%)**: event/dual-3D staging. Its resource strings cover
+  `ev/EV_*.p2`, event cameras, character/weapon targets and shared effects, so
+  it is the next strong source for in-engine scenes after basic actor motion;
+- **ov025 (98.5%)**: `CAMPMENUMNGR` and the large `UI/cm` family: root, status,
+  select, save, configuration, mission lists and tutorials;
+- **ov026 (98.8%)**: the shop path (`ui/shop/*`) and its localized strings;
+- **ov107 (100%)**: battle/shared-effect resources including burn, frost and
+  shock status effects.
+
+There are also large mechanical deltas in many later overlays (notably ov245,
+ov253 and the 200-series) plus SDK/library and Ghidra-sync tooling. Completion
+percentage alone is not enough to assign gameplay meaning, so they stay in the
+audit queue until call sites and resource paths identify their contracts. For
+the playable slice the practical order is still actor graph/weapon/collision,
+then hitboxes/damage/effects, enemy actor/AI, event staging, and finally the
+camp/shop UI families.
+
 ## Phase 0 — Bootstrap
 
 - Establish README, license, notices, and contribution rules.
@@ -216,9 +240,9 @@ not ported). Port or replace the minimum required systems for:
   **Attract/demo — reverse-engineered, deliberately not implemented:** the title
   stamps a tick on entry and re-stamps it on any activity; once idle for
   **105 seconds** it loads **ov012** inline (not via a scene change) to play a
-  cutscene. The cutscenes are `mv/*.mods` = **MODSN3 (MobiClip)**, a proprietary
-  DS codec, so the timer is left unimplemented until a decoder exists — it would
-  otherwise only show a blank screen.)*
+  cutscene. The cutscenes are `mv/*.mods` = **MODSN3 (MobiClip)**. Their native
+  decoder/player is now available; only the title's 105-second attract trigger
+  remains to be wired.)*
 - memory arenas;
 - archives and filesystem; *(started — `khdays::vfs` resolves a NitroFS game
   path (e.g. `/db/db_en.p2`, `/mi/ch/03/slot_7/0000.nsbmd`) to the extracted
@@ -242,17 +266,20 @@ not ported). Port or replace the minimum required systems for:
 The native flow now runs **boot logos → title/menus → character select →
 gameplay**. Scene 2 is registered (`kSceneGameplay`) and contains a deliberately
 narrow, non-canonical bring-up harness in `wd_tt` room 0: the real Roxas model,
-distinct idle/locomotion clips, a real Keyblade attached to the weapon target
+  distinct idle/locomotion clips, a profile-selected Keyblade attached to the weapon target
 bone, floor and lateral room collision, camera-relative movement, a follow
 camera, and a goal ring. It exercises the native gameplay path while ov002
 mission, combat, and HUD behavior are reconstructed.
 
-Two front-end screens are understood but **not** ported, on purpose:
+One front-end screen is understood but **not** ported, on purpose:
 
 - the **save-file screen** ("Cargar": three file rows at Y=18/54/90 with the
   selected row indented, plus a "JUEGO INVITADO" row in the Mission flow) — its
   layout is known, but the port has no save system yet;
-- the **attract cutscene** — blocked on MobiClip (see above).
+
+The MobiClip path is no longer a blocker: movies are decoded in the preview and
+played by the native video service. The remaining attract work is scene timing
+and integration.
 
 **Exit condition:** the runtime reaches a recognizable game-owned state without executing Nintendo DS binaries directly. *(met — the boot→title→character-select→gameplay flow reaches scene 2/ov002.)*
 
@@ -262,7 +289,8 @@ The first narrow, reproducible target is in progress:
 
 - [x] one real room: `mi/wd/wd_tt`, room 0;
 - [x] real Roxas model with distinct idle and locomotion skeletal clips;
-- [x] real `ro_w01000` Keyblade attached to Roxas's `ro_w_tg_R` bone;
+- [x] real profile-selected `w_.p2` Keyblade attached to Roxas's
+  `ro_w_tg_R` bone;
 - [x] camera-relative player movement and follow camera;
 - [x] room collision used for walkable ground and lateral sphere sweeps;
 - [x] near/far clipping and repeating room textures in the CPU path;
@@ -273,6 +301,11 @@ The first narrow, reproducible target is in progress:
   records, language character sheet, `cmd.s.z`, and small battle font;
 - [x] wire the original X-button primary-command cycle, including unavailable
   slot skipping and wraparound;
+- [x] decode the ov002/ov022 actor resource chain `wp.b.z -> ci.b.z -> cm.b.z
+  -> am.p2`, dispatch its first non-looping action, expose subsequent graph rows
+  for inspection, and preserve the weapon attachment;
+- [x] add a deterministic actor debug room with solid test obstacles, profile
+  and action cycling, on-screen source indices, and a headless snapshot mode;
 - [ ] complete command execution and reconstruct the expanded Magic/Items,
   party, target, and mission HUD tile layouts; *(the exact 0x7e profile loadout
   decoder, split availability inputs, and neutral A-button primary dispatch

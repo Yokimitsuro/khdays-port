@@ -101,10 +101,35 @@ and NSBCA playback (GPU path). For a world archive, `--world-info` lists its
 rooms and models and `--extract-world` writes each `KAPH` out in the
 `slot_N/0000.ext` layout that viewer already reads. The gameplay scene now uses
 that same neutral 3D data in the native frame loop: it renders `wd_tt` room 0,
-the real animated Roxas model, its `ro_w01000` Keyblade from `ba/ch/ro/w_.p2`,
+the real animated Roxas model, the profile-selected Keyblade from
+`ba/ch/ro/w_.p2`,
 and a small goal ring offscreen to RGBA before blitting it through the game
 renderer. The room-data collision mesh supplies both the floor query and a
 lateral sphere sweep. Run the harness directly with `--playable-demo`.
+
+The character/weapon selection has also been checked against ov002/ov022's
+loader paths and the internal Nitro dictionaries rather than inferred from
+filenames. `def.p` indices 0/1 are `b_ro_A000` (39-frame idle) and
+`b_ro_A001` (18-frame locomotion). Attack selection follows the actual resource
+chain: `wp.b.z` supplies the visible `w_.p2` model index and CI variant;
+`ci.b.z` supplies action ids; `cm.b.z` maps those ids to rows in `am.p2`; and
+each selected `am.p2` KAPH supplies the NSBCA. `ab.p2` is an actor-effects
+archive and must not be treated as an animation bank. The separate
+`hit_model_index + 0xa0` path is exposed by the debug UI but is not yet used for
+hit detection.
+
+Run `--debug-room` for the port-owned actor laboratory. It deliberately
+bypasses story setup while using the same Roxas loader, skinning, weapon-bone
+attachment and command path as gameplay. The neutral arena has fixed bounds and
+three solid obstacles so movement and wall sliding can be checked independently
+of a mission map. `Z` starts the first decoded action and queues the next graph
+row; `A` cycles valid weapon/action profiles; Right Shift previews the next
+decoded action; arrows move; `Q/E` rotate the camera. The lower screen reports
+the selected WP row, visible weapon index, hit-model index, CI variant and AM
+row. `--debug-room-shot OUT.bmp [FRAMES] [BUTTON]` provides a reproducible
+headless capture (`a` = profile, `t` = animation). Exact combo input windows,
+hitboxes and actor effects remain future work; the room is an inspection tool,
+not a claim that combat is already 1:1.
 
 ## HUD reconstruction status
 

@@ -149,6 +149,9 @@ void register_native_scenes(khdays::game::Game& game) {
     game.scenes().register_scene(khdays::game::kSceneGameplay, [] {
         return std::make_unique<khdays::game::scenes::GameplayScene>();
     });
+    game.scenes().register_scene(khdays::game::kSceneDebugRoom, [] {
+        return std::make_unique<khdays::game::scenes::GameplayScene>(true);
+    });
 }
 
 // --- viewer skin payload ---------------------------------------------------
@@ -425,6 +428,8 @@ void print_help() {
         << "  khdays-port --day-transition-shot OUT.bmp [FRAME]\n"
         << "  khdays-port --playable-demo\n"
         << "  khdays-port --playable-shot OUT.bmp [FRAMES] [BUTTON]\n"
+        << "  khdays-port --debug-room\n"
+        << "  khdays-port --debug-room-shot OUT.bmp [FRAMES] [BUTTON]\n"
         << "  khdays-port --game-demo\n"
         << "  khdays-port --render-tiles NCGR NCLR OUT.bmp [PALETTE]\n"
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
@@ -474,9 +479,11 @@ void print_help() {
         << "  --opening-demo      Start directly in ov012's movie/artwork sequence.\n"
         << "  --day-transition-demo  Start in ov004's post-opening day transition.\n"
         << "  --day-transition-shot  Render ov004's day-255 transition headlessly.\n"
-        << "  --playable-demo     Start directly in the playable wd_zz room-0 slice.\n"
+        << "  --playable-demo     Start directly in the playable wd_tt room-0 slice.\n"
         << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
         << "                      u/d/l/r/q/e or press z/s for FRAMES.\n"
+        << "  --debug-room        Open the actor/weapon/action/collision laboratory.\n"
+        << "  --debug-room-shot   Render its headless snapshot; a=profile, t=animation.\n"
         << "  --game-demo         Run the scene/task frame loop headless (logs the flow).\n"
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
@@ -994,9 +1001,9 @@ int main(int argc, char* argv[]) {
             return EXIT_SUCCESS;
         }
 
-        if (first == "--playable-shot") {
+        if (first == "--playable-shot" || first == "--debug-room-shot") {
             if (argc < 3 || argc > 5) {
-                std::cerr << "ERROR: --playable-shot requires an output BMP "
+                std::cerr << "ERROR: " << first << " requires an output BMP "
                              "plus optional FRAMES and BUTTON\n";
                 return EXIT_FAILURE;
             }
@@ -1006,7 +1013,10 @@ int main(int argc, char* argv[]) {
             }
             khdays::game::Game game;
             register_native_scenes(game);
-            game.scenes().start(khdays::game::kSceneGameplay);
+            const bool debug_room = first == "--debug-room-shot";
+            game.scenes().start(
+                debug_room ? khdays::game::kSceneDebugRoom
+                           : khdays::game::kSceneGameplay);
             for (int frame = 0; frame < 31; ++frame) {
                 game.step();
             }
@@ -1023,6 +1033,8 @@ int main(int argc, char* argv[]) {
                 case 'e': button = khdays::game::Button::R; break;
                 case 'z': button = khdays::game::Button::A; break;
                 case 's': button = khdays::game::Button::X; break;
+                case 'a': button = khdays::game::Button::Y; break;
+                case 't': button = khdays::game::Button::Select; break;
                 default: valid_button = false; break;
             }
             for (int frame = 0; frame < input_frames; ++frame) {
@@ -1052,13 +1064,14 @@ int main(int argc, char* argv[]) {
                 std::cerr << "ERROR: could not write " << argv[2] << '\n';
                 return EXIT_FAILURE;
             }
-            std::cout << "Playable snapshot -> BMP: " << argv[2] << '\n';
+            std::cout << (debug_room ? "Debug-room" : "Playable")
+                      << " snapshot -> BMP: " << argv[2] << '\n';
             return EXIT_SUCCESS;
         }
 
         if (first == "--game" || first == "--opening-demo"
             || first == "--day-transition-demo"
-            || first == "--playable-demo") {
+            || first == "--playable-demo" || first == "--debug-room") {
             if (!khdays::vfs::autodetect_data_root()) {
                 std::cerr << "note: no extracted data under data/extracted; "
                              "scenes will show without game assets\n";
@@ -1071,6 +1084,8 @@ int main(int argc, char* argv[]) {
                 game.scenes().start(khdays::game::kSceneDayTransition, 0x190);
             } else if (first == "--playable-demo") {
                 game.scenes().start(khdays::game::kSceneGameplay);
+            } else if (first == "--debug-room") {
+                game.scenes().start(khdays::game::kSceneDebugRoom);
             } else {
                 game.boot(0);
             }

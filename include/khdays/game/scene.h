@@ -45,6 +45,9 @@ inline constexpr SceneId kSceneMainMenu = 19;  // Mission Mode main menu (ov08);
 // MODO MISION > UN JUGADOR and the character select. The id is the port's own:
 // this screen is part of ov000 rather than a scene the DS dispatches by id.
 inline constexpr SceneId kSceneSaveFile = 100;
+// Port-owned actor laboratory. It deliberately bypasses mission/story setup
+// while using the same ov002 actor, action and rendering paths as gameplay.
+inline constexpr SceneId kSceneDebugRoom = 101;
 
 // One game state. Override the hooks that matter; the default is a no-op.
 class Scene {

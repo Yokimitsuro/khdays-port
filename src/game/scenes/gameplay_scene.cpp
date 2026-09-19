@@ -1,10 +1,14 @@
 #include "khdays/game/scenes/gameplay_scene.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "khdays/assets/message.h"
@@ -23,10 +27,16 @@ namespace {
 constexpr char kFont[] = "text/font_eu_08.nftr";
 constexpr char kWorld[] = "tt";
 constexpr char kWorldPath[] = "mi/wd/wd_tt";
+constexpr char kRoxasWeaponProfiles[] = "ba/ch/ro/wp.b.z";
+constexpr char kRoxasActionGraph[] = "ba/ch/ro/ci.b.z";
+constexpr char kRoxasActionMetadata[] = "ba/ch/ro/cm.b.z";
+constexpr char kRoxasAnimationBank[] = "ba/ch/ro/am.p2";
+constexpr char kRoxasWeaponBank[] = "ba/ch/ro/w_.p2";
 constexpr std::size_t kRoom = 0U;
 constexpr int kFadeIn = 30;
 constexpr float kFxScale = 4096.0F;
 constexpr float kPi = 3.14159265358979323846F;
+constexpr float kDebugHalfExtent = 12.0F;
 
 std::array<float, 16> actor_transform(
     const float x,
@@ -88,9 +98,82 @@ khdays::assets::NeutralModel make_goal_model() {
     return model;
 }
 
+void add_box(
+    khdays::assets::NeutralMesh& mesh,
+    const std::array<float, 3>& minimum,
+    const std::array<float, 3>& maximum,
+    const std::array<std::uint8_t, 4>& color) {
+    const std::uint32_t base = static_cast<std::uint32_t>(
+        mesh.vertices.size());
+    const std::array<std::array<float, 3>, 8> points{{
+        {minimum[0], minimum[1], minimum[2]},
+        {maximum[0], minimum[1], minimum[2]},
+        {maximum[0], maximum[1], minimum[2]},
+        {minimum[0], maximum[1], minimum[2]},
+        {minimum[0], minimum[1], maximum[2]},
+        {maximum[0], minimum[1], maximum[2]},
+        {maximum[0], maximum[1], maximum[2]},
+        {minimum[0], maximum[1], maximum[2]}}};
+    for (const auto& point : points) {
+        khdays::assets::NeutralVertex vertex;
+        vertex.position = point;
+        vertex.color = color;
+        mesh.vertices.push_back(vertex);
+    }
+    constexpr std::array<std::uint32_t, 36> indices{{
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
+        0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2,
+        1, 2, 6, 1, 6, 5, 0, 4, 7, 0, 7, 3}};
+    for (const auto index : indices) {
+        mesh.indices.push_back(base + index);
+    }
+}
+
+khdays::resource::RoomModel make_debug_room() {
+    khdays::resource::RoomModel room;
+    room.name = "actor_debug_room";
+    room.model.name = room.name;
+    khdays::assets::NeutralMesh mesh;
+    mesh.name = "debug_geometry";
+    add_box(mesh, {-12.0F, -0.25F, -12.0F}, {12.0F, 0.0F, 12.0F},
+            {72U, 86U, 112U, 255U});
+    add_box(mesh, {-12.0F, 0.0F, -12.0F}, {-11.5F, 2.5F, 12.0F},
+            {98U, 116U, 151U, 255U});
+    add_box(mesh, {11.5F, 0.0F, -12.0F}, {12.0F, 2.5F, 12.0F},
+            {98U, 116U, 151U, 255U});
+    add_box(mesh, {-12.0F, 0.0F, -12.0F}, {12.0F, 2.5F, -11.5F},
+            {98U, 116U, 151U, 255U});
+    add_box(mesh, {-12.0F, 0.0F, 11.5F}, {12.0F, 2.5F, 12.0F},
+            {98U, 116U, 151U, 255U});
+    add_box(mesh, {-2.2F, 0.0F, -1.2F}, {2.2F, 1.4F, 1.2F},
+            {181U, 99U, 82U, 255U});
+    add_box(mesh, {3.0F, 0.0F, -7.0F}, {4.4F, 2.2F, -2.0F},
+            {88U, 157U, 123U, 255U});
+    add_box(mesh, {-7.0F, 0.0F, 3.0F}, {-4.0F, 1.0F, 4.2F},
+            {155U, 121U, 186U, 255U});
+    room.model.meshes.push_back(std::move(mesh));
+    return room;
+}
+
+bool circle_overlaps_box(
+    const float x, const float z, const float radius,
+    const float min_x, const float max_x,
+    const float min_z, const float max_z) {
+    const float nearest_x = std::clamp(x, min_x, max_x);
+    const float nearest_z = std::clamp(z, min_z, max_z);
+    const float dx = x - nearest_x;
+    const float dz = z - nearest_z;
+    return dx * dx + dz * dz < radius * radius;
+}
+
 }  // namespace
 
 void GameplayScene::on_enter(SceneManager& manager) {
+    if (debug_room_) {
+        command_available_ = {true, false, false};
+        load_playable_harness();
+        return;
+    }
     const auto& session = manager.mission_session();
     command_available_ = session.panel_loadout && session.panel_availability
         ? khdays::assets::ov002_command_availability(
@@ -134,31 +217,51 @@ void GameplayScene::load_playable_harness() {
     player_gauge_ = {};
     command_menu_ = {};
     command_index_ = 0U;
+    weapon_profile_index_ = 0U;
+    attack_step_ = 0U;
+    attacking_ = false;
+    attack_queued_ = false;
+    attack_animations_.clear();
+    attack_rows_.clear();
+    weapon_profiles_.clear();
+    player_textures_.clear();
+    weapon_textures_.clear();
+    weapon_.reset();
+    debug_text_.reset();
     hud_hp_ = 0xffffU;
     hud_max_hp_ = 0xffffU;
     controls_text_ = khdays::resource::render_ui_text(
-        kFont, u"FLECHAS: MOVER  Q/E: CAMARA  S: ORDEN  X: VOLVER");
+        kFont,
+        debug_room_
+            ? u"Z: ATACAR  A: PERFIL  SHIFT: ANIM  X: VOLVER"
+            : u"FLECHAS: MOVER  Z: ATACAR  S: ORDEN  X: VOLVER");
     complete_text_ = khdays::resource::render_ui_text(
         kFont, u"DEMO COMPLETADA - ENTER PARA REINICIAR");
 
     try {
-        room_ = khdays::resource::load_world_models(kWorld, {2U});
-        if (room_.empty()) {
-            throw std::runtime_error("wd_tt room model is unavailable");
-        }
+        if (debug_room_) {
+            room_.clear();
+            room_.push_back(make_debug_room());
+            collision_ = {};
+        } else {
+            room_ = khdays::resource::load_world_models(kWorld, {2U});
+            if (room_.empty()) {
+                throw std::runtime_error("wd_tt room model is unavailable");
+            }
 
-        const auto room_data =
-            khdays::resource::room_data_subfile(kWorld, kRoom);
-        if (!room_data) {
-            throw std::runtime_error("wd_tt collision is unavailable");
-        }
-        const auto world = khdays::vfs::read(kWorldPath);
-        const auto blob = khdays::assets::extract_p2_subfile(
-            world.data(), world.size(), *room_data);
-        collision_ = khdays::assets::decode_collision_model(
-            blob.data(), blob.size());
-        if (!collision_.valid) {
-            throw std::runtime_error("wd_tt collision did not decode");
+            const auto room_data =
+                khdays::resource::room_data_subfile(kWorld, kRoom);
+            if (!room_data) {
+                throw std::runtime_error("wd_tt collision is unavailable");
+            }
+            const auto world = khdays::vfs::read(kWorldPath);
+            const auto blob = khdays::assets::extract_p2_subfile(
+                world.data(), world.size(), *room_data);
+            collision_ = khdays::assets::decode_collision_model(
+                blob.data(), blob.size());
+            if (!collision_.valid) {
+                throw std::runtime_error("wd_tt collision did not decode");
+            }
         }
 
         const auto model_path = khdays::vfs::resolve(
@@ -193,36 +296,14 @@ void GameplayScene::load_playable_harness() {
                 khdays::resource::load_animation(*animation_path, 1U);
         }
 
-        // w_d00.p is an attack effect, not the held weapon. Roxas's actual
-        // weapon models live as KAPH sub-files in w_.p2; sub-file 1 is the
-        // default ro_w01000 Keyblade used by this playable slice.
-        const auto weapon_archive = khdays::vfs::read("ba/ch/ro/w_.p2");
-        const auto weapon_blob = khdays::assets::extract_p2_subfile(
-            weapon_archive.data(), weapon_archive.size(), 1U);
-        const auto weapon_pack = khdays::assets::parse_slot_container(
-            weapon_blob.data(), weapon_blob.size());
-        if (weapon_pack.valid && weapon_pack.slots.size() > 7U
-            && !weapon_pack.slots[7].empty()) {
-            const auto& bmd = weapon_pack.slots[7].front();
-            khdays::resource::LoadedModel loaded;
-            loaded.model = khdays::assets::decode_model_geometry(
-                bmd.data, bmd.size);
-            weapon_ = std::move(loaded);
-            for (const auto& mesh : weapon_->model.meshes) {
-                if (mesh.texture_name.empty()
-                    || weapon_textures_.count(mesh.texture_name) != 0U) {
-                    continue;
-                }
-                try {
-                    weapon_textures_.emplace(
-                        mesh.texture_name,
-                        khdays::assets::load_tex0_texture(
-                            bmd.data, bmd.size, mesh.texture_name));
-                } catch (const std::exception&) {
-                    // Missing material textures fall back to vertex colour.
-                }
-            }
+        const auto profiles = khdays::assets::lz_decompress(
+            khdays::vfs::read(kRoxasWeaponProfiles));
+        weapon_profiles_ = khdays::assets::decode_actor_weapon_profiles(
+            profiles.data(), profiles.size());
+        if (weapon_profiles_.empty()) {
+            throw std::runtime_error("Roxas weapon profiles are unavailable");
         }
+        load_actor_profile(0U);
 
         goal_model_ = make_goal_model();
         const auto probe = [this](const float x, const float z) {
@@ -244,11 +325,123 @@ void GameplayScene::load_playable_harness() {
         if (!ready_) {
             throw std::runtime_error("playable room has no walkable start/goal");
         }
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         ready_ = false;
+        std::cerr << (debug_room_ ? "debug room" : "gameplay harness")
+                  << ": " << error.what() << '\n';
         error_text_ = khdays::resource::render_ui_text(
             kFont, u"DEMO NO DISPONIBLE - EXTRAE LOS DATOS DEL JUEGO");
     }
+}
+
+void GameplayScene::load_actor_profile(const std::size_t profile_index) {
+    if (weapon_profiles_.empty()) {
+        throw std::runtime_error("actor has no weapon profiles");
+    }
+    const std::size_t selected = profile_index % weapon_profiles_.size();
+    const auto& profile = weapon_profiles_[selected];
+
+    // func_ov022_020b0720 installs ci/cm and then claims am.p2 rows for the
+    // selected 0x20-byte action profile. Keep that exact indirection here:
+    // graph action id -> CM record -> AM sub-file.
+    const auto ci = khdays::assets::lz_decompress(
+        khdays::vfs::read(kRoxasActionGraph));
+    const auto cm = khdays::assets::lz_decompress(
+        khdays::vfs::read(kRoxasActionMetadata));
+    const auto action_ids = khdays::assets::decode_actor_action_ids(
+        ci.data(), ci.size(), profile.combo_variant, 0U);
+    const auto animation_archive = khdays::vfs::read(kRoxasAnimationBank);
+
+    std::vector<std::size_t> rows;
+    std::vector<khdays::assets::SkeletalAnimation> animations;
+    for (const auto action_id : action_ids) {
+        const auto row = khdays::assets::actor_action_animation_row(
+            cm.data(), cm.size(), action_id);
+        if (!row || std::find(rows.begin(), rows.end(), *row) != rows.end()) {
+            continue;
+        }
+        const auto blob = khdays::assets::extract_p2_subfile(
+            animation_archive.data(), animation_archive.size(), *row);
+        const auto pack = khdays::assets::parse_slot_container(
+            blob.data(), blob.size());
+        if (!pack.valid || pack.slots.empty() || pack.slots[0].empty()) {
+            continue;
+        }
+        const auto& bca = pack.slots[0].front();
+        auto animation = khdays::assets::load_nsbca(
+            bca.data, bca.size, 0U);
+        if (animation.frame_count == 0U) {
+            continue;
+        }
+        rows.push_back(*row);
+        animations.push_back(std::move(animation));
+    }
+    if (animations.empty()) {
+        throw std::runtime_error("selected action graph has no animations");
+    }
+
+    const auto weapon_archive = khdays::vfs::read(kRoxasWeaponBank);
+    const auto weapon_blob = khdays::assets::extract_p2_subfile(
+        weapon_archive.data(), weapon_archive.size(), profile.model_index);
+    const auto weapon_pack = khdays::assets::parse_slot_container(
+        weapon_blob.data(), weapon_blob.size());
+    if (!weapon_pack.valid || weapon_pack.slots.size() <= 7U
+        || weapon_pack.slots[7].empty()) {
+        throw std::runtime_error("selected weapon model is unavailable");
+    }
+    const auto& bmd = weapon_pack.slots[7].front();
+    khdays::resource::LoadedModel loaded_weapon;
+    loaded_weapon.model = khdays::assets::decode_model_geometry(
+        bmd.data, bmd.size);
+    if (loaded_weapon.model.meshes.empty()) {
+        throw std::runtime_error("selected weapon model has no geometry");
+    }
+    std::map<std::string, khdays::assets::DecodedTexture> weapon_textures;
+    for (const auto& mesh : loaded_weapon.model.meshes) {
+        if (mesh.texture_name.empty()
+            || weapon_textures.count(mesh.texture_name) != 0U) {
+            continue;
+        }
+        try {
+            weapon_textures.emplace(
+                mesh.texture_name,
+                khdays::assets::load_tex0_texture(
+                    bmd.data, bmd.size, mesh.texture_name));
+        } catch (const std::exception&) {
+            // Missing material textures fall back to vertex colour.
+        }
+    }
+
+    weapon_profile_index_ = selected;
+    attack_step_ = 0U;
+    attack_rows_ = std::move(rows);
+    attack_animations_ = std::move(animations);
+    weapon_ = std::move(loaded_weapon);
+    weapon_textures_ = std::move(weapon_textures);
+    update_debug_text();
+}
+
+void GameplayScene::update_debug_text() {
+    if (!debug_room_ || weapon_profiles_.empty()
+        || weapon_profile_index_ >= weapon_profiles_.size()) {
+        debug_text_.reset();
+        return;
+    }
+    const auto& profile = weapon_profiles_[weapon_profile_index_];
+    std::ostringstream line;
+    line << "WP " << weapon_profile_index_
+         << "  W " << static_cast<unsigned>(profile.model_index)
+         << "  HIT " << static_cast<unsigned>(profile.hit_model_index) + 0xa0U
+         << "  CI " << static_cast<unsigned>(profile.combo_variant)
+         << "  AM ";
+    if (attack_rows_.empty()) {
+        line << '-';
+    } else {
+        line << attack_step_ + 1U << '/' << attack_rows_.size()
+             << " ROW " << attack_rows_[attack_step_];
+    }
+    debug_text_ = khdays::resource::render_ui_text(
+        kFont, khdays::assets::message_from_utf8(line.str()));
 }
 
 void GameplayScene::finish_story_movie(SceneManager& manager) {
@@ -281,6 +474,15 @@ void GameplayScene::finish_story_movie(SceneManager& manager) {
 std::optional<float> GameplayScene::ground_height(
     const float x,
     const float z) const {
+    if (debug_room_) {
+        if (x <= -kDebugHalfExtent + 0.5F
+            || x >= kDebugHalfExtent - 0.5F
+            || z <= -kDebugHalfExtent + 0.5F
+            || z >= kDebugHalfExtent - 0.5F) {
+            return std::nullopt;
+        }
+        return 0.0F;
+    }
     if (!collision_.valid) {
         return std::nullopt;
     }
@@ -295,24 +497,47 @@ std::optional<float> GameplayScene::ground_height(
     return static_cast<float>(hit.y) / kFxScale;
 }
 
+bool GameplayScene::debug_motion_allowed(
+    const float x, const float z, const float radius) const {
+    if (x - radius <= -kDebugHalfExtent + 0.5F
+        || x + radius >= kDebugHalfExtent - 0.5F
+        || z - radius <= -kDebugHalfExtent + 0.5F
+        || z + radius >= kDebugHalfExtent - 0.5F) {
+        return false;
+    }
+    return !circle_overlaps_box(
+               x, z, radius, -2.2F, 2.2F, -1.2F, 1.2F)
+        && !circle_overlaps_box(
+               x, z, radius, 3.0F, 4.4F, -7.0F, -2.0F)
+        && !circle_overlaps_box(
+               x, z, radius, -7.0F, -4.0F, 3.0F, 4.2F);
+}
+
 void GameplayScene::update_animation() {
     if (!player_ || !idle_animation_
         || idle_animation_->frame_count == 0U
         || player_->model.skinning == nullptr) {
         return;
     }
-    const bool moving = controller_.state().moving;
+    const bool playing_attack = attacking_
+        && attack_step_ < attack_animations_.size()
+        && attack_animations_[attack_step_].frame_count > 0U;
+    const bool moving = !playing_attack && controller_.state().moving;
     const khdays::assets::SkeletalAnimation* animation = &*idle_animation_;
-    if (moving && walk_animation_ && walk_animation_->frame_count > 0U) {
+    if (playing_attack) {
+        animation = &attack_animations_[attack_step_];
+    } else if (moving && walk_animation_ && walk_animation_->frame_count > 0U) {
         animation = &*walk_animation_;
     }
-    if (moving != animation_was_moving_) {
+    if (!playing_attack && moving != animation_was_moving_) {
         animation_frame_ = 0.0F;
         animation_was_moving_ = moving;
     }
-    animation_frame_ += 1.0F;
-    animation_frame_ = std::fmod(
-        animation_frame_, static_cast<float>(animation->frame_count));
+    if (!playing_attack) {
+        animation_frame_ += 1.0F;
+        animation_frame_ = std::fmod(
+            animation_frame_, static_cast<float>(animation->frame_count));
+    }
     const auto objects = khdays::assets::sample_animation(
         *animation, animation_frame_,
         player_->model.object_matrices);
@@ -333,6 +558,26 @@ void GameplayScene::update_animation() {
             if (index < bone_world.size()) {
                 weapon_bone_transform_ = bone_world[index];
                 weapon_attached_ = true;
+            }
+        }
+    }
+
+    if (playing_attack) {
+        animation_frame_ += 1.0F;
+        if (animation_frame_
+            >= static_cast<float>(animation->frame_count)) {
+            animation_frame_ = 0.0F;
+            if (attack_queued_
+                && attack_step_ + 1U < attack_animations_.size()) {
+                ++attack_step_;
+                attack_queued_ = false;
+                update_debug_text();
+            } else {
+                attacking_ = false;
+                attack_queued_ = false;
+                attack_step_ = 0U;
+                animation_was_moving_ = false;
+                update_debug_text();
             }
         }
     }
@@ -392,10 +637,37 @@ void GameplayScene::update(SceneManager& manager) {
         return;
     }
 
+    if (debug_room_ && !attacking_ && input.just_pressed(Button::Y)
+        && weapon_profiles_.size() > 1U) {
+        for (std::size_t offset = 1U; offset <= weapon_profiles_.size();
+             ++offset) {
+            const auto candidate =
+                (weapon_profile_index_ + offset) % weapon_profiles_.size();
+            try {
+                load_actor_profile(candidate);
+                animation_frame_ = 0.0F;
+                break;
+            } catch (const std::exception&) {
+                // Some rows intentionally refer to actor-specific assets not
+                // present in Roxas's archive; keep walking the real table.
+            }
+        }
+    }
+    if (debug_room_ && !attacking_
+        && input.just_pressed(Button::Select)
+        && !attack_animations_.empty()) {
+        attack_step_ = (attack_step_ + 1U) % attack_animations_.size();
+        attacking_ = true;
+        attack_queued_ = false;
+        animation_frame_ = 0.0F;
+        update_debug_text();
+    }
+
     // ov022 tests the DS X bit (0x400) before calling
     // func_ov002_02056cc8 -> func_ov002_0205d658. That routine advances the
     // primary command ring, skipping slot value 7 and wrapping at the end.
-    if (input.just_pressed(Button::X) && command_menu_artwork_) {
+    if (!attacking_ && input.just_pressed(Button::X)
+        && command_menu_artwork_) {
         const std::size_t next = khdays::assets::advance_ov002_command(
             command_index_, command_available_);
         if (next != command_index_) {
@@ -411,15 +683,47 @@ void GameplayScene::update(SceneManager& manager) {
         const float from_x, const float from_y, const float from_z,
         const float to_x, const float to_y, const float to_z,
         const float radius) {
+        if (debug_room_) {
+            return debug_motion_allowed(to_x, to_z, radius);
+        }
         return !khdays::assets::sweep_sphere(
                     collision_, {from_x, from_y, from_z},
                     {to_x, to_y, to_z}, radius)
                     .hit;
     };
+
+    // ov022's A bit reaches func_ov002_02056d48 and
+    // func_ov002_0205dae4. Primary action 9 is Attack. The motion list here
+    // follows wp -> ci -> cm -> am.p2; ab.p2 is the separate effect bank.
+    if (!attacking_ && !controller_.state().completed
+        && input.just_pressed(Button::A)
+        && khdays::assets::activate_ov002_command(
+               command_index_, command_available_)
+            == khdays::assets::Ov002CommandPage::Attack
+        && !attack_animations_.empty()
+        && attack_animations_[0].frame_count > 0U) {
+        attack_step_ = 0U;
+        attacking_ = true;
+        attack_queued_ = false;
+        animation_frame_ = 0.0F;
+        update_debug_text();
+    } else if (attacking_ && input.just_pressed(Button::A)) {
+        // The exact cancel/window data is not applied yet; this deliberately
+        // exposes the next graph row for inspection when the clip completes.
+        attack_queued_ = true;
+    }
     if (controller_.state().completed
         && input.just_pressed(Button::Start)) {
         controller_.reset(probe);
         animation_frame_ = 0.0F;
+        attacking_ = false;
+        attack_queued_ = false;
+        attack_step_ = 0U;
+        update_debug_text();
+    } else if (attacking_) {
+        // The attack state owns motion until its non-looping clip completes.
+        // An empty input also clears a locomotion flag left by the prior frame.
+        controller_.update(Input{}, probe, motion_probe);
     } else {
         controller_.update(input, probe, motion_probe);
     }
@@ -526,6 +830,9 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
             draw_bottom_centered(*error_text_, 88);
         }
     } else {
+        if (debug_text_) {
+            draw_bottom_centered(*debug_text_, 12);
+        }
         if (controls_text_) {
             draw_bottom_centered(*controls_text_, 172);
         }

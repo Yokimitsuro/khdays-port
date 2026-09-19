@@ -121,6 +121,7 @@ endif()
 add_library(
     khdays-assets
     STATIC
+        src/assets/actor_actions.cpp
         src/assets/animation.cpp
         src/assets/audio.cpp
         src/assets/battle_hud.cpp
@@ -281,6 +282,17 @@ khdays_enable_sanitizers(khdays-port)
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(
+        khdays-actor-actions-test
+        tests/cpp/test_actor_actions.cpp
+    )
+
+    target_link_libraries(
+        khdays-actor-actions-test
+        PRIVATE
+            khdays-assets
+    )
+
     add_executable(
         khdays-tex0-test
         tests/cpp/test_tex0.cpp
@@ -480,6 +492,7 @@ if(BUILD_TESTING)
     )
 
     if(MSVC)
+        target_compile_options(khdays-actor-actions-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-tex0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mdl0-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-mesh-test PRIVATE /W4 /permissive-)
@@ -499,6 +512,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-collision-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-battle-hud-test PRIVATE /W4 /permissive-)
     else()
+        target_compile_options(khdays-actor-actions-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-tex0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mdl0-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-mesh-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -519,6 +533,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-battle-hud-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
+    khdays_enable_sanitizers(khdays-actor-actions-test)
     khdays_enable_sanitizers(khdays-tex0-test)
     khdays_enable_sanitizers(khdays-mdl0-test)
     khdays_enable_sanitizers(khdays-mesh-test)
@@ -537,6 +552,11 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-ui-layout-test)
     khdays_enable_sanitizers(khdays-collision-test)
     khdays_enable_sanitizers(khdays-battle-hud-test)
+
+    add_test(
+        NAME khdays-actor-actions
+        COMMAND khdays-actor-actions-test
+    )
 
     add_test(
         NAME khdays-port-version
@@ -641,6 +661,7 @@ if(BUILD_TESTING)
     add_custom_target(
         khdays-asset-tests
         DEPENDS
+            khdays-actor-actions-test
             khdays-tex0-test
             khdays-mdl0-test
             khdays-mesh-test

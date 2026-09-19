@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "khdays/assets/animation.h"
+#include "khdays/assets/actor_actions.h"
 #include "khdays/assets/collision.h"
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/tex0.h"
@@ -24,6 +25,9 @@ namespace khdays::game::scenes {
 // remains a deliberately separate development harness.
 class GameplayScene final : public Scene {
 public:
+    explicit GameplayScene(bool debug_room = false)
+        : debug_room_(debug_room) {}
+
     void on_enter(SceneManager& manager) override;
     void update(SceneManager& manager) override;
     void render(SceneManager& manager, Renderer& renderer) override;
@@ -31,11 +35,14 @@ public:
 
 private:
     void load_playable_harness();
+    void load_actor_profile(std::size_t profile_index);
     void finish_story_movie(SceneManager& manager);
     std::optional<float> ground_height(float x, float z) const;
+    bool debug_motion_allowed(float x, float z, float radius) const;
     void update_animation();
     void update_battle_hud();
     void update_command_menu();
+    void update_debug_text();
 
     std::vector<khdays::resource::RoomModel> room_;
     std::optional<khdays::resource::LoadedModel> player_;
@@ -44,6 +51,9 @@ private:
     std::map<std::string, khdays::assets::DecodedTexture> weapon_textures_;
     std::optional<khdays::assets::SkeletalAnimation> idle_animation_;
     std::optional<khdays::assets::SkeletalAnimation> walk_animation_;
+    std::vector<khdays::assets::SkeletalAnimation> attack_animations_;
+    std::vector<std::size_t> attack_rows_;
+    std::vector<khdays::assets::ActorWeaponProfile> weapon_profiles_;
     std::optional<khdays::resource::BattleHudArtwork> battle_hud_;
     std::optional<khdays::assets::Ov002CommandMenuArtwork>
         command_menu_artwork_;
@@ -56,6 +66,7 @@ private:
     VideoFrame video_frame_{};
 
     std::optional<khdays::assets::DecodedTexture> controls_text_;
+    std::optional<khdays::assets::DecodedTexture> debug_text_;
     std::optional<khdays::assets::DecodedTexture> complete_text_;
     std::optional<khdays::assets::DecodedTexture> error_text_;
     std::array<float, 16> weapon_bone_transform_{
@@ -72,15 +83,20 @@ private:
     std::uint16_t hud_hp_ = 0xffffU;
     std::uint16_t hud_max_hp_ = 0xffffU;
     std::size_t command_index_ = 0U;
+    std::size_t weapon_profile_index_ = 0U;
+    std::size_t attack_step_ = 0U;
     std::array<bool, 3> command_available_{true, false, false};
     std::uint32_t story_day_ = 0U;
     std::optional<std::uint32_t> stored_day_after_movie_;
     std::optional<int> calendar_request_after_movie_;
     bool animation_was_moving_ = false;
+    bool attacking_ = false;
+    bool attack_queued_ = false;
     bool weapon_attached_ = false;
     bool ready_ = false;
     bool story_movie_ = false;
     bool movie_exiting_ = false;
+    bool debug_room_ = false;
 };
 
 }  // namespace khdays::game::scenes
