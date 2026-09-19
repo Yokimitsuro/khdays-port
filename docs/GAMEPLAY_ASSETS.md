@@ -110,7 +110,12 @@ lateral sphere sweep. Run the harness directly with `--playable-demo`.
 The character/weapon selection has also been checked against ov002/ov022's
 loader paths and the internal Nitro dictionaries rather than inferred from
 filenames. `def.p` indices 0/1 are `b_ro_A000` (39-frame idle) and
-`b_ro_A001` (18-frame locomotion). Attack selection follows the actual resource
+`b_ro_A001` (18-frame locomotion); indices 2/3/4 are the normal jump
+anticipation, air and landing clips. Their playback follows the node steps used
+by ov022 (`0x900` idle and `0xd00` while moving/jumping), rather than advancing
+one whole animation frame per host tick. DS B enters the normal jump with
+ov022's `0x630` impulse; the shared placement routine applies `0x80` gravity
+and the jump state caps the fall at `-0x420`. Attack selection follows the actual resource
 chain: `wp.b.z` supplies the visible `w_.p2` model index and CI variant;
 `ci.b.z` supplies action ids; `cm.b.z` maps those ids to rows in `am.p2`; and
 each selected `am.p2` KAPH supplies the NSBCA. `ab.p2` is an actor-effects
@@ -125,16 +130,16 @@ The neutral arena generates its rendered boxes and collision faces from one
 shared description, with fixed bounds and three solid obstacles, so movement,
 wall sliding and camera occlusion can be checked independently of a mission
 map. `Z` starts the first decoded action and queues the next graph
-row; `A` cycles valid weapon/action profiles; Right Shift previews the next
-decoded action; arrows move; `Q/E` rotate the camera. The lower screen reports
+row; `X` jumps; `A` cycles valid weapon/action profiles; Right Shift previews
+the next decoded action; arrows move; `Q/E` rotate the camera. The lower screen reports
 the selected WP row, visible weapon index, hit-model index, CI variant and AM
 row. F1 opens the developer console. It currently exposes `status`, `reset`,
 `profile N`, `anim N` and real SDAT BGM selection through
 `bgm field|battle|stop|NAME`. `spawn ID` is deliberately rejected until the
 enemy actor constructor and AI state are connected; the room never substitutes
 a placeholder mesh for a game actor. `--debug-room-shot OUT.bmp [FRAMES] [BUTTON]` provides a reproducible
-headless capture (`a` = profile, `t` = animation). Exact combo input windows,
-hitboxes, one-shot SEQARC sound effects and actor effects remain future work;
+headless capture (`x` = jump, `a` = profile, `t` = animation). Hitboxes,
+one-shot SEQARC sound effects, aerial attacks and actor effects remain future work;
 the room is an inspection tool,
 not a claim that combat is already 1:1.
 

@@ -303,6 +303,12 @@ void GameplayScene::load_playable_harness() {
     attack_step_ = 0U;
     attacking_ = false;
     attack_queued_ = false;
+    base_animation_slot_ = -1;
+    idle_animation_.reset();
+    walk_animation_.reset();
+    jump_start_animation_.reset();
+    jump_air_animation_.reset();
+    jump_land_animation_.reset();
     attack_animations_.clear();
     attack_actions_.clear();
     weapon_profiles_.clear();
@@ -315,8 +321,8 @@ void GameplayScene::load_playable_harness() {
     controls_text_ = khdays::resource::render_ui_text(
         kFont,
         debug_room_
-            ? u"F1: CONSOLA  Z: ATACAR  A: PERFIL  SHIFT: ANIM"
-            : u"FLECHAS: MOVER  Z: ATACAR  S: ORDEN  X: VOLVER");
+            ? u"F1: CONSOLA  Z: ATACAR  X: SALTAR  A: PERFIL"
+            : u"FLECHAS: MOVER  Z: ATACAR  X: SALTAR  S: ORDEN");
     complete_text_ = khdays::resource::render_ui_text(
         kFont, u"DEMO COMPLETADA - ENTER PARA REINICIAR");
 
@@ -376,6 +382,12 @@ void GameplayScene::load_playable_harness() {
                 khdays::resource::load_animation(*animation_path, 0U);
             walk_animation_ =
                 khdays::resource::load_animation(*animation_path, 1U);
+            jump_start_animation_ =
+                khdays::resource::load_animation(*animation_path, 2U);
+            jump_air_animation_ =
+                khdays::resource::load_animation(*animation_path, 3U);
+            jump_land_animation_ =
+                khdays::resource::load_animation(*animation_path, 4U);
         }
 
         const auto profiles = khdays::assets::lz_decompress(
@@ -567,6 +579,7 @@ void GameplayScene::reset_actor() {
          controller_.state().z});
     controller_.set_camera_yaw(camera_.yaw_radians());
     animation_frame_ = 0.0F;
+    base_animation_slot_ = -1;
     attacking_ = false;
     attack_queued_ = false;
     attack_step_ = 0U;
@@ -594,7 +607,11 @@ std::string GameplayScene::execute_debug_command(
         std::ostringstream status;
         status << "Roxas pos=(" << actor.x << ", " << actor.y << ", "
                << actor.z << ") WP=" << weapon_profile_index_
-               << " AM=" << attack_step_ << " actors=1";
+               << " AM=" << attack_step_
+               << " locomotion=" << static_cast<int>(actor.locomotion)
+               << " vy=0x" << std::hex
+               << controller_.vertical_velocity_fx() << std::dec
+               << " actors=1";
         return status.str();
     }
     if (verb == "reset") {
@@ -696,19 +713,45 @@ void GameplayScene::update_animation() {
         && attack_animations_[attack_step_].frame_count > 0U;
     const bool moving = !playing_attack && controller_.state().moving;
     const khdays::assets::SkeletalAnimation* animation = &*idle_animation_;
+    int base_slot = 0;
+    bool loop = true;
     if (playing_attack) {
         animation = &attack_animations_[attack_step_];
-    } else if (moving && walk_animation_ && walk_animation_->frame_count > 0U) {
-        animation = &*walk_animation_;
-    }
-    if (!playing_attack && moving != animation_was_moving_) {
-        animation_frame_ = 0.0F;
-        animation_was_moving_ = moving;
-    }
-    if (!playing_attack) {
-        animation_frame_ += 1.0F;
-        animation_frame_ = std::fmod(
-            animation_frame_, static_cast<float>(animation->frame_count));
+    } else {
+        switch (controller_.state().locomotion) {
+            case PlayableController::LocomotionPhase::JumpStart:
+                base_slot = 2;
+                loop = false;
+                if (jump_start_animation_ && jump_start_animation_->frame_count) {
+                    animation = &*jump_start_animation_;
+                }
+                break;
+            case PlayableController::LocomotionPhase::Rising:
+            case PlayableController::LocomotionPhase::Falling:
+                base_slot = 3;
+                loop = false;
+                if (jump_air_animation_ && jump_air_animation_->frame_count) {
+                    animation = &*jump_air_animation_;
+                }
+                break;
+            case PlayableController::LocomotionPhase::Landing:
+                base_slot = 4;
+                loop = false;
+                if (jump_land_animation_ && jump_land_animation_->frame_count) {
+                    animation = &*jump_land_animation_;
+                }
+                break;
+            case PlayableController::LocomotionPhase::Grounded:
+                if (moving && walk_animation_ && walk_animation_->frame_count) {
+                    base_slot = 1;
+                    animation = &*walk_animation_;
+                }
+                break;
+        }
+        if (base_slot != base_animation_slot_) {
+            animation_frame_ = 0.0F;
+            base_animation_slot_ = base_slot;
+        }
     }
     const auto objects = khdays::assets::sample_animation(
         *animation, animation_frame_,
@@ -731,6 +774,23 @@ void GameplayScene::update_animation() {
                 weapon_bone_transform_ = bone_world[index];
                 weapon_attached_ = true;
             }
+        }
+    }
+
+    if (!playing_attack) {
+        // Node +0x148 is reset to 0x900 by the common state entry and raised
+        // to 0xd00 by both ground and air movement states in ov022.
+        const float frame_step = base_slot == 0
+            ? 0x900 / kFxScale
+            : 0xd00 / kFxScale;
+        animation_frame_ += frame_step;
+        if (loop) {
+            animation_frame_ = std::fmod(
+                animation_frame_, static_cast<float>(animation->frame_count));
+        } else {
+            animation_frame_ = std::min(
+                animation_frame_,
+                static_cast<float>(animation->frame_count - 1U));
         }
     }
 
@@ -763,7 +823,7 @@ void GameplayScene::update_animation() {
                 attacking_ = false;
                 attack_queued_ = false;
                 attack_step_ = 0U;
-                animation_was_moving_ = false;
+                base_animation_slot_ = -1;
                 update_debug_text();
             }
         }
@@ -813,13 +873,6 @@ void GameplayScene::update(SceneManager& manager) {
         }
         return;
     }
-    if (input.just_pressed(Button::B)) {
-        // Returning from the development harness must not leak story mission
-        // 10000 into a later direct/menu launch of scene 2.
-        manager.mission_session() = {};
-        manager.change_scene(kSceneTitle);
-        return;
-    }
     if (!ready_) {
         return;
     }
@@ -840,7 +893,7 @@ void GameplayScene::update(SceneManager& manager) {
             }
         }
     }
-    if (debug_room_ && !attacking_
+    if (debug_room_ && !attacking_ && controller_.grounded()
         && input.just_pressed(Button::Select)
         && !attack_animations_.empty()) {
         attack_step_ = (attack_step_ + 1U) % attack_animations_.size();
@@ -891,7 +944,8 @@ void GameplayScene::update(SceneManager& manager) {
     // ov022's A bit reaches func_ov002_02056d48 and
     // func_ov002_0205dae4. Primary action 9 is Attack. The motion list here
     // follows wp -> ci -> cm -> am.p2; ab.p2 is the separate effect bank.
-    if (!attacking_ && !controller_.state().completed
+    if (!attacking_ && controller_.grounded()
+        && !controller_.state().completed
         && input.just_pressed(Button::A)
         && khdays::assets::activate_ov002_command(
                command_index_, command_available_)

@@ -286,6 +286,27 @@ int main() {
         expect(controller.step_rate_fx() == 0,
                "idle clears the original nStepRate immediately");
 
+        Input jump;
+        jump.down = static_cast<std::uint16_t>(Button::B);
+        jump.pressed = jump.down;
+        controller.update(jump, floor);
+        expect(controller.state().locomotion
+                   == PlayableController::LocomotionPhase::JumpStart,
+               "DS B enters ov022's jump anticipation state");
+        expect(controller.state().y == 2.0F,
+               "the three-frame jump anticipation remains grounded");
+        for (int frame = 0; frame < 4; ++frame) {
+            controller.update(Input{}, floor);
+        }
+        expect(controller.state().y > 2.0F
+                   && controller.vertical_velocity_fx() < 0x630,
+               "the 0x630 launch impulse is integrated with 0x80 gravity");
+        for (int frame = 0; frame < 100; ++frame) {
+            controller.update(Input{}, floor);
+        }
+        expect(controller.grounded() && controller.state().y == 2.0F,
+               "jump fall and landing return exactly to walkable ground");
+
         PlayableController camera_relative{
             0.0F, 0.0F, 10.0F, 10.0F,
             3.14159265358979323846F / 2.0F};

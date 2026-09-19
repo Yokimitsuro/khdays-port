@@ -481,7 +481,7 @@ void print_help() {
         << "  --day-transition-shot  Render ov004's day-255 transition headlessly.\n"
         << "  --playable-demo     Start directly in the playable wd_tt room-0 slice.\n"
         << "  --playable-shot     Render a headless playable snapshot; optionally hold\n"
-        << "                      u/d/l/r/q/e or press z/s for FRAMES.\n"
+        << "                      u/d/l/r/q/e or press z/x/s for FRAMES.\n"
         << "  --debug-room        Open the actor/weapon/action/collision laboratory.\n"
         << "  --debug-room-shot   Render its headless snapshot; a=profile, t=animation.\n"
         << "  --game-demo         Run the scene/task frame loop headless (logs the flow).\n"
@@ -1032,6 +1032,7 @@ int main(int argc, char* argv[]) {
                 case 'q': button = khdays::game::Button::L; break;
                 case 'e': button = khdays::game::Button::R; break;
                 case 'z': button = khdays::game::Button::A; break;
+                case 'x': button = khdays::game::Button::B; break;
                 case 's': button = khdays::game::Button::X; break;
                 case 'a': button = khdays::game::Button::Y; break;
                 case 't': button = khdays::game::Button::Select; break;

@@ -54,6 +54,9 @@ private:
     std::map<std::string, khdays::assets::DecodedTexture> weapon_textures_;
     std::optional<khdays::assets::SkeletalAnimation> idle_animation_;
     std::optional<khdays::assets::SkeletalAnimation> walk_animation_;
+    std::optional<khdays::assets::SkeletalAnimation> jump_start_animation_;
+    std::optional<khdays::assets::SkeletalAnimation> jump_air_animation_;
+    std::optional<khdays::assets::SkeletalAnimation> jump_land_animation_;
     std::vector<khdays::assets::SkeletalAnimation> attack_animations_;
     std::vector<khdays::assets::ActorComboAction> attack_actions_;
     std::vector<khdays::assets::ActorWeaponProfile> weapon_profiles_;
@@ -93,7 +96,7 @@ private:
     std::uint32_t story_day_ = 0U;
     std::optional<std::uint32_t> stored_day_after_movie_;
     std::optional<int> calendar_request_after_movie_;
-    bool animation_was_moving_ = false;
+    int base_animation_slot_ = -1;
     bool attacking_ = false;
     bool attack_queued_ = false;
     bool weapon_attached_ = false;

@@ -14,6 +14,14 @@ namespace khdays::game {
 // returns the floor height or nullopt when a step would leave walkable ground.
 class PlayableController final {
 public:
+    enum class LocomotionPhase {
+        Grounded,
+        JumpStart,
+        Rising,
+        Falling,
+        Landing,
+    };
+
     struct State final {
         float x = 0.0F;
         float y = 0.0F;
@@ -24,6 +32,7 @@ public:
         std::uint16_t max_hp = 100U;
         bool moving = false;
         bool completed = false;
+        LocomotionPhase locomotion = LocomotionPhase::Grounded;
     };
 
     using GroundProbe =
@@ -50,7 +59,13 @@ public:
     float goal_x() const { return goal_x_; }
     float goal_z() const { return goal_z_; }
     std::int32_t step_rate_fx() const { return step_rate_fx_; }
+    std::int32_t vertical_velocity_fx() const {
+        return vertical_velocity_fx_;
+    }
     std::uint16_t motion_angle() const { return motion_angle_; }
+    bool grounded() const {
+        return state_.locomotion == LocomotionPhase::Grounded;
+    }
 
 private:
     float spawn_x_ = 0.0F;
@@ -59,6 +74,10 @@ private:
     float goal_z_ = 0.0F;
     float camera_yaw_ = 0.0F;
     std::int32_t step_rate_fx_ = 0;
+    std::int32_t vertical_velocity_fx_ = 0;
+    std::int32_t phase_frame_fx_ = 0;
+    float motion_x_ = 0.0F;
+    float motion_z_ = 0.0F;
     std::uint16_t motion_angle_ = 0;
     State state_;
 };
