@@ -274,7 +274,10 @@ void OverlayUi::process_event(const SDL_Event& event) {
             return;
         }
         // App hotkeys.
-        if (event.key.key == SDLK_F10) {
+        if (event.key.key == SDLK_F1 && !event.key.repeat) {
+            show_console_ = !show_console_;
+            focus_console_input_ = show_console_;
+        } else if (event.key.key == SDLK_F10) {
             show_menu_bar_ = !show_menu_bar_;
             if (!show_menu_bar_) {
                 hint_ = tr(Text::BarHint);
@@ -291,7 +294,8 @@ void OverlayUi::process_event(const SDL_Event& event) {
 
 bool OverlayUi::wants_keyboard() const {
 #ifdef KHDAYS_HAS_UI
-    return ui_ && (ImGui::GetIO().WantCaptureKeyboard || remapping_ >= 0);
+    return ui_ && (show_console_ || ImGui::GetIO().WantCaptureKeyboard
+                   || remapping_ >= 0);
 #else
     return false;
 #endif
@@ -366,6 +370,7 @@ void OverlayUi::render() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu(tr(Text::View))) {
+            ImGui::MenuItem("Developer console", "F1", &show_console_);
             if (ImGui::MenuItem(tr(Text::HideBar), "F10")) {
                 show_menu_bar_ = false;
                 hint_ = tr(Text::BarHint);
@@ -396,6 +401,48 @@ void OverlayUi::render() {
             }
             if (ImGui::Button(buf, ImVec2(140.0F, 0.0F))) {
                 remapping_ = static_cast<int>(i);
+            }
+        }
+        ImGui::End();
+    }
+
+    if (show_console_) {
+        ImGui::SetNextWindowSize(ImVec2(620.0F, 260.0F),
+                                 ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Developer Console", &show_console_)) {
+            ImGui::BeginChild(
+                "##console_history", ImVec2(0.0F, -32.0F), true);
+            for (const auto& line : console_lines_) {
+                ImGui::TextWrapped("%s", line.c_str());
+            }
+            if (scroll_console_) {
+                ImGui::SetScrollHereY(1.0F);
+                scroll_console_ = false;
+            }
+            ImGui::EndChild();
+
+            ImGui::SetNextItemWidth(-1.0F);
+            if (focus_console_input_) {
+                ImGui::SetKeyboardFocusHere();
+                focus_console_input_ = false;
+            }
+            if (ImGui::InputText(
+                    "##console_command", console_input_.data(),
+                    console_input_.size(),
+                    ImGuiInputTextFlags_EnterReturnsTrue)) {
+                const std::string command{console_input_.data()};
+                if (!command.empty()) {
+                    console_lines_.push_back("> " + command);
+                    const std::string response = command_handler_
+                        ? command_handler_(command)
+                        : "game command handler is unavailable";
+                    if (!response.empty()) {
+                        console_lines_.push_back(response);
+                    }
+                    scroll_console_ = true;
+                }
+                console_input_.fill('\0');
+                focus_console_input_ = true;
             }
         }
         ImGui::End();

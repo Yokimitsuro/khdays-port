@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -57,6 +58,12 @@ public:
     virtual void update(SceneManager&) {}                 // per-frame logic
     virtual void render(SceneManager&, Renderer&) {}       // per-frame draw
     virtual void on_exit(SceneManager&) {}
+    // Port-only developer command entry point. Retail scenes leave the
+    // default response; diagnostic scenes may expose real runtime systems.
+    virtual std::string execute_debug_command(
+        SceneManager&, std::string_view) {
+        return "debug commands are not available in this scene";
+    }
 };
 
 using SceneFactory = std::function<std::unique_ptr<Scene>()>;
@@ -107,6 +114,9 @@ public:
 
     // Draw the current scene through the platform renderer.
     void render(Renderer& renderer);
+
+    // Route a developer-console command only to the active scene.
+    std::string execute_debug_command(std::string_view command);
 
     // The current frame's input, updated by the platform before step().
     void set_input(const Input& input) { input_ = input; }

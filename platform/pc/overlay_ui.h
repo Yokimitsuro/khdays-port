@@ -1,7 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <SDL3/SDL.h>
 
@@ -48,6 +53,13 @@ public:
     // True while the UI is capturing input, so the game should ignore it.
     bool wants_keyboard() const;
 
+    // F1 developer console. The callback is supplied by the running game and
+    // routes commands to the active scene; the platform owns only the UI.
+    void set_command_handler(
+        std::function<std::string(std::string_view)> handler) {
+        command_handler_ = std::move(handler);
+    }
+
     float volume() const { return volume_; }
     const KeyBindings& bindings() const { return bindings_; }
 
@@ -68,6 +80,13 @@ private:
     bool applied_fullscreen_ = false;
     bool show_menu_bar_ = true;
     bool show_controls_ = false;
+    bool show_console_ = false;
+    bool focus_console_input_ = false;
+    bool scroll_console_ = false;
+    std::array<char, 256> console_input_{};
+    std::vector<std::string> console_lines_{
+        "Developer console. F1 toggles it; type help."};
+    std::function<std::string(std::string_view)> command_handler_;
     // The language the app started in. Scenes load their localized assets on
     // entry, so a change only takes full effect on restart — this is what the
     // menu compares against to say so.

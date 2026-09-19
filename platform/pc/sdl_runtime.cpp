@@ -900,6 +900,10 @@ int run_game(khdays::game::Game& game) {
 
     SdlFrameRenderer frame_renderer{renderer};
     OverlayUi overlay{window, renderer};  // options menu bar (volume/layout/keys)
+    overlay.set_command_handler(
+        [&game](const std::string_view command) {
+            return game.scenes().execute_debug_command(command);
+        });
 
     // Music: render the game's SSEQ tracks and stream them for scenes that
     // request a BGM. Absent SDAT (no game data) → scenes simply run silent.

@@ -75,6 +75,14 @@ public:
 
 class EmptyScene final : public Scene {};
 
+class CommandScene final : public Scene {
+public:
+    std::string execute_debug_command(
+        SceneManager&, const std::string_view command) override {
+        return "handled:" + std::string{command};
+    }
+};
+
 void expect(bool ok, const char* what) {
     if (!ok) {
         throw std::runtime_error(what);
@@ -232,6 +240,14 @@ int main() {
         expect(child_runs == 0 && objects.size() == 1U, "child staged");
         objects.update();
         expect(child_runs == 1 && objects.empty(), "child ran next frame");
+
+        SceneManager commands;
+        commands.register_scene(
+            kSceneDebugRoom,
+            [] { return std::make_unique<CommandScene>(); });
+        commands.start(kSceneDebugRoom);
+        expect(commands.execute_debug_command("status") == "handled:status",
+               "developer commands route only to the active scene");
 
         // --- first playable slice controller ---
         const auto floor = [](const float x, const float z)

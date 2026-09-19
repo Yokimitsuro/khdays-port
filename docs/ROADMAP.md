@@ -306,6 +306,11 @@ The first narrow, reproducible target is in progress:
   for inspection, and preserve the weapon attachment;
 - [x] add a deterministic actor debug room with solid test obstacles, profile
   and action cycling, on-screen source indices, and a headless snapshot mode;
+- [x] add an F1 developer console routed to the active scene, with real actor
+  profile/action controls and SDAT field/battle BGM; reserve `spawn` for the
+  real enemy constructor rather than creating a test-only enemy;
+- [ ] reconstruct the one-shot SEQARC mixer and map ov022 sound requests so
+  footsteps, weapon swings, impacts and UI sounds use their original entries;
 - [ ] complete command execution and reconstruct the expanded Magic/Items,
   party, target, and mission HUD tile layouts; *(the exact 0x7e profile loadout
   decoder, split availability inputs, and neutral A-button primary dispatch

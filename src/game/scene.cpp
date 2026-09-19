@@ -76,4 +76,12 @@ void SceneManager::render(Renderer& renderer) {
     }
 }
 
+std::string SceneManager::execute_debug_command(
+    const std::string_view command) {
+    if (!current_) {
+        return "no active scene";
+    }
+    return current_->execute_debug_command(*this, command);
+}
+
 }  // namespace khdays::game

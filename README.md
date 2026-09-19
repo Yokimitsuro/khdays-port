@@ -53,8 +53,8 @@ flow**. What runs today:
 - [x] **Story opening hand-off** — ov012's `802.mods` opening now feeds ov004's special day-255 calendar route, then ov002 resolves mission `10000` by its named CAKP bundles (`400.Z` → `818.mods` → control `0x191` → day 7 → `7.Z` → `803.mods`), including MobiClip audio and the native sixteen-frame Start skip fade
 - [x] **Title and menus** — the real 3D KH logo over the character illustration, hosting every menu level (MODO HISTORIA / MODO MISIÓN → NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR) with the real localized textures at the exact DS positions, playing the real title BGM (an SDAT STRM stream) through the neutral `game::MusicPlayer`
 - [x] **Character select** (scene 7, ov06) — the 13-portrait grid from `UI/mlt/res.p2`, laid out and shaded (greyscale, colour when selected) exactly as the DS does
-- [x] In-window options overlay (Dear ImGui): volume, remappable controls, stacked/side-by-side screen layout, fullscreen — persisted between runs
-- [ ] Gameplay (scene 2, ov002) — an experimental `wd_tt` room-0 harness currently exercises the real Roxas model, distinct idle/locomotion clips, a Keyblade attached to `ro_w_tg_R`, shared floor/lateral/camera collision, ov002's normal selector-0 camera constants and smoothing, movement, its runtime-composited local-player HP gauge, and its localized three-row primary command page with the original X-button selection cycle; mission logic, enemies, combat, command execution, special camera modes, and the remaining party/enemy HUD remain in progress
+- [x] In-window options overlay (Dear ImGui): volume, remappable controls, stacked/side-by-side screen layout, fullscreen, and an F1 developer console — persisted settings, scene-routed commands
+- [ ] Gameplay (scene 2, ov002) — an experimental `wd_tt` room-0 harness currently exercises the real Roxas model, distinct idle/locomotion clips, a Keyblade attached to `ro_w_tg_R`, shared floor/lateral/camera collision, ov002's normal selector-0 camera constants and smoothing, movement, the real `TwilightR_F` SDAT field BGM, its runtime-composited local-player HP gauge, and its localized three-row primary command page with the original X-button selection cycle; mission logic, enemies, combat, sound effects, command execution, special camera modes, and the remaining party/enemy HUD remain in progress
 - [ ] The save-file screen (layout known; needs a save system) and wiring the decoded attract MobiClip into the title flow
 
 Run the slice directly with:
@@ -64,7 +64,8 @@ Run the slice directly with:
 ```
 
 Use the arrow keys to move, Q/E as the DS L/R camera buttons, X to return to the title,
-and Enter to reset after reaching the goal.
+and Enter to reset after reaching the goal. In `--debug-room`, F1 opens the
+developer console; `help` lists commands backed by currently connected systems.
 
 Scene identification is **verified against the running game** (emulator savestates) rather than assumed — which corrected an earlier wrong model: ov000 is the *entire* front-end (logos, title, all menu levels, save-file screen), ov06 is the character select, and ov012 is the movie player.
 

@@ -33,6 +33,8 @@ public:
     void update(SceneManager& manager) override;
     void render(SceneManager& manager, Renderer& renderer) override;
     void on_exit(SceneManager& manager) override;
+    std::string execute_debug_command(
+        SceneManager& manager, std::string_view command) override;
 
 private:
     void load_playable_harness();
@@ -43,6 +45,7 @@ private:
     void update_battle_hud();
     void update_command_menu();
     void update_debug_text();
+    void reset_actor();
 
     std::vector<khdays::resource::RoomModel> room_;
     std::optional<khdays::resource::LoadedModel> player_;

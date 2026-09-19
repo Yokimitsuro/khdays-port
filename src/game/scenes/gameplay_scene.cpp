@@ -32,6 +32,8 @@ constexpr char kRoxasActionGraph[] = "ba/ch/ro/ci.b.z";
 constexpr char kRoxasActionMetadata[] = "ba/ch/ro/cm.b.z";
 constexpr char kRoxasAnimationBank[] = "ba/ch/ro/am.p2";
 constexpr char kRoxasWeaponBank[] = "ba/ch/ro/w_.p2";
+constexpr char kTwilightFieldTheme[] = "TwilightR_F";
+constexpr char kTwilightBattleTheme[] = "TwilightR_B";
 constexpr std::size_t kRoom = 0U;
 constexpr int kFadeIn = 30;
 constexpr float kFxScale = 4096.0F;
@@ -246,6 +248,9 @@ void GameplayScene::on_enter(SceneManager& manager) {
     if (debug_room_) {
         command_available_ = {true, false, false};
         load_playable_harness();
+        if (auto* music = manager.music()) {
+            music->play_music(kTwilightFieldTheme);
+        }
         return;
     }
     const auto& session = manager.mission_session();
@@ -281,6 +286,9 @@ void GameplayScene::on_enter(SceneManager& manager) {
         }
     }
     load_playable_harness();
+    if (auto* music = manager.music()) {
+        music->play_music(kTwilightFieldTheme);
+    }
 }
 
 void GameplayScene::load_playable_harness() {
@@ -307,7 +315,7 @@ void GameplayScene::load_playable_harness() {
     controls_text_ = khdays::resource::render_ui_text(
         kFont,
         debug_room_
-            ? u"Z: ATACAR  A: PERFIL  SHIFT: ANIM  X: VOLVER"
+            ? u"F1: CONSOLA  Z: ATACAR  A: PERFIL  SHIFT: ANIM"
             : u"FLECHAS: MOVER  Z: ATACAR  S: ORDEN  X: VOLVER");
     complete_text_ = khdays::resource::render_ui_text(
         kFont, u"DEMO COMPLETADA - ENTER PARA REINICIAR");
@@ -547,6 +555,120 @@ void GameplayScene::finish_story_movie(SceneManager& manager) {
     // command stream (room, actors, dialogue and retail HUD); until then the
     // existing room harness remains reachable after that real intro.
     load_playable_harness();
+    if (auto* music = manager.music()) {
+        music->play_music(kTwilightFieldTheme);
+    }
+}
+
+void GameplayScene::reset_actor() {
+    const auto probe = [this](const float x, const float z) {
+        return ground_height(x, z);
+    };
+    controller_.reset(probe);
+    camera_.reset(
+        {controller_.state().x, controller_.state().y,
+         controller_.state().z});
+    controller_.set_camera_yaw(camera_.yaw_radians());
+    animation_frame_ = 0.0F;
+    attacking_ = false;
+    attack_queued_ = false;
+    attack_step_ = 0U;
+    update_debug_text();
+}
+
+std::string GameplayScene::execute_debug_command(
+    SceneManager& manager, const std::string_view command) {
+    if (!debug_room_) {
+        return "commands are restricted to the developer room";
+    }
+
+    std::istringstream input{std::string{command}};
+    std::string verb;
+    input >> verb;
+    if (verb.empty()) {
+        return {};
+    }
+    if (verb == "help") {
+        return "help | status | reset | bgm field|battle|stop|NAME | "
+               "profile N | anim N | spawn ID";
+    }
+    if (verb == "status") {
+        const auto& actor = controller_.state();
+        std::ostringstream status;
+        status << "Roxas pos=(" << actor.x << ", " << actor.y << ", "
+               << actor.z << ") WP=" << weapon_profile_index_
+               << " AM=" << attack_step_ << " actors=1";
+        return status.str();
+    }
+    if (verb == "reset") {
+        reset_actor();
+        return "Roxas reset through the gameplay controller";
+    }
+    if (verb == "bgm") {
+        std::string track;
+        input >> track;
+        if (track.empty()) {
+            return "usage: bgm field|battle|stop|SDAT_NAME";
+        }
+        auto* music = manager.music();
+        if (music == nullptr) {
+            return "audio backend is unavailable";
+        }
+        if (track == "stop") {
+            music->stop_music();
+            return "BGM stopped";
+        }
+        if (track == "field") {
+            track = kTwilightFieldTheme;
+        } else if (track == "battle") {
+            track = kTwilightBattleTheme;
+        }
+        music->play_music(track);
+        return "BGM requested from SDAT: " + track;
+    }
+    if (verb == "profile") {
+        std::size_t profile = 0U;
+        if (!(input >> profile)) {
+            return "usage: profile N";
+        }
+        if (profile >= weapon_profiles_.size()) {
+            return "profile is outside Roxas's decoded WP table";
+        }
+        try {
+            load_actor_profile(profile);
+            animation_frame_ = 0.0F;
+            return "loaded real Roxas WP/CI/CM/AM profile "
+                + std::to_string(profile);
+        } catch (const std::exception& error) {
+            return std::string{"profile load failed: "} + error.what();
+        }
+    }
+    if (verb == "anim") {
+        std::size_t animation = 0U;
+        if (!(input >> animation)) {
+            return "usage: anim N";
+        }
+        if (animation >= attack_animations_.size()) {
+            return "animation is outside the decoded AM action rows";
+        }
+        attack_step_ = animation;
+        attacking_ = true;
+        attack_queued_ = false;
+        animation_frame_ = 0.0F;
+        update_debug_text();
+        return "previewing decoded AM row "
+            + std::to_string(attack_rows_[animation]);
+    }
+    if (verb == "spawn") {
+        std::string actor;
+        input >> actor;
+        if (actor.empty()) {
+            return "usage: spawn ACTOR_ID";
+        }
+        return "spawn rejected: enemy actor construction is not connected "
+               "yet; no placeholder was created";
+    }
+    return "unknown command; use help";
 }
 
 std::optional<float> GameplayScene::ground_height(
@@ -776,16 +898,7 @@ void GameplayScene::update(SceneManager& manager) {
     }
     if (controller_.state().completed
         && input.just_pressed(Button::Start)) {
-        controller_.reset(probe);
-        camera_.reset(
-            {controller_.state().x, controller_.state().y,
-             controller_.state().z});
-        controller_.set_camera_yaw(camera_.yaw_radians());
-        animation_frame_ = 0.0F;
-        attacking_ = false;
-        attack_queued_ = false;
-        attack_step_ = 0U;
-        update_debug_text();
+        reset_actor();
     } else if (attacking_) {
         // The attack state owns motion until its non-looping clip completes.
         // An empty input also clears a locomotion flag left by the prior frame.
@@ -906,9 +1019,12 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
     }
 }
 
-void GameplayScene::on_exit(SceneManager&) {
+void GameplayScene::on_exit(SceneManager& manager) {
     if (video_player_ != nullptr) {
         video_player_->stop_video();
+    }
+    if (auto* music = manager.music()) {
+        music->stop_music();
     }
     video_player_ = nullptr;
     video_frame_ = {};
