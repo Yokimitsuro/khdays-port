@@ -171,6 +171,19 @@ int main() {
                     .hit,
                "a sphere above the wall passes it");
 
+        const auto segment_hit = khdays::assets::cast_segment(
+            walls, {0.0F, 1.0F, 0.0F}, {2.0F, 1.0F, 0.0F});
+        expect(segment_hit.hit, "an arbitrary segment hits the wall");
+        expect(segment_hit.fraction > 0.49F
+                   && segment_hit.fraction < 0.51F,
+               "the segment reports the wall crossing fraction");
+        expect(segment_hit.normal[0] < -0.99F,
+               "the hit normal faces the segment origin");
+        expect(!khdays::assets::cast_segment(
+                    walls, {0.0F, 3.0F, 0.0F}, {2.0F, 3.0F, 0.0F})
+                    .hit,
+               "a segment outside the polygon misses");
+
         std::cout << "Collision test passed\n";
         return 0;
     } catch (const std::exception& error) {

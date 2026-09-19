@@ -325,4 +325,98 @@ SphereSweepHit sweep_sphere(
     return best;
 }
 
+SegmentHit cast_segment(
+    const CollisionModel& model,
+    const std::array<float, 3>& from,
+    const std::array<float, 3>& to) {
+    SegmentHit best;
+    if (!model.valid) {
+        return best;
+    }
+
+    constexpr float kInvFx = 1.0F / static_cast<float>(kFxOne);
+    constexpr float kSegmentEpsilon = 0.000001F;
+    constexpr float kInsideEpsilon = 0.002F;
+    const std::array<float, 3> direction{
+        to[0] - from[0], to[1] - from[1], to[2] - from[2]};
+
+    for (std::size_t i = 0; i < model.faces.size(); ++i) {
+        const CollisionFace& face = model.faces[i];
+        if ((face.flags & kFaceFlagSkip) != 0U
+            || (face.vertex_count != 3U && face.vertex_count != 4U)) {
+            continue;
+        }
+
+        std::array<float, 3> normal{
+            static_cast<float>(face.plane.x) * kInvFx,
+            static_cast<float>(face.plane.y) * kInvFx,
+            static_cast<float>(face.plane.z) * kInvFx};
+        const float normal_length = std::sqrt(
+            normal[0] * normal[0] + normal[1] * normal[1]
+            + normal[2] * normal[2]);
+        if (normal_length < kSegmentEpsilon) {
+            continue;
+        }
+        for (float& component : normal) {
+            component /= normal_length;
+        }
+        const float denominator = normal[0] * direction[0]
+            + normal[1] * direction[1] + normal[2] * direction[2];
+        if (std::fabs(denominator) < kSegmentEpsilon) {
+            continue;
+        }
+        const float plane_distance =
+            static_cast<float>(face.plane.distance) * kInvFx / normal_length;
+        const float start_distance = normal[0] * from[0]
+            + normal[1] * from[1] + normal[2] * from[2];
+        const float fraction = (plane_distance - start_distance) / denominator;
+        if (fraction < 0.0F || fraction > 1.0F
+            || fraction >= best.fraction) {
+            continue;
+        }
+
+        std::array<float, 3> point{
+            from[0] + direction[0] * fraction,
+            from[1] + direction[1] * fraction,
+            from[2] + direction[2] * fraction};
+        bool has_positive = false;
+        bool has_negative = false;
+        for (std::size_t vertex = 0; vertex < face.vertex_count; ++vertex) {
+            const auto& av = face.vertices[vertex];
+            const auto& bv = face.vertices[(vertex + 1U) % face.vertex_count];
+            const std::array<float, 3> edge{
+                (bv[0] - av[0]) * kInvFx,
+                (bv[1] - av[1]) * kInvFx,
+                (bv[2] - av[2]) * kInvFx};
+            const std::array<float, 3> delta{
+                point[0] - av[0] * kInvFx,
+                point[1] - av[1] * kInvFx,
+                point[2] - av[2] * kInvFx};
+            const std::array<float, 3> cross{
+                edge[1] * delta[2] - edge[2] * delta[1],
+                edge[2] * delta[0] - edge[0] * delta[2],
+                edge[0] * delta[1] - edge[1] * delta[0]};
+            const float orientation = cross[0] * normal[0]
+                + cross[1] * normal[1] + cross[2] * normal[2];
+            has_positive = has_positive || orientation > kInsideEpsilon;
+            has_negative = has_negative || orientation < -kInsideEpsilon;
+        }
+        if (has_positive && has_negative) {
+            continue;
+        }
+
+        if (denominator > 0.0F) {
+            for (float& component : normal) {
+                component = -component;
+            }
+        }
+        best.hit = true;
+        best.fraction = fraction;
+        best.face_index = i;
+        best.point = point;
+        best.normal = normal;
+    }
+    return best;
+}
+
 }  // namespace khdays::assets

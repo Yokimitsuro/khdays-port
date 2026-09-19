@@ -120,9 +120,11 @@ hit detection.
 
 Run `--debug-room` for the port-owned actor laboratory. It deliberately
 bypasses story setup while using the same Roxas loader, skinning, weapon-bone
-attachment and command path as gameplay. The neutral arena has fixed bounds and
-three solid obstacles so movement and wall sliding can be checked independently
-of a mission map. `Z` starts the first decoded action and queues the next graph
+attachment, collision queries, ov002 normal camera and command path as gameplay.
+The neutral arena generates its rendered boxes and collision faces from one
+shared description, with fixed bounds and three solid obstacles, so movement,
+wall sliding and camera occlusion can be checked independently of a mission
+map. `Z` starts the first decoded action and queues the next graph
 row; `A` cycles valid weapon/action profiles; Right Shift previews the next
 decoded action; arrows move; `Q/E` rotate the camera. The lower screen reports
 the selected WP row, visible weapon index, hit-model index, CI variant and AM

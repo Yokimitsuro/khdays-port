@@ -12,6 +12,7 @@
 #include "khdays/assets/mesh.h"
 #include "khdays/assets/tex0.h"
 #include "khdays/game/playable_controller.h"
+#include "khdays/game/gameplay_camera.h"
 #include "khdays/game/scene.h"
 #include "khdays/resource/loader.h"
 #include "khdays/resource/ui_content.h"
@@ -38,7 +39,6 @@ private:
     void load_actor_profile(std::size_t profile_index);
     void finish_story_movie(SceneManager& manager);
     std::optional<float> ground_height(float x, float z) const;
-    bool debug_motion_allowed(float x, float z, float radius) const;
     void update_animation();
     void update_battle_hud();
     void update_command_menu();
@@ -77,6 +77,7 @@ private:
 
     PlayableController controller_{0.0F, 5.0F, 0.0F, 8.0F,
                                    3.14159265358979323846F};
+    GameplayCamera camera_;
     float animation_frame_ = 0.0F;
     int frame_ = 0;
     int movie_exit_fade_ = 0;

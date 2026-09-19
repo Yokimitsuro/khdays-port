@@ -36,7 +36,31 @@ constexpr std::size_t kRoom = 0U;
 constexpr int kFadeIn = 30;
 constexpr float kFxScale = 4096.0F;
 constexpr float kPi = 3.14159265358979323846F;
-constexpr float kDebugHalfExtent = 12.0F;
+
+struct DebugBox final {
+    std::array<float, 3> minimum;
+    std::array<float, 3> maximum;
+    std::array<std::uint8_t, 4> color;
+};
+
+constexpr std::array<DebugBox, 8> kDebugBoxes{{
+    {{-12.0F, -0.25F, -12.0F}, {12.0F, 0.0F, 12.0F},
+     {72U, 86U, 112U, 255U}},
+    {{-12.0F, 0.0F, -12.0F}, {-11.5F, 2.5F, 12.0F},
+     {98U, 116U, 151U, 255U}},
+    {{11.5F, 0.0F, -12.0F}, {12.0F, 2.5F, 12.0F},
+     {98U, 116U, 151U, 255U}},
+    {{-12.0F, 0.0F, -12.0F}, {12.0F, 2.5F, -11.5F},
+     {98U, 116U, 151U, 255U}},
+    {{-12.0F, 0.0F, 11.5F}, {12.0F, 2.5F, 12.0F},
+     {98U, 116U, 151U, 255U}},
+    {{-2.2F, 0.0F, -1.2F}, {2.2F, 1.4F, 1.2F},
+     {181U, 99U, 82U, 255U}},
+    {{3.0F, 0.0F, -7.0F}, {4.4F, 2.2F, -2.0F},
+     {88U, 157U, 123U, 255U}},
+    {{-7.0F, 0.0F, 3.0F}, {-4.0F, 1.0F, 4.2F},
+     {155U, 121U, 186U, 255U}},
+}};
 
 std::array<float, 16> actor_transform(
     const float x,
@@ -135,35 +159,85 @@ khdays::resource::RoomModel make_debug_room() {
     room.model.name = room.name;
     khdays::assets::NeutralMesh mesh;
     mesh.name = "debug_geometry";
-    add_box(mesh, {-12.0F, -0.25F, -12.0F}, {12.0F, 0.0F, 12.0F},
-            {72U, 86U, 112U, 255U});
-    add_box(mesh, {-12.0F, 0.0F, -12.0F}, {-11.5F, 2.5F, 12.0F},
-            {98U, 116U, 151U, 255U});
-    add_box(mesh, {11.5F, 0.0F, -12.0F}, {12.0F, 2.5F, 12.0F},
-            {98U, 116U, 151U, 255U});
-    add_box(mesh, {-12.0F, 0.0F, -12.0F}, {12.0F, 2.5F, -11.5F},
-            {98U, 116U, 151U, 255U});
-    add_box(mesh, {-12.0F, 0.0F, 11.5F}, {12.0F, 2.5F, 12.0F},
-            {98U, 116U, 151U, 255U});
-    add_box(mesh, {-2.2F, 0.0F, -1.2F}, {2.2F, 1.4F, 1.2F},
-            {181U, 99U, 82U, 255U});
-    add_box(mesh, {3.0F, 0.0F, -7.0F}, {4.4F, 2.2F, -2.0F},
-            {88U, 157U, 123U, 255U});
-    add_box(mesh, {-7.0F, 0.0F, 3.0F}, {-4.0F, 1.0F, 4.2F},
-            {155U, 121U, 186U, 255U});
+    for (const auto& box : kDebugBoxes) {
+        add_box(mesh, box.minimum, box.maximum, box.color);
+    }
     room.model.meshes.push_back(std::move(mesh));
     return room;
 }
 
-bool circle_overlaps_box(
-    const float x, const float z, const float radius,
-    const float min_x, const float max_x,
-    const float min_z, const float max_z) {
-    const float nearest_x = std::clamp(x, min_x, max_x);
-    const float nearest_z = std::clamp(z, min_z, max_z);
-    const float dx = x - nearest_x;
-    const float dz = z - nearest_z;
-    return dx * dx + dz * dz < radius * radius;
+std::int32_t debug_fx(const float value) {
+    return static_cast<std::int32_t>(std::lround(value * kFxScale));
+}
+
+void add_debug_collision_face(
+    khdays::assets::CollisionModel& collision,
+    const std::array<std::array<float, 3>, 4>& vertices,
+    const std::array<std::int16_t, 3>& normal) {
+    khdays::assets::CollisionFace face;
+    face.vertex_count = 4U;
+    face.bounds = {
+        debug_fx(vertices[0][0]), debug_fx(vertices[0][2]),
+        debug_fx(vertices[0][0]), debug_fx(vertices[0][2])};
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        face.vertices[i] = {
+            debug_fx(vertices[i][0]),
+            debug_fx(vertices[i][1]),
+            debug_fx(vertices[i][2])};
+        face.bounds[0] = std::min(face.bounds[0], face.vertices[i][0]);
+        face.bounds[1] = std::min(face.bounds[1], face.vertices[i][2]);
+        face.bounds[2] = std::max(face.bounds[2], face.vertices[i][0]);
+        face.bounds[3] = std::max(face.bounds[3], face.vertices[i][2]);
+    }
+    face.plane.x = normal[0];
+    face.plane.y = normal[1];
+    face.plane.z = normal[2];
+    face.plane.distance = static_cast<std::int32_t>(
+        (static_cast<std::int64_t>(normal[0]) * face.vertices[0][0]
+         + static_cast<std::int64_t>(normal[1]) * face.vertices[0][1]
+         + static_cast<std::int64_t>(normal[2]) * face.vertices[0][2]
+         + 0x800)
+        >> 12);
+    // ground_at() uses a 2D edge-plane test. Box faces all share these four
+    // inward bounds; vertical faces never enter its downward-plane branch.
+    face.edges[0] = {0x1000, 0, face.bounds[0]};
+    face.edges[1] = {-0x1000, 0, -face.bounds[2]};
+    face.edges[2] = {0, 0x1000, face.bounds[1]};
+    face.edges[3] = {0, -0x1000, -face.bounds[3]};
+    collision.faces.push_back(face);
+}
+
+khdays::assets::CollisionModel make_debug_collision() {
+    khdays::assets::CollisionModel collision;
+    collision.valid = true;
+    for (const auto& box : kDebugBoxes) {
+        const auto& a = box.minimum;
+        const auto& b = box.maximum;
+        const std::array<std::array<float, 3>, 8> point{{
+            {a[0], a[1], a[2]}, {b[0], a[1], a[2]},
+            {b[0], b[1], a[2]}, {a[0], b[1], a[2]},
+            {a[0], a[1], b[2]}, {b[0], a[1], b[2]},
+            {b[0], b[1], b[2]}, {a[0], b[1], b[2]}}};
+        add_debug_collision_face(
+            collision, {point[0], point[3], point[2], point[1]},
+            {0, 0, -0x1000});
+        add_debug_collision_face(
+            collision, {point[4], point[5], point[6], point[7]},
+            {0, 0, 0x1000});
+        add_debug_collision_face(
+            collision, {point[0], point[1], point[5], point[4]},
+            {0, -0x1000, 0});
+        add_debug_collision_face(
+            collision, {point[3], point[7], point[6], point[2]},
+            {0, 0x1000, 0});
+        add_debug_collision_face(
+            collision, {point[1], point[2], point[6], point[5]},
+            {0x1000, 0, 0});
+        add_debug_collision_face(
+            collision, {point[0], point[4], point[7], point[3]},
+            {-0x1000, 0, 0});
+    }
+    return collision;
 }
 
 }  // namespace
@@ -242,7 +316,7 @@ void GameplayScene::load_playable_harness() {
         if (debug_room_) {
             room_.clear();
             room_.push_back(make_debug_room());
-            collision_ = {};
+            collision_ = make_debug_collision();
         } else {
             room_ = khdays::resource::load_world_models(kWorld, {2U});
             if (room_.empty()) {
@@ -310,6 +384,10 @@ void GameplayScene::load_playable_harness() {
             return ground_height(x, z);
         };
         controller_.reset(probe);
+        camera_.reset(
+            {controller_.state().x, controller_.state().y,
+             controller_.state().z});
+        controller_.set_camera_yaw(camera_.yaw_radians());
         battle_hud_ = khdays::resource::load_battle_hud_artwork();
         command_menu_artwork_ = khdays::resource::load_ov002_command_menu(
             khdays::game::localized_path("UI/btl/&/main.p2").c_str(),
@@ -474,15 +552,6 @@ void GameplayScene::finish_story_movie(SceneManager& manager) {
 std::optional<float> GameplayScene::ground_height(
     const float x,
     const float z) const {
-    if (debug_room_) {
-        if (x <= -kDebugHalfExtent + 0.5F
-            || x >= kDebugHalfExtent - 0.5F
-            || z <= -kDebugHalfExtent + 0.5F
-            || z >= kDebugHalfExtent - 0.5F) {
-            return std::nullopt;
-        }
-        return 0.0F;
-    }
     if (!collision_.valid) {
         return std::nullopt;
     }
@@ -495,22 +564,6 @@ std::optional<float> GameplayScene::ground_height(
         return std::nullopt;
     }
     return static_cast<float>(hit.y) / kFxScale;
-}
-
-bool GameplayScene::debug_motion_allowed(
-    const float x, const float z, const float radius) const {
-    if (x - radius <= -kDebugHalfExtent + 0.5F
-        || x + radius >= kDebugHalfExtent - 0.5F
-        || z - radius <= -kDebugHalfExtent + 0.5F
-        || z + radius >= kDebugHalfExtent - 0.5F) {
-        return false;
-    }
-    return !circle_overlaps_box(
-               x, z, radius, -2.2F, 2.2F, -1.2F, 1.2F)
-        && !circle_overlaps_box(
-               x, z, radius, 3.0F, 4.4F, -7.0F, -2.0F)
-        && !circle_overlaps_box(
-               x, z, radius, -7.0F, -4.0F, 3.0F, 4.2F);
 }
 
 void GameplayScene::update_animation() {
@@ -683,14 +736,23 @@ void GameplayScene::update(SceneManager& manager) {
         const float from_x, const float from_y, const float from_z,
         const float to_x, const float to_y, const float to_z,
         const float radius) {
-        if (debug_room_) {
-            return debug_motion_allowed(to_x, to_z, radius);
-        }
         return !khdays::assets::sweep_sphere(
                     collision_, {from_x, from_y, from_z},
                     {to_x, to_y, to_z}, radius)
                     .hit;
     };
+
+    camera_.update(
+        input,
+        {controller_.state().x, controller_.state().y,
+         controller_.state().z},
+        [this](
+            const GameplayCamera::Vec3& focus,
+            const GameplayCamera::Vec3& wanted_eye) {
+            return resolve_gameplay_camera_collision(
+                collision_, focus, wanted_eye);
+        });
+    controller_.set_camera_yaw(camera_.yaw_radians());
 
     // ov022's A bit reaches func_ov002_02056d48 and
     // func_ov002_0205dae4. Primary action 9 is Attack. The motion list here
@@ -715,6 +777,10 @@ void GameplayScene::update(SceneManager& manager) {
     if (controller_.state().completed
         && input.just_pressed(Button::Start)) {
         controller_.reset(probe);
+        camera_.reset(
+            {controller_.state().x, controller_.state().y,
+             controller_.state().z});
+        controller_.set_camera_yaw(camera_.yaw_radians());
         animation_frame_ = 0.0F;
         attacking_ = false;
         attack_queued_ = false;
@@ -781,17 +847,9 @@ void GameplayScene::render(SceneManager&, Renderer& renderer) {
                 matrix_multiply(player_transform, weapon_bone_transform_)});
         }
 
-        khdays::assets::Camera3D camera;
-        camera.target = {player.x, player.y + 0.9F, player.z};
-        camera.eye = {
-            player.x + std::sin(player.camera_yaw) * 5.2F,
-            player.y + 3.2F,
-            player.z + std::cos(player.camera_yaw) * 5.2F};
-        camera.fov_y = 0.82F;
-        camera.near_z = 0.05F;
-        camera.far_z = 180.0F;
         scene_frame_ =
-            khdays::assets::render_scene(instances, camera, 256, 192);
+            khdays::assets::render_scene(
+                instances, camera_.camera(), 256, 192);
         draw_screen_dynamic(renderer, layout, scene_frame_, false);
 
         // func_ov002_0205ad5c anchors the default three-entry page to the

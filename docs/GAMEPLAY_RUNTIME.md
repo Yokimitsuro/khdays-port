@@ -114,9 +114,9 @@ direction (`cam+0x14` − `cam+0x20`) and the direction to the tracked point
 
 ### The selector table (`arm9_ov002::0207e764`, stride 0xc)
 
-Word 0 is the minimum the smoother clamps to; word 2 is the base the lookup
-reads (its label `data_ov002_0207e76c` is just this table + 8). Word 1 is not
-touched by either function.
+Word 0 is the minimum the smoother clamps to; word 1 is the eye-height term
+read by `func_ov002_02050b68`; word 2 is the focus-height/base term read by
+`func_ov002_02050a54` (its label `data_ov002_0207e76c` is just table + 8).
 
 | sel | w0 (min) | w1 | w2 (base) |
 |---:|---:|---:|---:|
@@ -164,6 +164,31 @@ cam+0x60 / cam+0x88  = Ov002_GetCameraDistance(sel)      // func_ov002_02050a54
 
 What *picks* a selector is still unread: `Ov002_SetValueAndDerive` has no direct
 cross-references, so it is reached through a dispatch table.
+
+### Ordinary camera controller now used by the port
+
+The neutral `GameplayCamera` follows the normal selector-0 path instead of the
+old free-orbit approximation:
+
+- projection is the original 60-degree vertical FOV, 4:3 aspect, near 1.0 and
+  far 1000.0 from `func_02023c60`;
+- reset begins at distance `0x3000`; normal play approaches
+  `0x5000 + 0xc00`, with eye height `0x1a00`;
+- DS R subtracts and DS L adds the normal `0x300` binary-angle step; yaw settles
+  at rate `0x800`;
+- focus follows horizontally at `0x300` and vertically at `0x600`; height terms
+  settle at `0x600`;
+- `func_ov002_0204ea58`'s forward ray, radius-`0x500` sphere sweep, reverse ray,
+  ceiling/floor probes and `0xc00` clearances are applied to the same decoded
+  collision model as actor movement.
+
+The developer room constructs collision faces from the exact boxes it renders,
+so it no longer has a separate hand-written bounds/obstacle test. This is
+intentional: a behavior accepted there exercises the gameplay code path.
+
+This is the normal free camera slice, not every camera mode. Selector changes,
+locked/scripted cameras, lock-on, recentering, shake and event overrides remain
+to be connected before the complete camera system can be called 1:1.
 
 ## The collision world — what a handle actually is
 
@@ -316,8 +341,6 @@ allocates the array as `n * 0x14`, which confirms the stride independently.
 1. What picks a camera selector. There are 17 of them and `Ov002_SetValueAndDerive`
    stores one at `cam+0x44`, but it is called through a dispatch table, so the
    callers are not reachable by cross-reference.
-2. What word 1 of the selector table *means*. Its reader and its destinations
-   (`cam+0x5c`, `cam+0x84`) are known; the quantity is not.
-3. What the named record's `+0x10` payload pointer holds.
-4. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
+2. What the named record's `+0x10` payload pointer holds.
+3. Whether `entry+0xc`'s "world" is the `wd_` world id, a room id, or something
    else. ov022 owns these entries and is only 65% named.

@@ -44,6 +44,7 @@ public:
         const GroundProbe& ground_probe,
         const MotionProbe& motion_probe = {});
     void reset(const GroundProbe& ground_probe);
+    void set_camera_yaw(float yaw) { state_.camera_yaw = yaw; }
 
     const State& state() const { return state_; }
     float goal_x() const { return goal_x_; }

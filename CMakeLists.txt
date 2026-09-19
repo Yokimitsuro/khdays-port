@@ -207,6 +207,7 @@ add_library(
         src/game/scene.cpp
         src/game/object.cpp
         src/game/game.cpp
+        src/game/gameplay_camera.cpp
         src/game/game_state.cpp
         src/game/playable_controller.cpp
         src/game/settings.cpp
@@ -415,6 +416,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-gameplay-camera-test
+        tests/cpp/test_gameplay_camera.cpp
+    )
+
+    target_link_libraries(
+        khdays-gameplay-camera-test
+        PRIVATE
+            khdays-game
+    )
+
+    add_executable(
         khdays-anim-channel-test
         tests/cpp/test_anim_channel.cpp
     )
@@ -504,6 +516,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-game-state-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-gameplay-camera-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-anim-channel-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-affine-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cakp-test PRIVATE /W4 /permissive-)
@@ -524,6 +537,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-vfs-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-game-state-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-gameplay-camera-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-anim-channel-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-affine-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cakp-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -545,6 +559,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-vfs-test)
     khdays_enable_sanitizers(khdays-game-test)
     khdays_enable_sanitizers(khdays-game-state-test)
+    khdays_enable_sanitizers(khdays-gameplay-camera-test)
     khdays_enable_sanitizers(khdays-anim-channel-test)
     khdays_enable_sanitizers(khdays-affine-test)
     khdays_enable_sanitizers(khdays-cakp-test)
@@ -619,6 +634,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-gameplay-camera
+        COMMAND khdays-gameplay-camera-test
+    )
+
+    add_test(
         NAME khdays-anim-channel
         COMMAND khdays-anim-channel-test
     )
@@ -673,6 +693,7 @@ if(BUILD_TESTING)
             khdays-vfs-test
             khdays-game-test
             khdays-game-state-test
+            khdays-gameplay-camera-test
             khdays-anim-channel-test
             khdays-affine-test
             khdays-cell-test

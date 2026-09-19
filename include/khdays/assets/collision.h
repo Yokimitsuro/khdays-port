@@ -100,6 +100,17 @@ struct SphereSweepHit final {
     std::array<float, 3> normal{0.0F, 0.0F, 0.0F};
 };
 
+// Earliest intersection of a finite segment with any decoded collision face.
+// Unlike ground_at(), this accepts arbitrary directions and tests the face's
+// full 3D polygon. It is the neutral query needed by ov002's gameplay camera.
+struct SegmentHit final {
+    bool hit = false;
+    float fraction = 1.0F;
+    std::size_t face_index = 0;
+    std::array<float, 3> point{0.0F, 0.0F, 0.0F};
+    std::array<float, 3> normal{0.0F, 0.0F, 0.0F};
+};
+
 // Cast straight down from `from_y` to `to_y` at (x, z) and return the nearest
 // surface, exactly as `func_01ffd824` decides it: the face's 2D bound must
 // contain the point, the segment must cross the plane downward within the
@@ -125,5 +136,10 @@ SphereSweepHit sweep_sphere(
     const std::array<float, 3>& from,
     const std::array<float, 3>& to,
     float radius);
+
+SegmentHit cast_segment(
+    const CollisionModel& model,
+    const std::array<float, 3>& from,
+    const std::array<float, 3>& to);
 
 }  // namespace khdays::assets

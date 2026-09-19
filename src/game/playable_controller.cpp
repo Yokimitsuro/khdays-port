@@ -6,7 +6,6 @@ namespace khdays::game {
 
 namespace {
 constexpr float kMoveSpeed = 0.08F;
-constexpr float kCameraSpeed = 0.025F;
 constexpr float kGoalRadius = 1.25F;
 constexpr float kBodyRadius = 0.3125F;  // ov002 player cast radius: 0x500
 constexpr float kBodyCentreY = 0.72F;
@@ -42,13 +41,6 @@ void PlayableController::update(
     const Input& input,
     const GroundProbe& ground_probe,
     const MotionProbe& motion_probe) {
-    if (input.held(Button::L)) {
-        state_.camera_yaw -= kCameraSpeed;
-    }
-    if (input.held(Button::R)) {
-        state_.camera_yaw += kCameraSpeed;
-    }
-
     float local_x = 0.0F;
     float local_z = 0.0F;
     if (input.held(Button::Left)) {
