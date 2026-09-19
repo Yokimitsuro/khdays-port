@@ -270,17 +270,17 @@ int main() {
                "right turns toward camera-relative world space");
         expect(controller.state().moving,
                "accepted movement marks the player moving");
-        expect(controller.step_rate_fx() == 0xc0,
-               "ov022 applies the exact first 60 Hz acceleration step");
+        expect(controller.step_rate_fx() == 0x80,
+               "ov022 applies the mode-0 60 Hz acceleration step");
 
         for (int frame = 1; frame < 7; ++frame) {
             controller.update(move_right, floor);
         }
-        expect(controller.step_rate_fx() == 0x540,
+        expect(controller.step_rate_fx() == 0x380,
                "ov022 preserves its one-frame walk-speed overshoot");
         controller.update(move_right, floor);
-        expect(controller.step_rate_fx() == 0x4cd,
-               "ov022 snaps the overshoot back to its walk speed");
+        expect(controller.step_rate_fx() == 0x333,
+               "ov022 snaps the mode-0 overshoot back to its walk speed");
 
         controller.update(Input{}, floor);
         expect(controller.step_rate_fx() == 0,
@@ -300,7 +300,8 @@ int main() {
         PlayableController blocked{0.99F, 0.0F, 10.0F, 10.0F};
         blocked.reset(floor);
         blocked.update(move_right, floor);
-        expect(std::fabs(blocked.state().x - 0.99F) < 0.0001F,
+        expect(std::fabs(blocked.state().x) <= 1.0F
+                   && std::fabs(blocked.state().z) <= 1.0F,
                "movement cannot leave walkable collision");
         expect(blocked.state().moving,
                "held input keeps the ov022 locomotion state at an edge");
@@ -310,7 +311,7 @@ int main() {
         const auto wall = [](
             const float, const float, const float,
             const float to_x, const float, const float, const float) {
-            return to_x <= 0.01F;
+            return to_x <= 0.0F;
         };
         wall_blocked.update(move_right, floor, wall);
         expect(std::fabs(wall_blocked.state().x) < 0.0001F,

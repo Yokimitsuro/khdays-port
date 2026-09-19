@@ -11,9 +11,12 @@ constexpr float kInvFx = 1.0F / 4096.0F;
 constexpr float kGoalRadius = 1.25F;
 constexpr float kBodyRadius = 0.3125F;  // ov002 player cast radius: 0x500
 constexpr float kBodyCentreY = 0.72F;
-constexpr std::int32_t kMoveRate = 0x1200;
-constexpr std::int32_t kWalkSpeed = 0x4cd;
-constexpr std::int32_t kStepEase = 0xc0;
+// ov022 selects the larger values only in global mode 1, whose main loop
+// waits two VBlanks. The native port updates once per 60 Hz VBlank, matching
+// mode 0 and therefore its normal-rate branch.
+constexpr std::int32_t kMoveRate = 0xc00;
+constexpr std::int32_t kWalkSpeed = 0x333;
+constexpr std::int32_t kStepEase = 0x80;
 
 std::uint16_t binary_angle(const float radians) {
     const float turns = radians / kTau;

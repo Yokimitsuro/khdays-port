@@ -304,7 +304,7 @@ void GameplayScene::load_playable_harness() {
     attacking_ = false;
     attack_queued_ = false;
     attack_animations_.clear();
-    attack_rows_.clear();
+    attack_actions_.clear();
     weapon_profiles_.clear();
     player_textures_.clear();
     weapon_textures_.clear();
@@ -434,20 +434,17 @@ void GameplayScene::load_actor_profile(const std::size_t profile_index) {
         khdays::vfs::read(kRoxasActionGraph));
     const auto cm = khdays::assets::lz_decompress(
         khdays::vfs::read(kRoxasActionMetadata));
-    const auto action_ids = khdays::assets::decode_actor_action_ids(
-        ci.data(), ci.size(), profile.combo_variant, 0U);
+    const auto actions = khdays::assets::decode_actor_combo_chain(
+        ci.data(), ci.size(), cm.data(), cm.size(),
+        profile.combo_variant, 0U, profile.combo_kind);
     const auto animation_archive = khdays::vfs::read(kRoxasAnimationBank);
 
-    std::vector<std::size_t> rows;
+    std::vector<khdays::assets::ActorComboAction> loaded_actions;
     std::vector<khdays::assets::SkeletalAnimation> animations;
-    for (const auto action_id : action_ids) {
-        const auto row = khdays::assets::actor_action_animation_row(
-            cm.data(), cm.size(), action_id);
-        if (!row || std::find(rows.begin(), rows.end(), *row) != rows.end()) {
-            continue;
-        }
+    for (const auto& action : actions) {
         const auto blob = khdays::assets::extract_p2_subfile(
-            animation_archive.data(), animation_archive.size(), *row);
+            animation_archive.data(), animation_archive.size(),
+            action.animation_row);
         const auto pack = khdays::assets::parse_slot_container(
             blob.data(), blob.size());
         if (!pack.valid || pack.slots.empty() || pack.slots[0].empty()) {
@@ -459,7 +456,7 @@ void GameplayScene::load_actor_profile(const std::size_t profile_index) {
         if (animation.frame_count == 0U) {
             continue;
         }
-        rows.push_back(*row);
+        loaded_actions.push_back(action);
         animations.push_back(std::move(animation));
     }
     if (animations.empty()) {
@@ -500,7 +497,7 @@ void GameplayScene::load_actor_profile(const std::size_t profile_index) {
 
     weapon_profile_index_ = selected;
     attack_step_ = 0U;
-    attack_rows_ = std::move(rows);
+    attack_actions_ = std::move(loaded_actions);
     attack_animations_ = std::move(animations);
     weapon_ = std::move(loaded_weapon);
     weapon_textures_ = std::move(weapon_textures);
@@ -520,11 +517,11 @@ void GameplayScene::update_debug_text() {
          << "  HIT " << static_cast<unsigned>(profile.hit_model_index) + 0xa0U
          << "  CI " << static_cast<unsigned>(profile.combo_variant)
          << "  AM ";
-    if (attack_rows_.empty()) {
+    if (attack_actions_.empty()) {
         line << '-';
     } else {
-        line << attack_step_ + 1U << '/' << attack_rows_.size()
-             << " ROW " << attack_rows_[attack_step_];
+        line << attack_step_ + 1U << '/' << attack_actions_.size()
+             << " ROW " << attack_actions_[attack_step_].animation_row;
     }
     debug_text_ = khdays::resource::render_ui_text(
         kFont, khdays::assets::message_from_utf8(line.str()));
@@ -657,7 +654,7 @@ std::string GameplayScene::execute_debug_command(
         animation_frame_ = 0.0F;
         update_debug_text();
         return "previewing decoded AM row "
-            + std::to_string(attack_rows_[animation]);
+            + std::to_string(attack_actions_[animation].animation_row);
     }
     if (verb == "spawn") {
         std::string actor;
@@ -739,6 +736,21 @@ void GameplayScene::update_animation() {
 
     if (playing_attack) {
         animation_frame_ += 1.0F;
+        const auto frame_q12 = static_cast<std::int32_t>(
+            std::lround(animation_frame_ * kFxScale));
+        const bool forced_transition = attack_queued_
+            && attack_step_ + 1U < attack_animations_.size()
+            && attack_step_ < attack_actions_.size()
+            && attack_actions_[attack_step_].transition_frame_q12 != -0x1000
+            && frame_q12
+                >= attack_actions_[attack_step_].transition_frame_q12;
+        if (forced_transition) {
+            ++attack_step_;
+            attack_queued_ = false;
+            animation_frame_ = 0.0F;
+            update_debug_text();
+            return;
+        }
         if (animation_frame_
             >= static_cast<float>(animation->frame_count)) {
             animation_frame_ = 0.0F;
@@ -892,9 +904,16 @@ void GameplayScene::update(SceneManager& manager) {
         animation_frame_ = 0.0F;
         update_debug_text();
     } else if (attacking_ && input.just_pressed(Button::A)) {
-        // The exact cancel/window data is not applied yet; this deliberately
-        // exposes the next graph row for inspection when the clip completes.
-        attack_queued_ = true;
+        const auto frame_q12 = static_cast<std::int32_t>(
+            std::lround(animation_frame_ * kFxScale));
+        if (attack_step_ + 1U < attack_actions_.size()
+            && khdays::assets::actor_combo_accepts_input(
+                attack_actions_[attack_step_], frame_q12)) {
+            // Ov022_PickComboPhase latches phase 1 only inside the current
+            // record's [field10, field14) window. update_animation then uses
+            // nWindow to force the current clip over at the exact threshold.
+            attack_queued_ = true;
+        }
     }
     if (controller_.state().completed
         && input.just_pressed(Button::Start)) {

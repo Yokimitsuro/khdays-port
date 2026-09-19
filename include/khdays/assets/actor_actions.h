@@ -18,6 +18,17 @@ struct ActorWeaponProfile final {
     std::uint8_t combo_kind_alt = 0;
 };
 
+// One resolved node of ov022's normal (left-link) combo walk. Frame values
+// retain the game's signed Fx12 representation; -0x1000 is its "never/no
+// upper bound" sentinel.
+struct ActorComboAction final {
+    std::uint32_t action_id = 0;
+    std::size_t animation_row = 0;
+    std::int32_t transition_frame_q12 = -0x1000;
+    std::int32_t input_start_q12 = 0;
+    std::int32_t input_end_q12 = -0x1000;
+};
+
 // Decode every complete 0x40-byte row in a decompressed wp.b.z file. The
 // narrowing matches func_ov002_02052308; malformed trailing bytes are ignored.
 std::vector<ActorWeaponProfile> decode_actor_weapon_profiles(
@@ -31,6 +42,22 @@ std::vector<std::uint32_t> decode_actor_action_ids(
     std::size_t size,
     std::uint8_t variant,
     std::size_t group);
+
+// Reconstruct the left-link walk used by attack input, including the pool-1
+// finisher selected when nStep reaches the weapon profile's combo kind. CM
+// metadata is resolved at the same time so callers can enforce ov022's input
+// and forced-transition windows.
+std::vector<ActorComboAction> decode_actor_combo_chain(
+    const std::uint8_t* ci_data,
+    std::size_t ci_size,
+    const std::uint8_t* cm_data,
+    std::size_t cm_size,
+    std::uint8_t variant,
+    std::size_t group,
+    std::uint8_t combo_kind);
+
+bool actor_combo_accepts_input(
+    const ActorComboAction& action, std::int32_t frame_q12);
 
 // cm.b.z records are indexed by an action id. Word 2 of the matching record is
 // the tag claimed in the 16-row action table; ov022 subsequently uses that tag

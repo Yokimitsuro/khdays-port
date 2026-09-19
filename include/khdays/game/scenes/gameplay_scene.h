@@ -55,7 +55,7 @@ private:
     std::optional<khdays::assets::SkeletalAnimation> idle_animation_;
     std::optional<khdays::assets::SkeletalAnimation> walk_animation_;
     std::vector<khdays::assets::SkeletalAnimation> attack_animations_;
-    std::vector<std::size_t> attack_rows_;
+    std::vector<khdays::assets::ActorComboAction> attack_actions_;
     std::vector<khdays::assets::ActorWeaponProfile> weapon_profiles_;
     std::optional<khdays::resource::BattleHudArtwork> battle_hud_;
     std::optional<khdays::assets::Ov002CommandMenuArtwork>
