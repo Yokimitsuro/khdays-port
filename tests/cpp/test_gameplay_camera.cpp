@@ -37,17 +37,17 @@ int main() {
     khdays::game::Input right;
     right.down = static_cast<std::uint16_t>(khdays::game::Button::R);
     camera.update(right, {0.0F, 0.0F, 0.0F});
-    expect(camera.target_yaw() == 0x7d00U,
-           "DS R subtracts the exact 0x300 camera step");
-    expect(camera.yaw() == 0x7e80U,
+    expect(camera.target_yaw() == 0x7b80U,
+           "DS R subtracts the exact 60 Hz 0x480 camera step");
+    expect(camera.yaw() == 0x7dc0U,
            "ordinary yaw settling uses the Q12 0x800 rate");
 
     camera.reset({0.0F, 0.0F, 0.0F});
     khdays::game::Input left;
     left.down = static_cast<std::uint16_t>(khdays::game::Button::L);
     camera.update(left, {0.0F, 0.0F, 0.0F});
-    expect(camera.target_yaw() == 0x8300U,
-           "DS L adds the exact 0x300 camera step");
+    expect(camera.target_yaw() == 0x8480U,
+           "DS L adds the exact 60 Hz 0x480 camera step");
     expect(camera.distance_fx() == 0x3b00,
            "distance opens by one quarter of the remaining delta");
 

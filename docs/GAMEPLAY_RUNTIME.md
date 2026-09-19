@@ -174,10 +174,10 @@ old free-orbit approximation:
   far 1000.0 from `func_02023c60`;
 - reset begins at distance `0x3000`; normal play approaches
   `0x5000 + 0xc00`, with eye height `0x1a00`;
-- DS R subtracts and DS L adds the normal `0x300` binary-angle step; yaw settles
+- DS R subtracts and DS L adds the 60 Hz `0x480` binary-angle step; yaw settles
   at rate `0x800`;
-- focus follows horizontally at `0x300` and vertically at `0x600`; height terms
-  settle at `0x600`;
+- focus follows horizontally at `0x480` and vertically at `0x900`; height terms
+  settle at `0x900`;
 - `func_ov002_0204ea58`'s forward ray, radius-`0x500` sphere sweep, reverse ray,
   ceiling/floor probes and `0xc00` clearances are applied to the same decoded
   collision model as actor movement.
@@ -189,6 +189,27 @@ intentional: a behavior accepted there exercises the gameplay code path.
 This is the normal free camera slice, not every camera mode. Selector changes,
 locked/scripted cameras, lock-on, recentering, shake and event overrides remain
 to be connected before the complete camera system can be called 1:1.
+
+### Ground locomotion now used by the port
+
+The developer room no longer uses its former constant `0.08` float step.
+`PlayableController` reproduces the ordinary idle/steer path in
+`func_ov022_020981f4`, `func_ov022_020a0814`,
+`func_ov022_020a3ccc` and `func_ov022_020ad4e8`:
+
+- the DS D-pad combinations become the same eight 16-bit binary angles;
+- the camera angle is applied before steering, including 16-bit wrap;
+- actor heading is limited by the 60 Hz `0x1200` turn rate, including the
+  original snap for a wrapped difference over `0x7000`;
+- `nStepRate` rises by `0xc0` each tick toward `0x4cd`. The original one-frame
+  overshoot is retained and the idle path clears the rate immediately;
+- movement is built as `-sin(angle), -cos(angle)` and diagonals therefore use
+  the same speed as cardinal directions.
+
+The room's sphere sweep and axis-separated wall-slide response are still the
+port's neutral collision resolver. Actor collision contacts, slopes, wall
+holds and climb transitions must be moved over from ov022 before that final
+part of locomotion can be described as 1:1.
 
 ## The collision world — what a handle actually is
 

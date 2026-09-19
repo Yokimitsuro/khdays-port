@@ -182,20 +182,20 @@ void GameplayCamera::update(
     const Vec3& actor_position,
     const CollisionProbe& collision_probe) {
     // func_ov002_0204d170 maps DS R (0x100) to input bit 4 and subtracts
-    // func_ov002_02050a08 (0x300 in the normal display mode); L maps to bit 8
-    // and adds the same step. Pressing both cancels both branches.
+    // func_ov002_02050a08 returns 0x480 in the port's 60 Hz display mode.
+    // DS R subtracts it and L adds it; pressing both cancels both branches.
     const bool right = input.held(Button::R);
     const bool left = input.held(Button::L);
     if (right && !left) {
-        target_yaw_ = static_cast<std::uint16_t>(target_yaw_ - 0x300U);
+        target_yaw_ = static_cast<std::uint16_t>(target_yaw_ - 0x480U);
     } else if (left && !right) {
-        target_yaw_ = static_cast<std::uint16_t>(target_yaw_ + 0x300U);
+        target_yaw_ = static_cast<std::uint16_t>(target_yaw_ + 0x480U);
     }
 
     eye_height_ = approach_fx(
-        eye_height_, target_eye_height_, 0x100, 0x600);
+        eye_height_, target_eye_height_, 0x100, 0x900);
     focus_offset_ = approach_fx(
-        focus_offset_, target_focus_offset_, 0x100, 0x600);
+        focus_offset_, target_focus_offset_, 0x100, 0x900);
 
     const std::int32_t distance_delta = target_distance_ - distance_;
     if (std::abs(distance_delta) < 0x100) {
@@ -216,7 +216,7 @@ void GameplayCamera::update(
     const float horizontal_length = std::sqrt(
         horizontal[0] * horizontal[0] + horizontal[2] * horizontal[2]);
     if (horizontal_length > 0.00390625F) {
-        const float step = horizontal_length * (0x300 * kInvFx);
+        const float step = horizontal_length * (0x480 * kInvFx);
         focus_[0] += horizontal[0] / horizontal_length * step;
         focus_[2] += horizontal[2] / horizontal_length * step;
     } else {
@@ -225,7 +225,7 @@ void GameplayCamera::update(
     }
     const float vertical_delta = wanted_focus[1] - focus_[1];
     if (std::fabs(vertical_delta) > 0.00390625F) {
-        focus_[1] += vertical_delta * (0x600 * kInvFx);
+        focus_[1] += vertical_delta * (0x900 * kInvFx);
     } else {
         focus_[1] = wanted_focus[1];
     }

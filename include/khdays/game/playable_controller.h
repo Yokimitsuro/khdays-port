@@ -49,6 +49,8 @@ public:
     const State& state() const { return state_; }
     float goal_x() const { return goal_x_; }
     float goal_z() const { return goal_z_; }
+    std::int32_t step_rate_fx() const { return step_rate_fx_; }
+    std::uint16_t motion_angle() const { return motion_angle_; }
 
 private:
     float spawn_x_ = 0.0F;
@@ -56,6 +58,8 @@ private:
     float goal_x_ = 0.0F;
     float goal_z_ = 0.0F;
     float camera_yaw_ = 0.0F;
+    std::int32_t step_rate_fx_ = 0;
+    std::uint16_t motion_angle_ = 0;
     State state_;
 };
 

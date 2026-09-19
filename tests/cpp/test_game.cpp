@@ -250,38 +250,57 @@ int main() {
         move_right.down = static_cast<std::uint16_t>(Button::Right);
         controller.update(move_right, floor);
         expect(controller.state().x > 0.0F
-                   && std::fabs(controller.state().z) < 0.0001F,
-               "right moves in camera-relative world space");
+                   && controller.state().z < 0.0F,
+               "right turns toward camera-relative world space");
         expect(controller.state().moving,
                "accepted movement marks the player moving");
+        expect(controller.step_rate_fx() == 0xc0,
+               "ov022 applies the exact first 60 Hz acceleration step");
 
-        Input turn_camera;
-        turn_camera.down = static_cast<std::uint16_t>(Button::R);
-        const float old_yaw = controller.state().camera_yaw;
-        controller.update(turn_camera, floor);
-        expect(controller.state().camera_yaw > old_yaw,
-               "R rotates the follow camera");
+        for (int frame = 1; frame < 7; ++frame) {
+            controller.update(move_right, floor);
+        }
+        expect(controller.step_rate_fx() == 0x540,
+               "ov022 preserves its one-frame walk-speed overshoot");
+        controller.update(move_right, floor);
+        expect(controller.step_rate_fx() == 0x4cd,
+               "ov022 snaps the overshoot back to its walk speed");
 
-        PlayableController blocked{0.96F, 0.0F, 10.0F, 10.0F};
+        controller.update(Input{}, floor);
+        expect(controller.step_rate_fx() == 0,
+               "idle clears the original nStepRate immediately");
+
+        PlayableController camera_relative{
+            0.0F, 0.0F, 10.0F, 10.0F,
+            3.14159265358979323846F / 2.0F};
+        camera_relative.reset(floor);
+        Input move_up;
+        move_up.down = static_cast<std::uint16_t>(Button::Up);
+        camera_relative.update(move_up, floor);
+        expect(camera_relative.state().x < 0.0F
+                   && std::fabs(camera_relative.state().z) < 0.0001F,
+               "D-pad aim includes the current binary camera angle");
+
+        PlayableController blocked{0.99F, 0.0F, 10.0F, 10.0F};
         blocked.reset(floor);
         blocked.update(move_right, floor);
-        expect(std::fabs(blocked.state().x - 0.96F) < 0.0001F,
+        expect(std::fabs(blocked.state().x - 0.99F) < 0.0001F,
                "movement cannot leave walkable collision");
-        expect(!blocked.state().moving,
-               "a rejected step is not reported as movement");
+        expect(blocked.state().moving,
+               "held input keeps the ov022 locomotion state at an edge");
 
         PlayableController wall_blocked{0.0F, 0.0F, 10.0F, 10.0F};
         wall_blocked.reset(floor);
         const auto wall = [](
             const float, const float, const float,
             const float to_x, const float, const float, const float) {
-            return to_x <= 0.04F;
+            return to_x <= 0.01F;
         };
         wall_blocked.update(move_right, floor, wall);
         expect(std::fabs(wall_blocked.state().x) < 0.0001F,
                "lateral collision prevents crossing a wall");
-        expect(!wall_blocked.state().moving,
-               "a wall-blocked step is not reported as movement");
+        expect(wall_blocked.state().moving,
+               "held input keeps the ov022 locomotion state at a wall");
 
         PlayableController finish{0.0F, 0.0F, 1.2F, 0.0F};
         finish.reset(floor);
