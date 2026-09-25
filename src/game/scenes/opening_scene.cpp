@@ -162,7 +162,10 @@ void OpeningScene::render(SceneManager&, Renderer& r) {
 
     // ov012 clears POWCNT1's display-swap bit: main-engine op.p2 art is on the
     // top LCD, while ov024 is initialized only for the sub engine.
-    draw_solid_screen(r, layout, /*bottom=*/false, /*white=*/true);
+    // func_ov012_0205ad1c starts both master brightnesses at -16 -- negative is
+    // mode Down, i.e. black -- and the main one stays there whenever no card
+    // plane is up (func_ov012_0205b2a4 / 0205b4b0 leave it at -16).
+    draw_solid_screen(r, layout, /*bottom=*/false, /*white=*/false);
     draw_solid_screen(r, layout, /*bottom=*/true, /*white=*/false);
 
     if (artwork_) {
@@ -215,20 +218,23 @@ void OpeningScene::render(SceneManager&, Renderer& r) {
                                 /*bottom=*/false, localized_alpha);
                 }
 
-                int white_alpha = 0;
+                // The first plane fades in by master brightness step - 16
+                // (func_ov012_0205b3d4) and the last fades out by -step
+                // (func_ov012_0205b4b0): from and to black.
+                int black_alpha = 0;
                 if (timeline_frame_ < timing.base_in + timing.base_in_duration) {
-                    white_alpha = 255 - alpha_from_step(fade_step(
+                    black_alpha = 255 - alpha_from_step(fade_step(
                         timeline_frame_, timing.base_in,
                         timing.base_in_duration));
                 }
                 if (timeline_frame_ >= timing.card_out) {
-                    white_alpha = alpha_from_step(fade_step(
+                    black_alpha = alpha_from_step(fade_step(
                         timeline_frame_, timing.card_out,
                         timing.card_out_duration));
                 }
-                if (white_alpha > 0) {
+                if (black_alpha > 0) {
                     draw_solid_screen(r, layout, /*bottom=*/false,
-                                      /*white=*/true, white_alpha);
+                                      /*white=*/false, black_alpha);
                 }
             }
         }
@@ -242,9 +248,9 @@ void OpeningScene::render(SceneManager&, Renderer& r) {
             DualScreenLayout::kScreenW * layout.scale,
             160 * layout.scale);
     } else {
-        // The original starts both master-brightness registers at -16; the sub
-        // display becomes visible when ov024 reports its first frame.
-        draw_solid_screen(r, layout, /*bottom=*/true, /*white=*/true);
+        // The sub master brightness stays at -16 (black) until ov024 reports a
+        // decoded frame; func_ov012_0205ac40 then sets it to 0.
+        draw_solid_screen(r, layout, /*bottom=*/true, /*white=*/false);
     }
 
     for (std::size_t i = 0U; i < subtitle_cues_.size()
