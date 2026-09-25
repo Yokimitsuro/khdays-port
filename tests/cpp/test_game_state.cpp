@@ -105,7 +105,7 @@ int main() {
         s.reset_to_new_game(7);
         expect(!s.flag(0x100U), "new game clears the state");
         expect(s.day() == 0x191U, "new game starts at day counter 0x191");
-        expect(s.get_field({0x40aU, 2U}) == 3U, "save slot is clamped to 3");
+        expect(s.get_field({0x40aU, 2U}) == 3U, "difficulty is clamped to 3");
         expect(s.get_field({0x3c1bU, 2U}) == 2U, "default 0x3c1b = 2");
         expect(s.get_field({0x0ab3U, 4U}) == 8U, "default 0xab3 = 8");
         expect(s.get_field({0x37c6U, 1U}) == 1U, "default 0x37c6 = 1");

@@ -53,11 +53,13 @@ class GameState {
     // The state a new game starts from, exactly as func_ov000_02054c50 writes
     // it: everything cleared, the day counter at 0x191 (the value ov000's story
     // start, func_ov000_0204ee24, turns into mission 10000 and the ov012
-    // opening), save slot `slot` (clamped to 0..3), its list of default
-    // settings, and the word table at +0x198c of the work area (+0x197c here)
-    // filled with -1. ov000 runs it on every boot (func_ov000_02054bac, from
-    // the scene-1 constructor) before any save is loaded.
-    void reset_to_new_game(int slot);
+    // opening), the difficulty (field 0x40a, 2 bits, clamped to 0..3), its list
+    // of default settings, and the word table at +0x198c of the work area
+    // (+0x197c here) filled with -1. ov000 runs it on every boot with
+    // difficulty 1 (func_ov000_02054bac, from the scene-1 constructor) and
+    // again when the new-game difficulty select is confirmed
+    // (func_ov000_020544b0 passes the chosen row).
+    void reset_to_new_game(int difficulty);
 
     // --- Named anchors (from khdays-decomp) ------------------------------
     // The day / story counter: field (offset 0, width 9). ov008 gates on it

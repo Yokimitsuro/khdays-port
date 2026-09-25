@@ -33,11 +33,11 @@ void GameState::set_flag(const std::uint32_t bit) {
     words_[word] |= mask_of(bit);
 }
 
-void GameState::reset_to_new_game(int slot) {
+void GameState::reset_to_new_game(int difficulty) {
     words_.clear();
     set_field({0x000U, 9U}, 0x191U);
-    slot = slot < 0 ? 0 : (slot > 3 ? 3 : slot);
-    set_field({0x40aU, 2U}, static_cast<std::uint32_t>(slot));
+    difficulty = difficulty < 0 ? 0 : (difficulty > 3 ? 3 : difficulty);
+    set_field({0x40aU, 2U}, static_cast<std::uint32_t>(difficulty));
     // func_ov000_02054c50's default list, in its order: {bit, width, value}.
     constexpr std::uint32_t kDefaults[][3] = {
         {0x37c4U, 1U, 0U}, {0x37bfU, 1U, 0U}, {0x37c0U, 2U, 1U},
