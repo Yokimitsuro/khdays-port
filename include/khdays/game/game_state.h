@@ -50,6 +50,15 @@ class GameState {
     [[nodiscard]] std::uint32_t get_field(FieldRef ref) const;
     void set_field(FieldRef ref, std::uint32_t value);
 
+    // The state a new game starts from, exactly as func_ov000_02054c50 writes
+    // it: everything cleared, the day counter at 0x191 (the value ov000's story
+    // start, func_ov000_0204ee24, turns into mission 10000 and the ov012
+    // opening), save slot `slot` (clamped to 0..3), its list of default
+    // settings, and the word table at +0x198c of the work area (+0x197c here)
+    // filled with -1. ov000 runs it on every boot (func_ov000_02054bac, from
+    // the scene-1 constructor) before any save is loaded.
+    void reset_to_new_game(int slot);
+
     // --- Named anchors (from khdays-decomp) ------------------------------
     // The day / story counter: field (offset 0, width 9). ov008 gates on it
     // reaching 0x47 (Ov008_Menu_ApplyFlagPresets) and 0x165 (layout variant in

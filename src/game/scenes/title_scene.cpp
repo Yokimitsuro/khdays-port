@@ -238,15 +238,29 @@ void TitleScene::update_leave(SceneManager& manager) {
         return;
     }
     sub_brightness_ = -16;
-    // NUEVA PARTIDA continues into the difficulty select (func_ov000_0204f610),
-    // which is not ported yet, so the gameplay harness stands in for it. Where
-    // the story then goes is decompiled but not pinned down: the story path
-    // func_ov000_0204ee24 reads a selector (func_020235d0(0, 9)) and requests
-    // scene 11 -- the ov012 opening, after ov028's checks, with mission 10000 --
-    // only when it is 0x191, and scene 5 (ov004) otherwise; which value a fresh
-    // game carries is unverified.
-    manager.change_scene(next_ == Next::NewGame ? kSceneGameplay
-                                                : kSceneSaveFile);
+    if (next_ == Next::SaveFile) {
+        manager.change_scene(kSceneSaveFile);
+        return;
+    }
+    // NUEVA PARTIDA continues into the difficulty select (func_ov000_0204f610)
+    // and, once one is confirmed (which raises ctx+0x4c40), its hand-off fade
+    // func_ov000_0204ebe4 -- neither is ported yet. They end in
+    // func_ov000_0204ef34, which for the story layout runs
+    // func_ov000_0204ee24: it reads the day counter (func_020235d0(0, 9)),
+    // and 0x191 -- what func_ov000_02054c50 leaves for a new game -- clears
+    // the mission descriptor, sets mission 10000 once ov028's checks pass and
+    // requests scene 11, the ov012 opening; any other day goes to scene 5
+    // (ov004) with the day as its argument.
+    const std::uint32_t day = manager.state().day();
+    auto& session = manager.mission_session();
+    if (day == 0x191U) {
+        session.reset_word = 0U;
+        session.state = 0U;
+        session.mission_id = 0x2710U;
+        manager.change_scene(kSceneOpening, 0);
+    } else {
+        manager.change_scene(kSceneDayTransition, static_cast<int>(day));
+    }
 }
 
 void TitleScene::draw_object(Renderer& r, const DualScreenLayout& layout,

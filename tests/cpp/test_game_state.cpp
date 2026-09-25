@@ -98,6 +98,23 @@ int main() {
         expect(s.day() == 0x47U, "day counter round-trips (0x47)");
     }
 
+    // --- New-game defaults (func_ov000_02054c50) ---------------------------
+    {
+        GameState s;
+        s.set_flag(0x100U);  // anything earlier is wiped
+        s.reset_to_new_game(7);
+        expect(!s.flag(0x100U), "new game clears the state");
+        expect(s.day() == 0x191U, "new game starts at day counter 0x191");
+        expect(s.get_field({0x40aU, 2U}) == 3U, "save slot is clamped to 3");
+        expect(s.get_field({0x3c1bU, 2U}) == 2U, "default 0x3c1b = 2");
+        expect(s.get_field({0x0ab3U, 4U}) == 8U, "default 0xab3 = 8");
+        expect(s.get_field({0x37c6U, 1U}) == 1U, "default 0x37c6 = 1");
+        expect(s.raw_word(0x197cU / 4U) == 0xFFFFFFFFU
+                   && s.raw_word((0x197cU + 0x31cU) / 4U) == 0xFFFFFFFFU
+                   && s.raw_word((0x197cU + 0x320U) / 4U) == 0U,
+               "the -1 word table spans exactly 0x320 bytes");
+    }
+
     // --- Progression flags ------------------------------------------------
     {
         GameState s;

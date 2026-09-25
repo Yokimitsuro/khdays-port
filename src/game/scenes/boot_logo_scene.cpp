@@ -8,7 +8,10 @@
 
 namespace khdays::game::scenes {
 
-void BootLogoScene::on_enter(SceneManager&) {
+void BootLogoScene::on_enter(SceneManager& manager) {
+    // The scene-1 constructor's save-system init (func_ov000_02054bac) starts
+    // the game state from the new-game defaults before any save is loaded.
+    manager.state().reset_to_new_game(1);
     // The boot screens live in ttl.p2 sub-file 1 (a D2KP background pack),
     // paired by data_ov000_0205a9d4: the main engine shows screens 4/5/6 with
     // tiles 2 / palette 2, the sub engine screens 0/1/2 with tiles 0 / palette 0.
