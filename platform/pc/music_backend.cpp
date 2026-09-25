@@ -1,5 +1,6 @@
 #include "music_backend.h"
 
+#include <algorithm>
 #include <exception>
 #include <iostream>
 
@@ -58,8 +59,10 @@ SdlMusicPlayer::SdlMusicPlayer(const std::filesystem::path& sdat_path) {
 
 SdlMusicPlayer::~SdlMusicPlayer() {
     generation_.fetch_add(1);  // make any in-flight render commit nothing
-    if (worker_.joinable()) {
-        worker_.join();
+    for (auto& worker : workers_) {
+        if (worker.thread.joinable()) {
+            worker.thread.join();
+        }
     }
     if (stream_ != nullptr) {
         SDL_DestroyAudioStream(stream_);
@@ -92,15 +95,31 @@ void SdlMusicPlayer::play_music(const std::string_view track) {
         std::cerr << "music: no track named '" << current_ << "'\n";
         return;  // unknown track: stay silent
     }
-    if (worker_.joinable()) {
-        worker_.join();
-    }
-    worker_ = std::thread(&SdlMusicPlayer::render_track, this, current_,
-                          generation);
+    // Reap renders that have finished; superseded ones still running are left
+    // alone rather than joined here, which would stall the frame loop for as
+    // long as the synth needs.
+    workers_.erase(
+        std::remove_if(workers_.begin(), workers_.end(),
+                       [](Worker& worker) {
+                           if (!worker.done->load()) {
+                               return false;
+                           }
+                           worker.thread.join();
+                           return true;
+                       }),
+        workers_.end());
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    workers_.push_back(Worker{
+        std::thread([this, track = current_, generation, done] {
+            render_track(track, generation);
+            done->store(true);
+        }),
+        done});
 }
 
 void SdlMusicPlayer::set_volume(const float volume) {
-    volume_.store(volume < 0.0F ? 0.0F : (volume > 1.0F ? 1.0F : volume));
+    // NaN fails every comparison, so test for the valid range positively.
+    volume_.store(volume >= 0.0F ? (volume <= 1.0F ? volume : 1.0F) : 0.0F);
 }
 
 void SdlMusicPlayer::stop_music() {
@@ -143,10 +162,28 @@ void SdlMusicPlayer::render_track(std::string track,
         audio.samples = std::move(stereo);
     }
     const std::uint16_t out_channels = channels == 1U ? 2U : channels;
-    // Commit only if no newer request arrived while we were rendering.
+    // Streams keep their own rate (most STRMs are not the synth's 32768 Hz),
+    // so the stream's input format follows each track rather than playing
+    // every one at the device-open rate.
+    SDL_AudioSpec track_spec;
+    SDL_zero(track_spec);
+    track_spec.format = SDL_AUDIO_S16;
+    track_spec.channels = kChannels;
+    track_spec.freq = audio.sample_rate != 0U
+        ? static_cast<int>(audio.sample_rate)
+        : kSampleRate;
+
+    // Commit only if no newer request arrived while we were rendering. The
+    // stream lock comes first, matching feed(): SDL holds it while calling back.
+    SDL_LockAudioStream(stream_);
     std::lock_guard<std::mutex> lock(mutex_);
     if (generation != generation_.load()) {
+        SDL_UnlockAudioStream(stream_);
         return;
+    }
+    if (!SDL_SetAudioStreamFormat(stream_, &track_spec, nullptr)) {
+        std::cerr << "music: cannot set the stream format for '" << track
+                  << "': " << SDL_GetError() << '\n';
     }
     pcm_ = std::move(audio.samples);
     pos_ = 0;
@@ -157,6 +194,7 @@ void SdlMusicPlayer::render_track(std::string track,
         loop_start_ = 0;
     }
     ready_ = !pcm_.empty();
+    SDL_UnlockAudioStream(stream_);
 }
 
 void SDLCALL SdlMusicPlayer::feed(void* userdata, SDL_AudioStream* stream,

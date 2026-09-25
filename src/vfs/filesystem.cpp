@@ -27,7 +27,9 @@ std::optional<std::filesystem::path> normalize(std::string_view game_path) {
         ++start;
     }
     const std::filesystem::path rel{cleaned.substr(start)};
-    if (rel.empty()) {
+    // A root name ("C:", "C:/...") would make `root / rel` discard the root
+    // entirely, so it escapes as surely as "..".
+    if (rel.empty() || rel.has_root_name() || rel.has_root_directory()) {
         return std::nullopt;
     }
     for (const auto& part : rel) {

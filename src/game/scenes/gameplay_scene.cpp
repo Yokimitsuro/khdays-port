@@ -39,6 +39,38 @@ constexpr int kFadeIn = 30;
 constexpr float kFxScale = 4096.0F;
 constexpr float kPi = 3.14159265358979323846F;
 
+// The harness's own on-screen text. It is port UI, not game data, so it follows
+// the configured language like the options overlay does. Columns match
+// khdays::game::Language: de, en, es, fr, it.
+enum class HarnessText { DebugControls, Controls, Complete, Unavailable, Count };
+
+constexpr const char16_t* kHarnessText[static_cast<int>(HarnessText::Count)][5] = {
+    {u"F1: KONSOLE  Z: ANGRIFF  X: SPRUNG  A: PROFIL",
+     u"F1: CONSOLE  Z: ATTACK  X: JUMP  A: PROFILE",
+     u"F1: CONSOLA  Z: ATACAR  X: SALTAR  A: PERFIL",
+     u"F1: CONSOLE  Z: ATTAQUE  X: SAUT  A: PROFIL",
+     u"F1: CONSOLE  Z: ATTACCO  X: SALTO  A: PROFILO"},
+    {u"PFEILE: GEHEN  Z: ANGRIFF  X: SPRUNG  S: BEFEHL",
+     u"ARROWS: MOVE  Z: ATTACK  X: JUMP  S: COMMAND",
+     u"FLECHAS: MOVER  Z: ATACAR  X: SALTAR  S: ORDEN",
+     u"FLÈCHES: BOUGER  Z: ATTAQUE  X: SAUT  S: ORDRE",
+     u"FRECCE: MUOVI  Z: ATTACCO  X: SALTO  S: COMANDO"},
+    {u"DEMO BEENDET - ENTER ZUM NEUSTART",
+     u"DEMO COMPLETE - ENTER TO RESTART",
+     u"DEMO COMPLETADA - ENTER PARA REINICIAR",
+     u"DÉMO TERMINÉE - ENTRÉE POUR RECOMMENCER",
+     u"DEMO COMPLETATA - INVIO PER RICOMINCIARE"},
+    {u"DEMO NICHT VERFÜGBAR - SPIELDATEN EXTRAHIEREN",
+     u"DEMO UNAVAILABLE - EXTRACT THE GAME DATA",
+     u"DEMO NO DISPONIBLE - EXTRAE LOS DATOS DEL JUEGO",
+     u"DÉMO INDISPONIBLE - EXTRAYEZ LES DONNÉES DU JEU",
+     u"DEMO NON DISPONIBILE - ESTRAI I DATI DEL GIOCO"},
+};
+
+const char16_t* harness_text(const HarnessText key) {
+    return kHarnessText[static_cast<int>(key)][static_cast<int>(language())];
+}
+
 struct DebugBox final {
     std::array<float, 3> minimum;
     std::array<float, 3> maximum;
@@ -320,11 +352,10 @@ void GameplayScene::load_playable_harness() {
     hud_max_hp_ = 0xffffU;
     controls_text_ = khdays::resource::render_ui_text(
         kFont,
-        debug_room_
-            ? u"F1: CONSOLA  Z: ATACAR  X: SALTAR  A: PERFIL"
-            : u"FLECHAS: MOVER  Z: ATACAR  X: SALTAR  S: ORDEN");
+        harness_text(debug_room_ ? HarnessText::DebugControls
+                                 : HarnessText::Controls));
     complete_text_ = khdays::resource::render_ui_text(
-        kFont, u"DEMO COMPLETADA - ENTER PARA REINICIAR");
+        kFont, harness_text(HarnessText::Complete));
 
     try {
         if (debug_room_) {
@@ -428,7 +459,7 @@ void GameplayScene::load_playable_harness() {
         std::cerr << (debug_room_ ? "debug room" : "gameplay harness")
                   << ": " << error.what() << '\n';
         error_text_ = khdays::resource::render_ui_text(
-            kFont, u"DEMO NO DISPONIBLE - EXTRAE LOS DATOS DEL JUEGO");
+            kFont, harness_text(HarnessText::Unavailable));
     }
 }
 

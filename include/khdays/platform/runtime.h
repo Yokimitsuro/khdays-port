@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,8 +12,12 @@ namespace khdays::platform {
 
 // Run the game frame loop in a native window: each frame maps input, advances
 // the scene/task state machine (khdays::game), and draws the current scene
-// through an SDL renderer. The caller registers scenes and boots `game` first.
-int run_game(khdays::game::Game& game);
+// through an SDL renderer. The caller registers scenes; `start` then enters the
+// first scene (e.g. `game.boot()`). It runs only once the platform services
+// exist -- music, video and the saved settings, language included -- because a
+// scene's on_enter may request a track or a movie and loads localized assets.
+int run_game(khdays::game::Game& game,
+             const std::function<void(khdays::game::Game&)>& start);
 
 // Play one NitroFS MODS movie in a native window. Video is decoded by the
 // reconstructed MobiClip path; audio support follows separately.

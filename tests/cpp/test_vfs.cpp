@@ -84,6 +84,12 @@ int main() {
         expect(!khdays::vfs::exists("does/not/exist"), "missing file");
         expect(!khdays::vfs::resolve("../escape").has_value(),
                "traversal rejected");
+        // An absolute path to a real file outside the root must not resolve
+        // either (on Windows it carries a drive root name).
+        const auto outside = base / "outside.bin";
+        write_file(outside, "outside");
+        expect(!khdays::vfs::resolve(outside.generic_string()).has_value(),
+               "absolute path rejected");
 
         bool threw = false;
         try {

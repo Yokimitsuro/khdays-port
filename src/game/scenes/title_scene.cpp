@@ -168,6 +168,16 @@ void TitleScene::confirm(SceneManager& manager) {
             // name label positions live on the BG layer, which the savestate's
             // register mirror does not expose -- building it now would mean
             // inventing those positions, so it waits for a BG-layer reading.
+            //
+            // Where the story then goes is decompiled but not yet pinned down:
+            // ov000's dispatcher func_ov000_0204ef34 runs func_ov000_0204ee24
+            // for the story path, which reads a selector (func_020235d0(0, 9))
+            // and requests scene 11 -- the ov012 opening, after ov028's checks,
+            // with mission 10000 -- only when it is 0x191, and scene 5 (ov004)
+            // with the selector otherwise. Which value a fresh game carries is
+            // unverified (it needs a trace or a savestate right after the
+            // difficulty choice), so this still enters the gameplay harness
+            // rather than guessing between the two.
             manager.change_scene(kSceneGameplay);
         }
         // CARGAR is unreachable while has_save_data() is false.

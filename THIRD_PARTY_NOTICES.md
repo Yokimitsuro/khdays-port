@@ -50,6 +50,8 @@ Project: stb — `stb_image.h`
 
 Upstream: <https://github.com/nothings/stb>
 
+Pinned commit: `2c980bb59875b0d32144a71867fbdebb2f77cd20` (`stb_image.h` v2.30)
+
 License: public domain (Unlicense) or MIT, at your option.
 
 Usage: compiled into `khdays-assets` (via `src/assets/png.cpp`) to decode PNG
@@ -62,12 +64,30 @@ Project: cgltf — single-file glTF loader
 
 Upstream: <https://github.com/jkuhlmann/cgltf>
 
+Pinned commit: `85cd62382dfea638278962690cf515023f33ed00`
+
 License: MIT.
 
 Usage: compiled into `khdays-assets` (via `src/assets/gltf.cpp`) to import glTF
 model overrides. Fetched by CMake when `KHDAYS_ENABLE_GLTF` is on (the default,
 which also requires `KHDAYS_ENABLE_PNG`); with it off, glTF support is dropped
 and no fetch occurs.
+
+## Dear ImGui
+
+Project: Dear ImGui — immediate-mode GUI library
+
+Upstream: <https://github.com/ocornut/imgui>
+
+Pinned release: **v1.91.6** (`v1.91.6`)
+
+License: MIT. Copyright (c) 2014-2024 Omar Cornut.
+
+Usage: compiled as a static library (core plus the SDL3 and SDL_Renderer
+backends) and linked into the native runtime for the in-window options menu
+bar and developer console. Fetched by CMake when `KHDAYS_ENABLE_UI` is on (the
+default); with it off, no fetch occurs and the runtime keeps only its keyboard
+hotkeys.
 
 ## Vulkan SDK (build tool)
 

@@ -8,8 +8,12 @@ namespace {
 constexpr float kPi = 3.14159265358979323846F;
 constexpr float kTau = 2.0F * kPi;
 constexpr float kInvFx = 1.0F / 4096.0F;
+// Port harness only: the goal ring has no DS counterpart.
 constexpr float kGoalRadius = 1.25F;
 constexpr float kBodyRadius = 0.3125F;  // ov002 player cast radius: 0x500
+// UNVERIFIED -- not DS data. The height above the feet at which the lateral
+// sphere is swept has not been read out of ov002/ov022 yet (0.72 is not even a
+// 20.12 value). It is a stand-in until that cast's origin is traced.
 constexpr float kBodyCentreY = 0.72F;
 // ov022 selects the larger values only in global mode 1, whose main loop
 // waits two VBlanks. The native port updates once per 60 Hz VBlank, matching

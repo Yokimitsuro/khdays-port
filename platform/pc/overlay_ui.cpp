@@ -186,7 +186,8 @@ void OverlayUi::load_config() {
         try {
             if (key == "volume") {
                 const float v = std::stof(value);
-                volume_ = v < 0.0F ? 0.0F : (v > 1.0F ? 1.0F : v);
+                // NaN fails every comparison, so test the range positively.
+                volume_ = v >= 0.0F ? (v <= 1.0F ? v : 1.0F) : 0.0F;
             } else if (key == "language") {
                 khdays::game::set_language(khdays::game::language_from_code(value));
             } else if (key == "framerate") {
@@ -199,10 +200,15 @@ void OverlayUi::load_config() {
                                           : khdays::game::ScreenLayout::Vertical);
             } else if (key.rfind("key.", 0) == 0) {
                 const std::string button = key.substr(4);
+                const int code = std::stoi(value);
+                // poll_buttons indexes SDL's keyboard-state array with this,
+                // so a hand-edited value outside it must not get through.
+                if (code < 0 || code >= SDL_SCANCODE_COUNT) {
+                    continue;
+                }
                 for (const auto& row : kBindRows) {
                     if (button == row.label) {
-                        bindings_.*(row.field) =
-                            static_cast<SDL_Scancode>(std::stoi(value));
+                        bindings_.*(row.field) = static_cast<SDL_Scancode>(code);
                     }
                 }
             }

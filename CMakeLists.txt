@@ -65,9 +65,9 @@ if(KHDAYS_ENABLE_PNG)
     FetchContent_Declare(
         stb
         GIT_REPOSITORY https://github.com/nothings/stb.git
-        # Header-only; track master. Pin to a commit for fully reproducible builds.
-        GIT_TAG master
-        GIT_SHALLOW TRUE
+        # stb has no release tags: pin a commit (recorded in
+        # THIRD_PARTY_NOTICES.md). A shallow clone cannot fetch a bare SHA.
+        GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20
     )
     FetchContent_MakeAvailable(stb)
 endif()
@@ -78,8 +78,8 @@ if(KHDAYS_ENABLE_GLTF AND KHDAYS_ENABLE_PNG)
     FetchContent_Declare(
         cgltf
         GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
-        GIT_TAG master
-        GIT_SHALLOW TRUE
+        # Pinned commit, recorded in THIRD_PARTY_NOTICES.md.
+        GIT_TAG 85cd62382dfea638278962690cf515023f33ed00
     )
     FetchContent_MakeAvailable(cgltf)
 endif()

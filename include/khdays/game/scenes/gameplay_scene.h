@@ -81,6 +81,9 @@ private:
         0.0F, 0.0F, 1.0F, 0.0F,
         0.0F, 0.0F, 0.0F, 1.0F};
 
+    // Port harness only: spawn (0, 5), goal (0, 8) and the initial yaw are not
+    // the mission's; the real placement comes from the CAKP room setup, which
+    // is not reconstructed yet.
     PlayableController controller_{0.0F, 5.0F, 0.0F, 8.0F,
                                    3.14159265358979323846F};
     GameplayCamera camera_;

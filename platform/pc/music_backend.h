@@ -53,7 +53,9 @@ private:
     SDL_AudioStream* stream_ = nullptr;
     bool audio_inited_ = false;
 
-    std::mutex mutex_;               // guards pcm_/pos_/ready_/loop fields
+    // Guards pcm_/pos_/ready_/loop fields. Lock order: the SDL stream lock
+    // first, then this -- SDL holds the stream lock while it calls feed().
+    std::mutex mutex_;
     std::vector<std::int16_t> pcm_;  // interleaved stereo
     std::size_t pos_ = 0;
     std::size_t loop_start_ = 0;     // sample index to loop back to
@@ -63,7 +65,16 @@ private:
     std::string current_;  // track currently requested (main thread only)
     std::atomic<std::uint64_t> generation_{0};
     std::atomic<float> volume_{1.0F};
-    std::thread worker_;
+
+    // Render threads, newest last. A superseded render cannot be interrupted
+    // (the synth renders a whole track), so it is left to finish in the
+    // background -- its generation no longer matches, so it commits nothing --
+    // and joined once it reports done, never on the frame loop's time.
+    struct Worker final {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+    std::vector<Worker> workers_;  // main thread only
 };
 
 }  // namespace khdays::platform

@@ -360,8 +360,8 @@ public:
         for (auto& [key, texture] : cache_) {
             SDL_DestroyTexture(texture);
         }
-        if (dynamic_tex_ != nullptr) {
-            SDL_DestroyTexture(dynamic_tex_);
+        for (auto& [key, texture] : dynamic_) {
+            SDL_DestroyTexture(texture);
         }
     }
 
@@ -446,10 +446,6 @@ public:
         return h;
     }
 
-    // Drop all cached textures. The cache is keyed by the source pixel pointer,
-    // which is only unique while a scene's images stay alive; across a scene
-    // change a freed buffer can be reallocated at the same address, so the cache
-    // must be invalidated on transition or it would serve the old scene's image.
     void draw_image_dynamic(
         const std::uint8_t* rgba, int width, int height, int x, int y,
         int dst_width, int dst_height, int alpha) override {
@@ -457,36 +453,40 @@ public:
             return;
         }
         // A per-frame texture: re-upload into a reused streaming texture instead
-        // of the pointer-keyed cache (which would serve stale pixels).
-        if (dynamic_tex_ == nullptr || dynamic_w_ != width
-            || dynamic_h_ != height) {
-            if (dynamic_tex_ != nullptr) {
-                SDL_DestroyTexture(dynamic_tex_);
-            }
-            dynamic_tex_ = SDL_CreateTexture(
+        // of the pointer-keyed cache (which would serve stale pixels). One is
+        // kept per size, since a frame can draw several dynamic images of
+        // different sizes and recreating a single texture for each would churn
+        // GPU allocations every frame. Reusing one for two same-sized images in
+        // a frame is safe: SDL flushes queued draws before a texture update.
+        const auto size_key = (static_cast<std::uint64_t>(width) << 32U)
+            | static_cast<std::uint32_t>(height);
+        SDL_Texture*& texture = dynamic_[size_key];
+        if (texture == nullptr) {
+            texture = SDL_CreateTexture(
                 renderer_, SDL_PIXELFORMAT_ABGR8888,
                 SDL_TEXTUREACCESS_STREAMING, width, height);
-            dynamic_w_ = width;
-            dynamic_h_ = height;
-            if (dynamic_tex_ != nullptr) {
-                SDL_SetTextureBlendMode(dynamic_tex_, SDL_BLENDMODE_BLEND);
-                SDL_SetTextureScaleMode(dynamic_tex_, SDL_SCALEMODE_NEAREST);
+            if (texture == nullptr) {
+                dynamic_.erase(size_key);
+                return;
             }
+            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+            SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
         }
-        if (dynamic_tex_ == nullptr) {
-            return;
-        }
-        SDL_UpdateTexture(dynamic_tex_, nullptr, rgba, width * 4);
+        SDL_UpdateTexture(texture, nullptr, rgba, width * 4);
         SDL_SetTextureAlphaMod(
-            dynamic_tex_,
+            texture,
             static_cast<Uint8>(alpha < 0 ? 0 : alpha > 255 ? 255 : alpha));
         SDL_FRect dst{
             static_cast<float>(x), static_cast<float>(y),
             static_cast<float>(dst_width > 0 ? dst_width : width),
             static_cast<float>(dst_height > 0 ? dst_height : height)};
-        SDL_RenderTexture(renderer_, dynamic_tex_, nullptr, &dst);
+        SDL_RenderTexture(renderer_, texture, nullptr, &dst);
     }
 
+    // Drop all cached textures. The cache is keyed by the source pixel pointer,
+    // which is only unique while a scene's images stay alive; across a scene
+    // change a freed buffer can be reallocated at the same address, so the cache
+    // must be invalidated on transition or it would serve the old scene's image.
     void clear_cache() {
         for (auto& [key, texture] : cache_) {
             SDL_DestroyTexture(texture);
@@ -515,9 +515,8 @@ private:
 
     SDL_Renderer* renderer_;
     std::unordered_map<const void*, SDL_Texture*> cache_;
-    SDL_Texture* dynamic_tex_ = nullptr;  // reused for per-frame images
-    int dynamic_w_ = 0;
-    int dynamic_h_ = 0;
+    // Streaming textures for per-frame images, one per (width, height).
+    std::unordered_map<std::uint64_t, SDL_Texture*> dynamic_;
 };
 
 // Streaming bridge used by game scenes. Decoding stays in the neutral MODS
@@ -876,30 +875,20 @@ int play_mods_video(const std::string_view game_path) {
     }
 }
 
-int run_game(khdays::game::Game& game) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        log_sdl_error("SDL_Init");
-        return EXIT_FAILURE;
-    }
+namespace {
 
-    SDL_Window* window = nullptr;
-    SDL_Renderer* renderer = nullptr;
-    const std::string title =
-        std::string{khdays::port::Version::name} + " " + KHDAYS_PORT_VERSION;
-    if (!SDL_CreateWindowAndRenderer(
-            title.c_str(),
-            kInitialWindowWidth,
-            kInitialWindowHeight,
-            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY,
-            &window,
-            &renderer)) {
-        log_sdl_error("SDL_CreateWindowAndRenderer");
-        SDL_Quit();
-        return EXIT_FAILURE;
-    }
-
+// The frame loop proper. Everything it creates owns SDL objects (textures,
+// ImGui's device objects, audio streams), so all of it is destroyed when this
+// returns -- before run_game destroys the renderer, the window and SDL itself.
+// SDL_Quit frees every audio stream; destroying one afterwards is a double
+// free.
+void run_frame_loop(khdays::game::Game& game,
+                    const std::function<void(khdays::game::Game&)>& start,
+                    SDL_Window* window, SDL_Renderer* renderer) {
     SdlFrameRenderer frame_renderer{renderer};
-    OverlayUi overlay{window, renderer};  // options menu bar (volume/layout/keys)
+    // Options menu bar (volume/layout/keys); constructing it also applies the
+    // saved settings, the language among them.
+    OverlayUi overlay{window, renderer};
     overlay.set_command_handler(
         [&game](const std::string_view command) {
             return game.scenes().execute_debug_command(command);
@@ -917,6 +906,10 @@ int run_game(khdays::game::Game& game) {
 
     SdlVideoPlayer video;
     game.scenes().set_video_player(&video);
+
+    // Only now can the first scene enter: its on_enter may already request a
+    // track or a movie, and it loads assets in the configured language.
+    start(game);
 
     std::uint16_t previous = 0;
     bool running = true;
@@ -975,10 +968,38 @@ int run_game(khdays::game::Game& game) {
     }
 
     overlay.save_config();  // persist volume / layout / key bindings
-    // Detach the music player before it is destroyed at scope exit.
+    // Detach the players before they are destroyed at scope exit.
     game.scenes().set_music_player(nullptr);
     game.scenes().set_video_player(nullptr);
     video.stop_video();
+}
+
+}  // namespace
+
+int run_game(khdays::game::Game& game,
+             const std::function<void(khdays::game::Game&)>& start) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        log_sdl_error("SDL_Init");
+        return EXIT_FAILURE;
+    }
+
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    const std::string title =
+        std::string{khdays::port::Version::name} + " " + KHDAYS_PORT_VERSION;
+    if (!SDL_CreateWindowAndRenderer(
+            title.c_str(),
+            kInitialWindowWidth,
+            kInitialWindowHeight,
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY,
+            &window,
+            &renderer)) {
+        log_sdl_error("SDL_CreateWindowAndRenderer");
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+
+    run_frame_loop(game, start, window, renderer);
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

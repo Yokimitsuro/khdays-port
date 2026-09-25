@@ -197,9 +197,15 @@ DecodedTexture compose_ov002_command_menu(
     constexpr int kHeight = 64;
     constexpr int kHeaderHeight = 16;
     constexpr int kRowHeight = 16;
-    constexpr int kTextTop = 3;
+    // func_ov002_0205ad5c writes each label as 8x2 tiles at column indent 2
+    // (selected) or 1 (idle): the 16/8-pixel insets below.
     constexpr int kSelectedInset = 16;
     constexpr int kIdleInset = 8;
+    // UNVERIFIED -- not DS data. The DS renders labels into tiles and greys
+    // an idle one through the palette it passes (nPalette), which the port
+    // does not decode yet; the glyph offset inside the 16-pixel row and this
+    // alpha are stand-ins until that palette and the glyph tiles are read.
+    constexpr int kTextTop = 3;
     constexpr std::uint8_t kIdleText = 107U;
 
     DecodedTexture out;

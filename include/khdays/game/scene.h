@@ -30,25 +30,34 @@ class SceneManager;
 // {overlayId, classDesc} per id) that the scene dispatcher (func_0202099c)
 // indexes. The port's scene factory is the native form of a table entry; the DS
 // overlay a scene lived in is noted for reference:
-//   1 → ov000 (boot/logo)   2 → ov02    3 → ov03    5 → ov04    6 → ov05
+//   1 → ov000   2 → ov02    3 → ov03    5 → ov04    6 → ov05
 //   7 → ov06   8 → ov11   9 → ov09   10 → ov07   11 → ov12   12 → ov10   19 → ov08
+// Scene 1 (ov000) is the WHOLE front-end on the DS -- boot logos, title, every
+// menu level and the save-file screen -- as runtime savestates confirmed (curId
+// stays 1 throughout). The port splits it into separate scenes; the pieces after
+// the boot logos therefore take port-owned ids (100+), so that every id below
+// 100 keeps meaning exactly what the DS table means by it.
 // Semantic names are filled in as each scene is decompiled.
 using SceneId = int;
 inline constexpr SceneId kSceneNone = 0;
-inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → the intro/logo scene (ov000)
+inline constexpr SceneId kSceneBootLogo = 1;   // fresh boot → ov000, entered at its boot logos
 inline constexpr SceneId kSceneGameplay = 2;   // gameplay (ov002); the menu enters it on confirm
 inline constexpr SceneId kSceneDayTransition = 5;  // calendar/day hand-off (ov004)
-inline constexpr SceneId kSceneTitle = 7;      // the title screen (ov06); the intro requests it
+// The Mission Mode character select (ov06): a savestate at that screen reads
+// curId = 7.
+inline constexpr SceneId kSceneCharacterSelect = 7;
 inline constexpr SceneId kSceneOpening = 11;   // opening movie / illustration timeline (ov012)
 inline constexpr SceneId kSceneContinue = 12;  // continue/other boot path (ov10)
-inline constexpr SceneId kSceneMainMenu = 19;  // Mission Mode main menu (ov08); title requests it on Start
 // The save-file screen ("Seleccionar archivo."), which the DS shows between
-// MODO MISION > UN JUGADOR and the character select. The id is the port's own:
-// this screen is part of ov000 rather than a scene the DS dispatches by id.
+// MODO MISION > UN JUGADOR and the character select. Part of ov000 (scene 1),
+// so the id is the port's own.
 inline constexpr SceneId kSceneSaveFile = 100;
 // Port-owned actor laboratory. It deliberately bypasses mission/story setup
 // while using the same ov002 actor, action and rendering paths as gameplay.
 inline constexpr SceneId kSceneDebugRoom = 101;
+// The title screen and its menu levels, which follow the boot logos inside
+// ov000 (scene 1); a port-owned id for the same reason as kSceneSaveFile.
+inline constexpr SceneId kSceneTitle = 102;
 
 // One game state. Override the hooks that matter; the default is a no-op.
 class Scene {

@@ -140,7 +140,7 @@ void register_native_scenes(khdays::game::Game& game) {
     game.scenes().register_scene(khdays::game::kSceneTitle, [] {
         return std::make_unique<khdays::game::scenes::TitleScene>();
     });
-    game.scenes().register_scene(khdays::game::kSceneMainMenu, [] {
+    game.scenes().register_scene(khdays::game::kSceneCharacterSelect, [] {
         return std::make_unique<khdays::game::scenes::MainMenuScene>();
     });
     game.scenes().register_scene(khdays::game::kSceneSaveFile, [] {
@@ -423,6 +423,10 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --game\n"
+        << "  khdays-port --boot-shot OUT.bmp [FRAME]\n"
+        << "  khdays-port --title-shot OUT.bmp [KEYS] [h]\n"
+        << "  khdays-port --save-shot OUT.bmp [CURSOR-STEPS]\n"
+        << "  khdays-port --menu-shot OUT.bmp [CURSOR-STEPS]\n"
         << "  khdays-port --opening-demo\n"
         << "  khdays-port --day-transition-demo\n"
         << "  khdays-port --day-transition-shot OUT.bmp [FRAME]\n"
@@ -435,10 +439,13 @@ void print_help() {
         << "  khdays-port --render-bg NSCR NCLR OUT.bmp NCGR [NCGR...]\n"
         << "  khdays-port --render-text NFTR TEXT OUT.bmp\n"
         << "  khdays-port --render-cell P2 SUBFILE CELL OUT.bmp\n"
+        << "  khdays-port --dump-ui P2 SUBFILE OUTDIR [MAX-WRITTEN] [MAX-EXAMINED]\n"
+        << "  khdays-port --dump-textures MODEL OUTDIR\n"
         << "  khdays-port --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav\n"
         << "  khdays-port --play-sound SDAT WAVEARCHIVE SWAV\n"
         << "  khdays-port --render-sequence SDAT SEQ OUTPUT.wav [SECONDS]\n"
         << "  khdays-port --play-sequence SDAT SEQ [SECONDS]\n"
+        << "  khdays-port --extract-stream SDAT STREAM OUTPUT.wav\n"
         << "  khdays-port --mods-info FILE\n"
         << "  khdays-port --render-video-frame GAMEPATH FRAME OUT.bmp\n"
         << "  khdays-port --play-video GAMEPATH [LANG]\n"
@@ -456,6 +463,7 @@ void print_help() {
         << "  khdays-port --extract-world WORLD OUTDIR\n"
         << "  khdays-port --room-collision WORLD ROOM [X Z]\n"
         << "  khdays-port --ui-layout FILE.ui\n"
+        << "  khdays-port --ui-keys FILE.ui P2 SUBFILE\n"
         << "  khdays-port --version\n"
         << "  khdays-port --help\n"
         << '\n'
@@ -476,6 +484,11 @@ void print_help() {
         << "  --anim-info FILE [INDEX]  Inspect one internal NSBCA animation.\n"
         << "  --vfs-resolve GAMEPATH  Resolve a NitroFS game path in the extracted data.\n"
         << "  --game              Run the native boot/title/menu/gameplay flow.\n"
+        << "  --boot-shot / --title-shot / --save-shot / --menu-shot  Headless BMP\n"
+        << "                      snapshots of the front-end scenes. --title-shot KEYS\n"
+        << "                      drives the menu first: d/u move, a confirms, b backs\n"
+        << "                      out, a digit N = N x Down; 'h' lays the screens side\n"
+        << "                      by side.\n"
         << "  --opening-demo      Start directly in ov012's movie/artwork sequence.\n"
         << "  --day-transition-demo  Start in ov004's post-opening day transition.\n"
         << "  --day-transition-shot  Render ov004's day-255 transition headlessly.\n"
@@ -488,11 +501,15 @@ void print_help() {
         << "  --render-tiles NCGR NCLR OUT.bmp [PALETTE]  Render an NCGR tile sheet to BMP.\n"
         << "  --render-bg NSCR NCLR OUT.bmp NCGR...  Compose an NSCR background to BMP.\n"
         << "  --render-text NFTR TEXT OUT.bmp  Render TEXT with an NFTR font to BMP.\n"
+        << "  --dump-ui P2 SUB DIR  Dump every screen x tile-sheet x palette of a D2KP\n"
+        << "                      UI pack (exploration aid; most output is mispaired).\n"
+        << "  --dump-textures MODEL DIR  Export a model's TEX0 textures as images.\n"
         << "  --audio-info FILE   List the contents of an SDAT sound archive.\n"
         << "  --extract-wav SDAT WAVEARCHIVE SWAV OUTPUT.wav  Decode a SWAV waveform to WAV.\n"
         << "  --play-sound SDAT WAVEARCHIVE SWAV  Decode and play a SWAV waveform.\n"
         << "  --render-sequence SDAT SEQ OUT.wav [SECONDS]  Synthesize an SSEQ to WAV.\n"
         << "  --play-sequence SDAT SEQ [SECONDS]  Synthesize and play an SSEQ.\n"
+        << "  --extract-stream SDAT N OUT.wav  Decode SDAT stream (STRM) N to WAV.\n"
         << "  --mods-info FILE    Summarize a MobiClip MODS cutscene container (mv/*.mods).\n"
         << "  --render-video-frame PATH FRAME OUT.bmp  Decode a real MODS frame through\n"
         << "                      overlay 24's original VLC tables (FRAME is zero-based).\n"
@@ -514,6 +531,8 @@ void print_help() {
         << "                      container is accepted (it may drive fewer bones); one\n"
         << "                      from elsewhere needs an exact bone count to be believed.\n"
         << "  --ui-layout FILE    Decode a .ui screen layout (element id/kind/position).\n"
+        << "  --ui-keys FILE.ui P2 SUB  Resolve a .ui's content keys through the\n"
+        << "                      NANR animation bank of the pack its screen binds.\n"
         << "  --version           Print version information without opening a window.\n"
         << "  --help              Show this help text.\n";
 }
@@ -838,9 +857,9 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--menu-shot") {
-            // Headless snapshot of the main-menu scene (for previewing the
-            // layout without opening a window). Optional 2nd arg = how many
-            // times to move the cursor right before capturing.
+            // Headless snapshot of the character-select scene (for previewing
+            // the layout without opening a window). Optional 2nd arg = how
+            // many times to move the cursor right before capturing.
             if (argc < 3) {
                 std::cerr << "ERROR: --menu-shot requires an output BMP "
                              "[cursor-steps]\n";
@@ -849,10 +868,10 @@ int main(int argc, char* argv[]) {
             khdays::vfs::autodetect_data_root();
             const int steps = argc > 3 ? std::stoi(argv[3]) : 0;
             khdays::game::SceneManager manager;
-            manager.register_scene(khdays::game::kSceneMainMenu, [] {
+            manager.register_scene(khdays::game::kSceneCharacterSelect, [] {
                 return std::make_unique<khdays::game::scenes::MainMenuScene>();
             });
-            manager.start(khdays::game::kSceneMainMenu);
+            manager.start(khdays::game::kSceneCharacterSelect);
             for (int i = 0; i < steps; ++i) {
                 khdays::game::Input in;
                 in.pressed = static_cast<std::uint16_t>(khdays::game::Button::Right);
@@ -907,11 +926,10 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--title-shot") {
-            // Headless snapshot of the title/main-menu scene (two DS screens
-            // stacked). Optional 2nd arg = how many times to press Down first.
+            // Headless snapshot of the title scene (two DS screens stacked).
             if (argc < 3) {
                 std::cerr << "ERROR: --title-shot requires an output BMP "
-                             "[down-steps]\n";
+                             "[KEYS] [h]\n";
                 return EXIT_FAILURE;
             }
             khdays::vfs::autodetect_data_root();
@@ -1079,23 +1097,27 @@ int main(int argc, char* argv[]) {
             }
             khdays::game::Game game;
             register_native_scenes(game);
-            if (first == "--opening-demo") {
-                game.scenes().start(khdays::game::kSceneOpening);
-            } else if (first == "--day-transition-demo") {
-                game.scenes().start(khdays::game::kSceneDayTransition, 0x190);
-            } else if (first == "--playable-demo") {
-                game.scenes().start(khdays::game::kSceneGameplay);
-            } else if (first == "--debug-room") {
-                game.scenes().start(khdays::game::kSceneDebugRoom);
-            } else {
-                game.boot(0);
-            }
+            // run_game enters the first scene once music, video and the saved
+            // settings exist, so a demo's opening scene gets all three.
+            const auto start = [first](khdays::game::Game& g) {
+                if (first == "--opening-demo") {
+                    g.scenes().start(khdays::game::kSceneOpening);
+                } else if (first == "--day-transition-demo") {
+                    g.scenes().start(khdays::game::kSceneDayTransition, 0x190);
+                } else if (first == "--playable-demo") {
+                    g.scenes().start(khdays::game::kSceneGameplay);
+                } else if (first == "--debug-room") {
+                    g.scenes().start(khdays::game::kSceneDebugRoom);
+                } else {
+                    g.boot(0);
+                }
+            };
             std::cout << "Running the game frame loop:\n"
                          "  Z/Enter confirm, X back, arrows move, Q/E camera "
                          "(remap in Config > Controls)\n"
                          "  Menu bar: Config (volume/controls/layout), View; "
                          "F10 hide bar, F11 fullscreen, Esc quit\n";
-            return khdays::platform::run_game(game);
+            return khdays::platform::run_game(game, start);
         }
 
         if (first == "--vfs-resolve") {

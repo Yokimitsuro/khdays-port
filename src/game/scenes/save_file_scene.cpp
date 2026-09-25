@@ -63,7 +63,7 @@ void SaveFileScene::update(SceneManager& manager) {
     // the title on cancel. Which rows are selectable at all is a save-system
     // question the port cannot answer yet, so every row accepts.
     if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
-        manager.change_scene(kSceneMainMenu);
+        manager.change_scene(kSceneCharacterSelect);
     } else if (in.just_pressed(Button::B)) {
         manager.change_scene(kSceneTitle);
     }
