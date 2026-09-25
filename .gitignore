@@ -57,3 +57,6 @@ title.bmp
 
 # Snapshot output from --save-shot / --title-shot / --boot-shot and friends.
 *.bmp
+
+# Spike survey outputs (regenerate with spike/native_decomp/*.py)
+spike/native_decomp/*.json
