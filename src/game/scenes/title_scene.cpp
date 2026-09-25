@@ -1,307 +1,315 @@
 #include "khdays/game/scenes/title_scene.h"
 
 #include <algorithm>
-#include <cmath>
+#include <cstdlib>
 
-#include "khdays/assets/animation.h"  // sample_animation
-#include "khdays/assets/mesh.h"       // compute_palette
-#include "khdays/assets/screen.h"     // compose_flat_model
 #include "khdays/game/draw.h"
 #include "khdays/game/settings.h"
 
 namespace khdays::game::scenes {
 
 namespace {
+
 constexpr char kTitleTheme[] = "Title_BGM_PCM8";  // the title BGM (SDAT stream)
 
-// Distance the option block travels when the page/level changes: one screen
-// width (the DS lays the menu pages out one screen apart). Port rendition of the
-// measured page-scroll ease; see the header.
-constexpr float kPagePitch = 256.0F;
+// The port has no save system yet, so neither the save-dependent CARGAR row
+// (ctx loadAvailable) nor the cleared-save third root row
+// (ctx extraOptionAvailable) exists.
+constexpr bool kLoadAvailable = false;
+constexpr bool kExtraOptionAvailable = false;
 
-// The DS only offers CARGAR once a save file exists. The port has no save
-// system yet, so no save is present.
-bool has_save_data() {
-    return false;
+// Counter thresholds shared by func_ov000_0204e270 and func_ov000_0204e5b0.
+constexpr int kFadeStart = 0x3c;
+constexpr int kFadeEnd = 0x5c;
+constexpr int kSettled = 0x79;  // where a skip or a page change leaves it
+
+// func_ov000_0204cac0 / 0204cc90 object positions (20.12 in the ROM).
+constexpr int kOptionX = 0;
+constexpr std::array<int, 2> kOptionY{0x74, 0x90};
+constexpr int kCursorX = 0x8;
+constexpr std::array<int, 2> kCursorY{0x84, 0xa0};
+
+constexpr auto kConfirm = static_cast<std::uint16_t>(
+    static_cast<std::uint16_t>(Button::A)
+    | static_cast<std::uint16_t>(Button::Start));
+constexpr auto kCancel = static_cast<std::uint16_t>(Button::B);
+
+bool pressed_any(const Input& in, const std::uint16_t buttons) {
+    return (in.pressed & buttons) != 0U;
 }
+
 }  // namespace
 
 void TitleScene::on_enter(SceneManager& manager) {
-    // The title's two screens live in ttl.p2 sub-file 1 (a D2KP background pack),
-    // paired by data_ov000_0205a9d4: screen 7 / tiles 3 / palette 3 = the top
-    // screen (Disney + SQUARE ENIX + the KINGDOM HEARTS 358/2 Days logo), and
-    // screen 3 / tiles 1 / palette 1 = the bottom character illustration. The
-    // menu options are the real localized OBJ textures from ttl_<lang>.p2.
-    //
-    // (The port used to draw a 3D BMD0 logo on white here; that dropped the
-    // Disney/SQUARE ENIX logos and did not match the DS's 2D screen.)
-    top_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 7, 3, 3);
-    // The "358/2 Days" subtitle is not in the s7 BG; it lives in the ttl.p2
-    // KAPH/BMD0 logo model, which we overlay (transparent) on top so the full
-    // "KINGDOM HEARTS 358/2 Days" reads over Disney/SQUARE ENIX and the scene.
-    // A title savestate confirmed the top screen carries no OBJ, so the logo is
-    // a BG/3D-layer element, not sprites.
-    // The s7 BG already carries KINGDOM HEARTS; the "358/2 Days" subtitle is a
-    // separate quad (texture "title_006") in the logo model, which the DS renders
-    // and animates via its BCA0 (func_ov000_0204d7c8 loads it,
-    // func_ov000_02059f50 renders 3D). Load the model + animation so the subtitle
-    // is posed per frame with the shared animator (sample_animation ->
-    // compute_palette -> compose_flat_model), instead of a static overlay.
-    logo_model_ = khdays::resource::load_title_logo_model();
-    // The intro plays the logo's own animation once; its length is the BCA0's.
-    intro_len_ = (logo_model_ && logo_model_->animation.frame_count > 0)
-                     ? logo_model_->animation.frame_count
-                     : 0;
-    // The colour title (phase 2) shows the "358/2 Days" subtitle too, which s7
-    // lacks. Compose it once from the model's rest pose (last frame), just the
-    // title_006 quad, so it can be laid over s7 statically.
-    if (logo_model_ && logo_model_->model.skinning && intro_len_ > 0) {
-        auto& lm = *logo_model_;
-        const auto objects = khdays::assets::sample_animation(
-            lm.animation, static_cast<float>(intro_len_ - 1),
-            lm.model.object_matrices);
-        lm.model.palette =
-            khdays::assets::compute_palette(*lm.model.skinning, objects);
-        rest_358_ = khdays::assets::compose_flat_model(
-            lm.model, lm.textures, 256, 192, 0.80F, 0.20F, "title_006");
-    }
-    illustration_ = khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1);
-    // English is the odd one out: there is no ttl_en.p2 — the English option
-    // textures are the base file's sub-file 2, while the other four ship as
-    // ttl_<lang>.p2 sub-file 1.
+    top_.load();
+    // The bottom illustration is screen 3 / tiles 1 / palette 1; for the
+    // non-English variants func_ov000_0204e0c8 streams ttl_&.p2 sub-file 2 over
+    // its tiles from char offset 0x9000.
+    illustration_ = language() == Language::English
+        ? khdays::resource::load_ui_background("ttl/ttl.p2", 1, 3, 1, 1)
+        : khdays::resource::load_ui_background(
+              "ttl/ttl.p2", 1, 3, 1, 1,
+              khdays::resource::CharacterPatch{
+                  localized_path("ttl/ttl_&.p2"), 2U, 0x9000U});
+    // func_ov000_0204cac0: ttl_&.p2 sub-file 1 when the region resource exists,
+    // else (English, which has no ttl_en.p2) ttl.p2 sub-file 2.
     buttons_ = language() == Language::English
-                   ? khdays::resource::load_sprite_set("ttl/ttl.p2", 2)
-                   : khdays::resource::load_sprite_set(
-                         localized_path("ttl/ttl_&.p2").c_str(), 1);
+        ? khdays::resource::load_sprite_set("ttl/ttl.p2", 2)
+        : khdays::resource::load_sprite_set(
+              localized_path("ttl/ttl_&.p2").c_str(), 1);
+    if (buttons_) {
+        cursor_ = khdays::assets::Animator(buttons_->animations, 0);
+    }
     if (auto* music = manager.music()) {
         music->play_music(kTitleTheme);
     }
-    begin_page_slide(kPagePitch);  // the menu slides in as the title appears
 }
 
-void TitleScene::begin_page_slide(const float from) {
-    page_x_ = from;
-}
-
-void TitleScene::draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
-                                       const int page_dx, const int row_y,
-                                       const int alpha) const {
-    if (!buttons_ || buttons_->cells.empty()) {
-        return;
+int TitleScene::row_count(const int page) const {
+    // func_ov000_0204d244: data_ov000_0205a6b0 = {2, 2, 2}, with 3 rows on the
+    // root page when the extra option exists and 1 on the story page without
+    // a save.
+    if (page == 0) {
+        return kExtraOptionAvailable ? 3 : 2;
     }
-    // The DS pulses the highlight's *blend level*, not its cell. Read out of
-    // func_ov000_0205157c: a Tween ping-pongs Q12 0x2000 <-> 0x8000 over 500 ms
-    // per leg, self-restarting reversed at each end, and the sampled value >> 12
-    // is stored as the DS blend coefficient, clamped to 0..16 (func_020327e0).
-    // The tween is mode 0, which FUN_02035da8 computes as
-    // from + elapsed * (to - from) / duration -- linear. nDirection starts 0, so
-    // the first leg runs 2 -> 8.
-    //
-    // (This replaces a cell-cycle over cells 0..3, which was an inference from
-    // the same 500 ms and does not appear in the DS code.)
-    constexpr int kPulseLegFrames = 30;  // 500 ms at 60 fps
-    constexpr int kPulseMin = 2;         // 0x2000 >> 12
-    constexpr int kPulseMax = 8;         // 0x8000 >> 12
-    constexpr int kBlendRange = 16;      // the DS blend coefficient's range
-    const int leg = frame_ % (kPulseLegFrames * 2);
-    const int rise = leg < kPulseLegFrames ? leg : kPulseLegFrames * 2 - leg;
-    const int level =
-        kPulseMin + (kPulseMax - kPulseMin) * rise / kPulseLegFrames;
-    // Fold the blend level into the screen's own fade-in alpha.
-    const int pulse_alpha = alpha * level / kBlendRange;
-    // Exact position from the title savestate's bottom OAM: the cursor square is
-    // sprite #0 at (0, 124) while the first option row sits at Y=116, i.e. +8
-    // down from the row's top and flush left.
-    constexpr int kCursorX = 0;
-    constexpr int kCursorY = 8;
-    // Which cell the cursor draws is unchanged and still unverified; only the
-    // pulse is measured. Cell 0 is the resting frame of the same group.
-    draw_overlay(r, layout, buttons_->cells[0], page_dx + kCursorX,
-                 row_y + kCursorY, /*bottom=*/true, pulse_alpha);
+    if (page == 1) {
+        return kLoadAvailable ? 2 : 1;
+    }
+    return 2;
 }
 
-std::size_t TitleScene::options(Option* out) const {
-    // ttl_<lang>.p2 sub-file 1 cells, as {selected (red bar), normal (gray bar)}.
-    constexpr Option kStoryMode{4, 5};       // MODO HISTORIA
-    constexpr Option kMissionMode{6, 7};     // MODO MISION
-    constexpr Option kNewGame{8, 9};         // NUEVA PARTIDA
-    constexpr Option kLoad{10, 11};          // CARGAR
-    constexpr Option kSinglePlayer{18, 19};  // UN JUGADOR
-    constexpr Option kMultiPlayer{20, 21};   // MULTIJUGADOR
-
-    switch (level_) {
-    case Level::Root:
-        out[0] = kStoryMode;
-        out[1] = kMissionMode;
-        return 2;
-    case Level::Story:
-        out[0] = kNewGame;
-        // With no save file the DS shows NUEVA PARTIDA alone, in the first slot.
-        if (has_save_data()) {
-            out[1] = kLoad;
-            return 2;
-        }
-        return 1;
-    case Level::Mission:
-        out[0] = kSinglePlayer;
-        out[1] = kMultiPlayer;
-        return 2;
+std::array<int, 2> TitleScene::page_objects() const {
+    // func_ov000_0204cc90 without the extra option: page 0 shows objects 1/2,
+    // a sub-page 3/4 (4 only with a save) or, in the alternate layout, 8/9.
+    if (page_ == 0) {
+        return {1, 2};
     }
-    return 0;
-}
-
-void TitleScene::confirm(SceneManager& manager) {
-    switch (level_) {
-    case Level::Root:
-        level_ = selected_ == 0 ? Level::Story : Level::Mission;
-        selected_ = 0;
-        begin_page_slide(kPagePitch);  // deeper: new page slides in from the right
-        break;
-    case Level::Story:
-        if (selected_ == 0) {
-            // NUEVA PARTIDA. The DS shows a difficulty selector before gameplay.
-            // Partly measured (tools/savestate_obj): the option names are
-            // UI/cm/cmo_&.p2 sub-file 3 cells 40 PRINCIPIANTE / 41 NORMAL /
-            // 42 EXPERTO (43 CRITICAL), and the OBJ layer is three plates at
-            // Y=56/72/88 with the selected one red plus a cursor. Not ported
-            // yet: the plate art is a tile surface (not a clean cell) and the
-            // name label positions live on the BG layer, which the savestate's
-            // register mirror does not expose -- building it now would mean
-            // inventing those positions, so it waits for a BG-layer reading.
-            //
-            // Where the story then goes is decompiled but not yet pinned down:
-            // ov000's dispatcher func_ov000_0204ef34 runs func_ov000_0204ee24
-            // for the story path, which reads a selector (func_020235d0(0, 9))
-            // and requests scene 11 -- the ov012 opening, after ov028's checks,
-            // with mission 10000 -- only when it is 0x191, and scene 5 (ov004)
-            // with the selector otherwise. Which value a fresh game carries is
-            // unverified (it needs a trace or a savestate right after the
-            // difficulty choice), so this still enters the gameplay harness
-            // rather than guessing between the two.
-            manager.change_scene(kSceneGameplay);
-        }
-        // CARGAR is unreachable while has_save_data() is false.
-        break;
-    case Level::Mission:
-        if (selected_ == 0) {
-            // UN JUGADOR. The DS shows the save-file screen ("Seleccionar
-            // archivo.") before the character select, and so does this.
-            manager.change_scene(kSceneSaveFile);
-        }
-        // MULTIJUGADOR is DS local wireless — not ported.
-        break;
+    if (alt_layout_) {
+        return {8, 9};
     }
+    return {3, kLoadAvailable ? 4 : -1};
 }
 
 void TitleScene::update(SceneManager& manager) {
-    ++frame_;
-    // During the intro (the gray logo animation) the menu is not up yet.
-    if (frame_ < intro_len_) {
+    const Input& in = manager.input();
+    // The pad sampler and the object manager run every frame whatever the
+    // state; only the menu state consumes the repeat mask.
+    const std::uint16_t repeated = repeat_.update(in);
+    cursor_.tick();
+    switch (state_) {
+        case State::Intro:
+            update_intro(in);
+            break;
+        case State::Menu:
+            update_menu(in, repeated);
+            break;
+        case State::PageChange:
+            update_page_change();
+            break;
+        case State::Leave:
+            update_leave(manager);
+            break;
+    }
+}
+
+void TitleScene::update_intro(const Input& in) {
+    const int last_frame = std::max(0, top_.logo_frames() - 1);
+    // func_ov000_0204d338: a pressed A or Start skips to the settled end.
+    if (pressed_any(in, kConfirm)) {
+        counter_ = kSettled;
+        logo_frame_ = last_frame;
+        sub_brightness_ = 0;
+        obj_weight_ = 16;
+        state_ = State::Menu;
         return;
     }
-    const auto& in = manager.input();
+    const int c = counter_;
+    logo_frame_ = std::min(c, last_frame);
+    if (c < kFadeStart) {
+        sub_brightness_ = 0x10;
+    } else if (c <= kFadeEnd) {
+        sub_brightness_ = 0x10 - (c - kFadeStart) / 2;
+        obj_weight_ = (c - kFadeStart) / 2;
+    } else {
+        sub_brightness_ = 0;
+        obj_weight_ = 16;
+    }
+    // After drawing frame c the logo advances one frame; the state ends once
+    // that reaches the animation's last frame (func_0202a928), without
+    // counting further.
+    if (c + 1 >= last_frame) {
+        state_ = State::Menu;
+        return;
+    }
+    ++counter_;
+}
 
-    // Page-scroll ease (func_ov000_02050ec4): close a quarter of the gap to the
-    // resting position each frame, snapping once the step is under 1/8 px.
-    page_x_ += (0.0F - page_x_) * 0.25F;
-    if (std::abs(page_x_) < 0.125F) {
-        page_x_ = 0.0F;
+void TitleScene::update_menu(const Input& in, const std::uint16_t repeated) {
+    // Cursor input waits until no key is held (the pad's held mask is 0).
+    if (input_ready_) {
+        const int rows = row_count(page_);
+        int row = cursor_row_[static_cast<std::size_t>(page_)];
+        if ((repeated & static_cast<std::uint16_t>(Button::Up)) != 0U) {
+            --row;
+        }
+        if ((repeated & static_cast<std::uint16_t>(Button::Down)) != 0U) {
+            ++row;
+        }
+        if (row < 0) {
+            row = rows - 1;
+        }
+        if (row >= rows) {
+            row = 0;
+        }
+        cursor_row_[static_cast<std::size_t>(page_)] = row;
+    } else if (in.down == 0U) {
+        input_ready_ = true;
     }
 
-    Option opts[2];
-    const int count = static_cast<int>(options(opts));
-    if (in.just_pressed(Button::Down)) {
-        selected_ = std::min(count - 1, selected_ + 1);
+    if (counter_ < kFadeStart) {
+        sub_brightness_ = 0x10;
+        ++counter_;
+    } else if (counter_ <= kFadeEnd) {
+        sub_brightness_ = 0x10 - (counter_ - kFadeStart) / 2;
+        obj_weight_ = (counter_ - kFadeStart) / 2;
+        ++counter_;
+    } else {
+        sub_brightness_ = 0;
+        obj_weight_ = 16;
     }
-    if (in.just_pressed(Button::Up)) {
-        selected_ = std::max(0, selected_ - 1);
+
+    const int row = cursor_row_[static_cast<std::size_t>(page_)];
+    if (pressed_any(in, kConfirm)) {
+        if (page_ == 0) {
+            if (row == 0) {
+                counter_ = 0;
+                if (kLoadAvailable) {
+                    cursor_row_[1] = 1;
+                }
+                alt_layout_ = false;
+                page_delta_ += 1;
+                state_ = State::PageChange;
+            } else if (row == 1) {
+                counter_ = 0;
+                alt_layout_ = true;
+                page_delta_ = 2;
+                state_ = State::PageChange;
+            }
+        } else {
+            counter_ = 0;
+            if (row == 0) {
+                next_ = alt_layout_ ? Next::SaveFile : Next::NewGame;
+                state_ = State::Leave;
+            } else if (row == 1) {
+                next_ = Next::SaveFile;
+                state_ = State::Leave;
+            }
+        }
+    } else if (pressed_any(in, kCancel) && page_ != 0) {
+        page_delta_ -= 1;
+        if (page_ > 1) {
+            page_delta_ -= 1;
+        }
+        counter_ = 0;
+        state_ = State::PageChange;
     }
-    if (in.just_pressed(Button::A) || in.just_pressed(Button::Start)) {
-        confirm(manager);
+}
+
+void TitleScene::update_page_change() {
+    ++counter_;
+    if (counter_ == 4) {
+        page_ += page_delta_;
+        page_delta_ = 0;
     }
-    if (in.just_pressed(Button::B) && level_ != Level::Root) {
-        level_ = Level::Root;
-        selected_ = 0;
-        begin_page_slide(-kPagePitch);  // back: page slides in from the left
+    if (counter_ <= 4) {
+        obj_weight_ = 16 - counter_ * 4;
+    } else if (counter_ < 8) {
+        obj_weight_ = counter_ * 4 - 16;
+    } else {
+        counter_ = kSettled;
+        state_ = State::Menu;
     }
+}
+
+void TitleScene::update_leave(SceneManager& manager) {
+    if (counter_ <= 16) {
+        sub_brightness_ = -counter_;
+        ++counter_;
+        return;
+    }
+    sub_brightness_ = -16;
+    // NUEVA PARTIDA continues into the difficulty select (func_ov000_0204f610),
+    // which is not ported yet, so the gameplay harness stands in for it. Where
+    // the story then goes is decompiled but not pinned down: the story path
+    // func_ov000_0204ee24 reads a selector (func_020235d0(0, 9)) and requests
+    // scene 11 -- the ov012 opening, after ov028's checks, with mission 10000 --
+    // only when it is 0x191, and scene 5 (ov004) otherwise; which value a fresh
+    // game carries is unverified.
+    manager.change_scene(next_ == Next::NewGame ? kSceneGameplay
+                                                : kSceneSaveFile);
+}
+
+void TitleScene::draw_object(Renderer& r, const DualScreenLayout& layout,
+                             const int cell, const int x, const int y,
+                             const int alpha) const {
+    if (!buttons_ || cell < 0
+        || static_cast<std::size_t>(cell) >= buttons_->cells.size()) {
+        return;
+    }
+    const auto& origin = buttons_->cell_origins[static_cast<std::size_t>(cell)];
+    draw_overlay(r, layout, buttons_->cells[static_cast<std::size_t>(cell)],
+                 x + origin[0], y + origin[1], /*bottom=*/true, alpha);
 }
 
 void TitleScene::render(SceneManager&, Renderer& r) {
     r.clear(Color{0, 0, 0, 255});
     const auto layout = dual_screen_layout(r);
 
-    // Phase 1 -- intro: the gray 3D logo animates ALONE on the top screen while
-    // the bottom stays black. When its animation ends the title takes over (the
-    // DS ticks the logo in func_ov000_0204ef34, then hands off to the title via
-    // func_ov000_0204ede0). Drawn with no s7 behind it, so the model reads gray
-    // as on the DS -- the colour comes later, from the 2D title.
-    if (logo_model_ && logo_model_->model.skinning
-        && logo_model_->animation.frame_count > 0 && frame_ < intro_len_) {
-        auto& lm = *logo_model_;
-        const auto objects = khdays::assets::sample_animation(
-            lm.animation, static_cast<float>(frame_), lm.model.object_matrices);
-        lm.model.palette =
-            khdays::assets::compute_palette(*lm.model.skinning, objects);
-        // The gray intro logo shows KINGDOM HEARTS + crown + heart, but NOT the
-        // "358/2 Days" subtitle (that appears only with the colour title), so
-        // exclude the title_006 quad here.
-        logo_frame_ = khdays::assets::compose_flat_model(
-            lm.model, lm.textures, 256, 192, 0.80F, 0.20F,
-            /*only_texture=*/"", /*exclude_texture=*/"title_006");
-        // Per-frame pixels -> dynamic path (the SDL cache is pointer-keyed).
-        draw_screen_dynamic(r, layout, logo_frame_, /*bottom=*/false, 255);
-        return;  // bottom black; the menu is not up during the intro
-    }
+    // Top: during the intro BG1 is off until the counter reaches 0x3c, then
+    // its palette walks back from white; afterwards it stays at level 0.
+    const bool intro = state_ == State::Intro;
+    const bool show_bg = !intro || counter_ >= kFadeStart;
+    const int level = !intro || counter_ < kFadeStart
+        ? 0
+        : std::max(0, 0x10 - (counter_ - kFadeStart) / 2);
+    draw_screen_dynamic(r, layout, top_.compose(logo_frame_, show_bg, level),
+                        /*bottom=*/false);
 
-    // Phase 2 -- the title on both screens, fading in (func_ov000_0204e270): a
-    // two-stage fade from black, timed from when the intro ended. The top settles
-    // over t=0..0x3c; the bottom stays black until 0x3c then fades over
-    // 0x3c..0x5c (the DS ramps sub master brightness 0x10->0 there).
-    const int t = frame_ - intro_len_;
-    constexpr int kTopEnd = 0x3c;     // 60
-    constexpr int kBottomEnd = 0x5c;  // 92
-    const int top_a = t >= kTopEnd ? 255 : 255 * t / kTopEnd;
-    const int bottom_a =
-        t <= kTopEnd
-            ? 0
-            : (t >= kBottomEnd ? 255
-                               : 255 * (t - kTopEnd) / (kBottomEnd - kTopEnd));
-
-    if (top_) {
-        draw_screen(r, layout, *top_, /*bottom=*/false, top_a);
-    }
-    if (!rest_358_.rgba.empty()) {
-        draw_screen(r, layout, rest_358_, /*bottom=*/false, top_a);
-    }
+    // Bottom: the illustration (BG1), then the OBJ layer blended over it by
+    // the sub engine's BLDALPHA weight, then the master brightness.
     if (illustration_) {
-        draw_screen(r, layout, *illustration_, /*bottom=*/true, bottom_a);
+        draw_screen(r, layout, *illustration_, /*bottom=*/true);
     }
-
-    // The option block eases horizontally into place (see update()).
-    const int page_dx = static_cast<int>(std::lround(page_x_));
-
-    // The current level's options on the bottom screen, red for the selected one
-    // and gray for the rest.
-    if (buttons_) {
-        Option opts[2];
-        const std::size_t count = options(opts);
-        for (std::size_t i = 0; i < count; ++i) {
-            const bool sel = static_cast<int>(i) == selected_;
-            const int cell = sel ? opts[i].selected : opts[i].normal;
-            const int y = 116 + static_cast<int>(i) * 28;
-            if (cell >= 0
-                && static_cast<std::size_t>(cell) < buttons_->cells.size()) {
-                // Real positions from the ov000 sub-engine OAM: the option slots
-                // are at (0, 116) and (0, 144) — left-aligned, 24px tall, with a
-                // 28px row pitch. page_dx applies the page-scroll ease; bottom_a
-                // fades the bottom screen in with the entry.
-                draw_overlay(r, layout, buttons_->cells[cell], page_dx, y,
-                             /*bottom=*/true, bottom_a);
+    const int obj_alpha = std::clamp(obj_weight_, 0, 16) * 255 / 16;
+    if (buttons_ && obj_alpha > 0) {
+        const auto objects = page_objects();
+        const int row = cursor_row_[static_cast<std::size_t>(page_)];
+        for (std::size_t i = 0; i < objects.size(); ++i) {
+            const int object = objects[i];
+            if (object < 0
+                || static_cast<std::size_t>(object)
+                       >= buttons_->animations.animations.size()) {
+                continue;
             }
-            if (sel) {
-                draw_selection_cursor(r, layout, page_dx, y, bottom_a);
+            const auto& steps =
+                buttons_->animations.animations[static_cast<std::size_t>(object)]
+                    .steps;
+            const std::size_t frame = static_cast<int>(i) == row ? 1U : 0U;
+            if (frame < steps.size()) {
+                draw_object(r, layout, steps[frame].cell, kOptionX,
+                            kOptionY[i], obj_alpha);
             }
         }
+        const auto slot = static_cast<std::size_t>(std::clamp(row, 0, 1));
+        draw_object(r, layout, cursor_.current_cell(), kCursorX,
+                    kCursorY[slot], obj_alpha);
+    }
+    if (sub_brightness_ != 0) {
+        // Master brightness: positive = toward white, negative = black.
+        const int amount = std::min(16, std::abs(sub_brightness_));
+        const auto a = static_cast<std::uint8_t>(amount * 255 / 16);
+        const std::uint8_t shade = sub_brightness_ > 0 ? 255U : 0U;
+        draw_screen_fill(r, layout, /*bottom=*/true, shade == 255U, a);
     }
 }
 

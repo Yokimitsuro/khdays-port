@@ -7,6 +7,7 @@
 #include "khdays/assets/tex0.h"
 #include "khdays/assets/ui_layout.h"
 #include "khdays/game/scene.h"
+#include "khdays/game/scenes/title_top_screen.h"
 #include "khdays/resource/ui_content.h"  // SpriteSet
 
 namespace khdays::game::scenes {
@@ -47,7 +48,8 @@ private:
 
     // ov000 is the whole front-end and keeps the KH logo on the top screen
     // across all of it, this screen included (runtime-confirmed).
-    std::optional<khdays::assets::DecodedTexture> logo_;
+    TitleTopScreen top_;
+    khdays::assets::DecodedTexture top_frame_;
     std::optional<khdays::assets::UiLayout> layout_;
     std::optional<khdays::resource::SpriteSet> sprites_;
     int selected_ = 0;

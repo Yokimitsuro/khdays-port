@@ -423,7 +423,7 @@ void print_help() {
         << "  khdays-port --audio-info FILE\n"
         << "  khdays-port --vfs-resolve GAMEPATH\n"
         << "  khdays-port --game\n"
-        << "  khdays-port --boot-shot OUT.bmp [FRAME]\n"
+        << "  khdays-port --boot-shot OUT.bmp [FRAME] [LANG]\n"
         << "  khdays-port --title-shot OUT.bmp [KEYS] [h]\n"
         << "  khdays-port --save-shot OUT.bmp [CURSOR-STEPS]\n"
         << "  khdays-port --menu-shot OUT.bmp [CURSOR-STEPS]\n"
@@ -936,18 +936,21 @@ int main(int argc, char* argv[]) {
             // Optional 2nd arg: a key sequence driving the menu before the
             // capture — 'd'/'u' move, 'a' confirms (enters a submenu), 'b' goes
             // back; a digit N means N x Down. e.g. "da" = MODO MISION -> its
-            // submenu.
+            // submenu. "@N" instead captures frame N of the intro.
             const std::string keys = argc > 3 ? std::string{argv[3]} : std::string{};
             khdays::game::SceneManager manager;
             manager.register_scene(khdays::game::kSceneTitle, [] {
                 return std::make_unique<khdays::game::scenes::TitleScene>();
             });
             manager.start(khdays::game::kSceneTitle);
-            for (int i = 0; i < 240; ++i) {  // settle past the fade-in
+            const bool intro_frame = !keys.empty() && keys[0] == '@';
+            // The intro runs 119 frames (func_ov000_0204e270); settle past it.
+            const int settle = intro_frame ? std::stoi(keys.substr(1)) + 1 : 240;
+            for (int i = 0; i < settle; ++i) {
                 manager.set_input(khdays::game::Input{});
                 manager.step();
             }
-            for (const char key : keys) {
+            for (const char key : intro_frame ? std::string{} : keys) {
                 auto button = khdays::game::Button::Down;
                 int repeat = 1;
                 switch (key) {
@@ -964,15 +967,22 @@ int main(int argc, char* argv[]) {
                 }
                 for (int i = 0; i < repeat; ++i) {
                     khdays::game::Input in;
-                    in.pressed = static_cast<std::uint16_t>(button);
+                    in.down = static_cast<std::uint16_t>(button);
+                    in.pressed = in.down;
                     manager.set_input(in);
                     manager.step();
-                    manager.set_input(khdays::game::Input{});
-                    manager.step();
+                    // Release, and let a level change's 8-frame cross-fade
+                    // (func_ov000_0204e9a4) finish before the next key.
+                    for (int wait = 0; wait < 12; ++wait) {
+                        manager.set_input(khdays::game::Input{});
+                        manager.step();
+                    }
                 }
             }
-            manager.set_input(khdays::game::Input{});
-            manager.step();
+            if (!intro_frame) {
+                manager.set_input(khdays::game::Input{});
+                manager.step();
+            }
             // Optional last arg "h" = side-by-side layout (wider canvas).
             const bool horizontal = argc > 4 && std::string{argv[4]} == "h";
             if (horizontal) {
@@ -992,19 +1002,30 @@ int main(int argc, char* argv[]) {
         }
 
         if (first == "--boot-shot") {
-            // Headless snapshot of the boot logo sequence at a given frame.
+            // Headless snapshot of the boot logo sequence at a given frame
+            // (0-based, the frame ov000's counter shows), optionally in a
+            // language (the legal screen is localized).
             if (argc < 3) {
-                std::cerr << "ERROR: --boot-shot requires an output BMP [frame]\n";
+                std::cerr << "ERROR: --boot-shot requires an output BMP "
+                             "[frame] [LANG]\n";
                 return EXIT_FAILURE;
             }
             khdays::vfs::autodetect_data_root();
             const int frames = argc > 3 ? std::stoi(argv[3]) : 0;
+            if (argc > 4) {
+                khdays::game::set_language(
+                    khdays::game::language_from_code(argv[4]));
+            }
             khdays::game::SceneManager manager;
             manager.register_scene(khdays::game::kSceneBootLogo, [] {
                 return std::make_unique<khdays::game::scenes::BootLogoScene>();
             });
+            // Past the logos the flow hands over to the title.
+            manager.register_scene(khdays::game::kSceneTitle, [] {
+                return std::make_unique<khdays::game::scenes::TitleScene>();
+            });
             manager.start(khdays::game::kSceneBootLogo);
-            for (int i = 0; i < frames; ++i) {
+            for (int i = 0; i <= frames; ++i) {
                 manager.set_input(khdays::game::Input{});
                 manager.step();
             }

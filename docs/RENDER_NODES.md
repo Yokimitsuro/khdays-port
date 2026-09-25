@@ -33,11 +33,14 @@ not a guess.
   `func_0203257c(mgr, cell, pos)` positions it. The menu holds **10 cells**
   (`func_ov000_0204cc90`): cell 0 = cursor, cells 1..9 = the options across
   pages; the layout shows/hides them per page and per progression flag.
-- **Page scroll** (`func_ov000_02050ec4`, already ported as an ease): eases four
-  page positions toward their target (quarter of the gap per frame, snap < 1/8
-  px), the selected page offset +8px.
-- **Selection pulse** (`func_ov000_0205157c`, already ported): a ping-pong alpha
-  tween 2/16..8/16 over 500 ms on the selection highlight.
+- **Page scroll** (`func_ov000_02050ec4`): eases four page positions toward
+  their target (quarter of the gap per frame, snap < 1/8 px), the selected page
+  offset +8px. It runs on `data_ov000_0205ac24`, the load-page (save-file)
+  context -- **not** the title, whose level change is the 8-frame cross-fade
+  `func_ov000_0204e9a4`.
+- **Selection pulse** (`func_ov000_0205157c`, called only from `02050ec4`): a
+  ping-pong alpha tween 2/16..8/16 over 500 ms on the load page's selection
+  highlight. The title cursor instead plays its own NANR animation.
 
 ## Correction (2026-08-08): the title logo IS the 3D model
 

@@ -131,6 +131,7 @@ add_library(
         src/assets/collision.cpp
         src/assets/font.cpp
         src/assets/graphics2d.cpp
+        src/assets/material_animation.cpp
         src/assets/mdl0.cpp
         src/assets/mesh.cpp
         src/assets/message.cpp
@@ -216,6 +217,7 @@ add_library(
         src/game/scenes/day_transition_scene.cpp
         src/game/scenes/opening_scene.cpp
         src/game/scenes/title_scene.cpp
+        src/game/scenes/title_top_screen.cpp
         src/game/scenes/main_menu_scene.cpp
         src/game/scenes/gameplay_scene.cpp
         src/game/scenes/save_file_scene.cpp
@@ -471,6 +473,17 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        khdays-material-animation-test
+        tests/cpp/test_material_animation.cpp
+    )
+
+    target_link_libraries(
+        khdays-material-animation-test
+        PRIVATE
+            khdays-assets
+    )
+
+    add_executable(
         khdays-ui-layout-test
         tests/cpp/test_ui_layout.cpp
     )
@@ -521,6 +534,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-affine-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cakp-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-cell-test PRIVATE /W4 /permissive-)
+        target_compile_options(khdays-material-animation-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-ui-layout-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-collision-test PRIVATE /W4 /permissive-)
         target_compile_options(khdays-battle-hud-test PRIVATE /W4 /permissive-)
@@ -542,6 +556,7 @@ if(BUILD_TESTING)
         target_compile_options(khdays-affine-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cakp-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-cell-test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(khdays-material-animation-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-ui-layout-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-collision-test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(khdays-battle-hud-test PRIVATE -Wall -Wextra -Wpedantic)
@@ -564,6 +579,7 @@ if(BUILD_TESTING)
     khdays_enable_sanitizers(khdays-affine-test)
     khdays_enable_sanitizers(khdays-cakp-test)
     khdays_enable_sanitizers(khdays-cell-test)
+    khdays_enable_sanitizers(khdays-material-animation-test)
     khdays_enable_sanitizers(khdays-ui-layout-test)
     khdays_enable_sanitizers(khdays-collision-test)
     khdays_enable_sanitizers(khdays-battle-hud-test)
@@ -669,6 +685,11 @@ if(BUILD_TESTING)
     )
 
     add_test(
+        NAME khdays-material-animation
+        COMMAND khdays-material-animation-test
+    )
+
+    add_test(
         NAME khdays-battle-hud
         COMMAND khdays-battle-hud-test
     )
@@ -697,6 +718,7 @@ if(BUILD_TESTING)
             khdays-anim-channel-test
             khdays-affine-test
             khdays-cell-test
+            khdays-material-animation-test
             khdays-ui-layout-test
             khdays-collision-test
             khdays-cakp-test

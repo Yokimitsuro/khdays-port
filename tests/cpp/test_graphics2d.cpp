@@ -272,7 +272,7 @@ int main() {
                    "screen back BG visible");
         }
 
-        // compose_flat_model: one white-textured triangle tinted red by the
+        // draw_ortho_model: one white-textured triangle tinted red by the
         // vertex colour, over an identity palette.
         {
             khdays::assets::DecodedTexture white_tex;
@@ -294,22 +294,37 @@ int main() {
             };
             nmesh.vertices = {mk(-1.0F, -1.0F), mk(1.0F, -1.0F), mk(0.0F, 1.0F)};
             nmesh.indices = {0U, 1U, 2U};
+            nmesh.material_name = "m";
             m.meshes.push_back(nmesh);
 
             std::map<std::string, khdays::assets::DecodedTexture> texs;
             texs["t"] = white_tex;
-            const auto img =
-                khdays::assets::compose_flat_model(m, texs, 32, 32, 0.9F, 0.05F);
-            expect(img.width == 32 && img.height == 32, "flat-model size");
-            bool red = false;
-            for (std::size_t k = 0; k + 4U <= img.rgba.size(); k += 4U) {
-                if (img.rgba[k] > 200 && img.rgba[k + 1] < 60
-                    && img.rgba[k + 3] > 0) {
-                    red = true;
-                    break;
-                }
-            }
-            expect(red, "flat-model draws a tinted textured triangle");
+            const auto blank = [] {
+                khdays::assets::DecodedTexture t;
+                t.width = 32;
+                t.height = 32;
+                t.rgba.assign(32U * 32U * 4U, 0U);  // black
+                return t;
+            };
+            const khdays::assets::OrthoView view{-2.0F, 2.0F, -2.0F, 2.0F};
+            auto img = blank();
+            khdays::assets::draw_ortho_model(img, m, texs, view);
+            // The triangle's centroid (0, -1/3) lands at screen (16, 18.7).
+            const std::size_t centre = (18U * 32U + 16U) * 4U;
+            expect(img.rgba[centre] == 255U && img.rgba[centre + 1U] == 0U,
+                   "ortho model draws a tinted textured triangle");
+            // (-2,2)..(2,-2) fills the target: the corner stays untouched.
+            expect(img.rgba[0] == 0U, "ortho model leaves the corner");
+
+            auto hidden = blank();
+            khdays::assets::draw_ortho_model(hidden, m, texs, view, {{"m", 0.0F}});
+            expect(hidden.rgba[centre] == 0U,
+                   "a material with alpha 0 is not drawn");
+
+            auto half = blank();
+            khdays::assets::draw_ortho_model(half, m, texs, view, {{"m", 0.5F}});
+            expect(half.rgba[centre] > 100U && half.rgba[centre] < 160U,
+                   "material alpha blends over the target");
         }
 
         {

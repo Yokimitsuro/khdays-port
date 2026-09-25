@@ -12,6 +12,7 @@
 #include "khdays/assets/battle_hud.h"  // Ov002PlayerGauge
 #include "khdays/assets/cell.h"       // AnimBank
 #include "khdays/assets/graphics2d.h"
+#include "khdays/assets/material_animation.h"  // MaterialColorAnimation
 #include "khdays/assets/mesh.h"       // NeutralModel
 #include "khdays/assets/tex0.h"       // DecodedTexture
 #include "khdays/assets/ui_layout.h"  // UiLayout
@@ -61,20 +62,6 @@ std::optional<khdays::assets::UiLayout> load_ui_layout(const char* game_path);
 // NCLR + NCGR + NSCR full-screen image).
 std::optional<khdays::assets::DecodedTexture> load_boot_logo();
 
-// Compose the real title logo: ttl.p2 sub-file 0 is a KAPH pack holding the
-// "title" 3D model — a few flat textured quads (KINGDOM HEARTS, 358/2 Days, the
-// heart and crown). This decodes the model and its textures and composites them
-// to a 2D image, so the title shows the actual logo instead of a flat backdrop.
-// The KINGDOM HEARTS 358/2 Days logo (the ttl.p2 KAPH/BMD0 model, flattened).
-// `over_white` composites it on an opaque white top screen (the default, as the
-// save screen uses it); false keeps the logo's own alpha so it can be overlaid
-// on another background (the title draws it over the s7 top-screen BG, which
-// carries Disney/SQUARE ENIX and the illustration but not the "358/2 Days"
-// subtitle -- that subtitle lives in this model).
-std::optional<khdays::assets::DecodedTexture> load_title_logo(
-    bool over_white = true, float scale = 0.80F, float y_offset = 0.20F,
-    const char* only_texture = "");
-
 // The title logo as an animatable 3D model plus its NSBCA. The DS renders this
 // model (ttl.p2 sub-file 0, a KAPH holding a BMD0 + a BCA0) and plays the
 // animation (func_ov000_0204d7c8 loads it, func_ov000_02059f50 renders 3D). A
@@ -84,6 +71,9 @@ struct TitleLogoModel {
     khdays::assets::NeutralModel model;
     std::map<std::string, khdays::assets::DecodedTexture> textures;
     khdays::assets::SkeletalAnimation animation;  // frame_count == 0 if none
+    // The KAPH's slot-2 BMA0, which ov000 plays alongside the BCA0 (node
+    // tracks 0 and 2): it fades the materials' polygon alpha.
+    std::optional<khdays::assets::MaterialColorAnimation> material_animation;
 };
 
 // Neutral reconstruction of ov012's `op/op.p2` resources. The base archive
@@ -135,6 +125,27 @@ std::optional<khdays::assets::DecodedTexture> load_ui_background(
     std::size_t screen,
     std::size_t tiles_index,
     std::size_t palette_index);
+
+// Character data the game streams over a BG layer's tiles after loading them:
+// the NCGR in `game_path` sub-file `subfile` is copied into the layer's
+// character VRAM at `char_byte_offset` (relative to the layer's char base), so
+// it replaces the tiles from that point on. ov000 does this to localize the
+// boot legal screen (func_ov000_0204de30) and the title illustration
+// (func_ov000_0204e0c8).
+struct CharacterPatch final {
+    std::string game_path;
+    std::size_t subfile = 0;
+    std::size_t char_byte_offset = 0;
+};
+
+// load_ui_background with `patch` applied to the tiles before composing.
+std::optional<khdays::assets::DecodedTexture> load_ui_background(
+    const char* game_path,
+    std::size_t subfile,
+    std::size_t screen,
+    std::size_t tiles_index,
+    std::size_t palette_index,
+    const CharacterPatch& patch);
 
 // Decode a tile-only D2KP UI sub-file to a transparent atlas. Battle UI packs
 // such as UI/btl/main.p2 carry their CHR/PLT here and assemble the final HUD at

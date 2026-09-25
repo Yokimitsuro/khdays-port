@@ -162,44 +162,25 @@ float edge(const Vec2 a, const Vec2 b, const Vec2 c) {
 
 }  // namespace
 
-DecodedTexture compose_flat_model(
-    const NeutralModel& model,
-    const std::map<std::string, DecodedTexture>& textures, const int width,
-    const int height, const float fill, const float top_margin,
-    const std::string& only_texture, const std::string& exclude_texture) {
-    DecodedTexture frame;
-    frame.name = "flat-model";
-    frame.width = width;
-    frame.height = height;
-    frame.rgba.assign(static_cast<std::size_t>(width) * height * 4U, 0U);
-
-    // Rest-pose XY bounding box over every vertex.
-    float min_x = 1e9F;
-    float max_x = -1e9F;
-    float min_y = 1e9F;
-    float max_y = -1e9F;
-    bool any = false;
-    for (const auto& mesh : model.meshes) {
-        for (const auto& v : mesh.vertices) {
-            const auto p = posed_position(model, v);
-            min_x = std::min(min_x, p[0]);
-            max_x = std::max(max_x, p[0]);
-            min_y = std::min(min_y, p[1]);
-            max_y = std::max(max_y, p[1]);
-            any = true;
-        }
+void draw_ortho_model(
+    DecodedTexture& target, const NeutralModel& model,
+    const std::map<std::string, DecodedTexture>& textures,
+    const OrthoView& view,
+    const std::map<std::string, float>& material_alpha) {
+    const int width = target.width;
+    const int height = target.height;
+    if (width <= 0 || height <= 0
+        || target.rgba.size()
+            < static_cast<std::size_t>(width) * height * 4U
+        || view.right <= view.left || view.top <= view.bottom) {
+        return;
     }
-    if (!any || max_x <= min_x || max_y <= min_y) {
-        return frame;
-    }
-
-    const float model_w = max_x - min_x;
-    const float scale = static_cast<float>(width) * fill / model_w;
-    const float off_x = (static_cast<float>(width) - model_w * scale) * 0.5F;
-    const float off_y = static_cast<float>(height) * top_margin;
+    // Orthographic camera looking down -Z with +Y up: the view volume's
+    // [left, right] x [bottom, top] fills the target.
+    const float sx = static_cast<float>(width) / (view.right - view.left);
+    const float sy = static_cast<float>(height) / (view.top - view.bottom);
     const auto to_screen = [&](const std::array<float, 3>& p) {
-        return Vec2{off_x + (p[0] - min_x) * scale,
-                    off_y + (max_y - p[1]) * scale};  // flip Y (up is +Y)
+        return Vec2{(p[0] - view.left) * sx, (view.top - p[1]) * sy};
     };
 
     // Draw meshes back-to-front by mean depth (Z ascending = furthest first).
@@ -214,16 +195,17 @@ DecodedTexture compose_flat_model(
             mesh.vertices.empty() ? 0.0F : z_sum / mesh.vertices.size();
         order.emplace_back(z_avg, &mesh);
     }
-    std::sort(order.begin(), order.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::stable_sort(order.begin(), order.end(),
+                     [](const auto& a, const auto& b) { return a.first < b.first; });
 
     for (const auto& [z_avg, mesh_ptr] : order) {
         const NeutralMesh& mesh = *mesh_ptr;
-        if (!only_texture.empty() && mesh.texture_name != only_texture) {
-            continue;  // draw only the requested sub-part (keeps full-model bounds)
-        }
-        if (!exclude_texture.empty() && mesh.texture_name == exclude_texture) {
-            continue;  // draw everything except this sub-part
+        const auto alpha_it = material_alpha.find(mesh.material_name);
+        const float alpha = alpha_it != material_alpha.end()
+            ? alpha_it->second
+            : mesh.material_alpha;
+        if (alpha <= 0.0F) {
+            continue;  // the DS skips a material whose polygon alpha is 0
         }
         const auto tex_it = textures.find(mesh.texture_name);
         const DecodedTexture* tex =
@@ -287,15 +269,16 @@ DecodedTexture compose_flat_model(
                     const std::uint8_t src[4] = {
                         static_cast<std::uint8_t>(tr * cr),
                         static_cast<std::uint8_t>(tg * cg),
-                        static_cast<std::uint8_t>(tb * cb), ta};
+                        static_cast<std::uint8_t>(tb * cb),
+                        static_cast<std::uint8_t>(
+                            std::lround(static_cast<float>(ta) * alpha))};
                     blend_pixel(
-                        &frame.rgba[(static_cast<std::size_t>(py) * width + px) * 4U],
+                        &target.rgba[(static_cast<std::size_t>(py) * width + px) * 4U],
                         src);
                 }
             }
         }
     }
-    return frame;
 }
 
 }  // namespace khdays::assets

@@ -38,7 +38,11 @@ bool SaveFileScene::hidden_on_entry(const std::int32_t id) {
 }
 
 void SaveFileScene::on_enter(SceneManager&) {
-    logo_ = khdays::resource::load_title_logo();
+    // ov000's top screen stays as the title left it: BG1 at its real colours
+    // under the logo held on its last frame.
+    top_.load();
+    top_frame_ = top_.compose(std::max(0, top_.logo_frames() - 1),
+                              /*show_bg=*/true, /*level=*/0);
     layout_ = khdays::resource::load_ui_layout(kLayoutPath);
     sprites_ = khdays::resource::load_sprite_set(
         khdays::game::localized_path(kSpritePack).c_str(), kSpriteSubfile);
@@ -75,9 +79,7 @@ void SaveFileScene::render(SceneManager&, Renderer& r) {
 
     // The DS draws this on the touch screen, with the front-end's KH logo still
     // on the top one.
-    if (logo_) {
-        draw_screen(r, layout, *logo_, /*bottom=*/false);
-    }
+    draw_screen(r, layout, top_frame_, /*bottom=*/false);
     if (!layout_ || !sprites_) {
         return;  // no game data: nothing invented to stand in for it
     }

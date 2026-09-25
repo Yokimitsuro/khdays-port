@@ -1,10 +1,15 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
+#include "khdays/assets/cell.h"  // Animator
 #include "khdays/assets/tex0.h"
+#include "khdays/game/input.h"   // KeyRepeat
 #include "khdays/game/scene.h"
+#include "khdays/game/scenes/title_top_screen.h"
 #include "khdays/resource/ui_content.h"  // SpriteSet
 
 namespace khdays::game {
@@ -13,20 +18,33 @@ struct DualScreenLayout;  // defined in draw.h
 
 namespace khdays::game::scenes {
 
-// Scene 1 (ov000): the title screen — and the whole front-end menu. Two DS
-// screens from ttl.p2: the top screen is the 2D background s7_t3_p3 (the
-// Disney + SQUARE ENIX logos above the KINGDOM HEARTS 358/2 Days logo, per the
-// data_ov000_0205a9d4 pairing), the character illustration (s3_t1_p1) on the
-// bottom. The title hosts EVERY menu level: the option pair swaps in place at
-// the same two slots, (0,116) and (0,144) (positions read from the live ov000
-// sub-engine OAM, 28px row pitch), sliding in with the game's page-scroll ease:
+// The title screen and its menu levels -- part of ov000 (scene 1) on the DS,
+// which runs them as a chain of object states after the boot logos. Each state
+// here is the port of one ov000 function, and the frame counter is its heap[0]:
 //
-//   MODO HISTORIA / MODO MISION
-//     MODO HISTORIA -> NUEVA PARTIDA / CARGAR   (CARGAR only when a save exists)
-//     MODO MISION   -> UN JUGADOR / MULTIJUGADOR
+//   Intro      func_ov000_0204e270  the 3D logo animates over white; from
+//              counter 0x3c the 2D title emerges from white under it and the
+//              bottom screen comes up from white. Ends when the logo animation
+//              reaches its last frame, or at once on A/Start.
+//   Menu       func_ov000_0204e5b0  Up/Down (with key repeat, wrapping) move
+//              the cursor; A/Start confirm, B cancels.
+//   PageChange func_ov000_0204e9a4  an 8-frame OBJ/BG1 cross-fade, swapping
+//              the menu level on its 4th frame.
+//   Leave      func_ov000_0204f51c / func_ov000_0204ef84  the bottom screen
+//              fades to black over 17 frames and the next screen starts.
 //
-// Up/Down move the cursor, A/Start confirm, B goes back a level. The options are
-// the real localized OBJ textures from ttl_<lang>.p2. Plays the title theme.
+// Menu levels (page, and altLayout on page 2):
+//   page 0  MODO HISTORIA / MODO MISION
+//   page 1  NUEVA PARTIDA / CARGAR          (CARGAR only when a save exists)
+//   page 2  UN JUGADOR / MULTIJUGADOR
+// The options and the cursor are OBJ cells animated by the pack's NANR: object
+// i plays animation i -- options rest on frame 0 (grey) or 1 (red, selected),
+// the cursor (object 0) loops its own animation.
+//
+// Not reproduced yet, and left out rather than guessed: the menu sound effects
+// (func_02033b78 ids 0 move, 1 confirm, 3 cancel -- the id-to-SDAT mapping is
+// not traced), the 105-second attract hand-off to ov012, and the third root
+// row that only a cleared save enables.
 class TitleScene final : public Scene {
 public:
     void on_enter(SceneManager& manager) override;
@@ -34,43 +52,40 @@ public:
     void render(SceneManager& manager, Renderer& renderer) override;
 
 private:
-    // Which option pair the title is currently showing.
-    enum class Level { Root, Story, Mission };
+    enum class State { Intro, Menu, PageChange, Leave };
+    enum class Next { NewGame, SaveFile };
 
-    // One option: its localized cell in ttl_<lang>.p2 when selected (red bar)
-    // and when not (gray bar).
-    struct Option {
-        int selected;
-        int normal;
-    };
+    void update_intro(const Input& input);
+    void update_menu(const Input& input, std::uint16_t repeated);
+    void update_page_change();
+    void update_leave(SceneManager& manager);
+    // How many rows page `page` has (func_ov000_0204d244's table).
+    int row_count(int page) const;
+    // Object ids shown on the current page, top row first.
+    std::array<int, 2> page_objects() const;
+    // Draw OBJ cell `cell` positioned at (x, y) plus the cell's own origin.
+    void draw_object(Renderer& r, const DualScreenLayout& layout, int cell,
+                     int x, int y, int alpha) const;
 
-    // Fill `out` with the current level's options; returns how many there are.
-    std::size_t options(Option* out) const;
-    void confirm(SceneManager& manager);
-    // Start the option block sliding in from `from` px; it eases to rest (0).
-    void begin_page_slide(float from);
-    // Draw the pulsing selection square over the selected option row at `row_y`.
-    void draw_selection_cursor(Renderer& r, const DualScreenLayout& layout,
-                               int page_dx, int row_y, int alpha = 255) const;
+    TitleTopScreen top_;
+    std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom BG1
+    std::optional<khdays::resource::SpriteSet> buttons_;  // localized OBJ pack
+    khdays::assets::Animator cursor_;  // object 0's looping animation
 
-    std::optional<khdays::assets::DecodedTexture> top_;    // top screen BG (s7)
-    // The KH logo as an animatable model (its BCA0 plays the "358/2 Days"
-    // entry); logo_frame_ holds the flattened current frame.
-    std::optional<khdays::resource::TitleLogoModel> logo_model_;
-    khdays::assets::DecodedTexture logo_frame_;  // per-frame intro pose
-    khdays::assets::DecodedTexture rest_358_;    // static "358/2 Days" for the title
-    std::optional<khdays::assets::DecodedTexture> illustration_;  // bottom screen
-    std::optional<khdays::resource::SpriteSet> buttons_;  // localized option textures
-    Level level_ = Level::Root;
-    int selected_ = 0;
-    int frame_ = 0;      // frames since the scene began
-    int intro_len_ = 0;  // frames the intro logo animation runs before the title
-    // Horizontal ease of the option block when the page/level changes. The DS
-    // eases each menu page toward its resting position (func_ov000_02050ec4:
-    // close a quarter of the gap per frame, snap below 1/8 px). The easing math
-    // is the game's; the slide distance (one screen width) and direction are the
-    // port's rendition -- the exact per-page start positions are not measured.
-    float page_x_ = 0.0F;
+    State state_ = State::Intro;
+    Next next_ = Next::NewGame;
+    int counter_ = 0;     // ov000 heap[0]
+    int logo_frame_ = 0;  // the logo animation frame on screen
+    int page_ = 0;
+    int page_delta_ = 0;  // pending level change, applied mid-fade
+    std::array<int, 3> cursor_row_{};
+    bool alt_layout_ = false;
+    bool input_ready_ = false;
+    // Sub-engine OBJ blend weight (0..16) and master brightness, as the
+    // current state last set them.
+    int obj_weight_ = 0;
+    int sub_brightness_ = 0x10;
+    KeyRepeat repeat_{30, 8};  // ov000's KeyRepeat{15, 4} in frame-rate mode 0
 };
 
 }  // namespace khdays::game::scenes

@@ -526,16 +526,48 @@ std::vector<Matrix> read_inverse_binds(
     return inv_binds;
 }
 
-// ----- Materials (only the texture size, for UV normalization) -------------
+// ----- Materials -------------------------------------------------------------
 
-// Returns the TEX0 texture name bound to each material (empty when none). UVs
-// are decoded in texels and normalized by the real texture size at render time,
-// so the material's own size fields are not needed here.
-std::vector<std::string> read_material_textures(
+struct MaterialInfo final {
+    std::string texture;  // bound TEX0 texture name, empty when none
+    std::string name;     // the material's own name (what animations target)
+    float alpha = 1.0F;   // base polygon alpha, 0..31 scaled to 0..1
+};
+
+// Reads each material's name, base polygon alpha and bound TEX0 texture. UVs
+// are decoded in texels and normalized by the real texture size at render
+// time, so the material's own size fields are not needed here.
+//
+// Layout (NitroSystem NNSG3dResMat / NNSG3dResMatData, as the decomp's G3D
+// material handler func_01ffbbf0 reads them): two u16 pairing-dictionary
+// offsets, then a dictionary whose entries are u32 offsets -- relative to the
+// block -- to each material record; a record's polyAttr sits at +0x0C with the
+// alpha in bits 16..20.
+std::vector<MaterialInfo> read_materials(
     const ByteVector& mdl0,
     const std::size_t materials_offset,
     const std::size_t material_count) {
+    std::vector<MaterialInfo> materials(material_count);
     std::vector<std::string> textures(material_count);
+
+    const auto material_dictionary =
+        parse_dictionary(mdl0, materials_offset + 4U, "materials");
+    for (std::size_t i = 0U;
+         i < material_dictionary.names.size() && i < material_count; ++i) {
+        materials[i].name = material_dictionary.names[i];
+        const auto& entry = material_dictionary.entries[i];
+        if (entry.size() < 4U) {
+            continue;
+        }
+        const auto record = materials_offset
+            + (static_cast<std::size_t>(entry[0])
+               | (static_cast<std::size_t>(entry[1]) << 8U)
+               | (static_cast<std::size_t>(entry[2]) << 16U)
+               | (static_cast<std::size_t>(entry[3]) << 24U));
+        const auto poly_attr = read_u32(mdl0, record + 0x0CU, "material polyAttr");
+        materials[i].alpha =
+            static_cast<float>((poly_attr >> 16U) & 0x1FU) / 31.0F;
+    }
 
     // The materials block starts with two u16 pairing offsets. The texture
     // pairing is an info block whose names are texture names and whose entries
@@ -566,7 +598,10 @@ std::vector<std::string> read_material_textures(
         }
     }
 
-    return textures;
+    for (std::size_t i = 0U; i < material_count; ++i) {
+        materials[i].texture = textures[i];
+    }
+    return materials;
 }
 
 // ----- Render command stream (SBC) -----------------------------------------
@@ -795,7 +830,7 @@ struct Builder final {
     const ByteVector& mdl0;
     const std::vector<Matrix>& objects;
     const std::vector<Matrix>& inv_binds;
-    const std::vector<std::string>& materials;  // texture name per material
+    const std::vector<MaterialInfo>& materials;
     float up_scale = 1.0F;
     float down_scale = 1.0F;
 
@@ -817,7 +852,7 @@ struct Builder final {
         const ByteVector& mdl0_,
         const std::vector<Matrix>& objects_,
         const std::vector<Matrix>& inv_binds_,
-        const std::vector<std::string>& materials_,
+        const std::vector<MaterialInfo>& materials_,
         khdays::assets::NeutralModel& out_)
         : mdl0(mdl0_),
           objects(objects_),
@@ -901,8 +936,11 @@ struct Builder final {
         mesh.name = piece_names[piece_idx];
         if (current_material >= 0
             && static_cast<std::size_t>(current_material) < materials.size()) {
-            mesh.texture_name =
+            const auto& material =
                 materials[static_cast<std::size_t>(current_material)];
+            mesh.texture_name = material.texture;
+            mesh.material_name = material.name;
+            mesh.material_alpha = material.alpha;
         }
 
         std::array<float, 3> position{0.0F, 0.0F, 0.0F};
@@ -1311,7 +1349,7 @@ NeutralModel decode_model_from_bytes(
         read_inverse_binds(mdl0, model_offset + inv_binds_off, num_objects);
     const auto material_count =
         static_cast<std::size_t>(mdl0[model_offset + 0x18U]);
-    const auto materials = read_material_textures(
+    const auto materials = read_materials(
         mdl0, model_offset + materials_off, material_count);
 
     Builder builder{mdl0, objects, inv_binds, materials, result};

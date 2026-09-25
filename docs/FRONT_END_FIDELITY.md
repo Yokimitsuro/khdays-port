@@ -48,20 +48,23 @@ eyeballed offsets; do not repeat that. The pairing is game data — see §3.
 These are flagged in the source as approximations, and each needs a measured
 replacement:
 
-- `TitleScene::kPagePitch = 256.0F` — "port rendition" of the page scroll. ov000
-  does not use a uniform pitch; see §3.
-- ~~`TitleScene::draw_selection_cursor` cycles the highlight through cells 0..3~~
-  **Resolved.** `func_ov000_0205157c` pulses a **blend level**, not a cell: a
-  Tween ping-pongs Q12 `0x2000` ↔ `0x8000` over 500 ms per leg, restarting
-  reversed at each end, and the sample `>> 12` is stored as the DS blend
-  coefficient clamped to 0..16 (`func_020327e0`). Mode 0 is linear
-  (`FUN_02035da8` = `from + elapsed * (to - from) / duration`), and `nDirection`
-  starts 0 so the first leg runs 2 → 8. `RENDER_NODES.md` had it right; the cell
-  cycle was an inference from the same 500 ms. Now drawn as a linear 2/16..8/16
-  level on the resting cell. *Which* cell the cursor uses is still unverified.
-- `has_save_data()` is hard-coded `false`, so CARGAR is never reachable.
-- `BootLogoScene` skips the whole logo chain on A or Start. Whether the DS
-  accepts a skip there, and on which button, is **not established**.
+- ~~`TitleScene::kPagePitch = 256.0F`~~ **Resolved (2026-09-25): the title has
+  no page scroll.** `func_ov000_02050ec4` and the selection pulse
+  `func_ov000_0205157c` both run on `data_ov000_0205ac24`, the *load-page*
+  (save-file) context -- `02050ec4` is the only caller of `0205157c` -- not on
+  the title. A title level change is `func_ov000_0204e9a4`: an 8-frame OBJ/BG1
+  cross-fade (weight 16 - 4n for n = 1..4, then 4n - 16), swapping the level on
+  frame 4.
+- ~~the pulsing selection level~~ **Corrected (2026-09-25).** The title cursor
+  is object 0, created in mode 1 by `func_ov000_0204cac0`, so the object manager
+  plays its own NANR animation 0: cells 0,1,2,3,2,1 for 6 frames each -- the
+  cell cycle an earlier version had, with the game's durations.
+- `kLoadAvailable` is hard-coded `false` (no save system), so CARGAR is never
+  reachable.
+- ~~`BootLogoScene` skips the logo chain on A or Start~~ **Resolved: no skip.**
+  None of `func_ov000_0204dc38` / `0204dd34` / `0204de30` reads the pad and the
+  scene tick `func_ov000_0204d354` is empty. The title intro, by contrast, *is*
+  skippable (`func_ov000_0204d338`: A or Start).
 
 ## 3. The DS lays the front-end out from a data table, not from code
 

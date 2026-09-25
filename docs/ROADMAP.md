@@ -214,12 +214,18 @@ not ported). Port or replace the minimum required systems for:
   this is a native reconstruction of the same content):
 
   - **Boot logos** — three publisher/legal screen pairs from `ttl.p2`, with the
-    DS's own timings taken from ov000's fade-state chain: 91 frames per pair
-    (32 fade-in / 27 hold / 32 fade-out) driving both screens' **master
-    brightness**, which fades through **black** (a positive brightness darkens;
-    the title is the one that fades from white, via a negative value).
-  - **Title** — the real 3D KH logo (a `ttl.p2` KAPH/BMD0 model) over the
-    character illustration, hosting every menu level with the real localized
+    DS's own timings taken from ov000's fade-state chain: 92 frames per pair
+    (counter 0..0x5b) driving both screens' **master brightness**, which fades
+    through **white** (`GXx_SetMasterBrightness_`: a positive value is mode Up;
+    corrected 2026-09-25 -- an earlier note had the sign backwards). The legal
+    screen is localized by streaming `ttl_&.p2` sub-file 0 over its tiles, and
+    the save check that follows holds white for at least five frames.
+  - **Title** — `func_ov000_0204e270`'s intro: the 3D KH logo (a `ttl.p2`
+    KAPH: BMD0 + BCA0 + a BMA0 that fades its materials' alpha) through ov000's
+    orthographic camera, over white; from frame 0x3c the 2D title emerges from
+    white under it while the bottom screen comes up from white; skippable with
+    A/Start. Then the menu over the character illustration, hosting every menu
+    level with the real localized
     option textures from `ttl_<lang>.p2` (MODO HISTORIA / MODO MISIÓN →
     NUEVA PARTIDA / CARGAR or UN JUGADOR / MULTIJUGADOR), at the exact OBJ
     positions (0,116) and (0,144). CARGAR only appears when a save exists, as on

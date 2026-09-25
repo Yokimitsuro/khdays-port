@@ -44,6 +44,10 @@ struct NeutralMesh final {
     // Name of the TEX0 texture bound by the mesh's material, or empty if the
     // material has no texture. Resolve it with the TEX0 loader on the same file.
     std::string texture_name;
+    // The material's own name (what material animations address) and its base
+    // polygon alpha in 0..1. The DS does not draw a mesh whose alpha is 0.
+    std::string material_name;
+    float material_alpha = 1.0F;
     std::vector<NeutralVertex> vertices;
     std::vector<std::uint32_t> indices;  // 3 per triangle
 };

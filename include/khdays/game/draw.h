@@ -85,6 +85,19 @@ inline void draw_screen_dynamic(Renderer& r, const DualScreenLayout& l,
                          DualScreenLayout::kScreenH * l.scale, alpha);
 }
 
+// Cover one whole screen with white or black at `alpha` -- the DS master
+// brightness (positive = toward white, negative = toward black, 16 = full).
+// The pixels are static so a pointer-keyed backend uploads them once.
+inline void draw_screen_fill(Renderer& r, const DualScreenLayout& l,
+                             const bool bottom, const bool white,
+                             const int alpha) {
+    static constexpr std::uint8_t kWhite[4] = {255U, 255U, 255U, 255U};
+    static constexpr std::uint8_t kBlack[4] = {0U, 0U, 0U, 255U};
+    r.draw_image(white ? kWhite : kBlack, 1, 1, l.screen_x(bottom),
+                 l.screen_y(bottom), DualScreenLayout::kScreenW * l.scale,
+                 DualScreenLayout::kScreenH * l.scale, alpha);
+}
+
 // Draw an overlay image at virtual (vx, vy) within a screen, scaled to match.
 inline void draw_overlay(Renderer& r, const DualScreenLayout& l,
                          const khdays::assets::DecodedTexture& image,

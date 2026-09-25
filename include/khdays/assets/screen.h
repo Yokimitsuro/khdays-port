@@ -47,25 +47,26 @@ DecodedTexture compose_screen(
     int width = 256,
     int height = 192);
 
-// Composite a flat (2D-in-3D) model — e.g. the title logo, which is a handful of
-// textured quads facing the camera — to a `width`x`height` RGBA image. The
-// model's rest-pose XY is scaled to fill `fill` of the canvas (preserving aspect,
-// centred horizontally, top-aligned by `top_margin` fraction), each triangle is
-// textured from `textures` (keyed by mesh texture name) and modulated by the
-// vertex colour, and meshes are drawn back-to-front by depth. Transparent
-// backdrop.
-// `only_texture`, when non-empty, restricts drawing to meshes using that texture
-// name (the projection still uses the whole model's bounds, so the drawn subset
-// keeps its position within the full layout -- e.g. rendering just the "358/2
-// Days" subtitle quad of the title logo in the spot it occupies in the logo).
-DecodedTexture compose_flat_model(
+// An orthographic view volume, in model units, as the DS's G3_Ortho takes it
+// (the camera looks down -Z with +Y up).
+struct OrthoView final {
+    float left = -1.0F;
+    float right = 1.0F;
+    float bottom = -1.0F;
+    float top = 1.0F;
+};
+
+// Draw a posed model onto `target` through `view` -- which fills the target --
+// texturing each triangle from `textures` (keyed by mesh texture name),
+// modulating by the vertex colour and alpha-blending over what is already
+// there, meshes back-to-front by depth. A mesh's alpha is its material's
+// entry in `material_alpha` (e.g. sampled from a material animation) or else
+// its own material_alpha; a mesh whose alpha is 0 is not drawn, as on the DS.
+void draw_ortho_model(
+    DecodedTexture& target,
     const NeutralModel& model,
     const std::map<std::string, DecodedTexture>& textures,
-    int width = 256,
-    int height = 192,
-    float fill = 0.86F,
-    float top_margin = 0.06F,
-    const std::string& only_texture = "",
-    const std::string& exclude_texture = "");
+    const OrthoView& view,
+    const std::map<std::string, float>& material_alpha = {});
 
 }  // namespace khdays::assets

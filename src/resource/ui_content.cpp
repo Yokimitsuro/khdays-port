@@ -322,62 +322,6 @@ std::optional<khdays::assets::DecodedTexture> load_boot_logo() {
     }
 }
 
-std::optional<khdays::assets::DecodedTexture> load_title_logo(
-    const bool over_white, const float scale, const float y_offset,
-    const char* only_texture) {
-    try {
-        const auto container = khdays::vfs::read("ttl/ttl.p2");
-        const auto kaph = khdays::assets::extract_p2_subfile(
-            container.data(), container.size(), 0);
-        // The KAPH pack embeds a standard BMD0/NSBMD (BOM at +4), so the generic
-        // Nitro-resource scan carves it out.
-        const auto bmd0 = khdays::assets::find_nitro_resource(
-            kaph.data(), kaph.size(), "BMD0");
-        if (!bmd0) {
-            return std::nullopt;
-        }
-        const auto model =
-            khdays::assets::decode_model_geometry(bmd0.data, bmd0.size);
-        std::map<std::string, khdays::assets::DecodedTexture> textures;
-        for (const auto& mesh : model.meshes) {
-            if (mesh.texture_name.empty()
-                || textures.count(mesh.texture_name) != 0U) {
-                continue;
-            }
-            textures.emplace(
-                mesh.texture_name,
-                khdays::assets::load_tex0_texture(bmd0.data, bmd0.size,
-                                                  mesh.texture_name));
-        }
-        // The logo sits on the white top screen; composite it over white so the
-        // scene can draw it as the whole top screen.
-        const auto logo = khdays::assets::compose_flat_model(
-            model, textures, 256, 192, scale, y_offset, only_texture);
-        if (!over_white) {
-            return logo;  // keep the logo's own alpha for overlaying
-        }
-        khdays::assets::DecodedTexture out;
-        out.width = 256;
-        out.height = 192;
-        out.rgba.assign(static_cast<std::size_t>(256) * 192 * 4, 255);
-        for (std::size_t i = 0; i + 4U <= logo.rgba.size(); i += 4U) {
-            const std::uint8_t a = logo.rgba[i + 3U];
-            if (a == 0U) {
-                continue;
-            }
-            out.rgba[i] = static_cast<std::uint8_t>(
-                (logo.rgba[i] * a + out.rgba[i] * (255 - a)) / 255);
-            out.rgba[i + 1U] = static_cast<std::uint8_t>(
-                (logo.rgba[i + 1U] * a + out.rgba[i + 1U] * (255 - a)) / 255);
-            out.rgba[i + 2U] = static_cast<std::uint8_t>(
-                (logo.rgba[i + 2U] * a + out.rgba[i + 2U] * (255 - a)) / 255);
-        }
-        return out;
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-}
-
 std::optional<TitleLogoModel> load_title_logo_model() {
     try {
         const auto container = khdays::vfs::read("ttl/ttl.p2");
@@ -400,11 +344,18 @@ std::optional<TitleLogoModel> load_title_logo_model() {
                 khdays::assets::load_tex0_texture(bmd0.data, bmd0.size,
                                                   mesh.texture_name));
         }
-        // The joint animation rides in the same KAPH as a BCA0.
+        // The joint animation rides in the same KAPH as a BCA0, the material
+        // (polygon alpha) animation as a BMA0.
         const auto bca0 = khdays::assets::find_nitro_resource(
             kaph.data(), kaph.size(), "BCA0");
         if (bca0) {
             out.animation = khdays::assets::load_nsbca(bca0.data, bca0.size, 0);
+        }
+        const auto bma0 = khdays::assets::find_nitro_resource(
+            kaph.data(), kaph.size(), "BMA0");
+        if (bma0) {
+            out.material_animation =
+                khdays::assets::load_nsbma(bma0.data, bma0.size, 0);
         }
         return out;
     } catch (const std::exception&) {
@@ -412,9 +363,12 @@ std::optional<TitleLogoModel> load_title_logo_model() {
     }
 }
 
-std::optional<khdays::assets::DecodedTexture> load_ui_background(
+namespace {
+
+std::optional<khdays::assets::DecodedTexture> compose_ui_background(
     const char* game_path, const std::size_t subfile, const std::size_t screen,
-    const std::size_t tiles_index, const std::size_t palette_index) {
+    const std::size_t tiles_index, const std::size_t palette_index,
+    const CharacterPatch* patch) {
     try {
         const auto container = khdays::vfs::read(game_path);
         const auto blob = khdays::assets::extract_p2_subfile(
@@ -426,14 +380,54 @@ std::optional<khdays::assets::DecodedTexture> load_ui_background(
         }
         const auto map = khdays::assets::decode_nscr(
             pack.screens[screen].data, pack.screens[screen].size);
-        const auto tiles = khdays::assets::decode_ncgr(
+        auto tiles = khdays::assets::decode_ncgr(
             pack.tiles[tiles_index].data, pack.tiles[tiles_index].size);
+        if (patch != nullptr) {
+            const auto patch_container = khdays::vfs::read(patch->game_path);
+            const auto patch_blob = khdays::assets::extract_p2_subfile(
+                patch_container.data(), patch_container.size(), patch->subfile);
+            const auto patch_tiles = khdays::assets::decode_ncgr(
+                patch_blob.data(), patch_blob.size());
+            if (patch_tiles.bpp != tiles.bpp) {
+                return std::nullopt;  // VRAM bytes would mean different pixels
+            }
+            // An 8x8 tile is 64 bytes at 8bpp and 32 at 4bpp; `indices` holds
+            // 64 unpacked entries per tile either way.
+            const std::size_t tile_bytes = tiles.bpp == 8 ? 64U : 32U;
+            const std::size_t first =
+                patch->char_byte_offset / tile_bytes * 64U;
+            const std::size_t end = first + patch_tiles.indices.size();
+            if (tiles.indices.size() < end) {
+                tiles.indices.resize(end, 0U);
+                tiles.tile_count = static_cast<int>(end / 64U);
+            }
+            std::copy(patch_tiles.indices.begin(), patch_tiles.indices.end(),
+                      tiles.indices.begin()
+                          + static_cast<std::ptrdiff_t>(first));
+        }
         const auto palette = khdays::assets::decode_nclr(
             pack.palettes[palette_index].data, pack.palettes[palette_index].size);
         return khdays::assets::compose_background(map, tiles, palette, false);
     } catch (const std::exception&) {
         return std::nullopt;
     }
+}
+
+}  // namespace
+
+std::optional<khdays::assets::DecodedTexture> load_ui_background(
+    const char* game_path, const std::size_t subfile, const std::size_t screen,
+    const std::size_t tiles_index, const std::size_t palette_index) {
+    return compose_ui_background(
+        game_path, subfile, screen, tiles_index, palette_index, nullptr);
+}
+
+std::optional<khdays::assets::DecodedTexture> load_ui_background(
+    const char* game_path, const std::size_t subfile, const std::size_t screen,
+    const std::size_t tiles_index, const std::size_t palette_index,
+    const CharacterPatch& patch) {
+    return compose_ui_background(
+        game_path, subfile, screen, tiles_index, palette_index, &patch);
 }
 
 std::optional<OpeningArtwork> load_opening_artwork(
