@@ -371,6 +371,29 @@ def main() -> int:
             module_of[rel] = m.name
             compiled.append((src, rel))
 
+    # Data sources no delinks.txt lists although they are the only definition of
+    # a DS data symbol (the decomp's own build then takes those bytes from the
+    # ROM, which natively would leave ARM addresses in function-pointer tables).
+    # Each joins the module that owns its symbol.
+    listed = {rel for m in modules for rel in m.files}
+    provided = {d[2] for text in texts.values() for d in definitions(text)}
+    owner_module = {n: m.name for m in modules for n, k, _ in m.symbols if k in ("data", "bss")}
+    orphans = []
+    for path in sorted((DECOMP / "src").rglob("data/*.c")):
+        rel = path.relative_to(DECOMP).as_posix()
+        if rel in listed:
+            continue
+        text = transform(path.read_text(encoding="utf-8", errors="replace"))
+        names = [n for n in re.findall(r"(?:^|\})[ \t\w\*]*?\b(data_\w+)\s*(?:\[[^\]\n]*\])*\s*=",
+                                       text, re.MULTILINE)
+                 if n in owner_module and n not in provided]
+        if names:
+            texts[rel] = text
+            module_of[rel] = owner_module[names[0]]
+            compiled.append((path, rel))
+            orphans.append(f"{rel}\t{' '.join(names)}")
+    (out / "orphan_data.txt").write_text("".join(o + "\n" for o in orphans), encoding="utf-8")
+
     # Globals defined (with an initializer) in several files: the decomp split
     # one original translation unit into a file per function, repeating its
     # file-scope variables. Keep one definition -- in a data/ file when there
@@ -511,6 +534,7 @@ def main() -> int:
 
     print(f"{len(compiled)} sources ({patched} patched), "
           f"{len(hal_files)} assembly-only files for the HAL, "
+          f"{len(orphans)} unlisted data sources taken in (orphan_data.txt), "
           f"{len(duplicates)} duplicated globals resolved; at DS addresses: "
           f"{len(converted)} C-defined data objects ({len(unconverted)} left in the image, "
           f"see unconverted_data.txt), {bss_count} other BSS symbols, "

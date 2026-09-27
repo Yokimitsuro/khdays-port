@@ -83,13 +83,82 @@ def body_of(text: str, open_brace: int) -> str:
     return text[open_brace:]
 
 
+CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+
+
+def split_arguments(text: str, open_paren: int) -> tuple[list[str], int]:
+    """The top-level arguments of the call whose '(' is at open_paren, and the
+    index just past its ')'."""
+    depth = 0
+    args = []
+    current = ""
+    for i in range(open_paren, len(text)):
+        c = text[i]
+        if c in "([{":
+            depth += 1
+            if depth == 1:
+                continue
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                if current.strip() or args:
+                    args.append(current.strip())
+                return args, i + 1
+        if c == "," and depth == 1:
+            args.append(current.strip())
+            current = ""
+        else:
+            current += c
+    return args, len(text)
+
+
+def is_declaration(text: str, start: int) -> bool:
+    """Whether the `name(` at `start` declares rather than calls: a type name
+    or `*` stands right before it (`void f(`, `int *f(`)."""
+    before = text[:start].rstrip()
+    if not before:
+        return True
+    word = re.search(r"([A-Za-z_]\w*)$", before)
+    if word:
+        return word[1] not in ("return", "else", "case", "do", "sizeof")
+    if before.endswith("*"):
+        return re.search(r"[A-Za-z_]\w*\s*\*+$", before) is not None and \
+            not re.search(r"[=(,;{}]\s*\*+$", before)
+    return False
+
+
+def calls_in(body: str) -> list[tuple[str, list[str]]]:
+    out = []
+    for m in CALL_RE.finditer(body):
+        if m[1] in NOT_TYPES or is_declaration(body, m.start()):
+            continue
+        args, _ = split_arguments(body, m.end() - 1)
+        out.append((m[1], args))
+    return out
+
+
+def value_used(name: str, text: str) -> bool:
+    """Whether some call of `name` in `text` is not a statement of its own."""
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\(", text):
+        if is_declaration(text, m.start()):
+            continue
+        before = text[:m.start()].rstrip()
+        _, after_index = split_arguments(text, m.end() - 1)
+        after = text[after_index:].lstrip()
+        standalone = (not before or before[-1] in ";{}:" or before.endswith("else")) and after.startswith(";")
+        if not standalone:
+            return True
+    return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(P.ROOT / "build" / "native" / "gen"))
     args = ap.parse_args()
 
-    defs: dict[str, tuple[str, int | None, str]] = {}  # name -> (ret, params, file)
-    decls = collections.defaultdict(list)             # name -> [(ret, params, file)]
+    defs: dict[str, tuple] = {}            # name -> (ret, count, file, names, body, returns)
+    decls = collections.defaultdict(list)  # name -> [(ret, count, file)]
+    texts: dict[str, str] = {}
     for m in P.load_modules():
         for rel in m.files:
             src = P.DECOMP / rel
@@ -97,6 +166,7 @@ def main() -> int:
                 continue
             text = P.strip_comments(P.transform(src.read_text(encoding="utf-8", errors="replace")))
             text = re.sub(r"^\s*#.*$", "", text, flags=re.MULTILINE)
+            texts[rel] = text
             for f in FUNC_RE.finditer(text):
                 storage, ret, name, params, end = f.groups()
                 ret_words = ret.split()
@@ -107,24 +177,60 @@ def main() -> int:
                 entry = (" ".join(ret_words), param_count(params), rel)
                 if end == "{":
                     body = body_of(text, f.end() - 1)
-                    # which parameters the body reads, by position
-                    used = [bool(n) and re.search(rf"\b{re.escape(n)}\b", body) is not None
-                            for n in param_names(params)]
                     returns = re.search(r"\breturn\s+[^;\s]", body) is not None
-                    defs[name] = entry + (used, returns)
+                    defs[name] = entry + (param_names(params), body, returns)
                 else:
                     decls[name].append(entry)
 
+    # Which parameters each definition really reads. A parameter passed on
+    # unchanged (possibly cast) as argument j of another defined function is
+    # read only if that function reads its parameter j: iterate to the least
+    # fixed point.
+    forwards: dict[str, list[list[tuple[str, int]]]] = {}
+    reads: dict[str, list[bool]] = {}
+    for name, (_, _, _, names, body, _) in defs.items():
+        direct = [False] * len(names)
+        fwd: list[list[tuple[str, int]]] = [[] for _ in names]
+        for k, pname in enumerate(names):
+            if not pname:
+                continue
+            total = len(re.findall(rf"\b{re.escape(pname)}\b", body))
+            forwarded = 0
+            for callee, arguments in calls_in(body):
+                for j, argument in enumerate(arguments):
+                    if re.fullmatch(rf"(?:\(\s*[\w\s\*]+\)\s*)*{re.escape(pname)}", argument):
+                        forwarded += 1
+                        if callee in defs:
+                            fwd[k].append((callee, j))
+                        else:
+                            direct[k] = True  # to something we cannot see into
+            if total > forwarded:
+                direct[k] = True
+        reads[name] = direct
+        forwards[name] = fwd
+    changed = True
+    while changed:
+        changed = False
+        for name, fwd in forwards.items():
+            r = reads[name]
+            for k, targets in enumerate(fwd):
+                if not r[k] and any(j < len(reads[c]) and reads[c][j] for c, j in targets):
+                    r[k] = True
+                    changed = True
+
     fewer = []
     phantom_return = []
-    for name, (dret, dcount, dfile, used, returns) in sorted(defs.items()):
+    for name, (dret, dcount, dfile, names, _, returns) in sorted(defs.items()):
         for ret, count, rel in decls.get(name, []):
             if rel == dfile:
                 continue
-            # only parameters the definition actually reads matter
-            if dcount is not None and count is not None and count < dcount and any(used[count:]):
+            # only parameters the definition actually reads matter, and only
+            # if the file calls it
+            if (dcount is not None and count is not None and count < dcount
+                    and any(reads[name][count:]) and any(c == name for c, _ in calls_in(texts[rel]))):
                 fewer.append((name, dfile, dcount, rel, count))
-            if dret == "void" and not returns and ret != "void":
+            # a void definition's "result" matters only where a call uses it
+            if dret == "void" and not returns and ret != "void" and value_used(name, texts[rel]):
                 phantom_return.append((name, dfile, rel, ret))
 
     out = Path(args.out)

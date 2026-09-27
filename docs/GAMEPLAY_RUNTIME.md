@@ -85,7 +85,10 @@ Indexed by a **selector**, from a 12-byte record table (below):
 - the base is word 2 of the selector's record;
 - **selector 10 alone is interpolated**: when the active actor's depth
   (`entry+0x494`) is below `-0x10000`, the base is pulled toward record 0's word 2
-  by `FX_Inv(-0x10000 - depth, 0x8000)`;
+  by `FX_Div(-0x10000 - depth, 0x8000)` -- a fixed-point division, not a
+  reciprocal: twice the overshoot past `-0x10000` (checked in the ROM: FX_Div
+  divides numerator·2³² by the denominator and rounds, `+0x80000 >> 20`) --
+  scaling `base - record0` as `base -= (diff * scale + 0x800) >> 12`;
 - a fixed offset is then added, keyed on the field the decomp calls the actor's
   **world** (`entry+0xc`): `+0x4cd` for worlds 0, 5, 0xb, 0xe, 0x12–0x15;
   `+0xccd` for 1–4, 6–0xa, 0xc, 0xd, 0xf; `-0x400` for 0x10 and 0x11;
