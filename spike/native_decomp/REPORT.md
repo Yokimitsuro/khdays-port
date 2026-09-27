@@ -36,7 +36,7 @@ mechanical reason.
 
 ## 2. Link: everything fits in one image
 
-All 24,385 objects -- every overlay side by side -- link together
+All 24,458 objects -- every overlay side by side -- link together
 (`/FORCE`, to list everything at once) with:
 
 - **632 unresolved symbols** [700]
@@ -80,8 +80,9 @@ almost as it stands. The work is the layer underneath, all of it outside the
 decomp:
 
 1. **Link cleanly**: generate the BSS definitions from `symbols.txt`,
-   extract the 47 data objects, write the ~200 SDK/asm routines in C, settle
-   the duplicates, and fix the ~60 syntax cases.
+   extract the 47 data objects, write the ~130 SDK/runtime routines that
+   are assembly in C, settle the duplicates, and fix the ~60 other compile
+   failures (26 of them one mid-struct zero-size-array pattern).
 2. **Memory map**: reserve the DS regions at their real virtual addresses in
    the 32-bit process (ITCM, DTCM, shared RAM, I/O, palette, VRAM, OAM) so
    literal accesses just work; give each overlay load its DS semantics
