@@ -1,0 +1,154 @@
+/* NitroSDK OS routines the decompilation keeps as ARM assembly
+ * (libs/nitro/os/asm_stubs, src/calls/DC_FlushRange.c). What they do to
+ * hardware (CPSR, caches, the protection unit) has no native counterpart; what
+ * they do to memory is kept exactly. */
+#include "hal.h"
+
+/* --- CPSR interrupt bits --------------------------------------------------
+ * The emulated CPSR (hal.h): interrupts reach the game only where the runtime
+ * delivers them, so what matters is the I/F state callers save and restore
+ * (OSIntrMode = the CPSR I bit, 0x80; F is 0x40) and that thread switches
+ * carry it (OS_SaveContext / OS_LoadContext). crt0 leaves the CPU in system
+ * mode with both enabled (`msr cpsr_csfx, #0x1f`). */
+u32 khdays_cpsr = 0x1f;
+
+u32 OS_DisableInterrupts(void)
+{
+    const u32 old = khdays_cpsr & 0x80;
+    khdays_cpsr |= 0x80;
+    return old;
+}
+
+u32 OS_EnableInterrupts(void)
+{
+    const u32 old = khdays_cpsr & 0x80;
+    khdays_cpsr &= ~0x80u;
+    return old;
+}
+
+u32 OS_RestoreInterrupts(u32 state)
+{
+    const u32 old = khdays_cpsr & 0x80;
+    khdays_cpsr = (khdays_cpsr & ~0x80u) | (state & 0x80);
+    return old;
+}
+
+u32 OS_DisableInterrupts_IrqAndFiq(void)
+{
+    const u32 old = khdays_cpsr & 0xc0;
+    khdays_cpsr |= 0xc0;
+    return old;
+}
+
+u32 OS_RestoreInterrupts_IrqAndFiq(u32 state)
+{
+    const u32 old = khdays_cpsr & 0xc0;
+    khdays_cpsr = (khdays_cpsr & ~0xc0u) | (state & 0xc0);
+    return old;
+}
+
+u32 OS_GetCpsrIrq(void)
+{
+    return khdays_cpsr & 0x80;
+}
+
+u32 OS_GetProcMode(void)
+{
+    return khdays_cpsr & 0x1f;
+}
+
+/* --- Caches, write buffer, protection unit: no native counterpart --------- */
+void DC_InvalidateAll(void) {}
+void DC_StoreAll(void) {}
+void DC_FlushAll(void) {}
+void DC_InvalidateRange(void *start, u32 size) { (void)start; (void)size; }
+void DC_StoreRange(const void *start, u32 size) { (void)start; (void)size; }
+void DC_FlushRange(const void *start, u32 size) { (void)start; (void)size; }
+void DC_WaitWriteBufferEmpty(void) {}
+void IC_InvalidateAll(void) {}
+void IC_InvalidateRange(void *start, u32 size) { (void)start; (void)size; }
+void OS_EnableProtectionUnit(void) {}
+void OS_DisableProtectionUnit(void) {}
+void OS_SetProtectionRegion1(u32 param) { (void)param; }
+void OS_SetProtectionRegion2(u32 param) { (void)param; }
+void OS_SetDPermissionsForProtectionRegion(u32 set, u32 flags) { (void)set; (void)flags; }
+void OS_UnLockCartridge(u16 lockId) { (void)lockId; }
+
+/* The DTCM sits where the process maps it. */
+u32 OS_GetDTCMAddress(void)
+{
+    return 0x027e0000;
+}
+
+/* --- Lock ids: the two shared flag words at 0x027fffb0 -------------------
+ * A set bit is a free id; the highest free bit is taken (CLZ). Ids 0x40..0x5f
+ * come from the first word, 0x60.. from the second; 0xfffffffd
+ * (OS_LOCK_ID_ERROR) when both are full. */
+static u32 count_leading_zeros(u32 x)
+{
+    u32 n = 0;
+    if (x == 0) {
+        return 32;
+    }
+    while ((x & 0x80000000u) == 0) {
+        x <<= 1;
+        ++n;
+    }
+    return n;
+}
+
+s32 OS_GetLockID(void)
+{
+    volatile u32 *flags = (volatile u32 *)0x027fffb0;
+    u32 base = 0x40;
+    u32 zeros = count_leading_zeros(flags[0]);
+    if (zeros == 32) {
+        ++flags;
+        zeros = count_leading_zeros(flags[0]);
+        if (zeros == 32) {
+            return (s32)0xfffffffd;
+        }
+        base = 0x60;
+    }
+    *flags &= ~(0x80000000u >> zeros);
+    return (s32)(base + zeros);
+}
+
+void OS_ReleaseLockID(s32 id)
+{
+    volatile u32 *flags = (volatile u32 *)0x027fffb0;
+    if (id >= 0x60) {
+        ++flags;
+        id -= 0x60;
+    } else {
+        id -= 0x40;
+    }
+    *flags |= 0x80000000u >> id;
+}
+
+s32 OsCountZeroBits(u32 value)
+{
+    return (s32)count_leading_zeros(value);
+}
+
+/* OS_SpinWait (func_0200386c): burns cycles; nothing to wait for natively. */
+void func_0200386c(u32 cycles)
+{
+    (void)cycles;
+}
+
+/* OS_Halt: CP15 wait-for-interrupt. */
+void OS_Halt(void)
+{
+    khdays_runtime_wait();
+}
+
+/* --- Left to the runtime (threads, interrupts, reset) -------------------- */
+KHDAYS_HAL_TODO(OSi_ExceptionHandler)
+KHDAYS_HAL_TODO(OSi_GetAndDisplayContext)
+KHDAYS_HAL_TODO(OSi_SetExContext)
+KHDAYS_HAL_TODO(func_0200302c)  /* OSi_DisplayExContext */
+KHDAYS_HAL_TODO(func_02003948)  /* OS_ResetSystem */
+KHDAYS_HAL_TODO(OSi_AlarmHandler)
+KHDAYS_HAL_TODO(OSi_CancelDma0)
+KHDAYS_HAL_TODO(func_01ff8330)  /* OSi_DoBoot */
