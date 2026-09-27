@@ -123,6 +123,24 @@ std::optional<std::filesystem::path> resolve(std::string_view game_path) {
     return std::nullopt;
 }
 
+std::optional<std::filesystem::path> resolve_original(
+    std::string_view game_path) {
+    const auto rel = normalize(game_path);
+    if (!rel) {
+        return std::nullopt;
+    }
+    if (const auto mod = find_mod_file(*rel)) {
+        return mod;
+    }
+    if (!g_data_root.empty()) {
+        const auto raw = g_data_root / "nitrofs" / *rel;
+        if (is_file(raw)) {
+            return raw;
+        }
+    }
+    return std::nullopt;
+}
+
 bool exists(std::string_view game_path) {
     return resolve(game_path).has_value();
 }

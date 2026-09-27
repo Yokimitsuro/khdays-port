@@ -31,6 +31,7 @@ data/
         ├── metadata.json
         ├── manifest.json
         ├── system/
+        │   ├── header.bin
         │   ├── arm9.bin
         │   ├── arm7.bin
         │   ├── arm9_overlay_table.bin

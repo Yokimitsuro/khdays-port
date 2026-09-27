@@ -403,6 +403,9 @@ def extract_rom(
         system_records: dict[str, Any] = {}
 
         for name, offset, size in (
+            # The cartridge header: what the DS loader copies to 0x027ffe00,
+            # and the Nintendo logo the ARM9 BIOS also holds.
+            ("header.bin", 0, 0x200),
             ("arm9.bin", header.arm9_offset, header.arm9_size),
             ("arm7.bin", header.arm7_offset, header.arm7_size),
             (

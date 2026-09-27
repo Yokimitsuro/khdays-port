@@ -75,10 +75,21 @@ int main() {
         expect(read_string(khdays::vfs::read("only.bin")) == "raw",
                "nitrofs fallback");
 
+        // The game's own view skips the extractor's decompressed/unpacked
+        // copies and reads the raw NitroFS file.
+        expect(khdays::vfs::resolve_original("a/x.bin")
+                   == root / "nitrofs" / "a" / "x.bin",
+               "original view is raw NitroFS");
+        expect(!khdays::vfs::resolve_original("missing.bin").has_value(),
+               "original view: missing file");
+
         // A mod file shadows every data view.
         write_file(mods / "ZMod" / "files" / "a" / "x.bin", "mod");
         expect(read_string(khdays::vfs::read("a/x.bin")) == "mod",
                "mod override");
+        expect(khdays::vfs::resolve_original("a/x.bin")
+                   == mods / "ZMod" / "files" / "a" / "x.bin",
+               "original view: mod override");
 
         // Missing files and path traversal.
         expect(!khdays::vfs::exists("does/not/exist"), "missing file");
