@@ -1,9 +1,12 @@
-/* The native process entry: what the DS crt0 (_start, libs/nitro/init/
- * asm_stubs/calls/Entry.c) does before it enters the game's main, step for
- * step, minus what has no native counterpart (CPU modes, stacks, CP15, the
- * static module's decompression and autoload -- the linker placed the ITCM and
- * DTCM code and data already). */
+/* The native process entry: what the DS firmware and the game's crt0 (_start,
+ * libs/nitro/init/asm_stubs/calls/Entry.c) do before the game's main, step
+ * for step, minus what has no native counterpart (CPU modes, stacks, CP15).
+ *
+ * The static module's image is loaded at its address as the firmware loads
+ * it, so memory holds what the DS holds; the native data initializers then
+ * go over it (their function pointers are native). */
 #include "../hal/hal.h"
+#include "rom.h"
 #include "runtime.h"
 
 #include <stdio.h>
@@ -13,10 +16,17 @@ extern void func_01ff8148(void);     /* OS_IrqHandler */
 extern void func_020207f0(void);     /* _fp_init */
 extern void func_02000b60(void);     /* NitroStartUp */
 extern void func_02020808(void);     /* __call_static_initializers */
+extern void AutoloadCallback(void);
+extern void MIi_UncompressBackward(void *bottom);
 
 /* The ARM9 static initializer table the DS linker built (.ctor): in the ROM
  * its first entry (0x02042288) is already the terminating null. */
 void (*ARM9_CTOR_START[1])(void) = {0};
+
+/* _start_ModuleParams (BuildInfo), in the static module's image: autoload
+ * list, its end, the autoload data, static BSS start and end, and the end of
+ * the compressed static module (0 when it is not compressed). */
+#define MODULE_PARAMS ((volatile u32 *)0x02000b68)
 
 static void clear32(u32 value, u32 address, u32 size)
 {
@@ -26,14 +36,49 @@ static void clear32(u32 value, u32 address, u32 size)
     }
 }
 
+/* The firmware: the ARM9 binary from the card to its RAM address. */
+static void load_static_module(void)
+{
+    const u8 *header = khdays_rom_header();
+    const u32 rom = *(const u32 *)(header + 0x20);
+    const u32 ram = *(const u32 *)(header + 0x28);
+    const u32 size = *(const u32 *)(header + 0x2c);
+    khdays_rom_read(rom, (u8 *)ram, size);
+}
+
+/* crt0's do_autoload (func_020009fc): copy each autoload block (ITCM, DTCM)
+ * from the static module to its address and clear the BSS after it. */
+static void autoload(void)
+{
+    const volatile u32 *info = (const volatile u32 *)MODULE_PARAMS[0];
+    const volatile u32 *const info_end = (const volatile u32 *)MODULE_PARAMS[1];
+    const volatile u32 *source = (const volatile u32 *)MODULE_PARAMS[2];
+    while (info != info_end) {
+        volatile u32 *destination = (volatile u32 *)info[0];
+        volatile u32 *const data_end = (volatile u32 *)(info[0] + info[1]);
+        volatile u32 *bss_end;
+        while (destination < data_end) {
+            *destination++ = *source++;
+        }
+        bss_end = (volatile u32 *)((u32)destination + info[2]);
+        while (destination < bss_end) {
+            *destination++ = 0;
+        }
+        info += 3;
+    }
+    AutoloadCallback();
+}
+
 int main(int argc, char **argv)
 {
+    khdays_diag_init();
     if (!khdays_memory_map()) {
         return 1;
     }
     if (!khdays_runtime_init(argc, argv)) {
         return 1;
     }
+    load_static_module();
 
     /* crt0: IME off (the register base's low bit is 0). */
     *(volatile u32 *)0x04000208 = 0x04000000;
@@ -41,7 +86,16 @@ int main(int argc, char **argv)
     clear32(0, 0x027e0000, 0x4000);
     clear32(0, 0x05000000, 0x400);
     clear32(0x0200, 0x07000000, 0x400);
-    /* crt0: the static .bss is zero already -- the memory map starts zeroed. */
+    /* crt0: decompress the static module, autoload, clear the static BSS. */
+    if (MODULE_PARAMS[5] != 0) {
+        MIi_UncompressBackward((void *)MODULE_PARAMS[5]);
+    }
+    autoload();
+    clear32(0, MODULE_PARAMS[3], MODULE_PARAMS[4] - MODULE_PARAMS[3]);
+    /* The native data of the static module, ITCM and DTCM, over their image. */
+    khdays_data_init(-1);
+    khdays_data_init(-2);
+    khdays_data_init(-3);
     /* crt0: HW_COMPONENT_PARAM = 0. */
     *(volatile u32 *)0x027fff9c = 0;
     /* crt0: the BIOS IRQ vector at DTCM + 0x3ffc points at OS_IrqHandler. */

@@ -33,6 +33,12 @@ extern u32 khdays_cpsr;
  * one interrupt has been delivered. */
 void khdays_runtime_wait(void);
 
+/* Blocks until the display is on the given line (VCOUNT), clock.c. */
+void khdays_wait_for_line(u32 line);
+
+/* Interrupts were just unmasked: take what is pending (events.c). */
+void khdays_irq_poll(void);
+
 #ifdef __cplusplus
 }
 #endif

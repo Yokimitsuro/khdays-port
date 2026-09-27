@@ -31,6 +31,10 @@ target_compile_definitions(khdays-decomp PRIVATE
     _CRT_SECURE_NO_WARNINGS)
 target_compile_options(khdays-decomp PRIVATE
     /W0
+    # Struct members align to at most 4 bytes, as mwcc lays them out for the
+    # ARM9: a u64 inside a struct sits at a 4-byte offset (OSContext's divider
+    # context puts the thread state at +0x64, not +0x68).
+    /Zp4
     "/FI${CMAKE_CURRENT_SOURCE_DIR}/compat/decomp_compat.h"
     $<$<COMPILE_LANGUAGE:C>:/std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/std:c++17>)
@@ -46,18 +50,34 @@ add_executable(khdays-native
     hal/sdk_os.c
     hal/sdk_runtime.c
     hal/sdk_thread.c
+    runtime/arm7.c
+    runtime/boot.c
+    runtime/card.c
+    runtime/data_init.c
+    runtime/clock.c
+    runtime/diag.c
+    runtime/events.c
+    runtime/io_regs.c
+    runtime/io_trap.c
     runtime/memory.c
+    runtime/rom.cpp
     runtime/runtime.c
     runtime/start.c
-    "${KHDAYS_GEN}/absolute.asm")
+    "${KHDAYS_GEN}/absolute.asm"
+    ../src/vfs/filesystem.cpp)  # the port's VFS: files and mods
+target_include_directories(khdays-native PRIVATE ../include)
 target_compile_options(khdays-native PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>)
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+
+target_link_libraries(khdays-native PRIVATE dbghelp winmm)
 
 # Aliases for symbols the DS build gave two names (prepare.py).
 file(STRINGS "${KHDAYS_GEN}/alternatenames.txt" KHDAYS_ALTERNATENAMES)
 target_link_options(khdays-native PRIVATE
     ${KHDAYS_ALTERNATENAMES}
     /DEBUG
+    /INCREMENTAL:NO             # no padding between .khdi entries (data_init.c walks them)
     /SAFESEH:NO                 # absolute.asm carries no exception handlers
     /LARGEADDRESSAWARE
     /DYNAMICBASE:NO)            # a fixed image, clear of the DS address range

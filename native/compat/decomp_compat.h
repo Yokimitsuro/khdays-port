@@ -22,6 +22,22 @@ static __inline unsigned int khdays_clz(unsigned int x)
     return n;
 }
 
+/* Game data lives at its DS address (prepare.py): each initialised object's
+ * initializer is kept as `<name>__khdays_init` and listed in section .khdi,
+ * which the runtime walks to copy it into place when the object's module
+ * (-1 static, -2 ITCM, -3 DTCM, else the overlay id) is loaded. */
+struct khdays_data_init {
+    void *address;
+    const void *init;
+    unsigned int size;
+    int module;
+};
+#pragma section(".khdi$m", read, write)
+#define KHDAYS_DATA_INIT(name, module)                                        \
+    __declspec(allocate(".khdi$m")) struct khdays_data_init khdays_init_##name = { \
+        (void *)&name, (const void *)&name##__khdays_init,                    \
+        sizeof(name##__khdays_init), module};
+
 /* `*(T (*)[n])dst = *(T (*)[n])src;` -- a whole-array assignment mwcc accepts
  * (prepare.py rewrites it to this). */
 #define KHDAYS_ARRAY_ASSIGN(T, n, dst, src)                         \

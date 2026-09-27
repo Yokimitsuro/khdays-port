@@ -19,10 +19,19 @@ u32 OS_DisableInterrupts(void)
     return old;
 }
 
+/* Lifting the I bit lets a pending IRQ in at once, as on the CPU. */
+static void unmasked(u32 old)
+{
+    if (old != 0 && (khdays_cpsr & 0x80) == 0) {
+        khdays_irq_poll();
+    }
+}
+
 u32 OS_EnableInterrupts(void)
 {
     const u32 old = khdays_cpsr & 0x80;
     khdays_cpsr &= ~0x80u;
+    unmasked(old);
     return old;
 }
 
@@ -30,6 +39,7 @@ u32 OS_RestoreInterrupts(u32 state)
 {
     const u32 old = khdays_cpsr & 0x80;
     khdays_cpsr = (khdays_cpsr & ~0x80u) | (state & 0x80);
+    unmasked(old);
     return old;
 }
 
@@ -44,6 +54,7 @@ u32 OS_RestoreInterrupts_IrqAndFiq(u32 state)
 {
     const u32 old = khdays_cpsr & 0xc0;
     khdays_cpsr = (khdays_cpsr & ~0xc0u) | (state & 0xc0);
+    unmasked(old & 0x80);
     return old;
 }
 
@@ -143,6 +154,18 @@ void OS_Halt(void)
     khdays_runtime_wait();
 }
 
+/* OSi_CancelDma0 (its assembly): with IME off, wait for VCOUNT to read 0 --
+ * the first line of a frame -- then restore IME. The wait is the runtime's,
+ * not a spin on the trapped register. */
+void OSi_CancelDma0(void)
+{
+    volatile u32 *const ime = (volatile u32 *)0x04000208;
+    const u32 saved = *ime;
+    *ime = 0x04000000;  /* the register base, as the assembly stores it: bit 0 clear */
+    khdays_wait_for_line(0);
+    *ime = saved;
+}
+
 /* --- Left to the runtime (threads, interrupts, reset) -------------------- */
 KHDAYS_HAL_TODO(OSi_ExceptionHandler)
 KHDAYS_HAL_TODO(OSi_GetAndDisplayContext)
@@ -150,5 +173,4 @@ KHDAYS_HAL_TODO(OSi_SetExContext)
 KHDAYS_HAL_TODO(func_0200302c)  /* OSi_DisplayExContext */
 KHDAYS_HAL_TODO(func_02003948)  /* OS_ResetSystem */
 KHDAYS_HAL_TODO(OSi_AlarmHandler)
-KHDAYS_HAL_TODO(OSi_CancelDma0)
 KHDAYS_HAL_TODO(func_01ff8330)  /* OSi_DoBoot */

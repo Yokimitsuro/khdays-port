@@ -39,9 +39,27 @@ void MIi_CpuCopy16(const void *src, void *dest, u32 size)
     }
 }
 
+/* The ARM9 BIOS (0xffff0000) cannot be mapped in a 32-bit Windows process.
+ * The one read the game makes of it (func_0200f78c) copies the Nintendo logo
+ * at 0xffff0020 -- the same 156 bytes every cartridge header carries at 0xc0,
+ * which is where they are served from. Any other BIOS read stops. */
+extern const u8 *khdays_rom_header(void);
+
+static const void *bios_readable(const void *src, u32 size)
+{
+    const u32 address = (u32)src;
+    if (address < 0xffff0000u) {
+        return src;
+    }
+    if (address >= 0xffff0020u && address + size <= 0xffff0020u + 156) {
+        return khdays_rom_header() + 0xc0 + (address - 0xffff0020u);
+    }
+    khdays_hal_unimplemented("a read of the ARM9 BIOS other than its logo");
+}
+
 void MIi_CpuCopy32(const void *src, void *dest, u32 size)
 {
-    const volatile u32 *s = (const volatile u32 *)src;
+    const volatile u32 *s = (const volatile u32 *)bios_readable(src, size);
     volatile u32 *d = (volatile u32 *)dest;
     for (u32 i = 0; i < size / 4; ++i) {
         d[i] = s[i];

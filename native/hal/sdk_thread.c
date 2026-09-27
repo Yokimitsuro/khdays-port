@@ -17,7 +17,25 @@
  * left unused (its guard words are still written and checked by the SDK). */
 #include "hal.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <windows.h>
+
+/* KHDAYS_TRACE_THREADS: log every thread creation and switch, with the SDK's
+ * thread list (OSi_ThreadInfo.list at 0x02044338; OSThread state +0x64, next
+ * +0x68, priority +0x70). */
+static int trace_threads;
+
+static void trace_list(void)
+{
+    u32 t = *(volatile u32 *)0x02044338;
+    fprintf(stderr, "  list:");
+    for (int n = 0; t != 0 && n < 32; ++n) {
+        fprintf(stderr, " %08x(s%u,p%u)", t, *(volatile u32 *)(t + 0x64), *(volatile u32 *)(t + 0x70));
+        t = *(volatile u32 *)(t + 0x68);
+    }
+    fprintf(stderr, "\n");
+}
 
 /* OSContext: cpsr, r0-r12, sp, lr, pc+4, the SVC sp, then the CP (divider)
  * context at +0x48. */
@@ -94,6 +112,10 @@ static void CALLBACK thread_fiber(void *parameter)
 void OS_InitContext(OSContext *context, u32 newpc, u32 newsp)
 {
     int slot;
+    if (trace_threads) {
+        fprintf(stderr, "thread: init %p entry %08x stack %08x\n", (void *)context, newpc, newsp);
+        trace_list();
+    }
     newpc += 4;
     context->pc_plus4 = newpc;
     context->sp_svc = newsp;
@@ -144,6 +166,11 @@ void OS_LoadContext(OSContext *context)
     if (slot < 0) {
         khdays_hal_unimplemented("OS_LoadContext of a context with no thread");
     }
+    if (trace_threads) {
+        fprintf(stderr, "thread: switch to %p (entry %08x, cpsr %02x -> %02x)\n",
+                (void *)context, context->pc_plus4 - 4, khdays_cpsr, context->cpsr);
+        trace_list();
+    }
     CPi_RestoreContext(context->cp_context);
     /* The thread resumes with its own mode and interrupt state (the assembly
      * returns through spsr = the saved cpsr). */
@@ -158,6 +185,7 @@ void OS_LoadContext(OSContext *context)
  * from it. */
 void khdays_threads_init(void)
 {
+    trace_threads = getenv("KHDAYS_TRACE_THREADS") != NULL;
     if (ConvertThreadToFiber(NULL) == NULL) {
         khdays_hal_unimplemented("ConvertThreadToFiber failed");
     }
