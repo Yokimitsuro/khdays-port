@@ -6,36 +6,49 @@ on a layer that stands in for the DS hardware (the approach of the Super
 Mario 64 PC port, Ship of Harkinian and the pokeemerald ports)? That would
 make the game's behaviour 1:1 by construction.
 
-**Setup.** Pinned decomp `e20a592a7`. MSVC 19.5x (Visual Studio 18) for
+**Setup.** First run at decomp `e20a592a7` (99.2% of functions in C); re-run
+at `9791f2452`, when the decomp reached ~100% complete functions (99.5% real
+C, 99.73% of code bytes; the rest is library code whose original source is
+assembly). The numbers below are the re-run's, with the first run's in
+brackets. MSVC 19.5x (Visual Studio 18) for
 **32-bit x86**, because the decomp stores pointers in `int` (~34k
 `*(T *)(int + n)` dereferences), so a 64-bit build is out. C17
 (`/std:c17 /TC`), C++17 for the 7 `.cpp` files. mwcc's own flags are
 `-lang c99 -char signed -enum int -gccext,on`; MSVC's `char` is signed and its
 enums are `int` already. Scripts: `compile_survey.py`, `link_survey.py`.
 
-## 1. Compile: 99.21%
+## 1. Compile: 99.31% [99.21%]
 
-**24,385 of 24,580** source files compile unchanged (58 s on 28 threads).
-The 195 that do not:
+**24,458 of 24,629** source files compile unchanged [24,385 of 24,580]. The
+171 that do not [195]:
 
-| cause | files | note |
-|-------|-------|------|
-| ARM `asm` (C2054 / C2065 / C2400) | 132 | NitroSDK OS / CARD / MI / MTX / init internals -- the hardware layer the port replaces anyway |
-| zero-size arrays mid-struct (C2229) | 26 | `/std:clatest` or a mechanical fix |
-| `__attribute__` (C2061 / C2146) | 22 | a `#define` away |
-| other syntax (C2055, C2143, C5299) | 15 | label at end of block etc.; `/std:clatest` covers C5299 |
+| cause | game (`src/`) | libraries (`libs/`) | note |
+|-------|---------------|---------------------|------|
+| inline ARM `asm` | 10 | 98 | NitroSDK OS / CARD / MI / MTX / init internals -- the hardware layer the port replaces anyway |
+| zero-size arrays mid-struct (C2229) | 26 | -- | a GNU extension MSVC rejects; mechanical |
+| `__attribute__` | 1 | 20 | a `#define` away |
+| unnamed parameters in definitions (C2055) | -- | 7 | name them |
+| label at end of block (C5299) | -- | 3 | `/std:clatest` fixes these (and only these) |
+| other syntax | 6 | -- | |
+
+So only 43 files of the game's own code fail, and 26 of those for one
+mechanical reason.
 
 ## 2. Link: everything fits in one image
 
 All 24,385 objects -- every overlay side by side -- link together
 (`/FORCE`, to list everything at once) with:
 
-- **700 unresolved symbols**
+- **632 unresolved symbols** [700]
   - **431 BSS** variables: every one is in the decomp's `symbols.txt` with
     its address, so their definitions can be generated.
-  - **197 functions**: the not-yet-C remainder plus the SDK's assembly-only
-    routines (`MI_CpuFill8`, `MIi_CpuClearFast`, `OS_DisableInterrupts`,
-    `MTX_RotY33_`, ...).
+  - **129 functions** [197]. Every one has source in the decomp: 122 live in
+    the files above that failed to compile (67 SDK routines such as
+    `MI_CpuFill8`, `MIi_CpuClearFast`, `OS_DisableInterrupts`, `MTX_RotY33_`,
+    `DC_FlushRange`, plus 55 game-named ones), and 7 are `.s` files -- the
+    CodeWarrior runtime's division helpers (`func_02020400`, `02020368`,
+    `0202060c`, ...) and MobiClip's FastAudio decoder, which KH Days never
+    runs.
   - **47 initialized data** objects the decomp keeps in assembly.
   - **25 toolchain symbols**: `OVERLAY_n_ID`, `SDK_*_STACKSIZE`,
     `memset` / `memcpy`.
