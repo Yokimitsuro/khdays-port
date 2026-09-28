@@ -251,17 +251,29 @@ def main() -> int:
                 consumed.add(name)
                 changed = True
 
+    # The arguments each file really passes: fewest at any call of the function
+    # (an unprototyped `f()` declaration says nothing; the calls do).
+    passed: dict[tuple[str, str], int] = {}
+    for rel, text in texts.items():
+        for callee, arguments in calls_in(text):
+            if callee in defs:
+                n = 0 if arguments == [""] else len(arguments)
+                key = (callee, rel)
+                passed[key] = min(passed.get(key, n), n)
+
     fewer = []
     phantom_return = []
+    for (name, rel), count in sorted(passed.items()):
+        _, dcount, dfile, _, _, _ = defs[name]
+        if rel == dfile or dcount is None:
+            continue
+        # only parameters the definition actually reads matter
+        if count < dcount and any(reads[name][count:]):
+            fewer.append((name, dfile, dcount, rel, count))
     for name, (dret, dcount, dfile, names, _, returns) in sorted(defs.items()):
         for ret, count, rel in decls.get(name, []):
             if rel == dfile:
                 continue
-            # only parameters the definition actually reads matter, and only
-            # if the file calls it
-            if (dcount is not None and count is not None and count < dcount
-                    and any(reads[name][count:]) and any(c == name for c, _ in calls_in(texts[rel]))):
-                fewer.append((name, dfile, dcount, rel, count))
             # a void definition's "result" matters only where a call uses it
             if dret == "void" and not returns and ret != "void" and name in consumed:
                 direct, through = value_uses(name, texts[rel])

@@ -145,11 +145,23 @@ B FS_LoadOverlayImage FS_GetOverlayFileID 0200b3b0 r1 <- 0200b3ac mov r1,r5
 B FS_LoadOverlayInfo FS_GetOverlayFileID 0200b2f8 r1 <- 0200b2f4 mov r1,r5
 B FSi_LoadOverlayInfoCore FS_GetOverlayFileID 0200b248 r1 <- 0200b240 mov r1,r4
 B FX_Div FX_DivAsync 01ff8a08 r1 <- entry:r1
+B NNS_FndDestroyExpHeap NNSi_FndFinalizeHeap 020107f4 r0 <- entry:r0
+B NNS_FndDestroyFrmHeap NNSi_FndFinalizeHeap 02010bc4 r0 <- entry:r0
 B PMi_SetLEDAsync func_0200cd40 0200cf04 r1 <- entry:r1
 B PMi_SetLEDAsync func_0200cd40 0200cf04 r2 <- entry:r2
-B func_01ffe460 FX_Div 01ffe4d0 r0 <- 01ffe4cc mov r0,r4
-B func_01ffe460 FX_Div 01ffe4d0 r1 <- 01ffe4b8 mov r1,r0
+B func_020018e0 func_02025aac 020018e4 r0 <- entry:r0
+B func_020018e0 func_02025aac 020018e4 r1 <- entry:r1
+B func_020018e0 func_02025aac 020018e4 r2 <- entry:r2
+B func_020018e0 func_02025aac 020018e4 r3 <- entry:r3
 B func_0200ee0c CARDi_CheckPulledOutCore 0200ee38 r0 <- 0200ee34 bl 0x0200edb0 => 0x200edb0 CARDi_ReadRomIDCore
+B func_020116e4 func_020116a8 020116e8 r0 <- entry:r0
+B func_020116e4 func_020116a8 020116e8 r1 <- entry:r1
+B func_0201696c NNS_FndFreeToAllocator 02016970 r0 <- entry:r0
+B func_0201696c NNS_FndFreeToAllocator 02016970 r1 <- entry:r1
+B func_0201a55c func_0201a80c 0201a560 r0 <- entry:r0
+B func_0202019c func_0201f7bc 020201a0 r0 <- entry:r0
+B func_0202019c func_0201f7bc 020201a0 r1 <- entry:r1
+B func_0202019c func_0201f7bc 020201a0 r2 <- entry:r2
 B func_0202099c func_0201e4a8 020209dc r1 <- 020209cc ldr r1,[r1,#0x0]
 B func_020217d4 func_02021294 020217fc r0 <- entry:r0
 B func_02021980 func_020218a4 02021982 r1 <- entry:r1
@@ -165,18 +177,28 @@ B func_020224b4 func_020218a4 020224b8 r1 <- entry:r1
 B func_020224b4 func_02033bfc 020224c4 r0 <- 020224c0 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_02022544 func_02021980 02022548 r1 <- entry:r1
 B func_02023018 func_0203409c 02023080 r1 <- 02023074 ldr r1,[r0,#0x0]
+B func_02023768 func_0201082c 02023770 r1 <- entry:r1
+B func_02023768 func_0201082c 02023770 r2 <- entry:r2
+B func_02023ad0 func_02023a4c 02023ad4 r0 <- entry:r0
 B func_0202a440 func_0201f6b0 0202a4b8 r0 <- 0202a4ac ldr r0,[r7,#0xc]
+B func_0202a66c func_0202a4d0 0202a67c r3 <- entry:r3
+B func_0202aee0 func_01fff75c 0202aee4 r0 <- entry:r0
+B func_0202aee0 func_01fff75c 0202aee4 r1 <- entry:r1
 B func_0202aef8 func_01fff75c 0202aefc r0 <- entry:r0
 B func_0202aef8 func_01fff75c 0202aefc r1 <- entry:r1
+B func_0202afe8 func_0202a9d0 0202afec r0 <- entry:r0
 B func_0202b150 func_0202b0a4 0202b154 r0 <- entry:r0
 B func_0202b450 func_020293fc 0202b46c r1 <- entry:r1
-B func_0202c404 func_0202b150 0202c418 r0 <- 0202c414 add r0,r2,r0, lsl #0x3
-B func_0202e358 func_0202e5e8 0202e38c r0 <- 0202e384 mov r0,r4
-B func_0202e358 func_0202e5e8 0202e38c r1 <- 0202e388 mov r1,#0x0
+B func_0202c604 func_0202872c 0202c60c r1 <- entry:r1
+B func_0202c614 func_02028740 0202c61c r1 <- entry:r1
 B func_0202e5e8 func_020170c8 0202e5f8 r1 <- entry:r1
 B func_0202f384 func_0202ec2c 0202f398 r1 <- entry:r1
 B func_02030988 func_020308a0 02030998 r0 <- 02030994 blx 0x0203065c => 0x203065c CARD_GetResultCode_0x0203065c
 B func_02032288 func_02031ac4 02032298 r0 <- entry:r0
+B func_0203243c func_02031d90 0203243e r1 <- entry:r1
+B func_02032444 func_02032288 02032448 r0 <- entry:r0
+B func_02032444 func_02032288 02032448 r1 <- entry:r1
+B func_02032444 func_02032288 02032448 r2 <- entry:r2
 B func_02033bb4 func_02019f08 02033bc8 r1 <- entry:r1
 B func_02033bb4 func_02019f08 02033bc8 r2 <- entry:r2
 B func_0203c9b4 func_0202f188 0203c9bc r1 <- entry:r1
@@ -186,12 +208,18 @@ B func_ov000_0204f610 func_ov000_020548c8 arm9_ov000::0204f634 r0 <- arm9_ov000:
 B func_ov000_0204f7ac func_ov000_02054e48 arm9_ov000::0204f7b0 r0 <- entry:r0
 B func_ov000_0204f7d0 func_ov000_02054f1c arm9_ov000::0204f7d4 r0 <- entry:r0
 B func_ov000_02055544 func_ov000_02055bc4 arm9_ov000::02055554 r1 <- entry:r1
+B func_ov000_02055a8c NNSi_FndFreeFromDefaultHeap arm9_ov000::02055aca r0 <- arm9_ov000::02055ac4 ldr r0,[sp,#0x0]
+B func_ov000_02055b30 func_02032388 arm9_ov000::02055b34 r1 <- entry:r1
 B func_ov000_02055c48 func_ov000_02055bc4 arm9_ov000::02055c60 r0 <- entry:r0
 B func_ov000_02055c48 func_ov000_02055bc4 arm9_ov000::02055c60 r1 <- entry:r1
 B func_ov000_020569dc func_020315c0 arm9_ov000::020569ec r0 <- arm9_ov000::020569e8 bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov000_02058360 func_ov000_020580fc arm9_ov000::02058364 r0 <- entry:r0
 B func_ov002_0204d170 func_ov022_020881f8 - no-call-found
 B func_ov002_0204f0a8 func_ov022_020881f8 - no-call-found
 B func_ov002_0204fc54 func_ov022_020881f8 - no-call-found
+B func_ov002_02050b68 func_01fffde0 arm9_ov002::02050b74 r0 <- arm9_ov002::02050b70 bl 0x01fffe14 => 0x1fffe14 QueryActiveStateOrDelegate
+B func_ov002_02050d18 func_ov002_02050d38 arm9_ov002::02050d1e r2 <- entry:r2
+B func_ov002_02050d18 func_ov002_02050d38 arm9_ov002::02050d1e r3 <- entry:r3
 B func_ov002_02055068 func_ov002_020535a4 arm9_ov002::02055080 r0 <- arm9_ov002::0205507c blx 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_02055068 func_ov002_020535a4 arm9_ov002::02055094 r0 <- arm9_ov002::02055090 blx 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_02055068 func_ov002_020535a4 arm9_ov002::020550a2 r0 <- arm9_ov002::0205509e blx 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
@@ -201,6 +229,7 @@ B func_ov002_0205633c func_ov002_020550d0 arm9_ov002::02056758 r2 <- arm9_ov002:
 B func_ov002_0205633c func_ov002_020550d0 arm9_ov002::02056758 r3 <- arm9_ov002::0205674a blx 0x02023930 => 0x2023930 InstantiateClass
 B func_ov002_02056a98 func_ov002_020535f0 arm9_ov002::02056ac4 r0 <- arm9_ov002::02056ac0 bl 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_02056a98 func_ov002_02053700 arm9_ov002::02056ab4 r0 <- arm9_ov002::02056aa4 bl 0x020536bc => 0x20536bc Ov002_Ctx_FindActiveEntryByTag
+B func_ov002_02056de0 func_ov002_0205e214 arm9_ov002::02056de8 r1 <- entry:r1
 B func_ov002_02057500 func_ov002_020535a4 arm9_ov002::0205754c r0 <- arm9_ov002::02057548 bl 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_0205953c func_ov002_020535a4 arm9_ov002::02059584 r0 <- arm9_ov002::02059580 bl 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_020596c0 func_ov002_020535a4 arm9_ov002::02059724 r0 <- arm9_ov002::02059720 bl 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
@@ -221,6 +250,7 @@ B func_ov002_02062d74 func_ov002_020535a4 arm9_ov002::02062dd4 r0 <- arm9_ov002:
 B func_ov002_02063a38 func_ov002_020535a4 arm9_ov002::02063a40 r0 <- arm9_ov002::02063a3c blx 0x02053558 => 0x2053558 Ov002_ForwardToSubDc
 B func_ov002_020652c8 func_ov022_020881f8 - no-call-found
 B func_ov002_02066074 func_ov002_02066738 arm9_ov002::02066094 r0 <- arm9_ov002::02066090 bl 0x0206373c => 0x206373c OS_IsThreadAvailable_0x0206373c
+B func_ov002_0206700c func_ov002_02066fc0 arm9_ov002::0206701a r0 <- arm9_ov002::02067012 blx 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B func_ov002_02067068 func_ov002_02067044 arm9_ov002::0206706c r0 <- entry:r0
 B func_ov002_0206716c func_ov002_02067150 arm9_ov002::020672ca r0 <- arm9_ov002::020672c4 bl 0x02067994 => 0x2067994 Ov002_NextStreamRecord
 B func_ov002_0206716c func_ov002_02067150 arm9_ov002::020672f2 r0 <- arm9_ov002::020672ec bl 0x02067994 => 0x2067994 Ov002_NextStreamRecord
@@ -239,64 +269,57 @@ B func_ov002_0206aeb8 func_ov002_02056edc arm9_ov002::0206aefa arg4 <- stack
 B func_ov002_0206ba48 func_ov022_02088474 - no-call-found
 B func_ov002_0206c2a0 func_ov002_02061b80 arm9_ov002::0206c544 r0 <- arm9_ov002::0206c538 bl 0x0206b864 => 0x206b864 Ov002_HasAssignedPeerId
 B func_ov002_02072ba8 func_ov002_02072754 arm9_ov002::02072baa r0 <- entry:r0
-B func_ov002_0207465c func_02021980 arm9_ov002::0207465e r0 <- entry:r0
 B func_ov002_0207465c func_02021980 arm9_ov002::0207465e r1 <- entry:r1
-B func_ov002_0207466c func_02021980 arm9_ov002::0207466e r0 <- entry:r0
+B func_ov002_0207465c func_ov002_0206a93c arm9_ov002::02074662 r0 <- arm9_ov002::0207465e bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_0207466c func_02021980 arm9_ov002::0207466e r1 <- entry:r1
+B func_ov002_0207466c func_ov002_0206aa30 arm9_ov002::02074672 r0 <- arm9_ov002::0207466e bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_0207467c func_02021980 arm9_ov002::0207467e r1 <- entry:r1
-B func_ov002_02074a94 func_02021980 arm9_ov002::02074a96 r0 <- entry:r0
 B func_ov002_02074a94 func_02021980 arm9_ov002::02074a96 r1 <- entry:r1
-B func_ov002_02074be4 func_02021980 arm9_ov002::02074be6 r0 <- entry:r0
+B func_ov002_02074a94 func_ov002_0206b0f8 arm9_ov002::02074a9a r0 <- arm9_ov002::02074a96 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_02074be4 func_02021980 arm9_ov002::02074be6 r1 <- entry:r1
-B func_ov002_02074bf4 func_02021980 arm9_ov002::02074bf6 r0 <- entry:r0
+B func_ov002_02074be4 func_ov002_020738ac arm9_ov002::02074bea r0 <- arm9_ov002::02074be6 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_02074bf4 func_02021980 arm9_ov002::02074bf6 r1 <- entry:r1
+B func_ov002_02074bf4 func_ov002_020739ec arm9_ov002::02074bfa r0 <- arm9_ov002::02074bf6 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_02074c7c func_02021980 arm9_ov002::02074c7e r1 <- entry:r1
-B func_ov002_02074cac func_02021980 arm9_ov002::02074cae r0 <- entry:r0
+B func_ov002_02074c9c func_02021948 arm9_ov002::02074c9e r1 <- entry:r1
+B func_ov002_02074c9c func_ov002_0206ae8c arm9_ov002::02074ca2 r0 <- arm9_ov002::02074c9e bl 0x02021948 => 0x2021948 ByteCode_ResolveOperand
 B func_ov002_02074cac func_02021980 arm9_ov002::02074cae r1 <- entry:r1
-B func_ov002_02074cb8 func_02021980 arm9_ov002::02074cba r0 <- entry:r0
 B func_ov002_02074cb8 func_02021980 arm9_ov002::02074cba r1 <- entry:r1
-B func_ov002_02074ce8 func_02021980 arm9_ov002::02074cee r0 <- entry:r0
-B func_ov002_02074ce8 func_02021980 arm9_ov002::02074cee r1 <- entry:r1
-B func_ov002_02074ce8 func_02021980 arm9_ov002::02074cfa r0 <- arm9_ov002::02074cf6 add r0,r5,#0x0
-B func_ov002_02074ce8 func_02021980 arm9_ov002::02074cfa r1 <- arm9_ov002::02074cf8 add r1,r4,#0x0
-B func_ov002_02074d0c func_02021980 arm9_ov002::02074d12 r0 <- entry:r0
-B func_ov002_02074d0c func_02021980 arm9_ov002::02074d12 r1 <- entry:r1
-B func_ov002_02074d0c func_02021980 arm9_ov002::02074d1e r0 <- arm9_ov002::02074d1a add r0,r5,#0x0
-B func_ov002_02074d0c func_02021980 arm9_ov002::02074d1e r1 <- arm9_ov002::02074d1c add r1,r4,#0x0
-B func_ov002_02074d30 func_02021980 arm9_ov002::02074d32 r0 <- entry:r0
 B func_ov002_02074d30 func_02021980 arm9_ov002::02074d32 r1 <- entry:r1
-B func_ov002_02074f30 func_02021980 arm9_ov002::02074f36 r0 <- entry:r0
-B func_ov002_02074f30 func_02021980 arm9_ov002::02074f36 r1 <- entry:r1
-B func_ov002_02074f30 func_02021980 arm9_ov002::02074f42 r0 <- arm9_ov002::02074f3e add r0,r5,#0x0
-B func_ov002_02074f30 func_02021980 arm9_ov002::02074f42 r1 <- arm9_ov002::02074f40 add r1,r4,#0x0
-B func_ov002_0207510c func_02021980 arm9_ov002::0207510e r0 <- entry:r0
+B func_ov002_02074d30 func_ov002_0206d880 arm9_ov002::02074d36 r0 <- arm9_ov002::02074d32 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_0207510c func_02021980 arm9_ov002::0207510e r1 <- entry:r1
-B func_ov002_0207511c func_02021980 arm9_ov002::0207511e r0 <- entry:r0
+B func_ov002_0207510c func_ov002_0206cf40 arm9_ov002::02075112 r0 <- arm9_ov002::0207510e bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_0207511c func_02021980 arm9_ov002::0207511e r1 <- entry:r1
-B func_ov002_02075194 func_02021980 arm9_ov002::02075196 r0 <- entry:r0
+B func_ov002_0207511c func_ov002_0206ade4 arm9_ov002::02075122 r0 <- arm9_ov002::0207511e bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_02075194 func_02021980 arm9_ov002::02075196 r1 <- entry:r1
-B func_ov002_020751b0 func_02021980 arm9_ov002::020751b2 r0 <- entry:r0
+B func_ov002_02075194 func_ov002_0206cf4c arm9_ov002::0207519a r0 <- arm9_ov002::02075196 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_020751b0 func_02021980 arm9_ov002::020751b2 r1 <- entry:r1
-B func_ov002_020751c0 func_02021980 arm9_ov002::020751c6 r0 <- entry:r0
-B func_ov002_020751c0 func_02021980 arm9_ov002::020751c6 r1 <- entry:r1
-B func_ov002_020751c0 func_02021980 arm9_ov002::020751d2 r0 <- arm9_ov002::020751ce add r0,r5,#0x0
-B func_ov002_020751c0 func_02021980 arm9_ov002::020751d2 r1 <- arm9_ov002::020751d0 add r1,r4,#0x0
-B func_ov002_020751f0 func_02021980 arm9_ov002::020751f2 r0 <- entry:r0
+B func_ov002_020751b0 func_ov002_02073914 arm9_ov002::020751b6 r0 <- arm9_ov002::020751b2 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_020751f0 func_02021980 arm9_ov002::020751f2 r1 <- entry:r1
 B func_ov002_02075578 func_ov002_02057300 arm9_ov002::02075612 r1 <- arm9_ov002::020755fc mov r1,#0x0
 B func_ov002_02075860 func_ov002_0206d424 arm9_ov002::0207586a r0 <- arm9_ov002::02075862 blx 0x0205f534 => 0x205f534 Ov002_GetPanelRequestBlock
-B func_ov002_020758d8 func_02021980 arm9_ov002::020758da r0 <- entry:r0
 B func_ov002_020758d8 func_02021980 arm9_ov002::020758da r1 <- entry:r1
-B func_ov002_02075978 func_02021980 arm9_ov002::0207597a r0 <- entry:r0
+B func_ov002_020758d8 func_ov002_0206d9fc arm9_ov002::020758de r0 <- arm9_ov002::020758da bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
+B func_ov002_02075900 func_ov002_0206ce00 arm9_ov002::0207590a r0 <- arm9_ov002::02075906 blx 0x02088474
+B func_ov002_02075900 func_ov022_02088474 - no-call-found
+B func_ov002_02075914 func_02021948 arm9_ov002::02075916 r1 <- entry:r1
+B func_ov002_02075914 func_ov106_020b8108 - no-call-found
 B func_ov002_02075978 func_02021980 arm9_ov002::0207597a r1 <- entry:r1
-B func_ov002_020759e8 func_02021980 arm9_ov002::020759ea r0 <- entry:r0
+B func_ov002_02075978 func_ov002_0206dd94 arm9_ov002::0207597e r0 <- arm9_ov002::0207597a bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_020759e8 func_02021980 arm9_ov002::020759ea r1 <- entry:r1
+B func_ov002_020759e8 func_ov002_0206e518 arm9_ov002::020759ee r0 <- arm9_ov002::020759ea bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
 B func_ov002_02076c24 func_ov002_0207c490 arm9_ov002::02076cb8 r1 <- entry:r1
+B func_ov002_0207706c func_ov002_0207c770 arm9_ov002::02077070 r1 <- entry:r1
+B func_ov002_02079b38 func_ov002_0207c770 arm9_ov002::02079b3c r1 <- entry:r1
+B func_ov002_0207a0bc func_ov002_0207c770 arm9_ov002::0207a0c0 r1 <- entry:r1
 B func_ov002_0207a90c func_01fffde0 arm9_ov002::0207a91c r0 <- arm9_ov002::0207a918 bl 0x01fffe14 => 0x1fffe14 QueryActiveStateOrDelegate
-B func_ov002_0207d92c func_02021980 arm9_ov002::0207d92e r0 <- entry:r0
 B func_ov002_0207d92c func_02021980 arm9_ov002::0207d92e r1 <- entry:r1
-B func_ov002_0207d940 func_02021980 arm9_ov002::0207d942 r0 <- entry:r0
 B func_ov002_0207d940 func_02021980 arm9_ov002::0207d942 r1 <- entry:r1
+B func_ov002_0207d940 func_ov002_0207689c arm9_ov002::0207d946 r0 <- arm9_ov002::0207d942 bl 0x02021980 => 0x2021980 ScriptVm_ReadOperandInt
+B func_ov004_0204ccbc NNSi_FndFreeFromDefaultHeap arm9_ov004::0204ccd0 r0 <- arm9_ov004::0204ccc4 ldr r0,[r4,#0x3c]
+B func_ov004_0204ccbc NNSi_FndFreeFromDefaultHeap arm9_ov004::0204cce8 r0 <- arm9_ov004::0204ccdc ldr r0,[r4,#0x40]
+B func_ov004_0204ccbc NNSi_FndFreeFromDefaultHeap arm9_ov004::0204cd00 r0 <- arm9_ov004::0204ccf4 ldr r0,[r4,#0x44]
+B func_ov004_0204ccbc NNSi_FndFreeFromDefaultHeap arm9_ov004::0204cd18 r0 <- arm9_ov004::0204cd0c ldr r0,[r4,#0x48]
 B func_ov004_0204d1a8 func_ov004_0204d020 arm9_ov004::0204d1e0 r2 <- entry:r2
 B func_ov004_0204d1a8 func_ov004_0204d034 arm9_ov004::0204d1f0 r2 <- entry:r2
 B func_ov004_0204d1a8 func_ov004_0204d034 arm9_ov004::0204d1f0 r3 <- entry:r3
@@ -308,11 +331,19 @@ B func_ov004_0204d1a8 func_ov004_0204d120 arm9_ov004::0204d240 r2 <- entry:r2
 B func_ov004_0204d1a8 func_ov004_0204d134 arm9_ov004::0204d250 r2 <- entry:r2
 B func_ov004_0204d25c func_ov004_0204d1a8 arm9_ov004::0204d2b0 r3 <- arm9_ov004::0204d29c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B func_ov004_0204d368 func_020315c0 arm9_ov004::0204d378 r0 <- arm9_ov004::0204d374 bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov004_0204ecec func_ov004_0204ea88 arm9_ov004::0204ecf0 r0 <- entry:r0
 B func_ov005_0204dae0 func_ov005_0204e15c arm9_ov005::0204daf0 r1 <- entry:r1
 B func_ov005_0204e098 func_02032388 arm9_ov005::0204e09c r1 <- entry:r1
+B func_ov005_0204e0b0 func_0203243c arm9_ov005::0204e0b2 r0 <- entry:r0
+B func_ov005_0204e0b0 func_0203243c arm9_ov005::0204e0b2 r0 <- entry:r0
+B func_ov005_0204e0b0 func_0203243c arm9_ov005::0204e0b2 r1 <- entry:r1
 B func_ov005_0204e1e0 func_ov005_0204e1d8 arm9_ov005::0204e1f4 r1 <- entry:r1
 B func_ov005_0204e230 func_ov005_0204e15c arm9_ov005::0204e248 r0 <- entry:r0
 B func_ov005_0204e230 func_ov005_0204e15c arm9_ov005::0204e248 r1 <- entry:r1
+B func_ov005_0204e6f0 NNSi_FndFreeFromDefaultHeap arm9_ov005::0204e704 r0 <- arm9_ov005::0204e6f8 ldr r0,[r4,#0x3c]
+B func_ov005_0204e6f0 NNSi_FndFreeFromDefaultHeap arm9_ov005::0204e71c r0 <- arm9_ov005::0204e710 ldr r0,[r4,#0x40]
+B func_ov005_0204e6f0 NNSi_FndFreeFromDefaultHeap arm9_ov005::0204e734 r0 <- arm9_ov005::0204e728 ldr r0,[r4,#0x44]
+B func_ov005_0204e6f0 NNSi_FndFreeFromDefaultHeap arm9_ov005::0204e74c r0 <- arm9_ov005::0204e740 ldr r0,[r4,#0x48]
 B func_ov005_0204ebdc func_ov005_0204ea54 arm9_ov005::0204ec14 r2 <- entry:r2
 B func_ov005_0204ebdc func_ov005_0204ea68 arm9_ov005::0204ec24 r2 <- entry:r2
 B func_ov005_0204ebdc func_ov005_0204ea68 arm9_ov005::0204ec24 r3 <- entry:r3
@@ -324,16 +355,25 @@ B func_ov005_0204ebdc func_ov005_0204eb54 arm9_ov005::0204ec74 r2 <- entry:r2
 B func_ov005_0204ebdc func_ov005_0204eb68 arm9_ov005::0204ec84 r2 <- entry:r2
 B func_ov005_0204ec90 func_ov005_0204ebdc arm9_ov005::0204ece4 r3 <- arm9_ov005::0204ecd0 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B func_ov005_0204eda0 func_020315c0 arm9_ov005::0204edb0 r0 <- arm9_ov005::0204edac bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov005_02050724 func_ov005_020504c0 arm9_ov005::02050728 r0 <- entry:r0
 B func_ov005_0205896c func_020315c0 arm9_ov005::02058974 r0 <- arm9_ov005::02058970 bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
 B func_ov008_02050a40 func_ov008_0204f1ac arm9_ov008::02050a48 r0 <- entry:r0
 B func_ov008_02050b3c func_ov008_0204fc74 arm9_ov008::02050b40 r0 <- entry:r0
 B func_ov008_02050b74 func_ov008_0204fc74 arm9_ov008::02050b78 r0 <- entry:r0
 B func_ov008_02051b20 func_020315c0 arm9_ov008::02051b30 r0 <- arm9_ov008::02051b2c bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov008_02053464 func_ov008_02053200 arm9_ov008::02053468 r0 <- entry:r0
 B func_ov008_02054158 func_ov008_02054820 arm9_ov008::02054168 r1 <- entry:r1
 B func_ov008_02054744 func_02032388 arm9_ov008::02054748 r1 <- entry:r1
+B func_ov008_0205475c func_0203243c arm9_ov008::0205475e r0 <- entry:r0
+B func_ov008_0205475c func_0203243c arm9_ov008::0205475e r0 <- entry:r0
+B func_ov008_0205475c func_0203243c arm9_ov008::0205475e r1 <- entry:r1
 B func_ov008_020548bc func_ov008_0205489c arm9_ov008::020548d0 r1 <- entry:r1
 B func_ov008_02054aac func_ov008_02054820 arm9_ov008::02054ac4 r0 <- entry:r0
 B func_ov008_02054aac func_ov008_02054820 arm9_ov008::02054ac4 r1 <- entry:r1
+B func_ov008_02055f8c NNSi_FndFreeFromDefaultHeap arm9_ov008::02055fa0 r0 <- arm9_ov008::02055f94 ldr r0,[r4,#0x3c]
+B func_ov008_02055f8c NNSi_FndFreeFromDefaultHeap arm9_ov008::02055fb8 r0 <- arm9_ov008::02055fac ldr r0,[r4,#0x40]
+B func_ov008_02055f8c NNSi_FndFreeFromDefaultHeap arm9_ov008::02055fd0 r0 <- arm9_ov008::02055fc4 ldr r0,[r4,#0x44]
+B func_ov008_02055f8c NNSi_FndFreeFromDefaultHeap arm9_ov008::02055fe8 r0 <- arm9_ov008::02055fdc ldr r0,[r4,#0x48]
 B func_ov008_02056478 func_ov008_020562f0 arm9_ov008::020564b0 r2 <- entry:r2
 B func_ov008_02056478 func_ov008_02056304 arm9_ov008::020564c0 r2 <- entry:r2
 B func_ov008_02056478 func_ov008_02056304 arm9_ov008::020564c0 r3 <- entry:r3
@@ -344,15 +384,34 @@ B func_ov008_02056478 func_ov008_020563dc arm9_ov008::02056500 r2 <- entry:r2
 B func_ov008_02056478 func_ov008_020563f0 arm9_ov008::02056510 r2 <- entry:r2
 B func_ov008_02056478 func_ov008_02056404 arm9_ov008::02056520 r2 <- entry:r2
 B func_ov008_0205652c func_ov008_02056478 arm9_ov008::02056580 r3 <- arm9_ov008::0205656c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
+B func_ov008_0205665c func_ov008_02055c84 arm9_ov008::02056660 r0 <- entry:r0
+B func_ov008_0205665c func_ov008_02055c84 arm9_ov008::02056660 r1 <- entry:r1
 B func_ov008_020566f4 func_ov008_02056478 arm9_ov008::02056710 r3 <- arm9_ov008::02056700 bl 0x02056418 => 0x2056418 ov008_DestroyAllListObjects
 B func_ov008_02058984 func_ov008_0204ebbc arm9_ov008::020589d0 r0 <- arm9_ov008::020589cc blx 0x02023588 => 0x2023588 GameState_IsFlagSet
+B func_ov008_020594c4 func_ov008_02058bac arm9_ov008::020594c8 r0 <- entry:r0
+B func_ov008_0205968c func_ov008_02058a28 arm9_ov008::02059690 r0 <- entry:r0
+B func_ov008_0205968c func_ov008_02058a28 arm9_ov008::02059690 r1 <- entry:r1
+B func_ov008_0205968c func_ov008_02058a28 arm9_ov008::02059690 r2 <- entry:r2
+B func_ov008_0205968c func_ov008_02058a28 arm9_ov008::02059690 r3 <- entry:r3
+B func_ov008_0205c574 func_ov008_0205bf04 arm9_ov008::0205c578 r0 <- entry:r0
+B func_ov008_0205c574 func_ov008_0205bf04 arm9_ov008::0205c578 r1 <- entry:r1
+B func_ov008_0205c574 func_ov008_0205bf04 arm9_ov008::0205c578 r2 <- entry:r2
+B func_ov008_0205c574 func_ov008_0205bf04 arm9_ov008::0205c578 r3 <- entry:r3
+B func_ov008_020676a0 func_ov008_020559a8 arm9_ov008::020676a8 r0 <- arm9_ov008::020676a4 bl 0x02050c28 => 0x2050c28 Ov008_GetCtxBlock9500
 B func_ov008_02074878 func_ov008_02074758 arm9_ov008::02074884 r1 <- entry:r1
+B func_ov008_02078154 func_ov008_02078088 arm9_ov008::02078158 r0 <- entry:r0
+B func_ov008_020782c8 func_ov008_020559a8 arm9_ov008::020782d0 r0 <- arm9_ov008::020782cc bl 0x02050c3c => 0x2050c3c Ov008_GetCtxBlock954c
 B func_ov009_0204e3f4 func_ov009_0204d818 arm9_ov009::0204e3f8 r0 <- entry:r0
 B func_ov009_0204ee50 func_020315c0 arm9_ov009::0204ee60 r0 <- arm9_ov009::0204ee5c bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov009_020507d4 func_ov009_02050570 arm9_ov009::020507d8 r0 <- entry:r0
 B func_ov009_020512ec func_ov009_02051978 arm9_ov009::020512fc r1 <- entry:r1
 B func_ov009_020518d8 func_02032388 arm9_ov009::020518dc r1 <- entry:r1
 B func_ov009_020519fc func_ov009_02051978 arm9_ov009::02051a14 r0 <- entry:r0
 B func_ov009_020519fc func_ov009_02051978 arm9_ov009::02051a14 r1 <- entry:r1
+B func_ov009_02055078 NNSi_FndFreeFromDefaultHeap arm9_ov009::0205508c r0 <- arm9_ov009::02055080 ldr r0,[r4,#0x3c]
+B func_ov009_02055078 NNSi_FndFreeFromDefaultHeap arm9_ov009::020550a4 r0 <- arm9_ov009::02055098 ldr r0,[r4,#0x40]
+B func_ov009_02055078 NNSi_FndFreeFromDefaultHeap arm9_ov009::020550bc r0 <- arm9_ov009::020550b0 ldr r0,[r4,#0x44]
+B func_ov009_02055078 NNSi_FndFreeFromDefaultHeap arm9_ov009::020550d4 r0 <- arm9_ov009::020550c8 ldr r0,[r4,#0x48]
 B func_ov009_02055564 func_ov009_020553dc arm9_ov009::0205559c r2 <- entry:r2
 B func_ov009_02055564 func_ov009_020553f0 arm9_ov009::020555ac r2 <- entry:r2
 B func_ov009_02055564 func_ov009_020553f0 arm9_ov009::020555ac r3 <- entry:r3
@@ -367,7 +426,14 @@ B func_ov011_0205bb58 func_ov011_0205b814 arm9_ov011::0205bda0 arg5 <- stack
 B func_ov011_0205cb18 func_ov011_0205b340 arm9_ov011::0205cc24 r0 <- arm9_ov011::0205cc00 mvneq r0,#0x1
 B func_ov011_0205cb18 func_ov011_0205b340 arm9_ov011::0205cc24 r1 <- arm9_ov011::0205cc10 add r1,r0,#0x23000
 B func_ov012_0205b0cc func_ov008_020846c0 - no-call-found
+B func_ov012_0205b618 func_0201e374 arm9_ov012::0205b7a4 r0 <- arm9_ov012::0205b7a0 bl 0x0201e428 => 0x201e428 LoadGlobalS8_027e0084
+B func_ov012_0205b618 func_0201e374 arm9_ov012::0205b834 r0 <- arm9_ov012::0205b830 mvn r0,#0xf
+B func_ov012_0205b618 func_0201e374 arm9_ov012::0205b888 r0 <- arm9_ov012::0205b884 mvn r0,#0xf
+B func_ov012_0205b618 func_0201e3cc arm9_ov012::0205b7ac r0 <- arm9_ov012::0205b7a8 bl 0x0201e438 => 0x201e438 LoadGlobalS8At1_027e0084
+B func_ov012_0205b618 func_0201e3cc arm9_ov012::0205b83c r0 <- arm9_ov012::0205b838 mvn r0,#0xf
+B func_ov012_0205b618 func_0201e3cc arm9_ov012::0205b890 r0 <- arm9_ov012::0205b88c mvn r0,#0xf
 B func_ov012_0205ba08 func_02021948 arm9_ov012::0205ba0c r1 <- entry:r1
+B func_ov012_0205bb78 func_0202f9ec arm9_ov012::0205bb7c r0 <- entry:r0
 B func_ov015_02081554 func_ov002_02072754 - no-call-found
 B func_ov016_0207fb28 func_ov002_0207c770 - no-call-found
 B func_ov019_0207fa40 func_02021980 - no-call-found
@@ -384,8 +450,15 @@ B func_ov022_02084a34 func_ov002_02072754 - no-call-found
 B func_ov022_020876f0 func_ov002_0204cb18 - no-call-found
 B func_ov022_02087f7c func_ov002_0204cb18 - no-call-found
 B func_ov022_02088314 func_01fffde0 arm9_ov022::02088318 r0 <- entry:r0
+B func_ov022_0208d758 func_ov022_0208b848 - no-call-found
+B func_ov022_0208fd64 func_ov022_0208f888 - no-call-found
+B func_ov022_02095444 func_ov002_02059654 - no-call-found
 B func_ov022_02096644 func_ov002_02076d04 - no-call-found
 B func_ov022_0209a4f8 func_ov022_020aa8e8 - no-call-found
+B func_ov022_0209d10c func_ov022_0209d1c0 arm9_ov022::0209d110 r0 <- entry:r0
+B func_ov022_020b15a4 func_ov022_020b1290 arm9_ov022::020b15a8 r0 <- entry:r0
+B func_ov022_020b15a4 func_ov022_020b1290 arm9_ov022::020b15a8 r1 <- entry:r1
+B func_ov023_0208402c func_02023ad0 arm9_ov023::0208403a r0 <- arm9_ov023::02084034 ldr r0,[r1,r0]
 B func_ov023_02084a38 func_ov023_02084994 arm9_ov023::02084a3a r1 <- entry:r1
 B func_ov023_02084adc func_020219b4 arm9_ov023::02084ade r1 <- entry:r1
 B func_ov023_02084ba0 func_020219b4 arm9_ov023::02084ba2 r1 <- entry:r1
@@ -396,22 +469,37 @@ B func_ov023_020867c4 func_02021980 arm9_ov023::020867c6 r1 <- entry:r1
 B func_ov023_02086e90 func_02021980 arm9_ov023::02086e92 r1 <- entry:r1
 B func_ov023_02086f6c func_02021980 arm9_ov023::02086f6e r1 <- entry:r1
 B func_ov023_02086f8c func_02021980 arm9_ov023::02086f8e r1 <- entry:r1
+B func_ov023_02088954 func_ov023_02087160 arm9_ov023::02088956 r0 <- entry:r0
 B func_ov024_02082f04 func_0201e374 arm9_ov024::02083088 r0 <- arm9_ov024::02083084 bl 0x0201e428 => 0x201e428 LoadGlobalS8_027e0084
 B func_ov024_02082f04 func_0201e374 arm9_ov024::020831a0 r0 <- arm9_ov024::0208319c bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_
 B func_ov024_02082f04 func_0201e3cc arm9_ov024::02083090 r0 <- arm9_ov024::0208308c bl 0x0201e438 => 0x201e438 LoadGlobalS8At1_027e0084
 B func_ov024_02082f04 func_0201e3cc arm9_ov024::020831ac r0 <- arm9_ov024::020831a8 bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_
 B func_ov024_02083488 func_02021980 arm9_ov024::0208348a r1 <- entry:r1
 B func_ov024_0208349c func_02021980 arm9_ov024::0208349e r1 <- entry:r1
+B func_ov024_020835cc func_0202f9ec arm9_ov024::020835d0 r0 <- entry:r0
+B func_ov024_02083d00 NNSi_FndFreeFromDefaultHeap arm9_ov024::02083d04 r0 <- entry:r0
+B func_ov024_02084f98 func_ov024_02085e48 arm9_ov024::02084fa0 r0 <- entry:r0
 B func_ov024_0208505c func_ov024_02085ab8 arm9_ov024::0208506c r1 <- entry:r1
 B func_ov024_0208505c func_ov024_02085ab8 arm9_ov024::0208506c r2 <- entry:r2
 B func_ov024_0208505c func_ov024_02085ab8 arm9_ov024::0208506c r3 <- arm9_ov024::02085068 ldmiaeq sp!,{r3,pc}
 B func_ov024_020850bc func_ov024_02085c8c arm9_ov024::020850cc r1 <- entry:r1
 B func_ov024_020850e4 func_020207f4 arm9_ov024::020850ec r0 <- entry:r0
+B func_ov024_020850f8 func_ov024_02083cf0 arm9_ov024::020850fc r0 <- entry:r0
+B func_ov024_02085104 func_ov024_02083d00 arm9_ov024::02085108 r0 <- entry:r0
 B func_ov024_02085140 func_ov024_02085700 arm9_ov024::02085148 r0 <- entry:r0
+B func_ov024_02085e3c func_ov024_02083cf0 arm9_ov024::02085e40 r0 <- entry:r0
+B func_ov024_02085e48 func_ov024_02083d00 arm9_ov024::02085e4c r0 <- entry:r0
 B func_ov025_020858d0 func_020315c0 arm9_ov025::020858e0 r0 <- arm9_ov025::020858dc bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov025_02087254 func_ov025_02086ff0 arm9_ov025::02087258 r0 <- entry:r0
 B func_ov025_02087e0c func_ov025_020884c8 arm9_ov025::02087e1c r1 <- entry:r1
+B func_ov025_020883f8 func_02032388 arm9_ov025::020883fc r1 <- entry:r1
+B func_ov025_02088410 func_0203243c arm9_ov025::02088412 r1 <- entry:r1
 B func_ov025_02088754 func_ov025_020884c8 arm9_ov025::0208876c r0 <- entry:r0
 B func_ov025_02088754 func_ov025_020884c8 arm9_ov025::0208876c r1 <- entry:r1
+B func_ov025_02089b9c NNSi_FndFreeFromDefaultHeap arm9_ov025::02089bb0 r0 <- arm9_ov025::02089ba4 ldr r0,[r4,#0x3c]
+B func_ov025_02089b9c NNSi_FndFreeFromDefaultHeap arm9_ov025::02089bc8 r0 <- arm9_ov025::02089bbc ldr r0,[r4,#0x40]
+B func_ov025_02089b9c NNSi_FndFreeFromDefaultHeap arm9_ov025::02089be0 r0 <- arm9_ov025::02089bd4 ldr r0,[r4,#0x44]
+B func_ov025_02089b9c NNSi_FndFreeFromDefaultHeap arm9_ov025::02089bf8 r0 <- arm9_ov025::02089bec ldr r0,[r4,#0x48]
 B func_ov025_0208a088 func_ov025_02089f00 arm9_ov025::0208a0c0 r2 <- entry:r2
 B func_ov025_0208a088 func_ov025_02089f14 arm9_ov025::0208a0d0 r2 <- entry:r2
 B func_ov025_0208a088 func_ov025_02089f14 arm9_ov025::0208a0d0 r3 <- entry:r3
@@ -422,15 +510,27 @@ B func_ov025_0208a088 func_ov025_02089fec arm9_ov025::0208a110 r2 <- entry:r2
 B func_ov025_0208a088 func_ov025_0208a000 arm9_ov025::0208a120 r2 <- entry:r2
 B func_ov025_0208a088 func_ov025_0208a014 arm9_ov025::0208a130 r2 <- entry:r2
 B func_ov025_0208a13c func_ov025_0208a088 arm9_ov025::0208a190 r3 <- arm9_ov025::0208a17c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
-B func_ov025_0208a304 func_ov025_0208a088 arm9_ov025::0208a320 r0 <- arm9_ov025::0208a318 mov r0,r5
-B func_ov025_0208a304 func_ov025_0208a088 arm9_ov025::0208a320 r1 <- arm9_ov025::0208a314 ldr r1,[r5,#0xc]
-B func_ov025_0208a304 func_ov025_0208a088 arm9_ov025::0208a320 r2 <- arm9_ov025::0208a31c mov r2,r4
+B func_ov025_0208a26c func_ov025_02089894 arm9_ov025::0208a270 r0 <- entry:r0
+B func_ov025_0208a26c func_ov025_02089894 arm9_ov025::0208a270 r1 <- entry:r1
 B func_ov025_0208a304 func_ov025_0208a088 arm9_ov025::0208a320 r3 <- arm9_ov025::0208a310 bl 0x0208a028 => 0x208a028 ov025_DestroyAllListObjects
+B func_ov025_0208bdf8 func_ov025_0208bda0 arm9_ov025::0208bdfc r0 <- entry:r0
+B func_ov025_0208eb08 func_ov025_0208e498 arm9_ov025::0208eb0c r0 <- entry:r0
+B func_ov025_0208eb08 func_ov025_0208e498 arm9_ov025::0208eb0c r1 <- entry:r1
+B func_ov025_0208eb08 func_ov025_0208e498 arm9_ov025::0208eb0c r2 <- entry:r2
+B func_ov025_0208eb08 func_ov025_0208e498 arm9_ov025::0208eb0c r3 <- entry:r3
+B func_ov025_02099a80 func_ov025_020895b8 arm9_ov025::02099a88 r0 <- arm9_ov025::02099a84 bl 0x02084a50 => 0x2084a50 Ov025_GetCtxBlock9500
 B func_ov025_020a9ed0 func_ov025_020a9db0 arm9_ov025::020a9edc r1 <- entry:r1
+B func_ov025_020ad7ac func_ov025_020ad6e0 arm9_ov025::020ad7b0 r0 <- entry:r0
+B func_ov025_020aebbc func_ov025_020ae0f0 arm9_ov025::020aebc0 r0 <- entry:r0
+B func_ov025_020aed20 func_ov025_020895b8 arm9_ov025::020aed28 r0 <- arm9_ov025::020aed24 bl 0x02084a64 => 0x2084a64 Ov025_GetCtxBlock954c
 B func_ov026_02083cac func_ov026_020842f8 arm9_ov026::02083cbc r1 <- entry:r1
 B func_ov026_02084264 func_02032388 arm9_ov026::02084268 r1 <- entry:r1
 B func_ov026_0208437c func_ov026_020842f8 arm9_ov026::02084394 r0 <- entry:r0
 B func_ov026_0208437c func_ov026_020842f8 arm9_ov026::02084394 r1 <- entry:r1
+B func_ov026_020846d0 NNSi_FndFreeFromDefaultHeap arm9_ov026::020846e4 r0 <- arm9_ov026::020846d8 ldr r0,[r4,#0x3c]
+B func_ov026_020846d0 NNSi_FndFreeFromDefaultHeap arm9_ov026::020846fc r0 <- arm9_ov026::020846f0 ldr r0,[r4,#0x40]
+B func_ov026_020846d0 NNSi_FndFreeFromDefaultHeap arm9_ov026::02084714 r0 <- arm9_ov026::02084708 ldr r0,[r4,#0x44]
+B func_ov026_020846d0 NNSi_FndFreeFromDefaultHeap arm9_ov026::0208472c r0 <- arm9_ov026::02084720 ldr r0,[r4,#0x48]
 B func_ov026_02084bbc func_ov026_02084a34 arm9_ov026::02084bf4 r2 <- entry:r2
 B func_ov026_02084bbc func_ov026_02084a48 arm9_ov026::02084c04 r2 <- entry:r2
 B func_ov026_02084bbc func_ov026_02084a48 arm9_ov026::02084c04 r3 <- entry:r3
@@ -442,184 +542,394 @@ B func_ov026_02084bbc func_ov026_02084b34 arm9_ov026::02084c54 r2 <- entry:r2
 B func_ov026_02084bbc func_ov026_02084b48 arm9_ov026::02084c64 r2 <- entry:r2
 B func_ov026_02084c70 func_ov026_02084bbc arm9_ov026::02084cc4 r3 <- arm9_ov026::02084cb0 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B func_ov026_0208e740 func_020315c0 arm9_ov026::0208e748 r0 <- arm9_ov026::0208e744 bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov028_0208ab14 func_ov028_0208aa78 arm9_ov028::0208ab18 r0 <- entry:r0
+B func_ov028_0208ab14 func_ov028_0208aa78 arm9_ov028::0208ab18 r1 <- entry:r1
+B func_ov028_0208ab14 func_ov028_0208aa78 arm9_ov028::0208ab18 r2 <- entry:r2
+B func_ov028_0208ab14 func_ov028_0208aa78 arm9_ov028::0208ab18 r3 <- entry:r3
+B func_ov030_020b3e24 func_ov030_020b4c50 - no-call-found
 B func_ov032_020b328c func_ov032_020b4618 arm9_ov032::020b3294 r0 <- arm9_ov032::020b328e blx 0x02023c00 => 0x2023c00 NNSi_FndGetCurrentRootHeap
 B func_ov032_020b367c func_ov022_02089584 - no-call-found
+B func_ov033_020b4a34 func_0202a818 arm9_ov033::020b4a4c r1 <- entry:r1
+B func_ov035_020b3b08 func_ov035_020b4270 arm9_ov035::020b3b0c r0 <- entry:r0
 B func_ov035_020b3b14 func_ov035_020b3b5c arm9_ov035::020b3b1c r2 <- entry:r2
+B func_ov036_020b3928 func_ov036_020b3d40 arm9_ov036::020b392c r0 <- entry:r0
+B func_ov037_020b3a08 func_ov022_0209145c - no-call-found
 B func_ov038_020b360c func_ov022_020ad588 - no-call-found
+B func_ov039_020b3e80 func_ov039_020b4404 arm9_ov039::020b3e84 r0 <- entry:r0
 B func_ov040_020b3614 func_ov022_020ad588 - no-call-found
+B func_ov040_020b39c0 func_ov040_020b3a54 arm9_ov040::020b39d4 r2 <- entry:r2
+B func_ov042_020b4628 func_0202a818 arm9_ov042::020b4648 r1 <- entry:r1
 B func_ov044_020b3a7c func_ov044_020b4884 arm9_ov044::020b3a88 r1 <- entry:r1
+B func_ov046_020b3a70 func_ov046_020b3b7c arm9_ov046::020b3a74 r0 <- entry:r0
+B func_ov051_020b7234 func_0202a818 arm9_ov051::020b724c r1 <- entry:r1
 B func_ov052_020b5a8c func_ov052_020b6e18 arm9_ov052::020b5a94 r0 <- arm9_ov052::020b5a8e blx 0x02023c00 => 0x2023c00 NNSi_FndGetCurrentRootHeap
 B func_ov052_020b5e7c func_ov022_02089584 - no-call-found
+B func_ov054_020b6308 func_ov054_020b6a70 arm9_ov054::020b630c r0 <- entry:r0
 B func_ov054_020b6314 func_ov054_020b635c arm9_ov054::020b631c r2 <- entry:r2
+B func_ov055_020b6128 func_ov055_020b6540 arm9_ov055::020b612c r0 <- entry:r0
+B func_ov056_020b6208 func_ov022_0209145c - no-call-found
 B func_ov057_020b5e0c func_ov022_020ad588 - no-call-found
+B func_ov058_020b6680 func_ov058_020b6c04 arm9_ov058::020b6684 r0 <- entry:r0
 B func_ov059_020b5e14 func_ov022_020ad588 - no-call-found
+B func_ov059_020b61c0 func_ov059_020b6254 arm9_ov059::020b61d4 r2 <- entry:r2
+B func_ov061_020b6e28 func_0202a818 arm9_ov061::020b6e48 r1 <- entry:r1
 B func_ov063_020b627c func_ov063_020b7084 arm9_ov063::020b6288 r1 <- entry:r1
+B func_ov065_020b6270 func_ov065_020b637c arm9_ov065::020b6274 r0 <- entry:r0
 B func_ov069_020b8698 func_02021980 arm9_ov069::020b869a r0 <- entry:r0
 B func_ov069_020b8698 func_02021980 arm9_ov069::020b869a r0 <- entry:r0
 B func_ov069_020b8698 func_02021980 arm9_ov069::020b869a r1 <- entry:r1
+B func_ov069_020b88c0 func_020315c0 arm9_ov069::020b88d0 r0 <- arm9_ov069::020b88cc bl 0x02030788 => 0x2030788 Session_GetLocalPlayerIndex
+B func_ov069_020ba244 func_ov069_020b9fe0 arm9_ov069::020ba248 r0 <- entry:r0
+B func_ov071_020b9914 func_0202a818 arm9_ov071::020b992c r1 <- entry:r1
 B func_ov072_020b816c func_ov072_020b94f8 arm9_ov072::020b8174 r0 <- arm9_ov072::020b816e blx 0x02023c00 => 0x2023c00 NNSi_FndGetCurrentRootHeap
 B func_ov072_020b855c func_ov022_02089584 - no-call-found
+B func_ov074_020b89e8 func_ov074_020b9150 arm9_ov074::020b89ec r0 <- entry:r0
 B func_ov074_020b89f4 func_ov074_020b8a3c arm9_ov074::020b89fc r2 <- entry:r2
+B func_ov075_020b8808 func_ov075_020b8c20 arm9_ov075::020b880c r0 <- entry:r0
+B func_ov076_020b88e8 func_ov022_0209145c - no-call-found
 B func_ov077_020b84ec func_ov022_020ad588 - no-call-found
+B func_ov078_020b8d60 func_ov078_020b92e4 arm9_ov078::020b8d64 r0 <- entry:r0
 B func_ov079_020b84f4 func_ov022_020ad588 - no-call-found
+B func_ov079_020b88a0 func_ov079_020b8934 arm9_ov079::020b88b4 r2 <- entry:r2
+B func_ov081_020b9508 func_0202a818 arm9_ov081::020b9528 r1 <- entry:r1
 B func_ov082_020b895c func_ov082_020b9764 arm9_ov082::020b8968 r1 <- entry:r1
+B func_ov084_020b8950 func_ov084_020b8a5c arm9_ov084::020b8954 r0 <- entry:r0
+B func_ov089_020bbfd4 func_0202a818 arm9_ov089::020bbfec r1 <- entry:r1
+B func_ov091_020bb0a8 func_ov091_020bb810 arm9_ov091::020bb0ac r0 <- entry:r0
 B func_ov091_020bb0b4 func_ov091_020bb0fc arm9_ov091::020bb0bc r2 <- entry:r2
+B func_ov092_020baec8 func_ov092_020bb2e0 arm9_ov092::020baecc r0 <- entry:r0
+B func_ov093_020bafa8 func_ov022_0209145c - no-call-found
 B func_ov094_020babac func_ov022_020ad588 - no-call-found
+B func_ov095_020bb420 func_ov095_020bb9a4 arm9_ov095::020bb424 r0 <- entry:r0
 B func_ov096_020babb4 func_ov022_020ad588 - no-call-found
+B func_ov096_020baf60 func_ov096_020baff4 arm9_ov096::020baf74 r2 <- entry:r2
+B func_ov098_020bbbc8 func_0202a818 arm9_ov098::020bbbe8 r1 <- entry:r1
 B func_ov099_020bb01c func_ov099_020bbe24 arm9_ov099::020bb028 r1 <- entry:r1
+B func_ov101_020bb010 func_ov101_020bb11c arm9_ov101::020bb014 r0 <- entry:r0
 B func_ov105_020be4c8 func_ov105_020be4ac arm9_ov105::020be4ec r0 <- arm9_ov105::020be4e4 moveq r0,#0x1
 B func_ov105_020be56c func_ov105_020be4ac arm9_ov105::020be5a8 r0 <- arm9_ov105::020be5a0 moveq r0,#0x1
 B func_ov105_020bec64 func_ov105_020be4ac arm9_ov105::020beca0 r0 <- arm9_ov105::020bec98 moveq r0,#0x1
 B func_ov105_020bf66c func_ov105_020be4ac arm9_ov105::020bf698 r0 <- arm9_ov105::020bf690 moveq r0,#0x1
 B func_ov105_020bf6b4 func_ov105_020be4ac arm9_ov105::020bf6c4 r0 <- arm9_ov105::020bf6b8 ldrh r0,[r0,#0x2]
 B func_ov105_020bf6b4 func_ov105_020be4ac arm9_ov105::020bf6e4 r0 <- arm9_ov105::020bf6d8 bl 0x020bd558 => 0x20bd558 Ov105_SetSessionCallback
+B func_ov105_020bf900 func_ov105_020bf070 arm9_ov105::020bf904 r0 <- entry:r0
+B func_ov105_020bf900 func_ov105_020bf070 arm9_ov105::020bf904 r1 <- entry:r1
+B func_ov105_020bf900 func_ov105_020bf070 arm9_ov105::020bf904 r2 <- entry:r2
 B func_ov106_020b7a3c func_ov002_0204cb18 - no-call-found
 B func_ov106_020b7f08 func_ov002_0204cb68 - no-call-found
 B func_ov106_020b821c func_02021980 arm9_ov106::020b821e r1 <- entry:r1
 B func_ov106_020b823c func_02021980 arm9_ov106::020b823e r1 <- entry:r1
+B func_ov107_020c3190 func_0203d194 arm9_ov107::020c3194 r0 <- entry:r0
 B func_ov107_020c5c54 func_0203ca30 arm9_ov107::020c5c60 r1 <- entry:r1
 B func_ov107_020c9c0c func_02023930 arm9_ov107::020c9c10 r1 <- entry:r1
+B func_ov107_020c9c1c func_02023ad0 arm9_ov107::020c9c1e r0 <- entry:r0
 B func_ov107_020c9c90 func_0203bc78 arm9_ov107::020c9ca0 r1 <- entry:r1
 B func_ov107_020c9ec8 func_0203c7ac arm9_ov107::020c9ed4 r1 <- entry:r1
-B func_ov107_020c9ee8 func_ov107_020c9ec8 arm9_ov107::020c9f40 r0 <- arm9_ov107::020c9f38 mov r0,r4
-B func_ov107_020c9ee8 func_ov107_020c9ec8 arm9_ov107::020c9f40 r1 <- arm9_ov107::020c9f3c mov r1,#0x0
-B func_ov114_020cce9c FX_Div arm9_ov114::020ccebc r0 <- arm9_ov114::020cceb4 add r0,r2,r0
-B func_ov114_020cce9c FX_Div arm9_ov114::020ccebc r1 <- arm9_ov114::020cceb0 ldr r1,[0x20ccf24] = 0x555
+B func_ov114_020cc1c4 func_ov107_020c6980 - no-call-found
 B func_ov114_020cdc48 func_ov114_020cc6f4 arm9_ov114::020cdd34 r1 <- arm9_ov114::020cdd28 mov r1,#0x1
+B func_ov115_020cc374 func_ov107_020c6980 - no-call-found
+B func_ov115_020cc380 func_ov107_020c7b70 - no-call-found
+B func_ov116_020cffb4 func_ov107_020c6980 - no-call-found
+B func_ov116_020cffc0 func_ov107_020c7b70 - no-call-found
 B func_ov117_020cbfc4 func_ov107_020c92b0 - no-call-found
+B func_ov117_020cc16c func_ov107_020c6980 - no-call-found
 B func_ov118_020cfc04 func_ov107_020c92b0 - no-call-found
+B func_ov118_020cfdac func_ov107_020c6980 - no-call-found
 B func_ov120_020cc280 func_ov107_020c9ec8 - no-call-found
 B func_ov121_020ce0a0 func_ov107_020c9ec8 - no-call-found
 B func_ov122_020cfec0 func_ov107_020c9ec8 - no-call-found
+B func_ov123_020cc294 func_ov107_020c6980 - no-call-found
 B func_ov123_020cc3dc func_ov107_020c4924 - no-call-found
+B func_ov123_020cd728 func_ov107_020c6980 - no-call-found
+B func_ov124_020cfed4 func_ov107_020c6980 - no-call-found
 B func_ov124_020d001c func_ov107_020c4924 - no-call-found
+B func_ov124_020d1368 func_ov107_020c6980 - no-call-found
+B func_ov125_020cc2f8 func_ov107_020c6980 - no-call-found
+B func_ov125_020cf9bc func_ov107_020c6980 - no-call-found
+B func_ov126_020cff38 func_ov107_020c6980 - no-call-found
+B func_ov126_020d35fc func_ov107_020c6980 - no-call-found
 B func_ov127_020cc210 func_ov107_020c9ec8 - no-call-found
 B func_ov128_020d3a90 func_ov107_020c9ec8 - no-call-found
 B func_ov129_020d58b0 func_ov107_020c9ec8 - no-call-found
 B func_ov130_020cc210 func_ov107_020c9ec8 - no-call-found
+B func_ov131_020cbfc4 func_ov107_020c9440 - no-call-found
+B func_ov131_020cbfc4 func_ov131_020cc25c - no-call-found
+B func_ov131_020cbfc4 func_ov131_020cc448 - no-call-found
 B func_ov131_020cc25c func_ov107_020c9ec8 - no-call-found
+B func_ov131_020cc280 func_ov107_020c4924 - no-call-found
+B func_ov131_020cde38 func_ov107_020cb100 - no-call-found
+B func_ov131_020cef38 func_0203c640 arm9_ov131::020cef50 r0 <- entry:r0
+B func_ov132_020cdde4 func_ov107_020c9440 - no-call-found
+B func_ov132_020cdde4 func_ov132_020ce07c - no-call-found
+B func_ov132_020cdde4 func_ov132_020ce268 - no-call-found
 B func_ov132_020ce07c func_ov107_020c9ec8 - no-call-found
+B func_ov132_020ce0a0 func_ov107_020c4924 - no-call-found
+B func_ov132_020cfc58 func_ov107_020cb100 - no-call-found
+B func_ov132_020d0d58 func_0203c640 arm9_ov132::020d0d70 r0 <- entry:r0
+B func_ov133_020d1a24 func_ov107_020c9440 - no-call-found
+B func_ov133_020d1a24 func_ov133_020d1cbc - no-call-found
+B func_ov133_020d1a24 func_ov133_020d1ea8 - no-call-found
 B func_ov133_020d1cbc func_ov107_020c9ec8 - no-call-found
+B func_ov133_020d1ce0 func_ov107_020c4924 - no-call-found
+B func_ov133_020d3898 func_ov107_020cb100 - no-call-found
+B func_ov133_020d4998 func_0203c640 arm9_ov133::020d49b0 r0 <- entry:r0
+B func_ov134_020cbfc4 func_ov107_020c9440 - no-call-found
+B func_ov134_020cbfc4 func_ov134_020cc270 - no-call-found
+B func_ov134_020cbfc4 func_ov134_020cc294 - no-call-found
+B func_ov134_020cbfc4 func_ov134_020cc2c4 - no-call-found
+B func_ov134_020cbfc4 func_ov134_020cc5a0 - no-call-found
 B func_ov134_020cc270 func_ov107_020c9ec8 - no-call-found
+B func_ov135_020cfc04 func_ov107_020c9440 - no-call-found
+B func_ov135_020cfc04 func_ov135_020cfeb0 - no-call-found
+B func_ov135_020cfc04 func_ov135_020cfed4 - no-call-found
+B func_ov135_020cfc04 func_ov135_020cff04 - no-call-found
+B func_ov135_020cfc04 func_ov135_020d01e0 - no-call-found
 B func_ov135_020cfeb0 func_ov107_020c9ec8 - no-call-found
+B func_ov136_020d1a24 func_ov107_020c9440 - no-call-found
+B func_ov136_020d1a24 func_ov136_020d1cd0 - no-call-found
+B func_ov136_020d1a24 func_ov136_020d1cf4 - no-call-found
+B func_ov136_020d1a24 func_ov136_020d1d24 - no-call-found
+B func_ov136_020d1a24 func_ov136_020d2000 - no-call-found
 B func_ov136_020d1cd0 func_ov107_020c9ec8 - no-call-found
 B func_ov137_020cc290 func_ov107_020c9ec8 - no-call-found
+B func_ov137_020ceb20 func_ov107_020c6980 - no-call-found
 B func_ov138_020cfed0 func_ov107_020c9ec8 - no-call-found
+B func_ov138_020d2760 func_ov107_020c6980 - no-call-found
 B func_ov139_020cc208 func_ov107_020c9ec8 - no-call-found
 B func_ov140_020cfe48 func_ov107_020c9ec8 - no-call-found
 B func_ov141_020cc280 func_ov107_020c9ec8 - no-call-found
+B func_ov141_020cdbc8 func_ov107_020c6980 - no-call-found
+B func_ov141_020ce99c func_0203c640 arm9_ov141::020ce9b4 r0 <- entry:r0
 B func_ov142_020cfec0 func_ov107_020c9ec8 - no-call-found
+B func_ov142_020d1808 func_ov107_020c6980 - no-call-found
+B func_ov142_020d25dc func_0203c640 arm9_ov142::020d25f4 r0 <- entry:r0
 B func_ov143_020d3b00 func_ov107_020c9ec8 - no-call-found
+B func_ov143_020d5448 func_ov107_020c6980 - no-call-found
+B func_ov143_020d621c func_0203c640 arm9_ov143::020d6234 r0 <- entry:r0
 B func_ov144_020cc3f8 func_ov107_020c9ec8 - no-call-found
 B func_ov144_020cc970 func_ov014_0208064c - no-call-found
 B func_ov145_020ce214 func_ov107_020c9ec8 - no-call-found
 B func_ov145_020ce78c func_ov014_0208064c - no-call-found
 B func_ov147_020cc480 func_0203c7ac arm9_ov147::020cc490 r1 <- entry:r1
+B func_ov147_020cc578 func_ov107_020cb100 - no-call-found
 B func_ov147_020cd4a4 func_ov147_020ccb30 arm9_ov147::020cd4c4 r3 <- arm9_ov147::020cd4c0 ldmia r1,{r1,r2,r3}
 B func_ov147_020cd4a4 func_ov147_020ccb30 arm9_ov147::020cd4c4 arg4 <- stack
 B func_ov147_020cd50c func_ov147_020ccb30 arm9_ov147::020cd52c r3 <- arm9_ov147::020cd528 ldmia r1,{r1,r2,r3}
 B func_ov147_020cd50c func_ov147_020ccb30 arm9_ov147::020cd52c arg4 <- stack
 B func_ov147_020cd5f0 func_ov147_020ccb30 arm9_ov147::020cd610 r3 <- arm9_ov147::020cd60c ldmia r1,{r1,r2,r3}
 B func_ov147_020cd5f0 func_ov147_020ccb30 arm9_ov147::020cd610 arg4 <- stack
+B func_ov147_020cd668 func_ov147_020ccb30 arm9_ov147::020cd688 r3 <- arm9_ov147::020cd684 ldmia r1,{r1,r2,r3}
+B func_ov147_020cd668 func_ov147_020ccb30 arm9_ov147::020cd688 arg4 <- stack
+B func_ov147_020cd9fc func_0203c634 arm9_ov147::020cda14 r2 <- arm9_ov147::020cda08 mov r2,#0x0
 B func_ov147_020cdb90 func_ov147_020ccb30 arm9_ov147::020cdbc8 r3 <- arm9_ov147::020cdbc4 ldmia r1,{r1,r2,r3}
 B func_ov147_020cdb90 func_ov147_020ccb30 arm9_ov147::020cdbc8 arg4 <- stack
 B func_ov147_020cdc18 func_ov147_020ccb30 arm9_ov147::020cdc50 r3 <- arm9_ov147::020cdc4c ldmia r1,{r1,r2,r3}
 B func_ov147_020cdc18 func_ov147_020ccb30 arm9_ov147::020cdc50 arg4 <- stack
+B func_ov147_020cdf38 func_ov107_020c6980 - no-call-found
 B func_ov148_020d00c0 func_0203c7ac arm9_ov148::020d00d0 r1 <- entry:r1
+B func_ov148_020d01b8 func_ov107_020cb100 - no-call-found
 B func_ov148_020d10e4 func_ov148_020d0770 arm9_ov148::020d1104 r3 <- arm9_ov148::020d1100 ldmia r1,{r1,r2,r3}
 B func_ov148_020d10e4 func_ov148_020d0770 arm9_ov148::020d1104 arg4 <- stack
 B func_ov148_020d114c func_ov148_020d0770 arm9_ov148::020d116c r3 <- arm9_ov148::020d1168 ldmia r1,{r1,r2,r3}
 B func_ov148_020d114c func_ov148_020d0770 arm9_ov148::020d116c arg4 <- stack
 B func_ov148_020d1230 func_ov148_020d0770 arm9_ov148::020d1250 r3 <- arm9_ov148::020d124c ldmia r1,{r1,r2,r3}
 B func_ov148_020d1230 func_ov148_020d0770 arm9_ov148::020d1250 arg4 <- stack
+B func_ov148_020d12a8 func_ov148_020d0770 arm9_ov148::020d12c8 r3 <- arm9_ov148::020d12c4 ldmia r1,{r1,r2,r3}
+B func_ov148_020d12a8 func_ov148_020d0770 arm9_ov148::020d12c8 arg4 <- stack
+B func_ov148_020d163c func_0203c634 arm9_ov148::020d1654 r2 <- arm9_ov148::020d1648 mov r2,#0x0
 B func_ov148_020d17d0 func_ov148_020d0770 arm9_ov148::020d1808 r3 <- arm9_ov148::020d1804 ldmia r1,{r1,r2,r3}
 B func_ov148_020d17d0 func_ov148_020d0770 arm9_ov148::020d1808 arg4 <- stack
 B func_ov148_020d1858 func_ov148_020d0770 arm9_ov148::020d1890 r3 <- arm9_ov148::020d188c ldmia r1,{r1,r2,r3}
 B func_ov148_020d1858 func_ov148_020d0770 arm9_ov148::020d1890 arg4 <- stack
+B func_ov148_020d1b78 func_ov107_020c6980 - no-call-found
 B func_ov149_020ce09c func_ov107_020c9ec8 - no-call-found
+B func_ov149_020cf9ec func_ov107_020c6980 - no-call-found
+B func_ov149_020d0718 func_0203c640 arm9_ov149::020d0730 r0 <- entry:r0
 B func_ov150_020cfebc func_ov107_020c9ec8 - no-call-found
+B func_ov150_020d180c func_ov107_020c6980 - no-call-found
+B func_ov150_020d2538 func_0203c640 arm9_ov150::020d2550 r0 <- entry:r0
 B func_ov151_020cc29c func_ov107_020c9ec8 - no-call-found
+B func_ov151_020cc934 func_0203c640 arm9_ov151::020cc94c r0 <- entry:r0
 B func_ov151_020ccc04 func_ov107_020c6980 - no-call-found
 B func_ov152_020d3b1c func_ov107_020c9ec8 - no-call-found
+B func_ov152_020d41b4 func_0203c640 arm9_ov152::020d41cc r0 <- entry:r0
 B func_ov152_020d4484 func_ov107_020c6980 - no-call-found
+B func_ov153_020cc290 func_ov107_020c6980 - no-call-found
 B func_ov153_020cc3d8 func_ov107_020c4924 - no-call-found
+B func_ov153_020cc7a8 func_ov107_020c6980 - no-call-found
+B func_ov154_020cfed0 func_ov107_020c6980 - no-call-found
 B func_ov154_020d0018 func_ov107_020c4924 - no-call-found
+B func_ov154_020d03e8 func_ov107_020c6980 - no-call-found
+B func_ov155_020d3b10 func_ov107_020c6980 - no-call-found
 B func_ov155_020d3c58 func_ov107_020c4924 - no-call-found
+B func_ov155_020d4028 func_ov107_020c6980 - no-call-found
 B func_ov156_020cc5e0 func_ov107_020c4924 - no-call-found
+B func_ov156_020ce134 func_ov107_020c6980 - no-call-found
 B func_ov157_020ce400 func_ov107_020c4924 - no-call-found
+B func_ov157_020cff54 func_ov107_020c6980 - no-call-found
 B func_ov158_020cc28c func_ov107_020c9ec8 - no-call-found
+B func_ov158_020ceba4 func_ov107_020c6980 - no-call-found
 B func_ov159_020d1cec func_ov107_020c9ec8 - no-call-found
+B func_ov159_020d4604 func_ov107_020c6980 - no-call-found
 B func_ov160_020cc294 func_ov107_020c9ec8 - no-call-found
+B func_ov160_020ced80 func_ov107_020c6980 - no-call-found
+B func_ov161_020cbfc4 func_ov107_020c9440 - no-call-found
+B func_ov161_020cbfc4 func_ov161_020cc25c - no-call-found
+B func_ov161_020cbfc4 func_ov161_020cc47c - no-call-found
 B func_ov161_020cc25c func_ov107_020c9ec8 - no-call-found
+B func_ov161_020cc280 func_ov107_020c4924 - no-call-found
+B func_ov161_020cc9bc func_0203c640 arm9_ov161::020cc9d4 r0 <- entry:r0
+B func_ov161_020ce3dc func_ov107_020cb100 - no-call-found
+B func_ov162_020cdde4 func_ov107_020c9440 - no-call-found
+B func_ov162_020cdde4 func_ov162_020ce07c - no-call-found
+B func_ov162_020cdde4 func_ov162_020ce29c - no-call-found
 B func_ov162_020ce07c func_ov107_020c9ec8 - no-call-found
+B func_ov162_020ce0a0 func_ov107_020c4924 - no-call-found
+B func_ov162_020ce7dc func_0203c640 arm9_ov162::020ce7f4 r0 <- entry:r0
+B func_ov162_020d01fc func_ov107_020cb100 - no-call-found
+B func_ov163_020cdde4 func_ov107_020c9440 - no-call-found
+B func_ov163_020cdde4 func_ov163_020ce07c - no-call-found
+B func_ov163_020cdde4 func_ov163_020ce280 - no-call-found
 B func_ov163_020ce07c func_ov107_020c9ec8 - no-call-found
 B func_ov163_020ce0a0 func_ov107_020c4924 - no-call-found
+B func_ov163_020cfc9c func_ov107_020cb100 - no-call-found
+B func_ov163_020d0e34 func_0203c640 arm9_ov163::020d0e4c r0 <- entry:r0
+B func_ov164_020cfc04 func_ov107_020c9440 - no-call-found
+B func_ov164_020cfc04 func_ov164_020cfe9c - no-call-found
+B func_ov164_020cfc04 func_ov164_020d00a0 - no-call-found
 B func_ov164_020cfe9c func_ov107_020c9ec8 - no-call-found
 B func_ov164_020cfec0 func_ov107_020c4924 - no-call-found
+B func_ov164_020d1abc func_ov107_020cb100 - no-call-found
+B func_ov164_020d2c54 func_0203c640 arm9_ov164::020d2c6c r0 <- entry:r0
+B func_ov165_020d1a24 func_ov107_020c9440 - no-call-found
+B func_ov165_020d1a24 func_ov165_020d1cbc - no-call-found
+B func_ov165_020d1a24 func_ov165_020d1ec0 - no-call-found
 B func_ov165_020d1cbc func_ov107_020c9ec8 - no-call-found
 B func_ov165_020d1ce0 func_ov107_020c4924 - no-call-found
+B func_ov165_020d38dc func_ov107_020cb100 - no-call-found
+B func_ov165_020d4a74 func_0203c640 arm9_ov165::020d4a8c r0 <- entry:r0
+B func_ov166_020cc37c func_ov107_020c6980 - no-call-found
+B func_ov166_020ce324 func_ov107_020c6980 - no-call-found
+B func_ov166_020ce35c func_ov107_020c7500 - no-call-found
+B func_ov167_020cffbc func_ov107_020c6980 - no-call-found
+B func_ov167_020d1f64 func_ov107_020c6980 - no-call-found
+B func_ov167_020d1f9c func_ov107_020c7500 - no-call-found
+B func_ov168_020d3bfc func_ov107_020c6980 - no-call-found
+B func_ov168_020d5ba4 func_ov107_020c6980 - no-call-found
+B func_ov168_020d5bdc func_ov107_020c7500 - no-call-found
+B func_ov169_020cc37c func_ov107_020c6980 - no-call-found
+B func_ov169_020ce358 func_ov107_020c6980 - no-call-found
+B func_ov169_020ce390 func_ov107_020c7500 - no-call-found
+B func_ov170_020ce19c func_ov107_020c6980 - no-call-found
+B func_ov170_020d0178 func_ov107_020c6980 - no-call-found
+B func_ov170_020d01b0 func_ov107_020c7500 - no-call-found
+B func_ov171_020cc384 func_ov107_020c6980 - no-call-found
+B func_ov171_020ce2b0 func_ov107_020c6980 - no-call-found
+B func_ov172_020cffc4 func_ov107_020c6980 - no-call-found
+B func_ov172_020d1ef0 func_ov107_020c6980 - no-call-found
+B func_ov173_020cc370 func_ov107_020c6980 - no-call-found
+B func_ov173_020cc37c func_ov107_020c7b70 - no-function
+B func_ov174_020cffb0 func_ov107_020c6980 - no-call-found
+B func_ov174_020cffbc func_ov107_020c7b70 - no-function
+B func_ov175_020cc37c func_ov107_020c6980 - no-call-found
+B func_ov175_020ce3c0 func_ov107_020c6980 - no-call-found
+B func_ov175_020ce3f8 func_ov107_020c7500 - no-call-found
+B func_ov176_020cffbc func_ov107_020c6980 - no-call-found
+B func_ov176_020d2000 func_ov107_020c6980 - no-call-found
+B func_ov176_020d2038 func_ov107_020c7500 - no-call-found
+B func_ov177_020d3bfc func_ov107_020c6980 - no-call-found
+B func_ov177_020d5c40 func_ov107_020c6980 - no-call-found
+B func_ov177_020d5c78 func_ov107_020c7500 - no-call-found
+B func_ov178_020cc384 func_ov107_020c6980 - no-call-found
+B func_ov178_020cee40 func_0203c634 arm9_ov178::020cee68 r2 <- arm9_ov178::020cee5c mov r2,#0x0
+B func_ov179_020d1de4 func_ov107_020c6980 - no-call-found
+B func_ov179_020d48a0 func_0203c634 arm9_ov179::020d48c8 r2 <- arm9_ov179::020d48bc mov r2,#0x0
+B func_ov180_020d3c04 func_ov107_020c6980 - no-call-found
+B func_ov180_020d66c0 func_0203c634 arm9_ov180::020d66e8 r2 <- arm9_ov180::020d66dc mov r2,#0x0
 B func_ov181_020cc1d8 func_ov107_020c9ec8 - no-call-found
-B func_ov181_020cce8c FX_Div arm9_ov181::020cceac r0 <- arm9_ov181::020ccea4 add r0,r2,r0
-B func_ov181_020cce8c FX_Div arm9_ov181::020cceac r1 <- arm9_ov181::020ccea0 ldr r1,[0x20ccf14] = 0x555
-B func_ov181_020cdaa8 FX_Div arm9_ov181::020cdac8 r0 <- arm9_ov181::020cdac0 add r0,r2,r0
-B func_ov181_020cdaa8 FX_Div arm9_ov181::020cdac8 r1 <- arm9_ov181::020cdabc ldr r1,[0x20cdb48] = 0x2aa
 B func_ov181_020ce004 func_ov181_020cc704 arm9_ov181::020ce0ec r1 <- arm9_ov181::020ce0e0 mov r1,#0x1
 B func_ov182_020cdff8 func_ov107_020c9ec8 - no-call-found
-B func_ov182_020cecac FX_Div arm9_ov182::020ceccc r0 <- arm9_ov182::020cecc4 add r0,r2,r0
-B func_ov182_020cecac FX_Div arm9_ov182::020ceccc r1 <- arm9_ov182::020cecc0 ldr r1,[0x20ced34] = 0x555
-B func_ov182_020cf8c8 FX_Div arm9_ov182::020cf8e8 r0 <- arm9_ov182::020cf8e0 add r0,r2,r0
-B func_ov182_020cf8c8 FX_Div arm9_ov182::020cf8e8 r1 <- arm9_ov182::020cf8dc ldr r1,[0x20cf968] = 0x2aa
 B func_ov182_020cfe24 func_ov182_020ce524 arm9_ov182::020cff0c r1 <- arm9_ov182::020cff00 mov r1,#0x1
 B func_ov183_020cfe18 func_ov107_020c9ec8 - no-call-found
-B func_ov183_020d0acc FX_Div arm9_ov183::020d0aec r0 <- arm9_ov183::020d0ae4 add r0,r2,r0
-B func_ov183_020d0acc FX_Div arm9_ov183::020d0aec r1 <- arm9_ov183::020d0ae0 ldr r1,[0x20d0b54] = 0x555
-B func_ov183_020d16e8 FX_Div arm9_ov183::020d1708 r0 <- arm9_ov183::020d1700 add r0,r2,r0
-B func_ov183_020d16e8 FX_Div arm9_ov183::020d1708 r1 <- arm9_ov183::020d16fc ldr r1,[0x20d1788] = 0x2aa
 B func_ov183_020d1c44 func_ov183_020d0344 arm9_ov183::020d1d2c r1 <- arm9_ov183::020d1d20 mov r1,#0x1
 B func_ov184_020d1c38 func_ov107_020c9ec8 - no-call-found
-B func_ov184_020d28ec FX_Div arm9_ov184::020d290c r0 <- arm9_ov184::020d2904 add r0,r2,r0
-B func_ov184_020d28ec FX_Div arm9_ov184::020d290c r1 <- arm9_ov184::020d2900 ldr r1,[0x20d2974] = 0x555
-B func_ov184_020d3508 FX_Div arm9_ov184::020d3528 r0 <- arm9_ov184::020d3520 add r0,r2,r0
-B func_ov184_020d3508 FX_Div arm9_ov184::020d3528 r1 <- arm9_ov184::020d351c ldr r1,[0x20d35a8] = 0x2aa
 B func_ov184_020d3a64 func_ov184_020d2164 arm9_ov184::020d3b4c r1 <- arm9_ov184::020d3b40 mov r1,#0x1
+B func_ov185_020ce058 func_ov107_020c6980 - no-call-found
 B func_ov185_020ce2e4 func_ov107_020c8500 - no-call-found
 B func_ov185_020ce344 func_ov107_020c887c - no-call-found
 B func_ov185_020cfa2c func_ov107_020c92b0 - no-call-found
+B func_ov185_020cfbd4 func_ov107_020c6980 - no-call-found
+B func_ov186_020cfe78 func_ov107_020c6980 - no-call-found
 B func_ov186_020d0104 func_ov107_020c8500 - no-call-found
 B func_ov186_020d0164 func_ov107_020c887c - no-call-found
 B func_ov186_020d184c func_ov107_020c92b0 - no-call-found
+B func_ov186_020d19f4 func_ov107_020c6980 - no-call-found
+B func_ov187_020d3ab8 func_ov107_020c6980 - no-call-found
 B func_ov187_020d3d44 func_ov107_020c8500 - no-call-found
 B func_ov187_020d3da4 func_ov107_020c887c - no-call-found
 B func_ov187_020d548c func_ov107_020c92b0 - no-call-found
+B func_ov187_020d5634 func_ov107_020c6980 - no-call-found
+B func_ov188_020cdde4 func_ov188_020ce230 - no-call-found
+B func_ov188_020cdde4 func_ov188_020ce254 - no-call-found
+B func_ov188_020cdde4 func_ov188_020ce45c - no-call-found
+B func_ov188_020cdde4 func_ov188_020ce64c - no-call-found
+B func_ov188_020ce450 func_ov107_020c7b70 - no-call-found
+B func_ov189_020cfc04 func_ov189_020d0050 - no-call-found
+B func_ov189_020cfc04 func_ov189_020d0074 - no-call-found
+B func_ov189_020cfc04 func_ov189_020d027c - no-call-found
+B func_ov189_020cfc04 func_ov189_020d046c - no-call-found
+B func_ov189_020d0270 func_ov107_020c7b70 - no-call-found
+B func_ov190_020d3844 func_ov190_020d3c90 - no-call-found
+B func_ov190_020d3844 func_ov190_020d3cb4 - no-call-found
+B func_ov190_020d3844 func_ov190_020d3ebc - no-call-found
+B func_ov190_020d3844 func_ov190_020d40ac - no-call-found
+B func_ov190_020d3eb0 func_ov107_020c7b70 - no-call-found
+B func_ov191_020d0220 func_ov107_020c6980 - no-call-found
 B func_ov191_020d022c func_ov107_020c4924 - no-call-found
+B func_ov191_020d2060 func_ov107_020c6980 - no-call-found
+B func_ov192_020d2040 func_ov107_020c6980 - no-call-found
 B func_ov192_020d204c func_ov107_020c4924 - no-call-found
+B func_ov192_020d3e80 func_ov107_020c6980 - no-call-found
+B func_ov193_020d3e60 func_ov107_020c6980 - no-call-found
 B func_ov193_020d3e6c func_ov107_020c4924 - no-call-found
+B func_ov193_020d5ca0 func_ov107_020c6980 - no-call-found
 B func_ov194_020cc28c func_ov107_020c9ec8 - no-call-found
 B func_ov195_020cfecc func_ov107_020c9ec8 - no-call-found
 B func_ov196_020d3b0c func_ov107_020c9ec8 - no-call-found
 B func_ov197_020cc47c func_0203c7ac arm9_ov197::020cc48c r1 <- entry:r1
+B func_ov197_020cc574 func_ov107_020cb100 - no-call-found
 B func_ov197_020cd498 func_ov197_020ccb24 arm9_ov197::020cd4b8 r3 <- arm9_ov197::020cd4b4 ldmia r1,{r1,r2,r3}
 B func_ov197_020cd498 func_ov197_020ccb24 arm9_ov197::020cd4b8 arg4 <- stack
 B func_ov197_020cd500 func_ov197_020ccb24 arm9_ov197::020cd520 r3 <- arm9_ov197::020cd51c ldmia r1,{r1,r2,r3}
 B func_ov197_020cd500 func_ov197_020ccb24 arm9_ov197::020cd520 arg4 <- stack
 B func_ov197_020cd5e4 func_ov197_020ccb24 arm9_ov197::020cd604 r3 <- arm9_ov197::020cd600 ldmia r1,{r1,r2,r3}
 B func_ov197_020cd5e4 func_ov197_020ccb24 arm9_ov197::020cd604 arg4 <- stack
+B func_ov197_020cd65c func_ov197_020ccb24 arm9_ov197::020cd67c r3 <- arm9_ov197::020cd678 ldmia r1,{r1,r2,r3}
+B func_ov197_020cd65c func_ov197_020ccb24 arm9_ov197::020cd67c arg4 <- stack
+B func_ov197_020cd9f0 func_0203c634 arm9_ov197::020cda08 r2 <- arm9_ov197::020cd9fc mov r2,#0x0
 B func_ov197_020cdb84 func_ov197_020ccb24 arm9_ov197::020cdbbc r3 <- arm9_ov197::020cdbb8 ldmia r1,{r1,r2,r3}
 B func_ov197_020cdb84 func_ov197_020ccb24 arm9_ov197::020cdbbc arg4 <- stack
 B func_ov197_020cdc0c func_ov197_020ccb24 arm9_ov197::020cdc44 r3 <- arm9_ov197::020cdc40 ldmia r1,{r1,r2,r3}
 B func_ov197_020cdc0c func_ov197_020ccb24 arm9_ov197::020cdc44 arg4 <- stack
+B func_ov197_020cdf2c func_ov107_020c6980 - no-call-found
 B func_ov198_020d00bc func_0203c7ac arm9_ov198::020d00cc r1 <- entry:r1
+B func_ov198_020d01b4 func_ov107_020cb100 - no-call-found
 B func_ov198_020d10d8 func_ov198_020d0764 arm9_ov198::020d10f8 r3 <- arm9_ov198::020d10f4 ldmia r1,{r1,r2,r3}
 B func_ov198_020d10d8 func_ov198_020d0764 arm9_ov198::020d10f8 arg4 <- stack
 B func_ov198_020d1140 func_ov198_020d0764 arm9_ov198::020d1160 r3 <- arm9_ov198::020d115c ldmia r1,{r1,r2,r3}
 B func_ov198_020d1140 func_ov198_020d0764 arm9_ov198::020d1160 arg4 <- stack
 B func_ov198_020d1224 func_ov198_020d0764 arm9_ov198::020d1244 r3 <- arm9_ov198::020d1240 ldmia r1,{r1,r2,r3}
 B func_ov198_020d1224 func_ov198_020d0764 arm9_ov198::020d1244 arg4 <- stack
+B func_ov198_020d129c func_ov198_020d0764 arm9_ov198::020d12bc r3 <- arm9_ov198::020d12b8 ldmia r1,{r1,r2,r3}
+B func_ov198_020d129c func_ov198_020d0764 arm9_ov198::020d12bc arg4 <- stack
+B func_ov198_020d1630 func_0203c634 arm9_ov198::020d1648 r2 <- arm9_ov198::020d163c mov r2,#0x0
 B func_ov198_020d17c4 func_ov198_020d0764 arm9_ov198::020d17fc r3 <- arm9_ov198::020d17f8 ldmia r1,{r1,r2,r3}
 B func_ov198_020d17c4 func_ov198_020d0764 arm9_ov198::020d17fc arg4 <- stack
 B func_ov198_020d184c func_ov198_020d0764 arm9_ov198::020d1884 r3 <- arm9_ov198::020d1880 ldmia r1,{r1,r2,r3}
 B func_ov198_020d184c func_ov198_020d0764 arm9_ov198::020d1884 arg4 <- stack
+B func_ov198_020d1b6c func_ov107_020c6980 - no-call-found
 B func_ov199_020d3cfc func_0203c7ac arm9_ov199::020d3d0c r1 <- entry:r1
+B func_ov199_020d3df4 func_ov107_020cb100 - no-call-found
 B func_ov199_020d4d18 func_ov199_020d43a4 arm9_ov199::020d4d38 r3 <- arm9_ov199::020d4d34 ldmia r1,{r1,r2,r3}
 B func_ov199_020d4d18 func_ov199_020d43a4 arm9_ov199::020d4d38 arg4 <- stack
 B func_ov199_020d4d80 func_ov199_020d43a4 arm9_ov199::020d4da0 r3 <- arm9_ov199::020d4d9c ldmia r1,{r1,r2,r3}
@@ -628,48 +938,118 @@ B func_ov199_020d4e64 func_ov199_020d43a4 arm9_ov199::020d4e84 r3 <- arm9_ov199:
 B func_ov199_020d4e64 func_ov199_020d43a4 arm9_ov199::020d4e84 arg4 <- stack
 B func_ov199_020d4edc func_ov199_020d43a4 arm9_ov199::020d4efc r3 <- arm9_ov199::020d4ef8 ldmia r1,{r1,r2,r3}
 B func_ov199_020d4edc func_ov199_020d43a4 arm9_ov199::020d4efc arg4 <- stack
+B func_ov199_020d5270 func_0203c634 arm9_ov199::020d5288 r2 <- arm9_ov199::020d527c mov r2,#0x0
 B func_ov199_020d5404 func_ov199_020d43a4 arm9_ov199::020d543c r3 <- arm9_ov199::020d5438 ldmia r1,{r1,r2,r3}
 B func_ov199_020d5404 func_ov199_020d43a4 arm9_ov199::020d543c arg4 <- stack
 B func_ov199_020d548c func_ov199_020d43a4 arm9_ov199::020d54c4 r3 <- arm9_ov199::020d54c0 ldmia r1,{r1,r2,r3}
 B func_ov199_020d548c func_ov199_020d43a4 arm9_ov199::020d54c4 arg4 <- stack
+B func_ov199_020d57ac func_ov107_020c6980 - no-call-found
+B func_ov200_020ce134 func_ov107_020c6980 - no-call-found
+B func_ov200_020ce638 func_ov107_020c7b70 - no-call-found
+B func_ov201_020d1d74 func_ov107_020c6980 - no-call-found
+B func_ov201_020d2278 func_ov107_020c7b70 - no-call-found
+B func_ov202_020cbfc8 func_ov107_020c9440 - no-call-found
+B func_ov202_020cbfc8 func_ov202_020cc260 - no-call-found
+B func_ov202_020cbfc8 func_ov202_020cc44c - no-call-found
 B func_ov202_020cc260 func_ov107_020c9ec8 - no-call-found
+B func_ov202_020cc284 func_ov107_020c4924 - no-call-found
+B func_ov202_020cddf8 func_ov107_020cb100 - no-call-found
+B func_ov202_020cef30 func_0203c640 arm9_ov202::020cef48 r0 <- entry:r0
+B func_ov203_020d3848 func_ov107_020c9440 - no-call-found
+B func_ov203_020d3848 func_ov203_020d3ae0 - no-call-found
+B func_ov203_020d3848 func_ov203_020d3ccc - no-call-found
 B func_ov203_020d3ae0 func_ov107_020c9ec8 - no-call-found
+B func_ov203_020d3b04 func_ov107_020c4924 - no-call-found
+B func_ov203_020d5678 func_ov107_020cb100 - no-call-found
+B func_ov203_020d67b0 func_0203c640 arm9_ov203::020d67c8 r0 <- entry:r0
 B func_ov204_020cfe50 func_ov107_020c9ec8 - no-call-found
 B func_ov205_020d3a90 func_ov107_020c9ec8 - no-call-found
 B func_ov206_020cc498 func_ov107_020c9ec8 - no-call-found
+B func_ov206_020ccdf4 func_0203c640 arm9_ov206::020cce0c r0 <- entry:r0
 B func_ov207_020d00d8 func_ov107_020c9ec8 - no-call-found
+B func_ov207_020d0a34 func_0203c640 arm9_ov207::020d0a4c r0 <- entry:r0
 B func_ov208_020d0188 func_ov107_020c9ec8 - no-call-found
+B func_ov208_020d3974 func_ov107_020c6980 - no-call-found
+B func_ov208_020d4754 func_0203c634 arm9_ov208::020d477c r2 <- arm9_ov208::020d4770 mov r2,#0x0
 B func_ov209_020d1fa8 func_ov107_020c9ec8 - no-call-found
+B func_ov209_020d5794 func_ov107_020c6980 - no-call-found
+B func_ov209_020d6574 func_0203c634 arm9_ov209::020d659c r2 <- arm9_ov209::020d6590 mov r2,#0x0
+B func_ov210_020d3f1c func_ov107_020c49b8 - no-call-found
+B func_ov211_020d5d3c func_ov107_020c49b8 - no-call-found
+B func_ov212_020d0700 func_0203c634 arm9_ov212::020d0718 r2 <- arm9_ov212::020d070c mov r2,#0x0
+B func_ov212_020d0c3c func_ov107_020c6980 - no-call-found
 B func_ov213_020cc4cc func_ov107_020c6980 - no-call-found
+B func_ov213_020ccb98 func_ov107_020cb100 - no-call-found
 B func_ov213_020d0790 func_ov107_020c6980 - no-call-found
 B func_ov214_020cc61c func_0203c7ac arm9_ov214::020cc62c r1 <- entry:r1
+B func_ov214_020ce748 func_0203c634 arm9_ov214::020ce760 r2 <- arm9_ov214::020ce754 mov r2,#0x0
 B func_ov215_020d025c func_0203c7ac arm9_ov215::020d026c r1 <- entry:r1
+B func_ov215_020d2388 func_0203c634 arm9_ov215::020d23a0 r2 <- arm9_ov215::020d2394 mov r2,#0x0
 B func_ov216_020cc630 func_0203c7ac arm9_ov216::020cc640 r1 <- entry:r1
+B func_ov216_020ce748 func_0203c634 arm9_ov216::020ce760 r2 <- arm9_ov216::020ce754 mov r2,#0x0
 B func_ov217_020d0270 func_0203c7ac arm9_ov217::020d0280 r1 <- entry:r1
+B func_ov217_020d2388 func_0203c634 arm9_ov217::020d23a0 r2 <- arm9_ov217::020d2394 mov r2,#0x0
 B func_ov218_020cc2d4 func_ov107_020c9ec8 - no-call-found
 B func_ov218_020ce25c func_ov107_020c6980 - no-call-found
 B func_ov219_020cfe3c func_ov107_020c9ec8 - no-call-found
 B func_ov220_020d1c5c func_ov107_020c9ec8 - no-call-found
 B func_ov221_020d025c func_ov107_020c9ec8 - no-call-found
+B func_ov221_020d3c68 func_0203c634 arm9_ov221::020d3c80 r2 <- arm9_ov221::020d3c74 mov r2,#0x0
+B func_ov221_020d424c func_ov107_020c6980 - no-call-found
 B func_ov222_020d207c func_ov107_020c9ec8 - no-call-found
+B func_ov222_020d5a88 func_0203c634 arm9_ov222::020d5aa0 r2 <- arm9_ov222::020d5a94 mov r2,#0x0
+B func_ov222_020d606c func_ov107_020c6980 - no-call-found
 B func_ov223_020d0264 func_ov107_020c9ec8 - no-call-found
+B func_ov223_020d3aa8 func_0203c634 arm9_ov223::020d3ac0 r2 <- arm9_ov223::020d3ab4 mov r2,#0x0
+B func_ov223_020d405c func_ov107_020c6980 - no-call-found
 B func_ov224_020d026c func_ov107_020c9ec8 - no-call-found
+B func_ov224_020d3c90 func_0203c634 arm9_ov224::020d3ca8 r2 <- arm9_ov224::020d3c9c mov r2,#0x0
+B func_ov224_020d4274 func_ov107_020c6980 - no-call-found
 B func_ov225_020d026c func_ov107_020c9ec8 - no-call-found
+B func_ov225_020d3f54 func_0203c634 arm9_ov225::020d3f6c r2 <- arm9_ov225::020d3f60 mov r2,#0x0
+B func_ov225_020d4538 func_ov107_020c6980 - no-call-found
 B func_ov226_020d0260 func_ov107_020c9ec8 - no-call-found
+B func_ov226_020d3be4 func_0203c634 arm9_ov226::020d3bfc r2 <- arm9_ov226::020d3bf0 mov r2,#0x0
 B func_ov226_020d3eb4 func_ov226_020d429c arm9_ov226::020d3f4c arg4 <- stack
 B func_ov226_020d3eb4 func_ov226_020d429c arm9_ov226::020d3f4c arg5 <- stack
+B func_ov226_020d4140 func_ov107_020c6980 - no-call-found
+B func_ov227_020d3ad0 func_0203c634 arm9_ov227::020d3ae8 r2 <- arm9_ov227::020d3adc mov r2,#0x0
 B func_ov228_020ce31c func_ov107_020c9ec8 - no-call-found
+B func_ov228_020ce674 func_ov107_020cb100 - no-call-found
+B func_ov228_020cf67c func_01fff8e8 arm9_ov228::020cf790 arg4 <- stack
+B func_ov228_020d1d10 func_0203c634 arm9_ov228::020d1d28 r2 <- arm9_ov228::020d1d1c mov r2,#0x0
+B func_ov228_020d21f8 func_ov107_020c6980 - no-call-found
 B func_ov229_020d1f5c func_ov107_020c9ec8 - no-call-found
+B func_ov229_020d22b4 func_ov107_020cb100 - no-call-found
+B func_ov229_020d32bc func_01fff8e8 arm9_ov229::020d33d0 arg4 <- stack
+B func_ov229_020d5950 func_0203c634 arm9_ov229::020d5968 r2 <- arm9_ov229::020d595c mov r2,#0x0
+B func_ov229_020d5e38 func_ov107_020c6980 - no-call-found
 B func_ov230_020d1f5c func_ov107_020c9ec8 - no-call-found
+B func_ov230_020d22b4 func_ov107_020cb100 - no-call-found
+B func_ov230_020d3360 func_01fff8e8 arm9_ov230::020d3474 arg4 <- stack
+B func_ov230_020d5974 func_0203c634 arm9_ov230::020d598c r2 <- arm9_ov230::020d5980 mov r2,#0x0
 B func_ov231_020cc4b4 func_ov107_020c9ec8 - no-call-found
 B func_ov232_020d00f4 func_ov107_020c9ec8 - no-call-found
 B func_ov233_020cc4f8 func_ov107_020c9ec8 - no-call-found
+B func_ov233_020cc84c func_ov107_020cb100 - no-call-found
+B func_ov233_020cd7e8 func_01fff8e8 arm9_ov233::020cd8fc arg4 <- stack
+B func_ov233_020cfe60 func_0203c634 arm9_ov233::020cfe78 r2 <- arm9_ov233::020cfe6c mov r2,#0x0
+B func_ov233_020d0348 func_ov107_020c6980 - no-call-found
 B func_ov234_020cc1fc func_ov107_020c6980 - no-call-found
+B func_ov234_020cc25c func_ov107_020c7b70 - no-call-found
+B func_ov235_020cc8a0 func_ov107_020c7b70 - no-call-found
+B func_ov235_020d2084 func_0203c640 arm9_ov235::020d209c r0 <- entry:r0
+B func_ov235_020d22b0 func_0203c640 arm9_ov235::020d22c8 r0 <- entry:r0
 B func_ov236_020cc630 func_ov107_020c9ec8 - no-call-found
+B func_ov236_020cc86c func_ov236_020d5f34 arm9_ov236::020cc9f4 r0 <- entry:r0
 B func_ov236_020ccd68 func_ov107_020c8500 - no-call-found
 B func_ov236_020cd450 func_ov107_020c4924 - no-call-found
+B func_ov236_020cd780 func_ov107_020cb100 - no-call-found
 B func_ov236_020ce230 func_ov107_020c9ec8 - no-call-found
 B func_ov236_020ce2d0 func_ov107_020c4924 - no-call-found
+B func_ov236_020ce6fc func_ov107_020c7ca4 - no-call-found
+B func_ov236_020d5f14 func_0203c640 arm9_ov236::020d5f2c r0 <- entry:r0
+B func_ov237_020cc800 func_ov107_020c3e50 - no-call-found
 B func_ov237_020cc80c func_ov107_020c9ec8 - no-call-found
 B func_ov237_020cdbe4 func_ov237_020cdb50 arm9_ov237::020cdc8c r2 <- arm9_ov237::020cdc84 mov r2,r9
 B func_ov237_020ce378 func_ov237_020cdb50 arm9_ov237::020ce3d4 r2 <- arm9_ov237::020ce3d0 mov r2,r3
@@ -679,77 +1059,157 @@ B func_ov237_020cec58 func_ov237_020cdb50 arm9_ov237::020cec7c r2 <- arm9_ov237:
 B func_ov237_020ced4c func_ov237_020cdb50 arm9_ov237::020cef48 r2 <- arm9_ov237::020cef44 add r2,r2,#0x2c
 B func_ov237_020cff0c func_ov237_020cdb50 arm9_ov237::020cffac r2 <- arm9_ov237::020cffa8 mov r2,r3
 B func_ov237_020cff0c func_ov237_020cdb50 arm9_ov237::020d0008 r2 <- arm9_ov237::020d0004 mov r2,r3
+B func_ov237_020d0c68 func_ov107_020c6980 - no-call-found
+B func_ov237_020d0ca0 func_ov107_020c7500 - no-call-found
 B func_ov239_020cc27c func_ov107_020c9ec8 - no-call-found
+B func_ov239_020cd980 func_0203c634 arm9_ov239::020cd998 r2 <- arm9_ov239::020cd98c mov r2,#0x0
 B func_ov240_020ce0c4 func_ov107_020c9ec8 - no-call-found
+B func_ov240_020cf8a0 func_0203c634 arm9_ov240::020cf8b8 r2 <- arm9_ov240::020cf8ac mov r2,#0x0
 B func_ov241_020d008c func_ov107_020c9ec8 - no-call-found
 B func_ov242_020d3ccc func_ov107_020c9ec8 - no-call-found
 B func_ov243_020d3b64 func_ov107_020c9ec8 - no-call-found
+B func_ov244_020cd20c func_ov107_020c7da4 - no-call-found
 B func_ov244_020cd218 func_ov107_020c8500 - no-call-found
-B func_ov244_020d2510 FX_Div arm9_ov244::020d2530 r0 <- arm9_ov244::020d2528 add r0,r2,r0
-B func_ov244_020d2510 FX_Div arm9_ov244::020d2530 r1 <- arm9_ov244::020d2524 ldr r1,[0x20d2598] = 0x555
+B func_ov244_020cd68c func_ov107_020c6980 - no-call-found
+B func_ov244_020ceff0 func_0203c640 arm9_ov244::020cf008 r0 <- entry:r0
+B func_ov244_020d0e7c func_ov107_020c6980 - no-call-found
+B func_ov244_020d1838 func_ov107_020c6980 - no-call-found
 B func_ov244_020d32bc func_ov244_020d1d68 arm9_ov244::020d33a8 r1 <- arm9_ov244::020d339c mov r1,#0x1
+B func_ov245_020cea48 func_ov107_020c6980 - no-call-found
+B func_ov245_020d09b4 func_ov107_020c6980 - no-call-found
+B func_ov245_020d1478 func_ov107_020c6980 - no-call-found
+B func_ov245_020d1d98 func_0203c634 arm9_ov245::020d1dc0 r2 <- arm9_ov245::020d1db4 mov r2,#0x0
+B func_ov245_020d27b4 func_0203c634 arm9_ov245::020d27dc r2 <- arm9_ov245::020d27d0 mov r2,#0x0
+B func_ov245_020d2a78 func_ov107_020c6980 - no-call-found
+B func_ov245_020d462c func_0203c634 arm9_ov245::020d4654 r2 <- arm9_ov245::020d4648 mov r2,#0x0
+B func_ov245_020d47e0 func_0203c634 arm9_ov245::020d4808 r2 <- arm9_ov245::020d47fc mov r2,#0x0
 B func_ov246_020cfecc func_ov107_020c9ec8 - no-call-found
+B func_ov246_020d1d20 func_ov107_020c6980 - no-call-found
 B func_ov247_020d1cec func_ov107_020c9ec8 - no-call-found
+B func_ov247_020d3b40 func_ov107_020c6980 - no-call-found
 B func_ov248_020cc4fc func_ov107_020c9ec8 - no-call-found
+B func_ov248_020cc854 func_ov107_020cb100 - no-call-found
+B func_ov248_020cd85c func_01fff8e8 arm9_ov248::020cd970 arg4 <- stack
+B func_ov248_020cff80 func_0203c634 arm9_ov248::020cff98 r2 <- arm9_ov248::020cff8c mov r2,#0x0
+B func_ov248_020d0b28 func_0203c634 arm9_ov248::020d0b50 r2 <- arm9_ov248::020d0b44 mov r2,#0x0
 B func_ov249_020d013c func_ov107_020c9ec8 - no-call-found
-B func_ov250_020d08fc FX_Div arm9_ov250::020d091c r0 <- arm9_ov250::020d0914 add r0,r2,r0
-B func_ov250_020d08fc FX_Div arm9_ov250::020d091c r1 <- arm9_ov250::020d0910 ldr r1,[0x20d0984] = 0x555
-B func_ov250_020d14fc FX_Div arm9_ov250::020d151c r0 <- arm9_ov250::020d1514 add r0,r2,r0
-B func_ov250_020d14fc FX_Div arm9_ov250::020d151c r1 <- arm9_ov250::020d1510 ldr r1,[0x20d159c] = 0x2aa
-B func_ov251_020d453c FX_Div arm9_ov251::020d455c r0 <- arm9_ov251::020d4554 add r0,r2,r0
-B func_ov251_020d453c FX_Div arm9_ov251::020d455c r1 <- arm9_ov251::020d4550 ldr r1,[0x20d45c4] = 0x555
-B func_ov251_020d513c FX_Div arm9_ov251::020d515c r0 <- arm9_ov251::020d5154 add r0,r2,r0
-B func_ov251_020d513c FX_Div arm9_ov251::020d515c r1 <- arm9_ov251::020d5150 ldr r1,[0x20d51dc] = 0x2aa
+B func_ov249_020d0494 func_ov107_020cb100 - no-call-found
+B func_ov249_020d13ec func_01fff8e8 arm9_ov249::020d1500 arg4 <- stack
+B func_ov249_020d3a50 func_0203c634 arm9_ov249::020d3a68 r2 <- arm9_ov249::020d3a5c mov r2,#0x0
+B func_ov249_020d3fac func_ov107_020c6980 - no-call-found
 B func_ov252_020d1c7c func_ov252_020cdafc arm9_ov252::020d1eec r2 <- arm9_ov252::020d1ee8 add r2,sp,#0x94
 B func_ov252_020d1c7c func_ov252_020cdafc arm9_ov252::020d20d0 r2 <- arm9_ov252::020d20cc mov r2,r5
+B func_ov253_020cccf4 func_ov107_020c7ca4 - no-call-found
 B func_ov253_020cce54 func_ov107_020c8500 - no-call-found
 B func_ov253_020ce868 func_ov107_020c6980 - no-call-found
 B func_ov254_020ce8a0 func_ov107_020ca414 - no-call-found
+B func_ov254_020d2020 func_0203c634 arm9_ov254::020d2048 r2 <- arm9_ov254::020d203c mov r2,#0x0
+B func_ov254_020d2a2c func_0203c634 arm9_ov254::020d2a54 r2 <- arm9_ov254::020d2a48 mov r2,#0x0
 B func_ov254_020d2c58 func_ov107_020c6980 - no-call-found
+B func_ov254_020d4ce8 func_0203c634 arm9_ov254::020d4d10 r2 <- arm9_ov254::020d4d04 mov r2,#0x0
+B func_ov254_020d52ac func_0203c634 arm9_ov254::020d52d4 r2 <- arm9_ov254::020d52c8 mov r2,#0x0
+B func_ov255_020d16f0 func_0203c640 arm9_ov255::020d1708 r0 <- entry:r0
+B func_ov255_020d1a60 func_ov107_020c6980 - no-call-found
+B func_ov255_020d1b6c func_ov107_020c7ca4 - no-call-found
+B func_ov256_020d0510 func_ov107_020c6980 - no-call-found
 B func_ov257_020cc6b0 func_ov107_020c4924 - no-call-found
+B func_ov257_020cca20 func_ov107_020c7b70 - no-call-found
+B func_ov257_020d3044 func_0203c640 arm9_ov257::020d305c r0 <- entry:r0
+B func_ov258_020cc4f0 func_ov107_020c6980 - no-call-found
+B func_ov258_020d16d4 func_0203c640 arm9_ov258::020d16ec r0 <- entry:r0
 B func_ov259_020cc590 func_ov107_020c9ec8 - no-call-found
+B func_ov259_020d1be0 func_ov107_020c7500 - no-call-found
+B func_ov259_020d1bec func_ov107_020c7ca4 - no-call-found
+B func_ov259_020d28c0 func_ov107_020c68ec - no-call-found
+B func_ov259_020d28cc func_ov107_020c6980 - no-call-found
 B func_ov260_020cc4a8 func_ov107_020c9ec8 - no-call-found
 B func_ov260_020cf518 func_01fff888 arm9_ov260::020cf798 r3 <- arm9_ov260::020cf760 mov r3,#0x0
+B func_ov260_020d0c60 func_ov107_020c6980 - no-call-found
+B func_ov260_020d1a60 func_ov107_020c6980 - no-call-found
+B func_ov260_020d252c func_ov107_020c6980 - no-call-found
 B func_ov261_020cff40 func_ov107_020c6980 - no-call-found
 B func_ov261_020cffc0 func_ov107_020c4924 - no-call-found
 B func_ov262_020d3b80 func_ov107_020c6980 - no-call-found
 B func_ov262_020d3c00 func_ov107_020c4924 - no-call-found
 B func_ov263_020d00f4 func_ov107_020c9ec8 - no-call-found
 B func_ov264_020cc61c func_0203c7ac arm9_ov264::020cc62c r1 <- entry:r1
+B func_ov264_020ce728 func_0203c634 arm9_ov264::020ce740 r2 <- arm9_ov264::020ce734 mov r2,#0x0
 B func_ov265_020d00f4 func_ov107_020c9ec8 - no-call-found
+B func_ov266_020d24fc func_0203c634 arm9_ov266::020d2514 r2 <- arm9_ov266::020d2508 mov r2,#0x0
+B func_ov266_020d2a34 func_ov107_020c6980 - no-call-found
+B func_ov267_020d431c func_0203c634 arm9_ov267::020d4334 r2 <- arm9_ov267::020d4328 mov r2,#0x0
+B func_ov267_020d4854 func_ov107_020c6980 - no-call-found
 B func_ov268_020d018c func_ov107_020c9ec8 - no-call-found
+B func_ov268_020d3998 func_ov107_020c6980 - no-call-found
+B func_ov268_020d4780 func_0203c634 arm9_ov268::020d47a8 r2 <- arm9_ov268::020d479c mov r2,#0x0
 B func_ov269_020d1cec func_ov107_020c9ec8 - no-call-found
 B func_ov270_020d3b0c func_ov107_020c9ec8 - no-call-found
+B func_ov271_020cff54 func_ov107_020c6980 - no-call-found
+B func_ov271_020d0458 func_ov107_020c7b70 - no-call-found
 B func_ov273_020d010c func_ov107_020c6980 - no-call-found
+B func_ov273_020d07d8 func_ov107_020cb100 - no-call-found
 B func_ov273_020d43d0 func_ov107_020c6980 - no-call-found
 B func_ov274_020d00d8 func_ov107_020c9ec8 - no-call-found
+B func_ov274_020d0a34 func_0203c640 arm9_ov274::020d0a4c r0 <- entry:r0
 B func_ov275_020d1ef8 func_ov107_020c9ec8 - no-call-found
+B func_ov275_020d2854 func_0203c640 arm9_ov275::020d286c r0 <- entry:r0
 B func_ov276_020d0118 func_ov107_020c9ec8 - no-call-found
+B func_ov276_020d0194 func_ov107_020c7b70 - no-call-found
+B func_ov276_020d0fc8 func_01fff8e8 arm9_ov276::020d10dc arg4 <- stack
+B func_ov276_020d28a4 func_0203c634 arm9_ov276::020d28bc r2 <- arm9_ov276::020d28b0 mov r2,#0x0
 B func_ov277_020cd130 func_ov107_020c8500 - no-call-found
-B func_ov277_020d24a8 FX_Div arm9_ov277::020d24c8 r0 <- arm9_ov277::020d24c0 add r0,r2,r0
-B func_ov277_020d24a8 FX_Div arm9_ov277::020d24c8 r1 <- arm9_ov277::020d24bc ldr r1,[0x20d2530] = 0x555
+B func_ov277_020cd24c func_ov107_020c7da4 - no-call-found
+B func_ov277_020cd68c func_ov107_020c6980 - no-call-found
+B func_ov277_020cefc0 func_0203c640 arm9_ov277::020cefd8 r0 <- entry:r0
+B func_ov277_020d0e14 func_ov107_020c6980 - no-call-found
+B func_ov277_020d17d0 func_ov107_020c6980 - no-call-found
 B func_ov277_020d3254 func_ov277_020d1d00 arm9_ov277::020d3340 r1 <- arm9_ov277::020d3334 mov r1,#0x1
 B func_ov278_020cc630 func_ov107_020c9ec8 - no-call-found
+B func_ov278_020cc86c func_ov278_020d5ee8 arm9_ov278::020cc9f4 r0 <- entry:r0
 B func_ov278_020ccd68 func_ov107_020c8500 - no-call-found
 B func_ov278_020cd450 func_ov107_020c4924 - no-call-found
+B func_ov278_020cd780 func_ov107_020cb100 - no-call-found
 B func_ov278_020ce230 func_ov107_020c9ec8 - no-call-found
 B func_ov278_020ce2d0 func_ov107_020c4924 - no-call-found
+B func_ov278_020ce6fc func_ov107_020c7ca4 - no-call-found
+B func_ov278_020d5ec8 func_0203c640 arm9_ov278::020d5ee0 r0 <- entry:r0
 B func_ov280_020d00f4 func_ov107_020c9ec8 - no-call-found
+B func_ov281_020cc63c func_ov107_020c7b70 - no-call-found
+B func_ov282_020d3f30 func_ov107_020c49b8 - no-call-found
 B func_ov283_020cc25c func_ov107_020c6980 - no-call-found
 B func_ov284_020cc3c4 func_ov107_020c6980 - no-call-found
+B func_ov285_020d1a24 func_ov107_020c9440 - no-call-found
+B func_ov285_020d1a24 func_ov285_020d1bdc - no-call-found
+B func_ov285_020d1a24 func_ov285_020d1c48 - no-call-found
 B func_ov285_020d1b80 func_ov107_020c6980 - no-call-found
+B func_ov286_020d3844 func_ov107_020c9440 - no-call-found
+B func_ov286_020d3844 func_ov286_020d39fc - no-call-found
+B func_ov286_020d3844 func_ov286_020d3a68 - no-call-found
 B func_ov286_020d39a0 func_ov107_020c6980 - no-call-found
 B func_ov287_020cfe40 func_ov107_020c6980 - no-call-found
 B func_ov288_020d3a80 func_ov107_020c6980 - no-call-found
 B func_ov289_020d58a0 func_ov107_020c6980 - no-call-found
+B func_ov292_020d3ab4 func_ov107_020c6980 - no-call-found
+B func_ov292_020d3ac0 func_ov107_020c7500 - no-call-found
+B func_ov293_020d1a24 func_ov293_020d1cbc - no-call-found
+B func_ov293_020d1a24 func_ov293_020d1ce0 - no-call-found
+B func_ov293_020d1a24 func_ov293_020d1ef0 - no-call-found
 B func_ov294_020d1b9c func_ov107_020c6980 - no-call-found
 B func_ov295_020d39bc func_ov107_020c6980 - no-call-found
 B func_ov296_020d57dc func_ov107_020c6980 - no-call-found
 B func_ov297_020d3a7c func_ov107_020c6980 - no-call-found
+B func_ov297_020d3adc func_ov107_020c7b70 - no-call-found
 B func_ov298_020d3a54 func_ov107_020c6980 - no-call-found
+B func_ov298_020d3ab4 func_ov107_020c7b70 - no-call-found
 B func_ov298_020d47c0 func_02023e80 arm9_ov298::020d480c r0 <- arm9_ov298::020d47f8 ldr r0,[0x20d482c] = 0x1fe0
 B func_ov298_020d53c4 func_ov107_020c0b90 - no-call-found
+B func_ov299_020d3f7c func_ov107_020c6980 - no-call-found
 B func_ov301_020cc178 func_ov107_020c6980 - no-call-found
+B func_ov301_020cc1d8 func_ov107_020c7b70 - no-call-found
+B func_ov302_020cc0ac NNSi_FndFreeFromDefaultHeap arm9_ov302::020cc0c0 r0 <- arm9_ov302::020cc0b4 ldr r0,[r4,#0x3c]
+B func_ov302_020cc0ac NNSi_FndFreeFromDefaultHeap arm9_ov302::020cc0d8 r0 <- arm9_ov302::020cc0cc ldr r0,[r4,#0x40]
+B func_ov302_020cc0ac NNSi_FndFreeFromDefaultHeap arm9_ov302::020cc0f0 r0 <- arm9_ov302::020cc0e4 ldr r0,[r4,#0x44]
+B func_ov302_020cc0ac NNSi_FndFreeFromDefaultHeap arm9_ov302::020cc108 r0 <- arm9_ov302::020cc0fc ldr r0,[r4,#0x48]
 B func_ov302_020cc598 func_ov302_020cc424 arm9_ov302::020cc5e0 r3 <- entry:r3
 B func_ov302_020cc64c func_ov302_020cc598 arm9_ov302::020cc6a0 r3 <- arm9_ov302::020cc68c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B main func_0201e374 - no-function
