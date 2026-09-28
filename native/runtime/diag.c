@@ -4,6 +4,7 @@
 #include "../hal/hal.h"
 #include "runtime.h"
 #include "events.h"
+#include "input.h"
 
 extern unsigned khdays_cpsr;
 static unsigned khdays_cpsr_value(void) { return khdays_cpsr; }
@@ -315,6 +316,15 @@ void khdays_diag_init(void)
     }
 }
 
+unsigned khdays_diag_symbol(const char *name)
+{
+    char buffer[sizeof(SYMBOL_INFO) + 256];
+    SYMBOL_INFO *symbol = (SYMBOL_INFO *)buffer;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = 255;
+    return SymFromName(GetCurrentProcess(), name, symbol) ? (unsigned)symbol->Address : 0;
+}
+
 /* The name of the native function at `address`, for traces. */
 static const char *symbol_name(const void *address)
 {
@@ -382,6 +392,7 @@ void khdays_check_update(int fn, int next)
     static int trace = -1;
     const IMAGE_NT_HEADERS *nt;
     const u8 *base = (const u8 *)&__ImageBase;
+    khdays_input_update_ran((u32)fn);
     if (trace < 0) {
         const char *setting = getenv("KHDAYS_TRACE_UPDATES");
         trace = setting == NULL ? 0 : strcmp(setting, "all") == 0 ? 2 : 1;

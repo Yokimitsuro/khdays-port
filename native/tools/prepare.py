@@ -266,6 +266,25 @@ ABI_FIXES = {
     "itcm@01ff9d44": [  # G3_MultMtx33
         ("    return MI_Copy36B(m);", "    return MI_Copy36B(m, (void *)0x4000400);"),
     ],
+    # Each buffer is freed with the pointer just tested still in r0:
+    # `ldr r0,[r4,#0x3c]; cmp r0,#0; beq; bl NNSi_FndFreeFromDefaultHeap`
+    # (0x02055f94, and +0x40/+0x44/+0x48 after it).
+    "ov008@02055f8c": [  # Ov008_FreeWorkBuffers
+        (f"        NNSi_FndFreeFromDefaultHeap();\n        p->{f} = 0;",
+         f"        NNSi_FndFreeFromDefaultHeap(p->{f});\n        p->{f} = 0;")
+        for f in ("f3c", "f40", "f44", "f48")
+    ],
+}
+
+# Argument registers the Ghidra scan counts as read but the ROM shows the
+# function never reads (it sets them first), by function: the calls into it
+# need nothing more than the C passes.
+ABI_NOT_READ = {
+    # Ov008_QueryFieldBySelector switches on r1 to eight helpers; seven load
+    # their own r3 before the tail call (`ldr r12,=0x02056268; ldr r3,=...;
+    # bx r12`, 0x020562f0, 0x020563a0-0x02056404), the eighth (0x02056304)
+    # writes r3 before reading it.
+    "ov008@02056478": (3,),
 }
 
 
@@ -324,6 +343,33 @@ PHANTOMS = {
     "sWh_pChildWEPKeyGenerator": 0x020c0500,
     "sWh_pWmBuffer": 0x020c050c,
 }
+
+
+def forward_tail_call(text: str, name: str) -> tuple[str, str]:
+    """`T name() { return g(); }` for a ROM tail call: take and pass on four
+    argument words (cdecl: a caller that pushed fewer leaves its own frame in
+    the extra ones, which g does not read). Returns the text and what was
+    done."""
+    body = re.search(rf"(\b{re.escape(name)}\s*\()\s*(?:void)?\s*(\)\s*\{{\s*(?:return\s+)?)"
+                     rf"(\w+)\s*\(\s*\)(\s*;\s*\}})", text)
+    if body is None:
+        return text, "left (the C passes its arguments or is not a lone call)"
+    callee = body[3]
+    before = text[:body.start()]
+    decl = None
+    for decl in re.finditer(rf"\b{re.escape(callee)}\s*\(([^()]*)\)\s*;", before):
+        pass
+    if decl is not None and decl[1].strip() not in ("", "void"):
+        return text, f"left ({callee} is declared with parameters)"
+    words = ", ".join(f"khdays_r{i}" for i in range(4))
+    params = ", ".join(f"int khdays_r{i}" for i in range(4))
+    new = f"{body[1]}{params}{body[2]}{callee}({words}){body[4]}"
+    text = before + new + text[body.end():]
+    # declarations of either that say `(void)` would contradict the call and
+    # the definition
+    for fn in (callee, name):
+        text = re.sub(rf"(\b{re.escape(fn)}\s*\()\s*void\s*(\)\s*;)", r"\1\2", text)
+    return text, f"forwards four words to {callee}"
 
 
 def zero_size(expr: str, defines: dict[str, str]) -> bool:
@@ -679,8 +725,36 @@ def main() -> int:
             if before not in texts[rel]:
                 raise SystemExit(f"ABI fix text not found in {rel}: {before[:60]}")
             texts[rel] = texts[rel].replace(before, after)
-    findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt",
-                                        {k: n for n, k in function_keys(modules).items()})
+    # Tail calls (native/abi/tail_calls.txt): the ROM's `ldr r12,=g; bx r12`
+    # hands g the argument registers as the caller set them; a C body
+    # `return g();` passes none. Such a body forwards four.
+    tail_report = []
+    for line in (ROOT / "native" / "abi" / "tail_calls.txt").read_text(encoding="utf-8").splitlines():
+        key = line.strip()
+        if not key or key.startswith("#"):
+            continue
+        name = key_name.get(key)
+        rel = next((r for r in texts if Path(r).stem == name), None) if name else None
+        if rel is None:
+            tail_report.append(f"{key} {name}: no source")
+            continue
+        texts[rel], note = forward_tail_call(texts[rel], name)
+        tail_report.append(f"{key} {name}: {note}")
+    (out / "tail_calls.txt").write_text("\n".join(tail_report) + "\n", encoding="utf-8")
+
+    names = {k: n for n, k in function_keys(modules).items()}
+    findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt", names)
+    for key, registers in ABI_NOT_READ.items():
+        callee = names.get(key, key)
+        for pair in [p for p in findings.calls if p[1] == callee]:
+            sites = findings.calls[pair]
+            for site in list(sites):
+                for k in registers:
+                    sites[site].pop(k, None)
+                if not sites[site]:
+                    del sites[site]
+            if not sites:
+                del findings.calls[pair]
     functions = {m.name: {a: n for n, k, a in m.symbols if k == "function"} for m in modules}
     repairer = abi_repair.Repairer(texts, module_of, functions, findings)
     repairer.fixed = set(abi_fixes)

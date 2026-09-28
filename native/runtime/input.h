@@ -24,8 +24,14 @@ enum {
 /* Reads KHDAYS_INPUT, a script of presses for runs without a window: items
  * `FRAME+KEY` (press) and `FRAME-KEY` (release) separated by spaces, KEY one
  * of A B X Y L R START SELECT UP DOWN LEFT RIGHT, or `FRAME@X,Y` / `FRAME@-`
- * to touch the lower screen / lift the stylus. */
+ * to touch the lower screen / lift the stylus. After an item `sN` the frames
+ * count from the first frame of scene N, after `uName` from the first frame
+ * the object update Name ran, and wait for it: loading times vary from run
+ * to run, where the game has got to does not. */
 void khdays_input_init(void);
+
+/* An object update ran (runtime/diag.c, from Obj_UpdateAll). */
+void khdays_input_update_ran(u32 update);
 
 /* At each VBlank: apply the script's items for this frame. */
 void khdays_input_frame(u32 frame);

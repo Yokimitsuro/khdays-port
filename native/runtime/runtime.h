@@ -9,6 +9,9 @@ extern "C" {
 /* Crash and stall reports (diag.c). */
 void khdays_diag_init(void);
 
+/* The native address of the function named `name` (from the PDB), or 0. */
+unsigned khdays_diag_symbol(const char *name);
+
 /* Maps the DS address space at its real virtual addresses (memory.c). Must
  * run before anything touches DS memory; returns 0 (and says why) when an
  * address range is already taken. */

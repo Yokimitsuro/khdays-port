@@ -1,12 +1,22 @@
 #include "input.h"
+#include "runtime.h"
 #include "../host/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* What a step's frame counts from: boot, or the first frame of a scene (sN)
+ * or of an object update (uName). */
+typedef struct Anchor {
+    char type;   /* 's' or 'u' */
+    u32 value;   /* the scene id, or the update's address */
+    u32 start;   /* the frame it began + 1; 0 = not yet */
+} Anchor;
+
 typedef struct Step {
     u32 frame;
+    int anchor; /* -1: from boot */
     char kind;  /* '+', '-' or '@' */
     u16 keys;
     int x, y;   /* '@': -1 lifts the stylus */
@@ -17,6 +27,15 @@ static int script_len;
 static int script_next;
 static u16 script_keys;
 static int script_touch_x = -1, script_touch_y;
+
+#define MAX_ANCHORS 64
+static Anchor anchors[MAX_ANCHORS];
+static int anchor_count;
+static u32 last_frame;
+
+/* The scene controller at 0x0204bda8, its current id at +8
+ * (src/calls/func_0202099c.c). */
+#define SCENE_CURRENT (*(volatile u32 *)(0x0204bda8 + 8))
 
 static const struct {
     const char *name;
@@ -34,10 +53,35 @@ static void bad_script(const char *item)
     exit(2);
 }
 
+static int add_anchor(const char *item)
+{
+    Anchor *a = &anchors[anchor_count];
+    char *end;
+    if (anchor_count == MAX_ANCHORS) {
+        bad_script(item);
+    }
+    a->type = item[0];
+    a->start = 0;
+    if (a->type == 's') {
+        a->value = (u32)strtoul(item + 1, &end, 10);
+        if (*end != '\0') {
+            bad_script(item);
+        }
+    } else {
+        a->value = khdays_diag_symbol(item + 1);
+        if (a->value == 0) {
+            fprintf(stderr, "KHDAYS_INPUT: no function named %s\n", item + 1);
+            exit(2);
+        }
+    }
+    return anchor_count++;
+}
+
 void khdays_input_init(void)
 {
     const char *text = getenv("KHDAYS_INPUT");
     char *copy, *item, *rest;
+    int anchor = -1;
     if (text == NULL) {
         return;
     }
@@ -46,7 +90,12 @@ void khdays_input_init(void)
     for (item = strtok_s(copy, " ", &rest); item != NULL; item = strtok_s(NULL, " ", &rest)) {
         Step step;
         char *end;
+        if (item[0] == 's' || item[0] == 'u') {
+            anchor = add_anchor(item);
+            continue;
+        }
         memset(&step, 0, sizeof(step));
+        step.anchor = anchor;
         step.frame = strtoul(item, &end, 10);
         step.kind = *end;
         if (step.kind == '@') {
@@ -72,10 +121,32 @@ void khdays_input_init(void)
     free(copy);
 }
 
+void khdays_input_update_ran(u32 update)
+{
+    for (int i = 0; i < anchor_count; ++i) {
+        if (anchors[i].type == 'u' && anchors[i].value == update && anchors[i].start == 0) {
+            anchors[i].start = last_frame + 1;
+        }
+    }
+}
+
 void khdays_input_frame(u32 frame)
 {
-    while (script_next < script_len && script[script_next].frame <= frame) {
-        const Step *s = &script[script_next++];
+    const u32 scene = SCENE_CURRENT;
+    last_frame = frame;
+    for (int i = 0; i < anchor_count; ++i) {
+        if (anchors[i].type == 's' && anchors[i].value == scene && anchors[i].start == 0) {
+            anchors[i].start = frame + 1;
+        }
+    }
+    while (script_next < script_len) {
+        const Step *s = &script[script_next];
+        if (s->anchor < 0 ? s->frame > frame
+                          : anchors[s->anchor].start == 0 ||
+                                anchors[s->anchor].start - 1 + s->frame > frame) {
+            break;
+        }
+        ++script_next;
         if (s->kind == '+') {
             script_keys |= s->keys;
         } else if (s->kind == '-') {
