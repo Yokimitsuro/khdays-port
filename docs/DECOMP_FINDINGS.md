@@ -147,6 +147,15 @@ mechanical. Numbers at the revision above: see the generated lists below.
   `Ov024_MobiClip_BlitFrame` with r0-r3 untouched, which are what
   `Ov024_MobiClip_FrameAlarm` passes (decoder, buffer, `0x100`, 0). The C
   takes and passes one argument; `BlitFrame` takes four.
+- **`G3_LoadMtx43`, `G3_MultMtx43`, `G3_MultMtx33`** (ITCM) write their
+  command to GXFIFO and tail-call the copy with the same register as its
+  destination: `ldr r1,=0x04000400; mov r2,#0x17/0x19/0x1a; str r2,[r1];
+  bx r12` (`0x01ff9d0c`, `0x01ff9d28`, `0x01ff9d44`). The C calls
+  `GX_SendFifo48B(m)` / `MI_Copy36B(m)`; both take `(src, dst)`. Should read
+  `GX_SendFifo48B(m, (void *)0x04000400)` and `MI_Copy36B(m, (void
+  *)0x04000400)`. Natively the matrix was copied over the stack, where it
+  broke the first skinned model drawn (the SBC's NODEMIX, in Mission Mode's
+  menu).
 - **Empty functions used as object updates.** `Obj_UpdateAll` calls each
   update with the update's own address in r0 (`0x02023b60 ldr r0,[r1,#0x14]`,
   `blx r0`) and stores a nonzero result as the next update. An empty function
@@ -916,7 +925,6 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   Naming: `Ov024_MobiClip_OpenContainer` stores that copy as
   `pDecoder->pQuantTables`, but it is code -- `Ov024_MobiClip_DecodeFrame`
   calls it through the pointer at `+0x38`.
-- **The link layer in local (single-player) mode.** See 5, mission lobby.
 
 ## 5. Game flow, as observed running the game
 
@@ -952,12 +960,18 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   fails, `Ov012_StartOpeningMovie` only sets flag 2 and `Ov012_RunOpeningScene`
   skips the block that would set state 3, so the script waits forever: a movie
   that fails to open is not a path the game recovers from.
-- **Mission lobby.** `Ov008_MissionLobbyStartTransfer` moves to
-  `Ov008_MissionLobbyPoll`, which waits for `+0x4f4` of the lobby context,
-  set by `Ov008_Link_RequestLeave` (`0x0207b908`). In single player the
-  message it waits for has to come back through the link layer's local loop
-  (`func_0203065c` returns the link mode; mode 1 copies sent messages into the
-  local slots). Natively it does not come back yet; under investigation.
+- **Mission Mode's menu (scene 19) in single player.** The session object
+  (`*0x0204c228`) holds the link mode in its first word (`func_0203065c`
+  returns it); alone the game runs in mode 1, and `Session_IsReady`
+  (`0x02030694`) is `mode != 3`, so it is true. `Ov008_MainMenuInit` stores
+  that in the menu context's first word, `Ov008_IsSessionReady` returns it,
+  and `Ov008_MainMenuTopState` goes on once no other player's slot (1-3 in
+  `data_020429c8`) is occupied: `TopState_2` → `CommitSelectedPage` →
+  `RouteCommittedPageState`. The lobby's own transfer
+  (`Ov008_MissionLobbyPoll`, waiting for `+0x4f4`, which only
+  `Ov008_Link_RequestLeave` from `Ov008_LobbyStep` sets) keeps polling
+  alongside, as it should. The earlier report of a stop here was the port's
+  (see 9).
 - **The ARM7's X/Y word** at `0x027fffa8` reads `0x2c00` with nothing held and
   the lid open (every DeSmuME savestate of this game): X, Y and debug in bits
   10, 11 and 13, active low; the hinge in bit 15 (1 = closed). Game code reads
@@ -969,6 +983,11 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   (`x ^= v`, `tmp = r ^ v`): the seeds start from whatever the registers held.
   Harmless for a random seed, but the source says nothing about it; a
   run-time checker flags it.
+- **`data_ov008_02090f24` is declared two ways**: most of ov008 reads it as
+  `MissionContext *`, `Ov008_MissionApplyEntryUpdate` as a pair
+  `{context, controller_instance}`. Both agree with the ROM (the controller
+  is the next word, `0x02090f28`, which `Ov008_Link_Poll` reads too); one
+  declaration of the pair would say so.
 - **The C library defines C runtime names** (`strlen`, `strncmp`, `strncpy`,
   `strtol`, `abs` in `libs/msl`). Fine for the DS; any host build has to
   rename them.
@@ -1049,3 +1068,7 @@ For whoever adds the ARM7: what the port relies on, read from its code
 
 - The twelve data tables a renaming pass had dropped from `delinks.txt` are
   back (`45e840239`).
+- **The mission lobby "stop"** reported earlier (the link layer's local loop)
+  was not in the decomp: a source transform of the port had deleted
+  `return data_ov008_02090f00[0];` from `Ov008_IsSessionReady`, and the
+  matrix commands above wrote over the stack. Nothing to change there.
