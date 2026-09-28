@@ -38,6 +38,15 @@ struct khdays_data_init {
         (void *)&name, (const void *)&name##__khdays_init,                    \
         sizeof(name##__khdays_init), module};
 
+/* A call the decomp's C makes with fewer arguments than the ROM passes, where
+ * the missing value is not yet known (prepare.py, native/abi): reaching it
+ * stops the game, naming the call. */
+#ifdef __cplusplus
+extern "C"
+#endif
+__declspec(noreturn) void khdays_abi_gap(const char *what);
+#define KHDAYS_ABI_GAP(what) (khdays_abi_gap(what), 0)
+
 /* `*(T (*)[n])dst = *(T (*)[n])src;` -- a whole-array assignment mwcc accepts
  * (prepare.py rewrites it to this). */
 #define KHDAYS_ARRAY_ASSIGN(T, n, dst, src)                         \

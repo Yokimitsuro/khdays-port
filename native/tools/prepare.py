@@ -31,6 +31,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import abi_repair  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 DECOMP = ROOT / "external" / "khdays-decomp"
 CONFIG = DECOMP / "config" / "arm9"
@@ -118,6 +121,42 @@ HOOKS = {
         "FSOverlayInitFunc *p = (khdays_data_init((int)p_ovi->header.id), "
         "p_ovi->header.sinit_init);",
     ),
+}
+
+
+# Calls whose native form the ROM shows but no mechanical rule gives (see
+# abi_repair.py for the rules): file -> [(text, replacement)], each read from
+# the function's disassembly. Applied before the mechanical repairs.
+ABI_FIXES = {
+    # The ARM ABI returns this two-word struct through a pointer in r0, which
+    # the definition spells out; its callers declare the NitroSDK form
+    # `FSFileID FS_GetOverlayFileID(const FSOverlayInfo *)`. The ROM
+    # (0x0200b178) stores {&rom archive, overlay->file_id (+0x18)} through r0.
+    "libs/nitro/fs/calls/FS_GetOverlayFileID.c": [(
+        "void FS_GetOverlayFileID(FsOverlayInfo *dst, int *overlay) {\n"
+        "    FsOverlayInfo info;\n"
+        "    info.a = (int)&data_02046334;\n"
+        "    info.b = overlay[6];\n"
+        "    *dst = info;\n"
+        "}",
+        "FsOverlayInfo FS_GetOverlayFileID(int *overlay) {\n"
+        "    FsOverlayInfo info;\n"
+        "    info.a = (int)&data_02046334;\n"
+        "    info.b = overlay[6];\n"
+        "    return info;\n"
+        "}",
+    )],
+    # NNSi_G2dFontGetTextRect returns its two-word rect by value; both callers
+    # (func_0201449c, func_ov002_0205e674) pass the ARM ABI's result pointer
+    # themselves. MSVC returns an 8-byte struct in EDX:EAX instead, so the
+    # definition takes the pointer as they do.
+    "libs/nns/g2d/calls/func_0201386c.c": [
+        ("NNSG2dTextRect func_0201386c (const NNSG2dFont * pFont, int hSpace, int vSpace, "
+         "const void * txt)",
+         "void func_0201386c (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
+         "int hSpace, int vSpace, const void * txt)"),
+        ("    return rect;\n}", "    *khdays_result = rect;\n}"),
+    ],
 }
 
 
@@ -419,6 +458,46 @@ def main() -> int:
         "".join(f"{n}\t{' '.join(f)}\n" for n, f in sorted(duplicates.items())),
         encoding="utf-8")
 
+    # Calls that lean on the ARM registers (native/tools/abi_repair.py): pass
+    # and return what the ROM's code does, from native/abi/ghidra_abi.txt.
+    for rel, fixes in ABI_FIXES.items():
+        for before, after in fixes:
+            if before not in texts.get(rel, ""):
+                raise SystemExit(f"ABI fix text not found in {rel}: {before[:60]}")
+            texts[rel] = texts[rel].replace(before, after)
+    findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt")
+    functions = {m.name: {a: n for n, k, a in m.symbols if k == "function"} for m in modules}
+    repairer = abi_repair.Repairer(texts, module_of, functions, findings)
+    repairer.fixed = {Path(rel).stem for rel in ABI_FIXES}
+    for name in sorted(findings.returns):
+        why = repairer.plan_return(name)
+        if why == "return type is not plain void":
+            continue  # a manual fix (ABI_FIXES) gave it its value
+        if why:
+            repairer.plan.gaps.append(f"{name}'s value: {why}")
+    equivalent = 0
+    for (caller, callee), sites in sorted(findings.calls.items()):
+        ks = sorted({k for regs in sites.values() for k in regs})
+        why = repairer.plan_call(caller, callee, ks[0], ks[-1] + 1)
+        if why in ("struct-by-value", "resolved"):
+            equivalent += 1
+        elif why:
+            repairer.gap_call(caller, callee, why)
+    where = {}
+    for m in modules:
+        space = f"arm9_{m.name}" if m.name.startswith("ov") else "-"
+        for n, k, a in m.symbols:
+            if k == "function":
+                where[n] = (space, a)
+    new_texts = repairer.result()
+    (out / "abi_next_targets.txt").write_text(
+        "".join(t + "\n" for t in repairer.next_targets(where)), encoding="utf-8")
+    texts.update(new_texts)
+    (out / "abi_repairs.txt").write_text("\n".join(repairer.plan.applied) + "\n", encoding="utf-8")
+    (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
+    abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
+                   f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt)")
+
     # Game data at its DS address. Every object a C file defines that the DS
     # linker placed (symbols.txt) becomes an absolute symbol at that address,
     # so all code meets it where the DS had it -- including code that reaches
@@ -540,7 +619,7 @@ def main() -> int:
           f"see unconverted_data.txt), {bss_count} other BSS symbols, "
           f"{len(PHANTOMS)} split-unit statics, "
           f"{len(absolute) - bss_count - len(converted) - len(PHANTOMS)} other absolute symbols; "
-          f"{len(alternates)} aliases")
+          f"{len(alternates)} aliases; {abi_summary}")
     return 0
 
 

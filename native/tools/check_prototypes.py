@@ -137,8 +137,11 @@ def calls_in(body: str) -> list[tuple[str, list[str]]]:
     return out
 
 
-def value_used(name: str, text: str) -> bool:
-    """Whether some call of `name` in `text` is not a statement of its own."""
+def value_uses(name: str, text: str) -> tuple[bool, set[str]]:
+    """How calls of `name` in `text` use its value: (consumed directly, the
+    functions whose own value it becomes through `return name(...)`)."""
+    direct = False
+    through: set[str] = set()
     for m in re.finditer(rf"\b{re.escape(name)}\s*\(", text):
         if is_declaration(text, m.start()):
             continue
@@ -146,9 +149,19 @@ def value_used(name: str, text: str) -> bool:
         _, after_index = split_arguments(text, m.end() - 1)
         after = text[after_index:].lstrip()
         standalone = (not before or before[-1] in ";{}:" or before.endswith("else")) and after.startswith(";")
-        if not standalone:
-            return True
-    return False
+        if standalone:
+            continue
+        if re.search(r"\breturn\s*(?:\([\w\s\*]+\)\s*)*$", before) and after.startswith(";"):
+            # returned as the enclosing function's value
+            enclosing = None
+            for d in FUNC_RE.finditer(text[:m.start()]):
+                if d.group(5) == "{":
+                    enclosing = d.group(3)
+            if enclosing:
+                through.add(enclosing)
+                continue
+        direct = True
+    return direct, through
 
 
 def main() -> int:
@@ -195,6 +208,8 @@ def main() -> int:
             if not pname:
                 continue
             total = len(re.findall(rf"\b{re.escape(pname)}\b", body))
+            # `(void)name;` only silences a warning
+            total -= len(re.findall(rf"\(\s*void\s*\)\s*{re.escape(pname)}\s*;", body))
             forwarded = 0
             for callee, arguments in calls_in(body):
                 for j, argument in enumerate(arguments):
@@ -218,6 +233,24 @@ def main() -> int:
                     r[k] = True
                     changed = True
 
+    # Whose value is consumed: used directly somewhere, or returned by a function
+    # whose value is consumed (least fixed point over all calls).
+    uses_direct: dict[str, bool] = collections.defaultdict(bool)
+    uses_through: dict[str, set[str]] = collections.defaultdict(set)
+    for rel, text in texts.items():
+        for name in set(CALL_RE.findall(text)) & defs.keys():
+            direct, through = value_uses(name, text)
+            uses_direct[name] |= direct
+            uses_through[name] |= through
+    consumed = {n for n, d in uses_direct.items() if d}
+    changed = True
+    while changed:
+        changed = False
+        for name, via in uses_through.items():
+            if name not in consumed and via & consumed:
+                consumed.add(name)
+                changed = True
+
     fewer = []
     phantom_return = []
     for name, (dret, dcount, dfile, names, _, returns) in sorted(defs.items()):
@@ -230,8 +263,10 @@ def main() -> int:
                     and any(reads[name][count:]) and any(c == name for c, _ in calls_in(texts[rel]))):
                 fewer.append((name, dfile, dcount, rel, count))
             # a void definition's "result" matters only where a call uses it
-            if dret == "void" and not returns and ret != "void" and value_used(name, texts[rel]):
-                phantom_return.append((name, dfile, rel, ret))
+            if dret == "void" and not returns and ret != "void" and name in consumed:
+                direct, through = value_uses(name, texts[rel])
+                if direct or through & consumed:
+                    phantom_return.append((name, dfile, rel, ret))
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -242,6 +277,15 @@ def main() -> int:
         f.write("# declared returning a value the definition does not return\n")
         for name, dfile, rel, ret in phantom_return:
             f.write(f"{name}\tvoid in {dfile}\t{ret} in {rel}\n")
+    # The same, structured, for the ROM analysis (ghidra_abi.py).
+    import json
+    (out / "prototype_mismatches.json").write_text(json.dumps({
+        "fewer": [{"callee": n, "def_file": d, "def_count": dc, "caller_file": r, "decl_count": c,
+                   "reads": reads[n]}
+                  for n, d, dc, r, c in fewer],
+        "void_used": [{"function": n, "def_file": d, "caller_file": r}
+                      for n, d, r, _ in phantom_return],
+    }, indent=1), encoding="utf-8")
     print(f"{len(fewer)} declarations with fewer parameters than their definition, "
           f"{len(phantom_return)} that read a return value the definition does not give "
           f"(see {out / 'prototype_mismatches.txt'})")
