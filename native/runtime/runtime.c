@@ -18,6 +18,13 @@ void khdays_hal_unimplemented(const char *what)
     exit(3);
 }
 
+void khdays_abi_gap(const char *what)
+{
+    fprintf(stderr, "khdays-native: reached a call the ROM makes differently: %s\n", what);
+    fflush(stderr);
+    exit(10);
+}
+
 int khdays_runtime_init(int argc, char **argv)
 {
     (void)argc;
@@ -31,6 +38,13 @@ int khdays_runtime_init(int argc, char **argv)
     khdays_threads_init();
     khdays_clock_init();
     return 1;
+}
+
+/* No window yet: nothing touches the screen. */
+int khdays_host_touch(int *x, int *y)
+{
+    *x = *y = 0;
+    return 0;
 }
 
 void khdays_host_frame(void)

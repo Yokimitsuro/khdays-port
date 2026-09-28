@@ -7,10 +7,61 @@
 #include "rom.h"
 #include "runtime.h"
 
+#include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 #define U16(address) (*(volatile u16 *)(address))
 #define U32(address) (*(volatile u32 *)(address))
+
+/* The firmware's user settings at 0x027ffc80 (GBATEK, "DS Firmware User
+ * Settings"). The language is the player's (KHDAYS_LANGUAGE, else the
+ * system's, as the port chooses it). The touch calibration is the port's own
+ * pair, the one the touch service converts host positions with: 12-bit ADC =
+ * pixel * 16 (arm7.c). Nothing else of it is known to matter to the game and
+ * stays zero. */
+static u32 language_code(void)
+{
+    /* NDS codes: 1 English, 2 French, 3 German, 4 Italian, 5 Spanish */
+    char name[16] = "";
+    const char *env = getenv("KHDAYS_LANGUAGE");
+    if (env != NULL) {
+        /* (not strncpy: the game's own C library, linked in, defines it) */
+        for (int i = 0; i < (int)sizeof(name) - 1 && env[i] != '\0'; ++i) {
+            name[i] = env[i];
+        }
+    } else {
+        wchar_t locale[LOCALE_NAME_MAX_LENGTH];
+        if (GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH) > 0) {
+            name[0] = (char)locale[0];
+            name[1] = (char)locale[1];
+        }
+    }
+    if (_strnicmp(name, "fr", 2) == 0) return 2;
+    if (_strnicmp(name, "de", 2) == 0) return 3;
+    if (_strnicmp(name, "it", 2) == 0) return 4;
+    if (_strnicmp(name, "es", 2) == 0) return 5;
+    return 1;  /* English, as the port defaults */
+}
+
+static void user_settings(void)
+{
+    volatile u8 *const s = (volatile u8 *)0x027ffc80;
+    const u32 x1 = 0x20, y1 = 0x20, x2 = 0xe0, y2 = 0xa0;
+    for (int i = 0; i < 0x70; ++i) {
+        s[i] = 0;
+    }
+    *(volatile u16 *)(s + 0x00) = 5;                      /* version */
+    *(volatile u16 *)(s + 0x58) = (u16)(x1 * 16);         /* adc.x1 */
+    *(volatile u16 *)(s + 0x5a) = (u16)(y1 * 16);         /* adc.y1 */
+    s[0x5c] = (u8)x1;                                     /* scr.x1 */
+    s[0x5d] = (u8)y1;                                     /* scr.y1 */
+    *(volatile u16 *)(s + 0x5e) = (u16)(x2 * 16);         /* adc.x2 */
+    *(volatile u16 *)(s + 0x60) = (u16)(y2 * 16);         /* adc.y2 */
+    s[0x62] = (u8)x2;                                     /* scr.x2 */
+    s[0x63] = (u8)y2;                                     /* scr.y2 */
+    *(volatile u16 *)(s + 0x64) = (u16)language_code();   /* language */
+}
 
 void khdays_boot_environment(void)
 {
@@ -35,4 +86,6 @@ void khdays_boot_environment(void)
     U16(0x027ffc0e) = 0;
     U16(0x027ffc10) = 0x5835;
     U16(0x027ffc40) = 1;           /* boot indicator: normal */
+
+    user_settings();
 }

@@ -1,6 +1,7 @@
 #include "events.h"
 #include "clock.h"
 #include "io.h"
+#include "arm7.h"
 
 static u64 last_update;
 static u64 next_vblank = KHDAYS_VBLANK_LINE * KHDAYS_CYCLES_PER_LINE;
@@ -35,6 +36,7 @@ void khdays_events_update(void)
                 }
             }
         }
+        khdays_arm7_frame();
         ++vblank_count;
         next_vblank += KHDAYS_CYCLES_PER_FRAME;
     }

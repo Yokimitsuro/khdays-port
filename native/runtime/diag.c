@@ -6,6 +6,7 @@
 extern unsigned khdays_cpsr;
 static unsigned khdays_cpsr_value(void) { return khdays_cpsr; }
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
@@ -96,9 +97,50 @@ static DWORD WINAPI watchdog(void *parameter)
     ExitProcess(5);
 }
 
+#if defined(_DEBUG)
+#include <rtcapi.h>
+
+/* The debug build's run-time checks (/RTC1) catch a local variable read
+ * before any write. On the ARM9 such a read takes whatever the register held
+ * -- the same leftover dependency as the ABI repairs (native/abi). Each site
+ * is logged once, for review against the ROM, and the game goes on instead
+ * of stopping at the CRT's dialog. */
+static int __cdecl on_runtime_check(int type, const wchar_t *file, int line, const wchar_t *module,
+                                    const wchar_t *format, ...)
+{
+    static const wchar_t *seen_file[256];
+    static int seen_line[256];
+    static int seen;
+    (void)module;
+    for (int i = 0; i < seen; ++i) {
+        if (seen_line[i] == line && seen_file[i] == file) {
+            return 0;
+        }
+    }
+    if (seen < 256) {
+        seen_file[seen] = file;
+        seen_line[seen] = line;
+        ++seen;
+    }
+    fwprintf(stderr, L"khdays-native: run-time check %d at %s:%d: ", type, file ? file : L"?", line);
+    if (format != NULL) {
+        va_list args;
+        va_start(args, format);
+        vfwprintf(stderr, format, args);
+        va_end(args);
+    }
+    fwprintf(stderr, L"\n");
+    fflush(stderr);
+    return 0;  /* carry on */
+}
+#endif
+
 void khdays_diag_init(void)
 {
     const char *stall = getenv("KHDAYS_STALL_SECONDS");
+#if defined(_DEBUG)
+    _RTC_SetErrorFuncW(on_runtime_check);
+#endif
     SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
     SetUnhandledExceptionFilter(on_crash);
