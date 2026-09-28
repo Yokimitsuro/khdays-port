@@ -97,9 +97,12 @@ def load_modules() -> list[Module]:
 REGISTER_ASM = re.compile(r"\basm\s*\(\s*\"r\d+\"\s*\)")
 # `asm { clz x, y }` -- ARM count-leading-zeros; the compat header supplies it.
 CLZ_ASM = re.compile(r"\basm\s*\{\s*clz\s+(\w+)\s*,\s*(\w+)\s*\}")
-# Struct members whose array size is a constant expression equal to zero.
+# Struct members whose array size is a constant expression equal to zero. A
+# statement of the same shape (`return p[0];`) is no declaration: the line
+# may not start with a statement keyword.
 ZERO_MEMBER = re.compile(
-    r"^([ \t]+)[\w \t\*]+?\b(\w+)[ \t]*\[([\w \t\+\-\*\(\)]+)\][ \t]*;[^\n]*$",
+    r"^([ \t]+)(?![ \t]|(?:return|else|case|goto|do)\b)[\w \t\*]+?\b(\w+)[ \t]*"
+    r"\[([\w \t\+\-\*\(\)]+)\][ \t]*;[^\n]*$",
     re.MULTILINE)
 # An object-like macro with a plain number as its value.
 NUMERIC_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+\(?(0[xX][0-9a-fA-F]+|\d+)[uU]?\)?[ \t]*$",
@@ -248,6 +251,20 @@ ABI_FIXES = {
          "                        func_0201e438();\n                        SetMasterBrightnessSub();",
          "                        SetMasterBrightnessMain(func_0201e428());\n"
          "                        SetMasterBrightnessSub(func_0201e438());"),
+    ],
+    # The matrix commands write their command to GXFIFO and tail-call the copy
+    # with the register that held GXFIFO's address still in r1, the copy's
+    # destination: `ldr r1,=0x04000400; mov r2,#cmd; str r2,[r1]; bx r12`
+    # (0x01ff9d0c, 0x01ff9d28, 0x01ff9d44). Without it the matrix went to
+    # whatever the stack held -- over the frame of the SBC's NODEMIX.
+    "itcm@01ff9d0c": [  # G3_LoadMtx43
+        ("    return GX_SendFifo48B(m);", "    return GX_SendFifo48B(m, (void *)0x4000400);"),
+    ],
+    "itcm@01ff9d28": [  # G3_MultMtx43
+        ("    return GX_SendFifo48B(m);", "    return GX_SendFifo48B(m, (void *)0x4000400);"),
+    ],
+    "itcm@01ff9d44": [  # G3_MultMtx33
+        ("    return MI_Copy36B(m);", "    return MI_Copy36B(m, (void *)0x4000400);"),
     ],
 }
 
