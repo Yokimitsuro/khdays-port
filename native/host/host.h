@@ -18,4 +18,8 @@ uint16_t khdays_host_buttons(void);
 /* The mouse held on the lower screen, in its pixels; 0 when not touching. */
 int khdays_host_touch(int *x, int *y);
 
+/* Sound: `count` stereo frames (left, right) at KHDAYS_SOUND_RATE
+ * (runtime/sound.h), from the game's thread. */
+void khdays_host_audio(const int16_t *frames, int count);
+
 #endif

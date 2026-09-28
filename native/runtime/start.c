@@ -8,6 +8,7 @@
 #include "../hal/hal.h"
 #include "rom.h"
 #include "runtime.h"
+#include "snd_driver.h"
 
 #include <stdio.h>
 
@@ -98,6 +99,9 @@ int main(int argc, char **argv)
     khdays_data_init(-1);
     khdays_data_init(-2);
     khdays_data_init(-3);
+    /* The ARM7, meanwhile, has started its sound driver (it reads a table
+     * in the static module, so after the above). */
+    khdays_snd_driver_init();
     /* crt0: HW_COMPONENT_PARAM = 0. */
     *(volatile u32 *)0x027fff9c = 0;
     /* crt0: the BIOS IRQ vector at DTCM + 0x3ffc points at OS_IrqHandler. */

@@ -101,6 +101,8 @@ add_executable(khdays-native
     runtime/overlays.c
     runtime/rom.cpp
     runtime/runtime.c
+    runtime/snd_driver.c
+    runtime/sound.c
     runtime/start.c
     runtime/vram.c
     host/window.c

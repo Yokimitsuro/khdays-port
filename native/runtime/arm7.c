@@ -1,6 +1,7 @@
 #include "arm7.h"
 #include "input.h"
 #include "io.h"
+#include "snd_driver.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,18 +36,36 @@ static void unimplemented(u32 tag, u32 data, const char *what)
     exit(6);
 }
 
-/* A word to the ARM9: tag in bits 0-4, error in bit 5, data in bits 6-31. */
-static void reply(u32 tag, u32 data, u32 err)
+/* Words the ARM7 has yet to get into a full FIFO: on the DS its sender
+ * retries until the ARM9 makes room (PXI_SendWordByFifo fails while the
+ * FIFO is full); here the rest of the ARM7 does not wait meanwhile. */
+#define BACKLOG_DEPTH 256
+static u32 backlog[BACKLOG_DEPTH];
+static int backlog_head, backlog_count;
+
+static void push(u32 word)
 {
-    if (recv_count == FIFO_DEPTH) {
-        unimplemented(tag, data, "receive FIFO overflow");
-    }
-    recv_fifo[(recv_head + recv_count) % FIFO_DEPTH] = tag | err << 5 | data << 6;
+    recv_fifo[(recv_head + recv_count) % FIFO_DEPTH] = word;
     ++recv_count;
     /* IPCFIFOCNT bit 10: IRQ 18 while the receive FIFO is not empty. */
     if (IO16(0x184) & 0x0400) {
         khdays_io_request_irq(1u << 18);
     }
+}
+
+/* A word to the ARM9: tag in bits 0-4, error in bit 5, data in bits 6-31. */
+void khdays_arm7_reply(u32 tag, u32 data, u32 err)
+{
+    const u32 word = tag | err << 5 | data << 6;
+    if (recv_count < FIFO_DEPTH && backlog_count == 0) {
+        push(word);
+        return;
+    }
+    if (backlog_count == BACKLOG_DEPTH) {
+        unimplemented(tag, data, "the ARM9 stopped reading its receive FIFO");
+    }
+    backlog[(backlog_head + backlog_count) % BACKLOG_DEPTH] = word;
+    ++backlog_count;
 }
 
 /* --- Services ---------------------------------------------------------------
@@ -68,7 +87,7 @@ static void ctrdg_service(u32 data, u32 err)
 {
     (void)err;
     if ((data & 0x3f) == 1) {
-        reply(TAG_CTRDG, 1, 0);
+        khdays_arm7_reply(TAG_CTRDG, 1, 0);
         return;
     }
     unimplemented(TAG_CTRDG, data, "cartridge command");
@@ -95,11 +114,11 @@ static void rtc_service(u32 data, u32 err)
         SYSTEMTIME now;
         GetLocalTime(&now);
         RTC_BUF[1] = bcd(now.wHour) | bcd(now.wMinute) << 8 | bcd(now.wSecond) << 16;
-        reply(TAG_RTC, command << 8, 0);
+        khdays_arm7_reply(TAG_RTC, command << 8, 0);
         return;
     }
     if (command == 0x27) {
-        reply(TAG_RTC, command << 8, 0);
+        khdays_arm7_reply(TAG_RTC, command << 8, 0);
         return;
     }
     unimplemented(TAG_RTC, data, "RTC command");
@@ -160,7 +179,7 @@ static void tp_service(u32 data, u32 err)
     default:
         unimplemented(TAG_TP, data, "touch panel command");
     }
-    reply(TAG_TP, 0x1000000 | command << 8, 0);
+    khdays_arm7_reply(TAG_TP, 0x1000000 | command << 8, 0);
 }
 
 /* Automatic sampling: `frequency` samples a frame, each announced with
@@ -173,34 +192,27 @@ void khdays_arm7_frame(void)
     *(volatile u16 *)0x027fffa8 = khdays_input_xy();
     for (u32 i = 0; i < tp_auto_frequency && recv_count < FIFO_DEPTH; ++i) {
         tp_sample();
-        reply(TAG_TP, 0x10u << 8, 0);
+        khdays_arm7_reply(TAG_TP, 0x10u << 8, 0);
     }
 }
 
-/* Sound (tag 7), NitroSDK's snd_command.c as the ARM9 side speaks it: a word
- * is the address of a list of commands (SNDCommand: next, id, arg[4]) or 0,
- * a request to process what was sent. The ARM7's sound driver runs each list
- * and then advances the finished-command tag, the first word of the shared
- * work that command 0x1d (SHARED_WORK) names; the ARM9 waits on that tag.
- * No sound is made yet: each list is taken as run, and each command id seen
- * is reported once, so the driver is written against what the game sends. */
+/* Sound (tag 7): the ARM7's own sound driver takes it (snd_driver.c). With
+ * the driver off (KHDAYS_SOUND=0) the lists are taken as run, the way
+ * NitroSDK's snd_command.c on the ARM9 sees it: a word is the address of a
+ * list of commands (SNDCommand: next, id, arg[4]) or 0, a request to
+ * process what was sent; the driver advances the finished-command tag, the
+ * first word of the shared work command 0x1d (SHARED_WORK) names, and the
+ * ARM9 waits on that tag. */
 static u32 snd_shared_work;
-static u32 snd_ids_seen[8];  /* a bit per command id */
 
 static void sound_service(u32 data, u32 err)
 {
-    (void)err;
-    if (data == 0) {
-        return;  /* everything sent is already run */
+    if (khdays_snd_driver_pxi(data, err) || data == 0) {
+        return;
     }
     for (u32 command = data; command != 0; command = *(volatile u32 *)command) {
-        const u32 id = *(volatile u32 *)(command + 4);
-        if (id == 0x1d) {
+        if (*(volatile u32 *)(command + 4) == 0x1d) {
             snd_shared_work = *(volatile u32 *)(command + 8);
-        }
-        if (id < 256 && !(snd_ids_seen[id / 32] & (1u << (id % 32)))) {
-            snd_ids_seen[id / 32] |= 1u << (id % 32);
-            fprintf(stderr, "arm7: sound command 0x%02x (not played yet)\n", id);
         }
     }
     if (snd_shared_work != 0) {
@@ -275,7 +287,7 @@ static void card_service(u32 data, u32 err)
     if (card_expect_address) {
         card_cmd = data;
         card_expect_address = 0;
-        reply(TAG_FS, 0, 1);
+        khdays_arm7_reply(TAG_FS, 0, 1);
         return;
     }
     switch (data) {
@@ -326,7 +338,7 @@ static void card_service(u32 data, u32 err)
         unimplemented(TAG_FS, data, "backup request");
     }
     CARD_CMD(0x00) = result;
-    reply(TAG_FS, data, 1);
+    khdays_arm7_reply(TAG_FS, data, 1);
 }
 
 /* PM (tag 8): power management. */
@@ -350,6 +362,7 @@ void khdays_arm7_reset(void)
 {
     sync_nibble = 0;
     recv_head = recv_count = 0;
+    backlog_head = backlog_count = 0;
     ARM7_HANDLE_CHECKER = 0;
     *(volatile u16 *)0x027fffa8 = khdays_input_xy();  /* X, Y, hinge */
     for (u32 tag = 0; tag < 32; ++tag) {
@@ -398,6 +411,11 @@ u32 khdays_arm7_recv_pop(void)
     word = recv_fifo[recv_head];
     recv_head = (recv_head + 1) % FIFO_DEPTH;
     --recv_count;
+    if (backlog_count > 0) {
+        push(backlog[backlog_head]);
+        backlog_head = (backlog_head + 1) % BACKLOG_DEPTH;
+        --backlog_count;
+    }
     return word;
 }
 

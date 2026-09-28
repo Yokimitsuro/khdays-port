@@ -1,7 +1,8 @@
 /* The ARM7, high level: the other side of the IPC registers. The DS's ARM7
  * runs Nintendo's system component (sound, touch, RTC, power, backup
  * memory); natively each service it offers the ARM9 over PXI is answered
- * here, one message at a time. */
+ * here, one message at a time -- except the sound, whose driver runs as the
+ * ARM7's own code (snd_driver.c). */
 #ifndef KHDAYS_ARM7_H
 #define KHDAYS_ARM7_H
 
@@ -22,6 +23,9 @@ int khdays_arm7_recv_count(void);
 u32 khdays_arm7_recv_pop(void);
 int khdays_arm7_send_count(void);
 void khdays_arm7_send_clear(void);
+
+/* A word from the ARM7 on `tag` (the receive FIFO, IRQ 18 if enabled). */
+void khdays_arm7_reply(u32 tag, u32 data, u32 err);
 
 /* Once a frame (VBlank): what the ARM7 does periodically. */
 void khdays_arm7_frame(void);

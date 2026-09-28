@@ -7,6 +7,9 @@
  *               shared area at 0x027ff000 is the mirror of 0x023ff000)
  *   0x027e0000  DTCM, 16 KB, in front of the main RAM mirror
  *   0x03000000  shared WRAM
+ *   0x037f8000  the ARM7's WRAM as the ARM7 sees it (the shared 32 KB, then
+ *               its own 64 KB at 0x03800000), for its sound driver
+ *               (snd_driver.c); the ARM9 never looks there
  *   0x04000000  I/O registers; 0x04100000 the IPC FIFO / card data ports
  *   0x05000000  palettes, 2 KB
  *   0x06000000  VRAM: BG A, BG B (0x06200000), OBJ A (0x06400000), OBJ B
@@ -26,6 +29,8 @@
 #define MAIN_RAM_SIZE 0x400000u
 #define DTCM_BASE     0x027e0000u
 #define GRANULE       0x10000u
+#define ARM7_WRAM_BASE 0x037f8000u
+#define ARM7_WRAM_END  0x03810000u
 
 static int fail(const char *what, unsigned address)
 {
@@ -137,6 +142,7 @@ int khdays_memory_map(void)
     return plain("ITCM", 0x01ff8000, 0x8000) &&
            plain("DTCM", DTCM_BASE, 0x4000) &&
            plain("shared WRAM", 0x03000000, 0x8000) &&
+           plain("ARM7 WRAM", ARM7_WRAM_BASE, ARM7_WRAM_END - ARM7_WRAM_BASE) &&
            (khdays_io_host = io_region("I/O", KHDAYS_IO_BASE, GRANULE)) != NULL &&
            (khdays_io2_host = io_region("IPC/card ports", KHDAYS_IO2_BASE, GRANULE)) != NULL &&
            plain("palettes", 0x05000000, 0x800) &&

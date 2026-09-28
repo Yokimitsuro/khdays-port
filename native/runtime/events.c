@@ -4,8 +4,11 @@
 #include "arm7.h"
 #include "display.h"
 #include "input.h"
+#include "snd_driver.h"
 #include "../gpu/gpu3d.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <windows.h>
 
 static u64 last_update;
@@ -23,6 +26,10 @@ volatile LONG khdays_game_waiting;
 static u64 next_event(void)
 {
     u64 next = next_vblank;
+    const u64 sound = khdays_snd_driver_next_event();
+    if (sound < next) {
+        next = sound;
+    }
     for (int n = 0; n < 4; ++n) {
         const u64 overflow = khdays_timer_next_overflow(n, last_update);
         if (overflow < next) {
@@ -72,6 +79,7 @@ void khdays_events_update(void)
         ++vblank_count;
         next_vblank += KHDAYS_CYCLES_PER_FRAME;
     }
+    khdays_snd_driver_update(now);
     last_update = now;
     InterlockedExchange64(&khdays_next_event, (LONG64)next_event());
 }
@@ -90,11 +98,39 @@ void khdays_irq_poll(void)
     }
 }
 
+/* KHDAYS_PROFILE: once a second, how long the game ran between its waits
+ * and how long it waited (a game that never waits starves its lower-priority
+ * threads, the sound's stream loader among them). */
+static int profile = -1;
+static u64 wait_end, busy, waited, waits, report_at;
+
+static void profile_wait(u64 enter)
+{
+    if (profile < 0) {
+        profile = getenv("KHDAYS_PROFILE") != NULL;
+    }
+    if (!profile) {
+        return;
+    }
+    if (wait_end != 0) {
+        busy += enter - wait_end;
+    }
+    ++waits;
+    if (enter >= report_at) {
+        fprintf(stderr, "wait: %llu waits, %.1f ms running, %.1f ms waiting in the last second\n",
+                waits, busy * 1000.0 / KHDAYS_CLOCK_HZ, waited * 1000.0 / KHDAYS_CLOCK_HZ);
+        busy = waited = waits = 0;
+        report_at = enter + KHDAYS_CLOCK_HZ;
+    }
+}
+
 /* The CPU halted until an interrupt (OS_Halt, SWI Halt, the RTC busy-wait):
  * run time forward to the next event, present finished frames, and return
  * once the interrupt line is up -- taking the IRQ if the CPSR allows it. */
 void khdays_runtime_wait(void)
 {
+    const u64 enter = khdays_clock_cycles();
+    profile_wait(enter);
     InterlockedIncrement(&khdays_game_waiting);
     for (;;) {
         khdays_events_update();
@@ -104,6 +140,10 @@ void khdays_runtime_wait(void)
         }
         if (irq_line()) {
             InterlockedDecrement(&khdays_game_waiting);
+            if (profile) {
+                wait_end = khdays_clock_cycles();
+                waited += wait_end - enter;
+            }
             khdays_irq_deliver();
             return;
         }

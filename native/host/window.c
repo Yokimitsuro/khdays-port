@@ -3,9 +3,11 @@
  * through a lock and interlocked words. Keys follow the port's defaults
  * (platform/pc/overlay_ui.h): arrows, Z = A, X = B, S = X, A = Y, Q = L,
  * E = R, Enter = Start, right Shift = Select; the mouse on the lower screen
- * is the stylus. Closing the window ends the process. */
+ * is the stylus. Closing the window ends the process. The sound goes to an
+ * SDL audio stream, which converts the DS's rate to the device's. */
 #include "host.h"
 #include "../runtime/input.h"
+#include "../runtime/sound.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -26,6 +28,8 @@ static volatile LONG touch;  /* bit 31: touching; x in bits 0-7, y in 8-15 */
 
 static HANDLE ready;
 static volatile LONG started;
+
+static SDL_AudioStream *volatile audio;
 
 static const struct {
     SDL_Scancode code;
@@ -73,10 +77,21 @@ static DWORD WINAPI host_thread(LPVOID unused)
     SDL_Texture *texture;
     int mouse_down = 0;
     (void)unused;
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "host: SDL_Init failed: %s\n", SDL_GetError());
         SetEvent(ready);
         return 1;
+    }
+    {
+        const SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, KHDAYS_SOUND_RATE};
+        SDL_AudioStream *stream =
+            SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+        if (stream == NULL) {
+            fprintf(stderr, "host: no sound: %s\n", SDL_GetError());
+        } else {
+            SDL_ResumeAudioStreamDevice(stream);
+            audio = stream;
+        }
     }
     window = SDL_CreateWindow("Kingdom Hearts 358/2 Days (native)", 2 * W, 4 * H, SDL_WINDOW_RESIZABLE);
     renderer = window ? SDL_CreateRenderer(window, NULL) : NULL;
@@ -163,6 +178,22 @@ void khdays_host_present(const uint32_t *upper, const uint32_t *lower)
         event.type = frame_event;
         SDL_PushEvent(&event);
     }
+}
+
+/* The game makes sound as fast as the DS clock, which follows the PC's; the
+ * device plays it on its own clock. What piles up beyond a tenth of a second
+ * (after the game thread stalled and caught up) is dropped, so the delay
+ * stays short. */
+void khdays_host_audio(const int16_t *frames, int count)
+{
+    SDL_AudioStream *stream = audio;
+    if (stream == NULL) {
+        return;
+    }
+    if (SDL_GetAudioStreamQueued(stream) > KHDAYS_SOUND_RATE * 4 / 10) {
+        return;
+    }
+    SDL_PutAudioStreamData(stream, frames, count * 4);
 }
 
 uint16_t khdays_host_buttons(void)

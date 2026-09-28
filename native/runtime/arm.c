@@ -9,7 +9,12 @@
  * A native call into DS memory faults (the pages are not executable); the
  * fault handler runs the callee here with the cdecl arguments in r0-r3 and on
  * the stack, and returns r1:r0 in EDX:EAX. A branch from interpreted code to
- * an address outside DS memory calls that native function the same way. */
+ * an address outside DS memory calls that native function the same way.
+ *
+ * The ARM7's sound driver runs here too (snd_driver.c), on the ARM7's bus:
+ * main RAM through the ARM7's mirrors, its WRAM, and its own I/O registers
+ * (sound.c). ARMv5 is a superset of the ARM7's ARMv4T for code built for the
+ * latter. Its system calls into the OS and the BIOS are native stand-ins. */
 #if defined(_MSC_VER) && !defined(__clang__)
 #pragma runtime_checks("", off)
 #pragma optimize("gt", on)
@@ -17,6 +22,7 @@
 
 #include "arm.h"
 #include "io.h"
+#include "sound.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,10 +48,22 @@ extern volatile LONG khdays_async_irq_blocked;
 static u8 *stack_memory;
 static u32 stack_top;  /* free space ends here; nested runs continue below */
 
+/* The code running is the ARM7's (its bus, its hooks and BIOS). */
+static int on_arm7;
+
+#define ARM7_WRAM_BASE 0x037f8000u
+#define ARM7_WRAM_END  0x03810000u
+
+#define MAX_HOOKS 16
+static u32 hook_address[MAX_HOOKS];
+static KhdaysArmHook hook_function[MAX_HOOKS];
+static int hook_count;
+static KhdaysArmSwi arm7_bios;
+
 static void fail(const Cpu *cpu, u32 op, const char *what)
 {
-    fprintf(stderr, "khdays-native: ARM interpreter at 0x%08x (%s, opcode 0x%08x): %s\n",
-            cpu->pc, cpu->thumb ? "Thumb" : "ARM", op, what);
+    fprintf(stderr, "khdays-native: ARM%s interpreter at 0x%08x (%s, opcode 0x%08x): %s\n",
+            on_arm7 ? "7" : "9", cpu->pc, cpu->thumb ? "Thumb" : "ARM", op, what);
     fflush(stderr);
     exit(13);
 }
@@ -55,6 +73,24 @@ static void fail(const Cpu *cpu, u32 op, const char *what)
 static int is_io(u32 a)
 {
     return (a >> 24) == 0x04;
+}
+
+/* An ARM7 address as the process holds it: main RAM repeats every 4 MB (to
+ * the ARM7, 0x027e0000 is main RAM's 0x023e0000, not the ARM9's DTCM that
+ * the process maps there), the WRAM is where memory.c put it. Nothing else
+ * is modelled. */
+static u32 arm7_address(u32 a)
+{
+    if (a >= 0x02000000u && a < 0x03000000u) {
+        return 0x02000000u | (a & 0x3fffffu);
+    }
+    if (a >= ARM7_WRAM_BASE && a < ARM7_WRAM_END) {
+        return a;
+    }
+    fprintf(stderr, "khdays-native: ARM7 interpreter at 0x%08x: access to 0x%08x, outside main "
+                    "RAM, its WRAM and its I/O\n", khdays_arm_pc, a);
+    fflush(stderr);
+    exit(13);
 }
 
 static u8 *io_host(u32 a)
@@ -90,35 +126,56 @@ static void io_write(u32 a, int size, u32 v)
 static u32 rd32(u32 a)
 {
     a &= ~3u;
-    return is_io(a) ? io_read(a, 4) : *(const u32 *)(size_t)a;
+    if (is_io(a)) return on_arm7 ? khdays_sound_io_read(a, 4) : io_read(a, 4);
+    if (on_arm7) a = arm7_address(a);
+    return *(const u32 *)(size_t)a;
 }
 
 static u32 rd16(u32 a)
 {
     a &= ~1u;
-    return is_io(a) ? io_read(a, 2) : *(const u16 *)(size_t)a;
+    if (is_io(a)) return on_arm7 ? khdays_sound_io_read(a, 2) : io_read(a, 2);
+    if (on_arm7) a = arm7_address(a);
+    return *(const u16 *)(size_t)a;
 }
 
 static u32 rd8(u32 a)
 {
-    return is_io(a) ? io_read(a, 1) : *(const u8 *)(size_t)a;
+    if (is_io(a)) return on_arm7 ? khdays_sound_io_read(a, 1) : io_read(a, 1);
+    if (on_arm7) a = arm7_address(a);
+    return *(const u8 *)(size_t)a;
 }
 
 static void wr32(u32 a, u32 v)
 {
     a &= ~3u;
-    if (is_io(a)) io_write(a, 4, v); else *(u32 *)(size_t)a = v;
+    if (is_io(a)) {
+        if (on_arm7) khdays_sound_io_write(a, 4, v); else io_write(a, 4, v);
+        return;
+    }
+    if (on_arm7) a = arm7_address(a);
+    *(u32 *)(size_t)a = v;
 }
 
 static void wr16(u32 a, u32 v)
 {
     a &= ~1u;
-    if (is_io(a)) io_write(a, 2, v); else *(u16 *)(size_t)a = (u16)v;
+    if (is_io(a)) {
+        if (on_arm7) khdays_sound_io_write(a, 2, v); else io_write(a, 2, v);
+        return;
+    }
+    if (on_arm7) a = arm7_address(a);
+    *(u16 *)(size_t)a = (u16)v;
 }
 
 static void wr8(u32 a, u32 v)
 {
-    if (is_io(a)) io_write(a, 1, v); else *(u8 *)(size_t)a = (u8)v;
+    if (is_io(a)) {
+        if (on_arm7) khdays_sound_io_write(a, 1, v); else io_write(a, 1, v);
+        return;
+    }
+    if (on_arm7) a = arm7_address(a);
+    *(u8 *)(size_t)a = (u8)v;
 }
 
 /* LDR from an unaligned address rotates the word (ARMv5). */
@@ -149,6 +206,27 @@ static void branch(Cpu *cpu, u32 target, int interwork)
     target &= cpu->thumb ? ~1u : ~3u;
     if ((target & ~3u) == RETURN_MAGIC) {
         cpu->done = 1;
+        return;
+    }
+    if (on_arm7) {
+        for (int i = 0; i < hook_count; ++i) {
+            if (hook_address[i] == target) {
+                /* A native stand-in: it returns (or suspends) as the routine would. */
+                int suspend;
+                cpu->pc = target;
+                suspend = hook_function[i](cpu->r);
+                branch(cpu, cpu->r[14], 1);
+                if (suspend) {
+                    if (cpu->done) fail(cpu, target, "a wait outside an ARM7 thread");
+                    cpu->done = 2;
+                }
+                return;
+            }
+        }
+        if (target < ARM7_WRAM_BASE || target >= ARM7_WRAM_END) {
+            fail(cpu, target, "an ARM7 branch outside its WRAM");
+        }
+        cpu->pc = target;
         return;
     }
     if (!is_ds_code(target)) {
@@ -263,6 +341,12 @@ static s32 saturate(s64 v, Cpu *cpu)
 
 static void swi(Cpu *cpu, u32 number, u32 op)
 {
+    if (on_arm7) {
+        if (arm7_bios == NULL || !arm7_bios(number, cpu->r)) {
+            fail(cpu, op, "an ARM7 BIOS call the runtime does not model");
+        }
+        return;
+    }
     switch (number) {
     case 0x09: {  /* Div */
         const s32 num = (s32)cpu->r[0], den = (s32)cpu->r[1];
@@ -815,9 +899,98 @@ u64 khdays_arm_call(u32 entry, const u32 *args, int count)
     stack_top = sp - 64;  /* nested runs go below this one's frame */
     cpu.thumb = entry & 1;
     cpu.pc = entry & ~1u;
-    run(&cpu);
+    {
+        const int outer = on_arm7;  /* the ARM9's bus, whatever called */
+        on_arm7 = 0;
+        run(&cpu);
+        on_arm7 = outer;
+    }
     stack_top = saved_top;
     return (u64)cpu.r[1] << 32 | cpu.r[0];
+}
+
+/* --- The ARM7 ---------------------------------------------------------------------- */
+
+void khdays_arm7cpu_hook(u32 address, KhdaysArmHook hook)
+{
+    if (hook_count == MAX_HOOKS) {
+        fprintf(stderr, "khdays-native: too many ARM7 hooks\n");
+        exit(13);
+    }
+    hook_address[hook_count] = address;
+    hook_function[hook_count] = hook;
+    ++hook_count;
+}
+
+void khdays_arm7cpu_bios(KhdaysArmSwi swi)
+{
+    arm7_bios = swi;
+}
+
+struct KhdaysArmThread {
+    Cpu cpu;
+};
+
+/* Runs `cpu` on the ARM7's bus, then gives the bus back to whatever ran
+ * before (an ARM7 run can start inside an ARM9 one: a native call the
+ * interpreted ARM9 makes can talk to the ARM7). */
+static void run_arm7(Cpu *cpu)
+{
+    const int outer = on_arm7;
+    const u32 outer_pc = khdays_arm_pc;
+    on_arm7 = 1;
+    run(cpu);
+    on_arm7 = outer;
+    khdays_arm_pc = outer_pc;
+}
+
+u64 khdays_arm7cpu_call(u32 entry, const u32 *args, int count, u32 sp)
+{
+    Cpu cpu;
+    memset(&cpu, 0, sizeof(cpu));
+    sp &= ~7u;
+    if (count > 4) {
+        sp -= (u32)(count - 4) * 4;
+        sp &= ~7u;
+        for (int i = 4; i < count; ++i) {
+            *(u32 *)(size_t)(sp + (u32)(i - 4) * 4) = args[i];
+        }
+    }
+    for (int i = 0; i < 4 && i < count; ++i) {
+        cpu.r[i] = args[i];
+    }
+    cpu.r[13] = sp;
+    cpu.r[14] = RETURN_MAGIC;
+    cpu.thumb = entry & 1;
+    cpu.pc = entry & ~1u;
+    run_arm7(&cpu);
+    if (cpu.done != 1) {
+        fprintf(stderr, "khdays-native: the ARM7 routine 0x%08x waited, outside a thread\n", entry);
+        exit(13);
+    }
+    return (u64)cpu.r[1] << 32 | cpu.r[0];
+}
+
+KhdaysArmThread *khdays_arm7cpu_thread(u32 entry, u32 arg, u32 sp)
+{
+    KhdaysArmThread *thread = (KhdaysArmThread *)calloc(1, sizeof(*thread));
+    if (thread == NULL) {
+        fprintf(stderr, "khdays-native: no memory for an ARM7 thread\n");
+        exit(13);
+    }
+    thread->cpu.r[0] = arg;
+    thread->cpu.r[13] = sp;
+    thread->cpu.r[14] = RETURN_MAGIC;
+    thread->cpu.thumb = entry & 1;
+    thread->cpu.pc = entry & ~1u;
+    return thread;
+}
+
+int khdays_arm7cpu_resume(KhdaysArmThread *thread)
+{
+    thread->cpu.done = 0;
+    run_arm7(&thread->cpu);
+    return thread->cpu.done == 1;
 }
 
 /* A native call landed in DS memory: the page is not executable. Run the
