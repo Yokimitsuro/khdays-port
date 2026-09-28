@@ -1137,60 +1137,9 @@ B ov008@0207c518 ov008@0207bcd8 arm9_ov008::0207c5a4 r0 <- arm9_ov008::0207c55c 
 B ov008@0207c7c8 ov008@0207bcd8 arm9_ov008::0207c7fc r0 <- arm9_ov008::0207c7f0 bl 0x0207bc58 => 0x207bc58 Ov008_IsMissionMenuExitRequested
 B ov008@0207c7c8 ov008@0207bcd8 arm9_ov008::0207c82c r0 <- arm9_ov008::0207c820 bl 0x0207be38 => 0x207be38 Ov008_CanConfirmMissionMenu
 B ov008@0206e878 ov008@0206e1fc arm9_ov008::0206e91c r0 <- entry:r0
-B ov022@0209a4f8 ov022@020aa8e8 - no-call-found
 B ov025@020973e0 ov025@0208a82c arm9_ov025::020974dc r0 <- arm9_ov025::020974a0 ldr r0,[r0,#0xa0] | arm9_ov025::020974b0 bl 0x0208a830 => 0x208a830 Ov025_DrawMenuQuad
 B ov025@020a7b88 ov025@020a53f0 arm9_ov025::020a7d4c r0 <- arm9_ov025::020a7d40 blx 0x020235d0 => 0x20235d0 GameState_GetField
 B ov025@020a3f0c ov025@020a3890 arm9_ov025::020a3fb0 r0 <- entry:r0
-B ov030@020b3e24 ov030@020b4c50 - no-call-found
-B ov202@020cbfc8 ov107@020c9440 - no-call-found
-B ov131@020cbfc4 ov131@020cc448 - no-call-found
-B ov131@020cbfc4 ov131@020cc25c - no-call-found
-B ov132@020cdde4 ov132@020ce268 - no-call-found
-B ov132@020cdde4 ov132@020ce07c - no-call-found
-B ov133@020d1a24 ov133@020d1ea8 - no-call-found
-B ov133@020d1a24 ov133@020d1cbc - no-call-found
-B ov134@020cbfc4 ov134@020cc2c4 - no-call-found
-B ov134@020cbfc4 ov134@020cc294 - no-call-found
-B ov134@020cbfc4 ov134@020cc5a0 - no-call-found
-B ov134@020cbfc4 ov134@020cc270 - no-call-found
-B ov135@020cfc04 ov135@020cff04 - no-call-found
-B ov135@020cfc04 ov135@020cfed4 - no-call-found
-B ov135@020cfc04 ov135@020d01e0 - no-call-found
-B ov135@020cfc04 ov135@020cfeb0 - no-call-found
-B ov136@020d1a24 ov136@020d1d24 - no-call-found
-B ov136@020d1a24 ov136@020d1cf4 - no-call-found
-B ov136@020d1a24 ov136@020d2000 - no-call-found
-B ov136@020d1a24 ov136@020d1cd0 - no-call-found
-B ov161@020cbfc4 ov161@020cc47c - no-call-found
-B ov161@020cbfc4 ov161@020cc25c - no-call-found
-B ov162@020cdde4 ov162@020ce29c - no-call-found
-B ov162@020cdde4 ov162@020ce07c - no-call-found
-B ov163@020cdde4 ov163@020ce280 - no-call-found
-B ov163@020cdde4 ov163@020ce07c - no-call-found
-B ov164@020cfc04 ov164@020d00a0 - no-call-found
-B ov164@020cfc04 ov164@020cfe9c - no-call-found
-B ov165@020d1a24 ov165@020d1ec0 - no-call-found
-B ov165@020d1a24 ov165@020d1cbc - no-call-found
-B ov188@020cdde4 ov188@020ce64c - no-call-found
-B ov188@020cdde4 ov188@020ce254 - no-call-found
-B ov188@020cdde4 ov188@020ce230 - no-call-found
-B ov189@020cfc04 ov189@020d046c - no-call-found
-B ov189@020cfc04 ov189@020d0074 - no-call-found
-B ov189@020cfc04 ov189@020d0050 - no-call-found
-B ov190@020d3844 ov190@020d40ac - no-call-found
-B ov190@020d3844 ov190@020d3cb4 - no-call-found
-B ov190@020d3844 ov190@020d3c90 - no-call-found
-B ov202@020cbfc8 ov202@020cc44c - no-call-found
-B ov202@020cbfc8 ov202@020cc260 - no-call-found
-B ov203@020d3848 ov203@020d3ccc - no-call-found
-B ov203@020d3848 ov203@020d3ae0 - no-call-found
-B ov285@020d1a24 ov285@020d1bdc - no-call-found
-B ov285@020d1a24 ov285@020d1c48 - no-call-found
-B ov286@020d3844 ov286@020d39fc - no-call-found
-B ov286@020d3844 ov286@020d3a68 - no-call-found
-B ov293@020d1a24 ov293@020d1ce0 - no-call-found
-B ov293@020d1a24 ov293@020d1ef0 - no-call-found
-B ov293@020d1a24 ov293@020d1cbc - no-call-found
 B main@02030f58 main@0203112c 02030fa2 r0 <- 02030f9e blx 0x02023728 => 0x2023728 HeapDispatchWrapper_0201098c
 B main@0202b064 main@02028d70 0202b07c r0 <- 0202b076 ldr r0,[r0,r4]
 B ov008@0205a8c4 ov008@0205697c arm9_ov008::0205a8d4 r2 <- entry:r2
@@ -1200,16 +1149,9 @@ B ov008@0205951c ov008@020593cc arm9_ov008::020595b4 r2 <- arm9_ov008::020595ac 
 B ov008@0205951c ov008@020593cc arm9_ov008::020595b4 r3 <- arm9_ov008::020595ac bl 0x020593d8 => 0x20593d8 Ov008_SetupMenuSurfaces
 B ov025@0208cdc4 ov025@0208a5ec arm9_ov025::0208cdd4 r2 <- entry:r2
 B ov025@0208cdc4 ov025@0208a5ec arm9_ov025::0208cdd4 r3 <- entry:r3
-B ov188@020cdde4 ov188@020ce450 - no-call-found
-B ov188@020cdde4 ov188@020ce45c - no-call-found
-B ov189@020cfc04 ov189@020d0270 - no-call-found
-B ov189@020cfc04 ov189@020d027c - no-call-found
-B ov190@020d3844 ov190@020d3eb0 - no-call-found
-B ov190@020d3844 ov190@020d3ebc - no-call-found
 B main@02000bcc ov001@0204cd7c - no-function
 B main@0202223c main@02021980 02022240 r1 <- entry:r1
 B main@02022324 main@02021980 02022326 r1 <- entry:r1
-B main@020223dc main@02021980 - no-call-found
 B main@02022434 main@02021980 02022436 r0 <- entry:r0
 B main@02022434 main@02021980 02022436 r1 <- entry:r1
 B main@02022544 main@02021980 02022548 r1 <- entry:r1
@@ -1254,8 +1196,6 @@ B ov008@0205b770 ov008@0205a8c4 arm9_ov008::0205b7ac r1 <- arm9_ov008::0205b7a4 
 B ov008@0205b770 ov008@0205a8c4 arm9_ov008::0205b7ac r2 <- arm9_ov008::0205b7a4 bl 0x020566f4 => 0x20566f4 Ov008_RebuildQueryList
 B ov008@0205b770 ov008@0205a8c4 arm9_ov008::0205b7ac r3 <- arm9_ov008::0205b7a4 bl 0x020566f4 => 0x20566f4 Ov008_RebuildQueryList
 B ov009@02055618 ov009@02055564 arm9_ov009::0205566c r3 <- arm9_ov009::02055658 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
-B ov019@0207fa40 main@02021980 - no-call-found
-B ov019@0207fcc0 main@02021980 - no-call-found
 B ov023@02084c30 main@02021980 arm9_ov023::02084c34 r1 <- entry:r1
 B ov023@0208617c main@02021980 arm9_ov023::0208617e r1 <- entry:r1
 B ov023@02086190 main@02021980 arm9_ov023::02086192 r1 <- entry:r1
@@ -1372,3 +1312,92 @@ B ov278@020cc630 ov107@020c9ec8 arm9_ov278::020cc644 r1 <- entry:r1
 B ov278@020ce230 ov107@020c9ec8 arm9_ov278::020ce244 r1 <- entry:r1
 B ov280@020d00f4 ov107@020c9ec8 arm9_ov280::020d0104 r1 <- entry:r1
 B ov302@020cc64c ov302@020cc598 arm9_ov302::020cc6a0 r3 <- arm9_ov302::020cc68c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
+A main@0202fec8 0202ff54 r0 <- 0202ff24 mov r0,#0x0 | 0202ff4e blx 0x02014174 => 0x2014174 Tilemap_FillRect
+B ov017@02080dd0 ov017@02080a68 arm9_ov017::02080df4 r0 <- arm9_ov017::02080df0 blx 0x0207679c
+B ov022@0209a4f8 ov022@020aa8e8 - no-call-found
+B ov030@020b3e24 ov030@020b4c50 - no-call-found
+B ov125@020cf7f0 ov107@020c5c54 arm9_ov125::020cf7fc r1 <- entry:r1
+B ov126@020d3430 ov107@020c5c54 arm9_ov126::020d343c r1 <- entry:r1
+B ov166@020ce134 ov107@020c5c54 arm9_ov166::020ce140 r1 <- entry:r1
+B ov167@020d1d74 ov107@020c5c54 arm9_ov167::020d1d80 r1 <- entry:r1
+B ov168@020d59b4 ov107@020c5c54 arm9_ov168::020d59c0 r1 <- entry:r1
+B ov169@020ce168 ov107@020c5c54 arm9_ov169::020ce174 r1 <- entry:r1
+B ov170@020cff88 ov107@020c5c54 arm9_ov170::020cff94 r1 <- entry:r1
+B ov175@020ce1d0 ov107@020c5c54 arm9_ov175::020ce1dc r1 <- entry:r1
+B ov176@020d1e10 ov107@020c5c54 arm9_ov176::020d1e1c r1 <- entry:r1
+B ov177@020d5a50 ov107@020c5c54 arm9_ov177::020d5a5c r1 <- entry:r1
+B ov178@020ce710 ov107@020c5c54 arm9_ov178::020ce718 r1 <- entry:r1
+B ov179@020d4170 ov107@020c5c54 arm9_ov179::020d4178 r1 <- entry:r1
+B ov180@020d5f90 ov107@020c5c54 arm9_ov180::020d5f98 r1 <- entry:r1
+B ov244@020d0c74 ov107@020c5c54 arm9_ov244::020d0c7c r1 <- entry:r1
+B ov277@020d0c0c ov107@020c5c54 arm9_ov277::020d0c14 r1 <- entry:r1
+B ov202@020cbfc8 ov107@020c9440 - no-call-found
+B ov131@020cbfc4 ov131@020cc448 - no-call-found
+B ov131@020cbfc4 ov131@020cc280 - no-call-found
+B ov131@020cbfc4 ov131@020cc25c - no-call-found
+B ov132@020cdde4 ov132@020ce268 - no-call-found
+B ov132@020cdde4 ov132@020ce0a0 - no-call-found
+B ov132@020cdde4 ov132@020ce07c - no-call-found
+B ov133@020d1a24 ov133@020d1ea8 - no-call-found
+B ov133@020d1a24 ov133@020d1ce0 - no-call-found
+B ov133@020d1a24 ov133@020d1cbc - no-call-found
+B ov134@020cbfc4 ov134@020cc2c4 - no-call-found
+B ov134@020cbfc4 ov134@020cc294 - no-call-found
+B ov134@020cbfc4 ov134@020cc5a0 - no-call-found
+B ov134@020cbfc4 ov134@020cc270 - no-call-found
+B ov135@020cfc04 ov135@020cff04 - no-call-found
+B ov135@020cfc04 ov135@020cfed4 - no-call-found
+B ov135@020cfc04 ov135@020d01e0 - no-call-found
+B ov135@020cfc04 ov135@020cfeb0 - no-call-found
+B ov136@020d1a24 ov136@020d1d24 - no-call-found
+B ov136@020d1a24 ov136@020d1cf4 - no-call-found
+B ov136@020d1a24 ov136@020d2000 - no-call-found
+B ov136@020d1a24 ov136@020d1cd0 - no-call-found
+B ov161@020cbfc4 ov161@020cc47c - no-call-found
+B ov161@020cbfc4 ov161@020cc280 - no-call-found
+B ov161@020cbfc4 ov161@020cc25c - no-call-found
+B ov162@020cdde4 ov162@020ce29c - no-call-found
+B ov162@020cdde4 ov162@020ce0a0 - no-call-found
+B ov162@020cdde4 ov162@020ce07c - no-call-found
+B ov163@020cdde4 ov163@020ce0a0 - no-call-found
+B ov163@020cdde4 ov163@020ce280 - no-call-found
+B ov163@020cdde4 ov163@020ce07c - no-call-found
+B ov164@020cfc04 ov164@020cfec0 - no-call-found
+B ov164@020cfc04 ov164@020d00a0 - no-call-found
+B ov164@020cfc04 ov164@020cfe9c - no-call-found
+B ov165@020d1a24 ov165@020d1ce0 - no-call-found
+B ov165@020d1a24 ov165@020d1ec0 - no-call-found
+B ov165@020d1a24 ov165@020d1cbc - no-call-found
+B ov188@020cdde4 ov188@020ce64c - no-call-found
+B ov188@020cdde4 ov188@020ce254 - no-call-found
+B ov188@020cdde4 ov188@020ce230 - no-call-found
+B ov189@020cfc04 ov189@020d046c - no-call-found
+B ov189@020cfc04 ov189@020d0074 - no-call-found
+B ov189@020cfc04 ov189@020d0050 - no-call-found
+B ov190@020d3844 ov190@020d40ac - no-call-found
+B ov190@020d3844 ov190@020d3cb4 - no-call-found
+B ov190@020d3844 ov190@020d3c90 - no-call-found
+B ov202@020cbfc8 ov202@020cc284 - no-call-found
+B ov202@020cbfc8 ov202@020cc44c - no-call-found
+B ov202@020cbfc8 ov202@020cc260 - no-call-found
+B ov203@020d3848 ov203@020d3b04 - no-call-found
+B ov203@020d3848 ov203@020d3ccc - no-call-found
+B ov203@020d3848 ov203@020d3ae0 - no-call-found
+B ov285@020d1a24 ov285@020d1b80 - no-call-found
+B ov285@020d1a24 ov285@020d1bdc - no-call-found
+B ov285@020d1a24 ov285@020d1c48 - no-call-found
+B ov286@020d3844 ov286@020d39a0 - no-call-found
+B ov286@020d3844 ov286@020d39fc - no-call-found
+B ov286@020d3844 ov286@020d3a68 - no-call-found
+B ov293@020d1a24 ov293@020d1ce0 - no-call-found
+B ov293@020d1a24 ov293@020d1ef0 - no-call-found
+B ov293@020d1a24 ov293@020d1cbc - no-call-found
+B main@020223dc main@02021980 - no-call-found
+B ov019@0207fa40 main@02021980 - no-call-found
+B ov019@0207fcc0 main@02021980 - no-call-found
+B ov188@020cdde4 ov188@020ce450 - no-call-found
+B ov188@020cdde4 ov188@020ce45c - no-call-found
+B ov189@020cfc04 ov189@020d0270 - no-call-found
+B ov189@020cfc04 ov189@020d027c - no-call-found
+B ov190@020d3844 ov190@020d3eb0 - no-call-found
+B ov190@020d3844 ov190@020d3ebc - no-call-found
