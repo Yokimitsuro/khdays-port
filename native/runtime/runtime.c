@@ -54,9 +54,42 @@ int khdays_runtime_init(int argc, char **argv)
     return 1;
 }
 
+static int in_main_ram(u32 p)
+{
+    return p >= 0x02000000u && p < 0x02400000u;
+}
+
+/* KHDAYS_TRACE_PLAYER: the local player's position every 30 frames, for
+ * scripts that walk. The field keeps its players' actors in the table at
+ * *(data_ov022_020b2e78 + 4), 0xc bytes an entry, the actor at the entry's
+ * +4, then +0x20 (GetEntryField20ByIndex); the position is the actor's
+ * +0x48c (func_ov022_020881f8), fx32 (1.0 = 0x1000). */
+static void trace_player(u32 frame)
+{
+    static int trace = -1;
+    u32 base, entry, actor;
+    if (trace < 0) {
+        trace = getenv("KHDAYS_TRACE_PLAYER") != NULL;
+    }
+    if (!trace || frame % 30 != 0) {
+        return;
+    }
+    base = *(const volatile u32 *)0x020b2e7c;
+    for (u32 i = 0; i < 8 && in_main_ram(base); ++i) {
+        entry = *(const volatile u32 *)(base + i * 0xc + 4);
+        actor = in_main_ram(entry) ? *(const volatile u32 *)(entry + 0x20) : 0;
+        if (in_main_ram(actor)) {
+            const volatile s32 *pos = (const volatile s32 *)(actor + 0x48c);
+            fprintf(stderr, "player: frame %u, entry %u, actor %08x at (%.2f, %.2f, %.2f)\n", frame, i,
+                    actor, pos[0] / 4096.0, pos[1] / 4096.0, pos[2] / 4096.0);
+        }
+    }
+}
+
 void khdays_host_frame(void)
 {
     const u32 frame = khdays_events_vblank_count();
+    trace_player(frame);
     if (frame % 60 == 0) {
         khdays_arm_report();
         /* the scene controller (0x0204bda8: object, table entry, current id,
