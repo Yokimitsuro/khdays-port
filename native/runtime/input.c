@@ -121,24 +121,38 @@ void khdays_input_init(void)
     free(copy);
 }
 
-void khdays_input_update_ran(u32 update)
+/* The anchors begin in the order the script gives them: the first that has
+ * not begun is the only one that can (a second `s2` is the scene's second
+ * start, not the first again). */
+static Anchor *next_anchor(void)
 {
     for (int i = 0; i < anchor_count; ++i) {
-        if (anchors[i].type == 'u' && anchors[i].value == update && anchors[i].start == 0) {
-            anchors[i].start = last_frame + 1;
+        if (anchors[i].start == 0) {
+            return &anchors[i];
         }
+    }
+    return NULL;
+}
+
+void khdays_input_update_ran(u32 update)
+{
+    Anchor *a = next_anchor();
+    if (a != NULL && a->type == 'u' && a->value == update) {
+        a->start = last_frame + 1;
     }
 }
 
 void khdays_input_frame(u32 frame)
 {
+    static u32 previous_scene = 0xffffffffu;
     const u32 scene = SCENE_CURRENT;
+    Anchor *a = next_anchor();
     last_frame = frame;
-    for (int i = 0; i < anchor_count; ++i) {
-        if (anchors[i].type == 's' && anchors[i].value == scene && anchors[i].start == 0) {
-            anchors[i].start = frame + 1;
-        }
+    /* a scene's start: the frame its id becomes current */
+    if (a != NULL && a->type == 's' && a->value == scene && previous_scene != scene) {
+        a->start = frame + 1;
     }
+    previous_scene = scene;
     while (script_next < script_len) {
         const Step *s = &script[script_next];
         if (s->anchor < 0 ? s->frame > frame
