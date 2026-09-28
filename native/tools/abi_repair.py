@@ -412,6 +412,101 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     return {rel: apply_edits(texts[rel], e) for rel, e in edits.items()}, report
 
 
+NARROW_TYPE = re.compile(r"^(?:u8|s8|u16|s16|(?:unsigned\s+|signed\s+)?char|(?:unsigned\s+|signed\s+)?short(?:\s+int)?)$")
+PROTOTYPE = re.compile(r"^[ \t]*(?:extern\s+)?[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\(([^;{}()]*)\)\s*;", re.MULTILINE)
+
+
+def param_type(param: str) -> str:
+    """The type of a parameter without its name and qualifiers ('ptr' for
+    pointers, arrays and functions)."""
+    p = re.sub(r"\b(?:const|volatile|register)\b", " ", param)
+    p = re.sub(r"\s+", " ", p).strip()
+    if any(c in p for c in "*[("):
+        return "ptr"
+    name = param_name(p)
+    return p[:-len(name)].strip() if name and p.endswith(name) and p != name else p
+
+
+def argument_spans(text: str, mask: bytearray, open_paren: int, close: int) -> list[tuple[int, int]]:
+    """(start, end) of each argument of the call whose parentheses are at
+    open_paren and close, surrounding blanks left out."""
+    spans, depth, start = [], 0, open_paren + 1
+    for i in range(open_paren + 1, close + 1):
+        c = text[i]
+        if not mask[i] and i != close:
+            continue
+        if c in "([{" and i != close:
+            depth += 1
+        elif c in ")]}" and i != close:
+            depth -= 1
+        elif (c == "," and depth == 0) or i == close:
+            s, e = start, i
+            while s < e and text[s].isspace():
+                s += 1
+            while e > s and text[e - 1].isspace():
+                e -= 1
+            if e > s:
+                spans.append((s, e))
+            start = i + 1
+    return spans
+
+
+def widen_narrow_params(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Prototypes declaring a parameter narrower (char, short) than the
+    definition takes it. The ARM caller converts the argument to the narrow
+    type and passes it extended in its register, which the definition reads
+    whole; an x86 caller defines only the narrow part of the stack slot (an
+    optimizing MSVC leaves the rest as it was). Such a prototype takes an int
+    there, and each call in its file converts the argument to the narrow type
+    itself: the same value, extended."""
+    definitions: dict[str, list[str]] = {}
+    for rel, text in texts.items():
+        for m in re.finditer(r"^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\(([^;{}]*)\)\s*\{", text, re.MULTILINE):
+            if m[1] not in definitions and m[1] not in NOT_TYPES + ("if", "while", "for", "switch"):
+                definitions[m[1]] = [param_type(p) for p in split_top_level(m[2])
+                                     if p.strip() not in ("", "void")]
+    out: dict[str, str] = {}
+    report = []
+    for rel, text in texts.items():
+        mask = None
+        narrow: dict[str, dict[int, str]] = {}
+        for m in PROTOTYPE.finditer(text):
+            defined = definitions.get(m[1])
+            if defined is None:
+                continue
+            params = [p for p in split_top_level(m[2]) if p.strip() not in ("", "void")]
+            for k, p in enumerate(params):
+                t = param_type(p)
+                if k < len(defined) and NARROW_TYPE.match(t) and not NARROW_TYPE.match(defined[k]):
+                    narrow.setdefault(m[1], {})[k] = t
+        if not narrow:
+            continue
+        mask = code_mask(text)
+        edits: list[tuple[int, int, str]] = []
+        for name, ks in narrow.items():
+            prototypes = declarations(text, mask, name)
+            for _, open_paren, close in prototypes:
+                for k, (s, e) in enumerate(argument_spans(text, mask, open_paren, close)):
+                    if k in ks:
+                        pname = param_name(text[s:e])
+                        edits.append((s, e, "int" + (f" {pname}" if pname else "")))
+            calls = 0
+            not_calls = {open_paren for _, open_paren, _ in prototypes}
+            for start, close in call_sites(text, mask, name, (0, len(text))):
+                open_paren = text.find("(", start)
+                if open_paren in not_calls:
+                    continue  # `extern T *f(...);` has no word before the name
+                for k, (s, e) in enumerate(argument_spans(text, mask, open_paren, close)):
+                    if k in ks:
+                        edits.append((s, s, f"({ks[k]})("))
+                        edits.append((e, e, ")"))
+                calls += 1
+            report.append(f"{name} in {rel}: " + ", ".join(f"argument {k} {t}" for k, t in sorted(ks.items()))
+                          + f" ({calls} call(s))")
+        out[rel] = apply_edits(text, edits)
+    return out, report
+
+
 # --- Repairs ---------------------------------------------------------------------------
 
 

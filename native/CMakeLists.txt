@@ -19,6 +19,10 @@ include("${KHDAYS_GEN}/sources.cmake")
 
 set(DECOMP "${CMAKE_CURRENT_SOURCE_DIR}/../external/khdays-decomp")
 
+# Optimized code keeps its frame pointers: the crash and stall reports walk
+# the stack by them (diag.c).
+add_compile_options($<$<AND:$<CONFIG:Release>,$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>>:/Oy->)
+
 # The window: SDL3, static, the same release the port uses (../CMakeLists.txt).
 include(FetchContent)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -57,10 +61,15 @@ target_compile_definitions(khdays-decomp PRIVATE
     main=khdays_NitroMain       # the game's main; the process has its own
     # The game's C library (libs/msl) defines these C runtime names; renamed,
     # the game keeps its own and the rest of the process (SDL) the CRT's.
+    # (Also what an optimizing build would otherwise take for its intrinsics:
+    # it refuses a definition of strcmp or strcpy, and crashed on a call.)
+    strcmp=khdays_msl_strcmp
+    strcpy=khdays_msl_strcpy
     strlen=khdays_msl_strlen
     strncmp=khdays_msl_strncmp
     strncpy=khdays_msl_strncpy
     strtol=khdays_msl_strtol
+    toupper=khdays_msl_toupper
     abs=khdays_msl_abs
     _CRT_SECURE_NO_WARNINGS)
 target_compile_options(khdays-decomp PRIVATE

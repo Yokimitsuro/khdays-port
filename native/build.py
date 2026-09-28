@@ -5,6 +5,8 @@
 
 Runs prepare.py, then configures native/CMakeLists.txt for x86 with Ninja inside
 the Visual Studio x86 environment, then builds. Output: build/native/obj/khdays-native.exe
+(Release: build/native/obj-release/, so the two configurations do not rebuild
+each other).
 """
 from __future__ import annotations
 
@@ -56,14 +58,15 @@ def main() -> int:
     subprocess.run([sys.executable, str(ROOT / "native" / "tools" / "prepare.py"),
                     "--out", str(GEN)], check=True)
     env = msvc_env()
-    configure = ["cmake", "-S", str(ROOT / "native"), "-B", str(OBJ), "-G", "Ninja",
+    obj = OBJ if args.config == "Debug" else OBJ.with_name("obj-release")
+    configure = ["cmake", "-S", str(ROOT / "native"), "-B", str(obj), "-G", "Ninja",
                  f"-DCMAKE_BUILD_TYPE={args.config}", f"-DKHDAYS_GEN={GEN}",
                  "-DCMAKE_C_COMPILER=cl", "-DCMAKE_CXX_COMPILER=cl"]
     sdl = ROOT / "build" / "_deps" / "sdl3-src"
     if (sdl / "CMakeLists.txt").exists():  # the port's download of the same release
         configure.append(f"-DFETCHCONTENT_SOURCE_DIR_SDL3={sdl}")
     run(configure, env)
-    build = ["cmake", "--build", str(OBJ)]
+    build = ["cmake", "--build", str(obj)]
     if args.jobs:
         build += ["--parallel", str(args.jobs)]
     run(build + ["--", "-k", "0"], env)  # report every failing file at once

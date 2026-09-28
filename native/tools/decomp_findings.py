@@ -11,6 +11,7 @@ native/tools/prepare.py first (the ABI lists come from its output).
              which of them the decomp's C names
   repairs    calls the native build rewrites from the ROM (abi_repairs.txt)
   gaps       calls it cannot rewrite mechanically (abi_gaps.txt)
+  narrowparams  parameters declared narrower than defined (abi_narrow_params.txt)
 
 Only `revision` is required; the others are filled where the document has
 them.
@@ -75,6 +76,23 @@ def ambiguous_rows() -> list[str]:
             "|---|---|---|---|---|"] + rows
 
 
+def narrow_params() -> list[str]:
+    """The functions some file declares with a parameter narrower than the
+    definition takes it (abi_narrow_params.txt), and the files that do."""
+    spelled = {"unsigned char": "u8", "signed char": "s8", "char": "s8", "unsigned short": "u16",
+               "unsigned short int": "u16", "short": "s16", "signed short": "s16", "short int": "s16"}
+    args: dict[str, set[str]] = collections.defaultdict(set)
+    files: dict[str, set[str]] = collections.defaultdict(set)
+    for line in (GEN / "abi_narrow_params.txt").read_text(encoding="utf-8").splitlines():
+        m = re.match(r"(\w+) in (\S+): (.*) \(\d+ call", line)
+        if m:
+            for a in re.finditer(r"argument (\d+) ([\w ]+?)(?:,|$)", m[3]):
+                args[m[1]].add(f"argument {a[1]} as {spelled.get(a[2].strip(), a[2].strip())}")
+            files[m[1]].add(Path(m[2]).stem)
+    return [f"- `{name}` ({', '.join(sorted(args[name]))}): {', '.join(f'`{f}`' for f in sorted(fs))}"
+            for name, fs in sorted(files.items())]
+
+
 def listing(path: Path) -> list[str]:
     lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
     return ["```"] + lines + ["```"]
@@ -91,6 +109,7 @@ def main() -> int:
         "ambiguous": ambiguous_rows(),
         "repairs": listing(GEN / "abi_repairs.txt"),
         "gaps": listing(GEN / "abi_gaps.txt"),
+        "narrowparams": narrow_params(),
     }
     text = DOC.read_text(encoding="utf-8")
     filled = []
@@ -104,8 +123,10 @@ def main() -> int:
         text = pattern.sub(lambda m: m[1] + "\n".join(lines) + "\n" + m[2], text)
         filled.append(name)
     DOC.write_text(text, encoding="utf-8", newline="\n")
-    counts = {"ambiguous": "ambiguous references", "repairs": "repairs", "gaps": "gaps"}
-    print(f"{DOC}: " + ", ".join(f"{len(sections[n]) - 2} {counts[n]}" for n in filled if n in counts))
+    counts = {"ambiguous": "ambiguous references", "repairs": "repairs", "gaps": "gaps",
+              "narrowparams": "narrowly declared parameters"}
+    size = {n: len(sections[n]) - (0 if n == "narrowparams" else 2) for n in filled}  # table/fence lines
+    print(f"{DOC}: " + ", ".join(f"{size[n]} {counts[n]}" for n in filled if n in counts))
     return 0
 
 

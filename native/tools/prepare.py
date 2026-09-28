@@ -900,11 +900,15 @@ def main() -> int:
     padded_texts, padded = abi_repair.pad_short_calls(texts)
     texts.update(padded_texts)
     (out / "abi_padded.txt").write_text("\n".join(padded) + "\n", encoding="utf-8")
+    # Parameters declared narrower than defined: the calls pass them extended.
+    widened_texts, widened = abi_repair.widen_narrow_params(texts)
+    texts.update(widened_texts)
+    (out / "abi_narrow_params.txt").write_text("\n".join(widened) + "\n", encoding="utf-8")
     (out / "abi_repairs.txt").write_text("\n".join(repairer.plan.applied) + "\n", encoding="utf-8")
     (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
     abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
                    f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt), {len(padded)} short calls padded "
-                   "(abi_padded.txt)")
+                   f"(abi_padded.txt), {len(widened)} narrow parameters widened (abi_narrow_params.txt)")
 
     # References to an address several overlays share (the decomp's relocs
     # name them all: module:overlays(a,b)). On the DS the one loaded there at
