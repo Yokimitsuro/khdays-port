@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include <psapi.h>
 
 #define MAIN_RAM_SIZE 0x400000u
 #define DTCM_BASE     0x027e0000u
@@ -28,8 +29,26 @@
 
 static int fail(const char *what, unsigned address)
 {
+    MEMORY_BASIC_INFORMATION info;
     fprintf(stderr, "memory map: %s at 0x%08x failed (error %lu)\n", what, address,
             GetLastError());
+    /* what holds the range already */
+    for (unsigned at = 0x00010000u; at < address + 0x01000000u; at = (unsigned)info.BaseAddress + info.RegionSize) {
+        char module[MAX_PATH] = "";
+        if (VirtualQuery((const void *)at, &info, sizeof(info)) == 0) {
+            break;
+        }
+        if (info.State != MEM_FREE) {
+            if (info.Type == MEM_MAPPED) {
+                K32GetMappedFileNameA(GetCurrentProcess(), info.BaseAddress, module, sizeof(module));
+            } else {
+                GetModuleFileNameA((HMODULE)info.AllocationBase, module, sizeof(module));
+            }
+            fprintf(stderr, "  0x%08x-0x%08x taken (allocation 0x%08x, type 0x%lx) %s\n",
+                    (unsigned)info.BaseAddress, (unsigned)info.BaseAddress + (unsigned)info.RegionSize,
+                    (unsigned)info.AllocationBase, info.Type, module);
+        }
+    }
     return 0;
 }
 

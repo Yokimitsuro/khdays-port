@@ -2,6 +2,8 @@
 #include "clock.h"
 #include "io.h"
 #include "arm7.h"
+#include "display.h"
+#include "input.h"
 
 static u64 last_update;
 static u64 next_vblank = KHDAYS_VBLANK_LINE * KHDAYS_CYCLES_PER_LINE;
@@ -24,6 +26,12 @@ void khdays_events_update(void)
     const u64 now = khdays_clock_cycles();
     khdays_timers_update(last_update, now);
     while (now >= next_vblank) {
+        /* VBlank begins: the frame the game prepared is done (only the last
+         * one when several passed at once), then the input for the next. */
+        if (now < next_vblank + KHDAYS_CYCLES_PER_FRAME) {
+            khdays_display_vblank(vblank_count);
+        }
+        khdays_input_frame(vblank_count + 1);
         if (IO16(0x004) & 0x0008) {  /* DISPSTAT: VBlank IRQ enabled */
             khdays_io_request_irq(1u << 0);
         }

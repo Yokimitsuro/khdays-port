@@ -71,10 +71,12 @@ static void autoload(void)
 
 int main(int argc, char **argv)
 {
-    khdays_diag_init();
+    /* First: the DS's address ranges must be claimed before anything else
+     * (the symbol handler, SDL) allocates there. */
     if (!khdays_memory_map()) {
         return 1;
     }
+    khdays_diag_init();
     if (!khdays_runtime_init(argc, argv)) {
         return 1;
     }

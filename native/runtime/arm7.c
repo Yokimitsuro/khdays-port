@@ -1,4 +1,5 @@
 #include "arm7.h"
+#include "input.h"
 #include "io.h"
 
 #include <stdio.h>
@@ -123,7 +124,7 @@ static void tp_sample(void)
 {
     int x, y;
     u32 sample = 0;
-    if (khdays_host_touch(&x, &y)) {
+    if (khdays_input_touch(&x, &y)) {
         sample = (u32)(x * 16 + 8) | (u32)(y * 16 + 8) << 12 | 1u << 24;
     }
     TP_BUF[0] = (u16)sample;
@@ -166,6 +167,7 @@ static void tp_service(u32 data, u32 err)
  * command 0x10. */
 void khdays_arm7_frame(void)
 {
+    *(volatile u16 *)0x027fffa8 = khdays_input_xy();
     for (u32 i = 0; i < tp_auto_frequency; ++i) {
         tp_sample();
         reply(TAG_TP, 0x10u << 8, 0);
@@ -346,6 +348,7 @@ void khdays_arm7_reset(void)
     sync_nibble = 0;
     recv_head = recv_count = 0;
     ARM7_HANDLE_CHECKER = 0;
+    *(volatile u16 *)0x027fffa8 = khdays_input_xy();  /* X, Y, hinge */
     for (u32 tag = 0; tag < 32; ++tag) {
         if (services[tag] != NULL) {
             ARM7_HANDLE_CHECKER |= 1u << tag;

@@ -1,0 +1,129 @@
+/* The frame the DS shows is drawn line by line while the game prepares the
+ * next one; natively the game's frame work finishes long before the display
+ * would have, so the whole frame is drawn at once when VBlank begins -- from
+ * the registers, VRAM, palettes and OAM as the game left them for it, before
+ * the VBlank interrupt and VBlank DMA change them for the next frame. */
+#include "display.h"
+#include "../gpu/gpu2d.h"
+#include "../host/host.h"
+#include "io.h"
+#include "vram.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <windows.h>
+
+#define PIXELS (KHDAYS_SCREEN_W * KHDAYS_SCREEN_H)
+
+static uint32_t screens[2][PIXELS];  /* engine A, engine B */
+static KhdaysGpu2dState states[2];
+
+static u32 *shots;
+static int shot_count;
+static const char *shot_dir;
+
+void khdays_display_init(void)
+{
+    const char *text = getenv("KHDAYS_SHOTS");
+    shot_dir = getenv("KHDAYS_SHOT_DIR");
+    if (shot_dir == NULL) {
+        shot_dir = "shots";
+    }
+    if (text != NULL) {
+        const char *p = text;
+        shots = (u32 *)calloc(strlen(text) + 1, sizeof(u32));
+        while (*p) {
+            char *end;
+            const unsigned long frame = strtoul(p, &end, 10);
+            if (end == p) {
+                ++p;
+                continue;
+            }
+            shots[shot_count++] = (u32)frame;
+            p = end;
+        }
+        CreateDirectoryA(shot_dir, NULL);
+    }
+}
+
+static void put16(FILE *f, unsigned v)
+{
+    fputc((int)(v & 0xff), f);
+    fputc((int)(v >> 8), f);
+}
+
+static void put32(FILE *f, unsigned v)
+{
+    put16(f, v & 0xffff);
+    put16(f, v >> 16);
+}
+
+/* Both screens, upper above lower, as a 24-bit BMP. */
+static void save_shot(u32 frame, const uint32_t *upper, const uint32_t *lower)
+{
+    char path[MAX_PATH];
+    FILE *f;
+    const unsigned w = KHDAYS_SCREEN_W, h = 2 * KHDAYS_SCREEN_H;
+    snprintf(path, sizeof(path), "%s/frame_%05u.bmp", shot_dir, frame);
+    if (fopen_s(&f, path, "wb") != 0) {
+        fprintf(stderr, "display: cannot write %s\n", path);
+        return;
+    }
+    fputc('B', f);
+    fputc('M', f);
+    put32(f, 54 + w * h * 3);
+    put32(f, 0);
+    put32(f, 54);
+    put32(f, 40);
+    put32(f, w);
+    put32(f, h);
+    put16(f, 1);
+    put16(f, 24);
+    put32(f, 0);
+    put32(f, w * h * 3);
+    put32(f, 2835);
+    put32(f, 2835);
+    put32(f, 0);
+    put32(f, 0);
+    for (int y = (int)h - 1; y >= 0; --y) {  /* bottom-up */
+        const uint32_t *row = y < KHDAYS_SCREEN_H ? upper + y * w : lower + (y - KHDAYS_SCREEN_H) * w;
+        for (unsigned x = 0; x < w; ++x) {
+            fputc((int)(row[x] & 0xff), f);
+            fputc((int)((row[x] >> 8) & 0xff), f);
+            fputc((int)((row[x] >> 16) & 0xff), f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "display: frame %u saved to %s\n", frame, path);
+}
+
+void khdays_display_vblank(u32 frame)
+{
+    KhdaysGpuInput in;
+    const uint32_t *upper, *lower;
+    memset(&in, 0, sizeof(in));
+    in.io = khdays_io_host;
+    in.palette = (const u8 *)0x05000000;
+    in.oam = (const u8 *)0x07000000;
+    in.vram = khdays_vram_pages();
+    for (int bank = 0; bank < 4; ++bank) {
+        in.bank[bank] = khdays_vram_bank(bank);
+    }
+    khdays_gpu2d_frame(&in, &states[0], 0, screens[0], NULL);
+    khdays_gpu2d_frame(&in, &states[1], 1, screens[1], NULL);
+    /* POWCNT1 bit 15: 1 = engine A on the upper screen */
+    if (IO16(0x304) & 0x8000) {
+        upper = screens[0];
+        lower = screens[1];
+    } else {
+        upper = screens[1];
+        lower = screens[0];
+    }
+    khdays_host_present(upper, lower);
+    for (int n = 0; n < shot_count; ++n) {
+        if (shots[n] == frame) {
+            save_shot(frame, upper, lower);
+        }
+    }
+}

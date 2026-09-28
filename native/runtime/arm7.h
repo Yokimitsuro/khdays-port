@@ -26,8 +26,4 @@ void khdays_arm7_send_clear(void);
 /* Once a frame (VBlank): what the ARM7 does periodically. */
 void khdays_arm7_frame(void);
 
-/* The host's touch on the bottom screen, in pixels; 0 when not touched
- * (runtime.c). */
-int khdays_host_touch(int *x, int *y);
-
 #endif

@@ -1,7 +1,10 @@
 /* Host-side services the HAL calls into. */
 #include "../hal/hal.h"
+#include "../host/host.h"
 #include "clock.h"
+#include "display.h"
 #include "events.h"
+#include "input.h"
 #include "io.h"
 #include "rom.h"
 #include "runtime.h"
@@ -32,19 +35,17 @@ int khdays_runtime_init(int argc, char **argv)
     if (!khdays_rom_init()) {
         return 0;
     }
+    khdays_input_init();
+    khdays_display_init();
+    if (!khdays_host_start()) {
+        return 0;
+    }
     khdays_boot_environment();
     khdays_io_reset();
     khdays_io_trap_init();
     khdays_threads_init();
     khdays_clock_init();
     return 1;
-}
-
-/* No window yet: nothing touches the screen. */
-int khdays_host_touch(int *x, int *y)
-{
-    *x = *y = 0;
-    return 0;
 }
 
 void khdays_host_frame(void)

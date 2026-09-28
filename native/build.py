@@ -56,9 +56,13 @@ def main() -> int:
     subprocess.run([sys.executable, str(ROOT / "native" / "tools" / "prepare.py"),
                     "--out", str(GEN)], check=True)
     env = msvc_env()
-    run(["cmake", "-S", str(ROOT / "native"), "-B", str(OBJ), "-G", "Ninja",
-         f"-DCMAKE_BUILD_TYPE={args.config}", f"-DKHDAYS_GEN={GEN}",
-         "-DCMAKE_C_COMPILER=cl", "-DCMAKE_CXX_COMPILER=cl"], env)
+    configure = ["cmake", "-S", str(ROOT / "native"), "-B", str(OBJ), "-G", "Ninja",
+                 f"-DCMAKE_BUILD_TYPE={args.config}", f"-DKHDAYS_GEN={GEN}",
+                 "-DCMAKE_C_COMPILER=cl", "-DCMAKE_CXX_COMPILER=cl"]
+    sdl = ROOT / "build" / "_deps" / "sdl3-src"
+    if (sdl / "CMakeLists.txt").exists():  # the port's download of the same release
+        configure.append(f"-DFETCHCONTENT_SOURCE_DIR_SDL3={sdl}")
+    run(configure, env)
     build = ["cmake", "--build", str(OBJ)]
     if args.jobs:
         build += ["--parallel", str(args.jobs)]

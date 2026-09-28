@@ -9,6 +9,8 @@
 #include "card.h"
 #include "clock.h"
 #include "events.h"
+#include "input.h"
+#include "vram.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -326,6 +328,7 @@ void khdays_io_reset(void)
     IO16(0x130) = 0x03ff;  /* KEYINPUT: active low, nothing held */
     IO16(0x184) = 0x0101;  /* IPCFIFOCNT: both FIFOs empty */
     IO8(0x300) = 0x01;     /* POSTFLG: the firmware finished booting */
+    khdays_vram_reset();
     khdays_arm7_reset();
 }
 
@@ -365,6 +368,9 @@ void khdays_io_read(u32 address, int size)
         if ((division_unmodelled & (1u << word)) && overlaps(offset, size, 0x2a0 + 4 * word, 4)) {
             unimplemented("a division result word GBATEK leaves undefined", address);
         }
+    }
+    if (overlaps(offset, size, 0x130, 2)) {
+        IO16(0x130) = khdays_input_keyinput();
     }
     if (overlaps(offset, size, 0x180, 2)) {
         IO16(0x180) = (u16)((IO16(0x180) & ~0xfu) | khdays_arm7_sync_nibble());
@@ -442,6 +448,9 @@ void khdays_io_write(u32 address, int size, const u8 *before)
     }
     if (overlaps(offset, size, 0x1a7, 1) && (IO32(0x1a4) & 0x80000000u)) {
         khdays_card_start();  /* ROMCTRL written with its start bit */
+    }
+    if (overlaps(offset, size, 0x240, 7) || overlaps(offset, size, 0x248, 2)) {
+        khdays_vram_control_written();  /* VRAMCNT_A-G, H, I (0x247 is WRAMCNT) */
     }
     if (overlaps(offset, size, 0x280, 0x20)) {
         divide();

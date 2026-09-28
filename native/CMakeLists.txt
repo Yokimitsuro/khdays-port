@@ -19,6 +19,27 @@ include("${KHDAYS_GEN}/sources.cmake")
 
 set(DECOMP "${CMAKE_CURRENT_SOURCE_DIR}/../external/khdays-decomp")
 
+# The window: SDL3, static, the same release the port uses (../CMakeLists.txt).
+include(FetchContent)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    SDL3
+    URL
+        https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz
+    URL_HASH
+        SHA256=f07b958a9ac5020fb7a44cadb957f658b2149c3c8abb4f63145fac9303249db7
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(SDL3)
+
+# The 2D display engines, pure (they read the state they are given), shared
+# by the game and the savestate test.
+add_library(khdays-gpu STATIC gpu/gpu2d.c gpu/vram_map.c)
+target_compile_options(khdays-gpu PRIVATE /W4 /std:c17)
+
 # The game: every source the DS build links, compiled as the decomp wrote it.
 # mwcc ran with -lang c99 -char signed -enum int; MSVC's char is signed and its
 # enums are int already.
@@ -28,6 +49,12 @@ target_include_directories(khdays-decomp PRIVATE
     "${DECOMP}/src/overlays/ov028/dsprot")
 target_compile_definitions(khdays-decomp PRIVATE
     main=khdays_NitroMain       # the game's main; the process has its own
+    # The game's C library (libs/msl) defines these C runtime names; renamed,
+    # the game keeps its own and the rest of the process (SDL) the CRT's.
+    strlen=khdays_msl_strlen
+    strncmp=khdays_msl_strncmp
+    strncpy=khdays_msl_strncpy
+    abs=khdays_msl_abs
     _CRT_SECURE_NO_WARNINGS)
 target_compile_options(khdays-decomp PRIVATE
     /W0
@@ -56,13 +83,17 @@ add_executable(khdays-native
     runtime/data_init.c
     runtime/clock.c
     runtime/diag.c
+    runtime/display.c
     runtime/events.c
+    runtime/input.c
     runtime/io_regs.c
     runtime/io_trap.c
     runtime/memory.c
     runtime/rom.cpp
     runtime/runtime.c
     runtime/start.c
+    runtime/vram.c
+    host/window.c
     "${KHDAYS_GEN}/absolute.asm"
     ../src/vfs/filesystem.cpp)  # the port's VFS: files and mods
 target_include_directories(khdays-native PRIVATE ../include)
@@ -70,7 +101,14 @@ target_compile_options(khdays-native PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 
-target_link_libraries(khdays-native PRIVATE dbghelp winmm)
+target_link_libraries(khdays-native PRIVATE khdays-gpu SDL3::SDL3 dbghelp winmm delayimp)
+# The DS's address ranges are claimed first thing in main (memory.c). DLLs
+# loaded with the process could take them first: user32 maps the 20 MB
+# desktop heap at the lowest free address, right over main RAM. So SDL's
+# system DLLs (and everything that pulls in user32) load on first use.
+foreach(dll user32 gdi32 imm32 ole32 oleaut32 version setupapi shell32 winmm dbghelp)
+    target_link_options(khdays-native PRIVATE /DELAYLOAD:${dll}.dll)
+endforeach()
 
 # Aliases for symbols the DS build gave two names (prepare.py).
 file(STRINGS "${KHDAYS_GEN}/alternatenames.txt" KHDAYS_ALTERNATENAMES)
@@ -81,3 +119,9 @@ target_link_options(khdays-native PRIVATE
     /SAFESEH:NO                 # absolute.asm carries no exception handlers
     /LARGEADDRESSAWARE
     /DYNAMICBASE:NO)            # a fixed image, clear of the DS address range
+
+# Renders a DeSmuME savestate's display state and compares it with what
+# DeSmuME showed (native/tools/savestate_gpu.py extracts the input).
+add_executable(khdays-gpu-test gpu/savestate_test.c)
+target_link_libraries(khdays-gpu-test PRIVATE khdays-gpu)
+target_compile_options(khdays-gpu-test PRIVATE /W4 /std:c17)
