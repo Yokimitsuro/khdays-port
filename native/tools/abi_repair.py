@@ -150,15 +150,20 @@ def matching(text: str, mask: bytearray, open_index: int) -> int:
     return len(text)
 
 
+EXTERN_C_OPEN = re.compile(r'\bextern\s*"C"\s*$')
+
+
 def depth_at(text: str, mask: bytearray, index: int) -> int:
-    depth = 0
+    """Brace depth at index; an `extern "C" {` block does not count (C++
+    sources wrap their C definitions in one)."""
+    counted: list[bool] = []
     for i in range(index):
         if mask[i]:
             if text[i] == "{":
-                depth += 1
-            elif text[i] == "}":
-                depth -= 1
-    return depth
+                counted.append(not EXTERN_C_OPEN.search(text[max(0, i - 16):i]))
+            elif text[i] == "}" and counted:
+                counted.pop()
+    return sum(counted)
 
 
 @dataclass
