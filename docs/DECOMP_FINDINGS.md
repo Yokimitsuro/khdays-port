@@ -710,7 +710,6 @@ Ov023_ScriptCmd_SetGateFlagWithSound takes 2 parameters (its own r1..r1 pass thr
 Ov023_VmTickActor takes 2 parameters (its own r1..r1 pass through)
 Ov024_CmdPrepareStream takes 2 parameters (its own r1..r1 pass through)
 Ov024_CmdSetStreamByte takes 2 parameters (its own r1..r1 pass through)
-Ov024_MobiClip_DecodeAudioEntryChecked_3 takes 3 parameters (its own r1..r2 pass through)
 Ov024_MobiClip_DecodeAudioEntryChecked_5 takes 2 parameters (its own r1..r1 pass through)
 Ov025_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov025_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
@@ -863,7 +862,6 @@ Ov009_QueryFieldBySelector called from Ov009_InitObjectWithList without what the
 Ov011_BlitTileRow called from Ov011_StepPaneScroll without what the ROM passes (argument 5: stack)
 Ov011_TickLayoutAnimator called from Ov011_TickTitleMenu without what the ROM passes (argument 0: arm9_ov011::0205cc00 mvneq r0,#0x1)
 func_02023ad0 called from Ov023_RebuildSubObject without what the ROM passes (argument 0: arm9_ov023::02084034 ldr r0,[r1,r0])
-Ov024_MobiClip_BlitFrame called from Ov024_MobiClip_DecodeAudioEntryChecked_3 without what the ROM passes (argument 3: arm9_ov024::02085068 ldmiaeq sp!,{r3,pc})
 SetMasterBrightnessMain called from Ov024_MobiClip_UpdatePlayback without what the ROM passes (argument 0: arm9_ov024::02083084 bl 0x0201e428 => 0x201e428 LoadGlobalS8_027e0084; arm9_ov024::0208319c bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_)
 SetMasterBrightnessSub called from Ov024_MobiClip_UpdatePlayback without what the ROM passes (argument 0: arm9_ov024::0208308c bl 0x0201e438 => 0x201e438 LoadGlobalS8At1_027e0084; arm9_ov024::020831a8 bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_)
 NNSi_FndFreeFromDefaultHeap called from Ov025_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov025::02089ba4 ldr r0,[r4,#0x3c]; arm9_ov025::02089bbc ldr r0,[r4,#0x40]; arm9_ov025::02089bd4 ldr r0,[r4,#0x44]; arm9_ov025::02089bec ldr r0,[r4,#0x48])
@@ -920,10 +918,22 @@ Not wrong in the decomp, but worth recording next to the class declarations:
 
 ## 5. Game flow, as observed running the game
 
-- **Scene ids** (`StoreGlobalPairAt10` / `Scene_AdvanceToPending`): 1 = ov000
-  (logos, title, all its menus, the save-file screen), 7 = ov006 (Mission Mode
-  character select), 11 = ov012 (the opening movie, after "new game" in Story
-  Mode), 19 = ov008 (the mission lobby, after START on the character select).
+- **Scene ids** (`StoreGlobalPairAt10` / `Scene_AdvanceToPending`). The scene
+  table at `0x02042548` ({overlay id, class descriptor}, 8 bytes each) maps
+  1 → ov000, 2 → ov002, 3 → ov003, 5 → ov004, 6 → ov005, 7 → ov006,
+  8 → ov011, 9 → ov009, 10 → ov007, 11 → ov012, 12 → ov010, 19 → ov008
+  (0, 4 and 13-18 have none). Seen running: 1 is the logos, the title, all
+  its menus and the save-file screen; 7 the Mission Mode character select;
+  11 the opening movie (after "new game" in Story Mode); 5 the day title
+  card that follows it ("Día 255 ~El sol se pone rojo~"); 2 the field, where
+  the clock-tower cutscene of day 255 plays (`Ov002_BeginMissionRun`,
+  `Ov002_SessionTick`); 19 the mission lobby (after START on the character
+  select).
+- **`func_01ff80a8` is the game's VBlank count**: it returns the counter at
+  `data_027e0088`, which `OSi_VBlankInterruptHandler` increments (the struct
+  there is {counter, callback list}). `Ov012_RunOpeningScene`'s playback loop
+  spins on it; `func_02001020` stores its argument there (its old name,
+  srand, was a shape match).
 - **New game and DS Protect.** `Ov000_BootRunSelector` (`0x0204ee24`) with
   selector `0x191` loads ov028 and requests scene 11 only if
   `func_ov028_0208b490` (always true), `func_ov028_0208b120` (not a
