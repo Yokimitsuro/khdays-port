@@ -219,110 +219,6 @@ ABI_FIXES = {
          "int hSpace, int vSpace, const void * txt)"),
         ("    return rect;\n}", "    *khdays_result = rect;\n}"),
     ],
-    # The slot released is the one released after it: `mov r7,r0` (0x0202a448),
-    # then `ldr r0,[r7,#0xc]; cmp r0,#0; beq; bl ResSlot_ReleaseResource`
-    # (0x0202a4ac-0x0202a4b8) and `ldr r0,[r7,#0xc]; bl ResSlot_Release`.
-    "main@0202a440": [  # FreeAllResourceTables
-        ("extern void ResSlot_ReleaseResource(void);", "extern void ResSlot_ReleaseResource(int slot);"),
-        ("        ResSlot_ReleaseResource();", "        ResSlot_ReleaseResource(p[3]);"),
-    ],
-    # The ROM frees the node itself: `str r1,[sp,#0]` at 0x02055a8e keeps `b`
-    # in the stack slot that `ldr r0,[sp,#0]` (0x02055ac4) passes to the free.
-    "ov000@02055a8c": [  # Ov000_DestroyObject
-        ("        NNSi_FndFreeFromDefaultHeap();", "        NNSi_FndFreeFromDefaultHeap(b);"),
-    ],
-    # Ending a scene unloads its overlay: the ROM passes the entry's overlay id
-    # (0x020209c4 `ldr r1,[r4,#4]`, 0x020209cc `ldr r1,[r1,#0]`) to
-    # UnloadOverlaySync(target, id), as Overlay105_Release does.
-    "main@0202099c": [  # Scene_AdvanceToPending
-        ("extern void UnloadOverlaySync(int);", "extern void UnloadOverlaySync(int, int);"),
-        ("                UnloadOverlaySync(0);", "                UnloadOverlaySync(0, s->entry->overlayId);"),
-    ],
-    # A pass-through wrapper: the ROM (0x0208505c) saves only r3/lr and calls
-    # Ov024_MobiClip_BlitFrame with r0-r3 untouched -- the four arguments
-    # Ov024_MobiClip_FrameAlarm gives it (decoder, buffer, 0x100, 0).
-    "ov024@0208505c": [  # Ov024_MobiClip_DecodeAudioEntryChecked_3
-        ("extern int Ov024_MobiClip_BlitFrame(int arg);\n"
-         "int Ov024_MobiClip_DecodeAudioEntryChecked_3(int param_1) {\n"
-         "    if (param_1 == 0) return 0;\n"
-         "    return Ov024_MobiClip_BlitFrame(param_1) == 1;",
-         "extern int Ov024_MobiClip_BlitFrame(int arg, int dest, int width, int mode);\n"
-         "int Ov024_MobiClip_DecodeAudioEntryChecked_3(int param_1, int dest, int width, int mode) {\n"
-         "    if (param_1 == 0) return 0;\n"
-         "    return Ov024_MobiClip_BlitFrame(param_1, dest, width, mode) == 1;"),
-    ],
-    # The lid opening again restores both master brightnesses: the ROM passes
-    # each saved value straight on (0x0205b7a0 `bl 0x0201e428` then
-    # `bl SetMasterBrightnessMain`; 0x0205b7a8 `bl 0x0201e438` then
-    # `bl SetMasterBrightnessSub`).
-    "ov012@0205b618": [  # Ov012_RunOpeningScene
-        ("extern void SetMasterBrightnessMain();", "extern void SetMasterBrightnessMain(int);"),
-        ("extern void SetMasterBrightnessSub();", "extern void SetMasterBrightnessSub(int);"),
-        ("extern void func_0201e428(void);", "extern int func_0201e428(void);"),
-        ("extern void func_0201e438(void);", "extern int func_0201e438(void);"),
-        ("                        func_0201e428();\n                        SetMasterBrightnessMain();\n"
-         "                        func_0201e438();\n                        SetMasterBrightnessSub();",
-         "                        SetMasterBrightnessMain(func_0201e428());\n"
-         "                        SetMasterBrightnessSub(func_0201e438());"),
-    ],
-    # The matrix commands write their command to GXFIFO and tail-call the copy
-    # with the register that held GXFIFO's address still in r1, the copy's
-    # destination: `ldr r1,=0x04000400; mov r2,#cmd; str r2,[r1]; bx r12`
-    # (0x01ff9d0c, 0x01ff9d28, 0x01ff9d44). Without it the matrix went to
-    # whatever the stack held -- over the frame of the SBC's NODEMIX.
-    "itcm@01ff9d0c": [  # G3_LoadMtx43
-        ("    return GX_SendFifo48B(m);", "    return GX_SendFifo48B(m, (void *)0x4000400);"),
-    ],
-    "itcm@01ff9d28": [  # G3_MultMtx43
-        ("    return GX_SendFifo48B(m);", "    return GX_SendFifo48B(m, (void *)0x4000400);"),
-    ],
-    "itcm@01ff9d44": [  # G3_MultMtx33
-        ("    return MI_Copy36B(m);", "    return MI_Copy36B(m, (void *)0x4000400);"),
-    ],
-    # Each buffer is freed with the pointer just tested still in r0:
-    # `ldr r0,[r4,#0x3c]; cmp r0,#0; beq; bl NNSi_FndFreeFromDefaultHeap`
-    # (0x02055f94, and +0x40/+0x44/+0x48 after it).
-    "ov008@02055f8c": [  # Ov008_FreeWorkBuffers
-        (f"        NNSi_FndFreeFromDefaultHeap();\n        p->{f} = 0;",
-         f"        NNSi_FndFreeFromDefaultHeap(p->{f});\n        p->{f} = 0;")
-        for f in ("f3c", "f40", "f44", "f48")
-    ],
-    # func_ov022_020881f8(player) returns the player's position. The camera
-    # updates call it with r0 still holding QueryActiveStateOrDelegate's
-    # result: `bl 0x01fffe14; mov r8,r0; bl 0x020881f8` (0x0204d198),
-    # likewise 0x0204f0b8 and 0x0204fc68. (Calls across overlays, which the
-    # Ghidra scan does not follow.)
-    "ov002@0204d170": [  # Ov002_Camera_UpdateFollow
-        ("extern void *func_ov022_020881f8(void);", "extern void *func_ov022_020881f8(int player);"),
-        ("  puVar9 = (undefined4 *)func_ov022_020881f8();",
-         "  puVar9 = (undefined4 *)func_ov022_020881f8(idx);"),
-    ],
-    "ov002@0204f0a8": [  # Ov002_TickCamera
-        ("extern void *func_ov022_020881f8(void);", "extern void *func_ov022_020881f8(int player);"),
-        ("    pTarget = (VecFx32 *)func_ov022_020881f8();",
-         "    pTarget = (VecFx32 *)func_ov022_020881f8(nPlayer);"),
-    ],
-    "ov002@0204fc54": [  # Ov002_TickLockedCamera
-        ("extern VecFx32 *func_ov022_020881f8(void);", "extern VecFx32 *func_ov022_020881f8(int player);"),
-        ("    pAnchor = func_ov022_020881f8();", "    pAnchor = func_ov022_020881f8(nPlayer);"),
-    ],
-    # ... and this one with its own argument still in r0 (0x020652d0
-    # `mov r4,r0`, 0x020652d4 the call).
-    "ov002@020652c8": [  # Ov002_FormatRowFromSelection
-        ("extern int func_ov022_020881f8(void);", "extern int func_ov022_020881f8(int player);"),
-        ("    Ov002_ScreenToCell(pair, func_ov022_020881f8());",
-         "    Ov002_ScreenToCell(pair, func_ov022_020881f8(self));"),
-    ],
-    # The value tested against -1 is still in r0 when the ROM calls
-    # Ov002_GetWord20 (0x020616ac the test's call, 0x020616c0 this one).
-    "ov002@020616a0": [  # Ov002_SceneStepPanel
-        ("extern void *Ov002_GetWord20(void);", "extern void *Ov002_GetWord20(int self);"),
-        ("    if (func_ov022_02083f0c() == -1) {\n        return 0;\n    }\n"
-         "    pCam = Ov002_GetWord20();",
-         "    if ((khdays_r0 = func_ov022_02083f0c()) == -1) {\n        return 0;\n    }\n"
-         "    pCam = Ov002_GetWord20(khdays_r0);"),
-        ("    void *pCam;\n", "    void *pCam;\n    int khdays_r0;\n"),
-    ],
     # Ov002_IsPanelModeSet(fallback) returns its r0 untouched when no panel is
     # installed (`ldr r1,=0x0207f628; ldr r1,[r1]; cmp r1,#0; bxeq lr`,
     # 0x02061b80); here that r0 is whatever Ov002_RepublishHud left, several
@@ -348,12 +244,6 @@ SHARED_CALL_TARGETS = {
     # (confirmed at run time; docs/DECOMP_FINDINGS.md section 1).
     "ov012@0205b0cc": {0x020846c0: "ov024"},
 }
-
-# Ov008_FreeWorkBuffers has six copies, the same 0x6c bytes of ROM (but for
-# the call's offset) and the same C: each passes the pointer it tested.
-for _key in ("ov004@0204ccbc", "ov005@0204e6f0", "ov009@02055078", "ov025@02089b9c",
-             "ov026@020846d0", "ov302@020cc0ac"):
-    ABI_FIXES[_key] = ABI_FIXES["ov008@02055f8c"]
 
 # Argument registers the Ghidra scan counts as read but the ROM shows the
 # function never reads (it sets them first), by function: the calls into it
@@ -950,11 +840,20 @@ def main() -> int:
                 named = functions[m.name].get(address)
                 if named and reached and names.get(caller_key) and m.name != module:
                     reaches[(names[caller_key], named)] = reached
-    # An empty function (EMPTY_FUNCTION) takes r0 only to give it back: a call
-    # whose value goes nowhere needs nothing.
+    # An empty function (`bx lr`, written to return its first argument, as
+    # the decomp does and EMPTY_FUNCTION did) takes r0 only to give it back: a
+    # call whose value goes nowhere needs nothing.
+    def returns_first_argument(name: str) -> bool:
+        rel = repairer.def_file.get(name)
+        d = abi_repair.find_definition(texts[rel], repairer.mask(rel), name) if rel else None
+        if d is None:
+            return False
+        params = abi_repair.param_list(texts[rel], d)
+        first = abi_repair.param_name(params[0]) if len(params) == 1 else ""
+        body = abi_repair.strip_comments_code(texts[rel][d.body[0] + 1:d.body[1]], repairer.mask(rel)[d.body[0] + 1:d.body[1]])
+        return bool(first) and re.fullmatch(rf"\s*return\s+(?:\([^()]*\)\s*)?{re.escape(first)}\s*;\s*", body) is not None
     for caller, callee in list(findings.calls):
-        rel = repairer.def_file.get(callee)
-        if rel is None or f"{callee}(void *khdays_r0) {{ return khdays_r0; }}" not in texts[rel]:
+        if not returns_first_argument(callee):
             continue
         crel = repairer.def_file.get(caller)
         d = abi_repair.find_definition(texts[crel], repairer.mask(crel), caller) if crel else None

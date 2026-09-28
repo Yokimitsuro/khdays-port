@@ -51,6 +51,7 @@ list(GET DSPROT_HEADER 0 DSPROT_HEADER)
 get_filename_component(DSPROT_DIR "${DSPROT_HEADER}" DIRECTORY)
 target_include_directories(khdays-decomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/compat/include"
+    "${DECOMP}/include"         # nitro/*.h, nnsys/*.h: the SDK headers the sources share
     "${DSPROT_DIR}")
 target_compile_definitions(khdays-decomp PRIVATE
     main=khdays_NitroMain       # the game's main; the process has its own

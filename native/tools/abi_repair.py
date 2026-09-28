@@ -127,6 +127,11 @@ def code_mask(text: str) -> bytearray:
     return mask
 
 
+def strip_comments_code(text: str, mask: bytearray) -> str:
+    """text with its comments and literals blanked (mask from code_mask)."""
+    return "".join(c if keep else " " for c, keep in zip(text, mask))
+
+
 def matching(text: str, mask: bytearray, open_index: int) -> int:
     """Index of the bracket closing the one at open_index (code only)."""
     pairs = {"(": ")", "{": "}", "[": "]"}
@@ -358,8 +363,7 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
             continue
         params = param_list(texts[rel], d)
         names = [param_name(p) for p in params]
-        code = "".join(c if keep else " " for c, keep in
-                       zip(texts[rel][d.body[0]:d.body[1]], mask(rel)[d.body[0]:d.body[1]]))
+        code = strip_comments_code(texts[rel][d.body[0]:d.body[1]], mask(rel)[d.body[0]:d.body[1]])
         written = written_params(code, names)
         if written:
             needs[name] = (max(written) + 1, [names[k] for k in written])
