@@ -5,6 +5,7 @@
  * the VBlank interrupt and VBlank DMA change them for the next frame. */
 #include "display.h"
 #include "../gpu/gpu2d.h"
+#include "../gpu/gpu3d.h"
 #include "../host/host.h"
 #include "io.h"
 #include "vram.h"
@@ -17,7 +18,11 @@
 #define PIXELS (KHDAYS_SCREEN_W * KHDAYS_SCREEN_H)
 
 static uint32_t screens[2][PIXELS];  /* engine A, engine B */
+static uint32_t layer3d[PIXELS];     /* what the 3D engine drew at the last VBlank */
 static KhdaysGpu2dState states[2];
+
+/* KHDAYS_PROFILE: the time the frame's rendering takes, every 300 frames */
+static int profile;
 
 static u32 *shots;
 static int shot_count;
@@ -27,6 +32,7 @@ void khdays_display_init(void)
 {
     const char *text = getenv("KHDAYS_SHOTS");
     shot_dir = getenv("KHDAYS_SHOT_DIR");
+    profile = getenv("KHDAYS_PROFILE") != NULL;
     if (shot_dir == NULL) {
         shot_dir = "shots";
     }
@@ -102,6 +108,7 @@ void khdays_display_vblank(u32 frame)
 {
     KhdaysGpuInput in;
     const uint32_t *upper, *lower;
+    LARGE_INTEGER t0, t1, t2;
     memset(&in, 0, sizeof(in));
     in.io = khdays_io_host;
     in.palette = (const u8 *)0x05000000;
@@ -110,8 +117,27 @@ void khdays_display_vblank(u32 frame)
     for (int bank = 0; bank < 4; ++bank) {
         in.bank[bank] = khdays_vram_bank(bank);
     }
+    in.layer3d = layer3d;
+    QueryPerformanceCounter(&t0);
     khdays_gpu2d_frame(&in, &states[0], 0, screens[0], NULL);
     khdays_gpu2d_frame(&in, &states[1], 1, screens[1], NULL);
+    QueryPerformanceCounter(&t1);
+    /* the 3D engine renders during the next frame what it has now */
+    khdays_gpu3d_vblank(khdays_io_host, khdays_vram_pages(), layer3d);
+    QueryPerformanceCounter(&t2);
+    if (profile) {
+        LARGE_INTEGER hz;
+        static double ms2d, ms3d;
+        static int frames;
+        QueryPerformanceFrequency(&hz);
+        ms2d += (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)hz.QuadPart;
+        ms3d += (double)(t2.QuadPart - t1.QuadPart) * 1000.0 / (double)hz.QuadPart;
+        if (++frames == 300) {
+            fprintf(stderr, "display: %.2f ms 2D, %.2f ms 3D per frame\n", ms2d / frames, ms3d / frames);
+            ms2d = ms3d = 0;
+            frames = 0;
+        }
+    }
     /* POWCNT1 bit 15: 1 = engine A on the upper screen */
     if (IO16(0x304) & 0x8000) {
         upper = screens[0];

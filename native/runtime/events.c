@@ -4,6 +4,7 @@
 #include "arm7.h"
 #include "display.h"
 #include "input.h"
+#include "../gpu/gpu3d.h"
 
 static u64 last_update;
 static u64 next_vblank = KHDAYS_VBLANK_LINE * KHDAYS_CYCLES_PER_LINE;
@@ -25,6 +26,9 @@ void khdays_events_update(void)
 {
     const u64 now = khdays_clock_cycles();
     khdays_timers_update(last_update, now);
+    if (khdays_gpu3d_irq()) {
+        khdays_io_request_irq(1u << 21);  /* GXFIFO: set as long as the condition holds */
+    }
     while (now >= next_vblank) {
         /* VBlank begins: the frame the game prepared is done (only the last
          * one when several passed at once), then the input for the next. */

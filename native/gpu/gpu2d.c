@@ -1,3 +1,10 @@
+/* Runs every frame: optimized even in Debug builds, whose /RTC checks
+ * cannot be combined with optimization. */
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma runtime_checks("", off)
+#pragma optimize("gt", on)
+#endif
+
 #include "gpu2d.h"
 
 #include <stdio.h>
@@ -11,7 +18,6 @@ enum {
     MISSING_OBJ_MOSAIC = 1u << 2,
     MISSING_BITMAP_OBJ_ALPHA = 1u << 3,
     MISSING_WINDOW_X1_AFTER_X2 = 1u << 4,
-    MISSING_3D_BLEND = 1u << 5,
 };
 
 static void missing(unsigned what, const char *text)
@@ -485,9 +491,10 @@ static unsigned coefficient(unsigned v)
 
 enum { LAYER_OBJ = 4, LAYER_BACKDROP = 5 };
 
+/* `alpha3d`: when BG0 is the 3D layer, its per-pixel alpha (0-31). */
 static void compose_line(const Engine *e, const KhdaysGpu2dState *state,
                          uint16_t bg[4][KHDAYS_SCREEN_W], const int bg_on[4], const ObjLine *obj,
-                         uint16_t *out)
+                         const uint8_t *alpha3d, uint16_t *out)
 {
     const uint16_t bldcnt = rd16(e->io + 0x50);
     const uint16_t bldalpha = rd16(e->io + 0x52);
@@ -532,7 +539,12 @@ static void compose_line(const Engine *e, const KhdaysGpu2dState *state,
             }
         }
         result = color[0];
-        if (mask & 0x20) {
+        if (layer[0] == 0 && alpha3d != NULL && alpha3d[x] < 31 && ((bldcnt >> 8) & (1u << layer[1]))) {
+            /* the 3D layer over a 2nd target blends by its own alpha; GBATEK:
+             * "probably EVA=A/2, EVB=16-A/2", regardless of BLDALPHA and, it
+             * says with doubt, of the window's effect flag */
+            result = blend(color[0], color[1], alpha3d[x] / 2u, 16u - alpha3d[x] / 2u);
+        } else if (mask & 0x20) {
             const int second = (bldcnt >> 8) & (1u << layer[1]);
             if (layer[0] == LAYER_OBJ && (obj->mode[x] == OBJ_SEMI || obj->mode[x] == OBJ_BITMAP) &&
                 second) {
@@ -655,8 +667,11 @@ void khdays_gpu2d_frame(const KhdaysGpuInput *in, KhdaysGpu2dState *state, int e
         } else {
             static uint16_t bg[4][KHDAYS_SCREEN_W];
             static ObjLine obj;
+            static uint8_t alpha3d[KHDAYS_SCREEN_W];
+            const int is3d = engine == 0 && (e.dispcnt & 0x08);
             int bg_on[4];
             memset(bg, 0, sizeof(bg));
+            memset(alpha3d, 31, sizeof(alpha3d));
             memset(&obj, 0, sizeof(obj));
             for (int b = 0; b < 4; ++b) {
                 const uint16_t cnt = rd16(e.io + 0x08 + 2 * b);
@@ -678,11 +693,9 @@ void khdays_gpu2d_frame(const KhdaysGpuInput *in, KhdaysGpu2dState *state, int e
                             if (sx >= 256) continue;
                             p = in->layer3d[line * KHDAYS_SCREEN_W + sx];
                             if ((p >> 24) & 31) {
-                                if (((p >> 24) & 31) != 31) {
-                                    missing(MISSING_3D_BLEND, "3D per-pixel alpha (drawn opaque)");
-                                }
                                 bg[0][x] = (uint16_t)(OPAQUE | ((p >> 1) & 31) | (((p >> 9) & 31) << 5) |
                                                       (((p >> 17) & 31) << 10));
+                                alpha3d[x] = (uint8_t)((p >> 24) & 31);
                             }
                         }
                     }
@@ -705,7 +718,7 @@ void khdays_gpu2d_frame(const KhdaysGpuInput *in, KhdaysGpu2dState *state, int e
             if (e.dispcnt & 0x1000) {
                 objects(&e, line, &obj);
             }
-            compose_line(&e, state, bg, bg_on, &obj, color);
+            compose_line(&e, state, bg, bg_on, &obj, is3d ? alpha3d : NULL, color);
         }
         for (int x = 0; x < KHDAYS_SCREEN_W; ++x) {
             const uint32_t c6 = bright(color[x], master);

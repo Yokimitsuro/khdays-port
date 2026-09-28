@@ -10,6 +10,7 @@
 #include "clock.h"
 #include "events.h"
 #include "input.h"
+#include "../gpu/gpu3d.h"
 #include "vram.h"
 
 #include <stdio.h>
@@ -329,6 +330,7 @@ void khdays_io_reset(void)
     IO16(0x184) = 0x0101;  /* IPCFIFOCNT: both FIFOs empty */
     IO8(0x300) = 0x01;     /* POSTFLG: the firmware finished booting */
     khdays_vram_reset();
+    khdays_gpu3d_reset();
     khdays_arm7_reset();
 }
 
@@ -371,6 +373,11 @@ void khdays_io_read(u32 address, int size)
     }
     if (overlaps(offset, size, 0x130, 2)) {
         IO16(0x130) = khdays_input_keyinput();
+    }
+    for (u32 reg = 0x600; reg < 0x6a4; reg += 4) {  /* the 3D engine's status and results */
+        if (overlaps(offset, size, reg, 4)) {
+            IO32(reg) = khdays_gpu3d_read(reg);
+        }
     }
     if (overlaps(offset, size, 0x180, 2)) {
         IO16(0x180) = (u16)((IO16(0x180) & ~0xfu) | khdays_arm7_sync_nibble());
@@ -451,6 +458,19 @@ void khdays_io_write(u32 address, int size, const u8 *before)
     }
     if (overlaps(offset, size, 0x240, 7) || overlaps(offset, size, 0x248, 2)) {
         khdays_vram_control_written();  /* VRAMCNT_A-G, H, I (0x247 is WRAMCNT) */
+    }
+    if (overlaps(offset, size, 0x400, 0x200)) {  /* GXFIFO and the geometry command ports */
+        if (size != 4 || (offset & 3)) {
+            unimplemented("a geometry command write that is not a word", address);
+        }
+        if (offset < 0x440) {
+            khdays_gpu3d_fifo_write(IO32(offset));
+        } else {
+            khdays_gpu3d_port_write(offset, IO32(offset));
+        }
+    }
+    if (overlaps(offset, size, 0x600, 4)) {
+        khdays_gpu3d_gxstat_write(IO32(0x600));
     }
     if (overlaps(offset, size, 0x280, 0x20)) {
         divide();

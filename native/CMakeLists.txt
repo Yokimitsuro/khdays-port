@@ -37,7 +37,7 @@ FetchContent_MakeAvailable(SDL3)
 
 # The 2D display engines, pure (they read the state they are given), shared
 # by the game and the savestate test.
-add_library(khdays-gpu STATIC gpu/gpu2d.c gpu/vram_map.c)
+add_library(khdays-gpu STATIC gpu/gpu2d.c gpu/gpu3d.c gpu/vram_map.c)
 target_compile_options(khdays-gpu PRIVATE /W4 /std:c17)
 
 # The game: every source the DS build links, compiled as the decomp wrote it.

@@ -164,11 +164,14 @@ static void tp_service(u32 data, u32 err)
 }
 
 /* Automatic sampling: `frequency` samples a frame, each announced with
- * command 0x10. */
+ * command 0x10. When the ARM9 has fallen behind (the FIFO to it is full --
+ * natively, when several VBlanks pass before it runs again) the sample is
+ * skipped rather than stopping the run: a choice of this HLE, not measured
+ * ARM7 behaviour. */
 void khdays_arm7_frame(void)
 {
     *(volatile u16 *)0x027fffa8 = khdays_input_xy();
-    for (u32 i = 0; i < tp_auto_frequency; ++i) {
+    for (u32 i = 0; i < tp_auto_frequency && recv_count < FIFO_DEPTH; ++i) {
         tp_sample();
         reply(TAG_TP, 0x10u << 8, 0);
     }
