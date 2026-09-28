@@ -78,6 +78,22 @@ static int view(HANDLE section, const char *what, unsigned address, unsigned off
     return 1;
 }
 
+/* Keeps Windows from placing anything in [start, end): every granule still
+ * free there is reserved, inaccessible. The ARM interpreter takes any address
+ * 0x04xxxxxx for an I/O register, so its stack (or anything else it is
+ * handed) must not land in the gaps between the two I/O views -- where
+ * Windows put it on one machine, and the movie's decoder wrote its first
+ * push to "I/O". */
+static void keep_free(unsigned start, unsigned end)
+{
+    for (unsigned at = start; at < end; at += GRANULE) {
+        MEMORY_BASIC_INFORMATION info;
+        if (VirtualQuery((const void *)at, &info, sizeof(info)) != 0 && info.State == MEM_FREE) {
+            VirtualAlloc((void *)at, GRANULE, MEM_RESERVE, PAGE_NOACCESS);
+        }
+    }
+}
+
 u8 *khdays_io_host;
 u8 *khdays_io2_host;
 
@@ -139,14 +155,18 @@ int khdays_memory_map(void)
         !view(ram, "main RAM mirror", 0x02c00000, 0, MAIN_RAM_SIZE)) {
         return 0;
     }
-    return plain("ITCM", 0x01ff8000, 0x8000) &&
-           plain("DTCM", DTCM_BASE, 0x4000) &&
-           plain("shared WRAM", 0x03000000, 0x8000) &&
-           plain("ARM7 WRAM", ARM7_WRAM_BASE, ARM7_WRAM_END - ARM7_WRAM_BASE) &&
-           (khdays_io_host = io_region("I/O", KHDAYS_IO_BASE, GRANULE)) != NULL &&
-           (khdays_io2_host = io_region("IPC/card ports", KHDAYS_IO2_BASE, GRANULE)) != NULL &&
-           plain("palettes", 0x05000000, 0x800) &&
-           plain("VRAM", 0x06000000, 0x008a4000) &&
-           plain("OAM", 0x07000000, 0x800) &&
-           empty_gba_slot();
+    if (!(plain("ITCM", 0x01ff8000, 0x8000) &&
+          plain("DTCM", DTCM_BASE, 0x4000) &&
+          plain("shared WRAM", 0x03000000, 0x8000) &&
+          plain("ARM7 WRAM", ARM7_WRAM_BASE, ARM7_WRAM_END - ARM7_WRAM_BASE) &&
+          (khdays_io_host = io_region("I/O", KHDAYS_IO_BASE, GRANULE)) != NULL &&
+          (khdays_io2_host = io_region("IPC/card ports", KHDAYS_IO2_BASE, GRANULE)) != NULL &&
+          plain("palettes", 0x05000000, 0x800) &&
+          plain("VRAM", 0x06000000, 0x008a4000) &&
+          plain("OAM", 0x07000000, 0x800) &&
+          empty_gba_slot())) {
+        return 0;
+    }
+    keep_free(0x04000000, 0x05000000);  /* the rest of the I/O space */
+    return 1;
 }

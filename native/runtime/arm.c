@@ -905,6 +905,13 @@ u64 khdays_arm_call(u32 entry, const u32 *args, int count)
             fprintf(stderr, "khdays-native: no memory for the ARM interpreter's stack\n");
             exit(13);
         }
+        /* the interpreted code would take it for I/O (memory.c keeps the
+         * range free) */
+        if (is_io((u32)(size_t)stack_memory) || is_io((u32)(size_t)stack_memory + STACK_SIZE - 1)) {
+            fprintf(stderr, "khdays-native: the ARM interpreter's stack landed at 0x%08x, in the "
+                            "DS I/O space\n", (u32)(size_t)stack_memory);
+            exit(13);
+        }
         /* short of the end: at the top of the address space base + size is 0 */
         stack_top = (u32)(size_t)stack_memory + STACK_SIZE - 256;
     }
