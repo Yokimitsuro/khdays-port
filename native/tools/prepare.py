@@ -235,6 +235,44 @@ ABI_FIXES = {
     ],
 }
 
+# r9 across the object updates (runtime.c khdays_rom_r9): Obj_UpdateAll
+# starts with main's (unknown) and leaves each update's result in it
+# (`blx r0; mov sb, r0`, 0x02023b64/68).
+ABI_FIXES["main@02023adc"] = [  # Obj_UpdateAll
+    ("void Obj_UpdateAll(int paused)\n{",
+     "extern void khdays_rom_r9_unknown(void), khdays_rom_r9_set(int value);\n"
+     "void Obj_UpdateAll(int paused)\n{"),
+    ("    data_0204c058[1] = data_0204c058[3];\n",
+     "    khdays_rom_r9_unknown();  /* main's r9 (native/abi) */\n"
+     "    data_0204c058[1] = data_0204c058[3];\n"),
+    ("                  khdays_check_update(((int *)data_0204c058[1])[5], cb); }\n",
+     "                  khdays_check_update(((int *)data_0204c058[1])[5], cb); }\n"
+     "                khdays_rom_r9_set(cb);  /* `mov sb, r0` */\n"),
+]
+# The tag trackers' `swap` is r9 (sb), which the ROM never sets when the table
+# has no selection getter (+0x48): it reads what its caller left there (the
+# decomp's header calls it a ROM bug, kept). The eight copies are the same
+# 0x1a0 bytes; in Ov025's, reached from the camp menu's update through
+# Ov025_GetIdleHandler, Ov025_CommitPage and Ov025_TickSelectionWidget, none
+# of which touches r9, that is the previous update's result (0 in the
+# Holomisiones list). With a nonzero r9 and no setter (+0x44) the ROM calls
+# address 0 -- the ITCM mirror, OSi_VBlankInterruptHandler: the port stops.
+for _key in ("ov000@020561b4", "ov002@020540f0", "ov005@0204cdd0", "ov006@0204cdd0",
+             "ov008@020551a4", "ov009@02051f68", "ov025@02088e4c", "ov026@02082ecc"):
+    ABI_FIXES[_key] = [
+        ("    int swap;\n",
+         "    extern int khdays_rom_r9(const char *reader);\n"
+         "    extern void khdays_abi_gap(const char *what);\n"
+         "    int swap = *(int *)(param_1 + 0x48) != 0 ? 0 : khdays_rom_r9(\n"
+         "        \"a tag tracker's swap without a getter: r9 before the frame's first update\");\n"),
+        ("        if (swap != 0) {\n            (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));",
+         "        if (swap != 0) {\n"
+         "            if (*(int *)(param_1 + 0x44) == 0) {\n"
+         "                khdays_abi_gap(\"a tag tracker's setter at address 0 (the ROM runs the ITCM there)\");\n"
+         "            }\n"
+         "            (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));"),
+    ]
+
 # Calls to an address several overlays share, where the function the ROM
 # reaches is known: caller -> address -> the overlay loaded there. What the
 # call needs is what that function takes, not the one the C names.

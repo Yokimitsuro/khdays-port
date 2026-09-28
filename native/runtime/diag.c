@@ -323,6 +323,17 @@ void khdays_diag_init(void)
     }
 }
 
+/* printf to stderr, for a temporary hook in the game's C (prepare.py HOOKS),
+ * which cannot reach the CRT's inline stdio. */
+void khdays_debugf(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+    fflush(stderr);
+}
+
 void khdays_diag_stack(void)
 {
     CONTEXT context;

@@ -272,7 +272,30 @@ its definition, and the files that do.
 - `func_ov105_020bf900` (argument 1 as u16): `Ov006_SendNetworkPacket`, `Ov008_SendPacket`
 <!-- END generated:narrowparams -->
 
-### 1.2 Previously asked for
+### 1.2 The tag trackers' `swap`, seen running
+
+The header of the eight `OvNNN_TickTagTrackerNodes` (the same 0x1a0 bytes)
+keeps, as a ROM bug, the `swap` read uninitialised when the table has no
+getter at +0x48, and speaks of the case "with a +0x44 setter". What the game
+does, measured in the Holomisiones challenge list (Ov025, day 357): both
+tables there (`0x021cb390`, `0x021cb3dc`, 32 nodes) have neither a getter
+(+0x48) nor a setter (+0x44), only the apply at +0x3c. `swap` is `sb`,
+which the function never sets on that path; its value is its caller's r9.
+From the camp menu's update (`Ov025_GetIdleHandler` → `Ov025_CommitPage` →
+`Ov025_TickSelectionWidget`, none of which touches r9) that is what
+`Obj_UpdateAll` left: the previous update's result (`blx r0; mov sb, r0`,
+`0x02023b64`/`0x02023b68`), here `Ov002_SceneStep`'s 0 -- so nothing is
+called. With a nonzero r9 the ROM would call the missing setter, address 0,
+which the ARM9 maps to the ITCM: `OSi_VBlankInterruptHandler` would run twice
+per stepped node. Other callers set `sb` before the call (e.g.
+`Ov025_TickPageScroll`, `mov sb, #0` at `0x0209b300`), so the value is the
+caller's in each case. Worth a line in the header: which r9 each path leaves,
+and that "no setter" means a call to address 0.
+
+The port reproduces the first path (runtime.c `khdays_rom_r9`) and stops,
+naming it, on any read it cannot account for.
+
+### 1.3 Previously asked for
 
 Nothing left. Everything the previous version asked for is in:
 the four hand-checked calls say what the ROM leaves or pass it, the narrow

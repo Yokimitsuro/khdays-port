@@ -54,6 +54,33 @@ int khdays_runtime_init(int argc, char **argv)
     return 1;
 }
 
+/* r9 as the ARM9 leaves it where the decomp's C reads a local it never set
+ * because the ROM keeps it in r9 (prepare.py ABI_FIXES). Obj_UpdateAll
+ * saves r9 on entry -- main's, which the firmware left, unknown here -- and
+ * sets it to each update's result (`blx r0; mov sb, r0`, 0x02023b64/68); the
+ * update chains the port has checked leave it alone. Reading it before the
+ * frame's first update ran stops, naming the read. */
+static int rom_r9, rom_r9_known;
+
+void khdays_rom_r9_unknown(void)
+{
+    rom_r9_known = 0;
+}
+
+void khdays_rom_r9_set(int value)
+{
+    rom_r9 = value;
+    rom_r9_known = 1;
+}
+
+int khdays_rom_r9(const char *reader)
+{
+    if (!rom_r9_known) {
+        khdays_abi_gap(reader);
+    }
+    return rom_r9;
+}
+
 static int in_main_ram(u32 p)
 {
     return p >= 0x02000000u && p < 0x02400000u;
