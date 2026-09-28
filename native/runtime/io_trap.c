@@ -124,6 +124,140 @@ static int is_io(u32 address)
            (address >= KHDAYS_IO2_BASE && address < KHDAYS_IO2_BASE + KHDAYS_IO2_SIZE);
 }
 
+/* --- Plain loads and stores, done in the handler ----------------------------
+ * The single step costs a second exception and four page-protection changes
+ * per access, which a loop polling a register (the card's data port: two
+ * accesses a word) pays thousands of times a frame. The forms that only move
+ * a value between a register (or an immediate) and the register file are
+ * carried out here instead, and the thread continues after the instruction. */
+
+static DWORD *gpr(CONTEXT *c, int n)
+{
+    switch (n) {
+    case 0: return &c->Eax;
+    case 1: return &c->Ecx;
+    case 2: return &c->Edx;
+    case 3: return &c->Ebx;
+    case 4: return &c->Esp;
+    case 5: return &c->Ebp;
+    case 6: return &c->Esi;
+    default: return &c->Edi;
+    }
+}
+
+/* AL, CL, DL, BL, AH, CH, DH, BH */
+static u8 *gpr8(CONTEXT *c, int n)
+{
+    return (u8 *)gpr(c, n & 3) + (n >> 2);
+}
+
+/* The bytes of a ModRM memory operand (ModRM, SIB, displacement); 0 for a
+ * register operand. */
+static int modrm_bytes(const u8 *p)
+{
+    const int mod = p[0] >> 6, rm = p[0] & 7;
+    int n = 1;
+    if (mod == 3) return 0;
+    if (rm == 4) {
+        ++n;
+        if (mod == 0 && (p[1] & 7) == 5) n += 4;
+    } else if (mod == 0 && rm == 5) {
+        n += 4;
+    }
+    if (mod == 1) n += 1;
+    if (mod == 2) n += 4;
+    return n;
+}
+
+static u8 *host_view(u32 address)
+{
+    return address >= KHDAYS_IO2_BASE ? khdays_io2_host + (address - KHDAYS_IO2_BASE)
+                                      : khdays_io_host + (address - KHDAYS_IO_BASE);
+}
+
+static u32 io_load(u32 address, int size)
+{
+    u32 value = 0;
+    khdays_io_read(address, size);
+    memcpy(&value, host_view(address), (size_t)size);
+    return value;
+}
+
+static void io_store(u32 address, int size, u32 value)
+{
+    u8 before[4];
+    u8 *host = host_view(address);
+    memcpy(before, host, (size_t)size);
+    memcpy(host, &value, (size_t)size);
+    khdays_io_write(address, size, before);
+}
+
+/* 1 when the instruction at Eip was carried out (Eip is then past it). */
+static int emulate(CONTEXT *c, u32 address)
+{
+    const u8 *code = (const u8 *)c->Eip;
+    int size = 4, n;
+    u8 op, reg;
+    if (*code == 0x66) {
+        size = 2;
+        ++code;
+    }
+    if (is_prefix(*code)) return 0;
+    op = *code++;
+    if (op == 0x0f) {  /* movzx, movsx into a 32-bit register */
+        const u8 op2 = *code++;
+        u32 value;
+        if (size != 4 || (op2 != 0xb6 && op2 != 0xb7 && op2 != 0xbe && op2 != 0xbf)) return 0;
+        if ((n = modrm_bytes(code)) == 0) return 0;
+        reg = (code[0] >> 3) & 7;
+        size = (op2 & 1) ? 2 : 1;
+        value = io_load(address, size);
+        if (op2 == 0xbe) value = (u32)(s32)(s8)value;
+        if (op2 == 0xbf) value = (u32)(s32)(s16)value;
+        *gpr(c, reg) = value;
+        c->Eip = (DWORD)(size_t)(code + n);
+        return 1;
+    }
+    switch (op) {
+    case 0x8a: case 0x8b: case 0x88: case 0x89: case 0xc6: case 0xc7:
+        if ((n = modrm_bytes(code)) == 0) return 0;
+        reg = (code[0] >> 3) & 7;
+        if ((op & 1) == 0) size = 1;
+        if (op == 0x8a) {
+            *gpr8(c, reg) = (u8)io_load(address, 1);
+        } else if (op == 0x8b) {
+            const u32 value = io_load(address, size);
+            if (size == 2) *(u16 *)gpr(c, reg) = (u16)value; else *gpr(c, reg) = value;
+        } else if (op == 0x88) {
+            io_store(address, 1, *gpr8(c, reg));
+        } else if (op == 0x89) {
+            io_store(address, size, *gpr(c, reg));
+        } else {
+            u32 imm = 0;
+            if (reg != 0) return 0;
+            memcpy(&imm, code + n, (size_t)size);
+            io_store(address, size, imm);
+            n += size;
+        }
+        c->Eip = (DWORD)(size_t)(code + n);
+        return 1;
+    case 0xa0: case 0xa1: case 0xa2: case 0xa3:  /* al/ax/eax <-> [moffs32] */
+        if ((op & 1) == 0) size = 1;
+        if (op < 0xa2) {
+            const u32 value = io_load(address, size);
+            if (size == 1) *(u8 *)&c->Eax = (u8)value;
+            else if (size == 2) *(u16 *)&c->Eax = (u16)value;
+            else c->Eax = value;
+        } else {
+            io_store(address, size, c->Eax);
+        }
+        c->Eip = (DWORD)(size_t)(code + 4);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void set_protection(u32 address, DWORD protection)
 {
     DWORD old;
@@ -173,6 +307,9 @@ static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
         if (pending.active) {
             /* One instruction touching two I/O pages (movs between them). */
             fatal_instruction((const u8 *)context->Eip, address);
+        }
+        if (emulate(context, address)) {
+            return EXCEPTION_CONTINUE_EXECUTION;
         }
         if (!decode((const u8 *)context->Eip, &pending.access)) {
             fatal_instruction((const u8 *)context->Eip, address);

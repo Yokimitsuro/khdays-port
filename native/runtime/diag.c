@@ -88,6 +88,10 @@ static DWORD WINAPI watchdog(void *parameter)
     fprintf(stderr, "khdays-native: still running after %u s; the game thread is at:\n",
             (unsigned)(size_t)parameter);
     print_stack(game_thread, &context);
+    {
+        extern volatile u32 khdays_arm_pc;
+        fprintf(stderr, "the ARM interpreter's last instruction: 0x%08x\n", khdays_arm_pc);
+    }
     /* The SDK's threads: OSi_ThreadInfo (0x02044330) current and list, each
      * OSThread with state at +0x64, next at +0x68, priority at +0x70. */
     {

@@ -54,9 +54,16 @@ void khdays_card_start(void)
             /* the secure area cannot be read in main data mode */
             address = 0x8000 + (address & 0x1ff);
         }
-        /* a read stays inside its 4 KB page, wrapping at its end */
-        for (u32 i = 0; i < length; ++i) {
-            khdays_rom_read((address & ~0xfffu) | ((address + i) & 0xfffu), &buffer[i], 1);
+        /* a read stays inside its 4 KB page, wrapping at its end; taken in
+         * runs up to the wrap (a byte at a time costs a file seek each) */
+        for (u32 done = 0; done < length;) {
+            const u32 at = (address + done) & 0xfffu;
+            u32 run = 0x1000u - at;
+            if (run > length - done) {
+                run = length - done;
+            }
+            khdays_rom_read((address & ~0xfffu) | at, &buffer[done], run);
+            done += run;
         }
         break;
     }
