@@ -37,7 +37,7 @@ int khdays_gpu3d_irq(void);
  * draws its polygon list (again, if none was swapped in) into `out`
  * (256x192: RGB 6 bits each in bits 0-5/8-13/16-21, alpha 0-31 in 24-28),
  * with the rendering registers from `io` (0x04000000) and textures from
- * `vram`. */
+ * `vram`. With `out` NULL only the swap happens (a frame no one sees). */
 void khdays_gpu3d_vblank(const uint8_t *io, const KhdaysVramPages *vram, uint32_t *out);
 
 #endif

@@ -28,11 +28,32 @@ static u32 *shots;
 static int shot_count;
 static const char *shot_dir;
 
+/* KHDAYS_HEADLESS: no one sees the frames, so only those a shot saves are
+ * drawn (with the two before them, which settle the windows' vertical latch,
+ * the one state a frame carries into the next). Nothing the game reads comes
+ * from the drawing -- display capture is not modelled -- so the game runs the
+ * same; the 3D engine still swaps its buffers at each VBlank. */
+static int headless;
+
+static int drawn(u32 frame)
+{
+    if (!headless) {
+        return 1;
+    }
+    for (int n = 0; n < shot_count; ++n) {
+        if (frame <= shots[n] && frame + 2 >= shots[n]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void khdays_display_init(void)
 {
     const char *text = getenv("KHDAYS_SHOTS");
     shot_dir = getenv("KHDAYS_SHOT_DIR");
     profile = getenv("KHDAYS_PROFILE") != NULL;
+    headless = getenv("KHDAYS_HEADLESS") != NULL;
     if (shot_dir == NULL) {
         shot_dir = "shots";
     }
@@ -111,6 +132,10 @@ void khdays_display_vblank(u32 frame)
     KhdaysGpuInput in;
     const uint32_t *upper, *lower;
     LARGE_INTEGER t0, t1, t2;
+    if (!drawn(frame)) {
+        khdays_gpu3d_vblank(khdays_io_host, khdays_vram_pages(), NULL);
+        return;
+    }
     memset(&in, 0, sizeof(in));
     in.io = khdays_io_host;
     in.palette = (const u8 *)0x05000000;

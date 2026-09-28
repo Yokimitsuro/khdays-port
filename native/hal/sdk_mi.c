@@ -3,6 +3,7 @@
  * (e.g. MI_Copy48B reads r0 and writes r1), not the parameter names some
  * callers gave their extern declarations. */
 #include "hal.h"
+#include "../runtime/io.h"
 
 void MI_CpuFill8(void *dest, u8 data, u32 size)
 {
@@ -66,11 +67,18 @@ void MIi_CpuCopy32(const void *src, void *dest, u32 size)
     }
 }
 
-/* Writes every word to the same destination (a FIFO port). */
+/* Writes every word to the same destination (a FIFO port: the register
+ * model takes them directly, not through the trap). */
 void MIi_CpuSend32(const void *src, volatile void *dest, u32 size)
 {
     const volatile u32 *s = (const volatile u32 *)src;
     volatile u32 *d = (volatile u32 *)dest;
+    if (khdays_io_is_register((u32)dest)) {
+        for (u32 i = 0; i < size / 4; ++i) {
+            khdays_io_store((u32)dest, 4, s[i]);
+        }
+        return;
+    }
     for (u32 i = 0; i < size / 4; ++i) {
         *d = s[i];
     }

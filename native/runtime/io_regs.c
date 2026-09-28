@@ -200,6 +200,20 @@ static u8 *host_address(u32 address)
     return khdays_io_host + (address - KHDAYS_IO_BASE);
 }
 
+int khdays_io_is_register(u32 address)
+{
+    return is_io_address(address);
+}
+
+void khdays_io_store(u32 address, int size, u32 value)
+{
+    u8 before[4];
+    u8 *host = host_address(address);
+    memcpy(before, host, (size_t)size);
+    memcpy(host, &value, (size_t)size);
+    khdays_io_write(address, size, before);
+}
+
 /* Where a DMA access lands. DMA is on the system bus, which does not see the
  * CPU's TCMs: below main RAM there is nothing (0), and at the DTCM's address
  * it reaches the main RAM mirror underneath (0x027e0000 -> 0x023e0000). */

@@ -3,16 +3,28 @@
  * hardware registers (the geometry FIFO, the divide/sqrt unit); the memory
  * map gives those addresses their hardware side effects. */
 #include "hal.h"
+#include "../runtime/io.h"
+
+/* A word to a FIFO port: to the register model directly (runtime/io.h),
+ * without the trap's fault per word. */
+static void store(volatile u32 *d, u32 value)
+{
+    if (khdays_io_is_register((u32)d)) {
+        khdays_io_store((u32)d, 4, value);
+    } else {
+        *d = value;
+    }
+}
 
 /* 32 x `stmia r0, {r1-r3, r12}` of zero: the same four words, 32 times. */
 void GXi_NopClearFifo128_(void *pDest)
 {
     volatile u32 *d = (volatile u32 *)pDest;
     for (int i = 0; i < 32; ++i) {
-        d[0] = 0;
-        d[1] = 0;
-        d[2] = 0;
-        d[3] = 0;
+        store(&d[0], 0);
+        store(&d[1], 0);
+        store(&d[2], 0);
+        store(&d[3], 0);
     }
 }
 
@@ -23,9 +35,9 @@ void GX_SendFifo48B(const void *src, void *dst)
     const volatile u32 *s = (const volatile u32 *)src;
     volatile u32 *d = (volatile u32 *)dst;
     for (int i = 0; i < 4; ++i) {
-        d[0] = s[0];
-        d[1] = s[1];
-        d[2] = s[2];
+        store(&d[0], s[0]);
+        store(&d[1], s[1]);
+        store(&d[2], s[2]);
         s += 3;
     }
 }

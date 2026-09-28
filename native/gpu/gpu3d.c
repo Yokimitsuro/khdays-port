@@ -1388,6 +1388,9 @@ void khdays_gpu3d_vblank(const uint8_t *io, const KhdaysVramPages *vram, uint32_
             held_count -= i;
         }
     }
+    if (out == NULL) {
+        return;  /* the swap only: no one sees this frame (display.c) */
+    }
     disp3dcnt = io16(0x60);
     wbuffer = (render->swap_params >> 1) & 1;
     if (disp3dcnt & 0x10) {

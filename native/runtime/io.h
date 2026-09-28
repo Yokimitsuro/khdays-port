@@ -27,6 +27,12 @@ void khdays_io_trap_init(void);
 void khdays_io_read(u32 address, int size);
 void khdays_io_write(u32 address, int size, const u8 *before);
 
+/* A store to a register by the runtime or the HAL, with what it means --
+ * the same as the trap does for the game's own store, without the fault
+ * (the geometry FIFO takes thousands of words a frame). */
+int khdays_io_is_register(u32 address);
+void khdays_io_store(u32 address, int size, u32 value);
+
 /* Initial register values, as the ARM9 sees them when crt0 starts. */
 void khdays_io_reset(void);
 
