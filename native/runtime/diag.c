@@ -3,6 +3,7 @@
  * game is spinning. Symbols come from the build's PDB through DbgHelp. */
 #include "../hal/hal.h"
 #include "runtime.h"
+#include "events.h"
 
 extern unsigned khdays_cpsr;
 static unsigned khdays_cpsr_value(void) { return khdays_cpsr; }
@@ -63,6 +64,18 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
                 (unsigned long)info->ExceptionRecord->ExceptionInformation[1]);
     }
     fprintf(stderr, "\n");
+    {
+        const CONTEXT *c = info->ContextRecord;
+        fprintf(stderr, "  eax %08lx ebx %08lx ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx\n",
+                c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
+        if (c->Ebp > c->Esp && c->Ebp - c->Esp < 0x1000 &&
+            !IsBadReadPtr((const void *)(size_t)c->Esp, c->Ebp - c->Esp + 0x20)) {
+            for (DWORD at = c->Esp & ~15u; at < c->Ebp + 0x20; at += 16) {
+                const DWORD *w = (const DWORD *)(size_t)at;
+                fprintf(stderr, "  %08lx: %08lx %08lx %08lx %08lx\n", at, w[0], w[1], w[2], w[3]);
+            }
+        }
+    }
     if (info->ContextRecord->Eip >= 0x01ff8000 && info->ContextRecord->Eip < 0x0b000000) {
         fprintf(stderr, "  the game jumped into DS memory at 0x%08lx: ARM code there (a routine it "
                         "copies at run time) cannot run natively\n",
@@ -78,10 +91,133 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+/* KHDAYS_DUMP="ADDRESS:LENGTH ...", with the stall report: DS memory as
+ * words. `*ADDRESS+OFFSET:LENGTH` dumps from the pointer stored at ADDRESS,
+ * plus OFFSET (numbers in C notation). */
+static void dump_memory(void)
+{
+    const char *p = getenv("KHDAYS_DUMP");
+    while (p != NULL && *p != '\0') {
+        char *end;
+        const int indirect = *p == '*';
+        unsigned address, offset = 0, length;
+        if (*p == ' ') {
+            ++p;
+            continue;
+        }
+        address = (unsigned)strtoul(p + indirect, &end, 0);
+        if (*end == '+') {
+            offset = (unsigned)strtoul(end + 1, &end, 0);
+        }
+        length = *end == ':' ? (unsigned)strtoul(end + 1, &end, 0) : 4;
+        p = end;
+        if (indirect) {
+            if (IsBadReadPtr((const void *)(size_t)address, 4)) {
+                fprintf(stderr, "*%08x: not readable\n", address);
+                continue;
+            }
+            address = *(volatile unsigned *)address;
+        }
+        address += offset;
+        if (IsBadReadPtr((const void *)(size_t)address, length)) {
+            fprintf(stderr, "%08x: not readable\n", address);
+            continue;
+        }
+        for (unsigned at = 0; at < length; at += 4) {
+            if (at % 32 == 0) {
+                fprintf(stderr, "%s%08x:", at ? "\n" : "", address + at);
+            }
+            fprintf(stderr, " %08x", *(volatile unsigned *)(address + at));
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
+/* KHDAYS_STALL_SAMPLES=N: before the stall report, N samples of the game
+ * thread's stack a millisecond apart, and the functions found on them most
+ * often (each counted once per sample): what a stalled game keeps doing. */
+static void sample_stacks(int samples)
+{
+    enum { MAX_FUNCTIONS = 512 };
+    static DWORD64 function[MAX_FUNCTIONS];
+    static int hits[MAX_FUNCTIONS];
+    int count = 0;
+    HANDLE process = GetCurrentProcess();
+    for (int s = 0; s < samples; ++s) {
+        CONTEXT context;
+        STACKFRAME64 frame = {0};
+        DWORD64 seen[48];
+        int depth = 0;
+        Sleep(1);
+        SuspendThread(game_thread);
+        context.ContextFlags = CONTEXT_FULL;
+        GetThreadContext(game_thread, &context);
+        frame.AddrPC.Offset = context.Eip;
+        frame.AddrPC.Mode = AddrModeFlat;
+        frame.AddrFrame.Offset = context.Ebp;
+        frame.AddrFrame.Mode = AddrModeFlat;
+        frame.AddrStack.Offset = context.Esp;
+        frame.AddrStack.Mode = AddrModeFlat;
+        while (depth < 48 && StackWalk64(IMAGE_FILE_MACHINE_I386, process, game_thread, &frame, &context,
+                                         NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL) &&
+               frame.AddrPC.Offset != 0) {
+            char buffer[sizeof(SYMBOL_INFO) + 64];
+            SYMBOL_INFO *symbol = (SYMBOL_INFO *)buffer;
+            DWORD64 displacement;
+            DWORD64 start = frame.AddrPC.Offset;
+            int i;
+            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+            symbol->MaxNameLen = 64;
+            if (SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol)) {
+                start = symbol->Address;
+            }
+            for (i = 0; i < depth && seen[i] != start; ++i) {
+            }
+            if (i == depth) {
+                seen[depth++] = start;
+                for (i = 0; i < count && function[i] != start; ++i) {
+                }
+                if (i == count && count < MAX_FUNCTIONS) {
+                    function[count] = start;
+                    hits[count++] = 0;
+                }
+                if (i < count) {
+                    ++hits[i];
+                }
+            }
+        }
+        ResumeThread(game_thread);
+    }
+    fprintf(stderr, "khdays-native: functions on the game thread's stack in %d samples:\n", samples);
+    for (int shown = 0; shown < 60; ++shown) {
+        int best = -1;
+        char buffer[sizeof(SYMBOL_INFO) + 256];
+        SYMBOL_INFO *symbol = (SYMBOL_INFO *)buffer;
+        DWORD64 displacement;
+        for (int i = 0; i < count; ++i) {
+            if (hits[i] > 0 && (best < 0 || hits[i] > hits[best])) {
+                best = i;
+            }
+        }
+        if (best < 0) {
+            break;
+        }
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = 255;
+        fprintf(stderr, "  %5d  %s\n", hits[best],
+                SymFromAddr(process, function[best], &displacement, symbol) ? symbol->Name : "?");
+        hits[best] = -hits[best];
+    }
+}
+
 static DWORD WINAPI watchdog(void *parameter)
 {
     CONTEXT context;
+    const char *samples = getenv("KHDAYS_STALL_SAMPLES");
     Sleep((DWORD)(size_t)parameter * 1000);
+    if (samples != NULL && atoi(samples) > 0) {
+        sample_stacks(atoi(samples));
+    }
     SuspendThread(game_thread);
     context.ContextFlags = CONTEXT_FULL;
     GetThreadContext(game_thread, &context);
@@ -92,6 +228,7 @@ static DWORD WINAPI watchdog(void *parameter)
         extern volatile u32 khdays_arm_pc;
         fprintf(stderr, "the ARM interpreter's last instruction: 0x%08x\n", khdays_arm_pc);
     }
+    dump_memory();
     /* The SDK's threads: OSi_ThreadInfo (0x02044330) current and list, each
      * OSThread with state at +0x64, next at +0x68, priority at +0x70. */
     {
@@ -246,7 +383,41 @@ void khdays_check_update(int fn, int next)
     const IMAGE_NT_HEADERS *nt;
     const u8 *base = (const u8 *)&__ImageBase;
     if (trace < 0) {
-        trace = getenv("KHDAYS_TRACE_UPDATES") != NULL;
+        const char *setting = getenv("KHDAYS_TRACE_UPDATES");
+        trace = setting == NULL ? 0 : strcmp(setting, "all") == 0 ? 2 : 1;
+    }
+    if (trace == 2) {
+        /* KHDAYS_TRACE_UPDATES=all: the updates each frame runs, printed when
+         * that set changes */
+        static int frame_set[64], last_set[64], frame_count, last_count;
+        static u32 frame = ~0u;
+        const u32 now = khdays_events_vblank_count();
+        int i;
+        if (now != frame) {
+            int same = frame_count == last_count;
+            for (i = 0; same && i < frame_count; ++i) {
+                int j;
+                for (j = 0; j < last_count && last_set[j] != frame_set[i]; ++j) {
+                }
+                same = j < last_count;
+            }
+            if (!same && frame_count > 0) {
+                fprintf(stderr, "updates at frame %u:", frame);
+                for (i = 0; i < frame_count; ++i) {
+                    fprintf(stderr, " %s", symbol_name((const void *)(size_t)(u32)frame_set[i]));
+                }
+                fprintf(stderr, "\n");
+                memcpy(last_set, frame_set, sizeof(frame_set));
+                last_count = frame_count;
+            }
+            frame_count = 0;
+            frame = now;
+        }
+        for (i = 0; i < frame_count && frame_set[i] != fn; ++i) {
+        }
+        if (i == frame_count && frame_count < 64) {
+            frame_set[frame_count++] = fn;
+        }
     }
     if (trace && next != 0 && next != fn) {  /* KHDAYS_TRACE_UPDATES: every change of update */
         fprintf(stderr, "update %s -> ", symbol_name((const void *)(size_t)(u32)fn));

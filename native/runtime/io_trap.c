@@ -14,6 +14,7 @@
 #include "io.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 
@@ -192,6 +193,9 @@ static void io_store(u32 address, int size, u32 value)
     khdays_io_write(address, size, before);
 }
 
+/* KHDAYS_IO_STEP=1: every access takes the single step (to compare). */
+static int step_only;
+
 /* 1 when the instruction at Eip was carried out (Eip is then past it). */
 static int emulate(CONTEXT *c, u32 address)
 {
@@ -308,7 +312,7 @@ static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
             /* One instruction touching two I/O pages (movs between them). */
             fatal_instruction((const u8 *)context->Eip, address);
         }
-        if (emulate(context, address)) {
+        if (!step_only && emulate(context, address)) {
             return EXCEPTION_CONTINUE_EXECUTION;
         }
         if (!decode((const u8 *)context->Eip, &pending.access)) {
@@ -348,6 +352,8 @@ static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
 void khdays_io_trap_init(void)
 {
     DWORD old;
+    const char *setting = getenv("KHDAYS_IO_STEP");
+    step_only = setting != NULL && atoi(setting) != 0;
     AddVectoredExceptionHandler(1, io_handler);
     VirtualProtect((void *)KHDAYS_IO_BASE, KHDAYS_IO_SIZE, PAGE_NOACCESS, &old);
     VirtualProtect((void *)KHDAYS_IO2_BASE, KHDAYS_IO2_SIZE, PAGE_NOACCESS, &old);
