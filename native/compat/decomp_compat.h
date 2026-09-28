@@ -4,6 +4,10 @@
 #ifndef KHDAYS_DECOMP_COMPAT_H
 #define KHDAYS_DECOMP_COMPAT_H
 
+/* The game's code gets a section of its own: the interrupt watcher
+ * (runtime/async_irq.c) interrupts the game thread only while it runs there. */
+#pragma code_seg(".text$khdays_game")
+
 /* GCC/mwcc attributes (alignment hints) have no MSVC C spelling here. */
 #define __attribute__(x)
 

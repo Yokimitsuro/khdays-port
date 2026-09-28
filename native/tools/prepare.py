@@ -50,6 +50,8 @@ class Module:
     sections: dict[str, tuple[int, int]] = field(default_factory=dict)
     files: list[str] = field(default_factory=list)
     symbols: list[tuple[str, str, int]] = field(default_factory=list)  # name, kind, addr
+    ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # file -> sections
+    thumb: set[str] = field(default_factory=set)  # Thumb functions
 
 
 def load_modules() -> list[Module]:
@@ -73,12 +75,18 @@ def load_modules() -> list[Module]:
                 continue
             if line.endswith(":") and not line.startswith(" "):
                 m.files.append(line[:-1])
+                continue
+            s = SECTION_RE.match(line)
+            if s and m.files:
+                m.ranges.setdefault(m.files[-1], []).append((int(s[2], 16), int(s[3], 16)))
         syms = d / "symbols.txt"
         if syms.exists():
             for line in syms.read_text(encoding="utf-8").splitlines():
                 s = SYMBOL_RE.match(line)
                 if s:
                     m.symbols.append((s[1], s[2], int(s[4], 16)))
+                    if s[2] == "function" and (s[3] or "").startswith("thumb"):
+                        m.thumb.add(s[1])
         modules.append(m)
     return modules
 
@@ -207,6 +215,19 @@ ABI_FIXES = {
     "main@0202099c": [  # Scene_AdvanceToPending
         ("extern void UnloadOverlaySync(int);", "extern void UnloadOverlaySync(int, int);"),
         ("                UnloadOverlaySync(0);", "                UnloadOverlaySync(0, s->entry->overlayId);"),
+    ],
+    # A pass-through wrapper: the ROM (0x0208505c) saves only r3/lr and calls
+    # Ov024_MobiClip_BlitFrame with r0-r3 untouched -- the four arguments
+    # Ov024_MobiClip_FrameAlarm gives it (decoder, buffer, 0x100, 0).
+    "ov024@0208505c": [  # Ov024_MobiClip_DecodeAudioEntryChecked_3
+        ("extern int Ov024_MobiClip_BlitFrame(int arg);\n"
+         "int Ov024_MobiClip_DecodeAudioEntryChecked_3(int param_1) {\n"
+         "    if (param_1 == 0) return 0;\n"
+         "    return Ov024_MobiClip_BlitFrame(param_1) == 1;",
+         "extern int Ov024_MobiClip_BlitFrame(int arg, int dest, int width, int mode);\n"
+         "int Ov024_MobiClip_DecodeAudioEntryChecked_3(int param_1, int dest, int width, int mode) {\n"
+         "    if (param_1 == 0) return 0;\n"
+         "    return Ov024_MobiClip_BlitFrame(param_1, dest, width, mode) == 1;"),
     ],
     # The lid opening again restores both master brightnesses: the ROM passes
     # each saved value straight on (0x0205b7a0 `bl 0x0201e428` then
@@ -426,6 +447,17 @@ def statement_end(text: str, start: int) -> int:
 def strip_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
     return re.sub(r"//[^\n]*", " ", text)
+
+
+def hal_definitions() -> set[str]:
+    """What native/hal defines: functions, data and KHDAYS_HAL_TODO stubs."""
+    names: set[str] = set()
+    for source in (ROOT / "native" / "hal").glob("*.c"):
+        text = strip_comments(source.read_text(encoding="utf-8"))
+        names.update(re.findall(r"KHDAYS_HAL_TODO\((\w+)\)", text))
+        names.update(re.findall(r"^(?!extern\b|static\b|typedef\b|#)[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)"
+                                r"[ \t]*[\(\[=;]", text, re.MULTILINE))
+    return names
 
 
 def function_keys(modules: list[Module]) -> dict[str, str]:
@@ -761,6 +793,23 @@ def main() -> int:
             alternates[name] = target
         else:
             absolute[name] = addr
+    # What only an assembly file holds and native/hal does not implement is
+    # the ROM's bytes at its DS address -- the module image the game loads
+    # holds them: data is read there, and code is run there by the ARM
+    # interpreter (runtime/arm.c), which a native call into DS memory reaches.
+    # A Thumb function's address carries bit 0, as an ARM pointer to it does.
+    hal_names = hal_definitions()
+    by_name = {m.name: m for m in modules}
+    rom_run: list[str] = []
+    for mod_name, rel in hal_files:
+        m = by_name[mod_name]
+        for start, end in m.ranges.get(rel, []):
+            for n, k, a in m.symbols:
+                if start <= a < end and n not in hal_names and n not in absolute and n not in defined:
+                    absolute[n] = a | (1 if n in m.thumb else 0)
+                    if k == "function" or not rel.endswith(".s") or "_unk" in n:
+                        rom_run.append(n)
+    (out / "rom_code.txt").write_text("".join(f"{n}\n" for n in sorted(rom_run)), encoding="utf-8")
     # FS_OVERLAY_ID(n) is the ADDRESS of the linker symbol OVERLAY_n_ID.
     for d in sorted((CONFIG / "overlays").iterdir()):
         mo = re.fullmatch(r"ov(\d+)", d.name)

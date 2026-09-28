@@ -83,6 +83,9 @@ add_executable(khdays-native
     hal/sdk_os.c
     hal/sdk_runtime.c
     hal/sdk_thread.c
+    runtime/arm.c
+    runtime/async_irq.c
+    runtime/irq_trampoline.asm
     runtime/arm7.c
     runtime/boot.c
     runtime/card.c

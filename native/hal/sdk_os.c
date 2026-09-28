@@ -166,11 +166,19 @@ void OSi_CancelDma0(void)
     *ime = saved;
 }
 
+/* OSi_AlarmHandler: the timer interrupt's entry for OS alarms, an assembly
+ * shim that keeps r0/lr around OSi_ArrangeTimer (0x020036a0). */
+extern void OSi_ArrangeTimer(void);
+
+void OSi_AlarmHandler(void)
+{
+    OSi_ArrangeTimer();
+}
+
 /* --- Left to the runtime (threads, interrupts, reset) -------------------- */
 KHDAYS_HAL_TODO(OSi_ExceptionHandler)
 KHDAYS_HAL_TODO(OSi_GetAndDisplayContext)
 KHDAYS_HAL_TODO(OSi_SetExContext)
 KHDAYS_HAL_TODO(func_0200302c)  /* OSi_DisplayExContext */
 KHDAYS_HAL_TODO(func_02003948)  /* OS_ResetSystem */
-KHDAYS_HAL_TODO(OSi_AlarmHandler)
 KHDAYS_HAL_TODO(func_01ff8330)  /* OSi_DoBoot */

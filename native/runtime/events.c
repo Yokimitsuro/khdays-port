@@ -6,11 +6,31 @@
 #include "input.h"
 #include "../gpu/gpu3d.h"
 
+#include <windows.h>
+
 static u64 last_update;
 static u64 next_vblank = KHDAYS_VBLANK_LINE * KHDAYS_CYCLES_PER_LINE;
 static u32 vblank_count;
 static u32 presented;
 static u32 dma_at_vblank;  /* channel mask */
+
+/* For the interrupt watcher (async_irq.c), on another thread: the cycle of
+ * the next timed event, and whether the game is waiting here (this code then
+ * delivers interrupts itself). */
+volatile LONG64 khdays_next_event;
+volatile LONG khdays_game_waiting;
+
+static u64 next_event(void)
+{
+    u64 next = next_vblank;
+    for (int n = 0; n < 4; ++n) {
+        const u64 overflow = khdays_timer_next_overflow(n, last_update);
+        if (overflow < next) {
+            next = overflow;
+        }
+    }
+    return next;
+}
 
 void khdays_events_dma_at_vblank(int channel)
 {
@@ -53,6 +73,7 @@ void khdays_events_update(void)
         next_vblank += KHDAYS_CYCLES_PER_FRAME;
     }
     last_update = now;
+    InterlockedExchange64(&khdays_next_event, (LONG64)next_event());
 }
 
 static int irq_line(void)
@@ -74,24 +95,18 @@ void khdays_irq_poll(void)
  * once the interrupt line is up -- taking the IRQ if the CPSR allows it. */
 void khdays_runtime_wait(void)
 {
+    InterlockedIncrement(&khdays_game_waiting);
     for (;;) {
-        u64 next;
         khdays_events_update();
         if (presented != vblank_count) {
             presented = vblank_count;
             khdays_host_frame();
         }
         if (irq_line()) {
+            InterlockedDecrement(&khdays_game_waiting);
             khdays_irq_deliver();
             return;
         }
-        next = next_vblank;
-        for (int n = 0; n < 4; ++n) {
-            const u64 overflow = khdays_timer_next_overflow(n, last_update);
-            if (overflow < next) {
-                next = overflow;
-            }
-        }
-        khdays_clock_sleep_until(next);
+        khdays_clock_sleep_until(next_event());
     }
 }

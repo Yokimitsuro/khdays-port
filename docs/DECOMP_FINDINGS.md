@@ -142,6 +142,11 @@ mechanical. Numbers at the revision above: see the generated lists below.
   `0x02030998` the call): `Session_LayoutPacketSlots(func_0203065c())` -- the
   link mode sizes the message slots. Natively the slots stayed unsized and a
   message was copied through a null buffer.
+- **`Ov024_MobiClip_DecodeAudioEntryChecked_3`** is a four-argument
+  pass-through: the ROM (`0x0208505c`) saves only r3/lr and calls
+  `Ov024_MobiClip_BlitFrame` with r0-r3 untouched, which are what
+  `Ov024_MobiClip_FrameAlarm` passes (decoder, buffer, `0x100`, 0). The C
+  takes and passes one argument; `BlitFrame` takes four.
 - **Empty functions used as object updates.** `Obj_UpdateAll` calls each
   update with the update's own address in r0 (`0x02023b60 ldr r0,[r1,#0x14]`,
   `blx r0`) and stores a nonzero result as the next update. An empty function

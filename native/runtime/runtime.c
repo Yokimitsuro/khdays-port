@@ -1,6 +1,7 @@
 /* Host-side services the HAL calls into. */
 #include "../hal/hal.h"
 #include "../host/host.h"
+#include "arm.h"
 #include "clock.h"
 #include "display.h"
 #include "events.h"
@@ -43,7 +44,12 @@ int khdays_runtime_init(int argc, char **argv)
     khdays_boot_environment();
     khdays_io_reset();
     khdays_io_trap_init();
+    khdays_arm_init();
     khdays_threads_init();
+    {
+        extern void khdays_async_irq_start(void);
+        khdays_async_irq_start();
+    }
     khdays_clock_init();
     return 1;
 }
@@ -52,6 +58,7 @@ void khdays_host_frame(void)
 {
     const u32 frame = khdays_events_vblank_count();
     if (frame % 60 == 0) {
+        khdays_arm_report();
         /* the scene controller (0x0204bda8: object, table entry, current id,
          * pending id and argument; src/calls/func_0202099c.c) */
         const volatile u32 *scene = (const volatile u32 *)0x0204bda8;

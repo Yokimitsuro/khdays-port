@@ -138,6 +138,13 @@ static struct {
     u8 before[16];
 } pending;
 
+/* Whether an access is half done (the page open, a single step to come):
+ * the interrupt watcher must not divert the thread then (async_irq.c). */
+int khdays_io_trap_busy(void)
+{
+    return pending.active;
+}
+
 static void fatal_instruction(const u8 *code, u32 address)
 {
     fprintf(stderr, "io: unknown instruction touching 0x%08x at %p:", address, (void *)code);
@@ -149,10 +156,14 @@ static void fatal_instruction(const u8 *code, u32 address)
     ExitProcess(4);
 }
 
+void khdays_async_irq_undo(CONTEXT *context, const void *address);
+
 static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
 {
     EXCEPTION_RECORD *record = info->ExceptionRecord;
     CONTEXT *context = info->ContextRecord;
+
+    khdays_async_irq_undo(context, record->ExceptionAddress);  /* an interrupt injected in flight */
 
     if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
         const u32 address = (u32)record->ExceptionInformation[1];

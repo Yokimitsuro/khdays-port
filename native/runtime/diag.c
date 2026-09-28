@@ -142,8 +142,24 @@ static int __cdecl on_runtime_check(int type, const wchar_t *file, int line, con
 }
 #endif
 
+/* Last in the vectored chain: an exception no runtime handler took, reported
+ * before the structured handlers see it (a broken chain there hides it). */
+static LONG CALLBACK on_unhandled_first(EXCEPTION_POINTERS *info)
+{
+    const EXCEPTION_RECORD *r = info->ExceptionRecord;
+    if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION || r->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION ||
+        r->ExceptionCode == EXCEPTION_PRIV_INSTRUCTION) {
+        fprintf(stderr, "khdays-native: first-chance exception 0x%08lx at %p (eip %08lx, esp %08lx, info %lu %08lx)\n",
+                r->ExceptionCode, r->ExceptionAddress, info->ContextRecord->Eip, info->ContextRecord->Esp,
+                (unsigned long)r->ExceptionInformation[0], (unsigned long)r->ExceptionInformation[1]);
+        print_stack(GetCurrentThread(), info->ContextRecord);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 void khdays_diag_init(void)
 {
+    AddVectoredExceptionHandler(0, on_unhandled_first);
     const char *stall = getenv("KHDAYS_STALL_SECONDS");
 #if defined(_DEBUG)
     _RTC_SetErrorFuncW(on_runtime_check);
