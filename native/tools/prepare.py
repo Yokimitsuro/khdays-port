@@ -120,6 +120,11 @@ VIRTUAL_METHOD = re.compile(r"(\bvirtual\s+(?:[\w\*&]+\s+)*?)(~?[A-Za-z_]\w*\s*\
 # two), where MSVC gives it one. A placeholder declared first takes slot 0,
 # so the destructor and every later method land on mwcc's slots.
 VIRTUAL_DTOR = re.compile(r"^([ \t]*)(virtual __cdecl ~\w+\s*\(\s*\)\s*;)", re.MULTILINE)
+# An empty function (`bx lr` in the ROM) leaves r0 as its caller set it, and
+# callers that read the result get their own first argument back -- the
+# object dispatcher relies on it (an empty update keeps itself). Natively it
+# returns its first argument, which it now takes.
+EMPTY_FUNCTION = re.compile(r"^void[ \t]+(\w+)[ \t]*\([ \t]*(?:void)?[ \t]*\)[ \t]*\{[ \t]*\}[ \t]*$", re.MULTILINE)
 
 
 # Where the runtime joins the game's own flow, each a single, documented edit
@@ -132,6 +137,18 @@ HOOKS = {
         "FSOverlayInitFunc *p = p_ovi->header.sinit_init;",
         "FSOverlayInitFunc *p = (khdays_data_init((int)p_ovi->header.id), "
         "p_ovi->header.sinit_init);",
+    ),
+    # An object's update returns its next update. The ROM calls it with the
+    # update's own address in r0 (0x02023b60 `ldr r0,[r1,#0x14]`, `blx r0`),
+    # so one that leaves r0 alone -- an empty one, see EMPTY_FUNCTION -- keeps
+    # itself; natively it gets that address as its argument. Whatever else it
+    # returns must be native code (or -1/-2): anything not is caught here,
+    # naming the update that returned it (runtime/diag.c).
+    "src/calls/func_02023adc.c": (
+        "                int cb = ((int (*)(void))((int *)data_0204c058[1])[5])();\n",
+        "                int cb = ((int (*)(int))((int *)data_0204c058[1])[5])(((int *)data_0204c058[1])[5]);\n"
+        "                { extern void khdays_check_update(int fn, int next);\n"
+        "                  khdays_check_update(((int *)data_0204c058[1])[5], cb); }\n",
     ),
     # KHDAYS_TRACE_SCRIPT: the action-script interpreter reports each step it
     # stands on (runtime/diag.c), to see what a scene waits for.
@@ -295,6 +312,7 @@ def transform(text: str) -> str:
     text = END_LABEL.sub(lambda m: f"{m[1]};{m[2]}", text)
     text = DSPROT_RANGES_INCLUDE.sub(r'\1"khdays_dsprot_ranges.h"', text)
     text = VIRTUAL_METHOD.sub(r"\1__cdecl \2", text)
+    text = EMPTY_FUNCTION.sub(r"void *\1(void *khdays_r0) { return khdays_r0; }  /* bx lr: r0 unchanged */", text)
     text = VIRTUAL_DTOR.sub(r"\1virtual void __cdecl khdays_mwcc_complete_dtor();  /* mwcc's slot 0 */\n\1\2",
                             text)
     text = ARRAY_ASSIGN.sub(

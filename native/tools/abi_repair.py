@@ -163,9 +163,11 @@ def find_definition(text: str, mask: bytearray, name: str) -> Definition | None:
         if not mask[m.start()] or depth_at(text, mask, m.start()) != 0:
             continue
         close = matching(text, mask, m.end() - 1)
-        after = re.match(r"\s*\{", text[close + 1:])
-        if not after:
+        # a function returning a function pointer: `T (*name(params))(args) {`
+        tail = re.match(r"(\s*\)\s*\([^(){};]*\))*\s*\{", text[close + 1:])
+        if not tail:
             continue
+        after = tail
         open_brace = close + 1 + after.end() - 1
         line_start = text.rfind("\n", 0, m.start()) + 1
         return Definition(line_start, m.start(), (m.end(), close),
@@ -294,6 +296,10 @@ class Repairer:
         for rel, text in texts.items():
             for m in re.finditer(r"^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{",
                                  text, re.MULTILINE):
+                self.def_file.setdefault(m[1], rel)
+            # returning a function pointer: `T (*name(params))(args) {`
+            for m in re.finditer(r"^[A-Za-z_][\w \t\*]*\(\s*\*\s*([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\)"
+                                 r"\s*\([^;{}]*\)\s*\{", text, re.MULTILINE):
                 self.def_file.setdefault(m[1], rel)
         self.plan = Plan()
         # definitions that must take more parameters: name -> count

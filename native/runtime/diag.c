@@ -215,3 +215,33 @@ void khdays_trace_script(void *st, void *entry)
     fprintf(stderr, "\n");
     fflush(stderr);
 }
+
+/* Obj_UpdateAll (func_02023adc, prepare.py HOOKS): an update returned
+ * `next` as the object's next update. 0 keeps it, -1/-2 are markers; any
+ * other value must be native code, or the next frame would jump to it. */
+void khdays_check_update(int fn, int next)
+{
+    extern char __ImageBase;
+    static int trace = -1;
+    const IMAGE_NT_HEADERS *nt;
+    const u8 *base = (const u8 *)&__ImageBase;
+    if (trace < 0) {
+        trace = getenv("KHDAYS_TRACE_UPDATES") != NULL;
+    }
+    if (trace && next != 0 && next != fn) {  /* KHDAYS_TRACE_UPDATES: every change of update */
+        fprintf(stderr, "update %s -> ", symbol_name((const void *)(size_t)(u32)fn));
+        fprintf(stderr, "%s\n", next == -1 ? "idle" : next == -2 ? "destroy"
+                                                  : symbol_name((const void *)(size_t)(u32)next));
+    }
+    if (next == 0 || next == -1 || next == -2) {
+        return;
+    }
+    nt = (const IMAGE_NT_HEADERS *)(base + ((const IMAGE_DOS_HEADER *)base)->e_lfanew);
+    if ((const u8 *)(size_t)(u32)next >= base && (const u8 *)(size_t)(u32)next < base + nt->OptionalHeader.SizeOfImage) {
+        return;
+    }
+    fprintf(stderr, "khdays-native: the update %s returned 0x%08x as the object's next update, "
+                    "which is not code\n", symbol_name((const void *)(size_t)(u32)fn), (u32)next);
+    fflush(stderr);
+    exit(12);
+}
