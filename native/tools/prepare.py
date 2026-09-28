@@ -128,6 +128,12 @@ VIRTUAL_METHOD = re.compile(r"(\bvirtual\s+(?:[\w\*&]+\s+)*?)(~?[A-Za-z_]\w*\s*\
 # two), where MSVC gives it one. A placeholder declared first takes slot 0,
 # so the destructor and every later method land on mwcc's slots.
 VIRTUAL_DTOR = re.compile(r"^([ \t]*)(virtual __cdecl ~\w+\s*\(\s*\)\s*;)", re.MULTILINE)
+# `delete p` of such a class: mwcc checks p and calls vtable slot 1 with p in
+# r0 (ov024 0x02084ec4: `ldr r1,[r0]; ldr r1,[r1,#4]; blx r1`). MSVC keeps
+# __thiscall for destructors whatever the declaration says, so the C function
+# in that slot would get the delete flag as its argument; the call is spelled
+# out instead.
+DELETE_STATEMENT = re.compile(r"^([ \t]*)delete[ \t]+([^;\n]+);", re.MULTILINE)
 # An empty function (`bx lr` in the ROM) leaves r0 as its caller set it, and
 # callers that read the result get their own first argument back -- the
 # object dispatcher relies on it (an empty update keeps itself). Natively it
@@ -340,6 +346,9 @@ def transform(text: str) -> str:
     text = EMPTY_FUNCTION.sub(r"void *\1(void *khdays_r0) { return khdays_r0; }  /* bx lr: r0 unchanged */", text)
     text = VIRTUAL_DTOR.sub(r"\1virtual void __cdecl khdays_mwcc_complete_dtor();  /* mwcc's slot 0 */\n\1\2",
                             text)
+    text = DELETE_STATEMENT.sub(
+        r"\1{ void *khdays_p = (void *)(\2); if (khdays_p) "
+        r"((void (__cdecl *)(void *))(*(void ***)khdays_p)[1])(khdays_p); }", text)
     text = ARRAY_ASSIGN.sub(
         lambda m: f"{m[1]}KHDAYS_ARRAY_ASSIGN({m[2].strip()}, {m[3]}, {m[4].strip()}, {m[5].strip()});",
         text)
