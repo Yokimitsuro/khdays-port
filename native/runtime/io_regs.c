@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 static void unimplemented(const char *what, u32 address)
 {
@@ -213,19 +214,46 @@ static u32 dma_bus(u32 address)
     return address;
 }
 
+/* A source below main RAM inside this executable is data the decomp defines
+ * in C that lives here natively (on the DS it would be in main RAM). */
+static int in_executable(u32 address)
+{
+    extern char __ImageBase;
+    const u8 *base = (const u8 *)&__ImageBase;
+    const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(base + ((const IMAGE_DOS_HEADER *)base)->e_lfanew);
+    return address >= (u32)(size_t)base && address < (u32)(size_t)base + nt->OptionalHeader.SizeOfImage;
+}
+
 /* One DMA unit, with the register semantics when either side is I/O. */
 static void dma_unit(u32 source, u32 destination, int size)
 {
     u8 value[4];
-    source = dma_bus(source);
+    if (source < 0x02000000u && in_executable(source)) {
+        memcpy(value, (const void *)(size_t)source, (size_t)size);
+        source = 1;  /* read */
+    } else {
+        source = dma_bus(source);
+    }
     destination = dma_bus(destination);
     if (destination == 0) {
         return;  /* a write to nothing */
     }
     if (source == 0) {
-        unimplemented("a DMA reading below main RAM into memory", destination);
+        /* Reading where the bus has nothing (the game passes a null source
+         * for an empty player slot's gauge). GBATEK says the DMA cannot see
+         * the TCMs, not what it reads there: the destination is left as it
+         * is, and the first such read is reported. */
+        static int reported;
+        if (!reported) {
+            reported = 1;
+            fprintf(stderr, "io: a DMA read from outside the bus into 0x%08x; its value is not "
+                            "known, the destination is left unchanged\n", destination);
+        }
+        return;
     }
-    if (is_io_address(source)) {
+    if (source == 1) {
+        /* already read, from the executable */
+    } else if (is_io_address(source)) {
         khdays_io_read(source, size);
         memcpy(value, host_address(source), size);
     } else {

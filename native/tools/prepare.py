@@ -274,6 +274,56 @@ ABI_FIXES = {
          f"        NNSi_FndFreeFromDefaultHeap(p->{f});\n        p->{f} = 0;")
         for f in ("f3c", "f40", "f44", "f48")
     ],
+    # func_ov022_020881f8(player) returns the player's position. The camera
+    # updates call it with r0 still holding QueryActiveStateOrDelegate's
+    # result: `bl 0x01fffe14; mov r8,r0; bl 0x020881f8` (0x0204d198),
+    # likewise 0x0204f0b8 and 0x0204fc68. (Calls across overlays, which the
+    # Ghidra scan does not follow.)
+    "ov002@0204d170": [  # Ov002_Camera_UpdateFollow
+        ("extern void *func_ov022_020881f8(void);", "extern void *func_ov022_020881f8(int player);"),
+        ("  puVar9 = (undefined4 *)func_ov022_020881f8();",
+         "  puVar9 = (undefined4 *)func_ov022_020881f8(idx);"),
+    ],
+    "ov002@0204f0a8": [  # Ov002_TickCamera
+        ("extern void *func_ov022_020881f8(void);", "extern void *func_ov022_020881f8(int player);"),
+        ("    pTarget = (VecFx32 *)func_ov022_020881f8();",
+         "    pTarget = (VecFx32 *)func_ov022_020881f8(nPlayer);"),
+    ],
+    "ov002@0204fc54": [  # Ov002_TickLockedCamera
+        ("extern VecFx32 *func_ov022_020881f8(void);", "extern VecFx32 *func_ov022_020881f8(int player);"),
+        ("    pAnchor = func_ov022_020881f8();", "    pAnchor = func_ov022_020881f8(nPlayer);"),
+    ],
+    # ... and this one with its own argument still in r0 (0x020652d0
+    # `mov r4,r0`, 0x020652d4 the call).
+    "ov002@020652c8": [  # Ov002_FormatRowFromSelection
+        ("extern int func_ov022_020881f8(void);", "extern int func_ov022_020881f8(int player);"),
+        ("    Ov002_ScreenToCell(pair, func_ov022_020881f8());",
+         "    Ov002_ScreenToCell(pair, func_ov022_020881f8(self));"),
+    ],
+    # The value tested against -1 is still in r0 when the ROM calls
+    # Ov002_GetWord20 (0x020616ac the test's call, 0x020616c0 this one).
+    "ov002@020616a0": [  # Ov002_SceneStepPanel
+        ("extern void *Ov002_GetWord20(void);", "extern void *Ov002_GetWord20(int self);"),
+        ("    if (func_ov022_02083f0c() == -1) {\n        return 0;\n    }\n"
+         "    pCam = Ov002_GetWord20();",
+         "    if ((khdays_r0 = func_ov022_02083f0c()) == -1) {\n        return 0;\n    }\n"
+         "    pCam = Ov002_GetWord20(khdays_r0);"),
+        ("    void *pCam;\n", "    void *pCam;\n    int khdays_r0;\n"),
+    ],
+    # Ov002_IsPanelModeSet(fallback) returns its r0 untouched when no panel is
+    # installed (`ldr r1,=0x0207f628; ldr r1,[r1]; cmp r1,#0; bxeq lr`,
+    # 0x02061b80); here that r0 is whatever Ov002_RepublishHud left, several
+    # calls deep. With a panel it is not read; without one, stop there.
+    "ov002@02069d40": [  # Ov002_CreateAndRestoreHud
+        ("extern int Ov002_IsPanelModeSet(void);",
+         "extern int Ov002_IsPanelModeSet(int fallback);\n"
+         "extern void *data_ov002_0207f628;\n"
+         "extern void khdays_abi_gap(const char *what);"),
+        ("    if (Ov002_IsPanelModeSet()) {",
+         "    if (Ov002_IsPanelModeSet(data_ov002_0207f628 != 0 ? 0 :\n"
+         "            (khdays_abi_gap(\"Ov002_IsPanelModeSet's fallback with no panel: what \"\n"
+         "                            \"Ov002_RepublishHud left in r0\"), 0))) {"),
+    ],
 }
 
 # Argument registers the Ghidra scan counts as read but the ROM shows the
@@ -285,6 +335,10 @@ ABI_NOT_READ = {
     # bx r12`, 0x020562f0, 0x020563a0-0x02056404), the eighth (0x02056304)
     # writes r3 before reading it.
     "ov008@02056478": (3,),
+    # Ov002_LoadPanelSlots (Thumb) loads r2 from its literal pool at
+    # 0x020550dc before anything reads it, and r3 is only saved by the push
+    # that keeps the stack aligned until 0x0205510c sets it.
+    "ov002@020550d0": (2, 3),
 }
 
 
@@ -426,6 +480,66 @@ def transform(text: str) -> str:
 
     text = ZERO_MEMBER.sub(drop_zero, text)
     text = DEF_HEADER.sub(name_unnamed_params, text)
+    text = widen_narrow_returns(text)
+    return text
+
+
+# A function returning a char or short: the ARM callee leaves the value
+# extended to 32 bits in r0, and the decomp's callers often declare it `int`;
+# MSVC returns it in AL/AX and leaves the rest of EAX as it was. So the
+# definition returns an int holding the narrowed value, as r0 does.
+NARROW_TYPE = r"(?:u8|s8|u16|s16|(?:unsigned\s+|signed\s+)?char|(?:unsigned\s+|signed\s+)?short(?:\s+int)?)"
+NARROW_DEFINITION = re.compile(
+    rf"^((?:static\s+)?)({NARROW_TYPE})(\s+)(\w+)(\s*\([^;{{}}]*\)\s*\{{)", re.MULTILINE)
+RETURN_VALUE = re.compile(r"\breturn\b(\s*)([^;]+?)\s*;")
+
+
+def body_end(text: str, open_brace: int) -> int:
+    """The index just past the brace that closes the one at `open_brace`
+    (strings, characters and comments skipped)."""
+    depth, i, n = 0, open_brace, len(text)
+    while i < n:
+        c = text[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+            continue
+        if text.startswith("/*", i):
+            i = text.find("*/", i + 2) + 2 if text.find("*/", i + 2) >= 0 else n
+            continue
+        if text.startswith("//", i):
+            i = text.find("\n", i) if text.find("\n", i) >= 0 else n
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return n
+
+
+def widen_narrow_returns(text: str) -> str:
+    out, pos, widened = [], 0, []
+    for m in NARROW_DEFINITION.finditer(text):
+        if m.start() < pos:
+            continue
+        name, narrow = m[4], re.sub(r"\s+", " ", m[2])
+        end = body_end(text, m.end() - 1)
+        body = RETURN_VALUE.sub(lambda r: f"return{r[1]}({narrow})({r[2]});", text[m.end():end])
+        out.append(text[pos:m.start()])
+        out.append(f"{m[1]}int{m[3]}{name}{m[5]}{body}")
+        pos = end
+        widened.append(name)
+    out.append(text[pos:])
+    text = "".join(out)
+    # the same functions' prototypes in this file say so too
+    for name in widened:
+        text = re.sub(rf"^(\s*(?:extern\s+|static\s+)?){NARROW_TYPE}(\s+{re.escape(name)}\s*\([^;{{}}]*\)\s*;)",
+                      r"\1int\2", text, flags=re.MULTILINE)
     return text
 
 

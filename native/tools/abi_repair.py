@@ -439,6 +439,13 @@ class Repairer:
                 defined = min(defined, len(param_list(self.texts[callee_rel], cd)))
         if defined <= declared:
             return "resolved"
+        # A 64-bit parameter takes two argument words (r1:r2, or two stack
+        # slots on x86 alike): a prototype counting them covers the definition.
+        for _, open_paren, close in declarations(text, mask, callee):
+            params = [p for p in split_top_level(text[open_paren + 1:close]) if p.strip() not in ("", "void")]
+            wide = sum(1 for p in params if re.search(r"\b(?:u64|s64|fx64|double)\b|\blong\s+long\b", p))
+            if params and len(params) + wide >= defined:
+                return "resolved"
         # every call already passes them (a manual fix, ABI_FIXES)
         present = call_sites(text, mask, callee, d.body)
         if present and all(len(split_top_level(text[text.find("(", s) + 1:c].strip())) >= defined
