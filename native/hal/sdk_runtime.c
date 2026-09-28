@@ -19,7 +19,7 @@ u64 func_02020400(s32 numerator, s32 denominator)
 }
 
 /* _u32_div_f: as above, unsigned. */
-u64 func_0202060c(u32 numerator, u32 denominator)
+u64 Math_DivMod(u32 numerator, u32 denominator)
 {
     u32 quotient = numerator;
     u32 remainder = 0;

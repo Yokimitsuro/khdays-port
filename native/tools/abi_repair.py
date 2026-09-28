@@ -72,12 +72,18 @@ class Findings:
     calls: dict[tuple[str, str], dict[str, dict[int, list[Source]]]] = field(default_factory=dict)
 
 
-def load_findings(path: Path) -> Findings:
+def load_findings(path: Path, names: dict[str, str] | None = None) -> Findings:
+    """Functions are recorded by where they are, `module@address` (main, itcm,
+    dtcm, ovNNN), which survives the decomp renaming them; `names` gives each
+    key its current name."""
     f = Findings()
     for line in path.read_text(encoding="utf-8").splitlines():
         if " <- " not in line:
             continue
         w = line.split(" ")
+        for i in range(1, 2 if w[0] == "A" else 3):
+            if names is not None and "@" in w[i]:
+                w[i] = names.get(w[i], w[i])
         sources = [parse_source(s) for s in line.split(" <- ", 1)[1].split(" | ")]
         if w[0] == "A":
             f.returns.setdefault(w[1], []).append(sources)

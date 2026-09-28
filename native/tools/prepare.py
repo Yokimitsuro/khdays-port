@@ -128,12 +128,14 @@ EMPTY_FUNCTION = re.compile(r"^void[ \t]+(\w+)[ \t]*\([ \t]*(?:void)?[ \t]*\)[ \
 
 
 # Where the runtime joins the game's own flow, each a single, documented edit
-# (file -> (text, replacement)); a missing text stops the script.
+# (function -> (text, replacement)); a missing text stops the script. A
+# function is named by its key, module@address (function_keys), which stays
+# put when the decomp renames it; the text must match its current source.
 HOOKS = {
     # An overlay's data: its image has just been loaded and started; where the
     # SDK runs the overlay's static initializers, the native data initializers
     # of that overlay go over the image (runtime/data_init.c).
-    "libs/nitro/fs/calls/FS_StartOverlay.c": (
+    "main@0200b4b8": (  # FS_StartOverlay
         "FSOverlayInitFunc *p = p_ovi->header.sinit_init;",
         "FSOverlayInitFunc *p = (khdays_data_init((int)p_ovi->header.id), "
         "p_ovi->header.sinit_init);",
@@ -144,7 +146,7 @@ HOOKS = {
     # itself; natively it gets that address as its argument. Whatever else it
     # returns must be native code (or -1/-2): anything not is caught here,
     # naming the update that returned it (runtime/diag.c).
-    "src/calls/func_02023adc.c": (
+    "main@02023adc": (  # Obj_UpdateAll
         "                int cb = ((int (*)(void))((int *)data_0204c058[1])[5])();\n",
         "                int cb = ((int (*)(int))((int *)data_0204c058[1])[5])(((int *)data_0204c058[1])[5]);\n"
         "                { extern void khdays_check_update(int fn, int next);\n"
@@ -152,7 +154,7 @@ HOOKS = {
     ),
     # KHDAYS_TRACE_SCRIPT: the action-script interpreter reports each step it
     # stands on (runtime/diag.c), to see what a scene waits for.
-    "src/calls/func_02020e58.c": (
+    "main@02020e58": (  # Game_RunActionScript
         "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n",
         "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n"
         "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
@@ -162,13 +164,14 @@ HOOKS = {
 
 # Calls whose native form the ROM shows but no mechanical rule gives (see
 # abi_repair.py for the rules): file -> [(text, replacement)], each read from
-# the function's disassembly. Applied before the mechanical repairs.
+# the function's disassembly. Applied before the mechanical repairs. Keyed
+# like HOOKS.
 ABI_FIXES = {
     # The ARM ABI returns this two-word struct through a pointer in r0, which
     # the definition spells out; its callers declare the NitroSDK form
     # `FSFileID FS_GetOverlayFileID(const FSOverlayInfo *)`. The ROM
     # (0x0200b178) stores {&rom archive, overlay->file_id (+0x18)} through r0.
-    "libs/nitro/fs/calls/FS_GetOverlayFileID.c": [(
+    "main@0200b178": [(  # FS_GetOverlayFileID
         "void FS_GetOverlayFileID(FsOverlayInfo *dst, int *overlay) {\n"
         "    FsOverlayInfo info;\n"
         "    info.a = (int)&data_02046334;\n"
@@ -183,40 +186,41 @@ ABI_FIXES = {
         "}",
     )],
     # NNSi_G2dFontGetTextRect returns its two-word rect by value; both callers
-    # (func_0201449c, func_ov002_0205e674) pass the ARM ABI's result pointer
-    # themselves. MSVC returns an 8-byte struct in EDX:EAX instead, so the
-    # definition takes the pointer as they do.
-    "libs/nns/g2d/calls/func_0201386c.c": [
-        ("NNSG2dTextRect func_0201386c (const NNSG2dFont * pFont, int hSpace, int vSpace, "
+    # (Text_AlignAnchor, Ov002_SceneLayoutPanelWindow) pass the ARM ABI's
+    # result pointer themselves. MSVC returns an 8-byte struct in EDX:EAX
+    # instead, so the definition takes the pointer as they do.
+    "main@0201386c": [  # NNSi_G2dFontGetTextRect
+        ("NNSG2dTextRect NNSi_G2dFontGetTextRect (const NNSG2dFont * pFont, int hSpace, int vSpace, "
          "const void * txt)",
-         "void func_0201386c (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
+         "void NNSi_G2dFontGetTextRect (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
          "int hSpace, int vSpace, const void * txt)"),
         ("    return rect;\n}", "    *khdays_result = rect;\n}"),
     ],
     # The ROM frees the node itself: `str r1,[sp,#0]` at 0x02055a8e keeps `b`
     # in the stack slot that `ldr r0,[sp,#0]` (0x02055ac4) passes to the free.
-    "src/overlays/ov000/calls/func_ov000_02055a8c.c": [
+    "ov000@02055a8c": [  # Ov000_DestroyObject
         ("        NNSi_FndFreeFromDefaultHeap();", "        NNSi_FndFreeFromDefaultHeap(b);"),
     ],
     # Ending a scene unloads its overlay: the ROM passes the entry's overlay id
     # (0x020209c4 `ldr r1,[r4,#4]`, 0x020209cc `ldr r1,[r1,#0]`) to
-    # func_0201e4a8(target, id), as func_0200108c does.
-    "src/calls/func_0202099c.c": [
-        ("extern void func_0201e4a8(int);", "extern void func_0201e4a8(int, int);"),
-        ("                func_0201e4a8(0);", "                func_0201e4a8(0, s->entry->overlayId);"),
+    # UnloadOverlaySync(target, id), as Overlay105_Release does.
+    "main@0202099c": [  # Scene_AdvanceToPending
+        ("extern void UnloadOverlaySync(int);", "extern void UnloadOverlaySync(int, int);"),
+        ("                UnloadOverlaySync(0);", "                UnloadOverlaySync(0, s->entry->overlayId);"),
     ],
     # The lid opening again restores both master brightnesses: the ROM passes
     # each saved value straight on (0x0205b7a0 `bl 0x0201e428` then
-    # `bl 0x0201e374`; 0x0205b7a8 `bl 0x0201e438` then `bl 0x0201e3cc`).
-    "src/overlays/ov012/calls/func_ov012_0205b618.c": [
-        ("extern void func_0201e374();", "extern void func_0201e374(int);"),
-        ("extern void func_0201e3cc();", "extern void func_0201e3cc(int);"),
+    # `bl SetMasterBrightnessMain`; 0x0205b7a8 `bl 0x0201e438` then
+    # `bl SetMasterBrightnessSub`).
+    "ov012@0205b618": [  # Ov012_RunOpeningScene
+        ("extern void SetMasterBrightnessMain();", "extern void SetMasterBrightnessMain(int);"),
+        ("extern void SetMasterBrightnessSub();", "extern void SetMasterBrightnessSub(int);"),
         ("extern void func_0201e428(void);", "extern int func_0201e428(void);"),
         ("extern void func_0201e438(void);", "extern int func_0201e438(void);"),
-        ("                        func_0201e428();\n                        func_0201e374();\n"
-         "                        func_0201e438();\n                        func_0201e3cc();",
-         "                        func_0201e374(func_0201e428());\n"
-         "                        func_0201e3cc(func_0201e438());"),
+        ("                        func_0201e428();\n                        SetMasterBrightnessMain();\n"
+         "                        func_0201e438();\n                        SetMasterBrightnessSub();",
+         "                        SetMasterBrightnessMain(func_0201e428());\n"
+         "                        SetMasterBrightnessSub(func_0201e438());"),
     ],
 }
 
@@ -424,6 +428,12 @@ def strip_comments(text: str) -> str:
     return re.sub(r"//[^\n]*", " ", text)
 
 
+def function_keys(modules: list[Module]) -> dict[str, str]:
+    """Each function's key, `module@address`: what native/abi and the manual
+    fixes name functions by, as the decomp renames them."""
+    return {n: f"{m.name}@{a:08x}" for m in modules for n, k, a in m.symbols if k == "function"}
+
+
 def module_id(name: str) -> int:
     """The module number KHDAYS_DATA_INIT records: an overlay's id, or -1/-2/-3
     for the static module, ITCM and DTCM (their data is placed at start-up)."""
@@ -522,6 +532,14 @@ def main() -> int:
     hal_files: list[tuple[str, str]] = []  # (module, relative path)
     texts: dict[str, str] = {}
     module_of: dict[str, str] = {}
+    # The manual edits by the file of the function they name (one function per
+    # file, named after it).
+    key_name = {k: n for n, k in function_keys(modules).items()}
+    for key in list(HOOKS) + list(ABI_FIXES):
+        if key not in key_name:
+            raise SystemExit(f"no function at {key} (prepare.py HOOKS / ABI_FIXES)")
+    hooks = {key_name[k]: v for k, v in HOOKS.items()}
+    abi_fixes = {key_name[k]: v for k, v in ABI_FIXES.items()}
     for m in modules:
         for rel in m.files:
             src = DECOMP / rel
@@ -532,8 +550,8 @@ def main() -> int:
             # Anything still carrying ARM assembly after the transforms is
             # hardware-level code the HAL replaces.
             new = transform(text)
-            if rel in HOOKS:
-                before, after = HOOKS[rel]
+            if Path(rel).stem in hooks:
+                before, after = hooks[Path(rel).stem]
                 if before not in new:
                     raise SystemExit(f"hook text not found in {rel}: {before}")
                 new = "extern void khdays_data_init(int module);\n" + new.replace(before, after)
@@ -594,15 +612,20 @@ def main() -> int:
 
     # Calls that lean on the ARM registers (native/tools/abi_repair.py): pass
     # and return what the ROM's code does, from native/abi/ghidra_abi.txt.
-    for rel, fixes in ABI_FIXES.items():
+    fix_files = {Path(rel).stem: rel for rel in texts if Path(rel).stem in abi_fixes}
+    for name, fixes in abi_fixes.items():
+        rel = fix_files.get(name)
+        if rel is None:
+            raise SystemExit(f"no source defines {name} (prepare.py ABI_FIXES)")
         for before, after in fixes:
-            if before not in texts.get(rel, ""):
+            if before not in texts[rel]:
                 raise SystemExit(f"ABI fix text not found in {rel}: {before[:60]}")
             texts[rel] = texts[rel].replace(before, after)
-    findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt")
+    findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt",
+                                        {k: n for n, k in function_keys(modules).items()})
     functions = {m.name: {a: n for n, k, a in m.symbols if k == "function"} for m in modules}
     repairer = abi_repair.Repairer(texts, module_of, functions, findings)
-    repairer.fixed = {Path(rel).stem for rel in ABI_FIXES}
+    repairer.fixed = set(abi_fixes)
     for name in sorted(findings.returns):
         why = repairer.plan_return(name)
         if why == "return type is not plain void":

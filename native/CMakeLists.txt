@@ -44,9 +44,14 @@ target_compile_options(khdays-gpu PRIVATE /W4 /std:c17)
 # mwcc ran with -lang c99 -char signed -enum int; MSVC's char is signed and its
 # enums are int already.
 add_library(khdays-decomp OBJECT ${DECOMP_SOURCES})
+# DS Protect's sources include their own headers (ov028's dsprot directory,
+# wherever the decomp's layout puts it).
+file(GLOB_RECURSE DSPROT_HEADER "${DECOMP}/src/*/dsprot_types.h")
+list(GET DSPROT_HEADER 0 DSPROT_HEADER)
+get_filename_component(DSPROT_DIR "${DSPROT_HEADER}" DIRECTORY)
 target_include_directories(khdays-decomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/compat/include"
-    "${DECOMP}/src/overlays/ov028/dsprot")
+    "${DSPROT_DIR}")
 target_compile_definitions(khdays-decomp PRIVATE
     main=khdays_NitroMain       # the game's main; the process has its own
     # The game's C library (libs/msl) defines these C runtime names; renamed,
@@ -54,6 +59,7 @@ target_compile_definitions(khdays-decomp PRIVATE
     strlen=khdays_msl_strlen
     strncmp=khdays_msl_strncmp
     strncpy=khdays_msl_strncpy
+    strtol=khdays_msl_strtol
     abs=khdays_msl_abs
     _CRT_SECURE_NO_WARNINGS)
 target_compile_options(khdays-decomp PRIVATE

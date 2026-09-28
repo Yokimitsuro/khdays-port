@@ -142,8 +142,8 @@ s32 OsCountZeroBits(u32 value)
     return (s32)count_leading_zeros(value);
 }
 
-/* OS_SpinWait (func_0200386c): burns cycles; nothing to wait for natively. */
-void func_0200386c(u32 cycles)
+/* OS_SpinWait: burns cycles; nothing to wait for natively. */
+void OS_SpinWait(u32 cycles)
 {
     (void)cycles;
 }

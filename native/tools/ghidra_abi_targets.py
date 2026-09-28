@@ -35,12 +35,15 @@ def main() -> int:
                 where[name] = (space, addr)
     lines = []
     missing = set()
+    # functions go by their key (module@address), which the scan's output
+    # keeps: the findings survive the decomp renaming them
+    keys = P.function_keys(P.load_modules())
     for name in sorted({e["function"] for e in data["void_used"]}):
         if name not in where:
             missing.add(name)
             continue
         space, addr = where[name]
-        lines.append(f"A {name} {space} {addr:08x}")
+        lines.append(f"A {keys[name]} {space} {addr:08x}")
     seen = set()
     for e in data["fewer"]:
         caller = Path(e["caller_file"]).stem
@@ -53,7 +56,7 @@ def main() -> int:
             continue
         cs, ca = where[caller]
         fs, fa = where[e["callee"]]
-        lines.append(f"B {caller} {cs} {ca:08x} {e['callee']} {fs} {fa:08x} "
+        lines.append(f"B {keys[caller]} {cs} {ca:08x} {keys[e['callee']]} {fs} {fa:08x} "
                      f"{e['decl_count']} {e['def_count']}")
     (gen / "ghidra_targets.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"{len(lines)} targets ({sum(l[0] == 'A' for l in lines)} returns, "

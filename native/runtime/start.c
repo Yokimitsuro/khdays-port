@@ -13,9 +13,9 @@
 
 extern void khdays_NitroMain(void);  /* the decomp's main, renamed at build */
 extern void func_01ff8148(void);     /* OS_IrqHandler */
-extern void func_020207f0(void);     /* _fp_init */
-extern void func_02000b60(void);     /* NitroStartUp */
-extern void func_02020808(void);     /* __call_static_initializers */
+extern void _fp_init(void);
+extern void NitroStartUp(void);
+extern void __call_static_initializers(void);
 extern void AutoloadCallback(void);
 extern void MIi_UncompressBackward(void *bottom);
 
@@ -103,9 +103,9 @@ int main(int argc, char **argv)
     /* crt0: the BIOS IRQ vector at DTCM + 0x3ffc points at OS_IrqHandler. */
     *(volatile u32 *)0x027e3ffc = (u32)func_01ff8148;
 
-    func_020207f0();
-    func_02000b60();
-    func_02020808();
+    _fp_init();
+    NitroStartUp();
+    __call_static_initializers();
     khdays_NitroMain();
     /* main never returns; crt0 left HW_RESET_VECTOR as its return address. */
     khdays_hal_unimplemented("main returned");
