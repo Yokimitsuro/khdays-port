@@ -248,6 +248,30 @@ def call_sites(text: str, mask: bytearray, name: str, span: tuple[int, int]) -> 
     return out
 
 
+def value_unused(text: str, mask: bytearray, start: int, close: int) -> bool:
+    """Whether the call at start..close is a statement of its own (`f(...);`,
+    also under `if (...)`, `else` or a `(void)` cast): its value goes nowhere."""
+    if not re.match(r"\s*;", text[close + 1:]):
+        return False
+    before = text[:start].rstrip()
+    if not before or before[-1] in ";{}:" or re.search(r"\belse$", before):
+        return True
+    if before.endswith(")"):
+        # the parenthesis opening it: a control statement's, or a (void) cast
+        depth, i = 0, len(before) - 1
+        while i >= 0:
+            if mask[i] and before[i] == ")":
+                depth += 1
+            elif mask[i] and before[i] == "(":
+                depth -= 1
+                if depth == 0:
+                    break
+            i -= 1
+        head = before[:i].rstrip()
+        return bool(re.search(r"\b(?:if|while|for)$", head)) or before[i + 1:-1].strip() == "void"
+    return False
+
+
 def declarations(text: str, mask: bytearray, name: str) -> list[tuple[int, int, int]]:
     """(start of the line, open paren, close paren) of each prototype of name
     (not the definition)."""
@@ -277,6 +301,106 @@ def apply_edits(text: str, edits: list[tuple[int, int, str]]) -> str:
     for start, end, new in reversed(edits):
         text = text[:start] + new + text[end:]
     return text
+
+
+# --- Parameters used as locals --------------------------------------------------------
+
+
+def written_params(body: str, names: list[str]) -> list[int]:
+    """Indexes of the parameters the body assigns to, or whose address it takes."""
+    out = []
+    for k, name in enumerate(names):
+        if not name:
+            continue
+        n = re.escape(name)
+        # `name = x`, `name += x`, `name++` (also `*name++`), `--name`, `&name`
+        # -- not `*name =`, `p->name =`, `s.name =` or `name[i] =`
+        for m in re.finditer(rf"\b{n}\s*(?:[-+*/%|&^]|<<|>>)?=(?!=)|(?:\+\+|--)\s*{n}\b|\b{n}\s*(?:\+\+|--)"
+                             rf"|(?<![&\w])&\s*{n}\b(?!\s*(?:[\[.(]|->))", body):
+            before = body[:m.start()]
+            if m[0][0] == "&":
+                # unary: not after an operand (`a & name` is a bitwise and)
+                if re.search(r"(?:[\w)\]]|\breturn)\s*$", before) and not re.search(r"\breturn\s*$", before):
+                    continue
+                out.append(k)
+                break
+            member = re.search(r"(?:\.|->)\s*$", before)
+            if m[0][0] in "+-" or (m[0].endswith(("++", "--")) and not member) \
+                    or not (member or re.search(r"\*\s*$", before)):
+                out.append(k)
+                break
+    return out
+
+
+def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Calls passing fewer arguments than the definition takes, where the
+    definition assigns to a parameter it was not given (a parameter used as a
+    local, as the ARM code uses the register). On the ARM9 that writes a
+    register; on x86 the missing argument's slot is the caller's own stack --
+    its saved registers or its locals. Such calls pass zeros up to the last
+    parameter written: a value written before any read is never seen, and one
+    read first is what the ABI repairs pass (native/abi)."""
+    def_file: dict[str, str] = {}
+    for rel, text in texts.items():
+        for m in re.finditer(r"^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{", text, re.MULTILINE):
+            def_file.setdefault(m[1], rel)
+    masks: dict[str, bytearray] = {}
+
+    def mask(rel: str) -> bytearray:
+        if rel not in masks:
+            masks[rel] = code_mask(texts[rel])
+        return masks[rel]
+
+    needs: dict[str, tuple[int, list[str]]] = {}
+    for name, rel in def_file.items():
+        d = find_definition(texts[rel], mask(rel), name)
+        if d is None:
+            continue
+        params = param_list(texts[rel], d)
+        names = [param_name(p) for p in params]
+        code = "".join(c if keep else " " for c, keep in
+                       zip(texts[rel][d.body[0]:d.body[1]], mask(rel)[d.body[0]:d.body[1]]))
+        written = written_params(code, names)
+        if written:
+            needs[name] = (max(written) + 1, [names[k] for k in written])
+    edits: dict[str, list[tuple[int, int, str]]] = collections.defaultdict(list)
+    report = []
+    for name, (count, which) in sorted(needs.items()):
+        pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+        for rel, text in texts.items():
+            if name not in text or not pattern.search(text):
+                continue
+            short = []
+            # prototypes and the definition are no calls (`extern T *f();`
+            # has no word before the name)
+            not_calls = {open_paren for _, open_paren, _ in declarations(text, mask(rel), name)}
+            own = find_definition(text, mask(rel), name) if rel == def_file[name] else None
+            for start, close in call_sites(text, mask(rel), name, (0, len(text))):
+                if text.find("(", start) in not_calls or (own and start == own.name_start):
+                    continue
+                inner = text[text.find("(", start) + 1:close].strip()
+                passed = 0 if not inner else len(split_top_level(inner))
+                if passed < count:
+                    short.append((close, inner, passed))
+            if not short:
+                continue
+            for close, inner, passed in short:
+                zeros = ", ".join("0" for _ in range(passed, count))
+                edits[rel].append((close, close, (", " if inner else "") + zeros))
+            for _, open_paren, close_paren in declarations(text, mask(rel), name):
+                inner = text[open_paren + 1:close_paren].strip()
+                if inner == "void":
+                    edits[rel].append((open_paren + 1, close_paren,
+                                       ", ".join(f"int khdays_p{k}" for k in range(count))))
+                elif inner:
+                    have = len(split_top_level(inner))
+                    if have < count:
+                        edits[rel].append((close_paren, close_paren, ", " + ", ".join(
+                            f"int khdays_p{k}" for k in range(have, count))))
+            report.append(f"{name} in {rel}: {len(short)} call(s) passing "
+                          f"{min(p for _, _, p in short)} of {count} (the definition writes "
+                          f"{', '.join(which)})")
+    return {rel: apply_edits(texts[rel], e) for rel, e in edits.items()}, report
 
 
 # --- Repairs ---------------------------------------------------------------------------
@@ -466,7 +590,7 @@ class Repairer:
             for k, alternatives in regs.items():
                 sources_k[k] += alternatives
         exprs: dict[int, str] = {}
-        captures: list[tuple[int, str]] = []
+        captures: list[tuple[int, list[str]]] = []
         for k in range(declared, defined):
             alts = sources_k.get(k, [])
             kinds = {s.kind for s in alts}
@@ -488,12 +612,16 @@ class Repairer:
             elif kinds == {"pool"} and len({s.value for s in alts}) == 1 \
                     and self.name_at(rel, alts[0].value) is None:
                 exprs[k] = f"(int)0x{alts[0].value:x}"  # data sits at its DS address natively
-            elif kinds == {"call"} and k == 0 and len({s.target for s in alts}) == 1 \
-                    and alts[0].target is not None:
-                g = self.name_at(rel, alts[0].target)
-                if g is None:
-                    return f"previous callee 0x{alts[0].target:x} has no symbol"
-                captures.append((k, g))
+            elif kinds == {"call"} and k == 0 and all(s.target is not None for s in alts):
+                # each call passes the result of the call before it (several
+                # sites may follow different calls)
+                gs = []
+                for target in sorted({s.target for s in alts}):
+                    g = self.name_at(rel, target)
+                    if g is None:
+                        return f"previous callee 0x{target:x} has no symbol"
+                    gs.append(g)
+                captures.append((k, gs))
                 exprs[k] = f"khdays_c{k}"
             else:
                 return "argument %d: %s" % (k, "; ".join(sorted({s.text for s in alts})))
@@ -507,15 +635,16 @@ class Repairer:
             missing = [exprs[k] for k in range(max(passed, declared), defined)]
             if missing:
                 edits.append((close, close, (", " if inner else "") + ", ".join(missing)))
-            for k, g in captures:
-                prior = call_sites(text, mask, g, (d.body[0], start))
+            for k, gs in captures:
+                # the closest call before this one of those the ROM names
+                prior = [(ps, pc, g) for g in gs for ps, pc in call_sites(text, mask, g, (d.body[0], start))]
                 if not prior:
-                    return f"no call of {g} before {callee} in the C"
+                    return f"no call of {' or '.join(gs)} before {callee} in the C"
+                ps, pc, g = max(prior)
                 more = self.value_edits(rel, g)
                 if more is None:
                     return f"{g} gives no value to pass"
                 edits += more
-                ps, pc = prior[-1]
                 edits.append((ps, ps, f"(khdays_c{k} = (int)"))
                 edits.append((pc + 1, pc + 1, ")"))
         for k, _ in captures:

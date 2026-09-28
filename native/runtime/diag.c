@@ -17,6 +17,7 @@ static unsigned khdays_cpsr_value(void) { return khdays_cpsr; }
 #include <dbghelp.h>
 
 static HANDLE game_thread;
+static const char *symbol_name(const void *address);
 
 static void print_stack(HANDLE thread, CONTEXT *context)
 {
@@ -250,26 +251,29 @@ static DWORD WINAPI watchdog(void *parameter)
 #include <rtcapi.h>
 
 /* The debug build's run-time checks (/RTC1) catch a local variable read
- * before any write. On the ARM9 such a read takes whatever the register held
- * -- the same leftover dependency as the ABI repairs (native/abi). Each site
- * is logged once, for review against the ROM, and the game goes on instead
- * of stopping at the CRT's dialog. */
+ * before any write, and a call that leaves ESP moved (a callee taking or
+ * popping other arguments than its caller pushed). On the ARM9 such a read
+ * takes whatever the register held -- the same leftover dependency as the ABI
+ * repairs (native/abi). The CRT gives no file or line without its debug
+ * information, so each report names its call chain instead; each chain is
+ * logged once, for review against the ROM, and the game goes on instead of
+ * stopping at the CRT's dialog. */
 static int __cdecl on_runtime_check(int type, const wchar_t *file, int line, const wchar_t *module,
                                     const wchar_t *format, ...)
 {
-    static const wchar_t *seen_file[256];
-    static int seen_line[256];
+    static unsigned long seen_hash[256];
     static int seen;
+    void *frames[8];
+    unsigned long hash = 0;
+    USHORT count = CaptureStackBackTrace(1, 8, frames, &hash);
     (void)module;
     for (int i = 0; i < seen; ++i) {
-        if (seen_line[i] == line && seen_file[i] == file) {
+        if (seen_hash[i] == hash) {
             return 0;
         }
     }
     if (seen < 256) {
-        seen_file[seen] = file;
-        seen_line[seen] = line;
-        ++seen;
+        seen_hash[seen++] = hash;
     }
     fwprintf(stderr, L"khdays-native: run-time check %d at %s:%d: ", type, file ? file : L"?", line);
     if (format != NULL) {
@@ -279,6 +283,9 @@ static int __cdecl on_runtime_check(int type, const wchar_t *file, int line, con
         va_end(args);
     }
     fwprintf(stderr, L"\n");
+    for (USHORT i = 0; i < count; ++i) {
+        fprintf(stderr, "  #%-2u %p %s\n", i, frames[i], symbol_name(frames[i]));
+    }
     fflush(stderr);
     return 0;  /* carry on */
 }

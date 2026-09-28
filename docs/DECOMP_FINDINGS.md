@@ -120,6 +120,10 @@ The port scans the ROM for each such call and return (Ghidra, a backward
 register slice; `native/abi/ghidra_abi.txt`, functions keyed by
 `module@address`) and rewrites the C where the source of the value is
 mechanical. Numbers at the revision above: see the generated lists below.
+(Earlier versions of these lists missed most calls from one overlay into
+another -- the scan compared the call's target in the wrong address space --
+and the calls that reach a callee through a tail-call wrapper; both are
+counted now.)
 
 ### 2.1 Checked by hand, with the ROM evidence
 
@@ -193,13 +197,52 @@ mechanical. Numbers at the revision above: see the generated lists below.
   are 176 functions `void f(void) {}` in the tree. A spelling that says what
   the ROM does, and that mwcc should still emit as a lone `bx lr`, is
   `void *f(void *self) { return self; }` (not verified against the compiler).
+- **`FreeAllResourceTables`** calls `ResSlot_ReleaseResource()` (declared
+  `void (void)`); the definition takes the slot. The ROM passes `p[3]`, the
+  slot it then releases: `0x0202a448 mov r7,r0`, `0x0202a4ac ldr r0,[r7,#0xc];
+  cmp r0,#0; beq; bl ResSlot_ReleaseResource`, then `ldr r0,[r7,#0xc];
+  bl ResSlot_Release`. Should read `ResSlot_ReleaseResource(p[3])`. Reached
+  when a mission ends (Retirarse).
+- **`CollModel_FindEntry(void *p)`** looks a name up with
+  `FindEntryByNameNoCase(table)`; the definition takes `(table, key)`. The ROM
+  jumps to it (`0x0202b0b0 bx r12`) with its own r1 untouched -- the key its
+  caller `EntityMgr_FindCollEntry(index, key)` passes. Should take and pass the
+  key: `CollModel_FindEntry(void *p, void *key)`. The prototype check could
+  not see it: the key reaches the compare through the tail call
+  `func_0202019c` (→ `StrNCaseCmp`), written without parameters (2.1b).
+  Natively the lookup compared against stack garbage and crashed when a
+  mission placed its markers (`Ov002_ResolveNamedPlacement`).
+- **The six copies of `Ov008_FreeWorkBuffers`** -- `Ov004_`, `Ov005_`,
+  `Ov009_`, `Ov025_`, `Ov026_`, `Ov302_FreeWorkBuffers`, the same 0x6c bytes of
+  ROM (but for the call's offset) and the same C -- have the same missing
+  argument: `NNSi_FndFreeFromDefaultHeap(p->f3c)` etc. (ov005: `0x0204e6f8`,
+  `0x0204e710`, `0x0204e728`, `0x0204e740`). ov005's is reached leaving the
+  mission results screen.
+- **`Ov005_QueryFieldBySelector`**, like `Ov008_QueryFieldBySelector`, is
+  called with three arguments and declared with four; nothing reads r3: seven
+  of its eight helpers load their own (`ldr r3,[pc,#4]` before `bx ip`,
+  `0x0204ea58`, `0x0204eb08`-`0x0204eb6c`) and the eighth (`0x0204ea68`) reads
+  it only after `ldrhls r3,[r1,#8]` under the same condition. The fourth
+  parameter could go.
+- **`Ov024_MobiClip_UpdatePlayback`** ends with
+  `GXx_GetMasterBrightness_(0x0400006c); SetMasterBrightnessMain();` and the
+  same for the sub screen; the ROM passes each getter's result on
+  (`0x0208319c bl 0x02005760`, `0x020831a0 bl SetMasterBrightnessMain`;
+  `0x020831a8`/`0x020831ac`). Its lid-open branch has the same shape as
+  `Ov012_RunOpeningScene` above (`0x02083084`/`0x02083088`,
+  `0x0208308c`/`0x02083090`). Should read
+  `SetMasterBrightnessMain(GXx_GetMasterBrightness_(0x0400006c))` etc.
+- **`Ov005_HandleDirectionalInput`** and **`Ov005_UpdateConfirmation`** read
+  `direction` / `action` uninitialised when no key bit is set (their source
+  comments say so: the ROM leaves r4 as it was). Harmless while that leftover
+  is none of the values the switch tests; the port's debug build flags both.
 - **Struct returns** (not wrong, but not portable): `FS_GetOverlayFileID` and
   `NNSi_G2dFontGetTextRect` return two-word structs through the ARM ABI's
   hidden pointer, which their definitions or callers spell out by hand
   (`Text_AlignAnchor`, `Ov002_SceneLayoutPanelWindow`). x86 returns 8-byte
   structs in registers, so the port adjusts them.
 
-### 2.1b Two classes the port now repairs wholesale
+### 2.1b Classes the port now repairs wholesale
 
 - **Tail-call wrappers written without their arguments.** 172 functions in
   the ROM are 12 bytes, `ldr r12,=target; bx r12; .word target`: a jump that
@@ -218,6 +261,23 @@ mechanical. Numbers at the revision above: see the generated lists below.
   char`; `func_ov022_0208a1fc` declares `int`). On the ARM the callee
   leaves the value extended in r0, so the ROM is fine; a consistent
   declaration would still help anyone reading or porting the callers.
+- **Parameters used as locals, which callers do not pass.** A definition that
+  assigns to a parameter a caller omits writes, on the ARM, a register; on
+  any stack ABI it writes the caller's own frame (its saved registers). Three
+  calls do it: `Ov002_LoadPanelSlots(pSlots, pDst, nPalDst, i)` from
+  `Ov002_OpenPanelScreen` with two arguments (`nPalDst` and the loop counter
+  `i` are set before any read: `0x020550dc` loads r2 from the pool, r3 is only
+  pushed until `0x0205510c`); `Ov011_TickLayoutAnimator(nScene, nNow)` from
+  `Ov011_TickTitleMenu` with none (r0 set at `0x0205b34c`, r1 at
+  `0x0205b7d8`, the loop test reached first); `Ov011_BlitTileRow(..., nCols)`
+  from `Ov011_StepPaneScroll` with five (the ROM reads only the fifth,
+  `ldr r8,[sp,#0x20]` at `0x0205b828`). Natively the first corrupted
+  `Ov002_OpenPanelScreen`'s caller (the HUD's class constructor), which the
+  debug build caught as a bad ESP after the call. These parameters are locals
+  and could be declared as such.
+- **Definitions with the return type on its own line** (`void` then
+  `Ov008_InitializeMenuEntryLayout(void)`; 24 in the tree). Not wrong; noted
+  because tools that read one-line headers (the port's did) miss them.
 
 ### 2.2 All mechanical repairs (*generated*)
 
@@ -314,7 +374,9 @@ Anim_GetFrame -> Anim_GetChannelState: passes khdays_arg0, khdays_arg1
 Anim_GetLengthQ12 -> Anim_GetChannelState: passes khdays_arg0, khdays_arg1
 CARDi_ReadRomSyncCore -> CARDi_CheckPulledOutCore: passes khdays_c0
 CamAnim_SelectAnim -> NNS_G3dGetAnmByIdx: passes khdays_arg1
-CollModel_GetEntryField14 -> CollModel_FindEntry: passes khdays_arg0
+CollModel_FindEntry -> FindEntryByNameNoCase: passes khdays_arg1
+CollModel_GetEntryField14 -> CollModel_FindEntry: passes khdays_arg0, khdays_arg1
+Collision_ProbeGround -> CollModel_FindEntry: passes p3
 CommitCachedByteIfChanged -> ScriptVm_ReadOperandInt: passes khdays_arg1
 ForwardToHandlerOrCurrentObject -> NNS_SndPlayerStopSeqBySeqArcIdx: passes khdays_arg1, khdays_arg2
 Game_UpdateObjectMotion -> Obj_PrepAltTransform: passes obj
@@ -326,6 +388,7 @@ Ov000_InitFromDescAndMark -> ObjNode_InitFromDesc: passes khdays_arg1
 Ov000_LookupTypeCode -> Slot4_GetIfOccupied: passes khdays_c0
 Ov000_MarkSceneReady -> Ov000_BeginCardTransfer: passes khdays_arg0
 Ov000_WaitSubMenuResult -> Ov000_SetSubSceneHalf1C: passes khdays_c0
+Ov002_AbortSession -> Ov022_GetEntryField66: passes khdays_c0
 Ov002_Actor_SetNodeEnabled -> Ov002_SetSceneNodeEnabled: passes khdays_arg1
 Ov002_AnnounceSelection -> Ov002_Ctx_InvokeTagTrackerCallback: passes khdays_c0
 Ov002_AnnounceSelection -> Ov002_ForwardToSubDc_2: passes khdays_c0
@@ -362,6 +425,7 @@ Ov002_ScriptCmd_DispatchStateEnter -> ScriptVm_ReadOperandInt: passes khdays_arg
 Ov002_ScriptCmd_EnterPhase -> Ov002_EnterPhase: passes khdays_c0
 Ov002_ScriptCmd_EnterPhase -> ScriptVm_ReadOperandInt: passes khdays_arg1
 Ov002_ScriptCmd_NotifyNodesOfKind -> ScriptVm_ReadOperandInt: passes khdays_arg1
+Ov002_ScriptCmd_PostCrawlScoreLine -> Ov022_GetEntryField66: passes khdays_c0
 Ov002_ScriptCmd_RecreateObjectSlot -> Ov002_RecreateObjectSlot: passes khdays_c0
 Ov002_ScriptCmd_RecreateObjectSlot -> ScriptVm_ReadOperandInt: passes khdays_arg1
 Ov002_ScriptCmd_SetGlobalByte1F -> Ov002_SetGlobalByte1F: passes khdays_c0
@@ -369,6 +433,7 @@ Ov002_ScriptCmd_SetGlobalByte1F -> ScriptVm_ReadOperandInt: passes khdays_arg1
 Ov002_ScriptCmd_SetGlobalFlagOnce -> Ov002_SetGlobalFlagOnce: passes khdays_c0
 Ov002_ScriptCmd_SetGlobalFlagOnce -> ScriptVm_ReadOperandInt: passes khdays_arg1
 Ov002_ScriptCmd_SetPendingText -> ByteCode_ResolveOperand: passes khdays_arg1
+Ov002_ScriptCmd_SetPendingText -> Ov106_SetPendingText: passes khdays_c0
 Ov002_ScriptCmd_SetSessionActive -> ScriptVm_ReadOperandInt: passes khdays_arg1
 Ov002_ScriptCmd_SetSessionIdle -> Ov002_SetSessionIdle: passes khdays_c0
 Ov002_ScriptCmd_SetSessionIdle -> ScriptVm_ReadOperandInt: passes khdays_arg1
@@ -449,8 +514,13 @@ Ov009_QueryFieldBySelector -> Ov009_AppendRecordsKindZero: passes khdays_arg2
 Ov009_QueryFieldBySelector -> Ov009_AppendTriggerableInRange: passes khdays_arg2
 Ov009_QueryFieldBySelector -> Ov009_FindBestRecordAppend: passes khdays_arg2, khdays_arg3
 Ov012_InitAndDispatchTriple -> ByteCode_ResolveOperand: passes khdays_arg1
+Ov016_SetEmbeddedSceneNodeEnabled -> Ov002_SetSceneNodeEnabled: passes khdays_arg1
+Ov019_ShowMessageWithCounters -> Ov002_TryBeginPanelRequest: passes (int)0x0
 Ov022_GetStreamTimestamp -> GetEntryField20ByIndex: passes khdays_arg0
+Ov022_Party_ShowNearbyNames -> Ov002_GetBit0OfField38IfValid: passes khdays_c0
+Ov022_ScoreCandidateByFacing -> Ov002_GetSlotTableByte: passes khdays_c0
 Ov022_StartPauseMenu -> Ov022_GetEntryField66: passes khdays_c0
+Ov022_StepPrimaryNodeTarget -> Ov002_GetBit0OfField38IfValid: passes khdays_c0
 Ov023_ActorFinish_2 -> Ov023_ActorFinish: passes khdays_arg0
 Ov023_CmdEntry_SpawnEntityFollower -> Ov023_Cmd_SpawnEntityFollower: passes khdays_arg1
 Ov023_CmdOpenDialog -> ScriptVm_ReadOperandInt: passes khdays_arg1
@@ -468,6 +538,8 @@ Ov024_FreeStackAllocPassthrough -> StackAlloc_FreeIfSetB: passes a
 Ov024_MobiClip_DecodeAudioEntryChecked_5 -> Ov024_MobiClip_StepAudio: passes khdays_arg1
 Ov024_MobiClip_DecoderFreeBuffers -> func_ov024_02085e48: passes a
 Ov024_MobiClip_DecoderFreeBuffers_2 -> Ov024_MobiClip_CloseContainer: passes a
+Ov024_MobiClip_UpdatePlayback -> SetMasterBrightnessMain: passes khdays_c0
+Ov024_MobiClip_UpdatePlayback -> SetMasterBrightnessSub: passes khdays_c0
 Ov025_DetailPanel_SetScroll -> Ov025_LayoutDetailPanel: passes param_2
 Ov025_EmitSplinePair -> Ov025_ApplyFirstValidSlot: passes param_1, param_2
 Ov025_FillAnchorPair -> Ov025_ApplyFirstValidSlot: passes param_2
@@ -493,28 +565,35 @@ Ov026_QueryFieldBySelector -> Ov026_AppendRecordsKindNonZero: passes khdays_arg2
 Ov026_QueryFieldBySelector -> Ov026_AppendRecordsKindZero: passes khdays_arg2
 Ov026_QueryFieldBySelector -> Ov026_AppendTriggerableInRange: passes khdays_arg2
 Ov026_QueryFieldBySelector -> Ov026_FindBestRecordAppend: passes khdays_arg2, khdays_arg3
+Ov032_ForwardSetFlagBit3 -> func_ov022_02089584: passes khdays_arg1
 Ov032_UnloadEnemyOverlay -> Ov032_DisposeAndFreeChild: passes khdays_c0
 Ov033_ClearStateIfReadyWhenActive -> Sequence_UpdateTracks: passes khdays_arg1
 Ov035_TickTwoPhaseAnimOfSlot -> Ov035_TickTwoPhaseAnim: passes khdays_arg2
+Ov037_CallSubObjThenAdvance -> Ov022_ForwardToNodeHandler: passes khdays_arg1
 Ov040_ForwardToThreeSubHandlers -> Ov040_StepSequenceSlot: passes arg2
 Ov042_ClearState1IfReady -> Sequence_UpdateTracks: passes khdays_arg1
 Ov044_ForwardArmPlayerTarget -> Ov044_ArmPlayerTarget: passes khdays_arg1
 Ov051_ClearStateIfReadyWhenActive -> Sequence_UpdateTracks: passes khdays_arg1
+Ov052_ForwardSetFlagBit3 -> func_ov022_02089584: passes khdays_arg1
 Ov052_UnloadEnemyOverlay -> Ov052_DisposeAndFreeChild: passes khdays_c0
 Ov054_TickTwoPhaseAnimOfSlot -> Ov054_TickTwoPhaseAnim: passes khdays_arg2
+Ov056_CallSubObjThenAdvance -> Ov022_ForwardToNodeHandler: passes khdays_arg1
 Ov059_ForwardToThreeSubHandlers -> Ov059_StepSequenceSlot: passes arg2
 Ov061_ClearState1IfReady -> Sequence_UpdateTracks: passes khdays_arg1
 Ov063_ForwardArmPlayerTarget -> Ov063_ArmPlayerTarget: passes khdays_arg1
 Ov069_LookupTypeCode -> Slot4_GetIfOccupied: passes khdays_c0
 Ov069_MarkCurrentItemEquipped -> ScriptVm_ReadOperandInt: passes khdays_arg0, khdays_arg1
 Ov071_ClearStateIfReadyWhenActive -> Sequence_UpdateTracks: passes khdays_arg1
+Ov072_ForwardSetFlagBit3 -> func_ov022_02089584: passes khdays_arg1
 Ov072_UnloadEnemyOverlay -> Ov072_DisposeAndFreeChild: passes khdays_c0
 Ov074_TickTwoPhaseAnimOfSlot -> Ov074_TickTwoPhaseAnim: passes khdays_arg2
+Ov076_CallSubObjThenAdvance -> Ov022_ForwardToNodeHandler: passes khdays_arg1
 Ov079_ForwardToThreeSubHandlers -> Ov079_StepSequenceSlot: passes arg2
 Ov081_ClearState1IfReady -> Sequence_UpdateTracks: passes khdays_arg1
 Ov082_ForwardArmPlayerTarget -> Ov082_ArmPlayerTarget: passes khdays_arg1
 Ov089_ClearStateIfReadyWhenActive -> Sequence_UpdateTracks: passes khdays_arg1
 Ov091_TickTwoPhaseAnimOfSlot -> Ov091_TickTwoPhaseAnim: passes khdays_arg2
+Ov093_CallSubObjThenAdvance -> Ov022_ForwardToNodeHandler: passes khdays_arg1
 Ov096_ForwardToThreeSubHandlers -> Ov096_StepSequenceSlot: passes arg2
 Ov098_ClearState1IfReady -> Sequence_UpdateTracks: passes khdays_arg1
 Ov099_ForwardArmPlayerTarget -> Ov099_ArmPlayerTarget: passes khdays_arg1
@@ -524,46 +603,177 @@ Ov107_InstantiateFieldClass -> InstantiateClass: passes khdays_arg1
 Ov107_MoveNodeAndRelayout -> Srt_SetTranslation: passes v
 Ov107_RefreshAndSelectChild -> RefreshObjectCallbacks: passes khdays_arg1
 Ov107_TrackJointMotion -> Obj_RenderModel: passes khdays_arg1
+Ov114_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov114_WindupTick -> Ov114_PerformSwingSweep: passes (int)0x1
+Ov117_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov118_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov120_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov121_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov122_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov123_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov123_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov124_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov124_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov125_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov125_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov126_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov126_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov127_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
+Ov128_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
+Ov129_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
+Ov130_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
 Ov131_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov131_TickAndPlaceBelowCamera -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov131_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov132_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov132_TickAndPlaceBelowCamera -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov132_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov133_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov133_TickAndPlaceBelowCamera -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov133_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
+Ov134_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov135_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov136_ReleaseAndDestroy -> Ov107_RefreshAndSelectChild: passes r1
+Ov137_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov137_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov138_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov138_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov139_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
+Ov140_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
 Ov141_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov141_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov141_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov142_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov142_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov142_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov143_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov143_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov143_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov144_SetupAndPropagateBlock -> Ov107_RefreshAndSelectChild: passes arg2
+Ov145_SetupAndPropagateBlock -> Ov107_RefreshAndSelectChild: passes arg2
 Ov147_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov147_ResetSetupAndPropagate -> RefreshObjectCallbacks: passes arg2
+Ov147_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov148_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov148_ResetSetupAndPropagate -> RefreshObjectCallbacks: passes arg2
+Ov148_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov149_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov149_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov149_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov150_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov150_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov150_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov151_CopyBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov151_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov151_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov152_CopyBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov152_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov152_TickAndSyncMarkerSrt -> Ov107_RefreshAndSelectChild: passes arg1
+Ov153_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov153_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov154_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov154_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov155_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov155_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov156_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov156_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov157_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov157_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov158_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov158_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov159_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov159_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov160_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov160_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov161_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov161_TickAndPlaceBelowCamera -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov161_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov162_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov162_TickAndPlaceBelowCamera -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov162_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov163_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov163_InitModelPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov163_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov164_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov164_InitModelPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov164_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov165_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov165_InitModelPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov165_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
+Ov166_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov167_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov168_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov169_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov170_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov171_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov172_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov175_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov176_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov177_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov178_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
 Ov179_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
 Ov180_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
 Ov181_StepWindUp -> Ov181_SwingSweep: passes (int)0x1
+Ov181_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
 Ov182_StepWindUp -> Ov182_SwingSweep: passes (int)0x1
+Ov182_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
 Ov183_StepWindUp -> Ov183_SwingSweep: passes (int)0x1
+Ov183_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
 Ov184_StepWindUp -> Ov184_SwingSweep: passes (int)0x1
+Ov184_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
+Ov185_NotifyAndDoubleAngle -> Ov107_AiState_LoadStats: passes arg
+Ov185_RunSubNodeCallbacksArg -> Ov107_LoadMsUpRecord: passes arg
+Ov185_TickAndSyncChildren -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov185_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov186_NotifyAndDoubleAngle -> Ov107_AiState_LoadStats: passes arg
+Ov186_RunSubNodeCallbacksArg -> Ov107_LoadMsUpRecord: passes arg
+Ov186_TickAndSyncChildren -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov186_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov187_NotifyAndDoubleAngle -> Ov107_AiState_LoadStats: passes arg
+Ov187_RunSubNodeCallbacksArg -> Ov107_LoadMsUpRecord: passes arg
+Ov187_TickAndSyncChildren -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov187_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov191_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov191_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov192_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov192_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov193_RefreshPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov193_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov194_Draw -> Ov107_RefreshAndSelectChild: passes arg
+Ov195_Draw -> Ov107_RefreshAndSelectChild: passes arg
+Ov196_Draw -> Ov107_RefreshAndSelectChild: passes arg
 Ov197_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov197_ResetSetupAndPropagate -> RefreshObjectCallbacks: passes arg2
+Ov197_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov198_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov198_ResetSetupAndPropagate -> RefreshObjectCallbacks: passes arg2
+Ov198_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov199_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov199_ResetSetupAndPropagate -> RefreshObjectCallbacks: passes arg2
+Ov199_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov200_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov201_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov202_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov202_InitModelPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov202_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
 Ov203_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov203_InitModelPose -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov203_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
+Ov204_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
+Ov205_TickAndSyncChildren -> Ov107_RefreshAndSelectChild: passes arg1
+Ov206_DrawHandler -> Ov107_RefreshAndSelectChild: passes slot
 Ov206_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov207_DrawHandler -> Ov107_RefreshAndSelectChild: passes slot
 Ov207_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov208_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov208_DrawPushAway -> Ov107_RefreshAndSelectChild: passes slot
+Ov208_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov209_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov209_DrawPushAway -> Ov107_RefreshAndSelectChild: passes slot
+Ov209_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov212_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov213_PushPose -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov213_UpdateModelTransform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov214_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov214_resetChildAndDispatch -> RefreshObjectCallbacks: passes param2
 Ov215_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
@@ -572,53 +782,156 @@ Ov216_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov216_resetChildAndDispatch -> RefreshObjectCallbacks: passes param2
 Ov217_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov217_resetChildAndDispatch -> RefreshObjectCallbacks: passes param2
+Ov218_PropagateBlockToLinkedNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov218_Update -> Ov107_RefreshAndSelectChild: passes arg
+Ov219_ModelUpdateHook -> Ov107_RefreshAndSelectChild: passes a
+Ov220_ModelUpdateHook -> Ov107_RefreshAndSelectChild: passes a
 Ov221_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov221_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov221_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov222_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov222_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov222_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov223_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov223_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov224_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov224_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov224_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov225_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov225_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov225_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov226_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov226_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov226_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes r1
 Ov227_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov228_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov228_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov228_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
 Ov229_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov229_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov229_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
 Ov230_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov230_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
+Ov231_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
+Ov232_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
 Ov233_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov233_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov233_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
+Ov234_PropagateBlockToLinkedNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov235_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov235_FinishWhenFlagClear -> Task_MarkFinished: passes obj
 Ov236_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov236_HandleMessage -> Ov236_SpawnReactionTaskFromHit: passes self
+Ov236_InitModelPoses -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov236_InitRiderAnchors -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov236_SyncRiderHitPoints -> Ov107_AiState_LoadStats: passes khdays_arg1
+Ov236_UpdateShadow -> Ov107_RefreshAndSelectChild: passes arg1
+Ov236_UpdateShadowA -> Ov107_RefreshAndSelectChild: passes arg1
+Ov237_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov237_TickModelAndTransform -> Ov107_RefreshAndSelectChild: passes frame
 Ov239_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov239_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
 Ov240_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov240_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
+Ov241_SetupAndCopyBlock -> Ov107_RefreshAndSelectChild: passes arg2
+Ov242_SetupAndCopyBlock -> Ov107_RefreshAndSelectChild: passes arg2
+Ov243_SetupAndCopyBlock -> Ov107_RefreshAndSelectChild: passes arg2
 Ov244_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov244_Item_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov244_RunSubNodeCallbacksArg -> Ov107_AiState_LoadStats: passes arg
+Ov244_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov244_WindupTick -> Ov244_PerformSwingSweep: passes (int)0x1
 Ov245_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov245_Child_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov245_FourShape_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
 Ov245_FourShape_AiStep_QueueAction0OnAnimEndB -> SetIndexedSlot: passes (int)0x0
+Ov245_Hopper_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov245_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov245_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov245_Variant_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov246_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov246_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov247_RebindClip -> Ov107_RefreshAndSelectChild: passes slot
+Ov247_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov248_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov248_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov248_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
 Ov249_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov249_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov249_TickAndUpdateAnchor -> Ov107_RefreshAndSelectChild: passes r5
+Ov253_CopyBlockToLinkedNode -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov253_NotifyPartsThenBase -> Ov107_AiState_LoadStats: passes khdays_arg1
 Ov254_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
 Ov254_AiStep_QueueAction0OnAnimEnd_2 -> SetIndexedSlot: passes (int)0x0
 Ov254_AiStep_QueueAction0OnAnimEnd_3 -> SetIndexedSlot: passes (int)0x0
 Ov254_AiStep_QueueAction0OnAnimEnd_4 -> SetIndexedSlot: passes (int)0x0
+Ov254_PropagateBlockToLinkedNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov255_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov255_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov256_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov257_DrawPrePass -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
 Ov257_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov258_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov259_Item_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov259_Update -> Ov107_RefreshAndSelectChild: passes arg
+Ov260_PropagateBlockChain -> Ov107_RefreshAndSelectChild: passes arg2
 Ov260_SettleTick -> Collision_CastRayEx: passes (int)0x0
+Ov260_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov260_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov261_CopyBlockThenNotify -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov261_RefreshAndCopyTwoBlocks -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov262_CopyBlockThenNotify -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov262_RefreshAndCopyTwoBlocks -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov263_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
 Ov264_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov264_resetChildAndDispatch -> RefreshObjectCallbacks: passes param2
+Ov265_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
 Ov266_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov267_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
 Ov268_AiStep_QueueAction0OnAnimEnd -> SetIndexedSlot: passes (int)0x0
+Ov268_DrawPushAway -> Ov107_RefreshAndSelectChild: passes slot
+Ov268_Projectile_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov269_Draw -> Ov107_RefreshAndSelectChild: passes arg
+Ov270_Draw -> Ov107_RefreshAndSelectChild: passes arg
+Ov271_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov273_PushPose -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov273_UpdateModelTransform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov274_DrawHandler -> Ov107_RefreshAndSelectChild: passes slot
 Ov274_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov275_DrawHandler -> Ov107_RefreshAndSelectChild: passes slot
 Ov275_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov276_AiStep_QueueAction0 -> SetIndexedSlot: passes (int)0x0
+Ov276_DrawHook -> Ov107_RefreshAndSelectChild: passes arg
 Ov277_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
+Ov277_RunSubNodeCallbacksArg -> Ov107_AiState_LoadStats: passes arg
+Ov277_TickAndSyncTwoModelXforms -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov277_TickSyncXform -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov277_WindupTick -> Ov277_PerformSwingSweep: passes (int)0x1
 Ov278_FinishIfSubFlagClear -> Task_MarkFinished: passes obj
 Ov278_HandleMessage -> Ov278_SpawnReactionTaskFromHit: passes self
+Ov278_InitModelPoses -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov278_InitRiderAnchors -> Ov107_AiState_DispatchModelCallbacks: passes khdays_arg1
+Ov278_SyncRiderHitPoints -> Ov107_AiState_LoadStats: passes khdays_arg1
+Ov278_UpdateShadow -> Ov107_RefreshAndSelectChild: passes arg1
+Ov278_UpdateShadowA -> Ov107_RefreshAndSelectChild: passes arg1
+Ov280_TickWithChildRefresh -> Ov107_RefreshAndSelectChild: passes b
+Ov283_PropagateBlockToLinkedNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov284_CopyBlockToLinkedNode -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov285_ClassInit -> Ov107_PackTextureHandle: passes (int)0x0
+Ov285_CopyBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov286_ClassInit -> Ov107_PackTextureHandle: passes (int)0x0
+Ov286_CopyBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov287_CopyBlockThenNotify -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov288_CopyBlockThenNotify -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov289_CopyBlockThenNotify -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov294_BroadcastTransform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov295_CopyPoseBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov296_CopyPoseBlockToTwoNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov297_PropagateBlockChain -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov298_Pose1SetupWithTimerThenAdvance -> Rand16NextScaled: passes (int)0x1fe0
+Ov298_PropagateBlockChain -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov299_TickAndSyncModelXform -> Ov107_ProcessObjectTick: passes khdays_arg1
+Ov301_PropagateBlockToLinkedNodes -> Ov107_ProcessObjectTick: passes khdays_arg1
 Ov302_QueryFieldBySelector -> Ov302_SelectAndSpawnEncounter: passes khdays_arg3
 PMi_SetLEDAsync -> PM_SendUtilityCommandAsync: passes khdays_arg1, khdays_arg2
 ScriptCmd_DispatchToHandler -> ScriptVm_ResolveOperand: passes khdays_arg1
@@ -648,7 +961,8 @@ func_ov107_020c9c1c -> func_02023ad0: passes khdays_arg0
 Anim_GetFrame takes 2 parameters (its own r0..r1 pass through)
 Anim_GetLengthQ12 takes 2 parameters (its own r0..r1 pass through)
 CamAnim_SelectAnim takes 2 parameters (its own r1..r1 pass through)
-CollModel_GetEntryField14 takes 1 parameters (its own r0..r0 pass through)
+CollModel_FindEntry takes 2 parameters (its own r1..r1 pass through)
+CollModel_GetEntryField14 takes 2 parameters (its own r0..r1 pass through)
 CommitCachedByteIfChanged takes 2 parameters (its own r1..r1 pass through)
 ForwardToHandlerOrCurrentObject takes 3 parameters (its own r1..r2 pass through)
 Node_SetRotationFromMtx takes 2 parameters (its own r1..r1 pass through)
@@ -694,6 +1008,7 @@ Ov009_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov009_MarkSlotUsed takes 1 parameters (its own r0..r0 pass through)
 Ov009_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
 Ov012_InitAndDispatchTriple takes 2 parameters (its own r1..r1 pass through)
+Ov016_SetEmbeddedSceneNodeEnabled takes 2 parameters (its own r1..r1 pass through)
 Ov022_GetStreamTimestamp takes 1 parameters (its own r0..r0 pass through)
 Ov023_ActorFinish_2 takes 1 parameters (its own r0..r0 pass through)
 Ov023_CmdEntry_SpawnEntityFollower takes 2 parameters (its own r1..r1 pass through)
@@ -713,21 +1028,28 @@ Ov025_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov025_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
 Ov026_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov026_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
+Ov032_ForwardSetFlagBit3 takes 2 parameters (its own r1..r1 pass through)
 Ov033_ClearStateIfReadyWhenActive takes 2 parameters (its own r1..r1 pass through)
 Ov035_TickTwoPhaseAnimOfSlot takes 3 parameters (its own r2..r2 pass through)
+Ov037_CallSubObjThenAdvance takes 2 parameters (its own r1..r1 pass through)
 Ov042_ClearState1IfReady takes 2 parameters (its own r1..r1 pass through)
 Ov044_ForwardArmPlayerTarget takes 2 parameters (its own r1..r1 pass through)
 Ov051_ClearStateIfReadyWhenActive takes 2 parameters (its own r1..r1 pass through)
+Ov052_ForwardSetFlagBit3 takes 2 parameters (its own r1..r1 pass through)
 Ov054_TickTwoPhaseAnimOfSlot takes 3 parameters (its own r2..r2 pass through)
+Ov056_CallSubObjThenAdvance takes 2 parameters (its own r1..r1 pass through)
 Ov061_ClearState1IfReady takes 2 parameters (its own r1..r1 pass through)
 Ov063_ForwardArmPlayerTarget takes 2 parameters (its own r1..r1 pass through)
 Ov069_MarkCurrentItemEquipped takes 2 parameters (its own r0..r1 pass through)
 Ov071_ClearStateIfReadyWhenActive takes 2 parameters (its own r1..r1 pass through)
+Ov072_ForwardSetFlagBit3 takes 2 parameters (its own r1..r1 pass through)
 Ov074_TickTwoPhaseAnimOfSlot takes 3 parameters (its own r2..r2 pass through)
+Ov076_CallSubObjThenAdvance takes 2 parameters (its own r1..r1 pass through)
 Ov081_ClearState1IfReady takes 2 parameters (its own r1..r1 pass through)
 Ov082_ForwardArmPlayerTarget takes 2 parameters (its own r1..r1 pass through)
 Ov089_ClearStateIfReadyWhenActive takes 2 parameters (its own r1..r1 pass through)
 Ov091_TickTwoPhaseAnimOfSlot takes 3 parameters (its own r2..r2 pass through)
+Ov093_CallSubObjThenAdvance takes 2 parameters (its own r1..r1 pass through)
 Ov098_ClearState1IfReady takes 2 parameters (its own r1..r1 pass through)
 Ov099_ForwardArmPlayerTarget takes 2 parameters (its own r1..r1 pass through)
 Ov106_CmdSetGateFlag takes 2 parameters (its own r1..r1 pass through)
@@ -735,6 +1057,141 @@ Ov106_ScriptCmd_SetGateFlagWithSound takes 2 parameters (its own r1..r1 pass thr
 Ov107_InstantiateFieldClass takes 2 parameters (its own r0..r1 pass through)
 Ov107_RefreshAndSelectChild takes 2 parameters (its own r1..r1 pass through)
 Ov107_TrackJointMotion takes 2 parameters (its own r1..r1 pass through)
+Ov114_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov117_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov118_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov123_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov123_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov124_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov124_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov125_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov125_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov126_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov126_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov131_TickAndPlaceBelowCamera takes 2 parameters (its own r1..r1 pass through)
+Ov132_TickAndPlaceBelowCamera takes 2 parameters (its own r1..r1 pass through)
+Ov133_TickAndPlaceBelowCamera takes 2 parameters (its own r1..r1 pass through)
+Ov137_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov138_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov141_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov142_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov143_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov147_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov148_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov149_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov150_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov151_CopyBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov152_CopyBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov153_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov153_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov154_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov154_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov155_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov155_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov156_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov156_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov157_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov157_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov158_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov159_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov160_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov161_TickAndPlaceBelowCamera takes 2 parameters (its own r1..r1 pass through)
+Ov162_TickAndPlaceBelowCamera takes 2 parameters (its own r1..r1 pass through)
+Ov163_InitModelPose takes 2 parameters (its own r1..r1 pass through)
+Ov164_InitModelPose takes 2 parameters (its own r1..r1 pass through)
+Ov165_InitModelPose takes 2 parameters (its own r1..r1 pass through)
+Ov166_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov167_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov168_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov169_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov170_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov171_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov172_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov175_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov176_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov177_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov185_TickAndSyncChildren takes 2 parameters (its own r1..r1 pass through)
+Ov185_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov186_TickAndSyncChildren takes 2 parameters (its own r1..r1 pass through)
+Ov186_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov187_TickAndSyncChildren takes 2 parameters (its own r1..r1 pass through)
+Ov187_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov191_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov191_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov192_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov192_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov193_RefreshPose takes 2 parameters (its own r1..r1 pass through)
+Ov193_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov197_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov198_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov199_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov200_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov201_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov202_InitModelPose takes 2 parameters (its own r1..r1 pass through)
+Ov203_InitModelPose takes 2 parameters (its own r1..r1 pass through)
+Ov208_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov209_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov213_PushPose takes 2 parameters (its own r1..r1 pass through)
+Ov213_UpdateModelTransform takes 2 parameters (its own r1..r1 pass through)
+Ov218_PropagateBlockToLinkedNodes takes 2 parameters (its own r1..r1 pass through)
+Ov221_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov222_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov224_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov225_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov226_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov228_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov229_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov233_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov234_PropagateBlockToLinkedNodes takes 2 parameters (its own r1..r1 pass through)
+Ov236_InitModelPoses takes 2 parameters (its own r1..r1 pass through)
+Ov236_InitRiderAnchors takes 2 parameters (its own r1..r1 pass through)
+Ov236_SyncRiderHitPoints takes 2 parameters (its own r1..r1 pass through)
+Ov237_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov244_Item_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov244_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov245_Child_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov245_Hopper_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov245_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov245_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov246_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov247_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov249_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov253_CopyBlockToLinkedNode takes 2 parameters (its own r1..r1 pass through)
+Ov253_NotifyPartsThenBase takes 2 parameters (its own r1..r1 pass through)
+Ov254_PropagateBlockToLinkedNodes takes 2 parameters (its own r1..r1 pass through)
+Ov255_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov256_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov257_DrawPrePass takes 2 parameters (its own r1..r1 pass through)
+Ov259_Item_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov260_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov260_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov261_CopyBlockThenNotify takes 2 parameters (its own r1..r1 pass through)
+Ov261_RefreshAndCopyTwoBlocks takes 2 parameters (its own r1..r1 pass through)
+Ov262_CopyBlockThenNotify takes 2 parameters (its own r1..r1 pass through)
+Ov262_RefreshAndCopyTwoBlocks takes 2 parameters (its own r1..r1 pass through)
+Ov268_Projectile_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov271_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov273_PushPose takes 2 parameters (its own r1..r1 pass through)
+Ov273_UpdateModelTransform takes 2 parameters (its own r1..r1 pass through)
+Ov277_TickAndSyncTwoModelXforms takes 2 parameters (its own r1..r1 pass through)
+Ov277_TickSyncXform takes 2 parameters (its own r1..r1 pass through)
+Ov278_InitModelPoses takes 2 parameters (its own r1..r1 pass through)
+Ov278_InitRiderAnchors takes 2 parameters (its own r1..r1 pass through)
+Ov278_SyncRiderHitPoints takes 2 parameters (its own r1..r1 pass through)
+Ov283_PropagateBlockToLinkedNodes takes 2 parameters (its own r1..r1 pass through)
+Ov284_CopyBlockToLinkedNode takes 2 parameters (its own r1..r1 pass through)
+Ov285_CopyBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov286_CopyBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov287_CopyBlockThenNotify takes 2 parameters (its own r1..r1 pass through)
+Ov288_CopyBlockThenNotify takes 2 parameters (its own r1..r1 pass through)
+Ov289_CopyBlockThenNotify takes 2 parameters (its own r1..r1 pass through)
+Ov294_BroadcastTransform takes 2 parameters (its own r1..r1 pass through)
+Ov295_CopyPoseBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov296_CopyPoseBlockToTwoNodes takes 2 parameters (its own r1..r1 pass through)
+Ov297_PropagateBlockChain takes 2 parameters (its own r1..r1 pass through)
+Ov298_PropagateBlockChain takes 2 parameters (its own r1..r1 pass through)
+Ov299_TickAndSyncModelXform takes 2 parameters (its own r1..r1 pass through)
+Ov301_PropagateBlockToLinkedNodes takes 2 parameters (its own r1..r1 pass through)
 Ov302_QueryFieldBySelector takes 4 parameters (its own r3..r3 pass through)
 PMi_SetLEDAsync takes 3 parameters (its own r1..r2 pass through)
 ScriptCmd_DispatchToHandler takes 2 parameters (its own r1..r1 pass through)
@@ -788,40 +1245,81 @@ Ov252_TurnVecY's value: sources: arm9_ov252::020cdb6c ldmia r4,{r0,r1,r2}
 SetIndexedSlot's value: sources: 0203c634 add r0,r0,r1, lsl #0x2
 SetSubitemState's value: sources: 0203ba24 ldrsh r0,[r2,r0]; 0203ba68 bic r0,r0,#0x1; 0203ba78 add r0,r0,r4, lsl #0x2; 0203bab0 orr r0,r0,#0x2; entry:r0
 SoundMgr_Update's value: sources: 020333a4 bl 0x02019bf0 => 0x2019bf0 NNS_SndMain; tail 02032f78 addls pc,pc,r1, lsl #0x2; tail 02032fb0 addls pc,pc,r0, lsl #0x2; tail 02033034 addls pc,pc,r1, lsl #0x2; tail 020331d0 addls pc,pc,r0, lsl #0x2
-ResSlot_ReleaseResource called from FreeAllResourceTables without what the ROM passes (argument 0: 0202a4ac ldr r0,[r7,#0xc])
 Ov002_IsPanelModeSet called from Ov002_ApplyTally without what the ROM passes (no call in the C)
 Ov002_ForwardToSubDc_4 called from Ov002_HudSetSlotValue without what the ROM passes (no call in the C)
 Ov002_PostCrawlScoreLine called from Ov002_ScriptCmd_PostCrawlScoreLine without what the ROM passes (previous callee 0x2088474 has no symbol)
-NNSi_FndFreeFromDefaultHeap called from Ov004_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov004::0204ccc4 ldr r0,[r4,#0x3c]; arm9_ov004::0204ccdc ldr r0,[r4,#0x40]; arm9_ov004::0204ccf4 ldr r0,[r4,#0x44]; arm9_ov004::0204cd0c ldr r0,[r4,#0x48])
 Ov004_QueryFieldBySelector called from Ov004_InitObjectWithList without what the ROM passes (argument 3: arm9_ov004::0204d29c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
-NNSi_FndFreeFromDefaultHeap called from Ov005_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov005::0204e6f8 ldr r0,[r4,#0x3c]; arm9_ov005::0204e710 ldr r0,[r4,#0x40]; arm9_ov005::0204e728 ldr r0,[r4,#0x44]; arm9_ov005::0204e740 ldr r0,[r4,#0x48])
-Ov005_QueryFieldBySelector called from Ov005_InitObjectWithList without what the ROM passes (argument 3: arm9_ov005::0204ecd0 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
-NNSi_FndFreeFromDefaultHeap called from Ov009_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov009::02055080 ldr r0,[r4,#0x3c]; arm9_ov009::02055098 ldr r0,[r4,#0x40]; arm9_ov009::020550b0 ldr r0,[r4,#0x44]; arm9_ov009::020550c8 ldr r0,[r4,#0x48])
 Ov009_QueryFieldBySelector called from Ov009_InitObjectWithList without what the ROM passes (argument 3: arm9_ov009::02055658 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
-Ov011_BlitTileRow called from Ov011_StepPaneScroll without what the ROM passes (argument 5: stack)
-Ov011_TickLayoutAnimator called from Ov011_TickTitleMenu without what the ROM passes (argument 0: arm9_ov011::0205cc00 mvneq r0,#0x1)
+Ov002_GetSlotTableByte called from Ov015_ChestPushNearbyPlayers without what the ROM passes (previous callee 0x2088474 has no symbol)
+Ov002_GetWord20 called from Ov020_DrawEntity without what the ROM passes (argument 0: arm9_ov020::0207fc0c moveq r0,#0x0)
+Ov002_GetSlotTableByte called from Ov021_EmblemFindPlayer without what the ROM passes (previous callee 0x2088474 has no symbol)
+Ov002_GetSlotTableByte called from Ov021_EmblemHandleMessage without what the ROM passes (previous callee 0x2088474 has no symbol)
+Ov002_FindKeyIndex called from Ov021_PrizeBoxRefresh without what the ROM passes (argument 0: arm9_ov021::0207fd30 ldrsh r0,[r1,#0x7a])
+Ov002_GetElementVelocity called from Ov022_ApplySurfaceReactions without what the ROM passes (argument 0: arm9_ov022::02096904 ldrne r0,[r0,#0x158])
 func_02023ad0 called from Ov023_RebuildSubObject without what the ROM passes (argument 0: arm9_ov023::02084034 ldr r0,[r1,r0])
-SetMasterBrightnessMain called from Ov024_MobiClip_UpdatePlayback without what the ROM passes (argument 0: arm9_ov024::02083084 bl 0x0201e428 => 0x201e428 LoadGlobalS8_027e0084; arm9_ov024::0208319c bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_)
-SetMasterBrightnessSub called from Ov024_MobiClip_UpdatePlayback without what the ROM passes (argument 0: arm9_ov024::0208308c bl 0x0201e438 => 0x201e438 LoadGlobalS8At1_027e0084; arm9_ov024::020831a8 bl 0x02005760 => 0x2005760 GXx_GetMasterBrightness_)
-NNSi_FndFreeFromDefaultHeap called from Ov025_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov025::02089ba4 ldr r0,[r4,#0x3c]; arm9_ov025::02089bbc ldr r0,[r4,#0x40]; arm9_ov025::02089bd4 ldr r0,[r4,#0x44]; arm9_ov025::02089bec ldr r0,[r4,#0x48])
 Ov025_QueryFieldBySelector called from Ov025_InitObjectWithList without what the ROM passes (argument 3: arm9_ov025::0208a17c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
 Ov025_QueryFieldBySelector called from Ov025_RebuildQueryList without what the ROM passes (argument 3: arm9_ov025::0208a310 bl 0x0208a028 => 0x208a028 ov025_DestroyAllListObjects)
-NNSi_FndFreeFromDefaultHeap called from Ov026_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov026::020846d8 ldr r0,[r4,#0x3c]; arm9_ov026::020846f0 ldr r0,[r4,#0x40]; arm9_ov026::02084708 ldr r0,[r4,#0x44]; arm9_ov026::02084720 ldr r0,[r4,#0x48])
 Ov026_QueryFieldBySelector called from Ov026_InitObjectWithList without what the ROM passes (argument 3: arm9_ov026::02084cb0 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
 Ov105_SetField30IfModeAllows called from Ov105_RunStep3 without what the ROM passes (argument 0: arm9_ov105::020be4e4 moveq r0,#0x1)
 Ov105_SetField30IfModeAllows called from Ov105_RunStep3OnSecondHandle without what the ROM passes (argument 0: arm9_ov105::020bf690 moveq r0,#0x1)
 Ov105_SetField30IfModeAllows called from Ov105_RunStep3OnThirdHandle without what the ROM passes (argument 0: arm9_ov105::020bec98 moveq r0,#0x1)
 Ov105_SetField30IfModeAllows called from Ov105_RunStep3ViaBackend without what the ROM passes (argument 0: arm9_ov105::020be5a0 moveq r0,#0x1)
 Ov105_SetField30IfModeAllows called from Ov105_StepOrFallBack without what the ROM passes (argument 0: arm9_ov105::020bf6b8 ldrh r0,[r0,#0x2]; arm9_ov105::020bf6d8 bl 0x020bd558 => 0x20bd558 Ov105_SetSessionCallback)
+Ov002_GetWord20 called from Ov106_CameraStep without what the ROM passes (previous callee 0x2083f0c has no symbol)
+Ov002_GetBit0OfField38IfValid called from Ov106_UpdateInteractPrompt without what the ROM passes (previous callee 0x2083f0c has no symbol)
+Ov107_Actor_SetAttachSlot called from Ov117_InitEffectActor without what the ROM passes (argument 4: stack)
+Ov107_Actor_SetAttachSlot called from Ov118_InitEffectActor without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov131_HomingDash_Recover without what the ROM passes (argument 0: arm9_ov131::020cde4c ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov131_nodeConstructor without what the ROM passes (argument 1: arm9_ov131::020cc038 mov r1,#0x0; arm9_ov131::020cc090 mov r1,#0x1; arm9_ov131::020cc0b8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov132_HomingDash_Recover without what the ROM passes (argument 0: arm9_ov132::020cfc6c ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov132_nodeConstructor without what the ROM passes (argument 1: arm9_ov132::020cde58 mov r1,#0x0; arm9_ov132::020cdeb0 mov r1,#0x1; arm9_ov132::020cded8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov133_HomingDash_Recover without what the ROM passes (argument 0: arm9_ov133::020d38ac ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov133_nodeConstructor without what the ROM passes (argument 1: arm9_ov133::020d1a98 mov r1,#0x0; arm9_ov133::020d1af0 mov r1,#0x1; arm9_ov133::020d1b18 ldr r1,[r4,r5,lsl #0x2])
+Ov107_PackTextureHandle called from Ov134_Construct without what the ROM passes (argument 1: arm9_ov134::020cc028 mov r1,#0x0; arm9_ov134::020cc06c mov r1,#0x1; arm9_ov134::020cc094 ldr r1,[r4,r5,lsl #0x2])
+Ov107_PackTextureHandle called from Ov135_Construct without what the ROM passes (argument 1: arm9_ov135::020cfc68 mov r1,#0x0; arm9_ov135::020cfcac mov r1,#0x1; arm9_ov135::020cfcd4 ldr r1,[r4,r5,lsl #0x2])
+Ov107_PackTextureHandle called from Ov136_Construct without what the ROM passes (argument 1: arm9_ov136::020d1a88 mov r1,#0x0; arm9_ov136::020d1acc mov r1,#0x1; arm9_ov136::020d1af4 ldr r1,[r4,r5,lsl #0x2])
+Ov014_IsState3 called from Ov144_LureToPiece without what the ROM passes (argument 0: arm9_ov144::020cc9b0 ldr r0,[r0,#0x3ec])
+Ov014_IsState3 called from Ov145_LureToPiece without what the ROM passes (argument 0: arm9_ov145::020ce7cc ldr r0,[r0,#0x3ec])
+Ov107_UnlinkNodeFromOwner called from Ov147_ReleaseAttachmentsOnStop without what the ROM passes (argument 0: arm9_ov147::020cc5d4 ldr r0,[r4,#0x3ec]; arm9_ov147::020cc608 ldr r0,[r4,#0x3ec])
+Ov107_UnlinkNodeFromOwner called from Ov148_ReleaseAttachmentsOnStop without what the ROM passes (argument 0: arm9_ov148::020d0214 ldr r0,[r4,#0x3ec]; arm9_ov148::020d0248 ldr r0,[r4,#0x3ec])
+Ov107_PackTextureHandle called from Ov161_Construct without what the ROM passes (argument 1: arm9_ov161::020cc02c mov r1,#0x0; arm9_ov161::020cc090 mov r1,#0x1; arm9_ov161::020cc0b8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov161_HomingDash_Recover without what the ROM passes (argument 0: arm9_ov161::020ce3f0 ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov162_Construct without what the ROM passes (argument 1: arm9_ov162::020cde4c mov r1,#0x0; arm9_ov162::020cdeb0 mov r1,#0x1; arm9_ov162::020cded8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov162_HomingDash_Recover without what the ROM passes (argument 0: arm9_ov162::020d0210 ldr r0,[r0,#0x3d0])
+Ov107_UnlinkNodeFromOwner called from Ov163_AiReleaseHeldAndAim without what the ROM passes (argument 0: arm9_ov163::020cfcb0 ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov163_Construct without what the ROM passes (argument 1: arm9_ov163::020cde58 mov r1,#0x0; arm9_ov163::020cdeb0 mov r1,#0x1; arm9_ov163::020cded8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov164_AiReleaseHeldAndAim without what the ROM passes (argument 0: arm9_ov164::020d1ad0 ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov164_Construct without what the ROM passes (argument 1: arm9_ov164::020cfc78 mov r1,#0x0; arm9_ov164::020cfcd0 mov r1,#0x1; arm9_ov164::020cfcf8 ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov165_AiReleaseHeldAndAim without what the ROM passes (argument 0: arm9_ov165::020d38f0 ldr r0,[r0,#0x3d0])
+Ov107_PackTextureHandle called from Ov165_Construct without what the ROM passes (argument 1: arm9_ov165::020d1a98 mov r1,#0x0; arm9_ov165::020d1af0 mov r1,#0x1; arm9_ov165::020d1b18 ldr r1,[r4,r5,lsl #0x2])
+Ov107_Actor_SetAttachSlot called from Ov185_Actor_Construct_2 without what the ROM passes (argument 4: stack)
+Ov107_Actor_SetAttachSlot called from Ov186_InitEffectActor without what the ROM passes (argument 4: stack)
+Ov107_Actor_SetAttachSlot called from Ov187_InitEffectActor without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov197_ReleaseAttachmentsOnStop without what the ROM passes (argument 0: arm9_ov197::020cc5d0 ldr r0,[r4,#0x3ec]; arm9_ov197::020cc604 ldr r0,[r4,#0x3ec])
+Ov107_UnlinkNodeFromOwner called from Ov198_ReleaseAttachmentsOnStop without what the ROM passes (argument 0: arm9_ov198::020d0210 ldr r0,[r4,#0x3ec]; arm9_ov198::020d0244 ldr r0,[r4,#0x3ec])
+Ov107_UnlinkNodeFromOwner called from Ov199_ReleaseAttachmentsOnStop without what the ROM passes (argument 0: arm9_ov199::020d3e50 ldr r0,[r4,#0x3ec]; arm9_ov199::020d3e84 ldr r0,[r4,#0x3ec])
+Ov107_UnlinkNodeFromOwner called from Ov202_AiReleaseHeldAndTrack without what the ROM passes (argument 0: arm9_ov202::020cde0c ldr r0,[r0,#0x410])
+Ov107_UnlinkNodeFromOwner called from Ov203_AiReleaseHeldAndTrack without what the ROM passes (argument 0: arm9_ov203::020d568c ldr r0,[r0,#0x410])
+Ov107_PackTextureHandle called from Ov203_Construct without what the ROM passes (argument 1: arm9_ov203::020d38bc mov r1,#0x0; arm9_ov203::020d3914 mov r1,#0x1; arm9_ov203::020d393c ldr r1,[r4,r5,lsl #0x2])
+Ov107_UnlinkNodeFromOwner called from Ov213_TeardownHook without what the ROM passes (argument 0: arm9_ov213::020ccc04 ldr r0,[r4,#0x428]; arm9_ov213::020ccc1c ldr r0,[r4,#0x424]; arm9_ov213::020ccc34 ldr r0,[r4,#0x42c])
 Ov226_Projectile_SetupFlight called from Ov226_HandleMessageArgs without what the ROM passes (argument 4: stack)
 Collision_CastSphereEx called from Ov228_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov228_PostTickCleanup without what the ROM passes (argument 0: arm9_ov228::020ce788 ldrne r0,[r5,#0x4a4])
 Collision_CastSphereEx called from Ov229_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov229_PostTickCleanup without what the ROM passes (argument 0: arm9_ov229::020d23c8 ldrne r0,[r5,#0x4a4])
 Collision_CastSphereEx called from Ov230_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov230_PostTickCleanup without what the ROM passes (argument 0: arm9_ov230::020d23c8 ldrne r0,[r5,#0x4a4])
 Collision_CastSphereEx called from Ov233_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov233_PostTickCleanup without what the ROM passes (argument 0: arm9_ov233::020cc960 ldrne r0,[r5,#0x4a4])
+Ov107_UnlinkNodeFromOwner called from Ov236_TeardownHook without what the ROM passes (argument 0: arm9_ov236::020cd810 ldr r0,[r4,#0x3c4])
 Collision_CastSphereEx called from Ov248_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov248_PostTickCleanup without what the ROM passes (argument 0: arm9_ov248::020cc968 ldrne r0,[r5,#0x4a4])
 Collision_CastSphereEx called from Ov249_AiIntegrateMotion without what the ROM passes (argument 4: stack)
+Ov107_UnlinkNodeFromOwner called from Ov249_PostTickCleanup without what the ROM passes (argument 0: arm9_ov249::020d05a8 ldrne r0,[r5,#0x4a4])
+Ov107_QuerySphereContacts called from Ov254_PursuitTick without what the ROM passes (argument 3: arm9_ov254::020cec5c add r3,sp,#0x8)
+Ov107_UnlinkNodeFromOwner called from Ov273_TeardownHook without what the ROM passes (argument 0: arm9_ov273::020d0844 ldr r0,[r4,#0x428]; arm9_ov273::020d085c ldr r0,[r4,#0x424]; arm9_ov273::020d0874 ldr r0,[r4,#0x42c])
 Collision_CastSphereEx called from Ov276_ProbeBoxAhead without what the ROM passes (argument 4: stack)
-NNSi_FndFreeFromDefaultHeap called from Ov302_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov302::020cc0b4 ldr r0,[r4,#0x3c]; arm9_ov302::020cc0cc ldr r0,[r4,#0x40]; arm9_ov302::020cc0e4 ldr r0,[r4,#0x44]; arm9_ov302::020cc0fc ldr r0,[r4,#0x48])
+Ov107_UnlinkNodeFromOwner called from Ov278_TeardownHook without what the ROM passes (argument 0: arm9_ov278::020cd810 ldr r0,[r4,#0x3c4])
 Ov302_QueryFieldBySelector called from Ov302_InitObjectWithList without what the ROM passes (argument 3: arm9_ov302::020cc68c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
 SoundMgr_StartStream called from Scene_Leave without what the ROM passes (argument 1: 02023074 ldr r1,[r0,#0x0])
 ```
@@ -867,8 +1365,13 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   11 the opening movie (after "new game" in Story Mode); 5 the day title
   card that follows it ("Día 255 ~El sol se pone rojo~"); 2 the field, where
   the clock-tower cutscene of day 255 plays (`Ov002_BeginMissionRun`,
-  `Ov002_SessionTick`); 19 the mission lobby (after START on the character
-  select).
+  `Ov002_SessionTick`); 10 (ov007) what follows the cutscene, Roxas's
+  narration over his portrait ("Como te imaginas, todo empieza por algún
+  sitio.", advanced with A); 19 the mission lobby (after START on the
+  character select). In Mission Mode: 19 → 2 (the mission) → on
+  PAUSA/Retirarse/Sí, a black "PULSA A" screen still in scene 2 → 6 (ov005,
+  "Resultados", the mission marked CANCELADA; A, then "¿Cerrar el repaso de
+  la misión?" Sí) → 19 again.
 - **`func_01ff80a8` is the game's VBlank count**: it returns the counter at
   `data_027e0088`, which `OSi_VBlankInterruptHandler` increments (the struct
   there is {counter, callback list}). `Ov012_RunOpeningScene`'s playback loop

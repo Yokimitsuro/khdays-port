@@ -137,6 +137,12 @@ VIRTUAL_DTOR = re.compile(r"^([ \t]*)(virtual __cdecl ~\w+\s*\(\s*\)\s*;)", re.M
 # in that slot would get the delete flag as its argument; the call is spelled
 # out instead.
 DELETE_STATEMENT = re.compile(r"^([ \t]*)delete[ \t]+([^;\n]+);", re.MULTILINE)
+# A definition with its return type on a line of its own (`void`, then
+# `name(void)`): one line, as the definitions everything here matches are
+# written. Only whitespace changes.
+SPLIT_HEADER = re.compile(
+    r"^((?:static[ \t]+|inline[ \t]+)*[A-Za-z_][\w \t\*]*?)[ \t]*\n"
+    r"(?=[A-Za-z_]\w*[ \t]*\([^;{}]*\)[ \t]*\n?[ \t]*\{)", re.MULTILINE)
 # An empty function (`bx lr` in the ROM) leaves r0 as its caller set it, and
 # callers that read the result get their own first argument back -- the
 # object dispatcher relies on it (an empty update keeps itself). Natively it
@@ -212,6 +218,13 @@ ABI_FIXES = {
          "void NNSi_G2dFontGetTextRect (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
          "int hSpace, int vSpace, const void * txt)"),
         ("    return rect;\n}", "    *khdays_result = rect;\n}"),
+    ],
+    # The slot released is the one released after it: `mov r7,r0` (0x0202a448),
+    # then `ldr r0,[r7,#0xc]; cmp r0,#0; beq; bl ResSlot_ReleaseResource`
+    # (0x0202a4ac-0x0202a4b8) and `ldr r0,[r7,#0xc]; bl ResSlot_Release`.
+    "main@0202a440": [  # FreeAllResourceTables
+        ("extern void ResSlot_ReleaseResource(void);", "extern void ResSlot_ReleaseResource(int slot);"),
+        ("        ResSlot_ReleaseResource();", "        ResSlot_ReleaseResource(p[3]);"),
     ],
     # The ROM frees the node itself: `str r1,[sp,#0]` at 0x02055a8e keeps `b`
     # in the stack slot that `ldr r0,[sp,#0]` (0x02055ac4) passes to the free.
@@ -326,6 +339,22 @@ ABI_FIXES = {
     ],
 }
 
+# Calls to an address several overlays share, where the function the ROM
+# reaches is known: caller -> address -> the overlay loaded there. What the
+# call needs is what that function takes, not the one the C names.
+SHARED_CALL_TARGETS = {
+    # The opening movie: the call at 0x0205b1f0 reaches ov024's
+    # Ov024_MobiClip_OpenStreams(request), not ov008's Ov008_RebuildShopList
+    # (confirmed at run time; docs/DECOMP_FINDINGS.md section 1).
+    "ov012@0205b0cc": {0x020846c0: "ov024"},
+}
+
+# Ov008_FreeWorkBuffers has six copies, the same 0x6c bytes of ROM (but for
+# the call's offset) and the same C: each passes the pointer it tested.
+for _key in ("ov004@0204ccbc", "ov005@0204e6f0", "ov009@02055078", "ov025@02089b9c",
+             "ov026@020846d0", "ov302@020cc0ac"):
+    ABI_FIXES[_key] = ABI_FIXES["ov008@02055f8c"]
+
 # Argument registers the Ghidra scan counts as read but the ROM shows the
 # function never reads (it sets them first), by function: the calls into it
 # need nothing more than the C passes.
@@ -335,11 +364,24 @@ ABI_NOT_READ = {
     # bx r12`, 0x020562f0, 0x020563a0-0x02056404), the eighth (0x02056304)
     # writes r3 before reading it.
     "ov008@02056478": (3,),
+    # Its copy in ov005 is the same: seven helpers `ldr r3,[pc,#4]` before
+    # `bx ip` (0x0204ea58, 0x0204eb08-0x0204eb6c); the eighth, 0x0204ea68,
+    # reads r3 only after `ldrhls r3,[r1,#8]` under the same condition.
+    "ov005@0204ebdc": (3,),
     # Ov002_LoadPanelSlots (Thumb) loads r2 from its literal pool at
     # 0x020550dc before anything reads it, and r3 is only saved by the push
     # that keeps the stack aligned until 0x0205510c sets it.
     "ov002@020550d0": (2, 3),
+    # Ov011_TickLayoutAnimator sets r0 (`add r0,r4,#2`, 0x0205b34c) and then
+    # branches to its loop test, which sets r1 (`ldr r1,[r8]`, 0x0205b7d8),
+    # before anything reads either.
+    "ov011@0205b340": (0, 1),
+    # Ov011_BlitTileRow reads one stack argument, its fifth (`ldr r8,[sp,#0x20]`
+    # after pushing eight registers, 0x0205b828); nothing reads the sixth.
+    "ov011@0205b814": (5,),
 }
+# (The C of these uses the parameters as locals: the calls pass zeros for
+# them, abi_repair.pad_short_calls, so the writes stay in the call's frame.)
 
 
 # Globals some split files define that symbols.txt does not name: statics of
@@ -455,6 +497,7 @@ def name_unnamed_params(match: re.Match) -> str:
 
 
 def transform(text: str) -> str:
+    text = SPLIT_HEADER.sub(r"\1 ", text)
     text = REGISTER_ASM.sub("", text)
     text = CLZ_ASM.sub(lambda m: f"{m[1]} = khdays_clz({m[2]});", text)
     text = END_LABEL.sub(lambda m: f"{m[1]};{m[2]}", text)
@@ -843,6 +886,7 @@ def main() -> int:
     # hands g the argument registers as the caller set them; a C body
     # `return g();` passes none. Such a body forwards four.
     tail_report = []
+    tail_targets: dict[str, str] = {}
     for line in (ROOT / "native" / "abi" / "tail_calls.txt").read_text(encoding="utf-8").splitlines():
         key = line.strip()
         if not key or key.startswith("#"):
@@ -854,24 +898,80 @@ def main() -> int:
             continue
         texts[rel], note = forward_tail_call(texts[rel], name)
         tail_report.append(f"{key} {name}: {note}")
+        if note.startswith("forwards four words to "):
+            tail_targets[name] = note.rsplit(" ", 1)[1]
     (out / "tail_calls.txt").write_text("\n".join(tail_report) + "\n", encoding="utf-8")
 
     names = {k: n for n, k in function_keys(modules).items()}
     findings = abi_repair.load_findings(ROOT / "native" / "abi" / "ghidra_abi.txt", names)
-    for key, registers in ABI_NOT_READ.items():
-        callee = names.get(key, key)
-        for pair in [p for p in findings.calls if p[1] == callee]:
-            sites = findings.calls[pair]
-            for site in list(sites):
-                for k in registers:
-                    sites[site].pop(k, None)
-                if not sites[site]:
-                    del sites[site]
-            if not sites:
-                del findings.calls[pair]
     functions = {m.name: {a: n for n, k, a in m.symbols if k == "function"} for m in modules}
     repairer = abi_repair.Repairer(texts, module_of, functions, findings)
     repairer.fixed = set(abi_fixes)
+    # What each call needs is what its callee takes: the argument words of its
+    # definition, more where the callee's own registers pass on to a call that
+    # needs them (abi_repair's extensions), and for a tail call (which hands
+    # on four words) what its target needs. A finding past that -- a register
+    # the scan was asked about when the C said otherwise -- is dropped, as are
+    # the registers the ROM shows a callee never reads (ABI_NOT_READ).
+    def words(name: str) -> int:
+        rel = repairer.def_file.get(name)
+        d = abi_repair.find_definition(texts[rel], repairer.mask(rel), name) if rel else None
+        if d is None:
+            return 8  # no C definition to go by: keep every finding
+        params = abi_repair.param_list(texts[rel], d)
+        if any(p.strip() == "..." for p in params):
+            return 8
+        return sum(2 if re.search(r"\b(?:u64|s64|fx64|double)\b|\blong\s+long\b", p) else 1 for p in params)
+    involved = {f for pair in findings.calls for f in pair} | set(tail_targets) | set(tail_targets.values())
+    need = {f: 0 if f in tail_targets else words(f) for f in involved}
+    changed = True
+    while changed:
+        changed = False
+        for wrapper, target in tail_targets.items():
+            if need[target] > need[wrapper]:
+                need[wrapper] = need[target]
+                changed = True
+        for (caller, callee), sites in findings.calls.items():
+            for regs in sites.values():
+                for k, alternatives in regs.items():
+                    if k >= need[callee]:
+                        continue
+                    for s in alternatives:
+                        if s.kind == "entry" and s.register + 1 > need[caller]:
+                            need[caller] = s.register + 1
+                            changed = True
+    not_read = {names.get(key, key): set(registers) for key, registers in ABI_NOT_READ.items()}
+    # the function a call to a shared address really reaches (SHARED_CALL_TARGETS)
+    reaches: dict[tuple[str, str], str] = {}
+    for caller_key, targets in SHARED_CALL_TARGETS.items():
+        for address, module in targets.items():
+            reached = functions.get(module, {}).get(address)
+            for m in modules:
+                named = functions[m.name].get(address)
+                if named and reached and names.get(caller_key) and m.name != module:
+                    reaches[(names[caller_key], named)] = reached
+    # An empty function (EMPTY_FUNCTION) takes r0 only to give it back: a call
+    # whose value goes nowhere needs nothing.
+    for caller, callee in list(findings.calls):
+        rel = repairer.def_file.get(callee)
+        if rel is None or f"{callee}(void *khdays_r0) {{ return khdays_r0; }}" not in texts[rel]:
+            continue
+        crel = repairer.def_file.get(caller)
+        d = abi_repair.find_definition(texts[crel], repairer.mask(crel), caller) if crel else None
+        sites = abi_repair.call_sites(texts[crel], repairer.mask(crel), callee, d.body) if d else []
+        if sites and all(abi_repair.value_unused(texts[crel], repairer.mask(crel), s, c) for s, c in sites):
+            del findings.calls[(caller, callee)]
+    for pair in list(findings.calls):
+        sites = findings.calls[pair]
+        limit = words(reaches[pair]) if pair in reaches else need[pair[1]]
+        for site in list(sites):
+            for k in list(sites[site]):
+                if k >= limit or k in not_read.get(pair[1], ()):
+                    del sites[site][k]
+            if not sites[site]:
+                del sites[site]
+        if not sites:
+            del findings.calls[pair]
     for name in sorted(findings.returns):
         why = repairer.plan_return(name)
         if why == "return type is not plain void":
@@ -896,10 +996,16 @@ def main() -> int:
     (out / "abi_next_targets.txt").write_text(
         "".join(t + "\n" for t in repairer.next_targets(where)), encoding="utf-8")
     texts.update(new_texts)
+    # Parameters used as locals that a call does not pass: on x86 the
+    # definition would write over its caller's frame.
+    padded_texts, padded = abi_repair.pad_short_calls(texts)
+    texts.update(padded_texts)
+    (out / "abi_padded.txt").write_text("\n".join(padded) + "\n", encoding="utf-8")
     (out / "abi_repairs.txt").write_text("\n".join(repairer.plan.applied) + "\n", encoding="utf-8")
     (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
     abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
-                   f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt)")
+                   f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt), {len(padded)} short calls padded "
+                   "(abi_padded.txt)")
 
     # References to an address several overlays share (the decomp's relocs
     # name them all: module:overlays(a,b)). On the DS the one loaded there at

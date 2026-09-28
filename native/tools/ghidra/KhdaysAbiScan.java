@@ -3,7 +3,8 @@
 // changes nothing in the program.
 //
 // Input  build/native/gen/ghidra_targets.txt (native/tools/ghidra_abi_targets.py)
-// Output build/native/gen/ghidra_abi.txt, one line per finding:
+// Output build/native/gen/ghidra_abi.txt, one line per finding (the script's
+// two arguments, when given, name other files there instead):
 //   A <function> <return address> r0 <- <source> [| <source> ...]
 //   B <caller> <callee> <call address> r<k> <- <source> [| ...]
 // A source is the instruction that last wrote the register on that path
@@ -156,7 +157,13 @@ public class KhdaysAbiScan extends GhidraScript {
             if (!(in.getFlowType().isCall() || in.getFlowType().isJump())) {
                 continue;
             }
-            if (!Arrays.asList(in.getFlows()).contains(fa)) {
+            // By offset: a call into another overlay flows to that address in
+            // the caller's own space (or the default one), never the callee's.
+            boolean hits = false;
+            for (Address t : in.getFlows()) {
+                hits |= t.getOffset() == fa.getOffset();
+            }
+            if (!hits) {
                 continue;
             }
             seen = true;
@@ -179,7 +186,10 @@ public class KhdaysAbiScan extends GhidraScript {
     @Override
     protected void run() throws Exception {
         model = new SimpleBlockModel(currentProgram);
-        for (String line : Files.readAllLines(Paths.get(GEN + "ghidra_targets.txt"))) {
+        String[] args = getScriptArgs();
+        String input = args.length > 0 ? args[0] : "ghidra_targets.txt";
+        String output = args.length > 1 ? args[1] : "ghidra_abi.txt";
+        for (String line : Files.readAllLines(Paths.get(GEN + input))) {
             String[] w = line.trim().split(" ");
             if (w[0].equals("A")) {
                 returns(w[1], addr(w[2], w[3]));
@@ -188,6 +198,6 @@ public class KhdaysAbiScan extends GhidraScript {
                       Integer.parseInt(w[7]), Integer.parseInt(w[8]));
             }
         }
-        Files.write(Paths.get(GEN + "ghidra_abi.txt"), out.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(Paths.get(GEN + output), out.toString().getBytes(StandardCharsets.UTF_8));
     }
 }

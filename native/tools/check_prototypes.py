@@ -172,13 +172,25 @@ def main() -> int:
     defs: dict[str, tuple] = {}            # name -> (ret, count, file, names, body, returns)
     decls = collections.defaultdict(list)  # name -> [(ret, count, file)]
     texts: dict[str, str] = {}
-    for m in P.load_modules():
+    # The ROM's tail calls (native/abi/tail_calls.txt) hand their target the
+    # argument registers untouched; prepare.py makes their C forward four
+    # words, and so does this analysis (a parameter they pass on is read if
+    # the target reads it).
+    modules = P.load_modules()
+    key_name = {k: n for n, k in P.function_keys(modules).items()}
+    tail_calls = set()
+    for line in (P.ROOT / "native" / "abi" / "tail_calls.txt").read_text(encoding="utf-8").splitlines():
+        if line.strip() and not line.startswith("#") and line.strip() in key_name:
+            tail_calls.add(key_name[line.strip()])
+    for m in modules:
         for rel in m.files:
             src = P.DECOMP / rel
             if "asm_stubs" in rel or src.suffix == ".s" or not src.exists():
                 continue
             text = P.strip_comments(P.transform(src.read_text(encoding="utf-8", errors="replace")))
             text = re.sub(r"^\s*#.*$", "", text, flags=re.MULTILINE)
+            if Path(rel).stem in tail_calls:
+                text = P.forward_tail_call(text, Path(rel).stem)[0]
             texts[rel] = text
             for f in FUNC_RE.finditer(text):
                 storage, ret, name, params, end = f.groups()
