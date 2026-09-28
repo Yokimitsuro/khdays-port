@@ -101,7 +101,9 @@ static void save_shot(u32 frame, const uint32_t *upper, const uint32_t *lower)
         }
     }
     fclose(f);
-    fprintf(stderr, "display: frame %u saved to %s\n", frame, path);
+    fprintf(stderr, "display: frame %u saved to %s (DISPCNT A %08x B %08x, MASTER_BRIGHT A %04x B %04x, "
+                    "POWCNT1 %04x)\n",
+            frame, path, IO32(0x000), IO32(0x1000), IO16(0x06c), IO16(0x106c), IO16(0x304));
 }
 
 void khdays_display_vblank(u32 frame)
