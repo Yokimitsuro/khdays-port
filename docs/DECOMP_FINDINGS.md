@@ -908,9 +908,11 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   (`0x020859d4`) calls into ITCM at `0x01ff9a64`: `data_ov024_0208c8c4`
   (`mobiclip_payload.s`, 0x659c bytes of position-independent ARM code)
   copied there by `Ov024_MobiClip_GetDecoderCodeCached`. It is the only game
-  code a native build cannot run, and it blocks the story's start (the
-  opening movie). For checking a decompilation of it: FFmpeg's `mobiclip`
-  decoder reproduces this game's luma byte for byte against the DS's VRAM.
+  code a native build cannot compile; the port now runs it in an ARM
+  interpreter (the opening movie plays), so it no longer blocks anything, but
+  it stays the one piece with no C. For checking a decompilation of it:
+  FFmpeg's `mobiclip` decoder reproduces this game's luma byte for byte
+  against the DS's VRAM.
   Naming: `Ov024_MobiClip_OpenContainer` stores that copy as
   `pDecoder->pQuantTables`, but it is code -- `Ov024_MobiClip_DecodeFrame`
   calls it through the pointer at `+0x38`.
@@ -971,7 +973,79 @@ Not wrong in the decomp, but worth recording next to the class declarations:
   `strtol`, `abs` in `libs/msl`). Fine for the DS; any host build has to
   rename them.
 
-## 7. Resolved since earlier reports
+## 7. Sound, seen with the ARM7's driver running
+
+The port now runs the ARM7's own sound driver (from the game's ARM7 binary,
+in an interpreter), so the ARM9's SND and NNS code talks to the real thing.
+
+- **`libs/nitro/pxi/calls/PxiFifoCallback.c` is the sound's PXI callback**
+  (NitroSDK `snd_command.c`'s `PxiFifoCallback`, registered for tag 7 by
+  `SND_CommandInit`); it belongs under `libs/nitro/snd`. Its definition takes
+  `(int unused, int data)`, while `InitPXI.c`, `SND_CommandInit.c` and
+  `SND_RecvCommandReply.c` declare it `(PXIFifoTag tag, u32 data, BOOL err)`,
+  which is what the PXI dispatcher passes.
+- **Alarm messages from the ARM7 are `alarmNo | id << 8`**, as
+  `SNDi_CallAlarmHandler` reads them: the title's stream alarm arrives as
+  `0x100` (alarm 0 with the id 1 that `SNDi_SetAlarmHandler` handed out).
+- **`snd_volume_table.c` (`data_02041588`) is in tenths of a decibel**, not
+  "1/8 dB" as its comment says: entry `723 + dB` is `127 * 10^(dB/200)`,
+  doubled for each data shift the thresholds -60/-120/-240 add (-60 gives
+  64, -61 gives 126, -241 gives 127) -- the unit of `snd_decibel_table.c`.
+  It is byte for byte the ARM7 BIOS's `GetVolumeTable` (SWI 1Ch), checked
+  against a dump of that BIOS.
+- **Thread priorities, running:** the card's task thread (`CARDi_TaskThread`,
+  its OSThread at `0x02046524`) has priority 4, above the game's own threads;
+  NNS's stream thread (`StrmThread`, `data_0204b140`, the
+  `NNSSndStrmThread` whose `commandList` `StrmCallback_2` fills) has 10. A
+  stream's loads therefore happen only while the card thread sleeps, and
+  `StrmCallback_2` clears a block (`MI_CpuClear8`) when two loads are still
+  pending (`commandCount >= BLOCK_NUM - 2`): a slow card is heard as gaps of
+  silence.
+- **The title's music** is `Title_BGM_PCM8`, an NNS stream on channels 6 and
+  7 (PCM8, a looped 0x200-word ring, timer 0xfe00 = 32728 Hz, pan 0 and
+  127), refilled a 512-sample block per alarm (period 8192 ticks); it plays
+  at 91/128 of full scale.
+
+## 8. The ARM7 binary (not in the decomp)
+
+For whoever adds the ARM7: what the port relies on, read from its code
+(addresses `arm7@...`). Names follow NitroSDK where the code is unmistakable
+(the SND loop is identified by its place in `SndThread`, as in the SDK's
+`snd_main.c`).
+
+- **Layout.** Loaded at `0x02380000` (ROM `0x317200`, `0x26f28` bytes).
+  crt0's module parameters at `+0x1d0` list two autoload blocks:
+  `0x037f8000` (`0xf4b0` bytes and `0x3e64` of BSS, from `+0x1e8`: the SDK's
+  OS, PXI, SND, SPI...) and `0x027e0000` (`0x17878` and `0x1968`). Stacks:
+  SVC `0x0380ffc0`, IRQ `0x0380ff80`, system `0x0380fb7c`. The main calls
+  `SND_Init(6)` at `037f83bc`.
+- **SND.** `SND_Init` `037feef8`; `SndThread` `037ff008`, whose loop calls
+  `SND_UpdateExChannel` `037ff1c0`, `SND_CommandProc` `03801f1c` (a switch
+  over ids 0..0x21), `SND_SeqMain` `037fff54`, `SND_ExChannelMain`
+  `037ff3ac`, `SND_UpdateSharedWork` `03801c8c`, `SND_CalcRandom` `037feec4`
+  (x = x * 1664525 + 1013904223); `SND_CommandInit` `03801ed8`; the PXI
+  callback `038025cc` (an address goes to the command queue, 0 wakes the
+  thread); the periodic handler `037fefec` (every `0xaa8` ticks);
+  `SND_CalcTimer` `037fecac`; `SND_CalcChannelVolume` `037fedd8`;
+  `SND_Enable` `037fe69c`; `SND_SetMasterVolume` `037fe7bc`;
+  `SND_SetOutputSelector` `037fe7cc`; `SND_StopChannel` `037fea20`;
+  `SND_BeginSleep` `037fe708` and `SND_EndSleep` `037fe760` (the only
+  callers of the SoundBias BIOS call).
+- **OS.** `OS_CreateThread` `037fc054`, `OS_InitContext` `037fc5c8`,
+  `OS_SleepThread` `037fc290`, `OS_WakeupThread` `037fc2e4`,
+  `OS_WakeupThreadDirect` `037fc36c`, `OS_InitMessageQueue` `037fc6ac`,
+  `OS_SendMessage` `037fc6d4`, `OS_ReceiveMessage` `037fc760`, `OS_GetTick`
+  `037fd21c` (timer 0 at F/64), `OS_CreateAlarm` `037fd3a0`,
+  `OSi_InsertAlarm` `037fd3b0`, `OS_SetAlarm` `037fd4dc`,
+  `OS_SetPeriodicAlarm` `037fd54c`, `OS_CancelAlarm` `037fd5c0`,
+  `OSi_AlarmHandler` `037fd658`, `OS_Panic` `037fde70`,
+  `OS_DisableInterrupts` / `OS_RestoreInterrupts` `037fdd00` / `037fdd14`.
+- **PXI.** `PXI_SetFifoRecvCallback` `037fe39c`, `PXI_SendWordByFifo`
+  `037fe410`.
+- **BIOS calls** are Thumb stubs from `038037b4` to `0380382c` (SWI 1Ah-1Ch,
+  the sound tables, at `03803824`-`0380382c`).
+
+## 9. Resolved since earlier reports
 
 - The twelve data tables a renaming pass had dropped from `delinks.txt` are
   back (`45e840239`).
