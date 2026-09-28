@@ -11,6 +11,8 @@ void khdays_diag_init(void);
 
 /* The native address of the function named `name` (from the PDB), or 0. */
 unsigned khdays_diag_symbol(const char *name);
+/* The native call stack here, symbolized, on stderr (for a fatal report). */
+void khdays_diag_stack(void);
 
 /* Maps the DS address space at its real virtual addresses (memory.c). Must
  * run before anything touches DS memory; returns 0 (and says why) when an

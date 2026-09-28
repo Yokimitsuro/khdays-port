@@ -323,6 +323,13 @@ void khdays_diag_init(void)
     }
 }
 
+void khdays_diag_stack(void)
+{
+    CONTEXT context;
+    RtlCaptureContext(&context);
+    print_stack(GetCurrentThread(), &context);
+}
+
 unsigned khdays_diag_symbol(const char *name)
 {
     char buffer[sizeof(SYMBOL_INFO) + 256];

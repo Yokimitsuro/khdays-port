@@ -60,6 +60,26 @@ static KhdaysArmHook hook_function[MAX_HOOKS];
 static int hook_count;
 static KhdaysArmSwi arm7_bios;
 
+/* The run in progress (nested runs restore the outer one), for reports. */
+static Cpu *current;
+static u32 current_entry;
+
+void khdays_diag_stack(void);
+
+/* The interpreter's state and the native calls around it, before a stop. */
+static void report_state(void)
+{
+    if (current != NULL) {
+        fprintf(stderr, "  entry 0x%08x, pc 0x%08x (%s)\n", current_entry, khdays_arm_pc,
+                current->thumb ? "Thumb" : "ARM");
+        for (int i = 0; i < 16; ++i) {
+            fprintf(stderr, "  r%-2d %08x%s", i, current->r[i], i % 4 == 3 ? "\n" : "");
+        }
+    }
+    khdays_diag_stack();
+    fflush(stderr);
+}
+
 static void fail(const Cpu *cpu, u32 op, const char *what)
 {
     fprintf(stderr, "khdays-native: ARM%s interpreter at 0x%08x (%s, opcode 0x%08x): %s\n",
@@ -103,6 +123,7 @@ static u8 *io_host(u32 a)
     }
     fprintf(stderr, "khdays-native: ARM interpreter: I/O access at 0x%08x outside the modelled "
                     "registers\n", a);
+    report_state();
     exit(13);
 }
 
@@ -831,7 +852,11 @@ void khdays_arm_report(void)
 static void run(Cpu *cpu)
 {
     const u32 entry = cpu->pc | (u32)cpu->thumb;
+    Cpu *const outer = current;
+    const u32 outer_entry = current_entry;
     u64 steps = 0;
+    current = cpu;
+    current_entry = entry;
     if (trace < 0) {
         trace = getenv("KHDAYS_TRACE_ARM") != NULL;
     }
@@ -851,6 +876,8 @@ static void run(Cpu *cpu)
             exec_arm(cpu, op);
         }
     }
+    current = outer;
+    current_entry = outer_entry;
     if (trace) {
         int i;
         for (i = 0; i < nseen && seen[i] != entry; ++i) {
