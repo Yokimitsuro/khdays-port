@@ -11,6 +11,9 @@ native/tools/prepare.py first (the ABI lists come from its output).
              which of them the decomp's C names
   repairs    calls the native build rewrites from the ROM (abi_repairs.txt)
   gaps       calls it cannot rewrite mechanically (abi_gaps.txt)
+
+Only `revision` is required; the others are filled where the document has
+them.
 """
 from __future__ import annotations
 
@@ -90,14 +93,19 @@ def main() -> int:
         "gaps": listing(GEN / "abi_gaps.txt"),
     }
     text = DOC.read_text(encoding="utf-8")
+    filled = []
     for name, lines in sections.items():
+        # the sections the document has; only the revision is required
         pattern = re.compile(rf"(<!-- BEGIN generated:{name} -->\n).*?(<!-- END generated:{name} -->)", re.S)
         if not pattern.search(text):
-            raise SystemExit(f"{DOC.name}: no generated:{name} section")
+            if name == "revision":
+                raise SystemExit(f"{DOC.name}: no generated:{name} section")
+            continue
         text = pattern.sub(lambda m: m[1] + "\n".join(lines) + "\n" + m[2], text)
+        filled.append(name)
     DOC.write_text(text, encoding="utf-8", newline="\n")
-    print(f"{DOC}: {len(sections['ambiguous']) - 2} ambiguous references, "
-          f"{len(sections['repairs']) - 2} repairs, {len(sections['gaps']) - 2} gaps")
+    counts = {"ambiguous": "ambiguous references", "repairs": "repairs", "gaps": "gaps"}
+    print(f"{DOC}: " + ", ".join(f"{len(sections[n]) - 2} {counts[n]}" for n in filled if n in counts))
     return 0
 
 
