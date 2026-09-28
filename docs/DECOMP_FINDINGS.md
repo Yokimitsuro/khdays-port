@@ -156,6 +156,34 @@ mechanical. Numbers at the revision above: see the generated lists below.
   *)0x04000400)`. Natively the matrix was copied over the stack, where it
   broke the first skinned model drawn (the SBC's NODEMIX, in Mission Mode's
   menu).
+- **`func_ov022_020881f8(player)`** (a player's position) is called with no
+  argument by four ov002 functions. The ROM passes, in `Ov002_Camera_UpdateFollow`,
+  `Ov002_TickCamera` and `Ov002_TickLockedCamera`, the result of
+  `QueryActiveStateOrDelegate` still in r0 (`bl 0x01fffe14; mov r8,r0;
+  bl 0x020881f8` at `0x0204d194`, likewise `0x0204f0b8`, `0x0204fc68`), and
+  in `Ov002_FormatRowFromSelection` its own argument (`0x020652d0 mov r4,r0`,
+  then the call). The C of all four already holds the value in a variable.
+- **`Ov002_SceneStepPanel`** calls `Ov002_GetWord20()`; the ROM passes the
+  value it just compared with -1, `func_ov022_02083f0c()`'s result
+  (`0x020616ac`, then `0x020616c0`).
+- **`Ov008_FreeWorkBuffers`** frees each of its four buffers with
+  `NNSi_FndFreeFromDefaultHeap()`; the ROM passes the pointer it just tested
+  (`0x02055f94 ldr r0,[r4,#0x3c]; cmp r0,#0; beq; bl`, and +0x40, +0x44,
+  +0x48).
+- **`Ov002_CreateAndRestoreHud`** calls `Ov002_IsPanelModeSet()`, whose
+  definition takes the value it returns when no panel exists
+  (`0x02061b80`: `bxeq lr` with r0 untouched). The ROM's r0 there is what
+  `Ov002_RepublishHud` (C: `void`) left, which follows several calls deep;
+  the port only stops if that path is taken.
+- **`Ov002_PostScoreRecord`** declares
+  `Ov002_RequestPanelScreen(void *, u64, int, int)`; the definition takes
+  `(u16 *, u32 lo, u32 hi, int, int)`. The same five words either way (mwcc
+  passes the u64 in r1:r2), but the two spellings could agree.
+- **`Ov002_TickScene`** queues a VRAM transfer from `ctx->aHandles[i]`
+  (`0x020590fc ldr r2,[r5,r6,lsl #2]`) for every dirty player slot, and for
+  the empty slots of a one-player mission that handle is 0: the ROM DMAs
+  from address 0, where the bus has nothing (GBATEK says only that DMA
+  cannot reach the TCMs). Faithful to the ROM; worth a comment.
 - **Empty functions used as object updates.** `Obj_UpdateAll` calls each
   update with the update's own address in r0 (`0x02023b60 ldr r0,[r1,#0x14]`,
   `blx r0`) and stores a nonzero result as the next update. An empty function
@@ -170,6 +198,26 @@ mechanical. Numbers at the revision above: see the generated lists below.
   hidden pointer, which their definitions or callers spell out by hand
   (`Text_AlignAnchor`, `Ov002_SceneLayoutPanelWindow`). x86 returns 8-byte
   structs in registers, so the port adjusts them.
+
+### 2.1b Two classes the port now repairs wholesale
+
+- **Tail-call wrappers written without their arguments.** 172 functions in
+  the ROM are 12 bytes, `ldr r12,=target; bx r12; .word target`: a jump that
+  hands the target r0-r3 exactly as the caller set them. 154 of them are
+  written `T f() { return target(); }` (or `target();`), which passes
+  nothing; `func_ov008_0205697c` → `Ov008_MergeSortList` lost both the list
+  and the comparator and the mission list crashed sorting. The list, from
+  Ghidra's byte search `00 c0 9f e5 1c ff 2f e1` kept where a 12-byte ARM
+  function starts, is `native/abi/tail_calls.txt` in the port (by
+  `module@address`); the other 18 already pass their parameters on.
+  Written as `T f(a, b, ...) { return target(a, b, ...); }` with the
+  target's parameters they say what the ROM does.
+- **Narrow return types declared wider elsewhere.** 139 functions are
+  defined returning `u8`/`s8`/`u16`/`s16`/`char`/`short`, and other files
+  declare many of them `int` (e.g. `func_ov022_020882bc` returns `unsigned
+  char`; `func_ov022_0208a1fc` declares `int`). On the ARM the callee
+  leaves the value extended in r0, so the ROM is fine; a consistent
+  declaration would still help anyone reading or porting the callers.
 
 ### 2.2 All mechanical repairs (*generated*)
 
@@ -270,8 +318,6 @@ CollModel_GetEntryField14 -> CollModel_FindEntry: passes khdays_arg0
 CommitCachedByteIfChanged -> ScriptVm_ReadOperandInt: passes khdays_arg1
 ForwardToHandlerOrCurrentObject -> NNS_SndPlayerStopSeqBySeqArcIdx: passes khdays_arg1, khdays_arg2
 Game_UpdateObjectMotion -> Obj_PrepAltTransform: passes obj
-NNS_FndDestroyExpHeap -> NNSi_FndFinalizeHeap: passes khdays_arg0
-NNS_FndDestroyFrmHeap -> NNSi_FndFinalizeHeap: passes khdays_arg0
 Node_SetRotationFromMtx -> Quat_FromMtx33: passes khdays_arg1
 Ov000_ArmAutoAdvanceTimer -> Ov000_WriteSlotHeaders: passes khdays_arg0
 Ov000_EmitSplinePair -> Ov000_GetEntryPosition: passes param_1, param_2
@@ -371,7 +417,6 @@ Ov005_QueryFieldBySelector -> Ov005_AppendRecordsKindNonZero: passes khdays_arg2
 Ov005_QueryFieldBySelector -> Ov005_AppendRecordsKindZero: passes khdays_arg2
 Ov005_QueryFieldBySelector -> Ov005_AppendTriggerableInRange: passes khdays_arg2
 Ov005_QueryFieldBySelector -> Ov005_FindBestRecordAppend: passes khdays_arg2, khdays_arg3
-Ov005_ReleasePanelViewVeneer -> Ov005_ClearStateFreeLists: passes khdays_arg0
 Ov008_ApplyOffsetSum -> Ov008_GetEntryBlock2c: passes param_2
 Ov008_ClearSlotBit -> Ov008_MapCodeToSlotIndex: passes khdays_arg0
 Ov008_DetailPanel_SetScroll -> Ov008_LayoutDetailPanel: passes param_2
@@ -406,7 +451,6 @@ Ov009_QueryFieldBySelector -> Ov009_FindBestRecordAppend: passes khdays_arg2, kh
 Ov012_InitAndDispatchTriple -> ByteCode_ResolveOperand: passes khdays_arg1
 Ov022_GetStreamTimestamp -> GetEntryField20ByIndex: passes khdays_arg0
 Ov022_StartPauseMenu -> Ov022_GetEntryField66: passes khdays_c0
-Ov022_VeneerTo_Ov022_CopyBlock2c00 -> Ov022_CopyBlock2c00: passes khdays_arg0
 Ov023_ActorFinish_2 -> Ov023_ActorFinish: passes khdays_arg0
 Ov023_CmdEntry_SpawnEntityFollower -> Ov023_Cmd_SpawnEntityFollower: passes khdays_arg1
 Ov023_CmdOpenDialog -> ScriptVm_ReadOperandInt: passes khdays_arg1
@@ -588,69 +632,18 @@ Session_Init_2 -> Session_LayoutPacketSlots: passes khdays_c0
 SlotTable_AddEntry -> SlotTable_FindFree: passes a0
 Srt_SetRotationAxisAngle -> QuatFromAxisAngle: passes khdays_arg1, khdays_arg2
 StoreField74ThenForward -> ModelInst_Init: passes khdays_arg3
-Text_VSNPrintf -> Text_VSNPrintf_2: passes khdays_arg0, khdays_arg1, khdays_arg2, khdays_arg3
 Vec3TransformViaTempMtx -> Mtx33_FromQuat: passes unused
-func_020116e4 -> GetUnpackedAnimBankImpl_: passes khdays_arg0, khdays_arg1
-func_0201696c -> NNS_FndFreeToAllocator: passes khdays_arg0, khdays_arg1
-func_0201a55c -> ShutdownPlayer: passes khdays_arg0
-func_0202019c -> StrNCaseCmp: passes khdays_arg0, khdays_arg1, khdays_arg2
 func_02023768 -> NNS_FndResizeForMBlockExpHeap: passes khdays_arg1, khdays_arg2
-func_02023ad0 -> Obj_Destroy: passes khdays_arg0
-func_0202afe8 -> SceneNode_JointCallback: passes khdays_arg0
 func_0202c604 -> ListPushFront: passes khdays_arg1
 func_0202c614 -> DList_Unlink: passes khdays_arg1
 func_0203243c -> Obj_LoadResourceNode: passes khdays_arg1
-func_02032444 -> SlotTable_AddEntry: passes khdays_arg0, khdays_arg1, khdays_arg2
-func_ov000_02058360 -> Ov000_ClearStateFreeLists: passes khdays_arg0
-func_ov004_0204ecec -> Ov004_ClearStateFreeLists: passes khdays_arg0
 func_ov005_0204e0b0 -> func_0203243c: passes khdays_arg0, khdays_arg1
-func_ov008_02053464 -> Ov008_ClearStateFreeLists: passes khdays_arg0
 func_ov008_0205475c -> func_0203243c: passes khdays_arg0, khdays_arg1
-func_ov008_0205665c -> Ov008_GetVarRecordByIndex: passes khdays_arg0, khdays_arg1
-func_ov008_020594c4 -> Ov008_HandleCancelFlags: passes khdays_arg0
-func_ov008_0205968c -> Ov008_Menu_AdvanceIntoPanel: passes khdays_arg0, khdays_arg1, khdays_arg2, khdays_arg3
-func_ov008_0205c574 -> Ov008_TweenSlotValue: passes khdays_arg0, khdays_arg1, khdays_arg2, khdays_arg3
 func_ov008_020676a0 -> Ov008_SweepElements: passes khdays_c0
-func_ov008_02078154 -> Ov008_MissionMenuBack: passes khdays_arg0
 func_ov008_020782c8 -> Ov008_SweepElements: passes khdays_c0
-func_ov009_020507d4 -> Ov009_ClearStateFreeLists: passes khdays_arg0
-func_ov012_0205bb78 -> TileTextRenderer_Destroy: passes khdays_arg0
-func_ov022_020b15a4 -> Ov022_BuildResNodeSet: passes khdays_arg0, khdays_arg1
-func_ov024_020835cc -> TileTextRenderer_Destroy: passes khdays_arg0
-func_ov024_02083d00 -> NNSi_FndFreeFromDefaultHeap: passes khdays_arg0
-func_ov024_020850f8 -> Ov024_MobiClip_Alloc: passes khdays_arg0
-func_ov024_02085104 -> func_ov024_02083d00: passes khdays_arg0
-func_ov024_02085e3c -> Ov024_MobiClip_Alloc: passes khdays_arg0
-func_ov024_02085e48 -> func_ov024_02083d00: passes khdays_arg0
-func_ov025_02087254 -> Ov025_ClearStateFreeLists: passes khdays_arg0
 func_ov025_02088410 -> func_0203243c: passes khdays_arg1
-func_ov025_0208a26c -> Ov025_GetVarRecordByIndex: passes khdays_arg0, khdays_arg1
-func_ov025_0208bdf8 -> Ov025_MenuBack: passes khdays_arg0
-func_ov025_0208eb08 -> Ov025_BlitClampedSlot: passes khdays_arg0, khdays_arg1, khdays_arg2, khdays_arg3
 func_ov025_02099a80 -> Ov025_SweepElements: passes khdays_c0
-func_ov025_020ad7ac -> Ov025_TeardownOrInit: passes khdays_arg0
-func_ov025_020aebbc -> Ov025_ScrollList_Confirm: passes khdays_arg0
 func_ov025_020aed20 -> Ov025_SweepElements: passes khdays_c0
-func_ov028_0208ab14 -> Ov028_RC4_EncryptInstructions: passes khdays_arg0, khdays_arg1, khdays_arg2, khdays_arg3
-func_ov035_020b3b08 -> Ov035_BindRig: passes khdays_arg0
-func_ov036_020b3928 -> Ov036_BindRig: passes khdays_arg0
-func_ov039_020b3e80 -> Ov039_BindRig: passes khdays_arg0
-func_ov046_020b3a70 -> Ov046_BindRig: passes khdays_arg0
-func_ov054_020b6308 -> Ov054_BindRig: passes khdays_arg0
-func_ov055_020b6128 -> Ov055_BindRig: passes khdays_arg0
-func_ov058_020b6680 -> Ov058_BindRig: passes khdays_arg0
-func_ov065_020b6270 -> Ov065_BindRig: passes khdays_arg0
-func_ov069_020ba244 -> Ov069_ClearStateFreeLists: passes khdays_arg0
-func_ov074_020b89e8 -> Ov074_BindRig: passes khdays_arg0
-func_ov075_020b8808 -> Ov075_BindRig: passes khdays_arg0
-func_ov078_020b8d60 -> Ov078_BindRig: passes khdays_arg0
-func_ov084_020b8950 -> Ov084_BindRig: passes khdays_arg0
-func_ov091_020bb0a8 -> Ov091_BindRig: passes khdays_arg0
-func_ov092_020baec8 -> Ov092_BindRig: passes khdays_arg0
-func_ov095_020bb420 -> Ov095_BindRig: passes khdays_arg0
-func_ov101_020bb010 -> Ov101_BindRig: passes khdays_arg0
-func_ov105_020bf900 -> Ov105_WH_StateInSetMPData: passes khdays_arg0, khdays_arg1, khdays_arg2
-func_ov107_020c3190 -> FreeInstanceMemory: passes khdays_arg0
 func_ov107_020c9c1c -> func_02023ad0: passes khdays_arg0
 Anim_GetFrame takes 2 parameters (its own r0..r1 pass through)
 Anim_GetLengthQ12 takes 2 parameters (its own r0..r1 pass through)
@@ -658,8 +651,6 @@ CamAnim_SelectAnim takes 2 parameters (its own r1..r1 pass through)
 CollModel_GetEntryField14 takes 1 parameters (its own r0..r0 pass through)
 CommitCachedByteIfChanged takes 2 parameters (its own r1..r1 pass through)
 ForwardToHandlerOrCurrentObject takes 3 parameters (its own r1..r2 pass through)
-NNS_FndDestroyExpHeap takes 1 parameters (its own r0..r0 pass through)
-NNS_FndDestroyFrmHeap takes 1 parameters (its own r0..r0 pass through)
 Node_SetRotationFromMtx takes 2 parameters (its own r1..r1 pass through)
 Ov000_ArmAutoAdvanceTimer takes 1 parameters (its own r0..r0 pass through)
 Ov000_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
@@ -695,7 +686,6 @@ Ov002_Slot_SetCellData takes 4 parameters (its own r2..r3 pass through)
 Ov004_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
 Ov005_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov005_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
-Ov005_ReleasePanelViewVeneer takes 1 parameters (its own r0..r0 pass through)
 Ov008_ClearSlotBit takes 1 parameters (its own r0..r0 pass through)
 Ov008_InitFromDescAndMark takes 2 parameters (its own r1..r1 pass through)
 Ov008_MarkSlotUsed takes 1 parameters (its own r0..r0 pass through)
@@ -705,7 +695,6 @@ Ov009_MarkSlotUsed takes 1 parameters (its own r0..r0 pass through)
 Ov009_QueryFieldBySelector takes 4 parameters (its own r2..r3 pass through)
 Ov012_InitAndDispatchTriple takes 2 parameters (its own r1..r1 pass through)
 Ov022_GetStreamTimestamp takes 1 parameters (its own r0..r0 pass through)
-Ov022_VeneerTo_Ov022_CopyBlock2c00 takes 1 parameters (its own r0..r0 pass through)
 Ov023_ActorFinish_2 takes 1 parameters (its own r0..r0 pass through)
 Ov023_CmdEntry_SpawnEntityFollower takes 2 parameters (its own r1..r1 pass through)
 Ov023_CmdOpenDialog takes 2 parameters (its own r1..r1 pass through)
@@ -756,64 +745,13 @@ ScriptVm_ReadOperandFx32 takes 2 parameters (its own r0..r1 pass through)
 ScriptVm_ReadOperandInt takes 2 parameters (its own r1..r1 pass through)
 Srt_SetRotationAxisAngle takes 3 parameters (its own r1..r2 pass through)
 StoreField74ThenForward takes 4 parameters (its own r3..r3 pass through)
-Text_VSNPrintf takes 4 parameters (its own r0..r3 pass through)
-func_020116e4 takes 2 parameters (its own r0..r1 pass through)
-func_0201696c takes 2 parameters (its own r0..r1 pass through)
-func_0201a55c takes 1 parameters (its own r0..r0 pass through)
-func_0202019c takes 3 parameters (its own r0..r2 pass through)
 func_02023768 takes 3 parameters (its own r1..r2 pass through)
-func_02023ad0 takes 1 parameters (its own r0..r0 pass through)
-func_0202afe8 takes 1 parameters (its own r0..r0 pass through)
 func_0202c604 takes 2 parameters (its own r1..r1 pass through)
 func_0202c614 takes 2 parameters (its own r1..r1 pass through)
 func_0203243c takes 2 parameters (its own r1..r1 pass through)
-func_02032444 takes 3 parameters (its own r0..r2 pass through)
-func_ov000_02058360 takes 1 parameters (its own r0..r0 pass through)
-func_ov004_0204ecec takes 1 parameters (its own r0..r0 pass through)
 func_ov005_0204e0b0 takes 2 parameters (its own r0..r1 pass through)
-func_ov008_02053464 takes 1 parameters (its own r0..r0 pass through)
 func_ov008_0205475c takes 2 parameters (its own r0..r1 pass through)
-func_ov008_0205665c takes 2 parameters (its own r0..r1 pass through)
-func_ov008_020594c4 takes 1 parameters (its own r0..r0 pass through)
-func_ov008_0205968c takes 4 parameters (its own r0..r3 pass through)
-func_ov008_0205c574 takes 4 parameters (its own r0..r3 pass through)
-func_ov008_02078154 takes 1 parameters (its own r0..r0 pass through)
-func_ov009_020507d4 takes 1 parameters (its own r0..r0 pass through)
-func_ov012_0205bb78 takes 1 parameters (its own r0..r0 pass through)
-func_ov022_020b15a4 takes 2 parameters (its own r0..r1 pass through)
-func_ov024_020835cc takes 1 parameters (its own r0..r0 pass through)
-func_ov024_02083d00 takes 1 parameters (its own r0..r0 pass through)
-func_ov024_020850f8 takes 1 parameters (its own r0..r0 pass through)
-func_ov024_02085104 takes 1 parameters (its own r0..r0 pass through)
-func_ov024_02085e3c takes 1 parameters (its own r0..r0 pass through)
-func_ov024_02085e48 takes 1 parameters (its own r0..r0 pass through)
-func_ov025_02087254 takes 1 parameters (its own r0..r0 pass through)
 func_ov025_02088410 takes 2 parameters (its own r1..r1 pass through)
-func_ov025_0208a26c takes 2 parameters (its own r0..r1 pass through)
-func_ov025_0208bdf8 takes 1 parameters (its own r0..r0 pass through)
-func_ov025_0208eb08 takes 4 parameters (its own r0..r3 pass through)
-func_ov025_020ad7ac takes 1 parameters (its own r0..r0 pass through)
-func_ov025_020aebbc takes 1 parameters (its own r0..r0 pass through)
-func_ov028_0208ab14 takes 4 parameters (its own r0..r3 pass through)
-func_ov035_020b3b08 takes 1 parameters (its own r0..r0 pass through)
-func_ov036_020b3928 takes 1 parameters (its own r0..r0 pass through)
-func_ov039_020b3e80 takes 1 parameters (its own r0..r0 pass through)
-func_ov046_020b3a70 takes 1 parameters (its own r0..r0 pass through)
-func_ov054_020b6308 takes 1 parameters (its own r0..r0 pass through)
-func_ov055_020b6128 takes 1 parameters (its own r0..r0 pass through)
-func_ov058_020b6680 takes 1 parameters (its own r0..r0 pass through)
-func_ov065_020b6270 takes 1 parameters (its own r0..r0 pass through)
-func_ov069_020ba244 takes 1 parameters (its own r0..r0 pass through)
-func_ov074_020b89e8 takes 1 parameters (its own r0..r0 pass through)
-func_ov075_020b8808 takes 1 parameters (its own r0..r0 pass through)
-func_ov078_020b8d60 takes 1 parameters (its own r0..r0 pass through)
-func_ov084_020b8950 takes 1 parameters (its own r0..r0 pass through)
-func_ov091_020bb0a8 takes 1 parameters (its own r0..r0 pass through)
-func_ov092_020baec8 takes 1 parameters (its own r0..r0 pass through)
-func_ov095_020bb420 takes 1 parameters (its own r0..r0 pass through)
-func_ov101_020bb010 takes 1 parameters (its own r0..r0 pass through)
-func_ov105_020bf900 takes 3 parameters (its own r0..r2 pass through)
-func_ov107_020c3190 takes 1 parameters (its own r0..r0 pass through)
 func_ov107_020c9c1c takes 1 parameters (its own r0..r0 pass through)
 ```
 <!-- END generated:repairs -->
@@ -852,20 +790,12 @@ SetSubitemState's value: sources: 0203ba24 ldrsh r0,[r2,r0]; 0203ba68 bic r0,r0,
 SoundMgr_Update's value: sources: 020333a4 bl 0x02019bf0 => 0x2019bf0 NNS_SndMain; tail 02032f78 addls pc,pc,r1, lsl #0x2; tail 02032fb0 addls pc,pc,r0, lsl #0x2; tail 02033034 addls pc,pc,r1, lsl #0x2; tail 020331d0 addls pc,pc,r0, lsl #0x2
 ResSlot_ReleaseResource called from FreeAllResourceTables without what the ROM passes (argument 0: 0202a4ac ldr r0,[r7,#0xc])
 Ov002_IsPanelModeSet called from Ov002_ApplyTally without what the ROM passes (no call in the C)
-Ov002_IsPanelModeSet called from Ov002_CreateAndRestoreHud without what the ROM passes (Ov002_RepublishHud gives no value to pass)
-Ov002_AddPanelCounter called from Ov002_DispatchHudCounterCommand without what the ROM passes (argument 3: arm9_ov002::0206ace6 ldr r3,[0x0206adcc] = 0x206f5c0 Ov002_GetStartTicks = 0xe92d4010; arm9_ov002::0206acf0 ldr r3,[0x0206add0] = 0x206f630 Ov002_GetEndTicks = 0xe92d4010; arm9_ov002::0206acfa ldr r3,[0x0206add4] = 0x206f604 Ov002_GetTimeoutTicks = 0xe59f101c; arm9_ov002::0206ad32 ldr r3,[0x0206adcc] = 0x206f5c0 Ov002_GetStartTicks = 0xe92d4010; arm9_ov002::0206ad3c ldr r3,[0x0206add0] = 0x206f630 Ov002_GetEndTicks = 0xe92d4010; arm9_ov002::0206ad46 ldr r3,[0x0206add4] = 0x206f604 Ov002_GetTimeoutTicks = 0xe59f101c; arm9_ov002::0206ad6c ldr r3,[0x0206add8] = 0x206dda8 Ov002_GetTimeoutRemaining = 0xe92d4010; arm9_ov002::0206ad9a ldr r3,[0x0206addc] = 0x206dde4 Ov002_GetRemainingTicks = 0xe92d4010)
 Ov002_ForwardToSubDc_4 called from Ov002_HudSetSlotValue without what the ROM passes (no call in the C)
-Ov002_LoadPanelSlots called from Ov002_OpenPanelScreen without what the ROM passes (argument 2: arm9_ov002::0205674a blx 0x02023930 => 0x2023930 InstantiateClass)
-Ov002_RequestPanelScreen called from Ov002_PostScoreRecord without what the ROM passes (argument 4: stack)
-Ov002_GetWord20 called from Ov002_SceneStepPanel without what the ROM passes (argument 0: arm9_ov002::020616b8 moveq r0,#0x0)
 Ov002_PostCrawlScoreLine called from Ov002_ScriptCmd_PostCrawlScoreLine without what the ROM passes (previous callee 0x2088474 has no symbol)
 NNSi_FndFreeFromDefaultHeap called from Ov004_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov004::0204ccc4 ldr r0,[r4,#0x3c]; arm9_ov004::0204ccdc ldr r0,[r4,#0x40]; arm9_ov004::0204ccf4 ldr r0,[r4,#0x44]; arm9_ov004::0204cd0c ldr r0,[r4,#0x48])
 Ov004_QueryFieldBySelector called from Ov004_InitObjectWithList without what the ROM passes (argument 3: arm9_ov004::0204d29c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
 NNSi_FndFreeFromDefaultHeap called from Ov005_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov005::0204e6f8 ldr r0,[r4,#0x3c]; arm9_ov005::0204e710 ldr r0,[r4,#0x40]; arm9_ov005::0204e728 ldr r0,[r4,#0x44]; arm9_ov005::0204e740 ldr r0,[r4,#0x48])
 Ov005_QueryFieldBySelector called from Ov005_InitObjectWithList without what the ROM passes (argument 3: arm9_ov005::0204ecd0 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
-NNSi_FndFreeFromDefaultHeap called from Ov008_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov008::02055f94 ldr r0,[r4,#0x3c]; arm9_ov008::02055fac ldr r0,[r4,#0x40]; arm9_ov008::02055fc4 ldr r0,[r4,#0x44]; arm9_ov008::02055fdc ldr r0,[r4,#0x48])
-Ov008_QueryFieldBySelector called from Ov008_InitMissionList without what the ROM passes (argument 3: arm9_ov008::0205656c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
-Ov008_QueryFieldBySelector called from Ov008_RebuildQueryList without what the ROM passes (argument 3: arm9_ov008::02056700 bl 0x02056418 => 0x2056418 ov008_DestroyAllListObjects)
 NNSi_FndFreeFromDefaultHeap called from Ov009_FreeWorkBuffers without what the ROM passes (argument 0: arm9_ov009::02055080 ldr r0,[r4,#0x3c]; arm9_ov009::02055098 ldr r0,[r4,#0x40]; arm9_ov009::020550b0 ldr r0,[r4,#0x44]; arm9_ov009::020550c8 ldr r0,[r4,#0x48])
 Ov009_QueryFieldBySelector called from Ov009_InitObjectWithList without what the ROM passes (argument 3: arm9_ov009::02055658 bl 0x0201ef9c => 0x201ef9c Archive_LoadFile)
 Ov011_BlitTileRow called from Ov011_StepPaneScroll without what the ROM passes (argument 5: stack)
