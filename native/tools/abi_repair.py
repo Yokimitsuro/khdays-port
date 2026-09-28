@@ -427,6 +427,12 @@ class Repairer:
                 defined = min(defined, len(param_list(self.texts[callee_rel], cd)))
         if defined <= declared:
             return "resolved"
+        # every call already passes them (a manual fix, ABI_FIXES)
+        present = call_sites(text, mask, callee, d.body)
+        if present and all(len(split_top_level(text[text.find("(", s) + 1:c].strip())) >= defined
+                           for s, c in present if text[text.find("(", s) + 1:c].strip()):
+            if all(text[text.find("(", s) + 1:c].strip() for s, c in present):
+                return "resolved"
         # The caller expects a struct by value where the definition takes the
         # ARM ABI's result pointer: the "missing" first argument is that
         # pointer, which x86 passes the same way for a struct over 8 bytes
@@ -511,7 +517,7 @@ class Repairer:
                                  ", ".join(exprs[k] for k in range(declared, defined)))
         return None
 
-    def gap_call(self, caller: str, callee: str, why: str) -> None:
+    def gap_call(self, caller: str, callee: str, why: str, needed: int = 0) -> None:
         rel = self.def_file.get(caller)
         message = f"{callee} called from {caller} without what the ROM passes ({why})"
         self.plan.gaps.append(message)
@@ -522,6 +528,9 @@ class Repairer:
         span = d.body if d else (0, len(text))
         quoted = message.replace("\\", "\\\\").replace('"', "'")
         for start, close in call_sites(text, mask, callee, span):
+            inner = text[text.find("(", start) + 1:close].strip()
+            if needed and inner and len(split_top_level(inner)) >= needed:
+                continue  # this call already passes them
             # stop before the call, keeping its type for the expression around it
             self.plan.edits[rel].append((start, start, f'(khdays_abi_gap("{quoted}"), '))
             self.plan.edits[rel].append((close + 1, close + 1, ")"))

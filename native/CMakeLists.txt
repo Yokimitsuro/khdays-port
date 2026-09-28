@@ -89,6 +89,7 @@ add_executable(khdays-native
     runtime/io_regs.c
     runtime/io_trap.c
     runtime/memory.c
+    runtime/overlays.c
     runtime/rom.cpp
     runtime/runtime.c
     runtime/start.c

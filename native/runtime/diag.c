@@ -1,6 +1,7 @@
 /* Diagnostics for the native game: a symbolized stack on a crash, and on
  * demand after a given time (KHDAYS_STALL_SECONDS=N) to see where a stalled
  * game is spinning. Symbols come from the build's PDB through DbgHelp. */
+#include "../hal/hal.h"
 #include "runtime.h"
 
 extern unsigned khdays_cpsr;
@@ -9,6 +10,7 @@ static unsigned khdays_cpsr_value(void) { return khdays_cpsr; }
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <windows.h>
 #include <dbghelp.h>
 
@@ -61,6 +63,11 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
                 (unsigned long)info->ExceptionRecord->ExceptionInformation[1]);
     }
     fprintf(stderr, "\n");
+    if (info->ContextRecord->Eip >= 0x01ff8000 && info->ContextRecord->Eip < 0x0b000000) {
+        fprintf(stderr, "  the game jumped into DS memory at 0x%08lx: ARM code there (a routine it "
+                        "copies at run time) cannot run natively\n",
+                (unsigned long)info->ContextRecord->Eip);
+    }
     if (info->ContextRecord->Eip == 0) {
         /* A call through a null pointer: resume the walk at its caller. */
         info->ContextRecord->Eip = *(DWORD *)info->ContextRecord->Esp;
@@ -149,4 +156,62 @@ void khdays_diag_init(void)
                         0, FALSE, DUPLICATE_SAME_ACCESS);
         CreateThread(NULL, 0, watchdog, (void *)(size_t)atoi(stall), 0, NULL);
     }
+}
+
+/* The name of the native function at `address`, for traces. */
+static const char *symbol_name(const void *address)
+{
+    static char buffer[sizeof(SYMBOL_INFO) + 256];
+    SYMBOL_INFO *symbol = (SYMBOL_INFO *)buffer;
+    DWORD64 displacement = 0;
+    if (address == NULL) {
+        return "-";
+    }
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = 255;
+    if (SymFromAddr(GetCurrentProcess(), (DWORD64)(size_t)address, &displacement, symbol)) {
+        return symbol->Name;
+    }
+    return "?";
+}
+
+/* KHDAYS_TRACE_SCRIPT: each step of the action-script interpreter
+ * (src/calls/func_02020e58.c) that differs from the last one it reported:
+ * the entry's command (opcode, sub-op, length word), its action slot and its
+ * five callback slots. */
+void khdays_trace_script(void *st, void *entry)
+{
+    static int enabled = -1;
+    static u32 last[8];
+    const u8 *e = (const u8 *)entry;
+    const u8 *cmd = *(const u8 *const *)(e + 0x10);
+    u32 now[8];
+    if (enabled < 0) {
+        enabled = getenv("KHDAYS_TRACE_SCRIPT") != NULL;
+    }
+    if (!enabled) {
+        return;
+    }
+    now[0] = (u32)(size_t)cmd;
+    now[1] = *(const u32 *)(e + 0x18);
+    for (int i = 0; i < 5; ++i) {
+        now[2 + i] = *(const u32 *)(e + 0x20 + 8 * i);
+    }
+    now[7] = *(const u32 *)((const u8 *)st + 0x124);
+    if (memcmp(now, last, sizeof(now)) == 0) {
+        return;
+    }
+    memcpy(last, now, sizeof(now));
+    fprintf(stderr, "script %p depth %u: cmd %p", st, now[7], (const void *)cmd);
+    if (cmd != NULL) {
+        fprintf(stderr, " op %02x.%02x len %04x", cmd[0], cmd[1], *(const u16 *)(cmd + 2));
+    }
+    fprintf(stderr, " action %s", symbol_name((const void *)(size_t)now[1]));
+    for (int i = 0; i < 5; ++i) {
+        if (now[2 + i] != 0) {
+            fprintf(stderr, " cb%d %s", i, symbol_name((const void *)(size_t)now[2 + i]));
+        }
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
 }

@@ -52,8 +52,11 @@ void khdays_host_frame(void)
 {
     const u32 frame = khdays_events_vblank_count();
     if (frame % 60 == 0) {
-        /* the scene controller's current scene id (0x0204bda4 + 0x0c) */
-        fprintf(stderr, "khdays-native: frame %u, scene %u\n", frame, *(volatile u32 *)0x0204bdb0);
+        /* the scene controller (0x0204bda8: object, table entry, current id,
+         * pending id and argument; src/calls/func_0202099c.c) */
+        const volatile u32 *scene = (const volatile u32 *)0x0204bda8;
+        fprintf(stderr, "khdays-native: frame %u, scene %u (object %08x, pending %u arg %u)\n", frame,
+                scene[2], scene[0], scene[3], scene[4]);
         fflush(stderr);
     }
 }

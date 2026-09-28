@@ -7,6 +7,7 @@
 #include "rom.h"
 #include "runtime.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -44,6 +45,8 @@ static u32 language_code(void)
     return 1;  /* English, as the port defaults */
 }
 
+static void console_mac(volatile u8 *mac);
+
 static void user_settings(void)
 {
     volatile u8 *const s = (volatile u8 *)0x027ffc80;
@@ -61,6 +64,29 @@ static void user_settings(void)
     s[0x62] = (u8)x2;                                     /* scr.x2 */
     s[0x63] = (u8)y2;                                     /* scr.y2 */
     *(volatile u16 *)(s + 0x64) = (u16)language_code();   /* language */
+    console_mac(s + 0x74);
+}
+
+/* The console's Wi-Fi MAC address, which the firmware copies after the user
+ * settings (0x027ffcf4; OS_GetMacAddress reads it). A real console has its
+ * own; this one is KHDAYS_MAC ("00:09:bf:12:34:56" form) or else DeSmuME's
+ * default, the one found in every savestate of this game. It matters: DS
+ * Protect (ov028) takes an all-zero MAC for an emulator, and the story's
+ * start (Ov000_BootRunSelector) then requests no scene at all. */
+static void console_mac(volatile u8 *mac)
+{
+    static const u8 fallback[6] = {0x00, 0x09, 0xbf, 0x12, 0x34, 0x56};
+    const char *env = getenv("KHDAYS_MAC");
+    unsigned v[6];
+    if (env != NULL && sscanf_s(env, "%x:%x:%x:%x:%x:%x", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) == 6) {
+        for (int i = 0; i < 6; ++i) {
+            mac[i] = (u8)v[i];
+        }
+        return;
+    }
+    for (int i = 0; i < 6; ++i) {
+        mac[i] = fallback[i];
+    }
 }
 
 void khdays_boot_environment(void)

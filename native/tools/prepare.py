@@ -108,6 +108,18 @@ DSPROT_RANGES_INCLUDE = re.compile(r'^([ \t]*#[ \t]*include[ \t]*)"dsprot_ranges
 END_LABEL = re.compile(r"(^[ \t]*[A-Za-z_]\w*:)([ \t]*\n?[ \t]*\})", re.MULTILINE)
 # A function definition header with an unnamed parameter such as `u32)`.
 DEF_HEADER = re.compile(r"^(\w[\w \t\*]*\b\w+[ \t]*\()([^()\n]*)\)[ \t]*$", re.MULTILINE)
+# A virtual member function (the decomp's C++ declares classes only to call
+# through vtables whose entries are C functions taking `this` first). On the
+# ARM `this` is simply r0; MSVC's default for members, __thiscall, passes it
+# in ECX instead, so the C function would read its arguments one off.
+# __cdecl members take `this` as the first stack argument, as the C does.
+VIRTUAL_METHOD = re.compile(r"(\bvirtual\s+(?:[\w\*&]+\s+)*?)(~?[A-Za-z_]\w*\s*\()")
+# mwcc gives a virtual destructor two vtable slots, the complete-object
+# destructor and then the deleting one (`delete p` loads slot 1:
+# ov024 0x02084ec4 `ldr r1,[r1,#4]`; data_ov024_020939c4 holds just those
+# two), where MSVC gives it one. A placeholder declared first takes slot 0,
+# so the destructor and every later method land on mwcc's slots.
+VIRTUAL_DTOR = re.compile(r"^([ \t]*)(virtual __cdecl ~\w+\s*\(\s*\)\s*;)", re.MULTILINE)
 
 
 # Where the runtime joins the game's own flow, each a single, documented edit
@@ -120,6 +132,13 @@ HOOKS = {
         "FSOverlayInitFunc *p = p_ovi->header.sinit_init;",
         "FSOverlayInitFunc *p = (khdays_data_init((int)p_ovi->header.id), "
         "p_ovi->header.sinit_init);",
+    ),
+    # KHDAYS_TRACE_SCRIPT: the action-script interpreter reports each step it
+    # stands on (runtime/diag.c), to see what a scene waits for.
+    "src/calls/func_02020e58.c": (
+        "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n",
+        "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n"
+        "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
     ),
 }
 
@@ -156,6 +175,31 @@ ABI_FIXES = {
          "void func_0201386c (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
          "int hSpace, int vSpace, const void * txt)"),
         ("    return rect;\n}", "    *khdays_result = rect;\n}"),
+    ],
+    # The ROM frees the node itself: `str r1,[sp,#0]` at 0x02055a8e keeps `b`
+    # in the stack slot that `ldr r0,[sp,#0]` (0x02055ac4) passes to the free.
+    "src/overlays/ov000/calls/func_ov000_02055a8c.c": [
+        ("        NNSi_FndFreeFromDefaultHeap();", "        NNSi_FndFreeFromDefaultHeap(b);"),
+    ],
+    # Ending a scene unloads its overlay: the ROM passes the entry's overlay id
+    # (0x020209c4 `ldr r1,[r4,#4]`, 0x020209cc `ldr r1,[r1,#0]`) to
+    # func_0201e4a8(target, id), as func_0200108c does.
+    "src/calls/func_0202099c.c": [
+        ("extern void func_0201e4a8(int);", "extern void func_0201e4a8(int, int);"),
+        ("                func_0201e4a8(0);", "                func_0201e4a8(0, s->entry->overlayId);"),
+    ],
+    # The lid opening again restores both master brightnesses: the ROM passes
+    # each saved value straight on (0x0205b7a0 `bl 0x0201e428` then
+    # `bl 0x0201e374`; 0x0205b7a8 `bl 0x0201e438` then `bl 0x0201e3cc`).
+    "src/overlays/ov012/calls/func_ov012_0205b618.c": [
+        ("extern void func_0201e374();", "extern void func_0201e374(int);"),
+        ("extern void func_0201e3cc();", "extern void func_0201e3cc(int);"),
+        ("extern void func_0201e428(void);", "extern int func_0201e428(void);"),
+        ("extern void func_0201e438(void);", "extern int func_0201e438(void);"),
+        ("                        func_0201e428();\n                        func_0201e374();\n"
+         "                        func_0201e438();\n                        func_0201e3cc();",
+         "                        func_0201e374(func_0201e428());\n"
+         "                        func_0201e3cc(func_0201e438());"),
     ],
 }
 
@@ -250,6 +294,9 @@ def transform(text: str) -> str:
     text = CLZ_ASM.sub(lambda m: f"{m[1]} = khdays_clz({m[2]});", text)
     text = END_LABEL.sub(lambda m: f"{m[1]};{m[2]}", text)
     text = DSPROT_RANGES_INCLUDE.sub(r'\1"khdays_dsprot_ranges.h"', text)
+    text = VIRTUAL_METHOD.sub(r"\1__cdecl \2", text)
+    text = VIRTUAL_DTOR.sub(r"\1virtual void __cdecl khdays_mwcc_complete_dtor();  /* mwcc's slot 0 */\n\1\2",
+                            text)
     text = ARRAY_ASSIGN.sub(
         lambda m: f"{m[1]}KHDAYS_ARRAY_ASSIGN({m[2].strip()}, {m[3]}, {m[4].strip()}, {m[5].strip()});",
         text)
@@ -375,6 +422,75 @@ def decomp_absolute_symbols() -> dict[str, int]:
     return {n: int(v, 16) for n, v in re.findall(r'"(\w+)":\s*0x([0-9A-Fa-f]+)', block)}
 
 
+RELOC_OVERLAYS_RE = re.compile(
+    r"^from:0x[0-9a-fA-F]+\s+kind:\w+\s+to:0x([0-9a-fA-F]+)\s+module:overlays\(([\d,\s]+)\)")
+
+
+def overlay_dispatch(modules: list[Module], texts: dict[str, str], module_of: dict[str, str]
+                     ) -> tuple[dict[int, list[tuple[int, str]]], int]:
+    """Routes references to an address several overlays' functions share
+    through a thunk per address (see main). Returns the thunks (address ->
+    [(overlay, function)]) and how many files were rerouted."""
+    function_at: dict[tuple[int, int], str] = {}
+    for m in modules:
+        mo = re.fullmatch(r"ov(\d+)", m.name)
+        if mo:
+            for n, k, a in m.symbols:
+                if k == "function":
+                    function_at[(int(mo[1]), a)] = n
+    thunks: dict[int, list[tuple[int, str]]] = {}
+    reroute: dict[str, dict[str, str]] = collections.defaultdict(dict)  # module -> name -> thunk
+    for m in modules:
+        relocs = m.config / "relocs.txt"
+        if not relocs.exists():
+            continue
+        for line in relocs.read_text(encoding="utf-8").splitlines():
+            r = RELOC_OVERLAYS_RE.match(line)
+            if not r:
+                continue
+            target = int(r[1], 16)
+            candidates = [(o, function_at[(o, target)]) for o in
+                          (int(x) for x in r[2].replace(" ", "").split(",")) if (o, target) in function_at]
+            if len(candidates) < 2:
+                continue  # data, or a function in only one of them
+            thunks[target] = candidates
+            for _, name in candidates:
+                reroute[m.name][name] = f"khdays_ovcall_{target:08x}"
+    files = 0
+    for rel, text in texts.items():
+        names = reroute.get(module_of[rel])
+        if not names:
+            continue
+        used = [n for n in names if re.search(rf"\b{re.escape(n)}\b", text) and
+                # not the file defining it (a definition starts at column 0)
+                not re.search(rf"^[A-Za-z_][\w \t\*]*\b{re.escape(n)}\s*\([^;{{}}]*\)\s*\{{", text,
+                              re.MULTILINE)]
+        if used:
+            texts[rel] = "".join(f"#define {n} {names[n]}  /* the overlay loaded there (prepare.py) */\n"
+                                 for n in sorted(used)) + text
+            files += 1
+    return thunks, files
+
+
+def thunk_asm(thunks: dict[int, list[tuple[int, str]]]) -> list[str]:
+    """x86 thunks: ask which overlay is loaded at the address, jump to its
+    function with the caller's arguments and return address untouched."""
+    if not thunks:
+        return []
+    asm = ["EXTERN _khdays_overlay_at:PROC", "EXTERN _khdays_overlay_call_missing:PROC"]
+    for name in sorted({n for c in thunks.values() for _, n in c}):
+        asm.append(f"EXTERN _{name}:PROC")
+    asm += ["", ".code"]
+    for target, candidates in sorted(thunks.items()):
+        thunk = f"_khdays_ovcall_{target:08x}"
+        asm += [f"PUBLIC {thunk}", f"{thunk} PROC",
+                f"    push 0{target:08x}h", "    call _khdays_overlay_at", "    add esp, 4"]
+        for overlay, name in candidates:
+            asm += [f"    cmp eax, {overlay}", f"    jne @F", f"    jmp _{name}", "@@:"]
+        asm += [f"    push 0{target:08x}h", "    call _khdays_overlay_call_missing", f"{thunk} ENDP", ""]
+    return asm
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "build" / "native" / "gen"))
@@ -482,7 +598,7 @@ def main() -> int:
         if why in ("struct-by-value", "resolved"):
             equivalent += 1
         elif why:
-            repairer.gap_call(caller, callee, why)
+            repairer.gap_call(caller, callee, why, ks[-1] + 1)
     where = {}
     for m in modules:
         space = f"arm9_{m.name}" if m.name.startswith("ov") else "-"
@@ -497,6 +613,15 @@ def main() -> int:
     (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
     abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
                    f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt)")
+
+    # References to an address several overlays share (the decomp's relocs
+    # name them all: module:overlays(a,b)). On the DS the one loaded there at
+    # the time runs; the decomp's C names one of them, not always that one
+    # (ov012 opens its movie through "func_ov008_020846c0", ov008's shop list,
+    # where the ROM reaches ov024's MobiClip open at the same address). Natively
+    # every such function reference in the referring module goes through a
+    # thunk that jumps to the loaded overlay's function (runtime/overlays.c).
+    thunks, dispatched = overlay_dispatch(modules, texts, module_of)
 
     # Game data at its DS address. Every object a C file defines that the DS
     # linker placed (symbols.txt) becomes an absolute symbol at that address,
@@ -605,6 +730,7 @@ def main() -> int:
     for name, addr in sorted(absolute.items(), key=lambda kv: (kv[1], kv[0])):
         asm.append(f"PUBLIC _{name}")
         asm.append(f"_{name} EQU 0{addr:08x}h")
+    asm += [""] + thunk_asm(thunks)
     asm += ["", "END", ""]
     (out / "absolute.asm").write_text("\n".join(asm), encoding="utf-8")
     (out / "alternatenames.txt").write_text(
@@ -619,7 +745,9 @@ def main() -> int:
           f"see unconverted_data.txt), {bss_count} other BSS symbols, "
           f"{len(PHANTOMS)} split-unit statics, "
           f"{len(absolute) - bss_count - len(converted) - len(PHANTOMS)} other absolute symbols; "
-          f"{len(alternates)} aliases; {abi_summary}")
+          f"{len(alternates)} aliases; {abi_summary}; "
+          f"{len(thunks)} addresses shared by overlays' functions, reached through thunks from "
+          f"{dispatched} files")
     return 0
 
 
