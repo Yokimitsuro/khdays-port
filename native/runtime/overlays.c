@@ -74,6 +74,39 @@ int khdays_overlay_at(u32 address)
     return best;
 }
 
+/* The native function at a DS address (build/native/gen/ds_functions.c,
+ * sorted by address): of the main module, or of the overlay loaded there
+ * now. NULL outside those (ITCM and DTCM are not listed), for an address
+ * that starts no compiled function, or when no listed overlay is loaded. */
+typedef struct {
+    unsigned address;
+    int module;  /* -1: the main module */
+    void (*native)(void);
+} KhdaysDsFunction;
+extern const KhdaysDsFunction khdays_ds_functions[];
+extern const unsigned khdays_ds_function_count;
+
+void *khdays_native_at(u32 address)
+{
+    unsigned lo = 0, hi = khdays_ds_function_count;
+    address &= ~1u;  /* a Thumb function's address carries bit 0 */
+    while (lo < hi) {
+        const unsigned mid = (lo + hi) / 2;
+        if (khdays_ds_functions[mid].address < address) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    for (; lo < khdays_ds_function_count && khdays_ds_functions[lo].address == address; ++lo) {
+        const KhdaysDsFunction *f = &khdays_ds_functions[lo];
+        if (f->module < 0 || khdays_overlay_at(address) == f->module) {
+            return (void *)f->native;
+        }
+    }
+    return NULL;
+}
+
 /* A thunk found none of its overlays loaded at its address. */
 void khdays_overlay_call_missing(u32 address)
 {

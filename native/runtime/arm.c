@@ -65,6 +65,7 @@ static Cpu *current;
 static u32 current_entry;
 
 void khdays_diag_stack(void);
+void *khdays_native_at(u32 address);  /* overlays.c */
 
 /* The interpreter's state and the native calls around it, before a stop. */
 static void report_state(void)
@@ -249,6 +250,13 @@ static void branch(Cpu *cpu, u32 target, int interwork)
         }
         cpu->pc = target;
         return;
+    }
+    if (is_ds_code(target)) {
+        /* a compiled function of the module loaded there runs natively */
+        void *native = khdays_native_at(target);
+        if (native != NULL) {
+            target = (u32)(size_t)native;
+        }
     }
     if (!is_ds_code(target)) {
         const u32 sp = cpu->r[13];
@@ -860,6 +868,16 @@ static void run(Cpu *cpu)
     if (trace < 0) {
         trace = getenv("KHDAYS_TRACE_ARM") != NULL;
     }
+    if (trace && !on_arm7) {
+        /* the ARM9 routines as they start: a run that never ends names itself */
+        int i;
+        for (i = 0; i < nseen && seen[i] != entry; ++i) {
+        }
+        if (i == nseen) {
+            fprintf(stderr, "arm: 0x%08x starts (r0 %08x r1 %08x r2 %08x r3 %08x, lr %08x)\n", entry,
+                    cpu->r[0], cpu->r[1], cpu->r[2], cpu->r[3], cpu->r[14]);
+        }
+    }
     while (!cpu->done) {
         ++steps;
         const u32 at = cpu->pc;
@@ -1043,6 +1061,16 @@ static LONG CALLBACK on_execute(EXCEPTION_POINTERS *info)
     if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->ExceptionInformation[0] != 8 ||
         !is_ds_code(target & ~1u)) {
         return EXCEPTION_CONTINUE_SEARCH;
+    }
+    /* A compiled function of the module loaded there (a DS address the ROM's
+     * data held, such as an overlay's static initializer): run it natively,
+     * as the call was. Only code the build has no C for is interpreted. */
+    {
+        void *native = khdays_native_at(target);
+        if (native != NULL) {
+            context->Eip = (DWORD)(size_t)native;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
     }
     stack = (const u32 *)(size_t)context->Esp;  /* return address, then the arguments */
     InterlockedIncrement(&khdays_async_irq_blocked);  /* no interrupt inside this handler */
