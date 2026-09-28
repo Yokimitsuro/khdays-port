@@ -235,6 +235,11 @@ ABI_FIXES = {
     ],
 }
 
+# Arithmetic on a `void *` (mwcc and GCC take it as `char *`; MSVC refuses).
+ABI_FIXES["ov006@0204da3c"] = [  # Ov006_SendNetworkPacket
+    ("MISSION_CONTEXT->primaryBuffer + 4", "(char *)MISSION_CONTEXT->primaryBuffer + 4"),
+]
+
 # A node's +0x80 hook gets the node: `ldr r1,[r0,#0x80]; ...; blx r1` with r0
 # still the node (0x0203c8e8-0x0203c8f4). ProcessListChildren, a hook, reads
 # it. (A call through a pointer: the ROM scan does not see these.)
