@@ -8,7 +8,7 @@ commenting the decompilation; what its C should say differently is in
 
 Only what was seen is here. Each entry says how -- a trace (the environment
 variables at the end), the ROM, a save -- and anything not seen is marked
-*not identified*. Names are khdays-decomp's at `2a2cd711b`; addresses are
+*not identified*. Names are khdays-decomp's at `0788aae45`; addresses are
 ARM9. Overlay names in parentheses are the decomp's directory names.
 
 ## 1. Scenes and their overlays

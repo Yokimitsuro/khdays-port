@@ -304,18 +304,6 @@ for _key, _proto in (("ov117@020cbfc4", "struct Vec4 *"), ("ov118@020cfc04", "st
          "    Ov107_Actor_SetAttachSlot(self, 2, 2, 0, frame.outgoing);"),
     ]
 
-# Arithmetic on a `void *` (mwcc and GCC take it as `char *`; MSVC refuses).
-ABI_FIXES["ov006@0204da3c"] = [  # Ov006_SendNetworkPacket
-    ("MISSION_CONTEXT->primaryBuffer + 4", "(char *)MISSION_CONTEXT->primaryBuffer + 4"),
-]
-
-# A node's +0x80 hook gets the node: `ldr r1,[r0,#0x80]; ...; blx r1` with r0
-# still the node (0x0203c8e8-0x0203c8f4). ProcessListChildren, a hook, reads
-# it. (A call through a pointer: the ROM scan does not see these.)
-ABI_FIXES["main@0203c8e4"] = [  # Node_CallHook80
-    ("    return f();\n", "    return f(p);\n"),
-]
-
 # r9 across the object updates (runtime.c khdays_rom_r9): Obj_UpdateAll
 # starts with main's (unknown) and leaves each update's result in it
 # (`blx r0; mov sb, r0`, 0x02023b64/68).

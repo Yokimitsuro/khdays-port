@@ -16,7 +16,7 @@ overlay). Names are the decomp's own at the revision below. Sections marked
 *generated* are refreshed by `python native/tools/decomp_findings.py`.
 
 <!-- BEGIN generated:revision -->
-Checked against khdays-decomp `2a2cd711b`.
+Checked against khdays-decomp `0788aae45`.
 <!-- END generated:revision -->
 
 ## 1. Open
@@ -35,12 +35,10 @@ enemy near Roxas. Declarations that match the definitions, as the narrow
 return types now do, would say what the ROM does; the port converts such an
 argument itself and passes it as an `int`.
 
-At this revision the decomp has widened most of them (520 files) and keeps
-79 narrow on purpose, with a comment (a wide declaration changes mwcc's
-code). What is left below is more than those: some declare a different type
-altogether, e.g. `Entity_Activate(void *actor, unsigned short id)` in
-`Ov002_BindSlotActorModel` against the definition's
-`(unsigned char *ptr, void *arg)`.
+The decomp has widened most of them (520 files at `2a2cd711b`, another 153
+since) and keeps some narrow on purpose, with a comment (a wide declaration
+changes mwcc's code). The 42 functions left below are those and whatever
+else still declares a narrower parameter.
 
 *Generated:* each function, the parameters some file declares narrower than
 its definition, and the files that do.
@@ -50,12 +48,10 @@ its definition, and the files that do.
 - `Anim_GetLengthQ12` (argument 1 as u16): `Ov002_UpdatePeerAnimationsAndExit`, `Ov023_ActorQueueMotion`
 - `Anim_SetFrameWrapped` (argument 1 as u16): `Ov002_UpdatePeerAnimationsAndExit`
 - `ArrayEntryPtrD0` (argument 0 as u16): `Ov002_ApplyRosterSlotToNode`, `Ov023_CmdAttachWeapons`, `Ov023_CmdPlaceActor`, `Ov023_CmdPlaceRelative`, `Ov023_CmdRampActorTransition`, `Ov023_CmdRampAnimFrame`, `Ov023_CmdSeatMembers`, `Ov023_CmdWarpActor`, `Ov023_Cmd_ParentEntityToEntity`, `Ov023_Cmd_PlayEntityAnimKind1`, `Ov023_Cmd_TestEntityCollisionBit`
-- `EntityMgr_AttachTrackData` (argument 0 as u16): `Ov002_ConfigureGateFromPeerRow`
 - `EntityMgr_GetCollEntryField14` (argument 0 as u16): `Ov002_SpawnActorElement`
 - `EntityMgr_LinkChild` (argument 0 as u16, argument 1 as u16): `Ov023_CmdAttachWeapons`, `Ov023_Cmd_ParentEntityToEntity`
 - `EntityMgr_ProbeGround` (argument 0 as u16): `Ov002_SpawnActorElement`, `Ov023_CmdSeatMembers`
 - `EntityMgr_SetTransition` (argument 0 as u16): `Ov023_CmdRampActorTransition`, `Ov023_Cmd_PlayEntityAnimKind1`
-- `Entity_Activate` (argument 1 as u16): `Ov002_BindSlotActorModel`, `Ov002_BuildSpawnRow`
 - `Entity_ForwardToSlot` (argument 0 as u16): `Ov023_CmdSetupPartyActors`
 - `Entity_LoadAndAttach` (argument 0 as u16): `Ov002_LoadPeerIntoSlot`
 - `Entity_SetVisible` (argument 0 as u16): `Ov023_CmdPlaceActor`, `Ov023_CmdPlaceRelative`, `Ov023_CmdSetupPartyActors`, `Ov023_CmdWarpActor`, `Ov023_Cmd_ParentEntityToEntity`, `Ov023_HideScreenActors`, `Ov023_ReleaseScreenSprites`
@@ -67,28 +63,16 @@ its definition, and the files that do.
 - `LoadArrayU8At0cc` (argument 0 as u16): `Ov002_ApplyRosterSlotToNode`, `Ov023_CmdPlaceActor`
 - `LoadArrayU8At0ce` (argument 0 as u16): `Ov023_CmdAttachWeapons`, `Ov023_CmdPlaceRelative`, `Ov023_Cmd_ParentEntityToEntity`
 - `NNS_G3dMdlSetMdlDiffAll` (argument 1 as u16): `Ov255_DrawShakes`
-- `Ov002_CreateActorClass` (argument 0 as u16): `Ov002_VmCmd7d18c`
-- `Ov002_CreateElementClass` (argument 0 as u16): `Ov002_VmCmd7d004`
-- `Ov002_CreateLineClass` (argument 0 as u16): `Ov002_VmCmdList7d610`
-- `Ov002_CreatePieceClass` (argument 0 as u16): `Ov002_VmCmd7ceac`
-- `Ov002_CreatePieceClass_2` (argument 0 as u16): `Ov002_VmCmd7d334`
-- `Ov002_CreateSpareClass` (argument 0 as u16): `Ov002_CmdCreateModuleSlot`
-- `Ov002_CreateTravelClass` (argument 0 as u16): `Ov002_VmCmd7d950`
 - `Ov002_PlotCanvasPixel` (argument 1 as u16, argument 2 as u16, argument 3 as u8): `Ov002_BlitMask`
 - `Ov002_SpawnKindIntoFreeSpot` (argument 1 as u16): `Ov002_SpawnTieredDrop`
 - `Ov006_FindEntryByTag` (argument 1 as u16): `Ov006_MissionRetargetCellByTag`
 - `Ov008_ApplyTempFieldsAndRestore` (argument 2 as u16, argument 3 as u16): `Ov008_SetTagValueDup`
 - `Ov008_ClearGridSlot` (argument 1 as u16, argument 2 as u16, argument 3 as u16): `Ov008_PlaceTrackedNode`
-- `Ov008_DrawMissionRow` (argument 1 as u16): `Ov008_MissionListRevealTick`
 - `Ov008_Elem_SetPos` (argument 2 as s16, argument 3 as s16): `Ov008_RetargetCellByTag`
 - `Ov008_FindEntryByTag` (argument 1 as u16): `Ov008_MissionRetargetCellByTag`, `Ov008_RetargetCellByTag`, `Ov008_SetTagValueDup`, `Ov008_ShowTierPage`
 - `Ov008_StampTileMode` (argument 2 as u8): `Ov008_ShowTierPage`
-- `Ov015_CreateChestClass` (argument 0 as u16): `Ov015_VmCmd27a0`
-- `Ov015_CreatePickupClass` (argument 0 as u16): `Ov015_VmCmd22b0`
-- `Ov015_CreateSpotClass` (argument 0 as u16): `Ov015_ScriptOpCreateSpots`
 - `Ov025_ApplyTempFieldsByTagB` (argument 2 as s16, argument 3 as s16): `Ov025_ScrollList_DrawRow`
 - `Ov025_ClearGridSlot` (argument 1 as u16, argument 2 as u16, argument 3 as u16): `Ov025_PlaceTrackedNode`
-- `Ov025_DrawMissionRow` (argument 1 as u16): `Ov025_MissionListRevealTick`
 - `Ov025_Elem_SetPos` (argument 2 as s16, argument 3 as s16): `Ov025_RetargetCellByTag`
 - `Ov025_FindEntryByTag` (argument 1 as u16): `Ov025_RetargetCellByTag`, `Ov025_SetTagValueDup`
 - `Ov025_GetTableValue` (argument 0 as u16): `Ov025_ScrollList_BuildRows`
@@ -96,64 +80,15 @@ its definition, and the files that do.
 - `Ov025_MissionList_HasVisibleInDays` (argument 0 as u16, argument 1 as u16): `Ov025_ScrollList_BuildRows`
 - `Ov026_FillTilemapRegionPalette` (argument 2 as u8): `Ov026_ShowTierPage`
 - `Ov026_FindEntryByTag` (argument 1 as u16): `Ov026_ShowTierPage`
-- `Ov105_SetSlotEventHandler` (argument 0 as u16): `Ov105_SelectChannel`, `Ov105_WH_ChildConnect`, `Ov105_WH_Finalize`, `Ov105_WH_FreeBuffers`, `Ov105_WH_Initialize`, `Ov105_WH_ParentConnect`, `Ov105_WH_PortReceiveCallback`, `Ov105_WH_SetReceiver`, `Ov105_WH_SetSsid`, `Ov105_WH_StartMeasureChannel`, `Ov105_WH_StateInEndChild`, `Ov105_WH_StateInMeasureChannel`, `Ov105_WH_StateInSetMPData`, `Ov105_WH_StateInStartChildMP`, `Ov105_WH_StateOutEnd`, `Ov105_WH_StateOutMeasureChannel`, `Ov105_WH_StateOutStartChild`, `Ov105_WH_StateOutStartChildMP`
 - `Ov107_InvokeHitCallback` (argument 3 as u8): `Ov208_ContactSweep`, `Ov209_ContactSweep`, `Ov212_AreaAttackSweep`, `Ov214_ProcessHitTargets`, `Ov215_ProcessHitTargets`, `Ov216_ProcessHitTargets`, `Ov217_ProcessHitTargets`, `Ov218_ShotBurstTick`, `Ov219_AttackSweep`, `Ov220_AttackSweep`, `Ov221_StrikeSweepEntities`, `Ov222_StrikeSweepEntities`, `Ov223_StrikeSweepEntities`, `Ov224_StrikeSweepEntities`, `Ov225_StrikeSweepEntities`, `Ov226_StrikeSweepEntities`, `Ov227_AttackSweep`, `Ov228_ContactSweep`, `Ov229_ContactSweep`, `Ov230_ContactSweep`, `Ov231_ProbeSpawnPoint`, `Ov232_ProbeSpawnPoint`, `Ov233_ContactSweep`, `Ov237_AttackHitTest`, `Ov239_ContactSweep`, `Ov240_ContactSweep`, `Ov248_ContactSweep`, `Ov249_ContactSweep`, `Ov252_ReboundHitTest`, `Ov254_ReboundHitTest`, `Ov256_AttackHitTest`, `Ov260_AttackSweep`, `Ov263_ProbeSpawnPoint`, `Ov264_ProcessHitTargets`, `Ov265_ProbeSpawnPoint`, `Ov266_AreaAttackSweep`, `Ov267_AreaAttackSweep`, `Ov268_ContactSweep`, `Ov276_ContactSweep`, `Ov280_ProbeSpawnPoint`
-- `Ov231_Item_RelayoutAndStoreVec` (argument 3 as s8): `Ov231_AiFireVolleyTick`
-- `Ov232_Item_RelayoutAndStoreVec` (argument 3 as s8): `Ov232_AiFireVolleyTick`
-- `Ov263_Item_RelayoutAndStoreVec` (argument 3 as s8): `Ov263_AiFireVolleyTick`
-- `Ov265_Item_RelayoutAndStoreVec` (argument 3 as s8): `Ov265_AiFireVolleyTick`
-- `Ov280_Item_RelayoutAndStoreVec` (argument 3 as s8): `Ov280_AiFireVolleyTick`
 - `PMi_SendSleepStart` (argument 0 as u16, argument 1 as u16): `PM_GoSleepMode`
-- `Res_RequestIdPair` (argument 0 as s16): `Ov287_Actor_InitClassAndSpawnParts`, `Ov288_Actor_InitClassAndSpawnParts`, `Ov289_Actor_InitClassAndSpawnParts`
 - `StoreValueInNamedEntry` (argument 0 as u16): `Ov002_LoadPeerIntoSlot`
 - `TailForwardTrackEntry` (argument 0 as u16): `Ov023_CmdSeatMembers`, `Ov023_CmdSetupPartyActors`
 - `func_0202c208` (argument 0 as u16): `Ov002_PlaceSlotMarkerOnGround`, `Ov002_UpdateSpawnedSpots`, `Ov022_SettlePointOnGround`
 - `func_0202c248` (argument 0 as u16): `Ov002_UpdateSpawnedSpots`, `Ov022_SettlePointOnGround`
 <!-- END generated:narrowparams -->
 
-### 1.2 The tag trackers' `swap`, seen running
-
-The header of the eight `OvNNN_TickTagTrackerNodes` (the same 0x1a0 bytes)
-keeps, as a ROM bug, the `swap` read uninitialised when the table has no
-getter at +0x48, and speaks of the case "with a +0x44 setter". What the game
-does, measured in the Holomisiones challenge list (Ov025, day 357): both
-tables there (`0x021cb390`, `0x021cb3dc`, 32 nodes) have neither a getter
-(+0x48) nor a setter (+0x44), only the apply at +0x3c. `swap` is `sb`,
-which the function never sets on that path; its value is its caller's r9.
-From the camp menu's update (`Ov025_GetIdleHandler` → `Ov025_CommitPage` →
-`Ov025_TickSelectionWidget`, none of which touches r9) that is what
-`Obj_UpdateAll` left: the previous update's result (`blx r0; mov sb, r0`,
-`0x02023b64`/`0x02023b68`), here `Ov002_SceneStep`'s 0 -- so nothing is
-called. With a nonzero r9 the ROM would call the missing setter, address 0,
-which the ARM9 maps to the ITCM: `OSi_VBlankInterruptHandler` would run twice
-per stepped node. Other callers set `sb` before the call (e.g.
-`Ov025_TickPageScroll`, `mov sb, #0` at `0x0209b300`), so the value is the
-caller's in each case. Worth a line in the header: which r9 each path leaves,
-and that "no setter" means a call to address 0.
-
-The port reproduces the first path (runtime.c `khdays_rom_r9`) and stops,
-naming it, on any read it cannot account for.
-
-### 1.3 `Node_CallHook80` hands the hook its node
-
-`Node_CallHook80(char *p)` calls the node's +0x80 hook as `f()`. The ROM
-keeps the node in r0 for it: `ldr r1,[r0,#0x80]; cmp r1,#0; popeq; blx r1`
-(`0x0203c8e8`-`0x0203c8f4`), and the hooks read it --
-`ProcessListChildren(int this_)` is one (`mov r4, r0` at `0x0203c180`).
-Should read `f(p)`. Reached when an enemy region is hidden
-(`Ov107_Region_SetVisible` → `Node_CallHook80`); natively the hook walked a
-list at a garbage address. A call through a pointer, so the ROM scan behind
-the lists in 2 does not see it.
-
-### 1.4 Arithmetic on a `void *`
-
-`Ov006_SendNetworkPacket` copies the payload to
-`MISSION_CONTEXT->primaryBuffer + 4`, and `primaryBuffer` is a `void *` in
-the new shared `MissionContext` (`include/game/mission_lobby.h`). mwcc and
-GCC take `void *` arithmetic as `char *`; standard C, and MSVC, do not. A
-`char *` field, or a cast there, says the same.
-
-### 1.5 Struct results spelled one way at the definition, another at the call
+### 1.2 Struct results spelled one way at the definition, another at the call
 
 A struct returned by value travels, in the ARM ABI, through a pointer the
 caller passes in r0. Five functions spell that pointer out on one side and
@@ -182,7 +117,7 @@ does not, and the port had to fix each by hand:
   struct through the pointer the callee returns in EAX, which a `void`
   definition leaves unset (MSVC: `call; mov edx,[eax]`).
 
-### 1.6 `ModelAnimSet_Bind` returns `texSrc`
+### 1.3 `ModelAnimSet_Bind` returns `texSrc`
 
 `ModelAnimSet_Bind` is `void`, and both its callers,
 `Resource_BindFileToSlot` and `Snd_RegisterSeqAndBind`, return its value as
@@ -192,7 +127,7 @@ an `int`. The ROM leaves its fourth argument in r0: it stores `texSrc` at
 `return texSrc;` after that store, it would say so; the load is already the
 one the return needs.
 
-### 1.7 `Ov006_MissionBuildOptionRows` passes `input` unset
+### 1.4 `Ov006_MissionBuildOptionRows` passes `input` unset
 
 In single-player mode (`single_row_mode != 0`) the C never assigns `input`
 before `Ov006_SetTitleMode(input)`. The ROM passes r4 there
@@ -205,7 +140,7 @@ The ov005 handlers (`Ov005_HandleDirectionalInput`,
 would too. Compiled for another CPU the variable is whatever the stack held,
 and a value from 1 to 4 would change the title mode.
 
-### 1.8 `Ov026_CreateService` depends on an order C leaves open
+### 1.5 `Ov026_CreateService` depends on an order C leaves open
 
 `data_ov026_02091360[2] = InstantiateClass(&data_ov026_02091200, arg0);`
 stores the new service at +8 of the shop's state, whose pointer the
@@ -218,7 +153,7 @@ say what the ROM does. mwcc probably gives the same code for both; worth a
 look wherever a call on the right may set the pointer written through on the
 left (a constructor and the scene's state, as here).
 
-### 1.9 The enemies print their resource name without the class id
+### 1.6 The enemies print their resource name without the class id
 
 43 enemy constructors, ov202 to ov301 (35 `OvNNN_CreateNamedEntity`, 8
 `OvNNN_AllocActorWithName`; the list is in 2.1), call
@@ -235,7 +170,7 @@ Declaring `OS_SPrintf` variadic and passing the id -- the value already
 stored at +0x19c -- says what the ROM does, and likely gives mwcc the same
 code, since r2 already holds it.
 
-### 1.10 What runs natively on it
+### 1.7 What runs natively on it
 
 Mission Mode's whole loop (camp menu, mission, Retirarse, results, camp menu)
 and Story Mode to the second day (title, opening movie, day 255, the
@@ -243,7 +178,7 @@ clock-tower cutscene, the monologue, the next day's card, the field). With a
 player's own save (day 357): loading, the main menu and its submenus, saving
 to a new slot and reading it back, the Holomisiones and challenge lists,
 challenge 07 in play (Axel's intro, the mission's HUD, combat), the Moogle
-shop, and a Halloween Town mission up to its first enemy (1.9). The
+shop, and a Halloween Town mission up to its first enemy (1.6). The
 optimized (Release) build runs the same.
 
 ## 2. Known, and kept as they are
