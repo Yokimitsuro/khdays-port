@@ -153,25 +153,128 @@ the new shared `MissionContext` (`include/game/mission_lobby.h`). mwcc and
 GCC take `void *` arithmetic as `char *`; standard C, and MSVC, do not. A
 `char *` field, or a cast there, says the same.
 
-### 1.5 What runs natively on it
+### 1.5 Struct results spelled one way at the definition, another at the call
+
+A struct returned by value travels, in the ARM ABI, through a pointer the
+caller passes in r0. Five functions spell that pointer out on one side and
+not on the other. mwcc makes the same code of both forms; any other compiler
+does not, and the port had to fix each by hand:
+
+- `SND_GetFirstInstDataPos` is defined `void (struct S *p)` and zeroes both
+  words through it (`str r1,[r0]`, `str r1,[r0,#4]`, `0x02009024`).
+  `LoadSingleWaves` declares the SDK's
+  `SNDInstPos SND_GetFirstInstDataPos(const SNDBankData *)` and passes its
+  stack slot (`add r0,sp,#0` before the `bl` at `0x0201c484`). On x86 an
+  8-byte struct comes back in EDX:EAX with no pointer passed, so the
+  definition as written zeroed the bank's first two words. The SDK's form in
+  both places (the bank is never read) says what the ROM does.
+- `FS_GetOverlayFileID` is the same: defined
+  `void (FsOverlayInfo *dst, int *overlay)`, declared by its callers
+  (`FSi_LoadOverlayInfoCore`, `FS_LoadOverlayImage`, `FS_LoadOverlayInfo`)
+  as `FSFileID FS_GetOverlayFileID(const FSOverlayInfo *)`.
+- `NNSi_G2dFontGetTextRect` the other way round: defined returning
+  `NNSG2dTextRect`, while `Text_AlignAnchor` and
+  `Ov002_SceneLayoutPanelWindow` declare it `void` and pass the pointer.
+- `Ov237_RotateByActorHeading` and `Ov252_TurnVecY` are defined
+  `void (VecFx32 *out, ...)` and their callers (seven in Ov237,
+  `Ov252_CruiseTick`) declare them returning `VecFx32`. For a 12-byte struct
+  x86 passes the pointer in the same place, but the caller then copies the
+  struct through the pointer the callee returns in EAX, which a `void`
+  definition leaves unset (MSVC: `call; mov edx,[eax]`).
+
+### 1.6 `ModelAnimSet_Bind` returns `texSrc`
+
+`ModelAnimSet_Bind` is `void`, and both its callers,
+`Resource_BindFileToSlot` and `Snd_RegisterSeqAndBind`, return its value as
+an `int`. The ROM leaves its fourth argument in r0: it stores `texSrc` at
+`[sp,#4]` on entry and reloads it for the last store
+(`ldr r0,[sp,#4]; strh r0,[fp,#0xa]`, `0x0202a378`). Declared `int`, with
+`return texSrc;` after that store, it would say so; the load is already the
+one the return needs.
+
+### 1.7 `Ov006_MissionBuildOptionRows` passes `input` unset
+
+In single-player mode (`single_row_mode != 0`) the C never assigns `input`
+before `Ov006_SetTitleMode(input)`. The ROM passes r4 there
+(`mov r0,r4`, `0x02050f4c`), which the function never sets on that path: it
+is its caller's, `Obj_UpdateAll`'s previous heap (`mov r4,r0` after
+`func_0202362c`, `0x02023b5c`) -- an address, which `Ov006_SetTitleMode`
+ignores as it does 0 (it stores only 1 to 4, `0x02055b44`-`0x02055b58`).
+The ov005 handlers (`Ov005_HandleDirectionalInput`,
+`Ov005_UpdateConfirmation`) say the same of their r4 in a comment; one here
+would too. Compiled for another CPU the variable is whatever the stack held,
+and a value from 1 to 4 would change the title mode.
+
+### 1.8 `Ov026_CreateService` depends on an order C leaves open
+
+`data_ov026_02091360[2] = InstantiateClass(&data_ov026_02091200, arg0);`
+stores the new service at +8 of the shop's state, whose pointer the
+service's constructor sets. The ROM calls first and loads the pointer after
+(`bl InstantiateClass`, then `ldr r1,=0x02091360; ldr r1,[r1];
+str r0,[r1,#8]`, `0x02082a90`-`0x02082a9c`); C does not order the two sides
+of `=`, and MSVC optimizing loaded the pointer first, still NULL -- the shop
+crashed on opening. Two statements (the call into a local, then the store)
+say what the ROM does. mwcc probably gives the same code for both; worth a
+look wherever a call on the right may set the pointer written through on the
+left (a constructor and the scene's state, as here).
+
+### 1.9 The enemies print their resource name without the class id
+
+43 enemy constructors, ov202 to ov301 (35 `OvNNN_CreateNamedEntity`, 8
+`OvNNN_AllocActorWithName`; the list is in 2.1), call
+`OS_SPrintf(name, &data_ovNNN_...)` with the format `"Ms/%02x.p"` and no
+argument for `%02x`, declared `OS_SPrintf(void *buffer, void *format)`. The
+ROM passes the class id in r2 -- the same `mov r2, #id` that feeds the
+`strb` to +0x19c (Ov286: `mov r2,#0x6a` at `0x020d37fc`, `strb r2,[r4,#0x19c]`,
+`bl OS_SPrintf` at `0x020d380c`); the Ghidra scan finds a constant there at
+all 43. Compiled for another CPU the name gets whatever the stack held, the
+`Ms/` file is not found and `FS_ReadFile` reads through an unopened file:
+a Halloween Town mission crashed on its first enemy (ov286), after its
+cutscene.
+Declaring `OS_SPrintf` variadic and passing the id -- the value already
+stored at +0x19c -- says what the ROM does, and likely gives mwcc the same
+code, since r2 already holds it.
+
+### 1.10 What runs natively on it
 
 Mission Mode's whole loop (camp menu, mission, Retirarse, results, camp menu)
 and Story Mode to the second day (title, opening movie, day 255, the
 clock-tower cutscene, the monologue, the next day's card, the field). With a
 player's own save (day 357): loading, the main menu and its submenus, saving
-to a new slot and reading it back, the Holomisiones and challenge lists, and
-challenge 07 in play (Axel's intro, the mission's HUD, combat).
+to a new slot and reading it back, the Holomisiones and challenge lists,
+challenge 07 in play (Axel's intro, the mission's HUD, combat), the Moogle
+shop, and a Halloween Town mission up to its first enemy (1.9). The
+optimized (Release) build runs the same.
 
 ## 2. Known, and kept as they are
 
-What remains cannot be written in C without changing the ROM's code (or
-follows a value through a chain too deep to spell out), as the decomp has
-said: the `void` functions whose r0 a caller uses
-(`Ov107_RegisterChildInRegion`, `Ov107_RemoveChildFromRegion`,
-`Ov107_ProcessObjectTick`), the fifth, stack argument of
-`Ov107_Actor_SetAttachSlot` and the variadic call in `Ov226`, and the
-NitroSDK functions the SDK itself declares `void`. The port handles these
-itself; the lists below are what it rewrites and where it would stop, kept for
+What remains cannot be written in C without changing the ROM's code, as the
+decomp has said: the `void` functions whose r0 a caller uses
+(`Ov107_RegisterChildInRegion`, `Ov107_RemoveChildFromRegion`), the fifth,
+stack argument of `Ov107_Actor_SetAttachSlot` and the variadic call in
+`Ov226`, the NitroSDK functions the SDK itself declares `void`, and the calls
+that pass fewer arguments than their callee's definition takes. The port
+handles these itself, and at this revision nothing is left where it would
+stop:
+
+- Of the 25 values some declaration takes from a `void` definition, no C
+  reads 23 (the call is a statement of its own, the value is handed to a
+  function that takes no such argument, or it is returned where nothing reads
+  it). The other two, `Ov107_ProcessObjectTick`'s and `SetSubitemState`'s,
+  are returned by hooks at +0xc and +0x1dc, and every `blx` of those hooks in
+  the ROM sets r0 next or returns it unread.
+- `Ov107_Actor_SetAttachSlot`'s fifth argument is the outgoing slot its five
+  callers fill themselves; the port passes that. `Ov226`'s call is the same
+  on x86: cdecl stacks its two `VecFx32` in the words
+  `Ov226_Projectile_SetupFlight` reads.
+- Every short call (689 at this revision) passes zeros for the words the
+  definition takes and it does not. On x86 those slots are the caller's frame,
+  and an optimizing compiler keeps other values in a parameter's slot once the
+  parameter is dead: MSVC's Release build crashed in Ov025's camp menu on
+  exactly that, when `Ov025_ScrollMenuMoveTo`'s menu pointer came back
+  changed from a callee's callee.
+
+The lists below are what the port rewrites and where it would stop, kept for
 reference and to show when a new revision changes them.
 
 ### 2.1 Rewritten by the port (*generated*)
@@ -180,41 +283,62 @@ reference and to show when a new revision changes them.
 ```
 NNS_FndFreeToExpHeap returns the result of RecycleRegion
 NNSi_FndFreeFromDefaultHeap returns the result of NNS_FndFreeToExpHeap
-OS_FreeToHeap returns the result of OS_RestoreInterrupts
 OSi_FreeStackAlloc returns the result of OS_FreeToHeap
 Ov107_Actor_DetachFromRegion returns the result of Ov107_RemoveChildFromRegion
 Ov107_HandleRegionEvent returns the result of Ov107_RegisterChildInRegion
-SND_GetFirstInstDataPos returns (int)p
+Ov237_RotateByActorHeading returns (int)out
+Ov252_TurnVecY returns (int)out
+Ov202_AllocActorWithName -> OS_SPrintf: passes (int)0x27
+Ov203_AllocActorWithName -> OS_SPrintf: passes (int)0x27
+Ov204_CreateNamedEntity -> OS_SPrintf: passes (int)0x28
+Ov205_CreateNamedEntity -> OS_SPrintf: passes (int)0x28
+Ov214_AllocActorWithName -> OS_SPrintf: passes (int)0x2e
+Ov215_AllocActorWithName -> OS_SPrintf: passes (int)0x2e
+Ov216_AllocActorWithName -> OS_SPrintf: passes (int)0x2f
+Ov217_AllocActorWithName -> OS_SPrintf: passes (int)0x2f
+Ov219_CreateNamedEntity -> OS_SPrintf: passes (int)0x31
+Ov220_CreateNamedEntity -> OS_SPrintf: passes (int)0x32
+Ov234_CreateNamedEntity -> OS_SPrintf: passes (int)0x3d
+Ov239_CreateNamedEntity -> OS_SPrintf: passes (int)0x42
+Ov240_CreateNamedEntity -> OS_SPrintf: passes (int)0x43
+Ov241_CreateNamedEntity -> OS_SPrintf: passes (int)0x44
+Ov242_CreateNamedEntity -> OS_SPrintf: passes (int)0x44
+Ov243_CreateNamedEntity -> OS_SPrintf: passes (int)0x45
+Ov250_CreateNamedEntity -> OS_SPrintf: passes (int)0x4b
+Ov251_CreateNamedEntity -> OS_SPrintf: passes (int)0x4b
+Ov261_CreateNamedEntity -> OS_SPrintf: passes (int)0x55
+Ov262_CreateNamedEntity -> OS_SPrintf: passes (int)0x55
+Ov264_AllocActorWithName -> OS_SPrintf: passes (int)0x58
+Ov269_CreateNamedEntity -> OS_SPrintf: passes (int)0x5c
+Ov270_CreateNamedEntity -> OS_SPrintf: passes (int)0x5c
+Ov276_AllocActorWithName -> OS_SPrintf: passes (int)0x61
+Ov281_CreateNamedEntity -> OS_SPrintf: passes (int)0x66
+Ov284_CreateNamedEntity -> OS_SPrintf: passes (int)0x69
+Ov285_CreateNamedEntity -> OS_SPrintf: passes (int)0x6a
+Ov286_CreateNamedEntity -> OS_SPrintf: passes (int)0x6a
+Ov287_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
+Ov288_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
+Ov289_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
+Ov290_CreateNamedEntity -> OS_SPrintf: passes (int)0x6c
+Ov291_CreateNamedEntity -> OS_SPrintf: passes (int)0x6d
+Ov292_CreateNamedEntity -> OS_SPrintf: passes (int)0x6e
+Ov293_CreateNamedEntity -> OS_SPrintf: passes (int)0x6f
+Ov294_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
+Ov295_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
+Ov296_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
+Ov297_CreateNamedEntity -> OS_SPrintf: passes (int)0x71
+Ov298_CreateNamedEntity -> OS_SPrintf: passes (int)0x72
+Ov299_CreateNamedEntity -> OS_SPrintf: passes (int)0x73
+Ov300_CreateNamedEntity -> OS_SPrintf: passes (int)0x74
+Ov301_CreateNamedEntity -> OS_SPrintf: passes (int)0x75
 ```
 <!-- END generated:repairs -->
 
 ### 2.2 Where the port would stop (*generated*)
 
-The value comes from somewhere the rewrite does not follow (a load, a
-struct in registers, a stack argument). None has been reached so far.
+A call or a value the ROM shows is read, from somewhere the rewrite does not
+follow (a load, a struct in registers, a stack argument).
 
 <!-- BEGIN generated:gaps -->
-```
-DispatchWithReentrantScratch's value: sources: 0202e518 ldr r0,[0x202e538] = 0x20475d0 DAT_020475d0 = 0x0 Reset; 0202e52c bl 0x0202e474 => 0x202e474 RigWork_Update
-FSi_WaitForCardThread's value: sources: 01ff8110 ldr r0,[0x1ff8124] = 0x27e0078 DAT_027e0078 = 0x0 Reset
-FreeInstanceMemory's value: sources: 0203d1b0 bl 0x020236ac => 0x20236ac NNSi_FndFreeFromDefaultHeap; entry:r0
-ModelAnimSet_Bind's value: sources: 0202a378 ldr r0,[sp,#0x4]
-Ov002_FillMapRows's value: sources: arm9_ov002::02053b68 bl 0x02053bb8 => 0x2053bb8 Ov002_GetItemResource; arm9_ov002::02053b9c bl 0x02053c18 => 0x2053c18 Ov002_WriteMapRow
-Ov011_SetupTitleBackgrounds's value: sources: arm9_ov011::0205da30 orr r0,r0,#0x33
-Ov107_InvokeSlot0x74's value: sources: arm9_ov107::020c2b48 blx r2; entry:r0
-Ov107_ProcessObjectTick's value: sources: arm9_ov107::020c6a3c add r0,r0,#0x1; arm9_ov107::020c6ab4 add r0,r0,#0x1; arm9_ov107::020c6b28 add r0,r0,#0x1; arm9_ov107::020c6b8c add r0,r0,#0x1; arm9_ov107::020c6bf0 add r0,r0,#0x1; arm9_ov107::020c6c94 add r0,r0,#0x1; arm9_ov107::020c7358 bic r0,r0,#0x2; arm9_ov107::020c736c orr r0,r0,#0x2
-Ov107_RegisterChildInRegion's value: sources: arm9_ov107::020c4e9e add r0,#0x9c; arm9_ov107::020c4eae blx 0x0203bfb4 => 0x203bfb4 RegisterSubscriberSlot
-Ov107_RemoveChildFromRegion's value: sources: arm9_ov107::020c4eb6 add r0,#0x9c; arm9_ov107::020c4ec6 blx 0x0203bfe8 => 0x203bfe8 RemoveChildFromListByPtr
-Ov237_RotateByActorHeading's value: sources: arm9_ov237::020cdbc8 ldmia r5,{r0,r1,r2}
-Ov252_TurnVecY's value: sources: arm9_ov252::020cdb6c ldmia r4,{r0,r1,r2}
-SetSubitemState's value: sources: 0203ba24 ldrsh r0,[r2,r0]; 0203ba68 bic r0,r0,#0x1; 0203ba78 add r0,r0,r4, lsl #0x2; 0203bab0 orr r0,r0,#0x2; entry:r0
-SoundMgr_Update's value: sources: 020333a4 bl 0x02019bf0 => 0x2019bf0 NNS_SndMain; tail 02032f78 addls pc,pc,r1, lsl #0x2; tail 02032fb0 addls pc,pc,r0, lsl #0x2; tail 02033034 addls pc,pc,r1, lsl #0x2; tail 020331d0 addls pc,pc,r0, lsl #0x2
-TileSurface_Init's value: sources: 0202ff24 mov r0,#0x0; 0202ff4e blx 0x02014174 => 0x2014174 Tilemap_FillRect
-Ov107_Actor_SetAttachSlot called from Ov117_InitEffectActor without what the ROM passes (argument 4: stack)
-Ov107_Actor_SetAttachSlot called from Ov118_InitEffectActor without what the ROM passes (argument 4: stack)
-Ov107_Actor_SetAttachSlot called from Ov185_Actor_Construct_2 without what the ROM passes (argument 4: stack)
-Ov107_Actor_SetAttachSlot called from Ov186_InitEffectActor without what the ROM passes (argument 4: stack)
-Ov107_Actor_SetAttachSlot called from Ov187_InitEffectActor without what the ROM passes (argument 4: stack)
-Ov226_Projectile_SetupFlight called from Ov226_HandleMessageArgs without what the ROM passes (argument 4: stack)
-```
+*None at this revision.*
 <!-- END generated:gaps -->
