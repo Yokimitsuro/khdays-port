@@ -113,5 +113,15 @@ void khdays_boot_environment(void)
     U16(0x027ffc10) = 0x5835;
     U16(0x027ffc40) = 1;           /* boot indicator: normal */
 
+    /* After OS_ResetSystem the game finds the parameter it left at
+     * 0x027ffc20 (OS_GetResetParameter); the process that reset passes it
+     * on (start.c). */
+    {
+        const char *reset = getenv("KHDAYS_RESET_PARAMETER");
+        if (reset != NULL) {
+            U32(0x027ffc20) = (u32)strtoul(reset, NULL, 0);
+        }
+    }
+
     user_settings();
 }

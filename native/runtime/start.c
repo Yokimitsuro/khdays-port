@@ -10,7 +10,10 @@
 #include "runtime.h"
 #include "snd_driver.h"
 
+#include "../host/host.h"
+
 #include <stdio.h>
+#include <windows.h>
 
 extern void khdays_NitroMain(void);  /* the decomp's main, renamed at build */
 extern void func_01ff8148(void);     /* OS_IrqHandler */
@@ -68,6 +71,36 @@ static void autoload(void)
         info += 3;
     }
     AutoloadCallback();
+}
+
+/* OS_ResetSystem: the game restarts the console -- Mission Mode's "main
+ * menu" goes back to the title so -- leaving `parameter` at 0x027ffc20. The
+ * DS reloads the game from the card; natively this process starts itself
+ * again, which writes the parameter there at boot (boot.c), and ends with
+ * its exit code. Its window closes first. */
+void khdays_reset_system(u32 parameter)
+{
+    char value[16];
+    STARTUPINFOW startup = {sizeof(startup)};
+    PROCESS_INFORMATION process;
+    DWORD code = 1;
+    fprintf(stderr, "khdays-native: the game resets the console (parameter 0x%08x): starting again\n",
+            parameter);
+    fflush(stderr);
+    khdays_host_close();
+    snprintf(value, sizeof(value), "0x%08x", parameter);
+    SetEnvironmentVariableA("KHDAYS_RESET_PARAMETER", value);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    if (!CreateProcessW(NULL, GetCommandLineW(), NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process)) {
+        fprintf(stderr, "khdays-native: cannot start again (error %lu)\n", GetLastError());
+        ExitProcess(1);
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    GetExitCodeProcess(process.hProcess, &code);
+    ExitProcess(code);
 }
 
 int main(int argc, char **argv)

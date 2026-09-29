@@ -28,6 +28,8 @@ static volatile LONG touch;  /* bit 31: touching; x in bits 0-7, y in 8-15 */
 
 static HANDLE ready;
 static volatile LONG started;
+static HANDLE closed;       /* set when the window and the sound are gone */
+static Uint32 close_event;  /* khdays_host_close's request */
 
 static SDL_AudioStream *volatile audio;
 
@@ -98,7 +100,8 @@ static DWORD WINAPI host_thread(LPVOID unused)
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888,
                                            SDL_TEXTUREACCESS_STREAMING, W, 2 * H)
                        : NULL;
-    frame_event = SDL_RegisterEvents(1);
+    frame_event = SDL_RegisterEvents(2);
+    close_event = frame_event + 1;
     if (texture == NULL || frame_event == 0) {
         fprintf(stderr, "host: cannot open the window: %s\n", SDL_GetError());
         SetEvent(ready);
@@ -135,6 +138,18 @@ static DWORD WINAPI host_thread(LPVOID unused)
             }
             break;
         default:
+            if (event.type == close_event) {
+                SDL_AudioStream *stream = (SDL_AudioStream *)InterlockedExchangePointer((PVOID *)&audio, NULL);
+                if (stream != NULL) {
+                    SDL_DestroyAudioStream(stream);
+                }
+                SDL_DestroyTexture(texture);
+                SDL_DestroyRenderer(renderer);
+                SDL_DestroyWindow(window);
+                SDL_Quit();
+                SetEvent(closed);
+                return 0;
+            }
             if (event.type == frame_event) {
                 AcquireSRWLockShared(&frame_lock);
                 SDL_UpdateTexture(texture, NULL, frame, W * 4);
@@ -161,6 +176,21 @@ int khdays_host_start(void)
     }
     WaitForSingleObject(ready, INFINITE);
     return started != 0;
+}
+
+void khdays_host_close(void)
+{
+    SDL_Event event;
+    if (!started) {
+        return;
+    }
+    InterlockedExchange(&started, 0);  /* no more frames */
+    closed = CreateEventA(NULL, TRUE, FALSE, NULL);
+    SDL_zero(event);
+    event.type = close_event;
+    if (closed != NULL && SDL_PushEvent(&event)) {
+        WaitForSingleObject(closed, 5000);
+    }
 }
 
 void khdays_host_present(const uint32_t *upper, const uint32_t *lower)

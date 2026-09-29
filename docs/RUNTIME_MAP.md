@@ -34,6 +34,19 @@ and a day-357 save loaded into the Grey Area and challenge 07.
 | 7 | Mission Mode's character select | ov006 (`ov006_mission_mode_select`) |
 | 19 | Mission Mode's camp | ov008 (`ov008_camp_menu`), then ov302 (`field/ov302`) once scene 19 is current |
 | 6 | a mission's results | ov005 (`ov005_mission_result`) |
+| 12 | "Error de conexión. Pulsa A para volver a la pantalla principal." | ov010 (`scenes/ov010`) |
+
+**Resets.** `func_02003948` is the NitroSDK's `OS_ResetSystem` (its C:
+`CARD_LockRom`, `MI_StopDma` of the four channels, the parameter stored at
+`0x027ffc20`, PXI command 0x10, `OSi_FinalizeReset`). The game restarts the
+console with it and `Boot_InitScene` picks the first scene from the word it
+left: 0 (a cold boot) and -2 give scene 1, anything else scene 12. Callers:
+`Game_RunSceneLoop` (after the wireless loop, with
+`Ov105_GetState() << 16 | Ov105_GetStatusLow() | 0x80000000`),
+`Ov006_MissionBootWatchdog` and `Ov010_TeardownWorkArea` (both -2). Seen:
+booted with 0x80000000, the game shows scene 12; A there resets with
+0xfffffffe and the game comes back on the title (the native build restarts
+its process for a reset).
 
 Inside the field (scene 2), without a scene change:
 

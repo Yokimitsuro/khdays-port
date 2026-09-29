@@ -9,6 +9,9 @@
 /* Opens the window, unless KHDAYS_HEADLESS is set. Returns 0 on failure. */
 int khdays_host_start(void);
 
+/* Closes the window and the sound, and waits until they are (a reset). */
+void khdays_host_close(void);
+
 /* A finished frame: both screens, 256x192 each, 0x00RRGGBB. Copied. */
 void khdays_host_present(const uint32_t *upper, const uint32_t *lower);
 

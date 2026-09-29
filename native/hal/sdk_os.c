@@ -180,5 +180,12 @@ KHDAYS_HAL_TODO(OSi_ExceptionHandler)
 KHDAYS_HAL_TODO(OSi_GetAndDisplayContext)
 KHDAYS_HAL_TODO(OSi_SetExContext)
 KHDAYS_HAL_TODO(func_0200302c)  /* OSi_DisplayExContext */
-KHDAYS_HAL_TODO(func_02003948)  /* OS_ResetSystem */
+/* OS_ResetSystem (0x02003948): a restart of the whole console, the
+ * parameter left for OS_GetResetParameter (runtime/start.c). */
+extern void khdays_reset_system(u32 parameter);
+
+void func_02003948(u32 parameter)
+{
+    khdays_reset_system(parameter);
+}
 KHDAYS_HAL_TODO(func_01ff8330)  /* OSi_DoBoot */
