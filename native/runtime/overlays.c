@@ -7,6 +7,7 @@
  * those references go through thunks (prepare.py, absolute.asm) that ask here
  * which one is loaded and jump to its function. */
 #include "../hal/hal.h"
+#include "events.h"
 #include "rom.h"
 
 #include <stdio.h>
@@ -59,6 +60,12 @@ void khdays_overlay_started(int id)
         }
     }
     overlays[id].loaded = ++loads;
+    if (getenv("KHDAYS_TRACE_OVERLAYS") != NULL) {
+        /* the scene controller's current and pending ids (runtime.c) */
+        const volatile u32 *scene = (const volatile u32 *)0x0204bda8;
+        fprintf(stderr, "overlay: %d started at 0x%08x (frame %u, scene %u, pending %u)\n", id,
+                overlays[id].start, khdays_events_vblank_count(), scene[2], scene[3]);
+    }
 }
 
 /* The overlay loaded at `address`, or -1. */

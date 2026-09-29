@@ -167,6 +167,10 @@ int khdays_memory_map(void)
           empty_gba_slot())) {
         return 0;
     }
-    keep_free(0x04000000, 0x05000000);  /* the rest of the I/O space */
+    /* The holes between the regions, the rest of the I/O space among them.
+     * Windows put fiber stacks (the game's threads) in the palettes' mirror
+     * range, where a stray write of the game's corrupts them unseen; reserved,
+     * such a write stops at the instruction. */
+    keep_free(0x01ff0000, 0x0b010000);
     return 1;
 }

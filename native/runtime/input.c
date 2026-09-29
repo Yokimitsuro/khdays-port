@@ -36,6 +36,26 @@ static u32 last_frame;
 /* The scene controller at 0x0204bda8, its current id at +8
  * (src/calls/func_0202099c.c). */
 #define SCENE_CURRENT (*(volatile u32 *)(0x0204bda8 + 8))
+/* The game's own frame count: Obj_UpdateAll adds one per unpaused pass
+ * (data_0204c058[2]). */
+#define GAME_FRAMES (*(volatile u32 *)(0x0204c058 + 8))
+
+static int trace;  /* KHDAYS_TRACE_INPUT: each step as it is applied */
+/* KEYINPUT reads so far: the game's pad routine reads it once a frame, and
+ * X and Y (which the ARM7 passes on) along with it. */
+static u32 reads;
+static u32 pressed_at[16];  /* the reads when the script pressed each key */
+
+/* Whether the game has read these keys down at least twice. */
+static int seen_down(u16 keys)
+{
+    for (int b = 0; b < 16; ++b) {
+        if ((keys & (1u << b)) && reads - pressed_at[b] < 2) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
 static const struct {
     const char *name;
@@ -82,6 +102,7 @@ void khdays_input_init(void)
     const char *text = getenv("KHDAYS_INPUT");
     char *copy, *item, *rest;
     int anchor = -1;
+    trace = getenv("KHDAYS_TRACE_INPUT") != NULL;
     if (text == NULL) {
         return;
     }
@@ -160,9 +181,25 @@ void khdays_input_frame(u32 frame)
                                 anchors[s->anchor].start - 1 + s->frame > frame) {
             break;
         }
+        /* A key is let go only once the game has read it down twice: the
+         * script counts VBlanks, which follow the host's clock, and a game
+         * slowed by a busy machine can read the pad less often than the
+         * press lasts (the steps after wait with it). */
+        if (s->kind == '-' && !seen_down(s->keys)) {
+            break;
+        }
         ++script_next;
+        if (trace) {
+            fprintf(stderr, "input: frame %u, game frame %u, %u pad reads: %c%04x\n", frame, GAME_FRAMES,
+                    reads, s->kind, s->keys);
+        }
         if (s->kind == '+') {
             script_keys |= s->keys;
+            for (int b = 0; b < 16; ++b) {
+                if (s->keys & (1u << b)) {
+                    pressed_at[b] = reads;
+                }
+            }
         } else if (s->kind == '-') {
             script_keys &= (u16)~s->keys;
         } else {
@@ -179,6 +216,7 @@ static u16 pressed(void)
 
 u16 khdays_input_keyinput(void)
 {
+    ++reads;
     return (u16)(~pressed() & 0x03ff);
 }
 

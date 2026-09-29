@@ -291,6 +291,8 @@ static int __cdecl on_runtime_check(int type, const wchar_t *file, int line, con
 }
 #endif
 
+static DWORD game_thread_id;  /* the thread that runs the game: main's */
+
 /* Last in the vectored chain: an exception no runtime handler took, reported
  * before the structured handlers see it (a broken chain there hides it). */
 static LONG CALLBACK on_unhandled_first(EXCEPTION_POINTERS *info)
@@ -298,9 +300,18 @@ static LONG CALLBACK on_unhandled_first(EXCEPTION_POINTERS *info)
     const EXCEPTION_RECORD *r = info->ExceptionRecord;
     if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION || r->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION ||
         r->ExceptionCode == EXCEPTION_PRIV_INSTRUCTION) {
+        const NT_TIB *tib = (const NT_TIB *)NtCurrentTeb();
+        const DWORD esp = info->ContextRecord->Esp;
         fprintf(stderr, "khdays-native: first-chance exception 0x%08lx at %p (eip %08lx, esp %08lx, info %lu %08lx)\n",
-                r->ExceptionCode, r->ExceptionAddress, info->ContextRecord->Eip, info->ContextRecord->Esp,
+                r->ExceptionCode, r->ExceptionAddress, info->ContextRecord->Eip, esp,
                 (unsigned long)r->ExceptionInformation[0], (unsigned long)r->ExceptionInformation[1]);
+        fprintf(stderr, "  on %s thread %lu, stack %p-%p\n",
+                GetCurrentThreadId() == game_thread_id ? "the game's" : "another", GetCurrentThreadId(),
+                tib->StackLimit, tib->StackBase);
+        if (info->ContextRecord->Eip == 0 && !IsBadReadPtr((const void *)(size_t)esp, 16)) {
+            const DWORD *w = (const DWORD *)(size_t)esp;
+            fprintf(stderr, "  [esp] %08lx %08lx %08lx %08lx\n", w[0], w[1], w[2], w[3]);
+        }
         print_stack(GetCurrentThread(), info->ContextRecord);
     }
     return EXCEPTION_CONTINUE_SEARCH;
@@ -308,6 +319,7 @@ static LONG CALLBACK on_unhandled_first(EXCEPTION_POINTERS *info)
 
 void khdays_diag_init(void)
 {
+    game_thread_id = GetCurrentThreadId();
     AddVectoredExceptionHandler(0, on_unhandled_first);
     const char *stall = getenv("KHDAYS_STALL_SECONDS");
 #if defined(_DEBUG)
