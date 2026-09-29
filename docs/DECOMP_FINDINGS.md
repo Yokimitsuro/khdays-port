@@ -16,7 +16,7 @@ overlay). Names are the decomp's own at the revision below. Sections marked
 *generated* are refreshed by `python native/tools/decomp_findings.py`.
 
 <!-- BEGIN generated:revision -->
-Checked against khdays-decomp `0788aae45`.
+Checked against khdays-decomp `5f4f68329`.
 <!-- END generated:revision -->
 
 ## 1. Open
@@ -88,89 +88,7 @@ its definition, and the files that do.
 - `func_0202c248` (argument 0 as u16): `Ov002_UpdateSpawnedSpots`, `Ov022_SettlePointOnGround`
 <!-- END generated:narrowparams -->
 
-### 1.2 Struct results spelled one way at the definition, another at the call
-
-A struct returned by value travels, in the ARM ABI, through a pointer the
-caller passes in r0. Five functions spell that pointer out on one side and
-not on the other. mwcc makes the same code of both forms; any other compiler
-does not, and the port had to fix each by hand:
-
-- `SND_GetFirstInstDataPos` is defined `void (struct S *p)` and zeroes both
-  words through it (`str r1,[r0]`, `str r1,[r0,#4]`, `0x02009024`).
-  `LoadSingleWaves` declares the SDK's
-  `SNDInstPos SND_GetFirstInstDataPos(const SNDBankData *)` and passes its
-  stack slot (`add r0,sp,#0` before the `bl` at `0x0201c484`). On x86 an
-  8-byte struct comes back in EDX:EAX with no pointer passed, so the
-  definition as written zeroed the bank's first two words. The SDK's form in
-  both places (the bank is never read) says what the ROM does.
-- `FS_GetOverlayFileID` is the same: defined
-  `void (FsOverlayInfo *dst, int *overlay)`, declared by its callers
-  (`FSi_LoadOverlayInfoCore`, `FS_LoadOverlayImage`, `FS_LoadOverlayInfo`)
-  as `FSFileID FS_GetOverlayFileID(const FSOverlayInfo *)`.
-- `NNSi_G2dFontGetTextRect` the other way round: defined returning
-  `NNSG2dTextRect`, while `Text_AlignAnchor` and
-  `Ov002_SceneLayoutPanelWindow` declare it `void` and pass the pointer.
-- `Ov237_RotateByActorHeading` and `Ov252_TurnVecY` are defined
-  `void (VecFx32 *out, ...)` and their callers (seven in Ov237,
-  `Ov252_CruiseTick`) declare them returning `VecFx32`. For a 12-byte struct
-  x86 passes the pointer in the same place, but the caller then copies the
-  struct through the pointer the callee returns in EAX, which a `void`
-  definition leaves unset (MSVC: `call; mov edx,[eax]`).
-
-### 1.3 `ModelAnimSet_Bind` returns `texSrc`
-
-`ModelAnimSet_Bind` is `void`, and both its callers,
-`Resource_BindFileToSlot` and `Snd_RegisterSeqAndBind`, return its value as
-an `int`. The ROM leaves its fourth argument in r0: it stores `texSrc` at
-`[sp,#4]` on entry and reloads it for the last store
-(`ldr r0,[sp,#4]; strh r0,[fp,#0xa]`, `0x0202a378`). Declared `int`, with
-`return texSrc;` after that store, it would say so; the load is already the
-one the return needs.
-
-### 1.4 `Ov006_MissionBuildOptionRows` passes `input` unset
-
-In single-player mode (`single_row_mode != 0`) the C never assigns `input`
-before `Ov006_SetTitleMode(input)`. The ROM passes r4 there
-(`mov r0,r4`, `0x02050f4c`), which the function never sets on that path: it
-is its caller's, `Obj_UpdateAll`'s previous heap (`mov r4,r0` after
-`func_0202362c`, `0x02023b5c`) -- an address, which `Ov006_SetTitleMode`
-ignores as it does 0 (it stores only 1 to 4, `0x02055b44`-`0x02055b58`).
-The ov005 handlers (`Ov005_HandleDirectionalInput`,
-`Ov005_UpdateConfirmation`) say the same of their r4 in a comment; one here
-would too. Compiled for another CPU the variable is whatever the stack held,
-and a value from 1 to 4 would change the title mode.
-
-### 1.5 `Ov026_CreateService` depends on an order C leaves open
-
-`data_ov026_02091360[2] = InstantiateClass(&data_ov026_02091200, arg0);`
-stores the new service at +8 of the shop's state, whose pointer the
-service's constructor sets. The ROM calls first and loads the pointer after
-(`bl InstantiateClass`, then `ldr r1,=0x02091360; ldr r1,[r1];
-str r0,[r1,#8]`, `0x02082a90`-`0x02082a9c`); C does not order the two sides
-of `=`, and MSVC optimizing loaded the pointer first, still NULL -- the shop
-crashed on opening. Two statements (the call into a local, then the store)
-say what the ROM does. mwcc probably gives the same code for both; worth a
-look wherever a call on the right may set the pointer written through on the
-left (a constructor and the scene's state, as here).
-
-### 1.6 The enemies print their resource name without the class id
-
-43 enemy constructors, ov202 to ov301 (35 `OvNNN_CreateNamedEntity`, 8
-`OvNNN_AllocActorWithName`; the list is in 2.1), call
-`OS_SPrintf(name, &data_ovNNN_...)` with the format `"Ms/%02x.p"` and no
-argument for `%02x`, declared `OS_SPrintf(void *buffer, void *format)`. The
-ROM passes the class id in r2 -- the same `mov r2, #id` that feeds the
-`strb` to +0x19c (Ov286: `mov r2,#0x6a` at `0x020d37fc`, `strb r2,[r4,#0x19c]`,
-`bl OS_SPrintf` at `0x020d380c`); the Ghidra scan finds a constant there at
-all 43. Compiled for another CPU the name gets whatever the stack held, the
-`Ms/` file is not found and `FS_ReadFile` reads through an unopened file:
-a Halloween Town mission crashed on its first enemy (ov286), after its
-cutscene.
-Declaring `OS_SPrintf` variadic and passing the id -- the value already
-stored at +0x19c -- says what the ROM does, and likely gives mwcc the same
-code, since r2 already holds it.
-
-### 1.7 What runs natively on it
+### 1.2 What runs natively on it
 
 Mission Mode's whole loop (camp menu, mission, Retirarse, results, camp menu)
 and Story Mode to the second day (title, opening movie, day 255, the
@@ -178,8 +96,8 @@ clock-tower cutscene, the monologue, the next day's card, the field). With a
 player's own save (day 357): loading, the main menu and its submenus, saving
 to a new slot and reading it back, the Holomisiones and challenge lists,
 challenge 07 in play (Axel's intro, the mission's HUD, combat), the Moogle
-shop, and a Halloween Town mission up to its first enemy (1.6). The
-optimized (Release) build runs the same.
+shop, a Halloween Town mission's fights and Fire, and a reset back to the
+title. The optimized (Release) build runs the same.
 
 ## 2. Known, and kept as they are
 
@@ -216,7 +134,13 @@ stop:
   the optimized build returned to address 0 with the saved registers
   zeroed, where the unoptimized one ran on; with these functions
   unoptimized the optimized build casts it too.
-- Every short direct call (689 at this revision) passes zeros for the words
+- `ModelAnimSet_Bind` returns `texSrc` in r0, which `Resource_BindFileToSlot`
+  returns (the decomp's comment says why the C cannot); the port's definition
+  returns it. Where the ROM passes a caller's r4 that the C leaves unset
+  (`input` in `Ov006_MissionBuildOptionRows`, `direction` and `action` in
+  ov005's handlers, all commented in the decomp), the port passes 0, which
+  those functions take the same way.
+- Every short direct call (681 at this revision) passes zeros for the words
   the definition takes and it does not. On x86 those slots are the caller's frame,
   and an optimizing compiler keeps other values in a parameter's slot once the
   parameter is dead: MSVC's Release build crashed in Ov025's camp menu on
@@ -235,51 +159,6 @@ NNSi_FndFreeFromDefaultHeap returns the result of NNS_FndFreeToExpHeap
 OSi_FreeStackAlloc returns the result of OS_FreeToHeap
 Ov107_Actor_DetachFromRegion returns the result of Ov107_RemoveChildFromRegion
 Ov107_HandleRegionEvent returns the result of Ov107_RegisterChildInRegion
-Ov237_RotateByActorHeading returns (int)out
-Ov252_TurnVecY returns (int)out
-Ov202_AllocActorWithName -> OS_SPrintf: passes (int)0x27
-Ov203_AllocActorWithName -> OS_SPrintf: passes (int)0x27
-Ov204_CreateNamedEntity -> OS_SPrintf: passes (int)0x28
-Ov205_CreateNamedEntity -> OS_SPrintf: passes (int)0x28
-Ov214_AllocActorWithName -> OS_SPrintf: passes (int)0x2e
-Ov215_AllocActorWithName -> OS_SPrintf: passes (int)0x2e
-Ov216_AllocActorWithName -> OS_SPrintf: passes (int)0x2f
-Ov217_AllocActorWithName -> OS_SPrintf: passes (int)0x2f
-Ov219_CreateNamedEntity -> OS_SPrintf: passes (int)0x31
-Ov220_CreateNamedEntity -> OS_SPrintf: passes (int)0x32
-Ov234_CreateNamedEntity -> OS_SPrintf: passes (int)0x3d
-Ov239_CreateNamedEntity -> OS_SPrintf: passes (int)0x42
-Ov240_CreateNamedEntity -> OS_SPrintf: passes (int)0x43
-Ov241_CreateNamedEntity -> OS_SPrintf: passes (int)0x44
-Ov242_CreateNamedEntity -> OS_SPrintf: passes (int)0x44
-Ov243_CreateNamedEntity -> OS_SPrintf: passes (int)0x45
-Ov250_CreateNamedEntity -> OS_SPrintf: passes (int)0x4b
-Ov251_CreateNamedEntity -> OS_SPrintf: passes (int)0x4b
-Ov261_CreateNamedEntity -> OS_SPrintf: passes (int)0x55
-Ov262_CreateNamedEntity -> OS_SPrintf: passes (int)0x55
-Ov264_AllocActorWithName -> OS_SPrintf: passes (int)0x58
-Ov269_CreateNamedEntity -> OS_SPrintf: passes (int)0x5c
-Ov270_CreateNamedEntity -> OS_SPrintf: passes (int)0x5c
-Ov276_AllocActorWithName -> OS_SPrintf: passes (int)0x61
-Ov281_CreateNamedEntity -> OS_SPrintf: passes (int)0x66
-Ov284_CreateNamedEntity -> OS_SPrintf: passes (int)0x69
-Ov285_CreateNamedEntity -> OS_SPrintf: passes (int)0x6a
-Ov286_CreateNamedEntity -> OS_SPrintf: passes (int)0x6a
-Ov287_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
-Ov288_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
-Ov289_CreateNamedEntity -> OS_SPrintf: passes (int)0x6b
-Ov290_CreateNamedEntity -> OS_SPrintf: passes (int)0x6c
-Ov291_CreateNamedEntity -> OS_SPrintf: passes (int)0x6d
-Ov292_CreateNamedEntity -> OS_SPrintf: passes (int)0x6e
-Ov293_CreateNamedEntity -> OS_SPrintf: passes (int)0x6f
-Ov294_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
-Ov295_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
-Ov296_CreateNamedEntity -> OS_SPrintf: passes (int)0x70
-Ov297_CreateNamedEntity -> OS_SPrintf: passes (int)0x71
-Ov298_CreateNamedEntity -> OS_SPrintf: passes (int)0x72
-Ov299_CreateNamedEntity -> OS_SPrintf: passes (int)0x73
-Ov300_CreateNamedEntity -> OS_SPrintf: passes (int)0x74
-Ov301_CreateNamedEntity -> OS_SPrintf: passes (int)0x75
 ```
 <!-- END generated:repairs -->
 

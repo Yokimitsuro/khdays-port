@@ -190,49 +190,6 @@ HOOKS = {
 # the function's disassembly. Applied before the mechanical repairs. Keyed
 # like HOOKS.
 ABI_FIXES = {
-    # The ARM ABI returns this two-word struct through a pointer in r0, which
-    # the definition spells out; its callers declare the NitroSDK form
-    # `FSFileID FS_GetOverlayFileID(const FSOverlayInfo *)`. The ROM
-    # (0x0200b178) stores {&rom archive, overlay->file_id (+0x18)} through r0.
-    "main@0200b178": [(  # FS_GetOverlayFileID
-        "void FS_GetOverlayFileID(FsOverlayInfo *dst, int *overlay) {\n"
-        "    FsOverlayInfo info;\n"
-        "    info.a = (int)&data_02046334;\n"
-        "    info.b = overlay[6];\n"
-        "    *dst = info;\n"
-        "}",
-        "FsOverlayInfo FS_GetOverlayFileID(int *overlay) {\n"
-        "    FsOverlayInfo info;\n"
-        "    info.a = (int)&data_02046334;\n"
-        "    info.b = overlay[6];\n"
-        "    return info;\n"
-        "}",
-    )],
-    # NNSi_G2dFontGetTextRect returns its two-word rect by value; both callers
-    # (Text_AlignAnchor, Ov002_SceneLayoutPanelWindow) pass the ARM ABI's
-    # result pointer themselves. MSVC returns an 8-byte struct in EDX:EAX
-    # instead, so the definition takes the pointer as they do.
-    "main@0201386c": [  # NNSi_G2dFontGetTextRect
-        ("NNSG2dTextRect NNSi_G2dFontGetTextRect (const NNSG2dFont * pFont, int hSpace, int vSpace, "
-         "const void * txt)",
-         "void NNSi_G2dFontGetTextRect (NNSG2dTextRect * khdays_result, const NNSG2dFont * pFont, "
-         "int hSpace, int vSpace, const void * txt)"),
-        ("    return rect;\n}", "    *khdays_result = rect;\n}"),
-    ],
-    # The other way round: SND_GetFirstInstDataPos's definition takes the ARM
-    # ABI's result pointer and its caller (LoadSingleWaves, `add r0,sp,#0`
-    # before the call at 0x0201c484) declares the SDK's
-    # `SNDInstPos SND_GetFirstInstDataPos(const SNDBankData *)`. MSVC returns
-    # the 8-byte struct in EDX:EAX and passes no pointer, so the definition
-    # would zero the bank's first words; it returns the struct instead. The
-    # ROM (0x02009024) zeroes both words and a local, never reading the bank.
-    "main@02009024": [  # SND_GetFirstInstDataPos
-        ("void SND_GetFirstInstDataPos(struct S *p)\n{\n    volatile struct S local;\n"
-         "    p->a = 0;\n    local.a = 0;\n    local.b = 0;\n    p->b = 0;\n}",
-         "struct S SND_GetFirstInstDataPos(const void *bank)\n{\n    struct S pos;\n"
-         "    volatile struct S local;\n    pos.a = 0;\n    local.a = 0;\n    local.b = 0;\n"
-         "    pos.b = 0;\n    return pos;\n}"),
-    ],
     # Ov006_MissionBuildOptionRows passes `input` to Ov006_SetTitleMode
     # unset in single-player mode: the ROM's r4 there (`mov r0,r4`,
     # 0x02050f4c) is its caller's, Obj_UpdateAll's previous heap
@@ -254,16 +211,6 @@ ABI_FIXES = {
     ],
     "ov005@020547e4": [  # Ov005_UpdateConfirmation
         ("    int action;\n", "    int action = 0;  /* the ROM's r4 here: an address, no action (native/abi) */\n"),
-    ],
-    # Ov026_CreateService stores the new service at +8 of the shop's state,
-    # whose pointer the service class's constructor sets: the ROM calls
-    # first and loads the pointer after (`bl InstantiateClass; ldr r1,=...;
-    # ldr r1,[r1]; str r0,[r1,#8]`, 0x02082a90-0x02082a9c). C leaves the
-    # order of `p[2] = f()` open; MSVC /O2 loaded p first, still NULL.
-    "ov026@02082a84": [  # Ov026_CreateService
-        ("    data_ov026_02091360[2] = InstantiateClass(&data_ov026_02091200, arg0);\n",
-         "    int service = InstantiateClass(&data_ov026_02091200, arg0);\n"
-         "    data_ov026_02091360[2] = service;  /* the pointer after the call, as the ROM (native/abi) */\n"),
     ],
     # ModelAnimSet_Bind leaves texSrc in r0: it stores its fourth argument at
     # [sp,#4] on entry and reloads it to store the half at +0x0a, last
