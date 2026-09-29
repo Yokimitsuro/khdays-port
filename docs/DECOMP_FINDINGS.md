@@ -267,8 +267,22 @@ stop:
   callers fill themselves; the port passes that. `Ov226`'s call is the same
   on x86: cdecl stacks its two `VecFx32` in the words
   `Ov226_Projectile_SetupFlight` reads.
-- Every short call (689 at this revision) passes zeros for the words the
-  definition takes and it does not. On x86 those slots are the caller's frame,
+- 150 files add `(x - x)` with `x` a local never set (`RandNextScaled(n) +
+  (v - v)`, the lever for mwcc's register copy). The sum is the same
+  whatever `x` holds, but reading an unset local is undefined behaviour,
+  which an optimizing compiler may act on; the port starts those locals at 0.
+  Debug builds report each one as it runs (`Ov114_StartSidestep`,
+  `Ov118_PickRandomSignedSpeed`, `Ov286_Chase_DecideAttack` so far).
+- Calls through pointers pass what the C gives them, often fewer arguments
+  than the function reached takes (the ARM leaves the registers as they
+  were). The port cannot pad those, so the functions whose address is taken
+  are compiled without optimization: unoptimized, a function writes a
+  parameter's slot only where its C assigns the parameter. (Casting Fire,
+  the optimized build returned to address 0 with the saved registers
+  zeroed, where the unoptimized one ran on; this is the likely cause, not
+  yet confirmed.)
+- Every short direct call (689 at this revision) passes zeros for the words
+  the definition takes and it does not. On x86 those slots are the caller's frame,
   and an optimizing compiler keeps other values in a parameter's slot once the
   parameter is dead: MSVC's Release build crashed in Ov025's camp menu on
   exactly that, when `Ov025_ScrollMenuMoveTo`'s menu pointer came back

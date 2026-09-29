@@ -378,6 +378,66 @@ def written_params(body: str, names: list[str]) -> list[int]:
     return out
 
 
+DEFINITION = re.compile(r"^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{", re.MULTILINE)
+UNCALLED_NAME = re.compile(r"\b([A-Za-z_]\w*)\b(?!\s*\()")
+
+
+def unoptimize_callbacks(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Functions whose address the C takes: callbacks, handlers, tables.
+    Their calls go through pointers, whose C often passes fewer arguments
+    than the function takes (the ARM passes what the registers hold), and
+    pad_short_calls cannot see them. An optimizing compiler keeps other
+    values in a parameter's slot once the parameter is dead; for a call that
+    did not pass it, that slot is the caller's frame (the likely cause of the
+    Release build returning to address 0, its saved registers zeroed, when a
+    spell was cast; Debug ran on). Unoptimized, a function writes
+    a parameter only where its C does. The files defining them turn
+    optimization off (MSVC's `#pragma optimize`; a no-op where it is off
+    anyway)."""
+    defined: dict[str, set[str]] = collections.defaultdict(set)
+    for rel, text in texts.items():
+        for m in DEFINITION.finditer(text):
+            defined[m[1]].add(rel)
+    taken: set[str] = set()
+    for rel, text in texts.items():
+        code = strip_comments_code(text, code_mask(text))
+        taken.update(n for n in UNCALLED_NAME.findall(code) if n in defined)
+    files = sorted({rel for name in taken for rel in defined[name]})
+    out = {rel: '#pragma optimize("", off)  /* reached through pointers (native/abi) */\n' + texts[rel]
+           for rel in files}
+    return out, sorted(taken)
+
+
+SELF_SUBTRACTION = re.compile(r"\(\s*([A-Za-z_]\w*)\s*-\s*\1\s*\)")
+
+
+def init_self_subtracted(texts: dict[str, str]) -> tuple[dict[str, str], int]:
+    """Locals the C never sets and reads only to add `(x - x)` -- a term that
+    makes mwcc copy a register the way the ROM does (`RandNextScaled(n) +
+    (v - v)`). The sum is the same whatever x holds, but reading an unset
+    local is undefined behaviour, which an optimizing compiler may act on;
+    and a local with no initializer set to 0 changes nothing defined. Every
+    such declaration inside a function starts at 0."""
+    out: dict[str, str] = {}
+    changed = 0
+    for rel, text in texts.items():
+        names = set(SELF_SUBTRACTION.findall(text))
+        if not names:
+            continue
+        mask = code_mask(text)
+        edits = []
+        for name in names:
+            for m in re.finditer(rf"^(\s*(?:int|u32|s32|unsigned(?:\s+int)?|long\s+long|u64|s64)\s+{name})\s*;",
+                                 text, re.MULTILINE):
+                at = m.start(1) + len(m[1]) - len(name)
+                if mask[at] and depth_at(text, mask, at) > 0:
+                    edits.append((m.end(1), m.end(1), " = 0"))
+        if edits:
+            out[rel] = apply_edits(text, edits)
+            changed += 1
+    return out, changed
+
+
 def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     """Calls passing fewer arguments than the definition takes. On the ARM9
     the missing ones are registers; on x86 their slots are the caller's own

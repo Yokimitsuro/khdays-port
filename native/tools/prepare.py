@@ -1108,6 +1108,9 @@ def main() -> int:
     (out / "abi_next_targets.txt").write_text(
         "".join(t + "\n" for t in repairer.next_targets(where)), encoding="utf-8")
     texts.update(new_texts)
+    # Locals read unset only to add `(x - x)` start at 0.
+    initialized_texts, initialized = abi_repair.init_self_subtracted(texts)
+    texts.update(initialized_texts)
     # Parameters used as locals that a call does not pass: on x86 the
     # definition would write over its caller's frame.
     padded_texts, padded = abi_repair.pad_short_calls(texts)
@@ -1117,12 +1120,19 @@ def main() -> int:
     widened_texts, widened = abi_repair.widen_narrow_params(texts)
     texts.update(widened_texts)
     (out / "abi_narrow_params.txt").write_text("\n".join(widened) + "\n", encoding="utf-8")
+    # Functions reached through pointers, whose short calls nothing pads,
+    # keep their parameters' slots to themselves: compiled unoptimized.
+    unoptimized_texts, callbacks = abi_repair.unoptimize_callbacks(texts)
+    texts.update(unoptimized_texts)
+    (out / "abi_unoptimized.txt").write_text("\n".join(callbacks) + "\n", encoding="utf-8")
     (out / "abi_repairs.txt").write_text("\n".join(repairer.plan.applied) + "\n", encoding="utf-8")
     (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
     abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
                    f"{values_unread} values no C reads, "
                    f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt), {len(padded)} short calls padded "
-                   f"(abi_padded.txt), {len(widened)} narrow parameters widened (abi_narrow_params.txt)")
+                   f"(abi_padded.txt), {len(widened)} narrow parameters widened (abi_narrow_params.txt), "
+                   f"{initialized} files' `(x - x)` locals set to 0, {len(callbacks)} functions reached "
+                   f"through pointers in {len(unoptimized_texts)} unoptimized files (abi_unoptimized.txt)")
 
     # References to an address several overlays share (the decomp's relocs
     # name them all: module:overlays(a,b)). On the DS the one loaded there at
