@@ -277,10 +277,10 @@ stop:
   than the function reached takes (the ARM leaves the registers as they
   were). The port cannot pad those, so the functions whose address is taken
   are compiled without optimization: unoptimized, a function writes a
-  parameter's slot only where its C assigns the parameter. (Casting Fire,
+  parameter's slot only where its C assigns the parameter. Casting Fire,
   the optimized build returned to address 0 with the saved registers
-  zeroed, where the unoptimized one ran on; this is the likely cause, not
-  yet confirmed.)
+  zeroed, where the unoptimized one ran on; with these functions
+  unoptimized the optimized build casts it too.
 - Every short direct call (689 at this revision) passes zeros for the words
   the definition takes and it does not. On x86 those slots are the caller's frame,
   and an optimizing compiler keeps other values in a parameter's slot once the

@@ -388,9 +388,9 @@ def unoptimize_callbacks(texts: dict[str, str]) -> tuple[dict[str, str], list[st
     than the function takes (the ARM passes what the registers hold), and
     pad_short_calls cannot see them. An optimizing compiler keeps other
     values in a parameter's slot once the parameter is dead; for a call that
-    did not pass it, that slot is the caller's frame (the likely cause of the
-    Release build returning to address 0, its saved registers zeroed, when a
-    spell was cast; Debug ran on). Unoptimized, a function writes
+    did not pass it, that slot is the caller's frame (casting Fire, the
+    Release build returned to address 0 with its saved registers zeroed; with
+    these unoptimized it casts it). Unoptimized, a function writes
     a parameter only where its C does. The files defining them turn
     optimization off (MSVC's `#pragma optimize`; a no-op where it is off
     anyway)."""
