@@ -8,7 +8,7 @@ commenting the decompilation; what its C should say differently is in
 
 Only what was seen is here. Each entry says how -- a trace (the environment
 variables at the end), the ROM, a save -- and anything not seen is marked
-*not identified*. Names are khdays-decomp's at `5f4f68329`; addresses are
+*not identified*. Names are khdays-decomp's at `497f599a9`; addresses are
 ARM9. Overlay names in parentheses are the decomp's directory names.
 
 ## 1. Scenes and their overlays
@@ -36,14 +36,15 @@ and a day-357 save loaded into the Grey Area and challenge 07.
 | 6 | a mission's results | ov005 (`ov005_mission_result`) |
 | 12 | "Error de conexión. Pulsa A para volver a la pantalla principal." | ov010 (`scenes/ov010`) |
 
-**Resets.** `func_02003948` is the NitroSDK's `OS_ResetSystem` (its C:
-`CARD_LockRom`, `MI_StopDma` of the four channels, the parameter stored at
-`0x027ffc20`, PXI command 0x10, `OSi_FinalizeReset`). The game restarts the
-console with it and `Boot_InitScene` picks the first scene from the word it
-left: 0 (a cold boot) and -2 give scene 1, anything else scene 12. Callers:
-`Game_RunSceneLoop` (after the wireless loop, with
-`Ov105_GetState() << 16 | Ov105_GetStatusLow() | 0x80000000`),
-`Ov006_MissionBootWatchdog` and `Ov010_TeardownWorkArea` (both -2). Seen:
+**Resets.** `OS_ResetSystem` (0x02003948) restarts the console, and
+`Boot_InitScene` picks the first scene from the word it left at
+`0x027ffc20`: 0 (a cold boot) and -2 give scene 1, anything else scene 12.
+`Game_RunSceneLoop` passes the wireless state (after the wireless loop,
+`Ov105_GetState() << 16 | Ov105_GetStatusLow() | 0x80000000`); the others
+pass -2: `Ov008_MainMenuExit` (Mission Mode's "Principal"),
+`Ov006_MissionBootWatchdog`, `Ov006_MissionInitVideoScene`,
+`Ov008_MissionInitVideoScene`, `Ov008_MissionScene_Release`, the
+`PageTeardown` of ov008, ov009 and ov025, and `Ov010_TeardownWorkArea`. Seen:
 booted with 0x80000000, the game shows scene 12; A there resets with
 0xfffffffe and the game comes back on the title (the native build restarts
 its process for a reset).

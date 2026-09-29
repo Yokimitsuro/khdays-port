@@ -184,7 +184,7 @@ KHDAYS_HAL_TODO(func_0200302c)  /* OSi_DisplayExContext */
  * parameter left for OS_GetResetParameter (runtime/start.c). */
 extern void khdays_reset_system(u32 parameter);
 
-void func_02003948(u32 parameter)
+void OS_ResetSystem(u32 parameter)
 {
     khdays_reset_system(parameter);
 }
