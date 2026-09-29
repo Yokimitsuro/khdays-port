@@ -219,6 +219,61 @@ ABI_FIXES = {
          "int hSpace, int vSpace, const void * txt)"),
         ("    return rect;\n}", "    *khdays_result = rect;\n}"),
     ],
+    # The other way round: SND_GetFirstInstDataPos's definition takes the ARM
+    # ABI's result pointer and its caller (LoadSingleWaves, `add r0,sp,#0`
+    # before the call at 0x0201c484) declares the SDK's
+    # `SNDInstPos SND_GetFirstInstDataPos(const SNDBankData *)`. MSVC returns
+    # the 8-byte struct in EDX:EAX and passes no pointer, so the definition
+    # would zero the bank's first words; it returns the struct instead. The
+    # ROM (0x02009024) zeroes both words and a local, never reading the bank.
+    "main@02009024": [  # SND_GetFirstInstDataPos
+        ("void SND_GetFirstInstDataPos(struct S *p)\n{\n    volatile struct S local;\n"
+         "    p->a = 0;\n    local.a = 0;\n    local.b = 0;\n    p->b = 0;\n}",
+         "struct S SND_GetFirstInstDataPos(const void *bank)\n{\n    struct S pos;\n"
+         "    volatile struct S local;\n    pos.a = 0;\n    local.a = 0;\n    local.b = 0;\n"
+         "    pos.b = 0;\n    return pos;\n}"),
+    ],
+    # Ov006_MissionBuildOptionRows passes `input` to Ov006_SetTitleMode
+    # unset in single-player mode: the ROM's r4 there (`mov r0,r4`,
+    # 0x02050f4c) is its caller's, Obj_UpdateAll's previous heap
+    # (`mov r4,r0` after func_0202362c, 0x02023b5c) -- an address, which
+    # Ov006_SetTitleMode ignores as it does 0 (only 1-4 are stored,
+    # 0x02055b44-0x02055b58). Natively the garbage could fall in 1-4.
+    "ov006@02050e1c": [  # Ov006_MissionBuildOptionRows
+        ("    int input;\n", "    int input = 0;  /* the ROM's r4 here: a heap address, ignored (native/abi) */\n"),
+    ],
+    # Ov005's direction and confirmation handlers keep r4 when no key bit is
+    # set: Ov005_UpdateMainScene's, its state table's end (two `ldm r4!`
+    # from 0x0205b368, 0x02053d84/0x02053d90), 0x0205b388. Ov005_MoveSelection
+    # takes that as no direction (its default path, 0x02053578, loads r0
+    # afresh) and Ov005_UpdateConfirmation as no action (`cmp r4,#0x20;
+    # popne`, 0x02054864). 0 does the same; natively the garbage could be a
+    # key.
+    "ov005@020536ac": [  # Ov005_HandleDirectionalInput
+        ("    int direction;\n", "    int direction = 0;  /* the ROM's r4 here: an address, no direction (native/abi) */\n"),
+    ],
+    "ov005@020547e4": [  # Ov005_UpdateConfirmation
+        ("    int action;\n", "    int action = 0;  /* the ROM's r4 here: an address, no action (native/abi) */\n"),
+    ],
+    # Ov026_CreateService stores the new service at +8 of the shop's state,
+    # whose pointer the service class's constructor sets: the ROM calls
+    # first and loads the pointer after (`bl InstantiateClass; ldr r1,=...;
+    # ldr r1,[r1]; str r0,[r1,#8]`, 0x02082a90-0x02082a9c). C leaves the
+    # order of `p[2] = f()` open; MSVC /O2 loaded p first, still NULL.
+    "ov026@02082a84": [  # Ov026_CreateService
+        ("    data_ov026_02091360[2] = InstantiateClass(&data_ov026_02091200, arg0);\n",
+         "    int service = InstantiateClass(&data_ov026_02091200, arg0);\n"
+         "    data_ov026_02091360[2] = service;  /* the pointer after the call, as the ROM (native/abi) */\n"),
+    ],
+    # ModelAnimSet_Bind leaves texSrc in r0: it stores its fourth argument at
+    # [sp,#4] on entry and reloads it to store the half at +0x0a, last
+    # (`ldr r0,[sp,#4]; strh r0,[fp,#0xa]`, 0x0202a378). Resource_BindFileToSlot
+    # returns that.
+    "main@0202a208": [  # ModelAnimSet_Bind
+        ("void ModelAnimSet_Bind(ModelAnimSet *set, ModelInst *inst, void *file, int texSrc)",
+         "int ModelAnimSet_Bind(ModelAnimSet *set, ModelInst *inst, void *file, int texSrc)"),
+        ("    set->texSrc = texSrc;\n}", "    set->texSrc = texSrc;\n    return texSrc;\n}"),
+    ],
     # Ov002_IsPanelModeSet(fallback) returns its r0 untouched when no panel is
     # installed (`ldr r1,=0x0207f628; ldr r1,[r1]; cmp r1,#0; bxeq lr`,
     # 0x02061b80); here that r0 is whatever Ov002_RepublishHud left, several
@@ -234,6 +289,20 @@ ABI_FIXES = {
          "                            \"Ov002_RepublishHud left in r0\"), 0))) {"),
     ],
 }
+
+# Ov107_Actor_SetAttachSlot takes a fifth, stack argument. Five effect actors
+# store it in the outgoing-argument slot themselves and call with four: the
+# C's `frame.outgoing = 0x1000` is that store (Ov117: `mov r0,#0x1000;
+# str r0,[sp]` at 0x020cc09c/0x020cc0a4, then `bl` at 0x020cc0c4). On x86
+# the fifth argument is passed.
+for _key, _proto in (("ov117@020cbfc4", "struct Vec4 *"), ("ov118@020cfc04", "struct Vec4 *"),
+                     ("ov185@020cfa2c", "int"), ("ov186@020d184c", "int"), ("ov187@020d548c", "int")):
+    ABI_FIXES[_key] = [
+        (f"extern void Ov107_Actor_SetAttachSlot(struct Obj *, int, unsigned int, {_proto});",
+         f"extern void Ov107_Actor_SetAttachSlot(struct Obj *, int, unsigned int, {_proto}, unsigned int);"),
+        ("    Ov107_Actor_SetAttachSlot(self, 2, 2, 0);",
+         "    Ov107_Actor_SetAttachSlot(self, 2, 2, 0, frame.outgoing);"),
+    ]
 
 # Arithmetic on a `void *` (mwcc and GCC take it as `char *`; MSVC refuses).
 ABI_FIXES["ov006@0204da3c"] = [  # Ov006_SendNetworkPacket
@@ -319,6 +388,25 @@ ABI_NOT_READ = {
     # Ov011_BlitTileRow reads one stack argument, its fifth (`ldr r8,[sp,#0x20]`
     # after pushing eight registers, 0x0205b828); nothing reads the sixth.
     "ov011@0205b814": (5,),
+}
+
+# Values the C returns from functions reached only through pointers, where
+# the ROM's pointer calls never read r0 (the rest the need filter finds
+# mechanically: no C reads them). By the function whose value it is.
+VALUE_NOT_READ = {
+    # Returned by the enemies' tick hooks at +0xc (Ov131..133/161..165/202/
+    # 203_TickWithChildRefresh, Ov134..136_ReleaseAndDestroy). Every `blx`
+    # of an [actor,#0xc] hook sets r0 next (`ldr r0,[r5,#0x384]`, `mov r0,#0`,
+    # `add r0,r5,#0x44`...) or calls Session_GetLocalPlayerIndex, which loads
+    # r0 first (Ov107_Scene_Tick, 0x020c98fc); Ov212_BoneCallback returns it,
+    # and no C reads that.
+    "ov107@020c6980": "Ov107_ProcessObjectTick",
+    # Returned by Ov285/286_ForwardAnimEvent, the animation hook at +0x1dc.
+    # Its callers: Ov107_AiState_OnMessage branches to `mov r0,sl`
+    # (0x020c7a10), Ov144/145_Construct `mov r0,r4`; Ov107_PostTagUpdate
+    # returns it to Ov245_ResetMode and Ov245_SetNodeMode3, whose values no
+    # C reads.
+    "main@0203b9fc": "SetSubitemState",
 }
 # (The C of these uses the parameters as locals: the calls pass zeros for
 # them, abi_repair.pad_short_calls, so the writes stay in the call's frame.)
@@ -861,7 +949,7 @@ def main() -> int:
         params = abi_repair.param_list(texts[rel], d)
         if any(p.strip() == "..." for p in params):
             return 8
-        return sum(2 if re.search(r"\b(?:u64|s64|fx64|double)\b|\blong\s+long\b", p) else 1 for p in params)
+        return sum(abi_repair.param_words(p) for p in params)
     involved = {f for pair in findings.calls for f in pair} | set(tail_targets) | set(tail_targets.values())
     need = {f: 0 if f in tail_targets else words(f) for f in involved}
     changed = True
@@ -921,7 +1009,82 @@ def main() -> int:
                 del sites[site]
         if not sites:
             del findings.calls[pair]
+    # A value no C reads needs nothing: every call of the function is a
+    # statement of its own, in a file that declares it void, the whole
+    # argument of a call whose callee's definition takes fewer words than
+    # that argument's position (Ov002_DismissIfState4 hands
+    # Ov002_FillMapRows's to Ov002_HudTeardownToState5(void)), or returned
+    # by a function no pointer reaches whose own value no C reads.
+    defined_in: dict[str, list[str]] = collections.defaultdict(list)
+    for fname, rel in repairer.def_file.items():
+        defined_in[rel].append(fname)
+
+    def address_taken(name: str) -> bool:
+        for rel, text in texts.items():
+            if name not in text:
+                continue
+            mask = repairer.mask(rel)
+            for m in re.finditer(rf"\b{re.escape(name)}\b(?!\s*\()", text):
+                if mask[m.start()]:
+                    return True
+        return False
+
+    def returned_by(rel: str, text: str, mask: bytearray, start: int, close: int) -> str | None:
+        """The function returning the call's value: `return f(...);`, or
+        `v = f(...);` into a local it only returns."""
+        if not re.match(r"\s*;", text[close + 1:]):
+            return None
+        before = text[:start]
+        for fname in defined_in[rel]:
+            d = abi_repair.find_definition(text, mask, fname)
+            if not d or not d.body[0] < start < d.body[1]:
+                continue
+            if re.search(r"\breturn\s*(?:\([\w\s\*]+\)\s*)*$", before):
+                return fname
+            v = re.search(r"\b([A-Za-z_]\w*)\s*=\s*$", before)
+            if not v or not mask[v.start()]:
+                return None
+            body = text[d.body[0]:d.body[1]]
+            for use in re.finditer(rf"\b{v[1]}\b", body):
+                at = d.body[0] + use.start()
+                if not mask[at] or at == v.start(1):
+                    continue
+                if re.search(r"\breturn\s*$", body[:use.start()]) and re.match(r"\s*;", body[use.end():]):
+                    continue
+                if re.search(r"\b(?:int|u32|s32|void\s*\*)\s*$", body[:use.start()]) and \
+                        re.match(r"\s*;", body[use.end():]):
+                    continue  # its declaration
+                return None
+            return fname
+        return None
+
+    def value_read(name: str, seen: tuple[str, ...] = ()) -> bool:
+        for rel, text in texts.items():
+            if name not in text or rel == repairer.def_file.get(name):
+                continue
+            mask = repairer.mask(rel)
+            decls = abi_repair.declarations(text, mask, name)
+            if decls and all(abi_repair.VOID_BEFORE_NAME.search(text[s:o]) for s, o, _ in decls):
+                continue
+            prototypes = {o for _, o, _ in decls}
+            for s, c in abi_repair.call_sites(text, mask, name, (0, len(text))):
+                if text.find("(", s) in prototypes or abi_repair.value_unused(text, mask, s, c):
+                    continue
+                argument = abi_repair.argument_of(text, mask, s, c)
+                if argument and argument[0] in repairer.def_file and words(argument[0]) <= argument[1]:
+                    continue
+                through = returned_by(rel, text, mask, s, c)
+                if through and through not in seen and through != name and \
+                        not address_taken(through) and not value_read(through, seen + (name,)):
+                    continue
+                return True
+        return False
+    values_unread = 0
+    not_read_values = {names.get(key, key) for key in VALUE_NOT_READ}
     for name in sorted(findings.returns):
+        if name in not_read_values or not value_read(name):
+            values_unread += 1
+            continue
         why = repairer.plan_return(name)
         if why == "return type is not plain void":
             continue  # a manual fix (ABI_FIXES) gave it its value
@@ -957,6 +1120,7 @@ def main() -> int:
     (out / "abi_repairs.txt").write_text("\n".join(repairer.plan.applied) + "\n", encoding="utf-8")
     (out / "abi_gaps.txt").write_text("\n".join(repairer.plan.gaps) + "\n", encoding="utf-8")
     abi_summary = (f"ABI: {len(repairer.plan.applied)} repaired, {equivalent} equivalent on x86, "
+                   f"{values_unread} values no C reads, "
                    f"{len(repairer.plan.gaps)} gaps (abi_gaps.txt), {len(padded)} short calls padded "
                    f"(abi_padded.txt), {len(widened)} narrow parameters widened (abi_narrow_params.txt)")
 

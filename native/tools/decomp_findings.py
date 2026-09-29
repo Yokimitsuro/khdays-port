@@ -93,9 +93,13 @@ def narrow_params() -> list[str]:
             for name, fs in sorted(files.items())]
 
 
+def entries(path: Path) -> list[str]:
+    return [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
 def listing(path: Path) -> list[str]:
-    lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-    return ["```"] + lines + ["```"]
+    lines = entries(path)
+    return ["```"] + lines + ["```"] if lines else ["*None at this revision.*"]
 
 
 def main() -> int:
@@ -125,7 +129,8 @@ def main() -> int:
     DOC.write_text(text, encoding="utf-8", newline="\n")
     counts = {"ambiguous": "ambiguous references", "repairs": "repairs", "gaps": "gaps",
               "narrowparams": "narrowly declared parameters"}
-    size = {n: len(sections[n]) - (0 if n == "narrowparams" else 2) for n in filled}  # table/fence lines
+    size = {n: len(sections[n]) - (2 if n == "ambiguous" else 0) for n in filled}  # its table's head
+    size.update(repairs=len(entries(GEN / "abi_repairs.txt")), gaps=len(entries(GEN / "abi_gaps.txt")))
     print(f"{DOC}: " + ", ".join(f"{size[n]} {counts[n]}" for n in filled if n in counts))
     return 0
 

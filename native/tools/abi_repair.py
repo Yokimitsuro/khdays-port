@@ -282,6 +282,42 @@ def value_unused(text: str, mask: bytearray, start: int, close: int) -> bool:
     return False
 
 
+def param_words(param: str) -> int:
+    """The argument words a parameter takes, alike in ARM registers and on
+    the x86 stack: two for a 64-bit value, three for a VecFx32 by value."""
+    if re.search(r"\b(?:u64|s64|fx64|double)\b|\blong\s+long\b", param):
+        return 2
+    if re.search(r"\bVecFx32\b", param) and "*" not in param and "[" not in param:
+        return 3
+    return 1
+
+
+def argument_of(text: str, mask: bytearray, start: int, close: int) -> tuple[str, int] | None:
+    """(callee, argument index) when the call at start..close is, alone, an
+    argument of another call: `g(a, f(...), b)`."""
+    before = text[:start].rstrip()
+    after = text[close + 1:].lstrip()
+    if not before or before[-1] not in "(," or not after or after[0] not in "),":
+        return None
+    depth, commas, i = 0, 0, len(before) - 1
+    while i >= 0:
+        if mask[i] and before[i] in ")]}":
+            depth += 1
+        elif mask[i] and before[i] in "([{":
+            if depth == 0:
+                break
+            depth -= 1
+        elif mask[i] and before[i] == "," and depth == 0:
+            commas += 1
+        i -= 1
+    if i < 0 or before[i] != "(":
+        return None
+    word = re.search(r"([A-Za-z_]\w*)\s*$", before[:i])
+    if not word or word[1] in NOT_TYPES or word[1] in ("if", "while", "for", "switch"):
+        return None
+    return word[1], commas
+
+
 def declarations(text: str, mask: bytearray, name: str) -> list[tuple[int, int, int]]:
     """(start of the line, open paren, close paren) of each prototype of name
     (not the definition)."""
@@ -343,17 +379,25 @@ def written_params(body: str, names: list[str]) -> list[int]:
 
 
 def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    """Calls passing fewer arguments than the definition takes, where the
-    definition assigns to a parameter it was not given (a parameter used as a
-    local, as the ARM code uses the register). On the ARM9 that writes a
-    register; on x86 the missing argument's slot is the caller's own stack --
-    its saved registers or its locals. Such calls pass zeros up to the last
-    parameter written: a value written before any read is never seen, and one
-    read first is what the ABI repairs pass (native/abi)."""
+    """Calls passing fewer arguments than the definition takes. On the ARM9
+    the missing ones are registers; on x86 their slots are the caller's own
+    stack -- its saved registers or its locals -- and the callee owns them:
+    one that assigns to such a parameter (used as a local, as the ARM code
+    uses the register) writes over its caller's frame, and so may an
+    optimizing compiler, which keeps other values in a parameter's slot once
+    the parameter is dead (MSVC /O2 does). Such calls pass zeros for every
+    word the definition takes: what the ROM shows a callee reads is what the
+    ABI repairs pass first (native/abi), and a value written before any read
+    is never seen."""
+    # A file's own definition (a static one: several files may each have one
+    # of the same name) before the one the others link to.
     def_file: dict[str, str] = {}
+    defined_in: dict[str, set[str]] = collections.defaultdict(set)
     for rel, text in texts.items():
         for m in re.finditer(r"^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{", text, re.MULTILINE):
-            def_file.setdefault(m[1], rel)
+            defined_in[m[1]].add(rel)
+            if not re.match(r"\s*static\b", m[0]):
+                def_file.setdefault(m[1], rel)
     masks: dict[str, bytearray] = {}
 
     def mask(rel: str) -> bytearray:
@@ -361,31 +405,40 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
             masks[rel] = code_mask(texts[rel])
         return masks[rel]
 
-    needs: dict[str, tuple[int, list[str]]] = {}
-    for name, rel in def_file.items():
+    def taken(name: str, rel: str) -> tuple[list[int], list[str]] | None:
+        """The words each parameter of name's definition in rel takes, and
+        the parameters it writes."""
         d = find_definition(texts[rel], mask(rel), name)
         if d is None:
-            continue
-        params = param_list(texts[rel], d)
+            return None
+        params = [p for p in param_list(texts[rel], d) if p.strip() != "..."]
         names = [param_name(p) for p in params]
         code = strip_comments_code(texts[rel][d.body[0]:d.body[1]], mask(rel)[d.body[0]:d.body[1]])
-        written = written_params(code, names)
-        if written:
-            needs[name] = (max(written) + 1, [names[k] for k in written])
+        return [param_words(p) for p in params], [names[k] for k in written_params(code, names)]
+
     edits: dict[str, list[tuple[int, int, str]]] = collections.defaultdict(list)
     report = []
-    for name, (count, which) in sorted(needs.items()):
+    for name in sorted(defined_in):
         pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+        linked = taken(name, def_file[name]) if name in def_file else None
         for rel, text in texts.items():
             if name not in text or not pattern.search(text):
                 continue
+            definition = taken(name, rel) if rel in defined_in[name] else linked
+            if not definition or not definition[0]:
+                continue
+            sizes, which = definition
+            count = len(sizes)
             short = []
             # prototypes and the definition are no calls (`extern T *f();`
             # has no word before the name)
             not_calls = {open_paren for _, open_paren, _ in declarations(text, mask(rel), name)}
-            own = find_definition(text, mask(rel), name) if rel == def_file[name] else None
+            own = find_definition(text, mask(rel), name) if rel in defined_in[name] else None
             for start, close in call_sites(text, mask(rel), name, (0, len(text))):
                 if text.find("(", start) in not_calls or (own and start == own.name_start):
+                    continue
+                # outside any body: a prototype after a comma (`extern void a(void), b(void);`)
+                if depth_at(text, mask(rel), start) == 0:
                     continue
                 inner = text[text.find("(", start) + 1:close].strip()
                 passed = 0 if not inner else len(split_top_level(inner))
@@ -393,22 +446,23 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
                     short.append((close, inner, passed))
             if not short:
                 continue
+            # one int per word: a 64-bit or struct parameter takes several
+            def pads(first: int) -> list[str]:
+                return [f"int khdays_p{k}_{w}" for k in range(first, count) for w in range(sizes[k])]
             for close, inner, passed in short:
-                zeros = ", ".join("0" for _ in range(passed, count))
+                zeros = ", ".join("0" for _ in pads(passed))
                 edits[rel].append((close, close, (", " if inner else "") + zeros))
             for _, open_paren, close_paren in declarations(text, mask(rel), name):
                 inner = text[open_paren + 1:close_paren].strip()
                 if inner == "void":
-                    edits[rel].append((open_paren + 1, close_paren,
-                                       ", ".join(f"int khdays_p{k}" for k in range(count))))
+                    edits[rel].append((open_paren + 1, close_paren, ", ".join(pads(0))))
                 elif inner:
                     have = len(split_top_level(inner))
                     if have < count:
-                        edits[rel].append((close_paren, close_paren, ", " + ", ".join(
-                            f"int khdays_p{k}" for k in range(have, count))))
+                        edits[rel].append((close_paren, close_paren, ", " + ", ".join(pads(have))))
             report.append(f"{name} in {rel}: {len(short)} call(s) passing "
-                          f"{min(p for _, _, p in short)} of {count} (the definition writes "
-                          f"{', '.join(which)})")
+                          f"{min(p for _, _, p in short)} of {count}"
+                          + (f" (the definition writes {', '.join(which)})" if which else ""))
     return {rel: apply_edits(texts[rel], e) for rel, e in edits.items()}, report
 
 
@@ -589,6 +643,28 @@ class Repairer:
         return edits
 
     # A function defined void whose value callers use.
+    def struct_result(self, name: str, defined: int) -> bool:
+        """Whether every file that takes name's value declares it returning a
+        struct by value, with one parameter fewer than its `defined`: the
+        ARM ABI's result pointer."""
+        seen = False
+        for rel, text in self.texts.items():
+            if rel == self.def_file.get(name) or name not in text:
+                continue
+            mask = self.mask(rel)
+            for line_start, open_paren, close in declarations(text, mask, name):
+                head = re.sub(r"\b(?:extern|static|inline|const|volatile)\b", "", text[line_start:open_paren])
+                words = re.findall(r"[A-Za-z_]\w*|\*", head)[:-1]
+                if not words or words == ["void"]:
+                    continue
+                if "*" in words or words[-1] in BASIC_TYPES:
+                    return False
+                params = [p for p in split_top_level(text[open_paren + 1:close]) if p.strip() not in ("", "void")]
+                if len(params) != defined - 1:
+                    return False
+                seen = True
+        return seen
+
     def plan_return(self, name: str) -> str | None:
         """None when planned, else why not."""
         rel = self.def_file.get(name)
@@ -607,7 +683,19 @@ class Repairer:
         edits: list[tuple[int, int, str]] = []
         captures: list[tuple[int, int]] = []
         callee = ""
-        if kinds == {"entry"} and {s.register for s in alternatives} == {0} and params:
+        why = "r0 as the ROM leaves it"
+        if self.struct_result(name, len(params)) and params and "*" in params[0]:
+            # Its value is a struct its callers take by value, through the
+            # result pointer the definition spells out as its first parameter.
+            # The ARM caller reads the struct where it pointed; an x86 caller
+            # reads it through the pointer the callee returns in EAX: the one
+            # it passed, as the definition had it on entry.
+            p0 = param_name(params[0])
+            if not p0:
+                return "unnamed result pointer"
+            init = f"(int){p0}"
+            why = "the result pointer, as x86 returns a struct"
+        elif kinds == {"entry"} and {s.register for s in alternatives} == {0} and params:
             p0 = param_name(params[0])
             body = text[d.body[0]:d.body[1]]
             if not p0 or re.search(rf"\b{p0}\s*(?:[-+*/|&^]?=(?!=)|\+\+|--)|(?:\+\+|--)\s*{p0}\b", body):
@@ -636,7 +724,7 @@ class Repairer:
             if v:
                 edits.append((line_start + v.start(), line_start + v.end(), "int"))
         edits.append((d.body[0] + 1, d.body[0] + 1,
-                      f"\n    int khdays_r0 = {init};  /* r0 as the ROM leaves it (native/abi) */"))
+                      f"\n    int khdays_r0 = {init};  /* {why} (native/abi) */"))
         for start, close in captures:
             edits.append((start, start, "(khdays_r0 = (int)"))
             edits.append((close + 1, close + 1, ")"))
@@ -668,11 +756,13 @@ class Repairer:
         if defined <= declared:
             return "resolved"
         # A 64-bit parameter takes two argument words (r1:r2, or two stack
-        # slots on x86 alike): a prototype counting them covers the definition.
+        # slots on x86 alike), a VecFx32 by value three: a prototype counting
+        # them covers the definition (Ov226_HandleMessageArgs passes two
+        # VecFx32 where Ov226_Projectile_SetupFlight defines three unused
+        # words and one VecFx32).
         for _, open_paren, close in declarations(text, mask, callee):
             params = [p for p in split_top_level(text[open_paren + 1:close]) if p.strip() not in ("", "void")]
-            wide = sum(1 for p in params if re.search(r"\b(?:u64|s64|fx64|double)\b|\blong\s+long\b", p))
-            if params and len(params) + wide >= defined:
+            if params and sum(param_words(p) for p in params) >= defined:
                 return "resolved"
         # every call already passes them (a manual fix, ABI_FIXES)
         present = call_sites(text, mask, callee, d.body)
@@ -683,7 +773,9 @@ class Repairer:
         # The caller expects a struct by value where the definition takes the
         # ARM ABI's result pointer: the "missing" first argument is that
         # pointer, which x86 passes the same way for a struct over 8 bytes
-        # (the 8-byte ones are fixed by hand, prepare.py ABI_FIXES).
+        # (the 8-byte ones, returned in EDX:EAX, are fixed by hand: prepare.py
+        # ABI_FIXES; build/native/gen/prototype_mismatches.txt lists them as a
+        # void definition some file declares returning a struct).
         for line_start, open_paren, _ in declarations(text, mask, callee):
             head = re.sub(r"\b(?:extern|static|inline|const|volatile)\b", "", text[line_start:open_paren])
             words = re.findall(r"[A-Za-z_]\w*|\*", head)[:-1]

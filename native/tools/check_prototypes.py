@@ -29,6 +29,14 @@ FUNC_RE = re.compile(
     re.MULTILINE)
 NOT_TYPES = {"return", "if", "while", "for", "switch", "sizeof", "else", "do", "case", "goto"}
 
+# The printf family: the index of the format among the arguments, plus one.
+PRINTF_FAMILY = {"OS_SPrintf": 2, "OS_SNPrintf": 3, "OS_TPrintf": 1, "OS_Printf": 1}
+# A string defined as data (`char data_x[n] = "..." "...";`), its pieces, and
+# a format's conversions.
+STRING_DATA = re.compile(r'\bchar\s+(data_\w+)\s*\[[^\]]*\]\s*=\s*((?:"(?:[^"\\]|\\.)*"\s*)+);')
+STRING_PIECE = re.compile(r'"((?:[^"\\]|\\.)*)"')
+CONVERSION = re.compile(r"%(?:%|[-+ #0]*\d*(?:\.\d+)?[hlL]*[a-zA-Z])")
+
 
 def param_count(params: str) -> int | None:
     p = params.strip()
@@ -282,6 +290,32 @@ def main() -> int:
         # only parameters the definition actually reads matter
         if count < dcount and any(reads[name][count:]):
             fewer.append((name, dfile, dcount, rel, count))
+    # A call to the printf family passes what its format asks for after it,
+    # and a declaration without those arguments hides them: the ROM passes
+    # them in r2 and on all the same (the enemies' OvNNN_CreateNamedEntity
+    # print "Ms/%02x.p" with the class id in r2). The format, read from the
+    # string data, counts them.
+    strings: dict[str, str] = {}
+    for text in texts.values():
+        for m in STRING_DATA.finditer(text):
+            strings[m[1]] = "".join(STRING_PIECE.findall(m[2]))
+    printf_reads: dict[str, list[bool]] = {}
+    for rel, text in sorted(texts.items()):
+        for callee, arguments in calls_in(text):
+            fixed = PRINTF_FAMILY.get(callee)
+            if fixed is None or callee not in defs or len(arguments) < fixed:
+                continue
+            fmt = arguments[fixed - 1].strip()
+            literal = re.fullmatch(r'"((?:[^"\\]|\\.)*)"', fmt)
+            symbol = re.search(r"\b(data_\w+)\b", fmt)
+            fmt = literal[1] if literal else strings.get(symbol[1]) if symbol else None
+            if fmt is None:
+                continue  # made at run time
+            need = len([c for c in CONVERSION.findall(fmt) if c != "%%"])
+            if len(arguments) - fixed < need:
+                total = fixed + need
+                fewer.append((callee, defs[callee][2], total, rel, len(arguments)))
+                printf_reads[callee] = [True] * max(total, len(printf_reads.get(callee, [])))
     for name, (dret, dcount, dfile, names, _, returns) in sorted(defs.items()):
         for ret, count, rel in decls.get(name, []):
             if rel == dfile:
@@ -305,7 +339,7 @@ def main() -> int:
     import json
     (out / "prototype_mismatches.json").write_text(json.dumps({
         "fewer": [{"callee": n, "def_file": d, "def_count": dc, "caller_file": r, "decl_count": c,
-                   "reads": reads[n]}
+                   "reads": printf_reads.get(n) or reads[n]}
                   for n, d, dc, r, c in fewer],
         "void_used": [{"function": n, "def_file": d, "caller_file": r}
                       for n, d, r, _ in phantom_return],
