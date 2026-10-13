@@ -182,6 +182,15 @@ HOOKS = {
         "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n"
         "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
     ),
+    # The opening movie's loop is the same spin as MobiClip's below (decoder
+    # work, a KEYINPUT read for the Start skip, the timeline per VBlank) and
+    # trapped ~120,000 KEYINPUT reads a second; each pass now ends waiting for
+    # the next interrupt, as the DS spin effectively does.
+    "ov012@0205b618": (  # Ov012_RunOpeningScene
+        "                } while (Ov024_TickStreamSlots() == 0);\n",
+        "                    { extern void khdays_runtime_wait(void); khdays_runtime_wait(); }\n"
+        "                } while (Ov024_TickStreamSlots() == 0);\n",
+    ),
     # The synchronous card read: the SDK moves the transfer a word at a time
     # through ROMCTRL and the data port, each a trapped register access, and
     # the music stream and every load read the card that way (the game thread
