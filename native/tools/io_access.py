@@ -26,6 +26,7 @@ SCALAR_WORDS = frozenset({
     "vu8", "vu16", "vu32", "vu64", "vs8", "vs16", "vs32", "vs64",
     "REGType8", "REGType16", "REGType32", "REGType64",
     "REGType8v", "REGType16v", "REGType32v", "REGType64v",
+    "fx16", "fx32", "fx64", "fx64c",
 })
 TYPE = r"[A-Za-z_][\w \t]*?"
 # `*(T *)0x04000400`, optionally with the address in parentheses or suffixed u.
