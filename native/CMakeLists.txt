@@ -118,6 +118,7 @@ add_executable(khdays-native
     host/window.c
     "${KHDAYS_GEN}/absolute.asm"
     "${KHDAYS_GEN}/ds_functions.c"  # the native function at each DS address
+    "${KHDAYS_GEN}/overlay_layout.c"  # the overlay table as the compiled code needs it
     ../src/vfs/filesystem.cpp)  # the port's VFS: files and mods
 target_include_directories(khdays-native PRIVATE ../include)
 target_compile_options(khdays-native PRIVATE

@@ -77,6 +77,45 @@ std::vector<u8> read_whole(const fs::path& path) {
     return {std::istreambuf_iterator<char>(in), {}};
 }
 
+// The overlay table the compiled code needs (prepare.py's overlay_layout.c).
+extern "C" {
+typedef struct {
+    unsigned id, ram_address, sinit_init, sinit_init_end;
+} KhdaysOverlayLayout;
+extern const KhdaysOverlayLayout khdays_overlay_layout[];
+extern const unsigned khdays_overlay_layout_count;
+}
+
+constexpr u32 kOverlayEntrySize = 32;
+constexpr u32 kOverlayRamAddress = 4;
+constexpr u32 kOverlaySinitInit = 16;
+constexpr u32 kOverlaySinitInitEnd = 20;
+
+void put_le32(u8* p, const u32 v) {
+    p[0] = static_cast<u8>(v);
+    p[1] = static_cast<u8>(v >> 8);
+    p[2] = static_cast<u8>(v >> 16);
+    p[3] = static_cast<u8>(v >> 24);
+}
+
+// The card's overlay table describes the card's own code: a US card's
+// overlays all load 0x20 lower than the EU build the decomp (and so this
+// executable) is. The code that runs is ours, so each overlay's address and
+// static-initialiser range come from the compiled layout; ids, sizes and
+// file ids stay the card's (the same in both releases).
+void use_compiled_overlay_layout(std::vector<u8>& table) {
+    if (table.size() / kOverlayEntrySize != khdays_overlay_layout_count) {
+        fail("the card's overlay table does not have this build's overlay count");
+    }
+    for (unsigned n = 0; n < khdays_overlay_layout_count; ++n) {
+        const KhdaysOverlayLayout& o = khdays_overlay_layout[n];
+        u8* entry = table.data() + o.id * kOverlayEntrySize;
+        put_le32(entry + kOverlayRamAddress, o.ram_address);
+        put_le32(entry + kOverlaySinitInit, o.sinit_init);
+        put_le32(entry + kOverlaySinitInitEnd, o.sinit_init_end);
+    }
+}
+
 // FNT: file id -> game path.
 void walk_fnt(const std::vector<u8>& fnt, u32 dir, const std::string& prefix,
               std::map<u32, std::string>& names) {
@@ -178,6 +217,9 @@ extern "C" int khdays_rom_init(void) {
         Blob blob{field(s.offset_field), read_whole(system / s.name)};
         if (blob.bytes.size() != field(s.size_field)) {
             fail(std::string("system/") + s.name + " does not match the header's size");
+        }
+        if (std::strcmp(s.name, "arm9_overlay_table.bin") == 0) {
+            use_compiled_overlay_layout(blob.bytes);
         }
         regions.push_back({blob.start, blob.start + static_cast<u32>(blob.bytes.size()),
                            SYSTEM_BLOB, static_cast<int>(blobs.size())});
