@@ -8,10 +8,28 @@
  * that thread is scheduled again -- as the DS resumes it from its saved
  * context. */
 #include "hal.h"
+#include "../runtime/io.h"
 
-#define REG_IME (*(volatile u32 *)0x04000208)
-#define REG_IE  (*(volatile u32 *)0x04000210)
-#define REG_IF  (*(volatile u32 *)0x04000214)
+#define IO_BASE 0x04000000u
+#define OFFSET_IME 0x208u
+#define OFFSET_IE 0x210u
+#define OFFSET_IF 0x214u
+
+/* Reads through the register model without the access fault: the same
+ * update an ordinary load gets (khdays_io_read), then the value. The IRQ
+ * check runs constantly, and through the trapped page it cost up to three
+ * exceptions each time. */
+static u32 io_read32(u32 offset)
+{
+    khdays_io_read(IO_BASE + offset, 4);
+    return IO32(offset);
+}
+
+#define REG_IME (io_read32(OFFSET_IME))
+#define REG_IE  (io_read32(OFFSET_IE))
+#define REG_IF  (io_read32(OFFSET_IF))
+/* The acknowledge is a write with side effects: it stays a real store. */
+#define REG_IF_ACK (*(volatile u32 *)(IO_BASE + OFFSET_IF))
 
 /* OS_IRQTable: one handler per IE bit, at the start of the DTCM. */
 #define OS_IRQ_TABLE ((volatile u32 *)0x027e0000)
@@ -64,7 +82,7 @@ void func_01ff8148(void)
     while ((pending & (1u << index)) == 0) {
         ++index;
     }
-    REG_IF = 1u << index;  /* write-one-to-clear */
+    REG_IF_ACK = 1u << index;  /* write-one-to-clear */
     ((void (*)(void))OS_IRQ_TABLE[index])();
     func_01ff81a0();
 }
