@@ -211,19 +211,65 @@ void khdays_host_present(const uint32_t *upper, const uint32_t *lower)
 }
 
 /* The game makes sound as fast as the DS clock, which follows the PC's; the
- * device plays it on its own clock. What piles up beyond a tenth of a second
- * (after the game thread stalled and caught up) is dropped, so the delay
- * stays short. */
+ * device plays it on its own clock. The game thread hands it over in bursts,
+ * so the device is held paused until a cushion of sound is queued, and
+ * paused again to refill whenever it runs dry -- without the cushion every
+ * late burst is a gap, heard as buzzing and skips. What piles up beyond the
+ * cushion plus a tenth of a second (after the game thread stalled and caught
+ * up) is dropped, so the delay stays short. KHDAYS_AUDIO_CUSHION_MS sets the
+ * cushion (0 plays as it arrives); dry spells are counted and logged. */
+#define AUDIO_BYTES_PER_FRAME 4
+#define AUDIO_DEFAULT_CUSHION_MS 80
+#define AUDIO_EXTRA_MS 100
+#define AUDIO_REPORT_SECONDS 10
+
+static int audio_cushion_bytes = -1;
+static int audio_playing;
+static unsigned audio_dry_spells;
+static Uint64 audio_report_at;
+
+static int ms_to_bytes(int ms)
+{
+    return KHDAYS_SOUND_RATE * ms / 1000 * AUDIO_BYTES_PER_FRAME;
+}
+
 void khdays_host_audio(const int16_t *frames, int count)
 {
     SDL_AudioStream *stream = audio;
+    int queued;
     if (stream == NULL) {
         return;
     }
-    if (SDL_GetAudioStreamQueued(stream) > KHDAYS_SOUND_RATE * 4 / 10) {
+    if (audio_cushion_bytes < 0) {
+        const char *setting = getenv("KHDAYS_AUDIO_CUSHION_MS");
+        audio_cushion_bytes = ms_to_bytes(setting != NULL ? atoi(setting) : AUDIO_DEFAULT_CUSHION_MS);
+        SDL_PauseAudioStreamDevice(stream);
+        audio_report_at = SDL_GetTicks() + AUDIO_REPORT_SECONDS * 1000;
+    }
+    queued = SDL_GetAudioStreamQueued(stream);
+    if (audio_playing && queued == 0) {
+        ++audio_dry_spells;
+        if (audio_cushion_bytes > 0) {
+            SDL_PauseAudioStreamDevice(stream);
+            audio_playing = 0;
+        }
+    }
+    if (queued > audio_cushion_bytes + ms_to_bytes(AUDIO_EXTRA_MS)) {
         return;
     }
-    SDL_PutAudioStreamData(stream, frames, count * 4);
+    SDL_PutAudioStreamData(stream, frames, count * AUDIO_BYTES_PER_FRAME);
+    if (!audio_playing && queued + count * AUDIO_BYTES_PER_FRAME >= audio_cushion_bytes) {
+        SDL_ResumeAudioStreamDevice(stream);
+        audio_playing = 1;
+    }
+    if (SDL_GetTicks() >= audio_report_at) {
+        if (audio_dry_spells != 0) {
+            fprintf(stderr, "sound: the device ran dry %u times in %d s\n", audio_dry_spells,
+                    AUDIO_REPORT_SECONDS);
+        }
+        audio_dry_spells = 0;
+        audio_report_at += AUDIO_REPORT_SECONDS * 1000;
+    }
 }
 
 uint16_t khdays_host_buttons(void)
