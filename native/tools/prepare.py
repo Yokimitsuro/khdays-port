@@ -182,6 +182,18 @@ HOOKS = {
         "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n"
         "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
     ),
+    # The synchronous card read: the SDK moves the transfer a word at a time
+    # through ROMCTRL and the data port, each a trapped register access, and
+    # the music stream and every load read the card that way (the game thread
+    # was mostly here). The transfer becomes one copy from the ROM
+    # (runtime/card.c); the wake-ups and the callback after it are unchanged.
+    "main@0200ee0c": (  # CARDi_ReadRomSyncCore
+        "    char *q = data_02046b20;\n"
+        "    if (CARDi_ReadFromCache(q) != 0) {\n"
+        "        (*(CARDFunc *)q)(q);\n"
+        "    }\n",
+        "    { extern void khdays_card_read_direct(void); khdays_card_read_direct(); }\n",
+    ),
     # MobiClip's playback loop spins until the decoder's streams drain; each
     # pass does whatever work the card DMA and frame-timer interrupts made
     # ready, then reads KEYINPUT for a Start skip. On the DS the spin is idle

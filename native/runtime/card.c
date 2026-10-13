@@ -89,6 +89,30 @@ void khdays_card_start(void)
     }
 }
 
+/* CARDi_ReadRomSyncCore's transfer done in one copy (prepare.py HOOKS).
+ * The SDK moves it a word at a time through ROMCTRL and the data port, each
+ * access a trapped register access here, while the music streams and every
+ * load read the card that way: the game thread spent most of its time on it.
+ * The request is CARDiCommon's src/dst/len (data_020464e0 +0x1c/+0x20/+0x24);
+ * afterwards they stand where the SDK's loop leaves them. */
+#define CARD_COMMON 0x020464e0u
+#define CARD_COMMON_SRC 0x1c
+#define CARD_COMMON_DST 0x20
+#define CARD_COMMON_LEN 0x24
+
+void khdays_card_read_direct(void)
+{
+    u32 *const src = (u32 *)(size_t)(CARD_COMMON + CARD_COMMON_SRC);
+    u32 *const dst = (u32 *)(size_t)(CARD_COMMON + CARD_COMMON_DST);
+    u32 *const len = (u32 *)(size_t)(CARD_COMMON + CARD_COMMON_LEN);
+    if (*len != 0) {
+        khdays_rom_read(*src, (u8 *)(size_t)*dst, *len);
+        *src += *len;
+        *dst += *len;
+        *len = 0;
+    }
+}
+
 /* The CPU (or a DMA) reads the data port: the next word of the transfer. */
 u32 khdays_card_read_word(void)
 {

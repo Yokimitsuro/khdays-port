@@ -16,4 +16,7 @@ void khdays_card_start(void);
 /* A read of the data port (0x04100010). */
 u32 khdays_card_read_word(void);
 
+/* CARDi_ReadRomSyncCore's whole transfer as one copy from the ROM. */
+void khdays_card_read_direct(void);
+
 #endif
