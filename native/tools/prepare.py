@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import collections
+import functools
 import re
 import sys
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import abi_repair  # noqa: E402
+import io_access  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 DECOMP = ROOT / "external" / "khdays-decomp"
@@ -487,7 +489,14 @@ def transform(text: str) -> str:
     text = ZERO_MEMBER.sub(drop_zero, text)
     text = DEF_HEADER.sub(name_unnamed_params, text)
     text = widen_narrow_returns(text)
+    text = io_access.rewrite(text, register_macros())
     return text
+
+
+@functools.cache
+def register_macros() -> dict[str, tuple[str, str]]:
+    """The decomp headers' register macros (io_access.py)."""
+    return io_access.header_macros(DECOMP / "include")
 
 
 # A function returning a char or short: the ARM callee leaves the value

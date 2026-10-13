@@ -34,6 +34,10 @@ int khdays_io_is_register(u32 address);
 void khdays_io_store(u32 address, int size, u32 value);
 /* The matching read: the value the game's load would see. */
 u32 khdays_io_load(u32 address, int size);
+/* The same up to 8 bytes (a 64-bit divider operand or result), for the
+ * game's own accesses prepare.py rewrites (compat/decomp_compat.h). */
+void khdays_io_set(u32 address, int size, u64 value);
+u64 khdays_io_get(u32 address, int size);
 
 /* Initial register values, as the ARM9 sees them when crt0 starts. */
 void khdays_io_reset(void);

@@ -205,21 +205,31 @@ int khdays_io_is_register(u32 address)
     return is_io_address(address);
 }
 
-void khdays_io_store(u32 address, int size, u32 value)
+void khdays_io_set(u32 address, int size, u64 value)
 {
-    u8 before[4];
+    u8 before[8];
     u8 *host = host_address(address);
     memcpy(before, host, (size_t)size);
     memcpy(host, &value, (size_t)size);
     khdays_io_write(address, size, before);
 }
 
-u32 khdays_io_load(u32 address, int size)
+u64 khdays_io_get(u32 address, int size)
 {
-    u32 value = 0;
+    u64 value = 0;
     khdays_io_read(address, size);
     memcpy(&value, host_address(address), (size_t)size);
     return value;
+}
+
+void khdays_io_store(u32 address, int size, u32 value)
+{
+    khdays_io_set(address, size, value);
+}
+
+u32 khdays_io_load(u32 address, int size)
+{
+    return (u32)khdays_io_get(address, size);
 }
 
 /* Where a DMA access lands. DMA is on the system bus, which does not see the

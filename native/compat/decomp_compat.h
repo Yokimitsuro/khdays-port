@@ -51,6 +51,22 @@ extern "C"
 __declspec(noreturn) void khdays_abi_gap(const char *what);
 #define KHDAYS_ABI_GAP(what) (khdays_abi_gap(what), 0)
 
+/* A hardware register read or stored by name or by address (prepare.py,
+ * native/tools/io_access.py, rewrites the plain forms to these): the
+ * register model's own access (runtime/io_regs.c), what the I/O trap does for
+ * the same load or store, without the fault. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+unsigned long long khdays_io_get(unsigned int address, int size);
+void khdays_io_set(unsigned int address, int size, unsigned long long value);
+#ifdef __cplusplus
+}
+#endif
+#define KHDAYS_IO_GET(type, address) ((type)khdays_io_get((address), (int)sizeof(type)))
+#define KHDAYS_IO_SET(type, address, value) \
+    khdays_io_set((address), (int)sizeof(type), (unsigned long long)(type)(value))
+
 /* `*(T (*)[n])dst = *(T (*)[n])src;` -- a whole-array assignment mwcc accepts
  * (prepare.py rewrites it to this). */
 #define KHDAYS_ARRAY_ASSIGN(T, n, dst, src)                         \
