@@ -42,26 +42,30 @@ void GX_SendFifo48B(const void *src, void *dst)
     }
 }
 
-#define REG_DIVCNT      (*(volatile u16 *)0x04000280)
-#define REG_DIV_NUMER   ((volatile u32 *)0x04000290)  /* numer lo/hi, denom lo/hi */
-#define REG_SQRTCNT     (*(volatile u16 *)0x040002b0)
-#define REG_SQRT_PARAM  ((volatile u32 *)0x040002b8)  /* param lo/hi */
+/* The divide/sqrt unit's registers, through the register model (runtime/
+ * io.h): the same reads and writes as the assembly's loads and stores,
+ * without a fault each -- the context is saved and restored on every
+ * thread switch. */
+#define DIVCNT     0x04000280u
+#define DIV_NUMER  0x04000290u  /* numer lo/hi, denom lo/hi */
+#define SQRTCNT    0x040002b0u
+#define SQRT_PARAM 0x040002b8u  /* param lo/hi */
 
 /* Context: +0x00 DIV_NUMER/DIV_DENOM (4 words), +0x10 SQRT_PARAM (2 words),
  * +0x18 DIVCNT & 3, +0x1a SQRTCNT & 1. */
 void CP_SaveContext(void *pContext)
 {
     u32 *c = (u32 *)pContext;
-    c[0] = REG_DIV_NUMER[0];
-    c[1] = REG_DIV_NUMER[1];
-    c[2] = REG_DIV_NUMER[2];
-    c[3] = REG_DIV_NUMER[3];
+    c[0] = khdays_io_load(DIV_NUMER, 4);
+    c[1] = khdays_io_load(DIV_NUMER + 4, 4);
+    c[2] = khdays_io_load(DIV_NUMER + 8, 4);
+    c[3] = khdays_io_load(DIV_NUMER + 12, 4);
     {
-        const u16 divcnt = REG_DIVCNT;
-        c[4] = REG_SQRT_PARAM[0];
-        c[5] = REG_SQRT_PARAM[1];
+        const u16 divcnt = (u16)khdays_io_load(DIVCNT, 2);
+        c[4] = khdays_io_load(SQRT_PARAM, 4);
+        c[5] = khdays_io_load(SQRT_PARAM + 4, 4);
         ((u16 *)pContext)[0x18 / 2] = (u16)(divcnt & 3);
-        ((u16 *)pContext)[0x1a / 2] = (u16)(REG_SQRTCNT & 1);
+        ((u16 *)pContext)[0x1a / 2] = (u16)(khdays_io_load(SQRTCNT, 2) & 1);
     }
 }
 
@@ -70,12 +74,12 @@ void CP_SaveContext(void *pContext)
 void CPi_RestoreContext(const void *pContext)
 {
     const u32 *c = (const u32 *)pContext;
-    REG_DIV_NUMER[0] = c[0];
-    REG_DIV_NUMER[1] = c[1];
-    REG_DIV_NUMER[2] = c[2];
-    REG_DIV_NUMER[3] = c[3];
-    REG_DIVCNT = ((const u16 *)pContext)[0x18 / 2];
-    REG_SQRTCNT = ((const u16 *)pContext)[0x1a / 2];
-    REG_SQRT_PARAM[0] = c[4];
-    REG_SQRT_PARAM[1] = c[5];
+    khdays_io_store(DIV_NUMER, 4, c[0]);
+    khdays_io_store(DIV_NUMER + 4, 4, c[1]);
+    khdays_io_store(DIV_NUMER + 8, 4, c[2]);
+    khdays_io_store(DIV_NUMER + 12, 4, c[3]);
+    khdays_io_store(DIVCNT, 2, ((const u16 *)pContext)[0x18 / 2]);
+    khdays_io_store(SQRTCNT, 2, ((const u16 *)pContext)[0x1a / 2]);
+    khdays_io_store(SQRT_PARAM, 4, c[4]);
+    khdays_io_store(SQRT_PARAM + 4, 4, c[5]);
 }
