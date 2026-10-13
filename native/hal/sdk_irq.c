@@ -28,8 +28,9 @@ static u32 io_read32(u32 offset)
 #define REG_IME (io_read32(OFFSET_IME))
 #define REG_IE  (io_read32(OFFSET_IE))
 #define REG_IF  (io_read32(OFFSET_IF))
-/* The acknowledge is a write with side effects: it stays a real store. */
-#define REG_IF_ACK (*(volatile u32 *)(IO_BASE + OFFSET_IF))
+/* The acknowledge is a write with side effects (write-one-to-clear): the
+ * register model's store, which applies them, without the fault. */
+#define REG_IF_ACK(bits) khdays_io_store(IO_BASE + OFFSET_IF, 4, (bits))
 
 /* OS_IRQTable: one handler per IE bit, at the start of the DTCM. */
 #define OS_IRQ_TABLE ((volatile u32 *)0x027e0000)
@@ -82,7 +83,7 @@ void func_01ff8148(void)
     while ((pending & (1u << index)) == 0) {
         ++index;
     }
-    REG_IF_ACK = 1u << index;  /* write-one-to-clear */
+    REG_IF_ACK(1u << index);
     ((void (*)(void))OS_IRQ_TABLE[index])();
     func_01ff81a0();
 }
