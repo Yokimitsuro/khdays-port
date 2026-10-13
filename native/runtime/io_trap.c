@@ -12,6 +12,7 @@
  * form is added from evidence, not assumed. */
 #include "../hal/hal.h"
 #include "io.h"
+#include "runtime.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -306,7 +307,44 @@ static u32 fault_counts[IO_SLOTS];
 static u32 fault_total;
 static DWORD profile_since;
 
-static void count_fault(u32 address)
+/* Which instructions fault: a small open-addressed table of code address ->
+ * count, the busiest named through the PDB in each report. */
+#define SITE_SLOTS 1024
+static struct {
+    u32 code;
+    u32 count;
+} sites[SITE_SLOTS];
+
+static void count_site(u32 code)
+{
+    u32 slot = (code * 2654435761u) % SITE_SLOTS;
+    for (u32 probe = 0; probe < SITE_SLOTS; ++probe, slot = (slot + 1) % SITE_SLOTS) {
+        if (sites[slot].code == code || sites[slot].code == 0) {
+            sites[slot].code = code;
+            ++sites[slot].count;
+            return;
+        }
+    }
+}
+
+static void report_sites(void)
+{
+    fprintf(stderr, "io: fault sites:");
+    for (int n = 0; n < PROFILE_TOP; ++n) {
+        u32 best = 0;
+        for (u32 i = 1; i < SITE_SLOTS; ++i) {
+            if (sites[i].count > sites[best].count) best = i;
+        }
+        if (sites[best].count == 0) break;
+        fprintf(stderr, " %s+%08x:%u", khdays_diag_name((const void *)(size_t)sites[best].code),
+                sites[best].code, sites[best].count);
+        sites[best].count = 0;
+    }
+    fprintf(stderr, "\n");
+    memset(sites, 0, sizeof(sites));
+}
+
+static void count_fault(u32 address, u32 code)
 {
     const u32 offset = address - KHDAYS_IO_BASE;
     DWORD now;
@@ -314,6 +352,7 @@ static void count_fault(u32 address)
     if (offset / 2 < IO_SLOTS) {
         ++fault_counts[offset / 2];
     }
+    count_site(code);
     now = GetTickCount();
     if (now - profile_since < PROFILE_SECONDS * 1000) {
         return;
@@ -329,6 +368,7 @@ static void count_fault(u32 address)
         fault_counts[best] = 0;
     }
     fprintf(stderr, "\n");
+    report_sites();
     memset(fault_counts, 0, sizeof(fault_counts));
     fault_total = 0;
     profile_since = now;
@@ -347,7 +387,7 @@ static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
             return EXCEPTION_CONTINUE_SEARCH;
         }
         if (profile) {
-            count_fault(address);
+            count_fault(address, (u32)context->Eip);
         }
         if (pending.active) {
             /* One instruction touching two I/O pages (movs between them). */

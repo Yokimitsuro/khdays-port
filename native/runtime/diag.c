@@ -379,6 +379,12 @@ static const char *symbol_name(const void *address)
     return "?";
 }
 
+/* The same lookup for other modules' reports (io_trap.c's fault sites). */
+const char *khdays_diag_name(const void *address)
+{
+    return symbol_name(address);
+}
+
 /* KHDAYS_TRACE_SCRIPT: each step of the action-script interpreter
  * (src/calls/func_02020e58.c) that differs from the last one it reported:
  * the entry's command (opcode, sub-op, length word), its action slot and its
