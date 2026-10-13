@@ -182,6 +182,18 @@ HOOKS = {
         "    cur = st + 4 + *(int *)(st + 0x124) * 0x48;\n"
         "    { extern void khdays_trace_script(void *st, void *entry); khdays_trace_script(st, cur); }\n",
     ),
+    # MobiClip's playback loop spins until the decoder's streams drain; each
+    # pass does whatever work the card DMA and frame-timer interrupts made
+    # ready, then reads KEYINPUT for a Start skip. On the DS the spin is idle
+    # time; natively each pass was a trapped register read, ~160,000 a second,
+    # which starved the decoder (movies and the field crawled). Waiting for
+    # the next interrupt at the end of each pass is what the spin amounts to.
+    "ov024@02082f04": (  # Ov024_MobiClip_UpdatePlayback
+        "            }\n        }\n\n    drain:",
+        "            }\n"
+        "            { extern void khdays_runtime_wait(void); khdays_runtime_wait(); }\n"
+        "        }\n\n    drain:",
+    ),
 }
 
 

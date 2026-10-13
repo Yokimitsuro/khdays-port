@@ -296,6 +296,44 @@ static void fatal_instruction(const u8 *code, u32 address)
 
 void khdays_async_irq_undo(CONTEXT *context, const void *address);
 
+/* KHDAYS_PROFILE: faults per I/O halfword, the busiest reported every
+ * PROFILE_SECONDS of host time (what the trap costs, and where). */
+#define PROFILE_SECONDS 5
+#define PROFILE_TOP 8
+#define IO_SLOTS (0x1100 / 2)  /* 0x04000000-0x040010ff, halfword granularity */
+static int profile;
+static u32 fault_counts[IO_SLOTS];
+static u32 fault_total;
+static DWORD profile_since;
+
+static void count_fault(u32 address)
+{
+    const u32 offset = address - KHDAYS_IO_BASE;
+    DWORD now;
+    ++fault_total;
+    if (offset / 2 < IO_SLOTS) {
+        ++fault_counts[offset / 2];
+    }
+    now = GetTickCount();
+    if (now - profile_since < PROFILE_SECONDS * 1000) {
+        return;
+    }
+    fprintf(stderr, "io: %u faults in %d s; busiest:", fault_total, PROFILE_SECONDS);
+    for (int n = 0; n < PROFILE_TOP; ++n) {
+        u32 best = 0;
+        for (u32 i = 1; i < IO_SLOTS; ++i) {
+            if (fault_counts[i] > fault_counts[best]) best = i;
+        }
+        if (fault_counts[best] == 0) break;
+        fprintf(stderr, " %08x:%u", KHDAYS_IO_BASE + best * 2, fault_counts[best]);
+        fault_counts[best] = 0;
+    }
+    fprintf(stderr, "\n");
+    memset(fault_counts, 0, sizeof(fault_counts));
+    fault_total = 0;
+    profile_since = now;
+}
+
 static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
 {
     EXCEPTION_RECORD *record = info->ExceptionRecord;
@@ -307,6 +345,9 @@ static LONG CALLBACK io_handler(EXCEPTION_POINTERS *info)
         const u32 address = (u32)record->ExceptionInformation[1];
         if (!is_io(address)) {
             return EXCEPTION_CONTINUE_SEARCH;
+        }
+        if (profile) {
+            count_fault(address);
         }
         if (pending.active) {
             /* One instruction touching two I/O pages (movs between them). */
@@ -354,6 +395,8 @@ void khdays_io_trap_init(void)
     DWORD old;
     const char *setting = getenv("KHDAYS_IO_STEP");
     step_only = setting != NULL && atoi(setting) != 0;
+    profile = getenv("KHDAYS_PROFILE") != NULL;
+    profile_since = GetTickCount();
     AddVectoredExceptionHandler(1, io_handler);
     VirtualProtect((void *)KHDAYS_IO_BASE, KHDAYS_IO_SIZE, PAGE_NOACCESS, &old);
     VirtualProtect((void *)KHDAYS_IO2_BASE, KHDAYS_IO2_SIZE, PAGE_NOACCESS, &old);
