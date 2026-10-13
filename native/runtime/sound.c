@@ -19,7 +19,17 @@
  * mixer runs faster inside the chip (1.04876 MHz), but GBATEK does not say
  * how the PWM takes its value from it, so the channels are read as each
  * output sample is due. The capture units are not modelled: a capture that
- * starts is reported. */
+ * starts is reported.
+ *
+ * A channel takes its sample data through a FIFO of 32 bytes, as melonDS
+ * models it (GBATEK does not describe it): two 4-word bursts are fetched
+ * at the start, and another whenever 16
+ * bytes or fewer are left, so memory is read up to 32 bytes ahead of what
+ * plays. It matters to a stream: the game refills each block of its ring
+ * buffer as an alarm says the block has played, which on this timing is a
+ * couple of samples before the last of it does; through the FIFO those
+ * samples were already fetched, read straight from memory they were
+ * overwritten -- single-sample clicks in the title music's left channel. */
 #include "sound.h"
 #include "../host/host.h"
 
@@ -33,6 +43,12 @@
 enum { PCM8, PCM16, ADPCM, PSG };
 enum { MANUAL, LOOP, ONE_SHOT };
 
+#define FIFO_BYTES 32
+#define FIFO_BURST_BYTES 16  /* a fetch, and the level at or below which one is made */
+/* Word slots: the FIFO's 8 and one for the word being read, whose used
+ * bytes the hardware has already freed. */
+#define FIFO_SLOTS (FIFO_BYTES / 4 + 1)
+
 typedef struct Channel {
     u32 sad, pnt, len;  /* as they were when the channel started */
     int busy;           /* the status bit */
@@ -44,6 +60,11 @@ typedef struct Channel {
     s32 loop_pcm, loop_index;
     int loop_saved;
     u32 noise;
+    /* The data FIFO: up to 8 words, each with its byte offset from SAD,
+     * the oldest at `fifo_head`; `fetch` is the offset of the next word. */
+    u32 fifo[FIFO_SLOTS], fifo_offset[FIFO_SLOTS];
+    int fifo_head, fifo_count;
+    u32 fetch;
 } Channel;
 
 static u8 regs[REG_SIZE];
@@ -104,6 +125,51 @@ static u32 control(int n)
     return REG32(n * 16);
 }
 
+/* One burst into the FIFO: up to 4 words from the fetch offset; at the end
+ * of the sound it goes on from the loop start, or (one-shot) stops. */
+static void fifo_fetch(int n)
+{
+    Channel *c = &channels[n];
+    const u32 total = (c->pnt + c->len) * 4;
+    if (c->fetch >= total) {
+        if (((control(n) >> 27) & 3) != LOOP) {
+            return;
+        }
+        c->fetch = c->pnt * 4;
+    }
+    for (u32 i = 0; i < FIFO_BURST_BYTES && c->fetch < total; i += 4) {
+        const u8 *data = memory(c->sad + c->fetch, n);
+        const int slot = (c->fifo_head + c->fifo_count) % FIFO_SLOTS;
+        c->fifo[slot] = data != NULL ? *(const u32 *)data : 0;
+        c->fifo_offset[slot] = c->fetch;
+        ++c->fifo_count;
+        c->fetch += 4;
+    }
+}
+
+/* The data word holding the `size` bytes at `offset` of the sound, as the
+ * FIFO has it: the words before it are used up, and once these bytes are
+ * taken, a burst follows if 16 bytes or fewer remain. */
+static u32 fifo_word(int n, u32 offset, u32 size)
+{
+    Channel *c = &channels[n];
+    u32 word;
+    while (c->fifo_count > 0 && c->fifo_offset[c->fifo_head] != (offset & ~3u)) {
+        c->fifo_head = (c->fifo_head + 1) % FIFO_SLOTS;
+        --c->fifo_count;
+    }
+    if (c->fifo_count == 0) {
+        const u8 *data = memory(c->sad + (offset & ~3u), n);
+        report("a sample the FIFO did not hold, read from memory", n);
+        return data != NULL ? *(const u32 *)data : 0;
+    }
+    word = c->fifo[c->fifo_head];
+    if ((u32)c->fifo_count * 4 - ((offset & 3) + size) <= FIFO_BURST_BYTES) {
+        fifo_fetch(n);
+    }
+    return word;
+}
+
 static void set_busy(int n, int busy)
 {
     channels[n].busy = busy;
@@ -154,6 +220,10 @@ static void start(int n)
         /* GBATEK: under 4 words the channel hangs, busy, with no output. */
         report("a sound shorter than 4 words (hangs, as on the DS)", n);
     }
+    c->fifo_head = c->fifo_count = 0;
+    c->fetch = 0;
+    fifo_fetch(n);
+    fifo_fetch(n);
     if (format == ADPCM) {
         const u8 *header = memory(c->sad, n);
         const u32 word = header != NULL ? *(const u32 *)header : 0;
@@ -197,7 +267,7 @@ static void advance(int n)
     const u32 format = (cnt >> 29) & 3;
     const u32 per_word = format == PCM8 ? 4 : format == PCM16 ? 2 : 8;
     s32 total, loop_start;
-    const u8 *data;
+    u32 offset;
 
     ++c->position;
     if (format == PSG) {
@@ -249,16 +319,16 @@ static void advance(int n)
     }
     switch (format) {
     case PCM8:
-        data = memory(c->sad + (u32)c->position, n);
-        c->sample = data != NULL ? (s32)(s8)*data * 256 : 0;
+        offset = (u32)c->position;
+        c->sample = (s32)(s8)(fifo_word(n, offset, 1) >> ((offset & 3) * 8)) * 256;
         break;
     case PCM16:
-        data = memory(c->sad + (u32)c->position * 2, n);
-        c->sample = data != NULL ? (s32)*(const s16 *)data : 0;
+        offset = (u32)c->position * 2;
+        c->sample = (s32)(s16)(fifo_word(n, offset, 2) >> ((offset & 3) * 8));
         break;
     default:
-        data = memory(c->sad + ((u32)c->position >> 1), n);
-        c->sample = data != NULL ? adpcm_step(c, (*data >> ((c->position & 1) * 4)) & 0xf) : c->pcm;
+        offset = (u32)c->position >> 1;
+        c->sample = adpcm_step(c, (fifo_word(n, offset, 1) >> ((offset & 3) * 8 + (c->position & 1) * 4)) & 0xf);
         break;
     }
 }
