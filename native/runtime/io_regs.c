@@ -214,6 +214,14 @@ void khdays_io_store(u32 address, int size, u32 value)
     khdays_io_write(address, size, before);
 }
 
+u32 khdays_io_load(u32 address, int size)
+{
+    u32 value = 0;
+    khdays_io_read(address, size);
+    memcpy(&value, host_address(address), (size_t)size);
+    return value;
+}
+
 /* Where a DMA access lands. DMA is on the system bus, which does not see the
  * CPU's TCMs: below main RAM there is nothing (0), and at the DTCM's address
  * it reaches the main RAM mirror underneath (0x027e0000 -> 0x023e0000). */

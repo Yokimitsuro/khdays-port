@@ -62,6 +62,20 @@ void MIi_CpuCopy32(const void *src, void *dest, u32 size)
 {
     const volatile u32 *s = (const volatile u32 *)bios_readable(src, size);
     volatile u32 *d = (volatile u32 *)dest;
+    /* A side in the I/O region (a matrix sent to the geometry FIFO, 64
+     * bytes at a time): word by word through the register model, without
+     * the trap's fault per word. */
+    if (khdays_io_is_register((u32)s) || khdays_io_is_register((u32)d)) {
+        for (u32 i = 0; i < size / 4; ++i) {
+            const u32 value = khdays_io_is_register((u32)&s[i]) ? khdays_io_load((u32)&s[i], 4) : s[i];
+            if (khdays_io_is_register((u32)&d[i])) {
+                khdays_io_store((u32)&d[i], 4, value);
+            } else {
+                d[i] = value;
+            }
+        }
+        return;
+    }
     for (u32 i = 0; i < size / 4; ++i) {
         d[i] = s[i];
     }
