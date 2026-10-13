@@ -205,10 +205,18 @@ int khdays_io_is_register(u32 address)
     return is_io_address(address);
 }
 
+/* The game's rewritten accesses (compat/decomp_compat.h). A pointer variable
+ * prepare.py follows can be moved off the registers; there the access is the
+ * plain memory access it always was. */
 void khdays_io_set(u32 address, int size, u64 value)
 {
     u8 before[8];
-    u8 *host = host_address(address);
+    u8 *host;
+    if (!is_io_address(address)) {
+        memcpy((void *)(size_t)address, &value, (size_t)size);
+        return;
+    }
+    host = host_address(address);
     memcpy(before, host, (size_t)size);
     memcpy(host, &value, (size_t)size);
     khdays_io_write(address, size, before);
@@ -217,6 +225,10 @@ void khdays_io_set(u32 address, int size, u64 value)
 u64 khdays_io_get(u32 address, int size)
 {
     u64 value = 0;
+    if (!is_io_address(address)) {
+        memcpy(&value, (const void *)(size_t)address, (size_t)size);
+        return value;
+    }
     khdays_io_read(address, size);
     memcpy(&value, host_address(address), (size_t)size);
     return value;

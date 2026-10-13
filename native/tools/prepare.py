@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import abi_repair  # noqa: E402
 import io_access  # noqa: E402
+import io_pointers  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 DECOMP = ROOT / "external" / "khdays-decomp"
@@ -490,6 +491,7 @@ def transform(text: str) -> str:
     text = DEF_HEADER.sub(name_unnamed_params, text)
     text = widen_narrow_returns(text)
     text = io_access.rewrite(text, register_macros())
+    text = io_pointers.rewrite(text)
     return text
 
 

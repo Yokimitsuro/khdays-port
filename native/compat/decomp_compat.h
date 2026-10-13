@@ -66,6 +66,10 @@ void khdays_io_set(unsigned int address, int size, unsigned long long value);
 #define KHDAYS_IO_GET(type, address) ((type)khdays_io_get((address), (int)sizeof(type)))
 #define KHDAYS_IO_SET(type, address, value) \
     khdays_io_set((address), (int)sizeof(type), (unsigned long long)(type)(value))
+/* A member of a register block a pointer variable names (io_pointers.py):
+ * its address and size, never its value, are taken from the lvalue. */
+#define KHDAYS_IO_SET_LV(lvalue, value) \
+    khdays_io_set((unsigned int)&(lvalue), (int)sizeof(lvalue), (unsigned long long)(value))
 
 /* `*(T (*)[n])dst = *(T (*)[n])src;` -- a whole-array assignment mwcc accepts
  * (prepare.py rewrites it to this). */
