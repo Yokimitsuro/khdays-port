@@ -487,6 +487,7 @@ def transform(text: str) -> str:
     text = ZERO_MEMBER.sub(drop_zero, text)
     text = DEF_HEADER.sub(name_unnamed_params, text)
     text = widen_narrow_returns(text)
+    text = name_anonymous_objects(text)
     return text
 
 
@@ -604,6 +605,34 @@ def definitions(text: str) -> list[re.Match]:
             continue
         out.append(m)
     return out
+
+
+ANONYMOUS_OBJECT_RE = re.compile(r"^((?:const[ \t]+)?)(struct|union)[ \t]*\{", re.MULTILINE)
+ANONYMOUS_OBJECT_NAME_RE = re.compile(r"\s*([A-Za-z_]\w*)\s*(?:\[[^\]\n]*\]\s*)*(?:=|;)")
+
+
+def name_anonymous_objects(text: str) -> str:
+    """A file-scope object of an unnamed struct or union type
+    (`struct { ... } data_x = { ... };`) gets a named type first, so the
+    passes that find definitions by the name before their declarator see it:
+    otherwise it is never placed at its DS address, and code that reaches it
+    from a neighbouring table reads the ROM's bytes there."""
+    for m in reversed(list(ANONYMOUS_OBJECT_RE.finditer(text))):
+        changes = brace_depths(text)
+        starts = [i for i, _ in changes]
+        if changes[bisect.bisect_right(starts, m.start()) - 1][1] != 0:
+            continue
+        open_at = m.end() - 1
+        close_at = next((i - 1 for i, depth in changes if i > open_at and depth == 0), None)
+        if close_at is None:
+            continue
+        name = ANONYMOUS_OBJECT_NAME_RE.match(text, close_at + 1)
+        if name is None:
+            continue
+        type_name = f"{name[1]}__khdays_type"
+        text = (text[:m.start()] + f"typedef {m[2]} {text[open_at:close_at + 1]} {type_name};\n"
+                f"{m[1]}{type_name}" + text[close_at + 1:])
+    return text
 
 
 def statement_end(text: str, start: int) -> int:
