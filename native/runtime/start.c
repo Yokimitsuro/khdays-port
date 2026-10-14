@@ -13,6 +13,7 @@
 #include "../host/host.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <windows.h>
 
 extern void khdays_NitroMain(void);  /* the decomp's main, renamed at build */
@@ -48,6 +49,42 @@ static void load_static_module(void)
     const u32 ram = *(const u32 *)(header + 0x28);
     const u32 size = *(const u32 *)(header + 0x2c);
     khdays_rom_read(rom, (u8 *)ram, size);
+}
+
+/* A US card's static module (game code YKGE) is the EU one the decomp is,
+ * with a few functions changed: from the EU build's 0x02000c40 on, it sits
+ * 0x20 lower. What the build runs from the image (prepare.py's rom_code.txt:
+ * the SHA-1 block transform, a quicksort) is at its EU address, so once crt0
+ * is done with the card's own layout (autoload, BSS) the image moves up to
+ * it. Those routines are the same bytes in both releases and only reach
+ * code and constants relative to themselves.
+ *
+ * The compiled code also reads two tables of function pointers out of the
+ * ITCM image (NNSi_G3dSendTexMtxMode0/2: the texture-matrix builders), and
+ * there a US card holds the US addresses of the main module's functions;
+ * they move up the same 0x20, to the functions the build knows. */
+#define US_GAME_CODE "YKGE"
+#define US_SHIFT_FROM 0x02000c20u  /* the card's address of the EU 0x02000c40 */
+#define US_SHIFT 0x20u
+#define TEX_MTX_BUILDERS 8
+static const u32 tex_mtx_builder_tables[] = {0x01ffa1f8u, 0x01ffa598u};
+
+static void move_us_image(void)
+{
+    const u8 *header = khdays_rom_header();
+    const u32 image_end = MODULE_PARAMS[3];  /* the static BSS starts where the image ends */
+    if (memcmp(header + 0x0c, US_GAME_CODE, 4) != 0) {
+        return;
+    }
+    memmove((void *)(US_SHIFT_FROM + US_SHIFT), (const void *)US_SHIFT_FROM, image_end - US_SHIFT_FROM);
+    for (int t = 0; t < (int)(sizeof(tex_mtx_builder_tables) / sizeof(tex_mtx_builder_tables[0])); ++t) {
+        volatile u32 *builder = (volatile u32 *)tex_mtx_builder_tables[t];
+        for (int i = 0; i < TEX_MTX_BUILDERS; ++i) {
+            if (builder[i] >= US_SHIFT_FROM && builder[i] < image_end) {
+                builder[i] += US_SHIFT;
+            }
+        }
+    }
 }
 
 /* crt0's do_autoload (func_020009fc): copy each autoload block (ITCM, DTCM)
@@ -128,6 +165,7 @@ int main(int argc, char **argv)
     }
     autoload();
     clear32(0, MODULE_PARAMS[3], MODULE_PARAMS[4] - MODULE_PARAMS[3]);
+    move_us_image();
     /* The native data of the static module, ITCM and DTCM, over their image. */
     khdays_data_init(-1);
     khdays_data_init(-2);
