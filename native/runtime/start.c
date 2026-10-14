@@ -62,7 +62,11 @@ static void load_static_module(void)
  * The compiled code also reads two tables of function pointers out of the
  * ITCM image (NNSi_G3dSendTexMtxMode0/2: the texture-matrix builders), and
  * there a US card holds the US addresses of the main module's functions;
- * they move up the same 0x20, to the functions the build knows. */
+ * they move up the same 0x20, to the functions the build knows.
+ *
+ * The offset was measured on one US dump; the check is the game code alone,
+ * so another US revision would pass it and would need its own comparison. */
+#define HEADER_GAME_CODE 0x0c  /* the cartridge header's 4-byte game code */
 #define US_GAME_CODE "YKGE"
 #define US_SHIFT_FROM 0x02000c20u  /* the card's address of the EU 0x02000c40 */
 #define US_SHIFT 0x20u
@@ -73,7 +77,7 @@ static void move_us_image(void)
 {
     const u8 *header = khdays_rom_header();
     const u32 image_end = MODULE_PARAMS[3];  /* the static BSS starts where the image ends */
-    if (memcmp(header + 0x0c, US_GAME_CODE, 4) != 0) {
+    if (memcmp(header + HEADER_GAME_CODE, US_GAME_CODE, 4) != 0) {
         return;
     }
     memmove((void *)(US_SHIFT_FROM + US_SHIFT), (const void *)US_SHIFT_FROM, image_end - US_SHIFT_FROM);

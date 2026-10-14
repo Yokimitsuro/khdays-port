@@ -1181,11 +1181,10 @@ def main() -> int:
         ds_path.write_text(ds_text, encoding="utf-8", newline="\n")
 
     # Each overlay's load address and static-initialiser range as the compiled
-    # code has them (the decomp's EU layout). runtime/rom.cpp writes these over
-    # the cartridge's overlay table, so a US card, whose overlays all sit 0x20
-    # lower, starts the overlays this build contains. The load address is the
-    # first section (ov108-ov113 have no .text), and the table's initialiser
-    # range ends one pointer past .ctor, at the list's null terminator.
+    # code has them, for runtime/rom.cpp (which says why). The load address is
+    # the first section (ov108-ov113 have no .text), and the table's
+    # initialiser range ends one pointer past .ctor, at the list's null
+    # terminator.
     layout = sorted((int(m.name[2:]), min(start for start, _ in m.sections.values()),
                      m.sections[".ctor"][0], m.sections[".ctor"][1] + CTOR_TERMINATOR_SIZE)
                     for m in modules if m.name.startswith("ov"))
