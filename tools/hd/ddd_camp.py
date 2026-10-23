@@ -808,7 +808,7 @@ def main() -> int:
         data = found[0].parent
     font = ng.Font(args.ddd / "original" / ng.FONT, sorted((args.ddd / "remastered" / ng.FONT).glob("US_*.png")))
     mod = tt.ROOT / "mods" / args.mod / "layouts"
-    for lang in args.lang:
+    for lang in tt.skip_missing_languages(data, args.lang):
         print(f"{lang}: camp {make(args.ddd, args.mare, args.settings, data, lang, mod, font)}")
     return 0
 

@@ -66,6 +66,33 @@ static void load_static_module(void)
     khdays_rom_read(rom, (u8 *)KHDAYS_W(ram), size);
 }
 
+/* The ITCM image's two tables of the texture-matrix builders (NNSi_G3dSendTexMtxMode0/2 call through
+ * them), which on a US card name the main module's functions by their US addresses. */
+#define TEX_MTX_BUILDERS 8
+static const u32 tex_mtx_builder_tables[] = {0x01ffa1f8u, 0x01ffa598u};
+
+/* A US card's static module up to the EU build's addresses (rom.h), once crt0 has autoloaded and
+ * cleared the BSS by the card's own layout: the native data initializers then go over the image as
+ * on an EU card, and what is read from it (the static initializers' list) is where the build has it.
+ * The builder tables' main-module entries move with it. */
+static void move_us_image(void)
+{
+    const u32 image_end = MODULE_PARAMS[3]; /* the static BSS starts where the image ends */
+    if (!khdays_rom_is_us()) {
+        return;
+    }
+    memmove((void *)KHDAYS_W(KHDAYS_US_SHIFT_FROM + KHDAYS_US_SHIFT), (const void *)KHDAYS_W(KHDAYS_US_SHIFT_FROM),
+            image_end - KHDAYS_US_SHIFT_FROM);
+    for (size_t t = 0; t < sizeof(tex_mtx_builder_tables) / sizeof(tex_mtx_builder_tables[0]); ++t) {
+        volatile u32 *builder = (volatile u32 *)KHDAYS_W(tex_mtx_builder_tables[t]);
+        for (int i = 0; i < TEX_MTX_BUILDERS; ++i) {
+            if (builder[i] >= KHDAYS_US_SHIFT_FROM && builder[i] < image_end) {
+                builder[i] += KHDAYS_US_SHIFT;
+            }
+        }
+    }
+}
+
 /* crt0's do_autoload (func_020009fc): copy each autoload block (ITCM, DTCM)
  * from the static module to its address and clear the BSS after it. */
 static void autoload(void)
@@ -251,6 +278,7 @@ static void run_game(void *reset)
     }
     autoload();
     clear32(0, MODULE_PARAMS[3], MODULE_PARAMS[4] - MODULE_PARAMS[3]);
+    move_us_image();
     /* The native data of the static module, ITCM and DTCM, over their image. */
     khdays_data_init(-1);
     khdays_data_init(-2);

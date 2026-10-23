@@ -63,6 +63,22 @@ LANGUAGES = {
     ),
 }
 
+
+def cart_languages(data: Path, wanted) -> list[str]:
+    """The languages of `wanted` the cart has text for: a European cart all five, a North American
+    one English and French (each has its theater strings, UI/thr/thr_<lang>.s.z)."""
+    return [lang for lang in wanted if (data / "nitrofs" / "UI" / "thr" / f"thr_{lang}.s.z").is_file()]
+
+
+def skip_missing_languages(data: Path, wanted) -> list[str]:
+    """`wanted` less the languages the cart lacks, each one left out said."""
+    have = cart_languages(data, wanted)
+    for lang in wanted:
+        if lang not in have:
+            print(f"{lang}: not on this cart, left out")
+    return have
+
+
 # Layout 113, the theater's main menu: its option nodes top to bottom with their word parts, the nodes
 # of the entries under its options, and the controls that draw an option selected (0) and not (3); its
 # groups appear with control 1 and stand still with 0 (docs/HD_SCREENS.md, "The title").

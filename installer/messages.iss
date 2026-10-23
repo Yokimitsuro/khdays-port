@@ -2,11 +2,11 @@
 ; translations).
 
 [Messages]
-en.WelcomeLabel2=This installs a PC port of KINGDOM HEARTS 358/2 Days.%n%nYou need your own copy of the game: the installer asks for its ROM (358/2 Days, Europe) and prepares the game from it on this computer. KINGDOM HEARTS HD 1.5+2.5 ReMIX and HD 2.8 Final Chapter Prologue are optional, for the HD menus and videos.
-es.WelcomeLabel2=Esto instala un port para PC de KINGDOM HEARTS 358/2 Days.%n%nNecesitas tu propia copia del juego: el instalador pide su ROM (358/2 Days, Europa) y prepara el juego a partir de ella en este ordenador. KINGDOM HEARTS HD 1.5+2.5 ReMIX y HD 2.8 Final Chapter Prologue son opcionales, para los menús y vídeos HD.
-fr.WelcomeLabel2=Ceci installe un portage PC de KINGDOM HEARTS 358/2 Days.%n%nIl vous faut votre propre copie du jeu : l'installateur demande sa ROM (358/2 Days, Europe) et prépare le jeu à partir d'elle sur cet ordinateur. KINGDOM HEARTS HD 1.5+2.5 ReMIX et HD 2.8 Final Chapter Prologue sont facultatifs, pour les menus et vidéos HD.
-de.WelcomeLabel2=Dies installiert eine PC-Portierung von KINGDOM HEARTS 358/2 Days.%n%nDu brauchst deine eigene Kopie des Spiels: Das Installationsprogramm fragt nach ihrem ROM (358/2 Days, Europa) und bereitet das Spiel daraus auf diesem Computer vor. KINGDOM HEARTS HD 1.5+2.5 ReMIX und HD 2.8 Final Chapter Prologue sind optional, für die HD-Menüs und -Videos.
-it.WelcomeLabel2=Questo installa un port per PC di KINGDOM HEARTS 358/2 Days.%n%nServe la tua copia del gioco: l'installazione chiede la sua ROM (358/2 Days, Europa) e prepara il gioco da essa su questo computer. KINGDOM HEARTS HD 1.5+2.5 ReMIX e HD 2.8 Final Chapter Prologue sono facoltativi, per i menu e i video HD.
+en.WelcomeLabel2=This installs a PC port of KINGDOM HEARTS 358/2 Days.%n%nYou need your own copy of the game: the installer asks for its ROM (358/2 Days, Europe or North America) and prepares the game from it on this computer. KINGDOM HEARTS HD 1.5+2.5 ReMIX and HD 2.8 Final Chapter Prologue are optional, for the HD menus and videos.
+es.WelcomeLabel2=Esto instala un port para PC de KINGDOM HEARTS 358/2 Days.%n%nNecesitas tu propia copia del juego: el instalador pide su ROM (358/2 Days, Europa o Norteamérica) y prepara el juego a partir de ella en este ordenador. KINGDOM HEARTS HD 1.5+2.5 ReMIX y HD 2.8 Final Chapter Prologue son opcionales, para los menús y vídeos HD.
+fr.WelcomeLabel2=Ceci installe un portage PC de KINGDOM HEARTS 358/2 Days.%n%nIl vous faut votre propre copie du jeu : l'installateur demande sa ROM (358/2 Days, Europe ou Amérique du Nord) et prépare le jeu à partir d'elle sur cet ordinateur. KINGDOM HEARTS HD 1.5+2.5 ReMIX et HD 2.8 Final Chapter Prologue sont facultatifs, pour les menus et vidéos HD.
+de.WelcomeLabel2=Dies installiert eine PC-Portierung von KINGDOM HEARTS 358/2 Days.%n%nDu brauchst deine eigene Kopie des Spiels: Das Installationsprogramm fragt nach ihrem ROM (358/2 Days, Europa oder Nordamerika) und bereitet das Spiel daraus auf diesem Computer vor. KINGDOM HEARTS HD 1.5+2.5 ReMIX und HD 2.8 Final Chapter Prologue sind optional, für die HD-Menüs und -Videos.
+it.WelcomeLabel2=Questo installa un port per PC di KINGDOM HEARTS 358/2 Days.%n%nServe la tua copia del gioco: l'installazione chiede la sua ROM (358/2 Days, Europa o Nord America) e prepara il gioco da essa su questo computer. KINGDOM HEARTS HD 1.5+2.5 ReMIX e HD 2.8 Final Chapter Prologue sono facoltativi, per i menu e i video HD.
 
 [CustomMessages]
 en.StartPort=Start the port
@@ -27,11 +27,11 @@ fr.RomPageDescription=Le portage est fait à partir de votre propre copie du jeu
 de.RomPageDescription=Die Portierung entsteht aus deiner eigenen Kopie des Spiels.
 it.RomPageDescription=Il port nasce dalla tua copia del gioco.
 
-en.RomPageText=Choose the ROM file of your KINGDOM HEARTS 358/2 Days cartridge (Europe). It is checked before going on, and read only.
-es.RomPageText=Elige el archivo ROM de tu cartucho de KINGDOM HEARTS 358/2 Days (Europa). Se comprueba antes de seguir y sólo se lee.
-fr.RomPageText=Choisissez le fichier ROM de votre cartouche KINGDOM HEARTS 358/2 Days (Europe). Il est vérifié avant de continuer, et seulement lu.
-de.RomPageText=Wähle die ROM-Datei deines Moduls KINGDOM HEARTS 358/2 Days (Europa). Sie wird vor dem Weitergehen geprüft und nur gelesen.
-it.RomPageText=Scegli il file ROM della tua cartuccia di KINGDOM HEARTS 358/2 Days (Europa). Viene controllato prima di proseguire, e solo letto.
+en.RomPageText=Choose the ROM file of your KINGDOM HEARTS 358/2 Days cartridge (Europe or North America). It is checked before going on, and read only.
+es.RomPageText=Elige el archivo ROM de tu cartucho de KINGDOM HEARTS 358/2 Days (Europa o Norteamérica). Se comprueba antes de seguir y sólo se lee.
+fr.RomPageText=Choisissez le fichier ROM de votre cartouche KINGDOM HEARTS 358/2 Days (Europe ou Amérique du Nord). Il est vérifié avant de continuer, et seulement lu.
+de.RomPageText=Wähle die ROM-Datei deines Moduls KINGDOM HEARTS 358/2 Days (Europa oder Nordamerika). Sie wird vor dem Weitergehen geprüft und nur gelesen.
+it.RomPageText=Scegli il file ROM della tua cartuccia di KINGDOM HEARTS 358/2 Days (Europa o Nord America). Viene controllato prima di proseguire, e solo letto.
 
 en.RomFileLabel=ROM file:
 es.RomFileLabel=Archivo ROM:

@@ -87,8 +87,8 @@ build, macOS, Windows on ARM and the Nintendo Switch.
 ## Installing
 
 On Windows, the installer from the releases page is all you need besides your
-own copy of the game: it asks for your ROM (the European release of KINGDOM
-HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
+own copy of the game: it asks for your ROM (the European or North American
+release of KINGDOM HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
 KINGDOM HEARTS HD 1.5+2.5 ReMIX folder), prepares the game's data from it, and
 can also make the HD pack from your HD collections, add the port to Steam (PC
 and Steam Deck), and install the mod studio. Nothing of the game comes with

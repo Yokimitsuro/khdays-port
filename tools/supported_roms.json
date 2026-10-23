@@ -7,6 +7,13 @@
 	  "rom_version": 0,
 	  "sha256": "1ecf5e7a41a2ae48e7c5fd3f678e5a79e854d843f1a1fa3a952a41b14e51ec4f",
 	  "sha256_header_free": "d9e103c6ccd39d5b91e44d865983badc5e2af1674db404b3768557712038a373"
+	},
+	{
+	  "name": "358/2 DAYS (USA)",
+	  "game_code": "YKGE",
+	  "rom_version": 0,
+	  "sha256": "3cbbe3f15b49fc26f43edaf0050899b3cc1091a25e7a496373409c7c8c6fd0cb",
+	  "sha256_header_free": "f3ebe95bc6a4fb3b096cefc5cdb54147647889fa7f404818f91d1a226b35e34b"
 	}
   ]
 }

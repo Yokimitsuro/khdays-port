@@ -50,6 +50,33 @@ struct Blob {
     std::vector<u8> bytes;
 };
 std::vector<Blob> blobs; // arm9, arm7, overlay table, fnt
+constexpr int OVERLAY_TABLE_BLOB = 2;
+
+// The header's game code and ROM version of the US release whose layout rom.h describes.
+constexpr char US_GAME_CODE[] = "YKGE";
+constexpr u32 GAME_CODE_AT = 0x0c;
+constexpr u32 ROM_VERSION_AT = 0x1e;
+constexpr u8 US_ROM_VERSION = 0;
+bool us_card;
+
+// A US card's overlay table at the EU build's addresses: each 32-byte entry's RAM address and its
+// static initializers' start and end (fields 1, 4 and 5; an empty one stays 0). Its file id and
+// compressed size are the card's own.
+void move_us_overlay_table(std::vector<u8> &table)
+{
+    constexpr u32 ENTRY = 32;
+    constexpr int SHIFTED[] = {1, 4, 5};
+    for (size_t at = 0; at + ENTRY <= table.size(); at += ENTRY) {
+        for (const int field : SHIFTED) {
+            u32 value;
+            std::memcpy(&value, table.data() + at + 4 * field, 4);
+            if (value != 0) {
+                value += KHDAYS_US_SHIFT;
+                std::memcpy(table.data() + at + 4 * field, &value, 4);
+            }
+        }
+    }
+}
 
 struct GameFile {
     fs::path path; // resolved through the VFS
@@ -211,6 +238,8 @@ extern "C" int khdays_rom_init(void)
         fail("system/header.bin is not a 0x200-byte cartridge header (re-run the extractor)");
     }
     const auto field = [](u32 offset) { return le32(header.data() + offset); };
+    us_card =
+        std::memcmp(header.data() + GAME_CODE_AT, US_GAME_CODE, 4) == 0 && header[ROM_VERSION_AT] == US_ROM_VERSION;
 
     const struct {
         const char *name;
@@ -231,6 +260,9 @@ extern "C" int khdays_rom_init(void)
         regions.push_back({blob.start, blob.start + static_cast<u32>(blob.bytes.size()), SYSTEM_BLOB,
                            static_cast<int>(blobs.size())});
         blobs.push_back(std::move(blob));
+    }
+    if (us_card) {
+        move_us_overlay_table(blobs[OVERLAY_TABLE_BLOB].bytes);
     }
     fat = read_whole(system / "fat.bin");
     regions.push_back({field(0x48), field(0x48) + static_cast<u32>(fat.size()), FAT, 0});
@@ -302,6 +334,18 @@ extern "C" int khdays_rom_init(void)
 extern "C" const u8 *khdays_rom_header(void)
 {
     return header.data();
+}
+
+extern "C" int khdays_rom_is_us(void)
+{
+    return us_card ? 1 : 0;
+}
+
+extern "C" int khdays_rom_language(int language)
+{
+    constexpr int ENGLISH = 1;
+    constexpr int FRENCH = 2;
+    return us_card && language != ENGLISH && language != FRENCH ? ENGLISH : language;
 }
 
 namespace {

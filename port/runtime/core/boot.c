@@ -22,7 +22,7 @@
  * converts). The rest stays zero. */
 static u32 language_code(void)
 {
-    return (u32)khdays_settings_game_language(); /* NDS codes: 1 English .. 5 Spanish */
+    return (u32)khdays_rom_language(khdays_settings_game_language()); /* NDS codes: 1 English .. 5 Spanish */
 }
 
 static void console_mac(volatile u8 *mac);

@@ -16,6 +16,18 @@ int khdays_rom_init(void);
 /* The 0x200-byte cartridge header. */
 const u8 *khdays_rom_header(void);
 
+/* The US release (game code YKGE) is the EU build the port compiles, with its static module from
+ * KHDAYS_US_SHIFT_FROM on and every overlay KHDAYS_US_SHIFT bytes lower. rom.cpp serves its overlay
+ * table at the EU addresses; start.c moves its static module's image up once crt0 is done with it.
+ * Nonzero for such a card. */
+int khdays_rom_is_us(void);
+
+/* `language` (the firmware's numbering, 1 English .. 5 Spanish) if the card has its text, else English:
+ * a US card has English and French only, and its own code falls back to English as this does. */
+int khdays_rom_language(int language);
+#define KHDAYS_US_SHIFT 0x20u
+#define KHDAYS_US_SHIFT_FROM 0x02000c20u /* the US card's address of the EU build's 0x02000c40 */
+
 /* `size` bytes of the ROM at `offset`. */
 void khdays_rom_read(u32 offset, u8 *destination, u32 size);
 
