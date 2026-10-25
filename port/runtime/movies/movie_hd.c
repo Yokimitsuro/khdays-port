@@ -215,6 +215,7 @@ static void finish(const char *how)
     khdays_hd_close();
     khdays_clock_hold(KHDAYS_HOLD_MOVIE, 0);
     khdays_sound_output_mute(0);
+    khdays_sound_bridge_hold_new_music(0);
     khdays_log("movie %s: the HD video %s (the game's movie %s); the game goes on", id, how, skippable_text());
     fprintf(stderr, "movies: %s: the HD video %s; the game goes on\n", id, how);
     InterlockedExchange(&ended, 1);
@@ -896,8 +897,10 @@ static int scene_course(const char *key, uint32_t event_state, char *const *stem
     if (chapter) {
         scene_begin(); /* from the Theater's list, at once */
     } else {
-        /* the game fades out first and is held once black (poll), so no sound or picture is cut off */
+        /* the game fades out first and is held once black (poll), so no sound or picture is cut off; the
+         * music its event begins meanwhile is not heard (a moment of it before the videos) */
         fade_began = seconds_now();
+        khdays_sound_bridge_hold_new_music(1);
         InterlockedExchange(&state, SCENE_FADE);
         khdays_log("scene %s: the game goes down to black first", key);
     }

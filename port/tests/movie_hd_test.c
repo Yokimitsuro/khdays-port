@@ -146,6 +146,12 @@ void khdays_sound_output_mute(int mute)
 {
     muted = mute;
 }
+/* the music the game starts held silent (a scene's videos coming) */
+static int music_held;
+void khdays_sound_bridge_hold_new_music(int hold)
+{
+    music_held = hold;
+}
 /* a monologue's voice: the files asked for, and the stops */
 static char voice_path[260];
 static int voices, voice_files, voice_stops;
@@ -470,7 +476,7 @@ int main(void)
         CHECK(khdays_movie_hd_scene("EV_S#12", 0x1234u, stems, from, until, 2) == 1);
         /* the game going down, the first video opened and waiting */
         CHECK(!khdays_movie_hd_showing() && khdays_movie_hd_running() && !held() && !muted && !started &&
-              opens == opened_before + 1 && wakes == 1 && khdays_movie_hd_game_level() > 0.5f);
+              opens == opened_before + 1 && wakes == 1 && khdays_movie_hd_game_level() > 0.5f && music_held);
         CHECK(khdays_movie_hd_game_buttons(A) == 0); /* the game's, but none of the player's buttons */
         khdays_movie_hd_host_buttons(0);
         khdays_movie_hd_host_buttons(START); /* no pause before the videos */
@@ -496,7 +502,7 @@ int main(void)
         khdays_movie_hd_scene_step(0x1234u, event);
         CHECK(*(uint32_t *)(event + 0x588) == 1 && sound_effects_stopped == stopped_before + 1);
         CHECK(khdays_movie_hd_scene_ended() == 1); /* the port's skip: the videos were watched */
-        CHECK(!khdays_movie_hd_showing() && !muted && !held() && khdays_movie_hd_game_level() < 0.5f);
+        CHECK(!khdays_movie_hd_showing() && !muted && !held() && khdays_movie_hd_game_level() < 0.5f && !music_held);
         Sleep(600);
         CHECK(khdays_movie_hd_game_level() == 1.0f); /* up again */
         khdays_movie_hd_game_buttons(0);

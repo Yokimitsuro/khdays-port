@@ -252,6 +252,18 @@ static LARGE_INTEGER sequence_requested_at; /* when StartSeq was entered (KHDAYS
 static char sequence_playing[16][96];       /* each ARM7 player's sequence name, for the log's "stopped" lines */
 static const char *const category_names[KHDAYS_SOUND_CATEGORIES] = {"music", "effects", "voices", "movies"};
 static volatile LONG movie_channels; /* khdays_sound_movie_channels */
+/* khdays_sound_bridge_hold_new_music: whether held, and the sequence players and stream players (bits)
+ * whose music began meanwhile, not heard */
+static volatile LONG music_held, held_players, held_streams;
+
+void khdays_sound_bridge_hold_new_music(int hold)
+{
+    InterlockedExchange(&music_held, hold != 0);
+    if (!hold) {
+        InterlockedExchange(&held_players, 0);
+        InterlockedExchange(&held_streams, 0);
+    }
+}
 
 void khdays_sound_sequence_requested(void)
 {
@@ -285,6 +297,10 @@ void khdays_sound_sequence_started(int arm7_player, int kind, int number, int en
             khdays_log("sound: %s starts on player %d (%s)", identifier, arm7_player,
                        category_names[sequence_category[arm7_player]]);
         }
+    }
+    if (music_held && arm7_player >= 0 && arm7_player < 16 && sequence_category[arm7_player] == KHDAYS_SOUND_MUSIC) {
+        InterlockedOr(&held_players, 1 << arm7_player);
+        khdays_log("sound: %s not heard: a scene's HD videos come", identifier);
     }
     if (driver == NULL || (!hw.trace && !khdays_sound_mods_present())) {
         return;
@@ -325,11 +341,12 @@ void khdays_sound_player_assigned(int arm7_player, int archive_player)
 static void update_gains(void)
 {
     static int told;
+    const LONG players_held = held_players, streams_held = held_streams;
     for (int p = 0; p < 16; ++p) {
-        player_gain[p] = bus.category[sequence_category[p]];
+        player_gain[p] = (players_held >> p & 1) ? 0.0f : bus.category[sequence_category[p]];
     }
     for (int s = 0; s < 4; ++s) {
-        stream_gain[s] = bus.category[stream_category[s]];
+        stream_gain[s] = (streams_held >> s & 1) ? 0.0f : bus.category[stream_category[s]];
     }
     for (int n = 0; n < 16; ++n) {
         const KhdaysSoundChannel *c = &hw.channels[n];
@@ -338,12 +355,12 @@ static void update_gains(void)
         if (c->source >= 0 && !(c->source & KHDAYS_WAVE_HANDLE)) {
             const int s = khdays_streams_handle_player(c->source);
             category = stream_category[s];
-            replaced = khdays_sound_mods_replaces_stream(s);
+            replaced = khdays_sound_mods_replaces_stream(s) || (streams_held >> s & 1);
         } else {
             const int player = driver->channel_player != NULL ? driver->channel_player(n) : -1;
             if (player >= 0) {
                 category = sequence_category[player];
-                replaced = khdays_sound_mods_replaces_player(player);
+                replaced = khdays_sound_mods_replaces_player(player) || (players_held >> player & 1);
             } else if (movie_channels & 1 << n) {
                 category = KHDAYS_SOUND_MOVIES;      /* a movie's sound: one of the channels its player locked */
                 replaced = khdays_video_mod_sound(); /* a mod's movie plays its own sound instead */
@@ -406,7 +423,7 @@ static void run(void *context, u64 cycle)
         const u32 cycles = cycles_to_next_sample();
         const int movie = khdays_video_mod_sound(); /* a mod's movie's sound (video_mod.h) */
         const int mods = khdays_sound_mods_present() || movie;
-        const int unity = khdays_sound_bus_unity(&bus) && !mods;
+        const int unity = khdays_sound_bus_unity(&bus) && !mods && !(held_players | held_streams);
         float extra[2] = {0.0f, 0.0f};
         hw.smooth = output_pc; /* the PC's output reads the channels between their samples */
         khdays_sound_hw_step(&hw, cycles);
@@ -718,6 +735,10 @@ void khdays_sound_stream_prepared(int player, int stream_number, int channels, c
                                          blocks != 0 ? (blocks - 1) * block_samples + *(const u32 *)(h + 0x3c) : 0};
         AcquireSRWLockExclusive(&lock);
         stream_category[player] = category;
+        if (music_held && category == KHDAYS_SOUND_MUSIC) {
+            InterlockedOr(&held_streams, 1 << player);
+            khdays_log("sound: stream %d not heard: a scene's HD videos come", stream_number);
+        }
         if (khdays_sound_mods_present()) {
             khdays_sound_mods_stream(a, player, stream_number, start_sample, loop.rate, &loop, block_samples);
         }
