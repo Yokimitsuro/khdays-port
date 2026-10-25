@@ -16,6 +16,7 @@
 #include "../runtime/core/session_log.h"
 #include "../runtime/core/vram.h"
 #include "../runtime/core/window.h"
+#include "../host/app/host.h"
 
 #include <stdarg.h>
 #include <math.h>
@@ -262,7 +263,8 @@ static int profiling(void)
     return on;
 }
 
-/* A/B diagnostic switch: preserve unmodified DS text when disabled. */
+/* Whether the mods' fonts are drawn: [video] hd_fonts as the game started (the player's choice), and the A/B
+ * diagnostic switch KHDAYS_HD_FONT_DISABLE. Off, the DS's text is left unmodified. */
 static int hd_enabled(void)
 {
     static int enabled = -1;
@@ -270,7 +272,7 @@ static int hd_enabled(void)
         const char *v = getenv("KHDAYS_HD_FONT_DISABLE");
         enabled = !(v && *v && strcmp(v, "0") != 0);
     }
-    return enabled;
+    return enabled && khdays_host_hd_fonts();
 }
 
 static void say(const char *format, ...)

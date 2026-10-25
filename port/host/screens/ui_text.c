@@ -458,6 +458,13 @@ static const char *const texts[TXT_COUNT][5] = {
                                  "Der DS zeichnet Texturen ohne Glättung.", "Il DS disegna le texture senza filtro.",
                                  "La DS dibuja las texturas sin suavizado."},
     [TXT_VIDEO_HD] = {"HD graphics", "Graphismes HD", "HD-Grafiken", "Grafica HD", "Gráficos HD"},
+    [TXT_VIDEO_HD_FONTS] = {"HD fonts", "Polices HD", "HD-Schriften", "Caratteri HD", "Fuentes HD"},
+    [TXT_VIDEO_HD_FONTS_NOTE] = {"The mods' fonts over the game's text. Off, the DS's own pixel fonts.",
+                                 "Les polices des mods sur le texte du jeu. Désactivé, les polices en pixels de la DS.",
+                                 "Die Schriften der Mods für den Text des Spiels. Aus: die Pixelschriften des DS.",
+                                 "I caratteri delle mod sul testo del gioco. Disattivato, i caratteri in pixel del DS.",
+                                 "Las fuentes de los mods sobre el texto del juego. Desactivado, las fuentes en "
+                                 "píxeles de la DS."},
     [TXT_VIDEO_DUMP] = {"Dump graphics", "Extraire les graphismes", "Grafiken ausgeben", "Esporta grafica",
                         "Volcar gráficos"},
     [TXT_VIDEO_DUMP_NOTE] = {"Writes every texture and graphic shown to saves/dump, and the colours each 2D sheet is "

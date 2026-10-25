@@ -306,6 +306,11 @@ uint32_t khdays_ui_palette_hash(int engine)
     (void)engine;
     return tint;
 }
+/* [video] hd_fonts: on, as without a window */
+int khdays_host_hd_fonts(void)
+{
+    return 1;
+}
 void khdays_ui_left_out_cell(int part, int screen, int bg, int x, int y)
 {
     (void)part;

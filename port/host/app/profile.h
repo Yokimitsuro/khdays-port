@@ -153,6 +153,7 @@ typedef struct KhdaysVideo {
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
     int texture_smoothing;
     int hd_graphics;   /* use the replacements in mods/ */
+    int hd_fonts;      /* the mods' fonts (fonts/) over the DS's text (ui/text.c), else the DS's own pixels */
     int dump_graphics; /* write the graphics shown to saves/dump/ */
     int movies;        /* KhdaysMovies: HD videos, full colour or the DS's */
     int picture_ds;    /* the DS's pace (a picture each logic frame), else the 3D at the monitor's rate */

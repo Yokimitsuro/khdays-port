@@ -262,6 +262,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->show_fps = 0;
     v->backend = KHDAYS_BACKEND_AUTO;
     v->hd_graphics = 1;
+    v->hd_fonts = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->hud_size = 4;
@@ -1039,6 +1040,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } switches[] = {
             {"texture_smoothing", offsetof(KhdaysVideo, texture_smoothing)},
             {"hd_graphics", offsetof(KhdaysVideo, hd_graphics)},
+            {"hd_fonts", offsetof(KhdaysVideo, hd_fonts)},
             {"dump_graphics", offsetof(KhdaysVideo, dump_graphics)},
         };
         for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); ++i) {
@@ -1502,7 +1504,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "aspect = %s\n"
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
-            "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
+            "texture_smoothing = %s\nhd_graphics = %s\n"
+            "# hd_fonts: on (the mods' fonts over the DS's text) or off (the DS's own pixels)\n"
+            "hd_fonts = %s\ndump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
             "movies = %s\n"
@@ -1519,7 +1523,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             v->one_screen ? "one" : "two", v->hud_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
-            v->dump_graphics ? "on" : "off",
+            v->hd_fonts ? "on" : "off", v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS   ? "ds"
             : v->movies == KHDAYS_MOVIES_PC ? "pc"
                                             : "hd",

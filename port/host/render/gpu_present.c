@@ -1366,12 +1366,24 @@ int khdays_host_graphics_flags(void)
     return graphics_flags;
 }
 
+/* [video] hd_fonts as the game started (read by the game thread, ui/text.c; -1 not told yet, on): a change
+ * takes effect at the next start, the text already drawn not left half in one font, half in the other. */
+static volatile int hd_fonts_at_start = -1;
+
+int khdays_host_hd_fonts(void)
+{
+    return hd_fonts_at_start != 0;
+}
+
 void khdays_present_set_video(const KhdaysVideo *v)
 {
     graphics_flags =
         (v->hd_graphics ? KHDAYS_HOST_HD_GRAPHICS : 0) | (v->dump_graphics ? KHDAYS_HOST_DUMP_GRAPHICS : 0) |
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
         (v->movies == KHDAYS_MOVIES_HD ? KHDAYS_HOST_MOVIES_HD : 0) | (v->one_screen ? KHDAYS_HOST_ONE_SCREEN : 0);
+    if (hd_fonts_at_start < 0) {
+        hd_fonts_at_start = v->hd_fonts != 0;
+    }
     khdays_subtitles_set(v->subtitles);
     if (v->internal_resolution != video.internal_resolution || v->antialiasing != video.antialiasing) {
         refused_scale = 0; /* try the new choice */
