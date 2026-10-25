@@ -1194,6 +1194,13 @@ HOOKS = {
             "    { extern void khdays_trace_camera_request(int found, int x, int y, int kind, int state);\n"
             "      khdays_trace_camera_request(puVar13 != 0, request.x, request.y, request.kind, request.state); }\n",
         ),
+        # Chase Camera set to Manual (Config): walking no longer pulls the camera's tilt back to the
+        # preset's (its distance still is), and the events' cameras and the lock-on keep the game's own.
+        (
+            "        piVar7[0x21] = iVar11;\n        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
+            "        if (GameState_GetField(CONFIG_CHASE_CAM, 1) == 0) piVar7[0x21] = iVar11;\n"
+            "        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
+        ),
     ],
     # Lock-on: whether a target is locked, the lock-on scheme (Config option 0), and whether the
     # lock-on logic runs this frame, so separate lock-on makes R presses only when the game will
