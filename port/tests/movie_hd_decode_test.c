@@ -10,6 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* the Menu Overhaul (runtime/mods/installed.h) not installed: the theater's music as the port's own */
+int khdays_mod_installed(int mod)
+{
+    (void)mod;
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "data/cutscenes/cinematics/hd808.mp4";

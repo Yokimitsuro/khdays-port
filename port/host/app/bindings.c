@@ -248,6 +248,10 @@ void khdays_bindings_resolve(const KhdaysProfile *p, KhdaysDeviceState *s, Khday
     out->mouse_x = (int32_t)floor(s->mouse_x);
     out->mouse_y = (int32_t)floor(s->mouse_y);
     out->mouse_speed = (uint16_t)p->enh.mouse_speed;
+    for (int i = 0; i < 2; ++i) {
+        out->sticks[i][0] = s->stick[i][0];
+        out->sticks[i][1] = s->stick[i][1];
+    }
     out->enhancements = (uint16_t)((p->enh.analog_camera ? KHDAYS_ENH_ANALOG_CAMERA : 0) |
                                    (p->enh.mouse_camera ? KHDAYS_ENH_MOUSE_CAMERA : 0) |
                                    (p->enh.separate_lock_on ? KHDAYS_ENH_SEPARATE_LOCK_ON : 0) |

@@ -594,13 +594,14 @@ HOOKS = {
         )
     ],
     # The camp menus on one screen (runtime/menus/camp.c): the status panel's numbers as the panel draws
-    # them, each field with its values.
+    # them, each field with its values and the change the Panels page previews with a panel held; the change
+    # left off the DS's upper screen while the port draws the page (its status card shows it).
     "ov008@0206d46c": [
         (  # Ov008_DrawStatusField
             "    nCtx = Ov008_GetCtxBlock4a80();\n",
-            "    { extern void khdays_camp_field(void *panel, int field, unsigned int delta, int style, void *values,\n"
-            "                                    int animate);\n"
-            "      khdays_camp_field(pPanel, nField, nDelta, nStyle, pValues, bAnimate); }\n"
+            "    { extern unsigned int khdays_camp_field(void *panel, int field, unsigned int delta, int style,\n"
+            "                                            void *values, int animate);\n"
+            "      nDelta = khdays_camp_field(pPanel, nField, nDelta, nStyle, pValues, bAnimate); }\n"
             "    nCtx = Ov008_GetCtxBlock4a80();\n",
         )
     ],
@@ -608,9 +609,9 @@ HOOKS = {
     "ov025@020a2b00": [
         (  # Ov025_DrawStatusField
             "    nCtx = Ov025_GetBlock4a80();\n",
-            "    { extern void khdays_camp_field(void *panel, int field, unsigned int delta, int style, void *values,\n"
-            "                                    int animate);\n"
-            "      khdays_camp_field(pPanel, nField, nDelta, nStyle, pValues, bAnimate); }\n"
+            "    { extern unsigned int khdays_camp_field(void *panel, int field, unsigned int delta, int style,\n"
+            "                                            void *values, int animate);\n"
+            "      nDelta = khdays_camp_field(pPanel, nField, nDelta, nStyle, pValues, bAnimate); }\n"
             "    nCtx = Ov025_GetBlock4a80();\n",
         )
     ],
@@ -2238,6 +2239,127 @@ def role_scoped(rel: str) -> bool:
     return any(path.startswith(d) for d in ROLE_DIRS) and Path(rel).stem not in ROLE_KEPT
 
 
+# The Menu Overhaul's (runtime/mods/installed.h): each port function the game calls here answers as the
+# game would without that mod. The camps' menus keep their cursor between visits (runtime/menus/camp.c
+# khdays_camp_remember_entry, khdays_camp_restore_entry), the story's menu hovers its entry as it starts.
+HOOKS["ov025@0208b7d0"] = [  # Ov025_Hub_InitEntries
+    (
+        "    pScene->nHoverId = Ov025_UpdateMenuOptionLocksAndDrawCategory(pScene);",
+        "    { extern int khdays_camp_restore_entry(int story, int fallback);\n"
+        "      pScene->nHoverId = khdays_camp_restore_entry(1, Ov025_UpdateMenuOptionLocksAndDrawCategory(pScene)); }",
+    ),
+    (
+        "    Ov025_ReleaseTwoSlotsEx(nCtx, pCursor, &pos);",
+        "    Ov025_ReleaseTwoSlotsEx(nCtx, pCursor, &pos);\n"
+        "    { extern void Ov025_Hub_OnEntryHover(Ov008MenuEntry *entry, u32 keys);\n"
+        "      extern int khdays_camp_hover_at_start(void);\n"
+        "      if (khdays_camp_hover_at_start()) { pScene->nHoverId = -1; Ov025_Hub_OnEntryHover(pEntry, 0xf0); } }",
+    ),
+]
+HOOKS["ov025@0208bf68"] = [  # Ov025_Hub_OnEntryHover
+    (
+        "    pScene->nHoverId = pEntry->nId;",
+        "    pScene->nHoverId = pEntry->nId;\n"
+        "    { extern void khdays_camp_remember_entry(int story, int entry);\n"
+        "      khdays_camp_remember_entry(1, pEntry->nId); }",
+    )
+]
+HOOKS["ov008@02059698"] = [  # Ov008_HandleMenuEntrySelection
+    (
+        "    *(int *)(renderer + 0x88) = selectedEntry->value0c;",
+        "    *(int *)(renderer + 0x88) = selectedEntry->value0c;\n"
+        "    { extern void khdays_camp_remember_entry(int story, int entry);\n"
+        "      khdays_camp_remember_entry(0, selectedEntry->value0c); }",
+    )
+]
+HOOKS["ov008@02057f58"] = [  # Ov008_Menu_RefreshSubitemGrid
+    (
+        "    if (((Flags *)(data_ov008_02090f1c + 0x5c6))->b5 == 0) {\n        e = Ov008_FindEntryById(ui, 9);",
+        "    { extern int khdays_camp_restore_entry(int story, int fallback);\n"
+        "      unsigned int saved = khdays_camp_restore_entry(0, (int)uVar13);\n"
+        "      for (i = 0; i < 7; ++i) if (values[i] == saved && flags[i] == 0) uVar13 = saved; }\n"
+        "    if (((Flags *)(data_ov008_02090f1c + 0x5c6))->b5 == 0) {\n        e = Ov008_FindEntryById(ui, 9);",
+    )
+]
+# The story's Panels page's line (runtime/menus/camp.c khdays_camp_text_row): the text the lower screen's box
+# shows, for the port to show it in its own band.
+HOOKS["ov025@02091070"] = [  # Ov025_RepaintTextRow
+    (
+        "    EnqueueObjGfxCommand(self->animator);\n}",
+        "    EnqueueObjGfxCommand(self->animator);\n"
+        "    { extern void khdays_camp_text_row(unsigned int self, int row, unsigned int text, int style);\n"
+        "      khdays_camp_text_row((unsigned int)self, row, (unsigned int)text, style); }\n}",
+    )
+]
+# Mission Mode's Panels page the same (ov008: the same grid menu under its own names).
+HOOKS["ov008@0205eafc"] = [  # Ov008_RepaintTextRow
+    (
+        "    EnqueueObjGfxCommand(self->animator);\n}",
+        "    EnqueueObjGfxCommand(self->animator);\n"
+        "    { extern void khdays_camp_text_row(unsigned int self, int row, unsigned int text, int style);\n"
+        "      khdays_camp_text_row((unsigned int)self, row, (unsigned int)text, style); }\n}",
+    )
+]
+# The Panels page's preview of a panel held (Ov025/Ov008_PreviewDropSummary): the DS's up and down arrows beside
+# the upper screen's numbers left out while the port draws the page (its status card shows the changes; camp.c
+# khdays_camp_preview_arrows, with khdays_camp_field the changes' words).
+HOOKS["ov025@020a42b8"] = [  # Ov025_DrawPageBWidget
+    (
+        "        nSelection = Ov025_SetPairSelection(pPage, &pairs.aPair[nPair], nArg);\n",
+        "        { extern int khdays_camp_preview_arrows(int delta);\n"
+        "          nSelection = Ov025_SetPairSelection(pPage, &pairs.aPair[nPair], khdays_camp_preview_arrows(nArg)); }\n",
+    )
+]
+HOOKS["ov008@0206ec2c"] = [  # Ov008_DrawPageBWidget
+    (
+        "        nSelection = Ov008_SetPairSelection(pPage, &pairs.aPair[nPair], nArg);\n",
+        "        { extern int khdays_camp_preview_arrows(int delta);\n"
+        "          nSelection = Ov008_SetPairSelection(pPage, &pairs.aPair[nPair], khdays_camp_preview_arrows(nArg)); }\n",
+    )
+]
+# Preferences' steering (runtime/menus/camp.c khdays_camp_navigation_sound): the port's presses on the way to a
+# setting make no sound of their own.
+HOOKS["main@02033b78"] = [  # PlaySound
+    (
+        "int PlaySound(int arg0, int arg1) {",
+        "int PlaySound(int arg0, int arg1) {\n"
+        "    extern int khdays_camp_navigation_sound(int kind, int sound);\n"
+        "    if (!khdays_camp_navigation_sound(arg0, arg1)) return 0;",
+    )
+]
+# The day's monologue in the theater's voice with its subtitles (runtime/movies/scene_trace.c): the DS's words
+# and the page's arrow left out (Roxas's picture, BG1, stays), A not turning the page while the voice speaks,
+# START taken by the window's pause, and the monologue left once the voice has said it all.
+HOOKS["ov007@0204cac0"] = [  # Ov007_SetupSubDisplay
+    (
+        "        reg_dispcnt[0] = reg_dispcnt[0] & ~0x1f00 | 0x1600;",
+        "        { extern int khdays_monologue_words_hidden(void);\n"
+        "          reg_dispcnt[0] = reg_dispcnt[0] & ~0x1f00 | (khdays_monologue_words_hidden() ? 0x200 : 0x1600); }",
+    )
+]
+_MONOLOGUE_EXTERNS = (
+    "extern unsigned short gPadPressed;",
+    "extern unsigned short gPadPressed;\n"
+    "extern int khdays_monologue_next(int pressed);\n"
+    "extern int khdays_monologue_leave(int pressed);",
+)
+_MONOLOGUE_NEXT = ("    if ((gPadPressed & 1) != 0) {", "    if (khdays_monologue_next((gPadPressed & 1) != 0)) {")
+_MONOLOGUE_LEAVE = ("    if ((gPadPressed & 8) != 0) {", "    if (khdays_monologue_leave((gPadPressed & 8) != 0)) {")
+HOOKS["ov007@0204cf7c"] = [_MONOLOGUE_EXTERNS, _MONOLOGUE_NEXT, _MONOLOGUE_LEAVE]  # Ov007_TextWindowFadeIn
+HOOKS["ov007@0204d170"] = [_MONOLOGUE_EXTERNS, _MONOLOGUE_NEXT, _MONOLOGUE_LEAVE]  # Ov007_ScrollTextWindow
+HOOKS["ov007@0204d23c"] = [_MONOLOGUE_EXTERNS, _MONOLOGUE_LEAVE]  # Ov007_FadeBackdropStep
+HOOKS["ov007@0204d0ec"] = [_MONOLOGUE_EXTERNS, _MONOLOGUE_LEAVE]  # Ov007_AdvanceTextLine
+# The game over's own firefly left out while the window draws its menu as KH2's pause, with KH2's firefly
+# (runtime/menus/retry.c khdays_game_over_hides_orb).
+HOOKS["ov027@0208344c"].append(  # Ov027_UpdateFlushForward
+    (
+        "    Ov002_ResetViewToDefault();\n",
+        "    Ov002_ResetViewToDefault();\n"
+        "    { extern int khdays_game_over_hides_orb(void); if (khdays_game_over_hides_orb()) return; }\n",
+    )
+)
+
+
 # Hooks by the decomp file, for functions HOOKS cannot name: DS Protect's (ov028) are data in the
 # symbols, their bodies encrypted in the ROM, and several share a file. Applied like HOOKS.
 FILE_HOOKS = {
@@ -2470,6 +2592,10 @@ ABI_FIXES = {
     # reads them only with a shape, which that path never has (pShape stays 0
     # from 0x02094990). 0 says so, without the leftover.
     "ov025@02094988": [  # Ov025_MoveGridCursor
+        ("    int nDx;\n", "    int nDx = 0;  /* unread without a list node (port/abi) */\n"),
+        ("    int nDy;\n", "    int nDy = 0;\n"),
+    ],
+    "ov008@0206245c": [  # Ov008_MoveGridCursor: the same, Mission Mode's Panels page's
         ("    int nDx;\n", "    int nDx = 0;  /* unread without a list node (port/abi) */\n"),
         ("    int nDy;\n", "    int nDy = 0;\n"),
     ],

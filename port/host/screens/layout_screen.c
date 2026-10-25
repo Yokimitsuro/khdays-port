@@ -5,6 +5,7 @@
 #include "../render/png_io.h"
 #include "../app/profile.h"
 #include "../settings/settings_ui.h"
+#include "../../runtime/mods/installed.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -430,7 +431,28 @@ typedef struct Icon {
     SDL_Texture *texture;
     SDL_FRect src;
     unsigned short label[24]; /* a key's name when no icon is there */
+    float h;                  /* with the Menu Overhaul, its height on every screen (the layout's units), or 0 */
 } Icon;
+
+/* With the Menu Overhaul (runtime/mods/installed.h) every button's icon is one size on every screen, as the KH
+ * collections show theirs: a pad's at its picture's size at 1080 lines (the 36-texel face buttons ICON_PAD
+ * high), a key's at ICON_KEY, the Switch's at ICON_PAD; in a line, ICON_GAP either side. Else in a line
+ * 1.5 times the capitals' height, and given a place, its height. */
+#define ICON_PAD 38.0f
+#define ICON_FACE 36.0f
+#define ICON_KEY 42.0f
+#define ICON_GAP 4.0f
+
+static int overhaul(void)
+{
+    return khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL);
+}
+
+/* An icon's height in a line whose capitals are `ink` high. */
+static float line_icon_height(const Icon *icon, float ink)
+{
+    return overhaul() && icon->h > 0 ? icon->h : ink * 1.5f;
+}
 
 static SDL_Texture *switch_icon(SDL_Renderer *renderer, const char *name)
 {
@@ -493,6 +515,7 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
                 out->src.y = p->v;
                 out->src.w = p->w;
                 out->src.h = p->h;
+                out->h = p->h * ICON_PAD / ICON_FACE;
                 return 1;
             }
         } else {
@@ -520,6 +543,7 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
                 out->texture = t;
                 out->src.x = out->src.y = 0;
                 SDL_GetTextureSize(t, &out->src.w, &out->src.h);
+                out->h = ICON_PAD;
                 return 1;
             }
         }
@@ -555,6 +579,7 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
         out->src.y = p->v;
         out->src.w = p->w;
         out->src.h = p->h;
+        out->h = ICON_KEY;
         return 1;
     }
     khdays_layout_utf8(SDL_GetScancodeName((SDL_Scancode)input), out->label,
@@ -590,6 +615,24 @@ static int input_icon(const KhdaysLayout *l, int action, Icon *out)
     return named;
 }
 
+/* With the Menu Overhaul, a DS button's own letter for a button the player has no input with an icon or a name
+ * for (the mouse's): A, B, X or Y in brackets rather than nothing. */
+static int button_letter(int action, Icon *out)
+{
+    const char letter = !overhaul()              ? 0
+                        : action == KHDAYS_ACT_A ? 'A'
+                        : action == KHDAYS_ACT_B ? 'B'
+                        : action == KHDAYS_ACT_X ? 'X'
+                        : action == KHDAYS_ACT_Y ? 'Y'
+                                                 : 0;
+    memset(out, 0, sizeof(*out));
+    if (letter == 0) {
+        return 0;
+    }
+    out->label[0] = (unsigned short)letter;
+    return 1;
+}
+
 /* The DS's button the text has here: its actions (one or two) and its glyphs' count; 0 none. */
 static int buttons_at(const unsigned short *t, int *length, int action[2])
 {
@@ -612,16 +655,16 @@ static int buttons_at(const unsigned short *t, int *length, int action[2])
 float khdays_layout_line_width(const KhdaysLayout *l, const unsigned short *t, float size)
 {
     float w = 0;
-    const float ink = (l->ink_bottom - l->ink_top) * size;
+    const float ink = (l->ink_bottom - l->ink_top) * size, gap = overhaul() ? ICON_GAP : 0.0f;
     for (; *t != 0; ++t) {
         Icon icon;
         int length, action[2], drawn = 0;
         const int buttons = buttons_at(t, &length, action);
         for (int b = 0; b < buttons; ++b) {
-            if (input_icon(l, action[b], &icon)) {
+            if (input_icon(l, action[b], &icon) || button_letter(action[b], &icon)) {
                 drawn = 1;
                 if (icon.texture != NULL) {
-                    w += icon.src.w * (ink * 1.5f / icon.src.h);
+                    w += icon.src.w * (line_icon_height(&icon, ink) / icon.src.h) + gap;
                 } else {
                     w += khdays_layout_line_width(l, icon.label, size) + 2 * size * 4;
                 }
@@ -642,6 +685,9 @@ float khdays_layout_line_width(const KhdaysLayout *l, const unsigned short *t, f
 static void draw_line_rgb(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const unsigned short *t, float x, float y,
                           float size, const float rgb[3], float alpha, int shadow);
 
+static float draw_icon(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const Icon *got, float x, float y, float h,
+                       float alpha);
+
 float khdays_layout_draw_action(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, int action, float x, float y,
                                 float h, float alpha)
 {
@@ -649,9 +695,33 @@ float khdays_layout_draw_action(const KhdaysLayout *l, const KhdaysLayoutFrame *
     if (!input_icon(l, action, &icon)) {
         return 0;
     }
+    return draw_icon(l, fr, &icon, x, y, h, alpha);
+}
+
+float khdays_layout_draw_action_key(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, int action, int key, float x,
+                                    float y, float h, float alpha)
+{
+    SDL_Gamepad *pad = khdays_devices_gamepad();
+    const int on_pad = pad != NULL && khdays_devices_pad_in_use();
+    if (!on_pad && overhaul()) {
+        const int16_t *inputs = khdays_devices_profile()->input[KHDAYS_DEVICE_KEYBOARD][KHDAYS_LAYER_BASE][action];
+        for (int k = 0; k < KHDAYS_INPUTS_PER_ACTION; ++k) {
+            Icon icon;
+            if (inputs[k] == key && icon_of_input(l, pad, 0, inputs[k], &icon)) {
+                return draw_icon(l, fr, &icon, x, y, h, alpha);
+            }
+        }
+    }
+    return khdays_layout_draw_action(l, fr, action, x, y, h, alpha);
+}
+
+static float draw_icon(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const Icon *got, float x, float y, float h,
+                       float alpha)
+{
+    const Icon icon = *got;
     if (icon.texture != NULL) {
-        const float w = icon.src.w * (h / icon.src.h);
-        const SDL_FRect dst = khdays_layout_to_window(fr, x, y, w, h);
+        const float ih = overhaul() && icon.h > 0 ? icon.h : h, w = icon.src.w * (ih / icon.src.h);
+        const SDL_FRect dst = khdays_layout_to_window(fr, x, y + (h - ih) / 2, w, ih);
         SDL_SetTextureAlphaModFloat(icon.texture, alpha);
         SDL_RenderTexture(l->renderer, icon.texture, &icon.src, &dst);
         SDL_SetTextureAlphaModFloat(icon.texture, 1.0f);
@@ -680,6 +750,13 @@ void khdays_layout_draw_line(const KhdaysLayout *l, const KhdaysLayoutFrame *fr,
     draw_line_rgb(l, fr, t, x, y, size, rgb, alpha, shadow);
 }
 
+void khdays_layout_draw_line_rgb(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const unsigned short *t, float x,
+                                 float y, float size, const Uint8 rgb[3], float alpha, int shadow)
+{
+    const float c[3] = {rgb[0], rgb[1], rgb[2]};
+    draw_line_rgb(l, fr, t, x, y, size, c, alpha, shadow);
+}
+
 /* A line in a colour (0-255 each): a plain font's grey made it, an outlined font's white. */
 static void draw_line_rgb(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const unsigned short *t, float x, float y,
                           float size, const float rgb[3], float alpha, int shadow)
@@ -697,19 +774,20 @@ static void draw_line_rgb(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, co
         int length, action[2], drawn = 0;
         const int buttons = buttons_at(t, &length, action);
         for (int b = 0; b < buttons; ++b) {
-            if (!input_icon(l, action[b], &icon)) {
+            if (!input_icon(l, action[b], &icon) && !button_letter(action[b], &icon)) {
                 continue;
             }
             drawn = 1;
             if (icon.texture != NULL) {
-                const float h = ink * 1.5f, w = icon.src.w * (h / icon.src.h);
+                const float h = line_icon_height(&icon, ink), w = icon.src.w * (h / icon.src.h);
+                const float gap = overhaul() ? ICON_GAP : 0.0f;
                 if (!shadow) {
-                    const SDL_FRect dst = khdays_layout_to_window(fr, x, y + ink / 2 - h / 2, w, h);
+                    const SDL_FRect dst = khdays_layout_to_window(fr, x + gap / 2, y + ink / 2 - h / 2, w, h);
                     SDL_SetTextureAlphaModFloat(icon.texture, alpha);
                     SDL_RenderTexture(l->renderer, icon.texture, &icon.src, &dst);
                     SDL_SetTextureAlphaModFloat(icon.texture, 1.0f);
                 }
-                x += w;
+                x += w + gap;
             } else {
                 const unsigned short open[2] = {'[', 0}, close[2] = {']', 0};
                 draw_line_rgb(l, fr, open, x, y, size, rgb, alpha, shadow);
@@ -894,6 +972,112 @@ void khdays_layout_shade(SDL_Renderer *renderer, int master)
     }
 }
 
+/* ---- KH2's firefly (layout_screen.h) ------------------------------------------------------------ */
+
+static struct {
+    SDL_Renderer *renderer;
+    SDL_Texture *texture;
+    int tried;
+} firefly;
+
+static struct {
+    double born, seen, moved; /* seconds: grown in, drawn last, set off to its place */
+    float x, y, from_x, from_y;
+} flies[KHDAYS_FIREFLY_COUNT];
+
+static void firefly_forget(void)
+{
+    if (firefly.texture != NULL) {
+        SDL_DestroyTexture(firefly.texture);
+    }
+    firefly.texture = NULL;
+    firefly.renderer = NULL;
+    firefly.tried = 0;
+}
+
+static SDL_Texture *firefly_picture(SDL_Renderer *renderer)
+{
+    char path[1024];
+    if (renderer != firefly.renderer) {
+        firefly_forget();
+        firefly.renderer = renderer;
+    }
+    if (!firefly.tried) {
+        firefly.tried = 1;
+        if (overhaul() && khdays_mods_find("layouts/kh2pause/firefly.png", path, (int)sizeof(path))) {
+            const char *error = NULL;
+            int w = 0, h = 0;
+            uint8_t *px = khdays_png_read(path, &w, &h, &error);
+            if (px != NULL) {
+                firefly.texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, w, h);
+                if (firefly.texture != NULL) {
+                    SDL_UpdateTexture(firefly.texture, NULL, px, w * 4);
+                    /* KH2 adds its light to the picture (the animations' blend 1) */
+                    SDL_SetTextureBlendMode(firefly.texture, SDL_BLENDMODE_ADD);
+                    SDL_SetTextureScaleMode(firefly.texture, SDL_SCALEMODE_LINEAR);
+                }
+                khdays_png_free(px);
+            } else {
+                SDL_Log("firefly: %s: %s", path, error != NULL ? error : "not read");
+            }
+        }
+    }
+    return firefly.texture;
+}
+
+static float smooth01(float t)
+{
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    return t * t * (3.0f - 2.0f * t);
+}
+
+void khdays_layout_firefly(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, int which, float x, float y, float unit,
+                           float alpha)
+{
+    /* pause.2ld: group 7 grows it in over 16 frames from (-10, -5), its scale 0 to 1.25 and its light
+     * 0 to full; group 8 then wanders it, 8 pixels each way, 26 and 34 swings over 1500 frames; the
+     * picture is the scaled 1.25's (20 pixels across) */
+    const double now = (double)SDL_GetTicksNS() / 1e9;
+    SDL_Texture *t = renderer != NULL ? firefly_picture(renderer) : NULL;
+    float grow, frames, wander, cx, cy, size, k;
+    SDL_FRect dst;
+    if (t == NULL || which < 0 || which >= KHDAYS_FIREFLY_COUNT || alpha <= 0.0f) {
+        return;
+    }
+    if (now - flies[which].seen > 0.25) {
+        flies[which].born = now;
+        flies[which].moved = now - 1.0;
+        flies[which].x = flies[which].from_x = x;
+        flies[which].y = flies[which].from_y = y;
+    } else if (fabsf(x - flies[which].x) > 0.5f || fabsf(y - flies[which].y) > 0.5f) {
+        /* the selection moved: off from where it shows now */
+        k = smooth01((float)((now - flies[which].moved) / 0.16));
+        flies[which].from_x += (flies[which].x - flies[which].from_x) * k;
+        flies[which].from_y += (flies[which].y - flies[which].from_y) * k;
+        flies[which].x = x;
+        flies[which].y = y;
+        flies[which].moved = now;
+    }
+    flies[which].seen = now;
+    k = smooth01((float)((now - flies[which].moved) / 0.16));
+    cx = flies[which].from_x + (x - flies[which].from_x) * k;
+    cy = flies[which].from_y + (y - flies[which].from_y) * k;
+    frames = (float)((now - flies[which].born) * 60.0);
+    grow = frames / 16.0f > 1.0f ? 1.0f : frames / 16.0f;
+    wander = frames > 16.0f ? frames - 16.0f : 0.0f;
+    wander = fmodf(wander, 1500.0f);
+    cx += unit * (8.0f * sinf(3.14159265f * 26.0f * wander / 1500.0f) - 10.0f * (1.0f - grow));
+    cy += unit * (8.0f * sinf(3.14159265f * 34.0f * wander / 1500.0f) - 5.0f * (1.0f - grow));
+    size = 20.0f * unit * grow;
+    if (size <= 0.0f) {
+        return;
+    }
+    dst = khdays_layout_to_window(fr, cx - size / 2, cy - size / 2, size, size);
+    SDL_SetTextureAlphaModFloat(t, alpha * grow);
+    SDL_RenderTexture(renderer, t, NULL, &dst);
+    SDL_SetTextureAlphaModFloat(t, 1.0f);
+}
+
 void khdays_layout_renderer_gone(void)
 {
     for (int i = 0; i < switch_icon_count; ++i) {
@@ -903,4 +1087,17 @@ void khdays_layout_renderer_gone(void)
     }
     switch_icon_count = 0;
     switch_renderer = NULL;
+    firefly_forget();
+}
+
+float khdays_layout_glove_sway(void)
+{
+    /* KH2's glove (camp.2ld's group 22, pause.2ld's 6: 4 of its screen's dots each way, three times in 89
+     * frames), as large as on a full screen of the picture */
+    const double period = KHDAYS_GLOVE_FRAMES / 60.0;
+    const double t = fmod((double)SDL_GetTicks() / 1000.0, period) / period;
+    if (!overhaul()) {
+        return 0.0f;
+    }
+    return KHDAYS_GLOVE_MIDDLE - KHDAYS_GLOVE_REACH * sinf((float)(t * 6.28318530718));
 }

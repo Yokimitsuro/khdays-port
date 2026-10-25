@@ -10,6 +10,7 @@ extern "C" {
 #include "elements.h"
 #include "parts.h"
 #include "../host/screens/ui_text.h"
+#include "../host/screens/game_pause.h"
 #include "../host/render/png_io.h"
 #include "../runtime/menus/retry.h"
 #include "../runtime/core/rom.h"
@@ -267,8 +268,9 @@ void emit_line(int index, const Line &texels, int x, int y)
 // --- A mod's pictures ----------------------------------------------------------------------------
 
 const char *const kCodes[6] = {"en", "en", "fr", "de", "it", "es"}; // by the game's language (1-5)
-const char *const kFiles[KHDAYS_PAUSE_KEYS] = {"title",    "question", "continue", "skip",
-                                               "withdraw", "retry",    "yes",      "no"};
+// (the game over's lines have no picture of their own here: drawn by the Menu Overhaul's pause alone)
+const char *const kFiles[KHDAYS_PAUSE_KEYS] = {"title", "question", "continue",    "skip",      "withdraw",   "retry",
+                                               "yes",   "no",       "go_continue", "go_easier", "go_withdraw"};
 // the hand's size and place by its line's strip (DS dots): where the game's lit strip has it, in the
 // strip's first 16 dots, the capsule's rim from dot 9
 constexpr float kHand = 20.0f;
@@ -431,12 +433,93 @@ bool emit_pictures(const KhdaysPauseView &pv)
     return true;
 }
 
+// The game's pause -- a scene's (PAUSE, Continue, Skip; or PAUSE alone), a mission's (Continue, the
+// port's Retry, Withdraw; its "Are you sure?" and Yes, No) -- drawn by the window as Kingdom Hearts II's
+// (host/screens/game_pause.h): the game's pieces left out; false when it has a piece the window does not
+// draw or the window cannot.
+int kh2_row;
+bool kh2_pause(const KhdaysPauseView &pv)
+{
+    KhdaysBgLayer l;
+    int keys[3] = {0, 0, 0}, rows = 0, lit = -1;
+    bool question = false;
+    if (pv.count < 1 || pv.piece[0].key != KHDAYS_PAUSE_TITLE || !khdays_game_pause_kh2_ready() ||
+        !khdays_bg_text_layer(kScreen, pv.layer, &l)) {
+        return false;
+    }
+    for (int i = 1; i < pv.count; ++i) {
+        const KhdaysPausePiece &p = pv.piece[i];
+        if (p.key == KHDAYS_PAUSE_QUESTION) {
+            question = true;
+            continue;
+        }
+        if (p.key < KHDAYS_PAUSE_CONTINUE || p.key > KHDAYS_PAUSE_NO || rows == 3) {
+            return false;
+        }
+        if (p.lit != 0) {
+            lit = rows;
+        }
+        keys[rows++] = p.key;
+    }
+    if (lit >= 0) {
+        kh2_row = lit; // (the lit strip blinks: the last lit kept between)
+    }
+    for (int i = 0; i < pv.count; ++i) {
+        // (out of the display capture too: a scene's pause during its camera's blend shows the capture)
+        const KhdaysPausePiece &p = pv.piece[i];
+        for (int cy = p.y; cy < p.y + p.h; ++cy) {
+            for (int cx = p.x; cx < p.x + p.w; ++cx) {
+                khdays_ui_left_out_cell_captured(KHDAYS_UI_PAUSE, kScreen, pv.layer, cx % l.wt, cy % l.ht);
+            }
+        }
+    }
+    khdays_game_pause_publish(1, rows, keys, kh2_row < rows ? kh2_row : 0, question ? 1 : 0, pv.language);
+    return true;
+}
+
+// The game over's menu (runtime/menus/retry.h) drawn by the window as KH2's pause, as the game's own pause
+// is: the game's panel (its BG1, nothing else there) left out whole while it shows.
+void game_over()
+{
+    KhdaysGameOverView v;
+    KhdaysBgLayer l;
+    const bool ours = khdays_game_over_ours() && khdays_game_pause_kh2_ready();
+    khdays_game_over_set_kh2(ours ? 1 : 0);
+    if (ours) {
+        // the game's own firefly, the orb that floats to the line chosen (an ov002 display object: sprites
+        // of engine A, the game over's only ones), left out the whole scene: KH2's is drawn instead
+        for (int i = 0; i < 128; ++i) {
+            khdays_ui_left_out_obj(KHDAYS_UI_PAUSE, kScreen, i);
+        }
+    }
+    if (!khdays_game_over_view(&v) || !khdays_game_pause_kh2_ready() ||
+        !khdays_bg_text_layer(kScreen, KHDAYS_GAME_OVER_LAYER, &l)) {
+        khdays_game_over_publish(0, 0, nullptr, 0, 0, 0);
+        return;
+    }
+    for (int cy = 0; cy < l.ht; ++cy) {
+        for (int cx = 0; cx < l.wt; ++cx) {
+            khdays_ui_left_out_cell(KHDAYS_UI_PAUSE, kScreen, KHDAYS_GAME_OVER_LAYER, cx, cy);
+        }
+    }
+    khdays_game_over_publish(1, v.rows, v.keys, v.row, v.question, v.language);
+}
+
 void emit()
 {
     KhdaysRetryView v;
     KhdaysPauseView pv;
     KhdaysBgLayer l;
-    if (khdays_pause_view(&pv) && emit_pictures(pv)) {
+    game_over();
+    const bool viewed = khdays_pause_view(&pv) != 0;
+    if (viewed && kh2_pause(pv)) {
+        return;
+    }
+    khdays_game_pause_publish(0, 0, nullptr, 0, 0, 0);
+    if (!viewed) {
+        kh2_row = 0; // the next pause opens on Continue
+    }
+    if (viewed && emit_pictures(pv)) {
         return;
     }
     if (!khdays_retry_view(&v) || !khdays_bg_text_layer(kScreen, kLayer, &l)) {

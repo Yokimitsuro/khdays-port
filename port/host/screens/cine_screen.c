@@ -448,6 +448,23 @@ static void draw_day(const KhdaysLayoutFrame *fr, int day, float top)
     }
 }
 
+/* KH2's firefly at the selected row's right end (layout_screen.h), as large beside the glove as KH2's
+ * beside its own. */
+static void firefly_at(const KhdaysLayoutFrame *fr, float right, float middle)
+{
+    const KhdaysLayoutPlace *g = khdays_layout_place(&s.layout, "glove");
+    const float unit = KHDAYS_FIREFLY_UNIT * (g != NULL && g->h > 0 ? g->h / 91.0f : 1.0f);
+    khdays_layout_firefly(s.layout.renderer, fr, KHDAYS_FIREFLY_CINE, right - 15.0f * unit, middle, unit, 1.0f);
+}
+
+static void firefly_row(const KhdaysLayoutFrame *fr, float top)
+{
+    const KhdaysLayoutPlace *r = khdays_layout_place(&s.layout, "row_selected");
+    if (r != NULL) {
+        firefly_at(fr, r->x + r->w, top + r->y + r->h / 2);
+    }
+}
+
 static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysCineView *v, int index, float top)
 {
     const Scene *sc = scene_of(v->movies[index]);
@@ -462,7 +479,8 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysCineView *v, int i
         }
     }
     if (index == v->cursor) {
-        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, top, 1.0f);
+        khdays_layout_draw_placed(&s.layout, fr, "glove", khdays_layout_glove_sway(), top, 1.0f);
+        firefly_row(fr, top);
     }
     khdays_layout_draw_text(&s.layout, fr, "name", khdays_layout_string(&s.strings, THR_NAMES + index), 0, top, 1.0f);
     khdays_layout_draw_text(&s.layout, fr, "length", khdays_layout_string(&s.strings, THR_LENGTHS + index), 0, top,
@@ -484,7 +502,8 @@ static void draw_chapter_row(const KhdaysLayoutFrame *fr, int index, float top)
         }
     }
     if (index == s.cursor) {
-        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, top, 1.0f);
+        khdays_layout_draw_placed(&s.layout, fr, "glove", khdays_layout_glove_sway(), top, 1.0f);
+        firefly_row(fr, top);
     }
     snprintf(length, sizeof(length), "%02d:%02d", c->seconds / 60, c->seconds % 60);
     for (int k = 0; k < (int)sizeof(length); ++k) {

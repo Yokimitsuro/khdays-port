@@ -804,6 +804,14 @@ static const char *const texts[TXT_COUNT][5] = {
          "Los datos del juego en\n%s\nestán incompletos o dañados: %s\n\nVuelve a extraerlos de tu propia "
          "copia del juego con tools/extract_data.py."},
     [TXT_PAUSE_RETRY] = {"Retry", "Réessayer", "Wiederholen", "Riprova", "Reintentar"},
+    [TXT_PANELS_STATS] = {"Stats", "Statistiques", "Status", "Statistiche", "Estadísticas"},
+    [TXT_PANELS_SUBMENU] = {"Submenu", "Sous-menu", "Untermenü", "Sottomenu", "Submenú"},
+    [TXT_VIEWER_MODEL] = {"3D Model", "Modèle 3D", "3D-Modell", "Modello 3D", "Modelo 3D"},
+    [TXT_VIEWER_TURN] = {"Turn", "Tourner", "Drehen", "Ruota", "Girar"},
+    [TXT_VIEWER_ZOOM] = {"Zoom", "Zoom", "Zoom", "Zoom", "Zoom"},
+    [TXT_VIEWER_RESET] = {"Reset", "Recentrer", "Zurücksetzen", "Ripristina", "Restablecer"},
+    [TXT_VIEWER_BACK] = {"Back", "Retour", "Zurück", "Indietro", "Volver"},
+    [TXT_VIEWER_ENEMY] = {"Enemy", "Ennemi", "Gegner", "Nemico", "Enemigo"},
     [TXT_SAVE_AUTOSAVE_TAG] = {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
     [TXT_CAMP_BACK_TO_MENU] = {"Return to the main menu?", "Revenir au menu principal ?", "Zum Hauptmenü zurückkehren?",
                                "Tornare al menu principale?", "¿Volver al menú principal?"},
@@ -957,6 +965,7 @@ static const char *const texts[TXT_COUNT][5] = {
                             "mientras juegas; Esc lo suelta con los ajustes."},
     [TXT_MOUSE_SPEED] = {"Mouse camera speed (%)", "Vitesse caméra souris (%)", "Maus-Kameratempo (%)",
                          "Velocità telecamera mouse (%)", "Velocidad cámara ratón (%)"},
+    [TXT_SHOP_WELCOME] = {"Welcome!", "Bienvenue !", "Willkommen!", "Benvenuto!", "¡Bienvenido!"},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

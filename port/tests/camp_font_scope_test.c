@@ -53,6 +53,78 @@ uint32_t khdays_events_vblank_count(void)
 {
     abort();
 }
+/* the Menu Overhaul's camp (the story's menu, its Files pages, its save screen): not installed, never run here */
+typedef struct KhdaysRomReader KhdaysRomReader;
+int khdays_mod_installed(int mod)
+{
+    (void)mod;
+    return 0;
+}
+int PlaySound(int kind, int sound)
+{
+    (void)kind;
+    (void)sound;
+    abort();
+}
+int Ov025_GetContext(void)
+{
+    abort();
+}
+unsigned int Ov025_FindEntryById(int context, int id)
+{
+    (void)context;
+    (void)id;
+    abort();
+}
+void Ov025_SwapParamOverrides(int context, unsigned int entry)
+{
+    (void)context;
+    (void)entry;
+    abort();
+}
+void Ov025_Hub_OnEntryHover(unsigned int entry, unsigned int keys)
+{
+    (void)entry;
+    (void)keys;
+    abort();
+}
+void Ov025_Hub_SelectMenuGroup(unsigned int renderer, int group)
+{
+    (void)renderer;
+    (void)group;
+    abort();
+}
+KhdaysRomReader *khdays_rom_reader_new(void)
+{
+    abort();
+}
+int khdays_rom_file_data(KhdaysRomReader *reader, const char *path, int entry, unsigned char **data, unsigned *size)
+{
+    (void)reader;
+    (void)path;
+    (void)entry;
+    (void)data;
+    (void)size;
+    abort();
+}
+void khdays_enemy_viewer_update(int on, int enemies, int cursor, int rows, const int16_t *ids)
+{
+    (void)on;
+    (void)enemies;
+    (void)cursor;
+    (void)rows;
+    (void)ids;
+    abort();
+}
+uint16_t khdays_enemy_viewer_buttons(uint16_t buttons)
+{
+    return buttons;
+}
+int khdays_savelist_camp_save_screen(int overlay)
+{
+    (void)overlay;
+    abort();
+}
 static int overlay;
 int khdays_overlay_loaded(int id)
 {

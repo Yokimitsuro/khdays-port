@@ -22,6 +22,10 @@ typedef struct KhdaysGpuInput {
      * bits 0-5/8-13/16-21 and the alpha (0-31) in bits 24-28; alpha 0 is
      * transparent. NULL: no 3D image (the layer is transparent). */
     const uint32_t *layer3d;
+    /* Engine A's text layers' cells drawn transparent: a bit per cell, cell (cx, cy) of layer l bit
+     * l * 4096 + cy * 64 + cx (gfx/elements.h KE_CELLS), what a picture the window draws apart stands
+     * for (ui/elements.h khdays_ui_left_out_cell_captured). NULL: none. */
+    const uint8_t *left_out_cells;
 } KhdaysGpuInput;
 
 /* What an engine keeps from one frame to the next. */

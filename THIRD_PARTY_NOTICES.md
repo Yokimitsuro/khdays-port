@@ -258,6 +258,18 @@ port, the components below, each unmodified. Their own license files travel with
 
 `installer/pinned.json` pins each downloaded file by its SHA-256.
 
+## OpenKh (format reference)
+
+Project: OpenKh -- Kingdom Hearts tools and engine
+
+Upstream repository: <https://github.com/OpenKH/OpenKh>
+
+License: **Apache License 2.0**.
+
+Usage: **not linked or embedded**. `port/host/screens/kh2_seq.c` plays Kingdom Hearts II's 2D sequences (SEQD)
+for the Menu Overhaul's screens, its reading of their fields and its drawing written in C after OpenKh's
+`OpenKh.Kh2/Sequence.cs` and `OpenKh.Engine/Renderers/SequenceRenderer.cs`.
+
 ## KH Melon Mix (acknowledgement)
 
 KH Melon Mix (by vitor251093, justedni, Kite2810 and contributors,

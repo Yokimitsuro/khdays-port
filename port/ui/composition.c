@@ -8,6 +8,7 @@
 #include "../host/render/png_io.h"
 #include "../runtime/core/rom.h"
 #include "../runtime/core/session_log.h"
+#include "../runtime/mods/installed.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -38,9 +39,20 @@ static const char *const brightness_names[] = {"default", "upper", "lower", "hal
 /* the HUD's screen-space 3D: the polygons the HUD's own drawing sends (gfx/g3d.h KHDAYS_G3D_HUD) */
 static const char *const group_names[] = {"hud", "all"}; /* KHDAYS_SHAPE3D_* */
 
+/* `push <state>[|<state>...] <dx> <dy> <frames>`: a shape moved by dx, dy (the port's units) while one of the
+ * states holds, easing there and back over that many of the game's frames; its progress kept from frame to
+ * frame. */
+typedef struct Push {
+    uint32_t states; /* 1 << KHDAYS_ST_*; 0 none */
+    float dx, dy, frames;
+    float t;     /* 0 at its place, 1 moved */
+    uint32_t at; /* the game's frame t was last brought to */
+} Push;
+
 /* A shape as the file gives it: its lengths in the port's units (hud_factor), each a part at the
  * HUD's scale and a part that is not (`fixed(N)`). */
 typedef struct ShapeDef {
+    Push push;
     int lower;
     int whole; /* no rectangle: the whole screen */
     float x, y, w, h;
@@ -60,6 +72,7 @@ typedef struct ShapeDef {
 } ShapeDef;
 
 typedef struct Shape3dDef {
+    Push push;
     int group;
     int hide;
     float x, y, w, h;
@@ -77,9 +90,10 @@ typedef struct Directive {
 } Directive;
 
 typedef struct Condition {
-    int state; /* KHDAYS_ST_*, or -1 for the picture's width */
+    int state; /* KHDAYS_ST_*, or -1 for the picture's width or a mod */
     int negate;
     int width; /* 1 `wide` (16:9 or wider), 2 `narrow` (4:3); 0 none */
+    int mod;   /* `mod-<id>`: a mod of the port's features installed (runtime/mods/installed.h): its id + 1; 0 none */
 } Condition;
 
 /* The picture's columns the compositions are made for this frame (`wide`, `narrow`). */
@@ -132,6 +146,9 @@ typedef struct AnimPiece {
     uint32_t blend;
     int first_key, keys;
     char *prompt; /* `prompt <action>`, or NULL */
+    float sway;   /* `sway <units> <frames>`: KH2's pointing glove's swing, about half `units` each way, or 0 */
+    /* `wander <units> <x swings> <y swings> <frames>`: KH2's firefly's figure, `units` each way, or 0 */
+    float wander, wander_x, wander_y, wander_frames;
 } AnimPiece;
 
 /* An input's icon in the atlas (`icon`), and a rectangle the mouse clicks (`button`). */
@@ -228,6 +245,11 @@ static int buttons_now_room;
 static int last_animation = -1;
 static int clip_playing = -1;
 static uint32_t clip_began;
+/* With the Menu Overhaul (runtime/mods/installed.h), a clip that follows another level of the menu (not the
+ * picture's first showing) plays CLIP_FAST times as fast: the game takes the next press within a few frames,
+ * and the clips made from the theater's left the menu unread well after it was ready. */
+#define CLIP_FAST 2u
+static int clip_fast;
 
 /* Makes room in *array (`count` items of `size` bytes) for one more item. */
 static int grow(void **array, int *room, int count, size_t size)
@@ -365,6 +387,54 @@ static int four(char **t, int n, int at, float out[4])
     return 1;
 }
 
+/* `push <state>[|<state>...] <dx> <dy> <frames>` at t[at]; 1 when read. */
+static int read_push(char **t, int n, int at, Push *p)
+{
+    float v[3];
+    int state;
+    uint32_t states = 0;
+    if (at + 4 >= n || !number(t[at + 2], &v[0]) || !number(t[at + 3], &v[1]) || !number(t[at + 4], &v[2]) ||
+        v[2] < 1.0f) {
+        return 0;
+    }
+    for (const char *w = t[at + 1]; *w != '\0';) {
+        const char *bar = strchr(w, '|');
+        const int len = bar != NULL ? (int)(bar - w) : (int)strlen(w);
+        if ((state = khdays_situation_state_named(w, len)) < 0 || state >= 32) {
+            return 0;
+        }
+        states |= 1u << state;
+        w += len + (bar != NULL);
+    }
+    p->states = states;
+    p->dx = v[0];
+    p->dy = v[1];
+    p->frames = v[2];
+    p->t = 0.0f;
+    p->at = 0;
+    return 1;
+}
+
+/* How far a push has its shape this frame (0 none, 1 all the way), eased; brought toward its states' truth by
+ * the frames since it was last seen (a shape not shown for a while is where its states say). */
+static float push_now(Push *p, const KhdaysSituation *situation)
+{
+    float step, target;
+    if (p->states == 0) {
+        return 0.0f;
+    }
+    target = (situation->states & p->states) != 0 ? 1.0f : 0.0f;
+    step = p->at == 0 ? p->frames : (float)(uint32_t)(situation->frame - p->at);
+    p->at = situation->frame != 0 ? situation->frame : 1u;
+    step /= p->frames;
+    if (step > 1.0f) {
+        step = 1.0f;
+    }
+    p->t =
+        p->t < target ? (p->t + step < target ? p->t + step : target) : (p->t - step > target ? p->t - step : target);
+    return p->t * p->t * (3.0f - 2.0f * p->t); /* smoothstep */
+}
+
 /* Reads `shape <upper|lower> [<x> <y> <w> <h>] at <corner> ...`. Returns 1,
  * or 0 with the reason. */
 static int read_shape(char **t, int n, ShapeDef *s, const char **why)
@@ -490,6 +560,8 @@ static int read_shape(char **t, int n, ShapeDef *s, const char **why)
         } else if (strcmp(w, "fade") == 0 && (s->flags & KOF_DIM) == 0u && four(t, n, i + 1, s->fade)) {
             s->flags |= KOF_WEIGHT;
             i += 5;
+        } else if (strcmp(w, "push") == 0 && read_push(t, n, i, &s->push)) {
+            i += 5;
         } else {
             *why = "an effect this version does not know, or its values";
             return 0;
@@ -540,8 +612,10 @@ static int read_shape3d(char **t, int n, Shape3dDef *s, const char **why)
             i += 2;
         } else if (strcmp(t[i], "scale") == 0 && i + 1 < n && number(t[i + 1], &s->scale) && s->scale > 0.0f) {
             i += 2;
+        } else if (strcmp(t[i], "push") == 0 && read_push(t, n, i, &s->push)) {
+            i += 5;
         } else {
-            *why = "margin or scale";
+            *why = "margin, scale or push";
             return 0;
         }
     }
@@ -626,10 +700,14 @@ static int read_section(char **t, int n, const char **why)
         c.negate = w[0] == '!';
         w += c.negate;
         c.width = 0;
+        c.mod = 0;
         c.state = khdays_situation_state_named(w, (int)strlen(w));
         if (strcmp(w, "wide") == 0 || strcmp(w, "narrow") == 0) {
             c.state = -1;
             c.width = w[0] == 'w' ? 1 : 2;
+        } else if (strncmp(w, "mod-", 4) == 0 && khdays_mod_named(w + 4) >= 0) {
+            c.state = -1;
+            c.mod = khdays_mod_named(w + 4) + 1;
         } else if (c.state < 0) {
             *why = "an unknown state";
             return 0;
@@ -913,6 +991,7 @@ static int holds(const Section *s, const KhdaysSituation *situation)
     for (int i = 0; i < s->conditions; ++i) {
         const Condition *c = &conditions[s->first_condition + i];
         const int truth = c->state >= 0   ? (int)((situation->states >> c->state) & 1u)
+                          : c->mod != 0   ? khdays_mod_installed(c->mod - 1)
                           : c->width == 1 ? current_columns >= WIDE_COLUMNS
                                           : current_columns <= 256;
         if (truth == c->negate) {
@@ -1259,6 +1338,21 @@ static int read_animation(const char *name, Animation *a, int ahead)
                     why = "no memory";
                 }
             }
+        } else if (strcmp(line_words[0], "sway") == 0) {
+            if (piece < 0 || !numbers(n, 1, 2, v) || v[1] < 1.0f) {
+                why = "sway <units> <frames>, after its piece";
+            } else {
+                anim_pieces[piece].sway = v[0];
+            }
+        } else if (strcmp(line_words[0], "wander") == 0) {
+            if (piece < 0 || !numbers(n, 1, 4, v) || v[3] < 1.0f) {
+                why = "wander <units> <x swings> <y swings> <frames>, after its piece";
+            } else {
+                anim_pieces[piece].wander = v[0];
+                anim_pieces[piece].wander_x = v[1];
+                anim_pieces[piece].wander_y = v[2];
+                anim_pieces[piece].wander_frames = v[3];
+            }
         } else if (strcmp(line_words[0], "clip") == 0 || strcmp(line_words[0], "loop") == 0) {
             if (read_clip(n, line_words[0][0] == 'l', a, &why)) {
                 piece = -1;
@@ -1280,6 +1374,8 @@ static int read_animation(const char *name, Animation *a, int ahead)
                 p->first_key = anim_key_count;
                 p->keys = 0;
                 p->prompt = NULL;
+                p->sway = 0.0f;
+                p->wander = p->wander_x = p->wander_y = p->wander_frames = 0.0f;
                 piece = anim_piece_count++;
                 ++anim_clips[anim_clip_count - 1].pieces;
             }
@@ -1403,10 +1499,17 @@ static int animation_now(int a, uint32_t frame)
                 }
             }
             clip_began = frame;
+            clip_fast = khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) && before[0] != '\0' &&
+                        strcmp(before, "none") != 0 && strcmp(before, "intro") != 0 && strcmp(before, "logo") != 0;
         }
     }
     t = frame - clip_began;
     c = clip_playing;
+    if (c >= 0 && clip_fast) {
+        /* its frames CLIP_FAST at a time, then the loop where the clip at its own pace would have left it */
+        const uint32_t frames = (uint32_t)anim_clips[c].frames;
+        t = t * CLIP_FAST < frames ? t * CLIP_FAST : t + frames - frames / CLIP_FAST;
+    }
     if (c < 0 || (t >= (uint32_t)anim_clips[c].frames && an->loop >= 0)) {
         c = an->loop;
     }
@@ -1441,6 +1544,24 @@ static int animation_now(int a, uint32_t frame)
         out = &pieces_now[count++];
         memset(out, 0, sizeof(*out));
         memcpy(out->rect, v, sizeof(out->rect));
+        if (p->sway != 0.0f) {
+            /* the pointing glove, as every menu's (host/screens/layout_screen.h khdays_layout_glove_sway): KH2's
+             * swing, about half `sway` and 1.04 times it each way, every 89 / 3 of the game's frames */
+            const float swing = 89.0f / 3.0f;
+            const float dx = p->sway * (0.5f - 1.04f * sinf(6.28318531f * fmodf((float)frame, swing) / swing));
+            out->rect[0] += dx;
+            out->rect[2] += dx;
+        }
+        if (p->wander != 0.0f) {
+            /* sin(pi * swings * f / frames) across and down, as KH2's bounces */
+            const float f = (float)(frame % (uint32_t)p->wander_frames) / p->wander_frames;
+            const float dx = p->wander * sinf(3.14159265f * p->wander_x * f);
+            const float dy = p->wander * sinf(3.14159265f * p->wander_y * f);
+            out->rect[0] += dx;
+            out->rect[2] += dx;
+            out->rect[1] += dy;
+            out->rect[3] += dy;
+        }
         memcpy(out->texels, icon != NULL ? icon->texels : p->texels, sizeof(out->texels));
         if (icon != NULL && icon->texels[3] != 0.0f) {
             /* the icon at the piece's height, as wide as its own shape, its right edge kept */
@@ -1473,7 +1594,7 @@ static void put_float(uint32_t *words, int at, float v)
 
 /* Builds a shape for this frame in the C x 192 picture: its source's rectangle scaled (a DS dot
  * becomes `scale` picture dots), placed at its corner and moved by its margins. */
-static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int key_first)
+static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int key_first, float push_x, float push_y)
 {
     const float f = hud_factor();
     const float c = (float)columns;
@@ -1519,8 +1640,8 @@ static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int ke
     for (int i = 0; i < 4; ++i) {
         margin[i] = d->margin[i] * f + d->margin_fixed[i];
     }
-    x1 += margin[0] - margin[2];
-    y1 += margin[1] - margin[3];
+    x1 += margin[0] - margin[2] + push_x * f;
+    y1 += margin[1] - margin[3] + push_y * f;
     memset(words, 0, sizeof(out->words));
     words[KO_FLAGS] = d->flags | (d->lower ? KOF_LOWER : 0u);
     put_float(words, KO_SRC_X, d->x);
@@ -1543,7 +1664,7 @@ static void build_shape(const ShapeDef *d, int columns, KhdaysShape *out, int ke
     put_float(words, KO_SCALE_Y, sy);
 }
 
-static void build_shape3d(const Shape3dDef *d, int columns, KhdaysShape3d *out)
+static void build_shape3d(const Shape3dDef *d, int columns, KhdaysShape3d *out, float push_x, float push_y)
 {
     /* at the HUD's scale, as the 2D shapes, unless fixed */
     const float u = d->fixed ? 1.0f : 1.0f / hud_factor();
@@ -1575,8 +1696,8 @@ static void build_shape3d(const Shape3dDef *d, int columns, KhdaysShape3d *out)
     }
     out->group = d->group;
     out->hide = d->hide;
-    out->x = x1 + (d->margin[0] - d->margin[2]) / u;
-    out->y = y1 + (d->margin[1] - d->margin[3]) / u;
+    out->x = x1 + (d->margin[0] - d->margin[2] + push_x) / u;
+    out->y = y1 + (d->margin[1] - d->margin[3] + push_y) / u;
     out->scale = d->scale / u;
     out->src_x = d->x;
     out->src_y = d->y;
@@ -1621,7 +1742,7 @@ static void add_halves(int columns, int key_count, int *shape_count, int *shape3
         lower.sx_fixed = lower.sy_fixed = k;
         lower.flags = KOF_FORCE;
         lower.opacity = 1.0f;
-        build_shape(&lower, columns, &shapes[(*shape_count)++], key_count);
+        build_shape(&lower, columns, &shapes[(*shape_count)++], key_count, 0.0f, 0.0f);
     }
 }
 
@@ -1635,6 +1756,12 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
     out->backdrop_ax = out->backdrop_ay = 0.5f;
     out->backdrop_fit = 0;
     out->hide3d_all = 0;
+    out->lower_whole = 0;
+    for (int s = 0; s < 2; ++s) {
+        out->shop_screens[s] = out->shop_cut_layers[s] = 0u;
+        out->shop_fade[s] = out->shop_with3d[s] = out->shop_slide[s] = 0;
+    }
+    out->shop_scale = 0;
     out->animated = 0;
     out->picture_w = out->picture_h = 0;
     out->ground = 0;
@@ -1657,7 +1784,8 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             case D_SCREENS: out->screens = out->screens < 0 ? d->value : out->screens; break;
             case D_BRIGHTNESS: out->brightness = out->brightness < 0 ? d->value : out->brightness; break;
             case D_SHAPE: {
-                const ShapeDef *def = &shape_defs[d->value];
+                ShapeDef *def = &shape_defs[d->value];
+                const float pushed = push_now(&def->push, situation);
                 if (!grow((void **)&shapes, &shape_room, shape_count, sizeof(KhdaysShape))) {
                     break;
                 }
@@ -1666,13 +1794,17 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
                         keys[key_count + k] = def_keys[def->key_first + k];
                     }
                 }
-                build_shape(def, columns, &shapes[shape_count++], key_count);
+                build_shape(def, columns, &shapes[shape_count++], key_count, def->push.dx * pushed,
+                            def->push.dy * pushed);
                 key_count += def->key_count;
                 break;
             }
             case D_SHAPE3D:
                 if (grow((void **)&shapes3d, &shape3d_room, shape3d_count, sizeof(KhdaysShape3d))) {
-                    build_shape3d(&shape3d_defs[d->value], columns, &shapes3d[shape3d_count++]);
+                    Shape3dDef *def3 = &shape3d_defs[d->value];
+                    const float pushed = push_now(&def3->push, situation);
+                    build_shape3d(def3, columns, &shapes3d[shape3d_count++], def3->push.dx * pushed,
+                                  def3->push.dy * pushed);
                 }
                 break;
             case D_BACKDROP:
@@ -1751,7 +1883,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             whole.corner = CORNER_CENTRE;
             whole.sx_fixed = whole.sy_fixed = 1.0f; /* fixed: the DS's size, whatever the HUD's */
             whole.opacity = 1.0f;
-            build_shape(&whole, columns, &shapes[shape_count++], key_count);
+            build_shape(&whole, columns, &shapes[shape_count++], key_count, 0.0f, 0.0f);
         }
     }
     if (halves) {

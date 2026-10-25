@@ -375,6 +375,7 @@ add_executable(khdays-native
     runtime/input/controls_hooks.c
     runtime/core/diag.c
     runtime/display/display.c
+    runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
     runtime/core/events.c
     runtime/input/input.c
     runtime/core/language.c           # the game's language changed while it runs
@@ -383,10 +384,14 @@ add_executable(khdays-native
     runtime/core/sha1.c               # SHA-1: the saves' signatures, the rooms' passwords
     runtime/menus/autosave.c           # the autosave after a cleared mission
     runtime/menus/savelist.c           # the port's save list over the game's
+    runtime/menus/saveworld.c          # the world of each save (the save page's pictures)
     runtime/menus/cinelist.c           # MODO CINE's list, read for the port to draw
+    runtime/menus/daycard.c            # the day's calendar card, read for the port to draw
     runtime/net/roomlist.c           # the port's list of Mission Mode's rooms over the game's
     runtime/menus/charselect.c         # Mission Mode's character select, read and steered for the port
     runtime/menus/camp.c               # Mission Mode's camp menu, read for the port
+    runtime/menus/shop.c               # the Moogle Shop, read for the port (its moogle turned to the menu)
+    runtime/menus/enemy_viewer.c       # Enemy Profiles' model viewer: the game's own 3D of the enemy
     runtime/menus/retry.c              # Mission Mode's Retry in the pause
     runtime/menus/mission_start.c      # a mod's mission.start: the camp's own presses
     runtime/scripts/scripts.c          # gameplay mods' scripts: found, loaded, run at the frame point
@@ -450,11 +455,16 @@ add_executable(khdays-native
     host/screens/layout_screen.c           # the port's screens drawn from a mod's pieces
     host/screens/save_screen.c             # the port's save list on the screen
     host/screens/cine_screen.c             # MODO CINE's list as the HD theater's chapters
+    host/screens/day_screen.c              # the day's calendar card as the HD theater's chapter days
     host/screens/room_screen.c             # the port's list of Mission Mode's rooms on the screen
     host/screens/mod_screen.c              # a mod's screens and the title's mods' prompt
     host/screens/select_screen.c           # Mission Mode's character select on one screen
     host/screens/camp_screen.c             # Mission Mode's camp menu on one screen
+    host/screens/overhaul_camp_screen.c    # ... and the story's, with its pages, in the Menu Overhaul's look
     host/screens/movie_pause.cpp           # the DS's scene pause over an HD movie
+    host/screens/shop_screen.c             # the Moogle Shop on one screen
+    host/screens/modern_pause.c            # the Menu Overhaul's pause (KH2's look) over HD movies and monologues
+    host/screens/kh2_seq.c                 # KH2's 2D sequences (the pause's, the story menu's buttons)
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
     runtime/core/origin.c
@@ -463,6 +473,7 @@ add_executable(khdays-native
     runtime/mods/font_raster.cpp
     runtime/mods/font_runtime.cpp
     runtime/mods/textures.c
+    runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/tiles2d.c
@@ -577,6 +588,9 @@ add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_h
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
+add_executable(khdays-camp-memory-test tests/camp_memory_test.c runtime/menus/camp.c)
+target_compile_options(khdays-camp-memory-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-camp-memory COMMAND khdays-camp-memory-test)
 add_executable(khdays-scenes-test tests/scenes_test.c runtime/movies/scene_map.c)
 target_compile_options(khdays-scenes-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-scenes COMMAND khdays-scenes-test)

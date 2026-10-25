@@ -26,6 +26,7 @@ enum {
 enum { CAMP_MENU = 0, CAMP_HOLO_MISSIONS = 1, CAMP_STORY_SAVE = 4, CAMP_PREFERENCES = 5, CAMP_BETWEEN = -1 };
 
 static int previous = KHDAYS_SIT_UNKNOWN;
+static int pause_over_both; /* the pause up was opened over the 3D on both screens */
 /* the last camp the game had loaded was the story's (ov025), not Mission Mode's (ov008): the field
  * after it is the story's */
 static int story_camp = 1;
@@ -227,7 +228,7 @@ static uint32_t states_of(const KhdaysSituationInputs *in, int scene)
     /* the pause opened in an event (ov023's scene there: a cutscene, its pause "Continue" and
      * "Skip"), where the lower screen shows none of the field's HUD; in a battle's pause no event
      * scene is there (mission walk f5029-5529) */
-    if (scene == KHDAYS_SIT_PAUSE && in->event_status >= 0) {
+    if (scene == KHDAYS_SIT_PAUSE && (in->event_status >= 0 || pause_over_both)) {
         s |= ST(EVENT);
     }
 #undef ST
@@ -243,6 +244,14 @@ void khdays_situation_decide(const KhdaysSituationFrame *frame, KhdaysSituation 
         story_camp = 1; /* a new game or a story's file follows, or Mission Mode's camp says otherwise */
     }
     out->scene = situation_of(in);
+    /* a pause opened over the 3D on both screens (a boss with Sora's memories: mission 61's Guard
+     * Armor): its lower screen holds his 3D, none of the field's HUD -- as an event's (else the
+     * banner's, the map's and the panel's places are drawn black) */
+    if (out->scene == KHDAYS_SIT_PAUSE && previous != KHDAYS_SIT_PAUSE) {
+        pause_over_both = previous == KHDAYS_SIT_FIELD_3D_BOTH;
+    } else if (out->scene != KHDAYS_SIT_PAUSE) {
+        pause_over_both = 0;
+    }
     out->states = states_of(in, out->scene);
     previous = out->scene;
 }

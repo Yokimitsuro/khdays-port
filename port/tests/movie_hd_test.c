@@ -119,6 +119,22 @@ void khdays_hd_close(void)
 {
     ++closes;
 }
+/* the Menu Overhaul's (runtime/mods/installed.h): not installed but in its own part, the DS's pause tested */
+static int overhaul_installed;
+static int scene_end_closes;
+void khdays_hd_close_scene_end(void)
+{
+    ++scene_end_closes;
+}
+void khdays_hd_voice_pause(int pause)
+{
+    (void)pause;
+}
+int khdays_mod_installed(int mod)
+{
+    (void)mod;
+    return overhaul_installed;
+}
 int khdays_hd_status(char *why, size_t size)
 {
     if (status_now == -1) {
@@ -637,6 +653,44 @@ int main(void)
         DeleteFileA("data/cutscenes/cinematics/hd834.mp4");
         DeleteFileA("data/cutscenes/cinematics/hd848.mp4");
     }
+
+    /* the Menu Overhaul's panel in place of the DS's pause: START opens it on Continue, B backs out, and A on
+     * Skip skips at once (no question asked) */
+    overhaul_installed = 1;
+    khdays_movie_hd_stream(1, "/mv/802.mods", 0);
+    khdays_movie_hd_game_buttons(0);
+    khdays_movie_hd_flags(8);
+    {
+        int row = -1, can_skip = 0;
+        const int closed_before = closes;
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(START, 0, 0);
+        CHECK(khdays_movie_pause_menu(&row, &can_skip) && row == 0 && can_skip && hd_paused &&
+              khdays_clock_held(KHDAYS_HOLD_MOVIE_MENU)); /* the video and the game held */
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(KHDAYS_KEY_B, 0, 0); /* backed out: on as it was */
+        CHECK(!khdays_movie_pause_menu(&row, &can_skip) && !hd_paused && !khdays_clock_held(KHDAYS_HOLD_MOVIE_MENU) &&
+              !khdays_movie_pause_closed_by_choice());
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(START, 0, 0);
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(KHDAYS_KEY_DOWN, 0, 0);
+        CHECK(khdays_movie_pause_menu(&row, &can_skip) && row == 1);
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(A, 0, 0); /* Skip */
+        CHECK(!khdays_movie_pause_menu(&row, &can_skip) && khdays_movie_pause_closed_by_choice());
+        CHECK(closes == closed_before + 1 && !held() && !khdays_movie_hd_course_paused());
+        khdays_media_host_presses(0, 0, 0);
+        khdays_media_host_presses(START, 0, 0); /* opened again: on Continue, not where it was left */
+        CHECK(!khdays_movie_pause_menu(&row, &can_skip) || row == 0);
+        khdays_media_host_presses(0, 0, 0);
+    }
+    khdays_movie_hd_flags(8 | 4); /* the game took the skip */
+    khdays_movie_hd_stopped();
+    khdays_movie_hd_game_buttons(0);
+    khdays_movie_hd_game_buttons(0);
+    CHECK(!khdays_movie_hd_showing() && !held());
+    overhaul_installed = 0;
 
     /* failing to open: the game's movie, said once */
     open_ok = 0;

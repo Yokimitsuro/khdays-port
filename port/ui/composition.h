@@ -80,6 +80,16 @@ typedef struct KhdaysComposition {
     int backdrop_fit; /* 1: inside the picture, its aspect kept, instead of covering it (`backdrop ...
                        * fit`; a screen of the port's laid out over it: host/screens/camp_screen.c) */
     int hide3d_all;   /* `hide3d all`: the 3D not drawn */
+    int lower_whole;  /* the lower screen shown by the shapes whole, its 3D in it: engine A, when it is the lower
+                       * screen, composed with its 3D (not apart from it) -- the 3D then not moved by any 3D shape */
+    /* the Moogle Shop's screens composed apart (host/render/gfx_render.h khdays_gfx_render_shop), and the camp's
+     * (the Files page's upper screen, the Panels page's): by screen (0 the upper, 1 the lower) which
+     * (KHDAYS_SHOP_WANT_* bits), the layers the cut leaves out (a bit each), whether the normal one keeps the DS's
+     * fade (the lower's list coming and going) and its 3D, how many dots it is slid back (the Panels page's layers
+     * scrolled and sprites moved by its slide, put back); their texels a DS dot */
+    unsigned shop_screens[2], shop_cut_layers[2];
+    int shop_fade[2], shop_with3d[2], shop_slide[2];
+    int shop_scale;
     /* an animated picture's: its size (the one that covers the picture; a picture's own size
      * otherwise), its ground (8-bit RGB, red in the low byte) and this frame's pieces, drawn in
      * order on it from the atlas `backdrop` is then; none for a picture */

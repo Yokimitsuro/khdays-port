@@ -2,11 +2,14 @@
 // rox_warai_S01, a wave of SE_SYS_WAVE), decoded straight from the archive -- the sound driver belongs
 // to the paused game -- and played at the volumes the mixer would give them (docs/PLATFORM.md).
 #include "settings_sample.h"
+#include "settings_ui.h"
 
 #include "khdays/assets/audio.h"
 
 extern "C" {
+#include "../app/devices.h"
 #include "../../runtime/core/rom.h"
+#include "../../runtime/mods/installed.h"
 #include "../../sound/archive.h"
 }
 
@@ -212,6 +215,127 @@ void play(int kind, float gain)
     SDL_ResumeAudioStreamDevice(stream);
 }
 
+// With the Menu Overhaul, the menus' own sounds: the game's se_sys_click, kettei, open and cancel (COMMON_SYS's
+// sequences 0-3, one note of SE_SYS_BNK's instruments 0-3), as --dump-sounds renders them (whole, at full volume:
+// the sequence's volume goes on top), from a mod's menu_sounds/se_sys_*.wav; else the wave alone of SE_SYS_WAVE.
+struct Cue {
+    const char *name; // its sequence
+    int wave;         // its wave in SE_SYS_WAVE
+    int volume;       // its sequence's volume, 0-127
+};
+constexpr Cue kCues[] = {{"se_sys_click", 39, 65},
+                         {"se_sys_kettei", 40, 120},
+                         {"se_sys_open", 42, 100},
+                         {"se_sys_cancel", 38, 70}}; // KHDAYS_SETTINGS_CUE_*
+Sample cue_samples[4];
+bool cue_rendered[4]; // the game's own render (stereo, the pan's halves in it), not the wave alone
+// The game plays each on a sequence player of its own (PLAYER_SE has 14): a sound goes on as the next
+// starts. A few streams in turn do the same.
+constexpr int kCueStreams = 4;
+SDL_AudioStream *cue_streams[kCueStreams];
+int cue_next;
+
+// Cue `which` as the game sounds it, from the HD pack's menu_sounds; false if it has none.
+bool load_rendered(Sample &s, int which)
+{
+    char relative[96], path[1024];
+    SDL_AudioSpec spec;
+    Uint8 *bytes = nullptr;
+    Uint32 length = 0;
+    std::snprintf(relative, sizeof(relative), "menu_sounds/%s.wav", kCues[which].name);
+    if (!khdays_mods_find(relative, path, (int)sizeof(path)) || !SDL_LoadWAV(path, &spec, &bytes, &length)) {
+        return false;
+    }
+    if (spec.format != SDL_AUDIO_S16 || length == 0) {
+        SDL_free(bytes);
+        return false;
+    }
+    s.spec = spec;
+    s.samples.assign(reinterpret_cast<const std::int16_t *>(bytes),
+                     reinterpret_cast<const std::int16_t *>(bytes) + length / sizeof(std::int16_t));
+    s.ok = !s.samples.empty();
+    SDL_free(bytes);
+    return s.ok;
+}
+
+// Wave `wave` of the wave archive `name`.
+void load_wave(Sample &s, const char *name, int wave)
+{
+    const int n = find(KHDAYS_SOUND_WAVE, name);
+    const u32 record = n >= 0 ? khdays_sound_archive_record(archive, KHDAYS_SOUND_WAVE, n) : 0;
+    u32 offset = 0, size = 0;
+    if (record == 0) {
+        return;
+    }
+    const std::vector<std::uint8_t> info = read_bytes(record, 4);
+    if (!khdays_sound_archive_file(archive, le32(info.data()) & 0xffffff, &offset, &size) || size < 0x3c) {
+        return;
+    }
+    const std::vector<std::uint8_t> swar = read_bytes(offset, size);
+    const u32 count = le32(&swar[0x38]);
+    const u32 w = static_cast<u32>(wave);
+    if (w >= count || 0x3c + 4 * (w + 1) > swar.size()) {
+        return;
+    }
+    const u32 start = le32(&swar[0x3c + 4 * w]);
+    const u32 end = w + 1 < count && 0x3c + 4 * (w + 2) <= swar.size() ? le32(&swar[0x3c + 4 * (w + 1)]) : size;
+    if (start >= end || end > swar.size()) {
+        return;
+    }
+    const khdays::assets::DecodedAudio audio = khdays::assets::decode_swav(&swar[start], end - start);
+    keep(s, audio, audio.samples.size());
+}
+
+void play_cue(int which, const KhdaysSound *levels)
+{
+    if (which < 0 || which >= (int)(sizeof(kCues) / sizeof(kCues[0])) || levels == nullptr ||
+        !khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return;
+    }
+    Sample &s = cue_samples[which];
+    if (!s.tried) {
+        s.tried = true;
+        try {
+            cue_rendered[which] = load_rendered(s, which);
+            if (!cue_rendered[which] && open_archive()) {
+                load_wave(s, "SE_SYS_WAVE", kCues[which].wave);
+            }
+        } catch (const std::exception &e) {
+            std::fprintf(stderr, "settings: no menu sound %d: %s\n", which, e.what());
+            s.ok = false;
+        }
+    }
+    if (!s.ok) {
+        return;
+    }
+    SDL_AudioStream *&stream_now = cue_streams[cue_next];
+    cue_next = (cue_next + 1) % kCueStreams;
+    if (stream_now == nullptr) {
+        stream_now = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &s.spec, nullptr, nullptr);
+        if (stream_now == nullptr) {
+            std::fprintf(stderr, "settings: no stream for the menu's sounds: %s\n", SDL_GetError());
+            return;
+        }
+    }
+    // the sequence's volume as NNS gives it (SND_CalcDecibel: 200 log10(v / 127) tenths of a dB, its share
+    // straight); the wave alone, mono, takes the middle pan's half too
+    const float v = static_cast<float>(kCues[which].volume) / 127.0f * (cue_rendered[which] ? 1.0f : 0.5f);
+    const float gain = static_cast<float>(levels->volume) / 100.0f * static_cast<float>(levels->effects) / 100.0f;
+    SDL_ClearAudioStream(stream_now);
+    SDL_SetAudioStreamFormat(stream_now, &s.spec, nullptr);
+    SDL_SetAudioStreamGain(stream_now, gain * v);
+    SDL_PutAudioStreamData(stream_now, s.samples.data(), static_cast<int>(s.samples.size() * sizeof(std::int16_t)));
+    SDL_ResumeAudioStreamDevice(stream_now);
+}
+
+// The menu asks for its sounds through this (settings_ui.h); the tests' builds of the menu have none.
+struct RegisterCue {
+    RegisterCue()
+    {
+        khdays_settings_set_cue(play_cue);
+    }
+} register_cue;
+
 } // namespace
 
 extern "C" void khdays_settings_sample(const KhdaysSound *before, const KhdaysSound *now)
@@ -238,4 +362,9 @@ extern "C" void khdays_settings_sample_stop(void)
 extern "C" int khdays_settings_sample_has_movies(void)
 {
     return 0; // playing an HD video's sound as the sample is not built
+}
+
+extern "C" void khdays_menu_cue(int which)
+{
+    play_cue(which, &khdays_devices_profile()->sound);
 }

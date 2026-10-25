@@ -13,6 +13,7 @@
 #include "ui_text.h"
 #include "../../runtime/menus/camp.h"
 #include "../../runtime/core/rom.h"
+#include "../../runtime/mods/installed.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -346,6 +347,10 @@ static int applied;
 
 void khdays_camp_screen_applied(int yes)
 {
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        khdays_overhaul_camp_applied(yes); /* the Menu Overhaul's camp (overhaul_camp_screen.c) */
+        return;
+    }
     applied = yes;
 }
 
@@ -353,6 +358,9 @@ int khdays_camp_screen_model(KhdaysCampModel *out)
 {
     KhdaysCampView v;
     const Plan *p;
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return khdays_overhaul_camp_model(out);
+    }
     khdays_camp_view(&v);
     if (!v.shown || (p = plan(v.language)) == NULL || (s.tried == v.language && !s.ok) ||
         (v.config && p->page_backdrop == NULL)) {
@@ -892,6 +900,9 @@ int khdays_camp_screen_draw(SDL_Renderer *renderer)
 {
     KhdaysCampView v;
     KhdaysLayoutFrame fr;
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return khdays_overhaul_camp_draw(renderer);
+    }
     khdays_camp_view(&v);
     if (!v.shown || !applied || !khdays_present_one_picture()) {
         khdays_camp_set_page_drawn(0);
@@ -977,6 +988,7 @@ int khdays_camp_screen_draw(SDL_Renderer *renderer)
 
 void khdays_camp_screen_renderer_gone(void)
 {
+    khdays_overhaul_camp_renderer_gone();
     forget();
     s.tried = 0;
     s.ok = 0;

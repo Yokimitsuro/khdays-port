@@ -4,11 +4,14 @@
  * selected row. With the guest's row (Mission Mode's) Y plays as the guest from anywhere. */
 #include "save_screen.h"
 
+#include "camp_screen.h"
 #include "layout_screen.h"
 #include "ui_text.h"
 #include "../../runtime/core/rom.h"
 #include "../../runtime/menus/savelist.h"
+#include "../../runtime/mods/installed.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,7 +43,20 @@ static struct {
     unsigned short empty[64], guest[64];
     KhdaysLayoutStrings strings[STRINGS_FILES];
     int top; /* the first row shown */
+    /* with the Menu Overhaul, the motion: the list's top as it scrolls (in rows), the glove's middle, each
+     * row's red (0-1), the screen shown last picture and when */
+    float view_top, glove_y, lit[KHDAYS_SLOT_COUNT + 1];
+    int was_screen;
+    Uint64 was_at;
 } s;
+
+/* A value eased toward `to` over a picture `dt` seconds after the last, fast then gently in. */
+static float ease_to(float from, float to, float dt, float rate)
+{
+    const float k = 1.0f - expf(-dt * rate);
+    const float out = from + (to - from) * k;
+    return fabsf(to - out) < 0.002f ? to : out;
+}
 
 /* ---- The pieces' file ------------------------------------------------------------------------- */
 
@@ -203,18 +219,31 @@ static void draw_glove(const KhdaysLayoutFrame *fr, float x, float middle)
 {
     const KhdaysLayoutPlace *g = khdays_layout_place(&s.layout, "glove");
     if (g != NULL) {
-        khdays_layout_draw_piece(&s.layout, fr, "glove", x + g->x, middle + g->y - g->h / 2, g->w, g->h, 1.0f);
+        khdays_layout_draw_piece(&s.layout, fr, "glove", x + g->x + khdays_layout_glove_sway(),
+                                 middle + g->y - g->h / 2, g->w, g->h, 1.0f);
     }
+}
+
+/* KH2's firefly by the selected row's or button's right end (layout_screen.h), as large beside the
+ * glove as KH2's beside its own. */
+static void draw_firefly(const KhdaysLayoutFrame *fr, float right, float middle)
+{
+    const KhdaysLayoutPlace *g = khdays_layout_place(&s.layout, "glove");
+    const float unit = KHDAYS_FIREFLY_UNIT * (g != NULL ? g->h / 91.0f : 1.0f);
+    khdays_layout_firefly(s.layout.renderer, fr, KHDAYS_FIREFLY_SAVE, right - 15.0f * unit, middle, unit, 1.0f);
 }
 
 static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysSaveView *v, int index, float x, float y)
 {
     unsigned short line[128];
     char digits[32];
-    const int selected = index == v->cursor;
-    khdays_layout_draw_piece(&s.layout, fr, selected ? "row_selected" : "row", x, y, s.rows[2], s.rows[3], 1.0f);
-    if (selected && !v->buttons) {
-        draw_glove(fr, x, y + s.rows[3] / 2);
+    /* the red comes and goes with the cursor (s.lit) */
+    const float lit = index >= 0 && index <= KHDAYS_SLOT_COUNT ? s.lit[index] : 0.0f;
+    if (lit < 1.0f) {
+        khdays_layout_draw_piece(&s.layout, fr, "row", x, y, s.rows[2], s.rows[3], 1.0f);
+    }
+    if (lit > 0.0f) {
+        khdays_layout_draw_piece(&s.layout, fr, "row_selected", x, y, s.rows[2], s.rows[3], lit);
     }
     if (index >= KHDAYS_SLOT_COUNT) {
         khdays_layout_draw_placed(&s.layout, fr, "guest", x, y, 1.0f); /* Mission Mode's guest: its words, Days's */
@@ -248,11 +277,16 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysSaveView *v, int i
         ascii(digits, line, 128);
         draw_text(fr, "munny", line, x, y);
         {
-            /* H:MM:SS, the game's separator (Ov000_DrawSaveSlotText) */
+            /* H:MM:SS, the game's separator (Ov000_DrawSaveSlotText); H:MM with the Menu Overhaul */
             const unsigned short *colon = string_of(STRINGS_LRD, LRD_TIME);
             const unsigned short sep = colon[0] != 0 ? colon[0] : ':';
-            snprintf(digits, sizeof(digits), "%u%c%02u%c%02u", (unsigned)(r->seconds / 3600), ':',
-                     (unsigned)(r->seconds / 60 % 60), ':', (unsigned)(r->seconds % 60));
+            if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+                snprintf(digits, sizeof(digits), "%u%c%02u", (unsigned)(r->seconds / 3600), ':',
+                         (unsigned)(r->seconds / 60 % 60));
+            } else {
+                snprintf(digits, sizeof(digits), "%u%c%02u%c%02u", (unsigned)(r->seconds / 3600), ':',
+                         (unsigned)(r->seconds / 60 % 60), ':', (unsigned)(r->seconds % 60));
+            }
             ascii(digits, line, 128);
             for (int i = 0; line[i] != 0; ++i) {
                 if (line[i] == ':') {
@@ -278,6 +312,10 @@ int khdays_save_screen_draw(SDL_Renderer *renderer)
     khdays_savelist_view(&v);
     if (v.screen == KHDAYS_SAVELIST_NONE) {
         return 0;
+    }
+    if (khdays_camp_screen_draws_save()) {
+        return 0; /* the camp's save page shows this list, or the title's load list in its look (camp_screen.c,
+                   * "The save page") */
     }
     if (renderer != s.layout.renderer || v.language != s.tried) {
         s.tried = v.language;
@@ -305,13 +343,50 @@ int khdays_save_screen_draw(SDL_Renderer *renderer)
     if (s.top < 0) {
         s.top = 0;
     }
-    for (int i = 0; i < s.rows_shown && s.top + i < rows_in; ++i) {
-        draw_row(&fr, &v, s.top + i, s.rows[0], s.rows[1] + (float)i * s.row_pitch);
+    {
+        /* the motion (the Menu Overhaul's): the list scrolls, the glove glides, the red comes and goes; all at
+         * once when the screen opens, and a wrap (the last file to the first) too */
+        const Uint64 now = SDL_GetTicksNS();
+        const int opened =
+            !khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) || v.screen != s.was_screen || now - s.was_at > 250000000u;
+        const float dt = opened ? 0.0f : (float)((double)(now - s.was_at) / 1e9);
+        const float glove_to = s.rows[1] + ((float)v.cursor - (float)s.top) * s.row_pitch + s.rows[3] / 2;
+        s.was_screen = v.screen;
+        s.was_at = now;
+        if (opened || fabsf((float)s.top - s.view_top) > (float)s.rows_shown) {
+            s.view_top = (float)s.top;
+        }
+        s.view_top = opened ? (float)s.top : ease_to(s.view_top, (float)s.top, dt, 22.0f);
+        s.glove_y = opened || fabsf(glove_to - s.glove_y) > s.row_pitch * (float)s.rows_shown
+                        ? glove_to
+                        : ease_to(s.glove_y, glove_to, dt, 26.0f);
+        for (int i = 0; i <= KHDAYS_SLOT_COUNT; ++i) {
+            const float to = i == v.cursor ? 1.0f : 0.0f;
+            s.lit[i] = opened ? to : ease_to(s.lit[i], to, dt, 20.0f);
+        }
+    }
+    {
+        /* the rows in the list's band; those scrolling in or out cut at its edges */
+        const int first = (int)floorf(s.view_top);
+        const SDL_FRect band = khdays_layout_to_window(&fr, 0.0f, s.rows[1] - 2.0f, KHDAYS_LAYOUT_W,
+                                                       (float)(s.rows_shown - 1) * s.row_pitch + s.rows[3] + 4.0f);
+        const SDL_Rect clip = {(int)floorf(band.x), (int)floorf(band.y), (int)ceilf(band.w), (int)ceilf(band.h)};
+        SDL_SetRenderClipRect(renderer, &clip);
+        for (int i = first; i <= first + s.rows_shown && i < rows_in; ++i) {
+            if (i >= 0) {
+                draw_row(&fr, &v, i, s.rows[0], s.rows[1] + ((float)i - s.view_top) * s.row_pitch);
+            }
+        }
+        SDL_SetRenderClipRect(renderer, NULL);
+    }
+    if (!v.buttons) {
+        draw_glove(&fr, s.rows[0], s.glove_y);
+        draw_firefly(&fr, s.rows[0] + s.rows[2], s.glove_y);
     }
     {
         const KhdaysLayoutPlace *thumb = khdays_layout_place(&s.layout, "thumb");
         if (thumb != NULL) {
-            const float t = rows_in > s.rows_shown ? (float)s.top / (float)(rows_in - s.rows_shown) : 0.0f;
+            const float t = rows_in > s.rows_shown ? s.view_top / (float)(rows_in - s.rows_shown) : 0.0f;
             khdays_layout_draw_piece(&s.layout, &fr, "thumb", thumb->x, s.scroll[0] + t * (s.scroll[1] - s.scroll[0]),
                                      thumb->w, thumb->h, 1.0f);
         }
@@ -342,6 +417,7 @@ int khdays_save_screen_draw(SDL_Renderer *renderer)
                 khdays_layout_draw_piece(&s.layout, &fr, names[b][on], pl->x, pl->y, pl->w, pl->h, 1.0f);
                 if (on) {
                     draw_glove(&fr, pl->x, pl->y + pl->h / 2);
+                    draw_firefly(&fr, pl->x + pl->w, pl->y + pl->h / 2);
                 }
                 /* the word in the button's middle (the style's place is from there) */
                 {

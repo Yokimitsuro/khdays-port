@@ -36,6 +36,12 @@ int khdays_ui_take_changed(void);
  * KE_CELLS), or sprite `index` of the screen's 128 */
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy);
 void khdays_ui_left_out_obj(int part, int screen, int index);
+/* The same for a cell whose picture the window draws apart from the composition (the Menu Overhaul's
+ * pause): also left out of engine A's display capture, which the game shows again in its screen blends
+ * (an event's camera cuts), and its layer left to it: the other parts' elements in that layer are not
+ * drawn (a scene's text canvas, whose characters the game's pause has taken). */
+void khdays_ui_left_out_cell_captured(int part, int screen, int layer, int cx, int cy);
+const uint8_t *khdays_ui_captured_cell_bits(int screen);
 /* Whether a part that is not off already stands for cell (cx, cy) of text
  * layer `layer` this frame (the parts emit in their order, the text first). */
 int khdays_ui_cell_taken(int screen, int layer, int cx, int cy);

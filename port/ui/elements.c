@@ -133,6 +133,11 @@ static uint32_t record_count[2][2], record_room[2][2];
 static uint8_t left_cells[2][2][KE_LEFT_CELL_WORDS * 4];
 static uint8_t left_obj[2][2][KE_LEFT_OBJ_WORDS * 4];
 static int left_any_cells[2][2], left_any_obj[2][2];
+/* of those, per screen, the cells also left out of the display capture (khdays_ui_left_out_cell_captured), and
+ * the layers they are in (bits) */
+static uint8_t captured_cells[2][KE_LEFT_CELL_WORDS * 4];
+static int captured_any[2];
+static unsigned captured_layers[2];
 
 void khdays_ui_register(int part, void (*emit)(void))
 {
@@ -207,6 +212,25 @@ void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy)
         left_cells[list][screen][bit >> 3] |= (uint8_t)(1u << (bit & 7u));
         left_any_cells[list][screen] = 1;
     }
+}
+
+void khdays_ui_left_out_cell_captured(int part, int screen, int layer, int cx, int cy)
+{
+    uint32_t bit;
+    khdays_ui_left_out_cell(part, screen, layer, cx, cy);
+    if (khdays_ui_mode(part) != KHDAYS_UI_ON || screen < 0 || screen > 1 || layer < 0 || layer > 3 || cx < 0 ||
+        cx > 63 || cy < 0 || cy > 63) {
+        return;
+    }
+    bit = (uint32_t)layer * KE_CELLS + (uint32_t)cy * 64u + (uint32_t)cx;
+    captured_cells[screen][bit >> 3] |= (uint8_t)(1u << (bit & 7u));
+    captured_any[screen] = 1;
+    captured_layers[screen] |= 1u << layer;
+}
+
+const uint8_t *khdays_ui_captured_cell_bits(int screen)
+{
+    return captured_any[screen & 1] ? captured_cells[screen & 1] : NULL;
 }
 
 int khdays_ui_cell_taken(int screen, int layer, int cx, int cy)
@@ -470,9 +494,15 @@ void khdays_ui_collect(int wide_margin, int upper)
                 memset(left_cells[list][s], 0, sizeof(left_cells[list][s]));
         }
     }
+    for (int s = 0; s < 2; ++s) {
+        if (captured_any[s])
+            memset(captured_cells[s], 0, sizeof(captured_cells[s]));
+    }
     memset(left_obj, 0, sizeof(left_obj));
     memset(left_any_cells, 0, sizeof(left_any_cells));
     memset(left_any_obj, 0, sizeof(left_any_obj));
+    memset(captured_any, 0, sizeof(captured_any));
+    memset(captured_layers, 0, sizeof(captured_layers));
     for (int part = 0; part < KHDAYS_UI_PARTS; ++part) {
         if (emitters[part] != NULL && khdays_ui_mode(part) != KHDAYS_UI_OFF) {
             emitters[part]();
@@ -590,6 +620,13 @@ void khdays_ui_collect(int wide_margin, int upper)
     qsort(entries, (size_t)entry_count, sizeof(Entry), above);
     for (int i = 0; i < entry_count; ++i) {
         Entry *n = &entries[i];
+        if (n->part != KHDAYS_UI_PAUSE && !(n->dslot & KES_SPRITES) &&
+            ((captured_layers[n->source] >> (n->dslot & KES_NUMBER_MASK)) & 1u)) {
+            /* a layer the window's own picture stands for (the game's pause on it now): another part's element
+             * there stands for what the layer no longer shows (a scene's text canvas, its characters the
+             * pause's now) */
+            continue;
+        }
         if (n->e.screen != n->source && !(n->e.slot & KES_DIRECT)) {
             /* on the other screen: its colours from its own engine's palettes
              * (an image of colours already needs none) */

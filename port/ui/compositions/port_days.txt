@@ -36,15 +36,21 @@ hide3d hud
 # picture's left edge at the top, above everything, for a few seconds after a
 # message comes (info-new; not when the line empties). Its ground (8-bit 36 36
 # 36) not shown. The line runs on to the DS's edge with no end of its own, so
-# where it is cut it fades out.
-[field if hud info-new]
+# where it is cut it fades out. With the Menu Overhaul (docs/MENU_OVERHAUL.md)
+# at 0.75, the mission's panel and what is under it moving down 20 to make room
+# for it while it shows (`push`, below), easing there and back.
+[field if hud info-new !mod-menu-overhaul]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+[field if hud info-new mod-menu-overhaul]
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
 
 # The mission's information the upper screen shows at its start (the same
 # banner, the upper screen's 0,0-256,24, fading out at the DS's edge), in the
 # same place: the game takes it away after about five seconds.
-[field if info-upper mission-panel]
+[field if info-upper mission-panel !mod-menu-overhaul]
 shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
+[field if info-upper mission-panel mod-menu-overhaul]
+shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
 
 # The mission's panel (the lower screen's 4,152-252,192) at the top left,
 # scale 0.75; the backdrop around its bevelled corners (8-bit 36 36 36) made
@@ -55,9 +61,12 @@ shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
 # whenever the lower screen has it (mission-panel), with the HUD and at a
 # mission's start, before the game draws the rest of its HUD; in a story's
 # challenge too, whose lower screen is a mission's.
-[field if mission-panel !dialog]
+[field if mission-panel !dialog !mod-menu-overhaul]
 shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
 shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
+[field if mission-panel !dialog mod-menu-overhaul]
+shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
+shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
 
 # The enemy's health first, above the map: at the top right, the map in the
 # same corner under it (as Kingdom Hearts II has them).
@@ -89,8 +98,13 @@ stop
 # x 127.5, short of the middle where the portal's countdown, also the HUD's
 # 3D, ends its digits (Ov002_SceneStepPanelHud draws them leftwards from it).
 # At the 2D shapes' scale, so that it stays under the panel at every HUD size.
+[field if hud !mod-menu-overhaul]
 shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
 shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667
+[field if hud mod-menu-overhaul]
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667 push info-new|info-upper 0 20 12
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 push info-new|info-upper 0 20 12
+[field if hud]
 # the countdown and the lock-on, at the top in the middle
 shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
 # the sigils and the death counter under the map
@@ -132,8 +146,10 @@ screens upper
 brightness upper
 [field-3d-both if !hud]
 hide3d hud
-[field-3d-both if hud info-new]
+[field-3d-both if hud info-new !mod-menu-overhaul]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+[field-3d-both if hud info-new mod-menu-overhaul]
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
 [field-3d-both if hud]
 shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
 [field-3d-both if info-upper]
@@ -196,8 +212,11 @@ screens upper
 brightness upper
 hide3d hud
 shape upper 72 64 112 76 at centre scale 1
-[pause if !event]
+[pause if !event !mod-menu-overhaul]
 shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16
+[pause if !event mod-menu-overhaul]
+shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 key 16 16 16
+[pause if !event]
 shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4
 shape lower 4 152 248 40 at bottom-left margin 5 0 0 5 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
 [pause]
@@ -260,11 +279,22 @@ stop
 # two screens side by side. NEW GAME's dialogs' pictures are read ahead from the
 # first logo on (their atlas took 110 ms to read, the title held still when
 # NEW GAME was chosen: the session log, 2026-10-09), and in the title for the
-# times it comes without the logos.
+# times it comes without the logos. So are the menu's rows (each file took some
+# 9 ms to read, a hitch the first time a row was chosen).
 [intro]
 backdrop title/{lang}/{menu}_{count}_{row}.txt at centre fit
 preload title/{lang}/newgame1_1_1.txt
 preload title/{lang}/newgame2_1_1.txt
+preload title/{lang}/root_2_0.txt
+preload title/{lang}/root_2_1.txt
+preload title/{lang}/root_3_0.txt
+preload title/{lang}/root_3_1.txt
+preload title/{lang}/root_3_2.txt
+preload title/{lang}/story_1_0.txt
+preload title/{lang}/story_2_0.txt
+preload title/{lang}/story_2_1.txt
+preload title/{lang}/mission_2_0.txt
+preload title/{lang}/mission_2_1.txt
 screens upper
 brightness lower
 hide3d all

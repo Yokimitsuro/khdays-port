@@ -2003,6 +2003,90 @@ void start_imgui(SDL_Renderer *renderer)
     }
 }
 
+// ---- The menu's sounds (settings_ui.h) -------------------------------------------
+
+void (*cue_player)(int which, const KhdaysSound *levels);
+
+void cue(int which)
+{
+    if (cue_player != nullptr) {
+        cue_player(which, &m.work.sound);
+    }
+}
+
+// Where the focus is, to hear what an event or a moment changed.
+struct Focus {
+    bool open, in_rows;
+    int mode, column, section, row, cell, choice;
+    bool operator==(const Focus &) const = default;
+};
+
+Focus focus_now()
+{
+    return Focus{m.open, m.in_rows, (int)m.mode, m.column, m.section, m.row, m.cell, m.choice};
+}
+
+enum { INTENT_NONE, INTENT_ACCEPT, INTENT_BACK };
+
+// What the player meant by a press: to choose, to go back, or neither (a move).
+int intent_of(const SDL_Event *e)
+{
+    switch (e->type) {
+    case SDL_EVENT_KEY_DOWN:
+        switch (e->key.scancode) {
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_SPACE: return INTENT_ACCEPT;
+        case SDL_SCANCODE_ESCAPE:
+        case SDL_SCANCODE_BACKSPACE: return INTENT_BACK;
+        default: return INTENT_NONE;
+        }
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
+        const SDL_GamepadButton button = (SDL_GamepadButton)e->gbutton.button;
+        const int input = pad_input_of_button(button);
+        if (input >= 0 && is_open_settings_input(input)) {
+            return INTENT_BACK;
+        }
+        switch (face_of(button)) {
+        case FACE_ACCEPT: return INTENT_ACCEPT;
+        case FACE_BACK: return INTENT_BACK;
+        default: return INTENT_NONE;
+        }
+    }
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        return e->button.button == SDL_BUTTON_LEFT    ? INTENT_ACCEPT
+               : e->button.button == SDL_BUTTON_RIGHT ? INTENT_BACK
+                                                      : INTENT_NONE;
+    default: return INTENT_NONE;
+    }
+}
+
+// The sound for what changed since `was` and `before`: the cursor for a move or a value changed, a choice
+// made or going back as the press meant, nothing when nothing changed. A volume changed has its own sample.
+void cue_after(const Focus &was, const KhdaysProfile &before, int intent)
+{
+    const Focus now = focus_now();
+    if (was.open && !now.open) {
+        cue(intent == INTENT_ACCEPT ? KHDAYS_SETTINGS_CUE_ACCEPT : KHDAYS_SETTINGS_CUE_BACK);
+        return;
+    }
+    const bool moved = !(was == now);
+    const bool edited = std::memcmp(&before, &m.work, sizeof(m.work)) != 0;
+    if ((!moved && !edited) || (!moved && std::memcmp(&before.sound, &m.work.sound, sizeof(m.work.sound)) != 0)) {
+        return;
+    }
+    if (was.mode == MODE_CAPTURE) {
+        // a key or button taken for a binding
+        cue(now.mode == MODE_CAPTURE ? KHDAYS_SETTINGS_CUE_CURSOR : KHDAYS_SETTINGS_CUE_ACCEPT);
+        return;
+    }
+    cue(intent == INTENT_ACCEPT ? KHDAYS_SETTINGS_CUE_ACCEPT
+        : intent == INTENT_BACK ? KHDAYS_SETTINGS_CUE_BACK
+                                : KHDAYS_SETTINGS_CUE_CURSOR);
+}
+
+int handle_event(const SDL_Event *e, SDL_Window *window);
+
 } // namespace
 
 // ---- The interface -------------------------------------------------------------
@@ -2022,6 +2106,12 @@ void khdays_settings_open(const KhdaysProfile *current)
     m.test_action = -2;
     m.scroll_to_top = true;
     settle();
+    cue(KHDAYS_SETTINGS_CUE_OPEN);
+}
+
+void khdays_settings_set_cue(void (*player)(int which, const KhdaysSound *levels))
+{
+    cue_player = player;
 }
 
 void khdays_settings_offer_update(const KhdaysProfile *current, const char *have, const char *latest,
@@ -2090,6 +2180,23 @@ void khdays_settings_set_graphics_card(int available)
 }
 
 int khdays_settings_handle(const SDL_Event *e, SDL_Window *window)
+{
+    if (!m.open) {
+        return 0;
+    }
+    const Focus was = focus_now();
+    const KhdaysProfile before = m.work;
+    const int intent = intent_of(e);
+    const int closed = handle_event(e, window);
+    cue_after(was, before, intent);
+    return closed;
+}
+
+} // extern "C"
+
+namespace {
+
+int handle_event(const SDL_Event *e, SDL_Window *window)
 {
     bool closed = false;
     if (!m.open) {
@@ -2229,12 +2336,18 @@ int khdays_settings_handle(const SDL_Event *e, SDL_Window *window)
     return closed;
 }
 
+} // namespace
+
+extern "C" {
+
 void khdays_settings_tick(void)
 {
     const Uint64 now = SDL_GetTicks();
     if (!m.open) {
         return;
     }
+    const Focus was = focus_now();
+    const KhdaysProfile before = m.work;
     update_tick();
     if (m.mode == MODE_CAPTURE && now >= m.cap_until) {
         m.mode = MODE_BROWSE; // nothing pressed in time: unchanged
@@ -2247,6 +2360,9 @@ void khdays_settings_tick(void)
     if (m.mode == MODE_TEXT && m.held_dir != 0 && now >= m.repeat_at) {
         text_direction(m.held_dir);
         m.repeat_at = now + kRepeatEveryMs;
+    }
+    if (m.mode == MODE_BROWSE || m.mode == MODE_TEXT) {
+        cue_after(was, before, INTENT_NONE); // a held direction's steps
     }
 }
 

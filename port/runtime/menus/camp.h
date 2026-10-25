@@ -22,6 +22,9 @@ enum { KHDAYS_CAMP_IN_MENU = 0, KHDAYS_CAMP_READY = 8 };
 #define KHDAYS_CAMP_SETTINGS 25 /* the Preferences page's table: the game's 25 entries */
 #define KHDAYS_CAMP_VALUES 3    /* a setting's values: an entry holds three */
 #define KHDAYS_CAMP_SECTIONS 5  /* the page's tabs: a list of them holds five */
+#define KHDAYS_CAMP_PANEL_PAGES 3  /* the panels' grid (the game state's +0xee0): three pages */
+#define KHDAYS_CAMP_PANEL_CELLS 40 /* of five columns and eight rows */
+#define KHDAYS_CAMP_TEXT 200       /* a description's UTF-16 units, its NUL among them */
 
 /* A setting of the Preferences page (an entry of the game's table, its words cfg_&.s records):
  * its name and help, its values' names and helps, the one chosen; the game's flag `enabled` off,
@@ -47,11 +50,40 @@ typedef struct KhdaysCampPage {
     int chosen;
 } KhdaysCampPage;
 
+/* The story camp's Files pages (its screen 7: Roxas's Diary, Enemy Profiles -- Ov025_Reports_*, the
+ * list on the lower screen, the entry on the upper): the list as the game has it, for the port to draw
+ * its own (host/screens/camp_screen.c, "The Files pages"). A row: the diary's day (the enemies' its
+ * place in the list, from 1), its title (the enemy's name; while A is held on the cursor's row, its
+ * other version's, as the game shows it), whether the enemy is not met yet (its name the game's "?"),
+ * the game's NEW badge: -1 none, 0 never viewed, 1 viewed on this visit (gone at the next), whether A
+ * shows another page of it while held (the diary's entry rewritten, an enemy's drops: the game's A mark
+ * on the row). */
+#define KHDAYS_CAMP_FILES_MOST 192
+#define KHDAYS_CAMP_FILES_TITLE 40
+typedef struct KhdaysCampFileRow {
+    int16_t number;
+    int8_t locked;
+    int8_t badge;
+    int8_t alternate;
+    uint16_t title[KHDAYS_CAMP_FILES_TITLE];
+} KhdaysCampFileRow;
+
+typedef struct KhdaysCampFiles {
+    int mode;        /* 0 Roxas's Diary, 1 Enemy Profiles */
+    int count;       /* the game's rows (row[] holds the first KHDAYS_CAMP_FILES_MOST) */
+    int top, cursor; /* the game's first row shown (of its ten), the row chosen */
+    int held;        /* A held: the chosen row's other page shown */
+    KhdaysCampFileRow row[KHDAYS_CAMP_FILES_MOST];
+} KhdaysCampFiles;
+
 /* A field of the status panel as the game last drew it: its values (fields 0x11 and 0x12 have two;
- * 0xc is Q12, 0x13 a record of status_&.s). */
+ * 0xc is Q12, 0x13 a record of status_&.s), and the change the Panels page previews with a panel held (the
+ * game's Ov025_PreviewDropSummary: what the field would become with the panel dropped at the cursor, less its
+ * value; 0 none, 0xc's in whole points as the DS draws it). */
 typedef struct KhdaysCampField {
     int has;
     uint32_t value[2];
+    int32_t delta;
 } KhdaysCampField;
 
 /* A member of the group (a place of the session): whether one is there, where it is
@@ -66,6 +98,12 @@ typedef struct KhdaysCampMember {
 
 typedef struct KhdaysCampView {
     int shown;
+    int leaving; /* the menu closes (B at its root: the camp's next screen -1, Ov025_MenuBack): the view the
+                  * last before it while the game takes the menu down (host/screens/camp_screen.c fades it) */
+    int next;    /* the camp's next screen (SetTargetSlot's word: the screen it goes to, then the one it is
+                  * on): 5 while the menu goes to its Preferences page, 0 while the page comes back, -1 out
+                  * of the camp; KHDAYS_CAMP_NONE unknown. The window's screen slides the two into each
+                  * other on it, in place of the game's black between them */
     int story;                       /* the story's camp (ov025): its options, its day; no group */
     int sub;                         /* the story's: 0 its options, 1 Holo-Missions' two, 2 Files' two (selected
                            * the one of them the cursor is on) */
@@ -86,6 +124,28 @@ typedef struct KhdaysCampView {
     int yes;                         /* the answer the cursor is on: 1 Yes, 0 No */
     int config;                      /* the Preferences page is on (screen 5): `page` instead of the menu's */
     KhdaysCampPage page;
+    int files; /* the story's Files page is on (screen 7): `file` instead of the menu's */
+    KhdaysCampFiles file;
+    int save;        /* the camp's save screen is on (the story's screen 4, Mission Mode's own): the
+                                      * port's save list (savelist.h) in the camp's look; `selected` the menu's
+                                      * Save, `description` its */
+    int save_screen; /* the camp's save screen's index (its `next` going there), -1 unknown */
+    int files_new;   /* the story's menu: what of Files has an entry never viewed (the game's NEW
+                                      * inside): bit 0 Roxas's Diary, bit 1 Enemy Profiles */
+    int panel_cells; /* the story's menu: the panels' slots open (item 1's count + 15, at most 120;
+                                      * the rest locked), and the panels installed in them (Ov025_LoadGridFromSave's
+                                      * table: an item id a cell, row by row, 0 none; a link's id at its anchor,
+                                      * its footprint's other cells the panels linked into it) */
+    uint16_t panel[KHDAYS_CAMP_PANEL_PAGES][KHDAYS_CAMP_PANEL_CELLS];
+    int panels;       /* the story's Panels page is on (screen 2): its grid and list on the lower screen, the
+                       * status page on the upper one (host/screens/camp_screen.c shows them as cards) */
+    int panels_view;  /* that upper screen's view: 1 the numbers (the default; the port's status panel in its
+                       * place), 0 the list of what the panels give (X: Ov025_ChangeMenuSelection) */
+    int panels_slide; /* its slide between the two (dots): 192 the numbers, 0 the list, between while it moves */
+    int panels_early; /* the page setting up: its upper screen shows the list (the numbers' view coming), its words
+                       * drawn -- the port takes the list from it (camp.c read_panels) */
+    uint16_t panel_text[KHDAYS_CAMP_TEXT]; /* the description of the panel under the grid's cursor, or the list's
+                                            * row's, or the one carried (the lower screen's own line) */
     uint32_t munny, hearts;
     int self;      /* this copy's place */
     int character; /* its character, 0-18 (mlt_&.s's order), -1 unknown */
@@ -95,11 +155,24 @@ typedef struct KhdaysCampView {
 
 /* The game's thread: an object's update ran (diag.c, its native address). */
 void khdays_camp_update_ran(uintptr_t update);
-/* The game's thread: the status panel draws a field (prepare.py's hook in Ov008_DrawStatusField;
- * `values` the game's own, two words). */
-void khdays_camp_field(void *panel, int field, unsigned int delta, int style, void *values, int animate);
+/* The game's thread: the status panel draws a field (prepare.py's hook in Ov008_DrawStatusField and
+ * Ov025_DrawStatusField; `values` the game's own, two words). Returns the change the game is to draw beside it:
+ * `delta`, or 0 while the port draws the Panels page (its status card shows the change instead of the DS's
+ * upper screen). */
+unsigned int khdays_camp_field(void *panel, int field, unsigned int delta, int style, void *values, int animate);
+/* The window's thread: whether the port drew the Panels page (with its status card) this frame. */
+void khdays_camp_set_preview_drawn(int drawn);
+/* The game's thread, Ov008/Ov025_DrawPageBWidget (prepare.py's hook): the change its up and down arrows show
+ * (Ov025_SetPairSelection: the up one for more, the down one for less, none for 0): `delta`, or 0 while the
+ * port draws the Panels page. */
+int khdays_camp_preview_arrows(int delta);
+/* The game's thread: the story camp's grid menu wrote a row of its text panel (prepare.py's hook in
+ * Ov025_RepaintTextRow: the panel, the row, the UTF-16 text or 0, its style; DS addresses). */
+void khdays_camp_text_row(unsigned int self, int row, unsigned int text, int style);
 /* Any thread: the menu as last published. */
 void khdays_camp_view(KhdaysCampView *out);
+/* Any thread: the game's fade now, as the view's `master` (-16 black to 16 white). */
+int khdays_camp_game_brightness(void);
 /* The game's thread: the loaded camp's screen (its table A's index: 0 the menu, 1 Holo-Missions,
  * 5 Preferences, -1 between two; the others an option's page), *story whether it is the story's
  * camp; KHDAYS_CAMP_NONE with no camp loaded. */
@@ -110,6 +183,17 @@ void khdays_camp_font_scope(uint32_t font, char *scope, int size);
 /* The window's thread: whether the port drew the Preferences page this frame (host/screens/camp_screen.c):
  * only then the page's directions and L and R are the port's (khdays_camp_buttons). */
 void khdays_camp_set_page_drawn(int drawn);
+/* The window's thread: whether the port drew the story's Files page (the Menu Overhaul's): only then X opens its
+ * Enemy Profiles' model viewer (enemy_viewer.h). */
+void khdays_camp_set_files_drawn(int drawn);
+/* The game's thread, Ov025_Hub_InitEntries (prepare.py's hook): whether the menu's start hovers its entry (its
+ * help drawn at once: with the Menu Overhaul). */
+int khdays_camp_hover_at_start(void);
+/* The window's thread: the story's menu drawn with the panels' grid of `pages` pages (0 not drawn): Y turns
+ * them (the game's Y kept from it there, the Panels page's sound played, as Ov025_TickIdleTouchSample does);
+ * and how many times Y turned them. */
+void khdays_camp_set_panels_drawn(int pages);
+unsigned khdays_camp_panel_turns(void);
 /* The game's thread, at Pad_Sample (input.c): the buttons the game gets. On the Preferences page
  * the port's sections join the game's tabs: UP and DOWN go over a section's settings, L and R
  * from section to section, the port pressing the game's own buttons to take its cursor there;

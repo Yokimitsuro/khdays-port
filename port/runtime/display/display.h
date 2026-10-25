@@ -18,5 +18,7 @@ void khdays_display_vblank(u32 frame);
 /* Moves by one with each new 3D picture shown (the game's SwapBuffers): how many the player saw in a
  * time. */
 u32 khdays_display_3d_serial(void);
+/* The game's thread: the VBlanks in a row engine A has changed screens (2 and up: the 3D on both). */
+u32 khdays_display_engine_swaps(void);
 
 #endif

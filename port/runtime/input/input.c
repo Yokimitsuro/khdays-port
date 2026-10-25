@@ -8,6 +8,7 @@
 #include "../menus/camp.h"
 #include "../menus/charselect.h"
 #include "../menus/cinelist.h"
+#include "../menus/daycard.h"
 #include "../net/roomlist.h"
 #include "../net/net_session.h"
 #include "controls_hooks.h"
@@ -384,6 +385,7 @@ void khdays_input_pad_sample(void)
     latched = khdays_newgame_buttons(latched);       /* the port's question in the new game takes them */
     latched = khdays_savelist_buttons(latched);      /* the port's save list takes the files' rows */
     khdays_cinelist_frame();                         /* MODO CINE's list, for the port to draw */
+    khdays_daycard_frame();                          /* the day's card, for the port to draw */
     latched = khdays_cinelist_buttons(latched);      /* the port's list of chapters takes all but B and START */
     latched = khdays_roomlist_buttons(latched);      /* the port's list of rooms takes the group list's */
     latched = khdays_charselect_buttons(latched);    /* the port's character select takes the directions */

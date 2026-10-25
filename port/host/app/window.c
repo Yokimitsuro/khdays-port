@@ -6,7 +6,10 @@
 #include "devices.h"
 #include "press_edges.h"
 #include "../render/gpu_present.h"
+#include "../render/onescreen.h"
 #include "../movies/movie_hd.h"
+#include "../movies/movie_subtitles.h"
+#include "../screens/game_pause.h"
 #include "profile.h"
 #include "../../runtime/menus/newgame.h"
 #include "../../runtime/menus/savelist.h"
@@ -15,12 +18,17 @@
 #include "../settings/settings_sample.h"
 #include "../settings/settings_ui.h"
 #include "../screens/cine_screen.h"
+#include "../screens/day_screen.h"
+#include "../movies/theater_music.h"
 #include "../../runtime/menus/cinelist.h"
 #include "../screens/mod_screen.h"
+#include "../../runtime/menus/camp.h"
 #include "../screens/room_screen.h"
 #include "../screens/select_screen.h"
 #include "../screens/camp_screen.h"
+#include "../screens/shop_screen.h"
 #include "../screens/movie_pause.h"
+#include "../screens/modern_pause.h"
 #include "../screens/save_screen.h"
 #include "sound_output.h"
 #include "updates.h"
@@ -30,7 +38,9 @@
 #include "../../runtime/display/display.h"
 #include "../../runtime/display/frame_package.h"
 #include "../../runtime/core/language.h"
+#include "../../runtime/mods/installed.h"
 #include "../../runtime/movies/movie_hd.h"
+#include "../../runtime/movies/scene_trace.h"
 #include "../../runtime/net/net_session.h"
 #include "../../runtime/scripts/queue.h"
 #include "../../runtime/scripts/view.h"
@@ -55,6 +65,7 @@ static SDL_AtomicInt frame_pending; /* a frame event is already on its way */
 static Uint32 frame_event;          /* our SDL event: "a new frame is ready" */
 static Uint64 last_redraw;          /* SDL_GetTicks of the last redraw */
 #define MOVIE_REDRAW_MS 8           /* an HD video drawn at least this often (ms) */
+#define MOVIE_REDRAW_LATE_MS 25     /* ... and, while events keep coming, at most this late (ms) */
 
 /* The frame packages. There are three, so neither thread ever waits for the
  * other: the game thread fills one, the newest finished one waits in
@@ -75,6 +86,9 @@ static SDL_Mutex *input_lock;
 static KhdaysInputSnapshot input;
 /* Presses and releases since the game's last read of the pad (press_edges.h), under input_lock. */
 static KhdaysPressEdges edges, edges_field;
+/* The DS buttons pressed since the window's last look for the HD movies' pause panel (even let go
+ * again since), under input_lock: a quick tap is never lost however long a look takes. */
+static uint16_t pause_taps;
 
 static SDL_Semaphore *ready; /* signalled when the window is up (or failed) */
 static SDL_AtomicInt started;
@@ -89,6 +103,7 @@ static void publish(const KhdaysInputSnapshot *snapshot)
     const uint32_t generation = input.generation + 1;
     khdays_press_edges_note(&edges, input.ds_buttons, snapshot->ds_buttons);
     khdays_press_edges_note(&edges_field, input.ds_buttons_field, snapshot->ds_buttons_field);
+    pause_taps |= (uint16_t)(snapshot->ds_buttons & ~input.ds_buttons);
     input = *snapshot;
     input.generation = generation;
     SDL_UnlockMutex(input_lock);
@@ -265,6 +280,77 @@ static void take_mod_notices(void)
     }
 }
 
+/* The DS buttons pressed since the last call (pause_taps), taken. */
+static uint16_t take_pause_taps(void)
+{
+    uint16_t taps;
+    if (input_lock == NULL) {
+        return 0;
+    }
+    SDL_LockMutex(input_lock);
+    taps = pause_taps;
+    pause_taps = 0;
+    SDL_UnlockMutex(input_lock);
+    return taps;
+}
+
+/* The menu sounds of the HD movies' pause panel (the game's se_sys_*, settings_sample.h): opening,
+ * the cursor moving, a choice made, backing out. Looked at once a pass of the loop. */
+static void pause_panel_sounds(void)
+{
+    static int was_open, was_row;
+    int row = 0, can_skip = 0;
+    const int open = khdays_movie_pause_menu(&row, &can_skip);
+    const int by_choice = khdays_movie_pause_closed_by_choice();
+    if (open && !was_open) {
+        khdays_menu_cue(KHDAYS_SETTINGS_CUE_OPEN);
+    } else if (!open && was_open) {
+        khdays_menu_cue(by_choice ? KHDAYS_SETTINGS_CUE_ACCEPT : KHDAYS_SETTINGS_CUE_BACK);
+    } else if (open && row != was_row) {
+        khdays_menu_cue(KHDAYS_SETTINGS_CUE_CURSOR);
+    }
+    was_open = open;
+    was_row = row;
+}
+
+/* A day's monologue heard in the theater's voice (runtime/movies/scene_trace.c): the theater's
+ * subtitles of what it says, at the voice's clock, over the game's page -- the video named by the
+ * voice's clock, loaded when it changes. */
+static void draw_voice_subtitles(SDL_Renderer *renderer)
+{
+    static char loaded[64];
+    char name[64];
+    double seconds = 0.0;
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode;
+    if (!khdays_subtitles_shown() || !khdays_hd_voice_clock(name, sizeof(name), &seconds)) {
+        if (loaded[0] != '\0') {
+            loaded[0] = '\0';
+            khdays_movie_subtitles_load("", 0); /* none */
+        }
+        return;
+    }
+    if (strcmp(name, loaded) != 0) {
+        const int chosen = khdays_language_choose(khdays_devices_profile()->language);
+        snprintf(loaded, sizeof(loaded), "%s", name);
+        khdays_movie_subtitles_load(strncmp(name, "hd", 2) == 0 ? name + 2 : name,
+                                    chosen >= 1 && chosen <= 5 ? chosen : 1);
+    }
+    SDL_GetRenderLogicalPresentation(renderer, &lw, &lh, &mode);
+    SDL_SetRenderLogicalPresentation(renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    khdays_movie_subtitles_draw(renderer, seconds, 0.0, 1920, 1080);
+    SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
+}
+
+/* A port's screen with the swaying glove showed at the last picture (save, chapters, rooms, camp, shop). */
+static int glove_screen;
+
+/* The theater's music's lines (host/movies/theater_music.c) in the session log. */
+static void theater_music_line(const char *line)
+{
+    khdays_log("theater music: %s", line);
+}
+
 /* Draws the last frame, with the FPS and ping displays and the settings menu
  * over it. Draws nothing while the graphics card is lost (the loop recreates
  * it). */
@@ -272,17 +358,39 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
 {
     int pictures, frames, fps, corner_rows;
     char *ping;
+    const Uint64 began = SDL_GetTicksNS();
+    Uint64 drawn;
     last_redraw = SDL_GetTicks();
     if (khdays_present_lost()) {
         return;
     }
     khdays_present_draw();
-    khdays_save_screen_draw(renderer);   /* the port's save list over the game's (runtime/menus/savelist.h) */
-    khdays_cine_screen_draw(renderer);   /* MODO CINE's list as the HD theater's (runtime/menus/cinelist.h) */
-    khdays_room_screen_draw(renderer);   /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
+    {
+        static int logging;
+        if (!logging) {
+            logging = 1;
+            khdays_theater_music_log_to(theater_music_line);
+        }
+    }
+    khdays_theater_music_poll(); /* the theater's music kept for a next scene's video, or let go */
+    /* (the port's lists sway their glove: drawn at the display's rate while one shows, glove_screen) */
+    glove_screen =
+        khdays_save_screen_draw(renderer); /* the port's save list over the game's (runtime/menus/savelist.h) */
+    glove_screen |=
+        khdays_cine_screen_draw(renderer); /* MODO CINE's list as the HD theater's (runtime/menus/cinelist.h) */
+    khdays_day_screen_draw(renderer); /* the day's card as the HD theater's chapter days (runtime/menus/daycard.h) */
+    glove_screen |=
+        khdays_room_screen_draw(renderer); /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
     khdays_select_screen_draw(renderer); /* Mission Mode's character select on one screen (charselect.h) */
-    khdays_camp_screen_draw(renderer);   /* Mission Mode's camp menu on one screen (camp.h) */
-    khdays_mod_screen_draw(renderer);    /* a mod's screen, the title's mods' prompt (runtime/scripts/screens.h) */
+    /* the Moogle Shop on one screen (shop.h): before the camp's, whose black comes over it when Mission
+     * Mode's shop opens from its menu or closes back to it */
+    glove_screen |= khdays_shop_screen_draw(renderer);
+    glove_screen |= khdays_camp_screen_draw(renderer);      /* Mission Mode's camp menu on one screen (camp.h) */
+    glove_screen |= khdays_shop_screen_draw_over(renderer); /* Mission Mode's shop and menu into each other */
+    khdays_mod_screen_draw(renderer); /* a mod's screen, the title's mods' prompt (runtime/scripts/screens.h) */
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) && !khdays_movie_hd_showing()) {
+        draw_voice_subtitles(renderer); /* a monologue's voice: what it says */
+    }
     fps = khdays_present_fps(&pictures, &frames);
     if (fps) {
         khdays_settings_fps_draw(renderer, pictures, frames);
@@ -297,8 +405,11 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     for (int i = 0; i < mod_notice_count; ++i) {
         khdays_settings_corner_draw(renderer, mod_notices[i].line, corner_rows + i);
     }
+    khdays_movie_pause_draw(renderer);
     khdays_settings_draw(renderer, window);
+    drawn = SDL_GetTicksNS();
     SDL_RenderPresent(renderer);
+    khdays_present_redraw_took(drawn - began, SDL_GetTicksNS() - drawn); /* (the shop's timings) */
 }
 
 /* Whether the open settings menu paused the game. In a multiplayer session
@@ -433,6 +544,32 @@ static void settings_closed(SDL_Window *window, SDL_Renderer *renderer)
     redraw(window, renderer);
 }
 
+/* With the Menu Overhaul, whether the settings menu may open now: in the game's menus and pauses (a situation
+ * the port does not know taken as one), not in the middle of play -- the field, Sora's memories, the DS's
+ * movies, the day's card, the end -- as the one-screen picture decided last. With two screens: always. */
+static int settings_allowed(void)
+{
+    static int refused_said;
+    int allowed = 1;
+    if (khdays_devices_profile()->video.one_screen) {
+        switch (khdays_onescreen_scene()) {
+        case KHDAYS_SIT_FIELD:
+        case KHDAYS_SIT_FIELD_3D_BOTH:
+        case KHDAYS_SIT_MOVIE:
+        case KHDAYS_SIT_DAY_COUNTER:
+        case KHDAYS_SIT_THOUGHTS:
+        case KHDAYS_SIT_THE_END: allowed = 0; break;
+        default: break;
+        }
+    }
+    if (!allowed && !refused_said) {
+        refused_said = 1;
+        khdays_log("settings: not opened in the middle of play (%s); the game's menus and pauses open it",
+                   khdays_situation_name(khdays_onescreen_scene()));
+    }
+    return allowed;
+}
+
 /* Opens the settings menu (the game pauses, stop_game_for_menu). */
 static void open_settings(void)
 {
@@ -474,8 +611,13 @@ static void close_settings(void)
     if (settings_stopped) {
         khdays_clock_hold(KHDAYS_HOLD_SETTINGS, 0);
         khdays_sound_output_pause(0);
-        if (!khdays_movie_hd_course_paused()) {
-            khdays_hd_pause(0); /* not a video its course keeps paused (a pause over it) */
+        {
+            /* an HD video's pause still up (the menu opened from it), or one its course keeps paused: the
+             * video stays paused */
+            int row, skip;
+            if (!khdays_movie_hd_course_paused() && !khdays_movie_pause_menu(&row, &skip)) {
+                khdays_hd_pause(0);
+            }
         }
         khdays_hd_voice_pause(0);
         settings_stopped = 0;
@@ -487,7 +629,8 @@ static void close_settings(void)
  * on, the window also holds the mouse while the game has the input (devices.c). */
 static void mouse_follow(SDL_Window *window)
 {
-    const int menu = khdays_settings_is_open();
+    int row, skip;
+    const int menu = khdays_settings_is_open() || khdays_movie_pause_menu(&row, &skip);
     const int focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     const int hold = !menu && khdays_devices_profile()->enh.mouse_camera && focused;
     const int shown = menu || !focused;
@@ -504,17 +647,36 @@ static void mouse_follow(SDL_Window *window)
 }
 
 /* Whether this event opens the settings menu (which is closed now). */
-static int opens_settings(const SDL_Event *event, SDL_Window *window)
+static int opens_settings(const SDL_Event *event, SDL_Renderer *renderer)
 {
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat && event->key.scancode == SDL_SCANCODE_ESCAPE) {
         return 1;
     }
-    (void)window;
     if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT &&
-        khdays_present_settings_button() && khdays_present_settings_button_at(event->button.x, event->button.y)) {
-        return 1; /* the picture's own settings key (the title's) */
+        ((khdays_present_settings_button() && khdays_present_settings_button_at(event->button.x, event->button.y)) ||
+         khdays_movie_pause_settings_at(renderer, event->button.x, event->button.y))) {
+        return 1; /* the picture's own settings key (the title's), or the one a pause shows */
     }
     return khdays_devices_take_settings_request();
+}
+
+/* The settings key pressed: the settings menu. With the Menu Overhaul, over an HD video or a monologue it opens
+ * that mod's pause (as START does), and with the pause up the settings menu, the video staying paused under it;
+ * elsewhere the settings menu where settings_allowed lets it. */
+static void settings_key(void)
+{
+    int row, skip;
+    if (!khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        open_settings();
+    } else if (khdays_movie_pause_menu(&row, &skip)) {
+        open_settings();
+    } else if (khdays_movie_hd_showing()) {
+        khdays_movie_pause_toggle();
+    } else if (khdays_monologue_running()) {
+        khdays_monologue_pause_toggle(); /* a day's monologue: its pause first, as a movie's */
+    } else if (settings_allowed()) {
+        open_settings();
+    }
 }
 
 /* Creates the window: the DS's two screens at 2x, or with one picture
@@ -584,6 +746,7 @@ static int host_thread(void *unused)
         /* While the settings menu shows, it keeps animating even if the paused
          * game sends no frames. */
         int animating;
+        int menu_row, menu_skip; /* the pause panel's (khdays_movie_pause_menu) */
         /* A newer release is told of on the front-end (the boot logos, the title: scene 1), never
          * in the middle of the game, and once a run. */
         if (!khdays_settings_is_open() && khdays_runtime_scene() == 1) {
@@ -604,6 +767,13 @@ static int host_thread(void *unused)
          * the movie's end). Here we watch for its end and pass on START, which
          * the waiting game thread cannot read. */
         const int movie = khdays_movie_hd_running();
+        /* So, with the Menu Overhaul, are the game's pause drawn as KH2's (game_pause.h: the paused game
+         * sends a picture a second or so, its PAUSE and glove move on), a port's screen with its swaying
+         * glove (glove_screen) and a monologue's pause */
+        const int monologue = !movie && khdays_monologue_running();
+        const int kh2_pause = !movie && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) &&
+                              (khdays_game_pause_kh2_showing() || glove_screen ||
+                               (monologue && khdays_movie_pause_menu(&menu_row, &menu_skip)));
         /* So is an animated backdrop (the title's, ui/composition.h): its pieces move while the
          * game's still menu sends no frames. */
         const int backdrop = khdays_present_backdrop_moving();
@@ -614,12 +784,34 @@ static int host_thread(void *unused)
         if (!khdays_settings_is_open()) {
             khdays_cine_screen_buttons(khdays_cinelist_seen()); /* MODO CINE's chapters, the port's list */
         }
+        {
+            /* taken on every pass, so presses from before a movie never reach its pause */
+            const uint16_t taps = take_pause_taps();
+            if ((movie || monologue) && !khdays_settings_is_open()) {
+                /* (a day's monologue too: with the Menu Overhaul its START opens the pause panel) */
+                khdays_media_host_presses(khdays_host_buttons(), taps, monologue);
+            }
+        }
+        pause_panel_sounds();
+        if (kh2_pause && !khdays_settings_is_open()) {
+            const Uint64 since = SDL_GetTicks() - last_redraw;
+            if (since >= MOVIE_REDRAW_MS &&
+                (since >= MOVIE_REDRAW_LATE_MS || !SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST))) {
+                redraw(window, renderer);
+            }
+        }
         if (movie && !khdays_settings_is_open()) {
             khdays_movie_hd_poll();
-            khdays_movie_hd_host_buttons(khdays_host_buttons());
             /* drawn on time even while events keep coming (a gamepad's stream of them): the game,
              * held for a scene's video, sends no frames that would draw it */
-            if (SDL_GetTicks() - last_redraw >= MOVIE_REDRAW_MS) {
+            /* but never one picture per event: a picture waits for the display's refresh (~16 ms), and a
+             * gamepad's or a mouse's stream of events (hundreds a second, SDL sending a joystick's and a
+             * gamepad's of each) then queued faster than one a picture could take them, the pause's
+             * presses seconds -- minutes -- behind. The waiting events first, a picture at least every
+             * MOVIE_REDRAW_LATE_MS however many keep coming. */
+            const Uint64 since = SDL_GetTicks() - last_redraw;
+            if (since >= MOVIE_REDRAW_MS &&
+                (since >= MOVIE_REDRAW_LATE_MS || !SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST))) {
                 redraw(window, renderer);
             }
         }
@@ -628,10 +820,10 @@ static int host_thread(void *unused)
              * handle it like SDL's event */
             SDL_zero(event);
             event.type = SDL_EVENT_RENDER_DEVICE_LOST;
-        } else if (!(smooth || movie || backdrop ? SDL_WaitEventTimeout(&event, 1)
-                     : settling                  ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
-                     : animating                 ? SDL_WaitEventTimeout(&event, 50)
-                                                 : SDL_WaitEvent(&event))) {
+        } else if (!(smooth || movie || backdrop || kh2_pause ? SDL_WaitEventTimeout(&event, 1)
+                     : settling  ? SDL_WaitEventTimeout(&event, 4) /* (a VBlank is ~17 ms) */
+                     : animating ? SDL_WaitEventTimeout(&event, 50)
+                                 : SDL_WaitEvent(&event))) {
             if (animating) {
                 khdays_settings_tick();
                 if (khdays_settings_is_open()) {
@@ -642,7 +834,7 @@ static int host_thread(void *unused)
                 }
             }
             if ((smooth && khdays_present_refresh()) || (backdrop && khdays_present_refresh_backdrop()) ||
-                (settling && khdays_present_refresh_settling()) || animating || movie) {
+                (settling && khdays_present_refresh_settling()) || animating || movie || kh2_pause) {
                 redraw(window, renderer);
             }
             continue;
@@ -667,11 +859,14 @@ static int host_thread(void *unused)
             khdays_settings_renderer_gone();
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
+            khdays_day_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
             khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
+            khdays_shop_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();
+            khdays_modern_pause_renderer_gone();
             khdays_present_close();
             SDL_DestroyWindow(window);
             SDL_Quit();
@@ -705,11 +900,14 @@ static int host_thread(void *unused)
             khdays_settings_renderer_gone();
             khdays_save_screen_renderer_gone();
             khdays_cine_screen_renderer_gone();
+            khdays_day_screen_renderer_gone();
             khdays_room_screen_renderer_gone();
             khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
             khdays_camp_screen_renderer_gone();
+            khdays_shop_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();
+            khdays_modern_pause_renderer_gone();
             renderer = khdays_present_event(&event, &renewed);
             khdays_settings_set_graphics_card(khdays_present_gpu());
             tell_game();
@@ -763,9 +961,16 @@ static int host_thread(void *unused)
             khdays_devices_handle(&event, renderer);
             continue;
         }
-        if (opens_settings(&event, window)) {
-            open_settings();
+        if (opens_settings(&event, renderer)) {
+            settings_key();
             redraw(window, renderer);
+            continue;
+        }
+        if (khdays_movie_pause_event(renderer, &event)) {
+            /* The pause owns this click. Publishing it as a bound game A
+             * would take the row the click just chose a second time. Not drawn here: the
+             * movie's pictures above draw it (a picture for each of a mouse's moves left the pause
+             * behind the player). */
             continue;
         }
         khdays_devices_handle(&event, renderer); /* keys, mouse, gamepads, focus */
@@ -775,7 +980,7 @@ static int host_thread(void *unused)
                        khdays_situation_hud_mode());
         }
         if (khdays_devices_take_settings_request()) {
-            open_settings();
+            settings_key();
             redraw(window, renderer);
         }
     }

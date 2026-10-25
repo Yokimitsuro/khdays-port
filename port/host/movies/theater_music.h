@@ -17,9 +17,21 @@ void khdays_theater_music_open(const char *video_path);
  * paused. Starts, stops, moves and sets the volume of the music it says. */
 void khdays_theater_music_tick(double seconds, int started, int paused);
 
-/* The video closed. With `next_follows` (another video opens at once, as a scene's videos do), music
- * that goes on into the next video keeps playing; otherwise, or when it does not go on, it fades out. */
+/* The video closed. With `next_follows` 1 (another video opens at once, as a scene's videos do), music
+ * that goes on into the next video keeps playing; with 2 (a scene's videos watched to their end: the
+ * event's next scene, a course of its own, may open its video in a moment) it keeps playing for
+ * KHDAYS_THEATER_MUSIC_WAIT_MS, faded out then unless a video took it; with 0, or when it does not go
+ * on, it fades out -- but a close with no video open (the course's own end) leaves music kept for a
+ * next video waiting. A video with no schedule of its own lets kept music play on through it. */
+#define KHDAYS_THEATER_MUSIC_WAIT_MS 1500
 void khdays_theater_music_close(int next_follows);
+
+/* The window's thread, once a frame: music kept for a next video that none took within
+ * KHDAYS_THEATER_MUSIC_WAIT_MS fades out. */
+void khdays_theater_music_poll(void);
+
+/* Where its lines go besides the console (the session log: host/app/window.c); NULL none. */
+void khdays_theater_music_log_to(void (*log)(const char *line));
 
 /* The music's volume (0-1): the master volume times the music's. Any thread. */
 void khdays_theater_music_set_gain(float gain);

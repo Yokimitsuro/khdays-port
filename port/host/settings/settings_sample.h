@@ -18,6 +18,10 @@ void khdays_settings_sample(const KhdaysSound *before, const KhdaysSound *now);
 /* The menu closed: stops the sample. */
 void khdays_settings_sample_stop(void);
 
+/* One of the menu sounds (KHDAYS_SETTINGS_CUE_*, settings_ui.h: the game's se_sys_click, kettei, open,
+ * cancel) at the player's effects volume, for the port's own panels (the HD movies' pause). */
+void khdays_menu_cue(int which);
+
 /* Whether there is a movie sound to play as the sample of the movies volume. */
 int khdays_settings_sample_has_movies(void);
 

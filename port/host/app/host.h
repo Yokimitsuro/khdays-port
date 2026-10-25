@@ -106,6 +106,9 @@ typedef struct KhdaysInputSnapshot {
     uint16_t mouse_speed;      /* the mouse camera: percent of MOUSE_COUNTS_A_FRAME (controls_hooks.c) */
     uint8_t ui_open;           /* 1 while the settings menu is open: no input reaches the game */
     uint16_t enhancements;     /* KHDAYS_ENH_* switched on */
+    int16_t sticks[2][2];      /* the pad's two sticks as they are, [left, right][x, y] in SDL's range (y grows
+                                  downwards), whatever their roles: the Enemy Profiles' model viewer turns and
+                                  zooms with them (runtime/menus/enemy_viewer.c); 0 without a pad */
 } KhdaysInputSnapshot;
 
 /* The latest snapshot, for the game's own read of the pad once a game frame: a button pressed and let

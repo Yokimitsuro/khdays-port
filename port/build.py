@@ -20,6 +20,12 @@ OBJ = ROOT / "build" / "port" / "obj-x64"
 
 
 def vcvarsall() -> Path:
+    portable = os.environ.get("KHDAYS_VCVARSALL")
+    if portable:
+        path = Path(portable).resolve()
+        if not path.is_file():
+            raise SystemExit(f"KHDAYS_VCVARSALL does not exist: {path}")
+        return path
     vswhere = (
         Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
         / "Microsoft Visual Studio"

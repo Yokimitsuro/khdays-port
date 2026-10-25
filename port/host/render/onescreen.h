@@ -25,4 +25,13 @@ int khdays_onescreen_settling(const KhdaysFramePackage *package);
  * screen's, so it is made on the VBlanks engine A shows the upper screen and the others keep it. */
 int khdays_onescreen_makes_picture(const KhdaysFramePackage *package);
 
+/* The situation (ui/situation.h KHDAYS_SIT_*) the pictures were made for last; any thread. */
+int khdays_onescreen_scene(void);
+/* Its states (1 << KHDAYS_ST_*); any thread. */
+unsigned khdays_onescreen_states(void);
+
+/* The Moogle Shop's DS screens composed apart (its thread) since the last call: how many times, their
+ * milliseconds in all and the longest, and the game's pictures alike to the last (not composed). */
+void khdays_onescreen_shop_work(unsigned *jobs, double *ms, double *most, unsigned *alike);
+
 #endif

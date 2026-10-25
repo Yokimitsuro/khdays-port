@@ -4,6 +4,7 @@
 #include "display.h"
 #include "../core/events.h"
 #include "frame_package.h"
+#include "field_wipe.h"
 #include "../../gfx/describe.h"
 #include "gfx_check.h"
 #include "../../gpu/gpu2d.h"
@@ -244,6 +245,11 @@ static const char *shot_dir;
 static int engine_upper; /* engine A on the upper screen at the VBlank before */
 static u32 swap_history; /* bit n: engine A changed screens n VBlanks ago */
 static u32 engine_swaps; /* how many of the last 8 VBlanks engine A changed screens in */
+
+u32 khdays_display_engine_swaps(void)
+{
+    return engine_swaps;
+}
 
 /* KHDAYS_HEADLESS: only the frames a shot saves are drawn, with the two before them (they settle the
  * windows' vertical latch). The game reads nothing from the drawing, so it runs the same. */
@@ -1104,6 +1110,7 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
      * kept picture, at its own resolution (gfx_render.c) */
     p->capture = (uint8_t)capture;
     package_capture(p);
+    p->field_wipe = (uint32_t)khdays_field_wipe_running(frame);
     if (want & KHDAYS_WANT_SITUATION) {
         /* the one-screen picture's inputs: a few of the game's bytes */
         khdays_situation_take(&p->situation, frame);
@@ -1381,6 +1388,7 @@ static void capture_source_a(u32 cnt, const KhdaysGpuInput *in, const KhdaysGpu2
     } else {
         KhdaysGpuInput with3d = *in;
         with3d.layer3d = shown3d;
+        with3d.left_out_cells = khdays_ui_captured_cell_bits(0);
         khdays_gpu2d_graphics(&with3d, window_a, capture_a);
         for (int i = 0; i < PIXELS; ++i) {
             capture_a[i] |= 0x8000u;

@@ -1,6 +1,7 @@
 /* HD movies and scenes: with Video `hd` and the video there (data/cutscenes/cinematics/hd<id>.mp4),
  * the window shows it with its sound while the game plays its own movie unseen and silent, and holds
- * the game until it ends. START pauses it where the DS lets the movie be skipped. */
+ * the game until it ends. START pauses it where the DS lets the movie be skipped; with the Menu Overhaul
+ * (runtime/mods/installed.h) it opens that mod's panel instead: Continue and Skip. */
 #ifndef KHDAYS_MOVIE_HD_H
 #define KHDAYS_MOVIE_HD_H
 
@@ -10,6 +11,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* The Menu Overhaul's pause panel: 1 while open, its row (0 Continue, 1 Skip), whether Skip is offered; opened
+ * or closed; a row chosen (the mouse), and taken. */
+int khdays_movie_pause_menu(int *row, int *can_skip);
+void khdays_movie_pause_toggle(void);
+void khdays_movie_pause_focus(int row, int activate);
 
 /* The game's thread. A stream of a movie opens (Ov024_MobiClip_OpenStreamSlot,
  * the path as the game built it); `replaced` when a mod's movie takes it. */
@@ -39,7 +46,8 @@ void khdays_movie_hd_flags(unsigned flags);
 /* The DS buttons the game is given, from those pressed (the player's and a
  * script's): none of them while a course runs -- only START while the port
  * skips the game's movie -- and, after it, none of those still held from it
- * until they are let go. A START pressed during a course asks for the skip. */
+ * until they are let go. A START pressed during a course asks for the skip (not with the Menu Overhaul,
+ * whose panel takes the window's presses). */
 uint16_t khdays_movie_hd_game_buttons(uint16_t buttons);
 
 /* Either thread: whether the window shows the HD video. */
@@ -59,6 +67,19 @@ void khdays_movie_hd_poll(void);
 /* The host's thread: the player's DS buttons now (while the game is held its
  * thread reads none). */
 void khdays_movie_hd_host_buttons(uint16_t buttons);
+/* The same with `taps` (buttons pressed since the last call, even if let go again), and over a day's
+ * monologue as well (`monologue`: one runs, its START opening the Menu Overhaul's panel). */
+void khdays_media_host_presses(uint16_t buttons, uint16_t taps, int monologue);
+/* A day's monologue's pause (the panel above, Continue and Skip): the game held, the voice paused. The
+ * window's thread. */
+void khdays_monologue_pause_toggle(void);
+/* The game's thread: Skip was chosen in it (taken once). */
+int khdays_monologue_skip_taken(void);
+/* Whether the pause panel just closed by a choice made (Continue, or Skip) rather than by
+ * backing out; told once. */
+int khdays_movie_pause_closed_by_choice(void);
+/* Whether the theater's subtitles of the video `stem` ("hd000") exist in the game's language. */
+int khdays_movie_hd_subtitles_exist(const char *stem);
 
 /* The pause START opens over a movie's HD video (a copy of the DS's scene pause: Continue, Skip).
  * Whether it is open, the entry chosen (0 Continue, 1 Skip), its blink (1 or 2) and the game's

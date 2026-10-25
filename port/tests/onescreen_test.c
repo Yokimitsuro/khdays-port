@@ -80,6 +80,17 @@ int khdays_mods_find(const char *relative, char *path, int size)
     return 1;
 }
 
+/* the Menu Overhaul (runtime/mods/installed.h) not installed: the compositions as the port's own */
+int khdays_mod_installed(int mod)
+{
+    (void)mod;
+    return 0;
+}
+int khdays_mod_named(const char *name)
+{
+    return strcmp(name, "menu-overhaul") == 0 ? 0 : -1;
+}
+
 long khdays_host_read_file(const char *path, void *data, size_t size)
 {
     FILE *f = fopen(path, "rb");

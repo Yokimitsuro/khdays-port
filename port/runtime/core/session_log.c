@@ -17,9 +17,32 @@ static u32 marks;
 static volatile LONG wanted;   /* the settings ask for it */
 static int opened_for_setting; /* this log was opened because they did */
 
+/* The port's own messages (stderr) when nothing takes them -- the game opened from its shortcut has no
+ * console, and a stop of the port's (an update returning no function, a register it does not model, the
+ * sound driver's) says why only there, the session log just ending -- go to stderr-<the log's time>.log
+ * beside it (buffered: exit(), which those stops call, writes the buffer out). Run from a console or with
+ * stderr redirected, they go where they went. 1 when they were sent to `path`. */
+static int keep_stderr(const char *path)
+{
+    static int done;
+    const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    if (done) {
+        return 0;
+    }
+    done = 1;
+    if (h != NULL && h != INVALID_HANDLE_VALUE && GetFileType(h) != FILE_TYPE_UNKNOWN) {
+        return 0;
+    }
+    if (freopen(path, "w", stderr) == NULL) {
+        return 0;
+    }
+    setvbuf(stderr, NULL, _IOFBF, 16384);
+    return 1;
+}
+
 static void open_now(void)
 {
-    char path[160];
+    char path[160], err_path[160];
     SYSTEMTIME now;
     /* saves/logs -- a further player's copy on the PC: saves/player<N>/logs */
     const char *folder = khdays_host_user_folder();
@@ -37,9 +60,15 @@ static void open_now(void)
     }
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&started);
+    snprintf(err_path, sizeof(err_path), "%s/logs/stderr-%04u%02u%02u-%02u%02u%02u.log", folder, now.wYear, now.wMonth,
+             now.wDay, now.wHour, now.wMinute, now.wSecond);
+    const int kept = keep_stderr(err_path);
     fprintf(stderr, "log: this session's log is %s (F12 marks it)\n", path);
     fprintf(file, "khdays-native session log, %04u-%02u-%02u %02u:%02u:%02u\n", now.wYear, now.wMonth, now.wDay,
             now.wHour, now.wMinute, now.wSecond);
+    if (kept) {
+        fprintf(file, "log: the port's messages (stderr, its stops' reasons among them) go to %s\n", err_path);
+    }
     fflush(file);
 }
 
