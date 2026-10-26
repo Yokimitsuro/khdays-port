@@ -373,6 +373,7 @@ add_executable(khdays-native
     runtime/core/data_init.c
     runtime/core/clock.c
     runtime/input/controls_hooks.c
+    runtime/input/walk.c               # the Walk mod's analog walk animation
     runtime/core/diag.c
     runtime/display/display.c
     runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
@@ -588,6 +589,11 @@ add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_h
 target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
+# the Walk mod's clip from its folder (KHDAYS_WALK_CLIP: a Roxas walk, animations/walk/ro.khw); skipped without one
+add_executable(khdays-walk-test tests/walk_test.c runtime/input/walk.c)
+target_compile_options(khdays-walk-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-walk COMMAND khdays-walk-test "$ENV{KHDAYS_WALK_CLIP}")
+set_tests_properties(khdays-walk PROPERTIES SKIP_RETURN_CODE 77)
 add_executable(khdays-camp-memory-test tests/camp_memory_test.c runtime/menus/camp.c)
 target_compile_options(khdays-camp-memory-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-camp-memory COMMAND khdays-camp-memory-test)

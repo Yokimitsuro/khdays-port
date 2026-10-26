@@ -255,6 +255,57 @@ static volatile LONG movie_channels; /* khdays_sound_movie_channels */
 /* khdays_sound_bridge_hold_new_music: whether held, and the sequence players and stream players (bits)
  * whose music began meanwhile, not heard */
 static volatile LONG music_held, held_players, held_streams;
+/* khdays_sound_bridge_walk_steps: whether the walk has the footsteps, the players whose footstep the game
+ * started meanwhile (not heard), how many footsteps the walk itself asks for (heard), and the last
+ * footstep the game asked for (under `lock`) */
+static volatile LONG walk_steps, walk_players, walk_expected;
+static char footstep_archive[64], footstep_entry[64];
+
+void khdays_sound_bridge_walk_steps(int owns)
+{
+    if (InterlockedExchange(&walk_steps, owns != 0) != (owns != 0) && !owns) {
+        InterlockedExchange(&walk_players, 0);
+    }
+}
+
+int khdays_sound_bridge_footstep(char *out_archive, int out_archive_size, char *out_entry, int out_entry_size)
+{
+    int known;
+    AcquireSRWLockExclusive(&lock);
+    known = footstep_archive[0] != '\0';
+    snprintf(out_archive, (size_t)out_archive_size, "%s", footstep_archive);
+    snprintf(out_entry, (size_t)out_entry_size, "%s", footstep_entry);
+    ReleaseSRWLockExclusive(&lock);
+    return known;
+}
+
+void khdays_sound_bridge_expect_footstep(void)
+{
+    InterlockedIncrement(&walk_expected);
+}
+
+/* A footstep's identifier ("seqarc/FIELD_13FS_STONE/se_13fs_stone_run01", "seqarc/FIELD_ROX_FS_..."): the
+ * archive's name has "FS_" after "FIELD_". Its archive and entry are copied out when it is one. */
+static int footstep_of(const char *identifier, char *fs_archive, int fs_archive_size, char *fs_entry,
+                       int fs_entry_size)
+{
+    const char *slash;
+    if (strncmp(identifier, "seqarc/FIELD_", 13) != 0) {
+        return 0;
+    }
+    slash = strchr(identifier + 7, '/');
+    if (slash == NULL || (int)(slash - (identifier + 7)) >= fs_archive_size ||
+        (int)strlen(slash + 1) >= fs_entry_size) {
+        return 0;
+    }
+    memcpy(fs_archive, identifier + 7, (size_t)(slash - (identifier + 7)));
+    fs_archive[slash - (identifier + 7)] = '\0';
+    if (strstr(fs_archive, "FS_") == NULL) {
+        return 0;
+    }
+    snprintf(fs_entry, (size_t)fs_entry_size, "%s", slash + 1);
+    return 1;
+}
 
 void khdays_sound_bridge_hold_new_music(int hold)
 {
@@ -302,6 +353,26 @@ void khdays_sound_sequence_started(int arm7_player, int kind, int number, int en
         InterlockedOr(&held_players, 1 << arm7_player);
         khdays_log("sound: %s not heard: a scene's HD videos come", identifier);
     }
+    if (arm7_player >= 0 && arm7_player < 16) {
+        char fs_archive[64], fs_entry[64];
+        InterlockedAnd(&walk_players, ~(1 << arm7_player));
+        if (footstep_of(identifier, fs_archive, sizeof(fs_archive), fs_entry, sizeof(fs_entry))) {
+            AcquireSRWLockExclusive(&lock);
+            snprintf(footstep_archive, sizeof(footstep_archive), "%s", fs_archive);
+            snprintf(footstep_entry, sizeof(footstep_entry), "%s", fs_entry);
+            ReleaseSRWLockExclusive(&lock);
+            if (walk_expected > 0) {
+                InterlockedDecrement(&walk_expected); /* the walk's own, heard */
+            } else if (walk_steps) {
+                static int told;
+                InterlockedOr(&walk_players, 1 << arm7_player);
+                if (!told) {
+                    told = 1;
+                    khdays_log("sound: %s not heard: the walk plays the footsteps at its own feet", identifier);
+                }
+            }
+        }
+    }
     if (driver == NULL || (!hw.trace && !khdays_sound_mods_present())) {
         return;
     }
@@ -341,7 +412,7 @@ void khdays_sound_player_assigned(int arm7_player, int archive_player)
 static void update_gains(void)
 {
     static int told;
-    const LONG players_held = held_players, streams_held = held_streams;
+    const LONG players_held = held_players | walk_players, streams_held = held_streams;
     for (int p = 0; p < 16; ++p) {
         player_gain[p] = (players_held >> p & 1) ? 0.0f : bus.category[sequence_category[p]];
     }
@@ -965,12 +1036,17 @@ int khdays_sound_bridge_word(u32 data, u32 err)
         return 0;
     }
     count_commands(data);
-    if (khdays_log_on() && data != 0) {
+    if (data != 0 && (khdays_log_on() || walk_players != 0)) {
         for (u32 command = data; command != 0; command = *(volatile u32 *)KHDAYS_W(command)) {
             if (*(volatile u32 *)KHDAYS_W(command + 4) == 1) {
                 const u32 p = *(volatile u32 *)KHDAYS_W(command + 8);
-                khdays_log("sound: player %u stopped (%s)", p,
-                           p < 16 && sequence_playing[p][0] ? sequence_playing[p] : "?");
+                if (p < 16) {
+                    InterlockedAnd(&walk_players, ~(1 << p)); /* a footstep not heard is over */
+                }
+                if (khdays_log_on()) {
+                    khdays_log("sound: player %u stopped (%s)", p,
+                               p < 16 && sequence_playing[p][0] ? sequence_playing[p] : "?");
+                }
             }
         }
     }

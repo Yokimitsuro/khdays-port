@@ -66,6 +66,14 @@ void khdays_sound_movie_channels(u32 mask);
  * where it has got to. */
 void khdays_sound_bridge_hold_new_music(int hold);
 
+/* The Walk mod (runtime/input/walk.c): while `owns` the game's footsteps (a FIELD_*FS_* archive's entry,
+ * the run's, played under the walk) are started but not heard, the walk playing the one the game last asked
+ * for at its own feet: khdays_sound_bridge_footstep gives that sound's archive and entry (0 when none yet),
+ * khdays_sound_bridge_expect_footstep lets the next one through. */
+void khdays_sound_bridge_walk_steps(int owns);
+int khdays_sound_bridge_footstep(char *archive, int archive_size, char *entry, int entry_size);
+void khdays_sound_bridge_expect_footstep(void);
+
 /* The game's thread, from NNSi_SndPlayerStartSeq (prepare.py HOOKS): ARM7 sequence player
  * `arm7_player` now plays for the archive's player `archive_player`, whose category (music, effects,
  * voices) it takes (port/sound/categories.h). */

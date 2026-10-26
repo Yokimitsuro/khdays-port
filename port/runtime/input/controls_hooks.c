@@ -7,6 +7,7 @@
 #include "../core/window.h"
 #include "analog.h"
 #include "input.h"
+#include "walk.h"
 #include "../net/net_session.h"
 
 #include <stdarg.h>
@@ -344,6 +345,7 @@ int khdays_controls_move_rate(int actor, int rate)
     if (rate > 0 && analog_moving(actor, &in)) {
         const int tilt = khdays_analog_tilt(in.x, in.y);
         const int walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
+        khdays_walk_movement(actor, walk, rate); /* (the Walk mod's animation: walk.h) */
         if (walk < rate) {
             walking.actor = actor;
             walking.frame = khdays_input_game_frames();
@@ -352,6 +354,7 @@ int khdays_controls_move_rate(int actor, int rate)
             return walk;
         }
     }
+    khdays_walk_movement(actor, rate, rate);
     return rate;
 }
 

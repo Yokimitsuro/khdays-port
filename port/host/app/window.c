@@ -55,6 +55,8 @@
 
 #define W 256
 #define H 192
+#define WALK_SPEED_DEFAULT 50 /* profile.c's walk_speed */
+#define WALK_SPEED_MOD 55     /* the Walk mod's */
 
 /* The plain two-screen frame of khdays_host_present (when there are no frame
  * packages). */
@@ -715,6 +717,12 @@ static int host_thread(void *unused)
         char path[512];
         khdays_settings_path(path, sizeof(path));
         khdays_profile_load(&profile, path, notice);
+        if (khdays_mod_installed(KHDAYS_MOD_WALK) && profile.enh.walk_speed == WALK_SPEED_DEFAULT) {
+            /* the Walk mod's walk is timed for 55% of the game's speed: the setting set so once (a value of the
+             * player's own, any but the port's default, kept) */
+            profile.enh.walk_speed = WALK_SPEED_MOD;
+            khdays_profile_save(&profile, path, notice);
+        }
         khdays_ui_set_language(khdays_language_choose(profile.language));
         khdays_sound_output_set(&profile.sound);
         khdays_log_want(profile.session_log);

@@ -2366,6 +2366,30 @@ HOOKS["ov027@0208344c"].append(  # Ov027_UpdateFlushForward
     )
 )
 
+# The Walk mod's (runtime/input/walk.h): the local player's model drawn with its walk, each joint the model sends
+# taken from the walk's clip over the game's own result and given back after (the result is the motion's cache).
+# Without the mod no clip is read and both answer at once.
+HOOKS["main@0202aa9c"] = [  # Scene_DrawNode
+    (
+        "    NNS_G3dDraw(node->object);",
+        "    { extern void khdays_walk_draw_begin(int node);\n"
+        "      extern void khdays_walk_draw_end(void);\n"
+        "      khdays_walk_draw_begin((int)node);\n"
+        "      NNS_G3dDraw(node->object);\n"
+        "      khdays_walk_draw_end(); }",
+    )
+]
+HOOKS["itcm@01ffc164"].append(  # NNSi_G3dFuncSbc_NODEDESC
+    (
+        "        state->sendJnt(result);",
+        "        { extern void khdays_walk_send_begin(unsigned int joint, void *result);\n"
+        "          extern void khdays_walk_send_end(void *result);\n"
+        "          khdays_walk_send_begin(nodeId, result);\n"
+        "          state->sendJnt(result);\n"
+        "          khdays_walk_send_end(result); }",
+    )
+)
+
 
 # Hooks by the decomp file, for functions HOOKS cannot name: DS Protect's (ov028) are data in the
 # symbols, their bodies encrypted in the ROM, and several share a file. Applied like HOOKS.

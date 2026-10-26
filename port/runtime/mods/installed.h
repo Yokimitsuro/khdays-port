@@ -9,6 +9,7 @@ extern "C" {
 
 enum {
     KHDAYS_MOD_MENU_OVERHAUL, /* days-mods/menu-overhaul.txt: the Menu Overhaul's screens, transitions and pauses */
+    KHDAYS_MOD_WALK,          /* days-mods/walk.txt: the analog walk's own animation (runtime/input/walk.h) */
     KHDAYS_MODS
 };
 

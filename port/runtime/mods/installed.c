@@ -8,7 +8,7 @@
 
 #include <SDL3/SDL_atomic.h>
 
-static const char *const IDS[KHDAYS_MODS] = {"menu-overhaul"};
+static const char *const IDS[KHDAYS_MODS] = {"menu-overhaul", "walk"};
 
 /* each mod's state: 0 not looked for yet, 1 not installed, 2 installed */
 static SDL_AtomicInt state[KHDAYS_MODS];
