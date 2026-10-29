@@ -278,6 +278,77 @@ class HdMenuTools(unittest.TestCase):
             self.assertEqual(s.menu_tools_to_make(old, inputs, made), everything)
 
 
+class PortModsInTheHdPack(unittest.TestCase):
+    def files(self, folder):
+        return {p.relative_to(folder).as_posix(): p.read_text() for p in folder.rglob("*") if p.is_file()}
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.install = Path(self.temp.name)
+        self.hd = self.install / "mods" / s.HD_MOD
+        for rel, text in (("layouts/camp/en/camp.txt", "hd camp"), ("layouts/save/en/save.txt", "hd save")):
+            (self.hd / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.hd / rel).write_text(text)
+        self.pristine = self.files(self.hd)
+        self.overhaul, self.walk = self.install / "work" / "overhaul", self.install / "work" / "walk"
+        for folder, rel, text in (
+            (self.overhaul, "layouts/camp/en/camp.txt", "overhaul camp"),
+            (self.overhaul, "layouts/campsave/campsave.txt", "overhaul save page"),
+            (self.walk, "animations/walk/ro.khw", "walk"),
+            (self.walk, "days-mods/walk.txt", ""),
+        ):
+            (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+            (folder / rel).write_text(text)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_over_the_hd_pieces_and_out_again(self):
+        s.merge_port_mods(self.install, [self.overhaul, self.walk], {"mods": ["menu-overhaul", "walk"]})
+        merged = self.files(self.hd)
+        self.assertEqual(merged["layouts/camp/en/camp.txt"], "overhaul camp")  # the mod's over the HD menus'
+        self.assertEqual(merged["layouts/save/en/save.txt"], "hd save")  # the HD menus' it has not
+        self.assertEqual(merged["animations/walk/ro.khw"], "walk")
+        record = s.load_state(self.install)["steps"]["port-mods"]
+        self.assertEqual(record["replaced"], ["layouts/camp/en/camp.txt"])
+        self.assertEqual(len(record["added"]), 3)
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+        self.assertFalse((self.hd / "animations").exists())  # the folders the mods' files left empty
+        self.assertFalse((self.install / "setup" / s.HD_ORIGINALS).exists())
+        self.assertNotIn("port-mods", s.load_state(self.install).get("steps", {}))
+        s.unmerge_port_mods(self.install)  # nothing in: nothing done
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_a_merge_stopped_half_way(self):
+        # recorded, then stopped before any HD piece was moved aside: the HD PACK's own are kept
+        state = {"steps": {"port-mods": {"replaced": ["layouts/camp/en/camp.txt"], "added": ["days-mods/walk.txt"]}}}
+        s.save_state(self.install, state)
+        (self.hd / "days-mods").mkdir()
+        (self.hd / "days-mods" / "walk.txt").write_text("")
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_the_hd_menus_made_again_from_their_own_pieces(self):
+        s.merge_port_mods(self.install, [self.overhaul], {"mods": ["menu-overhaul"]})
+        recorded = {"by": "the same tool", "files": ["layouts/camp/en/camp.txt", "layouts/save/en/save.txt"]}
+        state = s.load_state(self.install)
+        state["steps"]["hd-menus"] = {"complete": True, "inputs": {}, "tools": {"camp.py": recorded}}
+        s.save_state(self.install, state)
+        with (
+            mock.patch.object(s, "menu_tools_to_make", return_value=["heart_points.py"]),
+            mock.patch.object(s, "check_folder", return_value=[]),
+            mock.patch.object(s, "data_folder", side_effect=s.Refusal("data-missing")),
+        ):
+            with self.assertRaises(s.Refusal):
+                s.build_hd(
+                    s.argparse.Namespace(
+                        install=self.install, menus=True, videos=False, c1525=Path("a"), c28=Path("b"), language="en"
+                    )
+                )
+        self.assertEqual(self.files(self.hd), self.pristine)  # taken out before the kept pieces are copied
+
+
 class Results(unittest.TestCase):
     def run_command(self, *argv):
         with tempfile.TemporaryDirectory() as d:

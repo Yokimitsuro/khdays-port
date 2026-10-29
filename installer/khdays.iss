@@ -96,8 +96,6 @@ Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "{cm:StartPort}";
 Type: filesandordirs; Name: "{app}\data\extracted"
 Type: filesandordirs; Name: "{app}\data\cutscenes"
 Type: filesandordirs; Name: "{app}\mods\HD PACK"
-Type: filesandordirs; Name: "{app}\mods\Days - Menu Overhaul"
-Type: filesandordirs; Name: "{app}\mods\Days - Walk"
 Type: filesandordirs; Name: "{app}\setup"
 Type: filesandordirs; Name: "{app}\native"
 Type: filesandordirs; Name: "{app}\tools"
@@ -113,7 +111,6 @@ var
   DataOk: Boolean;
   HdPage: TInputQueryWizardPage;
   HdMenus, HdVideos: TNewCheckBox;
-  ModOverhaul, ModWalk: TNewCheckBox;  { the port's own mods: off unless chosen (docs/MENU_OVERHAUL.md, WALK_MOD.md) }
   HdStatus: TNewStaticText;
   SteamPage: TWizardPage;
   SteamAdd: TNewCheckBox;
@@ -291,12 +288,6 @@ end;
 
 { ---- The HD collections: the HD menus and HUD (both), the HD videos (1.5+2.5) ---- }
 
-{ Whether the chosen folder holds the HD menus already (an earlier install made them) }
-function HdMenusMade: Boolean;
-begin
-  Result := DirExists(AddBackslash(WizardDirValue) + 'mods\HD PACK');
-end;
-
 procedure HdChanged(Sender: TObject);
 begin
   { a choice whose collection is not given is unavailable; its caption says what it needs }
@@ -304,9 +295,6 @@ begin
   HdVideos.Enabled := Trim(HdPage.Values[0]) <> '';
   if not HdMenus.Enabled then HdMenus.Checked := False;
   if not HdVideos.Enabled then HdVideos.Checked := False;
-  { the Menu Overhaul is made from the HD menus' pieces (made now, or before in this folder) and the 1.5+2.5 }
-  ModOverhaul.Enabled := (Trim(HdPage.Values[0]) <> '') and (HdMenus.Checked or HdMenusMade);
-  if not ModOverhaul.Enabled then ModOverhaul.Checked := False;
 end;
 
 { A collection's folder as given (0 the 1.5+2.5, 1 the 2.8), or '' for none: without spaces around it
@@ -369,22 +357,10 @@ begin
   HdVideos.Width := HdPage.SurfaceWidth;
   HdVideos.Height := ScaleY(20);
   HdVideos.Caption := CustomMessage('HdVideos');
-  ModOverhaul := TNewCheckBox.Create(HdPage);
-  ModOverhaul.Parent := HdPage.Surface;
-  ModOverhaul.Top := HdVideos.Top + HdVideos.Height + ScaleY(6);
-  ModOverhaul.Width := HdPage.SurfaceWidth;
-  ModOverhaul.Height := ScaleY(20);
-  ModOverhaul.Caption := CustomMessage('ModOverhaul');
-  ModWalk := TNewCheckBox.Create(HdPage);
-  ModWalk.Parent := HdPage.Surface;
-  ModWalk.Top := ModOverhaul.Top + ModOverhaul.Height + ScaleY(6);
-  ModWalk.Width := HdPage.SurfaceWidth;
-  ModWalk.Height := ScaleY(20);
-  ModWalk.Caption := CustomMessage('ModWalk');
   HdMenus.OnClick := @HdChanged;
   HdStatus := TNewStaticText.Create(HdPage);
   HdStatus.Parent := HdPage.Surface;
-  HdStatus.Top := ModWalk.Top + ModWalk.Height + ScaleY(10);
+  HdStatus.Top := HdVideos.Top + HdVideos.Height + ScaleY(10);
   HdStatus.Width := HdPage.SurfaceWidth;
   HdStatus.AutoSize := False;
   HdStatus.WordWrap := True;
@@ -412,8 +388,6 @@ begin
   HdMenus.Checked := HdMenus.Enabled and (Pos('menus', Wanted) > 0);
   HdVideos.Checked := HdVideos.Enabled and (Pos('videos', Wanted) > 0);
   HdChanged(nil);
-  ModOverhaul.Checked := ModOverhaul.Enabled and (Pos('overhaul', Wanted) > 0);
-  ModWalk.Checked := Pos('walk', Wanted) > 0;
 end;
 
 function CheckHd: Boolean;
@@ -423,7 +397,7 @@ begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
   WizardForm.Refresh;
-  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked or ModOverhaul.Checked) then
+  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked) then
     if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '"', Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
@@ -699,14 +673,12 @@ begin
         { made but for some screens (a tool that failed): said, with where its error was kept }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
-    { the port's own mods chosen, after the HD menus the Menu Overhaul is made from }
-    if DataOk and (ModOverhaul.Checked or ModWalk.Checked) then begin
+    { the port's own mods (the Menu Overhaul, made from the HD menus' pieces, and the Walk) put inside the HD
+      PACK after the HD menus }
+    if DataOk and HdMenus.Checked and DirExists(ExpandConstant('{app}') + '\mods\HD PACK') then begin
       WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
       WizardForm.Refresh;
-      Args := 'build-mods "' + ExpandConstant('{app}') + '"';
-      if ModOverhaul.Checked then
-        Args := Args + ' --menu-overhaul --1525 "' + HdFolder(0) + '"';
-      if ModWalk.Checked then Args := Args + ' --walk';
+      Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
     end;

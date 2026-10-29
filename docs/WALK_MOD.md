@@ -57,7 +57,8 @@ motions).
 py .\tools\mods\walk_clips.py --data .\data\extracted\<hash>          # mods/Days - Walk
 ```
 
-The installer's helper runs it into an install: `installer/setup_steps.py build-mods <install> --walk`.
+The installer makes it with the HD menus and puts it inside the HD PACK with the Menu Overhaul
+(docs/MENU_OVERHAUL.md, "Making the mod"); its helper: `installer/setup_steps.py build-mods <install> --walk`.
 
 A KHW1 file: `"KHW1"`, the frame count, the joint count and the frames a second (u32, u32, f32), then for each
 frame and each of the field model's joints a rotation quaternion and a local offset (7 f32); then, optionally,

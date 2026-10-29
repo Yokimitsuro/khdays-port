@@ -968,6 +968,8 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             missing = check_folder(kind, folder)
             if missing:
                 raise Refusal("hd-missing", missing="; ".join(missing))
+    if menus:
+        unmerge_port_mods(install)  # the menus kept are copied as their tools made them (build-mods puts them in again)
     data = data_folder(install)
     inputs = hd_inputs()
     work = install / "setup" / "hd-work"
@@ -1094,9 +1096,12 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
 # ---- The mods of the port's own features -------------------------------------------------------
 
 # The mods that switch on features of the port's own (port/runtime/mods/installed.h), each made by its tool in
-# tools/mods: its folder under mods/ and the tool's command line, its places filled in ({data} the game's
+# tools/mods: the folder it makes and the tool's command line, its places filled in ({data} the game's
 # extraction; the Menu Overhaul's collections' entries as installer/mod_inputs.txt lists them, extracted as the HD
-# pieces' are, the HD menus' pieces made before it, the fonts the installer carries, the port).
+# pieces' are, the HD menus' pieces made before it, the fonts the installer carries, the port). Both are put inside
+# the HD PACK, one mod for the player: their files over the HD menus' (the pieces they replace kept apart in
+# setup/hd-originals and put back before the HD menus or these mods are made again, each made from the HD tools'
+# own pieces), the rest added; the install's state ("port-mods") says which are which.
 PORT_MODS = {
     "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
     "menu-overhaul": (
@@ -1109,6 +1114,7 @@ PORT_MODS = {
     ),
 }
 MOD_INPUTS_FILE = HERE / "mod_inputs.txt"
+HD_ORIGINALS = "hd-originals"  # (under setup/) the HD menus' pieces the port's own mods replace in the HD PACK
 # where each archive's entries are extracted for the mods' tools (KH2's two archives into one folder)
 MOD_SOURCES = {
     "kh2_first": "kh2",
@@ -1187,6 +1193,55 @@ def _mods_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
 
 
+def unmerge_port_mods(install: Path) -> None:
+    """The HD PACK as the HD tools made it: the port's own mods' files taken out of it, the HD pieces they replaced
+    put back (none when a merge stopped before moving them: the HD PACK's own are still there)."""
+    state = load_state(install)
+    record = state.get("steps", {}).get("port-mods")
+    if not record:
+        return
+    mod, originals = install / "mods" / HD_MOD, install / "setup" / HD_ORIGINALS
+    for rel in record["added"]:
+        remove(mod / rel)
+    for rel in record["replaced"]:
+        if (originals / rel).is_file():
+            (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(originals / rel, mod / rel)
+    # the folders the added files leave empty
+    for folder in sorted({(mod / rel).parent for rel in record["added"]}, key=lambda p: -len(p.parts)):
+        while folder != mod and folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+            folder = folder.parent
+    remove(originals)
+    del state["steps"]["port-mods"]
+    save_state(install, state)
+
+
+def merge_port_mods(install: Path, made: list[Path], record: dict[str, Any]) -> None:
+    """The port's own mods made (each one's folder) put inside the HD PACK, the HD pieces they replace kept apart;
+    `record` kept with which files were added and which replaced (first: a merge stopped half way is taken out
+    whole by unmerge_port_mods)."""
+    mod, originals = install / "mods" / HD_MOD, install / "setup" / HD_ORIGINALS
+    files: dict[str, Path] = {}
+    for folder in made:
+        for f in sorted(p for p in folder.rglob("*") if p.is_file()):
+            files[f.relative_to(folder).as_posix()] = f
+    replaced = sorted(rel for rel in files if (mod / rel).is_file())
+    state = load_state(install)
+    state.setdefault("steps", {})["port-mods"] = {
+        **record,
+        "replaced": replaced,
+        "added": sorted(set(files) - set(replaced)),
+    }
+    save_state(install, state)
+    for rel in replaced:
+        (originals / rel).parent.mkdir(parents=True, exist_ok=True)
+        os.replace(mod / rel, originals / rel)
+    for rel, source in files.items():
+        (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, mod / rel)
+
+
 @command("build-mods", "the port's own mods (docs/WALK_MOD.md, docs/MENU_OVERHAUL.md)", _mods_arguments)
 def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     import subprocess
@@ -1195,40 +1250,49 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
 
     install = args.install.resolve()
     wanted = [m for m in PORT_MODS if getattr(args, m.replace("-", "_"))]
-    if "menu-overhaul" in wanted and (args.c1525 is None or not (install / "mods" / HD_MOD).is_dir()):
+    # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
+    unmerge_port_mods(install)
+    hd = install / "mods" / HD_MOD
+    if "menu-overhaul" in wanted and (args.c1525 is None or not any(p.is_file() for p in hd.rglob("*"))):
         raise Refusal("mod-needs-hd")
-    made = []
-    for i, mod in enumerate(wanted):
-        folder, template = PORT_MODS[mod]
-        progress(i, len(wanted), words("mod-making", args.language, what=folder))
-        work = install / "setup" / "mod-work"
-        remove(work)
-        try:
-            # the tools in the repository's layout under a root of their own (tools/hd's helpers too): the mod lands
-            # there, then whole into mods/ (an older one replaced)
-            tools = tool_folders()
-            shutil.copytree(tools["mods"], work / "tools" / "mods", ignore=shutil.ignore_patterns("tests"))
-            shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
-            shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
-            places = mod_places(install, work / "src")
-            if mod == "menu-overhaul":
-                # the collections' entries the tools read, extracted as the HD pieces' are
-                cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
-                for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
-                    with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
-                        collection_archive.materialise(a, paths, work / "src" / f"{MOD_SOURCES[archive]}.hed_out")
+    for folder, _ in PORT_MODS.values():
+        remove(install / "mods" / folder)  # where an earlier installer put each, apart from the HD PACK
+    made: list[str] = []
+    failed = None
+    work = install / "setup" / "mod-work"
+    remove(work)
+    try:
+        # the tools in the repository's layout under a root of their own (tools/hd's helpers too): the mods land
+        # there, then inside the HD PACK
+        tools = tool_folders()
+        shutil.copytree(tools["mods"], work / "tools" / "mods", ignore=shutil.ignore_patterns("tests"))
+        shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
+        shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
+        places = mod_places(install, work / "src")
+        if "menu-overhaul" in wanted:
+            # the collections' entries the tools read, extracted as the HD pieces' are
+            cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+            for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
+                with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
+                    collection_archive.materialise(a, paths, work / "src" / f"{MOD_SOURCES[archive]}.hed_out")
+        for i, mod in enumerate(wanted):
+            folder, template = PORT_MODS[mod]
+            progress(i, len(wanted), words("mod-making", args.language, what=folder))
             line = [sys.executable, str(work / "tools" / "mods" / template[0])]
             line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + ["--mod", folder]
             done = subprocess.run(line, cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if done.returncode != 0:
                 said = done.stderr.strip().splitlines()
-                raise RuntimeError(f"{template[0]}: {said[-1] if said else done.returncode}")
-            put_in_place(work / "mods" / folder, install / "mods" / folder)
-        finally:
-            remove(work)
-        made.append(folder)
+                failed = failed or RuntimeError(f"{template[0]}: {said[-1] if said else done.returncode}")
+                continue  # the others made still go in
+            made.append(mod)
+        merge_port_mods(install, [work / "mods" / PORT_MODS[m][0] for m in made], {"mods": made})
+    finally:
+        remove(work)
+    if failed is not None:
+        raise failed
     progress(1, 1, words("mod-ready", args.language))
-    return {"mods": made, "message": words("mod-ready", args.language)}
+    return {"mods": made, "into": HD_MOD, "message": words("mod-ready", args.language)}
 
 
 def _mod_trace_arguments(p: argparse.ArgumentParser) -> None:

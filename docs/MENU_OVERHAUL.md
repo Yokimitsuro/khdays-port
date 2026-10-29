@@ -9,9 +9,10 @@ and timings stay as they are.
 ## Turning it on
 
 A folder of `mods/` holding `days-mods/menu-overhaul.txt` (any contents) turns it on
-(`port/runtime/mods/installed.h`, looked for once at the start). The folder's name decides which
-mod's files win, as for every mod: one named before `HD PACK` (`Days - Menu Overhaul`) overrides its
-pieces. Every feature below also needs the screens on one picture (`screens = one`).
+(`port/runtime/mods/installed.h`, looked for once at the start). The installer puts it inside the HD PACK,
+its files over the HD menus' it replaces (see "Making the mod"); a folder of its own, as
+`tools/mods/menu_overhaul.py` makes it, must be named before `HD PACK` to override its pieces, as for every
+mod. Every feature below also needs the screens on one picture (`screens = one`).
 
 ## What it changes
 
@@ -39,13 +40,16 @@ function they call answers as the game would without the mod.
 
 ## Making the mod
 
-The installer makes it when chosen, from the 1.5+2.5 collection, after the HD menus (made then, or by an earlier
-install in that folder: an update needs no 2.8 for it); or a developer runs the installer's helper on an install
-whose HD menus are made, with KHGummi.otf and KHMenu.otf in `installer/fonts` (the installer's build takes them
-out of the package `installer/pinned.json` pins):
+The installer makes it with the HD menus, from the 1.5+2.5 collection, and puts it inside the HD PACK with the
+Walk (docs/WALK_MOD.md): one mod for the player. Its files go over the HD menus' (the 200 or so of the camp and
+the title it retouches), the pieces they replace kept in `setup/hd-originals` and the install's state saying
+which; before the HD menus or these mods are made again they are put back, so each is made from the HD tools'
+own pieces. A developer runs the installer's helper on an install whose HD menus are made, with KHGummi.otf and
+KHMenu.otf in `installer/fonts` (the installer's build takes them out of the package `installer/pinned.json`
+pins); the mods not named are taken out of the HD PACK:
 
 ```powershell
-py .\installer\setup_steps.py build-mods "<install>" --menu-overhaul --1525 "<1.5+2.5>"
+py .\installer\setup_steps.py build-mods "<install>" --menu-overhaul --walk --1525 "<1.5+2.5>"
 ```
 
 It extracts the collections' entries `installer/mod_inputs.txt` lists (KH2's menus and fields' irises, Birth by
