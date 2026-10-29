@@ -258,7 +258,8 @@ int main(int argc, char **argv)
         if (MODULE_PARAMS[5] != 0) {
             MIi_UncompressBackward(MODULE_PARAMS[5]);
         }
-        return khdays_sound_dump(argc >= 3 ? argv[2] : KHDAYS_SOUND_DUMP_DIRECTORY);
+        return khdays_sound_dump(argc >= 3 ? argv[2] : KHDAYS_SOUND_DUMP_DIRECTORY, (const char *const *)argv + 3,
+                                 argc > 3 ? argc - 3 : 0);
     }
     if (argc >= 2 && strcmp(argv[1], "--dump-graphics") == 0) {
         /* Headless: the ROM's files only; nothing of the game runs. */

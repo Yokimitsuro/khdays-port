@@ -1093,7 +1093,7 @@ the files a mod gives under `mods/<Mod>/sounds/`, named as
   its own, so an original written out and put back plays the same; at
   another rate they are interpolated (Catmull-Rom).
 
-**The originals written out** (`khdays-native --dump-sounds [DIR]`,
+**The originals written out** (`khdays-native --dump-sounds [DIR [NAME...]]`,
 `port/runtime/sound/sound_dump.c`; default `saves/dump/sounds`, and inside a
 repository only under its `saves/`):
 

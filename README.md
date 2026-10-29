@@ -659,7 +659,7 @@ ends by itself (not when the game stops it); the voices' streams are decoded
 ahead, so even their first line is the mod's. Best: 48,000 Hz, 16 bits, about
 as loud as the original (a dumped one shows how loud).
 
-**The originals** to make them from: `khdays-native --dump-sounds [DIR]`
+**The originals** to make them from: `khdays-native --dump-sounds [DIR [NAME...]]`
 writes every wave, stream, sequence and sequence-archive entry as WAV under
 those same names, loops included (default `saves/dump/sounds`, about
 2.3 GB). It runs without starting the game; the sequences are played by the

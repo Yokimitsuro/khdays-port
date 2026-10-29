@@ -13,6 +13,8 @@
 #define STEP_CYCLES (0xaa8u * 64u) /* the driver's periodic step, 5.21 ms (snd7_driver.c) */
 #define PLAYER 0                   /* the ARM7 sequence player it plays on */
 #define TAIL_SECONDS 30u           /* the most an ended sequence's notes may ring on */
+#define WAIT_SECONDS 30u           /* the most a track may wait for its notes to end (waits_on_notes) */
+#define NOT_WAITING UINT64_MAX
 
 /* The commands it sends (the ARM7's numbers, snd7_command.c). */
 enum { PREPARE_SEQ = 2, START_PREPARED_SEQ = 3, PLAYER_PARAM = 6, ALLOCATABLE_CHANNEL = 9, SHARED_WORK = 29 };
@@ -150,6 +152,20 @@ static void seen_clear(void)
     seen_capacity = seen_count = 0;
 }
 
+/* Whether a track of the player waits for its notes to end (its flags' 0x10, the driver's
+ * TRACK_NOTE_FINISH_WAIT: after a note of length 0, which plays its wave through, as the menus' cues do). Its
+ * state stands still from tick to tick then while the note goes on: no loop. */
+static int waits_on_notes(void)
+{
+    const uint8_t *player = khdays_snd7_native_player_record(PLAYER);
+    for (int t = 0; t < 16; ++t) {
+        if (player[8 + t] != 0xff && (khdays_snd7_native_track_record(player[8 + t])[0] & 0x10u)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* --- The render ------------------------------------------------------------------ */
 
 static int16_t to16(float v)
@@ -172,7 +188,7 @@ int khdays_render_sequence(const KhdaysRenderRequest *q, KhdaysRendered *out)
 {
     const KhdaysSnd7Driver *driver = &khdays_snd7_native;
     const uint64_t limit = (uint64_t)q->limit_seconds * q->rate;
-    uint64_t start, stop_at = limit, capacity = 0, k;
+    uint64_t start, stop_at = limit, capacity = 0, k, wait_from = NOT_WAITING;
     uint32_t at, ticks = 0;
     int playing = 1;
 
@@ -229,6 +245,19 @@ int khdays_render_sequence(const KhdaysRenderRequest *q, KhdaysRendered *out)
                     continue; /* no tick this step: the state as it was */
                 }
                 ticks = now_ticks;
+                if (waits_on_notes()) {
+                    /* a note playing its wave through; one that never ends (a looping wave) is cut after
+                     * WAIT_SECONDS of it */
+                    if (wait_from == NOT_WAITING) {
+                        wait_from = frame;
+                    }
+                    if (frame - wait_from >= (uint64_t)WAIT_SECONDS * q->rate) {
+                        playing = 0;
+                        stop_at = frame;
+                    }
+                    continue;
+                }
+                wait_from = NOT_WAITING;
                 found = seen_add(state_hash(), frame, &first);
                 if (found < 0) {
                     fprintf(stderr, "sound: out of memory rendering a sequence\n");
