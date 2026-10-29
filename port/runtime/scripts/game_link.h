@@ -17,6 +17,9 @@ void khdays_link_folders(const char **mods, const char **user);
 
 /* The game's frame count (the object list's), and whether it is paused (gPauseMode). */
 unsigned khdays_link_frame(void);
+/* The length of one of the game's frames in seconds, by its frame-rate mode (GetFrameRateMode:
+ * gObjSystem's first byte; 0 two V-blanks, 1 three, 2 one). */
+double khdays_link_frame_seconds(void);
 int khdays_link_paused(void);
 
 /* The current scene (gSceneCtl) and its argument. */

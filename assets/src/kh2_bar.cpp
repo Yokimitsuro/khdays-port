@@ -9,7 +9,7 @@ bool is_bar(const std::uint8_t* data, std::size_t size, std::size_t at) {
            data[at + 2] == 'R' && data[at + 3] == 1;
 }
 
-std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, std::size_t at) {
+std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, std::size_t at, bool skip_bad) {
     if (!is_bar(data, size, at)) {
         throw std::runtime_error("KH2 BAR: missing BAR header");
     }
@@ -27,6 +27,9 @@ std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, st
         const auto p = at + 16 + std::size_t(i) * 16;
         const std::size_t offset = word(p + 8), length = word(p + 12);
         if (length != 0 && (offset > size - at || length > size - at - offset)) {
+            if (skip_bad) {
+                continue;
+            }
             throw std::runtime_error("KH2 BAR: entry extends past the archive");
         }
         std::string name;

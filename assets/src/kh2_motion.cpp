@@ -618,7 +618,7 @@ MotionSet::MotionSet(const std::uint8_t* data, const std::size_t size) {
         names_.push_back(e.name);
         std::shared_ptr<Motion> motion;
         if (e.size != 0 && is_bar(data, size, e.offset)) {
-            for (const BarEntry& inner : bar_entries(data, e.offset + e.size, e.offset)) {
+            for (const BarEntry& inner : bar_entries(data, e.offset + e.size, e.offset, true)) {
                 if (inner.type == 0x09 && inner.size > 0x90) {
                     try {
                         motion = std::make_shared<Motion>(data, inner.offset + inner.size, inner.offset + 0x90);

@@ -1,0 +1,123 @@
+# Reusable secondary-motion presets for KH2 characters (docs/SECONDARY_MOTION.md).
+# Style settings only: no bone numbers. A character's file includes this one
+# (`include kh2_secondary_presets.txt`) and names the presets in its groups.
+# Tuning seeds measured against B_EX390's baked coat and refined in the replay
+# tool, not KH2's own parameters (KH2 bakes its cloth into the motions).
+secondary_motion 1
+units cm
+
+# A long coat: barely stretches, bends with resistance so neighbouring strips
+# fold together, moves broadly and settles in about a second. The plain values
+# hold at the waist; `hem` values are reached at the free edge.
+preset kh2_coat
+  mass 0.06
+  stretch_compliance 0.0005
+  # around the rows: a skirt flares like a dress spinning out, its circumference growing toward the hem
+  # (KH2's baked coats do this); stiff and hardly stretching at the belt, free at the hem, so a panel
+  # over a raised knee is not dragged back by its neighbours
+  row_compliance 0.00002 hem 0.05 curve 1.5
+  # along a strip: stretches where a leg comes up into it (KH2's own coat stretches about 2x in the
+  # battle idle); held at the rest length it fights the leg, and the coat twitches
+  max_strain 0.6
+  row_max_strain 0.04 hem 4 curve 1.5
+  shear_compliance 0.0002
+  bend_compliance 0.0015
+  damping 2.5
+  # the pull toward the shape on the hips, weak toward the hem: that shape tips with the pelvis (in a
+  # crouch it lies behind the knees, under the floor), so the lower coat falls off the knee instead
+  follow_frequency 4.0 hem 0.3 curve 1.5
+  follow_damping 0.55
+  gravity_scale 1
+  tether_slack 0.03
+  swing_limit 55 hem 70
+  twist_limit 0                      # no roll about the bone's length: swings only
+  inertia 1.0 hem 0.9
+  guided_inertia 0.4
+  max_speed 12
+  # the drawn shape eased toward the solved one (in the hips' space, so the body is never delayed):
+  # contact against a leg sweeping through the coat jumps step to step, this hides it
+  smoothing 0.05
+  thickness 1.5
+  friction 0.3
+  wind_drag 1.5
+  collide body legs         # the waist, hips and legs only
+  self_collision garment
+end
+
+# Sleeve cuffs: rings that keep their shape and swing less than the coat.
+preset kh2_cuff
+  mass 0.02
+  stretch_compliance 0
+  shear_compliance 0.000005
+  bend_compliance 0.0002
+  damping 4
+  follow_frequency 5.5
+  follow_damping 0.7
+  swing_limit 25
+  twist_limit 10
+  inertia 0.8
+  max_speed 8
+  thickness 0.8
+  friction 0.2
+  wind_drag 0.6
+  collide hands
+end
+
+# Drawstrings and other hanging cords: inextensible, lag on their own, a
+# restrained end. Hung under gravity at load (`settle on` in the group).
+preset kh2_string
+  mass 0.015
+  stretch_compliance 0
+  bend_compliance 0.004
+  damping 1.8
+  follow_frequency 1.2
+  follow_damping 0.4
+  gravity_scale 1
+  tether_slack 0
+  swing_limit 75
+  twist_limit 20
+  inertia 1
+  max_speed 10
+  thickness 0.8
+  friction 0.4
+  wind_drag 2
+  collide torso body
+  self_collision garment
+end
+
+# A hood or other heavy flap on one bone: lies on the back under gravity, sways a little.
+preset kh2_hood
+  mass 0.15
+  damping 4
+  follow_frequency 2.5
+  follow_damping 0.7
+  gravity_scale 1
+  swing_limit 45
+  inertia 0.8
+  max_speed 8
+  thickness 2
+  friction 0.4
+  wind_drag 0.8
+  collide torso body head
+end
+
+# Short sculpted hair: strongly back to the animated silhouette, small swing,
+# a little lag. Guided: the animation's own hair motion is the target.
+preset kh2_hair
+  mode guided
+  mass 0.01
+  stretch_compliance 0
+  damping 6
+  follow_frequency 7
+  follow_damping 0.8
+  gravity_scale 0.3
+  swing_limit 9
+  twist_limit 0
+  inertia 0.6
+  guided_inertia 0.6
+  max_speed 4
+  thickness 0.5
+  friction 0
+  wind_drag 0.4
+  collide head
+end

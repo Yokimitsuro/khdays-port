@@ -28,6 +28,7 @@ void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, Khdays
 #include "names.h"
 #include "room_animation.h"
 #include "../characters/characters.h"
+#include "secondary/model_link.h"
 
 #include "khdays/assets/fbx.h"
 #include "khdays/assets/gltf.h"
@@ -322,6 +323,8 @@ struct Model {
     bool kh2_ik_adjust = true; // the feet on the game's floor (IKAdjust)
     std::vector<int> kh2_bone;
     std::vector<int> kh2_weapon; // per game node: the joint what the game attaches to it is put on (-1 none)
+    // its secondary motion (<model>.secondary.txt: cloth, cords, hair), on top of whatever poses it
+    khdays::secondary::ModelSecondaryPtr secondary;
 };
 
 int trace = -1;
@@ -338,6 +341,7 @@ struct Playing {
 std::vector<Playing> playing;
 std::map<u32, std::string> animation_names; // by the J0AC's DS address
 const void *drawn_object = nullptr;         // the render object being drawn: which actor's model
+Mat drawn_start = kIdentity; // the position matrix as the draw starts: the view times the actor's world matrix
 
 // A section's KH2 motion as an actor plays it: its player (the pose it keeps) and its clock in KH2's
 // ticks (60 a second).
@@ -852,6 +856,17 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         out.head = {h[0] * k, h[1] * k, h[2] * k};
         joint_of_palette[in.palette_index] = static_cast<int>(model->joints.size());
         model->joints.push_back(std::move(out));
+    }
+
+    // its secondary motion, cooked against the file's skeleton and skinned mesh before the meshes are taken
+    {
+        std::vector<int> joint_of_bone(n, -1);
+        std::vector<Mat> inverse_binds;
+        for (std::size_t j = 0; j < n; ++j)
+            joint_of_bone[j] = placed[j];
+        for (const Joint &joint : model->joints)
+            inverse_binds.push_back(joint.inverse_bind);
+        model->secondary = khdays::secondary::load_model_secondary(path, name, mod, joint_of_bone, inverse_binds);
     }
 
     // the rest pose correction, from the roots down
@@ -2030,6 +2045,25 @@ void draw(Model &m)
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
+    // secondary motion over the finished pose (the game's or the KH2 motions', blended), before skinning
+    if (m.secondary) {
+        khdays::secondary::DrawInput in;
+        in.actor = drawn_object;
+        in.root = scaled_root;
+        in.start = drawn_start;
+        in.projection = proj_f;
+        for (const Playing &p : playing) {
+            khdays::secondary::DrawAnimation a{p.name, -1, -1.0F, p.frame, p.frames, p.ratio};
+            if (const auto s = m.kh2_sections.find(p.name); s != m.kh2_sections.end() && m.kh2_motions)
+                for (const Kh2Section &section : s->second)
+                    if (section.from <= p.frame) {
+                        a.slot = static_cast<int>(section.slot);
+                        a.section = section.from;
+                    }
+            in.animations.push_back(std::move(a));
+        }
+        khdays::secondary::apply_model_secondary(*m.secondary, in, skin);
+    }
     // what the game attaches to a node (its weapons) on the joint a `weapon` line names, as it is drawn:
     // its saved matrix (MtxFx43, the same space as the nodes') written over
     for (const auto &[saved, node] : saved_joints) {
@@ -2319,6 +2353,11 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
         saved_joints.clear();
         read_playing(render_obj);
         drawn_object = render_obj;
+        {
+            float start[16], vecm[16], proj[16];
+            khdays_g3d_matrices(start, vecm, proj);
+            std::copy(start, start + 16, drawn_start.begin());
+        }
         if (tracing()) { // what to name in <model>.motions.txt, when it changes
             static std::string said;
             std::string now = active->name + ":";

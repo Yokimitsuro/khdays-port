@@ -614,7 +614,9 @@ own textures, its bones named `kh2_<index>`, KH2's centimetres made metres
 ([`docs/KH2_MODELS.md`](docs/KH2_MODELS.md)). Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
 the file stores under another machine's path is found by its name beside the
 model -- and one that is missing is drawn white and named once in the log.
-The model's own animations are not used: the game's move it. While a mod's graphics are drawn,
+The model's own animations are not used: the game's move it. A model can also
+simulate its coat, cords and hair over that animation, set up in a text file
+beside it ([`docs/SECONDARY_MOTION.md`](docs/SECONDARY_MOTION.md)). While a mod's graphics are drawn,
 the 3D and the 2D's blending and brightness work in 8 bits a channel instead
 of the DS's 6 and 5. A file that cannot be used is named once in the log,
 and the original is drawn.

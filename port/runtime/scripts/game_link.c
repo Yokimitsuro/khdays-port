@@ -87,6 +87,12 @@ unsigned khdays_link_frame(void)
     return rd32(KHDAYS_DS_gObjSystem + OBJ_FRAME);
 }
 
+double khdays_link_frame_seconds(void)
+{
+    const unsigned mode = *(const volatile unsigned char *)KHDAYS_W(KHDAYS_DS_gObjSystem);
+    return mode == 2 ? 1.0 / 60.0 : mode == 1 ? 3.0 / 60.0 : 2.0 / 60.0;
+}
+
 int khdays_link_paused(void)
 {
     /* main's loop: mode 1 runs the callbacks only, the objects stand still */

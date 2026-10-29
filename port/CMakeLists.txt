@@ -665,6 +665,13 @@ add_executable(khdays-native
     runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
+    runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
+    runtime/mods/secondary/rig.cpp      # ... cooked against the model
+    runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp   # ... the XPBD solver
+    runtime/mods/secondary/actor.cpp    # ... per actor, on the game's clock
+    runtime/mods/secondary/days_environment.cpp # ... the game's rooms, read
+    runtime/mods/secondary/model_link.cpp       # ... on models.cpp's draws
     runtime/mods/tiles2d.c
     runtime/mods/sheet_colours.c        # the colours each 2D sheet is drawn with, for the studio
     runtime/core/files.c
@@ -892,6 +899,21 @@ add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
 target_compile_options(khdays-room-animation-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-room-animation COMMAND khdays-room-animation-test)
+# Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
+# synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
+set(KHDAYS_SECONDARY_SOURCES
+    runtime/mods/secondary/config.cpp runtime/mods/secondary/rig.cpp runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp runtime/mods/secondary/actor.cpp)
+add_executable(khdays-secondary-motion-test tests/secondary_motion_test.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp)
+target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/include runtime/mods/secondary)
+target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
+# The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
+add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp)
+target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)

@@ -4233,6 +4233,9 @@ PORT_DS_SYMBOLS = (
     "gSoundMgr",
     # the room's rules, friendly fire first (runtime/battle/stop_magic.c)
     "data_0204c248",
+    # the entity manager: the rooms' collision blobs, read (never cast) for mods' cloth
+    # (runtime/mods/secondary/days_environment.cpp)
+    "gEntityMgr",
 )
 
 

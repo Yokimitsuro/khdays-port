@@ -315,6 +315,12 @@ by `Vec3ScaleAddQ27` as the game finds it.
 flag (the motion object's bit 0) and what it does with a hit beyond the foot
 (`check_ik`: a script callback); the hips are not lowered on a slope.
 
+## Secondary motion
+
+A KH2 model's coat, cords and hair can be simulated over its motions (or the
+game's animation) from `<model>.secondary.txt` beside it: `SECONDARY_MOTION.md`,
+with N_EX830's setup.
+
 ## Not yet
 
 - 4-bit textures (PSMT4) and other formats: reported and drawn white.
