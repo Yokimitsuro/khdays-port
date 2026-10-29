@@ -630,7 +630,7 @@ add_executable(khdays-native
     host/screens/movie_pause.cpp           # the DS's scene pause over an HD movie
     host/screens/shop_screen.c             # the Moogle Shop on one screen
     host/screens/modern_pause.c            # the Menu Overhaul's pause (KH2's look) over HD movies and monologues
-    host/screens/kh2_seq.c                 # KH2's 2D sequences (the pause's, the story menu's buttons)
+    host/screens/kh2_seq.cpp               # KH2's 2D sequences (the pause's, the story menu's buttons)
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
     runtime/core/origin.c

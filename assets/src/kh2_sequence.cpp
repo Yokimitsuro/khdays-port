@@ -324,8 +324,11 @@ SequenceFrame evaluate_sequence(const SequenceData& data, std::size_t clip, floa
             q.linear_filter = !bit(a, 2);
             const auto tint = color(a, t, pose, false);
             for (std::size_t v = 0; v < 4; ++v) {
-                const auto p = point(m, float(group.rect[(v & 1) ? 2 : 0]), float(group.rect[(v & 2) ? 3 : 1]));
-                q.vertices[v] = {pose.x + float(m.x) + p[0] + 0.5f, pose.y + float(m.y) + p[1] + 0.5f,
+                float edge = float(group.rect[(v & 1) ? 2 : 0]);
+                if (pose.widen != 0 && edge > pose.widen_from)
+                    edge += pose.widen;
+                const auto p = point(m, edge, float(group.rect[(v & 2) ? 3 : 1]));
+                q.vertices[v] = {pose.x + float(m.x) + p[0] + 0.5f, pose.y + float(m.y) + p[1] * pose.stretch_y + 0.5f,
                                  float(part.uv[(v & 1) ? 2 : 0]) + 0.5f, float(part.uv[(v & 2) ? 3 : 1]) + 0.5f,
                                  multiply(part.colors[v], tint, pose.alpha)};
             }

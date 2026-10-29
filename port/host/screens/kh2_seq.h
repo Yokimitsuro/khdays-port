@@ -1,47 +1,20 @@
-/* Kingdom Hearts II's 2D sequences (SEQD, a 2LD's LAYD's) played as the PS2 game plays them, over the
- * window: the Menu Overhaul's pause (modern_pause.c, pause.2ld's) and story menu (overhaul_camp_screen.c,
- * camp.2ld's). Sprites (a texture rectangle and four corner colours), sprite groups (sprites placed around
- * a point), animations (a group's motion between two frames) and animation groups; the fields' meaning
- * and the drawing after OpenKh's (OpenKh.Kh2/Sequence.cs, Engine/SequenceRenderer.cs; Apache License 2.0:
- * THIRD_PARTY_NOTICES.md). */
+/* Kingdom Hearts II's 2D sequences (SEQD, a 2LD's LAYD's) played over the window: the Menu Overhaul's pause
+ * (modern_pause.c, pause.2ld's) and story menu (overhaul_camp_screen.c, camp.2ld's). Read and evaluated by the KH2
+ * HUD's reader (assets/kh2_sequence.h: sprites, their groups, animations and clips), drawn with the window's
+ * renderer. */
 #ifndef KHDAYS_HOST_KH2_SEQ_H
 #define KHDAYS_HOST_KH2_SEQ_H
 
 #include <SDL3/SDL.h>
 #include <stdint.h>
 
-typedef struct KhdaysKh2Sprite {
-    int u0, v0, u1, v1;
-    uint32_t color[4]; /* the corners: top-left, top-right, bottom-left, bottom-right */
-} KhdaysKh2Sprite;
-
-typedef struct KhdaysKh2Part {
-    int left, top, right, bottom, sprite;
-} KhdaysKh2Part;
-
-typedef struct KhdaysKh2Group {
-    int first, count;
-} KhdaysKh2Group;
-
-typedef struct KhdaysKh2Anim {
-    int flags, group, frame_start, frame_end;
-    int tx[2], ty[2], px[2], py[2];
-    float rx[2], ry[2], rz[2], s[2], sx[2], sy[2], bx[2], by[2];
-    int bx_count, by_count, blend;
-    uint32_t color[2];
-} KhdaysKh2Anim;
-
-typedef struct KhdaysKh2AnimGroup {
-    int first, count, no_loop, loop_start, loop_end;
-} KhdaysKh2AnimGroup;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct KhdaysKh2Seq {
-    KhdaysKh2Sprite *sprites;
-    KhdaysKh2Part *parts;
-    KhdaysKh2Group *groups;
-    KhdaysKh2Anim *anims;
-    KhdaysKh2AnimGroup *agroups;
-    int sprite_count, part_count, group_count, anim_count, agroup_count;
+    void *data;        /* the sequence as read (assets/kh2_sequence.h's SequenceData), NULL none */
+    int agroup_count;  /* its animation groups (the reader's clips) */
     float sheet_units; /* the sheet's size in the PS2 game (its IMGZ picture's): the sprites' rectangles' unit */
 } KhdaysKh2Seq;
 
@@ -76,5 +49,9 @@ void khdays_kh2_stage(KhdaysKh2Stage *st, SDL_Renderer *renderer, SDL_Texture *s
 
 /* Animation group `group` at `frame` (looped as the group says), at (x, y) of KH2's screen (its dots). */
 void khdays_kh2_seq_draw(const KhdaysKh2Stage *st, const KhdaysKh2Seq *seq, int group, int frame, float x, float y);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

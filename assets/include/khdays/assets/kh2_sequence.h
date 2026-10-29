@@ -61,6 +61,10 @@ struct SequencePose final {
     float scale = 1, scale_x = 1, scale_y = 1;
     std::array<float, 4> color_rate{1, 1, 1, 1};
     float alpha = 1;
+    // A host's own reshaping, none by default (the Menu Overhaul's buttons and pause band): a sprite's edges right
+    // of `widen_from` moved `widen` further before its transform, and its turned height times `stretch_y` about
+    // its animation's place.
+    float widen = 0, widen_from = 0, stretch_y = 1;
 };
 
 struct SequenceVertex final {
