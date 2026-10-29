@@ -51,9 +51,6 @@ int khdays_host_frame_scale(void);
 #define KHDAYS_HOST_ONE_SCREEN 0x10 /* [video] screens = one */
 int khdays_host_graphics_flags(void);
 
-/* Whether the mods' fonts are drawn over the DS's text ([video] hd_fonts; 1 when headless). */
-int khdays_host_hd_fonts(void);
-
 /* The package the game thread fills next (NULL without a window). It belongs
  * to the game thread until khdays_host_frame_publish; the next call then
  * gives another one. */

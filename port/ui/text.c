@@ -419,8 +419,8 @@ static int profiling(void)
     return on;
 }
 
-/* Whether the mods' fonts are drawn: [video] hd_fonts as the game started (the player's choice), and the A/B
- * diagnostic switch KHDAYS_HD_FONT_DISABLE. Off, the DS's text is left unmodified. */
+/* Whether the mods' fonts may be drawn: the A/B diagnostic switch KHDAYS_HD_FONT_DISABLE (the player's own,
+ * [enhancements] hd_font, is font_display_enabled's). Off, the DS's text is left unmodified. */
 static int hd_enabled(void)
 {
     static int enabled = -1;
@@ -428,7 +428,7 @@ static int hd_enabled(void)
         const char *v = getenv("KHDAYS_HD_FONT_DISABLE");
         enabled = !(v && *v && strcmp(v, "0") != 0);
     }
-    return enabled && khdays_host_hd_fonts();
+    return enabled;
 }
 
 static int font_display_enabled(void)
