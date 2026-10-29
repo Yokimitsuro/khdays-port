@@ -373,6 +373,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
         if (!logging) {
             logging = 1;
             khdays_theater_music_log_to(theater_music_line);
+            khdays_theater_music_overhaul(khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL));
         }
     }
     khdays_theater_music_poll(); /* the theater's music kept for a next scene's video, or let go */

@@ -5,7 +5,6 @@
 #include "theater_music.h"
 
 #include "music_schedule.h"
-#include "../../runtime/mods/installed.h"
 
 #include <SDL3/SDL.h>
 #include <stdarg.h>
@@ -67,6 +66,13 @@ static void (*logger)(const char *line); /* khdays_theater_music_log_to's */
 void khdays_theater_music_log_to(void (*log)(const char *line))
 {
     logger = log;
+}
+
+static SDL_AtomicInt overhaul; /* khdays_theater_music_overhaul's */
+
+void khdays_theater_music_overhaul(int on)
+{
+    SDL_SetAtomicInt(&overhaul, on != 0);
 }
 
 /* A line for the console and, when one was given, the session log. */
@@ -291,7 +297,7 @@ void khdays_theater_music_open(const char *video_path)
             playing_cue = 0;
             carried = 0;
             say("%s: the music %s goes on from the video before", video, playing->name);
-        } else if (carried && !have_schedule && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        } else if (carried && !have_schedule && SDL_GetAtomicInt(&overhaul)) {
             /* the Menu Overhaul's: a video without music of its own lets the kept music play on through it
              * (kept still: its close decides again) */
             say("%s: the music %s plays on through it", video, playing->name);
@@ -320,7 +326,7 @@ void khdays_theater_music_tick(double seconds, int started, int paused)
     frame = seconds * schedule.rate;
     cue = khdays_music_cue_at(&schedule, frame);
     if (cue < 0 && playing != NULL && schedule.to_field && playing_cue == schedule.cue_count - 1 &&
-        frame >= (double)schedule.cues[playing_cue].first && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        frame >= (double)schedule.cues[playing_cue].first && SDL_GetAtomicInt(&overhaul)) {
         /* the Menu Overhaul's: the last cue's music goes on into the next video (`to field`), past its end (a
          * frame or two before the video's), for the next video to take it from there */
         cue = playing_cue;
@@ -368,13 +374,12 @@ void khdays_theater_music_close(int next_follows)
                             : "the end",
         was_open ? "open" : "none open", playing != NULL ? playing->name : "nothing", carried ? ", kept" : "");
     if (playing != NULL) {
-        const int goes_on =
-            (have_schedule && schedule.to_field) || (carried && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL));
+        const int goes_on = (have_schedule && schedule.to_field) || (carried && SDL_GetAtomicInt(&overhaul));
         if (next_follows == 1 && goes_on) {
             keep_for_next(); /* the next video decides (khdays_theater_music_open) */
         } else if (next_follows == 2 && goes_on) {
             keep_for_next(); /* a next scene's video may take it (else khdays_theater_music_poll ends it) */
-        } else if (!was_open && carried && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        } else if (!was_open && carried && SDL_GetAtomicInt(&overhaul)) {
             /* no video open (the course's own close after its video's): the wait decides */
         } else {
             fade_out_playing();
