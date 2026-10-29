@@ -3,14 +3,15 @@ pieces and places, layouts/campsave/ (campsave.txt, campsave_atlas.png, files_fo
 
 - KH2's save list (the HD collection's menu/us/save.2ld, its sequences drawn by kh2_seq_draw.py, green made grey):
   the list's frame, a file's row (and the chosen one's, red), the ring of the chosen one's number, the scroll bar's
-  track and thumb, the crown and the MUNNY word;
+  track and thumb, the crown and the MUNNY word; the other languages' (menu/sp, fr, gr, it): their MUNNY and their
+  titles' words (SAVE, LOAD) for the pill;
 - Days's own worlds, the Holo-Missions map's models (UI/cm/cm.p2: campsave_worlds.py), and their titles, the
   worlds' logos (mi/ob) and KH2's for The World That Never Was (menu/jm_top_eh.2ld: campsave_titles.py);
 - the files' faces as the port's save list has them (the HD menus' layouts/save/en/save_atlas.png), sharp, larger;
 - the menu's lit bar without its yellow glow, for the option chosen beside the pill (the camp piece's
   layouts/camp/en, made before this one);
 - the top band the player made (art/campsave/band.png, its SAVE pill) and the load list's, LOAD written over SAVE
-  in KHGummi;
+  in KHGummi; the other languages' bands, KH2's own words over SAVE;
 - the Files pages' font (the files piece's layouts/files, made before this one).
 """
 
@@ -31,7 +32,10 @@ import raqm_text  # noqa: E402
 from common import ART, LANGS, Inputs  # noqa: E402
 from kh2_sq import Layout  # noqa: E402
 
-SAVE = "menu/us/save.2ld"  # KH2's save list
+SAVE = "menu/{}/save.2ld"  # KH2's save list, in a language's folder
+# the port's languages' folders of KH2's menus (English's band is the player's own, its SAVE written there)
+KH2_LANGS = {"en": "us", "fr": "fr", "de": "gr", "it": "it", "es": "sp"}
+SAVE_WORD, LOAD_WORD, MUNNY_WORD = 21, 22, 25  # the save list's sprites: its titles' words and MUNNY
 WORLDS = ["castle", "tt", "al", "bb", "he", "aw", "nm", "pp"]  # the worlds' numbers (saveworld.h's)
 
 # ---- The page's geometry (the layout's units: 1920 x 1080) ----
@@ -56,7 +60,7 @@ BODY_LEN = SCROLL[3] - 2 * CAP
 CROWN_W = 52.0  # the crown (the story cleared) on top of the number's ring, as wide as KH2 makes it beside a row
 FACE_K = 8  # the faces' pixels made squares this large (the page draws them a little smaller)
 ATLAS_W = 2048
-# The load list's band: SAVE in the pill (the band's own pixels, 2000 wide) is wiped and LOAD written there
+# The band's pill: its SAVE (the band's own pixels, 2000 wide) is wiped and another word written there
 PILL = (190, 52, 470, 112)
 
 # campsave.txt's comment lines (the port skips them)
@@ -69,6 +73,7 @@ HEADER = [
     "#                              face, day, level, difficulty, munny, time, crown, empty),",
     "#                              or the picture's (band, frame, scroll, button)",
     "#   words empty|load_empty|guest LANG WORDS   an empty file's words (save, load), the guest's row's",
+    "# A piece NAME_LANG (band_es, band_load_es, munny_es) stands for NAME in that language when there.",
 ]
 
 
@@ -84,11 +89,11 @@ def grey(colour, anim, group):
 
 
 class SaveList:
-    """KH2's save list's layout (its first sequence) and HD texture 0."""
+    """KH2's save list's layout (its first sequence) and HD texture 0, in a language's folder (KH2_LANGS')."""
 
-    def __init__(self, kh2: Path):
-        self.tex = Image.open(kh2 / "remastered" / SAVE / "US_save_2ld0.png").convert("RGBA")
-        self.seq = Layout(str(kh2 / "original" / SAVE), [self.tex]).seqs("save")[0]
+    def __init__(self, kh2: Path, lang: str = "us"):
+        self.tex = Image.open(kh2 / "remastered" / SAVE.format(lang) / f"{lang.upper()}_save_2ld0.png").convert("RGBA")
+        self.seq = Layout(str(kh2 / "original" / SAVE.format(lang)), [self.tex]).seqs("save")[0]
 
     def group(self, w: int, h: int, gi: int, frame: int, origin, kx: float, ky: float, **kw) -> Image.Image:
         """Animation group `gi` at `frame` drawn on a w x h picture."""
@@ -107,6 +112,11 @@ class SaveList:
             a[..., :3] = np.clip(a[..., :3] * bright, 0, 255)
             im = Image.fromarray(a.astype(np.uint8), "RGBA")
         return im
+
+    def ink(self, i: int) -> Image.Image:
+        """Sprite i's ink (its alpha), cut to it."""
+        a = self.sprite(i).getchannel("A")
+        return a.crop(a.point(lambda v: 255 if v > 24 else 0).getbbox())
 
     def stack(self, parts, w: int) -> Image.Image:
         """[(sprite, length in the layout's units or None: its own)] one under another, `w` wide (SK x)."""
@@ -178,23 +188,55 @@ def faces(save: Path) -> list[Image.Image]:
     return out
 
 
-def load_band(band: Image.Image, font: Path) -> Image.Image:
-    """The load list's band from the save page's: the pill's SAVE wiped (each row the pill's own grey beside it)
-    and LOAD written in its place in KHGummi, as high as SAVE (the same font), laid out as raqm_text.ink lays it."""
+def wiped_pill(band: Image.Image) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """The band's pixels with the pill's SAVE wiped (each row the pill's own grey beside it), and SAVE's box."""
     a = np.asarray(band).astype(float)
     x0, y0, x1, y1 = PILL
     ys, xs = np.where(a[y0:y1, x0:x1, :3].mean(-1) < 60)
     tb = (xs.min() + x0, ys.min() + y0, xs.max() + x0 + 1, ys.max() + y0 + 1)
-    size = 200 * (tb[3] - tb[1]) / raqm_text.ink(font, "SAVE", 200).height
     m = 4
     for y in range(tb[1] - m, tb[3] + m):
         a[y, tb[0] - m : tb[2] + m, :3] = a[y, tb[0] - m - 6, :3]
+    return a, tb
+
+
+def written(a: np.ndarray, tb, ink: Image.Image, top: int) -> Image.Image:
+    """The wiped band with a word's ink written dark at `top`, its middle SAVE's."""
     out = Image.fromarray(a.astype(np.uint8), "RGBA")
-    word = raqm_text.ink(font, "LOAD", size)
-    text = Image.new("RGBA", word.size, (12, 12, 12, 255))
-    text.putalpha(word)
-    out.alpha_composite(text, (round((tb[0] + tb[2]) / 2 - word.width / 2), tb[1]))
+    text = Image.new("RGBA", ink.size, (12, 12, 12, 255))
+    text.putalpha(ink)
+    out.alpha_composite(text, (round((tb[0] + tb[2]) / 2 - ink.width / 2), top))
     return out
+
+
+def load_band(band: Image.Image, font: Path) -> Image.Image:
+    """The load list's band from the save page's: LOAD written in KHGummi over the pill's SAVE, as high as SAVE (the
+    same font), laid out as raqm_text.ink lays it."""
+    a, tb = wiped_pill(band)
+    size = 200 * (tb[3] - tb[1]) / raqm_text.ink(font, "SAVE", 200).height
+    return written(a, tb, raqm_text.ink(font, "LOAD", size), tb[1])
+
+
+def worded_band(band: Image.Image, word: Image.Image, save: Image.Image) -> Image.Image:
+    """The band with KH2's `word` of a language (its ink) written over the pill's SAVE: as high as SAVE (that
+    language's KH2 SAVE, `save`, made as high as the band's), smaller when the pill's straight part is narrower."""
+    a, tb = wiped_pill(band)
+    middle = ((tb[0] + tb[2]) // 2, (tb[1] + tb[3]) // 2)
+    light = a[..., :3].mean(-1) > 120  # the pill's grey (SAVE wiped)
+    left = right = middle[0]
+    while left > 0 and light[middle[1], left - 1]:
+        left -= 1
+    while right < light.shape[1] - 1 and light[middle[1], right + 1]:
+        right += 1
+    top = bottom = middle[1]
+    while top > 0 and light[top - 1, middle[0]]:
+        top -= 1
+    while bottom < light.shape[0] - 1 and light[bottom + 1, middle[0]]:
+        bottom += 1
+    room = right - left + 1 - (bottom - top + 1)  # less its round ends
+    k = min((tb[3] - tb[1]) / save.height, room / word.width)
+    ink = word.resize((round(word.width * k), round(word.height * k)), Image.LANCZOS)
+    return written(a, tb, ink, round(middle[1] - ink.height / 2))
 
 
 def full_width(band: Image.Image) -> Image.Image:
@@ -249,7 +291,7 @@ def make(inputs: Inputs, mod: Path) -> None:
     # the panel's own drawing within its piece: KH2's g53 is its body 4/140 to 126/140 of its height (a shadow under)
     body = (round(ROW_H * 4 / 140.0) + 2, round(ROW_H * 122 / 140.0) - 2)
 
-    pieces["munny"] = kh2.sprite(25, bright=2.0)  # KH2's MUNNY word (white: tinted when drawn)
+    pieces["munny"] = kh2.sprite(MUNNY_WORD, bright=2.0)  # KH2's MUNNY word (white: tinted when drawn)
     pieces["scroll_bar"] = kh2.stack([(41, None), (42, BODY_LEN), (43, None)], SCROLL[2] * SK)
     pieces["scroll_thumb"] = kh2.stack([(44, None), (45, THUMB), (46, None)], SCROLL[2] * SK)
     # where the thumb's picture goes (from the bar's top): from A (t = 0) to B (t at its lowest), its height
@@ -270,6 +312,15 @@ def make(inputs: Inputs, mod: Path) -> None:
     pieces["band"] = full_width(band)
     places.append("place band 0 0 1920 %d" % pieces["band"].height)
     pieces["band_load"] = full_width(load_band(band, inputs.font("KHGummi.otf")))
+    # the other languages': KH2's words of each (its SAVE and LOAD in the pill, its MUNNY); the page draws its
+    # language's pieces (band_es, band_load_es, munny_es) when it has them
+    for lang, folder in KH2_LANGS.items():
+        if lang != "en":
+            words = SaveList(inputs.kh2, folder)
+            save = words.ink(SAVE_WORD)
+            pieces[f"band_{lang}"] = full_width(worded_band(band, save, save))
+            pieces[f"band_load_{lang}"] = full_width(worded_band(band, words.ink(LOAD_WORD), save))
+            pieces[f"munny_{lang}"] = words.sprite(MUNNY_WORD, bright=2.0)
 
     # the atlas: the pieces on shelves, tallest first; the worlds' titles on shelves under them
     at, end = shelves(pieces, sorted(pieces, key=lambda n: -pieces[n].height), 0)

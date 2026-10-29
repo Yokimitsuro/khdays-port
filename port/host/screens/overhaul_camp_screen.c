@@ -2870,6 +2870,19 @@ static const float *save_place(const char *name)
     return p != NULL ? &p->x : none;
 }
 
+/* A piece in `language`'s words when the page has it (band_es, munny_fr: KH2's own words), else its own
+ * (English's). */
+static const char *save_piece_in(const char *name, int language, char *out, size_t size)
+{
+    if (language > 0 && language < LANGUAGES) {
+        snprintf(out, size, "%s_%s", name, CODES[language]);
+        if (khdays_layout_piece(&sp.layout, out) != NULL) {
+            return out;
+        }
+    }
+    return name;
+}
+
 /* A line in the page's font (the Files pages'), its capitals' top at y, `cap` high, grey `grey`; its width.
  * centre: x its middle. */
 static float save_text(const KhdaysLayoutFrame *fr, const unsigned short *t, float x, float y, float cap, float grey,
@@ -2995,7 +3008,9 @@ static void save_row(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, const
         const float *difficulty = save_place("difficulty"), *munny = save_place("munny"), *time = save_place("time");
         const float *crown = save_place("crown");
         const float *title = save_place("title");
-        const KhdaysLayoutPiece *word = khdays_layout_piece(&sp.layout, "munny"), *words;
+        char munny_name[16];
+        const char *munny_piece = save_piece_in("munny", language, munny_name, sizeof(munny_name));
+        const KhdaysLayoutPiece *word = khdays_layout_piece(&sp.layout, munny_piece), *words;
         const int which = khdays_saveworld_of(r->counter);
         char name[16];
         save_face(fr, r->face, x, y, sp.face_alpha);
@@ -3032,9 +3047,9 @@ static void save_row(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, const
             static const Uint8 black[3] = {0, 0, 0};
             const float wh = munny[3] * 0.8f, ww = word->w * wh / word->h, wy = munny[1] + (munny[3] - wh) / 2;
             const float shadow = munny[3] * 0.07f;
-            khdays_layout_draw_tinted(&sp.layout, fr, "munny", x + munny[0] + shadow, y + wy + shadow, ww, wh, black,
-                                      0.8f);
-            khdays_layout_draw_tinted(&sp.layout, fr, "munny", x + munny[0], y + wy, ww, wh, sp.munny_word, 1.0f);
+            khdays_layout_draw_tinted(&sp.layout, fr, munny_piece, x + munny[0] + shadow, y + wy + shadow, ww, wh,
+                                      black, 0.8f);
+            khdays_layout_draw_tinted(&sp.layout, fr, munny_piece, x + munny[0], y + wy, ww, wh, sp.munny_word, 1.0f);
             snprintf(digits, sizeof(digits), "%u", (unsigned)r->munny);
             khdays_layout_utf8(digits, line, 128);
             camp_text(fr, line, x + munny[0] + ww + munny[3] * 0.35f, y + munny[1], munny[3], sp.munny_digits, 0);
@@ -3298,10 +3313,12 @@ static void save_common(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, co
     }
 }
 
-/* The page's top band (the SAVE pill) at `page`, over the camp's. */
-static void save_band(const KhdaysLayoutFrame *fr, float page, const char *name)
+/* The page's top band (the SAVE pill) at `page`, over the camp's, in `language`'s words. */
+static void save_band(const KhdaysLayoutFrame *fr, float page, const char *name, int language)
 {
     const float *band = save_place("band");
+    char named[32];
+    name = save_piece_in(name, language, named, sizeof(named));
     if (page > 0.002f && band[2] > 0) {
         khdays_layout_draw_piece(&sp.layout, fr, name, band[0], band[1], band[2], band[3], page < 1.0f ? page : 1.0f);
     }
@@ -3313,7 +3330,7 @@ static void save_draw(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const Khday
     khdays_layout_begin_over(renderer, fr);
     files_pattern(renderer, fr, now);
     files_bands(renderer, fr);
-    save_band(fr, 1.0f, "band");
+    save_band(fr, 1.0f, "band", v->language);
     save_group(renderer, fr, v, sl, now);
     save_common(fr, v, sl);
 }
@@ -3339,7 +3356,7 @@ static int load_page_draw(SDL_Renderer *renderer, const KhdaysSaveView *sl, doub
     khdays_layout_begin_over(renderer, &fr);
     files_pattern(renderer, &fr, now);
     files_bands(renderer, &fr);
-    save_band(&fr, 1.0f, "band_load");
+    save_band(&fr, 1.0f, "band_load", sl->language);
     save_group(renderer, &fr, &v, sl, now);
     save_common(&fr, &v, sl);
     khdays_layout_shade(renderer, sl->master); /* the title's fades */
@@ -4890,7 +4907,7 @@ static void draw_save_switch(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, cons
     khdays_camp_set_page_drawn(0);
     khdays_layout_begin_over(renderer, fr);
     files_switch_backdrop(renderer, fr, now, menu, v->save ? 0.0f : model, story_on(v));
-    save_band(fr, page, "band");
+    save_band(fr, page, "band", v->language);
     if (sw.phase == SW_OUT) {
         const int grouped = group_begin(renderer);
         if (sw.to_page) {
