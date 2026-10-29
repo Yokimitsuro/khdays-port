@@ -10,7 +10,7 @@ beside it, a drifting pattern behind; mods/<mod>/layouts/files/:
   files_pattern.png  the backdrop's tile (files_pattern.py)
   files_hint.png     the DS's A mark (files_hint.py)
 
-From the user's pictures (art/files: button.png, arrow.png, pattern.png, heart_kh.webp, crown_kh.png), KH2's camp
+From the user's pictures (art/files: button.png, arrow.png, symbols.png), KH2's camp
 menu sheet (kh2_fifth's menu/us/camp.2ld, its first HD texture: the NEW! badge), the game's UI/cm/cm.p2 and
 Televo's KHMenu and KHGummi.
 """
