@@ -444,6 +444,7 @@ static int flood(const char *exe, const char *log)
     PROCESS_INFORMATION process;
     unsigned int token, sent = 0, heard = 0, sequence = 0, random = 12345;
     unsigned long long start, last_heard, longest_gap = 0, registered = 0, held_most, budget, evicted_most;
+    unsigned long long flooded = 0; /* the flood's datagrams sent so far */
     long size;
     int result = 0;
     for (int i = 0; i < FLOODERS; ++i) {
@@ -488,8 +489,10 @@ static int flood(const char *exe, const char *log)
             send_kind(host, &server, host_id, K_REGISTER, announce, 20 + sizeof(info), 0);
             registered = now;
         }
-        /* the flood: 128 datagrams in those 20 ms, 6,400 a second */
-        for (int i = 0; i < 128; ++i) {
+        /* the flood: 6,400 datagrams a second (128 in each 20 ms), by the clock: Sleep(20) lasts up to 31 ms
+         * where the system's timer ticks every 15.6 ms, which left the flood a third short of the budget */
+        for (const unsigned long long due = (now - start) * 6400u / 1000u + 128u; flooded < due; ++flooded) {
+            const int i = (int)(flooded % 128u);
             unsigned char id[6], flood_body[1200];
             KhdaysUdp *f = flooders[i % FLOODERS];
             random = random * 1664525u + 1013904223u;
