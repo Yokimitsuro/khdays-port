@@ -1464,9 +1464,9 @@ constexpr Row rows[] =
          {"{0} given back to the game in {1}.", "{0} rendue au jeu dans {1}.", "{0} in {1} dem Spiel zurückgegeben.",
           "{0} restituita al gioco in {1}.", "{0} devuelta al juego en {1}."}},
         {S::mission_copy,
-         {"Make another mission from this one...", "Faire une autre mission à partir de celle-ci...",
-          "Eine andere Mission daraus machen...", "Crea un'altra missione da questa...",
-          "Hacer otra misión a partir de esta..."}},
+         {"Replace another game mission with this one...", "Remplacer une autre mission du jeu par celle-ci...",
+          "Eine andere Mission des Spiels durch diese ersetzen...",
+          "Sostituisci un'altra missione del gioco con questa...", "Sustituir otra misión del juego por esta..."}},
         {S::mission_copy_note,
          {"The content of {0} as you see it now -- where it happens, its enemies, starts, time and texts, your unsaved changes included -- becomes the mission of the slot you choose, in your mod. That slot keeps its place in the Mission Mode list, its name there, when it unlocks and its saved progress (the game keeps them by its number). A mission with a place of its own: 'New mission from this one'.", "Le contenu de {0} tel que vous le voyez -- où elle se passe, ses ennemis, départs, temps et textes, vos changements non enregistrés compris -- devient la mission de l'emplacement choisi, dans votre mod. Cet emplacement garde sa place dans la liste du mode Missions, son nom, son déblocage et sa progression enregistrée (le jeu les garde par son numéro). Une mission avec sa propre place : « Nouvelle mission à partir de celle-ci ».",
           "Der Inhalt von {0}, wie du ihn jetzt siehst -- wo sie spielt, Gegner, Starts, Zeit und Texte, deine ungespeicherten Änderungen inklusive -- wird in deinem Mod die Mission des gewählten Platzes. Dieser Platz behält seine Stelle in der Missionsliste, seinen Namen dort, seine Freischaltung und den gespeicherten Fortschritt (das Spiel führt sie unter seiner Nummer). Eine Mission mit eigenem Platz: „Neue Mission aus dieser“.",
@@ -1490,50 +1490,27 @@ constexpr Row rows[] =
         {S::mission_new,
          {"New mission from this one", "Nouvelle mission à partir de celle-ci", "Neue Mission aus dieser",
           "Nuova missione da questa", "Misión nueva a partir de esta"}},
-        {S::mission_new_note,
-         {"A mission of your mod's own, listed in Mission Mode after the game's: it starts as {0} as the game has it "
-          "(its file copied into the mod), in the world and room you choose. Give it its name and objective in the "
-          "tab \"The mod's new missions\". Its progress is kept beside each save file, never in it, so a save opened "
-          "without the mod loads as before.",
-          "Une mission propre à votre mod, listée dans le mode Missions après celles du jeu : elle part de {0} tel "
-          "que le jeu l'a (son fichier copié dans le mod), dans le monde et la salle choisis. Donnez-lui son nom et "
-          "son objectif dans l'onglet « Missions nouvelles du mod ». Sa progression est gardée à côté de chaque "
-          "sauvegarde, jamais dedans : une sauvegarde ouverte sans le mod se charge comme avant.",
-          "Eine eigene Mission deines Mods, im Missionsmodus nach denen des Spiels gelistet: Sie beginnt als {0}, wie "
-          "das Spiel sie hat (ihre Datei in den Mod kopiert), in der gewählten Welt und dem gewählten Raum. Name und "
-          "Ziel gibst du ihr im Reiter „Neue Missionen des Mods“. Ihr Fortschritt liegt neben jedem Spielstand, nie "
-          "darin: Ein Spielstand ohne den Mod lädt wie zuvor.",
-          "Una missione tutta della tua mod, elencata nella modalità Missione dopo quelle del gioco: parte da {0} come "
-          "il gioco lo ha (il suo file copiato nella mod), nel mondo e nella stanza che scegli. Dalle nome e "
-          "obiettivo nella scheda «Missioni nuove della mod». I suoi progressi sono tenuti accanto a ogni "
-          "salvataggio, mai dentro: un salvataggio aperto senza la mod si carica come prima.",
-          "Una misión propia de tu mod, en la lista del Modo Misión después de las del juego: empieza siendo {0} tal "
-          "como la tiene el juego (su archivo copiado en el mod), en el mundo y la sala que elijas. Ponle nombre y "
-          "objetivo en la pestaña «Misiones nuevas del mod». Su progreso se guarda junto a cada partida, nunca dentro: "
-          "una partida abierta sin el mod carga como antes."}},
-        {S::mission_new_key,
-         {"key (letters, digits, _ and -)", "clé (lettres, chiffres, _ et -)", "Schlüssel (Buchstaben, Ziffern, _ und -)",
-          "chiave (lettere, cifre, _ e -)", "clave (letras, cifras, _ y -)"}},
-        {S::mission_new_world, {"world", "monde", "Welt", "mondo", "mundo"}},
-        {S::mission_new_room, {"room", "salle", "Raum", "stanza", "sala"}},
-        {S::mission_new_made,
-         {"Made: new mission {0} in your mod, from {1}. Name it in \"The mod's new missions\".",
-          "Faite : nouvelle mission {0} dans votre mod, à partir de {1}. Nommez-la dans « Missions nouvelles du mod ».",
-          "Erstellt: neue Mission {0} in deinem Mod, aus {1}. Benenne sie unter „Neue Missionen des Mods“.",
-          "Fatta: nuova missione {0} nella tua mod, da {1}. Dalle un nome in «Missioni nuove della mod».",
-          "Hecha: misión nueva {0} en tu mod, a partir de {1}. Ponle nombre en «Misiones nuevas del mod»."}},
-        {S::mission_tab_new,
-         {"The mod's new missions", "Missions nouvelles du mod", "Neue Missionen des Mods", "Missioni nuove della mod",
-          "Misiones nuevas del mod"}},
+        {S::mission_new_hint,
+         {"A mission of your mod's own, listed in Mission Mode after the game's, that starts as this one: the "
+          "Missions window opens with this mission as its template.",
+          "Une mission propre à votre mod, listée dans le mode Missions après celles du jeu, qui part de celle-ci : "
+          "la fenêtre Missions s'ouvre avec cette mission comme modèle.",
+          "Eine eigene Mission deines Mods, im Missionsmodus nach denen des Spiels gelistet, die von dieser ausgeht: "
+          "Das Fenster Missionen öffnet sich mit dieser Mission als Vorlage.",
+          "Una missione tutta della tua mod, elencata nella modalità Missione dopo quelle del gioco, che parte da "
+          "questa: la finestra Missioni si apre con questa missione come modello.",
+          "Una misión propia de tu mod, en la lista del Modo Misión después de las del juego, que parte de esta: se "
+          "abre la ventana Misiones con esta misión como plantilla."}},
         {S::new_missions_none,
-         {"The mod has no new mission yet: make one from a game mission with \"New mission from this one\".",
-          "Le mod n'a pas encore de nouvelle mission : faites-en une à partir d'une mission du jeu avec « Nouvelle "
-          "mission à partir de celle-ci ».",
-          "Der Mod hat noch keine neue Mission: Erstelle eine aus einer Mission des Spiels mit „Neue Mission aus "
-          "dieser“.",
-          "La mod non ha ancora missioni nuove: creane una da una missione del gioco con «Nuova missione da questa».",
-          "El mod aún no tiene misiones nuevas: crea una a partir de una misión del juego con «Misión nueva a partir "
-          "de esta»."}},
+         {"The mod has no new mission yet: make one above, or from a game mission's \"New mission from this one\".",
+          "Le mod n'a pas encore de nouvelle mission : faites-en une ci-dessus, ou depuis « Nouvelle mission à "
+          "partir de celle-ci » d'une mission du jeu.",
+          "Der Mod hat noch keine neue Mission: Erstelle eine oben oder mit „Neue Mission aus dieser“ bei einer "
+          "Mission des Spiels.",
+          "La mod non ha ancora missioni nuove: creane una qui sopra, o con «Nuova missione da questa» di una "
+          "missione del gioco.",
+          "El mod aún no tiene misiones nuevas: crea una aquí arriba, o con «Misión nueva a partir de esta» en una "
+          "misión del juego."}},
         {S::new_missions_problems,
          {"Left out by the port (missions/missions.txt):", "Laissées de côté par le port (missions/missions.txt) :",
           "Vom Port ausgelassen (missions/missions.txt):", "Lasciate fuori dal port (missions/missions.txt):",
@@ -2263,6 +2240,23 @@ constexpr Row rows[] =
           "Mission {0} erstellt: setze ihren Start und ihre Gegner auf ihre Karte.",
           "Missione {0} creata: metti la sua partenza e i suoi nemici sulla sua mappa.",
           "Misión {0} creada: pon su salida y sus enemigos en su mapa."}},
+        {S::mw_new_template, {"Template", "Modèle", "Vorlage", "Modello", "Plantilla"}},
+        {S::mw_new_template_note,
+         {"The template is the mission it starts as, played as the template is -- its kind, its enemies, its "
+          "scripts -- until its map has a start and waves; then the whole mission is made from them: every wave "
+          "to defeat.",
+          "Le modèle est la mission dont elle part, jouée comme lui -- son type, ses ennemis, ses scripts -- tant "
+          "que sa carte n'a pas de départ et de vagues ; alors toute la mission est faite d'elles : chaque vague à "
+          "vaincre.",
+          "Die Vorlage ist die Mission, von der sie ausgeht, gespielt wie die Vorlage -- ihre Art, ihre Gegner, "
+          "ihre Skripte --, bis ihre Karte einen Start und Wellen hat; dann wird die ganze Mission aus ihnen "
+          "gemacht: jede Welle besiegen.",
+          "Il modello è la missione da cui parte, giocata come il modello -- il suo tipo, i suoi nemici, i suoi "
+          "script -- finché la sua mappa non ha una partenza e delle ondate; allora l'intera missione è fatta da "
+          "esse: ogni ondata da sconfiggere.",
+          "La plantilla es la misión de la que parte, que se juega como ella -- su tipo, sus enemigos, sus "
+          "scripts -- hasta que su mapa tenga salida y oleadas; entonces la misión entera se hace con ellas: vencer "
+          "cada oleada."}},
         {S::mw_tab_settings,
          {"Words and settings",
           "Textes et réglages",

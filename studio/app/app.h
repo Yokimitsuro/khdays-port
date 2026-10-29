@@ -119,6 +119,7 @@ struct App {
     std::vector<std::string> dialog_characters;       // a character's model, clips, picture or sound
 
     std::string status;
+    bool missions_asked = false;  // the Missions window to open (main.cpp), asked by a game mission's view
 
     // What a person must see happened -- a save done or failed, work kept or
     // lost: shown over the window (main.cpp draw_notices) in green or red, a

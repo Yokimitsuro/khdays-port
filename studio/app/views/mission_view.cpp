@@ -1118,25 +1118,38 @@ void draw_unlock(App& app, const Mod& m, ModMission& e) {
     }
 }
 
-// A new mission: its key, its world and room (the world's rooms counted when it is chosen), the game mission it
-// starts from; made in the mod and chosen.
+// The new mission's form: its key, its world and room (the world's rooms counted when it is chosen), the game
+// mission it starts as.
+struct NewMissionForm {
+    std::string key;
+    std::string world = "tt";
+    int room = 0, rooms = 0;
+    std::string rooms_for;
+    std::vector<int> templates;  // the game's mission files
+    int template_file = 0;
+    bool show = false;  // asked open by a game mission's "New mission from this one"
+};
+
+NewMissionForm form;
+
+// A new mission made in the mod from the form, and chosen.
 void draw_new_mission_form(App& app, const Mod& m) {
     const auto lang = app.language;
-    static std::string key;
-    static std::string world = "tt";
-    static int room = 0, rooms = 0;
-    static std::string rooms_for;
-    static int template_file = 0;
-    if (rooms_for != world) {
+    std::string& key = form.key;
+    std::string& world = form.world;
+    int& room = form.room;
+    if (form.rooms_for != world) {
         World w;
         std::string why;
-        rooms = load_world(nitrofs(), world, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
-        rooms_for = world;
+        form.rooms = load_world(nitrofs(), world, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
+        form.rooms_for = world;
     }
-    if (template_file == 0) {
-        const auto numbers = mission_numbers(nitrofs());
-        template_file = numbers.empty() ? 0 : numbers.front();
-    }
+    const int rooms = form.rooms;
+    if (form.templates.empty())
+        form.templates = mission_numbers(nitrofs());
+    if (form.template_file == 0 && !form.templates.empty())
+        form.template_file = form.templates.front();
+    const int template_file = form.template_file;
     ImGui::TextDisabled("%s", tr(lang, S::mw_new_key));
     ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
     ImGui::InputText("##newmissionkey", &key);
@@ -1152,6 +1165,20 @@ void draw_new_mission_form(App& app, const Mod& m) {
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::SliderInt(tr(lang, S::mw_new_room), &room, 0, std::max(0, rooms - 1));
     room = std::clamp(room, 0, std::max(0, rooms - 1));
+    const auto label = [&](int file) {
+        char number[16];
+        std::snprintf(number, sizeof(number), "%04d", file);
+        const auto& names = mission_names(lang);
+        const auto named = names.find(file);
+        return named == names.end() ? std::string(number) : std::string(number) + "  " + named->second.name;
+    };
+    ImGui::SetNextItemWidth(30 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mw_new_template), label(template_file).c_str())) {
+        for (const int file : form.templates)
+            if (ImGui::Selectable(label(file).c_str(), file == template_file))
+                form.template_file = file;
+        ImGui::EndCombo();
+    }
     ImGui::SameLine();
     ImGui::BeginDisabled(key.empty() || rooms == 0 || template_file == 0);
     if (ImGui::Button(tr(lang, S::mw_new_create))) {
@@ -1168,6 +1195,9 @@ void draw_new_mission_form(App& app, const Mod& m) {
         }
     }
     ImGui::EndDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("%s", tr(lang, S::mw_new_template_note));
+    ImGui::PopStyleColor();
 }
 
 void draw_new_missions(App& app) {
@@ -1189,6 +1219,10 @@ void draw_new_missions(App& app) {
             ImGui::BulletText("%s", p.c_str());
     }
     // a new one, any time; the only thing shown while the mod has none
+    if (form.show) {
+        ImGui::SetNextItemOpen(true);
+        form.show = false;
+    }
     if (ImGui::CollapsingHeader(tr(lang, S::mw_new), nm.missions.empty() ? ImGuiTreeNodeFlags_DefaultOpen : 0))
         draw_new_mission_form(app, *m);
     if (nm.missions.empty()) {
@@ -1454,50 +1488,15 @@ void draw_mission_view(App& app, const Item& item) {
                 ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
-        // a mission of the mod's own made from this one
+        // a mission of the mod's own made from this one, in the Missions window
         same_line_if_room(button_width(tr(lang, S::mission_new)));
-        if (ImGui::Button(tr(lang, S::mission_new)))
-            ImGui::OpenPopup("###newmission");
-        if (ImGui::BeginPopupModal((std::string(tr(lang, S::mission_new)) + "###newmission").c_str(), nullptr,
-                                   ImGuiWindowFlags_AlwaysAutoResize)) {
-            static std::string key;
-            static std::string world = "tt";
-            static int room = 0;
-            ImGui::PushTextWrapPos(40 * ImGui::GetFontSize());
-            ImGui::TextUnformatted(fmt(lang, S::mission_new_note, {mission_path(v.edit.number)}).c_str());
-            ImGui::PopTextWrapPos();
-            ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
-            ImGui::InputText(tr(lang, S::mission_new_key), &key);
-            ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-            if (ImGui::BeginCombo(tr(lang, S::mission_new_world), world.c_str())) {
-                for (const char* w : {"tt", "aw", "he", "al", "eh", "nm", "zz", "pp", "bb", "tw"})
-                    if (ImGui::Selectable(w, world == w))
-                        world = w;
-                ImGui::EndCombo();
-            }
-            ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-            ImGui::InputInt(tr(lang, S::mission_new_room), &room);
-            room = std::max(room, 0);
-            ImGui::BeginDisabled(key.empty());
-            if (ImGui::Button(tr(lang, S::mission_copy_do))) {
-                std::string why;
-                if (new_mod_mission(nitrofs(), m->dir, key, v.edit.number, world, room, &why)) {
-                    app.tell(fmt(lang, S::mission_new_made, {key, mission_path(v.edit.number)}) + "  " +
-                                 tr(lang, S::restart_note),
-                             true);
-                    nm.stale = true;
-                    key.clear();
-                    ImGui::CloseCurrentPopup();
-                } else {
-                    app.tell(fmt(lang, S::save_failed, {why}), false);
-                }
-            }
-            ImGui::EndDisabled();
-            same_line_if_room(button_width(tr(lang, S::cancel)));
-            if (ImGui::Button(tr(lang, S::cancel)))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
+        if (ImGui::Button(tr(lang, S::mission_new))) {
+            form.template_file = v.edit.number;
+            form.show = true;
+            app.missions_asked = true;
         }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", tr(lang, S::mission_new_hint));
         if (from_mod) {
             same_line_if_room(button_width(tr(lang, S::mission_give_back)));
             if (ImGui::Button(tr(lang, S::mission_give_back))) {
@@ -1518,10 +1517,6 @@ void draw_mission_view(App& app, const Item& item) {
         }
         if (ImGui::BeginTabItem(tr(lang, S::mission_tab_scripts))) {
             draw_scripts(app);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem(tr(lang, S::mission_tab_new))) {
-            draw_new_missions(app);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

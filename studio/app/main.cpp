@@ -134,6 +134,11 @@ void draw_frame(App& app, Windows& open) {
         draw_plugin_parameters(app, &open.plugin);
     if (open.characters)
         draw_characters(app, &open.characters);
+    if (app.missions_asked) {
+        open.missions = true;
+        app.missions_asked = false;
+        ImGui::SetNextWindowFocus();
+    }
     if (open.missions)
         draw_mod_missions(app, &open.missions);
 }

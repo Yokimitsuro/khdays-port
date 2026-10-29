@@ -158,13 +158,15 @@ block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
 file; without one the template's file is played as the game has it. The tool
 writes both and reads them back with the port's own reader
 (`port/runtime/missions/registry.c`) before it says they are saved. In the
-window **Missions** (top right; also a mission's tab **The mod's new missions**):
-**New mission** (a key, a world, a room of it); and for each mission its **Places
+window **Missions** (top right): **New mission** (a key, a world, a room of it and
+its template, the game mission it starts as); and for each mission its **Places
 on the map** (below) and its **Words and settings** (each one's words in the five
 languages, where it is listed, when it opens; **Save to the mod** writes and reads
 back each change). Another mission chosen, or the studio closed, with changes not
-saved asks first. A mission's own **New mission from this one** makes one from a
-game mission. From the command line:
+saved asks first. A game mission's **New mission from this one** opens that window
+with the mission as the new one's template; its **Replace another game mission
+with this one...** puts the mission's content in another game mission's slot
+instead. From the command line:
 
     khdays-studio --new-mission <Mod> <key> <game mission> <world> <room>
     khdays-studio --mission-set <Mod> <key> <setting> [<language>] <value...>
