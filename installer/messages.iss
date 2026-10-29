@@ -147,6 +147,30 @@ fr.HdFailed=Les éléments HD n'ont pas pu être créés ; le jeu fonctionne ave
 de.HdFailed=Die HD-Teile konnten nicht erstellt werden; das Spiel läuft im DS-Aussehen. Starte das Installationsprogramm erneut, um es noch einmal zu versuchen.
 it.HdFailed=Non è stato possibile creare i pezzi HD; il gioco funziona con l'aspetto DS. Esegui di nuovo l'installazione per riprovare.
 
+en.ModOverhaul=Mod: Menu Overhaul, the menus in the HD collections' look (needs the HD menus)
+es.ModOverhaul=Mod: Menu Overhaul, los menús con el aspecto de las colecciones HD (necesita los menús HD)
+fr.ModOverhaul=Mod : Menu Overhaul, les menus à l'aspect des collections HD (menus HD nécessaires)
+de.ModOverhaul=Mod: Menu Overhaul, die Menüs im Aussehen der HD-Sammlungen (braucht die HD-Menüs)
+it.ModOverhaul=Mod: Menu Overhaul, i menu con l'aspetto delle raccolte HD (servono i menu HD)
+
+en.ModWalk=Mod: Walk, the Organization's members walk with the game's own walk
+es.ModWalk=Mod: Walk, los miembros de la Organización caminan con el paso del propio juego
+fr.ModWalk=Mod : Walk, les membres de l'Organisation marchent avec la marche du jeu
+de.ModWalk=Mod: Walk, die Mitglieder der Organisation gehen mit dem Gang des Spiels
+it.ModWalk=Mod: Walk, i membri dell'Organizzazione camminano con la camminata del gioco
+
+en.ModsMaking=Making the mods chosen from your copies...
+es.ModsMaking=Haciendo los mods elegidos a partir de tus copias...
+fr.ModsMaking=Création des mods choisis à partir de vos copies...
+de.ModsMaking=Die gewählten Mods werden aus deinen Kopien erstellt...
+it.ModsMaking=Creazione delle mod scelte dalle tue copie...
+
+en.ModsFailed=The mods chosen could not be made; the game plays without them. Run the installer again to try once more.
+es.ModsFailed=No se han podido hacer los mods elegidos; el juego funciona sin ellos. Vuelve a ejecutar el instalador para intentarlo otra vez.
+fr.ModsFailed=Les mods choisis n'ont pas pu être créés ; le jeu fonctionne sans eux. Relancez l'installateur pour réessayer.
+de.ModsFailed=Die gewählten Mods konnten nicht erstellt werden; das Spiel läuft ohne sie. Starte das Installationsprogramm erneut, um es noch einmal zu versuchen.
+it.ModsFailed=Non è stato possibile creare le mod scelte; il gioco funziona senza di esse. Esegui di nuovo l'installazione per riprovare.
+
 en.SteamPageCaption=Add to Steam (optional)
 es.SteamPageCaption=Añadir a Steam (opcional)
 fr.SteamPageCaption=Ajouter à Steam (facultatif)

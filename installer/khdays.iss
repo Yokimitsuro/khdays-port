@@ -1,4 +1,4 @@
-﻿; The port's installer (README.md beside this file). Built by build_installer.py, which defines
+; The port's installer (README.md beside this file). Built by build_installer.py, which defines
 ; Version (VERSION, and the commit when not at its tag) and Stage (the folder of the files to install).
 ;
 ; The install has the repository's layout at its root (installer/, tools/ beside data/, mods/,
@@ -111,6 +111,7 @@ var
   DataOk: Boolean;
   HdPage: TInputQueryWizardPage;
   HdMenus, HdVideos: TNewCheckBox;
+  ModOverhaul, ModWalk: TNewCheckBox;  { the port's own mods: off unless chosen (docs/MENU_OVERHAUL.md, WALK_MOD.md) }
   HdStatus: TNewStaticText;
   SteamPage: TWizardPage;
   SteamAdd: TNewCheckBox;
@@ -295,6 +296,9 @@ begin
   HdVideos.Enabled := Trim(HdPage.Values[0]) <> '';
   if not HdMenus.Enabled then HdMenus.Checked := False;
   if not HdVideos.Enabled then HdVideos.Checked := False;
+  { the Menu Overhaul is made from the HD menus' pieces and both collections }
+  ModOverhaul.Enabled := HdMenus.Checked;
+  if not ModOverhaul.Enabled then ModOverhaul.Checked := False;
 end;
 
 { A collection's folder as given (0 the 1.5+2.5, 1 the 2.8), or '' for none: without spaces around it
@@ -357,9 +361,22 @@ begin
   HdVideos.Width := HdPage.SurfaceWidth;
   HdVideos.Height := ScaleY(20);
   HdVideos.Caption := CustomMessage('HdVideos');
+  ModOverhaul := TNewCheckBox.Create(HdPage);
+  ModOverhaul.Parent := HdPage.Surface;
+  ModOverhaul.Top := HdVideos.Top + HdVideos.Height + ScaleY(6);
+  ModOverhaul.Width := HdPage.SurfaceWidth;
+  ModOverhaul.Height := ScaleY(20);
+  ModOverhaul.Caption := CustomMessage('ModOverhaul');
+  ModWalk := TNewCheckBox.Create(HdPage);
+  ModWalk.Parent := HdPage.Surface;
+  ModWalk.Top := ModOverhaul.Top + ModOverhaul.Height + ScaleY(6);
+  ModWalk.Width := HdPage.SurfaceWidth;
+  ModWalk.Height := ScaleY(20);
+  ModWalk.Caption := CustomMessage('ModWalk');
+  HdMenus.OnClick := @HdChanged;
   HdStatus := TNewStaticText.Create(HdPage);
   HdStatus.Parent := HdPage.Surface;
-  HdStatus.Top := HdVideos.Top + HdVideos.Height + ScaleY(10);
+  HdStatus.Top := ModWalk.Top + ModWalk.Height + ScaleY(10);
   HdStatus.Width := HdPage.SurfaceWidth;
   HdStatus.AutoSize := False;
   HdStatus.WordWrap := True;
@@ -386,6 +403,9 @@ begin
   Wanted := ExpandConstant('{param:HD|menus,videos}');
   HdMenus.Checked := HdMenus.Enabled and (Pos('menus', Wanted) > 0);
   HdVideos.Checked := HdVideos.Enabled and (Pos('videos', Wanted) > 0);
+  HdChanged(nil);
+  ModOverhaul.Checked := ModOverhaul.Enabled and (Pos('overhaul', Wanted) > 0);
+  ModWalk.Checked := Pos('walk', Wanted) > 0;
 end;
 
 function CheckHd: Boolean;
@@ -667,6 +687,17 @@ begin
       else if JsonValue(Json, 'missing') <> '' then
         { made but for some screens (a tool that failed): said, with where its error was kept }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
+    end;
+    { the port's own mods chosen, after the HD menus the Menu Overhaul is made from }
+    if DataOk and (ModOverhaul.Checked or ModWalk.Checked) then begin
+      WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
+      WizardForm.Refresh;
+      Args := 'build-mods "' + ExpandConstant('{app}') + '"';
+      if ModOverhaul.Checked then
+        Args := Args + ' --menu-overhaul --1525 "' + HdFolder(0) + '"';
+      if ModWalk.Checked then Args := Args + ' --walk';
+      if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
+        SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);
       if it does not run, the port writes its own defaults on first start, so no error is shown }

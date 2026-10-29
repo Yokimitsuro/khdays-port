@@ -734,6 +734,9 @@ COLLECTION_ARCHIVES = {
         "SettingMenu": "Image/SettingMenu",
         "kh2_first": "Image/dt/kh2_first",
         "kh2_fifth": "Image/dt/kh2_fifth",
+        # (the port's own mods': mod_inputs.txt)
+        "bbs_first": "Image/dt/bbs_first",
+        "Recom": "Image/dt/Recom",
     },
     "2.8": {"kh3d_first": "Image/dt/kh3d_first"},
 }
@@ -842,6 +845,8 @@ def check_folder(kind: str, folder: Path) -> list[str]:
     import collection_archive
 
     inputs = hd_inputs()
+    for archive, paths in mod_inputs().items():  # the port's own mods' too
+        inputs.setdefault(archive, []).extend(paths)
     missing = []
     for archive, rel in COLLECTION_ARCHIVES[kind].items():
         base = archive_base(folder, kind, archive)
@@ -1089,10 +1094,30 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
 # ---- The mods of the port's own features -------------------------------------------------------
 
 # The mods that switch on features of the port's own (port/runtime/mods/installed.h), each made by its tool in
-# tools/mods from the game's data: its folder under mods/ and the tool's command line ({data} the extraction).
+# tools/mods: its folder under mods/ and the tool's command line, its places filled in ({data} the game's
+# extraction; the Menu Overhaul's collections' entries as installer/mod_inputs.txt lists them, extracted as the HD
+# pieces' are, the HD menus' pieces made before it, the fonts the installer carries, the port).
 PORT_MODS = {
     "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
+    "menu-overhaul": (
+        "Days - Menu Overhaul",
+        [
+            "menu_overhaul.py",
+            *("--kh2", "{kh2}", "--bbs", "{bbs}", "--recom", "{recom}", "--mare", "{mare}"),
+            *("--hd", "{hd}", "--fonts", "{fonts}", "--data", "{data}", "--exe", "{exe}"),
+        ],
+    ),
 }
+MOD_INPUTS_FILE = HERE / "mod_inputs.txt"
+# where each archive's entries are extracted for the mods' tools (KH2's two archives into one folder)
+MOD_SOURCES = {
+    "kh2_first": "kh2",
+    "kh2_fifth": "kh2",
+    "bbs_first": "bbs_first",
+    "Recom": "Recom",
+    "Mare": "Mare",
+}
+FONTS = HERE / "fonts"  # the fonts the installer takes from its pinned packages (build_installer.py)
 MESSAGES.update(
     {
         "mod-making": {
@@ -1109,21 +1134,69 @@ MESSAGES.update(
             "de": "Die Mods sind fertig.",
             "it": "Le mod sono pronte.",
         },
+        "mod-needs-hd": {
+            "en": "The Menu Overhaul needs the 1.5+2.5 collection and the HD menus made first.",
+            "es": "El Menu Overhaul necesita la colección 1.5+2.5 y los menús HD hechos antes.",
+            "fr": "Le Menu Overhaul a besoin de la collection 1.5+2.5 et des menus HD faits avant.",
+            "de": "Das Menu Overhaul braucht die Sammlung 1.5+2.5 und zuerst die HD-Menüs.",
+            "it": "Il Menu Overhaul richiede la raccolta 1.5+2.5 e i menu HD fatti prima.",
+        },
     }
 )
 
 
-@command(
-    "build-mods",
-    "the port's own mods (docs/WALK_MOD.md) made from the game's data",
-    lambda p: (p.add_argument("install", type=Path), p.add_argument("--walk", action="store_true")),
-)
+def mod_inputs() -> dict[str, list[str]]:
+    """mod_inputs.txt: archive -> its entries (the mods' tools', as hd_inputs.txt is the HD tools')."""
+    out: dict[str, list[str]] = {}
+    for line in MOD_INPUTS_FILE.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            archive, _, path = line.partition(" ")
+            out.setdefault(archive, []).append(path)
+    return out
+
+
+def mods_digest(repository: Path) -> str:
+    """What mod_inputs.txt's trace depends on: the mods' tools and pictures, as they are in `repository`."""
+    folder = repository / "tools" / "mods"
+    files = sorted(p for p in folder.rglob("*") if p.is_file() and "tests" not in p.relative_to(folder).parts)
+    h = hashlib.sha256()
+    for p in files:
+        if "__pycache__" not in p.parts:
+            h.update(p.relative_to(folder).as_posix().encode() + b"\0" + p.read_bytes())
+    return h.hexdigest()
+
+
+def mod_places(install: Path, src: Path, fonts: Path = FONTS) -> dict[str, str]:
+    """The mods' tools' places ({kh2}, {data}...) in an install, the collections' entries extracted under `src`."""
+    return {
+        "kh2": str(src / "kh2.hed_out"),
+        "bbs": str(src / "bbs_first.hed_out"),
+        "recom": str(src / "Recom.hed_out"),
+        "mare": str(src / "Mare.hed_out" / "original"),
+        "hd": str(install / "mods" / HD_MOD),
+        "fonts": str(fonts),
+        "data": str(data_folder(install)),
+        "exe": str(install / "khdays-native.exe"),
+    }
+
+
+def _mods_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument("install", type=Path)
+    p.add_argument("--walk", action="store_true", help="the Walk (docs/WALK_MOD.md): the game's data")
+    p.add_argument("--menu-overhaul", action="store_true", help="the Menu Overhaul: 1.5+2.5, the HD menus")
+    p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
+
+
+@command("build-mods", "the port's own mods (docs/WALK_MOD.md, docs/MENU_OVERHAUL.md)", _mods_arguments)
 def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     import subprocess
 
+    import collection_archive
+
     install = args.install.resolve()
-    data = data_folder(install)
     wanted = [m for m in PORT_MODS if getattr(args, m.replace("-", "_"))]
+    if "menu-overhaul" in wanted and (args.c1525 is None or not (install / "mods" / HD_MOD).is_dir()):
+        raise Refusal("mod-needs-hd")
     made = []
     for i, mod in enumerate(wanted):
         folder, template = PORT_MODS[mod]
@@ -1131,12 +1204,21 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         work = install / "setup" / "mod-work"
         remove(work)
         try:
-            # the tools in the repository's layout under a root of their own: the mod lands there, then whole
-            # into mods/ (an older one replaced)
-            shutil.copytree(tool_folders()["mods"], work / "tools" / "mods")
-            shutil.copy2(tool_folders()["rom"] / "decompress_data.py", work / "tools")
+            # the tools in the repository's layout under a root of their own (tools/hd's helpers too): the mod lands
+            # there, then whole into mods/ (an older one replaced)
+            tools = tool_folders()
+            shutil.copytree(tools["mods"], work / "tools" / "mods", ignore=shutil.ignore_patterns("tests"))
+            shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
+            shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
+            places = mod_places(install, work / "src")
+            if mod == "menu-overhaul":
+                # the collections' entries the tools read, extracted as the HD pieces' are
+                cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+                for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
+                    with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
+                        collection_archive.materialise(a, paths, work / "src" / f"{MOD_SOURCES[archive]}.hed_out")
             line = [sys.executable, str(work / "tools" / "mods" / template[0])]
-            line += [str(data) if a == "{data}" else a for a in template[1:]] + ["--mod", folder]
+            line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + ["--mod", folder]
             done = subprocess.run(line, cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if done.returncode != 0:
                 said = done.stderr.strip().splitlines()
@@ -1147,6 +1229,69 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         made.append(folder)
     progress(1, 1, words("mod-ready", args.language))
     return {"mods": made, "message": words("mod-ready", args.language)}
+
+
+def _mod_trace_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument("install", type=Path, help="an install with the game's data, the HD menus and the port")
+    p.add_argument("--src", type=Path, required=True, help="the collections' entries extracted (<name>.hed_out)")
+    p.add_argument("--1525", dest="c1525", type=Path, required=True)
+    p.add_argument(
+        "--fonts", type=Path, default=FONTS, help="KHGummi.otf and KHMenu.otf (pinned.json's fonts; the installer's)"
+    )
+    p.add_argument("--out", type=Path, default=MOD_INPUTS_FILE)
+
+
+@command(
+    "trace-mod-inputs",
+    "developers: which collection files the mods' tools read, traced into mod_inputs.txt",
+    _mod_trace_arguments,
+)
+def trace_mod_inputs(args: argparse.Namespace) -> dict[str, Any]:
+    import subprocess
+    import tempfile
+
+    import collection_archive
+
+    repository = HERE.parent
+    install = args.install.resolve()
+    places = mod_places(install, args.src.resolve(), args.fonts.resolve())
+    with tempfile.TemporaryDirectory() as temp:
+        log = Path(temp) / "trace.log"
+        folder, template = PORT_MODS["menu-overhaul"]
+        line = [sys.executable, "-c", _TRACER, str(repository / "tools" / "mods" / template[0])]
+        line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + [
+            "--mod",
+            str(Path(temp) / folder),
+        ]
+        subprocess.run(line, check=True, env={**os.environ, "KHDAYS_TRACE_LOG": str(log)})
+        opened = {
+            Path(raw).resolve() for kind, _, raw in (ln.partition("\t") for ln in log.read_text("utf-8").splitlines())
+        }
+    cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
+    entries: dict[str, set[str]] = {}
+    for archive, source in MOD_SOURCES.items():
+        root = (args.src / f"{source}.hed_out").resolve()
+        if not root.is_dir():
+            continue
+        with collection_archive.Archive(archive_base(args.c1525, "1.5+2.5", archive), cipher) as a:
+            for path in opened:
+                if root not in path.parents:
+                    continue
+                rel = path.relative_to(root).as_posix()
+                layout, _, rel = rel.partition("/")
+                if layout == "remastered":
+                    rel = rel.rsplit("/", 1)[0]  # the asset's entry
+                if layout in ("original", "remastered") and a.has(rel):
+                    entries.setdefault(archive, set()).add(rel)
+    lines = [
+        "# The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):",
+        "# '<archive> <entry>' (its data and remastered assets).",
+        f"# tools {mods_digest(repository)}",
+    ]
+    for archive in sorted(entries):
+        lines += [f"{archive} {rel}" for rel in sorted(entries[archive])]
+    args.out.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    return {"inputs": sum(len(v) for v in entries.values()), "out": str(args.out)}
 
 
 # ---- The installed game's starting settings ----------------------------------------------------
