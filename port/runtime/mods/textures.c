@@ -2,6 +2,7 @@
  * palette slots, their bank, the bank's origin (origin.c) and the names there (names.cpp); looked up
  * once per slot place, format and palette, and again only after its bank changed. */
 #include "textures.h"
+#include "../../gfx/character_shadow.h"
 #include "names.h"
 #include "../core/origin.h"
 #include "../core/rom.h"
@@ -602,7 +603,9 @@ static void mark(KhdaysG3dPolygon *polys, int32_t n)
         const u32 param = p->tex & 0x3ff0ffffu;
         const u32 format = (param >> 26) & 7;
         const Seen *s;
-        if (p->flags & KHDAYS_G3D_MOD) {
+        if ((p->flags & KHDAYS_G3D_MOD) && !(p->flags & KHDAYS_G3D_SHADOW_NATIVE) &&
+            (p->flags & (KHDAYS_G3D_SHADOW_RECEIVER | KHDAYS_G3D_SHADOW_SPRITE)) !=
+                (KHDAYS_G3D_SHADOW_RECEIVER | KHDAYS_G3D_SHADOW_SPRITE)) {
             continue; /* a mod model's polygon: its texture is already chosen */
         }
         s = format == 0 || nseen == 0 ? NULL : seen_find(param, format == 7 ? 0 : p->pltt);

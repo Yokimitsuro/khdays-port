@@ -534,12 +534,71 @@ HOOKS = {
         ),
     ],
     # Replace only the heart panel's own node draws; its bookkeeping and other widgets still run.
+    "main@0202bc90": [  # Render_DrawViewLists
+        (
+            "            ShadowVolume_Draw((char *)p + 0x168);\n",
+            "            { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow((char *)p + 0x168, p + 4); }\n",
+        ),
+    ],
+    "main@0202c624": [  # Entity_Tick
+        (
+            "        ShadowVolume_Draw(entity + 0x168);\n",
+            "        { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow(entity + 0x168, entity + 0x10); }\n",
+        ),
+    ],
+    "ov022@0209c870": [  # Ov022_DropGroundMark
+        (
+            "        ShadowVolume_Draw(&pActor->mark.vecPos);\n",
+            "        { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow(&pActor->mark.vecPos, (char *)pActor->pNode + 4); }\n",
+        ),
+    ],
     "main@0202aa9c": [  # Scene_DrawNode
+        (
+            "    NNS_G3dDraw(node->object);\n",
+            "    { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "      khdays_character_caster_begin(node); NNS_G3dDraw(node->object); khdays_character_caster_end(); }\n",
+        ),
         (
             "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n",
             "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n"
             "    { extern int khdays_heart_node(const void *node);\n"
             "      if (khdays_heart_node(node)) return; }\n",
+        ),
+    ],
+    "main@0203bc78": [  # Obj_RenderModel: the enemy framework's model and attachment draw
+        (
+            "    NNS_G3dDraw(&self->renderCtx->objFlags);\n",
+            "    { extern void khdays_character_object_begin(const void *); extern void khdays_character_object_end(void);\n"
+            "      khdays_character_object_begin(self); NNS_G3dDraw(&self->renderCtx->objFlags); khdays_character_object_end(); }\n",
+        ),
+    ],
+    "ov107@020c6624": [  # enemy construction: keep ownership outside the game's objects
+        (
+            "    self->field_1a8->flags_5c |= 2;\n",
+            "    self->field_1a8->flags_5c |= 2;\n"
+            "    { extern void khdays_character_bind_enemy(const void *); khdays_character_bind_enemy(self); }\n",
+        ),
+    ],
+    "ov107@020c68ec": [  # release ownership before the flat shadow object is freed
+        (
+            "    DestroyInstance(self->field_1a8);\n",
+            "    { extern void khdays_character_forget_enemy(const void *); khdays_character_forget_enemy(self->field_1a8); }\n"
+            "    DestroyInstance(self->field_1a8);\n",
+        ),
+    ],
+    "ov002@02051cbc": [  # independently drawn player parts use the same scene-node layout
+        (
+            "    NNS_G3dDraw((unsigned int *)(pActor + 0x24));\n",
+            "    { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "      khdays_character_caster_begin(pActor + 4); NNS_G3dDraw((unsigned int *)(pActor + 0x24)); khdays_character_caster_end(); }\n",
+        ),
+    ],
+    "ov022@0209c9fc": [  # the two equipped weapon slots, associated with the actor's body
+        (
+            "            Ov002_SubmitActorDraw(iVar4);\n",
+            "            { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "              khdays_character_caster_begin((char *)*(int *)(param_1 + 0x20) + 4);\n"
+            "              Ov002_SubmitActorDraw(iVar4); khdays_character_caster_end(); }\n",
         ),
     ],
     "ov002@0205f980": [  # Ov002_Hud_RewindWidget: repeated pickups restart the pulse
@@ -1487,9 +1546,12 @@ HOOKS = {
         (  # NNSi_G3dFuncSbcSHP
             "        NNS_G3dGeSendDL((u8 *)data + data->payloadOffset08, data->payloadSize0c);\n",
             "        { extern int khdays_models_shape(const void *list, unsigned int size);\n"
+            "          extern int khdays_character_sprite_begin(const void *); extern void khdays_character_sprite_end(void);\n"
+            "          int khdays_sprite = khdays_character_sprite_begin(state);\n"
             "          if (!khdays_models_shape((u8 *)data + data->payloadOffset08, data->payloadSize0c)) {\n"
             "              NNS_G3dGeSendDL((u8 *)data + data->payloadOffset08, data->payloadSize0c);\n"
-            "          } }\n",
+            "          }\n"
+            "          if (khdays_sprite) khdays_character_sprite_end(); }\n",
         )
     ],
     # Gameplay mods' scripts (runtime/scripts/scripts.h): the frame point, once the game's logic of the

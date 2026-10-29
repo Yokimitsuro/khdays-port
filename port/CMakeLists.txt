@@ -287,10 +287,18 @@ target_compile_options(khdays-hud-settings PRIVATE /W4 /std:c17)
 add_library(khdays-gfx STATIC
     gfx/compose_cpu.c
     gfx/describe.c
+    gfx/character_shadow.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
 target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
 target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
+add_executable(khdays-character-shadow-test tests/character_shadow_test.c)
+target_link_libraries(khdays-character-shadow-test PRIVATE khdays-gfx)
+target_compile_options(khdays-character-shadow-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow COMMAND khdays-character-shadow-test)
+add_executable(khdays-character-shadow-hooks-test tests/character_shadow_hooks_test.c runtime/display/character_shadows.c)
+target_compile_options(khdays-character-shadow-hooks-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow-hooks COMMAND khdays-character-shadow-hooks-test)
 
 # KH2's native 2D sequences and their reference renderer; also used by the
 # independent viewer, without the game or its generated sources.
@@ -516,6 +524,7 @@ add_executable(khdays-native
     runtime/input/controls_hooks.c
     runtime/input/walk.c               # the Walk mod's analog walk animation
     runtime/core/diag.c
+    runtime/display/character_shadows.c
     runtime/display/display.c
     runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
     runtime/core/events.c

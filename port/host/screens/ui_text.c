@@ -1129,6 +1129,15 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_AUTOSAVE_FAILED] = {"Autosave failed: file %d", "Échec de la sauvegarde auto : fichier %d",
                              "Autospeichern fehlgeschlagen: Datei %d", "Salvataggio automatico non riuscito: file %d",
                              "Error al autoguardar: archivo %d"},
+    [TXT_CHARACTER_SHADOWS] = {"Enhanced character shadows", "Ombres des personnages améliorées",
+                               "Verbesserte Charakterschatten", "Ombre dei personaggi migliorate",
+                               "Sombras de personajes mejoradas"},
+    [TXT_CHARACTER_SHADOWS_NOTE] =
+        {"Soft animated silhouettes directly beneath characters, including replacement models.",
+         "Silhouettes animées et adoucies sous les personnages, modèles de remplacement inclus.",
+         "Weiche animierte Silhouetten direkt unter Charakteren, auch mit Ersatzmodellen.",
+         "Sagome animate e sfumate sotto i personaggi, inclusi i modelli sostitutivi.",
+         "Siluetas animadas y suaves bajo los personajes, incluidos los modelos de reemplazo."},
     [TXT_ENH_MOUSE] = {"Mouse camera", "Caméra à la souris", "Kamera mit der Maus", "Telecamera con il mouse",
                        "Cámara con el ratón"},
     [TXT_ENH_MOUSE_NOTE] = {"Moving the mouse turns the camera, up and down too. The window holds the mouse while "

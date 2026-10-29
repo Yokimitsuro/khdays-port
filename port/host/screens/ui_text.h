@@ -345,6 +345,8 @@ enum {
     TXT_AUTOSAVE_DONE,
     TXT_AUTOSAVE_FAILED,
     /* The mouse camera (the controls' enhancements) */
+    TXT_CHARACTER_SHADOWS,
+    TXT_CHARACTER_SHADOWS_NOTE,
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
     TXT_MOUSE_SPEED,

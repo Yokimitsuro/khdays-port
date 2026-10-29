@@ -375,6 +375,8 @@ static void test_settings_file(void)
     /* The defaults go out and come back unchanged, byte for byte. */
     khdays_profile_default(&p);
     path_of("round.ini", path, sizeof(path));
+    CHECK(p.enh.character_shadows == 0);
+    p.enh.character_shadows = 1;
     CHECK(khdays_profile_save(&p, path, count_notice) == 0);
     notices = 0;
     khdays_profile_load(&q, path, count_notice);
@@ -389,6 +391,7 @@ static void test_settings_file(void)
     SDL_free(b);
 
     /* No file: the defaults, silently. */
+    khdays_profile_default(&p);
     path_of("missing.ini", path, sizeof(path));
     notices = 0;
     khdays_profile_load(&q, path, count_notice);
@@ -2181,8 +2184,18 @@ static void test_hud_settings(void)
             CHECK(*rows[i].value != old);
         }
     CHECK(found == KHDAYS_OPT_COUNT);
+    int shadow_found = 0;
+    for (int i = 0; i < count; ++i)
+        if (rows[i].id == KHDAYS_SET_CHARACTER_SHADOWS) {
+            ++shadow_found;
+            CHECK(rows[i].available && rows[i].value == &q.enh.character_shadows);
+            CHECK(khdays_model_adjust(&q, &rows[i], 1));
+            CHECK(q.enh.character_shadows == 1);
+        }
+    CHECK(shadow_found == 1);
     CHECK(khdays_model_changes(&p, &q) & KHDAYS_CHANGE_CONTROLS);
     khdays_devices_set_profile(&q);
+    CHECK(khdays_character_shadows_enabled() == q.enh.character_shadows);
     CHECK(khdays_hud_settings_generation() != generation);
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
         CHECK(khdays_hud_setting(i) == q.enh.hud[i]);

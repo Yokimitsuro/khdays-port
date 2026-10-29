@@ -72,7 +72,7 @@ typedef struct KhdaysG3dPreInfo {
         uint64_t name##_slot;                                                                                          \
     }
 
-/* A list in drawing order: opaque, then translucent (Y-sorted unless manual), then selection
+/* A list in drawing order: opaque, projected shadows, translucent (Y-sorted unless manual), then selection
  * markers in submission order. It holds its polygons and vertices in memory of its own. */
 typedef struct KhdaysG3dList {
     int32_t npolys, nverts;

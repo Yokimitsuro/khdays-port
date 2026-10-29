@@ -23,6 +23,15 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
 static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1},  {1}, {1}, {1},
                                                {1}, {1}, {1}, {1}, {-1}, {-1}, {0}, {0}};
 static SDL_AtomicInt generation;
+static SDL_AtomicInt character_shadows;
+void khdays_character_shadows_publish(int enabled)
+{
+    SDL_SetAtomicInt(&character_shadows, enabled != 0);
+}
+int khdays_character_shadows_enabled(void)
+{
+    return SDL_GetAtomicInt(&character_shadows);
+}
 
 /* The HD fonts on, as before these settings; the KH2 replacements, and the play during INFORMATION, the player's to
  * turn on. */

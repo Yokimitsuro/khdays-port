@@ -310,6 +310,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
      * for two screens, where the game draws its own page */
     add_switch(b, KHDAYS_SET_ENH_CHASE_FREE, TXT_ENH_CHASE_FREE, &e->chase_free, 1,
                khdays_text(TXT_ENH_CHASE_FREE_NOTE));
+    add_switch(b, KHDAYS_SET_CHARACTER_SHADOWS, TXT_CHARACTER_SHADOWS, &e->character_shadows, 1,
+               khdays_text(TXT_CHARACTER_SHADOWS_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
     add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));

@@ -4,6 +4,9 @@
  * the sides as the 2D's pieces do (docs/RENDERING.md, "On the graphics card"). */
 #include "gpu_raster3d.h"
 #include "gpu_hd.h"
+#include "../../gfx/character_shadow.h"
+#include "generated/shadow_mask_cs.h"
+#include "generated/shadow_blur_cs.h"
 #include "../../runtime/display/frame_package.h"
 #include "../../runtime/mods/textures.h"
 #include "../../ui/composition.h"
@@ -47,6 +50,13 @@ typedef struct ComposeParams {
 } ComposeParams;
 
 static SDL_GPUDevice *device;
+static SDL_GPUComputePipeline *shadow_raster, *shadow_blur;
+static SDL_GPUBuffer *shadow_raw, *shadow_soft, *shadow_tiles;
+static SDL_GPUTransferBuffer *shadow_upload;
+static uint32_t shadow_tile_capacity;
+static uint32_t *shadow_index;
+static uint32_t shadow_index_capacity;
+
 static SDL_GPUComputePipeline *raster, *compose;
 static SDL_GPUBuffer *polys, *verts, *tiles, *vram, *records, *sequences;
 static uint32_t polys_capacity, verts_capacity; /* entries in `polys` and `verts`: the most any list has had */
@@ -110,7 +120,7 @@ static int scratch_for(const KhdaysG3dList *list)
 static SDL_GPUComputePipeline *make_pipeline(const unsigned char *dxil, unsigned dxil_size, const unsigned char *spirv,
                                              unsigned spirv_size, const unsigned char *msl, unsigned msl_size,
                                              const char *entry, Uint32 ro_textures, Uint32 ro_buffers,
-                                             Uint32 rw_textures)
+                                             Uint32 rw_textures, Uint32 rw_buffers)
 {
     SDL_GPUComputePipelineCreateInfo info;
     const SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
@@ -136,6 +146,7 @@ static SDL_GPUComputePipeline *make_pipeline(const unsigned char *dxil, unsigned
     info.num_readonly_storage_buffers = ro_buffers;
     info.num_readwrite_storage_textures = rw_textures;
     info.num_uniform_buffers = 1;
+    info.num_readwrite_storage_buffers = rw_buffers;
     info.threadcount_x = 8;
     info.threadcount_y = 8;
     info.threadcount_z = 1;
@@ -155,9 +166,20 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
 {
     device = d;
     raster = make_pipeline(raster3d_cs_dxil, raster3d_cs_dxil_size, raster3d_cs_spirv, raster3d_cs_spirv_size,
-                           raster3d_cs_msl, raster3d_cs_msl_size, RASTER3D_CS_ENTRY, 0, 6, 2);
+                           raster3d_cs_msl, raster3d_cs_msl_size, RASTER3D_CS_ENTRY, 0, 7, 2, 0);
     compose = make_pipeline(compose_cs_dxil, compose_cs_dxil_size, compose_cs_spirv, compose_cs_spirv_size,
-                            compose_cs_msl, compose_cs_msl_size, COMPOSE_CS_ENTRY, 0, 1, 3);
+                            compose_cs_msl, compose_cs_msl_size, COMPOSE_CS_ENTRY, 0, 1, 3, 0);
+    shadow_raster =
+        make_pipeline(shadow_mask_cs_dxil, shadow_mask_cs_dxil_size, shadow_mask_cs_spirv, shadow_mask_cs_spirv_size,
+                      shadow_mask_cs_msl, shadow_mask_cs_msl_size, SHADOW_MASK_CS_ENTRY, 0, 5, 0, 1);
+    shadow_blur =
+        make_pipeline(shadow_blur_cs_dxil, shadow_blur_cs_dxil_size, shadow_blur_cs_spirv, shadow_blur_cs_spirv_size,
+                      shadow_blur_cs_msl, shadow_blur_cs_msl_size, SHADOW_BLUR_CS_ENTRY, 0, 1, 0, 1);
+    SDL_GPUBufferCreateInfo shadow_info = {0};
+    shadow_info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+    shadow_info.size = KHDAYS_SHADOW_MAX * KHDAYS_SHADOW_SIZE * KHDAYS_SHADOW_SIZE * 4u;
+    shadow_raw = SDL_CreateGPUBuffer(device, &shadow_info);
+    shadow_soft = SDL_CreateGPUBuffer(device, &shadow_info);
     polys_capacity = KHDAYS_G3D_DS_POLYS;
     verts_capacity = KHDAYS_G3D_DS_VERTS;
     polys = make_buffer(polys_capacity * (Uint32)sizeof(KhdaysG3dPolygon));
@@ -174,7 +196,8 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
         target_usage |= SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE;
     }
     if (raster == NULL || compose == NULL || polys == NULL || verts == NULL || vram == NULL || records == NULL ||
-        tiles == NULL || sequences == NULL || !khdays_gpu_hd_open(device)) {
+        tiles == NULL || sequences == NULL || shadow_raster == NULL || shadow_blur == NULL || shadow_raw == NULL ||
+        shadow_soft == NULL || !khdays_gpu_hd_open(device)) {
         char why[256];
         SDL_strlcpy(why, SDL_GetError(), sizeof(why));
         khdays_raster3d_close();
@@ -207,6 +230,25 @@ void khdays_raster3d_close(void)
         return;
     }
     drop_targets();
+    if (shadow_raster)
+        SDL_ReleaseGPUComputePipeline(device, shadow_raster);
+    if (shadow_blur)
+        SDL_ReleaseGPUComputePipeline(device, shadow_blur);
+    if (shadow_raw)
+        SDL_ReleaseGPUBuffer(device, shadow_raw);
+    if (shadow_soft)
+        SDL_ReleaseGPUBuffer(device, shadow_soft);
+    if (shadow_tiles)
+        SDL_ReleaseGPUBuffer(device, shadow_tiles);
+    if (shadow_upload)
+        SDL_ReleaseGPUTransferBuffer(device, shadow_upload);
+    shadow_raster = shadow_blur = NULL;
+    shadow_raw = shadow_soft = shadow_tiles = NULL;
+    shadow_upload = NULL;
+    shadow_tile_capacity = 0;
+    SDL_free(shadow_index);
+    shadow_index = NULL;
+    shadow_index_capacity = 0;
     if (raster != NULL)
         SDL_ReleaseGPUComputePipeline(device, raster);
     if (compose != NULL)
@@ -422,6 +464,8 @@ static const KhdaysG3dVertex *move_hud(const KhdaysG3dList *list, int margin)
  * every w is 1) and is not the HUD's. */
 static int overlay_polygon(const KhdaysG3dPolygon *p, const KhdaysG3dVertex *v)
 {
+    if (p->flags & (KHDAYS_G3D_SHADOW_SOURCE | KHDAYS_G3D_SHADOW_RECEIVER))
+        return 0;
     if ((p->flags & KHDAYS_G3D_HUD) || p->count <= 0) {
         return 0;
     }
@@ -523,7 +567,7 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         const KhdaysG3dPolygon *p = &list->polys[i];
         float xmin = 1e9f, xmax = -1e9f;
         int tx0, tx1, ty0, ty1;
-        if (unusable(list, p)) {
+        if ((p->flags & (KHDAYS_G3D_SHADOW_SOURCE | KHDAYS_G3D_SHADOW_REPLACED)) || unusable(list, p)) {
             box[i][0] = 1;
             box[i][1] = 0; /* empty */
             continue;
@@ -591,6 +635,109 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
     return need;
 }
 
+/* The mask has its own overhead tile index; it never uses the camera's screen tiles. */
+static int draw_shadows(SDL_GPUCommandBuffer *cmd, const KhdaysG3dList *list)
+{
+    enum { CELLS = KHDAYS_SHADOW_MAX * 256 };
+    static uint32_t counts[CELLS], cursor[CELLS];
+    uint32_t groups = 0, total = 0;
+    memset(counts, 0, sizeof(counts));
+    for (int i = 0; i < list->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &list->polys[i];
+        if (!(p->flags & KHDAYS_G3D_SHADOW_SOURCE) || unusable(list, p))
+            continue;
+        const uint32_t group = KHDAYS_SHADOW_INDEX(p->flags);
+        if (groups <= group)
+            groups = group + 1;
+        float x0 = 128, x1 = 0;
+        for (int k = 0; k < p->count; ++k) {
+            const float x = list->verts[p->first + k].x;
+            x0 = fminf(x0, x);
+            x1 = fmaxf(x1, x);
+        }
+        const int a = SDL_clamp((int)floorf(x0 / 8), 0, 15), b = SDL_clamp((int)floorf(x1 / 8), 0, 15);
+        const int c = SDL_clamp((int)floorf(p->ymin / 8), 0, 15), d = SDL_clamp((int)floorf(p->ymax / 8), 0, 15);
+        box[i][0] = (uint8_t)a;
+        box[i][1] = (uint8_t)b;
+        box[i][2] = (uint8_t)c;
+        box[i][3] = (uint8_t)d;
+        for (int y = c; y <= d; ++y)
+            for (int x = a; x <= b; ++x)
+                ++counts[group * 256u + (unsigned)y * 16u + (unsigned)x];
+    }
+    if (!groups)
+        return 1;
+    const uint32_t cells = groups * 256u;
+    for (uint32_t i = 0; i < cells; ++i)
+        total += counts[i];
+    const uint32_t entries = cells + 1 + total, bytes = entries * 4u;
+    if (entries > shadow_index_capacity) {
+        uint32_t *grown = SDL_realloc(shadow_index, (size_t)bytes);
+        if (!grown)
+            return 0;
+        shadow_index = grown;
+        shadow_index_capacity = entries;
+    }
+    uint32_t at = cells + 1;
+    for (uint32_t i = 0; i < cells; ++i) {
+        shadow_index[i] = cursor[i] = at;
+        at += counts[i];
+    }
+    shadow_index[cells] = at;
+    for (int i = 0; i < list->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &list->polys[i];
+        if (!(p->flags & KHDAYS_G3D_SHADOW_SOURCE) || unusable(list, p))
+            continue;
+        const uint32_t group = KHDAYS_SHADOW_INDEX(p->flags);
+        for (int y = box[i][2]; y <= box[i][3]; ++y)
+            for (int x = box[i][0]; x <= box[i][1]; ++x)
+                shadow_index[cursor[group * 256u + (unsigned)y * 16u + (unsigned)x]++] = (uint32_t)i;
+    }
+    if (bytes > shadow_tile_capacity) {
+        if (shadow_tiles)
+            SDL_ReleaseGPUBuffer(device, shadow_tiles);
+        if (shadow_upload)
+            SDL_ReleaseGPUTransferBuffer(device, shadow_upload);
+        shadow_tiles = make_buffer(bytes);
+        SDL_GPUTransferBufferCreateInfo ti = {0};
+        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        ti.size = bytes;
+        shadow_upload = SDL_CreateGPUTransferBuffer(device, &ti);
+        shadow_tile_capacity = bytes;
+    }
+    if (!shadow_tiles || !shadow_upload)
+        return 0;
+    void *mapped = SDL_MapGPUTransferBuffer(device, shadow_upload, true);
+    if (!mapped)
+        return 0;
+    memcpy(mapped, shadow_index, bytes);
+    SDL_UnmapGPUTransferBuffer(device, shadow_upload);
+    SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTransferBufferLocation src = {shadow_upload, 0};
+    SDL_GPUBufferRegion dst = {shadow_tiles, 0, bytes};
+    SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+    SDL_EndGPUCopyPass(copy);
+    const uint32_t params[4] = {groups, (uint32_t)list->npolys, (uint32_t)list->nverts, entries};
+    SDL_GPUStorageBufferReadWriteBinding out = {0};
+    out.buffer = shadow_raw;
+    out.cycle = true;
+    SDL_GPUBuffer *in[5] = {polys, verts, shadow_tiles, vram, khdays_gpu_hd_buffer()};
+    SDL_GPUComputePass *pass = SDL_BeginGPUComputePass(cmd, NULL, 0, &out, 1);
+    SDL_BindGPUComputePipeline(pass, shadow_raster);
+    SDL_BindGPUComputeStorageBuffers(pass, 0, in, 5);
+    SDL_PushGPUComputeUniformData(cmd, 0, params, sizeof(params));
+    SDL_DispatchGPUCompute(pass, 16, 16, groups);
+    SDL_EndGPUComputePass(pass);
+    out.buffer = shadow_soft;
+    pass = SDL_BeginGPUComputePass(cmd, NULL, 0, &out, 1);
+    SDL_BindGPUComputePipeline(pass, shadow_blur);
+    SDL_BindGPUComputeStorageBuffers(pass, 0, &shadow_raw, 1);
+    SDL_PushGPUComputeUniformData(cmd, 0, params, sizeof(params));
+    SDL_DispatchGPUCompute(pass, 16, 16, groups);
+    SDL_EndGPUComputePass(pass);
+    return 1;
+}
+
 static uint32_t io32(const uint8_t *io3d, unsigned offset)
 {
     return (uint32_t)io3d[offset] | (uint32_t)io3d[offset + 1] << 8 | (uint32_t)io3d[offset + 2] << 16 |
@@ -642,8 +789,8 @@ static int place_all(const KhdaysG3dList *list, int origin_x)
         for (int i = 0; i < list->npolys; ++i) {
             KhdaysG3dPolygon *p = &placed_polys[i];
             float x0 = 1e9f, x1 = -1e9f, mx, my;
-            if (p->count <= 0 || p->first < 0 || p->first + p->count > list->nverts ||
-                (h->world && (p->flags & KHDAYS_G3D_HUD))) {
+            if ((p->flags & KHDAYS_G3D_SHADOW_SOURCE) || p->count <= 0 || p->first < 0 ||
+                p->first + p->count > list->nverts || (h->world && (p->flags & KHDAYS_G3D_HUD))) {
                 continue;
             }
             for (int k = 0; k < p->count; ++k) {
@@ -929,10 +1076,14 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         at += (uint32_t)nchanged * KHDAYS_FRAME_VRAM_PAGE;
         SDL_EndGPUCopyPass(copy);
     }
+    if (!draw_shadows(cmd, list)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        return 0;
+    }
     {
         RasterParams rp;
         SDL_GPUStorageTextureReadWriteBinding out[2];
-        SDL_GPUBuffer *in[6] = {polys, verts, tiles, vram, khdays_gpu_hd_buffer(), sequences};
+        SDL_GPUBuffer *in[7] = {polys, verts, tiles, vram, khdays_gpu_hd_buffer(), sequences, shadow_soft};
         SDL_GPUComputePass *pass;
         SDL_zero(rp);
         rp.scale = (uint32_t)scale;
@@ -973,7 +1124,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         out[1].cycle = true;
         pass = SDL_BeginGPUComputePass(cmd, out, 2, NULL, 0);
         SDL_BindGPUComputePipeline(pass, raster);
-        SDL_BindGPUComputeStorageBuffers(pass, 0, in, 6);
+        SDL_BindGPUComputeStorageBuffers(pass, 0, in, 7);
         SDL_PushGPUComputeUniformData(cmd, 0, &rp, sizeof(rp));
         SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);

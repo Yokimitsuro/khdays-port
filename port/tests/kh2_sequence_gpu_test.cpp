@@ -9,6 +9,7 @@ extern "C" {
 #include "../host/render/gpu_hd.h"
 #include "../host/render/gpu_raster3d.h"
 #include "../runtime/display/frame_package.h"
+#include "../gfx/character_shadow.h"
 #include "../runtime/mods/textures.h"
 #include "../gpu/gpu3d.h"
 #include "../ui/composition.h"
@@ -237,6 +238,137 @@ void compare_scene(const std::vector<seq::SequenceQuad> &quads, const khdays::as
                                          std::to_string(i / std::size_t(side)) + " got " +
                                          std::to_string(got[i] & 0xffffffu) + " expected " +
                                          std::to_string(expected[i] & 0xffffffu));
+}
+
+void character_shadows()
+{
+    auto p = std::make_unique<KhdaysFramePackage>();
+    const unsigned clear = 31u << 16, far_depth = 32767;
+    std::memcpy(p->io3d + 0x50, &clear, 4);
+    std::memcpy(p->io3d + 0x54, &far_depth, 4);
+    p->disp3dcnt = 9;
+    KhdaysG3dPolygon polygons[4]{};
+    KhdaysG3dVertex vertices[16]{};
+    for (int i = 0; i < 4; ++i) {
+        auto &poly = polygons[i];
+        poly.first = i * 4;
+        poly.count = 4;
+        poly.ymin = 24;
+        poly.ymax = 88;
+        poly.attr = 0xc0u | (31u << 16) | (2u << 24);
+        poly.replacement = -1;
+        for (int k = 0; k < 4; ++k) {
+            const int corners[]{0, 1, 3, 2};
+            const int c = corners[k];
+            auto &v = vertices[i * 4 + k];
+            v.x = (c & 1) ? 80.0f : 16.0f;
+            v.y = (c & 2) ? 88.0f : 24.0f;
+            v.z = 0;
+            v.w = 4096;
+            v.a = 1;
+            v.r = v.g = v.b = 63;
+            v.s = (c & 1) ? 128 * 16.0f : 0;
+            v.t = (c & 2) ? 128 * 16.0f : 0;
+        }
+    }
+    polygons[1].flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_SOURCE;
+    polygons[1].ymin = 16;
+    polygons[1].ymax = 112;
+    for (int k = 0; k < 4; ++k) {
+        auto &v = vertices[4 + k];
+        v.x = (k == 1 || k == 2) ? 112.0f : 16.0f;
+        v.y = k >= 2 ? 112.0f : 16.0f;
+    }
+    polygons[2].flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_RECEIVER;
+    polygons[2].attr = 0xc0u | 0x4000u | (16u << 16) | (63u << 24);
+    polygons[2].pltt = 2;
+    polygons[2].translucent = 1;
+    for (int k = 8; k < 12; ++k)
+        vertices[k].r = vertices[k].g = vertices[k].b = 0;
+    polygons[3] = polygons[2];
+    polygons[3].first = 12;
+    std::memcpy(vertices + 12, vertices + 8, 4 * sizeof(vertices[0]));
+    p->list3d.polys = polygons;
+    p->list3d.npolys = 4;
+    p->list3d.verts = vertices;
+    p->list3d.nverts = 16;
+    p->list3d.widen = 1;
+    require(khdays_raster3d_open(device));
+    khdays_raster3d_set_fine(1);
+    for (int resolution : {1, 4}) {
+        require(khdays_raster3d_rasterize(p.get(), resolution, 0));
+        const auto got = scene_pixels(resolution);
+        const int side = 64 * resolution;
+        const int middle = int(got[std::size_t(side / 2 * side + side / 2)] & 255u);
+        if (middle < 118 || middle > 128)
+            throw std::runtime_error("shadow opacity or duplicate receiver blending");
+        if ((got[0] & 255u) < 250)
+            throw std::runtime_error("silhouette source leaked into scene");
+        for (const auto attr : scene_pixels(resolution, true))
+            if ((attr & 0xffffffu) != 8388096u)
+                throw std::runtime_error("shadow changed receiver depth");
+    }
+    // Both native and replacement alpha cutouts must reach the silhouette in a nonzero atlas slot.
+    polygons[1].flags |= 1 << 24;
+    polygons[2].flags |= 1 << 24;
+    polygons[3].flags |= 1 << 24;
+    polygons[1].tex = 7u << 26;
+    for (int k = 0; k < 4; ++k) {
+        vertices[4 + k].s = (k == 1 || k == 2) ? 128.0f : 0;
+        vertices[4 + k].t = k >= 2 ? 128.0f : 0;
+    }
+    set_image(2, 2, 1, {0, 0xffffffffu});
+    khdays_gpu_hd_close();
+    require(khdays_gpu_hd_open(device));
+    for (int y = 0; y < 8; ++y)
+        for (int x = 4; x < 8; ++x)
+            p->tex[(y * 8 + x) * 2 + 1] = 0x80;
+    ++p->tex_version[0];
+    for (int replacement : {-1, 2}) {
+        polygons[1].replacement = replacement;
+        require(khdays_raster3d_rasterize(p.get(), 1, 0));
+        const auto got = scene_pixels(1);
+        if ((got[32 * 64 + 16] & 255u) < 250 || (got[32 * 64 + 48] & 255u) > 130)
+            throw std::runtime_error("shadow cutout " + std::to_string(replacement) + ": " +
+                                     std::to_string(got[32 * 64 + 16] & 255u) + ", " +
+                                     std::to_string(got[32 * 64 + 48] & 255u));
+    }
+    // Projected sprite shadows keep the native texture's center tint and opacity, including HD replacements.
+    set_image(3, 1, 1, {0x800000ffu});
+    khdays_gpu_hd_close();
+    require(khdays_gpu_hd_open(device));
+    for (int k = 8; k < 16; ++k)
+        vertices[k].r = vertices[k].g = vertices[k].b = 63;
+    for (int k = 2; k < 4; ++k) {
+        polygons[k].flags |= KHDAYS_G3D_SHADOW_SPRITE | (2 << 18);
+        polygons[k].tex = 7u << 26;
+        polygons[k].pltt = 0;
+        polygons[k].attr = (polygons[k].attr & ~(31u << 16)) | (31u << 16);
+    }
+    // The receiver's texture and the silhouette source's texture have independent slots and palettes.
+    polygons[1].replacement = 2;
+    const std::uint16_t red = 31u | 0x8000u;
+    for (int i = 0; i < 64; ++i)
+        std::memcpy(p->tex + 128 + i * 2, &red, sizeof(red));
+    ++p->tex_version[0];
+    for (int replacement : {-1, 3}) {
+        for (int k = 2; k < 4; ++k) {
+            polygons[k].replacement = replacement;
+            polygons[k].tex = replacement < 0 ? (7u << 26) | 16u : 7u << 26;
+        }
+        require(khdays_raster3d_rasterize(p.get(), 1, 0));
+        const auto got = scene_pixels(1);
+        const auto pixel = got[32 * 64 + 48];
+        const unsigned green = (pixel >> 8) & 255u;
+        if ((pixel & 255u) < 250u || (replacement < 0 ? green > 2u : green < 122u || green > 125u))
+            throw std::runtime_error("sprite shadow tint/opacity mismatch: " + std::to_string(pixel & 0xffffffu));
+    }
+    // Foreground geometry and mismatched receiver IDs must keep the shadow behind them.
+    polygons[0].attr = (polygons[0].attr & ~(63u << 24)) | (3u << 24);
+    require(khdays_raster3d_rasterize(p.get(), 1, 0));
+    for (const auto pixel : scene_pixels(1))
+        require((pixel & 255u) > 250);
+    khdays_raster3d_close();
 }
 
 void scene_blending()
@@ -1133,6 +1265,7 @@ int main(int argc, char **argv)
         information_text();
         radar_mask();
         scene_blending();
+        character_shadows();
         native_marker_depth();
         if (argc == 5 && std::string(argv[1]) == "--heart-compare")
             compare_heart_layouts(argv[2], argv[3], argv[4]);

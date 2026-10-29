@@ -8,6 +8,7 @@
 
 extern "C" {
 #include "../../gfx/g3d.h"
+#include "../../gfx/character_shadow.h"
 #include "../core/origin.h"
 #include "../core/events.h" // khdays_events_vblank_count
 #include "../core/rom.h"    // khdays_mods_find
@@ -205,6 +206,7 @@ struct Mesh {
     int replacement = -1;
     float tex_w = 1.0F, tex_h = 1.0F;
     bool double_sided = false, translucent = false;
+    bool shadow_sprite = false;
     VertexAlpha vertex_alpha = VertexAlpha::ignored;
     float cutoff = 0.5F;
     // its own moving texture: texels added a game frame; pictures in turn (the textures made for them,
@@ -644,6 +646,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     std::size_t vertices = 0, triangles = 0;
     for (auto &in : mod.model.meshes) {
         Mesh out;
+        out.shadow_sprite = in.material_name == "ef_htd" || in.material_name == "kage00";
         out.indices = std::move(in.indices);
         out.vertices = std::move(in.vertices);
         for (auto &v : out.vertices) {
@@ -1349,6 +1352,8 @@ void draw(Model &m)
     const uint32_t tex = (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16); // 1024x1024, repeated
     const uint32_t game_alpha = (material.attr >> 16) & 31u;
     for (const Mesh &mesh : m.meshes) {
+        if (mesh.shadow_sprite && khdays_shadow_has_sprite())
+            continue;
         // its picture now, and how far its texture has scrolled
         const Mesh::Picture picture = picture_now(mesh, m.frames);
         const float tex_w = picture.w, tex_h = picture.h;
@@ -1610,6 +1615,8 @@ extern "C" int khdays_models_shape(const void *list, unsigned int size)
             0) {
         return 0;
     }
+    if (khdays_shadow_sprite_active())
+        return 0; // retain the original flat shadow until its animated replacement is ready
     // the list's matrix commands run, its drawing left out: packed words of up
     // to four command numbers, each command's parameters after them in order
     const auto *words = static_cast<const uint32_t *>(list);

@@ -390,6 +390,7 @@ int khdays_profile_repair(KhdaysProfile *p)
     }
     changed += clamp(&p->enh.camera_speed, 10, 300);
     changed += clamp(&p->enh.mouse_speed, 10, 300);
+    changed += clamp(&p->enh.character_shadows, 0, 1);
     changed += clamp(&p->enh.run_threshold, 50, 95);
     changed += clamp(&p->enh.walk_speed, 20, 90);
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
@@ -876,6 +877,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"camera_speed", offsetof(KhdaysEnhancements, camera_speed), 10, 300},
         {"camera_invert_x", offsetof(KhdaysEnhancements, camera_invert_x), 0, 0},
         {"camera_invert_y", offsetof(KhdaysEnhancements, camera_invert_y), 0, 0},
+        {"character_shadows", offsetof(KhdaysEnhancements, character_shadows), 0, 0},
         {"mouse_camera", offsetof(KhdaysEnhancements, mouse_camera), 0, 0},
         {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
@@ -1532,6 +1534,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         else
             add(&t, "%s = %d\n", khdays_hud_setting_keys[i], e->hud[i]);
     }
+    add(&t, "character_shadows = %s\n", e->character_shadows ? "on" : "off");
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;

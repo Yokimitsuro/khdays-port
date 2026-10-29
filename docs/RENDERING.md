@@ -186,6 +186,14 @@ a pixel of its own ID. A mask reaching a pixel after any other polygon starts
 from no mark there, so one volume's marks where its shadow did not draw shade
 nothing of the next.
 
+The optional **Enhanced character shadows** setting replaces that footprint on
+the GPU with a softened overhead silhouette of the current model pose. It uses
+the original shadow's color, opacity and receiver height range, including mod
+model geometry and equipped weapons. NPC and enemy flat shadow materials also
+use this path, retaining native visibility, tint and opacity. See
+[CHARACTER_SHADOWS.md](CHARACTER_SHADOWS.md) for the hooks,
+projection and mask passes, fallback behavior, provenance and validation.
+
 ## On the graphics card
 
 The GPU device is made with every shader format the build carries

@@ -7,6 +7,7 @@
 #endif
 
 #include "g3d.h"
+#include "character_shadow.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -290,6 +291,7 @@ static void clear_list(List *l)
 
 void khdays_g3d_reset(void)
 {
+    khdays_shadow_reset();
     uintptr_t *drawn = g.drawn;
     const int32_t drawn_capacity = g.drawn_capacity;
     memset(&g, 0, sizeof(g));
@@ -637,6 +639,7 @@ static const KhdaysG3dPreInfo *record_pre(const void *vertices, int n, const Pol
     info->widen = g.widen;
     memcpy(&building->pre_verts[building->npre_verts], vertices, sizeof(KhdaysG3dPreVertex) * (size_t)n);
     building->npre_verts += n;
+    khdays_shadow_record(building);
     return info;
 }
 
@@ -686,7 +689,7 @@ static void finish_polygon(List *out, int32_t ds[2], const Clip *v, int n, const
         return;
     }
     p = &out->polys[out->npolys++];
-    p->flags = in->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_OVER_2D | KHDAYS_G3D_MARKER);
+    p->flags = in->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_OVER_2D | KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_REPLACED);
     p->replacement = in->replacement;
     /* the DS keeps a polygon while its RAM has room for it, and drops the rest */
     if (ds[0] < KHDAYS_G3D_DS_POLYS && ds[1] + count <= KHDAYS_G3D_DS_VERTS) {
@@ -1034,6 +1037,21 @@ static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, c
     }
 }
 
+int khdays_g3d_shadow_polygon(const KhdaysG3dClipVertex *v, int n, const Polygon *polygon,
+                              const KhdaysG3dPreInfo *identity_)
+{
+    if (!pre_reserve(building, building->npre + 1, building->npre_verts + n))
+        return 0;
+    Polygon *p = &building->pre[building->npre];
+    *p = *polygon;
+    p->first = building->npre_verts;
+    p->count = n;
+    building->pre_info[building->npre++] = *identity_;
+    memcpy(&building->pre_verts[building->npre_verts], v, (size_t)n * sizeof(*v));
+    building->npre_verts += n;
+    return 1;
+}
+
 static void mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, uint32_t pltt,
                         int32_t replacement, int translucent_, int sky, int flags)
 {
@@ -1132,12 +1150,16 @@ static void into_drawing_order_with(List *l, Polygon **order_, int32_t *order_ca
     }
     order = *order_;
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
-        if (!l->polys[i].translucent && !(l->polys[i].flags & KHDAYS_G3D_MARKER))
+        if (!l->polys[i].translucent && !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER)))
+            order[n++] = l->polys[i];
+    }
+    for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
+        if (l->polys[i].flags & KHDAYS_G3D_SHADOW_RECEIVER)
             order[n++] = l->polys[i];
     }
     first_translucent = n;
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
-        if (l->polys[i].translucent && !(l->polys[i].flags & KHDAYS_G3D_MARKER))
+        if (l->polys[i].translucent && !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER)))
             order[n++] = l->polys[i];
     }
     if (!(l->swap_params & 1)) { /* auto-sort by Y */
@@ -1216,6 +1238,7 @@ void khdays_g3d_draw_end(void)
 
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12])
 {
+    khdays_shadow_camera(projection, camera);
     if (building->flushes++ == 0) {
         memcpy(building->camera, camera, sizeof(building->camera));
         memcpy(building->projection, projection, sizeof(building->projection));
@@ -1245,6 +1268,28 @@ static void swap_buffers(uint32_t params)
     ++swaps;
     l->swap_params = g.swap_params;
     l->widen = (float)g.widen / WIDEN_ONE;
+    const int original_pre = l->npre, original_vertices = l->npre_verts;
+    if (khdays_shadow_finish(l)) {
+        List rebuilt = {0};
+        if (l->npre <= INT32_MAX / 10 && khdays_g3d_list_reserve(&rebuilt, l->npre, l->npre * 10)) {
+            khdays_g3d_finish(l, NULL, &rebuilt);
+            free(l->polys);
+            free(l->verts);
+            l->polys = rebuilt.polys;
+            l->verts = rebuilt.verts;
+            l->npolys = rebuilt.npolys;
+            l->nverts = rebuilt.nverts;
+            l->poly_capacity = rebuilt.poly_capacity;
+            l->vert_capacity = rebuilt.vert_capacity;
+            l->beyond_ds = rebuilt.beyond_ds;
+        } else {
+            khdays_g3d_list_free(&rebuilt);
+            l->npre = original_pre;
+            l->npre_verts = original_vertices;
+            for (int i = 0; i < original_pre; ++i)
+                l->pre[i].flags &= ~KHDAYS_G3D_SHADOW_REPLACED;
+        }
+    }
     into_drawing_order(l);
     if (nclosed == 2) {
         missing(MISSING_THIRD_LIST, "a third SwapBuffers before a VBlank showed the first: the oldest is dropped");
