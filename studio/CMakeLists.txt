@@ -93,6 +93,7 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/font.cpp"               # the game's font: which characters it draws
     "${ROOT}/assets/src/graphics2d.cpp"         # 2D: palettes, tile sheets, screens
     "${ROOT}/assets/src/cell.cpp"               # and sprite cells
+    "${ROOT}/assets/src/kh2_bar.cpp"            # KH2's BAR archives, which its maps are read from
     "${ROOT}/assets/src/kh2_map.cpp"            # KH2's maps, from the player's 1.5+2.5 copy
     "${ROOT}/assets/src/kh2_room.cpp"           # made into a scene for glTF
     "${ROOT}/assets/src/dds.cpp"                # and their HD pictures
