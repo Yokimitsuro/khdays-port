@@ -63,7 +63,6 @@ static const int LIST_LINE[4] = {12, 15, 18, 24}; /* Buy's, Sell's, Synthesize's
 #define SETTINGS_GEAR 0.62f /* the settings key (the camp's) */
 #define SETTINGS_KEY 0.6f
 #define FIREFLY_GLOVE 91.0f /* KH2's firefly as large beside the glove as KH2's beside its own */
-#define PIECES_MOST 160
 #define TEXT_MOST 256
 static const Uint8 BLACK[3] = {0, 0, 0};
 static const Uint8 MINUS[3] = {255, 120, 120}, PLUS[3] = {150, 240, 150};
@@ -145,7 +144,22 @@ static struct {
     float source[4], view[4], window[4];
 } plan;
 
-static KhdaysPiece pieces[PIECES_MOST];
+static KhdaysPiece *pieces; /* grown to the most a moment asks (pieces_room) */
+static int pieces_room;
+
+/* Room for `n` pieces in `pieces`; 0 when it could not grow. */
+static int pieces_for(int n)
+{
+    if (n > pieces_room) {
+        KhdaysPiece *more = (KhdaysPiece *)realloc(pieces, (size_t)n * sizeof(*more));
+        if (more == NULL) {
+            return 0;
+        }
+        pieces = more;
+        pieces_room = n;
+    }
+    return 1;
+}
 
 static void plan_line(char *line, const char *folder)
 {
@@ -251,7 +265,12 @@ static int make_pieces(double now, float floor)
     const float ox = (float)fmod(now * plan.speed[0], (double)sx), oy = (float)fmod(now * plan.speed[1], 2.0 * sy);
     float sheet[4];
     const int one = sheet_texels(now, sheet);
+    const int rows = (int)(KHDAYS_LAYOUT_H / sy) + 5, cols = (int)(KHDAYS_LAYOUT_W / sx) + 5;
     int n = 0;
+    /* the stripes, the sheet or a piece a moogle of the grid, the shadow, the block */
+    if (!pieces_for(4 + (one ? 0 : rows * cols))) {
+        return 0;
+    }
     piece_at(&pieces[n++], 0, 0, KHDAYS_LAYOUT_W, KHDAYS_LAYOUT_H, plan.stripes, 1.0f);
     if (one) {
         piece_at(&pieces[n++], 0, 0, KHDAYS_LAYOUT_W, KHDAYS_LAYOUT_H, sheet, plan.icon_alpha);
@@ -259,7 +278,7 @@ static int make_pieces(double now, float floor)
     for (int row = -2; !one && row <= (int)(KHDAYS_LAYOUT_H / sy) + 2; ++row) {
         for (int col = -2; col <= (int)(KHDAYS_LAYOUT_W / sx) + 2; ++col) {
             const float x = (float)col * sx + ox + ((row & 1) ? sx / 2 : 0.0f), y = (float)row * sy + oy;
-            if (x + iw <= 0 || x >= KHDAYS_LAYOUT_W || y + ih <= 0 || y >= KHDAYS_LAYOUT_H || n >= PIECES_MOST - 2) {
+            if (x + iw <= 0 || x >= KHDAYS_LAYOUT_W || y + ih <= 0 || y >= KHDAYS_LAYOUT_H) {
                 continue;
             }
             piece_at(&pieces[n++], x, y, iw, ih, plan.icon, plan.icon_alpha);

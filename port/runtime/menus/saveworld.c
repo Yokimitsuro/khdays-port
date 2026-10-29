@@ -1,5 +1,6 @@
 /* The world of each save (saveworld.h). */
 #include "saveworld.h"
+#include "saveslots.h"
 
 #include "../core/rom.h"
 #include "../core/session_log.h"
@@ -36,11 +37,12 @@ static struct {
  * a mission the world before it is the mission's. */
 static volatile int now = -1, before = -1;
 
-#define KEPT_MOST 1024
+/* the saves' worlds by their counters: the saves the files hold (a counter none holds any more let go when a
+ * save is kept), the lists grown as needed */
 static SRWLOCK lock = SRWLOCK_INIT;
-static u32 kept_counter[KEPT_MOST];
-static unsigned char kept_world[KEPT_MOST];
-static int kept;
+static u32 *kept_counter;
+static unsigned char *kept_world;
+static int kept, kept_room;
 static char path[300];
 static u32 highest_seen; /* the highest save counter seen: a write with no higher one saved nothing new */
 
@@ -104,6 +106,60 @@ int khdays_saveworld_now(void)
     return a >= 0 ? a : b >= 0 ? b : KHDAYS_WORLD_CASTLE;
 }
 
+/* Room for one more kept save; 0 when the lists could not grow. */
+static int kept_more(void)
+{
+    if (kept == kept_room) {
+        const int room = kept_room ? kept_room * 2 : 64;
+        u32 *counters = (u32 *)realloc(kept_counter, (size_t)room * sizeof(*counters));
+        unsigned char *worlds;
+        if (counters == NULL) {
+            return 0;
+        }
+        kept_counter = counters;
+        if ((worlds = (unsigned char *)realloc(kept_world, (size_t)room)) == NULL) {
+            return 0;
+        }
+        kept_world = worlds;
+        kept_room = room;
+    }
+    return 1;
+}
+
+/* Whether one of the files holds the save counted `counter` (fields 0xc77 and 0xc87, as saveslots.h reads them). */
+static int counter_saved(u32 counter)
+{
+    for (int f = 0; f < KHDAYS_SLOT_COUNT; ++f) {
+        const u8 *state;
+        if (khdays_slots_state(f, &state) == KHDAYS_SLOT_SAVED &&
+            (khdays_slots_field(state, 0xc77, 16) << 16 | khdays_slots_field(state, 0xc87, 16)) == counter) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The whole file at `file`, NUL-ended; NULL when it is missing or cannot be read. */
+static char *read_whole(const char *file, long *size)
+{
+    for (size_t room = 4096;; room *= 2) {
+        char *text = (char *)malloc(room + 1);
+        if (text == NULL) {
+            return NULL;
+        }
+        *size = khdays_host_read_file(file, text, room);
+        if (*size < 0) {
+            free(text);
+            return NULL;
+        }
+        if ((size_t)*size < room) {
+            text[*size] = 0;
+            return text;
+        }
+        free(text);
+    }
+}
+
 static void write_kept(void)
 {
     char *text;
@@ -132,26 +188,22 @@ void khdays_saveworld_attach(const char *folder, u32 highest)
     snprintf(path, sizeof(path), "%s/save_worlds.txt", folder);
     AcquireSRWLockExclusive(&lock);
     kept = 0;
-    text = (char *)malloc(KEPT_MOST * 24 + 64);
+    text = read_whole(path, &size);
     if (text != NULL) {
-        size = khdays_host_read_file(path, text, KEPT_MOST * 24 + 63);
-        if (size > 0) {
-            text[size] = 0;
-            for (char *line = text; line != NULL && *line != 0 && kept < KEPT_MOST;) {
-                unsigned counter;
-                int world;
-                char *next = strchr(line, '\n');
-                if (next != NULL) {
-                    *next++ = 0;
-                }
-                if (line[0] != '#' && sscanf(line, "%u %d", &counter, &world) == 2 && world >= 0 &&
-                    world < KHDAYS_WORLDS) {
-                    kept_counter[kept] = counter;
-                    kept_world[kept] = (unsigned char)world;
-                    ++kept;
-                }
-                line = next;
+        for (char *line = text; line != NULL && *line != 0;) {
+            unsigned counter;
+            int world;
+            char *next = strchr(line, '\n');
+            if (next != NULL) {
+                *next++ = 0;
             }
+            if (line[0] != '#' && sscanf(line, "%u %d", &counter, &world) == 2 && world >= 0 && world < KHDAYS_WORLDS &&
+                kept_more()) {
+                kept_counter[kept] = counter;
+                kept_world[kept] = (unsigned char)world;
+                ++kept;
+            }
+            line = next;
         }
         free(text);
     }
@@ -167,22 +219,23 @@ void khdays_saveworld_saved(u32 counter)
     }
     highest_seen = counter;
     AcquireSRWLockExclusive(&lock);
-    for (i = 0; i < kept && kept_counter[i] != counter; ++i) {
-    }
-    if (i == kept) {
-        if (kept == KEPT_MOST) {
-            /* the oldest let go (the lowest counter) */
-            int low = 0;
-            for (int k = 1; k < kept; ++k) {
-                low = kept_counter[k] < kept_counter[low] ? k : low;
-            }
-            i = low;
+    /* the saves overwritten or deleted since let go */
+    for (i = 0; i < kept;) {
+        if (kept_counter[i] != counter && !counter_saved(kept_counter[i])) {
+            kept_counter[i] = kept_counter[kept - 1];
+            kept_world[i] = kept_world[kept - 1];
+            --kept;
         } else {
-            ++kept;
+            ++i;
         }
     }
-    kept_counter[i] = counter;
-    kept_world[i] = (unsigned char)world;
+    for (i = 0; i < kept && kept_counter[i] != counter; ++i) {
+    }
+    if (i < kept || kept_more()) {
+        kept += i == kept;
+        kept_counter[i] = counter;
+        kept_world[i] = (unsigned char)world;
+    }
     write_kept();
     ReleaseSRWLockExclusive(&lock);
     khdays_log("save world: save %u kept with world %d", counter, world);

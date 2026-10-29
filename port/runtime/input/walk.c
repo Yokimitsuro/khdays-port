@@ -29,7 +29,7 @@ typedef struct Clip {
     float fps;
     float *data;
     /* the frames a foot is planted (the clip's STEP trailer), where the footstep is played */
-    unsigned steps[8], step_count;
+    unsigned *steps, step_count;
     /* an optional clip for the weapon's own model (<code>_w.khw, two joints: the holding hand in the player
      * model's space frame by frame, and that hand as the idle holds it) -- for the weapons the game places
      * itself as a scene object of their own rather than hangs on a joint of the player's skeleton (Zexion's
@@ -43,7 +43,7 @@ typedef struct Clip {
      * forward, the plain walk being his unarmed one): its joints that differ from the walk's, and the one that
      * tells the two apart most */
     float *held;
-    unsigned char held_joint[128];
+    unsigned char *held_joint; /* a flag a joint */
     int decider;
     int applied;
     /* a Keyblade's keychain (the HANG trailer, of the armed clip when there are two): node `hang_node` of the
@@ -53,8 +53,8 @@ typedef struct Clip {
     float *hang;
     int hang_applied;
 } Clip;
-static Clip clips[32];
-static unsigned clip_count;
+static Clip **clips; /* each character's clip as first asked for (none read is kept too), the list grown */
+static unsigned clip_count, clip_room;
 static Clip *drawing, *drawn_clip; /* the clip being applied; the local player's, kept for its weapon's draw */
 static unsigned seen_frame;
 static int local_actor, local_node, target_walk;
@@ -71,11 +71,19 @@ static u64 drawn_at;
  * "HANG", a weapon file's folder (4 bytes: ba/ch/<folder>/w_.p2), a node of its models, the frame count and the
  * node's rotation on every frame (4 f32), a Keyblade's keychain hanging from the pommel. */
 typedef struct Trailers {
-    unsigned steps[8], step_count;
+    unsigned *steps, step_count; /* NULL without them */
     char hang_folder[4];
     unsigned hang_node;
     float *hang; /* NULL without one */
 } Trailers;
+
+static void trailers_free(Trailers *t)
+{
+    free(t->steps);
+    free(t->hang);
+    t->steps = NULL;
+    t->hang = NULL;
+}
 
 static int read_trailers(FILE *f, unsigned frames, Trailers *t)
 {
@@ -83,15 +91,20 @@ static int read_trailers(FILE *f, unsigned frames, Trailers *t)
     memset(t, 0, sizeof(*t));
     while (fread(magic, 1, 4, f) == 4) {
         if (!memcmp(magic, "STEP", 4)) {
-            if (fread(&t->step_count, 4, 1, f) != 1 || t->step_count > 8)
+            /* any number of them, each a frame of the clip */
+            if (t->steps || fread(&t->step_count, 4, 1, f) != 1 || t->step_count > frames)
+                return 0;
+            t->steps = malloc((t->step_count ? t->step_count : 1) * sizeof(unsigned));
+            if (!t->steps)
                 return 0;
             for (unsigned i = 0; i < t->step_count; ++i)
                 if (fread(&t->steps[i], 4, 1, f) != 1 || t->steps[i] >= frames)
                     return 0;
         } else if (!memcmp(magic, "HANG", 4)) {
             unsigned count;
+            /* the node is told by the model's count of them, a byte (keychain_joint) */
             if (t->hang || fread(t->hang_folder, 1, 4, f) != 4 || fread(&t->hang_node, 4, 1, f) != 1 ||
-                t->hang_node > 63 || fread(&count, 4, 1, f) != 1 || count != frames)
+                t->hang_node > 254 || fread(&count, 4, 1, f) != 1 || count != frames)
                 return 0;
             t->hang = malloc((size_t)frames * 4 * sizeof(float));
             if (!t->hang || fread(t->hang, sizeof(float), (size_t)frames * 4, f) != (size_t)frames * 4)
@@ -121,9 +134,14 @@ static float *read_khw(const char *name, unsigned *frames, unsigned *joints, flo
     FILE *f = fopen(path, "rb");
     if (!f)
         return NULL;
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "KHW1", 4) || fread(frames, 4, 1, f) != 1 ||
-        fread(joints, 4, 1, f) != 1 || fread(fps, 4, 1, f) != 1 || *frames < 2 || *frames > 240 || *joints < 1 ||
-        *joints > 128 || !isfinite(*fps) || *fps < 1 || *fps > 120) {
+    /* any length and skeleton the file holds: its frames checked against its size */
+    long size = -1;
+    if (!fseek(f, 0, SEEK_END))
+        size = ftell(f);
+    if (size < 16 || fseek(f, 0, SEEK_SET) || fread(magic, 1, 4, f) != 4 || memcmp(magic, "KHW1", 4) ||
+        fread(frames, 4, 1, f) != 1 || fread(joints, 4, 1, f) != 1 || fread(fps, 4, 1, f) != 1 || *frames < 2 ||
+        *joints < 1 || (unsigned long long)*frames * *joints * 7 * sizeof(float) > (unsigned long long)size - 16 ||
+        !isfinite(*fps) || *fps < 1 || *fps > 120) {
         fclose(f);
         return NULL;
     }
@@ -138,38 +156,48 @@ static float *read_khw(const char *name, unsigned *frames, unsigned *joints, flo
     fclose(f);
     for (size_t i = 0; read && i < count; ++i)
         if (!isfinite(data[i])) {
-            free(t.hang);
+            trailers_free(&t);
             free(data);
             return NULL;
         }
     if (!read) {
-        free(t.hang);
+        trailers_free(&t);
         free(data);
         return NULL;
     }
     if (trailers)
         *trailers = t;
     else
-        free(t.hang);
+        trailers_free(&t);
     return data;
 }
 
 static Clip *clip_of(const char *code)
 {
     for (unsigned i = 0; i < clip_count; ++i)
-        if (!strcmp(clips[i].code, code))
-            return &clips[i];
-    if (clip_count == 32)
+        if (!strcmp(clips[i]->code, code))
+            return clips[i];
+    if (clip_count == clip_room) {
+        const unsigned room = clip_room ? clip_room * 2 : 32;
+        Clip **more = realloc(clips, room * sizeof(*more));
+        if (!more)
+            return NULL;
+        clips = more;
+        clip_room = room;
+    }
+    Clip *clip = calloc(1, sizeof(*clip)); /* each apart: the frame keeps pointers to it */
+    if (!clip)
         return NULL;
-    Clip *clip = &clips[clip_count++];
+    clips[clip_count++] = clip;
     Trailers t;
     memcpy(clip->code, code, 3);
     clip->decider = -1;
     clip->data = read_khw(code, &clip->frames, &clip->joints, &clip->fps, &t);
     if (!clip->data)
         return clip;
-    memcpy(clip->steps, t.steps, sizeof(clip->steps));
+    clip->steps = t.steps;
     clip->step_count = t.step_count;
+    t.steps = NULL;
     if (t.hang) {
         memcpy(clip->hang_folder, t.hang_folder, 4);
         clip->hang_node = t.hang_node;
@@ -183,7 +211,9 @@ static Clip *clip_of(const char *code)
         float fps = 0;
         snprintf(name, sizeof(name), "%s_k", code);
         float *with = read_khw(name, &frames, &joints, &fps, &t);
-        if (with && frames == clip->frames && joints == clip->joints) {
+        unsigned char *held_joint = with ? calloc(joints, 1) : NULL;
+        if (with && held_joint && frames == clip->frames && joints == clip->joints) {
+            clip->held_joint = held_joint;
             if (t.hang) { /* the keychain as the armed walk holds the Keyblade (the unarmed one has none) */
                 free(clip->hang);
                 memcpy(clip->hang_folder, t.hang_folder, 4);
@@ -209,9 +239,10 @@ static Clip *clip_of(const char *code)
             clip->held = with;
             khdays_log("walk: %s's Keyblade walk read (the arm told by joint %d)", code, clip->decider);
         } else {
-            free(t.hang);
+            free(held_joint);
             free(with);
         }
+        trailers_free(&t); /* the armed clip's footsteps are the walk's */
         if (clip->hang)
             khdays_log("walk: %s's keychain hangs (node %u of ba/ch/%.2s/w_.p2's models)", code, clip->hang_node,
                        clip->hang_folder);
