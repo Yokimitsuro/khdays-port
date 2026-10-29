@@ -1229,11 +1229,14 @@ HOOKS = {
             "    { extern void khdays_trace_camera_request(int found, int x, int y, int kind, int state);\n"
             "      khdays_trace_camera_request(puVar13 != 0, request.x, request.y, request.kind, request.state); }\n",
         ),
-        # Chase Camera set to Manual (Config): walking no longer pulls the camera's tilt back to the
-        # preset's (its distance still is), and the events' cameras and the lock-on keep the game's own.
+        # Chase Camera set to Manual (Config), with the enhancement on ([enhancements] manual_camera_tilt,
+        # runtime/input/controls_hooks.c): walking no longer pulls the camera's tilt back to the preset's (its
+        # distance still is), and the events' cameras and the lock-on keep the game's own. Off, the game's.
         (
             "        piVar7[0x21] = iVar11;\n        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
-            "        if (GameState_GetField(CONFIG_CHASE_CAM, 1) == 0) piVar7[0x21] = iVar11;\n"
+            "        { extern int khdays_controls_manual_tilt_kept(void);\n"
+            "          if (GameState_GetField(CONFIG_CHASE_CAM, 1) == 0 || !khdays_controls_manual_tilt_kept())\n"
+            "              piVar7[0x21] = iVar11; }\n"
             "        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
         ),
     ],

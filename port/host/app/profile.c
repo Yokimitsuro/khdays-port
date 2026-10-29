@@ -881,6 +881,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
         {"run_threshold", offsetof(KhdaysEnhancements, run_threshold), 50, 95},
         {"walk_speed", offsetof(KhdaysEnhancements, walk_speed), 20, 90},
+        {"manual_camera_tilt", offsetof(KhdaysEnhancements, manual_camera_tilt), 0, 0},
     };
     for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i) {
         if (SDL_strcasecmp(key, settings[i].name) == 0) {
@@ -1513,6 +1514,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
+    add(&t, "# manual_camera_tilt: on, Chase Camera on Manual keeps the camera's tilt while walking\n");
+    add(&t, "manual_camera_tilt = %s\n", e->manual_camera_tilt ? "on" : "off");
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i) {
         if (i < KHDAYS_OPT_MISSION_VISIBILITY)
             add(&t, "%s = %s\n", khdays_hud_setting_keys[i], e->hud[i] ? "on" : "off");

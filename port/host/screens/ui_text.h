@@ -342,6 +342,9 @@ enum {
     /* The mouse camera (the controls' enhancements) */
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
+    /* Chase Camera on Manual keeping its tilt (the controls' enhancements) */
+    TXT_ENH_MANUAL_TILT,
+    TXT_ENH_MANUAL_TILT_NOTE,
     TXT_MOUSE_SPEED,
     TXT_MOD_CHOOSE,   /* a mod's screens: its list's A */
     TXT_SHOP_WELCOME, /* the Moogle Shop's menu: its word in the right pill (shop_screen.c) */

@@ -242,6 +242,10 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Manual camera keeps its tilt:** with Chase Camera set to Manual in the
+  game's Config, walking no longer tilts the camera back to its default angle
+  (its distance still comes back); the events' cameras and the lock-on keep
+  the game's own.
 
 The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
 sequences, the pause-menu target, and HUD/control during INFORMATION messages.

@@ -129,8 +129,9 @@ typedef struct KhdaysEnhancements {
     int separate_lock_on;
     int dpad_command_menu;
     int analog_movement;
-    int run_threshold; /* percent of stick travel, 50..95 */
-    int walk_speed;    /* percent of the game's own speed, 20..90 */
+    int run_threshold;      /* percent of stick travel, 50..95 */
+    int walk_speed;         /* percent of the game's own speed, 20..90 */
+    int manual_camera_tilt; /* Chase Camera on Manual (the game's Config) keeps its tilt while walking; off: the game's */
     int hud[KHDAYS_OPT_COUNT];
 } KhdaysEnhancements;
 

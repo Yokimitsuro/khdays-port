@@ -256,7 +256,8 @@ void khdays_bindings_resolve(const KhdaysProfile *p, KhdaysDeviceState *s, Khday
                                    (p->enh.mouse_camera ? KHDAYS_ENH_MOUSE_CAMERA : 0) |
                                    (p->enh.separate_lock_on ? KHDAYS_ENH_SEPARATE_LOCK_ON : 0) |
                                    (p->enh.dpad_command_menu ? KHDAYS_ENH_DPAD_COMMAND_MENU : 0) |
-                                   (p->enh.analog_movement ? KHDAYS_ENH_ANALOG_MOVEMENT : 0));
+                                   (p->enh.analog_movement ? KHDAYS_ENH_ANALOG_MOVEMENT : 0) |
+                                   (p->enh.manual_camera_tilt ? KHDAYS_ENH_MANUAL_CAMERA_TILT : 0));
     out->camera_speed = (uint16_t)p->enh.camera_speed;
     out->run_threshold = (uint8_t)p->enh.run_threshold;
     out->walk_speed = (uint8_t)p->enh.walk_speed;

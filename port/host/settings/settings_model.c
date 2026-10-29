@@ -304,6 +304,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     /* the mouse turns the camera where the analog camera does (runtime/input/controls_hooks.c) */
     add_switch(b, KHDAYS_SET_ENH_MOUSE, TXT_ENH_MOUSE, &e->mouse_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
                khdays_text(TXT_ENH_MOUSE_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_MANUAL_TILT, TXT_ENH_MANUAL_TILT, &e->manual_camera_tilt, 1,
+               khdays_text(TXT_ENH_MANUAL_TILT_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
     add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
