@@ -107,6 +107,12 @@ int PlaySound(int a, int b)
     return 1;
 }
 int khdays_camp_navigation_sound(int kind, int sound);
+/* no mods' characters (runtime/characters/characters.h): the members are the game's */
+int khdays_characters_known(int number)
+{
+    (void)number;
+    return 0;
+}
 /* the Menu Overhaul installed (runtime/mods/installed.h): its camp's memory and sounds tested */
 int khdays_mod_installed(int mod)
 {
