@@ -9,6 +9,10 @@
 extern "C" {
 #endif
 
+/* NNSi_G3dDrawInternal's start: the render object's joint animation (its NNSG3dAnmObj's reference, 0 none),
+ * for the draw that follows (a mod's character's own skeleton plays its clip for it). */
+void khdays_models_draw_animation(unsigned animation);
+
 /* NNSi_G3dDrawInternal's start, for `model` (its NNSG3dResMdl), and its end. */
 void khdays_models_draw_begin(const void *model);
 void khdays_models_draw_end(void);
@@ -16,6 +20,10 @@ void khdays_models_draw_end(void);
 /* NNSi_G3dFuncSbc_NODEDESC: node `node`'s matrix is the current one (`sent`:
  * it was sent, not only computed). */
 void khdays_models_node(unsigned node, int sent);
+
+/* NNSi_G3dFuncSbc_NODEDESC, node `node`'s matrix made, before its callback reads it: a mod's character's
+ * weapon node is put on its own skeleton's weapon bone. */
+void khdays_models_node_placed(unsigned node, int sent);
 
 /* NNSi_G3dFuncSbcSHP, the shape's display list `list` (`size` bytes): whether
  * it is left unsent (the draw's model is replaced). One left unsent still has

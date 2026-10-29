@@ -1,0 +1,1 @@
+kh_add_plugin(custom_character custom_character.cpp)

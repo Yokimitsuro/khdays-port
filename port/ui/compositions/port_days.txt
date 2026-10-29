@@ -39,17 +39,17 @@ hide3d hud
 # where it is cut it fades out. With the Menu Overhaul (docs/MENU_OVERHAUL.md)
 # at 0.75, the mission's panel and what is under it moving down 20 to make room
 # for it while it shows (`push`, below), easing there and back.
-[field if hud info-new !mod-menu-overhaul]
+[field if hud info-new !mod-menu-overhaul !information-mod]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
-[field if hud info-new mod-menu-overhaul]
+[field if hud info-new mod-menu-overhaul !information-mod]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
 
 # The mission's information the upper screen shows at its start (the same
 # banner, the upper screen's 0,0-256,24, fading out at the DS's edge), in the
 # same place: the game takes it away after about five seconds.
-[field if info-upper mission-panel !mod-menu-overhaul]
+[field if info-upper mission-panel !mod-menu-overhaul !information-mod]
 shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
-[field if info-upper mission-panel mod-menu-overhaul]
+[field if info-upper mission-panel mod-menu-overhaul !information-mod]
 shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
 
 # The mission's panel (the lower screen's 4,152-252,192) at the top left,
@@ -61,10 +61,10 @@ shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
 # whenever the lower screen has it (mission-panel), with the HUD and at a
 # mission's start, before the game draws the rest of its HUD; in a story's
 # challenge too, whose lower screen is a mission's.
-[field if mission-panel !dialog !mod-menu-overhaul]
+[field if mission-panel !dialog !mod-menu-overhaul !mission-panel-mod]
 shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
 shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
-[field if mission-panel !dialog mod-menu-overhaul]
+[field if mission-panel !dialog mod-menu-overhaul !mission-panel-mod]
 shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
 shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
 
@@ -146,9 +146,9 @@ screens upper
 brightness upper
 [field-3d-both if !hud]
 hide3d hud
-[field-3d-both if hud info-new !mod-menu-overhaul]
+[field-3d-both if hud info-new !mod-menu-overhaul !information-mod]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
-[field-3d-both if hud info-new mod-menu-overhaul]
+[field-3d-both if hud info-new mod-menu-overhaul !information-mod]
 shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 fade 0 0 16 0
 [field-3d-both if hud]
 shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
@@ -212,12 +212,13 @@ screens upper
 brightness upper
 hide3d hud
 shape upper 72 64 112 76 at centre scale 1
-[pause if !event !mod-menu-overhaul]
+[pause if !event !mod-menu-overhaul !information-mod]
 shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16
-[pause if !event mod-menu-overhaul]
+[pause if !event mod-menu-overhaul !information-mod]
 shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 key 16 16 16
 [pause if !event]
 shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4
+[pause if !event !mission-panel-mod]
 shape lower 4 152 248 40 at bottom-left margin 5 0 0 5 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
 [pause]
 stop

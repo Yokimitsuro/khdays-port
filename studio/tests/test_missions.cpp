@@ -6,9 +6,13 @@
 #include "core/missions/command_names.h"
 #include "core/files/containers.h"
 #include "core/missions/mission_db.h"
+#include "core/missions/mission_build.h"
 #include "core/missions/mission_edit.h"
 #include "core/missions/missions.h"
+#include "core/missions/mission_names.h"
+#include "core/missions/mod_missions.h"
 
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -611,4 +615,265 @@ TEST(a_mission_made_from_another_in_its_slot) {
     CHECK(c106 != nullptr && c106->rows[0].h2 == 251 && c105 != nullptr &&
           c105->rows[0].h2 == 251);                             // 105's chest in 106's slot, 105 untouched
     CHECK(!std::filesystem::exists(mod / "files/mi/mi/0105"));  // the source stays the game's
+}
+
+namespace {
+
+// A mission file with named entries (8 bytes each after the descriptors).
+Bytes named_p2(const std::vector<Bytes>& entries, const std::vector<std::string>& names) {
+    Bytes file = p2(entries);
+    const std::size_t n = entries.size(), names_at = 0x10 + ((n + 1) / 2) * 4 + 4 * n;
+    for (std::size_t e = 0; e < n; ++e)
+        std::memcpy(file.data() + names_at + 8 * e, names[e].data(), names[e].size());
+    return file;
+}
+
+constexpr std::uint32_t kInt = 1, kFixed = 0x10, kField = 4;
+
+std::uint32_t field(int f, int bits) {
+    return static_cast<std::uint32_t>(f | bits << 16);
+}
+
+// The pieces the mission builder takes from the game: 1354's area 11 (its steps, c0, c1), its start, its
+// enemy table (classes 0-4); 0004's "all defeated" check (2.7).
+studio::GameFiles builder_game() {
+    Bytes i;
+    step(i, 2, 0, {kInt, 1});
+    step(i, 2, 25, {kInt, 4, kInt, 1});
+    step(i, 2, 26, {kInt, 0, kInt, 2});
+    step(i, 2, 13, {kInt, 0xffffffffu});
+    step(i, 2, 36, {kInt, 4, kInt, 1});
+    step(i, 2, 48, {kInt, 0});
+    step(i, 2, 14, {kInt, 0});
+    step(i, 2, 49, {kInt, 0, kInt, 0});
+    std::vector<std::uint32_t> spawner;
+    for (int s = 0; s < 16; ++s)
+        spawner.insert(spawner.end(), {s >= 5 ? kFixed : kInt, 0});
+    step(i, 2, 32, spawner);
+    step(i, 2, 50, {});
+    step(i, 2, 10, {kInt, 0});
+    for (std::uint32_t p = 0; p < 4; ++p)
+        step(i, 2, 12, {kInt, p, kInt, 2, 0, 2, kFixed, 0, kFixed, 0, kFixed, 0, kInt, 0});
+    for (std::uint32_t k = 0; k < 5; ++k)
+        step(i, 2, 39, {kInt, 0, kInt, k, kInt, 0, kInt, 0xffffffffu});
+    step(i, 2, 16, {kInt, 0, kInt, 0, kInt, 0});
+    step(i, 2, 16, {kInt, 7, kInt, 0, kInt, 60000});
+    step(i, 2, 20, {kInt, 0});
+    step(i, 2, 53, {kInt, 0, kInt, 0, kInt, 2000});
+    step(i, 2, 6, {kInt, 0, kInt, 3, kInt, 4, kInt, 0});  // the clock's watch (kind 4)
+    step(i, 2, 5, {kInt, 0, kInt, 3, kInt, 2, 0, 2, kInt, 0, 0, 0, kInt, 0, kInt, 0});
+    step(i, 2, 9,
+         {kInt, 0, kInt, 1, kInt, 0xffffffffu, kInt, 1, kInt, 0, kField, field(8844, 1), kInt, 7, kInt, 1, kInt, 4000});
+    step(i, 0, 16, {kInt, 21, kInt, 15});
+    step(i, 2, 1, {kInt, 4});
+    step(i, 0, 3, {});
+    Bytes end;
+    step(end, 0, 3, {});
+    const Bytes area = cakp({"c0", "c1", "_i"}, {script({end}), script({end}), script({i})});
+
+    Bytes s;
+    step(s, 2, 0, {kInt, 1});
+    for (const int c : {78, 76, 83, 31, 46})
+        step(s, 2, static_cast<std::uint8_t>(c), {kInt, 0, kInt, 0, kInt, 0});
+    step(s, 0, 0, {kField, field(8846, 1), kInt, 1});
+    step(s, 4, 16, {kInt, 0});
+    step(s, 2, 34, {kInt, 0});
+    step(s, 2, 52, {kInt, 0, kInt, 0});
+    for (const auto& [f, bits] :
+         std::vector<std::pair<int, int>>{{8840, 4}, {8833, 4}, {8844, 1}, {8837, 1}, {8838, 1}, {8839, 1}, {6318, 1}})
+        step(s, 0, 0, {kField, field(f, bits), kInt, 0});
+    step(s, 2, 3, {0, 0xffffffffu, kInt, 11, kInt, 0});
+    step(s, 0, 3, {});
+    const Bytes start = cakp({"dg", "_i"}, {script({end}), script({s})});
+
+    Bytes em;
+    em.push_back(5);
+    em.push_back(1);
+    add16(em, 0);
+    add32(em, 12);
+    add32(em, 12 + 5 * 16);
+    for (std::uint8_t c = 0; c < 5; ++c) {
+        Bytes row(16, 0);
+        row[0] = c;
+        row[4] = 0xfb;  // the row's own level adjustment: the built one's is 0
+        em.insert(em.end(), row.begin(), row.end());
+    }
+    em.insert(em.end(), {1, 0, 1, 0, 0, 1, 1, 0});
+    const Bytes base = named_p2({area, start, em, em}, {"11.Z", "_s.Z", "em0", "em0m"});
+
+    Bytes c;
+    step(c, 2, 7, {kInt, 0, kInt, 3, kInt, 1, kInt, 0xffffffffu, kInt, 5, kInt, 9});
+    const Bytes check = named_p2({cakp({"_i"}, {script({c})})}, {"11.Z"});
+
+    studio::GameFiles g;
+    g.read = [base, check](const std::string& path) {
+        return path == "mi/mi/1354" ? base : path == "mi/mi/0004" ? check : Bytes();
+    };
+    g.missions = {4, 1354};
+    return g;
+}
+
+studio::WaveSpawner spawner_of(std::vector<std::pair<int, int>> enemies, double z) {
+    studio::WaveSpawner w;
+    for (const auto& [c, n] : enemies)
+        w.enemies.push_back({c, n});
+    w.at = {0.0, 0.049, z};
+    return w;
+}
+
+int count_steps(const Script& s, int group, int command) {
+    int n = 0;
+    for (const ScriptStep& st : s.steps)
+        n += st.group == group && st.command == command;
+    return n;
+}
+
+}  // namespace
+
+TEST(a_mission_with_waves_built_of_the_games_own_steps) {
+    const studio::GameFiles game = builder_game();
+    studio::MissionPlan plan;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.facing = -90;
+    plan.time_ms = 120000;
+    plan.notice = {"Two Waves", "", "", "", "Dos oleadas"};
+    plan.objective = {"Defeat them all.", "", "", "", ""};
+    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5), spawner_of({{3, 1}}, 3.0)}};
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const int area = m.entry("11"), table = m.entry("em0");
+    CHECK(area >= 0 && table >= 0);
+    const ScriptArchive& a = m.entries[static_cast<std::size_t>(area)].archive;
+    CHECK(a.names == std::vector<std::string>({"c0", "c1", "w2", "_i"}));
+    const Script& w2 = a.scripts[2];
+    const Script& i = a.scripts[3];
+    CHECK(count_steps(i, 2, 32) == 1 && count_steps(w2, 2, 32) == 2);  // each wave's spawners in its script
+    CHECK(count_steps(i, 2, 49) == 4);                                 // an actor for every enemy of every wave
+    CHECK(count_steps(i, 2, 7) == 1 && count_steps(w2, 2, 7) == 1);    // each wave's "all defeated"
+    CHECK(operand_at(i.steps[1], 0).value == 4 && operand_at(i.steps[2], 2).value == 2);  // world, room
+    EnemyTable t;
+    CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(table)].data, &t, &why));
+    CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 3; three spawners
+    CHECK(t.kinds[0].raw[4] == 0);                       // the level: the mission's own
+
+    // the game's limits, said: an area's four enemy classes; a class no game mission has
+    plan.waves = {{spawner_of({{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}}, 0.0)}};
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("four") != std::string::npos);
+    plan.waves = {{spawner_of({{99, 1}}, 0.0)}};
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("99") != std::string::npos);
+}
+
+TEST(a_new_missions_waves_chests_and_emblems_added_and_taken_away) {
+    const auto mod = studio_test::scratch("mission_lines") / "mods" / "M";
+    const auto txt = mod / "missions" / "missions.txt";
+    studio_test::write(txt, "[mission waves]\nname en = W\nobjective en = O\nworld = eh\nroom = 2\n\n"
+                            "[mission other]\nname en = X\nobjective en = Y\nworld = tt\n");
+    std::string why;
+    CHECK(studio::set_mod_mission(mod, "waves", "start", "", "0 0.049 0 -90", &why));
+    CHECK(studio::add_mod_mission_line(mod, "waves", "wave 1", "0x1 at 0 0.049 -1.5", &why));
+    CHECK(studio::add_mod_mission_line(mod, "waves", "wave 2", "0x2 at 0 0.049 1.5", &why));
+    CHECK(studio::add_mod_mission_line(mod, "waves", "wave 2", "3x1 at 4 0 4", &why));
+    CHECK(studio::add_mod_mission_line(mod, "waves", "chest", "257 at 1 0 -2 180", &why));
+    CHECK(studio::add_mod_mission_line(mod, "waves", "emblem", "2 at -1 0 2", &why));
+    const Bytes before = file_bytes(txt);
+    CHECK(!studio::add_mod_mission_line(mod, "waves", "wave 3", "0x0 at 0 0 0", &why));  // no enemy: refused
+    CHECK(file_bytes(txt) == before);                                                    // the file as it was
+    std::string text(before.begin(), before.end());
+    const auto waves_end = text.find("[mission other]");
+    CHECK(waves_end != std::string::npos && text.find("wave 2 = 3x1 at 4 0 4") < waves_end &&
+          text.find("chest = 257 at 1 0 -2 180") < waves_end && text.find("start = 0 0.049 0 -90") < waves_end);
+    int removed = 0;
+    CHECK(studio::clear_mod_mission_lines(mod, "waves", "wave 2", &removed, &why) && removed == 2);
+    CHECK(studio::clear_mod_mission_lines(mod, "waves", "wave", &removed, &why) && removed == 1);
+    CHECK(studio::clear_mod_mission_lines(mod, "waves", "emblem", &removed, &why) && removed == 1);
+    const Bytes after = file_bytes(txt);
+    text.assign(after.begin(), after.end());
+    CHECK(text.find("wave 1 =") == std::string::npos && text.find("wave 2 =") == std::string::npos &&
+          text.find("emblem") == std::string::npos && text.find("chest = 257") != std::string::npos &&
+          text.find("[mission other]") != std::string::npos);
+}
+
+TEST(a_new_missions_places_read_and_saved_at_once) {
+    const auto root = studio_test::scratch("mission_places");
+    const auto mod = root / "mods" / "M";
+    const auto txt = mod / "missions" / "missions.txt";
+    studio_test::write(txt, "[mission map]\nname en = W\nobjective en = O\nworld = eh\nroom = 2\n"
+                            "start = 1 0.049 -2 90\nwave 1 = 0x2 32x1 at 0 0.049 1.5\nchest = 257 at 1.25 0 -2 180\n"
+                            "emblem = 1 at -1 0 2\nlevel = 5\n\n[mission other]\nname en = X\nobjective en = Y\n"
+                            "world = tt\n");
+    std::string why;
+    using Kind = studio::MissionSpot::Kind;
+    auto spots = studio::mod_mission_spots(mod, "map", &why);
+    CHECK(spots.size() == 4 && spots[0].kind == Kind::start && spots[0].heading == 90);
+    CHECK(spots[1].kind == Kind::spawner && spots[1].wave == 1 && spots[1].enemies.size() == 2 &&
+          spots[1].enemies[1] == std::make_pair(32, 1) && std::fabs(spots[1].at[2] - 1.5) < 1e-9);
+    CHECK(spots[2].kind == Kind::chest && spots[2].contents == 257 && spots[2].heading == 180);
+    CHECK(spots[3].kind == Kind::emblem && spots[3].emblem == 1);
+    CHECK(studio::mission_spot_line(spots[1]) ==
+          std::make_pair(std::string("wave 1"), std::string("0x2 32x1 at 0 0.049 1.5")));
+    CHECK(studio::mission_spot_line(spots[2]) ==
+          std::make_pair(std::string("chest"), std::string("257 at 1.25 0 -2 180")));
+    CHECK(studio::mod_mission_spots(mod, "nothing", &why).empty() && !why.empty());
+
+    // the places made others at once: where the first one was, the block's other lines kept
+    spots[0].at = {3.5, 0.049, 4};
+    spots[3].emblem = 2;
+    spots.erase(spots.begin() + 1);  // no wave: nothing to build
+    studio::MissionSpot chest;
+    chest.kind = Kind::chest;
+    chest.at = {-2, 0, 0.125};
+    chest.contents = 3;
+    spots.push_back(chest);
+    const auto nitrofs = root / "nitrofs";  // no game: a mission with waves would not build
+    CHECK(studio::set_mod_mission_spots(nitrofs, mod, "map", spots, &why));
+    const Bytes after = file_bytes(txt);
+    const std::string text(after.begin(), after.end());
+    CHECK(text.find("start = 3.5 0.049 4 90\nchest = 257 at 1.25 0 -2 180\nemblem = 2 at -1 0 2\n"
+                    "chest = 3 at -2 0 0.125 0\nlevel = 5\n") != std::string::npos);
+    CHECK(text.find("wave") == std::string::npos && text.find("[mission other]") != std::string::npos);
+    CHECK(studio::mod_mission_spots(mod, "map", &why).size() == 4);
+
+    // a wave that does not build (here: no game files) leaves the file as it was
+    studio::MissionSpot wave;
+    wave.kind = Kind::spawner;
+    wave.enemies = {{0, 1}};
+    spots.push_back(wave);
+    CHECK(!studio::set_mod_mission_spots(nitrofs, mod, "map", spots, &why) && why.find("build") != std::string::npos);
+    CHECK(file_bytes(txt) == after);
+}
+
+TEST(the_games_missions_named_from_its_list) {
+    // a made-up list: two rows of file 0101 (the story's, then Mission Mode's) and one of 0102
+    auto record = [](int file, int number, int category, int shown, int kind, const std::u16string& name) {
+        std::string r(0x30, '\0');
+        auto put16 = [&r](std::size_t at, int v) {
+            r[at] = static_cast<char>(v & 0xff);
+            r[at + 1] = static_cast<char>((v >> 8) & 0xff);
+        };
+        put16(2, file);
+        put16(4, number);
+        put16(0xa, category);
+        put16(0xe, shown);
+        r[0x23] = static_cast<char>(kind);
+        for (const char16_t c : name + u'\0') {
+            r += static_cast<char>(c & 0xff);
+            r += static_cast<char>(c >> 8);
+        }
+        put16(0, static_cast<int>(r.size()));
+        return r;
+    };
+    const std::string list = std::string("\x03\0", 2) + record(101, 7, 0, 3, 0, u"Story row") +
+                             record(101, 7, 0, 5, 4, u"Colección") + record(102, 8, 9, 6, 0, u"Other");
+    const auto root = studio_test::scratch("mission_names");
+    studio_test::write(root / "decompressed" / "UI" / "cm" / "msl_es.msi", list);
+    const auto names = studio::game_mission_names(root / "nitrofs", "es");
+    CHECK(names.size() == 2);
+    CHECK(names.at(101).mission_mode && names.at(101).shown == 5 && names.at(101).name == "Colección");
+    CHECK(!names.at(102).mission_mode && names.at(102).number == 8 && names.at(102).category == 9);
+    CHECK(studio::game_mission_names(root / "nitrofs", "fr").empty());  // no list: none
 }

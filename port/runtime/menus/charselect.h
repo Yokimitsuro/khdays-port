@@ -20,7 +20,8 @@ extern "C" {
 typedef struct KhdaysSelectPlace {
     int present;                       /* a player is in the place */
     int ready;                         /* the player chose (the game's A) */
-    int character;                     /* the character the place is on, 0-18 */
+    int character;                     /* the character the place is on: the game's 0-18, a mod's
+                                        * number (runtime/characters), -1 none */
     uint16_t name[KHDAYS_SELECT_NAME]; /* the player's (empty when the game has none) */
 } KhdaysSelectPlace;
 
@@ -49,6 +50,10 @@ uint16_t khdays_charselect_buttons(uint16_t buttons);
  * `message`), with "Y Random" after it while the player chooses, written into `out` (`units` UTF-16
  * units on the game's stack); otherwise `game`. */
 void *khdays_charselect_help(int message, void *game, void *out, int units);
+/* The character at `position` of the port's grid: the ones the game lets be chosen in its order, the
+ * mods' after them (runtime/characters), then the random choice (KHDAYS_SELECT_CHARACTERS); -1 past
+ * it. */
+int khdays_charselect_at(const KhdaysSelectView *v, int position);
 /* Any thread: the screen as last published. */
 void khdays_charselect_view(KhdaysSelectView *out);
 /* The window's thread: the columns of the port's grid (its layout's), for the directions. */

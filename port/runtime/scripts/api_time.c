@@ -10,6 +10,7 @@
 #include "game_link.h"
 #include "sandbox.h"
 #include "time_link.h"
+#include "../plugins/plugins.h"
 
 #include <lauxlib.h>
 #include <lua.h>
@@ -458,6 +459,7 @@ static void take_shares(void)
     while (khdays_link_shared(&data, &size)) {
         const unsigned char *end = memchr(data, 0, size);
         KhdaysEvent e;
+        khdays_plugins_shared(data, size); /* a native plugin's message (kh.net), heard by the plugins */
         if (end == NULL) {
             free(data);
             continue;

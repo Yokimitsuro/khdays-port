@@ -26,6 +26,8 @@ static uint32_t changed_upload_size;
 
 static int has_smaller(uint32_t id, const KhdaysTextureReplacement *r)
 {
+    if (r->info & KHDAYS_REPLACEMENT_NO_MIPS)
+        return 0;
     const uint32_t kind = r->info & (KHDAYS_REPLACEMENT_INDEXED | KHDAYS_REPLACEMENT_TILES | KHDAYS_REPLACEMENT_BITMAP);
     return (kind == 0 || kind == KHDAYS_REPLACEMENT_TILES) && khdays_textures_version((int)id) == 0 &&
            (r->width > 1 || r->height > 1);
@@ -84,7 +86,7 @@ static SDL_GPUBuffer *make_buffer(void)
 {
     SDL_GPUBufferCreateInfo info;
     SDL_zero(info);
-    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
+    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
     info.size = (table_capacity * 4u + texel_capacity) * 4u;
     return SDL_CreateGPUBuffer(device, &info);
 }

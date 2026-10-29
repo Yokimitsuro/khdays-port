@@ -55,6 +55,8 @@ typedef struct KhdaysG3dPreInfo {
 #define KHDAYS_G3D_BEYOND_DS 0x2 /* the DS's polygon or vertex RAM would not have held it */
 #define KHDAYS_G3D_MOD 0x4       /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
 #define KHDAYS_G3D_SKY 0x10      /* a mod's sky: behind everything else, its layer in bits 8-15 */
+#define KHDAYS_G3D_SEQUENCE 0x20 /* ordered native sequence commands; pltt identifies the retained program */
+#define KHDAYS_G3D_MARKER 0x40   /* screen-projected selection art: after world geometry, inside the 3D layer */
 #define KHDAYS_G3D_SKY_LAYER(flags) (((flags) & KHDAYS_G3D_SKY) ? ((flags) >> 8) & 0xff : 0)
 #define KHDAYS_G3D_OVER_2D                                                                                             \
     0x8 /* a HUD polygon the DS shows over all its 2D (its BG0 the top layer): the one
@@ -70,9 +72,8 @@ typedef struct KhdaysG3dPreInfo {
         uint64_t name##_slot;                                                                                          \
     }
 
-/* A list in drawing order: the opaque polygons as submitted, then the
- * translucent ones, sorted by Y unless SwapBuffers asked for manual order.
- * It holds its polygons and vertices in memory of its own, as many as come. */
+/* A list in drawing order: opaque, then translucent (Y-sorted unless manual), then selection
+ * markers in submission order. It holds its polygons and vertices in memory of its own. */
 typedef struct KhdaysG3dList {
     int32_t npolys, nverts;
     uint32_t swap_params; /* the SwapBuffers bits it is drawn with */
@@ -184,6 +185,12 @@ void khdays_g3d_set_widen(float k);
  * to the sides and the one picture's 3D shapes place it (host/render/gpu_raster3d.c). */
 void khdays_g3d_set_hud(int on);
 
+/* Selection-marker draws only. Does not change HUD placement or the ordering of the 2D layers. */
+void khdays_g3d_set_marker(int on);
+
+/* The building list's stable slot (0..3), for transient images retained with that list. */
+int khdays_g3d_build_slot(void);
+
 /* --- A mod's model, drawn instead of the game's (runtime/mods/models.h) ---------------- */
 
 /* The matrices now as floats (1.0 the DS's 0x1000): position, vector and
@@ -223,6 +230,10 @@ typedef struct KhdaysG3dClipVertex {
  * (runtime/mods/textures.h), -1 for none. */
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
+
+/* A screen-projected sequence in the 3D layer; its program is retained in the frame package.
+ * The shader samples the atlas and blends each element against the scene at full alpha precision. */
+void khdays_g3d_sequence_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, int32_t atlas, uint32_t program);
 
 /* For traces: `hook` hears of each polygon added to the list being built,
  * as it is added (NULL: none). */

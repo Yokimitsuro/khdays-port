@@ -11,6 +11,7 @@
 #include "../../gfx/g3d.h"
 #include "../../gpu/vram_map.h"
 #include "../../ui/situation.h"
+#include "../../gfx/sequence_image.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -58,6 +59,10 @@ typedef struct KhdaysFrameElements {
     uint32_t count, capacity;
     KHDAYS_G3D_POINTER(uint32_t, records);
 } KhdaysFrameElements;
+
+/* Information state: low bits own each engine's banner, bits 8/9 have an image. Availability
+ * survives an empty message, a completed exit and a scene change, so native crops stay disabled. */
+#define KHDAYS_INFORMATION_AVAILABLE (1u << 16)
 
 typedef struct KhdaysFramePackage {
     uint32_t frame;     /* the VBlank it was drawn at */
@@ -123,6 +128,24 @@ typedef struct KhdaysFramePackage {
     /* The field's room change is being drawn (runtime/display/field_wipe.h): its wipe's quad is in this
      * frame's 3D, and the window covers the columns beside it. Not recorded either. */
     uint32_t field_wipe;
+    /* Transient native image commands, owned by this package, not part of version-14 recordings. */
+    KhdaysSequenceImage sequence_image;
+    KhdaysSequenceImage portrait_images[4];
+    KhdaysSequenceImage party_images[3];
+    KhdaysSequenceImage label_images[5];
+    KhdaysSequenceImage enemy_image;
+    KhdaysSequenceImage sequence3d_images[KSI_3D_PROGRAMS];
+    KhdaysSequenceImage information_images[2];
+    KhdaysSequenceImage obtained_image;
+    KhdaysSequenceImage notification_images[3];
+    KhdaysSequenceImage mission_panel_image;
+    KhdaysSequenceImage minimap_images[4];
+    KhdaysSequenceImage radar_image;
+    uint32_t mission_panel_state; /* bit 0: replacement owns panel; bit 1: native panel visible */
+    int mission_panel_backdrop;
+    uint32_t information_hold_frames;
+    uint32_t information_state;
+    uint32_t hud_options;
 } KhdaysFramePackage;
 
 /* What KHDAYS_RECORD_FRAMES writes of a package (version 14): all of it but

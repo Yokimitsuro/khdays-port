@@ -266,6 +266,76 @@ Taken up (for the record of what the old names were):
   halfword (`GetLanguage`, `Msg_BuildLangPath`'s `&`, 1..5 the firmware's
   English .. Spanish). It is `Msg_SetLanguage(int language, int unused)` now,
   declared as defined. Found 2026-10-07 (`docs/RUNTIME_MAP.md` 8.1).
+- The missions' list (`UI/cm/msl_&.msi.z`) and what reads it, found for the port's new missions, 2026-10-24
+  (`docs/RUNTIME_MAP.md` 29), with names proposed:
+  - `Ov008_IsEncounterEligible` (and its copies `Ov004_`, `Ov005_`, `Ov302_IsEncounterEligible`) is no spawn
+    test: it is the row test of Mission Mode's list (`Ov008_AppendEligibleRecords`, list kind 3) --
+    `IsMissionModeRowListed(record, flags)`, its flags the kinds of rows the list takes (a bit each, `1 << (kind
+    - 1)`; bit 3, the kind-4 rows, takes the tutorial's row too), bits 0-1 the day test, the category in
+    bits 8-15.
+  - `Ov008_BuildRecordNode`'s source is a list record (`MissionListRecord`: `+2` fileNumber, `+4` missionNumber,
+    `+6` firstDay, `+8` lastDay, `+0xa` category, `+0xc` hidden, `+0xe` shownNumber, `+0x10` tier, `+0x18`
+    timeLimitSeconds, `+0x23` kind, `+0x28` rewardKind, then four texts: name, briefing, objective, format), its
+    node `MissionListEntry` (`+0` fileNumber, `+2` missionNumber, `+4` category, `+6` shownNumber, `+0x18` kind,
+    `+0x3c`-`+0x48` the texts). The decomp's `Ov008MissionListEntry` calls `+4` `nTextSlot`/`nSlot` and `+6`
+    `nRank`; `Ov008_CalcMissionCompletionPercent`'s `statusFlags` at `+0x18` is the kind (`& 3`: kinds 1 and 2).
+  - A record's kind: 0 the story's row of a mission (`Ov008_RecordFilter_KindZero`, by its days), 4 its Mission
+    Mode row, 1 and 2 its other Mission Mode entries; `Ov008_RecordFilter_Kind4Id10` is the tutorial's row (file
+    0010, mission 94, shown 00).
+  - The game state's 4 bits at `0x92b + 4n` (`FIELD_MISSION_REWARDS` in `Ov008_DrawMissionRow`) open mission n's
+    rows, a bit for each kind; status `0x28e4 + 3n`, crown `0x2a4c + 3n`, Mission Mode rank `0x2ca4 + 3n`.
+  - `data_02046334` is NitroSDK's `fsi_arc_rom` (named only by a `#define` in `func_0200afb8.c`, which is
+    NitroSDK's `FSi_InitRom`); `Ov008_AnyEntryFlagged` decides between the list of rows and the tutorial's alone.
+- The field's spawners (`docs/RUNTIME_MAP.md` 18 and 29, read for the mods' waves 2026-10-28), with names proposed:
+  - `Ov002_ScriptCreateSlotObject` (2.32) makes a **spawner**: `nEntry` its group of the enemy table, `nKind` the
+    region (`aSources[]`, `Ov107_Region_New`) it and its enemies belong to, `nObjA` (+0x110) how far the enemies
+    are placed around it (`Ov107_Spawner_PlaceActors`), `nObjC` (+0x114) the distance within which a player keeps
+    them (`func_ov107_020c0ea0`: none near, they are called back), `nObjB` (+0x118) a scale; `nAnimMode` is no
+    animation mode but the **radius of its trigger sphere** around `vAnimAt` (`Ov002_StartSlotAnim` ->
+    `Ov107_CreateTriggerSphere`; 0: `Ov107_CreateRestartTask`), and `nGate` shows its group's node. Proposed:
+    `nGroup, nRegion, nMask, nMode, nShown, vAt, fxSpread, nTag, fxScale, fxKeepNear, vTriggerAt, fxTriggerRadius`.
+  - `Ov002MarkerRow.nKind` (`Ov002_UpdateSlotLookup`, a row's +1 low nibble) is the **most of the row's class out
+    at once** (`Ov107_SetLookupByte` into the region table's +0x9c, which `Ov107_Spawner_FindFreeActor` holds the
+    live count +0xa0 to; 0, every game row's, is no limit). `func_ov107_020c0ea0` is the spawner's tick
+    (`Ov107_Spawner_Tick`).
+  - A node's state word +0x40 (`Ov107_InitNodeBase`): bit 0 shown, bit 1 running -- `Ov107_Region_TickChildren`
+    ticks only the running ones, and a region sets them on its members only when it is enabled
+    (`Ov107_Region_SetEnabled`, called by `Ov107_Region_AddMember` when a player joins it). A spawner made after
+    its region's players joined never runs: the game's own later spawners (0160's `e0`) are made where a player
+    will come. `Ov107_SetBit1OfField0x40` is `Ov107_Node_SetRunning`, `Ov107_SetBit0OfField0x40`
+    `Ov107_Node_SetShown`.
+  - `Ov002_TimedSpawnRecord.nBucket` (a chest's `trbox` row +1, `Ov002_PushBucketNode`) is the **room** the chest is
+    in: 0102's chests in rooms 6 and 11, 0105's in 1, 4 and 7, as their areas load them (2.26).
+  - `Ov002_SpawnStateSpots` takes the emblems' set by the field's key (the mission's file) but their bits at
+    `0x92b + 4 x data_0204c23c`, the mission's number; an `evi` row's bit is 0, 1 or 3 (the list's kinds 1, 2
+    and 4), its s16 at +2 is 1 for the bit-3 ones.
+- The characters (spec 034, 2026-10-28):
+  - `NNSi_G3dDrawInternal.c`'s `NNSG3dRenderObj` leaves +0x08..+0x20 as `pad08_20`: they are `anmMat`,
+    `funcBlendMat`, `anmJnt` (+0x10, the joint animations: an `NNSG3dAnmObj` list -- frame in 20.12 at +0,
+    its `NNSG3dResJntAnm` at +8, whose u16 at +4 is its frames), `funcBlendJnt`, `anmVis`, `funcBlendVis`, as
+    `include/nnsys/g3d.h` and `NNSi_G3dFuncSbc_NODEDESC.c` name them.
+  - `Ov006_MenuEntryToSlot` / `Ov008_MenuEntryToSlot` turn a select's place (its own order, 0-18) into the
+    data folders' character number; `Ov006_MenuSlotToEntry` / `Ov008_MenuSlotToEntry` the other way. The
+    places keep it in a signed byte (`Ov006_GetMissionRowInfo`'s `icon`).
+  - `Ov008_Menu_InitSceneObject`'s `*param_2` ("sceneId") is the camp's character (member 0's): its model
+    pack, camera turn and texts by it; `data_ov008_0208e9c4`'s 0x34-byte records by character (the folder
+    code, then the weapon nodes' names `Ov008_Menu_BindScenePanels` looks up).
+  - `Ov022_PlayEntityVoice(pActor, nKind, nRequest)`: `nKind` is the sequence archive and `nRequest` its entry
+    (`Slot_Spawn`'s two), and its `Actor.nState` (+0xc) is the actor's character (`nCharacter`: the switch's
+    0, 5, 0xb, 0xe, 0x10, 0x11 are Roxas, Sora, Riku, Xion, Mickey, Donald), as `Ov022_SpawnVoiceCue`'s
+    `nModelId` and `Ov022_BuildActorSlot`'s `nKind` name it; its unnamed +9 is the actor's seat (`nId`).
+  - `Ov022_RunContactMode0`'s `ScaledFanSlot.nFace` (+0x00) is the hit's damage factor (fx32, given to
+    `Ov022_ComputeStrengthDamage`), not a face; with `Ov022_UnpackChannelGrid`'s `Channel` it is `nA`, whose
+    `nB`/`nC` are the first and last frame, `nD`/`nE` the push out and up, and the mode-0 tail's `nA`-`nC` the
+    hit's place, `nD` its radius, `nE` its spread's cosine (RUNTIME_MAP section 30, "Its attacks").
+  - `Ov002_GetPanelWord0220(nId, nValue)` sets the panel's HP gauge of seat `nId` (the panel's +0x220 holds
+    each seat's gauge's index into `data_ov002_0207f618`, `Ov002_SetGaugeValue`'s gauges): a setter, not a
+    getter. `data_ov002_0207f614` (the panel) and `data_ov002_0207f618` (its gauges) are 0 until the field's
+    panel is set up, while the battle's actors already exist (a script's set HP faulted there).
+  - `Ov022_ScaleRowValues(obj, factor, ...)` is the player overlays' own moves' damage (a Limit's hits, the
+    specials): the seat's strength and bonuses times `factor`.
+  - `Ov022_BuildNodeGraph`'s graphs are a keyblade's combos (graph 0 the ground one, 1 the air one): `nValue`
+    an attack's number in `cm.b`, `pLeft` the next attack, the pools the chain, its finisher and the branches.
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 

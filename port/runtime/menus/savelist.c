@@ -12,6 +12,7 @@
 #include "../core/session_log.h"
 #include "../core/window.h"
 #include "../mods/installed.h"
+#include "../missions/missions.h"
 
 #include "khdays_ds_symbols.h"
 
@@ -933,6 +934,7 @@ static void follow_played(void)
     if (title_there && !title_was) {
         current_file = KHDAYS_PLAYED_NONE;
         played_level = 0;
+        khdays_missions_loaded(KHDAYS_PLAYED_NONE);
     }
     title_was = title_there;
     if (title != 0) {
@@ -949,6 +951,7 @@ static void follow_played(void)
             } else {
                 khdays_log("save list: file %d loaded", current_file + 1);
             }
+            khdays_missions_loaded(current_file);
         }
         title_state_was = state;
     } else {

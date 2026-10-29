@@ -1,5 +1,5 @@
-"""Builds the port's installer: the Release port and server, the studio, the Visual C++ runtime, the
-tools the installer runs and the Python they run with, packed by Inno Setup. The install has the
+"""Builds the port's installer: the Release port and server, the studio (with the KH Mod SDK and its examples), the
+Visual C++ runtime, the tools the installer runs and the Python they run with, packed by Inno Setup. The install has the
 repository's layout (tools/, installer/ beside data/, mods/, saves/); nothing of the game or the
 collections is packed. Output: build/installer/KH358-2-Days-Port-Setup-<version>.exe
   python installer/build_installer.py [--no-build] [--iscc PATH]"""
@@ -24,6 +24,7 @@ CACHE = OUT / "cache"
 STAGE = OUT / "stage"
 RELEASE = ROOT / "build" / "port" / "obj-release-x64"
 STUDIO_RELEASE = ROOT / "build" / "studio" / "release"  # khdays-studio, the optional mod tool
+SDK_RELEASE = ROOT / "build" / "sdk"  # the KH Mod SDK built alone: its examples' plugins
 
 sys.path.insert(0, str(ROOT / "port"))
 import build  # noqa: E402
@@ -45,6 +46,15 @@ TOOLS = [
     "tools/hd/save_screen.py",
     "tools/hd/ddd_camp.py",
     "tools/hd/kh2_fonts.py",
+    "tools/hd/kh2_gauge.py",
+    "tools/hd/minimap_icons.py",
+    "tools/hd/heart_points.py",
+    "port/tools/heart_model_export.cpp",
+    "port/tools/kh2_center_gauge.py",
+    "port/tools/kh2_add_limit_gauge.py",
+    "port/tools/kh2_add_limit_marker.py",
+    "port/tools/kh2_add_party_gauges.py",
+    "docs/examples/kh2-gauge.json",
     "port/movies/hd_scenes.txt",  # theater_movies.py's scene map: the scene videos it makes
 ]
 # the installer's own (its tests and this script stay in the repository)
@@ -163,6 +173,39 @@ def stage_python(packed: list[str]) -> None:
     pth[0].write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def manifest_value(ini: Path, key: str) -> str | None:
+    """A mod.ini's `key = value` (its comment after " #" left out)."""
+    for line in ini.read_text(encoding="utf-8").splitlines():
+        name, equals, value = line.partition("=")
+        if equals and name.strip() == key:
+            return value.split(" #")[0].strip()
+    return None
+
+
+def tracked(folder: str) -> list[Path]:
+    """The repository's files under `folder`, as git has them."""
+    out = subprocess.run(["git", "ls-files", folder], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    return [ROOT / line for line in out.splitlines() if line]
+
+
+def stage_sdk(packed: list[str]) -> None:
+    """The KH Mod SDK for those who install the studio (in studio/: its task): the SDK as the repository has it
+    (sdk/), and each example as a mod ready to copy into mods/, its plugin built (mods-examples/<example>)."""
+    for source in tracked("sdk"):
+        copy(source, STAGE / "studio" / source.relative_to(ROOT), packed)
+    examples = ROOT / "sdk" / "examples"
+    for example in sorted(e for e in examples.iterdir() if (e / "mod.ini").is_file()):
+        library = manifest_value(example / "mod.ini", "native.windows-x64")
+        built = SDK_RELEASE / "examples" / example.name / Path(library or "").name
+        if library is None or not built.is_file():
+            sys.exit(f"build_installer: {example.name}'s plugin is not built ({built}; cmake -S sdk -B build/sdk)")
+        to = STAGE / "studio" / "mods-examples" / example.name
+        for source in tracked(f"sdk/examples/{example.name}"):
+            if source.suffix not in (".c", ".cpp", ".h", ".py") and source.name != "CMakeLists.txt":
+                copy(source, to / source.relative_to(example), packed)  # the mod's own files, not its sources
+        copy(built, to / library, packed)
+
+
 def find_iscc(given: str | None) -> Path:
     candidates = [
         given,
@@ -186,6 +229,12 @@ def main() -> int:
     if not args.no_build:
         subprocess.run([sys.executable, str(ROOT / "port" / "build.py"), "--config", "Release"], cwd=ROOT, check=True)
         subprocess.run([sys.executable, str(ROOT / "studio" / "build.py"), "--config", "Release"], cwd=ROOT, check=True)
+        sdk_env = build.msvc_env()
+        build.run(
+            ["cmake", "-S", str(ROOT / "sdk"), "-B", str(SDK_RELEASE), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"],
+            sdk_env,
+        )
+        build.run(["cmake", "--build", str(SDK_RELEASE)], sdk_env)
     exe = RELEASE / "khdays-native.exe"
     if not exe.is_file():
         sys.exit(f"build_installer: {exe} is not built")
@@ -215,6 +264,7 @@ def main() -> int:
     copy(studio_exe, STAGE / "studio" / studio_exe.name, packed)
     for dll in runtime_dlls(studio_exe, env):
         copy(dll, STAGE / "studio" / dll.name, packed)
+    stage_sdk(packed)
     for rel in TOOLS:
         copy(ROOT / rel, STAGE / rel, packed)
     # the port's license and the third parties' notices, at the install's root

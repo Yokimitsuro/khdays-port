@@ -111,6 +111,34 @@ std::vector<std::uint8_t> lz_decompress(const ByteVector& input) {
     return out;
 }
 
+ByteVector lz11_literals(const ByteVector& raw) {
+    ByteVector out;
+    const auto size = static_cast<std::uint32_t>(raw.size());
+    out.push_back(0x11U);
+    if (size <= 0xFFFFFFU) {
+        out.push_back(static_cast<std::uint8_t>(size));
+        out.push_back(static_cast<std::uint8_t>(size >> 8U));
+        out.push_back(static_cast<std::uint8_t>(size >> 16U));
+    } else {  // extended 32-bit size
+        for (int i = 0; i < 3; ++i) {
+            out.push_back(0U);
+        }
+        for (int i = 0; i < 4; ++i) {
+            out.push_back(static_cast<std::uint8_t>(size >> (8U * static_cast<unsigned>(i))));
+        }
+    }
+    for (std::size_t i = 0U; i < raw.size(); i += 8U) {
+        out.push_back(0U);
+        for (std::size_t j = i; j < raw.size() && j < i + 8U; ++j) {
+            out.push_back(raw[j]);
+        }
+    }
+    while (out.size() % 4U != 0U) {
+        out.push_back(0U);
+    }
+    return out;
+}
+
 std::string message_to_utf8(const std::u16string& text) {
     std::string out;
     out.reserve(text.size());

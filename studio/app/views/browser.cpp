@@ -1,8 +1,12 @@
 // The catalog on the left: search, kinds, the items.
 #include "../app.h"
 
+#include "core/characters/character_files.h"
 #include "core/files/catalog_tree.h"
 #include "core/files/paths.h"
+#include "core/missions/mission_names.h"
+
+#include "khdays/vfs/filesystem.h"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -58,14 +62,51 @@ void select_item(App& app, int index) {
     }
 }
 
+// What a folder holds, where its name says it: a world's archive (mi/wd/wd_tt, its parts wd_tt#3) or a character's
+// folder (ba/ch/ro); empty for any other.
+std::string folder_meaning(App& app, const TreeNode& node) {
+    const std::string& name = node.name;
+    if (name.rfind("wd_", 0) == 0 && name.size() >= 5 && (name.size() == 5 || name[5] == '#' || name[5] == '.')) {
+        const std::string code = name.substr(3, 2);
+        const std::string world = world_name(app.language, code);
+        if (world != code)
+            return world;
+    }
+    if (node.parent > 0 && tv.tree.nodes[static_cast<std::size_t>(node.parent)].name == "ch") {
+        for (const auto& base : character_bases())
+            if (character_base_code(base) == name)
+                return character_display_name(base);
+        if (name == "r2")  // the folders' 20th (data_02042a70), ov049's: not a base a new character plays as
+            return tr(app.language, S::folder_dual_roxas);
+    }
+    return {};
+}
+
+// An item's name as listed: a mission file's (mi/mi/0105) with the name the game's list gives it, in the window's
+// language (read from the player's copy).
+std::string item_name(App& app, const Item& item, const std::string& leaf) {
+    if (item.kind != Kind::mission)
+        return leaf;
+    static std::map<Language, std::map<int, GameMissionName>> read;
+    auto found = read.find(app.language);
+    if (found == read.end())
+        found = read.emplace(app.language,
+                             game_mission_names(khdays::vfs::data_root() / "nitrofs", language_code(app.language)))
+                    .first;
+    const auto named = found->second.find(std::atoi(leaf.c_str()));
+    return named == found->second.end() ? leaf : leaf + "   " + named->second.name;
+}
+
 void draw_tree_node(App& app, int n) {
     const TreeNode& node = tv.tree.nodes[static_cast<std::size_t>(n)];
     if (tv.open_found)
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
     if (!tv.reveal.empty() && tv.reveal[static_cast<std::size_t>(n)])
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-    const std::string name =
-        node.kind >= 0 ? std::string(tr(app.language, kind_word(static_cast<Kind>(node.kind)))) : node.name;
+    const std::string meaning = node.kind >= 0 ? std::string() : folder_meaning(app, node);
+    const std::string name = node.kind >= 0    ? std::string(tr(app.language, kind_word(static_cast<Kind>(node.kind))))
+                             : meaning.empty() ? node.name
+                                               : node.name + "  -  " + meaning;
     const std::string label = name + "  (" + std::to_string(node.count) + ")###n" + std::to_string(n);
     ImGuiTreeNodeFlags flags =
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
@@ -110,7 +151,7 @@ void draw_tree_node(App& app, int n) {
                               ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                   ImGuiTreeNodeFlags_SpanAvailWidth |
                                   (app.selected == index ? ImGuiTreeNodeFlags_Selected : 0),
-                              "%s  %s", kind_tag(item.kind), leaf_name(item.key).c_str());
+                              "%s  %s", kind_tag(item.kind), item_name(app, item, leaf_name(item.key)).c_str());
             if (ImGui::IsItemClicked())
                 select_item(app, index);
             if (ImGui::IsItemHovered())
@@ -251,7 +292,8 @@ void draw_browser(App& app) {
             ImGui::PopID();
             const auto slash = item.key.find_last_of('/');
             ImGui::TableSetColumnIndex(1);
-            ImGui::TextUnformatted(slash == std::string::npos ? item.key.c_str() : item.key.c_str() + slash + 1);
+            ImGui::TextUnformatted(
+                item_name(app, item, slash == std::string::npos ? item.key : item.key.substr(slash + 1)).c_str());
             ImGui::TableSetColumnIndex(2);
             ImGui::TextDisabled("%s", item.group.c_str());
         }
@@ -264,7 +306,7 @@ void draw_dump_panel(App& app) {
         ImGui::TextWrapped("%s", fmt(app.language, missing, {setting}).c_str());
         if (app.job)
             return;
-        const fs::path exe = resolve(app.settings, app.settings.port);
+        const fs::path exe = port_exe(app.settings);
         std::error_code ec;
         if (app.settings.port.empty() || !fs::is_regular_file(exe, ec)) {
             ImGui::TextWrapped("%s", tr(app.language, S::no_port));

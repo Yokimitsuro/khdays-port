@@ -71,6 +71,39 @@ TEST(settings_defaults_and_bad_file) {
     CHECK(fs::exists(kept));
 }
 
+TEST(settings_find_the_port_and_take_pasted_paths) {
+    // an install: the tool beside the game; a repository: the tool in build/studio/release
+    const fs::path install = studio_test::scratch("settings_install"), repo = studio_test::scratch("settings_repo");
+    const fs::path elsewhere = studio_test::scratch("settings_elsewhere");
+    studio_test::write(install / "khdays-native.exe", "x");
+    fs::create_directories(repo / "data");
+    fs::create_directories(repo / "build" / "studio" / "release");
+    CHECK(is_port_folder(install) && is_port_folder(repo) && !is_port_folder(elsewhere));
+    CHECK(find_port_root(install, elsewhere) == install);                             // started there
+    CHECK(find_port_root(elsewhere, install) == install);                             // started elsewhere
+    CHECK(find_port_root(elsewhere, repo / "build" / "studio" / "release") == repo);  // its parents
+    CHECK(find_port_root(elsewhere, fs::path()) == elsewhere);                        // none: as before
+
+    CHECK(clean_path("  \"C:\\Program Files\\KH\\khdays-native.exe\"  ") == "C:\\Program Files\\KH\\khdays-native.exe");
+    CHECK(clean_path("'saves/dump'") == "saves/dump");
+    CHECK(clean_path("plain") == "plain");
+
+    // the game's executable beside the tool, found with nothing set; a folder named stands for it; a full path,
+    // quoted, taken
+    std::string note;
+    Settings s = load_settings(install, &note);
+    CHECK(port_exe(s) == install / "khdays-native.exe");
+    s.port = u8(install);
+    CHECK(port_exe(s) == install / "khdays-native.exe");
+    s.port = "\"" + u8(install / "khdays-native.exe") + "\"";
+    CHECK(port_exe(s) == install / "khdays-native.exe");
+    CHECK(resolve(s, "\"" + u8(elsewhere) + "\"") == elsewhere);
+    // a named executable gone: the one there is
+    s.port = "build/port/obj-release-x64/khdays-native.exe";
+    CHECK(save_settings(s, nullptr));
+    CHECK(load_settings(install, &note).port == "khdays-native.exe");
+}
+
 TEST(catalog_from_dumps_and_game_files) {
     const fs::path root = studio_test::scratch("catalog");
     const fs::path g = root / "graphics", s = root / "sounds", n = root / "nitrofs";

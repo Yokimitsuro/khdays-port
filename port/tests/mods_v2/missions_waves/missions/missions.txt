@@ -1,0 +1,24 @@
+# The missions_waves walk's mission: built by the port at its start (its waves, start, time and texts), listed
+# in Twilight Town's category after the game's. Wave 1 is one Shadow ahead of the start, wave 2 two more on the
+# other side once it is defeated; the mission is cleared when wave 2 is. Its emblem lies on the way to the
+# first Shadow, its chest in reach of the attack.
+[mission waves]
+name en = Two Waves
+name fr = Deux vagues
+name de = Zwei Wellen
+name it = Due ondate
+name es = Dos oleadas
+objective en = Defeat every Heartless.
+objective fr = Battez tous les Sans-cœur.
+objective de = Besiege alle Herzlosen.
+objective it = Sconfiggi tutti gli Heartless.
+objective es = Derrota a todos los sincorazón.
+world = eh
+room = 2
+category = 0
+time = 120000
+start = 0 0.049 0 -90
+wave 1 = 0x1 at 0 0.049 -3
+wave 2 = 0x2 at 0 0.049 1.5
+chest = 2 at 0.9 0.049 0 90
+emblem = 2 at 0 0.049 -1.5

@@ -87,8 +87,8 @@ build, macOS, Windows on ARM and the Nintendo Switch.
 ## Installing
 
 On Windows, the installer from the releases page is all you need besides your
-own copy of the game: it asks for your ROM (the European release of KINGDOM
-HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
+own copy of the game: it asks for your ROM (the European or North American
+release of KINGDOM HEARTS 358/2 Days; it finds it by itself where KH Melon Mix keeps one in your
 KINGDOM HEARTS HD 1.5+2.5 ReMIX folder), prepares the game's data from it, and
 can also make the HD pack from your HD collections, add the port to Steam (PC
 and Steam Deck), and install the mod studio. Nothing of the game comes with
@@ -206,9 +206,9 @@ Your choices are kept in `saves/settings.ini`, a text file you may also edit
 by hand (`KHDAYS_SETTINGS=<path>` uses another file). If the port cannot read
 it, it starts with the defaults and keeps the old file as `settings.ini.bad`.
 
-**Enhancements** (Settings → Enhancements; all off by default, so the game
-plays as on the DS until you switch one on). Each does only what the game's
-own controls can do, through the same parts of the game:
+**Enhancements** (Settings → Enhancements). The control enhancements below
+are off by default. Each uses the game's own controls through the same parts
+of the game:
 
 - **Analog camera:** the right stick turns the field camera and tilts it, as
   far as the tilt of the stick, at up to the game's own turning speed
@@ -242,6 +242,17 @@ own controls can do, through the same parts of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+
+The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
+sequences, the pause-menu target, and HUD/control during INFORMATION messages.
+All but the HD fonts are off until the player turns them on. These switches
+require the corresponding enabled mod assets and preserve native fallback when
+an asset is unavailable. Mission-panel visibility and its gameplay
+and pause anchors are saved here too. **UI padding**, off by default, removes
+the outer inset from an active HD HUD in single-screen mode. Changes use
+`saves/settings.ini`; they never rewrite mod JSON. See the
+[HUD preference reference](docs/KH2_SEQUENCES.md#live-enhancements-preferences)
+for defaults, precedence, and the INFORMATION transition exception.
 
 The **Kingdom Hearts II layout** (Settings → Gamepad preset; Kingdom Hearts
 III uses the same buttons for these actions) puts attack on the bottom face
@@ -736,6 +747,16 @@ outside their own folder, nor any memory but the game's. `docs/SCRIPTING.md` des
 as `mods-examples/`) has examples to copy into `mods/`; khdays-studio's Console shows what the
 mods print and reloads them while the game runs.
 
+For what scripts cannot do, a mod can carry a native plugin: C++ built for the player's computer
+against the KH Mod SDK (`sdk/`), loaded only once the player has turned native code on (the
+settings menu's Mods page, read at the next start; it runs inside the game, unisolated).
+`docs/MODDING_NATIVE.md` describes it. **Examples:** installed with KH Studio (the installer's
+choice), `mods-examples/` has five mods with a native plugin ready to copy into `mods/`, their
+plugins built -- `HelloWorld`, `CustomCharacter` (a character of its own), `CustomLimit` (a
+character with a Limit of its own), `CustomEnemy` (Shadows that blink away and split) and
+`AdvancedNativeMod` (hooks at the game's routines) -- and `sdk/` the KH Mod SDK to build your own
+(`sdk/examples/` in the repository).
+
 ## Multiplayer
 
 Mission Mode's multiplayer works over the PC's network: the game's own
@@ -843,6 +864,9 @@ the connection error -- the port boots it again in the same window.
 | `tools/` | ROM verification, data extraction and decompression; `hd/` the HD mods made from the player's HD collections; `tests/` their tests (`python -m unittest`) |
 | `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`MENU_OVERHAUL.md`](docs/MENU_OVERHAUL.md), the Menu Overhaul mod's screens; [`WALK_MOD.md`](docs/WALK_MOD.md), the Walk mod's analog walk; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
 | `external/khdays-decomp` | The decompilation, pinned; updated deliberately and tested |
+
+KH2's local-asset sequence viewer, renderer validation, and HP gauge mapping are
+documented in [`docs/KH2_SEQUENCES.md`](docs/KH2_SEQUENCES.md).
 
 ### Checking the port
 

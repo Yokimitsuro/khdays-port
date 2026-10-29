@@ -5,7 +5,8 @@
 #ifndef KHDAYS_SCRIPTS_MODS_LOG_H
 #define KHDAYS_SCRIPTS_MODS_LOG_H
 
-/* Starts the log afresh in `folder`/logs (the last run's kept as mods.prev.log). */
+/* Starts the log afresh in `folder`/logs (the last run's kept as mods.prev.log); opened again in the same
+ * run, it goes on. */
 void khdays_mods_log_open(const char *folder);
 
 /* One entry; `file` NULL (or `line` <= 0) when none applies. A text of several lines gives a line

@@ -12,6 +12,7 @@
 #include "../sound/sound_bridge.h"
 #include "../menus/saveslots.h"
 #include "../menus/saveworld.h"
+#include "../missions/missions.h"
 #include "../scripts/scripts.h"
 #include "../../host/app/files.h"
 #include "../../host/app/instance.h"
@@ -342,6 +343,14 @@ static void backup_identify(u32 type)
     khdays_saveworld_attach(khdays_host_user_folder(), khdays_slots_highest_counter()); /* the saves' worlds */
 }
 
+/* The files a save action wrote: the new missions' progress beside each (runtime/missions/). */
+static void saved_files(void)
+{
+    for (int file; (file = khdays_slots_next_written()) >= 0;) {
+        khdays_missions_saved(file);
+    }
+}
+
 int khdays_backup_commit(void)
 {
     u64 start;
@@ -352,6 +361,7 @@ int khdays_backup_commit(void)
     }
     if (!backup_changed || backup == NULL) {
         if (slots) {
+            saved_files();
             khdays_scripts_saved();
             khdays_saveworld_saved(khdays_slots_highest_counter());
         }
@@ -368,6 +378,7 @@ int khdays_backup_commit(void)
     backup_changed = 0;
     khdays_log("backup: %s written whole, %u bytes, in %.1f ms", SAVE_FILE, backup_extent,
                (double)(khdays_clock_cycles() - start) * 1000.0 / KHDAYS_CLOCK_HZ);
+    saved_files();
     khdays_scripts_saved();
     khdays_saveworld_saved(khdays_slots_highest_counter());
     return 1;

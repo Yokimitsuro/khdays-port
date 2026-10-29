@@ -360,8 +360,48 @@ void draw_settings(App& app, bool* open) {
         }
         ImGui::EndCombo();
     }
+    // the game's folder, found as the tool started (main.cpp)
+    if (is_port_folder(app.settings.root))
+        ImGui::TextDisabled("%s", fmt(app.language, S::port_folder, {u8(app.settings.root)}).c_str());
+    else
+        ImGui::TextWrapped("%s", tr(app.language, S::port_folder_none));
     bool paths = false;
+    {
+        std::lock_guard lock(app.dialog_mutex);
+        if (!app.dialog_ports.empty()) {
+            app.settings.port = app.dialog_ports.front();
+            app.dialog_ports.clear();
+            paths = true;
+        }
+    }
     paths |= ImGui::InputText(tr(app.language, S::port_exe), &app.settings.port);
+    ImGui::SameLine();
+    if (ImGui::SmallButton(tr(app.language, S::choose_file))) {
+#ifdef _WIN32
+        static const SDL_DialogFileFilter programs[] = {{"khdays-native", "exe"}};
+        const int filters = 1;
+#else
+        static const SDL_DialogFileFilter* programs = nullptr;  // programs have no extension of their own there
+        const int filters = 0;
+#endif
+        SDL_ShowOpenFileDialog(
+            [](void* user, const char* const* files, int) {
+                if (files == nullptr || files[0] == nullptr)
+                    return;
+                App* a = static_cast<App*>(user);
+                std::lock_guard lock(a->dialog_mutex);
+                a->dialog_ports.emplace_back(files[0]);
+            },
+            &app, app.window, programs, filters, u8(app.settings.root).c_str(), false);
+    }
+    {
+        const fs::path exe = port_exe(app.settings);
+        std::error_code ec;
+        if (!app.settings.port.empty() && fs::is_regular_file(exe, ec))
+            ImGui::TextDisabled("%s", fmt(app.language, S::port_exe_found, {u8(exe)}).c_str());
+        else
+            ImGui::TextWrapped("%s", tr(app.language, S::port_exe_missing));
+    }
     paths |= ImGui::InputText(tr(app.language, S::graphics_dump), &app.settings.graphics_dump);
     paths |= ImGui::InputText(tr(app.language, S::sounds_dump), &app.settings.sounds_dump);
     changed |= ImGui::InputText(tr(app.language, S::ffmpeg), &app.settings.ffmpeg);

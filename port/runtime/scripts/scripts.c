@@ -12,10 +12,12 @@
 #include "mods_log.h"
 #include "screens.h"
 #include "time_link.h"
-#include "order.h"
 #include "queue.h"
+#include "../mods/list.h"
 #include "sandbox.h"
 #include "view.h"
+#include "../characters/characters.h"
+#include "../plugins/plugins.h"
 #include "../core/sha256.h"
 #include "../menus/autosave.h"
 #include "../net/net_session.h"
@@ -32,6 +34,7 @@ static int count;
 static int changed; /* the mods' view is to be published again (view.h) */
 static void publish(void);
 static void tell_rooms(void);
+static KhdaysMod *by_folder(const char *folder);
 static void reload(KhdaysMod *m);
 static int started;
 static int tracing = -1;
@@ -44,7 +47,6 @@ static unsigned fell_at;      /* the game frame the local player last fell, + 1;
 static int game_over_up, lost;
 static unsigned looked; /* frame points since the mods' files were last looked at */
 static char *user_folder;
-static KhdaysOrder order;
 
 int khdays_scripts_mod_count(void)
 {
@@ -225,72 +227,30 @@ static int examine(KhdaysMod *m)
     return 1;
 }
 
-typedef struct Found {
-    const char *mods;
-    char **names;
-    int count, capacity;
-} Found;
-
-static void found_folder(const char *name, void *context)
-{
-    Found *f = context;
-    char *folder = joined(f->mods, name), *ini = folder != NULL ? joined(folder, "mod.ini") : NULL;
-    const int scripted = ini != NULL && khdays_folders_is_file(ini);
-    free(ini);
-    free(folder);
-    if (!scripted) {
-        return; /* a content mod: not this module's */
-    }
-    if (f->count == f->capacity) {
-        const int grown = f->capacity == 0 ? 8 : f->capacity * 2;
-        char **n = realloc(f->names, (size_t)grown * sizeof(*n));
-        if (n == NULL) {
-            return;
-        }
-        f->names = n;
-        f->capacity = grown;
-    }
-    f->names[f->count] = copy(name);
-    if (f->names[f->count] != NULL) {
-        ++f->count;
-    }
-}
-
 void khdays_scripts_start_in(const char *mods_path, const char *user)
 {
-    Found found = {mods_path, NULL, 0, 0};
-    char *order_path, *order_text;
-    int present = 0;
+    int scripted = 0;
     khdays_scripts_stop();
     started = 1;
-    khdays_folders_list(mods_path, found_folder, &found);
-    if (found.count == 0) {
-        free(found.names);
-        return; /* no scripted mod: nothing made */
-    }
+    khdays_mods_scan(mods_path, user);
     user_folder = copy(user);
-    order_path = joined(user, "mods/order.ini");
-    order_text = order_path != NULL ? khdays_folders_read(order_path, NULL) : NULL;
-    khdays_order_parse(&order, order_text);
-    khdays_order_merge(&order, (const char *const *)found.names, found.count);
-    free(order_text);
-    free(order_path);
-    for (int i = 0; i < found.count; ++i) {
-        free(found.names[i]);
+    for (int i = 0; i < khdays_mods_count(); ++i) {
+        scripted += khdays_mods_at(i)->scripted;
     }
-    free(found.names);
-
-    for (int i = 0; i < order.count; ++i) {
-        present += order.entries[i].present;
+    if (scripted == 0) {
+        publish();    /* content mods alone: the Mods page still shows them */
+        tell_rooms(); /* no scripted mod, but the mods' characters and native plugins still make the room's mods */
+        return;
     }
-    mods = calloc((size_t)present, sizeof(*mods));
+    mods = calloc((size_t)scripted, sizeof(*mods));
     if (mods == NULL) {
         return;
     }
     khdays_mods_log_open(user);
-    for (int i = 0; i < order.count; ++i) {
+    for (int i = 0; i < khdays_mods_count(); ++i) {
+        const KhdaysModEntry *e = khdays_mods_at(i);
         KhdaysMod *m;
-        if (!order.entries[i].present) {
+        if (!e->scripted) {
             continue;
         }
         m = calloc(1, sizeof(*m));
@@ -298,9 +258,9 @@ void khdays_scripts_start_in(const char *mods_path, const char *user)
             break;
         }
         mods[count++] = m;
-        m->folder = copy(order.entries[i].folder);
-        m->path = joined(mods_path, order.entries[i].folder);
-        m->enabled = order.entries[i].on;
+        m->folder = copy(e->folder);
+        m->path = copy(e->path);
+        m->enabled = khdays_mods_active(e);
         m->state = KHDAYS_MOD_OFF;
         if (m->folder == NULL || m->path == NULL || !examine(m)) {
             if (m->state != KHDAYS_MOD_REFUSED) {
@@ -337,7 +297,6 @@ void khdays_scripts_stop(void)
     count = 0;
     free(user_folder);
     user_folder = NULL;
-    khdays_order_free(&order);
     khdays_script_events_reset();
     khdays_mods_log_close();
     started = 0;
@@ -346,13 +305,23 @@ void khdays_scripts_stop(void)
 static void publish(void)
 {
     KhdaysModsView now;
+    const int n = khdays_mods_count();
     memset(&now, 0, sizeof(now));
-    now.mods = count > 0 ? calloc((size_t)count, sizeof(*now.mods)) : NULL;
-    now.count = now.mods != NULL ? count : 0;
+    now.mods = n > 0 ? calloc((size_t)n, sizeof(*now.mods)) : NULL;
+    now.count = now.mods != NULL ? n : 0;
     for (int i = 0; i < now.count; ++i) {
-        const KhdaysMod *m = mods[i];
+        const KhdaysModEntry *e = khdays_mods_at(i);
+        const KhdaysMod *m = e->scripted ? by_folder(e->folder) : NULL;
         KhdaysModView *v = &now.mods[i];
-        v->folder = m->folder;
+        v->folder = (char *)e->folder;
+        v->enabled = e->on;
+        v->ignored = e->ignored;
+        v->content = m == NULL;
+        if (m == NULL) {
+            v->kind = -1;
+            v->state = khdays_mods_active(e) ? KHDAYS_MOD_LOADED : KHDAYS_MOD_OFF;
+            continue;
+        }
         v->id = m->manifest.id;
         v->name = m->manifest.name;
         v->version = m->manifest.version;
@@ -361,7 +330,6 @@ static void publish(void)
         v->reason = m->reason;
         v->kind = m->manifest.id != NULL ? m->manifest.kind : -1;
         v->state = m->state;
-        v->enabled = m->enabled;
         v->memory_write = m->manifest.memory_write;
         v->options = m->option_count > 0 ? calloc((size_t)m->option_count, sizeof(*v->options)) : NULL;
         v->option_count = v->options != NULL ? m->option_count : 0;
@@ -390,8 +358,9 @@ static void publish(void)
 
 /* The gameplay mods running, for multiplayer rooms (runtime/net/net_session.h): their fingerprint, the
  * first four bytes of SHA-256 over each one's id, a 0, its version, a 0 and its own fingerprint, in
- * load order (0 with none; a digest whose first four bytes are 0 counts as 1), and their names and
- * versions. Visual mods are not counted: each player's own. */
+ * load order, then each of the mods' characters' identity, a 0 and its part (characters.h), in their numbers'
+ * order (0 with none; a digest whose first four bytes are 0 counts as 1), and their names and versions (a
+ * character's identity). Visual mods are not counted: each player's own. */
 static void tell_rooms(void)
 {
     KhdaysSha256 sha;
@@ -425,6 +394,59 @@ static void tell_rooms(void)
         size += version;
         ++counted;
     }
+    /* the mods' characters (a mod of characters alone has no scripts): the select numbers them by their
+     * identities, and their descriptions and data play */
+    for (int c = 0;; ++c) {
+        unsigned char part[32];
+        const char *name, *identity;
+        size_t name_size, identity_size;
+        unsigned char *more;
+        if (!khdays_characters_room_entry(c, part, &name, &identity)) {
+            break;
+        }
+        khdays_sha256_add(&sha, identity, strlen(identity) + 1);
+        khdays_sha256_add(&sha, part, sizeof(part));
+        name_size = strlen(name) < 255 ? strlen(name) : 255;
+        identity_size = strlen(identity) < 255 ? strlen(identity) : 255;
+        more = realloc(list, size + 2 + name_size + identity_size);
+        if (more == NULL) {
+            continue;
+        }
+        list = more;
+        list[size++] = (unsigned char)name_size;
+        memcpy(list + size, name, name_size);
+        size += name_size;
+        list[size++] = (unsigned char)identity_size;
+        memcpy(list + size, identity, identity_size);
+        size += identity_size;
+        ++counted;
+    }
+    /* the native plugins started (a copy with native code off has none): their libraries and parameters play */
+    for (int p = 0;; ++p) {
+        unsigned char part[32];
+        const char *name, *version;
+        size_t name_size, version_size;
+        unsigned char *more;
+        if (!khdays_plugins_room_entry(p, part, &name, &version)) {
+            break;
+        }
+        khdays_sha256_add(&sha, "native", 7);
+        khdays_sha256_add(&sha, part, sizeof(part));
+        name_size = strlen(name) < 255 ? strlen(name) : 255;
+        version_size = strlen(version) < 255 ? strlen(version) : 255;
+        more = realloc(list, size + 2 + name_size + version_size);
+        if (more == NULL) {
+            continue;
+        }
+        list = more;
+        list[size++] = (unsigned char)name_size;
+        memcpy(list + size, name, name_size);
+        size += name_size;
+        list[size++] = (unsigned char)version_size;
+        memcpy(list + size, version, version_size);
+        size += version_size;
+        ++counted;
+    }
     if (counted > 0) {
         khdays_sha256_end(&sha, digest);
         fingerprint = (unsigned int)digest[0] | (unsigned int)digest[1] << 8 | (unsigned int)digest[2] << 16 |
@@ -455,34 +477,11 @@ static KhdaysMod *by_id(const char *id)
     return NULL;
 }
 
-static void save_order(void)
-{
-    char *path = joined(user_folder, "mods/order.ini"), *text = khdays_order_text(&order);
-    if (path != NULL && text != NULL) {
-        khdays_folders_write(path, text, strlen(text));
-    }
-    free(path);
-    free(text);
-}
-
-static int order_index(const char *folder)
-{
-    for (int i = 0; i < order.count; ++i) {
-        if (strcmp(order.entries[i].folder, folder) == 0) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-/* A mod turned on or off from the Mods page: loaded or closed (its options' values and data kept). */
+/* A mod turned on or off from the Mods page: loaded or closed (its options' values and data kept). The
+ * list keeps order.ini. */
 static void set_enabled(KhdaysMod *m, int on)
 {
-    const int at = order_index(m->folder);
-    if (at >= 0) {
-        order.entries[at].on = on;
-        save_order();
-    }
+    khdays_mods_set_on(m->folder, on);
     m->enabled = on;
     changed = 1;
     if (on && (m->state == KHDAYS_MOD_OFF)) {
@@ -494,20 +493,28 @@ static void set_enabled(KhdaysMod *m, int on)
     }
 }
 
-/* A mod one place earlier or later: the order file and the order events reach the mods in. */
-static void move(KhdaysMod *m, int by)
+/* The scripted mods in the list's order again (one moved among the content mods too). */
+static void follow_order(void)
 {
-    int i = 0;
-    while (i < count && mods[i] != m) {
-        ++i;
+    int at = 0;
+    for (int i = 0; i < khdays_mods_count() && at < count; ++i) {
+        KhdaysMod *m = by_folder(khdays_mods_at(i)->folder);
+        if (m != NULL) {
+            int j = at;
+            while (mods[j] != m) {
+                ++j;
+            }
+            mods[j] = mods[at];
+            mods[at++] = m;
+        }
     }
-    if (i == count || i + by < 0 || i + by >= count) {
-        return;
-    }
-    khdays_order_move(&order, order_index(m->folder), by);
-    save_order();
-    mods[i] = mods[i + by];
-    mods[i + by] = m;
+}
+
+/* A mod one place earlier or later in the list: the order file and the order events reach the mods in. */
+static void move(const char *folder, int by)
+{
+    khdays_mods_move(folder, by);
+    follow_order();
     changed = 1;
 }
 
@@ -529,13 +536,18 @@ static void take_messages(void)
             khdays_script_events_raise(&e);
             break;
         case KHDAYS_ASK_ENABLE:
-            if ((m = by_folder(msg.mod)) != NULL && m->enabled != (msg.value != 0)) {
-                set_enabled(m, msg.value != 0);
+            if ((m = by_folder(msg.mod)) != NULL) {
+                if (m->enabled != (msg.value != 0)) {
+                    set_enabled(m, msg.value != 0);
+                }
+            } else if (khdays_mods_by_folder(msg.mod) != NULL) { /* a content mod: its files only */
+                khdays_mods_set_on(msg.mod, msg.value != 0);
+                changed = 1;
             }
             break;
         case KHDAYS_ASK_MOVE:
-            if ((m = by_folder(msg.mod)) != NULL) {
-                move(m, msg.value < 0 ? -1 : 1);
+            if (khdays_mods_by_folder(msg.mod) != NULL) {
+                move(msg.mod, msg.value < 0 ? -1 : 1);
             }
             break;
         case KHDAYS_ASK_RELOAD:
@@ -639,6 +651,12 @@ static void trace_time(void)
     }
 }
 
+/* Whether anything hears the game's events: a Lua mod, or a native plugin (runtime/plugins/plugins.h). */
+static int heard(void)
+{
+    return count > 0 || khdays_plugins_listening();
+}
+
 void khdays_scripts_frame(void)
 {
     if (tracing < 0) {
@@ -659,6 +677,20 @@ void khdays_scripts_frame(void)
         khdays_scripts_start_in(mods_path, user);
     }
     if (count == 0) {
+        take_messages(); /* content mods turned on or off, or moved */
+        if (changed) {
+            changed = 0;
+            publish();
+        }
+        if (khdays_plugins_listening()) {
+            unsigned char *data;
+            unsigned size;
+            while (khdays_link_shared(&data, &size)) {
+                khdays_plugins_shared(data, size); /* the host's plugins' messages */
+                free(data);
+            }
+            khdays_script_events_frame(); /* the native plugins' events */
+        }
         return;
     }
     for (int i = 0; i < count; ++i) {
@@ -700,10 +732,12 @@ void khdays_scripts_mission_start(void)
     if (tracing > 0) {
         fprintf(stderr, "mods-trace: mission start: mission %d\n", khdays_link_mission());
     }
-    if (count == 0) {
+    if (!heard()) {
         return;
     }
-    khdays_api_time_mission_start(); /* every player of a room draws the same from here */
+    if (count > 0) {
+        khdays_api_time_mission_start(); /* every player of a room draws the same from here */
+    }
     memset(&e, 0, sizeof(e));
     e.id = KHDAYS_EVENT_MISSION_START;
     e.a = khdays_link_mission();
@@ -727,7 +761,7 @@ void khdays_scripts_mission_end(int mission, int rank, int complete)
         fprintf(stderr, "mods-trace: mission end: mission %d, rank %d, complete %d, given up %d, %s\n", mission, rank,
                 complete, given_up, ending(given_up));
     }
-    if (count == 0) {
+    if (!heard()) {
         return;
     }
     memset(&e, 0, sizeof(e));
@@ -748,7 +782,7 @@ void khdays_scripts_hp(void *entity, int before)
     if (hp == 0 && before > 0 && khdays_link_is_player(entity)) {
         fell_at = khdays_link_frame() + 1u;
     }
-    if (count == 0) {
+    if (!heard()) {
         return;
     }
     if (hp == before) {
@@ -774,7 +808,7 @@ uint16_t khdays_scripts_buttons(uint16_t buttons)
 void khdays_scripts_saved(void)
 {
     KhdaysEvent e;
-    if (count == 0) {
+    if (!heard()) {
         return;
     }
     memset(&e, 0, sizeof(e));

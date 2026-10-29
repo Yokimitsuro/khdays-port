@@ -130,6 +130,11 @@ int khdays_overlay_loaded(int id)
 {
     return id == overlay;
 }
+int khdays_characters_known(int number) /* no mod's characters here */
+{
+    (void)number;
+    return 0;
+}
 void Ov008_RouteCommittedPageState(void) {}
 int Ov025_GetIdleHandler(void)
 {

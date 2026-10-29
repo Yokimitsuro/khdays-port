@@ -59,6 +59,10 @@ struct Atlas {
 // from the SAME mod. Returns null for no mod or invalid data; errors are logged.
 // An original NFTR can be 'text/font_eu_10.nftr' or 'sf/ssfont_8.nftr'.
 std::shared_ptr<const Atlas> load(const std::string &original_resource);
+// Capture keeps configured artwork identities while the display preference is off.
+bool observe(bool enabled);
+int layout_override(int mode);
+std::shared_ptr<const Atlas> load_configured(const std::string &original_resource);
 
 // Called by the offline graphics dump for an initial independent smoke test.
 // Return: 0=no override, 1=valid, -1=invalid override.

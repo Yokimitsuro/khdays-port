@@ -36,6 +36,9 @@ u8 *khdays_slots_byte(u32 offset, int writing, u32 *chip_at);
  * it wrote, written whole and atomically. 0 if one could not be. */
 int khdays_slots_commit(void);
 
+/* A file the game wrote to since the last asked (0 on), taken; -1 when none is left. */
+int khdays_slots_next_written(void);
+
 /* Whether a save action wrote to one of the port's files not committed yet. */
 int khdays_slots_changed(void);
 

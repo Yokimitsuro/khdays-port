@@ -15,6 +15,10 @@
 #include "runtime.h"
 #include "session_log.h"
 #include "../movies/scene_trace.h"
+#include "../characters/characters.h"
+#include "../plugins/actors.h"
+#include "../plugins/plugins.h"
+#include "../missions/missions.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +46,8 @@ int khdays_runtime_init(int argc, char **argv)
     if (!khdays_rom_init()) {
         return 0;
     }
+    khdays_missions_start();   /* the mods' new missions: their files in the ROM before anything reads it */
+    khdays_characters_start(); /* the mods' characters: their folders in the ROM too */
     khdays_input_init();
     khdays_display_init();
     if (!khdays_host_start()) {
@@ -214,32 +220,99 @@ static void trace_chests_and_time(u32 frame)
     }
 }
 
+/* KHDAYS_TRACE_MISSION: the field's pickups (*data_ov002_0207fa28's stage, Ov002_FindFreeSpotId: a bit per id,
+ * MSB first, set while free; ids 0-31 the band an emblem takes, Ov002_TakeEntryOfKind1; where each was last put at
+ * +0x2528) and the chests opened (the root's +0x8d80, Ov002_NoteSeatAnswer's marks), when they change. */
+static void trace_pickups(u32 frame)
+{
+    static u32 last_taken = ~0u, last_opened = ~0u;
+    const u32 stage = *(const volatile u32 *)KHDAYS_W(0x0207fa28 + 4);
+    const u32 root = *(const volatile u32 *)KHDAYS_W(0x0207fa00);
+    const u32 bits = in_game_ram(stage) ? *(const volatile u32 *)KHDAYS_W(stage + 0x5c) : 0;
+    const u32 taken = in_game_ram(bits) ? ~*(const volatile u32 *)KHDAYS_W(bits) : 0;
+    const u32 opened = in_game_ram(root) ? *(const volatile u16 *)KHDAYS_W(root + 0x8d80) : 0;
+    if (opened != last_opened) {
+        last_opened = opened;
+        fprintf(stderr, "mission: frame %u, chests opened %04x\n", frame, opened);
+    }
+    if (taken == last_taken) {
+        return;
+    }
+    last_taken = taken;
+    fprintf(stderr, "mission: frame %u, pickups of the low band taken %08x\n", frame, taken);
+    for (u32 id = 0; id < 32; ++id) {
+        if (taken & 0x80000000u >> id) {
+            const volatile s32 *at = (const volatile s32 *)KHDAYS_W(stage + 0x2528 + 12 * id);
+            fprintf(stderr, "pickup: frame %u, id %u at (%.3f, %.3f, %.3f)\n", frame, id, at[0] / 4096.0,
+                    at[1] / 4096.0, at[2] / 4096.0);
+        }
+    }
+}
+
+/* KHDAYS_TRACE_MISSION in the field: the state fields the missions' scripts steer their areas, objective and
+ * dark corridor by, when they change. */
+extern int GameState_GetField(int field, int bits);
+
+static void trace_mission_fields(u32 frame)
+{
+    static const struct {
+        int field, bits;
+    } fields[] = {{8320, 5}, {8326, 1}, {8327, 1}, {8834, 1},  {8835, 1}, {8837, 1}, {8839, 1},
+                  {8840, 1}, {8841, 1}, {8842, 1}, {8862, 10}, {8872, 1}, {8419, 1}};
+    static int last[sizeof(fields) / sizeof(fields[0])];
+    static int known;
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
+        const int v = GameState_GetField(fields[i].field, fields[i].bits);
+        if (known && v != last[i]) {
+            fprintf(stderr, "mission: frame %u, state[%d:%d] %d -> %d\n", frame, fields[i].field, fields[i].bits,
+                    last[i], v);
+        }
+        last[i] = v;
+    }
+    known = 1;
+}
+
 /* KHDAYS_TRACE_MISSION: what a mission puts in the field, to compare with the studio's mission
  * editor: chests and time limit (above) and spawners. The object context *data_ov002_0207fa14: its
  * slots (0x18 bytes, the object first) at +0x44, how many at +0x49; an object's script position at
- * +0x104, its tag at +0x4a; the slot's group at +0x14. */
+ * +0x104, its tag at +0x4a; the slot's group at +0x14; its enemies' places (Ov107_Spawner_Run's: 0xc bytes from
+ * +0x50, how many at +0x4c, the second byte's bit 1 set while an actor is bound to it). */
 static void trace_mission(u32 frame, int in_field)
 {
     static int trace = -1;
-    static u32 last_ctx = ~0u, last_count = ~0u;
-    u32 ctx, slots, count;
+    static u32 last_ctx = ~0u, last_count = ~0u, last_bound = ~0u;
+    u32 ctx, slots, count, bound = 0;
     if (trace < 0) {
         trace = getenv("KHDAYS_TRACE_MISSION") != NULL;
     }
-    if (!trace || frame % 60 != 0) {
+    if (!trace) {
+        return;
+    }
+    if (in_field) {
+        trace_mission_fields(frame);
+    }
+    if (frame % 60 != 0) {
         return;
     }
     if (in_field) {
         trace_chests_and_time(frame);
+        trace_pickups(frame);
     }
     ctx = *(const volatile u32 *)KHDAYS_W(0x0207fa14);
     slots = in_game_ram(ctx) ? *(const volatile u32 *)KHDAYS_W(ctx + 0x44) : 0;
     count = in_game_ram(ctx) ? *(const volatile u8 *)KHDAYS_W(ctx + 0x49) : 0;
-    if (ctx == last_ctx && count == last_count) {
+    for (u32 i = 0; in_game_ram(slots) && i < count; ++i) {
+        const u32 object = *(const volatile u32 *)KHDAYS_W(slots + i * 0x18);
+        for (s16 p = 0; in_game_ram(object) && p < *(const volatile s16 *)KHDAYS_W(object + 0x4c); ++p) {
+            bound = bound * 3 + ((*(const volatile u8 *)KHDAYS_W(object + 0x50 + 0xc * (u32)p + 1) >> 1) & 1) + 1;
+        }
+    }
+    if (ctx == last_ctx && count == last_count && bound == last_bound) {
         return;
     }
     last_ctx = ctx;
     last_count = count;
+    last_bound = bound;
     fprintf(stderr, "spawners: frame %u, context %08x, slots %08x, %u of them\n", frame, ctx, slots, count);
     if (!in_game_ram(slots)) {
         return;
@@ -251,8 +324,32 @@ static void trace_mission(u32 frame, int in_field)
             continue;
         }
         const volatile s32 *pos = (const volatile s32 *)KHDAYS_W(object + 0x104);
-        fprintf(stderr, "spawner: frame %u, slot %u, group %d, tag %d, at (%.3f, %.3f, %.3f)\n", frame, i, group,
-                *(const volatile s16 *)KHDAYS_W(object + 0x4a), pos[0] / 4096.0, pos[1] / 4096.0, pos[2] / 4096.0);
+        const s16 places = *(const volatile s16 *)KHDAYS_W(object + 0x4c);
+        int with_actor = 0;
+        for (s16 p = 0; p < places; ++p) {
+            with_actor += (*(const volatile u8 *)KHDAYS_W(object + 0x50 + 0xc * (u32)p + 1) >> 1) & 1;
+        }
+        fprintf(stderr, "spawner: frame %u, slot %u, group %d, tag %d, at (%.3f, %.3f, %.3f), %d of %d enemies out\n",
+                frame, i, group, *(const volatile s16 *)KHDAYS_W(object + 0x4a), pos[0] / 4096.0, pos[1] / 4096.0,
+                pos[2] / 4096.0, with_actor, places);
+        {
+            const u32 task = *(const volatile u32 *)KHDAYS_W(object + 0xf4);
+            fprintf(
+                stderr,
+                "spawner: frame %u, slot %u: task %08x armed %d, timers %d %d, rounds %d, flags %04x, near %d, node %08x\n",
+                frame, i, task, in_game_ram(task) ? (int)(*(const volatile u16 *)KHDAYS_W(task + 0xc) & 1) : -1,
+                *(const volatile s32 *)KHDAYS_W(object + 0xfc), *(const volatile s32 *)KHDAYS_W(object + 0x100),
+                *(const volatile s32 *)KHDAYS_W(object + 0xf8), *(const volatile u16 *)KHDAYS_W(object + 0x48),
+                *(const volatile s32 *)KHDAYS_W(object + 0x114), *(const volatile u32 *)KHDAYS_W(object + 0x40));
+        }
+        const u32 owner = *(const volatile u32 *)KHDAYS_W(object + 4);
+        const u32 kinds = in_game_ram(owner) ? *(const volatile u32 *)KHDAYS_W(owner + 4) : 0;
+        for (s16 p = 0; in_game_ram(kinds) && p < places; ++p) {
+            const u8 key = *(const volatile u8 *)KHDAYS_W(object + 0x50 + 0xc * (u32)p);
+            fprintf(stderr, "spawner: frame %u, slot %u, place %d: kind %u, at most %u out, %u out\n", frame, i, p, key,
+                    *(const volatile u8 *)KHDAYS_W(*(const volatile u32 *)KHDAYS_W(kinds + 0x9c) + key),
+                    *(const volatile u8 *)KHDAYS_W(*(const volatile u32 *)KHDAYS_W(kinds + 0xa0) + key));
+        }
     }
 }
 
@@ -273,7 +370,10 @@ void khdays_host_frame(void)
     if (scene[2] != logged_scene) {
         khdays_log("scene %d -> %u (argument %u)", logged_scene == ~0u ? -1 : (int)logged_scene, scene[2], scene[4]);
         logged_scene = scene[2];
+        khdays_characters_scene((int)scene[2]);
+        khdays_plugins_scene((int)scene[2]);
     }
+    khdays_plugins_frame(); /* the window asked them to stop: on this, the game's thread */
     khdays_scene_trace_frame(frame);
     trace_player(frame);
     trace_heap(frame);

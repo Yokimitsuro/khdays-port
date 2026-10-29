@@ -12,6 +12,25 @@ import font_fit  # noqa: E402
 
 
 class ScopeHooks(unittest.TestCase):
+    def test_reflow_hooks(self):
+        for rel in (
+            font_layout.DRAW,
+            font_layout.LINE,
+            font_layout.ALIGN,
+            "libs/nns/g2d/calls/Text_AlignAnchor.c",
+            font_fit.DRAW,
+        ):
+            source = prepare.transform((prepare.DECOMP / rel).read_text(encoding="utf-8"))
+            output = font_layout.patch(source, rel)
+            self.assertIn("int token = khdays_ui_text_layout_begin();", output)
+            self.assertIn("khdays_ui_text_layout_actual(token);", output)
+            self.assertIn("khdays_ui_text_layout_end(token);", output)
+            if rel == font_layout.DRAW:
+                self.assertLess(
+                    output.index("if (khdays_ui_text_layout_glyph("),
+                    output.index("khdays_ui_text_position(font, x, y);"),
+                )
+
     def test_speaker_name_only(self):
         rel = "src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"
         text = prepare.transform((prepare.DECOMP / rel).read_text(encoding="utf-8"))
@@ -149,6 +168,17 @@ class ScopeHooks(unittest.TestCase):
         self.assertNotIn(
             "src/overlays/scenes/ov002_field/Ov002_BuildPanelLabels.c", prepare.UI_HOOKS
         )  # Enemy-name captions are not command labels.
+
+    def test_notification_layout_observer(self):
+        rel = "src/overlays/scenes/ov002_field/Ov002_BlitTileRegion.c"
+        text = prepare.transform((prepare.DECOMP / rel).read_text(encoding="utf-8"))
+        for before, after in prepare.FILE_HOOKS[rel]:
+            self.assertEqual(text.count(before), 1)
+            text = text.replace(before, after)
+        self.assertIn("khdays_ui_notification_layout(pReq, nFlag)", text)
+        self.assertIn("Ov002_WriteMapRow(pReq->nDest", text)
+        rel = "src/overlays/scenes/ov002_field/Ov002_BuildTextItem.c"
+        self.assertIn(("Ov002_BuildTextItem", "text", "field.breakthrough", "scope"), prepare.UI_HOOKS[rel])
 
     def test_obtained_private_surface(self):
         rel = "src/overlays/scenes/ov002_field/Ov002_PanelDrawSlotCursor.c"

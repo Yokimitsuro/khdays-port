@@ -4388,6 +4388,36 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   prize boxes (17.0 a class with a shuffled list of prizes -- 0 item, 1 munny, 2 keyed object, 3
   nothing --, 17.1 a box) appear only in 1053, 1351 and 2001, its emblems (17.3) in five missions.
 - **Beside them**: `eid.z` (118 of 24: the drops by enemy class).
+- **How a Mission Mode mission flows** (read in 0004, 0010, 0160 and 1354, traced with `KHDAYS_TRACE_MISSION`,
+  which logs the state fields below as they change, 2026-10-24): the start's `_i` sets the mission up -- its chests
+  (2.76), emblems (2.83), enemy table (2.31), objective texts (2.52), the dark corridor (4.18, 4.19 at a point) --
+  and posts area 11 (2.3, `Ov002_ScriptPostLinkMessage`); an area's `_i` loads its world and room, makes its
+  spawners, the players' starts, the HUD, the notice, and files its events. Area 99's `_e` is where the others go
+  between areas and at the end; state 8862 (or 8853) tells it which area comes next, 8320 which phase an area is in.
+  **Waves**: a spawner (2.32) puts its group out when its step runs (`Ov002_CreateSlotObjectAndStart`, every part
+  at once, unless the group is already settled), so a later wave is a script with spawners run on an event: 0160's
+  `e0` makes two groups and queues itself again on event 0 with 2.7. **2.7** (`Ov002_SubmitRequestBlockKind1`:
+  gate, event, check, -, slot, threshold) with check 1 fires when every spawner row's group has settled -- all its
+  enemies defeated (`Ov002_NodeRunCheckPhase` -> `Ov002_QueryEntryValue(-1, filter)`); 0004 (defeat the
+  Mega-Shadow) files it twice, at once (event 3, its `e1`: state 8326 = 1, the objective done, 8839 = 0, the
+  corridor) and after 4000 ms (event 4, `e2`: to area 99, then back to area 11 in its second phase, the corridor
+  open). **The end**: in 1354 (survive one minute) the clock's end is a counter watch (2.6 kind 4) whose `c0` raises
+  state 8844, an event on it (2.9, 4000 ms) runs `c1`, which posts area 99, and its `_e` ends the mission (0.12): the
+  trace saw state 8326 go 0 -> 1 at the clock's end and the results 4.7 s later. The field root's `+0x8ba8`, the
+  key of `mdb.z`, `trbox` and `evi`, is the mission's file number (`Ov002_ConstructGameplayScene` copies it from
+  `data_0204c240` + 2 and formats `mi/mi/%04d` with it).
+- **Chests and emblems in Mission Mode**: neither is put out with mode flag bit 1 (`Ov002_ScriptSpawnTimedSet`
+  returns at once, `Ov002_SpawnStateSpots` skips them): Mission Mode's own missions show none. An emblem found sets
+  bit `kind` of the mission's 4 bits at `0x92b + 4n` (the same bits Mission Mode's list asks for its rows).
+- **Spawners** (2.32, `Ov002_CreateSlotObjectAndStart`; read 2026-10-28 and traced with `KHDAYS_TRACE_MISSION`,
+  which logs each spawner's enemies out and the region's limits): a spawner is a node of a region (the source 2.14
+  made), started by its trigger sphere (the last operand, a radius: 1354's 100) when a player is inside it, then
+  every 0x1000 ticks it binds a free actor of its region (made by 2.49) to each empty place of its group's parts. A
+  region ticks only the nodes it set running, which it does when a player joins it: in a game area that is after
+  the spawners are made (the 2.12 starts come after 2.32), so they run. A spawner made later in the area -- a wave
+  after the first -- stays still (seen: wave 2's spawner made, 0 of its 2 enemies out for 100 s, its node's state
+  4 against the first's 7). A row's +1 low nibble is the most of its class out at once (0, no limit, in every game
+  row).
 
 ## 19. The game's heaps
 
@@ -5080,3 +5110,232 @@ the port restores it (`runtime/battle/`).
   plays without it, or, its own off, that the host plays with it. Seen on the walk `stop` with it off: the session
   log's `stop: off`, the test mod's three panels refused (`unknown panel`), mission 94 played to its time with no
   fault.
+
+## 29. Missions and worlds of mods
+
+Read in the decompilation and seen with the test mod `port/tests/mods_v2/missions` (the walk `missions`), 2026-10-24.
+The port adds a mod's missions to the game's own list and plays them as the game's (`runtime/missions/`).
+
+- **The missions' list** (`UI/cm/msl_<lang>.msi.z`, 273 records in each language): a u16 count, then records led by
+  their u16 size (72-1,076 bytes). `Ov008_BuildRecordNode` makes a 0x58-byte node of each: `+2` the mission file's
+  number, `+4` the mission's number, `+6`/`+8` the first and last day of the story it is listed on, `+0xa` its
+  category (the world picker's: a mission's world, `tt` 0 ... `bb` 9), `+0xc` 1 for the story's hidden "next day"
+  rows (900-916), `+0xe` the number the row shows, `+0x10` a tier, `+0x14`-`+0x17` bytes, `+0x18` the time limit the
+  info shows (seconds), `+0x1a` its enemies, `+0x1c`-`+0x2e` the info's further lines (`+0x28` the results' reward
+  kind), `+0x23` its kind; then four UTF-16 texts: its name, a briefing, the objective the info shows last, a format.
+- **A record's kind**: 0 is a mission's row in the story's lists (`Ov008_RecordFilter_InRange` and its kin, by the
+  day: 108 rows), 4 its row in Mission Mode's (80), 1 and 2 its other entries there (65, 20). A mission has a row of
+  each kind it takes, all with its file and number; Mission Mode's tutorial is mission 94 on file 0010, a kind-4 row
+  alone, shown as 00.
+- **Mission Mode's list** (scene 19, `Ov008_MainMenu_StateTick`) is built a category at a time from the rows
+  `Ov008_IsEncounterEligible` takes for the list's flags (its category << 8, bit 3 the kind-4 rows): a row of
+  another kind or category is left out, one whose number is 900 or more too, then one whose last day is not past in
+  the story (`GameState_GetField(0, 9)`, 401 once field 0x44e reaches 6), and one whose mission's 4 bits at
+  `0x92b + 4n` lack its kind's bit. When the camp has no entry flagged (`Ov008_AnyEntryFlagged`: the words from its
+  context's +0x9758, as many as +0x9750 says), the list is the tutorial's row alone (list kind 7,
+  `Ov008_RecordFilter_Kind4Id10`). Seen: the walks' guest game (a level-1 Roxas, no file) lists 00, the tutorial, in
+  every world.
+  The list's rows of a world go by DOWN and UP; UP on its first row goes to its last. L and R change the world.
+- **What counts the game's missions**: `Ov008_CalcMissionCompletionPercent` (the camp's percentage) counts the
+  rows of kinds 1 and 2 (`kind & 3`), not Mission Mode's own (kind 4); `Ov005_UpdateAllMissionsClearedFlag` asks
+  missions 1-93 by number. A row of kind 4 alone never changes either.
+- **A mission's progress fields** (the game state's flag array, `gGameState` + 0x10, 0x4000 bits): status
+  `0x28e4 + 3n` (1 seen, 2 cleared, 3 complete: the story's results), crown `0x2a4c + 3n`, Mission Mode's rank
+  `0x2ca4 + 3n` (the only one Mission Mode's results write: its rows' reward kind is 8), the 4 bits at `0x92b + 4n`,
+  and the best result `gGameState` + 0x198c + 4n for n below 200 (`Ov005_CommitMissionResults`, three reads in
+  `Ov005_InitializeResultConfiguration`, the two camps' `*_MissionMenu_DrawInfo`). Each block holds 120 missions;
+  the game reaches no field past the array: the port says so in the session log when one is asked for (`missions:
+  the game reached field ...`), and no run here has said it.
+- **The port's new missions** (`runtime/missions/`): a mod's `missions/missions.txt` gives each mission a number
+  whose four fields all lie past the array (from 3510: 0x92b + 4 x 3510 = 0x4003), its number's last two digits the
+  ones it is shown with (95 on, after the tutorial's 94), and a file number from 20000; `GameState_GetField`,
+  `_SetField`, `_IsFlagSet`, `_SetFlag` and `_ClearFlag` answer its fields from the port's store, and the best result
+  joins answer for numbers past 200, so the game's own code shows, starts, ranks and records it. As
+  `UI/cm/msl_<lang>.msi.z` and `mi/mi/mdb.z` load (`Archive_LoadFile`) the port hands them back with the new
+  missions' rows after the game's: in the list a Mission Mode row made from its template's (its days past the
+  story's, so no story list takes it), its texts in that language (English where it has none); in `mdb.z` its
+  template's row. `Ov008_IsEncounterEligible` takes a new mission's row by the port's own test (its category, the
+  kinds the list asks for, its unlock) since its number is past 900; `FS_OpenFile` opens `mi/mi/<its file>` where
+  the port placed the mod's file in the ROM's image (or its template's file, for a mission without its own), the
+  file table not naming it. Its progress is kept in `saves/missions/fileNN.txt` beside the save file (read when the
+  title loads file NN, written after each save action of file NN), never in the DS's save.
+- **Seen** (the walk `missions`, the test mod `port/tests/mods_v2/missions`: a mission on 1354's file, "survive for
+  60 seconds", listed in Twilight Town's category; the maintainer's save, file 1): its row last of Twilight Town's
+  (95, "El reloj perdido"); started, the game opened `mi/mi/20000`, the mod heard mission 3595; cleared when the
+  clock ran out (rank 0); the autosave wrote file 99 and the port `saves/missions/file99.txt` (`test.missions/clock 0
+  0 4 0 -1`: Mission Mode's rank 4, no status, no best result, as the game records a Mission Mode mission). With the
+  autosave into the file played: file 1 loaded again with the mod showed the row with its crown; without the mod the
+  list ended at 92 as the game's, and the save's every mission field (1-119, the four kinds) was as before the run.
+- **A mission built from its description** (2026-10-28): a mission with waves in `missions.txt` (`start`, `wave
+  <n>`, `chest`, `emblem`, beside its time, texts, world and room) is built by the port at its start
+  (`runtime/missions/build.cpp`, khdays-studio's `core/missions/mission_build.cpp` compiled in) from the game's own
+  steps: 1354's area (world, room, actors, HUD, clock, the ending's `c0`/`c1`), its start's `_i` (the chests, the
+  emblems, the enemy table, the objective) and 0004's "all defeated" check (2.7). Wave 1's spawners are made in the
+  area's `_i`; each next wave is a script (`w2`, `w3` ...) queued on the last one's "all defeated" event, the last's
+  queues `c0` (state 8844 raised, then `c1` 4000 ms later to area 99 and the results). Each enemy of every wave has
+  its own actor (2.49). A spawner made by a later wave would never run (section 18, "Spawners"): the join at
+  `Ov002_CreateSlotObjectAndStart` sets it running with its region in the port's missions only (session log:
+  `missions: <mission>: a spawner made after its region started, running with it`).
+- **Chests and emblems of a new mission**: their sets are added to `mi/mi/trbox` and `mi/mi/evi` as they load (the
+  key the mission's file number; a chest's room byte is the mission's room, its opened flag one of the port's past
+  the flag array, kept in the save part). Seven places of ov002 leave chests and emblems out in Mission Mode (mode flag
+  bit 1): `Ov002_ScriptSpawnTimedSet` (the chests put out), `Ov002_SpawnStateSpots` (the emblems' pickups),
+  `Ov002_NoteSeatAnswer` (a chest opened marked in the root's +0x8d80), `Ov002_RaiseSeatFlagsForKey` (the marked
+  chests' flags raised at the end), `Ov002_ModuleHasKey` (the chests' module asked by the panel and the items),
+  `Ov002_GetPanelValueBand` and `Ov002_FillMissionResult` (Mission Mode's own panel and results, left as they are);
+  the first five are joined to act as the story's for a new mission. `Ov002_AppendPendingId`'s ids are the message
+  database's (the names the field shows, `Ov002_BuildKeyEntryTable`), not files.
+- **Seen** (the walk `missions_waves`, the test mod `port/tests/mods_v2/missions_waves`: two waves of Shadows in eh
+  room 2, a chest, an emblem, 120 s; the maintainer's save): listed as 95 "Dos oleadas"; wave 1's Shadow out at the
+  start (`KHDAYS_TRACE_MISSION`: 1 of 1 enemies out), defeated by the attack button; wave 2's spawner made, set
+  running, its two Shadows out (2 of 2) and defeated; state 8326 0 -> 1, "Misión completada", the results (crown
+  reward), the camp. The chest put out (1 of 1 placed), opened with Examinar ("Ganas: Poción", the panel's 1/1), its
+  mark (0001) raised at the end and kept: `test.waves/waves 0 0 4 0 -1 1`. **The emblem**: its pickup is made at its
+  point (the field's pickups, id 1 at (0, 0.049, -1.5), by `Ov002_SpawnStateSpots` with the mission's number 3595),
+  but in these runs it was neither drawn nor picked up: *open*.
+
+## 30. Characters of mods
+
+Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on the member records and the seats),
+2026-10-28. The port adds a mod's playable characters to Mission Mode (`runtime/characters/`).
+
+- **A player's character** is byte `+3` of its member record, `gPartyMembers` (0x0204c678, four records of 0x104
+  bytes: `+0` the slot, `+1` a kind, `+2` the level, `+3` the character; `PartyMember_Reset` writes the header, the
+  level row `LevelTable_ReadEntry(character, level)` into `+8` and the character's signature skill from
+  `data_02042160`, a table of 22: characters 0x00-0x15). Its numbers are the data folders' (`data_02042a70`, 20
+  codes under `ba/ch/`): 0 ro, 1 ax, 2 xi, 3 sa, 4 xa, 5 so, 6 de, 7 la, 8 le, 9 lu, 10 ma, 11 ri, 12 ve, 13 xe,
+  14 xo, 15 ze, 16 mi, 17 do, 18 go, 19 r2. The game maps three past those onto others itself: 0x13 and 0x14 onto
+  0, 0x15 onto 0xe (`PartyMember_RebuildDerived`'s growth row; `Ov022_FillSelectorStates` and
+  `LevelTable_ReadEntry` 0x14 and 0x15).
+- **From the select to the field** (seen, the walk `mission`, Roxas): the select's places keep the select's own
+  numbers (`+2`, a signed byte: `Ov006_GetMissionRowInfo`), 0-18 in its order (the Organization's thirteen from
+  Xemnas to Roxas, then Xion, the king, Sora, Riku, Donald, Goofy); `Ov006_MenuEntryToSlot` turns one into the
+  folders' number (0 -> 0xd ... 12 -> 0, 13 -> 0xe, 14 -> 0x10, 15 -> 5, 16 -> 0xb, 17 -> 0x11, 18 -> 0x12) as
+  `Ov006_UpdateMissionEntrySynchronization` writes the seats, `data_020429c8` (four of 8 bytes: a word set when
+  taken, the character's word; `Slot4_GetIfOccupied`), VBlank 2405. The camp (`Ov008_CommitSelectedPage`) resets
+  member 0 with its seat's character (`Ov008_ResetPartyMemberAndLayout` -> `PartyMember_ResetWithKind(0, 0, c, 0)`),
+  VBlank 2480; the field rewrites the header (`Ov002_UpdatePartyEntries`, VBlank 5565). In multiplayer the camp
+  copies the host's four records whole (`Ov008_CommitSynchronizedSnapshotState`): byte `+3` travels with them.
+- **A player becomes an actor**: `Ov022_FillSelectorStates` loads the overlay of the group named by the character
+  for the player's slot (`Ov029_AcquireOverlaySlot(slot, character)`, `data_ov029_020b30b0[20][4]`: ov030-048 the
+  first player's, ov049 the dual-wielding Roxas, ov050-104 the others'), whose constructor (`Ov030_CreateActor` for
+  Roxas) sets the actor's `+9` (the member's slot) and `+0xc` (a constant of the overlay: its character), loads its
+  body's pack by a literal path (`ba/ch/ro/def.p.z`, `def_hb`, `def_hho`) through `TailForwardTrackEntry(slot, path,
+  1, slot + 7)` -- called by the 74 player overlays' constructors and by `Ov023_CmdSetupPartyActors` /
+  `Ov023_CmdSeatMembers` (there with packed handles, bit 31 set) -- and finds its bones by name (`roxas_tg`,
+  `ro_w_tg_R/L`, `roxas_R`, `Bip01`).
+- **The folder's readers** by the actor's `+0xc` or a character: `LevelTable_ReadEntry` (`lv.b.z`),
+  `Ov022_BuildActorSlot` (`w_.p2`), `Ov022_BuildActionTable` (`ci.b.z`, `cm.b.z`, and the weapon's move block
+  through `Ov002_LoadCharacterWeapon`, `wp.b.z`, read Xigbar's way for character 2), `Ov022_LoadActionRows`
+  (`am.p2`), `Ov022_LoadActorEffects`, `Ov022_StartAnimRequest` (`gl`, `rg`, `as`, `ma0`, `ma2`, `it` `.p.z`,
+  `eta<n>.p.z`), `Ov023_CmdSetupPartyActors`, `Ov008_LoadCharacterWeapon`, and Mission Mode's camp model
+  (`Ov008_Menu_InitSceneObject`: records of 0x34 by character at `data_ov008_0208e9c4`, the first word its code;
+  `def_hb` for 0, `def` for 5 and 0x10-0x12, `def_h` for the rest; `Ov008_Menu_LoadSceneText` its weapons' texts,
+  Roxas's for Xion).
+- **The port's characters**: a mod's `characters/<key>/character.ini` ([CHARACTERS.md](CHARACTERS.md)) gives a
+  character a number from 0x16 (their identities' order; 0x7f the last, the places' signed byte). Only the
+  select's places hold it: the seats and the members get its base's number (`Ov006_MenuEntryToSlot` /
+  `Ov008_MenuEntryToSlot` joined), so that the game's tables of characters -- the results', the camp's, the
+  shop's, the saves -- never see one they do not have, and the port keeps which seat is a new character's (the
+  joins at the seats' writes, `Ov006_UpdateMissionEntrySynchronization`, `Ov008_MissionLobbyPoll`; forgotten at
+  the title). The base's overlay plays it. Where the game opens a seat's character's data, the joins
+  (`port/tools/prepare.py`, "Characters of mods") give the character's own folder `ba/ch/c<number>/`, which the
+  port serves at the start (the mod's `data/` files, else copies of the base's: their own places in the ROM, so
+  that a model loaded from there is known as the character's and drawn as its model). The game's own select
+  screens draw a place on one as its base's place (`Ov006_UpdateMissionMemberMenuScreen`, `Ov008_LobbyStep`:
+  their gauges, model pose, names and slots index tables of 19, which a new number would run past: seen,
+  `Ov006_MissionApplyParameterRow` stopped the game reading row 0x16). Their input
+  (`Ov00N_UpdateMissionMemberSelectionInput`) looks for the place on the DS's grid (clamped to 18 there) and,
+  on any button, writes back the grid's character -- -1 for one it does not hold -- and the screen asks for
+  its place every frame (`Ov006_MissionArmCursorRequest`, seen with a watch): joined to keep the place's own
+  number unless a direction moves it.
+- **Its animations** (`skeleton = own`, seen 2026-10-28 with the maintainer's character on Roxas, the walk
+  `missions_waves`): each draw's render object carries the joint animation the game plays (`anmJnt`, its
+  frame and its BCA0 resource). Roxas's: standing `b_ro_A000` (39 frames), running `b_ro_A001` (18), the
+  ground combo `b_ro_B009`, `b_ro_B008`, `b_ro_B015`, then `b_ro_A004`; his folder's packs hold `b_ro_A000`-
+  `A011` (`def*.p.z`), `b_ro_e000`-`E010` (`etc.p.z`), `b_ro_D000` (`it.p.z`), `b_ro_D001`-`D003` (`ma0`-`ma2`),
+  `b_ro_L000`/`L001` (`li.p.z`), `b_ro_E011`/`E013`/`E014` (`eta*.p.z`); the B-series comes from elsewhere
+  (not found in his folder as text). The port draws the character's skeleton from the clip its description
+  gives each name, at the game's animation's point.
+- **Its weapon**: the game puts the weapon on the base model's `*_w_tg_R` node, read during the body's draw
+  by the node's callback (`NNS_G3dGetCurrentMtx` at `NODEDESC`, timing 3: the camp's
+  `Ov008_RefreshMatchingMatrices`; the field's actor finds the node by name in `Ov030_CreateActor`). The
+  port loads the character's own weapon bone's matrix there first, so the game's weapon follows it.
+- **Its voice** (read 2026-10-28; heard in `missions_waves`'s session log): an actor's sounds start through
+  `Ov022_PlayEntityVoice(actor, archive, entry)` (its action's cues from `Ov022_StepReactionCues`, its hurt,
+  the player overlay's own: `Ov030_UpdateMotionController`) and `Ov022_SpawnVoiceCue`, both into `Slot_Spawn` ->
+  `NNS_SndArcPlayerStartSeqArcEx`, which starts the entry at once. The actor's seat is its +9, its character
+  its +0xc (`PlayEntityVoice`'s switch on it picks Roxas, Sora, Riku, Xion, Mickey, Donald). Roxas's attack
+  shouts: `seqarc/PLY_ROX/vo_rs02atNN` on a voices' player; his swings `seqarc/WEP_ROX26/se_rox_weap_swingNN`
+  and run steps `seqarc/FIELD_ROX_FS_LAST/se_rox_fs_last_run01/02` are effects. The port is told the actor
+  around those two `Slot_Spawn`s, and a new character's `[sounds]` choose the entry's file then.
+- **Its combos** (`ba/ch/<code>/ci.b.z`, unpacked by its name's `.z`; read 2026-10-28 from Roxas's): a word
+  counting the keyblades (Roxas 18), then 0x34 bytes each -- the six pools' places from the file's start, their
+  counts (u16 x3 a graph), each graph's four entry points into its first pool (s16 x4) -- then the pools, 8
+  bytes a node (the attack's number, then s16 the node it goes on to and the branch: an index in the pool,
+  0x80 the graph's entry point with the next pool as its alternate, -1 none). The keyblade's record is the one
+  `Ov022_RebaseAnimRecord` takes (`ActionTable` +0x18); its graph 0 is the ground combo, 1 the air one
+  (`Ov022_BuildNodeGraph`): pool 0 the chain, pool 1 the finisher, pool 2 the branches' nodes; entry 1 is where
+  the chain's last node goes on (0: from the start), entry 2 its last node. Roxas's first keyblade: ground
+  `0 1`, finisher `2`; air `3 4`, finisher `5`; the others' attacks are numbered by keyblade (1010, 1060, 1000;
+  2060, 2080, 2050 ...).
+- **Its attacks** (`cm.b.z`): a word whose low byte counts them (Roxas 96), their places, then each a record of
+  15 words -- its number, its hits' kind, the animation's row its attack plays (`Ov022_FindOrClaimTagSlot`'s tag:
+  16 rows a keyblade), ..., the hits' count -- and its hits (`Ov022_UnpackChannelGrid`). A sweeping hit (kind
+  0, `Ov022_RunContactMode0`) is 15 words: its damage (fx32, `Ov022_ComputeStrengthDamage`'s factor), its first
+  and last frame, its push out and up, two flags, a level, then its place (x, y, z: turned by the actor's facing),
+  its radius, its spread's cosine and its event. Roxas's first hit: damage 0.75 over frames 6-12 at 1.19 radius;
+  the finisher five hits of 1.5 sweeping round over frames 12-21. `Ov022_LinkActionAnims` keeps at most 64
+  attacks of a keyblade's two graphs. The port writes a new character's `[moveset]` into its own copies of
+  both (unpacked, rewritten, packed again as LZ11 literals) when the game starts.
+- **Its Limit** (seen 2026-10-28 in `missions_waves` with the HP kept low by a test mod, the tutorial's text:
+  hold A once the HP is in the yellow): Roxas's plays `b_ro_L000` as it starts, then `b_ro_L001` at each of
+  its hits with `b_ro_A003`/`b_ro_A004` between them, shouting `vo_rs02at01`/`vo_rs02at03`; the combo comes
+  back after it. Its animations are his folder's `li.p.z` (one BCA0) and its effects `li_e0`-`li_e3`,
+  `li_ea0` (`Ov030_BuildActorHandles`, `Ov030_initStateSlotsDispatch`, the paths written in ov030). Its
+  hits are not `cm.b`'s attacks (`Ov022_RunComboContacts` never runs during them): ov030's own code
+  (`Ov030_EmitTimelineEffect`: a hit every 6 frames, its damage `Ov022_ScaleRowValues` with factor 1.23,
+  1.17 for its other kind). Every player overlay makes its own moves' damage through
+  `Ov022_ScaleRowValues` (the actor's seat's strength and bonuses, capped at 999, times the factor), which
+  the port joins for a new character's `[limit] damage`.
+
+## 31. Mods' native plugins
+
+- **How the game closes** (read 2026-10-28, `host/app/window.c`): the window's close (`SDL_EVENT_QUIT`) ends the
+  process at once with `_Exit(0)` from the window's thread, the game's thread still running its frame; nothing of the
+  game is stopped. The port's native plugins (`port/runtime/plugins`, docs/MODDING_NATIVE.md) are stopped on the
+  game's thread first: the window asks (`khdays_plugins_quit`) and waits up to a second, the game's thread stops them
+  at its next frame (`khdays_plugins_frame`, from `khdays_host_frame`). Seen with the SDK's Hello World: its goodbye
+  logged and its library released before the process ended.
+- **The first hook points** (seen 2026-10-28 with `sdk/examples/AdvancedNativeMod` in `missions_waves`):
+  `Ov022_ActorSetHp` runs for the player's HP (a Shadow's hit of 1 on a 359-HP player) but not for the enemies'
+  (the Lua mods' `hp` event hears no enemy either): their HP goes another way, a point of its own to find.
+  `PlaySound` starts the menus' sound effects (6-7 a scene there) but none of the field's, which go through
+  `Slot_Spawn` (`Ov022_PlayEntityVoice`, section 30).
+- **The enemies' and the field's points** (seen 2026-10-28, the same mission with `sdk/examples/CustomCharacter`):
+  `Ov107_AiState_ApplyHit` runs for each hit an enemy takes; after it, a Shadow's HP read 0 of 75 from a 618-damage
+  hit and the enemy was still standing (+0x60 bit 0x100): the defeat comes after the routine returns. `Slot_Spawn`
+  started 83 sounds in that field and none in the menus before it (where `PlaySound` started 3-7 a scene).
+- **The standing enemies** are ov107's actor manager's list (`gOv107ActorManager` + 4, `List_First`/`List_Next`: +4
+  its first node, +0x10 its end, a node's +4 the next, +0xc an element whose first word is the actor): the port walks
+  it without the list's cursor (+0x24 of the list), which the game's own walks keep, and takes those set going
+  (+0x60 bit 0x100). The id table (+0x48, `Ov107_Scene_BuildIdTable`) is not used: it is made again after each new
+  actor, and between the two its size (+0x24) is ahead of it.
+- **A player's attacks** (`Ov022_RunComboContacts`, each battle tick of an attack, section 30): the record's first
+  half-word is the attack's id as `[moveset]` names it. Roxas's combo with his own files went 13090, 13080, 13150
+  (Ventus's rewritten ones 0, 1, 2), each attack's hits worked out several times as its frames test them
+  (`Ov022_ComputeStrengthDamage` 1-6 times an attack).
+- **A player's states** (seen 2026-10-29 with `Ov022_ActorSetState`'s hook point, Roxas's code, `missions_waves`):
+  the routine takes the state's number and answers its routine (the DS address the actor keeps at +0x460, 0 for
+  none), which the caller makes the actor's. The combo is 3 then 14 (`Ov022_StepComboState`, mode 0x27); the Limit 23
+  as it starts (`Ov022_SelectForcedState` when the actor's state block says so: mode 0x2e, its `b_ro_L000`), then at
+  each hit 34 (`Ov030_ArmPlayerTarget`) and 24 at once (the pending action 5: mode 0x2f, ov030's own state
+  routine, `b_ro_L001`), and between the hits 2 and 22 (`Ov022_StepJumpState`, modes 3 and 4: its `A003`/`A004`).
+  A before-function that skips 23, 34 and 24 for an actor (answering 0) keeps the Limit from starting: the actor
+  stays in its state, none of the Limit's animations plays (`sdk/examples/CustomLimit`).
+- **The enemies' manager** also holds actors with no HP: beside the waves mission's Shadows one of kind byte 67
+  (maximum HP 0) stood (+0x60 bit 0x100) and took none of the hits dealt to it; kh.actors leaves them out.
+- **A plugin's hit** (`kh.combat`): the players' packet (`Ov022_SendSweepHit`) built with no part node, so that
+  `Ov107_CalcHitDamage` takes its damage as it is; given to `Ov107_AiState_ApplyHit` with the player's +0x4ec as its
+  source, as the game does. Seen: 241 damage spins took Shadows of 75 and 38 HP to 0 (defeated, rewarded), and a
+  Shadow moved by `Ov107_MoveNodeAndRelayout` after a hit answered it had moved.

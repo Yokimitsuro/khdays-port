@@ -109,6 +109,7 @@ static int set_flag(lua_State *L)
 static int set_hp(lua_State *L)
 {
     const lua_Integer v = luaL_checkinteger(L, 1);
+    const char *why;
     int hp, max;
     if (!khdays_api_may_change(L, 1)) {
         return 2;
@@ -117,7 +118,10 @@ static int set_hp(lua_State *L)
         return refuse(L, "no player");
     }
     /* the game clamps to the maximum; 0 is a defeat, as a hit's */
-    khdays_link_set_player_hp((int)clamp(v, 0, max));
+    why = khdays_link_set_player_hp((int)clamp(v, 0, max));
+    if (why != NULL) {
+        return refuse(L, why);
+    }
     lua_pushboolean(L, 1);
     return 1;
 }

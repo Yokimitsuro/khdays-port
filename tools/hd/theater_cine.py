@@ -631,7 +631,7 @@ def main() -> int:
         if not found:
             ap.error("no extracted game data in data/extracted: give --data")
         data = found[0].parent
-    for lang in args.lang:
+    for lang in tt.skip_missing_languages(data, args.lang):
         make(args.mare, data, lang, tt.ROOT / "mods" / args.mod / "layouts" / "cine", args.preview)
     return 0
 

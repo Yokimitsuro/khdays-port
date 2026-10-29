@@ -7,6 +7,8 @@
 #include "../screens/ui_text.h"
 #include "../../runtime/scripts/queue.h"
 #include "../../runtime/scripts/view.h"
+#include "../../runtime/plugins/plugins.h"
+#include "../../runtime/plugins/shown.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -31,6 +33,8 @@ static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT
     *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
 static const int antialiasing_values[4] = {1, 2, 3, 4};
 static const char *autosaves[3], *save_files[2];
+static const char *hud_anchors[9], *mission_visibility[2];
+static const int hud_anchor_values[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 /* the choices' order on screen: file 99 (the default) first */
 static const int autosave_values[3] = {KHDAYS_AUTOSAVE_FILE99, KHDAYS_AUTOSAVE_PLAYED, KHDAYS_AUTOSAVE_OFF};
 static const int save_files_values[2] = {1, 0};
@@ -42,6 +46,10 @@ static char preset_line[160], kh2_note[1024], menu_note[512], automatic[64];
 void khdays_model_refresh(const KhdaysProfile *work)
 {
     khdays_ui_set_language(khdays_language_choose(work->language));
+    for (int i = 0; i < 9; ++i)
+        hud_anchors[i] = khdays_text(TXT_HUD_ANCHOR_0 + i);
+    mission_visibility[0] = khdays_text(TXT_HUD_ALWAYS);
+    mission_visibility[1] = khdays_text(TXT_HUD_PAUSE_ONLY);
     stick_roles[0] = khdays_text(TXT_NOTHING);
     stick_roles[1] = khdays_text(TXT_DPAD_MOVE);
     stick_roles[2] = khdays_text(TXT_CAMERA);
@@ -296,6 +304,42 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     /* the mouse turns the camera where the analog camera does (runtime/input/controls_hooks.c) */
     add_switch(b, KHDAYS_SET_ENH_MOUSE, TXT_ENH_MOUSE, &e->mouse_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
                khdays_text(TXT_ENH_MOUSE_NOTE));
+    add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
+    add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_MINIMAP, TXT_HUD_MINIMAP, &e->hud[KHDAYS_OPT_MINIMAP], 1,
+               khdays_text(TXT_HUD_MINIMAP_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_PARTY_HP, TXT_HUD_PARTY_HP, &e->hud[KHDAYS_OPT_PARTY_HP], 1,
+               khdays_text(TXT_HUD_PARTY_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_ENEMY_HP, TXT_HUD_ENEMY_HP, &e->hud[KHDAYS_OPT_ENEMY_HP], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_MISSION, TXT_HUD_MISSION, &e->hud[KHDAYS_OPT_MISSION], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_INFORMATION, TXT_HUD_INFORMATION, &e->hud[KHDAYS_OPT_INFORMATION], 1,
+               khdays_text(TXT_HUD_INFORMATION_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_RETICLES, TXT_HUD_RETICLES, &e->hud[KHDAYS_OPT_RETICLES], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_LOCKED_ON, TXT_HUD_LOCKED_ON, &e->hud[KHDAYS_OPT_LOCKED_ON], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_NOTIFICATIONS, TXT_HUD_NOTIFICATIONS, &e->hud[KHDAYS_OPT_NOTIFICATIONS], 1,
+               khdays_text(TXT_HUD_NOTIFICATIONS_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_HEART_POINTS, TXT_HUD_HEART_POINTS, &e->hud[KHDAYS_OPT_HEART_POINTS], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
+               khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,
+               khdays_text(TXT_HUD_INFORMATION_HUD_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_UI_PADDING, TXT_HUD_UI_PADDING, &e->hud[KHDAYS_OPT_UI_PADDING], 1,
+               khdays_text(TXT_HUD_UI_PADDING_NOTE));
+    add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_MISSION_LAYOUT));
+    add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY, &e->hud[KHDAYS_OPT_MISSION_VISIBILITY],
+               mission_visibility, 2);
+    add_choice(b, KHDAYS_SET_HUD_MISSION_ANCHOR, TXT_HUD_MISSION_ANCHOR, &e->hud[KHDAYS_OPT_MISSION_ANCHOR],
+               hud_anchors, 9)
+        ->values = hud_anchor_values;
+    add_choice(b, KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR, TXT_HUD_MISSION_PAUSE_ANCHOR,
+               &e->hud[KHDAYS_OPT_MISSION_PAUSE_ANCHOR], hud_anchors, 9)
+        ->values = hud_anchor_values;
 }
 
 static void build_sticks(Builder *b, KhdaysProfile *w)
@@ -510,6 +554,15 @@ static void mods_rebuild(void)
         } else {
             snprintf(mod_heads[i], sizeof(mod_heads[i]), "%s %s", name, v->version != NULL ? v->version : "");
         }
+        if (v->ignored) {
+            snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_IGNORED));
+            continue;
+        }
+        if (v->content) {
+            snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s",
+                     khdays_text(v->state == KHDAYS_MOD_LOADED ? TXT_MOD_FILES_ON : TXT_MOD_FILES_OFF));
+            continue;
+        }
         switch (v->state) {
         case KHDAYS_MOD_LOADED: snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_RUNNING)); break;
         case KHDAYS_MOD_OFF: snprintf(mod_lines[i], sizeof(mod_lines[i]), "%s", khdays_text(TXT_MOD_OFF)); break;
@@ -532,20 +585,87 @@ static void mods_take(void)
     }
 }
 
+/* The native plugins as the game's thread last showed them (runtime/plugins/shown.h), and their rows' words. */
+static KhdaysPluginsShown plugins_view;
+static char (*plugin_heads)[160], (*plugin_lines)[400];
+
+static void plugins_take(void)
+{
+    if (!khdays_plugins_shown(&plugins_view)) {
+        return;
+    }
+    free(plugin_heads);
+    free(plugin_lines);
+    plugin_heads = calloc((size_t)plugins_view.count + 1, sizeof(*plugin_heads));
+    plugin_lines = calloc((size_t)plugins_view.count + 1, sizeof(*plugin_lines));
+    if (plugin_heads == NULL || plugin_lines == NULL) {
+        khdays_plugins_shown_free(&plugins_view);
+        return;
+    }
+    for (int i = 0; i < plugins_view.count; ++i) {
+        const KhdaysPluginShown *v = &plugins_view.plugins[i];
+        if (v->author[0] != '\0') {
+            snprintf(plugin_heads[i], sizeof(plugin_heads[i]), "%s %s -- %s", v->name, v->version, v->author);
+        } else {
+            snprintf(plugin_heads[i], sizeof(plugin_heads[i]), "%s %s", v->name, v->version);
+        }
+        switch (v->state) {
+        case KHDAYS_PLUGIN_STARTED:
+            snprintf(plugin_lines[i], sizeof(plugin_lines[i]), "%s", khdays_text(TXT_PLUGIN_RUNNING));
+            break;
+        case KHDAYS_PLUGIN_STOPPED:
+            snprintf(plugin_lines[i], sizeof(plugin_lines[i]), "%s", khdays_text(TXT_PLUGIN_STOPPED));
+            break;
+        case KHDAYS_PLUGIN_WAITING:
+            snprintf(plugin_lines[i], sizeof(plugin_lines[i]), "%s",
+                     khdays_text(plugins_view.safe_mode ? TXT_PLUGIN_SAFE_MODE : TXT_PLUGIN_WAITING));
+            break;
+        default:
+            snprintf(plugin_lines[i], sizeof(plugin_lines[i]),
+                     khdays_text(v->state == KHDAYS_PLUGIN_FAILED ? TXT_PLUGIN_FAILED : TXT_PLUGIN_REFUSED), v->why);
+            break;
+        }
+    }
+}
+
 int khdays_model_section_shown(int section)
 {
     if (section != KHDAYS_SECTION_MODS) {
         return section >= 0 && section < KHDAYS_SECTION_COUNT;
     }
     mods_take();
-    return mods_view.count > 0;
+    plugins_take();
+    return mods_view.count > 0 || plugins_view.count > 0;
 }
 
-static void build_mods(Builder *b)
+/* Native code, and what became of each plugin as the game started: the switch is read at the next start. */
+static void build_native_code(Builder *b, KhdaysProfile *w)
+{
+    KhdaysRow *r;
+    plugins_take();
+    if (plugins_view.count == 0 || plugin_heads == NULL) {
+        return;
+    }
+    r = add_switch(b, KHDAYS_SET_NATIVE_CODE, TXT_NATIVE_CODE, &w->mods.native_code, 1,
+                   khdays_text(TXT_NATIVE_CODE_NOTE));
+    r->apply = KHDAYS_APPLY_NEXT;
+    r->takes = TXT_TAKES_NEXT_START;
+    for (int i = 0; i < plugins_view.count; ++i) {
+        r = add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_PLUGIN_HEADING, plugin_heads[i]);
+        r->layer = i;
+        r = add(b, KHDAYS_ROW_LINE, KHDAYS_SET_PLUGIN_STATE, plugin_lines[i]);
+        r->layer = i;
+    }
+}
+
+static void build_mods(Builder *b, KhdaysProfile *w)
 {
     const int language = khdays_ui_language();
     mods_take();
-    add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_NOTE, khdays_text(TXT_MOD_ORDER_NOTE));
+    build_native_code(b, w);
+    if (mods_view.count > 0 || b->count == 0) {
+        add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_NOTE, khdays_text(TXT_MOD_ORDER_NOTE));
+    }
     for (int i = 0; i < mods_view.count && mod_enabled != NULL; ++i) {
         const KhdaysModView *v = &mods_view.mods[i];
         KhdaysRow *r = add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_MOD_HEADING, mod_heads[i]);
@@ -556,13 +676,16 @@ static void build_mods(Builder *b)
             r = add(b, KHDAYS_ROW_LINE, KHDAYS_SET_MOD_STATE, khdays_text(TXT_MOD_WRITES_MEMORY));
             r->layer = i;
         }
-        r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_MOD_ENABLED, khdays_text(TXT_MOD_ENABLED));
-        r->value = &mod_enabled[i];
-        r->high = 1;
-        r->layer = i;
-        r->note = v->description;
-        r->apply = KHDAYS_APPLY_RESUME;
-        r->takes = TXT_TAKES_RESUME;
+        if (!v->ignored) { /* a mod turned off by hand is turned on by hand */
+            r = add(b, KHDAYS_ROW_SWITCH, KHDAYS_SET_MOD_ENABLED, khdays_text(TXT_MOD_ENABLED));
+            r->value = &mod_enabled[i];
+            r->high = 1;
+            r->layer = i;
+            r->note = v->description;
+            /* a content mod's files are the ones on as the game started (runtime/mods/list.h) until it starts again */
+            r->apply = v->content ? KHDAYS_APPLY_NEXT : KHDAYS_APPLY_RESUME;
+            r->takes = v->content ? TXT_TAKES_NEXT_START : TXT_TAKES_RESUME;
+        }
         if (i > 0) {
             r = add(b, KHDAYS_ROW_COMMAND, KHDAYS_SET_MOD_EARLIER, khdays_text(TXT_MOD_EARLIER));
             r->layer = i;
@@ -683,7 +806,7 @@ int khdays_model_rows_into(int section, KhdaysProfile *work, const KhdaysModelCo
     case KHDAYS_SECTION_MULTIPLAYER: build_multiplayer(&b, work); break;
     case KHDAYS_SECTION_LANGUAGE: build_language(&b, work); break;
     case KHDAYS_SECTION_GENERAL: build_general(&b, work); break;
-    case KHDAYS_SECTION_MODS: build_mods(&b); break;
+    case KHDAYS_SECTION_MODS: build_mods(&b, work); break;
     default: break;
     }
     return b.count;

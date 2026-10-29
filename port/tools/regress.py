@@ -43,6 +43,7 @@ class Walk:
     mods: str | None = None  # one mod's folder (from the repository's root) it plays with, alone
     window: bool = False  # in a window (a mission's opening dialogs wait for the window's picture)
     marks: tuple[str, ...] = ()  # what each player's session log must say (KHDAYS_LOG on)
+    env: tuple[tuple[str, str], ...] = ()  # its own NAME=VALUE pairs for the game
 
 
 # The routes: the Mission Mode loop, Story Mode, a mission in play, challenge 07, a save (the camp
@@ -104,6 +105,78 @@ WALKS = [
         window=True,
         marks=("stop: recipes 101-103 added after the game's 101", "Stop synthesised\t1"),
     ),
+    # a mod's new mission (port/tests/mods_v2/missions): listed in Twilight Town's Mission Mode list after the
+    # game's (the player's save: a file with the missions open), played on mission 1354's file, cleared when its
+    # clock runs out, its progress written beside the save file the autosave writes (file 99: the chip untouched)
+    Walk(
+        "missions",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions",
+        window=True,
+        marks=(
+            "missions: test.missions/clock is mission 3595",
+            "with the new missions' rows",
+            "rom: the game opened mi/mi/20000",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+            "missions: file 99's progress written",
+        ),
+    ),
+    # ... and one the port builds from its description (port/tests/mods_v2/missions_waves): two waves of Shadows
+    # beaten by the attack button, the second's spawner running once the first is defeated, its chest and emblem
+    # rows in the game's tables, cleared when the second wave is; its script's player.set_hp on every frame, refused
+    # while the field loads
+    Walk(
+        "missions_waves",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_waves",
+        window=True,
+        marks=(
+            "missions: test.waves/waves is mission 3595",
+            "missions: mi/mi/trbox with the new missions' rows",
+            "missions: mi/mi/evi with the new missions' rows",
+            "the mod's mission\t3595",
+            "missions: test.waves/waves: a spawner made after its region started, running with it",
+            "mission end\tcleared",
+            "set_hp in the field\tnot now",
+            "set_hp in the field\tdone",
+        ),
+    ),
+    # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
+    # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
+    # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route
+    Walk(
+        "character",
+        250,
+        player_save=False,
+        mods="port/tests/mods_v2/character",
+        script="mission",
+        env=(("KHDAYS_TEST_CHARACTER", "test.character/block"), ("KHDAYS_TRACE_CHARACTERS", "1")),
+        marks=(
+            "characters: test.character/block, number 0x16, plays as roxas, its folder ba/ch/c16/",
+            "characters: seat 0 is test.character/block",
+            "characters: member 0 is test.character/block (0x16), on roxas's code",
+            "rom: the game opened ba/ch/c16/def",
+            "a mod's character",
+        ),
+    ),
+    # ... chosen by a guest in a room of two: both copies play its seat as the character (the multiplayer
+    # walk's route)
+    Walk(
+        "multiplayer_character",
+        240,
+        player_save=False,
+        players=2,
+        script="multiplayer",
+        mods="port/tests/mods_v2/character",
+        env=(("2:KHDAYS_TEST_CHARACTER", "test.character/block"), ("KHDAYS_TRACE_CHARACTERS", "1")),
+        marks=(
+            "characters: seat 1 is test.character/block",
+            "characters: member 1 is test.character/block (0x16), on roxas's code",
+        ),
+    ),
 ]
 
 # The runtime reports the current scene once a second, and at each change,
@@ -131,8 +204,14 @@ def player_saves(work: Path, player: int) -> Path:
     return work / "saves" if player == 1 else work / "saves" / f"player{player}"
 
 
-def make_workdir(save: Path | None, mods: Path | None = None, settings: Path | None = None, player: int = 1) -> Path:
-    """A fresh directory with data/ linked in and, if given, a copy of the save
+def make_workdir(
+    save: Path | None,
+    mods: Path | None = None,
+    settings: Path | None = None,
+    player: int = 1,
+    data: Path = ROOT / "data",
+) -> Path:
+    """A fresh directory with data/ (`data`) linked in and, if given, a copy of the save
     (where player `player` keeps it), the mods folder linked in as mods/ and a
     copy of a settings file as saves/settings.ini (screens = one for the
     one-screen walks)."""
@@ -140,7 +219,7 @@ def make_workdir(save: Path | None, mods: Path | None = None, settings: Path | N
     link = work / "data"
     # A junction, not a copy: data/ is gigabytes. `mklink /J` needs no
     # administrator rights.
-    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(ROOT / "data")], check=True, capture_output=True)
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(data.resolve())], check=True, capture_output=True)
     if mods is not None and (mods / "mod.ini").exists():
         # one mod's own folder: alone in a mods/ of the run's
         (work / "mods").mkdir()
@@ -334,10 +413,11 @@ def run_walks(args: argparse.Namespace) -> int:
             players = []
             mods = ROOT / walk.mods if walk.mods is not None else args.mods
             for player, (name, script_name) in enumerate(zip(names, scripts), start=1):
-                works.append(make_workdir(save, mods, args.settings, player))
+                works.append(make_workdir(save, mods, args.settings, player, args.data))
                 script = (WALKS_DIR / f"{script_name}.input").read_text(encoding="utf-8").strip()
                 players.append((works[-1], script, works[-1] / "game.log"))
             env = extra_env_of(args)
+            env.update(dict(walk.env))
             if walk.marks:
                 env["KHDAYS_LOG"] = "1"
             if walk.server is not None:
@@ -433,7 +513,7 @@ def extra_env_of(args: argparse.Namespace) -> dict[str, str]:
 def run_script(args: argparse.Namespace) -> int:
     script = " ".join(args.input.read_text(encoding="utf-8").split())
     extra_env = extra_env_of(args)
-    work = make_workdir(args.save, args.mods, args.settings)
+    work = make_workdir(args.save, args.mods, args.settings, data=args.data)
     try:
         exit_code = run_game(args.exe, work, script, extra_env, args.timeout, args.log, args.window)
         keep_session_log(work, args.log.with_suffix(".session.log"))
@@ -459,6 +539,9 @@ def main() -> int:
         nargs="?",
         default=DEFAULT_EXE,
         help=f"the khdays-native.exe to run (default: {DEFAULT_EXE.relative_to(ROOT)})",
+    )
+    parser.add_argument(
+        "--data", type=Path, default=ROOT / "data", help="the data folder to play from (another extraction's)"
     )
     walks = parser.add_argument_group("regression walks")
     walks.add_argument("--walk-save", type=Path, help="the save the mission, story and play walks start from")

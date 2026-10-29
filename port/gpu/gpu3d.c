@@ -136,6 +136,7 @@ static void plot(const Polygon *p, int x, int y, const Attrs *at, int edge, uint
     Pixel *px = &fb[y * W + x];
     const float w = 1.0f / at->iw;
     const uint32_t depth = depth_of(NULL, at->z, w, wbuffer);
+    const int marker = (p->flags & KHDAYS_G3D_MARKER) != 0;
     const unsigned mode = (p->attr >> 4) & 3;
     const unsigned id = (p->attr >> 24) & 63;
     int alpha = (p->attr >> 16) & 31;
@@ -167,7 +168,9 @@ static void plot(const Polygon *p, int x, int y, const Attrs *at, int edge, uint
     if (bv < 0)
         bv = 0;
 
-    if (p->attr & 0x4000) {
+    if (marker) {
+        pass = 1;
+    } else if (p->attr & 0x4000) {
         const int64_t diff = (int64_t)depth - px->depth;
         pass = diff >= -0x200 && diff <= 0x200;
     } else {
@@ -264,7 +267,7 @@ static void plot(const Polygon *p, int x, int y, const Attrs *at, int edge, uint
             px->b = (uint8_t)b;
             px->a = (uint8_t)a;
         }
-        if (p->attr & 0x800) {
+        if ((p->attr & 0x800) && !marker) {
             px->depth = depth;
         }
         px->trans_id = (uint8_t)id;
@@ -275,7 +278,8 @@ static void plot(const Polygon *p, int x, int y, const Attrs *at, int edge, uint
         px->g = (uint8_t)gg;
         px->b = (uint8_t)b;
         px->a = 31;
-        px->depth = depth;
+        if (!marker)
+            px->depth = depth;
         px->opaque_id = (uint8_t)id;
         px->translucent = 0;
         px->fog = (p->attr >> 15) & 1;
@@ -503,9 +507,15 @@ void khdays_gpu3d_draw(const KhdaysG3dList *list, const uint8_t *io, const Khday
         missing(MISSING_ANTIALIAS, "anti-aliasing (drawn without it)");
     }
     rear_plane(disp3dcnt);
+    int marker_started = 0;
     for (int i = 0; i < list->npolys; ++i) {
         if (list->polys[i].flags & (KHDAYS_G3D_BEYOND_DS | KHDAYS_G3D_MOD)) {
             continue; /* the DS's RAM would not have held it, or a mod's model drew it */
+        }
+        if ((list->polys[i].flags & KHDAYS_G3D_MARKER) && !marker_started) {
+            for (int p = 0; p < W * H; ++p)
+                fb[p].trans_id = 0xff;
+            marker_started = 1;
         }
         draw_polygon(&list->polys[i], &list->verts[list->polys[i].first], disp3dcnt, wbuffer);
     }

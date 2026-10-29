@@ -1,0 +1,18 @@
+# The port (port/): its C style, a function's brace on its own line and `T *p`.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+IndentCaseLabels: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AccessModifierOffset: -4
+SortIncludes: Never
+ReflowComments: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+PointerAlignment: Right
+BreakStringLiterals: false

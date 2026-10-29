@@ -239,9 +239,36 @@ int main(void)
         CHECK(memcmp(out, base_out, sizeof(out)) == 0);
     }
 
-    for (int i = 0; i < 8; ++i) {
-        free(images[i]);
+    /* A native mission-panel image remains visible on engine B's BG2 in dual-screen mode. */
+    scene();
+    put32(io + 0x1000, 0x00010000u | 0x700u);
+    put16(io + 0x100a, 1u | (1u << 2) | (30u << 8));
+    put16(io + 0x100c, 2u | (1u << 2) | (29u << 8));
+    image(1, 8, 8, 0);
+    for (int i = 0; i < 64; ++i)
+        images[1][i] = 0xff00ff00u;
+    element(r, 2 | KES_DIRECT | KES_PICTURE | KES_FINE, 16, 152, 8, 8, 1, 8, 8);
+    compose(1, r, 1, NULL, out);
+    CHECK(out[152 * W + 16] != out[0]);
+
+    _Static_assert((KES_FINE & KES_PICTURE) == 0u, "image sampling and placement flags must be independent");
+    /* Independent images are drawn separately from the one-screen source crop. */
+    scene();
+    image(1, 8, 8, 1);
+    element(r, 1 | KES_PICTURE | KES_HUD, 40, 40, 8, 8, 1, 8, 8);
+    compose(0, r, 1, NULL, out);
+    CHECK(out[40 * W + 40] != out[0]);
+    desc[KD_FLAGS] |= KDF_SPLIT | KDF_FINE;
+    {
+        KhdaysGfxMemory m;
+        memory_of(&m, r, NULL);
+        CHECK(khdays_gfx_pixel_cpu(desc, &m, 40, 40) == 0);
+        r[KE_SLOT] &= ~KES_PICTURE;
+        r[KE_SLOT] |= KES_FINE;
+        CHECK(khdays_gfx_pixel_cpu(desc, &m, 40, 40) != 0);
     }
+    for (int i = 0; i < 8; ++i)
+        free(images[i]);
     if (failures) {
         fprintf(stderr, "%d failed\n", failures);
         return 1;

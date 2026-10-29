@@ -2,6 +2,7 @@
  * the sound bridge, the stream reader, the native driver (with the ARM7 binary given), the replacements
  * and the offline render (docs/BUILD.md, "The port's tests"). Prints "all sound checks passed" and
  * exits 0, or names each failure. */
+#include "../runtime/mods/list.h"
 #include "../sound/channels.h"
 #include "../sound/mix_ds.h"
 #include "../sound/bus.h"
@@ -241,6 +242,38 @@ int khdays_mods_find(const char *relative, char *path, int size)
     (void)relative;
     (void)path;
     (void)size;
+    return 0;
+}
+int khdays_mods_started_count(void)
+{
+    return 0;
+}
+const char *khdays_mods_started_path(int index)
+{
+    (void)index;
+    return NULL;
+}
+/* no mods' characters */
+int khdays_characters_speaker_sound(const char *game, char *path, int size, char *name, int name_size)
+{
+    (void)game;
+    (void)path;
+    (void)size;
+    (void)name;
+    (void)name_size;
+    return 0;
+}
+int khdays_characters_have_sounds(void)
+{
+    return 0;
+}
+int khdays_characters_sound_file(int index, char *path, int size, char *name, int name_size)
+{
+    (void)index;
+    (void)path;
+    (void)size;
+    (void)name;
+    (void)name_size;
     return 0;
 }
 struct KhdaysRomReader {

@@ -11,6 +11,7 @@ ByteAddressBuffer keys : register(t1, space0);   // the colours made transparent
 // an animated picture's pieces this frame (ui/composition.h KhdaysPiece, 32 words each): its
 // rectangle in the picture, its texels in the atlas, its corners' colours, its blend
 ByteAddressBuffer pieces : register(t2, space0);
+ByteAddressBuffer hd : register(t3, space0); // the existing changing image store
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, C x 192 at N
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
@@ -78,6 +79,14 @@ uint source_at(uint lower, float x, float y)
 #define KO_FLOOR(f) floor(f)
 #define KO_ABS(i) abs(i)
 #define KO_SOURCE(lower, x, y) source_at((lower), (x), (y))
+uint image_at(uint image, float x, float y)
+{
+    const uint first = hd.Load(image * 16u), w = hd.Load(image * 16u + 4u), h = hd.Load(image * 16u + 8u);
+    if (x < 0.0f || y < 0.0f || x >= (float)w || y >= (float)h)
+        return 0u;
+    return hd.Load((first + (uint)y * w + (uint)x) * 4u);
+}
+#define KO_IMAGE(image, x, y) image_at((image), (x), (y))
 #include "../gfx/onescreen.h"
 
 // The 3D at the texel, 8-bit channels, bit 24 when it shows there; drawn over

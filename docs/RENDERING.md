@@ -150,6 +150,17 @@ rasterizer (`port/gpu/gpu3d.c`, GBATEK's "DS 3D Video") draws them as the
 reference, close to the hardware where GBATEK leaves the arithmetic open (the
 depth value, the interpolation, which pixels a polygon covers), not bit-exact.
 
+Selection reticles have a port-only `KHDAYS_G3D_MARKER` flag. The selection draw
+hooks mark both KH2 replacements and native PNG/DS fallback draws, and clear the
+scope before returning to unrelated rendering. These polygons follow the world
+in submission order, bypass world depth in both Z and W modes, and leave world
+depth unchanged. Their translucent IDs start separately from the world's, so an
+enemy using the same ID cannot erase them. This prevents translucent enemies
+from covering reticles through the normal Y sort. GPU and software paths apply
+the same rule, including lists rebuilt for interpolation. This does not set
+`KHDAYS_G3D_OVER_2D` or change HUD placement: the existing BG0 and one-screen UI
+composition still decide which 2D elements cover the reticle.
+
 ### Shadow volumes
 
 The game draws a shadow in two passes (`ShadowVolume_Draw`): the volume's rear

@@ -17,6 +17,7 @@
 #include "../menus/mission_start.h"
 #include "../menus/retry.h"
 #include "../menus/savelist.h"
+#include "../plugins/plugins.h"
 #include "../scripts/scripts.h"
 #include "../core/runtime.h"
 #include "sequencers.h"
@@ -26,6 +27,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define DIRECTIONS (KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT)
 
 /* What a step's frame counts from: boot, or the first frame of a scene (sN)
  * or of an object update (uName). */
@@ -377,6 +380,9 @@ void khdays_input_pad_sample(void)
         snapshot.camera_x = (int16_t)script_camera[0];
         snapshot.camera_y = (int16_t)script_camera[1];
     }
+    if ((khdays_plugins_hidden_buttons() & DIRECTIONS) == DIRECTIONS) {
+        snapshot.move_x = snapshot.move_y = 0; /* a native plugin keeps the directions from the game: the stick too */
+    }
     share_stick(&snapshot);
     /* While the settings menu is open the player's input is not the
      * game's (the script's still is: headless runs have no screen). */
@@ -393,6 +399,7 @@ void khdays_input_pad_sample(void)
     latched = khdays_retry_buttons(latched);         /* the pause's Retry line in Mission Mode takes the directions */
     latched = khdays_scripts_buttons(latched);       /* a mod's screen, the title's mods' prompt */
     latched = khdays_mission_start_buttons(latched); /* a mod's mission.start presses the camp's own way */
+    latched = (u16)khdays_plugins_buttons(latched);  /* the native plugins read them, and may hide some */
     latched_unread = 1;
     ++pad_samples;
     /* Pad_Sample reads X and Y from here right after: the same moment as the

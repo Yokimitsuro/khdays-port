@@ -14,11 +14,17 @@ static Uint64 opened;
 
 void khdays_mods_log_open(const char *folder)
 {
+    static char started[1024] = ""; /* the folder whose log this run started: opened again, it goes on */
     char path[1024], previous[1024], logs[1024];
     khdays_mods_log_close();
     snprintf(logs, sizeof(logs), "%s/logs", folder);
     snprintf(path, sizeof(path), "%s/mods.log", logs);
     snprintf(previous, sizeof(previous), "%s/mods.prev.log", logs);
+    if (strcmp(started, folder) == 0) {
+        file = fopen(path, "a");
+        return;
+    }
+    snprintf(started, sizeof(started), "%s", folder);
     khdays_folders_remove(previous);
     khdays_folders_rename(path, previous);
     /* the folder made through a first empty write */

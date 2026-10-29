@@ -914,6 +914,8 @@ KD_FN uint kd_split(uint color[4], KdSprite spr, uint mask, int x, int row)
 KD_FN uint kd_element_texel(uint e, int x, int row)
 {
     const uint base = e * KE_WORDS;
+    if ((KD_DESC(KD_FLAGS) & KDF_SPLIT) != 0u && (KD_ELEMENT(base + KE_SLOT) & KES_PICTURE) != 0u)
+        return 0u;
     const float fx = (float)x + KD_SUB_X, fy = (float)row + KD_SUB_Y;
     const float ex = KD_ASFLOAT(KD_ELEMENT(base + KE_X)), ey = KD_ASFLOAT(KD_ELEMENT(base + KE_Y));
     const float ew = KD_ASFLOAT(KD_ELEMENT(base + KE_W)), eh = KD_ASFLOAT(KD_ELEMENT(base + KE_H));

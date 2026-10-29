@@ -42,6 +42,12 @@ removed -- says how it went over the window: a green notice that goes after a
 few seconds, or a red one with the reason that stays until you close it. The
 last one stays in the line at the bottom too.
 
+What the studio knows is shown by its name beside its code: the mission worlds
+(`wd_tt` - Twilight Town, in the tool's language), the game's characters'
+folders (`ba/ch/ro` - Roxas), and each mission file with the name the game's
+own list gives it, read from the player's copy (nothing of it is kept but in
+memory).
+
 "Themes" (top right) chooses the studio's colour palette, in the colours of
 KH1's, KH2's, KH3's, Days' or Melody of Memory's menus (MoM's unless another
 is chosen). It changes at once and is kept in the settings.
@@ -329,7 +335,82 @@ is chosen). It changes at once and is kept in the settings.
     game's movies set to HD. A mod holds one of the two per movie (an
     `.mpg` would win over an `.mp4`).
 
+11. **A plugin's parameters.** "Plugin" (top right) opens the chosen mod's
+    native plugin's parameters, as the mod describes them in its
+    `parameters.ini` (docs/MODDING_NATIVE.md, "Its parameters"): a slider for
+    a number within its bounds, a box for a flag, a list for its choices, a
+    field for a text, each with its label and help in the tool's language and
+    its default. "Save the values" writes them beside the description
+    (`parameters.values.ini`), which the game reads as it starts. The plugin
+    itself is never loaded: what shows is the description's.
+
+    To try one, `mods-examples/CustomLimit` is a mod with parameters (its
+    Limit's spins, damage, reach and status).
+
+12. **Characters.** "Characters" (top right) lists the chosen mod's playable
+    characters (docs/CHARACTERS.md) and makes new ones: a folder name, a name
+    and the game's character it plays as. Its tabs:
+    - *Character*: its name and its weapon's, for every language or one; the
+      character it plays as; when it is offered; its picture in the character
+      select (any picture: one not in PNG is made one); its own gauges.
+    - *Model*: its model (FBX, glTF or glb, chosen or dropped on the window:
+      copied into `model/` with the files it needs); its own skeleton or its
+      bones paired with its base's; its size, with **As tall as its base**;
+      the bone holding its weapon and how the weapon turns on it.
+    - *Animations*: its clips (**Add clips...**, or dropped: copied into
+      `clips/`) and, for each animation the game plays for its base (read from
+      the game, named where they are known: standing, running, jump, combo,
+      Limit...), the clip shown instead; a row clicked plays the game's
+      animation on the base and the character's clip on the character side by
+      side; below the table, the chosen row's blend, its own step and the
+      game's beat.
+    - *Voice, moves and Limit*: its sounds (a file each, or none), its combos
+      and its Limit's damage.
+
+    **Save the character** writes `character.ini` when the port's own reader
+    (port/runtime/characters/registry.c) takes it and every file it names is
+    in its folder; what the game would refuse is listed above the tabs as it
+    is changed. What the window does not change -- comments, parts it does not
+    show -- stays as written. Another character chosen, or the studio closed,
+    with changes not saved asks first.
+
+13. **Missions.** "Missions" (top right) holds the chosen mod's own missions
+    (docs/STUDIO.md, "New missions"): **New mission** makes one from a folder
+    name, a world and a room. Each mission's **Places on the map** shows its
+    room from above with its floor: choose what to add -- the players' start,
+    enemies, a chest, an emblem -- and click the floor; drag a place to move
+    it; click it to change it on the right (its wave and enemies by name, how
+    many, its facing, a chest's contents, an emblem's badge) or remove it.
+    **Save the places** writes them all at once when the mission builds as the
+    game will build it. **Words and settings** holds its name, objective and
+    description in each language; the world it is played in and its room; the
+    world tab of Mission Mode's list it is listed under (`category`); its
+    enemies' level and the time limit the list shows; and when it opens
+    (`unlock`): from the start, after one of the game's missions (chosen by
+    its number and name), or after another of the mod's.
+
 Sound loops and old-format mods come next.
+
+## Native plugins' examples
+
+The installer brings them with the studio (its "KH Studio" choice; without it,
+none is installed), beside the game:
+
+- `mods-examples/`: five mods with a native plugin, each ready to copy into
+  `mods/`, its Windows plugin built -- `HelloWorld` (a plugin's start, its
+  lines in the mods' log, its stop), `CustomCharacter` (a character of its own,
+  Block, whose attacks heal and hit twice as hard), `CustomLimit` (Spinner, a
+  character whose Limit is the plugin's: its own clips, its spins' hits; its
+  parameters in the Plugin window), `CustomEnemy` (the Shadows blink away and
+  split in two) and `AdvancedNativeMod` (hooks at the game's routines, a
+  routine and a datum by name).
+- `sdk/`: the KH Mod SDK they are built with -- its headers, CMake, docs
+  (`sdk/docs/README.md`) and the examples' sources -- to build plugins of your
+  own.
+
+A plugin runs only once the player turns native code on (the game's settings
+menu, Mods page, **Native code**: read at the next start). What a plugin may
+do, and its risks: docs/MODDING_NATIVE.md.
 
 ## Command line
 
@@ -486,6 +567,14 @@ rebuilds every mission world with nothing changed, writes every room's
 collision back from what was read, checks the game's trees and rebuilds them
 from their faces, and computes the faces' planes as the game does (under a
 second).
+
+```powershell
+.\build\studio\release\khdays-studio.exe --plugin-parameters <Mod>
+.\build\studio\release\khdays-studio.exe --set-plugin-parameter <Mod> <name> <value>
+```
+
+print a mod's native plugin's parameters with the values chosen (and what is
+wrong in its files), or choose one and save it, as the Plugin window does.
 
 Exit code 0, 1 on a problem, 2 on bad arguments.
 

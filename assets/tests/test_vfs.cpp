@@ -64,6 +64,25 @@ int main() {
         expect(khdays::vfs::resolve_original("a/x.bin") == mods / "ZMod" / "files" / "a" / "x.bin",
                "original view: mod override");
 
+        // A mod off by hand is not read: a .ignore file, or a name beginning with a dot.
+        write_file(mods / "Ign" / "files" / "a" / "x.bin", "ignored");
+        write_file(mods / "Ign" / ".ignore", "");
+        write_file(mods / ".Hidden" / "files" / "a" / "x.bin", "hidden");
+        expect(khdays::vfs::mod_ignored(mods / "Ign") && khdays::vfs::mod_ignored(mods / ".Hidden") &&
+                   !khdays::vfs::mod_ignored(mods / "ZMod"),
+               "mod_ignored");
+        expect(read_string(khdays::vfs::read("a/x.bin")) == "mod", "ignored mods skipped");
+
+        // The list set_mods gives replaces the folder's listing: its order, and only its mods.
+        write_file(mods / "AMod" / "files" / "a" / "x.bin", "amod");
+        expect(read_string(khdays::vfs::read("a/x.bin")) == "amod", "sorted order: AMod first");
+        khdays::vfs::set_mods({mods / "ZMod", mods / "AMod"});
+        expect(read_string(khdays::vfs::read("a/x.bin")) == "mod", "the list's order: ZMod first");
+        khdays::vfs::set_mods({});
+        expect(read_string(khdays::vfs::read("a/x.bin")) == "decomp", "an empty list: no mod read");
+        khdays::vfs::set_mods_root(mods);  // the listing again
+        expect(read_string(khdays::vfs::read("a/x.bin")) == "amod", "the root set again: listed again");
+
         // Missing files and path traversal.
         expect(!khdays::vfs::exists("does/not/exist"), "missing file");
         expect(!khdays::vfs::resolve("../escape").has_value(), "traversal rejected");

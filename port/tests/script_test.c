@@ -3,6 +3,7 @@
  * the state names, the interface's version 2. Each case writes its mods under a folder of its own,
  * removed at the end. */
 #include "../runtime/core/sha256.h"
+#include "../runtime/mods/list.h"
 #include "../runtime/scripts/api_v2.h"
 #include "../runtime/scripts/deck_link.h"
 #include "../runtime/scripts/enemies_link.h"
@@ -134,6 +135,7 @@ int khdays_link_position(float at[3])
 }
 
 static int fake_hp = 40, fake_hp_max = 50;
+static int fake_gauge = 1; /* the field's panel set up, its HP gauge there (0 while the field loads) */
 
 static float fake_set_at[3];
 
@@ -150,10 +152,16 @@ int khdays_link_player_hp(int *hp, int *max)
     return fake_scene == 2;
 }
 
-int khdays_link_set_player_hp(int hp)
+const char *khdays_link_set_player_hp(int hp)
 {
+    if (fake_scene != 2) {
+        return "no player";
+    }
+    if (!fake_gauge) {
+        return "not now";
+    }
     fake_hp = hp > fake_hp_max ? fake_hp_max : hp;
-    return fake_scene == 2;
+    return NULL;
 }
 
 void khdays_link_entity_hp(const void *entity, int *hp, int *max)
@@ -236,6 +244,50 @@ void khdays_net_set_mods(unsigned int fingerprint, const unsigned char *list, un
     fake_mods_count = count;
     memset(fake_mods_list, 0, sizeof(fake_mods_list));
     memcpy(fake_mods_list, list, size < sizeof(fake_mods_list) ? size : sizeof(fake_mods_list));
+}
+
+/* no native plugins (runtime/plugins/plugins.h) */
+int khdays_plugins_listening(void)
+{
+    return 0;
+}
+int khdays_plugins_room_entry(int index, unsigned char digest[32], const char **name, const char **version)
+{
+    (void)index;
+    (void)digest;
+    (void)name;
+    (void)version;
+    return 0; /* no native plugin in these tests */
+}
+void khdays_plugins_shared(const unsigned char *data, unsigned size)
+{
+    (void)data;
+    (void)size;
+}
+void khdays_plugins_game_event(const char *name, long long a, long long b, long long c, long long d, const char *text)
+{
+    (void)name;
+    (void)a;
+    (void)b;
+    (void)c;
+    (void)d;
+    (void)text;
+}
+
+/* the mods' characters (runtime/characters/characters.h): `fake_characters` of them, each part filled with
+ * `fake_character_part` */
+static int fake_characters;
+static unsigned char fake_character_part = 1;
+
+int khdays_characters_room_entry(int index, unsigned char digest[32], const char **name, const char **identity)
+{
+    if (index >= fake_characters) {
+        return 0;
+    }
+    memset(digest, fake_character_part, 32);
+    *name = "Wind";
+    *identity = "test.wind/wind";
+    return 1;
 }
 
 const char *khdays_link_play_sound(const char *sequence_archive, const char *entry)
@@ -504,6 +556,9 @@ static void reset_game(void)
     fake_munny = 0;
     fake_guest = 0;
     fake_hp = 40;
+    fake_gauge = 1;
+    fake_characters = 0;
+    fake_character_part = 1;
     fake_sound[0] = fake_notice[0] = 0;
     fake_next_actor = 0;
     fake_removed = 0;
@@ -905,11 +960,17 @@ static void test_player(void)
     mod_folder("Infinite", "test.infinite", "gameplay",
                "mod.on('frame', function()\n"
                "  local hp, max = player.hp, player.max_hp\n"
-               "  if hp ~= nil and hp < max then player.set_hp(max + 100) end\nend)\n");
+               "  if hp ~= nil and hp < max and select(2, player.set_hp(max + 100)) == 'not now' then\n"
+               "    game.set_flag(24, true)\n"
+               "  end\nend)\n");
     start();
     frames(1);
     CHECK(fake_hp == 40); /* the title: no player */
     fake_scene = 2;
+    fake_gauge = 0;
+    frames(1);
+    CHECK(fake_hp == 40 && khdays_link_flag(24)); /* the field loading: not now */
+    fake_gauge = 1;
     frames(1);
     CHECK(fake_hp == 50); /* clamped to the maximum */
     end_case();
@@ -1001,6 +1062,85 @@ static void test_menu_asks(void)
     frames(1); /* resumed, and paused again by its loop */
     CHECK(mod_by_folder("B")->state == KHDAYS_MOD_PAUSED);
     CHECK(log_has("test.b resumed - by the player"));
+    khdays_scripts_view_free(&view);
+    end_case();
+}
+
+/* Mods of files alone (no mod.ini) are listed with the scripted ones, turned off from the Mods page
+ * (order.ini), and off by hand with a .ignore file or a name beginning with a dot. */
+static void test_content_mods(void)
+{
+    KhdaysModsView view;
+    char path[600], *order;
+    const KhdaysModEntry *e;
+    memset(&view, 0, sizeof(view));
+    begin_case("content");
+    mod_folder("S", "test.s", "gameplay", "game.set_munny(game.munny + 1)\n");
+    put("mods/Looks/files/x.bin", "x");
+    put("mods/Ignored/files/x.bin", "x");
+    put("mods/Ignored/.ignore", "");
+    put("mods/.Hidden/files/x.bin", "x");
+    put("saves/mods/order.ini", "S = on\nLooks = off\n");
+    start();
+    frames(1);
+    CHECK(khdays_mods_count() == 4 && khdays_scripts_mod_count() == 1);
+    CHECK(strcmp(khdays_mods_at(0)->folder, "S") == 0 && khdays_mods_at(0)->scripted);
+    /* what the game reads: the mods on as it started, S alone (Looks off, the other two off by hand) */
+    khdays_mods_start();
+    CHECK(khdays_mods_started_count() == 1 && khdays_mods_started_has("S") && !khdays_mods_started_has("Looks"));
+    CHECK(strcmp(khdays_mods_started_folder(0), "S") == 0 && khdays_mods_started_folder(1) == NULL);
+    e = khdays_mods_by_folder("Looks");
+    CHECK(e != NULL && !e->scripted && !e->on && !e->ignored && !khdays_mods_active(e));
+    e = khdays_mods_by_folder("Ignored");
+    CHECK(e != NULL && e->on && e->ignored && !khdays_mods_active(e));
+    e = khdays_mods_by_folder(".Hidden");
+    CHECK(e != NULL && e->ignored);
+    CHECK(khdays_scripts_view(&view) && view.count == 4);
+    CHECK(strcmp(view.mods[0].folder, "S") == 0 && !view.mods[0].content && view.mods[0].state == KHDAYS_MOD_LOADED);
+    /* the listed ones in order.ini's order, then the new ones in name order */
+    CHECK(view.mods[1].content && !view.mods[1].enabled && view.mods[1].state == KHDAYS_MOD_OFF &&
+          strcmp(view.mods[1].folder, "Looks") == 0);
+    CHECK(view.mods[2].content && view.mods[2].ignored && strcmp(view.mods[2].folder, ".Hidden") == 0);
+    CHECK(view.mods[3].content && view.mods[3].ignored && strcmp(view.mods[3].folder, "Ignored") == 0);
+    khdays_scripts_ask(KHDAYS_ASK_ENABLE, "Looks", NULL, 1);
+    khdays_scripts_ask(KHDAYS_ASK_MOVE, "Looks", NULL, -1); /* before S */
+    frames(1);
+    e = khdays_mods_by_folder("Looks");
+    CHECK(e != NULL && khdays_mods_active(e) && strcmp(khdays_mods_at(0)->folder, "Looks") == 0);
+    /* its files at the next start: the start's list is as it was */
+    CHECK(khdays_mods_started_count() == 1 && !khdays_mods_started_has("Looks"));
+    CHECK(khdays_scripts_mod_count() == 1 && mod_by_folder("S")->state == KHDAYS_MOD_LOADED);
+    snprintf(path, sizeof(path), "%s/saves/mods/order.ini", root);
+    order = khdays_folders_read(path, NULL);
+    CHECK(order != NULL && strcmp(order, "Looks = on\nS = on\n.Hidden = on\nIgnored = on\n") == 0);
+    free(order);
+    khdays_scripts_view_free(&view);
+    CHECK(khdays_scripts_view(&view) && view.count == 4 && view.mods[0].enabled &&
+          view.mods[0].state == KHDAYS_MOD_LOADED && strcmp(view.mods[0].folder, "Looks") == 0);
+    khdays_scripts_view_free(&view);
+    end_case();
+
+    /* a native plugin's mod alone (no scripts/, its mod.ini naming the SDK): listed, not a scripted mod */
+    begin_case("native_only");
+    put("mods/Native/mod.ini", "id = test.native\nname = Native\nversion = 1\nsdk = 1\n");
+    start();
+    frames(1);
+    CHECK(khdays_mods_count() == 1 && !khdays_mods_at(0)->scripted && khdays_scripts_mod_count() == 0);
+    end_case();
+
+    /* content mods alone: no scripted mod, the page's asks still taken */
+    begin_case("content_only");
+    put("mods/Only/files/x.bin", "x");
+    start();
+    frames(1);
+    CHECK(khdays_scripts_mod_count() == 0 && khdays_mods_count() == 1);
+    CHECK(khdays_scripts_view(&view) && view.count == 1 && view.mods[0].content && view.mods[0].enabled);
+    khdays_scripts_view_free(&view);
+    khdays_scripts_ask(KHDAYS_ASK_ENABLE, "Only", NULL, 0);
+    frames(1);
+    CHECK(!khdays_mods_active(khdays_mods_by_folder("Only")));
+    CHECK(khdays_scripts_view(&view) && view.count == 1 && !view.mods[0].enabled &&
+          view.mods[0].state == KHDAYS_MOD_OFF);
     khdays_scripts_view_free(&view);
     end_case();
 }
@@ -1106,12 +1246,23 @@ static void test_files_and_notices(void)
 
 static void test_room_fingerprint(void)
 {
-    unsigned int first, second;
+    unsigned int first, second, alone;
     begin_case("rooms");
     mod_folder("Look", "test.look", "visual", "print('a visual mod')\n");
     start();
     CHECK(fake_mods_fingerprint == 0 && fake_mods_count == 0); /* visual mods are each player's own */
     khdays_scripts_stop();
+    fake_characters = 1; /* a mod's character counts, its mod without scripts */
+    start();
+    alone = fake_mods_fingerprint;
+    CHECK(alone != 0 && fake_mods_count == 1 && fake_mods_list[0] == 4 && memcmp(fake_mods_list + 1, "Wind", 4) == 0 &&
+          fake_mods_list[5] == 14 && memcmp(fake_mods_list + 6, "test.wind/wind", 14) == 0);
+    khdays_scripts_stop();
+    fake_character_part = 2; /* its description or its data changed */
+    start();
+    CHECK(fake_mods_fingerprint != 0 && fake_mods_fingerprint != alone);
+    khdays_scripts_stop();
+    fake_characters = 0;
     mod_folder("Play", "test.play", "gameplay", "print('a gameplay mod')\n");
     start();
     first = fake_mods_fingerprint;
@@ -1710,6 +1861,7 @@ int main(void)
     RUN(test_player);
     RUN(test_options);
     RUN(test_menu_asks);
+    RUN(test_content_mods);
     RUN(test_actions);
     RUN(test_files_and_notices);
     RUN(test_room_fingerprint);

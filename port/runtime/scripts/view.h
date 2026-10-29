@@ -21,6 +21,8 @@ typedef struct KhdaysModView {
     int kind;  /* KhdaysModKind; -1 when its manifest was refused */
     int state; /* KhdaysModState */
     int enabled;
+    int content; /* no mod.ini: its files alone (a model, a texture, a sound, a text) */
+    int ignored; /* off by hand: a .ignore file in its folder, or a name beginning with '.' */
     int memory_write; /* its mod.ini's memory = write */
     KhdaysOptionView *options;
     int option_count;

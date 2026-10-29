@@ -42,6 +42,10 @@ int khdays_names_dump_sheet(const char *file, u32 offset, const char *directory)
  * model starts there. */
 int khdays_names_model(const char *file, u32 offset, char *out, int size);
 
+/* The joint animation whose data (NNSG3dResJntAnm) starts at `offset` into `file`'s data: its name as its
+ * BCA0's JNT0 dictionary gives it ("b_ro_A001"), into `out`. 0 if none starts there. */
+int khdays_names_animation(const char *file, u32 offset, char *out, int size);
+
 /* khdays-native --dump-graphics [DIR] (default saves/dump/graphics), without the game running: every
  * texture of every NitroSystem resource in the ROM as DIR/<name>.png (with each palette the models'
  * materials use, else the first), every model as <name>.gltf, every 2D tile sheet as an indexed

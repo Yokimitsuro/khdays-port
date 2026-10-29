@@ -1,0 +1,18 @@
+# The missions walk's mission: no mission.p2 of its own, so its template's file (mi/mi/1354, "survive for 60
+# seconds") as it is, listed in Twilight Town's category after the game's.
+[mission clock]
+name en = The Lost Clock
+name fr = L'horloge perdue
+name de = Die verlorene Uhr
+name it = L'orologio perduto
+name es = El reloj perdido
+objective en = Hold out until the clock runs out.
+objective fr = Tenez jusqu'à la fin du compte à rebours.
+objective de = Halte durch, bis die Uhr abläuft.
+objective it = Resisti finché il tempo non scade.
+objective es = Resiste hasta que se acabe el tiempo.
+world = eh
+room = 0
+category = 0
+time = 60000
+template = 1354

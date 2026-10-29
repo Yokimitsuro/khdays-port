@@ -76,22 +76,17 @@ static void refuse(char *reason, size_t size, const char *key)
     snprintf(reason, size, "mod.ini: %s missing or not valid", key);
 }
 
-int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, char *reason, size_t reason_size)
+/* mod.ini's next `key = value` line from *at (blank lines, comments and lines without '=' skipped): its key's and
+ * value's spans, trimmed. 0 at the end. */
+static int next_pair(const char **at, const char *end, const char **k0, const char **k1, const char **v0,
+                     const char **v1)
 {
-    char *kind = NULL, *api = NULL, *memory = NULL;
-    const char *p = text, *end = text + size;
-    memset(out, 0, sizeof(*out));
-    if (size >= 3 && (unsigned char)p[0] == 0xef && (unsigned char)p[1] == 0xbb && (unsigned char)p[2] == 0xbf) {
-        p += 3; /* a UTF-8 mark */
-    }
-    while (p < end) {
-        const char *line = p, *eol = memchr(p, '\n', (size_t)(end - p)), *eq;
-        const char *k0, *k1, *v0, *v1;
-        char **slot = NULL;
+    while (*at < end) {
+        const char *line = *at, *eol = memchr(*at, '\n', (size_t)(end - *at)), *eq;
         if (eol == NULL) {
             eol = end;
         }
-        p = eol < end ? eol + 1 : end;
+        *at = eol < end ? eol + 1 : end;
         while (line < eol && is_space(*line)) {
             ++line;
         }
@@ -102,17 +97,51 @@ int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, ch
         if (eq == NULL) {
             continue;
         }
-        k0 = line, k1 = eq;
-        while (k1 > k0 && is_space(k1[-1])) {
-            --k1;
+        *k0 = line, *k1 = eq;
+        while (*k1 > *k0 && is_space((*k1)[-1])) {
+            --*k1;
         }
-        v0 = eq + 1, v1 = eol;
-        while (v0 < v1 && is_space(*v0)) {
-            ++v0;
+        *v0 = eq + 1, *v1 = eol;
+        while (*v0 < *v1 && is_space(**v0)) {
+            ++*v0;
         }
-        while (v1 > v0 && is_space(v1[-1])) {
-            --v1;
+        while (*v1 > *v0 && is_space((*v1)[-1])) {
+            --*v1;
         }
+        return 1;
+    }
+    return 0;
+}
+
+static const char *after_mark(const char *text, size_t size)
+{
+    return size >= 3 && (unsigned char)text[0] == 0xef && (unsigned char)text[1] == 0xbb &&
+                   (unsigned char)text[2] == 0xbf
+               ? text + 3 /* a UTF-8 mark */
+               : text;
+}
+
+char *khdays_manifest_value(const char *text, size_t size, const char *key)
+{
+    const char *p = after_mark(text, size), *end = text + size, *k0, *k1, *v0, *v1;
+    const size_t n = strlen(key);
+    char *found = NULL;
+    while (next_pair(&p, end, &k0, &k1, &v0, &v1)) {
+        if ((size_t)(k1 - k0) == n && memcmp(k0, key, n) == 0) {
+            free(found);
+            found = copy_span(v0, (size_t)(v1 - v0));
+        }
+    }
+    return found;
+}
+
+int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, char *reason, size_t reason_size)
+{
+    char *kind = NULL, *api = NULL, *memory = NULL;
+    const char *p = after_mark(text, size), *end = text + size, *k0, *k1, *v0, *v1;
+    memset(out, 0, sizeof(*out));
+    while (next_pair(&p, end, &k0, &k1, &v0, &v1)) {
+        char **slot = NULL;
 #define KEY(name) ((size_t)(k1 - k0) == sizeof(name) - 1 && memcmp(k0, name, sizeof(name) - 1) == 0)
         if (KEY("id")) {
             slot = &out->id;

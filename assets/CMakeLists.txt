@@ -93,7 +93,9 @@ add_library(
         src/gltf_export.cpp
         src/graphics2d.cpp
         src/image.cpp
+        src/kh2_bar.cpp
         src/kh2_map.cpp
+        src/kh2_sequence.cpp
         src/kh2_room.cpp
         src/mesh.cpp
         src/message.cpp

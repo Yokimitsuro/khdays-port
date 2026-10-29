@@ -162,35 +162,6 @@ std::vector<std::uint8_t> write_table(const std::vector<std::u16string> &texts)
     return b;
 }
 
-// LZ11 with every byte a literal (a zero flag byte before each eight), which the game's decompression
-// reads as it reads the ROM's own.
-std::vector<std::uint8_t> lz11_literals(const std::vector<std::uint8_t> &raw)
-{
-    std::vector<std::uint8_t> out;
-    const auto size = static_cast<unsigned>(raw.size());
-    out.push_back(0x11);
-    if (size <= 0xffffff) {
-        out.push_back(static_cast<std::uint8_t>(size));
-        out.push_back(static_cast<std::uint8_t>(size >> 8));
-        out.push_back(static_cast<std::uint8_t>(size >> 16));
-    } else {
-        out.push_back(0);
-        out.push_back(0);
-        out.push_back(0);
-        put32(out, size);
-    }
-    for (std::size_t i = 0; i < raw.size(); i += 8) {
-        out.push_back(0);
-        for (std::size_t j = i; j < raw.size() && j < i + 8; ++j) {
-            out.push_back(raw[j]);
-        }
-    }
-    while (out.size() % 4 != 0) {
-        out.push_back(0);
-    }
-    return out;
-}
-
 } // namespace
 
 bool khdays_text_patch(const std::string &game_path, const std::filesystem::path &source,
@@ -230,6 +201,6 @@ bool khdays_text_patch(const std::string &game_path, const std::filesystem::path
     if (!changed) {
         return false;
     }
-    out = lz11_literals(write_table(texts));
+    out = khdays::assets::lz11_literals(write_table(texts));
     return true;
 }

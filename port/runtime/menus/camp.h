@@ -148,7 +148,8 @@ typedef struct KhdaysCampView {
                                             * row's, or the one carried (the lower screen's own line) */
     uint32_t munny, hearts;
     int self;      /* this copy's place */
-    int character; /* its character, 0-18 (mlt_&.s's order), -1 unknown */
+    int character; /* its character, 0-18 (mlt_&.s's order) or a mod's number (runtime/characters), -1
+                    * unknown */
     KhdaysCampField field[KHDAYS_CAMP_FIELDS];
     KhdaysCampMember member[KHDAYS_CAMP_PLACES];
 } KhdaysCampView;

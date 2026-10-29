@@ -1,7 +1,10 @@
 /* The sounds mods replace (sound_mods.h). */
 #include "sound_mods.h"
+#include "../characters/characters.h"
 #include "../core/window.h"
 #include "../core/rom.h"
+#include "../core/session_log.h"
+#include "../mods/list.h"
 #include "../../sound/categories.h"
 #include "../../sound/stream_reader.h"
 
@@ -130,28 +133,39 @@ void khdays_sound_mods_trace(int on)
     trace = on;
 }
 
-/* mods/<Mod>/sounds, in the folder the mods' order reads (the VFS's mods
- * root, "mods" beside the game). */
+/* Whether a mod on as the game started (runtime/mods/list.h: the folders order.ini turns on, in load order)
+ * has the folder `sub` (e.g. "sounds/wave"), looked at in load order. */
+static int any_mod_has(const char *sub)
+{
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        const char *path = khdays_mods_started_path(i);
+        char folder[600];
+        DWORD attributes;
+        if (path == NULL) {
+            continue;
+        }
+        snprintf(folder, sizeof(folder), "%s/%s", path, sub);
+        attributes = GetFileAttributesA(folder);
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* mods/<Mod>/sounds in a mod that is on, or a mod's character's [sounds]. */
+static int mods_sounds(void);
+
 int khdays_sound_mods_present(void)
+{
+    return mods_sounds() || khdays_characters_have_sounds();
+}
+
+static int mods_sounds(void)
 {
     static int present = -1;
     if (present < 0) {
-        WIN32_FIND_DATAA found;
-        HANDLE h = FindFirstFileA("mods\\*", &found);
-        present = 0;
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                char sounds[600];
-                DWORD attributes;
-                if (!(found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || found.cFileName[0] == '.') {
-                    continue;
-                }
-                snprintf(sounds, sizeof(sounds), "mods\\%s\\sounds", found.cFileName);
-                attributes = GetFileAttributesA(sounds);
-                present = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
-            } while (!present && FindNextFileA(h, &found));
-            FindClose(h);
-        }
+        present = any_mod_has("sounds");
         if (present) {
             fprintf(stderr, "sound: mods with sounds found: their files replace the originals\n");
         }
@@ -182,6 +196,7 @@ static Entry *entry_find(const char *identifier)
             snprintf(relative, sizeof(relative), "sounds/%s%s", identifier, extensions[i]);
             if (khdays_mods_find(relative, e->path, sizeof(e->path))) {
                 e->state = LET_GO; /* to decode */
+                khdays_log("sound: %s replaced by %s", identifier, e->path);
                 break;
             }
         }
@@ -214,19 +229,45 @@ static Entry *entry_for(const char *identifier, const KhdaysOriginalLoop *loop)
     return entry_want(entry_find(identifier), loop);
 }
 
+/* The entry of a character's own file (characters.h), by its path; `name` what the traces call it (never a game
+ * sound's identifier: entry_find never finds it). */
+static Entry *entry_of_file(const char *path, const char *name)
+{
+    Entry *e;
+    for (e = entries; e != NULL; e = e->next) {
+        if (e->state != NO_FILE && strcmp(e->path, path) == 0) {
+            return e;
+        }
+    }
+    e = calloc(1, sizeof(*e));
+    if (e == NULL) {
+        return NULL;
+    }
+    snprintf(e->identifier, sizeof(e->identifier), "%s", name);
+    snprintf(e->path, sizeof(e->path), "%s", path);
+    e->state = LET_GO; /* to decode */
+    e->next = entries;
+    entries = e;
+    return e;
+}
+
+/* What a character's `none` plays in place of the game's sound: nothing, as long as it lasts. Never let go (it is
+ * not among the entries). */
+static Entry silence = {"silence", "none", {0}, READY, {32768, 1, 0, NULL, 0, 0, 0}, 0, 0, NULL};
+
 /* Whether a found file is a folder of its own (not "." or ".."). */
 static int is_folder(const WIN32_FIND_DATAA *found)
 {
     return (found->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && found->cFileName[0] != '.';
 }
 
-/* A mod's sequence archive's entries (mods/<mod>/sounds/seqarc/<archive>/<entry>.*), queued to decode. */
-static void decode_archive_ahead(const char *mod, const char *archive)
+/* A mod's sequence archive's entries (<mod>/sounds/seqarc/<archive>/<entry>.*), queued to decode. */
+static void decode_archive_ahead(const char *mod_path, const char *archive)
 {
     char pattern[600];
     WIN32_FIND_DATAA file;
     HANDLE found;
-    snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\%s\\*", mod, archive);
+    snprintf(pattern, sizeof(pattern), "%s\\sounds\\seqarc\\%s\\*", mod_path, archive);
     found = FindFirstFileA(pattern, &file);
     if (found == INVALID_HANDLE_VALUE) {
         return;
@@ -278,62 +319,54 @@ static void decode_voice_streams_ahead(const KhdaysSoundArchive *archive)
 static void decode_entries_ahead(const KhdaysSoundArchive *sdat)
 {
     static int done;
-    WIN32_FIND_DATAA mod;
-    HANDLE mods;
     if (done || sdat == NULL) {
         return;
     }
     done = 1;
     decode_voice_streams_ahead(sdat);
-    mods = FindFirstFileA("mods\\*", &mod);
-    if (mods == INVALID_HANDLE_VALUE) {
-        return;
+    for (int i = 0;; ++i) {
+        char path[520], name[160];
+        Entry *e;
+        if (!khdays_characters_sound_file(i, path, sizeof(path), name, sizeof(name))) {
+            break;
+        }
+        e = path[0] != '\0' ? entry_of_file(path, name) : NULL;
+        if (e != NULL && e->state == LET_GO) {
+            enqueue(e, 0);
+        }
     }
-    do {
+    for (int i = 0; i < khdays_mods_started_count(); ++i) {
+        const char *path = khdays_mods_started_path(i);
         char pattern[600];
         WIN32_FIND_DATAA archive;
         HANDLE archives;
-        if (!is_folder(&mod)) {
+        if (path == NULL) {
             continue;
         }
-        snprintf(pattern, sizeof(pattern), "mods\\%s\\sounds\\seqarc\\*", mod.cFileName);
+        snprintf(pattern, sizeof(pattern), "%s\\sounds\\seqarc\\*", path);
         archives = FindFirstFileA(pattern, &archive);
         if (archives == INVALID_HANDLE_VALUE) {
             continue;
         }
         do {
             if (is_folder(&archive)) {
-                decode_archive_ahead(mod.cFileName, archive.cFileName);
+                decode_archive_ahead(path, archive.cFileName);
             }
         } while (FindNextFileA(archives, &archive));
         FindClose(archives);
-    } while (FindNextFileA(mods, &mod));
-    FindClose(mods);
+    }
 }
 
 /* --- The waves --------------------------------------------------------------------- */
 
 static void set_entry(Entry **slot, Entry *e);
 
-/* Whether any mod has a sounds/wave folder (looked at once). */
+/* Whether any mod that is on has a sounds/wave folder (looked at once). */
 static int wave_folders(void)
 {
     static int found = -1;
     if (found < 0) {
-        WIN32_FIND_DATAA mod;
-        HANDLE h = FindFirstFileA("mods\\*", &mod);
-        found = 0;
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                char wave[600];
-                DWORD attributes;
-                snprintf(wave, sizeof(wave), "mods\\%s\\sounds\\wave", mod.cFileName);
-                attributes = GetFileAttributesA(wave);
-                found = mod.cFileName[0] != '.' && attributes != INVALID_FILE_ATTRIBUTES &&
-                        (attributes & FILE_ATTRIBUTE_DIRECTORY);
-            } while (!found && FindNextFileA(h, &mod));
-            FindClose(h);
-        }
+        found = any_mod_has("sounds/wave");
     }
     return found;
 }
@@ -365,9 +398,7 @@ static int has_folder(const KhdaysSoundArchive *archive, int number)
 {
     static signed char *known; /* by archive number: 0 not looked at, 1 has, -1 has not (grows) */
     static int known_count;
-    char identifier[160], *slash;
-    WIN32_FIND_DATAA mod;
-    HANDLE h;
+    char identifier[160], *slash, sub[200];
     if (number < 0) {
         return 0;
     }
@@ -393,19 +424,9 @@ static int has_folder(const KhdaysSoundArchive *archive, int number)
         return 0;
     }
     *slash = '\0'; /* wave/<archive> */
-    h = FindFirstFileA("mods\\*", &mod);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            char folder[600];
-            DWORD attributes;
-            snprintf(folder, sizeof(folder), "mods\\%s\\sounds\\%s", mod.cFileName, identifier);
-            attributes = GetFileAttributesA(folder);
-            if (mod.cFileName[0] != '.' && attributes != INVALID_FILE_ATTRIBUTES &&
-                (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                known[number] = 1;
-            }
-        } while (known[number] < 0 && FindNextFileA(h, &mod));
-        FindClose(h);
+    snprintf(sub, sizeof(sub), "sounds/%s", identifier);
+    if (any_mod_has(sub)) {
+        known[number] = 1;
     }
     return known[number] > 0;
 }
@@ -639,13 +660,18 @@ static void set_entry(Entry **slot, Entry *e)
 void khdays_sound_mods_sequence(const KhdaysSoundArchive *archive, int arm7_player, int kind, int number, int entry,
                                 u32 command_tag)
 {
-    char identifier[160];
+    char identifier[160], path[520], name[160];
+    int own;
     if (!khdays_sound_mods_present() || archive == NULL || arm7_player < 0 || arm7_player > 15 ||
         !khdays_sound_archive_identifier(archive, kind, number, entry, identifier, sizeof(identifier))) {
         return;
     }
     decode_entries_ahead(archive);
-    set_entry(&sequence[arm7_player].entry, entry_for(identifier, NULL));
+    /* a new character's actor's sound: its own file, or silence (characters.h) */
+    own = khdays_characters_speaker_sound(identifier, path, sizeof(path), name, sizeof(name));
+    set_entry(&sequence[arm7_player].entry, own < 0   ? &silence
+                                            : own > 0 ? entry_want(entry_of_file(path, name), NULL)
+                                                      : entry_for(identifier, NULL));
     sequence[arm7_player].state = sequence[arm7_player].entry != NULL ? ARMED : IDLE;
     sequence[arm7_player].tag = command_tag;
     sequence[arm7_player].played = 0;

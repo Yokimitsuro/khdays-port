@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "khdays/assets/kh2_bar.h"
 #include "khdays/assets/texture.h"  // DecodedTexture
 
 // KINGDOM HEARTS II FINAL MIX's maps (map/<world><nn>.map in the player's
@@ -16,18 +17,6 @@
 // descriptions of the formats and the files themselves; every reader throws
 // std::runtime_error naming what it could not read.
 namespace khdays::assets::kh2 {
-
-// A BAR archive's entry: "BAR\x01", u32 count, 8 bytes, then 16-byte entries
-// (u32 type, 4-character name, u32 offset from the BAR's start, u32 size).
-struct BarEntry final {
-    std::uint32_t type = 0;
-    std::string name;
-    std::size_t offset = 0;  // from the start of the data given
-    std::size_t size = 0;
-};
-
-bool is_bar(const std::uint8_t* data, std::size_t size, std::size_t at = 0);
-std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, std::size_t at = 0);
 
 // Entry types in a map's BAR.
 inline constexpr std::uint32_t kEntryModel = 0x04;       // MAP, SK0, SK1, BOB

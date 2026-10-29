@@ -48,7 +48,13 @@ id or has no main script is not loaded, and the reason is logged.
 
 Mods load in the order kept in `saves/mods/order.ini` (`<folder> = on|off`, one line each); a mod
 not listed yet comes after the others, on. Events reach the mods in that order: when two mods change
-the same thing in a frame, the later one's change stands.
+the same thing in a frame, the later one's change stands. Every folder in `mods/` is listed there,
+scripted or not: a mod of files alone (models, textures, sounds, texts) is turned on and off from the
+settings menu's Mods page like a scripted one, and a file two mods both replace comes from the earlier
+one. A mod is also off, whatever the file says, when its folder holds a file named `.ignore` or its
+folder's name begins with a dot: a way to turn one off by hand, in a file manager. A scripted mod's
+scripts follow a switch at once; the files, sounds, characters, missions and native plugins the game
+reads are those of the mods on as it started, so turning or moving a mod changes them at the next start.
 
 ## What a script may use
 
@@ -140,7 +146,7 @@ What a handler changes is seen by the game's next frame. An event the game raise
 | `game.munny`, `game.set_munny(n)` | munny | 0 to 999999 |
 | `game.item(id)`, `game.set_item(id, n)` | an item's count | ids 0 to 2255 (`0x8cf`), counts 0 to 99; a count above 0 marks the item owned |
 | `game.flag(n)`, `game.set_flag(n, on)` | a story or mission flag | 0 to 16383 (`0x3fff`) |
-| `player.hp`, `player.max_hp`, `player.set_hp(n)` | the player's HP in the field | `set_hp` clamps to 0..`max_hp`, as the game's own hits and cures do (0 is a defeat); `nil` / `nil, "no player"` elsewhere |
+| `player.hp`, `player.max_hp`, `player.set_hp(n)` | the player's HP in the field | `set_hp` clamps to 0..`max_hp`, as the game's own hits and cures do (0 is a defeat); `nil` / `nil, "no player"` elsewhere, and `nil, "not now"` while the field is still loading (the HP is there before the gauge that shows it) |
 | `player.position()` | `x, y, z` in the field | `nil, "no player"` elsewhere |
 | `mission.id` | the current mission | `nil` outside the field |
 | `scene.id` | the current scene | |
@@ -400,7 +406,8 @@ battle's actors); `mod.share` carries the rest.
 
 The host's game decides for everyone in a room, so a room takes only players with the same gameplay
 mods as its host: the same ids, versions and scripts (a fingerprint of them travels with the request
-to join). A player with other gameplay mods is not let in and the room list says which mods the room
+to join), and the same mods' characters with the same descriptions and data (CHARACTERS.md, "In a
+room"). A player with other gameplay mods is not let in and the room list says which mods the room
 plays with. Visual mods are each player's own and never keep anyone out.
 
 In a room, a guest's scripts still run and hear the events, but what they would change in the game

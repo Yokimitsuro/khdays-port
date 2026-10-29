@@ -25,7 +25,8 @@ static int changed[PORT_FILES];
 static u8 blank[KHDAYS_SLOT_BYTES]; /* a slot never written: each copy's first 0x20 bytes zero, the rest erased */
 static u8 dropped;                  /* where a write to a blank slot goes */
 static int told_dropped;
-static volatile long generation; /* counts the writes to the files */
+static volatile long generation;      /* counts the writes to the files */
+static u8 written[KHDAYS_SLOT_COUNT]; /* the files written since khdays_slots_next_written took them */
 
 /* ---- The files ------------------------------------------------------------------------------ */
 
@@ -133,6 +134,7 @@ u8 *khdays_slots_byte(u32 offset, int writing, u32 *chip_at)
     }
     if (writing) {
         ++generation;
+        written[file] = 1;
     }
     if (file < KHDAYS_GAME_SLOTS) {
         *chip_at = KHDAYS_SLOTS_START + (u32)file * KHDAYS_SLOT_BYTES + within;
@@ -174,6 +176,17 @@ int khdays_slots_commit(void)
         }
     }
     return ok;
+}
+
+int khdays_slots_next_written(void)
+{
+    for (int f = 0; f < KHDAYS_SLOT_COUNT; ++f) {
+        if (written[f]) {
+            written[f] = 0;
+            return f;
+        }
+    }
+    return -1;
 }
 
 int khdays_slots_changed(void)

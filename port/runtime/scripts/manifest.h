@@ -25,6 +25,10 @@ int khdays_manifest_parse(const char *text, size_t size, KhdaysManifest *out, ch
 
 void khdays_manifest_free(KhdaysManifest *m);
 
+/* The value of `key` in mod.ini's text (its last line for it), to free(); NULL when it has none. For the keys other
+ * readers than the Lua mods' need (a native plugin's `native.<platform>`, `sdk`, `requires`). */
+char *khdays_manifest_value(const char *text, size_t size, const char *key);
+
 /* A mod's fingerprint: SHA-256 over mod.ini and every file under scripts/, each as its path from the
  * mod's folder, a 0 byte and its bytes, in byte order of the paths. Returns 0 when one of them cannot
  * be read. */

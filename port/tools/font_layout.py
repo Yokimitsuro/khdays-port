@@ -3,6 +3,7 @@
 import font_fractional
 import font_numbers
 import font_fit
+import font_reflow
 
 DRAW = "libs/nns/g2d/calls/Text_DrawGlyph.c"
 LINE = "libs/nns/g2d/calls/Text_DrawLine.c"
@@ -104,6 +105,7 @@ PATCHES = {
         ),
         (
             "            Obj_ForwardInnerPayload(&ctx->pFont, ctx->nPenX, ctx->nPenY, 8, wChar);",
+            "            khdays_ui_text_crawl_font(pFont);\n"
             "            khdays_ui_text_crawl_begin(ctx, pText, ctx->nIndex, ctx->nPenX, ctx->nPenY, "
             "khdays_ui_text_kerning_f(pFont, ctx->nIndex ? pText[ctx->nIndex - 1] : 0, wChar));\n"
             "            Obj_ForwardInnerPayload(&ctx->pFont, ctx->nPenX, ctx->nPenY, 8, wChar);",
@@ -121,9 +123,9 @@ def patch(text: str, rel: str) -> str:
     text = font_fit.patch(text, rel)
     text = font_numbers.patch(text, rel)
     if rel == "libs/nns/g2d/calls/Text_AlignAnchor.c":
-        return font_fractional.patch(text, rel)
+        return font_reflow.patch(font_fractional.patch(text, rel), rel)
     if rel not in PATCHES:
-        return text
+        return font_reflow.patch(text, rel)
     for before, after in PATCHES[rel]:
         if before not in text:
             raise SystemExit(f"font layout hook not found in {rel}: {before}")
@@ -150,14 +152,18 @@ def patch(text: str, rel: str) -> str:
     if rel == CRAWL:
         text = (
             font_fractional.COMMON
-            + "extern void khdays_ui_text_crawl_begin(const void *ctx, const void *text, int index, int x, int y, double kerning);\nextern int khdays_ui_text_crawl_advance(double advance);\n"
+            + "extern void khdays_ui_text_crawl_font(const void *font);\nextern void khdays_ui_text_crawl_begin(const void *ctx, const void *text, int index, int x, int y, double kerning);\nextern int khdays_ui_text_crawl_advance(double advance);\n"
             + text
         )
-    return font_fractional.patch(
-        (
-            "extern int khdays_ui_text_metric(const void *font, int glyph, int field, int fallback);\n"
-            "extern int khdays_ui_text_kerning(const void *font, int left, int right);\n"
-            "extern int khdays_ui_text_extent(const void *font, int glyph, int left, int width, int advance);\n" + text
+    return font_reflow.patch(
+        font_fractional.patch(
+            (
+                "extern int khdays_ui_text_metric(const void *font, int glyph, int field, int fallback);\n"
+                "extern int khdays_ui_text_kerning(const void *font, int left, int right);\n"
+                "extern int khdays_ui_text_extent(const void *font, int glyph, int left, int width, int advance);\n"
+                + text
+            ),
+            rel,
         ),
         rel,
     )

@@ -5,6 +5,7 @@
 
 #include "../../hal/hal.h"
 #include "events.h"
+#include "rom.h"
 #include "session_log.h"
 #include "window.h"
 
@@ -35,7 +36,7 @@ static u32 rd32(u32 address)
 void khdays_language_request(int language)
 {
     if (language >= 1 && language <= 5) {
-        InterlockedExchange(&requested, language);
+        InterlockedExchange(&requested, khdays_rom_language(language));
     }
 }
 

@@ -6,6 +6,16 @@
 #include <cmath>
 #include <cstring>
 
+extern "C" int khdays_hd_font_layout_override(int mode)
+{
+    return khdays::hd_fonts::layout_override(mode);
+}
+
+extern "C" int khdays_hd_font_observe(int enabled)
+{
+    return khdays::hd_fonts::observe(enabled != 0);
+}
+
 extern "C" int khdays_hd_font_mappings_enabled(void)
 {
     return khdays::hd_fonts::mappings_enabled();
@@ -81,7 +91,7 @@ extern "C" void khdays_hd_font_bind_charmap(const char *resource, const uint32_t
 {
     if (!resource || !codes || count <= 0)
         return;
-    auto atlas = khdays::hd_fonts::load(resource);
+    auto atlas = khdays::hd_fonts::load_configured(resource);
     if (!atlas || atlas->codes_bound)
         return;
     std::unordered_map<std::uint32_t, int> by_code, secondary_by_code;

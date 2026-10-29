@@ -23,9 +23,18 @@ bool autodetect_data_root(const std::filesystem::path& extracted_dir = "data/ext
 // `mods/<Mod>/files/<game_path>`.
 void set_mods_root(const std::filesystem::path& root);
 
+// The mods read, in load order (the port's runtime/mods/list.h: the folders order.ini
+// turns on). Set, it replaces the listing of the mods root; empty, nothing is read.
+void set_mods(std::vector<std::filesystem::path> mods);
+
+// A mod folder that is off by hand, whatever the order says: its name begins
+// with '.' or it holds a file named ".ignore".
+bool mod_ignored(const std::filesystem::path& mod);
+
 // A file some mod provides at `mods/<Mod>/<rel>` (e.g.
-// "sounds/strm/Title_BGM_PCM8.ogg"): the first mod, in sorted order, that
-// has it -- the order every override follows.
+// "sounds/strm/Title_BGM_PCM8.ogg"): the first mod, in load order (the list
+// set_mods gave, else the root's folders in sorted order, the ignored ones
+// left out), that has it -- the order every override follows.
 std::optional<std::filesystem::path> find_in_mods(const std::filesystem::path& rel);
 
 // Resolve a game path to an on-disk file, searching in order: mod overrides,

@@ -2,6 +2,7 @@
  * (khdays_script_events_frame: the frame, the scene, the menus, the items and munny compared with the last
  * frame) and the game's routines the build joins (scripts.c). */
 #include "events.h"
+#include "../plugins/plugins.h"
 
 #include "api_v2.h"
 #include "game_link.h"
@@ -236,6 +237,10 @@ void khdays_script_events_release(void)
 
 void khdays_script_events_raise(const KhdaysEvent *e)
 {
+    if (e->id >= 0 && e->id <= KHDAYS_EVENT_SAVE) {
+        /* the game's events the native plugins hear too (kh.events), as they happen */
+        khdays_plugins_game_event(NAMES[e->id], e->a, e->b, e->c, e->d, e->text);
+    }
     if (!khdays_script_events_wanted(e->id)) {
         return;
     }

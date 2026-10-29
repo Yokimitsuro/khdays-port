@@ -148,6 +148,71 @@ takes `from`'s content (world, rooms, enemies, starts, texts) as mission
 saved progress stay the target's (kept by its number); its chests and emblems
 are copied when the target's sets have as many rows.
 
+### New missions
+
+A mission of the mod's own (`core/missions/mod_missions.h`) is listed in Mission
+Mode after the game's, in its world's category: `missions/missions.txt` holds a
+block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
+`description <lang>`, `category`, `world`, `room`, `level`, `time`, `unlock`,
+`template`), and `missions/<key>/mission.p2` its file, a game mission
+file; without one the template's file is played as the game has it. The tool
+writes both and reads them back with the port's own reader
+(`port/runtime/missions/registry.c`) before it says they are saved. In the
+window **Missions** (top right; also a mission's tab **The mod's new missions**):
+**New mission** (a key, a world, a room of it); and for each mission its **Places
+on the map** (below) and its **Words and settings** (each one's words in the five
+languages, where it is listed, when it opens; **Save to the mod** writes and reads
+back each change). Another mission chosen, or the studio closed, with changes not
+saved asks first. A mission's own **New mission from this one** makes one from a
+game mission. From the command line:
+
+    khdays-studio --new-mission <Mod> <key> <game mission> <world> <room>
+    khdays-studio --mission-set <Mod> <key> <setting> [<language>] <value...>
+    khdays-studio --check-mod-missions <Mod>
+
+`--check-mod-missions` reads every new mission as the port does, its world and
+room, its file, and the rows the port adds to the list in each language; it exits
+1 with a line for each problem.
+
+**Waves, chests and emblems.** A mission with waves needs no file of its own:
+the port builds it at its start (`core/missions/mission_build.h`, compiled into
+the port as it is) from its block's lines, out of the game's own steps (1354's
+area, start and ending, 0004's "all defeated" check), with its world, room, start,
+time limit, notice and objective:
+
+    start = <x> <y> <z> <facing>               # where the players start, degrees
+    wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
+    chest = <contents> at <x> <y> <z> <heading>     # a chest (the game's contents number)
+    emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
+
+Wave 1 comes out at the start, each next wave when every enemy of the last is
+defeated, and the mission is cleared when the last wave is (or failed by its
+time). An area takes four enemy classes at most (the game's); a class must be
+one a game mission has (the window lists them by name). The chests and emblems
+are added to the game's `trbox` and `evi` as they load and put out in Mission
+Mode for new missions; a chest's opened flag is kept in the port's save part (an
+emblem's pickup is made at its place, but it is not drawn nor picked up yet).
+
+**Places on the map** (`app/views/mission_map.cpp`) shows the mission's room as
+the game has it -- its models and, over them, its floor -- or as the mod replaces
+it (the mod's world file and its model of the room), with the players' start (its
+facing drawn), each spawner (its wave and how many enemies), each chest and each
+emblem on it. A place is dragged over the floor (it stands on the floor under the
+pointer, the collision's grounds); one is added by choosing what (**Players'
+start**, **Enemies**, **Chest**, **Emblem**) and clicking the floor; the one
+clicked is changed beside the picture: where it is, onto the floor, its facing, a
+spawner's wave and enemies (by name, from the classes the game's missions have,
+with how many of each), a chest's contents, an emblem's badge, or it is removed. A
+place over no floor is ringed red. **Save the places** writes the start, waves,
+chests and emblems at once where the first of them was in the mission's block
+(`set_mod_mission_spots`), when the mission reads as the port reads it and builds
+as the port builds it; otherwise the file is left as it was and the reason told.
+From the command line (each change checked by building the mission):
+
+    khdays-studio --mission-wave <Mod> <key> add <n> <class>x<count> ... at <x> <y> <z> | clear [<n>]
+    khdays-studio --mission-chest <Mod> <key> add <contents> at <x> <y> <z> <heading> | clear
+    khdays-studio --mission-emblem <Mod> <key> add <kind> at <x> <y> <z> | clear
+
 ## 2D sheets
 
 A 2D tile sheet is seen assembled and edited as a picture

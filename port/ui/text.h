@@ -1,13 +1,14 @@
 /* BG canvas text tracking: independent glyph commands and preserved graphics follow
  * character transfers into the PC compositor. Hook arguments are host pointers to
  * the rewritten game's 32-bit-reference structures. See docs/HD_FONTS.md. */
-#ifndef KHDAYS_UI_TEXT_H
-#define KHDAYS_UI_TEXT_H
+#ifndef KHDAYS_CANVAS_TEXT_H
+#define KHDAYS_CANVAS_TEXT_H
 
 #include <stdint.h>
 
 /* Registers the part's elements (at start). */
 void khdays_ui_text_init(void);
+void khdays_ui_text_settings_changed(void);
 
 /* What the hooks follow: a text renderer attached to a layer and let go; a canvas added to a tile
  * surface; a block of the game's heaps freed (a canvas whose buffer it was is gone); and characters

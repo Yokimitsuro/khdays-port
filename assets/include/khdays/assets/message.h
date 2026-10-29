@@ -17,6 +17,10 @@ std::vector<std::u16string> load_string_table(const std::filesystem::path& path)
 // packed assets.
 std::vector<std::uint8_t> lz_decompress(const std::vector<std::uint8_t>& input);
 
+// Pack `raw` as LZ11 with every byte a literal (a zero flag byte before each eight), padded to four
+// bytes: no smaller, but the game's decompression reads it as it reads the ROM's own.
+std::vector<std::uint8_t> lz11_literals(const std::vector<std::uint8_t>& raw);
+
 // Render a decoded UTF-16 message as UTF-8 for display: printable code points
 // pass through, '\n'/'\t' are kept, and other control units below 0x20 become
 // \xNN escapes.

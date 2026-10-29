@@ -11,11 +11,15 @@
 #define KES_NUMBER_MASK 0x3u /* the BG layer (0-3), or the sprites' priority */
 #define KES_SPRITES 0x4u     /* in the sprites' slot of that priority, else the BG layer's */
 #define KES_DIRECT                                                                                                     \
-    0x8u                 /* texels are colours (RGBA: in a layer's slot their alpha shows, over the
+    0x8u                  /* texels are colours (RGBA: in a layer's slot their alpha shows, over the
                                * elements and the picture under them -- gfx/compose.h kd_element_layer;
                                * in the sprites' from half their alpha), else palette indices */
-#define KES_SEMI_SHIFT 4 /* sprites: 1 drawn as a semi-transparent sprite (the DS's mode 1) */
-#define KES_FINE 0x20u   /* its image is finer than the DS's pixels (a mod's font): the frame is drawn at full size */
+#define KES_SEMI_SHIFT 4  /* sprites: 1 drawn as a semi-transparent sprite (the DS's mode 1) */
+#define KES_FINE 0x20u    /* its image is finer than the DS's pixels (a mod's font): the frame is drawn at full size */
+#define KES_PICTURE 0x40u /* on one screen, an image placed independently of the screen's crop */
+#define KES_HUD 0x80u     /* independent field HUD image: follows the one-screen situation's HUD visibility */
+#define KES_NATIVE_FADE 0x100u  /* follow the native layer's fade without requiring the field HUD */
+#define KES_PAUSE_LAYOUT 0x200u /* independently positioned pause pieces, centered on one screen */
 
 #define KE_X 1     /* float bits: its left edge, DS pixels (fractions allowed) */
 #define KE_Y 2     /* its top */

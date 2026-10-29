@@ -18,6 +18,18 @@
 #include "../../ui/elements.h"
 #include "../../ui/parts.h"
 #include "../../ui/hud.h"
+#include "../../ui/kh2_hp_hud.h"
+#include "../../ui/kh2_portrait_hud.h"
+#include "../../ui/kh2_party_hud.h"
+#include "../../ui/kh2_hud_labels.h"
+#include "../../ui/kh2_enemy_hud.h"
+#include "../../ui/kh2_reticles.h"
+#include "../../ui/heart_points.h"
+#include "../../ui/kh2_information.h"
+#include "../../ui/kh2_obtained.h"
+#include "../../ui/hud_options.h"
+#include "../../ui/kh2_mission_panel.h"
+#include "../../ui/minimap.h"
 #include "../../ui/pause.h"
 #include "../../ui/text.h"
 #include "../../ui/situation.h"
@@ -35,6 +47,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+
+_Static_assert(KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS, "3D sequence package capacity");
 
 #define PIXELS (KHDAYS_SCREEN_W * KHDAYS_SCREEN_H)
 
@@ -666,6 +680,8 @@ static void capture_3d(KhdaysFramePackage *p)
         }
     }
     khdays_textures_mark(&p->list3d); /* the textures drawn instead (HD graphics) */
+    khdays_reticles_commands(&p->list3d, p->sequence3d_images);
+    khdays_heart_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT);
     p->list3d_serial = list3d_serial;
     p->list3d_time = list3d_time;
     p->list3d_cut = (uint8_t)list3d_cut;
@@ -887,7 +903,30 @@ static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int refere
 {
     /* widescreen moves the elements to the sides like the HUD's pieces; on one screen they stay at their
      * DS places and the composition places them */
+    khdays_ui_kh2_hp_reference(reference);
+    khdays_ui_kh2_portrait_reference(reference);
+    khdays_ui_kh2_party_reference(reference);
+    khdays_ui_kh2_labels_reference(reference);
+    p->hud_options = khdays_ui_hud_options();
+    if (!khdays_ui_information_keep_hud())
+        p->hud_options &= ~KHDAYS_HUD_KEEP_INFORMATION;
+    khdays_ui_kh2_enemy_reference(reference);
     khdays_ui_collect((p->wants & KHDAYS_WANT_SITUATION) ? 0 : (int)p->desc2d[0][KD_WIDE], p->upper);
+    khdays_ui_kh2_hp_commands(&p->sequence_image);
+    khdays_ui_kh2_portrait_commands(p->portrait_images);
+    khdays_ui_kh2_party_commands(p->party_images);
+    khdays_ui_kh2_labels_commands(p->label_images);
+    khdays_ui_kh2_enemy_commands(&p->enemy_image);
+    khdays_ui_information_commands(p->information_images);
+    khdays_ui_obtained_commands(&p->obtained_image);
+    khdays_ui_notification_commands(p->notification_images);
+    khdays_ui_mission_panel_commands(&p->mission_panel_image);
+    khdays_minimap_commands(p->minimap_images);
+    khdays_minimap_radar_commands(&p->radar_image);
+    p->mission_panel_state = khdays_ui_mission_panel_state();
+    p->mission_panel_backdrop = khdays_ui_mission_panel_backdrop();
+    p->information_hold_frames = khdays_ui_information_hold_frames();
+    p->information_state = khdays_ui_information_state();
     for (int e = 0; e < 2; ++e) {
         KhdaysFrameElements *fe = &p->elements[e];
         uint32_t n;
@@ -1101,6 +1140,26 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
         p->wants = 0; /* no 3D captured for it */
     }
     p->frame = frame;
+    p->sequence_image.words[KSI_COUNT] = 0;
+    memset(p->information_images, 0, sizeof(p->information_images));
+    memset(&p->obtained_image, 0, sizeof(p->obtained_image));
+    memset(p->notification_images, 0, sizeof(p->notification_images));
+    memset(&p->mission_panel_image, 0, sizeof(p->mission_panel_image));
+    memset(p->minimap_images, 0, sizeof(p->minimap_images));
+    memset(&p->radar_image, 0, sizeof(p->radar_image));
+    p->mission_panel_state = 0;
+    p->mission_panel_backdrop = -1;
+    p->information_hold_frames = 0;
+    p->information_state = 0;
+    p->hud_options = 0;
+    p->enemy_image.words[KSI_COUNT] = p->enemy_image.words[KSI_CLEAR] = p->enemy_image.words[KSI_ANCHORED] = 0;
+    for (int i = 0; i < 4; ++i) {
+        p->portrait_images[i].words[KSI_COUNT] = p->portrait_images[i].words[KSI_CLEAR] = 0;
+    }
+    for (int i = 0; i < 3; ++i)
+        p->party_images[i].words[KSI_COUNT] = 0;
+    for (int i = 0; i < 5; ++i)
+        p->label_images[i].words[KSI_COUNT] = p->label_images[i].words[KSI_CLEAR] = 0;
     p->time = khdays_events_vblank_time();
     p->alike = last_drawn.alike;
     last_drawn.alike = 0;
@@ -1500,6 +1559,17 @@ void khdays_display_vblank(u32 frame)
         }
         khdays_g3d_set_widen(widen);
     }
+    khdays_ui_hud_settings_frame();
+    khdays_ui_kh2_hp_frame(frame);
+    khdays_ui_information_frame(frame);
+    khdays_ui_obtained_frame(frame);
+    khdays_ui_mission_panel_frame(frame);
+    khdays_minimap_frame(frame);
+    khdays_reticles_frame(frame);
+    khdays_ui_kh2_enemy_frame(frame);
+    khdays_ui_kh2_party_frame(frame);
+    khdays_ui_kh2_labels_frame(frame);
+    khdays_ui_kh2_portrait_frame(frame);
     if (!drawn(frame)) {
         gpu_input(&in);
         display_capture(&in, &window_a);

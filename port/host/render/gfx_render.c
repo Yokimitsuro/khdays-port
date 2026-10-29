@@ -4,6 +4,7 @@
  * then makes the single picture from both. */
 #include "gfx_render.h"
 #include "gpu_hd.h"
+#include "kh2_sequence_gpu.h"
 #include "gpu_raster3d.h"
 #include "../../runtime/display/frame_package.h"
 #include "generated/capture_cs.h"
@@ -490,7 +491,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     shrinker = make_pipeline_of(shrink_cs_dxil, shrink_cs_dxil_size, shrink_cs_spirv, shrink_cs_spirv_size,
                                 shrink_cs_msl, shrink_cs_msl_size, SHRINK_CS_ENTRY, 0, 2);
     onescreen = make_pipeline_of(onescreen_cs_dxil, onescreen_cs_dxil_size, onescreen_cs_spirv, onescreen_cs_spirv_size,
-                                 onescreen_cs_msl, onescreen_cs_msl_size, ONESCREEN_CS_ENTRY, 3, 6);
+                                 onescreen_cs_msl, onescreen_cs_msl_size, ONESCREEN_CS_ENTRY, 4, 6);
     /* without it the screen blends show the DS's bank, as before */
     capturer = make_pipeline_of(capture_cs_dxil, capture_cs_dxil_size, capture_cs_spirv, capture_cs_spirv_size,
                                 capture_cs_msl, capture_cs_msl_size, CAPTURE_CS_ENTRY, 0, 3);
@@ -517,6 +518,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     }
     layer3d = make_buffer(KHDAYS_FRAME_PIXELS * 4);
     ok = ok && layer3d != NULL && khdays_gpu_hd_open(d);
+    ok = ok && khdays_sequence_gpu_open(d);
     valid = 0;
     if (!ok) {
         char why[256];
@@ -580,6 +582,7 @@ static void drop_shop(void)
 
 void khdays_gfx_render_close(void)
 {
+    khdays_sequence_gpu_close();
     if (device == NULL) {
         return;
     }
@@ -1182,6 +1185,72 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         valid = 0;
         return 0;
     }
+    if (!khdays_sequence_gpu_draw(device, cmd, &p->sequence_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
+    if (!khdays_sequence_gpu_draw(device, cmd, &p->enemy_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
+    for (int i = 0; i < 2; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->information_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->minimap_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    }
+    for (int i = 0; i < 3; ++i)
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->notification_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    if (one && !khdays_sequence_gpu_draw(device, cmd, &p->radar_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
+    if (!khdays_sequence_gpu_draw(device, cmd, &p->mission_panel_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
+    if (!khdays_sequence_gpu_draw(device, cmd, &p->obtained_image)) {
+        SDL_CancelGPUCommandBuffer(cmd);
+        valid = 0;
+        return 0;
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->party_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->portrait_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    }
+    for (int i = 0; i < 5; ++i) {
+        if (!khdays_sequence_gpu_draw(device, cmd, &p->label_images[i])) {
+            SDL_CancelGPUCommandBuffer(cmd);
+            valid = 0;
+            return 0;
+        }
+    }
     {
         SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmd);
         SDL_GPUTransferBufferLocation src;
@@ -1370,7 +1439,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         /* the one-screen picture, from both screens and the 3D (onescreen.hlsl) */
         OneScreenParams op;
         SDL_GPUStorageTextureReadWriteBinding io[6];
-        SDL_GPUBuffer *in[3];
+        SDL_GPUBuffer *in[4];
         SDL_GPUTexture *backdrop = backdrop_on_card(cmd, one);
         SDL_GPUComputePass *pass;
         const int upper = p->upper; /* the engine on the upper screen */
@@ -1429,6 +1498,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         in[0] = shape_buffer;
         in[1] = key_buffer;
         in[2] = piece_buffer;
+        in[3] = khdays_gpu_hd_buffer();
         SDL_zeroa(io);
         io[0].texture = raster ? color3d : dummy3d[0];
         io[1].texture = raster ? attr3d : dummy3d[1];
@@ -1439,7 +1509,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[5].texture = backdrop; /* read only */
         pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
         SDL_BindGPUComputePipeline(pass, onescreen);
-        SDL_BindGPUComputeStorageBuffers(pass, 0, in, 3);
+        SDL_BindGPUComputeStorageBuffers(pass, 0, in, 4);
         SDL_PushGPUComputeUniformData(cmd, 0, &op, sizeof(op));
         SDL_DispatchGPUCompute(pass, (op.width + 7) / 8, (op.height + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);

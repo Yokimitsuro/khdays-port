@@ -35,5 +35,7 @@ int khdays_bg_cell_shows(int engine, const KhdaysBgLayer *l, uint32_t entry);
 /* The file the bytes at `address` of the engine's BG memory came from
  * (runtime/core/origin.h; only while the names are followed), or NULL. */
 const char *khdays_bg_origin(int engine, uint32_t address);
+/* Source and contiguous byte range of resident BG data; false where no file is known. */
+int khdays_bg_source(int engine, uint32_t address, const char **file, uint32_t *offset, uint32_t *run);
 
 #endif

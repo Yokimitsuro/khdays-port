@@ -1,6 +1,6 @@
 # The collection files the HD tools read (installer/setup_steps.py trace-inputs):
 # '<archive> <entry>' (its data and remastered assets) or 'movies <file>'.
-# tools fb8d3697462cce7a21216964ee25ddd164c920a2b0ba3afefd867c8a721495f6
+# tools 493a5c6a67506dfe2139d5685f4cf339e4057cfe1942d7956b20ca869d676954
 Mare bg/artwork/tz000a.tm2
 Mare bg/artwork/tz000b.tm2
 Mare bg/artwork/tz007a.tm2
@@ -1258,9 +1258,15 @@ SettingMenu sp/l2d/setting_1525.l2d
 SettingMenu uk/font/menufont.cod
 SettingMenu uk/font/menufont.tm2
 SettingMenu uk/l2d/setting_1525.l2d
+kh2_fifth field2d/fr/zz0field.2dd
+kh2_fifth field2d/gr/zz0field.2dd
+kh2_fifth field2d/it/zz0field.2dd
+kh2_fifth field2d/sp/zz0field.2dd
+kh2_fifth field2d/us/zz0field.2dd
 kh2_first menu/fm/title.2ld
 kh2_first msg/us/fontimage.bar
 kh2_first msg/us/fontinfo.bar
+kh2_first radar.tm2
 kh3d_first font/en/bin/helpfont.bcfnt
 kh3d_first font/en/bin/iconfont_n.ctt
 kh3d_first menu/de/camp/comn/comn/bin/camp00_n.l2d

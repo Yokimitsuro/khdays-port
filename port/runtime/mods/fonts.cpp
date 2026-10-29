@@ -1,4 +1,5 @@
 #include "fonts.h"
+#include "../../host/app/hud_settings.h"
 
 extern "C" {
 #include "../../host/app/host.h"
@@ -676,7 +677,32 @@ Entry load_uncached(const std::string &original)
 }
 } // namespace
 
+static thread_local bool observing;
+static thread_local int layout_mode = -1;
+int layout_override(int mode)
+{
+    const int previous = layout_mode;
+    layout_mode = mode;
+    return previous;
+}
+static bool font_enabled()
+{
+    return layout_mode >= 0 ? layout_mode != 0 : observing || khdays_hud_setting(KHDAYS_OPT_FONT);
+}
+bool observe(bool enabled)
+{
+    const bool previous = observing;
+    observing = enabled;
+    return previous;
+}
+
 std::shared_ptr<const Atlas> load(const std::string &original_resource)
+{
+    if (!font_enabled())
+        return nullptr;
+    return load_configured(original_resource);
+}
+std::shared_ptr<const Atlas> load_configured(const std::string &original_resource)
 {
     const std::string resource = resource_path(original_resource);
     std::lock_guard<std::mutex> lock(cache_mutex);
@@ -687,6 +713,8 @@ std::shared_ptr<const Atlas> load(const std::string &original_resource)
 }
 int probe(const std::string &original_resource)
 {
+    if (!font_enabled())
+        return 0;
     const std::string resource = resource_path(original_resource);
     std::lock_guard<std::mutex> lock(cache_mutex);
     const auto [it, inserted] = cache.try_emplace(resource);
@@ -697,6 +725,8 @@ int probe(const std::string &original_resource)
 
 std::string select(const std::string &original_resource, const std::string &scope)
 {
+    if (!font_enabled())
+        return {};
     const auto original = resource_path(original_resource);
     std::string target;
     {
@@ -741,6 +771,8 @@ std::string select(const std::string &original_resource, const std::string &scop
 
 bool mappings_enabled()
 {
+    if (!font_enabled())
+        return false;
     std::lock_guard<std::mutex> lock(cache_mutex);
     load_rules();
     return !rules.empty();
@@ -769,7 +801,7 @@ bool numeric_layout(int layout)
     static const std::array<bool, 3> enabled = {layout_for(cached_layouts(), "camp.panels.inventory.counter"),
                                                 layout_for(cached_layouts(), "title.load.play_time"),
                                                 layout_for(cached_layouts(), "camp.save.play_time")};
-    return layout >= 0 && static_cast<std::size_t>(layout) < enabled.size() && enabled[layout];
+    return font_enabled() && layout >= 0 && static_cast<std::size_t>(layout) < enabled.size() && enabled[layout];
 }
 
 double fit_layout(int layout, double *offset)
@@ -786,7 +818,7 @@ double fit_layout(int layout, double *offset)
     }();
     if (offset)
         *offset = 0;
-    if (layout < 0 || static_cast<std::size_t>(layout) >= fitting.size())
+    if (!font_enabled() || layout < 0 || static_cast<std::size_t>(layout) >= fitting.size())
         return 0;
     if (offset)
         *offset = fitting[layout].offset;

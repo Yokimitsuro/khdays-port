@@ -11,6 +11,14 @@
 
 namespace studio {
 
+WrappedTexts::WrappedTexts() {
+    ImGui::PushTextWrapPos(0.0f);
+}
+
+WrappedTexts::~WrappedTexts() {
+    ImGui::PopTextWrapPos();
+}
+
 void same_line_if_room(float width) {
     // after an item the cursor is at the next line's start: from there, what is
     // left of the line is the window's whole visible width

@@ -4,6 +4,7 @@
  * in the file's order and made into the pass's shapes for the picture's
  * width. */
 #include "composition.h"
+#include "hud_options.h"
 #include "../host/app/files.h"
 #include "../host/render/png_io.h"
 #include "../runtime/core/rom.h"
@@ -38,6 +39,11 @@ static const char *const screens_names[] = {"upper", "lower", "stacked", "side-b
 static const char *const brightness_names[] = {"default", "upper", "lower", "halves", "own"};
 /* the HUD's screen-space 3D: the polygons the HUD's own drawing sends (gfx/g3d.h KHDAYS_G3D_HUD) */
 static const char *const group_names[] = {"hud", "all"}; /* KHDAYS_SHAPE3D_* */
+static unsigned hud_options;
+void khdays_composition_set_hud_options(unsigned options)
+{
+    hud_options = options;
+}
 
 /* `push <state>[|<state>...] <dx> <dy> <frames>`: a shape moved by dx, dy (the port's units) while one of the
  * states holds, easing there and back over that many of the game's frames; its progress kept from frame to
@@ -1748,6 +1754,13 @@ static void add_halves(int columns, int key_count, int *shape_count, int *shape3
 
 void khdays_composition_for(const KhdaysSituation *situation, int columns, KhdaysComposition *out)
 {
+    KhdaysSituation presentation = *situation;
+    if ((hud_options & KHDAYS_HUD_KEEP_INFORMATION) &&
+        (situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH) &&
+        (situation->states & (1u << KHDAYS_ST_HUD))) {
+        presentation.states &= ~(1u << KHDAYS_ST_INFO_UPPER);
+        situation = &presentation;
+    }
     int shape_count = 0, key_count = 0, shape3d_count = 0, stopped = 0, matched = 0, shown = -1, menu = 0, halves = 0;
     out->screens = -1;
     out->brightness = -1;
@@ -1784,8 +1797,24 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             case D_SCREENS: out->screens = out->screens < 0 ? d->value : out->screens; break;
             case D_BRIGHTNESS: out->brightness = out->brightness < 0 ? d->value : out->brightness; break;
             case D_SHAPE: {
-                ShapeDef *def = &shape_defs[d->value];
-                const float pushed = push_now(&def->push, situation);
+                ShapeDef adjusted = shape_defs[d->value];
+                /* its push's state is the definition's own (push_now keeps it there frame to frame) */
+                const float pushed = push_now(&shape_defs[d->value].push, situation);
+                const int field = situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH;
+                const int counter =
+                    !adjusted.lower && adjusted.x == 0 && adjusted.y == 0 && adjusted.w == 108 && adjusted.h == 86;
+                if (field && (hud_options & KHDAYS_HUD_PANEL_HIDDEN) && counter)
+                    adjusted.margin[1] -= 24;
+                const int pause_map =
+                    situation->scene == KHDAYS_SIT_PAUSE && adjusted.lower &&
+                    ((adjusted.x == 112 && adjusted.y == 64 && adjusted.w == 104 && adjusted.h == 64) ||
+                     (adjusted.x == 186 && adjusted.y == 156 && adjusted.w == 2 && adjusted.h == 12));
+                if ((field || pause_map) && (hud_options & KHDAYS_HUD_ALIGN_EDGES)) {
+                    for (int edge = 0; edge < 4; ++edge)
+                        if (adjusted.margin[edge] > 0)
+                            adjusted.margin[edge] -= edge == 3 ? 6 : 5;
+                }
+                const ShapeDef *def = &adjusted;
                 if (!grow((void **)&shapes, &shape_room, shape_count, sizeof(KhdaysShape))) {
                     break;
                 }
@@ -1801,10 +1830,20 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             }
             case D_SHAPE3D:
                 if (grow((void **)&shapes3d, &shape3d_room, shape3d_count, sizeof(KhdaysShape3d))) {
-                    Shape3dDef *def3 = &shape3d_defs[d->value];
-                    const float pushed = push_now(&def3->push, situation);
-                    build_shape3d(def3, columns, &shapes3d[shape3d_count++], def3->push.dx * pushed,
-                                  def3->push.dy * pushed);
+                    Shape3dDef adjusted = shape3d_defs[d->value];
+                    const float pushed = push_now(&shape3d_defs[d->value].push, situation);
+                    const int field =
+                        situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH;
+                    if (field && adjusted.x == -64 && adjusted.y == -64 && adjusted.group == KHDAYS_SHAPE3D_HUD) {
+                        if (hud_options & KHDAYS_HUD_PANEL_HIDDEN)
+                            adjusted.margin[1] -= 24;
+                        if (hud_options & KHDAYS_HUD_ALIGN_EDGES) {
+                            adjusted.margin[0] -= 5;
+                            adjusted.margin[1] -= 5;
+                        }
+                    }
+                    build_shape3d(&adjusted, columns, &shapes3d[shape3d_count++], adjusted.push.dx * pushed,
+                                  adjusted.push.dy * pushed);
                 }
                 break;
             case D_BACKDROP:
@@ -1909,4 +1948,8 @@ void khdays_composition_set_hud_size(int size)
 float khdays_composition_hud_factor(void)
 {
     return hud_factor();
+}
+int khdays_composition_columns(void)
+{
+    return current_columns > 0 ? current_columns : 256;
 }

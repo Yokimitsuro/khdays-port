@@ -14,6 +14,7 @@
 #include "../../runtime/menus/newgame.h"
 #include "../../runtime/menus/savelist.h"
 #include "../../runtime/battle/stop_magic.h"
+#include "../../runtime/plugins/plugins.h"
 #include "../settings/settings_model.h"
 #include "../settings/settings_sample.h"
 #include "../settings/settings_ui.h"
@@ -727,7 +728,8 @@ static int host_thread(void *unused)
         khdays_sound_output_set(&profile.sound);
         khdays_log_want(profile.session_log);
         khdays_savelist_set_settings(profile.save.all_files, profile.save.autosave);
-        khdays_stop_set_enabled(profile.gameplay.stop_magic); /* for this run: a change waits for the next */
+        khdays_stop_set_enabled(profile.gameplay.stop_magic);     /* for this run: a change waits for the next */
+        khdays_plugins_set_native_code(profile.mods.native_code); /* the same */
     }
     window = open_window(&profile);
     host_window = window;
@@ -852,6 +854,7 @@ static int host_thread(void *unused)
             if (khdays_settings_is_open() && khdays_settings_profile_changed()) {
                 save_settings(); /* closed with the menu open: keep what was changed */
             }
+            khdays_plugins_quit(1000); /* stopped on the game's thread, if it answers within a second */
             _Exit(0);
         }
         if (event.type == close_event) {
@@ -1025,14 +1028,15 @@ int khdays_host_start(void)
     }
     if (getenv("KHDAYS_HEADLESS") != NULL) {
         /* No window and no devices: a KHDAYS_INPUT script plays instead. It
-         * uses the enhancements (and their speeds) from the settings file
-         * named by KHDAYS_SETTINGS, if any; the regression walks name none,
-         * so they run with the defaults. */
+         * uses the enhancements (and their speeds) and whether mods' native code
+         * runs from the settings file named by KHDAYS_SETTINGS, if any; the
+         * regression walks name none, so they run with the defaults. */
         const char *path = SDL_getenv("KHDAYS_SETTINGS");
         if (path != NULL) {
             KhdaysProfile profile;
             KhdaysDeviceState nothing;
             khdays_profile_load(&profile, path, notice);
+            khdays_plugins_set_native_code(profile.mods.native_code);
             khdays_bindings_reset(&nothing);
             SDL_LockMutex(input_lock);
             khdays_bindings_resolve(&profile, &nothing, &input);

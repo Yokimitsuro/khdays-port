@@ -73,6 +73,57 @@ const ufbx_texture* material_texture(const ufbx_material* material) {
     return material->pbr.base_color.texture;
 }
 
+// A node's local transform as its translation, rotation (x y z w), scale and their matrix.
+void set_transform(khdays::assets::ImportedNode& node, const ufbx_transform& t) {
+    node.translation = {static_cast<float>(t.translation.x), static_cast<float>(t.translation.y),
+                        static_cast<float>(t.translation.z)};
+    node.rotation = {static_cast<float>(t.rotation.x), static_cast<float>(t.rotation.y),
+                     static_cast<float>(t.rotation.z), static_cast<float>(t.rotation.w)};
+    node.scale = {static_cast<float>(t.scale.x), static_cast<float>(t.scale.y), static_cast<float>(t.scale.z)};
+    node.local = to_array(ufbx_transform_to_matrix(&t));
+}
+
+// An animation stack as tracks of every node's translation, rotation and scale, a key each 1/`rate` s
+// from its start to its end (ufbx_evaluate_transform: the scene's axes and units as the nodes').
+khdays::assets::ImportedAnimation sample_stack(const ufbx_scene& scene, const ufbx_anim_stack& stack, double rate) {
+    using khdays::assets::ImportedTrack;
+    khdays::assets::ImportedAnimation out;
+    out.name = text(stack.name);
+    const double begin = stack.time_begin;
+    const double end = stack.time_end > begin ? stack.time_end : begin;
+    out.duration = static_cast<float>(end - begin);
+    const auto keys = static_cast<std::size_t>(std::ceil((end - begin) * rate - 1e-6)) + 1U;
+    for (std::size_t n = 0; n < scene.nodes.count; ++n) {
+        const ufbx_node* node = scene.nodes.data[n];
+        if (node->is_root) {
+            continue;
+        }
+        ImportedTrack t, r, s;
+        t.node = r.node = s.node = static_cast<int>(n);
+        t.path = ImportedTrack::Path::translation;
+        r.path = ImportedTrack::Path::rotation;
+        s.path = ImportedTrack::Path::scale;
+        for (std::size_t k = 0; k < keys; ++k) {
+            const double at = std::min(begin + static_cast<double>(k) / rate, end);
+            const ufbx_transform x = ufbx_evaluate_transform(stack.anim, node, at);
+            const auto time = static_cast<float>(at - begin);
+            t.times.push_back(time);
+            r.times.push_back(time);
+            s.times.push_back(time);
+            t.values.insert(t.values.end(), {static_cast<float>(x.translation.x), static_cast<float>(x.translation.y),
+                                             static_cast<float>(x.translation.z)});
+            r.values.insert(r.values.end(), {static_cast<float>(x.rotation.x), static_cast<float>(x.rotation.y),
+                                             static_cast<float>(x.rotation.z), static_cast<float>(x.rotation.w)});
+            s.values.insert(s.values.end(), {static_cast<float>(x.scale.x), static_cast<float>(x.scale.y),
+                                             static_cast<float>(x.scale.z)});
+        }
+        out.tracks.push_back(std::move(t));
+        out.tracks.push_back(std::move(r));
+        out.tracks.push_back(std::move(s));
+    }
+    return out;
+}
+
 }  // namespace
 
 namespace khdays::assets {
@@ -310,6 +361,30 @@ ImportedModel import_fbx(const std::filesystem::path& input_path) {
                 }
             }
         }
+    }
+
+    // the file's nodes at rest under their parents, each joint's node, and its animation stacks
+    // sampled at the file's frame rate (a character's own clips)
+    std::map<const ufbx_node*, int> node_index;
+    for (std::size_t n = 0; n < scene->nodes.count; ++n) {
+        node_index[scene->nodes.data[n]] = static_cast<int>(n);
+    }
+    for (std::size_t n = 0; n < scene->nodes.count; ++n) {
+        const ufbx_node* node = scene->nodes.data[n];
+        ImportedNode out;
+        out.name = text(node->name);
+        const auto parent = node->parent != nullptr ? node_index.find(node->parent) : node_index.end();
+        out.parent = parent != node_index.end() ? parent->second : -1;
+        set_transform(out, node->local_transform);
+        result.nodes.push_back(std::move(out));
+    }
+    for (std::size_t j = 0; j < result.joints.size(); ++j) {
+        const auto found = joint_bone[j] != nullptr ? node_index.find(joint_bone[j]) : node_index.end();
+        result.joints[j].node = found != node_index.end() ? found->second : -1;
+    }
+    const double rate = scene->settings.frames_per_second > 0.0 ? scene->settings.frames_per_second : 30.0;
+    for (std::size_t s = 0; s < scene->anim_stacks.count; ++s) {
+        result.animations.push_back(sample_stack(*scene, *scene->anim_stacks.data[s], rate));
     }
 
     for (auto& [key, texture] : textures) {

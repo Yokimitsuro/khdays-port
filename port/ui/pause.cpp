@@ -4,6 +4,7 @@
 // drawn instead of the game's pieces where the game puts them; a language missing any keeps the
 // game's.
 #include "pause.h"
+#include "hud_options.h"
 
 extern "C" {
 #include "bg.h"
@@ -13,21 +14,27 @@ extern "C" {
 #include "../host/screens/game_pause.h"
 #include "../host/render/png_io.h"
 #include "../runtime/menus/retry.h"
+#include "../runtime/scripts/game_link.h"
+#include "../runtime/core/session_log.h"
 #include "../runtime/core/rom.h"
 #include "../runtime/core/window.h"
 }
 
 #include "khdays/assets/font.h"
+#include "khdays/assets/graphics2d.h"
 #include "khdays/vfs/filesystem.h"
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <string>
 #include <vector>
+#include <map>
+#include <memory>
 
 namespace {
 
@@ -47,6 +54,8 @@ struct Seen {
     Line line[2][2];
 };
 Seen seen;
+bool target_layout = false;
+KhdaysUiElement target_element{};
 int seen_language = -1;
 
 // A line drawn: its image and the texels it holds.
@@ -357,13 +366,116 @@ void emit_picture(const char *id, int layer, int image, float x, float y, float 
     KhdaysUiElement e;
     e.id = id;
     e.screen = kScreen;
-    e.slot = KES_DIRECT | static_cast<std::uint32_t>(layer);
+    e.slot = KES_DIRECT | static_cast<std::uint32_t>(layer) | (target_layout ? KES_PICTURE | KES_PAUSE_LAYOUT : 0u);
     e.x = x;
-    e.y = y;
+    e.y = target_layout ? (std::strcmp(id, "pause.title") == 0 ? 48 - h : y + 44) : y;
     e.w = w;
     e.h = h;
     e.image = image;
     khdays_ui_emit(KHDAYS_UI_PAUSE, &e);
+}
+
+std::uint32_t palette_colour(int engine, unsigned index)
+{
+    const unsigned c =
+        *static_cast<const volatile std::uint16_t *>(KHDAYS_W(0x05000000u + (engine ? 0x400u : 0u) + index * 2));
+    const auto expand = [](unsigned v) { return (v << 3) | (v >> 2); };
+    return 0xff000000u | expand(c & 31) | expand((c >> 5) & 31) << 8 | expand((c >> 10) & 31) << 16;
+}
+
+// Rebuild native tile artwork, not pixels cropped from a composed lower screen.
+bool native_rectangle(int engine, int layer, int x, int y, int w, int h, std::vector<unsigned> &out)
+{
+    KhdaysBgLayer l;
+    if (!khdays_bg_text_layer(engine, layer, &l))
+        return false;
+    out.assign(std::size_t(w * h), 0);
+    for (int py = 0; py < h; ++py)
+        for (int px = 0; px < w; ++px) {
+            const unsigned entry = khdays_bg_map_entry(engine, &l, x / 8 + px / 8, y / 8 + py / 8);
+            const int tx = (entry & 0x400) ? 7 - px % 8 : px % 8;
+            const int ty = (entry & 0x800) ? 7 - py % 8 : py % 8;
+            const unsigned at = l.chars + (entry & 1023) * (l.colors256 ? 64u : 32u) +
+                                unsigned(ty * (l.colors256 ? 8 : 4) + (l.colors256 ? tx : tx / 2));
+            const auto *p = khdays_bg_memory(engine, at);
+            const unsigned value = p ? (l.colors256 ? *p : (*p >> ((tx & 1) * 4)) & 15u) : 0;
+            if (value)
+                out[std::size_t(py * w + px)] = palette_colour(engine, value + (l.colors256 ? 0u : (entry >> 12) * 16));
+        }
+    return true;
+}
+
+int mission_target_image(int language)
+{
+    int entry, primary;
+    if (!(khdays_ui_hud_options() & KHDAYS_HUD_PAUSE_TARGET) || !khdays_link_mission_target(&entry, &primary))
+        return -1;
+    static KhdaysRomReader *reader = khdays_rom_reader_new();
+    static std::map<std::pair<int, int>, khdays::assets::DecodedTexture> decoded;
+    const auto key = std::pair{primary ? language : 0, entry};
+    auto found = decoded.find(key);
+    if (found == decoded.end()) {
+        char file[128];
+        std::snprintf(file, sizeof(file), primary ? "UI/btl/%s/map.p2" : "UI/btl/mapchr.p2", kCodes[language]);
+        u8 *bytes = nullptr;
+        u32 size = 0;
+        if (!khdays_rom_file_data(reader, file, entry, &bytes, &size))
+            return -1;
+        const std::unique_ptr<u8, decltype(&std::free)> owned(bytes, &std::free);
+        try {
+            const auto pack = khdays::assets::parse_pk2d(bytes, size);
+            if (pack.palettes.empty() || pack.tiles.empty() || pack.screens.empty())
+                return -1;
+            const auto pal = khdays::assets::decode_nclr(pack.palettes[0].data, pack.palettes[0].size);
+            const auto chr = khdays::assets::decode_ncgr(pack.tiles[0].data, pack.tiles[0].size);
+            const auto map = khdays::assets::decode_nscr(pack.screens[0].data, pack.screens[0].size);
+            auto image = khdays::assets::compose_background(map, chr, pal, false);
+            if (image.width != 64 || image.height != 64)
+                return -1;
+            found = decoded.emplace(key, std::move(image)).first;
+        } catch (const std::exception &e) {
+            khdays_log("pause target: %s; retaining the normal pause", e.what());
+            return -1;
+        }
+    }
+    std::vector<unsigned> pixels;
+    if (!native_rectangle(1, 2, 32, 48, 64, 96, pixels))
+        return -1;
+    const auto &art = found->second;
+    for (int y = 0; y < 64; ++y)
+        std::memcpy(pixels.data() + (y + 24) * 64, art.rgba.data() + y * 64 * 4, 64 * 4);
+    static int image = -1;
+    static std::vector<unsigned> previous;
+    if (image < 0)
+        image = khdays_ui_image_get(64, 96);
+    if (image < 0)
+        return -1;
+    if (pixels != previous) {
+        auto *out = khdays_ui_image_begin(image);
+        if (!out)
+            return -1;
+        std::copy(pixels.begin(), pixels.end(), out);
+        khdays_ui_image_end(image);
+        previous = std::move(pixels);
+    }
+    return image;
+}
+
+bool emit_target_pause(const KhdaysPauseView &pv)
+{
+    if (std::any_of(pv.piece, pv.piece + pv.count, [](const auto &p) {
+            return p.key == KHDAYS_PAUSE_SKIP || p.key == KHDAYS_PAUSE_QUESTION || p.key == KHDAYS_PAUSE_YES ||
+                   p.key == KHDAYS_PAUSE_NO;
+        }))
+        return false;
+    const int image = mission_target_image(pv.language >= 1 && pv.language <= 5 ? pv.language : 1);
+    if (image < 0)
+        return false;
+    target_layout = true;
+    target_element = {"pause.target", 0,    KES_DIRECT | KES_PICTURE | KES_PAUSE_LAYOUT | unsigned(pv.layer),
+                      107.2f,         54,   41.6f,
+                      62.4f,          image};
+    return true;
 }
 
 // A piece's drawn size (DS dots): the title a quarter as tall as wide (its strip is 12 x 2 cells:
@@ -505,26 +617,8 @@ void game_over()
     khdays_game_over_publish(1, v.rows, v.keys, v.row, v.question, v.language);
 }
 
-void emit()
+bool prepare_retry_lines(const KhdaysRetryView &v, const KhdaysBgLayer &l)
 {
-    KhdaysRetryView v;
-    KhdaysPauseView pv;
-    KhdaysBgLayer l;
-    game_over();
-    const bool viewed = khdays_pause_view(&pv) != 0;
-    if (viewed && kh2_pause(pv)) {
-        return;
-    }
-    khdays_game_pause_publish(0, 0, nullptr, 0, 0, 0);
-    if (!viewed) {
-        kh2_row = 0; // the next pause opens on Continue
-    }
-    if (viewed && emit_pictures(pv)) {
-        return;
-    }
-    if (!khdays_retry_view(&v) || !khdays_bg_text_layer(kScreen, kLayer, &l)) {
-        return;
-    }
     if (v.language != seen_language) {
         std::memset(seen.have, 0, sizeof(seen.have)); // the lines' words are the language's
         seen_language = v.language;
@@ -533,7 +627,7 @@ void emit()
     for (int k = 0; k < 2; ++k) {
         const int lit = v.game_cursor == (k == 0 ? 0 : 2);
         if (!read_line(l, kGameRow[k], live[k])) {
-            return;
+            return false;
         }
         seen.line[k][lit] = live[k];
         seen.have[k][lit] = true;
@@ -551,9 +645,110 @@ void emit()
                                   : seen.have[0][0] ? &seen.line[0][0]
                                                     : nullptr);
         if (from == nullptr || !retry_line(*from, khdays_text_in(TXT_PAUSE_RETRY, v.language), drawn[1])) {
-            return; // the game's two lines, as it draws them
+            return false; // the game's two lines, as it draws them
         }
     }
+    return true;
+}
+
+bool emit_native_target_menu(const KhdaysPauseView &pv)
+{
+    struct NativePiece {
+        int image = -1, w = 0, h = 0;
+        std::vector<unsigned> pixels;
+    };
+    static std::array<NativePiece, KHDAYS_PAUSE_PIECES> pieces;
+    KhdaysBgLayer l;
+    if (!khdays_bg_text_layer(0, pv.layer, &l))
+        return false;
+    KhdaysRetryView retry_view;
+    const bool retry = khdays_retry_view(&retry_view) != 0;
+    if (retry && !prepare_retry_lines(retry_view, l))
+        return false;
+    for (int i = 0; i < pv.count; ++i) {
+        const auto &p = pv.piece[i];
+        auto &cached = pieces[i];
+        const int w = p.w * 8, h = p.h * 8;
+        std::vector<unsigned> pixels;
+        const int row = p.key == KHDAYS_PAUSE_WITHDRAW ? kGameRow[1] : p.y;
+        if (retry && p.key >= KHDAYS_PAUSE_CONTINUE) {
+            if (w != kW || h != kH)
+                return false;
+            const int index = p.key == KHDAYS_PAUSE_CONTINUE ? 0 : p.key == KHDAYS_PAUSE_RETRY ? 1 : 2;
+            const auto &line = drawn[index];
+            pixels.resize(line.size());
+            std::transform(line.begin(), line.end(), pixels.begin(),
+                           [](unsigned v) { return v ? palette_colour(0, v & 255u) : 0u; });
+        } else if (!native_rectangle(0, pv.layer, p.x * 8, row * 8, w, h, pixels))
+            return false;
+        if (cached.image < 0 || cached.w != w || cached.h != h) {
+            khdays_ui_image_put(cached.image);
+            cached.image = khdays_ui_image_get(w, h);
+            cached.w = w;
+            cached.h = h;
+            cached.pixels.clear();
+        }
+        if (cached.image < 0)
+            return false;
+        if (cached.pixels != pixels) {
+            auto *out = khdays_ui_image_begin(cached.image);
+            if (!out)
+                return false;
+            std::copy(pixels.begin(), pixels.end(), out);
+            khdays_ui_image_end(cached.image);
+            cached.pixels = std::move(pixels);
+        }
+    }
+    for (int i = 0; i < pv.count; ++i) {
+        const auto &p = pv.piece[i];
+        float w, h;
+        w = float(p.w * 8);
+        h = float(p.h * 8);
+        emit_picture(p.key == KHDAYS_PAUSE_TITLE ? "pause.title" : "pause.line", pv.layer, pieces[i].image,
+                     float(p.x * 8 - l.hofs), float(p.y * 8 - l.vofs), w, h);
+        const int row = p.key == KHDAYS_PAUSE_WITHDRAW ? kGameRow[1] : p.y;
+        for (int y = row; y < row + p.h; ++y)
+            for (int x = p.x; x < p.x + p.w; ++x)
+                khdays_ui_left_out_cell(KHDAYS_UI_PAUSE, 0, pv.layer, x % l.wt, y % l.ht);
+    }
+    return true;
+}
+
+void emit()
+{
+    target_layout = false;
+    KhdaysRetryView v;
+    KhdaysPauseView pv;
+    KhdaysBgLayer l;
+    game_over();
+    const bool viewed = khdays_pause_view(&pv) != 0;
+    if (viewed && kh2_pause(pv)) {
+        return; // the Menu Overhaul's KH2 pause (its mod's pieces there)
+    }
+    khdays_game_pause_publish(0, 0, nullptr, 0, 0, 0);
+    if (!viewed) {
+        kh2_row = 0; // the next pause opens on Continue
+    }
+    if (viewed) {
+        emit_target_pause(pv);
+        if (emit_pictures(pv) || (target_layout && emit_native_target_menu(pv))) {
+            if (target_layout) {
+                KhdaysBgLayer source;
+                if (khdays_bg_text_layer(0, pv.layer, &source))
+                    for (int y = 0; y < source.ht; ++y)
+                        for (int x = 0; x < source.wt; ++x)
+                            khdays_ui_left_out_cell(KHDAYS_UI_PAUSE, 0, pv.layer, x, y);
+                khdays_ui_emit(KHDAYS_UI_PAUSE, &target_element);
+            }
+            return;
+        }
+        target_layout = false;
+    }
+    if (!khdays_retry_view(&v) || !khdays_bg_text_layer(kScreen, kLayer, &l)) {
+        return;
+    }
+    if (!prepare_retry_lines(v, l))
+        return;
     for (int k = 0; k < 3; ++k) {
         emit_line(k, drawn[k], kCellX * 8 - (l.hofs & (l.wt * 8 - 1)), kRow[k] * 8 - (l.vofs & (l.ht * 8 - 1)));
     }

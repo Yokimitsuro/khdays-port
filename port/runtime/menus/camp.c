@@ -6,6 +6,8 @@
 #include "savelist.h"
 #include "enemy_viewer.h"
 
+#include "../characters/characters.h"
+
 #include "../input/input.h"
 #include "../core/io.h"
 #include "../core/session_log.h"
@@ -296,7 +298,7 @@ static void read_members(KhdaysCampView *v)
         m->character = -1;
         if (in_ram(session)) {
             const int c = (int)(s8)rd8(session + ROWS + (u32)i * ROW_SIZE + ROW_CHARACTER);
-            m->character = c >= 0 && c < KHDAYS_CAMP_CHARACTERS ? c : -1;
+            m->character = (c >= 0 && c < KHDAYS_CAMP_CHARACTERS) || khdays_characters_known(c) ? c : -1;
             if ((named >> i) & 1u) {
                 for (u32 k = 0; k < NAME_LENGTH; ++k) {
                     m->name[k] = rd16(session + NAMES + ((u32)i * NAME_LENGTH + k) * 2u);
@@ -1155,7 +1157,7 @@ static int read_menu(const Camp *c, KhdaysCampView *v)
         v->self = Ov008_GetLocalPlayerIndex() & 0xff;
         if (in_ram(session) && v->self < 4) {
             const int ch = (int)(s8)rd8(session + ROWS + (u32)v->self * ROW_SIZE + ROW_CHARACTER);
-            v->character = ch >= 0 && ch < KHDAYS_CAMP_CHARACTERS ? ch : -1;
+            v->character = (ch >= 0 && ch < KHDAYS_CAMP_CHARACTERS) || khdays_characters_known(ch) ? ch : -1;
         }
         read_members(v);
     }

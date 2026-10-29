@@ -29,10 +29,13 @@ std::string trim(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
-// The port's executable the build left most recently (port/build.py's
-// folders: Release, then Debug).
+// The port's executable: beside the tool in an install (the port's folder), else the one the build left most
+// recently (port/build.py's folders: Release, then Debug).
 std::string newest_port(const fs::path& root) {
     std::string best;
+    std::error_code beside;
+    if (fs::is_regular_file(root / (std::string("khdays-native") + kExe), beside))
+        return std::string("khdays-native") + kExe;
     fs::file_time_type best_time{};
     for (const char* dir : {"build/port/obj-release-x64", "build/port/obj-x64"}) {
         const fs::path exe = root / dir / (std::string("khdays-native") + kExe);
@@ -72,6 +75,41 @@ fs::path settings_file(const fs::path& root) {
     return root / "saves" / "studio.ini";
 }
 
+bool is_port_folder(const fs::path& folder) {
+    std::error_code ec;
+    return fs::is_directory(folder / "data", ec) ||
+           fs::is_regular_file(folder / (std::string("khdays-native") + kExe), ec);
+}
+
+fs::path find_port_root(const fs::path& current, const fs::path& tool) {
+    for (const fs::path& start : {current, tool}) {
+        if (start.empty())
+            continue;
+        for (fs::path folder = start;; folder = folder.parent_path()) {
+            if (is_port_folder(folder))
+                return folder;
+            if (folder == folder.parent_path() || folder.parent_path().empty())
+                break;
+        }
+    }
+    return current;
+}
+
+std::string clean_path(const std::string& typed) {
+    std::string s = trim(typed);
+    while (s.size() >= 2 && (s.front() == '"' || s.front() == '\'') && s.back() == s.front())
+        s = trim(s.substr(1, s.size() - 2));
+    return s;
+}
+
+fs::path port_exe(const Settings& settings) {
+    const fs::path named = resolve(settings, settings.port);
+    std::error_code ec;
+    if (fs::is_directory(named, ec))
+        return named / (std::string("khdays-native") + kExe);
+    return named;
+}
+
 Settings load_settings(const fs::path& root, std::string* note) {
     Settings s;
     s.root = root;
@@ -93,13 +131,13 @@ Settings load_settings(const fs::path& root, std::string* note) {
             const std::string key = trim(t.substr(0, eq));
             const std::string value = trim(t.substr(eq + 1));
             if (key == "port")
-                read.port = value;
+                read.port = clean_path(value);
             else if (key == "graphics_dump")
-                read.graphics_dump = value;
+                read.graphics_dump = clean_path(value);
             else if (key == "sounds_dump")
-                read.sounds_dump = value;
+                read.sounds_dump = clean_path(value);
             else if (key == "ffmpeg")
-                read.ffmpeg = value;
+                read.ffmpeg = clean_path(value);
             else if (key == "language")
                 read.language = value;
             else if (key == "mod")
@@ -109,7 +147,7 @@ Settings load_settings(const fs::path& root, std::string* note) {
             else if (key == "theme")
                 read.theme = value;
             else if (key == "collection_1525")
-                read.collection_1525 = value;
+                read.collection_1525 = clean_path(value);
             else if (key == "cache_mb") {
                 int mb = 0;
                 const auto r = std::from_chars(value.data(), value.data() + value.size(), mb);
@@ -132,8 +170,9 @@ Settings load_settings(const fs::path& root, std::string* note) {
                 *note = u8(file);
         }
     }
-    if (s.port.empty())
-        s.port = newest_port(root);
+    std::error_code ec;
+    if (s.port.empty() || !fs::is_regular_file(port_exe(s), ec))
+        s.port = newest_port(root);  // none named, or the one named is gone: the one there is
     if (s.ffmpeg.empty())
         s.ffmpeg = ffmpeg_on_path();
     return s;
@@ -179,7 +218,7 @@ bool save_settings(const Settings& s, std::string* why) {
 }
 
 fs::path resolve(const Settings& settings, const std::string& path) {
-    const fs::path p = path_u8(path);
+    const fs::path p = path_u8(clean_path(path));
     return p.is_absolute() ? p : settings.root / p;
 }
 

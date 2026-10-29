@@ -13,7 +13,12 @@
 #include "threads.h"
 #include "khdays_data_area.h" /* the data area's bounds (build/port/gen-x64) */
 #include "../sound/sound_dump.h"
+#include "../mods/list.h"
 #include "../mods/names.h"
+#include "../characters/characters.h"
+#include "../plugins/plugins.h"
+#include "../scripts/mods_log.h"
+#include "../missions/missions.h"
 #include "session_log.h"
 #include "window.h"
 
@@ -24,6 +29,7 @@
 #include <SDL3/SDL.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #ifdef _WIN32
@@ -34,6 +40,7 @@
 #define change_folder chdir
 #endif
 
+extern int khdays_export_heart_model(const char *input, const char *output);
 extern void khdays_NitroMain(void); /* the decomp's main, renamed at build */
 extern void _fp_init(void);
 extern void NitroStartUp(void);
@@ -64,6 +71,33 @@ static void load_static_module(void)
     const u32 ram = *(const u32 *)(header + 0x28);
     const u32 size = *(const u32 *)(header + 0x2c);
     khdays_rom_read(rom, (u8 *)KHDAYS_W(ram), size);
+}
+
+/* The ITCM image's two tables of the texture-matrix builders (NNSi_G3dSendTexMtxMode0/2 call through
+ * them), which on a US card name the main module's functions by their US addresses. */
+#define TEX_MTX_BUILDERS 8
+static const u32 tex_mtx_builder_tables[] = {0x01ffa1f8u, 0x01ffa598u};
+
+/* A US card's static module up to the EU build's addresses (rom.h), once crt0 has autoloaded and
+ * cleared the BSS by the card's own layout: the native data initializers then go over the image as
+ * on an EU card, and what is read from it (the static initializers' list) is where the build has it.
+ * The builder tables' main-module entries move with it. */
+static void move_us_image(void)
+{
+    const u32 image_end = MODULE_PARAMS[3]; /* the static BSS starts where the image ends */
+    if (!khdays_rom_is_us()) {
+        return;
+    }
+    memmove((void *)KHDAYS_W(KHDAYS_US_SHIFT_FROM + KHDAYS_US_SHIFT), (const void *)KHDAYS_W(KHDAYS_US_SHIFT_FROM),
+            image_end - KHDAYS_US_SHIFT_FROM);
+    for (size_t t = 0; t < sizeof(tex_mtx_builder_tables) / sizeof(tex_mtx_builder_tables[0]); ++t) {
+        volatile u32 *builder = (volatile u32 *)KHDAYS_W(tex_mtx_builder_tables[t]);
+        for (int i = 0; i < TEX_MTX_BUILDERS; ++i) {
+            if (builder[i] >= KHDAYS_US_SHIFT_FROM && builder[i] < image_end) {
+                builder[i] += KHDAYS_US_SHIFT;
+            }
+        }
+    }
 }
 
 /* crt0's do_autoload (func_020009fc): copy each autoload block (ITCM, DTCM)
@@ -181,6 +215,29 @@ static void attach_parent_console(void)
     }
 }
 
+/* A native plugin's line (runtime/plugins/plugins.h): in the mods' log, which also writes it to the session log. */
+static void plugin_said(const char *mod_id, const char *text)
+{
+    static int opened;
+    if (!opened) {
+        opened = 1;
+        khdays_mods_log_open(khdays_host_user_folder());
+    }
+    khdays_mods_log(mod_id, "native", NULL, 0, text);
+}
+
+/* Safe mode: the game started without the mods' native plugins (KHDAYS_SAFE_MODE=1 or --safe-mode). */
+static int safe_mode(int argc, char **argv)
+{
+    const char *knob = getenv("KHDAYS_SAFE_MODE");
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--safe-mode") == 0) {
+            return 1;
+        }
+    }
+    return knob != NULL && strcmp(knob, "0") != 0;
+}
+
 int main(int argc, char **argv)
 {
     /* first: claim the DS's address ranges before anything else (the symbol handler, SDL) allocates
@@ -210,6 +267,9 @@ int main(int argc, char **argv)
         }
         return khdays_graphics_dump(argc >= 3 ? argv[2] : KHDAYS_GRAPHICS_DUMP_DIRECTORY);
     }
+    if (argc == 4 && strcmp(argv[1], "--export-heart-model") == 0) {
+        return khdays_export_heart_model(argv[2], argv[3]);
+    }
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */
     khdays_host_player_slot();
@@ -220,6 +280,11 @@ int main(int argc, char **argv)
     }
     khdays_log_open();
     khdays_log("%s", working_folder_note);
+    khdays_missions_report();
+    khdays_characters_report();
+    khdays_plugins_set_safe_mode(safe_mode(argc, argv));
+    khdays_plugins_mods_on(khdays_mods_started_has);
+    khdays_plugins_start("mods", plugin_said);
     khdays_log("the game's memory at %p (its references from there)", (void *)khdays_window);
     {
         /* The game runs on a context whose stack is in its memory (memory.c), so its locals are reached
@@ -251,6 +316,7 @@ static void run_game(void *reset)
     }
     autoload();
     clear32(0, MODULE_PARAMS[3], MODULE_PARAMS[4] - MODULE_PARAMS[3]);
+    move_us_image();
     /* The native data of the static module, ITCM and DTCM, over their image. */
     khdays_data_init(-1);
     khdays_data_init(-2);

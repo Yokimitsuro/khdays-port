@@ -1,6 +1,129 @@
 /* Synthetic operation/VRAM tests; no game assets. Includes the implementation
  * to exercise canvas lifetime and transfers with a small fake DS memory. */
 #include "../ui/text.c"
+static int information_enabled, information_calls;
+static int information_engine, information_bg;
+static uint32_t information_ink;
+static int information_right;
+static unsigned information_revision;
+static unsigned information_epoch = 1;
+static int mission_panel_owned;
+void khdays_ui_mission_panel_emit(void) {}
+int khdays_ui_mission_panel_cell(int engine, int bg, int x, int y)
+{
+    (void)x;
+    return mission_panel_owned && engine == 1 && (bg == 0 || bg == 2) && y >= 19 && y < 24;
+}
+static int obtained_sequence_enabled, obtained_sequence_owned, obtained_sequence_calls, retiring_notice;
+static unsigned obtained_sequence_ink;
+static KhdaysUiElement notification_anchors[3];
+int khdays_ui_obtained_enabled(void)
+{
+    return obtained_sequence_enabled;
+}
+int khdays_ui_obtained_configured(void)
+{
+    return obtained_sequence_enabled;
+}
+void khdays_ui_obtained_request(int announcement)
+{
+    if (!announcement)
+        obtained_sequence_owned = 0;
+}
+void khdays_ui_obtained_begin(void) {}
+int khdays_ui_obtained_owns(void)
+{
+    return obtained_sequence_owned;
+}
+void khdays_ui_obtained_end(void) {}
+int khdays_ui_obtained_text(const KhdaysUiElement *e, const unsigned *rgba, int w, int h, unsigned version)
+{
+    notification_anchors[0] = *e;
+    (void)version;
+    obtained_sequence_owned = 1;
+    ++obtained_sequence_calls;
+    obtained_sequence_ink = 0;
+    for (int i = 0; i < w * h; ++i)
+        obtained_sequence_ink |= rgba[i];
+    return 1;
+}
+static int notification_enabled[4], notification_owned[4], notification_calls[4];
+int khdays_ui_notification_enabled(int k)
+{
+    return notification_enabled[k];
+}
+int khdays_ui_notification_configured(int k)
+{
+    return notification_enabled[k];
+}
+void khdays_ui_notification_request(int k, int present)
+{
+    if (!present)
+        notification_owned[k] = 0;
+}
+int khdays_ui_notification_owns(int k)
+{
+    return notification_owned[k];
+}
+int khdays_ui_notification_box(int k, KhdaysUiElement *out)
+{
+    if (!notification_enabled[k])
+        return 0;
+    *out = (KhdaysUiElement){"hud.notification", 0, 3, 0, 64, 96, 16, -1};
+    return 1;
+}
+int khdays_ui_notification_cell(int engine, int bg, int x, int y)
+{
+    return !engine && (bg == 1 || bg == 3) && (notification_owned[1] || obtained_sequence_owned || retiring_notice) &&
+           x < 13 && y >= 7 && y < 10;
+}
+int khdays_ui_notification_text(int k, const KhdaysUiElement *e, const unsigned *rgba, int w, int h, unsigned v)
+{
+    if (k == 1 || k == 2)
+        notification_anchors[k] = *e;
+    (void)v;
+    unsigned ink = 0;
+    for (int i = 0; i < w * h; ++i)
+        ink |= rgba[i];
+    if (ink)
+        ++notification_calls[k];
+    notification_owned[k] = 1;
+    return 1;
+}
+unsigned khdays_ui_information_epoch(void)
+{
+    return information_epoch;
+}
+void khdays_ui_information_begin(void) {}
+void khdays_ui_information_end(void) {}
+int khdays_ui_information_wants(void)
+{
+    return information_enabled;
+}
+int khdays_ui_information_active(int engine)
+{
+    (void)engine;
+    return information_enabled;
+}
+int khdays_ui_information_text(const KhdaysUiElement *e, const unsigned *rgba, int w, int h, unsigned version,
+                               float first_x, float first_y, unsigned coverage)
+{
+    information_engine = e->screen;
+    information_bg = (int)(e->slot & KES_NUMBER_MASK);
+    information_revision = version;
+    (void)first_x;
+    (void)first_y;
+    (void)coverage;
+    ++information_calls;
+    information_ink = 0;
+    information_right = 0;
+    for (int i = 0; i < w * h; ++i) {
+        information_ink |= rgba[i];
+        if ((rgba[i] >> 24) && i % w >= information_right)
+            information_right = i % w + 1;
+    }
+    return 1;
+}
 
 static unsigned char small_ram[65536], vram[65536];
 static unsigned char *ram = small_ram;
@@ -26,6 +149,23 @@ int khdays_game_ram_ref(unsigned int reference)
 static const char *font_origin;
 static uint32_t font_origin_info, font_origin_offset;
 static int font_probes;
+static int observing_font, font_layout_override = -1;
+int khdays_hd_font_layout_override(int mode)
+{
+    const int previous = font_layout_override;
+    font_layout_override = mode;
+    return previous;
+}
+int khdays_hd_font_observe(int enabled)
+{
+    const int previous = observing_font;
+    observing_font = enabled;
+    return previous;
+}
+static int font_available(void)
+{
+    return font_layout_override >= 0 ? font_layout_override : observing_font || khdays_hud_setting(KHDAYS_OPT_FONT);
+}
 static const char *test_scope = "";
 static int test_camp_screen = KHDAYS_CAMP_NONE, test_camp_story = 1;
 static char selected_scope[80];
@@ -37,7 +177,7 @@ int khdays_camp_screen(int *story)
 }
 int khdays_hd_font_mappings_enabled(void)
 {
-    return test_mappings;
+    return font_available() && test_mappings;
 }
 void khdays_camp_font_scope(uint32_t font, char *scope, int size)
 {
@@ -47,6 +187,8 @@ void khdays_camp_font_scope(uint32_t font, char *scope, int size)
 int khdays_hd_font_select(const char *resource, const char *scope, char *selected, int size)
 {
     (void)resource;
+    if (!font_available())
+        return 0;
     snprintf(selected_scope, sizeof(selected_scope), "%s", scope);
     if ((strcmp(scope, "field.command") == 0 && command_route) ||
         (strcmp(scope, "field.obtained") == 0 && popup_route) || strcmp(scope, "shop") == 0) {
@@ -76,18 +218,33 @@ int khdays_hd_font_select(const char *resource, const char *scope, char *selecte
     return 1;
 }
 static int metric_override, text_mode = KHDAYS_UI_ON;
+unsigned short NNS_G2dFontFindGlyphIndex(KhdaysRef f, unsigned ch)
+{
+    (void)f;
+    return ch == 'V' ? 1 : 0;
+}
+KhdaysRef NNS_G2dFontGetCharWidthsFromIndex(KhdaysRef f, unsigned glyph_index)
+{
+    (void)f;
+    return 512 + glyph_index * 3;
+}
 static int numeric_layout_enabled;
 static double fit_widths[2];
 static double fit_offsets[2];
 static int native_blits;
-static const void *native_hostrefs[2];
+static const void *native_hostrefs[64];
 static int native_hostref_count;
 static void *native_hostref(KhdaysRef ref)
 {
-    return ref >= 0xfffffff0u && ref < 0xfffffff2u ? (void *)native_hostrefs[ref - 0xfffffff0u] : KHDAYS_W(ref);
+    return ref >= 0xffff0000u && ref < 0xffff0040u ? (void *)native_hostrefs[ref - 0xffff0000u] : KHDAYS_W(ref);
 }
 double khdays_hd_font_fit_layout(int layout, double *offset)
 {
+    if (!font_available()) {
+        if (offset)
+            *offset = 0;
+        return 0;
+    }
     if (offset)
         *offset = layout >= 0 && layout < 2 ? fit_offsets[layout] : 0;
     return layout >= 0 && layout < 2 ? fit_widths[layout] : 0;
@@ -126,7 +283,7 @@ int khdays_hd_font_baseline(const char *path, int index, int days_baseline)
     (void)path;
     (void)index;
     (void)days_baseline;
-    return baseline_shift;
+    return font_available() ? baseline_shift : 0;
 }
 double khdays_hd_font_baseline_f(const char *path, int index, int days_baseline)
 {
@@ -153,6 +310,8 @@ void khdays_hd_font_bind_charmap(const char *path, const uint32_t *codes, int co
 }
 int khdays_hd_font_metric(const char *path, int index, int field, int fallback)
 {
+    if (!font_available())
+        return fallback;
     if (field == KHDF_SIZED)
         return large_geometry;
     if (path && index == 0 && field == KHDF_WIDTH && glyph_width_override >= 0)
@@ -182,7 +341,7 @@ int khdays_hd_font_geometry(const char *path, int index, int days_w, int days_h,
 }
 int khdays_hd_font_kerning(const char *path, unsigned int left, unsigned int right)
 {
-    return path && metric_override && left == 'A' && right == 'V' ? -2 : 0;
+    return font_available() && path && metric_override && left == 'A' && right == 'V' ? -2 : 0;
 }
 double khdays_hd_font_metric_f(const char *path, int index, int field, double fallback)
 {
@@ -218,6 +377,15 @@ static uint32_t *test_images[32];
 static int image_ends, paint_calls, failures;
 static int image_requests, test_scale = 1, fail_direct_images;
 static int test_hofs, test_vofs, test_colors256;
+static int virtual_caption_scroll;
+int khdays_ui_information_text_scroll(int *x, int *y)
+{
+    if (!virtual_caption_scroll)
+        return 0;
+    *x = test_hofs;
+    *y = test_vofs + 216;
+    return 1;
+}
 static int test_map_bg = -1, test_bg_colors256[4] = {-1, -1, -1, -1};
 static size_t image_bytes[32], live_bytes, peak_bytes;
 static uint16_t map_cells[1024] = {1, 2};
@@ -225,6 +393,7 @@ static int map_width = 2, map_height = 1;
 static KhdaysUiElement submissions[128];
 static int submission_count;
 static unsigned char suppressed[32 * 32];
+static unsigned char suppressed_layers[4][32 * 32];
 static uint32_t tint = 0xff123456u;
 #define CHECK(expr)                                                                                                    \
     do {                                                                                                               \
@@ -238,9 +407,9 @@ KhdaysRef khdays_reference(const void *p)
 {
     /* the snapshots' canvas and pixels on the stack (fitted glyphs, buttons' glyphs) */
     if ((uintptr_t)p < (uintptr_t)ram || (uintptr_t)p >= (uintptr_t)ram + ram_bytes) {
-        const int slot = native_hostref_count++ % 2;
+        const int slot = native_hostref_count++ % 64;
         native_hostrefs[slot] = p;
-        return 0xfffffff0u + (unsigned)slot;
+        return 0xffff0000u + (unsigned)slot;
     }
     return (KhdaysRef)((const unsigned char *)p - ram);
 }
@@ -251,7 +420,7 @@ void khdays_log(const char *format, ...)
 int khdays_hd_font_has(const char *path)
 {
     ++font_probes;
-    return path && strcmp(path, "text/missing.nftr") != 0;
+    return font_available() && path && strcmp(path, "text/missing.nftr") != 0;
 }
 int khdays_hd_font_numeric_layout(int layout)
 {
@@ -261,7 +430,7 @@ int khdays_hd_font_numeric_layout(int layout)
 int khdays_hd_font_glyph_available(const char *path, int index)
 {
     (void)path;
-    return index >= 0 && index < 32 && (available_glyphs & (1u << index)) != 0;
+    return font_available() && index >= 0 && index < 32 && (available_glyphs & (1u << index)) != 0;
 }
 /* the player's A as a 2x2 red icon while button_icon_on; the buttons asked for, a bit each */
 static int button_icon_on;
@@ -315,9 +484,11 @@ void khdays_ui_left_out_cell(int part, int screen, int bg, int x, int y)
 {
     (void)part;
     (void)screen;
-    (void)bg;
-    if (x >= 0 && x < 32 && y >= 0 && y < 32)
+    if (x >= 0 && x < 32 && y >= 0 && y < 32) {
         suppressed[y * 32 + x] = 1;
+        if (bg >= 0 && bg < 4)
+            suppressed_layers[bg][y * 32 + x] = 1;
+    }
 }
 uint32_t khdays_ui_palette_colour(int engine, uint32_t slot, uint32_t indexed)
 {
@@ -399,6 +570,8 @@ int khdays_hd_font_paint_clipped(const char *path, int index, double x, double y
     (void)path;
     (void)index;
     (void)height;
+    if (!font_available())
+        return 0;
     ++paint_calls;
     /* A replacement on the RIGHT half: original ink is on the LEFT half. */
     for (int py = t * scale; py < b * scale; ++py)
@@ -415,6 +588,8 @@ int khdays_hd_font_paint_fitted(const char *path, int index, double x, double y,
     (void)path;
     (void)index;
     (void)height;
+    if (!font_available())
+        return 0;
     ++paint_calls;
     for (int py = t * scale; py < b * scale; ++py)
         for (int px = l * scale; px < r * scale; ++px)
@@ -437,6 +612,7 @@ static uint32_t primary_hd_pixel(size_t offset)
 static void setup(int bpp)
 {
     khdays_window = ram;
+    khdays_ui_text_crawl_font(NULL);
     obtained_reset();
     while (canvas_count)
         forget(&canvases[0]);
@@ -880,6 +1056,21 @@ static void command_menu_selections(int primary_row)
 
 static void obtained_popup(void)
 {
+    {
+        Canvas panel = {0};
+        KhdaysBgLayer panel_layer = {0};
+        panel.engine = 1;
+        panel.bg = 0;
+        mission_panel_owned = 1;
+        CHECK(obtained_cell(&panel, &panel_layer, 1, 20));
+        CHECK(!obtained_cell(&panel, &panel_layer, 1, 10));
+        panel.bg = 1;
+        CHECK(!obtained_cell(&panel, &panel_layer, 1, 20));
+        mission_panel_owned = 0;
+        panel.bg = 0;
+        CHECK(!obtained_cell(&panel, &panel_layer, 1, 20));
+    }
+
     ram_bytes = 0x02400000u;
     ram = (unsigned char *)calloc(1, ram_bytes);
     CHECK(ram != NULL);
@@ -999,6 +1190,105 @@ static void obtained_popup(void)
     CHECK(khdays_ui_text_obtained_wants(0, 1));
     obtained_reset();
     fit_widths[1] = 0;
+    /* A sequence requests a private native-font capture even with identical font routes. */
+    obtained_sequence_enabled = 1;
+    available_glyphs = 0;
+    CHECK(khdays_ui_text_obtained_wants(0, 1));
+    cc = (DsCanvas *)(ram + 8200);
+    *cc = *(const DsCanvas *)(ram + 16);
+    cc->char_base = 9000;
+    c = canvas_of(cc, "sequence pickup");
+    khdays_ui_text_scope_push("field.obtained");
+    draw(0);
+    khdays_ui_text_scope_pop();
+    CHECK(c->op_count && c->ops[0].native_glyph);
+    khdays_ui_text_obtained_capture(surface);
+    c = find(KHDAYS_REF(ram + 16));
+    cc = (DsCanvas *)(ram + 16);
+    khdays_ui_text_scope_push("field.command");
+    draw(0);
+    khdays_ui_text_scope_pop();
+    memcpy(vram + address, ram + 1024, c->bytes);
+    chars_loaded(0, 1, ram + 1024, address, c->bytes);
+    memset(suppressed_layers, 0, sizeof(suppressed_layers));
+    const uint16_t saved_item_cell = map_cells[8 * 32 + 1];
+    map_cells[8 * 32 + 1] = 0; /* INFORMATION returns BG3 before the aliased BG1 item tiles. */
+    const int before_restore = obtained_sequence_calls;
+    emit();
+    CHECK(!obtained.ready && obtained_sequence_calls == before_restore + 1 && obtained_sequence_ink);
+    map_cells[8 * 32 + 1] = saved_item_cell;
+    emit();
+    CHECK(obtained_sequence_calls && obtained_sequence_ink);
+    CHECK(suppressed[7 * 32] && suppressed[9 * 32 + 12] && !suppressed[9 * 32 + 13] && !suppressed[10 * 32 + 12]);
+    for (int bg = 0; bg < 4; ++bg)
+        CHECK(suppressed_layers[bg][7 * 32 + 12] == (bg == 1 || bg == 3));
+    obtained_sequence_owned = 0;
+    retiring_notice = 1;
+    const int ended_count = submission_count;
+    emit_obtained();
+    CHECK(submission_count == ended_count); /* Never revive the old private text plane after a sequence. */
+    KhdaysBgLayer ending_layer;
+    CHECK(khdays_bg_text_layer(0, 1, &ending_layer));
+    CHECK(obtained_cell(c, &ending_layer, 12, 7));
+    retiring_notice = 0;
+    obtained_sequence_owned = 1;
+    KhdaysBgLayer pickup_layer;
+    CHECK(khdays_bg_text_layer(0, 1, &pickup_layer));
+    CHECK(obtained_cell(c, &pickup_layer, 12, 7) && !obtained_cell(c, &pickup_layer, 13, 7));
+    Canvas picture_canvas = {0};
+    picture_canvas.bg = 3;
+    CHECK(obtained_cell(&picture_canvas, &pickup_layer, 12, 7));
+    picture_canvas.engine = 1;
+    CHECK(!obtained_cell(&picture_canvas, &pickup_layer, 12, 7));
+    picture_canvas.engine = 0;
+    obtained_sequence_owned = obtained_sequence_enabled = 0;
+    CHECK(!obtained_cell(c, &pickup_layer, 12, 7));
+    CHECK(!obtained_cell(&picture_canvas, &pickup_layer, 12, 7));
+    memset(suppressed_layers, 0, sizeof(suppressed_layers));
+    emit();
+    CHECK(!suppressed_layers[3][7 * 32 + 12]);
+    /* Backpack announcements alias the same item cache one tile farther right. */
+    notification_enabled[1] = 1;
+    CHECK(khdays_ui_text_obtained_wants(0, 0));
+    cc = (DsCanvas *)(ram + 8200);
+    *cc = *(const DsCanvas *)(ram + 16);
+    cc->char_base = 9000;
+    c = canvas_of(cc, "backpack name");
+    khdays_ui_text_scope_push("field.obtained");
+    draw(0);
+    khdays_ui_text_scope_pop();
+    khdays_ui_text_obtained_capture(surface);
+    for (int row = 0; row < 2; ++row)
+        for (int col = 0; col < 8; ++col)
+            map_cells[(row + 8) * 32 + col + 2] = (uint16_t)(0xf250u + row * 8 + col);
+    const uint16_t saved_backpack_cell = map_cells[8 * 32 + 2];
+    map_cells[8 * 32 + 2] = 0;
+    const int backpack_before_restore = notification_calls[1];
+    emit();
+    CHECK(!obtained.ready && notification_calls[1] == backpack_before_restore + 1);
+    map_cells[8 * 32 + 2] = saved_backpack_cell;
+    emit();
+    CHECK(notification_calls[1] && notification_owned[1]);
+    CHECK(suppressed_layers[3][7 * 32 + 12]);
+    notification_enabled[1] = notification_owned[1] = 0;
+    const int fallback_count = submission_count;
+    emit_obtained();
+    CHECK(submission_count == fallback_count); /* Keep the native backpack text if its replacement fails. */
+    /* The recon line keeps native glyphs even without an HD font mapping. */
+    notification_enabled[2] = 1;
+    c = canvas_of(cc, "breakthrough line");
+    khdays_ui_text_scope_push("field.breakthrough");
+    draw(0);
+    khdays_ui_text_scope_pop();
+    CHECK(c->notification == 2 && c->op_count && c->ops[0].native_glyph);
+    memcpy(vram + address, ram + 9000, c->bytes);
+    chars_loaded(0, 1, ram + 9000, address, c->bytes);
+    CHECK(c->display_notification == 2);
+    prepare_breakthrough(2);
+    CHECK(notification_calls[2]);
+    notification_enabled[2] = notification_owned[2] = 0;
+    available_glyphs = 1;
+    obtained_reset();
     test_mappings = 1;
     command_route = 0;
     popup_route = 1;
@@ -1203,6 +1493,170 @@ static void fitted_duplicate_tail_tests(void)
     fit_widths[0] = 0;
 }
 
+static void information_planes(void)
+{
+    for (int variation = 0; variation < 6; ++variation) {
+        const int native = variation & 1, engine = variation < 4 ? variation >> 1 : 0, bg = engine ? 0 : 1;
+        setup(4);
+        virtual_caption_scroll = variation >= 4;
+        test_map_bg = bg;
+        const int base_vofs = engine ? 216 : 0;
+        test_vofs = base_vofs;
+        if (engine || virtual_caption_scroll) {
+            // SetCaptionText builds at tile row 28 of sub BG0, scrolled to y=8 on screen.
+            map_width = map_height = 32;
+            memset(map_cells, 0, sizeof(map_cells));
+            map_cells[28 * 32] = 1;
+            map_cells[28 * 32 + 1] = 2;
+        }
+        test_mappings = !native;
+        mapping_ready = !native;
+        available_glyphs = native ? 0 : 1;
+        khdays_ui_text_scope_push("field.hud.information");
+        draw(0);
+        draw(8);
+        khdays_ui_text_scope_pop();
+        CHECK(c->op_count == 2 && c->ops[0].native_glyph == native);
+        const unsigned bytes = c->bytes;
+        memcpy(ram + 4096, ram + 1024, bytes);
+        khdays_ui_text_memory_copy(ram + 1024, ram + 4096, bytes, 4096);
+        CHECK(canvas_count == 2 && canvases[1].information);
+        memcpy(vram + 32, ram + 4096, bytes);
+        chars_loaded(engine, bg, ram + 4096, 32, bytes);
+        c = &canvases[0];
+        map_cells[(engine || virtual_caption_scroll ? 28 * 32 : 0) + 1] =
+            0; // Retain offscreen glyphs for the KH2 marquee.
+        information_enabled = 1;
+        information_calls = 0;
+        emit();
+        CHECK(c->information && information_calls == 1 && information_ink);
+        CHECK(information_right > 8 && canvases[1].engine == engine && canvases[1].bg == bg);
+        CHECK(information_engine == engine && information_bg == bg);
+        const int paints = paint_calls;
+        emit();
+        CHECK(information_calls == 2 && paint_calls == paints);
+        const unsigned previous_revision = information_revision;
+        int preferences[KHDAYS_OPT_COUNT];
+        khdays_hud_settings_default(preferences);
+        preferences[KHDAYS_OPT_FONT] = 0;
+        khdays_hud_settings_publish(preferences);
+        khdays_ui_text_settings_changed();
+        emit();
+        CHECK(information_revision != previous_revision && information_ink);
+        const unsigned native_revision = information_revision;
+        preferences[KHDAYS_OPT_FONT] = 1;
+        khdays_hud_settings_publish(preferences);
+        khdays_ui_text_settings_changed();
+        emit();
+        CHECK(information_revision != native_revision && information_ink);
+        information_calls -= 2;
+        // Canvas placement wraps with the tilemap, including the upper crawl's saved rows.
+        test_hofs = 512;
+        test_vofs = base_vofs + 256;
+        emit();
+        CHECK(information_calls == 3);
+        test_hofs = 0;
+        test_vofs = base_vofs;
+        ++information_epoch;
+        emit();
+        CHECK(information_calls == 3); // Retained glyphs from an old map cannot supply the new caption.
+        khdays_ui_text_scope_push("field.hud.information");
+        draw(0);
+        draw(8);
+        khdays_ui_text_scope_pop();
+        memcpy(ram + 4096, ram + 1024, bytes);
+        khdays_ui_text_memory_copy(ram + 1024, ram + 4096, bytes, 4096);
+        memcpy(vram + 32, ram + 4096, bytes);
+        chars_loaded(engine, bg, ram + 4096, 32, bytes);
+        emit();
+        CHECK(information_calls == 4);
+        memcpy(ram + 4096, ram + 8192, bytes);
+        khdays_ui_text_memory_copy(ram + 8192, ram + 4096, bytes, 4096);
+        CHECK(!canvases[1].information && canvases[1].display_information);
+        emit();
+        CHECK(information_calls == 5); // Unpublished RAM reuse must not turn the on-screen caption back into DS art.
+        memcpy(vram + 32, ram + 4096, bytes);
+        chars_loaded(engine, bg, ram + 4096, 32, bytes);
+        CHECK(!canvases[1].display_information);
+        information_enabled = 0;
+        virtual_caption_scroll = 0;
+        test_mappings = mapping_ready = 1;
+    }
+}
+
+static void live_layout_switch(void)
+{
+    int preferences[KHDAYS_OPT_COUNT];
+    khdays_hud_settings_default(preferences);
+    for (int mode = 0; mode < 2; ++mode) {
+        preferences[KHDAYS_OPT_FONT] = mode;
+        khdays_hud_settings_publish(preferences);
+        setup(4);
+        cc->area_width = cc->param = 8;
+        c = canvas_of(cc, "paired layout");
+        const int token = khdays_ui_text_layout_begin();
+        CHECK(token);
+        for (int i = 0; i < 2; ++i)
+            CHECK(khdays_ui_text_layout_glyph(cc, font, (mode ? 20 : 10) + i * (mode ? 6 : 11), 0, 'A'));
+        khdays_ui_text_layout_actual(token);
+        for (int i = 0; i < 2; ++i) {
+            const int x = (mode ? 10 : 20) + i * (mode ? 11 : 6);
+            CHECK(!khdays_ui_text_layout_glyph(cc, font, x, 0, 'A'));
+            draw(x);
+        }
+        khdays_ui_text_layout_end(token);
+        upload(0, c->bytes);
+        for (int pass = 0; pass < 4; ++pass) {
+            const int hd = pass & 1;
+            preferences[KHDAYS_OPT_FONT] = hd;
+            khdays_hud_settings_publish(preferences);
+            khdays_ui_text_settings_changed();
+            CHECK(c->display_count == 2);
+            CHECK(c->display_ops[0].x == (hd ? 10 : 20));
+            CHECK(c->display_ops[1].x == (hd ? 21 : 26));
+            CHECK(c->display_ops[0].w == (hd ? 8 : 4));
+        }
+    }
+    khdays_hud_settings_default(preferences);
+    khdays_hud_settings_publish(preferences);
+}
+
+static void live_font_switch(void)
+{
+    int preferences[KHDAYS_OPT_COUNT];
+    khdays_hud_settings_default(preferences);
+    for (int initially_enabled = 0; initially_enabled <= 1; ++initially_enabled) {
+        preferences[KHDAYS_OPT_FONT] = initially_enabled;
+        khdays_hud_settings_publish(preferences);
+        setup(4);
+        draw(0);
+        upload(0, c->bytes);
+        CHECK(c->display_count == 1 && c->display_ops[0].native_saved);
+        for (int pass = 0; pass < 4; ++pass) {
+            const int enabled = pass & 1;
+            preferences[KHDAYS_OPT_FONT] = enabled;
+            khdays_hud_settings_publish(preferences);
+            khdays_ui_text_settings_changed();
+            render();
+            CHECK(c->base_hd);
+            CHECK(c->display_count == 1); /* No new game text draw or transfer. */
+            if (enabled) {
+                CHECK(c->hd_ready && c->hd_image >= 0);
+                CHECK(test_images[c->hd_image][7] == tint);
+                CHECK(test_images[c->image][0] == 0);
+            } else {
+                CHECK(test_images[c->image][0] == 0);
+                CHECK(c->hd_image >= 0 && test_images[c->hd_image][0] != 0);
+            }
+            uint32_t glyph_pixels[16 * 8] = {0};
+            paint_op(c, &c->display_ops[0], 0, 0, 0, glyph_pixels, 16, 8, 1, 0, 0, 8, 8);
+            CHECK(enabled ? glyph_pixels[7] == tint : glyph_pixels[0] != 0 && glyph_pixels[7] == 0);
+        }
+    }
+    preferences[KHDAYS_OPT_FONT] = 1;
+    khdays_hud_settings_publish(preferences);
+}
+
 int main(int argc, char **argv)
 {
     graphics_replacements();
@@ -1213,7 +1667,19 @@ int main(int argc, char **argv)
         free(canvases);
         return failures ? 1 : 0;
     }
+    live_layout_switch();
+    live_font_switch();
     obtained_popup();
+    KhdaysUiElement ordinary_anchors[3];
+    memcpy(ordinary_anchors, notification_anchors, sizeof(ordinary_anchors));
+    information_enabled = virtual_caption_scroll = 1;
+    obtained_popup(); // Command labels and obtained/backpack/recon text must also survive a visible upper caption.
+    for (int k = 0; k < 3; ++k) {
+        CHECK(notification_anchors[k].x == ordinary_anchors[k].x && notification_anchors[k].y == ordinary_anchors[k].y);
+        CHECK(notification_anchors[k].w == ordinary_anchors[k].w && notification_anchors[k].h == ordinary_anchors[k].h);
+    }
+    information_enabled = virtual_caption_scroll = 0;
+    information_planes();
     button_icon_tests();
     fitted_capture_tests();
     fitted_duplicate_tail_tests();

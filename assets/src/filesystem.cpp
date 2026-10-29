@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <fstream>
+#include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -13,6 +15,9 @@ namespace {
 
 std::filesystem::path g_data_root{};
 std::filesystem::path g_mods_root{"mods"};
+std::vector<std::filesystem::path> g_mods;  // set_mods's list, in load order
+bool g_mods_set = false;
+std::shared_mutex g_mods_lock;  // the three above: set on one thread while others look files up
 
 // Normalize a game path to a relative path: strip leading slashes, unify
 // separators, and reject any component that would escape the root.
@@ -47,18 +52,34 @@ bool is_file(const std::filesystem::path& path) {
 
 }  // namespace
 
+bool mod_ignored(const std::filesystem::path& mod) {
+    const std::string name = mod.filename().string();
+    std::error_code ec;
+    return (!name.empty() && name[0] == '.') || std::filesystem::is_regular_file(mod / ".ignore", ec);
+}
+
+void set_mods(std::vector<std::filesystem::path> mods) {
+    std::unique_lock lock(g_mods_lock);
+    g_mods = std::move(mods);
+    g_mods_set = true;
+}
+
 std::optional<std::filesystem::path> find_in_mods(const std::filesystem::path& rel) {
     std::error_code ec;
-    if (!std::filesystem::is_directory(g_mods_root, ec)) {
-        return std::nullopt;
-    }
-    std::vector<std::filesystem::path> mods;
-    for (const auto& entry : std::filesystem::directory_iterator(g_mods_root, ec)) {
-        if (entry.is_directory(ec)) {
-            mods.push_back(entry.path());
+    std::vector<std::filesystem::path> listed;
+    std::shared_lock lock(g_mods_lock);
+    if (!g_mods_set) {
+        if (!std::filesystem::is_directory(g_mods_root, ec)) {
+            return std::nullopt;
         }
+        for (const auto& entry : std::filesystem::directory_iterator(g_mods_root, ec)) {
+            if (entry.is_directory(ec) && !mod_ignored(entry.path())) {
+                listed.push_back(entry.path());
+            }
+        }
+        std::sort(listed.begin(), listed.end());
     }
-    std::sort(mods.begin(), mods.end());
+    const auto& mods = g_mods_set ? g_mods : listed;
     for (const auto& mod : mods) {
         const auto candidate = mod / rel;
         if (is_file(candidate)) {
@@ -86,7 +107,10 @@ const std::filesystem::path& data_root() {
 }
 
 void set_mods_root(const std::filesystem::path& root) {
+    std::unique_lock lock(g_mods_lock);
     g_mods_root = root;
+    g_mods.clear();
+    g_mods_set = false;
 }
 
 bool autodetect_data_root(const std::filesystem::path& extracted_dir) {

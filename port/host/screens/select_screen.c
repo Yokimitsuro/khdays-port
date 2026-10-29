@@ -8,6 +8,8 @@
 #include "../app/places.h"
 #include "ui_text.h"
 #include "../../runtime/menus/charselect.h"
+#include "../../runtime/characters/characters.h"
+#include "mod_faces.h"
 #include "../../runtime/core/rom.h"
 #include "../app/profile.h"
 
@@ -38,6 +40,7 @@ static struct {
     float gap, stat_pitch, gauge_pitch, plate_pitch, frame_place, frame_other;
     Uint8 bars[BARS_MOST][3];
     int bar_count;
+    KhdaysModFaces faces; /* the mods' characters' */
 } s;
 
 static void forget(void)
@@ -47,6 +50,7 @@ static void forget(void)
         s.art = NULL;
     }
     s.bar_count = 0;
+    khdays_mod_faces_forget(&s.faces);
     khdays_layout_forget(&s.layout);
     khdays_layout_strings_free(&s.strings);
 }
@@ -139,6 +143,10 @@ static const float *place(const char *name)
 static void face(const KhdaysLayoutFrame *fr, int character, int in_colour, float x, float y, float w, float h)
 {
     char name[24];
+    if (character >= KHDAYS_SELECT_CHARACTERS) {
+        khdays_mod_face_draw(&s.faces, &s.layout, fr, character, x, y, w, h, in_colour ? 255 : GREY_LIGHT);
+        return;
+    }
     snprintf(name, sizeof(name), in_colour ? "face%d" : "face%d_grey", character);
     if (in_colour) {
         khdays_layout_draw_piece(&s.layout, fr, name, x, y, w, h, 1.0f);
@@ -163,6 +171,14 @@ static void circle(const KhdaysLayoutFrame *fr, const char *style, int which, fl
     snprintf(label, sizeof(label), khdays_text(TXT_ROOM_PLACE), which + 1);
     khdays_layout_utf8(label, wide, 16);
     line(fr, style, wide, cx, cy);
+}
+
+/* Character `c`'s name (`record` NAMES) or its weapon's (WEAPONS): the game's text, or a mod's
+ * character's in the game's language `language` (1-5), into `out` when it is one. */
+static const unsigned short *named(int c, int record, int language, unsigned short *out, int room)
+{
+    const unsigned short *mod = khdays_mod_name(c, record == WEAPONS, language, out, room);
+    return mod != NULL ? mod : khdays_layout_string(&s.strings, record + c);
 }
 
 /* The character a place is on as shown: this copy's as it moves. */
@@ -202,7 +218,8 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
         line(fr, "name", name, 0, 0);
         return;
     }
-    if (c < 0 || c >= KHDAYS_SELECT_CHARACTERS) {
+    unsigned short text[64];
+    if (c < 0 || (c >= KHDAYS_SELECT_CHARACTERS && khdays_characters_numbered(c) == NULL)) {
         return;
     }
     khdays_layout_fill_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, BLACK,
@@ -210,8 +227,8 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     face(fr, c, 1, f[0], f[1], f[2], f[3]);
     khdays_layout_ring_rounded(s.layout.renderer, fr, f[0] - t, f[1] - t, f[2] + 2 * t, f[3] + 2 * t, 10, t,
                                KHDAYS_PLACE_COLOURS[v->self & 3], 1.0f);
-    line(fr, "name", khdays_layout_string(&s.strings, NAMES + c), 0, 0);
-    line(fr, "weapon", khdays_layout_string(&s.strings, WEAPONS + c), 0, 0);
+    line(fr, "name", named(c, NAMES, v->language, text, 64), 0, 0);
+    line(fr, "weapon", named(c, WEAPONS, v->language, text, 64), 0, 0);
     for (int i = 0; i < KHDAYS_SELECT_STATS; ++i) {
         const float y = row[1] + (float)i * s.stat_pitch;
         khdays_layout_fill_rounded(s.layout.renderer, fr, row[0], y, row[2], row[3], row[3] / 2, BLACK, PANEL_ALPHA);
@@ -230,11 +247,9 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 {
     const float *tile = place("tile"), *tag_at = place("tile_tag");
-    int list[KHDAYS_SELECT_CHARACTERS], count = 0;
-    for (int c = 0; c < KHDAYS_SELECT_CHARACTERS; ++c) {
-        if (v->choosable & (1u << c)) {
-            list[count++] = c;
-        }
+    int count = 0; /* the characters before the random choice */
+    while (khdays_charselect_at(v, count) >= 0 && khdays_charselect_at(v, count) != KHDAYS_SELECT_CHARACTERS) {
+        ++count;
     }
     for (int p = 0; p <= count; ++p) {
         /* the characters, then the random choice (charselect.c's grid has it last too) */
@@ -257,7 +272,7 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
             break;
         }
         for (int i = 0; i < KHDAYS_SELECT_PLACES; ++i) {
-            if ((v->places[i].present || i == v->self) && character_of(v, i) == list[p]) {
+            if ((v->places[i].present || i == v->self) && character_of(v, i) == khdays_charselect_at(v, p)) {
                 on[n++] = i;
             }
         }
@@ -265,7 +280,7 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
             const float t = n > 0 ? s.frame_place : s.frame_other;
             khdays_layout_fill_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, BLACK,
                                        TILE_ALPHA);
-            face(fr, list[p], n > 0, x, y, tile[2], tile[3]);
+            face(fr, khdays_charselect_at(v, p), n > 0, x, y, tile[2], tile[3]);
             khdays_layout_ring_rounded(s.layout.renderer, fr, x - t, y - t, tile[2] + 2 * t, tile[3] + 2 * t, 8, t,
                                        n > 0 ? KHDAYS_PLACE_COLOURS[on[0] & 3] : OTHERS_GREY, 1.0f);
         }
@@ -293,13 +308,14 @@ static void draw_places(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
         khdays_layout_ring_rounded(s.layout.renderer, fr, x, y, plate[2], plate[3], plate[3] / 2, pl->ready ? 4 : EDGE,
                                    pl->ready ? KHDAYS_PLACE_COLOURS[i & 3] : EDGE_GREY, 1.0f);
         circle(fr, "plate_tag", i, x + ring[0], y + ring[1], ring[2]);
-        if (c >= 0 && c < KHDAYS_SELECT_CHARACTERS) {
+        if (c >= 0 && (c < KHDAYS_SELECT_CHARACTERS || khdays_characters_numbered(c) != NULL)) {
+            unsigned short text[64];
             face(fr, c, 1, x + small[0], y + small[1], small[2], small[3]);
             if (pl->name[0] != 0) {
                 line(fr, "plate_player", pl->name, x, y);
-                line(fr, "plate_character", khdays_layout_string(&s.strings, NAMES + c), x, y);
+                line(fr, "plate_character", named(c, NAMES, v->language, text, 64), x, y);
             } else {
-                line(fr, "plate_alone", khdays_layout_string(&s.strings, NAMES + c), x, y);
+                line(fr, "plate_alone", named(c, NAMES, v->language, text, 64), x, y);
             }
         }
     }
