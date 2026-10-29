@@ -25,6 +25,79 @@ static KhdaysG3dClipVertex at(float x, float y, float w)
 
 static const uint32_t BOTH_SIDES = (31u << 16) | 0xc0u;
 
+static void sequence_hud_bounds(void)
+{
+    const KhdaysG3dClipVertex box[4] = {{-0.9f, 1.2f, -0.95f, 1, 63, 63, 63, 0, 0, 1},
+                                        {-0.5f, 1.2f, -0.95f, 1, 63, 63, 63, 128, 0, 1},
+                                        {-0.5f, 0.7f, -0.95f, 1, 63, 63, 63, 128, 128, 1},
+                                        {-0.9f, 0.7f, -0.95f, 1, 63, 63, 63, 0, 128, 1}};
+    for (int kind = 0; kind < 3; ++kind) {
+        khdays_g3d_reset();
+        khdays_g3d_set_hud(kind != 0);
+        if (kind == 2)
+            khdays_g3d_mod_polygon(box, 4, BOTH_SIDES, 0, 7, 1, 0);
+        else
+            khdays_g3d_sequence_polygon(box, 4, BOTH_SIDES, 7, 20);
+        const uint32_t swap = 0;
+        khdays_g3d_command(0x50, &swap);
+        khdays_g3d_vblank();
+        const KhdaysG3dList *list = khdays_g3d_shown();
+        CHECK(list->npolys == 1);
+        if (list->npolys == 1)
+            CHECK(kind == 1 ? list->polys[0].ymin < -19 : list->polys[0].ymin >= 0);
+        KhdaysG3dList replay = {0};
+        CHECK(khdays_g3d_finish(list, NULL, &replay));
+        CHECK(replay.npolys == 1);
+        if (replay.npolys == 1)
+            CHECK(kind == 1 ? replay.polys[0].ymin < -19 : replay.polys[0].ymin >= 0);
+        khdays_g3d_list_free(&replay);
+    }
+}
+
+static void native_triangle(unsigned alpha, unsigned id)
+{
+    const uint32_t attr = (alpha << 16) | (id << 24) | 0xc0u, begin = 0;
+    const uint32_t vertices[3][2] = {{0xf800f800u, 0}, {0xf8000800u, 0}, {0x08000000u, 0}};
+    khdays_g3d_command(0x29, &attr);
+    khdays_g3d_command(0x40, &begin);
+    for (int i = 0; i < 3; ++i)
+        khdays_g3d_command(0x23, vertices[i]);
+    khdays_g3d_command(0x41, NULL);
+}
+
+static void marker_order(void)
+{
+    khdays_g3d_reset();
+    khdays_g3d_set_marker(1);
+    native_triangle(31, 1);
+    khdays_g3d_set_marker(0);
+    native_triangle(16, 2);
+    khdays_g3d_set_marker(1);
+    const KhdaysG3dClipVertex v[3] = {at(-5, -5, 10), at(5, -5, 10), at(0, 5, 10)};
+    khdays_g3d_sequence_polygon(v, 3, BOTH_SIDES | (5u << 24), 7, 19);
+    khdays_g3d_set_marker(0);
+    native_triangle(31, 3);
+    const uint32_t swap = 0;
+    khdays_g3d_command(0x50, &swap);
+    khdays_g3d_vblank();
+    const KhdaysG3dList *shown = khdays_g3d_shown();
+    CHECK(shown->npolys == 4);
+    for (unsigned sort = 0; sort < 2; ++sort) {
+        KhdaysG3dList seed = *shown, replay = {0};
+        seed.swap_params = sort;
+        CHECK(khdays_g3d_finish(&seed, NULL, &replay));
+        CHECK(replay.npolys == 4);
+        for (int i = 0; i < replay.npolys; ++i) {
+            const KhdaysG3dPolygon *p = &replay.polys[i];
+            CHECK(((p->flags & KHDAYS_G3D_MARKER) != 0) == (i >= 2));
+            CHECK(!(p->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_OVER_2D)));
+        }
+        CHECK(((replay.polys[2].attr >> 24) & 63u) == 1);
+        CHECK(replay.polys[3].pltt == 19);
+        khdays_g3d_list_free(&replay);
+    }
+}
+
 /* The polygon `n` of the list shown: its nearest and farthest depth (z / w). */
 static int depths(const KhdaysG3dList *l, int n, float *nearest, float *farthest)
 {
@@ -91,6 +164,19 @@ int main(void)
         }
         CHECK(cut == 2 && clear == 2 && whole == 0);
     }
+    khdays_g3d_reset();
+    khdays_g3d_sequence_polygon(glow, 3, BOTH_SIDES, 7, 19);
+    khdays_g3d_command(0x50, &swap);
+    khdays_g3d_vblank();
+    l = khdays_g3d_shown();
+    CHECK(l->npolys == 1 && (l->polys[0].flags & KHDAYS_G3D_SEQUENCE));
+    CHECK(l->polys[0].pltt == 19 && l->polys[0].replacement == 7);
+    KhdaysG3dList replay = {0};
+    CHECK(khdays_g3d_finish(l, NULL, &replay));
+    CHECK(replay.npolys == 1 && replay.polys[0].pltt == 19 && (replay.polys[0].flags & KHDAYS_G3D_SEQUENCE));
+    khdays_g3d_list_free(&replay);
+    marker_order();
+    sequence_hud_bounds();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

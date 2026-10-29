@@ -2123,6 +2123,54 @@ static void test_languages(void)
     khdays_ui_set_language(KHDAYS_LANGUAGE_ENGLISH);
 }
 
+static void test_hud_settings(void)
+{
+    KhdaysProfile p, q;
+    char path[512];
+    khdays_profile_default(&p);
+    CHECK(load_text("version = 1\n", &q) == 0);
+    CHECK(p.enh.hud[KHDAYS_OPT_UI_PADDING] == 0);
+    CHECK(memcmp(p.enh.hud, q.enh.hud, sizeof(p.enh.hud)) == 0);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        p.enh.hud[i] = i < KHDAYS_OPT_MISSION_VISIBILITY ? (i & 1) : i == KHDAYS_OPT_MISSION_VISIBILITY ? 1 : 9;
+    path_of("hud.ini", path, sizeof(path));
+    CHECK(khdays_profile_save(&p, path, count_notice) == 0);
+    notices = 0;
+    khdays_profile_load(&q, path, count_notice);
+    CHECK(notices == 0 && memcmp(p.enh.hud, q.enh.hud, sizeof(p.enh.hud)) == 0);
+    khdays_hud_settings_publish(q.enh.hud);
+    const unsigned generation = khdays_hud_settings_generation();
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        CHECK(khdays_hud_setting(i) == q.enh.hud[i]);
+    khdays_hud_settings_publish(q.enh.hud);
+    CHECK(khdays_hud_settings_generation() == generation);
+    KhdaysModelContext context = {0};
+    KhdaysRow rows[KHDAYS_MODEL_ROWS_MAX];
+    khdays_model_refresh(&q);
+    const int count = khdays_model_rows(KHDAYS_SECTION_ENHANCEMENTS, &q, &context, rows);
+    int found = 0;
+    for (int i = 0; i < count; ++i)
+        if (rows[i].id >= KHDAYS_SET_HUD_FONT && rows[i].id <= KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR) {
+            const int option = rows[i].id - KHDAYS_SET_HUD_FONT;
+            ++found;
+            CHECK(rows[i].value == &q.enh.hud[option] && rows[i].available);
+            CHECK(rows[i].apply == KHDAYS_APPLY_NOW);
+            const int old = *rows[i].value;
+            CHECK(khdays_model_adjust(&q, &rows[i], rows[i].kind == KHDAYS_ROW_SWITCH && old ? -1 : 1));
+            CHECK(*rows[i].value != old);
+        }
+    CHECK(found == KHDAYS_OPT_COUNT);
+    CHECK(khdays_model_changes(&p, &q) & KHDAYS_CHANGE_CONTROLS);
+    khdays_devices_set_profile(&q);
+    CHECK(khdays_hud_settings_generation() != generation);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        CHECK(khdays_hud_setting(i) == q.enh.hud[i]);
+    q.enh.hud[KHDAYS_OPT_MISSION_ANCHOR] = 999;
+    q.enh.hud[KHDAYS_OPT_MISSION_VISIBILITY] = -1;
+    CHECK(khdays_profile_repair(&q));
+    CHECK(q.enh.hud[KHDAYS_OPT_MISSION_ANCHOR] == 9 && q.enh.hud[KHDAYS_OPT_MISSION_VISIBILITY] == 0);
+}
+
 int main(void)
 {
     test_default_profile();
@@ -2145,6 +2193,7 @@ int main(void)
     test_settings_model();
     test_settings_layout();
     test_settings_screen();
+    test_hud_settings();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

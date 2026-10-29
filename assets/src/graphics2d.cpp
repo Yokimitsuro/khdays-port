@@ -222,4 +222,39 @@ Pk2dPack parse_pk2d(const std::uint8_t* data, const std::size_t size) {
     return out;
 }
 
+DecodedTexture compose_background(const Tilemap& map, const TileGraphics& tiles, const Palette2D& palette,
+                                  const bool color_zero_transparent) {
+    if (map.width_tiles <= 0 || map.height_tiles <= 0 || map.width_tiles > 128 || map.height_tiles > 128 ||
+        (tiles.bpp != 4 && tiles.bpp != 8) || palette.colors_per_palette <= 0 ||
+        map.cells.size() != static_cast<std::size_t>(map.width_tiles) * map.height_tiles) {
+        throw std::runtime_error("Invalid background dimensions or tile format");
+    }
+    DecodedTexture out;
+    out.width = map.width_tiles * 8;
+    out.height = map.height_tiles * 8;
+    out.rgba.resize(static_cast<std::size_t>(out.width) * out.height * 4);
+    for (int y = 0; y < out.height; ++y) {
+        for (int x = 0; x < out.width; ++x) {
+            const auto& cell = map.cells[static_cast<std::size_t>(y / 8) * map.width_tiles + x / 8];
+            const int tx = cell.flip_h ? 7 - x % 8 : x % 8;
+            const int ty = cell.flip_v ? 7 - y % 8 : y % 8;
+            const std::size_t source = static_cast<std::size_t>(cell.tile) * 64 + ty * 8 + tx;
+            if (cell.tile >= tiles.tile_count || source >= tiles.indices.size()) {
+                throw std::runtime_error("Background references a missing tile");
+            }
+            const auto index = tiles.indices[source];
+            const std::size_t color = index + (tiles.bpp == 4 ? cell.palette * palette.colors_per_palette : 0);
+            if (color >= palette.colors.size()) {
+                throw std::runtime_error("Background references a missing palette color");
+            }
+            auto rgba = palette.colors[color];
+            if (color_zero_transparent && index == 0) {
+                rgba[3] = 0;
+            }
+            std::copy(rgba.begin(), rgba.end(), out.rgba.begin() + (static_cast<std::size_t>(y) * out.width + x) * 4);
+        }
+    }
+    return out;
+}
+
 }  // namespace khdays::assets

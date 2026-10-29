@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import setup_steps as s  # noqa: E402
 
-ARCHIVES = {"Mare", "SettingMenu", "kh2_first", "kh3d_first", "movies"}
+ARCHIVES = {"Mare", "SettingMenu", "kh2_first", "kh2_fifth", "kh3d_first", "movies"}
 
 
 class Inputs(unittest.TestCase):
@@ -37,6 +37,20 @@ class Inputs(unittest.TestCase):
         self.assertIn(f"kh2_first {s.HAND}", entries)
         self.assertIn("kh2_first msg/us/fontinfo.bar", entries)
         self.assertIn("kh2_first msg/us/fontimage.bar", entries)
+        self.assertIn("kh2_first radar.tm2", entries)
+        for region in ("us", "sp", "fr", "gr", "it"):
+            self.assertIn(f"kh2_fifth field2d/{region}/zz0field.2dd", entries)
+
+    def test_minimap_generator_wiring(self):
+        self.assertIn(("minimap_icons.py", ["--settings", "{minimap_settings}", "--kh2", "{kh2}"]), s.HD_MENU_TOOLS)
+        self.assertIn("minimap_icons.py", s.DATA_TOOLS)
+        source = ast.parse((HERE.parent / "build_installer.py").read_text(encoding="utf-8"))
+        tools = next(
+            node.value
+            for node in source.body
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "TOOLS" for t in node.targets)
+        )
+        self.assertIn("tools/hd/minimap_icons.py", ast.literal_eval(tools))
 
     def test_font_generator_wiring(self):
         self.assertIn(("kh2_fonts.py", ["{kh2}"]), s.HD_MENU_TOOLS)

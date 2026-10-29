@@ -87,6 +87,23 @@ matched to the player's Days NFTR character maps. The conversion and defaults
 are described in [HD font rendering](../docs/HD_FONTS.md#generating-kh2-fonts).
 Only the generator ships; all font images and JSON definitions are made locally.
 
+HD menus and HUD also imports the native KH2 HP gauge. `kh2_gauge.py` reads the
+five localized `field2d/*/zz0field.2dd` entries from `kh2_fifth` and their second
+remastered PNG sheets. It adjusts the private output's sequence coordinates,
+adds the Days limit overlay and divider, and creates per-language `gauge.json`
+files under `mods/HD PACK/layouts/gauge/`. The installation's packages remain
+untouched. Existing gauge animation/position settings are preserved when the
+pack is rebuilt; generated resource names and centered origins are updated.
+The converter scripts and default JSON are shipped with the installer and
+included in its HD cache fingerprint. [Native sequence details](../docs/KH2_SEQUENCES.md).
+
+The same localized archive supplies party/enemy gauges, field reticles,
+INFORMATION, and the obtained-item box. Additional mod-authored layouts stay
+disabled until their JSON entries and resources are provided. The minimap tool
+exports Days' icon atlas and copies KH2's remastered radar mask; existing icon
+settings and images are preserved. Replacements can be gated live in the game's
+Enhancements menu without rewriting these JSON files.
+
 ## Add to Steam
 
 Optional, off by default, on a page of its own shown only when Steam is found: the port added to
@@ -198,3 +215,8 @@ keys the Proton mapping and finds the entry again to remove it. In `config.vdf` 
 tools live at `InstallConfigStore/Software/Valve/Steam/CompatToolMapping`, one block per app id; the
 port's entry is inserted into or removed from that block as text, so every other byte stays as
 Steam wrote it, and only when the block exists (the player has run a game under Proton).
+The HD menu/HUD build also runs `heart_points.py` against the extracted Days ROM.
+It assembles the heart counter's palettes into an editable PNG and creates its
+`hart` BAR image/sequence entries. The installed native executable provides a
+headless model-conversion command; the game is not started during conversion.
+Existing edited counter files and `gauge.json` settings are preserved on rebuild.

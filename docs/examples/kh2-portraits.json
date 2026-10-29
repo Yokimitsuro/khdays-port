@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "characters": {
+    "Xemnas": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Xigbar": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Xaldin": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Vexen": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Lexaeus": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Zexion": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Saix": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Axel": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Demyx": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Luxord": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": true,
+        "archive": "P_EX020.a.us",
+        "texture": "P_EX020.a.us_face.dds",
+        "image_entry": "face",
+        "sequence_entry": "face",
+        "offset_x": 0,
+        "offset_y": 0,
+        "scale": 0.65,
+        "source_origin_x": 0,
+        "source_origin_y": 0,
+        "frames_per_tick": 1,
+        "canvas_padding": 4,
+        "normal": 3,
+        "alert": 0,
+        "dead": 2,
+        "damage_small": 1,
+        "damage_medium": 1,
+        "damage_large": 1,
+        "play_intro": false,
+        "intro": -1,
+        "animation_override": -1
+      }
+    },
+    "Marluxia": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Larxene": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Roxas": {
+      "player": {
+        "enabled": true,
+        "archive": "P_EX110.a.us",
+        "texture": "P_EX110.a.us_face.dds",
+        "image_entry": "face",
+        "sequence_entry": "face",
+        "offset_x": 0,
+        "offset_y": 0,
+        "scale": 0.65,
+        "source_origin_x": 0,
+        "source_origin_y": 0,
+        "frames_per_tick": 1,
+        "canvas_padding": 4,
+        "normal": 3,
+        "alert": 0,
+        "dead": 2,
+        "damage_small": 1,
+        "damage_medium": 1,
+        "damage_large": 1,
+        "play_intro": false,
+        "intro": -1,
+        "animation_override": -1
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Xion": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Mickey": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Sora": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Riku": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Donald": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Goofy": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Xion_Hood": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    },
+    "Roxas_Hood": {
+      "player": {
+        "enabled": false
+      },
+      "party": {
+        "enabled": false
+      }
+    }
+  }
+}

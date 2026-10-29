@@ -40,6 +40,7 @@ typedef struct KhdaysTextureReplacement {
  * of `units` 32-byte units (bits 8-15) and `rows` rows (bits 16-31). The
  * units drawn instead are numbered from the bitmap's start (tiles2d.h). */
 #define KHDAYS_REPLACEMENT_BITMAP 0x4u
+#define KHDAYS_REPLACEMENT_NO_MIPS 0x10u /* atlas regions are sampled explicitly at their logical size */
 
 /* A texture from a file's data, as the port draws it, into `rgba` (width x
  * height x 4 bytes, the sizes of `param`): `param` its TEXIMAGE_PARAM (the

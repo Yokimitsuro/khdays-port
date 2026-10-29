@@ -103,12 +103,18 @@ const uint32_t *khdays_ui_texels(uint32_t image)
     return r != NULL ? r->rgba : NULL;
 }
 
+int khdays_ui_image_replacement(int image)
+{
+    return image >= 0 && image < image_count ? images[image].replacement : -1;
+}
+
 /* --- This frame's elements ------------------------------------------------------- */
 
 static void (*emitters[KHDAYS_UI_PARTS])(void);
 
 typedef struct Entry {
     KhdaysUiElement e;
+    KhdaysUiElement box;
     int part, order, seq;
     int source;           /* the engine it belongs to */
     float dx, dy, dw, dh; /* its DS place */
@@ -155,7 +161,7 @@ int khdays_ui_take_changed(void)
     return was;
 }
 
-void khdays_ui_emit(int part, const KhdaysUiElement *element)
+void khdays_ui_emit_extended(int part, const KhdaysUiElement *element, const KhdaysUiElement *box)
 {
     if (part < 0 || part >= KHDAYS_UI_PARTS || element->screen < 0 || element->screen > 1 || element->image < 0 ||
         element->image >= image_count) {
@@ -171,6 +177,7 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element)
         entry_room = room;
     }
     entries[entry_count].e = *element;
+    entries[entry_count].box = *box;
     entries[entry_count].part = part;
     entries[entry_count].order = 0;
     entries[entry_count].seq = entry_count;
@@ -192,6 +199,11 @@ void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const Kh
             break;
         }
     }
+}
+
+void khdays_ui_emit(int part, const KhdaysUiElement *element)
+{
+    khdays_ui_emit_extended(part, element, element);
 }
 
 void khdays_ui_left_out_cell(int part, int screen, int layer, int cx, int cy)
@@ -356,6 +368,18 @@ uint32_t khdays_ui_palette_hash(int engine)
 }
 
 /* The image element `n` draws on the other screen: its own, in direct colour. */
+uint32_t khdays_ui_element_rgba(const KhdaysUiElement *element, int x, int y)
+{
+    if (element == NULL || element->image < 0 || element->image >= image_count)
+        return 0;
+    const Image *im = &images[element->image];
+    const KhdaysTextureReplacement *r = khdays_textures_replacement(im->replacement);
+    if (r == NULL || r->rgba == NULL || x < 0 || y < 0 || x >= im->width || y >= im->height)
+        return 0;
+    const uint32_t t = r->rgba[(size_t)y * (size_t)im->width + (size_t)x];
+    return (element->slot & KES_DIRECT) ? t : colour_of(element->screen, element->slot, t);
+}
+
 static int direct_image(const Entry *n)
 {
     Image *im = &images[n->e.image];
@@ -374,14 +398,32 @@ static int direct_image(const Entry *n)
         if (r == NULL || r->rgba == NULL || out == NULL) {
             return -1;
         }
+        uint32_t palette[256];
+        for (unsigned i = 0; i < 256; ++i)
+            palette[i] = colour_of(n->source, n->e.slot, KET_OPAQUE | i);
         for (size_t i = 0; i < (size_t)im->width * (size_t)im->height; ++i) {
-            out[i] = colour_of(n->source, n->e.slot, r->rgba[i]);
+            const uint32_t t = r->rgba[i];
+            out[i] = !(t & KET_OPAQUE)    ? 0u
+                     : (t & KET_EXTENDED) ? colour_of(n->source, n->e.slot, t)
+                                          : palette[t & 255u];
         }
         khdays_ui_image_end(im->direct);
         im->direct_version = im->version;
         im->direct_palettes = palettes_seen[n->source];
     }
     return im->direct;
+}
+
+int khdays_ui_element_direct(const KhdaysUiElement *element)
+{
+    if (element->slot & KES_DIRECT)
+        return khdays_ui_image_replacement(element->image);
+    Entry n;
+    memset(&n, 0, sizeof(n));
+    n.e = *element;
+    n.source = element->screen;
+    palettes_seen[n.source] = palettes_of(n.source);
+    return khdays_ui_image_replacement(direct_image(&n));
 }
 
 /* Widescreen: each element's group, as the game's pieces are made (gpu2d.h KhdaysGpu2dWide) -- the
@@ -434,7 +476,7 @@ static int find_groups(void)
     }
     for (int i = 0; i < entry_count; ++i) {
         for (int k = i + 1; k < entry_count && group_of[i] >= 0; ++k) {
-            if (group_of[k] >= 0 && cells_touch(&entries[i].e, &entries[k].e)) {
+            if (group_of[k] >= 0 && cells_touch(&entries[i].box, &entries[k].box)) {
                 const int a = group_root(i), b = group_root(k);
                 if (a != b) {
                     group_of[b] = a;
@@ -449,7 +491,7 @@ static int find_groups(void)
     for (int i = 0; i < entry_count; ++i) {
         if (group_of[i] >= 0) {
             const int r = group_root(i);
-            const float x0 = entries[i].e.x, x1 = entries[i].e.x + entries[i].e.w;
+            const float x0 = entries[i].box.x, x1 = entries[i].box.x + entries[i].box.w;
             group_x[r][0] = x0 < group_x[r][0] ? x0 : group_x[r][0];
             group_x[r][1] = x1 > group_x[r][1] ? x1 : group_x[r][1];
         }
@@ -512,8 +554,14 @@ void khdays_ui_collect(int wide_margin, int upper)
             if (n->leader < 0) {
                 /* where the layout puts it (the check compares at the DS's place) */
                 const float *group = grouped && group_of[i] >= 0 ? group_x[group_root(i)] : NULL;
-                n->placed = khdays_ui_layout_place(n->e.id, &n->e.screen, upper, wide_margin, group, &n->e.x, &n->e.y,
-                                                   &n->e.w, &n->e.h, &n->e.slot, &n->order);
+                float x = n->box.x, y = n->box.y, w = n->box.w, h = n->box.h;
+                n->placed = khdays_ui_layout_place(n->e.id, &n->e.screen, upper, wide_margin, group, &x, &y, &w, &h,
+                                                   &n->e.slot, &n->order);
+                const float sx = n->box.w > 0 ? w / n->box.w : 1, sy = n->box.h > 0 ? h / n->box.h : 1;
+                n->e.x = x + (n->e.x - n->box.x) * sx;
+                n->e.y = y + (n->e.y - n->box.y) * sy;
+                n->e.w *= sx;
+                n->e.h *= sy;
             }
         }
     }
@@ -581,7 +629,9 @@ void khdays_ui_collect(int wide_margin, int upper)
     for (int e = 0; e < 2; ++e) {
         int moved = 0;
         for (int i = 0; i < entry_count && !moved; ++i) {
-            moved = entries[i].source == e && entries[i].e.screen != e;
+            moved =
+                entries[i].source == e &&
+                (entries[i].e.screen != e || ((entries[i].e.slot & KES_PICTURE) && !(entries[i].e.slot & KES_DIRECT)));
         }
         if (moved) {
             palettes_seen[e] = palettes_of(e);
@@ -590,9 +640,8 @@ void khdays_ui_collect(int wide_margin, int upper)
     qsort(entries, (size_t)entry_count, sizeof(Entry), above);
     for (int i = 0; i < entry_count; ++i) {
         Entry *n = &entries[i];
-        if (n->e.screen != n->source && !(n->e.slot & KES_DIRECT)) {
-            /* on the other screen: its colours from its own engine's palettes
-             * (an image of colours already needs none) */
+        if ((n->e.screen != n->source || (n->e.slot & KES_PICTURE)) && !(n->e.slot & KES_DIRECT)) {
+            /* Independent images and cross-screen elements need colours from their source palette. */
             const int direct = direct_image(n);
             if (direct < 0) {
                 continue;

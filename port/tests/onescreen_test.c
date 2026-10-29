@@ -3,7 +3,10 @@
  *   ctest --test-dir build/port/obj-x64 -R khdays-onescreen --output-on-failure */
 #include "../gfx/describe.h"
 #include "../ui/composition.h"
+#include "../ui/hud_options.h"
 #include "../host/render/png_io.h"
+#include "../host/render/onescreen_images.h"
+#include "../runtime/display/frame_package.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -583,6 +586,95 @@ static void test_field_hud_reference(void)
 }
 
 /* A file of the test's, in the build's directory. */
+static void test_hud_edge_alignment(void)
+{
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    KhdaysSituation field = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+    for (int size = 1; size <= 8; ++size) {
+        khdays_composition_set_hud_size(size);
+        for (int width = 256; width <= 342; width += 43) {
+            KhdaysComposition c;
+            khdays_composition_set_hud_options(KHDAYS_HUD_ALIGN_EDGES);
+            khdays_composition_for(&field, width, &c);
+            int command = 0, health = 0;
+            for (int i = 0; i < c.shape_count; ++i) {
+                const uint32_t *w = c.shapes[i].words;
+                if (word_float(w, KO_SRC_X) == 0 && word_float(w, KO_SRC_Y) == 84 && word_float(w, KO_SRC_W) == 112) {
+                    CHECK(fabsf(word_float(w, KO_DST_Y2) - 192) < .001f);
+                    CHECK(fabsf(word_float(w, KO_DST_X1)) < .001f);
+                    ++command;
+                }
+                if (word_float(w, KO_SRC_X) == 128 && word_float(w, KO_SRC_Y) == 84) {
+                    CHECK(fabsf(word_float(w, KO_DST_Y2) - 192) < .001f);
+                    CHECK(fabsf(word_float(w, KO_DST_X2) - width) < .001f);
+                    ++health;
+                }
+            }
+            CHECK(command == 1 && health == 1);
+            khdays_composition_set_hud_options(KHDAYS_HUD_ALIGN_EDGES | KHDAYS_HUD_PANEL_HIDDEN);
+            khdays_composition_for(&field, width, &c);
+            for (int i = 0; i < c.shape_count; ++i) {
+                const uint32_t *w = c.shapes[i].words;
+                if (word_float(w, KO_SRC_W) == 108 && word_float(w, KO_SRC_H) == 86)
+                    CHECK(fabsf(word_float(w, KO_DST_Y1)) < .001f);
+            }
+        }
+    }
+    khdays_composition_set_hud_options(0);
+    khdays_composition_set_hud_size(3);
+    mods_file = NULL;
+}
+
+static void test_pause_target_placement(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    uint32_t record[KE_WORDS] = {0};
+    record[KE_SLOT] = KES_PICTURE | KES_PAUSE_LAYOUT | KES_DIRECT | 2;
+    record[KE_IMAGE] = 333;
+    record[KE_IW] = 64;
+    record[KE_IH] = 96;
+    const float x = 107.2f, y = 54, w = 41.6f, h = 62.4f;
+    memcpy(record + KE_X, &x, 4);
+    memcpy(record + KE_Y, &y, 4);
+    memcpy(record + KE_W, &w, 4);
+    memcpy(record + KE_H, &h, 4);
+    p->elements[0].records = record;
+    p->elements[0].count = 1;
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    KhdaysSituation s = {KHDAYS_SIT_PAUSE, 0};
+    KhdaysComposition c;
+    khdays_composition_for(&s, 342, &c);
+    khdays_onescreen_images(p, &s, &c);
+    int found = 0;
+    const float factor = khdays_composition_hud_factor();
+    for (int i = 0; i < c.shape_count; ++i) {
+        const uint32_t *shape = c.shapes[i].words;
+        if ((shape[KO_FLAGS] & KOF_IMAGE) && shape[KO_KEYS] == 333) {
+            CHECK(fabsf(word_float(shape, KO_DST_X1) - (171 + (x - 128) * factor)) < .001f);
+            CHECK(fabsf(word_float(shape, KO_DST_Y2) - word_float(shape, KO_DST_Y1) - h * factor) < .001f);
+            ++found;
+        }
+    }
+    CHECK(found == 1);
+    for (int i = 0; i < c.shape_count; ++i) {
+        const uint32_t *shape = c.shapes[i].words;
+        CHECK((shape[KO_FLAGS] & (KOF_IMAGE | KOF_LOWER)) || word_float(shape, KO_SRC_X) != 72 ||
+              word_float(shape, KO_SRC_Y) != 64);
+    }
+    s.states = 1u << KHDAYS_ST_EVENT;
+    khdays_composition_for(&s, 342, &c);
+    khdays_onescreen_images(p, &s, &c);
+    for (int i = 0; i < c.shape_count; ++i)
+        CHECK(!(c.shapes[i].words[KO_FLAGS] & KOF_IMAGE));
+    free(p);
+    mods_file = NULL;
+}
+
 static const char *test_file(const char *suffix, const char *text)
 {
     static char paths[4][512];
@@ -767,9 +859,19 @@ static void test_title_prompt(void)
 
 typedef uint32_t uint;
 
-static uint32_t shape_words[4][KO_WORDS];
+static uint32_t shape_words[32][KO_WORDS];
 static uint32_t key_words[4];
 static uint32_t upper_src[192][256], lower_src[192][256]; /* as KO_SOURCE gives them */
+static uint32_t image_colour;
+static uint32_t image_colours[16];
+static int use_image_colours;
+static float last_image_x, last_image_y;
+static uint32_t image_sample(uint32_t image, float x, float y)
+{
+    last_image_x = x;
+    last_image_y = y;
+    return use_image_colours ? image_colours[image] : image_colour;
+}
 
 static uint32_t source(uint32_t lower, float x, float y)
 {
@@ -792,6 +894,7 @@ static float as_float(uint32_t u)
 #define KO_FLOOR(f) floorf(f)
 #define KO_ABS(i) abs(i)
 #define KO_SOURCE(lower, x, y) source((lower), (x), (y))
+#define KO_IMAGE(image, x, y) image_sample((image), (x), (y))
 #include "../gfx/onescreen.h"
 
 static void put_float(uint32_t *w, int at, float f)
@@ -927,6 +1030,447 @@ static void test_steps(void)
         const uint32_t c = ko_pixel(50.5f, 50.5f, 1.0f, x3d, 0, KOB_DEFAULT, ((2u << 14) | 16u) << 16, 0, 171.0f, 1);
         CHECK(c == 0u);
     }
+}
+
+static int image_shapes(const KhdaysComposition *c);
+static void test_obtained_image(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    uint32_t record[KE_WORDS] = {0};
+    record[KE_SLOT] = KES_DIRECT | KES_PICTURE | KES_HUD | KES_NATIVE_FADE | 1;
+    record[KE_IMAGE] = 77;
+    record[KE_IW] = 712;
+    record[KE_IH] = 280;
+    put_float(record, KE_X, -2);
+    put_float(record, KE_Y, 54);
+    put_float(record, KE_W, 178);
+    put_float(record, KE_H, 70);
+    p->elements[0].records = record;
+    p->elements[0].count = 1;
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    for (int notice = 0; notice < 4; ++notice) {
+        memset(&p->obtained_image, 0, sizeof(p->obtained_image));
+        memset(p->notification_images, 0, sizeof(p->notification_images));
+        unsigned *words = notice ? p->notification_images[notice - 1].words : p->obtained_image.words;
+        words[KSI_OUTPUT] = 77;
+        words[KSI_ANCHORED] = 1;
+        put_float(words, KSI_ANCHOR_X, 0);
+        put_float(words, KSI_ANCHOR_Y, 56);
+        for (int size = 1; size <= 8; size *= 2) {
+            khdays_composition_set_hud_size(size);
+            KhdaysSituation s = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+            KhdaysComposition comp;
+            khdays_composition_for(&s, 342, &comp);
+            float root_x = 0, root_y = 0;
+            int found = 0;
+            for (int i = 0; i < comp.shape_count; ++i) {
+                const uint32_t *w = comp.shapes[i].words;
+                if (w[KO_FLAGS] & (KOF_LOWER | KOF_3D | KOF_IMAGE))
+                    continue;
+                const float sx = word_float(w, KO_SRC_X), sy = word_float(w, KO_SRC_Y);
+                if (sx <= 0 && sx + word_float(w, KO_SRC_W) > 0 && sy <= 56 && sy + word_float(w, KO_SRC_H) > 56) {
+                    root_x = word_float(w, KO_DST_X1) - sx * word_float(w, KO_SCALE_X);
+                    root_y = word_float(w, KO_DST_Y1) + (56 - sy) * word_float(w, KO_SCALE_Y);
+                    found = 1;
+                    break;
+                }
+            }
+            CHECK(found);
+            const float scale = .766667f * khdays_composition_hud_factor();
+            khdays_onescreen_images(p, &s, &comp);
+            CHECK(image_shapes(&comp) == 1);
+            for (int i = 0; i < comp.shape_count; ++i) {
+                const uint32_t *w = comp.shapes[i].words;
+                if ((w[KO_FLAGS] & KOF_IMAGE) && w[KO_KEYS] == 77) {
+                    CHECK(fabsf(word_float(w, KO_DST_X1) - (root_x - 2 * scale)) < .001f);
+                    CHECK(fabsf(word_float(w, KO_DST_Y1) - (root_y - 2 * scale)) < .001f);
+                    CHECK(fabsf(word_float(w, KO_DST_X2) - word_float(w, KO_DST_X1) - 178 * scale) < .001f);
+                }
+            }
+        }
+    }
+    free(p);
+}
+static void test_independent_image(void)
+{
+    /* Outside the screen's crop, an image still covers its own rectangle; its alpha composes
+     * against the next shape, and transparent texels leave that shape alone. */
+    memset(upper_src, 0, sizeof(upper_src));
+    upper_src[10][10] = 0x010000ffu;
+    shape(0, KOF_IMAGE, 0, 0, 128, 64, 50, 50, 1);
+    shape(1, 0, 0, 0, 32, 32, 50, 50, 1);
+    image_colour = 0x8000ff00u;
+    CHECK(ko_pixel(60.5f, 60.5f, 1, 0, 2, KOB_DEFAULT, 0, 0, 128, 1) == 0x00807fu);
+    CHECK(ko_pixel(150.5f, 60.5f, 1, 0, 2, KOB_DEFAULT, 0, 0, 128, 1) == 0x008000u);
+    image_colour = 0;
+    CHECK(ko_pixel(60.5f, 60.5f, 1, 0, 2, KOB_DEFAULT, 0, 0, 128, 1) == 0xffu);
+    image_colour = 0xff00ff00u;
+    CHECK(ko_pixel(60.5f, 60.5f, 1, 0, 2, KOB_DEFAULT, 0x8010, 0, 128, 1) == 0);
+}
+
+static int image_shapes(const KhdaysComposition *comp)
+{
+    int count = 0;
+    for (int i = 0; i < comp->shape_count; ++i)
+        count += (comp->shapes[i].words[KO_FLAGS] & KOF_IMAGE) != 0;
+    return count;
+}
+
+static int information_crops(const KhdaysComposition *comp)
+{
+    int count = 0;
+    for (int i = 0; i < comp->shape_count; ++i) {
+        const uint32_t *w = comp->shapes[i].words;
+        const float width = word_float(w, KO_SRC_W);
+        if (!(w[KO_FLAGS] & (KOF_3D | KOF_IMAGE)) && word_float(w, KO_SRC_X) == 0 && word_float(w, KO_SRC_Y) == 0 &&
+            word_float(w, KO_SRC_H) == 24 && (width == 224 || width == 232 || width == 256))
+            ++count;
+    }
+    return count;
+}
+
+static void test_information_image(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    uint32_t record[KE_WORDS] = {0};
+    record[KE_SLOT] = KES_DIRECT | KES_FINE | KES_PICTURE | KES_NATIVE_FADE | 1;
+    record[KE_IMAGE] = 25;
+    record[KE_IW] = 1200;
+    record[KE_IH] = 120;
+    put_float(record, KE_X, -70);
+    put_float(record, KE_Y, -6);
+    put_float(record, KE_W, 300);
+    put_float(record, KE_H, 30);
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    for (int source = 0; source < 2; ++source) {
+        p->elements[source].records = record;
+        p->elements[source].count = 1;
+        p->information_images[source].words[KSI_OUTPUT] = 25;
+        p->information_images[source].words[KSI_ANCHORED] = 1;
+        // Neither a moving native text anchor nor an invisible offscreen BG may move/hide the banner.
+        put_float(p->information_images[source].words, KSI_ANCHOR_X, 999);
+        put_float(p->information_images[source].words, KSI_ANCHOR_Y, 999);
+        p->desc2d[source][KD_BLEND] = 2u | (0x21u << 8) | (1u << 16);
+        p->desc2d[source][KD_COEF] = 16u << 8;
+        for (int size = 1; size <= 8; size += size == 1 ? 3 : 4) {
+            khdays_composition_set_hud_size(size);
+            const float factor = khdays_composition_hud_factor();
+            const float gauge_scale = .766667f * factor;
+            for (int upper = 0; upper < 2; ++upper) {
+                p->upper = (uint8_t)upper;
+                p->information_state = KHDAYS_INFORMATION_AVAILABLE | (0x101u << source);
+                KhdaysSituation s = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+                KhdaysComposition comp;
+                CHECK(khdays_onescreen_information(p, &s));
+                CHECK(s.states & (1u << KHDAYS_ST_INFORMATION_MOD));
+                khdays_composition_for(&s, 342, &comp);
+                CHECK(information_crops(&comp) == 0);
+                float player_scale = 0;
+                for (int n = 0; n < comp.shape_count; ++n) {
+                    const uint32_t *native = comp.shapes[n].words;
+                    if (!(native[KO_FLAGS] & (KOF_IMAGE | KOF_3D | KOF_LOWER)) && word_float(native, KO_SRC_X) == 128 &&
+                        word_float(native, KO_SRC_W) == 128)
+                        player_scale = word_float(native, KO_SCALE_X);
+                }
+                khdays_onescreen_images(p, &s, &comp);
+                CHECK(image_shapes(&comp) == 1);
+                const uint32_t *image = comp.shapes[0].words;
+                CHECK(image[KO_FLAGS] & KOF_IMAGE);
+                CHECK(!(image[KO_FLAGS] & KOF_NATIVE_FADE));
+                CHECK(fabsf(word_float(image, KO_DST_X1) - -70 * gauge_scale) < .001f);
+                CHECK(fabsf(word_float(image, KO_DST_Y1) - (5 * factor - 6 * gauge_scale)) < .001f);
+                CHECK(fabsf(word_float(image, KO_DST_X2) - 230 * gauge_scale) < .001f);
+                const float image_scale = word_float(image, KO_SCALE_X) * record[KE_IW] / 300;
+                CHECK(fabsf(image_scale - gauge_scale) < .001f);
+                CHECK(player_scale > 0 && fabsf(image_scale - player_scale) < .001f);
+                // Rendering does not require any source-screen crop, including a custom composition.
+                comp.shapes = NULL;
+                comp.shape_count = 0;
+                khdays_onescreen_images(p, &s, &comp);
+                CHECK(image_shapes(&comp) == 1);
+
+                // End of exit: no replacement image and no one-frame return to the DS crop.
+                p->information_state &= ~0x300u;
+                khdays_onescreen_information(p, &s);
+                khdays_composition_for(&s, 342, &comp);
+                khdays_onescreen_images(p, &s, &comp);
+                CHECK(image_shapes(&comp) == 0 && information_crops(&comp) == 0);
+            }
+        }
+        p->elements[source].count = 0;
+        p->information_images[source] = (KhdaysSequenceImage){0};
+    }
+    khdays_composition_set_hud_size(4);
+    p->elements[1].records = record;
+    p->elements[1].count = 1;
+    p->information_images[1].words[KSI_OUTPUT] = 25;
+    p->information_images[1].words[KSI_ANCHORED] = 1;
+    p->information_state = KHDAYS_INFORMATION_AVAILABLE | 0x202u;
+    p->upper = 0;
+    // One visual window during an upper/lower handoff, with the native upper image on top.
+    uint32_t upper_record[KE_WORDS];
+    memcpy(upper_record, record, sizeof(upper_record));
+    upper_record[KE_IMAGE] = 26;
+    p->elements[0].records = upper_record;
+    p->elements[0].count = 1;
+    p->information_images[0].words[KSI_OUTPUT] = 26;
+    p->information_images[0].words[KSI_ANCHORED] = 1;
+    p->information_state |= 0x101u;
+    KhdaysSituation handoff = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+    KhdaysComposition comp;
+    khdays_onescreen_information(p, &handoff);
+    khdays_composition_for(&handoff, 342, &comp);
+    khdays_onescreen_images(p, &handoff, &comp);
+    CHECK(image_shapes(&comp) == 1 && comp.shapes[0].words[KO_KEYS] == 26);
+    CHECK(!(handoff.states & (1u << KHDAYS_ST_INFO_UPPER)));
+    CHECK(comp.shape3d_count > 0); // The heart counter must retain its composition transform during the exit.
+    // The native game can still be showing its upper panel after the sequence's last frame.
+    KhdaysSituation native_upper = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_INFO_UPPER};
+    p->information_state &= ~0x100u;
+    khdays_onescreen_information(p, &native_upper);
+    CHECK(native_upper.states & (1u << KHDAYS_ST_INFO_UPPER));
+    CHECK(!(native_upper.states & (1u << KHDAYS_ST_HUD)));
+    khdays_composition_for(&native_upper, 342, &comp);
+    CHECK(comp.shape3d_count == 1 && comp.shapes3d[0].hide);
+    p->hud_options = KHDAYS_HUD_KEEP_INFORMATION;
+    p->situation.event_status = 1; // A mission script can show INFORMATION without being a cutscene/dialog.
+    p->situation.updates[KHDAYS_UPD_Ov023_SceneRun / 64] |= 1ull << (KHDAYS_UPD_Ov023_SceneRun % 64);
+    khdays_composition_set_hud_options(p->hud_options);
+    khdays_onescreen_information(p, &native_upper);
+    CHECK(native_upper.states & (1u << KHDAYS_ST_HUD));
+    khdays_composition_for(&native_upper, 342, &comp);
+    CHECK(comp.shape3d_count > 0 && !comp.shapes3d[0].hide);
+    native_upper.states &= ~(1u << KHDAYS_ST_HUD);
+    p->situation.event_status = 3;
+    khdays_onescreen_information(p, &native_upper);
+    CHECK(native_upper.states & (1u << KHDAYS_ST_HUD));
+    native_upper.states &= ~(1u << KHDAYS_ST_HUD);
+    native_upper.states |= 1u << KHDAYS_ST_DIALOG;
+    khdays_onescreen_information(p, &native_upper);
+    CHECK(!(native_upper.states & (1u << KHDAYS_ST_HUD)));
+    native_upper.states &= ~(1u << KHDAYS_ST_DIALOG);
+    p->situation.event_status = -1;
+    p->hud_options = 0;
+    khdays_composition_set_hud_options(0);
+    // Pause uses the retained lower caption even if the upper exit was still running.
+    p->information_state |= 0x100u;
+    KhdaysSituation paused_handoff = {KHDAYS_SIT_PAUSE, 0};
+    khdays_onescreen_information(p, &paused_handoff);
+    khdays_composition_for(&paused_handoff, 342, &comp);
+    khdays_onescreen_images(p, &paused_handoff, &comp);
+    CHECK(image_shapes(&comp) == 1 && comp.shapes[0].words[KO_KEYS] == 25);
+    p->elements[0].count = 0;
+    p->information_images[0] = (KhdaysSequenceImage){0};
+    p->information_state = KHDAYS_INFORMATION_AVAILABLE | 0x202u;
+    KhdaysSituation dialog = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_DIALOG};
+    khdays_onescreen_information(p, &dialog);
+    khdays_composition_for(&dialog, 342, &comp);
+    khdays_onescreen_images(p, &dialog, &comp);
+    CHECK(image_shapes(&comp) == 0);
+    p->upper = 0;
+    KhdaysSituation pause = {KHDAYS_SIT_PAUSE, 0};
+    khdays_onescreen_information(p, &pause);
+    khdays_composition_for(&pause, 342, &comp);
+    CHECK(information_crops(&comp) == 0);
+    khdays_onescreen_images(p, &pause, &comp);
+    CHECK(image_shapes(&comp) == 1);
+    pause.states |= 1u << KHDAYS_ST_EVENT;
+    khdays_composition_for(&pause, 342, &comp);
+    khdays_onescreen_images(p, &pause, &comp);
+    CHECK(image_shapes(&comp) == 0);
+    const int hidden[] = {KHDAYS_SIT_CAMP_MENU, KHDAYS_SIT_MOVIE, KHDAYS_SIT_TUTORIAL, KHDAYS_SIT_SHOP};
+    for (size_t i = 0; i < sizeof(hidden) / sizeof(hidden[0]); ++i) {
+        KhdaysSituation s = {hidden[i], 0};
+        khdays_onescreen_information(p, &s);
+        khdays_composition_for(&s, 342, &comp);
+        khdays_onescreen_images(p, &s, &comp);
+        CHECK(image_shapes(&comp) == 0);
+    }
+    // Availability remains set even before the first caption or after resetting its context.
+    p->information_state = KHDAYS_INFORMATION_AVAILABLE;
+    pause.states = 0;
+    CHECK(khdays_onescreen_information(p, &pause));
+    khdays_composition_for(&pause, 342, &comp);
+    CHECK(information_crops(&comp) == 0);
+    // No mod: preserve the original crop and the native timer's ownership.
+    p->information_state = 0;
+    p->elements[1].count = 0;
+    CHECK(!khdays_onescreen_information(p, &pause));
+    khdays_composition_for(&pause, 342, &comp);
+    CHECK(information_crops(&comp) == 1);
+    KhdaysSituation fallback = {KHDAYS_SIT_FIELD, (1u << KHDAYS_ST_HUD) | (1u << KHDAYS_ST_INFO_NEW)};
+    CHECK(!khdays_onescreen_information(p, &fallback));
+    khdays_composition_for(&fallback, 342, &comp);
+    CHECK(information_crops(&comp) == 1);
+    free(p);
+}
+static void test_native_hud_fade(void)
+{
+    memset(upper_src, 0, sizeof(upper_src));
+    memset(lower_src, 0, sizeof(lower_src));
+    use_image_colours = 1;
+    image_colours[1] = 0xff0000ffu; /* opaque portrait over the green gauge */
+    image_colours[2] = 0xff00ff00u;
+    for (int i = 0; i < 2; ++i) {
+        shape(i, KOF_IMAGE | KOF_NATIVE_FADE, 0, 0, 32, 32, 50, 50, 1);
+        shape_words[i][KO_KEYS] = (uint32_t)i + 1u;
+        shape_words[i][KO_IMAGE_GROUP] = 4;
+    }
+    for (int level = 0; level <= 16; ++level) {
+        const float alpha = (float)level / 16;
+        put_float(shape_words[0], KO_IMAGE_ALPHA, alpha);
+        put_float(shape_words[1], KO_IMAGE_ALPHA, alpha);
+        const uint32_t expected = (uint32_t)(255 * alpha + 0.5f) | ((uint32_t)(255 * (1 - alpha) + 0.5f) << 16);
+        CHECK(ko_pixel(60.5f, 60.5f, 1, 0x01ff0000u, 2, KOB_DEFAULT, 0, 0, 128, 1) == expected);
+    }
+    put_float(shape_words[0], KO_IMAGE_ALPHA, 0.5f);
+    put_float(shape_words[1], KO_IMAGE_ALPHA, 0.5f);
+    image_colours[1] = 0x800000ffu;
+    const uint32_t mixed = ko_pixel(60.5f, 60.5f, 1, 0x01ff0000u, 2, KOB_DEFAULT, 0, 0, 128, 1);
+    CHECK(abs((int)(mixed & 255u) - 64) <= 1 && abs((int)((mixed >> 8) & 255u) - 64) <= 1 &&
+          ((mixed >> 16) & 255u) == 128u);
+    /* An independent foreground image does not inherit the HUD group's fade. */
+    memcpy(shape_words[2], shape_words[1], sizeof(shape_words[2]));
+    shape_words[1][KO_KEYS] = 1;
+    shape_words[0][KO_FLAGS] = KOF_IMAGE;
+    shape_words[0][KO_KEYS] = 3;
+    image_colours[3] = 0xffffffffu;
+    CHECK(ko_pixel(60.5f, 60.5f, 1, 0x01ff0000u, 3, KOB_DEFAULT, 0, 0, 128, 1) == 0xffffffu);
+    use_image_colours = 0;
+}
+
+static void test_hud_image_layers(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    uint32_t records[6][KE_WORDS] = {0};
+    /* Number label, portrait, player gauge, party gauge, LIMIT, enemy gauge. */
+    const float rects[6][4] = {{180, 180, 16, 8},  {200, 130, 54, 62}, {90, 120, 166, 72},
+                               {200, 100, 54, 32}, {146, 174, 40, 8},  {120, 40, 136, 16}};
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    p->elements[0].records = records[0];
+    p->elements[0].count = 6;
+    for (int i = 0; i < 6; ++i) {
+        records[i][KE_SLOT] = KES_DIRECT | KES_PICTURE | KES_HUD | 3;
+        records[i][KE_IMAGE] = (uint32_t)i + 1u;
+        for (int a = 0; a < 4; ++a)
+            put_float(records[i], KE_X + a, rects[i][a]);
+        records[i][KE_IW] = (uint32_t)rects[i][2] * 4u;
+        records[i][KE_IH] = (uint32_t)rects[i][3] * 4u;
+    }
+    p->enemy_image.words[KSI_OUTPUT] = 6;
+    p->enemy_image.words[KSI_ANCHORED] = 1;
+    put_float(p->enemy_image.words, KSI_ANCHOR_X, 254);
+    put_float(p->enemy_image.words, KSI_ANCHOR_Y, 12);
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    for (int width = 256; width <= 512; width += 128) {
+        for (int size = 1; size <= 8; size += size == 1 ? 3 : 4) {
+            KhdaysComposition comp;
+            KhdaysSituation s = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+            khdays_composition_set_hud_size(size);
+            khdays_composition_for(&s, width, &comp);
+            const int original = comp.shape_count;
+            khdays_onescreen_images(p, &s, &comp);
+            CHECK(image_shapes(&comp) == 6 && comp.shape_count == original + 6);
+            for (int i = 0, last = 0; i < comp.shape_count; ++i) {
+                const uint32_t *w = comp.shapes[i].words;
+                if ((w[KO_FLAGS] & KOF_IMAGE) && w[KO_KEYS] <= 5) {
+                    CHECK((int)w[KO_KEYS] > last); /* keep labels above their gauges */
+                    last = (int)w[KO_KEYS];
+                    if (w[KO_KEYS] == 3) {
+                        const float scale = word_float(w, KO_SCALE_X);
+                        CHECK(word_float(w, KO_DST_X2) - word_float(w, KO_DST_X1) > 128 * 4 * scale);
+                    }
+                }
+            }
+        }
+    }
+    khdays_composition_set_hud_size(4);
+    for (int level = 0; level <= 16; ++level) {
+        KhdaysSituation s = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+        KhdaysComposition comp;
+        p->desc2d[0][KD_BLEND] = 8u | (0x21u << 8) | (1u << 16);
+        p->desc2d[0][KD_COEF] = (uint32_t)level | ((uint32_t)(16 - level) << 8);
+        khdays_composition_for(&s, 342, &comp);
+        khdays_onescreen_images(p, &s, &comp);
+        CHECK(image_shapes(&comp) == 6);
+        for (int i = 0; i < comp.shape_count; ++i) {
+            const uint32_t *w = comp.shapes[i].words;
+            if (w[KO_FLAGS] & KOF_IMAGE) {
+                CHECK(w[KO_FLAGS] & KOF_NATIVE_FADE);
+                CHECK(w[KO_IMAGE_GROUP] == 4);
+                CHECK(word_float(w, KO_IMAGE_ALPHA) == (float)level / 16);
+            }
+        }
+    }
+    {
+        KhdaysSituation s = {KHDAYS_SIT_TUTORIAL, 1u << KHDAYS_ST_HUD};
+        KhdaysComposition comp;
+        khdays_composition_for(&s, 342, &comp);
+        khdays_onescreen_images(p, &s, &comp);
+        CHECK(image_shapes(&comp) == 6 && comp.shape_count == 9);
+        CHECK(comp.shapes[0].words[KO_FLAGS] == KOF_LOWER); /* tutorial page stays above every HUD image */
+        for (int i = 1; i <= 6; ++i) {
+            const uint32_t *w = comp.shapes[i].words;
+            CHECK((w[KO_FLAGS] & (KOF_IMAGE | KOF_DIM)) == (KOF_IMAGE | KOF_DIM));
+            CHECK(fabsf(word_float(w, KO_OPACITY) - 0.35f) < 0.001f);
+        }
+        CHECK(comp.shape_count <= 32);
+        memcpy(shape_words, comp.shapes, (size_t)comp.shape_count * sizeof(*comp.shapes));
+        memset(upper_src, 0, sizeof(upper_src));
+        for (int y = 0; y < 192; ++y)
+            for (int x = 0; x < 256; ++x)
+                lower_src[y][x] = 0x010000ffu;
+        image_colour = 0xff00ff00u;
+        const uint32_t *gauge = comp.shapes[3].words;
+        const float px = floorf((word_float(gauge, KO_DST_X1) + word_float(gauge, KO_DST_X2)) * 0.5f) + 0.5f;
+        const float py = floorf((word_float(gauge, KO_DST_Y1) + word_float(gauge, KO_DST_Y2)) * 0.5f) + 0.5f;
+        CHECK(ko_pixel(px, py, 1, 0, (uint32_t)comp.shape_count, KOB_OWN, 0, 0, 171, 1) == 0xffu);
+        const int x = (int)(px - word_float(comp.shapes[0].words, KO_DST_X1));
+        const int y = (int)(py - word_float(comp.shapes[0].words, KO_DST_Y1));
+        CHECK(x >= 0 && x < 256 && y >= 0 && y < 192);
+        if (x >= 0 && x < 256 && y >= 0 && y < 192)
+            lower_src[y][x] = 0;
+        CHECK(ko_pixel(px, py, 1, 0, (uint32_t)comp.shape_count, KOB_OWN, 0, 0, 171, 1) == 0x5900u);
+    }
+    {
+        const KhdaysSituation hidden[] = {{KHDAYS_SIT_PAUSE, 0},
+                                          {KHDAYS_SIT_GAME_OVER, 0},
+                                          {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_DIALOG},
+                                          {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_INFO_UPPER},
+                                          {KHDAYS_SIT_FIELD, 0},
+                                          {KHDAYS_SIT_TUTORIAL, 0}};
+        for (size_t i = 0; i < sizeof(hidden) / sizeof(hidden[0]); ++i) {
+            KhdaysComposition comp;
+            khdays_composition_for(&hidden[i], 342, &comp);
+            const int original = comp.shape_count;
+            khdays_onescreen_images(p, &hidden[i], &comp);
+            CHECK(image_shapes(&comp) == 0 && comp.shape_count == original);
+        }
+    }
+    /* HUD visibility does not suppress independent images belonging to a menu. */
+    {
+        KhdaysSituation s = {KHDAYS_SIT_PAUSE, 0};
+        KhdaysComposition comp;
+        p->elements[0].count = 1;
+        records[0][KE_SLOT] &= ~KES_HUD;
+        put_float(records[0], KE_X, 100);
+        put_float(records[0], KE_Y, 80);
+        khdays_composition_for(&s, 342, &comp);
+        khdays_onescreen_images(p, &s, &comp);
+        CHECK(image_shapes(&comp) == 1);
+    }
+    free(p);
 }
 
 /* --- The upper screen's 2D apart from its 3D ------------------------------------------- */
@@ -1077,11 +1621,255 @@ static void test_swap_skips(void)
     CHECK((s.states & (1u << KHDAYS_ST_LOWER_3D)) != 0u);
 }
 
+static void test_weighted_image(void)
+{
+    const uint32_t background = 0x01000000u | 0x00ffffffu;
+    memset(shape_words, 0, sizeof(shape_words));
+    shape(0, KOF_IMAGE | KOF_WEIGHT, 0, 0, 20, 20, 0, 0, 1);
+    image_colour = 0x80000000u;
+    use_image_colours = 0;
+    put_float(shape_words[0], KO_FADE, 5);
+    uint32_t edge = ko_pixel(0, 10, 1, background, 1, KOB_DEFAULT, 0, 0, 171, 1);
+    uint32_t middle = ko_pixel(10, 10, 1, background, 1, KOB_DEFAULT, 0, 0, 171, 1);
+    uint32_t ramp = ko_pixel(2.5f, 10, 1, background, 1, KOB_DEFAULT, 0, 0, 171, 1);
+    CHECK((edge & 255u) == 255u && (middle & 255u) == 127u && (ramp & 255u) == 191u);
+}
+
+static void test_mission_panel_image(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    uint32_t records[KE_WORDS * 2] = {0};
+    for (int i = 0; i < 2; ++i) {
+        uint32_t *r = records + i * KE_WORDS;
+        r[KE_SLOT] = KES_DIRECT | KES_FINE | KES_PICTURE | 2;
+        r[KE_IMAGE] = 71 + i;
+        r[KE_IW] = 400;
+        r[KE_IH] = 100;
+        put_float(r, KE_X, -2);
+        put_float(r, KE_Y, -3);
+        put_float(r, KE_W, 200);
+        put_float(r, KE_H, 50);
+    }
+    put_float(records, KE_Y, 152 - 3);
+    p->upper = 0;
+    p->elements[1].records = records;
+    p->elements[1].count = 2;
+    p->mission_panel_state = 3;
+    p->mission_panel_backdrop = 73;
+    p->mission_panel_image.words[KSI_OUTPUT] = 71;
+    p->mission_panel_image.words[KSI_ANCHORED] = 1;
+    put_float(p->mission_panel_image.words, KSI_ANCHOR_Y, 152);
+    p->information_images[1].words[KSI_OUTPUT] = 72;
+    p->information_images[1].words[KSI_ANCHORED] = 1;
+    p->information_state = KHDAYS_INFORMATION_AVAILABLE | 0x202u;
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    khdays_composition_set_hud_size(4);
+    KhdaysSituation s = {KHDAYS_SIT_FIELD,
+                         (1u << KHDAYS_ST_HUD) | (1u << KHDAYS_ST_MISSION_PANEL) | (1u << KHDAYS_ST_MISSION_PANEL_MOD)};
+    khdays_onescreen_information(p, &s);
+    KhdaysComposition c;
+    khdays_composition_for(&s, 342, &c);
+    for (int i = 0; i < c.shape_count; ++i) {
+        const uint32_t *shape = c.shapes[i].words;
+        CHECK(!(word_float(shape, KO_SRC_Y) == 152 && word_float(shape, KO_SRC_X) == 4));
+    }
+    khdays_onescreen_images(p, &s, &c);
+    CHECK(c.shapes[0].words[KO_KEYS] == 72 && c.shapes[1].words[KO_KEYS] == 71);
+    const float factor = khdays_composition_hud_factor();
+    CHECK(fabsf(word_float(c.shapes[1].words, KO_DST_Y1) - (5 - 3 * .766667f) * factor) < .001f);
+    int backdrop = 0;
+    for (int i = 0; i < c.shape_count; ++i)
+        if ((c.shapes[i].words[KO_FLAGS] & KOF_IMAGE) && c.shapes[i].words[KO_KEYS] == 73)
+            ++backdrop;
+    CHECK(backdrop == 1);
+    // Anchors follow the viewport after HUD scaling, using resting artwork rather than canvas extents.
+    p->elements[1].count = 1;
+    const int columns[] = {256, 308, 342, 460, 768};
+    for (int size = 1; size <= 8; ++size) {
+        khdays_composition_set_hud_size(size);
+        const float scale = .766667f * khdays_composition_hud_factor();
+        for (unsigned a = 1; a <= 9; ++a) {
+            const float ax = (float)((a - 1) % 3) * .5f, ay = (float)((a - 1) / 3) * .5f;
+            p->mission_panel_image.words[KSI_PANEL_ANCHOR] = a;
+            put_float(records, KE_X, 256 * ax - (20 + 100 * ax) + 7);
+            put_float(records, KE_Y, 192 * ay - (10 + 20 * ay) - 9);
+            for (unsigned col = 0; col < sizeof(columns) / sizeof(columns[0]); ++col)
+                for (int aligned = 0; aligned < 2; ++aligned) {
+                    p->hud_options = aligned ? KHDAYS_HUD_ALIGN_EDGES : 0;
+                    khdays_composition_for(&s, columns[col], &c);
+                    khdays_onescreen_images(p, &s, &c);
+                    int found = 0;
+                    for (int j = 0; j < c.shape_count; ++j) {
+                        const uint32_t *shape = c.shapes[j].words;
+                        if (!(shape[KO_FLAGS] & KOF_IMAGE) || shape[KO_KEYS] != 71)
+                            continue;
+                        ++found;
+                        CHECK(fabsf(word_float(shape, KO_DST_X1) + (20 + 100 * ax) * scale -
+                                    (columns[col] * ax + 7 * scale)) < .001f);
+                        CHECK(fabsf(word_float(shape, KO_DST_Y1) + (10 + 20 * ay) * scale - (192 * ay - 9 * scale)) <
+                              .001f);
+                        CHECK(fabsf(word_float(shape, KO_DST_X2) - word_float(shape, KO_DST_X1) - 200 * scale) < .001f);
+                    }
+                    CHECK(found == 1);
+                }
+        }
+    }
+    khdays_composition_set_hud_size(4);
+    p->hud_options = 0;
+    p->mission_panel_image.words[KSI_PANEL_ANCHOR] = 0;
+    put_float(records, KE_X, -2);
+    put_float(records, KE_Y, 152 - 3);
+    // With native INFORMATION, its crop still covers the independent mission panel.
+    p->information_state = 0;
+    p->elements[1].count = 1;
+    s.states &= ~(1u << KHDAYS_ST_INFORMATION_MOD);
+    s.states |= 1u << KHDAYS_ST_INFO_UPPER;
+    khdays_composition_for(&s, 342, &c);
+    khdays_onescreen_images(p, &s, &c);
+    CHECK(!(c.shapes[0].words[KO_FLAGS] & KOF_IMAGE));
+    CHECK(word_float(c.shapes[0].words, KO_SRC_Y) == 0 && word_float(c.shapes[0].words, KO_SRC_H) == 24);
+    // No replacement restores the existing cropped panel.
+    p->mission_panel_state = 0;
+    s.states &= ~(1u << KHDAYS_ST_MISSION_PANEL_MOD);
+    khdays_composition_for(&s, 342, &c);
+    int native = 0;
+    for (int i = 0; i < c.shape_count; ++i)
+        if (word_float(c.shapes[i].words, KO_SRC_Y) == 152 && word_float(c.shapes[i].words, KO_SRC_X) == 4)
+            ++native;
+    CHECK(native == 2);
+    free(p);
+}
+
+static void test_minimap_image(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    uint32_t record[KE_WORDS] = {0};
+    record[KE_SLOT] = KES_DIRECT | KES_FINE | KES_PICTURE | KES_NATIVE_FADE | 2;
+    record[KE_IMAGE] = 90;
+    record[KE_IW] = 240;
+    record[KE_IH] = 160;
+    put_float(record, KE_X, 104);
+    put_float(record, KE_Y, 56);
+    put_float(record, KE_W, 120);
+    put_float(record, KE_H, 80);
+    p->elements[1].records = record;
+    p->elements[1].count = 1;
+    p->minimap_images[0].words[KSI_OUTPUT] = 90;
+    p->minimap_images[0].words[KSI_ANCHORED] = 1;
+    put_float(p->minimap_images[0].words, KSI_ANCHOR_X, 164);
+    put_float(p->minimap_images[0].words, KSI_ANCHOR_Y, 96);
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    KhdaysSituation s = {KHDAYS_SIT_FIELD, (1u << KHDAYS_ST_HUD) | (1u << KHDAYS_ST_MISSION_PANEL)};
+    for (int size = 1; size <= 8; size *= 2) {
+        khdays_composition_set_hud_size(size);
+        KhdaysComposition c;
+        khdays_composition_for(&s, 342, &c);
+        KhdaysShape map = {0};
+        for (int i = 0; i < c.shape_count; ++i)
+            if ((c.shapes[i].words[KO_FLAGS] & KOF_LOWER) && word_float(c.shapes[i].words, KO_SRC_X) == 112 &&
+                word_float(c.shapes[i].words, KO_SRC_Y) == 64)
+                map = c.shapes[i];
+        CHECK(map.words[KO_KEY_COUNT] != 0);
+        khdays_onescreen_images(p, &s, &c);
+        CHECK(image_shapes(&c) == 1);
+        for (int i = 0; i < c.shape_count; ++i) {
+            const uint32_t *w = c.shapes[i].words;
+            if (!(w[KO_FLAGS] & KOF_IMAGE) || w[KO_KEYS] != 90)
+                continue;
+            CHECK(word_float(w, KO_SRC_X) == 16 && word_float(w, KO_SRC_Y) == 16);
+            CHECK(word_float(w, KO_SRC_W) == 208 && word_float(w, KO_SRC_H) == 128);
+            CHECK(word_float(w, KO_DST_X1) == word_float(map.words, KO_DST_X1));
+            CHECK(word_float(w, KO_DST_Y1) == word_float(map.words, KO_DST_Y1));
+            CHECK(!(w[KO_FLAGS] & KOF_SEE_THROUGH));
+            CHECK(w[KO_FLAGS] & KOF_WEIGHT);
+            CHECK(word_float(w, KO_FADE) == word_float(map.words, KO_FADE));
+            CHECK(word_float(w, KO_IMAGE_ALPHA) == 1);
+            memset(shape_words, 0, sizeof(shape_words));
+            memcpy(shape_words[0], w, KO_WORDS * sizeof(*w));
+            use_image_colours = 0;
+            float x = (word_float(w, KO_DST_X1) + word_float(w, KO_DST_X2)) / 2;
+            float y = (word_float(w, KO_DST_Y1) + word_float(w, KO_DST_Y2)) / 2;
+            for (int colour = 0; colour < 3; ++colour) {
+                image_colour = colour == 0 ? 0xffffffffu : colour == 1 ? 0xffefefefu : 0xff0000ffu;
+                CHECK(ko_pixel(x, y, 1, 0x01000000u, 1, KOB_DEFAULT, 0, 0, 171, 1) == (image_colour & 0xffffffu));
+                CHECK(fabsf(last_image_x - 120) < .001f && fabsf(last_image_y - 80) < .001f);
+            }
+        }
+        p->radar_image.words[KSI_CLEAR] = 1;
+        p->radar_image.words[KSI_RADAR_MASK] = 99;
+        p->radar_image.words[KSI_OUTPUT] = 91;
+        p->radar_image.words[KSI_WIDTH] = p->radar_image.words[KSI_HEIGHT] = 192;
+        put_float(p->radar_image.words, KSI_RADAR_SCALE, .65f);
+        khdays_composition_for(&s, 342, &c);
+        khdays_onescreen_images(p, &s, &c);
+        CHECK(image_shapes(&c) == 1);
+        int found = 0;
+        for (int i = 0; i < c.shape_count; ++i) {
+            const uint32_t *w = c.shapes[i].words;
+            if ((w[KO_FLAGS] & KOF_IMAGE) && w[KO_KEYS] == 91) {
+                float side = 96 * .65f * .766667f * khdays_composition_hud_factor();
+                CHECK(fabsf(word_float(w, KO_DST_X2) - word_float(map.words, KO_DST_X2)) < .001f);
+                CHECK(fabsf(word_float(w, KO_DST_X1) - (word_float(map.words, KO_DST_X2) - side)) < .001f);
+                CHECK(fabsf(word_float(w, KO_DST_Y2) - word_float(w, KO_DST_Y1) - side) < .001f);
+                CHECK(word_float(w, KO_SRC_X) == 0 && word_float(w, KO_SRC_W) == 192);
+                CHECK(!(w[KO_FLAGS] & (KOF_WEIGHT | KOF_SEE_THROUGH)) && word_float(w, KO_FADE) == 0);
+                ++found;
+            }
+            CHECK((w[KO_FLAGS] & KOF_IMAGE) || word_float(w, KO_SRC_X) != 112 || word_float(w, KO_SRC_Y) != 64);
+            CHECK((w[KO_FLAGS] & KOF_IMAGE) || word_float(w, KO_SRC_X) != 186 || word_float(w, KO_SRC_Y) != 156);
+        }
+        CHECK(found == 1);
+        memset(&p->radar_image, 0, sizeof(p->radar_image));
+    }
+    khdays_composition_set_hud_options(KHDAYS_HUD_ALIGN_EDGES);
+    for (int radar = 0; radar < 2; ++radar) {
+        p->radar_image.words[KSI_CLEAR] = radar;
+        p->radar_image.words[KSI_RADAR_MASK] = radar ? 99 : 0;
+        p->radar_image.words[KSI_OUTPUT] = 91;
+        p->radar_image.words[KSI_WIDTH] = p->radar_image.words[KSI_HEIGHT] = 192;
+        put_float(p->radar_image.words, KSI_RADAR_SCALE, .65f);
+        float gameplay[4] = {0};
+        for (int paused = 0; paused < 2; ++paused) {
+            KhdaysSituation scene = {paused ? KHDAYS_SIT_PAUSE : KHDAYS_SIT_FIELD, s.states};
+            KhdaysComposition c;
+            khdays_composition_for(&scene, 342, &c);
+            khdays_onescreen_images(p, &scene, &c);
+            int found = 0;
+            for (int i = 0; i < c.shape_count; ++i) {
+                const uint32_t *w = c.shapes[i].words;
+                if (!(w[KO_FLAGS] & KOF_IMAGE) || w[KO_KEYS] != (radar ? 91u : 90u))
+                    continue;
+                for (int coordinate = 0; coordinate < 4; ++coordinate) {
+                    const float value = word_float(w, KO_DST_X1 + coordinate);
+                    if (!paused)
+                        gameplay[coordinate] = value;
+                    else
+                        CHECK(fabsf(value - gameplay[coordinate]) < .001f);
+                }
+                ++found;
+            }
+            CHECK(found == 1);
+        }
+    }
+    khdays_composition_set_hud_options(0);
+    free(p);
+}
+
 int main(void)
 {
     test_places();
     test_real_file();
     test_field_hud_reference();
+    test_hud_edge_alignment();
+    test_pause_target_placement();
     test_inside();
     CHECK(outside_pieces == 0 && inside_pieces > 1000);
     test_apart();
@@ -1092,6 +1880,14 @@ int main(void)
     test_title_backdrop();
     test_title_prompt();
     test_steps();
+    test_independent_image();
+    test_obtained_image();
+    test_native_hud_fade();
+    test_information_image();
+    test_mission_panel_image();
+    test_minimap_image();
+    test_weighted_image();
+    test_hud_image_layers();
     test_split();
     test_split_under_3d();
     test_swap_skips();

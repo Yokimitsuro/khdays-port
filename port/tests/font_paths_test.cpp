@@ -505,6 +505,22 @@ int main()
     const auto unicode = load("text/paths.nftr");
     ok = ok && unicode && unicode->png_path == mod_directory + "font-paths.nftr.png" &&
          last_png_path == unicode->png_path && mappings_enabled();
+    int preferences[KHDAYS_OPT_COUNT];
+    khdays_hud_settings_default(preferences);
+    preferences[KHDAYS_OPT_FONT] = 0;
+    khdays_hud_settings_publish(preferences);
+    const uint32_t codes[] = {'A', 'B'};
+    khdays_hd_font_bind_charmap("text/paths.nftr", codes, 2);
+    ok = ok && unicode->codes_bound;
+    ok = ok && !load("text/paths.nftr") && probe("text/paths.nftr") == 0 && !mappings_enabled() &&
+         select("text/small.nftr", "camp").empty() && !numeric_layout(KHDF_LAYOUT_PANEL_COUNTER);
+    const int previous_observation = khdays_hd_font_observe(1);
+    ok = ok && load("text/paths.nftr") == unicode && mappings_enabled() && !select("text/small.nftr", "camp").empty();
+    khdays_hd_font_observe(previous_observation);
+    ok = ok && !load("text/paths.nftr");
+    preferences[KHDAYS_OPT_FONT] = 1;
+    khdays_hud_settings_publish(preferences);
+    ok = ok && load("text/paths.nftr") == unicode && mappings_enabled();
     std::filesystem::remove(unicode_dir / "font-paths.nftr.json");
     std::filesystem::remove(unicode_dir / "font-mappings.json");
     std::filesystem::remove(unicode_dir);

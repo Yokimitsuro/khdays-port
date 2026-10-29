@@ -27,6 +27,13 @@ void khdays_ui_emit(int part, const KhdaysUiElement *element);
 /* Move a supplementary image with a queued anchor, including when that anchor
  * follows a HUD piece rather than a layout line. */
 void khdays_ui_emit_following(int part, const KhdaysUiElement *element, const KhdaysUiElement *anchor);
+/* An image extending beyond its layout box (the KH2 gauge around the portrait). */
+void khdays_ui_emit_extended(int part, const KhdaysUiElement *element, const KhdaysUiElement *box);
+/* An element's current texels resolved through its own engine's palette, or direct RGBA. */
+uint32_t khdays_ui_element_rgba(const KhdaysUiElement *element, int x, int y);
+/* The existing image store's id; an indexed element converted once per image/palette change. */
+int khdays_ui_image_replacement(int image);
+int khdays_ui_element_direct(const KhdaysUiElement *element);
 
 /* For a part drawn from the port's own state (the pause's Retry cursor): when that state changes, the
  * next VBlank composes the frame again even if the game's picture is the same. */

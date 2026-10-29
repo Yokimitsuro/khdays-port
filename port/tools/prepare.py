@@ -533,14 +533,49 @@ HOOKS = {
             "    khdays_io_store(0x0400044cu, 4, state->pSbc[1]);\n",
         ),
     ],
+    # Replace only the heart panel's own node draws; its bookkeeping and other widgets still run.
+    "main@0202aa9c": [  # Scene_DrawNode
+        (
+            "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n",
+            "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n"
+            "    { extern int khdays_heart_node(const void *node);\n"
+            "      if (khdays_heart_node(node)) return; }\n",
+        ),
+    ],
+    "ov002@0205f980": [  # Ov002_Hud_RewindWidget: repeated pickups restart the pulse
+        (
+            "    Ov002_RewindWidget",
+            "    { extern void khdays_heart_event(int kind, int row); khdays_heart_event(0, 0); }\n"
+            "    Ov002_RewindWidget",
+        ),
+    ],
+    "ov002@0205fc5c": [  # Ov002_SceneSpawnPanelRowCount: only after the row is actually allocated
+        (
+            "    s->aRowBusy[nRow] = 1;\n",
+            "    s->aRowBusy[nRow] = 1;\n"
+            "    { extern void khdays_heart_event(int kind, int row); khdays_heart_event(1, nRow); }\n",
+        ),
+    ],
+    "ov002@02060358": [  # Ov002_SceneStartPanelBlink
+        (
+            "    s = *(Ov002BlinkScene **)&data_ov002_0207f628;\n",
+            "    s = *(Ov002BlinkScene **)&data_ov002_0207f628;\n"
+            "    { extern void khdays_heart_event(int kind, int row); khdays_heart_event(2, 0); }\n",
+        ),
+    ],
     # The field's HUD panel draws its 3D pieces (the hearts counter, the countdown) with a camera of
     # its own: the port marks those polygons as the HUD's, so widescreen keeps them to the sides
     # (runtime/display/display.c khdays_hud_3d). Nothing the game computes changes.
     "ov002@020616a0": [  # Ov002_SceneStepPanel
         (
+            "    Ov002_SceneStepPanelBlink();\n",
+            "    Ov002_SceneStepPanelBlink();\n    { extern void khdays_heart_end(void); khdays_heart_end(); }\n",
+        ),
+        (
             "    Camera_CommitMatricesEx(s->aCamera, 0x3b33, -0x3b33, -0x4d9a, 0x4d9a);\n",
             "    Camera_CommitMatricesEx(s->aCamera, 0x3b33, -0x3b33, -0x4d9a, 0x4d9a);\n"
-            "    { extern void khdays_hud_3d(int on); khdays_hud_3d(1); }\n",
+            "    { extern void khdays_hud_3d(int on); khdays_hud_3d(1); }\n"
+            "    { extern void khdays_heart_begin(const void *context); khdays_heart_begin(s); }\n",
         ),
         (
             "    Ov002_DrawMarkerQueue(pCam);\n",
@@ -1271,6 +1306,10 @@ HOOKS = {
             "      khdays_controls_command_input(GameState_GetField(0x37c6, 1), Ov002_Hud_IsPanelOpen(),"
             " pActor->nMenuState, gPadHeld, gPadPressed, pMenu[0], pMenu[1], Ov022_GetRepeatKeys()); }\n"
             "    if (pActor->nMenuState == 2 || pActor->nMenuState == 3) {\n",
+        ),
+        (  # Retained INFORMATION leaves command navigation, shortcuts and command kinds intact.
+            "Ov002_Hud_IsPanelOpen",
+            "khdays_ui_command_panel_open",
         ),
         (
             "Ov002_SelectShortcut(nCmd);",
@@ -2726,6 +2765,7 @@ for _function, _scope in (
     ("DrawMessageCaption", "field.hud.status"),
     ("ShowNoticeText", "field.hud.status"),
     ("DrawPanelRowText", "field.command"),
+    ("BuildTextItem", "field.breakthrough"),
 ):
     _name = f"Ov002_{_function}"
     UI_HOOKS[f"src/overlays/scenes/ov002_field/{_name}.c"] = [(_name, "text", _scope, "scope")]
@@ -2991,7 +3031,257 @@ FILE_HOOKS = {
     ],
 }
 
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SetCaptionText.c"] = [
+    (
+        "void Ov002_SetCaptionText(const u16 *pText)\n{",
+        "void Ov002_SetCaptionText(const u16 *pText)\n{\n"
+        "    extern void khdays_ui_information_message(const unsigned short *text);\n"
+        "    khdays_ui_information_message(pText);",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_RequestPanelScreen.c"] = [
+    (
+        "    Ov002_StartBlendFade(-1, 0, 300);",
+        "    { extern int khdays_ui_information_keep_hud(void);\n"
+        "      if (!khdays_ui_information_keep_hud()) Ov002_StartBlendFade(-1, 0, 300); }",
+    ),
+    (
+        "    StrCopy16(ctx->pCrawlText, pText);",
+        "    StrCopy16(ctx->pCrawlText, pText);\n"
+        "    { extern void khdays_ui_information_panel(const unsigned short *text);\n"
+        "      khdays_ui_information_panel(pText); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_FinishPanelFadeIn.c"] = [
+    (
+        "        Ov002_PopMapSnapshot();",
+        "        { extern void khdays_ui_information_pop_maps(void);\n          khdays_ui_information_pop_maps(); }",
+    ),
+    (
+        "        Ov002_StartBlendFade(0, 0x10, 300);",
+        "        { extern int khdays_ui_information_keep_hud(void);\n"
+        "          if (!khdays_ui_information_keep_hud()) Ov002_StartBlendFade(0, 0x10, 300); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_ResetFaders.c"] = [
+    (
+        "    Ov002_PushMapSnapshot(0);",
+        "    { extern void khdays_ui_information_push_maps(void);\n      khdays_ui_information_push_maps(); }",
+    ),
+    (
+        "    Ov002_Ctx_InvokeTagTrackerCallback(Ov002_ForwardToSubDc(0x50));",
+        "    { extern int khdays_ui_information_keep_hud(void);\n"
+        "      if (!khdays_ui_information_keep_hud())\n"
+        "          Ov002_Ctx_InvokeTagTrackerCallback(Ov002_ForwardToSubDc(0x50)); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PushMapSnapshot.c"] = [
+    (
+        "    for (i = 0; i <= 2; i++) {",
+        "    for (i = 0; i <= 2; i++) {\n"
+        "        extern int khdays_ui_information_preserving_maps(void);\n"
+        "        if (khdays_ui_information_preserving_maps()) continue;",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SetPanelMode.c"] = [
+    (
+        "        pOfs[0] = 0x180000;",
+        "        { extern int khdays_ui_information_keep_hud(void);\n"
+        "          if (nMode != 0 || !khdays_ui_information_keep_hud()) pOfs[0] = 0x180000; }",
+    ),
+    (
+        "        pOfs[2] = 0x180000;",
+        "        { extern int khdays_ui_information_keep_hud(void);\n"
+        "          if (!khdays_ui_information_keep_hud()) pOfs[2] = 0x180000; }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main001c.c"] = [
+    (
+        "void Ov002_SetBgOfs_main001c(unsigned int param_1, unsigned int param_2) {",
+        "void Ov002_SetBgOfs_main001c(unsigned int param_1, unsigned int param_2) {\n"
+        "    { extern int khdays_ui_information_keep_hud(void);\n"
+        "      if (khdays_ui_information_keep_hud()) return; }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main0014.c"] = [
+    (
+        "void Ov002_SetBgOfs_main0014(unsigned int param_1, unsigned int param_2) {",
+        "void Ov002_SetBgOfs_main0014(unsigned int param_1, unsigned int param_2) {\n"
+        "    { extern int khdays_ui_information_capture_scroll(unsigned int x, unsigned int y);\n"
+        "      if (khdays_ui_information_capture_scroll(param_1, param_2)) return; }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_BeginTextCrawl.c"] = [
+    (
+        "    ctx->nCrawlPenX = 8;",
+        "    ctx->nCrawlPenX = 8;\n"
+        "    { extern void khdays_ui_information_crawl(const unsigned short *text);\n"
+        "      khdays_ui_information_crawl((const unsigned short *)ctx->pCrawlText); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c"] = [
+    (
+        "    MI_CpuFill8(ctx, 0, 0x2c4);",
+        "    MI_CpuFill8(ctx, 0, 0x2c4);\n"
+        "    { extern void khdays_ui_information_reset(void);\n"
+        "      khdays_ui_information_reset(); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_ClosePanel.c"] = [
+    (
+        "    ctx->nPanelState = 0;",
+        "    ctx->nPanelState = 0;\n"
+        "    { extern void khdays_ui_information_panel(const unsigned short *text);\n"
+        "      khdays_ui_information_panel(0); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_StartPanelFadeIn.c"] = [
+    (
+        "    char *ctx = data_ov002_0207f614;",
+        "    char *ctx = data_ov002_0207f614;\n"
+        "    { extern void khdays_ui_information_panel(const unsigned short *text);\n"
+        "      khdays_ui_information_panel(0); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c"] = [
+    (
+        "    data_ov002_0207f614 = 0;",
+        "    data_ov002_0207f614 = 0;\n"
+        "    { extern void khdays_ui_information_reset(void);\n"
+        "      khdays_ui_information_reset(); }",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_HoldPanelScreen.c"] = [
+    (
+        "    ctx->nHeld = nHold;",
+        "    ctx->nHeld = nHold;\n"
+        "    { extern void khdays_ui_information_hold(int held, int leaving);\n"
+        "      khdays_ui_information_hold(nHold, bLeaving); }",
+    ),
+]
+
+# Capture the minimap's icon stamps before they are flattened into its 4bpp layer.
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_RedrawMapPanel.c"] = [
+    (
+        "    pScene = data_ov002_0207f638;",
+        "    extern void khdays_minimap_begin(void);\n    extern void khdays_minimap_end(void);\n    khdays_minimap_begin();\n    pScene = data_ov002_0207f638;",
+    ),
+    (
+        "    GFXi_EnqueueCommand(0x16, 0x2720, pScene->pTiles, 0x12c0);",
+        "    khdays_minimap_end();\n    GFXi_EnqueueCommand(0x16, 0x2720, pScene->pTiles, 0x12c0);",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PlotMapIcon.c"] = [
+    (
+        "    pCtx = data_ov002_0207f638;",
+        "    extern void khdays_minimap_icon(int kind, int x, int y);\n    khdays_minimap_icon(nKind, pCell[0], pCell[1]);\n    pCtx = data_ov002_0207f638;",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PlotPageGlyph.c"] = [
+    (
+        "    nBand = ((nHeight + 0x1000) / 0x2000) % 8;",
+        "    extern void khdays_minimap_player(int player, int x, int y, int heading);\n    khdays_minimap_player(nSelf, pCell->x, pCell->y, nHeight);\n    nBand = ((nHeight + 0x1000) / 0x2000) % 8;",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PlotPageEmblem.c"] = [
+    (
+        "    bMask = data_ov002_0207e400[nSelf];",
+        "    extern void khdays_minimap_emblem(int player);\n    khdays_minimap_emblem(nSelf);\n    bMask = data_ov002_0207e400[nSelf];",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_StampCellBlock.c"] = [
+    (
+        "    for (i = 0; i < 8; i++) {",
+        "    { extern void khdays_minimap_stamp(unsigned source, int x, int y);\n      khdays_minimap_stamp((unsigned)pCells, x, y); }\n    for (i = 0; i < 8; i++) {",
+    ),
+]
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_TeardownHudNode.c"] = [
+    (
+        "    int node = (int)data_ov002_0207f638;",
+        "    extern void khdays_minimap_reset(void);\n    int node = (int)data_ov002_0207f638;\n    khdays_minimap_reset();",
+    ),
+]
+
 # The portrait label is measured and drawn here, before dialogue window layout.
+# Selection art only: keep projection, target choice, tween state and all native fallback draws.
+HOOKS["ov022@02085380"] += [
+    (
+        "    u8 runtimeMode = data_0204be04;\n",
+        "    u8 runtimeMode = data_0204be04;\n"
+        "    extern void khdays_reticles_begin(void);\n"
+        "    extern void khdays_reticles_end(int cancel);\n"
+        "    if (runtimeMode == 0) khdays_reticles_begin();\n",
+    ),
+    (
+        "        return suppressInput;",
+        "        if (runtimeMode == 0) khdays_reticles_end(1);\n        return suppressInput;",
+    ),
+    ("return 0;", "if (runtimeMode == 0) khdays_reticles_end(1);\n    return 0;"),
+    ("    Ov022_UpdateSelectionMarker();\n", "    Ov022_UpdateSelectionMarker();\n    khdays_reticles_end(0);\n"),
+]
+FILE_HOOKS["src/overlays/field/ov022_battle/Ov022_UpdateSelectionMarker.c"] = [
+    (
+        "    void *target = 0;\n",
+        "    void *target = 0;\n"
+        "    extern int khdays_reticles_saved_world(int kind, int *world);\n"
+        "    extern void khdays_reticles_projected(int kind, int visible, int x, int y);\n"
+        "    extern void khdays_reticles_target(const int *world);\n"
+        "    /* Use the world camera before native marker drawing switches to orthographic. */\n"
+        "    for (int kind = 0; kind < 5; ++kind) {\n"
+        "        int world[3];\n"
+        "        if (khdays_reticles_saved_world(kind, world)) {\n"
+        "            Ov022SelectionPoint projected;\n"
+        "            int visible = Ov022_ProjectToScreen(world, &projected) != -1;\n"
+        "            khdays_reticles_projected(kind, visible, projected.x, projected.y);\n"
+        "        }\n"
+        "    }\n",
+    ),
+    (
+        "    if (Ov022_ProjectToScreen(target, &point) == -1)",
+        "    khdays_reticles_target((const int *)target);\n    if (Ov022_ProjectToScreen(target, &point) == -1)",
+    ),
+]
+FILE_HOOKS["src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c"] = [
+    (
+        "    Ov002_ResetViewToDefault();\n    Ov002_ResourceNodeCallback(&group->records[0]);",
+        "    Ov002_ResetViewToDefault();\n"
+        "    extern int khdays_reticles_mark(int kind, unsigned identity, unsigned sprite, int x, int y);\n"
+        "    int khdays_replaced = khdays_reticles_mark(enabled ? 1 : 0, (unsigned)context->focus,\n"
+        "        (unsigned)&group->records[0], point->x, point->y);\n"
+        "    if (!khdays_replaced) Ov002_ResourceNodeCallback(&group->records[0]);",
+    ),
+    (
+        "    Ov002_ResourceNodeCallback(&group->records[1]);",
+        "    if (!khdays_replaced) Ov002_ResourceNodeCallback(&group->records[1]);",
+    ),
+    (
+        "            Ov002_ResourceNodeCallback(&group->records[2]);",
+        "            if (!khdays_reticles_mark(3, (unsigned)context->focus, (unsigned)&group->records[2],\n"
+        "                    point->x, point->y)) Ov002_ResourceNodeCallback(&group->records[2]);",
+    ),
+]
+FILE_HOOKS["src/overlays/field/ov022_battle/Ov022_UpdateUiSelectionMarker.c"] = [
+    (
+        "    Ov002_ResetViewToDefault();\n    switch (subsystem->state)",
+        "    Ov002_ResetViewToDefault();\n"
+        "    extern int khdays_reticles_mark(int kind, unsigned identity, unsigned sprite, int x, int y);\n"
+        "    int khdays_replaced = 0;\n"
+        "    if (subsystem->state == 1 || subsystem->state == 2)\n"
+        "        khdays_replaced = khdays_reticles_mark(\n"
+        "            (unsigned)subsystem->displayObject == (unsigned)subsystem + 0xf0 ? 4 : 2,\n"
+        "            *(unsigned *)((char *)subsystem + 0x128), (unsigned)subsystem->displayObject, point->x, point->y);\n"
+        "    switch (subsystem->state)",
+    ),
+    (
+        "        Ov022_PlaceCornerMarkers(subsystem, value, point);",
+        "        if (!khdays_replaced) Ov022_PlaceCornerMarkers(subsystem, value, point);",
+    ),
+    (
+        "        Ov002_ResourceNodeCallback(subsystem->displayObject);",
+        "        if (!khdays_replaced) Ov002_ResourceNodeCallback(subsystem->displayObject);",
+    ),
+]
+
 FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
     (
         "void Ov002_SceneApplyPanelRequest(int *pReq)",
@@ -3054,6 +3344,18 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_PanelDrawSlotCursor.c"] = [
         "        FreeFieldAt8((char *)narrow);\n"
         "        khdays_ui_text_scope_pop();\n"
         "    }\n}",
+    ),
+]
+
+# Observe layout placement without changing the native tilemap or gameplay callbacks.
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_BlitTileRegion.c"] = [
+    (
+        "void Ov002_BlitTileRegion(",
+        "extern void khdays_ui_notification_layout(const void *request, int shown);\nvoid Ov002_BlitTileRegion(",
+    ),
+    (
+        "    Ov002_GetItemFlag(pReq->nDest);",
+        "    khdays_ui_notification_layout(pReq, nFlag);\n    Ov002_GetItemFlag(pReq->nDest);",
     ),
 ]
 

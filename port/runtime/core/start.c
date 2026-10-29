@@ -40,6 +40,7 @@
 #define change_folder chdir
 #endif
 
+extern int khdays_export_heart_model(const char *input, const char *output);
 extern void khdays_NitroMain(void); /* the decomp's main, renamed at build */
 extern void _fp_init(void);
 extern void NitroStartUp(void);
@@ -265,6 +266,9 @@ int main(int argc, char **argv)
             return 1;
         }
         return khdays_graphics_dump(argc >= 3 ? argv[2] : KHDAYS_GRAPHICS_DUMP_DIRECTORY);
+    }
+    if (argc == 4 && strcmp(argv[1], "--export-heart-model") == 0) {
+        return khdays_export_heart_model(argv[2], argv[3]);
     }
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */

@@ -29,6 +29,12 @@ order while their conditions hold. Their lines:
 A length is in the picture's DS dots at the HUD's scale (its factor, 1 at the
 default HUD size); `fixed(N)` is one that does not follow it, `A+fixed(B)` both.
 
+`information-mod` holds while a valid KH2 information replacement is enabled,
+including gaps between messages. The port's native banner crops require
+`!information-mod`; custom compositions that crop those banners can use the same
+condition. The replacement is placed independently at the picture's top left
+(`docs/KH2_SEQUENCES.md`), rather than sampled from either screen's banner crop.
+
 A backdrop's name may hold the title menu's state: `{lang}` the game's language
 (en, fr, de, it, es); `{menu}` root, story or mission (`intro`: its fade-in
 while the lower screen is still white; `logo`: the boot logos, 3 of them, `{row}`

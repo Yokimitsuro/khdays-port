@@ -6,6 +6,7 @@
 #define KHDAYS_PROFILE_H
 
 #include <stdint.h>
+#include "hud_settings.h"
 
 #ifdef __cplusplus
 extern "C" { /* the settings menu is C++ (settings_menu.cpp) */
@@ -130,6 +131,7 @@ typedef struct KhdaysEnhancements {
     int analog_movement;
     int run_threshold; /* percent of stick travel, 50..95 */
     int walk_speed;    /* percent of the game's own speed, 20..90 */
+    int hud[KHDAYS_OPT_COUNT];
 } KhdaysEnhancements;
 
 typedef enum KhdaysPreset { KHDAYS_PRESET_DS, KHDAYS_PRESET_KH2 } KhdaysPreset;

@@ -24,6 +24,36 @@ extern int HD_FontTime(khdays_ref surface, int layout, int x, int y, unsigned ho
                        khdays_ref separator);
 unsigned char *khdays_window;
 extern void HD_FontFitShadow(khdays_ref surface, int x, int y, int depth, khdays_ref text, int shadow, int layout);
+/* The scalar layout tests do not capture canvases; compositor reflow is tested separately. */
+int khdays_ui_text_layout_begin(void)
+{
+    return 0;
+}
+void khdays_ui_text_layout_actual(int token)
+{
+    (void)token;
+}
+void khdays_ui_text_layout_end(int token)
+{
+    (void)token;
+}
+int khdays_ui_text_layout_glyph(const void *owner, const void *font, double x, double y, unsigned ch)
+{
+    (void)owner;
+    (void)font;
+    (void)x;
+    (void)y;
+    (void)ch;
+    return 0;
+}
+double khdays_ui_text_layout_x(double x)
+{
+    return x;
+}
+double khdays_ui_text_layout_y(double y)
+{
+    return y;
+}
 static khdays_ref widths;
 static int original_second;
 static int failures, custom, custom_width = 12, bearing_case, sized_case, count, xs[2048], ys[2048];

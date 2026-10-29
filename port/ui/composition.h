@@ -97,8 +97,10 @@ void khdays_composition_load(void);
 
 /* The player's HUD size ([video] hud_size: 1 to 8, 4 the default). */
 void khdays_composition_set_hud_size(int size);
+void khdays_composition_set_hud_options(unsigned options);
 /* The HUD's factor its size gives (1 at the default size 4). */
 float khdays_composition_hud_factor(void);
+int khdays_composition_columns(void);
 
 /* The inputs the player has for `action` on the device played, as icons are named (`icon`), in
  * the order to try; none (count 0) when the keyboard is played: the pieces' own texels. Copied. */

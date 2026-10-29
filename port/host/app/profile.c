@@ -211,6 +211,7 @@ void khdays_profile_default(KhdaysProfile *p)
     khdays_network_default(&p->network);
     khdays_save_default(&p->save);
     p->gameplay.stop_magic = 1;
+    khdays_hud_settings_default(p->enh.hud);
     p->mods.native_code = 0;
 }
 
@@ -390,6 +391,9 @@ int khdays_profile_repair(KhdaysProfile *p)
     changed += clamp(&p->enh.mouse_speed, 10, 300);
     changed += clamp(&p->enh.run_threshold, 50, 95);
     changed += clamp(&p->enh.walk_speed, 20, 90);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        changed +=
+            clamp(&p->enh.hud[i], i >= KHDAYS_OPT_MISSION_ANCHOR ? 1 : 0, i >= KHDAYS_OPT_MISSION_ANCHOR ? 9 : 1);
     if (p->preset != KHDAYS_PRESET_DS && p->preset != KHDAYS_PRESET_KH2) {
         p->preset = KHDAYS_PRESET_DS;
         ++changed;
@@ -852,6 +856,15 @@ static void read_stick_setting(Reader *r, const char *key, const char *value, co
 static void read_enhancement(Reader *r, const char *key, const char *value, const char *line)
 {
     KhdaysEnhancements *e = &r->profile->enh;
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
+        if (SDL_strcasecmp(key, khdays_hud_setting_keys[i]) == 0) {
+            if (i < KHDAYS_OPT_MISSION_VISIBILITY)
+                read_switch(r, key, value, &e->hud[i]);
+            else
+                read_number(r, key, value, i >= KHDAYS_OPT_MISSION_ANCHOR ? 1 : 0,
+                            i >= KHDAYS_OPT_MISSION_ANCHOR ? 9 : 1, &e->hud[i]);
+            return;
+        }
     static const struct {
         const char *name;
         size_t offset;
@@ -1492,6 +1505,12 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
+    for (int i = 0; i < KHDAYS_OPT_COUNT; ++i) {
+        if (i < KHDAYS_OPT_MISSION_VISIBILITY)
+            add(&t, "%s = %s\n", khdays_hud_setting_keys[i], e->hud[i] ? "on" : "off");
+        else
+            add(&t, "%s = %d\n", khdays_hud_setting_keys[i], e->hud[i]);
+    }
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;

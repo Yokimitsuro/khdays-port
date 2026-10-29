@@ -281,12 +281,150 @@ set_source_files_properties(sound/third_party_decoders.c PROPERTIES COMPILE_OPTI
 # The port's own graphics: the frame description made from what
 # the game asks for, and its composition -- shared with the GPU's shaders --
 # and the 3D geometry. Plain C with no SDL and no operating system calls.
+add_library(khdays-hud-settings STATIC host/app/hud_settings.c)
+target_link_libraries(khdays-hud-settings PUBLIC SDL3::SDL3)
+target_compile_options(khdays-hud-settings PRIVATE /W4 /std:c17)
 add_library(khdays-gfx STATIC
     gfx/compose_cpu.c
     gfx/describe.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
 target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
+target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
+
+# KH2's native 2D sequences and their reference renderer; also used by the
+# independent viewer, without the game or its generated sources.
+add_library(khdays-kh2-sequence STATIC
+    ../assets/src/kh2_bar.cpp
+    ../assets/src/kh2_sequence.cpp
+    ../assets/src/dds.cpp
+    ../assets/src/image.cpp
+    gfx/kh2_sequence.cpp
+    host/render/kh2_sequence_asset.cpp)
+target_include_directories(khdays-kh2-sequence PUBLIC ../assets/include)
+target_include_directories(khdays-kh2-sequence PRIVATE "${stb_SOURCE_DIR}")
+target_compile_options(khdays-kh2-sequence PRIVATE /W4 /std:c++20 /EHsc)
+
+add_library(khdays-kh2-gauge STATIC ui/kh2_hp_gauge.cpp ui/kh2_hp_config.cpp ui/kh2_enemy_gauge.cpp)
+target_link_libraries(khdays-kh2-gauge PUBLIC khdays-kh2-sequence khdays-hud-settings)
+target_compile_options(khdays-kh2-gauge PRIVATE /W4 /std:c++20 /EHsc)
+
+add_library(khdays-kh2-portrait STATIC ui/kh2_portrait.cpp)
+target_link_libraries(khdays-kh2-portrait PUBLIC khdays-kh2-sequence)
+target_compile_options(khdays-kh2-portrait PRIVATE /W4 /std:c++20 /EHsc)
+
+add_executable(khdays-kh2-portrait-test tests/kh2_portrait_test.cpp ui/kh2_portrait_hud.cpp ui/kh2_party_hud.cpp ui/kh2_hud_labels.cpp)
+target_link_libraries(khdays-kh2-portrait-test PRIVATE khdays-kh2-portrait khdays-kh2-gauge)
+target_compile_options(khdays-kh2-portrait-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-portrait COMMAND khdays-kh2-portrait-test)
+
+add_executable(khdays-pause-target-test tests/pause_target_test.cpp ../assets/src/graphics2d.cpp)
+target_include_directories(khdays-pause-target-test PRIVATE ../assets/include)
+target_compile_options(khdays-pause-target-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-pause-target COMMAND khdays-pause-target-test)
+add_executable(khdays-pause-layout-test tests/pause_layout_test.cpp ../assets/src/graphics2d.cpp)
+target_include_directories(khdays-pause-layout-test PRIVATE ../assets/include)
+target_compile_options(khdays-pause-layout-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-pause-layout COMMAND khdays-pause-layout-test)
+add_executable(khdays-information-maps-test tests/information_maps_test.cpp ui/hud_options.cpp
+    tests/information_input_fixture.cpp
+    "${KHDAYS_GEN}/rewritten/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_Hud_IsPanelOpen.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_PushMapSnapshot.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_PopMapSnapshot.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_SetPanelMode.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main001c.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main0014.c"
+    "${KHDAYS_GEN}/rewritten/src/overlays/scenes/ov002_field/Ov002_UpdatePanelScroll.c")
+target_include_directories(khdays-information-maps-test PRIVATE ../assets/include compat "${KHDAYS_GEN}")
+target_compile_options(khdays-information-maps-test PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:/W4;/EHsc>" "$<$<COMPILE_LANGUAGE:C>:/W0;/Zp4;/std:c17>")
+set_property(TARGET khdays-information-maps-test PROPERTY CXX_STANDARD 20)
+target_link_libraries(khdays-information-maps-test PRIVATE khdays-hud-settings)
+add_test(NAME khdays-information-maps COMMAND khdays-information-maps-test)
+add_test(NAME khdays-information-maps-disabled COMMAND khdays-information-maps-test --disabled)
+
+add_executable(khdays-kh2-sequence-test tests/kh2_sequence_test.cpp)
+target_link_libraries(khdays-kh2-sequence-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-sequence-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-sequence COMMAND khdays-kh2-sequence-test)
+
+add_executable(khdays-kh2-hud-test tests/kh2_hp_hud_test.cpp ui/kh2_hp_hud.cpp)
+target_link_libraries(khdays-kh2-hud-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-hud-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-hud COMMAND khdays-kh2-hud-test)
+
+add_executable(khdays-kh2-enemy-test tests/kh2_enemy_test.cpp ui/kh2_enemy_hud.cpp)
+target_link_libraries(khdays-kh2-enemy-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-enemy-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-enemy COMMAND khdays-kh2-enemy-test)
+add_test(NAME khdays-kh2-enemy-missing COMMAND khdays-kh2-enemy-test --missing)
+add_test(NAME khdays-kh2-enemy-legacy COMMAND khdays-kh2-enemy-test --no-config)
+add_test(NAME khdays-kh2-enemy-reference COMMAND khdays-kh2-enemy-test --reference)
+
+add_executable(khdays-heart-points-test tests/heart_points_test.cpp ui/heart_points.cpp)
+target_link_libraries(khdays-heart-points-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-heart-points-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-heart-points COMMAND khdays-heart-points-test)
+add_test(NAME khdays-heart-points-missing COMMAND khdays-heart-points-test --missing)
+add_test(NAME khdays-heart-points-disabled COMMAND khdays-heart-points-test --disabled)
+add_test(NAME khdays-heart-points-pickup-loop COMMAND khdays-heart-points-test --pickup-loop)
+add_test(NAME khdays-heart-points-final-tick COMMAND khdays-heart-points-test --final-tick)
+add_test(NAME khdays-heart-points-native-chain COMMAND khdays-heart-points-test --native-chain)
+
+add_executable(khdays-kh2-reticles-test tests/kh2_reticles_test.cpp ui/kh2_reticles.cpp)
+add_executable(khdays-kh2-information-test tests/kh2_information_test.cpp ui/kh2_information.cpp)
+target_link_libraries(khdays-kh2-information-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-information-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-information COMMAND khdays-kh2-information-test)
+add_test(NAME khdays-kh2-information-missing COMMAND khdays-kh2-information-test --missing)
+add_test(NAME khdays-kh2-information-legacy COMMAND khdays-kh2-information-test --legacy)
+add_executable(khdays-minimap-test tests/minimap_test.cpp ui/minimap_config.cpp)
+target_link_libraries(khdays-minimap-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-minimap-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-minimap COMMAND khdays-minimap-test)
+
+add_executable(khdays-kh2-mission-panel-test tests/kh2_mission_panel_test.cpp)
+target_link_libraries(khdays-kh2-mission-panel-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-mission-panel-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-mission-panel COMMAND khdays-kh2-mission-panel-test)
+add_test(NAME khdays-kh2-mission-panel-missing COMMAND khdays-kh2-mission-panel-test --missing)
+add_test(NAME khdays-kh2-mission-panel-legacy COMMAND khdays-kh2-mission-panel-test --legacy)
+add_test(NAME khdays-kh2-mission-panel-disabled COMMAND khdays-kh2-mission-panel-test --disabled)
+
+add_executable(khdays-kh2-obtained-test tests/kh2_obtained_test.cpp ui/kh2_obtained.cpp)
+target_link_libraries(khdays-kh2-obtained-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-obtained-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-obtained COMMAND khdays-kh2-obtained-test)
+add_test(NAME khdays-kh2-obtained-missing COMMAND khdays-kh2-obtained-test --missing)
+add_test(NAME khdays-kh2-obtained-legacy COMMAND khdays-kh2-obtained-test --legacy)
+target_link_libraries(khdays-kh2-reticles-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-kh2-reticles-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-reticles COMMAND khdays-kh2-reticles-test)
+add_test(NAME khdays-kh2-reticles-missing COMMAND khdays-kh2-reticles-test --missing)
+add_test(NAME khdays-kh2-reticles-optional COMMAND khdays-kh2-reticles-test --optional)
+add_test(NAME khdays-kh2-reticles-partial COMMAND khdays-kh2-reticles-test --partial)
+add_test(NAME khdays-kh2-reticles-legacy COMMAND khdays-kh2-reticles-test --legacy)
+
+add_executable(khdays-kh2-limit-timing-test tests/kh2_limit_timing_test.c)
+target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/include")
+target_compile_options(khdays-kh2-limit-timing-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-kh2-limit-timing COMMAND khdays-kh2-limit-timing-test)
+
+add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c)
+target_link_libraries(khdays-kh2-gpu-test PRIVATE khdays-kh2-gauge khdays-gpu khdays-gfx SDL3::SDL3)
+target_compile_options(khdays-kh2-gpu-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
+set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
+
+add_executable(khdays-kh2-sequence-viewer tools/kh2_sequence_viewer.cpp host/render/png_io.c)
+target_include_directories(khdays-kh2-sequence-viewer PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-kh2-sequence-viewer PRIVATE khdays-kh2-gauge SDL3::SDL3)
+target_compile_options(khdays-kh2-sequence-viewer PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 
 # The input layer -- the control profile and its settings file, the
 # bindings, the devices, the settings menu (its FPS and ping displays in the
@@ -313,7 +451,7 @@ add_library(khdays-host-input STATIC
     ../assets/src/font.cpp       # the port's NFTR decoder
     ../assets/src/message.cpp)   # its LZ decompression
 target_include_directories(khdays-host-input PRIVATE ../assets/include "${stb_SOURCE_DIR}" "${KHDAYS_MENU_FONT_DIR}")
-target_link_libraries(khdays-host-input PUBLIC SDL3::SDL3 khdays-host-imgui)
+target_link_libraries(khdays-host-input PUBLIC SDL3::SDL3 khdays-host-imgui khdays-hud-settings)
 target_compile_options(khdays-host-input PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
@@ -470,7 +608,9 @@ add_executable(khdays-native
     host/render/gpu_present.c
     host/render/gpu_raster3d.c
     host/render/gfx_render.c
+    host/render/kh2_sequence_gpu.c
     host/render/onescreen.c               # the one picture's situation and composition
+    host/render/onescreen_images.c
     host/screens/layout_screen.c           # the port's screens drawn from a mod's pieces
     host/screens/save_screen.c             # the port's save list on the screen
     host/screens/cine_screen.c             # MODO CINE's list as the HD theater's chapters
@@ -512,6 +652,21 @@ add_executable(khdays-native
     ui/parts.c
     ui/bg.c
     ui/hud.c
+    ui/kh2_hp_hud.cpp
+    ui/kh2_enemy_hud.cpp
+    ui/heart_points.cpp
+    ui/hud_options.cpp
+    tools/heart_model_export.cpp
+    ../assets/src/animation.cpp
+    ui/kh2_reticles.cpp
+    ui/kh2_information.cpp
+    ui/kh2_obtained.cpp
+    ui/kh2_mission_panel.cpp
+    ui/minimap.cpp
+    ui/minimap_config.cpp
+    ui/kh2_party_hud.cpp
+    ui/kh2_hud_labels.cpp
+    ui/kh2_portrait_hud.cpp
     ui/badges.c                    # the badges' icons on the mission panel
     ui/crowns.c                    # the crowns on the story's day list
     ui/mission_list.c              # the camp's mission list from the game's files
@@ -586,8 +741,8 @@ const int khdays_static_plugin_count = @KHDAYS_STATIC_COUNT@;
 " @ONLY)
 # the frame decoder's state (runtime/movies/video.c)
 set_source_files_properties(runtime/movies/video.c PROPERTIES INCLUDE_DIRECTORIES "${MOBICLIP_PORTABLE}")
-# the port's wording holds the game's own texts in UTF-16 literals, written in UTF-8
-set_source_files_properties(runtime/core/text_patches.cpp PROPERTIES COMPILE_OPTIONS "/utf-8")
+# Game text and translated UI labels use Unicode literals in UTF-8 source files.
+set_source_files_properties(runtime/core/text_patches.cpp host/screens/ui_text.c PROPERTIES COMPILE_OPTIONS "/utf-8")
 # khdays-studio's mission builder, compiled in as the studio builds it: its headers by their own paths
 set(KHDAYS_MISSION_BUILDER runtime/missions/build.cpp ../studio/core/missions/mission_build.cpp
     ../studio/core/missions/missions.cpp ../studio/core/missions/mission_db.cpp
@@ -609,7 +764,7 @@ target_compile_options(khdays-native PRIVATE
 # ufbx, as it is: third-party, not held to the port's warnings.
 add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
-target_link_libraries(khdays-native PRIVATE khdays-lua)
+target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-kh2-portrait)
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3 dbghelp winmm delayimp
                       mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp)
 # The DS's own addresses are held, inaccessible, first thing in main
@@ -733,7 +888,7 @@ add_test(NAME khdays-mod-polygon COMMAND khdays-mod-polygon-test)
 # The one-screen picture: the compositions' places and the port's own file, the pass's steps and the 2D
 # apart from the 3D, on the CPU.
 add_executable(khdays-onescreen-test tests/onescreen_test.c ui/composition.c ui/situation.c ui/situation_decide.c
-                                     host/render/png_io.c)
+                                     host/render/png_io.c host/render/onescreen_images.c)
 target_include_directories(khdays-onescreen-test PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(khdays-onescreen-test PRIVATE khdays-gfx SDL3::SDL3)
 target_compile_definitions(khdays-onescreen-test PRIVATE "KHDAYS_PORT_COMPOSITIONS_FILE=\"${KHDAYS_PORT_COMPOSITIONS}\""
@@ -875,7 +1030,7 @@ add_test(NAME khdays-sound COMMAND khdays-sound-test "${KHDAYS_ARM7_BIN_FIRST}")
 # Recorded frame packages (KHDAYS_RECORD_FRAMES, in saves/frames: the
 # player's game data, never in the repository) checked against the pictures
 # the game showed; skipped without recordings.
-add_executable(khdays-render-test tests/render_test.c host/render/gpu_raster3d.c host/render/gpu_hd.c runtime/display/frame_package.c)
+add_executable(khdays-render-test tests/render_test.c host/render/gpu_raster3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
 target_link_libraries(khdays-render-test PRIVATE khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-render-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-render COMMAND khdays-render-test "${CMAKE_CURRENT_SOURCE_DIR}/../saves/frames")
@@ -950,7 +1105,8 @@ khdays_fuzz_target(mods fuzz/fuzz_mods.c runtime/scripts/manifest.c runtime/scri
 # The static analysis (port/tools/analyze.py, in the Release tree's tests): the port's own sources of
 # each target compiled again with /analyze and their own flags, not linked, built only when asked;
 # not the decompilation's rewritten files, not the third parties'.
-set(KHDAYS_ANALYZED khdays-native khdays-gpu khdays-sound khdays-gfx khdays-host-input khdays-server)
+set(KHDAYS_ANALYZED khdays-native khdays-gpu khdays-sound khdays-gfx khdays-host-input khdays-server
+                   khdays-hud-settings khdays-kh2-sequence khdays-kh2-gauge khdays-kh2-portrait)
 set(KHDAYS_ANALYZE_TARGETS "")
 foreach(target IN LISTS KHDAYS_ANALYZED)
     get_target_property(sources ${target} SOURCES)

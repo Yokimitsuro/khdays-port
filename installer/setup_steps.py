@@ -238,6 +238,7 @@ def made_by(step: str) -> str:
     kept apart (`menu_tools_to_make`). An update whose tools differ makes them again."""
     if step == "hd-menus":
         parts = [repr(HD_MENU_TOOLS).encode()] + [(tool_folders()["hd"] / t).read_bytes() for t, _ in HD_MENU_TOOLS]
+        parts += [(HERE.parent / rel).read_bytes() for rel in HD_MENU_SUPPORT]
     else:
         parts = [tool_made_by(t, template).encode() for t, template in HD_VIDEO_TOOLS]
         parts.append((HERE.parent / SCENE_MAP).read_bytes())
@@ -263,6 +264,8 @@ def tool_made_by(tool: str, template: list[str]) -> str:
         source = path.read_bytes()
         parts.append(source)
         waiting += [module + ".py" for module in IMPORTS.findall(source.decode("utf-8"))]
+    if tool in ("kh2_gauge.py", "heart_points.py"):
+        parts += [(HERE.parent / rel).read_bytes() for rel in HD_MENU_SUPPORT]
     return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
@@ -483,7 +486,18 @@ HD_MENU_TOOLS = [
     ("save_screen.py", ["{ddd}", "{mare}"]),
     ("ddd_camp.py", ["{ddd}", "{mare}", "{settings}"]),
     ("kh2_fonts.py", ["{kh2}"]),
+    ("kh2_gauge.py", ["{kh2_gauge}", "--settings", "{gauge_settings}"]),
+    ("heart_points.py", ["--settings", "{gauge_settings}"]),
+    ("minimap_icons.py", ["--settings", "{minimap_settings}", "--kh2", "{kh2}"]),
 ]
+HD_MENU_SUPPORT = (
+    "port/tools/kh2_center_gauge.py",
+    "port/tools/kh2_add_limit_gauge.py",
+    "port/tools/kh2_add_limit_marker.py",
+    "port/tools/kh2_add_party_gauges.py",
+    "docs/examples/kh2-gauge.json",
+    "port/tools/heart_model_export.cpp",
+)
 HD_VIDEO_TOOLS = [
     ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles", "--music"]),
 ]
@@ -580,6 +594,7 @@ def tool_arguments(template: list[str], places: dict[str, Path]) -> list[str]:
 def tools_digest(repository: Path) -> str:
     """What the trace depends on: the HD tools and the scene map, as they are in `repository`."""
     parts = [(repository / "tools" / "hd" / t).read_bytes() for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS]
+    parts += [(repository / rel).read_bytes() for rel in HD_MENU_SUPPORT]
     return hashlib.sha256(b"".join(parts + [(repository / SCENE_MAP).read_bytes()])).hexdigest()
 
 
@@ -588,8 +603,15 @@ def _inputs_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--settings", type=Path, required=True, help="<1.5+2.5>/Image/SettingMenu.hed_out/original")
     p.add_argument("--ddd", type=Path, required=True, help="<2.8>/Image/dt (or en)/kh3d_first.hed_out")
     p.add_argument("--kh2", type=Path, required=True, help="<1.5+2.5>/Image/dt (or en)/kh2_first.hed_out")
+    p.add_argument("--kh2-gauge", type=Path, help="kh2_fifth.hed_out (default: beside --kh2)")
     p.add_argument("--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt (or EPIC/.../en)")
     p.add_argument("--data", type=Path, default=HERE.parent / "data" / "extracted", help="the game's extracted data")
+    p.add_argument(
+        "--native",
+        type=Path,
+        default=HERE.parent / "build" / "port" / "obj-release-x64" / "khdays-native.exe",
+        help="a built khdays-native.exe (heart_points.py converts the heart's model with it)",
+    )
     p.add_argument("--out", type=Path, default=INPUTS_FILE)
 
 
@@ -610,6 +632,10 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         "hand": hand,
         "movies": args.movies,
     }
+    kh2_gauge = args.kh2_gauge or args.kh2.with_name("kh2_fifth.hed_out")
+    places["kh2_gauge"] = kh2_gauge
+    places["gauge_settings"] = Path("no-existing-gauge-settings")
+    places["minimap_settings"] = Path("no-existing-minimap-settings")
     # the archives the sources are extractions of, and how a file there names its entry
     sources = [
         ("Mare", args.mare, "original"),
@@ -618,6 +644,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         ("kh3d_first", args.ddd / "remastered", "remastered"),
         ("kh2_first", args.kh2 / "original", "original"),
         ("kh2_first", args.kh2 / "remastered", "remastered"),
+        ("kh2_fifth", kh2_gauge / "original", "original"),
+        ("kh2_fifth", kh2_gauge / "remastered", "remastered"),
         ("movies", args.movies, "plain"),
     ]
     entries: dict[str, set[str]] = {}
@@ -625,7 +653,11 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         root = Path(temp)
         # the tools in the repository's layout, the game's data beside them (read only: a junction to
         # data/extracted alone, so nothing they write reaches the repository's data or mods)
-        copied = [f"tools/hd/{t}" for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS] + ["tools/decompress_data.py", SCENE_MAP]
+        copied = [f"tools/hd/{t}" for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS] + [
+            "tools/decompress_data.py",
+            SCENE_MAP,
+            *HD_MENU_SUPPORT,
+        ]
         for rel in copied:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repository / rel, root / rel)
@@ -648,6 +680,11 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
                 ]
                 if (tool, template) in HD_MENU_TOOLS:
                     command_line += ["--mod", "trace"]
+                # as build-hd runs them: the extraction, and the executable the heart's model is converted with
+                if tool in DATA_TOOLS:
+                    command_line += ["--data", str(data_folder(root))]
+                if tool == "heart_points.py":
+                    command_line += ["--native", str(args.native.resolve())]
                 subprocess.run(command_line, cwd=root, check=True, env={**os.environ, "KHDAYS_TRACE_LOG": str(log)})
             for line in log.read_text(encoding="utf-8").splitlines():
                 kind, _, raw = line.partition("\t")
@@ -692,7 +729,12 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
 # videos are found where the collection has them.
 KH2_EXE = "KINGDOM HEARTS II FINAL MIX.exe"
 COLLECTION_ARCHIVES = {
-    "1.5+2.5": {"Mare": "Image/Mare", "SettingMenu": "Image/SettingMenu", "kh2_first": "Image/dt/kh2_first"},
+    "1.5+2.5": {
+        "Mare": "Image/Mare",
+        "SettingMenu": "Image/SettingMenu",
+        "kh2_first": "Image/dt/kh2_first",
+        "kh2_fifth": "Image/dt/kh2_fifth",
+    },
     "2.8": {"kh3d_first": "Image/dt/kh3d_first"},
 }
 MOVIES = "STEAM/Mare/MOVIE/Days/dt"
@@ -722,7 +764,15 @@ def movies_folder(folder: Path) -> Path:
     return folder / MOVIES
 
 
-DATA_TOOLS = {"theater_mission.py", "theater_cine.py", "save_screen.py", "ddd_camp.py", "kh2_fonts.py"}  # take --data
+DATA_TOOLS = {
+    "theater_mission.py",
+    "theater_cine.py",
+    "save_screen.py",
+    "ddd_camp.py",
+    "kh2_fonts.py",
+    "minimap_icons.py",
+    "heart_points.py",
+}  # take --data
 
 MESSAGES.update(
     {
@@ -925,6 +975,9 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         for tool, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS:
             (root / "tools" / "hd").mkdir(parents=True, exist_ok=True)
             shutil.copy2(tools["hd"] / tool, root / "tools" / "hd" / tool)
+        for rel in HD_MENU_SUPPORT:
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(HERE.parent / rel, root / rel)
         shutil.copy2(tools["rom"] / "decompress_data.py", root / "tools")
         (root / SCENE_MAP).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(HERE.parent / SCENE_MAP, root / SCENE_MAP)
@@ -935,6 +988,9 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             "ddd": src / "kh3d_first.hed_out",
             "kh2": src / "kh2_first.hed_out",
             "hand": src / "kh2_first.hed_out" / "remastered" / HAND / HAND_ASSET,
+            "kh2_gauge": src / "kh2_fifth.hed_out",
+            "gauge_settings": install / "mods" / HD_MOD / "layouts" / "gauge",
+            "minimap_settings": install / "mods" / HD_MOD / "layouts" / "minimap",
         }
         runs = [(t, template) for t, template in HD_MENU_TOOLS if t in menus] + (HD_VIDEO_TOOLS if videos else [])
         # the collections' files these tools read (their arguments' archives), made from their archives
@@ -965,6 +1021,9 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
                 line += ["--mod", HD_MOD]
             if tool in DATA_TOOLS:
                 line += ["--data", str(data)]
+            if tool == "heart_points.py":
+                # This tool runs below setup/hd-work, away from the installed exporter.
+                line += ["--native", str(install / "khdays-native.exe")]
             return line
 
         log = install / "setup" / HD_ERRORS

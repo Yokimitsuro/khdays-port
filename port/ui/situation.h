@@ -49,6 +49,8 @@ enum {
                               * screen's top left ("HOLOMEMORIA", a challenge's "RELOJ PARADO") */
     KHDAYS_ST_LOWER_SHOWN,   /* with the 3D on both screens, the lower screen shows a picture: Sora's
                               * memories under the game's noise (host/render/onescreen.c) */
+    KHDAYS_ST_MISSION_PANEL_MOD,
+    KHDAYS_ST_INFORMATION_MOD, /* a sequence replaces the native information crops */
     KHDAYS_STATES
 };
 

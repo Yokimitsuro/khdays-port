@@ -4,6 +4,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+int khdays_hd_font_observe(int enabled);
+int khdays_hd_font_layout_override(int mode);
 int khdays_hd_font_map_ready(const char *resource);
 void khdays_hd_font_bind_charmap(const char *resource, const uint32_t *codes, int count);
 int khdays_hd_font_has(const char *resource);

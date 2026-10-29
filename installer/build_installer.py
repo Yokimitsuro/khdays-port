@@ -46,6 +46,15 @@ TOOLS = [
     "tools/hd/save_screen.py",
     "tools/hd/ddd_camp.py",
     "tools/hd/kh2_fonts.py",
+    "tools/hd/kh2_gauge.py",
+    "tools/hd/minimap_icons.py",
+    "tools/hd/heart_points.py",
+    "port/tools/heart_model_export.cpp",
+    "port/tools/kh2_center_gauge.py",
+    "port/tools/kh2_add_limit_gauge.py",
+    "port/tools/kh2_add_limit_marker.py",
+    "port/tools/kh2_add_party_gauges.py",
+    "docs/examples/kh2-gauge.json",
     "port/movies/hd_scenes.txt",  # theater_movies.py's scene map: the scene videos it makes
 ]
 # the installer's own (its tests and this script stay in the repository)

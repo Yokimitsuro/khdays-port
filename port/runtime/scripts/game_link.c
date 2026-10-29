@@ -33,6 +33,9 @@ extern void Ov002_PauseMissionScene(void);
 extern int GetLanguage(void);
 extern void Ov000_TickMenuLoop(void);
 extern void GameState_SetField(unsigned int field, unsigned int bits, unsigned int value);
+extern int func_ov022_020ad7b0(KhdaysRef actor);
+extern int Ov022_ComputeChipGauge(KhdaysRef block);
+extern int Ov022_GetGlobal34(void);
 int khdays_overlay_loaded(int id); /* runtime/core/overlays.c */
 
 #define TITLE_SCENE 1u
@@ -281,6 +284,88 @@ const char *khdays_link_set_actor_hp(unsigned actor, int hp)
     }
     Ov022_ActorSetHp(actor, hp);
     return NULL;
+}
+
+int khdays_link_player_low_hp(void)
+{
+    const unsigned actor = player_actor();
+    return actor != 0 && func_ov022_020ad7b0(actor);
+}
+
+int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *low_hp)
+{
+    /* Ov002_OpenPanelScreen keeps the already mapped nId/nIcon pairs at +0x130.
+     * Ov002_CreateAndRestoreHud puts the local player first even in multiplayer. */
+    if (slot < 0 || slot >= 4 || !khdays_overlay_loaded(OV_FIELD) || !khdays_overlay_loaded(OV_BATTLE) ||
+        khdays_link_scene(NULL) != FIELD_SCENE || !khdays_game_ram(rd32(PLAYERS))) {
+        return 0;
+    }
+    const unsigned context = rd32(0x0207f614u);
+    if (!khdays_game_ram(context)) {
+        return 0;
+    }
+    const unsigned record = context + 0x130u + (unsigned)slot * 16u;
+    const int member = (int)rd32(record), portrait = (int)rd32(record + 4u);
+    if (member < 0 || member >= 4 || portrait < 0 || portrait >= 21) {
+        return 0;
+    }
+    const unsigned actor = (unsigned)GetEntryField20ByIndex(member);
+    if (!khdays_game_ram(actor)) {
+        return 0;
+    }
+    khdays_link_entity_hp(KHDAYS_W(actor), hp, maximum);
+    if (*maximum <= 0) {
+        return 0;
+    }
+    *icon = portrait;
+    *low_hp = func_ov022_020ad7b0(actor) != 0;
+    return 1;
+}
+
+int khdays_link_player_limit_hp(void)
+{
+    const unsigned actor = player_actor();
+    const unsigned block = actor + 0x22f8u; /* Ov022_UpdateSubsystems */
+    if (!actor || !khdays_game_ram(rd32(block + 0x328u)))
+        return 0;
+    return Ov022_ComputeChipGauge(block);
+}
+
+int khdays_link_limit_available(void)
+{
+    if (!khdays_overlay_loaded(OV_FIELD) || khdays_link_scene(NULL) != FIELD_SCENE)
+        return 0;
+    const unsigned context = rd32(0x0207f618u);
+    /* Ov022_UpdateSubsystems -> Ov002_SetPanelMode_2 arms LIMIT's tag 0x1a and stores +0x2c. */
+    return khdays_game_ram(context) && khdays_game_ram(context + 0x2fu) && rd32(context + 0x2cu) != 0;
+}
+
+int khdays_link_mission_target(int *entry, int *primary)
+{
+    if (!khdays_overlay_loaded(OV_FIELD) || khdays_link_scene(NULL) != FIELD_SCENE)
+        return 0;
+    const unsigned context = rd32(0x0207f630u); /* Ov002_QueuePanelGraphics / Ov002_Field_GetWordAC */
+    if (!khdays_game_ram(context) || !khdays_game_ram(context + 0xafu))
+        return 0;
+    const int selected = (int)rd32(context + 0xacu);
+    if (selected < 0 || selected > 0x3d)
+        return 0;
+    *primary = selected == 0;
+    *entry = selected == 0 ? 11 : selected + 0x2f;
+    return 1;
+}
+
+int khdays_link_player_limit_clock(struct KhdaysLinkLimitClock *clock)
+{
+    const unsigned actor = player_actor();
+    const unsigned block = actor + 0x22f8u;
+    if (!actor || !khdays_game_ram(rd32(block + 0x328u)))
+        return 0;
+    clock->elapsed = (int)rd32(block + 0x32cu);
+    clock->outward = (int)rd32(block + 0x338u);
+    clock->start_hp = *(const volatile unsigned short *)KHDAYS_W(block + 0x336u);
+    clock->step = Ov022_GetGlobal34();
+    return 1;
 }
 
 void khdays_link_entity_hp(const void *entity, int *hp, int *max)

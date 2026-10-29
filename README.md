@@ -206,9 +206,9 @@ Your choices are kept in `saves/settings.ini`, a text file you may also edit
 by hand (`KHDAYS_SETTINGS=<path>` uses another file). If the port cannot read
 it, it starts with the defaults and keeps the old file as `settings.ini.bad`.
 
-**Enhancements** (Settings → Enhancements; all off by default, so the game
-plays as on the DS until you switch one on). Each does only what the game's
-own controls can do, through the same parts of the game:
+**Enhancements** (Settings → Enhancements). The control enhancements below
+are off by default. Each uses the game's own controls through the same parts
+of the game:
 
 - **Analog camera:** the right stick turns the field camera and tilts it, as
   far as the tilt of the stick, at up to the game's own turning speed
@@ -242,6 +242,17 @@ own controls can do, through the same parts of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+
+The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
+sequences, the pause-menu target, and HUD/control during INFORMATION messages.
+All but the HD fonts are off until the player turns them on. These switches
+require the corresponding enabled mod assets and preserve native fallback when
+an asset is unavailable. Mission-panel visibility and its gameplay
+and pause anchors are saved here too. **UI padding**, off by default, removes
+the outer inset from an active HD HUD in single-screen mode. Changes use
+`saves/settings.ini`; they never rewrite mod JSON. See the
+[HUD preference reference](docs/KH2_SEQUENCES.md#live-enhancements-preferences)
+for defaults, precedence, and the INFORMATION transition exception.
 
 The **Kingdom Hearts II layout** (Settings → Gamepad preset; Kingdom Hearts
 III uses the same buttons for these actions) puts attack on the bottom face
@@ -853,6 +864,9 @@ the connection error -- the port boots it again in the same window.
 | `tools/` | ROM verification, data extraction and decompression; `hd/` the HD mods made from the player's HD collections; `tests/` their tests (`python -m unittest`) |
 | `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
 | `external/khdays-decomp` | The decompilation, pinned; updated deliberately and tested |
+
+KH2's local-asset sequence viewer, renderer validation, and HP gauge mapping are
+documented in [`docs/KH2_SEQUENCES.md`](docs/KH2_SEQUENCES.md).
 
 ### Checking the port
 

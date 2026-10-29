@@ -68,19 +68,24 @@ int khdays_bg_cell_shows(int engine, const KhdaysBgLayer *l, uint32_t entry)
     return 0;
 }
 
-const char *khdays_bg_origin(int engine, uint32_t address)
+int khdays_bg_source(int engine, uint32_t address, const char **file, uint32_t *offset, uint32_t *run)
 {
     const uint8_t *at = khdays_bg_memory(engine, address);
-    const char *file;
-    u32 offset, run;
     if (at == NULL) {
-        return NULL;
+        return 0;
     }
     for (int bank = 0; bank < KHDAYS_VRAM_BANKS; ++bank) {
         const uint8_t *base = khdays_vram_bank(bank);
         if (base != NULL && at >= base && at < base + khdays_vram_bank_size[bank]) {
-            return khdays_origin_of_bank(bank, (u32)(at - base), &file, &offset, &run) ? file : NULL;
+            return khdays_origin_of_bank(bank, (u32)(at - base), file, offset, run);
         }
     }
-    return NULL;
+    return 0;
+}
+
+const char *khdays_bg_origin(int engine, uint32_t address)
+{
+    const char *file;
+    uint32_t offset, run;
+    return khdays_bg_source(engine, address, &file, &offset, &run) ? file : NULL;
 }

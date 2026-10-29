@@ -56,6 +56,21 @@ int khdays_link_player_hp(int *hp, int *max);
  * (func_ov022_02088218: its actor moved with its child, its position +0x48c, its motion reset after the
  * move); NULL when done, else why not. */
 const char *khdays_link_set_position(const float at[3]);
+/* The game's low-HP predicate, including ability 0x42's exception. */
+int khdays_link_player_low_hp(void);
+/* Live HUD order, including mission mode: sheet icon and the actor belonging to a displayed slot. */
+int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *low_hp);
+/* The vanilla limit threshold in HP, including ability, use count and battle settings; 0 disabled. */
+int khdays_link_player_limit_hp(void);
+/* The native LIMIT label's armed state, independent of its flashing tile artwork. */
+int khdays_link_limit_available(void);
+/* Active lower-panel target resource; negative native selection means the ordinary world panel. */
+int khdays_link_mission_target(int *entry, int *primary);
+/* Original limit clock and entry HP, before the DS HUD rounds its position to pixels. */
+struct KhdaysLinkLimitClock {
+    int elapsed, outward, start_hp, step;
+};
+int khdays_link_player_limit_clock(struct KhdaysLinkLimitClock *clock);
 /* Through Ov022_ActorSetHp, as the game's own hits and cures do; NULL when done, else why not ("no player", or
  * "not now" while the field loads: its panel, whose gauge the routine sets, is not there yet). */
 const char *khdays_link_set_player_hp(int hp);

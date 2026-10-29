@@ -25,6 +25,12 @@ ByteAddressBuffer verts : register(t1, space0);
 ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then polygon indices
 ByteAddressBuffer vram : register(t3, space0);         // the texture slots (512 KB), then the palette slots (96 KB)
 ByteAddressBuffer hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
+ByteAddressBuffer sequences : register(t5, space0); // retained native sequences in this 3D list
+#define KSI_SHADER
+#include "../gfx/sequence_image.h"
+uint seq_word(uint program, uint at) { return sequences.Load((program*KSI_WORDS+at)*4u); }
+uint seq_hd_word(uint at) { return hd.Load(at); }
+#include "kh2_sequence_sample.hlsli"
 
 [[vk::image_format("r32ui")]] RWTexture2D<uint> out_color : register(u0, space1);
 [[vk::image_format("r32ui")]] RWTexture2D<uint> out_attr : register(u1, space1);
@@ -503,11 +509,46 @@ float texel_footprint(Polygon p, Attrs at)
     }
 }
 
+// Blend native sequence elements with the scene, before any DS alpha quantization or alpha test.
+void plot_sequence(Polygon p, inout Pixel px, Attrs at, uint depth) {
+    const uint program=p.pltt/4u;
+    if (program>=KSI_3D_PROGRAMS || seq_word(program,KSI_OUTPUT)!=p.pltt || seq_word(program,KSI_COUNT)>KSI_MAX_QUADS) return;
+    const float w=1.0f/at.iw;
+    const float opacity=(float)((p.attr>>16)&31u)/31.0f*saturate(at.a*w);
+    const float2 sample_at=float2(at.s,at.t)*w/128.0f*
+                       float2(seq_word(program,KSI_WIDTH),seq_word(program,KSI_HEIGHT));
+    const float to8=fine!=0u ? 1.0f : 255.0f/63.0f;
+    float4 colour=float4(float3(px.r,px.g,px.b)*to8,(float)px.a*255.0f/31.0f);
+    uint mask=0u; bool touched=false;
+    for (uint q=0u; q<seq_word(program,KSI_COUNT); ++q) {
+        float4 src; uint blend;
+        if (!seq_sample(program,q,sample_at,mask,src,blend)) continue;
+        src.a*=opacity;
+        if (src.a<=0.0f || (blend!=0u && all(src.rgb<=0.0f))) continue;
+        colour=seq_blend(colour,src,blend);
+        touched=true;
+    }
+    if (!touched) return;
+    const int3 rgb=(int3)round(colour.rgb/to8);
+    px.r=rgb.r; px.g=rgb.g; px.b=rgb.b;
+    px.a=(int)round(colour.a*31.0f/255.0f);
+    if ((p.attr&0x800u)!=0u && ((uint)p.flags&0x40u)==0u) px.depth=depth;
+    px.trans_id=(p.attr>>24)&63u;
+    px.translucent=1u;
+    px.fog&=(p.attr>>15)&1u;
+    px.over2d=((uint)p.flags>>3)&1u;
+}
+
 // One pixel of polygon `p` (gpu3d.c plot).
 void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
 {
     precise float w = 1.0f / at.iw;
     const uint depth = depth_of(at.z, w, wbuffer);
+    const bool marker=((uint)p.flags&0x40u)!=0u;
+    if (((uint)p.flags & 0x20u)!=0u) {
+        if (marker || depth<px.depth) plot_sequence(p,px,at,depth);
+        return;
+    }
     const uint mode = (p.attr >> 4) & 3u;
     const uint id = (p.attr >> 24) & 63u;
     int alpha = (int)((p.attr >> 16) & 31u);
@@ -538,7 +579,9 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     gv = clamp(gv, 0, cmax);
     bv = clamp(bv, 0, cmax);
 
-    if ((p.attr & 0x4000u) != 0u) {
+    if (marker) {
+        pass = true;
+    } else if ((p.attr & 0x4000u) != 0u) {
         const int diff = (int)depth - (int)px.depth;
         pass = diff >= -0x200 && diff <= 0x200;
     } else {
@@ -641,7 +684,7 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
             px.b = b;
             px.a = a;
         }
-        if ((p.attr & 0x800u) != 0u) {
+        if ((p.attr & 0x800u) != 0u && !marker) {
             px.depth = depth;
         }
         px.trans_id = id;
@@ -653,7 +696,7 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
         px.g = gg;
         px.b = b;
         px.a = 31;
-        px.depth = depth;
+        if (!marker) px.depth = depth;
         px.opaque_id = id;
         px.translucent = 0u;
         px.fog = (p.attr >> 15) & 1u;
@@ -794,6 +837,7 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     tile = min(id.y / scale / 8u, tiles_y - 1u) * tiles_x + min(id.x / scale / 8u, tiles_x - 1u);
     first = tiles.Load(tile * 4u);
     last = min(tiles.Load((tile + 1u) * 4u), entries);
+    bool marker_started=false;
     for (uint k = first; k < last; ++k) {
         const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
@@ -803,6 +847,10 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         Attrs at;
         uint edge;
         if (cover(p, x, y, at, edge)) {
+            if (((uint)p.flags&0x40u)!=0u && !marker_started) {
+                px.trans_id=0xffu; // The first marker must not share a translucent ID with the world.
+                marker_started=true;
+            }
             plot(p, px, at, edge, wbuffer);
         }
     }
