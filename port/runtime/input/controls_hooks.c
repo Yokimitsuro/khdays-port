@@ -213,13 +213,6 @@ static int mouse_share(const KhdaysInputSnapshot *in, int axis, int rate)
     return (int)(moved / per);
 }
 
-/* Whether Chase Camera on Manual (the game's Config) keeps the camera's tilt while walking: the field camera's
- * join asks before the game pulls the tilt back to its preset's (port/tools/prepare.py). Off, the game's own. */
-int khdays_controls_manual_tilt_kept(void)
-{
-    return (khdays_input_snapshot()->enhancements & KHDAYS_ENH_MANUAL_CAMERA_TILT) != 0;
-}
-
 /* Where the game applies its own turn input (bits 4 and 8 turn, 1 and 2 tilt; `rate` its turn a
  * frame; `inverted` its horizontal inversion, Config 0x37c3): returns the right stick's share of the
  * game's rate to add to the yaw target. Right on the stick turns as every "right" of the game's does

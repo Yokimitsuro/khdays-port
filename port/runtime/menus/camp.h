@@ -25,6 +25,9 @@ enum { KHDAYS_CAMP_IN_MENU = 0, KHDAYS_CAMP_READY = 8 };
 #define KHDAYS_CAMP_SECTIONS 5     /* the page's tabs: a list of them holds five */
 #define KHDAYS_CAMP_PANEL_PAGES 3  /* the panels' grid (the game state's +0xee0): three pages */
 #define KHDAYS_CAMP_PANEL_CELLS 40 /* of five columns and eight rows */
+/* The words of a value the port adds to a setting, in place of a cfg_&.s record: Chase Camera's Free (its name
+ * and its help; ui_text.h TXT_CHASE_FREE*) */
+enum { KHDAYS_CAMP_WORD_FREE = -2, KHDAYS_CAMP_WORD_FREE_HELP = -3 };
 
 /* A setting of the Preferences page (an entry of the game's table, its words cfg_&.s records):
  * its name and help, its values' names and helps, the one chosen; the game's flag `enabled` off,
@@ -216,8 +219,18 @@ unsigned khdays_camp_panel_turns(void);
 /* The game's thread, at Pad_Sample (input.c): the buttons the game gets. On the Preferences page
  * the port's sections join the game's tabs: UP and DOWN go over a section's settings, L and R
  * from section to section, the port pressing the game's own buttons to take its cursor there;
- * the rest are the player's. */
+ * on Chase Camera LEFT and RIGHT go round its three values (khdays_camp_chase_free); the rest are the
+ * player's. */
 uint16_t khdays_camp_buttons(uint16_t buttons);
+
+/* Chase Camera's Free, the third value the port's Preferences page gives the Config's Chase Camera after the
+ * game's Auto and Manual: on Manual (the game's value), walking keeps the camera's tilt as the player set it
+ * (prepare.py's hook in Ov002_Camera_UpdateFollow), where the game's Manual pulls it back to the preset's. The
+ * settings file keeps it ([enhancements] chase_free, the input snapshot's KHDAYS_ENH_CHASE_FREE).
+ * The game's thread: whether it is on (the page's choice until the window has kept it). */
+int khdays_camp_chase_free(void);
+/* The window's thread: the page's choice not kept yet (*on), 0 when there is none. */
+int khdays_camp_chase_free_chosen(int *on);
 
 #ifdef __cplusplus
 }

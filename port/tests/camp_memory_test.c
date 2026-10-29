@@ -113,6 +113,12 @@ int khdays_characters_known(int number)
     (void)number;
     return 0;
 }
+/* the input's snapshot (Chase Camera's Free kept, KHDAYS_ENH_CHASE_FREE): off */
+const KhdaysInputSnapshot *khdays_input_snapshot(void)
+{
+    static const KhdaysInputSnapshot none = {0};
+    return &none;
+}
 /* the Menu Overhaul installed (runtime/mods/installed.h): its camp's memory and sounds tested */
 int khdays_mod_installed(int mod)
 {
@@ -264,6 +270,36 @@ int main(void)
     CHECK(khdays_camp_buttons(0) == 0);
     CHECK(khdays_camp_navigation_sound(0, 0));
     {
+        /* Chase Camera (the cursor's entry 1) has the port's third value, Free, after the game's Auto and Manual:
+         * RIGHT on Manual keeps the game's value and plays its cue; held, the game gets nothing; RIGHT on Free goes
+         * to the game (its Manual wraps to Auto), Free let go; LEFT on Auto goes to the game (to Manual), Free */
+        KhdaysCampView v;
+        int on = -1;
+        *(int16_t *)KHDAYS_W(state + 0x4e + 2) = 1; /* the game's Manual */
+        khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
+        khdays_camp_view(&v);
+        CHECK(v.page.chosen >= 0 && v.page.setting[v.page.chosen].values == 3);
+        CHECK(v.page.setting[v.page.chosen].value == 1 && !khdays_camp_chase_free_chosen(&on));
+        played_sounds = 0;
+        CHECK(khdays_camp_buttons(KHDAYS_KEY_RIGHT) == 0 && played_sounds == 1);
+        CHECK(khdays_camp_chase_free_chosen(&on) && on == 1 && khdays_camp_chase_free());
+        khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
+        khdays_camp_view(&v);
+        CHECK(v.page.setting[v.page.chosen].value == 2);
+        CHECK(v.page.setting[v.page.chosen].value_name[2] == KHDAYS_CAMP_WORD_FREE);
+        CHECK(khdays_camp_buttons(KHDAYS_KEY_RIGHT) == 0); /* held */
+        CHECK(khdays_camp_buttons(0) == 0);
+        CHECK(khdays_camp_buttons(KHDAYS_KEY_RIGHT) == KHDAYS_KEY_RIGHT && played_sounds == 1);
+        CHECK(khdays_camp_chase_free_chosen(&on) && on == 0 && !khdays_camp_chase_free());
+        CHECK(khdays_camp_buttons(0) == 0);
+        *(int16_t *)KHDAYS_W(state + 0x4e + 2) = 0; /* the game took it: Auto */
+        khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
+        CHECK(khdays_camp_buttons(KHDAYS_KEY_LEFT) == KHDAYS_KEY_LEFT);
+        CHECK(khdays_camp_chase_free_chosen(&on) && on == 1);
+        CHECK(khdays_camp_buttons(0) == 0);
+        *(int16_t *)KHDAYS_W(state + 0x4e + 2) = 0;
+    }
+    {
         /* B in Files' two options: the game puts its cursor on the progress's default (entry 1), the
          * port puts it back on Files; opening Files again, on the option chosen there last */
         *(int *)KHDAYS_W(0x020b574c) = 0;
@@ -381,6 +417,6 @@ int main(void)
     free(khdays_window);
     if (!failures)
         puts(
-            "camp_memory_test: cursor memory, locks, nested pages, silent synthetic Config navigation, the Files page, the way back from it and its NEW passed");
+            "camp_memory_test: cursor memory, locks, nested pages, silent synthetic Config navigation, Chase Camera's Free, the Files page, the way back from it and its NEW passed");
     return failures != 0;
 }

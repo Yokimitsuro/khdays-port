@@ -1123,22 +1123,15 @@ static const char *const texts[TXT_COUNT][5] = {
                             "mentre giochi; Esc lo libera con le impostazioni.",
                             "Mover el ratón gira la cámara, también arriba y abajo. La ventana retiene el ratón "
                             "mientras juegas; Esc lo suelta con los ajustes."},
-    [TXT_ENH_MANUAL_TILT] = {"Manual camera keeps its tilt", "Caméra manuelle : inclinaison gardée",
-                             "Manuelle Kamera behält Neigung", "Telecamera manuale: inclinazione mantenuta",
-                             "Cámara manual: mantiene la inclinación"},
-    [TXT_ENH_MANUAL_TILT_NOTE] = {"With Chase Camera set to Manual in the game's Config, walking no longer tilts the "
-                                  "camera back to its default angle.",
-                                  "Avec la caméra de poursuite en Manuel dans la Config du jeu, marcher ne ramène plus "
-                                  "l'inclinaison de la caméra à son angle par défaut.",
-                                  "Ist die Verfolgerkamera in der Config des Spiels auf Manuell, setzt Gehen die "
-                                  "Neigung der Kamera nicht mehr auf ihren Standardwinkel zurück.",
-                                  "Con la telecamera di inseguimento su Manuale nella Config del gioco, camminare non "
-                                  "riporta più l'inclinazione della telecamera all'angolo predefinito.",
-                                  "Con la cámara de seguimiento en Manual en la Config del juego, caminar ya no "
-                                  "devuelve la inclinación de la cámara a su ángulo por defecto."},
     [TXT_MOUSE_SPEED] = {"Mouse camera speed (%)", "Vitesse caméra souris (%)", "Maus-Kameratempo (%)",
                          "Velocità telecamera mouse (%)", "Velocidad cámara ratón (%)"},
     [TXT_SHOP_WELCOME] = {"Welcome!", "Bienvenue !", "Willkommen!", "Benvenuto!", "¡Bienvenido!"},
+    [TXT_CHASE_FREE] = {"Free", "Libre", "Frei", "Libera", "Libre"},
+    [TXT_CHASE_FREE_HELP] = {"Control the camera yourself. Walking keeps the tilt you set.",
+                             "Contrôlez la caméra vous-même. La marche garde l'inclinaison choisie.",
+                             "Steuere die Kamera selbst. Beim Gehen bleibt die eingestellte Neigung.",
+                             "Controlla la telecamera da solo. Camminando resta l'inclinazione scelta.",
+                             "Controla la cámara tú mismo. Al caminar se mantiene la inclinación elegida."},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

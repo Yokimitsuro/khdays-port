@@ -1,6 +1,7 @@
 /* Synthetic camp handles: shared NFTR data must never route a dialogue font. */
 #include "../runtime/menus/camp.h"
 #include "../runtime/core/window.h"
+#include "../runtime/input/input.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,6 +135,11 @@ int khdays_characters_known(int number) /* no mod's characters here */
 {
     (void)number;
     return 0;
+}
+const KhdaysInputSnapshot *khdays_input_snapshot(void) /* Chase Camera's Free off */
+{
+    static const KhdaysInputSnapshot none = {0};
+    return &none;
 }
 void Ov008_RouteCommittedPageState(void) {}
 int Ov025_GetIdleHandler(void)

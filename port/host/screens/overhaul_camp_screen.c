@@ -991,6 +991,21 @@ static void draw_lines(const KhdaysLayoutFrame *fr, const KhdaysLayoutStrings *t
     draw_text_lines(fr, khdays_layout_string(table, record), style, pitch);
 }
 
+/* A setting's words: its cfg_&.s record, or those of a value the port adds (camp.h KHDAYS_CAMP_WORD_*) in the
+ * game's language, made in `own`. */
+static const unsigned short *setting_words(int record, int language, unsigned short *own, int room)
+{
+    const int id = record == KHDAYS_CAMP_WORD_FREE        ? TXT_CHASE_FREE
+                   : record == KHDAYS_CAMP_WORD_FREE_HELP ? TXT_CHASE_FREE_HELP
+                                                          : -1;
+    if (id >= 0) {
+        const char *t = khdays_text_in(id, language);
+        khdays_layout_utf8(t != NULL ? t : khdays_text(id), own, room);
+        return own;
+    }
+    return khdays_layout_string(&s.cfg, record);
+}
+
 /* The game's A prompt (mlt_&.s record 63: A's icon and its word, then B's): up to B's icon, the
  * spaces round it left out; with word_alone without A's icon (the word for accepting). */
 static void prompt_part(unsigned short *out, int room, int word_alone)
@@ -1127,8 +1142,9 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, int 
              mid - capitals("setting") / 2);
         if (left != NULL && right != NULL) {
             const float aw = left->w * arrow[3] / left->h;
+            unsigned short own[32];
             const unsigned short *found =
-                khdays_layout_string(&s.cfg, st->enabled ? st->value_name[value] : CFG_HIDDEN);
+                setting_words(st->enabled ? st->value_name[value] : CFG_HIDDEN, v->language, own, 32);
             static const unsigned short none[1] = {0};
             const unsigned short *words = found != NULL ? found : none;
             khdays_layout_draw_piece(&s.layout, fr, "page_arrow_left", vx, mid - arrow[3] / 2, aw, arrow[3], fade);
@@ -1175,7 +1191,8 @@ static void draw_setting_help(const KhdaysLayoutFrame *fr, const KhdaysCampView 
     }
     draw_lines(fr, &s.cfg, st->help, "description", s.description_pitch);
     if (st->value >= 0 && st->value < st->values) {
-        draw_lines(fr, &s.cfg, st->value_help[st->value], "detail", s.detail_pitch);
+        unsigned short own[160];
+        draw_text_lines(fr, setting_words(st->value_help[st->value], v->language, own, 160), "detail", s.detail_pitch);
     }
 }
 

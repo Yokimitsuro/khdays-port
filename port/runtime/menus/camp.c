@@ -409,6 +409,52 @@ static int tab_title(const Camp *c, int list, int tab)
     return TITLE_SETTINGS;
 }
 
+/* Chase Camera (camp.h khdays_camp_chase_free): the Config's entry 1 in both camps' tables (its value the page's
+ * second, CONFIG_CHASE_CAM in Ov008/Ov025_Config_LoadValues); Free, as the page last chose it until the window
+ * has kept it (-1 none). */
+#define CHASE_ENTRY 1
+static volatile LONG chase_chosen = -1;
+
+int khdays_camp_chase_free(void)
+{
+    const int kept = (khdays_input_snapshot()->enhancements & KHDAYS_ENH_CHASE_FREE) != 0;
+    const LONG chosen = InterlockedCompareExchange(&chase_chosen, -1, kept); /* kept: chosen no more */
+    return chosen >= 0 && chosen != kept ? (int)chosen : kept;
+}
+
+int khdays_camp_chase_free_chosen(int *on)
+{
+    const LONG chosen = InterlockedCompareExchange(&chase_chosen, 0, 0);
+    if (chosen < 0) {
+        return 0;
+    }
+    *on = (int)chosen;
+    return 1;
+}
+
+/* LEFT and RIGHT on Chase Camera while the port draws the page: round its three values, Auto, Manual, Free, as the
+ * game rounds its two. Between Auto and Manual (or Free) the press goes to the game, which changes its value and
+ * plays its cue; between Manual and Free the game's value stays (Manual) and the port plays the game's cue
+ * (PlaySound(0, 0), Ov025_MenuSelectionRight's). Held, the two are kept from the game: its repeat would change
+ * its value alone. */
+static u16 chase_buttons(u16 out, u16 pressed, int value)
+{
+    const u16 sides = KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
+    const int dir = (pressed & KHDAYS_KEY_RIGHT) ? 1 : (pressed & KHDAYS_KEY_LEFT) ? -1 : 0;
+    int to;
+    out = (u16)(out & ~sides);
+    if (dir == 0 || value < 0 || value > 2) {
+        return out;
+    }
+    to = (value + dir + 3) % 3;
+    InterlockedExchange(&chase_chosen, to == 2);
+    if ((to != 0) == (value != 0)) {
+        PlaySound(0, 0);
+        return out;
+    }
+    return (u16)(out | (dir > 0 ? KHDAYS_KEY_RIGHT : KHDAYS_KEY_LEFT));
+}
+
 /* The Preferences page from the game's state and tables: 0 when it is not as expected. */
 static int read_config(const Camp *c, u32 state, KhdaysCampView *v)
 {
@@ -460,6 +506,13 @@ static int read_config(const Camp *c, u32 state, KhdaysCampView *v)
                 s->value_help[i] = rd8(at + 8u + 4u * (u32)i + 3u);
             }
             s->value = (s16)rd16(state + CONFIG_VALUES + 2u * (u32)e);
+            if (e == CHASE_ENTRY && s->values == 2) {
+                /* the port's third value, after the game's Auto and Manual (khdays_camp_chase_free) */
+                s->values = 3;
+                s->value_name[2] = KHDAYS_CAMP_WORD_FREE;
+                s->value_help[2] = KHDAYS_CAMP_WORD_FREE_HELP;
+                s->value = s->value == 1 && khdays_camp_chase_free() ? 2 : s->value;
+            }
             config.tab_of[pg->settings] = (int)t;
             config.entry_of[pg->settings] = e;
             config.stops[t][config.stop_count[t]++] = e;
@@ -1653,6 +1706,10 @@ uint16_t khdays_camp_buttons(uint16_t buttons)
             steer_to(to);
             return steer_step();
         }
+    }
+    if (config.entry_of[pg->chosen] == CHASE_ENTRY && pg->setting[pg->chosen].values == 3 &&
+        pg->setting[pg->chosen].enabled) {
+        out = chase_buttons(out, pressed, pg->setting[pg->chosen].value);
     }
     return out;
 }

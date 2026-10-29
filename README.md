@@ -242,10 +242,13 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
-- **Manual camera keeps its tilt:** with Chase Camera set to Manual in the
-  game's Config, walking no longer tilts the camera back to its default angle
-  (its distance still comes back); the events' cameras and the lock-on keep
-  the game's own.
+- **Chase Camera: Free:** on the camp's Config page drawn on one screen,
+  Chase Camera has a third value after the game's Auto and Manual. Free is
+  the game's Manual, except that walking no longer pulls the camera's tilt
+  back to its preset's: the tilt set by hand stays (its distance still
+  follows, and the events' cameras and the lock-on are the game's). The game
+  keeps Manual in its save; the settings file keeps Free
+  (`[enhancements] chase_free`).
 
 The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
 sequences, the pause-menu target, and HUD/control during INFORMATION messages.

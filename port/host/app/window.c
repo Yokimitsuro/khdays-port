@@ -438,6 +438,23 @@ static void keep_subtitles(void)
     khdays_profile_save(&p, path, notice);
 }
 
+/* Keeps Chase Camera's Free as the Config's page chose it (runtime/menus/camp.h): in the profile, the game's input
+ * and the settings file. */
+static void keep_chase_free(void)
+{
+    KhdaysProfile p;
+    char path[512];
+    int on;
+    if (!khdays_camp_chase_free_chosen(&on) || khdays_devices_profile()->enh.chase_free == on) {
+        return;
+    }
+    p = *khdays_devices_profile();
+    p.enh.chase_free = on;
+    khdays_devices_set_profile(&p);
+    khdays_settings_path(path, sizeof(path));
+    khdays_profile_save(&p, path, notice);
+}
+
 /* Alt+Enter, as on most PC games: from a window to the full screen chosen last (the borderless
  * window if none), from either full screen to a window; kept in the profile and the settings file
  * as the menu keeps it. */
@@ -792,6 +809,7 @@ static int host_thread(void *unused)
          * on both screens): it is decided again as the game's VBlanks pass. */
         const int settling = khdays_present_settling();
         keep_subtitles();
+        keep_chase_free();
         if (!khdays_settings_is_open()) {
             khdays_cine_screen_buttons(khdays_cinelist_seen()); /* MODO CINE's chapters, the port's list */
         }

@@ -342,9 +342,6 @@ enum {
     /* The mouse camera (the controls' enhancements) */
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
-    /* Chase Camera on Manual keeping its tilt (the controls' enhancements) */
-    TXT_ENH_MANUAL_TILT,
-    TXT_ENH_MANUAL_TILT_NOTE,
     TXT_MOUSE_SPEED,
     TXT_MOD_CHOOSE,   /* a mod's screens: its list's A */
     TXT_SHOP_WELCOME, /* the Moogle Shop's menu: its word in the right pill (shop_screen.c) */
@@ -393,6 +390,9 @@ enum {
     TXT_PLUGIN_REFUSED,
     TXT_PLUGIN_FAILED,
     TXT_PLUGIN_STOPPED,
+    /* the Config's Chase Camera's third value, the port's (runtime/menus/camp.h khdays_camp_chase_free) */
+    TXT_CHASE_FREE,
+    TXT_CHASE_FREE_HELP,
     TXT_COUNT
 };
 

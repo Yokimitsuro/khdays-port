@@ -80,8 +80,7 @@ enum {
     KHDAYS_ENH_DPAD_COMMAND_MENU = 1 << 2,
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
     KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
-    KHDAYS_ENH_MANUAL_CAMERA_TILT =
-        1 << 5, /* Chase Camera on Manual keeps its tilt walking (the field camera's join) */
+    KHDAYS_ENH_CHASE_FREE = 1 << 5,   /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
 };
 
 /* Everything the game needs to know about the player's input at one moment.
