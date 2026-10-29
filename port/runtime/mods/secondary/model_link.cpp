@@ -125,12 +125,14 @@ struct ModelSecondary {
     std::shared_ptr<const Rig> rig;
     std::vector<std::filesystem::file_time_type> stamps;
     u32 checked = 0, swept = 0, reported = 0;
-    bool debug = false, profile = false;
+    bool debug = false, profile = false, trace = false;
     bool said_placement = false, said_camera = false;
     struct ActorState {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
         float units = 0.0F;
+        std::vector<Frame> last_pose; // KHDAYS_SECONDARY_TRACE: the last draw's, for its steps
+        std::vector<Vec3> last_cloth;
     };
     std::map<const void *, ActorState> actors; // by render object; dropped when unseen (sweep)
     std::vector<Frame> pose, out;
@@ -169,6 +171,7 @@ std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
     say(m.name + ": " + rig->summary);
     m.debug = rig->config.debug || flag("KHDAYS_SECONDARY_DEBUG");
     m.profile = rig->config.profile || flag("KHDAYS_SECONDARY_PROFILE");
+    m.trace = flag("KHDAYS_SECONDARY_TRACE");
     return rig;
 }
 
@@ -359,6 +362,56 @@ ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std:
     return m;
 }
 
+// KHDAYS_SECONDARY_TRACE: each draw's animations, how far the body and the cloth moved since the last
+// draw (cm, the model's own units), to find what jumps when the game does something (a loop, a cut)
+static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, const ActorInput &a, u32 now)
+{
+    std::string anims;
+    char part[160];
+    for (const auto &x : a.animations) {
+        std::snprintf(part, sizeof(part), " %s f%.1f/%.1f w%.2f", x.name.c_str(),
+                      static_cast<double>(x.seconds * 30.0F), static_cast<double>(x.length * 30.0F),
+                      static_cast<double>(x.weight));
+        anims += part;
+    }
+    const Rig &rig = *m.rig;
+    float hips = 0.0F, body = 0.0F, cloth = 0.0F;
+    int body_bone = -1, cloth_bone = -1;
+    if (state.last_pose.size() == m.pose.size()) {
+        if (!rig.groups.empty())
+            hips = length(m.pose[static_cast<std::size_t>(rig.groups.front().reference_bone)].t -
+                          state.last_pose[static_cast<std::size_t>(rig.groups.front().reference_bone)].t);
+        for (const int b : rig.needed) {
+            const auto i = static_cast<std::size_t>(b);
+            const float d = length(m.pose[i].t - state.last_pose[i].t);
+            if (d > body) {
+                body = d;
+                body_bone = b;
+            }
+        }
+    }
+    const auto &x = state.actor->simulation().positions();
+    if (state.last_cloth.size() == x.size())
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            if (!rig.particles[i].dynamic)
+                continue;
+            const float d = length(x[i] - state.last_cloth[i]);
+            if (d > cloth) {
+                cloth = d;
+                cloth_bone = rig.particles[i].bone;
+            }
+        }
+    const auto name = [&](int b) {
+        return b >= 0 ? rig.skeleton.names[static_cast<std::size_t>(b)] : std::string("-");
+    };
+    khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.1f cm, body %.1f cm (%s), cloth %.1f cm (%s)",
+               m.name.c_str(), now, a.seconds, static_cast<unsigned long long>(a.epoch), anims.c_str(),
+               static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
+               static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str());
+    state.last_pose = m.pose;
+    state.last_cloth = x;
+}
+
 void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<Mat4> &skin)
 {
     const u32 now = khdays_events_vblank_count();
@@ -413,6 +466,9 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         state.actor =
             std::make_unique<Actor>(m.rig, static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(in.actor) >> 4));
         state.units = units;
+        if (m.trace)
+            khdays_log("secondary trace: %s: a new actor for render object %p (%zu actors)", m.name.c_str(), in.actor,
+                       m.actors.size());
     }
     state.seen = now;
     // the needed bones in the solver's space
@@ -441,6 +497,8 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     for (const int b : rig.needed)
         m.out[static_cast<std::size_t>(b)] = m.pose[static_cast<std::size_t>(b)];
     state.actor->output(m.pose, m.out, m.written);
+    if (m.trace)
+        trace_draw(m, state, a, now);
     Mat4 from_sim = kIdentity4;
     from_sim[0] = from_sim[5] = from_sim[10] = units;
     for (std::size_t b = 0; b < m.written.size(); ++b) {

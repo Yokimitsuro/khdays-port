@@ -7,7 +7,8 @@
 //
 //   khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> [options]
 //     --out <dir>            contact sheets and the report go here
-//     --scenario <name>      idle, run, attack, jump, guard, wall, spawn, teleport, all (default all)
+//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, wall, spawn, teleport,
+//                            platform, all (default all)
 //     --actors <n>           simulate n actors at once (the benchmark; default 1)
 //     --draw-hz <hz>         draws a second (default 60); --repeat <n> draws each n times
 //     --reference <B.mdlx> <B.mset> <slot,...>   compare the coat with a baked KH2 coat (same coat bones)
@@ -75,6 +76,13 @@ struct Motions {
         if (!p)
             p = std::make_unique<kh2::MotionPlayer>(*skeleton);
         const float end = m->length_ticks(), from = m->loop_ticks();
+        if (std::getenv("KHDAYS_REPLAY_JITTER") != nullptr && ticks > end) {
+            const float wrapped = from >= 0.0F && from < end ? from + std::fmod(ticks - from, end - from) : end;
+            const float before = from >= 0.0F && from < end ? from + std::fmod(ticks - 1.0F - from, end - from) : end;
+            if (wrapped < before)
+                std::fprintf(stderr, "loop slot %zu at %.1f ticks (length %.1f, loop from %.1f)\n", slot,
+                             static_cast<double>(ticks), static_cast<double>(end), static_cast<double>(from));
+        }
         if (ticks > end)
             ticks = from >= 0.0F && from < end ? from + std::fmod(ticks - from, end - from) : end;
         const kh2::Mat4 unit{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -217,6 +225,9 @@ std::vector<Scenario> scenarios()
     s.push_back({"idle", 4.0F, {{0.0F, 0, "b_ro_A000"}}, still, floor_plane(20), nullptr});
     // the weaponless idle: standing, the coat should hang close to its authored drape
     s.push_back({"calm", 4.0F, {{0.0F, 2, "b_ro_e000"}}, still, floor_plane(20), nullptr});
+    // both idles long enough to loop several times: what a loop's seam does to the cloth
+    s.push_back({"idle_loop", 12.0F, {{0.0F, 0, "b_ro_A000"}}, still, floor_plane(20), nullptr});
+    s.push_back({"calm_loop", 12.0F, {{0.0F, 2, "b_ro_e000"}}, still, floor_plane(20), nullptr});
     // run forward (+z, the model faces +z), a sharp turn about, run back, stop
     s.push_back({"run",
                  7.0F,
@@ -600,6 +611,30 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                             wi = i;
                         }
                     }
+                    // the body colliders' ends: the most any moved since the last frame (hips space)
+                    static std::vector<Vec3> last_ends;
+                    std::vector<Vec3> ends;
+                    for (const auto &c : sim.colliders()) {
+                        ends.push_back(apply_inverse(pose[2], c.a));
+                        ends.push_back(apply_inverse(pose[2], c.b));
+                    }
+                    float cmove = 0.0F;
+                    std::size_t cwhich = 0;
+                    if (last_ends.size() == ends.size())
+                        for (std::size_t e = 0; e < ends.size(); ++e)
+                            if (length(ends[e] - last_ends[e]) > cmove) {
+                                cmove = length(ends[e] - last_ends[e]);
+                                cwhich = e / 2;
+                            }
+                    last_ends = ends;
+                    std::fprintf(stderr, "jcol %s f%d %.2f cm %s\n", sc.name.c_str(), f,
+                                 static_cast<double>(cmove * 100.0F), rig.colliders[cwhich].name.c_str());
+                    static std::vector<Vec3> last_solved;
+                    const float solved_step =
+                        last_solved.size() == np ? length(sim.positions()[wi] - last_solved[wi]) : 0.0F;
+                    std::fprintf(stderr, "jsol %s f%d %.2f cm\n", sc.name.c_str(), f,
+                                 static_cast<double>(solved_step * 100.0F));
+                    last_solved = sim.positions();
                     const Vec3 st = x[wi] - jx1[wi], tt = tg[wi] - jt1[wi];
                     std::fprintf(stderr, "jit %s f%d %.2f cm %s (group %s) step %.2f target step %.2f cm\n",
                                  sc.name.c_str(), f, static_cast<double>(wv * 100.0F),

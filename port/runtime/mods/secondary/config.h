@@ -44,6 +44,7 @@ enum class Param : int {
     row_max_strain,     // fraction row and shear links may stretch (KH2's coats flare their rows)
     smoothing,          // s: the drawn shape eased toward the solved one (in its reference bone's space)
     follow_bone_scale,  // 0..1: of its follow_bone shares it takes (how much the legs carry it)
+    drape,              // 0 or 1: its target swung out of the body colliders down its strip (Simulation::drape)
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);

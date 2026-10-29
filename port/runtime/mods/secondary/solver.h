@@ -135,6 +135,7 @@ private:
     // the drawn shape (`smoothing`): each control in its group's reference bone space; solved_ holds the
     // solved positions while the bones are rebuilt on it
     std::vector<Vec3> shown_, solved_;
+    std::vector<Vec3> pushed_; // contact's push on each control this substep (taken out of its velocity)
     const Frame &reference_bone_frame(std::size_t i, const std::vector<Frame> &pose) const;
     // poses: the needed bones at the substep's start and end
     std::vector<Frame> sub0_, sub1_;
@@ -158,6 +159,8 @@ private:
     std::vector<std::vector<std::pair<int, int>>> particle_colliders_;
     std::vector<Vec3> raw_, draped_;
     void drape(const std::vector<Frame> &pose, const std::vector<Shape> &shapes, std::vector<Vec3> &out);
+    void ease_drape(float h, bool exact);
+    std::vector<Vec3> drape_off_; // the drape's swing of each target, eased, in its reference bone's space
     // self-collision: per self-colliding particle, a bit per face of the faces it may touch
     std::vector<int> self_points_;
     std::vector<std::vector<std::uint64_t>> self_faces_ok_;

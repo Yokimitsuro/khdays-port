@@ -57,6 +57,7 @@ constexpr float kMaxLever = 2.0F;
 // a face a body pierces is carried out at most this far (m) in one contact (the velocity clamp keeps it
 // from flying on)
 constexpr float kMaxPierce = 0.5F;
+constexpr float kDrapeEase = 0.06F; // s: the drape's swing of a target eased over this (ease_drape)
 // passes of strain then contact closing each substep (a push spread through the coat)
 constexpr int kSpreadPasses = 2;
 } // namespace
@@ -82,6 +83,7 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
     pinned_.assign(n, 0);
     lambda_.assign(rig.distances.size(), 0.0F);
     compliance_.assign(rig.distances.size(), 0.0F);
+    pushed_.assign(n, {});
     rest_now_.resize(rig.distances.size());
     for (std::size_t c = 0; c < rig.distances.size(); ++c)
         rest_now_[c] = rig.distances[c].rest;
@@ -468,6 +470,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     sub0_ = sub1_;
     shapes(sub1_, shape1_);
     drape(sub1_, shape1_, draped_);
+    ease_drape(0.0F, true);
     for (std::size_t i = 0; i < x_.size(); ++i) {
         pinned_[i] = 0;
         if (!rig_.particles[i].dynamic)
@@ -650,6 +653,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         if (fresh_)
             drape(sub0_, shape0_, start);
         drape(sub1_, shape1_, draped_);
+        ease_drape(h, false);
         for (std::size_t i = 0; i < x_.size(); ++i) {
             const Particle &p = rig_.particles[i];
             if (!p.dynamic) {
@@ -695,6 +699,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         animated_lengths();
         std::fill(lambda_.begin(), lambda_.end(), 0.0F);
         std::fill(lambda_follow_.begin(), lambda_follow_.end(), 0.0F);
+        std::fill(pushed_.begin(), pushed_.end(), Vec3{});
         place_kinematic(sub1_);
         const auto t2 = Clock::now();
         times.solve += us(t1, t2);
@@ -735,10 +740,19 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         const auto t3 = Clock::now();
         times.model_collision += us(t25, t3);
         // velocity from the motion, never more than max_speed past the target's: a contact's push moves
-        // the cloth, it does not launch it
+        // the cloth, it does not launch it. Contact is inelastic: what a push gave it away from the body,
+        // past the target's own motion, is taken back (cloth hanging on a heel otherwise bounces off it,
+        // falls back and is thrown again, a flapping that a loop's small kick restarts)
         for (std::size_t i = 0; i < x_.size(); ++i)
             if (rig_.particles[i].dynamic && !pinned_[i]) {
                 v_[i] = (x_[i] - prev_[i]) * (1.0F / h);
+                const float lp = length(pushed_[i]);
+                if (lp > 1e-7F) {
+                    const Vec3 dir = pushed_[i] * (1.0F / lp);
+                    const float out = dot(v_[i] - target_vel_[i], dir);
+                    if (out > 0.0F)
+                        v_[i] -= dir * out;
+                }
                 const Vec3 rel = v_[i] - target_vel_[i];
                 const float speed = length(rel), most = drive_[i].params.get(Param::max_speed);
                 if (speed > most)
@@ -798,6 +812,23 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
 // The targets at `pose` draped down each strip: a control's segment from its anchor kept as the target
 // shape has it, swung out of any collider it would enter to the side it belongs on, its length kept. The
 // pull then leads around a raised knee instead of through it.
+// The drape's swing of each target eased in its reference bone's space: where the drape's answer jumps (a
+// target between a thigh and a calf swung out of one into the other, step to step) the target glides over
+// kDrapeEase instead of snapping, and the coat no longer chases it back and forth once a cycle
+void Simulation::ease_drape(float h, bool exact)
+{
+    drape_off_.resize(x_.size());
+    const float k = exact ? 1.0F : 1.0F - std::exp(-h / kDrapeEase);
+    for (std::size_t i = 0; i < x_.size(); ++i) {
+        if (!rig_.particles[i].dynamic)
+            continue;
+        const Quat q = reference_bone_frame(i, sub1_).q;
+        const Vec3 off = rotate(conjugate(q), draped_[i] - raw_[i]);
+        drape_off_[i] = drape_off_[i] + (off - drape_off_[i]) * k;
+        draped_[i] = raw_[i] + rotate(q, drape_off_[i]);
+    }
+}
+
 void Simulation::drape(const std::vector<Frame> &pose, const std::vector<Shape> &shapes, std::vector<Vec3> &out)
 {
     for (std::size_t i = 0; i < x_.size(); ++i) {
@@ -810,7 +841,8 @@ void Simulation::drape(const std::vector<Frame> &pose, const std::vector<Shape> 
     for (const int pi : drape_order_) {
         const auto i = static_cast<std::size_t>(pi);
         const Particle &p = rig_.particles[i];
-        if (p.anchor < 0 || particle_colliders_[i].empty() || drive_[i].authority >= 0.999F)
+        if (p.anchor < 0 || particle_colliders_[i].empty() || drive_[i].authority >= 0.999F ||
+            drive_[i].params.get(Param::drape) < 0.5F)
             continue;
         const auto j = static_cast<std::size_t>(p.anchor);
         const Vec3 base = out[j], seg = raw_[i] - raw_[j];
@@ -1046,6 +1078,7 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             }
             const float pen = th - dist;
             x_[i] += nrm * pen;
+            pushed_[i] += nrm * pen;
             ++contacts;
             const float mu = drive_[i].params.get(Param::friction) * friction_scale;
             if (mu > 0.0F) {
@@ -1094,8 +1127,11 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             // shared by the ends as their lever allows, no end moved more than twice the overlap (an end
             // near a fixed anchor would otherwise be thrown)
             const float pen = th - dist, s = pen / den;
-            x_[a] += nrm * minf(s * ca, kMaxLever * pen);
-            x_[b] += nrm * minf(s * cb, kMaxLever * pen);
+            const float ma = minf(s * ca, kMaxLever * pen), mb = minf(s * cb, kMaxLever * pen);
+            x_[a] += nrm * ma;
+            x_[b] += nrm * mb;
+            pushed_[a] += nrm * ma;
+            pushed_[b] += nrm * mb;
             ++contacts;
         }
         // faces: sample points inside each coarse face, pushed out and shared by its corners
@@ -1162,8 +1198,10 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             // the whole face out together: a coarse face is small beside a leg, and shared by its contact
             // point's barycentric weights it pivots on its far corner and stays inside
             for (std::size_t j = 0; j < 3; ++j)
-                if (wv[j] > 0.0F)
+                if (wv[j] > 0.0F) {
                     x_[v[j]] += side * pen;
+                    pushed_[v[j]] += side * pen;
+                }
             ++contacts;
         }
     }

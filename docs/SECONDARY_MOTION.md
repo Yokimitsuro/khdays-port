@@ -32,6 +32,7 @@ motion. The file and its includes are read again within a second of being saved
 |---|---|
 | `KHDAYS_SECONDARY_DEBUG=1` | draws particles (white), anchors (red), links (cyan, toward red when stretched past 10 %; anchors orange) and colliders (yellow cores and end rings) over the model; or `debug on` in the file |
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
+| `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log; for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
 
 ## The model it works on
@@ -135,6 +136,7 @@ the free end, by depth along the strip.
 | `max_speed` | m/s | 20 | relative to the target |
 | `smoothing` | s | 0 | the drawn shape eased toward the solved one, in its reference bone's space (below) |
 | `follow_bone_scale` | 0..1 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`) |
+| `drape` | 0 or 1 | 1 | its target swung out of the body colliders down its strip (eased, below) |
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
 | `friction` | 0..1 | 0.2 | |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
@@ -257,6 +259,17 @@ is squeezed under 50 % of its rest length or folded back past its head eases fro
 the shortest turn onto its point back to its reference's (the turn has no clear
 direction there), and the twist from row neighbours fades out where they bunch
 together or cross.
+
+**Once a cycle (measured in game, `KHDAYS_SECONDARY_TRACE`).** A jump of the
+lower back coat once per animation cycle (Days' animations and KH2 motions alike;
+in the calm idle 2.6 s into each 3 s cycle, not at the loop's seam) with the body,
+the colliders and the targets still: the drape swung a target lying between a
+thigh and a calf out of one into the other, a different answer step to step, and
+the coat chased it. The drape's swing is now eased in the reference bone's space
+over 0.06 s (`Simulation::ease_drape`). Replay at the game's 30 draws a second,
+drawn jitter p99: calm idle through its loops 11 -> 1.6 cm, battle idle 11.6 ->
+5.1; at 60: calm 3.6 -> 0.9, attack 13 -> 8.8. The wall scenario keeps a leg in
+the coat for more frames (7 -> 30 of 301).
 
 **Twitching (measured, replay `jitter` line).** A leg sweeping through the coat
 gave contact, the strip links and the strain limits no common answer: in one
