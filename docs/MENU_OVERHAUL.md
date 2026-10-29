@@ -23,7 +23,7 @@ pieces. Every feature below also needs the screens on one picture (`screens = on
 | Mission Mode's camp menu without the story's pieces (`layouts/campstory/`): DDD's camp look, the menu's touches and its Preferences sliding in without black | the same | `layouts/camp/` |
 | The Moogle Shop on one screen | `host/screens/shop_screen.c`, `runtime/menus/shop.c` | `layouts/shop/` |
 | The day's card, as the theater's between chapters, its pace measured on the collection's movie | `host/screens/day_screen.c`, `runtime/menus/daycard.c` | `layouts/day/` |
-| A pause over the HD movies, the scenes' videos and the days' monologues (Continue; Skip, at once), the game's pause and game over in KH2's look | `host/screens/modern_pause.c`, `host/screens/kh2_seq.c`, `ui/pause.cpp`, `runtime/movies/movie_hd.c` | `layouts/kh2pause/` (else `layouts/pause/`) |
+| A pause over the HD movies, the scenes' videos and the days' monologues (Continue; Skip, at once), the game's pause and game over in KH2's look | `host/screens/modern_pause.c`, `host/screens/kh2_seq.cpp` (the KH2 HUD's SEQD reader), `ui/pause.cpp`, `runtime/movies/movie_hd.c` | `layouts/kh2pause/` (else `layouts/pause/`) |
 | A day's monologue in the theater's voice with its subtitles, its words left out | `runtime/movies/scene_trace.c`, `host/app/window.c` | the HD PACK's subtitles |
 | The menus' sounds in the port's own screens (the game's SE_SYS) | `host/settings/settings_sample.cpp` | `menu_sounds/se_sys_*.wav` (optional) |
 | KH2's glove sway and firefly, the buttons' icons one size on every screen | `host/screens/layout_screen.c` | `layouts/kh2pause/firefly.png` |
