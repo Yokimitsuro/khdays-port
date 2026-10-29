@@ -39,9 +39,10 @@ function they call answers as the game would without the mod.
 
 ## Making the mod
 
-The installer makes it when chosen, after the HD menus, from the 1.5+2.5 collection; or a developer runs the
-installer's helper on an install whose HD menus are made, with KHGummi.otf and KHMenu.otf in `installer/fonts`
-(the installer's build takes them out of the package `installer/pinned.json` pins):
+The installer makes it when chosen, from the 1.5+2.5 collection, after the HD menus (made then, or by an earlier
+install in that folder: an update needs no 2.8 for it); or a developer runs the installer's helper on an install
+whose HD menus are made, with KHGummi.otf and KHMenu.otf in `installer/fonts` (the installer's build takes them
+out of the package `installer/pinned.json` pins):
 
 ```powershell
 py .\installer\setup_steps.py build-mods "<install>" --menu-overhaul --1525 "<1.5+2.5>"

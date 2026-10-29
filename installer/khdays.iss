@@ -96,6 +96,8 @@ Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "{cm:StartPort}";
 Type: filesandordirs; Name: "{app}\data\extracted"
 Type: filesandordirs; Name: "{app}\data\cutscenes"
 Type: filesandordirs; Name: "{app}\mods\HD PACK"
+Type: filesandordirs; Name: "{app}\mods\Days - Menu Overhaul"
+Type: filesandordirs; Name: "{app}\mods\Days - Walk"
 Type: filesandordirs; Name: "{app}\setup"
 Type: filesandordirs; Name: "{app}\native"
 Type: filesandordirs; Name: "{app}\tools"
@@ -289,6 +291,12 @@ end;
 
 { ---- The HD collections: the HD menus and HUD (both), the HD videos (1.5+2.5) ---- }
 
+{ Whether the chosen folder holds the HD menus already (an earlier install made them) }
+function HdMenusMade: Boolean;
+begin
+  Result := DirExists(AddBackslash(WizardDirValue) + 'mods\HD PACK');
+end;
+
 procedure HdChanged(Sender: TObject);
 begin
   { a choice whose collection is not given is unavailable; its caption says what it needs }
@@ -296,8 +304,8 @@ begin
   HdVideos.Enabled := Trim(HdPage.Values[0]) <> '';
   if not HdMenus.Enabled then HdMenus.Checked := False;
   if not HdVideos.Enabled then HdVideos.Checked := False;
-  { the Menu Overhaul is made from the HD menus' pieces and both collections }
-  ModOverhaul.Enabled := HdMenus.Checked;
+  { the Menu Overhaul is made from the HD menus' pieces (made now, or before in this folder) and the 1.5+2.5 }
+  ModOverhaul.Enabled := (Trim(HdPage.Values[0]) <> '') and (HdMenus.Checked or HdMenusMade);
   if not ModOverhaul.Enabled then ModOverhaul.Checked := False;
 end;
 
@@ -415,7 +423,7 @@ begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
   WizardForm.Refresh;
-  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked) then
+  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked or ModOverhaul.Checked) then
     if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '"', Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
@@ -574,12 +582,15 @@ begin
   Result := (PageID = SteamPage.ID) and not SteamFound and not UnderWine;
 end;
 
-{ When the Steam page is shown the folder is chosen, so re-check whether the port is already in
-  Steam (a repair or an update), with that folder. }
+{ When the HD page is shown the folder is chosen: the Menu Overhaul may be made from the HD menus
+  already there. When the Steam page is, re-check whether the port is already in Steam (a repair or
+  an update), with that folder. }
 procedure CurPageChanged(CurPageID: Integer);
 var
   Json: String;
 begin
+  if (HdPage <> nil) and (CurPageID = HdPage.ID) then
+    HdChanged(nil);
   if (SteamPage <> nil) and (CurPageID = SteamPage.ID) then begin
     if RunHelper('steam-status --install "' + WizardDirValue + '"', Json) = 0 then begin
       SteamPresent := JsonValue(Json, 'present') = 'true';
