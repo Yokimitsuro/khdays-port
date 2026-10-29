@@ -14,6 +14,7 @@
 #include "../render/png_io.h"
 #include "../app/profile.h"
 #include "ui_text.h"
+#include "mod_faces.h"
 #include "../../runtime/menus/camp.h"
 #include "../../runtime/menus/enemy_viewer.h"
 #include "../../runtime/menus/savelist.h"
@@ -98,6 +99,7 @@ static struct {
     Uint8 munny_colour[3], hearts_colour[3], day_colour[3];
     SDL_Texture *hearts_word; /* hearts_label.png: the heart points' word as DDD's MUNNY is drawn */
     int hearts_word_w, hearts_word_h;
+    KhdaysModFaces faces; /* the mods' characters' */
 } s;
 
 static int open_file(int language, char *path, int size, char *folder, int folder_size)
@@ -498,6 +500,7 @@ static void forget(void)
         SDL_free(s.difficulty[i]);
         s.difficulty[i] = NULL;
     }
+    khdays_mod_faces_forget(&s.faces);
     khdays_layout_forget(&s.layout);
     khdays_layout_strings_free(&s.status);
     khdays_layout_strings_free(&s.root);
@@ -1053,15 +1056,21 @@ static void draw_members(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
         snprintf(label, sizeof(label), khdays_text(TXT_ROOM_PLACE), i + 1);
         khdays_layout_utf8(label, wide, 16);
         text(fr, "member_tag", wide, x + ring[0], y + ring[1]);
-        if (m->character >= 0) {
+        if (m->character >= 0 && !khdays_mod_face_draw(&s.faces, &s.layout, fr, m->character, x + small[0],
+                                                       y + small[1], small[2], small[3], 255)) {
             char name[16];
             snprintf(name, sizeof(name), "face%d", m->character);
             khdays_layout_draw_piece(&s.layout, fr, name, x + small[0], y + small[1], small[2], small[3], 1.0f);
         }
-        text(fr, "member_name",
-             m->name[0] != 0 ? (const unsigned short *)m->name
-                             : khdays_layout_string(&s.status, NAMES + (m->character >= 0 ? m->character : 0)),
-             x, y);
+        {
+            unsigned short mod_name[64];
+            const unsigned short *named = khdays_mod_name(m->character, 0, v->language, mod_name, 64);
+            text(fr, "member_name",
+                 m->name[0] != 0 ? (const unsigned short *)m->name
+                 : named != NULL ? named
+                                 : khdays_layout_string(&s.status, NAMES + (m->character >= 0 ? m->character : 0)),
+                 x, y);
+        }
         if (ready) {
             prompt_part(wide, 64, 1);
             text(fr, "member_ready", wide, x, y);
@@ -1341,14 +1350,22 @@ static void draw_status_at(const KhdaysLayoutFrame *fr, const KhdaysCampView *v,
     /* the place's colour (the story's, alone: the first place's, as Mission Mode's alone) */
     const Uint8 *own = KHDAYS_PLACE_COLOURS[v->story ? 0 : v->self & 3];
     if (v->character >= 0) {
-        char name[16];
-        /* the story's own picture of the character when the atlas has one (face<N>_story) */
-        snprintf(name, sizeof(name), "face%d_story", v->character);
-        if (!v->story || khdays_layout_piece(&s.layout, name) == NULL) {
-            snprintf(name, sizeof(name), "face%d", v->character);
+        unsigned short mod_name[64];
+        const unsigned short *named = khdays_mod_name(v->character, 0, v->language, mod_name, 64);
+        if (named != NULL) {
+            /* a mod's character: its own picture (none drawn without one) and name */
+            khdays_mod_face_draw(&s.faces, &s.layout, fr, v->character, px + f[0], py + f[1], f[2], f[3], 255);
+            text(fr, "name", named, px, py);
+        } else {
+            char name[16];
+            /* the story's own picture of the character when the atlas has one (face<N>_story) */
+            snprintf(name, sizeof(name), "face%d_story", v->character);
+            if (!v->story || khdays_layout_piece(&s.layout, name) == NULL) {
+                snprintf(name, sizeof(name), "face%d", v->character);
+            }
+            khdays_layout_draw_piece(&s.layout, fr, name, px + f[0], py + f[1], f[2], f[3], 1.0f);
+            text(fr, "name", khdays_layout_string(&s.status, NAMES + v->character), px, py);
         }
-        khdays_layout_draw_piece(&s.layout, fr, name, px + f[0], py + f[1], f[2], f[3], 1.0f);
-        text(fr, "name", khdays_layout_string(&s.status, NAMES + v->character), px, py);
     }
     /* the face's frame: black in the story (the port's look), the place's colour in Mission Mode */
     khdays_layout_ring_rounded(s.layout.renderer, fr, px + ring[0], py + ring[1], ring[2], ring[3], 0, FACE_RING,
@@ -4030,7 +4047,9 @@ static void story_tokens(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 static void story_status(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 {
     if (v->character >= 0 && stp.title[2] > 0) {
-        const unsigned short *name = khdays_layout_string(&s.status, NAMES + v->character);
+        unsigned short mod_name[64];
+        const unsigned short *named = khdays_mod_name(v->character, 0, v->language, mod_name, 64);
+        const unsigned short *name = named != NULL ? named : khdays_layout_string(&s.status, NAMES + v->character);
         unsigned short upper[32];
         int n = 0;
         for (; name != NULL && name[n] != 0 && n < 31; ++n) {
