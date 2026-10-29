@@ -95,17 +95,34 @@ struct TextureContainer final {
 
 TextureContainer read_textures(const std::uint8_t* data, std::size_t size, std::size_t at);
 
+// GS info `index` of the container at `at` decoded to RGBA (its whole TW x TH,
+// PS2 alpha widened): its pictures uploaded into a model of the GS's memory as
+// the container's packets send them, then read back as the texture's format.
+// 8-bit textures only; throws std::runtime_error naming what it cannot decode.
+DecodedTexture read_texture_picture(const std::uint8_t* data, std::size_t size, std::size_t at, std::size_t index);
+
 // TIM2 pictures (radar): 4-bit, 8-bit (palette in the PS2's order) or 32-bit;
 // PS2 alpha (0x80 = opaque) widened to 0..255.
 std::vector<DecodedTexture> read_tim2(const std::uint8_t* data, std::size_t size, std::size_t at);
 
 // --- Models ---
 
+// One bone's share of a blended vertex: the vertex in that bone's space, scaled
+// by its weight, and the weight in w (the bone's matrix times this, summed over
+// the shares, places the vertex).
+struct Influence final {
+    int bone = 0;
+    std::array<float, 4> position{};
+};
+
 struct Vertex final {
     std::array<float, 3> position{};                            // KH2 units; object models: in its bone's space
     std::array<float, 2> uv{};                                  // over the whole texture, as stored
     std::array<std::uint8_t, 4> color{0x80, 0x80, 0x80, 0x80};  // as stored: 0x80 = 1.0
     int bone = 0;
+    // A vertex blended from several bones (characters), up to seven; empty
+    // for one of a single bone. `position` and `bone` are then its first's.
+    std::vector<Influence> influences;
 };
 
 struct Triangle final {
@@ -119,6 +136,9 @@ struct Group final {
     bool transparent = false;
     bool light = false;          // an object's light added over the model (its chain's flag 0x400000)
     std::uint8_t uv_option = 0;  // as stored: bit 1 scrolls, bits 2-5 the UVSC index
+    // Object models: the subpart's attribute word as stored (kn::ModelSKLRAWAttribute):
+    // bit 1 translucent, bits 16-20 its drawing priority, bit 27 additive.
+    std::uint32_t attribute = 0;
     std::vector<Triangle> triangles;
 
     std::optional<int> scroll_index() const;

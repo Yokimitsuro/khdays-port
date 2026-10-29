@@ -588,7 +588,7 @@ any resolution, with a file named after it:
 mods/<Mod>/graphics/<file>[#<entry>]/
 ├── tex/<texture>[@<palette>].png  # a 3D texture, any size (with any palette: <texture>.png)
 ├── chr/<n>.png                    # a 2D tile sheet, a whole multiple of its size
-└── mdl/<model>.gltf               # a model -- or .glb, or .fbx (<model>.bones.txt beside it pairs its joints)
+└── mdl/<model>.gltf               # a model -- or .glb, .fbx, or KH2's .mdlx (<model>.bones.txt beside it pairs its joints)
 ```
 
 `<file>` is the game file the graphic is loaded from and `#<entry>` its
@@ -609,7 +609,9 @@ the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is
 converted to glTF's metres and Y up, so the same model measures the same in
-either. Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
+either. A KH2 model (`.mdlx`, from your KINGDOM HEARTS II copy) comes with its
+own textures, its bones named `kh2_<index>`, KH2's centimetres made metres
+([`docs/KH2_MODELS.md`](docs/KH2_MODELS.md)). Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
 the file stores under another machine's path is found by its name beside the
 model -- and one that is missing is drawn white and named once in the log.
 The model's own animations are not used: the game's move it. While a mod's graphics are drawn,

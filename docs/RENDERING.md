@@ -351,7 +351,8 @@ the clip volume but for the game's far plane, which neither cuts nor hides them
 floor, a few large triangles, went at once); what lies past it is drawn at its
 depth (`gfx/g3d_geometry.c` `finish_mod_polygon`). A room of a mission world
 whose world the same mod replaces is drawn with HD graphics off too: its new
-ground is played either way.
+ground is played either way. A KH2 model (`.mdlx`) is imported into the same
+neutral form, its bones as the joints (`KH2_MODELS.md`).
 
 **A model that moves by itself** (`runtime/mods/room_animation.cpp`; the
 studio's KH2 rooms are made so). Its glTF's own animations move its nodes: a

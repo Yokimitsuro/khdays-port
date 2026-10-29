@@ -24,6 +24,7 @@ extern "C" {
 
 #include "khdays/assets/fbx.h"
 #include "khdays/assets/gltf.h"
+#include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/mesh.h"
 
 #include <algorithm>
@@ -306,7 +307,7 @@ bool tracing()
     return trace != 0;
 }
 
-// What `<model>.bones.txt` beside the model's file says (.gltf, .glb or .fbx: its name without its extension).
+// What `<model>.bones.txt` beside the model's file says (.gltf, .glb, .fbx or .mdlx: its name without its extension).
 struct BonesFile {
     std::map<std::string, std::string> pairs;
     float scale = 1.0F;
@@ -466,11 +467,16 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     model->node_names = game.object_names;
     model->node_names.resize(rest.size());
 
-    // the mod's model: glTF (.gltf, .glb) or FBX, the same neutral form
+    // the mod's model: glTF (.gltf, .glb), FBX or KH2's (.mdlx), the same neutral form
     assets::ImportedModel mod;
     try {
         const auto extension = u8(path).extension();
-        mod = extension == ".fbx" || extension == ".FBX" ? assets::import_fbx(u8(path)) : assets::import_gltf(u8(path));
+        if (extension == ".fbx" || extension == ".FBX")
+            mod = assets::import_fbx(u8(path));
+        else if (extension == ".mdlx" || extension == ".MDLX")
+            mod = assets::kh2::import_mdlx(u8(path));
+        else
+            mod = assets::import_gltf(u8(path));
     } catch (const std::exception &e) {
         std::fprintf(stderr, "models: %s cannot be read (%s): the game's is drawn\n", path.c_str(), e.what());
         khdays_log("models: %s cannot be read (%s): the game's is drawn", path.c_str(), e.what());
@@ -1517,8 +1523,8 @@ extern "C" void khdays_models_draw_begin(const void *resource)
                 khdays_log("models: %s drawn from %s, a mod's character", name, path);
             }
         } else if (named) {
-            /* glTF first, then binary glTF and FBX */
-            for (const char *extension : {".gltf", ".glb", ".fbx"}) {
+            /* glTF first, then binary glTF, FBX and KH2's */
+            for (const char *extension : {".gltf", ".glb", ".fbx", ".mdlx"}) {
                 std::snprintf(relative, sizeof(relative), "graphics/%s%s", name, extension);
                 if (khdays_mods_find(relative, path, sizeof(path))) {
                     loaded = load(name, path, file, offset);

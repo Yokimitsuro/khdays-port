@@ -1,4 +1,4 @@
-/* A mod's models drawn instead of the game's: mods/<Mod>/graphics/<name>.gltf (or .glb, .fbx), named as
+/* A mod's models drawn instead of the game's: mods/<Mod>/graphics/<name>.gltf (or .glb, .fbx, .mdlx), named as
  * the dump names the game's, while HD graphics are on. The game draws as always; the port takes each
  * node's matrix, leaves out the model's shapes and draws the mod's meshes on their own skeleton,
  * joints following nodes by name or <model>.bones.txt (docs/RENDERING.md, "Mods' graphics"). */
