@@ -41,14 +41,14 @@ static const struct {
     {{0x3303u, 0, 0}, 1, {KHDAYS_ACT_UP, KHDAYS_ACT_DOWN}, 2},
 };
 
-/* Kenney's Switch icons (settings_menu.cpp's): their textures, made from the executable's PNGs,
- * on the renderer they were made on */
+/* Kenney's gamepad icons (settings_menu.cpp's): their textures, made from the executable's PNGs, on the
+ * renderer they were made on */
 static struct {
     char name[KHDAYS_LAYOUT_NAME];
     SDL_Texture *texture;
-} *switch_icons;
-static int switch_icon_count;
-static SDL_Renderer *switch_renderer;
+} *kenney_icons;
+static int kenney_icon_count;
+static SDL_Renderer *kenney_renderer;
 
 static void *grow(void *array, int count, size_t size)
 {
@@ -454,18 +454,18 @@ static float line_icon_height(const Icon *icon, float ink)
     return overhaul() && icon->h > 0 ? icon->h : ink * 1.5f;
 }
 
-static SDL_Texture *switch_icon(SDL_Renderer *renderer, const char *name)
+static SDL_Texture *kenney_icon(SDL_Renderer *renderer, const char *name)
 {
     const unsigned char *png;
     unsigned size = 0;
     SDL_Texture *texture = NULL;
-    if (renderer != switch_renderer) {
-        switch_icon_count = 0; /* another renderer's: gone with it */
-        switch_renderer = renderer;
+    if (renderer != kenney_renderer) {
+        kenney_icon_count = 0; /* another renderer's: gone with it */
+        kenney_renderer = renderer;
     }
-    for (int i = 0; i < switch_icon_count; ++i) {
-        if (strcmp(switch_icons[i].name, name) == 0) {
-            return switch_icons[i].texture;
+    for (int i = 0; i < kenney_icon_count; ++i) {
+        if (strcmp(kenney_icons[i].name, name) == 0) {
+            return kenney_icons[i].texture;
         }
     }
     png = khdays_pad_icon_png(name, &size);
@@ -481,11 +481,11 @@ static SDL_Texture *switch_icon(SDL_Renderer *renderer, const char *name)
         }
     }
     {
-        void *more = grow(switch_icons, switch_icon_count, sizeof(*switch_icons));
+        void *more = grow(kenney_icons, kenney_icon_count, sizeof(*kenney_icons));
         if (more != NULL) {
-            switch_icons = more;
-            snprintf(switch_icons[switch_icon_count].name, KHDAYS_LAYOUT_NAME, "%s", name);
-            switch_icons[switch_icon_count++].texture = texture;
+            kenney_icons = more;
+            snprintf(kenney_icons[kenney_icon_count].name, KHDAYS_LAYOUT_NAME, "%s", name);
+            kenney_icons[kenney_icon_count++].texture = texture;
         }
     }
     return texture;
@@ -518,6 +518,19 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
                 out->h = p->h * ICON_PAD / ICON_FACE;
                 return 1;
             }
+            {
+                /* not among the layout's pieces (the pieces have no Guide, nor the sticks pressed): Kenney's, as
+                 * the Controls section shows it (a PlayStation's PS button has none: the action's next input) */
+                const char *kenney = khdays_pad_icon_name(input);
+                SDL_Texture *t = kenney != NULL ? kenney_icon(l->renderer, kenney) : NULL;
+                if (t != NULL) {
+                    out->texture = t;
+                    out->src.x = out->src.y = 0;
+                    SDL_GetTextureSize(t, &out->src.w, &out->src.h);
+                    out->h = ICON_PAD;
+                    return 1;
+                }
+            }
         } else {
             /* any other pad: Switch's letters, the DS's in the same places */
             static const char *const switch_names[KHDAYS_PAD_COUNT] = {[KHDAYS_PAD_SOUTH] = "switch_button_b",
@@ -538,7 +551,7 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
                                                                        [KHDAYS_PAD_BACK] = "switch_button_minus",
                                                                        [KHDAYS_PAD_GUIDE] = "switch_button_home"};
             const char *icon = input < KHDAYS_PAD_COUNT ? switch_names[input] : NULL;
-            SDL_Texture *t = icon != NULL ? switch_icon(l->renderer, icon) : NULL;
+            SDL_Texture *t = icon != NULL ? kenney_icon(l->renderer, icon) : NULL;
             if (t != NULL) {
                 out->texture = t;
                 out->src.x = out->src.y = 0;
@@ -562,7 +575,7 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
             [KHDAYS_MOUSE_WHEEL_DOWN] = "mouse_scroll_down",
         };
         const char *icon = mouse[input - KHDAYS_MOUSE_INPUT];
-        SDL_Texture *t = icon != NULL ? switch_icon(l->renderer, icon) : NULL;
+        SDL_Texture *t = icon != NULL ? kenney_icon(l->renderer, icon) : NULL;
         if (t == NULL) {
             return 0;
         }
@@ -1080,13 +1093,13 @@ void khdays_layout_firefly(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, 
 
 void khdays_layout_renderer_gone(void)
 {
-    for (int i = 0; i < switch_icon_count; ++i) {
-        if (switch_icons[i].texture != NULL) {
-            SDL_DestroyTexture(switch_icons[i].texture);
+    for (int i = 0; i < kenney_icon_count; ++i) {
+        if (kenney_icons[i].texture != NULL) {
+            SDL_DestroyTexture(kenney_icons[i].texture);
         }
     }
-    switch_icon_count = 0;
-    switch_renderer = NULL;
+    kenney_icon_count = 0;
+    kenney_renderer = NULL;
     firefly_forget();
 }
 
