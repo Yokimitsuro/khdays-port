@@ -1520,8 +1520,8 @@ HOOKS = {
             # plays its clip for it
             "    { extern void khdays_models_draw_animation(unsigned animation);\n"
             "      khdays_models_draw_animation(*(unsigned *)(renderObj->pad08_20 + 8)); }\n"
-            "    { extern void khdays_models_draw_begin(const void *model);\n"
-            "      khdays_models_draw_begin(renderObj->pResMdl); }\n"
+            "    { extern void khdays_models_draw_begin(const void *model, const void *render_obj);\n"
+            "      khdays_models_draw_begin(renderObj->pResMdl, renderObj); }\n"
             "    do {\n        u32 command;\n",
         ),
         (
@@ -1529,6 +1529,28 @@ HOOKS = {
             "    { extern void khdays_models_draw_end(void); khdays_models_draw_end(); }\n"
             "    renderObj->flags &= ~1;\n",
         ),
+    ],
+    # A mover put on its floor this frame (Mover_Step calls it every frame for one with
+    # gravity, standing or falling): its owner at +0, vertical speed at +0x38 (0x80000000
+    # on the floor) and floor collision index at +0x46, for a KH2 model's IKAdjust at its
+    # draw (runtime/mods/models.cpp, docs/KH2_MODELS.md).
+    "main@0202cf64": [
+        (  # Mover_ResolveFloor
+            "    if (mover->active < 0) {\n        return 0;\n    }\n",
+            "    if (mover->active < 0) {\n        return 0;\n    }\n"
+            "    { extern void khdays_models_actor_ground(void *mover); khdays_models_actor_ground(mover); }\n",
+        )
+    ],
+    # A joint's matrix saved for what the game attaches to it (an actor's weapons at
+    # ro_w_tg_L/_R): a KH2 model's motions.txt can put it on a KH2 bone instead
+    # (runtime/mods/models.cpp, written over at the body's draw end).
+    "itcm@01fffe68": [
+        (  # Obj_CaptureSelectedJointMtx
+            "            NNS_G3dGetCurrentMtx(&cache->matrices528[index], 0);\n",
+            "            NNS_G3dGetCurrentMtx(&cache->matrices528[index], 0);\n"
+            "            { extern void khdays_models_joint_saved(void *matrix, unsigned node);\n"
+            "              khdays_models_joint_saved(&cache->matrices528[index], selected); }\n",
+        )
     ],
     "itcm@01ffc164": [
         (  # NNSi_G3dFuncSbc_NODEDESC

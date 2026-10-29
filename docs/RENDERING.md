@@ -332,7 +332,16 @@ K_j = T(where its head is now) x linear(D_G) x C_j x T(-head_j): its rest turned
 by C_j (the rest pose correction, for a T-pose unlike the game's), then as the
 game turns G; its head is where its parent's K puts it, so the mod keeps its
 own proportions. A joint at G's place with no correction is drawn with D_G
-itself; one that follows no node moves with its parent. A mesh is drawn both
+itself; one that follows no node moves with its parent. C_j turns a joint at
+rest when its way to its one following child points more than 20 degrees from
+the game's; `pose_degrees <n>` in `<model>.bones.txt` sets that threshold for
+the model (KH2's Roxas: legs hanging straight against Days' 10-11 degree splay
+came out with the ankles crossed under 20). `ik <upper> <lower> <end>` bends a
+two-bone limb of paired joints after that, so the end reaches as the game's
+nodes reach: the target is the game's end node seen from its upper node, scaled
+by the two limbs' lengths, bent in the plane of the game's middle node (the law
+of cosines about an up vector, as KH2's `Motion::calcIKJoint`); the upper and
+lower joints are swung to it, keeping their nodes' twist. A mesh is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
 `<model>.bones.txt` says `cull back` or `cull none`. The game's own shapes are
 left unsent but for those `keep <node> ...` names: a shape whose vertices all

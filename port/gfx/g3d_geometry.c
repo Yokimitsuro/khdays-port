@@ -1236,8 +1236,25 @@ void khdays_g3d_draw_end(void)
     g.draw = 0;
 }
 
+static int32_t flushed_camera[12];
+static int camera_flushed;
+
+int khdays_g3d_camera(float camera[16])
+{
+    if (!camera_flushed)
+        return 0;
+    memset(camera, 0, 16 * sizeof(float));
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 3; ++r)
+            camera[c * 4 + r] = (float)flushed_camera[c * 3 + r] / 4096.0f;
+    camera[15] = 1.0f;
+    return 1;
+}
+
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12])
 {
+    memcpy(flushed_camera, camera, sizeof(flushed_camera));
+    camera_flushed = 1;
     khdays_shadow_camera(projection, camera);
     if (building->flushes++ == 0) {
         memcpy(building->camera, camera, sizeof(building->camera));

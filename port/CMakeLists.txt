@@ -737,6 +737,7 @@ add_executable(khdays-native
     ../assets/src/fbx.cpp          # ... as FBX
     ../assets/src/kh2_mdlx.cpp     # ... as KH2's (.mdlx; its BAR from khdays-kh2-sequence)
     ../assets/src/kh2_map.cpp      # ... its model and textures
+    ../assets/src/kh2_motion.cpp   # ... and KH2's motions for it
     ../assets/src/image.cpp        # their textures in PNG, JPEG, TGA, BMP (its own stb_image)
     ../assets/src/graphics2d.cpp   # the game's 2D sheets, for the rooms' signal
     ../assets/src/cell.cpp         # their cells

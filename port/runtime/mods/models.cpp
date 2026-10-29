@@ -17,6 +17,13 @@ extern "C" {
 #include "textures.h"
 #include "../core/window.h"
 #include "../../host/app/hud_settings.h" // a model's switch (bones.txt)
+
+/* The game's floor ray (Mover_ResolveFloor's downward casts): its collision world by index, the first
+ * hit of a segment (CollCastParams: origin, direction, radius, direction-is-unit, flags, exclude) and
+ * the point at a hit's distance along it. */
+KhdaysRef GetTrackEntryBase(int index);
+KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
+void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, KhdaysRef out);
 }
 #include "names.h"
 #include "room_animation.h"
@@ -25,11 +32,13 @@ extern "C" {
 #include "khdays/assets/fbx.h"
 #include "khdays/assets/gltf.h"
 #include "khdays/assets/kh2_mdlx.h"
+#include "khdays/assets/kh2_motion.h"
 #include "khdays/assets/mesh.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -264,6 +273,18 @@ struct OwnSkeleton {
 
 Mat compose(const Trs &x); // a node's local matrix
 
+// The KH2 motion a game animation plays from its frame `from` (BCA frames) until the next section's,
+// cross-faded in over `blend` frames from the pose before. `follow`: the motion's time is the game's
+// frame, stretched from the section onto the motion, so the game's holds and loops are the motion's;
+// a frame the game sets back cross-fades over `loop_blend` frames (-1: `blend`'s).
+struct Kh2Section {
+    float from = 0.0F;
+    std::size_t slot = 0;
+    float blend = 0.0F;
+    float loop_blend = -1.0F;
+    bool follow = false;
+};
+
 struct Model {
     std::string name;
     std::vector<Joint> joints;
@@ -272,7 +293,9 @@ struct Model {
     int cull = 0;                       // bones.txt's `cull`: 0 the file's own, 1 back faces culled, 2 both sides drawn
     std::set<std::uint32_t> kept_lists; // bones.txt's `keep`: the game's shapes still drawn (their lists' places)
     int setting = -1;                   // bones.txt's `switch`: the HD replacement it follows (hud_settings.h)
-    std::vector<Mat> node_rest_inverse; // the game's model, per node
+    float pose_degrees = kPoseDegrees;  // bones.txt's `pose_degrees`: the rest pose correction's threshold
+    std::vector<std::array<int, 3>> limbs; // bones.txt's `ik`: upper, lower and end joint, reaching as the nodes do
+    std::vector<Mat> node_rest_inverse;    // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
     int draws = 0;                      // for the session log's diagnosis
@@ -288,10 +311,61 @@ struct Model {
     bool clock_started = false;
     std::uint64_t frames = 0;
     u32 last_vblank = 0;
+    // a KH2 model's own motions (<model>.motions.txt): the mset, the sections of the game's animations
+    // that play its motions (by first frame), each joint's KH2 bone (-1 none) and the joint of bone 0
+    std::shared_ptr<const khdays::assets::kh2::MotionSet> kh2_motions;
+    std::shared_ptr<const khdays::assets::kh2::MotionSkeleton>
+        kh2_skeleton;                                                  // the mset's model's (its own, else `skeleton`)
+    std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_retarget; // from the `skeleton`'s bones to the model's
+    std::map<std::string, std::vector<Kh2Section>> kh2_sections;
+    bool kh2_root_motion = false;
+    bool kh2_ik_adjust = true; // the feet on the game's floor (IKAdjust)
+    std::vector<int> kh2_bone;
+    std::vector<int> kh2_weapon; // per game node: the joint what the game attaches to it is put on (-1 none)
 };
 
 int trace = -1;
 int draws; // for KHDAYS_TRACE_MODELS=2
+
+// A joint animation the drawn model plays (NNSG3dAnmObj on the render object's anmJnt chain): its
+// BCA0 name, frame (BCA frames), blend weight (0..1; two during the game's cross-fade) and length.
+struct Playing {
+    std::string name;
+    float frame = 0.0F;
+    float ratio = 1.0F;
+    float frames = 0.0F; // the J0AC's u16 at +4
+};
+std::vector<Playing> playing;
+std::map<u32, std::string> animation_names; // by the J0AC's DS address
+const void *drawn_object = nullptr;         // the render object being drawn: which actor's model
+
+// A section's KH2 motion as an actor plays it: its player (the pose it keeps) and its clock in KH2's
+// ticks (60 a second).
+struct Kh2Track {
+    std::unique_ptr<khdays::assets::kh2::MotionPlayer> player;
+    float ticks = 0.0F;
+    std::vector<khdays::assets::kh2::Mat4> joints; // the pose shown: the model's bones
+};
+// A game animation an actor plays: its section and the motion time it last showed, the pose fading out
+// (kept as it was last shown) with the frames left of the fade, its frame and forward step at its last
+// draw and `seen` the actor's draw it was last in.
+struct Kh2Animation {
+    int section = 0;
+    float shown = 0.0F;
+    std::vector<khdays::assets::kh2::Mat4> fade;
+    const khdays::assets::kh2::Motion *fade_motion = nullptr;
+    float fade_ticks = 0.0F, fade_left = 0.0F, fade_frames = 0.0F;
+    float looped_at = -1.0F; // a loop's fade: the frame the game set back from (-1 none)
+    float last_frame = 0.0F;
+    float step = 1.0F;
+    std::uint64_t seen = 0;
+    std::map<int, Kh2Track> tracks; // by section
+};
+struct Kh2Actor {
+    std::uint64_t draws = 0;
+    std::map<std::string, Kh2Animation> animations; // by game animation
+};
+std::map<const void *, Kh2Actor> kh2_actors; // by render object
 
 std::filesystem::path u8(const std::string &path)
 {
@@ -312,8 +386,10 @@ struct BonesFile {
     std::map<std::string, std::string> pairs;
     float scale = 1.0F;
     int cull = 0;
-    std::vector<std::string> keep; // the game's nodes whose own shapes are still drawn
-    std::string setting;           // the HD replacement switch it follows
+    std::vector<std::string> keep;  // the game's nodes whose own shapes are still drawn
+    std::string setting;            // the HD replacement switch it follows
+    float pose_degrees = kPoseDegrees; // the rest pose correction's threshold
+    std::vector<std::array<std::string, 3>> limbs; // its two-bone limbs (`ik <upper> <lower> <end>`)
 };
 
 void read_bones(const std::string &model_file, BonesFile &bones)
@@ -321,6 +397,8 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &pairs = bones.pairs;
     auto &scale = bones.scale;
     auto &cull = bones.cull;
+    auto &pose_degrees = bones.pose_degrees;
+    auto &limbs = bones.limbs;
     const auto dot = model_file.find_last_of('.');
     const std::string path = (dot != std::string::npos ? model_file.substr(0, dot) : model_file) + ".bones.txt";
     std::ifstream in(u8(path));
@@ -350,6 +428,24 @@ void read_bones(const std::string &model_file, BonesFile &bones)
             } else {
                 std::fprintf(stderr, "models: %s: cull %s is neither back nor none; the line is ignored\n",
                              path.c_str(), b.c_str());
+            }
+        } else if (a == "pose_degrees") {
+            char *end = nullptr;
+            const float degrees = std::strtof(b.c_str(), &end);
+            if (end != b.c_str() && *end == '\0' && degrees >= 0.0F) {
+                pose_degrees = degrees;
+            } else {
+                std::fprintf(stderr, "models: %s: pose_degrees %s is not a number of degrees; the line is ignored\n",
+                             path.c_str(), b.c_str());
+            }
+        } else if (a == "ik") {
+            std::string lower, end;
+            if (words >> lower >> end) {
+                limbs.push_back({b, lower, end});
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `ik <upper joint> <lower joint> <end joint>`; the line is ignored\n",
+                             path.c_str());
             }
         } else {
             pairs[a] = b;
@@ -429,6 +525,213 @@ void set_rest_size(Model &model)
                 model.high[c] = std::fmax(model.high[c], p[c]);
             }
         }
+// A KH2 model's own motions: `<model>.motions.txt` beside the .mdlx, a line each -- `mset <file>` (beside
+// it), `root_motion on|off` (off: the game places the model, KH2's root motion taken out of the bones as
+// KH2 takes it out; on: drawn as the motion moves it) and `<game animation>[@<frame>] <mset slot>
+// [blend <frames>]`, a section of the animation from that frame on; `skeleton <mdlx>` with `bone` and `ik`
+// lines when the mset was made for another model. A game animation without a line, or a slot with no
+// motion, keeps the game's (docs/KH2_MODELS.md).
+void load_kh2_motions(Model &model, const std::string &path)
+{
+    namespace kh2 = khdays::assets::kh2;
+    const auto file = u8(path);
+    if (file.extension() != ".mdlx" && file.extension() != ".MDLX")
+        return;
+    const auto list = file.parent_path() / (file.stem().u8string() + u8".motions.txt");
+    std::ifstream in(list);
+    if (!in)
+        return;
+    const auto say = [&](const std::string &what) {
+        std::fprintf(stderr, "models: %s: %s\n", path.c_str(), what.c_str());
+        khdays_log("models: %s: %s", path.c_str(), what.c_str());
+    };
+    std::string mset, line;
+    std::map<std::string, std::vector<Kh2Section>> sections;
+    std::vector<std::pair<std::string, int>> weapons; // the game's joint, the KH2 bone
+    std::string skeleton;                             // the mdlx the mset was made for, when not this one
+    std::vector<std::pair<int, int>> bones;           // this model's bone, the skeleton's
+    std::vector<khdays::assets::kh2::Retarget::Limb> limbs;
+    const auto number = [](const std::string &s, float &out) {
+        char *end = nullptr;
+        out = std::strtof(s.c_str(), &end);
+        return end != s.c_str() && *end == '\0' && out >= 0.0F;
+    };
+    // a bone number or a range of them (`171-215`)
+    const auto span = [](const std::string &s, int &from, int &to) {
+        char *end = nullptr;
+        const long a = std::strtol(s.c_str(), &end, 10);
+        long b = a;
+        if (end != s.c_str() && *end == '-') {
+            const char *rest = end + 1;
+            b = std::strtol(rest, &end, 10);
+            if (end == rest)
+                return false;
+        }
+        if (end == s.c_str() || *end != '\0' || a < 0 || b < a)
+            return false;
+        from = static_cast<int>(a);
+        to = static_cast<int>(b);
+        return true;
+    };
+    while (std::getline(in, line)) {
+        const auto hash = line.find('#');
+        if (hash != std::string::npos)
+            line.erase(hash);
+        std::istringstream words(line);
+        std::string a, b;
+        if (!(words >> a >> b))
+            continue;
+        if (a == "mset") {
+            mset = b;
+        } else if (a == "root_motion") {
+            model.kh2_root_motion = b == "on";
+        } else if (a == "ik_adjust") {
+            model.kh2_ik_adjust = b != "off";
+        } else if (a == "skeleton") {
+            skeleton = b;
+        } else if (a == "bone") {
+            std::string c;
+            int t0 = 0, t1 = 0, s0 = 0, s1 = 0;
+            if (!(words >> c) || !span(b, t0, t1) || !span(c, s0, s1) || t1 - t0 != s1 - s0) {
+                say("\"" + line +
+                    "\": write `bone <this model's bone> <the skeleton's bone>`, or two ranges as long (`bone 171-215 "
+                    "115-159`); the line is ignored");
+                continue;
+            }
+            for (int i = 0; i <= t1 - t0; ++i)
+                bones.emplace_back(t0 + i, s0 + i);
+        } else if (a == "ik") {
+            std::string c, d, r;
+            float u = 0.0F, l = 0.0F, e = 0.0F, reach = -1.0F;
+            if (!(words >> c >> d) || !number(b, u) || !number(c, l) || !number(d, e) ||
+                (words >> r && !number(r, reach))) {
+                say("\"" + line +
+                    "\": write `ik <upper bone> <lower bone> <end bone> [<bone it reaches with>]`; the line is ignored");
+                continue;
+            }
+            limbs.push_back({static_cast<int>(u), static_cast<int>(l), static_cast<int>(e), static_cast<int>(reach)});
+        } else if (a == "weapon") {
+            std::string bone;
+            float n = 0.0F;
+            if (!(words >> bone) || !number(bone, n)) {
+                say("\"" + line + "\": write `weapon <the game's joint> <KH2 bone>`; the line is ignored");
+                continue;
+            }
+            weapons.emplace_back(b, static_cast<int>(n));
+        } else {
+            Kh2Section section;
+            const auto at = a.find('@');
+            if (at != std::string::npos) {
+                if (!number(a.substr(at + 1), section.from)) {
+                    say("\"" + line + "\": the frame after @ is not a number; the line is ignored");
+                    continue;
+                }
+                a.erase(at);
+            }
+            char *end = nullptr;
+            section.slot = std::strtoul(b.c_str(), &end, 10);
+            if (end == b.c_str() || *end != '\0') {
+                say("\"" + line + "\": the slot is not a number; the line is ignored");
+                continue;
+            }
+            std::string c, d;
+            bool bad = false;
+            while (!bad && words >> c) {
+                if (c == "follow")
+                    section.follow = true;
+                else if (c == "loop_blend")
+                    bad = !(words >> d && number(d, section.loop_blend));
+                else
+                    bad = !(c == "blend" && words >> d && number(d, section.blend));
+            }
+            if (bad) {
+                say("\"" + line +
+                    "\": after the slot write `blend <frames>`, `loop_blend <frames>` or `follow`; the line is ignored");
+                continue;
+            }
+            auto &parts = sections[a];
+            std::erase_if(parts, [&](const Kh2Section &s) { return s.from == section.from; });
+            parts.push_back(section);
+        }
+    }
+    // each joint's KH2 bone: the importer names them kh2_<bone>
+    model.kh2_bone.assign(model.joints.size(), -1);
+    for (std::size_t j = 0; j < model.joints.size(); ++j) {
+        const std::string &n = model.joints[j].name;
+        if (n.rfind("kh2_", 0) == 0)
+            model.kh2_bone[j] = std::atoi(n.c_str() + 4);
+    }
+    // what the game attaches to a joint of its model (its weapons), on a KH2 bone's joint instead
+    for (const auto &[node, bone] : weapons) {
+        const auto g = std::find(model.node_names.begin(), model.node_names.end(), node);
+        const auto j = std::find(model.kh2_bone.begin(), model.kh2_bone.end(), bone);
+        if (g == model.node_names.end() || j == model.kh2_bone.end()) {
+            say("weapon " + node + " " + std::to_string(bone) + ": " +
+                (g == model.node_names.end() ? "the game's model has no joint " + node
+                                             : "the model has no bone " + std::to_string(bone)) +
+                "; the game's place is kept");
+            continue;
+        }
+        model.kh2_weapon.resize(model.node_names.size(), -1);
+        model.kh2_weapon[static_cast<std::size_t>(g - model.node_names.begin())] =
+            static_cast<int>(j - model.kh2_bone.begin());
+    }
+    if (mset.empty()) {
+        if (!sections.empty())
+            say("motions.txt names no mset (a line `mset <file>.mset`); the game's animations are played");
+        return;
+    }
+    try {
+        const auto read = [](const std::filesystem::path &p) {
+            std::ifstream f(p, std::ios::binary);
+            if (!f) {
+                const auto name = p.filename().u8string();
+                throw std::runtime_error("cannot open " + std::string(name.begin(), name.end()));
+            }
+            return std::vector<std::uint8_t>{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+        };
+        const auto mdlx = read(file);
+        const auto set = read(file.parent_path() / u8(mset));
+        const kh2::MotionSkeleton own = kh2::read_motion_skeleton(mdlx.data(), mdlx.size());
+        if (skeleton.empty()) {
+            model.kh2_skeleton = std::make_shared<kh2::MotionSkeleton>(own);
+        } else { // the mset plays on its own model's bones, given to this one's
+            const auto other = read(file.parent_path() / u8(skeleton));
+            model.kh2_skeleton =
+                std::make_shared<kh2::MotionSkeleton>(kh2::read_motion_skeleton(other.data(), other.size()));
+            std::vector<int> source_of(own.joints.size(), -1);
+            for (const auto &[t, s] : bones) {
+                if (static_cast<std::size_t>(t) >= source_of.size())
+                    throw std::runtime_error("bone " + std::to_string(t) + ": the model has " +
+                                             std::to_string(own.joints.size()) + " bones");
+                source_of[static_cast<std::size_t>(t)] = s;
+            }
+            model.kh2_retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, own, source_of, limbs);
+        }
+        model.kh2_motions = std::make_shared<kh2::MotionSet>(set.data(), set.size());
+    } catch (const std::exception &e) {
+        say(std::string("its motions cannot be read (") + e.what() + "); the game's animations are played");
+        model.kh2_motions.reset();
+        model.kh2_retarget.reset();
+        return;
+    }
+    for (auto &[name, parts] : sections) {
+        std::erase_if(parts, [&](const Kh2Section &s) {
+            if (model.kh2_motions->motion(s.slot) != nullptr)
+                return false;
+            say(name + ": mset slot " + std::to_string(s.slot) + " holds no motion it plays; the game's is kept");
+            return true;
+        });
+        if (parts.empty())
+            continue;
+        std::sort(parts.begin(), parts.end(), [](const Kh2Section &x, const Kh2Section &y) { return x.from < y.from; });
+        if (parts.front().from > 0.0F)
+            say(name + ": no section from frame 0; the game's animation plays before frame " +
+                std::to_string(parts.front().from));
+        model.kh2_sections[name] = std::move(parts);
+    }
+    khdays_log("models: %s: %zu of the game's animations play KH2 motions from %s (root motion %s)", path.c_str(),
+               model.kh2_sections.size(), mset.c_str(), model.kh2_root_motion ? "on" : "off");
 }
 
 std::unique_ptr<Model> load(const std::string &name, const std::string &path, const char *file, u32 offset)
@@ -499,6 +802,8 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &pairs = bones.pairs;
     model->scale = bones.scale;
     model->cull = bones.cull;
+    model->pose_degrees = bones.pose_degrees;
+    const auto &limbs = bones.limbs;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -583,13 +888,13 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
                 float degrees = 0.0F;
                 const Mat r = arc(ds, dg, degrees);
                 joint.degrees = degrees;
-                if (degrees > kPoseDegrees) {
+                if (degrees > model->pose_degrees) {
                     joint.correction = mul(r, joint.correction);
                 }
                 if (tracing()) {
                     std::fprintf(stderr, "models: %s: %s follows %s, %.1f degrees from its pose%s\n", name.c_str(),
                                  joint.name.c_str(), game.object_names[static_cast<std::size_t>(joint.node)].c_str(),
-                                 degrees, degrees > kPoseDegrees ? ", turned" : "");
+                                 degrees, degrees > model->pose_degrees ? ", turned" : "");
                 }
             }
         } else if (tracing()) {
@@ -601,6 +906,31 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             identity = identity && std::fabs(joint.correction[i] - kIdentity[i]) < 1e-6F;
         joint.exact = identity && std::fabs(joint.head[0] - hg[0]) < 1e-4F &&
                       std::fabs(joint.head[1] - hg[1]) < 1e-4F && std::fabs(joint.head[2] - hg[2]) < 1e-4F;
+    }
+
+    // the two-bone limbs: three paired joints, each below the one before
+    for (const auto &names : limbs) {
+        std::array<int, 3> limb{-1, -1, -1};
+        for (std::size_t i = 0; i < 3; ++i) {
+            for (std::size_t j = 0; j < model->joints.size(); ++j) {
+                if (model->joints[j].name == names[i])
+                    limb[i] = static_cast<int>(j);
+            }
+        }
+        bool ok = limb[0] >= 0 && limb[1] >= 0 && limb[2] >= 0 && descends(limb[1], limb[0]) &&
+                  descends(limb[2], limb[1]) && limb[1] != limb[0] && limb[2] != limb[1];
+        for (std::size_t i = 0; ok && i < 3; ++i)
+            ok = model->joints[static_cast<std::size_t>(limb[i])].node >= 0;
+        if (!ok) {
+            std::fprintf(stderr,
+                         "models: %s: ik %s %s %s: each must be a paired joint below the one before; the line is "
+                         "ignored\n",
+                         name.c_str(), names[0].c_str(), names[1].c_str(), names[2].c_str());
+            khdays_log("models: %s: ik %s %s %s: each must be a paired joint below the one before; the line is ignored",
+                       name.c_str(), names[0].c_str(), names[1].c_str(), names[2].c_str());
+            continue;
+        }
+        model->limbs.push_back(limb);
     }
 
     // the meshes and their textures, each texture as its material takes its alpha (glTF alphaMode): kept;
@@ -856,6 +1186,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         }
     }
     set_rest_size(*model);
+    load_kh2_motions(*model, path);
     return model;
 }
 
@@ -870,6 +1201,154 @@ const unsigned char *model_start; // the draw's model (its NNSG3dResMdl): its sh
 KhdaysG3dMaterial material;
 std::vector<Mat> node_matrix;
 std::vector<char> node_sent;
+std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
+
+// The movers Mover_ResolveFloor put on their floor, by owner (their render object is at owner + 0x24: the
+// animation state at +4, func_ov022_020a3c78, its NNSG3dRenderObj at +0x20): the mover and the vblank
+// it was last seen at.
+struct Grounded {
+    KhdaysRef mover = 0;
+    u32 vblank = 0;
+};
+std::unordered_map<KhdaysRef, Grounded> grounds;
+
+// The floor a drawn actor's KH2 feet are put on (IKAdjust): only while the game has it on the floor
+// (its mover's vertical speed 0x80000000; KH2's YS::MOTION::make_ik_adjust 0x45992c: while the object
+// touches the ground), `world` the model's centimetres to Days' world (DS units, y up as the solver
+// takes it), and the ray onto the actor's floor (the game's collision, the actor itself left out).
+struct Floor {
+    bool on = false;
+    Mat world = kIdentity;
+    khdays::assets::kh2::GroundRay ray;
+};
+
+// KHDAYS_TRACE_MODELS: a model's floor state when it changes, and now and then its rays (Days' world)
+// beside its actor's place (the mover owner's +0xa8) and its own.
+struct FloorTrace {
+    std::string said;
+    unsigned draws = 0, rays = 0, hits = 0;
+    std::array<float, 3> from{}, to{}, hit{};
+};
+std::map<std::string, FloorTrace> floor_traces;
+
+void trace_floor(const Model &m, const std::string &state)
+{
+    if (!tracing())
+        return;
+    FloorTrace &t = floor_traces[m.name];
+    if (t.said != state)
+        khdays_log("models: %s: IKAdjust %s", m.name.c_str(), state.c_str());
+    t.said = state;
+}
+
+Floor floor_of(const Model &m, const Mat &base)
+{
+    Floor f;
+    float camera[16];
+    if (!m.kh2_ik_adjust || m.kh2_skeleton == nullptr || m.kh2_skeleton->feet.empty() || drawn_object == nullptr ||
+        !khdays_g3d_camera(camera)) {
+        trace_floor(m, "off: ik_adjust off, no feet in the model or no camera yet");
+        return f;
+    }
+    const KhdaysRef object = KHDAYS_REF(drawn_object);
+    const auto found = grounds.find(object - 0x24U);
+    if (found == grounds.end() || khdays_events_vblank_count() - found->second.vblank > 4U) {
+        if (tracing()) { // the actors settled lately near its render object, to find the link to its mover
+            std::string near;
+            for (const auto &[record, g] : grounds) {
+                const long long off = static_cast<long long>(object) - static_cast<long long>(record);
+                if (khdays_events_vblank_count() - g.vblank > 4U || off < -0x4000 || off > 0x4000)
+                    continue;
+                char one[64];
+                std::snprintf(one, sizeof(one), " %08x (render object - record = %lld)", record, off);
+                near += one;
+            }
+            trace_floor(m, found == grounds.end() ? "off: no mover's owner at render object - 0x24; near:" +
+                                                        (near.empty() ? std::string(" none") : near)
+                                                  : "off: its mover was not put on a floor lately");
+        }
+        return f;
+    }
+    const auto *mover = static_cast<const unsigned char *>(KHDAYS_W(found->second.mover));
+    KhdaysRef record = 0;
+    s32 speed = 0;
+    u16 index = 0;
+    std::memcpy(&record, mover, 4);
+    std::memcpy(&speed, mover + 0x38, 4);
+    std::memcpy(&index, mover + 0x46, 2);
+    const bool on_floor = speed == static_cast<s32>(0x80000000U); // Mover_ResolveFloor: landed
+    if (record != found->first || static_cast<std::int16_t>(index) < 0 || !on_floor) {
+        trace_floor(m, !on_floor ? "off: its actor is not on the floor" : "off: its mover changed");
+        return f;
+    }
+    // the locals the game's functions read are passed by reference: the game thread's stack must be
+    // in the game's memory (it is, as the game's own casts pass theirs)
+    int here = 0;
+    if (static_cast<std::uintptr_t>(reinterpret_cast<const unsigned char *>(&here) - khdays_window) >= 0x100000000ULL) {
+        trace_floor(m, "off: the game thread's stack is outside the game's memory");
+        return f;
+    }
+    trace_floor(m, "on");
+    Mat view_of_world;
+    std::copy(camera, camera + 16, view_of_world.begin());
+    Mat cm = kIdentity; // KH2's centimetres to the model's metres
+    cm[0] = cm[5] = cm[10] = 0.01F;
+    f.world = mul(inverse(view_of_world), mul(base, cm)); // Days' world is y up, as the solver's
+    FloorTrace *t = tracing() ? &floor_traces[m.name] : nullptr;
+    if (t != nullptr && ++t->draws % 60U == 0U) {
+        s32 at[3] = {};
+        std::memcpy(at, static_cast<const unsigned char *>(KHDAYS_W(record)) + 0xa8, sizeof(at));
+        khdays_log("models: %s: IKAdjust %u rays, %u hits; actor at %.2f %.2f %.2f, model at %.2f %.2f %.2f; "
+                   "last ray %.2f %.2f %.2f to %.2f %.2f %.2f, hit %.2f %.2f %.2f (Days' world)",
+                   m.name.c_str(), t->rays, t->hits, static_cast<double>(at[0]) / 4096.0,
+                   static_cast<double>(at[1]) / 4096.0, static_cast<double>(at[2]) / 4096.0,
+                   static_cast<double>(f.world[12]), static_cast<double>(f.world[13]), static_cast<double>(f.world[14]),
+                   static_cast<double>(t->from[0]), static_cast<double>(t->from[1]), static_cast<double>(t->from[2]),
+                   static_cast<double>(t->to[0]), static_cast<double>(t->to[1]), static_cast<double>(t->to[2]),
+                   static_cast<double>(t->hit[0]), static_cast<double>(t->hit[1]), static_cast<double>(t->hit[2]));
+        t->rays = t->hits = 0;
+    }
+    f.ray = [record, index, t](const std::array<float, 3> &from, const std::array<float, 3> &to,
+                               std::array<float, 3> &hit) {
+        if (t != nullptr) {
+            ++t->rays;
+            t->from = from;
+            t->to = to;
+        }
+        struct Vec {
+            s32 x, y, z;
+        };
+        struct Params { // CollCastParams
+            KhdaysRef origin, direction;
+            s32 radius;
+            u16 unit, flags;
+            KhdaysRef exclude;
+        };
+        const auto fx = [](float v) { return static_cast<s32>(std::lround(v * 4096.0F)); };
+        Vec origin{fx(from[0]), fx(from[1]), fx(from[2])};
+        Vec direction{fx(to[0] - from[0]), fx(to[1] - from[1]), fx(to[2] - from[2])};
+        Vec at{};
+        Params params{KHDAYS_REF(&origin), KHDAYS_REF(&direction), 0, 0, 0, record};
+        const KhdaysRef world = GetTrackEntryBase(index);
+        if (world == 0)
+            return false;
+        const KhdaysRef h = Collision_RunRayCast(world, KHDAYS_REF(&params));
+        if (h == 0)
+            return false;
+        s32 distance = 0;
+        std::memcpy(&distance, static_cast<const unsigned char *>(KHDAYS_W(h)) + 12, 4);
+        Vec3ScaleAddQ27(distance, KHDAYS_REF(&direction), KHDAYS_REF(&origin), KHDAYS_REF(&at));
+        hit = {static_cast<float>(at.x) / 4096.0F, static_cast<float>(at.y) / 4096.0F,
+               static_cast<float>(at.z) / 4096.0F};
+        if (t != nullptr) {
+            ++t->hits;
+            t->hit = hit;
+        }
+        return true;
+    };
+    f.on = true;
+    return f;
+}
 
 std::vector<Mat> d, k, skin;
 u32 drawn_animation; // the render object's joint animation (an NNSG3dAnmObj), 0 none
@@ -953,6 +1432,72 @@ void apply_clip(const Clip &source, float t, std::vector<Trs> &pose)
             for (std::size_t c = 0; c < 3; ++c)
                 v[c] = track.values[k0 * 3 + c] + (track.values[k1 * 3 + c] - track.values[k0 * 3 + c]) * w;
             (track.path == Path::translation ? out.t : out.s) = v;
+// An `ik` limb (bones.txt) bent so its end joint reaches as the game's nodes reach: their way from the
+// upper node scaled to the model's limb, bent in the plane the game's middle node bends in -- the
+// law of cosines about an up vector, as KH2's Motion::calcIKJoint (0xf56a0) bends its chains. The
+// upper and lower joints are swung to it, keeping the twist their nodes give them; the joints below
+// them are placed again (`pose`).
+template <typename Pose> void reach(const Model &m, const std::array<int, 3> &limb, const Pose &pose)
+{
+    using V = std::array<float, 3>;
+    const auto sub = [](const V &a, const V &b) { return V{a[0] - b[0], a[1] - b[1], a[2] - b[2]}; };
+    const auto add = [](const V &a, const V &b, float s) {
+        return V{a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s};
+    };
+    const auto dot = [](const V &a, const V &b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    const auto about = [](const V &at, const Mat &r, const Mat &m0) { // T(at) * r * T(-at) * m0
+        Mat t = kIdentity, back = kIdentity;
+        t[12] = at[0];
+        t[13] = at[1];
+        t[14] = at[2];
+        back[12] = -at[0];
+        back[13] = -at[1];
+        back[14] = -at[2];
+        return mul(t, mul(r, mul(back, m0)));
+    };
+    constexpr float kTiny = 1e-5F;
+    const auto j0 = static_cast<std::size_t>(limb[0]), j1 = static_cast<std::size_t>(limb[1]),
+               j2 = static_cast<std::size_t>(limb[2]);
+    const Joint &a = m.joints[j0], &b = m.joints[j1], &c = m.joints[j2];
+    const V hip = point(k[j0], a.head), knee_was = point(k[j0], b.head), end_was = point(k[j1], c.head);
+    const float l0 = length(sub(knee_was, hip)), l1 = length(sub(end_was, knee_was));
+    const V hd = translation(node_matrix[static_cast<std::size_t>(a.node)]),
+            kd = translation(node_matrix[static_cast<std::size_t>(b.node)]),
+            ed = translation(node_matrix[static_cast<std::size_t>(c.node)]);
+    const float game = length(sub(kd, hd)) + length(sub(ed, kd));
+    if (l0 < kTiny || l1 < kTiny || game < kTiny)
+        return;
+    const float s = (l0 + l1) / game;
+    const V to = add(V{}, sub(ed, hd), s), pole = add(V{}, sub(kd, hd), s);
+    float dist = length(to);
+    if (dist < kTiny)
+        return;
+    const V dir{to[0] / dist, to[1] / dist, to[2] / dist};
+    dist = std::fmax(std::fabs(l0 - l1) * 1.001F + kTiny, std::fmin(dist, (l0 + l1) * 0.999F));
+    // the bend's side: the game's middle node, else the limb's own knee
+    V side = add(pole, dir, -dot(pole, dir));
+    if (length(side) < kTiny * 100.0F) {
+        const V own = sub(knee_was, hip);
+        side = add(own, dir, -dot(own, dir));
+    }
+    const float ls = length(side);
+    if (ls < kTiny)
+        return;
+    const float along = (l0 * l0 - l1 * l1 + dist * dist) / (2.0F * dist);
+    const float out = std::sqrt(std::fmax(0.0F, l0 * l0 - along * along));
+    const V knee = add(add(hip, dir, along), side, out / ls), end = add(hip, dir, dist);
+    float degrees = 0.0F;
+    k[j0] = about(hip, arc(sub(knee_was, hip), sub(knee, hip), degrees), k[j0]);
+    for (std::size_t j = j0 + 1; j < m.joints.size(); ++j) {
+        bool below = false;
+        for (int up = m.joints[j].parent; up >= 0 && !below; up = m.joints[static_cast<std::size_t>(up)].parent)
+            below = up == static_cast<int>(j0);
+        if (!below)
+            continue;
+        k[j] = pose(j);
+        if (j == j1) {
+            const V at = point(k[j1], b.head);
+            k[j1] = about(at, arc(sub(point(k[j1], c.head), at), sub(end, at), degrees), k[j1]);
         }
     }
 }
@@ -1208,6 +1753,161 @@ bool triangle_attr(const Mesh &mesh, std::size_t t, uint32_t attr, uint32_t &out
     return alpha > 0.0F;
 }
 
+// A KH2 model whose game animation has a KH2 motion: its joints posed by the motion (on `base`, the
+// game's root node, scaled), each motion of the game's cross-fade at the game's weight and the
+// game's own pose (skin, from its nodes) at the rest of it. A section's clock starts when the game's
+// frame enters it and moves as that frame moves (its pauses and speeds kept, its loops counted on;
+// a followed section's is the frame itself); past the motion's end it loops from its loop point
+// (retFrame) or holds.
+void play_kh2(Model &m, const Mat &base)
+{
+    namespace kh2 = khdays::assets::kh2;
+    if (kh2_actors.size() > 64)
+        kh2_actors.clear();
+    Kh2Actor &actor = kh2_actors[drawn_object];
+    ++actor.draws;
+    struct Pose {
+        float weight;
+        const std::vector<kh2::Mat4> *joints; // the model's bones (retargeted when its mset is another's)
+        const kh2::Motion *motion;
+        float ticks;
+    };
+    std::vector<Pose> poses;
+    float total = 0.0F, game = 0.0F;
+    const Floor ground = floor_of(m, base);
+    for (const Playing &p : playing) {
+        const float ratio = std::fmax(0.0F, std::fmin(1.0F, p.ratio));
+        total += ratio;
+        // its section at the game's frame: the last one starting at or before it
+        const auto found = m.kh2_sections.find(p.name);
+        int now = -1;
+        if (found != m.kh2_sections.end())
+            for (std::size_t s = 0; s < found->second.size() && found->second[s].from <= p.frame; ++s)
+                now = static_cast<int>(s);
+        if (now < 0) {
+            game += ratio;
+            continue;
+        }
+        const std::vector<Kh2Section> &sections = found->second;
+        const Kh2Section &section = sections[static_cast<std::size_t>(now)];
+        const kh2::Motion *motion = m.kh2_motions->motion(section.slot);
+        Kh2Animation &a = actor.animations[p.name];
+        const bool starts = a.seen + 1 != actor.draws;
+        const bool enters = starts || now != a.section;
+        const bool back = !starts && p.frame < a.last_frame; // the game set its frame back (a loop)
+        float step = 0.0F;                                   // BCA frames since the last draw
+        if (!starts) {
+            step = p.frame - a.last_frame;
+            if (step > 0.0F)
+                a.step = step;
+            else if (back)
+                step = a.step; // one step on (the fall's loop goes back to 16)
+        }
+        const float before = a.last_frame;
+        a.last_frame = p.frame;
+        a.seen = actor.draws;
+        // a cut (a new section, or a followed frame set back: the loop's blend): fade from the pose last shown
+        const bool loops = !enters && back && section.follow;
+        const float blend = loops && section.loop_blend >= 0.0F ? section.loop_blend : section.blend;
+        const auto shown = a.tracks.find(a.section);
+        if (starts) {
+            a.fade.clear();
+        } else if ((enters || loops) && blend > 0.0F && shown != a.tracks.end() && !shown->second.joints.empty() &&
+                   static_cast<std::size_t>(a.section) < sections.size()) {
+            a.fade = shown->second.joints;
+            a.fade_motion = m.kh2_motions->motion(sections[static_cast<std::size_t>(a.section)].slot);
+            a.fade_ticks = a.shown;
+            a.fade_left = a.fade_frames = blend;
+            a.looped_at = loops ? before : -1.0F;
+        } else if (!a.fade.empty() && a.looped_at >= 0.0F && (enters || p.frame > a.looped_at)) {
+            // the game let go of the loop (past where it set back): the loop's fade ends within `blend`
+            const float weight = a.fade_left / a.fade_frames;
+            a.fade_left = section.blend;
+            a.fade_frames = section.blend / weight;
+            a.looped_at = -1.0F;
+            if (!(section.blend > 0.0F))
+                a.fade.clear();
+        }
+        Kh2Track &track = a.tracks[now];
+        if (section.follow) { // the game's frame, the section stretched onto the motion
+            const float to = static_cast<std::size_t>(now) + 1 < sections.size()
+                                 ? sections[static_cast<std::size_t>(now) + 1].from
+                                 : p.frames;
+            track.ticks =
+                to > section.from ? (p.frame - section.from) / (to - section.from) * motion->length_ticks() : 0.0F;
+        } else if (enters) { // its clock from the section's first frame
+            track.ticks = (p.frame - section.from) * 2.0F;
+        } else {
+            track.ticks += step * 2.0F; // BCA frames at 30 a second
+        }
+        a.section = now;
+        float faded = 0.0F; // the weight of the pose fading out
+        if (!a.fade.empty()) {
+            a.fade_left -= step;
+            if (a.fade_left > 0.0F && a.fade_motion != nullptr)
+                faded = a.fade_left / a.fade_frames;
+            else
+                a.fade.clear();
+        }
+        if (!track.player)
+            track.player = std::make_unique<kh2::MotionPlayer>(*m.kh2_skeleton);
+        float ticks = track.ticks;
+        const float end = motion->length_ticks(), from = motion->loop_ticks();
+        if (ticks > end)
+            ticks = from >= 0.0F && from < end ? from + std::fmod(ticks - from, end - from) : end;
+        // IKAdjust's world: the model (KH2 centimetres, root motion taken out) to Days' world, y up
+        const Mat taken = m.kh2_root_motion ? kIdentity : inverse(motion->root_motion(ticks));
+        const Mat world = ground.on ? mul(ground.world, taken) : kIdentity;
+        track.player->evaluate(*motion, ticks, world, ground.on ? &ground.ray : nullptr);
+        if (m.kh2_retarget) // the mset's model's pose on this model's bones
+            m.kh2_retarget->apply(track.player->joints(), track.joints);
+        else
+            track.joints = track.player->joints();
+        a.shown = ticks;
+        if (faded > 0.0F)
+            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks});
+        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks});
+    }
+    if (poses.empty())
+        return;
+    if (!(total > 0.0F)) {
+        total = poses.back().weight = 1.0F;
+        game = 0.0F;
+    }
+    // each pose's joints in metres (KH2's centimetres), the root motion taken out unless it is kept
+    std::vector<std::vector<Mat>> placed;
+    for (const Pose &pose : poses) {
+        const Mat taken = m.kh2_root_motion ? kIdentity : inverse(pose.motion->root_motion(pose.ticks));
+        std::vector<Mat> joints;
+        for (const auto &g : *pose.joints) {
+            Mat w = mul(taken, g);
+            w[12] *= 0.01F;
+            w[13] *= 0.01F;
+            w[14] *= 0.01F;
+            joints.push_back(mul(base, w));
+        }
+        placed.push_back(std::move(joints));
+    }
+    for (std::size_t j = 0; j < m.joints.size() && j < m.kh2_bone.size(); ++j) {
+        const int bone = m.kh2_bone[j];
+        if (bone < 0)
+            continue;
+        Mat blended{};
+        const float own = game / total;
+        for (std::size_t i = 0; i < 16; ++i)
+            blended[i] = skin[j][i] * own;
+        for (std::size_t p = 0; p < poses.size(); ++p) {
+            if (static_cast<std::size_t>(bone) >= placed[p].size())
+                continue;
+            const Mat s = mul(placed[p][static_cast<std::size_t>(bone)], m.joints[j].inverse_bind);
+            const float wgt = poses[p].weight / total;
+            for (std::size_t i = 0; i < 16; ++i)
+                blended[i] += s[i] * wgt;
+        }
+        skin[j] = blended;
+    }
+}
+
 void draw(Model &m)
 {
     float pos[16], vecm[16], proj_f[16];
@@ -1307,19 +2007,41 @@ void draw(Model &m)
     // each joint, parents first
     k.resize(m.joints.size());
     skin.resize(m.joints.size());
-    for (std::size_t j = 0; j < m.joints.size(); ++j) {
+    const auto pose = [&](std::size_t j) {
         const Joint &joint = m.joints[j];
         const Mat *parent = joint.parent >= 0 ? &k[static_cast<std::size_t>(joint.parent)] : nullptr;
-        if (joint.node >= 0 && joint.exact) {
-            k[j] = d[static_cast<std::size_t>(joint.node)];
-        } else if (joint.node >= 0) {
+        if (joint.node >= 0 && joint.exact)
+            return d[static_cast<std::size_t>(joint.node)];
+        if (joint.node >= 0) {
             const Mat &dg = d[static_cast<std::size_t>(joint.node)];
-            k[j] = place(point(parent != nullptr ? *parent : dg, joint.head), dg, joint.correction, joint.head);
-        } else {
-            k[j] = parent != nullptr ? *parent : root;
+            return place(point(parent != nullptr ? *parent : dg, joint.head), dg, joint.correction, joint.head);
         }
+        return parent != nullptr ? *parent : root;
+    };
+    for (std::size_t j = 0; j < m.joints.size(); ++j)
+        k[j] = pose(j);
+    for (const auto &limb : m.limbs)
+        reach(m, limb, pose);
+    for (std::size_t j = 0; j < m.joints.size(); ++j) {
+        const Joint &joint = m.joints[j];
         const Mat *w = moved_world(joint, moved);
         skin[j] = w != nullptr ? mul(scaled_root, mul(*w, joint.inverse_bind)) : mul(k[j], joint.bind);
+    }
+    // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
+    if (m.kh2_motions && !m.kh2_sections.empty())
+        play_kh2(m, scaled_root);
+    // what the game attaches to a node (its weapons) on the joint a `weapon` line names, as it is drawn:
+    // its saved matrix (MtxFx43, the same space as the nodes') written over
+    for (const auto &[saved, node] : saved_joints) {
+        if (node >= m.kh2_weapon.size() || m.kh2_weapon[node] < 0)
+            continue;
+        const auto j = static_cast<std::size_t>(m.kh2_weapon[node]);
+        const Mat at = mul(skin[j], inverse(m.joints[j].inverse_bind));
+        s32 fx[12];
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 3; ++r)
+                fx[c * 3 + r] = static_cast<s32>(std::lround(at[static_cast<std::size_t>(c * 4 + r)] * 4096.0F));
+        std::memcpy(saved, fx, sizeof(fx));
     }
     // the session log's diagnosis, whole: each node's matrix sent and each joint's K, to
     // pose the mod's model again offline (columns 0-3 of the 3x4)
@@ -1473,12 +2195,48 @@ bool room_of_replaced_world(const std::string &name, const char *path)
                                        ec);
 }
 
+// The joint animations `render_obj` plays: NNSG3dRenderObj anmJnt (+0x10), each NNSG3dAnmObj's
+// frame (+0, fx32), ratio (+4, fx32), resAnm (+8: its J0AC) and next (+0x10).
+void read_playing(const void *render_obj)
+{
+    playing.clear();
+    if (render_obj == nullptr)
+        return;
+    u32 obj = 0;
+    std::memcpy(&obj, static_cast<const unsigned char *>(render_obj) + 0x10, 4);
+    for (int n = 0; obj != 0 && n < 8; ++n) {
+        const auto *a = static_cast<const unsigned char *>(KHDAYS_W(obj));
+        s32 frame = 0, ratio = 0;
+        u32 anm = 0, next = 0;
+        std::memcpy(&frame, a, 4);
+        std::memcpy(&ratio, a + 4, 4);
+        std::memcpy(&anm, a + 8, 4);
+        std::memcpy(&next, a + 0x10, 4);
+        auto known = animation_names.find(anm);
+        if (known == animation_names.end()) {
+            const char *file = nullptr;
+            u32 offset = 0, run = 0;
+            char name[64] = "";
+            if (anm == 0 || !khdays_origin_of_ram(anm, &file, &offset, &run) ||
+                !khdays_names_animation(file, offset, name, sizeof(name)))
+                name[0] = '\0';
+            known = animation_names.emplace(anm, name).first;
+        }
+        u16 frames = 0;
+        if (anm != 0)
+            std::memcpy(&frames, static_cast<const unsigned char *>(KHDAYS_W(anm)) + 4, 2);
+        playing.push_back({known->second, static_cast<float>(frame) / 4096.0F, static_cast<float>(ratio) / 4096.0F,
+                           static_cast<float>(frames)});
+        obj = next;
+    }
+}
+
 } // namespace
 
 extern "C" void khdays_walk_model_draw(unsigned model_resource); /* runtime/input/walk.h */
 extern "C" void khdays_walk_model_draw_end(void);
 
-extern "C" void khdays_models_draw_begin(const void *resource)
+extern "C" void khdays_models_draw_begin(const void *resource, const void *render_obj)
 {
     if (depth == 0) {
         khdays_g3d_draw_begin(resource); /* the polygons' key */
@@ -1558,6 +2316,18 @@ extern "C" void khdays_models_draw_begin(const void *resource)
         shapes = 0;
         node_matrix.assign(active->node_rest_inverse.size(), kIdentity);
         node_sent.assign(active->node_rest_inverse.size(), 0);
+        saved_joints.clear();
+        read_playing(render_obj);
+        drawn_object = render_obj;
+        if (tracing()) { // what to name in <model>.motions.txt, when it changes
+            static std::string said;
+            std::string now = active->name + ":";
+            for (const Playing &p : playing)
+                now += " " + (p.name.empty() ? std::string("(unnamed)") : p.name);
+            if (now != said)
+                khdays_log("models: %s", now.c_str());
+            said = now;
+        }
     }
 }
 
@@ -1605,6 +2375,21 @@ extern "C" void khdays_models_node_placed(unsigned node, int sent)
         words[i] =
             static_cast<uint32_t>(static_cast<int32_t>(std::lround(hand[static_cast<std::size_t>(i)] * 4096.0F)));
     khdays_g3d_command(0x16, words);
+extern "C" void khdays_models_actor_ground(void *mover)
+{
+    KhdaysRef owner = 0;
+    std::memcpy(&owner, mover, 4);
+    if (owner == 0)
+        return;
+    if (grounds.size() > 256)
+        grounds.clear();
+    grounds[owner] = {KHDAYS_REF(mover), khdays_events_vblank_count()};
+}
+
+extern "C" void khdays_models_joint_saved(void *matrix, unsigned node)
+{
+    if (active != nullptr && depth == 1 && node < active->kh2_weapon.size() && active->kh2_weapon[node] >= 0)
+        saved_joints.emplace_back(matrix, node);
 }
 
 extern "C" int khdays_models_shape(const void *list, unsigned int size)

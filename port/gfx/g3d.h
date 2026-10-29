@@ -120,6 +120,10 @@ void khdays_g3d_draw_begin(const void *resource);
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12]);
 void khdays_g3d_draw_end(void);
 
+/* The camera (world to view) of the latest flush, the draws' after it, as a
+ * float matrix like khdays_g3d_matrices'; 0 before the first flush. */
+int khdays_g3d_camera(float camera[16]);
+
 void khdays_g3d_reset(void);
 
 /* --- What the game sends ---------------------------------------------------------- */

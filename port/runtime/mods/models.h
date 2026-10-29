@@ -13,8 +13,9 @@ extern "C" {
  * for the draw that follows (a mod's character's own skeleton plays its clip for it). */
 void khdays_models_draw_animation(unsigned animation);
 
-/* NNSi_G3dDrawInternal's start, for `model` (its NNSG3dResMdl), and its end. */
-void khdays_models_draw_begin(const void *model);
+/* NNSi_G3dDrawInternal's start, for `model` (its NNSG3dResMdl) and `render_obj` (its NNSG3dRenderObj:
+ * the joint animations it plays, anmJnt at +0x10), and its end. */
+void khdays_models_draw_begin(const void *model, const void *render_obj);
 void khdays_models_draw_end(void);
 
 /* NNSi_G3dFuncSbc_NODEDESC: node `node`'s matrix is the current one (`sent`:
@@ -24,6 +25,14 @@ void khdays_models_node(unsigned node, int sent);
 /* NNSi_G3dFuncSbc_NODEDESC, node `node`'s matrix made, before its callback reads it: a mod's character's
  * weapon node is put on its own skeleton's weapon bone. */
 void khdays_models_node_placed(unsigned node, int sent);
+/* Obj_CaptureSelectedJointMtx: node `node`'s matrix was saved at `matrix` (an
+ * MtxFx43) for what the game attaches to it; a KH2 model's `weapon` line puts
+ * it on a KH2 bone at the draw's end. */
+void khdays_models_joint_saved(void *matrix, unsigned node);
+
+/* Mover_ResolveFloor: the mover `mover` (its owner at +0) was put on its floor;
+ * its owner's KH2 model's feet are put on that floor (IKAdjust). */
+void khdays_models_actor_ground(void *mover);
 
 /* NNSi_G3dFuncSbcSHP, the shape's display list `list` (`size` bytes): whether
  * it is left unsent (the draw's model is replaced). One left unsent still has
