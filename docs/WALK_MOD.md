@@ -32,7 +32,9 @@ whose run is a float, Demyx, and Sora, Donald, Goofy, Mickey and Riku. The clips
   and hand, and `ro_k.khw` with the Keyblade's. The Keyblade's keychain (node 1 of every Keyblade model in
   `ba/ch/ro/w_.p2`, which Xion's are too, at the pommel, its shapes along the node's -z: back along the blade)
   would point up behind the lowered blade; it hangs from the pommel instead, as a damped pendulum carried by the
-  walk's hand (a third of the hand's sway drives it: it stays within a few degrees of straight down);
+  walk's hand (a third of the hand's sway drives it: it stays within a few degrees of straight down). The
+  two-Keyblade Roxas (Mission Mode's, `ba/ch/r2`) holds both the same way, the left blade along the right one's
+  mirror image, and both keychains hang (his `w_.p2` has one Keyblade model, drawn in both hands);
 - Zexion's book, Luxord's cards and Xaldin's lances have no joint in the model: the game draws
   the weapon as a model of its own with the player's base matrix, and puts its place on the player into the
   weapon's own joints (the one under the root; Xaldin's two lances in two), for the motion it plays, which
@@ -40,9 +42,22 @@ whose run is a float, Demyx, and Sora, Donald, Goofy, Mickey and Riku. The clips
   (`<code>_w.khw`, two joints per holding hand: the hand in the model's space frame by frame, and the hand as
   the idle holds it) lets the port move the weapon to it (below);
 - every cycle lasts as long as Roxas's (the event walks' own strides are short), at the pace that keeps the
-  feet from sliding at the mod's walk speed of 55 (`toolchain`'s `build_walk2.py`, from the player's copy of
-  the game);
+  feet from sliding at the mod's walk speed of 55;
 - the frames each foot is planted (where it is farthest forward), for the footsteps.
+
+## Making the mod
+
+`tools/mods/walk_clips.py` makes the whole mod folder from your own copy of the game (its extraction in
+`data/extracted`, as the port reads it): the clips and the switch `days-mods/walk.txt`. It reads the field
+models (`ba/ch/<code>/def.p.z`: their skeletons and their idle and run), the event models and walks (`mi/ch`,
+`mi/mo`), and writes nothing else; numpy is all it needs (`tools/mods/nitro3d.py` reads the DS's models and
+motions).
+
+```powershell
+py .\tools\mods\walk_clips.py --data .\data\extracted\<hash>          # mods/Days - Walk
+```
+
+The installer's helper runs it into an install: `installer/setup_steps.py build-mods <install> --walk`.
 
 A KHW1 file: `"KHW1"`, the frame count, the joint count and the frames a second (u32, u32, f32), then for each
 frame and each of the field model's joints a rotation quaternion and a local offset (7 f32); then, optionally,

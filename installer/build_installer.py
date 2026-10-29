@@ -56,6 +56,9 @@ TOOLS = [
     "port/tools/kh2_add_party_gauges.py",
     "docs/examples/kh2-gauge.json",
     "port/movies/hd_scenes.txt",  # theater_movies.py's scene map: the scene videos it makes
+    # the port's own mods (setup_steps.py build-mods)
+    "tools/mods/nitro3d.py",
+    "tools/mods/walk_clips.py",
 ]
 # the installer's own (its tests and this script stay in the repository)
 INSTALLER_KEEP = ("build_installer.py", "pinned.json")

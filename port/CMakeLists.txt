@@ -936,6 +936,14 @@ foreach(hd_test ${KHDAYS_HD_TESTS})
     string(REPLACE "_" "-" hd_test_name "${hd_test_name}")
     add_test(NAME khdays-hd-${hd_test_name} COMMAND "${Python3_EXECUTABLE}" "${hd_test}")
 endforeach()
+# The port's own mods' tools (tools/mods/): the same.
+file(GLOB KHDAYS_MOD_TOOL_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/mods/tests/*_test.py")
+foreach(mod_test ${KHDAYS_MOD_TOOL_TESTS})
+    get_filename_component(mod_test_name "${mod_test}" NAME_WE)
+    string(REGEX REPLACE "_test$" "" mod_test_name "${mod_test_name}")
+    string(REPLACE "_" "-" mod_test_name "${mod_test_name}")
+    add_test(NAME khdays-mods-${mod_test_name} COMMAND "${Python3_EXECUTABLE}" "${mod_test}")
+endforeach()
 
 # The execution contexts the game's threads run on (host/app/context.h): more of
 # them than the old fixed table held, each resumed in turn.

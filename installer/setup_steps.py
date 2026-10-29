@@ -97,7 +97,7 @@ def progress(done: int, total: int, what: str) -> None:
 def tool_folders() -> dict[str, Path]:
     """The repository's tools beside installer/: in the repository and in an install alike."""
     tools = HERE.parent / "tools"
-    return {"rom": tools, "hd": tools / "hd"}
+    return {"rom": tools, "hd": tools / "hd", "mods": tools / "mods"}
 
 
 # ---- Whole or absent ---------------------------------------------------------------------------
@@ -1084,6 +1084,69 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
                     continue
         differences.append({"file": rel, "why": "different"})
     return {"equal": not differences, "files": len(reference), "differences": differences}
+
+
+# ---- The mods of the port's own features -------------------------------------------------------
+
+# The mods that switch on features of the port's own (port/runtime/mods/installed.h), each made by its tool in
+# tools/mods from the game's data: its folder under mods/ and the tool's command line ({data} the extraction).
+PORT_MODS = {
+    "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
+}
+MESSAGES.update(
+    {
+        "mod-making": {
+            "en": "Making the mod {what}",
+            "es": "Haciendo el mod {what}",
+            "fr": "Création du mod {what}",
+            "de": "Der Mod {what} wird erstellt",
+            "it": "Creazione della mod {what}",
+        },
+        "mod-ready": {
+            "en": "The mods are ready.",
+            "es": "Los mods están listos.",
+            "fr": "Les mods sont prêts.",
+            "de": "Die Mods sind fertig.",
+            "it": "Le mod sono pronte.",
+        },
+    }
+)
+
+
+@command(
+    "build-mods",
+    "the port's own mods (docs/WALK_MOD.md) made from the game's data",
+    lambda p: (p.add_argument("install", type=Path), p.add_argument("--walk", action="store_true")),
+)
+def build_mods(args: argparse.Namespace) -> dict[str, Any]:
+    import subprocess
+
+    install = args.install.resolve()
+    data = data_folder(install)
+    wanted = [m for m in PORT_MODS if getattr(args, m.replace("-", "_"))]
+    made = []
+    for i, mod in enumerate(wanted):
+        folder, template = PORT_MODS[mod]
+        progress(i, len(wanted), words("mod-making", args.language, what=folder))
+        work = install / "setup" / "mod-work"
+        remove(work)
+        try:
+            # the tools in the repository's layout under a root of their own: the mod lands there, then whole
+            # into mods/ (an older one replaced)
+            shutil.copytree(tool_folders()["mods"], work / "tools" / "mods")
+            shutil.copy2(tool_folders()["rom"] / "decompress_data.py", work / "tools")
+            line = [sys.executable, str(work / "tools" / "mods" / template[0])]
+            line += [str(data) if a == "{data}" else a for a in template[1:]] + ["--mod", folder]
+            done = subprocess.run(line, cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if done.returncode != 0:
+                said = done.stderr.strip().splitlines()
+                raise RuntimeError(f"{template[0]}: {said[-1] if said else done.returncode}")
+            put_in_place(work / "mods" / folder, install / "mods" / folder)
+        finally:
+            remove(work)
+        made.append(folder)
+    progress(1, 1, words("mod-ready", args.language))
+    return {"mods": made, "message": words("mod-ready", args.language)}
 
 
 # ---- The installed game's starting settings ----------------------------------------------------
