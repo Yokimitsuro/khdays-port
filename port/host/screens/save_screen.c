@@ -239,6 +239,9 @@ static void draw_row(const KhdaysLayoutFrame *fr, const KhdaysSaveView *v, int i
     char digits[32];
     /* the red comes and goes with the cursor (s.lit) */
     const float lit = index >= 0 && index <= KHDAYS_SLOT_COUNT ? s.lit[index] : 0.0f;
+    if (index < 0) {
+        return;
+    }
     if (lit < 1.0f) {
         khdays_layout_draw_piece(&s.layout, fr, "row", x, y, s.rows[2], s.rows[3], 1.0f);
     }

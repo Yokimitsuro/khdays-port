@@ -57,7 +57,7 @@ static LONG ended_now(void)
 {
     return InterlockedCompareExchange(&ended, 0, 0);
 }
-static uint16_t stuck;     /* ... until they are let go */
+static uint16_t stuck; /* ... until they are let go */
 /* The Menu Overhaul's pause panel (runtime/mods/installed.h; host/screens/modern_pause.c draws it) in place of
  * the DS's pause: Continue and Skip (at once: no question). Also over a day's monologue, whose START otherwise
  * leaves it at once: the game held, the voice paused; Skip leaves it as START does (khdays_monologue_skip_taken). */
@@ -170,7 +170,7 @@ static int tell_once(const char *movie)
     }
     if (told_count == told_capacity) {
         const int capacity = told_capacity ? told_capacity * 2 : 16;
-        char(*grown)[64] = realloc(told, (size_t)capacity * sizeof(*told));
+        char (*grown)[64] = realloc(told, (size_t)capacity * sizeof(*told));
         if (grown == NULL) {
             return 1;
         }
@@ -241,7 +241,7 @@ void khdays_movie_hd_reset(void)
 }
 
 static void scene_videos_over(const char *how);
-static int scene_chapter; /* the course is a Theater chapter's (no event: it ends with its videos) */
+static int scene_chapter;     /* the course is a Theater chapter's (no event: it ends with its videos) */
 static int scene_player_skip; /* the player took the game's pause's Skip (not the port, its videos over) */
 static void scene_pause_begin(void);
 
@@ -1046,7 +1046,7 @@ void khdays_movie_hd_poll(void)
                 request_skip();
             }
         }
-        if (state_now() == SCENE && !menu_open) {
+        if (state_now() == SCENE && !InterlockedCompareExchange(&menu_open, 0, 0)) {
             status = khdays_hd_status(why, sizeof(why));
             if (status == -1) {
                 khdays_log("scene %s: the HD video stopped part-way (%s)", scene_key, why);

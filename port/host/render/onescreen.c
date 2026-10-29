@@ -500,21 +500,32 @@ static KhdaysShape3d model_shape;
 /* The game over's own firefly -- the orb that floats to the line chosen, drawn as the HUD's 3D (prepare.py's
  * hook in Ov027_UpdateFlushForward) -- hidden while the window draws the game over's menu as KH2's pause,
  * with KH2's firefly (runtime/menus/retry.h khdays_game_over_hides_orb). */
-static KhdaysShape3d game_over_shapes[8];
+static KhdaysShape3d *game_over_shapes;
+static int game_over_room;
 
 static void game_over_orb(KhdaysComposition *composition)
 {
     const int n = composition->shape3d_count;
-    if (situation.scene != KHDAYS_SIT_GAME_OVER || !khdays_game_over_hides_orb() || n <= 0 ||
-        n > (int)(sizeof(game_over_shapes) / sizeof(game_over_shapes[0]))) {
+    if (situation.scene != KHDAYS_SIT_GAME_OVER || !khdays_game_over_hides_orb() || n <= 0) {
         return;
     }
+    if (n > game_over_room) {
+        KhdaysShape3d *grown = (KhdaysShape3d *)realloc(game_over_shapes, (size_t)n * sizeof(*grown));
+        if (grown == NULL) {
+            return;
+        }
+        game_over_shapes = grown;
+        game_over_room = n;
+    }
+#pragma warning(push)
+#pragma warning(disable : 6385) /* game_over_room >= n: grown just above */
     memcpy(game_over_shapes, composition->shapes3d, (size_t)n * sizeof(game_over_shapes[0]));
     for (int i = 0; i < n; ++i) {
         if (game_over_shapes[i].group == KHDAYS_SHAPE3D_HUD) {
             game_over_shapes[i].hide = 1;
         }
     }
+#pragma warning(pop)
     composition->shapes3d = game_over_shapes;
 }
 

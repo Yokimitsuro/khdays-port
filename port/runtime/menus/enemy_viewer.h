@@ -21,8 +21,6 @@ typedef struct KhdaysEnemyViewer {
     unsigned opening; /* a new one at each opening */
 } KhdaysEnemyViewer;
 
-#define KHDAYS_ENEMY_VIEWER_ROWS 192
-
 /* The game's thread, at each update of the story camp: the Files page's state (`on` while it runs;
  * `enemies` its mode is Enemy Profiles; its cursor's row, its rows' enemies' classes, -1 not met).
  * Opens, draws and closes the viewer. */

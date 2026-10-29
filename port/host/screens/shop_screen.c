@@ -316,7 +316,7 @@ static int applied;
 
 static void colour(const char *line, const char *key, Uint8 out[3])
 {
-    char name[48];
+    char name[48] = "";
     unsigned r, g, b;
     if (SDL_sscanf(line, "colour %47s %u %u %u", name, &r, &g, &b) == 4 && strcmp(name, key) == 0) {
         out[0] = (Uint8)r, out[1] = (Uint8)g, out[2] = (Uint8)b;

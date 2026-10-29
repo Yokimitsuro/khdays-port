@@ -321,8 +321,8 @@ static void pause_panel_sounds(void)
  * voice's clock, loaded when it changes. */
 static void draw_voice_subtitles(SDL_Renderer *renderer)
 {
-    static char loaded[64];
-    char name[64];
+    static char loaded[64] = "";
+    char name[64] = "";
     double seconds = 0.0;
     int lw = 0, lh = 0;
     SDL_RendererLogicalPresentation mode;
@@ -384,7 +384,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     khdays_day_screen_draw(renderer); /* the day's card as the HD theater's chapter days (runtime/menus/daycard.h) */
     glove_screen |=
         khdays_room_screen_draw(renderer); /* the port's list of rooms over the game's (runtime/net/roomlist.h) */
-    khdays_select_screen_draw(renderer); /* Mission Mode's character select on one screen (charselect.h) */
+    khdays_select_screen_draw(renderer);   /* Mission Mode's character select on one screen (charselect.h) */
     /* the Moogle Shop on one screen (shop.h): before the camp's, whose black comes over it when Mission
      * Mode's shop opens from its menu or closes back to it */
     glove_screen |= khdays_shop_screen_draw(renderer);

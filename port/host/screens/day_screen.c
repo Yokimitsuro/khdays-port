@@ -16,10 +16,6 @@
 #include <string.h>
 
 #define RATE 60.0f
-#define MOST_FRAMES 600
-#define ELEMENTS 8
-#define SLOTS 3
-#define ROLL_FRAMES 64
 #define ROLL_FIRST ((float)KHDAYS_DAYCARD_SLIDE_FIRST) /* the rolls' keys move from this frame */
 #define ROLL_LAST ((float)KHDAYS_DAYCARD_SLIDE_LAST)   /* to this one */
 #define HEART_FALLS 50.0f                              /* the heart's control's frame its fall starts at */
@@ -37,15 +33,22 @@ typedef struct Roll {
 
 enum { ROLL_IN_UP, ROLL_OUT_UP, ROLL_OUT_DOWN, ROLL_IN_DOWN, ROLL_KINDS };
 
+/* A piece the card moves: its name in the layout and its key at each frame, 0 to the card's length. */
+typedef struct Element {
+    char name[KHDAYS_LAYOUT_NAME];
+    Key *keys;
+} Element;
+
+/* The card as its layout gives it, each list as long as the layout's lines make it. */
 static struct {
     int tried, ok;
     KhdaysLayout layout;
     int length; /* the elements' last frame */
-    char names[ELEMENTS][KHDAYS_LAYOUT_NAME];
-    Key *keys[ELEMENTS];
+    Element *elements;
     int element_count;
-    SDL_FRect slots[SLOTS];
-    Roll rolls[ROLL_KINDS][ROLL_FRAMES];
+    SDL_FRect *slots; /* the day's digits, the ones first */
+    int slot_count;
+    Roll *rolls[ROLL_KINDS]; /* each kind's frames, roll_frames of them */
     int roll_frames;
     float title_x, title_y, title_top; /* its ink's middle, its capitals' top; theirs in its pieces */
     float *title_alpha;
@@ -57,16 +60,44 @@ static struct {
 
 static void forget(void)
 {
-    for (int i = 0; i < ELEMENTS; ++i) {
-        free(s.keys[i]);
-        s.keys[i] = NULL;
+#pragma warning(push)
+#pragma warning(disable : 6001) /* each of the first element_count elements was zeroed when grown (grow_to) */
+    for (int i = 0; i < s.element_count; ++i) {
+        free(s.elements[i].keys);
     }
+#pragma warning(pop)
+    free(s.elements);
+    s.elements = NULL;
+    s.element_count = 0;
+    free(s.slots);
+    s.slots = NULL;
+    s.slot_count = 0;
+    for (int k = 0; k < ROLL_KINDS; ++k) {
+        free(s.rolls[k]);
+        s.rolls[k] = NULL;
+    }
+    s.roll_frames = 0;
     free(s.title_alpha);
     s.title_alpha = NULL;
-    s.element_count = 0;
     s.length = 0;
-    s.roll_frames = 0;
     khdays_layout_forget(&s.layout);
+}
+
+/* `list` (of `*count` items of `size` bytes) made `count_wanted` long, the new items zero; 0 if no memory. */
+static int grow_to(void **list, int *count, int count_wanted, size_t size)
+{
+    void *grown;
+    if (count_wanted <= *count) {
+        return 1;
+    }
+    grown = realloc(*list, (size_t)count_wanted * size);
+    if (grown == NULL) {
+        return 0;
+    }
+    memset((char *)grown + (size_t)*count * size, 0, (size_t)(count_wanted - *count) * size);
+    *list = grown;
+    *count = count_wanted;
+    return 1;
 }
 
 static int roll_kind(int control)
@@ -89,29 +120,35 @@ static int read_line(char *line, const char *folder)
         return 1;
     }
     if (SDL_sscanf(line, "length %d", &a) == 1) {
-        s.length = SDL_clamp(a, 1, MOST_FRAMES - 1);
-        for (int i = 0; i < ELEMENTS; ++i) {
-            free(s.keys[i]);
-            s.keys[i] = (Key *)calloc((size_t)MOST_FRAMES, sizeof(Key));
+        /* every element's keys and the title's alpha, a frame each from 0 to the length */
+        s.length = SDL_max(a, 1);
+        for (int i = 0; i < s.element_count; ++i) {
+            free(s.elements[i].keys);
+            s.elements[i].keys = (Key *)calloc((size_t)s.length + 1, sizeof(Key));
         }
         free(s.title_alpha);
-        s.title_alpha = (float *)calloc((size_t)MOST_FRAMES, sizeof(float));
-        return s.keys[ELEMENTS - 1] != NULL && s.title_alpha != NULL;
+        s.title_alpha = (float *)calloc((size_t)s.length + 1, sizeof(float));
+        return s.title_alpha != NULL;
     }
-    if (SDL_sscanf(line, "element %d %39s", &a, name) == 2 && a >= 0 && a < ELEMENTS) {
-        snprintf(s.names[a], sizeof(s.names[a]), "%s", name);
-        s.element_count = SDL_max(s.element_count, a + 1);
+    if (SDL_sscanf(line, "element %d %39s", &a, name) == 2 && a >= 0) {
+        if (!grow_to((void **)&s.elements, &s.element_count, a + 1, sizeof(Element))) {
+            return 0;
+        }
+        snprintf(s.elements[a].name, sizeof(s.elements[a].name), "%s", name);
+        if (s.length > 0 && s.elements[a].keys == NULL) {
+            s.elements[a].keys = (Key *)calloc((size_t)s.length + 1, sizeof(Key));
+        }
         return 1;
     }
     if (SDL_sscanf(line, "key %d %d %f %f %f %f %f %d %d %d", &a, &b, &x, &y, &w, &h, &al, &c, &d, &e) == 10) {
-        if (a >= 0 && a < ELEMENTS && b >= 0 && b < MOST_FRAMES && s.keys[a] != NULL) {
+        if (a >= 0 && a < s.element_count && b >= 0 && b <= s.length && s.elements[a].keys != NULL) {
             const Key k = {x, y, w, h, al, c, d, e};
-            s.keys[a][b] = k;
+            s.elements[a].keys[b] = k;
         }
         return 1;
     }
     if (SDL_sscanf(line, "slot %d %f %f %f %f", &a, &x, &y, &w, &h) == 5) {
-        if (a >= 0 && a < SLOTS) {
+        if (a >= 0 && grow_to((void **)&s.slots, &s.slot_count, a + 1, sizeof(SDL_FRect))) {
             const SDL_FRect r = {x, y, w, h};
             s.slots[a] = r;
         }
@@ -119,10 +156,19 @@ static int read_line(char *line, const char *folder)
     }
     if (SDL_sscanf(line, "roll %d %d %f %f", &a, &b, &y, &al) == 4) {
         const int kind = roll_kind(a);
-        if (kind >= 0 && b >= 0 && b < ROLL_FRAMES) {
+        if (kind >= 0 && b >= 0 && b + 1 > s.roll_frames) {
+            /* every kind as long as the longest */
+            for (int k = 0; k < ROLL_KINDS; ++k) {
+                int frames = s.roll_frames;
+                if (!grow_to((void **)&s.rolls[k], &frames, b + 1, sizeof(Roll))) {
+                    return 0;
+                }
+            }
+            s.roll_frames = b + 1;
+        }
+        if (kind >= 0 && b >= 0) {
             s.rolls[kind][b].dy = y;
             s.rolls[kind][b].alpha = al;
-            s.roll_frames = SDL_max(s.roll_frames, b + 1);
         }
         return 1;
     }
@@ -133,7 +179,7 @@ static int read_line(char *line, const char *folder)
         return 1;
     }
     if (SDL_sscanf(line, "title_alpha %d %f", &a, &al) == 2) {
-        if (a >= 0 && a < MOST_FRAMES && s.title_alpha != NULL) {
+        if (a >= 0 && a <= s.length && s.title_alpha != NULL) {
             s.title_alpha[a] = al;
         }
         return 1;
@@ -218,16 +264,17 @@ static void draw_turned(const KhdaysLayoutFrame *fr, const char *name, float x, 
 static void draw_elements(const KhdaysLayoutFrame *fr, int frame, int heart)
 {
     for (int i = 0; i < s.element_count; ++i) {
-        const int is_heart = strcmp(s.names[i], "heart") == 0;
-        const Key *k = s.keys[i] != NULL ? &s.keys[i][SDL_clamp(is_heart ? heart : frame, 0, s.length)] : NULL;
+        const Element *el = &s.elements[i];
+        const int is_heart = strcmp(el->name, "heart") == 0;
+        const Key *k = el->keys != NULL ? &el->keys[SDL_clamp(is_heart ? heart : frame, 0, s.length)] : NULL;
         char name[KHDAYS_LAYOUT_NAME + 8];
-        if (k == NULL || s.names[i][0] == '\0') {
+        if (k == NULL || el->name[0] == '\0') {
             continue;
         }
         if (is_heart) {
             snprintf(name, sizeof(name), "heart%d", k->frame);
         } else {
-            snprintf(name, sizeof(name), "%s", s.names[i]);
+            snprintf(name, sizeof(name), "%s", el->name);
         }
         draw_turned(fr, name, k->x, k->y, k->w, k->h, k->alpha, k->fx, k->fy);
     }
@@ -256,7 +303,11 @@ static int digit_of(int day, int slot)
 /* Whether a day shows a digit in the slot: the ones always, the others while they are not leading zeros. */
 static int shows(int day, int slot)
 {
-    return slot == 0 || day >= (slot == 1 ? 10 : 100);
+    int place = 1;
+    for (int i = 0; i < slot && place <= day; ++i) {
+        place *= 10;
+    }
+    return slot == 0 || day >= place;
 }
 
 static void draw_digit(const KhdaysLayoutFrame *fr, int slot, int digit, float dy, float alpha)
@@ -270,7 +321,7 @@ static void draw_digit(const KhdaysLayoutFrame *fr, int slot, int digit, float d
 /* The day: `old` going and `next` coming `t` of the way (rising when the days go up); old < 0 none. */
 static void draw_digits(const KhdaysLayoutFrame *fr, int old, int next, float t, int rising)
 {
-    for (int slot = 0; slot < SLOTS; ++slot) {
+    for (int slot = 0; slot < s.slot_count; ++slot) {
         const int a = old >= 0 ? digit_of(old, slot) : -1, b = digit_of(next, slot);
         const int sa = old >= 0 && shows(old, slot), sb = shows(next, slot);
         if (a == b && sa == sb) {

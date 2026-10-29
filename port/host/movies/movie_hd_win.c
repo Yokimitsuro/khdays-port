@@ -1006,7 +1006,6 @@ static SRWLOCK voice_lock = SRWLOCK_INIT; /* guards the voice's stream against t
 static float voice_gain = 1.0f;           /* khdays_hd_voice_set_gain */
 static volatile LONG voice_paused;        /* khdays_hd_voice_pause */
 
-#define VOICE_FILES 16
 static struct {
     HANDLE thread;
     volatile LONG stop;
@@ -1017,9 +1016,9 @@ static struct {
      * began among them, the files begun, their videos' names ("hd007b"), the format queued now, and
      * whether the thread has put all it will. */
     double put;
-    double began[VOICE_FILES];
+    double *began; /* as many as the files */
     int begun;
-    char names[VOICE_FILES][64];
+    char **names;
     int channels, rate;
     volatile LONG done;
     ULONGLONG quiet_since; /* when the last of it was heard (0: not yet) */
@@ -1067,7 +1066,7 @@ static void voice_file(const WCHAR *file, int nth)
         stream = voice_stream(&spec);
         if (stream != NULL) {
             AcquireSRWLockExclusive(&voice_lock);
-            if (nth < VOICE_FILES) {
+            if (nth < voice.count) {
                 voice.began[nth] = voice.put;
                 voice.begun = nth + 1;
             }
@@ -1156,8 +1155,11 @@ void khdays_hd_voice_stop(void)
     }
     for (int i = 0; i < voice.count; ++i) {
         free(voice.files[i]);
+        free(voice.names[i]);
     }
     free(voice.files);
+    free(voice.names);
+    free(voice.began);
     memset(&voice, 0, sizeof(voice));
     ReleaseSRWLockExclusive(&voice_lock);
 }
@@ -1165,41 +1167,55 @@ void khdays_hd_voice_stop(void)
 void khdays_hd_voice_play(const char *const *paths, int count)
 {
     WCHAR **files;
+    char **names;
+    double *began;
     int n = 0;
     khdays_hd_voice_stop();
-    if (count <= 0 || (files = (WCHAR **)calloc((size_t)count, sizeof(*files))) == NULL) {
+    if (count <= 0) {
+        return;
+    }
+    files = (WCHAR **)calloc((size_t)count, sizeof(*files));
+    names = (char **)calloc((size_t)count, sizeof(*names));
+    began = (double *)calloc((size_t)count, sizeof(*began));
+    if (files == NULL || names == NULL || began == NULL) {
+        free(files);
+        free(names);
+        free(began);
         return;
     }
     for (int i = 0; i < count; ++i) {
         WCHAR *file = full_path(paths[i]);
+        const char *base = paths[i];
+        char *dot;
         if (file == NULL) {
             continue;
         }
-        if (n < VOICE_FILES) {
-            /* its video's name, for its subtitles: the path's file name without its extension */
-            const char *base = paths[i];
-            char *dot;
-            for (const char *p = paths[i]; *p; ++p) {
-                if (*p == '/' || *p == '\\') {
-                    base = p + 1;
-                }
+        /* its video's name, for its subtitles: the path's file name without its extension */
+        for (const char *p = paths[i]; *p; ++p) {
+            if (*p == '/' || *p == '\\') {
+                base = p + 1;
             }
-            snprintf(voice.names[n], sizeof(voice.names[n]), "%s", base);
-            dot = strrchr(voice.names[n], '.');
-            if (dot != NULL) {
-                *dot = '\0';
-            }
+        }
+        names[n] = _strdup(base);
+        dot = names[n] != NULL ? strrchr(names[n], '.') : NULL;
+        if (dot != NULL) {
+            *dot = '\0';
         }
         files[n++] = file;
     }
     voice.files = files;
+    voice.names = names;
+    voice.began = began;
     voice.count = n;
     voice.thread = CreateThread(NULL, 0, voice_run, NULL, 0, NULL);
     if (voice.thread == NULL) {
         for (int i = 0; i < n; ++i) {
             free(files[i]);
+            free(names[i]);
         }
         free(files);
+        free(names);
+        free(began);
         memset(&voice, 0, sizeof(voice));
     }
 }
@@ -1225,7 +1241,7 @@ int khdays_hd_voice_clock(char *name, size_t size, double *seconds)
                 file = i;
             }
         }
-        snprintf(name, size, "%s", voice.names[file]);
+        snprintf(name, size, "%s", voice.names[file] != NULL ? voice.names[file] : "");
         *seconds = heard - voice.began[file] > 0.0 ? heard - voice.began[file] : 0.0;
         found = 1;
     }

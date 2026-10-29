@@ -72,7 +72,7 @@ typedef struct Plan {
     float source[4], view[4], window[4];
     float story_source[4], story_view[4];
     float mission_source[4], mission_view[4]; /* Mission Mode's model in the story's look (its camera is farther) */
-    uint8_t *backdrop; /* kept while the port runs: the picture's card keeps it by its address */
+    uint8_t *backdrop;                        /* kept while the port runs: the picture's card keeps it by its address */
     int w, h;
     char backdrop_path[1300];
     uint8_t *page_backdrop; /* the Preferences page's, the same */
@@ -218,8 +218,8 @@ static const Plan *plan(int language)
  * Sleep's character plate in red for Roxas (his model in it, his numbers) and its deck plate for his panels, a
  * black block behind them, the Files pages' pattern drifting under all. The pattern, the block and the plates
  * are the one-screen picture's animated backdrop, the model over them; the screen draws the rest. */
-#define STORY_PLATES 3 /* the block, Roxas's plate, the panels' plate: the picture's pieces after the pattern */
-#define STORY_PANELS_OPTION 0   /* Panels: the story's options' first */
+#define STORY_PLATES 3        /* the block, Roxas's plate, the panels' plate: the picture's pieces after the pattern */
+#define STORY_PANELS_OPTION 0 /* Panels: the story's options' first */
 #define MISSION_PANELS_OPTION 1 /* and Mission Mode's second (its entry 102) */
 #define STORY_STATS 4
 #define STORY_ITEMS 0x277 /* the panels' records: item ids 1 to 0x276 */
@@ -269,7 +269,7 @@ static int story_failed; /* the screen's own pieces (KH2's sequence and sheet) m
 static void story_line(char *line, const char *folder, void *ctx)
 {
     float a[8];
-    char name[64], file[128], file2[128];
+    char name[64] = "", file[128] = "", file2[128] = "";
     int n, record, r, g, b;
     (void)ctx;
     if (SDL_sscanf(line, "atlas %127s", file) == 1 && stp.atlas == NULL) {
@@ -672,10 +672,19 @@ static SDL_SpinLock held_lock;
 static KhdaysCampView held;
 static int holding;
 
-static int camp_view_now(KhdaysCampView *v)
+/* The window's own copy of the view's lists (its rows and their titles, the description): the view the
+ * window draws points into it, the held one too (the window's thread alone reads them). */
+static KhdaysCampLists drawn_lists;
+
+/* `lists` NULL: the view without its lists (the one-screen picture's, which reads none of them). */
+static int camp_view_now(KhdaysCampView *v, KhdaysCampLists *lists)
 {
     int got = 0;
-    khdays_camp_view(v);
+    if (lists != NULL) {
+        khdays_camp_view_lists(v, lists);
+    } else {
+        khdays_camp_view(v);
+    }
     SDL_LockSpinlock(&held_lock);
     if (v->shown) {
         held = *v;
@@ -688,6 +697,11 @@ static int camp_view_now(KhdaysCampView *v)
     SDL_UnlockSpinlock(&held_lock);
     if (got == 1) {
         v->master = (int16_t)khdays_camp_game_brightness(); /* the game's fade goes on */
+    }
+    if (lists != NULL) {
+        khdays_camp_lists_point(v, lists); /* the held view's lists: the last the window copied */
+    } else {
+        khdays_camp_lists_point(v, &(KhdaysCampLists){0});
     }
     return got;
 }
@@ -711,14 +725,17 @@ int khdays_overhaul_camp_model(KhdaysCampModel *out)
 {
     KhdaysCampView v;
     const Plan *p;
-    camp_view_now(&v);
+    camp_view_now(&v, NULL);
     if (!v.shown || (p = plan(v.language)) == NULL || (s.tried == v.language && !s.ok) ||
         (v.config && p->page_backdrop == NULL) || (v.files && files_unavailable()) || (v.panels && !panels_look(&v)) ||
         (v.save && !save_ready())) {
         return 0; /* (the save screen without its page: the game's own, its screens shown) */
     }
     out->files = v.files;
-    memcpy(out->source, !story_look(&v) ? p->source : v.story ? p->story_source : p->mission_source,
+    memcpy(out->source,
+           !story_look(&v) ? p->source
+           : v.story       ? p->story_source
+                           : p->mission_source,
            sizeof(out->source));
     memcpy(out->view, !story_look(&v) ? p->view : v.story ? p->story_view : p->mission_view, sizeof(out->view));
     memcpy(out->window, p->window, sizeof(out->window));
@@ -1203,7 +1220,7 @@ static void draw_prompt(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
         const KhdaysCampFiles *f = &v->file;
         int n = 0;
         line[0] = 0;
-        if (f->mode == 1 && f->cursor >= 0 && f->cursor < KHDAYS_CAMP_FILES_MOST && f->cursor < f->count &&
+        if (f->mode == 1 && f->cursor >= 0 && f->cursor < f->rows && f->cursor < f->count &&
             !f->row[f->cursor].locked) {
             const char *model = khdays_text_in(TXT_VIEWER_MODEL, v->language);
             line[n++] = VIEWER_GLYPH_X;
@@ -2160,7 +2177,7 @@ static void files_line(char *line, const char *folder, void *ctx)
 {
     float a, b, c, d, e, f;
     int n;
-    char file[256], lang[8], day[FILES_WORD * 2], number[FILES_WORD * 2];
+    char file[256] = "", lang[8] = "", day[FILES_WORD * 2] = "", number[FILES_WORD * 2] = "";
     (void)ctx;
     if (khdays_layout_line(&fl.layout, line, folder)) {
         return;
@@ -2298,8 +2315,8 @@ static void files_hint(SDL_Renderer *renderer, const KhdaysCampView *v, const SD
     const float *at = files_place("hint"), cw = fl.hint_cell[0], ch = fl.hint_cell[1];
     const float k = dst->w / 256.0f;
     int frame;
-    if (fl.hint == NULL || f->count <= 0 || f->cursor < 0 || f->cursor >= KHDAYS_CAMP_FILES_MOST ||
-        !f->row[f->cursor].alternate || cw <= 0 || (float)fl.hint_h < ch * (float)(f->mode + 1)) {
+    if (fl.hint == NULL || f->count <= 0 || f->cursor < 0 || f->cursor >= f->rows || !f->row[f->cursor].alternate ||
+        cw <= 0 || (float)fl.hint_h < ch * (float)(f->mode + 1)) {
         return;
     }
     frame = f->held ? 0 : 2 + (int)fmod(now / FILES_HINT_STEP, 2.0);
@@ -2615,7 +2632,7 @@ static void files_group(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const Khd
 {
     const KhdaysCampFiles *f = &v->file;
     const float *rows = fl.rows, *arrows = files_place("arrows");
-    const int shown = (int)rows[5], count = SDL_min(f->count, KHDAYS_CAMP_FILES_MOST);
+    const int shown = (int)rows[5], count = SDL_min(f->count, f->rows);
     files_motion(f, now);
     /* the Files' page beside the MENU pill: Roxas's Diary or Enemy Profiles (the story's sub-options 2, 3) */
     tab_button(fr, "menu_button", s.story_sub[2 + (f->mode == 1)], 1.0f, story_on(v));
@@ -2724,7 +2741,7 @@ static void save_line(char *line, const char *folder, void *ctx)
 {
     float a, b, c, d, e, f;
     int r, g, bl;
-    char name[40], lang[8];
+    char name[40] = "", lang[8] = "";
     (void)ctx;
     if (khdays_layout_line(&sp.layout, line, folder)) {
         return;
@@ -3411,7 +3428,7 @@ static void viewer_draw(const KhdaysLayoutFrame *fr, const KhdaysCampView *v, co
     const KhdaysLayoutText *st = khdays_layout_text(&s.layout, "prompt");
     unsigned short line[200];
     int n = 0;
-    if (ev->row >= 0 && ev->row < KHDAYS_CAMP_FILES_MOST && ev->row < f->count) {
+    if (ev->row >= 0 && ev->row < f->rows && ev->row < f->count) {
         const unsigned short *name = f->row[ev->row].title;
         const float cap = 34.0f;
         const float ink = fl.layout.ink_bottom - fl.layout.ink_top;
@@ -4643,7 +4660,8 @@ static void panels_group(SDL_Renderer *renderer, KhdaysLayoutFrame *fr, const Kh
     option_button(fr, v, "menu_button", v->story ? STORY_PANELS_OPTION : MISSION_PANELS_OPTION, 1.0f);
     panels_lower_frame(renderer, fr, grouped);
     panels_cards(renderer, fr, v, now);
-    draw_text_lines(fr, v->panel_text, "description", s.description_pitch);
+    static const uint16_t no_text[1] = {0};
+    draw_text_lines(fr, v->panel_text != NULL ? v->panel_text : no_text, "description", s.description_pitch);
     panels_prompt(fr, v);
 }
 
@@ -4953,11 +4971,11 @@ int khdays_overhaul_camp_draw(SDL_Renderer *renderer)
     KhdaysCampView v;
     KhdaysLayoutFrame fr;
     const double now = seconds_now();
-    const int got = camp_view_now(&v);
+    const int got = camp_view_now(&v, &drawn_lists);
     const int handing = khdays_shop_screen_handing();
-    khdays_camp_set_panels_drawn(0); /* (the story's menu says it again below when it draws its panels) */
+    khdays_camp_set_panels_drawn(0);  /* (the story's menu says it again below when it draws its panels) */
     khdays_camp_set_preview_drawn(0); /* (and the Panels page, its status card showing the panel held's changes) */
-    khdays_camp_set_files_drawn(0);  /* (and the Files page) */
+    khdays_camp_set_files_drawn(0);   /* (and the Files page) */
     if (to_shop == 2) {
         if (handing == KHDAYS_SHOP_HAND_IN) {
             return 0; /* the shop's screen holds the window */

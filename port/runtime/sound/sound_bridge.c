@@ -286,8 +286,7 @@ void khdays_sound_bridge_expect_footstep(void)
 
 /* A footstep's identifier ("seqarc/FIELD_13FS_STONE/se_13fs_stone_run01", "seqarc/FIELD_ROX_FS_..."): the
  * archive's name has "FS_" after "FIELD_". Its archive and entry are copied out when it is one. */
-static int footstep_of(const char *identifier, char *fs_archive, int fs_archive_size, char *fs_entry,
-                       int fs_entry_size)
+static int footstep_of(const char *identifier, char *fs_archive, int fs_archive_size, char *fs_entry, int fs_entry_size)
 {
     const char *slash;
     if (strncmp(identifier, "seqarc/FIELD_", 13) != 0) {
@@ -361,7 +360,7 @@ void khdays_sound_sequence_started(int arm7_player, int kind, int number, int en
             snprintf(footstep_archive, sizeof(footstep_archive), "%s", fs_archive);
             snprintf(footstep_entry, sizeof(footstep_entry), "%s", fs_entry);
             ReleaseSRWLockExclusive(&lock);
-            if (walk_expected > 0) {
+            if (InterlockedCompareExchange(&walk_expected, 0, 0) > 0) {
                 InterlockedDecrement(&walk_expected); /* the walk's own, heard */
             } else if (walk_steps) {
                 static int told;
@@ -412,7 +411,8 @@ void khdays_sound_player_assigned(int arm7_player, int archive_player)
 static void update_gains(void)
 {
     static int told;
-    const LONG players_held = held_players | walk_players, streams_held = held_streams;
+    const LONG players_held = held_players | InterlockedCompareExchange(&walk_players, 0, 0),
+               streams_held = held_streams;
     for (int p = 0; p < 16; ++p) {
         player_gain[p] = (players_held >> p & 1) ? 0.0f : bus.category[sequence_category[p]];
     }
@@ -1036,7 +1036,7 @@ int khdays_sound_bridge_word(u32 data, u32 err)
         return 0;
     }
     count_commands(data);
-    if (data != 0 && (khdays_log_on() || walk_players != 0)) {
+    if (data != 0 && (khdays_log_on() || InterlockedCompareExchange(&walk_players, 0, 0) != 0)) {
         for (u32 command = data; command != 0; command = *(volatile u32 *)KHDAYS_W(command)) {
             if (*(volatile u32 *)KHDAYS_W(command + 4) == 1) {
                 const u32 p = *(volatile u32 *)KHDAYS_W(command + 8);

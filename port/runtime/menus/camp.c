@@ -15,6 +15,7 @@
 #include "../mods/installed.h"
 
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -668,32 +669,135 @@ static void show_steer_target(KhdaysCampPage *pg)
 #define FILES_LOCKED_NAME 0x020b5270u
 #define STORY_FILES_INDEX 2 /* Files: the story's options' third (STORY_ENTRIES) */
 
-/* the Files page as read at this update, for the enemies' model viewer (enemy_viewer.c) */
+/* the Files page as read at this update, for the enemies' model viewer (enemy_viewer.c): its rows' enemies, as
+ * many as the page has */
 static int files_on, files_mode, files_cursor, files_rows;
-static int16_t files_ids[KHDAYS_ENEMY_VIEWER_ROWS];
+static int16_t *files_ids;
+static size_t files_id_room;
 
 /* the diary's entries with their rewritten version, as the page linked them when it was open last (its
- * own reckoning, by the last chapter's missions): 0 not known, 1 none, 2 one */
-static uint8_t diary_alternate[KHDAYS_CAMP_FILES_MOST];
+ * own reckoning, by the last chapter's missions): 0 not known, 1 none, 2 one; as many as the diary has */
+static uint8_t *diary_alternate;
+static int diary_known; /* the entries diary_alternate holds */
+
+/* The view's lists: the Files page's rows and their titles, the Panels page's description -- as an update reads
+ * them (`building`), as the last view read keeps them (`kept`, for the menu closing), and as published with
+ * the view (`published`, under `lock`). Each as long as the game's. */
+typedef struct Lists {
+    KhdaysCampFileRow *rows;
+    size_t *title_at; /* each row's title's place in `titles` */
+    int row_count, row_room;
+    uint16_t *titles;
+    size_t title_count, title_room;
+    uint16_t *text;
+    size_t text_count, text_room;
+} Lists;
+static Lists building, kept, published;
+
+/* `*list` (`*room` items of `size` bytes) made room for `need`; 0 if no memory. */
+static int reserve(void **list, size_t *room, size_t need, size_t size)
+{
+    size_t grown = *room > 0 ? *room : 16;
+    void *more;
+    if (need <= *room) {
+        return 1;
+    }
+    while (grown < need) {
+        grown *= 2;
+    }
+    more = realloc(*list, grown * size);
+    if (more == NULL) {
+        return 0;
+    }
+    *list = more;
+    *room = grown;
+    return 1;
+}
+
+static int reserve_rows(Lists *l, int need)
+{
+    size_t room = (size_t)l->row_room, at_room = (size_t)l->row_room;
+    if (!reserve((void **)&l->rows, &room, (size_t)need, sizeof(*l->rows)) ||
+        !reserve((void **)&l->title_at, &at_room, (size_t)need, sizeof(*l->title_at))) {
+        return 0;
+    }
+    l->row_room = (int)(room < at_room ? room : at_room);
+    return 1;
+}
+
+static void lists_clear(Lists *l)
+{
+    l->row_count = 0;
+    l->title_count = 0;
+    l->text_count = 0;
+}
+
+static int lists_copy(Lists *to, const Lists *from)
+{
+    lists_clear(to);
+    if (!reserve_rows(to, from->row_count) ||
+        !reserve((void **)&to->titles, &to->title_room, from->title_count, sizeof(*to->titles)) ||
+        !reserve((void **)&to->text, &to->text_room, from->text_count + 1, sizeof(*to->text))) {
+        return 0;
+    }
+    if (from->row_count > 0) {
+        memcpy(to->rows, from->rows, (size_t)from->row_count * sizeof(*to->rows));
+        memcpy(to->title_at, from->title_at, (size_t)from->row_count * sizeof(*to->title_at));
+    }
+    if (from->title_count > 0) {
+        memcpy(to->titles, from->titles, from->title_count * sizeof(*to->titles));
+    }
+    if (from->text_count > 0) {
+        memcpy(to->text, from->text, from->text_count * sizeof(*to->text));
+    }
+    to->text[from->text_count] = 0;
+    to->row_count = from->row_count;
+    to->title_count = from->title_count;
+    to->text_count = from->text_count;
+    return 1;
+}
+
+/* A title of the game's (`length` characters at most, a newline as a space) put after the list's titles,
+ * NUL-ended: its place there. */
+static size_t add_title(Lists *l, u32 text, int length)
+{
+    const size_t at = l->title_count;
+    for (int n = 0; n < length && in_ram(text + 2u * (u32)n); ++n) {
+        const u16 ch = rd16(text + 2u * (u32)n);
+        if (ch == 0 || !reserve((void **)&l->titles, &l->title_room, l->title_count + 2, sizeof(*l->titles))) {
+            break;
+        }
+        l->titles[l->title_count++] = ch == '\n' ? ' ' : ch;
+    }
+    if (reserve((void **)&l->titles, &l->title_room, l->title_count + 1, sizeof(*l->titles))) {
+        l->titles[l->title_count++] = 0;
+    }
+    return at;
+}
 
 static int files_bit(u32 bits, int n)
 {
     return (int)((rd32(bits + 4u * (u32)(n / 32)) >> (31 - n % 32)) & 1u);
 }
 
-static void files_title(u32 text, int length, uint16_t *out)
+/* The locked name's length: the game's "?", read to its NUL. */
+#define FILES_LOCKED_LENGTH INT_MAX
+
+/* diary_alternate made to hold `count` entries, the new ones not known; 0 if no memory. */
+static int know_diary(int count)
 {
-    int n = 0;
-    if (in_ram(text)) {
-        for (; n < KHDAYS_CAMP_FILES_TITLE - 1 && n < length; ++n) {
-            const u16 ch = rd16(text + 2u * (u32)n);
-            if (ch == 0) {
-                break;
-            }
-            out[n] = ch == '\n' ? ' ' : ch;
-        }
+    uint8_t *more;
+    if (count <= diary_known) {
+        return 1;
     }
-    out[n] = 0;
+    more = (uint8_t *)realloc(diary_alternate, (size_t)count);
+    if (more == NULL) {
+        return 0;
+    }
+    memset(more + diary_known, 0, (size_t)(count - diary_known));
+    diary_alternate = more;
+    diary_known = count;
+    return 1;
 }
 
 static int read_files(u32 context, u32 state, KhdaysCampView *v)
@@ -714,29 +818,34 @@ static int read_files(u32 context, u32 state, KhdaysCampView *v)
         read_entries = 0;
         return 0;
     }
-    if (!in_ram(entries) || (mode != 0 && mode != 1) || count < 0 || count > 0x200 ||
-        (count > 0 && (cursor < 0 || cursor >= count))) {
+    if (!in_ram(entries) || (mode != 0 && mode != 1) || count < 0 || (count > 0 && (cursor < 0 || cursor >= count))) {
         return 0;
     }
     f->mode = mode;
     f->count = count;
     f->top = top;
     f->cursor = cursor;
-    for (int i = 0; i < count && i < KHDAYS_CAMP_FILES_MOST; ++i) {
-        KhdaysCampFileRow *r = &f->row[i];
+    if (!reserve_rows(&building, count) || (mode == 0 && !know_diary(count))) {
+        return 0;
+    }
+    /* the rows the game's memory holds, each entry where the table says */
+    for (int i = 0; i < count && in_ram(entries + FILES_ENTRY_SIZE * (u32)i + FILES_ENTRY_SIZE - 1u); ++i) {
+        KhdaysCampFileRow *r = &building.rows[building.row_count];
         const u32 e = entries + FILES_ENTRY_SIZE * (u32)i;
         const u16 id = rd16(e);
         const u32 other = rd32(e + FILES_OTHER);
         const int has_other = other != 0 && in_ram(other);
         const int n = mode == 0 && has_other ? i + 0x40 : i;
+        memset(r, 0, sizeof(*r));
         r->locked = (int8_t)(mode == 1 && (id >> 10) != 0);
         r->number = (int16_t)(mode == 0 ? (int)(id & 0x1ffu) : i + 1);
         if (r->locked) {
-            files_title(FILES_LOCKED_NAME, KHDAYS_CAMP_FILES_TITLE, r->title);
+            building.title_at[building.row_count] = add_title(&building, FILES_LOCKED_NAME, FILES_LOCKED_LENGTH);
         } else {
             /* the diary's row chosen shows its other version's title while A is held (Reports_DrawRowTexts) */
             const u32 titled = mode == 0 && held && i == cursor && has_other ? other : e;
-            files_title(rd32(titled + FILES_TITLE), (int)rd16(titled + FILES_TITLE_LENGTH), r->title);
+            building.title_at[building.row_count] =
+                add_title(&building, rd32(titled + FILES_TITLE), (int)rd16(titled + FILES_TITLE_LENGTH));
         }
         r->badge = -1;
         if (!r->locked && n < FILES_BITS) {
@@ -749,13 +858,17 @@ static int read_files(u32 context, u32 state, KhdaysCampView *v)
         if (mode == 0) {
             diary_alternate[i] = (uint8_t)(has_other ? 2 : 1);
         }
+        ++building.row_count;
     }
     f->held = held;
     /* the rows' enemies for the model viewer: each one's class (its record's first byte), -1 not met */
-    files_rows = mode == 1 ? (count < KHDAYS_ENEMY_VIEWER_ROWS ? count : KHDAYS_ENEMY_VIEWER_ROWS) : 0;
-    for (int i = 0; i < files_rows; ++i) {
-        const u16 id = rd16(entries + FILES_ENTRY_SIZE * (u32)i);
-        files_ids[i] = (int16_t)((id >> 10) == 0 ? (int)(id & 0x1ffu) : -1);
+    files_rows = 0;
+    if (mode == 1 && reserve((void **)&files_ids, &files_id_room, (size_t)building.row_count, sizeof(*files_ids))) {
+        files_rows = building.row_count;
+        for (int i = 0; i < files_rows; ++i) {
+            const u16 id = rd16(entries + FILES_ENTRY_SIZE * (u32)i);
+            files_ids[i] = (int16_t)((id >> 10) == 0 ? (int)(id & 0x1ffu) : -1);
+        }
     }
     files_cursor = cursor;
     files_on = running == 1;
@@ -766,20 +879,19 @@ static int read_files(u32 context, u32 state, KhdaysCampView *v)
     if (tracing()) {
         static int last_mode = -1, last_count = -1, last_cursor = -1;
         if (mode != last_mode || count != last_count || cursor != last_cursor) {
-            char first[KHDAYS_CAMP_FILES_TITLE];
+            char first[48];
             int k = 0;
-            if (count > 0) {
-                for (; f->row[cursor < KHDAYS_CAMP_FILES_MOST ? cursor : 0].title[k] != 0 &&
-                       k < KHDAYS_CAMP_FILES_TITLE - 1;
-                     ++k) {
-                    const u16 ch = f->row[cursor < KHDAYS_CAMP_FILES_MOST ? cursor : 0].title[k];
-                    first[k] = ch < 0x80 ? (char)ch : '?';
+            const int row = cursor < building.row_count ? cursor : 0;
+            if (building.row_count > 0) {
+                const uint16_t *title = building.titles + building.title_at[row];
+                for (; title[k] != 0 && k < (int)sizeof(first) - 1; ++k) {
+                    first[k] = title[k] < 0x80 ? (char)title[k] : '?';
                 }
             }
             first[k] = '\0';
             khdays_log("camp: files mode %d, %d rows, top %d, cursor %d: number %d \"%s\" badge %d", mode, count, top,
-                       cursor, count > 0 ? f->row[cursor < KHDAYS_CAMP_FILES_MOST ? cursor : 0].number : -1, first,
-                       count > 0 ? f->row[cursor < KHDAYS_CAMP_FILES_MOST ? cursor : 0].badge : -2);
+                       cursor, building.row_count > 0 ? building.rows[row].number : -1, first,
+                       building.row_count > 0 ? building.rows[row].badge : -2);
             last_mode = mode;
             last_count = count;
             last_cursor = cursor;
@@ -808,29 +920,29 @@ static int read_files(u32 context, u32 state, KhdaysCampView *v)
 #define PAGE_B_VIEW 0x44u
 #define PAGE_B_SLIDE_MOST 192
 #define PAGE_B_STEP 0x18u
-#define PAGE_B_DRAWN 3       /* its words drawn (Ov025_DrawStatusPage at step 1, then step 2) */
-#define PAGE_B_SLIDING 7     /* its slide's handler registered (step 6) and running */
+#define PAGE_B_DRAWN 3   /* its words drawn (Ov025_DrawStatusPage at step 1, then step 2) */
+#define PAGE_B_SLIDING 7 /* its slide's handler registered (step 6) and running */
 
 static u32 text_row_self;
-static uint16_t text_row[KHDAYS_CAMP_TEXT];
+static uint16_t *text_row; /* NUL-ended, text_row_count units before it */
+static size_t text_row_count, text_row_room;
 
 void khdays_camp_text_row(unsigned int self, int row, unsigned int text, int style)
 {
-    int n = 0;
+    size_t n = 0;
     (void)style;
-    if (row != 0) {
+    if (row != 0 || !reserve((void **)&text_row, &text_row_room, 1, sizeof(*text_row))) {
         return;
     }
-    if (text != 0 && in_ram(text)) {
-        for (; n < KHDAYS_CAMP_TEXT - 1; ++n) {
-            const u16 ch = rd16(text + 2u * (u32)n);
-            if (ch == 0) {
-                break;
-            }
-            text_row[n] = ch;
+    for (; text != 0 && in_ram(text + 2u * (u32)n); ++n) {
+        const u16 ch = rd16(text + 2u * (u32)n);
+        if (ch == 0 || !reserve((void **)&text_row, &text_row_room, n + 2, sizeof(*text_row))) {
+            break;
         }
+        text_row[n] = ch;
     }
     text_row[n] = 0;
+    text_row_count = n;
     text_row_self = self;
 }
 
@@ -855,8 +967,10 @@ static int read_panels(const Camp *c, u32 camp, u32 state, int page, KhdaysCampV
     }
     v->selected = c->panels_option;
     v->description = -1;
-    if (text_row_self == state) {
-        memcpy(v->panel_text, text_row, sizeof(v->panel_text));
+    if (text_row_self == state && text_row != NULL &&
+        reserve((void **)&building.text, &building.text_room, text_row_count + 1, sizeof(*building.text))) {
+        memcpy(building.text, text_row, (text_row_count + 1) * sizeof(*text_row));
+        building.text_count = text_row_count;
     }
     if (tracing()) {
         static int last_view = -1, last_step = -1;
@@ -865,7 +979,7 @@ static int read_panels(const Camp *c, u32 camp, u32 state, int page, KhdaysCampV
             (step != last_step && step <= PAGE_B_SLIDING)) {
             char line[64];
             int k = 0;
-            for (; text_row[k] != 0 && k < (int)sizeof(line) - 1; ++k) {
+            for (; text_row != NULL && text_row[k] != 0 && k < (int)sizeof(line) - 1; ++k) {
                 line[k] = text_row[k] < 0x80 ? (char)text_row[k] : '?';
             }
             line[k] = '\0';
@@ -906,7 +1020,6 @@ int khdays_rom_file_data(KhdaysRomReader *reader, const char *path, int entry, u
 #define ENEMY_MET 0xa11u
 #define REWRITTEN 0x40
 #define TABLE_RECORD 0x14u
-#define TABLE_MOST 0x400u
 
 static struct {
     int tried;
@@ -928,9 +1041,11 @@ static const u16 *files_table(int mode, u32 *count)
             u8 *data = NULL;
             u32 size = 0;
             snprintf(path, sizeof(path), "UI/cm/str/%s_%s.z", mode == 0 ? "rpt" : "enm", codes[i]);
-            if (khdays_rom_file_data(reader, path, -1, &data, &size) && size >= 4u) {
+            if (khdays_rom_file_data(reader, path, -1, &data, &size) && data != NULL && size >= 4u) {
+#pragma warning(suppress : 6001) /* khdays_rom_file_data filled `size` bytes of it */
                 const u32 n = (u32)data[0] | (u32)data[1] << 8 | (u32)data[2] << 16 | (u32)data[3] << 24;
-                if (n > 0 && n <= TABLE_MOST && 4u + n * TABLE_RECORD <= size &&
+                /* as many records as the file holds after its count */
+                if (n > 0 && (uint64_t)n * TABLE_RECORD <= (uint64_t)size - 4u &&
                     (tables[mode].first = (u16 *)malloc(n * sizeof(u16))) != NULL) {
                     for (u32 k = 0; k < n; ++k) {
                         tables[mode].first[k] = (u16)(data[4u + k * TABLE_RECORD] | data[5u + k * TABLE_RECORD] << 8);
@@ -981,14 +1096,15 @@ static int files_news(u32 game)
             ++rows;
         }
         seen_words(DIARY_SEEN, words);
-        for (u32 j = 0; j < rows && j < KHDAYS_CAMP_FILES_MOST && !(news & 1); ++j) {
+        for (u32 j = 0; j < rows && !(news & 1); ++j) {
+            const int alternate = j < (u32)diary_known ? diary_alternate[j] : 0; /* 0: not known yet */
             int rewritten = 0;
             for (u32 k = half; last && k < count && !rewritten; ++k) {
                 rewritten = (t[k] & 0x1ffu) == (t[j] & 0x1ffu);
             }
-            if (!rewritten || diary_alternate[j] == 1) {
+            if (!rewritten || alternate == 1) {
                 news |= !seen_bit(words, (int)j);
-            } else if (diary_alternate[j] == 2) {
+            } else if (alternate == 2) {
                 news |= !seen_bit(words, (int)j + REWRITTEN);
             } else {
                 news |= !seen_bit(words, (int)j) && !seen_bit(words, (int)j + REWRITTEN);
@@ -1183,6 +1299,7 @@ void khdays_camp_update_ran(uintptr_t update)
     KhdaysCampView v;
     const Camp *c = NULL;
     int loaded = 0;
+    lists_clear(&building);
     for (int i = 0; i < CAMPS; ++i) {
         if (khdays_overlay_loaded(camps[i].overlay)) {
             loaded = 1;
@@ -1199,6 +1316,7 @@ void khdays_camp_update_ran(uintptr_t update)
             seen = 0;
             AcquireSRWLockExclusive(&lock);
             memset(&shown, 0, sizeof(shown));
+            lists_clear(&published);
             ReleaseSRWLockExclusive(&lock);
         }
         return;
@@ -1229,8 +1347,10 @@ void khdays_camp_update_ran(uintptr_t update)
             v.leaving = target_seen && target == -1;
             v.next = target;
             last = v;
+            lists_copy(&kept, &building);
         } else if (target_seen && target == -1 && last.shown && overhaul()) {
             v = last;
+            lists_copy(&building, &kept);
             v.leaving = 1;
             v.next = target;
             v.master = brightness();
@@ -1250,6 +1370,7 @@ void khdays_camp_update_ran(uintptr_t update)
     seen_at = khdays_events_vblank_count();
     AcquireSRWLockExclusive(&lock);
     shown = v;
+    lists_copy(&published, &building);
     ReleaseSRWLockExclusive(&lock);
 }
 
@@ -1263,6 +1384,59 @@ void khdays_camp_view(KhdaysCampView *out)
     AcquireSRWLockShared(&lock);
     *out = shown;
     ReleaseSRWLockShared(&lock);
+    out->file.row = NULL;
+    out->file.rows = 0;
+    out->panel_text = NULL;
+}
+
+void khdays_camp_lists_point(KhdaysCampView *v, const KhdaysCampLists *lists)
+{
+    v->file.row = lists->row_count > 0 ? lists->rows : NULL;
+    v->file.rows = lists->row_count;
+    v->panel_text = lists->text_count > 0 ? lists->text : NULL;
+}
+
+void khdays_camp_view_lists(KhdaysCampView *out, KhdaysCampLists *lists)
+{
+    AcquireSRWLockShared(&lock);
+    *out = shown;
+    if (shown.shown) {
+        size_t row_room = (size_t)lists->row_room;
+        lists->row_count = 0;
+        lists->text_count = 0;
+        if (reserve((void **)&lists->rows, &row_room, (size_t)published.row_count, sizeof(*lists->rows)) &&
+            reserve((void **)&lists->titles, &lists->title_room, published.title_count + 1, sizeof(*lists->titles)) &&
+            reserve((void **)&lists->text, &lists->text_room, published.text_count + 1, sizeof(*lists->text))) {
+            lists->row_room = (int)row_room;
+            if (published.title_count > 0) {
+                memcpy(lists->titles, published.titles, published.title_count * sizeof(*lists->titles));
+            }
+            lists->titles[published.title_count] = 0;
+            for (int i = 0; i < published.row_count; ++i) {
+                lists->rows[i] = published.rows[i];
+                /* (a title the update had no room for: the empty one at the end) */
+                lists->rows[i].title =
+                    lists->titles +
+                    (published.title_at[i] < published.title_count ? published.title_at[i] : published.title_count);
+            }
+            lists->row_count = published.row_count;
+            if (published.text_count > 0) {
+                memcpy(lists->text, published.text, published.text_count * sizeof(*lists->text));
+            }
+            lists->text[published.text_count] = 0;
+            lists->text_count = published.text_count;
+        }
+    }
+    ReleaseSRWLockShared(&lock);
+    khdays_camp_lists_point(out, lists);
+}
+
+void khdays_camp_lists_free(KhdaysCampLists *lists)
+{
+    free(lists->rows);
+    free(lists->titles);
+    free(lists->text);
+    memset(lists, 0, sizeof(*lists));
 }
 
 int khdays_camp_screen(int *story)

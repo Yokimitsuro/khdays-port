@@ -81,7 +81,7 @@ extern int PlaySound(int kind, int sound);
 #define INST_TABLE 0xe0u  /* its animations' table: s16 counts per track */
 #define INST_ACTIVE 0x2u  /* track 0 playing (>= 0), and its channel: the frame in Q12 (Sequence_UpdateTracks) */
 #define INST_CHANNEL 0xcu
-#define MODEL_BOX 0x2cu   /* the model's info (+0x14): its box, six fx16 (min x, y, z, size), then the box's scale */
+#define MODEL_BOX 0x2cu /* the model's info (+0x14): its box, six fx16 (min x, y, z, size), then the box's scale */
 #define MODEL_BOX_SCALE 0x38u
 #define BANK_B 1
 #define BANK_B_SIZE 0x20000u
@@ -152,7 +152,8 @@ static struct {
     int step_to;          /* -1/+1: to the enemy before or after, met, in the page's list */
     int row;              /* the page's row shown */
     int rows;
-    int16_t ids[KHDAYS_ENEMY_VIEWER_ROWS]; /* the page's rows' enemies, -1 not met */
+    int16_t *ids; /* the page's rows' enemies, -1 not met: `rows` of them */
+    int id_room;
     /* the game's memory */
     u32 inst, camera, name, container, table;
     struct {
@@ -673,8 +674,17 @@ void khdays_enemy_viewer_update(int on, int enemies, int cursor, int rows, const
     vw.enemies = enemies;
     vw.cursor = cursor;
     if (!vw.open) {
-        vw.rows = rows < 0 ? 0 : rows > KHDAYS_ENEMY_VIEWER_ROWS ? KHDAYS_ENEMY_VIEWER_ROWS : rows;
-        if (ids != NULL && vw.rows > 0) {
+        vw.rows = ids != NULL && rows > 0 ? rows : 0;
+        if (vw.rows > vw.id_room) {
+            int16_t *grown = (int16_t *)realloc(vw.ids, (size_t)vw.rows * sizeof(*grown));
+            if (grown == NULL) {
+                vw.rows = vw.id_room; /* the rows it has room for */
+            } else {
+                vw.ids = grown;
+                vw.id_room = vw.rows;
+            }
+        }
+        if (vw.rows > 0) {
             memcpy(vw.ids, ids, (size_t)vw.rows * sizeof(vw.ids[0]));
         }
     }

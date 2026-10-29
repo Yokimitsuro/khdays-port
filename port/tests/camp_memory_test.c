@@ -286,6 +286,7 @@ int main(void)
         static const uint16_t entry1[] = {'E', 'n', 't', 'r', 'y', ' ', '1'}, other1[] = {'E', 'x', 't', 'r', 'a'};
         const unsigned entries = 0x02120000u, texts = 0x02130000u;
         KhdaysCampView v;
+        KhdaysCampLists lists = {0}; /* the rows and titles, the reader's own copy */
         *(int *)KHDAYS_W(0x020b574c) = 7;
         *(int *)KHDAYS_W(0x020b5750) = 6;
         *(int *)KHDAYS_W(context + 0x9768) = 0;
@@ -308,7 +309,7 @@ int main(void)
         *(unsigned *)KHDAYS_W(state + 0x238) = 0x80000000u; /* row 0 viewed on this visit */
         *(unsigned *)KHDAYS_W(state + 0x248) = 0x20000000u; /* row 2 seen before */
         khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
-        khdays_camp_view(&v);
+        khdays_camp_view_lists(&v, &lists);
         CHECK(v.shown && v.files && v.file.mode == 0 && v.file.count == 3 && v.file.cursor == 1);
         CHECK(v.file.row[0].number == 7 && v.file.row[2].number == 9);
         CHECK(v.file.row[0].title[0] == 'E' && v.file.row[0].title[6] == '1' && v.file.row[0].title[7] == 0);
@@ -317,8 +318,9 @@ int main(void)
         CHECK(viewer_on == 1 && viewer_enemies == 0 && viewer_rows == 0 && viewer_cursor == 1);
         *(int *)KHDAYS_W(state + 0xc0) = 1; /* A held: the chosen row shows its other version */
         khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
-        khdays_camp_view(&v);
-        CHECK(v.file.row[1].title[0] == 'E' && v.file.row[1].title[1] == 'x' && v.file.row[1].title[5] == 0);
+        khdays_camp_view_lists(&v, &lists);
+        CHECK(v.file.rows == 3 && v.file.row[1].title[0] == 'E' && v.file.row[1].title[1] == 'x' &&
+              v.file.row[1].title[5] == 0);
         CHECK(v.file.held && v.file.row[1].alternate && !v.file.row[0].alternate);
         *(int *)KHDAYS_W(state + 0xc8) = 0; /* B: left, the game still showing it (fading to the menu): read on */
         *(int *)KHDAYS_W(context + 0x95c4) = 0;
@@ -333,6 +335,7 @@ int main(void)
         khdays_camp_update_ran((uintptr_t)Ov025_GetIdleHandler);
         khdays_camp_view(&v);
         CHECK(!v.files); /* not running, and not the page left just now: the menu's words */
+        khdays_camp_lists_free(&lists);
     }
     {
         /* B on the page: back on the menu, Files' two open, the cursor on the page's (Enemy Profiles) */
