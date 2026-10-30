@@ -1,11 +1,15 @@
 // The mod's characters (docs/CHARACTERS.md): each one's name, base, picture and gauges; its model, skeleton, size
-// and weapon bone; its clips given to the base's animations, each seen beside the game's own; its voice, combos and
-// Limit. Every change made in the description as the tool shows it, saved when the port's own reader takes it.
+// and weapon bone; its clips given to the base's animations, each seen beside the game's own; its voice, combos,
+// Limit and stats; its forms, each with what it gives of its own and the rule that chooses it. Every change made in
+// the description as the tool shows it, saved when the port's own reader takes it.
 #include "../app.h"
 #include "../preview3d.h"
 
 #include "core/characters/character_files.h"
+#include "core/characters/character_forms.h"
 #include "core/characters/character_pose.h"
+#include "core/characters/form_rules.h"
+#include "core/characters/game_items.h"
 #include "core/files/paths.h"
 #include "core/models/game_model.h"
 #include "core/models/model_files.h"
@@ -16,6 +20,8 @@
 #include "imgui_stdlib.h"
 
 extern "C" {
+#include "characters/registry.h"
+#include "characters/rules.h"
 #include "render/png_io.h"
 }
 
@@ -39,7 +45,7 @@ struct Texture {
     int width = 0, height = 0;
 };
 
-enum class Tab { character, model, animations, more };
+enum class Tab { character, model, animations, more, stats };
 
 struct View {
     std::string mod;  // whose characters are listed
@@ -47,6 +53,7 @@ struct View {
     bool stale = true;
 
     std::string key;  // the one open
+    std::string form;  // its page shown: empty its default form, else a form's id
     IniText ini;
     std::string saved;  // its character.ini as on disk
     std::string checked;
@@ -96,6 +103,20 @@ struct View {
     // a new character
     std::string new_key, new_name;
     int new_base = 0;
+
+    // forms: a new one's id, a name for the one shown
+    std::string new_form, form_name;
+    bool to_form_tab = false;
+    // the game's items the rules name, in the interface's language
+    int items_language = -1;
+    std::vector<GameItem> items, gears, links, panels;
+    std::string items_error;
+    // the stats' base table
+    std::string stats_for = "\x01";
+    std::vector<std::uint8_t> stats_base;
+    std::string stats_error;
+    float stats_scale = 1.0f;
+    bool stats_unknown = false;  // the two values not known shown
 };
 
 View v;
@@ -116,6 +137,48 @@ std::string language_key(const char* key) {
     return v.language < 0 ? std::string(key) : std::string(key) + " " + kLanguages[v.language];
 }
 
+// The part the page shown keeps `section` in ("model", "actions" ...; the form's own part for "" and "model").
+std::string part(const char* section) {
+    return form_part(v.form, section);
+}
+
+// Its model's key: a character's [model] file, a form's model.
+const char* model_key() {
+    return v.form.empty() ? "file" : "model";
+}
+
+// A model line of the page shown: the form's own, else its default's ([model]).
+std::string model_value(const char* key) {
+    if (!v.form.empty()) {
+        bool found = false;
+        const std::string own = v.ini.get(part("model"), std::string(key) == "file" ? "model" : key, &found);
+        if (found)
+            return own;
+    }
+    return v.ini.get("model", key);
+}
+
+// Whether the form shown gives a section of its own, a line in it as the port reads it (its default's taken
+// otherwise); the default always does.
+bool gives_section(const char* section) {
+    return v.form.empty() || !v.ini.entries(part(section)).empty();
+}
+
+// A base as the game writes it, the dual-wield Roxas in the interface's words.
+std::string base_display(Language language, const std::string& base) {
+    return base == "roxas_dual" ? tr(language, S::folder_dual_roxas) : character_display_name(base);
+}
+
+// The game character the page shown plays as.
+std::string shown_base() {
+    if (!v.form.empty()) {
+        const std::string own = v.ini.get(part(""), "base");
+        if (!own.empty())
+            return own;
+    }
+    return v.ini.get("character", "base");
+}
+
 void read_list(const Mod& m) {
     v.mod = m.name;
     v.keys = character_keys(m.dir);
@@ -128,20 +191,16 @@ void read_list(const Mod& m) {
     v.stale = false;
 }
 
-void open_character(const Mod& m, const std::string& key) {
-    v.key = key;
-    v.saved = read_file(character_dir(m.dir, key) / "character.ini");
-    v.ini = IniText::parse(v.saved);
-    v.checked = "\x01";
-    v.model_for = v.base_for = v.animation_for = "\x01";
-    v.clips.clear();
-    v.clip_errors.clear();
+// The page of the default form or of form `id`: its first clip shown.
+void show_form(const std::string& id) {
+    v.form = id;
+    v.form_name = id;
     v.shown_game.clear();
     v.shown_clip.clear();
     v.time = 0.0;
     v.framed_for = 0.0f;
     // shown at first: the first of the base's animations it gives a clip, else its clip for any other
-    for (const auto& [game, value] : v.ini.entries("actions")) {
+    for (const auto& [game, value] : v.ini.entries(gives_section("actions") ? part("actions") : "actions")) {
         const std::string clip = value.substr(0, value.find(' '));
         if (game == "fallback") {
             if (v.shown_clip.empty())
@@ -154,17 +213,28 @@ void open_character(const Mod& m, const std::string& key) {
     }
 }
 
+void open_character(const Mod& m, const std::string& key) {
+    v.key = key;
+    v.saved = read_file(character_dir(m.dir, key) / "character.ini");
+    v.ini = IniText::parse(v.saved);
+    v.checked = "\x01";
+    v.model_for = v.base_for = v.animation_for = v.stats_for = "\x01";
+    show_form({});
+}
+
 bool unsaved() {
     return !v.key.empty() && v.ini.text() != v.saved;
 }
 
-// The model the description names, read as the port reads it (again when it changes).
+// The model the page shown names, read as the port reads it (again when it changes).
 void take_model(const Mod& m) {
-    const std::string file = v.ini.get("model", "file");
+    const std::string file = model_value("file");
     if (file == v.model_for)
         return;
     v.model_for = file;
     v.have_model = false;
+    v.clips.clear();  // read against the model before
+    v.clip_errors.clear();
     v.model = {};
     v.model_error.clear();
     v.model_texture.clear();
@@ -205,7 +275,7 @@ const Texture* base_texture(const std::string& name) {
 
 // The base's model as the graphics dump has it, and the names of its animations (again when the base changes).
 void take_base(App& app) {
-    const std::string base = v.ini.get("character", "base");
+    const std::string base = shown_base();
     if (base == v.base_for)
         return;
     v.base_for = base;
@@ -217,7 +287,7 @@ void take_base(App& app) {
     v.base_frames.clear();
     v.base_height = 0.0f;
     v.animation_for = "\x01";
-    const std::string code = character_base_code(base);
+    const std::string code = form_base_code(base);
     if (code.empty())
         return;
     // its model in battle: ba/ch/<code>/def_hb.p.z, else def.p.z
@@ -313,13 +383,13 @@ template <typename T> void numbers_of(const std::string& text, T* out, std::size
 }
 
 float model_scale() {
-    const std::string s = v.ini.get("model", "scale");
+    const std::string s = model_value("scale");
     const float k = s.empty() ? 1.0f : static_cast<float>(std::atof(s.c_str()));
     return k > 0.0f ? k : 1.0f;
 }
 
 bool own_skeleton() {
-    return v.ini.get("model", "skeleton") == "own";
+    return model_value("skeleton") == "own";
 }
 
 // The base (the game's model, its animation shown) and the character (its clip shown, scaled as the port scales
@@ -468,12 +538,12 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
     // the names under it: the game's on the left, the character's on the right
     const std::string left = v.base_ok
                                  ? fmt(app.language, S::chars_preview_base,
-                                       {character_display_name(v.base_for), v.shown_game.empty() ? "-" : v.shown_game})
+                                       {base_display(app.language, v.base_for), v.shown_game.empty() ? "-" : v.shown_game})
                                  : v.base_error;
-    const std::string right = !v.have_model
-                                  ? std::string()
-                                  : fmt(app.language, S::chars_preview_character,
-                                        {v.ini.get("character", "name"), v.shown_clip.empty() ? "-" : v.shown_clip});
+    const std::string name = v.ini.get("character", "name") + (v.form.empty() ? "" : " [" + v.form + "]");
+    const std::string right = !v.have_model ? std::string()
+                                            : fmt(app.language, S::chars_preview_character,
+                                                  {name, v.shown_clip.empty() ? "-" : v.shown_clip});
     ImGui::TextDisabled("%s", left.c_str());
     ImGui::SameLine(static_cast<float>(w) * 0.5f);
     ImGui::TextDisabled("%s", right.c_str());
@@ -485,10 +555,10 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
 
 // --- the file dialogs' answers, taken on the interface's thread ---------------------------------------------
 
-enum class Wanted { model, clips, face, sound };
+enum class Wanted { model, clips, face, sound, weapon };
 struct Asked {
     Wanted what;
-    std::string sound_key;  // a sound's line, for its file
+    std::string sound_key;  // a sound's line, for its file; the base's weapon model a file is for
 };
 Asked asked{Wanted::model, {}};
 
@@ -513,7 +583,7 @@ void ask_files(App& app, Wanted what, const std::string& sound_key = {}) {
 // A file given (chosen, or dropped on the window): copied into the character's folder and named in its
 // description, as the tab or the question it answers wants.
 void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const std::string& sound_key) {
-    const char* const folders[] = {"model", "clips", "", "voices"};
+    const char* const folders[] = {"model", "clips", "", "voices", "weapons"};
     std::string relative, why;
     if (!copy_into_character(m.dir, v.key, file, folders[static_cast<int>(what)], &relative, &why)) {
         app.tell(fmt(app.language, S::save_failed, {why}), false);
@@ -521,13 +591,14 @@ void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const 
     }
     switch (what) {
     case Wanted::model:
-        v.ini.set("model", "file", relative);
-        if (v.ini.get("model", "skeleton").empty())
-            v.ini.set("model", "skeleton", "own");
+        v.ini.set(part("model"), model_key(), relative);
+        if (model_value("skeleton").empty())
+            v.ini.set(part("model"), "skeleton", "own");
         break;
     case Wanted::clips:
-        if (v.ini.get("actions", "fallback").empty())
-            v.ini.set("actions", "fallback", relative);
+        // a form taking its default's clips: only copied (its default's not lost)
+        if (gives_section("actions") && v.ini.get(part("actions"), "fallback").empty())
+            v.ini.set(part("actions"), "fallback", relative);
         v.clip_errors.erase(relative);
         v.clips.erase(relative);
         v.shown_clip = relative;
@@ -538,7 +609,14 @@ void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const 
         break;
     case Wanted::sound:
         if (!sound_key.empty())
-            v.ini.set("sounds", sound_key, relative);
+            v.ini.set(part("sounds"), sound_key, relative);
+        break;
+    case Wanted::weapon:
+        // a form taking its default's weapons: those first, then this one
+        if (!gives_section("weapons") && shown_base() == v.ini.get("character", "base"))
+            v.ini.set_entries(part("weapons"), v.ini.entries("weapons"));
+        v.ini.set(part("weapons"), sound_key, relative);
+        raise_format(&v.ini);
         break;
     }
     app.tell(fmt(app.language, S::chars_copied, {u8(file.filename()), v.key}), true);
@@ -662,76 +740,136 @@ void draw_character_tab(App& app, const Mod& m) {
     }
 }
 
+// Its weapons: each of its base's weapon models (the graphics dump's ba/ch/<code>/w_.p2), drawn as a model of its
+// own or as the base's.
+void draw_weapons(App& app) {
+    const auto lang = app.language;
+    const std::string prefix = "ba/ch/" + form_base_code(shown_base()) + "/w_.p2";
+    std::vector<std::string> names;
+    for (const auto& it : app.catalog.items) {
+        const auto mdl = it.key.find("/mdl/");
+        if (it.kind == Kind::model && it.key.rfind(prefix, 0) == 0 && mdl != std::string::npos)
+            names.push_back(it.key.substr(mdl + 5));
+    }
+    // and those the description names that the dump does not have
+    const bool own = gives_section("weapons");
+    const bool same_base = shown_base() == v.ini.get("character", "base");
+    const auto entries = v.ini.entries(own ? part("weapons") : same_base ? "weapons" : part("weapons"));
+    for (const auto& [game, file] : entries)
+        if (std::find(names.begin(), names.end(), game) == names.end())
+            names.push_back(game);
+    ImGui::TextUnformatted(tr(lang, S::forms_weapons));
+    if (!own)
+        ImGui::TextDisabled("%s", tr(lang, same_base ? S::forms_default_section : S::forms_base_weapons));
+    std::string gone;
+    for (const auto& n : names) {
+        ImGui::PushID(n.c_str());
+        std::string file;
+        for (const auto& [game, value] : entries)
+            if (game == n)
+                file = value;
+        ImGui::BulletText("%s: %s", n.c_str(), file.empty() ? tr(lang, S::forms_base_weapon) : file.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton(tr(lang, S::chars_choose_model)))
+            ask_files(app, Wanted::weapon, n);
+        if (own && !file.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x"))
+                gone = n;
+        }
+        ImGui::PopID();
+    }
+    if (!gone.empty())
+        v.ini.remove(part("weapons"), gone);
+    if (names.empty())
+        ImGui::TextDisabled("%s", fmt(lang, S::no_graphics_dump, {app.settings.graphics_dump}).c_str());
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", tr(lang, S::forms_weapons_note));
+    ImGui::PopTextWrapPos();
+}
+
 void draw_model_tab(App& app) {
     const auto lang = app.language;
-    const std::string file = v.ini.get("model", "file");
+    const std::string mp = part("model");
+    const std::string file = model_value("file");
+    bool own_file = false;
+    v.ini.get(mp, model_key(), &own_file);
     if (file.empty())
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s", tr(lang, S::chars_no_model));
+    else if (!v.form.empty() && !own_file)
+        ImGui::TextUnformatted(fmt(lang, S::forms_default_model, {file}).c_str());
     else
         ImGui::TextUnformatted(fmt(lang, S::chars_model_file, {file}).c_str());
     if (!v.model_error.empty())
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", v.model_error.c_str());
     if (ImGui::Button(tr(lang, S::chars_choose_model)))
         ask_files(app, Wanted::model);
+    if (!v.form.empty() && own_file) {
+        ImGui::SameLine();
+        if (ImGui::Button(tr(lang, S::forms_back_to_default)))
+            v.ini.remove(mp, model_key());
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("%s", tr(lang, S::chars_drop_hint));
     ImGui::Separator();
     // its skeleton
     int own = own_skeleton() ? 0 : 1;
     if (ImGui::RadioButton(tr(lang, S::chars_skeleton_own), &own, 0))
-        v.ini.set("model", "skeleton", "own");
+        v.ini.set(mp, "skeleton", "own");
     if (ImGui::RadioButton(tr(lang, S::chars_skeleton_paired), &own, 1))
-        v.ini.set("model", "skeleton", "paired");
+        v.ini.set(mp, "skeleton", "paired");
     // its size
     float scale = model_scale();
     ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
     if (ImGui::InputFloat(tr(lang, S::chars_scale), &scale, 0.0f, 0.0f, "%.4g") && scale > 0.0f) {
         char text[32];
         std::snprintf(text, sizeof(text), "%g", static_cast<double>(scale));
-        v.ini.set("model", "scale", text);
+        v.ini.set(mp, "scale", text);
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(!v.base_ok || v.model_height <= 0.0f || v.base_height <= 0.0f);
     if (ImGui::Button(tr(lang, S::chars_match_height))) {
         char text[32];
         std::snprintf(text, sizeof(text), "%.4g", static_cast<double>(v.base_height / v.model_height));
-        v.ini.set("model", "scale", text);
+        v.ini.set(mp, "scale", text);
     }
     ImGui::EndDisabled();
     // the bone its weapon follows (own skeleton)
     if (own == 0 && v.have_model) {
-        const std::string bone = v.ini.get("model", "weapon_bone");
+        const std::string bone = model_value("weapon_bone");
         ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
         if (ImGui::BeginCombo(tr(lang, S::chars_weapon_bone),
                               bone.empty() ? tr(lang, S::chars_weapon_bone_none) : bone.c_str())) {
             if (ImGui::Selectable(tr(lang, S::chars_weapon_bone_none), bone.empty()))
-                v.ini.remove("model", "weapon_bone");
+                v.ini.remove(mp, "weapon_bone");
             for (const auto& b : v.bones)
                 if (ImGui::Selectable(b.c_str(), b == bone))
-                    v.ini.set("model", "weapon_bone", b);
+                    v.ini.set(mp, "weapon_bone", b);
             ImGui::EndCombo();
         }
         if (!bone.empty()) {
-            bool turned = !v.ini.get("model", "weapon_turn").empty();
+            bool turned = !model_value("weapon_turn").empty();
             if (ImGui::Checkbox(tr(lang, S::chars_weapon_turn), &turned)) {
                 if (turned)
-                    v.ini.set("model", "weapon_turn", "0 0 0");
+                    v.ini.set(mp, "weapon_turn", "0 0 0");
                 else
-                    v.ini.remove("model", "weapon_turn");
+                    v.ini.remove(mp, "weapon_turn");
             }
             if (turned) {
                 float t[3] = {0, 0, 0};
-                numbers_of(v.ini.get("model", "weapon_turn"), t, 3);
+                numbers_of(model_value("weapon_turn"), t, 3);
                 ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
                 if (ImGui::DragFloat3("##turn", t, 1.0f, -180.0f, 180.0f, "%.0f")) {
                     char text[64];
                     std::snprintf(text, sizeof(text), "%g %g %g", static_cast<double>(t[0]), static_cast<double>(t[1]),
                                   static_cast<double>(t[2]));
-                    v.ini.set("model", "weapon_turn", text);
+                    v.ini.set(mp, "weapon_turn", text);
                 }
             }
         }
     }
+    ImGui::Separator();
+    draw_weapons(app);
 }
 
 // Roxas's animations as they have been seen played (docs/CHARACTERS.md); others by their names alone.
@@ -807,6 +945,25 @@ void draw_animations_tab(App& app, const Mod& m) {
         ask_files(app, Wanted::clips);
     ImGui::SameLine();
     ImGui::TextDisabled("%s", fmt(lang, S::chars_clips_count, {std::to_string(clips.size())}).c_str());
+    // a form: its default's clips, or its own
+    const std::string ap = part("actions");
+    if (!gives_section("actions")) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextUnformatted(tr(lang, S::forms_default_clips));
+        ImGui::PopTextWrapPos();
+        auto entries = v.ini.entries("actions");
+        if (entries.empty() && !clips.empty())
+            entries.emplace_back("fallback", clips.front());
+        ImGui::BeginDisabled(entries.empty());
+        if (ImGui::Button(tr(lang, S::forms_own_clips)))
+            v.ini.set_entries(ap, entries);
+        ImGui::EndDisabled();
+        return;
+    }
+    if (!v.form.empty() && ImGui::Button(tr(lang, S::forms_default_clips_back))) {
+        v.ini.remove_part(ap);
+        return;
+    }
     auto clip_combo = [&](const char* id, std::string* clip, bool in_table = false) {
         bool changed = false;
         ImGui::SetNextItemWidth(in_table ? -FLT_MIN : 12 * ImGui::GetFontSize());
@@ -827,19 +984,19 @@ void draw_animations_tab(App& app, const Mod& m) {
         }
         return changed;
     };
-    std::string fallback = v.ini.get("actions", "fallback");
+    std::string fallback = v.ini.get(ap, "fallback");
     if (clip_combo(tr(lang, S::chars_fallback), &fallback)) {
         if (fallback.empty())
-            v.ini.remove("actions", "fallback");
+            v.ini.remove(ap, "fallback");
         else
-            v.ini.set("actions", "fallback", fallback);
+            v.ini.set(ap, "fallback", fallback);
     }
     ImGui::PushTextWrapPos(0);
     ImGui::TextDisabled("%s", tr(lang, S::chars_actions_note));
     ImGui::PopTextWrapPos();
     // the base's animations, and those the description names that the base does not have
     std::vector<std::string> rows = v.base_animations;
-    for (const auto& [game, value] : v.ini.entries("actions"))
+    for (const auto& [game, value] : v.ini.entries(ap))
         if (game != "fallback" && std::find(rows.begin(), rows.end(), game) == rows.end())
             rows.push_back(game);
     // the table takes the height left above the chosen row's details
@@ -867,7 +1024,7 @@ void draw_animations_tab(App& app, const Mod& m) {
                 text = fmt(lang, label, {std::to_string(number)}) + "  (" + game + ")";
             if (frames != v.base_frames.end())
                 text += "  " + fmt(lang, S::chars_frames, {std::to_string(frames->second)});
-            Action a = parse_action(v.ini.get("actions", game));
+            Action a = parse_action(v.ini.get(ap, game));
             // a row clicked: both shown, the game's and the character's
             if (ImGui::Selectable(text.c_str(), v.shown_game == game,
                                   ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
@@ -878,9 +1035,9 @@ void draw_animations_tab(App& app, const Mod& m) {
             ImGui::TableNextColumn();
             if (clip_combo("##clip", &a.clip, true)) {
                 if (a.clip.empty())
-                    v.ini.remove("actions", game);
+                    v.ini.remove(ap, game);
                 else
-                    v.ini.set("actions", game, action_text(a));
+                    v.ini.set(ap, game, action_text(a));
                 v.shown_game = game;
                 v.shown_clip = a.clip.empty() ? fallback : a.clip;
                 v.time = 0.0;
@@ -891,7 +1048,7 @@ void draw_animations_tab(App& app, const Mod& m) {
     }
     // the chosen row's details: how its clip blends in, steps and keeps time
     bool found = false;
-    Action a = parse_action(v.ini.get("actions", v.shown_game, &found));
+    Action a = parse_action(v.ini.get(ap, v.shown_game, &found));
     if (found && !v.shown_game.empty()) {
         bool changed = false;
         ImGui::TextUnformatted(v.shown_game.c_str());
@@ -903,7 +1060,7 @@ void draw_animations_tab(App& app, const Mod& m) {
         changed |= ImGui::Checkbox(tr(lang, S::chars_game_time), &a.game_time);
         if (changed) {
             a.blend = std::clamp(a.blend, 0, 10000);
-            v.ini.set("actions", v.shown_game, action_text(a));
+            v.ini.set(ap, v.shown_game, action_text(a));
         }
     } else if (!v.shown_game.empty()) {
         ImGui::PushTextWrapPos(0);
@@ -915,8 +1072,8 @@ void draw_animations_tab(App& app, const Mod& m) {
 }
 
 // A part's lines as rows of two fields, with a button to take one away and one to add one.
-void draw_pairs(App& app, const char* part, const char* key_hint, const char* value_hint, bool files) {
-    auto entries = v.ini.entries(part);
+void draw_pairs(App& app, const std::string& part_name, const char* key_hint, const char* value_hint, bool files) {
+    auto entries = v.ini.entries(part_name);
     bool changed = false;
     int gone = -1;
     for (std::size_t i = 0; i < entries.size(); ++i) {
@@ -940,7 +1097,7 @@ void draw_pairs(App& app, const char* part, const char* key_hint, const char* va
         entries.erase(entries.begin() + gone);
         changed = true;
     }
-    if (ImGui::SmallButton((std::string(tr(app.language, S::chars_add_row)) + "##" + part).c_str())) {
+    if (ImGui::SmallButton((std::string(tr(app.language, S::chars_add_row)) + "##" + part_name).c_str())) {
         entries.emplace_back(key_hint, value_hint);
         changed = true;
     }
@@ -949,33 +1106,514 @@ void draw_pairs(App& app, const char* part, const char* key_hint, const char* va
             k.erase(std::remove(k.begin(), k.end(), '#'), k.end());
             value.erase(std::remove(value.begin(), value.end(), '#'), value.end());
         }
-        v.ini.set_entries(part, entries);
+        v.ini.set_entries(part_name, entries);
     }
+}
+
+// A form's section: its default's, with a button giving it its own (the default's lines, else `first`, to start
+// with); or its own, with a button back. True when its own (the default's page: always).
+bool own_section(App& app, const char* section, const std::pair<std::string, std::string>& first) {
+    if (v.form.empty())
+        return true;
+    const auto lang = app.language;
+    ImGui::PushID(section);
+    const bool own = gives_section(section);
+    if (!own) {
+        ImGui::TextDisabled("%s", tr(lang, S::forms_default_section));
+        ImGui::SameLine();
+        if (ImGui::SmallButton(tr(lang, S::forms_own_section))) {
+            auto entries = v.ini.entries(section);
+            if (entries.empty())
+                entries.push_back(first);
+            v.ini.set_entries(part(section), entries);
+        }
+    } else if (ImGui::SmallButton(tr(lang, S::forms_back_to_default))) {
+        v.ini.remove_part(part(section));
+    }
+    ImGui::PopID();
+    return own;
 }
 
 void draw_more_tab(App& app) {
     const auto lang = app.language;
     ImGui::TextUnformatted(tr(lang, S::chars_sounds));
-    draw_pairs(app, "sounds", "seqarc/PLY_ROX/vo_*", "none", true);
+    if (own_section(app, "sounds", {"seqarc/PLY_ROX/vo_*", "none"}))
+        draw_pairs(app, part("sounds"), "seqarc/PLY_ROX/vo_*", "none", true);
     ImGui::Separator();
     ImGui::TextUnformatted(tr(lang, S::chars_moveset));
-    draw_pairs(app, "moveset", "ground", "0 1", false);
+    // a form of another base than its default's: its default's moveset names the other base's attacks
+    const bool other_base = !v.form.empty() && shown_base() != v.ini.get("character", "base");
+    if (other_base && !gives_section("moveset") && !v.ini.entries("moveset").empty()) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s",
+                           fmt(lang, S::forms_moveset_other_base, {base_display(lang, shown_base())}).c_str());
+        ImGui::PopTextWrapPos();
+    }
+    if (own_section(app, "moveset", {"moves", "base"})) {
+        const std::string mp = part("moveset");
+        bool base_moves = v.ini.get(mp, "moves") == "base";
+        if (!v.form.empty() && ImGui::Checkbox(tr(lang, S::forms_base_moves), &base_moves)) {
+            if (base_moves)
+                v.ini.set_entries(mp, {{"moves", "base"}});
+            else
+                v.ini.set_entries(mp, {{"ground", "0 1"}});
+        }
+        if (!base_moves)
+            draw_pairs(app, mp, "ground", "0 1", false);
+    }
     ImGui::Separator();
-    std::string damage = v.ini.get("limit", "damage");
-    float times = damage.empty() ? 1.0f : static_cast<float>(std::atof(damage.c_str()));
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
-    if (ImGui::InputFloat(tr(lang, S::chars_limit_damage), &times, 0.1f, 0.5f, "%.2f") && times > 0.0f) {
-        if (std::fabs(times - 1.0f) < 1e-4f) {
-            v.ini.set_entries("limit", {});
-        } else {
+    if (own_section(app, "limit", {"damage", "1"})) {
+        const std::string lp = part("limit");
+        std::string damage = v.ini.get(lp, "damage");
+        float times = damage.empty() ? 1.0f : static_cast<float>(std::atof(damage.c_str()));
+        ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+        if (ImGui::InputFloat(tr(lang, S::chars_limit_damage), &times, 0.1f, 0.5f, "%.2f") && times > 0.0f) {
             char text[32];
             std::snprintf(text, sizeof(text), "%g", static_cast<double>(times));
-            v.ini.set("limit", "damage", text);
+            if (v.form.empty() && std::fabs(times - 1.0f) < 1e-4f)
+                v.ini.set_entries(lp, {});
+            else
+                v.ini.set(lp, "damage", text);
         }
+    } else {
+        ImGui::TextDisabled("%s", tr(lang, S::chars_limit_damage));
     }
     ImGui::PushTextWrapPos(0);
     ImGui::TextDisabled("%s", tr(lang, S::chars_more_note));
     ImGui::PopTextWrapPos();
+}
+
+// --- forms ------------------------------------------------------------------------------------------------------
+
+// The game's items in the interface's language, read once a language.
+void take_items(App& app) {
+    if (v.items_language == static_cast<int>(app.language))
+        return;
+    v.items_language = static_cast<int>(app.language);
+    v.items_error.clear();
+    v.items = game_items(nitrofs(), language_code(app.language), &v.items_error);
+    v.gears = game_gears(v.items);
+    v.links = game_links(v.items);
+    v.panels = game_panels(v.items);
+}
+
+std::string item_name(int id) {
+    for (const auto& i : v.items)
+        if (i.id == id)
+            return i.name;
+    return {};
+}
+
+std::string item_label(int id) {
+    const std::string n = item_name(id);
+    return (n.empty() ? "?" : n) + " (" + std::to_string(id) + ")";
+}
+
+std::string lowered(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+// One of `list` chosen by name, filtered by what is typed; `any` (non-null) is offered first as item 0.
+bool item_combo(const char* id, const std::vector<GameItem>& list, int* item, const char* any) {
+    static std::string filter;
+    bool changed = false;
+    ImGui::SetNextItemWidth(11 * ImGui::GetFontSize());
+    const std::string shown = *item == 0 && any != nullptr ? std::string(any) : item_label(*item);
+    if (ImGui::BeginCombo(id, shown.c_str(), ImGuiComboFlags_HeightLarge)) {
+        if (ImGui::IsWindowAppearing()) {
+            filter.clear();
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##filter", "...", &filter);
+        if (any != nullptr && ImGui::Selectable(any, *item == 0)) {
+            *item = 0;
+            changed = true;
+        }
+        const std::string wanted = lowered(filter);
+        for (const auto& i : list) {
+            const std::string label = i.name + " (" + std::to_string(i.id) + ")";
+            if (!wanted.empty() && lowered(label).find(wanted) == std::string::npos)
+                continue;
+            if (ImGui::Selectable(label.c_str(), i.id == *item)) {
+                *item = i.id;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
+bool comparison_combo(const char* id, std::string* op) {
+    bool changed = false;
+    ImGui::SetNextItemWidth(3.5f * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(id, op->c_str())) {
+        for (const auto& o : rule_comparisons()) {
+            if (ImGui::Selectable(o.c_str(), o == *op)) {
+                *op = o;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
+bool count_field(long* n) {
+    ImGui::SetNextItemWidth(4 * ImGui::GetFontSize());
+    int value = static_cast<int>(*n);
+    if (!ImGui::InputInt("##n", &value, 0, 0))
+        return false;
+    *n = std::max(0, value);
+    return true;
+}
+
+void items_unknown(int item, void* context) {
+    if (item_name(item).empty())
+        static_cast<std::vector<int>*>(context)->push_back(item);
+}
+
+// The form's rule: its conditions as rows when it can be shown so, and as written.
+void draw_rule(App& app) {
+    const auto lang = app.language;
+    const std::string fp = part("");
+    std::string when = v.ini.get(fp, "when");
+    RuleRows rows;
+    const bool as_rows = when.empty() || rule_rows(when, &rows);
+    ImGui::TextUnformatted(tr(lang, S::forms_when));
+    if (as_rows) {
+        bool changed = false;
+        int any = rows.any ? 1 : 0;
+        changed |= ImGui::RadioButton(tr(lang, S::forms_all_of), &any, 0);
+        ImGui::SameLine();
+        changed |= ImGui::RadioButton(tr(lang, S::forms_any_of), &any, 1);
+        rows.any = any == 1;
+        static const S kinds[] = {S::forms_cond_gear, S::forms_cond_links, S::forms_cond_panel, S::forms_cond_dual,
+                                  S::forms_cond_level, S::forms_cond_hp, S::forms_cond_plugin};
+        int gone = -1;
+        for (std::size_t i = 0; i < rows.conditions.size(); ++i) {
+            RuleCondition& c = rows.conditions[i];
+            ImGui::PushID(static_cast<int>(i));
+            changed |= ImGui::Checkbox(tr(lang, S::forms_not), &c.negate);
+            ImGui::SameLine();
+            const int kind = static_cast<int>(c.kind);
+            ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+            if (ImGui::BeginCombo("##kind", tr(lang, kinds[kind]))) {
+                for (int k = 0; k < 7; ++k) {
+                    if (ImGui::Selectable(tr(lang, kinds[k]), k == kind) && k != kind) {
+                        c.kind = static_cast<RuleCondition::Kind>(k);
+                        c.item = c.kind == RuleCondition::gear && !v.gears.empty() ? v.gears.front().id : 0;
+                        c.op = ">=";
+                        c.n = c.kind == RuleCondition::hp ? 50 : 1;
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            switch (c.kind) {
+            case RuleCondition::gear:
+                ImGui::SameLine();
+                changed |= item_combo("##gear", v.gears, &c.item, nullptr);
+                break;
+            case RuleCondition::links:
+            case RuleCondition::panel:
+                ImGui::SameLine();
+                if (c.kind == RuleCondition::links)
+                    changed |= item_combo("##link", v.links, &c.item, tr(lang, S::forms_any_link));
+                else
+                    changed |= item_combo("##panel", v.panels, &c.item, nullptr);
+                ImGui::SameLine();
+                changed |= comparison_combo("##op", &c.op);
+                ImGui::SameLine();
+                changed |= count_field(&c.n);
+                break;
+            case RuleCondition::level:
+            case RuleCondition::hp:
+                ImGui::SameLine();
+                changed |= comparison_combo("##op", &c.op);
+                ImGui::SameLine();
+                changed |= count_field(&c.n);
+                break;
+            case RuleCondition::plugin:
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+                if (ImGui::InputTextWithHint("##plugin", "mod.condition", &c.name)) {
+                    c.name.erase(std::remove_if(c.name.begin(), c.name.end(),
+                                                [](unsigned char ch) { return std::isspace(ch) || ch == '#'; }),
+                                 c.name.end());
+                    changed = true;
+                }
+                break;
+            case RuleCondition::dual:
+                break;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x"))
+                gone = static_cast<int>(i);
+            ImGui::PopID();
+        }
+        if (gone >= 0) {
+            rows.conditions.erase(rows.conditions.begin() + gone);
+            changed = true;
+        }
+        if (ImGui::SmallButton(tr(lang, S::forms_add_condition))) {
+            RuleCondition c;
+            c.item = !v.gears.empty() ? v.gears.front().id : 0;
+            rows.conditions.push_back(c);
+            changed = true;
+        }
+        if (changed) {
+            if (rows.conditions.empty())
+                v.ini.remove(fp, "when");
+            else
+                v.ini.set_noted(fp, "when", rule_text(rows), rule_names(rows, item_name));
+            when = v.ini.get(fp, "when");
+        }
+    } else {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", tr(lang, S::forms_rule_as_text));
+        ImGui::PopTextWrapPos();
+    }
+    // as written: anything the language has (parentheses, both joins)
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::InputText("##when", &when)) {
+        when.erase(std::remove(when.begin(), when.end(), '#'), when.end());
+        RuleRows parsed;
+        v.ini.set_noted(fp, "when", when, rule_rows(when, &parsed) ? rule_names(parsed, item_name) : std::string());
+    }
+    // the port's reading of it, and the items it names that the game does not have
+    if (!when.empty()) {
+        char why[200] = "";
+        KhdaysRule* rule = khdays_rule_parse(when.c_str(), why, sizeof(why));
+        if (rule == nullptr) {
+            ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", why);
+        } else {
+            if (!v.items.empty()) {
+                std::vector<int> unknown;
+                khdays_rule_items(rule, items_unknown, &unknown);
+                for (const int item : unknown)
+                    ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s",
+                                       fmt(lang, S::forms_unknown_item, {std::to_string(item)}).c_str());
+            }
+            if (khdays_rule_in_field(rule))
+                ImGui::TextDisabled("%s", tr(lang, S::forms_rule_in_field));
+            khdays_rule_free(rule);
+        }
+    }
+    if (!v.items_error.empty())
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s", v.items_error.c_str());
+}
+
+void draw_form_tab(App& app) {
+    const auto lang = app.language;
+    take_items(app);
+    const std::string fp = part("");
+    std::string why;
+    // its id: renamed, copied, taken away, put earlier or later
+    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::InputText("##formname", &v.form_name);
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::forms_rename))) {
+        if (rename_form(&v.ini, v.form, v.form_name, &why))
+            v.form = v.form_name;
+        else
+            app.tell(fmt(lang, S::save_failed, {why}), false);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::forms_duplicate))) {
+        if (duplicate_form(&v.ini, v.form, v.form_name, &why))
+            show_form(v.form_name);
+        else
+            app.tell(fmt(lang, S::save_failed, {why}), false);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::forms_remove))) {
+        remove_form(&v.ini, v.form);
+        show_form({});
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##earlier", ImGuiDir_Up))
+        move_form(&v.ini, v.form, -1);
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##later", ImGuiDir_Down))
+        move_form(&v.ini, v.form, +1);
+    ImGui::Separator();
+    // whom it plays as
+    const std::string own_base = v.ini.get(fp, "base");
+    const std::string default_base = fmt(lang, S::forms_default_base, {base_display(lang, v.ini.get("character", "base"))});
+    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::chars_moves_like),
+                          own_base.empty() ? default_base.c_str() : base_display(lang, own_base).c_str())) {
+        if (ImGui::Selectable(default_base.c_str(), own_base.empty()))
+            v.ini.remove(fp, "base");
+        for (const auto& b : form_bases())
+            if (ImGui::Selectable(base_display(lang, b).c_str(), b == own_base))
+                v.ini.set(fp, "base", b);
+        ImGui::EndCombo();
+    }
+    // its priority
+    int priority = std::atoi(v.ini.get(fp, "priority").c_str());
+    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    if (ImGui::InputInt(tr(lang, S::forms_priority), &priority))
+        v.ini.set(fp, "priority", std::to_string(priority));
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", tr(lang, S::forms_priority_help));
+    ImGui::PopTextWrapPos();
+    ImGui::Separator();
+    draw_rule(app);
+}
+
+// --- stats ------------------------------------------------------------------------------------------------------
+
+void draw_stats_tab(App& app) {
+    const auto lang = app.language;
+    const std::string code = form_base_code(shown_base());
+    if (code != v.stats_for) {
+        v.stats_for = code;
+        v.stats_error.clear();
+        v.stats_base = code.empty() ? std::vector<std::uint8_t>() : base_level_table(nitrofs(), code, &v.stats_error);
+    }
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", fmt(lang, S::stats_help, {base_display(lang, shown_base()), code}).c_str());
+    ImGui::PopTextWrapPos();
+    if (!v.stats_error.empty())
+        ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", v.stats_error.c_str());
+    if (v.stats_base.empty())
+        return;
+    const bool own =
+        own_section(app, "stats", {"1", "hp " + std::to_string(level_value(v.stats_base, 1, KHDAYS_STAT_HP))});
+    const std::string sp = own ? part("stats") : "stats";
+    std::map<int, StatRow> rows = stats_of(v.ini.entries(sp));
+    const std::vector<std::uint8_t> table = level_table(v.stats_base, rows);
+    bool changed = false;
+    ImGui::BeginDisabled(!own);
+    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+    ImGui::InputFloat("##scale", &v.stats_scale, 0.0f, 0.0f, "%.2f");
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::stats_scale)) && v.stats_scale > 0.0f) {
+        // every level written: its base's values times the number
+        rows.clear();
+        for (int level = 1; level <= KHDAYS_CHARACTER_LEVELS; ++level) {
+            StatRow r;
+            r.fill(-1);
+            for (const int s : {KHDAYS_STAT_HP, KHDAYS_STAT_STRENGTH, KHDAYS_STAT_MAGIC, KHDAYS_STAT_DEFENCE}) {
+                const double b = static_cast<double>(level_value(v.stats_base, level, s));
+                r[static_cast<std::size_t>(s)] =
+                    std::clamp(std::lround(b * static_cast<double>(v.stats_scale)), 0L, 0xffffL);
+            }
+            rows[level] = r;
+        }
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::stats_clear))) {
+        rows.clear();
+        changed = true;
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox(tr(lang, S::stats_unknown), &v.stats_unknown);
+    ImGui::EndDisabled();
+    // the levels: the values the port plays with, those given here marked
+    const int values = v.stats_unknown ? 6 : 4;
+    static const S heads[] = {S::stats_hp,      S::stats_strength,  S::stats_magic,
+                              S::stats_defence, S::stats_unknown_8, S::stats_unknown_12};
+    static const int stat_of[] = {KHDAYS_STAT_HP,      KHDAYS_STAT_STRENGTH,  KHDAYS_STAT_MAGIC,
+                                  KHDAYS_STAT_DEFENCE, KHDAYS_STAT_UNKNOWN_8, KHDAYS_STAT_UNKNOWN_12};
+    if (ImGui::BeginTable("##stats", values + 2,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV,
+                          ImVec2(0, ImGui::GetContentRegionAvail().y))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn(tr(lang, S::stats_level), ImGuiTableColumnFlags_WidthFixed, 4 * ImGui::GetFontSize());
+        for (int c = 0; c < values; ++c)
+            ImGui::TableSetupColumn(tr(lang, heads[c]));
+        ImGui::TableSetupColumn("##clear", ImGuiTableColumnFlags_WidthFixed, 2 * ImGui::GetFontSize());
+        ImGui::TableHeadersRow();
+        ImGuiListClipper clipper;
+        clipper.Begin(KHDAYS_CHARACTER_LEVELS);
+        while (clipper.Step()) {
+            for (int level = clipper.DisplayStart + 1; level <= clipper.DisplayEnd; ++level) {
+                ImGui::PushID(level);
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", level);
+                const auto given = rows.find(level);
+                for (int c = 0; c < values; ++c) {
+                    ImGui::TableNextColumn();
+                    const int s = stat_of[c];
+                    const bool is_given = given != rows.end() && given->second[static_cast<std::size_t>(s)] >= 0;
+                    if (is_given)
+                        ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(40, 110, 70, 255));
+                    int value = static_cast<int>(level_value(table, level, s));
+                    ImGui::PushID(c);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::BeginDisabled(!own);
+                    if (ImGui::InputInt("##v", &value, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue) && value >= 0) {
+                        auto [row, made] = rows.try_emplace(level);
+                        if (made)
+                            row->second.fill(-1);
+                        row->second[static_cast<std::size_t>(s)] =
+                            s == KHDAYS_STAT_UNKNOWN_12 ? value : std::min(value, 0xffff);
+                        changed = true;
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::PopID();
+                    if (is_given)
+                        ImGui::PopStyleColor();
+                }
+                ImGui::TableNextColumn();
+                if (own && given != rows.end() && ImGui::SmallButton("x")) {
+                    rows.erase(given);
+                    changed = true;
+                }
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (changed && own) {
+        v.ini.set_entries(sp, stats_entries(rows));
+        if (!rows.empty())
+            raise_format(&v.ini);
+    }
+}
+
+// The page shown: the default form or one of the forms; a new form made here.
+void draw_forms_bar(App& app) {
+    const auto lang = app.language;
+    const auto ids = form_ids(v.ini);
+    if (!v.form.empty() && std::find(ids.begin(), ids.end(), v.form) == ids.end())
+        show_form({});  // taken away, or undone
+    const std::string shown = v.form.empty() ? std::string(tr(lang, S::forms_default)) : v.form;
+    ImGui::SetNextItemWidth(12 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::forms_page), shown.c_str())) {
+        if (ImGui::Selectable(tr(lang, S::forms_default), v.form.empty()))
+            show_form({});
+        for (const auto& id : ids)
+            if (ImGui::Selectable(id.c_str(), id == v.form))
+                show_form(id);
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    ImGui::InputTextWithHint("##newform", tr(lang, S::forms_new_id), &v.new_form);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(v.new_form.empty());
+    if (ImGui::Button(tr(lang, S::forms_add))) {
+        std::string why;
+        if (add_form(&v.ini, v.new_form, &why)) {
+            show_form(v.new_form);
+            v.new_form.clear();
+            v.to_form_tab = true;
+        } else {
+            app.tell(fmt(lang, S::save_failed, {why}), false);
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", tr(lang, S::forms_help));
 }
 
 void draw_list(App& app, const Mod& m) {
@@ -1040,9 +1678,9 @@ bool characters_take_drop(App& app, const fs::path& file) {
     const Mod* m = app.current_mod();
     if (!v.hovered || m == nullptr || v.key.empty())
         return false;
-    const Wanted what = v.tab == Tab::character    ? Wanted::face
-                        : v.tab == Tab::animations ? Wanted::clips
-                                                   : Wanted::model;
+    const Wanted what = v.tab == Tab::character && v.form.empty() ? Wanted::face
+                        : v.tab == Tab::animations                ? Wanted::clips
+                                                                  : Wanted::model;
     take_file(app, *m, file, what, {});
     return true;
 }
@@ -1115,13 +1753,21 @@ void draw_characters(App& app, bool* open) {
         for (const auto& p : v.problems)
             ImGui::BulletText("%s", p.c_str());
     }
+    draw_forms_bar(app);
     // the tabs on the left half, the preview on the right
     const float half = ImGui::GetContentRegionAvail().x * 0.58f;
     ImGui::BeginChild("##tabs", ImVec2(half, 0));
     if (WrappedTexts wrap; ImGui::BeginTabBar("##charactertabs")) {
-        if (ImGui::BeginTabItem(tr(lang, S::chars_tab_character))) {
+        // a form's page: its own tab in the character's place
+        const ImGuiTabItemFlags first = v.to_form_tab ? ImGuiTabItemFlags_SetSelected : 0;
+        v.to_form_tab = false;
+        if (ImGui::BeginTabItem(tr(lang, v.form.empty() ? S::chars_tab_character : S::forms_tab_form), nullptr,
+                                first)) {
             v.tab = Tab::character;
-            draw_character_tab(app, *m);
+            if (v.form.empty())
+                draw_character_tab(app, *m);
+            else
+                draw_form_tab(app);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem(tr(lang, S::chars_tab_model))) {
@@ -1137,6 +1783,11 @@ void draw_characters(App& app, bool* open) {
         if (ImGui::BeginTabItem(tr(lang, S::chars_tab_more))) {
             v.tab = Tab::more;
             draw_more_tab(app);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(tr(lang, S::stats_tab))) {
+            v.tab = Tab::stats;
+            draw_stats_tab(app);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

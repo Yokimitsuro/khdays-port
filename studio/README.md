@@ -356,7 +356,9 @@ is chosen). It changes at once and is kept in the settings.
     - *Model*: its model (FBX, glTF or glb, chosen or dropped on the window:
       copied into `model/` with the files it needs); its own skeleton or its
       bones paired with its base's; its size, with **As tall as its base**;
-      the bone holding its weapon and how the weapon turns on it.
+      the bone holding its weapon and how the weapon turns on it; its
+      weapons: each of its base's weapon models (read from the graphics
+      dump) drawn as a model of its own, or the base's.
     - *Animations*: its clips (**Add clips...**, or dropped: copied into
       `clips/`) and, for each animation the game plays for its base (read from
       the game, named where they are known: standing, running, jump, combo,
@@ -366,6 +368,22 @@ is chosen). It changes at once and is kept in the settings.
       game's beat.
     - *Voice, moves and Limit*: its sounds (a file each, or none), its combos
       and its Limit's damage.
+    - *Stats*: its values at each level, its base's table (read from the
+      game) with those given here marked; a value changed at a level is given
+      there, levels between two given ones in between; **Its base's, times
+      this** writes every level from the base's.
+
+    *Form* (above the tabs) chooses the page shown: *Default*, the character
+    itself, or one of its forms (docs/CHARACTERS.md, "Forms"); **Add form**
+    makes one. On a form's page the first tab is *Form*: its id (renamed,
+    duplicated, removed, put earlier or later), the game's character it plays
+    as (its default's, or any, the dual-wield Roxas too), its priority, its
+    rule -- conditions joined by *All of these* or *Any of these*, each
+    negated or not: the gear equipped, links on the gear, a panel in the deck
+    (each chosen by its name in the game, read from the player's copy), the
+    game's dual wield, the level, the HP in the field, a plugin's condition --
+    with the rule as written below it (for parentheses). Its other tabs show
+    what it takes from its default and give it its own.
 
     **Save the character** writes `character.ini` when the port's own reader
     (port/runtime/characters/registry.c) takes it and every file it names is

@@ -136,7 +136,10 @@ add_library(khdays-studio-core STATIC
     core/models/anim_replace.cpp
     core/models/bca0.cpp
     core/characters/character_files.cpp
+    core/characters/character_forms.cpp
     core/characters/character_pose.cpp
+    core/characters/form_rules.cpp
+    core/characters/game_items.cpp
     core/models/bones.cpp
     core/files/catalog.cpp
     core/files/catalog_tree.cpp
@@ -228,6 +231,7 @@ add_executable(khdays-studio-tests
     tests/test_mods_log.cpp
     tests/test_plugin_parameters.cpp
     tests/test_characters.cpp
+    tests/test_character_forms.cpp
     app/strings.cpp
     tests/test_strings.cpp)
 target_include_directories(khdays-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")

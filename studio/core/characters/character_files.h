@@ -22,6 +22,9 @@ public:
     std::string get(const std::string& part, const std::string& key, bool* found = nullptr) const;
     // Set: its line rewritten (its comment kept), else added at the part's end (the part made at the text's end).
     void set(const std::string& part, const std::string& key, const std::string& value);
+    // The same with its comment replaced by `note` (none when empty).
+    void set_noted(const std::string& part, const std::string& key, const std::string& value,
+                   const std::string& note);
     void remove(const std::string& part, const std::string& key);
     // Every key = value of a part, in order.
     std::vector<std::pair<std::string, std::string>> entries(const std::string& part) const;
@@ -29,6 +32,14 @@ public:
     // with its comments, or taken away when it has none.
     void set_entries(const std::string& part, const std::vector<std::pair<std::string, std::string>>& entries);
     bool has_part(const std::string& part) const;
+    // The parts' names in order (the lines before the first part left out).
+    std::vector<std::string> part_names() const;
+    // Part `from` named `to` (its heading rewritten); taken away with its lines; copied as `to` at the text's end.
+    void rename_part(const std::string& from, const std::string& to);
+    void remove_part(const std::string& part);
+    void copy_part(const std::string& from, const std::string& to);
+    // Parts `names` moved, in their order, before part `before` (to the text's end when it has none).
+    void move_parts(const std::vector<std::string>& names, const std::string& before);
 
 private:
     struct Part {
@@ -38,6 +49,7 @@ private:
     std::vector<Part> parts_;
     const Part* find(const std::string& name) const;
     Part& part(const std::string& name);
+    void space_parts();
 };
 
 // The characters/<key>/ folders of a mod that hold a character.ini, sorted.

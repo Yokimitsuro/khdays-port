@@ -206,6 +206,20 @@ void IniText::set(const std::string& part_name, const std::string& key, const st
     p.lines.insert(p.lines.begin() + static_cast<std::ptrdiff_t>(at), wanted + " = " + value);
 }
 
+void IniText::set_noted(const std::string& part_name, const std::string& key, const std::string& value,
+                        const std::string& note) {
+    set(part_name, key, value);
+    Part& p = part(part_name);
+    const std::string wanted = key_of(key);
+    for (std::string& l : p.lines) {
+        std::string k, v, c;
+        if (split_line(l, &k, &v, &c) && k == wanted) {
+            l = wanted + " = " + value + (note.empty() ? "" : "   # " + note);
+            return;
+        }
+    }
+}
+
 void IniText::remove(const std::string& part_name, const std::string& key) {
     for (Part& p : parts_) {
         if (p.name != part_name)
@@ -266,6 +280,81 @@ void IniText::set_entries(const std::string& part_name,
     if (blank_after)
         kept.emplace_back();
     p.lines = std::move(kept);
+}
+
+std::vector<std::string> IniText::part_names() const {
+    std::vector<std::string> out;
+    for (std::size_t i = 1; i < parts_.size(); ++i)
+        out.push_back(parts_[i].name);
+    return out;
+}
+
+// One blank line between parts, none at the text's end.
+void IniText::space_parts() {
+    for (std::size_t i = 0; i < parts_.size(); ++i) {
+        auto& lines = parts_[i].lines;
+        while (lines.size() > (i == 0 ? 0u : 1u) && trim(lines.back()).empty())
+            lines.pop_back();
+        if (i + 1 < parts_.size() && !lines.empty())
+            lines.emplace_back();
+    }
+}
+
+void IniText::rename_part(const std::string& from, const std::string& to) {
+    for (std::size_t i = 1; i < parts_.size(); ++i) {
+        if (parts_[i].name != from)
+            continue;
+        parts_[i].name = to;
+        std::string& head = parts_[i].lines.front();
+        const auto close = head.find(']');
+        head = "[" + to + (close == std::string::npos ? "]" : head.substr(close));  // its comment kept
+        return;
+    }
+}
+
+void IniText::remove_part(const std::string& name) {
+    for (std::size_t i = 1; i < parts_.size(); ++i) {
+        if (parts_[i].name == name) {
+            parts_.erase(parts_.begin() + static_cast<std::ptrdiff_t>(i));
+            space_parts();
+            return;
+        }
+    }
+}
+
+void IniText::copy_part(const std::string& from, const std::string& to) {
+    const Part* p = find(from);
+    if (p == nullptr || p == &parts_.front())
+        return;
+    Part copied = *p;
+    const auto close = copied.lines.front().find(']');
+    copied.lines.front() = "[" + to + (close == std::string::npos ? "]" : copied.lines.front().substr(close));
+    copied.name = to;
+    parts_.push_back(std::move(copied));
+    space_parts();
+}
+
+void IniText::move_parts(const std::vector<std::string>& names, const std::string& before) {
+    std::vector<Part> moved;
+    for (const auto& n : names) {
+        for (std::size_t i = 1; i < parts_.size(); ++i) {
+            if (parts_[i].name == n) {
+                moved.push_back(std::move(parts_[i]));
+                parts_.erase(parts_.begin() + static_cast<std::ptrdiff_t>(i));
+                break;
+            }
+        }
+    }
+    std::size_t at = parts_.size();
+    for (std::size_t i = 1; i < parts_.size(); ++i) {
+        if (parts_[i].name == before) {
+            at = i;
+            break;
+        }
+    }
+    parts_.insert(parts_.begin() + static_cast<std::ptrdiff_t>(at), std::make_move_iterator(moved.begin()),
+                  std::make_move_iterator(moved.end()));
+    space_parts();
 }
 
 fs::path character_dir(const fs::path& mod_dir, const std::string& key) {
@@ -331,13 +420,25 @@ std::vector<std::string> check_character(const fs::path& mod_dir, const std::str
             if (file != nullptr && !fs::is_regular_file(dir / path_u8(file), ec))
                 lines.push_back(std::string(what) + ": " + file + " is not in the character's folder");
         };
-        look("model", c.model);
         look("face", c.face);
-        look("fallback", c.fallback);
-        for (int i = 0; i < c.action_count; ++i)
-            look(c.actions[i].game, c.actions[i].clip);
-        for (int i = 0; i < c.sound_count; ++i)
-            look(c.sounds[i].game, c.sounds[i].file);
+        // the character's files and each form's (what a form takes from its default looked for once)
+        std::set<std::string> seen;
+        for (int f = -1; f < c.form_count; ++f) {
+            const KhdaysCharacter& t = f < 0 ? c : c.forms[f];
+            const std::string where = f < 0 ? std::string() : "[form " + std::string(t.form) + "] ";
+            auto look_once = [&](const std::string& what, const char* file) {
+                if (file != nullptr && seen.insert(file).second)
+                    look((where + what).c_str(), file);
+            };
+            look_once("model", t.model);
+            look_once("fallback", t.fallback);
+            for (int i = 0; i < t.action_count; ++i)
+                look_once(t.actions[i].game, t.actions[i].clip);
+            for (int i = 0; i < t.sound_count; ++i)
+                look_once(t.sounds[i].game, t.sounds[i].file);
+            for (int i = 0; i < t.weapon_count; ++i)
+                look_once(t.weapons[i].game, t.weapons[i].file);
+        }
     } else if (lines.empty()) {
         lines.push_back("not taken");
     }
