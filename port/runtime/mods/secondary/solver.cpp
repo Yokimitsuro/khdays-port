@@ -57,6 +57,9 @@ constexpr float kMaxLever = 2.0F;
 // a face a body pierces is carried out at most this far (m) in one contact (the velocity clamp keeps it
 // from flying on)
 constexpr float kMaxPierce = 0.5F;
+// a face's friction is drawn from at most this much of its push (m): a face held hard against a leg (by
+// a wall, say) can still slip out
+constexpr float kFaceFrictionReach = 0.01F;
 constexpr float kDrapeEase = 0.06F; // s: the drape's swing of a target eased over this (ease_drape)
 // passes of strain then contact closing each substep (a push spread through the coat)
 constexpr int kSpreadPasses = 2;
@@ -430,7 +433,13 @@ Frame Simulation::bone_frame(int si, const std::vector<Frame> &pose, bool twist)
     Frame out;
     out.q = q;
     out.s = anim.s;
-    out.t = x_[pi] - rotate(q, so); // translation = solved point - R * S * local offset
+    // translation = solved point - R * S * local offset: the bone lands on its point, its head moved with it
+    // (a lagging tip pulls the head along: hair stretched off the scalp in a fast move); `rotate_only` keeps
+    // the head where its simulated parent carries it, else where the animation has it
+    if (d.params.get(Param::rotate_only) >= 0.5F)
+        out.t = sb.parent_sim >= 0 ? base.t : anim.t;
+    else
+        out.t = x_[pi] - rotate(q, so);
     bone_done_[index] = 1;
     return bone_out_[index] = out;
 }
@@ -1281,6 +1290,19 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
                     x_[v[j]] += side * pen;
                     pushed_[v[j]] += side * pen;
                 }
+            // friction, as a control's: a face resting on a knee slides only as the knee moves it. Without
+            // it the face slid freely round the knee, climbing it and dropping back off (battle idle)
+            const Vec3 surface = (s1.a + (s1.b - s1.a) * tcore) - (s0.a + (s0.b - s0.a) * tcore);
+            for (std::size_t j = 0; j < 3; ++j) {
+                const float mu = drive_[v[j]].params.get(Param::face_friction) * friction_scale;
+                if (wv[j] <= 0.0F || mu <= 0.0F)
+                    continue;
+                Vec3 slide = (x_[v[j]] - prev_[v[j]]) - surface;
+                slide = slide - side * dot(slide, side);
+                const float ls = length(slide);
+                if (ls > 1e-9F)
+                    x_[v[j]] -= slide * minf(1.0F, mu * minf(pen, kFaceFrictionReach) / ls);
+            }
             ++contacts;
         }
     }

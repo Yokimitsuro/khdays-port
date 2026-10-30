@@ -18,8 +18,10 @@
 // KHDAYS_REPLAY_DUMP=<frame> the coat's controls and targets in the hips' space; KHDAYS_REPLAY_REFDUMP=<frame>
 // the bake's and the simulated coat there (--reference); KHDAYS_REPLAY_JITTER=1 each frame's worst drawn
 // control and any coat bone turning over 60 deg past its last step; KHDAYS_REPLAY_LEGPOSE=<slot> the mset
-// skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_NO_SIM=1 draws the
-// animation alone.
+// skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_TRACE=<bone,bone,...>
+// those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
+// deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
+// collide with it); KHDAYS_REPLAY_NO_SIM=1 draws the animation alone.
 
 #include "actor.h"
 
@@ -655,6 +657,36 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                                  static_cast<double>(length(st) * 100.0F), static_cast<double>(length(tt) * 100.0F));
                 }
             }
+            // KHDAYS_REPLAY_TRACE=<bones>: each listed control per frame in the hips' space (cm): drawn, solved,
+            // raw and draped targets, and the nearest body collider (gap from its surface)
+            if (const char *tr = std::getenv("KHDAYS_REPLAY_TRACE"); tr != nullptr) {
+                const std::string want = std::string(",") + tr + ",";
+                for (std::size_t i = 0; i < np; ++i) {
+                    const int bone = rig.particles[i].bone;
+                    if (want.find("," + std::to_string(bone) + ",") == std::string::npos)
+                        continue;
+                    const Vec3 p = sim.positions()[i], so = apply_inverse(pose[2], p) * 100.0F, dr = x[i] * 100.0F,
+                               rt = tg[i] * 100.0F, dt = apply_inverse(pose[2], sim.targets()[i]) * 100.0F;
+                    float gap = 1e9F;
+                    std::size_t near = 0;
+                    for (std::size_t ci = 0; ci < sim.colliders().size(); ++ci) {
+                        const auto &c = sim.colliders()[ci];
+                        const Vec3 ab = c.b - c.a;
+                        const float ll = dot(ab, ab);
+                        const float u = ll > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(p - c.a, ab) / ll)) : 0.0F;
+                        const float g = length(p - (c.a + ab * u)) - (c.ra + (c.rb - c.ra) * u);
+                        if (g < gap) {
+                            gap = g;
+                            near = ci;
+                        }
+                    }
+                    std::fprintf(stderr,
+                                 "tr f%d b%d drawn %.1f %.1f %.1f solved %.1f %.1f %.1f raw %.1f %.1f %.1f draped %.1f "
+                                 "%.1f %.1f gap %.1f %s\n",
+                                 f, bone, dr.x, dr.y, dr.z, so.x, so.y, so.z, rt.x, rt.y, rt.z, dt.x, dt.y, dt.z,
+                                 gap * 100.0F, rig.colliders[near].name.c_str());
+                }
+            }
             jx2 = jx1;
             jx1 = x;
             jt2 = jt1;
@@ -690,6 +722,33 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                 jw1 = w;
             }
             jq1 = q;
+        }
+        // KHDAYS_REPLAY_CLIP=<name>: each frame's deepest simulated vertex past its rest depth in the colliders
+        // whose names start so, whatever the vertex collides with (KHDAYS_REPLAY_CLIP_BY=<collider>: only the
+        // vertices of groups colliding with that one)
+        if (const char *cn = std::getenv("KHDAYS_REPLAY_CLIP"); cn != nullptr) {
+            const std::size_t nc = rig.colliders.size();
+            std::uint32_t by = ~0U;
+            if (const char *bn = std::getenv("KHDAYS_REPLAY_CLIP_BY"); bn != nullptr)
+                for (const auto &k : rig.colliders)
+                    if (k.name == bn)
+                        by = k.tags;
+            float clip_pen = 0.0F;
+            for (std::size_t ci = 0; ci < nc; ++ci) {
+                if (rig.colliders[ci].name.rfind(cn, 0) != 0)
+                    continue;
+                const auto &c = sim.colliders()[ci];
+                const Vec3 ab = c.b - c.a;
+                const float ll = dot(ab, ab);
+                for (std::size_t v = 0; v < verts.size(); ++v) {
+                    if (!run.model.coat_vertex[v] || !(run.model.vertex_tags[v] & by))
+                        continue;
+                    const float u = ll > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(verts[v] - c.a, ab) / ll)) : 0.0F;
+                    const float pen = c.ra + (c.rb - c.ra) * u - length(verts[v] - (c.a + ab * u));
+                    clip_pen = std::fmax(clip_pen, pen - std::fmax(0.0F, run.model.rest_depth[v * nc + ci]));
+                }
+            }
+            std::fprintf(stderr, "clip %s f%d %.2f cm\n", sc.name.c_str(), f, static_cast<double>(clip_pen * 100.0F));
         }
         for (std::size_t v = 0; v < verts.size(); ++v) {
             if (!run.model.coat_vertex[v])

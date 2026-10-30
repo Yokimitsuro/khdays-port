@@ -43,6 +43,8 @@ const ParamInfo kParams[kParamCount] = {
     {"follow_bone_scale", 1.0F, 0.0F, 1.0F, Unit::none},
     {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
     {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},
+    {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},
 };
 
 struct Line {

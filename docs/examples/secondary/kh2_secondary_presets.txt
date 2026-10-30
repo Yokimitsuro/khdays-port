@@ -41,6 +41,9 @@ preset kh2_coat
   draw_guard 1
   thickness 1.5
   friction 0.3
+  # a face resting on a knee holds to it instead of sliding round it (the coat climbed the knee in
+  # the battle idle and dropped back off)
+  face_friction 0.9
   wind_drag 1.5
   collide body legs         # the waist, hips and legs only
   self_collision garment
@@ -72,8 +75,9 @@ preset kh2_string
   stretch_compliance 0
   bend_compliance 0.004
   damping 1.8
-  follow_frequency 1.2
-  follow_damping 0.4
+  # no pull toward a shape: they hang and swing under gravity alone
+  follow_frequency 0
+  follow_damping 0
   gravity_scale 1
   tether_slack 0
   swing_limit 75
@@ -84,7 +88,6 @@ preset kh2_string
   friction 0.4
   wind_drag 2
   collide torso body
-  self_collision garment
 end
 
 # A hood or other heavy flap on one bone: lies on the back under gravity, sways a little.
@@ -121,5 +124,7 @@ preset kh2_hair
   thickness 0.5
   friction 0
   wind_drag 0.4
+  # its bones only turn: a tuft lagging in a fast move no longer pulls its root off the head
+  rotate_only 1
   collide head
 end

@@ -342,6 +342,10 @@ std::vector<Playing> playing;
 std::map<u32, std::string> animation_names; // by the J0AC's DS address
 const void *drawn_object = nullptr;         // the render object being drawn: which actor's model
 Mat drawn_start = kIdentity; // the position matrix as the draw starts: the view times the actor's world matrix
+// the latest flush's base transform (khdays_g3d_base) and camera as the draw starts, and the base's kind
+Mat drawn_base = kIdentity, drawn_camera = kIdentity;
+int drawn_base_kind = 0;
+bool drawn_has_camera = false;
 
 // A section's KH2 motion as an actor plays it: its player (the pose it keeps) and its clock in KH2's
 // ticks (60 a second).
@@ -2058,6 +2062,10 @@ void draw(Model &m)
         in.actor = drawn_object;
         in.root = scaled_root;
         in.start = drawn_start;
+        in.base = drawn_base;
+        in.base_kind = drawn_base_kind;
+        in.camera = drawn_camera;
+        in.has_camera = drawn_has_camera;
         in.projection = proj_f;
         for (const Playing &p : playing) {
             khdays::secondary::DrawAnimation a{p.name, -1, -1.0F, p.frame, p.frames, p.ratio};
@@ -2364,6 +2372,12 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
             float start[16], vecm[16], proj[16];
             khdays_g3d_matrices(start, vecm, proj);
             std::copy(start, start + 16, drawn_start.begin());
+            float base[16], camera[16];
+            drawn_base_kind = khdays_g3d_base(base);
+            std::copy(base, base + 16, drawn_base.begin());
+            drawn_has_camera = khdays_g3d_camera(camera) != 0;
+            if (drawn_has_camera)
+                std::copy(camera, camera + 16, drawn_camera.begin());
         }
         if (tracing()) { // what to name in <model>.motions.txt, when it changes
             static std::string said;

@@ -1007,7 +1007,8 @@ HOOKS = {
         )
     ],
     # The camera of each 3D list (gfx/g3d.h khdays_g3d_frame_camera):
-    # what NitroSystem's flush sends, as it sends it.
+    # what NitroSystem's flush sends, as it sends it; and the base transform it
+    # sends (khdays_g3d_flush_base: a model's place without the camera).
     # NitroSystem's NNS_G3dGlbFlush, which the decomp calls
     # Gfx_SubmitCachedCommandBlock: the whole NNSG3dGlb block at once, the
     # projection at +0x08 and the camera at +0x4c.
@@ -1017,7 +1018,9 @@ HOOKS = {
             "    unsigned int *p = (unsigned int *)&NNS_G3dGlb;\n"
             "    { extern void khdays_g3d_frame_camera(const int *projection, const int *camera);\n"
             "      khdays_g3d_frame_camera((const int *)((const char *)&NNS_G3dGlb + 0x08),\n"
-            "                              (const int *)((const char *)&NNS_G3dGlb + 0x4c)); }\n",
+            "                              (const int *)((const char *)&NNS_G3dGlb + 0x4c)); }\n"
+            "    { extern void khdays_g3d_flush_base(const int *base, int in_projection);\n"
+            "      khdays_g3d_flush_base((const int *)((const char *)&NNS_G3dGlb + 0x94), 0); }\n",
         )
     ],
     "main@020157c4": [
@@ -1025,7 +1028,9 @@ HOOKS = {
             "void NNS_G3dGlbFlushP(void)\n{\n",
             "void NNS_G3dGlbFlushP(void)\n{\n"
             "    { extern void khdays_g3d_frame_camera(const int *projection, const int *camera);\n"
-            "      khdays_g3d_frame_camera((const int *)&NNS_G3dGlb.projMtx, (const int *)&NNS_G3dGlb.cameraMtx); }\n",
+            "      khdays_g3d_frame_camera((const int *)&NNS_G3dGlb.projMtx, (const int *)&NNS_G3dGlb.cameraMtx); }\n"
+            "    { extern void khdays_g3d_flush_base(const int *base, int in_projection);\n"
+            "      khdays_g3d_flush_base((const int *)&NNS_G3dGlb.prmBaseRot, 1); }\n",
         )
     ],
     # The card's chip ID, read after every ROM read to see the card is still in: with the port's

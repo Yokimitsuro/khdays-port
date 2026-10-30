@@ -139,7 +139,9 @@ the free end, by depth along the strip.
 | `drape` | 0 or 1 | 1 | its target swung out of the body colliders down its strip (eased, below) |
 | `draw_guard` | 0 or 1 | 1 | a smoothed drawn face cutting into the body deeper than the solved one moved out (below) |
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
-| `friction` | 0..1 | 0.2 | |
+| `friction` | 0..1 | 0.2 | of a control against a collider |
+| `face_friction` | 0..1 | 0 | of a face resting on a collider, from at most 1 cm of its push (below) |
+| `rotate_only` | 0 or 1 | 0 | a rebuilt bone only turns toward its point; its head stays where its simulated parent carries it or the animation has it (1: no stretch) |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
 | `wind_lift` | 0..1 | 0.5 | (kept for surfaces' normal force; not used yet) |
 
@@ -321,11 +323,33 @@ Actors are the drawn render objects, each with its own state; an actor unseen fo
 
 `models.cpp` calls `apply_model_secondary` in `draw` after `play_kh2` (or the
 game's pose) and before the weapon attachments and skinning. Each needed bone's
-frame is `inverse(camera) x skin x inverse(inverse bind)` divided by the actor's
+frame is `world_of_view x skin x inverse(inverse bind)` divided by the actor's
 world units per model unit (from the root node's matrix): the solver's space has
 the world's axes (y up) and the model's metres (KH2 centimetres / 100, Days' world
-about a metre a unit). The camera is the latest flush's (`khdays_g3d_camera`);
-it only converts. Rebuilt bones go back the same way into `skin`.
+about a metre a unit). Rebuilt bones go back the same way into `skin`.
+
+`world_of_view` takes the camera out without the camera's own matrix:
+
+- The model's place without the camera, `P`: a field actor's world matrix (actor
+  +0x10c, which `Ov002_SubmitActorDraw` multiplies onto the view; that function
+  draws attached parts, the weapons), or else the base transform the 3D engine's
+  flush sent last (`NNS_G3dGlb` +0x94 rotation, +0xb8 translation, +0xc4 scale,
+  fx32; `khdays_g3d_base`, hooked in `NNS_G3dGlbFlush` and `NNS_G3dGlbFlushP`).
+  `Obj_RenderModel` and other draws set it before `NNS_G3dDraw`. The base is used
+  only when the draw starts from it: camera x base for `NNS_G3dGlbFlush` (which
+  multiplies both into the position matrix), identity for `NNS_G3dGlbFlushP`
+  (which folds both into the projection).
+- `world_of_view = P x R x inverse(root)`, where `R = inverse(start) x root` is the
+  root node in `P`'s space. `R` is the game's own node matrix, but read back from
+  the GE's fixed-point (1/4096) products with the camera, so each camera turn
+  changes its rounding. `R` is therefore held while it differs from the held one
+  by less than 1 cm and 1 degree (Days' `roxas_R` never moves). Otherwise the body
+  shook in the world by a fraction of a millimetre whenever the camera turned, and
+  hair and drawstrings swung with it.
+- Neither: the latest flush's camera (`khdays_g3d_camera`), said once in the
+  session log. Every session log until 2026-10-30 shows Roxas placed this way
+  ("placed in the world by the flushed camera"): his body is not an
+  `Ov002_SubmitActorDraw` draw.
 
 **The game's rooms** (`days_environment.cpp`, read only; layout from the
 decompilation): `gEntityMgr` (0x0204c208) holds eight model groups at +4 (8 bytes:
@@ -391,10 +415,9 @@ test mod; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
 - Colliders: pelvis, spine and chest (`torso`: hood, drawstrings), thighs (from
   12 cm down the bone), calves, feet, arms, forearms (to the wrist), hands, head.
   The coat collides with the pelvis and legs only.
-- Placement: a field actor's world matrix (actor +0x10c, which Ov002_SubmitActorDraw
-  multiplies onto the view before drawing actor +0x24) times the inverse of the
-  matrix its draw starts from, so the camera cancels out; other draws fall back to
-  the latest flushed camera.
+- Placement: by the 3D engine's base transform, the camera taken out (see "In the
+  game").
+- Hair: `rotate_only` (each tuft turns about its root, which stays on the head).
 
 **Measured against B_EX390's bake.** B_EX390 shares bones 0-94 with N_EX830 (the
 same coat rig at rest). Its baked coat keeps every strip's length and stretches
@@ -484,13 +507,35 @@ Each was found by measuring the legs against the coat's faces and reading why:
   than the leg's collider is held there as authored, not pushed out to the
   collider. Against P_EX100's baked coat (below) it took the battle idle from
   19.3 to 17.9 cm and the calm idle from 6.4 to 4.4 cm, with fewer clipping frames.
+- Faces have friction (`face_friction`, 0.9 for the coat). Without it a face
+  resting on a knee slid round it freely: halfway through the battle idle (P_EX110
+  slot 0, frames 66-104 at 30 Hz) the front-left panel climbed the left knee about
+  10 cm in a quarter second while the knee moved 1 cm, held there, then dropped
+  back off, and the drawstring hanging in front was caught between it and the chest
+  and shook (up to 7 cm a frame). Found with `KHDAYS_REPLAY_TRACE`: switching off
+  only the left calf's face contact removed both. Friction is drawn from at most
+  1 cm of a face's push (`kFaceFrictionReach`): from all of it, a coat pressed
+  between a leg and a wall held in place and clipped. In the replay 0.45 left the
+  drawstring shaking and 0.6 to 0.9 all stopped the climb; 0.9 (chosen in game)
+  lets the wall scenario's drawn coat into a leg up to 3.2 cm in 13 of 301 frames
+  (1.4 cm in 2 without face friction). The drawstrings no longer collide with the
+  coat (no `self_collision`) and have no pull toward a shape (`follow_frequency 0`).
 
 ## Not yet / residual cases
 
 - Wind's surface lift (`wind_lift`) is parsed, not applied.
 - A room box's turn sense is unverified; characters' cylinders are not colliders.
-- The camera is the latest flush's; a flush after a model's draw in the same
-  frame would show as motion (not seen).
+- A draw placed by the flushed camera (neither an actor's matrix nor the base
+  transform) still feels the camera turn (the GE's rounding).
+- The thumbs go into the sleeve cuffs up to about 1.5 cm in about a third of the
+  frames of the battle idle, run, attack, jump and wall scenarios (replay,
+  `KHDAYS_REPLAY_CLIP=thumb KHDAYS_REPLAY_CLIP_BY=hand_l` with capsules on bones
+  136-139-140 and 253-256-257 measured only). Fully rigid cuffs clip as much, and
+  KH2's own coat Roxas motion (P_EX100 battle idle, as a reference) puts them 1.4 cm
+  in, in 55 of 121 frames: it is the hand's pose against the cuff's root at the
+  wrist. Thumb colliders the cuffs collide with cut some frames but made the cuffs
+  flip round the thumb (battle idle jitter 3 to 7-16 cm) and the calm idle worse;
+  not used.
 - B_EX390's authored flares are larger than any body-driven setting produces;
   matching one motion closely needs an authored control (`mode guided` on a
   model whose motions carry coat tracks).

@@ -126,13 +126,17 @@ struct ModelSecondary {
     std::vector<std::filesystem::file_time_type> stamps;
     u32 checked = 0, swept = 0, reported = 0;
     bool debug = false, profile = false, trace = false;
-    bool said_placement = false, said_camera = false;
+    bool said_placement = false, said_base = false, said_camera = false;
     struct ActorState {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
         float units = 0.0F;
         std::vector<Frame> last_pose; // KHDAYS_SECONDARY_TRACE: the last draw's, for its steps
         std::vector<Vec3> last_cloth;
+        // the root node in its placement's space as held (hold_root), and the last draw's difference from it
+        Mat4 root_held = kIdentity4;
+        bool has_root = false;
+        float root_off = 0.0F, root_turn = 0.0F; // m, degrees
     };
     std::map<const void *, ActorState> actors; // by render object; dropped when unseen (sweep)
     std::vector<Frame> pose, out;
@@ -404,13 +408,50 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
     const auto name = [&](int b) {
         return b >= 0 ? rig.skeleton.names[static_cast<std::size_t>(b)] : std::string("-");
     };
-    khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.1f cm, body %.1f cm (%s), cloth %.1f cm (%s)",
+    khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.2f cm, body %.1f cm (%s), cloth %.1f cm (%s); "
+               "root %.2f mm %.3f deg off held",
                m.name.c_str(), now, a.seconds, static_cast<unsigned long long>(a.epoch), anims.c_str(),
                static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
-               static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str());
+               static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str(),
+               static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn));
     state.last_pose = m.pose;
     state.last_cloth = x;
 }
+
+namespace {
+
+// Whether two matrices agree to the fixed-point rounding of a few GE products (entries in 1/4096ths,
+// relative for large ones)
+bool fx_close(const Mat4 &a, const Mat4 &b)
+{
+    for (std::size_t i = 0; i < 16; ++i)
+        if (std::fabs(a[i] - b[i]) > 16.0F / 4096.0F + 0.002F * std::fabs(b[i]))
+            return false;
+    return true;
+}
+
+// The root node in its placement's space, inverse(start) x root, is the game's own (camera-free) node
+// matrix, but rebuilt from the GE's fixed-point products of the camera with it: every turn of the camera
+// changes its rounding, and the body seen in the world shook by a fraction of a millimetre, which hair and
+// cords felt as acceleration. It is held while it moves less than that (Days' roxas_R never moves at
+// all); past 1 cm or 1 degree it is taken anew. Returns the root to use.
+Mat4 hold_root(ModelSecondary::ActorState &state, const Mat4 &now)
+{
+    const Frame a = frame_of(state.root_held), b = frame_of(now);
+    const float per = length(Vec3{now[0], now[1], now[2]}); // its units a model unit (a model unit: 1 m)
+    state.root_off = per > 1e-9F ? length(b.t - a.t) / per : 0.0F;
+    state.root_turn =
+        2.0F * std::acos(std::fmin(1.0F, std::fabs(a.q.x * b.q.x + a.q.y * b.q.y + a.q.z * b.q.z + a.q.w * b.q.w))) *
+        57.29578F;
+    const bool scaled = std::fabs(length(b.s) / std::fmax(length(a.s), 1e-9F) - 1.0F) > 0.01F;
+    if (!state.has_root || state.root_off > 0.01F || state.root_turn > 1.0F || scaled) {
+        state.root_held = now;
+        state.has_root = true;
+    }
+    return state.root_held;
+}
+
+} // namespace
 
 void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<Mat4> &skin)
 {
@@ -422,25 +463,34 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     if (!m.rig)
         return;
     const Rig &rig = *m.rig;
-    // view space to the world: by the actor's own world matrix and the matrix the draw started from, so
-    // the camera cancels out; else (not a field actor) by the latest flushed camera
-    Mat4 view, world_of_view, placed;
+    // view space to the world: by the model's place without the camera (a field actor's world matrix, or
+    // the base transform the 3D engine's flush multiplied onto the camera, when the draw started from
+    // exactly that) and the matrix the draw started from, so the camera cancels out; else by the latest
+    // flushed camera (that cancels it only up to the GE's rounding, and the cloth feels the camera turn)
+    Mat4 world_of_view, placed;
+    bool camera_free = true;
     if (actor_world(in.actor, placed)) {
-        world_of_view = mul(placed, inverse_affine(in.start));
-        view = inverse_affine(world_of_view);
         if (!m.said_placement)
             say(m.name + ": placed in the world by its actor's matrix (camera-independent)");
         m.said_placement = true;
+    } else if ((in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) ||
+               (in.base_kind == 2 && fx_close(kIdentity4, in.start))) {
+        placed = in.base;
+        if (!m.said_base)
+            say(m.name + ": placed in the world by the 3D engine's base transform (camera-independent)");
+        m.said_base = true;
     } else {
-        float camera[16];
-        if (!khdays_g3d_camera(camera))
+        if (!in.has_camera)
             return;
-        std::copy(camera, camera + 16, view.begin());
-        world_of_view = inverse_affine(view);
+        camera_free = false;
+        world_of_view = inverse_affine(in.camera);
         if (!m.said_camera)
-            say(m.name + ": placed in the world by the flushed camera (not a field actor's draw)");
+            say(m.name + ": placed in the world by the flushed camera (its draw starts from neither an actor's "
+                         "matrix nor the base transform); turning the camera can move its cloth");
         m.said_camera = true;
     }
+    if (camera_free)
+        world_of_view = mul(placed, inverse_affine(in.start));
     const Mat4 root = mul(world_of_view, in.root);
     const float units = length(Vec3{root[0], root[1], root[2]}); // world units a model unit
     if (!(units > 1e-6F) || !std::isfinite(units))
@@ -471,6 +521,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
                        m.actors.size());
     }
     state.seen = now;
+    if (camera_free) // the root node held through the GE's rounding (hold_root)
+        world_of_view =
+            mul(placed, mul(hold_root(state, mul(inverse_affine(in.start), in.root)), inverse_affine(in.root)));
+    const Mat4 view = inverse_affine(world_of_view);
     // the needed bones in the solver's space
     Mat4 to_sim = kIdentity4;
     to_sim[0] = to_sim[5] = to_sim[10] = 1.0F / units;

@@ -124,6 +124,18 @@ void khdays_g3d_draw_end(void);
  * float matrix like khdays_g3d_matrices'; 0 before the first flush. */
 int khdays_g3d_camera(float camera[16]);
 
+/* NNS_G3dGlbFlush and NNS_G3dGlbFlushP (prepare.py HOOKS): the base transform
+ * the flush sends (NNSG3dGlb +0x94: rotation 3x3, translation, scale, fx32).
+ * Flush multiplies it onto the camera in the position matrix; FlushP folds
+ * camera and base into the projection and leaves the position at identity
+ * (`in_projection`). */
+void khdays_g3d_flush_base(const int32_t base[15], int in_projection);
+/* The latest flush's base transform (a model's place in the world, without the
+ * camera) as a float matrix like khdays_g3d_matrices': translation x rotation x
+ * scale. 1: Flush's (the position matrix starts at camera x base), 2: FlushP's
+ * (it starts at identity), 0: none yet. */
+int khdays_g3d_base(float base[16]);
+
 void khdays_g3d_reset(void);
 
 /* --- What the game sends ---------------------------------------------------------- */

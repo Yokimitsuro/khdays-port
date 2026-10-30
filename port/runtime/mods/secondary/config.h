@@ -46,6 +46,8 @@ enum class Param : int {
     follow_bone_scale,  // 0..1: of its follow_bone shares it takes (how much the legs carry it)
     drape,              // 0 or 1: its target swung out of the body colliders down its strip (Simulation::drape)
     draw_guard,         // 0 or 1: a smoothed drawn face cutting into the body moved out (guard_drawn_faces)
+    face_friction,      // 0..1: friction of a face resting on a body collider (0: it slides freely)
+    rotate_only,        // 0 or 1: a rebuilt bone only turns toward its point, its head kept where its parent puts it
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);

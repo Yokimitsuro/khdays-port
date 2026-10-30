@@ -37,9 +37,13 @@ struct DrawAnimation {
 };
 
 struct DrawInput {
-    const void *actor = nullptr;       // the drawn render object
-    Mat4 root = kIdentity4;            // the model's units to view space (the game's root node, scaled)
-    Mat4 start = kIdentity4;           // the position matrix as the draw started (view x the actor's world)
+    const void *actor = nullptr; // the drawn render object
+    Mat4 root = kIdentity4;      // the model's units to view space (the game's root node, scaled)
+    Mat4 start = kIdentity4;     // the position matrix as the draw started (view x the actor's world)
+    Mat4 base = kIdentity4;      // the latest flush's base transform (gfx/g3d.h khdays_g3d_base) ...
+    int base_kind = 0;           // ... and its kind there (0 none)
+    Mat4 camera = kIdentity4;    // the latest flush's camera, world to view
+    bool has_camera = false;
     const float *projection = nullptr; // view to clip, for the debug drawing
     std::vector<DrawAnimation> animations;
 };

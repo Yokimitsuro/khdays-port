@@ -1251,6 +1251,31 @@ int khdays_g3d_camera(float camera[16])
     return 1;
 }
 
+static int32_t flushed_base[15];
+static int base_flushed;
+
+void khdays_g3d_flush_base(const int32_t base[15], int in_projection)
+{
+    memcpy(flushed_base, base, sizeof(flushed_base));
+    base_flushed = in_projection ? 2 : 1;
+}
+
+int khdays_g3d_base(float base[16])
+{
+    if (!base_flushed)
+        return 0;
+    /* the GE's MTX_MULT_4x3 of rotation rows and translation, then MTX_SCALE:
+     * a vertex scaled, turned, moved; columns as khdays_g3d_camera's */
+    memset(base, 0, 16 * sizeof(float));
+    for (int c = 0; c < 3; ++c)
+        for (int r = 0; r < 3; ++r)
+            base[c * 4 + r] = (float)flushed_base[c * 3 + r] / 4096.0f * ((float)flushed_base[12 + c] / 4096.0f);
+    for (int r = 0; r < 3; ++r)
+        base[12 + r] = (float)flushed_base[9 + r] / 4096.0f;
+    base[15] = 1.0f;
+    return base_flushed;
+}
+
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12])
 {
     memcpy(flushed_camera, camera, sizeof(flushed_camera));
