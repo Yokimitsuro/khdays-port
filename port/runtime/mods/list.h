@@ -4,13 +4,36 @@
  * and whatever the file says, when its folder's name begins with '.' or when it holds a file named
  * .ignore. The VFS reads the on mods in this order (the first with a file wins), and so do the sounds
  * and the scripts. The files, the sounds and the mods' characters, missions and native plugins are the ones on as
- * the game started (khdays_mods_start): a mod turned or moved on the Mods page changes them at the next start. */
+ * the game started (khdays_mods_start): a mod turned or moved on the Mods page changes them at the next start.
+ * A .days file in the mods folder (KH DS Project Editor's) is a mod too, its files read from the port's copy of
+ * them in mods/.days/<its name> (days.h). */
 #ifndef KHDAYS_MODS_LIST_H
 #define KHDAYS_MODS_LIST_H
+
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define KHDAYS_DAYS_EXTENSION ".days"
+#define KHDAYS_DAYS_CACHE ".days" /* the folder of the .days mods' copies, in the mods folder */
+
+/* Whether a file's name is a .days mod's (any case). */
+static inline int khdays_mods_is_days(const char *name)
+{
+    const size_t n = strlen(name), e = sizeof(KHDAYS_DAYS_EXTENSION) - 1;
+    if (n <= e) {
+        return 0;
+    }
+    for (size_t i = 0; i < e; ++i) {
+        const char c = name[n - e + i];
+        if ((c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c) != KHDAYS_DAYS_EXTENSION[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
 typedef struct KhdaysModEntry {
     const char *folder; /* its name in the mods folder */

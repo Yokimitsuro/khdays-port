@@ -7,6 +7,7 @@
 extern "C" {
 #include "../../host/app/host.h"     // khdays_host_tell_no_data
 #include "../../host/app/instance.h" // khdays_host_user_folder
+#include "../mods/days.h"
 #include "../mods/list.h"
 #include "origin.h"
 #include "session_log.h"
@@ -257,6 +258,7 @@ static void give_vfs_the_mods()
 
 extern "C" int khdays_rom_init(void)
 {
+    khdays_days_unpack_all("mods"); // the .days mods' files copied out where the VFS reads them
     khdays_mods_scan("mods", khdays_host_user_folder()); // the VFS's mods root, beside the game
     khdays_mods_start();
     give_vfs_the_mods();
@@ -267,6 +269,7 @@ extern "C" int khdays_rom_init(void)
         khdays_host_tell_no_data(utf8(ec ? fs::path("data/extracted") : searched).c_str(), nullptr);
         return 0;
     }
+    khdays_days_check_originals(utf8(khdays::vfs::data_root() / "nitrofs").c_str());
     const fs::path system = khdays::vfs::data_root() / "system";
     header = read_whole(system / "header.bin");
     if (header.size() != 0x200) {

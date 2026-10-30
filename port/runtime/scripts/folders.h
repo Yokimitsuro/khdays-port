@@ -14,12 +14,18 @@ extern "C" {
  * Returns 0 when `path` is not a folder. */
 int khdays_folders_list(const char *path, void (*each)(const char *name, void *context), void *context);
 
+/* The same with every file directly in `path`. */
+int khdays_folders_list_files(const char *path, void (*each)(const char *name, void *context), void *context);
+
 /* Calls `each` with every file under `path` (all depths), as its path from `path` with '/', in byte
  * order of those paths. Returns 0 when `path` is not a folder. */
 int khdays_folders_files(const char *path, void (*each)(const char *relative, void *context), void *context);
 
 /* The time `path` was last written, in the file system's own unit; -1 when it is missing. */
 long long khdays_folders_time(const char *path);
+
+/* The file's size in bytes; -1 when it is missing. */
+long long khdays_folders_size(const char *path);
 
 int khdays_folders_is_file(const char *path);
 

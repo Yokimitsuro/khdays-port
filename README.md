@@ -756,6 +756,17 @@ and the log says why. Made from a copy you own, for example:
 ffmpeg -i source.mp4 -c:v mpeg1video -q:v 2 -c:a mp2 -b:a 256k -f mpeg mods/MyMod/movies/802.mpg
 ```
 
+## Mods made for the DS game
+
+A mod can replace any of the game's own files: `mods/<Mod>/files/<path>` is read instead of the
+card's file at that path (`ba/ch/ro/def.p.z`, `UI/cm/cm.p2`...), in the game's own format, as the
+studio writes them. Mods made with Kingdom Hearts DS Project Editor (`.days` files) need nothing
+more: left in `mods/` as they are, each is a mod of its own on the Mods page. The port copies their
+files out into `mods/.days/<name>/` (again only when the `.days` changes; the copy goes when the
+`.days` does), checks each against the mod's own list, and tells in the session log a mod made for
+another copy of the game than the player's. With the HD PACK's menus, the HD pieces are drawn
+instead of the game's pictures: a `.days` mod's new faces and title show with them off.
+
 ## Mods that change the game
 
 Besides content, a mod can carry Lua scripts that change how the game plays: they hear what

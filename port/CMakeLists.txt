@@ -543,6 +543,8 @@ add_executable(khdays-native
     runtime/scripts/order.c
     runtime/scripts/folders.cpp
     runtime/mods/list.c                # every mod folder, in load order, which are on
+    runtime/mods/days.c                # KH DS Project Editor's .days mods, copied out to be read
+    runtime/mods/zip_read.c            # a ZIP read from memory (the .days mods)
     runtime/scripts/mods_log.c
     runtime/scripts/api_events.c
     runtime/scripts/api_mod.c
@@ -1000,6 +1002,17 @@ add_executable(khdays-saveslots-test tests/saveslots_test.c runtime/menus/savesl
 target_link_libraries(khdays-saveslots-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-saveslots-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-saveslots COMMAND khdays-saveslots-test)
+
+# KH DS Project Editor's .days mods (runtime/mods/days.c): one made by the test, copied out, listed, checked.
+add_executable(khdays-days-test tests/days_test.c runtime/mods/days.c runtime/mods/zip_read.c runtime/mods/list.c
+               runtime/scripts/order.c runtime/scripts/manifest.c runtime/scripts/folders.cpp runtime/core/sha256.c
+               host/render/png_io.c)
+target_include_directories(khdays-days-test PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-days-test PRIVATE SDL3::SDL3)
+target_compile_options(khdays-days-test PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-days COMMAND khdays-days-test)
 
 # Gameplay mods' scripts (runtime/scripts): manifests, the load order, the sandbox, the events and the
 # state names, against a game of the test's own.

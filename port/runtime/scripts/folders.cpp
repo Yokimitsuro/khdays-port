@@ -48,6 +48,26 @@ extern "C" int khdays_folders_list(const char *path, void (*each)(const char *na
     return 1;
 }
 
+extern "C" int khdays_folders_list_files(const char *path, void (*each)(const char *name, void *context), void *context)
+{
+    std::error_code e;
+    std::vector<std::string> names;
+    const fs::path root = path_of(path);
+    if (!fs::is_directory(root, e)) {
+        return 0;
+    }
+    for (fs::directory_iterator it(root, e), end; !e && it != end; it.increment(e)) {
+        if (it->is_regular_file(e)) {
+            names.push_back(utf8_of(it->path().filename()));
+        }
+    }
+    std::sort(names.begin(), names.end());
+    for (const std::string &n : names) {
+        each(n.c_str(), context);
+    }
+    return 1;
+}
+
 extern "C" int khdays_folders_files(const char *path, void (*each)(const char *relative, void *context), void *context)
 {
     std::error_code e;
@@ -73,6 +93,13 @@ extern "C" long long khdays_folders_time(const char *path)
     std::error_code e;
     const auto t = fs::last_write_time(path_of(path), e);
     return e ? -1 : static_cast<long long>(t.time_since_epoch().count());
+}
+
+extern "C" long long khdays_folders_size(const char *path)
+{
+    std::error_code e;
+    const auto n = fs::file_size(path_of(path), e);
+    return e ? -1 : static_cast<long long>(n);
 }
 
 extern "C" int khdays_folders_is_file(const char *path)

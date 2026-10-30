@@ -71,6 +71,9 @@ typedef struct Found {
 static void found_folder(const char *name, void *context)
 {
     Found *f = context;
+    if (strcmp(name, KHDAYS_DAYS_CACHE) == 0) {
+        return; /* the .days mods' copies: each listed by its .days */
+    }
     if (f->count == f->capacity) {
         const int grown = f->capacity == 0 ? 8 : f->capacity * 2;
         char **n = realloc(f->names, (size_t)grown * sizeof(*n));
@@ -83,6 +86,13 @@ static void found_folder(const char *name, void *context)
     f->names[f->count] = copy(name);
     if (f->names[f->count] != NULL) {
         ++f->count;
+    }
+}
+
+static void found_days(const char *name, void *context)
+{
+    if (khdays_mods_is_days(name)) {
+        found_folder(name, context);
     }
 }
 
@@ -123,6 +133,19 @@ static int native_only(const char *folder, const char *ini)
     return 1;
 }
 
+/* Where a .days mod's files are read: the port's copy of them (days.h), mods/.days/<its name without .days>. */
+static char *days_copy(const char *mods_path, const char *name)
+{
+    char *cache = joined(mods_path, KHDAYS_DAYS_CACHE), *stem = copy(name), *out = NULL;
+    if (cache != NULL && stem != NULL) {
+        stem[strlen(stem) - strlen(KHDAYS_DAYS_EXTENSION)] = '\0';
+        out = joined(cache, stem);
+    }
+    free(cache);
+    free(stem);
+    return out;
+}
+
 static int add(const char *mods_path, const KhdaysOrderEntry *o)
 {
     Mod *m;
@@ -139,7 +162,7 @@ static int add(const char *mods_path, const KhdaysOrderEntry *o)
     m = &mods[count];
     memset(m, 0, sizeof(*m));
     m->folder = copy(o->folder);
-    m->path = joined(mods_path, o->folder);
+    m->path = khdays_mods_is_days(o->folder) ? days_copy(mods_path, o->folder) : joined(mods_path, o->folder);
     ini = m->path != NULL ? joined(m->path, "mod.ini") : NULL;
     ignore = m->path != NULL ? joined(m->path, IGNORE_FILE) : NULL;
     if (m->folder == NULL || m->path == NULL || ini == NULL || ignore == NULL) {
@@ -168,6 +191,7 @@ void khdays_mods_scan(const char *mods_path, const char *user)
     free(user_folder);
     user_folder = user != NULL ? copy(user) : NULL;
     khdays_folders_list(mods_path, found_folder, &found);
+    khdays_folders_list_files(mods_path, found_days, &found);
     order_path = user_folder != NULL ? joined(user_folder, "mods/order.ini") : NULL;
     order_text = order_path != NULL ? khdays_folders_read(order_path, NULL) : NULL;
     khdays_order_parse(&order, order_text);
