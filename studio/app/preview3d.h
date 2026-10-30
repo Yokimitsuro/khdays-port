@@ -41,9 +41,10 @@ public:
     // (column-major); `light` the direction light comes from (unit).
     void begin(int width, int height, const Mat& view_projection, std::array<float, 3> light);
     // A triangle; `cull`: its back left out (front counter-clockwise, as glTF);
-    // `tint` multiplies its colour.
+    // `tint` multiplies its colour; `translucent`: blended all over, its solid
+    // texels too (a glTF BLEND material, as the port draws a mod's).
     void triangle(const PreviewVertex& a, const PreviewVertex& b, const PreviewVertex& c, const PreviewImage& image,
-                  bool cull, std::array<float, 3> tint);
+                  bool cull, std::array<float, 3> tint, bool translucent = false);
     // The picture drawn on the graphics card, twice the size given to begin()
     // (shown at that size it is smoothed); null when it could not be drawn.
     SDL_GPUTexture* finish();
@@ -71,9 +72,10 @@ private:
     struct Batch {
         const std::uint8_t* image = nullptr;
         int sampler = 0;
-        bool cull = false, blend = false;
+        bool cull = false, blend = false, translucent = false;
         bool operator<(const Batch& o) const {
-            return std::tie(blend, image, sampler, cull) < std::tie(o.blend, o.image, o.sampler, o.cull);
+            return std::tie(blend, image, sampler, cull, translucent) <
+                   std::tie(o.blend, o.image, o.sampler, o.cull, o.translucent);
         }
     };
 

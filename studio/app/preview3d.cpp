@@ -295,7 +295,7 @@ bool Preview::project(const std::array<float, 3>& p, float* x, float* y) const {
 }
 
 void Preview::triangle(const PreviewVertex& a, const PreviewVertex& b, const PreviewVertex& c,
-                       const PreviewImage& image, bool cull, std::array<float, 3> tint) {
+                       const PreviewImage& image, bool cull, std::array<float, 3> tint, bool translucent) {
     if (!ready())
         return;
     Batch key;
@@ -313,8 +313,9 @@ void Preview::triangle(const PreviewVertex& a, const PreviewVertex& b, const Pre
     key.image = img != nullptr ? image.rgba : nullptr;
     key.sampler = img != nullptr ? sampler_of(image) : 0;
     key.cull = cull;
-    key.blend =
-        (img != nullptr && img->partial_alpha) || a.colour[3] < 0.999f || b.colour[3] < 0.999f || c.colour[3] < 0.999f;
+    key.translucent = translucent;
+    key.blend = translucent || (img != nullptr && img->partial_alpha) || a.colour[3] < 0.999f || b.colour[3] < 0.999f ||
+                c.colour[3] < 0.999f;
     auto& out = batches_[key];
     for (const PreviewVertex* v : {&a, &b, &c}) {
         out.insert(out.end(), v->position.begin(), v->position.end());
@@ -467,7 +468,7 @@ SDL_GPUTexture* Preview::finish() {
     SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
     // opaque first; then the blended ones twice: their solid texels (alpha 248 and above) as opaque,
     // writing depth -- a body hides what is behind it, its own far side included -- then their soft
-    // texels blended over (std::map orders by `blend` first)
+    // texels blended over (std::map orders by `blend` first); a translucent one's all blended
     const auto draw = [&](const Batch& key, std::uint32_t first, std::uint32_t count, bool blend, float cut_below) {
         SDL_BindGPUGraphicsPipeline(pass, g.pipeline[key.cull ? 1 : 0][blend ? 1 : 0]);
         SDL_GPUTextureSamplerBinding ts{};
@@ -484,7 +485,7 @@ SDL_GPUTexture* Preview::finish() {
             const std::uint32_t count = static_cast<std::uint32_t>(v.size() / kFloats);
             if (step == 0 && !key.blend)
                 draw(key, first, count, false, 0.5f);
-            if (step == 1 && key.blend)
+            if (step == 1 && key.blend && !key.translucent)
                 draw(key, first, count, false, 248.0f / 255.0f);
             if (step == 2 && key.blend)
                 draw(key, first, count, true, 8.0f / 255.0f);

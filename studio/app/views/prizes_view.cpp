@@ -144,7 +144,8 @@ void add_shape(Preview& p, const Shape& s, float at_x, float yaw, float k) {
         };
         for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
             p.triangle(vertex(mesh.vertices[mesh.indices[i]]), vertex(mesh.vertices[mesh.indices[i + 1]]),
-                       vertex(mesh.vertices[mesh.indices[i + 2]]), image, !mesh.double_sided, {1, 1, 1});
+                       vertex(mesh.vertices[mesh.indices[i + 2]]), image, !mesh.double_sided, {1, 1, 1},
+                       mesh.alpha_mode == assets::NeutralMesh::AlphaMode::blend);
         }
     }
 }
