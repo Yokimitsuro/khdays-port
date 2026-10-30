@@ -5,10 +5,10 @@ and each Days chest as the KH2 chest that looks like it.
     python tools/mods/kh2_prizes.py --kh2 <kh2.hed_out> [--exe <khdays-native>] [--bbs2 <bbs_second.hed_out>]
                                     [--mod "Days - KH2 Prizes"]
 
---kh2 is KH2's entries as the installer extracts them: original/obj/PRIZE.mdlx and its HD pages,
-remastered/obj/PRIZE.mdlx/-0.dds, -1.dds (one a page, in the order of the pages' places); the chests'
-original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds. --exe makes the chests (through
-khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures. Writes
+--kh2 is KH2's entries as the installer extracts them: original/obj/PRIZE.mdlx and PRIZE_HE.mdlx (the Coliseum's
+coin) and their HD pages, remastered/obj/<file>/-0.dds, -1.dds (one a page, in the order of the pages' places);
+the chests' original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds. --exe makes the
+chests (through khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures. Writes
 mods/<mod>/graphics/mo/prize.pak.z/fx/, mods/<mod>/graphics/mo/mo#<entry>/mdl/ and the switch
 days-mods/kh2-prizes.txt; says what it made and what it left out.
 """
@@ -29,10 +29,15 @@ sys.path.insert(0, str(HERE))
 import kh2_pax  # noqa: E402
 
 PRIZE = "obj/PRIZE.mdlx"
-# Days's prize pictures and KH2's animation for each (its number in PRIZE.mdlx) with the layer that is the prize's
-# body (made as wide as Days's picture): KH2's HP orb (its green core, under the halo) and its munny. KH2's MP orb
-# (2) and drive orb (3) have no Days prize.
-PAIRS = {"prize_01": (1, 1), "prize_03": (0, 0)}
+# Days's prize pictures and the KH2 effect for each: its file, its animation's number and the layer that is the
+# prize's body (made as wide as Days's picture), and what it is: KH2's HP orb (its green core, under the halo) and
+# its munny; the Olympus Coliseum's coin (the coin, its bolt's glow added over it) for Days's Coliseum coin.
+PAIRS = {
+    "prize_01": (PRIZE, 1, 1, "HP orb"),
+    "prize_03": (PRIZE, 0, 0, "munny"),
+    "he_prize": ("obj/PRIZE_HE.mdlx", 0, 0, "Olympus Coliseum coin"),
+}
+# PRIZE.mdlx's animations; its MP orb (2) and drive orb (3) have no Days prize
 ANIMATIONS = {0: "munny", 1: "HP orb", 2: "MP orb", 3: "drive orb"}
 
 # Days's chests (mo/mo's <world>_box_b: its entry) and the KH2 chest that looks like each, with its motion set (the
@@ -59,11 +64,11 @@ CHEST_BONES = "j0 dummy0\nj3 box1\nkeep light01 light02 light03\nswitch kh2_priz
 BOXES = {"prize_05": "PRIZE_BOX_YELLOW", "prize_06": "PRIZE_BOX_RED", "prize_07": "PRIZE_BOX_BLUE"}
 
 
-def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int) -> str:
+def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int, file: str = PRIZE) -> str:
     """An animation as the effect format writes it: its pages, its body layer, a frame a game frame."""
     lines = [
         "effect 1",
-        f"# KINGDOM HEARTS II's prize effect, animation {animation.number} ({PRIZE}), made by tools/mods/kh2_prizes.py",
+        f"# KINGDOM HEARTS II's prize effect, animation {animation.number} ({file}), made by tools/mods/kh2_prizes.py",
     ]
     lines += [f"page {n} {file}" for n, file in sorted(pages.items())]
     lines += [f"body {body}", f"frame_time {frame_time(animation)}"]
@@ -195,20 +200,27 @@ def make(
 ) -> list[str]:
     """The effects (and with `exe` the chests and prize boxes) into mod/; what was left out, each with why."""
     left_out = []
-    pax = kh2_pax.read_pax((kh2 / "original" / PRIZE).read_bytes())
-    page_order = sorted({p.tbp for p in pax.pictures})  # the HD pages' order (-0.dds the first)
+    paxes: dict[str, kh2_pax.Pax | None] = {}
     fx = mod / "graphics" / "mo" / "prize.pak.z" / "fx"
     fx.mkdir(parents=True, exist_ok=True)
     made = []
-    for picture, (number, body) in PAIRS.items():
+    for picture, (file, number, body, what) in PAIRS.items():
+        if file not in paxes:
+            original = kh2 / "original" / file
+            paxes[file] = kh2_pax.read_pax(original.read_bytes()) if original.is_file() else None
+        pax = paxes[file]
+        if pax is None:
+            left_out.append(f"{picture}: KH2's {file} is not there")
+            continue
+        page_order = sorted({p.tbp for p in pax.pictures})  # the HD pages' order (-0.dds the first)
         animation = next((a for a in pax.animations if a.number == number), None)
         if animation is None:
-            left_out.append(f"{picture}: KH2's {ANIMATIONS.get(number, number)} (animation {number}) is not there")
+            left_out.append(f"{picture}: KH2's {what} (animation {number} of {file}) is not there")
             continue
         pages = {}
         for n, tbp in enumerate(sorted(pages_tbp(animation))):
             name = f"{picture}_page{n}.png"
-            hd = kh2 / "remastered" / PRIZE / f"-{page_order.index(tbp)}.dds"
+            hd = kh2 / "remastered" / file / f"-{page_order.index(tbp)}.dds"
             if hd.exists():
                 with Image.open(hd) as page:
                     page.convert("RGBA").save(fx / name)
@@ -218,12 +230,12 @@ def make(
                     fx / name
                 )
             pages[n] = name
-        (fx / f"{picture}.txt").write_text(effect_text(animation, pages, body), encoding="utf-8", newline="\n")
-        made.append(f"{picture}: KH2's {ANIMATIONS[number]}")
+        (fx / f"{picture}.txt").write_text(effect_text(animation, pages, body, file), encoding="utf-8", newline="\n")
+        made.append(f"{picture}: KH2's {what}")
         if uneven(animation):
             left_out.append(f"{picture}: its frames' times as {frame_time(animation)} game frames each")
     for number, what in ANIMATIONS.items():
-        if number not in {n for n, _ in PAIRS.values()}:
+        if number not in {n for f, n, _, _ in PAIRS.values() if f == PRIZE}:
             left_out.append(f"KH2's {what} (animation {number}): Days has no such prize")
     if exe is not None:
         for part in (make_chests(kh2, mod, exe, bbs2, run), make_boxes(kh2, mod, exe, run)):

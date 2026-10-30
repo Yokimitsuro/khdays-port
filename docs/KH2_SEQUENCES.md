@@ -1294,12 +1294,13 @@ in the log and the picture keeps Days's look. Mods are taken in the player's ord
 layers or pages.
 
 `tools/mods/kh2_prizes.py --kh2 <kh2.hed_out>` writes KINGDOM HEARTS II's: the HP orb (`obj/PRIZE.mdlx`'s
-animation 1) for `prize_01` and munny (animation 0) for `prize_03`, with the remaster's HD pages
-(`remastered/obj/PRIZE.mdlx/-N.dds`) when there, from the player's own 1.5+2.5 copy. The installer makes it with
-the HD menus (`build-mods --kh2-prizes`) into the HD PACK. The settings' HD replacements have "KH2 prizes and
-chests" (`kh2_prizes`, on by default); off, Days's pictures are drawn exactly as before. The reference renderer
-draws Days's pictures. `KHDAYS_TRACE_PRIZES=1` names the pictures as they load, each effect found or refused, each
-prize taken and the player's HP and munny.
+animation 1) for `prize_01` and munny (animation 0) for `prize_03`, and the Olympus Coliseum's coin
+(`obj/PRIZE_HE.mdlx`'s animation 0: the coin, its bolt's glow added over it) for `he_prize`, Days's Coliseum coin;
+with the remaster's HD pages (`remastered/obj/<file>/-N.dds`) when there, from the player's own 1.5+2.5 copy.
+The installer makes it with the HD menus (`build-mods --kh2-prizes`) into the HD PACK. The settings' HD
+replacements have "KH2 prizes and chests" (`kh2_prizes`, on by default); off, Days's pictures are drawn exactly as
+before. The reference renderer draws Days's pictures. `KHDAYS_TRACE_PRIZES=1` names the pictures as they load, each
+effect found or refused, each prize taken and the player's HP and munny.
 
 With `--exe <khdays-native>` the tool also makes the chests: each Days chest (`mo/mo#<entry>`'s `<world>_box_b`)
 as the KH2 chest that looks like it -- KH2's large chest of the same world (`F_EX040_TT`, `_AL`, `_BB`, `_HE`,

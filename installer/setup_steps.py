@@ -734,6 +734,7 @@ COLLECTION_ARCHIVES = {
         "SettingMenu": "Image/SettingMenu",
         "kh2_first": "Image/dt/kh2_first",
         "kh2_fifth": "Image/dt/kh2_fifth",
+        "kh2_sixth": "Image/dt/kh2_sixth",
         # (the port's own mods': mod_inputs.txt)
         "bbs_first": "Image/dt/bbs_first",
         "bbs_second": "Image/dt/bbs_second",
@@ -1123,6 +1124,7 @@ HD_ORIGINALS = "hd-originals"  # (under setup/) the HD menus' pieces the port's 
 MOD_SOURCES = {
     "kh2_first": "kh2",
     "kh2_fifth": "kh2",
+    "kh2_sixth": "kh2",
     "bbs_first": "bbs_first",
     "bbs_second": "bbs_second",
     "Recom": "Recom",

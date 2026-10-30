@@ -241,8 +241,10 @@ class MakeTheMod(unittest.TestCase):
         with Image.open(fx / "prize_01_page0.png") as page:
             self.assertEqual(page.size, (256, 128))  # the HD page
         self.assertTrue((self.mod / "days-mods" / "kh2-prizes.txt").exists())
-        self.assertEqual(len(left_out), 2)  # the MP orb and the drive orb: no Days prize
+        # the MP orb and the drive orb: no Days prize; the Coliseum's coin: its file not there
+        self.assertEqual(len(left_out), 3)
         self.assertTrue(any("MP orb" in line for line in left_out) and any("drive orb" in line for line in left_out))
+        self.assertTrue(any(line.startswith("he_prize: KH2's obj/PRIZE_HE.mdlx is not there") for line in left_out))
 
     def test_the_original_pages_without_the_remaster(self):
         import kh2_prizes
@@ -253,6 +255,19 @@ class MakeTheMod(unittest.TestCase):
         with Image.open(self.mod / "graphics" / "mo" / "prize.pak.z" / "fx" / "prize_03_page0.png") as page:
             self.assertEqual(page.size, (128, 64))
             self.assertEqual(page.getpixel((0, 32)), (0, 255, 0, 255))
+
+    def test_the_coliseum_coin(self):
+        import kh2_prizes
+
+        self.prize()
+        coin = self.kh2 / "original" / "obj" / "PRIZE_HE.mdlx"
+        coin.write_bytes(make_pax(two_pictures(), [animation(0, [frame(0, 0x3000, 0x3E0C, [CORE, GLOW])] * 3)]))
+        left_out = kh2_prizes.make(self.kh2, self.mod)
+        text = (self.mod / "graphics" / "mo" / "prize.pak.z" / "fx" / "he_prize.txt").read_text(encoding="utf-8")
+        self.assertIn("(obj/PRIZE_HE.mdlx)", text)  # its own file named
+        self.assertIn("body 0", text.splitlines())  # the coin, under its bolt's glow
+        self.assertEqual(text.splitlines().count("frame"), 3)
+        self.assertFalse(any(line.startswith("he_prize") for line in left_out))
 
     def test_a_missing_animation_said(self):
         import kh2_prizes

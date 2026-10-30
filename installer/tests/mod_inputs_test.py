@@ -41,6 +41,8 @@ class Inputs(unittest.TestCase):
         self.assertIn("obj/F_EX040_TT.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
         self.assertIn("obj/PRIZE_BOX_BLUE.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
         self.assertIn("ForEventJP/gimmick/g01pp/00/g01pp00.pmo", entries.get("bbs_second", []))
+        # the Olympus Coliseum's coin (an archive of KH2's own)
+        self.assertIn("obj/PRIZE_HE.mdlx", entries.get("kh2_sixth", []))
 
     def test_wiring(self):
         folder, template = s.PORT_MODS["menu-overhaul"]
