@@ -43,13 +43,15 @@ float dot(const std::array<float, 3>& a, const std::array<float, 3>& b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-// What every preview shares on the one device: the pipelines (culled or not,
-// opaque or blended), the samplers (per axis: clamped, repeated, mirrored),
-// a white texel for pictures with no texture.
+// What every preview shares on the one device: the pipelines (culled or not;
+// opaque, blended, or blended as a translucent material, which a face at its
+// own depth hides as the DS's translucent polygons are hidden), the samplers
+// (per axis: clamped, repeated, mirrored), a white texel for pictures with no
+// texture.
 struct Shared {
     SDL_GPUDevice* device = nullptr;
     SDL_GPUTextureFormat depth = SDL_GPU_TEXTUREFORMAT_INVALID;
-    SDL_GPUGraphicsPipeline* pipeline[2][2] = {};  // [cull][blend]
+    SDL_GPUGraphicsPipeline* pipeline[2][3] = {};  // [cull][opaque, blended, translucent material]
     SDL_GPUSampler* sampler[9] = {};
     SDL_GPUTexture* white = nullptr;
     bool tried = false, ok = false;
@@ -115,7 +117,7 @@ bool make_shared(SDL_GPUDevice* d) {
         attributes[i].offset = offsets[i];
     }
     for (int cull = 0; cull < 2; ++cull) {
-        for (int blend = 0; blend < 2; ++blend) {
+        for (int blend = 0; blend < 3; ++blend) {
             SDL_GPUColorTargetDescription target{};
             target.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
             if (blend) {
@@ -140,7 +142,7 @@ bool make_shared(SDL_GPUDevice* d) {
             info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
             info.depth_stencil_state.enable_depth_test = true;
             info.depth_stencil_state.enable_depth_write = !blend;
-            info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+            info.depth_stencil_state.compare_op = blend == 2 ? SDL_GPU_COMPAREOP_LESS : SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
             info.target_info.color_target_descriptions = &target;
             info.target_info.num_color_targets = 1;
             info.target_info.depth_stencil_format = g.depth;
@@ -167,9 +169,12 @@ bool make_shared(SDL_GPUDevice* d) {
             g.sampler[s * 3 + t] = SDL_CreateGPUSampler(d, &info);
         }
     }
-    g.ok = g.pipeline[0][0] != nullptr && g.pipeline[0][1] != nullptr && g.pipeline[1][0] != nullptr &&
-           g.pipeline[1][1] != nullptr &&
-           std::all_of(std::begin(g.sampler), std::end(g.sampler), [](SDL_GPUSampler* s) { return s != nullptr; });
+    bool made = true;
+    for (const auto& row : g.pipeline)
+        made = made &&
+               std::all_of(std::begin(row), std::end(row), [](SDL_GPUGraphicsPipeline* p) { return p != nullptr; });
+    g.ok =
+        made && std::all_of(std::begin(g.sampler), std::end(g.sampler), [](SDL_GPUSampler* s) { return s != nullptr; });
     return g.ok;
 }
 
@@ -295,7 +300,7 @@ bool Preview::project(const std::array<float, 3>& p, float* x, float* y) const {
 }
 
 void Preview::triangle(const PreviewVertex& a, const PreviewVertex& b, const PreviewVertex& c,
-                       const PreviewImage& image, bool cull, std::array<float, 3> tint, bool translucent) {
+                       const PreviewImage& image, bool cull, std::array<float, 3> tint, PreviewAlpha alpha) {
     if (!ready())
         return;
     Batch key;
@@ -313,9 +318,18 @@ void Preview::triangle(const PreviewVertex& a, const PreviewVertex& b, const Pre
     key.image = img != nullptr ? image.rgba : nullptr;
     key.sampler = img != nullptr ? sampler_of(image) : 0;
     key.cull = cull;
-    key.translucent = translucent;
-    key.blend = translucent || (img != nullptr && img->partial_alpha) || a.colour[3] < 0.999f || b.colour[3] < 0.999f ||
-                c.colour[3] < 0.999f;
+    switch (alpha.mode) {
+    case PreviewAlpha::Mode::picture:
+        key.blend = (img != nullptr && img->partial_alpha) || a.colour[3] < 0.999f || b.colour[3] < 0.999f ||
+                    c.colour[3] < 0.999f;
+        break;
+    case PreviewAlpha::Mode::opaque: key.cut = 0.0f; break;
+    case PreviewAlpha::Mode::mask: key.cut = alpha.cutoff; break;
+    case PreviewAlpha::Mode::blend:
+        key.blend = true;
+        key.solid_first = false;
+        break;
+    }
     auto& out = batches_[key];
     for (const PreviewVertex* v : {&a, &b, &c}) {
         out.insert(out.end(), v->position.begin(), v->position.end());
@@ -468,9 +482,9 @@ SDL_GPUTexture* Preview::finish() {
     SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
     // opaque first; then the blended ones twice: their solid texels (alpha 248 and above) as opaque,
     // writing depth -- a body hides what is behind it, its own far side included -- then their soft
-    // texels blended over (std::map orders by `blend` first); a translucent one's all blended
+    // texels blended over (std::map orders by `blend` first); one blended as its material says, all of it
     const auto draw = [&](const Batch& key, std::uint32_t first, std::uint32_t count, bool blend, float cut_below) {
-        SDL_BindGPUGraphicsPipeline(pass, g.pipeline[key.cull ? 1 : 0][blend ? 1 : 0]);
+        SDL_BindGPUGraphicsPipeline(pass, g.pipeline[key.cull ? 1 : 0][!blend ? 0 : key.solid_first ? 1 : 2]);
         SDL_GPUTextureSamplerBinding ts{};
         ts.texture = key.image != nullptr ? images_[key.image].texture : g.white;
         ts.sampler = g.sampler[key.sampler];
@@ -484,8 +498,8 @@ SDL_GPUTexture* Preview::finish() {
         for (const auto& [key, v] : batches_) {
             const std::uint32_t count = static_cast<std::uint32_t>(v.size() / kFloats);
             if (step == 0 && !key.blend)
-                draw(key, first, count, false, 0.5f);
-            if (step == 1 && key.blend && !key.translucent)
+                draw(key, first, count, false, key.cut);
+            if (step == 1 && key.blend && key.solid_first)
                 draw(key, first, count, false, 248.0f / 255.0f);
             if (step == 2 && key.blend)
                 draw(key, first, count, true, 8.0f / 255.0f);

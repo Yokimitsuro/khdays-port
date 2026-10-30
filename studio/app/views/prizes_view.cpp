@@ -116,6 +116,13 @@ void add_shape(Preview& p, const Shape& s, float at_x, float yaw, float k) {
             tw = static_cast<float>(tex.width);
             th = static_cast<float>(tex.height);
         }
+        // as the port draws a mod's model: by its material's alpha mode
+        using Mode = assets::NeutralMesh::AlphaMode;
+        const PreviewAlpha alpha{mesh.alpha_mode == Mode::opaque  ? PreviewAlpha::Mode::opaque
+                                 : mesh.alpha_mode == Mode::mask  ? PreviewAlpha::Mode::mask
+                                 : mesh.alpha_mode == Mode::blend ? PreviewAlpha::Mode::blend
+                                                                  : PreviewAlpha::Mode::picture,
+                                 mesh.alpha_cutoff};
         auto vertex = [&](const assets::NeutralVertex& vx) {
             std::array<float, 3> pos{0, 0, 0}, nrm{0, 0, 0};
             float total = 0.0f;
@@ -144,8 +151,7 @@ void add_shape(Preview& p, const Shape& s, float at_x, float yaw, float k) {
         };
         for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
             p.triangle(vertex(mesh.vertices[mesh.indices[i]]), vertex(mesh.vertices[mesh.indices[i + 1]]),
-                       vertex(mesh.vertices[mesh.indices[i + 2]]), image, !mesh.double_sided, {1, 1, 1},
-                       mesh.alpha_mode == assets::NeutralMesh::AlphaMode::blend);
+                       vertex(mesh.vertices[mesh.indices[i + 2]]), image, !mesh.double_sided, {1, 1, 1}, alpha);
         }
     }
 }
