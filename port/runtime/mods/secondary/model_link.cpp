@@ -111,6 +111,9 @@ bool actor_world(const void *render_object, Mat4 &out)
     return std::isfinite(out[12]) && std::isfinite(out[13]) && std::isfinite(out[14]);
 }
 DaysEnvironment room_;
+// a camera cut: the camera jumping further than this in one draw (m, model units; degrees)
+constexpr float kCutDistance = 0.75F;
+constexpr float kCutDegrees = 25.0F;
 u32 room_vblank_ = 0;
 bool room_read_ = false;
 
@@ -131,14 +134,45 @@ struct ModelSecondary {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
         float units = 0.0F;
+        std::vector<Vec3> game_targets; // `game_shape` this draw (the solver's space)
+        std::vector<float> game_weight;
         std::vector<Frame> last_pose; // KHDAYS_SECONDARY_TRACE: the last draw's, for its steps
         std::vector<Vec3> last_cloth;
         // the root node in its placement's space as held (hold_root), and the last draw's difference from it
         Mat4 root_held = kIdentity4;
         bool has_root = false;
         float root_off = 0.0F, root_turn = 0.0F; // m, degrees
+        // the camera at the last draw (its place in the world) and how far it jumped to this one (m, degrees)
+        Mat4 camera_world = kIdentity4;
+        bool has_camera = false;
+        float camera_step = 0.0F, camera_turn = 0.0F;
     };
     std::map<const void *, ActorState> actors; // by render object; dropped when unseen (sweep)
+    // set_game_mesh: the coat locked on the game model's (`game_shape`): its locked strips each laid down paths of
+    // the game coat's edges, the strips behind its sides on outward arcs between two of them; the game model
+    // kept for a reload
+    struct GameChain {
+        std::vector<int> particles;          // top to bottom
+        int anchor = -1;                     // the fixed particle above the first (-1: none)
+        std::vector<float> lengths;          // at rest: from the anchor to the first, then each from the one before
+        std::vector<std::vector<int>> paths; // two sections, each game vertices top to bottom
+        std::vector<std::size_t> ends;       // each section's last particle (in `particles`)
+        // the front's middle: its points from the second to its first section's last (the fork) halfway between
+        // these two chains' (the strips at either side of it), not on its path (-1: none)
+        int between_a = -1, between_b = -1;
+        // a slit's panel: the strip beside it, whose bow (over the knee) its points between the fork and the corner
+        // take onto the straight slit edge (-1: none)
+        int sibling = -1;
+    };
+    struct GameArc {
+        std::vector<int> particles;
+        int a = -1, b = -1;        // its sides' chains (game_chains)
+        std::vector<float> t, bow; // per row: its share of the way from a to b, its outward bow per gap
+    };
+    std::vector<GameChain> game_chains;
+    std::vector<GameArc> game_arcs;
+    GameMesh game;
+    bool has_game = false;
     std::vector<Frame> pose, out;
     std::vector<std::uint8_t> written;
 };
@@ -200,6 +234,8 @@ void reload(ModelSecondary &m)
     if (rig) {
         m.rig = std::move(rig);
         m.actors.clear();
+        if (m.has_game)
+            set_game_mesh(m, m.game);
     }
 }
 
@@ -329,6 +365,521 @@ void report(ModelSecondary &m, u32 now)
 
 } // namespace
 
+namespace {
+
+// A place on a path (a polyline): its segment and how far along it
+struct PathAt {
+    std::size_t seg = 0;
+    float f = 0.0F;
+};
+
+Vec3 path_point(const std::vector<Vec3> &path, PathAt at)
+{
+    return path[at.seg] + (path[at.seg + 1] - path[at.seg]) * at.f;
+}
+
+// The first place at or past `at` whose distance from `from` reaches `r` (false: the path ends first)
+bool step_along(const std::vector<Vec3> &path, Vec3 from, float r, PathAt &at)
+{
+    for (std::size_t i = at.seg; i + 1 < path.size(); ++i) {
+        const float f0 = i == at.seg ? at.f : 0.0F;
+        const Vec3 a = path[i], ab = path[i + 1] - a, ac = a - from;
+        const float qa = dot(ab, ab);
+        if (qa < 1e-12F || length(path[i + 1] - from) < r)
+            continue;
+        const float qb = 2.0F * dot(ab, ac), qc = dot(ac, ac) - r * r;
+        const float x = (-qb + std::sqrt(maxf(qb * qb - 4.0F * qa * qc, 0.0F))) / (2.0F * qa);
+        at = {i, clampf(maxf(x, f0), 0.0F, 1.0F)};
+        return true;
+    }
+    at = {path.size() - 2, 1.0F};
+    return false;
+}
+
+// Bones of these lengths laid down the path from `from`, each from the last one's end to the first place on
+// the path its length away, all lengthened or shortened by one share so the last ends on the path's end
+std::vector<Vec3> lay_along(const std::vector<Vec3> &path, Vec3 from, const std::vector<float> &lengths)
+{
+    std::vector<Vec3> out(lengths.size(), path.empty() ? from : path.back());
+    if (path.size() < 2 || lengths.empty())
+        return out;
+    const auto run = [&](float share, bool keep) { // true: the last ends short of the path's end
+        Vec3 c = from;
+        PathAt at{};
+        for (std::size_t q = 0; q < lengths.size(); ++q) {
+            if (!step_along(path, c, lengths[q] * share, at))
+                return false;
+            c = path_point(path, at);
+            if (keep)
+                out[q] = c;
+        }
+        return !(at.seg + 2 == path.size() && at.f >= 1.0F - 1e-6F);
+    };
+    float lo = 0.05F, hi = 8.0F;
+    for (int i = 0; i < 40; ++i) {
+        const float mid = 0.5F * (lo + hi);
+        (run(mid, false) ? lo : hi) = mid;
+    }
+    run(hi, true);
+    out.back() = path.back();
+    return out;
+}
+
+} // namespace
+
+void set_game_mesh(ModelSecondary &m, const GameMesh &game)
+{
+    constexpr float kSeam = 0.02F; // m: game coat vertices this close are one place (its pieces' seams)
+    constexpr float kBand = 0.05F; // m: a top or knee vertex within this of the coat's top or the game's knee
+    constexpr float kHem = 0.06F;  // m: a bottom vertex within this of the coat's bottom
+    if (&game != &m.game)
+        m.game = game;
+    m.has_game = true;
+    m.game_chains.clear();
+    m.game_arcs.clear();
+    if (!m.rig)
+        return;
+    const Rig &rig = *m.rig;
+    const std::size_t nodes = game.node_parent.size(), bones = rig.skeleton.parent.size();
+    const float sc = game.scale;
+    const auto node_of = [&](int bone) {
+        return bone >= 0 && static_cast<std::size_t>(bone) < game.node_of_bone.size()
+                   ? game.node_of_bone[static_cast<std::size_t>(bone)]
+                   : -1;
+    };
+    const auto up = [&](int node) {
+        const int p = game.node_parent[static_cast<std::size_t>(node)];
+        return p == node ? -1 : p;
+    };
+    const auto head = [&](int bone) { return frame_of(rig.skeleton.rest[static_cast<std::size_t>(bone)]).t * sc; };
+    const auto dominant = [&](std::uint32_t v) { return v < game.weights.size() ? game.weights[v][0].first : -1; };
+    // each bone's vertices' middle: the side of the body a strip is on (two panels can start on one line)
+    std::vector<Vec3> middle(bones);
+    std::vector<int> counted(bones, 0);
+    for (const auto &v : m.mesh.vertices)
+        for (std::size_t k = 0; k < 4; ++k)
+            if (v.bones[k] >= 0 && static_cast<std::size_t>(v.bones[k]) < bones && v.weights[k] > 0.5F) {
+                middle[static_cast<std::size_t>(v.bones[k])] += v.position * sc;
+                ++counted[static_cast<std::size_t>(v.bones[k])];
+            }
+    const auto rest_of = [&](int i) {
+        const Particle &p = rig.particles[static_cast<std::size_t>(i)];
+        return apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(p.bone)]), p.offset) * sc;
+    };
+    const auto side_of = [&](int i) { // its strip's place across the body (its bone's vertices' middle)
+        const auto b = static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(i)].bone);
+        return counted[b] >= 3 ? middle[b] * (1.0F / static_cast<float>(counted[b])) : rest_of(i);
+    };
+    std::vector<std::uint8_t> has_next(rig.particles.size(), 0);
+    for (const Particle &p : rig.particles)
+        if (p.dynamic && p.anchor >= 0 && rig.particles[static_cast<std::size_t>(p.anchor)].dynamic)
+            has_next[static_cast<std::size_t>(p.anchor)] = 1;
+    for (std::size_t g = 0; g < rig.groups.size(); ++g) {
+        // the legs carrying it (its follow bones) and its reference bone's node (the hips)
+        std::vector<int> follow;
+        for (const Particle &p : rig.particles)
+            if (static_cast<std::size_t>(p.group) == g && p.blend >= 0) {
+                const ReferenceBlend &b = rig.blends[static_cast<std::size_t>(p.blend)];
+                for (int k = 1; k < b.count; ++k)
+                    if (std::find(follow.begin(), follow.end(), b.bone[static_cast<std::size_t>(k)]) == follow.end())
+                        follow.push_back(b.bone[static_cast<std::size_t>(k)]);
+            }
+        const int ref = node_of(rig.groups[g].reference_bone);
+        if (follow.empty() || ref < 0)
+            continue;
+        // the game coat's nodes: the hips' and those above them and below them (the waist, the thighs), the follow
+        // bones' and their children (the calves); and the knees' heights, the mod's and the game's
+        std::vector<std::uint8_t> allowed(nodes, 0), hips(nodes, 0);
+        for (int a = ref; a >= 0; a = up(a))
+            allowed[static_cast<std::size_t>(a)] = hips[static_cast<std::size_t>(a)] = 1;
+        for (std::size_t c = 0; c < nodes; ++c)
+            if (up(static_cast<int>(c)) == ref)
+                allowed[c] = 1;
+        float knee_own = 0.0F, knee_game = 0.0F;
+        int knees = 0;
+        for (const int f : follow) {
+            const int fn = node_of(f);
+            if (fn < 0)
+                continue;
+            allowed[static_cast<std::size_t>(fn)] = 1;
+            int own = -1, its = -1;
+            float own_d = 0.0F, its_d = 0.0F;
+            for (std::size_t c = 0; c < bones; ++c)
+                if (rig.skeleton.parent[c] == f && length(head(static_cast<int>(c)) - head(f)) > own_d) {
+                    own = static_cast<int>(c);
+                    own_d = length(head(own) - head(f));
+                }
+            for (std::size_t c = 0; c < nodes; ++c)
+                if (up(static_cast<int>(c)) == fn) {
+                    allowed[c] = 1;
+                    const float dist = length(game.node_place[c] - game.node_place[static_cast<std::size_t>(fn)]);
+                    if (dist > its_d) {
+                        its = static_cast<int>(c);
+                        its_d = dist;
+                    }
+                }
+            if (own >= 0 && its >= 0) {
+                knee_own += head(own).y;
+                knee_game += game.node_place[static_cast<std::size_t>(its)].y;
+                ++knees;
+            }
+        }
+        if (knees == 0)
+            continue;
+        knee_own /= static_cast<float>(knees);
+        knee_game /= static_cast<float>(knees);
+        // its surface: the triangles all on those nodes, in pieces (corners welded by place); the coat the pieces
+        // with a corner on the hips or above (not the game's own legs)
+        std::vector<std::array<std::uint32_t, 3>> surface;
+        for (std::size_t t = 0; t + 2 < game.triangles.size(); t += 3) {
+            const std::array<std::uint32_t, 3> v{game.triangles[t], game.triangles[t + 1], game.triangles[t + 2]};
+            bool in = true;
+            for (const std::uint32_t c : v) {
+                const int node = dominant(c);
+                in = in && node >= 0 && static_cast<std::size_t>(node) < nodes &&
+                     allowed[static_cast<std::size_t>(node)];
+            }
+            if (in)
+                surface.push_back(v);
+        }
+        std::map<std::array<long, 3>, int> weld;
+        std::vector<int> piece;
+        const auto welded = [&](std::uint32_t v) {
+            const Vec3 &p = game.positions[v];
+            const std::array<long, 3> key{std::lround(p.x * 1e4F), std::lround(p.y * 1e4F), std::lround(p.z * 1e4F)};
+            const auto [it, added] = weld.emplace(key, static_cast<int>(piece.size()));
+            if (added)
+                piece.push_back(it->second);
+            return it->second;
+        };
+        const auto find = [&](int a) {
+            while (piece[static_cast<std::size_t>(a)] != a)
+                a = piece[static_cast<std::size_t>(a)] =
+                    piece[static_cast<std::size_t>(piece[static_cast<std::size_t>(a)])];
+            return a;
+        };
+        for (const auto &v : surface) {
+            const int a = welded(v[0]), b = welded(v[1]), c = welded(v[2]);
+            piece[static_cast<std::size_t>(find(b))] = find(a);
+            piece[static_cast<std::size_t>(find(c))] = find(a);
+        }
+        std::vector<std::uint8_t> on_hips(piece.size(), 0);
+        for (const auto &v : surface)
+            for (const std::uint32_t c : v)
+                if (hips[static_cast<std::size_t>(dominant(c))])
+                    on_hips[static_cast<std::size_t>(find(welded(c)))] = 1;
+        // the coat's places (its vertices, one per kSeam) and the edges between them, with how many triangles
+        // each edge is on (one: an open edge, the coat's top, bottom and slit)
+        std::vector<std::uint32_t> place_vertex; // a game vertex at each place
+        std::vector<int> place_of_vertex(game.positions.size(), -1);
+        std::map<std::pair<int, int>, int> edges;
+        float top = -1e30F, bottom = 1e30F;
+        for (const auto &v : surface) {
+            if (!on_hips[static_cast<std::size_t>(find(welded(v[0])))])
+                continue;
+            std::array<int, 3> at{};
+            for (std::size_t e = 0; e < 3; ++e) {
+                const std::uint32_t c = v[e];
+                if (place_of_vertex[c] < 0) {
+                    for (std::size_t q = 0; q < place_vertex.size() && place_of_vertex[c] < 0; ++q)
+                        if (length(game.positions[place_vertex[q]] - game.positions[c]) < kSeam)
+                            place_of_vertex[c] = static_cast<int>(q);
+                    if (place_of_vertex[c] < 0) {
+                        place_of_vertex[c] = static_cast<int>(place_vertex.size());
+                        place_vertex.push_back(c);
+                    }
+                }
+                at[e] = place_of_vertex[c];
+                top = std::fmax(top, game.positions[c].y);
+                bottom = std::fmin(bottom, game.positions[c].y);
+            }
+            for (std::size_t e = 0; e < 3; ++e)
+                if (at[e] != at[(e + 1) % 3])
+                    ++edges[{std::min(at[e], at[(e + 1) % 3]), std::max(at[e], at[(e + 1) % 3])}];
+        }
+        const std::size_t places = place_vertex.size();
+        if (places == 0)
+            continue;
+        const auto place_at = [&](int q) { return game.positions[place_vertex[static_cast<std::size_t>(q)]]; };
+        std::vector<std::vector<std::pair<int, float>>> next(places);
+        std::vector<std::vector<int>> open(places);
+        for (const auto &[e, count] : edges) {
+            const float l = length(place_at(e.first) - place_at(e.second));
+            next[static_cast<std::size_t>(e.first)].push_back({e.second, l});
+            next[static_cast<std::size_t>(e.second)].push_back({e.first, l});
+            if (count == 1) {
+                open[static_cast<std::size_t>(e.first)].push_back(e.second);
+                open[static_cast<std::size_t>(e.second)].push_back(e.first);
+            }
+        }
+        const auto shortest = [&](int from, int to) { // the coat's edges from one place to another (Dijkstra)
+            std::vector<float> dist(places, 1e30F);
+            std::vector<int> prev(places, -1);
+            std::vector<std::uint8_t> done(places, 0);
+            dist[static_cast<std::size_t>(from)] = 0.0F;
+            for (;;) {
+                int u = -1;
+                for (std::size_t q = 0; q < places; ++q)
+                    if (!done[q] && dist[q] < 1e29F && (u < 0 || dist[q] < dist[static_cast<std::size_t>(u)]))
+                        u = static_cast<int>(q);
+                if (u < 0 || u == to)
+                    break;
+                done[static_cast<std::size_t>(u)] = 1;
+                for (const auto &[w, l] : next[static_cast<std::size_t>(u)])
+                    if (dist[static_cast<std::size_t>(u)] + l < dist[static_cast<std::size_t>(w)]) {
+                        dist[static_cast<std::size_t>(w)] = dist[static_cast<std::size_t>(u)] + l;
+                        prev[static_cast<std::size_t>(w)] = u;
+                    }
+            }
+            std::vector<int> path;
+            for (int q = to; q >= 0; q = q == from ? -1 : prev[static_cast<std::size_t>(q)])
+                path.insert(path.begin(), static_cast<int>(place_vertex[static_cast<std::size_t>(q)]));
+            return path.size() >= 2 && path.front() == static_cast<int>(place_vertex[static_cast<std::size_t>(from)])
+                       ? path
+                       : std::vector<int>{};
+        };
+        // around the body: from the hips' node, front the way the coat's shared (forked) points face, left across
+        const Vec3 centre = game.node_place[static_cast<std::size_t>(ref)];
+        const auto across = [&](Vec3 v) {
+            const float x = v.x - centre.x, z = v.z - centre.z, l = std::sqrt(x * x + z * z);
+            return l > 1e-6F ? std::array<float, 2>{x / l, z / l} : std::array<float, 2>{0.0F, 0.0F};
+        };
+        std::vector<std::vector<int>> strips;
+        std::map<int, int> shared;
+        for (std::size_t last = 0; last < rig.particles.size(); ++last) {
+            const Particle &lp = rig.particles[last];
+            if (static_cast<std::size_t>(lp.group) != g || !lp.dynamic || has_next[last])
+                continue;
+            std::vector<int> strip;
+            for (int c = static_cast<int>(last); c >= 0 && rig.particles[static_cast<std::size_t>(c)].dynamic;
+                 c = rig.particles[static_cast<std::size_t>(c)].anchor)
+                strip.insert(strip.begin(), c);
+            for (const int i : strip)
+                ++shared[i];
+            if (strip.size() >= 3)
+                strips.push_back(std::move(strip));
+        }
+        std::vector<std::size_t> forked, plain;
+        for (std::size_t s = 0; s < strips.size(); ++s)
+            (shared[strips[s][1]] > 1 || shared[strips[s][0]] > 1 ? forked : plain).push_back(s);
+        const std::string group = m.name + ": group " + rig.groups[g].name + ": game_shape: ";
+        if (forked.size() != 2 || plain.size() < 3) {
+            say(group + "its strips are not a coat with one forked front strip and others around it; not locked");
+            continue;
+        }
+        const auto knee_row = [&](const std::vector<int> &s) {
+            std::size_t kr = 1;
+            for (std::size_t q = 2; q + 1 < s.size(); ++q)
+                if (std::fabs(rest_of(s[q]).y - knee_own) < std::fabs(rest_of(s[kr]).y - knee_own))
+                    kr = q;
+            return kr;
+        };
+        const auto way_of = [&](const std::vector<int> &s) { return across(side_of(s[knee_row(s)])); };
+        const std::array<float, 2> front = across(side_of(strips[forked[0]][0]));
+        const std::array<float, 2> left{front[1], -front[0]};
+        const auto on = [](std::array<float, 2> a, std::array<float, 2> b) { return a[0] * b[0] + a[1] * b[1]; };
+        std::size_t back = plain[0];
+        for (const std::size_t s : plain)
+            if (on(way_of(strips[s]), front) < on(way_of(strips[back]), front))
+                back = s;
+        // each side's strips back to front: the middle one the side, those before it in front locked too, those
+        // behind on arcs between it and the back
+        std::array<std::size_t, 2> lateral{};
+        std::vector<std::size_t> front_sides, behind;
+        bool sides = true;
+        for (int sgn = 1; sgn >= -1; sgn -= 2) {
+            std::vector<std::size_t> row;
+            for (const std::size_t s : plain)
+                if (s != back && static_cast<float>(sgn) * on(way_of(strips[s]), left) > 0.0F)
+                    row.push_back(s);
+            std::sort(row.begin(), row.end(), [&](std::size_t a, std::size_t b) {
+                return on(way_of(strips[a]), front) < on(way_of(strips[b]), front);
+            });
+            if (row.empty()) {
+                sides = false;
+                break;
+            }
+            const std::size_t mid = row.size() / 2;
+            lateral[sgn > 0 ? 0 : 1] = row[mid];
+            for (std::size_t q = 0; q < row.size(); ++q)
+                if (q != mid)
+                    (q < mid ? behind : front_sides).push_back(row[q]);
+        }
+        if (!sides) {
+            say(group + "no strips at one of its sides; not locked");
+            continue;
+        }
+        const std::size_t chains_before = m.game_chains.size(), arcs_before = m.game_arcs.size();
+        // the key places, each the nearest by its way around and taken once: the slit's top (the highest open
+        // place in front, under the top) and its corners (down its open edges while they fall steeper than they
+        // run), the front's top; then each locked strip's top, knee and bottom
+        std::vector<std::uint8_t> taken(places, 0);
+        const auto nearest = [&](std::array<float, 2> way, float lo, float hi) {
+            int best = -1;
+            float best_on = -2.0F;
+            for (std::size_t q = 0; q < places; ++q) {
+                const Vec3 p = place_at(static_cast<int>(q));
+                const float o = on(across(p), way);
+                if (!taken[q] && p.y >= lo && p.y <= hi && o > best_on) {
+                    best = static_cast<int>(q);
+                    best_on = o;
+                }
+            }
+            if (best >= 0)
+                taken[static_cast<std::size_t>(best)] = 1;
+            return best;
+        };
+        int slit = -1;
+        for (std::size_t q = 0; q < places; ++q) {
+            const Vec3 p = place_at(static_cast<int>(q));
+            if (!open[q].empty() && p.y < top - 0.1F && on(across(p), front) > 0.7F &&
+                (slit < 0 || p.y > place_at(slit).y))
+                slit = static_cast<int>(q);
+        }
+        if (slit < 0) {
+            say(group + "the game coat has no slit in front (an open edge under its top); not locked");
+            continue;
+        }
+        taken[static_cast<std::size_t>(slit)] = 1;
+        std::array<std::vector<int>, 2> corner; // left, right: game vertices from the slit's top down its edge
+        for (const int first : open[static_cast<std::size_t>(slit)]) {
+            std::vector<int> walk{slit, first};
+            for (;;) {
+                int nx = -1;
+                for (const int w : open[static_cast<std::size_t>(walk.back())])
+                    if (w != walk[walk.size() - 2])
+                        nx = w;
+                if (nx < 0 || std::find(walk.begin(), walk.end(), nx) != walk.end())
+                    break;
+                const Vec3 a = place_at(walk.back()), b = place_at(nx);
+                if (a.y - b.y < std::sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)))
+                    break;
+                walk.push_back(nx);
+            }
+            std::vector<int> path;
+            for (const int q : walk) {
+                taken[static_cast<std::size_t>(q)] = 1;
+                path.push_back(static_cast<int>(place_vertex[static_cast<std::size_t>(q)]));
+            }
+            corner[on(across(place_at(first)), left) > 0.0F ? 0 : 1] = std::move(path);
+        }
+        const int front_top = nearest(front, top - kBand, 1e30F);
+        if (corner[0].empty() || corner[1].empty() || front_top < 0) {
+            say(group + "the game coat's slit has no two edges down from its top; not locked");
+            continue;
+        }
+        const std::vector<int> trunk = shortest(front_top, slit);
+        const auto lengths_of = [&](const std::vector<int> &s) {
+            std::vector<float> l;
+            const int anchor = rig.particles[static_cast<std::size_t>(s[0])].anchor;
+            Vec3 at = anchor >= 0 ? rest_of(anchor) : rest_of(s[0]);
+            for (const int i : s) {
+                l.push_back(length(rest_of(i) - at));
+                at = rest_of(i);
+            }
+            return l;
+        };
+        const auto chain_of = [&](const std::vector<int> &s) {
+            ModelSecondary::GameChain c;
+            c.particles = s;
+            c.anchor = rig.particles[static_cast<std::size_t>(s[0])].anchor;
+            c.lengths = lengths_of(s);
+            return c;
+        };
+        std::array<int, 7> chain_at{}; // back, left side, right side, left front side.., the front's left, right
+        const auto locked = [&](std::size_t s) {
+            const std::array<float, 2> way = way_of(strips[s]);
+            const int t = nearest(way, top - kBand, 1e30F), k = nearest(way, knee_game - kBand, knee_game + kBand),
+                      b = nearest(way, -1e30F, bottom + kHem);
+            ModelSecondary::GameChain c = chain_of(strips[s]);
+            if (t >= 0 && k >= 0 && b >= 0) {
+                c.paths = {shortest(t, k), shortest(k, b)};
+                c.ends = {knee_row(strips[s]), strips[s].size() - 1};
+            }
+            m.game_chains.push_back(std::move(c));
+            return static_cast<int>(m.game_chains.size()) - 1;
+        };
+        chain_at[0] = locked(back);
+        chain_at[1] = locked(lateral[0]);
+        chain_at[2] = locked(lateral[1]);
+        std::array<int, 2> beside{-1, -1}; // each side's front strip nearest the front: the front's middle between them
+        std::array<float, 2> nearest_front{-2.0F, -2.0F};
+        for (const std::size_t s : front_sides) {
+            const int c = locked(s);
+            const std::size_t at = on(way_of(strips[s]), left) > 0.0F ? 0 : 1;
+            if (on(way_of(strips[s]), front) > nearest_front[at]) {
+                nearest_front[at] = on(way_of(strips[s]), front);
+                beside[at] = c;
+            }
+        }
+        for (const std::size_t f : forked) {
+            const std::vector<int> &s = strips[f];
+            ModelSecondary::GameChain c = chain_of(s);
+            std::size_t fork = 0;
+            for (std::size_t q = 0; q < s.size(); ++q)
+                if (shared[s[q]] > 1)
+                    fork = q;
+            c.paths = {trunk, corner[on(across(side_of(s.back())), left) > 0.0F ? 0 : 1]};
+            c.ends = {fork, s.size() - 1};
+            if (beside[0] >= 0 && beside[1] >= 0) {
+                c.between_a = beside[0];
+                c.between_b = beside[1];
+            }
+            c.sibling = beside[on(across(side_of(s.back())), left) > 0.0F ? 0 : 1];
+            m.game_chains.push_back(std::move(c));
+        }
+        // the strips behind the sides: on an arc between their side and the back, by their way around at rest
+        for (const std::size_t s : behind) {
+            const std::array<float, 2> way = way_of(strips[s]);
+            const std::size_t lat = on(way, left) > 0.0F ? 1 : 2;
+            ModelSecondary::GameArc arc;
+            arc.particles = strips[s];
+            arc.a = chain_at[lat];
+            arc.b = chain_at[0];
+            const auto &pa = m.game_chains[static_cast<std::size_t>(arc.a)].particles;
+            const auto &pb = m.game_chains[static_cast<std::size_t>(arc.b)].particles;
+            for (std::size_t r = 0; r < arc.particles.size() && r < pa.size() && r < pb.size(); ++r) {
+                const auto aw = across(side_of(pa[r])), bw = across(side_of(pb[r])),
+                           mw = across(side_of(arc.particles[r]));
+                const float span = std::atan2(aw[0] * bw[1] - aw[1] * bw[0], on(aw, bw)),
+                            part = std::atan2(aw[0] * mw[1] - aw[1] * mw[0], on(aw, mw));
+                arc.t.push_back(std::fabs(span) > 1e-6F ? clampf(part / span, 0.0F, 1.0F) : 0.5F);
+                arc.bow.push_back(0.5F * std::tan(0.25F * std::fabs(span)));
+            }
+            m.game_arcs.push_back(std::move(arc));
+        }
+        // a key place or path missing: the group is not locked
+        bool whole = true;
+        for (std::size_t c = chains_before; c < m.game_chains.size(); ++c) {
+            whole = whole && m.game_chains[c].paths.size() == 2;
+            for (const auto &path : m.game_chains[c].paths)
+                whole = whole && path.size() >= 2;
+        }
+        std::string said = group + "locked:";
+        for (std::size_t c = chains_before; c < m.game_chains.size(); ++c) {
+            const auto &ch = m.game_chains[c];
+            if (ch.paths.size() != 2 || ch.paths[0].empty() || ch.paths[1].empty())
+                continue;
+            const Vec3 k = game.positions[static_cast<std::size_t>(ch.paths[0].back())] * 100.0F,
+                       b = game.positions[static_cast<std::size_t>(ch.paths[1].back())] * 100.0F;
+            char line[192];
+            std::snprintf(
+                line, sizeof line, " %s (row %zu on %.0f %.0f %.0f, last on %.0f %.0f %.0f)",
+                rig.skeleton
+                    .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(ch.particles[0])].bone)]
+                    .c_str(),
+                ch.ends[0], k.x, k.y, k.z, b.x, b.y, b.z);
+            said += line;
+        }
+        say(said + "; " + std::to_string(m.game_arcs.size() - arcs_before) + " on arcs (cm, the game's rest)");
+        if (!whole) {
+            say(group + "a strip's top, knee or bottom place or the coat's path to it is missing; not locked");
+            m.game_chains.resize(chains_before);
+            m.game_arcs.resize(arcs_before);
+        }
+    }
+}
+
 ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std::string &name,
                                        const assets::ImportedModel &model, const std::vector<int> &joint_of_bone,
                                        const std::vector<Mat4> &inverse_bind)
@@ -409,11 +960,12 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
         return b >= 0 ? rig.skeleton.names[static_cast<std::size_t>(b)] : std::string("-");
     };
     khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.2f cm, body %.1f cm (%s), cloth %.1f cm (%s); "
-               "root %.2f mm %.3f deg off held",
+               "root %.2f mm %.3f deg off held; camera %.2f m %.1f deg%s",
                m.name.c_str(), now, a.seconds, static_cast<unsigned long long>(a.epoch), anims.c_str(),
                static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
                static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str(),
-               static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn));
+               static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn),
+               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn), a.cut ? " (a cut)" : "");
     state.last_pose = m.pose;
     state.last_cloth = x;
 }
@@ -544,13 +1096,169 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     a.camera_distance = length(Vec3{in.root[12], in.root[13], in.root[14]}) / units;
     a.player = false;
     a.environment = rig.config.environment ? &room_ : nullptr;
+    // a camera cut: the camera jumped further in one draw than a camera moves (a new shot; cutscenes re-stage
+    // their actors across one, and the cloth would take that as a fling)
+    if (in.has_camera) {
+        const Mat4 camera_world = inverse_affine(in.camera);
+        if (state.has_camera) {
+            const Frame was = frame_of(state.camera_world), is = frame_of(camera_world);
+            state.camera_step = length(is.t - was.t) / units;
+            state.camera_turn = 2.0F *
+                                std::acos(std::fmin(1.0F, std::fabs(was.q.x * is.q.x + was.q.y * is.q.y +
+                                                                    was.q.z * is.q.z + was.q.w * is.q.w))) *
+                                57.29578F;
+            a.cut = state.camera_step > kCutDistance || state.camera_turn > kCutDegrees;
+        }
+        state.camera_world = camera_world;
+        state.has_camera = true;
+    }
     for (const auto &d : in.animations)
         a.animations.push_back({d.name, d.slot, d.section, d.frame / 30.0F, d.frames / 30.0F, d.weight});
+    // `game_shape`: the coat locked on the game model's coat now: each locked strip from its fixed point down its
+    // two paths (the game's vertices as its nodes carry them), each section's bones scaled alike to end on the
+    // section's end; the strips behind the sides on arcs between their side and the back, bowed outward by the gap
+    const bool coat_locked = in.game_nodes != nullptr && !m.game_chains.empty();
+    if (coat_locked) {
+        const std::size_t n = rig.particles.size();
+        state.game_targets.assign(n, {});
+        state.game_weight.assign(n, 0.0F);
+        const Mat4 view_to_sim = mul(to_sim, world_of_view);
+        const auto game_vertex = [&](int v) {
+            Vec3 at{};
+            const Vec3 r = m.game.positions[static_cast<std::size_t>(v)];
+            for (const auto &[node, w] : m.game.weights[static_cast<std::size_t>(v)]) {
+                if (node < 0 || w <= 0.0F || static_cast<std::size_t>(node) >= in.game_nodes->size())
+                    continue;
+                const Mat4 &dn = (*in.game_nodes)[static_cast<std::size_t>(node)];
+                at += Vec3{dn[0] * r.x + dn[4] * r.y + dn[8] * r.z + dn[12],
+                           dn[1] * r.x + dn[5] * r.y + dn[9] * r.z + dn[13],
+                           dn[2] * r.x + dn[6] * r.y + dn[10] * r.z + dn[14]} *
+                      w;
+            }
+            return Vec3{view_to_sim[0] * at.x + view_to_sim[4] * at.y + view_to_sim[8] * at.z + view_to_sim[12],
+                        view_to_sim[1] * at.x + view_to_sim[5] * at.y + view_to_sim[9] * at.z + view_to_sim[13],
+                        view_to_sim[2] * at.x + view_to_sim[6] * at.y + view_to_sim[10] * at.z + view_to_sim[14]};
+        };
+        const auto fixed_at = [&](int i) { // a fixed particle where its bone is now
+            const Particle &p = rig.particles[static_cast<std::size_t>(i)];
+            const int j = m.joint_of_bone[static_cast<std::size_t>(p.bone)];
+            if (j < 0 || static_cast<std::size_t>(j) >= skin.size())
+                return Vec3{};
+            return apply(frame_of(mul(view_to_sim, mul(skin[static_cast<std::size_t>(j)],
+                                                       m.bind_inverse[static_cast<std::size_t>(p.bone)]))),
+                         p.offset);
+        };
+        constexpr float kBetween = 0.5F; // the front's middle: this far from its left neighbour to its right
+        std::vector<Vec3> locked(n);
+        std::vector<std::uint8_t> done(n, 0);
+        std::vector<std::vector<Vec3>> rows(m.game_chains.size());
+        for (std::size_t c = 0; c < m.game_chains.size(); ++c) {
+            const auto &chain = m.game_chains[c];
+            std::size_t first = 0;
+            for (std::size_t sec = 0; sec < 2; ++sec) {
+                std::vector<Vec3> path;
+                for (const int v : chain.paths[sec])
+                    path.push_back(game_vertex(v));
+                const Vec3 from = first == 0 ? (chain.anchor >= 0 ? fixed_at(chain.anchor) : path.front())
+                                             : locked[static_cast<std::size_t>(chain.particles[first - 1])];
+                const std::vector<float> lengths(chain.lengths.begin() + static_cast<std::ptrdiff_t>(first),
+                                                 chain.lengths.begin() +
+                                                     static_cast<std::ptrdiff_t>(chain.ends[sec] + 1));
+                const std::vector<Vec3> pts = lay_along(path, from, lengths);
+                for (std::size_t q = 0; q < pts.size(); ++q) {
+                    const auto i = static_cast<std::size_t>(chain.particles[first + q]);
+                    locked[i] = pts[q];
+                    done[i] = 1;
+                }
+                // the front's middle (not its top, not the slit's panels) halfway between the strips beside it
+                if (sec == 0 && chain.between_a >= 0)
+                    for (std::size_t q = 1; q <= chain.ends[0]; ++q) {
+                        const auto &ra = rows[static_cast<std::size_t>(chain.between_a)],
+                                   &rb = rows[static_cast<std::size_t>(chain.between_b)];
+                        if (q < ra.size() && q < rb.size())
+                            locked[static_cast<std::size_t>(chain.particles[q])] = lerp(ra[q], rb[q], kBetween);
+                    }
+                first = chain.ends[sec] + 1;
+            }
+            // a slit's panel: each point between the fork and the corner on the line from the one above to the one
+            // below (its share of the way at rest), out by as much as the strip beside it stands out of its own
+            // such line there: the panel bows over the knee as its neighbour does
+            if (chain.sibling >= 0) {
+                const auto &sib = m.game_chains[static_cast<std::size_t>(chain.sibling)];
+                const auto &sr = rows[static_cast<std::size_t>(chain.sibling)];
+                const auto share = [](const std::vector<float> &l, std::size_t q) {
+                    const float span = l[q] + l[q + 1];
+                    return span > 1e-6F ? l[q] / span : 0.5F;
+                };
+                for (std::size_t q = chain.ends[0] + 1; q + 1 < chain.particles.size(); ++q) {
+                    if (q + 1 >= sr.size() || q + 1 >= sib.lengths.size())
+                        break;
+                    const Vec3 above = locked[static_cast<std::size_t>(chain.particles[q - 1])],
+                               below = locked[static_cast<std::size_t>(chain.particles[q + 1])];
+                    const Vec3 bow = sr[q] - lerp(sr[q - 1], sr[q + 1], share(sib.lengths, q));
+                    locked[static_cast<std::size_t>(chain.particles[q])] =
+                        lerp(above, below, share(chain.lengths, q)) + bow;
+                }
+            }
+            for (const int i : chain.particles)
+                rows[c].push_back(locked[static_cast<std::size_t>(i)]);
+        }
+        for (const auto &arc : m.game_arcs)
+            for (std::size_t r = 0; r < arc.t.size(); ++r) {
+                const Vec3 pa = rows[static_cast<std::size_t>(arc.a)][r], pb = rows[static_cast<std::size_t>(arc.b)][r];
+                Vec3 centre{};
+                float count = 0.0F;
+                for (const auto &row : rows)
+                    if (r < row.size()) {
+                        centre += row[r];
+                        count += 1.0F;
+                    }
+                centre = centre * (1.0F / count);
+                const Vec3 chord = pb - pa;
+                const float lc = length(chord), t = arc.t[r];
+                Vec3 out = (pa + pb) * 0.5F - centre;
+                if (lc > 1e-6F)
+                    out = out - chord * (dot(out, chord) / (lc * lc));
+                const float lo = length(out);
+                const auto i = static_cast<std::size_t>(arc.particles[r]);
+                locked[i] =
+                    pa + chord * t + (lo > 1e-6F ? out * (arc.bow[r] * lc * 4.0F * t * (1.0F - t) / lo) : Vec3{});
+                done[i] = 1;
+            }
+        for (std::size_t i = 0; i < n; ++i)
+            if (done[i]) {
+                state.game_targets[i] = locked[i];
+                state.game_weight[i] = 1.0F;
+            }
+        a.game_targets = &state.game_targets;
+        a.game_weight = &state.game_weight;
+    }
     state.actor->update(a);
     std::fill(m.written.begin(), m.written.end(), std::uint8_t{0});
     for (const int b : rig.needed)
         m.out[static_cast<std::size_t>(b)] = m.pose[static_cast<std::size_t>(b)];
     state.actor->output(m.pose, m.out, m.written);
+    // the front's middle turned halfway between the bones beside it too (the slit's top between its neighbours),
+    // its tail kept on its point
+    if (coat_locked)
+        for (const auto &chain : m.game_chains) {
+            if (chain.between_a < 0)
+                continue;
+            const auto &ca = m.game_chains[static_cast<std::size_t>(chain.between_a)];
+            const auto &cb = m.game_chains[static_cast<std::size_t>(chain.between_b)];
+            for (std::size_t q = 1; q <= chain.ends[0] && q < ca.particles.size() && q < cb.particles.size(); ++q) {
+                const Particle &p = rig.particles[static_cast<std::size_t>(chain.particles[q])];
+                const auto b = static_cast<std::size_t>(p.bone);
+                const auto ba = static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(ca.particles[q])].bone),
+                           bb = static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(cb.particles[q])].bone);
+                if (!m.written[b] || !m.written[ba] || !m.written[bb])
+                    continue;
+                const Vec3 tail = apply(m.out[b], p.offset);
+                m.out[b].q = nlerp(m.out[ba].q, m.out[bb].q, 0.5F);
+                m.out[b].t = Vec3{};
+                m.out[b].t = tail - apply(m.out[b], p.offset);
+            }
+        }
     if (m.trace)
         trace_draw(m, state, a, now);
     Mat4 from_sim = kIdentity4;

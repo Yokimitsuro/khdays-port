@@ -45,6 +45,8 @@ const ParamInfo kParams[kParamCount] = {
     {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},
     {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
     {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},
 };
 
 struct Line {
@@ -156,7 +158,9 @@ bool Reader::param_line(const Line &l, ParamSet &set)
         return info.unit == Unit::length ? length(v) : info.unit == Unit::angle ? v * kDegrees : v;
     };
     float v = 0.0F;
-    if (l.words.size() < 2 || !number(l.words[1], v)) {
+    if (p == Param::no_sim && l.words.size() == 1) // `no_sim` alone: all the way
+        v = 1.0F;
+    else if (l.words.size() < 2 || !number(l.words[1], v)) {
         error(l.number, std::string("write `") + info.name + " <number>`");
         return true;
     }
@@ -771,12 +775,20 @@ void Reader::run(const std::vector<Line> &lines, int depth)
         } else if (w == "idle_reset" && l.words.size() == 2 && number(l.words[1], v) && v > 0.0F) {
             c_.idle_reset = v;
         } else if (w == "environment") {
-            if (l.words.size() >= 2 && (l.words[1] == "on" || l.words[1] == "off"))
+            bool ok = l.words.size() >= 2 && (l.words[1] == "on" || l.words[1] == "off");
+            if (ok)
                 c_.environment = l.words[1] == "on";
-            else
-                error(l.number, "write `environment on|off [thickness <t>]`");
-            if (l.words.size() == 4 && l.words[2] == "thickness" && number(l.words[3], v) && v >= 0.0F)
-                c_.environment_thickness = length(v);
+            for (std::size_t k = 2; ok && k < l.words.size(); ++k) {
+                if (l.words[k] == "thickness" && k + 1 < l.words.size() && number(l.words[k + 1], v) && v >= 0.0F) {
+                    c_.environment_thickness = length(v);
+                    ++k;
+                } else if (l.words[k] == "ground")
+                    c_.environment_ground_only = true;
+                else
+                    ok = false;
+            }
+            if (!ok)
+                error(l.number, "write `environment on|off [thickness <t>] [ground]` (ground: the floors alone)");
         } else if (w == "first_pose_iterations" && l.words.size() == 2 && integer(l.words[1], n) && n >= 0 &&
                    n <= 500) {
             c_.settle_iterations = n;

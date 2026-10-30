@@ -79,6 +79,8 @@ simulation rate 60 substeps 4 iterations 2 max_catchup 4
 gravity 0 -9.81 0           # m/s^2, the world's y up
 environment on thickness 2  # the room's collision; its contact thickness
 teleport 150 100            # a jump this far (or turn, degrees) in a tick rebases
+# environment on [thickness <t>] [ground]: the room's floors, walls, ceilings and objects; `ground` the floors
+# alone (N_EX830: a wall caught the coat against a leg, the replay's wall scenario 22-84 cm jitter, 4 alone)
 idle_reset 1                # s unseen before an actor starts afresh
 first_pose_iterations 30    # contact relaxation before the first picture
 wind world 1 0 0 speed 2 gust 0.4 frequency 0.3 turbulence 0.2
@@ -141,6 +143,8 @@ the free end, by depth along the strip.
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
 | `friction` | 0..1 | 0.2 | of a control against a collider |
 | `face_friction` | 0..1 | 0 | of a face resting on a collider, from at most 1 cm of its push (below) |
+| `no_sim` | 0..1 | 0 | not simulated: each substep on its target (its reference bones, the legs' `follow_bone` carry, the drape round the body) instead of where its motion would take it, that far of the way (`no_sim` alone is 1); contact with the body still keeps it out of the legs (from the last substep, so it keeps its side), the room does not touch it. N_EX830's coat: legs in it 0 in the idles, jump and wall, 7 cm in 23 frames of the run (on its targets alone: up to 20 cm in most frames); jitter as the simulated coat's (the drawn shape still smoothed) |
+| `game_shape` | 0..1 | 0 | the coat locked on the replaced game model's coat (a cutscene model's), and at 1 kept there after the links and contact, unsmoothed (`set_game_mesh`, model_link.cpp). In a group with follow bones and one forked strip (the front): the game coat is the triangles on the reference bone's node, those above it, its children and the follow bones' nodes and their children, in the pieces reaching the hips (not the game's own legs); its places welded within 2 cm (its skirt and back flap meet). The back, each side's middle strip and the strips in front of them are locked: each laid from its fixed point (the waist) down two paths of the game coat's edges (shortest along them), its top to its knee vertex and on to its bottom vertex, each the place nearest its way around at the coat's top, the game's knee height and the coat's bottom, each place taken once (the front's first, then the back, the sides, the strips in front); each bone from the last one's end to the first place on the path its length away, the bones of each section scaled alike (bisection) so the knee row (the strip point nearest the mod's knee) ends exactly on the knee vertex and the last on the bottom. The forked front: down its middle to the slit's top (the highest open place in front, under the top), its two panels down the slit's edges to their corners (where the edge stops falling steeper than it runs). Its points below its first down to the fork (the slit's top as drawn) halfway between the strips in front of the sides at that row, its bones there turned halfway between theirs (their tails kept on their points), so the slit's top sits between its neighbours. Each panel's points between the fork and the corner take their neighbour's bow: on the line from the point above to the one below (their share of the way at rest), out by as much as the strip beside the panel stands out of its own such line at that row; the slit's edge is one straight game edge, which cuts across a raised knee, and its neighbour bends over it (the knee row moved 4.4 cm median, 31 max over the cutscenes). The strips behind the sides: row by row on an arc between their side's and the back's points now, at their share of the angle between them at rest, bowed outward from the coat's middle by tan(angle / 4) / 2 of the gap times 4t(1 - t). e_rox_hb: the back's knee row (the head of kh2_31) on the game's back knee vertex (0, 46, -25 cm), its last on (0, 8, -34); the sides' on (25, 45, -6), (32, 12, -9); in front of them (16, 45, 11), (21, 12, 10); the fork halfway between kh2_37's and kh2_61's tails (0, 65, 9 at rest), the panels from there down the slit's edges to its corners (8, 12, 12). Its legs are placed on the game's (RENDERING.md), so the coat covers them. Over the cutscenes a section's bones are 0.57-1.54 their length (median 0.97) |
 | `rotate_only` | 0 or 1 | 0 | a rebuilt bone only turns toward its point; its head stays where its simulated parent carries it or the animation has it (1: no stretch) |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
 | `wind_lift` | 0..1 | 0.5 | (kept for surfaces' normal force; not used yet) |
@@ -314,7 +318,25 @@ and the actor starts afresh, as after `idle_reset` unseen. A jump of a group's
 reference bone past `teleport` within a tick rebases the state rigidly (shape
 kept, relative velocity zero). A start places every control on its target at the
 first pose, still relative to it (a moving start moves with it), relaxes contacts
-`first_pose_iterations` times and only then draws.
+`first_pose_iterations` times, then lets the groups that hang (`settle on`: the
+drawstrings, the hood) settle in that pose: 40 ticks with the pose held, one
+substep each, each control keeping 0.75 of its velocity per tick
+(`Simulation::settle`; the other groups are put back as they were, then the first
+tick takes up the body's velocity). They start in their rest shape on their bones,
+and a bent first pose (a cutscene's) flung them.
+
+A camera cut is a new shot: cutscenes re-stage their actors across one (a restarted
+animation, a step aside, a turn), and under `teleport`'s limits the cloth took that
+for a move made in one frame. The draw compares the flushed camera with the last
+draw's; a jump of more than 0.75 m (the model's units) or 25 degrees is a cut
+(`model_link.cpp` `kCutDistance`, `kCutDegrees`): the state is rebased as for a
+teleport and the hanging groups settled in the new pose. In the replay's `cut`
+scenario (the battle idle restarted, the actor moved 45 cm and 30 degrees
+turned) a drawstring tip moved 30 cm in the frame after the cut and 2.6 cm a frame
+on average over the next second; with it, 4.3 cm (the restart itself) and 0.26 cm.
+A battle-idle start: 3.5 cm at most in its first second, now 0.5. A cut costs one
+update about 9 ms longer. `KHDAYS_SECONDARY_TRACE` prints each draw's camera jump
+and marks a cut.
 
 Actors are the drawn render objects, each with its own state; an actor unseen for
 `idle_reset` plus a second is dropped (no table is ever cleared wholesale).
@@ -440,7 +462,7 @@ khdays-secondary-replay ... --reference B_EX390.mdlx B_EX390.mset 0,10,140,208
 
 Plays the scenarios (idle, run with a 180 degree turn and a dead stop, attack with
 lunges, jump with landing, guard, wall and corner while turning and backing,
-spawn while running, teleport, a platform rising under the coat) on the KH2
+spawn while running, teleport, a camera cut, a platform rising under the coat) on the KH2
 motions as the port does (retargeted, matrix cross-fades between segments, root
 motion taken out, the actor placed on a path), and writes `report.txt` (clipping
 of the skinned simulated vertices beyond their rest overlap with the colliders

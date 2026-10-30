@@ -13,6 +13,15 @@ using Clock = std::chrono::steady_clock;
 constexpr std::size_t kProfileRing = 1024;
 // a draw's time is a sum of frame lengths in floating point: a tick due a hair later still counts
 constexpr double kTickSlack = 1e-3;
+// ticks a fresh start or a camera cut settles the cloth in its pose for (Simulation::settle)
+constexpr int kSettleTicks = 40;
+
+// settling: one substep a tick (it only has to come to rest, not follow motion)
+TickSettings settling(TickSettings s)
+{
+    s.substeps = 1;
+    return s;
+}
 
 bool matches(const ControlConfig &k, const AnimationState &a)
 {
@@ -208,9 +217,17 @@ void Actor::start(const ActorInput &in)
     s.environment = rig_->config.environment && l.environment && in.environment != nullptr;
     s.self_collision = l.self_collision;
     s.environment_thickness = rig_->config.environment_thickness;
+    s.ground_only = rig_->config.environment_ground_only;
     s.env = in.environment;
     drive(in, 0.0F);
+    if (in.game_targets != nullptr && in.game_weight != nullptr) {
+        last_game_ = *in.game_targets;
+        sim_.set_game_targets(last_game_, last_game_, *in.game_weight);
+    }
     sim_.initialize(*in.pose, s, rig_->config.settle_iterations);
+    // the hanging groups hung as this first pose has them (they start in their rest shape on their bones: a bent
+    // first pose flung the cords)
+    sim_.settle(*in.pose, settling(s), kSettleTicks);
     for (const int b : rig_->needed)
         last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
     last_seconds_ = sim_seconds_ = in.seconds;
@@ -254,8 +271,26 @@ void Actor::update(const ActorInput &in)
             angle_between(a.q, c.q) > rig.config.teleport_degrees * kDegrees)
             jump = true;
     }
-    if (jump) {
+    if (jump || in.cut) {
+        if (in.game_targets != nullptr && in.game_weight != nullptr) {
+            last_game_ = *in.game_targets;
+            sim_.set_game_targets(last_game_, last_game_, *in.game_weight);
+        }
         sim_.rebase(last_pose_, *in.pose);
+        if (in.cut) { // a new shot: settled in its pose (a jump keeps the cloth's swing shape, carried)
+            TickSettings s;
+            s.dt = dt;
+            s.substeps = l.substeps;
+            s.iterations = l.iterations;
+            s.gravity = rig.config.gravity;
+            s.environment = rig.config.environment && l.environment && in.environment != nullptr;
+            s.self_collision = l.self_collision;
+            s.environment_thickness = rig.config.environment_thickness;
+            s.ground_only = rig.config.environment_ground_only;
+            s.env = in.environment;
+            drive(in, 0.0F);
+            sim_.settle(*in.pose, settling(s), kSettleTicks);
+        }
         ++profile_.rebases;
         for (const int b : rig.needed)
             last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
@@ -282,6 +317,7 @@ void Actor::update(const ActorInput &in)
     s.environment = rig.config.environment && l.environment && in.environment != nullptr;
     s.self_collision = l.self_collision;
     s.environment_thickness = rig.config.environment_thickness;
+    s.ground_only = rig.config.environment_ground_only;
     s.env = in.environment;
     for (int k = 0; k < ticks; ++k) {
         // the poses at the tick's start and end, between the last pose received and this one
@@ -293,6 +329,15 @@ void Actor::update(const ActorInput &in)
             from_[i] = interpolate(last_pose_[i], (*in.pose)[i], ua);
             to_[i] = interpolate(last_pose_[i], (*in.pose)[i], ub);
         }
+        if (in.game_targets != nullptr && in.game_weight != nullptr && last_game_.size() == in.game_targets->size()) {
+            game_a_.resize(last_game_.size());
+            game_b_.resize(last_game_.size());
+            for (std::size_t i = 0; i < last_game_.size(); ++i) {
+                game_a_[i] = lerp(last_game_[i], (*in.game_targets)[i], ua);
+                game_b_[i] = lerp(last_game_[i], (*in.game_targets)[i], ub);
+            }
+            sim_.set_game_targets(game_a_, game_b_, *in.game_weight);
+        }
         drive(in, dt);
         sim_.tick(from_, to_, s);
         ++ticks_done_;
@@ -301,6 +346,8 @@ void Actor::update(const ActorInput &in)
     }
     for (const int bone : rig.needed)
         last_pose_[static_cast<std::size_t>(bone)] = (*in.pose)[static_cast<std::size_t>(bone)];
+    if (in.game_targets != nullptr)
+        last_game_ = *in.game_targets;
     last_seconds_ = in.seconds;
     PhaseTimes &p = profile_.phases;
     const PhaseTimes &t = sim_.times;

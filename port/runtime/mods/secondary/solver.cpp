@@ -60,7 +60,8 @@ constexpr float kMaxPierce = 0.5F;
 // a face's friction is drawn from at most this much of its push (m): a face held hard against a leg (by
 // a wall, say) can still slip out
 constexpr float kFaceFrictionReach = 0.01F;
-constexpr float kDrapeEase = 0.06F; // s: the drape's swing of a target eased over this (ease_drape)
+constexpr float kDrapeEase = 0.06F;  // s: the drape's swing of a target eased over this (ease_drape)
+constexpr float kSettleKeep = 0.75F; // settle: of each control's velocity kept from tick to tick
 // passes of strain then contact closing each substep (a push spread through the coat)
 constexpr int kSpreadPasses = 2;
 } // namespace
@@ -328,9 +329,26 @@ Vec3 Simulation::target_of(std::size_t i, const std::vector<Frame> &pose) const
     const ParticleDrive &d = drive_[i];
     const float g = maxf(d.guide, d.authority);
     const Vec3 anim = animated_of(i, pose);
-    if (g >= 1.0F)
-        return anim;
-    return lerp(reference_point(i, pose), anim, g);
+    const Vec3 own = g >= 1.0F ? anim : lerp(reference_point(i, pose), anim, g);
+    const float gs = game_shape_of(i);
+    if (gs <= 0.0F)
+        return own;
+    return lerp(own, game_now_[i], gs); // the game model's own surface there (its coat, skinned to its legs)
+}
+
+float Simulation::game_shape_of(std::size_t i) const
+{
+    return i < game_now_.size() && rig_.particles[i].dynamic ? drive_[i].params.get(Param::game_shape) * game_weight_[i]
+                                                             : 0.0F;
+}
+
+void Simulation::set_game_targets(const std::vector<Vec3> &from, const std::vector<Vec3> &to,
+                                  const std::vector<float> &weight)
+{
+    game_from_ = from;
+    game_to_ = to;
+    game_now_ = to;
+    game_weight_ = weight;
 }
 
 void Simulation::shapes(const std::vector<Frame> &pose, std::vector<Shape> &out) const
@@ -502,6 +520,8 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     env_.clear();
     if (s.environment && s.env != nullptr)
         s.env->gather(bounds_, env_);
+    if (s.ground_only)
+        std::erase_if(env_, [](const Triangle &t) { return t.kind != Surface::ground; });
     env_boxes_.clear();
     for (const auto &t : env_) {
         Aabb b;
@@ -578,6 +598,32 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     times.startup += us(t0, Clock::now());
 }
 
+void Simulation::settle(const std::vector<Frame> &pose, const TickSettings &s, int ticks)
+{
+    // only the groups that hang (`settle on`: cords, a hood) start in a shape the pose may not have; the others
+    // start on their targets, which follow the pose, and are put back as they were
+    const std::vector<Vec3> x0 = x_, prev0 = prev_, v0 = v_;
+    const auto settles = [&](std::size_t i) {
+        return rig_.particles[i].dynamic && rig_.groups[static_cast<std::size_t>(rig_.particles[i].group)].settle;
+    };
+    for (int k = 0; k < ticks; ++k) {
+        tick(pose, pose, s);
+        for (std::size_t i = 0; i < v_.size(); ++i)
+            if (rig_.particles[i].dynamic)
+                v_[i] = v_[i] * kSettleKeep;
+    }
+    for (std::size_t i = 0; i < x_.size(); ++i)
+        if (rig_.particles[i].dynamic && !settles(i)) {
+            x_[i] = x0[i];
+            prev_[i] = prev0[i];
+            v_[i] = v0[i];
+        }
+    for (std::size_t i = 0; i < x_.size() && shown_.size() == x_.size(); ++i)
+        if (settles(i))
+            shown_[i] = apply_inverse(reference_bone_frame(i, pose), x_[i]);
+    fresh_ = true; // its first tick takes up the body's velocity, as a start's does (spawned while running)
+}
+
 void Simulation::rebase(const std::vector<Frame> &a, const std::vector<Frame> &b)
 {
     for (std::size_t i = 0; i < x_.size(); ++i) {
@@ -614,6 +660,8 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         box.grow(minf(reach * s.dt, 1.0F) + s.environment_thickness + kDeepBehind);
         env_.clear();
         s.env->gather(box, env_);
+        if (s.ground_only) // walls caught the cloth (pinned between a leg and a wall): floors alone
+            std::erase_if(env_, [](const Triangle &t) { return t.kind != Surface::ground; });
         env_boxes_.clear();
         for (const auto &t : env_) {
             Aabb b;
@@ -647,6 +695,9 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
     for (int sub = 0; sub < n; ++sub) {
         const auto t0 = Clock::now();
         frames_at(from, to, static_cast<float>(sub + 1) / static_cast<float>(n), sub1_);
+        if (game_now_.size() == x_.size())
+            for (std::size_t i = 0; i < x_.size(); ++i)
+                game_now_[i] = lerp(game_from_[i], game_to_[i], static_cast<float>(sub + 1) / static_cast<float>(n));
         shapes(sub1_, shape1_);
         for (std::size_t f = 0; f < rig_.faces.size(); ++f) {
             const Face &face = rig_.faces[f];
@@ -699,6 +750,13 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
                     rel = rel * (most / speed);
                 v_[i] = vt + rel;
                 x_[i] += v_[i] * h;
+                // `no_sim`: not simulated, each substep on its target (its bones, the legs' carry, the drape);
+                // contact with the body still keeps it out of the legs, carried on from the last substep
+                const float ns = k.get(Param::no_sim);
+                if (ns > 0.0F) {
+                    x_[i] = lerp(x_[i], t, ns);
+                    v_[i] = lerp(v_[i], vt, ns);
+                }
             }
             target_vel_[i] = vt;
             bounds_.add(x_[i]);
@@ -746,6 +804,13 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
                 collide_environment(s);
             collide_model(0.0F, true);
         }
+        // `game_shape`: that far onto the game model's surface after everything else (at 1 nothing pushes it off)
+        if (game_now_.size() == x_.size())
+            for (std::size_t i = 0; i < x_.size(); ++i) {
+                const float gs = game_shape_of(i);
+                if (gs > 0.0F)
+                    x_[i] = lerp(x_[i], game_now_[i], gs);
+            }
         const auto t3 = Clock::now();
         times.model_collision += us(t25, t3);
         // velocity from the motion, never more than max_speed past the target's: a contact's push moves
@@ -784,7 +849,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         const Frame &ref = reference_bone_frame(i, sub1_);
         const Vec3 local = apply_inverse(ref, x_[i]);
         const float tau = drive_[i].params.get(Param::smoothing);
-        if (tau <= 0.0F) {
+        if (tau <= 0.0F || game_shape_of(i) >= 1.0F) { // on the game's surface: nothing to smooth
             shown_[i] = local;
             continue;
         }
@@ -1349,9 +1414,10 @@ void Simulation::collide_environment(const TickSettings &s)
         }
         return hit;
     };
+    const auto unsimulated = [&](std::size_t i) { return drive_[i].params.get(Param::no_sim) >= 0.5F; };
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
-        if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact))
+        if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact) || unsimulated(i))
             continue;
         const float th = maxf(p.thickness, s.environment_thickness);
         Vec3 push;
@@ -1376,7 +1442,7 @@ void Simulation::collide_environment(const TickSettings &s)
                                   static_cast<std::size_t>(f.c)};
         const float wv[3] = {w(v[0]), w(v[1]), w(v[2])};
         const float wsum = wv[0] + wv[1] + wv[2];
-        if (wsum <= 0.0F)
+        if (wsum <= 0.0F || unsimulated(v[0]) || unsimulated(v[1]) || unsimulated(v[2]))
             continue;
         const Vec3 c = (x_[v[0]] + x_[v[1]] + x_[v[2]]) * (1.0F / 3.0F);
         const Vec3 cb = (prev_[v[0]] + prev_[v[1]] + prev_[v[2]]) * (1.0F / 3.0F);

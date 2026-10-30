@@ -1023,6 +1023,23 @@ HOOKS = {
             "      khdays_g3d_flush_base((const int *)((const char *)&NNS_G3dGlb + 0x94), 0); }\n",
         )
     ],
+    # What the game attaches to a model's node (Obj_RenderModel's objList, Scene_DrawNode's children) reads the
+    # node's matrix back after the draw: for a model the mods replace, the node where the model's joint carries it
+    # (runtime/mods/models.cpp khdays_models_result_matrix).
+    "main@02016320": [
+        (  # NNS_G3dGetResultMtx
+            "        NNS_G3dGeRestoreMtx((int)stackID);\n",
+            "        NNS_G3dGeRestoreMtx((int)stackID);\n"
+            "        { extern int khdays_models_result_matrix(const void *render_obj, unsigned node,"
+            " int *position, int *direction);\n"
+            "          MtxFx43 mine; MtxFx33 turn;\n"
+            "          if (khdays_models_result_matrix(pRenderObj, nodeID, (int *)&mine, (int *)&turn)) {\n"
+            "              if (pos) *pos = mine;\n"
+            "              if (nrm) *nrm = turn;\n"
+            "              return 1;\n"
+            "          } }\n",
+        )
+    ],
     "main@020157c4": [
         (  # NNS_G3dGlbFlushP
             "void NNS_G3dGlbFlushP(void)\n{\n",

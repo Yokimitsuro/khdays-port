@@ -37,6 +37,7 @@ struct TickSettings {
     bool self_collision = true, environment = true;
     Vec3 gravity{0.0F, -9.81F, 0.0F};
     float environment_thickness = 0.02F;
+    bool ground_only = false; // the room's floors alone
     Environment *env = nullptr;
 };
 
@@ -55,6 +56,12 @@ public:
     // Each particle carried along with its target from pose `a` to pose `b` (the time between the last
     // tick and the draw).
     void carry(const std::vector<Frame> &a, const std::vector<Frame> &b);
+    // Ticks with `pose` held and the swing damped each tick, so the cloth hangs as this pose has it before it is
+    // shown (a fresh start, a camera cut); the drawn shape then starts on it.
+    void settle(const std::vector<Frame> &pose, const TickSettings &settings, int ticks);
+    // `game_shape`: each control's place on the replaced game model's surface at the next tick's start and end
+    // (the solver's space), and whether it has one
+    void set_game_targets(const std::vector<Vec3> &from, const std::vector<Vec3> &to, const std::vector<float> &weight);
 
     // The bones at `pose` from the solved particles: each rebuilt bone and each bone it carries, in
     // `out` (sized like the skeleton), flagged in `written`.
@@ -138,6 +145,9 @@ private:
     std::vector<Vec3> drawn_; // the drawn controls, world (guard_drawn_faces)
     void guard_drawn_faces();
     std::vector<Vec3> pushed_; // contact's push on each control this substep (taken out of its velocity)
+    std::vector<Vec3> game_from_, game_to_, game_now_; // set_game_targets; game_now_ at the substep's end
+    std::vector<float> game_weight_;
+    float game_shape_of(std::size_t i) const; // `game_shape` times the particle's weight, 0 without targets
     const Frame &reference_bone_frame(std::size_t i, const std::vector<Frame> &pose) const;
     // poses: the needed bones at the substep's start and end
     std::vector<Frame> sub0_, sub1_;

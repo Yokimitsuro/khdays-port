@@ -7,7 +7,7 @@
 //
 //   khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> [options]
 //     --out <dir>            contact sheets and the report go here
-//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, wall, spawn, teleport,
+//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, wall, spawn, teleport, cut,
 //                            platform, all (default all)
 //     --actors <n>           simulate n actors at once (the benchmark; default 1)
 //     --draw-hz <hz>         draws a second (default 60); --repeat <n> draws each n times
@@ -212,6 +212,7 @@ struct Scenario {
     std::function<Frame(float)> place; // the actor's placement (metres, y up) at a time
     std::vector<Triangle> room;
     std::function<Vec3(float)> room_offset; // a moving object (null: static)
+    float cut_at = -1.0F;                   // a camera cut then (seconds; -1 none): ActorInput::cut
 };
 
 Frame yaw_at(Vec3 t, float yaw)
@@ -325,6 +326,18 @@ std::vector<Scenario> scenarios()
                  [](float t) { return yaw_at(t < 2.0F ? Vec3{} : Vec3{12.0F, 0, -4.0F}, t < 2.0F ? 0.0F : 1.2F); },
                  floor_plane(40),
                  nullptr});
+    // a cutscene's camera cut: a new shot restarts the animation (no fade) and re-stages the actor 45 cm over and
+    // 30 degrees turned, under the teleport's limits
+    {
+        Scenario c{"cut",
+                   4.0F,
+                   {{0.0F, 0, "b_ro_A000"}, {2.0F, 0, "b_ro_A000", 0.0F}},
+                   [](float t) { return yaw_at(t < 2.0F ? Vec3{} : Vec3{0.4F, 0, 0.2F}, t < 2.0F ? 0.0F : 0.52F); },
+                   floor_plane(20),
+                   nullptr};
+        c.cut_at = 2.0F;
+        s.push_back(std::move(c));
+    }
     {
         Scenario m{"platform", 4.0F, {{0.0F, 0, "b_ro_A000"}}, still, floor_plane(20), nullptr};
         box_triangles({-0.6F, -1.0F, -0.8F}, {0.6F, 0.0F, -0.3F}, Surface::object, m.room); // under the coat's back
@@ -578,6 +591,7 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         in.placement = place;
         in.animations = {{s.name, static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
         in.environment = &env;
+        in.cut = sc.cut_at >= 0.0F && t >= sc.cut_at && t - 1.0F / draw_hz < sc.cut_at;
         for (int r = 0; r < repeat; ++r) {
             for (auto &a : list) {
                 const auto t0 = std::chrono::steady_clock::now();

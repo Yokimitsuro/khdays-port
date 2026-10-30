@@ -10,7 +10,7 @@ include kh2_secondary_presets.txt
 # less cost (docs/SECONDARY_MOTION.md, "Results")
 simulation rate 60 substeps 3 iterations 2
 gravity 0 -9.81 0           # m/s^2, the world's y up
-environment on thickness 2  # the room's floors, walls and ceilings
+environment on thickness 2 ground  # the room's floors alone: walls caught the cloth (pinned against a leg)
 teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
 first_pose_iterations 30
 
@@ -76,6 +76,9 @@ group coat surface preset kh2_coat
   bone 79 follow_bone_scale 0.3
   bone 80 follow_bone_scale 0.2
   mode simulated          # P_EX110's motions carry no coat tracks
+  # `no_sim`: the coat not simulated, each control on its target (the hips, the thighs' carry, the drape
+  # round the legs) every tick; here for the whole coat, or in a `control` for some animations
+  # no_sim
 end
 
 # --- Drawstrings: chains from the chest helpers, hung at load ---

@@ -48,6 +48,8 @@ enum class Param : int {
     draw_guard,         // 0 or 1: a smoothed drawn face cutting into the body moved out (guard_drawn_faces)
     face_friction,      // 0..1: friction of a face resting on a body collider (0: it slides freely)
     rotate_only,        // 0 or 1: a rebuilt bone only turns toward its point, its head kept where its parent puts it
+    no_sim,             // 0..1: of the way onto its target each tick (its bones and the legs' carry), unsimulated
+    game_shape,         // 0..1: its target taken that far from the replaced game model's own surface (its coat)
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);
@@ -226,7 +228,8 @@ struct Config {
     Wind wind;
     bool environment = true; // the room's collision
     float environment_thickness = 0.02F;
-    int settle_iterations = 30; // first-pose collision relaxation before the first result
+    bool environment_ground_only = false; // `environment ... ground`: the floors alone (no walls, ceilings, objects)
+    int settle_iterations = 30;           // first-pose collision relaxation before the first result
     std::vector<LodConfig> lods;
     bool debug = false, profile = false;
     std::vector<PresetConfig> presets;

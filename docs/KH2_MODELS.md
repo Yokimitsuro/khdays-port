@@ -140,6 +140,34 @@ passes the frame it last set back from (the button let go), what is left of the
 loop's fade ends within `blend` frames, so a long loop blend does not drag into
 the release. Its speed is the game's animation's stretched to the motion.
 
+`start_loop` starts a section's clock at the motion's loop point instead of its
+first tick (with `follow`, the section stretched onto the loop point to the end),
+for a game that plays a start and a loop as two animations where KH2 has one
+motion with a loop. When another game animation was playing the same slot up to
+then (the start), the motion carries on from that one's time instead: Days'
+`b_ro_A009` is 45 frames, 90 ticks of slot 30's 110 before its loop, and jumping
+to 110 snapped. `offset <x> <y> <z> [to <x> <y> <z>]` moves the whole pose,
+in KH2 centimetres on the model's axes (x its left, y up, z forward), gliding
+from the first to the second over the motion's length; a fade out of the
+section keeps the offset last shown. Roxas's ledge (Days' `b_ro_A009` grab,
+`A010` hang, `A011` climb up; KH2's P_EX110 slots 30, a grab looping from tick
+110, and 34):
+
+```text
+b_ro_A009 30 offset -0.8 -5.4 -42.4
+b_ro_A010 30 start_loop offset -0.8 -5.4 -42.4
+b_ro_A011 34 offset -0.8 -5.4 -42.4 to -0.8 -10.8 2.6
+```
+
+Measured in the root node's frame (`def_hb` BCA0 entries 5-7 on its model; slot
+30 and 34 on N_EX830 through the bone map, root motion out): hanging, Days' left
+hand (on the ledge) is at (0.2, 133.0, 43.6) cm and KH2's at (1.0, 138.4, 86.0),
+so KH2 hangs 42.4 cm too far forward and 5.4 cm too high; slot 34 starts where
+slot 30's loop is and A011 where A010 is. At the climb's end KH2's hips rise 33.7
+cm over its idle's (slot 0) and Days' 22.9 over theirs (A000), 2.6 cm less far
+back: the climb glides to (-0.8, -10.8, 2.6) so it meets the idle as Days' does
+(the head agrees to 0.4 cm in height).
+
 Days' jump is one animation per weapon state, where KH2 has a jump and a fall
 (`Ov022_StepJumpState`, `Ov022_EnterActorState`; Roxas's `etc.p.z` / `def_hb.p.z`):
 
@@ -243,6 +271,43 @@ only while its own motion plays (its slot matching the body's: R000 at 0 in
 both). A weapon drawn before the body in a
 frame takes the last frame's place, as in the game. Joints without a line keep
 the game's place; the line works without an mset.
+
+`weapon ro_w_tg_R 251 rotate 0 -90 90` turns that frame (degrees about the
+bone's own x, then y, then z) for a Days weapon. KH2 attaches a weapon to the
+bone `PARTY::hand_to_bone` names (`YS::WEAPON::WEAPON` 0x4bb468: `OBJ::attach`
+on it, the weapon's mset synced to the body's), so a KH2 keyblade's own frame
+is the bone's. Days' Kingdom Key (ro_w00600, a textured card) runs along its
++z from the grip (tip 0.83, handle end -0.17; teeth toward +y, from its
+texture's opaque texels); KH2's (W_EX010, bone 0's frame) runs along +x (tip
+78 cm), teeth toward -y, flat across z. The turn taking one onto the other,
+Days x to KH2 +z, y to -y, z to +x (`rotate 0 -90 180`); of the 24
+axis-aligned turns it lands the Days blade nearest KH2's (5.2 cm mean, a card
+against a solid blade; teeth the other way 6.3 cm, every other turn 7-21). In
+game that held the blade 90 degrees off in its own plane (pointing at the floor
+in the battle idle, where bone 251's z faces the camera), so the frame KH2
+holds its keyblade in is not bone 251's own: a further -90 degrees about the
+bone's z (`rotate 0 -90 90`) puts the blade along the bone's -y.
+Which bone `hand_to_bone` names for N_EX830 (its skeleton table) is not read. KH2 also turns
+its keyblade in the hand per motion (the weapon mset's bone 0: 15 degrees about
+the blade's flat normal in W_EX010_RX's slot 0, 40 in slot 2); a Days weapon does
+not get that.
+
+**Fingers under the game's animations.** Days' models have no fingers, so a
+KH2 model's unpaired bones ride their parents at rest (an open hand) whenever
+the game's own animation poses it. `ds_pose` lines in `motions.txt` turn them:
+
+```text
+ds_pose 2 135-156 252-273                  # as mset slot 2 (frame 0) turns them
+ds_pose 30@12 141-156 for b_ro_A005         # another slot's frame for one animation
+ds_pose rotate 0 0 20 252-257 for b_ro_e000  # or degrees about each bone's own axes
+```
+
+Each bone takes its turn from its parent as the slot's pose (through the bone
+map) has it against rest, about its head; the game animation with the most
+weight that plays no KH2 motion picks its own lines, else the default's (lines
+without `for`; later lines win). It changes only the game's share of the pose:
+a KH2 motion's fingers are its own. Bones paired with a game node in
+`bones.txt` are left to it.
 
 **The format** (`kn::MotionPrototype0RAW`, all offsets from the header after the
 0x90 bytes the game keeps): u32 type +0 (`kn::motionSetup` 0xf8e8c: 0

@@ -32,7 +32,14 @@ struct ActorInput {
     std::vector<AnimationState> animations;
     float camera_distance = 0.0F; // m, for the level of detail
     bool player = true;           // the player keeps the full detail
+    // the view cut (a camera cut): what the body did since the last draw is a new shot, not motion; the cloth is
+    // carried with it and settled in the new pose instead of being flung
+    bool cut = false;
     Environment *environment = nullptr;
+    // `game_shape`: each particle's place on the replaced game model's surface (the solver's space) and how far
+    // it may take it there (0 none: too far from that surface); null without
+    const std::vector<Vec3> *game_targets = nullptr;
+    const std::vector<float> *game_weight = nullptr;
 };
 
 // The last measurements of an actor's cost: per update (microseconds), kept for percentiles.
@@ -99,6 +106,7 @@ private:
     double last_seconds_ = 0.0, sim_seconds_ = 0.0;
     std::int64_t ticks_done_ = 0; // ticks since the start, sim_seconds_ = ticks_done_ / rate from it
     std::vector<Frame> last_pose_, from_, to_;
+    std::vector<Vec3> last_game_, game_a_, game_b_; // the last draw's game targets, a tick's start and end
     std::vector<float> control_applied_;
     Profile profile_;
     LodConfig full_;
