@@ -70,6 +70,8 @@ enum class S {
     text_saved,
     text_give_back,
     text_list,
+    text_scene,
+    text_scene_hint,
     text_filter,
     text_games,
     text_yours,

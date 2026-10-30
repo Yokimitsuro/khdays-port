@@ -59,6 +59,17 @@ are not matched, only what they decode to.
 - **String tables** (`UI/**/*.s`, usually `.s.z`): `u32 header_size (8); u32
   count;` then per string `u32 length` (these 4 bytes included) and its UTF-16LE
   units with a NUL. The 136 shipped tables hold 5,007 strings.
+- **The story's scenes** (`ev/EV_S.p2` the shared ones, `EV_TT`, `EV_NM`, `EV_BB`,
+  `EV_AL`, `EV_AW`, `EV_HE`, `EV_PP`, `EV_DP` each world's): a P2 container whose
+  entries, stored plain, are scripts of the game's script machine (see Missions).
+  A line is a step's mode-0x40 operand: a table in the script's data of seven
+  words, the offsets of the Japanese, English, French, German, Italian and Spanish
+  texts (UTF-8, NUL-ended) and a closing -1; -1 for a language the card lacks
+  (every Japanese one). Step 1.29 shows most of them, 2.64
+  (`Ov002_ScriptOpenChoicePanel`) a choice's; two steps may share a table, and the
+  languages may share a text ("..."). The archives hold 4,012 lines (`EV_DP`
+  none). The studio writes a changed line past its script's data and points that
+  language's word at it, so the other languages keep theirs.
 
 Strings keep the game's control codes; in them the DS's buttons are characters
 of the game's font (U+3349 its A, U+3314 its B, U+3322 its X, U+3336 U+3351

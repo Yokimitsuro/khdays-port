@@ -232,6 +232,7 @@ add_executable(khdays-studio-tests
     tests/test_plugin_parameters.cpp
     tests/test_characters.cpp
     tests/test_character_forms.cpp
+    tests/test_texts.cpp
     app/strings.cpp
     tests/test_strings.cpp)
 target_include_directories(khdays-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")

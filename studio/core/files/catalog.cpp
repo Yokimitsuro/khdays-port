@@ -2,6 +2,7 @@
 
 #include "core/files/paths.h"
 #include "core/rooms/worlds.h"
+#include "core/texts/texts.h"
 
 #include <algorithm>
 #include <array>
@@ -169,6 +170,13 @@ Catalog build_catalog(const CatalogSources& sources, std::atomic<int>* progress,
                        is_language(name.substr(3, 2))) {
                 // db/db.p2 is not known to hold text: left out
                 c.items.push_back(make(Kind::text_file, rel, group, path, name.substr(3, 2)));
+            } else if (is_scene_archive(rel)) {
+                // the story's scenes, every language in one file: listed when they have lines
+                TextFile t;
+                if (parse_scene_file(read_all_bytes(path), 1, &t, nullptr) &&
+                    std::any_of(t.lists.begin(), t.lists.end(), [](const auto& l) { return !l.empty(); })) {
+                    c.items.push_back(make(Kind::text_file, rel, group, path));
+                }
             } else if (group == "mv" && ends_with(name, ".mods")) {
                 c.items.push_back(make(Kind::movie, name.substr(0, name.size() - 5), group, path));
             } else if (group == "mi/mi" && !name.empty() &&

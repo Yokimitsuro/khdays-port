@@ -313,14 +313,19 @@ is chosen). It changes at once and is kept in the settings.
    (`studio/tools/enemy_names.py`).
 
 9. **A text file.** The "Texts" kind lists the game's string tables
-   (`*.s.z`, the menus' and screens' words) and its message databases
-   (`db/db_<language>.p2`, in lists). Each text shows the game's beside
+   (`*.s.z`, the menus' and screens' words), its message databases
+   (`db/db_<language>.p2`, in lists) and the story's scenes (`ev/EV_S.p2`, the
+   shared ones, and each world's `ev/EV_<world>.p2`: a list per scene, a row
+   per line the characters say, every language in the one file -- choose the
+   one you write in beside the scene). Each text shows the game's beside
    yours; write in the right column (Enter starts a new line, as in the
    game; codes like `\x01` are the game's control codes, to keep). A text
    changed turns green, and a character the game's font cannot draw is
    said under it. "Save into the mod" writes the whole file to
-   `files/<path>`; what you typed in other files stays while you look
-   elsewhere. "Give it back to the game" removes the mod's copy.
+   `files/<path>` (a scene archive with every language you changed, the
+   others as the game has them); what you typed in other files and languages
+   stays while you look elsewhere. "Give it back to the game" removes the
+   mod's copy.
 
 10. **A movie.** The "Movies" kind lists the game's movies (`mv/<id>.mods`).
     The view says what plays now -- a mod's video, your own HD video

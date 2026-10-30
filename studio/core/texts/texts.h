@@ -1,8 +1,9 @@
-// The game's texts as the studio edits them, and written back: string tables and message databases
-// (docs/FORMATS.md, "Text"), control codes kept as the game has them.
+// The game's texts as the studio edits them, and written back: string tables, message databases and the
+// story scenes' lines (docs/FORMATS.md, "Text"), control codes kept as the game has them.
 #pragma once
 
 #include "core/files/containers.h"
+#include "core/missions/missions.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -12,19 +13,36 @@
 
 namespace studio {
 
+// A line of a story scene: a table of its script's data, a word per language (GetLanguage's 1 en .. 5 es)
+// holding the offset of the line's UTF-8 text or -1, pointed at by a step's mode-0x40 operand.
+struct SceneLine {
+    std::size_t step = 0, slot = 0;  // the first step showing it, and its operand
+    std::uint32_t table = 0;
+};
+
 struct TextFile {
     bool database = false;
-    std::vector<std::vector<std::u16string>> lists;  // a string table: one list
+    bool scenes = false;                             // the story's scenes (ev/EV_<world>.p2)
+    int language = 1;                                // scenes: the language `lists` holds (1 en .. 5 es)
+    std::vector<std::vector<std::u16string>> lists;  // a string table: one list; scenes: one per entry
     std::uint8_t lz = 0;                             // a string table's LZ type (0x10, 0x11), 0 when stored plain
     std::size_t header_size = 8;                     // a string table's header
-    P2File p2;                                       // a database's container: its head and each entry's LZ kept
+    P2File p2;                                       // a database's or the scenes' container, each entry's LZ kept
+    std::vector<Script> scripts;                     // scenes: each entry's script
+    std::vector<std::vector<SceneLine>> lines;       // scenes: each script's lines, in step order
 };
 
 bool parse_text_file(const std::vector<std::uint8_t>& bytes, bool database, TextFile* out, std::string* why);
+// A scene archive's lines in `language`: a list per entry, each line's text where its table points.
+bool parse_scene_file(const std::vector<std::uint8_t>& bytes, int language, TextFile* out, std::string* why);
+// A scene line whose text changed is written past its script's data and the table's word for the
+// language points at it; the other languages keep theirs, and an entry not changed keeps its bytes.
 std::vector<std::uint8_t> write_text_file(const TextFile& t);
 
 // A text item's file is a database (db/db_<lang>.p2) rather than a string table.
 bool is_text_database(const std::string& game_path);
+// A text item's file is a scene archive (ev/EV_<world>.p2).
+bool is_scene_archive(const std::string& game_path);
 
 // The characters of `text` the font cannot draw (control codes left out),
 // each once, in order.
