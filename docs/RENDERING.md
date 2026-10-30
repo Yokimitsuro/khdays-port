@@ -341,7 +341,11 @@ two-bone limb of paired joints after that, so the end reaches as the game's
 nodes reach: the target is the game's end node seen from its upper node, scaled
 by the two limbs' lengths, bent in the plane of the game's middle node (the law
 of cosines about an up vector, as KH2's `Motion::calcIKJoint`); the upper and
-lower joints are swung to it, keeping their nodes' twist. A mesh is drawn both
+lower joints are swung to it, keeping their nodes' twist. `mesh_scale <joint>
+<x> <y> <z>` scales that joint's own vertices in its own rest axes, applied last
+(skin x B x S x inverse(B), B its rest frame): its bone, its children, the
+weapons and the secondary motion's colliders keep their sizes (N_EX830's pelvis,
+kh2_2, 0.95 along its y, which points backward, keeps the butt under the coat). A mesh is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
 `<model>.bones.txt` says `cull back` or `cull none`. The game's own shapes are
 left unsent but for those `keep <node> ...` names: a shape whose vertices all

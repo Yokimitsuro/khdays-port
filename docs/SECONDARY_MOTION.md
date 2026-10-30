@@ -413,7 +413,9 @@ test mod; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
 - Hood: one bone (101); it settles onto the back and swings as one piece (folding
   would need more bones than the model has).
 - Colliders: pelvis, spine and chest (`torso`: hood, drawstrings), thighs (from
-  12 cm down the bone), calves, feet, arms, forearms (to the wrist), hands, head.
+  12 cm down the bone), calves, feet, heels, arms, forearms (to the wrist), hands,
+  head. The feet run down from the ankle; the heels (radius 6 cm, 4.3 cm behind
+  it) cover the shoe's back, which reaches 8.6 cm behind the ankle.
   The coat collides with the pelvis and legs only.
 - Placement: by the 3D engine's base transform, the camera taken out (see "In the
   game").
@@ -525,6 +527,15 @@ Each was found by measuring the legs against the coat's faces and reading why:
 
 - Wind's surface lift (`wind_lift`) is parsed, not applied.
 - A room box's turn sense is unverified; characters' cylinders are not colliders.
+- The heels still come through the back hem now and then in a run, a jump and
+  against a wall (replay, `KHDAYS_REPLAY_POKE=9,18`, vertices behind the ankle:
+  run 2.9 cm in 57 of 421 frames before the heel colliders, 3.1 cm in 36 after;
+  jump 25 to 4, spawn 33 to 17). The kick-up meets the back strips (kh2_30, 54,
+  78) between controls, where the rendered panels leave the coarse contact
+  surface; radius 8 heels pinned the coat at the wall (legs 18 cm in it).
+- The pelvis's own vertices are drawn 5 % thinner front to back (`mesh_scale
+  kh2_2 1 0.95 1` in the bones file, docs/RENDERING.md): the butt came through
+  the coat by up to about 1 cm in nearly every frame but the calm idle's.
 - A draw placed by the flushed camera (neither an actor's matrix nor the base
   transform) still feels the camera turn (the GE's rounding).
 - The thumbs go into the sleeve cuffs up to about 1.5 cm in about a third of the

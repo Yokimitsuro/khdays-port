@@ -296,7 +296,9 @@ struct Model {
     int setting = -1;                   // bones.txt's `switch`: the HD replacement it follows (hud_settings.h)
     float pose_degrees = kPoseDegrees;  // bones.txt's `pose_degrees`: the rest pose correction's threshold
     std::vector<std::array<int, 3>> limbs; // bones.txt's `ik`: upper, lower and end joint, reaching as the nodes do
-    std::vector<Mat> node_rest_inverse;    // the game's model, per node
+    // bones.txt's `mesh_scale`: a joint and its skin matrix's last factor, its vertices scaled in its own axes
+    std::vector<std::pair<std::size_t, Mat>> mesh_scales;
+    std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
     int draws = 0;                      // for the session log's diagnosis
@@ -389,6 +391,12 @@ bool tracing()
     return trace != 0;
 }
 
+// A joint's mesh scale (`mesh_scale <joint> <x> <y> <z>`).
+struct MeshScale {
+    std::string joint;
+    std::array<float, 3> by{};
+};
+
 // What `<model>.bones.txt` beside the model's file says (.gltf, .glb, .fbx or .mdlx: its name without its extension).
 struct BonesFile {
     std::map<std::string, std::string> pairs;
@@ -398,6 +406,7 @@ struct BonesFile {
     std::string setting;            // the HD replacement switch it follows
     float pose_degrees = kPoseDegrees; // the rest pose correction's threshold
     std::vector<std::array<std::string, 3>> limbs; // its two-bone limbs (`ik <upper> <lower> <end>`)
+    std::vector<MeshScale> mesh_scales; // its joints' mesh scales
 };
 
 void read_bones(const std::string &model_file, BonesFile &bones)
@@ -407,6 +416,7 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &cull = bones.cull;
     auto &pose_degrees = bones.pose_degrees;
     auto &limbs = bones.limbs;
+    auto &mesh_scales = bones.mesh_scales;
     const auto dot = model_file.find_last_of('.');
     const std::string path = (dot != std::string::npos ? model_file.substr(0, dot) : model_file) + ".bones.txt";
     std::ifstream in(u8(path));
@@ -445,6 +455,16 @@ void read_bones(const std::string &model_file, BonesFile &bones)
             } else {
                 std::fprintf(stderr, "models: %s: pose_degrees %s is not a number of degrees; the line is ignored\n",
                              path.c_str(), b.c_str());
+            }
+        } else if (a == "mesh_scale") {
+            MeshScale s{b, {}};
+            if (words >> s.by[0] >> s.by[1] >> s.by[2] && s.by[0] > 0.0F && s.by[1] > 0.0F && s.by[2] > 0.0F) {
+                mesh_scales.push_back(s);
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `mesh_scale <joint> <x> <y> <z>` (each above 0, in the joint's own "
+                             "axes); the line is ignored\n",
+                             path.c_str());
             }
         } else if (a == "ik") {
             std::string lower, end;
@@ -819,6 +839,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     model->cull = bones.cull;
     model->pose_degrees = bones.pose_degrees;
     const auto &limbs = bones.limbs;
+    const auto &mesh_scales = bones.mesh_scales;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -957,6 +978,26 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             continue;
         }
         model->limbs.push_back(limb);
+    }
+
+    // the mesh scales: the joint's vertices scaled about its rest place in its own axes (B S B^-1 at rest,
+    // B its rest frame); the bones (its children, the cloth's colliders) keep their sizes
+    for (const MeshScale &s : mesh_scales) {
+        std::size_t j = 0;
+        while (j < model->joints.size() && model->joints[j].name != s.joint)
+            ++j;
+        if (j == model->joints.size()) {
+            std::fprintf(stderr, "models: %s: mesh_scale %s: no such joint; the line is ignored\n", name.c_str(),
+                         s.joint.c_str());
+            khdays_log("models: %s: mesh_scale %s: no such joint; the line is ignored", name.c_str(), s.joint.c_str());
+            continue;
+        }
+        Mat by = kIdentity;
+        by[0] = s.by[0];
+        by[5] = s.by[1];
+        by[10] = s.by[2];
+        const Mat &ib = model->joints[j].inverse_bind;
+        model->mesh_scales.emplace_back(j, mul(inverse(ib), mul(by, ib)));
     }
 
     // the meshes and their textures, each texture as its material takes its alpha (glTF alphaMode): kept;
@@ -2119,6 +2160,10 @@ void draw(Model &m)
             }
         }
     }
+    // bones.txt's mesh scales, last: the cloth and the weapons were placed on the unscaled bones
+    for (const auto &[j, by] : m.mesh_scales)
+        if (j < skin.size())
+            skin[j] = mul(skin[j], by);
     const Mat unskinned = scaled_root; // a mesh with no skin: placed with the model's first node
 
     // the polygons' attributes: the game's material's, the faces the mesh's. A mesh drawn whole (OPAQUE or

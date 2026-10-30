@@ -21,7 +21,8 @@
 // skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_TRACE=<bone,bone,...>
 // those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
 // deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
-// collide with it); KHDAYS_REPLAY_NO_SIM=1 draws the animation alone.
+// collide with it); KHDAYS_REPLAY_POKE=<bone,...> those bones' body vertices through the coat's drawn surface;
+// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone.
 
 #include "actor.h"
 
@@ -595,6 +596,79 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         ++m.frames;
         float frame_pen = 0.0F;
         const Simulation &sim = list.front()->simulation();
+        // KHDAYS_REPLAY_POKE=<bone,...>: the body's vertices on those bones through the coat's drawn surface,
+        // each frame: how far one lies outside the nearest coat triangle (within 6 cm), outward being away
+        // from the hips' long axis
+        if (const char *pk = std::getenv("KHDAYS_REPLAY_POKE"); pk != nullptr) {
+            const std::string want = std::string(",") + pk + ",";
+            std::uint32_t legs = 0;
+            for (const auto &k : rig.colliders)
+                if (k.name == "thigh_l")
+                    legs = k.tags;
+            std::vector<Triangle> coat;
+            const auto &tri = run.model.mesh.triangles;
+            for (std::size_t ti = 0; ti + 2 < tri.size(); ti += 3) {
+                bool all = true;
+                for (std::size_t k = 0; k < 3; ++k)
+                    all = all && run.model.coat_vertex[tri[ti + k]] && (run.model.vertex_tags[tri[ti + k]] & legs);
+                if (all)
+                    coat.push_back({verts[tri[ti]],
+                                    verts[tri[ti + 1]],
+                                    verts[tri[ti + 2]],
+                                    {static_cast<float>(run.model.dominant[tri[ti]]), 0.0F, 0.0F},
+                                    Surface::object});
+            }
+            TriangleBvh bvh;
+            bvh.build(std::move(coat));
+            std::vector<int> near;
+            const Frame &hips = pose[2];
+            const Vec3 axis = rotate(hips.q, {1.0F, 0.0F, 0.0F});
+            float worst = 0.0F;
+            int worst_bone = -1, over = 0, worst_under = -1;
+            for (std::size_t v = 0; v < verts.size(); ++v) {
+                const int b = run.model.dominant[v];
+                if (b < 0 || run.model.coat_vertex[v] || want.find("," + std::to_string(b) + ",") == std::string::npos)
+                    continue;
+                const Vec3 p = verts[v];
+                Aabb box;
+                box.add(p);
+                box.grow(0.06F);
+                near.clear();
+                bvh.query(box, near);
+                float best = 0.06F;
+                Vec3 q{};
+                bool found = false;
+                int under = -1;
+                for (const int ti : near) {
+                    const Triangle &c = bvh.triangles()[static_cast<std::size_t>(ti)];
+                    const Vec3 x = closest_on_triangle(p, c.a, c.b, c.c);
+                    const Vec3 n = normalized(cross(c.b - c.a, c.c - c.a), {0.0F, 0.0F, 0.0F});
+                    const Vec3 d = p - x;
+                    if (length(d - n * dot(d, n)) > 1e-4F)
+                        continue; // beside the triangle, not under it (a shoe below the hem)
+                    if (length(p - x) < best) {
+                        best = length(p - x);
+                        q = x;
+                        found = true;
+                        under = static_cast<int>(c.n.x);
+                    }
+                }
+                if (!found)
+                    continue;
+                Vec3 o = p - hips.t;
+                o = normalized(o - axis * dot(o, axis), {0.0F, 0.0F, 1.0F});
+                const float out_by = dot(p - q, o) * 100.0F;
+                if (out_by > 0.3F)
+                    ++over;
+                if (out_by > worst) {
+                    worst = out_by;
+                    worst_bone = b;
+                    worst_under = under;
+                }
+            }
+            std::fprintf(stderr, "poke %s f%d %.2f cm kh2_%d (%d verts over 0.3) under kh2_%d\n", sc.name.c_str(), f,
+                         static_cast<double>(worst), worst_bone, over, worst_under);
+        }
         {
             const std::size_t np = rig.particles.size();
             std::vector<Vec3> x(np), tg(np);
@@ -1234,6 +1308,11 @@ int main(int argc, char **argv)
                 if (v.bones[k] >= 0 && v.weights[k] > 0.5F && simulated[static_cast<std::size_t>(v.bones[k])])
                     bone = v.bones[k];
             run.model.coat_vertex.push_back(bone >= 0 ? 1 : 0);
+            int heaviest = -1;
+            for (std::size_t k = 0; k < 4; ++k)
+                if (v.bones[k] >= 0 && (heaviest < 0 || v.weights[k] > v.weights[static_cast<std::size_t>(heaviest)]))
+                    heaviest = static_cast<int>(k);
+            run.model.dominant.push_back(heaviest >= 0 ? v.bones[static_cast<std::size_t>(heaviest)] : -1);
             run.model.vertex_tags.push_back(bone >= 0 ? tags_of[static_cast<std::size_t>(bone)] : 0U);
             for (std::size_t ci = 0; ci < nc; ++ci) {
                 const Collider &k = run.rig->colliders[ci];

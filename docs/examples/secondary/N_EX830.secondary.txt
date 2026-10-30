@@ -26,6 +26,10 @@ collider foot_l   capsule 9 length 12 radius 4.5 3.5 tags legs
 collider thigh_r  capsule 14 15 offset 12 0 0 fit 0.9 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
 collider foot_r   capsule 18 length 12 radius 4.5 3.5 tags legs
+# the heels: the foot capsules run down from the ankle and the shoe reaches 8.6 cm behind it;
+# these keep the back hem off the heel kicking up in a run (6 cm: 8 pinned the coat at a wall)
+collider heel_l   capsule 9 length 11 radius 6 6 offset 0 4.3 0 tags legs
+collider heel_r   capsule 18 length 11 radius 6 6 offset 0 4.3 0 tags legs
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
 collider hand_l   sphere 133 offset 7 0 0 radius 4.5 side motion tags hands
