@@ -11,8 +11,8 @@ enum Op { GE, LE, GT, LT, EQ, NE };
 
 typedef struct Node {
     enum Kind kind;
-    int a, b;  /* AND, OR: the two sides; NOT: a */
-    int item;  /* GEAR, LINKS (0: any), PANEL */
+    int a, b; /* AND, OR: the two sides; NOT: a */
+    int item; /* GEAR, LINKS (0: any), PANEL */
     enum Op op;
     long n;
     char *name; /* PLUGIN */
@@ -134,6 +134,65 @@ static int compared(Parser *p, Node *n)
 
 static int expression(Parser *p);
 
+/* The condition named `w` (already taken) with its operands, into `n`; 0 on a mistake (told). */
+static int condition(Parser *p, const char *w, Node *n)
+{
+    long item;
+    if (strcmp(w, "dual") == 0) {
+        n->kind = DUAL;
+    } else if (strcmp(w, "gear") == 0) {
+        n->kind = GEAR;
+        if (!number(p, &item)) {
+            fail(p, "gear: the gear's item number expected");
+            return 0;
+        }
+        n->item = (int)item;
+    } else if (strcmp(w, "links") == 0) {
+        n->kind = LINKS;
+        if (number(p, &item)) {
+            n->item = (int)item;
+        }
+        return compared(p, n);
+    } else if (strcmp(w, "panel") == 0) {
+        n->kind = PANEL;
+        if (!number(p, &item)) {
+            fail(p, "panel: the panel's item number expected");
+            return 0;
+        }
+        n->item = (int)item;
+        n->op = GE;
+        n->n = 1;
+        const char *before = p->at;
+        enum Op op;
+        if (comparison(p, &op)) {
+            p->at = before;
+            return compared(p, n);
+        }
+    } else if (strcmp(w, "level") == 0 || strcmp(w, "hp") == 0) {
+        n->kind = strcmp(w, "level") == 0 ? LEVEL : HP;
+        return compared(p, n);
+    } else if (strcmp(w, "plugin") == 0) {
+        char name[128];
+        n->kind = PLUGIN;
+        if (!word(p, name, sizeof(name))) {
+            fail(p, "plugin: the condition's name expected");
+            return 0;
+        }
+        p->at += strlen(name);
+        n->name = malloc(strlen(name) + 1);
+        if (n->name == NULL) {
+            fail(p, "out of memory");
+            return 0;
+        }
+        memcpy(n->name, name, strlen(name) + 1);
+    } else {
+        p->at -= strlen(w);
+        fail(p, "not a condition (dual, gear, links, panel, level, hp, plugin or not)");
+        return 0;
+    }
+    return 1;
+}
+
 static int atom(Parser *p)
 {
     char w[64];
@@ -156,7 +215,6 @@ static int atom(Parser *p)
         return -1;
     }
     p->at += strlen(w);
-    long item;
     if (strcmp(w, "not") == 0) {
         const int a = atom(p);
         if (a < 0) {
@@ -166,65 +224,7 @@ static int atom(Parser *p)
         n.a = a;
         return add(p, n);
     }
-    if (strcmp(w, "dual") == 0) {
-        n.kind = DUAL;
-    } else if (strcmp(w, "gear") == 0) {
-        n.kind = GEAR;
-        if (!number(p, &item)) {
-            fail(p, "gear: the gear's item number expected");
-            return -1;
-        }
-        n.item = (int)item;
-    } else if (strcmp(w, "links") == 0) {
-        n.kind = LINKS;
-        if (number(p, &item)) {
-            n.item = (int)item;
-        }
-        if (!compared(p, &n)) {
-            return -1;
-        }
-    } else if (strcmp(w, "panel") == 0) {
-        n.kind = PANEL;
-        if (!number(p, &item)) {
-            fail(p, "panel: the panel's item number expected");
-            return -1;
-        }
-        n.item = (int)item;
-        n.op = GE;
-        n.n = 1;
-        const char *before = p->at;
-        enum Op op;
-        if (comparison(p, &op)) {
-            p->at = before;
-            if (!compared(p, &n)) {
-                return -1;
-            }
-        }
-    } else if (strcmp(w, "level") == 0 || strcmp(w, "hp") == 0) {
-        n.kind = strcmp(w, "level") == 0 ? LEVEL : HP;
-        if (!compared(p, &n)) {
-            return -1;
-        }
-    } else if (strcmp(w, "plugin") == 0) {
-        char name[128];
-        n.kind = PLUGIN;
-        if (!word(p, name, sizeof(name))) {
-            fail(p, "plugin: the condition's name expected");
-            return -1;
-        }
-        p->at += strlen(name);
-        n.name = malloc(strlen(name) + 1);
-        if (n.name == NULL) {
-            fail(p, "out of memory");
-            return -1;
-        }
-        memcpy(n.name, name, strlen(name) + 1);
-    } else {
-        p->at -= strlen(w);
-        fail(p, "not a condition (dual, gear, links, panel, level, hp, plugin or not)");
-        return -1;
-    }
-    return add(p, n);
+    return condition(p, w, &n) ? add(p, n) : -1;
 }
 
 static int conjunction(Parser *p)
@@ -272,18 +272,12 @@ KhdaysRule *khdays_rule_parse(const char *text, char *why, size_t why_size)
 static int compare(long value, enum Op op, long n)
 {
     switch (op) {
-    case GE:
-        return value >= n;
-    case LE:
-        return value <= n;
-    case GT:
-        return value > n;
-    case LT:
-        return value < n;
-    case EQ:
-        return value == n;
-    default:
-        return value != n;
+    case GE: return value >= n;
+    case LE: return value <= n;
+    case GT: return value > n;
+    case LT: return value < n;
+    case EQ: return value == n;
+    default: return value != n;
     }
 }
 
@@ -300,26 +294,16 @@ static int holds(const KhdaysRule *r, int at, const KhdaysFormFacts *f)
 {
     const Node *n = &r->nodes[at];
     switch (n->kind) {
-    case AND:
-        return holds(r, n->a, f) && holds(r, n->b, f);
-    case OR:
-        return holds(r, n->a, f) || holds(r, n->b, f);
-    case NOT:
-        return !holds(r, n->a, f);
-    case DUAL:
-        return f->dual != 0;
-    case GEAR:
-        return f->gear != 0 && f->gear == n->item;
-    case LINKS:
-        return compare(counted(f->gear_links, f->gear_link_count, n->item), n->op, n->n);
-    case PANEL:
-        return compare(counted(f->panels, f->panel_count, n->item), n->op, n->n);
-    case LEVEL:
-        return f->level >= 0 && compare(f->level, n->op, n->n);
-    case HP:
-        return f->hp_percent >= 0 && compare(f->hp_percent, n->op, n->n);
-    default:
-        return f->plugin != NULL && f->plugin(n->name, f->seat, f->number, f->plugin_user) != 0;
+    case AND: return holds(r, n->a, f) && holds(r, n->b, f);
+    case OR: return holds(r, n->a, f) || holds(r, n->b, f);
+    case NOT: return !holds(r, n->a, f);
+    case DUAL: return f->dual != 0;
+    case GEAR: return f->gear != 0 && f->gear == n->item;
+    case LINKS: return compare(counted(f->gear_links, f->gear_link_count, n->item), n->op, n->n);
+    case PANEL: return compare(counted(f->panels, f->panel_count, n->item), n->op, n->n);
+    case LEVEL: return f->level >= 0 && compare(f->level, n->op, n->n);
+    case HP: return f->hp_percent >= 0 && compare(f->hp_percent, n->op, n->n);
+    default: return f->plugin != NULL && f->plugin(n->name, f->seat, f->number, f->plugin_user) != 0;
     }
 }
 

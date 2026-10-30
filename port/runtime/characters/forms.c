@@ -214,16 +214,6 @@ const KhdaysCharacter *khdays_characters_seat_form_now(int seat)
     return loaded[seat] != NULL ? loaded[seat] : c;
 }
 
-void khdays_characters_set_seat_form(int seat, const KhdaysCharacter *form)
-{
-    if (seat < 0 || seat >= SEATS) {
-        return;
-    }
-    const KhdaysCharacter *c = khdays_characters_seat_character(seat);
-    loaded[seat] = form == c ? NULL : form;
-    chosen[seat] = form != NULL;
-}
-
 void khdays_characters_forms_clear(void)
 {
     for (int seat = 0; seat < SEATS; ++seat) {
@@ -265,8 +255,8 @@ void khdays_characters_forms_frame(void)
              * next camp */
             told_later[seat] = 1;
             if (traced()) {
-                khdays_log("characters: seat %d's rules now choose form %s of %s: from the next mission",
-                           seat, khdays_characters_form_id(form), c->identity);
+                khdays_log("characters: seat %d's rules now choose form %s of %s: from the next mission", seat,
+                           khdays_characters_form_id(form), c->identity);
             }
         }
     }

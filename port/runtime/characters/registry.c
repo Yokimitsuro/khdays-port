@@ -598,8 +598,8 @@ static enum Section head(KhdaysCharacter *c, const char *s, int *form, char *why
     static const struct {
         const char *name;
         enum Section section;
-    } parts[] = {{"character", CHARACTER}, {"model", MODEL},     {"actions", ACTIONS}, {"sounds", SOUNDS},
-                 {"moveset", MOVESET},     {"limit", LIMIT},     {"stats", STATS},     {"weapons", WEAPONS}};
+    } parts[] = {{"character", CHARACTER}, {"model", MODEL}, {"actions", ACTIONS}, {"sounds", SOUNDS},
+                 {"moveset", MOVESET},     {"limit", LIMIT}, {"stats", STATS},     {"weapons", WEAPONS}};
     char inside[160] = "", first[64] = "", id[64] = "", part[64] = "", extra[8] = "";
     const size_t n = strlen(s);
     *form = -1;
@@ -640,6 +640,107 @@ static enum Section head(KhdaysCharacter *c, const char *s, int *form, char *why
     return OTHER;
 }
 
+/* ---- A form made whole ---------------------------------------------------------------------- */
+
+/* The character's actions, copied into form `f`; 0 when out of memory. */
+static int copy_actions(KhdaysCharacter *f, const KhdaysCharacter *c)
+{
+    int ok = (f->fallback = copy(c->fallback)) != NULL || c->fallback == NULL;
+    f->actions = c->action_count > 0 ? calloc((size_t)c->action_count, sizeof(*f->actions)) : NULL;
+    for (int i = 0; f->actions != NULL && i < c->action_count; ++i) {
+        f->actions[i] = c->actions[i];
+        f->actions[i].game = copy(c->actions[i].game);
+        f->actions[i].clip = copy(c->actions[i].clip);
+        ok &= f->actions[i].game != NULL && f->actions[i].clip != NULL;
+        f->action_count = i + 1;
+    }
+    return ok && (c->action_count == 0 || f->actions != NULL);
+}
+
+/* The character's sounds, copied into form `f`; 0 when out of memory. */
+static int copy_sounds(KhdaysCharacter *f, const KhdaysCharacter *c)
+{
+    int ok = 1;
+    f->sounds = c->sound_count > 0 ? calloc((size_t)c->sound_count, sizeof(*f->sounds)) : NULL;
+    for (int i = 0; f->sounds != NULL && i < c->sound_count; ++i) {
+        f->sounds[i].game = copy(c->sounds[i].game);
+        f->sounds[i].file = copy(c->sounds[i].file);
+        ok &= f->sounds[i].game != NULL && (f->sounds[i].file != NULL || c->sounds[i].file == NULL);
+        f->sound_count = i + 1;
+    }
+    return ok && (c->sound_count == 0 || f->sounds != NULL);
+}
+
+/* The character's moveset, copied into form `f` when both play the same base (`why` says so when not: the
+ * form's base's moves play); 0 when out of memory. */
+static int copy_moveset(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size_t why_size)
+{
+    const int has = c->combos[0].count > 0 || c->combos[1].count > 0 || c->combos[0].finisher >= 0 ||
+                    c->combos[1].finisher >= 0 || c->attack_count > 0;
+    int ok = 1;
+    if (has && f->base != c->base) {
+        snprintf(why, why_size,
+                 "[form %.60s]: its default's [moveset] names %s's attacks, not %s's: its base's "
+                 "moves play (give it a [form %.60s moveset], `moves = base` for those)",
+                 f->form, bases[c->base].name, bases[f->base].name, f->form);
+        return 1;
+    }
+    if (!has) {
+        return 1;
+    }
+    for (int g = 0; g < 2; ++g) {
+        f->combos[g].finisher = c->combos[g].finisher;
+        f->combos[g].count = c->combos[g].count;
+        f->combos[g].attacks = c->combos[g].count > 0 ? malloc((size_t)c->combos[g].count * sizeof(int)) : NULL;
+        if (f->combos[g].attacks != NULL) {
+            memcpy(f->combos[g].attacks, c->combos[g].attacks, (size_t)c->combos[g].count * sizeof(int));
+        } else {
+            ok &= c->combos[g].count == 0;
+            f->combos[g].count = 0;
+        }
+    }
+    f->attacks = c->attack_count > 0 ? malloc((size_t)c->attack_count * sizeof(*f->attacks)) : NULL;
+    if (f->attacks != NULL) {
+        memcpy(f->attacks, c->attacks, (size_t)c->attack_count * sizeof(*f->attacks));
+        f->attack_count = c->attack_count;
+    } else {
+        ok &= c->attack_count == 0;
+    }
+    return ok;
+}
+
+/* The character's level stats, copied into form `f`; 0 when out of memory. */
+static int copy_stats(KhdaysCharacter *f, const KhdaysCharacter *c)
+{
+    if (c->stat_count == 0) {
+        return 1;
+    }
+    f->stats = malloc((size_t)c->stat_count * sizeof(*f->stats));
+    if (f->stats == NULL) {
+        return 0;
+    }
+    memcpy(f->stats, c->stats, (size_t)c->stat_count * sizeof(*f->stats));
+    f->stat_count = c->stat_count;
+    return 1;
+}
+
+/* The character's weapons, copied into form `f`; 0 when out of memory. */
+static int copy_weapons(KhdaysCharacter *f, const KhdaysCharacter *c)
+{
+    int ok = 1;
+    if (c->weapon_count == 0) {
+        return 1;
+    }
+    f->weapons = calloc((size_t)c->weapon_count, sizeof(*f->weapons));
+    for (int i = 0; f->weapons != NULL && i < c->weapon_count; ++i) {
+        f->weapons[i].game = copy(c->weapons[i].game);
+        f->weapons[i].file = copy(c->weapons[i].file);
+        ok &= f->weapons[i].game != NULL && f->weapons[i].file != NULL;
+        f->weapon_count = i + 1;
+    }
+    return ok && f->weapons != NULL;
+}
+
 /* A deep copy of what `f` takes from its character `c` (a part it does not give itself). */
 static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size_t why_size)
 {
@@ -678,78 +779,23 @@ static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size
         memcpy(f->weapon_turn, c->weapon_turn, sizeof(f->weapon_turn));
     }
     if (!(f->gives & KHDAYS_FORM_GIVES_ACTIONS)) {
-        ok &= (f->fallback = copy(c->fallback)) != NULL || c->fallback == NULL;
-        f->actions = c->action_count > 0 ? calloc((size_t)c->action_count, sizeof(*f->actions)) : NULL;
-        for (int i = 0; f->actions != NULL && i < c->action_count; ++i) {
-            f->actions[i] = c->actions[i];
-            f->actions[i].game = copy(c->actions[i].game);
-            f->actions[i].clip = copy(c->actions[i].clip);
-            ok &= f->actions[i].game != NULL && f->actions[i].clip != NULL;
-            f->action_count = i + 1;
-        }
-        ok &= c->action_count == 0 || f->actions != NULL;
+        ok &= copy_actions(f, c);
     }
     if (!(f->gives & KHDAYS_FORM_GIVES_SOUNDS)) {
-        f->sounds = c->sound_count > 0 ? calloc((size_t)c->sound_count, sizeof(*f->sounds)) : NULL;
-        for (int i = 0; f->sounds != NULL && i < c->sound_count; ++i) {
-            f->sounds[i].game = copy(c->sounds[i].game);
-            f->sounds[i].file = copy(c->sounds[i].file);
-            ok &= f->sounds[i].game != NULL && (f->sounds[i].file != NULL || c->sounds[i].file == NULL);
-            f->sound_count = i + 1;
-        }
-        ok &= c->sound_count == 0 || f->sounds != NULL;
+        ok &= copy_sounds(f, c);
     }
     if (!(f->gives & KHDAYS_FORM_GIVES_MOVESET)) {
-        const int has = c->combos[0].count > 0 || c->combos[1].count > 0 || c->combos[0].finisher >= 0 ||
-                        c->combos[1].finisher >= 0 || c->attack_count > 0;
-        if (has && f->base != c->base) {
-            snprintf(why, why_size, "[form %.60s]: its default's [moveset] names %s's attacks, not %s's: its base's "
-                     "moves play (give it a [form %.60s moveset], `moves = base` for those)",
-                     f->form, bases[c->base].name, bases[f->base].name, f->form);
-        } else if (has) {
-            for (int g = 0; g < 2; ++g) {
-                f->combos[g].finisher = c->combos[g].finisher;
-                f->combos[g].count = c->combos[g].count;
-                f->combos[g].attacks =
-                    c->combos[g].count > 0 ? malloc((size_t)c->combos[g].count * sizeof(int)) : NULL;
-                if (f->combos[g].attacks != NULL) {
-                    memcpy(f->combos[g].attacks, c->combos[g].attacks, (size_t)c->combos[g].count * sizeof(int));
-                } else {
-                    ok &= c->combos[g].count == 0;
-                    f->combos[g].count = 0;
-                }
-            }
-            f->attacks = c->attack_count > 0 ? malloc((size_t)c->attack_count * sizeof(*f->attacks)) : NULL;
-            if (f->attacks != NULL) {
-                memcpy(f->attacks, c->attacks, (size_t)c->attack_count * sizeof(*f->attacks));
-                f->attack_count = c->attack_count;
-            } else {
-                ok &= c->attack_count == 0;
-            }
-        }
+        ok &= copy_moveset(f, c, why, why_size);
     }
     if (!(f->gives & KHDAYS_FORM_GIVES_LIMIT)) {
         f->own_moves_damage = c->own_moves_damage;
     }
-    if (!(f->gives & KHDAYS_FORM_GIVES_STATS) && c->stat_count > 0) {
-        f->stats = malloc((size_t)c->stat_count * sizeof(*f->stats));
-        if (f->stats != NULL) {
-            memcpy(f->stats, c->stats, (size_t)c->stat_count * sizeof(*f->stats));
-            f->stat_count = c->stat_count;
-        } else {
-            ok = 0;
-        }
+    if (!(f->gives & KHDAYS_FORM_GIVES_STATS)) {
+        ok &= copy_stats(f, c);
     }
     /* the weapons name the base's models: another base's are its own */
-    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPONS) && f->base == c->base && c->weapon_count > 0) {
-        f->weapons = calloc((size_t)c->weapon_count, sizeof(*f->weapons));
-        for (int i = 0; f->weapons != NULL && i < c->weapon_count; ++i) {
-            f->weapons[i].game = copy(c->weapons[i].game);
-            f->weapons[i].file = copy(c->weapons[i].file);
-            ok &= f->weapons[i].game != NULL && f->weapons[i].file != NULL;
-            f->weapon_count = i + 1;
-        }
-        ok &= f->weapons != NULL;
+    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPONS) && f->base == c->base) {
+        ok &= copy_weapons(f, c);
     }
     ok &= (f->identity = copy(c->identity)) != NULL;
     if (f->identity != NULL) {
@@ -761,279 +807,391 @@ static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size
     return ok;
 }
 
-int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *mod_folder, const char *key,
-                           const char *text, size_t size, KhdaysCharactersReport report, void *context)
-{
+/* ---- A description read ----------------------------------------------------------------------- */
+
+/* What reading one description keeps from line to line. */
+typedef struct Reading {
     KhdaysCharacter c;
-    char why[300] = "", form_why[300] = "";
-    int why_line = 0, line = 0, format = 0, has_format = 0, has_base = 0, form = -1, form_line = 0;
-    enum Section section = NONE;
-    memset(&c, 0, sizeof(c));
-    c.base = -1;
-    c.combos[KHDAYS_CHARACTER_GROUND].finisher = c.combos[KHDAYS_CHARACTER_AIR].finisher = -1;
-    c.own_moves_damage = 1.0f;
-    if (!good_key(key)) {
-        report(mod_id, key, 0, "its folder's name is not a key (letters, digits, '_' and '-' only)", context);
+    enum Section section; /* the part being read */
+    int form;             /* its form (-1 the character's own) */
+    int format, has_format, has_base;
+    char why[300]; /* the mistake that leaves the character out, and its line */
+    int why_line;
+    const char *mod_id, *key; /* for the reports */
+    KhdaysCharactersReport report;
+    void *context;
+} Reading;
+
+static void fail(Reading *rd, int line, const char *why)
+{
+    snprintf(rd->why, sizeof(rd->why), "%s", why);
+    rd->why_line = line;
+}
+
+static void note(Reading *rd, int line, const char *text)
+{
+    rd->report(rd->mod_id, rd->key, line, text, rd->context);
+}
+
+/* The next line from `*at`: [*a, *b) without the spaces at its ends, a UTF-8 mark (on the first line) or a
+ * comment (from a # at its start or after a space). */
+static void next_line(const char *text, size_t size, size_t *at, int first, size_t *a, size_t *b)
+{
+    size_t from = *at, to = *at;
+    while (to < size && text[to] != '\n') {
+        ++to;
+    }
+    *at = to + 1;
+    while (from < to && isspace((unsigned char)text[from])) {
+        ++from;
+    }
+    while (to > from && isspace((unsigned char)text[to - 1])) {
+        --to;
+    }
+    if (first && to - from >= 3 && (unsigned char)text[from] == 0xef && (unsigned char)text[from + 1] == 0xbb &&
+        (unsigned char)text[from + 2] == 0xbf) {
+        from += 3;
+    }
+    for (size_t i = from; i < to; ++i) {
+        if (text[i] == '#' && (i == from || isspace((unsigned char)text[i - 1]))) {
+            to = i;
+        }
+    }
+    while (to > from && isspace((unsigned char)text[to - 1])) {
+        --to;
+    }
+    *a = from;
+    *b = to;
+}
+
+/* A part's head (`[model]`, `[form dual]`...): the part read next. */
+static void read_head(Reading *rd, const char *s, size_t n, int line)
+{
+    char *text = copy_n(s, n);
+    if (text == NULL) {
+        fail(rd, line, "out of memory");
+        return;
+    }
+    rd->section = head(&rd->c, text, &rd->form, rd->why, sizeof(rd->why));
+    if (rd->why[0] != '\0') {
+        rd->why_line = line;
+    } else if (rd->section == OTHER) {
+        char text_note[200];
+        snprintf(text_note, sizeof(text_note), "%.80s: no such part (its lines are not read)", text);
+        note(rd, line, text_note);
+    }
+    free(text);
+}
+
+/* A line of a part with a reader of its own, into `t` (what the part gives marked); 0 for another part. */
+static int read_part(KhdaysCharacter *t, enum Section section, const char *name, const char *value, char *why,
+                     size_t why_size)
+{
+    switch (section) {
+    case ACTIONS:
+        read_action(t, name, value, why, why_size);
+        t->gives |= KHDAYS_FORM_GIVES_ACTIONS;
+        return 1;
+    case SOUNDS:
+        read_sound(t, name, value, why, why_size);
+        t->gives |= KHDAYS_FORM_GIVES_SOUNDS;
+        return 1;
+    case MOVESET:
+        read_moveset(t, name, value, why, why_size);
+        t->gives |= KHDAYS_FORM_GIVES_MOVESET;
+        return 1;
+    case STATS:
+        read_stats(t, name, value, why, why_size);
+        t->gives |= KHDAYS_FORM_GIVES_STATS;
+        return 1;
+    case WEAPONS:
+        read_weapon(t, name, value, why, why_size);
+        t->gives |= KHDAYS_FORM_GIVES_WEAPONS;
+        return 1;
+    case LIMIT: {
+        if (strcmp(name, "damage") != 0) {
+            return 0;
+        }
+        char *number_end;
+        const float v = strtof(value, &number_end);
+        if (number_end == value || *number_end != '\0' || !(v >= 0.0f)) {
+            snprintf(why, why_size, "damage %.40s: a number of times, 0 or more", value);
+        } else {
+            t->own_moves_damage = v;
+            t->gives |= KHDAYS_FORM_GIVES_LIMIT;
+        }
+        return 1;
+    }
+    default: return 0;
+    }
+}
+
+/* A [character] line; 0 when the part has no such name. `*value` is taken when kept. */
+static int read_character(Reading *rd, const char *name, char **value)
+{
+    KhdaysCharacter *c = &rd->c;
+    char **slot = NULL;
+    int l;
+    if (strcmp(name, "format") == 0) {
+        char *digits_end;
+        const long v = strtol(*value, &digits_end, 10);
+        if (digits_end == *value || *digits_end != '\0' || v < 1) {
+            snprintf(rd->why, sizeof(rd->why), "format: not a version (%.40s)", *value);
+        } else if (v > KHDAYS_CHARACTER_FORMAT) {
+            snprintf(rd->why, sizeof(rd->why), "format %ld is newer than this port reads (%d)", v,
+                     KHDAYS_CHARACTER_FORMAT);
+        } else {
+            rd->format = (int)v;
+            rd->has_format = 1;
+        }
+    } else if (strcmp(name, "key") == 0) {
+        if (strcmp(*value, rd->key) != 0) {
+            snprintf(rd->why, sizeof(rd->why), "key %.60s: not its folder's name (%.60s)", *value, rd->key);
+        }
+    } else if (strcmp(name, "base") == 0) {
+        c->base = base_by_name(*value, KHDAYS_CHARACTER_BASES);
+        if (c->base < 0) {
+            snprintf(rd->why, sizeof(rd->why), "base %.60s is not one of the game's characters", *value);
+        }
+        rd->has_base = 1;
+    } else if ((l = named(name, "name")) != -2) {
+        slot = l < 0 ? &c->any_name : &c->name[l];
+    } else if ((l = named(name, "weapon")) != -2) {
+        slot = l < 0 ? &c->any_weapon : &c->weapon[l];
+    } else if (strcmp(name, "face") == 0) {
+        if (!good_reference(*value)) {
+            snprintf(rd->why, sizeof(rd->why), "face %.80s: not a file inside the character's folder", *value);
+        } else {
+            slot = &c->face;
+        }
+    } else if (strcmp(name, "locked") == 0) {
+        if (same_word(*value, "no")) {
+            c->locked_with_base = 0;
+        } else if (same_word(*value, "base")) {
+            c->locked_with_base = 1;
+        } else {
+            snprintf(rd->why, sizeof(rd->why), "locked %.40s: no or base", *value);
+        }
+    } else if (strcmp(name, "gauges") == 0) {
+        if (!read_bytes(*value, c->gauges, KHDAYS_CHARACTER_GAUGES)) {
+            snprintf(rd->why, sizeof(rd->why), "gauges: %d numbers 0-255", KHDAYS_CHARACTER_GAUGES);
+        }
+        c->has_gauges = 1;
+    } else {
         return 0;
     }
-    for (size_t at = 0; at < size && why[0] == '\0';) {
-        size_t end = at;
-        while (end < size && text[end] != '\n') {
-            ++end;
-        }
-        ++line;
-        /* the line without its ends' spaces (and a carriage return) */
-        size_t a = at, b = end;
-        at = end + 1;
-        while (a < b && isspace((unsigned char)text[a])) {
-            ++a;
-        }
-        while (b > a && isspace((unsigned char)text[b - 1])) {
-            --b;
-        }
-        if (line == 1 && b - a >= 3 && (unsigned char)text[a] == 0xef && (unsigned char)text[a + 1] == 0xbb &&
-            (unsigned char)text[a + 2] == 0xbf) {
-            a += 3; /* a UTF-8 mark */
-        }
-        /* a comment: from a # at the start or after a space */
-        for (size_t i = a; i < b; ++i) {
-            if (text[i] == '#' && (i == a || isspace((unsigned char)text[i - 1]))) {
-                b = i;
-            }
-        }
-        while (b > a && isspace((unsigned char)text[b - 1])) {
-            --b;
-        }
-        if (a == b) {
-            continue;
-        }
-        if (text[a] == '[') {
-            char *s = copy_n(text + a, b - a);
-            if (s == NULL) {
-                snprintf(why, sizeof(why), "out of memory");
-                why_line = line;
-                break;
-            }
-            section = head(&c, s, &form, why, sizeof(why));
-            if (why[0] != '\0') {
-                why_line = line;
-            } else if (section == OTHER) {
-                char note[200];
-                snprintf(note, sizeof(note), "%.80s: no such part (its lines are not read)", s);
-                report(mod_id, key, line, note, context);
-            }
-            free(s);
-            continue;
-        }
-        const char *eq = memchr(text + a, '=', b - a);
-        if (eq == NULL) {
-            snprintf(why, sizeof(why), "not a `name = value` line");
-            why_line = line;
-            break;
-        }
-        size_t ne = (size_t)(eq - text), vs = ne + 1;
-        while (ne > a && isspace((unsigned char)text[ne - 1])) {
-            --ne;
-        }
-        while (vs < b && isspace((unsigned char)text[vs])) {
-            ++vs;
-        }
-        char *name = copy_n(text + a, ne - a), *value = copy_n(text + vs, b - vs);
-        if (name == NULL || value == NULL) {
-            free(name);
-            free(value);
-            snprintf(why, sizeof(why), "out of memory");
-            why_line = line;
-            break;
-        }
-        /* a form's lines: a mistake leaves that form out, not the character */
-        KhdaysCharacter *t = form >= 0 ? &c.forms[form] : &c;
-        char *line_why = form >= 0 ? form_why : why;
-        const size_t line_why_size = form >= 0 ? sizeof(form_why) : sizeof(why);
-        int l;
-        form_why[0] = '\0';
-        if (section == OTHER) {
-            /* told at the part's head */
-        } else if (section == ACTIONS) {
-            read_action(t, name, value, line_why, line_why_size);
-            t->gives |= KHDAYS_FORM_GIVES_ACTIONS;
-        } else if (section == SOUNDS) {
-            read_sound(t, name, value, line_why, line_why_size);
-            t->gives |= KHDAYS_FORM_GIVES_SOUNDS;
-        } else if (section == MOVESET) {
-            read_moveset(t, name, value, line_why, line_why_size);
-            t->gives |= KHDAYS_FORM_GIVES_MOVESET;
-        } else if (section == STATS) {
-            read_stats(t, name, value, line_why, line_why_size);
-            t->gives |= KHDAYS_FORM_GIVES_STATS;
-        } else if (section == WEAPONS) {
-            read_weapon(t, name, value, line_why, line_why_size);
-            t->gives |= KHDAYS_FORM_GIVES_WEAPONS;
-        } else if (section == LIMIT && strcmp(name, "damage") == 0) {
-            char *number_end;
-            const float v = strtof(value, &number_end);
-            if (number_end == value || *number_end != '\0' || !(v >= 0.0f)) {
-                snprintf(line_why, line_why_size, "damage %.40s: a number of times, 0 or more", value);
-            } else {
-                t->own_moves_damage = v;
-                t->gives |= KHDAYS_FORM_GIVES_LIMIT;
-            }
-        } else if (section == FORM && read_form(t, name, value, line_why, line_why_size)) {
-        } else if ((section == MODEL || section == FORM) && read_model(t, name, &value, line_why, line_why_size)) {
-        } else if (section == NONE) {
-            snprintf(why, sizeof(why), "%.60s: before any part ([character] first)", name);
-        } else if (section == CHARACTER && strcmp(name, "format") == 0) {
-            char *digits_end;
-            const long v = strtol(value, &digits_end, 10);
-            if (digits_end == value || *digits_end != '\0' || v < 1) {
-                snprintf(why, sizeof(why), "format: not a version (%.40s)", value);
-            } else if (v > KHDAYS_CHARACTER_FORMAT) {
-                snprintf(why, sizeof(why), "format %ld is newer than this port reads (%d)", v, KHDAYS_CHARACTER_FORMAT);
-            } else {
-                format = (int)v;
-                has_format = 1;
-            }
-        } else if (section == CHARACTER && strcmp(name, "key") == 0) {
-            if (strcmp(value, key) != 0) {
-                snprintf(why, sizeof(why), "key %.60s: not its folder's name (%.60s)", value, key);
-            }
-        } else if (section == CHARACTER && strcmp(name, "base") == 0) {
-            c.base = base_by_name(value, KHDAYS_CHARACTER_BASES);
-            if (c.base < 0) {
-                snprintf(why, sizeof(why), "base %.60s is not one of the game's characters", value);
-            }
-            has_base = 1;
-        } else if (section == CHARACTER && (l = named(name, "name")) != -2) {
-            char **slot = l < 0 ? &c.any_name : &c.name[l];
-            free(*slot);
-            *slot = value;
-            value = NULL;
-        } else if (section == CHARACTER && (l = named(name, "weapon")) != -2) {
-            char **slot = l < 0 ? &c.any_weapon : &c.weapon[l];
-            free(*slot);
-            *slot = value;
-            value = NULL;
-        } else if (section == CHARACTER && strcmp(name, "face") == 0) {
-            if (!good_reference(value)) {
-                snprintf(why, sizeof(why), "face %.80s: not a file inside the character's folder", value);
-            } else {
-                free(c.face);
-                c.face = value;
-                value = NULL;
-            }
-        } else if (section == CHARACTER && strcmp(name, "locked") == 0) {
-            if (same_word(value, "no")) {
-                c.locked_with_base = 0;
-            } else if (same_word(value, "base")) {
-                c.locked_with_base = 1;
-            } else {
-                snprintf(why, sizeof(why), "locked %.40s: no or base", value);
-            }
-        } else if (section == CHARACTER && strcmp(name, "gauges") == 0) {
-            if (!read_bytes(value, c.gauges, KHDAYS_CHARACTER_GAUGES)) {
-                snprintf(why, sizeof(why), "gauges: %d numbers 0-255", KHDAYS_CHARACTER_GAUGES);
-            }
-            c.has_gauges = 1;
-        } else {
-            char note[200];
-            snprintf(note, sizeof(note), "%.80s: not a name this part has (the line is not read)", name);
-            report(mod_id, key, line, note, context);
-        }
-        if (why[0] != '\0') {
-            why_line = line;
-        }
-        if (form >= 0 && form_why[0] != '\0' && !(c.forms[form].gives & FORM_BROKEN)) {
-            char note[360];
-            snprintf(note, sizeof(note), "[form %.60s] %s: the form is left out", c.forms[form].form, form_why);
-            report(mod_id, key, line, note, context);
-            c.forms[form].gives |= FORM_BROKEN;
-            form_line = line;
-        }
+    if (slot != NULL) {
+        free(*slot);
+        *slot = *value;
+        *value = NULL;
+    }
+    return 1;
+}
+
+/* A `name = value` line of the part being read. A form's mistake leaves that form out, not the character. */
+static void read_setting(Reading *rd, const char *s, size_t n, int line)
+{
+    const char *eq = memchr(s, '=', n);
+    if (eq == NULL) {
+        fail(rd, line, "not a `name = value` line");
+        return;
+    }
+    size_t ne = (size_t)(eq - s), vs = ne + 1;
+    while (ne > 0 && isspace((unsigned char)s[ne - 1])) {
+        --ne;
+    }
+    while (vs < n && isspace((unsigned char)s[vs])) {
+        ++vs;
+    }
+    char *name = copy_n(s, ne), *value = copy_n(s + vs, n - vs);
+    if (name == NULL || value == NULL) {
         free(name);
         free(value);
+        fail(rd, line, "out of memory");
+        return;
     }
-    (void)form_line;
-    if (why[0] == '\0') {
-        why_line = 0;
-        if (!has_format) {
-            snprintf(why, sizeof(why), "format missing ([character] format = %d)", KHDAYS_CHARACTER_FORMAT);
-        } else if (!has_base) {
-            snprintf(why, sizeof(why), "base missing (the game's character it plays as)");
-        } else if (c.any_name == NULL && c.name[0] == NULL) {
-            snprintf(why, sizeof(why), "name missing (name, or name.en)");
-        } else if (c.model == NULL) {
-            snprintf(why, sizeof(why), "its model missing ([model] file)");
-        }
+    KhdaysCharacter *t = rd->form >= 0 ? &rd->c.forms[rd->form] : &rd->c;
+    char form_why[300] = "";
+    char *why = rd->form >= 0 ? form_why : rd->why;
+    const size_t why_size = rd->form >= 0 ? sizeof(form_why) : sizeof(rd->why);
+    if (rd->section == OTHER) {
+        /* told at the part's head */
+    } else if (read_part(t, rd->section, name, value, why, why_size)) {
+    } else if (rd->section == FORM && read_form(t, name, value, why, why_size)) {
+    } else if ((rd->section == MODEL || rd->section == FORM) && read_model(t, name, &value, why, why_size)) {
+    } else if (rd->section == NONE) {
+        snprintf(rd->why, sizeof(rd->why), "%.60s: before any part ([character] first)", name);
+    } else if (rd->section == CHARACTER && read_character(rd, name, &value)) {
+    } else {
+        char text_note[200];
+        snprintf(text_note, sizeof(text_note), "%.80s: not a name this part has (the line is not read)", name);
+        note(rd, line, text_note);
     }
-    if (why[0] != '\0') {
-        report(mod_id, key, why_line, why, context);
-        free_character(&c);
-        return 0;
+    if (rd->why[0] != '\0') {
+        rd->why_line = line;
     }
-    if (format < 2 && (c.form_count > 0 || c.stat_count > 0 || c.weapon_count > 0)) {
-        report(mod_id, key, 0, "forms, [stats] and [weapons] need format = 2: they are not read", context);
-        for (int i = 0; i < c.form_count; ++i) {
-            free_character(&c.forms[i]);
-        }
-        c.form_count = 0;
-        free(c.stats);
-        c.stats = NULL;
-        c.stat_count = 0;
+    if (rd->form >= 0 && form_why[0] != '\0' && !(rd->c.forms[rd->form].gives & FORM_BROKEN)) {
+        char text_note[360];
+        snprintf(text_note, sizeof(text_note), "[form %.60s] %s: the form is left out", rd->c.forms[rd->form].form,
+                 form_why);
+        note(rd, line, text_note);
+        rd->c.forms[rd->form].gives |= FORM_BROKEN;
+    }
+    free(name);
+    free(value);
+}
+
+/* What every description must have: the first one missing in `why`. */
+static void check_complete(Reading *rd)
+{
+    const KhdaysCharacter *c = &rd->c;
+    rd->why_line = 0;
+    if (!rd->has_format) {
+        snprintf(rd->why, sizeof(rd->why), "format missing ([character] format = %d)", KHDAYS_CHARACTER_FORMAT);
+    } else if (!rd->has_base) {
+        snprintf(rd->why, sizeof(rd->why), "base missing (the game's character it plays as)");
+    } else if (c->any_name == NULL && c->name[0] == NULL) {
+        snprintf(rd->why, sizeof(rd->why), "name missing (name, or name.en)");
+    } else if (c->model == NULL) {
+        snprintf(rd->why, sizeof(rd->why), "its model missing ([model] file)");
+    }
+}
+
+/* Format 1 has no forms, [stats] or [weapons]: a description of it that names them has them left out (told). */
+static void drop_format_two(Reading *rd)
+{
+    KhdaysCharacter *c = &rd->c;
+    if (rd->format >= 2 || (c->form_count == 0 && c->stat_count == 0 && c->weapon_count == 0)) {
+        return;
+    }
+    note(rd, 0, "forms, [stats] and [weapons] need format = 2: they are not read");
+    for (int i = 0; i < c->form_count; ++i) {
+        free_character(&c->forms[i]);
+    }
+    c->form_count = 0;
+    free(c->stats);
+    c->stats = NULL;
+    c->stat_count = 0;
 #pragma warning(push)
 #pragma warning(disable : 6001) /* the weapons up to weapon_count are read_weapon's, `game` set, `file` set or NULL */
-        for (int i = 0; i < c.weapon_count; ++i) {
-            free(c.weapons[i].game);
-            free(c.weapons[i].file);
-        }
+    for (int i = 0; i < c->weapon_count; ++i) {
+        free(c->weapons[i].game);
+        free(c->weapons[i].file);
+    }
 #pragma warning(pop)
-        free(c.weapons);
-        c.weapons = NULL;
-        c.weapon_count = 0;
-    }
-    c.mod = add_mod(r, mod_id, mod_folder);
-    const size_t n = strlen(mod_id) + 1 + strlen(key) + 1;
-    c.identity = c.mod >= 0 ? malloc(n) : NULL;
-    if (c.identity == NULL) {
-        report(mod_id, key, 0, "out of memory", context);
-        free_character(&c);
-        return 0;
-    }
-    snprintf(c.identity, n, "%s/%s", mod_id, key);
-    c.key = c.identity + strlen(mod_id) + 1;
-    /* the forms: each one complete, what it does not give taken from the character; a broken one left out */
-    for (int i = c.form_count - 1; i >= 0; --i) {
-        KhdaysCharacter *f = &c.forms[i];
-        char note[360] = "";
+    free(c->weapons);
+    c->weapons = NULL;
+    c->weapon_count = 0;
+}
+
+/* Each form made whole, what it does not give taken from the character; a broken one left out (told). */
+static void complete_forms(Reading *rd)
+{
+    KhdaysCharacter *c = &rd->c;
+    for (int i = c->form_count - 1; i >= 0; --i) {
+        KhdaysCharacter *f = &c->forms[i];
+        char text_note[360] = "";
         if (!(f->gives & FORM_BROKEN) && f->rule == NULL) {
-            snprintf(note, sizeof(note), "[form %.60s]: no `when` (it would never be chosen): left out", f->form);
+            snprintf(text_note, sizeof(text_note), "[form %.60s]: no `when` (it would never be chosen): left out",
+                     f->form);
             f->gives |= FORM_BROKEN;
         }
-        if (!(f->gives & FORM_BROKEN)) {
-            if (!inherit(f, &c, note, sizeof(note)) && note[0] != '\0') {
-                f->gives |= FORM_BROKEN;
-            }
+        if (!(f->gives & FORM_BROKEN) && !inherit(f, c, text_note, sizeof(text_note)) && text_note[0] != '\0') {
+            f->gives |= FORM_BROKEN;
         }
-        if (note[0] != '\0') {
-            report(mod_id, key, 0, note, context);
+        if (text_note[0] != '\0') {
+            note(rd, 0, text_note);
         }
         if (f->gives & FORM_BROKEN) {
             free_character(f);
-            memmove(f, f + 1, (size_t)(c.form_count - i - 1) * sizeof(*f));
-            --c.form_count;
+            memmove(f, f + 1, (size_t)(c->form_count - i - 1) * sizeof(*f));
+            --c->form_count;
         }
     }
+}
+
+/* The character's identity (`mod/key`) and its mod in the registry; 0 when out of memory. */
+static int set_identity(KhdaysCharacters *r, KhdaysCharacter *c, const char *mod_id, const char *mod_folder,
+                        const char *key)
+{
+    c->mod = add_mod(r, mod_id, mod_folder);
+    const size_t n = strlen(mod_id) + 1 + strlen(key) + 1;
+    c->identity = c->mod >= 0 ? malloc(n) : NULL;
+    if (c->identity == NULL) {
+        return 0;
+    }
+    snprintf(c->identity, n, "%s/%s", mod_id, key);
+    c->key = c->identity + strlen(mod_id) + 1;
+    return 1;
+}
+
+/* The character added to the registry's list; 0 when out of memory. */
+static int append(KhdaysCharacters *r, const KhdaysCharacter *c)
+{
     if (r->count == r->capacity) {
         const int grown = r->capacity == 0 ? 4 : r->capacity * 2;
         KhdaysCharacter *list = realloc(r->list, (size_t)grown * sizeof(*list));
         if (list == NULL) {
-            report(mod_id, key, 0, "out of memory", context);
-            free_character(&c);
             return 0;
         }
         r->list = list;
         r->capacity = grown;
     }
-    r->list[r->count++] = c;
+    r->list[r->count++] = *c;
+    return 1;
+}
+
+int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *mod_folder, const char *key,
+                           const char *text, size_t size, KhdaysCharactersReport report, void *context)
+{
+    Reading rd;
+    memset(&rd, 0, sizeof(rd));
+    rd.section = NONE;
+    rd.form = -1;
+    rd.mod_id = mod_id;
+    rd.key = key;
+    rd.report = report;
+    rd.context = context;
+    rd.c.base = -1;
+    rd.c.combos[KHDAYS_CHARACTER_GROUND].finisher = rd.c.combos[KHDAYS_CHARACTER_AIR].finisher = -1;
+    rd.c.own_moves_damage = 1.0f;
+    if (!good_key(key)) {
+        note(&rd, 0, "its folder's name is not a key (letters, digits, '_' and '-' only)");
+        return 0;
+    }
+    int line = 0;
+    for (size_t at = 0; at < size && rd.why[0] == '\0';) {
+        size_t a, b;
+        next_line(text, size, &at, ++line == 1, &a, &b);
+        if (a == b) {
+            continue;
+        }
+        if (text[a] == '[') {
+            read_head(&rd, text + a, b - a, line);
+        } else {
+            read_setting(&rd, text + a, b - a, line);
+        }
+    }
+    if (rd.why[0] == '\0') {
+        check_complete(&rd);
+    }
+    if (rd.why[0] != '\0') {
+        note(&rd, rd.why_line, rd.why);
+        free_character(&rd.c);
+        return 0;
+    }
+    drop_format_two(&rd);
+    if (!set_identity(r, &rd.c, mod_id, mod_folder, key)) {
+        note(&rd, 0, "out of memory");
+        free_character(&rd.c);
+        return 0;
+    }
+    complete_forms(&rd);
+    if (!append(r, &rd.c)) {
+        note(&rd, 0, "out of memory");
+        free_character(&rd.c);
+        return 0;
+    }
     return 1;
 }
 

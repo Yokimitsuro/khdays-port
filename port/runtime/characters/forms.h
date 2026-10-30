@@ -20,9 +20,6 @@ int khdays_characters_seat_form(int seat, int word);
 /* The form seat `seat` has (its character's own for its default form); NULL for a seat without a mod's character. */
 const KhdaysCharacter *khdays_characters_seat_form_now(int seat);
 
-/* Seat `seat` was given form `form` by the room (the copy that chose it); NULL forgets it. */
-void khdays_characters_set_seat_form(int seat, const KhdaysCharacter *form);
-
 /* Every seat's form forgotten (the title). */
 void khdays_characters_forms_clear(void);
 
