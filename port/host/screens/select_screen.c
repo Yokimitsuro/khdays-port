@@ -86,7 +86,7 @@ static int load(SDL_Renderer *renderer, int language)
     s.columns = 0;
     for (char *line = text; line != NULL && *line != '\0'; line = next) {
         float a, b;
-        int n, r, g, bl;
+        int n, r, g, bl, got;
         next = strchr(line, '\n');
         if (next != NULL) {
             *next++ = '\0';
@@ -94,12 +94,12 @@ static int load(SDL_Renderer *renderer, int language)
         if (khdays_layout_line(&s.layout, line, folder)) {
             continue;
         }
-        if (SDL_sscanf(line, "grid %d %f %d", &n, &a, &r) >= 2) {
-            /* columns, the gap, and the rows of a page (with the layouts made before the pages: the rows
-             * that fit above the places' plates) */
+        if ((got = SDL_sscanf(line, "grid %d %f %d", &n, &a, &r)) >= 2) {
+            /* columns, the gap, and the rows of a page (none in the layouts made before the pages: then the
+             * rows that fit above the places' plates) */
             s.columns = n > 0 ? n : 1;
             s.gap = a;
-            s.rows = SDL_sscanf(line, "grid %d %f %d", &n, &a, &r) == 3 && r > 0 ? r : 0;
+            s.rows = got == 3 && r > 0 ? r : 0;
         } else if (SDL_sscanf(line, "stats %f", &a) == 1) {
             s.stat_pitch = a;
         } else if (SDL_sscanf(line, "gauge_pitch %f", &a) == 1) {
@@ -274,6 +274,18 @@ static void page_indicator(const KhdaysLayoutFrame *fr, int page, int pages, con
     }
 }
 
+/* Where the cursor is in the grid: on this copy's character, or on the random choice (position `count`). */
+static int cursor_position(const KhdaysSelectView *v, int count)
+{
+    const int target = v->random ? KHDAYS_SELECT_CHARACTERS : v->character;
+    for (int p = 0; p <= count; ++p) {
+        if (khdays_charselect_at(v, p) == target) {
+            return p;
+        }
+    }
+    return 0;
+}
+
 static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 {
     const float *tile = place("tile"), *tag_at = place("tile_tag");
@@ -281,16 +293,8 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     while (khdays_charselect_at(v, count) >= 0 && khdays_charselect_at(v, count) != KHDAYS_SELECT_CHARACTERS) {
         ++count;
     }
-    /* the page the cursor is on: this copy's character, or the random choice */
     const KhdaysSelectGrid g = {count + 1, s.columns, s.rows};
-    const int target = v->random ? KHDAYS_SELECT_CHARACTERS : v->character;
-    int cursor = 0;
-    for (int p = 0; p <= count; ++p) {
-        if (khdays_charselect_at(v, p) == target) {
-            cursor = p;
-        }
-    }
-    const int page = khdays_select_page_of(g, cursor), first = khdays_select_page_first(g, page);
+    const int page = khdays_select_page_of(g, cursor_position(v, count)), first = khdays_select_page_first(g, page);
     const int shown = khdays_select_page_count(g, page);
     if (khdays_select_pages(g) > 1) {
         page_indicator(fr, page, khdays_select_pages(g), tile);

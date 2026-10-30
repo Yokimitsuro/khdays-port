@@ -316,15 +316,15 @@ int khdays_present_gpu(void)
     return device != NULL;
 }
 
-/* The width of engine A's screen for the aspect setting, in DS pixels: 256 at 4:3; 342 at 16:9 and 308
- * at 16:10 (rounded up to even, so the DS's 256 columns sit whole in the middle); for "window", as wide
- * as the window at the screens' height, up to three times the DS's. */
 /* Two screens side by side ([video] two_screens): each the DS's width, whatever the aspect. */
 static int side_by_side(void)
 {
     return !video.one_screen && video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE;
 }
 
+/* The width of engine A's screen for the aspect setting, in DS pixels: 256 at 4:3; 342 at 16:9 and 308
+ * at 16:10 (rounded up to even, so the DS's 256 columns sit whole in the middle); for "window", as wide
+ * as the window at the screens' height, up to three times the DS's. */
 static int columns_now(void)
 {
     int pw = 0, ph = 0, n;

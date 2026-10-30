@@ -33,9 +33,8 @@ int khdays_select_page_of(KhdaysSelectGrid g, int position);
 /* A page's first position and how many it holds. */
 int khdays_select_page_first(KhdaysSelectGrid g, int page);
 int khdays_select_page_count(KhdaysSelectGrid g, int page);
-/* Where `position` is on its page: its row, and its middle in columns from the page's middle column (the
- * last row centred). */
-int khdays_select_row_on_page(KhdaysSelectGrid g, int position);
+/* Where `position` is across its row: its middle in columns from the page's middle column (the last row
+ * centred). */
 float khdays_select_x(KhdaysSelectGrid g, int position);
 
 /* The position a move leads to from `at`, stepping over the positions `may` refuses (it is asked
