@@ -1,5 +1,8 @@
 // The field's prize pictures drawn as a mod's effect: the pictures named as the game loads them, each billboard of
 // one with an effect drawn instead on the 3D layer's native sequences (as ui/kh2_reticles.cpp draws KH2's markers).
+// Each prize plays the effect from its first frame when it shows, as KH2's do: a picture's frames are laid side by
+// side in one program and each billboard samples its own frame's column (an effect too long for one program
+// shows its current frame on all its prizes at once).
 #include "prize_effects.h"
 #include "prize_effects_model.h"
 #include "../gfx/kh2_sequence.h"
@@ -22,6 +25,7 @@ extern "C" {
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -32,7 +36,7 @@ namespace render = khdays::render::kh2;
 
 struct Canvas {
     int token = -1;
-    unsigned frame = ~0u; // the game frame its program was made for
+    unsigned frame = ~0u; // the game frame its program was made for (any, for a sheet: made once)
     KhdaysSequenceImage commands{};
 };
 
@@ -46,8 +50,19 @@ struct Picture {
     prizes::Reach reach;
     std::vector<std::uint32_t> pixels; // the atlas, kept while the texture registry points at it
     int atlas_id = -1;
+    bool sheet = false; // all its frames in one program
+    float column = 0;   // a frame's width on the canvas
     std::array<Canvas, 4> canvases;
 };
+
+// When each billboard showing an effect began to (its node and picture): the game frame it began and the last it
+// was drawn. A billboard not drawn for a second is a prize gone (the game reuses its nodes).
+struct Shown {
+    unsigned start = 0, last = 0;
+};
+std::map<std::pair<const void *, int>, Shown> shown;
+unsigned swept = ~0u;
+constexpr unsigned gone_after = 30; // game frames: a second of the field
 
 std::array<Picture, KHDAYS_PRIZE_PROGRAMS> pictures;
 // the program numbers in the frame package: after the reticles' and the heart counter's
@@ -158,6 +173,13 @@ void load(Picture &p)
         p.reach = prizes::reach_of(p.effect);
         if (p.reach.half <= 0 || p.reach.body_width <= 0)
             throw std::runtime_error("its body layer has no width");
+        std::size_t quads = 0;
+        for (const auto &f : p.effect.frames)
+            quads += f.layers.size();
+        p.sheet = quads <= KSI_MAX_QUADS;
+        p.column = std::ceil(2 * p.reach.half);
+        for (auto &c : p.canvases)
+            c.frame = ~0u;
         p.drawn = true;
         note("prizes: %s drawn as %s (%zu frames)", p.name.c_str(), found, p.effect.frames.size());
     } catch (const std::exception &e) {
@@ -178,10 +200,11 @@ int program(Picture &p, std::size_t i, unsigned now)
     const int slot = khdays_g3d_build_slot();
     auto &c = p.canvases[std::size_t(slot)];
     c.token = int(first_program + i) * 4 + slot;
-    if (c.frame == now)
+    if (c.frame == now || (p.sheet && c.frame != ~0u))
         return c.token;
     c.frame = now;
-    const auto quads = prizes::frame_quads(p.effect, prizes::frame_at(p.effect, now), p.reach, p.atlas);
+    const auto quads = p.sheet ? prizes::sheet_quads(p.effect, p.reach, p.atlas, p.column)
+                               : prizes::frame_quads(p.effect, prizes::frame_at(p.effect, now), p.reach, p.atlas);
     auto *w = c.commands.words;
     std::memset(w, 0, sizeof(unsigned) * KSI_HEADER);
     const float side = 2 * p.reach.half;
@@ -189,7 +212,8 @@ int program(Picture &p, std::size_t i, unsigned now)
     w[KSI_ATLAS] = unsigned(p.atlas_id);
     w[KSI_LOGICAL_W] = unsigned(p.atlas.width);
     w[KSI_LOGICAL_H] = unsigned(p.atlas.height);
-    w[KSI_WIDTH] = unsigned(std::ceil(side));
+    const auto frames = p.sheet ? p.effect.frames.size() : 1;
+    w[KSI_WIDTH] = unsigned(p.column) * unsigned(frames);
     w[KSI_HEIGHT] = unsigned(std::ceil(side));
     const float zero = 0, one = 1;
     std::memcpy(w + KSI_VIEW_X, &zero, 4);
@@ -255,6 +279,22 @@ extern "C" int khdays_prize_node(const void *node)
     try {
         const unsigned now = khdays_link_frame();
         const int token = program(p, std::size_t(i), now);
+        if (now != swept) { // the prizes gone forgotten, once a game frame
+            swept = now;
+            std::erase_if(shown, [now](const auto &kv) { return now - kv.second.last > gone_after; });
+        }
+        auto &seen = shown[{node, i}];
+        if (seen.last == 0 || now - seen.last > gone_after)
+            seen.start = now;
+        seen.last = now;
+        // its column on the canvas, in the polygon's s (0..128 the whole canvas)
+        float s0 = 0, s1 = 128;
+        if (p.sheet) {
+            const float columns = float(p.effect.frames.size());
+            const int k = prizes::frame_at(p.effect, now - seen.start);
+            s0 = 128.0F * float(k) / columns;
+            s1 = 128.0F * float(k + 1) / columns;
+        }
         // the billboard as Billboard_DrawList places it: its position through the view matrix (data_020473e0),
         // its quad on the billboard matrix's turn (data_020428e0), from its foot (y 0) to its height
         const auto *view = static_cast<const unsigned char *>(KHDAYS_W(0x020473e0u));
@@ -290,7 +330,7 @@ extern "C" int khdays_prize_node(const void *node)
             o.w = proj[3] * e[0] + proj[7] * e[1] + proj[11] * e[2] + proj[15];
             o.r = o.g = o.b = 63;
             o.a = 1;
-            o.s = (c & 1) ? 128.0F : 0;
+            o.s = (c & 1) ? s1 : s0;
             o.t = (c & 2) ? 128.0F : 0;
         }
         const unsigned attr = 0xc0u | (alpha << 16) | (poly << 24);

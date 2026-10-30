@@ -190,8 +190,11 @@ needs is read.
   then the GS TEX0 word), the width x height indices, then 256 RGBA palette entries stored in the PS2's CSM1 order
   (index bits 3 and 4 swapped), alpha 0x80 opaque. Pictures sit at (x, y) in 128 x 64 pages; the remaster's HD
   pages (`remastered/obj/PRIZE.mdlx/-0.dds`, `-1.dds`, 256 x 128) are those pages in the order of their TBPs.
-- An animation: a 0x20-byte header (its number first: 0 munny, 1 the HP orb, 2 the MP orb, 3 the drive orb), then
-  its frame list, pairs of words (`0x02000000 | offset` from the animation's +0x10, then 0, or 0x80 on the last).
+- An animation: a 0x20-byte header (its number first: 0 munny, 1 the HP orb, 2 the MP orb, 3 the drive orb; its
+  frame count, u16, at +0x14), then its frame list, 8 bytes a frame: u16 the frame's offset from the animation's
+  +0x10, u16 how long it shows in KH2's frames (60 a second) times 256, a byte 0x80 on the last, 3 bytes 0. Across
+  the 7957 animations of the player's KH2 every wait was whole frames (1, 2, 3, 4, 6, 40, 60); the prizes' are 2,
+  a 30th of a second, one of Days's field frames.
 - A frame: u16 kind (0 squares, 8 four corners), u16 layer count, u32 size, the GS TEX0 word at +0x10 (its page and
   palette), the layers at +0x20: a square (four s16: x0 y0 x1 y1) or four corners (eight s16), each with its part of
   the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS

@@ -129,6 +129,24 @@ void draws_a_frame()
     // outside the canvas's quads nothing changes: none here, the glow spans it all
 }
 
+void lays_the_frames_side_by_side()
+{
+    std::string why;
+    const auto e = prizes::parse_effect(example, why);
+    expect(e.has_value(), why.c_str());
+    const auto a = prizes::stack_pages({{64, 32}});
+    const auto reach = prizes::reach_of(*e);
+    const auto sheet = prizes::sheet_quads(*e, reach, a, 90);
+    const auto first = prizes::frame_quads(*e, 0, reach, a), second = prizes::frame_quads(*e, 1, reach, a);
+    expect(sheet.size() == first.size() + second.size(), "every frame's layers");
+    expect(sheet[0].vertices[0].x == first[0].vertices[0].x, "the first frame in the first column");
+    expect(sheet[2].vertices[0].x == second[0].vertices[0].x + 90 && sheet[2].vertices[3].x == 84 + 90,
+           "the second frame one column right");
+    expect(sheet[2].vertices[0].u == second[0].vertices[0].u && sheet[3].blend == second[1].blend,
+           "its texels and blends kept");
+    expect(sheet[1].vertices[0].color == first[1].vertices[0].color, "its colours kept");
+}
+
 } // namespace
 
 int main()
@@ -138,6 +156,7 @@ int main()
         refuses_what_breaks_the_rules();
         finds_the_pictures();
         draws_a_frame();
+        lays_the_frames_side_by_side();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "prize effects: %s\n", e.what());
         return 1;

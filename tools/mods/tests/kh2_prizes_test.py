@@ -43,8 +43,10 @@ def frame(kind, tbp, cbp, layers) -> bytes:
     return struct.pack("<HHI8xQ8x", kind, len(layers), 0x10 + len(body), tex0(tbp, cbp)) + body
 
 
-def animation(number, frames) -> bytes:
-    """An animation's block: its header, the frames' list (each offset from the block's +0x10) and the frames."""
+def animation(number, frames, waits=None) -> bytes:
+    """An animation's block: its header, the frames' list (each offset from the block's +0x10, its wait in KH2's
+    frames x 256, 0x80 on the last) and the frames."""
+    waits = waits or [0x200] * len(frames)
     head = 0x20 + 8 * len(frames)
     blobs, offsets, at = [], [], head - 0x10
     for f in frames:
@@ -52,7 +54,7 @@ def animation(number, frames) -> bytes:
         blobs.append(f)
         at += len(f)
     listing = b"".join(
-        struct.pack("<II", 0x02000000 | o, 0x80 if i == len(frames) - 1 else 0) for i, o in enumerate(offsets)
+        struct.pack("<HHI", o, waits[i], 0x80 if i == len(frames) - 1 else 0) for i, o in enumerate(offsets)
     )
     return (
         struct.pack("<IIIIIHHII", number, 0, len(listing), 0, 0x346, len(frames), len(frames), 0, 0)
@@ -156,6 +158,19 @@ class ReadPax(unittest.TestCase):
         self.assertEqual((glow.colour, glow.blend), ((0x90, 0x20, 0x1D, 0x80), "add"))
         self.assertEqual(core.blend, "alpha")
         self.assertEqual(turned.layers[0].corners, [(0, -356), (356, 0), (-356, 0), (0, 356)])
+        self.assertEqual((squares.wait, turned.wait), (0x200, 0x200))
+
+    def test_frames_as_the_header_counts_them_with_their_waits(self):
+        import kh2_pax
+
+        frames = [
+            frame(0, 0x3000, 0x3E0C, [CORE]),
+            frame(0, 0x3000, 0x3E0C, [GLOW]),
+            frame(8, 0x3000, 0x3E0C, [TURNED]),
+        ]
+        pax = kh2_pax.read_pax(make_pax(two_pictures(), [animation(5, frames, [0x400, 0x300, 0x3C00])]))
+        self.assertEqual([f.wait for f in pax.animations[0].frames], [0x400, 0x300, 0x3C00])
+        self.assertEqual(pax.animations[0].frames[1].layers[0].blend, "add")
 
     def test_a_page_coloured(self):
         import kh2_pax
@@ -213,6 +228,7 @@ class MakeTheMod(unittest.TestCase):
         self.assertEqual(hp[0], "effect 1")
         self.assertIn("page 0 prize_01_page0.png", hp)
         self.assertIn("body 1", hp)  # the HP orb's core
+        self.assertIn("frame_time 1", hp)  # KH2's 2 frames at 60 a second: one of the field's 30
         self.assertIn("body 0", (fx / "prize_03.txt").read_text(encoding="utf-8").splitlines())
         self.assertEqual(hp.count("frame"), 2)
         layers = [line for line in hp if line.startswith("layer ")]

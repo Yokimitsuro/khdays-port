@@ -35,7 +35,7 @@ def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int) 
         f"# KINGDOM HEARTS II's prize effect, animation {animation.number} ({PRIZE}), made by tools/mods/kh2_prizes.py",
     ]
     lines += [f"page {n} {file}" for n, file in sorted(pages.items())]
-    lines += [f"body {body}", "frame_time 1"]
+    lines += [f"body {body}", f"frame_time {frame_time(animation)}"]
     numbers = {tbp: n for n, tbp in enumerate(sorted(pages_tbp(animation)))}
     for frame in animation.frames:
         lines.append("frame")
@@ -47,6 +47,17 @@ def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int) 
                 f"layer page {numbers[frame.tbp]} rect {rect} corners {corners} colour {colour} blend {layer.blend}"
             )
     return "\n".join(lines) + "\n"
+
+
+def frame_time(animation: kh2_pax.Animation) -> int:
+    """The game frames a frame shows (Days's field runs 30 a second) from KH2's waits (its frames, 60 a second, in
+    1/256): the first frame's, at least 1."""
+    return max(1, round(animation.frames[0].wait / 256 / 2))
+
+
+def uneven(animation: kh2_pax.Animation) -> bool:
+    """Whether its frames' waits differ or are not whole field frames (the effect shows each frame_time)."""
+    return any(f.wait != animation.frames[0].wait for f in animation.frames) or animation.frames[0].wait % 512 != 0
 
 
 def pages_tbp(animation: kh2_pax.Animation) -> set[int]:
@@ -81,6 +92,8 @@ def make(kh2: Path, mod: Path) -> list[str]:
             pages[n] = name
         (fx / f"{picture}.txt").write_text(effect_text(animation, pages, body), encoding="utf-8", newline="\n")
         made.append(f"{picture}: KH2's {ANIMATIONS[number]}")
+        if uneven(animation):
+            left_out.append(f"{picture}: its frames' times as {frame_time(animation)} game frames each")
     for number, what in ANIMATIONS.items():
         if number not in {n for n, _ in PAIRS.values()}:
             left_out.append(f"KH2's {what} (animation {number}): Days has no such prize")

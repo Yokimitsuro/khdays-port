@@ -1285,8 +1285,10 @@ layer page <n> rect <u> <v> <w> <h> corners <x0> <y0> <x1> <y1> <x2> <y2> <x3> <
 
 `rect` is the layer's part of its page in fractions (left, top, width, height; w and h above 0); `corners` its
 top-left, top-right, bottom-left and bottom-right in the effect's own units (x right, y down, 0 the prize's middle);
-`colour` multiplies the page (0..2, 1 leaves it); `blend` is `alpha` or `add`. The frames loop, stand still while
-the game is paused, and every prize of one picture shows the same frame. The node's fade multiplies them. A file that
+`colour` multiplies the page (0..2, 1 leaves it); `blend` is `alpha` or `add`. The frames loop and stand still while
+the game is paused; each prize plays them from the first when it shows, as KH2's prizes do (an effect of more than
+128 layers in all, too long for one sequence program, shows the same frame on all its prizes). The node's fade
+multiplies them. A file that
 breaks a rule (another version, a page not declared or not readable, no frame, a frame with no layer) is named once
 in the log and the picture keeps Days's look. Mods are taken in the player's order; there are no limits on frames,
 layers or pages.

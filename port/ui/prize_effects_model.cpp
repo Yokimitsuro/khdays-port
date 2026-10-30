@@ -1,4 +1,4 @@
-// A prize picture's effect: its text read and checked, its pages stacked, a frame as sequence quads.
+// A prize picture's effect: its text read and checked, its pages stacked, its frames as sequence quads.
 #include "prize_effects_model.h"
 
 #include <algorithm>
@@ -158,6 +158,18 @@ std::vector<assets::kh2::SequenceQuad> frame_quads(const Effect &e, int f, const
         q.blend = l.blend;
         out.push_back(q);
     }
+    return out;
+}
+
+std::vector<assets::kh2::SequenceQuad> sheet_quads(const Effect &e, const Reach &r, const Atlas &a, float column)
+{
+    std::vector<assets::kh2::SequenceQuad> out;
+    for (std::size_t f = 0; f < e.frames.size(); ++f)
+        for (auto q : frame_quads(e, static_cast<int>(f), r, a)) {
+            for (auto &v : q.vertices)
+                v.x += float(f) * column;
+            out.push_back(q);
+        }
     return out;
 }
 

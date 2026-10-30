@@ -1,5 +1,5 @@
-// A prize picture's effect as a mod gives it (graphics/mo/prize.pak.z/fx/<picture>.txt, docs: README "A prize's
-// effect"): read and checked, its pages stacked into one atlas, a frame made into the sequence quads the 3D layer
+// A prize picture's effect as a mod gives it (graphics/mo/prize.pak.z/fx/<picture>.txt, docs/KH2_SEQUENCES.md "Field
+// prizes"): read and checked, its pages stacked into one atlas, a frame made into the sequence quads the 3D layer
 // draws. No game and no GPU here (ui/prize_effects.cpp draws them).
 #pragma once
 
@@ -55,6 +55,10 @@ Reach reach_of(const Effect &e);
 
 // Frame `f`'s layers as quads on a canvas `2 * half` square, the middle the picture's, their texels the atlas's.
 std::vector<assets::kh2::SequenceQuad> frame_quads(const Effect &e, int f, const Reach &r, const Atlas &a);
+
+// Every frame's quads side by side, frame k's moved right by k * `column` (at least `2 * half`): the whole
+// animation on one canvas, each billboard showing its own frame's column.
+std::vector<assets::kh2::SequenceQuad> sheet_quads(const Effect &e, const Reach &r, const Atlas &a, float column);
 
 // The frame shown `frames` game frames on (the loop).
 int frame_at(const Effect &e, unsigned frames);

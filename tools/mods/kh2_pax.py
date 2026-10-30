@@ -45,6 +45,7 @@ class Frame:
     tbp: int  # its page
     cbp: int  # its palette
     layers: list[Layer]
+    wait: int = 0x200  # how long it shows: KH2's frames (60 a second) in 1/256
 
 
 @dataclass
@@ -111,11 +112,14 @@ def _picture(pax: bytes, at: int) -> Picture:
 def _animation(pax: bytes, at: int) -> Animation:
     number = struct.unpack_from("<I", pax, at)[0]
     animation = Animation(number)
-    o = at + 0x20
-    while o + 8 <= len(pax) and struct.unpack_from("<I", pax, o)[0] >> 24 == 2:
-        offset = struct.unpack_from("<I", pax, o)[0] & 0xFFFFFF
-        animation.frames.append(_frame(pax, at + 0x10 + offset))
-        o += 8
+    # its header's frame count (+0x14), then a frame each: u16 its offset from +0x10, u16 its wait, u8 0x80 on
+    # the last
+    count = struct.unpack_from("<H", pax, at + 0x14)[0]
+    for k in range(count):
+        offset, wait = struct.unpack_from("<HH", pax, at + 0x20 + 8 * k)
+        frame = _frame(pax, at + 0x10 + offset)
+        frame.wait = wait
+        animation.frames.append(frame)
     if not animation.frames:
         raise PaxError(f"animation {number} has no frame")
     return animation
