@@ -136,6 +136,14 @@ class Generation(unittest.TestCase):
         self.assertNotIn(0x216C, k.international_map())
         self.assertNotIn(56, mapping.values())
 
+    def test_french_ligatures(self):
+        # KH2's pictures at bytes 0xB4 and 0xB5 are Œ and œ; Days's Æ and æ have none of their own
+        chars = {ord(c): i for i, c in enumerate("cœurŒÆæ")}
+        doc = k.definition("font_eu_10", list(range(256)) + [7] * 80, chars)
+        mapping = {m["codepoint"]: m["glyph"] for m in doc["charmap"]}
+        self.assertEqual((mapping[ord("Œ")], mapping[ord("œ")]), (0xB4 - 0x20, 0xB5 - 0x20))
+        self.assertTrue(all(ord(c) not in mapping for c in "Ææ"))
+
     def test_resource_specific_symbol_exclusions_and_numerals(self):
         characters = {code: i for i, code in enumerate((0x41, 0xFF2C, 0xFF42, 0x2165, 0x2167))}
         for name, (font, _, _) in k.REPLACEMENTS.items():

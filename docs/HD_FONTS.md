@@ -190,6 +190,8 @@ expressed from the user's KH2/Days reference tables. No OpenKH implementation or
 reference JSON is distributed. First occurrences of duplicate punctuation win;
 fullwidth ASCII aliases use the corresponding normal glyph. Unicode Roman
 numerals I–XII use individual atlas pictures, preserving ordinary Latin I/V/X.
+Bytes 0xB4 and 0xB5 are Œ and œ, as both sheets draw them (French's cœur), not
+Æ and æ: Days's Æ and æ keep their original glyphs.
 The Days compatibility mappings use U+2165 → slot 88 and U+2167 → slot 93,
 as requested after inspecting Days' numeral artwork; this does not assert how
 the original game composes wider numerals. Both SYS and EVT sheets were checked:

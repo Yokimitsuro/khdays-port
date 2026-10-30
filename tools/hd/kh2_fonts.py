@@ -120,7 +120,8 @@ def international_map() -> dict[int, int]:
         0x5A: "()「」『』“”[]<>-–⤷♩⇾⇽◯✕",
         0x7F: "αβγ⭑⭒",
         0x86: "&#®▴▾▸◂°♪",
-        0x90: "0123456789abcdefghijklmnopqrstuvwxyzÆæßàáâäèéêëìíîïñòóôöùúûüº—»«",
+        # 0xB4 and 0xB5 are Œ and œ in both sheets (French's cœur), not Æ and æ
+        0x90: "0123456789abcdefghijklmnopqrstuvwxyzŒœßàáâäèéêëìíîïñòóôöùúûüº—»«",
         0xD0: "ÀÁÂÄÈÉÊËÌÍÎÏÑÒÓÔÖÙÚÛÜ¡¿Çç‛’`´\"'★☆■□▲△●○♪♫→←↑↓・❤",
     }
     result = {}
