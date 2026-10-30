@@ -5418,6 +5418,13 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   (ov002@02078bac) takes them: kind 2 tier 0 is `prize_01`, the HP orb (the HP rose as each was taken: 355 to 358, 358
   to 359 of 359), kind 3 tier 1 is `prize_03`, the munny crystal (the save's munny unchanged during the mission: Mission
   Mode's munny is the results' PLATINES line, +15 there for this mission's drops). A Shadow dropped one of each.
+  The table's picture bytes (its data, `ov002_spawn_rows.c`): kind 0 `ef_pp` (the grey crystal), 1 `he_prize`,
+  2 `prize_01`, 3 `prize_03`, 6-8 `prize_05`-`prize_07`, 13 `born`, 15 `prize_11`; 9-11 none (0xff).
+  `Ov002_BuildSpawnRow` (read in the C) changes two: kind 0 placed at a spot (mode 3) shows `prize_08`, the blue
+  crystal, its tier + 10; kind 15 tier 3 shows `prize_10`. Kind 0 is put out only in Mission Mode (`data_0204c240`
+  bit 2, `Ov002_SpawnKindIntoFreeSpot`). The node's width (+0x18) and height (+0x1a) come from its speed (tier 0
+  0x200, 1 0x380, others and items 0x500): kind 0 twice as wide and four times as tall (its pictures 16 x 32), kind
+  1 four times both, the rest twice both. Kinds 0 and 1 make the same pickup sound (`Ov002_PlaySlotActionSound`).
 - **The port draws a mod's effect instead** (spec 038, `port/ui/prize_effects.cpp`): with a mod's
   `graphics/mo/prize.pak.z/fx/<picture>.txt` (`port/ui/prize_effects_model.h`, made from KH2's `obj/PRIZE.mdlx` by
   `tools/mods/kh2_prizes.py`) and the settings' "KH2 prizes and chests" on, `Billboard_DrawList` skips the node

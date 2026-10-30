@@ -1327,6 +1327,14 @@ mods' models' polygons (`khdays_models_draw_placed`, `port/runtime/mods/models.c
 picture wins. The tool makes KH2's prize boxes so: `PRIZE_BOX_YELLOW`, `_RED` and `_BLUE` for Days's item spheres
 `prize_05`, `prize_06` and `prize_07` (the same designs, the blue with its gold horn).
 
+Days's crystals, `ef_pp` (grey) and `prize_08` (blue: the same Mission Mode object placed at a spot), have no KH2
+prize; with `--recom <Recom.hed_out>` the tool makes them from Re:Chain of Memories's red crystal, the same cut:
+Re:CoM's prize sheet (an entry of `Recom` known by its key alone, `c1f677b2925314aa87af10f1f21557f0.dat`, its HD
+picture `rec_prise_dpx1.dds`, 256 x 128: two gems, three orbs and their white outlines; the red crystal in the top
+row's second quarter, lying at 45 degrees) stood up, cut to its outline, given Days's crystals' shape (half as wide
+as tall) and coloured as each (grey; blue). Each is a still effect of one layer, 16 x 32, its body: as each Days
+crystal fills its 16 x 32 picture (the node twice as tall as wide), Re:CoM's is drawn the size of Days's.
+
 ## Live Enhancements preferences
 
 The Enhancements menu stores HUD choices only in the usual settings.ini under

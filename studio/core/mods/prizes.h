@@ -52,12 +52,12 @@ std::optional<PrizeEffect> load_prize_effect(const std::filesystem::path& file, 
 // reference renderer: RGBA rows.
 std::vector<std::uint8_t> prize_effect_frame(const PrizeEffect& e, int frame, int side, std::uint32_t background);
 
-// The collection's entries the KH2 prizes tool reads (installer/mod_inputs.txt's: KH2's obj/ entries, and
-// bbs_second's), by archive.
+// The collection's entries the KH2 prizes tool reads (installer/mod_inputs.txt's: KH2's obj/ entries, bbs_second's
+// and Re:CoM's), by archive.
 std::map<std::string, std::vector<std::string>> kh2_prizes_inputs(const std::filesystem::path& mod_inputs);
 
 // The KH2 prizes mod made into the mod in `mod_dir` from the player's copy (the studio's setting): its entries taken
-// out under saves/collection (kh2, bbs_second), then tools/mods/kh2_prizes.py run as the installer runs it, the
+// out under saves/collection (kh2, bbs_second, Recom), then tools/mods/kh2_prizes.py run as the installer runs it, the
 // chests made by `port_exe`. Blocks until done; `lines` what the tool said. False with the reason.
 bool make_kh2_prizes(const Settings& settings, const std::filesystem::path& mod_dir,
                      const std::filesystem::path& port_exe, std::vector<std::string>* lines, std::string* why);

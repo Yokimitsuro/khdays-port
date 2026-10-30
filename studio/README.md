@@ -419,7 +419,8 @@ is chosen). It changes at once and is kept in the settings.
     chest (from the graphics dump). A prize model's **Size** and **Turn** and a
     chest's **Scale** are changed there and written by **Save** (the rest of
     their files kept). **Make from my 1.5+2.5 copy** makes the KH2 prizes mod
-    -- KH2's HP orb and munny, its chests and its prize boxes -- into the
+    -- KH2's HP orb, munny and Coliseum coin, its chests and its prize boxes,
+    and Re:CoM's crystal coloured as Days's two -- into the
     chosen mod as the installer makes it into the HD PACK: the entries it
     needs taken out of the copy (the settings' 1.5+2.5 folder) into
     `saves/collection`, then `tools/mods/kh2_prizes.py` run with the port's

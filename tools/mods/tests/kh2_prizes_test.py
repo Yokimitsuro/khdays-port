@@ -241,10 +241,12 @@ class MakeTheMod(unittest.TestCase):
         with Image.open(fx / "prize_01_page0.png") as page:
             self.assertEqual(page.size, (256, 128))  # the HD page
         self.assertTrue((self.mod / "days-mods" / "kh2-prizes.txt").exists())
-        # the MP orb and the drive orb: no Days prize; the Coliseum's coin: its file not there
-        self.assertEqual(len(left_out), 3)
+        # the MP orb and the drive orb: no Days prize; the Coliseum's coin: its file not there; the crystals: no Re:CoM
+        self.assertEqual(len(left_out), 5)
         self.assertTrue(any("MP orb" in line for line in left_out) and any("drive orb" in line for line in left_out))
         self.assertTrue(any(line.startswith("he_prize: KH2's obj/PRIZE_HE.mdlx is not there") for line in left_out))
+        self.assertIn("ef_pp: Re:CoM's prize sheet is not there", left_out)
+        self.assertIn("prize_08: Re:CoM's prize sheet is not there", left_out)
 
     def test_the_original_pages_without_the_remaster(self):
         import kh2_prizes
@@ -268,6 +270,35 @@ class MakeTheMod(unittest.TestCase):
         self.assertIn("body 0", text.splitlines())  # the coin, under its bolt's glow
         self.assertEqual(text.splitlines().count("frame"), 3)
         self.assertFalse(any(line.startswith("he_prize") for line in left_out))
+
+    def test_the_crystals_from_recom(self):
+        import kh2_prizes
+        from PIL import Image, ImageDraw
+
+        self.prize()
+        recom = self.root / "Recom.hed_out"
+        sheet = recom / "remastered" / kh2_prizes.RECOM_PRIZES / kh2_prizes.RECOM_SHEET
+        sheet.parent.mkdir(parents=True)
+        made_up = Image.new("RGBA", (256, 128), (0, 0, 0, 0))  # a red bar lying as Re:CoM's crystal lies
+        ImageDraw.Draw(made_up).line((70, 6, 122, 58), fill=(200, 30, 30, 255), width=12)
+        made_up.save(sheet, format="PNG")
+        left_out = kh2_prizes.make(self.kh2, self.mod, recom=recom)
+        fx = self.mod / "graphics" / "mo" / "prize.pak.z" / "fx"
+        text = (fx / "ef_pp.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(text[0], "effect 1")
+        self.assertIn("page 0 ef_pp_page0.png", text)
+        self.assertIn("body 0", text)
+        # one still frame, Days's crystal's 16 x 32: the port makes it as wide as the picture
+        self.assertEqual(text.count("frame"), 1)
+        self.assertIn("layer page 0 rect 0 0 1 1 corners -8 -16 8 -16 -8 16 8 16 colour 1 1 1 1 blend alpha", text)
+        with Image.open(fx / "ef_pp_page0.png") as grey, Image.open(fx / "prize_08_page0.png") as blue:
+            self.assertGreater(grey.height, 60)  # stood up: as tall as the bar is long
+            self.assertEqual(grey.width, grey.height // 2)
+            r, g, b, a = grey.getpixel((grey.width // 2, grey.height // 2))
+            self.assertTrue(a == 255 and r == g == b)
+            r, g, b, a = blue.getpixel((blue.width // 2, blue.height // 2))
+            self.assertTrue(a == 255 and b > r and b > g)
+        self.assertFalse(any(line.startswith(("ef_pp", "prize_08")) for line in left_out))
 
     def test_a_missing_animation_said(self):
         import kh2_prizes

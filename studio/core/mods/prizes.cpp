@@ -216,7 +216,8 @@ std::map<std::string, std::vector<std::string>> kh2_prizes_inputs(const fs::path
         if (space == std::string::npos)
             continue;
         const std::string archive = line.substr(0, space), entry = line.substr(space + 1);
-        if ((archive.rfind("kh2_", 0) == 0 && entry.rfind("obj/", 0) == 0) || archive == "bbs_second")
+        if ((archive.rfind("kh2_", 0) == 0 && entry.rfind("obj/", 0) == 0) || archive == "bbs_second" ||
+            archive == "Recom")
             out[archive].push_back(entry);
     }
     return out;
@@ -225,14 +226,15 @@ std::map<std::string, std::vector<std::string>> kh2_prizes_inputs(const fs::path
 bool make_kh2_prizes(const Settings& settings, const fs::path& mod_dir, const fs::path& port_exe,
                      std::vector<std::string>* lines, std::string* why) {
     const fs::path root = settings.root;
-    const fs::path kh2 = kh2_folder(root), bbs2 = root / "saves" / "collection" / "bbs_second";
+    const fs::path kh2 = kh2_folder(root), collection = root / "saves" / "collection";
     const auto inputs = kh2_prizes_inputs(root / "installer" / "mod_inputs.txt");
     if (inputs.empty()) {
         *why = "no installer/mod_inputs.txt in " + u8(root) + " to say what the tool reads";
         return false;
     }
     for (const auto& [archive, entries] : inputs) {
-        if (!take_out_entries(settings, archive, entries, archive.rfind("kh2_", 0) == 0 ? kh2 : bbs2, why))
+        const fs::path into = archive.rfind("kh2_", 0) == 0 ? kh2 : collection / archive;  // KH2's archives in one
+        if (!take_out_entries(settings, archive, entries, into, why))
             return false;
     }
     std::error_code ec;
@@ -243,7 +245,8 @@ bool make_kh2_prizes(const Settings& settings, const fs::path& mod_dir, const fs
         return false;
     }
     Job job({fs::is_regular_file(own, ec) ? u8(own) : std::string("python"), u8(tool), "--kh2", u8(kh2), "--exe",
-             u8(port_exe), "--bbs2", u8(bbs2), "--mod", u8(fs::absolute(mod_dir, ec))},
+             u8(port_exe), "--bbs2", u8(collection / "bbs_second"), "--recom", u8(collection / "Recom"), "--mod",
+             u8(fs::absolute(mod_dir, ec))},
             root);
     while (!job.done())
         SDL_Delay(20);

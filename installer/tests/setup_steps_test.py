@@ -395,6 +395,7 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(len(ran), 1)
         self.assertEqual(Path(ran[0][1]).name, "kh2_prizes.py")
         self.assertEqual(Path(ran[0][ran[0].index("--kh2") + 1]).name, "kh2.hed_out")
+        self.assertEqual(Path(ran[0][ran[0].index("--recom") + 1]).name, "Recom.hed_out")  # the crystals
         self.assertIn("kh2.hed_out", {Path(out).name for out in extracted})  # the collection's entries extracted
         merged = self.files(self.hd)
         self.assertEqual(merged["graphics/mo/prize.pak.z/fx/prize_01.txt"], "kh2")

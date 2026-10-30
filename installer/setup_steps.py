@@ -1106,7 +1106,10 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
 # own pieces), the rest added; the install's state ("port-mods") says which are which.
 PORT_MODS = {
     "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
-    "kh2-prizes": ("Days - KH2 Prizes", ["kh2_prizes.py", "--kh2", "{kh2}", "--exe", "{exe}", "--bbs2", "{bbs2}"]),
+    "kh2-prizes": (
+        "Days - KH2 Prizes",
+        ["kh2_prizes.py", "--kh2", "{kh2}", "--exe", "{exe}", "--bbs2", "{bbs2}", "--recom", "{recom}"],
+    ),
     "menu-overhaul": (
         "Days - Menu Overhaul",
         [

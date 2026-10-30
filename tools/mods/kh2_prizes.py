@@ -1,14 +1,15 @@
 """KINGDOM HEARTS II's prizes and chests for Days's, from the player's own 1.5+2.5 copy: the effect file and pages
 of each prize KH2 has one for (docs/KH2_SEQUENCES.md, "Field prizes"; the reader: port/ui/prize_effects_model.h),
-and each Days chest as the KH2 chest that looks like it.
+each Days chest as the KH2 chest that looks like it, and Days's crystals as Re:Chain of Memories's.
 
     python tools/mods/kh2_prizes.py --kh2 <kh2.hed_out> [--exe <khdays-native>] [--bbs2 <bbs_second.hed_out>]
-                                    [--mod "Days - KH2 Prizes"]
+                                    [--recom <Recom.hed_out>] [--mod "Days - KH2 Prizes"]
 
 --kh2 is KH2's entries as the installer extracts them: original/obj/PRIZE.mdlx and PRIZE_HE.mdlx (the Coliseum's
 coin) and their HD pages, remastered/obj/<file>/-0.dds, -1.dds (one a page, in the order of the pages' places);
 the chests' original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds. --exe makes the
-chests (through khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures. Writes
+chests (through khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures, --recom gives
+the crystals Re:CoM's prize sheet (remastered/<its key>.dat/rec_prise_dpx1.dds). Writes
 mods/<mod>/graphics/mo/prize.pak.z/fx/, mods/<mod>/graphics/mo/mo#<entry>/mdl/ and the switch
 days-mods/kh2-prizes.txt; says what it made and what it left out.
 """
@@ -62,6 +63,13 @@ DAYS_CHEST_WIDTH = 0.982  # every Days chest's width (mo/mo's <world>_box_b, the
 CHEST_BONES = "j0 dummy0\nj3 box1\nkeep light01 light02 light03\nswitch kh2_prizes\n"
 # Days's item spheres and KH2's prize boxes, the same designs (the blue one with its gold horn)
 BOXES = {"prize_05": "PRIZE_BOX_YELLOW", "prize_06": "PRIZE_BOX_RED", "prize_07": "PRIZE_BOX_BLUE"}
+# Re:CoM's prize sheet: an entry of Recom known by its key alone, its HD picture; its red crystal (the second quarter
+# of the top row, lying at 45 degrees) is Days's crystals' cut
+RECOM_PRIZES = "c1f677b2925314aa87af10f1f21557f0.dat"
+RECOM_SHEET = "rec_prise_dpx1.dds"
+# Days's crystals (each fills its 16 x 32 picture) and Re:CoM's crystal coloured as each: its hue (None: grey) and
+# its saturation and brightness times
+GEMS = {"ef_pp": ("grey", None, 0.0, 1.9), "prize_08": ("blue", 0.667, 0.75, 1.6)}
 
 
 def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int, file: str = PRIZE) -> str:
@@ -191,14 +199,70 @@ def make_boxes(
     return made, left_out
 
 
+def stood_crystal(sheet: Image.Image) -> Image.Image:
+    """Re:CoM's red crystal from its prize sheet, stood up and cut to its outline, as tall as it is in the sheet and
+    half as wide (Days's crystals' shape)."""
+    w, h = sheet.size
+    cell = sheet.convert("RGBA").crop((w // 4, 0, w // 2, h // 2))
+    big = cell.resize((cell.width * 4, cell.height * 4), Image.Resampling.LANCZOS)  # turned without losing edges
+    stood = big.rotate(-45, Image.Resampling.BICUBIC, expand=True)
+    stood = stood.crop(stood.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox())
+    tall = max(2, round(stood.height / 4))
+    return stood.resize((max(1, tall // 2), tall), Image.Resampling.LANCZOS)
+
+
+def coloured(picture: Image.Image, hue: float | None, saturation: float, brightness: float) -> Image.Image:
+    """`picture` given a hue (0..1; None keeps its own), its saturation and brightness times these, its alpha kept."""
+    h, s, v = picture.convert("RGB").convert("HSV").split()
+    if hue is not None:
+        h = h.point(lambda _: round(hue * 255))
+    s = s.point(lambda x: min(255, round(x * saturation)))
+    v = v.point(lambda x: min(255, round(x * brightness)))
+    out = Image.merge("HSV", (h, s, v)).convert("RGB").convert("RGBA")
+    out.putalpha(picture.getchannel("A"))
+    return out
+
+
+def gem_text(picture: str, page: str) -> str:
+    """A still effect: the page as one layer, 16 x 32 (Days's crystal's picture) and its body."""
+    lines = [
+        "effect 1",
+        f"# Re:Chain of Memories's crystal coloured as Days's {picture}, made by tools/mods/kh2_prizes.py",
+        f"page 0 {page}",
+        "body 0",
+        "frame_time 1",
+        "frame",
+        "layer page 0 rect 0 0 1 1 corners -8 -16 8 -16 -8 16 8 16 colour 1 1 1 1 blend alpha",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def make_gems(recom: Path | None, fx: Path) -> tuple[list[str], list[str]]:
+    """Days's crystals as Re:CoM's: what was made and what was left out."""
+    sheet = recom / "remastered" / RECOM_PRIZES / RECOM_SHEET if recom else None
+    if sheet is None or not opened(sheet):
+        return [], [f"{picture}: Re:CoM's prize sheet is not there" for picture in GEMS]
+    with Image.open(sheet) as image:
+        crystal = stood_crystal(image)
+    made = []
+    for picture, (what, hue, saturation, brightness) in GEMS.items():
+        page = f"{picture}_page0.png"
+        coloured(crystal, hue, saturation, brightness).save(fx / page)
+        (fx / f"{picture}.txt").write_text(gem_text(picture, page), encoding="utf-8", newline="\n")
+        made.append(f"{picture}: Re:CoM's crystal, {what}")
+    return made, []
+
+
 def make(
     kh2: Path,
     mod: Path,
     exe: Path | None = None,
     bbs2: Path | None = None,
     run: Callable[[list[str]], str] = run_exe,
+    recom: Path | None = None,
 ) -> list[str]:
-    """The effects (and with `exe` the chests and prize boxes) into mod/; what was left out, each with why."""
+    """The effects (the crystals with `recom`; with `exe` the chests and prize boxes) into mod/; what was left out,
+    each with why."""
     left_out = []
     paxes: dict[str, kh2_pax.Pax | None] = {}
     fx = mod / "graphics" / "mo" / "prize.pak.z" / "fx"
@@ -237,6 +301,9 @@ def make(
     for number, what in ANIMATIONS.items():
         if number not in {n for f, n, _, _ in PAIRS.values() if f == PRIZE}:
             left_out.append(f"KH2's {what} (animation {number}): Days has no such prize")
+    gems = make_gems(recom, fx)
+    made += gems[0]
+    left_out += gems[1]
     if exe is not None:
         for part in (make_chests(kh2, mod, exe, bbs2, run), make_boxes(kh2, mod, exe, run)):
             made += part[0]
@@ -255,10 +322,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kh2", type=Path, required=True, help="KH2's entries extracted (<kh2.hed_out>)")
     ap.add_argument("--exe", type=Path, help="khdays-native, to make the chests with (--kh2-object)")
     ap.add_argument("--bbs2", type=Path, help="Birth by Sleep's bbs_second entries extracted (Neverland's chest)")
+    ap.add_argument("--recom", type=Path, help="Re:Chain of Memories's entries extracted (the crystals)")
     ap.add_argument("--mod", default="Days - KH2 Prizes", help="the mod folder under mods/")
     args = ap.parse_args(argv)
     try:
-        left_out = make(args.kh2, Path("mods") / args.mod, args.exe, args.bbs2)
+        left_out = make(args.kh2, Path("mods") / args.mod, args.exe, args.bbs2, recom=args.recom)
     except (OSError, kh2_pax.PaxError) as e:
         print(f"kh2 prizes: {e}", file=sys.stderr)
         return 1

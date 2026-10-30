@@ -94,8 +94,9 @@ TEST(prizes_collection_inputs) {
         "# made up\n# tools 0\nkh2_first obj/PRIZE.mdlx\nkh2_first menu/us/save.2ld\n"
         "kh2_fifth obj/F_EX030.mdlx\nbbs_second ForEventJP/gimmick/g01pp/00/g01pp00.pmo\nRecom FORM/x\n");
     const auto inputs = kh2_prizes_inputs(dir / "mod_inputs.txt");
-    CHECK(inputs.size() == 3);
+    CHECK(inputs.size() == 4);
     CHECK(inputs.at("kh2_first") == std::vector<std::string>{"obj/PRIZE.mdlx"});
     CHECK(inputs.at("kh2_fifth") == std::vector<std::string>{"obj/F_EX030.mdlx"});
     CHECK(inputs.at("bbs_second").size() == 1);
+    CHECK(inputs.at("Recom") == std::vector<std::string>{"FORM/x"});
 }
