@@ -76,14 +76,25 @@ def weapon(name: str, joint: str, colour) -> dict:
         "scenes": [{"nodes": [0, 1]}],
         "nodes": [{"name": name, "mesh": 0, "skin": 0}, {"name": joint}],
         "skins": [{"joints": [1], "inverseBindMatrices": 4}],
-        "meshes": [{"name": name, "primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1, "JOINTS_0": 2,
-                                                               "WEIGHTS_0": 3}, "indices": 5, "material": 0}]}],
+        "meshes": [
+            {
+                "name": name,
+                "primitives": [
+                    {
+                        "attributes": {"POSITION": 0, "NORMAL": 1, "JOINTS_0": 2, "WEIGHTS_0": 3},
+                        "indices": 5,
+                        "material": 0,
+                    }
+                ],
+            }
+        ],
         "materials": [{"name": name, "pbrMetallicRoughness": {"baseColorFactor": [c / 255 for c in colour] + [1]}}],
         "buffers": [{"uri": f"{name}.bin", "byteLength": len(blob)}],
         "bufferViews": views,
         "accessors": accessors,
     }
     return gltf, blob
+
 
 MOD = """# The forms walk{which}: Twin (characters/twin/) plays its `dual` form (the game's dual-wield Roxas, its own model)
 # with the Zero Gear and three Ability Units, its default form otherwise; its script sets the deck at the select

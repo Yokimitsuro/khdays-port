@@ -41,10 +41,9 @@ PAIRS = {
 # PRIZE.mdlx's animations; its MP orb (2) and drive orb (3) have no Days prize
 ANIMATIONS = {0: "munny", 1: "HP orb", 2: "MP orb", 3: "drive orb"}
 
-# Days's chests (mo/mo's <world>_box_b: its entry) and the KH2 chest that looks like each, with its motion set (the
-# maintainer's pairing, 2026-10-30): KH2's large chests of the same worlds; Wonderland's (not in KH2) KH2's common
-# small chest, red as Days's; Neverland's that model wearing Birth by Sleep's Never Land chest pictures, laid out as
-# its own.
+# Days's chests (mo/mo's <world>_box_b: its entry) and the KH2 chest that looks like each, with its motion set:
+# KH2's large chests of the same worlds; Wonderland's (not in KH2) KH2's common small chest, red as Days's;
+# Neverland's that model wearing Birth by Sleep's Never Land chest pictures, laid out as its own.
 CHESTS = {
     "tt": (102, "F_EX040_TT", "F_EX040_TT.mset"),
     "al": (94, "F_EX040_AL", "F_EX040.mset"),

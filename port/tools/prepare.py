@@ -1744,7 +1744,7 @@ HOOKS["ov008@0207c248"] = _ov008_list  # Ov008_UpdateMissionMenuOptionScreen
 HOOKS["ov006@020508e0"] = _ov006_members  # Ov006_UpdateMissionMenuSelectionScreen
 HOOKS["ov008@0207c7c8"] = _ov008_members  # Ov008_UpdateMissionMenuSelectionScreen
 
-# The field's prize pictures drawn as a mod's effect (ui/prize_effects.h, spec 038): each of mo/prize.pak.z's
+# The field's prize pictures drawn as a mod's effect (ui/prize_effects.h): each of mo/prize.pak.z's
 # pictures named as the game loads it, each billboard of one with an effect drawn by the port instead, and the
 # prizes taken traced (KHDAYS_TRACE_PRIZES).
 HOOKS["ov002@02078ef8"] = [

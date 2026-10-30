@@ -406,7 +406,7 @@ add_test(NAME khdays-kh2-reticles-optional COMMAND khdays-kh2-reticles-test --op
 add_test(NAME khdays-kh2-reticles-partial COMMAND khdays-kh2-reticles-test --partial)
 add_test(NAME khdays-kh2-reticles-legacy COMMAND khdays-kh2-reticles-test --legacy)
 
-# A prize picture drawn as a mod's effect (KH2's prizes, spec 038): its file read, its frames as sequence quads.
+# A prize picture drawn as a mod's effect (KH2's prizes): its file read, its frames as sequence quads.
 add_executable(khdays-prize-effects-test tests/prize_effects_test.cpp ui/prize_effects_model.cpp)
 target_link_libraries(khdays-prize-effects-test PRIVATE khdays-kh2-gauge)
 target_compile_options(khdays-prize-effects-test PRIVATE /W4 /std:c++20 /EHsc)

@@ -4001,7 +4001,7 @@ over Xigbar to Xaldin; the guest's left twice (Xemnas, then round to Roxas),
 right three times, the third over Xaldin to Vexen; its A gave "Espera al
 anfitrión." and "Espera..." in turn and its plate the red ring.
 
-The game's own screen with a mod's characters (2026-10-30, spec 039; no HD pieces' select, two screens):
+The game's own screen with a mod's characters (2026-10-30; no HD pieces' select, two screens):
 - **Its grid** is a table of two rows of twelve words (`data_ov006_02056410`, the camp's `data_ov008_02090c00`):
   -2 an edge, -1 the place of a bought character (13-18, put there each update from `data_ov006_020563f8` and
   `data_ov006_02056470`), else the character. Its first row has nine places (columns 2-10), its second ten (1-10):
@@ -5452,7 +5452,7 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   bit 2, `Ov002_SpawnKindIntoFreeSpot`). The node's width (+0x18) and height (+0x1a) come from its speed (tier 0
   0x200, 1 0x380, others and items 0x500): kind 0 twice as wide and four times as tall (its pictures 16 x 32), kind
   1 four times both, the rest twice both. Kinds 0 and 1 make the same pickup sound (`Ov002_PlaySlotActionSound`).
-- **The port draws a mod's effect instead** (spec 038, `port/ui/prize_effects.cpp`): with a mod's
+- **The port draws a mod's effect instead** (`port/ui/prize_effects.cpp`): with a mod's
   `graphics/mo/prize.pak.z/fx/<picture>.txt` (`port/ui/prize_effects_model.h`, made from KH2's `obj/PRIZE.mdlx` by
   `tools/mods/kh2_prizes.py`) and the settings' "KH2 prizes and chests" on, `Billboard_DrawList` skips the node
   (a join in `port/tools/prepare.py`) and the effect's current frame is drawn at its place on the 3D layer's
