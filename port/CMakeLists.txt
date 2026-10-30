@@ -531,6 +531,7 @@ add_executable(khdays-native
     runtime/menus/daycard.c            # the day's calendar card, read for the port to draw
     runtime/net/roomlist.c           # the port's list of Mission Mode's rooms over the game's
     runtime/menus/charselect.c         # Mission Mode's character select, read and steered for the port
+    runtime/menus/select_pages.c       # ... its pages
     runtime/menus/camp.c               # Mission Mode's camp menu, read for the port
     runtime/menus/shop.c               # the Moogle Shop, read for the port (its moogle turned to the menu)
     runtime/menus/enemy_viewer.c       # Enemy Profiles' model viewer: the game's own 3D of the enemy
@@ -982,6 +983,10 @@ add_test(NAME khdays-save COMMAND khdays-save-test)
 # holds as the game's read tells it, the two views, a port's file written and
 # read back.
 # The update check's versions and GitHub's answer (host/app/release_version.h).
+add_executable(khdays-select-pages-test tests/select_pages_test.c runtime/menus/select_pages.c)
+target_compile_options(khdays-select-pages-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-select-pages COMMAND khdays-select-pages-test)
+
 add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c)
 target_compile_options(khdays-present-layout-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-present-layout COMMAND khdays-present-layout-test)

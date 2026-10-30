@@ -130,7 +130,7 @@ Written by `tools/hd/theater_mission.py`, in the theater's pieces; drawn by
 
 | Line | What it is |
 |---|---|
-| `grid COLUMNS GAP` | the grid's columns and the tiles' gap (from place `tile`) |
+| `grid COLUMNS GAP ROWS` | the grid's columns, the tiles' gap (from place `tile`) and a page's rows; without ROWS (layouts made before the pages) the rows that fit above the places' plates |
 | `stats PITCH` | the gauges' rows' pitch (from place `stat`) |
 | `gauge_pitch PITCH` | a gauge's bars' pitch (from place `gauge`) |
 | `gauge_colour R G B` | the bars' colours, left to right (the game's) |
@@ -147,6 +147,18 @@ grid ends with a random choice, a "?" with the player's Y in its corner: A on it
 line then says "Y Random" with the game's own Y, 0x334d in `text/font_eu_10.nftr`,
 which its text never writes) moves to a character nobody is on, at random, and
 chooses it.
+
+When the characters and the random choice do not fit a page (`grid`'s COLUMNS x
+ROWS: the game's 19 and the random choice fill four rows of five, so a mod's
+characters past the first make more), the grid is paged
+(`runtime/menus/select_pages.c`): the page shown is the one the cursor is on, L and
+R turn it to the same place on the next or previous page (its last character when
+the page is shorter), the directions cross pages (down from a page's last row onto
+the next page's first, left and right along the whole order), and `text page`
+(else the places' circles' style under the grid) says "2 / 3". The random choice
+stays last, on the last page, and draws from every page. The places' plates show
+every place's character whatever page is shown. With everything on one page the
+screen is as it always was.
 
 ## The settings menu (`layouts/settings/<lang>/settings.txt`)
 

@@ -1,0 +1,2 @@
+# its bones are named as Roxas's: they follow his by name
+cull none

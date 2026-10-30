@@ -8,6 +8,7 @@
 #include "../app/places.h"
 #include "ui_text.h"
 #include "../../runtime/menus/charselect.h"
+#include "../../runtime/menus/select_pages.h"
 #include "../../runtime/characters/characters.h"
 #include "mod_faces.h"
 #include "../../runtime/core/rom.h"
@@ -36,7 +37,7 @@ static struct {
     KhdaysLayout layout;
     KhdaysLayoutStrings strings;
     SDL_Texture *art;
-    int columns;
+    int columns, rows; /* the grid's, and a page's rows (select_pages.h) */
     float gap, stat_pitch, gauge_pitch, plate_pitch, frame_place, frame_other;
     Uint8 bars[BARS_MOST][3];
     int bar_count;
@@ -54,6 +55,8 @@ static void forget(void)
     khdays_layout_forget(&s.layout);
     khdays_layout_strings_free(&s.strings);
 }
+
+static const float *place(const char *name);
 
 static int load(SDL_Renderer *renderer, int language)
 {
@@ -91,9 +94,12 @@ static int load(SDL_Renderer *renderer, int language)
         if (khdays_layout_line(&s.layout, line, folder)) {
             continue;
         }
-        if (SDL_sscanf(line, "grid %d %f", &n, &a) == 2) {
+        if (SDL_sscanf(line, "grid %d %f %d", &n, &a, &r) >= 2) {
+            /* columns, the gap, and the rows of a page (with the layouts made before the pages: the rows
+             * that fit above the places' plates) */
             s.columns = n > 0 ? n : 1;
             s.gap = a;
+            s.rows = SDL_sscanf(line, "grid %d %f %d", &n, &a, &r) == 3 && r > 0 ? r : 0;
         } else if (SDL_sscanf(line, "stats %f", &a) == 1) {
             s.stat_pitch = a;
         } else if (SDL_sscanf(line, "gauge_pitch %f", &a) == 1) {
@@ -127,7 +133,14 @@ static int load(SDL_Renderer *renderer, int language)
     }
     snprintf(path, sizeof(path), "UI/mlt/mlt_%s.s.z", codes[language]);
     khdays_layout_strings(reader, path, &s.strings, s.layout.who);
+    if (s.rows == 0) {
+        const float *tile = place("tile"), *plate = place("plate");
+        const float bottom = plate[1] > tile[1] ? plate[1] : 1080.0f;
+        s.rows = (int)((bottom - tile[1] + s.gap) / (tile[3] + s.gap));
+        s.rows = s.rows > 0 ? s.rows : 1;
+    }
     khdays_charselect_columns(s.columns);
+    khdays_charselect_rows(s.rows);
     return 1;
 }
 
@@ -244,6 +257,23 @@ static void draw_chosen(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     }
 }
 
+/* "2 / 3" under the grid: the layout's `text page` where it has one, else in the places' circles' style under the
+ * page's rows. */
+static void page_indicator(const KhdaysLayoutFrame *fr, int page, int pages, const float *tile)
+{
+    char label[32];
+    unsigned short wide[32];
+    snprintf(label, sizeof(label), "%d / %d", page + 1, pages);
+    khdays_layout_utf8(label, wide, 32);
+    if (khdays_layout_text(&s.layout, "page") != NULL) {
+        line(fr, "page", wide, 0, 0);
+    } else {
+        const float cx = tile[0] + ((float)s.columns * (tile[2] + s.gap) - s.gap) / 2;
+        const float cy = tile[1] + (float)s.rows * (tile[3] + s.gap) + s.gap;
+        line(fr, "tag", wide, cx, cy);
+    }
+}
+
 static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
 {
     const float *tile = place("tile"), *tag_at = place("tile_tag");
@@ -251,11 +281,26 @@ static void draw_grid(const KhdaysLayoutFrame *fr, const KhdaysSelectView *v)
     while (khdays_charselect_at(v, count) >= 0 && khdays_charselect_at(v, count) != KHDAYS_SELECT_CHARACTERS) {
         ++count;
     }
+    /* the page the cursor is on: this copy's character, or the random choice */
+    const KhdaysSelectGrid g = {count + 1, s.columns, s.rows};
+    const int target = v->random ? KHDAYS_SELECT_CHARACTERS : v->character;
+    int cursor = 0;
     for (int p = 0; p <= count; ++p) {
-        /* the characters, then the random choice (charselect.c's grid has it last too) */
-        const int row = p / s.columns, in_row = SDL_min(s.columns, count + 1 - row * s.columns);
+        if (khdays_charselect_at(v, p) == target) {
+            cursor = p;
+        }
+    }
+    const int page = khdays_select_page_of(g, cursor), first = khdays_select_page_first(g, page);
+    const int shown = khdays_select_page_count(g, page);
+    if (khdays_select_pages(g) > 1) {
+        page_indicator(fr, page, khdays_select_pages(g), tile);
+    }
+    for (int p = first; p < first + shown; ++p) {
+        /* the page's characters, then on the last page the random choice (charselect.c's grid has it last too) */
+        const int on_page = p - first, row = on_page / s.columns, in_row = SDL_min(s.columns, shown - row * s.columns);
         const float left = tile[0] + (float)(s.columns - in_row) * (tile[2] + s.gap) / 2;
-        const float x = left + (float)(p % s.columns) * (tile[2] + s.gap), y = tile[1] + (float)row * (tile[3] + s.gap);
+        const float x = left + (float)(on_page % s.columns) * (tile[2] + s.gap),
+                    y = tile[1] + (float)row * (tile[3] + s.gap);
         int on[KHDAYS_SELECT_PLACES], n = 0;
         if (p == count) {
             const float t = v->random ? s.frame_place : s.frame_other;

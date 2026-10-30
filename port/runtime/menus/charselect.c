@@ -3,6 +3,7 @@
  * request the game's own input makes, one step at a time, the game's sounds following. Addresses and
  * offsets: docs/RUNTIME_MAP.md section 16.3. */
 #include "charselect.h"
+#include "select_pages.h"
 
 #include "../characters/characters.h"
 #include "../input/input.h"
@@ -104,6 +105,7 @@ static KhdaysSelectView shown;
 static int on = -1; /* screens' index whose update ran last */
 static u32 seen_at;
 static volatile LONG columns = 5;
+static volatile LONG page_rows; /* a page's rows (the layout's), 0 one page */
 /* the game's thread's own */
 static KhdaysSelectView now; /* as last read, after the game's update */
 static int want = -1;        /* the character the player moved to, until the game has it */
@@ -234,59 +236,38 @@ static int grid_count(const KhdaysSelectView *v)
     return count;
 }
 
-/* Where a character is in the port's grid: the characters there in the game's order, `cols` a row,
- * the last row centred; x its middle in columns. */
-static float grid_x(int position, int count, int cols)
+/* Whether the cursor may go onto grid position `position` (`user` the view): the random choice, or a
+ * character no other place is on. */
+static int may_move_onto(int position, void *user)
 {
-    const int row = position / cols, in_row = count - row * cols < cols ? count - row * cols : cols;
-    return (float)(position % cols) - (float)(in_row - 1) / 2.0f;
+    const KhdaysSelectView *v = (const KhdaysSelectView *)user;
+    const int c = khdays_charselect_at(v, position);
+    return c == RANDOM || (c >= 0 && !taken(v, c));
 }
 
-/* The character a direction leads to from `from` (KHDAYS_KEY_*), the ones taken stepped over; the
- * grid's last is RANDOM, the random choice. */
-static int step(const KhdaysSelectView *v, int from, u16 key)
+/* The port's grid now: its positions, the layout's columns, and its rows a page (select_pages.h). */
+static KhdaysSelectGrid grid_of(const KhdaysSelectView *v)
 {
-    const int count = grid_count(v), cols = (int)columns > 0 ? (int)columns : 1;
+    const KhdaysSelectGrid g = {grid_count(v), (int)columns > 0 ? (int)columns : 1, (int)page_rows};
+    return g;
+}
+
+/* The character a move leads to from `from` (KHDAYS_SELECT_*), across the grid's pages, the ones taken
+ * stepped over; the grid's last is RANDOM, the random choice. */
+static int step(const KhdaysSelectView *v, int from, int move)
+{
+    const KhdaysSelectGrid g = grid_of(v);
     int at = 0;
-    for (int p = 0; p < count; ++p) {
+    for (int p = 0; p < g.count; ++p) {
         if (khdays_charselect_at(v, p) == from) {
             at = p;
         }
     }
-    if (count == 0) {
+    if (g.count == 0) {
         return from;
     }
-    if (key == KHDAYS_KEY_LEFT || key == KHDAYS_KEY_RIGHT) {
-        const int dir = key == KHDAYS_KEY_RIGHT ? 1 : -1;
-        for (int k = 1; k < count; ++k) {
-            const int c = khdays_charselect_at(v, ((at + dir * k) % count + count) % count);
-            if (c == RANDOM || !taken(v, c)) {
-                return c;
-            }
-        }
-        return from;
-    } else {
-        const int rows = (count + cols - 1) / cols, dir = key == KHDAYS_KEY_DOWN ? 1 : -1;
-        const float x = grid_x(at, count, cols);
-        for (int k = 1; k < rows; ++k) {
-            const int row = (((at / cols) + dir * k) % rows + rows) % rows;
-            int best = -1;
-            float best_d = 0.0f;
-            for (int p = row * cols; p < count && p < (row + 1) * cols; ++p) {
-                const float d = grid_x(p, count, cols) - x;
-                const float dist = d < 0 ? -d : d;
-                const int c = khdays_charselect_at(v, p);
-                if ((c == RANDOM || !taken(v, c)) && (best < 0 || dist < best_d)) {
-                    best = p;
-                    best_d = dist;
-                }
-            }
-            if (best >= 0) {
-                return khdays_charselect_at(v, best);
-            }
-        }
-        return from;
-    }
+    const int to = khdays_select_move(g, at, move, may_move_onto, (void *)v);
+    return to == at ? from : khdays_charselect_at(v, to);
 }
 
 /* A character the game lets be chosen and no other place is on, at random: another than `now` when
@@ -593,7 +574,11 @@ static int repeated(u16 buttons, u16 key)
 
 uint16_t khdays_charselect_buttons(uint16_t buttons)
 {
-    static const u16 keys[4] = {KHDAYS_KEY_UP, KHDAYS_KEY_DOWN, KHDAYS_KEY_LEFT, KHDAYS_KEY_RIGHT};
+    /* the directions, then L and R (the pages: the game's select does not read them) */
+    static const u16 keys[6] = {KHDAYS_KEY_UP,    KHDAYS_KEY_DOWN, KHDAYS_KEY_LEFT,
+                                KHDAYS_KEY_RIGHT, KHDAYS_KEY_L,    KHDAYS_KEY_R};
+    static const int moves[6] = {KHDAYS_SELECT_UP,    KHDAYS_SELECT_DOWN,          KHDAYS_SELECT_LEFT,
+                                 KHDAYS_SELECT_RIGHT, KHDAYS_SELECT_PREVIOUS_PAGE, KHDAYS_SELECT_NEXT_PAGE};
     const u16 directions = KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
     const int a_pressed = (buttons & KHDAYS_KEY_A) && !(held & KHDAYS_KEY_A);
     const int y_pressed = (buttons & KHDAYS_KEY_Y) && !(held & KHDAYS_KEY_Y);
@@ -616,12 +601,16 @@ uint16_t khdays_charselect_buttons(uint16_t buttons)
         on_random = 0;
     }
     if (active()) {
+        const int paged = khdays_select_pages(grid_of(&now)) > 1;
         out &= (u16)~directions; /* the port's grid, not the game's */
+        if (paged) {
+            out &= (u16) ~(KHDAYS_KEY_L | KHDAYS_KEY_R); /* its pages */
+        }
         if (choosing) {
             const int from = on_random ? RANDOM : want >= 0 ? want : now.places[now.self].character;
-            for (int k = 0; k < 4; ++k) {
+            for (int k = 0; k < (paged ? 6 : 4); ++k) {
                 if (repeated(buttons, keys[k])) {
-                    const int to = step(&now, from, keys[k]);
+                    const int to = step(&now, from, moves[k]);
                     if (to != from && to >= 0) {
                         on_random = to == RANDOM;
                         want = to == RANDOM ? -1 : to;
@@ -692,4 +681,9 @@ void khdays_charselect_view(KhdaysSelectView *out)
 void khdays_charselect_columns(int cols)
 {
     InterlockedExchange(&columns, cols > 0 ? cols : 1);
+}
+
+void khdays_charselect_rows(int rows)
+{
+    InterlockedExchange(&page_rows, rows > 0 ? rows : 0);
 }

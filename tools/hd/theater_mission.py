@@ -63,7 +63,7 @@ SELECT_PLACES = {
     "plate_face": (88, 9, 66, 66),  # its character's face
 }
 SELECT_LINES = {
-    "grid": "5 12",  # columns, the tiles' gap
+    "grid": "5 12 4",  # columns, the tiles' gap, a page's rows (above the places' plates)
     "stats": "50",  # the gauges' rows' pitch
     "gauge_pitch": "44",  # the bars' pitch
     "plates": "450",  # the plates' pitch
@@ -80,6 +80,7 @@ SELECT_TEXTS = {
     "plate_player": (170, 8, 36, "left", 255),
     "plate_character": (170, 44, 28, "left", 190),
     "plate_alone": (170, 24, 38, "left", 255),
+    "page": (1364, 925, 34, "centre", 255),  # the pages' "2 / 3", under the grid's four rows
 }
 ROOMS_PIECES = ("veil", "help_bar", "row", "row_selected", "square", "trough", "thumb", "end", "glove")
 ROOMS_PLACES = {
@@ -266,7 +267,7 @@ def make_select(mare: Path, data: Path, lang: str, mod: Path, layouts) -> str:
         "#   pieces: face<N> (the game's character N), face<N>_grey, veil; places: rule, face, tile",
         "#   (the grid's first), tile_tag, stat (the first gauge's row), gauge, plate, plate_circle,",
         "#   plate_face",
-        "#   grid COLUMNS GAP           the grid",
+        "#   grid COLUMNS GAP ROWS      the grid, ROWS a page's (more characters: pages, L and R)",
         "#   stats PITCH                the gauges' rows; gauge_pitch PITCH their bars",
         "#   plates PITCH               the places' plates",
         "#   frame PLACE OTHERS         a tile's frame: a place's colour on it, or none",

@@ -294,7 +294,8 @@ The decks are each player's own and the room does not share them, so the rules a
 ## Limits
 
 The select keeps a place's character in a signed byte: the mods' characters take the numbers 0x16-0x7f, 106 at
-once (more are left out, told). The numbers follow the characters' identities, so copies with the same mods give
+once (more are left out, told). The select of the HD pieces shows them in pages when they do not fit one (L and R
+turn the page; HD_SCREENS.md, "Mission Mode's character select"). The numbers follow the characters' identities, so copies with the same mods give
 the same ones. The rest of the game -- and the saves -- only ever hold the base's: a save made with a mod's
 character loads without the mod, its base standing in.
 

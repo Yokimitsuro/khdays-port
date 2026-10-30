@@ -58,6 +58,9 @@ int khdays_charselect_at(const KhdaysSelectView *v, int position);
 void khdays_charselect_view(KhdaysSelectView *out);
 /* The window's thread: the columns of the port's grid (its layout's), for the directions. */
 void khdays_charselect_columns(int columns);
+/* The window's thread: the rows of a page of the port's grid (its layout's; 0 every character on one page): with
+ * more than one page, L and R turn it and the directions cross pages (select_pages.h). */
+void khdays_charselect_rows(int rows);
 
 #ifdef __cplusplus
 }

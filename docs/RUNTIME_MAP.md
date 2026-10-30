@@ -3971,7 +3971,9 @@ camp's menu with Donald's model, face and numbers. What it holds:
   place is on; then `Ov006_MissionArmCursorRequest` -- the host's row itself,
   a guest's request at +0x4e0 (the same six bytes, sent to the host, which
   answers with the row) -- and no other move until it is answered
-  (`Ov006_MissionIsEntryActive`: the request's count is the row's). A
+  (`Ov006_MissionIsEntryActive`: the request's count is the row's). Neither it
+  nor the camp's twin (`Ov008_UpdateMissionMemberSelectionInput`, `Ov008_LobbyStep`)
+  reads L or R (0x200, 0x100): the port's pages take them (read 2026-10-30). A
   chooses, B unchooses; START with every place chosen goes on
   (`Ov006_SetPendingInput`): the update returns
   `Ov006_MemberMenuNextStateNoOp` while the screens fade out to scene 19.
