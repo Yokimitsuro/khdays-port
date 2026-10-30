@@ -11,6 +11,7 @@ extern "C" {
 #include "origin.h"
 #include "session_log.h"
 }
+#include "../menus/saveworld.h"
 
 #include "khdays/assets/message.h" // lz_decompress
 #include "khdays/vfs/filesystem.h"
@@ -477,6 +478,7 @@ void read_rom(KhdaysRomReader &reader, u32 offset, u8 *destination, u32 size)
 
 extern "C" void khdays_rom_read(u32 offset, u8 *destination, u32 size)
 {
+    khdays_saveworld_card_read(offset); /* the mission worlds' archives read: the save list's world */
     read_rom(card_reader, offset, destination, size);
 }
 

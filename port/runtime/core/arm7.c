@@ -11,6 +11,7 @@
 #include "window.h"
 #include "../sound/sound_bridge.h"
 #include "../menus/saveslots.h"
+#include "../menus/saveworld.h"
 #include "../missions/missions.h"
 #include "../scripts/scripts.h"
 #include "../../host/app/files.h"
@@ -339,6 +340,7 @@ static void backup_identify(u32 type)
     backup_changed = 0;
     /* the save files beyond the chip's three, and the view the game reads its slots through */
     khdays_slots_attach(backup, backup_size, khdays_host_user_folder());
+    khdays_saveworld_attach(khdays_host_user_folder(), khdays_slots_highest_counter()); /* the saves' worlds */
 }
 
 /* The files a save action wrote: the new missions' progress beside each (runtime/missions/). */
@@ -361,6 +363,7 @@ int khdays_backup_commit(void)
         if (slots) {
             saved_files();
             khdays_scripts_saved();
+            khdays_saveworld_saved(khdays_slots_highest_counter());
         }
         return 1;
     }
@@ -377,6 +380,7 @@ int khdays_backup_commit(void)
                (double)(khdays_clock_cycles() - start) * 1000.0 / KHDAYS_CLOCK_HZ);
     saved_files();
     khdays_scripts_saved();
+    khdays_saveworld_saved(khdays_slots_highest_counter());
     return 1;
 }
 

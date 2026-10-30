@@ -11,6 +11,7 @@
 #include "../core/rom.h"
 #include "../core/session_log.h"
 #include "../core/window.h"
+#include "../mods/installed.h"
 #include "../missions/missions.h"
 
 #include "khdays_ds_symbols.h"
@@ -88,6 +89,11 @@ extern void Ov008_SaveMenu_RefreshRows(KhdaysRef menu);
 extern void Ov008_RefreshSaveRowDigits(KhdaysRef menu);
 extern void Ov008_PlaceElementByVariant(KhdaysRef menu, int old, int now);
 extern int GameState_GetField(int field, int bits);
+/* the save screen's prompt and its points' entries (SaveMenuConfirm's "no", SaveMenu_OnBack's phase 1) */
+extern void Ov025_SetMenuEntriesVisible(int shown, int prompt);
+extern void Ov025_SaveMenuDrawPrompt(KhdaysRef menu, int phase);
+extern void Ov008_SetMenuEntriesVisible(int shown, int prompt);
+extern void Ov008_SaveMenuDrawPrompt(KhdaysRef menu, int phase);
 
 static void story_row_digits(KhdaysRef menu)
 {
@@ -107,12 +113,15 @@ typedef struct Camp {
     void (*refresh_rows)(KhdaysRef menu);
     void (*refresh_digits)(KhdaysRef menu);
     void (*place)(KhdaysRef menu, int old, int now);
+    /* its prompt's and entries' redraw, to go back to the slots after a save (back_to_slots) */
+    void (*entries_visible)(int shown, int prompt);
+    void (*draw_prompt)(KhdaysRef menu, int phase);
 } Camp;
 static const Camp camps[] = {
     {25, 0x020b574cu, 0x020b4ab0u, 0x020b4e2cu, 0x020b5748u, &story_counting, Ov025_SaveMenu_RefreshRows,
-     story_row_digits, Ov025_PlaceElementByVariant},
+     story_row_digits, Ov025_PlaceElementByVariant, Ov025_SetMenuEntriesVisible, Ov025_SaveMenuDrawPrompt},
     {8, 0x02090f0cu, 0x0209009cu, 0x02090460u, 0x02090f08u, &mission_counting, Ov008_SaveMenu_RefreshRows,
-     Ov008_RefreshSaveRowDigits, Ov008_PlaceElementByVariant},
+     Ov008_RefreshSaveRowDigits, Ov008_PlaceElementByVariant, Ov008_SetMenuEntriesVisible, Ov008_SaveMenuDrawPrompt},
 };
 #define CAMPS ((int)(sizeof(camps) / sizeof(camps[0])))
 
@@ -152,6 +161,7 @@ static const Camp camps[] = {
 #define SAVE_COUNTER 0x1ef8u  /* the highest save counter of the slots read */
 #define FIELD_SAVE_SLOT 0xc98 /* the slot saved to last: the camp's cursor starts there */
 #define SAVE_YES 0x64u
+#define SAVE_SLOT_X 0x140u /* the three slots' x (8 bytes each): the others parked away while it asks */
 #define SAVE_ERROR 0x23cu
 #define SAVE_ERROR_KIND 0x240u
 #define SAVE_READING 0x244u /* the slot read's step (a byte) */
@@ -336,6 +346,7 @@ static void make_rows(const Counting *c)
         r->difficulty = (uint8_t)khdays_slots_field(state, 0x40a, 2);
         r->face = (uint8_t)khdays_slots_field(state, 0xc4b, 2);
         r->crown = khdays_slots_field(state, 0x44e, 3) == 6;
+        r->counter = khdays_slots_field(state, 0xc77, 16) << 16 | khdays_slots_field(state, 0xc87, 16);
         r->level = work != 0 ? level_of(c, state, work) : 0;
     }
     if (work != 0) {
@@ -545,6 +556,27 @@ static int start_file(void)
     return 0;
 }
 
+/* After a save the DS's screen waits on its "saved" (phase 4) for A or B, both of which leave it. With the
+ * Menu Overhaul A or a direction there takes it back to its slots, as its "no" to the question does
+ * (Ov025_SaveMenuConfirm, SaveMenu_OnBack's phase 1), and B still leaves. Whether `pressed` asks for that. */
+static int after_save(u32 menu, int opening, int phase, u16 pressed)
+{
+    return opening >= 3 && phase == SAVE_DONE && rd32(menu + SAVE_ERROR) == 0 &&
+           (pressed & (KHDAYS_KEY_A | KHDAYS_KEY_UP | KHDAYS_KEY_DOWN)) != 0 &&
+           khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL);
+}
+
+static void back_to_slots(const Camp *camp, u32 menu)
+{
+    camp->entries_visible(1, 0);
+    for (u32 i = 0; i < KHDAYS_GAME_SLOTS; ++i) {
+        wr32(menu + SAVE_SLOT_X + 8u * i, 0);
+    }
+    camp->draw_prompt(menu, SAVE_PICK);
+    wr32(menu + SAVE_PHASE, SAVE_PICK);
+    khdays_log("save list: back to the slots after the save");
+}
+
 static u16 camp_buttons(const Camp *camp, u32 ctx, u32 menu, u16 buttons)
 {
     const int phase = (int)rd32(menu + SAVE_PHASE);
@@ -568,6 +600,18 @@ static u16 camp_buttons(const Camp *camp, u32 ctx, u32 menu, u16 buttons)
         make_rows(camp->counting);
     } else if ((phase == SAVE_PICK || phase == SAVE_DONE) && khdays_slots_generation() != rows_generation) {
         make_rows(camp->counting); /* a file saved */
+    }
+    if (after_save(menu, opening, phase, pressed)) {
+        back_to_slots(camp, menu);
+        handed = 0;
+        steer_field = 0;
+        repeat_dir = 0;
+        if (pressed & KHDAYS_KEY_A) {
+            PlaySound(0, 1);
+        } else {
+            move_cursor(buttons, ctx + CAMP_REPEAT, KHDAYS_SLOT_COUNT);
+        }
+        return (u16)(buttons & ~(KHDAYS_KEY_A | KHDAYS_KEY_UP | KHDAYS_KEY_DOWN));
     }
     if (opening < 3 || phase != SAVE_PICK || rd32(menu + SAVE_ERROR) != 0) {
         handed = 0;
@@ -621,6 +665,7 @@ static volatile LONG all_files = 1;     /* [save] files: the 99 (1) or the DS's 
 static int page_top = -1;               /* the first file of the page shown, -1 none */
 static int counted;                     /* the camp's save counter given the highest of all the files */
 static u16 taken;                       /* the direction keys the port took at a page's edge (page_step) */
+static u16 page_swallowed;              /* A kept from a camp's game while held (camp_page_buttons) */
 
 void khdays_savelist_set_settings(int files, int autosave)
 {
@@ -801,9 +846,22 @@ static u16 camp_page_buttons(const Camp *camp, u32 ctx, u32 menu, u16 buttons)
         }
         counted = 1;
     }
+    /* (A kept from the game while held after it took the screen back to its slots: the game would take
+     * it as a new press on a slot) */
+    page_swallowed &= buttons;
+    if (after_save(menu, opening, phase, (u16)(buttons & ~held))) {
+        back_to_slots(camp, menu);
+        taken = 0;
+        page_swallowed = (u16)(buttons & KHDAYS_KEY_A);
+        if (buttons & ~held & KHDAYS_KEY_A) {
+            PlaySound(0, 1);
+        }
+        /* a direction reaches the game the next picture, a new press on its slots */
+        return (u16)(buttons & ~(KHDAYS_KEY_A | KHDAYS_KEY_UP | KHDAYS_KEY_DOWN));
+    }
     if (opening < 3 || phase != SAVE_PICK || rd32(menu + SAVE_ERROR) != 0) {
         taken = 0;
-        return buttons;
+        return (u16)(buttons & ~page_swallowed);
     }
     /* UP steps the slot back, DOWN on (the screen's hooks: StepSelectionBackward, ...Forward) */
     take = page_step(buttons, row, 0, dir, &step, &to_top, &to_row);
@@ -818,7 +876,7 @@ static u16 camp_page_buttons(const Camp *camp, u32 ctx, u32 menu, u16 buttons)
         }
         PlaySound(0, 0);
     }
-    return (u16)(buttons & ~take);
+    return (u16)(buttons & ~(take | page_swallowed));
 }
 
 /* The page view while the title or a camp's menu runs, and the game's lists' buttons; 0 when
@@ -941,6 +999,21 @@ int khdays_savelist_camp_menu(int *screen, int *entry)
     }
     *entry = (int)rd32(menu + 0x88u);
     return (*entry >= 1 && *entry <= 9) || (*entry >= 101 && *entry <= 107) ? in_camp->overlay : 0;
+}
+
+int khdays_savelist_camp_save_screen(int overlay)
+{
+    for (int i = 0; i < CAMPS; ++i) {
+        if (camps[i].overlay != overlay || !khdays_overlay_loaded(overlay)) {
+            continue;
+        }
+        for (u32 index = 0; index < 16; ++index) {
+            if (rd32(camps[i].table + 8u * index) == camps[i].save_screen) {
+                return (int)index;
+            }
+        }
+    }
+    return -1;
 }
 
 /* ---- The two together ------------------------------------------------------------------------- */

@@ -261,6 +261,18 @@ port, the components below, each unmodified. Their own license files travel with
 
 `installer/pinned.json` pins each downloaded file by its SHA-256.
 
+## Kingdom Hearts Re:Collection's fonts (the Menu Overhaul's words)
+
+Project: Kingdom Hearts Re:Collection, by Televo -- a free archive of art assets and fonts
+(<https://github.com/Televo/kingdom-hearts-recollection>; the fonts also on DaFont, <https://www.dafont.com/khmenu.font>)
+
+License: free fonts, the author's terms "giving credit is much appreciated although not necessary"; no formal license.
+
+Usage: **not in this repository**. The installer carries KHMenu.otf and KHGummi.otf, taken from DaFont's
+package at build time (`installer/pinned.json` pins its SHA-256), into `installer/fonts/`; the Menu Overhaul's tools
+(`tools/mods/menu_overhaul.py`) draw the mod's words with them on the player's computer. `tools/hd/hd_pause.py` takes
+the same fonts from a folder the player gives.
+
 ## KH Melon Mix (acknowledgement)
 
 KH Melon Mix (by vitor251093, justedni, Kite2810 and contributors,

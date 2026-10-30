@@ -80,6 +80,7 @@ enum {
     KHDAYS_ENH_DPAD_COMMAND_MENU = 1 << 2,
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
     KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
+    KHDAYS_ENH_CHASE_FREE = 1 << 5,   /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
 };
 
 /* Everything the game needs to know about the player's input at one moment.
@@ -106,6 +107,9 @@ typedef struct KhdaysInputSnapshot {
     uint16_t mouse_speed;      /* the mouse camera: percent of MOUSE_COUNTS_A_FRAME (controls_hooks.c) */
     uint8_t ui_open;           /* 1 while the settings menu is open: no input reaches the game */
     uint16_t enhancements;     /* KHDAYS_ENH_* switched on */
+    int16_t sticks[2][2];      /* the pad's two sticks as they are, [left, right][x, y] in SDL's range (y grows
+                                  downwards), whatever their roles: the Enemy Profiles' model viewer turns and
+                                  zooms with them (runtime/menus/enemy_viewer.c); 0 without a pad */
 } KhdaysInputSnapshot;
 
 /* The latest snapshot, for the game's own read of the pad once a game frame: a button pressed and let

@@ -881,6 +881,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
         {"run_threshold", offsetof(KhdaysEnhancements, run_threshold), 50, 95},
         {"walk_speed", offsetof(KhdaysEnhancements, walk_speed), 20, 90},
+        {"chase_free", offsetof(KhdaysEnhancements, chase_free), 0, 0},
     };
     for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i) {
         if (SDL_strcasecmp(key, settings[i].name) == 0) {
@@ -1046,6 +1047,14 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "sharp");
             v->smooth_scaling = defaults.smooth_scaling;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "hd_fonts") == 0) {
+        /* an older name of [enhancements] hd_font (the Menu Overhaul's own build wrote it here): taken over, not
+         * written again */
+        if (SDL_strcasecmp(value, "on") == 0 || SDL_strcasecmp(value, "off") == 0) {
+            r->profile->enh.hud[KHDAYS_OPT_FONT] = SDL_strcasecmp(value, "on") == 0;
         }
         return;
     }
@@ -1505,6 +1514,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
+    add(&t, "chase_free = %s\n", e->chase_free ? "on" : "off");
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i) {
         if (i < KHDAYS_OPT_MISSION_VISIBILITY)
             add(&t, "%s = %s\n", khdays_hud_setting_keys[i], e->hud[i] ? "on" : "off");
@@ -1543,7 +1553,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "aspect = %s\n"
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
-            "texture_smoothing = %s\nhd_graphics = %s\ndump_graphics = %s\n"
+            "texture_smoothing = %s\nhd_graphics = %s\n"
+            "dump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
             "movies = %s\n"

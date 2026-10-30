@@ -125,6 +125,9 @@ typedef struct KhdaysFramePackage {
     uint32_t bank_captures[4];
     uint32_t bank_plain[4];
     uint32_t bank_intact;
+    /* The field's room change is being drawn (runtime/display/field_wipe.h): its wipe's quad is in this
+     * frame's 3D, and the window covers the columns beside it. Not recorded either. */
+    uint32_t field_wipe;
     /* Transient native image commands, owned by this package, not part of version-14 recordings. */
     KhdaysSequenceImage sequence_image;
     KhdaysSequenceImage portrait_images[4];

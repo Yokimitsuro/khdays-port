@@ -57,6 +57,8 @@ __pycache__/
 
 # The player's mods at the root (port/runtime/mods and studio/core/mods are source).
 /mods/
+# The fonts the installer takes from its pinned packages (installer/pinned.json), for tools/mods.
+/installer/fonts/
 
 # Frames the native build saves (KHDAYS_SHOTS, into shots/ by default).
 /shots/

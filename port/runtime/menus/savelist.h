@@ -26,6 +26,7 @@ typedef struct KhdaysSaveRow {
     uint16_t level;     /* the panels' count plus one, as the game counts them */
     uint32_t munny;     /* the state's +8 */
     uint32_t seconds;   /* the play time: the state's +0 */
+    uint32_t counter;   /* its save counter (fields 0xc77, 0xc87): its world (saveworld.h) */
 } KhdaysSaveRow;
 
 /* The list as the game's thread last left it. */
@@ -81,5 +82,9 @@ int khdays_savelist_played_level(void);
  * screen 0 with an option or a question's answer under its cursor. 0 when none. `*screen` and `*entry`
  * what was read (-1 nothing), for traces. */
 int khdays_savelist_camp_menu(int *screen, int *entry);
+
+/* The screen index of camp overlay `overlay`'s save screen (8 Mission Mode's, 25 the story's: its
+ * screens' table's), -1 when that camp is not loaded. The game's thread. */
+int khdays_savelist_camp_save_screen(int overlay);
 
 #endif

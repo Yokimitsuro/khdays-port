@@ -1,4 +1,4 @@
-﻿; The port's installer (README.md beside this file). Built by build_installer.py, which defines
+; The port's installer (README.md beside this file). Built by build_installer.py, which defines
 ; Version (VERSION, and the commit when not at its tag) and Stage (the folder of the files to install).
 ;
 ; The install has the repository's layout at its root (installer/, tools/ beside data/, mods/,
@@ -357,6 +357,7 @@ begin
   HdVideos.Width := HdPage.SurfaceWidth;
   HdVideos.Height := ScaleY(20);
   HdVideos.Caption := CustomMessage('HdVideos');
+  HdMenus.OnClick := @HdChanged;
   HdStatus := TNewStaticText.Create(HdPage);
   HdStatus.Parent := HdPage.Surface;
   HdStatus.Top := HdVideos.Top + HdVideos.Height + ScaleY(10);
@@ -386,6 +387,7 @@ begin
   Wanted := ExpandConstant('{param:HD|menus,videos}');
   HdMenus.Checked := HdMenus.Enabled and (Pos('menus', Wanted) > 0);
   HdVideos.Checked := HdVideos.Enabled and (Pos('videos', Wanted) > 0);
+  HdChanged(nil);
 end;
 
 function CheckHd: Boolean;
@@ -554,12 +556,15 @@ begin
   Result := (PageID = SteamPage.ID) and not SteamFound and not UnderWine;
 end;
 
-{ When the Steam page is shown the folder is chosen, so re-check whether the port is already in
-  Steam (a repair or an update), with that folder. }
+{ When the HD page is shown the folder is chosen: the Menu Overhaul may be made from the HD menus
+  already there. When the Steam page is, re-check whether the port is already in Steam (a repair or
+  an update), with that folder. }
 procedure CurPageChanged(CurPageID: Integer);
 var
   Json: String;
 begin
+  if (HdPage <> nil) and (CurPageID = HdPage.ID) then
+    HdChanged(nil);
   if (SteamPage <> nil) and (CurPageID = SteamPage.ID) then begin
     if RunHelper('steam-status --install "' + WizardDirValue + '"', Json) = 0 then begin
       SteamPresent := JsonValue(Json, 'present') = 'true';
@@ -667,6 +672,15 @@ begin
       else if JsonValue(Json, 'missing') <> '' then
         { made but for some screens (a tool that failed): said, with where its error was kept }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
+    end;
+    { the port's own mods (the Menu Overhaul, made from the HD menus' pieces, and the Walk) put inside the HD
+      PACK after the HD menus }
+    if DataOk and HdMenus.Checked and DirExists(ExpandConstant('{app}') + '\mods\HD PACK') then begin
+      WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
+      WizardForm.Refresh;
+      Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --1525 "' + HdFolder(0) + '"';
+      if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
+        SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);
       if it does not run, the port writes its own defaults on first start, so no error is shown }

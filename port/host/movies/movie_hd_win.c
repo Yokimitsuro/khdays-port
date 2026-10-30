@@ -743,6 +743,11 @@ void khdays_hd_close(void)
     close_video(0);
 }
 
+void khdays_hd_close_scene_end(void)
+{
+    close_video(2);
+}
+
 /* `path` (UTF-8) as a full Windows path, in a new string to free; NULL if it
  * cannot be converted. As long as the path is: no fixed limit. */
 static WCHAR *full_path(const char *path)
@@ -1007,6 +1012,16 @@ static struct {
     WCHAR **files; /* full paths */
     int count;
     SDL_AudioStream *sound; /* opened by the thread for the first file; destroyed once it has ended */
+    /* The voice's clock, under voice_lock: the seconds of sound put into the stream, where each file
+     * began among them, the files begun, their videos' names ("hd007b"), the format queued now, and
+     * whether the thread has put all it will. */
+    double put;
+    double *began; /* as many as the files */
+    int begun;
+    char **names;
+    int channels, rate;
+    volatile LONG done;
+    ULONGLONG quiet_since; /* when the last of it was heard (0: not yet) */
 } voice;
 
 /* The voice's stream, opened for `spec` the first time, else told the next file's format (what is
@@ -1034,7 +1049,7 @@ static SDL_AudioStream *voice_stream(const SDL_AudioSpec *spec)
 }
 
 /* One file's sound into the voice's stream, a little ahead of the device, to its end or a stop. */
-static void voice_file(const WCHAR *file)
+static void voice_file(const WCHAR *file, int nth)
 {
     IMFSourceReader *reader = NULL;
     SDL_AudioStream *stream = NULL;
@@ -1049,6 +1064,16 @@ static void voice_file(const WCHAR *file)
     } else {
         const SDL_AudioSpec spec = {SDL_AUDIO_F32, (int)channels, (int)rate};
         stream = voice_stream(&spec);
+        if (stream != NULL) {
+            AcquireSRWLockExclusive(&voice_lock);
+            if (nth < voice.count) {
+                voice.began[nth] = voice.put;
+                voice.begun = nth + 1;
+            }
+            voice.channels = (int)channels;
+            voice.rate = (int)rate;
+            ReleaseSRWLockExclusive(&voice_lock);
+        }
     }
     while (stream != NULL && !voice.stop) {
         DWORD index = 0, flags = 0;
@@ -1072,8 +1097,12 @@ static void voice_file(const WCHAR *file)
             DWORD length = 0;
             if (SUCCEEDED(IMFSample_ConvertToContiguousBuffer(sample, &buffer))) {
                 if (SUCCEEDED(IMFMediaBuffer_Lock(buffer, &data, NULL, &length))) {
+                    const double seconds = (double)length / (double)(channels * sizeof(float)) / rate;
+                    AcquireSRWLockExclusive(&voice_lock);
                     SDL_PutAudioStreamData(stream, data, (int)length);
-                    put += (double)length / (double)(channels * sizeof(float)) / rate;
+                    voice.put += seconds;
+                    ReleaseSRWLockExclusive(&voice_lock);
+                    put += seconds;
                     IMFMediaBuffer_Unlock(buffer);
                 }
                 IMFMediaBuffer_Release(buffer);
@@ -1101,10 +1130,11 @@ static DWORD WINAPI voice_run(LPVOID unused)
     (void)unused;
     if (SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET))) {
         for (int i = 0; i < voice.count && !voice.stop; ++i) {
-            voice_file(voice.files[i]);
+            voice_file(voice.files[i], i);
         }
         MFShutdown();
     }
+    InterlockedExchange(&voice.done, 1);
     if (SUCCEEDED(com)) {
         CoUninitialize();
     }
@@ -1125,8 +1155,11 @@ void khdays_hd_voice_stop(void)
     }
     for (int i = 0; i < voice.count; ++i) {
         free(voice.files[i]);
+        free(voice.names[i]);
     }
     free(voice.files);
+    free(voice.names);
+    free(voice.began);
     memset(&voice, 0, sizeof(voice));
     ReleaseSRWLockExclusive(&voice_lock);
 }
@@ -1134,27 +1167,106 @@ void khdays_hd_voice_stop(void)
 void khdays_hd_voice_play(const char *const *paths, int count)
 {
     WCHAR **files;
+    char **names;
+    double *began;
     int n = 0;
     khdays_hd_voice_stop();
-    if (count <= 0 || (files = (WCHAR **)calloc((size_t)count, sizeof(*files))) == NULL) {
+    if (count <= 0) {
+        return;
+    }
+    files = (WCHAR **)calloc((size_t)count, sizeof(*files));
+    names = (char **)calloc((size_t)count, sizeof(*names));
+    began = (double *)calloc((size_t)count, sizeof(*began));
+    if (files == NULL || names == NULL || began == NULL) {
+        free(files);
+        free(names);
+        free(began);
         return;
     }
     for (int i = 0; i < count; ++i) {
         WCHAR *file = full_path(paths[i]);
-        if (file != NULL) {
-            files[n++] = file;
+        const char *base = paths[i];
+        char *dot;
+        if (file == NULL) {
+            continue;
         }
+        /* its video's name, for its subtitles: the path's file name without its extension */
+        for (const char *p = paths[i]; *p; ++p) {
+            if (*p == '/' || *p == '\\') {
+                base = p + 1;
+            }
+        }
+        names[n] = _strdup(base);
+        dot = names[n] != NULL ? strrchr(names[n], '.') : NULL;
+        if (dot != NULL) {
+            *dot = '\0';
+        }
+        files[n++] = file;
     }
     voice.files = files;
+    voice.names = names;
+    voice.began = began;
     voice.count = n;
     voice.thread = CreateThread(NULL, 0, voice_run, NULL, 0, NULL);
     if (voice.thread == NULL) {
         for (int i = 0; i < n; ++i) {
             free(files[i]);
+            free(names[i]);
         }
         free(files);
+        free(names);
+        free(began);
         memset(&voice, 0, sizeof(voice));
     }
+}
+
+/* The seconds of the stream's sound not heard yet. Under voice_lock. */
+static double voice_unheard(void)
+{
+    if (voice.sound == NULL || voice.channels <= 0 || voice.rate <= 0) {
+        return 0.0;
+    }
+    return (double)SDL_GetAudioStreamQueued(voice.sound) / (double)(voice.channels * (int)sizeof(float)) / voice.rate;
+}
+
+int khdays_hd_voice_clock(char *name, size_t size, double *seconds)
+{
+    int found = 0;
+    AcquireSRWLockExclusive(&voice_lock);
+    if (voice.thread != NULL && voice.sound != NULL && voice.begun > 0) {
+        const double heard = voice.put - voice_unheard();
+        int file = 0;
+        for (int i = 0; i < voice.begun; ++i) {
+            if (voice.began[i] <= heard) {
+                file = i;
+            }
+        }
+        snprintf(name, size, "%s", voice.names[file] != NULL ? voice.names[file] : "");
+        *seconds = heard - voice.began[file] > 0.0 ? heard - voice.began[file] : 0.0;
+        found = 1;
+    }
+    ReleaseSRWLockExclusive(&voice_lock);
+    return found;
+}
+
+int khdays_hd_voice_speaking(void)
+{
+    int speaking = 0;
+    AcquireSRWLockExclusive(&voice_lock);
+    if (voice.thread != NULL) {
+        if (!InterlockedCompareExchange(&voice.done, 0, 0) || voice_paused || voice_unheard() > 0.0) {
+            voice.quiet_since = 0;
+            speaking = 1;
+        } else {
+            /* the last word heard: a moment's silence after it, as the theater leaves */
+            if (voice.quiet_since == 0) {
+                voice.quiet_since = GetTickCount64();
+            }
+            speaking = GetTickCount64() - voice.quiet_since < 700;
+        }
+    }
+    ReleaseSRWLockExclusive(&voice_lock);
+    return speaking;
 }
 
 void khdays_hd_voice_pause(int pause)

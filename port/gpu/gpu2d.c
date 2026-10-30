@@ -120,9 +120,16 @@ static void text_bg(const Engine *e, int bg, int line, uint16_t *out)
     const uint32_t screen = bg_screen_base(e, cnt) + (y >> 8) * ((size & 1) ? 2u : 1u) * 0x800u + ((y >> 3) & 31) * 64u;
     const uint32_t chars = bg_char_base(e, cnt);
     const int slot = (cnt & 0x80) ? ext_slot(e, bg, cnt) : -1;
+    const uint8_t *left = e->id == 0 ? e->in->left_out_cells : NULL;
     for (int x = 0; x < KHDAYS_SCREEN_W; ++x) {
         const uint32_t sx = ((uint32_t)x + hofs) & wmask;
         const uint16_t entry = vram16(e, e->bg_area, screen + (sx >> 8) * 0x800u + ((sx >> 3) & 31) * 2u);
+        if (left != NULL) {
+            const uint32_t cell = (uint32_t)bg * 4096u + (y >> 3) * 64u + (sx >> 3);
+            if ((left[cell >> 3] >> (cell & 7)) & 1u) {
+                continue; /* left out: the window draws what stands for it */
+            }
+        }
         const uint32_t tile = entry & 0x3ff;
         const uint32_t px = (entry & 0x400) ? 7 - (sx & 7) : (sx & 7);
         const uint32_t py = (entry & 0x800) ? 7 - (y & 7) : (y & 7);

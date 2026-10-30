@@ -7,6 +7,7 @@
 #include "music_schedule.h"
 
 #include <SDL3/SDL.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,8 @@ static char folder[1024]; /* the schedule's folder, where its tracks are */
 static char video[96];    /* the video's name, for the messages */
 static int playing_cue = -1;
 static int carried;        /* the playing track goes on into the next video */
+static Uint64 kept_since;  /* when the playing track was kept for a next video (keep_for_next) */
+static int video_open;     /* a video is open (between khdays_theater_music_open and its close) */
 static float applied_gain; /* the gain set on the playing track's stream */
 static int stream_paused;
 
@@ -56,6 +59,34 @@ static SDL_Mutex *lock_of(void **slot)
         m = (SDL_Mutex *)SDL_GetAtomicPointer(slot);
     }
     return m;
+}
+
+static void (*logger)(const char *line); /* khdays_theater_music_log_to's */
+
+void khdays_theater_music_log_to(void (*log)(const char *line))
+{
+    logger = log;
+}
+
+static SDL_AtomicInt overhaul; /* khdays_theater_music_overhaul's */
+
+void khdays_theater_music_overhaul(int on)
+{
+    SDL_SetAtomicInt(&overhaul, on != 0);
+}
+
+/* A line for the console and, when one was given, the session log. */
+static void say(const char *format, ...)
+{
+    char line[512];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    fprintf(stderr, "movies: %s\n", line);
+    if (logger != NULL) {
+        logger(line);
+    }
 }
 
 static float base_gain(void)
@@ -148,8 +179,8 @@ static Track *track_start(const KhdaysMusicCue *cue, double frame)
                  ? stb_vorbis_open_memory((const unsigned char *)t->file, (int)size, &error, NULL)
                  : NULL;
     if (t->ogg == NULL) {
-        fprintf(stderr, "movies: %s: the music %s cannot be read (%s)\n", video, path,
-                t->file == NULL ? SDL_GetError() : "not an Ogg Vorbis file stb_vorbis reads");
+        say("%s: the music %s cannot be read (%s)", video, path,
+            t->file == NULL ? SDL_GetError() : "not an Ogg Vorbis file stb_vorbis reads");
         track_free(t);
         return NULL;
     }
@@ -168,12 +199,11 @@ static Track *track_start(const KhdaysMusicCue *cue, double frame)
         t->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, feed, t);
     }
     if (t->stream == NULL) {
-        fprintf(stderr, "movies: %s: no sound for the music: %s\n", video, SDL_GetError());
+        say("%s: no sound for the music: %s", video, SDL_GetError());
         track_free(t);
         return NULL;
     }
-    fprintf(stderr, "movies: %s: the music %s from frame %d (%.1f s into it)\n", video, cue->track, (int)frame,
-            (double)sample / t->rate);
+    say("%s: the music %s from frame %d (%.1f s into it)", video, cue->track, (int)frame, (double)sample / t->rate);
     return t;
 }
 
@@ -211,11 +241,30 @@ static void fade_out_playing(void)
         SDL_ResumeAudioStreamDevice(playing->stream); /* it fades out, whatever paused it */
         stream_paused = 0;
     }
-    fprintf(stderr, "movies: %s: the music %s fades out after %.1f s of it (its loudest %.2f)\n", video, playing->name,
-            (double)fed / playing->rate, peak);
+    say("%s: the music %s fades out after %.1f s of it (its loudest %.2f)", video, playing->name,
+        (double)fed / playing->rate, peak);
     leaving = playing;
     playing = NULL;
     carried = 0;
+}
+
+/* Under `control`: the playing track kept for a next video, for a while (khdays_theater_music_poll). */
+static void keep_for_next(void)
+{
+    carried = 1;
+    kept_since = SDL_GetTicks();
+}
+
+void khdays_theater_music_poll(void)
+{
+    SDL_Mutex *control = lock_of(&control_lock);
+    SDL_LockMutex(control);
+    reclaim();
+    if (carried && playing != NULL && !video_open && SDL_GetTicks() - kept_since > KHDAYS_THEATER_MUSIC_WAIT_MS) {
+        say("%s: no video took the music on", video);
+        fade_out_playing();
+    }
+    SDL_UnlockMutex(control);
 }
 
 void khdays_theater_music_open(const char *video_path)
@@ -237,17 +286,29 @@ void khdays_theater_music_open(const char *video_path)
     snprintf(path, sizeof(path), "%s%s.txt", folder, video);
     have_schedule = khdays_music_schedule_read(path, &schedule);
     playing_cue = -1;
+    say("%s: opened, %s (from %s, to %s), %s playing%s", video,
+        have_schedule ? "its music schedule read" : "no music schedule",
+        have_schedule && schedule.from_field ? "field" : "stop", have_schedule && schedule.to_field ? "field" : "stop",
+        playing != NULL ? playing->name : "nothing", carried ? " (kept for it)" : "");
     if (playing != NULL) {
         /* the video before's music: on into this one when it takes it from there with the same track */
         if (carried && have_schedule && schedule.from_field && schedule.cues[0].first == 0 &&
             strcmp(schedule.cues[0].track, playing->name) == 0) {
             playing_cue = 0;
-            fprintf(stderr, "movies: %s: the music %s goes on from the video before\n", video, playing->name);
+            carried = 0;
+            say("%s: the music %s goes on from the video before", video, playing->name);
+        } else if (carried && !have_schedule && SDL_GetAtomicInt(&overhaul)) {
+            /* the Menu Overhaul's: a video without music of its own lets the kept music play on through it
+             * (kept still: its close decides again) */
+            say("%s: the music %s plays on through it", video, playing->name);
         } else {
             fade_out_playing();
         }
     }
-    carried = 0;
+    if (playing == NULL) {
+        carried = 0;
+    }
+    video_open = 1;
     SDL_UnlockMutex(control);
 }
 
@@ -264,6 +325,12 @@ void khdays_theater_music_tick(double seconds, int started, int paused)
     }
     frame = seconds * schedule.rate;
     cue = khdays_music_cue_at(&schedule, frame);
+    if (cue < 0 && playing != NULL && schedule.to_field && playing_cue == schedule.cue_count - 1 &&
+        frame >= (double)schedule.cues[playing_cue].first && SDL_GetAtomicInt(&overhaul)) {
+        /* the Menu Overhaul's: the last cue's music goes on into the next video (`to field`), past its end (a
+         * frame or two before the video's), for the next video to take it from there */
+        cue = playing_cue;
+    }
     if (cue != playing_cue) {
         fade_out_playing();
         playing_cue = cue;
@@ -296,11 +363,24 @@ void khdays_theater_music_tick(double seconds, int started, int paused)
 void khdays_theater_music_close(int next_follows)
 {
     SDL_Mutex *control = lock_of(&control_lock);
+    int was_open;
     SDL_LockMutex(control);
     reclaim();
+    was_open = video_open;
+    video_open = 0;
+    say("%s: closed (%s, %s), %s playing%s", video,
+        next_follows == 1   ? "a video follows"
+        : next_follows == 2 ? "a scene may follow"
+                            : "the end",
+        was_open ? "open" : "none open", playing != NULL ? playing->name : "nothing", carried ? ", kept" : "");
     if (playing != NULL) {
-        if (next_follows && have_schedule && schedule.to_field) {
-            carried = 1; /* the next video decides (khdays_theater_music_open) */
+        const int goes_on = (have_schedule && schedule.to_field) || (carried && SDL_GetAtomicInt(&overhaul));
+        if (next_follows == 1 && goes_on) {
+            keep_for_next(); /* the next video decides (khdays_theater_music_open) */
+        } else if (next_follows == 2 && goes_on) {
+            keep_for_next(); /* a next scene's video may take it (else khdays_theater_music_poll ends it) */
+        } else if (!was_open && carried && SDL_GetAtomicInt(&overhaul)) {
+            /* no video open (the course's own close after its video's): the wait decides */
         } else {
             fade_out_playing();
         }

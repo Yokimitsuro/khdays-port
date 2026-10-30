@@ -1,0 +1,45 @@
+# The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
+# '<archive> <entry>' (its data and remastered assets).
+# tools e3d929d05b37efbab858c7fb49f8250f87d51e64a68adfc08ec3e4f954956a8f
+Mare data/DaysTheater.chp
+Mare fr/ctd/ct00100.ctd
+Mare fr/font/menufont.cod
+Mare fr/font/menufont.tm2
+Mare fr/l2d/days_theatre.l2d
+Mare gr/ctd/ct00100.ctd
+Mare gr/font/menufont.cod
+Mare gr/font/menufont.tm2
+Mare gr/l2d/days_theatre.l2d
+Mare it/ctd/ct00100.ctd
+Mare it/font/menufont.cod
+Mare it/font/menufont.tm2
+Mare it/l2d/days_theatre.l2d
+Mare sp/ctd/ct00100.ctd
+Mare sp/font/menufont.cod
+Mare sp/font/menufont.tm2
+Mare sp/l2d/days_theatre.l2d
+Mare uk/ctd/ct00100.ctd
+Mare uk/font/menufont.cod
+Mare uk/font/menufont.tm2
+Mare uk/l2d/days_theatre.l2d
+Recom FORM/0109/FO0109.RTM
+Recom FORM/0109/FO0109.SPR
+bbs_first cba7b0396c9efe756ba1e069e6dd603e.dat
+kh2_fifth field2d/us/al0field.2dd
+kh2_fifth field2d/us/bb0field.2dd
+kh2_fifth field2d/us/eh0field.2dd
+kh2_fifth field2d/us/he0field.2dd
+kh2_fifth field2d/us/nm0field.2dd
+kh2_fifth menu/jm_top_eh.2ld
+kh2_fifth menu/us/camp.2ld
+kh2_first field2d/us/tt0field.2dd
+kh2_first menu/fr/pause.2ld
+kh2_first menu/fr/save.2ld
+kh2_first menu/gr/pause.2ld
+kh2_first menu/gr/save.2ld
+kh2_first menu/it/pause.2ld
+kh2_first menu/it/save.2ld
+kh2_first menu/sp/pause.2ld
+kh2_first menu/sp/save.2ld
+kh2_first menu/us/pause.2ld
+kh2_first menu/us/save.2ld

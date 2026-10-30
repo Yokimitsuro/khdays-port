@@ -14,6 +14,7 @@
 #include "mod_faces.h"
 #include "../../runtime/menus/camp.h"
 #include "../../runtime/core/rom.h"
+#include "../../runtime/mods/installed.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -349,6 +350,10 @@ static int applied;
 
 void khdays_camp_screen_applied(int yes)
 {
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        khdays_overhaul_camp_applied(yes); /* the Menu Overhaul's camp (overhaul_camp_screen.c) */
+        return;
+    }
     applied = yes;
 }
 
@@ -356,6 +361,9 @@ int khdays_camp_screen_model(KhdaysCampModel *out)
 {
     KhdaysCampView v;
     const Plan *p;
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return khdays_overhaul_camp_model(out);
+    }
     khdays_camp_view(&v);
     if (!v.shown || (p = plan(v.language)) == NULL || (s.tried == v.language && !s.ok) ||
         (v.config && p->page_backdrop == NULL)) {
@@ -487,10 +495,8 @@ static void draw_answers(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
 }
 
 /* A record's lines (as the game breaks them) in a style, `pitch` apart. */
-static void draw_lines(const KhdaysLayoutFrame *fr, const KhdaysLayoutStrings *table, int record, const char *style,
-                       float pitch)
+static void draw_words(const KhdaysLayoutFrame *fr, const unsigned short *t, const char *style, float pitch)
 {
-    const unsigned short *t = khdays_layout_string(table, record);
     unsigned short line[256];
     float dy = 0;
     if (t == NULL) {
@@ -514,6 +520,27 @@ static void draw_lines(const KhdaysLayoutFrame *fr, const KhdaysLayoutStrings *t
             ++t;
         }
     }
+}
+
+static void draw_lines(const KhdaysLayoutFrame *fr, const KhdaysLayoutStrings *table, int record, const char *style,
+                       float pitch)
+{
+    draw_words(fr, khdays_layout_string(table, record), style, pitch);
+}
+
+/* A setting's words: its cfg_&.s record, or those of a value the port adds (camp.h KHDAYS_CAMP_WORD_*) in the
+ * game's language, made in `own`. */
+static const unsigned short *setting_words(int record, int language, unsigned short *own, int room)
+{
+    const int id = record == KHDAYS_CAMP_WORD_FREE        ? TXT_CHASE_FREE
+                   : record == KHDAYS_CAMP_WORD_FREE_HELP ? TXT_CHASE_FREE_HELP
+                                                          : -1;
+    if (id >= 0) {
+        const char *t = khdays_text_in(id, language);
+        khdays_layout_utf8(t != NULL ? t : khdays_text(id), own, room);
+        return own;
+    }
+    return khdays_layout_string(&s.cfg, record);
 }
 
 /* The game's A prompt (mlt_&.s record 63: A's icon and its word, then B's): up to B's icon, the
@@ -657,8 +684,9 @@ static void draw_page(const KhdaysLayoutFrame *fr, const KhdaysCampView *v)
              mid - capitals("setting") / 2);
         if (left != NULL && right != NULL) {
             const float aw = left->w * arrow[3] / left->h;
+            unsigned short own[32];
             const unsigned short *found =
-                khdays_layout_string(&s.cfg, st->enabled ? st->value_name[value] : CFG_HIDDEN);
+                setting_words(st->enabled ? st->value_name[value] : CFG_HIDDEN, v->language, own, 32);
             static const unsigned short none[1] = {0};
             const unsigned short *words = found != NULL ? found : none;
             khdays_layout_draw_piece(&s.layout, fr, "page_arrow_left", vx, mid - arrow[3] / 2, aw, arrow[3], fade);
@@ -700,7 +728,8 @@ static void draw_setting_help(const KhdaysLayoutFrame *fr, const KhdaysCampView 
     }
     draw_lines(fr, &s.cfg, st->help, "description", s.description_pitch);
     if (st->value >= 0 && st->value < st->values) {
-        draw_lines(fr, &s.cfg, st->value_help[st->value], "detail", s.detail_pitch);
+        unsigned short own[160];
+        draw_words(fr, setting_words(st->value_help[st->value], v->language, own, 160), "detail", s.detail_pitch);
     }
 }
 
@@ -909,6 +938,9 @@ int khdays_camp_screen_draw(SDL_Renderer *renderer)
 {
     KhdaysCampView v;
     KhdaysLayoutFrame fr;
+    if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return khdays_overhaul_camp_draw(renderer);
+    }
     khdays_camp_view(&v);
     if (!v.shown || !applied || !khdays_present_one_picture()) {
         khdays_camp_set_page_drawn(0);
@@ -994,6 +1026,7 @@ int khdays_camp_screen_draw(SDL_Renderer *renderer)
 
 void khdays_camp_screen_renderer_gone(void)
 {
+    khdays_overhaul_camp_renderer_gone();
     forget();
     s.tried = 0;
     s.ok = 0;

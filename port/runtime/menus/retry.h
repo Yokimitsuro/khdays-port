@@ -33,6 +33,10 @@ enum {
     KHDAYS_PAUSE_RETRY,    /* the port's */
     KHDAYS_PAUSE_YES,
     KHDAYS_PAUSE_NO,
+    /* the game over's lines (its own words: Continue, Decrease Challenge, Withdraw) */
+    KHDAYS_PAUSE_GO_CONTINUE,
+    KHDAYS_PAUSE_GO_EASIER,
+    KHDAYS_PAUSE_GO_WITHDRAW,
     KHDAYS_PAUSE_KEYS
 };
 #define KHDAYS_PAUSE_PIECES 5
@@ -51,6 +55,28 @@ typedef struct KhdaysPauseView {
 
 /* Fills `v`; returns v->shown (0 too for a piece the port does not know). Game's thread. */
 int khdays_pause_view(KhdaysPauseView *v);
+
+/* The game over's menu (ov027, a mission lost alone): its lines -- Continue, Decrease Challenge (where the
+ * game offers it), Withdraw -- or its "Are you sure?" and Yes, No, for the window to draw as KH2's pause
+ * (host/screens/game_pause.h); the game's own panel (engine A's BG1) the pause part leaves out. */
+typedef struct KhdaysGameOverView {
+    int shown;    /* the menu or its question is up */
+    int rows;     /* 2 or 3 */
+    int keys[3];  /* KHDAYS_PAUSE_* */
+    int row;      /* the one lit */
+    int question; /* "Are you sure?" over Yes and No */
+    int language;
+} KhdaysGameOverView;
+#define KHDAYS_GAME_OVER_LAYER 1
+
+/* Fills `v`; returns v->shown. Game's thread. */
+int khdays_game_over_view(KhdaysGameOverView *v);
+/* Whether the game over is one whose menu the window can draw (ov027 loaded, no session's), and whether
+ * it does (the pause part tells it, ui/pause.cpp): then the game's own firefly, its floating orb, is
+ * left out (port/tools/prepare.py's hook). */
+int khdays_game_over_ours(void);
+void khdays_game_over_set_kh2(int on);
+int khdays_game_over_hides_orb(void);
 
 /* The buttons the game reads (input.c): while the port's lines are up, the directions move the
  * port's cursor and the game's is taken to the line the port's stands for. */

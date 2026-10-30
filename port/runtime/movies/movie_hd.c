@@ -12,6 +12,8 @@
 #include "../../host/movies/movie_hd.h"
 #include "../../host/movies/movie_subtitles.h"
 #include "../../host/app/sound_output.h"
+#include "../sound/sound_bridge.h"
+#include "../mods/installed.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +57,94 @@ static LONG ended_now(void)
 {
     return InterlockedCompareExchange(&ended, 0, 0);
 }
-static uint16_t stuck;     /* ... until they are let go */
+static uint16_t stuck; /* ... until they are let go */
+/* The Menu Overhaul's pause panel (runtime/mods/installed.h; host/screens/modern_pause.c draws it) in place of
+ * the DS's pause: Continue and Skip (at once: no question). Also over a day's monologue, whose START otherwise
+ * leaves it at once: the game held, the voice paused; Skip leaves it as START does (khdays_monologue_skip_taken). */
+static volatile LONG menu_open;
+static int menu_row;
+static int menu_closed_by_choice; /* the panel just closed by a choice made (Continue, Skip), not by backing out */
+static int mono_menu;
+static volatile LONG mono_skip;
+
+static int overhaul(void)
+{
+    return khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL);
+}
+
+int khdays_movie_pause_menu(int *row, int *can_skip)
+{
+    int open;
+    AcquireSRWLockShared(&lock);
+    open = menu_open;
+    *row = menu_row;
+    *can_skip = mono_menu || skippable != 0;
+    ReleaseSRWLockShared(&lock);
+    return open;
+}
+
+static void resume_menu(void)
+{
+    if (menu_open) {
+        khdays_log("%s %s: pause closed", mono_menu ? "monologue" : "movie", mono_menu ? "" : id);
+    }
+    menu_open = 0;
+    menu_row = 0;
+    if (mono_menu) {
+        khdays_hd_voice_pause(khdays_clock_held(KHDAYS_HOLD_SETTINGS));
+        mono_menu = 0;
+    } else {
+        khdays_hd_pause(khdays_clock_held(KHDAYS_HOLD_SETTINGS));
+    }
+    khdays_clock_hold(KHDAYS_HOLD_MOVIE_MENU, 0);
+}
+
+static void toggle_menu(void)
+{
+    if (menu_open) {
+        resume_menu();
+    } else if (overhaul() &&
+               (state_now() == PLAYING || state_now() == HELD || state_now() == FINISHING || state_now() == SCENE)) {
+        menu_open = 1;
+        menu_row = 0;
+        khdays_clock_hold(KHDAYS_HOLD_MOVIE_MENU, 1);
+        khdays_hd_pause(1);
+        khdays_log("movie %s: pause opened (Continue selected)", id);
+    }
+}
+
+void khdays_movie_pause_toggle(void)
+{
+    AcquireSRWLockExclusive(&lock);
+    toggle_menu();
+    ReleaseSRWLockExclusive(&lock);
+}
+
+static void toggle_monologue_menu(void)
+{
+    if (menu_open) {
+        resume_menu();
+    } else if (overhaul() && state_now() == IDLE) {
+        menu_open = 1;
+        mono_menu = 1;
+        menu_row = 0;
+        khdays_clock_hold(KHDAYS_HOLD_MOVIE_MENU, 1);
+        khdays_hd_voice_pause(1);
+        khdays_log("monologue: pause opened (Continue selected)");
+    }
+}
+
+void khdays_monologue_pause_toggle(void)
+{
+    AcquireSRWLockExclusive(&lock);
+    toggle_monologue_menu();
+    ReleaseSRWLockExclusive(&lock);
+}
+
+int khdays_monologue_skip_taken(void)
+{
+    return InterlockedExchange(&mono_skip, 0) != 0;
+}
 /* SCENE_PAUSE: START given to open the game's pause; the buttons held then; the pause seen open;
  * the frames since START */
 static int pause_start_given, pause_seen, pause_frames, pause_press;
@@ -81,7 +170,7 @@ static int tell_once(const char *movie)
     }
     if (told_count == told_capacity) {
         const int capacity = told_capacity ? told_capacity * 2 : 16;
-        char(*grown)[64] = realloc(told, (size_t)capacity * sizeof(*told));
+        char (*grown)[64] = realloc(told, (size_t)capacity * sizeof(*told));
         if (grown == NULL) {
             return 1;
         }
@@ -121,9 +210,12 @@ static const char *skippable_text(void)
 /* Back to the game: shown, heard, its clock let go. */
 static void finish(const char *how)
 {
+    menu_open = menu_row = 0;
+    khdays_clock_hold(KHDAYS_HOLD_MOVIE_MENU, 0);
     khdays_hd_close();
     khdays_clock_hold(KHDAYS_HOLD_MOVIE, 0);
     khdays_sound_output_mute(0);
+    khdays_sound_bridge_hold_new_music(0);
     khdays_log("movie %s: the HD video %s (the game's movie %s); the game goes on", id, how, skippable_text());
     fprintf(stderr, "movies: %s: the HD video %s; the game goes on\n", id, how);
     InterlockedExchange(&ended, 1);
@@ -149,7 +241,7 @@ void khdays_movie_hd_reset(void)
 }
 
 static void scene_videos_over(const char *how);
-static int scene_chapter; /* the course is a Theater chapter's (no event: it ends with its videos) */
+static int scene_chapter;     /* the course is a Theater chapter's (no event: it ends with its videos) */
 static int scene_player_skip; /* the player took the game's pause's Skip (not the port, its videos over) */
 static void scene_pause_begin(void);
 
@@ -158,7 +250,7 @@ static void begin_skip(void)
     khdays_hd_close(); /* the picture and the sound stop at once; the window keeps the last picture */
     skipped = 0;
     InterlockedExchange(&state, SKIPPING);
-    khdays_log("movie %s: the HD video stopped by START; START given to the game for its movie", id);
+    khdays_log("movie %s: the HD video skipped; START given to the game for its movie", id);
 }
 
 /* The movie skipped where the DS lets START skip it (its pause's Skip, or START itself). */
@@ -251,6 +343,40 @@ static void request_skip(void)
         break;
     default: break;
     }
+}
+
+/* A takes the row lit: Continue resumes, Skip skips at once (no question: a scene or a monologue is seen again
+ * from the theater); START and B always resume. */
+static void menu_activate(void)
+{
+    const int monologue = mono_menu, skip = menu_row == 1;
+    if (skip && !(monologue || skippable != 0)) {
+        return; /* (Skip not offered here: drawn faint) */
+    }
+    resume_menu(); /* (its row back to Continue for the next opening) */
+    menu_closed_by_choice = 1;
+    if (!skip) {
+        return;
+    }
+    if (monologue) {
+        InterlockedExchange(&mono_skip, 1);
+        khdays_log("monologue: Skip chosen; it is left as its START leaves it");
+    } else if (state_now() == SCENE) {
+        scene_videos_over("skipped in the pause menu");
+    } else {
+        movie_skip(); /* at once: request_skip would open the DS's pause over it */
+    }
+}
+
+void khdays_movie_pause_focus(int row, int activate)
+{
+    AcquireSRWLockExclusive(&lock);
+    if (menu_open && row >= 0 && row <= 1) {
+        menu_row = row;
+        if (activate)
+            menu_activate();
+    }
+    ReleaseSRWLockExclusive(&lock);
 }
 
 int khdays_movie_game_playing(void)
@@ -480,8 +606,8 @@ uint16_t khdays_movie_hd_game_buttons(uint16_t buttons)
     if (state_now() != IDLE) {
         const uint16_t pressed = (uint16_t)(buttons & ~game_last);
         game_last = buttons;
-        if (pressed & KHDAYS_KEY_START) {
-            request_skip();
+        if ((pressed & KHDAYS_KEY_START) && !overhaul()) {
+            request_skip(); /* (the Menu Overhaul's panel takes the window's presses instead) */
         }
         given = state_now() == SKIPPING && !skipped ? (uint16_t)KHDAYS_KEY_START : 0; /* a scene's: none */
         if (state_now() == SCENE_PAUSE) {
@@ -561,6 +687,7 @@ static void scene_finish(const char *how)
 
 static char scene_key[48];
 static uint32_t scene_state; /* the event machine's state (a reference) */
+static int scene_watched;    /* its videos ran to their end: the game's skip asked is the port's own */
 static char (*scene_stems)[64];
 static double *scene_parts; /* each video's part: from, until (seconds of it; 0 its own start or end) */
 static int scene_count, scene_next;
@@ -625,7 +752,19 @@ static void scene_videos_over(const char *how)
         scene_finish(how); /* a Theater chapter's: back to its list */
         return;
     }
-    khdays_hd_close();
+    if (overhaul()) {
+        /* the player's Skip (the panel) skips as the game's does; an end is the port's own skip, and the
+         * theater's music may go on into the next scene's video */
+        scene_watched = strcmp(how, "skipped in the pause menu") != 0;
+        scene_player_skip = !scene_watched; /* (khdays_movie_hd_scene_ended) */
+        if (scene_watched) {
+            khdays_hd_close_scene_end();
+        } else {
+            khdays_hd_close();
+        }
+    } else {
+        khdays_hd_close();
+    }
     InterlockedExchange(&state, SCENE_SKIP);
     khdays_clock_hold(KHDAYS_HOLD_MOVIE, 0);
     khdays_log("scene %s: the HD videos %s; the game's own skip is asked", scene_key, how);
@@ -741,6 +880,7 @@ static int scene_course(const char *key, uint32_t event_state, char *const *stem
     scene_player_skip = 0;
     scene_next = 0;
     scene_state = event_state;
+    scene_watched = 0;
     snprintf(scene_key, sizeof(scene_key), "%s", key);
     snprintf(id, sizeof(id), "%s", key);
     skippable = 1;
@@ -757,8 +897,10 @@ static int scene_course(const char *key, uint32_t event_state, char *const *stem
     if (chapter) {
         scene_begin(); /* from the Theater's list, at once */
     } else {
-        /* the game fades out first and is held once black (poll), so no sound or picture is cut off */
+        /* the game fades out first and is held once black (poll), so no sound or picture is cut off; the
+         * music its event begins meanwhile is not heard (a moment of it before the videos) */
         fade_began = seconds_now();
+        khdays_sound_bridge_hold_new_music(1);
         InterlockedExchange(&state, SCENE_FADE);
         khdays_log("scene %s: the game goes down to black first", key);
     }
@@ -833,6 +975,22 @@ int khdays_movie_hd_voice(const char *key, char *const *stems, int count)
     return ok;
 }
 
+int khdays_movie_hd_subtitles_exist(const char *stem)
+{
+    static const char *const codes[] = {"", "en", "fr", "de", "it", "es"};
+    char relative[128], path[1024];
+    const int language = khdays_language_wanted() != 0 ? khdays_language_wanted() : GetLanguage();
+    if (language < 1 || language > 5 || stem == NULL) {
+        return 0;
+    }
+    snprintf(relative, sizeof(relative), "movies/subtitles/%s/%s.txt", codes[language], stem);
+    if (khdays_mods_find(relative, path, (int)sizeof(path))) {
+        return 1;
+    }
+    snprintf(path, sizeof(path), "data/cutscenes/cinematics/subtitles/%s/%s.txt", codes[language], stem);
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
 void khdays_movie_hd_voice_stop(void)
 {
     khdays_hd_voice_stop();
@@ -859,6 +1017,9 @@ void khdays_movie_hd_poll(void)
 {
     char why[320];
     int status;
+    if (InterlockedCompareExchange(&menu_open, 0, 0)) {
+        return; /* (the video paused under the panel) */
+    }
     if (state_now() == SCENE_FADE) {
         AcquireSRWLockExclusive(&lock);
         if (state_now() == SCENE_FADE && seconds_now() - fade_began >= FADE_SECONDS) {
@@ -879,9 +1040,13 @@ void khdays_movie_hd_poll(void)
             GetTickCount64() - scene_began_at >= (ULONGLONG)test_start_ms) {
             test_start_done = 1;
             fprintf(stderr, "scenes: %s: KHDAYS_TEST_SCENE_START: START pressed\n", scene_key);
-            request_skip();
+            if (overhaul()) {
+                toggle_menu();
+            } else {
+                request_skip();
+            }
         }
-        if (state_now() == SCENE) {
+        if (state_now() == SCENE && !InterlockedCompareExchange(&menu_open, 0, 0)) {
             status = khdays_hd_status(why, sizeof(why));
             if (status == -1) {
                 khdays_log("scene %s: the HD video stopped part-way (%s)", scene_key, why);
@@ -980,6 +1145,49 @@ void khdays_movie_hd_host_buttons(uint16_t buttons)
         host_last = buttons;
         if (pressed & KHDAYS_KEY_START) {
             request_skip();
+        }
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+
+int khdays_movie_pause_closed_by_choice(void)
+{
+    int closed;
+    AcquireSRWLockExclusive(&lock);
+    closed = menu_closed_by_choice;
+    menu_closed_by_choice = 0;
+    ReleaseSRWLockExclusive(&lock);
+    return closed;
+}
+
+void khdays_media_host_presses(uint16_t buttons, uint16_t taps, int monologue)
+{
+    if (!overhaul()) {
+        if (!monologue) {
+            khdays_movie_hd_host_buttons(buttons); /* the DS's pause */
+        }
+        return;
+    }
+    if (state_now() == IDLE && !monologue) {
+        return;
+    }
+    AcquireSRWLockExclusive(&lock);
+    {
+        /* a press since the last look, or one the window saw come and go between two looks (`taps`) */
+        const uint16_t pressed = (uint16_t)((buttons & ~host_last) | taps);
+        host_last = buttons;
+        if (pressed & KHDAYS_KEY_START) {
+            if (state_now() != IDLE) {
+                toggle_menu();
+            } else {
+                toggle_monologue_menu();
+            }
+        } else if (menu_open && (pressed & KHDAYS_KEY_B)) {
+            resume_menu();
+        } else if (menu_open && (pressed & (KHDAYS_KEY_UP | KHDAYS_KEY_DOWN))) {
+            menu_row ^= 1; /* two rows: up and down both go round to the other */
+        } else if (menu_open && (pressed & KHDAYS_KEY_A)) {
+            menu_activate();
         }
     }
     ReleaseSRWLockExclusive(&lock);

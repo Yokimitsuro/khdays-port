@@ -242,6 +242,15 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Chase Camera: Free:** on the camp's Config page drawn on one screen,
+  Chase Camera has a third value after the game's Auto and Manual. Free is
+  the game's Manual, except that walking no longer pulls the camera's tilt
+  back to its preset's: the tilt set by hand stays (its distance still
+  follows, and the events' cameras and the lock-on are the game's). The game
+  keeps Manual in its save; the settings file keeps Free
+  (`[enhancements] chase_free`), which the settings' enhancements also turn
+  on and off (Free camera) -- there with two screens too, where the game
+  draws its own Config page. Off unless chosen.
 
 The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
 sequences, the pause-menu target, and HUD/control during INFORMATION messages.
@@ -655,7 +664,7 @@ ends by itself (not when the game stops it); the voices' streams are decoded
 ahead, so even their first line is the mod's. Best: 48,000 Hz, 16 bits, about
 as loud as the original (a dumped one shows how loud).
 
-**The originals** to make them from: `khdays-native --dump-sounds [DIR]`
+**The originals** to make them from: `khdays-native --dump-sounds [DIR [NAME...]]`
 writes every wave, stream, sequence and sequence-archive entry as WAV under
 those same names, loops included (default `saves/dump/sounds`, about
 2.3 GB). It runs without starting the game; the sequences are played by the
@@ -862,7 +871,7 @@ the connection error -- the port boots it again in the same window.
 | `assets/` | The library the port and the studio share: the game's data formats decoded to neutral forms (textures, 2D graphics, fonts, text, models and animation, sound, video), the open formats mods use (PNG, BMP, glTF, FBX), the mod layer and the game filesystem; `tests/` its tests (`ctest`) |
 | `installer/` | The Windows installer (Inno Setup) and the helper that runs its steps |
 | `tools/` | ROM verification, data extraction and decompression; `hd/` the HD mods made from the player's HD collections; `tests/` their tests (`python -m unittest`) |
-| `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
+| `docs/` | [`BUILD.md`](docs/BUILD.md), how the port is built from the decompilation and tested; [`PLATFORM.md`](docs/PLATFORM.md), how it stands in for the DS; [`RENDERING.md`](docs/RENDERING.md), how it draws the game; [`SOUND.md`](docs/SOUND.md), how it plays its sound; [`MULTIPLAYER.md`](docs/MULTIPLAYER.md), its multiplayer and server; [`COMPOSITIONS.md`](docs/COMPOSITIONS.md), the one-screen layouts' format; [`HD_SCREENS.md`](docs/HD_SCREENS.md), the HD screens' files; [`MENU_OVERHAUL.md`](docs/MENU_OVERHAUL.md), the Menu Overhaul mod's screens; [`WALK_MOD.md`](docs/WALK_MOD.md), the Walk mod's analog walk; [`HD_FONTS.md`](docs/HD_FONTS.md), PNG font definitions and rendering; [`FONT_MAPPING.md`](docs/FONT_MAPPING.md), scoped font choices; [`DECOMP_FINDINGS.md`](docs/DECOMP_FINDINGS.md), what the decompilation's C should say differently; [`RUNTIME_MAP.md`](docs/RUNTIME_MAP.md), what the running game does (scenes, overlays, menus, data); [`FORMATS.md`](docs/FORMATS.md), the game's data formats; [`STUDIO.md`](docs/STUDIO.md), how the studio works |
 | `external/khdays-decomp` | The decompilation, pinned; updated deliberately and tested |
 
 KH2's local-asset sequence viewer, renderer validation, and HP gauge mapping are

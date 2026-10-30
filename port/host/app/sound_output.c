@@ -126,8 +126,15 @@ void khdays_sound_output_set(const KhdaysSound *settings)
 void khdays_sound_output_mute(int mute)
 {
     SDL_AudioStream *stream = (SDL_AudioStream *)SDL_GetAtomicPointer(&audio);
+    const int was = SDL_GetAtomicInt(&muted);
     SDL_SetAtomicInt(&muted, mute != 0);
     if (stream != NULL) {
+        if (was && !mute) {
+            /* what waits in the stream was made under the video, unheard (the music left playing then):
+             * dropped, the game's sound goes on from now after a lead of silence */
+            SDL_ClearAudioStream(stream);
+            SDL_SetAtomicInt(&needs_lead, 1);
+        }
         apply_gain(stream);
     }
 }

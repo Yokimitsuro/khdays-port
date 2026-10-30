@@ -897,6 +897,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_ENH_LOCK_ON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MENU, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MOVEMENT, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_ENH_CHASE_FREE, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_LEFT_STICK, KHDAYS_ROW_CHOICE, 0, 2, 0},
         {KHDAYS_SET_RIGHT_STICK, KHDAYS_ROW_CHOICE, 0, 2, 0},
         {KHDAYS_SET_LEFT_DEAD_ZONE, KHDAYS_ROW_NUMBER, 5, 90, 5},
@@ -948,6 +949,7 @@ static void test_settings_model(void)
         int found[KHDAYS_SET_COUNT] = {0};
         int bindings[KHDAYS_LAYER_COUNT][KHDAYS_ACT_COUNT] = {{0}};
         khdays_profile_default(&p);
+        CHECK(p.enh.chase_free == 0); /* Chase Camera's Free: off unless chosen */
         p.enh.separate_lock_on = p.enh.dpad_command_menu = enhancements;
         khdays_model_refresh(&p);
         for (int s = 0; s < KHDAYS_SECTION_COUNT; ++s) {

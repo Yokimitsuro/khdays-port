@@ -1304,10 +1304,16 @@ bool room_of_replaced_world(const std::string &name, const char *path)
 
 } // namespace
 
+extern "C" void khdays_walk_model_draw(unsigned model_resource); /* runtime/input/walk.h */
+extern "C" void khdays_walk_model_draw_end(void);
+
 extern "C" void khdays_models_draw_begin(const void *resource)
 {
     if (depth == 0) {
         khdays_g3d_draw_begin(resource); /* the polygons' key */
+        if (resource != nullptr) {
+            khdays_walk_model_draw(KHDAYS_REF(resource)); /* the Walk mod: the player's weapon to the hand */
+        }
     }
     if (depth > 0) {
         if (depth < 8)
@@ -1464,6 +1470,7 @@ extern "C" void khdays_models_draw_end(void)
         active = depth < 8 ? outer[depth] : nullptr;
         return;
     }
+    khdays_walk_model_draw_end();
     // its polygons inside the game model's draw: keyed by the draw for the
     // pictures between lists (g3d_interp.c), not among the loose ones, whose
     // number moves with every effect's

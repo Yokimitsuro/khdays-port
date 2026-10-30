@@ -10,5 +10,7 @@ void khdays_scene_trace_frame(uint32_t frame);
 
 /* The scene running now (EV_S#4), "" when none. */
 const char *khdays_scene_current(void);
+/* Whether a day's monologue runs now (any thread). */
+int khdays_monologue_running(void);
 
 #endif

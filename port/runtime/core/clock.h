@@ -25,6 +25,7 @@ u64 khdays_clock_cycles(void);
 enum {
     KHDAYS_HOLD_SETTINGS = 1u << 0,
     KHDAYS_HOLD_MOVIE = 1u << 1,
+    KHDAYS_HOLD_MOVIE_MENU = 1u << 2,
 };
 void khdays_clock_hold(unsigned reason, int on);
 

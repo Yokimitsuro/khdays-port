@@ -57,6 +57,24 @@ void khdays_ui_emit(int, const KhdaysUiElement *e)
     emitted.push_back(*e);
 }
 void khdays_ui_left_out_cell(int, int, int, int, int) {}
+void khdays_ui_left_out_cell_captured(int, int, int, int, int) {}
+void khdays_ui_left_out_obj(int, int, int) {}
+/* the Menu Overhaul's KH2 pause and game over, without its pieces: the pause below is the port's own */
+int khdays_game_pause_kh2_ready(void)
+{
+    return 0;
+}
+void khdays_game_pause_publish(int, int, const int *, int, int, int) {}
+void khdays_game_over_publish(int, int, const int *, int, int, int) {}
+int khdays_game_over_view(KhdaysGameOverView *)
+{
+    return 0;
+}
+int khdays_game_over_ours(void)
+{
+    return 0;
+}
+void khdays_game_over_set_kh2(int) {}
 void khdays_ui_register(int, void (*)(void)) {}
 int khdays_pause_view(KhdaysPauseView *)
 {

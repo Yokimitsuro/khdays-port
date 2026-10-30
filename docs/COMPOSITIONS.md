@@ -61,6 +61,17 @@ picture, moving and fading over the frames of its clips. Its lines:
 | `prompt <action>` | (after a piece) it shows the input the player has for the action on the device played, where an icon for it is given (`khdays_composition_set_prompt`), its height kept, its right edge where it is; its own texels otherwise |
 | `icon <name> <x> <y> <w> <h>` | an input's icon in the atlas, named `<family>:<input>` (`xbox`, `playstation`, `pad`; `host/app/profile.c`'s gamepad names) |
 | `button <action> <x0> <y0> <x1> <y1>` | a rectangle of the picture the mouse clicks to do the action (`open_settings`: the settings menu) |
+| `sway <units> <frames>` | (after a piece) it sways right and back as KH2's pointing glove, about half `units` each way, every 89 / 3 frames (`frames` read, kept for older files) |
+| `wander <units> <x swings> <y swings> <frames>` | (after a piece) it wanders over KH2's firefly's figure, `units` each way, `sin(pi * swings * f / frames)` across and down |
+
+With the Menu Overhaul (docs/MENU_OVERHAUL.md), a clip that follows another level
+of the menu (not the picture's first showing) plays twice as fast.
+
+A section's condition `mod-<id>` (or `!mod-<id>`) holds while that mod of the
+port's features is installed (`port/runtime/mods/installed.h`: `menu-overhaul`).
+A shape's effect `push <state>[|<state>...] <dx> <dy> <frames>` moves it by dx, dy
+(the port's units) while one of the states holds, easing there and back over
+that many of the game's frames.
 
 After a picture of its own group (another row selected), the clip that follows
 the same groups and the loop go on from the frame they were at, not from their

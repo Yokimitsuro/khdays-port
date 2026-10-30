@@ -277,6 +277,16 @@ enum {
     TXT_SELECT_RANDOM, /* the character select's random choice */
     /* The camps' Title Screen question, in the port's words. */
     TXT_CAMP_BACK_TO_MENU,
+    /* Enemy Profiles' model viewer (runtime/menus/enemy_viewer.c, camp_screen.c) */
+    TXT_VIEWER_MODEL,
+    TXT_VIEWER_TURN,
+    TXT_VIEWER_ZOOM,
+    TXT_VIEWER_RESET,
+    TXT_VIEWER_BACK,
+    TXT_VIEWER_ENEMY,
+    /* The story's Panels page (camp_screen.c): X's word for the status panel's card, START's for its submenu */
+    TXT_PANELS_STATS,
+    TXT_PANELS_SUBMENU,
     /* Mission Mode's pause: the port's Retry line (runtime/menus/retry.c, ui/pause.cpp) */
     TXT_PAUSE_RETRY,
     /* The game's own save lists in pages: the tag over file 99's number, the autosave's (ui/save_numbers.cpp) */
@@ -333,7 +343,8 @@ enum {
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
     TXT_MOUSE_SPEED,
-    TXT_MOD_CHOOSE, /* a mod's screens: its list's A */
+    TXT_MOD_CHOOSE,   /* a mod's screens: its list's A */
+    TXT_SHOP_WELCOME, /* the Moogle Shop's menu: its word in the right pill (shop_screen.c) */
     TXT_HUD_FONT,
     TXT_HUD_MINIMAP,
     TXT_HUD_PARTY_HP,
@@ -379,6 +390,12 @@ enum {
     TXT_PLUGIN_REFUSED,
     TXT_PLUGIN_FAILED,
     TXT_PLUGIN_STOPPED,
+    /* the Config's Chase Camera's third value, the port's (runtime/menus/camp.h khdays_camp_chase_free) */
+    TXT_CHASE_FREE,
+    TXT_CHASE_FREE_HELP,
+    /* the same in the settings' enhancements (settings_model.c) */
+    TXT_ENH_CHASE_FREE,
+    TXT_ENH_CHASE_FREE_NOTE,
     TXT_COUNT
 };
 

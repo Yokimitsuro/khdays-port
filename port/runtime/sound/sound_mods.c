@@ -615,7 +615,23 @@ static struct {
     u32 tag;    /* the command list that prepares it */
     u64 played; /* output samples since it started, its pauses not counted */
     u32 stops;  /* the ARM9's stops of its player when it began (KhdaysSnd7Driver.player_stops) */
+    u32 waited; /* output samples its start has waited, silent, for its file (START_WAIT_SECONDS) */
 } sequence[16];
+
+/* How long a piece of music's start waits, silent, for its file to be decoded: it begins from its first
+ * note rather than as a moment of the original and then the file where the original got to (the field's
+ * music after a save is loaded, its file not decoded yet). Past it, the original is heard until the file
+ * is ready. */
+#define START_WAIT_SECONDS 3
+static uint32_t last_rate = 48000; /* the output rate the files last played at */
+
+/* Whether sequence `p`'s start waits for its file: a piece of music's (seq/), not yet decoded. */
+static int start_waits(int p)
+{
+    const Entry *e = sequence[p].entry;
+    return e != NULL && (e->state == QUEUED || e->state == LET_GO) && strncmp(e->identifier, "seq/", 4) == 0 &&
+           sequence[p].played == 0 && sequence[p].waited < START_WAIT_SECONDS * last_rate;
+}
 
 static struct {
     Entry *entry;
@@ -659,6 +675,7 @@ void khdays_sound_mods_sequence(const KhdaysSoundArchive *archive, int arm7_play
     sequence[arm7_player].state = sequence[arm7_player].entry != NULL ? ARMED : IDLE;
     sequence[arm7_player].tag = command_tag;
     sequence[arm7_player].played = 0;
+    sequence[arm7_player].waited = 0;
 }
 
 void khdays_sound_mods_stream(const KhdaysSoundArchive *archive, int stream_player, int number, uint32_t start,
@@ -679,7 +696,8 @@ void khdays_sound_mods_stream(const KhdaysSoundArchive *archive, int stream_play
 
 int khdays_sound_mods_replaces_player(int p)
 {
-    return sequence[p].state == PLAYING && sequence[p].entry != NULL && sequence[p].entry->state == READY;
+    return sequence[p].state == PLAYING && sequence[p].entry != NULL &&
+           (sequence[p].entry->state == READY || start_waits(p));
 }
 
 int khdays_sound_mods_replaces_stream(int s)
@@ -769,7 +787,9 @@ static void mix_sequences(const KhdaysSnd7Driver *driver, uint32_t rate, uint32_
         if (!sequence_step(p, record, driver, finished_tag, rate)) {
             continue;
         }
-        if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
+        if (sequence[p].state == PLAYING && !(record[0] & 4) && start_waits(p)) {
+            ++sequence[p].waited; /* its start waits for its file */
+        } else if (sequence[p].state == PLAYING_ON || !(record[0] & 4)) {
             ++sequence[p].played;
         }
         if (sequence[p].entry->state != READY) {
@@ -966,6 +986,7 @@ void khdays_sound_mods_mix(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driv
     const float master = (soundcnt & 0x8000) ? factor(soundcnt & 0x7f) : 0.0f;
     int heard[4] = {0, 0, 0, 0};
     smooth = hw->smooth;
+    last_rate = rate;
     mix_sequences(driver, rate, finished_tag, player_gain, master, out);
     mix_streams(hw, stream_gain, master, heard, out);
     mix_streams_on(rate, heard, out);

@@ -40,6 +40,11 @@ void khdays_hd_pause(int pause);
  * presenter keeps the last picture it took. Does nothing if no video is open. */
 void khdays_hd_close(void);
 
+/* The same at the end of a scene's videos watched to their end: the theater's music that goes on into
+ * the next video keeps playing a little while, for the next scene's video to take it from there (the
+ * event's next scene begins at once); unless one does, it fades out (theater_music.h). */
+void khdays_hd_close_scene_end(void);
+
 /* The video's state: 0 while it plays (or waits, or is paused); 1 once it has
  * ended (its last picture is due and its sound has played); -1 if it failed
  * part-way (with the reason in `why`); 2 if no video is open. */
@@ -81,6 +86,13 @@ void khdays_hd_voice_pause(int pause);
 
 /* Sets the voice's volume (0-1): the master volume times the voices' volume. */
 void khdays_hd_voice_set_gain(float gain);
+
+/* The voice's clock, for its subtitles: the video whose sound is heard now (its name, "hd007b") and
+ * how far into it (seconds). 0 when no voice is heard. Any thread. */
+int khdays_hd_voice_clock(char *name, size_t size, double *seconds);
+
+/* Whether the voice still speaks (a moment's silence after its last word counted in). Any thread. */
+int khdays_hd_voice_speaking(void);
 
 #ifdef __cplusplus
 }

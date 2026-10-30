@@ -172,12 +172,15 @@ as long as the original lasts. Its files are decoded ahead with the others.
 
 ## The originals, to make replacements from
 
-`khdays-native --dump-sounds [DIR]` writes every sound of the archive as WAV
+`khdays-native --dump-sounds [DIR [NAME...]]` writes every sound of the archive as WAV
 under the identifier a replacement takes, headless: `wave/<archive>/<index>.wav`
 (each wave an instrument plays, as the DS's channel decodes it),
 `strm/<name>.wav` (each stream, as NitroSystem's stream player makes it),
 `seq/<name>.wav` and `seqarc/<archive>/<entry>.wav` (each sequence and entry,
-played by the native driver and the PC's mixer at 48,000 Hz). Loops go in
+played by the native driver and the PC's mixer at 48,000 Hz); with names after the folder, those sounds alone
+(`seqarc/COMMON_SYS/se_sys_click`: the Menu Overhaul's menu cues, tools/mods/overhaul/menu_sounds.py). A
+sequence's note of length 0 plays its wave through (its track waits for it): the render takes that wait for no
+loop, up to 30 s. Loops go in
 `smpl`. The dump is the game's data: only under `saves/`, never in a
 repository.
 

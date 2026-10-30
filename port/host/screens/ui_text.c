@@ -899,6 +899,14 @@ static const char *const texts[TXT_COUNT][5] = {
          "Los datos del juego en\n%s\nestán incompletos o dañados: %s\n\nVuelve a extraerlos de tu propia "
          "copia del juego con tools/extract_data.py."},
     [TXT_PAUSE_RETRY] = {"Retry", "Réessayer", "Wiederholen", "Riprova", "Reintentar"},
+    [TXT_PANELS_STATS] = {"Stats", "Statistiques", "Status", "Statistiche", "Estadísticas"},
+    [TXT_PANELS_SUBMENU] = {"Submenu", "Sous-menu", "Untermenü", "Sottomenu", "Submenú"},
+    [TXT_VIEWER_MODEL] = {"3D Model", "Modèle 3D", "3D-Modell", "Modello 3D", "Modelo 3D"},
+    [TXT_VIEWER_TURN] = {"Turn", "Tourner", "Drehen", "Ruota", "Girar"},
+    [TXT_VIEWER_ZOOM] = {"Zoom", "Zoom", "Zoom", "Zoom", "Zoom"},
+    [TXT_VIEWER_RESET] = {"Reset", "Recentrer", "Zurücksetzen", "Ripristina", "Restablecer"},
+    [TXT_VIEWER_BACK] = {"Back", "Retour", "Zurück", "Indietro", "Volver"},
+    [TXT_VIEWER_ENEMY] = {"Enemy", "Ennemi", "Gegner", "Nemico", "Enemigo"},
     [TXT_SAVE_AUTOSAVE_TAG] = {"AUTO", "AUTO", "AUTO", "AUTO", "AUTO"},
     [TXT_CAMP_BACK_TO_MENU] = {"Return to the main menu?", "Revenir au menu principal ?", "Zum Hauptmenü zurückkehren?",
                                "Tornare al menu principale?", "¿Volver al menú principal?"},
@@ -1117,6 +1125,29 @@ static const char *const texts[TXT_COUNT][5] = {
                             "mientras juegas; Esc lo suelta con los ajustes."},
     [TXT_MOUSE_SPEED] = {"Mouse camera speed (%)", "Vitesse caméra souris (%)", "Maus-Kameratempo (%)",
                          "Velocità telecamera mouse (%)", "Velocidad cámara ratón (%)"},
+    [TXT_SHOP_WELCOME] = {"Welcome!", "Bienvenue !", "Willkommen!", "Benvenuto!", "¡Bienvenido!"},
+    [TXT_CHASE_FREE] = {"Free", "Libre", "Frei", "Libera", "Libre"},
+    [TXT_CHASE_FREE_HELP] = {"Control the camera yourself. Walking keeps the tilt you set.",
+                             "Contrôlez la caméra vous-même. La marche garde l'inclinaison choisie.",
+                             "Steuere die Kamera selbst. Beim Gehen bleibt die eingestellte Neigung.",
+                             "Controlla la telecamera da solo. Camminando resta l'inclinazione scelta.",
+                             "Controla la cámara tú mismo. Al caminar se mantiene la inclinación elegida."},
+    [TXT_ENH_CHASE_FREE] = {"Free camera", "Caméra libre", "Freie Kamera", "Telecamera libera", "Cámara libre"},
+    [TXT_ENH_CHASE_FREE_NOTE] =
+        {"With the camp's camera on Manual, walking keeps the tilt you set instead of pulling it "
+         "back. On one screen the camp's page shows it as a third value, Free.",
+         "Avec la caméra du camp en manuel, la marche garde l'inclinaison choisie au lieu de "
+         "la ramener. Sur un seul écran, la page du camp l'affiche comme troisième valeur, "
+         "Libre.",
+         "Steht die Kamera im Lager auf manuell, bleibt beim Gehen die eingestellte Neigung, "
+         "statt zurückzugehen. Auf einem Bildschirm zeigt die Lagerseite sie als dritten "
+         "Wert, Frei.",
+         "Con la telecamera del campo in manuale, camminando resta l'inclinazione scelta "
+         "invece di tornare indietro. Su un solo schermo la pagina del campo la mostra come "
+         "terzo valore, Libera.",
+         "Con la cámara del campamento en manual, al caminar se mantiene la inclinación que "
+         "pongas en vez de volver a la suya. En una pantalla, la página del campamento la "
+         "muestra como un tercer valor, Libre."},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

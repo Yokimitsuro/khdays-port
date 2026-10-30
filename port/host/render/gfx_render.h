@@ -37,6 +37,14 @@ typedef struct KhdaysOneScreenDraw {
     float backdrop_ax, backdrop_ay;
     int backdrop_fit; /* inside the picture instead of covering it */
     int hide3d_all;
+    int lower_whole; /* engine A, the lower screen, composed with its 3D (ui/composition.h) */
+    /* The Moogle Shop's screens composed apart (ui/composition.h shop_*), and the camp's (the Files page's upper
+     * screen, the Panels page's): by screen (0 the upper, 1 the lower), KHDAYS_SHOP_WANT_* bits, the layers its cut
+     * leaves out, whether its normal one keeps the DS's fade, its 3D (at 1x) and is slid back by so many dots;
+     * their size, in texels a DS dot (up to KHDAYS_SHOP_SCALE) */
+    unsigned shop_screens[2], shop_cut_layers[2];
+    int shop_fade[2], shop_with3d[2], shop_slide[2];
+    int shop_scale;
     /* an animated picture's: the size that covers the picture, its ground (8-bit RGB) and this
      * frame's pieces (ui/composition.h KhdaysPiece), from the atlas `backdrop` is then */
     int animated;
@@ -61,6 +69,21 @@ void khdays_gfx_render_set_shown(float pixels_per_ds_pixel);
 /* The last one-screen picture made, as a texture of `renderer`, and its width
  * in DS columns (NULL if none). */
 SDL_Texture *khdays_gfx_render_picture(SDL_Renderer *renderer, int *columns);
+
+/* The Moogle Shop's screens (KhdaysOneScreenDraw shop_screens), composed apart from the one picture at up to
+ * KHDAYS_SHOP_SCALE times the DS's size, the HD tiles and fonts in them (the CPU's composition has none): screen
+ * `lower` (0 the upper) as the DS shows it (KHDAYS_SHOP_NORMAL: no 3D, opaque), or without the layers its cut
+ * leaves out over a black backdrop (KHDAYS_SHOP_CUT_BLACK: its colours times how much they cover) or a white one
+ * (KHDAYS_SHOP_CUT_WHITE: the two differ by what does not cover), as a texture of `renderer`, *scale its texels a
+ * DS dot, *made a number that changes when it is composed anew. NULL when none is: never wanted, or not wanted in
+ * the last picture that wanted some (the screens held as they were while none is: the list floating out). */
+enum { KHDAYS_SHOP_NORMAL, KHDAYS_SHOP_CUT_BLACK, KHDAYS_SHOP_CUT_WHITE, KHDAYS_SHOP_VARIANTS };
+#define KHDAYS_SHOP_WANT_NORMAL 1u
+#define KHDAYS_SHOP_WANT_CUT 2u
+#define KHDAYS_SHOP_SCALE 4
+SDL_Texture *khdays_gfx_render_shop(SDL_Renderer *renderer, int lower, int variant, int *scale, unsigned *made);
+/* Whether the last picture that wanted some made that one. */
+int khdays_gfx_render_shop_made(int lower, int variant);
 
 /* How many DS columns the last drawn screen of engine `engine` covers (256,
  * or more for engine A in widescreen). */

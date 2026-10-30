@@ -52,7 +52,8 @@ int khdays_present_smooth(void);
 int khdays_present_refresh(void);
 
 /* An animated backdrop (the title's) moves at the display's pace even when a still menu sends no
- * frames: whether the latest picture has one, and drawing the newest package again for it. */
+ * frames: whether the latest picture has one, and drawing the newest package again for it (not while the
+ * game's own frames keep coming: each draws it, its motion with it). */
 int khdays_present_backdrop_moving(void);
 int khdays_present_refresh_backdrop(void);
 
@@ -70,6 +71,10 @@ int khdays_present_settings_button_at(float x, float y);
  * logic frames a second, measured over the last half second. */
 int khdays_present_fps(int *pictures, int *frames);
 void khdays_present_screens(const uint32_t *upper_then_lower);
+
+/* The window's drawing of a picture (redraw): how long it took, and how long presenting it waited (for
+ * the graphics card and the display) -- the session log's timings while the Moogle Shop shows. */
+void khdays_present_redraw_took(uint64_t drawing_ns, uint64_t presenting_ns);
 
 /* The picture settings, from the next frame drawn. */
 void khdays_present_set_video(const KhdaysVideo *video);

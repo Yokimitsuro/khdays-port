@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int GetLanguage(void);
 extern int Session_GetSetup(void);
@@ -431,5 +432,69 @@ int khdays_retry_take(void)
             rd32(CHALLENGE_TARGETS + TARGETS + 4u));
     }
     say("the field again instead of the results", 0, 0);
+    return 1;
+}
+
+/* ---- The game over's menu (retry.h) ------------------------------------------------------------- */
+
+#define OV_GAME_OVER 27
+#define GO_SCENE 0x02084364u  /* data_ov027_02084364: the scene's work */
+#define GO_CHOICE 0x02083ee0u /* data_ov027_02083ee0: the question's cursor, 0 Yes, 1 No */
+#define GO_SESSION                                                                                                     \
+    KHDAYS_DS_data_0204c240        /* its first byte's bit 2: a wireless session's (its waiting strip, no menu) */
+#define GO_FLAGS 0x1cu             /* bit 0: still loading */
+#define GO_MODE 0x24u              /* 1 the menu; 2 Continue, 4 Withdraw, bit 4 the question up */
+#define GO_CURSOR 0x5d8u           /* the menu's line: 0 Continue, 1 Decrease Challenge, 2 Withdraw */
+#define GO_PROMPT 0x5e0u           /* Decrease Challenge offered */
+int khdays_overlay_loaded(int id); /* overlays.c */
+
+static volatile int over_kh2;
+
+int khdays_game_over_ours(void)
+{
+    return khdays_overlay_loaded(OV_GAME_OVER) && (rd8(GO_SESSION) & 4u) == 0;
+}
+
+void khdays_game_over_set_kh2(int on)
+{
+    over_kh2 = on;
+}
+
+int khdays_game_over_hides_orb(void)
+{
+    return over_kh2 && khdays_game_over_ours();
+}
+
+int khdays_game_over_view(KhdaysGameOverView *v)
+{
+    u32 scene, mode;
+    int prompt, cursor;
+    memset(v, 0, sizeof(*v));
+    if (!khdays_overlay_loaded(OV_GAME_OVER) || !in_ram(scene = rd32(GO_SCENE)) || (rd8(GO_SESSION) & 4u) != 0 ||
+        (rd32(scene + GO_FLAGS) & 1u) != 0) {
+        return 0;
+    }
+    mode = rd32(scene + GO_MODE);
+    prompt = rd32(scene + GO_PROMPT) != 0;
+    cursor = (int)rd32(scene + GO_CURSOR);
+    if (mode == 1u) {
+        v->keys[v->rows++] = KHDAYS_PAUSE_GO_CONTINUE;
+        if (prompt) {
+            v->keys[v->rows++] = KHDAYS_PAUSE_GO_EASIER;
+        }
+        v->keys[v->rows++] = KHDAYS_PAUSE_GO_WITHDRAW;
+        v->row = cursor <= 0 ? 0 : cursor == 1 ? (prompt ? 1 : 0) : v->rows - 1;
+    } else if ((mode & 0x14u) == 0x14u) {
+        /* Withdraw's question: Yes above No, as the DS's panel (its cursor starts on No) */
+        v->keys[0] = KHDAYS_PAUSE_YES;
+        v->keys[1] = KHDAYS_PAUSE_NO;
+        v->rows = 2;
+        v->row = rd32(GO_CHOICE) == 0 ? 0 : 1;
+        v->question = 1;
+    } else {
+        return 0; /* chosen: the game fades it away */
+    }
+    v->language = khdays_language_wanted() != 0 ? khdays_language_wanted() : GetLanguage();
+    v->shown = 1;
     return 1;
 }

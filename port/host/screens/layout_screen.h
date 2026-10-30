@@ -113,9 +113,16 @@ float khdays_layout_line_width(const KhdaysLayout *l, const unsigned short *t, f
  * with its top-left at (x, y), or its name in brackets; its width (0: none). */
 float khdays_layout_draw_action(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, int action, float x, float y,
                                 float h, float alpha);
+/* The same, on the keyboard the action's input `key` (an SDL scancode) when the player has it among the
+ * action's (the arrows for L and R where they turn pages), else as above. */
+float khdays_layout_draw_action_key(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, int action, int key, float x,
+                                    float y, float h, float alpha);
 /* A line with its capitals' top at y, x its left. */
 void khdays_layout_draw_line(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const unsigned short *t, float x,
                              float y, float size, float grey, float alpha, int shadow);
+/* The same in a colour (0-255 each). */
+void khdays_layout_draw_line_rgb(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const unsigned short *t, float x,
+                                 float y, float size, const Uint8 rgb[3], float alpha, int shadow);
 /* A line where a text style puts it (offset by dx, dy), its shadow first (none with the font's
  * own colours). */
 void khdays_layout_draw_text(const KhdaysLayout *l, const KhdaysLayoutFrame *fr, const char *style,
@@ -134,5 +141,35 @@ void khdays_layout_ring_rounded(SDL_Renderer *renderer, const KhdaysLayoutFrame 
 void khdays_layout_shade(SDL_Renderer *renderer, int master);
 /* The renderer is gone: the input icons' textures with it. */
 void khdays_layout_renderer_gone(void);
+
+/* The pointing glove's sway, as KH2's (its camp.2ld's and pause.2ld's glove): 10.4 layout units each way
+ * about 5, a swing every 89 / 3 of the game's frames, whatever the refresh rate (a glove drawn at its place +
+ * this). Every menu's glove sways so (ui/composition.c's `sway` too). */
+#define KHDAYS_GLOVE_FRAMES (89.0 / 3.0)
+#define KHDAYS_GLOVE_MIDDLE 5.0f
+#define KHDAYS_GLOVE_REACH 10.4f /* KH2's 4 dots, at 1080 / 416 */
+float khdays_layout_glove_sway(void);
+
+/* Kingdom Hearts II's cursor light, "the firefly" (its pause.2ld's animation groups 7 to 9: a gold glow
+ * that grows in, then wanders over a small figure, added to what is under it), by the selected entry:
+ * its picture `layouts/kh2pause/firefly.png` (the HD PACK's, from the player's collection). Each screen
+ * keeps its own (`which`): drawn again within a quarter second it flies over to where it is drawn now,
+ * else it grows in there. (x, y) its middle in the picture's units; `unit` the picture's units for one
+ * of KH2's screen pixels (KHDAYS_FIREFLY_UNIT on a full screen of the picture). Nothing without the
+ * picture. */
+enum {
+    KHDAYS_FIREFLY_SAVE,
+    KHDAYS_FIREFLY_CAMP,
+    KHDAYS_FIREFLY_CINE,
+    KHDAYS_FIREFLY_ROOM,
+    KHDAYS_FIREFLY_PAUSE,
+    KHDAYS_FIREFLY_GAME, /* the game's own menus' composition (ui/composition.c) */
+    KHDAYS_FIREFLY_TAB,  /* the camp's pages' option beside the MENU or SAVE pill (camp_screen.c tab_button) */
+    KHDAYS_FIREFLY_SHOP, /* the Moogle Shop's menu (shop_screen.c) */
+    KHDAYS_FIREFLY_COUNT
+};
+#define KHDAYS_FIREFLY_UNIT (1080.0f / 416.0f)
+void khdays_layout_firefly(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr, int which, float x, float y, float unit,
+                           float alpha);
 
 #endif

@@ -7,6 +7,9 @@
 #include "../menus/camp.h"
 #include "../menus/charselect.h"
 #include "../menus/cinelist.h"
+#include "../menus/daycard.h"
+#include "../menus/shop.h"
+#include "../display/field_wipe.h"
 #include "../net/roomlist.h"
 #include "../../ui/situation.h"
 #include "../input/input.h"
@@ -631,9 +634,12 @@ static void check_update(intptr_t fn, intptr_t next)
     const u8 *base = (const u8 *)&__ImageBase;
     khdays_input_update_ran((khdays_uptr)fn);
     khdays_cinelist_update_ran((khdays_uptr)fn);
+    khdays_daycard_update_ran((khdays_uptr)fn);
     khdays_roomlist_update_ran((khdays_uptr)fn);
     khdays_charselect_update_ran((khdays_uptr)fn);
     khdays_camp_update_ran((khdays_uptr)fn);
+    khdays_shop_update_ran((khdays_uptr)fn);
+    khdays_field_wipe_update_ran((uintptr_t)fn);
     khdays_situation_update_ran((uintptr_t)fn);
     if (trace < 0) {
         const char *setting = getenv("KHDAYS_TRACE_UPDATES");

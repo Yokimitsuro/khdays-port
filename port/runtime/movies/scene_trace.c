@@ -12,11 +12,14 @@
  * status halfword is at +0x8758c. */
 #include "scene_trace.h"
 #include "movie_hd.h"
+#include "../../host/movies/movie_hd.h"
+#include "../menus/newgame.h"
 #include "scenes.h"
 #include "../core/events.h"
 #include "../core/session_log.h"
 #include "../core/window.h"
 #include "../menus/mission_start.h"
+#include "../mods/installed.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -207,6 +210,10 @@ void khdays_scene_step(void *st)
 /* The scene running now (its key), "" when none: set when a stretch begins, cleared when it ends. */
 static char current[48];
 static int monologue; /* current is a day's monologue (no event of its own) */
+/* With the Menu Overhaul (runtime/mods/installed.h), the monologue's voice is heard with the theater's subtitles
+ * of what it says: the DS's words (which say it differently) are hidden, the page turns by itself, and it ends
+ * once the voice has. */
+static int monologue_voiced;
 
 const char *khdays_scene_current(void)
 {
@@ -298,9 +305,42 @@ void khdays_scene_monologue(int record)
                 : e->off  ? "ds (off)"
                           : "the theater's voice over the ds");
     }
+    monologue_voiced = 0;
     if (e != NULL && !e->off) {
-        khdays_movie_hd_voice(key, e->stems, e->stem_count); /* the clips are black: their sound alone */
+        /* the clips are black: their sound alone, with their subtitles when they show */
+        if (khdays_movie_hd_voice(key, e->stems, e->stem_count) && khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) &&
+            khdays_subtitles_shown() && khdays_movie_hd_subtitles_exist(e->stems[0])) {
+            monologue_voiced = 1;
+        }
     }
+}
+
+/* Ov007_SetupSubDisplay (prepare.py FILE_HOOKS): the DS's words and the page's arrow are left out while
+ * the voice speaks them with its subtitles; Roxas's picture stays. */
+int khdays_monologue_words_hidden(void)
+{
+    return monologue && monologue_voiced;
+}
+
+/* The monologue's A (turn the page): none while the voice speaks for it. */
+int khdays_monologue_next(int pressed)
+{
+    return monologue && monologue_voiced ? 0 : pressed;
+}
+
+/* The monologue's START (leave it). With the Menu Overhaul the window's pause panel takes START: left once
+ * Skip is chosen there, and by itself once the voice has said it all. */
+int khdays_monologue_leave(int pressed)
+{
+    if (!monologue || !khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
+        return pressed;
+    }
+    return khdays_monologue_skip_taken() || (monologue_voiced && !khdays_hd_voice_speaking());
+}
+
+int khdays_monologue_running(void)
+{
+    return monologue;
 }
 
 /* Ov007_RequestSceneChange (prepare.py HOOKS): the monologue ends, asking for the calendar. */
@@ -311,6 +351,7 @@ void khdays_scene_monologue_ends(void)
     }
     current[0] = '\0';
     monologue = 0;
+    monologue_voiced = 0;
     khdays_movie_hd_voice_stop();
 }
 

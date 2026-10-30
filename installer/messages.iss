@@ -117,11 +117,11 @@ fr.Hd28Label=Dossier de KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facultatif
 de.Hd28Label=Ordner von KINGDOM HEARTS HD 2.8 Final Chapter Prologue (optional):
 it.Hd28Label=Cartella di KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facoltativa):
 
-en.HdMenus=HD menus and HUD (needs both collections)
-es.HdMenus=Menús y HUD HD (necesita las dos colecciones)
-fr.HdMenus=Menus et interface HD (deux collections nécessaires)
-de.HdMenus=HD-Menüs und HD-HUD (braucht beide Sammlungen)
-it.HdMenus=Menu e HUD HD (servono entrambe le raccolte)
+en.HdMenus=HD menus and HUD, with the Menu Overhaul and Walk mods (needs both collections)
+es.HdMenus=Menús y HUD HD, con los mods Menu Overhaul y Walk (necesita las dos colecciones)
+fr.HdMenus=Menus et interface HD, avec les mods Menu Overhaul et Walk (deux collections nécessaires)
+de.HdMenus=HD-Menüs und HD-HUD, mit den Mods Menu Overhaul und Walk (braucht beide Sammlungen)
+it.HdMenus=Menu e HUD HD, con le mod Menu Overhaul e Walk (servono entrambe le raccolte)
 
 en.HdVideos=HD videos: movies and scenes with subtitles and music (needs 1.5+2.5, 6.5 GB)
 es.HdVideos=Vídeos HD: películas y escenas con subtítulos y música (necesita 1.5+2.5, 6,5 GB)
@@ -146,6 +146,18 @@ es.HdFailed=No se han podido hacer las piezas HD; el juego funciona con el aspec
 fr.HdFailed=Les éléments HD n'ont pas pu être créés ; le jeu fonctionne avec l'aspect DS. Relancez l'installateur pour réessayer.
 de.HdFailed=Die HD-Teile konnten nicht erstellt werden; das Spiel läuft im DS-Aussehen. Starte das Installationsprogramm erneut, um es noch einmal zu versuchen.
 it.HdFailed=Non è stato possibile creare i pezzi HD; il gioco funziona con l'aspetto DS. Esegui di nuovo l'installazione per riprovare.
+
+en.ModsMaking=Making the Menu Overhaul and Walk mods from your copies...
+es.ModsMaking=Haciendo los mods Menu Overhaul y Walk a partir de tus copias...
+fr.ModsMaking=Création des mods Menu Overhaul et Walk à partir de vos copies...
+de.ModsMaking=Die Mods Menu Overhaul und Walk werden aus deinen Kopien erstellt...
+it.ModsMaking=Creazione delle mod Menu Overhaul e Walk dalle tue copie...
+
+en.ModsFailed=The Menu Overhaul and Walk mods could not be made; the game plays with the HD menus without them. Run the installer again to try once more.
+es.ModsFailed=No se han podido hacer los mods Menu Overhaul y Walk; el juego funciona con los menús HD sin ellos. Vuelve a ejecutar el instalador para intentarlo otra vez.
+fr.ModsFailed=Les mods Menu Overhaul et Walk n'ont pas pu être créés ; le jeu fonctionne avec les menus HD sans eux. Relancez l'installateur pour réessayer.
+de.ModsFailed=Die Mods Menu Overhaul und Walk konnten nicht erstellt werden; das Spiel läuft mit den HD-Menüs ohne sie. Starte das Installationsprogramm erneut, um es noch einmal zu versuchen.
+it.ModsFailed=Non è stato possibile creare le mod Menu Overhaul e Walk; il gioco funziona con i menu HD senza di esse. Esegui di nuovo l'installazione per riprovare.
 
 en.SteamPageCaption=Add to Steam (optional)
 es.SteamPageCaption=Añadir a Steam (opcional)

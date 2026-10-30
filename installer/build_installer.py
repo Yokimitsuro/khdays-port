@@ -173,6 +173,24 @@ def stage_python(packed: list[str]) -> None:
     pth[0].write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def stage_fonts(packed: list[str]) -> None:
+    """The pinned fonts' packages, the fonts the mods' tools draw with taken out of them (installer/fonts:
+    tools/mods/menu_overhaul.py's)."""
+    for item in json.loads((HERE / "pinned.json").read_text(encoding="utf-8"))["fonts"]:
+        source = CACHE / item["name"]
+        if not source.is_file():
+            sys.exit(f"build_installer: {source} is missing: fetch it (installer/pinned.json gives its URL)")
+        got = sha256(source)
+        if got != item["sha256"]:
+            sys.exit(f"build_installer: {source.name} has SHA-256 {got}, pinned {item['sha256']}")
+        with zipfile.ZipFile(source) as z:
+            for name in item["keep"]:
+                target = STAGE / "installer" / "fonts" / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(z.read(name))
+                packed.append(f"installer/fonts/{name} <- {item['name']}")
+
+
 def manifest_value(ini: Path, key: str) -> str | None:
     """A mod.ini's `key = value` (its comment after " #" left out)."""
     for line in ini.read_text(encoding="utf-8").splitlines():
@@ -267,6 +285,10 @@ def main() -> int:
     stage_sdk(packed)
     for rel in TOOLS:
         copy(ROOT / rel, STAGE / rel, packed)
+    # the tools of the port's own mods (setup_steps.py build-mods), their pictures with them; not their tests
+    for source in tracked("tools/mods"):
+        if "tests" not in source.relative_to(ROOT).parts:
+            copy(source, STAGE / source.relative_to(ROOT), packed)
     # the port's license and the third parties' notices, at the install's root
     for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
         copy(ROOT / name, STAGE / name, packed)
@@ -279,6 +301,7 @@ def main() -> int:
         if source.is_file() and source.suffix in (".py", ".json", ".txt", ".ini") and source.name not in INSTALLER_KEEP:
             copy(source, STAGE / "installer" / source.name, packed)
     stage_python(packed)
+    stage_fonts(packed)
     (STAGE / "setup").mkdir(exist_ok=True)
     (STAGE / "setup" / "version.txt").write_text(ver + "\n", encoding="utf-8")
 

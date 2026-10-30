@@ -207,13 +207,31 @@ static const char *field_label(int which)
                                                         : TXT_ROOM_PASSWORD);
 }
 
+/* KH2's firefly at the selected row's right end (layout_screen.h), as large beside the glove as KH2's
+ * beside its own. */
+static void firefly_at(const KhdaysLayoutFrame *fr, float right, float middle)
+{
+    const KhdaysLayoutPlace *g = khdays_layout_place(&s.layout, "glove");
+    const float unit = KHDAYS_FIREFLY_UNIT * (g != NULL && g->h > 0 ? g->h / 91.0f : 1.0f);
+    khdays_layout_firefly(s.layout.renderer, fr, KHDAYS_FIREFLY_ROOM, right - 15.0f * unit, middle, unit, 1.0f);
+}
+
+static void firefly_row(const KhdaysLayoutFrame *fr, float top)
+{
+    const KhdaysLayoutPlace *r = khdays_layout_place(&s.layout, "row_selected");
+    if (r != NULL) {
+        firefly_at(fr, r->x + r->w, top + r->y + r->h / 2);
+    }
+}
+
 /* A row's pieces at `y`: the theater's bar (red when selected) and square, the glove before it. */
 static void row_pieces(const KhdaysLayoutFrame *fr, float y, int selected)
 {
     khdays_layout_draw_placed(&s.layout, fr, selected ? "row_selected" : "row", 0, y, 1.0f);
     khdays_layout_draw_placed(&s.layout, fr, "square", 0, y, 1.0f);
     if (selected) {
-        khdays_layout_draw_placed(&s.layout, fr, "glove", 0, y, 1.0f);
+        khdays_layout_draw_placed(&s.layout, fr, "glove", khdays_layout_glove_sway(), y, 1.0f);
+        firefly_row(fr, y);
     }
 }
 
@@ -448,7 +466,8 @@ static void draw_members(const KhdaysLayoutFrame *fr, const KhdaysRoomView *v)
                                  alpha);
         if (v->can_proceed) {
             const float *g = place("proceed_glove");
-            khdays_layout_draw_piece(&s.layout, fr, "glove", g[0], g[1], g[2], g[3], 1.0f);
+            khdays_layout_draw_piece(&s.layout, fr, "glove", g[0] + khdays_layout_glove_sway(), g[1], g[2], g[3], 1.0f);
+            firefly_at(fr, b[0] + b[2], b[1] + b[3] / 2);
         }
         words(fr, "proceed", MLT_PROCEED, 0, 0, alpha);
     }

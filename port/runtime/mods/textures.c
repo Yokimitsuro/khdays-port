@@ -273,6 +273,11 @@ int khdays_textures_replacements(void)
     return (int)InterlockedCompareExchange(&nreplacements, 0, 0);
 }
 
+const char *khdays_textures_name(int id)
+{
+    return id >= 0 && id < (int)InterlockedCompareExchange(&nreplacements, 0, 0) ? entry(id)->name : NULL;
+}
+
 const KhdaysTextureReplacement *khdays_textures_replacement(int id)
 {
     return id >= 0 && id < (int)InterlockedCompareExchange(&nreplacements, 0, 0) ? &entry(id)->texture : NULL;

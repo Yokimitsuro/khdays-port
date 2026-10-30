@@ -1,5 +1,5 @@
 {
-  "comment": "The Python the installer carries, and its two libraries: each file fetched once into build/installer/cache/ and used only when its SHA-256 matches. numpy and Pillow are the versions the HD tools were run with (the HD pieces must come out the same); Python is the last 3.13 maintenance release with Windows binaries.",
+  "comment": "The Python the installer carries, and its two libraries: each file fetched once into build/installer/cache/ and used only when its SHA-256 matches. numpy and Pillow are the versions the HD tools were run with (the HD pieces must come out the same); Python is the last 3.13 maintenance release with Windows binaries. The fonts: Televo's free KH Re:Collection fonts, DaFont's package of them, from which the installer keeps the ones the Menu Overhaul's pieces are drawn with (installer/fonts).",
   "files": [
     {
       "name": "python-3.13.16-embed-amd64.zip",
@@ -21,6 +21,19 @@
       "url": "https://files.pythonhosted.org/packages/6d/ec/1179083b8d6067a613e4d595359b5fdea65d0a3b7ad623fee906e1b3c4d2/pillow-11.2.1-cp313-cp313-win_amd64.whl",
       "size": 2676388,
       "sha256": "74ee3d7ecb3f3c05459ba95eed5efa28d6092d751ce9bf20e3e253a4e497e691"
+    }
+  ],
+  "fonts": [
+    {
+      "name": "khmenu.zip",
+      "what": "Televo's Kingdom Hearts Re:Collection fonts (free; credit appreciated): the Menu Overhaul's KHMenu and KHGummi",
+      "url": "https://dl.dafont.com/dl/?f=khmenu",
+      "size": 2569643,
+      "sha256": "7c2332dba6efbc600e529d8b67c9c8c22224d74d5c34dfced3c3c7bdc0db0a94",
+      "keep": [
+        "KHGummi.otf",
+        "KHMenu.otf"
+      ]
     }
   ]
 }
