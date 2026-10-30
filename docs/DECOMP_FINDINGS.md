@@ -341,6 +341,14 @@ Taken up (for the record of what the old names were):
     `Ov008_SendMenuMessage` sends to the room; `Ov008_RefreshSaveSlotWidget(seat)` makes the seat's character word
     from it (`Ov008_GetEntryStatusByte`: 0x13 for a Roxas whose record has the bit). Found for the characters'
     forms, 2026-10-30 (`docs/RUNTIME_MAP.md` section 32).
+- The field's prizes (spec 038, 2026-10-30; RUNTIME_MAP section 33):
+  - `Ov002_LoadShopTable` (ov002@02078ef8) loads no shop: it reads `mo/prize.pak.z` (11 BTX0) and keeps each
+    picture's texture words in the field stage's table at +0x60 (8 bytes a picture, the pack's order).
+  - `data_ov002_0207e67c` is 16 prize kinds of 8 bytes: {s8 picture (an index into that table), s8, s8, pad,
+    s16, s16}.
+  - A billboard node (`Billboard_DrawList`'s list) holds at +0x08 the address of its picture's texture words in
+    that table, and +0x18..+0x22 the quad: s16 width, s16 height, the texture corners s0 t0 s1 t1 (bytes), the
+    alpha (0..31) and the polygon id.
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 

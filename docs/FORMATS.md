@@ -176,3 +176,23 @@ are, and its translation, rotation and scale curves. A J0AC's tables and curve
 data are not inside it: the game's BCA0s share them between their animations,
 after the J0ACs, at offsets from each J0AC. The game loops or stops an animation
 at the frame count its clip gives (for example `Ov259_ModelAnimTick`).
+
+## KH2's PAX (the prize effect)
+
+Not the game's: KINGDOM HEARTS II's prize effect, `obj/PRIZE.mdlx` in the player's 1.5+2.5 copy, as
+`tools/mods/kh2_pax.py` reads it to make the KH2 prizes mod (docs/KH2_SEQUENCES.md, "Field prizes"). Only what that
+needs is read.
+
+- The file is a BAR; its entry of type 18 holds the PAX (`PAX_`). The PAX's data block is at +0x180: a word 0x96,
+  two words (1, 0x60), the pictures' count and their offsets, the animations' count and their offsets, each offset
+  from the block.
+- A picture: a 32-byte header (u16 page TBP, palette CBP, buffer width, format 0x13 = 8 bits, x, y, width, height;
+  then the GS TEX0 word), the width x height indices, then 256 RGBA palette entries stored in the PS2's CSM1 order
+  (index bits 3 and 4 swapped), alpha 0x80 opaque. Pictures sit at (x, y) in 128 x 64 pages; the remaster's HD
+  pages (`remastered/obj/PRIZE.mdlx/-0.dds`, `-1.dds`, 256 x 128) are those pages in the order of their TBPs.
+- An animation: a 0x20-byte header (its number first: 0 munny, 1 the HP orb, 2 the MP orb, 3 the drive orb), then
+  its frame list, pairs of words (`0x02000000 | offset` from the animation's +0x10, then 0, or 0x80 on the last).
+- A frame: u16 kind (0 squares, 8 four corners), u16 layer count, u32 size, the GS TEX0 word at +0x10 (its page and
+  palette), the layers at +0x20: a square (four s16: x0 y0 x1 y1) or four corners (eight s16), each with its part of
+  the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS
+  blend byte (0x44 mixed by alpha, 0x48 added).

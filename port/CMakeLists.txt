@@ -406,6 +406,12 @@ add_test(NAME khdays-kh2-reticles-optional COMMAND khdays-kh2-reticles-test --op
 add_test(NAME khdays-kh2-reticles-partial COMMAND khdays-kh2-reticles-test --partial)
 add_test(NAME khdays-kh2-reticles-legacy COMMAND khdays-kh2-reticles-test --legacy)
 
+# A prize picture drawn as a mod's effect (KH2's prizes, spec 038): its file read, its frames as sequence quads.
+add_executable(khdays-prize-effects-test tests/prize_effects_test.cpp ui/prize_effects_model.cpp)
+target_link_libraries(khdays-prize-effects-test PRIVATE khdays-kh2-gauge)
+target_compile_options(khdays-prize-effects-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-prize-effects COMMAND khdays-prize-effects-test)
+
 add_executable(khdays-kh2-limit-timing-test tests/kh2_limit_timing_test.c)
 target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/include")
 target_compile_options(khdays-kh2-limit-timing-test PRIVATE /W4 /std:c17)
@@ -674,6 +680,8 @@ add_executable(khdays-native
     tools/heart_model_export.cpp
     ../assets/src/animation.cpp
     ui/kh2_reticles.cpp
+    ui/prize_effects.cpp
+    ui/prize_effects_model.cpp
     ui/kh2_information.cpp
     ui/kh2_obtained.cpp
     ui/kh2_mission_panel.cpp

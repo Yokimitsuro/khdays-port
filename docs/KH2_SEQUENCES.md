@@ -1259,6 +1259,46 @@ runs UpdatePanelScroll through that callback with an active tween and verifies
 that disabled settings still write the original scroll value.
 
 
+## Field prizes
+
+A mod can give any of the field's prize pictures (`mo/prize.pak.z`: `ef_pp`, `prize_01` the HP orb, `prize_03`
+munny, `prize_05`-`prize_07` the item spheres, `prize_08`, `prize_10`, `prize_11`, `he_prize`, `born`) an animated
+effect drawn instead of it, on the same native sequence route as the reticles. The game still places, moves, fades
+and hands out its prizes: only the picture changes (docs/RUNTIME_MAP.md section 33).
+
+```text
+mods/<Mod>/graphics/mo/prize.pak.z/fx/
+├── <picture>.txt     # the effect: prize_01.txt, prize_03.txt ...
+└── <page>.png        # its pages, any size (RGBA)
+```
+
+The file is text, one statement a line, `#` a comment:
+
+```text
+effect 1                         # the format (1); first
+page <n> <file>                  # page n, a PNG beside the file
+body <layer>                     # the first frame's layer made as wide as Days's picture (default 0)
+frame_time <frames>              # game frames each frame shows (default 1; the field runs 30 a second)
+frame                            # a new frame; its layers follow, drawn in order
+layer page <n> rect <u> <v> <w> <h> corners <x0> <y0> <x1> <y1> <x2> <y2> <x3> <y3> colour <r> <g> <b> <a> blend <how>
+```
+
+`rect` is the layer's part of its page in fractions (left, top, width, height; w and h above 0); `corners` its
+top-left, top-right, bottom-left and bottom-right in the effect's own units (x right, y down, 0 the prize's middle);
+`colour` multiplies the page (0..2, 1 leaves it); `blend` is `alpha` or `add`. The frames loop, stand still while
+the game is paused, and every prize of one picture shows the same frame. The node's fade multiplies them. A file that
+breaks a rule (another version, a page not declared or not readable, no frame, a frame with no layer) is named once
+in the log and the picture keeps Days's look. Mods are taken in the player's order; there are no limits on frames,
+layers or pages.
+
+`tools/mods/kh2_prizes.py --kh2 <kh2.hed_out>` writes KINGDOM HEARTS II's: the HP orb (`obj/PRIZE.mdlx`'s
+animation 1) for `prize_01` and munny (animation 0) for `prize_03`, with the remaster's HD pages
+(`remastered/obj/PRIZE.mdlx/-N.dds`) when there, from the player's own 1.5+2.5 copy. The installer makes it with
+the HD menus (`build-mods --kh2-prizes`) into the HD PACK. The settings' HD replacements have "KH2 prizes and
+chests" (`kh2_prizes`, on by default); off, Days's pictures are drawn exactly as before. The reference renderer
+draws Days's pictures. `KHDAYS_TRACE_PRIZES=1` names the pictures as they load, each effect found or refused, each
+prize taken and the player's HP and munny.
+
 ## Live Enhancements preferences
 
 The Enhancements menu stores HUD choices only in the usual settings.ini under

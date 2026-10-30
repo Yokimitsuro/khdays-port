@@ -678,7 +678,7 @@ begin
     if DataOk and HdMenus.Checked and DirExists(ExpandConstant('{app}') + '\mods\HD PACK') then begin
       WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
       WizardForm.Refresh;
-      Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --1525 "' + HdFolder(0) + '"';
+      Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --kh2-prizes --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
     end;

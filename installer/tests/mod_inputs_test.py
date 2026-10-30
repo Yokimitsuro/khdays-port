@@ -35,6 +35,8 @@ class Inputs(unittest.TestCase):
         # the Moogle Shop's Re:CoM layout and Birth by Sleep's camp (an entry known by its MD5 alone)
         self.assertIn("FORM/0109/FO0109.SPR", entries.get("Recom", []))
         self.assertIn("cba7b0396c9efe756ba1e069e6dd603e.dat", entries.get("bbs_first", []))
+        # KH2's prize effect (tools/mods/kh2_prizes.py)
+        self.assertIn("obj/PRIZE.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
 
     def test_wiring(self):
         folder, template = s.PORT_MODS["menu-overhaul"]
@@ -45,7 +47,14 @@ class Inputs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             install = Path(temp)
             (s.extracted_root(install) / "0123456789abcdef" / "nitrofs").mkdir(parents=True)
-            self.assertEqual(places, set(s.mod_places(install, install / "src")))
+            filled = set(s.mod_places(install, install / "src"))
+            self.assertEqual(places, filled)
+            # every mod's places are filled in; each collection mod is one the trace runs
+            for mod, (_, line) in s.PORT_MODS.items():
+                self.assertLessEqual({a[1:-1] for a in line if a.startswith("{")}, filled, mod)
+        self.assertEqual(s.PORT_MODS["kh2-prizes"][0], "Days - KH2 Prizes")
+        self.assertLessEqual(set(s.COLLECTION_MODS), set(s.PORT_MODS))
+        self.assertNotIn("walk", s.COLLECTION_MODS)
 
 
 if __name__ == "__main__":

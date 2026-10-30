@@ -1744,6 +1744,36 @@ HOOKS["ov008@0207c248"] = _ov008_list  # Ov008_UpdateMissionMenuOptionScreen
 HOOKS["ov006@020508e0"] = _ov006_members  # Ov006_UpdateMissionMenuSelectionScreen
 HOOKS["ov008@0207c7c8"] = _ov008_members  # Ov008_UpdateMissionMenuSelectionScreen
 
+# The field's prize pictures drawn as a mod's effect (ui/prize_effects.h, spec 038): each of mo/prize.pak.z's
+# pictures named as the game loads it, each billboard of one with an effect drawn by the port instead, and the
+# prizes taken traced (KHDAYS_TRACE_PRIZES).
+HOOKS["ov002@02078ef8"] = [
+    (  # Ov002_LoadShopTable (the prize pack's pictures into the field stage's texture words)
+        "            Tex0_GetTexPlttParams((&data_ov002_0207fa28)[1] + 0x60 + off,\n"
+        "                          Archive_GetMember(list, 7, i), 0);\n",
+        "            { int member = Archive_GetMember(list, 7, i);\n"
+        "              Tex0_GetTexPlttParams((&data_ov002_0207fa28)[1] + 0x60 + off, member, 0);\n"
+        "              { extern void khdays_prize_picture(int index, unsigned btx0, unsigned words);\n"
+        "                khdays_prize_picture(i, (unsigned)member,\n"
+        "                                     (unsigned)((&data_ov002_0207fa28)[1] + 0x60 + off)); } }\n",
+    )
+]
+HOOKS["main@020287e8"] = [
+    (  # Billboard_DrawList: a node's picture drawn as its effect leaves the node's own quad out
+        "        fx16 hw = (fx16)(node->width / 2);\n",
+        "        fx16 hw = (fx16)(node->width / 2);\n"
+        "        { extern int khdays_prize_node(const void *node); if (khdays_prize_node(node)) continue; }\n",
+    )
+]
+HOOKS["ov002@02078bac"] = [
+    (  # Ov002_CollectNearbySpots: a prize taken
+        "            Activate(pOwner, pRow->nSpotId, pRow->nKind, pRow->nTier);\n",
+        "            { extern void khdays_prize_collected(int kind, int tier, unsigned row);\n"
+        "              khdays_prize_collected(pRow->nKind, pRow->nTier, (unsigned)pRow); }\n"
+        "            Activate(pOwner, pRow->nSpotId, pRow->nKind, pRow->nTier);\n",
+    )
+]
+
 # The Stop magic (runtime/battle/stop_magic.c): Days's unfinished sixth magic made whole on what the game
 # left. Its three panels are written over three blank records as the panels' table loads, the camp lets
 # them in, and the battle's list of magic names gets the names the game left empty.

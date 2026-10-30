@@ -1104,6 +1104,7 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
 # own pieces), the rest added; the install's state ("port-mods") says which are which.
 PORT_MODS = {
     "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
+    "kh2-prizes": ("Days - KH2 Prizes", ["kh2_prizes.py", "--kh2", "{kh2}"]),
     "menu-overhaul": (
         "Days - Menu Overhaul",
         [
@@ -1114,6 +1115,8 @@ PORT_MODS = {
     ),
 }
 MOD_INPUTS_FILE = HERE / "mod_inputs.txt"
+# the mods made from the 1.5+2.5 collection (installer/mod_inputs.txt's entries, extracted for them)
+COLLECTION_MODS = ("menu-overhaul", "kh2-prizes")
 HD_ORIGINALS = "hd-originals"  # (under setup/) the HD menus' pieces the port's own mods replace in the HD PACK
 # where each archive's entries are extracted for the mods' tools (KH2's two archives into one folder)
 MOD_SOURCES = {
@@ -1139,6 +1142,13 @@ MESSAGES.update(
             "fr": "Les mods sont prêts.",
             "de": "Die Mods sind fertig.",
             "it": "Le mod sono pronte.",
+        },
+        "mod-needs-1525": {
+            "en": "KH2's prizes and chests need the 1.5+2.5 collection.",
+            "es": "Los premios y cofres de KH2 necesitan la colección 1.5+2.5.",
+            "fr": "Les prix et coffres de KH2 ont besoin de la collection 1.5+2.5.",
+            "de": "Die Preise und Truhen aus KH2 brauchen die Sammlung 1.5+2.5.",
+            "it": "I premi e i forzieri di KH2 richiedono la raccolta 1.5+2.5.",
         },
         "mod-needs-hd": {
             "en": "The Menu Overhaul needs the 1.5+2.5 collection and the HD menus made first.",
@@ -1190,6 +1200,7 @@ def _mods_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
     p.add_argument("--walk", action="store_true", help="the Walk (docs/WALK_MOD.md): the game's data")
     p.add_argument("--menu-overhaul", action="store_true", help="the Menu Overhaul: 1.5+2.5, the HD menus")
+    p.add_argument("--kh2-prizes", action="store_true", help="KH2's prizes and chests: 1.5+2.5")
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
 
 
@@ -1253,6 +1264,8 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
     unmerge_port_mods(install)
     hd = install / "mods" / HD_MOD
+    if "kh2-prizes" in wanted and args.c1525 is None:
+        raise Refusal("mod-needs-1525")
     if "menu-overhaul" in wanted and (args.c1525 is None or not any(p.is_file() for p in hd.rglob("*"))):
         raise Refusal("mod-needs-hd")
     for folder, _ in PORT_MODS.values():
@@ -1269,7 +1282,7 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
         shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
         places = mod_places(install, work / "src")
-        if "menu-overhaul" in wanted:
+        if set(COLLECTION_MODS) & set(wanted):
             # the collections' entries the tools read, extracted as the HD pieces' are
             cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
             for archive, paths in mod_inputs().items():  # (all of 1.5+2.5: the HD menus' are 2.8's)
@@ -1321,13 +1334,14 @@ def trace_mod_inputs(args: argparse.Namespace) -> dict[str, Any]:
     places = mod_places(install, args.src.resolve(), args.fonts.resolve())
     with tempfile.TemporaryDirectory() as temp:
         log = Path(temp) / "trace.log"
-        folder, template = PORT_MODS["menu-overhaul"]
-        line = [sys.executable, "-c", _TRACER, str(repository / "tools" / "mods" / template[0])]
-        line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + [
-            "--mod",
-            str(Path(temp) / folder),
-        ]
-        subprocess.run(line, check=True, env={**os.environ, "KHDAYS_TRACE_LOG": str(log)})
+        for mod in COLLECTION_MODS:  # every tool that reads the collection
+            folder, template = PORT_MODS[mod]
+            line = [sys.executable, "-c", _TRACER, str(repository / "tools" / "mods" / template[0])]
+            line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + [
+                "--mod",
+                str(Path(temp) / folder),
+            ]
+            subprocess.run(line, check=True, env={**os.environ, "KHDAYS_TRACE_LOG": str(log)})
         opened = {
             Path(raw).resolve() for kind, _, raw in (ln.partition("\t") for ln in log.read_text("utf-8").splitlines())
         }

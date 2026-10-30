@@ -12,6 +12,7 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "locked_on_sequence",
                                                                "notification_sequences",
                                                                "heart_points_sequence",
+                                                               "kh2_prizes",
                                                                "pause_target",
                                                                "information_hud",
                                                                "ui_padding",
@@ -19,7 +20,7 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "mission_panel_anchor",
                                                                "mission_panel_pause_anchor"};
 /* Unpublished tools retain JSON presentation; the normal profile publishes explicit defaults. */
-static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1},  {1}, {1},
+static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1},  {1}, {1}, {1},
                                                {1}, {1}, {1}, {1}, {-1}, {-1}, {0}, {0}};
 static SDL_AtomicInt generation;
 
@@ -30,6 +31,7 @@ void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT])
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
         values[i] = 0;
     values[KHDAYS_OPT_FONT] = 1;
+    values[KHDAYS_OPT_PRIZES] = 1; /* made only with the HD menus' HD PACK: shown once made */
     values[KHDAYS_OPT_MISSION_ANCHOR] = 1;
     values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 8;
 }

@@ -25,6 +25,7 @@
 #include "../../ui/kh2_enemy_hud.h"
 #include "../../ui/kh2_reticles.h"
 #include "../../ui/heart_points.h"
+#include "../../ui/prize_effects.h"
 #include "../../ui/kh2_information.h"
 #include "../../ui/kh2_obtained.h"
 #include "../../ui/hud_options.h"
@@ -48,7 +49,8 @@
 #include <string.h>
 #include <windows.h>
 
-_Static_assert(KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS, "3D sequence package capacity");
+_Static_assert(KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS + KHDAYS_PRIZE_PROGRAMS,
+               "3D sequence package capacity");
 
 #define PIXELS (KHDAYS_SCREEN_W * KHDAYS_SCREEN_H)
 
@@ -682,6 +684,7 @@ static void capture_3d(KhdaysFramePackage *p)
     khdays_textures_mark(&p->list3d); /* the textures drawn instead (HD graphics) */
     khdays_reticles_commands(&p->list3d, p->sequence3d_images);
     khdays_heart_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT);
+    khdays_prize_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS);
     p->list3d_serial = list3d_serial;
     p->list3d_time = list3d_time;
     p->list3d_cut = (uint8_t)list3d_cut;

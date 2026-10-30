@@ -603,6 +603,10 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   (2026-10-18). The graphics dump and the studio write a mesh that does
   not say (a DS model's, an FBX's) as BLEND when its texture's texels (A3I5,
   A5I3) or its vertex colours have an alpha of their own, else MASK.
+- `KHDAYS_TRACE_PRIZES=1` -- the field's prize pictures as the game loads
+  them (their names and table places), a mod's effect for one found or
+  refused, each prize taken (its kind, tier and picture) and the player's HP
+  and munny each time they change (section 33).
 
 - `KHDAYS_SHOTS=FRAME FRAME ...` -- both screens of those VBlanks as the 2D
   and 3D engines drew them, 256x192 each, as `KHDAYS_SHOT_DIR/frame_NNNNN.bmp`
@@ -5395,3 +5399,28 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   (`Ov022_ComputeDamageTaken`, `+0xc`), `+6` the most HP (`Ov022_ApplyMissionLevelStats`), `+8` not known, a pad, and
   an `int` at `+0xc`, not known (0x5000, 5 in 20.12, at every level of the tables read). Roxas's level 1 is 9, 34, 7,
   62 and 6 (`+0` to `+8`), his level 100 83, 212, 140, 359 and 31. `r2`'s table is the same as `ro`'s.
+
+## 33. The field's prizes
+
+- **They are pictures, not models** (read 2026-10-30 in the decompilation, seen with `KHDAYS_TRACE_PRIZES=1`): the HP
+  orbs, munny and items a battle or an object drops are billboard nodes, each one textured quad facing the camera,
+  drawn by `Billboard_DrawList` (main@020287e8). A node: +0x00 the next, +0x08 the address of its picture's texture
+  words, +0x0c its place (VecFx32), +0x18 its width and +0x1a its height (fx16: the quad goes from -width/2 to width/2
+  and from its foot, 0, to its height on the billboard matrix's turn, DS 0x020428e0, after the view matrix at DS
+  0x020473e0), +0x1c..+0x1f the texture's corners s0 t0 s1 t1, +0x20 its
+  alpha (0..31), +0x22 its polygon id.
+- **The pictures** come from `mo/prize.pak.z` (11 BTX0), loaded by `Ov002_LoadShopTable` (ov002@02078ef8) into the
+  field stage's table at +0x60, 8 bytes a picture, in the pack's order. Seen in Mission Mode's field (the
+  `missions_waves` walk): 0 `ef_pp`, 1 `prize_01`, 2 `prize_03`, 3 `prize_05`, 4 `prize_06`, 5 `prize_07`,
+  6 `prize_08`, 7 `prize_10`, 8 `prize_11`, 9 `he_prize`, 10 `born`, their texture words at DS 0x300187dc + 8 x n.
+  A node's +0x08 points at one of these entries.
+- **The kinds** (`data_ov002_0207e67c`: 16 of {s8 picture, s8, s8, pad, s16, s16}) as `Ov002_CollectNearbySpots`
+  (ov002@02078bac) takes them: kind 2 tier 0 is `prize_01`, the HP orb (the HP rose as each was taken: 355 to 358, 358
+  to 359 of 359), kind 3 tier 1 is `prize_03`, the munny crystal (the save's munny unchanged during the mission: Mission
+  Mode's munny is the results' PLATINES line, +15 there for this mission's drops). A Shadow dropped one of each.
+- **The port draws a mod's effect instead** (spec 038, `port/ui/prize_effects.cpp`): with a mod's
+  `graphics/mo/prize.pak.z/fx/<picture>.txt` (`port/ui/prize_effects_model.h`, made from KH2's `obj/PRIZE.mdlx` by
+  `tools/mods/kh2_prizes.py`) and the settings' "KH2 prizes and chests" on, `Billboard_DrawList` skips the node
+  (a join in `port/tools/prepare.py`) and the effect's current frame is drawn at its place on the 3D layer's
+  sequences, its body as wide as the picture. Taking it is the game's own: with the switch off the same walk took the
+  same kinds, the HP rose the same and the results gave the same PLATINES.

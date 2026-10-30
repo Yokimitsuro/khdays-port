@@ -78,6 +78,8 @@ static const char *const texts[TXT_COUNT][5] = {
                                "Benachrichtigungssequenzen", "Sequenze notifiche", "Secuencias de notificaciones"},
     [TXT_HUD_HEART_POINTS] = {"Heart counter sequence", "Séquence du compteur de cœurs", "Herzzähler-Sequenz",
                               "Sequenza contatore cuori", "Secuencia del contador de corazones"},
+    [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
+                        "Premi e forzieri di KH2", "Premios y cofres de KH2"},
     [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
                               "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
     [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",

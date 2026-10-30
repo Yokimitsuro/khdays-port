@@ -348,6 +348,62 @@ class PortModsInTheHdPack(unittest.TestCase):
                 )
         self.assertEqual(self.files(self.hd), self.pristine)  # taken out before the kept pieces are copied
 
+    def build_mods(self, **chosen):
+        args = {"walk": False, "menu_overhaul": False, "kh2_prizes": False, "c1525": Path("c1525"), **chosen}
+        return s.build_mods(s.argparse.Namespace(install=self.install, language="en", **args))
+
+    def test_kh2_prizes_need_the_collection(self):
+        with self.assertRaises(s.Refusal) as refused:
+            self.build_mods(kh2_prizes=True, c1525=None)
+        self.assertEqual(refused.exception.key, "mod-needs-1525")
+        self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_kh2_prizes_made_from_the_collection_into_the_hd_pack(self):
+        import subprocess
+
+        import collection_archive
+
+        tools = self.install / "tools"
+        for folder in ("mods", "hd"):
+            (tools / folder).mkdir(parents=True)
+        (tools / "decompress_data.py").write_text("")
+        ran, extracted = [], []
+
+        def tool(line, cwd, **_):  # kh2_prizes.py, stubbed: its effect and its switch
+            ran.append(line)
+            mod = Path(cwd) / "mods" / line[line.index("--mod") + 1]
+            for rel in ("graphics/mo/prize.pak.z/fx/prize_01.txt", "days-mods/kh2-prizes.txt"):
+                (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+                (mod / rel).write_text("kh2")
+            return subprocess.CompletedProcess(line, 0, "", "")
+
+        with (
+            mock.patch.object(
+                s, "tool_folders", return_value={"rom": tools, "hd": tools / "hd", "mods": tools / "mods"}
+            ),
+            mock.patch.object(s, "data_folder", return_value=self.install / "data"),
+            mock.patch.object(collection_archive, "load_table"),
+            mock.patch.object(collection_archive, "Cipher"),
+            mock.patch.object(collection_archive, "Archive"),
+            mock.patch.object(
+                collection_archive, "materialise", side_effect=lambda a, paths, out: extracted.append(out)
+            ),
+            mock.patch("subprocess.run", side_effect=tool),
+        ):
+            result = self.build_mods(kh2_prizes=True)
+        self.assertEqual(result["mods"], ["kh2-prizes"])
+        self.assertEqual(len(ran), 1)
+        self.assertEqual(Path(ran[0][1]).name, "kh2_prizes.py")
+        self.assertEqual(Path(ran[0][ran[0].index("--kh2") + 1]).name, "kh2.hed_out")
+        self.assertIn("kh2.hed_out", {Path(out).name for out in extracted})  # the collection's entries extracted
+        merged = self.files(self.hd)
+        self.assertEqual(merged["graphics/mo/prize.pak.z/fx/prize_01.txt"], "kh2")
+        self.assertEqual(merged["days-mods/kh2-prizes.txt"], "kh2")
+        self.assertEqual(merged["layouts/camp/en/camp.txt"], "hd camp")  # the HD menus' own kept
+        self.assertFalse((self.install / "setup" / "mod-work").exists())
+        s.unmerge_port_mods(self.install)
+        self.assertEqual(self.files(self.hd), self.pristine)
+
 
 class Results(unittest.TestCase):
     def run_command(self, *argv):

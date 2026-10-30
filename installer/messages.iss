@@ -117,11 +117,11 @@ fr.Hd28Label=Dossier de KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facultatif
 de.Hd28Label=Ordner von KINGDOM HEARTS HD 2.8 Final Chapter Prologue (optional):
 it.Hd28Label=Cartella di KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facoltativa):
 
-en.HdMenus=HD menus and HUD, with the Menu Overhaul and Walk mods (needs both collections)
-es.HdMenus=Menús y HUD HD, con los mods Menu Overhaul y Walk (necesita las dos colecciones)
-fr.HdMenus=Menus et interface HD, avec les mods Menu Overhaul et Walk (deux collections nécessaires)
-de.HdMenus=HD-Menüs und HD-HUD, mit den Mods Menu Overhaul und Walk (braucht beide Sammlungen)
-it.HdMenus=Menu e HUD HD, con le mod Menu Overhaul e Walk (servono entrambe le raccolte)
+en.HdMenus=HD menus and HUD, with the Menu Overhaul, Walk and KH2 prizes and chests mods (needs both collections)
+es.HdMenus=Menús y HUD HD, con los mods Menu Overhaul, Walk y premios y cofres de KH2 (necesita las dos colecciones)
+fr.HdMenus=Menus et interface HD, avec les mods Menu Overhaul, Walk et prix et coffres de KH2 (deux collections nécessaires)
+de.HdMenus=HD-Menüs und HD-HUD, mit den Mods Menu Overhaul, Walk und Preise und Truhen aus KH2 (braucht beide Sammlungen)
+it.HdMenus=Menu e HUD HD, con le mod Menu Overhaul, Walk e premi e forzieri di KH2 (servono entrambe le raccolte)
 
 en.HdVideos=HD videos: movies and scenes with subtitles and music (needs 1.5+2.5, 6.5 GB)
 es.HdVideos=Vídeos HD: películas y escenas con subtítulos y música (necesita 1.5+2.5, 6,5 GB)
