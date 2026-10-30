@@ -412,6 +412,19 @@ is chosen). It changes at once and is kept in the settings.
     (`unlock`): from the start, after one of the game's missions (chosen by
     its number and name), or after another of the mod's.
 
+14. **Prizes.** "Prizes" (top right) shows the chosen mod's prizes and chests
+    (docs/KH2_SEQUENCES.md, "Field prizes"), each beside Days's own: a prize's
+    effect playing as the port draws it, beside the game's picture; a prize's
+    model turning at its pace, beside the picture; a chest beside the game's
+    chest (from the graphics dump). A prize model's **Size** and **Turn** and a
+    chest's **Scale** are changed there and written by **Save** (the rest of
+    their files kept). **Make from my 1.5+2.5 copy** makes the KH2 prizes mod
+    -- KH2's HP orb and munny, its chests and its prize boxes -- into the
+    chosen mod as the installer makes it into the HD PACK: the entries it
+    needs taken out of the copy (the settings' 1.5+2.5 folder) into
+    `saves/collection`, then `tools/mods/kh2_prizes.py` run with the port's
+    executable. What is made holds Square Enix's work: it stays the player's.
+
 Sound loops and old-format mods come next.
 
 ## Native plugins' examples

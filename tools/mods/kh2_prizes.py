@@ -152,7 +152,8 @@ def make_chests(
         bones = CHEST_BONES + f"scale {DAYS_CHEST_WIDTH / width:.6g}\n"
         out.with_suffix(".bones.txt").write_text(bones, encoding="utf-8", newline="\n")
         made.append(f"{world}'s chest: KH2's {name}" + (" in Birth by Sleep's pictures" if extra else ""))
-        left_out += [f"{world}'s chest: {note}" for note in info.get("report", [])]
+        for note in info.get("report", []):  # what khdays-native said of it (made all the same)
+            print(f"kh2 prizes: note {world}'s chest: {note}", file=sys.stderr)
     return made, left_out
 
 
@@ -180,7 +181,8 @@ def make_boxes(
             left_out.append(f"{picture}: KH2's {name} could not be made ({e})")
             continue
         made.append(f"{picture}: KH2's {name}")
-        left_out += [f"{picture}: {note}" for note in info.get("report", [])]
+        for note in info.get("report", []):
+            print(f"kh2 prizes: note {picture}: {note}", file=sys.stderr)
     return made, left_out
 
 

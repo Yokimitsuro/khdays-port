@@ -171,6 +171,9 @@ bool characters_take_drop(App& app, const std::filesystem::path& file);
 bool characters_unsaved();
 std::string characters_unsaved_key();
 bool draw_unsaved_quit(App& app);
+// The mod's prizes and chests (views/prizes_view.cpp): each beside Days's, their size and turn, and the KH2 prizes
+// mod made from the player's 1.5+2.5 copy.
+void draw_prizes(App& app, bool* open);
 // The mods' console: the running game's mods' log as it grows, and their reloads.
 void draw_mods_console(App& app, bool* open);
 // The chosen mod's native plugin's parameters, as its mod describes them, and the values saved for the game.

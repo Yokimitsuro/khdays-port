@@ -49,6 +49,12 @@ bool kh2_world_maps(const Settings& settings, const std::string& world, std::vec
 // reason: no collection set, its executable or archives missing, no archive holding the map.
 bool take_out_kh2_map(const Settings& settings, const std::string& map, std::string* why);
 
+// Entries of the copy's archive `archive` (kh2_first, bbs_second ...) taken out into `out` (original/ and
+// remastered/, as the installer extracts them); false with the reason (no collection, the archive or KH2's
+// executable missing, the reader failing). An archive holding none of them is no failure.
+bool take_out_entries(const Settings& settings, const std::string& archive, const std::vector<std::string>& entries,
+                      const std::filesystem::path& out, std::string* why);
+
 // Whether `map` is in kh2_folder() already.
 bool kh2_map_taken_out(const std::filesystem::path& root, const std::string& map);
 

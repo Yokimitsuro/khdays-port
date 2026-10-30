@@ -247,6 +247,41 @@ bool take_out_kh2_map(const Settings& settings, const std::string& map, std::str
     return false;
 }
 
+bool take_out_entries(const Settings& settings, const std::string& archive, const std::vector<std::string>& entries,
+                      const fs::path& out, std::string* why) {
+    const fs::path collection = kh2_collection(settings);
+    if (collection.empty()) {
+        *why = "no KINGDOM HEARTS HD 1.5+2.5 ReMIX folder: set it in the settings";
+        return false;
+    }
+    std::error_code ec;
+    if (!fs::is_regular_file(collection / kKh2Exe, ec)) {
+        *why = std::string("no ") + kKh2Exe + " in " + u8(collection) + " (its archives are read with its table)";
+        return false;
+    }
+    fs::path base;
+    for (const char* language : {"dt", "en"}) {
+        const fs::path at = collection / "Image" / language / path_u8(archive);
+        if (fs::is_regular_file(fs::path(at).concat(".hed"), ec)) {
+            base = at;
+            break;
+        }
+    }
+    if (base.empty()) {
+        *why = "no archive " + archive + " in " + u8(collection / "Image");
+        return false;
+    }
+    std::vector<std::string> args{u8(base), u8(out), u8(collection / kKh2Exe)};
+    args.insert(args.end(), entries.begin(), entries.end());
+    std::vector<std::string> lines;
+    const int status = run_reader(settings.root, args, &lines, why);
+    if (status == 0 || status == 3)  // 3: none of them in this archive
+        return true;
+    if (why->empty())
+        *why = lines.empty() ? "the collection's reader failed" : lines.back();
+    return false;
+}
+
 bool make_kh2_collision(const fs::path& root, const std::string& map, fs::path* out, std::string* why) {
     const auto data = read_all(original_map(kh2_folder(root), map));
     if (data.empty()) {
