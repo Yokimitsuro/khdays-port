@@ -295,13 +295,16 @@ The decks are each player's own and the room does not share them, so the rules a
 
 The select keeps a place's character in a signed byte: the mods' characters take the numbers 0x16-0x7f, 106 at
 once (more are left out, told). The select of the HD pieces shows them in pages when they do not fit one (L and R
-turn the page; HD_SCREENS.md, "Mission Mode's character select"). The numbers follow the characters' identities, so copies with the same mods give
-the same ones. The rest of the game -- and the saves -- only ever hold the base's: a save made with a mod's
+turn the page; HD_SCREENS.md, "Mission Mode's character select"). The game's own select (two screens without the
+HD pieces' select) has its own grid as its first page and the mods' characters on pages after it, in the same slots:
+R and L turn them, the directions move on them, and the chosen one's name and weapon -- above, and on its place's
+plate -- are its own, in the camp's select too (RUNTIME_MAP section 16.3). On one screen without the HD pieces'
+select they are not offered. The numbers follow the characters' identities, so copies with the same mods give the
+same ones. The rest of the game -- and the saves -- only ever hold the base's: a save made with a mod's
 character loads without the mod, its base standing in.
 
 ## Not yet
 
-- The game's own select (two screens, without the select's layout of the HD pieces) does not list them.
 - Characters are read from every folder in `mods/`, also one turned off in the Mods page (as the mods'
   missions are): a character is taken out by taking its mod's folder out.
 - Attacks of their own (new kinds of moves, not the base's) and a Limit of their own (its length, its kind of

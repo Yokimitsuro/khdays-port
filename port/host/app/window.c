@@ -26,6 +26,7 @@
 #include "../../runtime/menus/camp.h"
 #include "../screens/room_screen.h"
 #include "../screens/select_screen.h"
+#include "../screens/ds_select_pages.h"
 #include "../screens/camp_screen.h"
 #include "../screens/shop_screen.h"
 #include "../screens/movie_pause.h"
@@ -894,6 +895,7 @@ static int host_thread(void *unused)
             khdays_room_screen_renderer_gone();
             khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
+            khdays_ds_select_pages_renderer_gone();
             khdays_camp_screen_renderer_gone();
             khdays_shop_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();
@@ -935,6 +937,7 @@ static int host_thread(void *unused)
             khdays_room_screen_renderer_gone();
             khdays_mod_screen_renderer_gone();
             khdays_select_screen_renderer_gone();
+            khdays_ds_select_pages_renderer_gone();
             khdays_camp_screen_renderer_gone();
             khdays_shop_screen_renderer_gone();
             khdays_movie_pause_renderer_gone();

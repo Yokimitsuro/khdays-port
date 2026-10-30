@@ -2498,6 +2498,30 @@ HOOKS["ov006@02050fc8"] += [  # Ov006_UpdateMissionMemberMenuScreen
     ),
     ("rows[i].memberId + 0xb", _menu("rows[i].memberId") + " + 0xb"),
 ]
+# ... and the names it writes for a place on a mod's character (the chosen one's and its weapon on the upper screen,
+# each place's on its plate) are the character's own, not its base's (runtime/menus/charselect.h)
+_SELECT_NAME = "extern void *khdays_charselect_name(int member, int weapon, void *game, void *out, int units);\n"
+HOOKS["ov006@02050fc8"] += [  # Ov006_UpdateMissionMemberMenuScreen
+    (
+        "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n",
+        _SELECT_NAME + "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n    u16 khdays_name[64];\n",
+    ),
+    (
+        "Ov006_MissionDrawTextRunFwd(record, 0x26, 0x1c, (u8)1, 1, 2, 1);",
+        "Ov006_MissionDrawTextRunFwd(khdays_charselect_name(rows[Ov006_MissionGetCursorEntry()].memberId, 0, record,"
+        " khdays_name, 64), 0x26, 0x1c, (u8)1, 1, 2, 1);",
+    ),
+    (
+        "Ov006_MissionDrawTextRunFwd(record, 0x80, 0x1c, (u8)1, 1, 2, 1);",
+        "Ov006_MissionDrawTextRunFwd(khdays_charselect_name(rows[Ov006_MissionGetCursorEntry()].memberId, 1, record,"
+        " khdays_name, 64), 0x80, 0x1c, (u8)1, 1, 2, 1);",
+    ),
+    (
+        "Ov006_MissionDrawTextRunFwd(record, x, y, (u8)1, 1, 2, 1);",
+        "Ov006_MissionDrawTextRunFwd(khdays_charselect_name(rows[i].memberId, 0, record, khdays_name, 64), x, y,"
+        " (u8)1, 1, 2, 1);",
+    ),
+]
 HOOKS["ov008@0207ce84"] += [  # Ov008_LobbyStep
     ("Ov008LobbyStep Ov008_LobbyStep(void)\n{\n", _MENU_ENTRY + "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n"),
     (
@@ -2523,6 +2547,33 @@ HOOKS["ov008@0207ce84"] += [  # Ov008_LobbyStep
     ),
     ("Ov008_ResolveMissionSelection(aRow[i].icon)", "Ov008_ResolveMissionSelection(" + _menu("aRow[i].icon") + ")"),
     ("aRow[i].icon + TEXT_ICON_BASE", _menu("aRow[i].icon") + " + TEXT_ICON_BASE"),
+]
+# ... the camp's names as Ov006's above (after the joins before, which its weapon's line is written by)
+_ov008_weapon = (
+    "Ov008_GetVarRecordByIndex(data_ov008_02090fa0->records, "
+    + _menu("aRow[Ov008_GetLocalPlayerIndex()].icon")
+    + " + TEXT_NAME_BASE)"
+)
+HOOKS["ov008@0207ce84"] += [  # Ov008_LobbyStep
+    (
+        "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n",
+        _SELECT_NAME + "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n    u16 khdays_name[64];\n",
+    ),
+    (
+        "Ov008_ForwardSevenArgs(pText, 0x26, 0x1c, 1, 1, 2, 1);",
+        "Ov008_ForwardSevenArgs(nCursor != 0 ? khdays_charselect_name(aRow[Ov008_GetLocalPlayerIndex()].icon, 0, pText,"
+        " khdays_name, 64) : pText, 0x26, 0x1c, 1, 1, 2, 1);",
+    ),
+    (
+        "Ov008_ForwardSevenArgs(" + _ov008_weapon + ", 0x80, 0x1c, 1, 1, 2, 1);",
+        "Ov008_ForwardSevenArgs(khdays_charselect_name(aRow[Ov008_GetLocalPlayerIndex()].icon, 1, "
+        + _ov008_weapon
+        + ", khdays_name, 64), 0x80, 0x1c, 1, 1, 2, 1);",
+    ),
+    (
+        "Ov008_ForwardSevenArgs(pText, nX, nY, 1, 1, 2, 1);",
+        "Ov008_ForwardSevenArgs(khdays_charselect_name(aRow[i].icon, 0, pText, khdays_name, 64), nX, nY, 1, 1, 2, 1);",
+    ),
 ]
 # ... and their input: a place on a new character is looked for on the DS's grid at its base's place, and keeps
 # its own number unless a direction moves it on (A and B would take the grid's, and the screen asks for the

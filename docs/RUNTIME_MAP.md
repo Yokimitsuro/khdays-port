@@ -4001,6 +4001,31 @@ over Xigbar to Xaldin; the guest's left twice (Xemnas, then round to Roxas),
 right three times, the third over Xaldin to Vexen; its A gave "Espera al
 anfitrión." and "Espera..." in turn and its plate the red ring.
 
+The game's own screen with a mod's characters (2026-10-30, spec 039; no HD pieces' select, two screens):
+- **Its grid** is a table of two rows of twelve words (`data_ov006_02056410`, the camp's `data_ov008_02090c00`):
+  -2 an edge, -1 the place of a bought character (13-18, put there each update from `data_ov006_020563f8` and
+  `data_ov006_02056470`), else the character. Its first row has nine places (columns 2-10), its second ten (1-10):
+  nineteen, the game's nineteen characters, none to spare.
+- **Its portraits**, as its screen shows them (measured on the lower screen at 1x): 24 x 64 pixels, the first row's
+  from y 32 and x = 24 x column - 28, the second's from y 96 and x = 24 x column - 16 -- the second row half a
+  portrait to the right. An unbought character's place is empty.
+- **What it draws of a place** on a new character is its base's (prepare.py's `_menu` joins): the model, the gauges,
+  the portrait, and the J1 marker over the base's portrait.
+- **The port's pages** (`charselect.c` `ds_step`, `host/screens/ds_select_pages.c`):
+  - The mods' characters follow the game's grid as pages of its nineteen places.
+  - R from the game's grid goes onto the first; on them the port takes the directions and writes the game's own
+    request, as on one screen; L from the first goes back to the character the grid was left on.
+  - The presenter draws each place's face over the lower screen, grey unless a place is on it, then in colour
+    with the place's corners, and the pages as dots under the grid.
+  - The names it writes for a place on a mod's character are the character's own (prepare.py,
+    `khdays_charselect_name`; `Ov006_UpdateMissionMemberMenuScreen`, the camp's `Ov008_LobbyStep`): the chosen
+    one's name and weapon on the upper screen, each place's on its plate.
+- **Seen** with `port/tests/mods_v2/select_pages`:
+  - R onto "Página 1" (in colour, its corners, "Página 1 / Stick" above, "J1 Página 1" on the plate);
+  - R onto the second page;
+  - L back, down to "Página 10";
+  - A, START: the camp with it.
+
 ### 16.4 The camp menu on one screen (2026-10-10)
 
 Mission Mode's camp (scene 19, ov008) runs one screen of its table A

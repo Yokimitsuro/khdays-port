@@ -635,6 +635,7 @@ add_executable(khdays-native
     host/screens/room_screen.c             # the port's list of Mission Mode's rooms on the screen
     host/screens/mod_screen.c              # a mod's screens and the title's mods' prompt
     host/screens/select_screen.c           # Mission Mode's character select on one screen
+    host/screens/ds_select_pages.c         # ... the game's own, on the mods' characters' pages
     host/screens/camp_screen.c             # Mission Mode's camp menu on one screen
     host/screens/overhaul_camp_screen.c    # ... and the story's, with its pages, in the Menu Overhaul's look
     host/screens/mod_faces.c               # ... and the mods' characters' faces and names on both

@@ -15,7 +15,8 @@ extern "C" {
 #define KHDAYS_SELECT_CHARACTERS 19 /* the game's: their names are mlt_&.s's records 0x0b on */
 #define KHDAYS_SELECT_PLACES 4
 #define KHDAYS_SELECT_STATS 7
-#define KHDAYS_SELECT_NAME 12 /* a player's name: the game's 11 UTF-16 characters and a NUL */
+#define KHDAYS_SELECT_NAME 12    /* a player's name: the game's 11 UTF-16 characters and a NUL */
+#define KHDAYS_SELECT_DS_GRID 24 /* the game's own screen's grid table: two rows of twelve (data_ov006_02056410) */
 
 typedef struct KhdaysSelectPlace {
     int present;                       /* a player is in the place */
@@ -39,6 +40,12 @@ typedef struct KhdaysSelectView {
     int stat_label[KHDAYS_SELECT_STATS]; /* the gauges' names (records): the left column's four, then
                                           * the right's three, as the game lays them out */
     int stat[KHDAYS_SELECT_STATS];       /* this copy's character's gauges (0-10), in that order */
+    /* The game's own screen (no layout of the HD pieces), with mods' characters: its grid's slots (the game's
+     * table's row and column of each, in its order), and the page the cursor is on -- 0 the game's own grid, 1 on
+     * the mods' characters in the same slots, in the grid's order -- of `ds_pages`. */
+    int ds_slots;
+    signed char ds_slot_row[KHDAYS_SELECT_DS_GRID], ds_slot_column[KHDAYS_SELECT_DS_GRID];
+    int ds_page, ds_pages;
 } KhdaysSelectView;
 
 /* The game's thread: an object's update ran (diag.c, its native address). */
@@ -56,6 +63,12 @@ void *khdays_charselect_help(int message, void *game, void *out, int units);
 int khdays_charselect_at(const KhdaysSelectView *v, int position);
 /* Any thread: the screen as last published. */
 void khdays_charselect_view(KhdaysSelectView *out);
+/* The game's own select's text (prepare.py's hooks): the name -- or with `weapon` its weapon's -- of the place on
+ * `member`, a mod's character's own written into `out` (`units` UTF-16 units on the game's stack) in the game's
+ * language; otherwise the game's `game` (its base's). */
+void *khdays_charselect_name(int member, int weapon, void *game, void *out, int units);
+/* A mod's character on the game's own screen's page (`ds_page` 1 and on): the one at slot `slot`, -1 none. */
+int khdays_charselect_ds_at(const KhdaysSelectView *v, int slot);
 /* The window's thread: the columns of the port's grid (its layout's), for the directions. */
 void khdays_charselect_columns(int columns);
 /* The window's thread: the rows of a page of the port's grid (its layout's; 0 every character on one page): with

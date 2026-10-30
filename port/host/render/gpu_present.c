@@ -12,6 +12,7 @@
 #include "onescreen.h"
 #include "png_io.h"
 #include "two_screens.h"
+#include "../screens/ds_select_pages.h"
 #include "../../ui/composition.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_text.h"
@@ -1519,6 +1520,7 @@ static SDL_FRect at_place(KhdaysScreenPlace p)
 void khdays_present_draw(void)
 {
     const int beside = side_by_side();
+    KhdaysScreenPlace lower_place = {0.0f, 0.0f, 0.0f, 0.0f}; /* the two screens' lower one, where drawn */
     if (device_lost) {
         return;
     }
@@ -1581,6 +1583,7 @@ void khdays_present_draw(void)
         const KhdaysTwoScreensLayout two = khdays_two_screens_layout(beside, columns, (float)cu, (float)cl);
         const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
         present_size(two.width, two.height);
+        lower_place = two.lower;
         if (upper != NULL && lower != NULL) {
             /* stacked: each as wide as it was drawn; side by side: its DS's 256 columns */
             const SDL_FRect upper_from = ds_columns(upper, beside ? cu : W),
@@ -1596,6 +1599,7 @@ void khdays_present_draw(void)
         const SDL_FRect upper = {0, 0, W, H}, lower = {0, H, W, H};
         const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
         present_size(two.width, two.height);
+        lower_place = two.lower;
         SDL_RenderTexture(renderer, screens, &upper, &upper_at);
         SDL_RenderTexture(renderer, screens, &lower, &lower_at);
     }
@@ -1607,6 +1611,11 @@ void khdays_present_draw(void)
         const SDL_FRect place = at_place(hd_upper ? two.upper : two.lower);
         const SDL_FRect from = ds_columns(hd, beside ? hd_columns : W);
         SDL_RenderTexture(renderer, hd, &from, &place);
+    }
+    if (lower_place.w > 0.0f) {
+        /* the game's own character select on the mods' characters' pages, over its lower screen's DS columns */
+        khdays_ds_select_pages_draw(renderer, lower_place.x + (lower_place.w - (float)W) / 2.0f, lower_place.y, 1.0f,
+                                    1.0f);
     }
     /* around a scene's videos the game goes down to black and comes up from it */
     darken(1.0f - khdays_movie_hd_game_level());

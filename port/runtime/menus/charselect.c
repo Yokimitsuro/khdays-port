@@ -12,6 +12,7 @@
 #include "../core/session_log.h"
 #include "../core/utf8.h"
 #include "../core/window.h"
+#include "../../host/app/host.h"
 #include "../../host/screens/ui_text.h"
 
 #include <stdio.h>
@@ -88,15 +89,16 @@ typedef struct Screen {
     int (*self)(void);
     int (*flag_set)(void), (*confirming)(void), (*state)(void), (*entry_active)(void), (*players)(void);
     u32 session, menu, captions, stats;
+    u32 grid; /* its DS grid: two rows of twelve words (-2 none, -1 a bought character's place, else one) */
 } Screen;
 
 static const Screen screens[] = {
     {6, Ov006_UpdateMissionMemberMenuScreen, Ov006_MemberMenuNextStateNoOp, Ov006_MissionGetCursorEntry,
      Ov006_MissionScene_IsFlagSet, Ov006_CanConfirmMissionMenu, Ov006_MissionScene_GetState, Ov006_MissionIsEntryActive,
-     Ov006_CountPlayers, 0x020565e4u, 0x02056660u, 0x020561d0u, 0x020561e0u},
+     Ov006_CountPlayers, 0x020565e4u, 0x02056660u, 0x020561d0u, 0x020561e0u, 0x02056410u},
     {8, Ov008_LobbyStep, Ov008_LobbyNextStepNoOp, Ov008_GetLocalPlayerIndex, Ov008_MissionScene_IsFlagSet,
      Ov008_CanConfirmMissionMenu, Ov008_MissionScene_GetState, Ov008_MissionIsEntryActive, Ov008_CountPlayers,
-     0x02090f24u, 0x02090fa0u, 0x0208fc8cu, 0x0208fc9cu},
+     0x02090f24u, 0x02090fa0u, 0x0208fc8cu, 0x0208fc9cu, 0x02090c00u},
 };
 #define SCREENS ((int)(sizeof(screens) / sizeof(screens[0])))
 
@@ -357,6 +359,9 @@ static void messages(const Screen *sc, const GameRow *rows, int self, u32 menu, 
 }
 
 /* The screen as the game has it after its update (its overlay loaded). */
+static int ds_mod_count(const KhdaysSelectView *v);
+static int ds_mod_index(const KhdaysSelectView *v, int c);
+
 static int read_screen(const Screen *sc, GameRow rows[KHDAYS_SELECT_PLACES], KhdaysSelectView *v)
 {
     const u32 session = rd32(sc->session), menu = rd32(sc->menu);
@@ -394,6 +399,14 @@ static int read_screen(const Screen *sc, GameRow rows[KHDAYS_SELECT_PLACES], Khd
         }
     }
     messages(sc, rows, self, menu, v);
+    /* the game's own grid's slots: every place of its table that is not an edge, row by row */
+    for (int k = 0; k < KHDAYS_SELECT_DS_GRID; ++k) {
+        if ((int32_t)rd32(sc->grid + (u32)k * 4u) != -2) {
+            v->ds_slot_row[v->ds_slots] = (signed char)(k / 12);
+            v->ds_slot_column[v->ds_slots] = (signed char)(k % 12);
+            ++v->ds_slots;
+        }
+    }
     shown_character = want >= 0 ? want : v->places[self].character;
     if (on_random && !v->places[self].ready) {
         shown_character = -1;
@@ -421,6 +434,15 @@ static int read_screen(const Screen *sc, GameRow rows[KHDAYS_SELECT_PLACES], Khd
     v->language = language();
     v->master = brightness();
     v->shown = available(v->language);
+    if (!v->shown && v->ds_slots > 0 && !(khdays_host_graphics_flags() & KHDAYS_HOST_ONE_SCREEN)) {
+        /* the game's own screen, on two screens (where the presenter draws its pages over the lower one): the mods'
+         * characters on pages after its grid, the one the cursor is on */
+        const int mods = ds_mod_count(v), k = ds_mod_index(v, shown_character);
+        if (mods > 0) {
+            v->ds_pages = 1 + (mods + v->ds_slots - 1) / v->ds_slots;
+            v->ds_page = k >= 0 ? 1 + k / v->ds_slots : 0;
+        }
+    }
     return 1;
 }
 
@@ -553,6 +575,154 @@ void khdays_charselect_update_ran(uintptr_t update)
     }
 }
 
+/* ---- The game's own screen's pages (no layout of the HD pieces) -------------------------------- */
+
+/* The `k`-th mod's character the select lets be chosen, in its order; -1 past them. */
+static int ds_mod(const KhdaysSelectView *v, int k)
+{
+    for (int p = 0, c; (c = khdays_charselect_at(v, p)) >= 0; ++p) {
+        if (c > RANDOM && k-- == 0) {
+            return c;
+        }
+    }
+    return -1;
+}
+
+static int ds_mod_count(const KhdaysSelectView *v)
+{
+    int n = 0;
+    while (ds_mod(v, n) >= 0) {
+        ++n;
+    }
+    return n;
+}
+
+/* Where character `c` is among them; -1 when it is none of them (the game's own). */
+static int ds_mod_index(const KhdaysSelectView *v, int c)
+{
+    for (int k = 0, m; (m = ds_mod(v, k)) >= 0; ++k) {
+        if (m == c) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+int khdays_charselect_ds_at(const KhdaysSelectView *v, int slot)
+{
+    if (v->ds_page < 1 || slot < 0 || slot >= v->ds_slots) {
+        return -1;
+    }
+    return ds_mod(v, (v->ds_page - 1) * v->ds_slots + slot);
+}
+
+/* A slot's middle along the game's grid, in its columns: its second row stands half a column to the right. */
+static float ds_x(const KhdaysSelectView *v, int slot)
+{
+    return (float)v->ds_slot_column[slot] + (v->ds_slot_row[slot] != 0 ? 0.5f : 0.0f);
+}
+
+static int last_game = -1; /* the game's character the player left its own grid from */
+
+/* The mod's character nearest place `aim` of the mods' page `page` (0 their first) lets be moved onto: `aim`, then
+ * after and before it; -1 none. */
+static int ds_on_page(const KhdaysSelectView *v, int page, int aim, int mods)
+{
+    const int first = page * v->ds_slots, n = mods - first < v->ds_slots ? mods - first : v->ds_slots;
+    aim = aim < n ? aim : n - 1;
+    for (int k = 0; k < n; ++k) {
+        if (aim + k < n && !taken(v, ds_mod(v, first + aim + k))) {
+            return ds_mod(v, first + aim + k);
+        }
+        if (k > 0 && aim - k >= 0 && !taken(v, ds_mod(v, first + aim - k))) {
+            return ds_mod(v, first + aim - k);
+        }
+    }
+    return -1;
+}
+
+/* Where a move (KHDAYS_SELECT_*) leads on the game's own screen with mods' characters: from its own grid, R onto
+ * the mods' first page (the game moves on its own grid itself); on their pages along them, between the two rows,
+ * and from page to page, L from the first back to the game's character it was left on. -1: nowhere. */
+static int ds_step(const KhdaysSelectView *v, int move)
+{
+    const int from = want >= 0 ? want : v->places[v->self].character;
+    const int mods = ds_mod_count(v), slots = v->ds_slots, k = ds_mod_index(v, from);
+    if (mods == 0 || slots == 0) {
+        return -1;
+    }
+    if (k < 0) {
+        if (move != KHDAYS_SELECT_NEXT_PAGE) {
+            return -1;
+        }
+        last_game = from;
+        return ds_on_page(v, 0, 0, mods);
+    }
+    const int page = k / slots, slot = k % slots;
+    if (move == KHDAYS_SELECT_LEFT || move == KHDAYS_SELECT_RIGHT) {
+        const int dir = move == KHDAYS_SELECT_RIGHT ? 1 : -1;
+        for (int i = 1; i < mods; ++i) {
+            const int c = ds_mod(v, ((k + dir * i) % mods + mods) % mods);
+            if (!taken(v, c)) {
+                return c;
+            }
+        }
+        return -1;
+    }
+    if (move == KHDAYS_SELECT_UP || move == KHDAYS_SELECT_DOWN) {
+        const int other = v->ds_slot_row[slot] != 0 ? 0 : 1;
+        const float x = ds_x(v, slot);
+        int best = -1;
+        float best_d = 0.0f;
+        for (int s = 0; s < slots && page * slots + s < mods; ++s) {
+            const int c = ds_mod(v, page * slots + s);
+            const float d = ds_x(v, s) - x, dist = d < 0 ? -d : d;
+            if ((v->ds_slot_row[s] != 0) == (other != 0) && !taken(v, c) && (best < 0 || dist < best_d)) {
+                best = c;
+                best_d = dist;
+            }
+        }
+        return best;
+    }
+    if (move == KHDAYS_SELECT_NEXT_PAGE) {
+        return (page + 1) * slots < mods ? ds_on_page(v, page + 1, slot, mods) : -1;
+    }
+    if (move == KHDAYS_SELECT_PREVIOUS_PAGE) {
+        if (page > 0) {
+            return ds_on_page(v, page - 1, slot, mods);
+        }
+        /* back onto the game's own grid: the character it was left on, else its first free one */
+        if (last_game >= 0 && last_game < KHDAYS_SELECT_CHARACTERS && choosable(v, last_game) && !taken(v, last_game)) {
+            return last_game;
+        }
+        for (int c = 0; c < KHDAYS_SELECT_CHARACTERS; ++c) {
+            if (choosable(v, c) && !taken(v, c)) {
+                return c;
+            }
+        }
+    }
+    return -1;
+}
+
+void *khdays_charselect_name(int member, int weapon, void *game, void *out, int units)
+{
+    const KhdaysCharacter *c = khdays_characters_numbered(member);
+    u16 *to = (u16 *)out;
+    int n = 0;
+    if (c == NULL || to == NULL || units < 2) {
+        return game;
+    }
+    const char *text = weapon ? khdays_characters_weapon(c, language() - 1) : khdays_characters_name(c, language() - 1);
+    if (text == NULL) {
+        return game;
+    }
+    for (const unsigned char *p = (const unsigned char *)text; *p != 0 && n < units - 1;) {
+        to[n++] = khdays_utf8_next(&p);
+    }
+    to[n] = 0;
+    return out;
+}
+
 /* ---- The buttons ------------------------------------------------------------------------------ */
 
 /* Whether `key` moves this frame: on its press, then again while held. */
@@ -621,6 +791,26 @@ uint16_t khdays_charselect_buttons(uint16_t buttons)
             }
             if (on_random && a_pressed) {
                 choose_at_random();
+            }
+        }
+    }
+    if (!active() && now.ds_pages > 1) {
+        /* the game's own screen with mods' characters: L and R its pages; on the mods' pages the directions too */
+        out &= (u16) ~(KHDAYS_KEY_L | KHDAYS_KEY_R);
+        if (now.ds_page >= 1) {
+            out &= (u16)~directions;
+        }
+        if (choosing) {
+            for (int k = now.ds_page >= 1 ? 0 : 4; k < 6; ++k) {
+                if (repeated(buttons, keys[k])) {
+                    const int to = ds_step(&now, moves[k]);
+                    if (to >= 0) {
+                        on_random = 0;
+                        want = to;
+                        asked = 0;
+                    }
+                    break;
+                }
             }
         }
     }
