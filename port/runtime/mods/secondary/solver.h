@@ -135,6 +135,8 @@ private:
     // the drawn shape (`smoothing`): each control in its group's reference bone space; solved_ holds the
     // solved positions while the bones are rebuilt on it
     std::vector<Vec3> shown_, solved_;
+    std::vector<Vec3> drawn_; // the drawn controls, world (guard_drawn_faces)
+    void guard_drawn_faces();
     std::vector<Vec3> pushed_; // contact's push on each control this substep (taken out of its velocity)
     const Frame &reference_bone_frame(std::size_t i, const std::vector<Frame> &pose) const;
     // poses: the needed bones at the substep's start and end

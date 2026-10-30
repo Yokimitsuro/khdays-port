@@ -807,6 +807,85 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         if (moved)
             shown_[i] = apply_inverse(ref, w);
     }
+    guard_drawn_faces();
+}
+
+// Nor a drawn face cutting into the body deeper than the solved one: its corners shown as solved this
+// tick. The smoothing trails a fast leg, and a calf or knee swinging through the lagging coat (a run, a
+// jump) is the clipping it shows; where nothing cuts, the smoothing is left as it is.
+void Simulation::guard_drawn_faces()
+{
+    constexpr float kSlack = 0.005F; // m: deeper than the solved face by more than this
+    bool smoothed = false;
+    for (std::size_t i = 0; i < x_.size() && !smoothed; ++i)
+        smoothed = rig_.particles[i].dynamic && drive_[i].params.get(Param::smoothing) > 0.0F &&
+                   drive_[i].params.get(Param::draw_guard) >= 0.5F;
+    if (!smoothed)
+        return;
+    drawn_.resize(x_.size());
+    for (std::size_t i = 0; i < x_.size(); ++i)
+        drawn_[i] = rig_.particles[i].dynamic ? apply(reference_bone_frame(i, sub1_), shown_[i]) : x_[i];
+    for (const int ci : collider_order_) {
+        const auto c = static_cast<std::size_t>(ci);
+        if (!rig_.colliders[c].rest_side)
+            continue;
+        const Shape &sh = shape1_[c];
+        for (const int fi : collider_faces_[c]) {
+            const Face &f = rig_.faces[static_cast<std::size_t>(fi)];
+            const std::size_t v[3] = {static_cast<std::size_t>(f.a), static_cast<std::size_t>(f.b),
+                                      static_cast<std::size_t>(f.c)};
+            if (drive_[v[0]].params.get(Param::draw_guard) < 0.5F)
+                continue;
+            const float thick =
+                (rig_.particles[v[0]].thickness + rig_.particles[v[1]].thickness + rig_.particles[v[2]].thickness) /
+                3.0F;
+            const auto depth = [&](const std::vector<Vec3> &at, bool &crosses) {
+                Vec3 on_core, on_face;
+                const float d =
+                    closest_segment_triangle(sh.a, sh.b, at[v[0]], at[v[1]], at[v[2]], on_core, on_face, crosses);
+                const float ab2 = dot(sh.b - sh.a, sh.b - sh.a);
+                const float t = ab2 > 1e-12F ? clampf(dot(on_core - sh.a, sh.b - sh.a) / ab2, 0.0F, 1.0F) : 0.0F;
+                const float r = sh.ra + (sh.rb - sh.ra) * t;
+                return pair_reach(r + thick, face_clearance(c, static_cast<std::size_t>(fi), sh), 0.5F * r + thick) - d;
+            };
+            bool drawn_crosses = false, solved_crosses = false;
+            const float drawn_depth = depth(drawn_, drawn_crosses);
+            if (drawn_depth <= kSlack && !drawn_crosses)
+                continue;
+            const float solved_depth = depth(x_, solved_crosses);
+            const float allowed = maxf(0.0F, solved_depth) + kSlack;
+            if (!(drawn_crosses && !solved_crosses) && drawn_depth <= allowed)
+                continue;
+            // toward the solved face only as far as it takes to come out (a whole step back to it is a jump):
+            // the share found by halving between the drawn and the solved corners
+            const Vec3 from[3] = {drawn_[v[0]], drawn_[v[1]], drawn_[v[2]]};
+            std::vector<Vec3> &at = drawn_;
+            const auto share = [&](float limit) {
+                float lo = 0.0F, hi = 1.0F;
+                for (int k = 0; k < 6; ++k) {
+                    const float mid = 0.5F * (lo + hi);
+                    for (std::size_t j = 0; j < 3; ++j)
+                        at[v[j]] = lerp(from[j], x_[v[j]], mid);
+                    bool crosses = false;
+                    const float dm = depth(at, crosses);
+                    if ((crosses && !solved_crosses) || dm > limit)
+                        lo = mid;
+                    else
+                        hi = mid;
+                }
+                return hi;
+            };
+            const float hi = share(allowed);
+            for (std::size_t j = 0; j < 3; ++j) {
+                if (!rig_.particles[v[j]].dynamic) {
+                    drawn_[v[j]] = from[j];
+                    continue;
+                }
+                drawn_[v[j]] = lerp(from[j], x_[v[j]], hi);
+                shown_[v[j]] = apply_inverse(reference_bone_frame(v[j], sub1_), drawn_[v[j]]);
+            }
+        }
+    }
 }
 
 // The targets at `pose` draped down each strip: a control's segment from its anchor kept as the target

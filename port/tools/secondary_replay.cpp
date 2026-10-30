@@ -400,6 +400,8 @@ struct Metrics {
     double hem_ratio_sum = 0.0; // the hem's mean radius about the hips' axis over its rest radius
     int hem_count = 0;
     int frames_legs = 0;
+    float max_legs_drawn = 0.0F; // cm: the same for the drawn (smoothed) coat
+    int frames_legs_drawn = 0;
     int frames = 0, resets = 0, rebases = 0;
     bool finite = true;
     // frame-to-frame acceleration beyond the targets' (cm per frame^2) and the coat bones' angular (deg)
@@ -726,77 +728,91 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         }
         m.max_penetration = std::fmax(m.max_penetration, frame_pen * 100.0F);
         // the body through the coat: each collider its faces collide with against each coarse face exactly
-        float through = 0.0F, legs = 0.0F;
+        float through = 0.0F, legs = 0.0F, legs_drawn = 0.0F;
         const auto legs_tag = std::find(rig.tag_names.begin(), rig.tag_names.end(), std::string("legs"));
         const std::uint32_t legs_bit =
             legs_tag == rig.tag_names.end() ? 0U : 1U << static_cast<unsigned>(legs_tag - rig.tag_names.begin());
-        for (std::size_t fi = 0; fi < rig.faces.size(); ++fi) {
-            const Face &face = rig.faces[fi];
-            const auto &x = sim.positions();
-            const std::uint32_t mask = rig.particles[static_cast<std::size_t>(face.a)].collide;
-            for (std::size_t ci = 0; ci < sim.colliders().size(); ++ci) {
-                if (!(rig.colliders[ci].tags & mask) ||
-                    std::binary_search(rig.face_excluded.begin(), rig.face_excluded.end(),
-                                       (static_cast<std::uint64_t>(ci) << 32) | fi))
-                    continue;
-                const auto &c = sim.colliders()[ci];
-                Vec3 on_core, on_face;
-                bool crosses = false;
-                const float d = closest_segment_triangle(
-                    c.a, c.b, x[static_cast<std::size_t>(face.a)], x[static_cast<std::size_t>(face.b)],
-                    x[static_cast<std::size_t>(face.c)], on_core, on_face, crosses);
-                const float ab2 = dot(c.b - c.a, c.b - c.a);
-                const float u =
-                    ab2 > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(on_core - c.a, c.b - c.a) / ab2)) : 0.0F;
-                // against the pair's contact size: the collider's, or nearer where the coat hangs nearer as authored
-                const float rk = c.ra + (c.rb - c.ra) * u, k0 = rig.colliders[ci].radius;
-                const float clearance = rig.face_clearance.empty() || k0 <= 0.0F
-                                            ? 0.0F
-                                            : rig.face_clearance[ci * rig.faces.size() + fi] * (c.ra / k0);
-                const float deep = (crosses ? 2.0F : 1.0F) * pair_reach(rk, clearance, 0.5F * rk) - d;
-                if (std::getenv("KHDAYS_REPLAY_DEBUG") != nullptr && deep > 0.005F &&
-                    (rig.colliders[ci].tags & legs_bit)) {
-                    // the face's rest side of the collider against where it is now
-                    const auto rest_of = [&](int pi) {
-                        const Particle &pp = rig.particles[static_cast<std::size_t>(pi)];
-                        return apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(
-                                         rig.groups[static_cast<std::size_t>(pp.group)].reference_bone)]),
-                                     pp.reference);
-                    };
-                    const Collider &k = rig.colliders[ci];
-                    const Vec3 ra = apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(k.bone)]), k.offset);
-                    const Vec3 rb =
-                        apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(k.end_bone)]), k.end_offset);
-                    const Vec3 r0 = rest_of(face.a), r1 = rest_of(face.b), r2 = rest_of(face.c);
-                    const Vec3 rc = (r0 + r1 + r2) * (1.0F / 3.0F);
-                    float rs, rt;
-                    closest_segments(rc, rc, ra, rb, rs, rt);
-                    const float rest_sign = dot(rc - lerp(ra, rb, rt), cross(r1 - r0, r2 - r0)) >= 0.0F ? 1.0F : -1.0F;
-                    const Vec3 nn =
-                        normalized(cross(x[static_cast<std::size_t>(face.b)] - x[static_cast<std::size_t>(face.a)],
-                                         x[static_cast<std::size_t>(face.c)] - x[static_cast<std::size_t>(face.a)])) *
-                        rest_sign;
-                    std::fprintf(
-                        stderr, "through f%d: %s into face %s %s %s by %.1f cm%s; ahead %.1f cm, rest gap %.1f cm\n", f,
-                        k.name.c_str(),
-                        rig.skeleton
-                            .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.a)].bone)]
-                            .c_str(),
-                        rig.skeleton
-                            .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.b)].bone)]
-                            .c_str(),
-                        rig.skeleton
-                            .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.c)].bone)]
-                            .c_str(),
-                        static_cast<double>(deep * 100.0F), crosses ? " (through it)" : "",
-                        static_cast<double>(dot(on_face - on_core, nn) * 100.0F),
-                        static_cast<double>(length(rc - lerp(ra, rb, rt)) * 100.0F));
+        // the drawn coat: its controls on the bones as output (smoothed), what the player sees
+        std::vector<Vec3> coat_drawn(sim.positions());
+        for (std::size_t i = 0; i < rig.particles.size(); ++i)
+            if (rig.particles[i].dynamic)
+                coat_drawn[i] = apply(out[static_cast<std::size_t>(rig.particles[i].bone)], rig.particles[i].offset);
+        for (int pass = 0; pass < 2; ++pass)
+            for (std::size_t fi = 0; fi < rig.faces.size(); ++fi) {
+                const Face &face = rig.faces[fi];
+                const auto &x = pass == 0 ? sim.positions() : coat_drawn;
+                const std::uint32_t mask = rig.particles[static_cast<std::size_t>(face.a)].collide;
+                for (std::size_t ci = 0; ci < sim.colliders().size(); ++ci) {
+                    if (!(rig.colliders[ci].tags & mask) ||
+                        std::binary_search(rig.face_excluded.begin(), rig.face_excluded.end(),
+                                           (static_cast<std::uint64_t>(ci) << 32) | fi))
+                        continue;
+                    const auto &c = sim.colliders()[ci];
+                    Vec3 on_core, on_face;
+                    bool crosses = false;
+                    const float d = closest_segment_triangle(
+                        c.a, c.b, x[static_cast<std::size_t>(face.a)], x[static_cast<std::size_t>(face.b)],
+                        x[static_cast<std::size_t>(face.c)], on_core, on_face, crosses);
+                    const float ab2 = dot(c.b - c.a, c.b - c.a);
+                    const float u =
+                        ab2 > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(on_core - c.a, c.b - c.a) / ab2)) : 0.0F;
+                    // against the pair's contact size: the collider's, or nearer where the coat hangs nearer as authored
+                    const float rk = c.ra + (c.rb - c.ra) * u, k0 = rig.colliders[ci].radius;
+                    const float clearance = rig.face_clearance.empty() || k0 <= 0.0F
+                                                ? 0.0F
+                                                : rig.face_clearance[ci * rig.faces.size() + fi] * (c.ra / k0);
+                    const float deep = (crosses ? 2.0F : 1.0F) * pair_reach(rk, clearance, 0.5F * rk) - d;
+                    if (pass == 1) {
+                        if (rig.colliders[ci].tags & legs_bit)
+                            legs_drawn = std::fmax(legs_drawn, deep);
+                        continue;
+                    }
+                    if (std::getenv("KHDAYS_REPLAY_DEBUG") != nullptr && deep > 0.005F &&
+                        (rig.colliders[ci].tags & legs_bit)) {
+                        // the face's rest side of the collider against where it is now
+                        const auto rest_of = [&](int pi) {
+                            const Particle &pp = rig.particles[static_cast<std::size_t>(pi)];
+                            return apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(
+                                             rig.groups[static_cast<std::size_t>(pp.group)].reference_bone)]),
+                                         pp.reference);
+                        };
+                        const Collider &k = rig.colliders[ci];
+                        const Vec3 ra = apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(k.bone)]), k.offset);
+                        const Vec3 rb =
+                            apply(frame_of(rig.skeleton.rest[static_cast<std::size_t>(k.end_bone)]), k.end_offset);
+                        const Vec3 r0 = rest_of(face.a), r1 = rest_of(face.b), r2 = rest_of(face.c);
+                        const Vec3 rc = (r0 + r1 + r2) * (1.0F / 3.0F);
+                        float rs, rt;
+                        closest_segments(rc, rc, ra, rb, rs, rt);
+                        const float rest_sign =
+                            dot(rc - lerp(ra, rb, rt), cross(r1 - r0, r2 - r0)) >= 0.0F ? 1.0F : -1.0F;
+                        const Vec3 nn =
+                            normalized(
+                                cross(x[static_cast<std::size_t>(face.b)] - x[static_cast<std::size_t>(face.a)],
+                                      x[static_cast<std::size_t>(face.c)] - x[static_cast<std::size_t>(face.a)])) *
+                            rest_sign;
+                        std::fprintf(
+                            stderr,
+                            "through f%d: %s into face %s %s %s by %.1f cm%s; ahead %.1f cm, rest gap %.1f cm\n", f,
+                            k.name.c_str(),
+                            rig.skeleton
+                                .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.a)].bone)]
+                                .c_str(),
+                            rig.skeleton
+                                .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.b)].bone)]
+                                .c_str(),
+                            rig.skeleton
+                                .names[static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(face.c)].bone)]
+                                .c_str(),
+                            static_cast<double>(deep * 100.0F), crosses ? " (through it)" : "",
+                            static_cast<double>(dot(on_face - on_core, nn) * 100.0F),
+                            static_cast<double>(length(rc - lerp(ra, rb, rt)) * 100.0F));
+                    }
+                    through = std::fmax(through, deep);
+                    if (rig.colliders[ci].tags & legs_bit)
+                        legs = std::fmax(legs, deep);
                 }
-                through = std::fmax(through, deep);
-                if (rig.colliders[ci].tags & legs_bit)
-                    legs = std::fmax(legs, deep);
             }
-        }
         m.max_through = std::fmax(m.max_through, through * 100.0F);
         if (through > 0.01F)
             ++m.frames_through;
@@ -825,6 +841,9 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         if (std::getenv("KHDAYS_REPLAY_LEGS") != nullptr)
             std::fprintf(stderr, "legs %s %d %.2f\n", sc.name.c_str(), f, static_cast<double>(legs * 100.0F));
         m.max_legs = std::fmax(m.max_legs, legs * 100.0F);
+        m.max_legs_drawn = std::fmax(m.max_legs_drawn, legs_drawn * 100.0F);
+        if (legs_drawn > 0.005F)
+            ++m.frames_legs_drawn;
         // the coat's shape against its authored drape on the hips (bone 2)
         {
             const Frame rest_hips = frame_of(rig.skeleton.rest[2]);
@@ -1194,13 +1213,14 @@ int main(int argc, char **argv)
             }
             std::fprintf(
                 report,
-                "%-9s %4d frames: shape off the drape %.1f cm mean, %.1f max; off its targets %.1f cm; lower front coat %.0f deg off vertical; hem %.2fx its rest radius; legs in coat %.1f cm (%d frames over 0.5 cm); body in coat %.1f cm (%d over 1 cm); worst penetration %.2f cm (%d frames over 1 cm); below the room %.2f cm; "
+                "%-9s %4d frames: shape off the drape %.1f cm mean, %.1f max; off its targets %.1f cm; lower front coat %.0f deg off vertical; hem %.2fx its rest radius; legs in coat %.1f cm (%d frames over 0.5 cm), drawn %.1f cm (%d frames); body in coat %.1f cm (%d over 1 cm); worst penetration %.2f cm (%d frames over 1 cm); below the room %.2f cm; "
                 "strips %.1f%%, rows %.0f%%; resets %d, rebases %d%s; per actor update p50 %.0f us, p95 %.0f us, "
                 "p99 %.0f us\n",
                 sc.name.c_str(), m.frames, m.shape_count ? m.shape_sum / m.shape_count : 0.0,
                 static_cast<double>(m.shape_max), m.shape_count ? m.push_sum / m.shape_count : 0.0,
                 m.lean_count ? m.lean_sum / m.lean_count : 0.0, m.hem_count ? m.hem_ratio_sum / m.hem_count : 0.0,
-                static_cast<double>(m.max_legs), m.frames_legs, static_cast<double>(m.max_through), m.frames_through,
+                static_cast<double>(m.max_legs), m.frames_legs, static_cast<double>(m.max_legs_drawn),
+                m.frames_legs_drawn, static_cast<double>(m.max_through), m.frames_through,
                 static_cast<double>(m.max_penetration), m.frames_clipping, static_cast<double>(m.max_floor),
                 static_cast<double>(m.max_stretch * 100.0F), static_cast<double>(m.max_flare * 100.0F), m.resets,
                 m.rebases, m.finite ? "" : ", NOT FINITE", static_cast<double>(p.percentile(0.5F)),

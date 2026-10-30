@@ -45,6 +45,7 @@ enum class Param : int {
     smoothing,          // s: the drawn shape eased toward the solved one (in its reference bone's space)
     follow_bone_scale,  // 0..1: of its follow_bone shares it takes (how much the legs carry it)
     drape,              // 0 or 1: its target swung out of the body colliders down its strip (Simulation::drape)
+    draw_guard,         // 0 or 1: a smoothed drawn face cutting into the body moved out (guard_drawn_faces)
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);

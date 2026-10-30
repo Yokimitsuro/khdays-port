@@ -35,8 +35,10 @@ preset kh2_coat
   guided_inertia 0.4
   max_speed 12
   # the drawn shape eased toward the solved one (in the hips' space, so the body is never delayed):
-  # contact against a leg sweeping through the coat jumps step to step, this hides it
-  smoothing 0.05
+  # contact against a leg sweeping through the coat jumps step to step, this hides it. A drawn face
+  # that would cut into a leg it trails is moved out (draw_guard; 0 turns that off)
+  smoothing 0.08
+  draw_guard 1
   thickness 1.5
   friction 0.3
   wind_drag 1.5

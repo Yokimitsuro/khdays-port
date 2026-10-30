@@ -137,6 +137,7 @@ the free end, by depth along the strip.
 | `smoothing` | s | 0 | the drawn shape eased toward the solved one, in its reference bone's space (below) |
 | `follow_bone_scale` | 0..1 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`) |
 | `drape` | 0 or 1 | 1 | its target swung out of the body colliders down its strip (eased, below) |
+| `draw_guard` | 0 or 1 | 1 | a smoothed drawn face cutting into the body deeper than the solved one moved out (below) |
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
 | `friction` | 0..1 | 0.2 | |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
@@ -259,6 +260,19 @@ is squeezed under 50 % of its rest length or folded back past its head eases fro
 the shortest turn onto its point back to its reference's (the turn has no clear
 direction there), and the twist from row neighbours fades out where they bunch
 together or cross.
+
+**Drawn clipping in a run or a jump.** The solver kept the legs out of the coat,
+but the drawn shape trailed it (`smoothing`) and a calf or knee swinging through
+it cut the lagging faces: the replay's "legs in coat ... drawn" count, at 30
+draws a second, was run 127 of 211 frames (20 cm deep), attack 62, spawn 60,
+jump 37. A drawn face deeper in a body collider than its solved face is now moved
+toward the solved one as far as it takes to come out (`guard_drawn_faces`); none
+of those frames are left. Moving it all the way at once, and easing a face toward
+the solved one as it comes within 4 cm, both brought the twitch back (the idles
+rest that close to the thighs). With `smoothing 0.08`, drawn jitter p99: battle
+idle 5.1 -> 4.3 cm, calm 1.7 -> 1.4; run 36 -> 50 cm (its turns 143 -> 124 deg),
+attack 14 -> 27, guard 13 -> 19: in the fast moves the coat is pushed along by
+the leg instead of being passed through.
 
 **Once a cycle (measured in game, `KHDAYS_SECONDARY_TRACE`).** A jump of the
 lower back coat once per animation cycle (Days' animations and KH2 motions alike;
