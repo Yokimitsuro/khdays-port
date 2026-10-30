@@ -248,7 +248,9 @@ of the game:
   back to its preset's: the tilt set by hand stays (its distance still
   follows, and the events' cameras and the lock-on are the game's). The game
   keeps Manual in its save; the settings file keeps Free
-  (`[enhancements] chase_free`).
+  (`[enhancements] chase_free`), which the settings' enhancements also turn
+  on and off (Free camera) -- there with two screens too, where the game
+  draws its own Config page. Off unless chosen.
 
 The same menu has live switches for HD fonts, KH2 minimap presentation, HUD
 sequences, the pause-menu target, and HUD/control during INFORMATION messages.

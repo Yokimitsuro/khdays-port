@@ -1132,6 +1132,22 @@ static const char *const texts[TXT_COUNT][5] = {
                              "Steuere die Kamera selbst. Beim Gehen bleibt die eingestellte Neigung.",
                              "Controlla la telecamera da solo. Camminando resta l'inclinazione scelta.",
                              "Controla la cámara tú mismo. Al caminar se mantiene la inclinación elegida."},
+    [TXT_ENH_CHASE_FREE] = {"Free camera", "Caméra libre", "Freie Kamera", "Telecamera libera", "Cámara libre"},
+    [TXT_ENH_CHASE_FREE_NOTE] =
+        {"With the camp's camera on Manual, walking keeps the tilt you set instead of pulling it "
+         "back. On one screen the camp's page shows it as a third value, Free.",
+         "Avec la caméra du camp en manuel, la marche garde l'inclinaison choisie au lieu de "
+         "la ramener. Sur un seul écran, la page du camp l'affiche comme troisième valeur, "
+         "Libre.",
+         "Steht die Kamera im Lager auf manuell, bleibt beim Gehen die eingestellte Neigung, "
+         "statt zurückzugehen. Auf einem Bildschirm zeigt die Lagerseite sie als dritten "
+         "Wert, Frei.",
+         "Con la telecamera del campo in manuale, camminando resta l'inclinazione scelta "
+         "invece di tornare indietro. Su un solo schermo la pagina del campo la mostra come "
+         "terzo valore, Libera.",
+         "Con la cámara del campamento en manual, al caminar se mantiene la inclinación que "
+         "pongas en vez de volver a la suya. En una pantalla, la página del campamento la "
+         "muestra como un tercer valor, Libre."},
 };
 
 static int current = KHDAYS_LANGUAGE_ENGLISH;

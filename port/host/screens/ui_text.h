@@ -393,6 +393,9 @@ enum {
     /* the Config's Chase Camera's third value, the port's (runtime/menus/camp.h khdays_camp_chase_free) */
     TXT_CHASE_FREE,
     TXT_CHASE_FREE_HELP,
+    /* the same in the settings' enhancements (settings_model.c) */
+    TXT_ENH_CHASE_FREE,
+    TXT_ENH_CHASE_FREE_NOTE,
     TXT_COUNT
 };
 
