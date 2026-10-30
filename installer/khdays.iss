@@ -307,7 +307,7 @@ begin
 end;
 
 { The Browse button beside a folder (its Tag says which): an empty one starts beside the other
-  collection (Steam's and the Epic Games Store's keep both in one library), else in Program Files }
+  collection (Steam's, the Epic Games Store's and the Xbox app's keep both in one library), else in Program Files }
 procedure HdBrowse(Sender: TObject);
 var
   Folder: String;

@@ -15,6 +15,7 @@ is made on the player's computer from the player's own copies.
 | `setup_steps.py` | the helper: each step the installer cannot do by itself (`--help` lists them) |
 | `steam_library.py` | where Steam keeps the collections (its folder, libraries, app manifests) |
 | `epic_library.py` | where the Epic Games Store keeps them (its launcher's manifests, the default folder) |
+| `xbox_library.py` | where the Xbox app (Microsoft Store, PC Game Pass) keeps them (each drive's game library) |
 | `steam_shortcut.py` | the port added to Steam as a non-Steam game, and taken out again |
 | `collection_archive.py` | the collections' archives (`.hed`/`.pkg`) read as their own code reads them |
 | `hd_inputs.txt` | the collection files the HD tools read (traced: `setup_steps.py trace-inputs`) |
@@ -70,10 +71,12 @@ others' files. The videos
 already installed are linked into the tools' folder, not copied, so an installer whose scene map
 or video tool differs makes only the missing videos, and the subtitles and music again. Either folder may be left empty: a choice whose collection is not given cannot be
 ticked. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
-launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), and either store's copy
-is read: Steam's keeps its language's archives in `Image/dt` and Days's videos in
-`STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in `Image/en` and the videos in
-`EPIC/Mare/MOVIE/Days/en` (any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
+launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), else in the Xbox app's
+game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names; a game in
+`<library>/<game>/Content`), and each store's copy is read: Steam's keeps its language's archives in
+`Image/dt` and Days's videos in `STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in
+`Image/en` and the videos in `EPIC/Mare/MOVIE/Days/en`, the Xbox app's its videos under `MSSTORE`
+(any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
 page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
 fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
 others are made all the same: the installer says which, keeps what each said whole in

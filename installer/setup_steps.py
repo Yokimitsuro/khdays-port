@@ -354,7 +354,7 @@ def verify_rom(args: argparse.Namespace) -> dict[str, Any]:
         "folders",
         type=Path,
         nargs="*",
-        help="KINGDOM HEARTS HD 1.5+2.5 ReMIX folders (default: Steam's and the Epic Games Store's)",
+        help="KINGDOM HEARTS HD 1.5+2.5 ReMIX folders (default: Steam's, the Epic Games Store's and the Xbox app's)",
     ),
 )
 def find_rom(args: argparse.Namespace) -> dict[str, Any]:
@@ -362,10 +362,12 @@ def find_rom(args: argparse.Namespace) -> dict[str, Any]:
     if not folders:
         import epic_library
         import steam_library
+        import xbox_library
 
         found = [
             steam_library.app_folder(steam_library.APP_1525),
             epic_library.collection_folder(epic_library.MARKER_1525),
+            xbox_library.collection_folder(epic_library.MARKER_1525),
         ]
         folders = [f for f in found if f is not None]
     for folder in folders:
@@ -604,7 +606,9 @@ def _inputs_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ddd", type=Path, required=True, help="<2.8>/Image/dt (or en)/kh3d_first.hed_out")
     p.add_argument("--kh2", type=Path, required=True, help="<1.5+2.5>/Image/dt (or en)/kh2_first.hed_out")
     p.add_argument("--kh2-gauge", type=Path, help="kh2_fifth.hed_out (default: beside --kh2)")
-    p.add_argument("--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt (or EPIC/.../en)")
+    p.add_argument(
+        "--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt (or EPIC/.../en, MSSTORE/...)"
+    )
     p.add_argument("--data", type=Path, default=HERE.parent / "data" / "extracted", help="the game's extracted data")
     p.add_argument(
         "--native",
@@ -725,7 +729,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
 
 # The collections' places and what each HD choice needs. Steam's copies keep their language's archives
 # in Image/dt and Days's videos in STEAM/Mare/MOVIE/Days/dt; the Epic Games Store's keep the archives in
-# Image/en and the videos in EPIC/Mare/MOVIE/Days/en (seen in a copy of its own); the
+# Image/en and the videos in EPIC/Mare/MOVIE/Days/en (seen in a copy of its own); the Xbox app's keep
+# them in <library>/<game>/Content, its videos under MSSTORE (xbox_library.py); the
 # videos are found where the collection has them.
 KH2_EXE = "KINGDOM HEARTS II FINAL MIX.exe"
 COLLECTION_ARCHIVES = {
@@ -876,12 +881,13 @@ def check_folder(kind: str, folder: Path) -> list[str]:
 
 @command(
     "find-collections",
-    "the KINGDOM HEARTS collections Steam or the Epic Games Store has on this computer, each checked",
+    "the KINGDOM HEARTS collections Steam, the Epic Games Store or the Xbox app has on this computer, each checked",
     lambda p: None,
 )
 def find_collections(args: argparse.Namespace) -> dict[str, Any]:
     import epic_library
     import steam_library
+    import xbox_library
 
     steam = steam_library.steam_folder()
     found = []
@@ -889,14 +895,22 @@ def find_collections(args: argparse.Namespace) -> dict[str, Any]:
         ("1.5+2.5", steam_library.APP_1525, epic_library.MARKER_1525),
         ("2.8", steam_library.APP_28, epic_library.MARKER_28),
     ):
-        # Steam's copy first, the Epic Games Store's when Steam has none that is whole
-        folder = steam_library.app_folder(app, steam) if steam is not None else None
-        missing = check_folder(kind, folder) if folder is not None else None
-        if folder is None or missing:
-            epic = epic_library.collection_folder(marker)
-            epic_missing = check_folder(kind, epic) if epic is not None else None
-            if epic is not None and (folder is None or not epic_missing):
-                folder, missing = epic, epic_missing
+        # Steam's copy first, then the Epic Games Store's, then the Xbox app's: the first whole one, else
+        # the first found
+        folder, missing = None, None
+        for find in (
+            lambda: steam_library.app_folder(app, steam) if steam is not None else None,
+            lambda: epic_library.collection_folder(marker),
+            lambda: xbox_library.collection_folder(marker),
+        ):
+            candidate = find()
+            if candidate is None:
+                continue
+            candidate_missing = check_folder(kind, candidate)
+            if folder is None or not candidate_missing:
+                folder, missing = candidate, candidate_missing
+            if not missing:
+                break
         found.append(
             {
                 "kind": kind,
