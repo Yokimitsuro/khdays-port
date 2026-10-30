@@ -272,10 +272,11 @@ struct Model {
     std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
-    int draws = 0;                    // for the session log's diagnosis
-    bool room = false;                // a room of a world its own mod replaces: drawn with HD graphics off too
-    bool character = false;           // a mod's character's (runtime/characters): the same
-    std::unique_ptr<OwnSkeleton> own; // its own skeleton, posed by its clips (else following the game's nodes)
+    int draws = 0;                      // for the session log's diagnosis
+    bool room = false;                  // a room of a world its own mod replaces: drawn with HD graphics off too
+    std::array<float, 3> low{}, high{}; // its size at rest (a placed model's, khdays_models_placed_bounds)
+    bool character = false;             // a mod's character's (runtime/characters): the same
+    std::unique_ptr<OwnSkeleton> own;   // its own skeleton, posed by its clips (else following the game's nodes)
     // its own animation (a room's): the file's nodes and animations, and its clock in game frames,
     // counted from its first draw while the game is not paused
     std::vector<khdays::assets::ImportedNode> nodes;
@@ -363,14 +364,21 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     std::vector<unsigned char> bmd0;
     std::size_t index = 0;
     assets::NeutralModel game;
-    try {
-        if (!khdays_names_model_bmd0(file, offset, bmd0, index))
-            throw std::runtime_error("not in its file");
-        game = assets::decode_model_geometry(bmd0.data(), bmd0.size(), index);
-    } catch (const std::exception &e) {
-        std::fprintf(stderr, "models: %s: the game's model cannot be read (%s): the game's is drawn\n", name.c_str(),
-                     e.what());
-        return nullptr;
+    if (file == nullptr) {
+        // a model drawn at a place of the port's (khdays_models_draw_placed): one node, its place
+        game.object_names = {"place"};
+        game.object_matrices = {kIdentity};
+        game.object_parents = {-1};
+    } else {
+        try {
+            if (!khdays_names_model_bmd0(file, offset, bmd0, index))
+                throw std::runtime_error("not in its file");
+            game = assets::decode_model_geometry(bmd0.data(), bmd0.size(), index);
+        } catch (const std::exception &e) {
+            std::fprintf(stderr, "models: %s: the game's model cannot be read (%s): the game's is drawn\n",
+                         name.c_str(), e.what());
+            return nullptr;
+        }
     }
     const std::vector<Mat> rest = game.skinning != nullptr
                                       ? assets::compute_bone_world_matrices(*game.skinning, game.object_matrices)
@@ -778,6 +786,33 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
                        static_cast<double>(length({w[8], w[9], w[10]})));
         }
     }
+    // its size at rest: each vertex where its joints' binds put it
+    model->low = {INFINITY, INFINITY, INFINITY};
+    model->high = {-INFINITY, -INFINITY, -INFINITY};
+    for (const Mesh &mesh : model->meshes)
+        for (const auto &v : mesh.vertices) {
+            std::array<float, 3> p{0, 0, 0};
+            float total = 0.0F;
+            for (int w = 0; w < 4; ++w) {
+                const float weight = v.weights[static_cast<std::size_t>(w)];
+                const std::uint32_t jt = v.joints[static_cast<std::size_t>(w)];
+                if (weight <= 0.0F || jt >= model->joints.size())
+                    continue;
+                const auto q = point(model->joints[jt].bind, v.position);
+                for (int c = 0; c < 3; ++c)
+                    p[static_cast<std::size_t>(c)] += weight * q[static_cast<std::size_t>(c)];
+                total += weight;
+            }
+            if (total <= 0.0F)
+                p = {v.position[0] * k, v.position[1] * k, v.position[2] * k};
+            else
+                for (auto &c : p)
+                    c /= total;
+            for (std::size_t c = 0; c < 3; ++c) {
+                model->low[c] = std::fmin(model->low[c], p[c]);
+                model->high[c] = std::fmax(model->high[c], p[c]);
+            }
+        }
     return model;
 }
 
@@ -1540,4 +1575,52 @@ extern "C" void khdays_models_draw_end(void)
     }
     khdays_g3d_draw_end();
     active = nullptr;
+}
+
+namespace {
+// the models drawn at places of the port's, by their file; null: one that cannot be read
+std::unordered_map<std::string, std::unique_ptr<Model>> placed_models;
+
+Model *placed(const char *path)
+{
+    auto it = placed_models.find(path);
+    if (it == placed_models.end()) {
+        auto model = load(path, path, nullptr, 0);
+        if (!model) {
+            khdays_log("models: %s cannot be drawn at its place", path);
+        } else if (tracing()) {
+            std::fprintf(stderr, "models: %s drawn at its place (%zu meshes)\n", path, model->meshes.size());
+        }
+        it = placed_models.emplace(path, std::move(model)).first;
+    }
+    return it->second.get();
+}
+} // namespace
+
+extern "C" int khdays_models_placed_bounds(const char *path, float low[3], float high[3])
+{
+    const Model *m = placed(path);
+    if (m == nullptr || m->meshes.empty())
+        return 0;
+    for (std::size_t c = 0; c < 3; ++c) {
+        low[c] = m->low[c];
+        high[c] = m->high[c];
+    }
+    return 1;
+}
+
+extern "C" int khdays_models_draw_placed(const char *path, const float place[16], unsigned int attr)
+{
+    Model *m = placed(path);
+    if (m == nullptr || active != nullptr)
+        return 0;
+    // draw()'s state: its one node at the place, a material that lights nothing (its own colours)
+    node_matrix.assign(1, kIdentity);
+    std::copy(place, place + 16, node_matrix[0].begin());
+    node_sent.assign(1, 1);
+    material = {};
+    material.attr = attr & ~0xfu;
+    material.color[0] = material.color[1] = material.color[2] = 31;
+    draw(*m);
+    return 1;
 }

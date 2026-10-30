@@ -37,8 +37,9 @@ class Inputs(unittest.TestCase):
         self.assertIn("cba7b0396c9efe756ba1e069e6dd603e.dat", entries.get("bbs_first", []))
         # KH2's prize effect (tools/mods/kh2_prizes.py)
         self.assertIn("obj/PRIZE.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
-        # the chests (kh2_prizes.py through khdays-native) and Neverland's Birth by Sleep pictures
+        # the chests and prize boxes (kh2_prizes.py through khdays-native) and Neverland's Birth by Sleep pictures
         self.assertIn("obj/F_EX040_TT.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
+        self.assertIn("obj/PRIZE_BOX_BLUE.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
         self.assertIn("ForEventJP/gimmick/g01pp/00/g01pp00.pmo", entries.get("bbs_second", []))
 
     def test_wiring(self):

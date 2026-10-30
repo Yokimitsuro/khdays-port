@@ -55,6 +55,8 @@ DAYS_CHEST_WIDTH = 0.982  # every Days chest's width (mo/mo's <world>_box_b, the
 # KH2's chest's joints to Days's nodes: j0 its root, j3 its lid (box1 Days's, turned 96 degrees when open); Days's
 # light rays (light01-03) drawn as the game draws them; the chest follows the settings' KH2 prizes switch
 CHEST_BONES = "j0 dummy0\nj3 box1\nkeep light01 light02 light03\nswitch kh2_prizes\n"
+# Days's item spheres and KH2's prize boxes, the same designs (the blue one with its gold horn)
+BOXES = {"prize_05": "PRIZE_BOX_YELLOW", "prize_06": "PRIZE_BOX_RED", "prize_07": "PRIZE_BOX_BLUE"}
 
 
 def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int) -> str:
@@ -154,6 +156,34 @@ def make_chests(
     return made, left_out
 
 
+def make_boxes(
+    kh2: Path, mod: Path, exe: Path, run: Callable[[list[str]], str] = run_exe
+) -> tuple[list[str], list[str]]:
+    """Days's item spheres as KH2's prize boxes, models drawn in their place (upright, turning: the port's
+    prize models, graphics/mo/prize.pak.z/mdl/): what was made and what was left out."""
+    made, left_out = [], []
+    for picture, name in BOXES.items():
+        model = kh2 / "original" / "obj" / f"{name}.mdlx"
+        hd = kh2 / "remastered" / "obj" / f"{name}.mdlx"
+        if not opened(model):
+            left_out.append(f"{picture}: KH2's {name} is not there")
+            continue
+        if hd.is_dir():
+            for page in sorted(hd.glob("-*.dds")):
+                opened(page)
+        out = mod / "graphics" / "mo" / "prize.pak.z" / "mdl" / f"{picture}.gltf"
+        line = [str(exe), "--kh2-object", str(model.absolute()), str(out.absolute()), "--hd", str(hd.absolute())]
+        try:
+            said = [ln for ln in run(line).splitlines() if ln.startswith("{")]
+            info = json.loads(said[-1])
+        except (RuntimeError, ValueError, IndexError) as e:
+            left_out.append(f"{picture}: KH2's {name} could not be made ({e})")
+            continue
+        made.append(f"{picture}: KH2's {name}")
+        left_out += [f"{picture}: {note}" for note in info.get("report", [])]
+    return made, left_out
+
+
 def make(
     kh2: Path,
     mod: Path,
@@ -161,7 +191,7 @@ def make(
     bbs2: Path | None = None,
     run: Callable[[list[str]], str] = run_exe,
 ) -> list[str]:
-    """The effects (and with `exe` the chests) into mod/; what was left out, each with why."""
+    """The effects (and with `exe` the chests and prize boxes) into mod/; what was left out, each with why."""
     left_out = []
     pax = kh2_pax.read_pax((kh2 / "original" / PRIZE).read_bytes())
     page_order = sorted({p.tbp for p in pax.pictures})  # the HD pages' order (-0.dds the first)
@@ -194,9 +224,9 @@ def make(
         if number not in {n for n, _ in PAIRS.values()}:
             left_out.append(f"KH2's {what} (animation {number}): Days has no such prize")
     if exe is not None:
-        chests, missed = make_chests(kh2, mod, exe, bbs2, run)
-        made += chests
-        left_out += missed
+        for part in (make_chests(kh2, mod, exe, bbs2, run), make_boxes(kh2, mod, exe, run)):
+            made += part[0]
+            left_out += part[1]
     if made:
         switch = mod / "days-mods" / "kh2-prizes.txt"
         switch.parent.mkdir(parents=True, exist_ok=True)

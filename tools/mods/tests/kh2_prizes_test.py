@@ -334,6 +334,17 @@ class MakeTheChests(unittest.TestCase):
         pp = next(line for line in self.asked if line[3].endswith("pp_box_b.gltf"))
         self.assertEqual(pp[pp.index("--picture") + 1 : pp.index("--picture") + 3], ["0", str(picture)])
 
+    def test_the_prize_boxes(self):
+        import kh2_prizes
+
+        self.objects(["PRIZE_BOX_YELLOW.mdlx", "PRIZE_BOX_BLUE.mdlx"])
+        made, left_out = kh2_prizes.make_boxes(self.kh2, self.mod, Path("khdays-native"), self.run_exe)
+        self.assertEqual(made, ["prize_05: KH2's PRIZE_BOX_YELLOW", "prize_07: KH2's PRIZE_BOX_BLUE"])
+        box = next(line for line in self.asked if line[2].endswith("PRIZE_BOX_BLUE.mdlx"))
+        self.assertEqual(Path(box[3]), self.mod / "graphics" / "mo" / "prize.pak.z" / "mdl" / "prize_07.gltf")
+        self.assertNotIn("--pose", box)  # at rest, upright
+        self.assertTrue(any(line.startswith("prize_06: KH2's PRIZE_BOX_RED is not there") for line in left_out))
+
     def test_a_chest_that_cannot_be_made_said(self):
         import kh2_prizes
 

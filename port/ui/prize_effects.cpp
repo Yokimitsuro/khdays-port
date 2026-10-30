@@ -2,7 +2,9 @@
 // one with an effect drawn instead on the 3D layer's native sequences (as ui/kh2_reticles.cpp draws KH2's markers).
 // Each prize plays the effect from its first frame when it shows, as KH2's do: a picture's frames are laid side by
 // side in one program and each billboard samples its own frame's column (an effect too long for one program
-// shows its current frame on all its prizes at once).
+// shows its current frame on all its prizes at once). A picture with no effect but a model
+// (graphics/mo/prize.pak.z/mdl/<picture>.gltf, .glb or .fbx) is drawn as that model, upright at its place, as tall
+// as the picture (times `size` in <picture>.txt beside it) and turning (`turn` degrees a second, 90 unless said).
 #include "prize_effects.h"
 #include "prize_effects_model.h"
 #include "../gfx/kh2_sequence.h"
@@ -13,6 +15,7 @@ extern "C" {
 #include "../runtime/core/session_log.h"
 #include "../runtime/core/window.h"
 #include "../runtime/display/frame_package.h"
+#include "../runtime/mods/models.h"
 #include "../runtime/mods/textures.h"
 #include "../runtime/scripts/game_link.h"
 #include "../host/app/host.h"
@@ -50,8 +53,12 @@ struct Picture {
     prizes::Reach reach;
     std::vector<std::uint32_t> pixels; // the atlas, kept while the texture registry points at it
     int atlas_id = -1;
-    bool sheet = false; // all its frames in one program
-    float column = 0;   // a frame's width on the canvas
+    bool sheet = false;                 // all its frames in one program
+    float column = 0;                   // a frame's width on the canvas
+    std::string model;                  // a model drawn instead, when it has no effect (its file)
+    float size = 1.0F;                  // its height, times the picture's
+    float turn = 90.0F;                 // degrees a second
+    std::array<float, 3> low{}, high{}; // its size at rest
     std::array<Canvas, 4> canvases;
 };
 
@@ -132,16 +139,23 @@ std::filesystem::path path_of(const char *s)
     return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t *>(s)));
 }
 
+void load_model(Picture &p);
+
 // Picture p's effect from the first mod that has one, its pages stacked into one atlas; logged once when there is
-// one that cannot be used.
+// one that cannot be used. Without one, its model.
 void load(Picture &p)
 {
     p.tried = true;
     p.drawn = false;
+    p.model.clear();
     char relative[160], found[2048];
     std::snprintf(relative, sizeof(relative), "graphics/mo/prize.pak.z/fx/%s.txt", p.name.c_str());
-    if (p.name.empty() || !khdays_mods_find(relative, found, sizeof(found)))
+    if (p.name.empty())
         return;
+    if (!khdays_mods_find(relative, found, sizeof(found))) {
+        load_model(p);
+        return;
+    }
     try {
         std::ifstream in(path_of(found), std::ios::binary);
         std::stringstream text;
@@ -185,6 +199,83 @@ void load(Picture &p)
     } catch (const std::exception &e) {
         note("prizes: %s: %s; Days's picture kept", found, e.what());
     }
+}
+
+// Picture p's model (none when it has an effect), its size and turn from <picture>.txt beside it.
+void load_model(Picture &p)
+{
+    p.model.clear();
+    p.size = 1.0F;
+    p.turn = 90.0F;
+    char relative[160], found[2048];
+    for (const char *extension : {".gltf", ".glb", ".fbx"}) {
+        std::snprintf(relative, sizeof(relative), "graphics/mo/prize.pak.z/mdl/%s%s", p.name.c_str(), extension);
+        if (khdays_mods_find(relative, found, sizeof(found))) {
+            p.model = found;
+            break;
+        }
+    }
+    if (p.model.empty())
+        return;
+    if (!khdays_models_placed_bounds(p.model.c_str(), p.low.data(), p.high.data()) || !(p.high[1] > p.low[1])) {
+        note("prizes: %s: its model %s cannot be drawn; Days's picture kept", p.name.c_str(), p.model.c_str());
+        p.model.clear();
+        return;
+    }
+    std::snprintf(relative, sizeof(relative), "graphics/mo/prize.pak.z/mdl/%s.txt", p.name.c_str());
+    if (khdays_mods_find(relative, found, sizeof(found))) {
+        std::ifstream in(path_of(found));
+        std::string line;
+        while (std::getline(in, line)) {
+            std::istringstream words(line.substr(0, line.find('#')));
+            std::string what;
+            float value = 0;
+            if (!(words >> what >> value))
+                continue;
+            if (what == "size" && value > 0)
+                p.size = value;
+            else if (what == "turn")
+                p.turn = value;
+        }
+    }
+    note("prizes: %s drawn as the model %s (size %g, turning %g degrees a second)", p.name.c_str(), p.model.c_str(),
+         double(p.size), double(p.turn));
+}
+
+// A prize's model at billboard node n: upright on its foot, as tall as the picture times its size, turned by the
+// game's clock, faded as the node; drawn through the view matrix Billboard_DrawList takes (data_020473e0).
+int draw_model(const Picture &p, const unsigned char *n)
+{
+    const auto *view = static_cast<const unsigned char *>(KHDAYS_W(0x020473e0u));
+    const auto fx = [](const unsigned char *at, int k) {
+        std::int32_t v;
+        std::memcpy(&v, at + 4 * k, 4);
+        return float(v) / 4096.0F;
+    };
+    const float height = float(std::int16_t(read16(n + 0x1a))) / 4096.0F;
+    const float scale = height * p.size / (p.high[1] - p.low[1]);
+    const float angle = p.turn * float(khdays_link_frame()) / 30.0F * 3.14159265F / 180.0F;
+    const float c = std::cos(angle) * scale, s = std::sin(angle) * scale;
+    // the model's middle over its foot: (x - mx, y - low, z - mz) turned about y and scaled, at the node's place
+    const float mx = (p.low[0] + p.high[0]) / 2, mz = (p.low[2] + p.high[2]) / 2;
+    float model[16]{};
+    model[0] = c, model[2] = -s; // its x axis
+    model[5] = scale;            // its y
+    model[8] = s, model[10] = c; // its z
+    model[12] = fx(n + 0x0c, 0) - c * mx - s * mz;
+    model[13] = fx(n + 0x0c, 1) - scale * p.low[1];
+    model[14] = fx(n + 0x0c, 2) + s * mx - c * mz;
+    model[15] = 1;
+    // the view matrix: four rows of three (a point's x, y, z and 1 times them), times the model's
+    float place[16]{};
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 3; ++row)
+            for (int k = 0; k < 4; ++k)
+                place[col * 4 + row] += fx(view, 3 * k + row) * model[col * 4 + k];
+        place[col * 4 + 3] = model[col * 4 + 3];
+    }
+    const unsigned alpha = read16(n + 0x20) & 31u, poly = read16(n + 0x22) & 63u;
+    return khdays_models_draw_placed(p.model.c_str(), place, (alpha << 16) | (poly << 24));
 }
 
 bool available()
@@ -275,7 +366,7 @@ extern "C" int khdays_prize_node(const void *node)
     if (!p.tried)
         load(p);
     if (!p.drawn)
-        return 0;
+        return p.model.empty() ? 0 : draw_model(p, n);
     try {
         const unsigned now = khdays_link_frame();
         const int token = program(p, std::size_t(i), now);

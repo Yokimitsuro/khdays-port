@@ -1311,6 +1311,21 @@ Days's, with its HD pictures, and paired by `<world>_box_b.bones.txt`: its lid j
 for Days's light rays and `switch kh2_prizes`. The World That Never Was's chest's glowing lines, light KH2 adds
 over the model, are drawn blended by their own brightness (glTF has no added light).
 
+A prize picture with no effect may have a model instead:
+
+```text
+mods/<Mod>/graphics/mo/prize.pak.z/mdl/
+├── <picture>.gltf    # or .glb, or .fbx: the model drawn in the picture's place
+└── <picture>.txt     # optional: `size <k>` (its height as k times the picture's, 1 unless said),
+                      # `turn <degrees a second>` (90 unless said; the game's clock, still while paused)
+```
+
+It is drawn upright on the prize's foot, its middle over it, as tall as Days's picture times `size`, turning
+about its up axis, faded as the game fades the prize, in its own colours (no lights, as the picture), with the
+mods' models' polygons (`khdays_models_draw_placed`, `port/runtime/mods/models.cpp`); an effect of the same
+picture wins. The tool makes KH2's prize boxes so: `PRIZE_BOX_YELLOW`, `_RED` and `_BLUE` for Days's item spheres
+`prize_05`, `prize_06` and `prize_07` (the same designs, the blue with its gold horn).
+
 ## Live Enhancements preferences
 
 The Enhancements menu stores HUD choices only in the usual settings.ini under
