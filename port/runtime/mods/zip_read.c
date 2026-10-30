@@ -186,9 +186,12 @@ int khdays_zip_find(const KhdaysZip *z, const char *name)
 
 void khdays_zip_close(KhdaysZip *z)
 {
+#pragma warning(push)
+#pragma warning(disable : 6001) /* each of the first `count` entries was written whole by khdays_zip_open */
     for (int i = 0; i < z->count; ++i) {
         free(z->entries[i].name);
     }
+#pragma warning(pop)
     free(z->entries);
     memset(z, 0, sizeof(*z));
 }

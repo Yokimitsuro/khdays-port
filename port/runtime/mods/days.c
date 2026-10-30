@@ -127,9 +127,12 @@ static void read_manifest(const char *text, size_t size, Manifest *m)
 
 static void free_manifest(Manifest *m)
 {
+#pragma warning(push)
+#pragma warning(disable : 6001) /* each of the first `count` assets was written whole by read_manifest */
     for (int i = 0; i < m->count; ++i) {
         free(m->assets[i].path);
     }
+#pragma warning(pop)
     free(m->assets);
     free(m->title);
     free(m->author);
