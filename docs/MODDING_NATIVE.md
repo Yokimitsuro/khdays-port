@@ -123,7 +123,7 @@ not know the game's memory:
 | Interface | What it gives |
 |---|---|
 | `kh.actors` (`kh_actors.h`) | the players (by seat) and the standing enemies as handles: their kind, character, place and HP, a player placed or given HP through the game's own routines, the actor a hook point's argument names (`of`) |
-| `kh.characters` (`kh_characters.h`) | the game's 19 characters and the mods' ([CHARACTERS.md](CHARACTERS.md)), found by key, and listeners called for the actors that play one: as it enters the field, each frame, as it starts an attack, as it leaves |
+| `kh.characters` (`kh_characters.h`) | the game's 19 characters and the mods' ([CHARACTERS.md](CHARACTERS.md)), found by key, and listeners called for the actors that play one: as it enters the field, each frame, as it starts an attack, as it leaves, as its seat takes a form; the forms' conditions of plugins, each seat's form, a form given |
 
 **A handle names one actor for its life.** An enemy's ends when it is defeated, retired or sent away, every actor's
 when its area ends or the scene changes; after that every call with it is refused, and the actor made again in its
@@ -138,6 +138,13 @@ through `Ov022_ComputeStrengthDamage`'s hook and `of`, doubles its hits' damage 
 
 In a room every copy of the game calls its plugins for every seat: a plugin that changes the game's state does it
 on the host's copy (`kh.net`'s `host`, below).
+
+**Forms** (`kh.characters` version 2; CHARACTERS.md, "Forms"): `add_condition(plugin, "<name>", test, user)` gives
+the forms' rules a condition of the plugin's own, named `plugin <mod id>.<name>` in a `when`, asked with the seat and
+the character's number each time a form is chosen; `form(seat)` is the form a seat plays (`"default"` for the
+character's own); `set_form(plugin, seat, id)` gives a seat a form whatever its rules say, from the next camp (NULL
+gives the choice back; refused in a room, where a seat's form is the game's own choice); a listener's `form` call
+tells it each form taken. A plugin made for version 1 gets the same table and sees none of it.
 
 ## Moves, Limits and enemies of plugins
 

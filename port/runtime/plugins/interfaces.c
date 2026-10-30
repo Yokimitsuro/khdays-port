@@ -477,7 +477,8 @@ const void *khdays_plugins_interface(KhPlugin *plugin, const char *name, uint32_
         return version == KH_INPUT_VERSION ? khdays_plugins_input() : NULL;
     }
     if (strcmp(name, KH_CHARACTERS) == 0) {
-        return version == KH_CHARACTERS_VERSION ? khdays_plugins_characters() : NULL;
+        /* version 2 only added fields at its end: a plugin made for 1 gets the same table */
+        return version >= 1 && version <= KH_CHARACTERS_VERSION ? khdays_plugins_characters() : NULL;
     }
     for (int i = 0; i < service_count; ++i) {
         if (strcmp(services[i].name, name) == 0 && services[i].version == version) {

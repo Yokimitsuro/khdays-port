@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 #define KH_CHARACTERS "kh.characters"
-#define KH_CHARACTERS_VERSION 1
+#define KH_CHARACTERS_VERSION 2 /* 2: forms (add_condition, form, set_form; KhCharacterCalls' form) */
 
 typedef struct KhCharacterInfo {
     uint32_t size;        /* the caller sets sizeof(KhCharacterInfo) */
@@ -49,7 +49,16 @@ typedef struct KhCharacterCalls {
 
     /* It has left (its area ended, the field left): the handle no longer answers. */
     void (*left)(KhActor actor, void *user);
+
+    /* Version 2. The seat playing the character takes one of its forms (docs/CHARACTERS.md, "Forms"): `form` is its
+     * id, "default" for the character's own; called as the camp chooses it, before the field loads it. */
+    void (*form)(int32_t seat, const char *form, void *user);
 } KhCharacterCalls;
+
+/* A condition the forms' rules of the mods' characters name (`when = plugin <mod id>.<name>`): asked with the seat
+ * and the character's number each time a seat's form is chosen (at the camp, and in the field again each frame for
+ * a rule that names it); nonzero holds. `user` is add_condition()'s. */
+typedef int32_t (*KhFormCondition)(int32_t seat, int32_t number, void *user);
 
 /* A listener: 0 is none. */
 typedef uint64_t KhCharacterListener;
@@ -81,6 +90,22 @@ typedef struct KhCharacters {
      * another character or an action it has not got; a plugin's clips stop with it and as the field is left. */
     KhResult (*play)(KhPlugin *plugin, KhActor actor, const char *action, uint32_t flags);
     void (*stop_playing)(KhPlugin *plugin, KhActor actor);
+
+    /* Version 2: forms. */
+
+    /* `test` as the condition `<the plugin's mod id>.<name>` (letters, digits, '_', '-'); KH_ERROR when the name is
+     * taken or bad. Removed when the plugin stops. */
+    KhResult (*add_condition)(KhPlugin *plugin, const char *name, KhFormCondition test, void *user);
+
+    /* The form seat `seat` plays (its id, "default" for the character's own); NULL for a seat without a mod's
+     * character. */
+    const char *(*form)(int32_t seat);
+
+    /* Seat `seat` given its character's form `id` ("default": its own) whatever its rules say, from the next time the
+     * camp chooses (the field's actor is made from its form's base); NULL gives the choice back to the rules.
+     * KH_UNSUPPORTED in a room (a room's forms are the game's own choice, the same on every copy) or for a seat
+     * without a mod's character; KH_ERROR for a form it has not got. Taken back when the plugin stops. */
+    KhResult (*set_form)(KhPlugin *plugin, int32_t seat, const char *id);
 } KhCharacters;
 
 #ifdef __cplusplus

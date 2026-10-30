@@ -1,0 +1,1 @@
+kh_add_plugin(character_forms character_forms.cpp)

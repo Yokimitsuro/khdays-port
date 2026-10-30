@@ -7,6 +7,7 @@
  *   safe  native code on, safe mode: nothing loaded
  *   on    native code on: each case's state, the order of starts and stops, the stop asked from another thread */
 #include "../runtime/characters/characters.h"
+#include "../runtime/characters/forms.h"
 #include "../runtime/plugins/actors.h"
 #include "../runtime/plugins/interfaces.h"
 #include "../runtime/plugins/plugins.h"
@@ -244,6 +245,60 @@ const KhdaysCharacter *khdays_characters_at(int index)
 const KhdaysCharacter *khdays_characters_numbered(int number)
 {
     return number == 0x16 ? &fighter : NULL;
+}
+/* its forms (runtime/characters/forms.c): its own and "dual"; the conditions the plugins add, seat 0's forced form */
+static char dual_id[] = "dual";
+static KhdaysCharacter fighter_dual = {.identity = fighter_identity, .form = dual_id, .number = 0x100, .base = 19};
+static struct {
+    char name[64];
+    KhdaysFormCondition test;
+    void *user;
+    const void *owner;
+} condition;
+static const KhdaysCharacter *forced_form;
+static KhdaysFormChanged form_listener;
+const KhdaysCharacter *khdays_characters_seat_character(int seat)
+{
+    return seat == 0 ? &fighter : NULL;
+}
+const char *khdays_characters_form_id(const KhdaysCharacter *form)
+{
+    return form->form != NULL ? form->form : "default";
+}
+const KhdaysCharacter *khdays_characters_form(const KhdaysCharacter *c, const char *id)
+{
+    return id == NULL || strcmp(id, "default") == 0 ? c : strcmp(id, "dual") == 0 ? &fighter_dual : NULL;
+}
+int khdays_characters_add_condition(const char *name, KhdaysFormCondition test, void *user, const void *owner)
+{
+    if (condition.test != NULL && strcmp(condition.name, name) == 0) {
+        return 0;
+    }
+    snprintf(condition.name, sizeof(condition.name), "%s", name);
+    condition.test = test;
+    condition.user = user;
+    condition.owner = owner;
+    return 1;
+}
+void khdays_characters_remove_conditions(const void *owner)
+{
+    if (condition.owner == owner) {
+        memset(&condition, 0, sizeof(condition));
+    }
+}
+const KhdaysCharacter *khdays_characters_seat_form_now(int seat)
+{
+    return seat != 0 ? NULL : forced_form != NULL ? forced_form : &fighter;
+}
+void khdays_characters_force_form(int seat, const KhdaysCharacter *form)
+{
+    if (seat == 0) {
+        forced_form = form;
+    }
+}
+void khdays_characters_on_form(KhdaysFormChanged changed)
+{
+    form_listener = changed;
 }
 const char *khdays_character_base_name(int number)
 {
@@ -554,6 +609,20 @@ static void check_actors_and_characters(void)
     seat_actor[0] = 0;
     khdays_plugins_frame();
     CHECK(count_of("plugin left after") == 2 && count_of("frames, its handle refused") == 2);
+
+    /* forms: its condition named by its mod's id and asked as its own, a name taken or bad refused; seat 0's form
+     * read and forced; a form taken told to it */
+    CHECK(strstr(said, "test.fighter: plugin condition tired added, again refused, bad name refused") != NULL);
+    CHECK(strcmp(condition.name, "test.fighter.tired") == 0 && condition.test != NULL);
+    CHECK(condition.test != NULL && condition.test(0, 0x16, condition.user) == 1 &&
+          condition.test(1, 0x16, condition.user) == 0);
+    CHECK(strstr(said, "test.fighter: plugin seat 0 plays default; set dual 0, nothing -1, seat 2 -2") != NULL);
+    CHECK(forced_form == &fighter_dual);
+    CHECK(form_listener != NULL);
+    if (form_listener != NULL) {
+        form_listener(0, &fighter_dual);
+    }
+    CHECK(strstr(said, "test.fighter: plugin seat 0 takes form dual") != NULL);
 }
 
 static int SDLCALL quit_thread(void *unused)

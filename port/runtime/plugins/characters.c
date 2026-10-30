@@ -1,11 +1,13 @@
 /* kh.characters for native plugins (sdk/include/kh/kh_characters.h): the game's characters and the mods'
  * (runtime/characters), and listeners called for the actors that play one. Each frame the four seats' actors are
  * looked at: one that appeared has entered, one gone has left; an attack is the join's (khdays_plugins_character_
- * attack), told once as it starts. */
+ * attack), told once as it starts. The forms' conditions, choices and changes are runtime/characters/forms.c's. */
 #include "actors.h"
 #include "interfaces.h"
 
 #include "../characters/characters.h"
+#include "../characters/forms.h"
+#include "../net/net_session.h"
 #include "../core/events.h"
 #include "../scripts/game_link.h"
 
@@ -54,11 +56,11 @@ static void drop_dead_listeners(void)
     listeners_dead = 0;
 }
 
-typedef enum Call { ENTERED, FRAME, ATTACK, LEFT } Call;
+typedef enum Call { ENTERED, FRAME, ATTACK, LEFT, FORM } Call;
 
 /* Each listener of character `number` called, one at a time by its place (a call may add or remove listeners);
- * `value` is the seat (ENTERED) or the attack (ATTACK). */
-static void tell(int number, Call call, KhActor actor, int value)
+ * `value` is the seat (ENTERED, FORM) or the attack (ATTACK), `form` the form's id (FORM). */
+static void tell_form(int number, Call call, KhActor actor, int value, const char *form)
 {
     ++delivering;
     for (int i = 0; i < listener_count; ++i) {
@@ -89,11 +91,30 @@ static void tell(int number, Call call, KhActor actor, int value)
                 l.calls.left(actor, l.user);
             }
             break;
+        case FORM:
+            if (l.calls.form != NULL) {
+                l.calls.form(value, form, l.user);
+            }
+            break;
         }
         khdays_plugins_calling(was);
     }
     if (--delivering == 0 && listeners_dead) {
         drop_dead_listeners();
+    }
+}
+
+static void tell(int number, Call call, KhActor actor, int value)
+{
+    tell_form(number, call, actor, value, NULL);
+}
+
+/* A seat took a form (forms.c's listener): its character's listeners told. */
+static void form_changed(int seat, const KhdaysCharacter *form)
+{
+    const KhdaysCharacter *c = khdays_characters_seat_character(seat);
+    if (c != NULL && listener_count > 0) {
+        tell_form(c->number, FORM, 0, seat, khdays_characters_form_id(form));
     }
 }
 
@@ -332,8 +353,106 @@ static void stop_playing(KhPlugin *plugin, KhActor actor)
     }
 }
 
+/* --- Forms ------------------------------------------------------------------------------------------------------ */
+
+/* A plugin's condition, asked as its own (khdays_plugins_calling). */
+typedef struct Condition {
+    KhPlugin *owner;
+    KhFormCondition test;
+    void *user;
+} Condition;
+
+static Condition **conditions;
+static int condition_count;
+static KhPlugin *forced_by[SEATS]; /* the plugin that gave a seat its form (set_form) */
+
+static int ask_condition(int seat, int number, void *user)
+{
+    const Condition *c = user;
+    KhPlugin *was = khdays_plugins_calling(c->owner);
+    const int holds = c->test(seat, number, c->user) != 0;
+    khdays_plugins_calling(was);
+    return holds;
+}
+
+static KhResult add_condition(KhPlugin *plugin, const char *name, KhFormCondition test, void *user)
+{
+    char full[256];
+    if (plugin == NULL || name == NULL || name[0] == '\0' || test == NULL) {
+        return KH_ERROR;
+    }
+    for (const char *p = name; *p != '\0'; ++p) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' ||
+              *p == '-')) {
+            return KH_ERROR;
+        }
+    }
+    snprintf(full, sizeof(full), "%s.%s", khdays_plugins_mod_id(plugin), name);
+    Condition *c = malloc(sizeof(*c));
+    Condition **grown = c != NULL ? realloc(conditions, (size_t)(condition_count + 1) * sizeof(*grown)) : NULL;
+    if (grown == NULL) {
+        free(c);
+        return KH_ERROR;
+    }
+    conditions = grown;
+    c->owner = plugin;
+    c->test = test;
+    c->user = user;
+    if (!khdays_characters_add_condition(full, ask_condition, c, plugin)) {
+        free(c);
+        return KH_ERROR;
+    }
+    conditions[condition_count++] = c;
+    return KH_OK;
+}
+
+static const char *seat_form(int32_t seat)
+{
+    const KhdaysCharacter *f = khdays_characters_seat_form_now(seat);
+    return f != NULL ? khdays_characters_form_id(f) : NULL;
+}
+
+static KhResult set_form(KhPlugin *plugin, int32_t seat, const char *id)
+{
+    const KhdaysCharacter *c = seat >= 0 && seat < SEATS ? khdays_characters_seat_character(seat) : NULL;
+    if (plugin == NULL || c == NULL || khdays_net_in_session()) {
+        return KH_UNSUPPORTED;
+    }
+    if (id == NULL) {
+        khdays_characters_force_form(seat, NULL);
+        forced_by[seat] = NULL;
+        return KH_OK;
+    }
+    const KhdaysCharacter *f = khdays_characters_form(c, id);
+    if (f == NULL || (f != c && f->number == 0)) {
+        char text[160];
+        snprintf(text, sizeof(text), "set_form: %.40s has no form %.40s", c->identity, id);
+        khdays_plugins_tell(plugin, text);
+        return KH_ERROR;
+    }
+    khdays_characters_force_form(seat, f);
+    forced_by[seat] = plugin;
+    return KH_OK;
+}
+
 void khdays_plugins_characters_forget(KhPlugin *plugin)
 {
+    khdays_characters_remove_conditions(plugin);
+#pragma warning(push)
+#pragma warning(disable : 6001) /* each condition up to condition_count was set by add_condition */
+    for (int i = condition_count - 1; i >= 0; --i) {
+        if (conditions[i]->owner == plugin) {
+            free(conditions[i]);
+            conditions[i] = conditions[--condition_count];
+        }
+    }
+#pragma warning(pop)
+    for (int seat = 0; seat < SEATS; ++seat) {
+        if (forced_by[seat] == plugin) {
+            khdays_characters_force_form(seat, NULL);
+            forced_by[seat] = NULL;
+        }
+    }
     stop_clips(plugin);
     for (int i = 0; i < listener_count; ++i) {
         if (listeners[i].owner == plugin) {
@@ -345,10 +464,11 @@ void khdays_plugins_characters_forget(KhPlugin *plugin)
     }
 }
 
-static const KhCharacters characters_table = {sizeof(KhCharacters), count, info, find, listen, unlisten, play,
-                                              stop_playing};
+static const KhCharacters characters_table = {
+    sizeof(KhCharacters), count, info, find, listen, unlisten, play, stop_playing, add_condition, seat_form, set_form};
 
 const void *khdays_plugins_characters(void)
 {
+    khdays_characters_on_form(form_changed);
     return &characters_table;
 }

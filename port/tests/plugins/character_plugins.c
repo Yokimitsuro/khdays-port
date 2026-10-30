@@ -1,7 +1,8 @@
 /* The plugins' test of kh.actors and kh.characters (tests/plugins_test.c), library 6 (test.fighter): finds its mod's
  * character "block" and the game's roxas by name, refuses a character that is not there, and listens to "block":
  * each call says what it saw (its seat, its character, its HP and place, the standing enemies, an attack healing
- * it by 1, the handle refused once it has left) in the log, which the test reads. */
+ * it by 1, the handle refused once it has left, a form taken) in the log, which the test reads; adds the forms'
+ * condition "tired" (seat 0 only) and gives seat 0 the form "dual". */
 #include <kh/kh_actors.h>
 #include <kh/kh_characters.h>
 #include <kh/kh_events.h>
@@ -89,7 +90,22 @@ static void left(KhActor actor, void *user)
     say(text);
 }
 
-static const KhCharacterCalls calls = {sizeof(KhCharacterCalls), entered, frame, attack, left};
+static void form_taken(int32_t seat, const char *form, void *user)
+{
+    char text[100];
+    (void)user;
+    snprintf(text, sizeof(text), "seat %d takes form %s", (int)seat, form);
+    say(text);
+}
+
+static int32_t tired(int32_t seat, int32_t number, void *user)
+{
+    (void)number;
+    (void)user;
+    return seat == 0;
+}
+
+static const KhCharacterCalls calls = {sizeof(KhCharacterCalls), entered, frame, attack, left, form_taken};
 
 static KhResult start(const KhHost *given)
 {
@@ -113,6 +129,23 @@ static KhResult start(const KhHost *given)
              (int)characters->count(), info.identity, info.name, (int)info.base);
     say(text);
     say(characters->listen(host->plugin, 999, &calls, NULL) == 0 ? "999 refused" : "999 listened");
+    {
+        const KhResult added = characters->add_condition(host->plugin, "tired", tired, NULL);
+        const KhResult again = characters->add_condition(host->plugin, "tired", tired, NULL);
+        const KhResult bad = characters->add_condition(host->plugin, "bad name", tired, NULL);
+        snprintf(text, sizeof(text), "condition tired %s, again %s, bad name %s", added == KH_OK ? "added" : "refused",
+                 again == KH_OK ? "added" : "refused", bad == KH_OK ? "added" : "refused");
+        say(text);
+    }
+    {
+        const char *now = characters->form(0);
+        const KhResult dual = characters->set_form(host->plugin, 0, "dual");
+        const KhResult nothing = characters->set_form(host->plugin, 0, "nothing");
+        const KhResult empty = characters->set_form(host->plugin, 2, "dual");
+        snprintf(text, sizeof(text), "seat 0 plays %s; set dual %d, nothing %d, seat 2 %d", now != NULL ? now : "-",
+                 (int)dual, (int)nothing, (int)empty);
+        say(text);
+    }
     {
         const KhParameters *p = host->find(host->plugin, KH_PARAMETERS, KH_PARAMETERS_VERSION);
         snprintf(text, sizeof(text), "parameters: spins %d, damage %.2f, loud %d, sound %s (%d), name %s, missing %d",

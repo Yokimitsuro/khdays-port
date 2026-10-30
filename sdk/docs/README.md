@@ -51,6 +51,7 @@ extern "C" KH_PLUGIN_EXPORT const KhPluginDescriptor *kh_plugin_query(void)
 | `examples/CustomCharacter` | a mod's own character (its `characters/block/`) given behaviour by `kh.characters`: told of its attacks, 1 HP back for each, its hits doubled through a hook and `kh.actors` |
 | `examples/CustomLimit` | a character's Limit of its own: the game's skipped at `Ov022_ActorSetState`, the buttons hidden (`kh.input`), its own clips played (`kh.characters`), its spins' hits dealt through the game's routine (`kh.combat`); `make_files.py` makes its made-up character |
 | `examples/CustomEnemy` | the Shadows given a behaviour of their own: they blink away and split, after `Ov107_AiState_ApplyHit`'s hook (`kh.actors`' `set_position`, `make_enemy`) |
+| `examples/CharacterForms` | a mod's character with forms (its `characters/twin/`): a dual-wield form its description chooses by the Zero Gear and three Ability Units, and a guard form chosen by the plugin's own condition (`kh.characters`' `add_condition`, its parameter `guard`), each form taken logged |
 
 Each is a mod folder: copy it to the game's `mods/` with its built library in `native/<platform>/`. The installer
 brings them with KH Studio: this SDK in the game's `sdk/`, and each example ready to copy, its Windows plugin built,

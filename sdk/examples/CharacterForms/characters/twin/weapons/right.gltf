@@ -1,0 +1,149 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "khdays-port tests: character_forms/make_files.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    1
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "right",
+   "mesh": 0,
+   "skin": 0
+  },
+  {
+   "name": "ro_w13600_a"
+  }
+ ],
+ "skins": [
+  {
+   "joints": [
+    1
+   ],
+   "inverseBindMatrices": 4
+  }
+ ],
+ "meshes": [
+  {
+   "name": "right",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "JOINTS_0": 2,
+      "WEIGHTS_0": 3
+     },
+     "indices": 5,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "right",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.9803921568627451,
+     0.8627450980392157,
+     0.1568627450980392,
+     1
+    ]
+   }
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "right.bin",
+   "byteLength": 1192
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 288
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 288
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 576,
+   "byteLength": 96
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 672,
+   "byteLength": 384
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1056,
+   "byteLength": 64
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1120,
+   "byteLength": 72
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "min": [
+    -0.02,
+    -0.02,
+    0.45
+   ],
+   "max": [
+    0.02,
+    0.02,
+    0.95
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5121,
+   "count": 24,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 1,
+   "type": "MAT4"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5123,
+   "count": 36,
+   "type": "SCALAR"
+  }
+ ]
+}
