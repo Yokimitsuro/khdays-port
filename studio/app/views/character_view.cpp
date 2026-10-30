@@ -1275,102 +1275,132 @@ void items_unknown(int item, void* context) {
         static_cast<std::vector<int>*>(context)->push_back(item);
 }
 
+// One condition's row: its kind and operands. True when it changed.
+bool draw_condition(Language lang, RuleCondition& c) {
+    static const S kinds[] = {S::forms_cond_gear, S::forms_cond_links, S::forms_cond_panel, S::forms_cond_dual,
+                              S::forms_cond_level, S::forms_cond_hp, S::forms_cond_plugin};
+    bool changed = ImGui::Checkbox(tr(lang, S::forms_not), &c.negate);
+    ImGui::SameLine();
+    const int kind = static_cast<int>(c.kind);
+    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo("##kind", tr(lang, kinds[kind]))) {
+        for (int k = 0; k < 7; ++k) {
+            if (ImGui::Selectable(tr(lang, kinds[k]), k == kind) && k != kind) {
+                c.kind = static_cast<RuleCondition::Kind>(k);
+                c.item = c.kind == RuleCondition::gear && !v.gears.empty() ? v.gears.front().id : 0;
+                c.op = ">=";
+                c.n = c.kind == RuleCondition::hp ? 50 : 1;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    switch (c.kind) {
+    case RuleCondition::gear:
+        ImGui::SameLine();
+        changed |= item_combo("##gear", v.gears, &c.item, nullptr);
+        break;
+    case RuleCondition::links:
+    case RuleCondition::panel:
+        ImGui::SameLine();
+        if (c.kind == RuleCondition::links)
+            changed |= item_combo("##link", v.links, &c.item, tr(lang, S::forms_any_link));
+        else
+            changed |= item_combo("##panel", v.panels, &c.item, nullptr);
+        ImGui::SameLine();
+        changed |= comparison_combo("##op", &c.op);
+        ImGui::SameLine();
+        changed |= count_field(&c.n);
+        break;
+    case RuleCondition::level:
+    case RuleCondition::hp:
+        ImGui::SameLine();
+        changed |= comparison_combo("##op", &c.op);
+        ImGui::SameLine();
+        changed |= count_field(&c.n);
+        break;
+    case RuleCondition::plugin:
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+        if (ImGui::InputTextWithHint("##plugin", "mod.condition", &c.name)) {
+            c.name.erase(std::remove_if(c.name.begin(), c.name.end(),
+                                        [](unsigned char ch) { return std::isspace(ch) || ch == '#'; }),
+                         c.name.end());
+            changed = true;
+        }
+        break;
+    case RuleCondition::dual:
+        break;
+    }
+    return changed;
+}
+
+// The rule's conditions as rows (all of them or any), added and taken away; written back to `when` on a change.
+void draw_rule_rows(Language lang, const std::string& fp, RuleRows& rows, std::string* when) {
+    bool changed = false;
+    int any = rows.any ? 1 : 0;
+    changed |= ImGui::RadioButton(tr(lang, S::forms_all_of), &any, 0);
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton(tr(lang, S::forms_any_of), &any, 1);
+    rows.any = any == 1;
+    int gone = -1;
+    for (std::size_t i = 0; i < rows.conditions.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        changed |= draw_condition(lang, rows.conditions[i]);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x"))
+            gone = static_cast<int>(i);
+        ImGui::PopID();
+    }
+    if (gone >= 0) {
+        rows.conditions.erase(rows.conditions.begin() + gone);
+        changed = true;
+    }
+    if (ImGui::SmallButton(tr(lang, S::forms_add_condition))) {
+        RuleCondition c;
+        c.item = !v.gears.empty() ? v.gears.front().id : 0;
+        rows.conditions.push_back(c);
+        changed = true;
+    }
+    if (changed) {
+        if (rows.conditions.empty())
+            v.ini.remove(fp, "when");
+        else
+            v.ini.set_noted(fp, "when", rule_text(rows), rule_names(rows, item_name));
+        *when = v.ini.get(fp, "when");
+    }
+}
+
+// The port's reading of the rule: its mistake, the items it names that the game does not have, and whether the
+// field answers it.
+void draw_rule_check(Language lang, const std::string& when) {
+    char why[200] = "";
+    KhdaysRule* rule = khdays_rule_parse(when.c_str(), why, sizeof(why));
+    if (rule == nullptr) {
+        ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", why);
+        return;
+    }
+    if (!v.items.empty()) {
+        std::vector<int> unknown;
+        khdays_rule_items(rule, items_unknown, &unknown);
+        for (const int item : unknown)
+            ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s",
+                               fmt(lang, S::forms_unknown_item, {std::to_string(item)}).c_str());
+    }
+    if (khdays_rule_in_field(rule))
+        ImGui::TextDisabled("%s", tr(lang, S::forms_rule_in_field));
+    khdays_rule_free(rule);
+}
+
 // The form's rule: its conditions as rows when it can be shown so, and as written.
 void draw_rule(App& app) {
     const auto lang = app.language;
     const std::string fp = part("");
     std::string when = v.ini.get(fp, "when");
     RuleRows rows;
-    const bool as_rows = when.empty() || rule_rows(when, &rows);
     ImGui::TextUnformatted(tr(lang, S::forms_when));
-    if (as_rows) {
-        bool changed = false;
-        int any = rows.any ? 1 : 0;
-        changed |= ImGui::RadioButton(tr(lang, S::forms_all_of), &any, 0);
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton(tr(lang, S::forms_any_of), &any, 1);
-        rows.any = any == 1;
-        static const S kinds[] = {S::forms_cond_gear, S::forms_cond_links, S::forms_cond_panel, S::forms_cond_dual,
-                                  S::forms_cond_level, S::forms_cond_hp, S::forms_cond_plugin};
-        int gone = -1;
-        for (std::size_t i = 0; i < rows.conditions.size(); ++i) {
-            RuleCondition& c = rows.conditions[i];
-            ImGui::PushID(static_cast<int>(i));
-            changed |= ImGui::Checkbox(tr(lang, S::forms_not), &c.negate);
-            ImGui::SameLine();
-            const int kind = static_cast<int>(c.kind);
-            ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
-            if (ImGui::BeginCombo("##kind", tr(lang, kinds[kind]))) {
-                for (int k = 0; k < 7; ++k) {
-                    if (ImGui::Selectable(tr(lang, kinds[k]), k == kind) && k != kind) {
-                        c.kind = static_cast<RuleCondition::Kind>(k);
-                        c.item = c.kind == RuleCondition::gear && !v.gears.empty() ? v.gears.front().id : 0;
-                        c.op = ">=";
-                        c.n = c.kind == RuleCondition::hp ? 50 : 1;
-                        changed = true;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            switch (c.kind) {
-            case RuleCondition::gear:
-                ImGui::SameLine();
-                changed |= item_combo("##gear", v.gears, &c.item, nullptr);
-                break;
-            case RuleCondition::links:
-            case RuleCondition::panel:
-                ImGui::SameLine();
-                if (c.kind == RuleCondition::links)
-                    changed |= item_combo("##link", v.links, &c.item, tr(lang, S::forms_any_link));
-                else
-                    changed |= item_combo("##panel", v.panels, &c.item, nullptr);
-                ImGui::SameLine();
-                changed |= comparison_combo("##op", &c.op);
-                ImGui::SameLine();
-                changed |= count_field(&c.n);
-                break;
-            case RuleCondition::level:
-            case RuleCondition::hp:
-                ImGui::SameLine();
-                changed |= comparison_combo("##op", &c.op);
-                ImGui::SameLine();
-                changed |= count_field(&c.n);
-                break;
-            case RuleCondition::plugin:
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
-                if (ImGui::InputTextWithHint("##plugin", "mod.condition", &c.name)) {
-                    c.name.erase(std::remove_if(c.name.begin(), c.name.end(),
-                                                [](unsigned char ch) { return std::isspace(ch) || ch == '#'; }),
-                                 c.name.end());
-                    changed = true;
-                }
-                break;
-            case RuleCondition::dual:
-                break;
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("x"))
-                gone = static_cast<int>(i);
-            ImGui::PopID();
-        }
-        if (gone >= 0) {
-            rows.conditions.erase(rows.conditions.begin() + gone);
-            changed = true;
-        }
-        if (ImGui::SmallButton(tr(lang, S::forms_add_condition))) {
-            RuleCondition c;
-            c.item = !v.gears.empty() ? v.gears.front().id : 0;
-            rows.conditions.push_back(c);
-            changed = true;
-        }
-        if (changed) {
-            if (rows.conditions.empty())
-                v.ini.remove(fp, "when");
-            else
-                v.ini.set_noted(fp, "when", rule_text(rows), rule_names(rows, item_name));
-            when = v.ini.get(fp, "when");
-        }
+    if (when.empty() || rule_rows(when, &rows)) {
+        draw_rule_rows(lang, fp, rows, &when);
     } else {
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("%s", tr(lang, S::forms_rule_as_text));
@@ -1383,25 +1413,8 @@ void draw_rule(App& app) {
         RuleRows parsed;
         v.ini.set_noted(fp, "when", when, rule_rows(when, &parsed) ? rule_names(parsed, item_name) : std::string());
     }
-    // the port's reading of it, and the items it names that the game does not have
-    if (!when.empty()) {
-        char why[200] = "";
-        KhdaysRule* rule = khdays_rule_parse(when.c_str(), why, sizeof(why));
-        if (rule == nullptr) {
-            ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", why);
-        } else {
-            if (!v.items.empty()) {
-                std::vector<int> unknown;
-                khdays_rule_items(rule, items_unknown, &unknown);
-                for (const int item : unknown)
-                    ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s",
-                                       fmt(lang, S::forms_unknown_item, {std::to_string(item)}).c_str());
-            }
-            if (khdays_rule_in_field(rule))
-                ImGui::TextDisabled("%s", tr(lang, S::forms_rule_in_field));
-            khdays_rule_free(rule);
-        }
-    }
+    if (!when.empty())
+        draw_rule_check(lang, when);
     if (!v.items_error.empty())
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s", v.items_error.c_str());
 }

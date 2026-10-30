@@ -40,12 +40,12 @@ bool form_of_part(const std::string& part, std::string* id, std::string* section
     return true;
 }
 
-}  // namespace
-
-const std::vector<std::string>& form_sections() {
-    static const std::vector<std::string> sections = {"actions", "sounds", "moveset", "limit", "stats", "weapons"};
-    return sections;
+// A form id is letters, digits, '_' and '-', not "default".
+bool valid_form_id(const std::string& id) {
+    return valid_character_key(id) && id != "default";
 }
+
+}  // namespace
 
 std::string form_part(const std::string& id, const std::string& section) {
     if (id.empty())
@@ -90,10 +90,6 @@ std::string form_base_code(const std::string& base) {
         if (base == khdays_character_base_name(i))
             return khdays_character_base_code(i);
     return {};
-}
-
-bool valid_form_id(const std::string& id) {
-    return valid_character_key(id) && id != "default";
 }
 
 void raise_format(IniText* ini) {

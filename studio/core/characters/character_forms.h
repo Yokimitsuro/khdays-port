@@ -14,9 +14,6 @@
 
 namespace studio {
 
-// A form's sections besides its own part (`[form <id> <section>]`).
-const std::vector<std::string>& form_sections();
-
 // The part of form `id` (empty: the character's own) for `section` ("" its own part, "actions" ...). The
 // character's own: "model" for the form's part, the section's name for the rest.
 std::string form_part(const std::string& id, const std::string& section);
@@ -28,9 +25,6 @@ std::vector<std::string> form_part_names(const IniText& ini, const std::string& 
 // The game's characters a form plays as: a character's bases and the dual-wield Roxas (roxas_dual, r2).
 const std::vector<std::string>& form_bases();
 std::string form_base_code(const std::string& base);
-
-// A form id is letters, digits, '_' and '-', not "default".
-bool valid_form_id(const std::string& id);
 
 // Changes of a form's parts; each keeps the rest of the text as written. False with the reason (an id taken ...).
 bool add_form(IniText* ini, const std::string& id, std::string* why);
