@@ -755,6 +755,7 @@ struct Builder final {
 
     // Piece (mesh) command spans and names, indexed by piece id.
     std::vector<std::string> piece_names;
+    std::vector<std::uint32_t> piece_list_offsets;  // each piece's command list from the model's start
     std::vector<std::size_t> piece_offsets;
     std::vector<std::size_t> piece_lengths;
 
@@ -855,6 +856,7 @@ struct Builder final {
 
         khdays::assets::NeutralMesh mesh;
         mesh.name = piece_names[piece_idx];
+        mesh.list_offset = piece_list_offsets[piece_idx];
         if (current_material >= 0 && static_cast<std::size_t>(current_material) < materials.size()) {
             const auto& material = materials[static_cast<std::size_t>(current_material)];
             mesh.texture_name = material.texture;
@@ -1218,6 +1220,7 @@ NeutralModel decode_model_from_bytes(const ByteVector& file, const std::size_t m
             throw std::runtime_error("mesh GPU command list exceeds MDL0");
         }
         builder.piece_names.push_back(mesh_dictionary.names[index]);
+        builder.piece_list_offsets.push_back(static_cast<std::uint32_t>(command_offset - model_offset));
         builder.piece_offsets.push_back(command_offset);
         builder.piece_lengths.push_back(command_length);
     }

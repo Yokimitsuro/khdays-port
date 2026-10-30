@@ -133,6 +133,53 @@ public:
         return std::move(room_);
     }
 
+    // An object's .mdlx (a BAR of its model and its textures): the object at rest, a node per bone under its own.
+    Room object(const ObjectOptions& options) {
+        pictures_in_place_ = options.pictures;
+        const auto entries = bar_entries(data_, size_, 0);
+        const auto first = [&](std::uint32_t type) {
+            return std::find_if(entries.begin(), entries.end(),
+                                [type](const BarEntry& e) { return e.type == type && e.size != 0; });
+        };
+        const auto model = first(kEntryModel);
+        const auto textures = first(kEntryTextures);
+        if (model == entries.end() || textures == entries.end())
+            throw std::runtime_error("KH2 object: no model (entry 0x04) or no textures (entry 0x07)");
+        Part part;
+        part.info.name = name_;
+        part.model = read_model(data_, size_, model->offset);
+        if (part.model.kind != 3)
+            throw std::runtime_error("KH2 object: model kind " + std::to_string(part.model.kind) +
+                                     " (an object's is 3)");
+        part.textures = read_textures(data_, size_, textures->offset);
+        parts_.push_back(std::move(part));
+        room_.scene.name = name_;
+        SceneNode object;
+        object.name = lower(name_);
+        object.rotation = quaternion(0.0F, options.turn * 3.14159265F / 180.0F, 0.0F);
+        room_.scene.nodes.push_back(object);
+        std::vector<int> joints;
+        const auto& bones = parts_[0].model.bones;
+        const Motion* pose = options.pose ? &*options.pose : nullptr;
+        for (std::size_t b = 0; b < bones.size(); ++b) {
+            SceneNode joint;
+            joint.name = "j" + std::to_string(b);
+            const int parent = bones[b].parent;
+            joint.parent =
+                parent >= 0 && static_cast<std::size_t>(parent) < b ? joints[static_cast<std::size_t>(parent)] : 0;
+            const auto ch = channels(bones[b], pose, static_cast<int>(b), pose ? pose->start : 0.0F);
+            joint.scale = {ch[0], ch[1], ch[2]};
+            joint.rotation = quaternion(ch[3], ch[4], ch[5]);
+            joint.translation = {ch[6], ch[7], ch[8]};
+            room_.scene.nodes.push_back(joint);
+            joints.push_back(static_cast<int>(room_.scene.nodes.size() - 1));
+        }
+        if (joints.empty())
+            throw std::runtime_error("KH2 object: no bones");
+        add_mesh(0, 0, joints, lower(name_));
+        return std::move(room_);
+    }
+
 private:
     void note(const std::string& text) {
         if (std::find(room_.report.begin(), room_.report.end(), text) == room_.report.end())
@@ -173,7 +220,9 @@ private:
         const int hd = part.info.first_hd_picture + part.textures.hd_pictures[static_cast<std::size_t>(i)];
         DecodedTexture base;
         try {
-            base = read_dds(hd_ / ("-" + std::to_string(hd) + ".dds"));
+            const auto in_place = pictures_in_place_.find(hd);
+            base = read_dds(in_place != pictures_in_place_.end() ? in_place->second
+                                                                 : hd_ / ("-" + std::to_string(hd) + ".dds"));
         } catch (const std::exception& e) {
             note(where + ": no HD picture (-" + std::to_string(hd) + ".dds: " + e.what() + "), vertex colours only");
             return pic;
@@ -261,9 +310,43 @@ private:
         }
     }
 
+    // A light group's picture (its light added over the model in KH2): each texel's alpha its brightness, so
+    // that blended its black adds nothing and its colours show as light.
+    const Picture& light_picture(std::size_t p, int i) {
+        const auto key = std::make_pair(p, -1 - i);
+        const auto found = pictures_.find(key);
+        if (found != pictures_.end())
+            return found->second;
+        Picture& pic = pictures_[key];
+        const Part& part = parts_[p];
+        const GsTexture* gs = gs_of(part, i);
+        if (gs == nullptr)
+            return pic;
+        const int hd = part.info.first_hd_picture + part.textures.hd_pictures[static_cast<std::size_t>(i)];
+        DecodedTexture light;
+        try {
+            const auto in_place = pictures_in_place_.find(hd);
+            light = read_dds(in_place != pictures_in_place_.end() ? in_place->second
+                                                                  : hd_ / ("-" + std::to_string(hd) + ".dds"));
+        } catch (const std::exception& e) {
+            note(lower(part.info.name) + " texture " + std::to_string(i) + ": no HD picture for its light (" +
+                 e.what() + "), left out");
+            return pic;
+        }
+        for (std::size_t k = 0; k + 3 < light.rgba.size(); k += 4)
+            light.rgba[k + 3] = std::max({light.rgba[k], light.rgba[k + 1], light.rgba[k + 2]});
+        pic.file = name_ + "_" + std::to_string(hd) + "_light.png";
+        pic.translucent = true;
+        sink_(pic.file, light);
+        note(lower(part.info.name) + " texture " + std::to_string(i) +
+             ": its light (added over the model in KH2) drawn blended by its brightness");
+        return pic;
+    }
+
     int material(std::size_t p, const Group& g, bool two_sided, bool vertex_alpha) {
         const int scroll_index = g.scroll_index().value_or(-1);
-        const auto key = std::make_tuple(p, g.texture, g.transparent, two_sided, scroll_index);
+        const auto key =
+            std::make_tuple(p, g.light ? -1 - g.texture : g.texture, g.transparent, two_sided, scroll_index);
         const auto found = materials_.find(key);
         auto upgrade = [&](int m) {
             // a translucent group's cut-out surface whose vertex colours fade: blended
@@ -274,14 +357,15 @@ private:
         };
         if (found != materials_.end())
             return upgrade(found->second);
-        const Picture& pic = picture(p, g.texture);
+        const Picture& pic = g.light ? light_picture(p, g.texture) : picture(p, g.texture);
         const Part& part = parts_[p];
         SceneMaterial mat;
         mat.name = lower(part.info.name) + "_t" + std::to_string(g.texture) + (g.transparent ? "_cut" : "") +
                    (two_sided ? "_2" : "") + (scroll_index >= 0 ? "_scroll" + std::to_string(scroll_index) : "");
         mat.texture = pic.file;
         mat.double_sided = two_sided;
-        mat.alpha_mode = !g.transparent    ? (pic.cut ? NeutralMesh::AlphaMode::mask : NeutralMesh::AlphaMode::opaque)
+        mat.alpha_mode = g.light           ? NeutralMesh::AlphaMode::blend
+                         : !g.transparent  ? (pic.cut ? NeutralMesh::AlphaMode::mask : NeutralMesh::AlphaMode::opaque)
                          : pic.translucent ? NeutralMesh::AlphaMode::blend
                                            : NeutralMesh::AlphaMode::mask;
         const GsTexture* gs = gs_of(part, g.texture);
@@ -480,6 +564,7 @@ private:
     std::vector<Part> parts_;
     std::map<std::pair<std::size_t, int>, Picture> pictures_;
     std::map<std::tuple<std::size_t, int, bool, bool, int>, int> materials_;
+    std::map<int, std::filesystem::path> pictures_in_place_;  // an object's HD pictures given in place of its own
     Room room_;
 };
 
@@ -488,6 +573,11 @@ private:
 Room room_model(const std::uint8_t* data, std::size_t size, const std::filesystem::path& hd_folder,
                 const std::string& name, const PictureSink& write_picture) {
     return Maker(data, size, hd_folder, name, write_picture).run();
+}
+
+Room object_model(const std::uint8_t* data, std::size_t size, const std::filesystem::path& hd_folder,
+                  const std::string& name, const PictureSink& write_picture, const ObjectOptions& options) {
+    return Maker(data, size, hd_folder, name, write_picture).object(options);
 }
 
 Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::string& name) {

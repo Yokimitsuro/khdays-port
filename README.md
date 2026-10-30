@@ -596,7 +596,10 @@ drawn over itself are replaced, so the game's text stays its own. A model
 keeps its own skeleton, weights, polygons and textures and is moved by the
 game's animations: its joints named like the original's nodes follow them,
 `<model>.bones.txt` pairs the others (a line `<joint> <node>`; `scale <k>`
-sizes the model), the rest move with their parents, and a rest pose far from
+sizes the model; `keep <node> ...` still draws the game's own shapes of
+those nodes, a chest's light rays under a new chest; `switch <setting>`
+draws the model only while that HD replacement of the settings is on, such
+as `kh2_prizes`), the rest move with their parents, and a rest pose far from
 the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is
@@ -614,6 +617,11 @@ writes, without starting the game, every texture (with each palette it is
 drawn with), every model as glTF with its skeleton, and every 2D tile sheet
 as an indexed PNG, under those names (default `saves/dump/graphics`). A
 dumped 2D tile sheet put back unchanged is drawn as the original.
+`khdays-native --kh2-object <mdlx> <out.gltf> [--hd <folder>] [--picture <n>
+<file>]... [--pose <mset> <motion>] [--turn <degrees>]` makes a KINGDOM HEARTS
+II object of the player's 1.5+2.5 copy into a glTF model with its skeleton,
+in the first frame of one of its motions, its HD pictures beside it (the KH2
+prizes mod's chests are made so).
 
 ## Sound
 

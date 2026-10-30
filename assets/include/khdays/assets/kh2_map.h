@@ -117,6 +117,7 @@ struct Triangle final {
 struct Group final {
     int texture = 0;  // GS info index in the model's container
     bool transparent = false;
+    bool light = false;          // an object's light added over the model (its chain's flag 0x400000)
     std::uint8_t uv_option = 0;  // as stored: bit 1 scrolls, bits 2-5 the UVSC index
     std::vector<Triangle> triangles;
 

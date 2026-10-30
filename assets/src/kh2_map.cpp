@@ -259,6 +259,8 @@ void read_object_model(const Bytes& b, const std::size_t h, Model& model) {
         const std::size_t entry = h + 0x20 + s * 0x20U;
         Group group;
         group.texture = static_cast<int>(b.u32(entry + 4));
+        // its flags: 0x400000 its light added over the model (a glow)
+        group.light = (b.u32(entry) & 0x400000U) != 0;
         std::size_t p = h + b.u32(entry + 0x10);
         // A packet's VIF stream gathered from its tags: ref tags (ID 3) bring
         // data from ADDR (from the header) or, with QWC 4, a bone's matrix (ADDR

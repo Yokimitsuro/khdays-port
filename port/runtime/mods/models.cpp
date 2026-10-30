@@ -15,6 +15,7 @@ extern "C" {
 #include "../scripts/game_link.h" // khdays_link_paused
 #include "textures.h"
 #include "../core/window.h"
+#include "../../host/app/hud_settings.h" // a model's switch (bones.txt)
 }
 #include "names.h"
 #include "room_animation.h"
@@ -266,6 +267,8 @@ struct Model {
     std::vector<Mesh> meshes;
     float scale = 1.0F;
     int cull = 0;                       // bones.txt's `cull`: 0 the file's own, 1 back faces culled, 2 both sides drawn
+    std::set<std::uint32_t> kept_lists; // bones.txt's `keep`: the game's shapes still drawn (their lists' places)
+    int setting = -1;                   // bones.txt's `switch`: the HD replacement it follows (hud_settings.h)
     std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
@@ -300,10 +303,20 @@ bool tracing()
     return trace != 0;
 }
 
-// The pairs, scale and faces of `<model>.bones.txt` beside the model's file
-// (.gltf, .glb or .fbx: its name without its extension).
-void read_bones(const std::string &model_file, std::map<std::string, std::string> &pairs, float &scale, int &cull)
+// What `<model>.bones.txt` beside the model's file says (.gltf, .glb or .fbx: its name without its extension).
+struct BonesFile {
+    std::map<std::string, std::string> pairs;
+    float scale = 1.0F;
+    int cull = 0;
+    std::vector<std::string> keep; // the game's nodes whose own shapes are still drawn
+    std::string setting;           // the HD replacement switch it follows
+};
+
+void read_bones(const std::string &model_file, BonesFile &bones)
 {
+    auto &pairs = bones.pairs;
+    auto &scale = bones.scale;
+    auto &cull = bones.cull;
     const auto dot = model_file.find_last_of('.');
     const std::string path = (dot != std::string::npos ? model_file.substr(0, dot) : model_file) + ".bones.txt";
     std::ifstream in(u8(path));
@@ -320,6 +333,11 @@ void read_bones(const std::string &model_file, std::map<std::string, std::string
             scale = std::strtof(b.c_str(), nullptr);
             if (!(scale > 0.0F))
                 scale = 1.0F;
+        } else if (a == "keep") {
+            for (std::string node = b; !node.empty(); node.clear(), words >> node)
+                bones.keep.push_back(node);
+        } else if (a == "switch") {
+            bones.setting = b;
         } else if (a == "cull") {
             if (b == "back") {
                 cull = 1;
@@ -386,8 +404,40 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     if (!own_skeleton && (u8(path).extension() == ".fbx" || u8(path).extension() == ".FBX")) {
         mod.animations.clear(); /* an FBX model's takes are not its own animation */
     }
-    std::map<std::string, std::string> pairs;
-    read_bones(path, pairs, model->scale, model->cull);
+    BonesFile bones;
+    read_bones(path, bones);
+    const auto &pairs = bones.pairs;
+    model->scale = bones.scale;
+    model->cull = bones.cull;
+    if (!bones.setting.empty()) {
+        for (int s = 0; s < KHDAYS_OPT_COUNT && model->setting < 0; ++s)
+            if (bones.setting == khdays_hud_setting_keys[s])
+                model->setting = s;
+        if (model->setting < 0)
+            std::fprintf(stderr, "models: %s: switch %s is no HD replacement's; drawn always\n", name.c_str(),
+                         bones.setting.c_str());
+    }
+    // the game's own shapes it keeps: each whose vertices all hang from the nodes named
+    std::set<std::uint32_t> kept_nodes;
+    for (const auto &node : bones.keep) {
+        const auto at = std::find(game.object_names.begin(), game.object_names.end(), node);
+        if (at == game.object_names.end())
+            std::fprintf(stderr, "models: %s: no node %s to keep\n", name.c_str(), node.c_str());
+        else
+            kept_nodes.insert(static_cast<std::uint32_t>(at - game.object_names.begin()));
+    }
+    for (const auto &mesh : kept_nodes.empty() ? std::vector<assets::NeutralMesh>{} : game.meshes) {
+        bool kept = !mesh.vertices.empty();
+        for (const auto &v : mesh.vertices) {
+            const auto entry = static_cast<std::size_t>(v.joints[0]);
+            const auto &from = entry < game.palette_bones.size() ? game.palette_bones[entry]
+                                                                 : decltype(game.palette_bones)::value_type{};
+            kept = kept && !from.empty() &&
+                   std::all_of(from.begin(), from.end(), [&](const auto &b) { return kept_nodes.count(b.first) != 0; });
+        }
+        if (kept)
+            model->kept_lists.insert(mesh.list_offset);
+    }
     if (own_skeleton && character->model_scale > 0.0F) {
         model->scale = character->model_scale;
     }
@@ -738,6 +788,7 @@ Model *active;
 int depth;
 Model *outer[8]; // the draws a draw's callbacks start: theirs are the game's
 int shapes;
+const unsigned char *model_start; // the draw's model (its NNSG3dResMdl): its shapes' lists are from here
 KhdaysG3dMaterial material;
 std::vector<Mat> node_matrix;
 std::vector<char> node_sent;
@@ -1376,6 +1427,10 @@ extern "C" void khdays_models_draw_begin(const void *resource)
     if (active != nullptr && !hd && !active->room && !active->character) {
         active = nullptr;
     }
+    if (active != nullptr && active->setting >= 0 && !khdays_hud_setting(active->setting)) {
+        active = nullptr; /* its switch off: the game's own */
+    }
+    model_start = static_cast<const unsigned char *>(resource);
     if (active != nullptr && active->own) {
         active->own->world_now = own_pose(*active); /* its pose before its nodes: its weapon's */
     }
@@ -1439,6 +1494,12 @@ extern "C" int khdays_models_shape(const void *list, unsigned int size)
     }
     if (shapes++ == 0) {
         khdays_g3d_material(&material);
+    }
+    // a shape of a node the mod's model keeps: the game's own, sent
+    if (!active->kept_lists.empty() && model_start != nullptr && list != nullptr &&
+        active->kept_lists.count(static_cast<std::uint32_t>(static_cast<const unsigned char *>(list) - model_start)) !=
+            0) {
+        return 0;
     }
     // the list's matrix commands run, its drawing left out: packed words of up
     // to four command numbers, each command's parameters after them in order

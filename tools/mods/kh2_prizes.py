@@ -1,17 +1,25 @@
-"""KINGDOM HEARTS II's prizes for Days's prize pictures, from the player's own 1.5+2.5 copy: the effect file and pages
-of each prize KH2 has one for (docs/KH2_SEQUENCES.md, "Field prizes"; the reader: port/ui/prize_effects_model.h).
+"""KINGDOM HEARTS II's prizes and chests for Days's, from the player's own 1.5+2.5 copy: the effect file and pages
+of each prize KH2 has one for (docs/KH2_SEQUENCES.md, "Field prizes"; the reader: port/ui/prize_effects_model.h),
+and each Days chest as the KH2 chest that looks like it.
 
-    python tools/mods/kh2_prizes.py --kh2 <kh2.hed_out> [--mod "Days - KH2 Prizes"]
+    python tools/mods/kh2_prizes.py --kh2 <kh2.hed_out> [--exe <khdays-native>] [--bbs2 <bbs_second.hed_out>]
+                                    [--mod "Days - KH2 Prizes"]
 
 --kh2 is KH2's entries as the installer extracts them: original/obj/PRIZE.mdlx and its HD pages,
-remastered/obj/PRIZE.mdlx/-0.dds, -1.dds (one a page, in the order of the pages' places). Writes
-mods/<mod>/graphics/mo/prize.pak.z/fx/ and the switch days-mods/kh2-prizes.txt; says what it made and what it left out.
+remastered/obj/PRIZE.mdlx/-0.dds, -1.dds (one a page, in the order of the pages' places); the chests'
+original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds. --exe makes the chests (through
+khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures. Writes
+mods/<mod>/graphics/mo/prize.pak.z/fx/, mods/<mod>/graphics/mo/mo#<entry>/mdl/ and the switch
+days-mods/kh2-prizes.txt; says what it made and what it left out.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image
@@ -26,6 +34,27 @@ PRIZE = "obj/PRIZE.mdlx"
 # (2) and drive orb (3) have no Days prize.
 PAIRS = {"prize_01": (1, 1), "prize_03": (0, 0)}
 ANIMATIONS = {0: "munny", 1: "HP orb", 2: "MP orb", 3: "drive orb"}
+
+# Days's chests (mo/mo's <world>_box_b: its entry) and the KH2 chest that looks like each, with its motion set (the
+# maintainer's pairing, 2026-10-30): KH2's large chests of the same worlds; Wonderland's (not in KH2) KH2's common
+# small chest, red as Days's; Neverland's that model wearing Birth by Sleep's Never Land chest pictures, laid out as
+# its own.
+CHESTS = {
+    "tt": (102, "F_EX040_TT", "F_EX040_TT.mset"),
+    "al": (94, "F_EX040_AL", "F_EX040.mset"),
+    "bb": (96, "F_EX040_BB", "F_EX040.mset"),
+    "he": (98, "F_EX040_HE", "F_EX040.mset"),
+    "nm": (99, "F_EX040_NM", "F_EX040.mset"),
+    "eh": (97, "F_EX040_EH", "F_EX040.mset"),
+    "aw": (95, "F_EX030", "F_EX030.mset"),
+    "pp": (101, "F_EX030", "F_EX030.mset"),
+}
+NEVERLAND = "ForEventJP/gimmick/g01pp/00/g01pp00.pmo"  # in bbs_second: its HD picture, -0.dds
+CLOSED = "00A"  # a KH2 chest's motion with its lid closed (its rest has it open)
+DAYS_CHEST_WIDTH = 0.982  # every Days chest's width (mo/mo's <world>_box_b, the graphics dump's units)
+# KH2's chest's joints to Days's nodes: j0 its root, j3 its lid (box1 Days's, turned 96 degrees when open); Days's
+# light rays (light01-03) drawn as the game draws them; the chest follows the settings' KH2 prizes switch
+CHEST_BONES = "j0 dummy0\nj3 box1\nkeep light01 light02 light03\nswitch kh2_prizes\n"
 
 
 def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int) -> str:
@@ -64,8 +93,75 @@ def pages_tbp(animation: kh2_pax.Animation) -> set[int]:
     return {frame.tbp for frame in animation.frames}
 
 
-def make(kh2: Path, mod: Path) -> list[str]:
-    """The effects into mod/; what was left out, each with why."""
+def opened(path: Path) -> bool:
+    """Whether `path` is a file that can be read (read here, as the installer's trace sees what the tools read)."""
+    try:
+        with open(path, "rb") as f:
+            return bool(f.read(4))
+    except OSError:
+        return False
+
+
+def run_exe(line: list[str]) -> str:
+    """khdays-native's run: its output; RuntimeError with what it said when it fails."""
+    done = subprocess.run(line, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if done.returncode != 0:
+        said = done.stderr.strip().splitlines()
+        raise RuntimeError(said[-1] if said else f"exit {done.returncode}")
+    return done.stdout
+
+
+def make_chests(
+    kh2: Path, mod: Path, exe: Path, bbs2: Path | None, run: Callable[[list[str]], str] = run_exe
+) -> tuple[list[str], list[str]]:
+    """Each Days chest as its KH2 chest, closed, turned to face as Days's and made Days's width: what was made and
+    what was left out."""
+    made, left_out = [], []
+    for world, (entry, name, motions) in CHESTS.items():
+        model = kh2 / "original" / "obj" / f"{name}.mdlx"
+        mset = kh2 / "original" / "obj" / motions
+        hd = kh2 / "remastered" / "obj" / f"{name}.mdlx"
+        if not opened(model) or not opened(mset):
+            left_out.append(f"{world}'s chest: KH2's {name} is not there")
+            continue
+        if hd.is_dir():
+            for picture in sorted(hd.glob("-*.dds")):
+                opened(picture)
+        extra: list[str] = []
+        if world == "pp":
+            picture = bbs2 / "remastered" / NEVERLAND / "-0.dds" if bbs2 else None
+            if picture is None or not opened(picture):
+                left_out.append("pp's chest: Birth by Sleep's Never Land chest pictures are not there")
+                continue
+            extra = ["--picture", "0", str(picture.absolute())]
+        out = mod / "graphics" / "mo" / f"mo#{entry}" / "mdl" / f"{world}_box_b.gltf"
+        # whole paths: khdays-native starts in a working folder of its own choosing
+        line = [str(exe), "--kh2-object", str(model.absolute()), str(out.absolute()), "--hd", str(hd.absolute())]
+        line += ["--pose", str(mset.absolute()), CLOSED, "--turn", "180", *extra]
+        try:
+            said = [ln for ln in run(line).splitlines() if ln.startswith("{")]
+            info = json.loads(said[-1])
+            width = info["max"][0] - info["min"][0]
+            if not width > 0:
+                raise ValueError("it has no width")
+        except (RuntimeError, ValueError, IndexError, KeyError) as e:
+            left_out.append(f"{world}'s chest: KH2's {name} could not be made ({e})")
+            continue
+        bones = CHEST_BONES + f"scale {DAYS_CHEST_WIDTH / width:.6g}\n"
+        out.with_suffix(".bones.txt").write_text(bones, encoding="utf-8", newline="\n")
+        made.append(f"{world}'s chest: KH2's {name}" + (" in Birth by Sleep's pictures" if extra else ""))
+        left_out += [f"{world}'s chest: {note}" for note in info.get("report", [])]
+    return made, left_out
+
+
+def make(
+    kh2: Path,
+    mod: Path,
+    exe: Path | None = None,
+    bbs2: Path | None = None,
+    run: Callable[[list[str]], str] = run_exe,
+) -> list[str]:
+    """The effects (and with `exe` the chests) into mod/; what was left out, each with why."""
     left_out = []
     pax = kh2_pax.read_pax((kh2 / "original" / PRIZE).read_bytes())
     page_order = sorted({p.tbp for p in pax.pictures})  # the HD pages' order (-0.dds the first)
@@ -97,6 +193,10 @@ def make(kh2: Path, mod: Path) -> list[str]:
     for number, what in ANIMATIONS.items():
         if number not in {n for n, _ in PAIRS.values()}:
             left_out.append(f"KH2's {what} (animation {number}): Days has no such prize")
+    if exe is not None:
+        chests, missed = make_chests(kh2, mod, exe, bbs2, run)
+        made += chests
+        left_out += missed
     if made:
         switch = mod / "days-mods" / "kh2-prizes.txt"
         switch.parent.mkdir(parents=True, exist_ok=True)
@@ -109,10 +209,12 @@ def make(kh2: Path, mod: Path) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--kh2", type=Path, required=True, help="KH2's entries extracted (<kh2.hed_out>)")
+    ap.add_argument("--exe", type=Path, help="khdays-native, to make the chests with (--kh2-object)")
+    ap.add_argument("--bbs2", type=Path, help="Birth by Sleep's bbs_second entries extracted (Neverland's chest)")
     ap.add_argument("--mod", default="Days - KH2 Prizes", help="the mod folder under mods/")
     args = ap.parse_args(argv)
     try:
-        left_out = make(args.kh2, Path("mods") / args.mod)
+        left_out = make(args.kh2, Path("mods") / args.mod, args.exe, args.bbs2)
     except (OSError, kh2_pax.PaxError) as e:
         print(f"kh2 prizes: {e}", file=sys.stderr)
         return 1

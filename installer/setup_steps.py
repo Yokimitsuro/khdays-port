@@ -736,6 +736,7 @@ COLLECTION_ARCHIVES = {
         "kh2_fifth": "Image/dt/kh2_fifth",
         # (the port's own mods': mod_inputs.txt)
         "bbs_first": "Image/dt/bbs_first",
+        "bbs_second": "Image/dt/bbs_second",
         "Recom": "Image/dt/Recom",
     },
     "2.8": {"kh3d_first": "Image/dt/kh3d_first"},
@@ -1104,7 +1105,7 @@ def compare_hd(args: argparse.Namespace) -> dict[str, Any]:
 # own pieces), the rest added; the install's state ("port-mods") says which are which.
 PORT_MODS = {
     "walk": ("Days - Walk", ["walk_clips.py", "--data", "{data}"]),
-    "kh2-prizes": ("Days - KH2 Prizes", ["kh2_prizes.py", "--kh2", "{kh2}"]),
+    "kh2-prizes": ("Days - KH2 Prizes", ["kh2_prizes.py", "--kh2", "{kh2}", "--exe", "{exe}", "--bbs2", "{bbs2}"]),
     "menu-overhaul": (
         "Days - Menu Overhaul",
         [
@@ -1123,6 +1124,7 @@ MOD_SOURCES = {
     "kh2_first": "kh2",
     "kh2_fifth": "kh2",
     "bbs_first": "bbs_first",
+    "bbs_second": "bbs_second",
     "Recom": "Recom",
     "Mare": "Mare",
 }
@@ -1187,6 +1189,7 @@ def mod_places(install: Path, src: Path, fonts: Path = FONTS) -> dict[str, str]:
     return {
         "kh2": str(src / "kh2.hed_out"),
         "bbs": str(src / "bbs_first.hed_out"),
+        "bbs2": str(src / "bbs_second.hed_out"),
         "recom": str(src / "Recom.hed_out"),
         "mare": str(src / "Mare.hed_out" / "original"),
         "hd": str(install / "mods" / HD_MOD),

@@ -817,6 +817,86 @@ void test_room(const Bytes& file) {
     }
 }
 
+// A KH2 object (an .mdlx: its model and its textures) made into a scene: in a motion's first pose, turned, its light
+// group blended by its brightness, a picture given in place of its own.
+void test_object() {
+    const auto folder = std::filesystem::temp_directory_path() / "khdays-kh2-object-test";
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+    auto write = [&](const std::string& name, const Bytes& bytes) {
+        std::ofstream out(folder / name, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    };
+    auto plain = [](std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+        Bytes body;
+        for (unsigned i = 0; i < 16; ++i)
+            body.insert(body.end(), {b, g, r, 255});  // stored B, G, R, A (the masks dds() writes)
+        return dds(nullptr, 4, 4, body);
+    };
+    write("-0.dds", plain(10, 20, 30));
+    write("other.dds", plain(200, 100, 50));
+    const Bytes model = object_model();
+    const Bytes mdlx = bar(
+        {{kh2::kEntryModel, "f_ex", model}, {kh2::kEntryTextures, "tim_", texture_container(false)}, {23, "f_ex", {}}});
+    std::map<std::string, khdays::assets::DecodedTexture> pictures;
+    auto sink = [&](const std::string& name, const khdays::assets::DecodedTexture& picture) {
+        pictures[name] = picture;
+    };
+
+    kh2::ObjectOptions options;
+    options.turn = 180.0F;
+    options.pose = kh2::Motion{};
+    options.pose->pose.push_back({1, 6, 7.0F});  // bone 1's x where its rest has 10
+    const auto made = kh2::object_model(mdlx.data(), mdlx.size(), folder, "F_EX040_TEST", sink, options);
+    const auto& scene = made.scene;
+    expect(scene.nodes.size() == 3 && scene.nodes[0].name == "f_ex040_test" && scene.nodes[1].name == "j0" &&
+               scene.nodes[2].name == "j1",
+           "the object's node and a node per bone");
+    expect(near(scene.nodes[0].rotation[1], 1.0F) && near(scene.nodes[0].rotation[3], 0.0F), "turned half round");
+    expect(scene.nodes[1].parent == 0 && scene.nodes[2].parent == 1, "bones under their parents");
+    expect(near(scene.nodes[2].translation[0], 7.0F) && near(scene.nodes[1].translation[0], 0.0F), "the motion's pose");
+    expect(scene.meshes.size() == 1 && scene.meshes[0].joints == std::vector<int>{1, 2} &&
+               scene.meshes[0].primitives.size() == 1 &&
+               scene.meshes[0].primitives[0].joint_of == std::vector<int>{0, 0, 1},
+           "its mesh skinned to its bones");
+    expect(scene.materials.size() == 1, "one material");
+    expect(scene.materials[0].texture == "F_EX040_TEST_0.png", "its HD picture: " + scene.materials[0].texture);
+    expect(pictures.count("F_EX040_TEST_0.png") == 1 && pictures["F_EX040_TEST_0.png"].rgba[0] == 10,
+           "the picture handed over");
+
+    // its group as light added over the model (flag 0x400000), and a picture in place of -0.dds
+    Bytes glowing = model;
+    glowing[0x90 + 0x20 + 2] = 0x40;
+    const Bytes glowing_mdlx =
+        bar({{kh2::kEntryModel, "f_ex", glowing}, {kh2::kEntryTextures, "tim_", texture_container(false)}});
+    pictures.clear();
+    kh2::ObjectOptions other;
+    other.pictures[0] = folder / "other.dds";
+    const auto lit = kh2::object_model(glowing_mdlx.data(), glowing_mdlx.size(), folder, "F_EX040_TEST", sink, other);
+    std::filesystem::remove_all(folder);
+    expect(lit.scene.materials.size() == 1 &&
+               lit.scene.materials[0].alpha_mode == khdays::assets::NeutralMesh::AlphaMode::blend &&
+               lit.scene.materials[0].texture == "F_EX040_TEST_0_light.png",
+           "its light blended");
+    const auto& light = pictures["F_EX040_TEST_0_light.png"];
+    expect(light.rgba.size() == 64 && light.rgba[0] == 200 && light.rgba[3] == 200,
+           "the picture given, alpha its brightness");
+    expect(std::any_of(lit.report.begin(), lit.report.end(),
+                       [](const std::string& line) { return line.find("its light") != std::string::npos; }),
+           "the light reported");
+
+    // not an object: refused
+    const Bytes map_mdlx =
+        bar({{kh2::kEntryModel, "f_ex", map_model()}, {kh2::kEntryTextures, "tim_", texture_container(false)}});
+    bool refused = false;
+    try {
+        (void)kh2::object_model(map_mdlx.data(), map_mdlx.size(), folder, "F_EX040_TEST", sink);
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    expect(refused, "a map's model is not an object");
+}
+
 void test_refusals() {
     auto refused = [](const Bytes& file, const char* name) {
         try {
@@ -841,6 +921,7 @@ int main() {
         test_dds();
         test_map();
         test_room(map_file());
+        test_object();
         test_refusals();
         std::cout << "KH2 map test passed\n";
         return 0;

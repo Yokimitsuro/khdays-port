@@ -5424,3 +5424,9 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   (a join in `port/tools/prepare.py`) and the effect's current frame is drawn at its place on the 3D layer's
   sequences, its body as wide as the picture. Taking it is the game's own: with the switch off the same walk took the
   same kinds, the HP rose the same and the results gave the same PLATINES.
+- **The chests** (seen 2026-10-30, the `missions_waves` walk, with `KHDAYS_TRACE_MODELS=2` and the chest replaced by
+  its own dumped glTF): the mission's chest is `mo/mo#97`'s `eh_box_b`. Every world's chest model (`mo/mo` entries
+  94-99, 101, 102: `<world>_box_b`) has the nodes `dummy0` -> `box2` -> `box1` and `light01`-`light03` (the light
+  rays), at rest all at the model's place, 0.982 wide, 0.717 high, 0.783 deep. Opened, `box1` -- the lid -- is drawn
+  96 degrees from its rest and `box2` 2; the light rays show as it opens. With KH2's `F_EX040_EH` in its place (the
+  KH2 prizes mod: lid `j3` paired with `box1`), the lid turned back on KH2's own hinge as the game opened it.

@@ -265,5 +265,87 @@ class MakeTheMod(unittest.TestCase):
         self.assertTrue(any(line.startswith("prize_01") for line in left_out))
 
 
+class MakeTheChests(unittest.TestCase):
+    """The chests' part with khdays-native's --kh2-object stood in for: what it is asked and what is written."""
+
+    def setUp(self):
+        import tempfile
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.kh2 = self.root / "kh2.hed_out"
+        self.mod = self.root / "mods" / "Days - KH2 Prizes"
+        self.asked = []
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def objects(self, names):
+        obj = self.kh2 / "original" / "obj"
+        obj.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (obj / name).write_bytes(b"BAR made up")
+
+    def run_exe(self, line):  # as khdays-native --kh2-object answers: a model 96 wide
+        self.asked.append(line)
+        out = Path(line[3])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("{}")
+        return "\n".join(
+            ["khdays-native: working folder", '{"bones":4,"min":[-48,0,-45],"max":[48,87,44],"report":[]}']
+        )
+
+    def test_each_world_its_chest(self):
+        import kh2_prizes
+
+        self.objects(["F_EX040_TT.mdlx", "F_EX040_TT.mset", "F_EX040_EH.mdlx", "F_EX040.mset", "F_EX030.mdlx"])
+        self.objects(["F_EX030.mset"])
+        made, left_out = kh2_prizes.make_chests(self.kh2, self.mod, Path("khdays-native"), None, self.run_exe)
+        self.assertEqual(
+            sorted(made), ["aw's chest: KH2's F_EX030", "eh's chest: KH2's F_EX040_EH", "tt's chest: KH2's F_EX040_TT"]
+        )
+        tt = next(line for line in self.asked if line[2].endswith("F_EX040_TT.mdlx"))
+        self.assertEqual(Path(tt[3]), self.mod / "graphics" / "mo" / "mo#102" / "mdl" / "tt_box_b.gltf")
+        self.assertEqual(tt[tt.index("--pose") + 2], "00A")  # made closed
+        self.assertEqual(tt[tt.index("--turn") + 1], "180")
+        self.assertTrue(tt[tt.index("--pose") + 1].endswith("F_EX040_TT.mset"))  # Twilight Town's own motions
+        eh = next(line for line in self.asked if line[2].endswith("F_EX040_EH.mdlx"))
+        self.assertTrue(eh[eh.index("--pose") + 1].endswith("F_EX040.mset"))
+        bones = (self.mod / "graphics" / "mo" / "mo#102" / "mdl" / "tt_box_b.bones.txt").read_text(encoding="utf-8")
+        self.assertIn("j3 box1", bones.splitlines())  # the lids paired
+        self.assertIn("keep light01 light02 light03", bones.splitlines())
+        self.assertIn("switch kh2_prizes", bones.splitlines())
+        self.assertIn(f"scale {0.982 / 96:.6g}", bones.splitlines())  # Days's width
+        # the others not there, and Neverland's without Birth by Sleep's pictures
+        self.assertTrue(any(line.startswith("al's chest: KH2's F_EX040_AL is not there") for line in left_out))
+        self.assertTrue(any(line.startswith("pp's chest: Birth by Sleep") for line in left_out))
+
+    def test_neverland_in_birth_by_sleep_pictures(self):
+        import kh2_prizes
+
+        self.objects(["F_EX030.mdlx", "F_EX030.mset"])
+        picture = self.root / "bbs_second.hed_out" / "remastered" / kh2_prizes.NEVERLAND / "-0.dds"
+        picture.parent.mkdir(parents=True)
+        picture.write_bytes(b"DDS made up")
+        made, _ = kh2_prizes.make_chests(
+            self.kh2, self.mod, Path("khdays-native"), self.root / "bbs_second.hed_out", self.run_exe
+        )
+        self.assertIn("pp's chest: KH2's F_EX030 in Birth by Sleep's pictures", made)
+        pp = next(line for line in self.asked if line[3].endswith("pp_box_b.gltf"))
+        self.assertEqual(pp[pp.index("--picture") + 1 : pp.index("--picture") + 3], ["0", str(picture)])
+
+    def test_a_chest_that_cannot_be_made_said(self):
+        import kh2_prizes
+
+        self.objects(["F_EX030.mdlx", "F_EX030.mset"])
+
+        def fails(line):
+            raise RuntimeError("khdays-native --kh2-object: KH2 object: no bones")
+
+        made, left_out = kh2_prizes.make_chests(self.kh2, self.mod, Path("khdays-native"), None, fails)
+        self.assertEqual(made, [])
+        self.assertTrue(any("aw's chest" in line and "no bones" in line for line in left_out))
+
+
 if __name__ == "__main__":
     unittest.main()

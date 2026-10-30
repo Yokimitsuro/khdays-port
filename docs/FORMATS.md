@@ -199,3 +199,16 @@ needs is read.
   palette), the layers at +0x20: a square (four s16: x0 y0 x1 y1) or four corners (eight s16), each with its part of
   the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS
   blend byte (0x44 mixed by alpha, 0x48 added).
+
+## KH2's objects (a chest, a prize box)
+
+Not the game's: KINGDOM HEARTS II's objects (`obj/<name>.mdlx` in the player's 1.5+2.5 copy), as
+`assets/src/kh2_map.cpp` reads them for the KH2 prizes mod's chests (`khdays-native --kh2-object`) and the studio's
+KH2 rooms' pieces. An `.mdlx` is a BAR: its model (type 4), its textures (type 7, a texture container as a map's),
+and a small entry of type 23. The model, 0x90 bytes after its entry's start: u32 kind (3 an object), u16 bones at
++0x10, the bones' table at +0x14 (0x40 bytes a bone: index, parent, then scale, rotation in radians and translation,
+four floats each), u16 groups at +0x1c, the groups from +0x20 (0x20 bytes each: u32 flags, u32 texture, the DMA chain
+at +0x10). A group's flag 0x400000 is light KH2 adds over the model (The World That Never Was's chest's glowing
+lines). A chest's rest pose has its lid open: its motion set (`obj/<name>.mset`, a BAR of motions, each a BAR
+holding the motion, type 9) has it closed in `00A`'s first frame; the lid is its last bone (`j3`), 100 degrees from
+closed when open.

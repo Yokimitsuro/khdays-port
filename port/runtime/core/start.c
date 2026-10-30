@@ -41,7 +41,8 @@
 #endif
 
 extern int khdays_export_heart_model(const char *input, const char *output);
-extern void khdays_NitroMain(void); /* the decomp's main, renamed at build */
+extern int khdays_export_kh2_object(int argc, char **argv); /* tools/kh2_object_export.cpp */
+extern void khdays_NitroMain(void);                         /* the decomp's main, renamed at build */
 extern void _fp_init(void);
 extern void NitroStartUp(void);
 extern void __call_static_initializers(void);
@@ -270,6 +271,10 @@ int main(int argc, char **argv)
     }
     if (argc == 4 && strcmp(argv[1], "--export-heart-model") == 0) {
         return khdays_export_heart_model(argv[2], argv[3]);
+    }
+    if (argc >= 4 && strcmp(argv[1], "--kh2-object") == 0) {
+        /* Headless: a KH2 object of the player's collection made into a glTF model (the KH2 prizes mod) */
+        return khdays_export_kh2_object(argc - 2, argv + 2);
     }
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */

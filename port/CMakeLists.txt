@@ -678,6 +678,9 @@ add_executable(khdays-native
     ui/heart_points.cpp
     ui/hud_options.cpp
     tools/heart_model_export.cpp
+    tools/kh2_object_export.cpp    # --kh2-object: a KH2 object made into a glTF model (the KH2 prizes mod)
+    ../assets/src/kh2_map.cpp      # ... its model and textures
+    ../assets/src/kh2_room.cpp     # ... as a scene
     ../assets/src/animation.cpp
     ui/kh2_reticles.cpp
     ui/prize_effects.cpp

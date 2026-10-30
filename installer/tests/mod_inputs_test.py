@@ -37,6 +37,9 @@ class Inputs(unittest.TestCase):
         self.assertIn("cba7b0396c9efe756ba1e069e6dd603e.dat", entries.get("bbs_first", []))
         # KH2's prize effect (tools/mods/kh2_prizes.py)
         self.assertIn("obj/PRIZE.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
+        # the chests (kh2_prizes.py through khdays-native) and Neverland's Birth by Sleep pictures
+        self.assertIn("obj/F_EX040_TT.mdlx", entries.get("kh2_first", []) + entries.get("kh2_fifth", []))
+        self.assertIn("ForEventJP/gimmick/g01pp/00/g01pp00.pmo", entries.get("bbs_second", []))
 
     def test_wiring(self):
         folder, template = s.PORT_MODS["menu-overhaul"]
@@ -48,7 +51,7 @@ class Inputs(unittest.TestCase):
             install = Path(temp)
             (s.extracted_root(install) / "0123456789abcdef" / "nitrofs").mkdir(parents=True)
             filled = set(s.mod_places(install, install / "src"))
-            self.assertEqual(places, filled)
+            self.assertLessEqual(places, filled)
             # every mod's places are filled in; each collection mod is one the trace runs
             for mod, (_, line) in s.PORT_MODS.items():
                 self.assertLessEqual({a[1:-1] for a in line if a.startswith("{")}, filled, mod)

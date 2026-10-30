@@ -317,7 +317,14 @@ game turns G; its head is where its parent's K puts it, so the mod keeps its
 own proportions. A joint at G's place with no correction is drawn with D_G
 itself; one that follows no node moves with its parent. A mesh is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
-`<model>.bones.txt` says `cull back` or `cull none`. A blended mesh's vertex
+`<model>.bones.txt` says `cull back` or `cull none`. The game's own shapes are
+left unsent but for those `keep <node> ...` names: a shape whose vertices all
+hang from those nodes (through the palette's bones) is known by its display
+list's place from the model's start, the place the game's SHP command sends it
+from, and sent as the game sends it (a chest's light rays under a KH2 chest).
+`switch <setting>` ties the model to an HD replacement of the settings
+(`hud_settings.h`'s keys): while it is off, the game's model is drawn. A blended
+mesh's vertex
 alpha goes across each polygon, pixel by pixel, times the polygon's (the list's
 vertices carry it: `KhdaysG3dVertex` `a`, 1 for the game's, whose polygons have
 one alpha as the DS's): taken whole per triangle, KH2's sun glow came out a disk

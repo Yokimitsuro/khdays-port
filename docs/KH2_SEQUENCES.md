@@ -1301,6 +1301,16 @@ chests" (`kh2_prizes`, on by default); off, Days's pictures are drawn exactly as
 draws Days's pictures. `KHDAYS_TRACE_PRIZES=1` names the pictures as they load, each effect found or refused, each
 prize taken and the player's HP and munny.
 
+With `--exe <khdays-native>` the tool also makes the chests: each Days chest (`mo/mo#<entry>`'s `<world>_box_b`)
+as the KH2 chest that looks like it -- KH2's large chest of the same world (`F_EX040_TT`, `_AL`, `_BB`, `_HE`,
+`_NM`, `_EH`), for Wonderland KH2's common chest (`F_EX030`), for Neverland that chest wearing Birth by Sleep's
+Never Land chest pictures (`bbs_second`'s `ForEventJP/gimmick/g01pp/00/g01pp00.pmo`, `--bbs2`). Each is made
+by `khdays-native --kh2-object` closed (its motion set's `00A`: KH2's rest has the lid open), turned to face as
+Days's, with its HD pictures, and paired by `<world>_box_b.bones.txt`: its lid joint `j3` with Days's lid `box1`
+(the game's opening turns it, 96 degrees), its root with `dummy0`, `scale` making it Days's width (0.982), `keep`
+for Days's light rays and `switch kh2_prizes`. The World That Never Was's chest's glowing lines, light KH2 adds
+over the model, are drawn blended by their own brightness (glTF has no added light).
+
 ## Live Enhancements preferences
 
 The Enhancements menu stores HUD choices only in the usual settings.ini under
