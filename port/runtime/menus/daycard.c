@@ -1,11 +1,5 @@
-/* The day's calendar card (daycard.h), read while its object runs (Ov004_StepSceneFrame). Its
- * context (data_ov004_02051384, the object's heap, Ov004_CreateSceneObjects): +0xaf8 the phase,
- * +0x5558 the day it starts on and +0x555c the one it rolls to (0x190 both made 0xff: the prologue's
- * day 255), +0x5568 the rolling value (20.12 fixed point), +0x5570 the rolling's step (16.16 of the
- * whole a frame, Ov004_FadeInTransition's), +0x5574 the rolling done, +0x5578 the rolling's progress,
- * +0x5598 the day whose title it draws (Ov004_PrepareTransitionLabel, set before 0x190 became 0xff:
- * 400 the prologue's). The port's card has its titles by that day (tools/hd/theater_day.py). More:
- * docs/RUNTIME_MAP.md, scene 5. */
+/* The day's calendar card (daycard.h), read while its object runs (Ov004_StepSceneFrame). Its context's
+ * fields: docs/MENU_OVERHAUL.md, "The day's card"; more in docs/RUNTIME_MAP.md, scene 5. */
 #include "daycard.h"
 
 #include "../core/io.h"

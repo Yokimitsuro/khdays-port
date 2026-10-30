@@ -1,17 +1,5 @@
-/* The Moogle Shop (shop.h). The story's shop is ov026 (a sub-scene of the field, Ov026_FillSceneHooks),
- * Mission Mode's the same code in ov008 (each function 0x2eb0 lower, the same context). The shop object's
- * update is its step (no mode of its own to read): ShopTabSelectTick the menu, ShopListInput a list, and
- * so on (the decomp's ov026_shop). Its context (Ov026_ShopCreate: 0xc608 bytes):
- *   +0xc250  the list's tab: 0 Buy, 1 Sell, 2 Synthesize, 3 Redeem (copied from the cursor on entering)
- *   +0xc31c  the munny row's change shown (s32), +0xc320 the heart points'
- *   +0xc3b0  the menu's cursor (0-4)
- *   +0xc4e4  the quantity dialog's stage (s16): 0 the count, 1 OK/Cancel; +0xc4e7 (u8) 0 OK, 1 Cancel
- *   +0xc51c  the recipe panel up (Synthesize: the moogle not drawn)
- *   +0xc534  the synthesis question's stage (s16): 0 asked, 1 done, 2 only one allowed; +0xc53c 0 Yes, 1 No
- *   +0xc5f0  Synthesize offered, +0xc5f4 Redeem offered
- *   +0xbff0  the moogle's model instance (mi/ch/70.z): +0x00 its flags (0x20: its rotation made again from
- *            its angles at the next draw), +0x7c its turn about Y (u16, 0x10000 a whole turn)
- * The money: the game state's +0x8 (munny) and +0xc (heart points), as the camp reads them. */
+/* The Moogle Shop (shop.h): the story's (ov026) and Mission Mode's (ov008, the same code) read while its object
+ * runs. Its context's fields: docs/MENU_OVERHAUL.md, "The Moogle Shop". */
 #include "shop.h"
 
 #include "../core/io.h"

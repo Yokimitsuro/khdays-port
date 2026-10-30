@@ -1702,17 +1702,9 @@ static struct {
 
 /* ---- The menu and its Preferences page, the one into the other -------------------------------- */
 
-/* Preferences chosen, the game fades the menu to black, loads its Preferences page (the camp's
- * screen 5) in its place and fades that in; B on the page, the same back. The two look alike but for
- * the middle and the right -- the model, the trials and the status panel against the page's tabs and
- * settings -- so the window's screen keeps the picture up instead of the black: the camp's next
- * screen (the view's `next`) says where it goes while the one still shows; the menu's own pieces
- * slide and fade out while the status panel grows to the left over the model's box and the trials into
- * the page's panel (the page's backdrop is the menu's with its status panel that wide: see
- * draw_grown); once the game shows the page (its view read) the page's pieces slide in. Back, the
- * page's panel shrinks to the status panel over the model come back. The options, the numbers, the
- * settings key and the members stay where they are, the options taking the page's look on the way.
- * The game's fade is left undrawn until it is over. */
+/* Preferences chosen, the game fades to black and loads its page; the window keeps the picture up instead: the
+ * menu's pieces slide out while the status panel grows into the page's panel (draw_grown), then the page's
+ * pieces slide in; back, the same the other way. The game's fade is left undrawn until it is over. */
 enum { SW_NONE, SW_OUT, SW_WAIT, SW_IN };
 #define SW_OUT_SECONDS 0.2
 #define SW_GROW_SECONDS                                                                                                \
@@ -1892,14 +1884,9 @@ static void draw_strips(SDL_Renderer *renderer, const KhdaysLayoutFrame *fr)
     }
 }
 
-/* The page's panel, its left at `left` (the layout's units): the status panel (camp.txt's panel) grown
- * to the left. The page's backdrop (the Menu Overhaul's camp_page_backdrop.png) is the menu's with
- * the status panel made as wide as the model's box and the panel together, of the status panel's own
- * texels: its left edge (GROW_LEFT texels, the highlight and the bevel), its middle (one shade a row,
- * the same across: GROW_MIDDLE's column stretched), its right edge (GROW_RIGHT) -- so drawn with its
- * left at the status panel's it is the status panel, at the model's box's it is the page's. Under it,
- * the page's ground over what reaches below the panel (the trials' bar); over it, the table's lines
- * of the status panel at `lines` (the backdrop's: white at 50/255). */
+/* The page's panel, its left at `left` (the layout's units): the status panel grown to the left from its own
+ * texels (its left edge, its middle column stretched, its right edge), so at the status panel's left it is the
+ * status panel and at the model's box's the page's; the table's lines over it at `lines`. */
 #define GROW_LEFT 24.0f
 #define GROW_MIDDLE 32.0f
 #define GROW_RIGHT 20.0f
@@ -3861,13 +3848,9 @@ static void story_tab_button(const KhdaysLayoutFrame *fr, const float *at, const
 }
 
 /* ---- The story's menu's panels -------------------------------------------------------------------
- * Roxas's panels on their plate as the Panels page has them (runtime/menus/camp.h's grid), a page of its five
- * columns and eight rows, Y turning the pages (camp.c): each panel the page's own texture (UI/pnl/3d_&.pak:
- * a DS dot three layout units), without the page's frame, over a soft shadow (the Moogle Shop's lists': its
- * shape in black, three times a little apart); the slots not open yet the game's locked one, faint; each
- * link's footprint outlined in yellow (its shape around its anchor, the panels in it the panels linked); all
- * floating as the DS's screens on the Files pages (up and down, the shadow left where it is, fainter as they
- * rise); the page and Y's icon at the plate's top right while there is more than one. */
+ * Roxas's panels on their plate as the Panels page has them, five columns and eight rows a page, Y turning the
+ * pages: each panel its own texture over a soft shadow, the locked slots faint, each link outlined in yellow,
+ * all floating as the DS's screens on the Files pages. */
 #define PANEL_LOCKED 0xd0 /* the locked slot's texture (Ov025_ShowGridPage: tag 0xd1) */
 #define PANEL_LOCKED_ALPHA 0.35f
 #define PANEL_COLUMNS 5

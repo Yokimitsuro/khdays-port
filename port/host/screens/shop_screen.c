@@ -1306,13 +1306,9 @@ static void draw_message(const KhdaysLayoutFrame *fr, const KhdaysShopView *v, d
 }
 
 /* ---- Mission Mode: the camp's menu and the shop into each other ------------------------------------
- * Mission Mode's shop opens from the camp's menu and closes back to it; the game fades the one out to black,
- * loads the other (the camp's menu is loaded again: its model, its pieces) and fades it in. The window keeps
- * a picture up instead: the camp's menu, its Shop chosen, hands the window over (khdays_shop_screen_take_over:
- * the window as it is, kept), the shop closing keeps its own; the picture stays whole over everything
- * (draw_over: drawn last) while the game is dark and the other screen comes in, and fades out over it only
- * once that screen is shown at its full brightness a moment -- nothing of the game's black, its fades nor
- * its screens half made is seen between. */
+ * The game fades one to black, loads the other and fades it in; the window keeps a picture up instead
+ * (khdays_shop_screen_take_over), drawn over everything until the other screen has shown at full brightness a
+ * moment, then faded out. */
 enum { HAND_NONE, HAND_IN, HAND_OUT };
 #define HAND_STEADY_SECONDS 0.15 /* the screen coming shown whole this long before the picture fades */
 #define HAND_FADE_SECONDS 0.35

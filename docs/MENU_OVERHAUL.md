@@ -68,3 +68,122 @@ Sleep's camp, Re:Chain of Memories' Moogle Shop, the theater's day card) as the 
 `installer/setup_steps.py trace-mod-inputs "<install>" --src <extractions> --1525 "<1.5+2.5>" [--fonts DIR]`
 writes `mod_inputs.txt` again from the tools as they are (`installer/tests/mod_inputs_test.py` fails when they
 changed since). `tools/mods/tests/menu_overhaul_test.py` checks the pieces' wiring without any game data.
+
+## How it reads the game
+
+What the port reads of the game's own screens to draw the Overhaul's, as the decompilation shows it.
+
+### The enemy viewer
+
+The Enemy Profiles' model viewer: the enemy's model as the game loads it in battle, drawn by the game's own 3D
+(NNS G3D, all in the main ARM9 code, loaded whatever the overlay) while its Files page runs -- the camp menu
+draws Roxas so (Ov025_ModelActor_Init, Ov025_Menu_RenderScenePanels).
+
+The model: Ms/<class>.p (a P2 archive; the class the enm_&.z record's first byte, as the enemies' overlays
+open it: Ov114_CreateNamedEntity's "Ms/%02x.p"), its entry 0 a KAPH pack -- the model (section 7) and, for
+most, its joint animations (section 0); for the others each later entry that holds a BCA alone is one
+animation. An entry is opened by a handle on the archive's header (Msg_OpenContainerAndReadHeader,
+Ov107_PackTextureHandle's packing) through RegisterSeqAndInit (the model instance: textures to VRAM, the
+render object, the animations' table at +0xe0) or Snd_RegisterSeqAndBind (an animation's file into a table of
+its own); BindAnimTrack plays one, Sequence_UpdateTracks steps it, Scene_DrawNode draws the instance on its
+matrix (+0x80, a 4x3) with the camera Camera_CommitMatrices made (a block Projection_LoadDefaults fills),
+between main's G3X_ResetMtxStack and its swap.
+
+The page has no texture VRAM (Ov025_Reports_SetupDisplay: banks A-D its BGs and OBJs) and hides the 3D layer.
+The port shows neither of the main engine's (the lower screen's) BG and OBJ there, so while the viewer is open
+bank B (the main OBJ's) holds the textures and F+G their palettes, as the camp's menu has them
+(Ov025_Hub_SetupGraphics), BG0 shows the 3D; on closing, all as it was (bank B's contents too).
+host/render/onescreen.c takes the 3D's polygons into the window.
+
+Some enemies are several models the game draws at one place (Darkside's DS01 with DS02 and DS03 on the actor's
+matrix, Ov244_TickAndSyncTwoModelXforms; the bosses' wings, swords, arms, tails): their parts
+(enemy_viewer_anims.h's VIEWER_PARTS) are instances of their own from the same archive, each with the
+animation of the body's number, on the body's matrix.
+
+(`port/runtime/menus/enemy_viewer.c`)
+
+### The Moogle Shop
+
+The story's shop is ov026 (a sub-scene of the field, Ov026_FillSceneHooks), Mission Mode's the same code in ov008
+(each function 0x2eb0 lower, the same context). The shop object's update is its step (no mode of its own to
+read): ShopTabSelectTick the menu, ShopListInput a list, and so on (the decomp's ov026_shop). Its context
+(Ov026_ShopCreate: 0xc608 bytes):
+
+- +0xc250 the list's tab: 0 Buy, 1 Sell, 2 Synthesize, 3 Redeem (copied from the cursor on entering)
+- +0xc31c the munny row's change shown (s32), +0xc320 the heart points'
+- +0xc3b0 the menu's cursor (0-4)
+- +0xc4e4 the quantity dialog's stage (s16): 0 the count, 1 OK/Cancel; +0xc4e7 (u8) 0 OK, 1 Cancel
+- +0xc51c the recipe panel up (Synthesize: the moogle not drawn)
+- +0xc534 the synthesis question's stage (s16): 0 asked, 1 done, 2 only one allowed; +0xc53c 0 Yes, 1 No
+- +0xc5f0 Synthesize offered, +0xc5f4 Redeem offered
+- +0xbff0 the moogle's model instance (mi/ch/70.z): +0x00 its flags (0x20: its rotation made again from its
+  angles at the next draw), +0x7c its turn about Y (u16, 0x10000 a whole turn)
+
+The money: the game state's +0x8 (munny) and +0xc (heart points), as the camp reads them.
+
+(`port/runtime/menus/shop.c`)
+
+### The day's card
+
+Read while its object runs (Ov004_StepSceneFrame). Its context (data_ov004_02051384, the object's heap,
+Ov004_CreateSceneObjects):
+
+- +0xaf8 the phase
+- +0x5558 the day it starts on and +0x555c the one it rolls to (0x190 both made 0xff: the prologue's day 255)
+- +0x5568 the rolling value (20.12 fixed point), +0x5570 the rolling's step (16.16 of the whole a frame,
+  Ov004_FadeInTransition's), +0x5574 the rolling done, +0x5578 the rolling's progress
+- +0x5598 the day whose title it draws (Ov004_PrepareTransitionLabel, set before 0x190 became 0xff: 400 the
+  prologue's)
+
+The port's card has its titles by that day (tools/hd/theater_day.py). More: docs/RUNTIME_MAP.md, scene 5.
+
+(`port/runtime/menus/daycard.c`)
+
+### The Files pages
+
+Roxas's Diary and Enemy Profiles are the story camp's screen 7, one page in two modes (Ov025_GoToPage7A / 7B: the
+context's word 0x9768, 0 the diary, 1 the enemies). Its state (the screen's, page A: Ov025_Reports_InitPage,
+0x278 bytes): s16 the first row shown (+0), the row chosen (+2), the rows (+4); A held (+0xc0: the cursor's
+row shows its other version); running (+0xc8, 1 from InitPage to Reports_Leave); the entries (+0x1e8: 0x40
+bytes each, Reports_LoadEntries -- u16 its id, the diary's day, in bits 0-8 and bits 10-15 set while it is
+locked; +2 its title's length; +0xc its other version or 0; +0x10 its title, UTF-16); the entries viewed on
+this visit and those seen before (+0x238, +0x248: bits, the first the highest of the first word;
+Ov025_QueryItemFlags -- the NEW badge while not seen before, dimmed once viewed). A diary row with another
+version is viewed as entry + 0x40 (its other version's). A locked enemy's name is the game's "?" (the
+overlay's string 0x020b5270).
+
+(`port/runtime/menus/camp.c`)
+
+### The Panels page
+
+The story camp's screen 2 (Ov025's grid menu: page A its grid's context, Ov008MenuContext -- the grid and the
+list on the lower screen; page B the status page on the upper one, Ov025_TickMenuState's). Shown by the port
+once page B is up (its gate 0x020b575c, Ov025_TickMenuState's step 1); not while table B shows another page
+there (4: the first visit's tutorial). While page B sets up (its step, +0x18, short of 7: its slide's handler,
+Ov025_TickPageBTransition, not running yet) its upper screen shows the list as set up (its layers not
+scrolled, its sprites where they are), the numbers chosen at step 3 and slid to at once when the handler
+starts: the view is the numbers' then, and `panels_early` once its words are drawn (steps 1-2), for the port
+to take the list from those pictures (the page opening, before X shows it). Page B's view (+0x44: 1 the
+numbers, 0 the list of what the panels give) and its slide between the two (+0x38, in dots:
+Ov025_TickPageBTransition's sub BG scroll, a 100 ms tween to 192 or 0 -- Ov025_ChangeMenuSelection). The lower
+screen's line (its box: row 0 of the grid's text panel, Ov025_RepaintTextRow -- the cell's panel's
+description, the list's row's, a count) as the game wrote it last (prepare.py's hook), copied then: the
+description's record goes away with the next.
+
+(`port/runtime/menus/camp.c`)
+
+### The Files pages' NEW badges
+
+An entry is new as its page would badge it (Reports_RefreshRowEntries: an entry's bit
+clear in the seen words, which Reports_Teardown keeps in the game state's fields 0x45b (the diary) and 0x3c6a
+(the enemies), eight 16-bit words 0x10 apart, the first bit the highest of the first two words' u32 --
+BitArray_TestBit). Its rows as Reports_LoadEntries / CountUnlocked make them from the page's table
+(UI/cm/str/rpt_&.z, enm_&.z: a u32 count, then 0x14-byte records whose first halfword holds the diary's day in
+bits 0-8; an enemy's id is the record's first byte): the diary's entries from the first while each one's day
+is before the story's (359 in the last chapter, field 0x44e), the next one's not after it, and the table has
+not started again (its second half, the rewritten versions); an entry with its rewritten version linked (the
+last chapter's, by its missions: the page's own reckoning) is viewed as entry + 0x40 -- known from the page
+once it was open, else counted new only while neither is seen. The enemies: all the table's, new once met (the
+game state's byte 0xa11 + id not 0: Ov025_IsFlagRowFree).
+
+(`port/runtime/menus/camp.c`)

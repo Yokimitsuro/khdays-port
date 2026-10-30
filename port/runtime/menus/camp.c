@@ -694,16 +694,8 @@ static void show_steer_target(KhdaysCampPage *pg)
 
 /* ---- The story's Files pages ------------------------------------------------------------------- */
 
-/* Roxas's Diary and Enemy Profiles: the story camp's screen 7, one page in two modes (Ov025_GoToPage7A /
- * 7B: the context's word 0x9768, 0 the diary, 1 the enemies). Its state (the screen's, page A:
- * Ov025_Reports_InitPage, 0x278 bytes): s16 the first row shown (+0), the row chosen (+2), the rows
- * (+4); A held (+0xc0: the cursor's row shows its other version); running (+0xc8, 1 from InitPage to
- * Reports_Leave); the entries (+0x1e8: 0x40 bytes each, Reports_LoadEntries -- u16 its id, the diary's
- * day, in bits 0-8 and bits 10-15 set while it is locked; +2 its title's length; +0xc its other version
- * or 0; +0x10 its title, UTF-16); the entries viewed on this visit and those seen before (+0x238, +0x248: bits, the first
- * the highest of the first word; Ov025_QueryItemFlags -- the NEW badge while not seen before, dimmed
- * once viewed). A diary row with another version is viewed as entry + 0x40 (its other version's). A
- * locked enemy's name is the game's "?" (the overlay's string 0x020b5270). */
+/* Roxas's Diary and Enemy Profiles: the story camp's screen 7, one page in two modes (the context's word
+ * 0x9768: 0 the diary, 1 the enemies). Its state's fields: docs/MENU_OVERHAUL.md, "The Files pages". */
 #define FILES_SCREEN 7
 #define FILES_MODE 0x9768u
 #define FILES_TOP 0x0u
@@ -955,18 +947,8 @@ static int read_files(u32 context, u32 state, KhdaysCampView *v)
 
 /* ---- The story's Panels page ------------------------------------------------------------------ */
 
-/* The story camp's screen 2 (Ov025's grid menu: page A its grid's context, Ov008MenuContext -- the grid and
- * the list on the lower screen; page B the status page on the upper one, Ov025_TickMenuState's). Shown by
- * the port once page B is up (its gate 0x020b575c, Ov025_TickMenuState's step 1); not while table B shows
- * another page there (4: the first visit's tutorial). While page B sets up (its step, +0x18, short of 7: its
- * slide's handler, Ov025_TickPageBTransition, not running yet) its upper screen shows the list as set up (its
- * layers not scrolled, its sprites where they are), the numbers chosen at step 3 and slid to at once when the
- * handler starts: the view is the numbers' then, and `panels_early` once its words are drawn (steps 1-2), for the
- * port to take the list from those pictures (the page opening, before X shows it). Page B's view (+0x44: 1 the numbers, 0 the list of what the panels give) and its slide
- * between the two (+0x38, in dots: Ov025_TickPageBTransition's sub BG scroll, a 100 ms tween to 192 or
- * 0 -- Ov025_ChangeMenuSelection). The lower screen's line (its box: row 0 of the grid's text panel,
- * Ov025_RepaintTextRow -- the cell's panel's description, the list's row's, a count) as the game wrote it
- * last (prepare.py's hook), copied then: the description's record goes away with the next. */
+/* The story camp's Panels page (screen 2: Ov025's grid menu, its grid and list below, the status page above),
+ * shown by the port once page B is up. Its steps and fields: docs/MENU_OVERHAUL.md, "The Panels page". */
 #define PANELS_SCREEN 2
 #define PAGE_B 0x95a0u
 #define PAGE_B_SLIDE 0x38u
@@ -1048,18 +1030,8 @@ static int read_panels(const Camp *c, u32 camp, u32 state, int page, KhdaysCampV
 
 /* ---- Files' NEW on the story's menu ------------------------------------------------------------ */
 
-/* What of Files has an entry never viewed, as its page would badge it (Reports_RefreshRowEntries: an
- * entry's bit clear in the seen words, which Reports_Teardown keeps in the game state's fields 0x45b
- * (the diary) and 0x3c6a (the enemies), eight 16-bit words 0x10 apart, the first bit the highest of
- * the first two words' u32 -- BitArray_TestBit). Its rows as Reports_LoadEntries / CountUnlocked make
- * them from the page's table (UI/cm/str/rpt_&.z, enm_&.z: a u32 count, then 0x14-byte records whose
- * first halfword holds the diary's day in bits 0-8; an enemy's id is the record's first byte): the
- * diary's entries from the first while each one's day is before the story's (359 in the last chapter,
- * field 0x44e), the next one's not after it, and the table has not started again (its second half,
- * the rewritten versions); an entry with its rewritten version linked (the last chapter's, by its
- * missions: the page's own reckoning) is viewed as entry + 0x40 -- known from the page once it was
- * open, else counted new only while neither is seen. The enemies: all the table's, new once met (the
- * game state's byte 0xa11 + id not 0: Ov025_IsFlagRowFree). */
+/* What of Files has an entry never viewed, as its page would badge it. How the game keeps the entries seen
+ * and makes its rows: docs/MENU_OVERHAUL.md, "The Files pages' NEW badges". */
 typedef struct KhdaysRomReader KhdaysRomReader; /* rom.h */
 KhdaysRomReader *khdays_rom_reader_new(void);
 int khdays_rom_file_data(KhdaysRomReader *reader, const char *path, int entry, u8 **data, u32 *size);

@@ -53,14 +53,10 @@ typedef struct KhdaysCampPage {
     int chosen;
 } KhdaysCampPage;
 
-/* The story camp's Files pages (its screen 7: Roxas's Diary, Enemy Profiles -- Ov025_Reports_*, the
- * list on the lower screen, the entry on the upper): the list as the game has it, for the port to draw
- * its own (host/screens/camp_screen.c, "The Files pages"). A row: the diary's day (the enemies' its
- * place in the list, from 1), its title (the enemy's name; while A is held on the cursor's row, its
- * other version's, as the game shows it), whether the enemy is not met yet (its name the game's "?"),
- * the game's NEW badge: -1 none, 0 never viewed, 1 viewed on this visit (gone at the next), whether A
- * shows another page of it while held (the diary's entry rewritten, an enemy's drops: the game's A mark
- * on the row). */
+/* The story camp's Files pages' list (screen 7: Roxas's Diary, Enemy Profiles) as the game has it, for the
+ * port to draw its own. A row: the diary's day (an enemy's place in the list, from 1), its title (with A held,
+ * its other version's), whether the enemy is not met yet, the NEW badge (-1 none, 0 never viewed, 1 viewed on
+ * this visit) and whether A shows another page of it. */
 typedef struct KhdaysCampFileRow {
     int16_t number;
     int8_t locked;

@@ -1,28 +1,6 @@
-/* The Enemy Profiles' model viewer (enemy_viewer.h): the enemy's model as the game loads it in battle,
- * drawn by the game's own 3D (NNS G3D, all in the main ARM9 code, loaded whatever the overlay) while
- * its Files page runs -- the camp menu draws Roxas so (Ov025_ModelActor_Init, Ov025_Menu_RenderScenePanels).
- *
- * The model: Ms/<class>.p (a P2 archive; the class the enm_&.z record's first byte, as the enemies'
- * overlays open it: Ov114_CreateNamedEntity's "Ms/%02x.p"), its entry 0 a KAPH pack -- the model
- * (section 7) and, for most, its joint animations (section 0); for the others each later entry that
- * holds a BCA alone is one animation. An entry is opened by a handle on the archive's header
- * (Msg_OpenContainerAndReadHeader, Ov107_PackTextureHandle's packing) through RegisterSeqAndInit (the
- * model instance: textures to VRAM, the render object, the animations' table at +0xe0) or
- * Snd_RegisterSeqAndBind (an animation's file into a table of its own); BindAnimTrack plays one,
- * Sequence_UpdateTracks steps it, Scene_DrawNode draws the instance on its matrix (+0x80, a 4x3) with
- * the camera Camera_CommitMatrices made (a block Projection_LoadDefaults fills), between main's
- * G3X_ResetMtxStack and its swap.
- *
- * The page has no texture VRAM (Ov025_Reports_SetupDisplay: banks A-D its BGs and OBJs) and hides the
- * 3D layer. The port shows neither of the main engine's (the lower screen's) BG and OBJ there, so while
- * the viewer is open bank B (the main OBJ's) holds the textures and F+G their palettes, as the camp's
- * menu has them (Ov025_Hub_SetupGraphics), BG0 shows the 3D; on closing, all as it was (bank B's
- * contents too). host/render/onescreen.c takes the 3D's polygons into the window.
- *
- * Some enemies are several models the game draws at one place (Darkside's DS01 with DS02 and DS03 on the
- * actor's matrix, Ov244_TickAndSyncTwoModelXforms; the bosses' wings, swords, arms, tails): their parts
- * (enemy_viewer_anims.h's VIEWER_PARTS) are instances of their own from the same archive, each with the
- * animation of the body's number, on the body's matrix. */
+/* The Enemy Profiles' model viewer (enemy_viewer.h): the enemy's model as the game loads it in battle, drawn
+ * by the game's own 3D while the Files page runs, as the camp menu draws Roxas. How it is loaded, drawn and
+ * given the page's video memory: docs/MENU_OVERHAUL.md, "The enemy viewer". */
 #include "enemy_viewer.h"
 
 #include "../core/io.h"

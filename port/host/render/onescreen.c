@@ -701,17 +701,10 @@ static void model_window(const KhdaysFramePackage *p, int columns, KhdaysComposi
 }
 
 /* ---- The Moogle Shop's DS screens, composed apart -------------------------------------------------
- * The shop's page floats parts of the DS's two screens (the lower's list, the upper's counter and
- * Synthesize's recipe), without the DS's stripes behind them (or as they are, in a frame, as the mod's
- * shop.txt says or when that cannot be made). Composing a screen on the CPU takes some 10 ms, so it is
- * not done here: each of the game's pictures with a list up, what the composition reads (both engines'
- * descriptions, their layers' and sprites' memory, the palettes, the port's elements) is copied -- when it
- * changed: a picture alike to the last gives nothing new -- and a thread of its own composes it, the
- * newest only; the page takes what it made when it is done. The stripes' layers are found once for each
- * list shown (the request's generation): each layer alone, over six strips of the screen, its own pixels
- * counted and those of the stripes' mustard browns -- the layers mostly of the stripes, over a quarter of
- * the screen or more, are left out (Redeem's list has its own over the screen's); none, the backmost that
- * covers the screen whole. What each layer showed goes to the session log. */
+ * The shop's page floats parts of the DS's two screens without their stripes. Composing takes some 10 ms, so
+ * each picture with a list up is copied (when it changed) and a thread of its own composes the newest. The
+ * stripes' layers are found once a list (those mostly of the stripes' browns, over a quarter of the screen),
+ * left out, and told in the session log. */
 #define SHOP_PAGES 51 /* an engine's layers, sprites and extended palettes (engine A's: the most) */
 #define SHOP_KEY 0xff00ffu
 enum { SHOP_UPPER, SHOP_LOWER };
