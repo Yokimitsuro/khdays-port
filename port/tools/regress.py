@@ -477,7 +477,11 @@ def run_walks(args: argparse.Namespace) -> int:
     if args.record:
         merged = read_expected()
         merged.update(results)
-        lines = ["# The scene sequence each regression walk must produce (port/tools/regress.py)."]
+        # the file's comments kept (the record of when each walk was added)
+        old = EXPECTED.read_text(encoding="utf-8").splitlines() if EXPECTED.exists() else []
+        lines = [line for line in old if line.startswith("#")] or [
+            "# The scene sequence each regression walk must produce (port/tools/regress.py)."
+        ]
         lines += [f"{w.name}: {' '.join(merged[w.name])}" for w in WALKS if w.name in merged]
         EXPECTED.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         print(f"recorded {EXPECTED.relative_to(ROOT)}")
