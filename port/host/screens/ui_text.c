@@ -521,6 +521,22 @@ static const char *const texts[TXT_COUNT][5] = {
                                 "Ein Bild: die Teile des unteren Bildschirms werden hineingesetzt.",
                                 "Un'unica immagine: gli elementi dello schermo inferiore vi sono portati.",
                                 "Una sola imagen: las piezas de la pantalla de abajo se colocan en ella."},
+    [TXT_VIDEO_TWO_SCREENS] = {"Two screens", "Deux écrans", "Zwei Bildschirme", "Due schermi", "Dos pantallas"},
+    [TXT_VIDEO_TWO_SCREENS_STACKED] = {"Stacked", "Superposés", "Übereinander", "Uno sopra l'altro", "Arriba y abajo"},
+    [TXT_VIDEO_TWO_SCREENS_SIDE] = {"Side by side", "Côte à côte", "Nebeneinander", "Affiancati", "A los lados"},
+    [TXT_VIDEO_TWO_SCREENS_NOTE] =
+        {"Side by side: the upper screen on the left, the lower on the right, each as wide as the DS's (the aspect "
+         "widens stacked screens only).",
+         "Côte à côte : l'écran du haut à gauche, celui du bas à droite, chacun aussi large que celui de la DS (le "
+         "format n'élargit que les écrans superposés).",
+         "Nebeneinander: der obere Bildschirm links, der untere rechts, jeder so breit wie der des DS (das "
+         "Seitenverhältnis verbreitert nur übereinanderliegende Bildschirme).",
+         "Affiancati: lo schermo superiore a sinistra, quello inferiore a destra, ciascuno largo come quello del DS "
+         "(il formato allarga solo gli schermi uno sopra l'altro).",
+         "A los lados: la pantalla de arriba a la izquierda y la de abajo a la derecha, cada una del ancho de la de "
+         "la DS (el formato solo ensancha las pantallas de arriba y abajo)."},
+    [TXT_VIDEO_TWO_SCREENS_ONE] = {"Only with two screens.", "Seulement avec deux écrans.",
+                                   "Nur mit zwei Bildschirmen.", "Solo con due schermi.", "Solo con dos pantallas."},
     [TXT_VIDEO_HUD_SIZE] = {"HUD size", "Taille du HUD", "HUD-Größe", "Dimensione HUD", "Tamaño del HUD"},
     [TXT_VIDEO_HUD_SIZE_NOTE] =
         {"One screen: how big the HUD's pieces are, 1 to 8 (4 by default); the dialogs keep "

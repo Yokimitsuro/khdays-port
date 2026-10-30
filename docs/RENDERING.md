@@ -76,6 +76,15 @@ engine's `KhdaysGpu2dWide` does the same, with a DS column whose own pixel stays
 taking the DS's record, and a column with no 2D and no sprite its window mask's
 record alone).
 
+## Two screens side by side
+
+With two screens, `[video] two_screens = side-by-side` puts the upper screen on the left and the lower on the right
+(`host/render/two_screens.c`): a picture two DS screens wide and one tall, each screen its DS's 256 columns (a screen
+drawn wider shows its middle 256), the engine A's 3D drawn on the card again over its own screen's place. The aspect
+ratio widens stacked screens only: side by side the picture is the DS's columns (`columns_now()`). Stacked, the
+default, is the picture as it was, the two screens one above the other. Only the presentation changes: the game and
+its frames are the same.
+
 ## One screen
 
 The one-screen pass (`port/gfx/onescreen.h`) places shapes -- rectangles of

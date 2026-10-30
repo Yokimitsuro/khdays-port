@@ -149,6 +149,14 @@ typedef enum KhdaysAspect {
 
 #define KHDAYS_RESOLUTION_WINDOW 0 /* internal_resolution = window */
 
+/* The two screens' arrangement ([video] two_screens), with two screens: the upper above the lower, as the
+ * DS has them, or side by side, the upper on the left. */
+typedef enum KhdaysTwoScreens {
+    KHDAYS_TWO_STACKED,
+    KHDAYS_TWO_SIDE_BY_SIDE,
+    KHDAYS_TWO_SCREENS_COUNT
+} KhdaysTwoScreens;
+
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
     int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
@@ -162,6 +170,7 @@ typedef struct KhdaysVideo {
     int show_fps;      /* the pictures and the game's frames a second, in a corner of the window */
     int backend;       /* KhdaysBackend: the graphics API the picture goes through */
     int one_screen;    /* screens = one: one picture, else the DS's two */
+    int two_screens;   /* KhdaysTwoScreens: the DS's two screens one above the other or side by side */
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */

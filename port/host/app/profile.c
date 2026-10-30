@@ -266,6 +266,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->hd_graphics = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
+    v->two_screens = KHDAYS_TWO_STACKED;
     v->hud_size = 4;
     v->subtitles = 1; /* as the DS showed them */
     v->display = KHDAYS_DISPLAY_WINDOW;
@@ -406,6 +407,7 @@ int khdays_profile_repair(KhdaysProfile *p)
             ++changed;
         }
         changed += clamp(&p->video.one_screen, 0, 1);
+        changed += clamp(&p->video.two_screens, 0, KHDAYS_TWO_SCREENS_COUNT - 1);
         if (p->video.aspect < 0 || p->video.aspect >= KHDAYS_ASPECT_COUNT) {
             p->video.aspect = default_aspect(p->video.one_screen);
             ++changed;
@@ -961,6 +963,15 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, defaults.one_screen ? "one" : "two");
             v->one_screen = defaults.one_screen;
+        }
+        return;
+    }
+    if (SDL_strcasecmp(key, "two_screens") == 0) {
+        if (SDL_strcasecmp(value, "stacked") == 0 || SDL_strcasecmp(value, "side-by-side") == 0) {
+            v->two_screens = SDL_strcasecmp(value, "side-by-side") == 0 ? KHDAYS_TWO_SIDE_BY_SIDE : KHDAYS_TWO_STACKED;
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "stacked");
+            v->two_screens = defaults.two_screens;
         }
         return;
     }
@@ -1545,8 +1556,11 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# antialiasing: off, 2x, 3x or 4x -- the picture made that many times larger and shrunk,\n"
             "# the 3D's edges smooth (2x is four times the work, 4x sixteen)\n"
             "antialiasing = %s\n"
-            "# screens: two (the DS's, one above the other) or one (one picture)\n"
+            "# screens: two (the DS's) or one (one picture)\n"
             "screens = %s\n"
+            "# two_screens: with two screens, stacked (the upper above the lower, as the DS has them)\n"
+            "#              or side-by-side (the upper on the left, each screen as wide as the DS's)\n"
+            "two_screens = %s\n"
             "# hud_size: 1 to 8, the HUD's size on one screen (4 the default)\n"
             "hud_size = %d\n"
             "# aspect: 4:3 (the DS's), 16:9, 16:10, or window\n"
@@ -1568,8 +1582,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
-            v->one_screen ? "one" : "two", v->hud_size,
-            aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
+            v->one_screen ? "one" : "two", v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked",
+            v->hud_size, aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
             v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS   ? "ds"

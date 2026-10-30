@@ -29,8 +29,8 @@ static const char *languages[KHDAYS_LANGUAGE_LAST + 1];
  * hand, for comparing with the DS) shows it first, so the menu says what it is. */
 enum { RESOLUTION_CHOICES = 17 };
 static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2],
-    *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *backends[KHDAYS_BACKEND_COUNT],
-    *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
+    *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *two_screens_choices[KHDAYS_TWO_SCREENS_COUNT],
+    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
 static const int antialiasing_values[4] = {1, 2, 3, 4};
 static const char *autosaves[3], *save_files[2];
 static const char *hud_anchors[9], *mission_visibility[2];
@@ -76,6 +76,8 @@ void khdays_model_refresh(const KhdaysProfile *work)
     displays[KHDAYS_DISPLAY_FULLSCREEN] = khdays_text(TXT_VIDEO_DISPLAY_FULLSCREEN);
     screens_choices[0] = khdays_text(TXT_VIDEO_SCREENS_TWO);
     screens_choices[1] = khdays_text(TXT_VIDEO_SCREENS_ONE);
+    two_screens_choices[KHDAYS_TWO_STACKED] = khdays_text(TXT_VIDEO_TWO_SCREENS_STACKED);
+    two_screens_choices[KHDAYS_TWO_SIDE_BY_SIDE] = khdays_text(TXT_VIDEO_TWO_SCREENS_SIDE);
     aspects[KHDAYS_ASPECT_4_3] = "4:3 (DS)";
     aspects[KHDAYS_ASPECT_16_9] = "16:9";
     aspects[KHDAYS_ASPECT_16_10] = "16:10";
@@ -389,6 +391,11 @@ static void build_video(Builder *b, KhdaysProfile *w)
                         TXT_VIDEO_ASPECT_NOTE);
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen, screens_choices, 2),
                         TXT_VIDEO_SCREENS_NOTE);
+    /* the two screens' arrangement: only with two screens (it changes nothing on one) */
+    r = add_choice(b, KHDAYS_SET_TWO_SCREENS, TXT_VIDEO_TWO_SCREENS, &v->two_screens, two_screens_choices,
+                   KHDAYS_TWO_SCREENS_COUNT);
+    r->available = !v->one_screen;
+    r->note = khdays_text(r->available ? TXT_VIDEO_TWO_SCREENS_NOTE : TXT_VIDEO_TWO_SCREENS_ONE);
     needs_graphics_card(b, add_number(b, KHDAYS_SET_HUD_SIZE, TXT_VIDEO_HUD_SIZE, &v->hud_size, 1, 8, 1),
                         TXT_VIDEO_HUD_SIZE_NOTE);
     add_choice(b, KHDAYS_SET_SCALING, TXT_VIDEO_SCALING, &v->smooth_scaling, scalings, 2)->note =

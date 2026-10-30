@@ -700,12 +700,13 @@ static void settings_key(void)
     }
 }
 
-/* Creates the window: the DS's two screens at 2x, or with one picture
- * the largest whole multiple of 342 x 192 (16:9) that fits in
- * three quarters of the desktop. */
+/* Creates the window: the DS's two screens at 2x (one above the other, or
+ * side by side), or with one picture the largest whole multiple of 342 x 192
+ * (16:9) that fits in three quarters of the desktop. */
 static SDL_Window *open_window(const KhdaysProfile *profile)
 {
-    int w = 2 * W, h = 4 * H;
+    const int beside = profile->video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE;
+    int w = beside ? 4 * W : 2 * W, h = beside ? 2 * H : 4 * H;
     SDL_Rect desk;
     if (profile->video.one_screen && SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &desk)) {
         const int kx = desk.w * 3 / 4 / 342, ky = desk.h * 3 / 4 / H;

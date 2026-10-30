@@ -621,6 +621,7 @@ add_executable(khdays-native
     host/app/sound_output.c
     host/settings/settings_sample.cpp       # the settings menu's volume samples
     host/render/gpu_present.c
+    host/render/two_screens.c             # the two screens' places: stacked or side by side
     host/render/gpu_raster3d.c
     host/render/gfx_render.c
     host/render/kh2_sequence_gpu.c
@@ -981,6 +982,10 @@ add_test(NAME khdays-save COMMAND khdays-save-test)
 # holds as the game's read tells it, the two views, a port's file written and
 # read back.
 # The update check's versions and GitHub's answer (host/app/release_version.h).
+add_executable(khdays-present-layout-test tests/present_layout_test.c host/render/two_screens.c)
+target_compile_options(khdays-present-layout-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-present-layout COMMAND khdays-present-layout-test)
+
 add_executable(khdays-updates-test tests/updates_test.c host/app/release_version.c)
 target_compile_options(khdays-updates-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-updates COMMAND khdays-updates-test)

@@ -11,6 +11,7 @@
 #include "../../runtime/menus/newgame.h"
 #include "onescreen.h"
 #include "png_io.h"
+#include "two_screens.h"
 #include "../../ui/composition.h"
 #include "../screens/movie_pause.h"
 #include "../screens/ui_text.h"
@@ -317,10 +318,16 @@ int khdays_present_gpu(void)
 /* The width of engine A's screen for the aspect setting, in DS pixels: 256 at 4:3; 342 at 16:9 and 308
  * at 16:10 (rounded up to even, so the DS's 256 columns sit whole in the middle); for "window", as wide
  * as the window at the screens' height, up to three times the DS's. */
+/* Two screens side by side ([video] two_screens): each the DS's width, whatever the aspect. */
+static int side_by_side(void)
+{
+    return !video.one_screen && video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE;
+}
+
 static int columns_now(void)
 {
     int pw = 0, ph = 0, n;
-    if (device == NULL || !raster_ready) {
+    if (device == NULL || !raster_ready || side_by_side()) {
         return W;
     }
     switch (video.aspect) {
@@ -347,10 +354,11 @@ static int antialiasing_now(void)
 static float shown_scale(void)
 {
     int pw = 0, ph = 0;
-    const int rows = video.one_screen ? H : 2 * H;
+    const KhdaysTwoScreensLayout two = khdays_two_screens_layout(side_by_side(), columns_now(), W, W);
+    const int across = video.one_screen ? columns_now() : two.width, rows = video.one_screen ? H : two.height;
     float sx, sy;
     SDL_GetWindowSizeInPixels(window, &pw, &ph);
-    sx = (float)pw / (float)columns_now();
+    sx = (float)pw / (float)across;
     sy = (float)ph / (float)rows;
     return sx < sy ? sx : sy;
 }
@@ -408,16 +416,17 @@ int khdays_present_scale(void)
     return port2d_ready && device != NULL ? scale_now() : 1;
 }
 
-/* Lays out the picture for its width now: the two screens one above the
- * other, the DS's 256 columns of each in the middle, fitted to the window. */
+/* Lays out the picture for its width now: the two screens one above the other or side by side
+ * (two_screens.h), the DS's 256 columns of each, fitted to the window. */
 static void present_size(int w, int h);
 
 static void layout(void)
 {
+    const KhdaysTwoScreensLayout two = khdays_two_screens_layout(side_by_side(), khdays_present_columns(), W, W);
     columns = khdays_present_columns();
     /* one screen: each frame sets what it shows (khdays_present_draw); until then, leave it */
     presented_w = presented_h = 0;
-    present_size(columns, video.one_screen ? H : 2 * H);
+    present_size(video.one_screen ? columns : two.width, video.one_screen ? H : two.height);
 }
 
 void khdays_present_resized(void)
@@ -1500,9 +1509,16 @@ static SDL_ScaleMode mode_for(SDL_Texture *t, float w, float h)
     return video.smooth_scaling ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST;
 }
 
+/* A screen's place as an SDL rectangle. */
+static SDL_FRect at_place(KhdaysScreenPlace p)
+{
+    const SDL_FRect r = {p.x, p.y, p.w, p.h};
+    return r;
+}
+
 void khdays_present_draw(void)
 {
-    const float left = (float)(columns - W) / 2;
+    const int beside = side_by_side();
     if (device_lost) {
         return;
     }
@@ -1556,36 +1572,41 @@ void khdays_present_draw(void)
             SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
         }
     } else if (port2d_drawn) {
-        /* stacked: the two-screen picture. Set each frame, as every picture sets its own: an HD video
-         * left its size behind (seen: after hd818's 1280 x 720, the two screens letterboxed into it at
-         * 0.4 of their size) */
-        present_size(columns, 2 * H);
-        /* the port's own screens, the DS's 256 columns in the middle (engine A as wide as it was drawn) */
+        /* the two-screen picture, stacked or side by side (two_screens.h). Set each frame, as every picture
+         * sets its own: an HD video left its size behind (seen: after hd818's 1280 x 720, the two screens
+         * letterboxed into it at 0.4 of their size) */
         int cu = 0, cl = 0;
         SDL_Texture *upper = screen_texture(port2d_upper, &cu);
         SDL_Texture *lower = screen_texture(!port2d_upper, &cl);
-        const float wu = (float)cu, wl = (float)cl;
-        const SDL_FRect upper_at = {((float)columns - wu) / 2, 0, wu, H},
-                        lower_at = {((float)columns - wl) / 2, H, wl, H};
+        const KhdaysTwoScreensLayout two = khdays_two_screens_layout(beside, columns, (float)cu, (float)cl);
+        const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
+        present_size(two.width, two.height);
         if (upper != NULL && lower != NULL) {
-            SDL_SetTextureScaleMode(upper, mode_for(upper, wu, H));
-            SDL_SetTextureScaleMode(lower, mode_for(lower, wl, H));
-            SDL_RenderTexture(renderer, upper, NULL, &upper_at);
-            SDL_RenderTexture(renderer, lower, NULL, &lower_at);
+            /* stacked: each as wide as it was drawn; side by side: its DS's 256 columns */
+            const SDL_FRect upper_from = ds_columns(upper, beside ? cu : W),
+                            lower_from = ds_columns(lower, beside ? cl : W);
+            SDL_SetTextureScaleMode(upper, mode_for(upper, upper_at.w, H));
+            SDL_SetTextureScaleMode(lower, mode_for(lower, lower_at.w, H));
+            SDL_RenderTexture(renderer, upper, &upper_from, &upper_at);
+            SDL_RenderTexture(renderer, lower, &lower_from, &lower_at);
         }
     } else if (screens != NULL) {
-        /* the 1x screens, the DS's 256 columns in the middle */
+        /* the 1x screens, the DS's 256 columns of each */
+        const KhdaysTwoScreensLayout two = khdays_two_screens_layout(beside, columns, W, W);
         const SDL_FRect upper = {0, 0, W, H}, lower = {0, H, W, H};
-        const SDL_FRect upper_at = {left, 0, W, H}, lower_at = {left, H, W, H};
-        present_size(columns, 2 * H);
+        const SDL_FRect upper_at = at_place(two.upper), lower_at = at_place(two.lower);
+        present_size(two.width, two.height);
         SDL_RenderTexture(renderer, screens, &upper, &upper_at);
         SDL_RenderTexture(renderer, screens, &lower, &lower_at);
     }
     if (hd != NULL) {
-        /* engine A drawn again, as wide as its list was made */
-        const SDL_FRect place = {(float)(columns - hd_columns) / 2, hd_upper ? 0.0f : (float)H, (float)hd_columns,
-                                 (float)H};
-        SDL_RenderTexture(renderer, hd, NULL, &place);
+        /* engine A drawn again, as wide as its list was made, on its screen's place (side by side its DS's
+         * 256 columns) */
+        const KhdaysTwoScreensLayout two =
+            khdays_two_screens_layout(beside, columns, (float)hd_columns, (float)hd_columns);
+        const SDL_FRect place = at_place(hd_upper ? two.upper : two.lower);
+        const SDL_FRect from = ds_columns(hd, beside ? hd_columns : W);
+        SDL_RenderTexture(renderer, hd, &from, &place);
     }
     /* around a scene's videos the game goes down to black and comes up from it */
     darken(1.0f - khdays_movie_hd_game_level());

@@ -616,6 +616,16 @@ static void test_video_settings(void)
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
     khdays_profile_load(&r, path, count_notice);
     CHECK(r.video.one_screen && r.video.aspect == KHDAYS_ASPECT_16_9);
+    /* The two screens' arrangement: stacked by default; side by side read and written back; a bad value says
+     * so and keeps stacked. */
+    CHECK(p.video.two_screens == KHDAYS_TWO_STACKED);
+    CHECK(load_text("[video]\nscreens = two\ntwo_screens = Side-By-Side\n", &q) == 0 &&
+          q.video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
+    CHECK(khdays_profile_save(&q, path, count_notice) == 0);
+    khdays_profile_load(&r, path, count_notice);
+    CHECK(r.video.two_screens == KHDAYS_TWO_SIDE_BY_SIDE && !r.video.one_screen);
+    CHECK(load_text("[video]\ntwo_screens = stacked\n", &q) == 0 && q.video.two_screens == KHDAYS_TWO_STACKED);
+    CHECK(load_text("[video]\ntwo_screens = beside\n", &q) == 1 && q.video.two_screens == KHDAYS_TWO_STACKED);
     /* The HUD's size: 1 to 8, 4 by default; a bad value says so. */
     CHECK(load_text("[video]\nhud_size = 6\n", &q) == 0 && q.video.hud_size == 6);
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
@@ -914,6 +924,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 3, 0}, /* off, 2x, 3x, 4x */
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
         {KHDAYS_SET_SCREENS, KHDAYS_ROW_CHOICE, 0, 1, 0},
+        {KHDAYS_SET_TWO_SCREENS, KHDAYS_ROW_CHOICE, 0, KHDAYS_TWO_SCREENS_COUNT - 1, 0},
         {KHDAYS_SET_HUD_SIZE, KHDAYS_ROW_NUMBER, 1, 8, 1},
         {KHDAYS_SET_SCALING, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_TEXTURES, KHDAYS_ROW_SWITCH, 0, 1, 0},
@@ -1445,6 +1456,11 @@ static void test_video_page(void)
     CHECK(v->one_screen == 1 && v->aspect == KHDAYS_ASPECT_16_9);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->one_screen == 0);
+    key(SDL_SCANCODE_DOWN); /* the two screens' arrangement, with two screens: side by side and back */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
+    key(SDL_SCANCODE_LEFT);
+    CHECK(v->two_screens == KHDAYS_TWO_STACKED);
     key(SDL_SCANCODE_DOWN); /* the HUD's size, by one */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->hud_size == 5);
@@ -1485,6 +1501,9 @@ static void test_video_page(void)
     key(SDL_SCANCODE_DOWN); /* the aspect cannot be chosen either, nor the screens: on to scaling */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->one_screen == 0);
+    key(SDL_SCANCODE_DOWN); /* the two screens' arrangement needs no card */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE);
     key(SDL_SCANCODE_DOWN); /* nor the HUD's size */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->hud_size == 4);

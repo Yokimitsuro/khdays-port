@@ -314,6 +314,10 @@ once:
   stays where it was, and the lower screen stays 4:3 in the middle. The game
   sees nothing different: it still computes
   its 4:3 view.
+- **Two screens** (with two screens): stacked, the upper above the lower as
+  on the DS, or side by side, the upper on the left and the lower on the
+  right, each at the DS's width (the aspect ratio widens stacked screens
+  only); side by side, a 16:9 window shows each screen a third larger.
 - **Screen scaling**: sharp (the DS's pixels as squares) or smooth.
 - **3D texture smoothing**: off as on the DS, or blended between texels.
 - **HD graphics**: the replacements in your mods (below), on by default.
@@ -346,6 +350,7 @@ The choices are kept in the `[video]` section of `saves/settings.ini`:
 internal_resolution = window   # the window's size (the default), or a multiple: 2 to 16 in the settings
 antialiasing = off        # off, 2x, 3x or 4x: made that many times larger and shrunk
 aspect = 16:9             # 4:3 (the DS's), 16:9, 16:10, or window
+two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth
 texture_smoothing = off   # off (the DS's) or on
 hd_graphics = on          # the mods' replacements
