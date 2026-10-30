@@ -262,11 +262,6 @@ static int engine_upper; /* engine A on the upper screen at the VBlank before */
 static u32 swap_history; /* bit n: engine A changed screens n VBlanks ago */
 static u32 engine_swaps; /* how many of the last 8 VBlanks engine A changed screens in */
 
-u32 khdays_display_engine_swaps(void)
-{
-    return engine_swaps;
-}
-
 /* KHDAYS_HEADLESS: only the frames a shot saves are drawn, with the two before them (they settle the
  * windows' vertical latch). The game reads nothing from the drawing, so it runs the same. */
 static int headless;

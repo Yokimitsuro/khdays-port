@@ -106,7 +106,6 @@ extern int PlaySound(int kind, int sound);
 #define FILL_MOST 0.9f
 #define FIT 0.92f  /* the model's reach (turning, animated) inside this part of the window */
 #define FRAME 1.7f /* (no size measured: the box's sphere this much of the view's height away) */
-#define PITCH_MOST 1.3f
 /* its controls (the DS's buttons, whatever the player plays them with) */
 #define KHDAYS_VIEW_OPEN KHDAYS_KEY_X
 #define KHDAYS_VIEW_CLOSE (KHDAYS_KEY_B | KHDAYS_KEY_X)

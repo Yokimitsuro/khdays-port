@@ -35,8 +35,6 @@ void khdays_saveworld_card_read(u32 offset);
 void khdays_saveworld_saved(u32 counter);
 /* The world of the save of counter `counter` (KHDAYS_WORLD_*). Any thread. */
 int khdays_saveworld_of(u32 counter);
-/* The world played last now (KHDAYS_WORLD_*), for traces. */
-int khdays_saveworld_now(void);
 
 #ifdef __cplusplus
 }

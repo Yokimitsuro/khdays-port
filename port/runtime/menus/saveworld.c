@@ -96,7 +96,8 @@ static int world_of_code(int i)
     return i >= 0 && i < CODE_COUNT ? CODES[i].world : -1;
 }
 
-int khdays_saveworld_now(void)
+/* The world played last now (KHDAYS_WORLD_*). */
+static int world_now(void)
 {
     const int a = world_of_code(now), b = world_of_code(before);
     /* in the Castle (where the story saves) after a mission elsewhere: that mission's world */
@@ -212,7 +213,7 @@ void khdays_saveworld_attach(const char *folder, u32 highest)
 
 void khdays_saveworld_saved(u32 counter)
 {
-    const int world = khdays_saveworld_now();
+    const int world = world_now();
     int i;
     if (counter == 0 || counter <= highest_seen || !khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL)) {
         return; /* (a write saving nothing new: a deletion, the settings) */
