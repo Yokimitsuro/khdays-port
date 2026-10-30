@@ -109,7 +109,9 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/port/runtime/missions/tables.c"         # ... and the rows it adds for them
     "${ROOT}/port/runtime/missions/worlds.c"
     "${ROOT}/port/runtime/plugins/parameters.c"      # a mod's native plugin's parameters, as the port reads them
-    "${ROOT}/port/runtime/characters/registry.c")    # a mod's characters, as the port reads them
+    "${ROOT}/port/runtime/characters/registry.c"     # a mod's characters, as the port reads them
+    "${ROOT}/port/runtime/characters/rules.c"        # ... their forms' rules
+    "${ROOT}/port/runtime/characters/stats.c")       # ... their level tables
 target_include_directories(khdays-studio-port PUBLIC "${ROOT}/assets/include")
 target_include_directories(khdays-studio-port PUBLIC "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}")
 target_include_directories(khdays-studio-port PRIVATE "${stb_SOURCE_DIR}" "${dr_libs_SOURCE_DIR}")

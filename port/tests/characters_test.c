@@ -88,7 +88,7 @@ static void bad_descriptions_left_out(void)
         const char *key, *text, *reason;
         int line;
     } cases[] = {
-        {"newer", "[character]\nformat = 2\nbase = roxas\nname = A\n[model]\nfile = a.glb\n", "newer than this port",
+        {"newer", "[character]\nformat = 3\nbase = roxas\nname = A\n[model]\nfile = a.glb\n", "newer than this port",
          2},
         {"nobase", "[character]\nformat = 1\nname = A\n[model]\nfile = a.glb\n", "base missing", 0},
         {"badbase", "[character]\nformat = 1\nbase = cloud\nname = A\n[model]\nfile = a.glb\n", "not one of the game's",
@@ -556,7 +556,9 @@ static void the_bases(void)
     CHECK(strcmp(khdays_character_base_code(0), "ro") == 0);
     CHECK(strcmp(khdays_character_base_code(14), "xo") == 0); /* Xion's folder */
     CHECK(strcmp(khdays_character_base_code(18), "go") == 0);
-    CHECK(khdays_character_base_name(KHDAYS_CHARACTER_BASES) == NULL);
+    CHECK(strcmp(khdays_character_base_name(KHDAYS_CHARACTER_DUAL), "roxas_dual") == 0); /* a form's only */
+    CHECK(strcmp(khdays_character_base_code(KHDAYS_CHARACTER_DUAL), "r2") == 0);
+    CHECK(khdays_character_base_name(KHDAYS_CHARACTER_FOLDERS) == NULL);
 }
 
 int main(void)

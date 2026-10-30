@@ -162,6 +162,48 @@ WALKS = [
             "a mod's character",
         ),
     ),
+    # a mod's character with two forms (port/tests/mods_v2/character_forms): with the Zero Gear and three Ability
+    # Units set at the select (its script), the camp chooses its `dual` form, played on the game's dual-wield Roxas
+    # from the form's own folder ba/ch/c100/ (that Roxas's model, animations and moveset under the form's model, its
+    # two weapons drawn as the form's own)
+    Walk(
+        "character_forms",
+        250,
+        player_save=False,
+        mods="port/tests/mods_v2/character_forms",
+        script="mission",
+        env=(("KHDAYS_TEST_CHARACTER", "test.forms/twin"), ("KHDAYS_TRACE_CHARACTERS", "1")),
+        marks=(
+            "characters: test.forms/twin, form dual (0x100) on roxas_dual, priority 10, its folder ba/ch/c100/",
+            "forms deck\ttrue\tunits\t3",
+            "characters: seat 0 takes form dual (0x100) of test.forms/twin, on roxas_dual",
+            "characters: member 0 is test.forms/twin, form dual (0x100), on roxas_dual's code",
+            "rom: the game opened ba/ch/c100/def",
+            "rom: the game opened ba/ch/c100/am",
+            "rom: the game opened ba/ch/c100/cm",
+            "drawn from mods/character_forms/characters/twin/model/twin_dual.gltf, a mod's character",
+            "ro_w13600 drawn from mods/character_forms/characters/twin/weapons/right.gltf, a mod's character",
+            "ro_w14600 drawn from mods/character_forms/characters/twin/weapons/left.gltf, a mod's character",
+        ),
+    ),
+    # ... with two Ability Units (character_forms_two): its rule does not hold, its default form plays on Roxas
+    Walk(
+        "character_forms_two",
+        250,
+        player_save=False,
+        mods="port/tests/mods_v2/character_forms_two",
+        script="mission",
+        env=(("KHDAYS_TEST_CHARACTER", "test.forms/twin"), ("KHDAYS_TRACE_CHARACTERS", "1")),
+        marks=(
+            "forms deck\ttrue\tunits\t2",
+            "characters: seat 0 takes form default (0x16) of test.forms/twin, on roxas",
+            "characters: member 0 is test.forms/twin (0x16), on roxas's code",
+            "rom: the game opened ba/ch/c16/def",
+            "rom: the game opened ba/ch/c16/am",
+            "rom: the game opened ba/ch/c16/cm",
+            "drawn from mods/character_forms_two/characters/twin/model/twin.gltf, a mod's character",
+        ),
+    ),
     # ... chosen by a guest in a room of two: both copies play its seat as the character (the multiplayer
     # walk's route)
     Walk(

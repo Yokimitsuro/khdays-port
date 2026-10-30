@@ -11,12 +11,18 @@ static const char *const languages[KHDAYS_CHARACTER_LANGUAGES] = {"en", "fr", "d
 /* The data folders' order (data_02042a70), with the names a description gives them. */
 static const struct {
     const char *name, *code;
-} bases[KHDAYS_CHARACTER_BASES] = {
+} bases[KHDAYS_CHARACTER_FOLDERS] = {
     {"roxas", "ro"},    {"axel", "ax"},   {"xigbar", "xi"},  {"saix", "sa"},    {"xaldin", "xa"},
     {"sora", "so"},     {"demyx", "de"},  {"larxene", "la"}, {"lexaeus", "le"}, {"luxord", "lu"},
     {"marluxia", "ma"}, {"riku", "ri"},   {"vexen", "ve"},   {"xemnas", "xe"},  {"xion", "xo"},
-    {"zexion", "ze"},   {"mickey", "mi"}, {"donald", "do"},  {"goofy", "go"},
+    {"zexion", "ze"},   {"mickey", "mi"}, {"donald", "do"},  {"goofy", "go"},   {"roxas_dual", "r2"},
 };
+
+/* [stats]' names, in KhdaysCharacterStat's order. */
+static const char *const stat_names[KHDAYS_STATS] = {"strength", "magic", "defence", "hp", "unknown_8", "unknown_12"};
+
+/* A form that cannot be taken: left out at the description's end (told once). */
+#define FORM_BROKEN 0x80000000u
 
 const char *khdays_character_language(int l)
 {
@@ -25,12 +31,12 @@ const char *khdays_character_language(int l)
 
 const char *khdays_character_base_name(int number)
 {
-    return number >= 0 && number < KHDAYS_CHARACTER_BASES ? bases[number].name : NULL;
+    return number >= 0 && number < KHDAYS_CHARACTER_FOLDERS ? bases[number].name : NULL;
 }
 
 const char *khdays_character_base_code(int number)
 {
-    return number >= 0 && number < KHDAYS_CHARACTER_BASES ? bases[number].code : NULL;
+    return number >= 0 && number < KHDAYS_CHARACTER_FOLDERS ? bases[number].code : NULL;
 }
 
 static char *copy_n(const char *s, size_t n)
@@ -45,7 +51,7 @@ static char *copy_n(const char *s, size_t n)
 
 static char *copy(const char *s)
 {
-    return copy_n(s, strlen(s));
+    return s != NULL ? copy_n(s, strlen(s)) : NULL;
 }
 
 static void free_character(KhdaysCharacter *c)
@@ -60,7 +66,7 @@ static void free_character(KhdaysCharacter *c)
     free(c->face);
     free(c->model);
 #pragma warning(push)
-/* the actions and sounds up to their counts are read_action's and read_sound's, their strings set (a sound's file
+/* the actions, sounds, weapons and forms up to their counts are the reading's, their strings set (a sound's file
  * NULL for none); the combos' lists are read_moveset's, or NULL from the reading's memset */
 #pragma warning(disable : 6001)
     for (int i = 0; i < c->action_count; ++i) {
@@ -71,6 +77,13 @@ static void free_character(KhdaysCharacter *c)
         free(c->sounds[i].game);
         free(c->sounds[i].file);
     }
+    for (int i = 0; i < c->weapon_count; ++i) {
+        free(c->weapons[i].game);
+        free(c->weapons[i].file);
+    }
+    for (int i = 0; i < c->form_count; ++i) {
+        free_character(&c->forms[i]);
+    }
     free(c->combos[KHDAYS_CHARACTER_GROUND].attacks);
     free(c->combos[KHDAYS_CHARACTER_AIR].attacks);
 #pragma warning(pop)
@@ -80,6 +93,11 @@ static void free_character(KhdaysCharacter *c)
     free(c->fallback);
     free(c->weapon_bone);
     free(c->base_weapon_node);
+    free(c->stats);
+    free(c->weapons);
+    free(c->forms);
+    free(c->form);
+    khdays_rule_free(c->rule);
     memset(c, 0, sizeof(*c));
 }
 
@@ -188,7 +206,7 @@ static int add_mod(KhdaysCharacters *r, const char *id, const char *folder)
     return r->mod_count++;
 }
 
-enum Section { NONE, CHARACTER, MODEL, ACTIONS, SOUNDS, MOVESET, LIMIT, OTHER };
+enum Section { NONE, CHARACTER, MODEL, ACTIONS, SOUNDS, MOVESET, LIMIT, STATS, WEAPONS, FORM, OTHER };
 
 /* An attack's number: 0 or more, and nothing else. */
 static int read_attack(const char *text, int *out)
@@ -203,11 +221,18 @@ static int read_attack(const char *text, int *out)
 }
 
 /* A [moveset] line: `ground` / `air` = the base's attacks in order; `ground finisher` / `air finisher` = one;
- * `attack <number>` = any of damage <x>, reach <x>, push <x> (times the base's). */
+ * `attack <number>` = any of damage <x>, reach <x>, push <x> (times the base's); `moves = base`: none of these,
+ * its base's own moves (a form's, its default's moveset not taken). */
 static void read_moveset(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
 {
     char word[32] = "", number[32] = "";
     int used = 0, id;
+    if (strcmp(name, "moves") == 0) {
+        if (!same_word(value, "base")) {
+            snprintf(why, why_size, "moves %.40s: base (its base's own moves)", value);
+        }
+        return;
+    }
     for (int g = 0; g < 2; ++g) {
         const char *combo = g == KHDAYS_CHARACTER_GROUND ? "ground" : "air";
         KhdaysCharacterCombo *k = &c->combos[g];
@@ -374,12 +399,374 @@ static void read_sound(KhdaysCharacter *c, const char *name, const char *value, 
     }
 }
 
+/* A [stats] line: `<level> = <stat> <value> ...` (strength, magic, defence, hp, unknown_8, unknown_12). */
+static void read_stats(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
+{
+    char *end, word[32] = "", number[32] = "";
+    int used = 0;
+    const long level = strtol(name, &end, 10);
+    if (end == name || *end != '\0' || level < 1 || level > KHDAYS_CHARACTER_LEVELS) {
+        snprintf(why, why_size, "%.40s: a level, 1-%d", name, KHDAYS_CHARACTER_LEVELS);
+        return;
+    }
+    for (const char *p = value; sscanf(p, "%31s%n", word, &used) == 1;) {
+        int stat = -1;
+        for (int s = 0; s < KHDAYS_STATS; ++s) {
+            if (same_word(word, stat_names[s]) || (s == KHDAYS_STAT_DEFENCE && same_word(word, "defense"))) {
+                stat = s;
+            }
+        }
+        p += used;
+        if (stat < 0 || sscanf(p, "%31s%n", number, &used) != 1) {
+            snprintf(why, why_size,
+                     "level %ld: %.30s is not strength, magic, defence, hp, unknown_8 or unknown_12 <value>", level,
+                     word);
+            return;
+        }
+        p += used;
+        const long v = strtol(number, &end, 10);
+        const long most = stat == KHDAYS_STAT_UNKNOWN_12 ? 0x7fffffffL : 0xffffL;
+        if (end == number || *end != '\0' || v < 0 || v > most) {
+            snprintf(why, why_size, "level %ld: %.30s %.30s is not a value, 0-%ld", level, word, number, most);
+            return;
+        }
+        KhdaysCharacterStatPoint *grown = realloc(c->stats, (size_t)(c->stat_count + 1) * sizeof(*grown));
+        if (grown == NULL) {
+            snprintf(why, why_size, "out of memory");
+            return;
+        }
+        c->stats = grown;
+        c->stats[c->stat_count].level = (int)level;
+        c->stats[c->stat_count].stat = stat;
+        c->stats[c->stat_count].value = v;
+        ++c->stat_count;
+    }
+}
+
+/* A [weapons] line: `<the base's weapon model> = <file>`; a later line for the same model replaces it. */
+static void read_weapon(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
+{
+    if (!good_reference(value)) {
+        snprintf(why, why_size, "%.60s: %.80s is not a file inside the character's folder", name, value);
+        return;
+    }
+    KhdaysCharacterWeapon *w = NULL;
+    for (int i = 0; i < c->weapon_count && w == NULL; ++i) {
+        w = strcmp(c->weapons[i].game, name) == 0 ? &c->weapons[i] : NULL;
+    }
+    if (w == NULL) {
+        KhdaysCharacterWeapon *grown = realloc(c->weapons, (size_t)(c->weapon_count + 1) * sizeof(*grown));
+        if (grown == NULL) {
+            snprintf(why, why_size, "out of memory");
+            return;
+        }
+        c->weapons = grown;
+        w = &c->weapons[c->weapon_count];
+        w->game = copy(name);
+        w->file = NULL;
+        if (w->game == NULL) {
+            snprintf(why, why_size, "out of memory");
+            return;
+        }
+        ++c->weapon_count;
+    }
+    free(w->file);
+    if ((w->file = copy(value)) == NULL) {
+        snprintf(why, why_size, "out of memory");
+    }
+}
+
+/* A base's number by its name: 0-18 for a character, 0-19 for a form (19 roxas_dual); -1 for none. */
+static int base_by_name(const char *value, int folders)
+{
+    for (int i = 0; i < folders; ++i) {
+        if (same_word(value, bases[i].name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* A [model] line, or one of a [form <id>]'s model lines: 1 when `name` is one of them (`*value` taken when kept). */
+static int read_model(KhdaysCharacter *t, const char *name, char **value, char *why, size_t why_size)
+{
+    if (strcmp(name, "file") == 0 || (t->form != NULL && strcmp(name, "model") == 0)) {
+        if (!good_reference(*value)) {
+            snprintf(why, why_size, "%s %.80s: not a file inside the character's folder", name, *value);
+        } else {
+            free(t->model);
+            t->model = *value;
+            *value = NULL;
+            t->gives |= KHDAYS_FORM_GIVES_MODEL;
+        }
+    } else if (strcmp(name, "scale") == 0) {
+        char *number_end;
+        const double v = strtod(*value, &number_end);
+        if (number_end == *value || *number_end != '\0' || !(v > 0.0)) {
+            snprintf(why, why_size, "scale %.40s: a number above 0", *value);
+        } else {
+            t->model_scale = (float)v;
+            t->gives |= KHDAYS_FORM_GIVES_SCALE;
+        }
+    } else if (strcmp(name, "weapon_bone") == 0 || strcmp(name, "base_weapon_node") == 0) {
+        const int bone = strcmp(name, "weapon_bone") == 0;
+        char **slot = bone ? &t->weapon_bone : &t->base_weapon_node;
+        free(*slot);
+        *slot = *value;
+        *value = NULL;
+        t->gives |= bone ? KHDAYS_FORM_GIVES_WEAPON_BONE : KHDAYS_FORM_GIVES_BASE_WEAPON_NODE;
+    } else if (strcmp(name, "weapon_turn") == 0) {
+        if (sscanf(*value, "%f %f %f", &t->weapon_turn[0], &t->weapon_turn[1], &t->weapon_turn[2]) != 3) {
+            snprintf(why, why_size, "weapon_turn %.40s: three angles in degrees (x y z)", *value);
+        } else {
+            t->has_weapon_turn = 1;
+            t->gives |= KHDAYS_FORM_GIVES_WEAPON_TURN;
+        }
+    } else if (strcmp(name, "skeleton") == 0) {
+        if (same_word(*value, "paired")) {
+            t->own_skeleton = 0;
+        } else if (same_word(*value, "own")) {
+            t->own_skeleton = 1;
+        } else {
+            snprintf(why, why_size, "skeleton %.40s: paired or own", *value);
+        }
+        t->gives |= KHDAYS_FORM_GIVES_SKELETON;
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/* A [form <id>] line other than its model's: base, priority, when. 1 when `name` is one of them. */
+static int read_form(KhdaysCharacter *f, const char *name, const char *value, char *why, size_t why_size)
+{
+    if (strcmp(name, "base") == 0) {
+        f->base = base_by_name(value, KHDAYS_CHARACTER_FOLDERS);
+        if (f->base < 0) {
+            snprintf(why, why_size, "base %.60s is not one of the game's characters (or roxas_dual)", value);
+        }
+    } else if (strcmp(name, "priority") == 0) {
+        char *end;
+        const long v = strtol(value, &end, 10);
+        if (end == value || *end != '\0') {
+            snprintf(why, why_size, "priority %.40s: a whole number", value);
+        } else {
+            f->priority = (int)v;
+        }
+    } else if (strcmp(name, "when") == 0) {
+        char rule_why[200] = "";
+        khdays_rule_free(f->rule);
+        f->rule = khdays_rule_parse(value, rule_why, sizeof(rule_why));
+        if (f->rule == NULL) {
+            snprintf(why, why_size, "when: %s", rule_why);
+        }
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+/* The form `id` of `c` (made the first time it is named): its index, -1 when it cannot be made. */
+static int form_named(KhdaysCharacter *c, const char *id)
+{
+    for (int i = 0; i < c->form_count; ++i) {
+        if (strcmp(c->forms[i].form, id) == 0) {
+            return i;
+        }
+    }
+    KhdaysCharacter *grown = realloc(c->forms, (size_t)(c->form_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        return -1;
+    }
+    c->forms = grown;
+    KhdaysCharacter *f = &c->forms[c->form_count];
+    memset(f, 0, sizeof(*f));
+    f->base = -1;
+    f->combos[KHDAYS_CHARACTER_GROUND].finisher = f->combos[KHDAYS_CHARACTER_AIR].finisher = -1;
+    f->own_moves_damage = 1.0f;
+    f->form = copy(id);
+    if (f->form == NULL) {
+        return -1;
+    }
+    return c->form_count++;
+}
+
+/* A part's head (`[model]`, `[form dual]`, `[form dual actions]`): its section and its form (-1 the character's
+ * own); OTHER for none this port has; `why` when it names a form badly. */
+static enum Section head(KhdaysCharacter *c, const char *s, int *form, char *why, size_t why_size)
+{
+    static const struct {
+        const char *name;
+        enum Section section;
+    } parts[] = {{"character", CHARACTER}, {"model", MODEL},     {"actions", ACTIONS}, {"sounds", SOUNDS},
+                 {"moveset", MOVESET},     {"limit", LIMIT},     {"stats", STATS},     {"weapons", WEAPONS}};
+    char inside[160] = "", first[64] = "", id[64] = "", part[64] = "", extra[8] = "";
+    const size_t n = strlen(s);
+    *form = -1;
+    if (n < 2 || s[n - 1] != ']' || n - 2 >= sizeof(inside)) {
+        return OTHER;
+    }
+    memcpy(inside, s + 1, n - 2);
+    inside[n - 2] = '\0';
+    const int words = sscanf(inside, "%63s %63s %63s %7s", first, id, part, extra);
+    if (words == 1) {
+        for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+            if (strcmp(first, parts[i].name) == 0) {
+                return parts[i].section;
+            }
+        }
+        return OTHER;
+    }
+    if (strcmp(first, "form") != 0 || words > 3) {
+        return OTHER;
+    }
+    if (!good_key(id) || same_word(id, "default")) {
+        snprintf(why, why_size, "[form %.60s]: a form's id is letters, digits, '_' and '-', not default", id);
+        return OTHER;
+    }
+    if ((*form = form_named(c, id)) < 0) {
+        snprintf(why, why_size, "out of memory");
+        return OTHER;
+    }
+    if (words == 2) {
+        return FORM;
+    }
+    for (size_t i = 2; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+        if (strcmp(part, parts[i].name) == 0) {
+            return parts[i].section;
+        }
+    }
+    *form = -1;
+    return OTHER;
+}
+
+/* A deep copy of what `f` takes from its character `c` (a part it does not give itself). */
+static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size_t why_size)
+{
+    int ok = 1;
+    f->mod = c->mod;
+    f->has_gauges = c->has_gauges;
+    memcpy(f->gauges, c->gauges, sizeof(f->gauges));
+    f->locked_with_base = c->locked_with_base;
+    for (int l = 0; l < KHDAYS_CHARACTER_LANGUAGES; ++l) {
+        ok &= (f->name[l] = copy(c->name[l])) != NULL || c->name[l] == NULL;
+        ok &= (f->weapon[l] = copy(c->weapon[l])) != NULL || c->weapon[l] == NULL;
+    }
+    ok &= (f->any_name = copy(c->any_name)) != NULL || c->any_name == NULL;
+    ok &= (f->any_weapon = copy(c->any_weapon)) != NULL || c->any_weapon == NULL;
+    ok &= (f->face = copy(c->face)) != NULL || c->face == NULL;
+    if (f->base < 0) {
+        f->base = c->base;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_MODEL)) {
+        ok &= (f->model = copy(c->model)) != NULL;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_SKELETON)) {
+        f->own_skeleton = c->own_skeleton;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_SCALE)) {
+        f->model_scale = c->model_scale;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPON_BONE)) {
+        ok &= (f->weapon_bone = copy(c->weapon_bone)) != NULL || c->weapon_bone == NULL;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_BASE_WEAPON_NODE)) {
+        ok &= (f->base_weapon_node = copy(c->base_weapon_node)) != NULL || c->base_weapon_node == NULL;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPON_TURN)) {
+        f->has_weapon_turn = c->has_weapon_turn;
+        memcpy(f->weapon_turn, c->weapon_turn, sizeof(f->weapon_turn));
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_ACTIONS)) {
+        ok &= (f->fallback = copy(c->fallback)) != NULL || c->fallback == NULL;
+        f->actions = c->action_count > 0 ? calloc((size_t)c->action_count, sizeof(*f->actions)) : NULL;
+        for (int i = 0; f->actions != NULL && i < c->action_count; ++i) {
+            f->actions[i] = c->actions[i];
+            f->actions[i].game = copy(c->actions[i].game);
+            f->actions[i].clip = copy(c->actions[i].clip);
+            ok &= f->actions[i].game != NULL && f->actions[i].clip != NULL;
+            f->action_count = i + 1;
+        }
+        ok &= c->action_count == 0 || f->actions != NULL;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_SOUNDS)) {
+        f->sounds = c->sound_count > 0 ? calloc((size_t)c->sound_count, sizeof(*f->sounds)) : NULL;
+        for (int i = 0; f->sounds != NULL && i < c->sound_count; ++i) {
+            f->sounds[i].game = copy(c->sounds[i].game);
+            f->sounds[i].file = copy(c->sounds[i].file);
+            ok &= f->sounds[i].game != NULL && (f->sounds[i].file != NULL || c->sounds[i].file == NULL);
+            f->sound_count = i + 1;
+        }
+        ok &= c->sound_count == 0 || f->sounds != NULL;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_MOVESET)) {
+        const int has = c->combos[0].count > 0 || c->combos[1].count > 0 || c->combos[0].finisher >= 0 ||
+                        c->combos[1].finisher >= 0 || c->attack_count > 0;
+        if (has && f->base != c->base) {
+            snprintf(why, why_size, "[form %.60s]: its default's [moveset] names %s's attacks, not %s's: its base's "
+                     "moves play (give it a [form %.60s moveset], `moves = base` for those)",
+                     f->form, bases[c->base].name, bases[f->base].name, f->form);
+        } else if (has) {
+            for (int g = 0; g < 2; ++g) {
+                f->combos[g].finisher = c->combos[g].finisher;
+                f->combos[g].count = c->combos[g].count;
+                f->combos[g].attacks =
+                    c->combos[g].count > 0 ? malloc((size_t)c->combos[g].count * sizeof(int)) : NULL;
+                if (f->combos[g].attacks != NULL) {
+                    memcpy(f->combos[g].attacks, c->combos[g].attacks, (size_t)c->combos[g].count * sizeof(int));
+                } else {
+                    ok &= c->combos[g].count == 0;
+                    f->combos[g].count = 0;
+                }
+            }
+            f->attacks = c->attack_count > 0 ? malloc((size_t)c->attack_count * sizeof(*f->attacks)) : NULL;
+            if (f->attacks != NULL) {
+                memcpy(f->attacks, c->attacks, (size_t)c->attack_count * sizeof(*f->attacks));
+                f->attack_count = c->attack_count;
+            } else {
+                ok &= c->attack_count == 0;
+            }
+        }
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_LIMIT)) {
+        f->own_moves_damage = c->own_moves_damage;
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_STATS) && c->stat_count > 0) {
+        f->stats = malloc((size_t)c->stat_count * sizeof(*f->stats));
+        if (f->stats != NULL) {
+            memcpy(f->stats, c->stats, (size_t)c->stat_count * sizeof(*f->stats));
+            f->stat_count = c->stat_count;
+        } else {
+            ok = 0;
+        }
+    }
+    /* the weapons name the base's models: another base's are its own */
+    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPONS) && f->base == c->base && c->weapon_count > 0) {
+        f->weapons = calloc((size_t)c->weapon_count, sizeof(*f->weapons));
+        for (int i = 0; f->weapons != NULL && i < c->weapon_count; ++i) {
+            f->weapons[i].game = copy(c->weapons[i].game);
+            f->weapons[i].file = copy(c->weapons[i].file);
+            ok &= f->weapons[i].game != NULL && f->weapons[i].file != NULL;
+            f->weapon_count = i + 1;
+        }
+        ok &= f->weapons != NULL;
+    }
+    ok &= (f->identity = copy(c->identity)) != NULL;
+    if (f->identity != NULL) {
+        f->key = f->identity + (c->key - c->identity);
+    }
+    if (!ok) {
+        snprintf(why, why_size, "out of memory");
+    }
+    return ok;
+}
+
 int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *mod_folder, const char *key,
                            const char *text, size_t size, KhdaysCharactersReport report, void *context)
 {
     KhdaysCharacter c;
-    char why[300] = "";
-    int why_line = 0, line = 0, format = 0, has_format = 0, has_base = 0;
+    char why[300] = "", form_why[300] = "";
+    int why_line = 0, line = 0, format = 0, has_format = 0, has_base = 0, form = -1, form_line = 0;
     enum Section section = NONE;
     memset(&c, 0, sizeof(c));
     c.base = -1;
@@ -427,14 +814,10 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
                 why_line = line;
                 break;
             }
-            section = strcmp(s, "[character]") == 0 ? CHARACTER
-                      : strcmp(s, "[model]") == 0   ? MODEL
-                      : strcmp(s, "[actions]") == 0 ? ACTIONS
-                      : strcmp(s, "[sounds]") == 0  ? SOUNDS
-                      : strcmp(s, "[moveset]") == 0 ? MOVESET
-                      : strcmp(s, "[limit]") == 0   ? LIMIT
-                                                    : OTHER;
-            if (section == OTHER) {
+            section = head(&c, s, &form, why, sizeof(why));
+            if (why[0] != '\0') {
+                why_line = line;
+            } else if (section == OTHER) {
                 char note[200];
                 snprintf(note, sizeof(note), "%.80s: no such part (its lines are not read)", s);
                 report(mod_id, key, line, note, context);
@@ -463,23 +846,40 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
             why_line = line;
             break;
         }
+        /* a form's lines: a mistake leaves that form out, not the character */
+        KhdaysCharacter *t = form >= 0 ? &c.forms[form] : &c;
+        char *line_why = form >= 0 ? form_why : why;
+        const size_t line_why_size = form >= 0 ? sizeof(form_why) : sizeof(why);
         int l;
+        form_why[0] = '\0';
         if (section == OTHER) {
             /* told at the part's head */
         } else if (section == ACTIONS) {
-            read_action(&c, name, value, why, sizeof(why));
+            read_action(t, name, value, line_why, line_why_size);
+            t->gives |= KHDAYS_FORM_GIVES_ACTIONS;
         } else if (section == SOUNDS) {
-            read_sound(&c, name, value, why, sizeof(why));
+            read_sound(t, name, value, line_why, line_why_size);
+            t->gives |= KHDAYS_FORM_GIVES_SOUNDS;
         } else if (section == MOVESET) {
-            read_moveset(&c, name, value, why, sizeof(why));
+            read_moveset(t, name, value, line_why, line_why_size);
+            t->gives |= KHDAYS_FORM_GIVES_MOVESET;
+        } else if (section == STATS) {
+            read_stats(t, name, value, line_why, line_why_size);
+            t->gives |= KHDAYS_FORM_GIVES_STATS;
+        } else if (section == WEAPONS) {
+            read_weapon(t, name, value, line_why, line_why_size);
+            t->gives |= KHDAYS_FORM_GIVES_WEAPONS;
         } else if (section == LIMIT && strcmp(name, "damage") == 0) {
             char *number_end;
             const float v = strtof(value, &number_end);
             if (number_end == value || *number_end != '\0' || !(v >= 0.0f)) {
-                snprintf(why, sizeof(why), "damage %.40s: a number of times, 0 or more", value);
+                snprintf(line_why, line_why_size, "damage %.40s: a number of times, 0 or more", value);
             } else {
-                c.own_moves_damage = v;
+                t->own_moves_damage = v;
+                t->gives |= KHDAYS_FORM_GIVES_LIMIT;
             }
+        } else if (section == FORM && read_form(t, name, value, line_why, line_why_size)) {
+        } else if ((section == MODEL || section == FORM) && read_model(t, name, &value, line_why, line_why_size)) {
         } else if (section == NONE) {
             snprintf(why, sizeof(why), "%.60s: before any part ([character] first)", name);
         } else if (section == CHARACTER && strcmp(name, "format") == 0) {
@@ -498,12 +898,7 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
                 snprintf(why, sizeof(why), "key %.60s: not its folder's name (%.60s)", value, key);
             }
         } else if (section == CHARACTER && strcmp(name, "base") == 0) {
-            c.base = -1;
-            for (int i = 0; i < KHDAYS_CHARACTER_BASES; ++i) {
-                if (same_word(value, bases[i].name)) {
-                    c.base = i;
-                }
-            }
+            c.base = base_by_name(value, KHDAYS_CHARACTER_BASES);
             if (c.base < 0) {
                 snprintf(why, sizeof(why), "base %.60s is not one of the game's characters", value);
             }
@@ -539,41 +934,6 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
                 snprintf(why, sizeof(why), "gauges: %d numbers 0-255", KHDAYS_CHARACTER_GAUGES);
             }
             c.has_gauges = 1;
-        } else if (section == MODEL && strcmp(name, "file") == 0) {
-            if (!good_reference(value)) {
-                snprintf(why, sizeof(why), "file %.80s: not a file inside the character's folder", value);
-            } else {
-                free(c.model);
-                c.model = value;
-                value = NULL;
-            }
-        } else if (section == MODEL && strcmp(name, "scale") == 0) {
-            char *number_end;
-            const double v = strtod(value, &number_end);
-            if (number_end == value || *number_end != '\0' || !(v > 0.0)) {
-                snprintf(why, sizeof(why), "scale %.40s: a number above 0", value);
-            } else {
-                c.model_scale = (float)v;
-            }
-        } else if (section == MODEL && (strcmp(name, "weapon_bone") == 0 || strcmp(name, "base_weapon_node") == 0)) {
-            char **slot = strcmp(name, "weapon_bone") == 0 ? &c.weapon_bone : &c.base_weapon_node;
-            free(*slot);
-            *slot = value;
-            value = NULL;
-        } else if (section == MODEL && strcmp(name, "weapon_turn") == 0) {
-            if (sscanf(value, "%f %f %f", &c.weapon_turn[0], &c.weapon_turn[1], &c.weapon_turn[2]) != 3) {
-                snprintf(why, sizeof(why), "weapon_turn %.40s: three angles in degrees (x y z)", value);
-            } else {
-                c.has_weapon_turn = 1;
-            }
-        } else if (section == MODEL && strcmp(name, "skeleton") == 0) {
-            if (same_word(value, "paired")) {
-                c.own_skeleton = 0;
-            } else if (same_word(value, "own")) {
-                c.own_skeleton = 1;
-            } else {
-                snprintf(why, sizeof(why), "skeleton %.40s: paired or own", value);
-            }
         } else {
             char note[200];
             snprintf(note, sizeof(note), "%.80s: not a name this part has (the line is not read)", name);
@@ -582,9 +942,17 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
         if (why[0] != '\0') {
             why_line = line;
         }
+        if (form >= 0 && form_why[0] != '\0' && !(c.forms[form].gives & FORM_BROKEN)) {
+            char note[360];
+            snprintf(note, sizeof(note), "[form %.60s] %s: the form is left out", c.forms[form].form, form_why);
+            report(mod_id, key, line, note, context);
+            c.forms[form].gives |= FORM_BROKEN;
+            form_line = line;
+        }
         free(name);
         free(value);
     }
+    (void)form_line;
     if (why[0] == '\0') {
         why_line = 0;
         if (!has_format) {
@@ -597,11 +965,30 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
             snprintf(why, sizeof(why), "its model missing ([model] file)");
         }
     }
-    (void)format;
     if (why[0] != '\0') {
         report(mod_id, key, why_line, why, context);
         free_character(&c);
         return 0;
+    }
+    if (format < 2 && (c.form_count > 0 || c.stat_count > 0 || c.weapon_count > 0)) {
+        report(mod_id, key, 0, "forms, [stats] and [weapons] need format = 2: they are not read", context);
+        for (int i = 0; i < c.form_count; ++i) {
+            free_character(&c.forms[i]);
+        }
+        c.form_count = 0;
+        free(c.stats);
+        c.stats = NULL;
+        c.stat_count = 0;
+#pragma warning(push)
+#pragma warning(disable : 6001) /* the weapons up to weapon_count are read_weapon's, `game` set, `file` set or NULL */
+        for (int i = 0; i < c.weapon_count; ++i) {
+            free(c.weapons[i].game);
+            free(c.weapons[i].file);
+        }
+#pragma warning(pop)
+        free(c.weapons);
+        c.weapons = NULL;
+        c.weapon_count = 0;
     }
     c.mod = add_mod(r, mod_id, mod_folder);
     const size_t n = strlen(mod_id) + 1 + strlen(key) + 1;
@@ -613,6 +1000,28 @@ int khdays_characters_read(KhdaysCharacters *r, const char *mod_id, const char *
     }
     snprintf(c.identity, n, "%s/%s", mod_id, key);
     c.key = c.identity + strlen(mod_id) + 1;
+    /* the forms: each one complete, what it does not give taken from the character; a broken one left out */
+    for (int i = c.form_count - 1; i >= 0; --i) {
+        KhdaysCharacter *f = &c.forms[i];
+        char note[360] = "";
+        if (!(f->gives & FORM_BROKEN) && f->rule == NULL) {
+            snprintf(note, sizeof(note), "[form %.60s]: no `when` (it would never be chosen): left out", f->form);
+            f->gives |= FORM_BROKEN;
+        }
+        if (!(f->gives & FORM_BROKEN)) {
+            if (!inherit(f, &c, note, sizeof(note)) && note[0] != '\0') {
+                f->gives |= FORM_BROKEN;
+            }
+        }
+        if (note[0] != '\0') {
+            report(mod_id, key, 0, note, context);
+        }
+        if (f->gives & FORM_BROKEN) {
+            free_character(f);
+            memmove(f, f + 1, (size_t)(c.form_count - i - 1) * sizeof(*f));
+            --c.form_count;
+        }
+    }
     if (r->count == r->capacity) {
         const int grown = r->capacity == 0 ? 4 : r->capacity * 2;
         KhdaysCharacter *list = realloc(r->list, (size_t)grown * sizeof(*list));
@@ -637,11 +1046,14 @@ static int by_identity(const void *a, const void *b)
 int khdays_characters_number(KhdaysCharacters *r, KhdaysCharactersReport report, void *context)
 {
     KhdaysCharacter **order = r->count > 0 ? malloc((size_t)r->count * sizeof(*order)) : NULL;
-    int kept = 0, numbered = 0;
+    int kept = 0, numbered = 0, form_number = KHDAYS_CHARACTER_FORM_FIRST;
     for (int i = 0; i < r->count; ++i) {
         KhdaysCharacter *c = &r->list[i];
         int taken = 0;
         c->number = 0;
+        for (int f = 0; f < c->form_count; ++f) {
+            c->forms[f].number = 0;
+        }
         for (int j = 0; j < i && !taken; ++j) {
             taken = strcmp(r->list[j].identity, c->identity) == 0;
         }
@@ -669,6 +1081,9 @@ int khdays_characters_number(KhdaysCharacters *r, KhdaysCharactersReport report,
             continue;
         }
         order[i]->number = number;
+        for (int f = 0; f < order[i]->form_count; ++f) {
+            order[i]->forms[f].number = form_number++;
+        }
         ++numbered;
     }
     free(order);
@@ -681,11 +1096,61 @@ const KhdaysCharacter *khdays_characters_by_number(const KhdaysCharacters *r, in
         return NULL;
     }
     for (int i = 0; i < r->count; ++i) {
-        if (r->list[i].number == number) {
-            return &r->list[i];
+        const KhdaysCharacter *c = &r->list[i];
+        if (c->number == number) {
+            return c;
+        }
+        for (int f = 0; number >= KHDAYS_CHARACTER_FORM_FIRST && f < c->form_count; ++f) {
+            if (c->forms[f].number == number) {
+                return &c->forms[f];
+            }
         }
     }
     return NULL;
+}
+
+const KhdaysCharacter *khdays_characters_owner(const KhdaysCharacters *r, const KhdaysCharacter *form)
+{
+    if (form == NULL || form->form == NULL) {
+        return form;
+    }
+    for (int i = 0; i < r->count; ++i) {
+        const KhdaysCharacter *c = &r->list[i];
+        if (c->form_count > 0 && form >= c->forms && form < c->forms + c->form_count) {
+            return c;
+        }
+    }
+    return NULL;
+}
+
+const KhdaysCharacter *khdays_characters_choose(const KhdaysCharacter *c, const KhdaysFormFacts *facts)
+{
+    const KhdaysCharacter *best = NULL;
+    for (int i = 0; c != NULL && i < c->form_count; ++i) {
+        const KhdaysCharacter *f = &c->forms[i];
+        if ((best == NULL || f->priority > best->priority) && khdays_rule_holds(f->rule, facts)) {
+            best = f;
+        }
+    }
+    return best;
+}
+
+const KhdaysCharacter *khdays_characters_form(const KhdaysCharacter *c, const char *id)
+{
+    if (c == NULL || id == NULL || strcmp(id, "default") == 0) {
+        return c;
+    }
+    for (int i = 0; i < c->form_count; ++i) {
+        if (strcmp(c->forms[i].form, id) == 0) {
+            return &c->forms[i];
+        }
+    }
+    return NULL;
+}
+
+const char *khdays_characters_form_id(const KhdaysCharacter *form)
+{
+    return form != NULL && form->form != NULL ? form->form : "default";
 }
 
 const KhdaysCharacterAction *khdays_characters_action(const KhdaysCharacter *c, const char *game)
@@ -693,6 +1158,16 @@ const KhdaysCharacterAction *khdays_characters_action(const KhdaysCharacter *c, 
     for (int i = 0; c != NULL && game != NULL && i < c->action_count; ++i) {
         if (strcmp(c->actions[i].game, game) == 0) {
             return &c->actions[i];
+        }
+    }
+    return NULL;
+}
+
+const KhdaysCharacterWeapon *khdays_characters_weapon_model(const KhdaysCharacter *c, const char *game)
+{
+    for (int i = 0; c != NULL && game != NULL && i < c->weapon_count; ++i) {
+        if (strcmp(c->weapons[i].game, game) == 0) {
+            return &c->weapons[i];
         }
     }
     return NULL;

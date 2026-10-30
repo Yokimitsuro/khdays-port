@@ -5339,3 +5339,59 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   `Ov107_CalcHitDamage` takes its damage as it is; given to `Ov107_AiState_ApplyHit` with the player's +0x4ec as its
   source, as the game does. Seen: 241 damage spins took Shadows of 75 and 38 HP to 0 (defeated, rewarded), and a
   Shadow moved by `Ov107_MoveNodeAndRelayout` after a hit answered it had moved.
+
+## 32. Roxas's dual wield and the characters' forms
+
+- **Another character, not another model** (read and seen 2026-10-30): the game plays Roxas's dual wield as
+  character 19, whose data folder (`data_02042a70[19]`) is `r2`, a whole folder of its own: `def.p.z`, `def_h.p.z`
+  (models), `am.p2`, `ab.p2` (animations), `ci.b.z`, `cm.b.z` (combos and attacks), `li*.p.z` (its Limit),
+  `w_.p2`, `wp.b.z` (its two weapons), `lv.b.z`, `ma*`, `it`, `etc`. `Ov022_FillSelectorStates` loads each player's
+  overlay by the member's character byte (`gPartyMembers + 0x104 * n + 3`) through `Ov029_AcquireOverlaySlot`; its
+  table `data_ov029_020b30b0[20][4]` gives row 19 overlays 49, 68, 87 and 104 (one a player: four can play it at
+  once), row 0 (Roxas) ov030 alone; 0x14 and 0x15 are mapped onto 0 and 0xe there, 0x13 is not. Seen in Mission
+  Mode with the Zero Gear (item 0xe6) and three Ability Units (item 0xf1) linked on it: the next camp loads
+  `ba/ch/r2/def_h.p.z` and `w_.p2`, the next field `def_h.p.z`, `ci.b.z`, `cm.b.z` and `am.p2` from `r2` instead of
+  `ro`; the shot shows Roxas hooded with a keyblade in each hand. With two units, `ro`'s.
+- **The items** (`db/db.p2` entry 0x15: a count, then 630 records of 0x64 bytes from item 1; `+0` the panel's
+  deck category, `+6` its kind, `+8` its shape, signed, -1 one cell; `db/db_<lang>.p2` entry 0x15: a name and a
+  description an item, from item 1): the Zero Gear is category 4 (gears), shape 21, kind 240; the Ability Unit
+  category 4, one cell (a link, its name marked Ｌ), kind 251, set on a cell of the gear.
+- **Where the member becomes 19** (each step seen with `KHDAYS_WATCH` on member 0's record, seat 0's word and the
+  camp's record of seat 0, the deck set at the select so that the first camp makes it):
+  1. The camp's construction (`Ov008_MainMenuInit`) walks the deck: `Ov008_BuildMenuListFrom(gGameState + 0xee0)`
+     sums the panels' records into a stat block (`Ov008_FoldPanelIntoTally`, `Ov008_FoldRecordIntoTally`, at the
+     walk's `+0x2c`); its first word not 0 sets game flag 0x2010, else clears it (set with three Ability Units on
+     the Zero Gear, clear with two). The camp's Panels can flip it too (`Ov008_GridMenuBack`,
+     `Ov008_ToggleOptionFlag`).
+  2. It makes the seat's 6-byte camp record (`+2` bit 1 = flag 0x2010, `+4` the seat's character) and
+     `Ov008_RecordInputCoords` -- misnamed: it is the seat's camp record, not input -- stores it at the camp's
+     context `+0x2e + 6 x seat` and sends it to the room (`Ov008_SendMenuMessage(3)` in a session, else 2).
+  3. `Ov008_CommitSelectedPage` -> `Ov008_RefreshSaveSlotWidget(seat)` rewrites the seat's character word
+     (`data_020429c8[seat] + 4`) with `Ov008_GetEntryStatusByte(seat)`: the row's character, and 0x13 when it is 0
+     (Roxas) and the record's bit 1 is set.
+  4. `Ov008_ResetPartyMemberAndLayout` -> `PartyMember_ResetWithKind(0, 0, 0x13, 0)` -> `PartyMember_Reset` writes
+     member 0's character 0x13; the field loads overlay 49, whose actor's `+0xc` is 19, its data `ba/ch/r2/`.
+  The story's route is another: `Ov002_AdvanceRosterSetup` (a mission script's command, mode 7) writes member 0's
+  character 0x13 itself (mode 6: 0x14).
+- **The forms** (docs/CHARACTERS.md, "Forms"): the port's join after step 3's `Ov008_GetEntryStatusByte` (prepare.py,
+  `Ov008_RefreshSaveSlotWidget`; runtime/characters/forms.c) gives a mod's character's seat the base of the form its
+  rules choose, the game's own choice made first (the game's Roxas keeps his). Before it, a Roxas-based mod character
+  with the Zero Gear and three units got 0x13 and its data opened `r2`'s folder, not its own: now it plays its
+  default form's base unless one of its forms is on 19. A form's data is served as a character's (section 30) from a
+  folder of its own, `ba/ch/c100/` on (`Port_CharacterCode`: any number), and `khdays_characters_of(seat, kind)`
+  answers the folder of the seat's form whose base is `kind`.
+- **Its weapons** (seen 2026-10-30, `KHDAYS_TRACE_MODELS=1`, the forms walk): with the dual-wield Roxas the field
+  draws `w_.p2#0/mdl/ro_w13600` and `w_.p2#80/mdl/ro_w14600`, one in each hand; `r2`'s `w_.p2` also holds
+  `#40` `bf_w00_trace` and `#160` `ro_w13600_hit`, not drawn as weapons there. Each weapon model's nodes are its
+  `_a` and `_b` (`ro_w13600_a`, `ro_w13600_b`), its blade along `z` (0.49-0.85 for `ro_w13600`, 0.65-1.03 for
+  `ro_w14600`, in the graphics dump's glTF).
+  The port draws a character's or a form's `[weapons]` file for the model of that name in its own folder.
+- **In a room** each copy makes every seat's word from the room's records (step 2's record travels; the host's camp
+  copies its four members to the guests, `Ov008_CommitSynchronizedSnapshotState`), so a form chosen from a deck,
+  which only its player's copy has, would differ between copies: there the seat takes its first form on the base the
+  game chose, the same on every copy.
+- **The level rows** (`LevelTable_ReadEntry`: `ba/ch/<code>/lv.b.z`, 100 rows of 16 bytes, read through section 30's
+  join): `u16` at `+0` strength (`Ov022_ComputeStrengthDamage`, the member's `+8`), `+2` magic (`+0xa`), `+4` defence
+  (`Ov022_ComputeDamageTaken`, `+0xc`), `+6` the most HP (`Ov022_ApplyMissionLevelStats`), `+8` not known, a pad, and
+  an `int` at `+0xc`, not known (0x5000, 5 in 20.12, at every level of the tables read). Roxas's level 1 is 9, 34, 7,
+  62 and 6 (`+0` to `+8`), his level 100 83, 212, 140, 359 and 31. `r2`'s table is the same as `ro`'s.

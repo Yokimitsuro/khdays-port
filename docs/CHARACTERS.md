@@ -10,8 +10,9 @@ give comes from a native plugin of the same mod ([MODDING_NATIVE.md](MODDING_NAT
 
 KH Studio makes and changes all of it without writing a line by hand: its **Characters** window
 ([studio/README.md](../studio/README.md), "Characters") makes a character, copies its model, clips, picture and
-voices into its folder, shows each of its base's animations beside the clip given to it, and saves the description
-once the port's own reader takes it.
+voices into its folder, shows each of its base's animations beside the clip given to it, gives it stats and forms
+(each form's rule built from the game's gears, links and panels by name), and saves the description once the port's
+own reader takes it.
 
 ## The folder
 
@@ -49,7 +50,8 @@ file = model/block.gltf
 skeleton = paired
 ```
 
-- `format` -- the description's version: 1. A newer one is refused, naming both.
+- `format` -- the description's version: 1, or 2 for forms and `[stats]` (below; a description of format 1 is read
+  as before). A newer one is refused, naming both.
 - `base` -- the game's character it plays as: roxas, axel, xigbar, saix, xaldin, sora, demyx, larxene, lexaeus,
   luxord, marluxia, riku, vexen, xemnas, xion, zexion, mickey, donald, goofy.
 - `name`, `weapon` -- for every language; `name en`, `name fr`, `name de`, `name it`, `name es` (and `weapon ...`)
@@ -177,6 +179,104 @@ damage = 1.5                         # its Limit's damage, times its base's
   overlay names them itself), so `data/` does not replace them.
 - Its length, its button and the way it is started are its base's.
 
+## Its stats (`[stats]`, format 2)
+
+The gauges are what the select shows; what the character plays with at each level is its level table, its base's
+(`ba/ch/<code>/lv.b.z`) unless `[stats]` gives values of its own:
+
+```ini
+[stats]
+1 = hp 70 strength 10 magic 30 defence 8
+50 = hp 230 strength 50
+100 = hp 400 strength 90 magic 200 defence 150
+```
+
+- `<level> = <stat> <value> ...` -- levels 1-100. A stat given at some levels has, between two of them, the value in
+  between (rounded); before the first, the first's; after the last, the last's. A stat given at no level keeps its
+  base's.
+- The stats, as the game uses each level row: `hp` (the most HP, `Ov022_ApplyMissionLevelStats`), `strength` (an
+  attack's damage, `Ov022_ComputeStrengthDamage`), `magic`, `defence` (`Ov022_ComputeDamageTaken`; `defense` is read
+  too), and two whose use is not known yet, `unknown_8` and `unknown_12` (RUNTIME_MAP section 32).
+- The port writes the table into the character's own folder as the game starts; a mod's own `data/lv.b.z` wins over
+  it (told).
+
+## Its weapons (`[weapons]`, format 2)
+
+The weapons the character holds are its base's models (`ba/ch/<code>/w_.p2`: Roxas's keyblades, the dual-wield
+Roxas's two); each one can be drawn as a model of the character's own:
+
+```ini
+[weapons]
+ro_w00600 = weapons/stick.glb           # the game's weapon model it draws instead (its name in w_.p2)
+```
+
+- `<the base's weapon model> = <file>` (glTF, GLB or FBX). Its joints follow the game's model's nodes by name (a
+  model exported from KH Studio keeps them: `ro_w13600_a` ...), as a paired model's do; drawn where and when the
+  game draws its own. With `KHDAYS_TRACE_MODELS=1` the log names each weapon model as it is drawn
+  (`ba/ch/c100/w_.p2#0/mdl/ro_w13600`); KH Studio lists the base's.
+- A file that cannot be read is told; the game's weapon is drawn. Only the picture: the weapon's reach and hits are
+  its base's.
+
+## Forms (`[form <id>]`, format 2)
+
+A character can have other forms: each one another model, skeleton, animations, voice, moveset, Limit, stats and
+weapons, and even another of the game's characters to play as, chosen by what the player equips. The character's
+own lines are its **default form**, played when no form's rule holds.
+
+```ini
+[form dual]
+base = roxas_dual                       # the game's dual-wield Roxas: two weapons, his combos and Limit
+priority = 100
+when = gear 230 and links 241 >= 3      # the Zero Gear with three Ability Units
+model = model/ventus_dual.glb
+skeleton = own
+
+[form dual weapons]
+ro_w13600 = weapons/right.glb           # the dual-wield Roxas's two weapon models, drawn as these
+ro_w14600 = weapons/left.glb
+
+[form dual actions]
+fallback = clips/dual_idle.glb
+
+[form dual moveset]
+moves = base                            # the dual-wield Roxas's own combos
+```
+
+- `[form <id>]` -- an id of letters, digits, `_` and `-` (not `default`), with `base` (any base above, or
+  `roxas_dual`), `priority` (a whole number, 0 when not given), `when` (its rule, below) and the model's lines of
+  `[model]` (`model` or `file`, `skeleton`, `scale`, `weapon_bone`, `weapon_turn`, `base_weapon_node`).
+- `[form <id> actions]`, `[form <id> sounds]`, `[form <id> moveset]`, `[form <id> limit]`, `[form <id> stats]`,
+  `[form <id> weapons]` -- the default's parts, for the form. A part a form does not give is its default's, whole
+  (its weapons only on the same base: they name the base's models); so is each model line.
+- A moveset names its base's attacks: a form on another base than its default's takes its default's `[moveset]` only
+  if it gives its own (told otherwise, its base's moves playing); `moves = base` says so without a line of moves.
+- Each form plays from a folder of its own (`ba/ch/c100/` on: the log names them), made from its base's.
+- The choice: among the forms whose rule holds, the highest `priority`, then the first written; none, the default
+  form. The same equipment always gives the same form.
+- A form that cannot be taken (a bad line, a rule that does not parse, a base it has not got, a file that cannot
+  be read, no `when`) is left out, told in the mods' log with its line; the character and its other forms are kept.
+
+### Its rule (`when`)
+
+```ini
+when = gear 230 and links 241 >= 3
+when = (panel 93 >= 2 or panel 94) and not dual
+when = links >= 2 and hp < 30
+```
+
+- `gear <item>` -- the deck's gear is this one. `links [<item>] <op> <n>` -- how many links (of that one, or any)
+  are set on the gear's cells. `panel <item> [<op> <n>]` -- that panel set in the deck (that many copies).
+  `dual` -- the game's own dual-wield condition (its flag 0x2010, set by the camp from the deck). `level <op> <n>`
+  -- its level (not read yet: false). `hp <op> <n>` -- its HP as a percent of its most, in the field only (false
+  at the camp).
+  `plugin <mod id>.<name>` -- a native plugin's condition (MODDING_NATIVE.md, "Actors and characters").
+- `<op>`: `>=`, `<=`, `>`, `<`, `==`, `!=`. `not`, `and` (before `or`), `or` and parentheses; `#` a comment.
+- Items are the game's numbers (KH Studio names them): the Zero Gear is 230, the Ability Unit 241.
+- When: at the camp, where the game itself makes each seat's character (its dual-wield Roxas, RUNTIME_MAP section
+  32), before the field loads it. A rule that asks what only the field knows (`hp`, a plugin's condition) is asked
+  again each frame there; a different form is told in the log and played from the next mission (the field's actor
+  is made from its form's base as it enters).
+
 ## In a room
 
 Any player of a room may choose a mod's character, and every copy plays it as its own: the select tells
@@ -186,6 +286,10 @@ identity, its `character.ini` and its `data/` files are in the gameplay mods' fi
 "Multiplayer"), and a copy whose characters differ is not let in, the room list naming the room's
 (`Ventus local.ventus/ventus`). Its model, clips, face and sounds are each player's own: they only change
 what that player sees and hears.
+
+In a room a seat's form is the game's own choice for it, which every copy makes alike from the room's records: its
+first form on the base the game chose (the dual-wield Roxas for a Roxas whose deck makes it so), else its default.
+The decks are each player's own and the room does not share them, so the rules are not asked there.
 
 ## Limits
 
@@ -202,3 +306,7 @@ character loads without the mod, its base standing in.
 - Attacks of their own (new kinds of moves, not the base's) and a Limit of their own (its length, its kind of
   hits: their base's code); the field's portrait and the results'
   model are still the base's.
+- The weapons' swing trails and the hits' shapes are the base's.
+- A form changes at the camp only: in the field it is told and waits for the next mission. `level` in a rule is
+  false (the seat's level is not read yet).
+- In a room, forms follow the game's own choice only (above).

@@ -41,6 +41,9 @@ void khdays_characters_scene(int scene);
  * for a new one, else `id` itself. */
 int khdays_characters_menu_entry(int id);
 
+/* The mod's character seat `seat` (0-3) was given by the select, NULL for one of the game's (forms.h: its form). */
+const KhdaysCharacter *khdays_characters_seat_character(int seat);
+
 /* The numbered characters, in their numbers' order (the select's). */
 int khdays_characters_count(void);
 const KhdaysCharacter *khdays_characters_at(int index);
@@ -92,7 +95,8 @@ void khdays_characters_play_none(int number);
 const KhdaysCharacterAction *khdays_characters_played(const KhdaysCharacter *c, unsigned *since, int *loop);
 
 /* For the models (runtime/mods/models.cpp): the model file drawn for the game model `name` ("ba/ch/c16/def.p.z/
- * mdl/roxas_b"), a model of a character's own folder, into `path`; 0 for any other. */
+ * mdl/roxas_b", or one of its weapons, "ba/ch/c100/w_.p2#0/mdl/ro_w13600", by its [weapons]), a model of a
+ * character's own folder, into `path`; 0 for any other. */
 int khdays_characters_model(const char *name, char *path, int size);
 
 #ifdef __cplusplus

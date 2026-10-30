@@ -336,6 +336,11 @@ Taken up (for the record of what the old names were):
     specials): the seat's strength and bonuses times `factor`.
   - `Ov022_BuildNodeGraph`'s graphs are a keyblade's combos (graph 0 the ground one, 1 the air one): `nValue`
     an attack's number in `cm.b`, `pLeft` the next attack, the pools the chain, its finisher and the branches.
+  - `Ov008_RecordInputCoords` is not input: it stores a seat's 6-byte camp record (`+2` bit 1 the game's flag
+    0x2010, the dual wield; `+4` the seat's character) at the camp's context `+0x2e + 6 x seat`, which
+    `Ov008_SendMenuMessage` sends to the room; `Ov008_RefreshSaveSlotWidget(seat)` makes the seat's character word
+    from it (`Ov008_GetEntryStatusByte`: 0x13 for a Roxas whose record has the bit). Found for the characters'
+    forms, 2026-10-30 (`docs/RUNTIME_MAP.md` section 32).
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 

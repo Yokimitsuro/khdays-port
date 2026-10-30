@@ -2224,13 +2224,23 @@ CHARACTER_DECLARATIONS = (
     "extern int khdays_characters_base(int number);\n"
     "extern const char *Port_CharacterCode(int number);\n"
 )
-# the own folders' codes, by number ("c16" ...): in the game's memory, for its paths (a game-side function:
+# the own folders' codes, by number ("c16", a form's "c100" ...): made in the game's memory, for its paths, into the
+# next of a few buffers (each caller uses its code at once); any number, no table to outgrow (a game-side function:
 # prepare.py makes a new global's definition extern, as a split unit's static)
 CHARACTER_CODES = (
-    "static const char sPortCharacterCodes[0x100][4] = {"
-    + ", ".join('""' if n < 0x16 else f'"c{n:02x}"' for n in range(0x100))
-    + "};\n"
-    "const char *Port_CharacterCode(int number)\n{\n    return sPortCharacterCodes[number & 0xff];\n}\n"
+    "static char sPortCharacterCodes[16][12];\n"
+    "static int sPortCharacterCodeNext;\n"
+    "const char *Port_CharacterCode(int number)\n{\n"
+    "    char *code = sPortCharacterCodes[sPortCharacterCodeNext++ & 15];\n"
+    "    int k = 0, shift = 28, digit;\n"
+    "    code[k++] = 'c';\n"
+    "    while (shift > 4 && ((number >> shift) & 15) == 0) shift -= 4; /* two digits at least */\n"
+    "    for (; shift >= 0; shift -= 4) {\n"
+    "        digit = (number >> shift) & 15;\n"
+    "        code[k++] = (char)(digit < 10 ? '0' + digit : 'a' + digit - 10);\n"
+    "    }\n"
+    "    code[k] = 0;\n"
+    "    return code;\n}\n"
 )
 
 
@@ -2402,6 +2412,19 @@ HOOKS["ov008@0205a138"] = [
         "    v = data_ov008_0208e9c4[sceneId].f0;\n",
         "    v = khdays_characters_of(0, sceneId) != sceneId ? (int)Port_CharacterCode(khdays_characters_of(0, sceneId))\n"
         "                                                : data_ov008_0208e9c4[sceneId].f0;\n",
+    ),
+]
+# ... the camp makes the local seat's character word (Ov008_GetEntryStatusByte: the game's own choice first, its
+# dual-wield Roxas, 0x13, for a Roxas whose deck sets flag 0x2010): a mod's character's seat gets the base of the
+# form its rules choose (runtime/characters/forms.c; docs/RUNTIME_MAP.md section 32)
+HOOKS["ov008@0204d6a8"] = [
+    (  # Ov008_RefreshSaveSlotWidget
+        "extern int  Ov008_GetEntryStatusByte(int slot);\n",
+        "extern int  Ov008_GetEntryStatusByte(int slot);\nextern int khdays_characters_seat_form(int seat, int word);\n",
+    ),
+    (
+        "        int summary = Ov008_GetEntryStatusByte(slot);\n",
+        "        int summary = khdays_characters_seat_form(slot, Ov008_GetEntryStatusByte(slot));\n",
     ),
 ]
 # ... the game's own select screens (scene 7's, the camp's): what they draw of a place on a new character -- the

@@ -1,7 +1,9 @@
 /* The mods' characters in the running game (characters.h). */
 #include "characters.h"
+#include "forms.h"
 #include "moveset.h"
 #include "packed.h"
+#include "stats.h"
 
 #include "../../host/app/instance.h"
 #include "../core/rom.h"
@@ -28,6 +30,8 @@
 static KhdaysCharacters registry;
 static const KhdaysCharacter **numbered; /* by number - KHDAYS_CHARACTER_FIRST */
 static int numbered_count;
+static const KhdaysCharacter **forms_numbered; /* the forms, by number - KHDAYS_CHARACTER_FORM_FIRST */
+static int forms_numbered_count;
 static int tracing;
 /* The new character each seat was given by the select (its number), 0 none: the seat itself has its
  * base's. */
@@ -165,6 +169,13 @@ static int files_there(const KhdaysCharacter *c)
             note(registry.mods[c->mod].id, c->key, 0, why, NULL);
         }
     }
+    for (int i = 0; i < c->weapon_count; ++i) {
+        if (!(khdays_characters_file(c, c->weapons[i].file, path, sizeof(path)) && khdays_folders_is_file(path))) {
+            snprintf(why, sizeof(why), "%.200s (for %.60s) cannot be read: the base's weapon is drawn",
+                     c->weapons[i].file, c->weapons[i].game);
+            note(registry.mods[c->mod].id, c->key, 0, why, NULL);
+        }
+    }
     for (int i = 0; i < c->sound_count; ++i) {
         if (c->sounds[i].file != NULL &&
             !(khdays_characters_file(c, c->sounds[i].file, path, sizeof(path)) && khdays_folders_is_file(path))) {
@@ -236,18 +247,59 @@ static void moveset_files(const KhdaysCharacter *c, Moveset *m)
     free(combos);
 }
 
+/* Its level table made from its [stats] and its base's (stats.h), packed as the game's; NULL when it has none, or
+ * when it cannot be made (told: its base's levels). */
+static unsigned char *stats_file(const KhdaysCharacter *c, size_t *size)
+{
+    size_t base_size = 0;
+    unsigned char table[KHDAYS_STATS_TABLE], *packed = NULL, *base;
+    if (c->stat_count == 0) {
+        return NULL;
+    }
+    base = base_file(c, "lv.b.z", &base_size);
+    if (base == NULL || !khdays_stats_table(c->stats, c->stat_count, base, base_size, table) ||
+        !khdays_characters_pack(table, sizeof(table), &packed, size)) {
+        note(registry.mods[c->mod].id, c->key, 0, "[stats]: its base's level table cannot be read: its base's levels",
+             NULL);
+        packed = NULL;
+    }
+    free(base);
+    return packed;
+}
+
+/* A file of its own given in the mod: a form's forms/<id>/data/<file>, else (a form on its character's base, or the
+ * character itself) data/<file>; 0 when there is none. */
+static int own_data(const KhdaysCharacter *c, const KhdaysCharacter *owner, const char *rest, char *disk, int size)
+{
+    char relative[300];
+    if (c->form != NULL) {
+        snprintf(relative, sizeof(relative), "forms/%s/data/%s", c->form, rest);
+        if (khdays_characters_file(c, relative, disk, size) && khdays_folders_is_file(disk)) {
+            return 1;
+        }
+        if (owner == NULL || owner->base != c->base) {
+            return 0; /* its character's files are another base's */
+        }
+    }
+    snprintf(relative, sizeof(relative), "data/%s", rest);
+    return khdays_characters_file(c, relative, disk, size) && khdays_folders_is_file(disk);
+}
+
 /* Its folder ba/ch/<code>/: every file of its base's folder, the mod's data/<file> when there, else its
- * [moveset]'s combo files, else a copy of the base's bytes (its own place in the ROM: what is loaded from it is
- * known as the character's). */
-static int serve_folder(const KhdaysCharacter *c)
+ * [moveset]'s combo files or its [stats]' level table, else a copy of the base's bytes (its own place in the ROM:
+ * what is loaded from it is known as the character's). A form's, the same from its own base's folder. */
+static int serve_folder(const KhdaysCharacter *c, const KhdaysCharacter *owner)
 {
     char base[24], own[24], path[256], target[256], disk[1024];
     Moveset moveset;
+    size_t levels_size = 0;
+    unsigned char *levels;
     snprintf(base, sizeof(base), "ba/ch/%s/", khdays_character_base_code(c->base));
     snprintf(own, sizeof(own), "ba/ch/c%02x/", c->number);
     const size_t base_length = strlen(base);
     int served = 0;
     moveset_files(c, &moveset);
+    levels = stats_file(c, &levels_size);
     for (int id = 0; id < khdays_rom_file_count(); ++id) {
         u32 offset, bytes;
         if (!khdays_rom_file_info(id, path, (int)sizeof(path), &offset, &bytes) ||
@@ -255,16 +307,21 @@ static int serve_folder(const KhdaysCharacter *c)
             continue;
         }
         const char *rest = path + base_length;
-        char relative[300];
         snprintf(target, sizeof(target), "%s%s", own, rest);
-        snprintf(relative, sizeof(relative), "data/%s", rest);
-        if (khdays_characters_file(c, relative, disk, sizeof(disk)) && khdays_folders_is_file(disk)) {
+        if (own_data(c, owner, rest, disk, (int)sizeof(disk))) {
             if ((moveset.ci != NULL && strcmp(rest, "ci.b.z") == 0) ||
                 (moveset.cm != NULL && strcmp(rest, "cm.b.z") == 0)) {
                 note(registry.mods[c->mod].id, c->key, 0, "[moveset] left out where its mod's data/ has the file",
                      NULL);
             }
+            if (levels != NULL && strcmp(rest, "lv.b.z") == 0) {
+                note(registry.mods[c->mod].id, c->key, 0, "[stats] left out where its mod's data/ has lv.b.z", NULL);
+            }
             served += khdays_rom_add_file(target, disk);
+            continue;
+        }
+        if (levels != NULL && strcmp(rest, "lv.b.z") == 0) {
+            served += khdays_rom_add_bytes(target, levels, (unsigned)levels_size);
             continue;
         }
         if (moveset.ci != NULL && strcmp(rest, "ci.b.z") == 0) {
@@ -285,7 +342,15 @@ static int serve_folder(const KhdaysCharacter *c)
     }
     free(moveset.ci);
     free(moveset.cm);
+    free(levels);
     return served;
+}
+
+/* A form's own files there, as a character's (a clip, a sound or a weapon that cannot be read is told). 0 leaves
+ * the form out. */
+static int form_files_there(const KhdaysCharacter *f)
+{
+    return files_there(f);
 }
 
 void khdays_characters_start(void)
@@ -313,13 +378,41 @@ void khdays_characters_start(void)
         if (c->number == 0) {
             continue;
         }
-        if (serve_folder(c) == 0) {
+        if (serve_folder(c, NULL) == 0) {
             note(registry.mods[c->mod].id, c->key, 0, "its base's folder cannot be copied: left out", NULL);
             c->number = 0;
             continue;
         }
         numbered[c->number - KHDAYS_CHARACTER_FIRST] = c;
+        for (int f = 0; f < c->form_count; ++f) {
+            KhdaysCharacter *form = &c->forms[f];
+            if (form->number - KHDAYS_CHARACTER_FORM_FIRST + 1 > forms_numbered_count) {
+                forms_numbered_count = form->number - KHDAYS_CHARACTER_FORM_FIRST + 1;
+            }
+        }
     }
+    forms_numbered = forms_numbered_count > 0 ? calloc((size_t)forms_numbered_count, sizeof(*forms_numbered)) : NULL;
+    for (int i = 0; i < registry.count && forms_numbered != NULL; ++i) {
+        KhdaysCharacter *c = &registry.list[i];
+        for (int f = 0; c->number != 0 && f < c->form_count; ++f) {
+            KhdaysCharacter *form = &c->forms[f];
+            char why[300];
+            if (form->number < KHDAYS_CHARACTER_FORM_FIRST || !form_files_there(form) ||
+                serve_folder(form, c) == 0) {
+                snprintf(why, sizeof(why), "[form %.60s] cannot be served (its files, or its base's folder): left out",
+                         form->form);
+                note(registry.mods[c->mod].id, c->key, 0, why, NULL);
+                form->number = 0;
+                continue;
+            }
+            forms_numbered[form->number - KHDAYS_CHARACTER_FORM_FIRST] = form;
+        }
+    }
+}
+
+const KhdaysCharacter *khdays_characters_seat_character(int seat)
+{
+    return seat >= 0 && seat < SEATS ? khdays_characters_numbered(seats[seat]) : NULL;
 }
 
 void khdays_characters_report(void)
@@ -345,11 +438,23 @@ void khdays_characters_report(void)
             khdays_log("characters: %s, number 0x%02x, plays as %s, its folder ba/ch/c%02x/", c->identity, c->number,
                        khdays_character_base_name(c->base), c->number);
         }
+        for (int f = 0; c != NULL && f < c->form_count; ++f) {
+            const KhdaysCharacter *form = &c->forms[f];
+            if (form->number != 0) {
+                khdays_log("characters: %s, form %s (0x%02x) on %s, priority %d, its folder ba/ch/c%02x/", c->identity,
+                           form->form, form->number, khdays_character_base_name(form->base), form->priority,
+                           form->number);
+            }
+        }
     }
 }
 
 const KhdaysCharacter *khdays_characters_numbered(int number)
 {
+    if (number >= KHDAYS_CHARACTER_FORM_FIRST) {
+        const int at = number - KHDAYS_CHARACTER_FORM_FIRST;
+        return at < forms_numbered_count ? forms_numbered[at] : NULL;
+    }
     const int index = number - KHDAYS_CHARACTER_FIRST;
     return index >= 0 && index < numbered_count ? numbered[index] : NULL;
 }
@@ -431,6 +536,7 @@ void khdays_characters_scene(int scene)
 {
     if (scene == TITLE_SCENE) {
         memset(seats, 0, sizeof(seats)); /* Mission Mode left: the story never has them */
+        khdays_characters_forms_clear();
     }
 }
 
@@ -440,18 +546,36 @@ int khdays_characters_of(int slot, int kind)
         return kind;
     }
     const KhdaysCharacter *c = khdays_characters_numbered(seats[slot]);
-    if (c == NULL || (kind >= 0 && kind != c->base)) {
-        return kind; /* not the seat's character's actor */
+    if (c == NULL) {
+        return kind;
+    }
+    /* the seat's form (chosen at the camp, or told by the room) when it plays as `kind`; else any of its forms that
+     * plays as `kind` (a room that did not tell: one form a base answers); else its own */
+    const KhdaysCharacter *f = khdays_characters_seat_form_now(slot);
+    if (f != NULL && f->number != 0 && (kind < 0 || kind == f->base)) {
+    } else if (kind >= 0 && kind != c->base) {
+        f = NULL;
+        for (int i = 0; i < c->form_count && f == NULL; ++i) {
+            f = c->forms[i].base == kind && c->forms[i].number != 0 ? &c->forms[i] : NULL;
+        }
+        if (f == NULL) {
+            return kind; /* not the seat's character's actor */
+        }
+    } else {
+        f = c;
     }
     if (tracing) {
         static int told[SEATS];
-        if (told[slot] != c->number) {
-            told[slot] = c->number;
+        if (told[slot] != f->number && f == c) {
             khdays_log("characters: member %d is %s (0x%02x), on %s's code", slot, c->identity, c->number,
                        khdays_character_base_name(c->base));
+        } else if (told[slot] != f->number) {
+            khdays_log("characters: member %d is %s, form %s (0x%02x), on %s's code", slot, c->identity,
+                       khdays_characters_form_id(f), f->number, khdays_character_base_name(f->base));
         }
+        told[slot] = f->number;
     }
-    return c->number;
+    return f->number;
 }
 
 /* A character's part of the rooms' fingerprint, growing (a file that cannot be read is left out: the copies'
@@ -498,6 +622,15 @@ int khdays_characters_room_entry(int index, unsigned char digest[32], const char
     }
     snprintf(data, sizeof(data), "%s/data", folder);
     khdays_folders_files(data, room_file, &part);
+    /* each form's own data/ (its description is in character.ini, above) */
+    for (int f = 0; f < c->form_count; ++f) {
+        char form_folder[1100];
+        snprintf(form_folder, sizeof(form_folder), "%s/forms/%s", folder, c->forms[f].form);
+        snprintf(data, sizeof(data), "%s/data", form_folder);
+        khdays_sha256_add(&part.sha, c->forms[f].form, strlen(c->forms[f].form) + 1);
+        part.folder = form_folder;
+        khdays_folders_files(data, room_file, &part);
+    }
     khdays_sha256_end(&part.sha, digest);
     *name = khdays_characters_name(c, 0);
     *identity = c->identity;
@@ -560,10 +693,23 @@ int khdays_characters_speaker_sound(const char *game, char *path, int size, char
     return s->file == NULL ? -1 : sound_path(speaker, s->file, path, size, name, name_size) ? 1 : 0;
 }
 
+/* The numbered characters and then the numbered forms with sounds of their own, one by one (`index` from 0); NULL
+ * for one to pass over. A form that gives no [sounds] has its character's files (the same names: decoded once). */
+static const KhdaysCharacter *numbered_at(int index)
+{
+    if (index < numbered_count) {
+        return numbered[index];
+    }
+    index -= numbered_count;
+    const KhdaysCharacter *f = index < forms_numbered_count ? forms_numbered[index] : NULL;
+    return f != NULL && (f->gives & KHDAYS_FORM_GIVES_SOUNDS) ? f : NULL;
+}
+
 int khdays_characters_have_sounds(void)
 {
-    for (int i = 0; i < numbered_count; ++i) {
-        if (numbered[i] != NULL && numbered[i]->sound_count > 0) {
+    for (int i = 0; i < numbered_count + forms_numbered_count; ++i) {
+        const KhdaysCharacter *c = numbered_at(i);
+        if (c != NULL && c->sound_count > 0) {
             return 1;
         }
     }
@@ -572,8 +718,8 @@ int khdays_characters_have_sounds(void)
 
 int khdays_characters_sound_file(int index, char *path, int size, char *name, int name_size)
 {
-    for (int i = 0; i < numbered_count; ++i) {
-        const KhdaysCharacter *c = numbered[i];
+    for (int i = 0; i < numbered_count + forms_numbered_count; ++i) {
+        const KhdaysCharacter *c = numbered_at(i);
         for (int s = 0; c != NULL && s < c->sound_count; ++s) {
             if (c->sounds[s].file != NULL && index-- == 0) {
                 if (!sound_path(c, c->sounds[s].file, path, size, name, name_size)) {
@@ -620,17 +766,36 @@ const KhdaysCharacter *khdays_characters_of_model(const char *name)
     /* the body's packs (def.p.z, def_hb.p.z, def_hho.p.z: the overlays' constructors load one of them) */
     static const char head[] = "ba/ch/c";
     const size_t n = sizeof(head) - 1;
-    if (numbered_count == 0 || strncmp(name, head, n) != 0 || strncmp(name + n + 2, "/def", 4) != 0) {
+    if (numbered_count == 0 || strncmp(name, head, n) != 0) {
         return NULL;
     }
-    char digits[3] = {name[n], name[n + 1], '\0'};
+    /* its folder's number in hex: two digits for a character, more for a form */
     char *end;
-    const long number = strtol(digits, &end, 16);
-    return *end == '\0' ? khdays_characters_numbered((int)number) : NULL;
+    const long number = strtol(name + n, &end, 16);
+    if (end == name + n || strncmp(end, "/def", 4) != 0) {
+        return NULL;
+    }
+    return khdays_characters_numbered((int)number);
 }
 
 int khdays_characters_model(const char *name, char *path, int size)
 {
     const KhdaysCharacter *c = khdays_characters_of_model(name);
-    return c != NULL && c->model != NULL && khdays_characters_file(c, c->model, path, size);
+    if (c != NULL) {
+        return c->model != NULL && khdays_characters_file(c, c->model, path, size);
+    }
+    /* a weapon of its folder's (ba/ch/c<number>/w_.p2#<entry>/mdl/<model>): its [weapons] file for the model */
+    static const char head[] = "ba/ch/c";
+    char *end;
+    const size_t n = sizeof(head) - 1;
+    if (numbered_count == 0 || strncmp(name, head, n) != 0) {
+        return 0;
+    }
+    const long number = strtol(name + n, &end, 16);
+    const char *model = strstr(name, "/mdl/");
+    if (end == name + n || strncmp(end, "/w_.p2", 6) != 0 || model == NULL) {
+        return 0;
+    }
+    const KhdaysCharacterWeapon *w = khdays_characters_weapon_model(khdays_characters_numbered((int)number), model + 5);
+    return w != NULL && khdays_characters_file(khdays_characters_numbered((int)number), w->file, path, size);
 }

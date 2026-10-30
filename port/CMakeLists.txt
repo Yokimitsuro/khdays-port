@@ -565,6 +565,9 @@ add_executable(khdays-native
     runtime/missions/worlds.c          # ... the worlds they are played in
     runtime/missions/missions.c        # ... and all of it in the game
     runtime/characters/registry.c      # the mods' characters: read and numbered,
+    runtime/characters/rules.c         # ... their forms' rules
+    runtime/characters/stats.c         # ... their level tables from [stats]
+    runtime/characters/forms.c         # ... their forms chosen for the seats
     runtime/characters/characters.c    # ... their folders served and their numbers answered in the game
     runtime/characters/moveset.c       # ... their [moveset] in their combo files
     runtime/characters/packed.cpp      # ... packed as the game's
@@ -847,9 +850,14 @@ endif()
 add_test(NAME khdays-missions COMMAND khdays-missions-test "${KHDAYS_DECOMPRESSED_FIRST}")
 # The mods' characters (runtime/characters/): descriptions, refusals, numbers, movesets.
 add_executable(khdays-characters-test tests/characters_test.c runtime/characters/registry.c
-    runtime/characters/moveset.c)
+    runtime/characters/rules.c runtime/characters/moveset.c)
 target_compile_options(khdays-characters-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-characters COMMAND khdays-characters-test)
+# ... their forms: rules, forms read and chosen, level tables.
+add_executable(khdays-character-forms-test tests/character_forms_test.c runtime/characters/registry.c
+    runtime/characters/rules.c runtime/characters/stats.c)
+target_compile_options(khdays-character-forms-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-forms COMMAND khdays-character-forms-test)
 # A replaced room's own animation (runtime/mods/room_animation.cpp): keys, loops, scrolls, frames.
 add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/mods/room_animation.cpp)
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
