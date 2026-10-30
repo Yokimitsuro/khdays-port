@@ -148,7 +148,11 @@ private:
 // unmapped one kept at rest under its parent; and each limb (three mapped bones) bent at the target's own lengths so its end
 // reaches where the source's end bone carries the target end's rest place, its middle bending toward
 // where the source's middle carries it (the law of cosines about an up vector, as
-// Motion::calcIKJoint 0xf56a0 bends a chain).
+// Motion::calcIKJoint 0xf56a0 bends a chain). A limb with `lengths` takes the source limb's lengths
+// instead (its upper and lower bones stretched along their length only, their children not) and
+// reaches along the source's own way from its upper joint to its end: the same bend, the end where the
+// source's is. A mapped root is placed where its source is plus the rests' difference, not turned by
+// the source root's turn (a root whose rest stands higher would otherwise move the hips forward).
 class Retarget final {
 public:
     struct Limb final {
@@ -156,6 +160,8 @@ public:
         // the mapped bone whose source carries the end's rest place to where the end reaches (-1: the
         // end's own): a wrist that turns with its forearm reaching where its hand is carried
         int reach = -1;
+        bool lengths = false;  // the source limb's lengths and way (its upper joint: the parent of the
+                               // lower's source bone)
     };
     // `source_of[t]`: the source bone target bone t follows, -1 for none. Throws when a bone or limb
     // does not fit the skeletons.
@@ -167,9 +173,12 @@ public:
 
 private:
     Mat4 pose(std::size_t t, const std::vector<Mat4>& source, const std::vector<Mat4>& out,
-              const std::vector<Mat4>& swing, const std::vector<Vec4>& heads, const std::vector<char>& moved) const;
+              const std::vector<Mat4>& swing, const std::vector<Vec4>& heads, const std::vector<char>& moved,
+              const std::vector<float>& stretch) const;
     Vec4 carried(const std::vector<Mat4>& source, int t, int by) const;
-    std::vector<int> parent_, source_of_;
+    std::vector<int> parent_, source_of_, source_parent_;
+    std::vector<Vec4> stretch_axis_;  // per target bone: its length way (unit, its rest space), for `lengths`
+    std::vector<Vec4> source_rest_head_;
     std::vector<std::size_t> order_;  // parents first
     std::vector<Limb> limbs_;
     std::vector<Mat4> source_rest_inverse_, target_rest_, target_rest_inverse_, target_local_;

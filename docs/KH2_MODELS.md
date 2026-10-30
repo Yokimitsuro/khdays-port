@@ -186,6 +186,8 @@ skeleton P_EX110.mdlx   # the model the mset was made for, beside this one
 bone 0-3 0-3            # <this model's bone> <its bone>, or two ranges as long
 ik 5 6 7                # a limb: upper, lower and end bone of this model
 ik 111 112 113 133      # ... reaching where bone 133's bone carries the end
+ik 14 15 16 lengths     # ... at the mset model's limb lengths and way (the knee bends as its does;
+                        #     the two bones stretched along their length only, their children not)
 ```
 
 The motion plays on the other model's skeleton exactly as it would there

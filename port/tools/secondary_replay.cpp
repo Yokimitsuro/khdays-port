@@ -113,6 +113,12 @@ struct Motions {
                     const Vec3 v = at(g[static_cast<std::size_t>(b)]);
                     std::fprintf(stderr, "dst %d: %.1f %.1f %.1f\n", b, v.x, v.y, v.z);
                 }
+            for (const int b : {5, 6, 7, 8, 9, 10, 11, 14, 15, 16})
+                if (static_cast<std::size_t>(b) < g.size()) {
+                    const auto &x = g[static_cast<std::size_t>(b)];
+                    std::fprintf(stderr, "scale %d: %.3f %.3f %.3f\n", b, std::hypot(x[0], x[1], x[2]),
+                                 std::hypot(x[4], x[5], x[6]), std::hypot(x[8], x[9], x[10]));
+                }
             if (sj.size() > 11 && g.size() > 9) {
                 std::fprintf(stderr, "knee bend: source (7 8 11) %.1f deg, (16 8 11) %.1f deg; ours (5 6 7) %.1f deg\n",
                              bend(at(sj[7]), at(sj[8]), at(sj[11])), bend(at(sj[16]), at(sj[8]), at(sj[11])),
@@ -160,9 +166,13 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
                 bones.emplace_back(t0 + i, s0 + i);
         } else if (a == "ik" && w >> c >> d) {
             int reach = -1;
-            if (w >> r)
-                reach = std::atoi(r.c_str());
-            limbs.push_back({std::atoi(b.c_str()), std::atoi(c.c_str()), std::atoi(d.c_str()), reach});
+            bool lengths = false;
+            while (w >> r)
+                if (r == "lengths")
+                    lengths = true;
+                else
+                    reach = std::atoi(r.c_str());
+            limbs.push_back({std::atoi(b.c_str()), std::atoi(c.c_str()), std::atoi(d.c_str()), reach, lengths});
         }
     }
     const auto folder = list.parent_path();

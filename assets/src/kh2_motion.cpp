@@ -1376,6 +1376,11 @@ Retarget::Retarget(const MotionSkeleton& source, const MotionSkeleton& target, s
     source_rest_inverse_.reserve(source_rest.size());
     for (const Mat4& r : source_rest) {
         source_rest_inverse_.push_back(inverse(r));
+        source_rest_head_.push_back(column(r, 3));
+    }
+    for (const auto& j : source.joints) {
+        source_parent_.push_back(j.parent >= 0 && static_cast<std::size_t>(j.parent) < source.joints.size() ? j.parent
+                                                                                                            : -1);
     }
     rest_of(target, target_rest_, target_local_);
     target_rest_inverse_.reserve(target_rest_.size());
@@ -1415,6 +1420,11 @@ Retarget::Retarget(const MotionSkeleton& source, const MotionSkeleton& target, s
                                      " " + std::to_string(l.end) +
                                      ": three bones that follow source bones, each below the one before, are needed");
         }
+        if (l.lengths && source_parent_[static_cast<std::size_t>(source_of_[static_cast<std::size_t>(l.lower)])] < 0) {
+            throw std::runtime_error("KH2 retarget: limb " + std::to_string(l.upper) + " " + std::to_string(l.lower) +
+                                     " " + std::to_string(l.end) +
+                                     " with `lengths`: its lower bone's source bone has no parent to measure from");
+        }
         if (l.reach >= 0 &&
             (static_cast<std::size_t>(l.reach) >= n || source_of_[static_cast<std::size_t>(l.reach)] < 0)) {
             throw std::runtime_error("KH2 retarget: limb " + std::to_string(l.upper) + " " + std::to_string(l.lower) +
@@ -1422,14 +1432,30 @@ Retarget::Retarget(const MotionSkeleton& source, const MotionSkeleton& target, s
                                      ": that bone follows no source bone");
         }
     }
+    // the `lengths` limbs' upper and lower bones: their way to their child joint, in their rest space
+    stretch_axis_.assign(n, {0.0F, 0.0F, 0.0F, 0.0F});
+    for (const Limb& l : limbs_) {
+        if (!l.lengths) {
+            continue;
+        }
+        const auto way = [&](int bone, int child) {
+            Vec4 v = apply1(target_rest_inverse_[static_cast<std::size_t>(bone)],
+                            column(target_rest_[static_cast<std::size_t>(child)], 3));
+            v[3] = 0.0F;
+            normalize(v);
+            return v;
+        };
+        stretch_axis_[static_cast<std::size_t>(l.upper)] = way(l.upper, l.lower);
+        stretch_axis_[static_cast<std::size_t>(l.lower)] = way(l.lower, l.end);
+    }
 }
 
 // Target bone t turned from its rest as its source bone is (then by `swing`), its head where its parent
 // carries it (the target's own lengths; a root's moved as its source moves) or where a limb's bend put
 // it (`heads`, when `moved`); an unmapped bone at rest under its parent.
 Mat4 Retarget::pose(const std::size_t t, const std::vector<Mat4>& source, const std::vector<Mat4>& out,
-                    const std::vector<Mat4>& swing, const std::vector<Vec4>& heads,
-                    const std::vector<char>& moved) const {
+                    const std::vector<Mat4>& swing, const std::vector<Vec4>& heads, const std::vector<char>& moved,
+                    const std::vector<float>& stretch) const {
     const int p = parent_[t];
     const int s = source_of_[t];
     if (s < 0 || static_cast<std::size_t>(s) >= source.size()) {
@@ -1438,9 +1464,22 @@ Mat4 Retarget::pose(const std::size_t t, const std::vector<Mat4>& source, const 
     const Mat4 d =
         mul(unscaled(source[static_cast<std::size_t>(s)]), source_rest_inverse_[static_cast<std::size_t>(s)]);
     Mat4 m = mul(swing[t], mul(turn_of(d), turn_of(target_rest_[t])));
-    const Vec4 head = moved[t] ? heads[t]
-                      : p >= 0 ? apply1(out[static_cast<std::size_t>(p)], column(target_local_[t], 3))
-                               : apply1(d, column(target_rest_[t], 3));
+    if (stretch[t] != 1.0F) {  // along its length way only (I + (k - 1) a a^T in its own space)
+        const Vec4& a = stretch_axis_[t];
+        Mat4 st = kUnit;
+        for (std::size_t c = 0; c < 3; ++c) {
+            for (std::size_t r = 0; r < 3; ++r) {
+                st[c * 4 + r] += (stretch[t] - 1.0F) * a[r] * a[c];
+            }
+        }
+        m = mul(m, st);
+    }
+    // a root where its source is plus the rests' difference, not turned by the source root's turn
+    const Vec4 head =
+        moved[t] ? heads[t]
+        : p >= 0 ? apply1(out[static_cast<std::size_t>(p)], column(target_local_[t], 3))
+                 : along(column(source[static_cast<std::size_t>(s)], 3),
+                         minus(column(target_rest_[t], 3), source_rest_head_[static_cast<std::size_t>(s)]), 1.0F);
     set_column(m, 3, head);
     return m;
 }
@@ -1458,9 +1497,10 @@ void Retarget::apply(const std::vector<Mat4>& source, std::vector<Mat4>& out) co
     std::vector<Mat4> swing(n, kUnit);
     std::vector<Vec4> heads(n, {0.0F, 0.0F, 0.0F, 1.0F});
     std::vector<char> moved(n, 0);
+    std::vector<float> stretch(n, 1.0F);
     const auto pass = [&] {
         for (const std::size_t t : order_) {
-            out[t] = pose(t, source, out, swing, heads, moved);
+            out[t] = pose(t, source, out, swing, heads, moved, stretch);
         }
     };
     pass();
@@ -1476,18 +1516,35 @@ void Retarget::apply(const std::vector<Mat4>& source, std::vector<Mat4>& out) co
         }
         // the limb's own lengths (its rest's), from where its upper bone rides now
         const Vec4 ru = column(target_rest_[u], 3), rm = column(target_rest_[m], 3), re = column(target_rest_[e], 3);
-        const float l0 = std::sqrt(dot3(minus(rm, ru), minus(rm, ru)));
-        const float l1 = std::sqrt(dot3(minus(re, rm), minus(re, rm)));
+        float l0 = std::sqrt(dot3(minus(rm, ru), minus(rm, ru)));
+        float l1 = std::sqrt(dot3(minus(re, rm), minus(re, rm)));
+        const float rest0 = l0, rest1 = l1;
+        // `lengths`: the source limb's joints (upper: its lower's parent), lengths and way
+        Vec4 su{}, sm{}, se{};
+        if (l.lengths) {
+            const auto s_m = static_cast<std::size_t>(source_of_[m]);
+            su = column(source[static_cast<std::size_t>(source_parent_[s_m])], 3);
+            sm = column(source[s_m], 3);
+            se = column(source[static_cast<std::size_t>(source_of_[static_cast<std::size_t>(by)])], 3);
+            l0 = std::sqrt(dot3(minus(sm, su), minus(sm, su)));
+            l1 = std::sqrt(dot3(minus(se, sm), minus(se, sm)));
+            if (l0 > 0.0F && l1 > 0.0F && rest0 > 0.0F && rest1 > 0.0F) {
+                stretch[u] = l0 / rest0;
+                stretch[m] = l1 / rest1;
+                pass();
+            }
+        }
         const Vec4 hip = column(out[u], 3);
         const Vec4 mid = column(out[m], 3);
-        Vec4 dir = minus(carried(source, l.end, by), hip);
+        Vec4 dir = l.lengths ? minus(se, su) : minus(carried(source, l.end, by), hip);
         float dist = normalize(dir);
         if (l0 <= 0.0F || l1 <= 0.0F || dist <= 0.0F) {
             continue;
         }
         dist = std::fmax(std::fabs(l0 - l1) * 1.001F, std::fmin(dist, (l0 + l1) * 0.999F));
-        // the bend's side: toward where the source's middle carries the target's, else as it is now
-        const Vec4 pole = minus(carried(source, l.lower, l.lower), hip);
+        // the bend's side: toward where the source's middle carries the target's (`lengths`: the source's
+        // own middle), else as it is now
+        const Vec4 pole = l.lengths ? minus(sm, su) : minus(carried(source, l.lower, l.lower), hip);
         Vec4 side = along(pole, dir, -dot3(pole, dir));
         side[3] = 0.0F;
         if (normalize(side) <= 1e-4F) {

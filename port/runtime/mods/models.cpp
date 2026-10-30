@@ -607,13 +607,20 @@ void load_kh2_motions(Model &model, const std::string &path)
         } else if (a == "ik") {
             std::string c, d, r;
             float u = 0.0F, l = 0.0F, e = 0.0F, reach = -1.0F;
-            if (!(words >> c >> d) || !number(b, u) || !number(c, l) || !number(d, e) ||
-                (words >> r && !number(r, reach))) {
+            bool ok = (words >> c >> d) && number(b, u) && number(c, l) && number(d, e), lengths = false;
+            while (ok && words >> r) // [<bone it reaches with>] [lengths]
+                if (r == "lengths")
+                    lengths = true;
+                else
+                    ok = reach < 0.0F && number(r, reach);
+            if (!ok) {
                 say("\"" + line +
-                    "\": write `ik <upper bone> <lower bone> <end bone> [<bone it reaches with>]`; the line is ignored");
+                    "\": write `ik <upper bone> <lower bone> <end bone> [<bone it reaches with>] [lengths]`; the line "
+                    "is ignored");
                 continue;
             }
-            limbs.push_back({static_cast<int>(u), static_cast<int>(l), static_cast<int>(e), static_cast<int>(reach)});
+            limbs.push_back(
+                {static_cast<int>(u), static_cast<int>(l), static_cast<int>(e), static_cast<int>(reach), lengths});
         } else if (a == "weapon") {
             std::string bone;
             float n = 0.0F;
