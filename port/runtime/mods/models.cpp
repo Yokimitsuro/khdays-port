@@ -354,6 +354,80 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     }
 }
 
+// The HD replacement switch (hud_settings.h) a bones.txt's `switch` names; -1 none (drawn always).
+int setting_named(const std::string &name, const std::string &key)
+{
+    if (key.empty())
+        return -1;
+    for (int s = 0; s < KHDAYS_OPT_COUNT; ++s)
+        if (key == khdays_hud_setting_keys[s])
+            return s;
+    std::fprintf(stderr, "models: %s: switch %s is no HD replacement's; drawn always\n", name.c_str(), key.c_str());
+    return -1;
+}
+
+// The game's own shapes a bones.txt's `keep` keeps drawn: each whose vertices all hang from the nodes named (their
+// lists' places in the model).
+std::set<std::uint32_t> kept_lists(const std::string &name, const khdays::assets::NeutralModel &game,
+                                   const std::vector<std::string> &keep)
+{
+    std::set<std::uint32_t> nodes, lists;
+    for (const auto &node : keep) {
+        const auto at = std::find(game.object_names.begin(), game.object_names.end(), node);
+        if (at == game.object_names.end())
+            std::fprintf(stderr, "models: %s: no node %s to keep\n", name.c_str(), node.c_str());
+        else
+            nodes.insert(static_cast<std::uint32_t>(at - game.object_names.begin()));
+    }
+    if (nodes.empty())
+        return lists;
+    for (const auto &mesh : game.meshes) {
+        bool kept = !mesh.vertices.empty();
+        for (const auto &v : mesh.vertices) {
+            const auto entry = static_cast<std::size_t>(v.joints[0]);
+            const auto &from = entry < game.palette_bones.size() ? game.palette_bones[entry]
+                                                                 : decltype(game.palette_bones)::value_type{};
+            kept = kept && !from.empty() &&
+                   std::all_of(from.begin(), from.end(), [&](const auto &b) { return nodes.count(b.first) != 0; });
+        }
+        if (kept)
+            lists.insert(mesh.list_offset);
+    }
+    return lists;
+}
+
+// The model's size at rest: each vertex where its joints' binds put it (an unbound one at the model's scale).
+void set_rest_size(Model &model)
+{
+    const float k = model.scale;
+    model.low = {INFINITY, INFINITY, INFINITY};
+    model.high = {-INFINITY, -INFINITY, -INFINITY};
+    for (const Mesh &mesh : model.meshes)
+        for (const auto &v : mesh.vertices) {
+            std::array<float, 3> p{0, 0, 0};
+            float total = 0.0F;
+            for (int w = 0; w < 4; ++w) {
+                const float weight = v.weights[static_cast<std::size_t>(w)];
+                const std::uint32_t jt = v.joints[static_cast<std::size_t>(w)];
+                if (weight <= 0.0F || jt >= model.joints.size())
+                    continue;
+                const auto q = point(model.joints[jt].bind, v.position);
+                for (int c = 0; c < 3; ++c)
+                    p[static_cast<std::size_t>(c)] += weight * q[static_cast<std::size_t>(c)];
+                total += weight;
+            }
+            if (total <= 0.0F)
+                p = {v.position[0] * k, v.position[1] * k, v.position[2] * k};
+            else
+                for (auto &c : p)
+                    c /= total;
+            for (std::size_t c = 0; c < 3; ++c) {
+                model.low[c] = std::fmin(model.low[c], p[c]);
+                model.high[c] = std::fmax(model.high[c], p[c]);
+            }
+        }
+}
+
 std::unique_ptr<Model> load(const std::string &name, const std::string &path, const char *file, u32 offset)
 {
     namespace assets = khdays::assets;
@@ -417,35 +491,8 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &pairs = bones.pairs;
     model->scale = bones.scale;
     model->cull = bones.cull;
-    if (!bones.setting.empty()) {
-        for (int s = 0; s < KHDAYS_OPT_COUNT && model->setting < 0; ++s)
-            if (bones.setting == khdays_hud_setting_keys[s])
-                model->setting = s;
-        if (model->setting < 0)
-            std::fprintf(stderr, "models: %s: switch %s is no HD replacement's; drawn always\n", name.c_str(),
-                         bones.setting.c_str());
-    }
-    // the game's own shapes it keeps: each whose vertices all hang from the nodes named
-    std::set<std::uint32_t> kept_nodes;
-    for (const auto &node : bones.keep) {
-        const auto at = std::find(game.object_names.begin(), game.object_names.end(), node);
-        if (at == game.object_names.end())
-            std::fprintf(stderr, "models: %s: no node %s to keep\n", name.c_str(), node.c_str());
-        else
-            kept_nodes.insert(static_cast<std::uint32_t>(at - game.object_names.begin()));
-    }
-    for (const auto &mesh : kept_nodes.empty() ? std::vector<assets::NeutralMesh>{} : game.meshes) {
-        bool kept = !mesh.vertices.empty();
-        for (const auto &v : mesh.vertices) {
-            const auto entry = static_cast<std::size_t>(v.joints[0]);
-            const auto &from = entry < game.palette_bones.size() ? game.palette_bones[entry]
-                                                                 : decltype(game.palette_bones)::value_type{};
-            kept = kept && !from.empty() &&
-                   std::all_of(from.begin(), from.end(), [&](const auto &b) { return kept_nodes.count(b.first) != 0; });
-        }
-        if (kept)
-            model->kept_lists.insert(mesh.list_offset);
-    }
+    model->setting = setting_named(name, bones.setting);
+    model->kept_lists = kept_lists(name, game, bones.keep);
     if (own_skeleton && character->model_scale > 0.0F) {
         model->scale = character->model_scale;
     }
@@ -786,33 +833,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
                        static_cast<double>(length({w[8], w[9], w[10]})));
         }
     }
-    // its size at rest: each vertex where its joints' binds put it
-    model->low = {INFINITY, INFINITY, INFINITY};
-    model->high = {-INFINITY, -INFINITY, -INFINITY};
-    for (const Mesh &mesh : model->meshes)
-        for (const auto &v : mesh.vertices) {
-            std::array<float, 3> p{0, 0, 0};
-            float total = 0.0F;
-            for (int w = 0; w < 4; ++w) {
-                const float weight = v.weights[static_cast<std::size_t>(w)];
-                const std::uint32_t jt = v.joints[static_cast<std::size_t>(w)];
-                if (weight <= 0.0F || jt >= model->joints.size())
-                    continue;
-                const auto q = point(model->joints[jt].bind, v.position);
-                for (int c = 0; c < 3; ++c)
-                    p[static_cast<std::size_t>(c)] += weight * q[static_cast<std::size_t>(c)];
-                total += weight;
-            }
-            if (total <= 0.0F)
-                p = {v.position[0] * k, v.position[1] * k, v.position[2] * k};
-            else
-                for (auto &c : p)
-                    c /= total;
-            for (std::size_t c = 0; c < 3; ++c) {
-                model->low[c] = std::fmin(model->low[c], p[c]);
-                model->high[c] = std::fmax(model->high[c], p[c]);
-            }
-        }
+    set_rest_size(*model);
     return model;
 }
 

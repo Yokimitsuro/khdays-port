@@ -1,10 +1,7 @@
-// The field's prize pictures drawn as a mod's effect: the pictures named as the game loads them, each billboard of
-// one with an effect drawn instead on the 3D layer's native sequences (as ui/kh2_reticles.cpp draws KH2's markers).
-// Each prize plays the effect from its first frame when it shows, as KH2's do: a picture's frames are laid side by
-// side in one program and each billboard samples its own frame's column (an effect too long for one program
-// shows its current frame on all its prizes at once). A picture with no effect but a model
-// (graphics/mo/prize.pak.z/mdl/<picture>.gltf, .glb or .fbx) is drawn as that model, upright at its place, as tall
-// as the picture (times `size` in <picture>.txt beside it) and turning (`turn` degrees a second, 90 unless said).
+// The field's prize pictures drawn as a mod's effect (prize_effects.h): each billboard of a picture with an effect
+// drawn instead on the 3D layer's native sequences, playing from its first frame when the prize shows, as KH2's do.
+// A picture's frames sit side by side in one program and each billboard samples its own frame's column. A picture
+// with a model instead (graphics/mo/prize.pak.z/mdl/<picture>) is drawn as that model, upright and turning.
 #include "prize_effects.h"
 #include "prize_effects_model.h"
 #include "../gfx/kh2_sequence.h"
@@ -62,8 +59,7 @@ struct Picture {
     std::array<Canvas, 4> canvases;
 };
 
-// When each billboard showing an effect began to (its node and picture): the game frame it began and the last it
-// was drawn. A billboard not drawn for a second is a prize gone (the game reuses its nodes).
+// When each billboard showing an effect (its node and picture) began to, and when it was last drawn.
 struct Shown {
     unsigned start = 0, last = 0;
 };
@@ -352,6 +348,67 @@ extern "C" void khdays_prize_picture(int index, unsigned btx0, unsigned words)
         note("prizes: picture %d is %s (words %08x)", index, name.empty() ? "?" : name.c_str(), words);
 }
 
+namespace {
+// The game frame the prize on `node` began to show its picture `i`: a billboard not drawn for a second is a prize
+// gone (the game reuses its nodes), the ones gone forgotten once a game frame.
+unsigned shown_since(const void *node, int i, unsigned now)
+{
+    if (now != swept) {
+        swept = now;
+        std::erase_if(shown, [now](const auto &kv) { return now - kv.second.last > gone_after; });
+    }
+    auto &seen = shown[{node, i}];
+    if (seen.last == 0 || now - seen.last > gone_after)
+        seen.start = now;
+    seen.last = now;
+    return seen.start;
+}
+
+// The effect's quad where Billboard_DrawList places the picture's: its position through the view matrix
+// (data_020473e0), turned by the billboard matrix (data_020428e0), from its foot (y 0) to its height, the
+// effect's body as wide as the picture; its texture's columns s0..s1 (0..128 the whole canvas).
+void draw_billboard(const Picture &p, const unsigned char *n, int token, float s0, float s1)
+{
+    const auto *view = static_cast<const unsigned char *>(KHDAYS_W(0x020473e0u));
+    const auto *board = static_cast<const unsigned char *>(KHDAYS_W(0x020428e0u));
+    const auto fx = [](const unsigned char *at, int k) {
+        std::int32_t v;
+        std::memcpy(&v, at + 4 * k, 4);
+        return float(v) / 4096.0F;
+    };
+    const float pos[3] = {fx(n + 0x0c, 0), fx(n + 0x0c, 1), fx(n + 0x0c, 2)};
+    float t[3];
+    for (int j = 0; j < 3; ++j)
+        t[j] = pos[0] * fx(view, j) + pos[1] * fx(view, 3 + j) + pos[2] * fx(view, 6 + j) + fx(view, 9 + j);
+    const auto width = float(std::int16_t(read16(n + 0x18))) / 4096.0F;
+    const auto height = float(std::int16_t(read16(n + 0x1a))) / 4096.0F;
+    const unsigned alpha = read16(n + 0x20) & 31u, poly = read16(n + 0x22) & 63u;
+    const float half = p.reach.half * width / p.reach.body_width, middle = height / 2;
+    float proj[16], unused_pos[16], unused_vec[16];
+    khdays_g3d_matrices(unused_pos, unused_vec, proj);
+    KhdaysG3dClipVertex v[4]{};
+    constexpr int corners[]{0, 1, 3, 2}; // top-left, top-right, bottom-right, bottom-left
+    for (int k = 0; k < 4; ++k) {
+        const int c = corners[k];
+        const float x = (c & 1) ? half : -half, y = middle + ((c & 2) ? -half : half);
+        float e[3];
+        for (int j = 0; j < 3; ++j)
+            e[j] = x * fx(board, j) + y * fx(board, 3 + j) + t[j];
+        auto &o = v[k];
+        o.x = proj[0] * e[0] + proj[4] * e[1] + proj[8] * e[2] + proj[12];
+        o.y = proj[1] * e[0] + proj[5] * e[1] + proj[9] * e[2] + proj[13];
+        o.z = proj[2] * e[0] + proj[6] * e[1] + proj[10] * e[2] + proj[14];
+        o.w = proj[3] * e[0] + proj[7] * e[1] + proj[11] * e[2] + proj[15];
+        o.r = o.g = o.b = 63;
+        o.a = 1;
+        o.s = (c & 1) ? s1 : s0;
+        o.t = (c & 2) ? 128.0F : 0;
+    }
+    const unsigned attr = 0xc0u | (alpha << 16) | (poly << 24);
+    khdays_g3d_sequence_polygon(v, 4, attr, p.atlas_id, unsigned(token));
+}
+} // namespace
+
 extern "C" int khdays_prize_node(const void *node)
 {
     if (traced())
@@ -370,62 +427,15 @@ extern "C" int khdays_prize_node(const void *node)
     try {
         const unsigned now = khdays_link_frame();
         const int token = program(p, std::size_t(i), now);
-        if (now != swept) { // the prizes gone forgotten, once a game frame
-            swept = now;
-            std::erase_if(shown, [now](const auto &kv) { return now - kv.second.last > gone_after; });
-        }
-        auto &seen = shown[{node, i}];
-        if (seen.last == 0 || now - seen.last > gone_after)
-            seen.start = now;
-        seen.last = now;
-        // its column on the canvas, in the polygon's s (0..128 the whole canvas)
-        float s0 = 0, s1 = 128;
+        const unsigned since = shown_since(node, i, now);
+        float s0 = 0, s1 = 128; // a sheet: this prize's frame's column
         if (p.sheet) {
             const float columns = float(p.effect.frames.size());
-            const int k = prizes::frame_at(p.effect, now - seen.start);
+            const int k = prizes::frame_at(p.effect, now - since);
             s0 = 128.0F * float(k) / columns;
             s1 = 128.0F * float(k + 1) / columns;
         }
-        // the billboard as Billboard_DrawList places it: its position through the view matrix (data_020473e0),
-        // its quad on the billboard matrix's turn (data_020428e0), from its foot (y 0) to its height
-        const auto *view = static_cast<const unsigned char *>(KHDAYS_W(0x020473e0u));
-        const auto *board = static_cast<const unsigned char *>(KHDAYS_W(0x020428e0u));
-        const auto fx = [](const unsigned char *at, int k) {
-            std::int32_t v;
-            std::memcpy(&v, at + 4 * k, 4);
-            return float(v) / 4096.0F;
-        };
-        const float pos[3] = {fx(n + 0x0c, 0), fx(n + 0x0c, 1), fx(n + 0x0c, 2)};
-        float t[3];
-        for (int j = 0; j < 3; ++j)
-            t[j] = pos[0] * fx(view, j) + pos[1] * fx(view, 3 + j) + pos[2] * fx(view, 6 + j) + fx(view, 9 + j);
-        const auto width = float(std::int16_t(read16(n + 0x18))) / 4096.0F;
-        const auto height = float(std::int16_t(read16(n + 0x1a))) / 4096.0F;
-        const unsigned alpha = read16(n + 0x20) & 31u, poly = read16(n + 0x22) & 63u;
-        // the effect's body as wide as the picture, the effect's middle the picture's
-        const float half = p.reach.half * width / p.reach.body_width, middle = height / 2;
-        float proj[16], unused_pos[16], unused_vec[16];
-        khdays_g3d_matrices(unused_pos, unused_vec, proj);
-        KhdaysG3dClipVertex v[4]{};
-        constexpr int corners[]{0, 1, 3, 2}; // top-left, top-right, bottom-right, bottom-left
-        for (int k = 0; k < 4; ++k) {
-            const int c = corners[k];
-            const float x = (c & 1) ? half : -half, y = middle + ((c & 2) ? -half : half);
-            float e[3];
-            for (int j = 0; j < 3; ++j)
-                e[j] = x * fx(board, j) + y * fx(board, 3 + j) + t[j];
-            auto &o = v[k];
-            o.x = proj[0] * e[0] + proj[4] * e[1] + proj[8] * e[2] + proj[12];
-            o.y = proj[1] * e[0] + proj[5] * e[1] + proj[9] * e[2] + proj[13];
-            o.z = proj[2] * e[0] + proj[6] * e[1] + proj[10] * e[2] + proj[14];
-            o.w = proj[3] * e[0] + proj[7] * e[1] + proj[11] * e[2] + proj[15];
-            o.r = o.g = o.b = 63;
-            o.a = 1;
-            o.s = (c & 1) ? s1 : s0;
-            o.t = (c & 2) ? 128.0F : 0;
-        }
-        const unsigned attr = 0xc0u | (alpha << 16) | (poly << 24);
-        khdays_g3d_sequence_polygon(v, 4, attr, p.atlas_id, unsigned(token));
+        draw_billboard(p, n, token, s0, s1);
         return 1;
     } catch (const std::exception &e) {
         p.drawn = false;

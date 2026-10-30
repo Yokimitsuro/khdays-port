@@ -1,5 +1,5 @@
 /* The field's prize pictures (mo/prize.pak.z: the HP orb, munny, the item spheres...) drawn as a mod's effect
- * instead (graphics/mo/prize.pak.z/fx/<picture>.txt): KH2's prizes when the installer made them (spec 038). */
+ * instead (graphics/mo/prize.pak.z/fx/<picture>.txt): KH2's prizes when the installer made them. */
 #ifndef KHDAYS_PRIZE_EFFECTS_H
 #define KHDAYS_PRIZE_EFFECTS_H
 #ifdef __cplusplus
