@@ -159,6 +159,18 @@ TEST(character_posed_by_its_own_clip) {
     // a clip of other bones: none of the model's moves
     CharacterClip other;
     CHECK(!load_character_clip(dir / "other.gltf", model, &other, &why) && !why.empty());
+    // one animation of a file by its name ("arm.gltf#lift"); a name it has not, refused
+    CHECK(clip_animation_names(dir / "arm.gltf") == std::vector<std::string>({"lift"}));
+    CHECK(clip_reference("clips/arm.gltf#lift") == std::make_pair(std::string("clips/arm.gltf"), std::string("lift")));
+    CHECK(clip_reference("clips/arm.gltf") == std::make_pair(std::string("clips/arm.gltf"), std::string()));
+    // the '#' after the file's extension only: one in the file's name or the animation's is theirs
+    CHECK(clip_reference("clips/run#2.GLB#Run.001") ==
+          std::make_pair(std::string("clips/run#2.GLB"), std::string("Run.001")));
+    CHECK(clip_reference("clips/all.fbx#a#b") == std::make_pair(std::string("clips/all.fbx"), std::string("a#b")));
+    CHECK(clip_reference("clips/run#2.gltf") == std::make_pair(std::string("clips/run#2.gltf"), std::string()));
+    CharacterClip named;
+    CHECK(load_character_clip(dir / "arm.gltf", model, &named, &why, "lift") && named.matched == 1);
+    CHECK(!load_character_clip(dir / "arm.gltf", model, &named, &why, "run") && why.find("run") != std::string::npos);
 
     // at rest the triangle is as built; half a second in, its arm turned an eighth, a second in a quarter:
     // the corner one along the arm from its joint goes round it

@@ -23,14 +23,48 @@ constexpr Mat kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
 }  // namespace
 
-bool load_character_clip(const fs::path& file, const assets::ImportedModel& model, CharacterClip* out,
-                         std::string* why) {
+namespace {
+
+assets::ImportedModel import_clip_file(const fs::path& file) {
     std::string extension = u8(file.extension());
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension == ".fbx" ? assets::import_fbx(file) : assets::import_gltf(file);
+}
+
+}  // namespace
+
+std::pair<std::string, std::string> clip_reference(const std::string& clip) {
+    // the '#' right after the file's extension, as the port reads it (port/runtime/characters/characters.c
+    // khdays_characters_clip_mark): a '#' in a file's or an animation's own name is neither
+    auto mark = std::string::npos;
+    for (std::size_t i = 0; i < clip.size() && mark == std::string::npos; ++i)
+        for (const std::string extension : {".gltf#", ".glb#", ".fbx#"})
+            if (clip.size() - i >= extension.size() &&
+                std::equal(extension.begin(), extension.end(), clip.begin() + static_cast<std::ptrdiff_t>(i),
+                           [](char a, char b) { return a == std::tolower(static_cast<unsigned char>(b)); })) {
+                mark = i + extension.size() - 1;
+                break;
+            }
+    return mark == std::string::npos ? std::make_pair(clip, std::string())
+                                     : std::make_pair(clip.substr(0, mark), clip.substr(mark + 1));
+}
+
+std::vector<std::string> clip_animation_names(const fs::path& file) {
+    std::vector<std::string> names;
+    try {
+        for (const auto& a : import_clip_file(file).animations)
+            names.push_back(a.name);
+    } catch (const std::exception&) {
+    }
+    return names;
+}
+
+bool load_character_clip(const fs::path& file, const assets::ImportedModel& model, CharacterClip* out,
+                         std::string* why, const std::string& animation) {
     assets::ImportedModel clip_file;
     try {
-        clip_file = extension == ".fbx" ? assets::import_fbx(file) : assets::import_gltf(file);
+        clip_file = import_clip_file(file);
     } catch (const std::exception& e) {
         *why = e.what();
         return false;
@@ -39,12 +73,21 @@ bool load_character_clip(const fs::path& file, const assets::ImportedModel& mode
         *why = "no animation in it";
         return false;
     }
+    auto chosen = clip_file.animations.begin();
+    if (!animation.empty()) {
+        chosen = std::find_if(clip_file.animations.begin(), clip_file.animations.end(),
+                              [&](const assets::ImportedAnimation& a) { return a.name == animation; });
+        if (chosen == clip_file.animations.end()) {
+            *why = "no animation named " + animation + " in it";
+            return false;
+        }
+    }
     // the model's nodes by name: what the port matches the clip's tracks with
     std::map<std::string, int> node_of;
     for (std::size_t n = 0; n < model.nodes.size(); ++n)
         node_of.emplace(model.nodes[n].name, static_cast<int>(n));
     CharacterClip c;
-    assets::ImportedAnimation& a = clip_file.animations.front();
+    assets::ImportedAnimation& a = *chosen;
     c.animation.name = a.name;
     c.animation.duration = a.duration;
     c.animation.loop = a.loop;

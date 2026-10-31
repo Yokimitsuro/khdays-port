@@ -85,9 +85,10 @@ struct View {
     bool animation_ok = false;
     assets::SkeletalAnimation animation;
 
-    // its clips, read when shown
+    // its clips, read when shown; each clip file's animations' names, read once
     std::map<std::string, CharacterClip> clips;
     std::map<std::string, std::string> clip_errors;
+    std::map<std::string, std::vector<std::string>> clip_animations;
 
     // the preview
     std::string shown_game;  // one of the base's animations
@@ -364,7 +365,8 @@ const CharacterClip* clip_of(const Mod& m, const std::string& file) {
         return nullptr;
     CharacterClip c;
     std::string why;
-    if (!load_character_clip(character_dir(m.dir, v.key) / path_u8(file), v.model, &c, &why)) {
+    const auto [path, animation] = clip_reference(file);
+    if (!load_character_clip(character_dir(m.dir, v.key) / path_u8(path), v.model, &c, &why, animation)) {
         v.clip_errors[file] = why;
         return nullptr;
     }
@@ -601,6 +603,7 @@ void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const 
             v.ini.set(part("actions"), "fallback", relative);
         v.clip_errors.erase(relative);
         v.clips.erase(relative);
+        v.clip_animations.erase(relative);  // a file copied again: its animations read again
         v.shown_clip = relative;
         break;
     case Wanted::face:
@@ -939,8 +942,23 @@ void draw_animations_tab(App& app, const Mod& m) {
         ImGui::PopTextWrapPos();
         return;
     }
-    // its clips
-    const std::vector<std::string> clips = character_files(m.dir, v.key, "clips");
+    // its clips: a file with several animations offers each by its name ("clips/all.gltf#run")
+    const std::vector<std::string> files = character_files(m.dir, v.key, "clips");
+    std::vector<std::string> clips;
+    for (const auto& file : files) {
+        auto found = v.clip_animations.find(file);
+        if (found == v.clip_animations.end())
+            found = v.clip_animations
+                        .emplace(file, clip_animation_names(character_dir(m.dir, v.key) / path_u8(file)))
+                        .first;
+        const std::size_t before = clips.size();
+        if (found->second.size() > 1)
+            for (const auto& name : found->second)
+                if (!name.empty() && name.find_first_of(" \t") == std::string::npos)  // (a line's words: no spaces)
+                    clips.push_back(file + "#" + name);
+        if (clips.size() == before)
+            clips.push_back(file);
+    }
     if (ImGui::Button(tr(lang, S::chars_add_clips)))
         ask_files(app, Wanted::clips);
     ImGui::SameLine();

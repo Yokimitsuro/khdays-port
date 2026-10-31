@@ -935,8 +935,8 @@ void apply_clip(const Clip &source, float t, std::vector<Trs> &pose)
     }
 }
 
-// The character's clip `relative`, read the first time it is asked for: its file's first animation, its
-// tracks matched to the model's nodes by name.
+// The character's clip `relative`, read the first time it is asked for: its file's first animation, or the one a
+// "#<name>" after the file names, its tracks matched to the model's nodes by name.
 Clip &clip_of(OwnSkeleton &o, const std::vector<khdays::assets::ImportedNode> &nodes, const std::string &relative)
 {
     auto it = o.clips.find(relative);
@@ -955,7 +955,20 @@ Clip &clip_of(OwnSkeleton &o, const std::vector<khdays::assets::ImportedNode> &n
             khdays_log("characters: %s: %s has no animation", o.character->identity, relative.c_str());
             return made;
         }
-        made.animation = std::move(clip_file.animations.front());
+        const char *const at = khdays_characters_clip_mark(relative.c_str());
+        const auto mark = at != nullptr ? static_cast<std::size_t>(at - relative.c_str()) : std::string::npos;
+        auto chosen = clip_file.animations.begin();
+        if (mark != std::string::npos) {
+            const std::string wanted = relative.substr(mark + 1);
+            chosen = std::find_if(clip_file.animations.begin(), clip_file.animations.end(),
+                                  [&](const khdays::assets::ImportedAnimation &a) { return a.name == wanted; });
+            if (chosen == clip_file.animations.end()) {
+                khdays_log("characters: %s: %s has no animation named %s", o.character->identity,
+                           relative.substr(0, mark).c_str(), wanted.c_str());
+                return made;
+            }
+        }
+        made.animation = std::move(*chosen);
         std::size_t matched = 0;
         for (const auto &track : made.animation.tracks) {
             int found = -1;

@@ -143,8 +143,11 @@ static void read_mod(const char *name, void *context)
 
 int khdays_characters_file(const KhdaysCharacter *c, const char *relative, char *path, int size)
 {
-    const int n =
-        snprintf(path, (size_t)size, "%s/%s/characters/%s/%s", MODS, registry.mods[c->mod].folder, c->key, relative);
+    /* a clip's "#<animation>" names one animation of its file, not the file */
+    const char *mark = khdays_characters_clip_mark(relative);
+    const int length = mark != NULL ? (int)(mark - relative) : (int)strlen(relative);
+    const int n = snprintf(path, (size_t)size, "%s/%s/characters/%s/%.*s", MODS, registry.mods[c->mod].folder, c->key,
+                           length, relative);
     return n > 0 && n < size;
 }
 

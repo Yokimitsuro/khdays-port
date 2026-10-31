@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace studio {
@@ -18,10 +19,16 @@ struct CharacterClip {
     std::size_t tracks = 0, matched = 0;          // the file's tracks, and those on one of the model's nodes
 };
 
-// The clip file's first animation, its tracks matched to `model`'s nodes by name. False with the reason (no
-// animation, none of its tracks on the model's nodes).
+// The clip file's animation named `animation` (empty: its first), its tracks matched to `model`'s nodes by name.
+// False with the reason (no such animation, none of its tracks on the model's nodes).
 bool load_character_clip(const std::filesystem::path& file, const khdays::assets::ImportedModel& model,
-                         CharacterClip* out, std::string* why);
+                         CharacterClip* out, std::string* why, const std::string& animation = {});
+
+// The names of the clip file's animations, in its order; empty when it cannot be read or has none.
+std::vector<std::string> clip_animation_names(const std::filesystem::path& file);
+
+// A clip's reference split: its file and the animation a "#<name>" after it names (empty: the file's first).
+std::pair<std::string, std::string> clip_reference(const std::string& clip);
 
 // Each of the model's nodes' world matrix `seconds` into `clip` (looped over its length), or at rest without one.
 std::vector<Mat> character_pose(const khdays::assets::ImportedModel& model, const CharacterClip* clip, double seconds);

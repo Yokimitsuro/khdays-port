@@ -1365,6 +1365,23 @@ const char *khdays_characters_weapon(const KhdaysCharacter *c, int l)
     return c->any_weapon != NULL ? c->any_weapon : c->weapon[0];
 }
 
+const char *khdays_characters_clip_mark(const char *relative)
+{
+    static const char *const extensions[] = {".gltf#", ".glb#", ".fbx#"};
+    for (const char *p = relative; *p != '\0'; ++p) {
+        for (size_t e = 0; e < sizeof(extensions) / sizeof(extensions[0]); ++e) {
+            size_t i = 0;
+            while (extensions[e][i] != '\0' && tolower((unsigned char)p[i]) == extensions[e][i]) {
+                ++i;
+            }
+            if (extensions[e][i] == '\0') {
+                return p + i - 1;
+            }
+        }
+    }
+    return NULL;
+}
+
 void khdays_characters_drop(KhdaysCharacters *r, int index)
 {
     if (index < 0 || index >= r->count) {

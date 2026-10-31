@@ -219,6 +219,10 @@ const KhdaysCharacterSound *khdays_characters_sound(const KhdaysCharacter *c, co
 const char *khdays_characters_name(const KhdaysCharacter *c, int l);
 const char *khdays_characters_weapon(const KhdaysCharacter *c, int l);
 
+/* That '#' of a clip's reference: the one right after the file's extension (.gltf, .glb, .fbx, any case), so a '#'
+ * in a file's or an animation's own name is neither; NULL when the reference names no animation. */
+const char *khdays_characters_clip_mark(const char *relative);
+
 /* Takes character `index` out of the registry (before numbering). */
 void khdays_characters_drop(KhdaysCharacters *r, int index);
 

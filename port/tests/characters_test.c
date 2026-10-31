@@ -561,6 +561,17 @@ static void the_bases(void)
     CHECK(khdays_character_base_name(KHDAYS_CHARACTER_FOLDERS) == NULL);
 }
 
+/* A clip naming one animation of its file: the '#' right after the extension, not one of a name's own. */
+static void clip_animation_named(void)
+{
+    const char *all = "clips/all.gltf#run";
+    const char *odd = "clips/run#2.GLB#Run.001";
+    CHECK(khdays_characters_clip_mark(all) == all + 14);
+    CHECK(khdays_characters_clip_mark(odd) == odd + 15);
+    CHECK(khdays_characters_clip_mark("clips/all.fbx") == NULL);
+    CHECK(khdays_characters_clip_mark("clips/run#2.gltf") == NULL);
+}
+
 int main(void)
 {
     a_description_read();
@@ -573,6 +584,7 @@ int main(void)
     moveset_read();
     moveset_files();
     the_bases();
+    clip_animation_named();
     if (failures == 0) {
         printf("characters: all checks passed\n");
     }

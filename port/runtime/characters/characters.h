@@ -49,7 +49,8 @@ int khdays_characters_count(void);
 const KhdaysCharacter *khdays_characters_at(int index);
 const KhdaysCharacter *khdays_characters_numbered(int number);
 
-/* A file of the character's folder (`relative`: its description's reference) on disk, UTF-8, into `path`. */
+/* A file of the character's folder (`relative`: its description's reference) on disk, UTF-8, into `path`. A clip's
+ * reference may name one animation of its file after a '#' ("clips/all.gltf#run"): the file's path, without it. */
 int khdays_characters_file(const KhdaysCharacter *c, const char *relative, char *path, int size);
 
 /* For the models (runtime/mods/models.cpp): the character whose own folder holds the game model `name`, NULL

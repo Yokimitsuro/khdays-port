@@ -90,7 +90,9 @@ b_ro_B009 = clips/200.fbx root keep time game  # the combo's first hit: its forw
 ```
 
 - `<the base's animation> = <clip> [blend <ms>] [root keep|remove] [time own|game]`: the clip (its file's first
-  animation, its bones by name) plays while the game plays that animation. `time own` (the default): at the
+  animation, or the one a `#<name>` right after the file's `.gltf`, `.glb` or `.fbx` names -- `clips/all.gltf#run`,
+  for a file holding many; a name with spaces cannot be named this way; its bones by name) plays while the game plays
+  that animation. The studio offers each animation of such a file by its name. `time own` (the default): at the
   speed it was made with, standing while the game holds its animation (the pause, a hit's stop), and looping
   once the game's animation loops (standing, running); a clip longer than a one-off animation of the game's is
   cut where the game goes on. `time game`: at the same point as the game's animation, stretched to its own

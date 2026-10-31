@@ -1,6 +1,8 @@
 // A mod's characters (character_files.h).
 #include "core/characters/character_files.h"
 
+#include "core/characters/character_pose.h"
+
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
 #include "core/models/model_files.h"
@@ -417,7 +419,8 @@ std::vector<std::string> check_character(const fs::path& mod_dir, const std::str
         const fs::path dir = character_dir(mod_dir, key);
         std::error_code ec;
         auto look = [&](const char* what, const char* file) {
-            if (file != nullptr && !fs::is_regular_file(dir / path_u8(file), ec))
+            // a clip's "#<animation>" names one animation of its file
+            if (file != nullptr && !fs::is_regular_file(dir / path_u8(clip_reference(file).first), ec))
                 lines.push_back(std::string(what) + ": " + file + " is not in the character's folder");
         };
         look("face", c.face);
