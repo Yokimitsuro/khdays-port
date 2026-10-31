@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <set>
 #include <string>
 
 using namespace khdays::secondary;
@@ -507,16 +508,19 @@ void guided_stretch()
 
 // `cutscene_sim`: about places wider and shorter than the rest shape (a game model's coat), with gravity and a
 // collider through them its group does not collide with: never inside the shell over the places, its links at
-// the places' lengths, untouched by that collider
+// the places' lengths, untouched by that collider; its rows (at the places' lengths) stiff at the top and free at
+// the hem, as kh2_coat's
 void cutscene_sim_shell()
 {
     Skirt s = make_skirt(8, 3);
     Diagnostics d;
-    auto rig = cooked(skirt_config(s,
-                                   "collider core capsule hips length 0.6 radius 0.3 tags hips\n"
-                                   "collider shin capsule hips length 0.05 radius 0.01 tags calves\n",
-                                   "  collide calves\n  cutscene_sim\n"),
-                      s.sk, s.mesh, d);
+    auto rig =
+        cooked(skirt_config(s,
+                            "collider core capsule hips length 0.6 radius 0.3 tags hips\n"
+                            "collider shin capsule hips length 0.05 radius 0.01 tags calves\n",
+                            "  collide calves\n  cutscene_sim\n"
+                            "  row_compliance 0.00002 hem 0.05 curve 1.5\n  row_max_strain 0.04 hem 4 curve 1.5\n"),
+               s.sk, s.mesh, d);
     CHECK(rig != nullptr);
     if (!rig)
         return;
@@ -624,7 +628,7 @@ void cutscene_sim_shell()
         from = to;
     }
     std::printf("cutscene_sim spun: %.3f m out off the shell, %.4f m inside it\n", out, inside);
-    CHECK(out > 0.02F);    // flung out
+    CHECK(out > 0.015F);   // flung out (its rows held: 2 cm; free, 3)
     CHECK(inside < 0.01F); // never in
 }
 
@@ -696,6 +700,143 @@ void shell_push_shin()
                     nearest);
         CHECK(push ? nearest > 0.06F : nearest < 0.03F);
     }
+}
+
+// `cutscene_sim`: a leg kicking one strip's places out and back with the hips still: the shell pushes the cloth
+// (contact, as a leg pushes the gameplay coat) without throwing it, and its neighbours come along a little
+void cutscene_sim_kick()
+{
+    Skirt s = make_skirt(8, 3);
+    Diagnostics d;
+    auto rig =
+        cooked(skirt_config(s, "",
+                            "  collide none\n  cutscene_sim\n  follow_frequency 3 hem 1.2 curve 1.5\n"
+                            "  follow_damping 0.75\n  damping 3\n  inertia 0.8\n"
+                            "  row_compliance 0.00002 hem 0.05 curve 1.5\n  row_max_strain 0.04 hem 4 curve 1.5\n"),
+               s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    std::vector<Vec3> places(rig->particles.size());
+    std::vector<float> weight(rig->particles.size(), 0.0F);
+    std::vector<int> strip(rig->particles.size(), -1), level(rig->particles.size(), 0);
+    std::vector<std::vector<int>> columns;
+    for (int k = 0; k < s.strips; ++k) {
+        const float a = 2.0F * kPi * static_cast<float>(k) / static_cast<float>(s.strips);
+        std::vector<int> col;
+        for (int l = 0; l < s.levels; ++l) {
+            int i = -1;
+            for (std::size_t j = 0; j < rig->particles.size(); ++j)
+                if (rig->particles[j].dynamic && rig->particles[j].bone == s.bone(k, l))
+                    i = static_cast<int>(j);
+            CHECK(i >= 0);
+            if (i < 0)
+                return;
+            if (l == 0)
+                col.push_back(rig->particles[static_cast<std::size_t>(i)].anchor);
+            const auto ui = static_cast<std::size_t>(i);
+            places[ui] = {0.2F * std::cos(a), 0.85F - 0.15F * static_cast<float>(l), 0.2F * std::sin(a)};
+            weight[ui] = 1.0F;
+            strip[ui] = k;
+            level[ui] = l;
+            col.push_back(i);
+        }
+        columns.push_back(col);
+    }
+    std::vector<std::array<int, 3>> shell;
+    for (std::size_t c = 0; c < columns.size(); ++c) {
+        const auto &l = columns[c], &r = columns[(c + 1) % columns.size()];
+        for (std::size_t q = 0; q + 1 < l.size(); ++q) {
+            shell.push_back({l[q], r[q], l[q + 1]});
+            shell.push_back({r[q], r[q + 1], l[q + 1]});
+        }
+    }
+    Simulation sim(*rig);
+    TickSettings ts;
+    const auto pose = pose_of(s.sk, {});
+    sim.set_game_targets(places, places, weight);
+    sim.set_game_shell(shell, {});
+    sim.initialize(pose, ts, 10);
+    for (int t = 0; t < 60; ++t)
+        sim.tick(pose, pose, ts);
+    // strip 0 kicked out along +x, 0.2 m at its hem, in 6 ticks and back in 6
+    const auto kicked = [&](float amount) {
+        std::vector<Vec3> now = places;
+        for (std::size_t i = 0; i < now.size(); ++i)
+            if (strip[i] == 0)
+                now[i].x += amount * static_cast<float>(level[i] + 1) / static_cast<float>(s.levels);
+        return now;
+    };
+    std::vector<Vec3> was = places;
+    float thrown = 0.0F, neighbour = 0.0F;
+    for (int t = 1; t <= 72; ++t) {
+        const float k = t <= 6 ? static_cast<float>(t) / 6.0F : t <= 12 ? static_cast<float>(12 - t) / 6.0F : 0.0F;
+        const std::vector<Vec3> now = kicked(0.2F * k);
+        sim.set_game_targets(was, now, weight);
+        sim.tick(pose, pose, ts);
+        for (std::size_t i = 0; i < now.size(); ++i) {
+            if (level[i] != s.levels - 1)
+                continue;
+            const Vec3 x = sim.positions()[i];
+            if (strip[i] == 0 && t > 12)
+                thrown = maxf(thrown, x.x - now[i].x);
+            if ((strip[i] == 1 || strip[i] == s.strips - 1) && t <= 12)
+                neighbour = maxf(neighbour, x.x - now[i].x);
+        }
+        was = now;
+    }
+    std::printf("cutscene_sim kick: hem thrown %.3f m past its place after the kick, neighbours carried %.3f m\n",
+                thrown, neighbour);
+    CHECK(thrown < 0.035F);   // in the shell's frame and free rows: 4.9 cm
+    CHECK(neighbour > 0.02F); // free rows: 0.7 cm
+}
+
+// A `clip_world` volume over the particles' places `rest`: closed (each edge on two faces, once each way) and wound
+// outward (its signed volume positive); that volume (m^3, model units cubed)
+float clip_volume_check(const ClipVolume &cv, const std::vector<Vec3> &rest)
+{
+    CHECK(!cv.faces.empty());
+    CHECK(cv.open_edges == 0U);
+    std::vector<Vec3> at;
+    for (const int p : cv.particles)
+        at.push_back(rest[static_cast<std::size_t>(p)]);
+    for (const auto *ring : {&cv.top, &cv.bottom}) {
+        Vec3 middle{};
+        for (const int k : *ring)
+            middle += at[static_cast<std::size_t>(k)] * (1.0F / static_cast<float>(ring->size()));
+        at.push_back(middle);
+    }
+    float volume = 0.0F;
+    for (const auto &f : cv.faces)
+        volume += dot(at[static_cast<std::size_t>(f[0])],
+                      cross(at[static_cast<std::size_t>(f[1])], at[static_cast<std::size_t>(f[2])])) /
+                  6.0F;
+    CHECK(volume > 0.0F);
+    return volume;
+}
+
+// `clip_world`: a skirt's volume, its slit (no faces between two strips) closed across, wound outward
+void clip_world_volume()
+{
+    Skirt s = make_skirt(8, 3, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "", "  clip_world inset 0.02\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    std::vector<Vec3> rest;
+    for (const auto &p : rig->particles)
+        rest.push_back(point(s.sk.rest[static_cast<std::size_t>(p.bone)], p.offset));
+    const auto volumes = clip_volumes_of(*rig, rest);
+    CHECK(volumes.size() == 1U);
+    if (volumes.size() != 1U)
+        return;
+    const float v = clip_volume_check(volumes[0], rest);
+    // a cylinder of the skirt's radius from its fixed points to its hem, give or take its facets
+    std::printf("clip_world: %zu columns, %zu faces, %.4f m^3, inset %.3f m\n", volumes[0].columns,
+                volumes[0].faces.size(), v, volumes[0].inset);
+    CHECK(volumes[0].columns == 8U);
+    CHECK(std::fabs(volumes[0].inset - 0.02F) < 1e-6F);
 }
 
 void contacts()
@@ -985,6 +1126,44 @@ void n_ex830()
     for (const auto &p : rig.particles)
         coat += p.dynamic && rig.groups[static_cast<std::size_t>(p.group)].name == "coat" ? 1 : 0;
     CHECK(coat == 43); // 44 listed, 85 shared by both front strips
+    // `clip_world` on the coat: nine columns (the forked front's two share its top), closed across the slit
+    {
+        Rig clipped = rig;
+        std::vector<Vec3> places;
+        for (auto &g : clipped.groups)
+            g.clip_world = g.name == "coat";
+        for (const auto &p : clipped.particles)
+            places.push_back(point(sk.rest[static_cast<std::size_t>(p.bone)], p.offset));
+        const auto volumes = clip_volumes_of(clipped, places);
+        CHECK(volumes.size() == 1U);
+        if (volumes.size() == 1U) {
+            const float v = clip_volume_check(volumes[0], places);
+            // its quads split as the coat's mesh splits them: each edge between two controls one of the mesh's
+            // faces has, but those across the slit (closed there)
+            std::set<std::uint64_t> drawn;
+            for (const Face &f : clipped.faces)
+                for (const auto &[a, b] : {std::pair{f.a, f.b}, std::pair{f.b, f.c}, std::pair{f.c, f.a}})
+                    drawn.insert(pair_key(a, b));
+            std::size_t across = 0;
+            const auto &cv = volumes[0];
+            for (const auto &f : cv.faces)
+                for (int k = 0; k < 3; ++k) {
+                    const int a = f[static_cast<std::size_t>(k)], b = f[static_cast<std::size_t>((k + 1) % 3)];
+                    if (static_cast<std::size_t>(a) >= cv.particles.size() ||
+                        static_cast<std::size_t>(b) >= cv.particles.size())
+                        continue;
+                    const int pa = cv.particles[static_cast<std::size_t>(a)],
+                              pb = cv.particles[static_cast<std::size_t>(b)];
+                    if (clipped.particles[static_cast<std::size_t>(pa)].dynamic &&
+                        clipped.particles[static_cast<std::size_t>(pb)].dynamic && drawn.count(pair_key(pa, pb)) == 0)
+                        ++across;
+                }
+            std::printf("N_EX830 clip_world: %zu columns, %zu faces, %.4f model units^3, %zu edges not the mesh's\n",
+                        volumes[0].columns, volumes[0].faces.size(), v, across / 2);
+            CHECK(volumes[0].columns == 9U);
+            CHECK(across / 2 == 5U); // across the slit: its three rows (88-92, 89-93, 90-94), two diagonals
+        }
+    }
     // the front slit: the two lower front panels are not joined
     for (const auto &l : rig.distances) {
         const std::string
@@ -1021,6 +1200,8 @@ int main()
     guided_stretch();
     cutscene_sim_shell();
     shell_push_shin();
+    cutscene_sim_kick();
+    clip_world_volume();
     contacts();
     spread_start();
     hair_and_wind();

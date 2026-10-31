@@ -126,6 +126,7 @@ static struct {
     int32_t widen, widen_next; /* the list being built's horizontal clip, the next list's */
     int hud;                   /* the polygons sent now are the HUD's */
     int marker;                /* selection art in the 3D layer, after the world's polygons */
+    int clip_owner;            /* mod polygons sent are a clip volume's owner's (khdays_g3d_set_clip_owner) */
     uintptr_t draw;            /* the model draw the polygons come from (khdays_g3d_draw_begin) */
     uint32_t occurrence, draw_ordinal;
     /* the polygons outside model draws, numbered per material (stream_key):
@@ -1064,6 +1065,7 @@ static void mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint
     what.tex = replacement >= 0 ? tex : 0;
     what.pltt = pltt;
     what.flags = KHDAYS_G3D_MOD | flags | (g.marker ? KHDAYS_G3D_MARKER : 0) |
+                 (g.clip_owner ? KHDAYS_G3D_CLIP_OWNER : 0) |
                  (sky > 0 ? KHDAYS_G3D_SKY | (((sky < 255 ? sky : 255) & 0xff) << 8) : 0) |
                  (g.hud ? KHDAYS_G3D_HUD | (g.hud == 2 ? KHDAYS_G3D_OVER_2D : 0) : 0);
     what.replacement = replacement;
@@ -1076,6 +1078,17 @@ void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, 
                             int translucent_, int sky)
 {
     mod_polygon(v, n, attr, tex, 0, replacement, translucent_, sky, 0);
+}
+
+void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *v)
+{
+    /* both sides, opaque (alpha 31), polygon ID 0: never drawn */
+    mod_polygon(v, 3, 0xc0u | (31u << 16), 0, 0, -1, 0, 0, KHDAYS_G3D_CLIP);
+}
+
+void khdays_g3d_set_clip_owner(int on)
+{
+    g.clip_owner = on != 0;
 }
 
 void khdays_g3d_sequence_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, int32_t atlas, uint32_t program)
@@ -1128,7 +1141,7 @@ static int compare_translucent(const void *a, const void *b)
     return pa->first < pb->first ? -1 : pa->first > pb->first; /* as submitted */
 }
 
-/* Opaque, then translucent (Y-sorted unless manual), then selection markers in submission order.
+/* Clip volumes, opaque, then translucent (Y-sorted unless manual), then selection markers in submission order.
  * Markers remain inside BG0's 3D layer. Vertices stay where they are. */
 static void into_drawing_order_with(List *l, Polygon **order_, int32_t *order_capacity, int report)
 {
@@ -1150,7 +1163,12 @@ static void into_drawing_order_with(List *l, Polygon **order_, int32_t *order_ca
     }
     order = *order_;
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
-        if (!l->polys[i].translucent && !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER)))
+        if (l->polys[i].flags & KHDAYS_G3D_CLIP)
+            order[n++] = l->polys[i];
+    }
+    for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
+        if (!l->polys[i].translucent &&
+            !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER | KHDAYS_G3D_CLIP)))
             order[n++] = l->polys[i];
     }
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {

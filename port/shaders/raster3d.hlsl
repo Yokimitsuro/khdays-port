@@ -4,6 +4,9 @@
 // `origin_x` is the DS column of the target's first (negative).
 
 static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
+static const uint G3D_CLIP = 0x20000000u;       // KHDAYS_G3D_CLIP: a clip volume's, first in the list, not drawn
+static const uint G3D_CLIP_OWNER = 0x40000000u; // KHDAYS_G3D_CLIP_OWNER: a clip volume's model's, drawn inside
+static const uint G3D_UNCLIPPED = 0x61u | G3D_CLIP_OWNER; // HUD, sequence, marker and owners: never left out
 
 // Every storage buffer is read by its bytes: SDL's Direct3D 12 views them raw (no stride), and AMD's
 // cards (vkd3d too) read a StructuredBuffer by the view's stride, so all its elements were the first.
@@ -600,15 +603,17 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
 // draw_polygon on the target's grid (the vertices scaled by N), and if so
 // its attributes there and whether it is an edge pixel. Each polygon covers
 // what it covers at N x, no more (a quarter of a DS pixel more on each side
-// bloated every model, a mod's many small triangles most).
-bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
+// bloated every model, a mod's many small triangles most). `grow` target pixels
+// more on each side (a clip volume's: two triangles' shared edge can leave a
+// pixel to neither, and the volume then lets the room through there).
+bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge, float grow)
 {
     const float n = (float)scale;
     const int rows = (int)height, columns = (int)width;
     precise float ymin = p.ymin * n;
     precise float ymax = p.ymax * n;
-    int y0 = (int)ceil(ymin - 0.5f);
-    int y1 = (int)ceil(ymax - 0.5f) - 1;
+    int y0 = (int)ceil(ymin - 0.5f - grow);
+    int y1 = (int)ceil(ymax - 0.5f + grow) - 1;
     float xl = 1e9f, xr = -1e9f;
     Attrs al = (Attrs)0, ar = (Attrs)0;
     bool found = false;
@@ -627,6 +632,9 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
     }
     {
         precise float cy = (float)y + 0.5f;
+        if (grow > 0.0f) {
+            cy = clamp(cy, ymin, ymax); // a grown row: the polygon's nearest
+        }
         for (int i = 0; i < p.count; ++i) {
             const Vertex va = vertex_at(p.first + i);
             const Vertex vb = vertex_at(p.first + (i + 1) % p.count);
@@ -661,8 +669,8 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
     }
     {
         // the pixels covered
-        const int x0 = (int)ceil(xl - 0.5f);
-        int x1 = (int)ceil(xr - 0.5f) - 1;
+        const int x0 = (int)ceil(xl - 0.5f - grow);
+        int x1 = (int)ceil(xr - 0.5f + grow) - 1;
         precise float span = xr - xl;
         if (x1 < x0) x1 = x0;  // at least a pixel: lines and dots
         if (x < x0 || x > x1 || x >= columns) {
@@ -729,6 +737,11 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     first = tiles.Load(tile * 4u);
     last = min(tiles.Load((tile + 1u) * 4u), entries);
     bool marker_started=false;
+    // the clip volumes this pixel shows (KHDAYS_G3D_CLIP, docs/RENDERING.md): their nearest depth, how many of
+    // their triangles cover it, and whether what was drawn here last is one never left out (an owner's), with
+    // the last owner's polygon ID and fog
+    uint clip_near = 0xffffffffu, clips = 0u, owner_id = px.opaque_id, owner_fog = px.fog;
+    bool kept = false;
     for (uint k = first; k < last; ++k) {
         const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
@@ -737,13 +750,49 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         const Polygon p = polygon_at(index);
         Attrs at;
         uint edge;
-        if (cover(p, x, y, at, edge)) {
+        if (cover(p, x, y, at, edge, ((uint)p.flags & G3D_CLIP) != 0u ? 1.0f : 0.0f)) {
+            if (((uint)p.flags & G3D_CLIP) != 0u) {
+                if (((uint)p.flags & 1u) == 0u) {
+                    clip_near = min(clip_near, depth_of(at.z, 1.0f / at.iw, wbuffer));
+                    ++clips;
+                }
+                continue;
+            }
+            const bool unclipped = ((uint)p.flags & G3D_UNCLIPPED) != 0u;
+            if (clips >= 2u && !unclipped && depth_of(at.z, 1.0f / at.iw, wbuffer) > clip_near) {
+                continue; // inside a clip volume or behind it (its far wall, the coat's inside, covers it)
+            }
             if (((uint)p.flags&0x40u)!=0u && !marker_started) {
                 px.trans_id=0xffu; // The first marker must not share a translucent ID with the world.
                 marker_started=true;
             }
-            plot(p, px, at, edge, wbuffer);
+            {
+                const uint was_depth = px.depth;
+                const int3 was = int3(px.r, px.g, px.b);
+                plot(p, px, at, edge, wbuffer);
+                if (px.depth != was_depth || any(int3(px.r, px.g, px.b) != was)) {
+                    kept = unclipped;
+                    if (((uint)p.flags & G3D_CLIP_OWNER) != 0u) {
+                        owner_id = (p.attr >> 24) & 63u;
+                        owner_fog = (p.attr >> 15) & 1u;
+                    }
+                }
+            }
         }
+    }
+    // a clip volume showing here with nothing of its model's in front of its near side: the coat's inside (black,
+    // as N_EX830's lining), not what lies behind it (the rear plane, the room seen through a crack in its floor)
+    if (clips >= 2u && !kept && px.depth > clip_near) {
+        px.r = 0;
+        px.g = 0;
+        px.b = 0;
+        px.a = 31;
+        px.depth = clip_near;
+        px.opaque_id = owner_id;
+        px.translucent = 0u;
+        px.edge = 0u;
+        px.fog = owner_fog;
+        px.over2d = 0u;
     }
     out_color[id.xy] = (uint)px.r | ((uint)px.g << 8) | ((uint)px.b << 16) | ((uint)px.a << 24) |
                        (px.over2d << 29) | (px.translucent << 31);

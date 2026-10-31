@@ -185,6 +185,8 @@ struct ModelSecondary {
     std::map<int, std::array<std::pair<int, float>, 4>> game_reskin;
     std::vector<Frame> pose, out;
     std::vector<std::uint8_t> written;
+    std::vector<ClipVolume> clip; // `clip_world`'s volumes, made for `clip_rig`
+    const Rig *clip_rig = nullptr;
 };
 
 void ModelSecondaryDeleter::operator()(ModelSecondary *m) const
@@ -1109,6 +1111,30 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
     }
 }
 
+// `clip_world`'s volumes (rig.cpp clip_volumes_of) from the particles' places at bind, said in the session log
+void build_clip(ModelSecondary &m)
+{
+    m.clip.clear();
+    m.clip_rig = m.rig.get();
+    if (!m.rig)
+        return;
+    const Rig &rig = *m.rig;
+    std::vector<Vec3> rest(rig.particles.size());
+    for (std::size_t i = 0; i < rest.size(); ++i)
+        rest[i] = point(m.bind_inverse[static_cast<std::size_t>(rig.particles[i].bone)], rig.particles[i].offset);
+    for (ClipVolume &cv : clip_volumes_of(rig, rest)) {
+        if (cv.faces.empty()) {
+            say(m.name + ": group " + cv.group + ": `clip_world` needs three strips round the body; no volume");
+            continue;
+        }
+        say(m.name + ": group " + cv.group + ": `clip_world` volume of " + std::to_string(cv.columns) + " columns, " +
+            std::to_string(cv.faces.size()) + " faces" +
+            (cv.open_edges == 0 ? std::string(", closed")
+                                : ", " + std::to_string(cv.open_edges) + " edges not closed"));
+        m.clip.push_back(std::move(cv));
+    }
+}
+
 ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std::string &name,
                                        const assets::ImportedModel &model, const std::vector<int> &joint_of_bone,
                                        const std::vector<Mat4> &inverse_bind)
@@ -1516,6 +1542,57 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     if (m.debug && in.projection != nullptr && !state.actor->frozen())
         draw_overlay(*state.actor, view, in.projection, units);
     report(m, now);
+}
+
+void clip_volumes(ModelSecondary &m, const std::vector<Mat4> &skin, std::vector<std::array<Vec3, 3>> &out)
+{
+    out.clear();
+    if (m.clip_rig != m.rig.get())
+        build_clip(m);
+    if (!m.rig)
+        return;
+    const Rig &rig = *m.rig;
+    std::vector<Vec3> at, normal;
+    const float inset_units = rig.model_units > 0.0F ? 1.0F / rig.model_units : 1.0F; // model units a metre
+    for (const ClipVolume &cv : m.clip) {
+        const std::size_t n = cv.particles.size();
+        at.assign(n + 2, {});
+        normal.assign(n + 2, {});
+        float scale = 1.0F; // view units a model unit
+        bool whole = true;
+        for (std::size_t k = 0; k < n && whole; ++k) {
+            const Particle &p = rig.particles[static_cast<std::size_t>(cv.particles[k])];
+            const auto b = static_cast<std::size_t>(p.bone);
+            const int j = b < m.joint_of_bone.size() ? m.joint_of_bone[b] : -1;
+            whole = j >= 0 && static_cast<std::size_t>(j) < skin.size();
+            if (!whole)
+                break;
+            const Mat4 &s = skin[static_cast<std::size_t>(j)];
+            at[k] = point(s, point(m.bind_inverse[b], p.offset));
+            scale = length(Vec3{s[0], s[1], s[2]});
+        }
+        if (!whole)
+            continue;
+        for (auto [ring, middle] : {std::pair{&cv.top, n}, std::pair{&cv.bottom, n + 1}})
+            for (const int k : *ring)
+                at[middle] += at[static_cast<std::size_t>(k)] * (1.0F / static_cast<float>(ring->size()));
+        // that far inside the drawn controls: each corner in by its side faces' normals (area-weighted; the caps'
+        // turned the hem's in and up, and the floor showed through the coat's last 1.5 cm)
+        for (const auto &f : cv.faces) {
+            if (static_cast<std::size_t>(f[0]) >= n || static_cast<std::size_t>(f[1]) >= n ||
+                static_cast<std::size_t>(f[2]) >= n)
+                continue;
+            const Vec3 nrm = cross(at[static_cast<std::size_t>(f[1])] - at[static_cast<std::size_t>(f[0])],
+                                   at[static_cast<std::size_t>(f[2])] - at[static_cast<std::size_t>(f[0])]);
+            for (const int k : f)
+                normal[static_cast<std::size_t>(k)] += nrm;
+        }
+        for (std::size_t k = 0; k < n; ++k)
+            at[k] -= normalized(normal[k], {}) * (cv.inset * inset_units * scale);
+        for (const auto &f : cv.faces)
+            out.push_back({at[static_cast<std::size_t>(f[0])], at[static_cast<std::size_t>(f[1])],
+                           at[static_cast<std::size_t>(f[2])]});
+    }
 }
 
 } // namespace khdays::secondary

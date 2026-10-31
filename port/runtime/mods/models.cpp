@@ -2287,6 +2287,7 @@ std::vector<Mat> d, k, skin;
 u32 drawn_animation; // the render object's joint animation (an NNSG3dAnmObj), 0 none
 u32 next_animation;  // the one khdays_models_draw_animation gave, for the draw that follows
 std::vector<KhdaysG3dClipVertex> clip;
+std::vector<std::array<khdays::secondary::Vec3, 3>> clip_triangles; // `clip_world`'s volumes this draw
 
 // --- A mod's character's own skeleton ------------------------------------------------------
 
@@ -3311,6 +3312,26 @@ void draw(Model &m)
             skin[j] = mul(skin[j], by);
     const Mat unskinned = scaled_root; // a mesh with no skin: placed with the model's first node
 
+    // `clip_world`: the coat's closed volume, not drawn; the room inside it is left out, this model's own
+    // polygons drawn there (docs/RENDERING.md)
+    clip_triangles.clear();
+    if (m.secondary)
+        khdays::secondary::clip_volumes(*m.secondary, skin, clip_triangles);
+    for (const auto &t : clip_triangles) {
+        KhdaysG3dClipVertex tri[3] = {};
+        for (int c = 0; c < 3; ++c) {
+            const auto &p = t[static_cast<std::size_t>(c)];
+            KhdaysG3dClipVertex &o = tri[c];
+            o.x = proj[0] * p.x + proj[4] * p.y + proj[8] * p.z + proj[12];
+            o.y = proj[1] * p.x + proj[5] * p.y + proj[9] * p.z + proj[13];
+            o.z = proj[2] * p.x + proj[6] * p.y + proj[10] * p.z + proj[14];
+            o.w = proj[3] * p.x + proj[7] * p.y + proj[11] * p.z + proj[15];
+            o.a = 1.0F;
+        }
+        khdays_g3d_clip_polygon(tri);
+    }
+    khdays_g3d_set_clip_owner(!clip_triangles.empty());
+
     // the polygons' attributes: the game's material's, the faces the mesh's. A mesh drawn whole (OPAQUE or
     // MASK) is drawn opaque when the game's material is all but opaque: the rooms are drawn at alpha 30 of
     // 31, and a translucent pixel takes no other translucent polygon of the same ID (the DS's rule), so a
@@ -3415,6 +3436,7 @@ void draw(Model &m)
                                        picture.translucent || mesh.vertex_alpha == VertexAlpha::blended, mesh.sky);
         }
     }
+    khdays_g3d_set_clip_owner(0);
 }
 
 // Whether `path` (a mod's model replacing `name`, `mi/wd/wd_<code>#<member>/mdl/<model>`)

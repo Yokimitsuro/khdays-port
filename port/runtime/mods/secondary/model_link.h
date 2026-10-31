@@ -66,6 +66,10 @@ struct DrawInput {
 // moves them. Does nothing without a camera yet, or while the actor is frozen.
 void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<Mat4> &skin);
 
+// `clip_world`: the triangles of each such group's closed volume as `skin` draws it (view space), wound outward, its
+// `inset` inside the drawn controls; none without one
+void clip_volumes(ModelSecondary &m, const std::vector<Mat4> &skin, std::vector<std::array<Vec3, 3>> &out);
+
 // `game_shape`: in a group with follow bones (a coat on the legs, its front strip forked), the coat locked on the
 // game model's coat (the triangles on the reference bone's node, those above and below it and the follow bones'
 // nodes and their children, in pieces reaching the hips): the back, the sides (each side's middle strip), the

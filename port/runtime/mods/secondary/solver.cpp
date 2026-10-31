@@ -455,8 +455,10 @@ void Simulation::keep_outside_shell()
         if (!shelled(i))
             continue;
         const float d = dot(x_[i] - game_now_[i], shell_normal_[i]);
-        if (d < 0.0F)
+        if (d < 0.0F) {
             x_[i] -= shell_normal_[i] * d;
+            pushed_[i] -= shell_normal_[i] * d; // contact: what it gave past the hips' carry taken back
+        }
     }
 }
 
@@ -846,7 +848,13 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
             const Vec3 g = s.gravity * k.get(Param::gravity_scale);
             // just started: the target's own velocity from the substep's start, so a moving start is still
             const Vec3 tp = fresh_ ? start[i] : target_[i];
-            const Vec3 vt = (t - tp) * (1.0F / h);
+            Vec3 vt = (t - tp) * (1.0F / h);
+            // `cutscene_sim`: its frame is the hips' (its place as they carry it), as the gameplay coat's is: the
+            // shell's own moves (the legs) push it as contact does, they do not throw it
+            if (shelled(i)) {
+                const Frame &r0 = reference_bone_frame(i, sub0_), &r1 = reference_bone_frame(i, sub1_);
+                vt = (apply(r1, apply_inverse(r0, tp)) - tp) * (1.0F / h);
+            }
             target_prev_[i] = tp;
             target_[i] = t;
             pinned_[i] = d.authority >= 0.999F ? 1 : 0;
@@ -1189,10 +1197,6 @@ void Simulation::solve_links(float h)
         const float wa = w(a), wb = w(b);
         if (wa + wb <= 0.0F)
             continue;
-        // `cutscene_sim`: its rows and faces only kept from stretching past their limit (limit_strain), so the coat
-        // can swing out off the shell (widening) while its strips keep their lengths
-        if ((d.kind == Link::row || d.kind == Link::shear) && (shelled(a) || shelled(b)))
-            continue;
         const Vec3 delta = x_[b] - x_[a];
         const float len = length(delta);
         if (len < 1e-9F)
@@ -1255,7 +1259,7 @@ void Simulation::solve_follow(float h)
         const float om = kTwoPi * f;
         const float alpha = wi / (om * om) / (h * h); // compliance 1 / (m w^2), over h^2
         const float gamma = 2.0F * d.params.get(Param::follow_damping) / (om * h);
-        const float rel = dot(nrm, (x_[i] - prev_[i]) - (target_[i] - target_prev_[i]));
+        const float rel = dot(nrm, (x_[i] - prev_[i]) - target_vel_[i] * h); // about its frame's motion
         const float dl = (-C - alpha * lambda_follow_[i] - gamma * rel) / ((1.0F + gamma) * wi + alpha);
         lambda_follow_[i] += dl;
         x_[i] += nrm * (wi * dl);

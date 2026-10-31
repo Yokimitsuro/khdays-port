@@ -51,12 +51,14 @@ typedef struct KhdaysG3dPreInfo {
     int32_t widen;       /* the clip factor, in 1/4096 */
 } KhdaysG3dPreInfo;
 
-#define KHDAYS_G3D_HUD 0x1       /* sent by the HUD's own drawing (khdays_g3d_set_hud) */
-#define KHDAYS_G3D_BEYOND_DS 0x2 /* the DS's polygon or vertex RAM would not have held it */
-#define KHDAYS_G3D_MOD 0x4       /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
-#define KHDAYS_G3D_SKY 0x10      /* a mod's sky: behind everything else, its layer in bits 8-15 */
-#define KHDAYS_G3D_SEQUENCE 0x20 /* ordered native sequence commands; pltt identifies the retained program */
-#define KHDAYS_G3D_MARKER 0x40   /* screen-projected selection art: after world geometry, inside the 3D layer */
+#define KHDAYS_G3D_HUD 0x1         /* sent by the HUD's own drawing (khdays_g3d_set_hud) */
+#define KHDAYS_G3D_BEYOND_DS 0x2   /* the DS's polygon or vertex RAM would not have held it */
+#define KHDAYS_G3D_MOD 0x4         /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
+#define KHDAYS_G3D_SKY 0x10        /* a mod's sky: behind everything else, its layer in bits 8-15 */
+#define KHDAYS_G3D_SEQUENCE 0x20   /* ordered native sequence commands; pltt identifies the retained program */
+#define KHDAYS_G3D_MARKER 0x40     /* screen-projected selection art: after world geometry, inside the 3D layer */
+#define KHDAYS_G3D_CLIP 0x20000000 /* a mod model's clip volume: not drawn; the world inside it left out */
+#define KHDAYS_G3D_CLIP_OWNER 0x40000000 /* a polygon of a model with a clip volume: drawn inside one */
 #define KHDAYS_G3D_SKY_LAYER(flags) (((flags) & KHDAYS_G3D_SKY) ? ((flags) >> 8) & 0xff : 0)
 #define KHDAYS_G3D_OVER_2D                                                                                             \
     0x8 /* a HUD polygon the DS shows over all its 2D (its BG0 the top layer): the one
@@ -246,6 +248,13 @@ typedef struct KhdaysG3dClipVertex {
  * (runtime/mods/textures.h), -1 for none. */
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
+
+/* A triangle of a mod model's closed clip volume (runtime/mods/secondary model_link.h clip_volumes), both sides,
+ * first in the drawing order: not drawn; a polygon not of such a model (not KHDAYS_G3D_CLIP_OWNER) is left out
+ * where it lies between the nearest and the farthest of the volumes a pixel shows (docs/RENDERING.md). */
+void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *v);
+/* While on, the mod polygons sent are a clip volume's owner's (KHDAYS_G3D_CLIP_OWNER). */
+void khdays_g3d_set_clip_owner(int on);
 
 /* A screen-projected sequence in the 3D layer; its program is retained in the frame package.
  * The shader samples the atlas and blends each element against the scene at full alpha precision. */

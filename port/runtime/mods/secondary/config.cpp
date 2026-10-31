@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -483,6 +484,16 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             if (!ok || g.shell_push.empty())
                 error(l.number, "write `shell_push <collider tag>... [from <0 to 1>]`");
             g.shell_push_from = from;
+        } else if (w == "clip_world") {
+            float inset = 0.0F;
+            const bool off = l.words.size() == 2 && l.words[1] == "off";
+            const bool ok = off || l.words.size() == 1 ||
+                            (l.words.size() == 3 && l.words[1] == "inset" && number(l.words[2], inset) &&
+                             std::fabs(inset * c_.units) <= 0.05F);
+            if (!ok)
+                error(l.number, "write `clip_world [inset <length, at most 5 cm either way>]` or `clip_world off`");
+            g.clip_world = ok && !off;
+            g.clip_inset = inset * c_.units;
         } else if (w == "self_collision" && l.words.size() == 2) {
             g.self_collision = l.words[1] == "off" ? std::string() : l.words[1];
             g.self_given = true;

@@ -167,7 +167,8 @@ void khdays_shadow_record(const KhdaysG3dList *list)
     if (!enabled || list->npre == 0)
         return;
     const KhdaysG3dPolygon *p = &list->pre[list->npre - 1];
-    if (p->count < 3 || p->count > 4 || (p->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_SKY | KHDAYS_G3D_MARKER)))
+    if (p->count < 3 || p->count > 4 ||
+        (p->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_SKY | KHDAYS_G3D_MARKER | KHDAYS_G3D_CLIP)))
         return;
     if (!inverse_valid) {
         float combined[16];

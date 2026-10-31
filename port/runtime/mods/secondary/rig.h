@@ -139,6 +139,8 @@ struct GroupRig {
     AuthoredPolicy policy = AuthoredPolicy::exact;
     std::uint32_t shell_push = 0; // `shell_push`: the collider tags pushing `cutscene_sim`'s shell
     float shell_push_from = 0.0F;
+    bool clip_world = false; // `clip_world`: the room left out inside its volume (model_link.cpp clip_volumes)
+    float clip_inset = 0.0F; // metres
 };
 
 struct ControlRig {
@@ -185,6 +187,20 @@ struct Rig {
 // groups claim, rigs without the freedom asked of them) are reported in `out`; with any, the result
 // is not usable (has_errors).
 Rig cook(const Config &config, const SkeletonDesc &skeleton, const MeshDesc &mesh, Diagnostics &out);
+
+// `clip_world`: a group's closed volume (vertices: its particles, then its top and bottom rings' middles), its
+// faces wound outward at rest
+struct ClipVolume {
+    std::string group;
+    std::vector<int> particles;
+    std::vector<int> top, bottom; // the rings (vertex indices), round the body
+    std::vector<std::array<int, 3>> faces;
+    float inset = 0.0F; // metres
+    std::size_t columns = 0, open_edges = 0;
+};
+// Each `clip_world` group's volume from its particles' rest places (`rest`, one a particle); none with fewer than
+// three strips
+std::vector<ClipVolume> clip_volumes_of(const Rig &rig, const std::vector<Vec3> &rest);
 
 // A bone named in the file, or -1 (with a diagnostic).
 int resolve_bone(const SkeletonDesc &skeleton, const BoneRef &ref, const std::string &file, Diagnostics &out);

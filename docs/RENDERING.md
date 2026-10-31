@@ -186,6 +186,32 @@ a pixel of its own ID. A mask reaching a pixel after any other polygon starts
 from no mark there, so one volume's marks where its shadow did not draw shade
 nothing of the next.
 
+### Clip volumes
+
+A mod model's `clip_world` group (SECONDARY_MOTION.md) sends a closed volume, the
+coat's, as triangles flagged `KHDAYS_G3D_CLIP`, both sides, first in the drawing
+order, and the model's own polygons flagged `KHDAYS_G3D_CLIP_OWNER`
+(`khdays_g3d_set_clip_owner` around its meshes). The volumes are not drawn as
+polygons: as `raster3d.hlsl` goes through a pixel's polygons it keeps the
+nearest depth of the volumes' triangles covering it, and where two or more do,
+any later polygon that is not an owner's, the HUD's, a sequence or a marker is
+left out behind that depth -- inside the volume, or behind it, where the coat's
+far wall would hide it. Where nothing of an owner's was drawn last in front of
+it, the pixel is then the coat's inside: black, at the volume's nearest depth,
+with the last owner polygon's ID and fog (leaving out only what lay inside the
+volume showed whatever was behind it: the rear plane, or the room under a bed
+through the crack along its quad's diagonal). A volume's triangles cover a target
+pixel more on each side than a drawn polygon does: two of them sharing an edge
+could leave a pixel to neither, and a pixel that misses the volume's front shows
+the room through it (a dashed line across the coat's inside); a pixel covered
+twice changes nothing. So the room inside a coat is not
+drawn and the coat's inside shows there, while a wall in front of the coat lies
+before the nearest depth and still covers it; the order of the list does not
+matter. Two volumes a pixel shows act as one from the nearest (the room behind
+the nearer model is left out, as it is behind its coat). The software rasterizer (`gpu3d.c`) draws no mod model and
+so no volume. The cost is a volume's triangles (about a hundred) in the tiles it
+covers.
+
 The optional **Enhanced character shadows** setting replaces that footprint on
 the GPU with a softened overhead silhouette of the current model pose. It uses
 the original shadow's color, opacity and receiver height range, including mod

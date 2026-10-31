@@ -155,6 +155,11 @@ struct GroupConfig {
     // each, its start left out), never the cloth itself
     std::vector<std::string> shell_push;
     float shell_push_from = 0.0F;
+    // `clip_world [inset <length>]` (surfaces): the room's polygons inside the closed volume its strips make (capped
+    // at the top and bottom, closed across any slit; that far inside the drawn controls, outside when negative) not
+    // drawn
+    bool clip_world = false;
+    float clip_inset = 0.0F;                  // metres
     std::vector<BoneRef> attach;              // body bones the group hangs from (its reference frame first)
     std::vector<FollowBone> follow_bones;     // body bones its reference shape partly rides
     std::vector<std::vector<BoneRef>> strips; // surfaces: control sequences anchor-to-hem; chains: chains

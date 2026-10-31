@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <map>
 #include <set>
+#include <tuple>
 #include <sstream>
 
 namespace khdays::secondary {
@@ -179,6 +180,8 @@ void Cook::group(std::size_t gi)
     gr.settle = g.settle;
     gr.settle_steps = g.settle_steps;
     gr.shell_push_from = g.shell_push_from;
+    gr.clip_world = g.clip_world && g.kind == GroupKind::surface;
+    gr.clip_inset = g.clip_inset;
     gr.twist_from_neighbours = g.twist_from_neighbours && g.kind == GroupKind::surface;
     gr.mode = g.mode.mode;
     gr.policy = g.policy.policy;
@@ -1067,6 +1070,141 @@ Rig cook(const Config &config, const SkeletonDesc &skeleton, const MeshDesc &mes
     if (!has_errors(out))
         c.finish();
     return rig;
+}
+
+// `clip_world`'s volumes: each strip from its fixed point down to its end (a forked strip's shared top in each
+// branch) a column, the columns round the body by their ends' angle about the coat's axis at rest, each beside
+// the next stitched by its share of the way down (closed all round, across a slit too), capped by fans from
+// the middle of the tops and of the ends; wound outward at rest
+std::vector<ClipVolume> clip_volumes_of(const Rig &rig, const std::vector<Vec3> &rest)
+{
+    std::vector<ClipVolume> out;
+    const auto particle = [&](int i) -> const Particle & { return rig.particles[static_cast<std::size_t>(i)]; };
+    const auto rest_of = [&](int i) { return rest[static_cast<std::size_t>(i)]; };
+    if (rest.size() != rig.particles.size())
+        return out;
+    for (const GroupRig &g : rig.groups) {
+        if (!g.clip_world)
+            continue;
+        std::vector<std::uint8_t> parent(rig.particles.size(), 0);
+        for (int i = g.first; i < g.last; ++i)
+            if (particle(i).dynamic && particle(i).anchor >= 0)
+                parent[static_cast<std::size_t>(particle(i).anchor)] = 1;
+        std::vector<std::vector<int>> columns;
+        for (int i = g.first; i < g.last; ++i) {
+            if (!particle(i).dynamic || parent[static_cast<std::size_t>(i)])
+                continue;
+            std::vector<int> col;
+            for (int k = i; k >= 0 && col.size() < 64; k = particle(k).anchor) {
+                col.push_back(k);
+                if (!particle(k).dynamic)
+                    break;
+            }
+            std::reverse(col.begin(), col.end());
+            if (col.size() >= 2)
+                columns.push_back(std::move(col));
+        }
+        ClipVolume cv;
+        cv.group = g.name;
+        cv.columns = columns.size();
+        if (columns.size() < 3) {
+            out.push_back(std::move(cv)); // no faces: fewer than three strips
+            continue;
+        }
+        Vec3 top{}, bottom{};
+        for (const auto &col : columns) {
+            top += rest_of(col.front()) * (1.0F / static_cast<float>(columns.size()));
+            bottom += rest_of(col.back()) * (1.0F / static_cast<float>(columns.size()));
+        }
+        const Vec3 up = normalized(top - bottom), u = normalized(perpendicular(up)), v = cross(up, u);
+        const auto angle = [&](const std::vector<int> &col) {
+            const Vec3 d = rest_of(col.back()) - bottom;
+            return std::atan2(dot(d, v), dot(d, u));
+        };
+        std::sort(columns.begin(), columns.end(),
+                  [&](const std::vector<int> &a, const std::vector<int> &b) { return angle(a) < angle(b); });
+        cv.inset = g.clip_inset;
+        std::map<int, int> vertex;
+        const auto at = [&](int p) {
+            const auto [it, added] = vertex.emplace(p, static_cast<int>(cv.particles.size()));
+            if (added)
+                cv.particles.push_back(p);
+            return it->second;
+        };
+        const auto face = [&](int a, int b, int c) {
+            if (a != b && b != c && a != c)
+                cv.faces.push_back({a, b, c});
+        };
+        // a quad split along the drawn mesh's diagonal (its faces'), so the volume's surface is the coat's: split
+        // the other way, the floor showed through as a line along the quads
+        std::set<std::uint64_t> drawn;
+        for (const Face &f : rig.faces)
+            for (const auto &[a, b] : {std::pair{f.a, f.b}, std::pair{f.b, f.c}, std::pair{f.c, f.a}})
+                drawn.insert(pair_key(a, b));
+        for (std::size_t c = 0; c < columns.size(); ++c) {
+            const auto &l = columns[c], &r = columns[(c + 1) % columns.size()];
+            const float nl = static_cast<float>(l.size() - 1), nr = static_cast<float>(r.size() - 1);
+            std::size_t i = 0, j = 0;
+            while (i + 1 < l.size() || j + 1 < r.size()) {
+                bool left = j + 1 >= r.size() ||
+                            (i + 1 < l.size() && static_cast<float>(i + 1) / nl <= static_cast<float>(j + 1) / nr);
+                const bool quad =
+                    i + 1 < l.size() && j + 1 < r.size() && (i + 1) * (r.size() - 1) == (j + 1) * (l.size() - 1);
+                if (quad && drawn.count(pair_key(l[i], r[j + 1])) != 0 && drawn.count(pair_key(l[i + 1], r[j])) == 0)
+                    left = false;
+                if (left) {
+                    face(at(l[i]), at(l[i + 1]), at(r[j]));
+                    ++i;
+                } else {
+                    face(at(l[i]), at(r[j + 1]), at(r[j]));
+                    ++j;
+                }
+            }
+        }
+        const auto rest_at = [&](int k) { return rest_of(cv.particles[static_cast<std::size_t>(k)]); };
+        float outward = 0.0F;
+        for (const auto &f : cv.faces) {
+            const Vec3 a = rest_at(f[0]), b = rest_at(f[1]), cc = rest_at(f[2]);
+            const Vec3 mid = (a + b + cc) * (1.0F / 3.0F) - bottom;
+            outward += dot(cross(b - a, cc - a), mid - up * dot(mid, up));
+        }
+        if (outward < 0.0F)
+            for (auto &f : cv.faces)
+                std::swap(f[1], f[2]);
+        for (const auto &col : columns)
+            for (auto [ring, p] : {std::pair{&cv.top, col.front()}, std::pair{&cv.bottom, col.back()}}) {
+                const int k = at(p);
+                if (ring->empty() || (ring->back() != k && ring->front() != k))
+                    ring->push_back(k);
+            }
+        // the caps: fans from the rings' middles (after the particles), turned up at the top and down at the bottom
+        const int middle_top = static_cast<int>(cv.particles.size());
+        for (const auto &[ring, middle, sign] :
+             {std::tuple{&cv.top, middle_top, 1.0F}, std::tuple{&cv.bottom, middle_top + 1, -1.0F}}) {
+            Vec3 centre{};
+            for (const int k : *ring)
+                centre += rest_at(k) * (1.0F / static_cast<float>(ring->size()));
+            const std::size_t before = cv.faces.size();
+            float turn = 0.0F;
+            for (std::size_t k = 0; k < ring->size(); ++k) {
+                const int a = (*ring)[k], b = (*ring)[(k + 1) % ring->size()];
+                cv.faces.push_back({middle, a, b});
+                turn += dot(cross(rest_at(a) - centre, rest_at(b) - centre), up);
+            }
+            if (turn * sign < 0.0F)
+                for (std::size_t q = before; q < cv.faces.size(); ++q)
+                    std::swap(cv.faces[q][1], cv.faces[q][2]);
+        }
+        // closed: each edge on two faces, once each way (an open one lets the room through a pixel's count)
+        std::map<std::pair<int, int>, int> edges;
+        for (const auto &f : cv.faces)
+            for (int k = 0; k < 3; ++k)
+                ++edges[{f[static_cast<std::size_t>(k)], f[static_cast<std::size_t>((k + 1) % 3)]}];
+        for (const auto &[e, n] : edges)
+            cv.open_edges += n != 1 || edges.count({e.second, e.first}) == 0 ? 1U : 0U;
+        out.push_back(std::move(cv));
+    }
+    return out;
 }
 
 } // namespace khdays::secondary
