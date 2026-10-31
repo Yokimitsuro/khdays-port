@@ -320,6 +320,16 @@ In a room a seat's form is the game's own choice for it, which every copy makes 
 first form on the base the game chose (the dual-wield Roxas for a Roxas whose deck makes it so), else its default.
 The decks are each player's own and the room does not share them, so the rules are not asked there.
 
+After a mission won in a room, the players sit on thrones (the mission review, before the results): a seat on a mod's
+character shows its own model there, without its base's robe piece (the `<base>_ita` model the game poses for its
+base's body; a character without a model of its own keeps it). The thrones play their own animations, each base's in `mrslt/data`, which `[actions]` gives clips to as
+any other: `so_result00` while they sit as it begins, then for the winner `so_result01` as it is shown and
+`so_result02` after, for the others `so_result04` as their place is shown and `so_result05` after (Sora's; another
+base's with its code: `ro_result00`, `ax_result00` ...; Mickey's last is `mickey_result06`). The files hold
+`_result03` and `_result06` too, which the review's code never plays. The studio lists them with the base's
+animations. Seen on two copies, a mod's character on Roxas's base in the second seat: its model on its throne, its
+clips for `ro_result00`, `ro_result01` (its `fallback`) and `ro_result02` (a give-up leaves both players first).
+
 ## Limits
 
 The select keeps a place's character in a signed byte: the mods' characters take the numbers 0x16-0x7f, 106 at
@@ -337,7 +347,7 @@ character loads without the mod, its base standing in.
 - Characters are read from every folder in `mods/`, also one turned off in the Mods page (as the mods'
   missions are): a character is taken out by taking its mod's folder out.
 - Attacks of their own (new kinds of moves, not the base's) and a Limit of their own (its length, its kind of
-  hits: their base's code); the results' model is still the base's.
+  hits: their base's code).
 - The weapons' swing trails sweep where the base's do (their pictures can be the character's own: `[weapons]`), and
   the hits' shapes are the base's.
 - A form changes at the camp only: in the field it is told and waits for the next mission. `level` in a rule is

@@ -36,6 +36,9 @@ static int tracing;
 /* The new character each seat was given by the select (its number), 0 none: the seat itself has its
  * base's. */
 static int seats[SEATS];
+/* The seat each entry of a room's mission review is (Ov002_BuildWrapUpReport packs the seats that are in) + 1,
+ * 0 none. */
+static int review_seats[SEATS];
 
 /* What the start found, told once the logs are open. */
 typedef struct Note {
@@ -547,6 +550,7 @@ void khdays_characters_scene(int scene)
 {
     if (scene == TITLE_SCENE) {
         memset(seats, 0, sizeof(seats)); /* Mission Mode left: the story never has them */
+        memset(review_seats, 0, sizeof(review_seats));
         khdays_characters_forms_clear();
     }
 }
@@ -587,6 +591,29 @@ int khdays_characters_of(int slot, int kind)
         told[slot] = f->number;
     }
     return f->number;
+}
+
+void khdays_characters_review_seat(int entry, int seat)
+{
+    if (entry >= 0 && entry < SEATS) {
+        review_seats[entry] = seat + 1;
+    }
+}
+
+int khdays_characters_review(int entry, int *own_model)
+{
+    *own_model = 0;
+    if (entry < 0 || entry >= SEATS || review_seats[entry] == 0) {
+        return -1;
+    }
+    const int seat = review_seats[entry] - 1;
+    const int n = khdays_characters_of(seat, -1);
+    const KhdaysCharacter *c = n >= 0 ? khdays_characters_numbered(n) : NULL;
+    *own_model = c != NULL && c->model != NULL;
+    if (c != NULL && tracing) {
+        khdays_log("characters: the review's throne %d is seat %d's, %s (0x%02x)", entry + 1, seat, c->identity, n);
+    }
+    return n;
 }
 
 /* A character's part of the rooms' fingerprint, growing (a file that cannot be read is left out: the copies'

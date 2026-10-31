@@ -2661,6 +2661,45 @@ HOOKS["main@0202b914"] = [
         "    }\n",
     )
 ]
+# ... a room's mission review (scene 3, ov003: the players on their thrones, each entry of the field's report a seat
+# that is in): a new character's seat's model from its own folder (its [actions] give clips to the thrones'
+# <base>_result00-06), without its base's robe piece when it has a model of its own (<base>_ita, posed for the base's
+# body)
+HOOKS["ov002@02069724"] = [
+    (  # Ov002_BuildWrapUpReport
+        "void Ov002_BuildWrapUpReport(u16 *pReport)\n",
+        "extern void khdays_characters_review_seat(int entry, int seat);\nvoid Ov002_BuildWrapUpReport(u16 *pReport)\n",
+    ),
+    (
+        "                *((u8 *)pReport + nCount + 6) = (u8)*(int *)(pSlot + 4);\n",
+        "                *((u8 *)pReport + nCount + 6) = (u8)*(int *)(pSlot + 4);\n"
+        "                khdays_characters_review_seat(nCount, i);\n",
+    ),
+]
+HOOKS["ov003@0204d98c"] = [
+    (  # Ov003_SceneInit
+        "int Ov003_SceneInit(int param_1) {\n",
+        "extern int khdays_characters_review(int entry, int *own_model);\n"
+        "extern const char *Port_CharacterCode(int number);\n"
+        "static char sPortReviewPaths[4][24]; /* the game's four seats */\n"
+        "static int sPortReviewOwnModels[4];\n"
+        "static unsigned int *Port_ReviewModel(int entry, unsigned int *game)\n{\n"
+        "    const int n = khdays_characters_review(entry, &sPortReviewOwnModels[entry]);\n"
+        "    if (n < 0) {\n        return game;\n    }\n"
+        "    OS_SPrintf(sPortReviewPaths[entry], \"ba/ch/%s/def.p.z\", Port_CharacterCode(n));\n"
+        "    return (unsigned int *)sPortReviewPaths[entry];\n}\n"
+        "int Ov003_SceneInit(int param_1) {\n",
+    ),
+    (
+        "RegisterSeqAndInit(puVar10, *(unsigned int **)(&data_ov003_0204f8f8[entry[6] * 4]), 1, 6);",
+        "RegisterSeqAndInit(puVar10, Port_ReviewModel(iVar12, *(unsigned int **)(&data_ov003_0204f8f8[entry[6] * 4])),"
+        " 1, 6);",
+    ),
+    (
+        "            uVar7 = (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
+        "            uVar7 = sPortReviewOwnModels[iVar12] ? 0xffffffff : (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
+    ),
+]
 # ... its voice: the sounds an actor starts are its seat's (the actor's +9, its character at +0xc), so that a new
 # character's [sounds] replace the base's only for its own actor (runtime/sound/sound_mods.c)
 _SPEAKER = "extern void khdays_characters_speaker(int seat, int kind);\n"

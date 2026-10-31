@@ -34,6 +34,13 @@ void khdays_characters_seat(int seat, int place);
  * seat's new character's number when it has one, else `entry`. */
 int khdays_characters_place(int seat, int entry);
 
+/* A room's mission review (scene 3, ov003: the players on their thrones): entry `entry` of its report is seat
+ * `seat` (Ov002_BuildWrapUpReport); the new character (or form) of the entry's seat, else -1 (the throne's model
+ * is then its own: ba/ch/<code>/def.p.z), and in `*own_model` whether it has a model of its own (its base's robe
+ * piece is then left out). */
+void khdays_characters_review_seat(int entry, int seat);
+int khdays_characters_review(int entry, int *own_model);
+
 /* The game's scene now `scene` (at each change): the title forgets the seats (the story never has them). */
 void khdays_characters_scene(int scene);
 

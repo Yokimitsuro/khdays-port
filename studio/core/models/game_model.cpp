@@ -147,11 +147,15 @@ bool load_game_model(const fs::path& nitrofs, const fs::path& graphics_dump, con
         g.textures.emplace(texture, e.path());
     }
 
-    // the animations beside it: every BCA0 in the files of its folder, and
-    // for a model of mi/ch the motions of mi/mo (mi/mo/<name>.z)
+    // the animations beside it: every BCA0 in the files of its folder, for a
+    // model of mi/ch the motions of mi/mo (mi/mo/<name>.z), and for a
+    // character's of ba/ch/<code> its thrones' in a room's mission review
+    // (mrslt/data: the BCA0 whose first is <code>_result00)
     const std::string path = g.label.substr(0, g.label.rfind('#'));
     const auto slash = path.find_last_of('/');
     const std::string folder = slash == std::string::npos ? std::string() : path.substr(0, slash);
+    const std::string review = "mrslt/data";
+    const std::string review_first = folder.rfind("ba/ch/", 0) == 0 ? folder.substr(6) + "_result00" : std::string();
     std::vector<std::string> files;
     const auto add_folder = [&](const std::string& dir) {
         std::vector<std::string> found;
@@ -166,11 +170,15 @@ bool load_game_model(const fs::path& nitrofs, const fs::path& graphics_dump, con
     add_folder(folder);
     if (folder == "mi/ch")
         add_folder("mi/mo");
+    if (!review_first.empty())
+        files.push_back(review);
     for (const auto& file : files) {
         for (const auto& data : game_file_data(nitrofs, file)) {
             for (const std::size_t at : sections(data.bytes, "BCA0")) {
                 const std::size_t size = le32(data.bytes, at + 8);
                 const auto named = bca0_animations(&data.bytes[at], size);  // their names in the dictionary
+                if (file == review && (named.empty() || named[0].name != review_first))
+                    continue;
                 for (std::size_t i = 0;; ++i) {
                     assets::SkeletalAnimation a;
                     try {
@@ -178,7 +186,9 @@ bool load_game_model(const fs::path& nitrofs, const fs::path& graphics_dump, con
                     } catch (const std::exception&) {
                         break;
                     }
-                    if (a.bones.size() != g.model.object_names.size())
+                    // (the thrones' may have more, which the game leaves out: Sora's 25 for his 24 nodes)
+                    if (a.bones.size() != g.model.object_names.size() &&
+                        !(file == review && a.bones.size() > g.model.object_names.size()))
                         continue;
                     g.animations.push_back({data.label, at, size, i, i < named.size() ? named[i].name : a.name,
                                             a.frame_count, fits_skeleton(g.model, a)});

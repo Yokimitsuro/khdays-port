@@ -5336,6 +5336,23 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
 - **The camp's model in a room**: `Ov008_Menu_InitSceneObject` and `Ov008_Menu_LoadSceneText` draw the local
   player's character; the joins ask its seat (`Session_GetLocalPlayerIndex`), not seat 0 -- asked seat 0, a guest
   on a mod's character's base saw itself as the host's character.
+- **The thrones of a room's mission review** (read 2026-10-31; ov003, scene 3, after a mission won in a room):
+  `Ov002_BuildWrapUpReport` packs the seats that are in (`Slot4_GetIfOccupied`) into the report at
+  `data_0204c300` -- +0 their count, +6 + n entry n's character (the seat's +4) -- and `Ov003_SceneInit` makes
+  each entry's throne at the scene model's joint `P<count>_<n>` (`mrslt/data` #8 `re_00`): its chair (#3-#6
+  `ch_1`-`ch_4`), the character's model from `ba/ch/<code>/def.p.z` (`data_ov003_0204f8f8`, by its character;
+  0x13, the dual-wield Roxas, is Roxas there), its animations (`data_ov003_0204f8d0`: the BCA0 holding
+  `<code>_result00`-`06`; Mickey's last `mickey_result06`) and, for some, a robe piece with its own
+  (`data_ov003_0204f8bc`: `<code>_ita`, a 4-bone model, its animations `<code>_ita00`-`06`; none for Sora,
+  Larxene, Luxord, Mickey, Donald, Goofy), and `/mi/ob/0A.z`. The animations bound (`BindAnimTrack`'s last
+  argument: their order in the BCA0): 0 as it begins; the first place (`Ov003_RankPlayers`' group 0, shown last)
+  1 (`Ov003_StateHoldTimer`), then 2 once it ends; the others 4 as their place is shown
+  (`Ov003_StateRebindAnims`, `Ov003_StateCountdownValues`), then 5 (`Ov003_AdvanceAnims`,
+  `Ov003_SceneStateActive`); 3 and 6 never. The port records each entry's seat in the report's join and gives a
+  mod's character's entry its own folder's `def.p.z` (its model, its `[actions]` for those names), leaving the
+  robe piece out when the character has a model of its own. Seen with `KHDAYS_TEST_REVIEW` on two copies (a
+  give-up: both players first): the second seat's mod's character on Roxas's base played `ro_result00` (61
+  frames, looped), `ro_result01`, then `ro_result02` (121, looped) with its own clips.
 - **Its voice** (read 2026-10-28; heard in `missions_waves`'s session log): an actor's sounds start through
   `Ov022_PlayEntityVoice(actor, archive, entry)` (its action's cues from `Ov022_StepReactionCues`, its hurt,
   the player overlay's own: `Ov030_UpdateMotionController`) and `Ov022_SpawnVoiceCue`, both into `Slot_Spawn` ->

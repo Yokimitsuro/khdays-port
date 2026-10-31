@@ -50,6 +50,13 @@ taken, else the first; a clip that moves none of the game's nodes is refused.
 every node kept (it must read back exactly), every node replaced by its own
 motion, and every file rebuilt half kept, half replaced.
 
+**A model's animations** (`core/models/game_model.cpp`, `--model-animations
+<model>`) are every BCA0's of its folder's files with as many nodes as it has,
+for a model of `mi/ch` the motions of `mi/mo`, and for a character's of
+`ba/ch/<code>` its thrones' in a room's mission review (`mrslt/data`'s
+`<code>_result00`-`06`, which may move a node more than the model has, left out
+as the game leaves it: Sora's 25 for his 24).
+
 `--export-model <model> <out.gltf> [animations]` writes a model as "Export this
 model..." does, its textures beside it (the dump's own glTF's pictures, else its
 first picture of each texture) and its animations at 30 frames a second; with

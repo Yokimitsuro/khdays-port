@@ -219,6 +219,25 @@ WALKS = [
             "characters: member 1 is test.character/block (0x16), on roxas's code",
         ),
     ),
+    # ... and on its throne in the mission review the give-up goes on to (KHDAYS_TEST_REVIEW): its own model
+    Walk(
+        "review_character",
+        240,
+        player_save=False,
+        players=2,
+        script="multiplayer",
+        mods="port/tests/mods_v2/character",
+        env=(
+            ("2:KHDAYS_TEST_CHARACTER", "test.character/block"),
+            ("KHDAYS_TEST_REVIEW", "1"),
+            ("KHDAYS_TRACE_CHARACTERS", "1"),
+        ),
+        marks=(
+            "characters: the review's throne 2 is seat 1's, test.character/block (0x16)",
+            "rom: the game opened ba/ch/c16/def.p.z",
+            "ba/ch/c16/def.p.z/mdl/roxas_b drawn from",
+        ),
+    ),
 ]
 
 # The runtime reports the current scene once a second, and at each change,

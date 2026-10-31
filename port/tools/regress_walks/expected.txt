@@ -5,7 +5,8 @@
 # added 2026-10-05, online and relayed 2026-10-06, multiplayer4 (each of its
 # four players) 2026-10-07, stop, stop_room (each of its players) and stop_shop
 # 2026-10-23, missions 2026-10-24, missions_waves, character and multiplayer_character (each of its
-# players) 2026-10-28, character_forms and character_forms_two 2026-10-30.
+# players) 2026-10-28, character_forms and character_forms_two 2026-10-30, review_character (each of
+# its players) 2026-10-31.
 mission: 1 7 19 2 6 19
 story: 1 11 5 2 10 5 2
 play: 1 7 19 2
@@ -25,3 +26,4 @@ character: 1 7 19 2 6 19
 character_forms: 1 7 19 2 6 19
 character_forms_two: 1 7 19 2 6 19
 multiplayer_character: 1 7 19 2 6
+review_character: 1 7 19 2 3

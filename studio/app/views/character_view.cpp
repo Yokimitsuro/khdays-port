@@ -894,7 +894,8 @@ void draw_model_tab(App& app) {
     draw_weapons(app);
 }
 
-// Roxas's animations as they have been seen played (docs/CHARACTERS.md); others by their names alone.
+// Roxas's animations as they have been seen played (docs/CHARACTERS.md), any base's on the thrones of a room's
+// mission review (<code>_result00-06: those the game plays); others by their names alone.
 S known_animation(const std::string& name, int* number) {
     static const std::map<std::string, std::pair<S, int>> known = {
         {"b_ro_A000", {S::chars_anim_standing, 0}},  {"b_ro_A001", {S::chars_anim_running, 0}},
@@ -903,6 +904,19 @@ S known_animation(const std::string& name, int* number) {
         {"b_ro_B015", {S::chars_anim_combo, 3}},     {"b_ro_L000", {S::chars_anim_limit_start, 0}},
         {"b_ro_L001", {S::chars_anim_limit_hit, 0}},
     };
+    static const std::map<std::string, S> thrones = {
+        {"_result00", S::chars_anim_throne_seated},
+        {"_result01", S::chars_anim_throne_winner},
+        {"_result02", S::chars_anim_throne_winner_after},
+        {"_result04", S::chars_anim_throne_rank},
+        {"_result05", S::chars_anim_throne_after},
+    };
+    const auto suffix = name.rfind("_result");
+    const auto throne = suffix != std::string::npos ? thrones.find(name.substr(suffix)) : thrones.end();
+    if (throne != thrones.end()) {
+        *number = 0;
+        return throne->second;
+    }
     const auto found = known.find(name);
     if (found == known.end())
         return S::count;
