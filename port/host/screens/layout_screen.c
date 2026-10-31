@@ -500,14 +500,19 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
     memset(out, 0, sizeof(*out));
     if (on_pad) {
         const SDL_GamepadType type = SDL_GetGamepadType(pad);
+        const int playstation =
+            type == SDL_GAMEPAD_TYPE_PS3 || type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5;
+        const int nintendo = type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO ||
+                             type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT ||
+                             type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT ||
+                             type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR || type == SDL_GAMEPAD_TYPE_GAMECUBE;
         const char *input_name = khdays_pad_input_name(input);
         if (input_name == NULL) {
             return 0;
         }
-        if (type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE || type == SDL_GAMEPAD_TYPE_PS3 ||
-            type == SDL_GAMEPAD_TYPE_PS4 || type == SDL_GAMEPAD_TYPE_PS5) {
-            const int xbox = type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE;
-            snprintf(name, sizeof(name), "icon %s:%s", xbox ? "xbox" : "playstation", input_name);
+        if (!nintendo) {
+            /* a pad SDL does not know is shown as an Xbox one, as the settings menu and the field show it */
+            snprintf(name, sizeof(name), "icon %s:%s", playstation ? "playstation" : "xbox", input_name);
             p = khdays_layout_piece(l, name);
             if (p != NULL) {
                 out->texture = l->atlas;
@@ -518,40 +523,12 @@ static int icon_of_input(const KhdaysLayout *l, SDL_Gamepad *pad, int on_pad, in
                 out->h = p->h * ICON_PAD / ICON_FACE;
                 return 1;
             }
-            {
-                /* not among the layout's pieces (the pieces have no Guide, nor the sticks pressed): Kenney's, as
-                 * the Controls section shows it (a PlayStation's PS button has none: the action's next input) */
-                const char *kenney = khdays_pad_icon_name(input);
-                SDL_Texture *t = kenney != NULL ? kenney_icon(l->renderer, kenney) : NULL;
-                if (t != NULL) {
-                    out->texture = t;
-                    out->src.x = out->src.y = 0;
-                    SDL_GetTextureSize(t, &out->src.w, &out->src.h);
-                    out->h = ICON_PAD;
-                    return 1;
-                }
-            }
-        } else {
-            /* any other pad: Switch's letters, the DS's in the same places */
-            static const char *const switch_names[KHDAYS_PAD_COUNT] = {[KHDAYS_PAD_SOUTH] = "switch_button_b",
-                                                                       [KHDAYS_PAD_EAST] = "switch_button_a",
-                                                                       [KHDAYS_PAD_WEST] = "switch_button_y",
-                                                                       [KHDAYS_PAD_NORTH] = "switch_button_x",
-                                                                       [KHDAYS_PAD_DPUP] = "switch_dpad_up",
-                                                                       [KHDAYS_PAD_DPDOWN] = "switch_dpad_down",
-                                                                       [KHDAYS_PAD_DPLEFT] = "switch_dpad_left",
-                                                                       [KHDAYS_PAD_DPRIGHT] = "switch_dpad_right",
-                                                                       [KHDAYS_PAD_LEFTSHOULDER] = "switch_button_l",
-                                                                       [KHDAYS_PAD_RIGHTSHOULDER] = "switch_button_r",
-                                                                       [KHDAYS_PAD_LEFTTRIGGER] = "switch_button_zl",
-                                                                       [KHDAYS_PAD_RIGHTTRIGGER] = "switch_button_zr",
-                                                                       [KHDAYS_PAD_LEFTSTICK] = "switch_stick_l_press",
-                                                                       [KHDAYS_PAD_RIGHTSTICK] = "switch_stick_r_press",
-                                                                       [KHDAYS_PAD_START] = "switch_button_plus",
-                                                                       [KHDAYS_PAD_BACK] = "switch_button_minus",
-                                                                       [KHDAYS_PAD_GUIDE] = "switch_button_home"};
-            const char *icon = input < KHDAYS_PAD_COUNT ? switch_names[input] : NULL;
-            SDL_Texture *t = icon != NULL ? kenney_icon(l->renderer, icon) : NULL;
+        }
+        {
+            /* a Nintendo pad, or an input the layout's pieces lack (no Guide, nor the sticks pressed): Kenney's,
+             * as the Controls section shows it (a PlayStation's PS button has none: the action's next input) */
+            const char *kenney = khdays_pad_icon_name(input);
+            SDL_Texture *t = kenney != NULL ? kenney_icon(l->renderer, kenney) : NULL;
             if (t != NULL) {
                 out->texture = t;
                 out->src.x = out->src.y = 0;
