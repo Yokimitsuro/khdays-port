@@ -242,6 +242,33 @@ bool read_mission(const GameFiles& game, int number, MissionFile* out, std::stri
     return parse_mission(bytes, number, out, why);
 }
 
+// The keys of room `room`'s exits in world `world` (its link rows: mi/wd/wd_<code> entry 0, the room table as
+// core/rooms/worlds.cpp parse_world reads it: a room's +1 its row count, +0x1c its rows' offset, 8 bytes a row, the
+// key first). A mission closes them at its start (2.39, Ov002_StampEntry finds a row by its key in the room loaded).
+bool room_exits(const GameFiles& game, int world, int room, std::vector<int>* keys, std::string* why) {
+    const char* code = khdays_world_code(world);
+    if (code == nullptr)
+        return fail_with(why, "no world " + std::to_string(world));
+    const std::string path = std::string("mi/wd/wd_") + code;
+    P2File archive;
+    std::string problem;
+    if (!parse_p2(game.read(path), &archive, &problem) || archive.entries.empty())
+        return fail_with(why, path + ": " + (problem.empty() ? "no room table" : problem));
+    const auto& t = archive.entries[0].data;
+    if (t.empty() || room < 0 || static_cast<std::size_t>(room) >= t[0])
+        return fail_with(why, path + " has no room " + std::to_string(room));
+    const std::size_t off = le32(t, 4 + 4 * static_cast<std::size_t>(room));
+    if (off + 0x20 > t.size())
+        return fail_with(why, path + ": room " + std::to_string(room) + " outside its table");
+    const std::size_t count = t[off + 1], rows = off + le32(t, off + 0x1c);
+    if (rows + 8 * count > t.size())
+        return fail_with(why, path + ": room " + std::to_string(room) + "'s exits outside its table");
+    keys->clear();
+    for (std::size_t k = 0; k < count; ++k)
+        keys->push_back(t[rows + 8 * k]);
+    return true;
+}
+
 // Every enemy class a game mission's table has a row of, with the first such row.
 std::map<int, std::array<std::uint8_t, 16>> class_rows(const GameFiles& game) {
     std::map<int, std::array<std::uint8_t, 16>> out;
@@ -329,6 +356,9 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     const Script* ending1 = script_named(area, "c1");
     if (area_i == nullptr || start_i == nullptr || check_i == nullptr || ending0 == nullptr || ending1 == nullptr)
         return fail_with(why, "the base missions' scripts are not as this studio knows them");
+    std::vector<int> exits;
+    if (!room_exits(game, plan.world, plan.room, &exits, why))
+        return false;
 
     // the enemy table: a row for each class, a group for each spawner (in wave order)
     const auto catalog = class_rows(game);
@@ -392,10 +422,14 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         }
         return *s;
     };
-    // a script queued on an event (2.5, as 1354's: the area's own list)
+    // a script queued on an event (2.5, as 1354's: the area's own list), run while the chosen room is loaded (its
+    // third operand, Ov002_RegisterEventSlot's index in the loaded rooms' table; 1354's names its arena, and a
+    // room not loaded leaves the script never run)
     auto queue = [&](Writer& to, int event, const std::string& script) {
         ScriptStep& q = need(copy(to, 2, 5));
         set_operand(q, 1, integer(event));
+        set_operand(q, 2, integer(plan.room));
+        set_operand(q, 3, none(plan.room));
         const std::uint32_t name = to.string(script);
         set_operand(q, 4, {2, 0, static_cast<std::int32_t>(name)});
         set_operand(q, 5, none(static_cast<std::int32_t>(name)));
@@ -443,13 +477,18 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     need(copy(w, 2, 50));
     need(copy(w, 2, 10));
     for (int p = 0; p < 4; ++p) {
+        // each player in the chosen room (its second operand: the room, whose loaded slot Ov002_GetCtxTableByte
+        // finds; 1354's says its arena), at the start
         ScriptStep& s = need(copy(w, 2, 12, p));
+        set_operand(s, 1, integer(plan.room));
         for (int k = 0; k < 3; ++k)
             set_operand(s, 3 + static_cast<std::size_t>(k), fixed(plan.start[static_cast<std::size_t>(k)]));
         set_operand(s, 6, integer(plan.facing));
     }
-    for (int k = 0; k < 5; ++k)
-        need(copy(w, 2, 39, k));
+    // the room's own exits closed (1354's steps name its arena's keys: another room has others, and a key the
+    // loaded room lacks leaves Ov002_StampEntry without a row to write)
+    for (const int key : exits)
+        set_operand(need(copy(w, 2, 39)), 1, integer(key));
     need(copy(w, 2, 16, 0));
     if (plan.time_ms > 0)
         set_operand(need(copy(w, 2, 16, 1)), 2, integer(plan.time_ms));

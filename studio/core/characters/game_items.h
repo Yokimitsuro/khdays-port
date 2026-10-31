@@ -20,6 +20,10 @@ struct GameItem {
 // Every item with a panel record, by number; empty when the files cannot be read (*why).
 std::vector<GameItem> game_items(const std::filesystem::path& nitrofs, const std::string& language, std::string* why);
 
+// How many items db/db.p2 has a record for (the ones named above and the ones whose words live elsewhere, 513 on);
+// 0 when it cannot be read. What the port counts too (port/runtime/missions/missions.c).
+int game_item_records(const std::filesystem::path& nitrofs);
+
 // The gears (category 4, more than one cell), their links (category 4, one cell) and every panel (any category but
 // the synthesis materials, 2), from `items`.
 std::vector<GameItem> game_gears(const std::vector<GameItem>& items);

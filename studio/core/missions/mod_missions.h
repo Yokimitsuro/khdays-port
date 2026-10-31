@@ -29,6 +29,7 @@ struct ModMission {
     std::vector<std::string> name, objective, description;  // by mission_languages()
     int category = -1, room = 0, level = 0, time_ms = 0, template_file = 0;
     std::string world, unlock;
+    bool built = false;     // it has waves: the port makes it from its places, whatever its file or template
     bool own_file = false;  // missions/<key>/mission.p2, else its template's file as it is
     std::string start;      // where the players start, as written ("x y z facing"); empty: the file's own
     // its waves, chests and emblems as written, in the file's order: ("wave 2", "0x2 at 0 0 1.5"), ...
@@ -36,9 +37,14 @@ struct ModMission {
 };
 std::vector<ModMission> read_mod_missions(const std::filesystem::path& mod_dir, std::vector<std::string>* problems);
 
-// A new mission `key` in the mod, made from game mission `template_file` (its file copied as
-// missions/<key>/mission.p2), played in `world`'s room `room`: its block written into missions.txt with the
-// key as its name and objective, both read back before it reports. False with the reason.
+// The game's items given to the port's reader, so that a chest holds only an item the game has (its count read from
+// `nitrofs`'s db/db.p2 once). Called before missions are read or checked.
+void use_game_items(const std::filesystem::path& nitrofs);
+
+// A new mission `key` in the mod, in `world`'s room `room`: its block written into missions.txt with the key as its
+// name and objective, both read back before it reports. Made from game mission `template_file` (its file copied as
+// missions/<key>/mission.p2, played as it is until the mission has places), or from nothing when it is 0 (the port
+// makes it from its places once they are saved). False with the reason.
 bool new_mod_mission(const std::filesystem::path& nitrofs, const std::filesystem::path& mod_dir, const std::string& key,
                      int template_file, const std::string& world, int room, std::string* why);
 

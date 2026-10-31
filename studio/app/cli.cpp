@@ -635,28 +635,34 @@ bool mission_command_paths(const fs::path& root, const std::string& mod, bool ma
                      why.empty() ? "" : ": ", why.c_str());
         return false;
     }
+    use_game_items(*nitrofs);
     return true;
 }
 
-// --new-mission <Mod> <key> <template> <world> <room>: a new mission made from a game mission's file, in
-// Mission Mode's list after the game's.
+// --new-mission <Mod> <key> <template|none> <world> <room>: a new mission in Mission Mode's list after the game's,
+// made from a game mission's file or (none) from the places its map is given.
 int new_mission(const fs::path& root, const std::vector<std::string>& args) {
     fs::path nitrofs, mod_dir;
     if (!mission_command_paths(root, args[1], true, &nitrofs, &mod_dir))
         return 1;
-    if (args[3] == "blank") {
-        std::fprintf(stderr, "khdays-studio: a blank mission comes with the waves' editor; give a game mission's "
-                             "number to start from (0010, the tutorial's square)\n");
+    const int template_file = args[3] == "none" ? 0 : std::atoi(args[3].c_str());
+    if (template_file <= 0 && args[3] != "none") {
+        std::fprintf(stderr, "khdays-studio: give a game mission's number to start from, or none\n");
         return 1;
     }
     std::string why;
-    if (!new_mod_mission(nitrofs, mod_dir, args[2], std::atoi(args[3].c_str()), args[4], std::atoi(args[5].c_str()),
+    if (!new_mod_mission(nitrofs, mod_dir, args[2], template_file, args[4], std::atoi(args[5].c_str()),
                          &why)) {
         std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
         return 1;
     }
-    std::printf("mission %s made in %s (mi/mi/%04d's file, %s room %s); name it with --mission-set\n", args[2].c_str(),
-                u8(mod_dir / "missions").c_str(), std::atoi(args[3].c_str()), args[4].c_str(), args[5].c_str());
+    if (template_file > 0)
+        std::printf("mission %s made in %s (mi/mi/%04d's file, %s room %s); name it with --mission-set\n",
+                    args[2].c_str(), u8(mod_dir / "missions").c_str(), template_file, args[4].c_str(), args[5].c_str());
+    else
+        std::printf("mission %s made in %s (%s room %s, no template): give it a start and a wave with "
+                    "--mission-wave and --mission-set\n",
+                    args[2].c_str(), u8(mod_dir / "missions").c_str(), args[4].c_str(), args[5].c_str());
     return 0;
 }
 

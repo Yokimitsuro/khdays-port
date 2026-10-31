@@ -653,7 +653,7 @@ studio::GameFiles builder_game() {
     step(i, 2, 50, {});
     step(i, 2, 10, {kInt, 0});
     for (std::uint32_t p = 0; p < 4; ++p)
-        step(i, 2, 12, {kInt, p, kInt, 2, 0, 2, kFixed, 0, kFixed, 0, kFixed, 0, kInt, 0});
+        step(i, 2, 12, {kInt, p, kInt, 5, 0, 2, kFixed, 0, kFixed, 0, kFixed, 0, kInt, 0});  // the base's own room
     for (std::uint32_t k = 0; k < 5; ++k)
         step(i, 2, 39, {kInt, 0, kInt, k, kInt, 0, kInt, 0xffffffffu});
     step(i, 2, 16, {kInt, 0, kInt, 0, kInt, 0});
@@ -705,9 +705,28 @@ studio::GameFiles builder_game() {
     step(c, 2, 7, {kInt, 0, kInt, 3, kInt, 1, kInt, 0xffffffffu, kInt, 5, kInt, 9});
     const Bytes check = named_p2({cakp({"_i"}, {script({c})})}, {"11.Z"});
 
+    // world eh (index 4): three rooms, room 2's exits keyed 7 and 9 (a room record 0x24 bytes, its rows after it)
+    Bytes table = {3, 0, 0, 0};
+    const std::vector<std::vector<std::uint8_t>> exits = {{1}, {}, {7, 9}};
+    std::size_t at = 4 + 4 * exits.size();
+    std::vector<Bytes> records;
+    for (const auto& keys : exits) {
+        add32(table, static_cast<std::uint32_t>(at));
+        Bytes r(0x24, 0);
+        r[1] = static_cast<std::uint8_t>(keys.size());
+        r[0x1c] = 0x24;  // its rows right after it
+        for (const std::uint8_t k : keys)
+            r.insert(r.end(), {k, 0, 0, 0, 0, 0, 0, 0});
+        at += r.size();
+        records.push_back(r);
+    }
+    for (const Bytes& r : records)
+        table.insert(table.end(), r.begin(), r.end());
+    const Bytes world = p2({table, Bytes(4, 0)});
+
     studio::GameFiles g;
-    g.read = [base, check](const std::string& path) {
-        return path == "mi/mi/1354" ? base : path == "mi/mi/0004" ? check : Bytes();
+    g.read = [base, check, world](const std::string& path) {
+        return path == "mi/mi/1354" ? base : path == "mi/mi/0004" ? check : path == "mi/wd/wd_eh" ? world : Bytes();
     };
     g.missions = {4, 1354};
     return g;
@@ -760,6 +779,33 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(table)].data, &t, &why));
     CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 3; three spawners
     CHECK(t.kinds[0].raw[4] == 0);                       // the level: the mission's own
+    // the room's own exits closed, by their keys (not the base mission's arena's five)
+    std::vector<std::int32_t> closed;
+    for (const ScriptStep& st : i.steps)
+        if (st.group == 2 && st.command == 39)
+            closed.push_back(operand_at(st, 2).value);  // its second operand (words 2-3): the exit's key
+    CHECK(closed == std::vector<std::int32_t>({7, 9}));
+    // every player started in the chosen room (2.12's second operand)
+    int placed = 0;
+    for (const ScriptStep& st : i.steps)
+        placed += st.group == 2 && st.command == 12 && operand_at(st, 2).value == 2;
+    CHECK(placed == 4);
+    // another room, another world's: its own exits, none for a room without
+    plan.room = 1;
+    CHECK(studio::build_mission(game, plan, &built, &why) && parse_mission(built, 20000, &m, &why));
+    CHECK(count_steps(m.entries[static_cast<std::size_t>(m.entry("11"))].archive.scripts[3], 2, 39) == 0);
+    // every queued script runs in the chosen room (2.5's third operand; the base's names its arena, room 2)
+    int queued = 0, in_room = 0;
+    for (const Script& sc : m.entries[static_cast<std::size_t>(m.entry("11"))].archive.scripts)
+        for (const ScriptStep& st : sc.steps)
+            if (st.group == 2 && st.command == 5) {
+                ++queued;
+                in_room += operand_at(st, 4).value == 1 && operand_at(st, 6).value == 1;
+            }
+    CHECK(queued == 4 && in_room == queued);  // the clock's end, the ending, the waves' "all defeated" (two)
+    plan.room = 5;
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("room 5") != std::string::npos);
+    plan.room = 2;
 
     // the game's limits, said: an area's four enemy classes; a class no game mission has
     plan.waves = {{spawner_of({{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}}, 0.0)}};
@@ -845,6 +891,26 @@ TEST(a_new_missions_places_read_and_saved_at_once) {
     spots.push_back(wave);
     CHECK(!studio::set_mod_mission_spots(nitrofs, mod, "map", spots, &why) && why.find("build") != std::string::npos);
     CHECK(file_bytes(txt) == after);
+}
+
+TEST(a_new_missions_chest_holds_an_item_of_the_games) {
+    const auto root = studio_test::scratch("mission_chest_item");
+    const auto mod = root / "mods" / "M";
+    const auto txt = mod / "missions" / "missions.txt";
+    studio_test::write(txt, "[mission map]\nname en = W\nobjective en = O\nworld = eh\nroom = 2\n");
+    std::string why;
+    studio::MissionSpot chest;
+    chest.kind = studio::MissionSpot::Kind::chest;
+    chest.contents = 0;  // no item: the game reads no record for it as the mission starts, and stops
+    const Bytes before = file_bytes(txt);
+    CHECK(!studio::set_mod_mission_spots(root / "nitrofs", mod, "map", {chest}, &why) &&
+          why.find("item") != std::string::npos);
+    CHECK(file_bytes(txt) == before);
+    chest.contents = 2;
+    CHECK(studio::set_mod_mission_spots(root / "nitrofs", mod, "map", {chest}, &why));
+    // no template, no file, no wave yet: nothing for the port to play
+    const auto missions = studio::read_mod_missions(mod, nullptr);
+    CHECK(missions.size() == 1 && !missions[0].built && !missions[0].own_file && missions[0].template_file == 0);
 }
 
 TEST(the_games_missions_named_from_its_list) {

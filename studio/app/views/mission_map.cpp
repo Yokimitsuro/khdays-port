@@ -5,6 +5,7 @@
 #include "../app.h"
 #include "../preview3d.h"
 
+#include "core/characters/game_items.h"
 #include "core/files/paths.h"
 #include "core/missions/enemy_names.h"
 #include "core/missions/mission_build.h"
@@ -19,6 +20,7 @@
 #include "khdays/vfs/filesystem.h"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 extern "C" {
 #include "render/png_io.h"
@@ -87,6 +89,34 @@ std::vector<std::uint8_t> read_bytes(const fs::path& file) {
 const std::vector<int>& buildable() {
     static const std::vector<int> classes = buildable_enemy_classes(extracted_game_files(nitrofs()));
     return classes;
+}
+
+// The game's items a chest can hold, named in the studio's language (read again when it changes).
+const std::vector<GameItem>& chest_items(Language language) {
+    static std::vector<GameItem> items;
+    static int read_for = -1;
+    if (read_for != static_cast<int>(language)) {
+        std::string why;
+        items = game_items(nitrofs(), language_code(language), &why);
+        read_for = static_cast<int>(language);
+    }
+    return items;
+}
+
+std::string chest_item_label(Language language, int id) {
+    for (const auto& i : chest_items(language))
+        if (i.id == id)
+            return i.name + " (" + std::to_string(id) + ")";
+    return "? (" + std::to_string(id) + ")";
+}
+
+// A new chest's contents: the game's first item of the items' category (a Potion), else its first item.
+int first_chest_item(Language language) {
+    const auto& items = chest_items(language);
+    for (const auto& i : items)
+        if (i.category == 0)
+            return i.id;
+    return items.empty() ? 1 : items.front().id;
 }
 
 std::array<float, 3> corner(const RoomFace& f, std::size_t v) {
@@ -462,6 +492,8 @@ void draw_room(App& app, ImVec2 size) {
                     added.wave = last_wave;
                     added.enemies = {{buildable().empty() ? 0 : buildable().front(), 3}};
                 }
+                if (added.kind == Spot::chest)
+                    added.contents = first_chest_item(app.language);
                 if (added.kind == Spot::start) {  // one start: moved there
                     s.spots.erase(std::remove_if(s.spots.begin(), s.spots.end(),
                                                  [](const MissionSpot& sp) { return sp.kind == Spot::start; }),
@@ -537,9 +569,28 @@ void draw_chosen(App& app) {
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::SliderInt("##heading", &sp.heading, -180, 180, (std::string(tr(lang, S::mmap_facing)) + ": %d").c_str());
         if (sp.kind == Spot::chest) {
-            ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-            ImGui::InputInt(tr(lang, S::mmap_contents), &sp.contents, 1, 10);
-            sp.contents = std::max(sp.contents, 0);
+            // what it gives, by the item's name (a filter narrows the game's hundreds)
+            static std::string filter;
+            ImGui::TextUnformatted(tr(lang, S::mmap_contents));
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::BeginCombo("##contents", chest_item_label(lang, sp.contents).c_str())) {
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputTextWithHint("##filter", tr(lang, S::mmap_contents_filter), &filter);
+                std::string wanted = filter;
+                std::transform(wanted.begin(), wanted.end(), wanted.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                for (const auto& item : chest_items(lang)) {
+                    const std::string label = item.name + " (" + std::to_string(item.id) + ")";
+                    std::string lowered = label;
+                    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (!wanted.empty() && lowered.find(wanted) == std::string::npos)
+                        continue;
+                    if (ImGui::Selectable(label.c_str(), item.id == sp.contents))
+                        sp.contents = item.id;
+                }
+                ImGui::EndCombo();
+            }
         }
         break;
     case Spot::spawner: {
@@ -607,8 +658,9 @@ bool mission_map_unsaved() {
     return false;
 }
 
-void draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room) {
+bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room) {
     const auto lang = app.language;
+    bool saved = false;
     // read again for another mission, mod, world or room (the room changed in the settings: its places kept)
     if (s.mod != m.name || s.key != key) {
         s.mod = m.name;
@@ -622,7 +674,7 @@ void draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
         load_room(app, m, world, room);
     if (!s.error.empty()) {
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", s.error.c_str());
-        return;
+        return false;
     }
     // what to add, then click the floor
     ImGui::TextUnformatted(tr(lang, S::mmap_add));
@@ -650,6 +702,7 @@ void draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
             s.saved = mod_mission_spots(m.dir, key, &s.read_error);
             s.spots = s.saved;
             s.chosen = -1;
+            saved = true;
             app.tell(fmt(lang, S::mmap_saved, {key}) + "  " + tr(lang, S::restart_note), true);
         } else {
             app.tell(fmt(lang, S::save_failed, {why}), false);
@@ -688,6 +741,7 @@ void draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
         draw_chosen(app);
     }
     ImGui::EndChild();
+    return saved;
 }
 
 }  // namespace studio

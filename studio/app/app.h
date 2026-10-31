@@ -160,9 +160,10 @@ void draw_mission_view(App& app, const Item& item);
 // Whether the mod's new missions have changes not saved; asked when the window closes (true: quit anyway).
 bool new_missions_unsaved();
 // The mod's new missions in a window of their own (views/mission_view.cpp), and a mission's places on its room's map
-// (views/mission_map.cpp): the mod's mission `key` played in `world`'s room `room`; its places changed, not saved.
+// (views/mission_map.cpp): the mod's mission `key` played in `world`'s room `room` (true the frame its places were
+// saved); its places changed, not saved.
 void draw_mod_missions(App& app, bool* open);
-void draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room);
+bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room);
 bool mission_map_unsaved();
 // The mod's characters (views/character_view.cpp): the window, a file dropped while the pointer is over it (true
 // when it took it), and its changes not saved.

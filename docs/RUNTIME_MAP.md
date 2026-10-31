@@ -5224,6 +5224,34 @@ The port adds a mod's missions to the game's own list and plays them as the game
   mark (0001) raised at the end and kept: `test.waves/waves 0 0 4 0 -1 1`. **The emblem**: its pickup is made at its
   point (the field's pickups, id 1 at (0, 0.049, -1.5), by `Ov002_SpawnStateSpots` with the mission's number 3595),
   but in these runs it was neither drawn nor picked up: *open*.
+- **A chest's item is read as the mission starts** (2026-10-31, a tester's mission stopped): each chest put out hands
+  its contents key to `Ov002_AppendPendingId`, and `Ov002_BuildKeyEntryTable` (2.46) fetches database 0x15's record
+  for every pending key (`MsgDb_FetchRecord(&rec, 0x15, key, 2)`) and copies its text (`+0xc`). Database 0x15 is the
+  items, from item 1: a chest holding 0 (the studio's old default) made it read through no record --
+  `Ov002_BuildKeyEntryTable.c:120`, an access violation as the field was built. The port's reader now takes a
+  chest's item from 1 to `db/db.p2` entry 0x15's count (630) and leaves a mission with another out, with the reason.
+  The game's own 396 chests hold 1-300.
+- **A mission's 2.39 steps close its room's exits by their keys** (2026-10-31, the second stop): 2.39
+  `Ov002_ScriptDriveFourOperands(0, key, 0, -1)` calls `Ov002_StampEntry`, which takes the room in slot 0
+  (`data_ov002_0207fa10 + 0x2f`) and `Ov002_FindPeerRow(key, room)` -- that room's link row with the key -- and
+  writes its kind and flags. 1354's area stamps keys 0, 2, 3, 20 and 21, its arena's (eh room 2); a mission built
+  from it in tt room 0 found no row for one of them and wrote through a null row (`Ov002_StampEntry.c:49`). The
+  builder now stamps the chosen room's own keys, read from the world's room table (entry 0, a room's `+1` row count,
+  `+0x1c` rows' offset, the key a row's first byte).
+- **2.12's second operand is the room a player starts in** (the third stop of the same mission): 2.12
+  `Ov002_ScriptMoveSlot(seat, room, ...)` writes the room into the seat's record (`Ov002_WriteSessionMarker`); placing
+  the player, `Ov002_StepRosterSlotPhase` turns it into the slot that room is loaded in (`Ov002_GetCtxTableByte`:
+  the link context's `+0x17` table, a room's slot or -1) and `Render_SubmitNode` takes that slot's container. 1354's
+  four 2.12 steps say room 2; in tt, with room 0 loaded in slot 0, room 2 has slot -1 and `QuadTree_InsertObject` read
+  through no container (`ModelObj_Place` <- `func_ov022_02088428`). The builder now writes the chosen room there.
+- **2.5's third operand is the room a queued script runs in** (the same mission, its waves all defeated and nothing
+  after): 2.5 `Ov002_ScriptQueueTextItem(0, event, room, none:room, name, ...)` hands the room to
+  `Ov002_RegisterEventSlot` as the slot's index in the link context's `+0x17` table (a room's loaded slot), resolved
+  later by `Ov002_RefreshSlotValue`; -1 runs it anywhere. The game's missions name their own rooms there (0101: 4 and
+  6, 0201: 0) or -1; 1354's say 2, so a mission built in tt room 0 queued "c0" on its "all defeated" event for a room
+  not loaded, and the event came with nothing to run: no clear (`state[8326:1]` never raised). The builder now writes
+  the chosen room. 2.32's fourth operand, 2 or -1 in any room, is not a room: the spawner's places keep it as a mode
+  (`Ov107_Spawner_AddSlot`, an actor's `+0x1c9`).
 
 ## 30. Characters of mods
 

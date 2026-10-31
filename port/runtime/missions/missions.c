@@ -120,8 +120,27 @@ static void read_mod(const char *name, void *context)
     free(folder);
 }
 
+/* How many items the game has (db/db.p2 entry 0x15: a count, then a record an item from item 1); 0 when it cannot
+ * be read. */
+static int game_items(void)
+{
+    KhdaysRomReader *reader = khdays_rom_reader_new();
+    u8 *data = NULL;
+    u32 size = 0;
+    int count = 0;
+    if (reader != NULL && khdays_rom_file_data(reader, "db/db.p2", 0x15, &data, &size) && data != NULL && size >= 4u) {
+#pragma warning(suppress : 6001) /* khdays_rom_file_data filled `size` bytes of it */
+        const u32 n = (u32)data[0] | (u32)data[1] << 8 | (u32)data[2] << 16 | (u32)data[3] << 24;
+        count = n <= 0x7fffu ? (int)n : 0x7fff;
+    }
+    free(data);
+    return count;
+}
+
 void khdays_missions_start(void)
 {
+    /* a chest's contents must be one of the game's items: the game reads its record as the mission starts */
+    khdays_missions_set_items(game_items());
     khdays_folders_list(MODS, read_mod, NULL);
     if (registry.count == 0) {
         return;

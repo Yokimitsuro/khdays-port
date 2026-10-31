@@ -183,6 +183,29 @@ static void waves_chests_and_emblems_read(void)
     khdays_missions_free(&r);
 }
 
+/* A chest holds an item the game has: item 0 is none (the game would read no record for it as the mission starts)
+ * and neither is one past the game's last; such a mission is left out with the reason, not played. */
+static void chests_hold_game_items(void)
+{
+    static const char text[] = "[mission potion]\nname en = A\nobjective en = B\nworld = tt\nchest = 2 at 0 0 0 0\n"
+                               "[mission nothing]\nname en = A\nobjective en = B\nworld = tt\nchest = 0 at 0 0 0 0\n"
+                               "[mission past]\nname en = A\nobjective en = B\nworld = tt\nchest = 631 at 0 0 0 0\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    khdays_missions_set_items(630);
+    CHECK(read_text(&r, "Chests", text, &reports) == 1);
+    CHECK(r.count == 1 && strcmp(r.list[0].key, "potion") == 0 && r.list[0].chests[0].item == 2);
+    CHECK(reports.count == 2);
+    khdays_missions_free(&r);
+    /* the items unknown: any from 1, never 0 */
+    KhdaysMissions u = {0};
+    Reports unknown = {0};
+    khdays_missions_set_items(0);
+    CHECK(read_text(&u, "Chests", text, &unknown) == 2);
+    CHECK(unknown.count == 1);
+    khdays_missions_free(&u);
+}
+
 /* Every field of every numbered mission past the array, and no two missions' bits the same. */
 static void numbers_apart(const KhdaysMissions *r)
 {
@@ -553,6 +576,7 @@ int main(int argc, char **argv)
     a_description_read();
     bad_blocks_left_out();
     waves_chests_and_emblems_read();
+    chests_hold_game_items();
     chests_kept();
     numbering();
     the_field_store();

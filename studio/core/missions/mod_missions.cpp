@@ -1,5 +1,6 @@
 #include "core/missions/mod_missions.h"
 
+#include "core/characters/game_items.h"
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
 #include "core/missions/mission_build.h"
@@ -256,6 +257,7 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
         mm.unlock = m.unlock_after != nullptr ? std::string("cleared ") + m.unlock_after
                     : m.unlock_number != 0    ? "cleared " + std::to_string(m.unlock_number)
                                               : "start";
+        mm.built = m.spawner_count > 0;
         mm.own_file = fs::is_regular_file(mod_dir / "missions" / path_u8(mm.key) / "mission.p2", ec);
         std::size_t start = 0, end = 0;
         if (block_of(file_lines, mm.key, &start, &end)) {
@@ -281,8 +283,17 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
     return out;
 }
 
+void use_game_items(const fs::path& nitrofs) {
+    static fs::path read_for;
+    if (!read_for.empty() && read_for == nitrofs)
+        return;
+    read_for = nitrofs;
+    khdays_missions_set_items(game_item_records(nitrofs));
+}
+
 bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std::string& key, int template_file,
                      const std::string& world, int room, std::string* why) {
+    use_game_items(nitrofs);
     if (!valid_key(key))
         return fail_with(why, "a key is letters, digits, '_' and '-'");
     if (khdays_world_index(world.c_str()) < 0)
@@ -295,7 +306,7 @@ bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std
         return fail_with(why, "world " + world + " has rooms 0-" + std::to_string(w.rooms.size() - 1));
     const fs::path game_file = nitrofs / path_u8(mission_file_path(template_file));
     std::error_code ec;
-    if (template_file <= 0 || !fs::is_regular_file(game_file, ec))
+    if (template_file < 0 || (template_file > 0 && !fs::is_regular_file(game_file, ec)))
         return fail_with(why, "no game mission " + mission_file_path(template_file));
     std::string text = read_text(missions_txt(mod_dir));
     {
@@ -307,29 +318,30 @@ bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std
         if (taken)
             return fail_with(why, "the mod has a mission " + key + " already");
     }
-    // its file first: a block whose file is missing would be left out by the port
-    const fs::path own = mod_dir / "missions" / path_u8(key) / "mission.p2";
-    const std::vector<std::uint8_t> game = read_bytes(game_file);
-    const WriteResult copied = write_into_mod(
-        mod_dir, own,
-        [&](const fs::path& temporary) {
-            std::string e = copy_bytes(game_file, temporary);
-            return e;
-        },
-        [&](const fs::path& temporary) {
-            return read_bytes(temporary) == game ? std::string() : "the copy differs from the game's file";
-        });
-    if (!copied.ok)
-        return fail_with(why, "missions/" + key + "/mission.p2: " + copied.why);
+    // a template's file first: a block whose file is missing would be left out by the port
+    if (template_file > 0) {
+        const fs::path own = mod_dir / "missions" / path_u8(key) / "mission.p2";
+        const std::vector<std::uint8_t> game = read_bytes(game_file);
+        const WriteResult copied = write_into_mod(
+            mod_dir, own, [&](const fs::path& temporary) { return copy_bytes(game_file, temporary); },
+            [&](const fs::path& temporary) {
+                return read_bytes(temporary) == game ? std::string() : "the copy differs from the game's file";
+            });
+        if (!copied.ok)
+            return fail_with(why, "missions/" + key + "/mission.p2: " + copied.why);
+    }
     if (!text.empty() && text.back() != '\n')
         text += '\n';
     if (text.empty())
         text = "# The mod's new missions (khdays-studio; docs/STUDIO.md, \"New missions\").\n";
     char block[512];
-    std::snprintf(block, sizeof(block),
-                  "\n[mission %s]\nname en = %s\nobjective en = %s\nworld = %s\nroom = %d\ntemplate = %04d\n",
-                  key.c_str(), key.c_str(), key.c_str(), world.c_str(), room, template_file);
+    std::snprintf(block, sizeof(block), "\n[mission %s]\nname en = %s\nobjective en = %s\nworld = %s\nroom = %d\n",
+                  key.c_str(), key.c_str(), key.c_str(), world.c_str(), room);
     text += block;
+    if (template_file > 0) {
+        std::snprintf(block, sizeof(block), "template = %04d\n", template_file);
+        text += block;
+    }
     return write_missions_txt(mod_dir, text, key, why);
 }
 
@@ -484,6 +496,7 @@ std::pair<std::string, std::string> mission_spot_line(const MissionSpot& s) {
 
 bool set_mod_mission_spots(const fs::path& nitrofs, const fs::path& mod_dir, const std::string& key,
                            const std::vector<MissionSpot>& spots, std::string* why) {
+    use_game_items(nitrofs);
     const std::string before = read_text(missions_txt(mod_dir));
     std::vector<std::string> lines = lines_of(before);
     std::size_t start, end;
@@ -559,6 +572,7 @@ std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMiss
 bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, const std::string& key, bool* has_waves,
                              std::vector<std::string>* off_floor, std::string* why) {
     *has_waves = false;
+    use_game_items(nitrofs);
     KhdaysMissions r{};
     Reports reports;
     read_registry(read_text(missions_txt(mod_dir)), &r, &reports);
@@ -582,6 +596,7 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
 }
 
 bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::vector<std::string>* lines) {
+    use_game_items(nitrofs);
     std::vector<std::string> problems;
     const std::vector<ModMission> missions = read_mod_missions(mod_dir, &problems);
     bool ok = true;
@@ -602,13 +617,17 @@ bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::v
                              std::to_string(w.rooms.size() - 1));
             ok = false;
         }
-        if (m.own_file) {
+        // as the port plays it (port/runtime/missions/missions.c): its places built, else its file, else its template's
+        if (m.built) {
+            about += ", made from its places";
+        } else if (m.own_file) {
             about += ", its own mission file";
         } else if (m.template_file != 0 &&
                    fs::is_regular_file(nitrofs / path_u8(mission_file_path(m.template_file)), ec)) {
             about += ", " + mission_file_path(m.template_file) + "'s file as it is";
         } else {
-            lines->push_back("problem: " + m.key + ": no missions/" + m.key + "/mission.p2 and no template's");
+            lines->push_back("problem: " + m.key + ": nothing to play yet: give it its players' start and a wave on " +
+                             "its map (or a template)");
             ok = false;
         }
         lines->push_back(about);

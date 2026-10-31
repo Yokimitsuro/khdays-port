@@ -160,6 +160,14 @@ static int read_wave(KhdaysMission *m, const char *number, char *value)
 /* Why the last chest or emblem line was refused, when its form was right. */
 static const char *refused_why;
 
+/* How many items the game has: a chest's contents is one of them, from item 1 (khdays_missions_set_items). */
+static int item_count;
+
+void khdays_missions_set_items(int count)
+{
+    item_count = count > 0 ? count : 0;
+}
+
 /* `chest = <item> at <x> <y> <z> <heading>`, `emblem = <kind> at <x> <y> <z>`, `start = <x> <y> <z> <facing>` */
 
 static int read_chest(KhdaysMission *m, char *value)
@@ -174,7 +182,16 @@ static int read_chest(KhdaysMission *m, char *value)
         return 0;
     }
     KhdaysMissionChest *c = &m->chests[m->chest_count];
-    if (!whole(words[0], 0, 0xffff, &c->item) || !point(&words[2], c->at) || !whole(words[5], -360, 360, &c->heading)) {
+    /* an item the game has: it reads that item's record as the mission starts (Ov002_BuildKeyEntryTable), and
+     * there is none for 0 nor past its last; the chest's row keeps it in 16 bits, signed */
+    static char item_why[96];
+    const int last = item_count > 0 ? item_count : 0x7fff;
+    if (!whole(words[0], 1, last, &c->item)) {
+        snprintf(item_why, sizeof(item_why), "chest: %.16s is no item of the game's (they are 1-%d)", words[0], last);
+        refused_why = item_why;
+        return 0;
+    }
+    if (!point(&words[2], c->at) || !whole(words[5], -360, 360, &c->heading)) {
         return 0;
     }
     ++m->chest_count;

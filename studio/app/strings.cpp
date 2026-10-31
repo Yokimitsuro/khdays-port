@@ -1537,6 +1537,24 @@ constexpr Row rows[] =
          {"Played on {0}'s file as the game has it.", "Jouée sur le fichier de {0} tel que le jeu l'a.",
           "Gespielt auf der Datei von {0}, wie das Spiel sie hat.", "Giocata sul file di {0} come il gioco lo ha.",
           "Se juega con el archivo de {0} tal como lo tiene el juego."}},
+        {S::new_missions_file_built,
+         {"The game makes it from its places on the map: the players' start, its waves, chests and emblems.",
+          "Le jeu la fait de ses lieux sur la carte : le départ des joueurs, ses vagues, coffres et emblèmes.",
+          "Das Spiel macht sie aus ihren Orten auf der Karte: dem Start der Spieler, ihren Wellen, Truhen und "
+          "Emblemen.",
+          "Il gioco la fa dai suoi luoghi sulla mappa: la partenza dei giocatori, le sue ondate, i forzieri e gli "
+          "emblemi.",
+          "El juego la hace con sus lugares del mapa: la salida de los jugadores, sus oleadas, cofres y emblemas."}},
+        {S::new_missions_file_none,
+         {"Nothing to play yet: put the players' start and a wave on its map, then save the places.",
+          "Rien à jouer pour l'instant : placez le départ des joueurs et une vague sur sa carte, puis enregistrez "
+          "les lieux.",
+          "Noch nichts zu spielen: Setze den Start der Spieler und eine Welle auf ihre Karte und speichere die "
+          "Orte.",
+          "Ancora niente da giocare: metti la partenza dei giocatori e un'ondata sulla sua mappa, poi salva i "
+          "luoghi.",
+          "Aún no hay nada que jugar: pon la salida de los jugadores y una oleada en su mapa y guarda los "
+          "lugares."}},
         {S::new_missions_save,
          {"Save to the mod ({0} changes)", "Enregistrer dans le mod ({0} changements)",
           "Im Mod speichern ({0} Änderungen)", "Salva nella mod ({0} modifiche)", "Guardar en el mod ({0} cambios)"}},
@@ -1673,11 +1691,13 @@ constexpr Row rows[] =
          {"No emblems in this mission.", "Aucun emblème dans cette mission.", "Keine Embleme in dieser Mission.",
           "Nessun emblema in questa missione.", "No hay emblemas en esta misión."}},
         {S::mission_sum_chests_note,
-         {"Where each chest is, which way it faces, and its contents' key: the number the game looks the item up by (which item each number is has not been read yet).",
-          "Où est chaque coffre, sa direction et la clé de son contenu : le nombre par lequel le jeu cherche l'objet (quel objet correspond à chaque nombre n'a pas encore été lu).",
-          "Wo jede Truhe steht, ihre Richtung und der Schlüssel ihres Inhalts: die Zahl, unter der das Spiel den Gegenstand sucht (welcher Gegenstand zu welcher Zahl gehört, ist noch nicht gelesen).",
-          "Dove si trova ogni forziere, la sua direzione e la chiave del contenuto: il numero con cui il gioco cerca l'oggetto (quale oggetto sia ogni numero non è ancora stato letto).",
-          "Dónde está cada cofre, hacia dónde mira y la clave de su contenido: el número con el que el juego busca el objeto (qué objeto es cada número aún no se ha leído)."}},
+         {"Where each chest is, which way it faces, and what it holds: the item's number among the game's items.",
+          "Où est chaque coffre, sa direction et ce qu'il contient : le numéro de l'objet parmi ceux du jeu.",
+          "Wo jede Truhe steht, ihre Richtung und was sie enthält: die Nummer des Gegenstands unter denen des "
+          "Spiels.",
+          "Dove si trova ogni forziere, la sua direzione e cosa contiene: il numero dell'oggetto tra quelli del "
+          "gioco.",
+          "Dónde está cada cofre, hacia dónde mira y lo que contiene: el número del objeto entre los del juego."}},
         {S::mission_sum_emblems_note,
          {"Where each of the mission's emblems is.", "Où se trouve chaque emblème de la mission.",
           "Wo jedes Emblem der Mission ist.", "Dove si trova ogni emblema della missione.",
@@ -1685,7 +1705,7 @@ constexpr Row rows[] =
         {S::mission_sum_chest, {"Chest {0}", "Coffre {0}", "Truhe {0}", "Forziere {0}", "Cofre {0}"}},
         {S::mission_sum_emblem, {"Emblem {0}", "Emblème {0}", "Emblem {0}", "Emblema {0}", "Emblema {0}"}},
         {S::mission_sum_contents,
-         {"contents (key)", "contenu (clé)", "Inhalt (Schlüssel)", "contenuto (chiave)", "contenido (clave)"}},
+         {"item", "objet", "Gegenstand", "oggetto", "objeto"}},
         {S::mission_sum_objective,
          {"Objective and events", "Objectif et événements", "Ziel und Ereignisse", "Obiettivo ed eventi",
           "Objetivo y eventos"}},
@@ -2250,22 +2270,29 @@ constexpr Row rows[] =
           "Missione {0} creata: metti la sua partenza e i suoi nemici sulla sua mappa.",
           "Misión {0} creada: pon su salida y sus enemigos en su mapa."}},
         {S::mw_new_template, {"Template", "Modèle", "Vorlage", "Modello", "Plantilla"}},
+        {S::mw_new_no_template,
+         {"None: made from its map", "Aucun : faite de sa carte", "Keine: aus ihrer Karte gemacht",
+          "Nessuno: fatta dalla sua mappa", "Ninguna: se hace con su mapa"}},
         {S::mw_new_template_note,
-         {"The template is the mission it starts as, played as the template is -- its kind, its enemies, its "
-          "scripts -- until its map has a start and waves; then the whole mission is made from them: every wave "
-          "to defeat.",
-          "Le modèle est la mission dont elle part, jouée comme lui -- son type, ses ennemis, ses scripts -- tant "
-          "que sa carte n'a pas de départ et de vagues ; alors toute la mission est faite d'elles : chaque vague à "
-          "vaincre.",
-          "Die Vorlage ist die Mission, von der sie ausgeht, gespielt wie die Vorlage -- ihre Art, ihre Gegner, "
-          "ihre Skripte --, bis ihre Karte einen Start und Wellen hat; dann wird die ganze Mission aus ihnen "
-          "gemacht: jede Welle besiegen.",
-          "Il modello è la missione da cui parte, giocata come il modello -- il suo tipo, i suoi nemici, i suoi "
-          "script -- finché la sua mappa non ha una partenza e delle ondate; allora l'intera missione è fatta da "
-          "esse: ogni ondata da sconfiggere.",
-          "La plantilla es la misión de la que parte, que se juega como ella -- su tipo, sus enemigos, sus "
-          "scripts -- hasta que su mapa tenga salida y oleadas; entonces la misión entera se hace con ellas: vencer "
-          "cada oleada."}},
+         {"Without a template the mission is made from what you put on its map: the players' start, its waves, "
+          "chests and emblems. With one, that game mission is played as it is -- its kind, enemies and scripts, in "
+          "its own world and rooms -- until its map's places are saved; then it is made from them.",
+          "Sans modèle, la mission est faite de ce que vous placez sur sa carte : le départ des joueurs, ses "
+          "vagues, coffres et emblèmes. Avec un modèle, cette mission du jeu est jouée telle quelle -- son type, "
+          "ses ennemis et ses scripts, dans son propre monde et ses salles -- tant que les lieux de sa carte ne "
+          "sont pas enregistrés ; ensuite elle est faite d'eux.",
+          "Ohne Vorlage wird die Mission aus dem gemacht, was du auf ihre Karte setzt: dem Start der Spieler, "
+          "ihren Wellen, Truhen und Emblemen. Mit einer wird diese Mission des Spiels so gespielt, wie sie ist -- "
+          "ihre Art, Gegner und Skripte, in ihrer eigenen Welt und ihren Räumen --, bis die Orte ihrer Karte "
+          "gespeichert sind; dann wird sie aus ihnen gemacht.",
+          "Senza modello la missione è fatta da ciò che metti sulla sua mappa: la partenza dei giocatori, le "
+          "ondate, i forzieri e gli emblemi. Con un modello, quella missione del gioco è giocata così com'è -- il "
+          "suo tipo, i nemici e gli script, nel suo mondo e nelle sue stanze -- finché i luoghi della mappa non "
+          "sono salvati; poi è fatta da essi.",
+          "Sin plantilla, la misión se hace con lo que pongas en su mapa: la salida de los jugadores, sus oleadas, "
+          "cofres y emblemas. Con plantilla, esa misión del juego se juega tal cual -- su tipo, enemigos y "
+          "scripts, en su propio mundo y salas -- hasta que guardes los lugares de su mapa; entonces se hace con "
+          "ellos."}},
         {S::mw_tab_settings,
          {"Words and settings",
           "Textes et réglages",
@@ -2387,11 +2414,10 @@ constexpr Row rows[] =
           "Direzione (gradi)",
           "Orientación (grados)"}},
         {S::mmap_contents,
-         {"Contents (item number)",
-          "Contenu (numéro d'objet)",
-          "Inhalt (Gegenstandsnummer)",
-          "Contenuto (numero dell'oggetto)",
-          "Contenido (número de objeto)"}},
+         {"What it holds", "Ce qu'il contient", "Was er enthält", "Cosa contiene", "Lo que contiene"}},
+        {S::mmap_contents_filter,
+         {"Search an item...", "Chercher un objet...", "Gegenstand suchen...", "Cerca un oggetto...",
+          "Buscar un objeto..."}},
         {S::mmap_wave,
          {"Wave",
           "Vague",

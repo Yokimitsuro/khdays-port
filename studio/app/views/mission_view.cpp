@@ -999,6 +999,7 @@ void read_new_missions(const Mod* m) {
                                        ? nm.missions[static_cast<std::size_t>(nm.chosen)].key
                                        : "";
     nm.mod = m != nullptr ? m->name : std::string();
+    use_game_items(nitrofs());  // a chest holds an item the game has
     nm.missions = m != nullptr ? read_mod_missions(m->dir, &nm.problems) : std::vector<ModMission>{};
     if (m == nullptr)
         nm.problems.clear();
@@ -1126,8 +1127,8 @@ struct NewMissionForm {
     int room = 0, rooms = 0;
     std::string rooms_for;
     std::vector<int> templates;  // the game's mission files
-    int template_file = 0;
-    bool show = false;  // asked open by a game mission's "New mission from this one"
+    int template_file = 0;       // 0: none, the mission made from its map
+    bool show = false;           // asked open by a game mission's "New mission from this one"
 };
 
 NewMissionForm form;
@@ -1147,8 +1148,6 @@ void draw_new_mission_form(App& app, const Mod& m) {
     const int rooms = form.rooms;
     if (form.templates.empty())
         form.templates = mission_numbers(nitrofs());
-    if (form.template_file == 0 && !form.templates.empty())
-        form.template_file = form.templates.front();
     const int template_file = form.template_file;
     ImGui::TextDisabled("%s", tr(lang, S::mw_new_key));
     ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
@@ -1166,6 +1165,8 @@ void draw_new_mission_form(App& app, const Mod& m) {
     ImGui::SliderInt(tr(lang, S::mw_new_room), &room, 0, std::max(0, rooms - 1));
     room = std::clamp(room, 0, std::max(0, rooms - 1));
     const auto label = [&](int file) {
+        if (file == 0)
+            return std::string(tr(lang, S::mw_new_no_template));
         char number[16];
         std::snprintf(number, sizeof(number), "%04d", file);
         const auto& names = mission_names(lang);
@@ -1174,13 +1175,22 @@ void draw_new_mission_form(App& app, const Mod& m) {
     };
     ImGui::SetNextItemWidth(30 * ImGui::GetFontSize());
     if (ImGui::BeginCombo(tr(lang, S::mw_new_template), label(template_file).c_str())) {
+        if (ImGui::Selectable(label(0).c_str(), template_file == 0))
+            form.template_file = 0;
         for (const int file : form.templates)
-            if (ImGui::Selectable(label(file).c_str(), file == template_file))
+            if (ImGui::Selectable(label(file).c_str(), file == template_file)) {
                 form.template_file = file;
+                // a template is played in its own world: the new mission listed there too
+                const auto& names = mission_names(lang);
+                const auto named = names.find(file);
+                if (named != names.end() && named->second.category >= 0 &&
+                    named->second.category < static_cast<int>(world_codes().size()))
+                    world = world_codes()[static_cast<std::size_t>(named->second.category)];
+            }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(key.empty() || rooms == 0 || template_file == 0);
+    ImGui::BeginDisabled(key.empty() || rooms == 0);
     if (ImGui::Button(tr(lang, S::mw_new_create))) {
         std::string why;
         if (new_mod_mission(nitrofs(), m.dir, key, template_file, world, room, &why)) {
@@ -1263,9 +1273,15 @@ void draw_new_missions(App& app) {
         ImGui::EndPopup();
     }
     ModMission& e = nm.edit;
-    ImGui::TextUnformatted(e.own_file
-                               ? fmt(lang, S::new_missions_file_own, {e.key}).c_str()
-                               : fmt(lang, S::new_missions_file_template, {mission_path(e.template_file)}).c_str());
+    // how the port plays it (port/runtime/missions/missions.c): its places built, else its file, else its template's
+    const std::string played = e.built      ? std::string(tr(lang, S::new_missions_file_built))
+                               : e.own_file ? fmt(lang, S::new_missions_file_own, {e.key})
+                               : e.template_file != 0
+                                   ? fmt(lang, S::new_missions_file_template, {mission_path(e.template_file)})
+                                   : std::string(tr(lang, S::new_missions_file_none));
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(played.c_str());
+    ImGui::PopTextWrapPos();
     // saving: each changed setting written and read back as the port reads it
     ImGui::BeginDisabled(changes.empty());
     if (ImGui::Button(fmt(lang, S::new_missions_save, {std::to_string(changes.size())}).c_str())) {
@@ -1292,7 +1308,17 @@ void draw_new_missions(App& app) {
     if (!ImGui::BeginTabBar("##newmissiontabs"))
         return;
     if (ImGui::BeginTabItem(tr(lang, S::mmap_tab))) {
-        draw_mission_map(app, *m, e.key, e.world, e.room);
+        if (draw_mission_map(app, *m, e.key, e.world, e.room)) {
+            // how it is played may have changed: that read again, the words being edited kept
+            for (const ModMission& read : read_mod_missions(m->dir, &nm.problems))
+                if (read.key == e.key) {
+                    e.built = read.built;
+                    e.start = read.start;
+                    e.lines = read.lines;
+                    if (nm.chosen >= 0 && nm.chosen < static_cast<int>(nm.missions.size()))
+                        nm.missions[static_cast<std::size_t>(nm.chosen)] = read;
+                }
+        }
         ImGui::EndTabItem();
     }
     if (!ImGui::BeginTabItem(tr(lang, S::mw_tab_settings))) {

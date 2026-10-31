@@ -104,6 +104,16 @@ std::vector<GameItem> game_items(const fs::path& nitrofs, const std::string& lan
     return items;
 }
 
+int game_item_records(const fs::path& nitrofs) {
+    std::vector<std::uint8_t> records;
+    std::string reason;
+    if (!entry_of(nitrofs / "db" / "db.p2", kItemsEntry, &records, &reason) || records.size() < 4)
+        return 0;
+    const std::uint32_t count =
+        records[0] | records[1] << 8 | records[2] << 16 | static_cast<std::uint32_t>(records[3]) << 24;
+    return count <= 0x7fffu ? static_cast<int>(count) : 0x7fff;
+}
+
 std::vector<GameItem> game_gears(const std::vector<GameItem>& items) {
     std::vector<GameItem> out;
     for (const auto& i : items)

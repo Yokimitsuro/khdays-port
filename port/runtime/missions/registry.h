@@ -98,6 +98,10 @@ typedef void (*KhdaysMissionsReport)(const char *mod, int line, const char *why,
 /* The game's two letters of language `l` (0-4): "en" ... */
 const char *khdays_mission_language(int l);
 
+/* How many items the game has (db/db.p2 entry 0x15's count), set before missions are read: a chest's contents is an
+ * item from 1 to it. 0 leaves it unknown (any item from 1). */
+void khdays_missions_set_items(int count);
+
 /* Adds mod `id`'s missions (its folder under mods/) from its missions.txt, `size` bytes. A block that does not
  * read is left out and reported; the others are kept. Returns how many were added. */
 int khdays_missions_read(KhdaysMissions *r, const char *id, const char *folder, const char *text, size_t size,
