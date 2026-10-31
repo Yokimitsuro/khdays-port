@@ -69,7 +69,11 @@ struct TextureFrame final {
     int sprite = 0;
 };
 
-// TEXA: sprites drawn over part of a texture in turn (blinking lights, eyes).
+// TEXA: sprites drawn over part of a texture in turn (blinking lights, eyes). Laid out as KH2's PS3 build
+// reads it (kn::TEXAnmWork::getSequenceNo, set, play, getPixelData): u16 target at +2, layers +4, bits per
+// pixel +6, first and last slot id +8 and +10, animation count +12, sprite count +14, x (low 12 bits) +16,
+// y +18, width +20, height +22; offsets of the slot table +24, the animation table +28, the sprites' pixels +32;
+// the default animation +36.
 struct TextureAnimation final {
     int target = 0;  // GS info index in the container
     int sprite_count = 0;
@@ -80,6 +84,13 @@ struct TextureAnimation final {
     int default_animation = 0;
     std::vector<std::vector<TextureFrame>> animations;
     int hd_sheet = -1;  // its sprites' HD sheet, numbered within the container (see TextureContainer)
+    // the animation a slot id picks (ids first_slot + k, -1 none): what a motion's range or an event names
+    // (kn::ModelObj::setTexanm); an id outside the table is not this animation's
+    int first_slot = 0;
+    std::vector<int> slot_animation;
+    int layers = 0;              // sprites shown at once (one more than this); only the first is read
+    int bits_per_pixel = 8;      // the sprites' pixels: indices into the target's palette
+    std::size_t sprites_at = 0;  // where the sprites' pixels start in the file (0: none)
 };
 
 struct TextureContainer final {
@@ -100,6 +111,12 @@ TextureContainer read_textures(const std::uint8_t* data, std::size_t size, std::
 // the container's packets send them, then read back as the texture's format.
 // 8-bit textures only; throws std::runtime_error naming what it cannot decode.
 DecodedTexture read_texture_picture(const std::uint8_t* data, std::size_t size, std::size_t at, std::size_t index);
+
+// TEXA `animation`'s sprites decoded to RGBA (width x height each) through the palette of the GS info it is
+// drawn over, as KH2 uploads them into that texture (kn::TEXAnmWork::getPixelData). 8-bit sprites only; throws
+// std::runtime_error as read_texture_picture does.
+std::vector<std::vector<std::uint8_t>> read_texture_sprites(const std::uint8_t* data, std::size_t size, std::size_t at,
+                                                            const TextureAnimation& animation);
 
 // TIM2 pictures (radar): 4-bit, 8-bit (palette in the PS2's order) or 32-bit;
 // PS2 alpha (0x80 = opaque) widened to 0..255.

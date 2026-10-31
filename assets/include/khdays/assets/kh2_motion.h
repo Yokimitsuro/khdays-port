@@ -87,6 +87,27 @@ private:
     float start_ = 0.0F, end_ = 0.0F, fps_ = 30.0F, ret_ = 0.0F;
 };
 
+// A motion's attributes (its entry's inner BAR entry of type 0x10, KH2's YS::ANMATR): what happens between two
+// of its frames (ranges) and on one (triggers), each an id and its 16-bit parameters. u8 range count, u8 trigger
+// count, u16 the triggers' offset; a range u16 start, u16 end, u8 id, u8 parameter count, the parameters; a
+// trigger u16 frame, u8 id, u8 parameter count, the parameters (YS::ANMATR::CheckRangeCallback and
+// ExecTriggerCallback act on them: range 23 holds a texture animation's slot, trigger 4 sets its default, 5
+// puts the file's back).
+struct MotionAttributes final {
+    struct Range {
+        int start = 0, end = 0;  // the motion's ticks (Motion::length_ticks)
+        int id = 0;
+        std::vector<std::uint16_t> params;
+    };
+    struct Trigger {
+        int frame = 0;
+        int id = 0;
+        std::vector<std::uint16_t> params;
+    };
+    std::vector<Range> ranges;
+    std::vector<Trigger> triggers;
+};
+
 // An .mset's motions by slot (its BAR entry index). An empty slot (DUMM, a size
 // of 0) or one that is not a MotionPrototype0 has none.
 class MotionSet final {
@@ -96,11 +117,13 @@ public:
         return motions_.size();
     }
     const Motion* motion(std::size_t slot) const;
-    std::string name(std::size_t slot) const;  // its BAR entry's (R000, ...)
+    std::string name(std::size_t slot) const;                    // its BAR entry's (R000, ...)
+    const MotionAttributes* attributes(std::size_t slot) const;  // none: null
 
 private:
     std::vector<std::shared_ptr<Motion>> motions_;
     std::vector<std::string> names_;
+    std::vector<std::shared_ptr<MotionAttributes>> attributes_;
 };
 
 // IKAdjust's ground: a segment from `from` to `to` in the space `world` takes

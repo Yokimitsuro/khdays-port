@@ -202,6 +202,76 @@ Bytes textures(unsigned psm) {
     return w.b;
 }
 
+// The textures above with a texture animation in their footer (TEXA, then _KN5): two 2 x 2 sprites drawn at
+// (4, 6); slot ids 30..33, 30 its first animation (sprite 0 for 2 frames, then stop), 33 its second (sprite 1 for
+// 4-8 frames, then back); the sprites' pixels palette indices 10-13 and 20-23.
+Bytes textures_with_face() {
+    Writer w;
+    const Bytes base = textures(0x13);
+    w.b = base;
+    for (const char c : std::string("TEXA")) {
+        w.u8(static_cast<unsigned>(c));
+    }
+    w.u32(96);
+    const std::size_t t = w.size();
+    w.u16(0);   // +0
+    w.u16(0);   // target: GS info 0
+    w.u16(0);   // layers
+    w.u16(8);   // bits per pixel
+    w.u16(30);  // first slot id
+    w.u16(33);  // last
+    w.u16(2);   // animations
+    w.u16(2);   // sprites
+    w.u16(4);   // x
+    w.u16(6);   // y
+    w.u16(2);   // width
+    w.u16(2);   // height
+    w.u32(40);  // slot table
+    w.u32(48);  // animation table
+    w.u32(88);  // sprites
+    w.u32(0);   // default animation
+    for (const unsigned s : {1U, 0U, 0U, 2U}) {
+        w.u16(s);
+    }
+    w.u32(56);
+    w.u32(72);
+    for (const unsigned v : {0U, 2U, 2U, 0U, 3U, 0U, 0U, 0U}) {  // sprite 0 for 2 frames; stop
+        w.u16(v);
+    }
+    for (const unsigned v : {0U, 4U, 8U, 1U, 2U | (0xFFFU << 4U), 0U, 0U, 0U}) {  // sprite 1 for 4-8; back 1
+        w.u16(v);
+    }
+    for (const unsigned p : {10U, 11U, 12U, 13U, 20U, 21U, 22U, 23U}) {
+        w.u8(p);
+    }
+    expect(w.size() == t + 96, "the TEXA chunk's size");
+    for (const char c : std::string("_KN5")) {
+        w.u8(static_cast<unsigned>(c));
+    }
+    w.u32(0);
+    return w.b;
+}
+
+void test_face() {
+    const Bytes file = bar({{0x04, model(true)}, {0x07, textures_with_face()}});
+    const auto m = kh2::import_mdlx(file.data(), file.size(), "test");
+    expect(m.textures.size() == 1 && m.texture_animations.size() == 1, "the texture and its animated part");
+    const auto& a = m.texture_animations[0];
+    expect(a.texture == "tex0" && a.x == 4 && a.y == 6 && a.width == 2 && a.height == 2, "drawn over tex0 at (4, 6)");
+    expect(a.first_slot == 30 && a.slot_script == std::vector<int>{0, -1, -1, 1}, "slot 30 the first, 33 the second");
+    using Kind = khdays::assets::ImportedTextureAnimation::Step::Kind;
+    expect(a.scripts.size() == 2 && a.scripts[0].size() == 2 && a.scripts[0][1].kind == Kind::stop,
+           "the first: a sprite, then stop");
+    const auto& s = a.scripts[1];
+    expect(s.size() == 2 && s[0].sprite == 1 && s[0].min_frames == 4 && s[0].max_frames == 8 &&
+               s[1].kind == Kind::jump && s[1].jump == -1,
+           "the second: sprite 1 for 4-8 frames, then back one");
+    expect(a.sprites.size() == 2 && a.sprites[0].size() == 16U, "two 2 x 2 RGBA sprites");
+    // colour k = (k, 255 - k, 7, 0x40) in the palette as the GS keeps it (CSM1): index 10 is entry 18, 20 is entry 12
+    expect(a.sprites[0][0] == 18 && a.sprites[0][1] == 237 && a.sprites[0][3] == 0x80, "index 10 through the palette");
+    expect(a.sprites[1][0] == 12, "index 20: entries 8-15 and 16-23 swapped");
+}
+
 void test_model() {
     const Bytes file = bar({{0x04, model(true)}, {0x07, textures(0x13)}});
     const auto m = kh2::import_mdlx(file.data(), file.size(), "test");
@@ -269,6 +339,7 @@ void test_refusals() {
 int main() {
     try {
         test_model();
+        test_face();
         test_weightless();
         test_refusals();
     } catch (const std::exception& e) {

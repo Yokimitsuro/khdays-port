@@ -382,6 +382,75 @@ by `Vec3ScaleAddQ27` as the game finds it.
 flag (the motion object's bit 0) and what it does with a hit beyond the foot
 (`check_ik`: a script callback); the hips are not lowered on a slope.
 
+## Faces (texture animation)
+
+A character's eyes and mouth are sprites drawn over a rectangle of one of its
+textures: a `TEXA` chunk each in the footer after the texture data (then
+`_KN5`). Layout from the PS3 EBOOT (`kn::TEXAnmWork::getSequenceNo`, `::set`,
+`::play`, `::getPixelData`, `::getX`, `::getW`); offsets into the chunk's body,
+little-endian on the PC:
+
+| Offset | Field |
+|---|---|
+| +2 | target texture (GS info index) |
+| +4 | layers (`multi`) |
+| +6 | bits per pixel (8 seen) |
+| +8, +10 | first and last slot id |
+| +12, +14 | script and sprite counts |
+| +16 | x (& 0xfff; 0x1000: the size is the texture's) |
+| +18, +20, +22 | y, width, height |
+| +24 | slot table: a u16 per id, script + 1 (0 none) |
+| +28 | script table (u32 offsets) |
+| +32 | sprite pixels, row-major, sprite i at i x w x h, the target's palette |
+| +36 | default script |
+
+A script's steps are 8 + 2 x layers bytes: u16 code (low 4 bits: 0 a sprite,
+1 the texture's own picture, 2 a jump by the signed 12-bit `code >> 4` steps
+from the jump's own step, 3 stop), u16 min and max frames (`vrand(min, max +
+1)`), u16 sprite. `play()` plays the default script unless `set(slot)` was
+called since the last play; a script that starts shows its first step a frame
+before it moves. Each draw sends the whole texture, then the sprite of each
+script at a sprite step (`kn::ModelSKL::setTexture`): a stop or a base step
+shows the texture's own picture.
+
+N_EX830: eyes over tex1 at (0, 20), 96 x 48, 18 sprites, default slot 12
+(sprite 4 for 2, sprite 5 for 6, sprite 0 for 30-240: the blink); slots 1, 3,
+5, 7 hold shapes 0-3, 13/15/17/19 the same shapes blinking, 10 closed, 65-162
+the special eyes (no blinking variants). Mouth over tex1 at (18, 76), 48 x 32,
+17 sprites, default slot 30 (closed); 33 talks, 64 and 161 talk in other
+shapes, 66-163 shapes.
+
+**Motion attributes** (an mset entry's inner BAR entry of type 0x10,
+`YS::ANMATR`): u8 range count, u8 trigger count, u16 the triggers' offset;
+ranges u16 start, u16 end, u8 id, u8 parameter count, u16 parameters; triggers
+u16 frame, u8 id, u8 parameter count, parameters. Frames are the motion's ticks
+(R000 is 300 ticks long and its ranges end at 300). `CheckRangeCallback`: range
+23 holds a face slot every frame it covers (`OBJ::texanm_set` ->
+`ModelObj::setTexanm` -> `TEXAnmWork::set`). `ExecTriggerCallback`: trigger 4
+sets the default script (`texanm_start` -> `setDefaultSequence`), 5 puts the
+file's back (`texanm_stop` -> `resetDefaultSequence`). Field talk
+(`SYSRC::TalkThread`) starts slot 33 for the talk and stops it after.
+
+**In the port** (`runtime/mods/face.cpp`, `models.cpp` `play_face`): the face
+plays once a game frame (one for all actors of a model; VBlanks taken as KH2's
+60 Hz frames) and the changed rectangle is patched into a changing copy of the
+texture. A block holds, first that applies: `face talk <slot>` while the
+dialogue's text types (a letter within 6 VBlanks) and its portrait is one of
+`face speaker <portrait>...`; `face ds <pattern animation> <slot>` while the
+game plays that texture pattern animation (its render object's anmMat; the
+cutscene Roxas closes his eyes with `e_ro_eye02`), unless the slot it would
+cover is one of `face closed <slot>...` (eyes already closed); `face portrait
+<portrait> [last|<slot>...] [talk <slot>]` for the speaker's last portrait
+(`last`: each block's last script; `talk`: the talk slot while it shows, in
+place of `face talk`), held across boxes and other speakers until his next
+portrait, dropped when the model goes undrawn for 5 seconds (another scene);
+the playing KH2 motion's ranges (`face ranges off` leaves them and the
+triggers out). Lines in `<model>.motions.txt`. The portrait comes from
+`Ov002_SceneApplyPanelRequest` (pReq[5]) and ends with
+`Ov002_SceneClosePanelStep`; letters from the text crawl (`ui/text.c`).
+Unverified: that Roxas's portraits are 30 and 131-141, and that cutscene
+dialogue goes through the same panel.
+
 ## Secondary motion
 
 A KH2 model's coat, cords and hair can be simulated over its motions (or the

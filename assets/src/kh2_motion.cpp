@@ -613,24 +613,73 @@ Mat4 Motion::root_motion(const float ticks) const {
 
 // --- The set ---
 
+namespace {
+
+// A motion's attributes from `at` (MotionAttributes); null when they run past `end`
+std::shared_ptr<MotionAttributes> read_attributes(const std::uint8_t* data, const std::size_t at,
+                                                  const std::size_t end) {
+    if (end < at + 4) {
+        return nullptr;
+    }
+    const auto u16 = [&](std::size_t p) { return static_cast<std::uint16_t>(data[p] | (data[p + 1] << 8U)); };
+    auto out = std::make_shared<MotionAttributes>();
+    const unsigned ranges = data[at], triggers = data[at + 1];
+    std::size_t p = at + 4;
+    for (unsigned k = 0; k < ranges; ++k) {
+        if (p + 6 > end || p + 6 + 2U * data[p + 5] > end) {
+            return nullptr;
+        }
+        MotionAttributes::Range r{u16(p), u16(p + 2), data[p + 4], {}};
+        for (unsigned n = 0; n < data[p + 5]; ++n) {
+            r.params.push_back(u16(p + 6 + 2U * n));
+        }
+        p += 6 + 2U * data[p + 5];
+        out->ranges.push_back(std::move(r));
+    }
+    if (const std::uint16_t offset = u16(at + 2); offset != 0) {
+        p = at + offset;
+    }
+    for (unsigned k = 0; k < triggers; ++k) {
+        if (p + 4 > end || p + 4 + 2U * data[p + 3] > end) {
+            return nullptr;
+        }
+        MotionAttributes::Trigger t{u16(p), data[p + 2], {}};
+        for (unsigned n = 0; n < data[p + 3]; ++n) {
+            t.params.push_back(u16(p + 4 + 2U * n));
+        }
+        p += 4 + 2U * data[p + 3];
+        out->triggers.push_back(std::move(t));
+    }
+    return out;
+}
+
+}  // namespace
+
 MotionSet::MotionSet(const std::uint8_t* data, const std::size_t size) {
     for (const BarEntry& e : bar_entries(data, size)) {
         names_.push_back(e.name);
         std::shared_ptr<Motion> motion;
+        std::shared_ptr<MotionAttributes> attributes;
         if (e.size != 0 && is_bar(data, size, e.offset)) {
             for (const BarEntry& inner : bar_entries(data, e.offset + e.size, e.offset, true)) {
-                if (inner.type == 0x09 && inner.size > 0x90) {
+                if (inner.type == 0x09 && inner.size > 0x90 && !motion) {
                     try {
                         motion = std::make_shared<Motion>(data, inner.offset + inner.size, inner.offset + 0x90);
                     } catch (const std::runtime_error&) {
                         motion.reset();  // a slot it cannot play: the caller falls back
                     }
-                    break;
+                } else if (inner.type == 0x10 && inner.size >= 4 && !attributes) {
+                    attributes = read_attributes(data, inner.offset, inner.offset + inner.size);
                 }
             }
         }
         motions_.push_back(std::move(motion));
+        attributes_.push_back(std::move(attributes));
     }
+}
+
+const MotionAttributes* MotionSet::attributes(const std::size_t slot) const {
+    return slot < attributes_.size() ? attributes_[slot].get() : nullptr;
 }
 
 const Motion* MotionSet::motion(const std::size_t slot) const {

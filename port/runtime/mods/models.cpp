@@ -25,6 +25,7 @@ KhdaysRef GetTrackEntryBase(int index);
 KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
 void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, KhdaysRef out);
 }
+#include "face.h"
 #include "names.h"
 #include "room_animation.h"
 #include "../characters/characters.h"
@@ -349,6 +350,41 @@ struct Kh2Section {
     std::array<float, 3> offset{}, offset_to{};
 };
 
+// A KH2 face's eyes or mouth (face.h) and the sprite last patched in (-2 none yet)
+struct FaceBlock {
+    khdays::assets::ImportedTextureAnimation animation;
+    std::unique_ptr<khdays::face::Player> player;
+    int shown = -2;
+    int last_slot = -1; // the slot of its last script (`face portrait ... last`)
+};
+// A texture faces are drawn over, as one alpha tag made it: changing, its picture kept to put back
+struct FaceTexture {
+    std::string key;
+    int replacement = -1, width = 0, height = 0;
+    std::vector<std::uint8_t> picture; // RGBA, alpha as made
+    int alpha = 0;                     // 0 kept, 1 opaque, 2 cut at `least`
+    std::uint8_t least = 0;
+};
+// motions.txt's `face portrait` line: slots held while that portrait is its speaker's (-2: each block's last
+// script) and the talk slot then in place of `face talk` (-1 that one)
+struct FacePortrait {
+    int portrait = -1;
+    std::vector<int> slots;
+    int talk = -1;
+};
+// motions.txt's `face` lines: what holds a face's slots besides its motions' ranges
+struct FaceConfig {
+    int talk = -1;                               // `face talk <slot>`: while its character's text types
+    std::vector<int> speakers;                   // `face speaker <portrait>...`: the dialogue's portraits that are it
+    std::vector<std::pair<std::string, int>> ds; // `face ds <pattern animation> <slot>`: while the game plays it
+    bool ranges = true;                          // `face ranges off`: the motions' ranges and triggers left out
+    // `face portrait <portrait> [last|<slot>...] [talk <slot>]`: slots held while that portrait shows (each on the
+    // block that has it) and its talk. A held shape has no blink; its blinking variant, when the face has one, is a
+    // slot of its own (N_EX830's eyes: 13, 15, 17, 19)
+    std::vector<FacePortrait> portraits;
+    std::vector<int> closed; // `face closed <slot>...`: eyes already closed, which `face ds` leaves as they are
+};
+
 struct Model {
     std::string name;
     std::vector<Joint> joints;
@@ -401,6 +437,13 @@ struct Model {
     std::map<std::string, std::vector<std::pair<std::size_t, Mat>>> ds_turns;
     // its secondary motion (<model>.secondary.txt: cloth, cords, hair), on top of whatever poses it
     khdays::secondary::ModelSecondaryPtr secondary;
+    // its face (one for all its actors), on the game's clock
+    std::vector<std::unique_ptr<FaceBlock>> face_blocks;
+    std::vector<FaceTexture> face_textures;
+    FaceConfig face;
+    u32 face_vblank = 0;
+    bool face_clock = false;
+    int face_portrait = -1; // the last of its speaker's portraits shown, held until the next (-1 none)
 };
 
 int trace = -1;
@@ -415,7 +458,8 @@ struct Playing {
     float frames = 0.0F; // the J0AC's u16 at +4
 };
 std::vector<Playing> playing;
-std::map<u32, std::string> animation_names;                             // by the J0AC's DS address
+std::vector<std::string> materials_playing; // the texture pattern animations on its anmMat chain (the eyes)
+std::map<u32, std::string> animation_names; // by the J0AC's DS address
 std::map<const void *, std::vector<std::pair<bool, Mat>>> node_results; // by render object: draw()'s per node
 const void *drawn_object = nullptr; // the render object being drawn: which actor's model
 Mat drawn_start = kIdentity;        // the position matrix as the draw starts: the view times the actor's world matrix
@@ -430,6 +474,7 @@ struct Kh2Track {
     std::unique_ptr<khdays::assets::kh2::MotionPlayer> player;
     float ticks = 0.0F;
     std::vector<khdays::assets::kh2::Mat4> joints; // the pose shown: the model's bones
+    float face_ticks = -1.0F;                      // the motion time last shown, for its triggers (-1 none)
 };
 // A game animation an actor plays: its section and the motion time it last showed, the pose fading out
 // (kept as it was last shown) with the frames left of the fade, its frame and forward step at its last
@@ -452,6 +497,17 @@ struct Kh2Actor {
     std::map<std::string, Kh2Animation> animations; // by game animation
 };
 std::map<const void *, Kh2Actor> kh2_actors; // by render object
+// The KH2 motion with the most weight in this draw, for the face: its attributes, its time and the time it
+// showed the draw before (-1: it starts)
+struct FaceMotion {
+    const khdays::assets::kh2::MotionAttributes *attributes = nullptr;
+    float ticks = 0.0F, before = -1.0F;
+};
+FaceMotion face_motion;
+// the dialogue (khdays_models_dialogue_*): its speaker's portrait (-1 none) and the VBlank a letter last typed
+int dialogue_speaker = -1;
+u32 dialogue_typed = 0;
+bool dialogue_typing = false;
 
 std::filesystem::path u8(const std::string &path)
 {
@@ -935,6 +991,60 @@ void load_kh2_motions(Model &model, const std::string &path)
             }
             weapons.emplace_back(b, static_cast<int>(n));
             weapon_degrees[b] = by;
+        } else if (a == "face") {
+            std::string w;
+            bool ok = true;
+            if (b == "talk") {
+                ok = static_cast<bool>(words >> model.face.talk);
+            } else if (b == "speaker") {
+                int from = 0, to = 0;
+                while (ok && words >> w) {
+                    ok = span(w, from, to);
+                    for (int x = from; ok && x <= to; ++x)
+                        model.face.speakers.push_back(x);
+                }
+            } else if (b == "ds") {
+                int slot = 0;
+                ok = words >> w >> slot && slot >= 0;
+                if (ok)
+                    model.face.ds.emplace_back(w, slot);
+            } else if (b == "portrait") {
+                FacePortrait shown;
+                ok = static_cast<bool>(words >> shown.portrait);
+                while (ok && words >> w) {
+                    if (w == "talk") {
+                        ok = words >> shown.talk && shown.talk >= 0;
+                        continue;
+                    }
+                    char *end = nullptr;
+                    const long n = std::strtol(w.c_str(), &end, 10);
+                    ok = w == "last" || (end != w.c_str() && *end == '\0' && n >= 0);
+                    shown.slots.push_back(w == "last" ? -2 : static_cast<int>(n));
+                }
+                ok = ok && (!shown.slots.empty() || shown.talk >= 0);
+                if (ok)
+                    model.face.portraits.push_back(std::move(shown));
+            } else if (b == "closed") {
+                int from = 0, to = 0;
+                ok = false;
+                while (words >> w) {
+                    ok = span(w, from, to);
+                    if (!ok)
+                        break;
+                    for (int x = from; x <= to; ++x)
+                        model.face.closed.push_back(x);
+                }
+            } else if (b == "ranges") {
+                ok = static_cast<bool>(words >> w) && (w == "on" || w == "off");
+                model.face.ranges = w != "off";
+            } else {
+                ok = false;
+            }
+            if (!ok)
+                say("\"" + line +
+                    "\": write `face talk <slot>`, `face speaker <portrait>...`, `face ds <pattern animation> <slot>`, "
+                    "`face portrait <portrait> [last|<slot>...] [talk <slot>]`, `face closed <slot>...` or `face ranges on|off`; the line is "
+                    "ignored");
         } else if (a == "ds_pose") {
             // ds_pose <slot>[@<frame>] | rotate <x> <y> <z>, then bones (`135-156`), then [for <animation>...]
             DsPoseRule rule;
@@ -1663,6 +1773,22 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         bool translucent = false;
     };
     std::map<std::string, Made> made;
+    // the face's blocks (a KH2 model's eyes and mouth): the textures under them made changing
+    std::set<std::string> face_keys;
+    for (auto &a : mod.texture_animations) {
+        if (a.sprites.empty() || a.scripts.empty())
+            continue;
+        face_keys.insert(a.texture);
+        auto block = std::make_unique<FaceBlock>();
+        block->animation = std::move(a);
+        const auto &slots = block->animation.slot_script;
+        for (std::size_t i = 0; i < slots.size(); ++i)
+            if (slots[i] == static_cast<int>(block->animation.scripts.size()) - 1)
+                block->last_slot = block->animation.first_slot + static_cast<int>(i);
+        block->player = std::make_unique<khdays::face::Player>(
+            block->animation, static_cast<std::uint32_t>(0x9E3779B9U * (model->face_blocks.size() + 1)));
+        model->face_blocks.push_back(std::move(block));
+    }
     auto texture_for = [&](const std::string &key, AlphaMode mode, float cutoff) -> const Made * {
         const auto t = texture_of.find(key);
         if (t == texture_of.end())
@@ -1689,7 +1815,27 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             partial = partial || (pixels[i] != 0 && pixels[i] != 255);
         }
         Made m;
-        m.replacement = khdays_textures_add((name + "/" + key + tag).c_str(), texture.width, texture.height, pixels);
+        if (face_keys.count(key)) { // changing: the face's sprites patched in as they play
+            FaceTexture f;
+            f.key = key;
+            f.width = texture.width;
+            f.height = texture.height;
+            f.picture.assign(pixels, pixels + bytes);
+            f.alpha = mode == AlphaMode::opaque ? 1 : mode == AlphaMode::mask ? 2 : 0;
+            f.least = least;
+            std::free(pixels);
+            f.replacement = khdays_textures_add_changing((name + "/" + key + tag + "@face").c_str(), texture.width,
+                                                         texture.height, 0);
+            if (f.replacement < 0)
+                return nullptr;
+            std::memcpy(khdays_textures_change_begin(f.replacement), f.picture.data(), bytes);
+            khdays_textures_change_end(f.replacement);
+            m.replacement = f.replacement;
+            model->face_textures.push_back(std::move(f));
+        } else {
+            m.replacement =
+                khdays_textures_add((name + "/" + key + tag).c_str(), texture.width, texture.height, pixels);
+        }
         m.w = texture.width;
         m.h = texture.height;
         m.translucent = mode == AlphaMode::blend || (mode == AlphaMode::unknown && partial);
@@ -2638,6 +2784,7 @@ void play_kh2(Model &m, const Mat &base)
         const kh2::Motion *motion;
         float ticks;
         std::array<float, 3> offset; // KH2 centimetres
+        FaceMotion face;
     };
     std::vector<Pose> poses;
     float total = 0.0F, game = 0.0F;
@@ -2748,16 +2895,24 @@ void play_kh2(Model &m, const Mat &base)
         else
             track.joints = track.player->joints();
         a.shown = ticks;
+        const FaceMotion face{m.kh2_motions->attributes(section.slot), ticks, enters ? -1.0F : track.face_ticks};
+        track.face_ticks = ticks;
         // `offset`, gliding to its `to` over the motion's length
         const float along = motion->length_ticks() > 0.0F ? std::fmin(1.0F, ticks / motion->length_ticks()) : 0.0F;
         for (std::size_t i = 0; i < 3; ++i)
             a.shown_offset[i] = section.offset[i] + (section.offset_to[i] - section.offset[i]) * along;
         if (faded > 0.0F)
-            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset});
-        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset});
+            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}});
+        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face});
     }
     if (poses.empty())
         return;
+    const Pose *most = &poses.front();
+    for (const Pose &pose : poses)
+        if (pose.weight > most->weight)
+            most = &pose;
+    if (most->weight >= game)
+        face_motion = most->face;
     if (!(total > 0.0F)) {
         total = poses.back().weight = 1.0F;
         game = 0.0F;
@@ -2794,6 +2949,109 @@ void play_kh2(Model &m, const Mat &base)
         }
         skin[j] = blended;
     }
+}
+
+// The face's frame (face.h), once a game frame: each block's slot held by what comes first -- its character's
+// text typing (`face talk`), the game's pattern animation (`face ds`: its eyes closed) unless what it would cover
+// is `face closed`, its speaker's last portrait (`face portrait`, held across boxes until the next of his), the
+// KH2 motion's ranges (id 23) --, the motion's triggers passed (4 a default, 5 the file's back), then the frames
+// since the last played. A block whose sprite changes is patched into each copy of its texture (KH2 sends the
+// texture, then the sprites over it: kn::ModelSKL::setTexture)
+void play_face(Model &m)
+{
+    if (m.face_blocks.empty())
+        return;
+    const u32 now = khdays_events_vblank_count();
+    const u32 frames = m.face_clock ? now - m.face_vblank : 1U;
+    if (m.face_clock && frames == 0)
+        return; // drawn again this frame: another actor, or a part
+    if (m.face_clock && frames > 300U)
+        m.face_portrait = -1; // not drawn for 5 seconds: another scene
+    m.face_clock = true;
+    m.face_vblank = now;
+    if (std::find(m.face.speakers.begin(), m.face.speakers.end(), dialogue_speaker) != m.face.speakers.end())
+        m.face_portrait = dialogue_speaker;
+    if (khdays_link_paused())
+        return;
+    const FacePortrait *portrait = nullptr;
+    for (const FacePortrait &shown : m.face.portraits)
+        if (shown.portrait == m.face_portrait)
+            portrait = &shown;
+    const int talk = portrait != nullptr && portrait->talk >= 0 ? portrait->talk : m.face.talk;
+    const bool talking =
+        talk >= 0 && dialogue_typing && now - dialogue_typed <= 6U &&
+        std::find(m.face.speakers.begin(), m.face.speakers.end(), dialogue_speaker) != m.face.speakers.end();
+    int ds_slot = -1;
+    for (const auto &[pattern, slot] : m.face.ds)
+        if (std::find(materials_playing.begin(), materials_playing.end(), pattern) != materials_playing.end())
+            ds_slot = slot;
+    const auto *attributes = m.face.ranges ? face_motion.attributes : nullptr;
+    const float ticks = face_motion.ticks, before = face_motion.before;
+    for (auto &block : m.face_blocks) {
+        khdays::face::Player &player = *block->player;
+        int held = -1;
+        if (attributes != nullptr) {
+            for (const auto &t : attributes->triggers) {
+                const auto f = static_cast<float>(t.frame);
+                const bool passed = before < 0.0F     ? f <= ticks
+                                    : ticks >= before ? f > before && f <= ticks
+                                                      : f > before || f <= ticks; // looped
+                if (passed && t.id == 4 && !t.params.empty())
+                    player.set_default(t.params[0]);
+                else if (passed && t.id == 5)
+                    player.reset_default();
+            }
+            for (const auto &r : attributes->ranges)
+                if (r.id == 23 && !r.params.empty() && static_cast<float>(r.start) <= ticks &&
+                    ticks <= static_cast<float>(r.end) && player.knows(r.params[0]))
+                    held = r.params[0];
+        }
+        if (portrait != nullptr)
+            for (const int slot : portrait->slots) {
+                const int s = slot == -2 ? block->last_slot : slot;
+                if (s >= 0 && player.knows(s))
+                    held = s;
+            }
+        if (ds_slot >= 0 && player.knows(ds_slot) &&
+            std::find(m.face.closed.begin(), m.face.closed.end(), held) == m.face.closed.end())
+            held = ds_slot;
+        if (talking && player.knows(talk))
+            held = talk;
+        if (held >= 0)
+            player.set(held);
+        player.play(static_cast<float>(std::min(frames, 30U))); // (a long gap: not drawn, or loading)
+    }
+    for (FaceTexture &t : m.face_textures) {
+        bool changed = false;
+        for (const auto &block : m.face_blocks)
+            changed = changed || (block->animation.texture == t.key && block->player->sprite() != block->shown);
+        if (!changed)
+            continue;
+        auto *texels = reinterpret_cast<std::uint8_t *>(khdays_textures_change_begin(t.replacement));
+        for (const auto &block : m.face_blocks) {
+            const auto &a = block->animation;
+            if (a.texture != t.key)
+                continue;
+            const int sprite = block->player->sprite();
+            for (int y = std::max(0, -a.y); y < a.height && a.y + y < t.height; ++y)
+                for (int x = std::max(0, -a.x); x < a.width && a.x + x < t.width; ++x) {
+                    const std::size_t at = 4 * (static_cast<std::size_t>(a.y + y) * static_cast<std::size_t>(t.width) +
+                                                static_cast<std::size_t>(a.x + x));
+                    if (sprite < 0) {
+                        std::memcpy(texels + at, t.picture.data() + at, 4);
+                        continue;
+                    }
+                    const std::uint8_t *px = a.sprites[static_cast<std::size_t>(sprite)].data() +
+                                             4 * (static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width) +
+                                                  static_cast<std::size_t>(x));
+                    std::memcpy(texels + at, px, 3);
+                    texels[at + 3] = t.alpha == 1 ? 255 : t.alpha == 2 ? (px[3] >= t.least ? 255 : 0) : px[3];
+                }
+        }
+        khdays_textures_change_end(t.replacement);
+    }
+    for (auto &block : m.face_blocks)
+        block->shown = block->player->sprite();
 }
 
 void draw(Model &m)
@@ -2958,8 +3216,10 @@ void draw(Model &m)
         skin[j] = w != nullptr ? mul(scaled_root, mul(*w, joint.inverse_bind)) : mul(k[j], joint.bind);
     }
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
+    face_motion = {};
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
+    play_face(m);
     // secondary motion over the finished pose (the game's or the KH2 motions', blended), before skinning
     if (m.secondary) {
         khdays::secondary::DrawInput in;
@@ -3176,11 +3436,37 @@ bool room_of_replaced_world(const std::string &name, const char *path)
 
 // The joint animations `render_obj` plays: NNSG3dRenderObj anmJnt (+0x10), each NNSG3dAnmObj's
 // frame (+0, fx32), ratio (+4, fx32), resAnm (+8: its J0AC) and next (+0x10).
+// The name of the animation whose data the game has at `anm` (a J0AC, a PAT0's animation), "" unknown
+const std::string &animation_name(u32 anm)
+{
+    auto known = animation_names.find(anm);
+    if (known == animation_names.end()) {
+        const char *file = nullptr;
+        u32 offset = 0, run = 0;
+        char name[64] = "";
+        if (anm == 0 || !khdays_origin_of_ram(anm, &file, &offset, &run) ||
+            !khdays_names_animation(file, offset, name, sizeof(name)))
+            name[0] = '\0';
+        known = animation_names.emplace(anm, name).first;
+    }
+    return known->second;
+}
+
 void read_playing(const void *render_obj)
 {
     playing.clear();
+    materials_playing.clear();
     if (render_obj == nullptr)
         return;
+    u32 mat = 0; // anmMat (+0x08): the material animations, the eyes' pattern among them
+    std::memcpy(&mat, static_cast<const unsigned char *>(render_obj) + 0x08, 4);
+    for (int n = 0; mat != 0 && n < 8; ++n) {
+        const auto *a = static_cast<const unsigned char *>(KHDAYS_W(mat));
+        u32 anm = 0;
+        std::memcpy(&anm, a + 8, 4);
+        materials_playing.push_back(animation_name(anm));
+        std::memcpy(&mat, a + 0x10, 4);
+    }
     u32 obj = 0;
     std::memcpy(&obj, static_cast<const unsigned char *>(render_obj) + 0x10, 4);
     for (int n = 0; obj != 0 && n < 8; ++n) {
@@ -3191,20 +3477,11 @@ void read_playing(const void *render_obj)
         std::memcpy(&ratio, a + 4, 4);
         std::memcpy(&anm, a + 8, 4);
         std::memcpy(&next, a + 0x10, 4);
-        auto known = animation_names.find(anm);
-        if (known == animation_names.end()) {
-            const char *file = nullptr;
-            u32 offset = 0, run = 0;
-            char name[64] = "";
-            if (anm == 0 || !khdays_origin_of_ram(anm, &file, &offset, &run) ||
-                !khdays_names_animation(file, offset, name, sizeof(name)))
-                name[0] = '\0';
-            known = animation_names.emplace(anm, name).first;
-        }
+        const std::string &name = animation_name(anm);
         u16 frames = 0;
         if (anm != 0)
             std::memcpy(&frames, static_cast<const unsigned char *>(KHDAYS_W(anm)) + 4, 2);
-        playing.push_back({known->second, static_cast<float>(frame) / 4096.0F, static_cast<float>(ratio) / 4096.0F,
+        playing.push_back({name, static_cast<float>(frame) / 4096.0F, static_cast<float>(ratio) / 4096.0F,
                            static_cast<float>(frames)});
         obj = next;
     }
@@ -3438,6 +3715,18 @@ extern "C" int khdays_models_shape(const void *list, unsigned int size)
         }
     }
     return 1;
+}
+
+extern "C" void khdays_models_dialogue_speaker(int portrait)
+{
+    dialogue_speaker = portrait;
+    dialogue_typing = false;
+}
+
+extern "C" void khdays_models_dialogue_typed(void)
+{
+    dialogue_typed = khdays_events_vblank_count();
+    dialogue_typing = true;
 }
 
 extern "C" void khdays_models_draw_end(void)

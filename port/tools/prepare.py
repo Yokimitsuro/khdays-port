@@ -3790,7 +3790,13 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
         "void Ov002_SceneApplyPanelRequest(int *pReq)",
         "extern void khdays_ui_text_scope_push(const char *scope);\n"
         "extern void khdays_ui_text_scope_pop(void);\n"
+        "extern void khdays_models_dialogue_speaker(int portrait);\n"
         "void Ov002_SceneApplyPanelRequest(int *pReq)",
+    ),
+    # the panel's portrait, for a KH2 face (models.cpp, motions.txt's `face` lines)
+    (
+        "    ctx = *(int **)&data_ov002_0207f624;",
+        "    ctx = *(int **)&data_ov002_0207f624;\n    khdays_models_dialogue_speaker(pReq[5]);",
     ),
     (
         "        Resource_BindByName(f.aBind, gOv002TextFontEu10SPath);",
@@ -3800,6 +3806,18 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
     (
         "        FreeFieldAt8(f.aBind);",
         "        FreeFieldAt8(f.aBind);\n        khdays_ui_text_scope_pop();",
+    ),
+]
+
+# The panel folded away: no portrait shows (a KH2 face's `face portrait` ends).
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneClosePanelStep.c"] = [
+    (
+        "void *Ov002_SceneClosePanelStep(void)",
+        "extern void khdays_models_dialogue_speaker(int portrait);\nvoid *Ov002_SceneClosePanelStep(void)",
+    ),
+    (
+        "        pNext = Ov002_PanelIdleState;",
+        "        pNext = Ov002_PanelIdleState;\n        khdays_models_dialogue_speaker(-1);",
     ),
 ]
 

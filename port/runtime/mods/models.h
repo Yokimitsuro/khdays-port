@@ -50,6 +50,12 @@ int khdays_models_draw_placed(const char *path, const float place[16], unsigned 
 /* That model's size at rest (its own units): its lowest and highest corners. Whether it can be read. */
 int khdays_models_placed_bounds(const char *path, float low[3], float high[3]);
 
+/* The field's dialogue, for KH2 faces (motions.txt's `face` lines): Ov002_SceneApplyPanelRequest shows a
+ * panel with `portrait` (its pReq[5], -1 none; Ov002_SceneClosePanelStep: -1, the panel gone), and the
+ * crawl typed a letter (text.c). */
+void khdays_models_dialogue_speaker(int portrait);
+void khdays_models_dialogue_typed(void);
+
 #ifdef __cplusplus
 }
 #endif

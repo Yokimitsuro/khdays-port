@@ -397,19 +397,32 @@ std::vector<TextureFrame> read_frames(const Bytes& b, std::size_t at, const std:
 TextureAnimation read_texa(const Bytes& b, const std::size_t t, const std::size_t size) {
     TextureAnimation a;
     a.target = b.u16(t + 2);
-    const std::uint16_t stride = b.u16(t + 4);
+    a.layers = b.u16(t + 4);
+    a.bits_per_pixel = b.u16(t + 6);
+    const std::uint16_t first_slot = b.u16(t + 8), last_slot = b.u16(t + 10);
     const std::uint16_t animations = b.u16(t + 12);
     a.sprite_count = b.u16(t + 14);
-    a.x = b.u16(t + 16);
+    a.x = b.u16(t + 16) & 0xFFFU;
     a.y = b.u16(t + 18);
     a.width = b.u16(t + 20);
     a.height = b.u16(t + 22);
-    const std::uint32_t table = b.u32(t + 28);
+    const std::uint32_t slots = b.u32(t + 24), table = b.u32(t + 28), sprites = b.u32(t + 32);
     a.default_animation = static_cast<int>(b.u32(t + 36));
+    // an entry is 8 bytes and a sprite index per further layer (kn::TEXAnmWork::play)
+    const std::size_t stride = 8U + 2U * a.layers;
     for (std::uint16_t i = 0; i < animations; ++i) {
         const std::uint32_t first = b.u32(t + table + i * 4U);
-        a.animations.push_back(read_frames(b, t + first, t + size, stride == 0 ? 8U : stride * 2U));
+        a.animations.push_back(read_frames(b, t + first, t + size, stride));
     }
+    // the slot table: per id from the first, its animation's number plus one (0: none)
+    a.first_slot = first_slot;
+    if (slots != 0 && last_slot >= first_slot) {
+        for (unsigned id = first_slot; id <= last_slot; ++id) {
+            const std::uint16_t n = b.u16(t + slots + (id - first_slot) * 2U);
+            a.slot_animation.push_back(n != 0 && n <= animations ? n - 1 : -1);
+        }
+    }
+    a.sprites_at = sprites != 0 ? t + sprites : 0;
     return a;
 }
 
@@ -595,18 +608,11 @@ std::uint64_t field(const std::uint64_t reg, const unsigned low, const unsigned 
 
 }  // namespace
 
-DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t size, const std::size_t at,
-                                    const std::size_t index) {
-    // kn::Texture (KH2's PS3 build): u16 type, u16 flag, u32 counts of colours,
-    // pictures and GS infos, then the offsets of the pictures' numbers, their
-    // send packets (0x90 bytes each; the palette's first), the GS infos (0xA0),
-    // the pixels and the palette.
-    const Bytes b(data, size);
+namespace {
+
+// The container's pictures uploaded into a model of the GS's memory, as its packets send them
+GsMemory upload_pictures(const Bytes& b, const std::size_t at) {
     const std::uint32_t pictures = b.u32(at + 8);
-    const std::uint32_t infos = b.u32(at + 12);
-    if (index >= infos) {
-        throw std::runtime_error("KH2 textures: no GS info " + std::to_string(index) + " of " + std::to_string(infos));
-    }
     const std::size_t sends = at + b.u32(at + 20);
     GsMemory gs;
     // Each packet: BITBLTBUF at 0x20, TRXPOS at 0x30, TRXREG at 0x40, and the
@@ -638,22 +644,50 @@ DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t 
                                      ", not read");
         }
     }
+    return gs;
+}
 
+// GS info `index`'s TEX0, checked to be an 8-bit texture with a 32-bit palette
+std::uint64_t texture_register(const Bytes& b, const std::size_t at, const std::size_t index) {
+    const std::uint32_t infos = b.u32(at + 12);
+    if (index >= infos) {
+        throw std::runtime_error("KH2 textures: no GS info " + std::to_string(index) + " of " + std::to_string(infos));
+    }
     const std::uint64_t tex0 = b.u64(at + b.u32(at + 24) + index * 0xA0U + 112U);
-    const auto tbp = static_cast<unsigned>(field(tex0, 0, 14)), tbw = static_cast<unsigned>(field(tex0, 14, 6));
-    const auto psm = static_cast<unsigned>(field(tex0, 20, 6)), cbp = static_cast<unsigned>(field(tex0, 37, 14));
+    const auto psm = static_cast<unsigned>(field(tex0, 20, 6));
     if (psm != 0x13 || field(tex0, 51, 4) != 0 || field(tex0, 55, 1) != 0) {
         throw std::runtime_error("KH2 textures: GS info " + std::to_string(index) + " is GS format " + hex(psm) +
                                  " (palette " + hex(static_cast<std::uint32_t>(field(tex0, 51, 4))) +
                                  "); only 8-bit textures with 32-bit palettes are decoded");
     }
-    // The palette (CSM1): 16 x 16 PSMCT32 at CBP, entries 8-15 and 16-23 of each 32 swapped.
+    return tex0;
+}
+
+// The palette (CSM1) a TEX0 names: 16 x 16 PSMCT32 at CBP, entries 8-15 and 16-23 of each 32 swapped
+std::array<std::array<std::uint8_t, 4>, 256> palette_of(GsMemory& gs, const std::uint64_t tex0) {
+    const auto cbp = static_cast<unsigned>(field(tex0, 37, 14));
     std::array<std::array<std::uint8_t, 4>, 256> palette{};
     for (unsigned k = 0; k < 256; ++k) {
         const unsigned at_k = (k & ~0x18U) | ((k & 8U) << 1U) | ((k & 16U) >> 1U);
         const std::uint8_t* c = gs.ct32(at_k % 16U, at_k / 16U, cbp, 1);
         palette[k] = {c[0], c[1], c[2], static_cast<std::uint8_t>(std::min(255, c[3] * 2))};
     }
+    return palette;
+}
+
+}  // namespace
+
+DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t size, const std::size_t at,
+                                    const std::size_t index) {
+    // kn::Texture (KH2's PS3 build): u16 type, u16 flag, u32 counts of colours,
+    // pictures and GS infos, then the offsets of the pictures' numbers, their
+    // send packets (0x90 bytes each; the palette's first), the GS infos (0xA0),
+    // the pixels and the palette.
+    const Bytes b(data, size);
+    const std::uint64_t tex0 = texture_register(b, at, index);
+    GsMemory gs = upload_pictures(b, at);
+    const auto tbp = static_cast<unsigned>(field(tex0, 0, 14)), tbw = static_cast<unsigned>(field(tex0, 14, 6));
+    const auto palette = palette_of(gs, tex0);
     DecodedTexture out;
     out.format_name = "kh2 psmt8";
     out.width = 1 << static_cast<int>(field(tex0, 26, 4));
@@ -664,6 +698,34 @@ DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t 
             const auto& c = palette[*gs.t8(static_cast<unsigned>(x), static_cast<unsigned>(y), tbp, tbw)];
             out.rgba.insert(out.rgba.end(), c.begin(), c.end());
         }
+    }
+    return out;
+}
+
+std::vector<std::vector<std::uint8_t>> read_texture_sprites(const std::uint8_t* data, const std::size_t size,
+                                                            const std::size_t at, const TextureAnimation& animation) {
+    const Bytes b(data, size);
+    std::vector<std::vector<std::uint8_t>> out;
+    if (animation.sprites_at == 0 || animation.sprite_count <= 0 || animation.width <= 0 || animation.height <= 0) {
+        return out;
+    }
+    if (animation.bits_per_pixel != 8) {
+        throw std::runtime_error("KH2 textures: a texture animation's sprites are " +
+                                 std::to_string(animation.bits_per_pixel) + "-bit; only 8-bit sprites are decoded");
+    }
+    const std::uint64_t tex0 = texture_register(b, at, static_cast<std::size_t>(animation.target));
+    GsMemory gs = upload_pictures(b, at);
+    const auto palette = palette_of(gs, tex0);
+    const std::size_t pixels = static_cast<std::size_t>(animation.width) * static_cast<std::size_t>(animation.height);
+    for (int n = 0; n < animation.sprite_count; ++n) {
+        const std::uint8_t* src = b.at(animation.sprites_at + static_cast<std::size_t>(n) * pixels, pixels);
+        std::vector<std::uint8_t> rgba;
+        rgba.reserve(pixels * 4U);
+        for (std::size_t k = 0; k < pixels; ++k) {
+            const auto& c = palette[src[k]];
+            rgba.insert(rgba.end(), c.begin(), c.end());
+        }
+        out.push_back(std::move(rgba));
     }
     return out;
 }

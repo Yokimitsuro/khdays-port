@@ -219,6 +219,42 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                 result.missing_textures.emplace_back(key, e.what());
             }
         }
+        // the textures' animated parts (a face's eyes and mouth), their sprites decoded through the palette
+        for (const TextureAnimation& a : container.animations) {
+            ImportedTextureAnimation out;
+            out.texture = "tex" + std::to_string(a.target);
+            out.x = a.x;
+            out.y = a.y;
+            out.width = a.width;
+            out.height = a.height;
+            out.default_script = a.default_animation;
+            out.first_slot = a.first_slot;
+            out.slot_script = a.slot_animation;
+            for (const auto& frames : a.animations) {
+                std::vector<ImportedTextureAnimation::Step> script;
+                for (const TextureFrame& f : frames) {
+                    using Kind = ImportedTextureAnimation::Step::Kind;
+                    ImportedTextureAnimation::Step s;
+                    s.kind = f.kind == TextureFrame::Kind::Sprite ? Kind::sprite
+                             : f.kind == TextureFrame::Kind::Base ? Kind::base
+                             : f.kind == TextureFrame::Kind::Jump ? Kind::jump
+                                                                  : Kind::stop;
+                    s.jump = f.jump;
+                    s.min_frames = f.min_length;
+                    s.max_frames = f.max_length;
+                    s.sprite = f.sprite;
+                    script.push_back(s);
+                }
+                out.scripts.push_back(std::move(script));
+            }
+            try {
+                out.sprites = read_texture_sprites(data, size, texture_entry->offset, a);
+            } catch (const std::exception& e) {
+                result.missing_textures.emplace_back(out.texture + " (its animated part)", e.what());
+                continue;
+            }
+            result.texture_animations.push_back(std::move(out));
+        }
     }
 
     // a mesh per subpart, and per face kind: one-sided, and seen from both sides

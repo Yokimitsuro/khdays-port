@@ -665,6 +665,7 @@ add_executable(khdays-native
     runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
+    runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
     runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
     runtime/mods/secondary/rig.cpp      # ... cooked against the model
     runtime/mods/secondary/collision.cpp
@@ -899,6 +900,11 @@ add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
 target_compile_options(khdays-room-animation-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-room-animation COMMAND khdays-room-animation-test)
+# A KH2 face's texture animation (runtime/mods/face.cpp): scripts, held slots, defaults, jumps and stops.
+add_executable(khdays-face-test tests/face_test.cpp runtime/mods/face.cpp)
+target_include_directories(khdays-face-test PRIVATE ../assets/include)
+target_compile_options(khdays-face-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-face COMMAND khdays-face-test)
 # Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
 # synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
 set(KHDAYS_SECONDARY_SOURCES

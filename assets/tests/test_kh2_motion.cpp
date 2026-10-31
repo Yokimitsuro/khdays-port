@@ -306,6 +306,29 @@ void test_retarget() {
     expect(refused, "a limb reaching with an unmapped bone");
 }
 
+void test_attributes() {
+    // two ranges holding texture animation slots (KH2's id 23), a trigger setting a default (id 4) at frame 10
+    Bytes a{2, 1, 20, 0};
+    for (const unsigned v : {0U, 300U}) {
+        a.push_back(static_cast<std::uint8_t>(v & 0xFFU));
+        a.push_back(static_cast<std::uint8_t>(v >> 8U));
+    }
+    a.insert(a.end(), {23, 1, 76, 0});
+    a.insert(a.end(), {125, 0, 188, 0, 23, 1, 24, 0});
+    a.insert(a.end(), {10, 0, 4, 1, 33, 0});
+    const Bytes set = bar({{0x11, bar({{0x10, a}})}, {0x10011, {}}});
+    const kh2::MotionSet motions(set.data(), set.size());
+    const auto* at = motions.attributes(0);
+    expect(at != nullptr && motions.attributes(1) == nullptr, "slot 0's attributes, none in the empty slot");
+    expect(at->ranges.size() == 2 && at->ranges[0].start == 0 && at->ranges[0].end == 300 && at->ranges[0].id == 23 &&
+               at->ranges[0].params == std::vector<std::uint16_t>{76},
+           "the first range");
+    expect(at->ranges[1].start == 125 && at->ranges[1].end == 188 && at->ranges[1].params[0] == 24, "the second");
+    expect(at->triggers.size() == 1 && at->triggers[0].frame == 10 && at->triggers[0].id == 4 &&
+               at->triggers[0].params == std::vector<std::uint16_t>{33},
+           "the trigger, read from its offset");
+}
+
 void test_refusals() {
     const Bytes junk{1, 2, 3, 4};
     bool refused = false;
@@ -324,6 +347,7 @@ int main() {
         test_curves();
         test_ik();
         test_retarget();
+        test_attributes();
         test_refusals();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";

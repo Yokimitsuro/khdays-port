@@ -234,6 +234,23 @@ void read_animations(const std::vector<u8> &d, std::size_t start, FileNames &nam
     }
 }
 
+// The texture pattern animations of the BTP0 at `start` (its PAT0's dictionary, entry offsets from the
+// PAT0, where NNS_G3dGetAnmByIdx points an animation object's resAnm): with the joint animations, by name.
+void read_pattern_animations(const std::vector<u8> &d, std::size_t start, FileNames &names)
+{
+    const u32 sections = le16(d, start + 0xe);
+    for (u32 s = 0; s < sections && s < 8; ++s) {
+        const std::size_t pat0 = start + le32(d, start + 0x10 + 4 * s);
+        if (pat0 + 0x10 > d.size() || std::memcmp(&d[pat0], "PAT0", 4) != 0)
+            continue;
+        const Dict animations = read_dict(d, pat0 + 8);
+        for (std::size_t a = 0; a < animations.names.size(); ++a) {
+            names.animations.push_back(
+                {static_cast<u32>(pat0 + le32(d, animations.entries[a])), 0, animations.names[a]});
+        }
+    }
+}
+
 // The NCGR at `at` (a Nitro file "RGCN" whose "RAHC" block gives its
 // tiles: u16 height and width in tiles at +0x18 and +0x1a, the depth at
 // +0x1c -- 4: 8 bits a pixel --, their size at +0x28 and their place after
@@ -270,6 +287,8 @@ const FileNames &names_of(const std::string &file)
                 read_models(d, at, names);
         } else if (std::memcmp(&d[at], "BCA0", 4) == 0 && le32(d, at + 8) <= d.size() - at) {
             read_animations(d, at, names);
+        } else if (std::memcmp(&d[at], "BTP0", 4) == 0 && le32(d, at + 8) <= d.size() - at) {
+            read_pattern_animations(d, at, names);
         } else if (std::memcmp(&d[at], "RGCN", 4) == 0 && le32(d, at + 8) <= d.size() - at) {
             read_sheet(d, at, names);
         }
