@@ -677,6 +677,20 @@ static int log_has(const char *text)
     return found;
 }
 
+static int log_count(const char *text)
+{
+    char path[600];
+    char *log;
+    int found = 0;
+    snprintf(path, sizeof(path), "%s/saves/logs/mods.log", root);
+    log = khdays_folders_read(path, NULL);
+    for (const char *at = log; at != NULL && (at = strstr(at, text)) != NULL; at += strlen(text)) {
+        ++found;
+    }
+    free(log);
+    return found;
+}
+
 /* ---- the cases ----------------------------------------------------------------------------------- */
 
 static void hex(const unsigned char *d, char *out)
@@ -1316,6 +1330,21 @@ static void test_reload(void)
     end_case();
 }
 
+static void test_refused_once(void)
+{
+    begin_case("refused");
+    mod_folder_api("Later", "test.later", "gameplay", KHDAYS_MODS_API + 1, "game.set_munny(7)\n");
+    start();
+    frames(90);
+    CHECK(mod_by_folder("Later")->state == KHDAYS_MOD_REFUSED && log_count("test.later refused") == 1);
+    /* its files fixed: looked at again */
+    SDL_Delay(20);
+    mod_folder_api("Later", "test.later", "gameplay", KHDAYS_MODS_API, "game.set_munny(7)\n");
+    frames(30);
+    CHECK(mod_by_folder("Later")->state == KHDAYS_MOD_LOADED && fake_munny == 7);
+    end_case();
+}
+
 static void test_guest(void)
 {
     begin_case("guest");
@@ -1866,6 +1895,7 @@ int main(void)
     RUN(test_files_and_notices);
     RUN(test_room_fingerprint);
     RUN(test_reload);
+    RUN(test_refused_once);
     RUN(test_guest);
     RUN(test_api_versions);
     RUN(test_enemies);

@@ -60,7 +60,7 @@ typedef struct KhdaysMod {
     int handler_count, handler_capacity, next_handle;
     KhdaysOption *options;
     int option_count, option_capacity;
-    long long stamp;                 /* the newest time among its files when it was loaded */
+    long long stamp;                 /* the newest time among its files when they were last read */
     uint64_t traced_sum, traced_max; /* KHDAYS_TRACE_MODS: its time per frame since the last report */
     unsigned traced_frames;
     struct KhdaysModV2 *v2; /* what the interface's version 2 holds for it (api_v2.h); NULL for api 1 */

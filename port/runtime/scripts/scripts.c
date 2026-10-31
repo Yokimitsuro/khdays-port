@@ -154,6 +154,7 @@ static void load(KhdaysMod *m)
 {
     char note[64];
     int ran;
+    m->stamp = newest_file(m);
     if (!khdays_sandbox_open(m)) {
         khdays_mods_log(name_of(m), "refused", NULL, 0, m->reason);
         return;
@@ -165,7 +166,6 @@ static void load(KhdaysMod *m)
     if (m->manifest.api >= 2) {
         khdays_api_v2_open(m);
     }
-    m->stamp = newest_file(m);
     m->spent = 0;
     m->allowance = khdays_sandbox_frame_allowance;
     khdays_script_events_hold();
@@ -181,11 +181,13 @@ static void load(KhdaysMod *m)
 }
 
 /* Reads a mod's folder: its manifest, its interface version, its id among the others, its
- * fingerprint. Returns 1 when it may be loaded. */
+ * fingerprint. Returns 1 when it may be loaded. A refused mod is read again only once its files
+ * change. */
 static int examine(KhdaysMod *m)
 {
     char reason[300], *ini = joined(m->path, "mod.ini"), *text;
     size_t size = 0;
+    m->stamp = newest_file(m);
     text = ini != NULL ? khdays_folders_read(ini, &size) : NULL;
     free(ini);
     if (text == NULL) {
