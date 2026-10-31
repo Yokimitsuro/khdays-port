@@ -47,6 +47,8 @@ const ParamInfo kParams[kParamCount] = {
     {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},
     {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
     {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"cutscene_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"leg_carry", 0.0F, 0.0F, 1.0F, Unit::none},
 };
 
 struct Line {
@@ -158,7 +160,7 @@ bool Reader::param_line(const Line &l, ParamSet &set)
         return info.unit == Unit::length ? length(v) : info.unit == Unit::angle ? v * kDegrees : v;
     };
     float v = 0.0F;
-    if (p == Param::no_sim && l.words.size() == 1) // `no_sim` alone: all the way
+    if ((p == Param::no_sim || p == Param::cutscene_sim) && l.words.size() == 1) // alone: on
         v = 1.0F;
     else if (l.words.size() < 2 || !number(l.words[1], v)) {
         error(l.number, std::string("write `") + info.name + " <number>`");
@@ -468,6 +470,19 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
         } else if (w == "collide") {
             g.collide.assign(l.words.begin() + 1, l.words.end());
             g.collide_given = true;
+        } else if (w == "shell_push") {
+            g.shell_push.clear();
+            float from = 0.0F;
+            bool ok = l.words.size() >= 2;
+            for (std::size_t k = 1; ok && k < l.words.size(); ++k) {
+                if (l.words[k] == "from")
+                    ok = k + 2 == l.words.size() && number(l.words[k + 1], from) && from >= 0.0F && from < 1.0F, ++k;
+                else
+                    g.shell_push.push_back(l.words[k]);
+            }
+            if (!ok || g.shell_push.empty())
+                error(l.number, "write `shell_push <collider tag>... [from <0 to 1>]`");
+            g.shell_push_from = from;
         } else if (w == "self_collision" && l.words.size() == 2) {
             g.self_collision = l.words[1] == "off" ? std::string() : l.words[1];
             g.self_given = true;

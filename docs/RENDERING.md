@@ -385,8 +385,18 @@ upper body, where cutscenes touch things, does). `mesh_scale <joint>
 weapons and the secondary motion's colliders keep their sizes (the secondary motion
 runs on the unscaled skin; its colliders are sized in its own file). roxas_b_h's
 pelvis, kh2_2, is 0.9 along its y, which points backward, to keep the butt under
-the coat; e_rox_hb's thighs 0, not drawn (the coat covers them). A 0 is drawn as a
+the coat. A 0 is drawn as a
 thousandth, so the normals stay finite.
+`hide <joint>... from <top> to <bottom> [fade <length>]` (the model's own
+centimetres at rest) leaves out what those joints carry most between the two
+heights and fades it back in below over `fade`: a triangle with a hidden corner is
+dropped (but at the bottom edge, within `fade` of it, where it fades from clear: a
+faded top edge showed the hips through the coat), one in the fade goes to a blended mesh of its own (the same picture, its vertex
+alpha the fade's), the rest stay as they were (the whole body blended would be
+drawn translucent, its parts covering each other wrongly). e_rox_hb: `hide kh2_2
+kh2_5 kh2_6 kh2_14 kh2_15 from 99 to 35 fade 8`, its legs from below the coat's
+waist ring down to halfway down the calves, fading into the coat's dark inside
+(206 triangles dropped, 28 fading).
 `place <joint> [<x> <y> <z>]` puts a paired joint on its game node's own place
 (plus the offset, the game's centimetres in the node's rest axes) instead of where
 its parent carries it, and the bone above it, when that is its only paired child,

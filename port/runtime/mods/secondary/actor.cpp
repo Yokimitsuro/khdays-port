@@ -15,6 +15,12 @@ constexpr std::size_t kProfileRing = 1024;
 constexpr double kTickSlack = 1e-3;
 // ticks a fresh start or a camera cut settles the cloth in its pose for (Simulation::settle)
 constexpr int kSettleTicks = 40;
+// m: a place on the game model moving this far about its hips in one draw is the game's pose snapping (a leg
+// swinging at 6 m/s moves 0.2 m in a 30 Hz draw)
+constexpr float kGameSnap = 0.35F;
+// s: a cut this soon after the last settle is not settled again (a cutscene's first frames snap the pose over
+// several draws, each a cut: 40 ticks apiece in one frame, a stall)
+constexpr double kSettleGap = 0.5;
 
 // settling: one substep a tick (it only has to come to rest, not follow motion)
 TickSettings settling(TickSettings s)
@@ -223,11 +229,16 @@ void Actor::start(const ActorInput &in)
     if (in.game_targets != nullptr && in.game_weight != nullptr) {
         last_game_ = *in.game_targets;
         sim_.set_game_targets(last_game_, last_game_, *in.game_weight);
+        if (in.game_shell != nullptr)
+            sim_.set_game_shell(*in.game_shell,
+                                in.game_shell_open != nullptr ? *in.game_shell_open : std::vector<std::uint8_t>{});
     }
     sim_.initialize(*in.pose, s, rig_->config.settle_iterations);
     // the hanging groups hung as this first pose has them (they start in their rest shape on their bones: a bent
     // first pose flung the cords)
     sim_.settle(*in.pose, settling(s), kSettleTicks);
+    settled_at_ = in.seconds;
+    sim_.snap_to_game();
     for (const int b : rig_->needed)
         last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
     last_seconds_ = sim_seconds_ = in.seconds;
@@ -271,13 +282,31 @@ void Actor::update(const ActorInput &in)
             angle_between(a.q, c.q) > rig.config.teleport_degrees * kDegrees)
             jump = true;
     }
-    if (jump || in.cut) {
+    // the game's pose snapping (a cutscene's first frames): a place on the game model jumping further in one draw,
+    // about its group's hips, than a leg carries it; a new shot like a camera cut
+    bool snap = false;
+    if (in.game_targets != nullptr && in.game_weight != nullptr && last_game_.size() == in.game_targets->size())
+        for (std::size_t i = 0; i < last_game_.size() && i < rig.particles.size() && !snap; ++i) {
+            if ((*in.game_weight)[i] <= 0.0F)
+                continue;
+            const auto b =
+                static_cast<std::size_t>(rig.groups[static_cast<std::size_t>(rig.particles[i].group)].reference_bone);
+            snap = length(apply_inverse((*in.pose)[b], (*in.game_targets)[i]) -
+                          apply_inverse(last_pose_[b], last_game_[i])) > kGameSnap;
+        }
+    const bool cut = in.cut || snap;
+    if (jump || cut) {
         if (in.game_targets != nullptr && in.game_weight != nullptr) {
             last_game_ = *in.game_targets;
             sim_.set_game_targets(last_game_, last_game_, *in.game_weight);
+            if (in.game_shell != nullptr)
+                sim_.set_game_shell(*in.game_shell,
+                                    in.game_shell_open != nullptr ? *in.game_shell_open : std::vector<std::uint8_t>{});
         }
         sim_.rebase(last_pose_, *in.pose);
-        if (in.cut) { // a new shot: settled in its pose (a jump keeps the cloth's swing shape, carried)
+        // a new shot: settled in its pose (a jump keeps the cloth's swing shape, carried), not again right after one
+        if (cut && in.seconds - settled_at_ > kSettleGap) {
+            settled_at_ = in.seconds;
             TickSettings s;
             s.dt = dt;
             s.substeps = l.substeps;
@@ -291,6 +320,7 @@ void Actor::update(const ActorInput &in)
             drive(in, 0.0F);
             sim_.settle(*in.pose, settling(s), kSettleTicks);
         }
+        sim_.snap_to_game();
         ++profile_.rebases;
         for (const int b : rig.needed)
             last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
@@ -337,6 +367,9 @@ void Actor::update(const ActorInput &in)
                 game_b_[i] = lerp(last_game_[i], (*in.game_targets)[i], ub);
             }
             sim_.set_game_targets(game_a_, game_b_, *in.game_weight);
+            if (in.game_shell != nullptr)
+                sim_.set_game_shell(*in.game_shell,
+                                    in.game_shell_open != nullptr ? *in.game_shell_open : std::vector<std::uint8_t>{});
         }
         drive(in, dt);
         sim_.tick(from_, to_, s);

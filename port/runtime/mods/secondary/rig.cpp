@@ -178,6 +178,7 @@ void Cook::group(std::size_t gi)
         gr.wind_bone = resolve_bone(sk, g.wind.bone, file, out);
     gr.settle = g.settle;
     gr.settle_steps = g.settle_steps;
+    gr.shell_push_from = g.shell_push_from;
     gr.twist_from_neighbours = g.twist_from_neighbours && g.kind == GroupKind::surface;
     gr.mode = g.mode.mode;
     gr.policy = g.policy.policy;
@@ -240,6 +241,7 @@ void Cook::group(std::size_t gi)
         return;
     }
     const std::uint32_t mask = g.collide_given ? tags(g.collide, g.line, "group " + g.name) : 0xffffffffU;
+    gr.shell_push = g.shell_push.empty() ? 0U : tags(g.shell_push, g.line, "group " + g.name + ": shell_push");
     // self-collision groups by name
     int self = -1;
     if (!g.self_collision.empty()) {

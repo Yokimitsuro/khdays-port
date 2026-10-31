@@ -50,6 +50,9 @@ enum class Param : int {
     rotate_only,        // 0 or 1: a rebuilt bone only turns toward its point, its head kept where its parent puts it
     no_sim,             // 0..1: of the way onto its target each tick (its bones and the legs' carry), unsimulated
     game_shape,         // 0..1: its target taken that far from the replaced game model's own surface (its coat)
+    cutscene_sim,       // 0 or 1: simulated about the game model's coat (its target there), never inside the shell
+                        // those targets make; only its group's colliders touch it (no room, not itself)
+    leg_carry,          // 0..1: the coat's back below its hips on the game model carried that much by both legs
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);
@@ -148,6 +151,10 @@ struct GroupConfig {
     bool collide_given = false;
     std::string self_collision; // groups sharing this name collide with each other (and themselves)
     bool self_given = false;
+    // `shell_push <tag>... [from <0-1>]`: `cutscene_sim`'s shell pushed out of these colliders (from that far down
+    // each, its start left out), never the cloth itself
+    std::vector<std::string> shell_push;
+    float shell_push_from = 0.0F;
     std::vector<BoneRef> attach;              // body bones the group hangs from (its reference frame first)
     std::vector<FollowBone> follow_bones;     // body bones its reference shape partly rides
     std::vector<std::vector<BoneRef>> strips; // surfaces: control sequences anchor-to-hem; chains: chains

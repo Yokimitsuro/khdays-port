@@ -472,6 +472,11 @@ struct MeshScale {
     std::string joint;
     std::array<float, 3> by{};
 };
+// bones.txt's `hide <joint>... from <top> to <bottom> [fade <length>]` (the model's own centimetres, at rest)
+struct HideLine {
+    std::vector<std::string> joints;
+    float top = 0.0F, bottom = 0.0F, fade = 0.0F;
+};
 struct LimbLine {
     std::array<std::string, 3> joints;
     bool exact = false;
@@ -491,6 +496,7 @@ struct BonesFile {
     std::map<std::string, std::string> aligns;
     std::map<std::string, std::array<float, 3>> places;
     std::array<std::string, 3> spine;
+    std::vector<HideLine> hides;
 };
 
 void read_bones(const std::string &model_file, BonesFile &bones)
@@ -504,6 +510,7 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &aligns = bones.aligns;
     auto &places = bones.places;
     auto &spine = bones.spine;
+    auto &hides = bones.hides;
     const auto dot = model_file.find_last_of('.');
     const std::string path = (dot != std::string::npos ? model_file.substr(0, dot) : model_file) + ".bones.txt";
     std::ifstream in(u8(path));
@@ -581,6 +588,29 @@ void read_bones(const std::string &model_file, BonesFile &bones)
                              path.c_str());
             } else {
                 places[b] = at;
+            }
+        } else if (a == "hide") {
+            HideLine h;
+            h.joints.push_back(b);
+            std::string w;
+            bool ok = false;
+            while (words >> w) {
+                if (w == "from") {
+                    ok = static_cast<bool>(words >> h.top) && static_cast<bool>(words >> w) && w == "to" &&
+                         static_cast<bool>(words >> h.bottom) && h.bottom < h.top;
+                    if (ok && words >> w)
+                        ok = w == "fade" && static_cast<bool>(words >> h.fade) && h.fade >= 0.0F;
+                    break;
+                }
+                h.joints.push_back(w);
+            }
+            if (ok) {
+                hides.push_back(std::move(h));
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `hide <joint>... from <top> to <bottom> [fade <length>]` (the model's "
+                             "own centimetres at rest, the top above the bottom); the line is ignored\n",
+                             path.c_str());
             }
         } else if (a == "spine") {
             std::string end, word, hips;
@@ -1249,6 +1279,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &aligns = bones.aligns;
     const auto &places = bones.places;
     const auto &spine_line = bones.spine;
+    const auto &hides = bones.hides;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -1710,6 +1741,77 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         vertices += out.vertices.size();
         triangles += out.indices.size() / 3;
         model->meshes.push_back(std::move(out));
+    }
+    // `hide`: the vertices these joints carry most, between those heights at rest, not drawn, and faded back in
+    // below over `fade` (a gradient into the coat's dark inside). A triangle all hidden is dropped; one in the fade
+    // goes to a blended mesh of its own (the same picture), the rest kept as they were: the whole body blended
+    // would be drawn translucent, its parts covering each other wrongly
+    for (const HideLine &h : hides) {
+        std::vector<std::uint8_t> joint_hidden(model->joints.size(), 0);
+        for (const auto &want : h.joints) {
+            std::size_t j = 0;
+            while (j < model->joints.size() && model->joints[j].name != want)
+                ++j;
+            if (j == model->joints.size()) {
+                khdays_log("models: %s: hide %s: no such joint; it is left out", name.c_str(), want.c_str());
+                continue;
+            }
+            joint_hidden[j] = 1;
+        }
+        const float top = h.top * 0.01F, bottom = h.bottom * 0.01F, fade = h.fade * 0.01F;
+        std::vector<Mesh> faded_meshes;
+        std::size_t dropped = 0, faded = 0;
+        for (Mesh &mesh : model->meshes) {
+            // each vertex's alpha: 0 hidden, 1 shown, between in the fade below the bottom
+            std::vector<float> alpha(mesh.vertices.size(), 1.0F);
+            for (std::size_t v = 0; v < mesh.vertices.size(); ++v) {
+                const auto &vx = mesh.vertices[v];
+                std::size_t most = 0;
+                for (std::size_t w = 1; w < 4; ++w)
+                    if (vx.weights[w] > vx.weights[most])
+                        most = w;
+                const std::uint32_t j = vx.joints[most];
+                if (j >= joint_hidden.size() || !joint_hidden[j] || vx.position[1] > top)
+                    continue;
+                if (vx.position[1] >= bottom)
+                    alpha[v] = 0.0F;
+                else if (fade > 0.0F && vx.position[1] > bottom - fade)
+                    alpha[v] = (bottom - vx.position[1]) / fade;
+            }
+            std::vector<std::uint32_t> kept, fading;
+            for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+                const float a0 = alpha[mesh.indices[t]], a1 = alpha[mesh.indices[t + 1]],
+                            a2 = alpha[mesh.indices[t + 2]];
+                auto &to = a0 >= 1.0F && a1 >= 1.0F && a2 >= 1.0F ? kept : fading;
+                // a corner hidden: none of it, but at the bottom edge, where it fades from clear (the top edge
+                // cut: a faded hip showed through the coat)
+                const float highest = std::fmax(mesh.vertices[mesh.indices[t]].position[1],
+                                                std::fmax(mesh.vertices[mesh.indices[t + 1]].position[1],
+                                                          mesh.vertices[mesh.indices[t + 2]].position[1]));
+                if ((a0 <= 0.0F && a1 <= 0.0F && a2 <= 0.0F) ||
+                    ((a0 <= 0.0F || a1 <= 0.0F || a2 <= 0.0F) && highest > bottom + fade)) {
+                    ++dropped;
+                    continue;
+                }
+                to.insert(to.end(), mesh.indices.begin() + static_cast<std::ptrdiff_t>(t),
+                          mesh.indices.begin() + static_cast<std::ptrdiff_t>(t + 3));
+            }
+            if (!fading.empty()) {
+                Mesh f = mesh; // its picture and settings; its own vertices, their alpha the fade's
+                f.indices = std::move(fading);
+                for (std::size_t v = 0; v < f.vertices.size(); ++v)
+                    f.vertices[v].color[3] = static_cast<std::uint8_t>(
+                        std::lround(std::fmin(1.0F, alpha[v]) * static_cast<float>(f.vertices[v].color[3])));
+                f.vertex_alpha = VertexAlpha::blended;
+                f.translucent = true;
+                faded += f.indices.size() / 3;
+                faded_meshes.push_back(std::move(f));
+            }
+            mesh.indices = std::move(kept);
+        }
+        for (Mesh &f : faded_meshes)
+            model->meshes.push_back(std::move(f));
+        khdays_log("models: %s: hide: %zu triangles not drawn, %zu fading", name.c_str(), dropped, faded);
     }
     // the sky layers in KH2's painting order: opaque and cut-out meshes first, then blended ones
     int sky_layer = 0;

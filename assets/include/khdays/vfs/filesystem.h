@@ -22,6 +22,7 @@ bool autodetect_data_root(const std::filesystem::path& extracted_dir = "data/ext
 // Set the mods root (default "mods"). Each mod may shadow game files under
 // `mods/<Mod>/files/<game_path>`.
 void set_mods_root(const std::filesystem::path& root);
+const std::filesystem::path& mods_root();
 
 // The mods read, in load order (the port's runtime/mods/list.h: the folders order.ini
 // turns on). Set, it replaces the listing of the mods root; empty, nothing is read.

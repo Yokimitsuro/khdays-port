@@ -62,6 +62,11 @@ public:
     // `game_shape`: each control's place on the replaced game model's surface at the next tick's start and end
     // (the solver's space), and whether it has one
     void set_game_targets(const std::vector<Vec3> &from, const std::vector<Vec3> &to, const std::vector<float> &weight);
+    // `cutscene_sim`: the shell over those places (triangles of particles, wound outward; a fixed particle at its
+    // own place), which such a particle never goes inside
+    void set_game_shell(const std::vector<std::array<int, 3>> &triangles, const std::vector<std::uint8_t> &open);
+    // `cutscene_sim`: each such particle on its place, still (a new shot, the game's pose snapping)
+    void snap_to_game();
 
     // The bones at `pose` from the solved particles: each rebuilt bone and each bone it carries, in
     // `out` (sized like the skeleton), flagged in `written`.
@@ -148,6 +153,13 @@ private:
     std::vector<Vec3> game_from_, game_to_, game_now_; // set_game_targets; game_now_ at the substep's end
     std::vector<float> game_weight_;
     float game_shape_of(std::size_t i) const; // `game_shape` times the particle's weight, 0 without targets
+    bool shelled(std::size_t i) const;        // `cutscene_sim` with a place on the game model
+    std::vector<std::array<int, 3>> shell_faces_;
+    std::vector<std::uint8_t> shell_open_; // per shell face: across an opening (a slit), not pushed
+    void push_shell();
+    std::vector<Vec3> shell_normal_; // per particle this substep: outward from the shell's faces round it
+    void shell_normals();
+    void keep_outside_shell();
     const Frame &reference_bone_frame(std::size_t i, const std::vector<Frame> &pose) const;
     // poses: the needed bones at the substep's start and end
     std::vector<Frame> sub0_, sub1_;

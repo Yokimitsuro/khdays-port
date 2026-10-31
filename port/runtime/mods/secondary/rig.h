@@ -137,6 +137,8 @@ struct GroupRig {
     int self_group = -1;
     Mode mode = Mode::simulated;
     AuthoredPolicy policy = AuthoredPolicy::exact;
+    std::uint32_t shell_push = 0; // `shell_push`: the collider tags pushing `cutscene_sim`'s shell
+    float shell_push_from = 0.0F;
 };
 
 struct ControlRig {

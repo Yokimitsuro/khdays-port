@@ -505,6 +505,199 @@ void guided_stretch()
     CHECK(off < 0.03F); // held at rest lengths the hem would stay 0.6 m short
 }
 
+// `cutscene_sim`: about places wider and shorter than the rest shape (a game model's coat), with gravity and a
+// collider through them its group does not collide with: never inside the shell over the places, its links at
+// the places' lengths, untouched by that collider
+void cutscene_sim_shell()
+{
+    Skirt s = make_skirt(8, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s,
+                                   "collider core capsule hips length 0.6 radius 0.3 tags hips\n"
+                                   "collider shin capsule hips length 0.05 radius 0.01 tags calves\n",
+                                   "  collide calves\n  cutscene_sim\n"),
+                      s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    const auto particle_of = [&](int bone) {
+        for (std::size_t i = 0; i < rig->particles.size(); ++i)
+            if (rig->particles[i].dynamic && rig->particles[i].bone == bone)
+                return static_cast<int>(i);
+        return -1;
+    };
+    // the places: flared out like a hem (gravity pulls the strips in against them), 0.75 of the rest spacing down
+    constexpr float kOut = 1.3F, kFlare = 0.6F, kDown = 0.15F;
+    const auto out_at = [&](int l) { return s.radius * kOut * (1.0F + kFlare * static_cast<float>(l)); };
+    std::vector<Vec3> places(rig->particles.size());
+    std::vector<float> weight(rig->particles.size(), 0.0F);
+    std::vector<int> level(rig->particles.size(), 0);
+    std::vector<std::vector<int>> columns;
+    for (int k = 0; k < s.strips; ++k) {
+        const float a = 2.0F * kPi * static_cast<float>(k) / static_cast<float>(s.strips);
+        std::vector<int> col;
+        for (int l = 0; l < s.levels; ++l) {
+            const int i = particle_of(s.bone(k, l));
+            CHECK(i >= 0);
+            if (i < 0)
+                return;
+            if (l == 0)
+                col.push_back(rig->particles[static_cast<std::size_t>(i)].anchor);
+            const auto ui = static_cast<std::size_t>(i);
+            places[ui] = {out_at(l) * std::cos(a), 1.0F - kDown * static_cast<float>(l + 1), out_at(l) * std::sin(a)};
+            weight[ui] = 1.0F;
+            level[ui] = l;
+            col.push_back(i);
+        }
+        columns.push_back(col);
+    }
+    std::vector<std::array<int, 3>> shell;
+    for (std::size_t c = 0; c < columns.size(); ++c) {
+        const auto &l = columns[c], &r = columns[(c + 1) % columns.size()];
+        for (std::size_t q = 0; q + 1 < l.size(); ++q) {
+            shell.push_back({l[q], l[q + 1], r[q]});
+            shell.push_back({r[q], l[q + 1], r[q + 1]});
+        }
+    }
+    // wound outward
+    const auto at = [&](int p) {
+        const auto i = static_cast<std::size_t>(p);
+        return weight[i] > 0.0F
+                   ? places[i]
+                   : point(s.sk.rest[static_cast<std::size_t>(rig->particles[i].bone)], rig->particles[i].offset);
+    };
+    const Vec3 n0 = cross(at(shell[0][1]) - at(shell[0][0]), at(shell[0][2]) - at(shell[0][0]));
+    const Vec3 c0 = (at(shell[0][0]) + at(shell[0][1]) + at(shell[0][2])) * (1.0F / 3.0F);
+    if (dot(n0, Vec3{c0.x, 0.0F, c0.z}) < 0.0F)
+        for (auto &f : shell)
+            std::swap(f[1], f[2]);
+    Simulation sim(*rig);
+    TickSettings ts;
+    const auto pose = pose_of(s.sk, {});
+    sim.set_game_targets(places, places, weight);
+    sim.set_game_shell(shell, {});
+    sim.initialize(pose, ts, 10);
+    float inside = 0.0F, off = 0.0F, link = 0.0F;
+    for (int t = 0; t < 180; ++t) {
+        sim.tick(pose, pose, ts);
+        for (std::size_t i = 0; i < places.size(); ++i) {
+            if (weight[i] <= 0.0F)
+                continue;
+            const Vec3 x = sim.positions()[i];
+            inside = maxf(inside, out_at(level[i]) - std::sqrt(x.x * x.x + x.z * x.z));
+            off = maxf(off, length(x - places[i]));
+        }
+    }
+    for (int k = 0; k < s.strips; ++k)
+        for (int l = 0; l + 1 < s.levels; ++l) {
+            const auto a = static_cast<std::size_t>(particle_of(s.bone(k, l))),
+                       b = static_cast<std::size_t>(particle_of(s.bone(k, l + 1)));
+            link =
+                maxf(link, std::fabs(length(sim.positions()[b] - sim.positions()[a]) - length(places[b] - places[a])));
+        }
+    std::printf("cutscene_sim: %.4f m inside the shell, %.3f m from its places, links %.4f m off theirs\n", inside, off,
+                link);
+    CHECK(inside < 0.01F); // held out on the flare (a tangent plane per point: its corners' circle cut a little)
+    CHECK(off < 0.04F);    // hanging about its places, the collider (radius 0.3) not pushing it out
+    CHECK(link < 0.02F);   // the places' spacing, not the rest shape's 0.2
+    // spun about its hips (the places turning with them): swung out off the shell, never in
+    float out = 0.0F;
+    inside = 0.0F;
+    std::vector<Vec3> was = places, now = places;
+    auto from = pose;
+    for (int t = 1; t <= 60; ++t) {
+        const float yaw = 0.12F * static_cast<float>(t);
+        const auto to = pose_of(s.sk, {}, yaw);
+        for (std::size_t i = 0; i < places.size(); ++i)
+            now[i] = rotate(axis_angle({0, 1, 0}, yaw), places[i]);
+        sim.set_game_targets(was, now, weight);
+        sim.tick(from, to, ts);
+        for (std::size_t i = 0; i < places.size(); ++i) {
+            if (weight[i] <= 0.0F)
+                continue;
+            const Vec3 x = sim.positions()[i];
+            const float r = std::sqrt(x.x * x.x + x.z * x.z);
+            inside = maxf(inside, out_at(level[i]) - r);
+            out = maxf(out, r - out_at(level[i]));
+        }
+        was = now;
+        from = to;
+    }
+    std::printf("cutscene_sim spun: %.3f m out off the shell, %.4f m inside it\n", out, inside);
+    CHECK(out > 0.02F);    // flung out
+    CHECK(inside < 0.01F); // never in
+}
+
+// `shell_push`: a shin standing through the shell's places, the coat about them pushed out of it (the places, not
+// the cloth: nothing touches the cloth), not when the group does not name it
+void shell_push_shin()
+{
+    for (const bool push : {false, true}) {
+        Skirt s = make_skirt(8, 3);
+        s.sk.names.push_back("shin");
+        s.sk.parent.push_back(1);
+        s.sk.rest.push_back(down_frame({0.2F, 1.0F, 0.0F}, 0.0F)); // down through strip 0's places
+        Diagnostics d;
+        auto rig = cooked(skirt_config(s, "collider shin capsule shin length 0.5 radius 0.06 tags calves\n",
+                                       std::string("  collide none\n  cutscene_sim\n  thickness 0.01\n") +
+                                           (push ? "  shell_push calves\n" : "")),
+                          s.sk, s.mesh, d);
+        CHECK(rig != nullptr);
+        if (!rig)
+            return;
+        std::vector<Vec3> places(rig->particles.size());
+        std::vector<float> weight(rig->particles.size(), 0.0F);
+        std::vector<std::vector<int>> columns;
+        for (int k = 0; k < s.strips; ++k) {
+            const float a = 2.0F * kPi * static_cast<float>(k) / static_cast<float>(s.strips);
+            std::vector<int> col;
+            for (int l = 0; l < s.levels; ++l) {
+                int i = -1;
+                for (std::size_t j = 0; j < rig->particles.size(); ++j)
+                    if (rig->particles[j].dynamic && rig->particles[j].bone == s.bone(k, l))
+                        i = static_cast<int>(j);
+                CHECK(i >= 0);
+                if (i < 0)
+                    return;
+                if (l == 0)
+                    col.push_back(rig->particles[static_cast<std::size_t>(i)].anchor);
+                places[static_cast<std::size_t>(i)] = {0.2F * std::cos(a), 0.85F - 0.15F * static_cast<float>(l),
+                                                       0.2F * std::sin(a)};
+                weight[static_cast<std::size_t>(i)] = 1.0F;
+                col.push_back(i);
+            }
+            columns.push_back(col);
+        }
+        std::vector<std::array<int, 3>> shell;
+        for (std::size_t c = 0; c < columns.size(); ++c) {
+            const auto &l = columns[c], &r = columns[(c + 1) % columns.size()];
+            for (std::size_t q = 0; q + 1 < l.size(); ++q) {
+                shell.push_back({l[q], r[q], l[q + 1]}); // wound outward (a ring turning +x to +z, rows down)
+                shell.push_back({r[q], r[q + 1], l[q + 1]});
+            }
+        }
+        Simulation sim(*rig);
+        TickSettings ts;
+        const auto pose = pose_of(s.sk, {});
+        sim.set_game_targets(places, places, weight);
+        sim.set_game_shell(shell, {});
+        sim.initialize(pose, ts, 10);
+        for (int t = 0; t < 120; ++t)
+            sim.tick(pose, pose, ts);
+        // the nearest a place-held point comes to the shin's core
+        float nearest = 1e9F;
+        for (std::size_t i = 0; i < places.size(); ++i) {
+            if (weight[i] <= 0.0F)
+                continue;
+            const Vec3 x = sim.positions()[i];
+            nearest = minf(nearest, std::sqrt((x.x - 0.2F) * (x.x - 0.2F) + x.z * x.z));
+        }
+        std::printf("shell_push %s: the coat %.3f m from the shin's core (radius 0.06)\n", push ? "on" : "off",
+                    nearest);
+        CHECK(push ? nearest > 0.06F : nearest < 0.03F);
+    }
+}
+
 void contacts()
 {
     // a skirt over a fast capsule sweeping through its middle, a floor below it, a wall beside it
@@ -826,6 +1019,8 @@ int main()
     spawn_teleport_identity();
     authored_and_release();
     guided_stretch();
+    cutscene_sim_shell();
+    shell_push_shin();
     contacts();
     spread_start();
     hair_and_wind();

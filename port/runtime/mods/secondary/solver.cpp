@@ -326,6 +326,8 @@ Frame Simulation::reference_frame(int si, const std::vector<Frame> &pose) const
 
 Vec3 Simulation::target_of(std::size_t i, const std::vector<Frame> &pose) const
 {
+    if (shelled(i)) // its place on the game model's coat: the legs' carry and the drape not wanted
+        return game_now_[i];
     const ParticleDrive &d = drive_[i];
     const float g = maxf(d.guide, d.authority);
     const Vec3 anim = animated_of(i, pose);
@@ -338,8 +340,124 @@ Vec3 Simulation::target_of(std::size_t i, const std::vector<Frame> &pose) const
 
 float Simulation::game_shape_of(std::size_t i) const
 {
-    return i < game_now_.size() && rig_.particles[i].dynamic ? drive_[i].params.get(Param::game_shape) * game_weight_[i]
-                                                             : 0.0F;
+    return i < game_now_.size() && rig_.particles[i].dynamic && !shelled(i)
+               ? drive_[i].params.get(Param::game_shape) * game_weight_[i]
+               : 0.0F;
+}
+
+bool Simulation::shelled(std::size_t i) const
+{
+    return i < game_now_.size() && i < game_weight_.size() && rig_.particles[i].dynamic && game_weight_[i] > 0.0F &&
+           drive_[i].params.get(Param::cutscene_sim) >= 0.5F;
+}
+
+void Simulation::set_game_shell(const std::vector<std::array<int, 3>> &triangles, const std::vector<std::uint8_t> &open)
+{
+    shell_faces_ = triangles;
+    shell_open_ = open;
+}
+
+// `shell_push`: the shell's faces moved out of their group's pushing colliders (from `shell_push_from` down
+// each), a face's corners by where on it the collider comes nearest, its thickness clear, four times over. The
+// places move, not the cloth: it follows them as ever, so nothing it touches squeezes it.
+void Simulation::push_shell()
+{
+    if (shell_faces_.empty() || game_now_.size() != x_.size())
+        return;
+    const auto at = [&](int p) {
+        const auto i = static_cast<std::size_t>(p);
+        return shelled(i) ? game_now_[i] : x_[i];
+    };
+    for (int pass = 0; pass < 4; ++pass)
+        for (std::size_t f = 0; f < shell_faces_.size(); ++f) {
+            if (f < shell_open_.size() && shell_open_[f])
+                continue;
+            const auto &face = shell_faces_[f];
+            int owner = -1;
+            for (const int p : face)
+                if (owner < 0 && shelled(static_cast<std::size_t>(p)))
+                    owner = p;
+            if (owner < 0)
+                continue;
+            const GroupRig &g =
+                rig_.groups[static_cast<std::size_t>(rig_.particles[static_cast<std::size_t>(owner)].group)];
+            if (g.shell_push == 0U)
+                continue;
+            const float clear = rig_.particles[static_cast<std::size_t>(owner)].thickness;
+            for (std::size_t c = 0; c < rig_.colliders.size(); ++c) {
+                if (!(rig_.colliders[c].tags & g.shell_push))
+                    continue;
+                const Shape &sh = shape1_[c];
+                const Vec3 a = at(face[0]), b = at(face[1]), cc = at(face[2]);
+                const Vec3 start = sh.a + (sh.b - sh.a) * g.shell_push_from;
+                float best = 1e30F, best_t = 0.0F;
+                Vec3 on_axis, on_face;
+                for (int k = 0; k <= 8; ++k) { // along the core: its nearest point to the face
+                    const float t = static_cast<float>(k) / 8.0F;
+                    const Vec3 p = start + (sh.b - start) * t;
+                    const Vec3 q = closest_on_triangle(p, a, b, cc);
+                    const float d = length(q - p);
+                    if (d < best) {
+                        best = d;
+                        best_t = g.shell_push_from + (1.0F - g.shell_push_from) * t;
+                        on_axis = p;
+                        on_face = q;
+                    }
+                }
+                const float need = sh.ra + (sh.rb - sh.ra) * best_t + clear - best;
+                if (need <= 0.0F)
+                    continue;
+                const Vec3 n =
+                    best > 1e-6F ? (on_face - on_axis) * (1.0F / best) : normalized(cross(b - a, cc - a), {});
+                const auto share = barycentric(on_face, a, b, cc);
+                for (std::size_t k = 0; k < 3; ++k) {
+                    const auto i = static_cast<std::size_t>(face[k]);
+                    if (shelled(i))
+                        game_now_[i] += n * (need * maxf(share[k], 0.0F));
+                }
+            }
+        }
+}
+
+void Simulation::snap_to_game()
+{
+    for (std::size_t i = 0; i < x_.size(); ++i)
+        if (shelled(i)) {
+            x_[i] = prev_[i] = target_[i] = target_prev_[i] = game_now_[i];
+            v_[i] = target_vel_[i] = {};
+        }
+}
+
+// Each shelled particle's outward way: the shell's faces round it at the places now, by their areas
+void Simulation::shell_normals()
+{
+    shell_normal_.assign(x_.size(), {});
+    if (game_now_.size() != x_.size())
+        return;
+    const auto at = [&](int p) {
+        const auto i = static_cast<std::size_t>(p);
+        return shelled(i) ? game_now_[i] : x_[i];
+    };
+    for (const auto &f : shell_faces_) {
+        const Vec3 n = cross(at(f[1]) - at(f[0]), at(f[2]) - at(f[0]));
+        for (const int p : f)
+            shell_normal_[static_cast<std::size_t>(p)] += n;
+    }
+    for (Vec3 &n : shell_normal_)
+        n = normalized(n, {});
+}
+
+// `cutscene_sim`: never inside the shell: a particle behind its place's tangent plane put back onto it (it
+// slides along the shell and swings out freely)
+void Simulation::keep_outside_shell()
+{
+    for (std::size_t i = 0; i < x_.size() && i < shell_normal_.size(); ++i) {
+        if (!shelled(i))
+            continue;
+        const float d = dot(x_[i] - game_now_[i], shell_normal_[i]);
+        if (d < 0.0F)
+            x_[i] -= shell_normal_[i] * d;
+    }
 }
 
 void Simulation::set_game_targets(const std::vector<Vec3> &from, const std::vector<Vec3> &to,
@@ -699,6 +817,8 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
             for (std::size_t i = 0; i < x_.size(); ++i)
                 game_now_[i] = lerp(game_from_[i], game_to_[i], static_cast<float>(sub + 1) / static_cast<float>(n));
         shapes(sub1_, shape1_);
+        push_shell();
+        shell_normals();
         for (std::size_t f = 0; f < rig_.faces.size(); ++f) {
             const Face &face = rig_.faces[f];
             face_normal_prev_[f] =
@@ -778,6 +898,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
             solve_follow(h);
             solve_limits();
             limit_strain(false);
+            keep_outside_shell();
             const auto b = Clock::now();
             // controls each pass; the edges and faces between them on the substep's last
             collide_model(1.0F, it + 1 == std::max(1, s.iterations));
@@ -804,6 +925,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
                 collide_environment(s);
             collide_model(0.0F, true);
         }
+        keep_outside_shell(); // last: nothing leaves it inside
         // `game_shape`: that far onto the game model's surface after everything else (at 1 nothing pushes it off)
         if (game_now_.size() == x_.size())
             for (std::size_t i = 0; i < x_.size(); ++i) {
@@ -849,7 +971,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         const Frame &ref = reference_bone_frame(i, sub1_);
         const Vec3 local = apply_inverse(ref, x_[i]);
         const float tau = drive_[i].params.get(Param::smoothing);
-        if (tau <= 0.0F || game_shape_of(i) >= 1.0F) { // on the game's surface: nothing to smooth
+        if (tau <= 0.0F || game_shape_of(i) >= 1.0F || shelled(i)) { // on or about the game's coat: unsmoothed
             shown_[i] = local;
             continue;
         }
@@ -995,7 +1117,7 @@ void Simulation::drape(const std::vector<Frame> &pose, const std::vector<Shape> 
         const auto i = static_cast<std::size_t>(pi);
         const Particle &p = rig_.particles[i];
         if (p.anchor < 0 || particle_colliders_[i].empty() || drive_[i].authority >= 0.999F ||
-            drive_[i].params.get(Param::drape) < 0.5F)
+            drive_[i].params.get(Param::drape) < 0.5F || shelled(i))
             continue;
         const auto j = static_cast<std::size_t>(p.anchor);
         const Vec3 base = out[j], seg = raw_[i] - raw_[j];
@@ -1037,8 +1159,9 @@ void Simulation::drape(const std::vector<Frame> &pose, const std::vector<Shape> 
 void Simulation::animated_lengths()
 {
     const auto aim = [&](std::size_t i) { return rig_.particles[i].dynamic ? target_[i] : x_[i]; };
+    // a shelled particle's lengths are its places' on the game model's coat, whatever they are scaled to
     const auto guided = [&](std::size_t i) {
-        return rig_.particles[i].dynamic ? maxf(drive_[i].guide, drive_[i].authority) : 1.0F;
+        return rig_.particles[i].dynamic ? (shelled(i) ? 1.0F : maxf(drive_[i].guide, drive_[i].authority)) : 1.0F;
     };
     for (std::size_t c = 0; c < rig_.distances.size(); ++c) {
         const Distance &d = rig_.distances[c];
@@ -1049,7 +1172,9 @@ void Simulation::animated_lengths()
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
         tether_now_[i] = p.tether;
-        if (p.root >= 0 && p.tether > 0.0F && guided(i) > 0.0F)
+        if (p.root >= 0 && shelled(i))
+            tether_now_[i] = maxf(p.tether, length(aim(i) - aim(static_cast<std::size_t>(p.root))));
+        else if (p.root >= 0 && p.tether > 0.0F && guided(i) > 0.0F)
             tether_now_[i] = maxf(
                 p.tether, p.tether + (length(aim(i) - aim(static_cast<std::size_t>(p.root))) - p.tether) * guided(i));
     }
@@ -1063,6 +1188,10 @@ void Simulation::solve_links(float h)
         const auto a = static_cast<std::size_t>(d.a), b = static_cast<std::size_t>(d.b);
         const float wa = w(a), wb = w(b);
         if (wa + wb <= 0.0F)
+            continue;
+        // `cutscene_sim`: its rows and faces only kept from stretching past their limit (limit_strain), so the coat
+        // can swing out off the shell (widening) while its strips keep their lengths
+        if ((d.kind == Link::row || d.kind == Link::shear) && (shelled(a) || shelled(b)))
             continue;
         const Vec3 delta = x_[b] - x_[a];
         const float len = length(delta);
@@ -1414,7 +1543,7 @@ void Simulation::collide_environment(const TickSettings &s)
         }
         return hit;
     };
-    const auto unsimulated = [&](std::size_t i) { return drive_[i].params.get(Param::no_sim) >= 0.5F; };
+    const auto unsimulated = [&](std::size_t i) { return drive_[i].params.get(Param::no_sim) >= 0.5F || shelled(i); };
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
         if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact) || unsimulated(i))
@@ -1472,6 +1601,8 @@ void Simulation::collide_self()
     }
     for (std::size_t k = 0; k < self_points_.size(); ++k) {
         const auto i = static_cast<std::size_t>(self_points_[k]);
+        if (shelled(i))
+            continue;
         const float wi = w(i);
         const Vec3 x = x_[i];
         const float thi = rig_.particles[i].thickness;
@@ -1482,6 +1613,8 @@ void Simulation::collide_self()
             const Face &face = rig_.faces[f];
             const std::size_t v[3] = {static_cast<std::size_t>(face.a), static_cast<std::size_t>(face.b),
                                       static_cast<std::size_t>(face.c)};
+            if (shelled(v[0]) || shelled(v[1]) || shelled(v[2]))
+                continue;
             const Aabb &fb = face_box_[f];
             if (x.x < fb.lo.x || x.x > fb.hi.x || x.y < fb.lo.y || x.y > fb.hi.y || x.z < fb.lo.z || x.z > fb.hi.z)
                 continue;

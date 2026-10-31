@@ -7,7 +7,9 @@
 #include "actor.h"
 #include "days_environment.h"
 
+#include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/model_import.h"
+#include "khdays/vfs/filesystem.h"
 
 extern "C" {
 #include "../../../gfx/g3d.h"
@@ -24,8 +26,12 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <condition_variable>
 #include <map>
+#include <mutex>
+#include <set>
 #include <system_error>
+#include <thread>
 
 namespace khdays::secondary {
 
@@ -171,8 +177,12 @@ struct ModelSecondary {
     };
     std::vector<GameChain> game_chains;
     std::vector<GameArc> game_arcs;
+    std::vector<std::array<int, 3>> game_shell; // `cutscene_sim`: the shell over the locked places (particles)
+    std::vector<std::uint8_t> game_shell_open;  // per shell face: across the slit (not pushed out of the legs)
     GameMesh game;
     bool has_game = false;
+    // `leg_carry`: game vertices skinned anew (the back's below the hips, partly on both legs)
+    std::map<int, std::array<std::pair<int, float>, 4>> game_reskin;
     std::vector<Frame> pose, out;
     std::vector<std::uint8_t> written;
 };
@@ -184,8 +194,135 @@ void ModelSecondaryDeleter::operator()(ModelSecondary *m) const
 
 namespace {
 
+// Rigs cooked and prepared ahead on a thread of their own (prewarm), by their .secondary.txt: a model loaded
+// later (a cutscene's, mid-scene) takes its rig from here instead of stalling the game ~0.1-0.25 s to cook it
+struct Prepared {
+    std::shared_ptr<const Rig> rig;
+    Diagnostics diagnostics;
+    std::vector<std::filesystem::path> files;
+    std::vector<std::filesystem::file_time_type> stamps;
+    std::size_t bones = 0, vertices = 0; // the model it was cooked against
+};
+std::mutex prepared_lock;
+std::condition_variable prepared_done;
+std::map<std::string, Prepared> prepared;
+std::set<std::string> preparing;
+
+// a file's key there: its full path, normalised (the game names its files with mixed slashes)
+std::string prepared_key(const std::filesystem::path &file)
+{
+    std::error_code ec;
+    std::filesystem::path full = std::filesystem::weakly_canonical(file, ec);
+    if (ec)
+        full = file.lexically_normal();
+    full.make_preferred();
+    const auto f8 = full.u8string();
+    return {f8.begin(), f8.end()};
+}
+
+struct Prewarm {
+    std::thread worker;
+    ~Prewarm()
+    {
+        if (worker.joinable())
+            worker.join();
+    }
+} prewarm;
+
+// Every mod model with secondary motion (mods/<Mod>/graphics/.../<name>.secondary.txt beside <name>.mdlx), but
+// `skip` (cooked already), cooked and prepared on a thread of its own
+void prewarm_model_secondary(const std::string &skip)
+{
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> work; // .secondary.txt, .mdlx
+    std::error_code ec;
+    for (const auto &mod : std::filesystem::directory_iterator(khdays::vfs::mods_root(), ec)) {
+        const auto graphics = mod.path() / "graphics";
+        if (!std::filesystem::is_directory(graphics, ec))
+            continue;
+        for (const auto &e : std::filesystem::recursive_directory_iterator(graphics, ec)) {
+            const std::string fname = e.path().filename().string();
+            const std::string tail = ".secondary.txt";
+            if (fname.size() <= tail.size() || fname.compare(fname.size() - tail.size(), tail.size(), tail) != 0)
+                continue;
+            const auto model = e.path().parent_path() / (fname.substr(0, fname.size() - tail.size()) + ".mdlx");
+            const std::string key = prepared_key(e.path());
+            if (key == prepared_key(u8(skip)) || !std::filesystem::exists(model, ec))
+                continue;
+            work.emplace_back(e.path(), model);
+            std::lock_guard<std::mutex> lock(prepared_lock);
+            preparing.insert(key);
+        }
+    }
+    if (work.empty())
+        return;
+    prewarm.worker = std::thread([work] {
+        for (const auto &[file, model] : work) {
+            const std::string key = prepared_key(file);
+            Prepared p;
+            try {
+                const auto imported = assets::kh2::import_mdlx(model);
+                SkeletonDesc skeleton;
+                MeshDesc mesh;
+                describe(imported, skeleton, mesh);
+                p.bones = skeleton.names.size();
+                p.vertices = mesh.vertices.size();
+                const Config config = read_config(file, p.diagnostics);
+                if (!has_errors(p.diagnostics)) {
+                    auto cooked = std::make_shared<Rig>(cook(config, skeleton, mesh, p.diagnostics));
+                    if (!has_errors(p.diagnostics)) {
+                        prepare_references(*cooked, &p.diagnostics);
+                        p.rig = std::move(cooked);
+                    }
+                }
+                std::error_code ec2;
+                for (const auto &f : config.files) {
+                    p.files.push_back(f);
+                    p.stamps.push_back(std::filesystem::last_write_time(f, ec2));
+                }
+            } catch (...) {
+                p.rig.reset(); // cooked again when loaded, which reports why
+            }
+            std::lock_guard<std::mutex> lock(prepared_lock);
+            if (p.rig)
+                prepared[key] = std::move(p);
+            preparing.erase(key);
+            prepared_done.notify_all();
+        }
+    });
+}
+
+// The rig prepared ahead for this model's file, when its files are as they were then (waits while it is being
+// prepared); null to cook it here
+std::shared_ptr<const Rig> take_prepared(ModelSecondary &m)
+{
+    const std::string key = prepared_key(u8(m.file));
+    std::unique_lock<std::mutex> lock(prepared_lock);
+    prepared_done.wait(lock, [&] { return preparing.count(key) == 0; });
+    const auto it = prepared.find(key);
+    if (it == prepared.end())
+        return nullptr;
+    const Prepared &p = it->second;
+    if (p.bones != m.skeleton.names.size() || p.vertices != m.mesh.vertices.size())
+        return nullptr;
+    std::error_code ec;
+    for (std::size_t i = 0; i < p.files.size(); ++i)
+        if (std::filesystem::last_write_time(p.files[i], ec) != p.stamps[i])
+            return nullptr;
+    for (const auto &x : p.diagnostics)
+        say(m.name + ": " + format(x));
+    m.stamps = p.stamps;
+    return p.rig;
+}
+
 std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
 {
+    if (auto ready = take_prepared(m)) {
+        say(m.name + ": " + ready->summary + " (prepared ahead)");
+        m.debug = ready->config.debug || flag("KHDAYS_SECONDARY_DEBUG");
+        m.profile = ready->config.profile || flag("KHDAYS_SECONDARY_PROFILE");
+        m.trace = flag("KHDAYS_SECONDARY_TRACE");
+        return ready;
+    }
     Diagnostics d;
     const Config config = read_config(u8(m.file), d);
     std::shared_ptr<Rig> rig;
@@ -437,6 +574,9 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
     m.has_game = true;
     m.game_chains.clear();
     m.game_arcs.clear();
+    m.game_shell.clear();
+    m.game_shell_open.clear();
+    m.game_reskin.clear();
     if (!m.rig)
         return;
     const Rig &rig = *m.rig;
@@ -497,6 +637,7 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
                 allowed[c] = 1;
         float knee_own = 0.0F, knee_game = 0.0F;
         int knees = 0;
+        std::vector<int> thighs, calves; // the legs' game nodes, above and below the knee
         for (const int f : follow) {
             const int fn = node_of(f);
             if (fn < 0)
@@ -522,6 +663,8 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
                 knee_own += head(own).y;
                 knee_game += game.node_place[static_cast<std::size_t>(its)].y;
                 ++knees;
+                thighs.push_back(fn);
+                calves.push_back(its);
             }
         }
         if (knees == 0)
@@ -800,6 +943,40 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
             return static_cast<int>(m.game_chains.size()) - 1;
         };
         chain_at[0] = locked(back);
+        // `leg_carry`: the back's vertices from the knee down (the game's back flap rides its hips, and one calf
+        // carries its hem) carried that much by both legs alike, the thighs from the knee up and the calves below
+        {
+            const auto &bc = m.game_chains[static_cast<std::size_t>(chain_at[0])];
+            const float carry =
+                bc.paths.size() == 2 && !bc.particles.empty()
+                    ? rig.params[static_cast<std::size_t>(
+                                     rig.particles[static_cast<std::size_t>(bc.particles[bc.ends[0]])].params)]
+                          .get(Param::leg_carry)
+                    : 0.0F;
+            if (carry > 0.0F && !thighs.empty())
+                for (const int v : bc.paths[1]) {
+                    std::map<int, float> w;
+                    for (const auto &[node, x] : game.weights[static_cast<std::size_t>(v)])
+                        if (node >= 0 && x > 0.0F)
+                            w[node] += (1.0F - carry) * x;
+                    const auto &legs =
+                        game.positions[static_cast<std::size_t>(v)].y >= knee_game - 1e-3F ? thighs : calves;
+                    for (const int node : legs)
+                        w[node] += carry / static_cast<float>(legs.size());
+                    std::vector<std::pair<int, float>> sorted(w.begin(), w.end());
+                    std::sort(sorted.begin(), sorted.end(),
+                              [](const auto &a, const auto &b) { return a.second > b.second; });
+                    std::array<std::pair<int, float>, 4> kept{};
+                    float total = 0.0F;
+                    for (std::size_t k = 0; k < 4; ++k) {
+                        kept[k] = k < sorted.size() ? sorted[k] : std::pair<int, float>{-1, 0.0F};
+                        total += kept[k].second;
+                    }
+                    for (auto &k : kept)
+                        k.second = total > 0.0F ? k.second / total : 0.0F;
+                    m.game_reskin[v] = kept;
+                }
+        }
         chain_at[1] = locked(lateral[0]);
         chain_at[2] = locked(lateral[1]);
         std::array<int, 2> beside{-1, -1}; // each side's front strip nearest the front: the front's middle between them
@@ -876,7 +1053,59 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
             say(group + "a strip's top, knee or bottom place or the coat's path to it is missing; not locked");
             m.game_chains.resize(chains_before);
             m.game_arcs.resize(arcs_before);
+            continue;
         }
+        // `cutscene_sim`'s shell: each strip (its fixed point, then its points down) beside the next round the
+        // body, closed all round (across the slit too); its faces wound alike, all turned outward when most point
+        // inward at rest (the slit's are near flat there)
+        const std::size_t shell_before = m.game_shell.size();
+        std::vector<std::vector<int>> columns;
+        const auto column = [&](const std::vector<int> &particles) {
+            std::vector<int> col;
+            const int anchor = rig.particles[static_cast<std::size_t>(particles[0])].anchor;
+            if (anchor >= 0)
+                col.push_back(anchor);
+            col.insert(col.end(), particles.begin(), particles.end());
+            columns.push_back(std::move(col));
+        };
+        for (std::size_t c = chains_before; c < m.game_chains.size(); ++c)
+            column(m.game_chains[c].particles);
+        for (std::size_t c = arcs_before; c < m.game_arcs.size(); ++c)
+            column(m.game_arcs[c].particles);
+        const auto angle = [&](const std::vector<int> &col) {
+            const auto w = across(side_of(col[std::min<std::size_t>(3, col.size() - 1)]));
+            return std::atan2(w[1], w[0]);
+        };
+        std::sort(columns.begin(), columns.end(),
+                  [&](const std::vector<int> &a, const std::vector<int> &b) { return angle(a) < angle(b); });
+        for (std::size_t c = 0; c < columns.size(); ++c) {
+            const auto &l = columns[c], &r = columns[(c + 1) % columns.size()];
+            for (std::size_t q = 0; q + 1 < l.size() && q + 1 < r.size(); ++q)
+                for (const std::array<int, 3> f :
+                     {std::array<int, 3>{l[q], l[q + 1], r[q]}, std::array<int, 3>{r[q], l[q + 1], r[q + 1]}}) {
+                    if (f[0] == f[1] || f[1] == f[2] || f[0] == f[2])
+                        continue; // the front above its fork: one strip
+                    m.game_shell.push_back(f);
+                    // between the front's two panels: across the slit, where the legs are seen anyway
+                    const auto forked_column = [&](const std::vector<int> &col) {
+                        for (const int i : col)
+                            if (shared.count(i) != 0 && shared.at(i) > 1)
+                                return true;
+                        return false;
+                    };
+                    m.game_shell_open.push_back(forked_column(l) && forked_column(r) ? 1 : 0);
+                }
+        }
+        float outward = 0.0F;
+        for (std::size_t q = shell_before; q < m.game_shell.size(); ++q) {
+            const auto &f = m.game_shell[q];
+            const Vec3 a = rest_of(f[0]), b = rest_of(f[1]), cc = rest_of(f[2]);
+            const Vec3 mid = (a + b + cc) * (1.0F / 3.0F);
+            outward += dot(cross(b - a, cc - a), Vec3{mid.x - centre.x, 0.0F, mid.z - centre.z});
+        }
+        if (outward < 0.0F)
+            for (std::size_t q = shell_before; q < m.game_shell.size(); ++q)
+                std::swap(m.game_shell[q][1], m.game_shell[q][2]);
     }
 }
 
@@ -910,6 +1139,13 @@ ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std:
     if (m->rig)
         khdays_log("secondary: %s: cooked and prepared in %.1f ms", name.c_str(),
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    // the first model with secondary motion: every other one prepared ahead, so a model loaded mid-scene does
+    // not stall the game to cook it
+    static bool prewarmed = false;
+    if (!prewarmed && !flag("KHDAYS_SECONDARY_NO_PREWARM")) {
+        prewarmed = true;
+        prewarm_model_secondary(m->file);
+    }
     const std::size_t n = m->skeleton.names.size();
     m->pose.assign(n, {});
     m->out.assign(n, {});
@@ -1126,7 +1362,9 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         const auto game_vertex = [&](int v) {
             Vec3 at{};
             const Vec3 r = m.game.positions[static_cast<std::size_t>(v)];
-            for (const auto &[node, w] : m.game.weights[static_cast<std::size_t>(v)]) {
+            const auto reskin = m.game_reskin.find(v);
+            for (const auto &[node, w] :
+                 reskin != m.game_reskin.end() ? reskin->second : m.game.weights[static_cast<std::size_t>(v)]) {
                 if (node < 0 || w <= 0.0F || static_cast<std::size_t>(node) >= in.game_nodes->size())
                     continue;
                 const Mat4 &dn = (*in.game_nodes)[static_cast<std::size_t>(node)];
@@ -1232,6 +1470,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
             }
         a.game_targets = &state.game_targets;
         a.game_weight = &state.game_weight;
+        if (!m.game_shell.empty()) {
+            a.game_shell = &m.game_shell;
+            a.game_shell_open = &m.game_shell_open;
+        }
     }
     state.actor->update(a);
     std::fill(m.written.begin(), m.written.end(), std::uint8_t{0});

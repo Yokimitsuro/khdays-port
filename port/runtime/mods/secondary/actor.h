@@ -40,6 +40,9 @@ struct ActorInput {
     // it may take it there (0 none: too far from that surface); null without
     const std::vector<Vec3> *game_targets = nullptr;
     const std::vector<float> *game_weight = nullptr;
+    // `cutscene_sim`: the shell over those places (Simulation::set_game_shell); null without
+    const std::vector<std::array<int, 3>> *game_shell = nullptr;
+    const std::vector<std::uint8_t> *game_shell_open = nullptr; // per shell face: across an opening (not pushed)
 };
 
 // The last measurements of an actor's cost: per update (microseconds), kept for percentiles.
@@ -104,6 +107,7 @@ private:
     bool started_ = false, frozen_ = false;
     std::uint64_t epoch_ = 0, generation_ = 0;
     double last_seconds_ = 0.0, sim_seconds_ = 0.0;
+    double settled_at_ = -1e9;    // the game's time of the last settle (a start, a cut)
     std::int64_t ticks_done_ = 0; // ticks since the start, sim_seconds_ = ticks_done_ / rate from it
     std::vector<Frame> last_pose_, from_, to_;
     std::vector<Vec3> last_game_, game_a_, game_b_; // the last draw's game targets, a tick's start and end
