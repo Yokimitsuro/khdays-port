@@ -6,7 +6,7 @@ emit (the C again); build.py runs them over the game (docs/BUILD.md, "The refere
 from __future__ import annotations
 
 
-def rewrite_text(text: str, filename: str, index=None, file_key: str = "f") -> str:
+def rewrite_text(text: str, filename: str, index=None, file_key: str = "f", routes: bool = False) -> str:
     """Preprocessed C text rewritten (the unit tests' entry; the build's is
     the same three steps)."""
     from .emit import Index, emit
@@ -15,5 +15,5 @@ def rewrite_text(text: str, filename: str, index=None, file_key: str = "f") -> s
 
     ast = parse(text, filename)
     tp = TypePass().run(ast)
-    out, _ = emit(ast, tp, index or Index(), file_key)
+    out, _ = emit(ast, tp, index or Index(), file_key, routes)
     return out

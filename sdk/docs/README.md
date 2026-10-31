@@ -47,7 +47,7 @@ extern "C" KH_PLUGIN_EXPORT const KhPluginDescriptor *kh_plugin_query(void)
 | Example | What it shows |
 |---|---|
 | `examples/HelloWorld` | the descriptor, `start` and `stop`, the log, an interface the port has not got |
-| `examples/AdvancedNativeMod` | `kh.hooks` (the player's HP, the enemies' hits, sounds), `kh.events` (scenes), `kh.engine` (a routine and a datum by name), `kh.actors` |
+| `examples/AdvancedNativeMod` | `kh.hooks` (the player's HP, the enemies' hits, sounds), `kh.events` (scenes), `kh.engine` (a routine and a datum by name, two routines replaced), `kh.actors` |
 | `examples/CustomCharacter` | a mod's own character (its `characters/block/`) given behaviour by `kh.characters`: told of its attacks, 1 HP back for each, its hits doubled through a hook and `kh.actors` |
 | `examples/CustomLimit` | a character's Limit of its own: the game's skipped at `Ov022_ActorSetState`, the buttons hidden (`kh.input`), its own clips played (`kh.characters`), its spins' hits dealt through the game's routine (`kh.combat`); `make_files.py` makes its made-up character |
 | `examples/CustomEnemy` | the Shadows given a behaviour of their own: they blink away and split, after `Ov107_AiState_ApplyHit`'s hook (`kh.actors`' `set_position`, `make_enemy`) |

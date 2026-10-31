@@ -261,7 +261,10 @@ def _emit(job):
     try:
         _, text = _source_text(source, meta)
         ast, tp = _parse_text(source, text)
-        out_text, e = emit(ast, tp, index, file_key(source))
+        # the game's own routines (rewritten/src/: not the SDK's libraries, libs/, nor the port's HAL, native_hal/)
+        # routed for the plugins
+        tree = output.replace("\\", "/").rsplit("/rewritten/", 1)
+        out_text, e = emit(ast, tp, index, file_key(source), routes=len(tree) == 2 and tree[1].startswith("src/"))
     except Exception as ex:  # noqa: BLE001
         r.error = f"{type(ex).__name__}: {ex}\n{traceback.format_exc()[-1500:]}"
         return r

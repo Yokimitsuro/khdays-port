@@ -459,7 +459,8 @@ const void *khdays_plugins_interface(KhPlugin *plugin, const char *name, uint32_
         return version == KH_HOOKS_VERSION ? &hooks_table : NULL;
     }
     if (strcmp(name, KH_ENGINE) == 0) {
-        return version == KH_ENGINE_VERSION ? khdays_plugins_engine() : NULL;
+        /* version 2 only added replace at its end: a plugin made for 1 gets the same table */
+        return version >= 1 && version <= KH_ENGINE_VERSION ? khdays_plugins_engine() : NULL;
     }
     if (strcmp(name, KH_ACTORS) == 0) {
         return version == KH_ACTORS_VERSION ? khdays_plugins_actors() : NULL;

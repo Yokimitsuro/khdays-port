@@ -181,6 +181,11 @@ KhPlugin *khdays_plugins_calling(KhPlugin *plugin)
     return was;
 }
 
+KhPlugin *khdays_plugins_called(void)
+{
+    return calling;
+}
+
 int khdays_plugins_may_change(KhPlugin *plugin)
 {
     const Plugin *p = plugin != NULL ? plugin : calling;
@@ -752,6 +757,7 @@ void khdays_plugins_frame(void)
     if (started_count > 0) {
         khdays_actors_frame();
         khdays_plugins_characters_frame();
+        khdays_plugins_engine_frame();
     }
 }
 

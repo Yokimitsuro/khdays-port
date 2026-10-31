@@ -43,6 +43,17 @@ struct khdays_function_record {
 };
 #pragma pack(pop)
 
+/* A routine of the game's a native plugin may replace (references/emit.py routed): its name, the pointer every call
+ * of it goes through, and its own body: in section .khrt$m (runtime/plugins/engine.c). */
+#pragma pack(push, 8)
+struct khdays_route_record {
+    const char *name;
+    void **route;
+    void *body;
+    void *unused; /* 32 bytes: whatever alignment the linker gives the section, no record straddles its padding */
+};
+#pragma pack(pop)
+
 /* A member's offset, without <stddef.h> (whose size_t is not the game's). */
 #define KHDAYS_OFFSETOF(type, member) ((khdays_ref)(unsigned long long)&(((type *)0)->member))
 

@@ -5,7 +5,9 @@
 //    menus') and every positioned sound (Slot_Spawn: the field's) it counts them.
 //  - kh.events: each scene change is logged, with the sounds counted in the scene before.
 //  - kh.engine: at start it calls a game routine by its decompilation name (GetLanguage) and reads a game datum by
-//    name (gSceneCtl: the scene controller, its current scene at +8).
+//    name (gSceneCtl: the scene controller, its current scene at +8). It replaces two routines: GetLanguage, counted
+//    and passed on to the game's (the count told at each scene change), and Ov002_ScriptAddMissionMember (a mission
+//    script's "a member joins"), its arguments logged before the game's runs.
 // What it relies on (Ov022_ActorSetHp's entity keeping its HP at +0x12, gSceneCtl's layout) is the game's own, as the
 // decompilation names it: a later port may move it (kh_engine.h).
 #include <kh/kh_actors.h>
@@ -72,13 +74,36 @@ void enemy_hit(KhHookCall *call, void *)
     say(text);
 }
 
-void scene_changed(const KhEvent *event, void *)
+// replaced routines: what the calls reached before (the game's own), called on
+int (*game_get_language)() = nullptr;
+void (*game_add_member)(int, int, int) = nullptr;
+unsigned language_calls = 0;
+
+int counted_get_language()
+{
+    ++language_calls;
+    return game_get_language();
+}
+
+// Ov002_ScriptAddMissionMember(member kind, behaviour, level bias): a mission's "a member joins"
+void logged_add_member(int kind, int behaviour, int level_bias)
 {
     char text[160];
-    std::snprintf(text, sizeof(text), "scene %lld -> %lld, %u sound effects and %u field sounds in the scene before",
-                  static_cast<long long>(event->a), static_cast<long long>(event->b), sounds, field_sounds);
+    std::snprintf(text, sizeof(text), "a mission member joins: kind %d, behaviour %d, level %+d", kind, behaviour,
+                  level_bias);
     say(text);
-    sounds = field_sounds = 0;
+    game_add_member(kind, behaviour, level_bias);
+}
+
+void scene_changed(const KhEvent *event, void *)
+{
+    char text[200];
+    std::snprintf(text, sizeof(text),
+                  "scene %lld -> %lld, %u sound effects, %u field sounds and %u GetLanguage calls in the scene before",
+                  static_cast<long long>(event->a), static_cast<long long>(event->b), sounds, field_sounds,
+                  language_calls);
+    say(text);
+    sounds = field_sounds = language_calls = 0;
 }
 
 KhResult start(const KhHost *given)
@@ -111,6 +136,15 @@ KhResult start(const KhHost *given)
     hooks->add(host->plugin, "Slot_Spawn", KH_HOOK_AFTER, 0, 0, field_sound_played, nullptr);
     hooks->add(host->plugin, "Ov107_AiState_ApplyHit", KH_HOOK_AFTER, 0, 0, enemy_hit, nullptr);
     events->subscribe(host->plugin, "scene", scene_changed, nullptr);
+    // any routine of the game's own code, replaced by name (kh.engine 2): the plugin's function takes its calls
+    void *previous = nullptr;
+    if (engine->size >= sizeof(KhEngine) &&
+        engine->replace("GetLanguage", reinterpret_cast<void *>(&counted_get_language), &previous) == KH_OK)
+        game_get_language = reinterpret_cast<int (*)()>(previous);
+    if (engine->size >= sizeof(KhEngine) &&
+        engine->replace("Ov002_ScriptAddMissionMember", reinterpret_cast<void *>(&logged_add_member), &previous) ==
+            KH_OK)
+        game_add_member = reinterpret_cast<void (*)(int, int, int)>(previous);
     return KH_OK;
 }
 

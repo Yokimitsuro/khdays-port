@@ -35,6 +35,7 @@ PRELUDE = """/* Rewritten by port/tools/references: every pointer of the
 #include "khdays_references.h"
 #pragma section(".khdi$m", read, write)
 #pragma section(".khfr$m", read)
+#pragma section(".khrt$m", read)
 """
 
 # The module number of the data area's records (runtime/core/data_init.c): copied
@@ -88,11 +89,12 @@ class EmitFailure(TypeFailure):
 
 
 class Emitter(c_generator.CGenerator):
-    def __init__(self, tp: TypePass, index: Index, file_key: str = "f"):
+    def __init__(self, tp: TypePass, index: Index, file_key: str = "f", routes: bool = False):
         super().__init__()
         self.tp = tp
         self.index = index
         self.file_key = file_key
+        self.routes = routes  # the game's own routines: each called through a pointer a plugin may change (routed)
         self.literals: list[str] = []  # the file's string literals used as pointers, by number
         self.unplaced: set[str] = set()  # objects it took for the port's (no game definition known)
         self.data_objects: dict[str, tuple[int, int]] = {}  # the data area's objects: key -> (size, align)
@@ -1069,7 +1071,8 @@ class Emitter(c_generator.CGenerator):
             if coord is not None and coord.file:
                 out.append(f'#line {coord.line} "{normalised_path(coord.file)}"\n')
             if isinstance(ext, c_ast.FuncDef):
-                out.append(self.visit(ext))
+                text = self.visit(ext)
+                out.append(self.routed(ext, text) if self.routes else text)
             elif isinstance(ext, c_ast.Pragma):
                 out.append(self.visit(ext) + "\n")
             else:
@@ -1079,6 +1082,49 @@ class Emitter(c_generator.CGenerator):
         out.append(self.literal_images())
         out.append(self.function_records())
         return "".join(out)
+
+    def route_arguments(self, n: c_ast.FuncDef) -> list[str] | None:
+        """The names a routed definition's wrapper passes on, in order; None when it cannot be routed (the port's
+        own, a static, inline or variadic one, one taking its arguments in a block, an unnamed parameter)."""
+        if self.host_node(n) or n.decl.name.startswith("khdays_") or n.decl.funcspec:
+            return None
+        s = self.tp.declared.get(id(n.decl))
+        if s is None or "static" in s.storage or not isinstance(s.type, Function):
+            return None
+        if s.type.params is None or s.type.variadic or n.decl.name in self.index.variadic:
+            return None
+        params = n.decl.type.args.params if n.decl.type.args is not None else []
+        names = []
+        for p in params:
+            if isinstance(p, c_ast.Typename) and len(params) == 1:
+                return []  # (void)
+            if not isinstance(p, c_ast.Decl) or p.name is None:
+                return None
+            names.append(p.name)
+        return names
+
+    def routed(self, n: c_ast.FuncDef, text: str) -> str:
+        """A game routine a native plugin may replace (kh.engine replace): its body renamed khdays_impl_<name>, a
+        pointer khdays_route_<name> to it, and <name> itself calling through the pointer -- every call, the game's
+        own and a function reference's, so reaching what the pointer holds; a record of the three in .khrt$m."""
+        args = self.route_arguments(n)
+        name = n.decl.name
+        at = text.find("{")
+        head = text[:at].rstrip() if at > 0 else ""
+        if args is None or head.count(f"{name}(") != 1:
+            return text
+        s = self.tp.declared[id(n.decl)]
+        call = f"khdays_route_{name}({', '.join(args)})"
+        body = f"{{\n  {call};\n}}\n" if isinstance(s.type.result, Void) else f"{{\n  return {call};\n}}\n"
+        return (
+            f"{head};\n"
+            + text.replace(f"{name}(", f"khdays_impl_{name}(", 1)
+            + head.replace(f"{name}(", f"(*khdays_route_{name})(", 1)
+            + f" = khdays_impl_{name};\n"
+            + f"{head}\n{body}"
+            + f'__declspec(allocate(".khrt$m")) const struct khdays_route_record khdays_route_record_{name} = '
+            f'{{"{name}", (void **)&khdays_route_{name}, (void *)khdays_impl_{name}}};\n'
+        )
 
     def function_records(self) -> str:
         """The native function of each function reference the build numbers
@@ -1090,6 +1136,8 @@ class Emitter(c_generator.CGenerator):
         )
 
 
-def emit(ast: c_ast.FileAST, tp: TypePass, index: Index, file_key: str = "f") -> tuple[str, Emitter]:
-    e = Emitter(tp, index, file_key)
+def emit(
+    ast: c_ast.FileAST, tp: TypePass, index: Index, file_key: str = "f", routes: bool = False
+) -> tuple[str, Emitter]:
+    e = Emitter(tp, index, file_key, routes)
     return e.visit(ast), e

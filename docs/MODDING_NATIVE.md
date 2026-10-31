@@ -87,7 +87,7 @@ planned for is one plugin's service that others build on. Four interfaces, each 
 | `kh.services` (`kh_services.h`) | publish a table of functions under a name and version (`<mod id>.<name>`) for other plugins, which find it with `find` as they find the port's; withdrawn at the plugin's stop |
 | `kh.events` (`kh_events.h`) | subscribe to the game's events by name (frame, scene, title, mission start and end, HP, items, munny, menus, saving: the Lua mods' own) and to other plugins' events; raise events of one's own (`<mod id>.<name>`, a payload of bytes) |
 | `kh.hooks` (`kh_hooks.h`) | functions before and after the game's routines at its hook points, with priorities: before-functions may change the arguments or skip the routine giving its result, after-functions may change the result; two plugins that both replace a routine are told |
-| `kh.engine` (`kh_engine.h`) | the game's memory (a reference to a host address and back), every routine and every datum of the game by its decompilation name, whether an overlay is loaded, the frame, the game's thread |
+| `kh.engine` (`kh_engine.h`) | the game's memory (a reference to a host address and back), every routine and every datum of the game by its decompilation name, any routine of the game's own code replaced by name (version 2), whether an overlay is loaded, the frame, the game's thread |
 
 **The hook points** are placed where the game is built (`port/tools/prepare.py`, `HOOK_POINTS`): the routine keeps its
 name as a wrapper that calls it at once while no plugin hooks it. The catalogue grows with what plugins need --
@@ -111,9 +111,21 @@ It is the game's own, as the decompilation names and lays it out: a later port m
 nothing a plugin does with it. An overlay's routines are always there, but its data and state only while it is
 loaded (`module_loaded`).
 
+**Any routine replaced** (`replace`, kh.engine version 2): every routine of the game's own code (the decompilation's
+`src/`) is built to be called through a pointer of its own (`port/tools/references/emit.py`, `routed`: the routine's
+body renamed `khdays_impl_<name>`, the pointer `khdays_route_<name>`, and the routine's own name calling through it),
+so a plugin can put a function of its own in its place by the routine's name -- no hook point needed. Every call
+reaches it: the game's own, those through a function reference, and `routine(name)`'s. `replace` gives back what the
+calls reached before (the game's body, or another plugin's replacement), for the plugin to call on to or to put back.
+The port puts a plugin's replacements back as it stops (before its library is let go) and, while in a room, those of
+a mod not made for rooms (`multiplayer = yes`), as it skips that mod's hooks there. Static routines (one file's own), routines taking a variable number of arguments or their arguments in a block, and
+the SDK libraries' routines (`libs/`) are not replaceable this way. The hook points stay: they give the arguments as
+slots, with priorities between plugins; `replace` gives the routine whole, at the plugin's own risk.
+
 `sdk/examples/AdvancedNativeMod` uses all four: it halves the damage the player takes through `Ov022_ActorSetHp`'s
 hook, reading the actor's HP from the game's memory, logs the enemies' HP as they are hit, counts the menus' and the
-field's sounds, logs scene changes, and calls `GetLanguage` and reads `gSceneCtl` by name.
+field's sounds, logs scene changes, calls `GetLanguage` and reads `gSceneCtl` by name, and replaces `GetLanguage`
+(its calls counted) and `Ov002_ScriptAddMissionMember` (its arguments logged).
 
 ## Actors and characters
 

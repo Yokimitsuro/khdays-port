@@ -24,8 +24,11 @@ const char *khdays_plugins_mod_id(const KhPlugin *plugin);
 void khdays_plugins_mark_game_thread(void);
 int khdays_plugins_on_game_thread(void);
 
-/* kh.engine (engine.c). */
+/* kh.engine (engine.c): its table; once a frame, the replacements of the mods not made for rooms put back while in
+ * one (and given again after); a plugin's replacements put back. */
 const void *khdays_plugins_engine(void);
+void khdays_plugins_engine_frame(void);
+void khdays_plugins_engine_forget(KhPlugin *plugin);
 
 /* kh.actors (actors.c): its table; seat `seat`'s player's handle; once a frame, the enemies no longer standing ended.
  */
@@ -34,9 +37,10 @@ KhActor khdays_actors_player(int seat);
 void khdays_actors_frame(void);
 
 /* The plugin whose function the port calls now (set around each call of one: its start and stop, its events, hooks
- * and listeners), the one before returned; whether a plugin (NULL: the one being called) may change the game now --
- * outside a room, or its mod made for rooms (mod.ini's `multiplayer = yes`). */
+ * and listeners), the one before returned, or that one alone; whether a plugin (NULL: the one being called) may change
+ * the game now -- outside a room, or its mod made for rooms (mod.ini's `multiplayer = yes`). */
 KhPlugin *khdays_plugins_calling(KhPlugin *plugin);
+KhPlugin *khdays_plugins_called(void);
 int khdays_plugins_may_change(KhPlugin *plugin);
 
 /* A plugin's message (kh.net) heard: delivered as the event `name` ("<mod id>.<name>"), its version in `a`. */

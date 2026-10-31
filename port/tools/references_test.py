@@ -51,8 +51,8 @@ def normalised(c_text: str) -> str:
 class Rewrite(unittest.TestCase):
     maxDiff = None
 
-    def check(self, source: str, expected: str, index: Index | None = None) -> None:
-        got = rewrite_text(PRELUDE + source, "game.c", index)
+    def check(self, source: str, expected: str, index: Index | None = None, routes: bool = False) -> None:
+        got = rewrite_text(PRELUDE + source, "game.c", index, routes=routes)
         self.assertEqual(normalised(got), normalised(PRELUDE + expected))
 
     def test_declarations(self):
@@ -267,6 +267,26 @@ class Rewrite(unittest.TestCase):
             " (*(int *)((unsigned char *)khdays_va_0 + 8)) = (int)((char)(3)),"
             " f(KHDAYS_REF(khdays_va_0))); }",
             index,
+        )
+
+    def test_routes(self):
+        # a routine a native plugin may replace (kh.engine replace): its body renamed, a pointer to it, its name
+        # calling through the pointer, a record of the three; a static one and a variadic one as they were
+        self.check(
+            "int f(int a, int *p) { return a + *p; } static int s(int a) { return a; } void v(void) { }"
+            " int w(int a, ...) { return a; }",
+            "int f(int a, khdays_ref p); int khdays_impl_f(int a, khdays_ref p) { return a + (*(int *)KHDAYS_W(p)); }"
+            " int (*khdays_route_f)(int a, khdays_ref p) = khdays_impl_f;"
+            " int f(int a, khdays_ref p) { return khdays_route_f(a, p); }"
+            ' const struct khdays_route_record khdays_route_record_f = {"f", (void **)&khdays_route_f,'
+            " (void *)khdays_impl_f};"
+            " static int s(int a) { return a; }"
+            " void v(void); void khdays_impl_v(void) { } void (*khdays_route_v)(void) = khdays_impl_v;"
+            " void v(void) { khdays_route_v(); }"
+            ' const struct khdays_route_record khdays_route_record_v = {"v", (void **)&khdays_route_v,'
+            " (void *)khdays_impl_v};"
+            " int w(khdays_ref khdays_va) { return (*(int *)KHDAYS_W(khdays_va + 0u)); }",
+            routes=True,
         )
 
     def test_pointer_comparison(self):

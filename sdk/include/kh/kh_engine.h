@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 #define KH_ENGINE "kh.engine"
-#define KH_ENGINE_VERSION 1
+#define KH_ENGINE_VERSION 2 /* 2 added replace; a plugin may still ask for 1 */
 
 /* A reference into the game's memory. */
 typedef uint32_t KhRef;
@@ -37,7 +37,8 @@ typedef struct KhEngine {
     KhRef (*reference)(const void *address);
 
     /* The game's routine `name` (the decompilation's), its module in *module when not NULL; NULL when the build
-     * has none of that name. The pointer is the compiled function: cast it to its prototype. */
+     * has none of that name. The pointer is the compiled function: cast it to its prototype. Calling it reaches
+     * whatever replaces the routine now (replace). */
     void *(*routine)(const char *name, int32_t *module);
 
     /* The game's datum `name` (the decompilation's: a global, a table), its reference; 0 when there is none. */
@@ -49,6 +50,16 @@ typedef struct KhEngine {
     /* The frames since the game started (60 a second), and whether the caller is on the game's thread. */
     uint32_t (*frame)(void);
     int32_t (*on_game_thread)(void);
+
+    /* Version 2. Every call of the game's routine `name` -- one of the game's own code (src/), not a static one,
+     * not one taking a variable number of arguments -- goes to `function` from now on: the game's own calls, those
+     * through a function reference, and routine(name)'s. `function` has the routine's prototype; *previous (when
+     * not NULL) is what the calls reached before -- the game's own body, or another plugin's replacement -- for
+     * `function` to call on to. Replacing with *previous puts it back. The port puts it back itself as the plugin
+     * stops, and while in a room when the mod is not made for rooms (as its hooks are skipped there). On the game's
+     * thread. KH_OK, else KH_ERROR (no such routine, one that cannot be replaced, or another thread: the mod's log
+     * says which). */
+    KhResult (*replace)(const char *name, void *function, void **previous);
 } KhEngine;
 
 #ifdef __cplusplus

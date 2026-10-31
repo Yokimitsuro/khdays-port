@@ -165,6 +165,18 @@ A declaration from the port's own headers (`runtime/`, `host/`, `gfx/`,
 `sound/`, `compat/decomp_compat.h`) is the port's: its types keep host
 pointers, and the game's side converts at its uses.
 
+The game's own routines (`rewritten/src/`: not `libs/`, not the HAL) are
+emitted *routed* for the native plugins (`emit.py` `routed`): a routine's body
+becomes `khdays_impl_<name>`, a pointer `khdays_route_<name>` holds it, and
+`<name>` itself calls through that pointer, so every call -- the game's, a
+function reference's -- reaches whatever a plugin put there (kh.engine
+`replace`, `docs/MODDING_NATIVE.md`). A record of the three goes to section
+`.khrt$m`, which `runtime/plugins/engine.c` reads. Static routines, those taking
+a variable argument list or their arguments in a block, and those with an
+unnamed parameter stay as they were. The cost, measured with `KHDAYS_PROFILE`
+in a mission (2026-10-31): the game thread's running time per second went from
+30.8 to 31.5 ms (median), the menus' unchanged.
+
 ## Memory, linking and the ROM
 
 - **Game data at its DS address.** Every object a C file defines that the DS
