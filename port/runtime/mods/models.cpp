@@ -493,7 +493,8 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     model->cull = bones.cull;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
-    if (own_skeleton && character->model_scale > 0.0F) {
+    // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
+    if (character != nullptr && character->model_scale > 0.0F) {
         model->scale = character->model_scale;
     }
     const float k = model->scale;
