@@ -81,6 +81,12 @@ OBTAINED. HD PACK generation emits these two explicit entries. The Items rule
 covers both the Items list and the Use/Discard header; those views reuse the same
 cached item-name tiles. OBTAINED keeps its independent capture and font mapping.
 
+A third entry, `camp.mission_list.count`, is the mission list's "found / total"
+(each row's chests and items, `DrawMissionRow` in ov008 and ov025). The game draws
+it from x 2 in a 16-pixel slot, so it fits in 14 pixels unless the file names
+the scope: KH2's wider digits otherwise lose the last one at the slot's edge.
+`"original"` keeps them as drawn.
+
 Widths are fractional DS pixels, between 0.25 and 64. Optional `"x_offset"` defaults
 to 0 and moves a fitted run to the right; the entire configured region must remain
 inside the 64-pixel strip. Fitting never enlarges or moves a name that already fits.

@@ -806,9 +806,12 @@ bool numeric_layout(int layout)
 
 double fit_layout(int layout, double *offset)
 {
-    static const std::array<LayoutRule, 2> fitting = [] {
-        std::array<LayoutRule, 2> result{};
-        const char *scopes[] = {"field.command.items.name", "field.obtained.name"};
+    static const std::array<LayoutRule, 3> fitting = [] {
+        std::array<LayoutRule, 3> result{};
+        // the mission list's "found / total" fits its 16-pixel slot (drawn from x 2) unless the file says
+        // otherwise: a count that already fits is left as it is
+        result[2].max_width = 14;
+        const char *scopes[] = {"field.command.items.name", "field.obtained.name", "camp.mission_list.count"};
         for (std::size_t i = 0; i < result.size(); ++i) {
             const auto found = cached_layouts().find(scopes[i]);
             if (found != cached_layouts().end())

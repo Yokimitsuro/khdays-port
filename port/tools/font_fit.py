@@ -4,6 +4,10 @@ from font_fractional import COMMON, replace
 
 DRAW = "src/engine/Text_DrawWithShadow.c"
 ITEMS = "src/overlays/scenes/ov002_field/Ov002_DrawPanelRowText.c"
+MISSION_ROWS = (
+    "src/overlays/scenes/ov008_camp_menu/Ov008_DrawMissionRow.c",
+    "src/overlays/screens/ov025_camp_menu_2/Ov025_DrawMissionRow.c",
+)
 DECLARATION = (
     "extern void HD_FontFitShadow(void *surface, int x, int y, int depth, void *text, int shadow, int layout);\n"
 )
@@ -71,4 +75,9 @@ def patch(text: str, rel: str) -> str:
             before,
             before.replace("Text_DrawWithShadow(", "HD_FontFitShadow(").replace("pText, 1);", "pText, 1, 0);"),
         )
+    if rel in MISSION_ROWS:
+        # the list's "found / total", in its row's 16-pixel slot (KHDF_FIT_MISSION_COUNT)
+        before = "Text_DrawWithShadow(&pList->aRowDotSurface[nRow], 2, 7, nColour, aCount, 1);"
+        after = before.replace("Text_DrawWithShadow(", "HD_FontFitShadow(").replace("aCount, 1);", "aCount, 1, 2);")
+        return DECLARATION + replace(text, before, after)
     return text

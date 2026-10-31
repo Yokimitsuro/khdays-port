@@ -13,7 +13,7 @@ int khdays_hd_font_select(const char *resource, const char *scope, char *selecte
 int khdays_hd_font_mappings_enabled(void);
 enum { KHDF_LAYOUT_PANEL_COUNTER, KHDF_LAYOUT_LOAD_TIME, KHDF_LAYOUT_SAVE_TIME, KHDF_LAYOUT_COUNT };
 int khdays_hd_font_numeric_layout(int layout);
-enum { KHDF_FIT_ITEMS, KHDF_FIT_OBTAINED };
+enum { KHDF_FIT_ITEMS, KHDF_FIT_OBTAINED, KHDF_FIT_MISSION_COUNT };
 double khdays_hd_font_fit_layout(int layout, double *offset);
 int khdays_hd_font_ink(const char *resource, int index, int w, int h, int ink, double *bounds);
 int khdays_hd_font_paint_fitted(const char *resource, int index, double x, double y, int logical_width,

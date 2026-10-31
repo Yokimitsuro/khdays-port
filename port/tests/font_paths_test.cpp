@@ -337,6 +337,8 @@ static bool layout_rules_test()
     double offset = 0;
     ok = ok && khdays_hd_font_fit_layout(KHDF_FIT_ITEMS, &offset) == 53.5 && offset == 1.25 &&
          khdays_hd_font_fit_layout(KHDF_FIT_OBTAINED, &offset) == 0 && offset == 0 &&
+         khdays_hd_font_fit_layout(KHDF_FIT_MISSION_COUNT, &offset) == 14 && offset == 0 &&
+         khdays_hd_font_fit_layout(KHDF_FIT_MISSION_COUNT + 1, &offset) == 0 &&
          khdays_hd_font_fit_layout(-1, &offset) == 0;
     for (int i = 0; i < 10000; ++i)
         ok = ok && khdays_hd_font_numeric_layout(KHDF_LAYOUT_PANEL_COUNTER);
