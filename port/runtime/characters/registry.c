@@ -64,6 +64,8 @@ static void free_character(KhdaysCharacter *c)
     free(c->any_name);
     free(c->any_weapon);
     free(c->face);
+    free(c->portrait);
+    free(c->portrait_ally);
     free(c->model);
 #pragma warning(push)
 /* the actions, sounds, weapons and forms up to their counts are the reading's, their strings set (a sound's file
@@ -303,7 +305,9 @@ static void read_moveset(KhdaysCharacter *c, const char *name, const char *value
 static void read_action(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
 {
     char clip[512] = "", word[32] = "", rest[64] = "";
-    int blend_ms = KHDAYS_CHARACTER_BLEND_MS, root_keep = 0, game_time = 0, used = 0;
+    int blend_ms = KHDAYS_CHARACTER_BLEND_MS, root_keep = 0, game_time = 0, loop = KHDAYS_CHARACTER_LOOP_GAME,
+        used = 0;
+    float loop_from = 0.0f;
     if (sscanf(value, "%511s%n", clip, &used) != 1) {
         snprintf(why, why_size, "%.60s: its clip missing", name);
         return;
@@ -332,9 +336,25 @@ static void read_action(KhdaysCharacter *c, const char *name, const char *value,
             root_keep = same_word(rest, "keep");
         } else if (strcmp(word, "time") == 0 && (same_word(rest, "own") || same_word(rest, "game"))) {
             game_time = same_word(rest, "game");
+        } else if (strcmp(word, "loop") == 0) {
+            char *end;
+            const float from = strtof(rest, &end);
+            if (same_word(rest, "game") || same_word(rest, "no") || same_word(rest, "yes")) {
+                loop = same_word(rest, "no")    ? KHDAYS_CHARACTER_LOOP_NO
+                       : same_word(rest, "yes") ? KHDAYS_CHARACTER_LOOP_YES
+                                                : KHDAYS_CHARACTER_LOOP_GAME;
+                loop_from = 0.0f;
+            } else if (end != rest && *end == '\0' && from >= 0.0f) {
+                loop = KHDAYS_CHARACTER_LOOP_YES;
+                loop_from = from;
+            } else {
+                snprintf(why, why_size, "%.60s: loop %.30s is not game, no, yes or a second of the clip", name, rest);
+                return;
+            }
         } else {
-            snprintf(why, why_size, "%.60s: %.30s %.30s is not blend <ms>, root keep|remove or time own|game", name,
-                     word, rest);
+            snprintf(why, why_size,
+                     "%.60s: %.30s %.30s is not blend <ms>, root keep|remove, time own|game or loop game|no|yes|<s>",
+                     name, word, rest);
             return;
         }
     }
@@ -355,6 +375,8 @@ static void read_action(KhdaysCharacter *c, const char *name, const char *value,
     a->blend_ms = blend_ms;
     a->root_keep = root_keep;
     a->game_time = game_time;
+    a->loop = loop;
+    a->loop_from = loop_from;
     if (a->game == NULL || a->clip == NULL) {
         free(a->game);
         free(a->clip);
@@ -537,10 +559,34 @@ static int read_model(KhdaysCharacter *t, const char *name, char **value, char *
     return 1;
 }
 
-/* A [form <id>] line other than its model's: base, priority, when. 1 when `name` is one of them. */
+/* A `portrait` or `portrait ally` line, of the character or of a form; 0 for another name. */
+static int read_portrait(KhdaysCharacter *t, const char *name, const char *value, char *why, size_t why_size)
+{
+    char **slot = strcmp(name, "portrait") == 0         ? &t->portrait
+                  : strcmp(name, "portrait ally") == 0 ? &t->portrait_ally
+                                                       : NULL;
+    if (slot == NULL) {
+        return 0;
+    }
+    if (!good_reference(value)) {
+        snprintf(why, why_size, "%s %.80s: not a file inside the character's folder", name, value);
+    } else {
+        char *kept = copy(value);
+        if (kept == NULL) {
+            snprintf(why, why_size, "out of memory");
+        } else {
+            free(*slot);
+            *slot = kept;
+        }
+    }
+    return 1;
+}
+
+/* A [form <id>] line other than its model's: base, priority, when, its portraits. 1 when `name` is one of them. */
 static int read_form(KhdaysCharacter *f, const char *name, const char *value, char *why, size_t why_size)
 {
-    if (strcmp(name, "base") == 0) {
+    if (read_portrait(f, name, value, why, why_size)) {
+    } else if (strcmp(name, "base") == 0) {
         f->base = base_by_name(value, KHDAYS_CHARACTER_FOLDERS);
         if (f->base < 0) {
             snprintf(why, why_size, "base %.60s is not one of the game's characters (or roxas_dual)", value);
@@ -756,6 +802,13 @@ static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size
     ok &= (f->any_name = copy(c->any_name)) != NULL || c->any_name == NULL;
     ok &= (f->any_weapon = copy(c->any_weapon)) != NULL || c->any_weapon == NULL;
     ok &= (f->face = copy(c->face)) != NULL || c->face == NULL;
+    /* a form's own portrait is its ally's picture too, unless it gives that */
+    if (f->portrait == NULL) {
+        ok &= (f->portrait = copy(c->portrait)) != NULL || c->portrait == NULL;
+        if (f->portrait_ally == NULL) {
+            ok &= (f->portrait_ally = copy(c->portrait_ally)) != NULL || c->portrait_ally == NULL;
+        }
+    }
     if (f->base < 0) {
         f->base = c->base;
     }
@@ -964,6 +1017,7 @@ static int read_character(Reading *rd, const char *name, char **value)
         } else {
             slot = &c->face;
         }
+    } else if (read_portrait(c, name, *value, rd->why, sizeof(rd->why))) {
     } else if (strcmp(name, "locked") == 0) {
         if (same_word(*value, "no")) {
             c->locked_with_base = 0;

@@ -2421,27 +2421,33 @@ HOOKS["ov008@0207a424"] = [
         "pPacket[i].characterId = khdays_characters_place(i, Ov008_MenuSlotToEntry(pInfo->nMemberKind));",
     ),
 ]
-# ... Mission Mode's camp: the chosen character's model (member 0's) and weapon texts from its own folder
+# ... Mission Mode's camp: the chosen character's model and weapon texts from its own folder -- the local player's
+# seat's (in a room the host's seat 0 is another player's: their base shown as the local player's character)
+_LOCAL_SEAT = "extern int Session_GetLocalPlayerIndex(void);\n"
 HOOKS["ov008@0205a3dc"] = [
     (  # Ov008_Menu_InitSceneObject
         "extern char gOv008BaChDefHPackPathFmt[];\n",
-        "extern char gOv008BaChDefHPackPathFmt[];\n" + CHARACTER_DECLARATIONS,
+        "extern char gOv008BaChDefHPackPathFmt[];\n" + CHARACTER_DECLARATIONS + _LOCAL_SEAT,
     ),
     (
         "    val = *(int *)(val + sceneId * 0x34);\n",
-        "    val = khdays_characters_of(0, sceneId) != sceneId ? (int)Port_CharacterCode(khdays_characters_of(0, sceneId))\n"
-        "                                                  : *(int *)(val + sceneId * 0x34);\n",
+        "    {\n"
+        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), sceneId);\n"
+        "        val = own != sceneId ? (int)Port_CharacterCode(own) : *(int *)(val + sceneId * 0x34);\n"
+        "    }\n",
     ),
 ]
 HOOKS["ov008@0205a138"] = [
     (  # Ov008_Menu_LoadSceneText
         "extern SceneParam data_ov008_0208e9c4[];\n",
-        "extern SceneParam data_ov008_0208e9c4[];\n" + CHARACTER_DECLARATIONS,
+        "extern SceneParam data_ov008_0208e9c4[];\n" + CHARACTER_DECLARATIONS + _LOCAL_SEAT,
     ),
     (
         "    v = data_ov008_0208e9c4[sceneId].f0;\n",
-        "    v = khdays_characters_of(0, sceneId) != sceneId ? (int)Port_CharacterCode(khdays_characters_of(0, sceneId))\n"
-        "                                                : data_ov008_0208e9c4[sceneId].f0;\n",
+        "    {\n"
+        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), sceneId);\n"
+        "        v = own != sceneId ? (int)Port_CharacterCode(own) : data_ov008_0208e9c4[sceneId].f0;\n"
+        "    }\n",
     ),
 ]
 # ... the camp makes the local seat's character word (Ov008_GetEntryStatusByte: the game's own choice first, its

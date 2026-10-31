@@ -292,7 +292,8 @@ int khdays_link_player_low_hp(void)
     return actor != 0 && func_ov022_020ad7b0(actor);
 }
 
-int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *low_hp)
+/* HUD slot `slot`'s member (its seat) and sheet icon; 0 when the slot shows none. */
+static int hud_record(int slot, int *member, int *portrait)
 {
     /* Ov002_OpenPanelScreen keeps the already mapped nId/nIcon pairs at +0x130.
      * Ov002_CreateAndRestoreHud puts the local player first even in multiplayer. */
@@ -305,8 +306,21 @@ int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *lo
         return 0;
     }
     const unsigned record = context + 0x130u + (unsigned)slot * 16u;
-    const int member = (int)rd32(record), portrait = (int)rd32(record + 4u);
-    if (member < 0 || member >= 4 || portrait < 0 || portrait >= 21) {
+    *member = (int)rd32(record);
+    *portrait = (int)rd32(record + 4u);
+    return *member >= 0 && *member < 4 && *portrait >= 0 && *portrait < 21;
+}
+
+int khdays_link_hud_seat(int slot)
+{
+    int member, portrait;
+    return hud_record(slot, &member, &portrait) ? member : -1;
+}
+
+int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *low_hp)
+{
+    int member, portrait;
+    if (!hud_record(slot, &member, &portrait)) {
         return 0;
     }
     const unsigned actor = (unsigned)GetEntryField20ByIndex(member);

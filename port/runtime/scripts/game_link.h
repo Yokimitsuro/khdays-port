@@ -60,6 +60,8 @@ const char *khdays_link_set_position(const float at[3]);
 int khdays_link_player_low_hp(void);
 /* Live HUD order, including mission mode: sheet icon and the actor belonging to a displayed slot. */
 int khdays_link_hud_portrait(int slot, int *icon, int *hp, int *maximum, int *low_hp);
+/* The seat whose portrait HUD slot `slot` shows (0 the local player's, 1-3 its allies'), -1 none. */
+int khdays_link_hud_seat(int slot);
 /* The vanilla limit threshold in HP, including ability, use count and battle settings; 0 disabled. */
 int khdays_link_player_limit_hp(void);
 /* The native LIMIT label's armed state, independent of its flashing tile artwork. */

@@ -172,6 +172,14 @@ static int files_there(const KhdaysCharacter *c)
             note(registry.mods[c->mod].id, c->key, 0, why, NULL);
         }
     }
+    const char *const portraits[] = {c->portrait, c->portrait_ally};
+    for (int i = 0; i < 2; ++i) {
+        if (portraits[i] != NULL &&
+            !(khdays_characters_file(c, portraits[i], path, sizeof(path)) && khdays_folders_is_file(path))) {
+            snprintf(why, sizeof(why), "%.200s cannot be read: the base's portrait is shown", portraits[i]);
+            note(registry.mods[c->mod].id, c->key, 0, why, NULL);
+        }
+    }
     for (int i = 0; i < c->weapon_count; ++i) {
         if (!(khdays_characters_file(c, c->weapons[i].file, path, sizeof(path)) && khdays_folders_is_file(path))) {
             snprintf(why, sizeof(why), "%.200s (for %.60s) cannot be read: the base's weapon is drawn",
@@ -799,6 +807,14 @@ int khdays_characters_model(const char *name, char *path, int size)
     if (end == name + n || strncmp(end, "/w_.p2", 6) != 0 || model == NULL) {
         return 0;
     }
-    const KhdaysCharacterWeapon *w = khdays_characters_weapon_model(khdays_characters_numbered((int)number), model + 5);
-    return w != NULL && khdays_characters_file(khdays_characters_numbered((int)number), w->file, path, size);
+    const KhdaysCharacter *owner = khdays_characters_numbered((int)number);
+    const KhdaysCharacterWeapon *w = khdays_characters_weapon_model(owner, model + 5);
+    if (w == NULL && owner != NULL && owner->weapon_count > 0) {
+        /* named once a model (the game's names, for [weapons]' lines) */
+        char text[300];
+        snprintf(text, sizeof(text), "the base's %.100s drawn as the game's: no [weapons] line names it", model + 5);
+        khdays_mods_log(registry.mods[owner->mod].id, "characters", NULL, 0, text);
+        khdays_log("characters: %s: %s", owner->identity, text);
+    }
+    return w != NULL && khdays_characters_file(owner, w->file, path, size);
 }

@@ -136,6 +136,8 @@ static const char ventus[] = "[character]\n"
                              "format = 2\n"
                              "base = roxas\n"
                              "name = Ventus\n"
+                             "portrait = hud/ventus.png\n"
+                             "portrait ally = hud/ventus_small.png\n"
                              "[model]\n"
                              "file = model/ventus.glb\n"
                              "skeleton = own\n"
@@ -156,6 +158,7 @@ static const char ventus[] = "[character]\n"
                              "priority = 100\n"
                              "when = gear 230 and links 241 >= 3   # the Zero Gear with three Ability Units\n"
                              "model = model/ventus_dual.glb\n"
+                             "portrait = hud/dual.png\n"
                              "[form dual weapons]\n"
                              "ro_w13600 = weapons/right.glb\n"
                              "ro_w14600 = weapons/left.glb\n"
@@ -201,6 +204,10 @@ static void forms_read(void)
           strcmp(khdays_characters_weapon_model(calm, "ro_w00600")->file, "weapons/stick.glb") == 0);
     CHECK(calm->own_moves_damage == 2.0f && c->own_moves_damage == 1.0f);
     CHECK(calm->stat_count == 2);
+    /* the portraits: a form's own is its ally's picture too; one without, its default's two */
+    CHECK(strcmp(c->portrait, "hud/ventus.png") == 0 && strcmp(c->portrait_ally, "hud/ventus_small.png") == 0);
+    CHECK(strcmp(dual->portrait, "hud/dual.png") == 0 && dual->portrait_ally == NULL);
+    CHECK(strcmp(calm->portrait, "hud/ventus.png") == 0 && strcmp(calm->portrait_ally, "hud/ventus_small.png") == 0);
 
     /* chosen: the highest priority whose rule holds, else the default */
     KhdaysFormFacts f = facts(230, three_units, 3, 0, 60);

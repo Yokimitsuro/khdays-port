@@ -698,6 +698,7 @@ add_executable(khdays-native
     ui/kh2_party_hud.cpp
     ui/kh2_hud_labels.cpp
     ui/kh2_portrait_hud.cpp
+    ui/character_portraits.cpp     # the mods' characters' own portraits on the HUD
     ui/badges.c                    # the badges' icons on the mission panel
     ui/crowns.c                    # the crowns on the story's day list
     ui/mission_list.c              # the camp's mission list from the game's files

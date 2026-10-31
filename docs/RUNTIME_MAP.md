@@ -5316,10 +5316,26 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   `b_ro_L000`/`L001` (`li.p.z`), `b_ro_E011`/`E013`/`E014` (`eta*.p.z`); the B-series comes from elsewhere
   (not found in his folder as text). The port draws the character's skeleton from the clip its description
   gives each name, at the game's animation's point.
-- **Its weapon**: the game puts the weapon on the base model's `*_w_tg_R` node, read during the body's draw
+  Sora's (seen 2026-10-31 with a tester's KH2 Sora, `missions_waves` with runs, jumps, B held in the air and Y):
+  the game begins some animations past their first frame (running `b_so_A001` at 4.8 of 18, standing at 1 or 4
+  of 39, the jump `b_so_A003` at 4 of 27 after `b_so_Ca005`), loops its standing, running and guard (`b_so_Ca003`,
+  36 frames: back to an early frame from its last ones) and keeps a held pose at its last frame (`b_so_Ca005`, 2
+  frames, frame 1 held while B is); a hit's stop holds a frame short of the end. So a clip at its own time begins
+  at the game's point, stands only for a hold short of the end (or the pause), goes on through a hold at the end,
+  and begins again when the game's frame goes back from elsewhere than its last few (`runtime/mods/models.cpp`
+  `own_pose`).
+- **Its weapon**: the game puts the weapon on the base model's weapon node, read during the body's draw
   by the node's callback (`NNS_G3dGetCurrentMtx` at `NODEDESC`, timing 3: the camp's
   `Ov008_RefreshMatchingMatrices`; the field's actor finds the node by name in `Ov030_CreateActor`). The
-  port loads the character's own weapon bone's matrix there first, so the game's weapon follows it.
+  port loads the character's own weapon bone's matrix there first, so the game's weapon follows it, and its
+  swing trail (`so_w00_trace` ...), drawn by the game from the weapon's places, with it. The nodes' names are
+  the players' overlays' strings: `ro_w_tg_R` (and `ro_w_tg_L`, the dual-wield Roxas's left), `so_w_tg00`,
+  `mi_w_tg_R`, `ve_w_tg` (ov030, ov035, ov046, ov042 and their copies); the other bases' models have no such
+  node (their weapons are part of them). Only `*_w_tg_R` was looked for until 2026-10-31: on Sora the weapon
+  stayed at the base's hand, its trail with it.
+- **The camp's model in a room**: `Ov008_Menu_InitSceneObject` and `Ov008_Menu_LoadSceneText` draw the local
+  player's character; the joins ask its seat (`Session_GetLocalPlayerIndex`), not seat 0 -- asked seat 0, a guest
+  on a mod's character's base saw itself as the host's character.
 - **Its voice** (read 2026-10-28; heard in `missions_waves`'s session log): an actor's sounds start through
   `Ov022_PlayEntityVoice(actor, archive, entry)` (its action's cues from `Ov022_StepReactionCues`, its hurt,
   the player overlay's own: `Ov030_UpdateMotionController`) and `Ov022_SpawnVoiceCue`, both into `Slot_Spawn` ->

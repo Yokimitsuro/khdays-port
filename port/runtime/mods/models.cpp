@@ -729,16 +729,26 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             }
         }
         model->nodes = std::move(mod.nodes);
-        // its weapon: the game's on its base's hand node, moved onto its own bone (the two at rest the same)
+        // its weapon: the game's on its base's hand node, moved onto its own bone (the two at rest the same). The
+        // players' overlays name it: ro_w_tg_R, mi_w_tg_R, so_w_tg00, ve_w_tg (the left hand's ro_w_tg_L is not it)
+        auto ends = [](const std::string &s, const char *end) {
+            const std::size_t n = std::strlen(end);
+            return s.size() > n && s.compare(s.size() - n, n, end) == 0;
+        };
         for (std::size_t g = 0; g < model->node_names.size() && o.game_weapon_node < 0; ++g) {
             const std::string &node_name = model->node_names[g];
             if (character->base_weapon_node != nullptr
                     ? node_name == character->base_weapon_node
-                    : node_name.size() > 7 && node_name.compare(node_name.size() - 7, 7, "_w_tg_R") == 0)
+                    : ends(node_name, "_w_tg_R") || ends(node_name, "_w_tg00") || ends(node_name, "_w_tg"))
                 o.game_weapon_node = static_cast<int>(g);
         }
-        for (std::size_t i = 0; character->weapon_bone != nullptr && i < model->nodes.size(); ++i) {
-            if (model->nodes[i].name == character->weapon_bone)
+        // its bone named by weapon_bone; without one, its node named as the base's (a skeleton made like the game's)
+        const std::string bone = character->weapon_bone != nullptr ? character->weapon_bone
+                                 : o.game_weapon_node >= 0
+                                     ? model->node_names[static_cast<std::size_t>(o.game_weapon_node)]
+                                     : std::string();
+        for (std::size_t i = 0; !bone.empty() && i < model->nodes.size(); ++i) {
+            if (model->nodes[i].name == bone)
                 o.weapon_bone = static_cast<int>(i);
         }
         if (o.weapon_bone >= 0 && o.game_weapon_node >= 0) {
@@ -783,9 +793,11 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
                 o.weapon_fix = mul(inverse(s), turn);
             }
         } else if (character->weapon_bone != nullptr) {
-            khdays_log("characters: %s: weapon_bone %s or the base's weapon node not found: the weapon stays "
-                       "where the base's hand is",
-                       character->identity, character->weapon_bone);
+            khdays_log("characters: %s: %s not found: the weapon stays where the base's hand is", character->identity,
+                       o.weapon_bone < 0 ? (std::string("its bone ") + character->weapon_bone).c_str()
+                       : character->base_weapon_node != nullptr
+                           ? (std::string("the base's node ") + character->base_weapon_node).c_str()
+                           : "the base's weapon node (base_weapon_node names it)");
         }
         khdays_log("models: %s: %s's own skeleton (%zu nodes), its %d clips by the base's animations", name.c_str(),
                    character->identity, model->nodes.size(), character->action_count);
@@ -998,6 +1010,7 @@ struct GameAnimation {
     std::string name;
     float phase = 0.0F;
     float frame = 0.0F;
+    float frames = 0.0F; // its length
 };
 
 GameAnimation game_animation(u32 anm)
@@ -1023,19 +1036,36 @@ GameAnimation game_animation(u32 anm)
     }
     out.name = it->second;
     out.frame = static_cast<float>(frame) / 4096.0F;
+    out.frames = static_cast<float>(frames);
     out.phase = frames > 0 ? std::fmin(1.0F, std::fmax(0.0F, out.frame / frames)) : 0.0F;
     return out;
 }
 
-// The vblanks (60 a second) a clip at its own speed goes on after the game's animation last moved: past them the
-// game holds it (its pause, a hit's stop), and the clip stands with it.
+// The vblanks (60 a second) a clip at its own speed goes on after the game's animation last moved: past them, with
+// the game's animation short of its end, the game holds it (a hit's stop), and the clip stands with it.
 constexpr u32 kStillVblanks = 4;
+// The game's animation back to an earlier frame from its last few: it loops; from elsewhere it began it again.
+constexpr float kWrapFrames = 3.0F;
+
+// The point of a clip `length` long at `t` seconds of its own time: past its end, held there or looped back to
+// second `from` of it.
+float clip_time(float t, float length, bool loops, float from)
+{
+    if (length <= 0.0F)
+        return 0.0F;
+    if (!loops || t < length)
+        return std::fmin(t, length);
+    from = std::fmin(std::fmax(from, 0.0F), length);
+    return length - from <= 0.0F ? length : from + std::fmod(t - from, length - from);
+}
 
 // The own skeleton's nodes' places for this draw: the clip given to the animation the game plays, at its own speed
-// while the game's animation moves (looped once the game's is seen to loop), or with `time game` at the same point
+// from the point the game begins its animation at, while the game's animation moves or is held at its end (not in a
+// hit's stop or the pause), past its end as its action's `loop` says (by default looped once the game's is seen to
+// loop), and from that point again when the game begins its animation again; or with `time game` at the same point
 // of the game's (stretched to the clip's length); a native plugin's clip instead while it plays one (kh.characters'
-// play: from when it began, at its own speed); blended from the pose shown when the animation changes; its root's
-// travel the game's (unless the action keeps the clip's).
+// play: from when it began, at its own speed); blended from the pose shown when the animation changes or begins
+// again; its root's travel the game's (unless the action keeps the clip's).
 std::vector<Mat> own_pose(Model &m)
 {
     OwnSkeleton &o = *m.own;
@@ -1046,43 +1076,50 @@ std::vector<Mat> own_pose(Model &m)
     const KhdaysCharacterAction *action =
         played != nullptr ? played : khdays_characters_action(o.character, g.name.c_str());
     const char *file = action != nullptr ? action->clip : o.character->fallback;
+    const Clip *chosen = file != nullptr ? &clip_of(o, m.nodes, file) : nullptr;
+    const float length = chosen != nullptr && chosen->ok ? chosen->animation.duration : 0.0F;
     const u32 now = khdays_events_vblank_count();
+    bool again = false; // the game began its animation again
     if (played != nullptr) {
         o.clock = static_cast<double>(now - since) / 60.0;
         o.clock_vblank = o.moved_vblank = now;
-        if (loop)
-            o.looping.insert(g.name);
-        else
-            o.looping.erase(g.name);
     } else if (g.name != o.playing) {
-        o.clock = 0.0;
+        o.clock = static_cast<double>(g.phase * length);
         o.clock_vblank = o.moved_vblank = now;
         o.last_frame = g.frame;
     } else {
         if (g.frame != o.last_frame) {
-            if (g.frame < o.last_frame)
-                o.looping.insert(g.name); // back to its start: the game loops it
+            if (g.frame < o.last_frame && o.last_frame + kWrapFrames >= g.frames) {
+                if (o.looping.insert(g.name).second && tracing() && khdays_log_on())
+                    khdays_log("characters: %s: the game loops %s (%.0f frames)", o.character->identity,
+                               g.name.c_str(), static_cast<double>(g.frames));
+            } else if (g.frame < o.last_frame) {
+                o.clock = static_cast<double>(g.phase * length);
+                again = true;
+            }
             o.last_frame = g.frame;
             o.moved_vblank = now;
         }
-        if (now - o.moved_vblank <= kStillVblanks)
+        const bool held = now - o.moved_vblank > kStillVblanks && g.frame + 1.5F < g.frames;
+        if (!again && !held && !khdays_link_paused())
             o.clock += static_cast<double>(now - o.clock_vblank) / 60.0;
         o.clock_vblank = now;
     }
     std::vector<Trs> pose = o.rest;
-    if (file != nullptr) {
-        const Clip &chosen = clip_of(o, m.nodes, file);
-        const float length = chosen.animation.duration;
-        if (played != nullptr && !loop && (!chosen.ok || o.clock >= length))
+    if (chosen != nullptr) {
+        if (played != nullptr && !loop && (!chosen->ok || o.clock >= length))
             khdays_characters_play_none(o.character->number); // played once: the game's again from the next draw
-        if (chosen.ok && action != nullptr && action->game_time && played == nullptr) {
-            apply_clip(chosen, g.phase * length, pose);
-        } else if (chosen.ok) {
-            const auto t = static_cast<float>(o.clock);
-            apply_clip(chosen,
-                       length <= 0.0F            ? 0.0F
-                       : o.looping.count(g.name) ? std::fmod(t, length)
-                                                 : std::fmin(t, length),
+        if (chosen->ok && action != nullptr && action->game_time && played == nullptr) {
+            apply_clip(*chosen, g.phase * length, pose);
+        } else if (chosen->ok) {
+            const int mode = action != nullptr && played == nullptr ? action->loop : KHDAYS_CHARACTER_LOOP_GAME;
+            const bool loops = played != nullptr                   ? loop != 0
+                               : mode == KHDAYS_CHARACTER_LOOP_YES ? true
+                               : mode == KHDAYS_CHARACTER_LOOP_NO  ? false
+                                                                   : o.looping.count(g.name) != 0;
+            apply_clip(*chosen,
+                       clip_time(static_cast<float>(o.clock), length, loops,
+                                 mode == KHDAYS_CHARACTER_LOOP_YES ? action->loop_from : 0.0F),
                        pose);
         }
     }
@@ -1091,12 +1128,14 @@ std::vector<Mat> own_pose(Model &m)
         pose[r].t[0] = o.rest[r].t[0];
         pose[r].t[2] = o.rest[r].t[2];
     }
-    if (g.name != o.playing) {
-        if (action == nullptr && !g.name.empty() && o.told.insert(g.name).second)
+    if (g.name != o.playing || again) {
+        if (again) {
+        } else if (action == nullptr && !g.name.empty() && o.told.insert(g.name).second)
             khdays_log("characters: %s: no clip for %s: %s", o.character->identity, g.name.c_str(),
                        o.character->fallback != nullptr ? "its fallback plays" : "its rest pose");
         else if (tracing() && khdays_log_on())
-            khdays_log("characters: %s plays %s with %s", o.character->identity, g.name.c_str(),
+            khdays_log("characters: %s plays %s (%.0f frames, from frame %.1f) with %s", o.character->identity,
+                       g.name.c_str(), static_cast<double>(g.frames), static_cast<double>(g.frame),
                        file != nullptr ? file : "its rest pose");
         o.from = o.shown;
         o.playing = g.name;

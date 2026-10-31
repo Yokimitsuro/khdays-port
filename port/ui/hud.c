@@ -8,6 +8,7 @@
 #include "kh2_portrait_hud.h"
 #include "kh2_party_hud.h"
 #include "kh2_hud_labels.h"
+#include "character_portraits.h"
 #include "badges.h"
 #include "minimap.h"
 #include "kh2_mission_panel.h"
@@ -594,6 +595,7 @@ static void emit(void)
     khdays_ui_kh2_hp_prepare();
     khdays_ui_kh2_party_prepare();
     khdays_ui_kh2_labels_prepare();
+    khdays_ui_character_portraits_prepare(); /* a mod's character's own, before the KH2 one takes the cells */
     khdays_ui_kh2_portrait_prepare();
     int party_there = 0;
     for (int n = 0; n < PIECE_COUNT; ++n) {
@@ -612,6 +614,7 @@ static void emit(void)
         }
         party_there |= there && strcmp(pieces_table[n].id, "hud.portrait") == 0;
     }
+    khdays_ui_character_portraits_emit();
     khdays_ui_kh2_portrait_emit();
     khdays_ui_kh2_labels_emit();
     khdays_ui_player_names_emit(party_there); /* the port's: the players' names in multiplayer */

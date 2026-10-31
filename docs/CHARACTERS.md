@@ -22,6 +22,7 @@ mods/<Mod>/
   characters/<key>/             one folder a character; its name is the character's key
     character.ini               its description (below)
     face.png                    its picture in the select (any size, drawn fitted)
+    portrait.png                optional: its picture by its HP gauge in the field (PNG, any size)
     model/<name>.gltf           its model: .gltf, .glb or .fbx
     model/<name>.bones.txt      its bones paired with its base's (RENDERING.md, "Mods' graphics")
     data/<file>                 optional: one of the game's files of a character's folder (ba/ch/<code>/),
@@ -42,6 +43,7 @@ name = Block
 name es = Bloque
 weapon = Stick
 face = face.png
+portrait = portrait.png
 locked = no
 gauges = 2 2 2 2 4 2 2 2 2
 
@@ -57,6 +59,12 @@ skeleton = paired
 - `name`, `weapon` -- for every language; `name en`, `name fr`, `name de`, `name it`, `name es` (and `weapon ...`)
   for one.
 - `face` -- its picture in the select.
+- `portrait` -- its picture by its HP gauge in the field, in place of its base's portrait: a PNG of any size, drawn
+  fitted into the game's portrait (48 x 48 dots), its shape kept and its transparency its own (the KH2 gauge of the
+  HD pieces moves and sizes it as it does the portrait there). `portrait ally` -- its picture as another player's
+  ally in a room (the game's small portraits, 24 x 24), each copy showing it; without it, `portrait` drawn smaller.
+  Without either, its base's portraits. A form may give its own (a form's `portrait` is its ally's picture too
+  unless it gives `portrait ally`).
 - `locked` -- `no`: always offered; `base`: offered only when its base can be chosen.
 - `gauges` -- the select's nine numbers, 0-10, in the order of the game's rows (RUNTIME_MAP section 16.3): strength,
   magic, defence, critical %, HP, two the select does not show, attack speed, critical bonus; without it, its
@@ -66,10 +74,13 @@ skeleton = paired
   its own clips (below); nothing of it is paired with the base's.
 - `[model] scale` -- its size to the game's: 100 for an FBX made in centimetres (the game's characters are about
   1.4 tall in its units, a model in metres 1.4).
-- `[model] weapon_bone` -- its bone the weapon follows (`R_buki`); without it the weapon stays where the base's
-  hand is. `weapon_turn = x y z` -- the weapon held on the bone's own axes, turned by these degrees (a weapon
-  bone made for its own weapon: the grip the model was made with); without it, the weapon is held as the base
-  holds it. `base_weapon_node` -- the base model's node the game puts the weapon on, when not its `*_w_tg_R`.
+- `[model] weapon_bone` -- its bone the weapon follows (`R_buki`); without it, its node named as the base model's
+  weapon node (a skeleton made like the game's: `so_w_tg00`), else the weapon stays where the base's hand is.
+  `weapon_turn = x y z` -- the weapon held on the bone's own axes, turned by these degrees (a weapon bone made for
+  its own weapon: the grip the model was made with); without it, the weapon is held as the base holds it.
+  `base_weapon_node` -- the base model's node the game puts the weapon on, when not the one the players' code
+  names: `ro_w_tg_R` (Roxas), `so_w_tg00` (Sora), `mi_w_tg_R` (Mickey), `ve_w_tg` (Vexen). Either one not found is
+  told in the session log.
 
 `#` starts a comment (at a line's start or after a space). A name or part the port does not know is told in the
 mods' log with its line and left out; a character with a missing `format`, `base`, `name` or `[model] file`, a bad
@@ -89,19 +100,31 @@ b_ro_B009 = clips/200.fbx root keep time game  # the combo's first hit: its forw
                                                # to the game's
 ```
 
-- `<the base's animation> = <clip> [blend <ms>] [root keep|remove] [time own|game]`: the clip (its file's first
-  animation, or the one a `#<name>` right after the file's `.gltf`, `.glb` or `.fbx` names -- `clips/all.gltf#run`,
-  for a file holding many; a name with spaces cannot be named this way; its bones by name) plays while the game plays
-  that animation. The studio offers each animation of such a file by its name. `time own` (the default): at the
-  speed it was made with, standing while the game holds its animation (the pause, a hit's stop), and looping
-  once the game's animation loops (standing, running); a clip longer than a one-off animation of the game's is
-  cut where the game goes on. `time game`: at the same point as the game's animation, stretched to its own
-  length, so that a hit lands when the game's does (for attacks). `blend` (default 100 ms) is how long it blends
-  from the pose before; the root's own travel is removed (the game moves the character) unless `root keep`.
+- `<the base's animation> = <clip> [blend <ms>] [root keep|remove] [time own|game] [loop game|no|yes|<s>]`: the
+  clip (its file's first animation, or the one a `#<name>` right after the file's `.gltf`, `.glb` or `.fbx` names --
+  `clips/all.gltf#run`, for a file holding many; a name with spaces cannot be named this way; its bones by name) plays
+  while the game plays that animation. The studio offers each animation of such a file by its name.
+- `time own` (the default): at the speed it was made with, from the point the game begins its animation at (the game
+  begins some past their start: Sora's running a third of the way in, his jump again after an air move), standing
+  while the game holds its animation short of its end (a hit's stop, the pause), going on while the game holds it
+  at its end (a pose the game keeps, as an air move's), and from that point again when the game begins its animation
+  again; a clip longer than a one-off animation of the game's is cut where the game goes on. `time game`: at the
+  same point as the game's animation, stretched to its own length, so that a hit lands when the game's does (for
+  attacks), and a cycle follows the game's speed (running).
+- `loop` -- what a clip at its own time does past its end: `game` (the default) plays it again once the game's
+  animation is seen to loop, else holds its last pose; `no` holds its last pose (a motion made once, as KH2's jump
+  or guard, where the game loops a short pose of its own); `yes` plays it again from its start, and a number of
+  seconds plays it again from that second (its start once, then the part that repeats: a guard's raise, then its
+  hold).
+- `blend` (default 100 ms) is how long it blends from the pose before; the root's own travel is removed (the game
+  moves the character) unless `root keep`.
 - The names: Roxas's standing `b_ro_A000`, running `b_ro_A001`, the ground combo `b_ro_B009`, `b_ro_B008`,
-  `b_ro_B015` and `b_ro_A004` after it (seen; more as they are found). With `KHDAYS_TRACE_MODELS=1` and the session
-  log on, the log names each animation as the game plays it and the clip shown; an animation with no clip is told
-  once in it either way.
+  `b_ro_B015` and `b_ro_A004` after it; Sora's standing `b_so_A000` (39 frames, looped), running `b_so_A001` (18,
+  looped), the jump `b_so_A002` (3), `b_so_A003` (27) and its landing `b_so_A004` (15), hurt `b_so_A007` (30), the
+  guard `b_so_Ca003` then `b_so_Ca004`, B held in the air `b_so_Ca005` (2, its last frame held) (seen; more as they
+  are found). With `KHDAYS_TRACE_MODELS=1` and the session log on, the log names each animation as the game plays
+  it (its length in frames and the frame it begins at), the clip shown, and each animation the game is seen to
+  loop; an animation with no clip is told once in it either way.
 - Clips are drawn at every displayed frame between two of the game's (the port's 3D smoothing): the game's logic
   keeps its own pace.
 
@@ -216,8 +239,12 @@ ro_w00600 = weapons/stick.glb           # the game's weapon model it draws inste
   model exported from KH Studio keeps them: `ro_w13600_a` ...), as a paired model's do; drawn where and when the
   game draws its own. With `KHDAYS_TRACE_MODELS=1` the log names each weapon model as it is drawn
   (`ba/ch/c100/w_.p2#0/mdl/ro_w13600`); KH Studio lists the base's.
-- A file that cannot be read is told; the game's weapon is drawn. Only the picture: the weapon's reach and hits are
-  its base's.
+- The swing trails (`so_w00_trace`, `so_w01600_trace` ...) and the hits' flashes (`so_w01600_hit` ...) are models of
+  the same file and are drawn the same way, where the game draws them from the weapon's places. Sora's: `so_w00600`,
+  `so_w01600`, `so_w02600`, their trails `so_w00_trace`, `so_w01600_trace`, `so_w02600_trace`.
+- A file that cannot be read is told; the game's weapon is drawn. A model of the base's the game draws for the
+  character with no line naming it is told once in the mods' log (its name as `[weapons]` wants it). Only the
+  picture: the weapon's reach and hits are its base's.
 
 ## Forms (`[form <id>]`, format 2)
 
@@ -310,9 +337,9 @@ character loads without the mod, its base standing in.
 - Characters are read from every folder in `mods/`, also one turned off in the Mods page (as the mods'
   missions are): a character is taken out by taking its mod's folder out.
 - Attacks of their own (new kinds of moves, not the base's) and a Limit of their own (its length, its kind of
-  hits: their base's code); the field's portrait and the results'
-  model are still the base's.
-- The weapons' swing trails and the hits' shapes are the base's.
+  hits: their base's code); the results' model is still the base's.
+- The weapons' swing trails sweep where the base's do (their pictures can be the character's own: `[weapons]`), and
+  the hits' shapes are the base's.
 - A form changes at the camp only: in the field it is told and waits for the next mission. `level` in a rule is
   false (the seat's level is not read yet).
 - In a room, forms follow the game's own choice only (above).

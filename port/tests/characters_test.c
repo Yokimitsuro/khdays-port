@@ -100,6 +100,8 @@ static void bad_descriptions_left_out(void)
          6},
         {"root", "[character]\nformat = 1\nbase = axel\nname = A\nface = C:/a.png\n[model]\nfile = a.glb\n",
          "inside the character's", 5},
+        {"portrait", "[character]\nformat = 1\nbase = axel\nname = A\nportrait ally = ../a.png\n[model]\nfile = a.glb\n",
+         "portrait ally ../a.png: not a file inside", 5},
         {"gauges", "[character]\nformat = 1\nbase = axel\nname = A\ngauges = 1 2 3\n[model]\nfile = a.glb\n", "gauges",
          5},
         {"bigauge",
@@ -203,7 +205,10 @@ static void own_skeleton_read(void)
                                "[actions]\nfallback = clips/idle.fbx\n"
                                "b_ro_A000 = clips/idle.fbx\n"
                                "b_ro_A001 = clips/run.fbx blend 120\n"
-                               "b_ro_B009 = clips/hit1.fbx root keep blend 0 time game\n";
+                               "b_ro_B009 = clips/hit1.fbx root keep blend 0 time game\n"
+                               "b_ro_A003 = clips/jump.fbx loop no\n"
+                               "b_ro_A005 = clips/guard.fbx loop 0.4\n"
+                               "b_ro_A006 = clips/glide.fbx loop yes\n";
     KhdaysCharacters r;
     Reports reports;
     memset(&r, 0, sizeof(r));
@@ -216,13 +221,20 @@ static void own_skeleton_read(void)
     CHECK(strcmp(c->weapon_bone, "R_buki") == 0);
     CHECK(c->has_weapon_turn == 1 && c->weapon_turn[1] == 90.0f && c->weapon_turn[2] == -45.0f);
     CHECK(strcmp(c->fallback, "clips/idle.fbx") == 0);
-    CHECK(c->action_count == 3);
+    CHECK(c->action_count == 6);
+    const KhdaysCharacterAction *jump = khdays_characters_action(c, "b_ro_A003"),
+                                *guard = khdays_characters_action(c, "b_ro_A005"),
+                                *glide = khdays_characters_action(c, "b_ro_A006");
+    CHECK(jump != NULL && jump->loop == KHDAYS_CHARACTER_LOOP_NO);
+    CHECK(guard != NULL && guard->loop == KHDAYS_CHARACTER_LOOP_YES && guard->loop_from == 0.4f);
+    CHECK(glide != NULL && glide->loop == KHDAYS_CHARACTER_LOOP_YES && glide->loop_from == 0.0f);
     const KhdaysCharacterAction *run = khdays_characters_action(c, "b_ro_A001");
     CHECK(run != NULL && strcmp(run->clip, "clips/run.fbx") == 0 && run->blend_ms == 120 && run->root_keep == 0);
     const KhdaysCharacterAction *hit = khdays_characters_action(c, "b_ro_B009");
     CHECK(hit != NULL && hit->blend_ms == 0 && hit->root_keep == 1 && hit->game_time == 1);
     const KhdaysCharacterAction *idle = khdays_characters_action(c, "b_ro_A000");
-    CHECK(idle != NULL && idle->blend_ms == KHDAYS_CHARACTER_BLEND_MS && idle->game_time == 0);
+    CHECK(idle != NULL && idle->blend_ms == KHDAYS_CHARACTER_BLEND_MS && idle->game_time == 0 &&
+          idle->loop == KHDAYS_CHARACTER_LOOP_GAME);
     CHECK(khdays_characters_action(c, "b_ro_A004") == NULL);
     khdays_characters_free(&r);
 
@@ -239,7 +251,11 @@ static void own_skeleton_read(void)
          "inside the character's", 8},
         {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx blend soon\n",
          "not milliseconds", 8},
-        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx loop yes\n",
+        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx loop soon\n",
+         "not game, no, yes or a second", 8},
+        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx loop -1\n",
+         "not game, no, yes or a second", 8},
+        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx speed 2\n",
          "not blend <ms>", 8},
         {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx root\n",
          "without its value", 8},

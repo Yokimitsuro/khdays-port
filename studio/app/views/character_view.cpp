@@ -557,7 +557,7 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
 
 // --- the file dialogs' answers, taken on the interface's thread ---------------------------------------------
 
-enum class Wanted { model, clips, face, sound, weapon };
+enum class Wanted { model, clips, face, sound, weapon, portrait, portrait_ally };
 struct Asked {
     Wanted what;
     std::string sound_key;  // a sound's line, for its file; the base's weapon model a file is for
@@ -569,7 +569,11 @@ void ask_files(App& app, Wanted what, const std::string& sound_key = {}) {
     static const SDL_DialogFileFilter models[] = {{"FBX, glTF, glb", "fbx;gltf;glb"}};
     static const SDL_DialogFileFilter pictures[] = {{"PNG, JPEG, BMP, TGA", "png;jpg;jpeg;bmp;tga"}};
     static const SDL_DialogFileFilter sounds[] = {{"WAV, FLAC, OGG", "wav;flac;ogg"}};
-    const SDL_DialogFileFilter* filters = what == Wanted::face ? pictures : what == Wanted::sound ? sounds : models;
+    static const SDL_DialogFileFilter pngs[] = {{"PNG", "png"}};  // the game's HUD reads PNG
+    const SDL_DialogFileFilter* filters = what == Wanted::face                                         ? pictures
+                                          : what == Wanted::portrait || what == Wanted::portrait_ally ? pngs
+                                          : what == Wanted::sound                                      ? sounds
+                                                                                                       : models;
     SDL_ShowOpenFileDialog(
         [](void* user, const char* const* files, int) {
             if (files == nullptr)
@@ -585,7 +589,7 @@ void ask_files(App& app, Wanted what, const std::string& sound_key = {}) {
 // A file given (chosen, or dropped on the window): copied into the character's folder and named in its
 // description, as the tab or the question it answers wants.
 void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const std::string& sound_key) {
-    const char* const folders[] = {"model", "clips", "", "voices", "weapons"};
+    const char* const folders[] = {"model", "clips", "", "voices", "weapons", "", ""};
     std::string relative, why;
     if (!copy_into_character(m.dir, v.key, file, folders[static_cast<int>(what)], &relative, &why)) {
         app.tell(fmt(app.language, S::save_failed, {why}), false);
@@ -607,7 +611,13 @@ void take_file(App& app, const Mod& m, const fs::path& file, Wanted what, const 
         v.shown_clip = relative;
         break;
     case Wanted::face:
-        v.ini.set("character", "face", relative);
+    case Wanted::portrait:
+    case Wanted::portrait_ally:
+        v.ini.set("character",
+                  what == Wanted::face       ? "face"
+                  : what == Wanted::portrait ? "portrait"
+                                             : "portrait ally",
+                  relative);
         app.images->forget(character_dir(m.dir, v.key) / path_u8(relative));
         break;
     case Wanted::sound:
@@ -650,6 +660,28 @@ void draw_text_field(const char* label, const char* key) {
     }
 }
 
+// A picture of its [character] part: shown small, with a button to choose another.
+void draw_picture(App& app, const Mod& m, const char* key, const char* label, Wanted what) {
+    ImGui::PushID(key);
+    ImGui::TextUnformatted(label);
+    const std::string file = v.ini.get("character", key);
+    if (!file.empty()) {
+        const GpuImage& g = app.images->get(character_dir(m.dir, v.key) / path_u8(file));
+        if (g.texture != nullptr) {
+            const float side = 6.0f * ImGui::GetFontSize();
+            const float k = side / static_cast<float>(std::max(g.width, g.height));
+            ImGui::Image(ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(g.texture))),
+                         ImVec2(static_cast<float>(g.width) * k, static_cast<float>(g.height) * k));
+            ImGui::SameLine();
+        } else {
+            ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s: %s", file.c_str(), g.error.c_str());
+        }
+    }
+    if (ImGui::Button(tr(app.language, S::chars_choose_picture)))
+        ask_files(app, what);
+    ImGui::PopID();
+}
+
 void draw_character_tab(App& app, const Mod& m) {
     const auto lang = app.language;
     // its words, for every language or one
@@ -685,23 +717,10 @@ void draw_character_tab(App& app, const Mod& m) {
     if (ImGui::Combo(tr(lang, S::chars_locked), &locked, lockings, 2))
         v.ini.set("character", "locked", locked == 1 ? "base" : "no");
     ImGui::Separator();
-    // its picture
-    ImGui::TextUnformatted(tr(lang, S::chars_face));
-    const std::string face = v.ini.get("character", "face");
-    if (!face.empty()) {
-        const GpuImage& g = app.images->get(character_dir(m.dir, v.key) / path_u8(face));
-        if (g.texture != nullptr) {
-            const float side = 6.0f * ImGui::GetFontSize();
-            const float k = side / static_cast<float>(std::max(g.width, g.height));
-            ImGui::Image(ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(g.texture))),
-                         ImVec2(static_cast<float>(g.width) * k, static_cast<float>(g.height) * k));
-            ImGui::SameLine();
-        } else {
-            ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s: %s", face.c_str(), g.error.c_str());
-        }
-    }
-    if (ImGui::Button(tr(lang, S::chars_choose_picture)))
-        ask_files(app, Wanted::face);
+    // its pictures: the select's, and by its HP gauge in the field (its own, and as an ally's)
+    draw_picture(app, m, "face", tr(lang, S::chars_face), Wanted::face);
+    draw_picture(app, m, "portrait", tr(lang, S::chars_portrait), Wanted::portrait);
+    draw_picture(app, m, "portrait ally", tr(lang, S::chars_portrait_ally), Wanted::portrait_ally);
     ImGui::Separator();
     // its gauges: its own, or its base's
     std::string gauges = v.ini.get("character", "gauges");
@@ -891,11 +910,13 @@ S known_animation(const std::string& name, int* number) {
     return found->second.first;
 }
 
-// An action's line: "<clip> [blend <ms>] [root keep] [time game]".
+// An action's line: "<clip> [blend <ms>] [root keep] [time game] [loop no|yes|<s>]".
 struct Action {
     std::string clip;
     int blend = 100;
     bool keep = false, game_time = false;
+    int loop = 0; // past its end: 0 as the game's, 1 its last pose held, 2 looped from loop_from
+    float loop_from = 0.0f;
 };
 
 Action parse_action(const std::string& value) {
@@ -919,6 +940,11 @@ Action parse_action(const std::string& value) {
             a.keep = words[i + 1] == "keep";
         else if (words[i] == "time")
             a.game_time = words[i + 1] == "game";
+        else if (words[i] == "loop") {
+            const std::string& w = words[i + 1];
+            a.loop = w == "no" ? 1 : w == "game" ? 0 : 2;
+            a.loop_from = a.loop == 2 && w != "yes" ? std::strtof(w.c_str(), nullptr) : 0.0f;
+        }
     }
     return a;
 }
@@ -931,6 +957,14 @@ std::string action_text(const Action& a) {
         out += " root keep";
     if (a.game_time)
         out += " time game";
+    if (a.loop == 1)
+        out += " loop no";
+    else if (a.loop == 2 && a.loop_from > 0.0f) {
+        char from[32];
+        std::snprintf(from, sizeof(from), " loop %g", a.loop_from);
+        out += from;
+    } else if (a.loop == 2)
+        out += " loop yes";
     return out;
 }
 
@@ -1076,8 +1110,20 @@ void draw_animations_tab(App& app, const Mod& m) {
         changed |= ImGui::Checkbox(tr(lang, S::chars_keep_root), &a.keep);
         ImGui::SameLine();
         changed |= ImGui::Checkbox(tr(lang, S::chars_game_time), &a.game_time);
+        // past its end (its own time only: on the game's beat it is where the game's animation is)
+        ImGui::BeginDisabled(a.game_time);
+        const char* loops[] = {tr(lang, S::chars_loop_game), tr(lang, S::chars_loop_no), tr(lang, S::chars_loop_yes)};
+        ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+        changed |= ImGui::Combo(tr(lang, S::chars_loop), &a.loop, loops, 3);
+        if (a.loop == 2) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+            changed |= ImGui::InputFloat(tr(lang, S::chars_loop_from), &a.loop_from, 0.1f, 0.5f, "%.2f");
+        }
+        ImGui::EndDisabled();
         if (changed) {
             a.blend = std::clamp(a.blend, 0, 10000);
+            a.loop_from = std::max(a.loop_from, 0.0f);
             v.ini.set(ap, v.shown_game, action_text(a));
         }
     } else if (!v.shown_game.empty()) {

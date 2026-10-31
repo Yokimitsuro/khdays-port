@@ -73,13 +73,20 @@ typedef struct KhdaysCharacterStatPoint {
 /* A blend's time when an action gives none: from the clip before to the new one. */
 #define KHDAYS_CHARACTER_BLEND_MS 100
 
+/* How a clip at its own speed goes on past its end. */
+#define KHDAYS_CHARACTER_LOOP_GAME 0 /* again once the game's animation is seen to loop, else its last pose held */
+#define KHDAYS_CHARACTER_LOOP_NO 1   /* its last pose held */
+#define KHDAYS_CHARACTER_LOOP_YES 2  /* again from loop_from */
+
 /* One of the base's animations given a clip of the character's own (its skeleton's). */
 typedef struct KhdaysCharacterAction {
-    char *game;    /* the animation the base's code plays ("b_ro_A001") */
-    char *clip;    /* relative to the character's folder */
-    int blend_ms;  /* from the clip before */
-    int root_keep; /* the clip's own travel of its root kept (else the game's movement alone) */
-    int game_time; /* stretched to the game's animation's length (else at its own speed) */
+    char *game;      /* the animation the base's code plays ("b_ro_A001") */
+    char *clip;      /* relative to the character's folder */
+    int blend_ms;    /* from the clip before */
+    int root_keep;   /* the clip's own travel of its root kept (else the game's movement alone) */
+    int game_time;   /* stretched to the game's animation's length (else at its own speed) */
+    int loop;        /* KHDAYS_CHARACTER_LOOP_* */
+    float loop_from; /* LOOP_YES: the second of the clip it loops back to */
 } KhdaysCharacterAction;
 
 /* A combo of the character's ([moveset] ground / air): the base's attacks in order (their records' numbers in its
@@ -121,8 +128,10 @@ typedef struct KhdaysCharacter {
     /* UTF-8; NULL: the one without a language */
     char *name[KHDAYS_CHARACTER_LANGUAGES], *weapon[KHDAYS_CHARACTER_LANGUAGES];
     char *any_name, *any_weapon;
-    char *face;  /* relative to the character's folder */
-    char *model; /* the same */
+    char *face;     /* relative to the character's folder */
+    char *portrait; /* the same: its picture by its HP gauge in the field; NULL its base's */
+    char *portrait_ally; /* the same: its picture as another player's ally; NULL its portrait */
+    char *model;         /* the same */
     int own_skeleton;
     float model_scale;              /* the model's size to the game's (an FBX in centimetres: 100); 0 not given */
     KhdaysCharacterAction *actions; /* skeleton = own: [actions] */
