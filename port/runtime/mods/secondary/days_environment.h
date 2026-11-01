@@ -7,6 +7,7 @@
 #include "collision.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace khdays::secondary {
@@ -31,15 +32,19 @@ public:
     {
         return rooms_.size();
     }
+    // Which collision the gathers take, for the session log: the player's room and its group, or every group
+    std::string describe() const;
 
 private:
     struct Room {
+        std::uint32_t group = 0; // its model group (a room slot's number)
         std::uint32_t blob = 0;
         std::uint32_t key[8] = {};       // the header words that change with the room (counts, region, pointers)
         TriangleBvh bvh;                 // world units
         std::vector<std::uint32_t> face; // per triangle: its face record's DS address (its disabled flag)
     };
     struct Box { // a room box (a moving or opening object), world units
+        std::uint32_t group = 0;
         Vec3 pos;
         float half_w = 0, half_d = 0, height = 0, angle = 0;
     };
@@ -51,6 +56,8 @@ private:
     float scale_ = 1.0F;
     std::uint64_t generation_ = 1;
     std::uint32_t manager_ = 0;
+    int current_ = -1; // the group of the room the player is in (-1: not known, every group is taken)
+    int room_ = -1;    // that room's index in its world
 };
 
 } // namespace khdays::secondary

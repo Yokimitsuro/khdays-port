@@ -162,6 +162,11 @@ void khdays_log_mark(void)
     fprintf(stderr, "log: mark %u\n", marks);
 }
 
+u32 khdays_log_marks(void)
+{
+    return marks;
+}
+
 void khdays_log_close(void)
 {
     /* a crash may come inside a line, the lock held: then only flushed */

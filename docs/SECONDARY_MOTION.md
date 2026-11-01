@@ -259,7 +259,11 @@ tangential motion relative to the collider's surface up to `friction` x the
 overlap. A one-sided room face pushes back to its front a control that crossed it
 this substep, sits less than 5 cm behind it, or belongs in front (a floor is solid
 below; a wall where the target is in front), up to 30 cm deep; deeper is left (a
-wall's other face). Self-contact: a control against the faces of its
+wall's other face). A floor over the group's reference bone (the hips, for the
+coat: a ramp's or a platform's underside) only keeps cloth from crossing it
+downward: pushed up through one 2.5 m over Roxas's head, the coat stayed on its top,
+stretched up to it (F12's marks: a 28 degree floor pushing it 1.5 m in a tick).
+Self-contact: a control against the faces of its
 self-collision groups, from the side it was on, neighbours (two links) and pairs
 already touching at rest (a slit, an overlapping layer) left out.
 
@@ -403,6 +407,18 @@ the quadtree's object lists (+0x9c, nodes +0x7a, 0x20 each, list +8, next +4):
 position +0x2c, size +0x38/+0x3c/+0x40 (half extents width/2 and depth/2,
 `RoomBox_UpdateBounds`), angle +0x44 (its sense not verified). Characters'
 cylinders are not cloth colliders. Nothing calls the game's casts.
+
+Only the player's room is taken, as an actor's own ground casts take only its
+room's group (`Actor_ResolveGround`: `GetTrackEntryBase` of its link's +0x46):
+the field's link context (`data_ov002_0207fa10`, overlay 2) holds the current slot
+(+0xd) and each of its four slots' room (+0x2f), and a slot's collision is the
+model group of its number (`Ov002_LoadPeerIntoSlot`: `Entity_LoadAndAttach(slot)`).
+Every loaded group was taken before, and Agrabah keeps a neighbouring room's
+collision loaded over the one Roxas stands in: room 0's 1.2 m sand mound lay under
+him in an empty plaza and threw his coat up (F12's marks). Without overlay 2, or
+with a slot not loaded, every group is taken. Assumed: the current slot is the
+player's link's group (its writer is not in the decompilation's C); in game the
+plaza's flares stopped with it. F12's lines name the room and group taken.
 
 ## Setting up another character
 

@@ -665,6 +665,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
         b.grow(s.environment_thickness + kDeepBehind); // what a face may push out reaches this far
         env_boxes_.push_back(b);
     }
+    room_push_.assign(env_.size(), 0.0F);
     // bounded relaxation: links and contacts settle before anything is drawn. The colliders sweep in from
     // where the rest pose has them on the first group's reference bone, so a pose that starts with the legs
     // apart carries the coat out around them (contact keeps the side a control came from) instead of
@@ -816,6 +817,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         env_boxes_.clear();
         environment_triangles = 0;
     }
+    room_push_.assign(env_.size(), 0.0F);
     // compliance of each link from its particles' settings
     for (std::size_t c = 0; c < rig_.distances.size(); ++c) {
         const Distance &d = rig_.distances[c];
@@ -1534,8 +1536,9 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
 
 void Simulation::collide_environment(const TickSettings &s)
 {
-    // `goal`: where the shape wants it; one behind a face it should be in front of comes back out
-    const auto point_vs_room = [&](Vec3 x, Vec3 before, Vec3 goal, float th, Vec3 &push) {
+    // `goal`: where the shape wants it; one behind a face it should be in front of comes back out. `body`: its
+    // group's reference bone, which says whether a floor is the one under it
+    const auto point_vs_room = [&](Vec3 x, Vec3 before, Vec3 goal, Vec3 body, float th, Vec3 &push) {
         Aabb me;
         me.add(x);
         bool hit = false;
@@ -1554,6 +1557,7 @@ void Simulation::collide_environment(const TickSettings &s)
                 const float dist = length(d);
                 if (dist < th) {
                     push += (dist > 1e-7F ? d * (1.0F / dist) : tri.n) * (th - dist);
+                    room_push_[k] = maxf(room_push_[k], th - dist);
                     hit = true;
                 }
                 continue;
@@ -1563,11 +1567,15 @@ void Simulation::collide_environment(const TickSettings &s)
             if (length(closest_on_triangle(onplane, tri.a, tri.b, tri.c) - onplane) > 1e-4F)
                 continue;
             const float was = dot(before - tri.a, tri.n);
-            // a floor is solid below it; a wall or ceiling only where the shape belongs in front of it
+            // a floor the body stands over is solid below it; a wall or ceiling only where the shape belongs in front
+            // of it. A floor over the body (a ramp's or a platform's underside) is passed from below: pushed up
+            // through it, the cloth stayed on its top, stretched up from the body (2.5 m in game)
+            const bool over_body = tri.kind == Surface::ground && dot(body - tri.a, tri.n) < 0.0F;
             const bool belongs_in_front =
                 -side < kDeepBehind && (tri.kind == Surface::ground || dot(goal - tri.a, tri.n) >= 0.0F);
-            if (was >= -1e-4F || -side < kShallowBehind || belongs_in_front) {
+            if (was >= -1e-4F || (!over_body && (-side < kShallowBehind || belongs_in_front))) {
                 push += tri.n * (th - side);
+                room_push_[k] = maxf(room_push_[k], th - side);
                 hit = true;
             }
         }
@@ -1579,8 +1587,10 @@ void Simulation::collide_environment(const TickSettings &s)
         if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact) || unsimulated(i))
             continue;
         const float th = maxf(p.thickness, s.environment_thickness);
+        const Vec3 body =
+            sub1_[static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(p.group)].reference_bone)].t;
         Vec3 push;
-        if (!point_vs_room(x_[i], prev_[i], target_[i], th, push))
+        if (!point_vs_room(x_[i], prev_[i], target_[i], body, th, push))
             continue;
         x_[i] += push;
         ++contacts;
@@ -1607,7 +1617,10 @@ void Simulation::collide_environment(const TickSettings &s)
         const Vec3 cb = (prev_[v[0]] + prev_[v[1]] + prev_[v[2]]) * (1.0F / 3.0F);
         Vec3 push;
         const Vec3 cg = (target_[v[0]] + target_[v[1]] + target_[v[2]]) * (1.0F / 3.0F);
-        if (!point_vs_room(c, cb, cg, maxf(rig_.particles[v[0]].thickness, s.environment_thickness), push))
+        const Vec3 body = sub1_[static_cast<std::size_t>(
+                                    rig_.groups[static_cast<std::size_t>(rig_.particles[v[0]].group)].reference_bone)]
+                              .t;
+        if (!point_vs_room(c, cb, cg, body, maxf(rig_.particles[v[0]].thickness, s.environment_thickness), push))
             continue;
         const float den = (wv[0] + wv[1] + wv[2]) / 9.0F;
         for (int j = 0; j < 3; ++j)

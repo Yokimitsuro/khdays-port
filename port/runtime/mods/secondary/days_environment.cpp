@@ -10,6 +10,7 @@
 extern "C" {
 #include "../../core/window.h"
 #include "khdays_ds_symbols.h"
+int khdays_overlay_loaded(int id); /* core/overlays.c */
 }
 
 #include <algorithm>
@@ -26,6 +27,8 @@ constexpr std::uint16_t kFaceDisabled = 0x4000;  // a wall that opened (Ov002_Se
 constexpr std::uint8_t kPassThrough = 5;         // a named record's tag the camera passes through
 constexpr std::uint32_t kBoxVtable = 0x02042928; // a room box (kind 3)
 constexpr std::uint32_t kMaxFaces = 20000, kMaxNodes = 8192;
+constexpr std::uint32_t kLinkCtx = 0x0207fa10; // data_ov002_0207fa10 (overlay 2's BSS): the field's Ov002LinkCtx *
+constexpr int kFieldOverlay = 2, kRoomSlots = 4;
 
 bool ram(std::uint32_t at, std::uint32_t size = 4)
 {
@@ -76,7 +79,37 @@ std::uint32_t blob_of(std::uint32_t manager, std::uint32_t g)
     return blob;
 }
 
+// The room the player is in and its model group: overlay 2's link context holds its current slot (+0xd) and each
+// slot's room (+0x2f, four: Ov002_StepPeerObjectLoading); a slot's collision is the model group of its number
+// (Ov002_LoadPeerIntoSlot: Entity_LoadAndAttach(slot)). An actor casts its ground against its own group alone
+// (Actor_ResolveGround: GetTrackEntryBase(link +0x46)): a neighbouring room's floors lie over this one. -1 unknown
+int current_slot(int &room)
+{
+    room = -1;
+    if (!khdays_overlay_loaded(kFieldOverlay) || !ram(kLinkCtx))
+        return -1;
+    const std::uint32_t ctx = u32(kLinkCtx);
+    if (!ram(ctx, 0x33))
+        return -1;
+    const auto slot = static_cast<std::int8_t>(u8(ctx + 0xd));
+    if (slot < 0 || slot >= kRoomSlots)
+        return -1;
+    room = static_cast<std::int8_t>(u8(ctx + 0x2f + static_cast<std::uint32_t>(slot)));
+    return room >= 0 ? slot : -1;
+}
+
 } // namespace
+
+std::string DaysEnvironment::describe() const
+{
+    std::string groups;
+    for (const Room &r : rooms_)
+        groups += (groups.empty() ? "" : " ") + std::to_string(r.group);
+    if (current_ < 0)
+        return "every loaded group (" + groups + "; the player's room not known)";
+    return "the player's room " + std::to_string(room_) + " (group " + std::to_string(current_) + "; loaded " + groups +
+           ")";
+}
 
 void DaysEnvironment::build(Room &room)
 {
@@ -160,6 +193,7 @@ void DaysEnvironment::refresh()
                 continue;
             }
             Room r;
+            r.group = g;
             r.blob = blob;
             std::memcpy(r.key, key, sizeof(key));
             build(r);
@@ -169,6 +203,17 @@ void DaysEnvironment::refresh()
     }
     changed = changed || !rooms_.empty(); // rooms left over were unloaded
     rooms_ = std::move(next);
+    // the player's room's group alone, as its ground casts take it; every group when it is not known or not loaded
+    int room = -1;
+    int current = current_slot(room);
+    if (std::none_of(rooms_.begin(), rooms_.end(),
+                     [&](const Room &r) { return static_cast<int>(r.group) == current; })) {
+        current = -1;
+        room = -1;
+    }
+    changed = changed || current != current_;
+    current_ = current;
+    room_ = room;
     // room boxes (opening walls, moving blocks) from each room's tree nodes: their place now
     std::vector<Box> boxes;
     for (const Room &r : rooms_) {
@@ -181,6 +226,7 @@ void DaysEnvironment::refresh()
                 if (u32(obj + 0x1c) != kBoxVtable)
                     continue; // characters' cylinders are not cloth colliders
                 Box x;
+                x.group = r.group;
                 x.pos = {fx(s32(obj + 0x2c)), fx(s32(obj + 0x30)), fx(s32(obj + 0x34))};
                 x.half_w = fx(s32(obj + 0x38)) * 0.5F;
                 x.height = fx(s32(obj + 0x3c));
@@ -209,6 +255,8 @@ void DaysEnvironment::gather(const Aabb &box, std::vector<Triangle> &out)
     world.add(box.hi * scale_);
     const float to_sim = 1.0F / scale_;
     for (const Room &r : rooms_) {
+        if (current_ >= 0 && static_cast<int>(r.group) != current_)
+            continue;
         hits_.clear();
         r.bvh.query(world, hits_);
         for (const int i : hits_) {
@@ -222,6 +270,8 @@ void DaysEnvironment::gather(const Aabb &box, std::vector<Triangle> &out)
         }
     }
     for (const Box &b : boxes_) {
+        if (current_ >= 0 && static_cast<int>(b.group) != current_)
+            continue;
         Aabb bb;
         const float reach = std::sqrt(b.half_w * b.half_w + b.half_d * b.half_d);
         bb.add(b.pos - Vec3{reach, 0.0F, reach});

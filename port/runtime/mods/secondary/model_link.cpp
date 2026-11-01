@@ -43,6 +43,38 @@ bool flag(const char *name)
     return v != nullptr && *v != '\0' && *v != '0';
 }
 
+// F12 (a session log mark): where an actor stands in the world (world units) and the room faces that pushed its
+// cloth in the last tick, most first: a floor steep enough to stand for a wall shows here
+void log_room_contacts(const std::string &name, u32 mark, const void *actor, const Mat4 &root, float units,
+                       const Simulation &sim, const std::string &collision)
+{
+    const float facing = std::atan2(root[8], root[10]) * 57.29578F;
+    const auto &room = sim.room();
+    const auto &push = sim.room_push();
+    std::vector<std::size_t> order;
+    for (std::size_t k = 0; k < room.size() && k < push.size(); ++k)
+        if (push[k] > 0.0F)
+            order.push_back(k);
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return push[a] > push[b]; });
+    khdays_log("secondary: %s: mark %u: actor %p at (%.2f %.2f %.2f), facing %.0f degrees; collision of %s; %zu room "
+               "triangles near, %zu pushed its cloth",
+               name.c_str(), mark, actor, static_cast<double>(root[12]), static_cast<double>(root[13]),
+               static_cast<double>(root[14]), static_cast<double>(facing), collision.c_str(), room.size(),
+               order.size());
+    static const char *const kKinds[] = {"ground", "wall", "ceiling", "object"};
+    for (std::size_t n = 0; n < order.size() && n < 8; ++n) {
+        const Triangle &t = room[order[n]];
+        const Vec3 c = (t.a + t.b + t.c) * (units / 3.0F);
+        const float steep = std::acos(std::fmax(-1.0F, std::fmin(1.0F, t.n.y))) * 57.29578F;
+        khdays_log("secondary: %s: mark %u:   %s %.0f degrees steep pushed %.1f cm; centre (%.2f %.2f %.2f), normal "
+                   "(%.2f %.2f %.2f)",
+                   name.c_str(), mark, kKinds[static_cast<int>(t.kind) & 3], static_cast<double>(steep),
+                   static_cast<double>(push[order[n]] * 100.0F), static_cast<double>(c.x), static_cast<double>(c.y),
+                   static_cast<double>(c.z), static_cast<double>(t.n.x), static_cast<double>(t.n.y),
+                   static_cast<double>(t.n.z));
+    }
+}
+
 void say(const std::string &text)
 {
     std::fprintf(stderr, "secondary: %s\n", text.c_str());
@@ -152,6 +184,7 @@ struct ModelSecondary {
         Mat4 camera_world = kIdentity4;
         bool has_camera = false;
         float camera_step = 0.0F, camera_turn = 0.0F;
+        u32 marked = 0; // the F12 mark last logged (khdays_log_marks)
     };
     std::map<const void *, ActorState> actors; // by render object; dropped when unseen (sweep)
     // set_game_mesh: the coat locked on the game model's (`game_shape`): its locked strips each laid down paths of
@@ -1330,6 +1363,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         state.actor =
             std::make_unique<Actor>(m.rig, static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(in.actor) >> 4));
         state.units = units;
+        state.marked = khdays_log_marks();
         if (m.trace)
             khdays_log("secondary trace: %s: a new actor for render object %p (%zu actors)", m.name.c_str(), in.actor,
                        m.actors.size());
@@ -1502,6 +1536,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         }
     }
     state.actor->update(a);
+    if (const u32 mark = khdays_log_marks(); mark != state.marked) {
+        state.marked = mark;
+        log_room_contacts(m.name, mark, in.actor, root, units, state.actor->simulation(), room_.describe());
+    }
     std::fill(m.written.begin(), m.written.end(), std::uint8_t{0});
     for (const int b : rig.needed)
         m.out[static_cast<std::size_t>(b)] = m.pose[static_cast<std::size_t>(b)];

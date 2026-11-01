@@ -974,6 +974,41 @@ void outward_axis()
     CHECK(has_text(d, "outward axis"));
 }
 
+void floor_over_body()
+{
+    // a platform's underside 5 cm over the skirt's hips (its top row 25 cm under it, within reach of a floor's push
+    // from below): not the floor the body stands on, so the skirt stays under it; pushed up through it, it stayed on
+    // its top, stretched up from the hips
+    const Skirt s = make_skirt(8, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "", "  thickness 0.01\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    std::vector<Triangle> room;
+    const Vec3 a{-5, 1.05F, -5}, b{5, 1.05F, -5}, c{5, 1.05F, 5}, e{-5, 1.05F, 5};
+    room.push_back({a, c, b, {0, 1, 0}, Surface::ground});
+    room.push_back({a, e, c, {0, 1, 0}, Surface::ground});
+    StaticEnvironment env(room);
+    Actor actor(rig, 13);
+    std::vector<Frame> pose;
+    ActorInput in;
+    in.pose = &pose;
+    in.environment = &env;
+    float highest = -1.0F;
+    for (int f = 0; f < 60; ++f) {
+        in.seconds = f / 60.0;
+        pose = pose_of(s.sk, {});
+        actor.update(in);
+        for (std::size_t i = 0; i < actor.simulation().positions().size(); ++i)
+            if (rig->particles[i].dynamic)
+                highest = maxf(highest, actor.simulation().positions()[i].y);
+    }
+    std::printf("floor over the body: the skirt's highest control at %.3f m (the floor at 1.05)%s",
+                static_cast<double>(highest), "\n");
+    CHECK(highest < 1.0F);
+}
+
 void contacts()
 {
     // a skirt over a fast capsule sweeping through its middle, a floor below it, a wall beside it
@@ -1332,6 +1367,7 @@ int main()
     pause_hold_and_rate();
     spawn_teleport_identity();
     partial_jump();
+    floor_over_body();
     authored_and_release();
     guided_stretch();
     cutscene_sim_shell();

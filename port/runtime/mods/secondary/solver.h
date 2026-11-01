@@ -86,6 +86,15 @@ public:
     {
         return x_;
     }
+    // the room's triangles the last tick gathered (solver space), and the most each pushed one point then (0: none)
+    const std::vector<Triangle> &room() const
+    {
+        return env_;
+    }
+    const std::vector<float> &room_push() const
+    {
+        return room_push_;
+    }
     const std::vector<Vec3> &targets() const
     {
         return target_;
@@ -168,6 +177,7 @@ private:
     Aabb bounds_; // the dynamic particles' this substep, grown by their reach
     std::vector<Triangle> env_;
     std::vector<Aabb> env_boxes_;
+    std::vector<float> room_push_; // per env_ triangle: the most it pushed one point this tick
     // per collider: the controls, edges and faces it may touch (tags matched, rest overlaps left out)
     std::vector<std::vector<int>> collider_points_, collider_edges_, collider_faces_;
     // a pair's authored clearance (Rig::point_clearance, face_clearance) at the collider's size now, or 0

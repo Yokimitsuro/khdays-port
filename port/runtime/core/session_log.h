@@ -34,6 +34,9 @@ void khdays_log(const char *format, ...);
 /* F12: a line the player can find. */
 void khdays_log_mark(void);
 
+/* How many marks F12 has made (0: none, or no log). */
+u32 khdays_log_marks(void);
+
 /* Flushes and closes (exit, crash). */
 void khdays_log_close(void);
 
