@@ -213,6 +213,9 @@ const std::vector<MissionSetting>& mission_settings() {
         {"start", false, "where the players start: x y z facing (degrees)"},
         {"level", false, "the enemies' level base, 1-120 (default: its template's)"},
         {"time", false, "the time limit the list shows, in milliseconds"},
+        {"kind", false, "how its places are cleared: waves (its last wave defeated) or eliminate (its goal)"},
+        {"target", false, "eliminate: the enemy class to defeat"},
+        {"goal", false, "eliminate: how many of the target class to defeat (0: all of them)"},
         {"unlock", false, "start, cleared <number> or cleared <mod id>/<key>"},
         {"template", false, "the game mission it was made from"},
     };
@@ -253,6 +256,9 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
         mm.room = m.room;
         mm.level = m.level;
         mm.time_ms = m.time_ms;
+        mm.kind = m.kind;
+        mm.target = m.has_target ? m.target : -1;
+        mm.goal = m.goal;
         mm.template_file = m.template_file;
         mm.unlock = m.unlock_after != nullptr ? std::string("cleared ") + m.unlock_after
                     : m.unlock_number != 0    ? "cleared " + std::to_string(m.unlock_number)

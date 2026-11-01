@@ -4437,6 +4437,26 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   trace saw state 8326 go 0 -> 1 at the clock's end and the results 4.7 s later. The field root's `+0x8ba8`, the
   key of `mdb.z`, `trbox` and `evi`, is the mission's file number (`Ov002_ConstructGameplayScene` copies it from
   `data_0204c240` + 2 and formats `mi/mi/%04d` with it).
+- **The mission gauge** (the bottom screen's bar, read 2026-11-01 for spec 036's eliminate missions): 2.34
+  (`Ov002_ResolveFourDescriptors` -> `Ov002_SetScriptRequest(kind, total, goal, flags)`) sets it at root +0x8c94;
+  the HUD keeps (total, done, goal) at `*(0x0207f62c + 4)` + 0x188. Its kinds in the game's missions: 1 targets
+  defeated (0004, 0102, 0105: 1 of 1), 2 hearts (0151: 104 of 148), 4 a counter (0402 "Defeat seven Fire
+  Plants!": 7 of 10; 0010 all five Scarlet Tangos; 0103 one Poison Plant; 1354 survive: 1 of 1). Tallies move it
+  (`Ov002_AddMissionTally(seat, kind, amount)` -> `Ov002_ApplyTally`): tally 2 moves kind 2, tally 3 kinds 0, 1
+  and 4. Tally 3 comes from: a defeated enemy of the tracked class (2.73 `Ov002_ScriptCmd_SetEventParams(class,
+  100)` -> `Ov002_Event_SetParams` keeps the class at the object context's +0xa; `Ov002_OnPartActorRetired`
+  compares it with the enemy row's byte 0, its class, and adds 1; 21 game missions use it, every one with 100 as
+  the second operand, whose use is not read); 2.38 (`Ov002_ScriptOpInvokeSlot0(-, kind, amount)`, a direct add:
+  0102's `e1` adds 1 when 2.7 check 0 sees group 16, the Guardian's, defeated); the globs' enemies (ov234), the
+  emblems (`Ov021_EmblemStep`) and the jars (`Ov021_PrizeBoxHandleMessage`). At the goal `Ov002_StepProgressBar`
+  raises state 8326 (`Ov002_TriggerOnceOnFlag`), which the areas watch with 2.9. **2.7 check 0** fires when one
+  group is defeated (`Ov002_QueryEntryValue(group)`; its operand packs the single-player group and the
+  multiplayer one << 16: 0x100010 is group 16 in both). The spawner's third operand (2.32) goes to the enemy's
+  status byte +0x179 (`Ov107_Spawner_Run` -> `Ov107_SetStatusAndEmit`): 1 on 0102's Guardian, 2 on 0402's Fire
+  Plants, 0 elsewhere; it does not count toward the gauge, and what it shows is not read (`func_ov022_0209a630`
+  tests it for 1). The port's eliminate missions (port/runtime/missions, studio/core/missions/mission_build.cpp)
+  are built as 0402: a counter gauge and 2.73 with the target class; the missions_eliminate walk traced the gauge
+  0 of 2 (goal 1), 1 of 2 at the first Shadow defeated, state 8326 0 -> 1 two frames later and the mission cleared.
 - **Chests and emblems in Mission Mode**: neither is put out with mode flag bit 1 (`Ov002_ScriptSpawnTimedSet`
   returns at once, `Ov002_SpawnStateSpots` skips them): Mission Mode's own missions show none. An emblem found sets
   bit `kind` of the mission's 4 bits at `0x92b + 4n` (the same bits Mission Mode's list asks for its rows).

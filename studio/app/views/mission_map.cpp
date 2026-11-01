@@ -86,11 +86,6 @@ std::vector<std::uint8_t> read_bytes(const fs::path& file) {
     return {std::istreambuf_iterator<char>(in), {}};
 }
 
-const std::vector<int>& buildable() {
-    static const std::vector<int> classes = buildable_enemy_classes(extracted_game_files(nitrofs()));
-    return classes;
-}
-
 // The game's items a chest can hold, named in the studio's language (read again when it changes).
 const std::vector<GameItem>& chest_items(Language language) {
     static std::vector<GameItem> items;
@@ -490,7 +485,7 @@ void draw_room(App& app, ImVec2 size) {
                         if (sp.kind == Spot::spawner)
                             last_wave = std::max(last_wave, sp.wave);
                     added.wave = last_wave;
-                    added.enemies = {{buildable().empty() ? 0 : buildable().front(), 3}};
+                    added.enemies = {{mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front(), 3}};
                 }
                 if (added.kind == Spot::chest)
                     added.contents = first_chest_item(app.language);
@@ -603,7 +598,7 @@ void draw_chosen(App& app) {
             auto& [enemy_class, count] = sp.enemies[e];
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
             if (ImGui::BeginCombo("##class", (std::to_string(enemy_class) + ": " + enemy_name(enemy_class)).c_str())) {
-                for (const int c : buildable())
+                for (const int c : mission_enemy_classes())
                     if (ImGui::Selectable((std::to_string(c) + ": " + enemy_name(c)).c_str(), c == enemy_class))
                         enemy_class = c;
                 ImGui::EndCombo();
@@ -620,7 +615,7 @@ void draw_chosen(App& app) {
         if (gone >= 0 && sp.enemies.size() > 1)
             sp.enemies.erase(sp.enemies.begin() + gone);
         if (ImGui::SmallButton(tr(lang, S::mmap_add_enemy)))
-            sp.enemies.emplace_back(buildable().empty() ? 0 : buildable().front(), 1);
+            sp.enemies.emplace_back(mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front(), 1);
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("%s", tr(lang, S::mmap_waves_note));
         ImGui::PopTextWrapPos();
@@ -646,6 +641,11 @@ void draw_chosen(App& app) {
 }
 
 }  // namespace
+
+const std::vector<int>& mission_enemy_classes() {
+    static const std::vector<int> classes = buildable_enemy_classes(extracted_game_files(nitrofs()));
+    return classes;
+}
 
 bool mission_map_unsaved() {
     if (s.key.empty())

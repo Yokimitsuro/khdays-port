@@ -183,6 +183,44 @@ static void waves_chests_and_emblems_read(void)
     khdays_missions_free(&r);
 }
 
+/* An eliminate mission: the enemies of its target class count toward its goal (all of them by default); a waves
+ * mission keeps target and goal unused (the studio switches kinds without losing them); no target, a target no wave
+ * has, or a goal past what counts leaves an eliminate mission out. */
+static void eliminate_read(void)
+{
+    static const char text[] =
+        "[mission guardian]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+        "kind = eliminate\ntarget = 38\nwave 1 = 0x2 38x1 at 1 0 1\n"
+        "[mission plants]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+        "kind = eliminate\ntarget = 0\ngoal = 3\nwave 1 = 0x2 at 1 0 1\nwave 2 = 9x2 0x3 at 2 0 2\n"
+        "[mission waves]\nname en = A\nobjective en = B\nworld = tt\nwave 1 = 0x1 at 0 0 0\n"
+        "[mission too-many]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "target = 38\ngoal = 2\nwave 1 = 38x1 0x9 at 0 0 0\n"
+        "[mission no-target]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "wave 1 = 0x1 at 0 0 0\n"
+        "[mission absent]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "target = 20\nwave 1 = 0x1 at 0 0 0\n"
+        "[mission kept]\nname en = A\nobjective en = B\nworld = tt\ntarget = 4\ngoal = 9\n"
+        "wave 1 = 0x1 at 0 0 0\n"
+        "[mission bad-kind]\nname en = A\nobjective en = B\nworld = tt\nkind = tea\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Eliminate", text, &reports) == 4);
+    CHECK(r.count == 4);
+    if (r.count == 4) {
+        const KhdaysMission *g = &r.list[0], *p = &r.list[1], *w = &r.list[2], *k = &r.list[3];
+        CHECK(g->kind == KHDAYS_MISSION_ELIMINATE && g->has_target && g->target == 38 && g->goal == 0 &&
+              khdays_mission_counted(g) == 1);
+        CHECK(p->kind == KHDAYS_MISSION_ELIMINATE && p->target == 0 && p->goal == 3 && khdays_mission_counted(p) == 5);
+        CHECK(w->kind == KHDAYS_MISSION_WAVES && !w->has_target);
+        CHECK(k->kind == KHDAYS_MISSION_WAVES && k->has_target && k->target == 4 && k->goal == 9);
+    }
+    CHECK(reports.count == 4);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_ELIMINATE), "eliminate") == 0);
+    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_ELIMINATE + 1) == NULL);
+    khdays_missions_free(&r);
+}
+
 /* A chest holds an item the game has: item 0 is none (the game would read no record for it as the mission starts)
  * and neither is one past the game's last; such a mission is left out with the reason, not played. */
 static void chests_hold_game_items(void)
@@ -576,6 +614,7 @@ int main(int argc, char **argv)
     a_description_read();
     bad_blocks_left_out();
     waves_chests_and_emblems_read();
+    eliminate_read();
     chests_hold_game_items();
     chests_kept();
     numbering();

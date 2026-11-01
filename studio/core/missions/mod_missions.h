@@ -28,6 +28,9 @@ struct ModMission {
     std::string key;
     std::vector<std::string> name, objective, description;  // by mission_languages()
     int category = -1, room = 0, level = 0, time_ms = 0, template_file = 0;
+    int kind = 0;     // KhdaysMissionKind (port/runtime/missions/registry.h)
+    int target = -1;  // eliminate: the enemy class to defeat; -1 none written
+    int goal = 0;     // eliminate: how many of the target class (0: all of them)
     std::string world, unlock;
     bool built = false;     // it has waves: the port makes it from its places, whatever its file or template
     bool own_file = false;  // missions/<key>/mission.p2, else its template's file as it is

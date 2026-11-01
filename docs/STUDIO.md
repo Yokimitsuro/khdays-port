@@ -162,7 +162,7 @@ A mission of the mod's own (`core/missions/mod_missions.h`) is listed in Mission
 Mode after the game's, in its world's category: `missions/missions.txt` holds a
 block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
 `description <lang>`, `category`, `world`, `room`, `level`, `time`, `unlock`,
-`template`). The port plays it, in this order: made from its places on the map
+`template`, and for its places `kind`, `target`, `goal`). The port plays it, in this order: made from its places on the map
 (below) when it has waves; else its own file `missions/<key>/mission.p2`; else
 its template's file as the game has it -- in that mission's own world and rooms,
 whatever the block's world and room say; a mission with none of them is left
@@ -174,7 +174,8 @@ from its map; a game mission's file otherwise, copied as the mission's own, and
 choosing one sets the world to its); the window says how each mission is played;
 and for each mission its **Places on the map** (below) and its **Words and
 settings** (each one's words in the five languages, where it is listed, when it
-opens; **Save to the mod** writes and reads back each change). Another mission
+opens, its **Kind** -- with **Eliminate**, the **Enemy to defeat** and **How
+many** --; **Save to the mod** writes and reads back each change). Another mission
 chosen, or the studio closed, with changes not saved asks first. A game mission's
 **New mission from this one** opens that window with the mission as the new one's
 template; its **Replace another game mission with this one...** puts the
@@ -191,17 +192,26 @@ room, its file, and the rows the port adds to the list in each language; it exit
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's
-area, start and ending, 0004's "all defeated" check), with its world, room, start,
-time limit, notice and objective:
+area, start and ending, 0004's "all defeated" check, 0402's tracked enemy class),
+with its world, room, start, time limit, notice and objective:
 
     start = <x> <y> <z> <facing>               # where the players start, degrees
     wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
     chest = <item> at <x> <y> <z> <heading>     # a chest holding one of the game's items
     emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
+    kind = waves | eliminate                     # how it is cleared (default waves)
+    target = <class>                             # eliminate: the enemy class to defeat
+    goal = <n>                                   # eliminate: how many of it (0 or none: all)
 
 Wave 1 comes out at the start, each next wave when every enemy of the last is
-defeated, and the mission is cleared when the last wave is (or failed by its
-time). The room's own exits are closed while it is played (each of its link
+defeated. A `waves` mission is cleared when the last wave is (or failed by its
+time). An `eliminate` mission is cleared once `goal` enemies of the `target`
+class are defeated, whichever waves they are in and whatever the others still
+standing; the mission gauge on the bottom screen counts them (as the game's 0402
+"Defeat seven Fire Plants!": a counter gauge and the tracked class, script
+commands 2.34 and 2.73). Only the target class's enemies placed in the waves
+count, so a target no wave has, or a goal above how many there are, leaves the
+mission out with the reason; a waves mission keeps `target` and `goal` unused. The room's own exits are closed while it is played (each of its link
 rows, by its key). A chest's item is the item's number, 1 to the game's item
 count (`db/db.p2` entry 0x15): the game reads that item's record as the
 mission starts, so a chest with no item (0) or one past the last leaves the

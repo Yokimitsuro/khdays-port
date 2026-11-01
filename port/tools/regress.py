@@ -144,6 +144,22 @@ WALKS = [
             "set_hp in the field\tdone",
         ),
     ),
+    # ... and an eliminate mission (port/tests/mods_v2/missions_eliminate): cleared once one of its two Shadows (its
+    # target class) is defeated, the mission gauge's goal, whatever the enemy that does not count; the waves walk's
+    # route
+    Walk(
+        "missions_eliminate",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_eliminate",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.eliminate/guardian is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

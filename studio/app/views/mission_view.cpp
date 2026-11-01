@@ -17,6 +17,7 @@
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 #include "core/files/paths.h"
+#include "missions/registry.h"
 
 #include "khdays/vfs/filesystem.h"
 
@@ -135,8 +136,10 @@ std::string meaning_of(App& app, const Script& script, const ScriptStep& s) {
         S::meaning_on_event,       S::meaning_on_event_start,   S::meaning_event_when,      S::meaning_hud_on,
         S::meaning_time_limit,     S::meaning_time_limit_shown, S::meaning_time_limit_add,  S::meaning_time_limit_set,
         S::meaning_time_limit_sub, S::meaning_clock_restart,    S::meaning_player_at,       S::meaning_player_at_marker,
-        S::meaning_chests,         S::meaning_emblems};
-    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::emblems + 1, "a word per meaning");
+        S::meaning_chests,         S::meaning_emblems,          S::meaning_gauge_defeat,    S::meaning_gauge_hearts,
+        S::meaning_gauge_counter,  S::meaning_gauge_other,      S::meaning_gauge_class,     S::meaning_tally_add,
+        S::meaning_group_defeated, S::meaning_all_defeated};
+    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::all_defeated + 1, "a word per meaning");
     if (m.kind == StepMeaning::none)
         return {};
     std::string text = tr(app.language, words[m.kind]);
@@ -991,7 +994,58 @@ std::vector<std::tuple<std::string, std::string, std::string>> new_mission_chang
         out.emplace_back("unlock", "", e.unlock);
     if (e.start != was.start && !e.start.empty())
         out.emplace_back("start", "", e.start);
+    // the target and goal before the kind: an eliminate mission is read only with its target
+    if (e.target != was.target && e.target >= 0)
+        out.emplace_back("target", "", std::to_string(e.target));
+    if (e.goal != was.goal)
+        out.emplace_back("goal", "", std::to_string(e.goal));
+    if (e.kind != was.kind && khdays_mission_kind_name(e.kind) != nullptr)
+        out.emplace_back("kind", "", khdays_mission_kind_name(e.kind));
     return out;
+}
+
+// The enemy class of a mission's first wave line ("0x2 at ..." is class 0), else the first a wave can use.
+int first_wave_class(const ModMission& e) {
+    for (const auto& [setting, value] : e.lines)
+        if (setting.rfind("wave ", 0) == 0 && !value.empty() && std::isdigit(static_cast<unsigned char>(value[0])))
+            return std::atoi(value.c_str());
+    return mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front();
+}
+
+std::string enemy_label(int enemy_class) {
+    const char* name = enemy_name(enemy_class);
+    return std::to_string(enemy_class) + ": " + (name != nullptr ? name : "?");
+}
+
+// How its places are cleared: its last wave defeated, or (eliminate) a goal of its target class's enemies.
+void draw_mission_kind(Language lang, ModMission& e) {
+    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate};
+    const int shown = e.kind == KHDAYS_MISSION_ELIMINATE ? 1 : 0;
+    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_kind), tr(lang, kinds[shown]))) {
+        for (int k = 0; k < 2; ++k)
+            if (ImGui::Selectable(tr(lang, kinds[k]), shown == k)) {
+                e.kind = k == 1 ? KHDAYS_MISSION_ELIMINATE : KHDAYS_MISSION_WAVES;
+                if (e.kind == KHDAYS_MISSION_ELIMINATE && e.target < 0)
+                    e.target = first_wave_class(e);
+            }
+        ImGui::EndCombo();
+    }
+    if (e.kind != KHDAYS_MISSION_ELIMINATE)
+        return;
+    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_target), enemy_label(e.target).c_str())) {
+        for (const int c : mission_enemy_classes())
+            if (ImGui::Selectable(enemy_label(c).c_str(), c == e.target))
+                e.target = c;
+        ImGui::EndCombo();
+    }
+    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    ImGui::InputInt(tr(lang, S::mission_goal), &e.goal);
+    e.goal = std::max(e.goal, 0);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", tr(lang, S::mission_goal_help));
+    ImGui::PopTextWrapPos();
 }
 
 void read_new_missions(const Mod* m) {
@@ -1373,6 +1427,7 @@ void draw_new_missions(App& app) {
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::InputInt(tr(lang, S::mission_time), &e.time_ms, 1000, 10000);
     e.time_ms = std::max(e.time_ms, 0);
+    draw_mission_kind(lang, e);
     draw_unlock(app, *m, e);
     ImGui::EndTabItem();
     ImGui::EndTabBar();

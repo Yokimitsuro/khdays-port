@@ -1,6 +1,7 @@
 #include "core/missions/command_meanings.h"
 
 #include "core/missions/command_names.h"
+#include "core/missions/enemy_names.h"
 
 #include <cstdio>
 #include <cstring>
@@ -224,6 +225,44 @@ StepMeaning step_meaning(const ScriptStep& s, const Script* script, int language
     if (is("Ov002_ScriptCmd_CreateActorFromMarker") && slots >= 2) {
         return {StepMeaning::enemy_at, {int_text(op(0)), int_text(op(1))}};
     }
+    // Ov002_ResolveFourDescriptors (kind, total, goal, flags): Ov002_SetScriptRequest sets the mission gauge (root
+    // +0x8c94). Ov002_ApplyTally moves it: kind 2 by tally 2 (hearts), kinds 0, 1 and 4 by tally 3 (defeats and
+    // counted things); at the goal Ov002_StepProgressBar raises state 8326 (Ov002_TriggerOnceOnFlag)
+    if (is("Ov002_ResolveFourDescriptors") && slots >= 3 && op(0).mode == 1) {
+        const StepMeaning::Kind kinds[] = {StepMeaning::gauge_other, StepMeaning::gauge_defeat,
+                                           StepMeaning::gauge_hearts, StepMeaning::gauge_other,
+                                           StepMeaning::gauge_counter};
+        const int k = op(0).value;
+        return {k >= 0 && k <= 4 ? kinds[k] : StepMeaning::gauge_other,
+                {int_text(op(1)), int_text(op(2)), int_text(op(0))}};
+    }
+    // Ov002_ScriptCmd_SetEventParams (class, n): Ov002_Event_SetParams tracks an enemy class (object context +0xa,
+    // its count +0xc cleared, n at +0xe): Ov002_OnPartActorRetired adds 1 to tally 3 for each defeated enemy whose
+    // row is of that class (402: class 20, "Defeat seven Fire Plants!")
+    if (is("Ov002_ScriptCmd_SetEventParams") && slots >= 1 && op(0).mode == 1) {
+        const char* name = enemy_name(op(0).value);
+        return {StepMeaning::gauge_class, {int_text(op(0)), name != nullptr ? name : "?"}};
+    }
+    // Ov002_ScriptOpInvokeSlot0 (-, kind, amount): Ov002_AddMissionTally(0, kind, amount) (0102's e1: the Guardian
+    // defeated, tally 3 + 1)
+    if (is("Ov002_ScriptOpInvokeSlot0") && slots >= 3) {
+        return {StepMeaning::tally_add, {int_text(op(1)), int_text(op(2))}};
+    }
+    // Ov002_SubmitRequestBlockKind1 (gate, event, check, group, owner, threshold): a node of
+    // Ov002_AllocScriptCallback whose check Ov002_NodeRunCheckPhase runs -- 0 asks whether the group is defeated
+    // (Ov002_QueryEntryValue(group)), 1 whether every one is (the group packed as single | multiplayer << 16)
+    if (is("Ov002_SubmitRequestBlockKind1") && slots >= 4 && op(2).mode == 1 && op(3).mode == 1) {
+        if (op(2).value == 1)
+            return {StepMeaning::all_defeated, {int_text(op(1))}};
+        if (op(2).value == 0) {
+            const int single = op(3).value & 0xffff, multi = (op(3).value >> 16) & 0xffff;
+            std::string group = std::to_string(single);
+            if (multi != 0 && multi != single)
+                group += " (" + std::to_string(multi) + " in multiplayer)";
+            return {StepMeaning::group_defeated, {int_text(op(1)), group}};
+        }
+        return {};
+    }
     // Ov002_ScriptCreateSlotObject: (group, source, mask, mode, gate, x, y, z, a, tag, b, c, x, y, z, mode)
     // -> Ov002_CreateSlotObjectAndStart: a spawner object at (x, y, z) adding the group's enemies
     if (is("Ov002_ScriptCreateSlotObject") && slots >= 8) {
@@ -315,6 +354,15 @@ std::string meaning_text(const StepMeaning& m) {
     case StepMeaning::emblems: return "the mission's emblems from evi, those not yet found";
     case StepMeaning::player_at_marker:
         return "player slot " + arg(0) + " at the room's marker \"" + arg(2) + "\", kind " + arg(1);
+    case StepMeaning::gauge_defeat: return "the mission gauge: targets defeated, " + arg(1) + " of " + arg(0);
+    case StepMeaning::gauge_hearts: return "the mission gauge: hearts, " + arg(1) + " of " + arg(0);
+    case StepMeaning::gauge_counter: return "the mission gauge: a counter, " + arg(1) + " of " + arg(0);
+    case StepMeaning::gauge_other: return "the mission gauge, kind " + arg(2) + ": " + arg(1) + " of " + arg(0);
+    case StepMeaning::gauge_class:
+        return "each defeated enemy of class " + arg(0) + " (" + arg(1) + ") counts on the mission gauge";
+    case StepMeaning::tally_add: return "the mission tally of kind " + arg(0) + " + " + arg(1);
+    case StepMeaning::group_defeated: return "event " + arg(0) + " when group " + arg(1) + " is defeated";
+    case StepMeaning::all_defeated: return "event " + arg(0) + " when every enemy out is defeated";
     }
     return {};
 }

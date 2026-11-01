@@ -38,6 +38,12 @@ typedef struct KhdaysMissionSpawner {
     int enemy_count;
 } KhdaysMissionSpawner;
 
+/* The kinds a mission's places are built into (`kind = ...`). */
+typedef enum KhdaysMissionKind {
+    KHDAYS_MISSION_WAVES,     /* cleared once its last wave is defeated */
+    KHDAYS_MISSION_ELIMINATE, /* cleared once `goal` enemies of its target class are defeated (all of them by default) */
+} KhdaysMissionKind;
+
 typedef struct KhdaysMissionChest {
     int item; /* its contents: an item of the game */
     double at[3];
@@ -71,6 +77,10 @@ typedef struct KhdaysMission {
     int has_start;      /* start = x y z facing */
     double start[3];
     int facing;
+    int kind;       /* KhdaysMissionKind */
+    int has_target; /* eliminate: target = <enemy class> (a waves mission keeps it unused) */
+    int target;
+    int goal;                       /* eliminate: how many of the target class to defeat; 0 all */
     KhdaysMissionSpawner *spawners; /* wave <n> = ... */
     int spawner_count;
     KhdaysMissionChest *chests;
@@ -97,6 +107,12 @@ typedef void (*KhdaysMissionsReport)(const char *mod, int line, const char *why,
 
 /* The game's two letters of language `l` (0-4): "en" ... */
 const char *khdays_mission_language(int l);
+
+/* A kind's name in missions.txt (`kind = ...`), NULL past the last. */
+const char *khdays_mission_kind_name(int kind);
+
+/* How many of mission `m`'s enemies count toward an eliminate mission's goal: its waves' of the target class. */
+int khdays_mission_counted(const KhdaysMission *m);
 
 /* How many items the game has (db/db.p2 entry 0x15's count), set before missions are read: a chest's contents is an
  * item from 1 to it. 0 leaves it unknown (any item from 1). */

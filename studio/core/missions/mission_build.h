@@ -27,6 +27,7 @@ struct WaveSpawner {
 };
 
 struct MissionPlan {
+    int kind = 0;   // KhdaysMissionKind (port/runtime/missions/registry.h)
     int world = 0;  // the game's world index (tt 0 ... tw 10)
     int room = 0;
     std::array<double, 3> start{};
@@ -34,6 +35,8 @@ struct MissionPlan {
     int time_ms = 0;                               // 0: no time limit
     std::array<std::string, 5> notice, objective;  // en fr de it es; empty: the English one
     std::vector<std::vector<WaveSpawner>> waves;   // the first at the start, each next once all are defeated
+    int target = -1;                               // eliminate: the enemy class to defeat
+    int goal = 0;                                  // eliminate: how many of the target class (0: all of them)
 };
 
 // The plan a mission's description gives: false (with why) when it has no wave or no start.

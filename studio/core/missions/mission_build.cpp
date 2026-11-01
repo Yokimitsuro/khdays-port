@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 
 constexpr int kBaseMission = 1354;    // survive one minute: one area, its ending without a corridor
 constexpr int kWaveCheckMission = 4;  // defeat the Mega-Shadow: the "all defeated" event (2.7)
+constexpr int kTargetMission = 402;   // defeat seven Fire Plants: the enemy class its gauge counts (2.73)
 constexpr int kMostClasses = 4;       // an area's enemy classes (Ov002_CreateActorFromMarker's four places)
 
 // The events the built area files: the clock's end (as 1354's), the ending's (its field raised, as 1354's), the last
@@ -31,7 +32,14 @@ constexpr int kMostClasses = 4;       // an area's enemy classes (Ov002_CreateAc
 constexpr int kEventClock = 3;
 constexpr int kEventEnding = 1;
 constexpr int kEventAllDefeated = 5;
+constexpr int kEventGoal = 6;
 constexpr int kEventFirstWave = 10;
+
+// An eliminate mission's gauge (2.34, Ov002_SetScriptRequest: its kind, total, goal) as 402's: a counter (kind 4)
+// that every defeated enemy of the tracked class moves (2.73 names the class: Ov002_OnPartActorRetired adds 1 to
+// tally 3); at the goal Ov002_StepProgressBar raises this field (Ov002_TriggerOnceOnFlag), which the area watches.
+constexpr int kGaugeCounter = 4;
+constexpr int kFieldGoalReached = 8326;
 
 // The game state fields the built mission reads as 1354 does: c0 raises the ending's, which area 11's event (2.9)
 // waits for before c1; the start sets the module's and the others as 1354's start does (what each is for is open).
@@ -296,6 +304,9 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
     if (!m.has_start)
         return fail_with(why, "a mission with waves needs where the players start (start = x y z facing)");
     MissionPlan plan;
+    plan.kind = m.kind;
+    plan.target = m.has_target ? m.target : -1;
+    plan.goal = m.goal;
     plan.world = khdays_world_index(m.world);
     plan.room = m.room;
     plan.time_ms = m.time_ms;
@@ -340,8 +351,10 @@ std::vector<int> buildable_enemy_classes(const GameFiles& game) {
 bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<std::uint8_t>* out, std::string* why) {
     if (plan.waves.empty() || plan.waves[0].empty())
         return fail_with(why, "no wave: a mission made here has its enemies in waves");
-    MissionFile base, check;
-    if (!read_mission(game, kBaseMission, &base, why) || !read_mission(game, kWaveCheckMission, &check, why))
+    const bool eliminate = plan.kind == KHDAYS_MISSION_ELIMINATE;
+    MissionFile base, check, target;
+    if (!read_mission(game, kBaseMission, &base, why) || !read_mission(game, kWaveCheckMission, &check, why) ||
+        (eliminate && !read_mission(game, kTargetMission, &target, why)))
         return false;
     const int area_e = base.entry("11"), start_e = base.entry("_s"), table_e = base.entry("em0"),
               table_m_e = base.entry("em0m"), check_e = check.entry("11");
@@ -507,7 +520,10 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             w.step(carried(*area_i, *clock, w));
         queue(w, kEventClock, "c0");
     }
-    when_all_defeated(w, event_of(0), next_of(0));
+    // an eliminate mission's last wave defeated is no end of its own: its gauge's goal is (the target class's last
+    // enemy is among them, and c0 run twice is not known to be harmless)
+    if (!eliminate || plan.waves.size() > 1)
+        when_all_defeated(w, event_of(0), next_of(0));
     {
         // the ending: once c0 raises its field, 4000 ms later c1 (to area 99, the results)
         const ScriptStep* ending = nullptr;
@@ -519,6 +535,15 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         else
             w.step(carried(*area_i, *ending, w));
         queue(w, kEventEnding, "c1");
+        if (eliminate && ending != nullptr) {
+            // the goal reached: the same watch on the gauge's field, c0 at once
+            ScriptStep goal = carried(*area_i, *ending, w);
+            set_operand(goal, 1, integer(kEventGoal));
+            set_operand(goal, 5, state_field(kFieldGoalReached, 1));
+            set_operand(goal, 8, integer(0));
+            w.step(goal);
+            queue(w, kEventGoal, "c0");
+        }
     }
     need(copy(w, 0, 16));
     need(copy(w, 2, 1));
@@ -529,7 +554,8 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         Writer wave;
         wave.script.name = "w" + std::to_string(k + 1);
         spawners(wave, plan.waves[k]);
-        when_all_defeated(wave, event_of(k), next_of(k));
+        if (!eliminate || k + 1 < plan.waves.size())
+            when_all_defeated(wave, event_of(k), next_of(k));
         need(copy(wave, 0, 3));
         area_scripts.push_back(wave.script);
     }
@@ -550,7 +576,24 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     const OperandSlot module_flag = state_field(kFieldModule, 1);
     need(copy_start(0, 0, 0, &module_flag));
     need(copy_start(4, 16));
-    need(copy_start(2, 34));
+    ScriptStep& gauge = need(copy_start(2, 34));
+    if (eliminate) {
+        int counted = 0;
+        for (const auto& wave : plan.waves)
+            for (const WaveSpawner& sp : wave)
+                for (const auto& e : sp.enemies)
+                    counted += e.enemy_class == plan.target ? e.count : 0;
+        if (counted == 0)
+            return fail_with(why, "no wave has an enemy of the target class " + std::to_string(plan.target));
+        set_operand(gauge, 0, integer(kGaugeCounter));
+        set_operand(gauge, 1, integer(counted));
+        set_operand(gauge, 2, integer(plan.goal > 0 && plan.goal < counted ? plan.goal : counted));
+        const int target_e = target.entry("_s");
+        const Script* target_i =
+            target_e < 0 ? nullptr : script_named(target.entries[static_cast<std::size_t>(target_e)].archive, "_i");
+        ScriptStep& tracked = need(target_i == nullptr ? nullptr : copy(s, 2, 73, 0, nullptr, target_i));
+        set_operand(tracked, 0, integer(plan.target));
+    }
     set_operand(need(copy_start(2, 52)), 1, {0x40, 0, static_cast<std::int32_t>(s.texts(plan.objective))});
     for (const auto& [field, bits] : kStartFields) {
         const OperandSlot f = state_field(field, bits);

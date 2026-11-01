@@ -45,6 +45,15 @@ struct StepMeaning {
         player_at_marker,  // player slot {0} at the room's marker {2}, kind {1} (Ov002_ScriptMoveSlot by name)
         chests,  // the mission's chests from trbox, their class in module slot {0}, model {1} (Ov002_ScriptSpawnTimedSet)
         emblems,  // the mission's emblems from evi, those not yet found (Ov002_SpawnStateSpots)
+        // the mission gauge (Ov002_ResolveFourDescriptors -> Ov002_SetScriptRequest(kind, total, goal, flags)):
+        gauge_defeat,    // kind 1, targets defeated: goal {1} of {0}
+        gauge_hearts,    // kind 2, hearts collected: goal {1} of {0}
+        gauge_counter,   // kind 4, a counter: goal {1} of {0}
+        gauge_other,     // another kind {2}: goal {1} of {0}
+        gauge_class,     // each defeated enemy of class {0} ({1}) counts on it (Ov002_Event_SetParams: tally 3)
+        tally_add,       // the mission tally of kind {0} + {1} (Ov002_ScriptOpInvokeSlot0 -> Ov002_AddMissionTally)
+        group_defeated,  // event {0} when group {1} is defeated (Ov002_SubmitRequestBlockKind1, check 0)
+        all_defeated,    // event {0} when every enemy out is defeated (Ov002_SubmitRequestBlockKind1, check 1)
     } kind = none;
     std::vector<std::string> args;
 };

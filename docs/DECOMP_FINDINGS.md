@@ -350,6 +350,24 @@ Taken up (for the record of what the old names were):
     that table, and +0x18..+0x22 the quad: s16 width, s16 height, the texture corners s0 t0 s1 t1 (bytes), the
     alpha (0..31) and the polygon id.
 
+- The mission gauge (spec 036, 2026-11-01; `docs/RUNTIME_MAP.md` section 18, "The mission gauge"):
+  - `Ov002_ResolveFourDescriptors` (script command 2.34) sets the mission gauge: its four operands are the
+    gauge's kind, total, goal and flags, handed to `Ov002_SetScriptRequest`, which keeps them at the field root's
+    +0x8c94 -- a "set mission gauge" pair (kind 1 targets defeated, 2 hearts, 4 a counter).
+  - `Ov002_ScriptCmd_SetEventParams` (2.73) and `Ov002_Event_SetParams` track an enemy class for the gauge: the
+    object context's +0xa is the class (`Ov002_OnPartActorRetired` names it `nTrackedRowId` and compares it with
+    the enemy row's byte 0, `bId`, which is the row's enemy class, not a row index), +0xc the defeats counted
+    (`nRetiredCount`), +0xe the second operand.
+  - `Ov002_ScriptOpInvokeSlot0` (2.38) adds to the mission tally: `Ov002_AddMissionTally(0, kind, amount)`, its
+    first operand read and left unused.
+  - `Ov002_SubmitRequestBlockKind1` (2.7) files a "defeated" watch, not a request: its third operand is the check
+    `Ov002_NodeRunCheckPhase` runs (0 one group, 1 every group), its fourth the group (single-player in the low
+    half, multiplayer in the high one). `Ov002_AllocScriptCallback` makes that node; it allocates no callback.
+  - `Ov002_TriggerOnceOnFlag`, called by `Ov002_StepProgressBar` when the gauge's done reaches its goal, raises
+    state 8326, the mission's goal reached.
+  - The spawner slot's `mask` (`Ov107_Spawner_AddSlot`, from 2.32's third operand) is the enemy's status byte
+    +0x179 (`Ov107_SetStatusAndEmit`), not a mask.
+
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 
 Locals that were one buffer only in the DS's frame, taken up by the decomp

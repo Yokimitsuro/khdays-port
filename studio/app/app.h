@@ -165,6 +165,8 @@ bool new_missions_unsaved();
 void draw_mod_missions(App& app, bool* open);
 bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room);
 bool mission_map_unsaved();
+// The enemy classes a new mission's waves can use: those the game's missions have a row of (read once).
+const std::vector<int>& mission_enemy_classes();
 // The mod's characters (views/character_view.cpp): the window, a file dropped while the pointer is over it (true
 // when it took it), and its changes not saved.
 void draw_characters(App& app, bool* open);

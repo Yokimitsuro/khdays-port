@@ -226,6 +226,35 @@ static int read_start(KhdaysMission *m, char *value)
     return m->has_start;
 }
 
+static const char *const kind_names[] = {"waves", "eliminate"};
+
+const char *khdays_mission_kind_name(int kind)
+{
+    return kind >= 0 && kind < (int)(sizeof(kind_names) / sizeof(kind_names[0])) ? kind_names[kind] : NULL;
+}
+
+static int read_kind(KhdaysMission *m, const char *value)
+{
+    for (int k = 0; khdays_mission_kind_name(k) != NULL; ++k) {
+        if (strcmp(value, khdays_mission_kind_name(k)) == 0) {
+            m->kind = k;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int khdays_mission_counted(const KhdaysMission *m)
+{
+    int counted = 0;
+    for (int i = 0; i < m->spawner_count && m->has_target; ++i) {
+        for (int e = 0; e < m->spawners[i].enemy_count; ++e) {
+            counted += m->spawners[i].enemies[e].enemy_class == m->target ? m->spawners[i].enemies[e].count : 0;
+        }
+    }
+    return counted;
+}
+
 static int valid_key(const char *key)
 {
     if (*key == '\0') {
@@ -299,6 +328,19 @@ static int close_block(Reading *g)
     }
     if (!g->bad && key_taken(g->r, g->mod, m->key)) {
         refuse(g, m->line, "the key is taken by another of the mod's missions");
+    }
+    if (!g->bad && m->kind == KHDAYS_MISSION_ELIMINATE) {
+        char why[120];
+        if (!m->has_target) {
+            refuse(g, m->line, "an eliminate mission names the enemy class to defeat (target = <class>)");
+        } else if (khdays_mission_counted(m) == 0) {
+            snprintf(why, sizeof(why), "target %d: no wave has an enemy of that class", m->target);
+            refuse(g, m->line, why);
+        } else if (m->goal > khdays_mission_counted(m)) {
+            snprintf(why, sizeof(why), "goal %d: the waves have %d of class %d", m->goal, khdays_mission_counted(m),
+                     m->target);
+            refuse(g, m->line, why);
+        }
     }
     if (g->bad) {
         char why[260];
@@ -435,6 +477,12 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
     refused_why = NULL;
     if (strcmp(name, "wave") == 0) {
         ok = language != NULL && read_wave(m, language, value);
+    } else if (strcmp(name, "kind") == 0) {
+        ok = read_kind(m, value);
+    } else if (strcmp(name, "target") == 0) {
+        ok = m->has_target = whole(value, 0, 255, &m->target);
+    } else if (strcmp(name, "goal") == 0) {
+        ok = whole(value, 0, 0x7fffffff, &m->goal);
     } else if (strcmp(name, "start") == 0) {
         ok = read_start(m, value);
     } else if (strcmp(name, "chest") == 0) {
@@ -466,6 +514,9 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
     }
     if (!ok) {
         static const char *const forms[][2] = {{"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
+                                               {"target", "target = <the enemy class to defeat>"},
+                                               {"kind", "kind = waves or eliminate"},
+                                               {"goal", "goal = <how many of the target class to defeat, 0 all>"},
                                                {"start", "start = <x> <y> <z> <facing>"},
                                                {"chest", "chest = <item> at <x> <y> <z> <heading>"},
                                                {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};
