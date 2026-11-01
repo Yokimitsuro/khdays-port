@@ -454,6 +454,62 @@ void partial_jump()
     CHECK(max_offset(a.simulation()) < 0.05F); // the chain carried with its arm
 }
 
+void free_chain_upside_down()
+{
+    // a keychain (no swing limit) on a blade turned tip down: it hangs on, opposite its reference; its first link
+    // points along it and does not jump from draw to draw (eased back to its reference, it pointed up, away from
+    // the chain, and jittered)
+    Skirt s = make_skirt(6, 3);
+    const int blade = static_cast<int>(s.sk.names.size());
+    s.sk.names.insert(s.sk.names.end(), {"blade", "c0", "c1", "c2"});
+    s.sk.parent.insert(s.sk.parent.end(), {1, blade, blade + 1, blade + 2});
+    for (int k = 0; k < 4; ++k)
+        s.sk.rest.push_back(down_frame({0.5F, 1.2F - 0.1F * static_cast<float>(k), 0.0F}, 0.0F));
+    Diagnostics d;
+    auto rig =
+        cooked(skirt_config(s, "") + "group keychain chain\n  attach blade\n  chain c0 c1 c2\n  offset c2 0.1 0 0\n"
+                                     "  follow_frequency 0\n  collide\nend\n",
+               s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 3);
+    std::vector<Frame> pose, out;
+    std::vector<std::uint8_t> written;
+    ActorInput in;
+    in.pose = &pose;
+    const auto c0 = static_cast<std::size_t>(blade + 1), c1 = static_cast<std::size_t>(blade + 2);
+    float worst_off = 0.0F, worst_step = 0.0F;
+    Quat last{};
+    for (int f = 0; f <= 180; ++f) {
+        pose = pose_of(s.sk, {});
+        // the blade and what hangs on it turned about z at the blade's head, to 180 degrees over a second
+        const float turn = kPi * minf(1.0F, static_cast<float>(f) / 60.0F);
+        const Vec3 pivot = pose[static_cast<std::size_t>(blade)].t;
+        const Quat q = axis_angle({0, 0, 1}, turn);
+        for (int k = blade; k < blade + 4; ++k) {
+            Frame &b = pose[static_cast<std::size_t>(k)];
+            b.t = pivot + rotate(q, b.t - pivot);
+            b.q = normalized(q * b.q);
+        }
+        in.seconds = f / 60.0;
+        a.update(in);
+        out = pose;
+        written.assign(pose.size(), 0);
+        a.output(pose, out, written);
+        if (f >= 120) { // settled, tip down: the first link along the chain, steady
+            const Vec3 along = normalized(out[c1].t - out[c0].t, {}), axis = rotate(out[c0].q, Vec3{1, 0, 0});
+            worst_off = maxf(worst_off, std::acos(clampf(dot(along, axis), -1.0F, 1.0F)) / kDegrees);
+            worst_step = maxf(worst_step, angle_between(last, out[c0].q) / kDegrees);
+        }
+        last = out[c0].q;
+    }
+    std::printf("free chain upside down: first link %.1f deg off the chain, %.2f deg its largest step\n",
+                static_cast<double>(worst_off), static_cast<double>(worst_step));
+    CHECK(worst_off < 15.0F);
+    CHECK(worst_step < 2.0F);
+}
+
 void authored_and_release()
 {
     const Skirt s = make_skirt(6, 3);
@@ -1435,6 +1491,7 @@ int main()
     pause_hold_and_rate();
     spawn_teleport_identity();
     partial_jump();
+    free_chain_upside_down();
     floor_over_body();
     authored_and_release();
     guided_stretch();

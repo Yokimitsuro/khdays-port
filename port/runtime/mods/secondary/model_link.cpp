@@ -167,7 +167,7 @@ struct ModelSecondary {
     std::vector<std::filesystem::file_time_type> stamps;
     u32 checked = 0, swept = 0, reported = 0;
     bool debug = false, profile = false, trace = false;
-    bool said_placement = false, said_base = false, said_camera = false;
+    bool said_placement = false, said_base = false, said_camera = false, said_shared = false;
     struct ActorState {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
@@ -177,6 +177,7 @@ struct ModelSecondary {
         std::vector<Frame> last_pose; // KHDAYS_SECONDARY_TRACE: the last draw's, for its steps
         std::vector<Vec3> last_cloth;
         std::uint64_t last_generation = 0; // KHDAYS_SECONDARY_TRACE: the actor's starts so far
+        const char *placement = "";        // ... and how this draw found its place in the world
         // the root node in its placement's space as held (hold_root), and the last draw's difference from it
         Mat4 root_held = kIdentity4;
         bool has_root = false;
@@ -1227,6 +1228,8 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
     }
     const Rig &rig = *m.rig;
     float hips = 0.0F, body = 0.0F, cloth = 0.0F;
+    // the first group's reference bone in the world (the solver's space, metres): where the model stands
+    const Vec3 at = rig.groups.empty() ? Vec3{} : m.pose[static_cast<std::size_t>(rig.groups.front().reference_bone)].t;
     int body_bone = -1, cloth_bone = -1;
     if (state.last_pose.size() == m.pose.size()) {
         if (!rig.groups.empty())
@@ -1256,12 +1259,13 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
         return b >= 0 ? rig.skeleton.names[static_cast<std::size_t>(b)] : std::string("-");
     };
     khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.2f cm, body %.1f cm (%s), cloth %.1f cm (%s); "
-               "root %.2f mm %.3f deg off held; camera %.2f m %.1f deg%s",
+               "root %.2f mm %.3f deg off held; camera %.2f m %.1f deg; placed by %s; at %.4f %.4f %.4f%s",
                m.name.c_str(), now, a.seconds, static_cast<unsigned long long>(a.epoch), anims.c_str(),
                static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
                static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str(),
                static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn),
-               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn),
+               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn), state.placement,
+               static_cast<double>(at.x), static_cast<double>(at.y), static_cast<double>(at.z),
                a.cut        ? " (a cut)"
                : a.pose_cut ? " (a pose cut)"
                             : "");
@@ -1307,6 +1311,16 @@ Mat4 hold_root(ModelSecondary::ActorState &state, const Mat4 &now)
 
 } // namespace
 
+// The view's way to the world as a draw this frame found it from its own place (its start exactly the camera times
+// its actor's matrix, or the base transform), with the flushed camera it went with: the same for every model drawn
+// under that camera, for one that cannot find its own (a weapon, drawn from the hand's saved matrix)
+struct SharedView {
+    Mat4 world_of_view = kIdentity4, camera = kIdentity4;
+    u32 vblank = 0;
+    bool valid = false;
+};
+SharedView shared_view;
+
 void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<Mat4> &skin)
 {
     const u32 now = khdays_events_vblank_count();
@@ -1322,14 +1336,36 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     // exactly that) and the matrix the draw started from, so the camera cancels out; else by the latest
     // flushed camera (that cancels it only up to the GE's rounding, and the cloth feels the camera turn)
     Mat4 world_of_view, placed;
-    bool camera_free = true;
-    if (actor_world(in.actor, placed)) {
+    bool camera_free = true, verified = false; // verified: its start is exactly its place under the camera
+    const char *placed_by = "the camera";
+    const bool own = actor_world(in.actor, placed);
+    const bool shared =
+        shared_view.valid && shared_view.vblank == now && in.has_camera && fx_close(shared_view.camera, in.camera);
+    if (own && in.has_camera && fx_close(mul(in.camera, placed), in.start)) { // its start is its own place
+        verified = true;
+        placed_by = "its actor";
+        if (!m.said_placement)
+            say(m.name + ": placed in the world by its actor's matrix (camera-independent)");
+        m.said_placement = true;
+    } else if (!(in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) &&
+               !(in.base_kind == 2 && fx_close(kIdentity4, in.start)) && shared) {
+        // drawn from a matrix not its own place (a weapon at the hand): this frame's view as another model found it
+        camera_free = false;
+        world_of_view = shared_view.world_of_view;
+        placed_by = "another model";
+        if (!m.said_shared)
+            say(m.name + ": placed in the world by another model's place this frame (camera-independent)");
+        m.said_shared = true;
+    } else if (own) {
+        placed_by = "its actor (unchecked)";
         if (!m.said_placement)
             say(m.name + ": placed in the world by its actor's matrix (camera-independent)");
         m.said_placement = true;
     } else if ((in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) ||
                (in.base_kind == 2 && fx_close(kIdentity4, in.start))) {
         placed = in.base;
+        verified = true;
+        placed_by = "the base";
         if (!m.said_base)
             say(m.name + ": placed in the world by the 3D engine's base transform (camera-independent)");
         m.said_base = true;
@@ -1346,8 +1382,8 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     if (camera_free)
         world_of_view = mul(placed, inverse_affine(in.start));
     const Mat4 root = mul(world_of_view, in.root);
-    const float units = length(Vec3{root[0], root[1], root[2]}); // world units a model unit
-    if (!(units > 1e-6F) || !std::isfinite(units))
+    const float measured = length(Vec3{root[0], root[1], root[2]}); // world units a model unit, this draw's root's
+    if (!(measured > 1e-6F) || !std::isfinite(measured))
         return;
     clock_.update();
     if (rig.config.environment && (!room_read_ || now != room_vblank_)) {
@@ -1355,7 +1391,6 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         room_vblank_ = now;
         room_.refresh();
     }
-    room_.set_scale(units);
     // the actor's state: made on its first draw, dropped once unseen for a while
     if (now - m.swept >= 60U) {
         m.swept = now;
@@ -1364,21 +1399,31 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
             it = now - it->second.seen > idle ? m.actors.erase(it) : std::next(it);
     }
     auto &state = m.actors[in.actor];
-    if (state.actor && std::fabs(state.units / units - 1.0F) > 0.02F)
+    state.placement = placed_by;
+    if (state.actor && std::fabs(state.units / measured - 1.0F) > 0.02F)
         state.actor.reset(); // drawn at another scale: another actor in the same place
     if (!state.actor) {
         state.actor =
             std::make_unique<Actor>(m.rig, static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(in.actor) >> 4));
-        state.units = units;
+        state.units = measured;
         state.marked = khdays_log_marks();
         if (m.trace)
             khdays_log("secondary trace: %s: a new actor for render object %p (%zu actors)", m.name.c_str(), in.actor,
                        m.actors.size());
     }
     state.seen = now;
+    // world units a model unit as the actor started (another scale past 2 % starts a new one): measured each draw,
+    // it took the root's fixed-point rounding (a weapon's root, the game's hand matrix: about 0.1 %), and since it
+    // divides the whole world position a keychain 40 m from the map's origin shook by centimetres, 6 m by millimetres
+    const float units = state.units;
+    room_.set_scale(units);
     if (camera_free) // the root node held through the GE's rounding (hold_root)
         world_of_view =
             mul(placed, mul(hold_root(state, mul(inverse_affine(in.start), in.root)), inverse_affine(in.root)));
+    // the view's way to the world for this frame's other draws under this camera, as held: the same as this
+    // model's own, so a weapon drawn from its hand's matrix lies in the world where the hand does
+    if (verified && in.has_camera)
+        shared_view = {world_of_view, in.camera, now, true};
     const Mat4 view = inverse_affine(world_of_view);
     // the needed bones in the solver's space
     Mat4 to_sim = kIdentity4;

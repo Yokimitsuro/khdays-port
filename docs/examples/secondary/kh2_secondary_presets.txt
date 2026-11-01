@@ -90,6 +90,26 @@ preset kh2_string
   collide torso body
 end
 
+# A keyblade's keychain: the drawstrings' links, swinging freely about the blade (no swing limit: it hangs
+# straight down off a level blade), colliding with nothing of the body (a weapon has none)
+preset kh2_keychain
+  mass 0.015
+  stretch_compliance 0
+  bend_compliance 0.004
+  damping 1.8
+  follow_frequency 0
+  follow_damping 0
+  gravity_scale 1
+  tether_slack 0
+  twist_limit 20
+  inertia 1
+  max_speed 10
+  thickness 0.8
+  friction 0.4
+  wind_drag 2
+  collide
+end
+
 # A hood or other heavy flap on one bone: lies on the back under gravity, sways a little.
 preset kh2_hood
   mass 0.15

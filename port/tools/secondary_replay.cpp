@@ -22,7 +22,10 @@
 // those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
 // deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
 // collide with it); KHDAYS_REPLAY_POKE=<bone,...> those bones' body vertices through the coat's drawn surface;
-// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>] the
+// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_ROLL=<degrees> turns the actor about its x,
+// KHDAYS_REPLAY_LIFT=<m> raises it, KHDAYS_REPLAY_NOISE=<mm> shakes it each draw;
+// KHDAYS_REPLAY_GROUP=<group> the group whose bones' turns the jitter measures (coat); KHDAYS_REPLAY_TWIST=1
+// their largest roll about their own length each frame; KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>] the
 // contact sheet's frames.
 
 #include "actor.h"
@@ -615,7 +618,28 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                     now[b][k] = fade_from[b][k] * (1.0F - u) + now[b][k] * u;
         }
         before = now;
-        const Frame place = sc.place(t);
+        // KHDAYS_REPLAY_ROLL=<degrees>: the whole actor turned about its x (a weapon held tip down)
+        static const float roll = std::getenv("KHDAYS_REPLAY_ROLL") != nullptr
+                                      ? static_cast<float>(std::atof(std::getenv("KHDAYS_REPLAY_ROLL"))) * kDegrees
+                                      : 0.0F;
+        // KHDAYS_REPLAY_LIFT=<m>: raised that far (a weapon, whose origin is its grip, at a hand's height)
+        static const float lift = std::getenv("KHDAYS_REPLAY_LIFT") != nullptr
+                                      ? static_cast<float>(std::atof(std::getenv("KHDAYS_REPLAY_LIFT")))
+                                      : 0.0F;
+        Frame place = sc.place(t);
+        place.q = normalized(place.q * axis_angle({1.0F, 0.0F, 0.0F}, roll));
+        place.t.y += lift;
+        // KHDAYS_REPLAY_NOISE=<mm>: shaken by up to that much each draw (the game's fixed-point rounding)
+        if (const char *nz = std::getenv("KHDAYS_REPLAY_NOISE"); nz != nullptr) {
+            static unsigned seed = 12345U;
+            const auto r = [&] {
+                seed = seed * 1664525U + 1013904223U;
+                return (static_cast<float>(seed >> 8) / 16777216.0F - 0.5F) * 2.0F;
+            };
+            const float mm = static_cast<float>(std::atof(nz)) * 0.001F;
+            place.t = place.t + Vec3{r() * mm, r() * mm, r() * mm};
+            place.q = normalized(place.q * axis_angle(normalized(Vec3{r(), r(), r()}, {1, 0, 0}), r() * mm * 0.5F));
+        }
         for (std::size_t b = 0; b < nb; ++b) {
             Mat4 g = now[b];
             g[12] *= 0.01F;
@@ -784,7 +808,8 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                                  static_cast<double>(lmove * 100.0F));
                     last_ends = ends;
                     std::fprintf(stderr, "jcol %s f%d %.2f cm %s\n", sc.name.c_str(), f,
-                                 static_cast<double>(cmove * 100.0F), rig.colliders[cwhich].name.c_str());
+                                 static_cast<double>(cmove * 100.0F),
+                                 rig.colliders.empty() ? "-" : rig.colliders[cwhich].name.c_str());
                     static std::vector<Vec3> last_solved;
                     const float solved_step =
                         last_solved.size() == np ? length(sim.positions()[wi] - last_solved[wi]) : 0.0F;
@@ -826,7 +851,7 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                                  "tr f%d b%d drawn %.1f %.1f %.1f solved %.1f %.1f %.1f raw %.1f %.1f %.1f draped %.1f "
                                  "%.1f %.1f gap %.1f %s\n",
                                  f, bone, dr.x, dr.y, dr.z, so.x, so.y, so.z, rt.x, rt.y, rt.z, dt.x, dt.y, dt.z,
-                                 gap * 100.0F, rig.colliders[near].name.c_str());
+                                 gap * 100.0F, rig.colliders.empty() ? "-" : rig.colliders[near].name.c_str());
                 }
             }
             jx2 = jx1;
@@ -850,7 +875,9 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                     std::size_t wb = 0;
                     for (const auto &sb : rig.bones_out) {
                         const auto b = static_cast<std::size_t>(sb.bone);
-                        if (rig.groups[static_cast<std::size_t>(sb.group)].name == "coat" &&
+                        static const std::string measured =
+                            std::getenv("KHDAYS_REPLAY_GROUP") != nullptr ? std::getenv("KHDAYS_REPLAY_GROUP") : "coat";
+                        if (rig.groups[static_cast<std::size_t>(sb.group)].name == measured &&
                             length(w[b] - jw1[b]) * 57.2958F > worst) {
                             worst = length(w[b] - jw1[b]) * 57.2958F;
                             wb = b;
@@ -862,6 +889,29 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                                      static_cast<double>(worst), rig.skeleton.names[wb].c_str());
                 }
                 jw1 = w;
+            }
+            // KHDAYS_REPLAY_TWIST=1: the measured group's bones' largest roll about their own length since the last
+            // frame, and how far their length turned meanwhile (a flip: a large roll, the length nearly still)
+            if (std::getenv("KHDAYS_REPLAY_TWIST") != nullptr && jq1.size() == out.size()) {
+                const std::string measured =
+                    std::getenv("KHDAYS_REPLAY_GROUP") != nullptr ? std::getenv("KHDAYS_REPLAY_GROUP") : "coat";
+                float roll = 0.0F, swing = 0.0F;
+                std::size_t rb = 0;
+                for (const auto &sb : rig.bones_out) {
+                    const auto b = static_cast<std::size_t>(sb.bone);
+                    if (rig.groups[static_cast<std::size_t>(sb.group)].name != measured)
+                        continue;
+                    const Vec3 was = rotate(jq1[b], Vec3{1, 0, 0}), now = rotate(q[b], Vec3{1, 0, 0});
+                    const Quat rest = normalized(conjugate(arc(was, now) * jq1[b]) * q[b]); // what is left: the roll
+                    const float r = 2.0F * std::acos(std::fmin(1.0F, std::fabs(rest.w))) * 57.2958F;
+                    if (r > roll) {
+                        roll = r;
+                        rb = b;
+                        swing = std::acos(std::fmax(-1.0F, std::fmin(1.0F, dot(was, now)))) * 57.2958F;
+                    }
+                }
+                std::fprintf(stderr, "jtwist %s f%d %.1f deg %s (its length %.1f deg)\n", sc.name.c_str(), f,
+                             static_cast<double>(roll), rig.skeleton.names[rb].c_str(), static_cast<double>(swing));
             }
             jq1 = q;
         }

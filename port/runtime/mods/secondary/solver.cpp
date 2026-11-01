@@ -102,6 +102,8 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
     env_boxes_.reserve(512);
     bone_out_.assign(rig.bones_out.size(), {});
     bone_done_.assign(rig.bones_out.size(), 0);
+    swung_.assign(rig.bones_out.size(), {});
+    swung_valid_.assign(rig.bones_out.size(), 0);
     face_normal_prev_.assign(rig.faces.size(), {});
     face_box_.assign(rig.faces.size(), {});
     for (const bool rest : {false, true})
@@ -556,13 +558,32 @@ Frame Simulation::bone_frame(int si, const std::vector<Frame> &pose, bool twist)
     const Vec3 d_sol = x_[pi] - base.t;
     Quat q = base.q;
     const float lr = length(d_ref), ls = length(d_sol);
+    // no swing limit (a keychain): it may hang anywhere about its reference or its parent, opposite too (a blade
+    // held tip down, a link folded back), and is turned onto its point however far. Past 90 degrees from the way
+    // it is carried that turn has no clear axis and its roll flipped draw to draw (115 degrees), so it turns from
+    // where it pointed last instead, wholly so folded back past 120 (the two turns differ only in their roll)
+    const bool free = d.params.get(Param::swing_limit) >= kPi - 0.01F;
     if (lr > 1e-7F && ls > 1e-7F) {
         // turned onto its solved point; a link squeezed short (a thigh pushing the coat up under the belt)
         // or folded back past its head gives that turn no clear direction, so it eases back to the
-        // reference's instead of spinning with the noise
+        // reference's instead of spinning with the noise (a free one eases back to its last turn instead:
+        // to its reference, a keychain's first link pointed away from the chain in a hover)
         const Vec3 a = d_ref * (1.0F / lr), b = d_sol * (1.0F / ls);
-        const float trust = clampf((ls / lr - 0.2F) / 0.3F, 0.0F, 1.0F) * clampf((dot(a, b) + 0.7F) / 0.4F, 0.0F, 1.0F);
-        q = nlerp(base.q, normalized(arc(a, b) * base.q), trust);
+        const float squeezed = clampf((ls / lr - 0.2F) / 0.3F, 0.0F, 1.0F);
+        if (!free) {
+            q = nlerp(base.q, normalized(arc(a, b) * base.q), squeezed * clampf((dot(a, b) + 0.7F) / 0.4F, 0.0F, 1.0F));
+        } else {
+            Quat turned = normalized(arc(a, b) * base.q);
+            const Vec3 l = swung_valid_[index] ? rotate(swung_[index], so) : Vec3{};
+            const float away = clampf(-dot(a, b) / 0.5F, 0.0F, 1.0F), ll = length(l);
+            if (away > 0.0F && ll > 1e-7F)
+                turned = nlerp(turned, normalized(arc(l * (1.0F / ll), b) * swung_[index]), away);
+            q = nlerp(swung_valid_[index] ? swung_[index] : base.q, turned, squeezed);
+        }
+    }
+    if (free) {
+        swung_[index] = q;
+        swung_valid_[index] = 1;
     }
     if (twist && g.twist_from_neighbours && p.left >= 0 && p.right >= 0 && ls > 1e-7F) {
         const auto l = static_cast<std::size_t>(p.left), r = static_cast<std::size_t>(p.right);
@@ -626,6 +647,7 @@ void Simulation::place_kinematic(const std::vector<Frame> &pose)
 void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &s, int relax)
 {
     const auto t0 = Clock::now();
+    std::fill(swung_valid_.begin(), swung_valid_.end(), std::uint8_t{0});
     for (const int b : rig_.needed)
         sub1_[static_cast<std::size_t>(b)] = pose[static_cast<std::size_t>(b)];
     sub0_ = sub1_;
@@ -762,6 +784,7 @@ void Simulation::settle(const std::vector<Frame> &pose, const TickSettings &s, i
 void Simulation::rebase(const std::vector<Frame> &a, const std::vector<Frame> &b,
                         const std::vector<std::uint8_t> *groups)
 {
+    std::fill(swung_valid_.begin(), swung_valid_.end(), std::uint8_t{0});
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
         if (groups != nullptr && !(*groups)[static_cast<std::size_t>(p.group)])

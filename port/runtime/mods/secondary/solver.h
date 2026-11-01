@@ -207,6 +207,9 @@ private:
     // bone rebuilding
     std::vector<Frame> bone_out_;
     std::vector<std::uint8_t> bone_done_;
+    // a freely swinging bone (no swing limit): its last turn, and whether it has one since a start
+    std::vector<Quat> swung_;
+    std::vector<std::uint8_t> swung_valid_;
 };
 
 // The reference shapes made ready, once a model: every group's rest shape pushed out of the colliders

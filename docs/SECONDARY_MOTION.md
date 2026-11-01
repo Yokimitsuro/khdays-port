@@ -32,7 +32,7 @@ motion. The file and its includes are read again within a second of being saved
 |---|---|
 | `KHDAYS_SECONDARY_DEBUG=1` | draws particles (white), anchors (red), links (cyan, toward red when stretched past 10 %; anchors orange) and colliders (yellow cores and end rings) over the model; or `debug on` in the file |
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
-| `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked; a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; for a jump at a loop or a cut |
+| `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked, how it found its place in the world (`placed by ...`) and where it is (`at`, metres); a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; with `weapon_motions`, `hand trace` (the weapon's joint, the frame written and the game's own, moved and turned since the last draw, in the root's space); a `held` weapon's `held trace` (its start against the frame written, its nodes from the first); for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
 
 ## The model it works on
@@ -275,7 +275,14 @@ the solved point's side. Bones are rebuilt on the drawn points. A bone whose lin
 is squeezed under 50 % of its rest length or folded back past its head eases from
 the shortest turn onto its point back to its reference's (the turn has no clear
 direction there), and the twist from row neighbours fades out where they bunch
-together or cross.
+together or cross. A bone with no swing limit (`swing_limit` 180, the keychain
+preset) is not eased back when folded: it may hang anywhere about its reference,
+opposite it too, and a chain's first bone turns from where it pointed at its last
+rebuild, not from its reference (the turn opposite has no clear axis); the bones
+under it turn from their parent's, never far. Eased back, the Kingdom Key's first
+link pointed up, away from the chain, and jittered whenever the blade was held tip
+down (Days' glide hover); the test `free_chain_upside_down` turns a blade 180
+degrees under such a chain.
 
 **Drawn clipping in a run or a jump.** The solver kept the legs out of the coat,
 but the drawn shape trailed it (`smoothing`) and a calf or knee swinging through
@@ -372,7 +379,14 @@ game's pose) and before the weapon attachments and skinning. Each needed bone's
 frame is `world_of_view x skin x inverse(inverse bind)` divided by the actor's
 world units per model unit (from the root node's matrix): the solver's space has
 the world's axes (y up) and the model's metres (KH2 centimetres / 100, Days' world
-about a metre a unit). Rebuilt bones go back the same way into `skin`.
+about a metre a unit). Rebuilt bones go back the same way into `skin`. That scale
+is the one the actor started with (a change past 2 % starts a new actor), not each
+draw's: it divides the whole world position, and a root's fixed-point rounding
+wobbles it. The Kingdom Key's root is the game's hand matrix, whose scale wobbled
+by up to 0.09 % a draw: 40 m from the map's origin its keychain's anchor moved
+1.5 cm a draw in the world while the blade drawn stood still (each axis's error the
+same share of its coordinate, the trace's `at` positions), 6 m out 3 mm; the chain
+shook on the hill and not at its foot.
 
 `world_of_view` takes the camera out without the camera's own matrix:
 
@@ -392,8 +406,15 @@ about a metre a unit). Rebuilt bones go back the same way into `skin`.
   by less than 1 cm and 1 degree (Days' `roxas_R` never moves). Otherwise the body
   shook in the world by a fraction of a millimetre whenever the camera turned, and
   hair and drawstrings swung with it.
-- Neither: the latest flush's camera (`khdays_g3d_camera`), said once in the
-  session log. Every session log until 2026-10-30 shows Roxas placed this way
+- A draw starting from neither (a weapon, from the hand's saved matrix): the view's
+  way to the world as a draw placed by one of the two above found it in the same
+  frame under the same flushed camera (said once). The weapon's own scene node can
+  pass for an actor's matrix that its draw does not start from; taken, the view
+  leaked into the world and turning the camera swung the Kingdom Key's keychain.
+  An actor's matrix is only taken as the start's (`fx_close`) when no such frame's
+  view is at hand.
+- Neither, and no other draw this frame: the latest flush's camera
+  (`khdays_g3d_camera`), said once in the session log. Every session log until 2026-10-30 shows Roxas placed this way
   ("placed in the world by the flushed camera"): his body is not an
   `Ov002_SubmitActorDraw` draw.
 
