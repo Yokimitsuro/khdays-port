@@ -34,16 +34,13 @@ void khdays_characters_seat(int seat, int place);
  * seat's new character's number when it has one, else `entry`. */
 int khdays_characters_place(int seat, int entry);
 
-/* A room's mission review (scene 3, ov003: the players on their thrones): entry `entry` of its report is seat
- * `seat` (Ov002_BuildWrapUpReport); the new character (or form) of the entry's seat, else -1 (the throne's model
- * is then its own: ba/ch/<code>/def.p.z), and in `*own_model` whether it has a model of its own (its base's robe
- * piece is then left out). */
+/* A room's mission review (ov003, the players on their thrones): entry `entry` of its report is seat `seat`
+ * (Ov002_BuildWrapUpReport). `review` gives the entry's mod's character (or form) number, else -1, and whether it
+ * has a model of its own; `review_character` the same character, NULL none, without a trace line. */
 void khdays_characters_review_seat(int entry, int seat);
 int khdays_characters_review(int entry, int *own_model);
-/* The same entry's mod's character (or form), NULL none; told nothing (asked each frame). */
 const KhdaysCharacter *khdays_characters_review_character(int entry);
-/* A room's game over (ov027, a mission given up or failed): seat `seat`'s new character (or form), else -1 (its
- * model then from its own folder). */
+/* A room's game over (ov027, a mission given up or failed): seat `seat`'s mod's character (or form), else -1. */
 int khdays_characters_game_over(int seat);
 
 /* The game's scene now `scene` (at each change): the title forgets the seats (the story never has them). */

@@ -181,14 +181,26 @@ bool draw(Slot &slot, int index, const KhdaysBgLayer &layer)
     return true;
 }
 
-// Up to `count` colours for the opaque texels (alpha from 128): median cut, each box its texels' average.
-std::vector<std::array<int, 3>> palette_of(const std::vector<std::uint32_t> &texels, std::size_t count)
+using Colour = std::array<int, 3>;
+
+bool opaque(std::uint32_t texel)
 {
-    using Box = std::vector<std::array<int, 3>>;
+    return (texel >> 24) >= 128;
+}
+
+Colour colour_of(std::uint32_t texel)
+{
+    return {int(texel & 0xff), int((texel >> 8) & 0xff), int((texel >> 16) & 0xff)};
+}
+
+// Up to `count` colours for the opaque texels: median cut, each box its texels' average.
+std::vector<Colour> palette_of(const std::vector<std::uint32_t> &texels, std::size_t count)
+{
+    using Box = std::vector<Colour>;
     std::vector<Box> boxes(1);
     for (const std::uint32_t t : texels)
-        if ((t >> 24) >= 128)
-            boxes[0].push_back({int(t & 0xff), int((t >> 8) & 0xff), int((t >> 16) & 0xff)});
+        if (opaque(t))
+            boxes[0].push_back(colour_of(t));
     if (boxes[0].empty())
         return {};
     while (boxes.size() < count) {
@@ -213,52 +225,61 @@ std::vector<std::array<int, 3>> palette_of(const std::vector<std::uint32_t> &tex
         box.resize(box.size() / 2);
         boxes.push_back(std::move(upper));
     }
-    std::vector<std::array<int, 3>> colours;
+    std::vector<Colour> colours;
     for (const Box &box : boxes) {
         std::array<long, 3> sum{0, 0, 0};
-        for (const auto &x : box)
-            for (int c = 0; c < 3; ++c)
-                sum[std::size_t(c)] += x[std::size_t(c)];
+        for (const Colour &x : box)
+            for (std::size_t c = 0; c < 3; ++c)
+                sum[c] += x[c];
         const long n = long(box.size());
         colours.push_back({int(sum[0] / n), int(sum[1] / n), int(sum[2] / n)});
     }
     return colours;
 }
+
+// The palette's index nearest `texel` (colour 0 is clear: the palette's first is 1).
+int nearest(std::uint32_t texel, const std::vector<Colour> &colours)
+{
+    if (!opaque(texel))
+        return 0;
+    const Colour c = colour_of(texel);
+    int index = 0;
+    long best = -1;
+    for (std::size_t i = 0; i < colours.size(); ++i) {
+        long d = 0;
+        for (std::size_t k = 0; k < 3; ++k)
+            d += long(c[k] - colours[i][k]) * long(c[k] - colours[i][k]);
+        if (best < 0 || d < best) {
+            best = d;
+            index = int(i) + 1;
+        }
+    }
+    return index;
+}
 } // namespace
 
 extern "C" int khdays_ui_review_face(int entry, unsigned char *characters, unsigned short *palette)
 {
-    constexpr int kSide = 48, kCells = kSide / 8; // the review's face: 6 x 6 characters of 4 bits
+    constexpr int kSide = 48, kCells = kSide / 8; // 6 x 6 characters of 4 bits
     const KhdaysCharacter *c = khdays_characters_review_character(entry);
     const Picture *p = c == nullptr ? nullptr : c->portrait != nullptr ? picture(c, false) : picture_file(c, c->face);
     if (p == nullptr)
         return 0;
     std::vector<std::uint32_t> texels;
     fit(*p, texels, kSide, kSide);
-    const auto colours = palette_of(texels, 15); // colour 0 is clear
+    const std::vector<Colour> colours = palette_of(texels, 15);
     std::memset(palette, 0, 16 * sizeof(unsigned short));
-    for (std::size_t i = 0; i < colours.size(); ++i)
-        palette[i + 1] = (unsigned short)((colours[i][0] >> 3) | (colours[i][1] >> 3) << 5 | (colours[i][2] >> 3) << 10);
+    for (std::size_t i = 0; i < colours.size(); ++i) {
+        const Colour &k = colours[i];
+        palette[i + 1] = (unsigned short)((k[0] >> 3) | (k[1] >> 3) << 5 | (k[2] >> 3) << 10); // BGR555
+    }
+    // the characters row by row, six a row; a character 8 rows of 4 bytes, a byte's low half its left pixel
     std::memset(characters, 0, kCells * kCells * 32);
     for (int y = 0; y < kSide; ++y)
         for (int x = 0; x < kSide; ++x) {
-            const std::uint32_t t = texels[std::size_t(y) * kSide + std::size_t(x)];
-            int index = 0;
-            if ((t >> 24) >= 128) {
-                long best = -1;
-                for (std::size_t i = 0; i < colours.size(); ++i) {
-                    const long dr = long(t & 0xff) - colours[i][0], dg = long((t >> 8) & 0xff) - colours[i][1],
-                               db = long((t >> 16) & 0xff) - colours[i][2];
-                    const long d = dr * dr + dg * dg + db * db;
-                    if (best < 0 || d < best) {
-                        best = d;
-                        index = int(i) + 1;
-                    }
-                }
-            }
-            // the characters in rows of six; each 8 rows of 4 bytes, the left pixel in the low half
             unsigned char &byte = characters[((y / 8) * kCells + x / 8) * 32 + (y % 8) * 4 + (x % 8) / 2];
-            byte = (unsigned char)(byte | index << ((x & 1) * 4));
+            byte = (unsigned char)(byte | nearest(texels[std::size_t(y) * kSide + std::size_t(x)], colours)
+                                              << ((x & 1) * 4));
         }
     khdays_log("characters: %s's face on the review's card %d", c->identity, entry + 1);
     return 1;

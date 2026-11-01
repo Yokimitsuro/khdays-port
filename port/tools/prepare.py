@@ -2592,8 +2592,8 @@ HOOKS["ov008@0206d46c"] += [  # Ov008_DrawStatusField
     ),
     (
         "        pText = Ov008_GetVarRecordByIndex(pPanel->textLoader, Ov008_GetLocalPlayerStatA());\n",
-        "        pText = khdays_charselect_name(khdays_characters_of(Session_GetLocalPlayerIndex(), -1), 0,\n"
-        "                                       Ov008_GetVarRecordByIndex(pPanel->textLoader, Ov008_GetLocalPlayerStatA()),\n"
+        "        pText = Ov008_GetVarRecordByIndex(pPanel->textLoader, Ov008_GetLocalPlayerStatA());\n"
+        "        pText = khdays_charselect_name(khdays_characters_of(Session_GetLocalPlayerIndex(), -1), 0, pText,\n"
         "                                       sPortStatusName, 64);\n",
     ),
 ]
@@ -2734,7 +2734,7 @@ HOOKS["ov003@0204d98c"] = [
         "static unsigned int *Port_ReviewModel(int entry, unsigned int *game)\n{\n"
         "    const int n = khdays_characters_review(entry, &sPortReviewOwnModels[entry]);\n"
         "    if (n < 0) {\n        return game;\n    }\n"
-        "    OS_SPrintf(sPortReviewPaths[entry], \"ba/ch/%s/def.p.z\", Port_CharacterCode(n));\n"
+        '    OS_SPrintf(sPortReviewPaths[entry], "ba/ch/%s/def.p.z", Port_CharacterCode(n));\n'
         "    return (unsigned int *)sPortReviewPaths[entry];\n}\n"
         "extern int khdays_ui_review_face(int entry, unsigned char *characters, unsigned short *palette);\n"
         "static unsigned int sPortReviewFaces[4][0x480 / 4]; /* words: the copies read them a word at a time */\n"
@@ -2759,7 +2759,8 @@ HOOKS["ov003@0204d98c"] = [
     ),
     (
         "            uVar7 = (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
-        "            uVar7 = sPortReviewOwnModels[iVar12] ? 0xffffffff : (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
+        "            uVar7 = sPortReviewOwnModels[iVar12] ? 0xffffffff\n"
+        "                                                 : (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
     ),
 ]
 # ... and the game over in a room (ov027, a mission given up or failed: every seat's character standing): a new
@@ -2780,14 +2781,14 @@ HOOKS["ov027@02083168"] = [
         "        return game;\n"
         "    }\n"
         "    while (*rest != 0 && *rest != '/') rest++; /* past its base's folder */\n"
-        "    OS_SPrintf(sPortGameOverPaths[seat], \"ba/ch/%s%s\", Port_CharacterCode(n), rest);\n"
+        '    OS_SPrintf(sPortGameOverPaths[seat], "ba/ch/%s%s", Port_CharacterCode(n), rest);\n'
         "    return sPortGameOverPaths[seat];\n}\n"
         "void Ov027_LoadCharacterModels(void)\n",
     ),
     (
         "RegisterSeqAndInit(&data_ov027_02084364->aModel[nLoaded], data_ov027_02084190[nKind], 0, 6);",
-        "RegisterSeqAndInit(&data_ov027_02084364->aModel[nLoaded], Port_GameOverModel(i, data_ov027_02084190[nKind]), 0,"
-        " 6);",
+        "RegisterSeqAndInit(&data_ov027_02084364->aModel[nLoaded],\n"
+        "                                   Port_GameOverModel(i, data_ov027_02084190[nKind]), 0, 6);",
     ),
 ]
 # ... its voice: the sounds an actor starts are its seat's (the actor's +9, its character at +0xc), so that a new

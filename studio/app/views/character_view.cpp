@@ -905,18 +905,17 @@ S known_animation(const std::string& name, int* number) {
         {"b_ro_B015", {S::chars_anim_combo, 3}},     {"b_ro_L000", {S::chars_anim_limit_start, 0}},
         {"b_ro_L001", {S::chars_anim_limit_hit, 0}},
     };
-    static const std::map<std::string, S> thrones = {
-        {"_result00", S::chars_anim_throne_seated},
-        {"_result01", S::chars_anim_throne_winner},
-        {"_result02", S::chars_anim_throne_winner_after},
-        {"_result04", S::chars_anim_throne_rank},
+    // by the name's ending, whatever its base's code
+    static const std::map<std::string, S> room_endings = {
+        {"_result00", S::chars_anim_throne_seated},  {"_result01", S::chars_anim_throne_winner},
+        {"_result02", S::chars_anim_throne_winner_after}, {"_result04", S::chars_anim_throne_rank},
         {"_result05", S::chars_anim_throne_after},   {"_mission00", S::chars_anim_game_over},
     };
     const auto suffix = name.rfind('_');
-    const auto throne = suffix != std::string::npos ? thrones.find(name.substr(suffix)) : thrones.end();
-    if (throne != thrones.end()) {
+    const auto ending = suffix != std::string::npos ? room_endings.find(name.substr(suffix)) : room_endings.end();
+    if (ending != room_endings.end()) {
         *number = 0;
-        return throne->second;
+        return ending->second;
     }
     const auto found = known.find(name);
     if (found == known.end())

@@ -73,8 +73,7 @@ skeleton = paired
   as `<name>.bones.txt` pairs them), moved by its base's animations. `skeleton = own`: its own skeleton, moved by
   its own clips (below); nothing of it is paired with the base's.
 - `[model] scale` -- its size to the game's: 100 for an FBX made in centimetres (the game's characters are about
-  1.4 tall in its units, a model in metres 1.4); with either skeleton, over a `.bones.txt`'s `scale` (until
-  2026-10-31 a paired skeleton took only the bones file's, the studio showing this one).
+  1.4 tall in its units, a model in metres 1.4); with either skeleton, over a `.bones.txt`'s `scale`.
 - `[model] weapon_bone` -- its bone the weapon follows (`R_buki`); without it, its node named as the base model's
   weapon node (a skeleton made like the game's: `so_w_tg00`), else the weapon stays where the base's hand is.
   `weapon_turn = x y z` -- the weapon held on the bone's own axes, turned by these degrees (a weapon bone made for
