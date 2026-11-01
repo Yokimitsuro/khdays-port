@@ -21,6 +21,9 @@ constexpr float kGameSnap = 0.35F;
 // s: a cut this soon after the last settle is not settled again (a cutscene's first frames snap the pose over
 // several draws, each a cut: 40 ticks apiece in one frame, a stall)
 constexpr double kSettleGap = 0.5;
+// m: a body collider's end moving this far about the first group's reference bone across a pose cut starts the
+// cloth afresh (KH2's aerial damage starting from an attack: a foot 0.9 m in one draw, and its landing 0.4 m)
+constexpr float kPoseCutJump = 0.12F;
 
 // settling: one substep a tick (it only has to come to rest, not follow motion)
 TickSettings settling(TickSettings s)
@@ -272,6 +275,32 @@ void Actor::update(const ActorInput &in)
     }
     if (gap <= 0.0)
         return; // the same moment drawn again: nothing moves
+    // a pose cut jumping the legs: carried on, the cloth was left on the wrong side of a leg (it kept the side it
+    // came from); started afresh, the colliders sweep in from rest and drape it round them (Simulation::initialize)
+    if (in.pose_cut && !rig.groups.empty()) {
+        std::uint32_t touch = 0;
+        for (const Particle &p : rig.particles)
+            if (p.dynamic)
+                touch |= p.collide;
+        const auto rb = static_cast<std::size_t>(rig.groups.front().reference_bone);
+        // a collider's end (its offset on its bone) about the reference bone, before and now
+        const auto jumped = [&](int bone, Vec3 offset) {
+            if (bone < 0)
+                return false;
+            const auto b = static_cast<std::size_t>(bone);
+            return length(apply_inverse((*in.pose)[rb], apply((*in.pose)[b], offset)) -
+                          apply_inverse(last_pose_[rb], apply(last_pose_[b], offset))) > kPoseCutJump;
+        };
+        for (const Collider &c : rig.colliders)
+            if (c.rest_side && (c.tags & touch) != 0 &&
+                (jumped(c.bone, c.offset) || (c.kind == ShapeKind::capsule && jumped(c.end_bone, c.end_offset)))) {
+                sim_.times.startup = 0.0;
+                start(in);
+                profile_.phases.startup += sim_.times.startup;
+                profile_.add(static_cast<float>(std::chrono::duration<double, std::micro>(Clock::now() - t0).count()));
+                return;
+            }
+    }
     const float dt = 1.0F / rig.config.rate;
     // a teleport: every group's reference bone jumping further than a tick could carry it. Some alone (a cuff on an
     // arm snapping to a new animation) are rebased by themselves below and the rest simulated: rebasing the whole

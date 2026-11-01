@@ -52,6 +52,21 @@ int main()
     check(near(angle_of(half), 32.5F), "halfway across a fade");
     const Mat wrap = attached_frame(about_z(170.0F, 1.0F, 0, 0, 0), about_z(-170.0F, 1.0F, 0, 0, 0), 0.5F);
     check(near(std::fabs(angle_of(wrap)), 180.0F), "the shorter way round");
+
+    // a joint's frames of several poses mixed: turns the shorter way, no joint shrunk between turns far apart
+    using khdays::models::blend_frames;
+    const Mat two[2] = {about_z(0.0F, 1.0F, 0, 0, 0), about_z(170.0F, 1.0F, 2, 0, 0)};
+    const float even[2] = {1.0F, 1.0F};
+    const Mat mixed = blend_frames(two, even, 2);
+    check(near(angle_of(mixed), 85.0F), "an even mix turns halfway");
+    check(near(std::hypot(mixed[0], mixed[1]), 1.0F), "a mix of turns 170 degrees apart keeps the joint's size");
+    check(near(mixed[12], 1.0F), "its place the weighted mean");
+    const Mat three[3] = {about_z(10.0F, 2.0F, 0, 0, 0), about_z(20.0F, 2.0F, 0, 0, 0), about_z(30.0F, 2.0F, 0, 0, 0)};
+    const float some[3] = {0.0F, 0.5F, 0.5F};
+    const Mat part = blend_frames(three, some, 3);
+    check(near(angle_of(part), 25.0F) && near(std::hypot(part[0], part[1]), 2.0F), "a weight of 0 leaves a pose out");
+    const Mat flipped[2] = {about_z(-170.0F, 1.0F, 0, 0, 0), about_z(170.0F, 1.0F, 0, 0, 0)};
+    check(near(std::fabs(angle_of(blend_frames(flipped, even, 2))), 180.0F), "the shorter way round, mixed");
     if (failures == 0)
         std::printf("attached_frame: all checks passed\n");
     return failures == 0 ? 0 : 1;

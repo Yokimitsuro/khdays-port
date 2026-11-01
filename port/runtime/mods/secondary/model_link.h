@@ -59,6 +59,8 @@ struct DrawInput {
     bool has_camera = false;
     const float *projection = nullptr; // view to clip, for the debug drawing
     std::vector<DrawAnimation> animations;
+    // the pose cut to another motion with no fade (ActorInput::pose_cut)
+    bool pose_cut = false;
     const std::vector<Mat4> *game_nodes = nullptr; // the game model's nodes now from rest (view space), `game_shape`
 };
 

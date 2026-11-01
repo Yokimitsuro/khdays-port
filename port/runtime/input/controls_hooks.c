@@ -5,6 +5,7 @@
  * docs/RUNTIME_MAP.md records what those traces showed. */
 #include "controls_hooks.h"
 #include "../core/window.h"
+#include "../mods/models.h"
 #include "analog.h"
 #include "input.h"
 #include "walk.h"
@@ -394,6 +395,7 @@ void khdays_trace_steer(int actor, int aim, int bias, int angle, int step, int r
 
 void khdays_trace_actor_state(int actor, int state)
 {
+    khdays_models_actor_state(actor, state); /* its KH2 model's `air` lines (runtime/mods/models.cpp) */
     if (trace_on() && actor == local_actor()) {
         trace("state %d (%#x)", state, state);
     }

@@ -7,8 +7,8 @@
 //
 //   khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> [options]
 //     --out <dir>            contact sheets and the report go here
-//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, wall, spawn, teleport, cut,
-//                            platform, all (default all)
+//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, air_front, air_back, wall,
+//                            spawn, teleport, cut, platform, all (default all)
 //     --actors <n>           simulate n actors at once (the benchmark; default 1)
 //     --draw-hz <hz>         draws a second (default 60); --repeat <n> draws each n times
 //     --reference <B.mdlx> <B.mset> <slot,...>   compare the coat with a baked KH2 coat (same coat bones)
@@ -17,12 +17,12 @@
 // in a coarse face with its side; KHDAYS_REPLAY_LEGS=1 each frame's deepest leg in the coat (cm);
 // KHDAYS_REPLAY_DUMP=<frame> the coat's controls and targets in the hips' space; KHDAYS_REPLAY_REFDUMP=<frame>
 // the bake's and the simulated coat there (--reference); KHDAYS_REPLAY_JITTER=1 each frame's worst drawn
-// control and any coat bone turning over 60 deg past its last step; KHDAYS_REPLAY_LEGPOSE=<slot> the mset
-// skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_TRACE=<bone,bone,...>
+// control, the legs' largest step and any coat bone turning over 60 deg past its last step;
+// KHDAYS_REPLAY_LEGPOSE=<slot> the mset skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_TRACE=<bone,bone,...>
 // those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
 // deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
 // collide with it); KHDAYS_REPLAY_POKE=<bone,...> those bones' body vertices through the coat's drawn surface;
-// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone.
+// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_SHEET=<frame>,<step> the contact sheet's frames.
 
 #include "actor.h"
 
@@ -45,6 +45,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace kh2 = khdays::assets::kh2;
@@ -295,6 +296,34 @@ std::vector<Scenario> scenarios()
                  nullptr});
     s.push_back(
         {"guard", 3.0F, {{0.0F, 0, "b_ro_A000"}, {0.5F, 644, "b_ro_Ca003", 0.1F}}, still, floor_plane(20), nullptr});
+    // launched by a hit (motions.txt `air`): KH2's aerial damage looping up 1.4 m and back down, cut to KH2's
+    // landing on touching down (no fade, as the game lands it), its readying, then the idle
+    // (KHDAYS_REPLAY_AIR=<seconds>: that long in the air, the landing at another point of the loop)
+    const char *air_env = std::getenv("KHDAYS_REPLAY_AIR");
+    const float up = air_env != nullptr ? std::fmax(0.2F, static_cast<float>(std::atof(air_env))) : 1.1F;
+    const auto launched = [up](float t) {
+        float y = 0.0F;
+        if (t > 0.5F && t < 0.5F + up) {
+            const float u = (t - 0.5F) / up;
+            y = 5.6F * u * (1.0F - u);
+        }
+        return yaw_at({0, y, -std::fmax(0.0F, std::fmin(t, 0.5F + up) - 0.5F) * 1.5F}, 0.0F);
+    };
+    // (KHDAYS_REPLAY_FROM=<slot>: launched out of that motion, started 0.3 s before, instead of the idle)
+    const char *from_env = std::getenv("KHDAYS_REPLAY_FROM");
+    const auto before_launch = static_cast<std::size_t>(from_env != nullptr ? std::atoi(from_env) : 0);
+    for (const auto &[name, air, land] : {std::tuple{"air_front", 66, 70}, std::tuple{"air_back", 74, 78}})
+        s.push_back({name,
+                     up + 2.7F,
+                     {{0.0F, 0, "b_ro_A000"},
+                      {0.2F, before_launch, "b_ro_B000", 0.0F},
+                      {0.5F, static_cast<std::size_t>(air), "b_ro_A005", 0.0F},
+                      {0.5F + up, static_cast<std::size_t>(land), "b_ro_A004", 0.0F},
+                      {1.33F + up, 24, "b_ro_A000", 0.0F},
+                      {1.76F + up, 0, "b_ro_A000", 0.27F}},
+                     launched,
+                     floor_plane(20),
+                     nullptr});
     // a wall 30 cm behind; turning in place sweeps the coat across it, then backing into it
     {
         Scenario w{"wall",
@@ -543,7 +572,10 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
     Image sheet(sheet_cols * 160, 2 * 240);
     int drawn = 0;
     const int frames = static_cast<int>(sc.seconds * draw_hz);
-    const int every = std::max(1, frames / sheet_cols);
+    int every = std::max(1, frames / sheet_cols), first = 0;
+    if (const char *e = std::getenv("KHDAYS_REPLAY_SHEET");
+        e != nullptr && std::sscanf(e, "%d,%d", &first, &every) == 2)
+        every = std::max(1, every);
     std::size_t seg = 0;
     float seg_start_pose_fade = 0.0F;
     std::vector<kh2::Mat4> fade_from;
@@ -554,8 +586,11 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
     std::vector<float> jitter_pos, jitter_rot;
     for (int f = 0; f <= frames; ++f) {
         const float t = static_cast<float>(f) / draw_hz;
-        // the segment playing, cross-faded by matrices from the pose last shown (as the game's blend)
+        // the segment playing, cross-faded by matrices from the pose last shown (as the game's blend); one with no
+        // fade a pose cut (as models.cpp's KH2 motions starting so)
+        bool pose_cut = false;
         while (seg + 1 < sc.segments.size() && t >= sc.segments[seg + 1].from) {
+            pose_cut = sc.segments[seg + 1].fade <= 0.0F;
             fade_from = before;
             seg_start_pose_fade = sc.segments[seg + 1].fade;
             ++seg;
@@ -592,6 +627,7 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         in.animations = {{s.name, static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
         in.environment = &env;
         in.cut = sc.cut_at >= 0.0F && t >= sc.cut_at && t - 1.0F / draw_hz < sc.cut_at;
+        in.pose_cut = pose_cut && std::getenv("KHDAYS_REPLAY_NO_POSE_CUT") == nullptr;
         for (int r = 0; r < repeat; ++r) {
             for (auto &a : list) {
                 const auto t0 = std::chrono::steady_clock::now();
@@ -720,14 +756,22 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                         ends.push_back(apply_inverse(pose[2], c.a));
                         ends.push_back(apply_inverse(pose[2], c.b));
                     }
-                    float cmove = 0.0F;
+                    float cmove = 0.0F, lmove = 0.0F; // any collider's ends; the legs'
                     std::size_t cwhich = 0;
                     if (last_ends.size() == ends.size())
-                        for (std::size_t e = 0; e < ends.size(); ++e)
-                            if (length(ends[e] - last_ends[e]) > cmove) {
-                                cmove = length(ends[e] - last_ends[e]);
+                        for (std::size_t e = 0; e < ends.size(); ++e) {
+                            const float step = length(ends[e] - last_ends[e]);
+                            if (step > cmove) {
+                                cmove = step;
                                 cwhich = e / 2;
                             }
+                            const auto leg = std::find(rig.tag_names.begin(), rig.tag_names.end(), "legs");
+                            if (leg != rig.tag_names.end() &&
+                                (rig.colliders[e / 2].tags >> (leg - rig.tag_names.begin()) & 1U) != 0U)
+                                lmove = std::fmax(lmove, step);
+                        }
+                    std::fprintf(stderr, "jleg %s f%d %.2f cm\n", sc.name.c_str(), f,
+                                 static_cast<double>(lmove * 100.0F));
                     last_ends = ends;
                     std::fprintf(stderr, "jcol %s f%d %.2f cm %s\n", sc.name.c_str(), f,
                                  static_cast<double>(cmove * 100.0F), rig.colliders[cwhich].name.c_str());
@@ -1073,7 +1117,7 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                                                  100));
             }
         }
-        if (sheets && f % every == 0 && drawn < sheet_cols) {
+        if (sheets && f >= first && (f - first) % every == 0 && drawn < sheet_cols) {
             const Vec3 centre = place.t + Vec3{0.0F, 0.85F, 0.0F};
             Image front(160, 240), side(160, 240);
             draw(sim, sc.room, env_at, front, 160, 240, centre, false);

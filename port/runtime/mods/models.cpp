@@ -28,6 +28,8 @@ void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, Khdays
 #include "face.h"
 #include "attached_frame.h"
 #include "kh2_clock.h"
+#include "kh2_moves.h"
+#include "kh2_tail.h"
 #include "names.h"
 #include "room_animation.h"
 #include "../characters/characters.h"
@@ -361,6 +363,20 @@ struct Kh2Section {
     bool start_loop = false; // its clock starts at the motion's loop point, not its first tick
     // the whole pose moved (KH2 centimetres, the model's axes): `offset`, gliding to `offset_to` over the motion
     std::array<float, 3> offset{}, offset_to{};
+    // `finish [<slot>...]`: when the game goes on to one of its `idle` animations before the motion ends, the rest of
+    // it plays, then those slots, then the idle's (kh2_tail.h)
+    bool finish = false;
+    std::vector<std::size_t> then;
+    bool realtime = false; // its clock runs with the game's frames, not its animation's (`air`: Days holds a frame)
+    bool cut = false;      // `cut`: it takes the whole pose at once where the game fades into it (the death)
+};
+
+// motions.txt's `air <game animation> <slot> [land <slot>] [finish <slot>...] [blend <frames>]`: while the game
+// plays that animation in its damage-in-the-air state (5, a launch included), the slot loops in its place; landing
+// straight out of it, the land slot plays in place of the `landing` animation's motion, then the `finish` slots
+struct Kh2Air {
+    std::vector<Kh2Section> air;  // one section, from frame 0
+    std::vector<Kh2Section> land; // one section (none without `land`)
 };
 
 // A KH2 face's eyes or mouth (face.h) and the sprite last patched in (-2 none yet)
@@ -441,6 +457,13 @@ struct Model {
         kh2_skeleton;                                                  // the mset's model's (its own, else `skeleton`)
     std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_retarget; // from the `skeleton`'s bones to the model's
     std::map<std::string, std::vector<Kh2Section>> kh2_sections;
+    std::vector<std::string> kh2_idle; // motions.txt's `idle`: the game's idles a `finish` plays out into
+    // `<game animation> blend <frames>` (no slot): its fade into an idle, for the game's own animations
+    std::map<std::string, float> kh2_idle_blend;
+    std::string kh2_landing;               // `landing`: the game's landing animation (`air`'s `land`)
+    std::map<std::string, Kh2Air> kh2_air; // `air`, by the game's animation
+    bool said_states = false;              // the game's actor states were seen reaching its draws
+    std::vector<Mat> kh2_rest;             // per joint: inverse(inverse_bind), skin to world (made on first use)
     bool kh2_root_motion = false;
     bool kh2_ik_adjust = true; // the feet on the game's floor (IKAdjust)
     std::vector<int> kh2_bone;
@@ -506,9 +529,41 @@ struct Kh2Animation {
     std::uint64_t seen = 0;
     std::map<int, Kh2Track> tracks; // by section
 };
+// A `finish` section the game played before going on to its idles, and its motion played out after it (kh2_tail.h)
+struct Kh2Finish {
+    std::string name; // the game animation (empty: none)
+    std::size_t slot = 0;
+    std::vector<std::size_t> then;
+    float blend = 0.0F;
+    float ticks = 0.0F; // the motion time it last showed
+};
 struct Kh2Actor {
     std::uint64_t draws = 0;
     std::map<std::string, Kh2Animation> animations; // by game animation
+    std::map<std::string, float> frames;            // each game animation's frame at the draw it was last in
+    Kh2Finish finish;
+    khdays::kh2_tail::Tail tail;
+    // the game animation it plays out while it still fades out into the idle, and its weight at the last draw: once
+    // gone or rising again (played anew), it is the game leaving its idles
+    std::string tail_from;
+    float tail_from_ratio = 0.0F;
+    // `air`: the game animation whose air slot played last, and the one whose land slot the landing plays now
+    std::string air_from, landing_from;
+    std::set<std::string> in_air; // the game animations playing their air slot, in the air or fading out after it
+    std::map<std::string, float> ratios; // each game animation's weight at the last draw, as the game gave it
+    u32 vblank = 0;                      // the vblank of its last draw (an `air` slot's clock)
+    // `blend` into an idle: the pose shown at the last draw (its skin), the animation the game played most then,
+    // its fade into an idle and whether an idle played; the pose fading out, its share, its frames and its source
+    std::vector<Mat> shown;
+    std::string main;
+    float main_blend = 0.0F;
+    bool had_idle = false;
+    std::vector<Mat> held;
+    khdays::kh2_moves::IdleFade held_fade;
+    float held_from_ratio = 0.0F;
+    std::string held_from;
+    Kh2Track tail_track, tail_faded; // the piece playing and the one before it fading out
+    std::size_t tail_piece = 0;
 };
 std::map<const void *, Kh2Actor> kh2_actors; // by render object
 // The KH2 motion with the most weight in this draw, for the face: its attributes, its time and the time it
@@ -551,6 +606,11 @@ struct LimbLine {
     std::array<std::string, 3> joints;
     bool exact = false;
     std::array<float, 3> offset{}; // centimetres
+};
+
+struct TwistLine {
+    std::array<std::string, 4> joints; // the joint, the one it turns with, the axis's from and to
+    float share = 1.0F;
 };
 
 // What `<model>.bones.txt` beside the model's file says (.gltf, .glb, .fbx or .mdlx: its name without its extension).
@@ -977,6 +1037,50 @@ void load_kh2_motions(Model &model, const std::string &path)
             mset = b;
         } else if (a == "root_motion") {
             model.kh2_root_motion = b == "on";
+        } else if (a == "idle") { // idle <game animation>...
+            std::string w;
+            model.kh2_idle.push_back(b);
+            while (words >> w)
+                model.kh2_idle.push_back(w);
+        } else if (a == "landing") {
+            model.kh2_landing = b;
+        } else if (a == "air") { // air <game animation> <slot> [land <slot>] [finish <slot>...] [blend <frames>]
+            Kh2Section air, land;
+            std::string slot, w, v;
+            bool ok = static_cast<bool>(words >> slot);
+            float number_of = 0.0F;
+            ok = ok && number(slot, number_of) && number_of >= 0.0F;
+            air.slot = static_cast<std::size_t>(number_of);
+            air.realtime = true;
+            bool has_land = false, finishing = false;
+            while (ok && words >> w) {
+                float n = 0.0F;
+                if (w == "land" && words >> v && number(v, n) && n >= 0.0F) {
+                    land.slot = static_cast<std::size_t>(n);
+                    has_land = true;
+                    finishing = false;
+                } else if (w == "blend" && words >> v && number(v, n)) {
+                    air.blend = land.blend = n;
+                    finishing = false;
+                } else if (w == "finish") {
+                    land.finish = finishing = true;
+                } else if (finishing && number(w, n) && n >= 0.0F) {
+                    land.then.push_back(static_cast<std::size_t>(n));
+                } else {
+                    ok = false;
+                }
+            }
+            if (!ok || (land.finish && !has_land)) {
+                say("\"" + line +
+                    "\": write `air <game animation> <slot> [land <slot>] [finish <slot>...] [blend <frames>]` "
+                    "(`finish` after a `land`); the line is ignored");
+                continue;
+            }
+            Kh2Air &entry = model.kh2_air[b];
+            entry.air = {air};
+            entry.land.clear();
+            if (has_land)
+                entry.land.push_back(land);
         } else if (a == "ik_adjust") {
             model.kh2_ik_adjust = b != "off";
         } else if (a == "skeleton") {
@@ -1118,6 +1222,16 @@ void load_kh2_motions(Model &model, const std::string &path)
                 }
                 a.erase(at);
             }
+            if (b == "blend") { // <game animation> blend <frames>: its fade into an idle, its own animation kept
+                std::string v;
+                float frames = 0.0F;
+                if (at != std::string::npos || !(words >> v) || !number(v, frames) || frames < 0.0F) {
+                    say("\"" + line + "\": write `<game animation> blend <frames>`; the line is ignored");
+                    continue;
+                }
+                model.kh2_idle_blend[a] = frames;
+                continue;
+            }
             char *end = nullptr;
             section.slot = std::strtoul(b.c_str(), &end, 10);
             if (end == b.c_str() || *end != '\0') {
@@ -1126,26 +1240,54 @@ void load_kh2_motions(Model &model, const std::string &path)
             }
             std::string c, d;
             bool bad = false, to = false;
-            while (!bad && words >> c) {
+            std::vector<std::string> rest;
+            while (words >> c)
+                rest.push_back(c);
+            std::istringstream options;
+            for (std::size_t r = 0; r < rest.size() && !bad; ++r) {
+                if (rest[r] != "finish")
+                    continue;
+                section.finish = true; // finish [<slot>...]: its slots taken out of the options
+                std::size_t q = r + 1;
+                for (; q < rest.size(); ++q) {
+                    char *slot_end = nullptr;
+                    const unsigned long slot = std::strtoul(rest[q].c_str(), &slot_end, 10);
+                    if (slot_end == rest[q].c_str() || *slot_end != '\0')
+                        break;
+                    section.then.push_back(slot);
+                }
+                rest.erase(rest.begin() + static_cast<std::ptrdiff_t>(r),
+                           rest.begin() + static_cast<std::ptrdiff_t>(q));
+                break;
+            }
+            {
+                std::string joined;
+                for (const std::string &w : rest)
+                    joined += w + " ";
+                options.str(joined);
+            }
+            while (!bad && options >> c) {
                 if (c == "follow")
                     section.follow = true;
+                else if (c == "cut")
+                    section.cut = true;
                 else if (c == "start_loop")
                     section.start_loop = true;
                 else if (c == "loop_blend")
-                    bad = !(words >> d && number(d, section.loop_blend));
+                    bad = !(options >> d && number(d, section.loop_blend));
                 else if (c == "offset") {
-                    bad = !(words >> section.offset[0] >> section.offset[1] >> section.offset[2]);
+                    bad = !(options >> section.offset[0] >> section.offset[1] >> section.offset[2]);
                     section.offset_to = section.offset;
                 } else if (c == "to")
-                    bad = !(words >> section.offset_to[0] >> section.offset_to[1] >> section.offset_to[2]) || to;
+                    bad = !(options >> section.offset_to[0] >> section.offset_to[1] >> section.offset_to[2]) || to;
                 else
-                    bad = !(c == "blend" && words >> d && number(d, section.blend));
+                    bad = !(c == "blend" && options >> d && number(d, section.blend));
                 to = to || c == "to";
             }
             if (bad) {
                 say("\"" + line +
-                    "\": after the slot write `blend <frames>`, `loop_blend <frames>`, `follow`, `start_loop` or "
-                    "`offset <x> <y> <z> [to <x> <y> <z>]` (centimetres); the line is ignored");
+                    "\": after the slot write `blend <frames>`, `loop_blend <frames>`, `follow`, `start_loop`, `cut`, "
+                    "`finish [<slot>...]` or `offset <x> <y> <z> [to <x> <y> <z>]` (centimetres); the line is ignored");
                 continue;
             }
             auto &parts = sections[a];
@@ -1225,6 +1367,16 @@ void load_kh2_motions(Model &model, const std::string &path)
             say(name + ": mset slot " + std::to_string(s.slot) + " holds no motion it plays; the game's is kept");
             return true;
         });
+        for (Kh2Section &s : parts) {
+            std::erase_if(s.then, [&](std::size_t slot) {
+                if (model.kh2_motions->motion(slot) != nullptr)
+                    return false;
+                say(name + ": `finish` slot " + std::to_string(slot) + " holds no motion it plays; left out");
+                return true;
+            });
+            if (s.finish && model.kh2_idle.empty())
+                say(name + ": `finish` with no `idle` line (the game's idles it plays out into): it never plays out");
+        }
         if (parts.empty())
             continue;
         std::sort(parts.begin(), parts.end(), [](const Kh2Section &x, const Kh2Section &y) { return x.from < y.from; });
@@ -1232,6 +1384,26 @@ void load_kh2_motions(Model &model, const std::string &path)
             say(name + ": no section from frame 0; the game's animation plays before frame " +
                 std::to_string(parts.front().from));
         model.kh2_sections[name] = std::move(parts);
+    }
+    for (auto it = model.kh2_air.begin(); it != model.kh2_air.end();) {
+        Kh2Air &air = it->second;
+        const auto plays = [&](std::size_t slot) { return model.kh2_motions->motion(slot) != nullptr; };
+        if (!plays(air.air.front().slot)) {
+            say("air " + it->first + ": mset slot " + std::to_string(air.air.front().slot) +
+                " holds no motion it plays; the line is ignored");
+            it = model.kh2_air.erase(it);
+            continue;
+        }
+        if (!air.land.empty() && !plays(air.land.front().slot)) {
+            say("air " + it->first + ": its land slot " + std::to_string(air.land.front().slot) +
+                " holds no motion it plays; landing keeps the landing's");
+            air.land.clear();
+        }
+        if (!air.land.empty())
+            std::erase_if(air.land.front().then, [&](std::size_t slot) { return !plays(slot); });
+        if (!air.land.empty() && model.kh2_landing.empty())
+            say("air " + it->first + ": `land` with no `landing` line (the game's landing animation): never played");
+        ++it;
     }
     resolve_ds_poses(model, ds_rules, say);
     khdays_log("models: %s: %zu of the game's animations play KH2 motions from %s (root motion %s)", path.c_str(),
@@ -2209,6 +2381,9 @@ std::vector<Mat> node_matrix;
 std::vector<char> node_sent;
 std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
 float kh2_game_share = 1.0F; // this draw: the game's own pose's share of a KH2 model's (play_kh2; 1 without)
+bool kh2_pose_cut = false;   // this draw: a KH2 motion took the whole pose with no fade (play_kh2): the cloth's cue
+// this draw: each game animation's KH2 slot and its section's first frame, `air` and `land` ones included
+std::map<std::string, std::pair<std::size_t, float>> kh2_played;
 
 // The movers Mover_ResolveFloor put on their floor, by owner (their render object is at owner + 0x24: the
 // animation state at +4, func_ov022_020a3c78, its NNSG3dRenderObj at +0x20): the mover and the vblank
@@ -2218,6 +2393,17 @@ struct Grounded {
     u32 vblank = 0;
 };
 std::unordered_map<KhdaysRef, Grounded> grounds;
+
+// The battle actors' states (Ov022_EnterActorState), by scene node as `grounds` (khdays_models_actor_state): the
+// state, the vblank it entered it at, and the vblank it last left the damage in the air at
+constexpr int kAirDamageState = 5;  // damage in the air, a launch included (Ov022_ResolveGuardBreakState)
+constexpr int kLandingState = 0x16; // landing (Ov022_EnterActorState: animation 4, b_ro_A004)
+constexpr u32 kLandedOutOf = 8;     // vblanks: landing this soon after state 5 is landing out of it
+struct ActorState {
+    int state = -1;
+    u32 entered = 0, left_air = 0;
+};
+std::unordered_map<KhdaysRef, ActorState> actor_states;
 
 // The floor a drawn actor's KH2 feet are put on (IKAdjust): only while the game has it on the floor
 // (its mover's vertical speed 0x80000000; KH2's YS::MOTION::make_ik_adjust 0x45992c: while the object
@@ -2854,6 +3040,11 @@ void play_kh2(Model &m, const Mat &base)
         kh2_actors.clear();
     Kh2Actor &actor = kh2_actors[drawn_object];
     ++actor.draws;
+    if (m.kh2_rest.size() != m.joints.size()) {
+        m.kh2_rest.resize(m.joints.size());
+        for (std::size_t j = 0; j < m.joints.size(); ++j)
+            m.kh2_rest[j] = inverse(m.joints[j].inverse_bind);
+    }
     struct Pose {
         float weight;
         const std::vector<kh2::Mat4> *joints; // the model's bones (retargeted when its mset is another's)
@@ -2865,23 +3056,153 @@ void play_kh2(Model &m, const Mat &base)
     std::vector<Pose> poses;
     float total = 0.0F, game = 0.0F;
     const Floor ground = floor_of(m, base);
+    // the game's frames this draw: its animations' largest forward step (a `finish` tail's clock), and whether one of
+    // its `idle` animations plays
+    const auto is_idle = [&](const std::string &name) {
+        return std::find(m.kh2_idle.begin(), m.kh2_idle.end(), name) != m.kh2_idle.end();
+    };
+    float game_step = 0.0F;
+    bool any_idle = false;
+    for (const Playing &p : playing) {
+        const auto was = actor.frames.find(p.name);
+        if (was != actor.frames.end() && p.frame > was->second)
+            game_step = std::fmax(game_step, p.frame - was->second);
+        any_idle = any_idle || (p.ratio > 0.0F && is_idle(p.name));
+    }
+    actor.frames.clear();
+    for (const Playing &p : playing)
+        actor.frames[p.name] = p.frame;
+    // the game's state for this actor (khdays_models_actor_state): damage in the air, or a landing straight out of it
+    const auto known = actor_states.find(drawn_object != nullptr ? KHDAYS_REF(drawn_object) - 0x24U : 0U);
+    const ActorState *game_state = known != actor_states.end() ? &known->second : nullptr;
+    if (game_state != nullptr && !m.said_states && !m.kh2_air.empty()) {
+        m.said_states = true;
+        khdays_log("models: %s: the game's actor states reach its draws (state %d): its `air` lines play",
+                   m.name.c_str(), game_state->state);
+    }
+    const bool in_air = game_state != nullptr && game_state->state == kAirDamageState;
+    const bool landed_out = game_state != nullptr && khdays::kh2_moves::landed_out_of_air(
+                                                         game_state->state == kLandingState, game_state->entered,
+                                                         game_state->left_air, kLandedOutOf);
+    // `air`: an animation playing its air slot keeps it while the game fades it out after (into the landing, or the
+    // fall it recovers into); played anew (its weight rising) or gone, it is the ground's again. Its ground slot cut
+    // in for that fade (R200 at frame 9) jumped the legs at the landing
+    const auto was = [&](const std::string &name) {
+        const auto r = actor.ratios.find(name);
+        return r != actor.ratios.end() ? r->second : 0.0F;
+    };
+    {
+        std::set<std::string> airborne;
+        for (const Playing &p : playing)
+            if (p.ratio > 0.0F && m.kh2_air.contains(p.name) &&
+                (in_air || (actor.in_air.contains(p.name) && p.ratio <= was(p.name) + 1e-4F)))
+                airborne.insert(p.name);
+        actor.in_air = std::move(airborne);
+    }
+    // `cut`: an animation the game fades into (its weight rising) takes the whole pose from its first draw; the
+    // game's fade into it depends on the animation before (Ov002_GetModeBlendFrames: a cut from some, a fade from
+    // others)
+    Playing *cutting = nullptr;
+    for (Playing &p : playing) {
+        const auto found = m.kh2_sections.find(p.name);
+        if (!(p.ratio > 0.0F) || p.ratio >= 0.999F || p.ratio < was(p.name) - 1e-4F || found == m.kh2_sections.end())
+            continue;
+        const Kh2Section *now = nullptr; // its section at the game's frame
+        for (const Kh2Section &section : found->second)
+            if (section.from <= p.frame)
+                now = &section;
+        if (now != nullptr && now->cut)
+            cutting = &p;
+    }
+    // the game cutting into an animation other than its idles (its whole weight at its first draw: a hit, the death)
+    // or `cut` taking the pose: a `finish` tail or an idle fade goes at once, as the game's pose does
+    bool game_cut = cutting != nullptr;
+    for (const Playing &p : playing)
+        game_cut = game_cut || (p.ratio >= 0.999F && !(was(p.name) > 0.0F) && !is_idle(p.name));
+    if (game_cut) {
+        actor.tail.stop();
+        actor.held_fade.stop();
+    }
+    actor.ratios.clear();
+    for (const Playing &p : playing)
+        actor.ratios[p.name] = p.ratio;
+    // KHDAYS_SECONDARY_TRACE: what this draw played, a line per draw (the game's weights, then what they became)
+    static const bool trace_kh2 = [] {
+        const char *v = std::getenv("KHDAYS_SECONDARY_TRACE");
+        return v != nullptr && *v != '\0' && *v != '0';
+    }();
+    std::string traced;
+    char part[192];
+    if (trace_kh2)
+        for (const Playing &p : playing) {
+            std::snprintf(part, sizeof(part), " %s f%.1f w%.2f", p.name.c_str(), static_cast<double>(p.frame),
+                          static_cast<double>(p.ratio));
+            traced += part;
+        }
+    if (cutting != nullptr)
+        for (Playing &p : playing)
+            p.ratio = &p == cutting ? 1.0F : 0.0F;
+    bool landing_plays = false;
+    for (const Playing &p : playing)
+        landing_plays = landing_plays || (p.ratio > 0.0F && p.name == m.kh2_landing);
+    if (!landing_plays)
+        actor.landing_from.clear();
+    else if (landed_out && actor.landing_from.empty())
+        actor.landing_from = actor.air_from; // kept while the landing plays, whatever state follows
+    // an `air` slot's clock: the vblanks since the last draw (60 a second, as KH2's ticks), none while paused
+    const u32 vblank = khdays_events_vblank_count();
+    const float realtime = actor.vblank != 0 && !khdays_link_paused()
+                               ? static_cast<float>(std::min<u32>(vblank - actor.vblank, 8U))
+                               : 0.0F;
+    actor.vblank = vblank;
+    Kh2Finish finishing; // the `finish` section the game plays now, before going on to an idle
+    float finishing_ratio = 0.0F;
+    std::string main; // the animation the game plays most, and its fade into an idle (`blend`)
+    float main_ratio = -1.0F, main_blend = 0.0F;
     for (const Playing &p : playing) {
         const float ratio = std::fmax(0.0F, std::fmin(1.0F, p.ratio));
         total += ratio;
-        // its section at the game's frame: the last one starting at or before it
+        // its sections: `air`'s in the game's damage in the air, `land`'s landing straight out of it, else its own
+        const std::vector<Kh2Section> *list = nullptr;
+        std::string key = p.name;
+        const auto air = m.kh2_air.find(p.name);
+        const auto landing = m.kh2_air.find(actor.landing_from);
         const auto found = m.kh2_sections.find(p.name);
+        if (actor.in_air.contains(p.name) && air != m.kh2_air.end()) {
+            list = &air->second.air;
+            key += "#air";
+            actor.air_from = p.name;
+        } else if (p.name == m.kh2_landing && landing != m.kh2_air.end() && !landing->second.land.empty()) {
+            list = &landing->second.land;
+            key += "#land";
+        } else if (found != m.kh2_sections.end()) {
+            list = &found->second;
+        }
+        // its section at the game's frame: the last one starting at or before it
         int now = -1;
-        if (found != m.kh2_sections.end())
-            for (std::size_t s = 0; s < found->second.size() && found->second[s].from <= p.frame; ++s)
+        if (list != nullptr)
+            for (std::size_t s = 0; s < list->size() && (*list)[s].from <= p.frame; ++s)
                 now = static_cast<int>(s);
+        if (ratio > main_ratio) {
+            const auto own = m.kh2_idle_blend.find(p.name);
+            main = p.name;
+            main_ratio = ratio;
+            main_blend = own != m.kh2_idle_blend.end() ? own->second
+                         : now >= 0                    ? (*list)[static_cast<std::size_t>(now)].blend
+                                                       : 0.0F;
+        }
         if (now < 0) {
             game += ratio;
+            if (trace_kh2) {
+                std::snprintf(part, sizeof(part), " | %s game's w%.2f", p.name.c_str(), static_cast<double>(ratio));
+                traced += part;
+            }
             continue;
         }
-        const std::vector<Kh2Section> &sections = found->second;
+        const std::vector<Kh2Section> &sections = *list;
         const Kh2Section &section = sections[static_cast<std::size_t>(now)];
         const kh2::Motion *motion = m.kh2_motions->motion(section.slot);
-        Kh2Animation &a = actor.animations[p.name];
+        Kh2Animation &a = actor.animations[key];
         const bool starts = a.seen + 1 != actor.draws;
         // the game set its frame back: counted on when the KH2 motion loops (it loops itself), else the section
         // starts over (a damage animation played again); a followed section's frame is its time either way
@@ -2932,7 +3253,7 @@ void play_kh2(Model &m, const Mat &base)
         if (section.start_loop && enters && !section.follow)
             for (const auto &[name, other] : actor.animations) {
                 const auto os = m.kh2_sections.find(name);
-                if (name == p.name || other.seen + 1 < actor.draws || os == m.kh2_sections.end() ||
+                if (name == key || other.seen + 1 < actor.draws || os == m.kh2_sections.end() ||
                     static_cast<std::size_t>(other.section) >= os->second.size() ||
                     os->second[static_cast<std::size_t>(other.section)].slot != section.slot)
                     continue;
@@ -2947,15 +3268,21 @@ void play_kh2(Model &m, const Mat &base)
             track.ticks = start + (to > section.from ? (p.frame - section.from) / (to - section.from) *
                                                            (motion->length_ticks() - start)
                                                      : 0.0F);
-        } else if (enters) { // its clock from the section's first frame
-            track.ticks = start + (p.frame - section.from) * 2.0F;
+        } else if (enters) { // its clock from the section's first frame (an `air` slot's from its start)
+            track.ticks = start + (section.realtime ? 0.0F : (p.frame - section.from) * 2.0F);
+        } else if (section.realtime) { // the game's frames: Days holds the damage on a frame while in the air
+            track.ticks += realtime;
         } else {
             track.ticks += step * 2.0F; // BCA frames at 30 a second
         }
         a.section = now;
+        kh2_played[p.name] = {section.slot, section.from};
+        // a cut: the whole pose a new motion's (or one started over), nothing fading from the last
+        if (enters && ratio >= 0.999F && a.fade.empty())
+            kh2_pose_cut = true;
         float faded = 0.0F; // the weight of the pose fading out
         if (!a.fade.empty()) {
-            a.fade_left -= step;
+            a.fade_left -= section.realtime ? realtime * 0.5F : step; // BCA frames
             if (a.fade_left > 0.0F && a.fade_motion != nullptr)
                 faded = a.fade_left / a.fade_frames;
             else
@@ -2976,6 +3303,12 @@ void play_kh2(Model &m, const Mat &base)
         else
             track.joints = track.player->joints();
         a.shown = ticks;
+        if (trace_kh2) {
+            std::snprintf(part, sizeof(part), " | %s slot %zu t%.1f w%.2f%s%s", key.c_str(), section.slot,
+                          static_cast<double>(ticks), static_cast<double>(ratio), starts ? " starts" : "",
+                          enters && !starts ? " enters" : "");
+            traced += part;
+        }
         const FaceMotion face{m.kh2_motions->attributes(section.slot), ticks, enters ? -1.0F : track.face_ticks};
         track.face_ticks = ticks;
         // `offset`, gliding to its `to` over the motion's length
@@ -2985,9 +3318,149 @@ void play_kh2(Model &m, const Mat &base)
         if (faded > 0.0F)
             poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}});
         poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face});
+        if (section.finish && !any_idle && !is_idle(p.name) && ratio > finishing_ratio) {
+            finishing = {p.name, section.slot, section.then, section.blend, ticks};
+            finishing_ratio = ratio;
+        }
     }
-    if (poses.empty())
+    // `finish`: the game went on to its idles before the motion ended (and plays nothing else): the motion's rest
+    // and the `finish` slots play out on the game's frames, then fade into the idle's; anything else drops them
+    bool idle_only = true, from_seen = false;
+    for (const Playing &p : playing) {
+        const bool fading_out =
+            actor.tail.active() && p.name == actor.tail_from && p.ratio <= actor.tail_from_ratio + 1e-4F;
+        if (actor.tail.active() && p.name == actor.tail_from && p.ratio > 0.0F) {
+            from_seen = fading_out;
+            actor.tail_from_ratio = p.ratio;
+        }
+        idle_only = idle_only && (!(p.ratio > 0.0F) || is_idle(p.name) || p.name == actor.finish.name || fading_out);
+    }
+    if (!from_seen)
+        actor.tail_from.clear();
+    if (actor.tail.active()) {
+        actor.tail.step(game_step, idle_only);
+    } else if (any_idle && idle_only && !actor.finish.name.empty()) {
+        std::vector<khdays::kh2_tail::Piece> pieces;
+        const auto add = [&](std::size_t slot, float from) {
+            if (const kh2::Motion *motion = m.kh2_motions->motion(slot))
+                pieces.push_back({static_cast<int>(slot), from, motion->length_ticks()});
+        };
+        add(actor.finish.slot, actor.finish.ticks);
+        for (const std::size_t slot : actor.finish.then)
+            add(slot, 0.0F);
+        actor.tail.start(std::move(pieces), actor.finish.blend);
+        actor.tail_from = actor.finish.name;
+        actor.tail_from_ratio = 1.0F;
+        for (const Playing &p : playing)
+            if (p.name == actor.tail_from)
+                actor.tail_from_ratio = p.ratio;
+        actor.tail_piece = 0;
+        actor.tail_track = {};
+        actor.tail_faded = {};
+        actor.finish = {};
+    }
+    if (!finishing.name.empty())
+        actor.finish = std::move(finishing);
+    else if (!idle_only)
+        actor.finish = {};
+    if (actor.tail.active()) { // its pieces at their share, the rest of the pose at what is left
+        if (actor.tail.piece() != actor.tail_piece) {
+            actor.tail_faded = std::move(actor.tail_track);
+            actor.tail_track = {};
+            actor.tail_piece = actor.tail.piece();
+        }
+        const auto evaluate = [&](Kh2Track &t, int slot, float ticks) -> const kh2::Motion * {
+            const kh2::Motion *motion = slot >= 0 ? m.kh2_motions->motion(static_cast<std::size_t>(slot)) : nullptr;
+            if (motion == nullptr)
+                return nullptr;
+            if (!t.player)
+                t.player = std::make_unique<kh2::MotionPlayer>(*m.kh2_skeleton);
+            ticks = std::fmin(ticks, motion->length_ticks());
+            const Mat taken = m.kh2_root_motion ? kIdentity : inverse(motion->root_motion(ticks));
+            const Mat world = ground.on ? mul(ground.world, taken) : kIdentity;
+            t.player->evaluate(*motion, ticks, world, ground.on ? &ground.ray : nullptr);
+            if (m.kh2_retarget)
+                m.kh2_retarget->apply(t.player->joints(), t.joints);
+            else
+                t.joints = t.player->joints();
+            t.ticks = ticks;
+            return motion;
+        };
+        const float share = actor.tail.weight(), under = actor.tail.faded_weight();
+        const float whole = total > 0.0F ? total : 1.0F;
+        for (Pose &pose : poses)
+            pose.weight *= 1.0F - share;
+        game *= 1.0F - share;
+        if (const kh2::Motion *motion = evaluate(actor.tail_track, actor.tail.slot(), actor.tail.ticks())) {
+            const int slot = actor.tail.slot();
+            const FaceMotion face{m.kh2_motions->attributes(static_cast<std::size_t>(slot)), actor.tail_track.ticks,
+                                  actor.tail_track.face_ticks};
+            actor.tail_track.face_ticks = actor.tail_track.ticks;
+            poses.push_back(
+                {share * (1.0F - under) * whole, &actor.tail_track.joints, motion, actor.tail_track.ticks, {}, face});
+        }
+        if (under > 0.0F)
+            if (const kh2::Motion *motion =
+                    evaluate(actor.tail_faded, actor.tail.faded_slot(), actor.tail.faded_ticks()))
+                poses.push_back(
+                    {share * under * whole, &actor.tail_faded.joints, motion, actor.tail_faded.ticks, {}, {}});
+        total = game;
+        for (const Pose &pose : poses)
+            total += pose.weight;
+    }
+    // `blend` into an idle: when the game goes on to one of its idles from an animation with an idle fade (its own
+    // `<animation> blend` line or its section's `blend`), the pose last shown fades into the game's over those frames
+    // (the game's own fade not counted; a `finish` tail fades itself); anything else the game plays ends it
+    const auto into_idle = [&]() {
+        if (actor.held_fade.weight() > 0.0F) {
+            bool other = actor.tail.active();
+            for (const Playing &p : playing) {
+                if (!(p.ratio > 0.0F) || is_idle(p.name))
+                    continue;
+                if (p.name == actor.held_from && p.ratio <= actor.held_from_ratio + 1e-4F) // fading out, not anew
+                    actor.held_from_ratio = p.ratio;
+                else
+                    other = true;
+            }
+            actor.held_fade.step(game_step, other);
+        } else if (actor.held_fade.starts(any_idle, actor.had_idle, actor.main.empty() || is_idle(actor.main),
+                                          actor.main_blend, actor.tail.active()) &&
+                   actor.shown.size() == skin.size()) {
+            actor.held = actor.shown;
+            actor.held_fade.start(actor.main_blend);
+            actor.held_from = actor.main;
+            actor.held_from_ratio = 1.0F;
+            for (const Playing &p : playing)
+                if (p.name == actor.held_from)
+                    actor.held_from_ratio = p.ratio;
+        }
+        // the pose held relative to the model's root (where the game puts it now: kept in the view's space, it stood
+        // where he was while he moved on, and slid), mixed as frames
+        const float w = actor.held_fade.weight();
+        if (w > 0.0F && actor.held.size() == skin.size())
+            for (std::size_t j = 0; j < skin.size(); ++j) {
+                const Mat both[2] = {mul(base, actor.held[j]), mul(skin[j], m.kh2_rest[j])};
+                const float share[2] = {w, 1.0F - w};
+                skin[j] = mul(khdays::models::blend_frames(both, share, 2), m.joints[j].inverse_bind);
+            }
+        const Mat from_root = inverse(base);
+        actor.shown.resize(skin.size());
+        for (std::size_t j = 0; j < skin.size(); ++j)
+            actor.shown[j] = mul(from_root, mul(skin[j], m.kh2_rest[j]));
+        actor.main = main;
+        actor.main_blend = main_blend;
+        actor.had_idle = any_idle;
+        if (trace_kh2)
+            khdays_log("kh2 trace: %s v%u state %d;%s%s; idle fade %.2f, tail %.2f%s", m.name.c_str(), vblank,
+                       game_state != nullptr ? game_state->state : -1, traced.c_str(),
+                       cutting != nullptr ? " (cut)" : "", static_cast<double>(actor.held_fade.weight()),
+                       static_cast<double>(actor.tail.active() ? actor.tail.weight() : 0.0F),
+                       kh2_pose_cut ? " (a pose cut)" : "");
+    };
+    if (poses.empty()) {
+        into_idle();
         return;
+    }
     const Pose *most = &poses.front();
     for (const Pose &pose : poses)
         if (pose.weight > most->weight)
@@ -3013,24 +3486,26 @@ void play_kh2(Model &m, const Mat &base)
         }
         placed.push_back(std::move(joints));
     }
+    // each joint's frames mixed (turns the shorter way round: a mix of the matrices shrank a joint between turns far
+    // apart), the game's own pose at its share
+    std::vector<Mat> frames;
+    std::vector<float> weights;
     for (std::size_t j = 0; j < m.joints.size() && j < m.kh2_bone.size(); ++j) {
         const int bone = m.kh2_bone[j];
         if (bone < 0)
             continue;
-        Mat blended{};
-        const float own = game / total;
-        for (std::size_t i = 0; i < 16; ++i)
-            blended[i] = skin[j][i] * own;
+        frames.assign(1, mul(skin[j], m.kh2_rest[j]));
+        weights.assign(1, game / total);
         for (std::size_t p = 0; p < poses.size(); ++p) {
             if (static_cast<std::size_t>(bone) >= placed[p].size())
                 continue;
-            const Mat s = mul(placed[p][static_cast<std::size_t>(bone)], m.joints[j].inverse_bind);
-            const float wgt = poses[p].weight / total;
-            for (std::size_t i = 0; i < 16; ++i)
-                blended[i] += s[i] * wgt;
+            frames.push_back(placed[p][static_cast<std::size_t>(bone)]);
+            weights.push_back(poses[p].weight / total);
         }
-        skin[j] = blended;
+        skin[j] =
+            mul(khdays::models::blend_frames(frames.data(), weights.data(), frames.size()), m.joints[j].inverse_bind);
     }
+    into_idle();
 }
 
 // The face's frame (face.h), once a game frame: each block's slot held by what comes first -- its character's
@@ -3300,6 +3775,8 @@ void draw(Model &m)
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
     face_motion = {};
     kh2_game_share = 1.0F;
+    kh2_pose_cut = false;
+    kh2_played.clear();
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
     play_face(m);
@@ -3327,14 +3804,13 @@ void draw(Model &m)
         in.has_camera = drawn_has_camera;
         in.projection = proj_f;
         in.game_nodes = &d;
+        in.pose_cut = kh2_pose_cut;
         for (const Playing &p : playing) {
             khdays::secondary::DrawAnimation a{p.name, -1, -1.0F, p.frame, p.frames, p.ratio};
-            if (const auto s = m.kh2_sections.find(p.name); s != m.kh2_sections.end() && m.kh2_motions)
-                for (const Kh2Section &section : s->second)
-                    if (section.from <= p.frame) {
-                        a.slot = static_cast<int>(section.slot);
-                        a.section = section.from;
-                    }
+            if (const auto played = kh2_played.find(p.name); played != kh2_played.end()) {
+                a.slot = static_cast<int>(played->second.first);
+                a.section = played->second.second;
+            }
             in.animations.push_back(std::move(a));
         }
         khdays::secondary::apply_model_secondary(*m.secondary, in, skin);
@@ -3768,6 +4244,28 @@ extern "C" void khdays_models_node_placed(unsigned node, int sent)
         words[i] =
             static_cast<uint32_t>(static_cast<int32_t>(std::lround(hand[static_cast<std::size_t>(i)] * 4096.0F)));
     khdays_g3d_command(0x16, words);
+// Ov022_EnterActorState (through controls_hooks.c's khdays_trace_actor_state): an actor's state as it entered it,
+// by its scene node (actor +0x20, whose render object is at +0x24 as the ground's link has it), when it entered it,
+// and when it last left state 5 (damage in the air, a launch included: Ov022_ResolveGuardBreakState)
+extern "C" void khdays_models_actor_state(int actor, int state)
+{
+    const auto a = static_cast<KhdaysRef>(actor);
+    if (a == 0 || !khdays_game_ram(a + 0x20) || !khdays_game_ram(a + 0x23))
+        return;
+    KhdaysRef node = 0;
+    std::memcpy(&node, KHDAYS_W(a + 0x20), 4);
+    if (node == 0)
+        return;
+    if (actor_states.size() > 64)
+        actor_states.clear();
+    ActorState &s = actor_states[node];
+    const u32 now = khdays_events_vblank_count();
+    if (s.state == kAirDamageState && state != kAirDamageState)
+        s.left_air = now;
+    s.state = state;
+    s.entered = now;
+}
+
 extern "C" void khdays_models_actor_ground(void *mover)
 {
     KhdaysRef owner = 0;

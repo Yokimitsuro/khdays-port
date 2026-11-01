@@ -35,6 +35,9 @@ struct ActorInput {
     // the view cut (a camera cut): what the body did since the last draw is a new shot, not motion; the cloth is
     // carried with it and settled in the new pose instead of being flung
     bool cut = false;
+    // the pose cut to another motion with no fade (a damage's KH2 motion starting): legs jumping far in it start
+    // the cloth afresh on the new pose, draped round them, rather than carried through them from the last one
+    bool pose_cut = false;
     Environment *environment = nullptr;
     // `game_shape`: each particle's place on the replaced game model's surface (the solver's space) and how far
     // it may take it there (0 none: too far from that surface); null without

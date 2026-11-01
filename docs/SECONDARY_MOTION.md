@@ -32,7 +32,7 @@ motion. The file and its includes are read again within a second of being saved
 |---|---|
 | `KHDAYS_SECONDARY_DEBUG=1` | draws particles (white), anchors (red), links (cyan, toward red when stretched past 10 %; anchors orange) and colliders (yellow cores and end rings) over the model; or `debug on` in the file |
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
-| `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log; for a jump at a loop or a cut |
+| `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked; a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
 
 ## The model it works on
@@ -334,7 +334,13 @@ in the new pose, and the rest is simulated through the draw (`Actor::update`):
 rebasing everything for a cuff skipped the coat's tick, and going from the calm
 idle to the guard (no blend; the replay with an instant 60 degree turn) the legs
 jumped through the coat, 13-20 cm deep on that frame, a leg left outside it in
-game. A start places every control on its target at the
+game. A pose cut the model says it made (`ActorInput::pose_cut`: a KH2 motion taking
+the whole pose with no fade) in which a body collider's end the cloth touches moves
+more than 12 cm about the first group's reference bone starts the actor afresh
+(`kPoseCutJump`): carried on, the coat kept the side of a leg it came from, the wrong
+one after the jump (KH2's aerial damage cut in from an attack: a foot 92 cm in one
+draw, the leg out through the coat); started, the legs sweep in from rest and drape
+it round them. A start places every control on its target at the
 first pose, still relative to it (a moving start moves with it), relaxes contacts
 `first_pose_iterations` times, then lets the groups that hang (`settle on`: the
 drawstrings, the hood) settle in that pose: 40 ticks with the pose held, one
@@ -508,7 +514,10 @@ khdays-secondary-replay ... --reference B_EX390.mdlx B_EX390.mset 0,10,140,208
 ```
 
 Plays the scenarios (idle, run with a 180 degree turn and a dead stop, attack with
-lunges, jump with landing, guard, wall and corner while turning and backing,
+lunges, jump with landing, guard, launched into KH2's aerial damage front and back
+and cut to its landing (`air_front`, `air_back`; `KHDAYS_REPLAY_AIR=<s>` the time in
+the air, `KHDAYS_REPLAY_FROM=<slot>` the motion launched out of, no-fade segments
+sent as pose cuts unless `KHDAYS_REPLAY_NO_POSE_CUT=1`), wall and corner while turning and backing,
 spawn while running, teleport, a camera cut, a platform rising under the coat) on the KH2
 motions as the port does (retargeted, matrix cross-fades between segments, root
 motion taken out, the actor placed on a path), and writes `report.txt` (clipping

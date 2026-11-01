@@ -1233,6 +1233,74 @@ void spread_start()
     CHECK(widest > 0.3F); // around the legs, whose feet are 0.3 m and more out
 }
 
+void pose_cut_restart()
+{
+    // a pose cut (a new motion with no fade) jumping the legs starts the cloth afresh, draped round them; one
+    // leaving the legs where they were, or a leg jump with no cut, carries the cloth on
+    Skirt s = make_skirt(8, 3);
+    s.radius = 0.15F;
+    for (const char *leg : {"leg_l", "leg_r"}) {
+        s.sk.names.push_back(leg);
+        s.sk.parent.push_back(1);
+        Mat4 m = kIdentity4;
+        m[12] = leg[4] == 'l' ? 0.08F : -0.08F;
+        m[13] = 1.0F;
+        s.sk.rest.push_back(m);
+    }
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s,
+                                   "collider leg_l capsule leg_l length 0.6 radius 0.06\n"
+                                   "collider leg_r capsule leg_r length 0.6 radius 0.06\n",
+                                   "  thickness 0.01\n"),
+                      s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    // the legs down, then spread `spread` radians either side
+    const auto legs = [&](float spread) {
+        auto pose = pose_of(s.sk, {});
+        for (std::size_t b = pose.size() - 2; b < pose.size(); ++b) {
+            const float side = b == pose.size() - 2 ? 1.0F : -1.0F;
+            pose[b].q = axis_angle({0, 0, 1}, -kPi * 0.5F + side * spread);
+            pose[b].t = {side * 0.08F, 1.0F, 0.0F};
+        }
+        return pose;
+    };
+    Actor a(rig, 4);
+    std::vector<Frame> pose = legs(0.0F);
+    ActorInput in;
+    in.pose = &pose;
+    int f = 0;
+    const auto draw = [&](float spread, bool cut) {
+        pose = legs(spread);
+        in.seconds = f++ / 60.0;
+        in.pose_cut = cut;
+        a.update(in);
+    };
+    for (int k = 0; k < 30; ++k)
+        draw(0.0F, false);
+    const auto generation = a.generation();
+    draw(0.0F, true); // a cut to the same pose of the legs: carried on
+    CHECK(a.generation() == generation);
+    draw(0.05F, false); // the legs moving 3 cm with no cut: carried on
+    CHECK(a.generation() == generation);
+    draw(0.6F, true); // their feet jumping 0.3 m out across a cut: started afresh
+    CHECK(a.generation() == generation + 1);
+    float inside = 0.0F;
+    for (std::size_t i = 0; i < rig->particles.size(); ++i) {
+        if (!rig->particles[i].dynamic)
+            continue;
+        const Vec3 x = a.simulation().positions()[i];
+        for (const auto &c : a.simulation().colliders()) {
+            float u, v;
+            closest_segments(x, x, c.a, c.b, u, v);
+            inside = maxf(inside, c.ra - length(x - lerp(c.a, c.b, v)));
+        }
+    }
+    std::printf("pose cut: deepest %.3f m inside a leg after the restart\n", static_cast<double>(inside));
+    CHECK(inside < 0.005F);
+}
+
 void stress()
 {
     const Skirt s = make_skirt(8, 4);
@@ -1378,6 +1446,7 @@ int main()
     outward_axis();
     contacts();
     spread_start();
+    pose_cut_restart();
     hair_and_wind();
     stress();
     n_ex830();

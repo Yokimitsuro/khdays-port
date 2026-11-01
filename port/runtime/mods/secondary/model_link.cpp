@@ -176,6 +176,7 @@ struct ModelSecondary {
         std::vector<float> game_weight;
         std::vector<Frame> last_pose; // KHDAYS_SECONDARY_TRACE: the last draw's, for its steps
         std::vector<Vec3> last_cloth;
+        std::uint64_t last_generation = 0; // KHDAYS_SECONDARY_TRACE: the actor's starts so far
         // the root node in its placement's space as held (hold_root), and the last draw's difference from it
         Mat4 root_held = kIdentity4;
         bool has_root = false;
@@ -1219,7 +1220,7 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
     std::string anims;
     char part[160];
     for (const auto &x : a.animations) {
-        std::snprintf(part, sizeof(part), " %s f%.1f/%.1f w%.2f", x.name.c_str(),
+        std::snprintf(part, sizeof(part), " %s slot %d f%.1f/%.1f w%.2f", x.name.c_str(), x.slot,
                       static_cast<double>(x.seconds * 30.0F), static_cast<double>(x.length * 30.0F),
                       static_cast<double>(x.weight));
         anims += part;
@@ -1260,7 +1261,13 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
                static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
                static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str(),
                static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn),
-               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn), a.cut ? " (a cut)" : "");
+               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn),
+               a.cut        ? " (a cut)"
+               : a.pose_cut ? " (a pose cut)"
+                            : "");
+    if (state.actor->generation() != state.last_generation)
+        khdays_log("secondary trace: %s v%u: the cloth started afresh", m.name.c_str(), now);
+    state.last_generation = state.actor->generation();
     state.last_pose = m.pose;
     state.last_cloth = x;
 }
@@ -1408,6 +1415,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         state.camera_world = camera_world;
         state.has_camera = true;
     }
+    a.pose_cut = in.pose_cut;
     for (const auto &d : in.animations)
         a.animations.push_back({d.name, d.slot, d.section, d.frame / 30.0F, d.frames / 30.0F, d.weight});
     // `game_shape`: the coat locked on the game model's coat now: each locked strip from its fixed point down its

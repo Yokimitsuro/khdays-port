@@ -34,6 +34,10 @@ void khdays_models_joint_saved(void *matrix, unsigned node);
  * its owner's KH2 model's feet are put on that floor (IKAdjust). */
 void khdays_models_actor_ground(void *mover);
 
+/* Ov022_EnterActorState: the battle actor `actor` (a DS address) enters state `state`; its KH2 model plays
+ * motions.txt's `air` lines in state 5 (damage in the air) and `land` on landing straight out of it. */
+void khdays_models_actor_state(int actor, int state);
+
 /* NNSi_G3dFuncSbcSHP, the shape's display list `list` (`size` bytes): whether
  * it is left unsent (the draw's model is replaced). One left unsent still has
  * its matrix commands run (MTX_RESTORE, MTX_SCALE, ...): the nodes after it

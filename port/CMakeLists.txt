@@ -914,6 +914,14 @@ add_executable(khdays-attached-frame-test tests/attached_frame_test.cpp)
 target_compile_options(khdays-attached-frame-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-attached-frame COMMAND khdays-attached-frame-test)
 
+add_executable(khdays-kh2-tail-test tests/kh2_tail_test.cpp)
+target_compile_options(khdays-kh2-tail-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-tail COMMAND khdays-kh2-tail-test)
+
+add_executable(khdays-kh2-moves-test tests/kh2_moves_test.cpp)
+target_compile_options(khdays-kh2-moves-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-moves COMMAND khdays-kh2-moves-test)
+
 # Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
 # synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
 set(KHDAYS_SECONDARY_SOURCES

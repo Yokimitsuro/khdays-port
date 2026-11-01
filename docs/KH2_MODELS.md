@@ -140,6 +140,106 @@ passes the frame it last set back from (the button let go), what is left of the
 loop's fade ends within `blend` frames, so a long loop blend does not drag into
 the release. Its speed is the game's animation's stretched to the motion.
 
+**Finish.** A Days animation the game cuts short by going back to its idle (or a
+KH2 motion longer than the game's animation) can play its KH2 motion out:
+
+```text
+idle b_ro_A000                   # the game's idle animations a `finish` plays out into
+b_ro_B000 604 blend 8 finish     # the rest of 604, then the idle's motion
+b_ro_A007 54 finish 24           # the rest of the damage (54), then slot 24, then the idle's
+```
+
+While the game plays the animation nothing changes: another attack, a move, a jump,
+a fall or a hit takes over where Days lets it. When the game goes on to one of its
+`idle` animations (and plays nothing else) before the KH2 motion has ended, the
+motion plays on from where it stood, then each slot after `finish` once from its
+start, then the idle's motion fades in; each piece cross-fades into the next over the
+line's `blend` frames (a cut without one). The game's own fade out of the animation
+does not count against it, but the game playing anything else does: it drops the
+tail, which fades out from where it stands over the same frames where the game fades,
+and goes at once where the game cuts (another animation at its whole weight on its
+first draw: a hit, the death; an idle fade likewise). Faded on the game's frames, it
+stood over a hit's first eight frames (the coat restarted round its pose, the legs
+then swept through it) and over the death's slow motion for seconds, half of each
+pose mixed (his head bent out of shape). Its clock is the
+game's animation frames (2 ticks each), so pauses and slow-downs carry over; its
+pieces play in place (their root motion out, as every motion here), on the floor
+(IKAdjust), and the weapon keeps the KH2 hand's grip (`kh2_tail.h`, `play_kh2`).
+Measured on P_EX110: the damage motions R200-R203 (slots 42-54) end on KH2's calm
+idle (0.4 degrees mean from slot 2's first pose), slot 24 (R010, 26 ticks) starts
+there (0.8) and ends on the battle idle (0.4 from slot 0's): KH2's readying; the
+attacks R300, R302 and R304 end exactly on the battle idle, R331 13 degrees off.
+Days' attacks are 24-42 frames (48-84 ticks) against 50-80 ticks.
+
+**Into the idle.** `<game animation> blend <frames>` (no slot) gives the game's
+own animation a fade into the idle; a section's `blend` is also its fade into the
+idle. When the game goes on to one of its `idle` animations (none playing the draw
+before) from the animation it played most, and that has a fade, the pose last shown
+fades into the game's over those frames, the game's own fade not counted; a KH2
+motion or the game's own pose alike. Anything else the game plays (an attack, a
+move, the animation played anew) ends it at once, and a `finish` tail fades itself.
+Its clock is the game's animation frames (`kh2_moves.h`, `play_kh2`). The pose is held
+relative to the model's root, where the game puts it now: held in the view's space,
+it stayed where he was while he moved on (an attack's lunge) and he slid forward and
+back. Every mix of poses on the model (the game's fades, a `finish` tail, these)
+mixes each joint's frames, turns the shorter way round (`attached_frame.h`
+`blend_frames`): a mix of the matrices shrank a joint between turns far apart (his
+head squashed in the game's fade from the aerial damage into the death, `b_ro_e003`).
+
+**In the air.** Days' damage in the air plays the ground damage animations and holds
+them on a frame (`Ov022_StepInterruptible`: frame 9) until a landing, a recovery in
+the air or the fall it times out into. The game's state says it: an actor enters
+state 5 for a hit in the air or one that launches it, state 4 for one that leaves it
+standing (`Ov022_ResolveGuardBreakState`), and lands in state 0x16 (animation 4,
+`b_ro_A004`); `Ov022_EnterActorState`'s hook (prepare.py, `controls_hooks.c`'s
+`khdays_trace_actor_state`) hands each change to `khdays_models_actor_state`, by the
+actor's scene node (+0x20), whose render object (+0x24) is the model drawn:
+
+```text
+landing b_ro_A004                          # the game's landing animation
+air b_ro_A005 66 land 70 finish 24         # state 5: KH2's aerial damage (66 front, 74 back) loops
+air b_ro_A007 74 land 78 finish 24         # ... landing out of it: KH2's landing, then 24, then the idle
+```
+
+In state 5 the line's animation plays its `air` slot from its start, on the game's
+frames (60 a second, standing while paused: Days' frame stands still) and looping
+from its loop point (P_EX110's R210 and R213 from tick 8). The game leaves it as Days
+does: the fall, a recovery, a landing. Days lands it through its fall state for a
+frame or two (state 5 ends in state 2, which lands at once), so a landing state
+entered 8 vblanks or less after state 5 is a landing out of it: the `landing`
+animation plays the `land` slot (R211, R214: 50 ticks, played once) for as long as
+it plays, then its `finish` slots as a `finish` line's (`kh2_moves.h`). A fall it
+recovered into lands as a jump does. While the game fades the animation out after
+state 5 (into the landing, or the fall a timed-out damage recovers into:
+`Ov022_StepInterruptible` goes to 0x16 on the ground, else 2), it keeps its `air`
+slot; it went back to its ground slot for that fade (R200 at frame 9, cut in under
+the landing). Played anew (its weight rising) or gone, it is the ground's again.
+Both slots start as the game starts them: a cut
+where it cuts (the port adds no fade), a cross-fade where it fades. `blend` on an
+`air` line is the `finish` tail's fade into the idle after the landing.
+The session log says once that the states reach the model's draws.
+
+**Cuts and the cloth.** A draw where a KH2 motion takes the whole pose with no fade
+(a new motion or section, or one started over) tells the cloth so
+(`ActorInput::pose_cut`); when a body collider's end moves more than 12 cm about the
+coat's reference bone in it, the cloth starts afresh on the new pose, draped round the
+legs as a first draw is, instead of carried on from the last pose with a leg on the
+wrong side of it (KH2's aerial damage starting out of `b_ro_B002`: a foot 92 cm in one
+draw, the leg out through the coat). The cloth's `control` lines see the slot a game
+animation plays, an `air` or `land` slot included. Still open: KH2's front landing
+(R211, slot 70) throws the knees up 40 cm into a deep crouch in its first frames and
+the leg there ends up in front of the coat's front panel (the replay's `air_front`),
+whatever the cut, the substeps or `no_sim`; the back landing (R214) does not.
+
+**`cut`.** A section's `cut` makes its motion take the whole pose at once where the
+game fades into its animation (its weight rising): every other animation's weight is
+taken as 0 until the game's fade is done (`b_ro_e003 66 cut`, the death). Days fades
+from one animation into another by a table of the pair (`Ov022_SetAnimState`:
+`Ov002_GetModeBlendFrames(new, old, model)`, not decompiled; an animation already
+playing is not set again), so the same animation is cut into from some and faded
+into from others: the death after a hit in the air, on the ground or a guard. It
+needs a slot: the game's own pose comes blended from the game.
+
 `start_loop` starts a section's clock at the motion's loop point instead of its
 first tick (with `follow`, the section stretched onto the loop point to the end),
 for a game that plays a start and a loop as two animations where KH2 has one
