@@ -43,7 +43,7 @@ enum class Param : int {
     max_strain,         // fraction a strip's links (and anchors) may stretch under contact
     row_max_strain,     // fraction row and shear links may stretch (KH2's coats flare their rows)
     smoothing,          // s: the drawn shape eased toward the solved one (in its reference bone's space)
-    follow_bone_scale,  // 0..1: of its follow_bone shares it takes (how much the legs carry it)
+    follow_bone_scale,  // 0..3: of its follow_bone shares it takes (how much the legs carry it; 95 % at most)
     drape,              // 0 or 1: its target swung out of the body colliders down its strip (Simulation::drape)
     draw_guard,         // 0 or 1: a smoothed drawn face cutting into the body moved out (guard_drawn_faces)
     face_friction,      // 0..1: friction of a face resting on a body collider (0: it slides freely)

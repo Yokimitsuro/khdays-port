@@ -22,7 +22,8 @@
 // those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
 // deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
 // collide with it); KHDAYS_REPLAY_POKE=<bone,...> those bones' body vertices through the coat's drawn surface;
-// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_SHEET=<frame>,<step> the contact sheet's frames.
+// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>] the
+// contact sheet's frames.
 
 #include "actor.h"
 
@@ -568,8 +569,17 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
     std::vector<Frame> pose(nb), shown(nb), out(nb);
     std::vector<std::uint8_t> written(nb);
     std::vector<Vec3> verts;
-    const int sheet_cols = 10;
-    Image sheet(sheet_cols * 160, 2 * 240);
+    // KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]: its frames, and fewer bigger pictures
+    int sheet_cols = 10, cell = 1;
+    if (const char *e = std::getenv("KHDAYS_REPLAY_SHEET"); e != nullptr) {
+        int a = 0, b = 0, c = 0, d = 0;
+        if (std::sscanf(e, "%d,%d,%d,%d", &a, &b, &c, &d) == 4) {
+            sheet_cols = std::max(1, c);
+            cell = std::clamp(d, 1, 4);
+        }
+    }
+    const int cw = 160 * cell, ch = 240 * cell;
+    Image sheet(sheet_cols * cw, 2 * ch);
     int drawn = 0;
     const int frames = static_cast<int>(sc.seconds * draw_hz);
     int every = std::max(1, frames / sheet_cols), first = 0;
@@ -1119,15 +1129,15 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         }
         if (sheets && f >= first && (f - first) % every == 0 && drawn < sheet_cols) {
             const Vec3 centre = place.t + Vec3{0.0F, 0.85F, 0.0F};
-            Image front(160, 240), side(160, 240);
-            draw(sim, sc.room, env_at, front, 160, 240, centre, false);
-            draw(sim, sc.room, env_at, side, 160, 240, centre, true);
-            for (int y = 0; y < 240; ++y)
-                for (int x = 0; x < 160; ++x)
+            Image front(cw, ch), side(cw, ch);
+            draw(sim, sc.room, env_at, front, cw, ch, centre, false);
+            draw(sim, sc.room, env_at, side, cw, ch, centre, true);
+            for (int y = 0; y < ch; ++y)
+                for (int x = 0; x < cw; ++x)
                     for (int k = 0; k < 3; ++k) {
-                        const auto src = static_cast<std::size_t>((y * 160 + x) * 3 + k);
-                        sheet.rgb[static_cast<std::size_t>((y * sheet.w + drawn * 160 + x) * 3 + k)] = front.rgb[src];
-                        sheet.rgb[static_cast<std::size_t>(((y + 240) * sheet.w + drawn * 160 + x) * 3 + k)] =
+                        const auto src = static_cast<std::size_t>((y * cw + x) * 3 + k);
+                        sheet.rgb[static_cast<std::size_t>((y * sheet.w + drawn * cw + x) * 3 + k)] = front.rgb[src];
+                        sheet.rgb[static_cast<std::size_t>(((y + ch) * sheet.w + drawn * cw + x) * 3 + k)] =
                             side.rgb[src];
                     }
             ++drawn;

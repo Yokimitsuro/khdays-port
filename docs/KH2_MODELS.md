@@ -226,10 +226,13 @@ coat's reference bone in it, the cloth starts afresh on the new pose, draped rou
 legs as a first draw is, instead of carried on from the last pose with a leg on the
 wrong side of it (KH2's aerial damage starting out of `b_ro_B002`: a foot 92 cm in one
 draw, the leg out through the coat). The cloth's `control` lines see the slot a game
-animation plays, an `air` or `land` slot included. Still open: KH2's front landing
-(R211, slot 70) throws the knees up 40 cm into a deep crouch in its first frames and
-the leg there ends up in front of the coat's front panel (the replay's `air_front`),
-whatever the cut, the substeps or `no_sim`; the back landing (R214) does not.
+animation plays, an `air` or `land` slot included. KH2's front landing (R211, slot
+70) throws a thigh up and forward into a deep crouch, away from where the coat hangs,
+so the thighs' carry (`follow_bone`) fell to its `always` share and the leg came out in
+front of the coat, whatever the cut, the substeps, `no_sim` or `max_distance` (its
+target hangs behind the leg). N_EX830's file has its front and side strips ride the
+thighs through the crouch (`control land_front`: `follow_bone_scale 3` for its first
+0.4 s, `docs/SECONDARY_MOTION.md`); the back landing (R214) needs none.
 
 **`cut`.** A section's `cut` makes its motion take the whole pose at once where the
 game fades into its animation (its weight rising): every other animation's weight is

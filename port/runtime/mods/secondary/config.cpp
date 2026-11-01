@@ -41,7 +41,7 @@ const ParamInfo kParams[kParamCount] = {
     {"max_strain", 0.08F, 0.0F, 4.0F, Unit::none},
     {"row_max_strain", 0.08F, 0.0F, 8.0F, Unit::none},
     {"smoothing", 0.0F, 0.0F, 0.5F, Unit::none},
-    {"follow_bone_scale", 1.0F, 0.0F, 1.0F, Unit::none},
+    {"follow_bone_scale", 1.0F, 0.0F, 3.0F, Unit::none},
     {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
     {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},
     {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},

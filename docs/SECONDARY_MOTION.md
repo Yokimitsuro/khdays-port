@@ -137,7 +137,7 @@ the free end, by depth along the strip.
 | `guided_inertia` | 0..2 | 0.5 | the same in guided mode |
 | `max_speed` | m/s | 20 | relative to the target |
 | `smoothing` | s | 0 | the drawn shape eased toward the solved one, in its reference bone's space (below) |
-| `follow_bone_scale` | 0..1 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`) |
+| `follow_bone_scale` | 0..3 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`); over 1 the legs carry it more than `always` and `weight` give, 95 % at most in all (a thigh swung up and forward, away from where the coat hangs, takes the panels in front of it along) |
 | `drape` | 0 or 1 | 1 | its target swung out of the body colliders down its strip (eased, below) |
 | `draw_guard` | 0 or 1 | 1 | a smoothed drawn face cutting into the body deeper than the solved one moved out (below) |
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
