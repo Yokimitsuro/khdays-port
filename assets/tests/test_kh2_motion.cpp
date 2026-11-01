@@ -329,6 +329,26 @@ void test_attributes() {
            "the trigger, read from its offset");
 }
 
+void test_added() {
+    // another set's slots from slot 10: its slot 0 at 10, nothing between; not over the set's own
+    const Bytes a = mset(2, {0, 1}, {0.0F, 60.0F}, {{1, 5, 0, {{0, 0.0F}, {1, 1.5707964F}}, 1}}, {}, 5.0F);
+    const Bytes b = mset(2, {0, 1}, {0.0F, 60.0F}, {{1, 5, 0, {{0, 0.0F}, {1, 1.0F}}, 1}}, {}, 0.0F);
+    kh2::MotionSet set(a.data(), a.size());
+    const kh2::MotionSet other(b.data(), b.size());
+    set.add(10, other);
+    expect(set.slots() == 12 && set.motion(0) != nullptr && set.motion(5) == nullptr && set.motion(10) != nullptr &&
+               set.motion(11) == nullptr,
+           "added from slot 10, the slots between empty");
+    expect(!set.motion(10)->has_root_motion() && set.motion(0)->has_root_motion(), "each its own motion");
+    bool refused = false;
+    try {
+        set.add(4, other);
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    expect(refused, "not over the set's own slots");
+}
+
 void test_refusals() {
     const Bytes junk{1, 2, 3, 4};
     bool refused = false;
@@ -348,6 +368,7 @@ int main() {
         test_ik();
         test_retarget();
         test_attributes();
+        test_added();
         test_refusals();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";

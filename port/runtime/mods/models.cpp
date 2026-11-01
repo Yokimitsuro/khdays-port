@@ -37,6 +37,7 @@ void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, Khdays
 
 #include "khdays/assets/fbx.h"
 #include "khdays/assets/gltf.h"
+#include "khdays/assets/kh2_bar.h"
 #include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/kh2_motion.h"
 #include "khdays/assets/mesh.h"
@@ -369,6 +370,9 @@ struct Kh2Section {
     std::vector<std::size_t> then;
     bool realtime = false; // its clock runs with the game's frames, not its animation's (`air`: Days holds a frame)
     bool cut = false;      // `cut`: it takes the whole pose at once where the game fades into it (the death)
+    // `rotate <x> <y> <z>`: the whole pose turned about the model's origin (degrees, x then y then z, the model's
+    // axes), before `offset`: a motion lying another way than the game's (KH2's game over)
+    Mat turn = kIdentity;
 };
 
 // motions.txt's `air <game animation> <slot> [land <slot>] [finish <slot>...] [blend <frames>]`: while the game
@@ -522,6 +526,7 @@ struct Kh2Animation {
     std::vector<khdays::assets::kh2::Mat4> fade;
     const khdays::assets::kh2::Motion *fade_motion = nullptr;
     std::array<float, 3> fade_offset{}, shown_offset{}; // the fading pose's `offset`, and the one last shown
+    Mat fade_turn = kIdentity, shown_turn = kIdentity;  // the same for `rotate`
     float fade_ticks = 0.0F, fade_left = 0.0F, fade_frames = 0.0F;
     float looped_at = -1.0F; // a loop's fade: the frame the game set back from (-1 none)
     float last_frame = 0.0F;
@@ -1003,6 +1008,11 @@ void load_kh2_motions(Model &model, const std::string &path)
     std::string skeleton;                   // the mdlx the mset was made for, when not this one
     std::vector<std::pair<int, int>> bones; // this model's bone, the skeleton's
     std::vector<khdays::assets::kh2::Retarget::Limb> limbs;
+    struct Extra {
+        std::string file, entry; // `motions <file> [<entry>] at <slot>`: an entry of a BAR of sets (GAMEOVER.mset)
+        std::size_t at = 0;
+    };
+    std::vector<Extra> extras;
     const auto number = [](const std::string &s, float &out) {
         char *end = nullptr;
         out = std::strtof(s.c_str(), &end);
@@ -1035,6 +1045,18 @@ void load_kh2_motions(Model &model, const std::string &path)
             continue;
         if (a == "mset") {
             mset = b;
+        } else if (a == "motions") { // motions <file> [<entry>] at <slot>
+            Extra x{b, {}, 0};
+            std::string w, v;
+            if (words >> w && w != "at") {
+                x.entry = w;
+                words >> w;
+            }
+            char *end = nullptr;
+            if (w != "at" || !(words >> v) || (x.at = std::strtoul(v.c_str(), &end, 10), end == v.c_str() || *end))
+                say("\"" + line + "\": write `motions <file> [<entry>] at <first slot>`; the line is ignored");
+            else
+                extras.push_back(x);
         } else if (a == "root_motion") {
             model.kh2_root_motion = b == "on";
         } else if (a == "idle") { // idle <game animation>...
@@ -1271,7 +1293,11 @@ void load_kh2_motions(Model &model, const std::string &path)
                     section.follow = true;
                 else if (c == "cut")
                     section.cut = true;
-                else if (c == "start_loop")
+                else if (c == "rotate") {
+                    std::array<float, 3> degrees{};
+                    bad = !(options >> degrees[0] >> degrees[1] >> degrees[2]);
+                    section.turn = turn_of(degrees);
+                } else if (c == "start_loop")
                     section.start_loop = true;
                 else if (c == "loop_blend")
                     bad = !(options >> d && number(d, section.loop_blend));
@@ -1287,7 +1313,7 @@ void load_kh2_motions(Model &model, const std::string &path)
             if (bad) {
                 say("\"" + line +
                     "\": after the slot write `blend <frames>`, `loop_blend <frames>`, `follow`, `start_loop`, `cut`, "
-                    "`finish [<slot>...]` or `offset <x> <y> <z> [to <x> <y> <z>]` (centimetres); the line is ignored");
+                    "`rotate <x> <y> <z>` (degrees), `finish [<slot>...]` or `offset <x> <y> <z> [to <x> <y> <z>]` (centimetres); the line is ignored");
                 continue;
             }
             auto &parts = sections[a];
@@ -1352,7 +1378,24 @@ void load_kh2_motions(Model &model, const std::string &path)
             }
             model.kh2_retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, own, source_of, limbs);
         }
-        model.kh2_motions = std::make_shared<kh2::MotionSet>(set.data(), set.size());
+        auto motions = std::make_shared<kh2::MotionSet>(set.data(), set.size());
+        // `motions`: another mset's slots from a slot on; with an entry, that entry of it, a set of its own
+        for (const Extra &x : extras) {
+            const auto bytes = read(file.parent_path() / u8(x.file));
+            if (x.entry.empty()) {
+                motions->add(x.at, kh2::MotionSet(bytes.data(), bytes.size()));
+                continue;
+            }
+            bool found = false;
+            for (const kh2::BarEntry &e : kh2::bar_entries(bytes.data(), bytes.size()))
+                if (!found && e.name == x.entry && kh2::is_bar(bytes.data(), bytes.size(), e.offset)) {
+                    motions->add(x.at, kh2::MotionSet(bytes.data() + e.offset, e.size));
+                    found = true;
+                }
+            if (!found)
+                throw std::runtime_error(x.file + " has no set named " + x.entry);
+        }
+        model.kh2_motions = std::move(motions);
     } catch (const std::exception &e) {
         say(std::string("its motions cannot be read (") + e.what() + "); the game's animations are played");
         model.kh2_motions.reset();
@@ -3052,6 +3095,7 @@ void play_kh2(Model &m, const Mat &base)
         float ticks;
         std::array<float, 3> offset; // KH2 centimetres
         FaceMotion face;
+        Mat turn = kIdentity; // `rotate`
     };
     std::vector<Pose> poses;
     float total = 0.0F, game = 0.0F;
@@ -3234,6 +3278,7 @@ void play_kh2(Model &m, const Mat &base)
             a.fade_motion = m.kh2_motions->motion(sections[static_cast<std::size_t>(a.section)].slot);
             a.fade_ticks = a.shown;
             a.fade_offset = a.shown_offset;
+            a.fade_turn = a.shown_turn;
             a.fade_left = a.fade_frames = blend;
             a.looped_at = loops ? before : -1.0F;
         } else if (!a.fade.empty() && a.looped_at >= 0.0F && (enters || p.frame > a.looped_at)) {
@@ -3315,9 +3360,30 @@ void play_kh2(Model &m, const Mat &base)
         const float along = motion->length_ticks() > 0.0F ? std::fmin(1.0F, ticks / motion->length_ticks()) : 0.0F;
         for (std::size_t i = 0; i < 3; ++i)
             a.shown_offset[i] = section.offset[i] + (section.offset_to[i] - section.offset[i]) * along;
+        a.shown_turn = section.turn;
+        // KHDAYS_SECONDARY_TRACE: on a section's first draw, where the joints the game drives are in its pose and in
+        // the motion's (cm, the model's root space), to tell which way each lies (`rotate`)
+        if (trace_kh2 && enters) {
+            std::string where;
+            const Mat to_root = inverse(base);
+            for (std::size_t j = 0; j < m.joints.size() && j < m.kh2_bone.size(); ++j) {
+                const int bone = m.kh2_bone[j];
+                if (m.joints[j].node < 0 || bone < 0 || static_cast<std::size_t>(bone) >= track.joints.size())
+                    continue;
+                const Mat g = mul(to_root, mul(skin[j], m.kh2_rest[j]));
+                const Mat kh = mul(section.turn, mul(taken, track.joints[static_cast<std::size_t>(bone)]));
+                std::snprintf(
+                    part, sizeof(part), " %s game (%.0f %.0f %.0f) kh2 (%.0f %.0f %.0f);", m.joints[j].name.c_str(),
+                    static_cast<double>(g[12] * 100.0F), static_cast<double>(g[13] * 100.0F),
+                    static_cast<double>(g[14] * 100.0F), static_cast<double>(kh[12] + section.offset[0]),
+                    static_cast<double>(kh[13] + section.offset[1]), static_cast<double>(kh[14] + section.offset[2]));
+                where += part;
+            }
+            khdays_log("kh2 trace: %s %s starts slot %zu:%s", m.name.c_str(), key.c_str(), section.slot, where.c_str());
+        }
         if (faded > 0.0F)
-            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}});
-        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face});
+            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}, a.fade_turn});
+        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face, a.shown_turn});
         if (section.finish && !any_idle && !is_idle(p.name) && ratio > finishing_ratio) {
             finishing = {p.name, section.slot, section.then, section.blend, ticks};
             finishing_ratio = ratio;
@@ -3478,7 +3544,7 @@ void play_kh2(Model &m, const Mat &base)
         const Mat taken = m.kh2_root_motion ? kIdentity : inverse(pose.motion->root_motion(pose.ticks));
         std::vector<Mat> joints;
         for (const auto &g : *pose.joints) {
-            Mat w = mul(taken, g);
+            Mat w = mul(pose.turn, mul(taken, g));
             w[12] = (w[12] + pose.offset[0]) * 0.01F;
             w[13] = (w[13] + pose.offset[1]) * 0.01F;
             w[14] = (w[14] + pose.offset[2]) * 0.01F;

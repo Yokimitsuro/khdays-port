@@ -678,6 +678,19 @@ MotionSet::MotionSet(const std::uint8_t* data, const std::size_t size) {
     }
 }
 
+void MotionSet::add(const std::size_t at, const MotionSet& other) {
+    if (at < motions_.size()) {
+        throw std::runtime_error("slot " + std::to_string(at) + " is the set's own (it has " +
+                                 std::to_string(motions_.size()) + ")");
+    }
+    motions_.resize(at);
+    names_.resize(at);
+    attributes_.resize(at);
+    motions_.insert(motions_.end(), other.motions_.begin(), other.motions_.end());
+    names_.insert(names_.end(), other.names_.begin(), other.names_.end());
+    attributes_.insert(attributes_.end(), other.attributes_.begin(), other.attributes_.end());
+}
+
 const MotionAttributes* MotionSet::attributes(const std::size_t slot) const {
     return slot < attributes_.size() ? attributes_[slot].get() : nullptr;
 }

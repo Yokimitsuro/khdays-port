@@ -119,6 +119,9 @@ public:
     const Motion* motion(std::size_t slot) const;
     std::string name(std::size_t slot) const;                    // its BAR entry's (R000, ...)
     const MotionAttributes* attributes(std::size_t slot) const;  // none: null
+    // Another set's slots from slot `at` on (at or past this one's last; the slots between empty): one model's
+    // motions from several msets (GAMEOVER.mset's, each set of it a BAR of its own)
+    void add(std::size_t at, const MotionSet& other);
 
 private:
     std::vector<std::shared_ptr<Motion>> motions_;

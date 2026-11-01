@@ -262,6 +262,27 @@ b_ro_A010 30 start_loop offset -0.8 -5.4 -42.4
 b_ro_A011 34 offset -0.8 -5.4 -42.4 to -0.8 -10.8 2.6
 ```
 
+`rotate <x> <y> <z>` turns the whole pose about the model's origin (degrees, x
+then y then z on the model's axes, before `offset`): a motion lying another way
+than the game's. With `KHDAYS_SECONDARY_TRACE=1` a section's first draw logs where
+the joints the game drives are in the game's pose and in the motion's (cm, the
+root's space), to tell whether it needs one.
+
+`motions <file> [<entry>] at <slot>` adds another mset's motions from that slot
+on (past the `mset`'s last; its slots then play as the `mset`'s do, on the same
+`skeleton`); with an entry, that entry of a BAR of sets. KH2's GAMEOVER.mset is
+such a BAR: AK10 (#252) and AK12 (#253) are sets of their own, AK10's slots 2, 14,
+26 and 34 moving 228, 229, 133 and 238 model joints, AK12's 2 and 14 228 and 133.
+Slot 14 (`0140`, 300 ticks looping from 0) is Roxas's: P_EX110's 229 joints, lying
+about 150 cm long and under 57 cm high, its hips rising 46 to 58 cm. Days' game
+over screen draws Roxas's model playing `ro_con00` (300 frames); slot 14 lies as it
+does, head and feet the same way (seen in game), with no `rotate`:
+
+```text
+motions GAMEOVER.mset AK10 at 1000
+ro_con00 1014
+```
+
 Measured in the root node's frame (`def_hb` BCA0 entries 5-7 on its model; slot
 30 and 34 on N_EX830 through the bone map, root motion out): hanging, Days' left
 hand (on the ledge) is at (0.2, 133.0, 43.6) cm and KH2's at (1.0, 138.4, 86.0),
