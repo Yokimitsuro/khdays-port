@@ -85,7 +85,10 @@ the palette's first; BITBLTBUF at +0x20, TRXPOS +0x30, TRXREG +0x40, the
 image's address at +0x74), the GS infos (0xA0 bytes; TEX0 at +112, CLAMP at
 +128), the pixels and the palette. The importer uploads each packet's picture
 into a model of the GS's memory as the GS would (PSMCT32 or PSMT8 transfers)
-and reads every texture back in its own format: P_EX110's 8-bit textures are
+and reads every texture back in its own format (the palette's packet sends a whole
+64 x 32 block, though a file keeps only its colours: W_EX010 stores 976, 3,904 of the
+8,192 bytes, and ends before the rest, so what the file has is sent and the rest
+left 0; read whole, its texture failed and drew white): P_EX110's 8-bit textures are
 sent as 32-bit pixels at half the width, so the read-back undoes the GS's
 swizzle. The palette is read as a 16 x 16 PSMCT32 rectangle at CBP with CSM1's
 order (entries 8-15 and 16-23 of each 32 swapped); `kn::clt2vram` is the PS3's
@@ -433,8 +436,29 @@ holds its keyblade in is not bone 251's own: a further -90 degrees about the
 bone's z (`rotate 0 -90 90`) puts the blade along the bone's -y.
 Which bone `hand_to_bone` names for N_EX830 (its skeleton table) is not read. KH2 also turns
 its keyblade in the hand per motion (the weapon mset's bone 0: 15 degrees about
-the blade's flat normal in W_EX010_RX's slot 0, 40 in slot 2); a Days weapon does
-not get that.
+the blade's flat normal in W_EX010_RX's slot 0, 40 in slot 2).
+
+`weapon_motions <mset> <mdlx> <bone>` gives the held weapon those turns: each KH2
+pose of the body plays the same slot of the weapon's mset at its time, on the
+mdlx's bones, mixed by the same weights (KH2's weapon mset is synced to the body's:
+W_EX010_RX's 819 slots are P_EX110's, its 42 motions the same names and lengths;
+the five body slots without one, 6, 10, 218, 534 and 558, play while the keyblade
+is put away). `<bone>` is the weapon itself: W_EX010's bone 2 carries the blade's
+834 vertices, 3 the keychain's ring, 4-10 its links and 11 its token (bones 0 and 1
+none; an mdlx's palette entry 0 is an identity, so entry n is bone n-1). The weapon
+is drawn at the `weapon` line's frame times its blade's turn from its held pose
+(slot 0's first frame), so in KH2's idle it is the line's turn alone. A slot the
+weapon has no motion for, and the game's own animations, count as Days' hold
+(their share of the pose held as the game holds it); without the line nothing
+changes. A replaced weapon model whose `bones.txt` says `held <joint>` has its
+bones from the root to that joint placed from the same pose and the bones under it
+carried (W_EX010 as `w_.p2#0/mdl/ro_w00600.mdlx` with `held kh2_2`, its keychain in
+its own `.secondary.txt` as a chain); a weapon model drawn before its body takes
+the last frame's pose, and one whose body has not been drawn for a second stands
+as the game's nodes place it. Days' own keyblade, unreplaced, gets the turns
+through the frame it is drawn at; dumped to glTF and put back as the mod its
+keychain (one bone, `ro_w_01` at the handle's end, under `ro_w_00`) can be
+simulated as well.
 
 **Fingers under the game's animations.** Days' models have no fingers, so a
 KH2 model's unpaired bones ride their parents at rest (an open hand) whenever

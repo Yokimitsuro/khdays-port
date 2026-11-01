@@ -430,7 +430,18 @@ struct Model {
     std::vector<Limb> limbs;            // bones.txt's `ik`: its two-bone limbs, reaching as the nodes do
     // bones.txt's `mesh_scale`: a joint and its skin matrix's last factor, its vertices scaled in its own axes
     std::vector<std::pair<std::size_t, Mat>> mesh_scales;
-    std::vector<Twist> twists;          // bones.txt's `twist`
+    std::vector<Twist> twists; // bones.txt's `twist`
+    // bones.txt's `held <joint>`: a weapon whose bones from its root to that joint (the weapon itself) the body
+    // holding it poses with its `weapon_motions`; per joint whether it is one of them, and its KH2 bone
+    std::string held_name;
+    std::vector<int> held_bone;
+    // motions.txt's `weapon_motions <mset> <mdlx> <bone>`: what this body holds plays that mset's slots as its
+    // own motions play theirs, on that mdlx's bones; <bone> is the weapon itself. Its held pose under the game's
+    // own animations: slot 0's first frame (each bone's frame, metres)
+    std::shared_ptr<const khdays::assets::kh2::MotionSet> weapon_motions;
+    std::shared_ptr<const khdays::assets::kh2::MotionSkeleton> weapon_skeleton;
+    int weapon_blade = -1;
+    std::vector<Mat> weapon_rest;
     std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
@@ -525,6 +536,7 @@ struct Kh2Animation {
     float shown = 0.0F;
     std::vector<khdays::assets::kh2::Mat4> fade;
     const khdays::assets::kh2::Motion *fade_motion = nullptr;
+    int fade_slot = -1;                                 // its slot
     std::array<float, 3> fade_offset{}, shown_offset{}; // the fading pose's `offset`, and the one last shown
     Mat fade_turn = kIdentity, shown_turn = kIdentity;  // the same for `rotate`
     float fade_ticks = 0.0F, fade_left = 0.0F, fade_frames = 0.0F;
@@ -569,6 +581,8 @@ struct Kh2Actor {
     std::string held_from;
     Kh2Track tail_track, tail_faded; // the piece playing and the one before it fading out
     std::size_t tail_piece = 0;
+    // `weapon_motions`: the weapon's motion players, by slot (a player keeps its pose from one draw to the next)
+    std::map<int, std::unique_ptr<khdays::assets::kh2::MotionPlayer>> weapon_players;
 };
 std::map<const void *, Kh2Actor> kh2_actors; // by render object
 // The KH2 motion with the most weight in this draw, for the face: its attributes, its time and the time it
@@ -633,6 +647,7 @@ struct BonesFile {
     std::array<std::string, 3> spine;
     std::vector<HideLine> hides;
     std::vector<TwistLine> twists;
+    std::string held;
 };
 
 void read_bones(const std::string &model_file, BonesFile &bones)
@@ -646,6 +661,7 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &aligns = bones.aligns;
     auto &places = bones.places;
     auto &spine = bones.spine;
+    auto &held = bones.held;
     auto &twists = bones.twists;
     auto &hides = bones.hides;
     const auto dot = model_file.find_last_of('.');
@@ -773,6 +789,8 @@ void read_bones(const std::string &model_file, BonesFile &bones)
                              "[<share, 0 to 1>]`; the line is ignored\n",
                              path.c_str());
             }
+        } else if (a == "held") { // held <joint>: a weapon posed by the weapon motions of the body holding it
+            held = b;
         } else if (a == "align") {
             std::string kind;
             if (words >> kind && (kind == "foot" || kind == "hand")) {
@@ -874,6 +892,15 @@ struct DsPoseRule {
     std::array<float, 3> degrees{};
     std::vector<std::string> animations;
 };
+
+// A KH2 bone's frame (centimetres) in metres, as the model's joints are
+Mat in_metres(Mat g)
+{
+    g[12] *= 0.01F;
+    g[13] *= 0.01F;
+    g[14] *= 0.01F;
+    return g;
+}
 
 // A turn of `degrees` about x, then y, then z (each about the fixed axes of the frame it is applied in)
 Mat turn_of(const std::array<float, 3> &degrees)
@@ -1013,6 +1040,8 @@ void load_kh2_motions(Model &model, const std::string &path)
         std::size_t at = 0;
     };
     std::vector<Extra> extras;
+    std::string weapon_mset, weapon_mdlx; // `weapon_motions <mset> <mdlx> <bone>`
+    int weapon_bone = -1;
     const auto number = [](const std::string &s, float &out) {
         char *end = nullptr;
         out = std::strtof(s.c_str(), &end);
@@ -1045,6 +1074,19 @@ void load_kh2_motions(Model &model, const std::string &path)
             continue;
         if (a == "mset") {
             mset = b;
+        } else if (a == "weapon_motions") { // weapon_motions <mset> <mdlx> <bone>
+            std::string mdlx, bone;
+            char *end = nullptr;
+            if (!(words >> mdlx >> bone) || (weapon_bone = static_cast<int>(std::strtol(bone.c_str(), &end, 10)),
+                                             end == bone.c_str() || *end || weapon_bone < 0)) {
+                say("\"" + line +
+                    "\": write `weapon_motions <mset> <mdlx> <bone>` (the bone: the weapon itself); "
+                    "the line is ignored");
+                weapon_bone = -1;
+            } else {
+                weapon_mset = b;
+                weapon_mdlx = mdlx;
+            }
         } else if (a == "motions") { // motions <file> [<entry>] at <slot>
             Extra x{b, {}, 0};
             std::string w, v;
@@ -1396,10 +1438,32 @@ void load_kh2_motions(Model &model, const std::string &path)
                 throw std::runtime_error(x.file + " has no set named " + x.entry);
         }
         model.kh2_motions = std::move(motions);
+        // `weapon_motions`: the weapon's mset and skeleton, and its held pose (slot 0's first frame)
+        if (!weapon_mset.empty()) {
+            const auto wset = read(file.parent_path() / u8(weapon_mset));
+            const auto wmdl = read(file.parent_path() / u8(weapon_mdlx));
+            auto skeleton_of =
+                std::make_shared<kh2::MotionSkeleton>(kh2::read_motion_skeleton(wmdl.data(), wmdl.size()));
+            auto weapon = std::make_shared<kh2::MotionSet>(wset.data(), wset.size());
+            if (static_cast<std::size_t>(weapon_bone) >= skeleton_of->joints.size())
+                throw std::runtime_error(weapon_mdlx + " has " + std::to_string(skeleton_of->joints.size()) +
+                                         " bones, no bone " + std::to_string(weapon_bone));
+            if (weapon->motion(0) == nullptr)
+                throw std::runtime_error(weapon_mset + " has no motion in slot 0 (the held pose)");
+            kh2::MotionPlayer held(*skeleton_of);
+            held.evaluate(*weapon->motion(0), 0.0F, kIdentity, nullptr);
+            model.weapon_rest.clear();
+            for (const auto &g : held.joints())
+                model.weapon_rest.push_back(in_metres(g));
+            model.weapon_motions = std::move(weapon);
+            model.weapon_skeleton = std::move(skeleton_of);
+            model.weapon_blade = weapon_bone;
+        }
     } catch (const std::exception &e) {
         say(std::string("its motions cannot be read (") + e.what() + "); the game's animations are played");
         model.kh2_motions.reset();
         model.kh2_retarget.reset();
+        model.weapon_motions.reset();
         resolve_ds_poses(model, ds_rules, say);
         return;
     }
@@ -1636,6 +1700,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &spine_line = bones.spine;
     const auto &hides = bones.hides;
     const auto &twists = bones.twists;
+    model->held_name = bones.held;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -2425,6 +2490,19 @@ std::vector<char> node_sent;
 std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
 float kh2_game_share = 1.0F; // this draw: the game's own pose's share of a KH2 model's (play_kh2; 1 without)
 bool kh2_pose_cut = false;   // this draw: a KH2 motion took the whole pose with no fade (play_kh2): the cloth's cue
+// this draw: `weapon_motions`' pose of the weapon (each bone's frame, metres; empty: none) and the share of it held
+// as Days holds it (the game's own pose and the slots the weapon has no motion for)
+std::vector<Mat> kh2_weapon_pose;
+float kh2_weapon_share = 1.0F;
+// the last weapon a body held with `weapon_motions`: its pose, the turn from the game's weapon frame (what the
+// game draws it at) to the weapon's root, and the vblank of that body's draw (a `held` weapon's model, bones.txt)
+struct HeldWeapon {
+    std::vector<Mat> pose;
+    Mat from_game = kIdentity;
+    u32 vblank = 0;
+    Mat written = kIdentity; // KHDAYS_SECONDARY_TRACE: the frame written for the game to draw it at
+};
+HeldWeapon held_weapon;
 // this draw: each game animation's KH2 slot and its section's first frame, `air` and `land` ones included
 std::map<std::string, std::pair<std::size_t, float>> kh2_played;
 
@@ -3096,6 +3174,7 @@ void play_kh2(Model &m, const Mat &base)
         std::array<float, 3> offset; // KH2 centimetres
         FaceMotion face;
         Mat turn = kIdentity; // `rotate`
+        int slot = -1;        // its mset slot (the weapon's motion plays the same)
     };
     std::vector<Pose> poses;
     float total = 0.0F, game = 0.0F;
@@ -3275,7 +3354,8 @@ void play_kh2(Model &m, const Mat &base)
         } else if ((enters || loops) && blend > 0.0F && shown != a.tracks.end() && !shown->second.joints.empty() &&
                    static_cast<std::size_t>(a.section) < sections.size()) {
             a.fade = shown->second.joints;
-            a.fade_motion = m.kh2_motions->motion(sections[static_cast<std::size_t>(a.section)].slot);
+            a.fade_slot = static_cast<int>(sections[static_cast<std::size_t>(a.section)].slot);
+            a.fade_motion = m.kh2_motions->motion(static_cast<std::size_t>(a.fade_slot));
             a.fade_ticks = a.shown;
             a.fade_offset = a.shown_offset;
             a.fade_turn = a.shown_turn;
@@ -3382,8 +3462,10 @@ void play_kh2(Model &m, const Mat &base)
             khdays_log("kh2 trace: %s %s starts slot %zu:%s", m.name.c_str(), key.c_str(), section.slot, where.c_str());
         }
         if (faded > 0.0F)
-            poses.push_back({ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}, a.fade_turn});
-        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face, a.shown_turn});
+            poses.push_back(
+                {ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}, a.fade_turn, a.fade_slot});
+        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face, a.shown_turn,
+                         static_cast<int>(section.slot)});
         if (section.finish && !any_idle && !is_idle(p.name) && ratio > finishing_ratio) {
             finishing = {p.name, section.slot, section.then, section.blend, ticks};
             finishing_ratio = ratio;
@@ -3462,14 +3544,26 @@ void play_kh2(Model &m, const Mat &base)
             const FaceMotion face{m.kh2_motions->attributes(static_cast<std::size_t>(slot)), actor.tail_track.ticks,
                                   actor.tail_track.face_ticks};
             actor.tail_track.face_ticks = actor.tail_track.ticks;
-            poses.push_back(
-                {share * (1.0F - under) * whole, &actor.tail_track.joints, motion, actor.tail_track.ticks, {}, face});
+            poses.push_back({share * (1.0F - under) * whole,
+                             &actor.tail_track.joints,
+                             motion,
+                             actor.tail_track.ticks,
+                             {},
+                             face,
+                             kIdentity,
+                             slot});
         }
         if (under > 0.0F)
             if (const kh2::Motion *motion =
                     evaluate(actor.tail_faded, actor.tail.faded_slot(), actor.tail.faded_ticks()))
-                poses.push_back(
-                    {share * under * whole, &actor.tail_faded.joints, motion, actor.tail_faded.ticks, {}, {}});
+                poses.push_back({share * under * whole,
+                                 &actor.tail_faded.joints,
+                                 motion,
+                                 actor.tail_faded.ticks,
+                                 {},
+                                 {},
+                                 kIdentity,
+                                 actor.tail.faded_slot()});
         total = game;
         for (const Pose &pose : poses)
             total += pose.weight;
@@ -3538,6 +3632,44 @@ void play_kh2(Model &m, const Mat &base)
         game = 0.0F;
     }
     kh2_game_share = game / total;
+    // `weapon_motions`: each pose's slot played on the weapon at its time, mixed as the poses are; a slot the weapon
+    // has no motion for counts as the game's own pose, held as Days holds it (the held pose, and its share)
+    if (m.weapon_motions) {
+        std::vector<std::vector<Mat>> played;
+        std::vector<float> shares;
+        float days = game;
+        for (const Pose &pose : poses) {
+            const kh2::Motion *motion =
+                pose.slot >= 0 ? m.weapon_motions->motion(static_cast<std::size_t>(pose.slot)) : nullptr;
+            if (motion == nullptr) {
+                days += pose.weight;
+                continue;
+            }
+            auto &player = actor.weapon_players[pose.slot];
+            if (!player)
+                player = std::make_unique<kh2::MotionPlayer>(*m.weapon_skeleton);
+            player->evaluate(*motion, std::fmin(pose.ticks, motion->length_ticks()), kIdentity, nullptr);
+            std::vector<Mat> bones;
+            for (const auto &g : player->joints())
+                bones.push_back(in_metres(g));
+            played.push_back(std::move(bones));
+            shares.push_back(pose.weight / total);
+        }
+        kh2_weapon_share = days / total;
+        kh2_weapon_pose.assign(m.weapon_rest.size(), kIdentity);
+        std::vector<Mat> frames;
+        std::vector<float> weights;
+        for (std::size_t b = 0; b < m.weapon_rest.size(); ++b) {
+            frames.assign(1, m.weapon_rest[b]);
+            weights.assign(1, kh2_weapon_share);
+            for (std::size_t p = 0; p < played.size(); ++p)
+                if (b < played[p].size()) {
+                    frames.push_back(played[p][b]);
+                    weights.push_back(shares[p]);
+                }
+            kh2_weapon_pose[b] = khdays::models::blend_frames(frames.data(), weights.data(), frames.size());
+        }
+    }
     // each pose's joints in metres (KH2's centimetres), the root motion taken out unless it is kept
     std::vector<std::vector<Mat>> placed;
     for (const Pose &pose : poses) {
@@ -3838,11 +3970,74 @@ void draw(Model &m)
         const Mat *w = moved_world(joint, moved);
         skin[j] = w != nullptr ? mul(scaled_root, mul(*w, joint.inverse_bind)) : mul(k[j], joint.bind);
     }
+    // bones.txt's `held`: a weapon's bones from its root to the weapon itself where the body holding it puts them
+    // (its `weapon_motions` pose, from the frame the game draws the weapon at), the bones under them carried
+    // (a chain, for the cloth); a body unseen for a second leaves the model as the game's nodes place it
+    // KHDAYS_SECONDARY_TRACE: where its draw starts against the frame its body wrote for it, and the game's own
+    // turn of its nodes from their rest (Days animating the weapon itself)
+    static const bool trace_held = [] {
+        const char *v = std::getenv("KHDAYS_SECONDARY_TRACE");
+        return v != nullptr && *v != '0';
+    }();
+    if (trace_held && !m.held_name.empty()) {
+        std::string turns;
+        char part[64];
+        for (std::size_t g = 0; g < nodes; ++g) {
+            const Mat local = mul(inverse(root), d[g]);
+            std::snprintf(
+                part, sizeof(part), " %s %.2f cm %.1f deg%s", m.node_names[g].c_str(),
+                static_cast<double>(length({local[12], local[13], local[14]}) * 100.0F),
+                static_cast<double>(
+                    std::acos(std::fmax(-1.0F, std::fmin(1.0F, (local[0] + local[5] + local[10] - 1.0F) / 2.0F))) *
+                    57.29578F),
+                node_sent[g] ? "" : " (not sent)");
+            turns += part;
+        }
+        const Mat &w = held_weapon.written;
+        const Mat rel = mul(inverse(w), root); // its start in the written frame
+        khdays_log(
+            "held trace: %s v%u: its start %.2f cm and %.1f deg off the frame written v%u (in that frame: %.2f "
+            "%.2f %.2f cm); nodes from the first:%s",
+            m.name.c_str(), khdays_events_vblank_count(),
+            static_cast<double>(length({rel[12], rel[13], rel[14]}) * 100.0F),
+            static_cast<double>(
+                std::acos(std::fmax(-1.0F, std::fmin(1.0F, (rel[0] + rel[5] + rel[10] - 1.0F) / 2.0F))) * 57.29578F),
+            held_weapon.vblank, static_cast<double>(rel[12] * 100.0F), static_cast<double>(rel[13] * 100.0F),
+            static_cast<double>(rel[14] * 100.0F), turns.c_str());
+    }
+    if (!m.held_name.empty() && !held_weapon.pose.empty() && khdays_events_vblank_count() - held_weapon.vblank < 60U) {
+        if (m.held_bone.size() != m.joints.size()) { // the held joint and those above it, by their KH2 bones
+            m.held_bone.assign(m.joints.size(), -1);
+            for (std::size_t j = 0; j < m.joints.size(); ++j)
+                if (m.joints[j].name == m.held_name)
+                    for (int up = static_cast<int>(j); up >= 0; up = m.joints[static_cast<std::size_t>(up)].parent) {
+                        const std::string &name = m.joints[static_cast<std::size_t>(up)].name;
+                        if (name.rfind("kh2_", 0) == 0)
+                            m.held_bone[static_cast<std::size_t>(up)] = std::atoi(name.c_str() + 4);
+                    }
+        }
+        Mat by = kIdentity;
+        by[0] = by[5] = by[10] = m.scale;
+        std::vector<char> moved_joint(m.joints.size(), 0);
+        for (std::size_t j = 0; j < m.joints.size(); ++j) {
+            const int b = m.held_bone[j], parent = m.joints[j].parent;
+            if (b >= 0 && static_cast<std::size_t>(b) < held_weapon.pose.size()) {
+                skin[j] = mul(mul(root, mul(held_weapon.from_game, held_weapon.pose[static_cast<std::size_t>(b)])),
+                              mul(by, m.joints[j].inverse_bind));
+                moved_joint[j] = 1;
+            } else if (m.joints[j].node < 0 && parent >= 0 && moved_joint[static_cast<std::size_t>(parent)]) {
+                skin[j] = skin[static_cast<std::size_t>(parent)];
+                moved_joint[j] = 1;
+            }
+        }
+    }
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
     face_motion = {};
     kh2_game_share = 1.0F;
     kh2_pose_cut = false;
     kh2_played.clear();
+    kh2_weapon_pose.clear();
+    kh2_weapon_share = 1.0F;
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
     play_face(m);
@@ -3887,6 +4082,22 @@ void draw(Model &m)
     const auto joint_frame = [&](std::size_t j) {
         return mul(mul(skin[j], inverse(m.joints[j].inverse_bind)), unscale);
     };
+    // the frame a weapon is drawn at on joint j for node g: the line's turn; with `weapon_motions` the weapon itself
+    // turned in the hand as its motion turns it from its held pose (slot 0's first frame: the line's turn alone,
+    // KH2's idle), and the turn from it to the weapon's root kept for a `held` weapon model
+    const std::vector<Mat> &weapon_pose = kh2_weapon_pose.empty() ? m.weapon_rest : kh2_weapon_pose;
+    const float weapon_share = m.weapon_motions && !kh2_weapon_pose.empty() ? kh2_weapon_share : kh2_game_share;
+    const auto hold = [&](std::size_t j, std::size_t g) {
+        const Mat turn = g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity;
+        if (!m.weapon_motions || static_cast<std::size_t>(m.weapon_blade) >= weapon_pose.size())
+            return mul(joint_frame(j), turn);
+        const auto b = static_cast<std::size_t>(m.weapon_blade);
+        const Mat weapon = mul(weapon_pose[b], mul(inverse(m.weapon_rest[b]), turn));
+        held_weapon.pose = weapon_pose;
+        held_weapon.from_game = inverse(weapon);
+        held_weapon.vblank = khdays_events_vblank_count();
+        return mul(joint_frame(j), weapon);
+    };
     // what the game attaches to a node (its weapons) on the joint a `weapon` line names, as it is drawn:
     // its saved matrix (MtxFx43, the same space as the nodes') written over
     for (const auto &[saved, node] : saved_joints) {
@@ -3899,9 +4110,37 @@ void draw(Model &m)
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
-        const Mat at = khdays::models::attached_frame(
-            mul(joint_frame(j), node < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[node] : kIdentity), game,
-            kh2_game_share);
+        const Mat at = khdays::models::attached_frame(hold(j, node), game, weapon_share);
+        if (m.weapon_motions)
+            held_weapon.written = at;
+        // KHDAYS_SECONDARY_TRACE: from the last draw, in the model's root space (the camera and the actor's move
+        // out): how far the joint moved and turned, the frame written turned, and the game's own frame turned
+        static const bool trace_hand = [] {
+            const char *v = std::getenv("KHDAYS_SECONDARY_TRACE");
+            return v != nullptr && *v != '0';
+        }();
+        if (trace_hand && m.weapon_motions) {
+            static Mat last_hand = kIdentity, last_at = kIdentity, last_game = kIdentity;
+            const Mat to_root = inverse(scaled_root), hand = mul(to_root, joint_frame(j)), in_root = mul(to_root, at),
+                      game_root = mul(to_root, game);
+            const auto turned = [](const Mat &a, const Mat &b) {
+                std::array<float, 3> sa{}, sb{};
+                const Mat r = mul(inverse(khdays::models::frame_detail::turn_of(a, sa)),
+                                  khdays::models::frame_detail::turn_of(b, sb));
+                return std::acos(std::fmax(-1.0F, std::fmin(1.0F, (r[0] + r[5] + r[10] - 1.0F) / 2.0F))) * 57.29578F;
+            };
+            khdays_log(
+                "hand trace: %s v%u: joint moved %.2f cm, turned %.2f deg; written turned %.2f deg; the game's "
+                "turned %.2f deg (share %.2f)",
+                m.name.c_str(), khdays_events_vblank_count(),
+                static_cast<double>(
+                    length({hand[12] - last_hand[12], hand[13] - last_hand[13], hand[14] - last_hand[14]}) * 100.0F),
+                static_cast<double>(turned(last_hand, hand)), static_cast<double>(turned(last_at, in_root)),
+                static_cast<double>(turned(last_game, game_root)), static_cast<double>(weapon_share));
+            last_hand = hand;
+            last_at = in_root;
+            last_game = game_root;
+        }
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 fx[c * 3 + r] = static_cast<s32>(std::lround(at[static_cast<std::size_t>(c * 4 + r)] * 4096.0F));
@@ -3943,10 +4182,7 @@ void draw(Model &m)
     for (std::size_t g = 0; g < nodes && g < m.node_joint.size(); ++g) {
         if (g < m.kh2_weapon.size() && m.kh2_weapon[g] >= 0) {
             const auto j = static_cast<std::size_t>(m.kh2_weapon[g]);
-            results[g] = {true,
-                          khdays::models::attached_frame(
-                              mul(joint_frame(j), g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity),
-                              node_matrix[g], kh2_game_share)};
+            results[g] = {true, khdays::models::attached_frame(hold(j, g), node_matrix[g], weapon_share)};
         } else if (m.node_joint[g] >= 0) {
             const auto j = static_cast<std::size_t>(m.node_joint[g]);
             results[g] = {true, mul(mul(joint_frame(j), m.joints[j].to_node), m.node_local[g])};

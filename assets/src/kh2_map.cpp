@@ -626,11 +626,14 @@ GsMemory upload_pictures(const Bytes& b, const std::size_t at) {
         const auto w = static_cast<unsigned>(field(trxreg, 0, 12)), h = static_cast<unsigned>(field(trxreg, 32, 12));
         const std::size_t pixels = at + b.u32(s + 0x74);
         if (psm == 0x00) {  // PSMCT32
-            const std::uint8_t* src = b.at(pixels, std::size_t{w} * h * 4U);
-            for (unsigned y = 0; y < h; ++y) {
-                for (unsigned x = 0; x < w; ++x, src += 4) {
-                    std::memcpy(gs.ct32(x0 + x, y0 + y, bp, bw), src, 4);
-                }
+            // the palettes' upload sends a whole 64 x 32 block though the file keeps only its colours (W_EX010:
+            // 976, 3,904 of 8,192 bytes, the file ending before the rest): what the file has, the rest left 0
+            const std::size_t texels = std::size_t{w} * h;
+            const std::size_t kept = pixels < b.size() ? std::min(texels, (b.size() - pixels) / 4U) : 0U;
+            const std::uint8_t* src = b.at(pixels, kept * 4U);
+            for (std::size_t i = 0; i < kept; ++i, src += 4) {
+                std::memcpy(gs.ct32(x0 + static_cast<unsigned>(i % w), y0 + static_cast<unsigned>(i / w), bp, bw), src,
+                            4);
             }
         } else if (psm == 0x13) {  // PSMT8
             const std::uint8_t* src = b.at(pixels, std::size_t{w} * h);
