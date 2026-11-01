@@ -270,7 +270,15 @@ weapon ro_w_tg_R 172   # <the game's joint> <KH2 bone>
 A hook after the save hands the port the matrix; at the body's draw end it is
 written over with the bone as drawn (its joint's skinning matrix times its rest
 pose: the KH2 motion, or the game's pose for an unmapped animation), in the
-nodes' space (DS fixed point, the same layout). The weapon's root sits on the
+nodes' space (DS fixed point, the same layout). It is turned as the game's
+own saved matrix is by the game's own animation's share of the pose
+(`attached_frame.h`): in an unmapped animation the weapon keeps the game's grip
+at the bone's place, in a KH2 motion the bone's frame and the line's turn, and
+across a fade between them it turns from one to the other. KH2's grip (the bone
+and turn) is not Days': the KH2 hand follows the game's hand, but Days holds its
+keyblade turned against it, and in `b_ro_D002` (`ba/ch/ro/ma1.p.z`, fire cast in
+the air) a blade Days points straight ahead pointed about 45 degrees up. The weapon
+bone itself never turns against the hand in P_EX110's motions (0 degrees in all). The weapon's root sits on the
 bone's frame, as KH2 attaches one: right for a KH2 weapon model; a Days weapon
 model, made for Days' joint, may sit turned. A KH2 weapon's rest pose is not
 its held one: W_EX010's bone 0 rests 1.2 m from its origin, turned (0, 270,

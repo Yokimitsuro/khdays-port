@@ -26,6 +26,7 @@ KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
 void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, KhdaysRef out);
 }
 #include "face.h"
+#include "attached_frame.h"
 #include "kh2_clock.h"
 #include "names.h"
 #include "room_animation.h"
@@ -2208,6 +2209,7 @@ KhdaysG3dMaterial material;
 std::vector<Mat> node_matrix;
 std::vector<char> node_sent;
 std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
+float kh2_game_share = 1.0F; // this draw: the game's own pose's share of a KH2 model's (play_kh2; 1 without)
 
 // The movers Mover_ResolveFloor put on their floor, by owner (their render object is at owner + 0x24: the
 // animation state at +4, func_ov022_020a3c78, its NNSG3dRenderObj at +0x20): the mover and the vblank
@@ -2999,6 +3001,7 @@ void play_kh2(Model &m, const Mat &base)
         total = poses.back().weight = 1.0F;
         game = 0.0F;
     }
+    kh2_game_share = game / total;
     // each pose's joints in metres (KH2's centimetres), the root motion taken out unless it is kept
     std::vector<std::vector<Mat>> placed;
     for (const Pose &pose : poses) {
@@ -3299,6 +3302,7 @@ void draw(Model &m)
     }
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
     face_motion = {};
+    kh2_game_share = 1.0F;
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
     play_face(m);
@@ -3350,8 +3354,15 @@ void draw(Model &m)
         if (node >= m.kh2_weapon.size() || m.kh2_weapon[node] < 0)
             continue;
         const auto j = static_cast<std::size_t>(m.kh2_weapon[node]);
-        const Mat at = mul(joint_frame(j), node < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[node] : kIdentity);
         s32 fx[12];
+        std::memcpy(fx, saved, sizeof(fx)); // the game's own frame for it, as it saved it
+        Mat game = kIdentity;
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 3; ++r)
+                game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
+        const Mat at = khdays::models::attached_frame(
+            mul(joint_frame(j), node < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[node] : kIdentity), game,
+            kh2_game_share);
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 fx[c * 3 + r] = static_cast<s32>(std::lround(at[static_cast<std::size_t>(c * 4 + r)] * 4096.0F));
@@ -3393,7 +3404,10 @@ void draw(Model &m)
     for (std::size_t g = 0; g < nodes && g < m.node_joint.size(); ++g) {
         if (g < m.kh2_weapon.size() && m.kh2_weapon[g] >= 0) {
             const auto j = static_cast<std::size_t>(m.kh2_weapon[g]);
-            results[g] = {true, mul(joint_frame(j), g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity)};
+            results[g] = {true,
+                          khdays::models::attached_frame(
+                              mul(joint_frame(j), g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity),
+                              node_matrix[g], kh2_game_share)};
         } else if (m.node_joint[g] >= 0) {
             const auto j = static_cast<std::size_t>(m.node_joint[g]);
             results[g] = {true, mul(mul(joint_frame(j), m.joints[j].to_node), m.node_local[g])};
