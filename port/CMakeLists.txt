@@ -905,6 +905,11 @@ add_executable(khdays-face-test tests/face_test.cpp runtime/mods/face.cpp)
 target_include_directories(khdays-face-test PRIVATE ../assets/include)
 target_compile_options(khdays-face-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-face COMMAND khdays-face-test)
+
+add_executable(khdays-kh2-clock-test tests/kh2_clock_test.cpp)
+target_compile_options(khdays-kh2-clock-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-clock COMMAND khdays-kh2-clock-test)
+
 # Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
 # synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
 set(KHDAYS_SECONDARY_SOURCES

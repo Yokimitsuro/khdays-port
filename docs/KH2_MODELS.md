@@ -187,8 +187,17 @@ hands the port its render object; its joint animations (anmJnt +0x10, each
 NNSG3dAnmObj: frame +0 fx32, ratio +4, resAnm +8, next +0x10) are named by
 their BCA0's JNT0 dictionary (`names.cpp` `khdays_names_animation`). A motion's
 clock starts when its section starts and moves with the animation's frame (2
-ticks a BCA frame), so the game's pauses and speeds carry over; a frame set back
-counts as one step on (the last forward step). Past its end the motion
+ticks a BCA frame), so the game's pauses and speeds carry over. A frame set back
+is a loop when it wraps a running frame from within two BCA steps of the end (the
+idles; the fall set back to 16): it counts as one step on (the last forward
+step). Set back from anywhere else, or from a frame the game held (unmoved for
+more than three draws), the game rewound it, and the section starts over
+(`kh2_clock.h`; a followed section takes the frame either way): a hit while a
+damage animation plays rolls one of its direction's two (`Ov022_TurnAwayFromDrift`:
+A005/A006 in front, A007/A008 behind), and the same one again is not requested
+anew (`Ov022_SetAnimState` ignores a repeat) but rewound to frame 0. Counted on,
+the 70-tick KH2 damage motion ran to its end and stood there while the 30-frame
+Days animation played again. Past its end the motion
 continues from its loop point (retFrame), or holds when there is none. During
 the game's cross-fade (two animations, their ratios summing to 1) each side is
 blended at the game's weight, the game's own pose standing in for an unmapped one.
