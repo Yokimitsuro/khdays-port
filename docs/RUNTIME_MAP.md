@@ -5352,7 +5352,14 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   mod's character's entry its own folder's `def.p.z` (its model, its `[actions]` for those names), leaving the
   robe piece out when the character has a model of its own. Seen with `KHDAYS_TEST_REVIEW` on two copies (a
   give-up: both players first): the second seat's mod's character on Roxas's base played `ro_result00` (61
-  frames, looped), `ro_result01`, then `ro_result02` (121, looped) with its own clips.
+  frames, looped), `ro_result01`, then `ro_result02` (121, looped) with its own clips. The cards' faces: each
+  entry's 48x48 (6 x 6 characters, 4 bits) from `mrslt/bg_&.p2d.z`'s face sheets (sprite set 3 for characters
+  below 0x10, 4 for the others, 0x24 characters a character), copied into both engines' BG memory at character
+  0x100 + 0x24 x entry, its palette to slot entry + 1; for a mod's character's entry the join copies its picture
+  instead, made into those 36 characters and 15 colours (`ui/character_portraits.cpp`), so that whatever draws
+  the card (the port's HUD pieces move them) shows it. Its buffers are words: the copies
+  (`Callbacks_RunTableEntryB/C`) read a word at a time, and from a byte array not on a word the last byte of each
+  word came from 28 bytes on (seen: the face's columns 6-7 of every character wrong).
 - **Its voice** (read 2026-10-28; heard in `missions_waves`'s session log): an actor's sounds start through
   `Ov022_PlayEntityVoice(actor, archive, entry)` (its action's cues from `Ov022_StepReactionCues`, its hurt,
   the player overlay's own: `Ov030_UpdateMotionController`) and `Ov022_SpawnVoiceCue`, both into `Slot_Spawn` ->

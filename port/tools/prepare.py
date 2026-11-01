@@ -2664,7 +2664,7 @@ HOOKS["main@0202b914"] = [
 # ... a room's mission review (scene 3, ov003: the players on their thrones, each entry of the field's report a seat
 # that is in): a new character's seat's model from its own folder (its [actions] give clips to the thrones'
 # <base>_result00-06), without its base's robe piece when it has a model of its own (<base>_ita, posed for the base's
-# body)
+# body), and its card's face its own picture, copied where the base's would be (ui/character_portraits.h)
 HOOKS["ov002@02069724"] = [
     (  # Ov002_BuildWrapUpReport
         "void Ov002_BuildWrapUpReport(u16 *pReport)\n",
@@ -2688,7 +2688,21 @@ HOOKS["ov003@0204d98c"] = [
         "    if (n < 0) {\n        return game;\n    }\n"
         "    OS_SPrintf(sPortReviewPaths[entry], \"ba/ch/%s/def.p.z\", Port_CharacterCode(n));\n"
         "    return (unsigned int *)sPortReviewPaths[entry];\n}\n"
+        "extern int khdays_ui_review_face(int entry, unsigned char *characters, unsigned short *palette);\n"
+        "static unsigned int sPortReviewFaces[4][0x480 / 4]; /* words: the copies read them a word at a time */\n"
+        "static unsigned int sPortReviewPalettes[4][8];\n"
+        "static void Port_ReviewFace(int entry, int *characters, int *palette)\n{\n"
+        "    if (khdays_ui_review_face(entry, (unsigned char *)sPortReviewFaces[entry],\n"
+        "                              (unsigned short *)sPortReviewPalettes[entry])) {\n"
+        "        *characters = (int)sPortReviewFaces[entry];\n"
+        "        *palette = (int)sPortReviewPalettes[entry];\n"
+        "    }\n}\n"
         "int Ov003_SceneInit(int param_1) {\n",
+    ),
+    (
+        "            iVar12 = iVar11 << 5;\n            Callbacks_RunTableEntryB(1, iVar6, iVar12, 0x480);\n",
+        "            Port_ReviewFace((int)uVar7, &iVar6, &iVar13);\n"
+        "            iVar12 = iVar11 << 5;\n            Callbacks_RunTableEntryB(1, iVar6, iVar12, 0x480);\n",
     ),
     (
         "RegisterSeqAndInit(puVar10, *(unsigned int **)(&data_ov003_0204f8f8[entry[6] * 4]), 1, 6);",

@@ -323,7 +323,9 @@ The decks are each player's own and the room does not share them, so the rules a
 
 After a mission won in a room, the players sit on thrones (the mission review, before the results): a seat on a mod's
 character shows its own model there, without its base's robe piece (the `<base>_ita` model the game poses for its
-base's body; a character without a model of its own keeps it). The thrones play their own animations, each base's in `mrslt/data`, which `[actions]` gives clips to as
+base's body; a character without a model of its own keeps it), and its card on the other screen its `portrait`, else
+its `face`, as the game's own face is: 48x48 in 15 colours (fitted with its shape kept, a pixel under half opaque
+left clear). The thrones play their own animations, each base's in `mrslt/data`, which `[actions]` gives clips to as
 any other: `so_result00` while they sit as it begins, then for the winner `so_result01` as it is shown and
 `so_result02` after, for the others `so_result04` as their place is shown and `so_result05` after (Sora's; another
 base's with its code: `ro_result00`, `ax_result00` ...; Mickey's last is `mickey_result06`). The files hold

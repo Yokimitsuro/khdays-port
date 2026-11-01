@@ -600,20 +600,24 @@ void khdays_characters_review_seat(int entry, int seat)
     }
 }
 
+const KhdaysCharacter *khdays_characters_review_character(int entry)
+{
+    if (entry < 0 || entry >= SEATS || review_seats[entry] == 0) {
+        return NULL;
+    }
+    const int n = khdays_characters_of(review_seats[entry] - 1, -1);
+    return n >= 0 ? khdays_characters_numbered(n) : NULL;
+}
+
 int khdays_characters_review(int entry, int *own_model)
 {
-    *own_model = 0;
-    if (entry < 0 || entry >= SEATS || review_seats[entry] == 0) {
-        return -1;
-    }
-    const int seat = review_seats[entry] - 1;
-    const int n = khdays_characters_of(seat, -1);
-    const KhdaysCharacter *c = n >= 0 ? khdays_characters_numbered(n) : NULL;
+    const KhdaysCharacter *c = khdays_characters_review_character(entry);
     *own_model = c != NULL && c->model != NULL;
     if (c != NULL && tracing) {
-        khdays_log("characters: the review's throne %d is seat %d's, %s (0x%02x)", entry + 1, seat, c->identity, n);
+        khdays_log("characters: the review's throne %d is seat %d's, %s (0x%02x)", entry + 1, review_seats[entry] - 1,
+                   c->identity, c->number);
     }
-    return n;
+    return c != NULL ? c->number : -1;
 }
 
 /* A character's part of the rooms' fingerprint, growing (a file that cannot be read is left out: the copies'

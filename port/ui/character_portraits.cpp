@@ -42,9 +42,8 @@ struct Slot {
 std::map<std::string, std::optional<Picture>> pictures; // by path; empty: it cannot be read (told once)
 std::array<Slot, 4> slots;
 
-const Picture *picture(const KhdaysCharacter *c, bool ally)
+const Picture *picture_file(const KhdaysCharacter *c, const char *relative)
 {
-    const char *relative = ally && c->portrait_ally != nullptr ? c->portrait_ally : c->portrait;
     char path[1024];
     if (relative == nullptr || !khdays_characters_file(c, relative, path, int(sizeof(path))))
         return nullptr;
@@ -67,6 +66,11 @@ const Picture *picture(const KhdaysCharacter *c, bool ally)
         found = pictures.emplace(path, std::move(read)).first;
     }
     return found->second ? &*found->second : nullptr;
+}
+
+const Picture *picture(const KhdaysCharacter *c, bool ally)
+{
+    return picture_file(c, ally && c->portrait_ally != nullptr ? c->portrait_ally : c->portrait);
 }
 
 // The picture fitted into w x h texels, its shape kept and in the middle: each texel the average of the picture's
@@ -176,7 +180,89 @@ bool draw(Slot &slot, int index, const KhdaysBgLayer &layer)
     slot.element.image = slot.image;
     return true;
 }
+
+// Up to `count` colours for the opaque texels (alpha from 128): median cut, each box its texels' average.
+std::vector<std::array<int, 3>> palette_of(const std::vector<std::uint32_t> &texels, std::size_t count)
+{
+    using Box = std::vector<std::array<int, 3>>;
+    std::vector<Box> boxes(1);
+    for (const std::uint32_t t : texels)
+        if ((t >> 24) >= 128)
+            boxes[0].push_back({int(t & 0xff), int((t >> 8) & 0xff), int((t >> 16) & 0xff)});
+    if (boxes[0].empty())
+        return {};
+    while (boxes.size() < count) {
+        // the box with the widest channel, split at its median
+        std::size_t widest = 0;
+        int channel = 0, range = -1;
+        for (std::size_t b = 0; b < boxes.size(); ++b)
+            for (int c = 0; c < 3; ++c) {
+                const auto [lo, hi] = std::minmax_element(boxes[b].begin(), boxes[b].end(),
+                                                          [c](const auto &x, const auto &y) { return x[c] < y[c]; });
+                if (boxes[b].size() > 1 && (*hi)[c] - (*lo)[c] > range) {
+                    range = (*hi)[c] - (*lo)[c];
+                    widest = b;
+                    channel = c;
+                }
+            }
+        if (range <= 0)
+            break;
+        Box &box = boxes[widest];
+        std::sort(box.begin(), box.end(), [channel](const auto &x, const auto &y) { return x[channel] < y[channel]; });
+        Box upper(box.begin() + std::ptrdiff_t(box.size() / 2), box.end());
+        box.resize(box.size() / 2);
+        boxes.push_back(std::move(upper));
+    }
+    std::vector<std::array<int, 3>> colours;
+    for (const Box &box : boxes) {
+        std::array<long, 3> sum{0, 0, 0};
+        for (const auto &x : box)
+            for (int c = 0; c < 3; ++c)
+                sum[std::size_t(c)] += x[std::size_t(c)];
+        const long n = long(box.size());
+        colours.push_back({int(sum[0] / n), int(sum[1] / n), int(sum[2] / n)});
+    }
+    return colours;
+}
 } // namespace
+
+extern "C" int khdays_ui_review_face(int entry, unsigned char *characters, unsigned short *palette)
+{
+    constexpr int kSide = 48, kCells = kSide / 8; // the review's face: 6 x 6 characters of 4 bits
+    const KhdaysCharacter *c = khdays_characters_review_character(entry);
+    const Picture *p = c == nullptr ? nullptr : c->portrait != nullptr ? picture(c, false) : picture_file(c, c->face);
+    if (p == nullptr)
+        return 0;
+    std::vector<std::uint32_t> texels;
+    fit(*p, texels, kSide, kSide);
+    const auto colours = palette_of(texels, 15); // colour 0 is clear
+    std::memset(palette, 0, 16 * sizeof(unsigned short));
+    for (std::size_t i = 0; i < colours.size(); ++i)
+        palette[i + 1] = (unsigned short)((colours[i][0] >> 3) | (colours[i][1] >> 3) << 5 | (colours[i][2] >> 3) << 10);
+    std::memset(characters, 0, kCells * kCells * 32);
+    for (int y = 0; y < kSide; ++y)
+        for (int x = 0; x < kSide; ++x) {
+            const std::uint32_t t = texels[std::size_t(y) * kSide + std::size_t(x)];
+            int index = 0;
+            if ((t >> 24) >= 128) {
+                long best = -1;
+                for (std::size_t i = 0; i < colours.size(); ++i) {
+                    const long dr = long(t & 0xff) - colours[i][0], dg = long((t >> 8) & 0xff) - colours[i][1],
+                               db = long((t >> 16) & 0xff) - colours[i][2];
+                    const long d = dr * dr + dg * dg + db * db;
+                    if (best < 0 || d < best) {
+                        best = d;
+                        index = int(i) + 1;
+                    }
+                }
+            }
+            // the characters in rows of six; each 8 rows of 4 bytes, the left pixel in the low half
+            unsigned char &byte = characters[((y / 8) * kCells + x / 8) * 32 + (y % 8) * 4 + (x % 8) / 2];
+            byte = (unsigned char)(byte | index << ((x & 1) * 4));
+        }
+    khdays_log("characters: %s's face on the review's card %d", c->identity, entry + 1);
+    return 1;
+}
 
 extern "C" void khdays_ui_character_portraits_prepare(void)
 {

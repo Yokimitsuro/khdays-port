@@ -40,6 +40,8 @@ int khdays_characters_place(int seat, int entry);
  * piece is then left out). */
 void khdays_characters_review_seat(int entry, int seat);
 int khdays_characters_review(int entry, int *own_model);
+/* The same entry's mod's character (or form), NULL none; told nothing (asked each frame). */
+const KhdaysCharacter *khdays_characters_review_character(int entry);
 
 /* The game's scene now `scene` (at each change): the title forgets the seats (the story never has them). */
 void khdays_characters_scene(int scene);
