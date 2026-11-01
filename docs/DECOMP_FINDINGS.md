@@ -371,6 +371,13 @@ Taken up (for the record of what the old names were):
     enemy's +0x19f): tally 2, the hearts in the high half and a bonus by the player's step in the low one; it scales
     no player. The enemy's `field_19f` and its spawn record's `field_5d` (`Ov107_LoadSpawnRecord`, byte 0x6d of the
     class's Ms/DP.p2f record) are the hearts it gives.
+  - `Ov002_FitsBudget` (a position check's kind 0, installed by `Ov002_CreateTaskNodePath`) tests whether a
+    player is within the node's radius (+0x20) of its point (+0x2c); there is no budget. Script command 2.8,
+    `Ov002_ScriptSubmitPathTask`, files the check (gate, event, mode, room, the place, kind, radius, height), so
+    "path task" is a position check; its node's `bOwner` (+0x18) is the players' mode (`nMode`: 0 the first, 1 all).
+  - `Ov021_VmCmd0e30` (17.2) makes the Organization emblems' class (`Ov021_CreateEmblemClass`) and
+    `Ov021_MarshalFxAndDispatch2` (17.3) puts one out (`Ov021_EmblemCreate`); `Ov021_ResetChildrenScoreExceptSelf`
+    restarts the other emblems' timers, which decide their points (10 or 8), not a score.
   - `Ov107_EnemyTableHasEntry(class, column)` and `data_ov107_020cb6a4` (6 bytes a class) say which of the six
     enemy code columns a class's overlay is built for (overlay 114 + the byte, 0xff none); `Ov107_LoadEnemyOverlay`
     returns how many columns the overlay takes, `data_ov107_020cbb04` is the next free column.

@@ -266,6 +266,8 @@ ImU32 spot_colour(const MissionSpot& p) {
     case Spot::spawner: return waves[static_cast<std::size_t>(std::max(0, p.wave - 1)) % 4];
     case Spot::chest: return IM_COL32(255, 205, 60, 255);
     case Spot::emblem: return IM_COL32(120, 255, 200, 255);
+    case Spot::collect: return IM_COL32(200, 130, 255, 255);
+    case Spot::reach: return IM_COL32(130, 255, 110, 255);
     }
     return IM_COL32_WHITE;
 }
@@ -281,6 +283,8 @@ std::string spot_label(App& app, const MissionSpot& p) {
     }
     case Spot::chest: return tr(app.language, S::mmap_chest);
     case Spot::emblem: return fmt(app.language, S::mmap_spot_badge, {std::to_string(p.emblem + 1)});
+    case Spot::collect: return tr(app.language, S::mmap_collect);
+    case Spot::reach: return tr(app.language, S::mmap_reach);
     }
     return {};
 }
@@ -440,6 +444,27 @@ void draw_room(App& app, ImVec2 size) {
             list->AddQuadFilled(ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y), ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y),
                                 colour);
             break;
+        case Spot::collect: list->AddNgonFilled(c, r * 0.9f, colour, 6); break;
+        case Spot::reach: {
+            // its radius drawn on the ground around it
+            list->AddCircleFilled(c, r * 0.6f, colour);
+            ImVec2 last{};
+            bool has_last = false;
+            for (int k = 0; k <= 32; ++k) {
+                const double a = k * 2.0 * 3.14159265358979 / 32.0;
+                float x, y;
+                const bool seen =
+                    p.project({static_cast<float>(sp.at[0] + std::sin(a) * sp.radius), static_cast<float>(sp.at[1]),
+                               static_cast<float>(sp.at[2] + std::cos(a) * sp.radius)},
+                              &x, &y);
+                const ImVec2 here(at.x + x, at.y + y);
+                if (seen && has_last)
+                    list->AddLine(last, here, colour, 2.0f);
+                last = here;
+                has_last = seen;
+            }
+            break;
+        }
         }
         if (chosen)
             list->AddCircle(c, r * 1.7f, IM_COL32(255, 255, 255, 255), 0, 2.5f);
@@ -489,9 +514,10 @@ void draw_room(App& app, ImVec2 size) {
                 }
                 if (added.kind == Spot::chest)
                     added.contents = first_chest_item(app.language);
-                if (added.kind == Spot::start) {  // one start: moved there
+                if (added.kind == Spot::start || added.kind == Spot::reach) {  // one of each: moved there
+                    const Spot only = added.kind;
                     s.spots.erase(std::remove_if(s.spots.begin(), s.spots.end(),
-                                                 [](const MissionSpot& sp) { return sp.kind == Spot::start; }),
+                                                 [only](const MissionSpot& sp) { return sp.kind == only; }),
                                   s.spots.end());
                 }
                 if (added.kind == Spot::emblem) {  // one of each badge
@@ -633,6 +659,14 @@ void draw_chosen(App& app) {
             sp.emblem = std::clamp(kind, 0, 2);
         break;
     }
+    case Spot::collect: break;
+    case Spot::reach: {
+        float radius = static_cast<float>(sp.radius);
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        if (ImGui::InputFloat(tr(lang, S::mmap_radius), &radius, 0.5f, 1.0f, "%.2f"))
+            sp.radius = std::max(0.1, static_cast<double>(radius));
+        break;
+    }
     }
     if (ImGui::Button(tr(lang, S::mmap_remove))) {
         s.spots.erase(s.spots.begin() + s.chosen);
@@ -678,8 +712,9 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
     }
     // what to add, then click the floor
     ImGui::TextUnformatted(tr(lang, S::mmap_add));
-    const S adds[] = {S::mmap_start, S::mmap_spawner, S::mmap_chest, S::mmap_emblem};
-    for (int i = 0; i < 4; ++i) {
+    const S adds[] = {S::mmap_start,  S::mmap_spawner, S::mmap_chest,
+                      S::mmap_emblem, S::mmap_collect, S::mmap_reach};  // in MissionSpot::Kind's order
+    for (int i = 0; i < static_cast<int>(std::size(adds)); ++i) {
         ImGui::SameLine();
         const bool on = s.placing == i;
         if (on)

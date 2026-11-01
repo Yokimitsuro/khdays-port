@@ -163,7 +163,7 @@ void khdays_missions_start(void)
         char template_path[32], why[300] = "";
         snprintf(template_path, sizeof(template_path), "mi/mi/%04d", m->template_file);
         int served = 0;
-        if (m->spawner_count > 0) {
+        if (khdays_mission_built(m)) {
             unsigned char *built = NULL;
             size_t size = 0;
             char reason[200];

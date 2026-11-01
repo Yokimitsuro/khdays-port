@@ -1,0 +1,23 @@
+# The missions_emblems walk's mission: three Organization emblems (30 points at most), one where the players start
+# and two far from it, no enemy; its goal is 10 points. It is cleared once the emblem at the start is picked up.
+[mission emblems]
+name en = Emblem Hunt
+name fr = Chasse aux emblèmes
+name de = Emblemjagd
+name it = Caccia agli emblemi
+name es = Caza de emblemas
+objective en = Find the Organization emblems!
+objective fr = Trouvez les emblèmes de l'Organisation !
+objective de = Finde die Embleme der Organisation!
+objective it = Trova gli emblemi dell'Organizzazione!
+objective es = ¡Encuentra los emblemas de la Organización!
+world = eh
+room = 2
+category = 0
+time = 120000
+kind = emblems
+goal = 10
+start = 0 0.049 0 -90
+collect = 0 0.5 0
+collect = 10 0.5 4
+collect = -10 0.5 -4

@@ -240,7 +240,38 @@ static void hearts_read(void)
     }
     CHECK(reports.count == 1);
     CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_HEARTS), "hearts") == 0);
-    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_HEARTS + 1) == NULL);
+    khdays_missions_free(&r);
+}
+
+/* An emblems mission places its Organization emblems (collect = x y z; a goal above 10 a piece refused), a reach
+ * mission its place (reach = x y z radius, the radius above 0); both are built without waves. */
+static void emblems_and_reach_read(void)
+{
+    static const char text[] = "[mission emblems]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = emblems\ngoal = 24\ncollect = 1 2 3\ncollect = 4 5 6\ncollect = -1 0.5 2\n"
+                               "[mission no-emblems]\nname en = A\nobjective en = B\nworld = tt\nkind = emblems\n"
+                               "[mission too-many-points]\nname en = A\nobjective en = B\nworld = tt\nkind = emblems\n"
+                               "goal = 11\ncollect = 0 0 0\n"
+                               "[mission reach]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = reach\nreach = 1 0 -2.5 1.5\n"
+                               "[mission no-place]\nname en = A\nobjective en = B\nworld = tt\nkind = reach\n"
+                               "[mission flat]\nname en = A\nobjective en = B\nworld = tt\nkind = reach\n"
+                               "reach = 1 0 2 0\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Places", text, &reports) == 2);
+    CHECK(r.count == 2);
+    if (r.count == 2) {
+        const KhdaysMission *e = &r.list[0], *p = &r.list[1];
+        CHECK(e->kind == KHDAYS_MISSION_EMBLEMS && e->goal == 24 && e->collect_count == 3 && e->spawner_count == 0);
+        CHECK(e->collects[2].at[0] == -1 && e->collects[2].at[1] == 0.5 && khdays_mission_built(e));
+        CHECK(p->kind == KHDAYS_MISSION_REACH && p->has_reach && p->reach[2] == -2.5 && p->reach_radius == 1.5);
+        CHECK(khdays_mission_built(p));
+    }
+    CHECK(reports.count == 4);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_EMBLEMS), "emblems") == 0);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_REACH), "reach") == 0);
+    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_REACH + 1) == NULL);
     khdays_missions_free(&r);
 }
 
@@ -639,6 +670,7 @@ int main(int argc, char **argv)
     waves_chests_and_emblems_read();
     eliminate_read();
     hearts_read();
+    emblems_and_reach_read();
     chests_hold_game_items();
     chests_kept();
     numbering();

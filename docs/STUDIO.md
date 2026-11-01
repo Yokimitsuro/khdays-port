@@ -174,7 +174,9 @@ from its map; a game mission's file otherwise, copied as the mission's own, and
 choosing one sets the world to its); the window says how each mission is played;
 and for each mission its **Places on the map** (below) and its **Words and
 settings** (each one's words in the five languages, where it is listed, when it
-opens, its **Kind** -- with **Hearts**, the **Hearts to collect** (the window
+opens, its **Kind** -- with **Emblems**, the **Points to collect** (the window says
+how many emblems it has and the points they give); with **Reach**, a word on its
+place; with **Hearts**, the **Hearts to collect** (the window
 says how many its waves give); with **Eliminate**, the **Enemy to defeat** and **How
 many** --; **Save to the mod** writes and reads back each change). Another mission
 chosen, or the studio closed, with changes not saved asks first. A game mission's
@@ -193,16 +195,19 @@ room, its file, and the rows the port adds to the list in each language; it exit
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's
-area, start and ending, 0004's "all defeated" check, 0402's tracked enemy class),
-with its world, room, start, time limit, notice and objective:
+area, start and ending, 0004's "all defeated" check, 0402's tracked enemy class,
+0001's position check, 0451's Organization emblems), with its world, room, start,
+time limit, notice and objective:
 
     start = <x> <y> <z> <facing>               # where the players start, degrees
     wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
     chest = <item> at <x> <y> <z> <heading>     # a chest holding one of the game's items
     emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
-    kind = waves | eliminate | hearts            # how it is cleared (default waves)
+    collect = <x> <y> <z>                        # emblems: an Organization emblem
+    reach = <x> <y> <z> <radius>                 # reach: the place to reach
+    kind = waves | eliminate | hearts | emblems | reach   # how it is cleared (default waves)
     target = <class>                             # eliminate: the enemy class to defeat
-    goal = <n>                                   # eliminate: how many of it; hearts: how many hearts (0 or none: all)
+    goal = <n>                                   # eliminate: how many of it; hearts: hearts; emblems: points (0: all)
 
 Wave 1 comes out at the start, each next wave when every enemy of the last is
 defeated. A `waves` mission is cleared when the last wave is (or failed by its
@@ -218,7 +223,15 @@ enemy gives its class's hearts (the game's, `Ms/DP.p2f`; Shadows and Possessors
 give none), and the gauge shows them over all the waves' enemies give (as the
 game's 0101 "Defeat Heartless and collect hearts!", a hearts gauge); waves whose
 enemies give no heart, or a goal above what they give, leave the mission out with
-the reason. The room's own exits are closed while it is played (each of its link
+the reason. An `emblems` mission is cleared once its Organization emblems
+(`collect` lines) give `goal` points: one gives 10 picked up while whole and 8
+once it has shrunk (picking one up makes the others whole again), and the gauge
+counts them over 10 a piece (as the game's 0451 "Find as many Organization
+emblems as you can!": panel 12's overlay, the emblems' class and pieces, script
+commands 4.25, 17.2 and 17.3); by default the goal is 8 a piece. A `reach`
+mission is cleared once a player comes within the radius of its place (as the
+game's 0001 "Reach Axel's position!", script command 2.8). Neither needs enemies:
+their waves, if any, come out as any mission's and end nothing. The room's own exits are closed while it is played (each of its link
 rows, by its key). A chest's item is the item's number, 1 to the game's item
 count (`db/db.p2` entry 0x15): the game reads that item's record as the
 mission starts, so a chest with no item (0) or one past the last leaves the
@@ -235,16 +248,19 @@ emblem's pickup is made at its place, but it is not drawn nor picked up yet).
 **Places on the map** (`app/views/mission_map.cpp`) shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces
 it (the mod's world file and its model of the room), with the players' start (its
-facing drawn), each spawner (its wave and how many enemies), each chest and each
-emblem on it. A place is dragged over the floor (it stands on the floor under the
+facing drawn), each spawner (its wave and how many enemies), each chest, each
+emblem, each Organization emblem and the place to reach (its radius drawn) on it.
+A place is dragged over the floor (it stands on the floor under the
 pointer, the collision's grounds); one is added by choosing what (**Players'
-start**, **Enemies**, **Chest**, **Emblem**) and clicking the floor; the one
+start**, **Enemies**, **Chest**, **Emblem**, **Organization emblem**, **Place to
+reach**) and clicking the floor; the one
 clicked is changed beside the picture: where it is, onto the floor, its facing, a
 spawner's wave and enemies (by name, from the classes the game's missions have,
 with how many of each), what a chest holds (the game's items by name, a search
-box over them; a new chest holds a Potion), an emblem's badge, or it is removed. A
+box over them; a new chest holds a Potion), an emblem's badge, the place to
+reach's radius, or it is removed. A
 place over no floor is ringed red. **Save the places** writes the start, waves,
-chests and emblems at once where the first of them was in the mission's block
+chests, emblems, Organization emblems and place at once where the first of them was in the mission's block
 (`set_mod_mission_spots`), when the mission reads as the port reads it and builds
 as the port builds it; otherwise the file is left as it was and the reason told.
 From the command line (each change checked by building the mission):

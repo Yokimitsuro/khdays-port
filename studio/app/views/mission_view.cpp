@@ -139,8 +139,9 @@ std::string meaning_of(App& app, const Script& script, const ScriptStep& s) {
         S::meaning_time_limit_sub, S::meaning_clock_restart,    S::meaning_player_at,       S::meaning_player_at_marker,
         S::meaning_chests,         S::meaning_emblems,          S::meaning_gauge_defeat,    S::meaning_gauge_hearts,
         S::meaning_gauge_counter,  S::meaning_gauge_other,      S::meaning_gauge_class,     S::meaning_tally_add,
-        S::meaning_group_defeated, S::meaning_all_defeated};
-    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::all_defeated + 1, "a word per meaning");
+        S::meaning_group_defeated, S::meaning_all_defeated,     S::meaning_place_first,     S::meaning_place_all,
+        S::meaning_panel,          S::meaning_org_emblems,      S::meaning_org_emblem};
+    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::org_emblem + 1, "a word per meaning");
     if (m.kind == StepMeaning::none)
         return {};
     std::string text = tr(app.language, words[m.kind]);
@@ -1039,10 +1040,19 @@ int mission_hearts(const ModMission& e) {
     return waves_hearts(waves, hearts);
 }
 
-// How its places are cleared: its last wave defeated, or a goal of its target class's enemies (eliminate) or of
-// the hearts its enemies give (hearts).
+// How many of a setting's lines a mission has ("collect": its Organization emblems).
+int mission_lines(const ModMission& e, const std::string& setting) {
+    int n = 0;
+    for (const auto& [name, value] : e.lines)
+        n += name == setting;
+    return n;
+}
+
+// How its places are cleared: its last wave defeated, or a goal of its target class's enemies (eliminate), of the
+// hearts its enemies give (hearts) or of its Organization emblems' points (emblems), or its place reached (reach).
 void draw_mission_kind(Language lang, ModMission& e) {
-    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate, S::mission_kind_hearts};
+    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate, S::mission_kind_hearts,
+                       S::mission_kind_emblems, S::mission_kind_reach};
     const int count = static_cast<int>(std::size(kinds));
     const int shown = e.kind >= 0 && e.kind < count ? e.kind : KHDAYS_MISSION_WAVES;
     ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
@@ -1054,6 +1064,24 @@ void draw_mission_kind(Language lang, ModMission& e) {
                     e.target = first_wave_class(e);
             }
         ImGui::EndCombo();
+    }
+    if (e.kind == KHDAYS_MISSION_EMBLEMS) {
+        const int placed = mission_lines(e, "collect");
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        ImGui::InputInt(tr(lang, S::mission_emblems_goal), &e.goal);
+        e.goal = std::max(e.goal, 0);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled(
+            "%s", fmt(lang, S::mission_emblems_help, {std::to_string(placed), std::to_string(10 * placed)}).c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (e.kind == KHDAYS_MISSION_REACH) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s",
+                            tr(lang, mission_lines(e, "reach") > 0 ? S::mission_reach_help : S::mission_reach_missing));
+        ImGui::PopTextWrapPos();
+        return;
     }
     if (e.kind == KHDAYS_MISSION_HEARTS) {
         ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());

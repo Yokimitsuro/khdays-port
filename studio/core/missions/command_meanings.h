@@ -54,6 +54,12 @@ struct StepMeaning {
         tally_add,       // the mission tally of kind {0} + {1} (Ov002_ScriptOpInvokeSlot0 -> Ov002_AddMissionTally)
         group_defeated,  // event {0} when group {1} is defeated (Ov002_SubmitRequestBlockKind1, check 0)
         all_defeated,    // event {0} when every enemy out is defeated (Ov002_SubmitRequestBlockKind1, check 1)
+        // a position check (Ov002_ScriptSubmitPathTask -> Ov002_CreateTaskNodePath, kind 0: Ov002_FitsBudget):
+        place_first,  // event {0} when the first player comes within {1} of ({2}, {3}, {4}), room {5} (mode 0)
+        place_all,    // event {0} when every player is within {1} of ({2}, {3}, {4}), room {5} (mode 1)
+        panel,        // panel {0}'s overlay loaded, its commands script group {1} (Ov002_SwitchPanelOverlay)
+        org_emblems,  // {1} Organization emblems, their class in module slot {0} (Ov021_CreateEmblemClass)
+        org_emblem,   // Organization emblem {1} of slot {0} at ({3}, {4}, {5}), room {2}, out while {6} is set
     } kind = none;
     std::vector<std::string> args;
 };

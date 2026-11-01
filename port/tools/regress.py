@@ -176,6 +176,36 @@ WALKS = [
             "mission end\tcleared",
         ),
     ),
+    # ... an emblems mission (port/tests/mods_v2/missions_emblems): three Organization emblems and no enemy, cleared
+    # once the one where the players start is picked up (10 of its 30 points, the goal); the waves walk's route
+    Walk(
+        "missions_emblems",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_emblems",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.emblems/emblems is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... and a reach mission (port/tests/mods_v2/missions_reach): no enemy, cleared once the player, walking ahead
+    # (regress_walks/missions_reach.input: the waves walk's route to the field, then Up held), is within its place
+    Walk(
+        "missions_reach",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_reach",
+        script="missions_reach",
+        window=True,
+        marks=(
+            "missions: test.reach/reach is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

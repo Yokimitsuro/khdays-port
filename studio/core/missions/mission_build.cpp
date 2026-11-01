@@ -28,6 +28,8 @@ namespace fs = std::filesystem;
 constexpr int kBaseMission = 1354;    // survive one minute: one area, its ending without a corridor
 constexpr int kWaveCheckMission = 4;  // defeat the Mega-Shadow: the "all defeated" event (2.7)
 constexpr int kTargetMission = 402;   // defeat seven Fire Plants: the enemy class its gauge counts (2.73)
+constexpr int kReachMission = 1;      // reach Axel's position: a player coming within reach of a place (2.8)
+constexpr int kEmblemMission = 451;   // find the Organization emblems: their overlay, class and pieces (17.2, 17.3)
 constexpr int kMostClasses = 4;       // an area's enemy classes (Ov002_CreateActorFromMarker's four places)
 
 // The events the built area files: the clock's end (as 1354's), the ending's (its field raised, as 1354's), the last
@@ -46,6 +48,21 @@ constexpr int kEventFirstWave = 10;
 constexpr int kGaugeCounter = 4;
 constexpr int kGaugeHearts = 2;
 constexpr int kFieldGoalReached = 8326;
+
+// An emblems mission's Organization emblems as 0451's: panel 12 brings their commands' overlay (4.25: ov021 as
+// script group 17), 2.45 and 2.75 name 392 as 0451's do (what for is not read), 17.2 makes their class in a module
+// slot and 17.3 each one, its GameState field set first (the piece is out while it is). Each gives tally 3 ten
+// points, eight once it has shrunk (Ov021_EmblemStep), on the counter gauge (kind 4).
+constexpr int kEmblemPanel = 12;
+constexpr int kEmblemResource = 392;
+constexpr int kEmblemSlot = 16;
+constexpr int kFirstEmblemField = 8888;
+constexpr int kEmblemPoints = 10, kEmblemLatePoints = 8;
+constexpr int kFlagBits = 0x4000;  // the game's flag array: its fields' bits
+
+// A reach mission's place as 0001's: 2.8 files a position check (Ov002_CreateTaskNodePath) -- mode 0, the first
+// player there; kind 0, within its radius of the point (Ov002_FitsBudget); in the room -- whose event runs c0.
+constexpr int kReachCheck = 1;  // 0001's second 2.8, the first with a place
 
 // An enemy class's record in Ms/DP.p2f (one entry per class) and its hearts' byte in it.
 constexpr char kEnemyRecords[] = "Ms/DP.p2f";
@@ -309,7 +326,7 @@ std::map<int, std::array<std::uint8_t, 16>> class_rows(const GameFiles& game) {
 }  // namespace
 
 bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
-    if (m.spawner_count == 0)
+    if (!khdays_mission_built(&m))
         return fail_with(why, "no wave");
     if (!m.has_start)
         return fail_with(why, "a mission with waves needs where the players start (start = x y z facing)");
@@ -317,6 +334,11 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
     plan.kind = m.kind;
     plan.target = m.has_target ? m.target : -1;
     plan.goal = m.goal;
+    for (int i = 0; i < m.collect_count; ++i)
+        plan.collects.push_back({m.collects[i].at[0], m.collects[i].at[1], m.collects[i].at[2]});
+    plan.has_reach = m.has_reach != 0;
+    plan.reach = {m.reach[0], m.reach[1], m.reach[2]};
+    plan.reach_radius = m.reach_radius;
     plan.world = khdays_world_index(m.world);
     plan.room = m.room;
     plan.time_ms = m.time_ms;
@@ -411,14 +433,24 @@ std::vector<int> load_order(const std::vector<int>& classes, const std::vector<s
 }
 
 bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<std::uint8_t>* out, std::string* why) {
-    if (plan.waves.empty() || plan.waves[0].empty())
-        return fail_with(why, "no wave: a mission made here has its enemies in waves");
     const bool eliminate = plan.kind == KHDAYS_MISSION_ELIMINATE;
     const bool hearts = plan.kind == KHDAYS_MISSION_HEARTS;
-    const bool to_goal = eliminate || hearts;  // cleared at its gauge's goal, not by its last wave
-    MissionFile base, check, target;
+    const bool emblems = plan.kind == KHDAYS_MISSION_EMBLEMS;
+    const bool reach = plan.kind == KHDAYS_MISSION_REACH;
+    const bool to_goal = eliminate || hearts || emblems;  // cleared at its gauge's goal
+    const bool by_waves = !to_goal && !reach;             // cleared by its last wave
+    // (an emblems or reach mission may have no enemies)
+    if ((plan.waves.empty() && by_waves) || (!plan.waves.empty() && plan.waves[0].empty()))
+        return fail_with(why, "no wave: a mission made here has its enemies in waves");
+    if (emblems && plan.collects.empty())
+        return fail_with(why, "no Organization emblem to collect");
+    if (reach && !plan.has_reach)
+        return fail_with(why, "no place to reach");
+    MissionFile base, check, target, reach_base, emblem_base;
     if (!read_mission(game, kBaseMission, &base, why) || !read_mission(game, kWaveCheckMission, &check, why) ||
-        (eliminate && !read_mission(game, kTargetMission, &target, why)))
+        (eliminate && !read_mission(game, kTargetMission, &target, why)) ||
+        (reach && !read_mission(game, kReachMission, &reach_base, why)) ||
+        (emblems && !read_mission(game, kEmblemMission, &emblem_base, why)))
         return false;
     const int area_e = base.entry("11"), start_e = base.entry("_s"), table_e = base.entry("em0"),
               table_m_e = base.entry("em0m"), check_e = check.entry("11");
@@ -479,10 +511,10 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         return fail_with(why, "more spawners than an enemy table holds (255)");
     // the rows in the order the classes' code fits the game's enemy slots (their actors are made in row order, 2.49,
     // each class's code loaded with its first)
-    if (game.overlay_table.empty())
+    if (!classes.empty() && game.overlay_table.empty())
         return fail_with(why, "the game's overlay table is not there (system/arm9_overlay_table.bin)");
     const std::vector<int> order = load_order(classes, game.overlay_table);
-    if (order.empty()) {
+    if (!classes.empty() && order.empty()) {
         std::string listed;
         for (const int c : classes)
             listed += (listed.empty() ? "" : ", ") + std::to_string(c);
@@ -582,7 +614,8 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     for (const auto& [row, n] : pool)
         for (int k = 0; k < n; ++k)
             set_operand(need(copy(w, 2, 49)), 1, integer(row));
-    spawners(w, plan.waves[0]);
+    if (!plan.waves.empty())
+        spawners(w, plan.waves[0]);
     need(copy(w, 2, 50));
     need(copy(w, 2, 10));
     for (int p = 0; p < 4; ++p) {
@@ -616,9 +649,9 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             w.step(carried(*area_i, *clock, w));
         queue(w, kEventClock, "c0");
     }
-    // the last wave defeated is no end of its own where a gauge's goal is (the target class's last enemy, or the
-    // last hearts, are among them, and c0 run twice is not known to be harmless)
-    if (!to_goal || plan.waves.size() > 1)
+    // the last wave defeated is no end of its own where a gauge's goal or a place is (the target class's last enemy,
+    // or the last hearts, are among them, and c0 run twice is not known to be harmless)
+    if (by_waves || plan.waves.size() > 1)
         when_all_defeated(w, event_of(0), next_of(0));
     {
         // the ending: once c0 raises its field, 4000 ms later c1 (to area 99, the results)
@@ -641,6 +674,23 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             queue(w, kEventGoal, "c0");
         }
     }
+    if (reach) {
+        // a player within the radius of the place: c0 (0001's position check, its operands set)
+        const int reach_e = reach_base.entry("11");
+        const Script* reach_i =
+            reach_e < 0 ? nullptr : script_named(reach_base.entries[static_cast<std::size_t>(reach_e)].archive, "_i");
+        ScriptStep& at = need(reach_i == nullptr ? nullptr : copy(w, 2, 8, kReachCheck, nullptr, reach_i));
+        set_operand(at, 1, integer(kEventGoal));
+        set_operand(at, 2, integer(0));  // mode 0: the first player there
+        set_operand(at, 3, integer(plan.room));
+        set_operand(at, 4, none(plan.room));
+        for (int k = 0; k < 3; ++k)
+            set_operand(at, 5 + static_cast<std::size_t>(k), fixed(plan.reach[static_cast<std::size_t>(k)]));
+        set_operand(at, 8, integer(0));  // kind 0: a sphere
+        set_operand(at, 9, fixed(plan.reach_radius));
+        set_operand(at, 12, integer(0));
+        queue(w, kEventGoal, "c0");
+    }
     need(copy(w, 0, 16));
     need(copy(w, 2, 1));
     need(copy(w, 0, 3));
@@ -650,7 +700,7 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         Writer wave;
         wave.script.name = "w" + std::to_string(k + 1);
         spawners(wave, plan.waves[k]);
-        if (!to_goal || k + 1 < plan.waves.size())
+        if (by_waves || k + 1 < plan.waves.size())
             when_all_defeated(wave, event_of(k), next_of(k));
         need(copy(wave, 0, 3));
         area_scripts.push_back(wave.script);
@@ -663,11 +713,22 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     auto copy_start = [&](int group, int command, int nth = 0, const OperandSlot* first = nullptr) {
         return copy(s, group, command, nth, first, start_i);
     };
+    const int emblem_e = emblems ? emblem_base.entry("_s") : -1;
+    const Script* emblem_i =
+        emblem_e < 0 ? nullptr : script_named(emblem_base.entries[static_cast<std::size_t>(emblem_e)].archive, "_i");
+    auto copy_emblem = [&](int group, int command, const OperandSlot* first = nullptr) {
+        return emblem_i == nullptr ? nullptr : copy(s, group, command, 0, first, emblem_i);
+    };
+    const OperandSlot emblem_panel = integer(kEmblemPanel), emblem_resource = integer(kEmblemResource);
     need(copy_start(2, 0));
     need(copy_start(2, 78));
     need(copy_start(2, 76));  // the chests (trbox, by the file's key)
     need(copy_start(2, 83));  // the emblems (evi)
+    if (emblems)
+        need(copy_emblem(4, 25, &emblem_panel));
     need(copy_start(2, 31));  // the enemy table
+    if (emblems)
+        need(copy_emblem(2, 45, &emblem_resource));
     need(copy_start(2, 46));
     const OperandSlot module_flag = state_field(kFieldModule, 1);
     need(copy_start(0, 0, 0, &module_flag));
@@ -700,8 +761,41 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         set_operand(gauge, 0, integer(kGaugeHearts));
         set_operand(gauge, 1, integer(total));
         set_operand(gauge, 2, integer(plan.goal > 0 ? plan.goal : total));
+    } else if (emblems) {
+        const int count = static_cast<int>(plan.collects.size());
+        if (kFirstEmblemField + count > kFlagBits)
+            return fail_with(why, std::to_string(count) +
+                                      " Organization emblems: the game's flag array has fields for " +
+                                      std::to_string(kFlagBits - kFirstEmblemField));
+        if (plan.goal > kEmblemPoints * count)
+            return fail_with(why, "goal " + std::to_string(plan.goal) + ": the emblems give " +
+                                      std::to_string(kEmblemPoints * count) + " points at most");
+        set_operand(gauge, 0, integer(kGaugeCounter));
+        set_operand(gauge, 1, integer(kEmblemPoints * count));
+        set_operand(gauge, 2, integer(plan.goal > 0 ? plan.goal : kEmblemLatePoints * count));
+        need(copy_emblem(2, 75, &emblem_resource));
     }
     set_operand(need(copy_start(2, 52)), 1, {0x40, 0, static_cast<std::int32_t>(s.texts(plan.objective))});
+    if (emblems) {
+        // each emblem's field set, their class, then each one in the room
+        const OperandSlot first_field = state_field(kFirstEmblemField, 1);
+        for (std::size_t k = 0; k < plan.collects.size(); ++k)
+            set_operand(need(copy_emblem(0, 0, &first_field)), 0,
+                        state_field(kFirstEmblemField + static_cast<int>(k), 1));
+        ScriptStep& made = need(copy_emblem(17, 2));
+        set_operand(made, 0, integer(kEmblemSlot));
+        set_operand(made, 1, integer(static_cast<int>(plan.collects.size())));
+        for (std::size_t k = 0; k < plan.collects.size(); ++k) {
+            ScriptStep& e = need(copy_emblem(17, 3));
+            set_operand(e, 0, integer(kEmblemSlot));
+            set_operand(e, 1, integer(static_cast<int>(k)));
+            set_operand(e, 2, integer(plan.room));
+            set_operand(e, 3, state_field(kFirstEmblemField + static_cast<int>(k), 1));
+            for (int c = 0; c < 3; ++c)
+                set_operand(e, 4 + static_cast<std::size_t>(c), fixed(plan.collects[k][static_cast<std::size_t>(c)]));
+            set_operand(e, 7, integer(0));
+        }
+    }
     for (const auto& [field, bits] : kStartFields) {
         const OperandSlot f = state_field(field, bits);
         need(copy_start(0, 0, 0, &f));

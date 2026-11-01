@@ -1,0 +1,20 @@
+# The missions_reach walk's mission: its place is five steps from the start along +x (where Up walks from this
+# start), 1.5 around, with no enemy. The walk walks there; the mission is cleared once the player is within it.
+[mission reach]
+name en = Over There
+name fr = Là-bas
+name de = Dort drüben
+name it = Laggiù
+name es = Allí
+objective en = Reach the marked place!
+objective fr = Atteignez le lieu indiqué !
+objective de = Erreiche den markierten Ort!
+objective it = Raggiungi il luogo indicato!
+objective es = ¡Llega al lugar indicado!
+world = eh
+room = 2
+category = 0
+time = 120000
+kind = reach
+reach = 5 0.049 0 1.5
+start = 0 0.049 0 -90

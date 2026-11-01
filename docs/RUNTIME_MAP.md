@@ -4469,6 +4469,27 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   with kind 2, the waves' enemies' hearts as the total and the goal watched as an eliminate mission's; the
   missions_hearts walk traced 0 of 28 (goal 13), 13 at the Yellow Opera defeated, state 8326 two frames later and
   the mission cleared.
+- **Organization emblems** (read 2026-11-01 for spec 036's emblems missions; 0158, 0251, 0451 and 0951 "Find as
+  many Organization emblems as you can!"): 4.25 `Ov002_SwitchPanelOverlay(12)` loads panel 12's overlay, ov021, and
+  binds its command table as script group 17 (a panel n is group n + 5, one panel at a time); 17.2
+  (`Ov021_VmCmd0e30` -> `Ov021_CreateEmblemClass`) makes their class in a module slot with their count; 17.3
+  (`Ov021_MarshalFxAndDispatch2` -> `Ov021_EmblemCreate`: slot, index, room, GameState field, x, y, z, heading) puts
+  each out while its field is set (0451 sets 8888-8903 first). An emblem's timer starts at 300 and runs down with
+  the frames, the model shrinking with it; the host picks it up when a player comes within reach and posts tally 3
+  ten points while the timer runs, eight once it has run out (`Ov021_EmblemStep`), and the others' timers start
+  again (`Ov021_ResetChildrenScoreExceptSelf`). Their gauge is a counter of 10 a piece (0451: 104 of 160). 2.45 and
+  2.75 name 392 in these missions; what for is not read. The port's emblems missions copy 0451's steps (fields from
+  8888); the missions_emblems walk traced 0 of 30 (goal 10), 10 at the emblem under the start, state 8326 two frames
+  later and the mission cleared, with no enemy (an empty enemy table, as 0001's). 1354's `c0` adds 1 more to the
+  gauge (its survive gauge), seen after the goal in every built mission.
+- **Reaching a place** (read 2026-11-01; 0001 "Reach Axel's position!"): 2.8 `Ov002_ScriptSubmitPathTask(gate,
+  event, mode, room, tag, x, y, z, kind, radius, height, -, threshold)` files a position check
+  (`Ov002_CreateTaskNodePath`) run on the players (`Ov002_NodeWalkPlayersPhase`: mode 0 the first player to pass,
+  1 all of them, each in the room); kind 0 is within the radius of the point (`Ov002_FitsBudget`, a radius with the
+  top bit set always passes), 1-4 other ranges and boxes (`Ov002_TaskNodePathInRange`, `Ov002_IsWithinRangeHorizontal`,
+  `Ov002_PointInBox3D`, `Ov002_PointInBox2D`). The port's reach missions file one (mode 0, kind 0) whose event runs
+  `c0`; the missions_reach walk (Up held from the start, `KHDAYS_TRACE_PLAYER`) stood still 10 s with nothing, then
+  walked toward +x and the mission was cleared as the player came within 1.5 of the place at x = 5.
 - **The enemy code slots**: a class's code is an overlay in six columns of 0x1e00 bytes (RAM from 0x020cbf20,
   0x1e20 apart). `Ov107_SpawnEntityClass` loads a class at its first actor into the first free column
   `data_ov107_020cb6a4[class * 6 + column]` has an overlay for (overlay 114 + the byte; 0xff none), the overlay

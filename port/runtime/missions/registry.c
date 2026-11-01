@@ -62,6 +62,7 @@ static void free_mission(KhdaysMission *m)
     free(m->spawners);
     free(m->chests);
     free(m->emblems);
+    free(m->collects);
     memset(m, 0, sizeof(*m));
 }
 
@@ -219,6 +220,29 @@ static int read_emblem(KhdaysMission *m, char *value)
     return 1;
 }
 
+/* `collect = <x> <y> <z>`: an Organization emblem */
+static int read_collect(KhdaysMission *m, char *value)
+{
+    char *words[8];
+    if (split(value, words, 8) != 3 || !grow((void **)&m->collects, m->collect_count, sizeof(*m->collects))) {
+        return 0;
+    }
+    if (!point(words, m->collects[m->collect_count].at)) {
+        return 0;
+    }
+    ++m->collect_count;
+    return 1;
+}
+
+/* `reach = <x> <y> <z> <radius>`: the place a reach mission's player goes to */
+static int read_reach(KhdaysMission *m, char *value)
+{
+    char *words[8];
+    m->has_reach = split(value, words, 8) == 4 && point(words, m->reach) && real(words[3], &m->reach_radius) &&
+                   m->reach_radius > 0;
+    return m->has_reach;
+}
+
 static int read_start(KhdaysMission *m, char *value)
 {
     char *words[8];
@@ -226,7 +250,7 @@ static int read_start(KhdaysMission *m, char *value)
     return m->has_start;
 }
 
-static const char *const kind_names[] = {"waves", "eliminate", "hearts"};
+static const char *const kind_names[] = {"waves", "eliminate", "hearts", "emblems", "reach"};
 
 const char *khdays_mission_kind_name(int kind)
 {
@@ -242,6 +266,12 @@ static int read_kind(KhdaysMission *m, const char *value)
         }
     }
     return 0;
+}
+
+int khdays_mission_built(const KhdaysMission *m)
+{
+    return m->spawner_count > 0 || (m->kind == KHDAYS_MISSION_EMBLEMS && m->collect_count > 0) ||
+           (m->kind == KHDAYS_MISSION_REACH && m->has_reach);
 }
 
 int khdays_mission_counted(const KhdaysMission *m)
@@ -345,6 +375,20 @@ static int close_block(Reading *g)
     /* how many hearts its enemies give is the game's (the builder reads them: khdays_missions_build) */
     if (!g->bad && m->kind == KHDAYS_MISSION_HEARTS && m->spawner_count == 0) {
         refuse(g, m->line, "a hearts mission has its enemies in waves (wave <n> = ...)");
+    }
+    /* an Organization emblem gives 10 points picked up while whole, 8 once it has shrunk (Ov021_EmblemStep) */
+    if (!g->bad && m->kind == KHDAYS_MISSION_EMBLEMS) {
+        char why[120];
+        if (m->collect_count == 0) {
+            refuse(g, m->line, "an emblems mission places its Organization emblems (collect = <x> <y> <z>)");
+        } else if (m->goal > 10 * m->collect_count) {
+            snprintf(why, sizeof(why), "goal %d: its %d emblems give %d points at most (10 each)", m->goal,
+                     m->collect_count, 10 * m->collect_count);
+            refuse(g, m->line, why);
+        }
+    }
+    if (!g->bad && m->kind == KHDAYS_MISSION_REACH && !m->has_reach) {
+        refuse(g, m->line, "a reach mission names its place (reach = <x> <y> <z> <radius>)");
     }
     if (g->bad) {
         char why[260];
@@ -493,6 +537,10 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
         ok = read_chest(m, value);
     } else if (strcmp(name, "emblem") == 0) {
         ok = read_emblem(m, value);
+    } else if (strcmp(name, "collect") == 0) {
+        ok = read_collect(m, value);
+    } else if (strcmp(name, "reach") == 0) {
+        ok = read_reach(m, value);
     } else if (strcmp(name, "category") == 0) {
         ok = whole(value, 0, KHDAYS_GAME_WORLDS - 1, &m->category);
     } else if (strcmp(name, "world") == 0) {
@@ -520,8 +568,10 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
         static const char *const forms[][2] = {
             {"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
             {"target", "target = <the enemy class to defeat>"},
-            {"kind", "kind = waves, eliminate or hearts"},
-            {"goal", "goal = <how many of the target class to defeat, or hearts to collect; 0 all>"},
+            {"kind", "kind = waves, eliminate, hearts, emblems or reach"},
+            {"goal", "goal = <how many of the target class to defeat, hearts or emblem points to collect; 0 all>"},
+            {"collect", "collect = <x> <y> <z>"},
+            {"reach", "reach = <x> <y> <z> <radius>"},
             {"start", "start = <x> <y> <z> <facing>"},
             {"chest", "chest = <item> at <x> <y> <z> <heading>"},
             {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};

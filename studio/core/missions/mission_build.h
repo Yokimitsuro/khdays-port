@@ -36,10 +36,15 @@ struct MissionPlan {
     std::array<std::string, 5> notice, objective;  // en fr de it es; empty: the English one
     std::vector<std::vector<WaveSpawner>> waves;   // the first at the start, each next once all are defeated
     int target = -1;                               // eliminate: the enemy class to defeat
-    int goal = 0;  // eliminate: how many of the target class; hearts: how many hearts (0: all of them)
+    int goal = 0;  // eliminate: how many of the target class; hearts: how many hearts; emblems: points (0: all)
+    std::vector<std::array<double, 3>> collects;  // emblems: its Organization emblems
+    bool has_reach = false;                       // reach: the place a player goes to, within its radius
+    std::array<double, 3> reach{};
+    double reach_radius = 0;
 };
 
-// The plan a mission's description gives: false (with why) when it has no wave or no start.
+// The plan a mission's description gives: false (with why) when the port does not build it (no wave, and no
+// emblems or place of its kind's) or it has no start.
 bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why);
 
 // The game's files as the builder reads them: a game path ("mi/mi/1354") to its bytes (empty: none), the game's

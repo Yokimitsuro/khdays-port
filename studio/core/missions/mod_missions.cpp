@@ -263,7 +263,7 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
         mm.unlock = m.unlock_after != nullptr ? std::string("cleared ") + m.unlock_after
                     : m.unlock_number != 0    ? "cleared " + std::to_string(m.unlock_number)
                                               : "start";
-        mm.built = m.spawner_count > 0;
+        mm.built = khdays_mission_built(&m) != 0;
         mm.own_file = fs::is_regular_file(mod_dir / "missions" / path_u8(mm.key) / "mission.p2", ec);
         std::size_t start = 0, end = 0;
         if (block_of(file_lines, mm.key, &start, &end)) {
@@ -277,7 +277,8 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
                 value = trimmed(hash == std::string::npos ? value : value.substr(0, hash));
                 if (setting == "start")
                     mm.start = value;
-                else if (setting.rfind("wave ", 0) == 0 || setting == "chest" || setting == "emblem")
+                else if (setting.rfind("wave ", 0) == 0 || setting == "chest" || setting == "emblem" ||
+                         setting == "collect" || setting == "reach")
                     mm.lines.emplace_back(setting, value);
             }
         }
@@ -479,6 +480,19 @@ std::vector<MissionSpot> mod_mission_spots(const fs::path& mod_dir, const std::s
             s.emblem = m->emblems[i].kind;
             out.push_back(s);
         }
+        for (int i = 0; i < m->collect_count; ++i) {
+            MissionSpot s;
+            s.kind = MissionSpot::Kind::collect;
+            s.at = {m->collects[i].at[0], m->collects[i].at[1], m->collects[i].at[2]};
+            out.push_back(s);
+        }
+        if (m->has_reach) {
+            MissionSpot s;
+            s.kind = MissionSpot::Kind::reach;
+            s.at = {m->reach[0], m->reach[1], m->reach[2]};
+            s.radius = m->reach_radius;
+            out.push_back(s);
+        }
     }
     khdays_missions_free(&r);
     return out;
@@ -496,6 +510,8 @@ std::pair<std::string, std::string> mission_spot_line(const MissionSpot& s) {
     case MissionSpot::Kind::chest:
         return {"chest", std::to_string(s.contents) + " at " + at_text(s.at) + " " + std::to_string(s.heading)};
     case MissionSpot::Kind::emblem: return {"emblem", std::to_string(s.emblem) + " at " + at_text(s.at)};
+    case MissionSpot::Kind::collect: return {"collect", at_text(s.at)};
+    case MissionSpot::Kind::reach: return {"reach", at_text(s.at) + " " + number_text(s.radius)};
     }
     return {};
 }
@@ -512,7 +528,8 @@ bool set_mod_mission_spots(const fs::path& nitrofs, const fs::path& mod_dir, con
     std::size_t at = 0;
     for (std::size_t i = end; i-- > start + 1;) {
         const std::string s = setting_of(lines[i]);
-        if (s == "start" || s == "chest" || s == "emblem" || s.rfind("wave ", 0) == 0) {
+        if (s == "start" || s == "chest" || s == "emblem" || s == "collect" || s == "reach" ||
+            s.rfind("wave ", 0) == 0) {
             lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(i));
             at = i;
             --end;
@@ -570,6 +587,10 @@ std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMiss
         check("chest " + std::to_string(i + 1), m.chests[i].at);
     for (int i = 0; i < m.emblem_count; ++i)
         check("emblem " + std::to_string(i + 1), m.emblems[i].at);
+    for (int i = 0; i < m.collect_count; ++i)
+        check("Organization emblem " + std::to_string(i + 1), m.collects[i].at);
+    if (m.has_reach)
+        check("the place to reach", m.reach);
     return out;
 }
 
@@ -591,7 +612,7 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
         *off_floor = off_the_floor(nitrofs, *m);
     if (m == nullptr) {
         ok = fail_with(why, "the mod has no mission " + key + " that reads");
-    } else if (m->spawner_count > 0) {
+    } else if (khdays_mission_built(m)) {
         *has_waves = true;
         MissionPlan plan;
         std::vector<std::uint8_t> bytes;

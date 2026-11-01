@@ -263,6 +263,31 @@ StepMeaning step_meaning(const ScriptStep& s, const Script* script, int language
         }
         return {};
     }
+    // Ov002_ScriptSubmitPathTask (gate, event, mode, room, place tag, x, y, z, kind, radius, height, -, threshold):
+    // Ov002_CreateTaskNodePath files a position check run on the players (Ov002_NodeWalkPlayersPhase: mode 0 the
+    // first player to pass, 1 all of them); kind 0 is within the radius of the point (Ov002_FitsBudget; 0001
+    // "Reach Axel's position!"), kinds 1-4 other ranges and boxes
+    if (is("Ov002_ScriptSubmitPathTask") && slots >= 10 && op(4).mode == 0 && op(8).mode == 1 && op(8).value == 0) {
+        return {op(2).mode == 1 && op(2).value == 1 ? StepMeaning::place_all : StepMeaning::place_first,
+                {int_text(op(1)), value_text(op(9)), value_text(op(5)), value_text(op(6)), value_text(op(7)),
+                 int_text(op(3))}};
+    }
+    // Ov002_ScriptCmd_SwitchPanelOverlay (panel): the panel's overlay loaded in place of the last, its command table
+    // as script group panel + 5 (12: ov021, group 17, the Organization emblems' commands)
+    if (is("Ov002_ScriptCmd_SwitchPanelOverlay") && slots >= 1 && op(0).mode == 1) {
+        return {StepMeaning::panel, {int_text(op(0)), std::to_string(op(0).value + 5)}};
+    }
+    // Ov021_VmCmd0e30 (module slot, count, model, -) -> Ov021_CreateEmblemClass; Ov021_MarshalFxAndDispatch2
+    // (module slot, index, room, field, x, y, z, heading) -> Ov021_EmblemCreate: an Organization emblem, 10 points
+    // picked up while whole, 8 once shrunk (Ov021_EmblemStep: tally 3)
+    if (is("Ov021_VmCmd0e30") && slots >= 2) {
+        return {StepMeaning::org_emblems, {int_text(op(0)), int_text(op(1))}};
+    }
+    if (is("Ov021_MarshalFxAndDispatch2") && slots >= 7) {
+        return {StepMeaning::org_emblem,
+                {int_text(op(0)), int_text(op(1)), int_text(op(2)), value_text(op(4)), value_text(op(5)),
+                 value_text(op(6)), value_text(op(3))}};
+    }
     // Ov002_ScriptCreateSlotObject: (group, source, mask, mode, gate, x, y, z, a, tag, b, c, x, y, z, mode)
     // -> Ov002_CreateSlotObjectAndStart: a spawner object at (x, y, z) adding the group's enemies
     if (is("Ov002_ScriptCreateSlotObject") && slots >= 8) {
@@ -363,6 +388,17 @@ std::string meaning_text(const StepMeaning& m) {
     case StepMeaning::tally_add: return "the mission tally of kind " + arg(0) + " + " + arg(1);
     case StepMeaning::group_defeated: return "event " + arg(0) + " when group " + arg(1) + " is defeated";
     case StepMeaning::all_defeated: return "event " + arg(0) + " when every enemy out is defeated";
+    case StepMeaning::place_first:
+        return "event " + arg(0) + " when the first player comes within " + arg(1) + " of (" + arg(2) + ", " + arg(3) +
+               ", " + arg(4) + "), room " + arg(5);
+    case StepMeaning::place_all:
+        return "event " + arg(0) + " when every player is within " + arg(1) + " of (" + arg(2) + ", " + arg(3) + ", " +
+               arg(4) + "), room " + arg(5);
+    case StepMeaning::panel: return "panel " + arg(0) + "'s overlay loaded, its commands script group " + arg(1);
+    case StepMeaning::org_emblems: return arg(1) + " Organization emblems, their class in module slot " + arg(0);
+    case StepMeaning::org_emblem:
+        return "Organization emblem " + arg(1) + " of slot " + arg(0) + " at (" + arg(3) + ", " + arg(4) + ", " +
+               arg(5) + "), room " + arg(2) + ", out while " + arg(6) + " is set";
     }
     return {};
 }
