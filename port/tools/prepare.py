@@ -1574,6 +1574,36 @@ HOOKS = {
             "              khdays_models_joint_saved(&cache->matrices528[index], selected); }\n",
         )
     ],
+    # The camp menus' model (ov025, its twin ov008) saves its hand joints' matrices for the keyblade from its own
+    # node callback, not Obj_CaptureSelectedJointMtx: the same note, so a KH2 model's `weapon` line holds there too.
+    "ov025@0208c868": [
+        (  # Ov025_RefreshMatchingMatrices
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n",
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n"
+            "            { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "              khdays_models_joint_saved_at((unsigned)(ctx + 0x150), key); }\n",
+        ),
+        (
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n",
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n"
+            "    { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "      khdays_models_joint_saved_at((unsigned)(ctx + 0x180), key); }\n",
+        ),
+    ],
+    "ov008@0205a0bc": [
+        (  # Ov008_RefreshMatchingMatrices
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n",
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n"
+            "            { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "              khdays_models_joint_saved_at((unsigned)(ctx + 0x150), key); }\n",
+        ),
+        (
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n",
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n"
+            "    { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "      khdays_models_joint_saved_at((unsigned)(ctx + 0x180), key); }\n",
+        ),
+    ],
     "itcm@01ffc164": [
         (  # NNSi_G3dFuncSbc_NODEDESC
             "    if (state->callbackTimings[6] == 3) {\n        state->sbcCallbacks[6](state);\n    }\n",

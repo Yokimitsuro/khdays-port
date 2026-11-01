@@ -330,33 +330,73 @@ int khdays_controls_move_heading(int actor, int heading)
     return result;
 }
 
-/* A walk this frame: its actor, the game's speed and the walk's (the animation slows as much). */
-static struct {
+/* Each actor's walk: the game frame of its last steer, the game's speed and the walk's (0 when it ran
+ * or stood). One per actor: every actor steers each frame, and another's steer must not end this one's. */
+typedef struct {
     int actor;
     u32 frame;
     int rate, walk;
-} walking;
+} Walking;
+static Walking walking[8];
+
+static Walking *walking_of(int actor, int add)
+{
+    Walking *oldest = &walking[0];
+    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+        if (walking[i].actor == actor) {
+            return &walking[i];
+        }
+        if (walking[i].frame < oldest->frame) {
+            oldest = &walking[i];
+        }
+    }
+    if (!add) {
+        return NULL;
+    }
+    oldest->actor = actor;
+    return oldest;
+}
 
 /* The speed the actor moves toward (its nWalkSpeed): with the stick pushed less than the run
  * threshold, the walk speed's share of it, never more than the game's own. */
 int khdays_controls_move_rate(int actor, int rate)
 {
     Stick in;
-    walking.actor = 0;
+    int walk = rate;
     if (rate > 0 && analog_moving(actor, &in)) {
         const int tilt = khdays_analog_tilt(in.x, in.y);
-        const int walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
-        khdays_walk_movement(actor, walk, rate); /* (the Walk mod's animation: walk.h) */
-        if (walk < rate) {
-            walking.actor = actor;
-            walking.frame = khdays_input_game_frames();
-            walking.rate = rate;
-            walking.walk = walk;
-            return walk;
+        walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
+    }
+    khdays_walk_movement(actor, walk < rate ? walk : rate, rate); /* (the Walk mod's animation: walk.h) */
+    Walking *w = walking_of(actor, walk < rate);
+    if (w != NULL) {
+        w->frame = khdays_input_game_frames();
+        w->rate = rate;
+        w->walk = walk < rate ? walk : 0;
+    }
+    return walk < rate ? walk : rate;
+}
+
+/* The walk of the actor whose scene node (its +0x20) is `node`, steered this game frame or the one before
+ * (its draw can follow the next frame's pad sample): its speed as a share of the game's, in 1/4096 (a KH2
+ * model's `walk` lines, runtime/mods/models.cpp); 0 when it does not walk. */
+int khdays_controls_walk_share(unsigned node)
+{
+    static int last = -1;
+    int share = 0;
+    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+        const Walking *w = &walking[i];
+        if (w->actor != 0 && w->walk > 0 && w->rate > 0 && khdays_input_game_frames() - w->frame <= 1u &&
+            khdays_game_ram((KhdaysRef)w->actor + 0x20U) && *(u32 *)KHDAYS_W((KhdaysRef)w->actor + 0x20U) == node) {
+            share = (int)((long long)w->walk * 4096 / w->rate);
+            break;
         }
     }
-    khdays_walk_movement(actor, rate, rate);
-    return rate;
+    if (trace_on() && share != last) {
+        trace("walk share %d/4096 at the draw of node %08x", share, node);
+        last = share;
+    }
+    return share;
 }
 
 /* The animation speed scale (0x1000 normal): while walking it slows as the speed did, so the steps
@@ -365,8 +405,9 @@ int khdays_controls_move_anim(int actor, int scale)
 {
     static int last = -1;
     int result = scale;
-    if (walking.actor == actor && walking.frame == khdays_input_game_frames()) {
-        result = (int)((long long)scale * walking.walk / walking.rate);
+    const Walking *w = walking_of(actor, 0);
+    if (w != NULL && w->walk > 0 && w->frame == khdays_input_game_frames()) {
+        result = (int)((long long)scale * w->walk / w->rate);
     }
     if (trace_on() && actor == local_actor() && result != last) {
         trace("move animation scale %x (the game's %x)", result, scale);

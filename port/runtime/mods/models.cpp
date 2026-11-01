@@ -567,6 +567,7 @@ struct Kh2Actor {
     // `air`: the game animation whose air slot played last, and the one whose land slot the landing plays now
     std::string air_from, landing_from;
     std::set<std::string> in_air; // the game animations playing their air slot, in the air or fading out after it
+    float walk = 0.0F;            // `walk` lines: how far into its walk motions it is (0 none, 1 wholly)
     std::map<std::string, float> ratios; // each game animation's weight at the last draw, as the game gave it
     u32 vblank = 0;                      // the vblank of its last draw (an `air` slot's clock)
     // `blend` into an idle: the pose shown at the last draw (its skin), the animation the game played most then,
@@ -1072,6 +1073,20 @@ void load_kh2_motions(Model &model, const std::string &path)
         std::string a, b;
         if (!(words >> a >> b))
             continue;
+        // `walk|camp <game animation>[@<frame>] <slot> ...`: a line of its own, kept as the animation's under its own
+        // name (`<animation>#walk`, `#camp`): played while the port's walk is on, or in the camp menu
+        bool walk_line = false;
+        if (a == "walk" || a == "camp") {
+            std::string slot;
+            if (!(words >> slot)) {
+                say("\"" + line + "\": write `" + a + " <game animation> <slot> ...`; the line is ignored");
+                continue;
+            }
+            walk_line = a == "walk";
+            const auto at = b.find('@');
+            a = b.substr(0, at) + "#" + a + (at != std::string::npos ? b.substr(at) : std::string());
+            b = slot;
+        }
         if (a == "mset") {
             mset = b;
         } else if (a == "weapon_motions") { // weapon_motions <mset> <mdlx> <bone>
@@ -1358,6 +1373,7 @@ void load_kh2_motions(Model &model, const std::string &path)
                     "`rotate <x> <y> <z>` (degrees), `finish [<slot>...]` or `offset <x> <y> <z> [to <x> <y> <z>]` (centimetres); the line is ignored");
                 continue;
             }
+            section.realtime = section.realtime || walk_line; // a walk at its own pace, not the game's slowed run
             auto &parts = sections[a];
             std::erase_if(parts, [&](const Kh2Section &s) { return s.from == section.from; });
             parts.push_back(section);
@@ -2490,6 +2506,8 @@ std::vector<char> node_sent;
 std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
 float kh2_game_share = 1.0F; // this draw: the game's own pose's share of a KH2 model's (play_kh2; 1 without)
 bool kh2_pose_cut = false;   // this draw: a KH2 motion took the whole pose with no fade (play_kh2): the cloth's cue
+extern "C" int khdays_controls_walk_share(unsigned node); // runtime/input/controls_hooks.c: the port's walk
+extern "C" int khdays_overlay_loaded(int id);             // runtime/core/overlays.c
 // this draw: `weapon_motions`' pose of the weapon (each bone's frame, metres; empty: none) and the share of it held
 // as Days holds it (the game's own pose and the slots the weapon has no motion for)
 std::vector<Mat> kh2_weapon_pose;
@@ -3246,6 +3264,13 @@ void play_kh2(Model &m, const Mat &base)
         actor.tail.stop();
         actor.held_fade.stop();
     }
+    // `walk` lines: the game's weight on its animations with one, at the last draw and now (the walk's mix below)
+    float walk_was = 0.0F, walk_now = 0.0F;
+    for (const Playing &p : playing)
+        if (m.kh2_sections.contains(p.name + "#walk")) {
+            walk_was = std::fmax(walk_was, was(p.name));
+            walk_now = std::fmax(walk_now, p.ratio);
+        }
     actor.ratios.clear();
     for (const Playing &p : playing)
         actor.ratios[p.name] = p.ratio;
@@ -3282,8 +3307,46 @@ void play_kh2(Model &m, const Mat &base)
     float finishing_ratio = 0.0F;
     std::string main; // the animation the game plays most, and its fade into an idle (`blend`)
     float main_ratio = -1.0F, main_blend = 0.0F;
+    // `camp` lines: while a camp menu draws the model (overlay 25, or its twin 8: runtime/menus/camp.c's camps)
+    const bool in_camp = khdays_overlay_loaded(25) != 0 || khdays_overlay_loaded(8) != 0;
+    // `walk` lines: the port's walk (the stick pushed short of running, controls_hooks.c) takes each animation with
+    // one into its walk motion, eased in and out over the line's `blend` frames (a cut without)
+    float walk_blend = 0.0F;
+    bool any_walk = false;
+    for (const Playing &p : playing)
+        if (const auto w = m.kh2_sections.find(p.name + "#walk"); w != m.kh2_sections.end() && !w->second.empty()) {
+            any_walk = true;
+            walk_blend = std::fmax(walk_blend, w->second.front().blend);
+        }
+    const bool walks =
+        any_walk && drawn_object != nullptr && khdays_controls_walk_share(KHDAYS_REF(drawn_object) - 0x24U) > 0;
+    // eased only while the game plays the animation whole: fading it in (from the idle, a landing) the game's fade
+    // is the change, and fading it out (no steer then) the mix is kept; eased there, KH2's run cut in between
+    const float walk_step = walk_blend > 0.0F ? realtime * 0.5F / walk_blend : 1.0F; // game frames, 2 vblanks each
+    const bool walk_fading = walk_now < walk_was - 1e-4F;
+    if (!any_walk || !(walk_now > 0.0F))
+        actor.walk = 0.0F;
+    else if (!walk_fading && (walk_now < 0.999F || !(walk_was > 0.0F)))
+        actor.walk = walks ? 1.0F : 0.0F;
+    else if (!walk_fading)
+        actor.walk = walks ? std::fmin(1.0F, actor.walk + walk_step) : std::fmax(0.0F, actor.walk - walk_step);
+    struct Play {
+        const Playing *p;
+        float ratio;
+        bool walk; // its `walk` line's sections
+    };
+    std::vector<Play> plays;
     for (const Playing &p : playing) {
-        const float ratio = std::fmax(0.0F, std::fmin(1.0F, p.ratio));
+        if (actor.walk > 0.0F && m.kh2_sections.contains(p.name + "#walk")) {
+            plays.push_back({&p, p.ratio * (1.0F - actor.walk), false});
+            plays.push_back({&p, p.ratio * actor.walk, true});
+        } else {
+            plays.push_back({&p, p.ratio, false});
+        }
+    }
+    for (const Play &play : plays) {
+        const Playing &p = *play.p;
+        const float ratio = std::fmax(0.0F, std::fmin(1.0F, play.ratio));
         total += ratio;
         // its sections: `air`'s in the game's damage in the air, `land`'s landing straight out of it, else its own
         const std::vector<Kh2Section> *list = nullptr;
@@ -3291,13 +3354,20 @@ void play_kh2(Model &m, const Mat &base)
         const auto air = m.kh2_air.find(p.name);
         const auto landing = m.kh2_air.find(actor.landing_from);
         const auto found = m.kh2_sections.find(p.name);
-        if (actor.in_air.contains(p.name) && air != m.kh2_air.end()) {
+        const auto camp = in_camp ? m.kh2_sections.find(p.name + "#camp") : m.kh2_sections.end();
+        if (play.walk) {
+            list = &m.kh2_sections.find(p.name + "#walk")->second;
+            key += "#walk";
+        } else if (actor.in_air.contains(p.name) && air != m.kh2_air.end()) {
             list = &air->second.air;
             key += "#air";
             actor.air_from = p.name;
         } else if (p.name == m.kh2_landing && landing != m.kh2_air.end() && !landing->second.land.empty()) {
             list = &landing->second.land;
             key += "#land";
+        } else if (camp != m.kh2_sections.end()) {
+            list = &camp->second;
+            key += "#camp";
         } else if (found != m.kh2_sections.end()) {
             list = &found->second;
         }
@@ -3310,8 +3380,9 @@ void play_kh2(Model &m, const Mat &base)
             const auto own = m.kh2_idle_blend.find(p.name);
             main = p.name;
             main_ratio = ratio;
+            // (a walk line's `blend` is its crossing with the run alone: the run fades into the idle with the game)
             main_blend = own != m.kh2_idle_blend.end() ? own->second
-                         : now >= 0                    ? (*list)[static_cast<std::size_t>(now)].blend
+                         : now >= 0 && !play.walk      ? (*list)[static_cast<std::size_t>(now)].blend
                                                        : 0.0F;
         }
         if (now < 0) {
@@ -3685,23 +3756,37 @@ void play_kh2(Model &m, const Mat &base)
         placed.push_back(std::move(joints));
     }
     // each joint's frames mixed (turns the shorter way round: a mix of the matrices shrank a joint between turns far
-    // apart), the game's own pose at its share
+    // apart), the game's own pose at its share; on its parent's mixed frame, as each pose holds it from its parent:
+    // mixed in the model's space, an arm held far apart in two poses lost its length and twisted (a hand's place
+    // the mean of two, off its forearm's mixed turn)
+    const std::size_t count = std::min(m.joints.size(), m.kh2_bone.size());
+    std::vector<Mat> game_frame(count), mixed(count);
+    std::vector<char> is_mixed(count, 0);
+    for (std::size_t j = 0; j < count; ++j)
+        game_frame[j] = mul(skin[j], m.kh2_rest[j]);
     std::vector<Mat> frames;
     std::vector<float> weights;
-    for (std::size_t j = 0; j < m.joints.size() && j < m.kh2_bone.size(); ++j) {
+    for (std::size_t j = 0; j < count; ++j) {
         const int bone = m.kh2_bone[j];
         if (bone < 0)
             continue;
-        frames.assign(1, mul(skin[j], m.kh2_rest[j]));
+        const int parent = m.joints[j].parent;
+        const bool on_parent = parent >= 0 && static_cast<std::size_t>(parent) < j && is_mixed[parent] != 0;
+        const auto b = static_cast<std::size_t>(bone);
+        const auto pb = on_parent ? static_cast<std::size_t>(m.kh2_bone[static_cast<std::size_t>(parent)]) : 0U;
+        frames.assign(1, on_parent ? mul(inverse(game_frame[static_cast<std::size_t>(parent)]), game_frame[j])
+                                   : game_frame[j]);
         weights.assign(1, game / total);
         for (std::size_t p = 0; p < poses.size(); ++p) {
-            if (static_cast<std::size_t>(bone) >= placed[p].size())
+            if (b >= placed[p].size() || pb >= placed[p].size())
                 continue;
-            frames.push_back(placed[p][static_cast<std::size_t>(bone)]);
+            frames.push_back(on_parent ? mul(inverse(placed[p][pb]), placed[p][b]) : placed[p][b]);
             weights.push_back(poses[p].weight / total);
         }
-        skin[j] =
-            mul(khdays::models::blend_frames(frames.data(), weights.data(), frames.size()), m.joints[j].inverse_bind);
+        const Mat frame = khdays::models::blend_frames(frames.data(), weights.data(), frames.size());
+        mixed[j] = on_parent ? mul(mixed[static_cast<std::size_t>(parent)], frame) : frame;
+        is_mixed[j] = 1;
+        skin[j] = mul(mixed[j], m.joints[j].inverse_bind);
     }
     into_idle();
 }
@@ -4604,6 +4689,14 @@ extern "C" void khdays_models_joint_saved(void *matrix, unsigned node)
 {
     if (active != nullptr && depth == 1 && node < active->kh2_weapon.size() && active->kh2_weapon[node] >= 0)
         saved_joints.emplace_back(matrix, node);
+}
+
+// The same, the matrix given by its address in the game's memory (the camp menus' model: Ov025/Ov008
+// RefreshMatchingMatrices keep it in their object, reached through plain addresses)
+extern "C" void khdays_models_joint_saved_at(unsigned matrix, unsigned node)
+{
+    if (khdays_game_ram(matrix) && khdays_game_ram(matrix + 0x2fU))
+        khdays_models_joint_saved(KHDAYS_W(matrix), node);
 }
 
 extern "C" int khdays_models_shape(const void *list, unsigned int size)

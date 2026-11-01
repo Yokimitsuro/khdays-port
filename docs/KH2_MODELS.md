@@ -188,6 +188,12 @@ back. Every mix of poses on the model (the game's fades, a `finish` tail, these)
 mixes each joint's frames, turns the shorter way round (`attached_frame.h`
 `blend_frames`): a mix of the matrices shrank a joint between turns far apart (his
 head squashed in the game's fade from the aerial damage into the death, `b_ro_e003`).
+The motions' poses (and the game's own, at its share) are mixed joint by joint on the
+parent's mixed frame, each pose's joint taken from its parent in that pose (the root in
+the model's space): mixed in the model's space, the keyblade arm crossing from the
+battle idle into the weapon walk lost its length and twisted, each hand's place the mean
+of two, off the forearm's mixed turn. The idle fade's held pose still mixes in the
+model's space.
 
 **In the air.** Days' damage in the air plays the ground damage animations and holds
 them on a frame (`Ov022_StepInterruptible`: frame 9) until a landing, a recovery in
@@ -285,6 +291,35 @@ does, head and feet the same way (seen in game), with no `rotate`:
 motions GAMEOVER.mset AK10 at 1000
 ro_con00 1014
 ```
+
+`walk <game animation>[@<frame>] <slot> ...` and `camp <game animation>[@<frame>]
+<slot> ...` are lines of the animation's own, with every option an animation's line
+takes, kept under a name of their own (`<animation>#walk`, `#camp`). The port's walk
+(the stick pushed short of running, `controls_hooks.c` `khdays_controls_move_rate`)
+moves the actor slower and plays the game's run slowed by as much; while it is on
+(`khdays_controls_walk_share`, by the actor's scene node, from its steer this game frame or
+the one before; `KHDAYS_TRACE_CONTROLS` logs the share each draw reads), an animation with a `walk`
+line plays it instead, at its own pace (vblanks, not the slowed run's frames), mixed
+with the animation's own sections by a weight easing between them over the walk line's
+`blend` frames, only while the game plays the animation whole: while the game fades it in
+(Days crosses idle and run over 5 frames) the walk takes it as it is, and while it fades it
+out (no steer then) the mix is kept, so KH2's run never cuts in between. That `blend` is
+not an idle fade: the walk fades into the idle with the game, as the run does. While a camp menu draws the model (overlay 25 or its twin 8, as
+`runtime/menus/camp.c` knows them), an animation with a `camp` line plays it. With
+`weapon_motions` the keyblade plays the same slots (W_EX010_RX has 4 and 7, not 6: the
+weaponless walk):
+
+```text
+walk b_ro_A001 4 blend 6   # with the keyblade
+walk b_ro_e002 6 blend 6   # without
+camp b_ro_A000 7           # the camp menu's idle
+```
+
+The camp menus' model saves its hand joints' matrices for the keyblade from its own
+node callback (`Ov025_RefreshMatchingMatrices`, `Ov008_RefreshMatchingMatrices`:
+`NNS_G3dGetCurrentMtx` into its object at +0x150 and +0x180, keyed by the node at
++0x148 and +0x14c), not `Obj_CaptureSelectedJointMtx`; both are hooked to note it
+(`khdays_models_joint_saved_at`), so a `weapon` line holds there too.
 
 Measured in the root node's frame (`def_hb` BCA0 entries 5-7 on its model; slot
 30 and 34 on N_EX830 through the bone map, root motion out): hanging, Days' left

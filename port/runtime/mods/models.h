@@ -29,6 +29,7 @@ void khdays_models_node_placed(unsigned node, int sent);
  * MtxFx43) for what the game attaches to it; a KH2 model's `weapon` line puts
  * it on a KH2 bone at the draw's end. */
 void khdays_models_joint_saved(void *matrix, unsigned node);
+void khdays_models_joint_saved_at(unsigned matrix, unsigned node);
 
 /* Mover_ResolveFloor: the mover `mover` (its owner at +0) was put on its floor;
  * its owner's KH2 model's feet are put on that floor (IKAdjust). */
