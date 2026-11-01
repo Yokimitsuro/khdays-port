@@ -615,6 +615,7 @@ enum class S {
     chars_anim_throne_winner_after,
     chars_anim_throne_rank,
     chars_anim_throne_after,
+    chars_anim_game_over,
     chars_no_clip_for,
     mw_button,
     mw_title,

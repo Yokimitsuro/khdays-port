@@ -2581,6 +2581,54 @@ HOOKS["ov008@0207ce84"] += [  # Ov008_LobbyStep
         "Ov008_ForwardSevenArgs(khdays_charselect_name(aRow[i].icon, 0, pText, khdays_name, 64), nX, nY, 1, 1, 2, 1);",
     ),
 ]
+# ... and the name on the camp's status panel (its field 1: status_&.s's record for the local seat's character), a
+# mod's character's own
+HOOKS["ov008@0206d46c"] += [  # Ov008_DrawStatusField
+    (
+        "void Ov008_DrawStatusField(",
+        _SELECT_NAME + _LOCAL_SEAT + "extern int khdays_characters_of(int slot, int kind);\n"
+        "static u16 sPortStatusName[64];\n"
+        "void Ov008_DrawStatusField(",
+    ),
+    (
+        "        pText = Ov008_GetVarRecordByIndex(pPanel->textLoader, Ov008_GetLocalPlayerStatA());\n",
+        "        pText = khdays_charselect_name(khdays_characters_of(Session_GetLocalPlayerIndex(), -1), 0,\n"
+        "                                       Ov008_GetVarRecordByIndex(pPanel->textLoader, Ov008_GetLocalPlayerStatA()),\n"
+        "                                       sPortStatusName, 64);\n",
+    ),
+]
+# ... and another place's mark on the game's own grid (the portrait its value names, lit): none while that grid is
+# shown for a place on a mod's character (the select's pages mark it on its own page, runtime/menus/charselect.h)
+_MARKER = "extern int khdays_charselect_marker(int member, int portrait);\n"
+HOOKS["ov006@02050fc8"] += [  # Ov006_UpdateMissionMemberMenuScreen
+    (
+        "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n",
+        _MARKER + "void *Ov006_UpdateMissionMemberMenuScreen(void)\n{\n",
+    ),
+    (
+        "(u16)" + _menu("rowPtr->memberId") + ",",
+        "(u16)khdays_charselect_marker(rowPtr->memberId, " + _menu("rowPtr->memberId") + "),",
+    ),
+]
+HOOKS["ov008@0207ce84"] += [  # Ov008_LobbyStep
+    ("Ov008LobbyStep Ov008_LobbyStep(void)\n{\n", _MARKER + "Ov008LobbyStep Ov008_LobbyStep(void)\n{\n"),
+    (
+        "(u16)" + _menu("aRow[i].icon") + ",",
+        "(u16)khdays_charselect_marker(aRow[i].icon, " + _menu("aRow[i].icon") + "),",
+    ),
+]
+# ... the mark's two cells for that value (KHDAYS_SELECT_NO_MARK) put past the screen's right edge, where nothing of
+# them shows (the game's own off-grid place, x and y below 0, is the screen's top left)
+for ov, address in (("006", "02054fb8"), ("008", "02080d28")):
+    HOOKS[f"ov{ov}@{address}"] = [
+        (  # Ov00N_MissionPlaceCellPair
+            "    if (selector == -1 || selector >= 19) {\n",
+            "    if (selector == 0x7fff) { /* KHDAYS_SELECT_NO_MARK */\n"
+            "        config.x = 256 + 64;\n"
+            "        config.y = 0;\n"
+            "    } else if (selector == -1 || selector >= 19) {\n",
+        )
+    ]
 # ... and their input: a place on a new character is looked for on the DS's grid at its base's place, and keeps
 # its own number unless a direction moves it on (A and B would take the grid's, and the screen asks for the
 # place every frame: Ov006_MissionArmCursorRequest)
@@ -2712,6 +2760,34 @@ HOOKS["ov003@0204d98c"] = [
     (
         "            uVar7 = (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
         "            uVar7 = sPortReviewOwnModels[iVar12] ? 0xffffffff : (unsigned int)data_ov003_0204f8bc[entry[6]];\n",
+    ),
+]
+# ... and the game over in a room (ov027, a mission given up or failed: every seat's character standing): a new
+# character's seat's model from its own folder, the file its base's would be (its [actions] give a clip to
+# <base>_mission00)
+HOOKS["ov027@02083168"] = [
+    (  # Ov027_LoadCharacterModels
+        "void Ov027_LoadCharacterModels(void)\n",
+        "extern int khdays_characters_game_over(int seat);\n"
+        "extern const char *Port_CharacterCode(int number);\n"
+        "extern int OS_SPrintf(char *dst, const char *fmt, ...);\n"
+        "static char sPortGameOverPaths[4][32]; /* the game's four seats */\n"
+        "static const char *Port_GameOverModel(int seat, const char *game)\n{\n"
+        "    const int n = khdays_characters_game_over(seat);\n"
+        "    const char *rest = game + 6;\n"
+        "    if (n < 0 || game[0] != 'b' || game[1] != 'a' || game[2] != '/' || game[3] != 'c' || game[4] != 'h' ||\n"
+        "        game[5] != '/') {\n"
+        "        return game;\n"
+        "    }\n"
+        "    while (*rest != 0 && *rest != '/') rest++; /* past its base's folder */\n"
+        "    OS_SPrintf(sPortGameOverPaths[seat], \"ba/ch/%s%s\", Port_CharacterCode(n), rest);\n"
+        "    return sPortGameOverPaths[seat];\n}\n"
+        "void Ov027_LoadCharacterModels(void)\n",
+    ),
+    (
+        "RegisterSeqAndInit(&data_ov027_02084364->aModel[nLoaded], data_ov027_02084190[nKind], 0, 6);",
+        "RegisterSeqAndInit(&data_ov027_02084364->aModel[nLoaded], Port_GameOverModel(i, data_ov027_02084190[nKind]), 0,"
+        " 6);",
     ),
 ]
 # ... its voice: the sounds an actor starts are its seat's (the actor's +9, its character at +0xc), so that a new

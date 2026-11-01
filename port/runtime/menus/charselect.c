@@ -718,6 +718,12 @@ void khdays_charselect_update_ran(uintptr_t update)
     }
 }
 
+int khdays_charselect_marker(int member, int portrait)
+{
+    /* a place on a mod's character is marked on its page (the presenter's corners), not on its base's portrait */
+    return khdays_characters_known(member & 0xff) && now.ds_page < 1 ? KHDAYS_SELECT_NO_MARK : portrait;
+}
+
 void *khdays_charselect_name(int member, int weapon, void *game, void *out, int units)
 {
     const KhdaysCharacter *c = khdays_characters_numbered(member);

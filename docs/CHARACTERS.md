@@ -330,7 +330,12 @@ any other: `so_result00` while they sit as it begins, then for the winner `so_re
 `so_result02` after, for the others `so_result04` as their place is shown and `so_result05` after (Sora's; another
 base's with its code: `ro_result00`, `ax_result00` ...; Mickey's last is `mickey_result06`). The files hold
 `_result03` and `_result06` too, which the review's code never plays. The studio lists them with the base's
-animations. Seen on two copies, a mod's character on Roxas's base in the second seat: its model on its throne, its
+animations.
+
+A mission given up or failed in a room ends on the game over, every player's character standing: a seat on a mod's
+character shows its own model there too, playing its clip for `so_mission00` (Sora's; another base's with its code:
+`ro_mission00`, `xe_mission00` ...). Played alone, the game over shows Roxas (or Xion) whoever played, as the game
+does for its own characters. Seen on two copies, a mod's character on Roxas's base in the second seat: its model on its throne, its
 clips for `ro_result00`, `ro_result01` (its `fallback`) and `ro_result02` (a give-up leaves both players first).
 
 ## Limits
@@ -340,7 +345,8 @@ once (more are left out, told). The select of the HD pieces shows them in pages 
 turn the page; HD_SCREENS.md, "Mission Mode's character select"). The game's own select (two screens without the
 HD pieces' select) has its own grid as its first page and the mods' characters on pages after it, in the same slots:
 R and L turn them, the directions move on them, and the chosen one's name and weapon -- above, and on its place's
-plate -- are its own, in the camp's select too (RUNTIME_MAP section 16.3). On one screen without the HD pieces'
+plate -- are its own, in the camp's select too (RUNTIME_MAP section 16.3); another player's place on one is marked on
+its page, never on its base's portrait. The camp's status panel shows its name too. On one screen without the HD pieces'
 select they are not offered. The numbers follow the characters' identities, so copies with the same mods give the
 same ones. The rest of the game -- and the saves -- only ever hold the base's: a save made with a mod's
 character loads without the mod, its base standing in.
@@ -356,3 +362,5 @@ character loads without the mod, its base standing in.
 - A form changes at the camp only: in the field it is told and waits for the next mission. `level` in a rule is
   false (the seat's level is not read yet).
 - In a room, forms follow the game's own choice only (above).
+- The camp's status panel without the HD pieces keeps its base's picture (`Ov008_LoadSubScreenBg`: a whole
+  background a character); the HD pieces' camp shows its face.

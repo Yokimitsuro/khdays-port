@@ -205,7 +205,7 @@ WALKS = [
         ),
     ),
     # ... chosen by a guest in a room of two: both copies play its seat as the character (the multiplayer
-    # walk's route)
+    # walk's route), its own model in the game over the give-up leads to
     Walk(
         "multiplayer_character",
         240,
@@ -217,6 +217,7 @@ WALKS = [
         marks=(
             "characters: seat 1 is test.character/block",
             "characters: member 1 is test.character/block (0x16), on roxas's code",
+            "characters: the game over's seat 1 is test.character/block (0x16)",
         ),
     ),
     # ... and on its throne in the mission review the give-up goes on to (KHDAYS_TEST_REVIEW): its own model

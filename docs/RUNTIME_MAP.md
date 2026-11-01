@@ -5360,6 +5360,23 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   the card (the port's HUD pieces move them) shows it. Its buffers are words: the copies
   (`Callbacks_RunTableEntryB/C`) read a word at a time, and from a byte array not on a word the last byte of each
   word came from 28 bytes on (seen: the face's columns 6-7 of every character wrong).
+- **The game over in a room** (read 2026-11-01; ov027, a mission given up or failed): `Ov027_LoadCharacterModels`
+  gives every occupied seat (`Slot4_GetIfOccupied`) the model of its character from `data_ov027_02084190`
+  (`ba/ch/<code>/def_h.p.z`, Roxas's `def_hb.p.z`, Sora's, Donald's and Goofy's `def.p.z`, the dual-wield Roxas's
+  `r2`, Mickey's `ba/ch/mi`) and its animation from `/gameover/data` (`data_ov027_020840f0`: the BCA0 holding
+  `<code>_mission00`; entry 2 `ro_con00` is the one played alone, where only Roxas, or Xion, is shown). The join
+  gives a mod's character's seat the same file of its own folder.
+- **Another place's mark on the game's own select** (read 2026-11-01; ov006, the camp's ov008 the same):
+  `Ov00N_SetMissionRowSlotValue(slot, value, visible)` keeps the place's portrait (+0x9510); each rebuild
+  (`Ov00N_MissionInitCells`) lights that portrait (0-18) and puts the mark's two cells (+0x96e4, +0x96f4) on it
+  (`Ov00N_MissionPlaceCellPair`); a value off the grid (-1, 19 on) gives x and y below 0, which
+  `Ov00N_MissionPlaceCell` makes 0, 0 -- the screen's top left, where a corner of the mark showed. For a place on
+  a mod's character while the game's own grid is shown the join gives 0x7fff, which the joined placer puts past
+  the screen's right edge, nothing lit (the port's page marks it instead).
+- **The camp's status panel**: its name is `Ov008_DrawStatusField`'s field 1, the `status_&.s` record
+  `data_ov008_0208f850[character * 6]` (the join writes a mod's character's own name instead); its picture a whole
+  background a character (`Ov008_LoadSubScreenBg`: the subfile `data_ov008_0208f854[character * 6]`, its characters
+  at the lower screen's BG3 0x2000, palettes 4-14), which stays its base's.
 - **Its voice** (read 2026-10-28; heard in `missions_waves`'s session log): an actor's sounds start through
   `Ov022_PlayEntityVoice(actor, archive, entry)` (its action's cues from `Ov022_StepReactionCues`, its hurt,
   the player overlay's own: `Ov030_UpdateMotionController`) and `Ov022_SpawnVoiceCue`, both into `Slot_Spawn` ->

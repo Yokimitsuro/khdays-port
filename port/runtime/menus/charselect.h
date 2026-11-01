@@ -67,6 +67,11 @@ void khdays_charselect_view(KhdaysSelectView *out);
  * `member`, a mod's character's own written into `out` (`units` UTF-16 units on the game's stack) in the game's
  * language; otherwise the game's `game` (its base's). */
 void *khdays_charselect_name(int member, int weapon, void *game, void *out, int units);
+/* The portrait the game's own select marks (and lights) for a place on `member` (prepare.py's hooks): `portrait`, or
+ * KHDAYS_SELECT_NO_MARK (none lit, its mark put off the screen's right) while the game's own grid is shown and
+ * `member` is a mod's character (marked on its page instead). */
+#define KHDAYS_SELECT_NO_MARK 0x7fff
+int khdays_charselect_marker(int member, int portrait);
 /* A mod's character on the game's own screen's page (`ds_page` 1 and on): the one at slot `slot`, -1 none. */
 int khdays_charselect_ds_at(const KhdaysSelectView *v, int slot);
 /* The window's thread: the columns of the port's grid (its layout's), for the directions. */
