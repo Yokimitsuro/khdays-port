@@ -503,7 +503,6 @@ struct Kh2Animation {
     float looped_at = -1.0F; // a loop's fade: the frame the game set back from (-1 none)
     float last_frame = 0.0F;
     float step = 1.0F;
-    int still = 0; // draws since its frame last moved
     std::uint64_t seen = 0;
     std::map<int, Kh2Track> tracks; // by section
 };
@@ -2884,15 +2883,13 @@ void play_kh2(Model &m, const Mat &base)
         const kh2::Motion *motion = m.kh2_motions->motion(section.slot);
         Kh2Animation &a = actor.animations[p.name];
         const bool starts = a.seen + 1 != actor.draws;
-        // the game set its frame back: a loop, counted on; or a rewind (a damage animation played again), which
-        // starts the section over as the game's does (a followed section's frame is its time either way). Running:
-        // moved within the last few draws (the game's frame stands for a draw or two between its steps)
+        // the game set its frame back: counted on when the KH2 motion loops (it loops itself), else the section
+        // starts over (a damage animation played again); a followed section's frame is its time either way
+        const bool own_loop = motion->loop_ticks() >= 0.0F && motion->loop_ticks() < motion->length_ticks();
         const kh2_clock::FrameMove move =
-            starts ? kh2_clock::FrameMove::on
-                   : kh2_clock::frame_move(a.last_frame, p.frame, p.frames, a.step, a.still <= 3);
+            starts ? kh2_clock::FrameMove::on : kh2_clock::frame_move(a.last_frame, p.frame, own_loop);
         const bool back = move != kh2_clock::FrameMove::on;
         const bool enters = starts || now != a.section || (move == kh2_clock::FrameMove::restart && !section.follow);
-        a.still = !starts && p.frame == a.last_frame ? a.still + 1 : 0;
         float step = 0.0F; // BCA frames since the last draw
         if (!starts) {
             step = p.frame - a.last_frame;

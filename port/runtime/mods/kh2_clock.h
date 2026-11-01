@@ -7,18 +7,15 @@ namespace khdays::kh2_clock {
 
 enum class FrameMove { on, loop, restart };
 
-// `before` and `now`: the frame at the last draw and this one; `frames`: the animation's length; `step`: its last
-// forward step; `moving`: it was running up to the last draw. A set-back is a loop when it wraps a running frame
-// from within two steps of its end (an idle's loop, the fall set back to 16); from anywhere else, or from a frame
-// the game held, the game rewound it (Ov022_TurnAwayFromDrift plays a damage animation again from frame 0), so
-// the motion starts over. An unknown length (0) counts as a loop.
-inline FrameMove frame_move(float before, float now, float frames, float step, bool moving)
+// `before` and `now`: the frame at the last draw and this one; `loops`: the KH2 motion has a loop of its own. A
+// set-back of a looping motion is counted on (it loops itself, smoothly: an idle's loop, the fall set back to 16, a
+// run wrapping after a cross-fade held it on its last frame); one that does not loop starts over, as the game's
+// animation did (Ov022_TurnAwayFromDrift plays a damage animation again from frame 0; counted on, it stood at its end)
+inline FrameMove frame_move(float before, float now, bool loops)
 {
     if (now >= before)
         return FrameMove::on;
-    if (frames <= 0.0F || (moving && before >= frames - 2.0F * step))
-        return FrameMove::loop;
-    return FrameMove::restart;
+    return loops ? FrameMove::loop : FrameMove::restart;
 }
 
 } // namespace khdays::kh2_clock
