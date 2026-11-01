@@ -134,6 +134,17 @@ struct FollowBone {
     float always = 0.0F; // in every pose, by the control's rest nearness: the leg carries the coat's shape
 };
 
+// `turn <bone> <degrees>|clear <collider> [margin <length>]`: a strip from that bone down turned at rest about the
+// line across that bone's head (out, away from its group's reference bone, when positive), so far, or just so far
+// that its controls start outside that collider
+struct StripTurn {
+    BoneRef bone;
+    float radians = 0.0F;
+    std::string clear; // a collider's name, or empty
+    float margin = 0.002F;
+    int line = 0;
+};
+
 struct BoneOverride {
     BoneRef bone;
     ParamSet params;
@@ -169,6 +180,11 @@ struct GroupConfig {
     std::vector<BoneRef> exclude;
     std::vector<std::pair<BoneRef, Vec3>> offsets; // explicit control points, bone-local, metres
     std::vector<BoneOverride> overrides;
+    std::vector<StripTurn> turns;
+    // `outward axis` (a surface round an axis, a cuff): its rest side (body colliders') is away from its own axis
+    // (its strips' heads' middle, along the middle of its controls' vertices), not from the vertical
+    bool outward_axis = false;
+    int outward_line = 0;
     bool settle = false;               // prepare a settled reference shape under gravity at load
     Vec3 hang{0.0F, -1.0F, 0.0F};      // startup hanging direction, model space at rest
     bool hang_given = false;           // chains: hang straight that way before settling

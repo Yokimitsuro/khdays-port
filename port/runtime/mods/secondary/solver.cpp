@@ -138,14 +138,21 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
         }
     }
     // outward: a garment is a shell around the body, so a control's or a face's way out is away from its
-    // group's reference bone's vertical axis at rest (kept in that bone's space); body colliders (rest
-    // side) push there whichever part of the body meets it
+    // group's reference bone's vertical axis at rest (kept in that bone's space), or its own axis (`outward
+    // axis`: a cuff on a T-pose arm lies along x); body colliders (rest side) push there whichever part of the
+    // body meets it
     {
         std::vector<Frame> rest(rig.skeleton.rest.size());
         for (std::size_t b = 0; b < rest.size(); ++b)
             rest[b] = frame_of(rig.skeleton.rest[b]);
         const auto out_of = [&](std::size_t group, Vec3 at) {
-            const Frame &f = rest[static_cast<std::size_t>(rig.groups[group].reference_bone)];
+            const GroupRig &g = rig.groups[group];
+            const Frame &f = rest[static_cast<std::size_t>(g.reference_bone)];
+            if (g.outward_axis) {
+                const Vec3 axis = normalized(rotate(f.q, g.outward_dir), {1.0F, 0.0F, 0.0F});
+                const Vec3 d = at - apply(f, g.outward_origin);
+                return normalized(d - axis * dot(d, axis), {0.0F, 0.0F, 1.0F});
+            }
             Vec3 d = at - f.t;
             d.y = 0.0F;
             return normalized(d, {0.0F, 0.0F, 1.0F});
@@ -170,6 +177,13 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
                                     (a + b + c) * (1.0F / 3.0F));
             face_out_[fi] = dot(cross(b - a, c - a), out) >= 0.0F ? std::int8_t{1} : std::int8_t{-1};
         }
+    }
+    loose_.assign(rig.distances.size(), 0);
+    for (std::size_t c = 0; c < rig.distances.size(); ++c) {
+        const Particle &pa = rig.particles[static_cast<std::size_t>(rig.distances[c].a)],
+                       &pb = rig.particles[static_cast<std::size_t>(rig.distances[c].b)];
+        loose_[c] = pa.dynamic && pb.dynamic && pa.root != pb.root &&
+                    rig.groups[static_cast<std::size_t>(pa.group)].outward_axis;
     }
     // the drape: each particle's colliders, the particles anchors first
     particle_colliders_.assign(n, {});
@@ -744,10 +758,13 @@ void Simulation::settle(const std::vector<Frame> &pose, const TickSettings &s, i
     fresh_ = true; // its first tick takes up the body's velocity, as a start's does (spawned while running)
 }
 
-void Simulation::rebase(const std::vector<Frame> &a, const std::vector<Frame> &b)
+void Simulation::rebase(const std::vector<Frame> &a, const std::vector<Frame> &b,
+                        const std::vector<std::uint8_t> *groups)
 {
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
+        if (groups != nullptr && !(*groups)[static_cast<std::size_t>(p.group)])
+            continue;
         const auto rb = static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(p.group)].reference_bone);
         x_[i] = apply(b[rb], apply_inverse(a[rb], x_[i]));
         prev_[i] = x_[i];
@@ -755,7 +772,8 @@ void Simulation::rebase(const std::vector<Frame> &a, const std::vector<Frame> &b
         target_prev_[i] = target_[i];
         v_[i] = target_vel_[i] = {};
     }
-    fresh_ = true;
+    if (groups == nullptr) // the others keep their swing
+        fresh_ = true;
 }
 
 void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &to, const TickSettings &s)
@@ -1195,7 +1213,7 @@ void Simulation::solve_links(float h)
         const Distance &d = rig_.distances[c];
         const auto a = static_cast<std::size_t>(d.a), b = static_cast<std::size_t>(d.b);
         const float wa = w(a), wb = w(b);
-        if (wa + wb <= 0.0F)
+        if (wa + wb <= 0.0F || loose_[c])
             continue;
         const Vec3 delta = x_[b] - x_[a];
         const float len = length(delta);
@@ -1218,7 +1236,7 @@ void Simulation::limit_strain(bool anchors_only)
 {
     for (std::size_t c = 0; c < rig_.distances.size(); ++c) {
         const Distance &d = rig_.distances[c];
-        if (d.kind == Link::bend || (anchors_only && d.kind != Link::anchor))
+        if (d.kind == Link::bend || (anchors_only && d.kind != Link::anchor) || loose_[c])
             continue;
         const auto a = static_cast<std::size_t>(d.a), b = static_cast<std::size_t>(d.b);
         const float wa = w(a), wb = w(b);
@@ -1403,10 +1421,20 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             const float ca0 = point_clearance(c, a, s1), cb0 = point_clearance(c, b, s1);
             const float th = pair_reach(re + te, ca0 > 0.0F && cb0 > 0.0F ? minf(ca0, cb0) : 0.0F, 0.5F * re + te);
             const Vec3 d = pe - q;
-            const float dist = length(d);
+            float dist = length(d);
             if (dist >= th || dist < 1e-7F)
                 continue;
-            const Vec3 nrm = d * (1.0F / dist);
+            Vec3 nrm = d * (1.0F / dist);
+            const GroupRig &eg = rig_.groups[static_cast<std::size_t>(rig_.particles[a].group)];
+            if (rig_.colliders[c].rest_side && eg.outward_axis) { // `outward axis`: back out on its way out
+                const Vec3 axis = normalized(s1.b - s1.a, {0.0F, 0.0F, 0.0F});
+                Vec3 out = rotate(sub1_[static_cast<std::size_t>(eg.reference_bone)].q, outward_[a] + outward_[b]);
+                out = normalized(out - axis * dot(out, axis), nrm);
+                if (dot(nrm, out) < 0.0F) {
+                    nrm = out;
+                    dist = -dist;
+                }
+            }
             const float ca = (1.0F - u) * wa, cb = u * wb, den = (1.0F - u) * ca + u * cb;
             if (den <= 0.0F)
                 continue;
@@ -1457,12 +1485,10 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             // pushed to the side it belongs on (its rest side along its normal), wherever the core is now
             Vec3 side = normalized(cross(x_[v[1]] - x_[v[0]], x_[v[2]] - x_[v[0]]),
                                    face_normal_prev_[static_cast<std::size_t>(fi)]);
+            const GroupRig &fg = rig_.groups[static_cast<std::size_t>(rig_.particles[v[0]].group)];
             if (rig_.colliders[c].rest_side &&
-                crosses) { // pierced: its normal's sign that agrees with its corners' way out
-                const Quat ref =
-                    sub1_[static_cast<std::size_t>(
-                              rig_.groups[static_cast<std::size_t>(rig_.particles[v[0]].group)].reference_bone)]
-                        .q;
+                (crosses || fg.outward_axis)) { // pierced (`outward axis`: any): the sign agreeing with its way out
+                const Quat ref = sub1_[static_cast<std::size_t>(fg.reference_bone)].q;
                 const Vec3 out = rotate(ref, outward_[v[0]] + outward_[v[1]] + outward_[v[2]]);
                 if (dot(side, out) < 0.0F)
                     side = -side;

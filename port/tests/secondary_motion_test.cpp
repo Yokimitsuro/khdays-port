@@ -405,6 +405,55 @@ void spawn_teleport_identity()
     CHECK(a.generation() == generation + 2);
 }
 
+void partial_jump()
+{
+    // a chain on an arm snapping 150 degrees in one draw: that group rebased alone, the skirt simulated through
+    // the draw exactly as without the snap (a whole rebase skipped its tick: legs jumped through a coat)
+    Skirt s = make_skirt(6, 3);
+    const int arm = static_cast<int>(s.sk.names.size());
+    s.sk.names.insert(s.sk.names.end(), {"arm", "t0", "t1"});
+    s.sk.parent.insert(s.sk.parent.end(), {1, arm, arm + 1});
+    for (int k = 0; k < 3; ++k)
+        s.sk.rest.push_back(down_frame({0.5F, 1.2F - 0.2F * static_cast<float>(k), 0.0F}, 0.0F));
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "teleport 1.5 100\n") +
+                          "group tail chain\n  attach arm\n  chain t0 t1\n  offset t1 0.2 0 0\nend\n",
+                      s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 3), b(rig, 3);
+    std::vector<Frame> pa, pb;
+    ActorInput ia, ib;
+    ia.pose = &pa;
+    ib.pose = &pb;
+    for (int f = 0; f <= 30; ++f) {
+        ia.seconds = ib.seconds = f / 60.0;
+        pa = pb = pose_of(s.sk, {0, 0, 5.0F * static_cast<float>(f) / 60.0F});
+        if (f == 30) { // a's arm and the chain under it turned about z at the arm's head
+            const Vec3 pivot = pa[static_cast<std::size_t>(arm)].t;
+            const Quat q = axis_angle({0, 0, 1}, 150.0F * kDegrees);
+            for (int k = arm; k < arm + 3; ++k) {
+                Frame &f2 = pa[static_cast<std::size_t>(k)];
+                f2.t = pivot + rotate(q, f2.t - pivot);
+                f2.q = normalized(q * f2.q);
+            }
+        }
+        a.update(ia);
+        b.update(ib);
+    }
+    float apart = 0.0F;
+    for (std::size_t i = 0; i < rig->particles.size(); ++i)
+        if (rig->particles[i].dynamic && rig->particles[i].group == 0)
+            apart = maxf(apart, length(a.simulation().positions()[i] - b.simulation().positions()[i]));
+    std::printf("partial jump: %llu rebases, skirt apart %.7f m, worst off its target %.4f m\n",
+                static_cast<unsigned long long>(a.profile().rebases), static_cast<double>(apart),
+                static_cast<double>(max_offset(a.simulation())));
+    CHECK(a.profile().rebases == 1U);
+    CHECK(apart < 1e-5F);
+    CHECK(max_offset(a.simulation()) < 0.05F); // the chain carried with its arm
+}
+
 void authored_and_release()
 {
     const Skirt s = make_skirt(6, 3);
@@ -839,6 +888,92 @@ void clip_world_volume()
     CHECK(std::fabs(volumes[0].inset - 0.02F) < 1e-6F);
 }
 
+// `turn`: a strip turned out at rest, by an angle or just clear of a collider; the drawn rest follows it
+void strip_turn()
+{
+    const Skirt s = make_skirt(8, 3);
+    const std::string post = "collider post sphere hips offset 0.15 -0.3 0 radius 0.03\n";
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, post, "  turn s0_0 clear post\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    // the turned strip's segments (its head through each control) clear the post; the next strip as it was
+    const Vec3 centre{0.15F, 0.7F, 0.0F};
+    Vec3 from = point(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))], {0, 0, 0});
+    float least = 1.0F;
+    for (int l = 0; l < 3; ++l) {
+        const auto b = static_cast<std::size_t>(s.bone(0, l));
+        const Vec3 x = point(rig->skeleton.rest[b], {s.link, 0, 0});
+        float u, v;
+        closest_segments(from, x, centre, centre, u, v);
+        least = std::fmin(least, length(lerp(from, x, u) - centre));
+        from = x;
+    }
+    const float turned = angle_between(frame_of(rig->skeleton.rest[static_cast<std::size_t>(s.bone(0, 0))]).q,
+                                       frame_of(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))]).q);
+    std::printf("turn: %.2f degrees, %.4f m from the post's centre\n", turned / kDegrees, least);
+    CHECK(turned > 1.0F * kDegrees && turned < 30.0F * kDegrees);
+    CHECK(least >= 0.03F + rig->particles[0].thickness);
+    CHECK(from.x > s.radius); // out, away from the hips
+    CHECK(rig->skeleton.rest[static_cast<std::size_t>(s.bone(1, 2))] ==
+          s.sk.rest[static_cast<std::size_t>(s.bone(1, 2))]);
+    // rebuilt at rest, the strip's bones are its turned rest
+    Simulation sim(*rig);
+    const auto pose = pose_of(s.sk, {});
+    TickSettings ts;
+    ts.gravity = {};
+    sim.initialize(pose, ts, 0);
+    std::vector<Frame> out(pose);
+    std::vector<std::uint8_t> written(pose.size(), 0);
+    sim.reconstruct(pose, out, written);
+    const auto b = static_cast<std::size_t>(s.bone(0, 1));
+    CHECK(written[b] && angle_between(out[b].q, frame_of(rig->skeleton.rest[b]).q) < 1e-3F);
+    // by an angle; a bone outside the group's strips refused
+    d.clear();
+    rig = cooked(skirt_config(s, "", "  turn s0_0 20\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (rig)
+        CHECK(std::fabs(angle_between(frame_of(rig->skeleton.rest[static_cast<std::size_t>(s.bone(0, 0))]).q,
+                                      frame_of(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))]).q) -
+                        20.0F * kDegrees) < 1e-3F);
+    d.clear();
+    CHECK(cooked(skirt_config(s, "", "  turn hips 20\n"), s.sk, s.mesh, d) == nullptr);
+    CHECK(has_text(d, "not in a strip"));
+}
+
+void outward_axis()
+{
+    // a post through strip 0's wall at rest: `outward axis` pushes that strip out alone (no links between
+    // its strips), the strip opposite it as without the post
+    const Skirt s = make_skirt(8, 3);
+    const std::string post = "collider post sphere hips offset 0.14 -0.3 0 radius 0.03\n";
+    Diagnostics d;
+    const auto rig = cooked(skirt_config(s, post, "  outward axis\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    const auto bare = cooked(skirt_config(s, "", "  outward axis\n"), s.sk, s.mesh, d); // the post left out
+    CHECK(bare != nullptr);
+    if (!bare)
+        return;
+    const auto moved = [&](int k, int l) {
+        for (std::size_t i = 0; i < rig->particles.size(); ++i)
+            if (rig->particles[i].dynamic && rig->particles[i].bone == s.bone(k, l))
+                return length(rig->particles[i].reference - bare->particles[i].reference);
+        return -1.0F;
+    };
+    std::printf("outward axis: strip 0 out %.4f m, opposite %.6f m\n", moved(0, 1),
+                std::fmax(moved(4, 0), std::fmax(moved(4, 1), moved(4, 2))));
+    CHECK(moved(0, 1) > 0.01F);
+    CHECK(moved(4, 0) >= 0.0F && moved(4, 0) < 1e-5F && moved(4, 1) < 1e-5F && moved(4, 2) < 1e-5F);
+    d.clear();
+    CHECK(
+        cooked("secondary_motion 1\nunits m\ngroup tail chain\n  attach hips\n  chain s0_0 s0_1\n  outward axis\nend\n",
+               s.sk, s.mesh, d) == nullptr);
+    CHECK(has_text(d, "outward axis"));
+}
+
 void contacts()
 {
     // a skirt over a fast capsule sweeping through its middle, a floor below it, a wall beside it
@@ -1196,12 +1331,15 @@ int main()
     clock_independence();
     pause_hold_and_rate();
     spawn_teleport_identity();
+    partial_jump();
     authored_and_release();
     guided_stretch();
     cutscene_sim_shell();
     shell_push_shin();
     cutscene_sim_kick();
     clip_world_volume();
+    strip_turn();
+    outward_axis();
     contacts();
     spread_start();
     hair_and_wind();

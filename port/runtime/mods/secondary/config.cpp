@@ -484,6 +484,35 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             if (!ok || g.shell_push.empty())
                 error(l.number, "write `shell_push <collider tag>... [from <0 to 1>]`");
             g.shell_push_from = from;
+        } else if (w == "turn") { // turn <bone> <degrees> | turn <bone> clear <collider> [margin <length>]
+            StripTurn t;
+            float degrees = 0.0F, margin = 0.002F / c_.units;
+            bool ok = l.words.size() >= 3;
+            if (ok && l.words[2] == "clear") {
+                ok =
+                    l.words.size() == 4 || (l.words.size() == 6 && l.words[4] == "margin" &&
+                                            number(l.words[5], margin) && margin >= 0.0F && margin * c_.units <= 0.05F);
+                if (ok)
+                    t.clear = l.words[3];
+            } else {
+                ok = ok && l.words.size() == 3 && number(l.words[2], degrees) && std::fabs(degrees) <= 90.0F;
+            }
+            if (!ok) {
+                error(l.number, "write `turn <bone> <degrees, -90 to 90>` or `turn <bone> clear <collider> [margin "
+                                "<length, at most 5 cm>]`");
+                continue;
+            }
+            t.bone = {l.words[1], l.number};
+            t.radians = degrees * kDegrees;
+            t.margin = margin * c_.units;
+            t.line = l.number;
+            g.turns.push_back(t);
+        } else if (w == "outward") {
+            const bool ok = l.words.size() == 2 && (l.words[1] == "axis" || l.words[1] == "vertical");
+            if (!ok)
+                error(l.number, "write `outward axis` (away from the group's own axis) or `outward vertical`");
+            g.outward_axis = ok && l.words[1] == "axis";
+            g.outward_line = l.number;
         } else if (w == "clip_world") {
             float inset = 0.0F;
             const bool off = l.words.size() == 2 && l.words[1] == "off";

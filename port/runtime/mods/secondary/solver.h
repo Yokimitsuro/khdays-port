@@ -51,8 +51,9 @@ public:
     // One tick from pose `from` to pose `to`, each needed bone moving between them.
     void tick(const std::vector<Frame> &from, const std::vector<Frame> &to, const TickSettings &settings);
     // Everything moved rigidly with group g's reference bone from `a` to `b` (a teleport): shape kept,
-    // velocity relative to it zeroed.
-    void rebase(const std::vector<Frame> &a, const std::vector<Frame> &b);
+    // velocity relative to it zeroed. `groups`: only those groups (1 each), the others left as they are.
+    void rebase(const std::vector<Frame> &a, const std::vector<Frame> &b,
+                const std::vector<std::uint8_t> *groups = nullptr);
     // Each particle carried along with its target from pose `a` to pose `b` (the time between the last
     // tick and the draw).
     void carry(const std::vector<Frame> &a, const std::vector<Frame> &b);
@@ -176,6 +177,9 @@ private:
     // normal; body (rest-side) contact pushes there however the body moved
     std::vector<Vec3> outward_;
     std::vector<std::int8_t> face_out_;
+    // per link: between two strips of an `outward axis` group (a cuff's rim, its diagonals, a bend across it): not
+    // solved, so a strip pushed out swings on its own and moves no other
+    std::vector<std::uint8_t> loose_;
     // the targets draped around the colliders down each strip (drape): order (anchors first), each
     // particle's colliders (collider, index into its candidates), raw and draped targets
     std::vector<int> drape_order_;

@@ -32,10 +32,13 @@ collider heel_l   capsule 9 length 11 radius 6 6 offset 0 4.3 0 tags legs
 collider heel_r   capsule 18 length 11 radius 6 6 offset 0 4.3 0 tags legs
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
-collider hand_l   sphere 133 offset 7 0 0 radius 4.5 side motion tags hands
+collider hand_l   sphere 133 offset 7 0 0 radius 4.5 side rest tags hands left_hand
+# the thumb, its root to past its tip: the cuff's thumb-side strip starts outside it (`turn ... clear`)
+collider thumb_l  capsule 139 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
 collider arm_r    capsule 228 229 fit 0.85 side motion tags arms
 collider forearm_r capsule 229 230 fit 0.85 side motion tags arms
-collider hand_r   sphere 250 offset 7 0 0 radius 4.5 side motion tags hands
+collider hand_r   sphere 250 offset 7 0 0 radius 4.5 side rest tags hands right_hand
+collider thumb_r  capsule 256 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
 collider head     sphere 169 offset 7 1 0 radius 9 tags head
 
 # --- The lower coat: eight strips from the waist, one connected surface ---
@@ -79,6 +82,11 @@ group coat surface preset kh2_coat
   # `no_sim`: the coat not simulated, each control on its target (the hips, the thighs' carry, the drape
   # round the legs) every tick; here for the whole coat, or in a `control` for some animations
   # no_sim
+  # `clip_world`: the room inside the coat's closed volume not drawn, so a wall it goes through shows the
+  # coat's inside, not the wall; 2 mm outside its drawn controls (on them, the skin's blending left a line
+  # of floor showing where it met the coat's inside)
+  # off in gameplay (the room drawn over the coat as it is); the cutscene coat (e_rox_hb) keeps it
+  # clip_world inset -0.2
 end
 
 # --- Drawstrings: chains from the chest helpers, hung at load ---
@@ -108,6 +116,8 @@ end
 
 # --- Sleeve cuffs: four strips a wrist joined around the circumference ---
 group cuff_l surface preset kh2_cuff
+  # its own hand only: the other hand passes through it
+  collide left_hand
   attach 116
   strip 118 119
   strip 121 122
@@ -115,9 +125,14 @@ group cuff_l surface preset kh2_cuff
   strip 127 128
   ring 118 121 124 127
   ring 119 122 125 128
+  # the thumb-side strip turned out at rest, just clear of the thumb
+  turn 121 clear thumb_l
+  # contact pushes each strip out from the cuff's own axis, alone (no links between its strips)
+  outward axis
   mode simulated
 end
 group cuff_r surface preset kh2_cuff
+  collide right_hand
   attach 233
   strip 235 236
   strip 238 239
@@ -125,6 +140,8 @@ group cuff_r surface preset kh2_cuff
   strip 244 245
   ring 235 238 241 244
   ring 236 239 242 245
+  turn 238 clear thumb_r
+  outward axis
   mode simulated
 end
 

@@ -273,15 +273,21 @@ void Actor::update(const ActorInput &in)
     if (gap <= 0.0)
         return; // the same moment drawn again: nothing moves
     const float dt = 1.0F / rig.config.rate;
-    // a teleport: any group's reference bone jumping further than a tick could carry it
-    bool jump = false;
-    for (const auto &g : rig.groups) {
-        const auto b = static_cast<std::size_t>(g.reference_bone);
+    // a teleport: every group's reference bone jumping further than a tick could carry it. Some alone (a cuff on an
+    // arm snapping to a new animation) are rebased by themselves below and the rest simulated: rebasing the whole
+    // coat for a cuff skipped the tick, and the legs jumped to the new pose through it
+    jumped_.assign(rig.groups.size(), 0);
+    std::size_t jumps = 0;
+    for (std::size_t g = 0; g < rig.groups.size(); ++g) {
+        const auto b = static_cast<std::size_t>(rig.groups[g].reference_bone);
         const Frame &a = last_pose_[b], &c = (*in.pose)[b];
         if (length(c.t - a.t) > rig.config.teleport_distance ||
-            angle_between(a.q, c.q) > rig.config.teleport_degrees * kDegrees)
-            jump = true;
+            angle_between(a.q, c.q) > rig.config.teleport_degrees * kDegrees) {
+            jumped_[g] = 1;
+            ++jumps;
+        }
     }
+    const bool jump = jumps > 0 && jumps == rig.groups.size();
     // the game's pose snapping (a cutscene's first frames): a place on the game model jumping further in one draw,
     // about its group's hips, than a leg carries it; a new shot like a camera cut
     bool snap = false;
@@ -328,6 +334,32 @@ void Actor::update(const ActorInput &in)
         ticks_done_ =
             static_cast<std::int64_t>(std::floor(in.seconds * static_cast<double>(rig.config.rate) + kTickSlack));
         return;
+    }
+    if (jumps > 0) { // those groups carried to the new pose; their bones (the reference bone, those under it, their
+                     // colliders') start the ticks there
+        sim_.rebase(last_pose_, *in.pose, &jumped_);
+        std::uint32_t touch = 0;
+        for (const Particle &p : rig.particles)
+            if (jumped_[static_cast<std::size_t>(p.group)])
+                touch |= p.collide;
+        const auto now = [&](int bone) {
+            if (bone >= 0)
+                last_pose_[static_cast<std::size_t>(bone)] = (*in.pose)[static_cast<std::size_t>(bone)];
+        };
+        for (const Collider &c : rig.colliders)
+            if (c.tags & touch) {
+                now(c.bone);
+                now(c.end_bone);
+            }
+        for (const int bone : rig.needed) {
+            bool under = false;
+            for (int up = bone; up >= 0 && !under; up = rig.skeleton.parent[static_cast<std::size_t>(up)])
+                for (std::size_t g = 0; g < rig.groups.size() && !under; ++g)
+                    under = jumped_[g] && rig.groups[g].reference_bone == up;
+            if (under)
+                now(bone);
+        }
+        ++profile_.rebases;
     }
     // the ticks due on the game's clock (counted whole, so rounding never doubles one), at most
     // max_catchup (a longer stall is skipped, not replayed)

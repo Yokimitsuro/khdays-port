@@ -110,6 +110,7 @@ private:
     double settled_at_ = -1e9;    // the game's time of the last settle (a start, a cut)
     std::int64_t ticks_done_ = 0; // ticks since the start, sim_seconds_ = ticks_done_ / rate from it
     std::vector<Frame> last_pose_, from_, to_;
+    std::vector<std::uint8_t> jumped_;              // per group: its reference bone jumped this draw
     std::vector<Vec3> last_game_, game_a_, game_b_; // the last draw's game targets, a tick's start and end
     std::vector<float> control_applied_;
     Profile profile_;
