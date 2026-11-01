@@ -405,7 +405,15 @@ units); an `ik exact` offset scales with it, and what the game attaches (a
 `weapon` line, the result matrices) keeps the game's size. The cutscene Roxas
 (`e_rox_hb`) is 0.93: game/KH2 height 0.95, shoulders 0.93, arms 0.93, head
 joint 0.91, legs 0.89, hip joint 0.83 (one scale cannot match his short legs; the
-upper body, where cutscenes touch things, does). `mesh_scale <joint>
+upper body, where cutscenes touch things, does). `twist <joint> <by joint> <axis
+from> <axis to> [<share>]` turns the joint and those under it about the way from one
+joint to the other (at rest, as the joint's parent carries it) by a share (default 1)
+of the other joint's twist about it against that parent (past 135 degrees eased back to none at half a
+turn, where +180 and -180 degrees are one pose: passing it flipped the cuff a whole turn in a frame), after the pose and before
+the secondary motion (`models.cpp` draw, `kh2::twist_about` / `twist_turn`): N_EX830's
+cuffs ride the wrist (113: the sleeve's last ring on 115 and the cuff on 116), and
+P_EX110's motions and Days' animations turn the hand alone, so `twist kh2_114 kh2_133
+kh2_112 kh2_113` (and 231 250 229 230) turns them with it. `mesh_scale <joint>
 <x> <y> <z>` scales that joint's own vertices in its own rest axes, applied last
 (skin x B x S x inverse(B), B its rest frame): its bone, its children, the
 weapons and the secondary motion's colliders keep their sizes (the secondary motion

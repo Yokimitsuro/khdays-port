@@ -207,4 +207,15 @@ private:
     std::vector<Mat4> source_rest_inverse_, target_rest_, target_rest_inverse_, target_local_;
 };
 
+// bones.txt's `twist`: a joint and those under it turned about an axis by a share of another joint's twist about
+// it (a forearm's end turning with the hand). `twist_about`: how far joint b has turned about `axis` (unit, model
+// space at rest) against joint a since rest, radians, from their matrices at rest and now (their scale left out);
+// past 135 degrees eased back to none at half a turn, where it is ambiguous (+180 and -180 degrees are one
+// pose: a hand passing it flipped the cuff a whole turn in one frame). `twist_turn`: a turn by `radians` about that
+// axis as joint a carries it now, through `pivot`, to put before the turned joints' matrices.
+float twist_about(const Mat4& rest_a, const Mat4& rest_b, const Mat4& now_a, const Mat4& now_b,
+                  const std::array<float, 3>& axis);
+Mat4 twist_turn(const Mat4& rest_a, const Mat4& now_a, const std::array<float, 3>& axis, float radians,
+                const std::array<float, 3>& pivot);
+
 }  // namespace khdays::assets::kh2

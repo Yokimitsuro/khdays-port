@@ -1622,4 +1622,117 @@ void Retarget::apply(const std::vector<Mat4>& source, std::vector<Mat4>& out) co
     }
 }
 
+namespace {
+
+using Mat3 = std::array<float, 9>;  // column-major
+
+// a matrix's turn: its columns made orthonormal (Gram-Schmidt from x), its scale left out
+Mat3 turn3(const Mat4& m) {
+    std::array<float, 3> x{m[0], m[1], m[2]}, y{m[4], m[5], m[6]};
+    const auto unit = [](std::array<float, 3>& v) {
+        const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (l > 1e-12F)
+            for (float& c : v)
+                c /= l;
+    };
+    unit(x);
+    const float d = x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+    for (int k = 0; k < 3; ++k)
+        y[k] -= x[k] * d;
+    unit(y);
+    const std::array<float, 3> z{x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]};
+    return {x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2]};
+}
+
+Mat3 mul3(const Mat3& a, const Mat3& b) {
+    Mat3 r{};
+    for (int c = 0; c < 3; ++c)
+        for (int row = 0; row < 3; ++row)
+            for (int k = 0; k < 3; ++k)
+                r[c * 3 + row] += a[k * 3 + row] * b[c * 3 + k];
+    return r;
+}
+
+Mat3 transpose3(const Mat3& a) {
+    return {a[0], a[3], a[6], a[1], a[4], a[7], a[2], a[5], a[8]};
+}
+
+}  // namespace
+
+float twist_about(const Mat4& rest_a, const Mat4& rest_b, const Mat4& now_a, const Mat4& now_b,
+                  const std::array<float, 3>& axis) {
+    // b's turn against a since rest, in the rest model space's axes
+    const Mat3 m = mul3(mul3(turn3(rest_a), transpose3(turn3(now_a))), mul3(turn3(now_b), transpose3(turn3(rest_b))));
+    // as a quaternion (its largest component first, for precision)
+    const auto at = [&](int row, int col) { return m[col * 3 + row]; };
+    float w = 0.0F, x = 0.0F, y = 0.0F, z = 0.0F;
+    const float tr = at(0, 0) + at(1, 1) + at(2, 2);
+    if (tr > 0.0F) {
+        const float s = std::sqrt(tr + 1.0F) * 2.0F;
+        w = 0.25F * s;
+        x = (at(2, 1) - at(1, 2)) / s;
+        y = (at(0, 2) - at(2, 0)) / s;
+        z = (at(1, 0) - at(0, 1)) / s;
+    } else if (at(0, 0) > at(1, 1) && at(0, 0) > at(2, 2)) {
+        const float s = std::sqrt(1.0F + at(0, 0) - at(1, 1) - at(2, 2)) * 2.0F;
+        w = (at(2, 1) - at(1, 2)) / s;
+        x = 0.25F * s;
+        y = (at(0, 1) + at(1, 0)) / s;
+        z = (at(0, 2) + at(2, 0)) / s;
+    } else if (at(1, 1) > at(2, 2)) {
+        const float s = std::sqrt(1.0F + at(1, 1) - at(0, 0) - at(2, 2)) * 2.0F;
+        w = (at(0, 2) - at(2, 0)) / s;
+        x = (at(0, 1) + at(1, 0)) / s;
+        y = 0.25F * s;
+        z = (at(1, 2) + at(2, 1)) / s;
+    } else {
+        const float s = std::sqrt(1.0F + at(2, 2) - at(0, 0) - at(1, 1)) * 2.0F;
+        w = (at(1, 0) - at(0, 1)) / s;
+        x = (at(0, 2) + at(2, 0)) / s;
+        y = (at(1, 2) + at(2, 1)) / s;
+        z = 0.25F * s;
+    }
+    // the twist part of it (swing-twist about the axis)
+    float a = 2.0F * std::atan2(x * axis[0] + y * axis[1] + z * axis[2], w);
+    if (a > kPi)
+        a -= 2.0F * kPi;
+    else if (a < -kPi)
+        a += 2.0F * kPi;
+    // past 135 degrees eased back to none at half a turn, so it never jumps from one side of it to the other
+    const float most = 0.75F * kPi;
+    if (std::fabs(a) > most)
+        a = std::copysign(most, a) * (kPi - std::fabs(a)) / (kPi - most);
+    return a;
+}
+
+Mat4 twist_turn(const Mat4& rest_a, const Mat4& now_a, const std::array<float, 3>& axis, const float radians,
+                const std::array<float, 3>& pivot) {
+    // the axis as a carries it now
+    const Mat3 carry = mul3(turn3(now_a), transpose3(turn3(rest_a)));
+    const float u[3] = {carry[0] * axis[0] + carry[3] * axis[1] + carry[6] * axis[2],
+                        carry[1] * axis[0] + carry[4] * axis[1] + carry[7] * axis[2],
+                        carry[2] * axis[0] + carry[5] * axis[1] + carry[8] * axis[2]};
+    // Rodrigues: c I + s [u]x + (1 - c) u u^T, about the pivot
+    const float c = std::cos(radians), s = std::sin(radians), t = 1.0F - c;
+    Mat4 r{t * u[0] * u[0] + c,
+           t * u[0] * u[1] + s * u[2],
+           t * u[0] * u[2] - s * u[1],
+           0.0F,
+           t * u[0] * u[1] - s * u[2],
+           t * u[1] * u[1] + c,
+           t * u[1] * u[2] + s * u[0],
+           0.0F,
+           t * u[0] * u[2] + s * u[1],
+           t * u[1] * u[2] - s * u[0],
+           t * u[2] * u[2] + c,
+           0.0F,
+           0.0F,
+           0.0F,
+           0.0F,
+           1.0F};
+    for (int row = 0; row < 3; ++row)
+        r[12 + row] = pivot[row] - (r[row] * pivot[0] + r[4 + row] * pivot[1] + r[8 + row] * pivot[2]);
+    return r;
+}
+
 }  // namespace khdays::assets::kh2

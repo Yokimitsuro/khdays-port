@@ -267,6 +267,17 @@ struct Limb {
     std::array<float, 3> offset{};
 };
 
+// bones.txt's `twist <joint> <by joint> <axis from> <axis to> [<share>]`: the joint and the joints under it turned
+// about the way from one joint to the other (at rest, as the joint's parent carries it) by a share of the other
+// joint's twist about it against that parent (a forearm's end turning with the hand: N_EX830's cuffs ride the wrist,
+// P_EX110's motions turn the hand alone)
+struct Twist {
+    std::size_t joint = 0, by = 0, parent = 0, to = 0;
+    float share = 1.0F;
+    std::array<float, 3> axis{}; // model space at rest
+    std::vector<std::size_t> turned;
+};
+
 // How a mesh's vertex colours' alpha counts (glTF: it multiplies the texture's): not at all (an opaque
 // material); a triangle under the cutoff left out (a mask); the triangle's polygon alpha lowered by it
 // (blended). Per triangle, by its corners' mean: the DS's alpha is a polygon's, not a vertex's.
@@ -397,6 +408,7 @@ struct Model {
     std::vector<Limb> limbs;            // bones.txt's `ik`: its two-bone limbs, reaching as the nodes do
     // bones.txt's `mesh_scale`: a joint and its skin matrix's last factor, its vertices scaled in its own axes
     std::vector<std::pair<std::size_t, Mat>> mesh_scales;
+    std::vector<Twist> twists;          // bones.txt's `twist`
     std::vector<Mat> node_rest_inverse; // the game's model, per node
     std::vector<int> node_parent;
     std::vector<std::string> node_names;
@@ -553,6 +565,7 @@ struct BonesFile {
     std::map<std::string, std::array<float, 3>> places;
     std::array<std::string, 3> spine;
     std::vector<HideLine> hides;
+    std::vector<TwistLine> twists;
 };
 
 void read_bones(const std::string &model_file, BonesFile &bones)
@@ -566,6 +579,7 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &aligns = bones.aligns;
     auto &places = bones.places;
     auto &spine = bones.spine;
+    auto &twists = bones.twists;
     auto &hides = bones.hides;
     const auto dot = model_file.find_last_of('.');
     const std::string path = (dot != std::string::npos ? model_file.substr(0, dot) : model_file) + ".bones.txt";
@@ -676,6 +690,20 @@ void read_bones(const std::string &model_file, BonesFile &bones)
                 std::fprintf(stderr,
                              "models: %s: write `spine <base joint> <end joint> [hips <joint>]`; the line is "
                              "ignored\n",
+                             path.c_str());
+            }
+        } else if (a == "twist") {
+            TwistLine t;
+            t.joints[0] = b;
+            bool ok = static_cast<bool>(words >> t.joints[1] >> t.joints[2] >> t.joints[3]);
+            if (ok && !(words >> t.share))
+                t.share = 1.0F;
+            if (ok && t.share >= 0.0F && t.share <= 1.0F) {
+                twists.push_back(t);
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `twist <joint> <by joint> <axis from joint> <axis to joint> "
+                             "[<share, 0 to 1>]`; the line is ignored\n",
                              path.c_str());
             }
         } else if (a == "align") {
@@ -1390,6 +1418,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &places = bones.places;
     const auto &spine_line = bones.spine;
     const auto &hides = bones.hides;
+    const auto &twists = bones.twists;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -1757,6 +1786,48 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         by[10] = std::fmax(s.by[2], 1e-3F);
         const Mat &ib = model->joints[j].inverse_bind;
         model->mesh_scales.emplace_back(j, mul(inverse(ib), mul(by, ib)));
+    }
+
+    // the twists: the joints named, the turned joint's parent, its descendants (parents come first)
+    for (const TwistLine &line : twists) {
+        std::array<std::size_t, 4> at{};
+        bool found = true;
+        for (std::size_t i = 0; i < 4 && found; ++i) {
+            at[i] = 0;
+            while (at[i] < model->joints.size() && model->joints[at[i]].name != line.joints[i])
+                ++at[i];
+            found = at[i] < model->joints.size();
+            if (!found) {
+                std::fprintf(stderr, "models: %s: twist: no joint %s; the line is ignored\n", name.c_str(),
+                             line.joints[i].c_str());
+                khdays_log("models: %s: twist: no joint %s; the line is ignored", name.c_str(), line.joints[i].c_str());
+            }
+        }
+        if (!found || model->joints[at[0]].parent < 0)
+            continue;
+        Twist t;
+        t.joint = at[0];
+        t.by = at[1];
+        t.parent = static_cast<std::size_t>(model->joints[at[0]].parent);
+        t.to = at[3];
+        t.share = line.share;
+        const Mat from = inverse(model->joints[at[2]].inverse_bind), to = inverse(model->joints[at[3]].inverse_bind);
+        const std::array<float, 3> d{to[12] - from[12], to[13] - from[13], to[14] - from[14]};
+        const float l = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (l < 1e-6F) {
+            std::fprintf(stderr, "models: %s: twist: %s and %s are in one place (no axis); the line is ignored\n",
+                         name.c_str(), line.joints[2].c_str(), line.joints[3].c_str());
+            continue;
+        }
+        t.axis = {d[0] / l, d[1] / l, d[2] / l};
+        std::vector<char> under(model->joints.size(), 0);
+        for (std::size_t j = 0; j < model->joints.size(); ++j) {
+            const int up = model->joints[j].parent;
+            under[j] = j == t.joint || (up >= 0 && under[static_cast<std::size_t>(up)]) ? 1 : 0;
+            if (under[j])
+                t.turned.push_back(j);
+        }
+        model->twists.push_back(std::move(t));
     }
 
     // the meshes and their textures, each texture as its material takes its alpha (glTF alphaMode): kept;
@@ -3221,6 +3292,18 @@ void draw(Model &m)
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
     play_face(m);
+    // bones.txt's `twist`: those joints (and the ones under them) turned with the other joint's twist, before the
+    // cloth reads the pose
+    for (const Twist &t : m.twists) {
+        namespace kh2 = khdays::assets::kh2;
+        const auto rest = [&](std::size_t j) { return inverse(m.joints[j].inverse_bind); };
+        const auto now = [&](std::size_t j) { return mul(skin[j], rest(j)); };
+        const Mat parent_rest = rest(t.parent), parent_now = now(t.parent), to = now(t.to);
+        const float angle = t.share * kh2::twist_about(parent_rest, rest(t.by), parent_now, now(t.by), t.axis);
+        const Mat turn = kh2::twist_turn(parent_rest, parent_now, t.axis, angle, {to[12], to[13], to[14]});
+        for (const std::size_t j : t.turned)
+            skin[j] = mul(turn, skin[j]);
+    }
     // secondary motion over the finished pose (the game's or the KH2 motions', blended), before skinning
     if (m.secondary) {
         khdays::secondary::DrawInput in;
