@@ -174,7 +174,8 @@ from its map; a game mission's file otherwise, copied as the mission's own, and
 choosing one sets the world to its); the window says how each mission is played;
 and for each mission its **Places on the map** (below) and its **Words and
 settings** (each one's words in the five languages, where it is listed, when it
-opens, its **Kind** -- with **Eliminate**, the **Enemy to defeat** and **How
+opens, its **Kind** -- with **Hearts**, the **Hearts to collect** (the window
+says how many its waves give); with **Eliminate**, the **Enemy to defeat** and **How
 many** --; **Save to the mod** writes and reads back each change). Another mission
 chosen, or the studio closed, with changes not saved asks first. A game mission's
 **New mission from this one** opens that window with the mission as the new one's
@@ -199,9 +200,9 @@ with its world, room, start, time limit, notice and objective:
     wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
     chest = <item> at <x> <y> <z> <heading>     # a chest holding one of the game's items
     emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
-    kind = waves | eliminate                     # how it is cleared (default waves)
+    kind = waves | eliminate | hearts            # how it is cleared (default waves)
     target = <class>                             # eliminate: the enemy class to defeat
-    goal = <n>                                   # eliminate: how many of it (0 or none: all)
+    goal = <n>                                   # eliminate: how many of it; hearts: how many hearts (0 or none: all)
 
 Wave 1 comes out at the start, each next wave when every enemy of the last is
 defeated. A `waves` mission is cleared when the last wave is (or failed by its
@@ -211,12 +212,22 @@ standing; the mission gauge on the bottom screen counts them (as the game's 0402
 "Defeat seven Fire Plants!": a counter gauge and the tracked class, script
 commands 2.34 and 2.73). Only the target class's enemies placed in the waves
 count, so a target no wave has, or a goal above how many there are, leaves the
-mission out with the reason; a waves mission keeps `target` and `goal` unused. The room's own exits are closed while it is played (each of its link
+mission out with the reason; a waves mission keeps `target` and `goal` unused.
+A `hearts` mission is cleared once `goal` hearts are collected: every defeated
+enemy gives its class's hearts (the game's, `Ms/DP.p2f`; Shadows and Possessors
+give none), and the gauge shows them over all the waves' enemies give (as the
+game's 0101 "Defeat Heartless and collect hearts!", a hearts gauge); waves whose
+enemies give no heart, or a goal above what they give, leave the mission out with
+the reason. The room's own exits are closed while it is played (each of its link
 rows, by its key). A chest's item is the item's number, 1 to the game's item
 count (`db/db.p2` entry 0x15): the game reads that item's record as the
 mission starts, so a chest with no item (0) or one past the last leaves the
 mission out with the reason instead of stopping the game. An area takes four enemy classes at most (the game's); a class must be
-one a game mission has (the window lists them by name). The chests and emblems
+one a game mission has (the window lists them by name). The game loads each
+class's code into six slots, and not every class has code for every slot (a
+Shadow's goes only in the first, and takes two; a Hover Ghost's too, so the two
+never come out together): the port puts the classes in an order where each finds
+its slots, and leaves out with the reason a mission whose classes fit in none. The chests and emblems
 are added to the game's `trbox` and `evi` as they load and put out in Mission
 Mode for new missions; a chest's opened flag is kept in the port's save part (an
 emblem's pickup is made at its place, but it is not drawn nor picked up yet).

@@ -2,6 +2,7 @@
 
 #include "core/files/containers.h"
 #include "core/files/paths.h"
+#include "core/missions/enemy_names.h"
 #include "core/missions/missions.h"
 
 extern "C" {
@@ -9,10 +10,12 @@ extern "C" {
 #include "missions/worlds.h"
 }
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <numeric>
 #include <set>
 #include <utility>
 
@@ -38,8 +41,15 @@ constexpr int kEventFirstWave = 10;
 // An eliminate mission's gauge (2.34, Ov002_SetScriptRequest: its kind, total, goal) as 402's: a counter (kind 4)
 // that every defeated enemy of the tracked class moves (2.73 names the class: Ov002_OnPartActorRetired adds 1 to
 // tally 3); at the goal Ov002_StepProgressBar raises this field (Ov002_TriggerOnceOnFlag), which the area watches.
+// A hearts mission's as 0101's: hearts (kind 2), which every defeated enemy moves by its class's hearts
+// (Ov107_AiState_OnDefeat posts them to tally 2); no class to name.
 constexpr int kGaugeCounter = 4;
+constexpr int kGaugeHearts = 2;
 constexpr int kFieldGoalReached = 8326;
+
+// An enemy class's record in Ms/DP.p2f (one entry per class) and its hearts' byte in it.
+constexpr char kEnemyRecords[] = "Ms/DP.p2f";
+constexpr std::size_t kRecordHearts = 0x6d;
 
 // The game state fields the built mission reads as 1354 does: c0 raises the ending's, which area 11's event (2.9)
 // waits for before c1; the start sets the module's and the others as 1354's start does (what each is for is open).
@@ -333,11 +343,13 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
 
 GameFiles extracted_game_files(const fs::path& nitrofs) {
     GameFiles g;
-    g.read = [nitrofs](const std::string& path) {
-        std::ifstream in(nitrofs / path_u8(path), std::ios::binary);
+    auto read_file = [](const fs::path& file) {
+        std::ifstream in(file, std::ios::binary);
         return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     };
+    g.read = [nitrofs, read_file](const std::string& path) { return read_file(nitrofs / path_u8(path)); };
     g.missions = mission_numbers(nitrofs);
+    g.overlay_table = read_file(nitrofs / ".." / "system" / "arm9_overlay_table.bin");
     return g;
 }
 
@@ -348,10 +360,62 @@ std::vector<int> buildable_enemy_classes(const GameFiles& game) {
     return out;
 }
 
+std::vector<int> enemy_hearts(const GameFiles& game) {
+    P2File records;
+    std::string why;
+    std::vector<int> out;
+    if (!parse_p2(game.read(kEnemyRecords), &records, &why))
+        return out;
+    for (const P2Entry& e : records.entries)
+        out.push_back(e.data.size() > kRecordHearts ? e.data[kRecordHearts] : 0);
+    return out;
+}
+
+int waves_hearts(const std::vector<std::vector<WaveSpawner>>& waves, const std::vector<int>& hearts) {
+    int total = 0;
+    for (const auto& wave : waves)
+        for (const WaveSpawner& sp : wave)
+            for (const auto& e : sp.enemies)
+                if (e.enemy_class >= 0 && static_cast<std::size_t>(e.enemy_class) < hearts.size())
+                    total += hearts[static_cast<std::size_t>(e.enemy_class)] * e.count;
+    return total;
+}
+
+std::vector<int> load_order(const std::vector<int>& classes, const std::vector<std::uint8_t>& overlay_table) {
+    auto columns_taken = [&](int overlay) {
+        const std::size_t at = static_cast<std::size_t>(overlay) * 32 + 8;
+        return at + 4 <= overlay_table.size() ? static_cast<int>(le32(overlay_table, at) / 0x1e00) + 1
+                                              : kEnemyColumns + 1;
+    };
+    auto loads = [&](const std::vector<int>& order) {
+        int column = 0;
+        for (const int k : order) {
+            const int c = classes[static_cast<std::size_t>(k)];
+            while (column < kEnemyColumns && enemy_overlay(c, column) < 0)
+                ++column;
+            if (column >= kEnemyColumns)
+                return false;
+            column += columns_taken(enemy_overlay(c, column));
+            if (column > kEnemyColumns)
+                return false;
+        }
+        return true;
+    };
+    std::vector<int> order(classes.size());
+    std::iota(order.begin(), order.end(), 0);
+    do {
+        if (loads(order))
+            return order;
+    } while (std::next_permutation(order.begin(), order.end()));
+    return {};
+}
+
 bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<std::uint8_t>* out, std::string* why) {
     if (plan.waves.empty() || plan.waves[0].empty())
         return fail_with(why, "no wave: a mission made here has its enemies in waves");
     const bool eliminate = plan.kind == KHDAYS_MISSION_ELIMINATE;
+    const bool hearts = plan.kind == KHDAYS_MISSION_HEARTS;
+    const bool to_goal = eliminate || hearts;  // cleared at its gauge's goal, not by its last wave
     MissionFile base, check, target;
     if (!read_mission(game, kBaseMission, &base, why) || !read_mission(game, kWaveCheckMission, &check, why) ||
         (eliminate && !read_mission(game, kTargetMission, &target, why)))
@@ -413,6 +477,38 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         return fail_with(why, "more than four enemy classes: the game makes an area's enemies of four at most");
     if (groups.size() > 255 || rows.size() > 255)
         return fail_with(why, "more spawners than an enemy table holds (255)");
+    // the rows in the order the classes' code fits the game's enemy slots (their actors are made in row order, 2.49,
+    // each class's code loaded with its first)
+    if (game.overlay_table.empty())
+        return fail_with(why, "the game's overlay table is not there (system/arm9_overlay_table.bin)");
+    const std::vector<int> order = load_order(classes, game.overlay_table);
+    if (order.empty()) {
+        std::string listed;
+        for (const int c : classes)
+            listed += (listed.empty() ? "" : ", ") + std::to_string(c);
+        return fail_with(why, "enemy classes " + listed +
+                                  ": their code does not fit the game's six enemy slots together, in any order");
+    }
+    {
+        std::vector<int> row_of(order.size());
+        for (std::size_t k = 0; k < order.size(); ++k)
+            row_of[static_cast<std::size_t>(order[k])] = static_cast<int>(k);
+        std::vector<int> ordered_classes;
+        std::vector<std::array<std::uint8_t, 16>> ordered_rows;
+        for (const int k : order) {
+            ordered_classes.push_back(classes[static_cast<std::size_t>(k)]);
+            ordered_rows.push_back(rows[static_cast<std::size_t>(k)]);
+        }
+        classes = std::move(ordered_classes);
+        rows = std::move(ordered_rows);
+        for (auto& parts : groups)
+            for (auto& part : parts)
+                part.first = row_of[static_cast<std::size_t>(part.first)];
+        std::map<int, int> ordered_pool;
+        for (const auto& [row, n] : pool)
+            ordered_pool[row_of[static_cast<std::size_t>(row)]] = n;
+        pool = std::move(ordered_pool);
+    }
 
     // ---- area 11: its world and room, the enemies' pool, the first wave, the start, HUD, clock, notice, events
     Writer w;
@@ -520,9 +616,9 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             w.step(carried(*area_i, *clock, w));
         queue(w, kEventClock, "c0");
     }
-    // an eliminate mission's last wave defeated is no end of its own: its gauge's goal is (the target class's last
-    // enemy is among them, and c0 run twice is not known to be harmless)
-    if (!eliminate || plan.waves.size() > 1)
+    // the last wave defeated is no end of its own where a gauge's goal is (the target class's last enemy, or the
+    // last hearts, are among them, and c0 run twice is not known to be harmless)
+    if (!to_goal || plan.waves.size() > 1)
         when_all_defeated(w, event_of(0), next_of(0));
     {
         // the ending: once c0 raises its field, 4000 ms later c1 (to area 99, the results)
@@ -535,7 +631,7 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         else
             w.step(carried(*area_i, *ending, w));
         queue(w, kEventEnding, "c1");
-        if (eliminate && ending != nullptr) {
+        if (to_goal && ending != nullptr) {
             // the goal reached: the same watch on the gauge's field, c0 at once
             ScriptStep goal = carried(*area_i, *ending, w);
             set_operand(goal, 1, integer(kEventGoal));
@@ -554,7 +650,7 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
         Writer wave;
         wave.script.name = "w" + std::to_string(k + 1);
         spawners(wave, plan.waves[k]);
-        if (!eliminate || k + 1 < plan.waves.size())
+        if (!to_goal || k + 1 < plan.waves.size())
             when_all_defeated(wave, event_of(k), next_of(k));
         need(copy(wave, 0, 3));
         area_scripts.push_back(wave.script);
@@ -593,6 +689,17 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             target_e < 0 ? nullptr : script_named(target.entries[static_cast<std::size_t>(target_e)].archive, "_i");
         ScriptStep& tracked = need(target_i == nullptr ? nullptr : copy(s, 2, 73, 0, nullptr, target_i));
         set_operand(tracked, 0, integer(plan.target));
+    } else if (hearts) {
+        const int total = waves_hearts(plan.waves, enemy_hearts(game));
+        if (total == 0)
+            return fail_with(why, "no heart to collect: none of the waves' enemies gives any (" +
+                                      std::string(kEnemyRecords) + ")");
+        if (plan.goal > total)
+            return fail_with(why, "goal " + std::to_string(plan.goal) + ": the waves' enemies give " +
+                                      std::to_string(total) + " hearts");
+        set_operand(gauge, 0, integer(kGaugeHearts));
+        set_operand(gauge, 1, integer(total));
+        set_operand(gauge, 2, integer(plan.goal > 0 ? plan.goal : total));
     }
     set_operand(need(copy_start(2, 52)), 1, {0x40, 0, static_cast<std::int32_t>(s.texts(plan.objective))});
     for (const auto& [field, bits] : kStartFields) {

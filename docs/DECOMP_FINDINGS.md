@@ -367,6 +367,13 @@ Taken up (for the record of what the old names were):
     state 8326, the mission's goal reached.
   - The spawner slot's `mask` (`Ov107_Spawner_AddSlot`, from 2.32's third operand) is the enemy's status byte
     +0x179 (`Ov107_SetStatusAndEmit`), not a mask.
+  - `Ov022_SetPlayerScale(seat, value)` posts a defeated enemy's hearts (`Ov107_AiState_OnDefeat` hands it the
+    enemy's +0x19f): tally 2, the hearts in the high half and a bonus by the player's step in the low one; it scales
+    no player. The enemy's `field_19f` and its spawn record's `field_5d` (`Ov107_LoadSpawnRecord`, byte 0x6d of the
+    class's Ms/DP.p2f record) are the hearts it gives.
+  - `Ov107_EnemyTableHasEntry(class, column)` and `data_ov107_020cb6a4` (6 bytes a class) say which of the six
+    enemy code columns a class's overlay is built for (overlay 114 + the byte, 0xff none); `Ov107_LoadEnemyOverlay`
+    returns how many columns the overlay takes, `data_ov107_020cbb04` is the next free column.
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 

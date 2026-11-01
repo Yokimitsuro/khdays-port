@@ -160,6 +160,22 @@ WALKS = [
             "mission end\tcleared",
         ),
     ),
+    # ... and a hearts mission (port/tests/mods_v2/missions_hearts): cleared once half the hearts its enemies give
+    # are collected, the first of its two enemies that give hearts defeated (a Shadow gives none); the waves walk's
+    # route
+    Walk(
+        "missions_hearts",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_hearts",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.hearts/hearts is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

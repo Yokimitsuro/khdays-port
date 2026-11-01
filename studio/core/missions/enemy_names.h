@@ -10,4 +10,10 @@ const char* enemy_name(int id);
 // How many ids the game's table has.
 int enemy_ids();
 
+// The game's six enemy code slots (columns): an id's overlay in column `column`, -1 where none is built for it.
+// Ov107_SpawnEntityClass loads an id's at the first free column it has one in, the overlay taking its RAM size /
+// 0x1e00 + 1 columns (Ov107_LoadEnemyOverlay); no column left is OS_Terminate.
+constexpr int kEnemyColumns = 6;
+int enemy_overlay(int id, int column);
+
 }  // namespace studio

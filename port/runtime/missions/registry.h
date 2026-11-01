@@ -42,6 +42,7 @@ typedef struct KhdaysMissionSpawner {
 typedef enum KhdaysMissionKind {
     KHDAYS_MISSION_WAVES,     /* cleared once its last wave is defeated */
     KHDAYS_MISSION_ELIMINATE, /* cleared once `goal` enemies of its target class are defeated (all of them by default) */
+    KHDAYS_MISSION_HEARTS,    /* cleared once `goal` hearts are collected (all its enemies' by default) */
 } KhdaysMissionKind;
 
 typedef struct KhdaysMissionChest {
@@ -80,7 +81,7 @@ typedef struct KhdaysMission {
     int kind;       /* KhdaysMissionKind */
     int has_target; /* eliminate: target = <enemy class> (a waves mission keeps it unused) */
     int target;
-    int goal;                       /* eliminate: how many of the target class to defeat; 0 all */
+    int goal;                       /* eliminate: how many of the target class; hearts: how many hearts; 0 all */
     KhdaysMissionSpawner *spawners; /* wave <n> = ... */
     int spawner_count;
     KhdaysMissionChest *chests;

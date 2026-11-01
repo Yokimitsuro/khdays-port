@@ -217,7 +217,30 @@ static void eliminate_read(void)
     }
     CHECK(reports.count == 4);
     CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_ELIMINATE), "eliminate") == 0);
-    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_ELIMINATE + 1) == NULL);
+    khdays_missions_free(&r);
+}
+
+/* A hearts mission: its goal how many hearts (0: all its enemies'), its enemies in waves; how many hearts they give
+ * is the game's, which the builder reads, so a goal is not checked here. */
+static void hearts_read(void)
+{
+    static const char text[] = "[mission hearts]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = hearts\ngoal = 40\nwave 1 = 1x3 at 1 0 1\n"
+                               "[mission every-heart]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = hearts\nwave 1 = 5x1 at 1 0 1\n"
+                               "[mission no-waves]\nname en = A\nobjective en = B\nworld = tt\nkind = hearts\n"
+                               "goal = 10\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Hearts", text, &reports) == 2);
+    CHECK(r.count == 2);
+    if (r.count == 2) {
+        CHECK(r.list[0].kind == KHDAYS_MISSION_HEARTS && r.list[0].goal == 40 && !r.list[0].has_target);
+        CHECK(r.list[1].kind == KHDAYS_MISSION_HEARTS && r.list[1].goal == 0);
+    }
+    CHECK(reports.count == 1);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_HEARTS), "hearts") == 0);
+    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_HEARTS + 1) == NULL);
     khdays_missions_free(&r);
 }
 
@@ -615,6 +638,7 @@ int main(int argc, char **argv)
     bad_blocks_left_out();
     waves_chests_and_emblems_read();
     eliminate_read();
+    hearts_read();
     chests_hold_game_items();
     chests_kept();
     numbering();

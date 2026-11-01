@@ -4457,6 +4457,29 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   tests it for 1). The port's eliminate missions (port/runtime/missions, studio/core/missions/mission_build.cpp)
   are built as 0402: a counter gauge and 2.73 with the target class; the missions_eliminate walk traced the gauge
   0 of 2 (goal 1), 1 of 2 at the first Shadow defeated, state 8326 0 -> 1 two frames later and the mission cleared.
+- **Hearts on the mission gauge** (read 2026-11-01 for spec 036's hearts missions): every defeated enemy posts its
+  class's hearts to tally 2, whatever the mission (`Ov107_AiState_OnDefeat` -> `Ov022_SetPlayerScale(seat,
+  hearts)`, which packs the hearts << 16 with a bonus by the player's step in the low half -> `Ov002_AddMissionTally(0,
+  2, ...)`); a hearts gauge (kind 2) adds the high half (`Ov002_ApplyTally`). A class's hearts are byte 0x6d of its
+  record in Ms/DP.p2f, one entry a class (`Ov107_LoadSpawnRecord` keeps it at the record's +0x5d, the enemy at
+  +0x19f): Shadows, Possessors and the Vendors give 0, Yellow Operas and Dire Plants 13, Fire Plants and Scarlet
+  Tangos 15. 0101's total, 199, is its table's enemies' hearts (11 Yellow Operas, 2 Scarlet Tangos, 2 Dire Plants);
+  its goal, 121, is the mission's own, and reaching it does not end 0101: its `e0` opens the corridor home (state
+  8840), the hearts still counting. 20 game missions have a hearts gauge. The port's hearts missions are built
+  with kind 2, the waves' enemies' hearts as the total and the goal watched as an eliminate mission's; the
+  missions_hearts walk traced 0 of 28 (goal 13), 13 at the Yellow Opera defeated, state 8326 two frames later and
+  the mission cleared.
+- **The enemy code slots**: a class's code is an overlay in six columns of 0x1e00 bytes (RAM from 0x020cbf20,
+  0x1e20 apart). `Ov107_SpawnEntityClass` loads a class at its first actor into the first free column
+  `data_ov107_020cb6a4[class * 6 + column]` has an overlay for (overlay 114 + the byte; 0xff none), the overlay
+  taking its RAM size / 0x1e00 + 1 columns (`Ov107_LoadEnemyOverlay`); a class with none left is `OS_Terminate`:
+  the field never starts, the frames going on (seen 2026-11-01 with a mod mission whose first wave was a Yellow
+  Opera, ov115 in columns 0-1, then a Shadow, whose only overlay is column 0's). The actors are made in the enemy
+  table's row order (2.49), so the rows' order decides. Shadows go in column 0 only (two columns), Yellow Operas in
+  0 or 2, Hover Ghosts in 0 only (so never with a Shadow), Fire Plants in 0, 2 or 4. The port's builder puts the
+  rows in an order where every class fits (`load_order`, the columns in studio/core/missions/enemy_names.cpp,
+  generated from the decompilation's table; the sizes from the ARM9 overlay table) and refuses classes that fit in
+  none.
 - **Chests and emblems in Mission Mode**: neither is put out with mode flag bit 1 (`Ov002_ScriptSpawnTimedSet`
   returns at once, `Ov002_SpawnStateSpots` skips them): Mission Mode's own missions show none. An emblem found sets
   bit `kind` of the mission's 4 bits at `0x92b + 4n` (the same bits Mission Mode's list asks for its rows).

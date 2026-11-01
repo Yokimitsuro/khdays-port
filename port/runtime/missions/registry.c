@@ -226,7 +226,7 @@ static int read_start(KhdaysMission *m, char *value)
     return m->has_start;
 }
 
-static const char *const kind_names[] = {"waves", "eliminate"};
+static const char *const kind_names[] = {"waves", "eliminate", "hearts"};
 
 const char *khdays_mission_kind_name(int kind)
 {
@@ -341,6 +341,10 @@ static int close_block(Reading *g)
                      m->target);
             refuse(g, m->line, why);
         }
+    }
+    /* how many hearts its enemies give is the game's (the builder reads them: khdays_missions_build) */
+    if (!g->bad && m->kind == KHDAYS_MISSION_HEARTS && m->spawner_count == 0) {
+        refuse(g, m->line, "a hearts mission has its enemies in waves (wave <n> = ...)");
     }
     if (g->bad) {
         char why[260];
@@ -513,13 +517,14 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
         return;
     }
     if (!ok) {
-        static const char *const forms[][2] = {{"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
-                                               {"target", "target = <the enemy class to defeat>"},
-                                               {"kind", "kind = waves or eliminate"},
-                                               {"goal", "goal = <how many of the target class to defeat, 0 all>"},
-                                               {"start", "start = <x> <y> <z> <facing>"},
-                                               {"chest", "chest = <item> at <x> <y> <z> <heading>"},
-                                               {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};
+        static const char *const forms[][2] = {
+            {"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
+            {"target", "target = <the enemy class to defeat>"},
+            {"kind", "kind = waves, eliminate or hearts"},
+            {"goal", "goal = <how many of the target class to defeat, or hearts to collect; 0 all>"},
+            {"start", "start = <x> <y> <z> <facing>"},
+            {"chest", "chest = <item> at <x> <y> <z> <heading>"},
+            {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};
         const char *form = NULL;
         for (size_t i = 0; i < sizeof(forms) / sizeof(forms[0]); ++i) {
             form = strcmp(name, forms[i][0]) == 0 ? forms[i][1] : form;

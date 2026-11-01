@@ -14,7 +14,8 @@
 
 namespace {
 
-// The game's files through the ROM, and its mission files' numbers ("mi/mi/<digits>").
+// The game's files through the ROM, its mission files' numbers ("mi/mi/<digits>") and its overlay table (the
+// header's 0x50 and 0x54: where and how long).
 studio::GameFiles rom_game_files()
 {
     studio::GameFiles g;
@@ -40,6 +41,15 @@ studio::GameFiles rom_game_files()
         if (std::strspn(digits, "0123456789") == std::strlen(digits)) {
             g.missions.push_back(std::atoi(digits));
         }
+    }
+    const u8 *header = khdays_rom_header();
+    auto word = [header](int at) {
+        return static_cast<u32>(header[at] | header[at + 1] << 8 | header[at + 2] << 16 |
+                                static_cast<u32>(header[at + 3]) << 24);
+    };
+    g.overlay_table.resize(word(0x54));
+    if (!g.overlay_table.empty()) {
+        khdays_rom_read(word(0x50), g.overlay_table.data(), static_cast<u32>(g.overlay_table.size()));
     }
     return g;
 }

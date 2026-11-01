@@ -2736,6 +2736,12 @@ constexpr Row rows[] =
           "Eliminieren: geschafft, sobald das Ziel besiegt ist",
           "Eliminazione: superata quando l'obiettivo è sconfitto",
           "Eliminar: superada al derrotar el objetivo"}},
+        {S::mission_kind_hearts,
+         {"Hearts: cleared once the goal's hearts are collected",
+          "Cœurs : réussie une fois les cœurs de l'objectif récoltés",
+          "Herzen: geschafft, sobald die Herzen des Ziels gesammelt sind",
+          "Cuori: superata quando i cuori dell'obiettivo sono raccolti",
+          "Corazones: superada al reunir los corazones de la meta"}},
         {S::mission_target,
          {"Enemy to defeat",
           "Ennemi à vaincre",
@@ -2754,6 +2760,23 @@ constexpr Row rows[] =
           "Nur die Gegner dieser Art aus den Wellen zählen; die Anzeige zeigt sie während der Mission.",
           "Contano solo i nemici di questo tipo posti nelle ondate; l'indicatore li mostra durante la missione.",
           "Solo cuentan los enemigos de este tipo puestos en las oleadas; el indicador los muestra en la misión."}},
+        {S::mission_hearts_goal,
+         {"Hearts to collect (0: all of them)",
+          "Cœurs à récolter (0 : tous)",
+          "Zu sammelnde Herzen (0: alle)",
+          "Cuori da raccogliere (0: tutti)",
+          "Corazones a reunir (0: todos)"}},
+        {S::mission_hearts_help,
+         {"The waves' enemies give {0} hearts when defeated (some, as Shadows, give none); the gauge shows them "
+          "during the mission.",
+          "Les ennemis des vagues donnent {0} cœurs une fois vaincus (certains, comme les Ombres, n'en donnent "
+          "aucun) ; la jauge les montre pendant la mission.",
+          "Die Gegner der Wellen geben besiegt {0} Herzen (manche, wie Schatten, keine); die Anzeige zeigt sie "
+          "während der Mission.",
+          "I nemici delle ondate danno {0} cuori quando sconfitti (alcuni, come le Ombre, nessuno); l'indicatore li "
+          "mostra durante la missione.",
+          "Los enemigos de las oleadas dan {0} corazones al derrotarlos (algunos, como las sombras, ninguno); el "
+          "indicador los muestra en la misión."}},
         {S::mission_name_field,
          {"Name",
           "Nom",

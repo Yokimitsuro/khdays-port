@@ -28,6 +28,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <sstream>
 #include <tuple>
 
 namespace studio {
@@ -1017,19 +1018,51 @@ std::string enemy_label(int enemy_class) {
     return std::to_string(enemy_class) + ": " + (name != nullptr ? name : "?");
 }
 
-// How its places are cleared: its last wave defeated, or (eliminate) a goal of its target class's enemies.
+// How many hearts the enemies of a mission's wave lines ("1x3 5x1 at ...") give together, by their classes'.
+int mission_hearts(const ModMission& e) {
+    static const std::vector<int> hearts = enemy_hearts(extracted_game_files(nitrofs()));
+    std::vector<std::vector<WaveSpawner>> waves(1);
+    for (const auto& [setting, value] : e.lines) {
+        if (setting.rfind("wave ", 0) != 0)
+            continue;
+        WaveSpawner sp;
+        std::istringstream words(value);
+        std::string word;
+        while (words >> word && word != "at") {
+            int enemy_class = 0, count = 0;
+            char x = 0;
+            if (std::istringstream(word) >> enemy_class >> x >> count && x == 'x')
+                sp.enemies.push_back({enemy_class, count});
+        }
+        waves[0].push_back(sp);
+    }
+    return waves_hearts(waves, hearts);
+}
+
+// How its places are cleared: its last wave defeated, or a goal of its target class's enemies (eliminate) or of
+// the hearts its enemies give (hearts).
 void draw_mission_kind(Language lang, ModMission& e) {
-    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate};
-    const int shown = e.kind == KHDAYS_MISSION_ELIMINATE ? 1 : 0;
+    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate, S::mission_kind_hearts};
+    const int count = static_cast<int>(std::size(kinds));
+    const int shown = e.kind >= 0 && e.kind < count ? e.kind : KHDAYS_MISSION_WAVES;
     ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
     if (ImGui::BeginCombo(tr(lang, S::mission_kind), tr(lang, kinds[shown]))) {
-        for (int k = 0; k < 2; ++k)
+        for (int k = 0; k < count; ++k)
             if (ImGui::Selectable(tr(lang, kinds[k]), shown == k)) {
-                e.kind = k == 1 ? KHDAYS_MISSION_ELIMINATE : KHDAYS_MISSION_WAVES;
+                e.kind = k;  // KhdaysMissionKind's order
                 if (e.kind == KHDAYS_MISSION_ELIMINATE && e.target < 0)
                     e.target = first_wave_class(e);
             }
         ImGui::EndCombo();
+    }
+    if (e.kind == KHDAYS_MISSION_HEARTS) {
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        ImGui::InputInt(tr(lang, S::mission_hearts_goal), &e.goal);
+        e.goal = std::max(e.goal, 0);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", fmt(lang, S::mission_hearts_help, {std::to_string(mission_hearts(e))}).c_str());
+        ImGui::PopTextWrapPos();
+        return;
     }
     if (e.kind != KHDAYS_MISSION_ELIMINATE)
         return;

@@ -639,7 +639,9 @@ std::uint32_t field(int f, int bits) {
 }
 
 // The pieces the mission builder takes from the game: 1354's area 11 (its steps, c0, c1), its start, its
-// enemy table (classes 0-4); 0004's "all defeated" check (2.7); 0402's tracked enemy class (2.73).
+// enemy table (classes 0-4); 0004's "all defeated" check (2.7); 0402's tracked enemy class (2.73); the classes'
+// records (Ms/DP.p2f: classes 0-4 give 0, 13, 0, 16 and 16 hearts); the overlay table's sizes of their enemy
+// overlays, 114-122 (the game's: Shadow's takes two slots of column 0, Yellow Opera's two of column 0 or 2...).
 studio::GameFiles builder_game() {
     Bytes i;
     step(i, 2, 0, {kInt, 1});
@@ -731,15 +733,32 @@ studio::GameFiles builder_game() {
         table.insert(table.end(), r.begin(), r.end());
     const Bytes world = p2({table, Bytes(4, 0)});
 
+    std::vector<Bytes> classes;
+    for (const int hearts : {0, 13, 0, 16, 16}) {
+        Bytes record(0x7c, 0);
+        record[0x6d] = static_cast<std::uint8_t>(hearts);
+        classes.push_back(record);
+    }
+    const Bytes class_records = p2(classes);
+
     studio::GameFiles g;
-    g.read = [base, check, plants, world](const std::string& path) {
+    g.read = [base, check, plants, world, class_records](const std::string& path) {
         return path == "mi/mi/1354"    ? base
                : path == "mi/mi/0004"  ? check
                : path == "mi/mi/0402"  ? plants
                : path == "mi/wd/wd_eh" ? world
+               : path == "Ms/DP.p2f"   ? class_records
                                        : Bytes();
     };
     g.missions = {4, 402, 1354};
+    g.overlay_table.assign(123 * 32, 0);
+    const std::vector<std::pair<int, std::uint32_t>> sizes = {{114, 0x20e0}, {115, 0x2c80}, {116, 0x2c80},
+                                                              {117, 0x1d60}, {118, 0x1d60}, {119, 0x3ac0},
+                                                              {120, 0x2060}, {121, 0x2060}, {122, 0x2060}};
+    for (const auto& [overlay, size] : sizes)
+        for (int b = 0; b < 4; ++b)
+            g.overlay_table[static_cast<std::size_t>(overlay) * 32 + 8 + static_cast<std::size_t>(b)] =
+                static_cast<std::uint8_t>(size >> (8 * b));
     return g;
 }
 
@@ -770,7 +789,7 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     plan.time_ms = 120000;
     plan.notice = {"Two Waves", "", "", "", "Dos oleadas"};
     plan.objective = {"Defeat them all.", "", "", "", ""};
-    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5), spawner_of({{3, 1}}, 3.0)}};
+    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5), spawner_of({{4, 1}}, 3.0)}};
     Bytes built;
     std::string why;
     CHECK(studio::build_mission(game, plan, &built, &why));
@@ -788,7 +807,7 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     CHECK(operand_at(i.steps[1], 0).value == 4 && operand_at(i.steps[2], 2).value == 2);  // world, room
     EnemyTable t;
     CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(table)].data, &t, &why));
-    CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 3; three spawners
+    CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 4; three spawners
     CHECK(t.kinds[0].raw[4] == 0);                       // the level: the mission's own
     // the room's own exits closed, by their keys (not the base mission's arena's five)
     std::vector<std::int32_t> closed;
@@ -834,8 +853,8 @@ TEST(an_eliminate_mission_counts_its_target_class_on_the_mission_gauge) {
     plan.start = {0.0, 0.049, 0.0};
     plan.notice = {"Guardian", "", "", "", ""};
     plan.objective = {"Defeat the guardians.", "", "", "", ""};
-    plan.target = 3;
-    plan.waves = {{spawner_of({{0, 2}}, -1.5), spawner_of({{3, 2}}, 2.0)}, {spawner_of({{3, 1}, {0, 1}}, 0.0)}};
+    plan.target = 4;
+    plan.waves = {{spawner_of({{0, 2}}, -1.5), spawner_of({{4, 2}}, 2.0)}, {spawner_of({{4, 1}, {0, 1}}, 0.0)}};
     Bytes built;
     std::string why;
     CHECK(studio::build_mission(game, plan, &built, &why));
@@ -854,7 +873,7 @@ TEST(an_eliminate_mission_counts_its_target_class_on_the_mission_gauge) {
     }
     CHECK(watched == 1 && ends == 1);
     // the start: the gauge a counter (kind 4) of the target class's three, all of them to defeat; then the class
-    // tracked (2.73: class 3, as 402's step with its 100)
+    // tracked (2.73: class 4, as 402's step with its 100)
     const Script& s = m.entries[static_cast<std::size_t>(m.entry("_s"))].archive.scripts.back();
     std::size_t gauge = s.steps.size(), tracked = s.steps.size();
     for (std::size_t k = 0; k < s.steps.size(); ++k) {
@@ -867,7 +886,7 @@ TEST(an_eliminate_mission_counts_its_target_class_on_the_mission_gauge) {
     if (tracked < s.steps.size()) {
         CHECK(operand_at(s.steps[gauge], 0).value == 4 && operand_at(s.steps[gauge], 2).value == 3 &&
               operand_at(s.steps[gauge], 4).value == 3);
-        CHECK(operand_at(s.steps[tracked], 0).value == 3 && operand_at(s.steps[tracked], 2).value == 100);
+        CHECK(operand_at(s.steps[tracked], 0).value == 4 && operand_at(s.steps[tracked], 2).value == 100);
     }
     // a goal of two of the three
     plan.goal = 2;
@@ -879,6 +898,92 @@ TEST(an_eliminate_mission_counts_its_target_class_on_the_mission_gauge) {
     // a target class no wave has: refused, said
     plan.target = 1;
     CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("target class 1") != std::string::npos);
+}
+
+TEST(enemy_classes_in_the_order_their_code_fits_the_games_slots) {
+    const studio::GameFiles game = builder_game();
+    // a Shadow's code goes only in column 0 (two slots), a Yellow Opera's in column 0 or 2: the Shadow first
+    CHECK(studio::load_order({0, 1}, game.overlay_table) == std::vector<int>({0, 1}));
+    CHECK(studio::load_order({1, 0}, game.overlay_table) == std::vector<int>({1, 0}));
+    // a Shadow and a Hover Ghost (column 0 only) never fit together; a missing table fits nothing
+    CHECK(studio::load_order({0, 3}, game.overlay_table).empty());
+    CHECK(studio::load_order({1}, {}).empty());
+    // a mission whose first wave is a Yellow Opera's: its table's rows Shadow first, each spawner's group pointing
+    // at its class's row
+    studio::MissionPlan plan;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Order", "", "", "", ""};
+    plan.objective = {"Defeat them.", "", "", "", ""};
+    plan.waves = {{spawner_of({{1, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5)}};
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    EnemyTable t;
+    CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(m.entry("em0"))].data, &t, &why));
+    CHECK(t.kinds.size() == 2 && t.kinds[0].raw[0] == 0 && t.kinds[1].raw[0] == 1);
+    CHECK(t.groups.size() == 2 && t.groups[0].parts.size() == 1 && t.groups[1].parts.size() == 1);
+    if (t.groups.size() == 2 && t.groups[0].parts.size() == 1 && t.groups[1].parts.size() == 1)
+        CHECK(t.groups[0].parts[0].row == 1 && t.groups[1].parts[0].row == 0);
+    // classes whose code does not fit together: refused, said
+    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{3, 1}}, 1.5)}};
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("enemy slots") != std::string::npos);
+}
+
+TEST(a_hearts_mission_fills_the_mission_gauge_with_its_enemies_hearts) {
+    const studio::GameFiles game = builder_game();
+    CHECK(studio::enemy_hearts(game) == std::vector<int>({0, 13, 0, 16, 16}));
+    studio::MissionPlan plan;
+    plan.kind = KHDAYS_MISSION_HEARTS;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Hearts", "", "", "", ""};
+    plan.objective = {"Collect hearts.", "", "", "", ""};
+    // two of class 1 and one of class 4 give 13 + 13 + 16; a Shadow would give none
+    plan.waves = {{spawner_of({{1, 2}}, -1.5)}, {spawner_of({{4, 1}}, 2.0)}};
+    CHECK(studio::waves_hearts(plan.waves, studio::enemy_hearts(game)) == 42);
+    CHECK(studio::waves_hearts({{spawner_of({{0, 5}}, 0.0)}}, studio::enemy_hearts(game)) == 0);
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const ScriptArchive& a = m.entries[static_cast<std::size_t>(m.entry("11"))].archive;
+    // as an eliminate mission: the last wave's "all defeated" ends nothing, the gauge's goal runs c0
+    CHECK(count_steps(a.scripts.back(), 2, 7) == 1 && count_steps(a.scripts[2], 2, 7) == 0);
+    int watched = 0;
+    for (const ScriptStep& st : a.scripts.back().steps)
+        watched += st.group == 2 && st.command == 9 && operand_at(st, 10).value == (8326 | 1 << 16);
+    CHECK(watched == 1);
+    // the start: the hearts gauge (kind 2), all 42 to collect; no class tracked
+    auto gauge_of = [&](const MissionFile& f, int* kind, int* total, int* goal) {
+        const Script& s = f.entries[static_cast<std::size_t>(f.entry("_s"))].archive.scripts.back();
+        CHECK(count_steps(s, 2, 73) == 0);
+        for (const ScriptStep& st : s.steps)
+            if (st.group == 2 && st.command == 34) {
+                *kind = operand_at(st, 0).value;
+                *total = operand_at(st, 2).value;
+                *goal = operand_at(st, 4).value;
+            }
+    };
+    int kind = -1, total = -1, goal = -1;
+    gauge_of(m, &kind, &total, &goal);
+    CHECK(kind == 2 && total == 42 && goal == 42);
+    // a goal of 20 of them
+    plan.goal = 20;
+    CHECK(studio::build_mission(game, plan, &built, &why) && parse_mission(built, 20000, &m, &why));
+    gauge_of(m, &kind, &total, &goal);
+    CHECK(kind == 2 && total == 42 && goal == 20);
+    // more than the waves give, or waves that give none: refused, said
+    plan.goal = 43;
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("give 42 hearts") != std::string::npos);
+    plan.goal = 0;
+    plan.waves = {{spawner_of({{0, 3}, {2, 1}}, 0.0)}};
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("no heart") != std::string::npos);
 }
 
 TEST(a_new_missions_waves_chests_and_emblems_added_and_taken_away) {
