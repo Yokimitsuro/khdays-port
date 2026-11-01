@@ -4497,10 +4497,18 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   the field never starts, the frames going on (seen 2026-11-01 with a mod mission whose first wave was a Yellow
   Opera, ov115 in columns 0-1, then a Shadow, whose only overlay is column 0's). The actors are made in the enemy
   table's row order (2.49), so the rows' order decides. Shadows go in column 0 only (two columns), Yellow Operas in
-  0 or 2, Hover Ghosts in 0 only (so never with a Shadow), Fire Plants in 0, 2 or 4. The port's builder puts the
-  rows in an order where every class fits (`load_order`, the columns in studio/core/missions/enemy_names.cpp,
-  generated from the decompilation's table; the sizes from the ARM9 overlay table) and refuses classes that fit in
-  none.
+  0 or 2, Hover Ghosts in 0 only (so never with a Shadow), Fire Plants in 0, 2 or 4; a boss's code takes all six
+  (the Guard Armor's ov236, 0xa600 bytes), so it never came out with any other class. The port lifts the limit
+  (2026-11-01, `runtime/core/enemy_overlays.h`): each enemy overlay has its own 64 KB from 0x09000000 (rom.cpp moves
+  its RAM address and static initializers in the overlay table, prepare.py its symbols: data, functions, the BSS;
+  the analyses of the ROM keep the DS's addresses), ov107's three slot tables (`data_ov107_020cbb08` the factories,
+  `cbb98` the overlays' infos, `cbca0` the spawn records) have room for 126 slots at 0x09c00000, and a class whose
+  columns are full takes slot 6 + its id with its first column's overlay (prepare.py's join in
+  `Ov107_SpawnEntityClass`) instead of `OS_Terminate`. A call through an address several overlays share on the DS
+  (ov016's into ov233 or ov291) finds the loaded one's function at its place now (`khdays_native_at`). Seen with the
+  missions_boss walk: Shadows in column 0, a Soldier in 2 (ov122), the Guard Armor in its own slot (ov236 at
+  0x097a0000), all in the field together. An area's `aMarkerIds` (`Ov002_CreateActorFromMarker`: four, for the
+  HUD's pause panel) keeps the first four classes; a fifth comes out all the same.
 - **Chests and emblems in Mission Mode**: neither is put out with mode flag bit 1 (`Ov002_ScriptSpawnTimedSet`
   returns at once, `Ov002_SpawnStateSpots` skips them): Mission Mode's own missions show none. An emblem found sets
   bit `kind` of the mission's 4 bits at `0x92b + 4n` (the same bits Mission Mode's list asks for its rows).

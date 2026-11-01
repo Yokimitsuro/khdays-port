@@ -2,6 +2,7 @@
 // each file through the VFS so a mod replaces it. The layout is the original's (a bigger mod file past
 // the end, the FAT patched); gaps read 0xff; the three ranges the extraction drops stop the process.
 #include "rom.h"
+#include "enemy_overlays.h"
 #include "text_patches.h"
 
 extern "C" {
@@ -80,6 +81,33 @@ void move_us_overlay_table(std::vector<u8> &table)
                 std::memcpy(table.data() + at + 4 * field, &value, 4);
             }
         }
+    }
+}
+
+// The enemies' overlays each at its own place (enemy_overlays.h): their RAM address and static initializers moved
+// in the table, the DS's address kept (khdays_rom_overlay_home).
+std::vector<u32> overlay_homes; // by overlay id; 0: not moved
+void move_enemy_overlays(std::vector<u8> &table)
+{
+    constexpr u32 ENTRY = 32;
+    for (size_t at = 0; at + ENTRY <= table.size(); at += ENTRY) {
+        u32 entry[8];
+        std::memcpy(entry, table.data() + at, sizeof(entry));
+        if (entry[0] < KHDAYS_ENEMY_OVERLAY_FIRST || entry[0] > KHDAYS_ENEMY_OVERLAY_LAST) {
+            continue;
+        }
+        const u32 home = entry[1];
+        const u32 moved = KHDAYS_ENEMY_OVERLAYS + (entry[0] - KHDAYS_ENEMY_OVERLAY_FIRST) * KHDAYS_ENEMY_OVERLAY_SPAN;
+        if (overlay_homes.size() <= entry[0]) {
+            overlay_homes.resize(entry[0] + 1, 0);
+        }
+        overlay_homes[entry[0]] = home;
+        for (const int field : {1, 4, 5}) {
+            if (entry[field] != 0) {
+                entry[field] = entry[field] - home + moved;
+            }
+        }
+        std::memcpy(table.data() + at, entry, sizeof(entry));
     }
 }
 
@@ -258,7 +286,7 @@ static void give_vfs_the_mods()
 
 extern "C" int khdays_rom_init(void)
 {
-    khdays_days_unpack_all("mods"); // the .days mods' files copied out where the VFS reads them
+    khdays_days_unpack_all("mods");                      // the .days mods' files copied out where the VFS reads them
     khdays_mods_scan("mods", khdays_host_user_folder()); // the VFS's mods root, beside the game
     khdays_mods_start();
     give_vfs_the_mods();
@@ -302,6 +330,7 @@ extern "C" int khdays_rom_init(void)
     if (us_card) {
         move_us_overlay_table(blobs[OVERLAY_TABLE_BLOB].bytes);
     }
+    move_enemy_overlays(blobs[OVERLAY_TABLE_BLOB].bytes);
     fat = read_whole(system / "fat.bin");
     regions.push_back({field(0x48), field(0x48) + static_cast<u32>(fat.size()), FAT, 0});
 
@@ -441,6 +470,11 @@ extern "C" const u8 *khdays_rom_header(void)
 extern "C" int khdays_rom_is_us(void)
 {
     return us_card ? 1 : 0;
+}
+
+extern "C" u32 khdays_rom_overlay_home(int id)
+{
+    return id >= 0 && static_cast<size_t>(id) < overlay_homes.size() ? overlay_homes[static_cast<size_t>(id)] : 0;
 }
 
 extern "C" int khdays_rom_language(int language)

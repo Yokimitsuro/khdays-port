@@ -2,7 +2,6 @@
 
 #include "core/files/containers.h"
 #include "core/files/paths.h"
-#include "core/missions/enemy_names.h"
 #include "core/missions/missions.h"
 
 extern "C" {
@@ -10,12 +9,10 @@ extern "C" {
 #include "missions/worlds.h"
 }
 
-#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iterator>
 #include <map>
-#include <numeric>
 #include <set>
 #include <utility>
 
@@ -30,7 +27,6 @@ constexpr int kWaveCheckMission = 4;  // defeat the Mega-Shadow: the "all defeat
 constexpr int kTargetMission = 402;   // defeat seven Fire Plants: the enemy class its gauge counts (2.73)
 constexpr int kReachMission = 1;      // reach Axel's position: a player coming within reach of a place (2.8)
 constexpr int kEmblemMission = 451;   // find the Organization emblems: their overlay, class and pieces (17.2, 17.3)
-constexpr int kMostClasses = 4;       // an area's enemy classes (Ov002_CreateActorFromMarker's four places)
 
 // The events the built area files: the clock's end (as 1354's), the ending's (its field raised, as 1354's), the last
 // wave defeated, and each wave's start from the second on.
@@ -371,7 +367,6 @@ GameFiles extracted_game_files(const fs::path& nitrofs) {
     };
     g.read = [nitrofs, read_file](const std::string& path) { return read_file(nitrofs / path_u8(path)); };
     g.missions = mission_numbers(nitrofs);
-    g.overlay_table = read_file(nitrofs / ".." / "system" / "arm9_overlay_table.bin");
     return g;
 }
 
@@ -401,35 +396,6 @@ int waves_hearts(const std::vector<std::vector<WaveSpawner>>& waves, const std::
                 if (e.enemy_class >= 0 && static_cast<std::size_t>(e.enemy_class) < hearts.size())
                     total += hearts[static_cast<std::size_t>(e.enemy_class)] * e.count;
     return total;
-}
-
-std::vector<int> load_order(const std::vector<int>& classes, const std::vector<std::uint8_t>& overlay_table) {
-    auto columns_taken = [&](int overlay) {
-        const std::size_t at = static_cast<std::size_t>(overlay) * 32 + 8;
-        return at + 4 <= overlay_table.size() ? static_cast<int>(le32(overlay_table, at) / 0x1e00) + 1
-                                              : kEnemyColumns + 1;
-    };
-    auto loads = [&](const std::vector<int>& order) {
-        int column = 0;
-        for (const int k : order) {
-            const int c = classes[static_cast<std::size_t>(k)];
-            while (column < kEnemyColumns && enemy_overlay(c, column) < 0)
-                ++column;
-            if (column >= kEnemyColumns)
-                return false;
-            column += columns_taken(enemy_overlay(c, column));
-            if (column > kEnemyColumns)
-                return false;
-        }
-        return true;
-    };
-    std::vector<int> order(classes.size());
-    std::iota(order.begin(), order.end(), 0);
-    do {
-        if (loads(order))
-            return order;
-    } while (std::next_permutation(order.begin(), order.end()));
-    return {};
 }
 
 bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<std::uint8_t>* out, std::string* why) {
@@ -505,42 +471,9 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
             groups.push_back(parts);
         }
     }
-    if (static_cast<int>(classes.size()) > kMostClasses)
-        return fail_with(why, "more than four enemy classes: the game makes an area's enemies of four at most");
+    // (the table's counts are bytes: the game reads them so)
     if (groups.size() > 255 || rows.size() > 255)
         return fail_with(why, "more spawners than an enemy table holds (255)");
-    // the rows in the order the classes' code fits the game's enemy slots (their actors are made in row order, 2.49,
-    // each class's code loaded with its first)
-    if (!classes.empty() && game.overlay_table.empty())
-        return fail_with(why, "the game's overlay table is not there (system/arm9_overlay_table.bin)");
-    const std::vector<int> order = load_order(classes, game.overlay_table);
-    if (!classes.empty() && order.empty()) {
-        std::string listed;
-        for (const int c : classes)
-            listed += (listed.empty() ? "" : ", ") + std::to_string(c);
-        return fail_with(why, "enemy classes " + listed +
-                                  ": their code does not fit the game's six enemy slots together, in any order");
-    }
-    {
-        std::vector<int> row_of(order.size());
-        for (std::size_t k = 0; k < order.size(); ++k)
-            row_of[static_cast<std::size_t>(order[k])] = static_cast<int>(k);
-        std::vector<int> ordered_classes;
-        std::vector<std::array<std::uint8_t, 16>> ordered_rows;
-        for (const int k : order) {
-            ordered_classes.push_back(classes[static_cast<std::size_t>(k)]);
-            ordered_rows.push_back(rows[static_cast<std::size_t>(k)]);
-        }
-        classes = std::move(ordered_classes);
-        rows = std::move(ordered_rows);
-        for (auto& parts : groups)
-            for (auto& part : parts)
-                part.first = row_of[static_cast<std::size_t>(part.first)];
-        std::map<int, int> ordered_pool;
-        for (const auto& [row, n] : pool)
-            ordered_pool[row_of[static_cast<std::size_t>(row)]] = n;
-        pool = std::move(ordered_pool);
-    }
 
     // ---- area 11: its world and room, the enemies' pool, the first wave, the start, HUD, clock, notice, events
     Writer w;

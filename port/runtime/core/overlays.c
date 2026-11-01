@@ -3,6 +3,7 @@
  * goes through its function reference (window.c), whose native function is the loaded overlay's
  * (khdays_native_at). */
 #include "../../hal/hal.h"
+#include "enemy_overlays.h"
 #include "events.h"
 #include "rom.h"
 #include "session_log.h"
@@ -20,6 +21,18 @@ typedef struct Overlay {
 } Overlay;
 
 static Overlay *overlays; /* by id, as many as the ROM's table has */
+
+/* The enemies' common code, whose slot tables are moved (enemy_overlays.h). */
+#define ENEMY_COMMON 107
+
+_Static_assert(KHDAYS_ENEMY_OVERLAYS +
+                       (KHDAYS_ENEMY_OVERLAY_LAST - KHDAYS_ENEMY_OVERLAY_FIRST + 1) * KHDAYS_ENEMY_OVERLAY_SPAN <=
+                   KHDAYS_ENEMY_HANDLERS,
+               "the enemies' overlays run into their slots");
+_Static_assert(KHDAYS_ENEMY_HANDLERS + 4 * KHDAYS_ENEMY_SLOT_COUNT <= KHDAYS_ENEMY_OVERLAY_INFOS &&
+                   KHDAYS_ENEMY_OVERLAY_INFOS + 0x2c * KHDAYS_ENEMY_SLOT_COUNT <= KHDAYS_ENEMY_SPAWN_RECORDS &&
+                   KHDAYS_ENEMY_SPAWN_RECORDS + 0x6a * KHDAYS_ENEMY_SLOT_COUNT <= KHDAYS_ENEMY_SLOTS_END,
+               "ov107's slot tables overlap");
 static int count = -1;
 static u32 loads;
 
@@ -68,6 +81,10 @@ void khdays_overlay_started(int id)
     }
     overlays[id].loaded = ++loads;
     overlays[id].ended = 0;
+    if (id == ENEMY_COMMON) {
+        /* ov107's slot tables, moved out of its BSS (enemy_overlays.h): empty as its BSS starts */
+        memset(KHDAYS_W(KHDAYS_ENEMY_HANDLERS), 0, KHDAYS_ENEMY_SLOTS_END - KHDAYS_ENEMY_HANDLERS);
+    }
     khdays_function_references_moved(); /* its functions' DS addresses are its now (window.c) */
     khdays_log("overlay %d started", id);
     if (getenv("KHDAYS_TRACE_OVERLAYS") != NULL) {
@@ -187,6 +204,15 @@ void *khdays_native_at(u32 address)
         if (f->module == -1 || (f->module == -2 && itcm_is_the_games(f)) ||
             (f->module >= 0 && khdays_overlay_at(address) == f->module)) {
             return (void *)f->native;
+        }
+    }
+    /* the DS's address of a moved enemy overlay's function (a call through an address overlays share there,
+     * prepare.py's thunks; a static initializer the ROM's image lists): the loaded one's, at its place now */
+    for (int n = KHDAYS_ENEMY_OVERLAY_FIRST; n <= KHDAYS_ENEMY_OVERLAY_LAST && n < count; ++n) {
+        const u32 home = khdays_rom_overlay_home(n);
+        if (home != 0 && overlays[n].loaded && home <= address &&
+            address < home + (overlays[n].end - overlays[n].start)) {
+            return khdays_native_at(overlays[n].start + (address - home));
         }
     }
     return NULL;

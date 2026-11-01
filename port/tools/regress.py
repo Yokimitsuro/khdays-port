@@ -206,6 +206,22 @@ WALKS = [
             "mission end\tcleared",
         ),
     ),
+    # ... and a boss among other enemies (port/tests/mods_v2/missions_boss): a Guard Armor, whose code took all six
+    # of the DS's enemy slots, out with Shadows and a Soldier (each class's code at its own place here:
+    # runtime/core/enemy_overlays.h); cleared once a Shadow is defeated; the waves walk's route
+    Walk(
+        "missions_boss",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_boss",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.boss/boss is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

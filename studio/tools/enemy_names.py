@@ -1,7 +1,7 @@
 """The enemies' names by the id a mission's enemy table gives them, from the pinned decompilation (the
-id's overlay through data_ov107_020cb6a4, named after its enemy), and the enemy code slots (columns) each id's
-overlays are built for, into studio/core/missions/enemy_names.cpp and, for the mods' enemies.kinds(),
-port/runtime/scripts/enemy_names.c (both committed; docs/FORMATS.md, "Missions").
+id's overlay through data_ov107_020cb6a4, named after its enemy), into
+studio/core/missions/enemy_names.cpp and, for the mods' enemies.kinds(), port/runtime/scripts/enemy_names.c
+(both committed; docs/FORMATS.md, "Missions").
     python studio/tools/enemy_names.py"""
 
 import re
@@ -27,9 +27,7 @@ def main() -> None:
         if m:
             overlays[int(m.group(1))] = m.group(2)
     names = []
-    columns_of = []
     for i in range(len(numbers) // 6):
-        columns_of.append([-1 if b == 255 else 114 + b for b in numbers[6 * i : 6 * i + 6]])
         columns = [b for b in numbers[6 * i : 6 * i + 6] if b != 255]
         name = overlays.get(114 + columns[0]) if columns else None
         if name is not None:
@@ -44,7 +42,7 @@ def main() -> None:
         f"// (khdays-decomp {commit}); do not edit. An id's enemy: row id of",
         "// data_ov107_020cb6a4 (src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb6a0.c),",
         "// its first column b, overlay 113 + b + 1 as the decompilation names it",
-        "// (src/overlays/enemies/ov<N>_enemy_<name>); its overlay in each of the six columns, -1 none.",
+        "// (src/overlays/enemies/ov<N>_enemy_<name>).",
         '#include "core/missions/enemy_names.h"',
         "",
         "namespace studio {",
@@ -55,18 +53,10 @@ def main() -> None:
     ]
     for i, n in enumerate(names):
         lines.append(f"    {'nullptr' if n is None else chr(34) + n + chr(34)},  // {i}")
-    lines += ["};", "", "const short kOverlays[][kEnemyColumns] = {"]
-    for i, cols in enumerate(columns_of):
-        lines.append("    {" + ", ".join(str(c) for c in cols) + f"}},  // {i}")
     lines += [
         "};",
         "",
         "}  // namespace",
-        "",
-        "int enemy_overlay(int id, int column) {",
-        "    if (id < 0 || id >= enemy_ids() || column < 0 || column >= kEnemyColumns) return -1;",
-        "    return kOverlays[id][column];",
-        "}",
         "",
         "const char* enemy_name(int id) {",
         "    if (id < 0 || id >= static_cast<int>(sizeof(kNames) / sizeof(kNames[0]))) return nullptr;",

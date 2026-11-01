@@ -1,0 +1,25 @@
+# The missions_boss walk's mission: a Guard Armor (class 63, whose code took all six of the DS's enemy slots) with
+# two Shadows and a Soldier, in the arena of mission 1354. Its target is the Shadows and its goal one of them: it is
+# cleared once a Shadow is defeated, the Guard Armor standing.
+[mission boss]
+name en = Armor and Company
+name fr = L'armure et sa compagnie
+name de = Rüstung und Gefolge
+name it = L'armatura e compagnia
+name es = La armadura y compañía
+objective en = Defeat a Shadow.
+objective fr = Battez une Ombre.
+objective de = Besiege einen Schatten.
+objective it = Sconfiggi un'Ombra.
+objective es = Derrota a una sombra.
+world = eh
+room = 2
+category = 0
+time = 120000
+kind = eliminate
+target = 0
+goal = 1
+start = 0 0.049 0 -90
+wave 1 = 0x2 at -2 0.049 0
+wave 1 = 4x1 at 0 0.049 4
+wave 1 = 63x1 at 10 0.049 0

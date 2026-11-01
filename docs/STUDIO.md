@@ -235,12 +235,12 @@ their waves, if any, come out as any mission's and end nothing. The room's own e
 rows, by its key). A chest's item is the item's number, 1 to the game's item
 count (`db/db.p2` entry 0x15): the game reads that item's record as the
 mission starts, so a chest with no item (0) or one past the last leaves the
-mission out with the reason instead of stopping the game. An area takes four enemy classes at most (the game's); a class must be
-one a game mission has (the window lists them by name). The game loads each
-class's code into six slots, and not every class has code for every slot (a
-Shadow's goes only in the first, and takes two; a Hover Ghost's too, so the two
-never come out together): the port puts the classes in an order where each finds
-its slots, and leaves out with the reason a mission whose classes fit in none. The chests and emblems
+mission out with the reason instead of stopping the game. Any of the game's
+enemy classes come out together, as many as the waves have: on the DS their code
+shared six slots of memory (a Shadow and a Hover Ghost never fitted together, a
+boss took all six), and the port gives each class's code its own place
+(`port/runtime/core/enemy_overlays.h`). A class must be one a game mission has a
+row of (its row is copied; the window lists them by name). The chests and emblems
 are added to the game's `trbox` and `evi` as they load and put out in Mission
 Mode for new missions; a chest's opened flag is kept in the port's save part (an
 emblem's pickup is made at its place, but it is not drawn nor picked up yet).

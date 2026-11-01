@@ -40,6 +40,37 @@ class Module:
     sizes: dict[str, int] = field(default_factory=dict)  # function -> bytes
 
 
+# The enemies' overlays each at its own place in the game's memory, and ov107's slot tables with room for every
+# class (port/runtime/core/enemy_overlays.h, whose defines are read here; rom.cpp moves the overlay table the same
+# way): their symbols where the game runs them (runtime_address). The analyses of the ROM keep the DS's addresses.
+ENEMY_OVERLAYS_H = ROOT / "port" / "runtime" / "core" / "enemy_overlays.h"
+ENEMY = {
+    n: int(v, 0)
+    for n, v in re.findall(
+        r"#define KHDAYS_ENEMY_(\w+) (0x[0-9a-fA-F]+|\d+)u?\b", ENEMY_OVERLAYS_H.read_text(encoding="utf-8")
+    )
+}
+MOVED_SLOT_TABLES = {
+    "data_ov107_020cbb08": ENEMY["HANDLERS"],
+    "data_ov107_020cbb98": ENEMY["OVERLAY_INFOS"],
+    "data_ov107_020cbca0": ENEMY["SPAWN_RECORDS"],
+}
+
+
+def runtime_address(m: Module, name: str, address: int) -> int:
+    """Where the game runs symbol `name` of module `m`, at `address` on the DS: an enemy overlay's moved with it
+    (its sections' start is the overlay table's RAM address), ov107's slot tables at theirs."""
+    if name in MOVED_SLOT_TABLES:
+        return MOVED_SLOT_TABLES[name]
+    mo = re.fullmatch(r"ov(\d+)", m.name)
+    if not mo or not ENEMY["OVERLAY_FIRST"] <= int(mo[1]) <= ENEMY["OVERLAY_LAST"]:
+        return address
+    offset = address - min(start for start, _ in m.sections.values())
+    if not 0 <= offset < ENEMY["OVERLAY_SPAN"]:
+        raise SystemExit(f"{m.name}: {name} at 0x{address:08x} is past its place's 0x{ENEMY['OVERLAY_SPAN']:x} bytes")
+    return ENEMY["OVERLAYS"] + (int(mo[1]) - ENEMY["OVERLAY_FIRST"]) * ENEMY["OVERLAY_SPAN"] + offset
+
+
 def load_modules() -> list[Module]:
     dirs = [CONFIG, CONFIG / "itcm", CONFIG / "dtcm"]
     dirs += sorted(p for p in (CONFIG / "overlays").iterdir() if p.is_dir())
@@ -1595,7 +1626,24 @@ HOOKS = {
             "    unsigned char state = data_ov107_020cbb20[id];\n",
             "    unsigned char state = data_ov107_020cbb20[id];\n"
             "    { extern void khdays_enemies_class(int id); khdays_enemies_class(id); }\n",
-        )
+        ),
+        (  # a class whose six columns are full takes its own slot past them, with its first column's overlay: each
+            # enemy overlay has its own place here (runtime/core/enemy_overlays.h), so any classes are out together
+            "        if (!found) {\n            goto terminate;\n        }\n",
+            "        if (!found) {\n"
+            "            int column = 0;\n"
+            "            while (column < 6 && Ov107_EnemyTableHasEntry(id, column) == 0) {\n"
+            "                column++;\n"
+            "            }\n"
+            "            if (column == 6) {\n"
+            "                goto terminate;\n"
+            "            }\n"
+            "            data_ov107_020cbb20[id] = (unsigned char)(6 + id + 1);\n"
+            "            Ov107_LoadEnemyOverlay(id, column, &data_ov107_020cbb98[6 + id]);\n"
+            "            Ov107_LoadSpawnRecord(id, &data_ov107_020cbca0[6 + id]);\n"
+            "            goto dispatch;\n"
+            "        }\n",
+        ),
     ],
     "ov107@020c1870": [
         (  # Ov107_Spawner_Run: op 0 (an idle enemy set going) skipped while a mod holds the mission's own
@@ -5171,7 +5219,7 @@ def main() -> int:
     for m in modules:
         for n, k, a in m.symbols:
             if k in ("data", "bss"):
-                ds_data[n] = a
+                ds_data[n] = runtime_address(m, n, a)
     converted: dict[str, int] = {}
     # C-defined globals the DS names nowhere: statics of a split unit (PHANTOMS).
     phantom_names = {
@@ -5266,7 +5314,7 @@ def main() -> int:
             # the HAL's too, of any module (the ITCM's OS_IrqHandler, which the
             # BIOS vector names by its DS address)
             if k == "function" and (n in native or n in hal_names_all):
-                ds_functions.append((a, ds_module, n))
+                ds_functions.append((runtime_address(m, n, a), ds_module, n))
     ds_functions.sort()
     sizes = {n: sz for m in modules for n, sz in m.sizes.items()}
     ds_c = [
@@ -5304,7 +5352,7 @@ def main() -> int:
         start, end = m.sections[".bss"]
         for n, k, a in m.symbols:
             if start <= a < end and n not in defined:
-                absolute[n] = a
+                absolute[n] = runtime_address(m, n, a)
     bss_count = len(absolute) - len(converted) - len(PHANTOMS)
     # The decomp's own linker-absolute symbols (tools/configure.py). A data_
     # entry that another, C-defined symbol shares the address of is an alias

@@ -23,6 +23,7 @@ that; the rest of the window is inaccessible, the null range among it.
 | 0x03000000 | shared WRAM; 0x037f8000 the ARM7's WRAM, for its sound driver |
 | 0x04000000 | I/O registers and ports: inaccessible, the port reaches them (`BUILD.md`, "The registers") |
 | 0x05000000 | palettes; 0x06000000 VRAM; 0x07000000 OAM; 0x08000000 the empty GBA slot |
+| 0x09000000 | the enemies' overlays (114-301), 64 KB each, apart; 0x09c00000 ov107's slot tables for every class (`runtime/core/enemy_overlays.h`) |
 | 0x0b100000 | the register model's memory (`io.h`); 0x0b200000 the data area |
 | 0x0c000000 | the stacks of the game's threads (`host/app/context.h`) |
 | 0x20000000 | the game's heaps, committed a granule at a time as the game touches them |

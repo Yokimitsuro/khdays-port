@@ -1,6 +1,7 @@
 /* The DS's ARM9 address space in the game's memory window (window.h): each region at the window's start
  * plus its DS address, rounded out to 64 KB; the rest inaccessible, the null range among it. The map:
  * docs/PLATFORM.md, "Memory". */
+#include "enemy_overlays.h"
 #include "game_heap.h"
 #include "io.h"
 #include "runtime.h"
@@ -373,6 +374,12 @@ int khdays_memory_map(void)
     if (!(plain("the register model's memory", KHDAYS_IO_VIEW, KHDAYS_IO_SIZE + KHDAYS_IO2_SIZE) &&
           (KHDAYS_DATA_AREA_END == KHDAYS_DATA_AREA ||
            plain("the data area", KHDAYS_DATA_AREA, KHDAYS_DATA_AREA_END - KHDAYS_DATA_AREA)))) {
+        return 0;
+    }
+    /* the enemies' overlays, each at its own place, and ov107's slot tables for every class (enemy_overlays.h) */
+    if (!plain("the enemies' overlays", KHDAYS_ENEMY_OVERLAYS,
+               (KHDAYS_ENEMY_OVERLAY_LAST - KHDAYS_ENEMY_OVERLAY_FIRST + 1) * KHDAYS_ENEMY_OVERLAY_SPAN) ||
+        !plain("the enemies' slots", KHDAYS_ENEMY_HANDLERS, KHDAYS_ENEMY_SLOTS_END - KHDAYS_ENEMY_HANDLERS)) {
         return 0;
     }
     if (!reserve_heaps()) {

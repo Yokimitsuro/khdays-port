@@ -593,7 +593,6 @@ add_executable(khdays-native
     ../studio/core/missions/missions.cpp
     ../studio/core/missions/mission_db.cpp
     ../studio/core/missions/command_names.cpp
-    ../studio/core/missions/enemy_names.cpp
     ../studio/core/files/containers.cpp
     ../studio/core/files/lz.cpp
     ../studio/core/files/paths.cpp
@@ -779,8 +778,7 @@ set_source_files_properties(runtime/core/text_patches.cpp host/screens/ui_text.c
 # khdays-studio's mission builder, compiled in as the studio builds it: its headers by their own paths
 set(KHDAYS_MISSION_BUILDER runtime/missions/build.cpp ../studio/core/missions/mission_build.cpp
     ../studio/core/missions/missions.cpp ../studio/core/missions/mission_db.cpp
-    ../studio/core/missions/command_names.cpp ../studio/core/missions/enemy_names.cpp
-    ../studio/core/files/containers.cpp ../studio/core/files/lz.cpp
+    ../studio/core/missions/command_names.cpp ../studio/core/files/containers.cpp ../studio/core/files/lz.cpp
     ../studio/core/files/paths.cpp)
 set_source_files_properties(${KHDAYS_MISSION_BUILDER} PROPERTIES
     INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../studio;${CMAKE_CURRENT_SOURCE_DIR}/runtime"

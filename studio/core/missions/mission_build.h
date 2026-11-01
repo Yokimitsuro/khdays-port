@@ -47,13 +47,11 @@ struct MissionPlan {
 // emblems or place of its kind's) or it has no start.
 bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why);
 
-// The game's files as the builder reads them: a game path ("mi/mi/1354") to its bytes (empty: none), the game's
-// mission files' numbers, and its ARM9 overlay table (an overlay's 32 bytes, its RAM size at +8: how many enemy
-// code slots an enemy's overlay takes). khdays-studio reads the extracted files; the port, its ROM.
+// The game's files as the builder reads them: a game path ("mi/mi/1354") to its bytes (empty: none), and the
+// game's mission files' numbers. khdays-studio reads the extracted files; the port, its ROM.
 struct GameFiles {
     std::function<std::vector<std::uint8_t>(const std::string& path)> read;
     std::vector<int> missions;
-    std::vector<std::uint8_t> overlay_table;
 };
 GameFiles extracted_game_files(const std::filesystem::path& nitrofs);
 
@@ -67,15 +65,9 @@ std::vector<int> enemy_hearts(const GameFiles& game);
 // How many hearts every enemy of `waves` gives together, `hearts` by class (enemy_hearts).
 int waves_hearts(const std::vector<std::vector<WaveSpawner>>& waves, const std::vector<int>& hearts);
 
-// The mission file for `plan`, read back by the mission reader before it is handed out. Its enemy classes in the
-// order their code finds room in the game's enemy slots (load_order). False with why (a class no game mission has,
-// more than four classes, classes whose code does not fit together, no wave...).
+// The mission file for `plan`, read back by the mission reader before it is handed out. Any enemy classes together
+// (the port gives each its own code slot: port/runtime/core/enemy_overlays.h). False with why (a class no game
+// mission has, no wave...).
 bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<std::uint8_t>* out, std::string* why);
-
-// An order the enemy classes' code is loaded in that finds each its slots, the given order when it does (indices
-// into `classes`); empty when none does. Ov107_SpawnEntityClass loads a class's overlay at the first free column
-// it has one in, the overlay taking its RAM size / 0x1e00 + 1 of the six (Ov107_LoadEnemyOverlay); a class
-// without a column left stops the game (OS_Terminate).
-std::vector<int> load_order(const std::vector<int>& classes, const std::vector<std::uint8_t>& overlay_table);
 
 }  // namespace studio
