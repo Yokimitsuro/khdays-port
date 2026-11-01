@@ -444,8 +444,25 @@ test mod; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
   forward): hung down and settled against the chest at load.
 - Cuffs 118-128 / 235-245: four two-control strips joined by two rings each,
   stiff, colliding with the hands only.
-- Hair: single-bone tufts under 170 (and 181, 183, 185 on 178): guided, 7 Hz,
-  10 degree swing.
+- Hair: single-bone tufts under 170, guided (`kh2_hair`). P_EX110's motions key
+  the hair's sway (its tufts 116-159 are N_EX830's 172-215 less 56; motions.txt
+  maps them): 2-3 degrees in the calm idle at 0.3 Hz, up to 19 rms in the battle
+  idle at 0.4-0.6 Hz, 3-19 in the run at 2.8-3.8 Hz, 15-45 rms in attacks; the
+  back cards 3-23. A damped spring driven by the head's acceleration fits none of
+  it (R^2 about 0.1): it is keyed by hand, in time with each motion. N_EX830_MEMO's
+  one idle sways the front tufts 1-4.5 degrees and keys no back cards (not used).
+  So the hair follows the keyed sway closely: 6 Hz at 0.7 of critical damping
+  (flat to about 3 Hz, no resonance), `damping 3`, 15 degree swing (never reached),
+  `guided_inertia 0.2`. A stop adds 0.8-1.4 cm of follow-through, settled in
+  0.2-0.4 s (replay `run`, tufts 172 189 205); an attack takes it 0.4-0.5 cm rms off
+  the keyed sway. Slower springs (3-4.5 Hz) lagged the keyed sway and wobbled on
+  their own (jelly: 0.7-1.0 cm rms, 4-6 reversals a second in an attack); 7 Hz,
+  0.8, damping 6 and a 9 degree limit shook against the limit at about 10 Hz after
+  a stop (rubbery). The flat cards on the back of the head (181, 183, 185) and the
+  tuft they hang on (178) are their own group (`hair_back`, `kh2_hair_card`): 6 Hz
+  critically damped, `damping 5`, 6 degrees, `guided_inertia 0.1`, 0.3-0.4 cm rms
+  off their keyed motion in an attack; their own settings alone changed little, as
+  they ride 178. In the head collider: none over idle, run, attack, jump, guard.
 - Hood: one bone (101); it settles onto the back and swings as one piece (folding
   would need more bones than the model has).
 - Colliders: pelvis, spine and chest (`torso`: hood, drawstrings), thighs (from

@@ -149,6 +149,11 @@ end
 group hair hair preset kh2_hair
   attach 170
   tufts 172 174 176 187 189 191 193 195 197 199 201 203 205 207 209 211 213 215
+end
+
+# The flat cards on the back of the head and the tuft they hang on: held closer
+group hair_back hair preset kh2_hair_card
+  attach 170
   tuft 178
   tufts 181 183 185
 end

@@ -106,20 +106,50 @@ preset kh2_hood
   collide torso body head
 end
 
-# Short sculpted hair: strongly back to the animated silhouette, small swing,
-# a little lag. Guided: the animation's own hair motion is the target.
+# Short sculpted hair: close on the animation's own (keyed) hair motion, a little
+# follow-through. Guided: the animation's own hair motion is the target.
 preset kh2_hair
+  # P_EX110's motions key the hair's sway (2-3 degrees in the calm idle at 0.3 Hz, 3-19 in the run at
+  # 2.8-3.8 Hz, 15-45 rms in attacks), so it follows that closely: 6 Hz at 0.7 of critical damping passes
+  # it with little lag and no resonance, a fifth of the body's acceleration adds a little follow-through.
+  # Slower springs lagged the keyed sway and wobbled on their own (jelly); 7 Hz with a 9 degree limit
+  # shook against the limit (rubbery)
   mode guided
   mass 0.01
   stretch_compliance 0
-  damping 6
-  follow_frequency 7
-  follow_damping 0.8
+  damping 3
+  follow_frequency 6
+  follow_damping 0.7
   gravity_scale 0.3
-  swing_limit 9
+  swing_limit 15
   twist_limit 0
   inertia 0.6
-  guided_inertia 0.6
+  guided_inertia 0.2
+  max_speed 4
+  thickness 0.5
+  friction 0
+  wind_drag 0.4
+  # its bones only turn: a tuft lagging in a fast move no longer pulls its root off the head
+  rotate_only 1
+  collide head
+end
+
+# The flat hair cards on the back of the head (and the tuft they hang on):
+# as kh2_hair, held closer.
+preset kh2_hair_card
+  # critically damped, a 6 degree swing, a tenth of the body's acceleration: on their keyed motion, little
+  # of their own
+  mode guided
+  mass 0.01
+  stretch_compliance 0
+  damping 5
+  follow_frequency 6
+  follow_damping 1
+  gravity_scale 0.3
+  swing_limit 6
+  twist_limit 0
+  inertia 0.6
+  guided_inertia 0.1
   max_speed 4
   thickness 0.5
   friction 0
