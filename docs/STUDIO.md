@@ -152,13 +152,13 @@ every world code and number and asked for (a game's maps listed in about a secon
 kept). A map is taken out by the installer's reader with the game's own executable into
 `saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
 with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
-`.bcd`, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of Memories' from its `.mcd`: docs/FORMATS.md, "Dream Drop
-Distance's rooms", "KINGDOM HEARTS FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). The change names it `source <game>:<map>` (KH2's keep their
-`kh2 <map>`). Its first place: in its game's units (KH1's and KH2's centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres
-at 1),
-its lowest main floor (the lowest height holding a quarter of the floor area the most held one does) at the room's
-ground, then moved across until most of the room's places -- its markers and its origin, where missions put the
-player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
+`.bcd`, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of Memories' from its `.mcd`: docs/FORMATS.md, "Dream
+Drop Distance's rooms", "KINGDOM HEARTS FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
+FINAL MIX's skies come with the model (KH1's its `.gvbl` assets), drawn around the camera behind everything. The change
+names it `source <game>:<map>` (KH2's keep their `kh2 <map>`). Its first place: in its game's units (KH1's and KH2's
+centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres at 1), its lowest main floor (the lowest height
+holding a quarter of the floor area the most held one does) at the room's ground, then moved across until most of the
+room's places -- its markers and its origin, where missions put the player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
 them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
 another game" lists a game's worlds and maps (taken out or not). A room with no collision of its own (a Dive
 stage) is given one made from its model (`own-collision` then says so).

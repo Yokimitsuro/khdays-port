@@ -251,8 +251,7 @@ our own reading of the player's files. The room's model is the remaster's own (i
 
 - **Where**: `<w>00_<nn>.bin` and `.img` (`<w>.wdt` the world's). The `.bin`: u32 entry count, then from +0x10 each
   entry's offset and size. In the rooms read its first entry is the floors and walls, its second the PS2's room model
-  (the remaster's `.mvbl` asset in its place, named by its offset), its third and fourth skies (`.gvbl` assets, not
-  read yet).
+  (the remaster's `.mvbl` asset in its place, named by its offset), its third and fourth skies (`.gvbl` assets).
 - **The .img**: its palettes from +0x100, its texture pages from the u32 at +0x18 (their bytes at +0x1c), 64 KB each.
   Its HD pictures are named `<that + page x 0x10000 + n>` in hexadecimal (`-f900.dds`, `-1f903.dds`), n a texture's
   place among its page's, the pages counted as the remaster numbers them: the plain ones from the lowest address,
@@ -265,6 +264,12 @@ our own reading of the player's files. The room's model is the remaster's own (i
   A mesh: u32 0x01234567, u32 1, the vertex count at +0x14, its texture's 16 bytes at +0x20, then 32-byte vertices:
   position f32 x3, colour (0x80 is 1), u, v f32 over its own texture, u32 0x1000 where a strip starts, else a
   triangle ends there (2 on the strip's odd ones).
+- **The .gvbl** (a sky): u32 0x4989, `DDDD` at +0x10, its group count at +0x14, the groups from +0x20, each after the
+  one before (the last ends the file in the 44 skies of the 22 rooms read): u32 0x25c, u32 its vertex count, 8 bytes,
+  u32 its picture's offset in the `.bin` (the remaster's `.dds` asset named by it), u32, u32 0 or 5 (not read), u32,
+  then its vertices as an `.mvbl` mesh's. A dome or a ring of clouds about the room's middle (KH1's centimetres, 20 to
+  1,300 metres across), a cap, a moon; their vertices' alpha fades the clouds at the horizon. Drawn around the camera,
+  blended, in the file's order (the third entry's first).
 - **Floors and walls** (the `.bin`'s first entry): u32 0x48, then eight sections' offsets and lengths, each after the
   last; the second its vertices (f32 x3), the fourth its faces, 20 bytes each: corners (i16 x4, the fourth -1 for a
   triangle), u32 its normal's place in a table of its own, f32 its plane's distance, u32 what it is. Each face's plane

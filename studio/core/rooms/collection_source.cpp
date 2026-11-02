@@ -20,8 +20,10 @@ extern "C" {
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <tuple>
 
 namespace fs = std::filesystem;
@@ -370,7 +372,7 @@ bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, con
 }
 
 // A KINGDOM HEARTS FINAL MIX room: the remaster's model of it (the .bin entry's .mvbl asset), its textures the
-// .img's HD pictures.
+// .img's HD pictures, its skies the .bin's .gvbl assets.
 bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                    const fs::path& out, CollectionMade* made, std::string* why) {
     const fs::path folder = collection_folder(settings.root, game);
@@ -394,25 +396,44 @@ bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, con
     }
     fs::create_directories(out.parent_path(), ec);
     std::string failed;
+    const auto write_picture = [&](const std::string& file, const khdays::assets::DecodedTexture& picture) {
+        const char* e = khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), picture.rgba.data(),
+                                         picture.width, picture.height);
+        if (e != nullptr && failed.empty())
+            failed = file + ": " + e;
+        ++made->pictures;
+    };
+    // a picture among the .img's or the .bin's remastered assets, by its name
+    const auto asset = [&](const std::string& file) {
+        return [&folder, file](const std::string& name) {
+            std::error_code exists;
+            const fs::path hd = folder / "remastered" / path_u8(file) / path_u8("-" + name + ".dds");
+            return fs::is_regular_file(hd, exists) ? hd : fs::path();
+        };
+    };
     khdays::assets::kh1::Room room;
     try {
-        room = khdays::assets::kh1::room_model(
-            data.data(), data.size(), map.name, khdays::assets::kh1::img_pages(img_data.data(), img_data.size()),
-            [&](const std::string& name) {
-                std::error_code exists;
-                const fs::path hd = folder / "remastered" / path_u8(img) / path_u8("-" + name + ".dds");
-                return fs::is_regular_file(hd, exists) ? hd : fs::path();
-            },
-            [&](const std::string& file, const khdays::assets::DecodedTexture& picture) {
-                const char* e = khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), picture.rgba.data(),
-                                                 picture.width, picture.height);
-                if (e != nullptr && failed.empty())
-                    failed = file + ": " + e;
-                ++made->pictures;
-            });
+        room = khdays::assets::kh1::room_model(data.data(), data.size(), map.name,
+                                               khdays::assets::kh1::img_pages(img_data.data(), img_data.size()),
+                                               asset(img), write_picture);
     } catch (const std::exception& e) {
         *why = u8(mvbl.filename()) + ": " + e.what();
         return false;
+    }
+    // its skies: the .bin's .gvbl assets (named by their offsets), in the .bin's order
+    std::map<unsigned long, fs::path> skies;
+    for (const auto& e : fs::directory_iterator(folder / "remastered" / path_u8(bin), ec)) {
+        const std::string stem = u8(e.path().stem());
+        if (e.path().extension() == ".gvbl" && stem.size() > 1)
+            skies.emplace(std::strtoul(stem.c_str() + 1, nullptr, 16), e.path());
+    }
+    for (const auto& [offset, path] : skies) {
+        const auto sky = read_all(path);
+        try {
+            khdays::assets::kh1::add_sky(&room, sky.data(), sky.size(), asset(bin), write_picture);
+        } catch (const std::exception& e) {
+            room.report.push_back(u8(path.filename()) + ": " + e.what() + "; that sky left out");
+        }
     }
     if (!failed.empty()) {
         *why = "a picture cannot be written: " + failed;

@@ -1,8 +1,8 @@
 #pragma once
 
 // KINGDOM HEARTS FINAL MIX's rooms (the 1.5+2.5 collection's <w>00_<nn>.bin and .img), read from the player's own
-// copy: the remaster's model of a room (the .bin's room entry's .mvbl asset), its textures the .img's HD pictures
-// (docs/FORMATS.md, "KINGDOM HEARTS FINAL MIX's rooms").
+// copy: the remaster's model of a room (the .bin's room entry's .mvbl asset), its textures the .img's HD pictures, its
+// skies the .bin's .gvbl assets (docs/FORMATS.md, "KINGDOM HEARTS FINAL MIX's rooms").
 
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +45,14 @@ ImgPages img_pages(const std::uint8_t* data, std::size_t size);
 // `write_picture`), cut out by its alpha. Throws std::runtime_error when it is no .mvbl.
 Room room_model(const std::uint8_t* data, std::size_t size, const std::string& name, const ImgPages& pages,
                 const PictureFinder& find, const PictureSink& write_picture);
+
+// `data` one of a room's .gvbl (its skies: the remaster's assets of the .bin's third and fourth entries): its meshes
+// added to `room` under a sky node (drawn around the camera, behind everything), blended by their vertices' and
+// pictures' alpha, in its order; each one's HD picture the .bin's asset named by the offset the mesh gives (found by
+// `find` from that offset in hexadecimal, written by `write_picture` as sky_<offset>.png). Throws std::runtime_error
+// when it is no .gvbl.
+void add_sky(Room* room, const std::uint8_t* data, std::size_t size, const PictureFinder& find,
+             const PictureSink& write_picture);
 
 // `data` a room's .bin: its floors and walls (its first entry of eight chained sections: vertices in the second,
 // faces in the fourth), turned upright as the model is, as KH2's collision scene is made. Throws std::runtime_error

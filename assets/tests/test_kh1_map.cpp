@@ -15,7 +15,7 @@
 // A KINGDOM HEARTS FINAL MIX room made here byte by byte as the reader expects it (docs/FORMATS.md, "KINGDOM HEARTS
 // FINAL MIX's rooms"): an .mvbl of two textures (one in the picture buffer's spare bits and a plain page, named the
 // other way round) and one mesh, a strip of two triangles on the first; seventeen plain pages, the last unnumbered; a
-// .bin's collision entry; a .bin's entry table and an .img's header.
+// .bin's collision entry; a .bin's entry table and an .img's header; a .gvbl, a sky of two groups.
 
 namespace {
 
@@ -264,6 +264,79 @@ void test_bin_and_img() {
     expect(pages.at == 0xf900 && pages.count == 0x13, "the .img's pages");
 }
 
+// A .gvbl of two groups on one picture: a strip of two triangles, then one triangle fading by its vertices' alpha.
+void test_sky() {
+    Writer w;
+    w.u32(0x4989);
+    w.zeros(12);
+    w.u32(0x44444444);
+    w.u32(2);  // groups
+    w.zeros(8);
+    const std::array<std::uint32_t, 2> counts{4, 3};
+    for (std::size_t g = 0; g < 2; ++g) {
+        w.u32(0x25c);
+        w.u32(counts[g]);
+        w.zeros(8);
+        w.u32(0x1e2a50);  // its picture's offset
+        w.u32(0);
+        w.u32(g == 0 ? 0 : 5);
+        w.u32(0);
+        for (std::uint32_t k = 0; k < counts[g]; ++k) {
+            w.f32(static_cast<float>(k) * 1000);
+            w.f32(-6000);  // y down: above
+            w.f32(static_cast<float>(k % 2) * 1000);
+            w.u32(g == 0 ? 0x80808080U : 0x20808080U);
+            w.f32(0);
+            w.f32(1);
+            w.u32(k < 2 ? 0x1000 : 1);
+            w.u32(0);
+        }
+    }
+    const auto folder = std::filesystem::temp_directory_path() / "khdays_kh1_sky_test";
+    std::filesystem::create_directories(folder);
+    const auto picture = folder / "-1e2a50.dds";
+    {
+        const Bytes dds = plain_dds();
+        std::ofstream(picture, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
+                                                      static_cast<std::streamsize>(dds.size()));
+    }
+    kh1::Room room;
+    room.scene.name = "tw99_02";
+    room.scene.nodes.push_back({"tw99_02", -1});
+    std::vector<std::string> asked;
+    std::map<std::string, int> written;
+    const auto find = [&](const std::string& name) {
+        asked.push_back(name);
+        return name == "1e2a50" ? picture : std::filesystem::path();
+    };
+    const auto write = [&](const std::string& file, const khdays::assets::DecodedTexture& t) { written[file] = t.width; };
+    kh1::add_sky(&room, w.b.data(), w.b.size(), find, write);
+    kh1::add_sky(&room, w.b.data(), w.b.size(), find, write);  // a second sky on the same picture
+    const auto& scene = room.scene;
+    expect(room.report.empty(), "nothing left out: " + (room.report.empty() ? std::string() : room.report.front()));
+    expect(scene.nodes.size() == 2 && scene.nodes[1].sky && scene.nodes[1].parent == 0, "one sky node, under the root");
+    expect(asked == std::vector<std::string>{"1e2a50"} && written.size() == 1 && written["sky_1e2a50.png"] == 1,
+           "its picture asked and written once");
+    expect(scene.materials.size() == 1 && scene.materials[0].texture == "sky_1e2a50.png" &&
+               scene.materials[0].alpha_mode == khdays::assets::NeutralMesh::AlphaMode::blend,
+           "one blended material");
+    expect(scene.meshes.size() == 4 && scene.meshes[1].node == 1, "a mesh a group, on the sky node");
+    const auto& strip = scene.meshes[0].primitives.at(0);
+    const auto& fading = scene.meshes[1].primitives.at(0);
+    expect(strip.indices.size() == 6 && fading.indices.size() == 3, "the groups' triangles, each after the last");
+    expect(std::fabs(strip.positions[0][1] - 6000) < 1e-4F, "turned upright: above");
+    expect(fading.colors[0][3] == 0x40, "its vertices' alpha kept");
+    bool threw = false;
+    try {
+        const Bytes junk(64, 0);
+        kh1::add_sky(&room, junk.data(), junk.size(), find, write);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    expect(threw, "a file that is no .gvbl refused");
+    std::filesystem::remove_all(folder);
+}
+
 }  // namespace
 
 int main() {
@@ -272,6 +345,7 @@ int main() {
         test_seventeenth_plain_page();
         test_collision();
         test_bin_and_img();
+        test_sky();
         std::cout << "KH1 map test passed\n";
         return 0;
     } catch (const std::exception& e) {

@@ -49,6 +49,13 @@ constexpr std::uint32_t kPlainPagesNumbered = 16;
 constexpr std::uint32_t kCollisionHeader = 0x48;
 constexpr std::size_t kCollisionVertex = 12;
 constexpr std::size_t kCollisionFace = 20;
+// A .gvbl (a sky): u32 0x4989, its group count at +0x14, the groups from +0x20, each after the one before: u32 0x25c,
+// u32 its vertex count, 8 bytes, u32 its picture's offset in the .bin (the remaster's asset named by it), u32, u32 0
+// or 5, u32, then its vertices as an .mvbl mesh's.
+constexpr std::uint32_t kGvbl = 0x4989;
+constexpr std::uint32_t kSkyGroup = 0x25c;
+constexpr std::size_t kSkyHeader = 0x20;
+constexpr std::size_t kSkyGroupHeader = 0x20;
 
 class Reader {
 public:
@@ -72,6 +79,27 @@ std::array<std::uint8_t, 4> gltf_color(const std::array<std::uint8_t, 4>& c) {
     for (std::size_t i = 0; i < 4; ++i)
         out[i] = static_cast<std::uint8_t>(std::min(255, c[i] * 2));
     return out;
+}
+
+// `count` 32-byte vertices from `at` (an .mvbl mesh's, a .gvbl group's) added to `prim`, their strips as triangles.
+void add_strips(const Reader& r, std::size_t at, std::size_t count, ScenePrimitive* prim) {
+    const auto base = static_cast<std::uint32_t>(prim->positions.size());
+    for (std::size_t k = 0; k < count; ++k) {
+        const std::size_t v = at + k * kVertexSize;
+        // KH1's axes, y down, turned upright about x
+        prim->positions.push_back({r.get<float>(v), -r.get<float>(v + 4), -r.get<float>(v + 8)});
+        prim->colors.push_back(gltf_color({r.get<std::uint8_t>(v + 12), r.get<std::uint8_t>(v + 13),
+                                           r.get<std::uint8_t>(v + 14), r.get<std::uint8_t>(v + 15)}));
+        prim->uvs.push_back({r.get<float>(v + 16), r.get<float>(v + 20)});
+        const auto ends = r.get<std::uint32_t>(v + 24);
+        if (k < 2 || ends == kStripStart)
+            continue;
+        const auto c = base + static_cast<std::uint32_t>(k);
+        if (ends == kOdd)
+            prim->indices.insert(prim->indices.end(), {c - 1, c - 2, c});
+        else
+            prim->indices.insert(prim->indices.end(), {c - 2, c - 1, c});
+    }
 }
 
 }  // namespace
@@ -258,28 +286,73 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
             mesh.name = room.scene.materials[static_cast<std::size_t>(m)].name;
             mesh.primitives.push_back({m});
         }
-        ScenePrimitive& prim = mesh.primitives.front();
-        const auto base = static_cast<std::uint32_t>(prim.positions.size());
-        for (std::size_t k = 0; k < count; ++k) {
-            const std::size_t v = at + kMeshHeader + k * kVertexSize;
-            // KH1's axes, y down, turned upright about x
-            prim.positions.push_back({r.get<float>(v), -r.get<float>(v + 4), -r.get<float>(v + 8)});
-            prim.colors.push_back(gltf_color({r.get<std::uint8_t>(v + 12), r.get<std::uint8_t>(v + 13),
-                                              r.get<std::uint8_t>(v + 14), r.get<std::uint8_t>(v + 15)}));
-            prim.uvs.push_back({r.get<float>(v + 16), r.get<float>(v + 20)});
-            const auto ends = r.get<std::uint32_t>(v + 24);
-            if (k < 2 || ends == kStripStart)
-                continue;
-            const auto c = base + static_cast<std::uint32_t>(k);
-            if (ends == kOdd)
-                prim.indices.insert(prim.indices.end(), {c - 1, c - 2, c});
-            else
-                prim.indices.insert(prim.indices.end(), {c - 2, c - 1, c});
-        }
+        add_strips(r, at + kMeshHeader, count, &mesh.primitives.front());
     }
     for (auto& [m, mesh] : by_material)
         room.scene.meshes.push_back(std::move(mesh));
     return room;
+}
+
+void add_sky(Room* room, const std::uint8_t* data, std::size_t size, const PictureFinder& find,
+             const PictureSink& write_picture) {
+    const Reader r(data, size);
+    if (size < kSkyHeader || r.get<std::uint32_t>(0) != kGvbl)
+        throw std::runtime_error("not a .gvbl");
+    Scene& scene = room->scene;
+    if (scene.nodes.empty())
+        scene.nodes.push_back({scene.name, -1});
+    // the room's sky node, under its root: made by the first sky
+    int node = -1;
+    for (std::size_t n = 0; n < scene.nodes.size() && node < 0; ++n)
+        node = scene.nodes[n].sky ? static_cast<int>(n) : -1;
+    if (node < 0) {
+        SceneNode sky;
+        sky.name = "sky";
+        sky.parent = 0;
+        sky.sky = true;
+        scene.nodes.push_back(sky);
+        node = static_cast<int>(scene.nodes.size() - 1);
+    }
+    const auto groups = r.get<std::uint32_t>(0x14);
+    std::size_t at = kSkyHeader;
+    for (std::size_t g = 0; g < groups; ++g) {
+        if (r.get<std::uint32_t>(at) != kSkyGroup)
+            throw std::runtime_error("a .gvbl group not where the one before it ends");
+        const auto count = r.get<std::uint32_t>(at + 4);
+        char hex[16];
+        std::snprintf(hex, sizeof(hex), "%x", r.get<std::uint32_t>(at + 0x10));
+        // its material: blended (the skies' layers fade by their vertices' alpha), one a picture
+        const std::string file = std::string("sky_") + hex + ".png";
+        int m = -1;
+        for (std::size_t i = 0; i < scene.materials.size() && m < 0; ++i)
+            m = scene.materials[i].texture == file ? static_cast<int>(i) : -1;
+        if (m < 0) {
+            SceneMaterial mat;
+            mat.name = scene.name + "_sky_" + hex;
+            mat.double_sided = true;
+            mat.alpha_mode = NeutralMesh::AlphaMode::blend;
+            const std::filesystem::path hd = find(hex);
+            if (!hd.empty()) {
+                try {
+                    write_picture(file, read_dds(hd));
+                    mat.texture = file;
+                } catch (const std::exception& e) {
+                    room->report.push_back(std::string("sky ") + hex + ": " + e.what());
+                }
+            } else {
+                room->report.push_back(std::string("sky ") + hex + ": no HD picture in the copy; in its colours");
+            }
+            m = static_cast<int>(scene.materials.size());
+            scene.materials.push_back(mat);
+        }
+        SceneMesh mesh;
+        mesh.name = scene.name + "_sky_" + std::to_string(g) + "_" + hex;
+        mesh.node = node;
+        mesh.primitives.push_back({m});
+        add_strips(r, at + kSkyGroupHeader, count, &mesh.primitives.front());
+        scene.meshes.push_back(std::move(mesh));
+        at += kSkyGroupHeader + std::size_t{count} * kVertexSize;
+    }
 }
 
 }  // namespace khdays::assets::kh1
