@@ -142,6 +142,33 @@ collision: written as `<map>_collision.gltf` beside its model and taken like
 another model's, placed as the model is (the Usual Spot's: 334 grounds, 847
 walls, 155 ceilings, a fifth of the floors made from its visible model).
 
+**Rooms from the collections** (`core/rooms/collection_source.h`). The maps of KINGDOM HEARTS FINAL MIX, KINGDOM
+HEARTS II FINAL MIX and Re:Chain of Memories (KINGDOM HEARTS HD 1.5+2.5 ReMIX, setting `collection_1525`) and of
+Dream Drop Distance (KINGDOM HEARTS HD 2.8 Final Chapter Prologue, setting `collection_28`; else the folders the
+install recorded with the game's executable there) are found in the player's own packages: a package's index keys
+each file by the MD5 of its path, so each game's name pattern (KH2's `map/<w><nn>.map`, DDD's
+`map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`) is tried for
+every world code and number and asked for (a game's maps listed in about a second, no list of the games' files
+kept). A map is taken out by the installer's reader with the game's own executable into
+`saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
+with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
+`.bcd`: docs/FORMATS.md, "Dream Drop Distance's rooms"). The change names it `source <game>:<map>` (KH2's keep their
+`kh2 <map>`). Its first place: in its game's units (KH2's centimetres at 0.01, Dream Drop Distance's metres at 1),
+its lowest main floor (the lowest height holding a quarter of the floor area the most held one does) at the room's
+ground, then moved across until most of the room's places -- its markers and its origin, where missions put the
+player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
+them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
+another game" lists a game's worlds and maps (taken out or not); KH1's and Re:CoM's are listed, not yet read.
+
+```
+khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections
+khdays-studio --collection-take ddd:eh_01            its files taken out
+khdays-studio --collection-room ddd:eh_01            made into a model (and its own collision)
+khdays-studio --replace-room <Mod> tt 0 ddd:eh_01 own-collision
+python port/tools/collection_room_walk.py ddd:eh_01 --walk-save OLD.sav
+                                                     in place of Twilight Town's room 0, played, frames saved
+```
+
 ## Missions
 
 A mission is changed in place (`core/missions/mission_edit.h`): a step's

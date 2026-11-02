@@ -212,3 +212,33 @@ at +0x10). A group's flag 0x400000 is light KH2 adds over the model (The World T
 lines). A chest's rest pose has its lid open: its motion set (`obj/<name>.mset`, a BAR of motions, each a BAR
 holding the motion, type 9) has it closed in `00A`'s first frame; the lid is its last bone (`j3`), 100 degrees from
 closed when open.
+
+## Dream Drop Distance's rooms
+
+Not the game's: KINGDOM HEARTS Dream Drop Distance's rooms, in the player's KINGDOM HEARTS HD 2.8 Final Chapter
+Prologue, as `assets/src/ddd_map.cpp` reads them for the studio (docs/STUDIO.md, "Rooms from the collections"). Read
+from the player's files; the header of a PMO as Birth by Sleep's public notes give it, the rest our own reading.
+
+- **Where**: `map/<w>/<w>_<nn>/bin/` in kh3d_first or kh3d_third (`Image/dt`): `<w>_<nn>.pmp` the room, `.pvd`,
+  `.mss`, `<w>_<nn>a.bcd` its floors and walls, `_<k>.mcv`, `.txa`. Its textures by name, `<name>.ctt` beside it;
+  their HD pictures (`.dds`) the `.ctt`'s remastered asset in kh3d_third, the `.pmp`'s own in kh3d_first. Each
+  world's `_60` to `_62` maps hold no `.bcd`: the stages the player falls through (Dive).
+- **PMP**: "PMP\0"; its objects (u16 at +0x10), 0x30 bytes each from +0x20: position, rotation (radians, about x then
+  y then z), scale (f32 x3 each), its PMO's offset (u32, 0 none); its textures (u16 at +0x1a, listed at +0x1c, 0x20
+  bytes each, the name at +4).
+- **PMO** (version 4): "PMO\0", its textures (u8 at +8) listed from +0xa0 as the PMP's, its section's offset at
+  +0x10 (else at +0x1c, a model of see-through parts only; with +0x10 set, +0x1c points within the vertices).
+- **A section**: two groups of records, pairs of u32 (the first group's, then the second's): the records' offset at
+  +0 / +4, their vertex count at +8 / +0xc, their count at +0x10 / +0x14; then the vertices' offset at +0x18 and their
+  bytes at +0x1c, the first group's vertices then the second's (offsets from the PMO). A record, 24 bytes: u16 vertex
+  count, u8 texture (in the PMO's list), u8 vertex size (20), u32 flags (the primitive in the top four bits: 3
+  triangles, 4 a strip stitched by degenerate triangles), u16 at +0xa its drawing (0x20 blended, 0x40 added, 0x60
+  taken away), its colour at +0xc. A vertex: u16 u, v (0x800 is 1), its colour (R G B A), position f32 x3 (32768 is
+  1). Read this way, every section of the rooms read holds its records' vertices exactly.
+- **BCD** ("@bcd", version 0x0a): its parts (u32 at +8, their offset at +0xc), 0x30 bytes each: a box (min, max),
+  u16 vertex and face counts at +0x18 / +0x1a, the vertices' and faces' offsets at +0x1c / +0x20 (from the file),
+  then a tree the game's look-ups use (16-byte nodes: a split, its axis, two offsets) and its u16 face lists. A
+  vertex: f32 x4 (w 1). A face, 48 bytes: its plane (normal, distance), its corners (i16 x4, the fourth -1 for a
+  triangle), then what it is (u32 at +0x20 1 on floors; the low four bits of +0x24, 1 a floor, 2 a wall).
+- **Units**: metres, as Days's: the stairs rise 0.17 to 0.25 (eh_01, nd_02); the floors and walls lie in the model's
+  space (eh_01: 47,075 of its 48,852 vertices inside the BCD's box).

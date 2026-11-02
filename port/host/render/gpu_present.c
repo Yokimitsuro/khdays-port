@@ -131,9 +131,14 @@ static struct {
     double hd_ms, hd_max_ms;
 } stats;
 
-/* KHDAYS_SHOTS_HD */
+/* KHDAYS_SHOTS_HD: each frame asked, taken at the first frame presented from it on (a frame showing what the last
+ * one did is not presented) */
+typedef struct {
+    uint32_t frame;
+    int taken;
+} Shot;
 static const char *shot_dir;
-static uint32_t shot_frames[64];
+static Shot *shots;
 static int shot_count;
 
 /* Wine or Proton (a Steam Deck, Linux): its ntdll names its version. */
@@ -283,17 +288,24 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
     notice = tell;
     profile = SDL_getenv("KHDAYS_PROFILE") != NULL;
     shot_dir = SDL_getenv("KHDAYS_SHOTS_HD");
+    SDL_free(shots);
+    shots = NULL;
     shot_count = 0;
     if (shot_dir != NULL && SDL_getenv("KHDAYS_SHOTS") != NULL) {
         const char *text = SDL_getenv("KHDAYS_SHOTS");
-        while (*text != '\0' && shot_count < (int)SDL_arraysize(shot_frames)) {
+        while (*text != '\0') {
             char *end;
             const unsigned long frame = SDL_strtoul(text, &end, 10);
             if (end == text) {
                 ++text;
                 continue;
             }
-            shot_frames[shot_count++] = (uint32_t)frame;
+            Shot *grown = (Shot *)SDL_realloc(shots, (size_t)(shot_count + 1) * sizeof(Shot));
+            if (grown == NULL)
+                break;
+            shots = grown;
+            shots[shot_count].frame = (uint32_t)frame;
+            shots[shot_count++].taken = 0;
             text = end;
         }
         SDL_CreateDirectory(shot_dir);
@@ -493,11 +505,14 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
     return part;
 }
 
-/* KHDAYS_SHOTS_HD: the screens of this frame, as presented. */
+/* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken. */
 static void save_shots(const KhdaysFramePackage *p)
 {
     for (int n = 0; n < shot_count; ++n) {
-        if (shot_frames[n] == p->frame && one_drawn) {
+        if (shots[n].taken || shots[n].frame > p->frame)
+            continue;
+        shots[n].taken = 1;
+        if (one_drawn) {
             /* the one-screen picture */
             int w = 0, h = 0;
             uint32_t *pixels = khdays_gfx_render_read(2, &w, &h);
@@ -505,7 +520,7 @@ static void save_shots(const KhdaysFramePackage *p)
                 save_png(p->frame, "one", pixels, w, h);
                 SDL_free(pixels);
             }
-        } else if (shot_frames[n] == p->frame && port2d_drawn) {
+        } else if (port2d_drawn) {
             /* the port's own screens, as they are presented */
             for (int e = 0; e < 2; ++e) {
                 int w = 0, h = 0;
@@ -515,7 +530,7 @@ static void save_shots(const KhdaysFramePackage *p)
                     SDL_free(pixels);
                 }
             }
-        } else if (shot_frames[n] == p->frame) {
+        } else {
             int w = 0, h = 0;
             uint32_t *a = hd != NULL ? khdays_raster3d_read(&w, &h) : NULL;
             const char *engine_a = p->upper == 0 ? "upper" : "lower";

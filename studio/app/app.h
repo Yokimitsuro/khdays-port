@@ -114,7 +114,8 @@ struct App {
     std::vector<std::string> dialog_sheet_folders;    // where every 2D sheet is exported
     std::vector<std::string> dialog_texture_exports;  // where a 3D texture is exported
     std::vector<std::string> dialog_texture_folders;  // where every 3D texture is exported
-    std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH2's rooms)
+    std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH1, KH2, Re:CoM rooms)
+    std::vector<std::string> dialog_collections_28;   // the 2.8 collection's folder (Dream Drop Distance's rooms)
     std::vector<std::string> dialog_ports;            // the port's executable (the settings)
     std::vector<std::string> dialog_characters;       // a character's model, clips, picture or sound
 

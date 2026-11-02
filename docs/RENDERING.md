@@ -255,7 +255,8 @@ copy of the bank instead of the DS's 256x192 one (RUNTIME_MAP, "The screen
 blends at the port's resolution").
 
 Testing knobs: `KHDAYS_SHOTS_HD=DIR` (the `KHDAYS_SHOTS` frames as presented,
-at the resolution drawn); `KHDAYS_GFX=reference` (the 2D engines' pictures);
+at the resolution drawn; each at the first frame presented from it on, named
+by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
 the time preparing the 3D took).

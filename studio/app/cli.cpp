@@ -16,6 +16,7 @@
 #include "core/models/texture_export.h"
 #include "core/models/model_export.h"
 #include "core/models/model_files.h"
+#include "core/rooms/collection_source.h"
 #include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
 #include "core/rooms/room_collision.h"
@@ -374,6 +375,109 @@ void print_kh2_made(const std::string& name, const Kh2Made& made) {
 // --kh2-room <map> <out.gltf> [<folder>]: a KH2 map (tt02) of the player's collection made into a model
 // to replace a room with, its pictures beside it; the folder the collection's archives gave it to
 // (saves/collection/kh2 when not given).
+// --collection-rooms <game> [<world>]: the maps of kh1, kh2, recom or ddd the player's copy holds, by world, each with
+// whether it is taken out (saves/collection/<game>).
+int collection_rooms(const fs::path& root, const std::vector<std::string>& args) {
+    std::string note, why;
+    const Settings settings = load_settings(root, &note);
+    const CollectionGameInfo* game = collection_game(args[1]);
+    if (game == nullptr) {
+        std::fprintf(stderr, "khdays-studio: no game %s (kh1, kh2, recom, ddd)\n", args[1].c_str());
+        return 2;
+    }
+    std::vector<CollectionMap> maps;
+    if (!collection_maps(settings, *game, &maps, &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    std::string world;
+    std::size_t shown = 0;
+    for (const auto& m : maps) {
+        if (args.size() > 2 && m.world != args[2])
+            continue;
+        if (m.world != world) {
+            world = m.world;
+            std::size_t in_world = 0;
+            for (const auto& n : maps)
+                in_world += n.world == world ? 1 : 0;
+            std::printf("%s: %zu maps\n", world.c_str(), in_world);
+        }
+        std::printf("  %s:%s  %s, %zu files%s%s\n", game->code, m.name.c_str(), m.package.c_str(), m.paths.size(),
+                    collection_map_taken_out(root, *game, m) ? ", taken out" : "",
+                    collection_map_falling(*game, m) ? ", a stage the player falls through (Dive): no floor" : "");
+        ++shown;
+    }
+    std::printf("%s: %zu maps\n", game->name, shown);
+    return 0;
+}
+
+// --collection-take <game>:<map>: the map's files taken out of the player's copy into saves/collection/<game>.
+int collection_take(const fs::path& root, const std::vector<std::string>& args) {
+    std::string note, why;
+    const Settings settings = load_settings(root, &note);
+    const auto colon = args[1].find(':');
+    const CollectionGameInfo* game = colon == std::string::npos ? nullptr : collection_game(args[1].substr(0, colon));
+    if (game == nullptr) {
+        std::fprintf(stderr, "khdays-studio: not <game>:<map> (kh1, kh2, recom, ddd): %s\n", args[1].c_str());
+        return 2;
+    }
+    const std::string name = args[1].substr(colon + 1);
+    std::vector<CollectionMap> maps;
+    if (!collection_maps(settings, *game, &maps, &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    for (const auto& m : maps) {
+        if (m.name != name)
+            continue;
+        if (!take_out_collection_map(settings, *game, m, &why)) {
+            std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+            return 1;
+        }
+        std::printf("%s:%s taken out into %s\n", game->code, name.c_str(), u8(collection_folder(root, *game)).c_str());
+        return 0;
+    }
+    std::fprintf(stderr, "khdays-studio: no map %s in this copy of %s\n", name.c_str(), game->name);
+    return 1;
+}
+
+// --collection-room <game>:<map>: the map taken out of the player's copy and made into a glTF with its pictures
+// (saves/collection/<game>/made/<map>/<map>.gltf).
+int collection_room(const fs::path& root, const std::vector<std::string>& args) {
+    std::string note, why;
+    const Settings settings = load_settings(root, &note);
+    const auto colon = args[1].find(':');
+    const CollectionGameInfo* game = colon == std::string::npos ? nullptr : collection_game(args[1].substr(0, colon));
+    if (game == nullptr) {
+        std::fprintf(stderr, "khdays-studio: not <game>:<map> (kh1, kh2, recom, ddd): %s\n", args[1].c_str());
+        return 2;
+    }
+    const std::string name = args[1].substr(colon + 1);
+    std::vector<CollectionMap> maps;
+    if (!collection_maps(settings, *game, &maps, &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    for (const auto& m : maps) {
+        if (m.name != name)
+            continue;
+        CollectionMade made;
+        if (!make_collection_room(settings, *game, m, &made, &why)) {
+            std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+            return 1;
+        }
+        std::printf("%s:%s: %zu triangles, %zu pictures -> %s\n", game->code, name.c_str(), made.triangles,
+                    made.pictures, u8(collection_made_model(root, *game, name)).c_str());
+        if (made.collision)
+            std::printf("  its own collision -> %s\n", u8(collection_made_collision(root, *game, name)).c_str());
+        for (const auto& r : made.report)
+            std::printf("  %s\n", r.c_str());
+        return 0;
+    }
+    std::fprintf(stderr, "khdays-studio: no map %s in this copy of %s\n", name.c_str(), game->name);
+    return 1;
+}
+
 int kh2_room(const fs::path& root, const std::vector<std::string>& args) {
     const fs::path folder = args.size() > 3 ? path_u8(args[3]) : kh2_folder(root);
     Kh2Made made;
@@ -501,6 +605,39 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
     // kh2:<map>: a KH2 map of the player's collection, taken out and made into the model
     std::vector<std::string> given = args;
     std::string kh2;
+    // <game>:<map>: another collection's map (kh1, recom, ddd), taken out and made into the model
+    std::string source;
+    if (args.size() >= 5 && args[4].rfind("kh2:", 0) != 0 && args[4].find(':') != std::string::npos &&
+        collection_game(args[4].substr(0, args[4].find(':'))) != nullptr) {
+        const CollectionGameInfo* game = collection_game(args[4].substr(0, args[4].find(':')));
+        const std::string name = args[4].substr(args[4].find(':') + 1);
+        std::string note;
+        const Settings settings = load_settings(root, &note);
+        std::vector<CollectionMap> maps;
+        if (!collection_maps(settings, *game, &maps, &why))
+            return print_outcome(false, {}, why);
+        const CollectionMap* map = nullptr;
+        for (const auto& m : maps)
+            if (m.name == name)
+                map = &m;
+        if (map == nullptr)
+            return print_outcome(false, {}, "no map " + name + " in this copy of " + game->name);
+        CollectionMade made;
+        if (!make_collection_room(settings, *game, *map, &made, &why))
+            return print_outcome(false, {}, why);
+        std::printf("%s: %zu triangles, %zu pictures\n", args[4].c_str(), made.triangles, made.pictures);
+        if (collection_map_falling(*game, *map))
+            std::printf("%s is a stage the player falls through (Dive): it has no floor to walk on\n",
+                        args[4].c_str());
+        source = args[4];
+        given[4] = u8(collection_made_model(root, *game, name));
+        // own-collision: the map's own game's floors and walls, placed like its model
+        if (args.size() >= 6 && args[5] == "own-collision") {
+            if (!made.collision)
+                return print_outcome(false, {}, args[4] + " has no collision of its own to use");
+            given[5] = u8(collection_made_collision(root, *game, name));
+        }
+    }
     if (args.size() >= 5 && args[4].rfind("kh2:", 0) == 0) {
         kh2 = args[4].substr(4);
         std::string note;
@@ -511,8 +648,8 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
             return print_outcome(false, {}, why);
         print_kh2_made(kh2, made);
         given[4] = u8(model);
-        // kh2-collision: the map's own floors and walls, placed like its model
-        if (args.size() >= 6 && args[5] == "kh2-collision") {
+        // kh2-collision (own-collision): the map's own floors and walls, placed like its model
+        if (args.size() >= 6 && (args[5] == "kh2-collision" || args[5] == "own-collision")) {
             fs::path collision;
             if (!make_kh2_collision(root, kh2, &collision, &why))
                 return print_outcome(false, {}, why);
@@ -535,9 +672,22 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
         if (load_world(nitrofs, code, &w, &why) && import_model(path_u8(given[4]), &model, &why)) {
             RoomCollision collision;
             const bool has_collision = room_collision_of(w, room, &collision);
-            const RoomAlignment a = !kh2.empty() && has_collision
-                                        ? kh2_alignment(room_points(nitrofs, dump, w, room), collision, model)
-                                        : align_with_room(room_points(nitrofs, dump, w, room), model);
+            // (another game's room comes in as KH2's do: their units and floors are alike); with its own game's
+            // collision, the floors it walks on are found there (the model's far scenery would pull its middle away)
+            khdays::assets::ImportedModel floors;
+            const bool own = args.size() >= 6 && (args[5] == "kh2-collision" || args[5] == "own-collision");
+            std::string no_floors;
+            const bool own_floors = own && import_model(path_u8(given[5]), &floors, &no_floors);
+            const CollectionGameInfo* source_game =
+                source.empty() ? nullptr : collection_game(source.substr(0, source.find(':')));
+            const float units = source_game != nullptr ? source_game->units : 0.01f;
+            RoomAlignment a = (!kh2.empty() || !source.empty()) && has_collision && units > 0
+                                  ? kh2_alignment(room_points(nitrofs, dump, w, room), collision,
+                                                  own_floors ? floors : model, units)
+                                  : align_with_room(room_points(nitrofs, dump, w, room), model);
+            std::pair<std::size_t, std::size_t> on_floors{0, 0};
+            if (!source.empty() && a.verdict == RoomAlignment::kh2_units)
+                on_floors = onto_floors(own_floors ? floors : model, collision, &a);
             // the KH2 map this room was made from, where Days put it
             std::vector<std::string> notes;
             const auto pairs = kh2_pairs(mod_dir, &notes);
@@ -548,6 +698,12 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
                 r.place.move = pair->move;
                 std::printf("placed where Days put %s: turned %g, moved %.2f %.2f %.2f\n", kh2.c_str(), pair->turn_y,
                             pair->move[0], pair->move[1], pair->move[2]);
+            } else if (a.verdict == RoomAlignment::kh2_units && on_floors.second > 0) {
+                r.place = a.place;
+                std::printf("placed by its game's units (scale %g), its floor at the room's, moved across until %zu of "
+                            "the room's %zu places (its markers, its origin) stand on its floors: move %.2f %.2f %.2f\n",
+                            a.place.scale, on_floors.first, on_floors.second, a.place.move[0], a.place.move[1],
+                            a.place.move[2]);
             } else if (a.verdict == RoomAlignment::kh2_units) {
                 r.place = a.place;
                 std::printf("placed by KH2's units (scale %g), its floor at the room's, the middles together: move "
@@ -572,6 +728,8 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
         r.keep_collision = true;
     if (!kh2.empty())
         r.kh2 = kh2;
+    if (!source.empty())
+        r.source = source;
     WorldOutcome o;
     const bool ok = args.size() >= 5 ? save_change(nitrofs, dump, mod_dir, r, path_u8(given[4]),
                                                    args.size() >= 6 && !keep ? path_u8(given[5]) : fs::path(), &o, &why)
@@ -1508,6 +1666,12 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         return replace_room(root, args);
     if (args.size() == 4 && args[0] == "--revert-room")
         return revert_room(root, args);
+    if ((args.size() == 2 || args.size() == 3) && args[0] == "--collection-rooms")
+        return collection_rooms(root, args);
+    if (args.size() == 2 && args[0] == "--collection-take")
+        return collection_take(root, args);
+    if (args.size() == 2 && args[0] == "--collection-room")
+        return collection_room(root, args);
     if (args.size() == 2 && args[0] == "--rebuild-worlds")
         return rebuild_worlds(root, args);
     if (args.size() >= 4 && args[0] == "--assemble")
@@ -1546,12 +1710,18 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a KH2 map of the player's collection as a model\n"
         "       khdays-studio [--port <dir>] --kh2-maps [<world>]\n"
         "                                                  the KH2 maps of the player's copy, the Days rooms made from each\n"
-        "       khdays-studio [--port <dir>] --replace-room <Mod> <code> <room> [<model> | kh2:<map> [<collision model> | game | kh2-collision]]\n"
+        "       khdays-studio [--port <dir>] --replace-room <Mod> <code> <room> [<model> | <game>:<map> [<collision model> | game | own-collision]]\n"
         "                                                  a room made from a model (or again from its change)\n"
         "       khdays-studio [--port <dir>] --revert-room <Mod> <code> <room>\n"
         "                                                  a room's change and what it wrote removed\n"
         "       khdays-studio [--port <dir>] --rebuild-worlds <Mod>\n"
         "                                                  every world the mod changes written again\n"
+        "       khdays-studio [--port <dir>] --collection-rooms kh1|kh2|recom|ddd [<world>]\n"
+        "                                                  the maps of a game in the player's collections\n"
+        "       khdays-studio [--port <dir>] --collection-take <game>:<map>\n"
+        "                                                  a map's files taken out of the player's copy\n"
+        "       khdays-studio [--port <dir>] --collection-room <game>:<map>\n"
+        "                                                  a map made into a model (and its own collision)\n"
         "       khdays-studio [--port <dir>] --model-animations <model>\n"
         "                                                  a model's animations, those made for it apart\n"
         "       khdays-studio [--port <dir>] --export-model <model> <out.gltf> [animations]\n"

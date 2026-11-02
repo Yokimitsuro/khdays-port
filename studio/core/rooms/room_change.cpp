@@ -263,6 +263,8 @@ std::string change_text(const RoomReplacement& r) {
     o << "model " << r.model << "\n";
     if (!r.kh2.empty())
         o << "kh2 " << r.kh2 << "\n";
+    if (!r.source.empty())
+        o << "source " << r.source << "\n";
     if (!r.collision.empty())
         o << "collision " << r.collision << "\n";
     if (r.keep_collision)
@@ -320,6 +322,8 @@ bool read_change(const std::filesystem::path& file, RoomReplacement* out, std::s
             r.model = rest;
         else if (word == "kh2")
             r.kh2 = rest;
+        else if (word == "source")
+            r.source = rest;
         else if (word == "collision")
             r.collision = rest;
         else if (word == "collision-kept")
@@ -622,13 +626,13 @@ bool room_ground_middle(const RoomCollision& room, double* x, double* z, double*
 }  // namespace
 
 RoomAlignment kh2_alignment(const std::vector<std::array<float, 3>>& room_points, const RoomCollision& room,
-                            const assets::ImportedModel& kh2) {
+                            const assets::ImportedModel& kh2, float units) {
     RoomAlignment a = align_with_room(room_points, kh2);
     if (a.verdict != RoomAlignment::unrelated)
         return a;
     a = RoomAlignment{};
     a.verdict = RoomAlignment::kh2_units;
-    a.place.scale = 0.01f;  // KH2's units are a hundredth of the game's (the Usual Spot, room 0 of Twilight Town)
+    a.place.scale = units;  // KH2's units are a hundredth of the game's (the Usual Spot, room 0 of Twilight Town)
     float kx = 0, kz = 0, floor_y = 0;
     double dx = 0, dz = 0, ground = 0;
     if (!kh2_floor_middle(kh2, &kx, &kz, &floor_y) || !room_ground_middle(room, &dx, &dz, &ground))
@@ -1009,6 +1013,81 @@ std::vector<SurfaceMap::Height> SurfaceMap::heights_at(float x, float z) const {
         out.push_back({static_cast<float>(a * t[0][1] + b * t[1][1] + c * t[2][1]), up[i] != 0});
     }
     return out;
+}
+
+std::pair<std::size_t, std::size_t> onto_floors(const assets::ImportedModel& floors, const RoomCollision& room,
+                                                RoomAlignment* a) {
+    std::vector<std::array<float, 3>> places{{0, 0, 0}};
+    for (const auto& m : markers(room))
+        places.push_back({m.place[0] / 4096.0f, m.place[1] / 4096.0f, m.place[2] / 4096.0f});
+    assets::ImportedModel placed = floors;
+    place_model(&placed, a->place);
+    // its lowest main floor (the lowest height, by halves of a unit, holding a quarter of the floors' area the most
+    // held one does) at the room's ground: the floor under its middle may be a roof, and from a higher one the player
+    // could fall past where the game takes a fall for a fall out of the room
+    double x = 0, z = 0, ground = 0;
+    if (room_ground_middle(room, &x, &z, &ground)) {
+        std::map<long long, double> area_at;
+        for (const auto& t : drawn_triangles(placed)) {
+            const float e0[3] = {t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]};
+            const float e1[3] = {t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]};
+            const float n[3] = {e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                e0[0] * e1[1] - e0[1] * e1[0]};
+            const float length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (!(length > 0) || n[1] / length <= 0.7f)
+                continue;  // (n[1]: twice its area seen from above)
+            area_at[std::llround((t[0][1] + t[1][1] + t[2][1]) / 3 * 2)] += n[1] / 2;
+        }
+        const auto most = std::max_element(area_at.begin(), area_at.end(),
+                                           [](const auto& p, const auto& q) { return p.second < q.second; });
+        auto main = area_at.begin();
+        while (main != most && main->second < most->second / 4)
+            ++main;
+        if (main != area_at.end()) {
+            const float raise = static_cast<float>(ground / 4096.0 - main->first / 2.0);
+            a->place.move[1] += raise;
+            for (auto& mesh : placed.model.meshes)
+                for (auto& v : mesh.vertices)
+                    v.position[1] += raise;
+        }
+    }
+    const SurfaceMap surfaces = surface_map(placed);
+    // a place stands on a floor at most a stair's rise above its feet (the game puts the player there and lets them
+    // fall: a floor higher up is passed under) and two units below
+    const float above = 0.25f, below = 2.0f;
+    auto on = [&](float dx, float dz) {
+        std::size_t count = 0;
+        for (const auto& q : places) {
+            bool stands = false;
+            for (const auto& h : surfaces.heights_at(q[0] - dx, q[2] - dz))
+                stands = stands || (h.up && h.y <= q[1] + above && h.y >= q[1] - below);
+            count += stands ? 1 : 0;
+        }
+        return count;
+    };
+    std::size_t most = on(0, 0);
+    float best_x = 0, best_z = 0;
+    for (std::size_t t = 0; t < surfaces.triangles.size() && most < places.size(); ++t) {
+        if (!surfaces.up[t])
+            continue;
+        const auto& tri = surfaces.triangles[t];
+        const float mx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3, mz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3;
+        const float my = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+        for (const auto& q : places) {
+            if (my > q[1] + above || my < q[1] - below)
+                continue;
+            const float dx = q[0] - mx, dz = q[2] - mz;
+            const std::size_t count = on(dx, dz);
+            if (count > most || (count == most && dx * dx + dz * dz < best_x * best_x + best_z * best_z)) {
+                most = count;
+                best_x = dx;
+                best_z = dz;
+            }
+        }
+    }
+    a->place.move[0] += best_x;
+    a->place.move[2] += best_z;
+    return {most, places.size()};
 }
 
 float raise_to_markers(const SurfaceMap& surfaces, const std::vector<std::array<float, 3>>& markers, std::size_t* on) {
