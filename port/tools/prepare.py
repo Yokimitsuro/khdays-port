@@ -453,6 +453,29 @@ HOOKS = {
     # so headers must lie below 0x02ff8000. The ones Msg_OpenContainerAndReadHeader reads come from
     # heaps of their own there, and the handle decoders check it (runtime/core/game_heap.c;
     # docs/RUNTIME_MAP.md).
+    # The resource cache past its 128 entries (runtime/core/game_heap.c): every table searched, and a new one when no
+    # entry is free -- the game's ResCache_Acquire read through the null a full cache gave (many enemy kinds, several
+    # players' characters).
+    "main@0201f3d8": [  # ResCache_FindSlot
+        (
+            "    unused = 0;\n    cur[n].entry = gFileLoader[2];\n\n    for (i = 0; i < 0x80; i++, cur[n].entry++) {\n",
+            "    unused = 0;\n"
+            "    { extern void *khdays_res_cache_table(int n);\n"
+            "      extern void *khdays_res_cache_grow(void);\n"
+            "      int table;\n"
+            "      for (table = 0; (cur[n].entry = (ResCacheEntry *)khdays_res_cache_table(table)) != 0; ++table)\n"
+            "    for (i = 0; i < 0x80; i++, cur[n].entry++) {\n",
+        ),
+        (
+            "        if (cur[n].refCount == 0) {\n            unused = cur[n].entry;\n        }\n    }\n    return unused;\n}",
+            "        if (cur[n].refCount == 0) {\n            unused = cur[n].entry;\n        }\n    }\n"
+            "      if (unused == 0) {\n"
+            "          unused = (ResCacheEntry *)khdays_res_cache_grow();\n"
+            "      }\n"
+            "    }\n"
+            "    return unused;\n}",
+        ),
+    ],
     "main@02024ee8": [  # Msg_OpenContainerAndReadHeader
         (
             "    buf = (u32 *)NNS_FndAllocFromDefaultExpHeapEx((u16)(size + 0x10), 4);\n",

@@ -5287,6 +5287,11 @@ The port adds a mod's missions to the game's own list and plays them as the game
   built mission's "all defeated" never came. Joined: in the mods' missions he is finished as Riku and the Shadow are
   at theirs (flags `+0x1ae` bits 0-1); seen: "Misión completada" at his defeat. Zero's state 3 is a grab, not his
   defeat.
+- **The resource cache holds 128 files** (`ResCache_FindSlot`, `FileLoader_Init`'s 0x1800-byte table of 0x30-byte
+  entries): full, it gave 0 and `ResCache_Acquire` read through it (a crash reading DS address 0 as an enemy's model
+  was built: ten enemy kinds in one mission, or a mission of six with three players' characters). The port adds tables
+  of 128 from the main heap as it fills (`runtime/core/game_heap.c`, joined in `ResCache_FindSlot`; the session log
+  says `memory: the resource cache grown to N entries`); the game keeps pointers to entries, so none moves.
 - **A call into an overlay not loaded** (a function reference whose address starts an overlay's function while
   another, or none, is loaded there): skipped (answer 0) and said once in the session log (`overlays: a call into
   overlay N's function ...`) instead of the game stopped. A tester's mission in a replaced Twilight Town room with
