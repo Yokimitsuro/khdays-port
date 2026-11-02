@@ -238,6 +238,20 @@ game's are (`core/rooms/room_map.h`: `map.png` in the map's colours, a prop's fe
     khdays-studio --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]
     khdays-studio --remove-room <Mod> <world> <key>
 
+**Worlds a mod adds** (`rooms/worlds.txt`, `core/rooms/added_rooms.h`). A world Days does not have is listed in
+Mission Mode under its own name, after the game's worlds (L and R reach it), its missions played in its rooms: its
+rooms are added (`--add-room <Mod> <its key> ...`, their folders `rooms/<its key>/<room>/`) to the game world it names
+with `like` -- whose sky, music and sounds it plays with -- and a mission is put in it with `world = <its key>` (the
+new mission's world list offers the mod's worlds after the game's). Its name per language (`name es = ...`), or one for
+all (`name = ...`); English where one is missing.
+
+    [world isle]
+    like = eh
+    name en = Isle of Waves
+    name es = Isla de las olas
+
+    khdays-studio --add-world <Mod> <key> <code> [<language>=<name> | <name>]...
+
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's

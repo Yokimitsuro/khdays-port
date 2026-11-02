@@ -29,6 +29,16 @@ const char *khdays_world_code(int index)
     return index >= 0 && index < KHDAYS_GAME_WORLDS ? worlds[index].code : NULL;
 }
 
+int khdays_world_code_taken(const char *code)
+{
+    for (int i = 0; code != NULL && i < KHDAYS_GAME_WORLDS; ++i) {
+        if (strcmp(worlds[i].code, code) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int khdays_world_map_chain(int index)
 {
     return index >= 0 && index < KHDAYS_GAME_WORLDS ? map_chains[index] : -1;

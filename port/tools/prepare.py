@@ -2939,6 +2939,43 @@ HOOKS["ov002@02064ac0"] = [
     )
 ]
 
+# Mission Mode's world slots past the game's twelve: the worlds the mods add (runtime/rooms/added.h), each listed under
+# its own name, shown on the world map at its game world's place.
+HOOKS["ov008@0206fce0"] = [
+    (  # Ov008_StepCursorToAcceptedSlot: L and R through every slot
+        "unsigned int Ov008_StepCursorToAcceptedSlot(int param_1, int param_2) {\n",
+        "extern int khdays_mission_slots(void);\n"
+        "unsigned int Ov008_StepCursorToAcceptedSlot(int param_1, int param_2) {\n",
+    ),
+    (
+        "        int x = cell + 0xc;\n        cell = x % 12;\n",
+        "        int x = cell + khdays_mission_slots();\n        cell = x % khdays_mission_slots();\n",
+    ),
+    (
+        "    } while (i < 0xc);\n",
+        "    } while (i < khdays_mission_slots());\n",
+    ),
+]
+HOOKS["ov008@02070c58"] = [
+    (  # Ov008_UpdateMissionListArrows: the arrows when two slots or more list missions
+        "    for (i = 0; i < PICK_COUNT; i++) {\n",
+        "    extern int khdays_mission_slots(void);\n    for (i = 0; i < khdays_mission_slots(); i++) {\n",
+    )
+]
+HOOKS["ov008@0205b4ec"] = [
+    (  # Ov008_MainMenu_UpdateSelectionText: a mod world open (its slot has no flag of the game's)
+        "    isEntryUnlocked = GameState_IsFlagSet(entryId + 0x3bc9);\n",
+        "    isEntryUnlocked = entryId >= 12 ? 1 : GameState_IsFlagSet(entryId + 0x3bc9);\n",
+    )
+]
+HOOKS["ov008@0205bea0"] = [
+    (  # Ov008_MenuCursor_MoveToSlot: a mod world at its game world's place on the map
+        "    if (slot < 0) {\n",
+        "    { extern int khdays_mission_slot_shown(int slot);\n      slot = khdays_mission_slot_shown(slot); }\n"
+        "    if (slot < 0) {\n",
+    )
+]
+
 HOOK_POINTS = [
     # (its file's key, its header as the decompilation writes it, its result's kind, its arguments' kinds)
     # combat and entities: an actor's HP set (a hit, a cure, a defeat)

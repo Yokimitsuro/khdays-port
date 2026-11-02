@@ -806,6 +806,30 @@ int add_room_command(const fs::path& root, const std::vector<std::string>& args)
     return ok ? 0 : 1;
 }
 
+// --add-world <Mod> <key> <code> [<language>=<name> | <name>]...: a world of the mod's own, played in game world
+// <code>, listed in Mission Mode under its name (one for every language, or each language's).
+int add_world_command(const fs::path& root, const std::vector<std::string>& args) {
+    fs::path nitrofs, dump, mod_dir;
+    if (!room_command_paths(root, args[1], &nitrofs, &dump, &mod_dir))
+        return 1;
+    AddedWorld world{args[2], args[3], {}};
+    for (std::size_t i = 4; i < args.size(); ++i) {
+        const auto equals = args[i].find('=');
+        if (equals == 2)
+            world.names[args[i].substr(0, 2)] = args[i].substr(3);
+        else
+            world.names[""] = args[i];
+    }
+    std::string why;
+    if (!add_world(mod_dir, world, &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    std::printf("world %s added to %s, played in %s; its rooms: --add-room %s %s <key> ...\n", world.key.c_str(),
+                args[1].c_str(), world.like.c_str(), args[1].c_str(), world.key.c_str());
+    return 0;
+}
+
 // --remove-room <Mod> <world> <key>: a room the mod added, removed.
 int remove_room_command(const fs::path& root, const std::vector<std::string>& args) {
     fs::path nitrofs, dump, mod_dir;
@@ -1748,6 +1772,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         return add_room_command(root, args);
     if (args.size() == 4 && args[0] == "--remove-room")
         return remove_room_command(root, args);
+    if (args.size() >= 4 && args[0] == "--add-world")
+        return add_world_command(root, args);
     if ((args.size() >= 4 && args.size() <= 6) && args[0] == "--replace-room")
         return replace_room(root, args);
     if (args.size() == 4 && args[0] == "--revert-room")
@@ -1802,6 +1828,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a room of the mod's own added to a world, for its missions\n"
         "       khdays-studio [--port <dir>] --remove-room <Mod> <code> <key>\n"
         "                                                  a room the mod added, removed\n"
+        "       khdays-studio [--port <dir>] --add-world <Mod> <key> <code> [<language>=<name> | <name>]...\n"
+        "                                                  a world of the mod's own, played in game world <code>\n"
         "       khdays-studio [--port <dir>] --revert-room <Mod> <code> <room>\n"
         "                                                  a room's change and what it wrote removed\n"
         "       khdays-studio [--port <dir>] --rebuild-worlds <Mod>\n"

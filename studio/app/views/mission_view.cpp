@@ -14,6 +14,7 @@
 #include "core/missions/mission_names.h"
 #include "core/missions/mod_missions.h"
 #include "core/characters/character_files.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 #include "core/files/paths.h"
@@ -1257,7 +1258,9 @@ void draw_new_mission_form(App& app, const Mod& m) {
     if (form.rooms_for != world) {
         World w;
         std::string why;
-        form.rooms = load_world(nitrofs(), world, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
+        const std::string played_in = world_played_in(m.dir, world);
+        form.rooms =
+            !played_in.empty() && load_world(nitrofs(), played_in, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
         form.rooms_for = world;
     }
     const int rooms = form.rooms;
@@ -1273,6 +1276,15 @@ void draw_new_mission_form(App& app, const Mod& m) {
         for (const auto& w : world_codes())
             if (w != "hb" && w != "pi" && ImGui::Selectable(world_label(lang, w).c_str(), world == w))
                 world = w;
+        // the mod's own worlds (rooms/worlds.txt), played in a game world's
+        std::vector<std::string> notes;
+        for (const auto& w : read_added_worlds(m.dir, &notes)) {
+            const auto named = w.names.find("");
+            const std::string label =
+                (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
+            if (ImGui::Selectable(label.c_str(), world == w.key))
+                world = w.key;
+        }
         ImGui::EndCombo();
     }
     ImGui::SameLine();

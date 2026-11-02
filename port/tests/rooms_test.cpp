@@ -2,7 +2,8 @@
  * archive of one room, a mod adding one, the archive as served read back -- its room table one room longer, the new
  * record (an id none of the world's, no exits, its collision and model members), its collision LZ-packed as the
  * game's, room 0's model copied -- the added room's index and model; its map's picture after the game's map pictures
- * and its entry in its world's chain; and the slots past 24 rooms. */
+ * and its entry in its world's chain; a world the mod adds (its Mission Mode slot, the game world it is played in, its
+ * names); and the slots past 24 rooms. */
 extern "C" {
 #include "../runtime/missions/worlds.h"
 }
@@ -110,7 +111,14 @@ static void a_mods_room_added_to_a_world(void)
     fs::remove_all(mod, ec);
     fs::create_directories(mod / "rooms" / "eh" / "plaza");
     mod_path = mod.string();
-    std::ofstream(mod / "rooms" / "rooms.txt") << "# a room\nplaza eh\nnot-a-world\n";
+    std::ofstream(mod / "rooms" / "rooms.txt") << "# a room\nplaza eh\nnot-a-world\ncove isle\ncave nowhere\n";
+    // a world of its own played in he, and one with no game world (left out)
+    std::ofstream(mod / "rooms" / "worlds.txt")
+        << "# its worlds\n[world isle]\nlike = he\nname en = Isle\nname es = Isla del sol\n"
+           "[world nowhere]\nname = None\n";
+    fs::create_directories(mod / "rooms" / "isle" / "cove");
+    std::ofstream(mod / "rooms" / "isle" / "cove" / "room.gltf") << "{}";
+    std::ofstream(mod / "rooms" / "isle" / "cove" / "collision.bin") << "c";
     std::ofstream(mod / "rooms" / "eh" / "plaza" / "room.gltf") << "{}";
     const std::vector<unsigned char> collision(0x123, 0x5a);
     std::ofstream(mod / "rooms" / "eh" / "plaza" / "collision.bin", std::ios::binary)
@@ -220,6 +228,32 @@ static void a_mods_room_added_to_a_world(void)
     CHECK(entry(out, 1, &desc) == none);
     CHECK(khdays_rooms_merge("UI/btl/en/map.p2", maps, out, game));
     CHECK(le16(entry(out, 4, &desc), at + 0x18) == 'P');
+
+    // its world: Mission Mode's slot 13, past the game's twelve and their thirteenth name, shown at he's place
+    char like[3] = "";
+    CHECK(khdays_mission_slots() == 14);
+    CHECK(khdays_mod_world(mod_path.c_str(), "isle", like) == 13 && std::strcmp(like, "he") == 0);
+    CHECK(khdays_mod_world(mod_path.c_str(), "nowhere", like) == -1);
+    CHECK(khdays_mission_slot_shown(13) == khdays_world_index("he") && khdays_mission_slot_shown(5) == 5);
+    // its name after the game's thirteen, in each language (English where it has none)
+    std::vector<unsigned char> names(8, 0);
+    put32(names, 0, 8);
+    put32(names, 4, 13);
+    for (int i = 0; i < 13; ++i) {
+        const std::size_t at_name = names.size();
+        names.resize(at_name + 8, 0);
+        put32(names, at_name, 8);
+        names[at_name + 4] = static_cast<unsigned char>('A' + i);
+    }
+    const auto packed_names = khdays::assets::lz11_literals(names);
+    CHECK(khdays_rooms_serves("UI/cm/str/world_id_es.s.z") && !khdays_rooms_serves("UI/cm/str/world_id_es.s"));
+    CHECK(khdays_rooms_merge("UI/cm/str/world_id_es.s.z", packed_names, out, game));
+    auto served = khdays::assets::lz_decompress(out);
+    CHECK(le32(served, 4) == 14 && served.size() == names.size() + 4 + 2 * (std::strlen("Isla del sol") + 1));
+    CHECK(le16(served, names.size() + 4) == 'I' && le16(served, names.size() + 4 + 2 * 5) == 'd');
+    CHECK(khdays_rooms_merge("UI/cm/str/world_id_de.s.z", packed_names, out, game));
+    served = khdays::assets::lz_decompress(out);
+    CHECK(le32(served, names.size()) == 4 + 2 * (std::strlen("Isle") + 1));
     fs::remove_all(mod, ec);
 }
 

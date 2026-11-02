@@ -8,6 +8,7 @@
 #include "core/rooms/room_change.h"
 
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,23 @@ namespace studio {
 struct AddedRoom {
     std::string key, world;
 };
+
+// A world the mod adds (rooms/worlds.txt, "[world <key>]"): its rooms played in a game world's archive and resources
+// (`like`), its missions listed in Mission Mode under its own name (`names` by language, "" all languages').
+struct AddedWorld {
+    std::string key, like;
+    std::map<std::string, std::string> names;
+};
+
+// The mod's worlds, in their order; `notes` the lines not read.
+std::vector<AddedWorld> read_added_worlds(const std::filesystem::path& mod_dir, std::vector<std::string>* notes);
+// Writes them (rooms/worlds.txt); false with the reason.
+bool write_added_worlds(const std::filesystem::path& mod_dir, const std::vector<AddedWorld>& worlds, std::string* why);
+// Adds `world` to the mod (or makes it again): a key none of the game's codes, a game world it is played in.
+bool add_world(const std::filesystem::path& mod_dir, const AddedWorld& world, std::string* why);
+// The game world whose archive the rooms of `world` (a game world's code or one of the mod's worlds' keys) are played
+// in; empty when it is neither.
+std::string world_played_in(const std::filesystem::path& mod_dir, const std::string& world);
 
 // The mod's added rooms, in their order; `notes` the lines not read.
 std::vector<AddedRoom> read_added_rooms(const std::filesystem::path& mod_dir, std::vector<std::string>* notes);

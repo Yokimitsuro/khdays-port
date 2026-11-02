@@ -545,7 +545,10 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
     } else if (strcmp(name, "category") == 0) {
         ok = whole(value, 0, KHDAYS_GAME_WORLDS - 1, &m->category);
     } else if (strcmp(name, "world") == 0) {
-        ok = khdays_world_index(value) >= 0;
+        /* a game world's code, or the key of a world the mod adds (rooms/worlds.txt), resolved as the missions start */
+        ok = khdays_world_index(value) >= 0 ||
+             (value[0] != '\0' && !khdays_world_code_taken(value) && strlen(value) < sizeof(m->world) &&
+              strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == strlen(value));
         if (ok) {
             snprintf(m->world, sizeof(m->world), "%s", value);
         }

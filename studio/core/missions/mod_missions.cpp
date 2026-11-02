@@ -305,11 +305,13 @@ bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std
     use_game_items(nitrofs);
     if (!valid_key(key))
         return fail_with(why, "a key is letters, digits, '_' and '-'");
-    if (khdays_world_index(world.c_str()) < 0)
-        return fail_with(why, "no world " + world + " (tt, aw, he, al, eh, nm, zz, pp, bb, tw)");
+    // a game world, or one the mod adds (its rooms its game world's)
+    const std::string played_in = world_played_in(mod_dir, world);
+    if (played_in.empty())
+        return fail_with(why, "no world " + world + " (tt, aw, he, al, eh, nm, zz, pp, bb, tw, or one the mod adds)");
     World w;
     std::string world_why;
-    if (!load_world(nitrofs, world, &w, &world_why))
+    if (!load_world(nitrofs, played_in, &w, &world_why))
         return fail_with(why, "world " + world + ": " + world_why);
     if (room < 0 || room >= static_cast<int>(w.rooms.size()))
         return fail_with(why, "world " + world + " has rooms 0-" + std::to_string(w.rooms.size() - 1));

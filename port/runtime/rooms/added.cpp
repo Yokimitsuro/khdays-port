@@ -44,7 +44,21 @@ struct Added {
     int picture = -1; // its picture's member of UI/btl/mapchr.p2
 };
 
+// A world a mod adds (rooms/worlds.txt): played in a game world's archive and resources (`like`: its rooms are added
+// to that world's), listed in Mission Mode under its own name in a slot past the game's.
+struct ModWorld {
+    std::string mod_path, key, like;
+    std::map<std::string, std::string> names; // by language, "" all languages'
+    int slot = -1;
+};
+
+// Mission Mode's world slots (Ov008_StepCursorToAcceptedSlot's twelve), and the first a mod world takes: past the
+// game's world names (UI/cm/str/world_id_<language>.s.z: the twelve worlds' and a thirteenth).
+constexpr int kGameSlots = 12, kFirstModSlot = 13;
+constexpr int kMostSlots = 0xff; // the list's slot is a byte (its +0x54)
+
 std::vector<Added> rooms;
+std::vector<ModWorld> worlds;
 bool loaded = false;
 std::map<std::string, bool> planned; // by world: whether its added rooms can be put in
 bool pictures_numbered = false;
@@ -150,6 +164,65 @@ std::vector<unsigned char> write_p2(const P2 &p)
 // its exits' offset at +0x1c), then its objects' offsets (u32 each, from the record), then its object (u8 flags, u8
 // its model's member, u16).
 constexpr std::size_t kRecord = 0x20;
+
+// The worlds the mod in `dir` adds (rooms/worlds.txt): blocks "[world <key>]" of "like = <a game world's code>",
+// "name = <text>" and "name <language> = <text>".
+void read_worlds(const fs::path &dir, const char *mod_path)
+{
+    std::ifstream list(dir / "rooms" / "worlds.txt", std::ios::binary);
+    std::string line;
+    int number = 0;
+    ModWorld *open = nullptr;
+    const auto close = [&]() {
+        if (open != nullptr && khdays_world_index(open->like.c_str()) < 0) {
+            khdays_log("rooms: %s/rooms/worlds.txt: world %s has no game world to be played in (like = tt ...): left "
+                       "out",
+                       mod_path, open->key.c_str());
+            worlds.pop_back();
+        }
+        open = nullptr;
+    };
+    while (std::getline(list, line)) {
+        ++number;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        line = line.substr(0, line.find('#'));
+        std::istringstream words(line);
+        std::string first;
+        if (!(words >> first))
+            continue;
+        if (first == "[world") {
+            close();
+            std::string key;
+            words >> key;
+            if (!key.empty() && key.back() == ']')
+                key.pop_back();
+            if (key.empty() || khdays_world_code_taken(key.c_str())) {
+                khdays_log("rooms: %s/rooms/worlds.txt line %d: a world's key, none of the game's codes: [world <key>]",
+                           mod_path, number);
+                continue;
+            }
+            worlds.push_back({mod_path, key, "", {}, -1});
+            open = &worlds.back();
+            continue;
+        }
+        if (open == nullptr)
+            continue;
+        const auto equals = line.find('=');
+        std::string value = equals == std::string::npos ? std::string() : line.substr(equals + 1);
+        value.erase(0, value.find_first_not_of(" \t"));
+        value.erase(value.find_last_not_of(" \t") + 1);
+        std::string language;
+        if (first == "like") {
+            open->like = value;
+        } else if (first == "name" && (words >> language) && language != "=") {
+            open->names[language] = value;
+        } else if (first == "name") {
+            open->names[""] = value;
+        }
+    }
+    close();
+}
 
 // Its map on the lower screen (map.png in the map's colours, map.txt: "origin x y", "size w h" in tiles, "cell" the
 // game units a pixel spans, "name" and "name.<language>"), when the folder has one.
@@ -446,6 +519,62 @@ bool merge_chains(const std::string &language, const std::vector<unsigned char> 
     return any;
 }
 
+// UI/cm/str/world_id_<language>.s.z with the mods' worlds' names past the game's: u32 8, u32 the count, each name a
+// u32 its length (these four bytes with it) and its UTF-16 text ended by 0; packed as the game's (.z).
+bool merge_world_names(const std::string &language, const std::vector<unsigned char> &source,
+                       std::vector<unsigned char> &out)
+{
+    bool wanted = false;
+    for (const auto &w : worlds)
+        wanted = wanted || w.slot >= 0;
+    if (!wanted)
+        return false;
+    std::vector<unsigned char> text;
+    try {
+        text = khdays::assets::lz_decompress(source);
+    } catch (const std::exception &) {
+        text.clear();
+    }
+    if (text.size() < 8 || le32(text, 0) != 8) {
+        khdays_log("rooms: UI/cm/str/world_id_%s.s.z is no list of names the port reads: the mods' worlds unnamed",
+                   language.c_str());
+        return false;
+    }
+    unsigned count = le32(text, 4);
+    std::size_t end = 8;
+    for (unsigned i = 0; i < count; ++i) {
+        const unsigned n = le32(text, end);
+        if (n < 4 || end + n > text.size())
+            return false;
+        end += n;
+    }
+    text.resize(end);
+    const auto add = [&](const std::string &name) {
+        const auto units = utf16(name);
+        const std::size_t at = text.size();
+        text.resize(at + 4);
+        put32(text, at, static_cast<unsigned>(units.size() + 4));
+        text.insert(text.end(), units.begin(), units.end());
+        ++count;
+    };
+    for (const auto &w : worlds) {
+        if (w.slot < 0)
+            continue;
+        while (static_cast<int>(count) < w.slot)
+            add(""); // a slot no world takes
+        const auto named = w.names.find(language);
+        const auto all = w.names.find("");
+        const auto english = w.names.find("en");
+        add(named != w.names.end()     ? named->second
+            : all != w.names.end()     ? all->second
+            : english != w.names.end() ? english->second
+                                       : w.key);
+    }
+    put32(text, 4, count);
+    out = khdays::assets::lz11_literals(text);
+    return true;
+}
+
 }  // namespace
 
 extern "C" void khdays_rooms_load(void)
@@ -458,6 +587,7 @@ extern "C" void khdays_rooms_load(void)
         if (path == nullptr)
             continue;
         const fs::path dir = utf8_path(path);
+        read_worlds(dir, path);
         std::ifstream list(dir / "rooms" / "rooms.txt", std::ios::binary);
         std::string line;
         int number = 0;
@@ -470,11 +600,23 @@ extern "C" void khdays_rooms_load(void)
             Added a;
             if (!(words >> a.key))
                 continue;
-            if (!(words >> a.world) || a.world.size() != 2) {
+            if (!(words >> a.world)) {
                 khdays_log("rooms: %s/rooms/rooms.txt line %d: not <key> <world>", path, number);
                 continue;
             }
+            // its folder by the world it names; a world the mod adds plays in its game world's archive
             const fs::path folder = dir / "rooms" / utf8_path(a.world) / utf8_path(a.key);
+            if (khdays_world_index(a.world.c_str()) < 0) {
+                const auto own = std::find_if(worlds.begin(), worlds.end(), [&](const ModWorld &w) {
+                    return w.mod_path == path && w.key == a.world;
+                });
+                if (own == worlds.end()) {
+                    khdays_log("rooms: %s/rooms/rooms.txt line %d: %s is no game world nor one of the mod's", path,
+                               number, a.world.c_str());
+                    continue;
+                }
+                a.world = own->like;
+            }
             std::error_code ec;
             for (const char *name : {"room.gltf", "room.glb", "room.fbx"}) {
                 if (a.model.empty() && fs::is_regular_file(folder / name, ec))
@@ -491,13 +633,58 @@ extern "C" void khdays_rooms_load(void)
             rooms.push_back(std::move(a));
         }
     }
+    int slot = kFirstModSlot;
+    for (auto &w : worlds) {
+        if (slot > kMostSlots) {
+            khdays_log("rooms: %s's world %s: Mission Mode's slots end at %d (a byte): left out of its list",
+                       w.mod_path.c_str(), w.key.c_str(), kMostSlots);
+            continue;
+        }
+        w.slot = slot++;
+        khdays_log("rooms: %s's world %s, played in %s, is Mission Mode's slot %d", w.mod_path.c_str(), w.key.c_str(),
+                   w.like.c_str(), w.slot);
+    }
     if (!rooms.empty())
         khdays_log("rooms: %zu rooms added by the mods", rooms.size());
+}
+
+extern "C" int khdays_mission_slots(void)
+{
+    khdays_rooms_load();
+    int last = -1;
+    for (const auto &w : worlds)
+        last = std::max(last, w.slot);
+    return last < 0 ? kGameSlots : last + 1;
+}
+
+extern "C" int khdays_mod_world(const char *mod_path, const char *key, char like[3])
+{
+    khdays_rooms_load();
+    for (const auto &w : worlds) {
+        std::error_code ec;
+        if (w.slot >= 0 && w.key == key && fs::equivalent(utf8_path(w.mod_path), utf8_path(mod_path), ec)) {
+            std::snprintf(like, 3, "%s", w.like.c_str());
+            return w.slot;
+        }
+    }
+    return -1;
+}
+
+extern "C" int khdays_mission_slot_shown(int slot)
+{
+    for (const auto &w : worlds)
+        if (w.slot == slot)
+            return khdays_world_index(w.like.c_str());
+    return slot;
 }
 
 bool khdays_rooms_serves(const std::string &game_path)
 {
     const std::string chain = "/map.p2";
+    const std::string names = "UI/cm/str/world_id_";
+    if (game_path.rfind(names, 0) == 0 && game_path.size() == names.size() + 6 &&
+        game_path.compare(game_path.size() - 4, 4, ".s.z") == 0)
+        return true;
     return game_path.rfind("mi/wd/wd_", 0) == 0 || game_path == "UI/btl/mapchr.p2" ||
            (game_path.rfind("UI/btl/", 0) == 0 && game_path.size() > 7 + chain.size() &&
             game_path.compare(game_path.size() - chain.size(), chain.size(), chain) == 0);
@@ -508,6 +695,8 @@ bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned
 {
     if (game_path == "UI/btl/mapchr.p2")
         return merge_pictures(source, out);
+    if (game_path.rfind("UI/cm/str/world_id_", 0) == 0 && khdays_rooms_serves(game_path))
+        return merge_world_names(game_path.substr(19, 2), source, out);
     if (game_path.rfind("UI/btl/", 0) == 0 && khdays_rooms_serves(game_path))
         return merge_chains(game_path.substr(7, game_path.size() - 7 - 7), source, out, game);
     if (game_path.rfind("mi/wd/wd_", 0) != 0)

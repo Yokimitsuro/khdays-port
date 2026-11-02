@@ -117,3 +117,25 @@ TEST(an_added_rooms_map_drawn_from_its_floors) {
     std::error_code ec;
     fs::remove_all(folder, ec);
 }
+
+TEST(a_mods_worlds_written_and_read_back) {
+    const fs::path mod = fs::temp_directory_path() / "khdays_added_worlds_test";
+    std::error_code ec;
+    fs::remove_all(mod, ec);
+    fs::create_directories(mod / "rooms");
+    std::string why;
+    CHECK(add_world(mod, {"isle", "tt", {{"", "Isle"}, {"es", "Isla"}}}, &why));
+    CHECK(add_world(mod, {"cave", "he", {}}, &why));
+    CHECK(add_world(mod, {"isle", "pp", {{"en", "Isle"}}}, &why));  // made again
+    CHECK(!add_world(mod, {"hb", "tt", {}}, &why));                 // a game world's code
+    CHECK(!add_world(mod, {"far", "pi", {}}, &why));                // no game world to play in
+    std::vector<std::string> notes;
+    const auto worlds = read_added_worlds(mod, &notes);
+    CHECK(notes.empty() && worlds.size() == 2);
+    CHECK(worlds[0].key == "isle" && worlds[0].like == "pp" && worlds[0].names.size() == 1 &&
+          worlds[0].names.at("en") == "Isle");
+    CHECK(worlds[1].key == "cave" && worlds[1].like == "he");
+    CHECK(world_played_in(mod, "isle") == "pp" && world_played_in(mod, "tt") == "tt" &&
+          world_played_in(mod, "x").empty());
+    fs::remove_all(mod, ec);
+}

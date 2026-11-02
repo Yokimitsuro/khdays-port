@@ -7,6 +7,7 @@
 #include "registry.h"
 #include "save_part.h"
 #include "tables.h"
+#include "worlds.h"
 
 #include "../../host/app/instance.h"
 #include "../core/rom.h"
@@ -157,6 +158,23 @@ void khdays_missions_start(void)
         unsigned first_chest;
         if (m->chest_count > 0 && !khdays_field_store_place_chests(&store, i, m->chest_count, &first_chest)) {
             note(registry.mods[m->mod].id, m->line, "its chests left out: no room for their flags", NULL);
+        }
+        /* a world the mod adds: played in its game world, listed in its own slot */
+        if (khdays_world_index(m->world) < 0) {
+            char mod_path[1024], like[3];
+            snprintf(mod_path, sizeof(mod_path), "%s/%s", MODS, registry.mods[m->mod].folder);
+            const int slot = khdays_mod_world(mod_path, m->world, like);
+            if (slot < 0) {
+                char why[160];
+                snprintf(why, sizeof(why), "mission %s left out: its world %s is no game world nor one the mod adds",
+                         m->key, m->world);
+                note(registry.mods[m->mod].id, m->line, why, NULL);
+                m->number = 0;
+                --numbered;
+                continue;
+            }
+            snprintf(m->world, sizeof(m->world), "%s", like);
+            m->category = slot;
         }
         /* a room the mod adds: its index, given when its world's archive was read */
         if (m->room_key != NULL) {

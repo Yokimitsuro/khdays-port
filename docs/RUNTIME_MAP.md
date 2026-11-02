@@ -5655,3 +5655,18 @@ and the `missions_waves` mission played in one, 2026-11-02. The port puts the ro
 - Seen: the waves mission started at the added room's origin, its Shadows, chest and emblem there, cleared; the
   merged archive in the play, mission and multiplayer walks.
 - `KHDAYS_ROOMS_DUMP=<folder>` writes each world archive the mods add rooms to, as served (`wd_<code>`), to look at.
+- **Mission Mode's worlds** (the camp's screen 1, the holo-mission world map, `Ov008_MainMenu_*`): its world is a slot
+  (`+0x54`, a byte) whose list `Ov008_EncodeCursorAction` builds from the rows of that category (`msl` +0xa; flags
+  `slot << 8 | 7`, `Ov008_AppendEligibleRecords`). Twelve slots, the worlds' indices: L and R step through them
+  (`Ov008_StepCursorToAcceptedSlot`, `(cell + 12) % 12`, a slot whose list is empty refused), the arrows show when two
+  list rows (`Ov008_UpdateMissionListArrows`), a slot is locked unless flag `0x3bc9 + slot` (0 and 4 always open:
+  `Ov008_MissionListOpen`, `Ov008_MainMenu_UpdateSelectionText`), its name the slot's record of
+  `UI/cm/str/world_id_<language>.s.z` (u32 8, u32 the count, each a u32 length and UTF-16: the twelve worlds' names and
+  a thirteenth), the map's cursor moved to the slot's place (`Ov008_MenuCursor_MoveToSlot`, held to 0-11). The game's
+  missions use slots 0-5 and 7-10.
+- **A world a mod adds** (`rooms/worlds.txt`: `[world <key>]`, `like = <code>`, `name <language> = ...`) takes a slot
+  from 13 (past the thirteenth name), in the mods' order: joined (`port/tools/prepare.py`), L and R and the arrows go
+  through 12 + its worlds (`khdays_mission_slots`), its slot is open, the map's cursor goes to its game world's place
+  (`khdays_mission_slot_shown`); its name is put after the game's in each language's `world_id` file. Its rooms are
+  added to its game world's archive and its missions played there (`world = <key>`: the port gives the mission its
+  game world and the world's slot as its category), with that world's sky, music and sounds.

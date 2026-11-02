@@ -6,6 +6,10 @@
 #include "core/rooms/room_map.h"
 #include "core/rooms/worlds.h"
 
+extern "C" {
+#include "missions/worlds.h"
+}
+
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -24,6 +28,15 @@ bool fail_with(std::string* why, const std::string& text) {
 
 fs::path list_file(const fs::path& mod_dir) {
     return mod_dir / "rooms" / "rooms.txt";
+}
+
+fs::path worlds_file(const fs::path& mod_dir) {
+    return mod_dir / "rooms" / "worlds.txt";
+}
+
+std::string trimmed(const std::string& s) {
+    const auto first = s.find_first_not_of(" \t");
+    return first == std::string::npos ? std::string() : s.substr(first, s.find_last_not_of(" \t") - first + 1);
 }
 
 }  // namespace
@@ -57,7 +70,7 @@ std::vector<AddedRoom> read_added_rooms(const fs::path& mod_dir, std::vector<std
         AddedRoom r;
         if (!(words >> r.key))
             continue;
-        if (!(words >> r.world) || r.world.size() != 2 || !added_room_key(r.key)) {
+        if (!(words >> r.world) || !added_room_key(r.world) || !added_room_key(r.key)) {
             if (notes != nullptr)
                 notes->push_back("rooms/rooms.txt line " + std::to_string(number) + ": not <key> <world>");
             continue;
@@ -82,6 +95,99 @@ bool write_added_rooms(const fs::path& mod_dir, const std::vector<AddedRoom>& ro
     return result.ok || fail_with(why, "rooms/rooms.txt: " + result.why);
 }
 
+std::vector<AddedWorld> read_added_worlds(const fs::path& mod_dir, std::vector<std::string>* notes) {
+    std::vector<AddedWorld> out;
+    std::ifstream in(worlds_file(mod_dir), std::ios::binary);
+    std::string line;
+    int number = 0;
+    bool open = false;
+    while (std::getline(in, line)) {
+        ++number;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        line = line.substr(0, line.find('#'));
+        std::istringstream words(line);
+        std::string first;
+        if (!(words >> first))
+            continue;
+        if (first == "[world") {
+            std::string key;
+            words >> key;
+            if (!key.empty() && key.back() == ']')
+                key.pop_back();
+            open = added_room_key(key) && !khdays_world_code_taken(key.c_str());
+            if (open)
+                out.push_back({key, "", {}});
+            else if (notes != nullptr)
+                notes->push_back("rooms/worlds.txt line " + std::to_string(number) +
+                                 ": a world's key is letters, digits, _ and -, none of the game's codes");
+            continue;
+        }
+        const auto equals = line.find('=');
+        if (!open || equals == std::string::npos)
+            continue;
+        const std::string value = trimmed(line.substr(equals + 1));
+        std::string language;
+        if (first == "like")
+            out.back().like = value;
+        else if (first == "name" && (words >> language) && language != "=")
+            out.back().names[language] = value;
+        else if (first == "name")
+            out.back().names[""] = value;
+    }
+    return out;
+}
+
+bool write_added_worlds(const fs::path& mod_dir, const std::vector<AddedWorld>& worlds, std::string* why) {
+    std::string text =
+        "# The worlds this mod adds: [world <key>], like = the game world it is played in (its sky, music and sounds;\n"
+        "# its rooms added to that world's), name <language> = its name in Mission Mode (name = in every language).\n";
+    for (const auto& w : worlds) {
+        text += "[world " + w.key + "]\nlike = " + w.like + "\n";
+        for (const auto& [language, name] : w.names)
+            text += (language.empty() ? std::string("name") : "name " + language) + " = " + name + "\n";
+    }
+    const auto result = write_into_mod(
+        mod_dir, worlds_file(mod_dir),
+        [&](const fs::path& temporary) -> std::string {
+            std::ofstream f(temporary, std::ios::binary | std::ios::trunc);
+            f << text;
+            return f ? std::string() : std::string("could not be written");
+        },
+        [](const fs::path&) { return std::string(); });
+    return result.ok || fail_with(why, "rooms/worlds.txt: " + result.why);
+}
+
+bool add_world(const fs::path& mod_dir, const AddedWorld& world, std::string* why) {
+    if (!added_room_key(world.key) || khdays_world_code_taken(world.key.c_str()))
+        return fail_with(why, "a world's key is letters, digits, _ and -, none of the game's codes: " + world.key);
+    if (khdays_world_index(world.like.c_str()) < 0)
+        return fail_with(why,
+                         "no game world " + world.like + " to play it in (tt, aw, he, al, eh, nm, zz, pp, bb, tw)");
+    std::vector<std::string> notes;
+    auto worlds = read_added_worlds(mod_dir, &notes);
+    bool replaced = false;
+    for (auto& w : worlds) {
+        if (w.key == world.key) {
+            w = world;
+            replaced = true;
+        }
+    }
+    if (!replaced)
+        worlds.push_back(world);
+    return write_added_worlds(mod_dir, worlds, why);
+}
+
+std::string world_played_in(const fs::path& mod_dir, const std::string& world) {
+    if (khdays_world_index(world.c_str()) >= 0)
+        return world;
+    std::vector<std::string> notes;
+    for (const auto& w : read_added_worlds(mod_dir, &notes))
+        if (w.key == world && khdays_world_index(w.like.c_str()) >= 0)
+            return w.like;
+    return {};
+}
+
 bool added_room_place(const khdays::assets::ImportedModel& floors, float units, RoomPlacement* place) {
     // a ground at height 0 under the origin, no markers: lined up as another game's room is on a room's ground
     RoomCollision ground;
@@ -104,8 +210,12 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
               std::vector<std::string>* lines, std::string* why) {
     if (!added_room_key(key))
         return fail_with(why, "a room's key is letters, digits, _ and -: " + key);
+    // a world the mod adds: its rooms on its game world's records
+    const std::string played_in = world_played_in(mod_dir, world);
+    if (played_in.empty())
+        return fail_with(why, "no world " + world + ": a game world's code or one the mod adds (--add-world)");
     World w;
-    if (!load_world(nitrofs, world, &w, why))
+    if (!load_world(nitrofs, played_in, &w, why))
         return false;
     if (w.rooms.empty())
         return fail_with(why, world_path(world) + " has no room to take records from");
