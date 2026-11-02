@@ -5292,6 +5292,22 @@ The port adds a mod's missions to the game's own list and plays them as the game
   was built: ten enemy kinds in one mission, or a mission of six with three players' characters). The port adds tables
   of 128 from the main heap as it fills (`runtime/core/game_heap.c`, joined in `ResCache_FindSlot`; the session log
   says `memory: the resource cache grown to N entries`); the game keeps pointers to entries, so none moves.
+- **The 3D's texture VRAM holds 512 KB** (TEXIMAGE_PARAM's place is 16 bits of 8 bytes; the field's frame managers,
+  `NNS_GfdInitFrmTexVramManager(4, 1)` and a palette one of 0x8000): a mission of ten enemy kinds filled it with
+  the enemies, and every file set up after them -- Roxas, the effects, the HUD's counters, the room -- failed its
+  allocation in `G3dRes_DefaultSetup` and was drawn untextured (the room white). The port gives such a file a texture
+  bank of its own (`runtime/display/texture_banks.c`, joined in `G3dRes_DefaultSetup`): the managers' states kept
+  (through the game's stack: its functions take references), reset for the file's allocations, given back; the
+  file's texels, 4x4 texels and indices, and palettes copied to the bank's memory at those places as
+  `Tex_LoadVram` / `Gfx_UploadBlock` would upload them (their loaded flags set). The DS's frame managers free
+  nothing on their own (`NNS_GfdFreeFrmTexVram`), so the game's frees of a bank's keys touch nothing. A draw
+  (`NNSi_G3dDrawInternal`, `InstancedModel_Draw`'s single shape) of a model inside such a file sends its textures
+  from the bank; the frame package draws those polygons with the bank's texture decoded (the replacements' path,
+  one replacement per picture whatever bank shows it). A file is kept only up to its texture images once they are
+  in VRAM (`ModelArchive_DropTextureImage` shrinks the block to `texInfo.ofsTex`) and other files go after that,
+  so a bank is dropped only when a file is set up over its model's part. Seen (2026-11-02): 73 files in banks in
+  that mission, everything textured; `KHDAYS_TRACE_TEXTURE_BANKS=1` says each bank dropped and first drawn. Not
+  covered: textures drawn outside model draws from a file in a bank (`Tex0_GetTexPlttParams`'s, the shop's).
 - **A call into an overlay not loaded** (a function reference whose address starts an overlay's function while
   another, or none, is loaded there): skipped (answer 0) and said once in the session log (`overlays: a call into
   overlay N's function ...`) instead of the game stopped. A tester's mission in a replaced Twilight Town room with

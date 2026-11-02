@@ -476,6 +476,60 @@ HOOKS = {
             "    return unused;\n}",
         ),
     ],
+    # The 3D's texture memory past the DS's (runtime/display/texture_banks.h): a file whose textures or palettes
+    # no longer fit the DS's VRAM (many enemy kinds in a mission, several players) is given places in a bank
+    # of its own -- the managers reset for it, the DS's states kept -- and copied there, instead of being left
+    # untextured (the room turned white).
+    "main@02025138": [  # G3dRes_DefaultSetup
+        (
+            "            tex = NNS_G3dGetTex(pResData);\n",
+            "            { extern void khdays_texture_banks_file(void *file); khdays_texture_banks_file(pResData); }\n"
+            "            tex = NNS_G3dGetTex(pResData);\n",
+        ),
+        (
+            "                    return 0;\n"
+            "                }\n"
+            "\n"
+            "                NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                Tex_LoadVram(tex);\n"
+            "                Gfx_UploadBlock(tex);\n",
+            "                    { extern int khdays_texture_banks_open(void);\n"
+            "                      extern void khdays_texture_banks_close(void *file, void *tex, int allocated);\n"
+            "                      if (!khdays_texture_banks_open())\n"
+            "                          return 0;\n"
+            "                      keyTex = szTex > 0 ? NNS_GfdAllocTexVram(szTex, 0, 0) : 0;\n"
+            "                      keyTex4x4 = szTex4x4 > 0 ? NNS_GfdAllocTexVram(szTex4x4, 1, 0) : 0;\n"
+            "                      keyPltt = szPltt > 0\n"
+            "                          ? NNS_GfdAllocPlttVram(szPltt, tex->tex4x4Flag & NNS_G3D_RESPLTT_USEPLTT4, 0) : 0;\n"
+            "                      sucTex = szTex == 0 || keyTex != NNS_GFD_ALLOC_ERROR_TEXKEY;\n"
+            "                      sucTex4x4 = szTex4x4 == 0 || keyTex4x4 != NNS_GFD_ALLOC_ERROR_TEXKEY;\n"
+            "                      sucPltt = szPltt == 0 || keyPltt != NNS_GFD_ALLOC_ERROR_PLTTKEY;\n"
+            "                      if (sucTex && sucTex4x4 && sucPltt) {\n"
+            "                          NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                          NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                      }\n"
+            "                      khdays_texture_banks_close(pResData, tex, sucTex && sucTex4x4 && sucPltt);\n"
+            "                      if (!sucTex || !sucTex4x4 || !sucPltt)\n"
+            "                          return 0; }\n"
+            "                } else {\n"
+            "                NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                Tex_LoadVram(tex);\n"
+            "                Gfx_UploadBlock(tex);\n"
+            "                }\n",
+        ),
+    ],
+    "main@0203c304": [  # InstancedModel_Draw
+        (
+            "            NNS_G3dDraw1Mat1Shp(this->modelHolder->model, 0, 0, 1);\n",
+            "            { extern void khdays_texture_banks_draw_begin(const void *model);\n"
+            "              extern void khdays_texture_banks_draw_end(void);\n"
+            "              khdays_texture_banks_draw_begin(this->modelHolder->model);\n"
+            "              NNS_G3dDraw1Mat1Shp(this->modelHolder->model, 0, 0, 1);\n"
+            "              khdays_texture_banks_draw_end(); }\n",
+        )
+    ],
     "main@02024ee8": [  # Msg_OpenContainerAndReadHeader
         (
             "    buf = (u32 *)NNS_FndAllocFromDefaultExpHeapEx((u16)(size + 0x10), 4);\n",
@@ -1517,11 +1571,16 @@ HOOKS = {
             "      khdays_models_draw_animation(*(unsigned *)(renderObj->pad08_20 + 8)); }\n"
             "    { extern void khdays_models_draw_begin(const void *model);\n"
             "      khdays_models_draw_begin(renderObj->pResMdl); }\n"
+            # the textures from the model's texture bank when its file's are past the DS's VRAM
+            # (runtime/display/texture_banks.h)
+            "    { extern void khdays_texture_banks_draw_begin(const void *model);\n"
+            "      khdays_texture_banks_draw_begin(renderObj->pResMdl); }\n"
             "    do {\n        u32 command;\n",
         ),
         (
             "    renderObj->flags &= ~1;\n",
             "    { extern void khdays_models_draw_end(void); khdays_models_draw_end(); }\n"
+            "    { extern void khdays_texture_banks_draw_end(void); khdays_texture_banks_draw_end(); }\n"
             "    renderObj->flags &= ~1;\n",
         ),
     ],

@@ -6,6 +6,7 @@
 #include "../core/origin.h"
 #include "../core/rom.h"
 #include "../core/vram.h"
+#include "../display/texture_banks.h"
 #include "../../gpu/texdecode.h"
 #include "../../host/app/host.h"
 #include "../../host/render/png_io.h"
@@ -333,6 +334,11 @@ static int replacement_for(const char *name, u32 param)
     return n;
 }
 
+int khdays_textures_mod_replacement(const char *name, uint32_t param)
+{
+    return replacement_for(name, param);
+}
+
 int khdays_textures_add(const char *name, int width, int height, const uint8_t *rgba)
 {
     return khdays_textures_add_info(name, width, height, (const uint32_t *)rgba, 0);
@@ -475,6 +481,19 @@ static int decode_rgba(const KhdaysVramPages *pages, u32 param, u32 pltt, u8 *rg
     return 1;
 }
 
+uint32_t *khdays_textures_decode_pages(const KhdaysVramPages *pages, uint32_t param, uint32_t pltt)
+{
+    int width, height;
+    u8 *rgba;
+    khdays_tex_size(param, &width, &height);
+    rgba = (u8 *)malloc((size_t)width * (size_t)height * 4);
+    if (rgba != NULL && !decode_rgba(pages, param, pltt, rgba)) {
+        free(rgba);
+        rgba = NULL;
+    }
+    return (uint32_t *)rgba;
+}
+
 int khdays_textures_write_png(const char *path, const uint8_t *rgba, int width, int height)
 {
     const char *error;
@@ -560,8 +579,8 @@ void khdays_textures_shown(const KhdaysG3dList *list)
         const u32 pltt = format == 7 || format == 0 ? 0 : p->pltt;
         char name[160];
         Seen *s;
-        if (format == 0 || (p->flags & KHDAYS_G3D_MOD)) {
-            continue; /* untextured, or a mod model's own texture */
+        if (format == 0 || (p->flags & KHDAYS_G3D_MOD) || p->replacement <= -2) {
+            continue; /* untextured, a mod model's own texture, or a texture bank's (texture_banks.h) */
         }
         s = seen_find(param, pltt);
         if (s != NULL && !stale(s)) {
@@ -604,6 +623,10 @@ static void mark(KhdaysG3dPolygon *polys, int32_t n)
         const Seen *s;
         if (p->flags & KHDAYS_G3D_MOD) {
             continue; /* a mod model's polygon: its texture is already chosen */
+        }
+        if (p->replacement <= -2) { /* from a texture bank past the DS's VRAM */
+            p->replacement = khdays_texture_banks_replacement(KHDAYS_G3D_BANK_OF(p->replacement), p->tex, p->pltt);
+            continue;
         }
         s = format == 0 || nseen == 0 ? NULL : seen_find(param, format == 7 ? 0 : p->pltt);
         p->replacement = s != NULL ? s->replacement : -1;

@@ -649,6 +649,7 @@ add_executable(khdays-native
     host/screens/kh2_seq.cpp               # KH2's 2D sequences (the pause's, the story menu's buttons)
     runtime/display/frame_package.c
     runtime/display/gfx_check.c
+    runtime/display/texture_banks.c   # the 3D's texture memory past the DS's 512 KB
     runtime/core/origin.c
     runtime/mods/names.cpp
     runtime/mods/fonts.cpp
@@ -934,6 +935,11 @@ add_executable(khdays-elements-test tests/elements_test.c)
 target_link_libraries(khdays-elements-test PRIVATE khdays-gfx)
 target_compile_options(khdays-elements-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-elements COMMAND khdays-elements-test)
+# The 3D's texture memory past the DS's: a file's bank, the draws from it, its textures decoded once.
+add_executable(khdays-texture-banks-test tests/texture_banks_test.c runtime/display/texture_banks.c)
+target_link_libraries(khdays-texture-banks-test PRIVATE khdays-gpu)
+target_compile_options(khdays-texture-banks-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-texture-banks COMMAND khdays-texture-banks-test)
 # A mod's polygons into a list: the near plane only, a sky behind everything else.
 add_executable(khdays-mod-polygon-test tests/mod_polygon_test.c)
 target_link_libraries(khdays-mod-polygon-test PRIVATE khdays-gfx)

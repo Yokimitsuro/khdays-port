@@ -6,6 +6,7 @@
 #define KHDAYS_TEXTURES_H
 
 #include "../../gfx/g3d.h"
+#include "../../gpu/vram_map.h"
 
 #include <stdint.h>
 
@@ -49,6 +50,14 @@ typedef struct KhdaysTextureReplacement {
  * For the dump without a game (--dump-graphics). */
 void khdays_textures_decode(uint32_t param, const uint8_t *texels, uint32_t texel_bytes, const uint8_t *index4x4,
                             uint32_t index_bytes, const uint8_t *palette, uint32_t palette_bytes, uint8_t *rgba);
+
+/* The texture TEXIMAGE_PARAM `param` and PLTT_BASE `pltt` place in `pages`, as the port draws it: its
+ * texels as 8-bit RGBA words (red low, rows top to bottom; the caller frees them), NULL without memory. */
+uint32_t *khdays_textures_decode_pages(const KhdaysVramPages *pages, uint32_t param, uint32_t pltt);
+
+/* A mod's texture for `name` (mods/<Mod>/graphics/<name>.png, read once), drawn instead of one with
+ * TEXIMAGE_PARAM `param`; -1 if there is none. */
+int khdays_textures_mod_replacement(const char *name, uint32_t param);
 
 /* `rgba` (width x height) as a PNG at `path`, its directories made; says why
  * not. */
