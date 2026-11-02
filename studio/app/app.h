@@ -161,10 +161,18 @@ void draw_mission_view(App& app, const Item& item);
 // Whether the mod's new missions have changes not saved; asked when the window closes (true: quit anyway).
 bool new_missions_unsaved();
 // The mod's new missions in a window of their own (views/mission_view.cpp), and a mission's places on its room's map
-// (views/mission_map.cpp): the mod's mission `key` played in `world`'s room `room` (true the frame its places were
-// saved); its places changed, not saved.
+// (views/mission_map.cpp): the mod's mission `key` played where `where` says (true the frame its places were saved);
+// its places changed, not saved.
 void draw_mod_missions(App& app, bool* open);
-bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room);
+// Where a new mission is played: its world (the game's code or the mod's own world's key), its room there (or one the
+// mod adds, by its key), and whether that differs from what the mod holds (saved with the places).
+struct MissionRoom {
+    std::string world;
+    int room = 0;
+    std::string room_key;
+    bool changed = false;
+};
+bool draw_mission_map(App& app, const Mod& m, const std::string& key, const MissionRoom& where);
 bool mission_map_unsaved();
 // The enemy classes a new mission's waves can use: those the game's missions have a row of (read once).
 const std::vector<int>& mission_enemy_classes();

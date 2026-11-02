@@ -305,9 +305,14 @@ are added to the game's `trbox` and `evi` as they load and put out in Mission
 Mode for new missions; a chest's opened flag is kept in the port's save part (an
 emblem's pickup is made at its place, but it is not drawn nor picked up yet).
 
-**Places on the map** (`app/views/mission_map.cpp`) shows the mission's room as
+**Places on the map** (`app/views/mission_map.cpp`) chooses, above the map, where
+the mission is played -- its world (the game's, or one of the mod's own) and its
+room (the world's own, or one the mod adds to it) -- and the map follows at once;
+the choice is saved with the places (first, so the mission is built on the room
+shown) or with **Save to the mod**. It shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces
-it (the mod's world file and its model of the room), with the players' start (its
+it (the mod's world file and its model of the room), or the mod's added room
+(its model and floors), with the players' start (its
 facing drawn), each spawner (its wave and how many enemies), each chest, each
 emblem, each Organization emblem and the place to reach (its radius drawn) on it.
 A place is dragged over the floor (it stands on the floor under the

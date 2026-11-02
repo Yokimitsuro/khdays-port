@@ -698,6 +698,7 @@ enum class S {
     mission_category_help,
     mission_world,
     mission_room,
+    mission_room_added,
     mission_unlock,
     mission_unlock_start,
     mission_unlock_game,
