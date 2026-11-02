@@ -69,6 +69,20 @@ sides (`RENDERING.md`).
   mesh (`Octree::intersectLineCamera`), and the eye goes 5 off what it hits along that surface's normal (30 for
   `DangleCamera`). There is no clearance above the floor.
 
+### First person (`ObjCamera::subjective_control` 0x67370, `calcSubjective` 0x66c44)
+
+- The eye is at the player's position (`get_subjective_camera_pos` 0x461b08) raised by the party member's
+  `PREF_PARTY::SubjectiveOffset`, 150 for the player by the maintainer. The look-at is 350 ahead of it.
+- The view is the player's facing, every frame, so it is the player that turns:
+  `YS::PLAYER::_OVR_post_exec` (0x47cf60) adds 3° a tick, at that one rate, while the stick is left or right and
+  the player `can_control`. The stick's up and down tilts by 3° a tick times its share of how far it is pushed,
+  to ±70° (`SUBJECTIVE_PITCH_MIN`, `_MAX`). The reset levels the view.
+- `YS::PLAYER::_OVR_is_wish_dir` (0x47e128) is false, so moving does not turn the player: it strafes.
+- Going in and out the player fades, 1 to 0 and back over 30 ticks (`YS::FADE`), what is attached to it with it
+  (`YS::OBJ::get_fade_alpha`). The springs carry the eye there. Out, the camera goes behind the player.
+- Lock-on, reactions, talks and events leave it (`cancelSubjective`, 0x672f0).
+- In first person `setCamera` casts the line only to move the look-at along it, which turns nothing.
+
 ### Locked on (`TargetCamera::update` 0x7dc48, `updateTargetCamera` 0x7d4d0, `control` 0x7cfb8)
 
 - The **look-at** is 30 % of the way from the point 170 above the player to the target. The **eye still goes
@@ -104,8 +118,12 @@ sides (`RENDERING.md`).
 - **Collision** is KH2's rule on the game's casts (`khdays_kh2_camera_collide`), at the two places KH2 casts: the
   wanted eye, then the eye the springs reached. `Ov002_ResolveCameraAgainstCollision` would hold the eye 0xc00
   (75 of KH2's units) off the floor and sweep a sphere that drags it in along the line, which is what cut the
-  player off at the knees. `Ov002_CastRayAlongMotion` passes over upright walls when asked for a normal, so
-  `Ov002_CastRayForContactPoint` takes those, the eye backing off along the line. The map's ceiling is kept.
+  player off at the knees. `Ov002_CastRayAlongMotion`'s faces are floors and slopes: their edge planes are
+  built against the up axis (`RoomPoly_BuildPlanesVertical`), so an upright wall has no area to hit.
+  `Ov002_CastRayForContactPoint` tests a list a map may not have (`CollCast_TestModel`, the count at the model's
+  +0x80). Walls come from `Ov002_SweepSphereAlongMotion`, along a line ending one radius (0x500) above the eye so
+  the sphere clears the floor, keeping hits with a normal's y inside 0x800 (the port's choice); the eye stays that
+  radius off a wall. KH2's 5 units stay for floors. The map's ceiling is kept.
   KH2's `BlindCollision` has no counterpart.
 - **Config.** Flags at +0x3c: 1 Manual (Config `0x37bf`), 2 slow, 4 fast, 8 Y inverted, 0x10 X inverted, 0x20 Type
   B. There is no switch between Auto and Manual in play: KH2's R2 is target switching on the port's controls, and
@@ -117,11 +135,40 @@ sides (`RENDERING.md`).
   would lock on. The R presses the lock-on's sequencer plays raise camera flag 8 too; the hook clears that without
   resetting. Without separate lock-on, R is both, as on the DS, and flag 8 resets. `Ov002_TickLockedCamera` never
   starts. The Select view has the same reset.
-- **Select view.** It stays this camera, the same eye and controls, with no chase. Its FOV goes to the indoor row's,
-  46.8° vertical (Days' own is 40°), through two easings in a row, about half a second each way.
+- **Select view.** It stays this camera, with no chase, and takes the indoor row whole: its FOV, 46.8° vertical
+  (Days' own is 40°), its radius starting at 600 between 400 and 700, and its height curve. The stick and the reset
+  work on those numbers. The eye's place and the FOV move together through two easings in a row, about half a
+  second each way. Leaving, the radius goes back to where it was: the port's choice, as KH2's `setParam` would
+  start the other row's radius anew.
+- **First person** (the **KH2 first person view** switch, `kh2_first_person`, off by default, needing the KH2
+  camera). `input.c` takes the player's Select while the camera runs, so Days' look view, which holds the player
+  still, never opens. KH2's view is the player's facing, but Days steers that facing as it moves, in several
+  places (`Ov022_SteerIdleByAim`, `Ov022_StepJumpState`, `Ov022_StepGlideState`, `Ov022_StepWalkState`,
+  `Ov022_StepAimJumpState`), so here the view has its own yaw and sets the facing from it each frame
+  (`func_ov022_02088280`), in the states the player has control: 0 standing or running, 1, 2 and 0x16 the jump's, 6
+  the glide, 0xd the aimed hop, 0x1e the walk (`Ov022_EnterActorState`). In the rest the game turns the player, an attack to
+  its soft target (`Ov022_ShapeMotionDelta`, `Ov022_StepAnchorApproachState`) among them, and the view follows the
+  facing, as KH2's view is that facing. KH2 was not checked for whether an attack leaves first person; here it does
+  not.
+  The strafe: Days moves an actor along its facing, turned a little a frame by `Ov022_ClampAngleTowardTarget`, which
+  every steer but the aimed hop's goes through. In first person it gives the stick's angle at once, and the frame's
+  write of the facing puts it back. The fade is `khdays_g3d_set_fade` around the player's draws (`character_shadows.c`,
+  its scopes already cover the body, the weapons and the shadow), not `NNS_G3dMdlSetMdlAlphaAll`: a mod's model has its
+  own, and the DS's alpha 0 is a wireframe. A faded-out polygon is not drawn at all. Each polygon fades by itself, so
+  mid-fade the legs show through the coat; fading the whole as one would take a depth pass in the rasteriser (a later
+  job). Days' FOV row stays the outdoor one.
+  In multiplayer the fade is only what this copy draws, so the others still see the player, and it only matches the
+  local actor: each party member is an entity of its own, and `scene_owner` stops at its own body (only what is
+  attached to a joint has a parent, `SceneNode_AttachToModelJoint`). The host's or a lone player's actor strafes,
+  and the guests see that as it is, a run sliding sideways, as nothing hides it there. A guest's actor is the host's
+  to move and turn (`Ov022_SendActorStatePacket` sends every heading each frame), so it turns as it moves, and a
+  guest's view has a yaw of its own and writes no heading.
+  The fade is `khdays_g3d_set_fade` around the player's draws (`character_shadows.c`, its scopes already cover the
+  body, the weapons and the shadow), not `NNS_G3dMdlSetMdlAlphaAll`: a mod's model has its own, and the DS's alpha
+  0 is a wireframe. A faded-out polygon is not drawn at all. Days' FOV row stays the outdoor one.
 - **FOV.** Days has one field FOV: a half angle of 0x1555 (30°, so 60° vertical) from `Ov002_InitWorldState`, and
-  0xe39 in the look view. No indoor flag was found, so the outdoor row is used everywhere, its FOV for the Select
-  view aside. The hook writes the FOV's sine and cosine (words 0 and 1) and, when the game's camera takes over,
+  0xe39 in the look view. No indoor flag was found, so the outdoor row is used everywhere, the Select view
+  aside. The hook writes the FOV's sine and cosine (words 0 and 1) and, when the game's camera takes over,
   puts back what the angles at +0xa0 and +0xa2 say.
 
 ### Left to see in the game

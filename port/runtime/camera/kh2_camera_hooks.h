@@ -19,6 +19,16 @@ void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int inp
 int khdays_kh2_camera_active(void);
 void khdays_kh2_camera_center(void);
 
+/* First person (KHDAYS_ENH_KH2_FIRST_PERSON): the input layer's Select. Every steer's clamp
+ * (Ov022_ClampAngleTowardTarget) asks whether `actor` strafes, going where the stick says. The draws ask for the scene node
+ * of the player being faded and how far (0 when none is, runtime/display/character_shadows.c). */
+void khdays_kh2_camera_toggle_first_person(void);
+
+/* Ov022_EnterActorState: the local player's actor enters `state`. */
+void khdays_kh2_camera_player_state(int state);
+int khdays_kh2_camera_strafing(int actor);
+unsigned khdays_kh2_camera_faded_node(float *fade);
+
 /* Ov002_TickCameraTransition, before the shake. prepare: the wanted eye, and where to cast from (returns 0
  * when the camera stays the game's); collide: the eye off what lies between; settle: what collision left of it,
  * and the eye the springs reached, to collide again; publish: the camera's fields from the result. All are DS

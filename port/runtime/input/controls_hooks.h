@@ -26,4 +26,8 @@ const KhdaysGameControls *khdays_controls_state(void);
  * KH2's own speed, so the percentage the stick has for Days' camera does not apply. */
 void khdays_controls_camera_look(float *x, float *y);
 
+/* In first person KH2 turns at its one rate once the stick leaves the dead zone (YS::PLAYER::_OVR_post_exec), and
+ * tilts by the stick's up and down share of how far it is pushed (ObjCamera::subjective_control). */
+void khdays_controls_first_person_look(float *x, float *y);
+
 #endif

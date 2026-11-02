@@ -305,6 +305,8 @@ static u16 pressed(void)
 /* The player's DS buttons for this game frame. With the command menu on the D-pad, while the player
  * has field control the gamepad's D-pad becomes the presses that move the menu (sequencers.h) and
  * does not move Roxas. */
+static int select_taken; /* first person has this frame's Select, a script's too */
+
 static u16 player_buttons(void)
 {
     const KhdaysGameControls *game = khdays_controls_state();
@@ -323,6 +325,18 @@ static u16 player_buttons(void)
         buttons &= (u16)~KHDAYS_KEY_R;
     }
     own_r_held = own_r;
+    /* First person: Select is the camera's, so the game's look view, which holds the player still, never opens. */
+    static int own_select_held;
+    const int own_select = ((buttons | script_keys) & KHDAYS_KEY_SELECT) != 0;
+    select_taken = 0;
+    if ((snapshot.enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) != 0 && khdays_kh2_camera_active()) {
+        if (own_select && !own_select_held) {
+            khdays_kh2_camera_toggle_first_person();
+        }
+        buttons &= (u16)~KHDAYS_KEY_SELECT;
+        select_taken = 1;
+    }
+    own_select_held = own_select;
     const uint32_t directions = ((snapshot.actions & KHDAYS_ACTION_MENU_UP) ? 1u << KHDAYS_MENU_UP : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_DOWN) ? 1u << KHDAYS_MENU_DOWN : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_LEFT) ? 1u << KHDAYS_MENU_LEFT : 0) |
@@ -400,6 +414,9 @@ void khdays_input_pad_sample(void)
      * game's (the script's still is: headless runs have no screen). */
     latched = khdays_movie_hd_game_buttons(
         (u16)(khdays_press_edges_take(&script_edges, script_keys) | (snapshot.ui_open ? 0 : player_buttons())));
+    if (select_taken) {
+        latched &= (u16)~KHDAYS_KEY_SELECT;
+    }
     latched = khdays_newgame_buttons(latched);       /* the port's question in the new game takes them */
     latched = khdays_savelist_buttons(latched);      /* the port's save list takes the files' rows */
     khdays_cinelist_frame();                         /* MODO CINE's list, for the port to draw */

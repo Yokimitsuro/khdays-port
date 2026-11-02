@@ -219,6 +219,8 @@ of the game:
   higher it is, and free to turn while locked on, the view kept between you and the
   target. Cutscenes keep the game's camera, and it needs the game's Controls on Type
   A ([docs/KH2_CAMERA.md](docs/KH2_CAMERA.md)).
+- **KH2 first person view:** with the KH2 camera on, Select switches to first person
+  as in Kingdom Hearts II: the player fades out, and you can look around and strafe.
 - **Mouse camera:** moving the mouse turns and tilts the field camera, through
   the same part of the game as the analog camera, at a speed of its own
   (Sticks and camera -> Mouse camera speed) and with the camera's inversions.

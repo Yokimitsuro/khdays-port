@@ -1,5 +1,6 @@
 /* Associate existing shadow volumes with the geometry emitted by their scene nodes. */
 #include "../../gfx/character_shadow.h"
+#include "../../gfx/g3d.h"
 #include "../../host/app/hud_settings.h"
 #include "../core/window.h"
 #include <stdlib.h>
@@ -32,22 +33,53 @@ static KhdaysRef scene_owner(const void *node)
 }
 
 extern void ShadowVolume_Draw(KhdaysRef volume);
+extern KhdaysRef khdays_kh2_camera_faded_node(float *fade);
+
+/* The KH2 camera's first person fades the player out, and what the player holds: all drawn in these scopes. */
+static float fade_now = 1.0f, fade_outer[16];
+static int fade_depth;
+
+static void fade_begin(KhdaysRef owner)
+{
+    float fade = 1.0f;
+    const KhdaysRef node = khdays_kh2_camera_faded_node(&fade);
+    if (fade_depth < 16) {
+        fade_outer[fade_depth] = fade_now;
+    }
+    ++fade_depth;
+    if (node != 0 && scene_owner(KHDAYS_W(node)) == owner) {
+        fade_now = fade;
+        khdays_g3d_set_fade(fade);
+    }
+}
+
+static void fade_end(void)
+{
+    if (fade_depth > 0 && --fade_depth < 16 && fade_outer[fade_depth] != fade_now) {
+        fade_now = fade_outer[fade_depth];
+        khdays_g3d_set_fade(fade_now);
+    }
+}
 
 void khdays_character_shadow(const void *volume, const void *node)
 {
+    fade_begin(scene_owner(node));
     khdays_shadow_volume_begin(KHDAYS_REF(node), volume, khdays_character_shadows_enabled());
     ShadowVolume_Draw(KHDAYS_REF(volume));
     khdays_shadow_volume_end();
+    fade_end();
 }
 
 void khdays_character_caster_begin(const void *node)
 {
+    fade_begin(scene_owner(node));
     khdays_shadow_capture_begin(scene_owner(node), khdays_character_shadows_enabled());
 }
 
 void khdays_character_caster_end(void)
 {
     khdays_shadow_capture_end();
+    fade_end();
 }
 
 /* The shared enemy framework owns the flat shadow separately from the model-node tree. */

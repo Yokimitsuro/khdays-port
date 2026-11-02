@@ -19,6 +19,15 @@ KhdaysRef khdays_reference(const void *host)
 {
     return (KhdaysRef)((const unsigned char *)host - memory);
 }
+KhdaysRef khdays_kh2_camera_faded_node(float *fade)
+{
+    *fade = 1.0f;
+    return 0;
+}
+void khdays_g3d_set_fade(float fade)
+{
+    (void)fade;
+}
 int khdays_character_shadows_enabled(void)
 {
     return on;

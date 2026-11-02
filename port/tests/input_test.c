@@ -491,9 +491,9 @@ static void test_settings_file(void)
     CHECK(load_text("[sticks]\nleft_dead_zone = 200\n", &q) == 1 && q.stick[0].dead_zone == 90);
     CHECK(load_text("[enhancements]\ncamera_speed = 1\nwalk_speed = 99\n", &q) == 2);
     CHECK(q.enh.camera_speed == 10 && q.enh.walk_speed == 90);
-    CHECK(!q.enh.kh2_camera); /* off unless asked for */
-    CHECK(load_text("[enhancements]\nkh2_camera = on\n", &q) == 0);
-    CHECK(q.enh.kh2_camera);
+    CHECK(!q.enh.kh2_camera && !q.enh.kh2_first_person); /* off unless asked for */
+    CHECK(load_text("[enhancements]\nkh2_camera = on\nkh2_first_person = on\n", &q) == 0);
+    CHECK(q.enh.kh2_camera && q.enh.kh2_first_person);
     CHECK(load_text("[sticks]\nright = sideways\n", &q) == 1 && q.stick[1].role == KHDAYS_STICK_CAMERA);
 
     /* One input for two actions: the first keeps it. */
@@ -911,6 +911,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_RESTORE_GAMEPAD, KHDAYS_ROW_COMMAND, 0, 0, 0},
         {KHDAYS_SET_ENH_CAMERA, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_KH2_CAMERA, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_ENH_KH2_FIRST_PERSON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_LOCK_ON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MENU, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MOVEMENT, KHDAYS_ROW_SWITCH, 0, 1, 0},
@@ -1930,9 +1931,12 @@ static void test_analog_axes(void)
           (KHDAYS_ENH_ANALOG_MOVEMENT | KHDAYS_ENH_ANALOG_CAMERA));
     CHECK((out.enhancements & KHDAYS_ENH_KH2_CAMERA) == 0);
     p.enh.kh2_camera = 1;
+    p.enh.kh2_first_person = 1;
     out = resolve(&p, &s);
     CHECK((out.enhancements & KHDAYS_ENH_KH2_CAMERA) != 0);
+    CHECK((out.enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) != 0);
     p.enh.kh2_camera = 0;
+    p.enh.kh2_first_person = 0;
     out = resolve(&p, &s);
     s.stick[1][0] = 0;
     s.stick[1][1] = -32767; /* full up (SDL's y grows downwards) */

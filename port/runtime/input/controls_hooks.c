@@ -297,6 +297,25 @@ void khdays_controls_camera_look(float *x, float *y)
     *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
 }
 
+void khdays_controls_first_person_look(float *x, float *y)
+{
+    const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    const float across = kh2_axis(in->camera_x), along = kh2_axis(in->camera_y);
+    const float pushed = sqrtf(across * across + along * along);
+    *x = *y = 0.0f;
+    if (pushed > 0.0f && (in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open) {
+        const float tilt = along / pushed * (pushed < 1.0f ? pushed : 1.0f);
+        if (across > 0.0f) {
+            *x = in->camera_x > 0 ? 1.0f : -1.0f;
+        }
+        if (along > 0.0f) {
+            *y = in->camera_y > 0 ? tilt : -tilt;
+        }
+    }
+    *x += (float)mouse_share(in, 0, 0x1000) / 4096.0f;
+    *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
+}
+
 void khdays_trace_camera_request(int found, int x, int y, int kind, int state)
 {
     static int last = -1;
@@ -477,6 +496,9 @@ void khdays_trace_steer(int actor, int aim, int bias, int angle, int step, int r
 void khdays_trace_actor_state(int actor, int state)
 {
     khdays_models_actor_state(actor, state); /* its KH2 model's `air` lines (runtime/mods/models.cpp) */
+    if (actor == local_actor()) {
+        khdays_kh2_camera_player_state(state);
+    }
     if (trace_on() && actor == local_actor()) {
         trace("state %d (%#x)", state, state);
     }

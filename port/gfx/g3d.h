@@ -203,6 +203,9 @@ void khdays_g3d_set_widen(float k);
  * to the sides and the one picture's 3D shapes place it (host/render/gpu_raster3d.c). */
 void khdays_g3d_set_hud(int on);
 
+/* What the polygons drawn from now on are faded by, 0..1 (1: as they are; a polygon faded out is not drawn). */
+void khdays_g3d_set_fade(float fade);
+
 /* Selection-marker draws only. Does not change HUD placement or the ordering of the 2D layers. */
 void khdays_g3d_set_marker(int on);
 

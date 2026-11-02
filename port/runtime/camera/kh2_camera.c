@@ -11,9 +11,12 @@
 const Kh2CameraParams kh2_camera_outdoor = {1.5f, 420.0f, 380.0f, 250.0f, 500.0f, 0.008f};
 const Kh2CameraParams kh2_camera_indoor = {1.04719758f, 600.0f, 520.0f, 400.0f, 700.0f, 0.005f};
 
-#define AT_HEIGHT 170.0f    /* calcAtTarget */
-#define EYE_BELOW_AT 150.0f /* calcEyeTarget */
-#define BODY_HEIGHT 100.0f  /* updateTargetCamera: the point of the player it keeps on screen */
+#define AT_HEIGHT 170.0f         /* calcAtTarget */
+#define EYE_BELOW_AT 150.0f      /* calcEyeTarget */
+#define SUBJECTIVE_HEIGHT 150.0f /* the player's YS::PREF::Party SubjectiveOffset, by the user */
+#define SUBJECTIVE_REACH 350.0f  /* calcSubjective */
+#define SUBJECTIVE_PITCH DEGREES(70.0f)
+#define BODY_HEIGHT 100.0f /* updateTargetCamera: the point of the player it keeps on screen */
 #define HOME_TURN DEGREES(10.0f)
 #define AUTO_TURN DEGREES(0.25f)
 #define MOVE_TURN DEGREES(3.0f) /* OBJECTIVE_MOVE_SPEED */
@@ -82,12 +85,33 @@ static float turn_towards(float from, float to, float step)
     return wrap(from + (difference > 0.0f ? step : -step));
 }
 
+static float clamp_to(const Kh2CameraParams *params, float radius)
+{
+    if (radius < params->min_radius) {
+        return params->min_radius;
+    }
+    return radius > params->max_radius ? params->max_radius : radius;
+}
+
 static float clamp_radius(const Kh2Camera *c, float radius)
 {
-    if (radius < c->params->min_radius) {
-        return c->params->min_radius;
+    return clamp_to(c->params, radius);
+}
+
+/* calcEyeTarget's parabola: how far above its lowest place the eye is at a radius. */
+static float height_at(const Kh2CameraParams *params, float radius)
+{
+    const float over = radius - params->min_radius;
+    return over * over * params->curve;
+}
+
+/* Entering the Select view starts its radius at the row's start, as ObjCamera::setParam does for a row. */
+static void set_zoomed(Kh2Camera *c, const Kh2CameraInput *in)
+{
+    if (in->zoomed && !c->zoomed) {
+        c->zoom_radius = kh2_camera_indoor.start_radius;
     }
-    return radius > c->params->max_radius ? c->params->max_radius : radius;
+    c->zoomed = in->zoomed;
 }
 
 /* auto_updown, autoLock_updown */
@@ -117,6 +141,9 @@ void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec 
     c->params = params;
     c->yaw = c->yaw_target = wrap(yaw);
     c->radius = radius > 0.0f ? radius : params->start_radius;
+    c->pitch = 0.0f;
+    c->zoom_radius = kh2_camera_indoor.start_radius;
+    c->zoom_blend = c->zoom_ease = 0.0f;
     c->fov_half = c->fov_ease = fov_half;
     c->zoomed = 0;
     c->at = c->at_target = c->at_target_prev = at;
@@ -133,18 +160,30 @@ static void apply_look(Kh2Camera *c, const Kh2CameraInput *in)
         c->yaw = c->yaw_target = wrap(c->yaw + MOVE_TURN * in->turn * in->ticks);
     }
     if (in->zoom != 0.0f) {
-        c->radius = clamp_radius(c, c->radius + MOVE_RADIUS * in->zoom * in->ticks);
+        const float change = MOVE_RADIUS * in->zoom * in->ticks;
+        if (c->zoomed) {
+            c->zoom_radius = clamp_to(&kh2_camera_indoor, c->zoom_radius + change);
+        } else {
+            c->radius = clamp_radius(c, c->radius + change);
+        }
     }
 }
 
 /* ObjCamera::calcEyeTarget: one number sets how far back and how high the eye is. */
 static void eye_from(Kh2Camera *c, Kh2CameraVec base, float ticks)
 {
-    const float over = c->radius - c->params->min_radius;
+    const float share = ticks / UPDATE_TICKS;
+    float radius, height;
+    /* the place between the two rows' moves as the FOV does (kh2_camera_settle), the same two easings */
+    c->zoom_ease += ((c->zoomed ? 1.0f : 0.0f) - c->zoom_ease) * FOV_EASE * share;
+    c->zoom_blend += (c->zoom_ease - c->zoom_blend) * FOV_EASE * share;
+    radius = c->radius + (c->zoom_radius - c->radius) * c->zoom_blend;
+    height = height_at(c->params, c->radius);
+    height += (height_at(&kh2_camera_indoor, c->zoom_radius) - height) * c->zoom_blend;
     c->yaw = c->snap ? c->yaw_target : turn_towards(c->yaw, c->yaw_target, HOME_TURN * ticks);
-    c->eye_target.x = base.x + c->radius * sinf(c->yaw);
-    c->eye_target.y = base.y - EYE_BELOW_AT + over * over * c->params->curve;
-    c->eye_target.z = base.z + c->radius * cosf(c->yaw);
+    c->eye_target.x = base.x + radius * sinf(c->yaw);
+    c->eye_target.y = base.y - EYE_BELOW_AT + height;
+    c->eye_target.z = base.z + radius * cosf(c->yaw);
     c->pivot = base;
 }
 
@@ -154,10 +193,14 @@ void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in)
     c->at_target_prev = c->at_target;
     c->eye_target_prev = c->eye_target;
     c->locked = 0;
-    c->zoomed = in->zoomed;
+    set_zoomed(c, in);
     if (in->home) {
         c->yaw_target = in->behind_yaw;
-        c->radius = c->params->start_radius;
+        if (c->zoomed) {
+            c->zoom_radius = kh2_camera_indoor.start_radius;
+        } else {
+            c->radius = c->params->start_radius;
+        }
         c->eye = c->eye_target;
         c->snap = in->move_amount != 0.0f;
     } else {
@@ -190,7 +233,7 @@ void kh2_camera_lock(Kh2Camera *c, const Kh2CameraInput *in, Kh2CameraVec target
     c->at_target_prev = c->at_target;
     c->eye_target_prev = c->eye_target;
     c->locked = 1;
-    c->zoomed = in->zoomed;
+    set_zoomed(c, in);
     if (target_low) {
         c->radius -= LOCK_ZOOM * in->ticks;
     }
@@ -224,6 +267,35 @@ void kh2_camera_lock(Kh2Camera *c, const Kh2CameraInput *in, Kh2CameraVec target
         c->radius = c->params->lock_radius;
     }
     eye_from(c, head, in->ticks);
+}
+
+void kh2_camera_first_person(Kh2Camera *c, const Kh2CameraInput *in)
+{
+    float look;
+    c->at_target_prev = c->at_target;
+    c->eye_target_prev = c->eye_target;
+    c->locked = 0;
+    c->zoomed = 0;
+    c->zoom_blend = c->zoom_ease = 0.0f;
+    /* YS::PLAYER::_OVR_post_exec: only with control; without, what turned the player turns the view */
+    c->yaw = wrap(in->can_turn ? c->yaw + MOVE_TURN * in->turn * in->ticks : in->behind_yaw);
+    c->yaw_target = c->yaw;
+    if (in->home) {
+        c->pitch = 0.0f;
+    }
+    /* in->zoom: up on the stick is negative, as it brings the eye down, which looks up */
+    c->pitch -= MOVE_TURN * in->zoom * in->ticks;
+    if (c->pitch > SUBJECTIVE_PITCH) {
+        c->pitch = SUBJECTIVE_PITCH;
+    } else if (c->pitch < -SUBJECTIVE_PITCH) {
+        c->pitch = -SUBJECTIVE_PITCH;
+    }
+    c->eye_target = above(in->player, SUBJECTIVE_HEIGHT);
+    look = cosf(c->pitch) * SUBJECTIVE_REACH;
+    c->at_target.x = c->eye_target.x - look * sinf(c->yaw);
+    c->at_target.y = c->eye_target.y + sinf(c->pitch) * SUBJECTIVE_REACH;
+    c->at_target.z = c->eye_target.z - look * cosf(c->yaw);
+    c->pivot = c->eye_target;
 }
 
 Kh2CameraVec kh2_camera_collision_origin(const Kh2Camera *c, const Kh2CameraInput *in)

@@ -299,6 +299,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_CAMERA_NOTE));
     add_switch(b, KHDAYS_SET_ENH_KH2_CAMERA, TXT_ENH_KH2_CAMERA, &e->kh2_camera, 1,
                khdays_text(TXT_ENH_KH2_CAMERA_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_KH2_FIRST_PERSON, TXT_ENH_KH2_FIRST_PERSON, &e->kh2_first_person, 1,
+               khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),

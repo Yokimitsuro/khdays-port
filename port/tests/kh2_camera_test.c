@@ -221,6 +221,100 @@ static void test_zoom_fov(void)
     CHECK(near_value(c.fov_half, outdoor, 0.001f));
 }
 
+/* The Select view has the indoor row's whole camera, the eye moving there and back without a jump; the radius
+ * it left is there on the way back. */
+static void test_zoom_camera(void)
+{
+    Kh2CameraInput in = still();
+    Kh2Camera c = started(300.0f);
+    float last_z, last_y;
+    in.manual = 1;
+    kh2_camera_follow(&c, &in);
+    CHECK(near_value(c.eye_target.z, 300.0f, 0.01f) && near_value(c.eye_target.y, 40.0f, 0.01f));
+    last_z = c.eye_target.z;
+    last_y = c.eye_target.y;
+    in.zoomed = 1;
+    for (int i = 0; i < 80; ++i) {
+        kh2_camera_follow(&c, &in);
+        CHECK(fabsf(c.eye_target.z - last_z) < 35.0f && fabsf(c.eye_target.y - last_y) < 35.0f);
+        last_z = c.eye_target.z;
+        last_y = c.eye_target.y;
+    }
+    /* radius 600, and 400 + the curve: 20 above the feet + 200 * 200 * 0.005 */
+    CHECK(near_value(c.eye_target.z, 600.0f, 0.5f) && near_value(c.eye_target.y, 220.0f, 0.5f));
+    CHECK(c.radius == 300.0f);
+
+    /* the stick and the reset work on the indoor row's numbers, not the radius it left */
+    in.zoom = -1.0f;
+    for (int i = 0; i < 40; ++i) {
+        kh2_camera_follow(&c, &in);
+    }
+    CHECK(c.zoom_radius == kh2_camera_indoor.min_radius);
+    in.zoom = 1.0f;
+    for (int i = 0; i < 40; ++i) {
+        kh2_camera_follow(&c, &in);
+    }
+    CHECK(c.zoom_radius == kh2_camera_indoor.max_radius);
+    in.zoom = 0.0f;
+    in.home = 1;
+    kh2_camera_follow(&c, &in);
+    in.home = 0;
+    CHECK(c.zoom_radius == kh2_camera_indoor.start_radius);
+    CHECK(c.radius == 300.0f);
+
+    last_z = c.eye_target.z;
+    last_y = c.eye_target.y;
+    in.zoomed = 0;
+    for (int i = 0; i < 80; ++i) {
+        kh2_camera_follow(&c, &in);
+        CHECK(fabsf(c.eye_target.z - last_z) < 35.0f && fabsf(c.eye_target.y - last_y) < 35.0f);
+        last_z = c.eye_target.z;
+        last_y = c.eye_target.y;
+    }
+    CHECK(near_value(c.eye_target.z, 300.0f, 0.5f) && near_value(c.eye_target.y, 40.0f, 0.5f));
+}
+
+/* First person: the eye at 150, looking the way the player faces, the opposite of the yaw behind them. */
+static void test_first_person(void)
+{
+    Kh2CameraInput in = still();
+    Kh2Camera c = started(0.0f);
+    in.can_turn = 1;
+    kh2_camera_first_person(&c, &in);
+    CHECK(near_value(c.eye_target.y, 150.0f, 0.001f) && near_value(c.eye_target.z, 0.0f, 0.001f));
+    CHECK(near_value(c.at_target.z, -350.0f, 0.01f) && near_value(c.at_target.y, 150.0f, 0.01f));
+
+    /* up on the stick looks up, to 70 degrees; the reset levels it */
+    in.zoom = -1.0f;
+    kh2_camera_first_person(&c, &in);
+    CHECK(near_value(c.pitch, 6.0f * PI / 180.0f, 0.0001f));
+    CHECK(c.at_target.y > 150.0f);
+    for (int i = 0; i < 40; ++i) {
+        kh2_camera_first_person(&c, &in);
+    }
+    CHECK(near_value(c.pitch, 70.0f * PI / 180.0f, 0.0001f));
+    in.zoom = 1.0f;
+    for (int i = 0; i < 80; ++i) {
+        kh2_camera_first_person(&c, &in);
+    }
+    CHECK(near_value(c.pitch, -70.0f * PI / 180.0f, 0.0001f));
+    in.zoom = 0.0f;
+    in.home = 1;
+    kh2_camera_first_person(&c, &in);
+    in.home = 0;
+    CHECK(c.pitch == 0.0f);
+
+    /* the view has its own yaw, whatever the facing Days steered to; without control it is that facing */
+    c.yaw = 1.0f;
+    in.behind_yaw = -2.0f;
+    in.turn = 1.0f;
+    kh2_camera_first_person(&c, &in);
+    CHECK(near_value(c.yaw, 1.0f + 6.0f * PI / 180.0f, 0.0001f));
+    in.can_turn = 0;
+    kh2_camera_first_person(&c, &in);
+    CHECK(near_value(c.yaw, -2.0f, 0.0001f));
+}
+
 /* Centring while locked on: the far side of the player from the look-at, at the lock-on radius. */
 static void test_lock_home(void)
 {
@@ -321,6 +415,8 @@ int main(void)
     test_start_snap();
     test_springs_at_20_fps();
     test_zoom_fov();
+    test_zoom_camera();
+    test_first_person();
     test_lock_home();
     test_lock_points();
     test_lock_steep();

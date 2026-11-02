@@ -1491,6 +1491,16 @@ HOOKS = {
     # The speed an idle actor moves toward and the animation speed it moves
     # with: analog movement's walk slows both; traced with the heading's
     # reference (the bias the game adds to it).
+    # The KH2 camera's first person strafes: every steer asks here how far it may turn, and gets the stick's angle at
+    # once (runtime/camera/kh2_camera_hooks.c), the facing being set back to the camera's each frame.
+    "ov022@020ad4e8": [  # Ov022_ClampAngleTowardTarget
+        (
+            "    if ((int)arg1 < 0) return 0xffffffff;\n",
+            "    if ((int)arg1 < 0) return 0xffffffff;\n"
+            "    { extern int khdays_kh2_camera_strafing(int actor);\n"
+            "      if (khdays_kh2_camera_strafing(arg0)) return arg1; }\n",
+        ),
+    ],
     "ov022@020a3ccc": [  # Ov022_SteerIdleByAim
         (
             "            nRate = pActor->nWalkSpeed;\n",

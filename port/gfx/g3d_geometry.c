@@ -740,12 +740,35 @@ static void finish_polygon(List *out, int32_t ds[2], const Clip *v, int n, const
     }
 }
 
+static float polygon_fade = 1.0f;
+
+void khdays_g3d_set_fade(float fade)
+{
+    polygon_fade = fade;
+}
+
+/* A polygon's attributes with its alpha faded; 0 when nothing is left of it (the DS's alpha 0 is a wireframe). */
+static int faded(uint32_t *attr)
+{
+    if (polygon_fade < 1.0f) {
+        const unsigned alpha = (unsigned)((float)((*attr >> 16) & 31u) * polygon_fade + 0.5f);
+        if (alpha == 0) {
+            return 0;
+        }
+        *attr = (*attr & ~(31u << 16)) | (alpha << 16);
+    }
+    return 1;
+}
+
 static void emit_polygon(const Clip *v, int n)
 {
     Polygon what;
     int32_t ds[2] = {ds_polys, ds_verts};
     memset(&what, 0, sizeof(what));
     what.attr = g.attr;
+    if (!faded(&what.attr)) {
+        return;
+    }
     what.tex = g.teximage;
     what.pltt = g.pltt;
     what.flags =
@@ -1057,7 +1080,7 @@ static void mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint
                         int32_t replacement, int translucent_, int sky, int flags)
 {
     Polygon what;
-    if (n < 3 || n > 4) {
+    if (n < 3 || n > 4 || ((flags & KHDAYS_G3D_CLIP) == 0 && !faded(&attr))) {
         return;
     }
     memset(&what, 0, sizeof(what));

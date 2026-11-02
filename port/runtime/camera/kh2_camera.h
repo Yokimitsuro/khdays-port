@@ -28,20 +28,25 @@ typedef struct Kh2CameraInput {
     int moved;                         /* the player moved in x or z */
     int manual;                        /* Chase Cam: Manual */
     int home;                          /* the camera reset was asked for */
-    int zoomed;                        /* the Select view: the indoor FOV */
+    int zoomed;                        /* the Select view: the indoor row */
+    int can_turn;                      /* first person: the stick turns the view (YS::OBJ::can_control) */
 } Kh2CameraInput;
 
 typedef struct Kh2Camera {
     const Kh2CameraParams *params;
     float yaw, yaw_target, radius;
-    float fov_half; /* the vertical half angle now */
-    float fov_ease; /* where it is easing to, itself easing to the wanted one */
+    float pitch;       /* first person, up positive */
+    float zoom_radius; /* the Select view's own radius, in the indoor row's limits; `radius` waits meanwhile */
+    float zoom_blend;  /* how far the eye is from `radius`'s place to `zoom_radius`'s, 0..1 */
+    float zoom_ease;   /* where that is easing to, as fov_ease */
+    float fov_half;    /* the vertical half angle now */
+    float fov_ease;    /* where it is easing to, itself easing to the wanted one */
     Kh2CameraVec at, eye;
     Kh2CameraVec at_target, eye_target, at_target_prev, eye_target_prev;
     Kh2CameraVec pivot; /* where a collision is cast from at the target */
     int locked;         /* this frame's targets are the lock-on's */
     int snap;           /* the next settle goes straight to the targets */
-    int zoomed;         /* this frame wants the indoor FOV */
+    int zoomed;         /* this frame wants the indoor row */
 } Kh2Camera;
 
 /* What dk::TargetCamera::checkVisibleObject says of a point on KH2's 512x416 screen. */
@@ -71,6 +76,12 @@ void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec 
 /* A frame's targets, without a target (ObjCamera::objective) or locked on (TargetCamera::update). */
 void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in);
 void kh2_camera_lock(Kh2Camera *c, const Kh2CameraInput *in, Kh2CameraVec target);
+
+/* A frame's targets in first person (ObjCamera::subjective_control): the eye at the player's eye height, looking
+ * opposite `yaw`. KH2's view is the player's facing; Days steers that facing as it moves, so here the view has the
+ * yaw and the caller sets the facing from it. Without control the game turns the player, an attack to its target,
+ * and the view follows `behind_yaw`, which is that facing. */
+void kh2_camera_first_person(Kh2Camera *c, const Kh2CameraInput *in);
 
 /* Moves the eye and look-at towards the targets by KH2's per-update springs (ObjCamera::setCamera), for a
  * game frame of `ticks`: KH2's field updates every 2 ticks, so at 30 fps that is one update. */
