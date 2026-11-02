@@ -1,5 +1,6 @@
 /* The mods' new missions in the running game (missions.h). */
 #include "missions.h"
+#include "../rooms/added.h"
 
 #include "build.h"
 #include "field_store.h"
@@ -156,6 +157,20 @@ void khdays_missions_start(void)
         unsigned first_chest;
         if (m->chest_count > 0 && !khdays_field_store_place_chests(&store, i, m->chest_count, &first_chest)) {
             note(registry.mods[m->mod].id, m->line, "its chests left out: no room for their flags", NULL);
+        }
+        /* a room the mod adds: its index, given when its world's archive was read */
+        if (m->room_key != NULL) {
+            char mod_path[1024];
+            snprintf(mod_path, sizeof(mod_path), "%s/%s", MODS, registry.mods[m->mod].folder);
+            const int index = khdays_rooms_index(mod_path, m->room_key, m->world);
+            if (index >= 0) {
+                m->room = index;
+            } else {
+                char why[160];
+                snprintf(why, sizeof(why), "its room %s is no room the mod adds to %s: played in the world's room 0",
+                         m->room_key, m->world);
+                note(registry.mods[m->mod].id, m->line, why, NULL);
+            }
         }
         snprintf(disk, sizeof(disk), "%s/%s/missions/%s/mission.p2", MODS, registry.mods[m->mod].folder, m->key);
         snprintf(path, sizeof(path), "mi/mi/%04d", m->file);

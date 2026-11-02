@@ -53,6 +53,7 @@ static void free_mission(KhdaysMission *m)
     }
     free(m->identity);
     free(m->unlock_after);
+    free(m->room_key);
 #pragma warning(push)
 #pragma warning(disable : 6001) /* the spawners up to spawner_count are read_wave's, their enemies set */
     for (int i = 0; i < m->spawner_count; ++i) {
@@ -549,7 +550,15 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
             snprintf(m->world, sizeof(m->world), "%s", value);
         }
     } else if (strcmp(name, "room") == 0) {
+        /* a room's id, or the key of a room the mod adds (letters, digits, _ and -) */
         ok = whole(value, 0, 254, &m->room);
+        if (!ok && value[0] != '\0' && strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") ==
+                                           strlen(value)) {
+            free(m->room_key);
+            m->room_key = copy_span(value, strlen(value));
+            m->room = 0;
+            ok = m->room_key != NULL;
+        }
     } else if (strcmp(name, "level") == 0) {
         ok = whole(value, 1, 120, &m->level);
     } else if (strcmp(name, "time") == 0) {

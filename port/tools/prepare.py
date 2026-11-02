@@ -2883,6 +2883,62 @@ HOOKS["ov022@020a48c8"] = [
 # after-functions. Arguments and results as 64-bit slots: integers widened ("int" sign-extended, "uint" not),
 # the game's pointers as references ("ref"). A point's number is its place in this list; the port's catalogue is
 # generated from it (khdays_hook_points.h). Points are added as plugins need them, across the game's subsystems.
+# A world's rooms past the game's 24 (rooms a mod adds, spec 040): which slot each room is loaded in, kept by the
+# port (runtime/rooms/slots.c) instead of the 24 bytes at +0x17 of the ov002 link context, which a 25th room's
+# aSlotMappings[nPeer] would write past. The five functions that touch them: the two that set, the three that fill.
+_ROOM_SLOTS = "extern int khdays_room_slot(int); extern void khdays_room_slot_set(int, int); extern void khdays_room_slots_clear(void);\n"
+HOOKS["ov002@0207285c"] = [
+    (  # Ov002_GetCtxTableByte: room i's slot
+        "    return *(signed char *)(*(int *)&data_ov002_0207fa10 + arg0 + 0x17);\n",
+        "    " + _ROOM_SLOTS + "    return khdays_room_slot(arg0);\n",
+    )
+]
+HOOKS["ov002@02071ba4"] = [
+    (  # Ov002_LoadPeerIntoSlot: the slot's last room in none, this room in the slot
+        "    if(pCtx->slots[nSlot]>=0) pCtx->aSlotMappings[pCtx->slots[nSlot]]=-1;\n"
+        "    pCtx->aSlotMappings[nPeer]=nSlot;\n",
+        "    { " + _ROOM_SLOTS + "    if(pCtx->slots[nSlot]>=0) khdays_room_slot_set(pCtx->slots[nSlot], -1);\n"
+        "    khdays_room_slot_set(nPeer, nSlot); }\n",
+    )
+]
+HOOKS["ov002@02071990"] = [
+    (  # Ov002_LoadWorldLinkResources: a world's rooms in none
+        "    MI_CpuFill8(pCtx->aSlotMappings,0xff,24);\n",
+        "    MI_CpuFill8(pCtx->aSlotMappings,0xff,24);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+HOOKS["ov002@0207185c"] = [
+    (  # Ov002_AllocSceneState
+        "    MI_CpuFill8(obj + 0x17, 0xff, 0x18);\n",
+        "    MI_CpuFill8(obj + 0x17, 0xff, 0x18);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+HOOKS["ov002@0207214c"] = [
+    (  # Ov002_ReleaseContextBuffers
+        "    MI_CpuFill8((char *)ctx + 0x17, 0xff, 0x18);\n",
+        "    MI_CpuFill8((char *)ctx + 0x17, 0xff, 0x18);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+
+# A room a mod adds has no entry of its own in the lower screen's chain (looked up by the request's value): the
+# summary not shown for it, rather than its box read through a null entry.
+HOOKS["ov002@02064a30"] = [
+    (  # Ov002_SnapshotChainEntry: no entry, nothing copied
+        "    if (copy != 0) {\n",
+        "    if (copy != 0 && entry != 0) {\n",
+    )
+]
+HOOKS["ov002@02064ac0"] = [
+    (  # Ov002_ShowSlotSummary: no entry, closed as when there is no layout
+        "    entry = Ov002_SnapshotChainEntry(*(int *)(self + 8), Ov002_Field_GetHalf86(), 1);\n",
+        "    entry = Ov002_SnapshotChainEntry(*(int *)(self + 8), Ov002_Field_GetHalf86(), 1);\n"
+        "    if (entry == 0) {\n"
+        "        Ov002_DestroyOwnedEntry(self, 1);\n"
+        "        return;\n"
+        "    }\n",
+    )
+]
+
 HOOK_POINTS = [
     # (its file's key, its header as the decompilation writes it, its result's kind, its arguments' kinds)
     # combat and entities: an actor's HP set (a hit, a cure, a defeat)

@@ -77,6 +77,7 @@ typedef struct KhdaysMission {
     int category;                                /* the list's (0-11) */
     char world[16];
     int room;
+    char *room_key; /* a room the mod adds (room = <key>), its index given as the missions start; NULL: `room` */
     int level;          /* the enemies' level base, 0: the template's */
     int time_ms;        /* 0: none given */
     int unlock_number;  /* a game mission's number to clear first, 0 none */

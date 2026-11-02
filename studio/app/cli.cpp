@@ -16,6 +16,7 @@
 #include "core/models/texture_export.h"
 #include "core/models/model_export.h"
 #include "core/models/model_files.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/collection_source.h"
 #include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
@@ -741,6 +742,84 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
 }
 
 // --revert-room <Mod> <code> <room>: the room's change and what it wrote removed.
+// --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]: a room of the mod's
+// own added to a world (no Days room replaced): another game's map placed in its units on room 0's ground, the
+// room's markers on its floors, or the modder's model as it is; its collision built from its own floors and walls,
+// a simpler model, or its visible triangles.
+int add_room_command(const fs::path& root, const std::vector<std::string>& args) {
+    fs::path nitrofs, dump, mod_dir;
+    if (!room_command_paths(root, args[1], &nitrofs, &dump, &mod_dir))
+        return 1;
+    const std::string world = args[2], key = args[3];
+    std::string why;
+    fs::path model = path_u8(args[4]), collision;
+    RoomPlacement place;
+    const auto colon = args[4].find(':');
+    const CollectionGameInfo* game = colon == std::string::npos || colon < 2 ? nullptr
+                                                                           : collection_game(args[4].substr(0, colon));
+    if (game != nullptr) {
+        const std::string name = args[4].substr(colon + 1);
+        std::string note;
+        const Settings settings = load_settings(root, &note);
+        std::vector<CollectionMap> maps;
+        if (!collection_maps(settings, *game, &maps, &why))
+            return print_outcome(false, {}, why);
+        const CollectionMap* map = nullptr;
+        for (const auto& m : maps)
+            map = m.name == name ? &m : map;
+        if (map == nullptr)
+            return print_outcome(false, {}, "no map " + name + " in this copy of " + game->name);
+        CollectionMade made;
+        if (!make_collection_room(settings, *game, *map, &made, &why))
+            return print_outcome(false, {}, why);
+        std::printf("%s: %zu triangles, %zu pictures\n", args[4].c_str(), made.triangles, made.pictures);
+        if (collection_map_falling(*game, *map))
+            std::printf("%s is a stage the player falls through (Dive): it has no floor to walk on\n", args[4].c_str());
+        model = collection_made_model(root, *game, name);
+        if (made.collision && (args.size() < 6 || args[5] == "own-collision"))
+            collision = collection_made_collision(root, *game, name);
+        // its lowest main floor at height 0, a floor under the origin (a mission's start = 0 0 0)
+        khdays::assets::ImportedModel floors;
+        if (game->units > 0 && import_model(collision.empty() ? model : collision, &floors, &why)) {
+            const bool on = added_room_place(floors, game->units, &place);
+            std::printf("placed by its game's units (scale %g), its lowest main floor at 0: %s\n", place.scale,
+                        on ? "a floor under the origin" : "no floor found under the origin (move it in its change)");
+        }
+        why.clear();
+    }
+    if (args.size() >= 6 && args[5] != "own-collision")
+        collision = path_u8(args[5]);
+    // the modder's own model, in the game's units: its lowest main floor at 0, a floor under the origin
+    khdays::assets::ImportedModel floors;
+    if (game == nullptr && import_model(collision.empty() ? model : collision, &floors, &why)) {
+        const bool on = added_room_place(floors, 1.0f, &place);
+        std::printf("its lowest main floor at 0: %s\n",
+                    on ? "a floor under the origin" : "no floor found under the origin (move it in its change)");
+    }
+    why.clear();
+    std::vector<std::string> lines;
+    const bool ok = add_room(nitrofs, mod_dir, world, key, model, place, collision, &lines, &why);
+    for (const auto& line : lines)
+        std::printf("%s\n", line.c_str());
+    if (!ok)
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+    return ok ? 0 : 1;
+}
+
+// --remove-room <Mod> <world> <key>: a room the mod added, removed.
+int remove_room_command(const fs::path& root, const std::vector<std::string>& args) {
+    fs::path nitrofs, dump, mod_dir;
+    if (!room_command_paths(root, args[1], &nitrofs, &dump, &mod_dir))
+        return 1;
+    std::string why;
+    if (!remove_added_room(mod_dir, args[2], args[3], &why)) {
+        std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return 1;
+    }
+    std::printf("%s room %s removed from %s\n", args[2].c_str(), args[3].c_str(), args[1].c_str());
+    return 0;
+}
+
 int revert_room(const fs::path& root, const std::vector<std::string>& args) {
     fs::path nitrofs, dump, mod_dir;
     if (!room_command_paths(root, args[1], &nitrofs, &dump, &mod_dir))
@@ -1665,6 +1744,10 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
     if (args.size() >= 4 &&
         (args[0] == "--mission-wave" || args[0] == "--mission-chest" || args[0] == "--mission-emblem"))
         return mission_lines(root, args);
+    if ((args.size() == 5 || args.size() == 6) && args[0] == "--add-room")
+        return add_room_command(root, args);
+    if (args.size() == 4 && args[0] == "--remove-room")
+        return remove_room_command(root, args);
     if ((args.size() >= 4 && args.size() <= 6) && args[0] == "--replace-room")
         return replace_room(root, args);
     if (args.size() == 4 && args[0] == "--revert-room")
@@ -1715,6 +1798,10 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  the KH2 maps of the player's copy, the Days rooms made from each\n"
         "       khdays-studio [--port <dir>] --replace-room <Mod> <code> <room> [<model> | <game>:<map> [<collision model> | game | own-collision]]\n"
         "                                                  a room made from a model (or again from its change)\n"
+        "       khdays-studio [--port <dir>] --add-room <Mod> <code> <key> <model> | <game>:<map> [<collision model> | own-collision]\n"
+        "                                                  a room of the mod's own added to a world, for its missions\n"
+        "       khdays-studio [--port <dir>] --remove-room <Mod> <code> <key>\n"
+        "                                                  a room the mod added, removed\n"
         "       khdays-studio [--port <dir>] --revert-room <Mod> <code> <room>\n"
         "                                                  a room's change and what it wrote removed\n"
         "       khdays-studio [--port <dir>] --rebuild-worlds <Mod>\n"

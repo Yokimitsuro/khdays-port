@@ -1,0 +1,36 @@
+/* The rooms the mods add to the game's mission worlds (spec 040): mods/<Mod>/rooms/rooms.txt names each (a line
+ * "<key> <world>"), its files in rooms/<world>/<key>/: room.gltf (or .glb, .fbx) the model drawn, collision.bin its
+ * floors and walls in the game's form (the studio's --add-room writes both). When the game reads a world's archive
+ * (mi/wd/wd_<code>), its added rooms are put after the world's own: each a room record of its own id (no exits: only
+ * missions start there), its collision a member of its own and a copy of room 0's model a member of its own, drawn as
+ * the mod's model (docs/RUNTIME_MAP.md, "A world's rooms"). */
+#pragma once
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+#include <string>
+#include <vector>
+
+/* `game_path`'s bytes `source` with the mods' rooms for that world added into `out`; false when none is added (a
+ * file that is no world archive, or one no mod adds to). */
+bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned char> &source,
+                        std::vector<unsigned char> &out);
+
+extern "C" {
+#endif
+
+/* The mods' added rooms read (once, after the mods are taken at the start). */
+void khdays_rooms_load(void);
+
+/* The room `key` the mod in `mod_path` adds to `world` (its code): its index in the world's room table, the number
+ * a mission names its room by; -1 when none. Known once its world's archive was read (given at the merge). */
+int khdays_rooms_index(const char *mod_path, const char *key, const char *world);
+
+/* Whether `name` (a model's, "mi/wd/wd_<code>#<member>/mdl/<model>") is an added room's: its mod's model into
+ * `path`. */
+int khdays_rooms_model(const char *name, char *path, int size);
+
+#ifdef __cplusplus
+}
+#endif

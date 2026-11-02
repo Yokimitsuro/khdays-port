@@ -5,6 +5,7 @@
 #include "core/files/paths.h"
 #include "core/missions/mission_build.h"
 #include "core/missions/missions.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 
@@ -254,6 +255,7 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
         mm.category = m.category;
         mm.world = m.world;
         mm.room = m.room;
+        mm.room_key = m.room_key != nullptr ? m.room_key : "";
         mm.level = m.level;
         mm.time_ms = m.time_ms;
         mm.kind = m.kind;
@@ -560,14 +562,22 @@ bool set_mod_mission_spots(const fs::path& nitrofs, const fs::path& mod_dir, con
 namespace {
 
 // The places of mission `m` over no floor of its room, said: its start, its spawners, chests and emblems.
-std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMission& m) {
+std::vector<std::string> off_the_floor(const fs::path& nitrofs, const fs::path& mod_dir, const KhdaysMission& m) {
     std::vector<std::string> out;
-    World w;
-    std::string why;
-    if (!load_world(nitrofs, m.world, &w, &why) || m.room < 0 || m.room >= static_cast<int>(w.rooms.size()))
-        return out;
-    const auto& data =
-        w.archive.entries[static_cast<std::size_t>(w.rooms[static_cast<std::size_t>(m.room)].collision_member)].data;
+    std::vector<std::uint8_t> data;
+    if (m.room_key != nullptr) {
+        // a room the mod adds: its own floors and walls
+        std::ifstream in(added_room_folder(mod_dir, m.world, m.room_key) / "collision.bin", std::ios::binary);
+        data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    } else {
+        World w;
+        std::string why;
+        if (!load_world(nitrofs, m.world, &w, &why) || m.room < 0 || m.room >= static_cast<int>(w.rooms.size()))
+            return out;
+        data = w.archive.entries[static_cast<std::size_t>(w.rooms[static_cast<std::size_t>(m.room)].collision_member)]
+                   .data;
+    }
+    const std::string room = m.room_key != nullptr ? std::string(m.room_key) : std::to_string(m.room);
     RoomCollision c;
     if (data.empty() || !parse_collision(data, &c, nullptr))
         return out;
@@ -577,7 +587,7 @@ std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMiss
             return;
         char where[96];
         std::snprintf(where, sizeof(where), " at (%.3f, %.3f, %.3f)", at[0], at[1], at[2]);
-        out.push_back(what + where + " is over no floor of " + m.world + " room " + std::to_string(m.room));
+        out.push_back(what + where + " is over no floor of " + m.world + " room " + room);
     };
     if (m.has_start)
         check("the start", m.start);
@@ -609,7 +619,7 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
             m = &r.list[i];
     bool ok = true;
     if (m != nullptr && off_floor != nullptr)
-        *off_floor = off_the_floor(nitrofs, *m);
+        *off_floor = off_the_floor(nitrofs, mod_dir, *m);
     if (m == nullptr) {
         ok = fail_with(why, "the mod has no mission " + key + " that reads");
     } else if (khdays_mission_built(m)) {
@@ -632,14 +642,21 @@ bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::v
         ok = false;
     }
     for (const ModMission& m : missions) {
-        std::string about = m.key + ": " + m.world + " room " + std::to_string(m.room);
+        std::string about =
+            m.key + ": " + m.world + " room " + (m.room_key.empty() ? std::to_string(m.room) : m.room_key);
         std::error_code ec;
         World w;
         std::string world_why;
+        bool added = false;
+        for (const auto& r : read_added_rooms(mod_dir, nullptr))
+            added = added || (r.key == m.room_key && r.world == m.world);
         if (!load_world(nitrofs, m.world, &w, &world_why)) {
             lines->push_back("problem: " + m.key + ": world " + m.world + ": " + world_why);
             ok = false;
-        } else if (m.room >= static_cast<int>(w.rooms.size())) {
+        } else if (!m.room_key.empty() && !added) {
+            lines->push_back("problem: " + m.key + ": the mod adds no room " + m.room_key + " to " + m.world);
+            ok = false;
+        } else if (m.room_key.empty() && m.room >= static_cast<int>(w.rooms.size())) {
             lines->push_back("problem: " + m.key + ": world " + m.world + " has rooms 0-" +
                              std::to_string(w.rooms.size() - 1));
             ok = false;

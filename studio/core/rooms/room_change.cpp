@@ -161,11 +161,11 @@ void remove_written(const std::filesystem::path& mod_dir, const std::string& rel
     }
 }
 
-// Writes `model` (placed) as the glTF replacing `key`'s model, its textures beside it.
-bool write_room_model(const std::filesystem::path& mod_dir, const std::string& key, const assets::ImportedModel& model,
-                      std::set<std::string>* written, std::string* why) {
-    const std::filesystem::path gltf = mod_dir / "graphics" / path_u8(key + ".gltf");
-    const std::string name = key.substr(key.rfind('/') + 1);
+}  // namespace
+
+bool write_model_as(const std::filesystem::path& mod_dir, const std::filesystem::path& gltf, const std::string& name,
+                    const std::string& listed, const assets::ImportedModel& model, std::set<std::string>* written,
+                    std::string* why) {
     std::map<std::string, assets::GltfTextureRef> refs;
     std::size_t n = 0;
     for (const auto& [texture, decoded] : model.textures) {
@@ -182,7 +182,7 @@ bool write_room_model(const std::filesystem::path& mod_dir, const std::string& k
             [](const std::filesystem::path&) { return std::string(); });
         if (!result.ok)
             return fail_with(why, file + ": " + result.why);
-        written->insert("graphics/" + key.substr(0, key.rfind('/') + 1) + file);
+        written->insert(listed + file);
         refs[texture] = {file, decoded.width, decoded.height,
                          assets::texels_translucent(decoded.rgba.data(), decoded.rgba.size() / 4)};
     }
@@ -206,9 +206,18 @@ bool write_room_model(const std::filesystem::path& mod_dir, const std::string& k
             return {};
         });
     if (!result.ok)
-        return fail_with(why, key + ".gltf: " + result.why);
-    written->insert("graphics/" + key + ".gltf");
+        return fail_with(why, name + ".gltf: " + result.why);
+    written->insert(listed + name + ".gltf");
     return true;
+}
+
+namespace {
+
+// Writes `model` (placed) as the glTF replacing `key`'s model, its textures beside it.
+bool write_room_model(const std::filesystem::path& mod_dir, const std::string& key, const assets::ImportedModel& model,
+                      std::set<std::string>* written, std::string* why) {
+    return write_model_as(mod_dir, mod_dir / "graphics" / path_u8(key + ".gltf"), key.substr(key.rfind('/') + 1),
+                          "graphics/" + key.substr(0, key.rfind('/') + 1), model, written, why);
 }
 
 // A model's joints at rest: each palette entry its joint's global times its inverse bind.

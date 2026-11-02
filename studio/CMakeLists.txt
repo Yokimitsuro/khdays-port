@@ -175,6 +175,7 @@ add_library(khdays-studio-core STATIC
     core/files/paths.cpp
     core/mods/process.cpp
     core/mods/prizes.cpp
+    core/rooms/added_rooms.cpp
     core/rooms/collection_source.cpp
     core/rooms/kh2_source.cpp
     core/rooms/room_change.cpp
@@ -239,6 +240,7 @@ add_executable(khdays-studio-tests
     tests/test_worlds.cpp
     tests/test_kh2.cpp
     tests/test_collection.cpp
+    tests/test_added_rooms.cpp
     tests/test_mods_log.cpp
     tests/test_plugin_parameters.cpp
     tests/test_characters.cpp

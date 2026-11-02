@@ -191,7 +191,7 @@ are copied when the target's sets have as many rows.
 A mission of the mod's own (`core/missions/mod_missions.h`) is listed in Mission
 Mode after the game's, in its world's category: `missions/missions.txt` holds a
 block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
-`description <lang>`, `category`, `world`, `room`, `level`, `time`, `unlock`,
+`description <lang>`, `category`, `world`, `room` (an index, or the key of a room the mod adds), `level`, `time`, `unlock`,
 `template`, and for its places `kind`, `target`, `goal`). The port plays it, in this order: made from its places on the map
 (below) when it has waves; else its own file `missions/<key>/mission.p2`; else
 its template's file as the game has it -- in that mission's own world and rooms,
@@ -221,6 +221,18 @@ mission's content in another game mission's slot instead. From the command line:
 `--check-mod-missions` reads every new mission as the port does, its world and
 room, its file, and the rows the port adds to the list in each language; it exits
 1 with a line for each problem.
+
+**Rooms a mod adds** (`core/rooms/added_rooms.h`). A room of the mod's own is added to a world without replacing
+any of Days's: `rooms/rooms.txt` lists them (`<key> <world>`), their files in `rooms/<world>/<key>/` -- `room.gltf`
+and its pictures (the model drawn) and `collision.bin` (its floors and walls as the game reads them, built as a
+replaced room's are, on room 0's records and markers). Another game's map is placed in its units with its lowest main
+floor at height 0 and one of its floors under the origin; the modder's own model as it is. A new mission plays there
+with `room = <key>` (its waves, start and places in the room's own coordinates: `start = 0 0 0 0` is on its floor);
+the port puts the rooms after the world's own when it reads the world (docs/RUNTIME_MAP.md section 34). Added rooms
+have no exits: only missions reach them.
+
+    khdays-studio --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]
+    khdays-studio --remove-room <Mod> <world> <key>
 
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into

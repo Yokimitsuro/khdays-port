@@ -104,6 +104,11 @@ RoomAlignment kh2_alignment(const std::vector<std::array<float, 3>>& room_points
                             const khdays::assets::ImportedModel& kh2, float units = 0.01f);
 bool placed_model(const std::filesystem::path& model, const RoomPlacement& place, khdays::assets::ImportedModel* out,
                   std::string* why);
+// Writes `model` as `gltf` under the mod, its pictures beside it named after `name`; each file written put in `written`
+// as `listed` followed by its name.
+bool write_model_as(const std::filesystem::path& mod_dir, const std::filesystem::path& gltf, const std::string& name,
+                    const std::string& listed, const khdays::assets::ImportedModel& model, std::set<std::string>* written,
+                    std::string* why);
 
 // A room from above, in cells of a quarter unit: those its grounds and walls cover, those they close in,
 // and those within `margin` units of either.

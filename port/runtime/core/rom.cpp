@@ -14,6 +14,7 @@ extern "C" {
 #include "session_log.h"
 }
 #include "../menus/saveworld.h"
+#include "../rooms/added.h"
 
 #include "khdays/assets/message.h" // lz_decompress
 #include "khdays/vfs/filesystem.h"
@@ -272,6 +273,15 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 } // namespace
 
+// A world's archive with the rooms the mods add to it (runtime/rooms/added.h) into `out`; false when they add none.
+static bool added_rooms(const std::string &game_path, const fs::path &source, std::vector<u8> &out)
+{
+    khdays_rooms_load();
+    std::ifstream in(source, std::ios::binary);
+    const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return khdays_rooms_merge(game_path, bytes, out);
+}
+
 // The VFS reads the mods on as the game started, in the list's order (runtime/mods/list.h).
 static void give_vfs_the_mods()
 {
@@ -375,6 +385,10 @@ extern "C" int khdays_rom_init(void)
         if (khdays_text_patch(game_path, *path, worded)) {
             const u32 bytes = static_cast<u32>(worded.size());
             files[id] = {*path, bytes, std::move(worded)};
+        } else if (game_path.rfind("mi/wd/wd_", 0) == 0 && added_rooms(game_path, *path, worded)) {
+            const u32 bytes = static_cast<u32>(worded.size()); // the mods' rooms put after the world's own
+            files[id] = {*path, bytes, std::move(worded)};
+            khdays_origin_want(); // their models named from the start, drawn as the mods' (models.cpp)
         } else {
             files[id] = {*path, static_cast<u32>(fs::file_size(*path)), {}};
         }

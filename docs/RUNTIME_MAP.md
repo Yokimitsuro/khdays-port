@@ -5621,3 +5621,34 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   rays), at rest all at the model's place, 0.982 wide, 0.717 high, 0.783 deep. Opened, `box1` -- the lid -- is drawn
   96 degrees from its rest and `box2` 2; the light rays show as it opens. With KH2's `F_EX040_EH` in its place (the
   KH2 prizes mod: lid `j3` paired with `box1`), the lid turned back on KH2's own hinge as the game opened it.
+
+## 34. A world's rooms
+
+Read in the decompilation and seen with a test mod adding two Dream Drop Distance rooms to `eh` (23 rooms of its own)
+and the `missions_waves` mission played in one, 2026-11-02. The port puts the rooms a mod adds after the world's own
+(`runtime/rooms/added.cpp`).
+
+- **The room table** (`Ov002_LoadWorldLinkResources`): entry 0 of `mi/wd/wd_<code>` (LZ-packed in the game's), u8 the
+  rooms' count, then each room's offset (u32, from the table). A room: s8 id, u8 exits, u8 objects, u8 its collision's
+  member (`Ov002_LoadPeerIntoSlot`), words not read (+0x14 one the studio calls a budget), its exits' offset at +0x1c
+  and its objects' at +0x20 (from the record; relocated at load), an object u8 flags, u8 its model's member. Members
+  and rooms are bytes; the P2's count is 9 bits.
+- **A mission's room is the room's index** in that table, not its id: `room = 5` loads the sixth record (eh's index 5
+  is a room with an empty collision, which `Coll_ResolveModelBlobPointers` cannot read). The ids repeat (eh has four
+  id 0s).
+- **24 rooms a world, the game's.** The link context (`data_ov002_0207fa10`) keeps which of the four loaded slots each
+  room is in at +0x17, 24 bytes, indexed by the room: `Ov002_LoadPeerIntoSlot` writes `aSlotMappings[nPeer]`, the
+  fills of `Ov002_LoadWorldLinkResources`, `Ov002_AllocSceneState` and `Ov002_ReleaseContextBuffers` are 24 bytes,
+  `Ov002_GetCtxTableByte` reads by index. Joined (`port/tools/prepare.py`) to a table of the port's that grows
+  (`runtime/rooms/slots.c`); the game's 24 bytes are still filled and no longer read.
+- **A room's collision is LZ-packed** where the game loads it (`Entity_LoadAndAttach`, `Archive_LoadFile` streaming
+  it unpacked into `ModelGroup_Open`): an added room's is written LZ11 (literals, `lz11_literals`).
+- **The lower screen's chain** (`Ov002_ShowSlotSummary` through `Ov002_SnapshotChainEntry`, looked up by the field
+  state's +0x86) has no entry for a room the game does not know: its null entry was read. Joined: no entry, nothing
+  shown.
+- **An added room's model** is a copy of room 0's model member (the game loads and draws a model there), drawn as the
+  mod's (`graphics` keyed by its member, `khdays_rooms_model`); its names are known from the start
+  (`khdays_origin_want`).
+- Seen: the waves mission started at the added room's origin, its Shadows, chest and emblem there, cleared; the
+  merged archive in the play, mission and multiplayer walks.
+- `KHDAYS_ROOMS_DUMP=<folder>` writes each world archive the mods add rooms to, as served (`wd_<code>`), to look at.

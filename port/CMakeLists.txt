@@ -572,6 +572,8 @@ add_executable(khdays-native
     runtime/missions/save_part.c       # ... kept beside each save file,
     runtime/missions/tables.c          # ... their rows in the game's tables,
     runtime/missions/worlds.c          # ... the worlds they are played in
+    runtime/rooms/slots.c              # a world's rooms' loaded slots, past the game's 24
+    runtime/rooms/added.cpp            # ... and the rooms the mods add to them
     runtime/missions/missions.c        # ... and all of it in the game
     runtime/characters/registry.c      # the mods' characters: read and numbered,
     runtime/characters/rules.c         # ... their forms' rules
@@ -865,6 +867,11 @@ if(KHDAYS_DECOMPRESSED)
     list(GET KHDAYS_DECOMPRESSED 0 KHDAYS_DECOMPRESSED_FIRST)
 endif()
 add_test(NAME khdays-missions COMMAND khdays-missions-test "${KHDAYS_DECOMPRESSED_FIRST}")
+# The rooms the mods add (runtime/rooms/): a world's archive with them, their indices and models; the slots past 24.
+add_executable(khdays-rooms-test tests/rooms_test.cpp runtime/rooms/added.cpp runtime/rooms/slots.c ../assets/src/message.cpp)
+target_include_directories(khdays-rooms-test PRIVATE ../assets/include)
+target_compile_options(khdays-rooms-test PRIVATE $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17> $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+add_test(NAME khdays-rooms COMMAND khdays-rooms-test)
 # The mods' characters (runtime/characters/): descriptions, refusals, numbers, movesets.
 add_executable(khdays-characters-test tests/characters_test.c runtime/characters/registry.c
     runtime/characters/rules.c runtime/characters/moveset.c)

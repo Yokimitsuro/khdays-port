@@ -62,6 +62,7 @@ static void a_description_read(void)
                                "name en = Second\n"
                                "objective en = Win.\n"
                                "world = he\n"
+                               "room = plaza_2 # a room the mod adds\n"
                                "unlock = cleared Other/clock\n";
     KhdaysMissions r = {0};
     Reports reports = {0};
@@ -80,6 +81,8 @@ static void a_description_read(void)
     CHECK(strcmp(m->identity, "Clocks/second-one") == 0);
     CHECK(m->category == 2); /* its world's: he */
     CHECK(m->room == 0 && strcmp(m->unlock_after, "Other/clock") == 0);
+    CHECK(m->room_key != NULL && strcmp(m->room_key, "plaza_2") == 0); /* its id given as the missions start */
+    CHECK(r.list[0].room_key == NULL);
     khdays_missions_free(&r);
 }
 

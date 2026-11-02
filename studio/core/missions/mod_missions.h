@@ -32,6 +32,7 @@ struct ModMission {
     int target = -1;  // eliminate: the enemy class to defeat; -1 none written
     int goal = 0;     // eliminate: how many of the target class; hearts: hearts; emblems: points (0: all of them)
     std::string world, unlock;
+    std::string room_key;   // a room the mod adds (room = <key>), else empty: `room` the world's room
     bool built = false;     // the port makes it from its places (khdays_mission_built), whatever its file or template
     bool own_file = false;  // missions/<key>/mission.p2, else its template's file as it is
     std::string start;      // where the players start, as written ("x y z facing"); empty: the file's own

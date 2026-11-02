@@ -12,6 +12,7 @@ extern "C" {
 #include "../core/events.h" // khdays_events_vblank_count
 #include "../core/rom.h"    // khdays_mods_find
 #include "../core/session_log.h"
+#include "../rooms/added.h"
 #include "../scripts/game_link.h" // khdays_link_paused
 #include "textures.h"
 #include "../core/window.h"
@@ -1510,6 +1511,12 @@ extern "C" void khdays_models_draw_begin(const void *resource)
             if (loaded) {
                 loaded->character = true;
                 khdays_log("models: %s drawn from %s, a mod's character", name, path);
+            }
+        } else if (named && khdays_rooms_model(name, path, sizeof(path))) {
+            loaded = load(name, path, file, offset); /* a room a mod adds: its own model */
+            if (loaded) {
+                loaded->room = true;
+                khdays_log("models: %s drawn from %s, a room a mod adds", name, path);
             }
         } else if (named) {
             /* glTF first, then binary glTF and FBX */
