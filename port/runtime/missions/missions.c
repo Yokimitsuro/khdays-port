@@ -486,6 +486,11 @@ int khdays_missions_spots_shown(void)
     return m != NULL;
 }
 
+int khdays_missions_playing(void)
+{
+    return playing() != NULL;
+}
+
 /* ---- The save part ------------------------------------------------------------------------------- */
 
 static void part_path(int file, char *path, size_t size)

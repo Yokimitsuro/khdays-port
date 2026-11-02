@@ -36,5 +36,8 @@ void khdays_missions_spawner_made(void *node);
 /* Whether the mission being played puts out its chests and emblems in Mission Mode (a new one's), which the
  * game's own leave out there (Ov002_ScriptSpawnTimedSet, Ov002_SpawnStateSpots). */
 int khdays_missions_spots_shown(void);
+/* Whether one of the mods' missions is being played: an enemy the game's own missions end by their scripts (one held
+ * at its defeat, waiting for them) is defeated there as the others are. */
+int khdays_missions_playing(void);
 
 #endif

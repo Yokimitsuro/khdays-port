@@ -2976,6 +2976,19 @@ HOOKS["ov008@0205bea0"] = [
     )
 ]
 
+# An enemy the game's own missions end by their scripts: Xigbar, at his defeat (state 3: its health at the fight's
+# limit or none), only stands, waiting for his mission's script to end the fight -- the "all defeated" of a mission
+# built by the port never came. In the mods' missions he is finished as a defeated enemy is (flags 0x1ae bits 0-1, as
+# Riku's Ov260_AiStep_SetFlags3AndEnd and the Shadow's Ov114_Action6Callback set them).
+HOOKS["ov283@020ced2c"] = [
+    (  # Ov283_AiEnterPatrol
+        "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n",
+        "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n"
+        "    { extern int khdays_missions_playing(void);\n"
+        "      if (khdays_missions_playing()) *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
+    )
+]
+
 HOOK_POINTS = [
     # (its file's key, its header as the decompilation writes it, its result's kind, its arguments' kinds)
     # combat and entities: an actor's HP set (a hit, a cure, a defeat)
