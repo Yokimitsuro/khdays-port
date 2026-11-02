@@ -420,6 +420,27 @@ their 3.7 degree rest difference, the coat fixed to the hips, the legs at their
 own lengths, the hip joints 5-6 cm from P_EX110's (13-16 before; the rest is the
 root's place, kept as it was).
 
+The hooded coat Roxas (B_EX390, as Days' hooded `roxas_ho_h` in `def_hho.p.z`)
+has N_EX830's bones at the same rest places (all within 0.3 cm, the same
+parents) but numbered apart: 273 bones, without N_EX830's hood (100-106), face
+and hair (171-223) and 276-281, with two keyblades of its own (95-116). So its
+files are N_EX830's renumbered: N 0-94 the same, 95-99 +22, 107-158 +15, 165-170
++9, 224-275 -29, 282-307 -35. Its drawstrings are its own (182-186, 187-191,
+under the head's base, 176, hanging straight down a centimetre into the coat's
+chest at rest); `docs/examples/secondary/B_EX390.secondary.txt` hangs them forward
+against a collider of their own over the chest. The keyblades are skinned to bones
+96-105 and 107-116 alone and hang 60 cm beside him at rest: `mesh_scale <bone> 0 0
+0` on each (a thousandth) hides them.
+
+Its collar is skinned rigidly to the neck (175, from 133 to 145 cm, blended into
+the hood's 178 only at the top), and P_EX110 turns its head 20-75 degrees on the
+neck in its idles, all of it in bone 113 (111 and 112 stay still on the neck,
+110). So 175-178 all take 113's turn (`bone 175 113` and so on; checked in game):
+on 110, the hood turned that far off the collar. 176-177 carry the drawstrings:
+left on 111-112, they turned with the neck while the collar turned with the head,
+and the strings ran back along the neck before they fell. In bones.txt, 175 pairs with Days'
+`Bip01_Head` and 176-178 have no pair of their own: they ride 175.
+
 **Weapons.** The game places what an actor holds on joints of its own model:
 `Ov030_CreateActor` looks up `ro_w_tg_L`, `ro_w_tg_R` and `roxas_R` (actor
 +0x514..+0x51c), and while the body is drawn `Obj_CaptureSelectedJointMtx`
