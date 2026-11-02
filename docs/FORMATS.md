@@ -255,8 +255,9 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   bytes at +0x1c, the first group's vertices then the second's (offsets from the PMO). A record, 24 bytes: u16 vertex
   count, u8 texture (in the PMO's list), u8 vertex size (20), u32 flags (the primitive in the top four bits: 3
   triangles, 4 a strip stitched by degenerate triangles), u16 at +0xa its drawing (0x20 blended, 0x40 added, 0x60
-  taken away), its colour at +0xc. A vertex: u16 u, v (0x800 is 1), its colour (R G B A), position f32 x3 (32768 is
-  1). Read this way, every section of the rooms read holds its records' vertices exactly.
+  taken away), its colour at +0xc. A vertex: u16 u, v (0x800 is 1), its colour (R G B A: red, green and blue 0x80
+  is 1 and brighter above it, as the PSP's -- many rooms never pass 0x80, the sunny ones do; the alpha's 1 is 0xff),
+  position f32 x3 (32768 is 1). Read this way, every section of the rooms read holds its records' vertices exactly.
 - **BCD** ("@bcd", version 0x0a): its parts (u32 at +8, their offset at +0xc), 0x30 bytes each: a box (min, max),
   u16 vertex and face counts at +0x18 / +0x1a, the vertices' and faces' offsets at +0x1c / +0x20 (from the file),
   then a tree the game's look-ups use (16-byte nodes: a split, its axis, two offsets) and its u16 face lists. A
@@ -298,7 +299,8 @@ our own reading of the player's files. The room's model is the remaster's own (i
   position f32 x3, colour (0x80 is 1), u, v f32 over its own texture, u32 0x1000 where a strip starts, else a
   triangle ends there (2 on the strip's odd ones).
 - **The .gvbl** (a sky): u32 0x4989, `DDDD` at +0x10, its group count at +0x14, the groups from +0x20, each after the
-  one before (the last ends the file in the 44 skies of the 22 rooms read): u32 0x25c, u32 its vertex count, 8 bytes,
+  one before (the last ends the file in the 44 skies of the 22 rooms read): u32 its kind (0x25c; 0x21c in Deep
+  Jungle's tz00_08, laid out the same), u32 its vertex count, 8 bytes,
   u32 its picture's offset in the `.bin` (the remaster's `.dds` asset named by it), u32, u32 0 or 5 (not read), u32,
   then its vertices as an `.mvbl` mesh's. A dome or a ring of clouds about the room's middle (KH1's centimetres, 20 to
   1,300 metres across), a cap, a moon; their vertices' alpha fades the clouds at the horizon. Drawn around the camera,

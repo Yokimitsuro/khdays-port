@@ -49,11 +49,10 @@ constexpr std::uint32_t kPlainPagesNumbered = 16;
 constexpr std::uint32_t kCollisionHeader = 0x48;
 constexpr std::size_t kCollisionVertex = 12;
 constexpr std::size_t kCollisionFace = 20;
-// A .gvbl (a sky): u32 0x4989, its group count at +0x14, the groups from +0x20, each after the one before: u32 0x25c,
-// u32 its vertex count, 8 bytes, u32 its picture's offset in the .bin (the remaster's asset named by it), u32, u32 0
-// or 5, u32, then its vertices as an .mvbl mesh's.
+// A .gvbl (a sky): u32 0x4989, its group count at +0x14, the groups from +0x20, each after the one before: u32 its
+// kind (0x25c; 0x21c in Deep Jungle's tz00_08, laid out the same), u32 its vertex count, 8 bytes, u32 its picture's
+// offset in the .bin (the remaster's asset named by it), u32, u32 0 or 5, u32, then its vertices as an .mvbl mesh's.
 constexpr std::uint32_t kGvbl = 0x4989;
-constexpr std::uint32_t kSkyGroup = 0x25c;
 constexpr std::size_t kSkyHeader = 0x20;
 constexpr std::size_t kSkyGroupHeader = 0x20;
 
@@ -316,9 +315,9 @@ void add_sky(Room* room, const std::uint8_t* data, std::size_t size, const Pictu
     const auto groups = r.get<std::uint32_t>(0x14);
     std::size_t at = kSkyHeader;
     for (std::size_t g = 0; g < groups; ++g) {
-        if (r.get<std::uint32_t>(at) != kSkyGroup)
-            throw std::runtime_error("a .gvbl group not where the one before it ends");
         const auto count = r.get<std::uint32_t>(at + 4);
+        if (at + kSkyGroupHeader + std::size_t{count} * kVertexSize > size)
+            throw std::runtime_error("a .gvbl group past the file's end");
         char hex[16];
         std::snprintf(hex, sizeof(hex), "%x", r.get<std::uint32_t>(at + 0x10));
         // its material: blended (the skies' layers fade by their vertices' alpha), one a picture

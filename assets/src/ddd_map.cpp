@@ -25,7 +25,8 @@ namespace {
 // bytes at +0x1c, the first group's vertices then the second's. A record, 24 bytes: u16 vertex count, u8 texture (in
 // the PMO's list), u8 vertex size, u32 flags (primitive in the top four bits: 3 triangles, 4 a strip stitched by
 // degenerate triangles), u16 at +0xa its drawing (0x20 blended, 0x40 added, 0x60 taken away), its colour at +0xc.
-// A vertex of 20 bytes: u16 u, v (0x800: 1), its colour (R G B A), position f32 x3 (x 32768).
+// A vertex of 20 bytes: u16 u, v (0x800: 1), its colour (R G B A: 0x80 is a colour's 1, brighter above, as
+// the PSP's; the alpha's 1 is 0xff), position f32 x3 (x 32768).
 constexpr std::size_t kObjectSize = 0x30;
 constexpr std::size_t kTextureInfoSize = 0x20;
 constexpr std::size_t kPmoTextures = 0xa0;
@@ -35,6 +36,13 @@ constexpr float kUvUnit = 2048.0F;
 constexpr float kPositionUnit = 32768.0F;
 constexpr unsigned kTriangles = 3, kStrip = 4;
 constexpr std::uint16_t kBlended = 0x60;  // blended, added or taken away: drawn see-through
+
+// A vertex's colour as glTF's (255 = 1.0): its red, green and blue doubled (0x80 is 1; brighter than 1.0 kept at
+// 1.0: the rooms lit by them, many never above 0x80, were drawn at half their light), its alpha as it is.
+std::array<std::uint8_t, 4> gltf_color(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) {
+    const auto lit = [](std::uint8_t c) { return static_cast<std::uint8_t>(std::min(255, c * 2)); };
+    return {lit(r), lit(g), lit(b), a};
+}
 // A BCD: "@bcd", its version (0x0a), its parts' count and offset at +8 / +0xc. A part, 0x30 bytes: its box (min, max:
 // f32 x3 each), u16 vertex and face counts at +0x18 / +0x1a, the vertices' offset at +0x1c and the faces' at +0x20
 // (from the file), then what speeds up the game's look-ups (a tree, its lists). A vertex: f32 x4 (w 1). A face, 48
@@ -250,8 +258,8 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
                 for (std::size_t k = 0; k < rec.count; ++k) {
                     const std::size_t v = v0 + (first + k) * kVertexSize;
                     prim.uvs.push_back({r.get<std::uint16_t>(v) / kUvUnit, r.get<std::uint16_t>(v + 2) / kUvUnit});
-                    prim.colors.push_back({r.get<std::uint8_t>(v + 4), r.get<std::uint8_t>(v + 5),
-                                           r.get<std::uint8_t>(v + 6), r.get<std::uint8_t>(v + 7)});
+                    prim.colors.push_back(gltf_color(r.get<std::uint8_t>(v + 4), r.get<std::uint8_t>(v + 5),
+                                                     r.get<std::uint8_t>(v + 6), r.get<std::uint8_t>(v + 7)));
                     std::array<float, 3> p{r.get<float>(v + 8) / kPositionUnit * scale[0],
                                            r.get<float>(v + 12) / kPositionUnit * scale[1],
                                            r.get<float>(v + 16) / kPositionUnit * scale[2]};

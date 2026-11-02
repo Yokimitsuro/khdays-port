@@ -274,7 +274,7 @@ void test_sky() {
     w.zeros(8);
     const std::array<std::uint32_t, 2> counts{4, 3};
     for (std::size_t g = 0; g < 2; ++g) {
-        w.u32(0x25c);
+        w.u32(g == 0 ? 0x25c : 0x21c);  // both kinds of group (Deep Jungle's tz00_08 has a 0x21c)
         w.u32(counts[g]);
         w.zeros(8);
         w.u32(0x1e2a50);  // its picture's offset
