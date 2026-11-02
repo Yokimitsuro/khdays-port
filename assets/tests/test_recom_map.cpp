@@ -13,7 +13,7 @@
 
 // A Re:Chain of Memories room made here byte by byte as the reader expects it (docs/FORMATS.md, "Re:Chain of
 // Memories' rooms"): an .AZF of one piece placed by its layout (turned a quarter about y and moved), its stream one
-// UNPACK of a strip of two triangles on its one texture; a .VTM's list.
+// UNPACK of a strip of two triangles on its one texture; a .VTM's list; an .mcd of one piece.
 
 namespace {
 
@@ -153,6 +153,76 @@ void test_room() {
     expect(threw, "a file that is no .AZF refused");
 }
 
+// An .mcd of one piece moved by 10 on x: a floor quad and a triangle on its plane (y down: its normal -y).
+Bytes mcd() {
+    Writer w;
+    w.text("@MCD", 4);
+    w.u32(3);
+    w.u16(1);  // pieces
+    w.u16(1);
+    w.zeros(0x4c - w.b.size());
+    w.u32(0x50);  // the pieces' section: the pieces at 0x60
+    w.zeros(0x60 - w.b.size());
+    w.u32(0);
+    w.u32(1);
+    w.u32(0);  // its number
+    w.u32(0);  // its mesh: right after the pieces
+    w.zeros(0x30);  // move, turn, scale (not read)
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r)
+            w.f32(c == r ? 1.0F : (c == 3 && r == 0 ? 10.0F : 0.0F));
+    w.zeros(0x40);  // its inverse
+    const std::size_t mesh = w.b.size();
+    w.zeros(0x20);  // its grid
+    for (const std::uint32_t at : {0x40U, 0x40U, 0x50U, 0x90U, 0x90U, 0x90U, 0xc0U, 0xc0U})
+        w.u32(at);
+    w.zeros(mesh + 0x40 - w.b.size());
+    w.f32(0);
+    w.f32(-1);
+    w.f32(0);
+    w.f32(0);  // its plane
+    for (const auto& v : {std::array<float, 3>{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}) {
+        w.f32(v[0]);
+        w.f32(v[1]);
+        w.f32(v[2]);
+        w.f32(1);
+    }
+    for (const auto& c : {std::array<unsigned, 4>{0, 1, 2, 3}, {0, 1, 2, 2}}) {
+        w.u16(0);
+        w.u16(0x80);
+        w.u16(0);  // its plane
+        w.zeros(8);
+        for (const unsigned i : c)
+            w.u16(i);
+        w.u16(1);
+    }
+    return w.b;
+}
+
+void test_collision() {
+    const Bytes data = mcd();
+    const auto scene = recom::collision_scene(data.data(), data.size(), "MP990001");
+    const auto& p = scene.meshes.at(0).primitives.at(0);
+    expect(p.indices.size() == 9, "a quad and a triangle: " + std::to_string(p.indices.size() / 3));
+    for (std::size_t i = 0; i < p.positions.size(); i += 3) {
+        const auto& a = p.positions[i];
+        const auto& b = p.positions[i + 1];
+        const auto& c = p.positions[i + 2];
+        const float up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+        expect(up > 0, "triangle " + std::to_string(i / 3) + " facing up, upright");
+        for (const auto& q : {a, b, c})
+            expect(q[0] >= 10 - 1e-4F && q[0] <= 11 + 1e-4F && q[2] <= 1e-4F, "moved by its piece, z turned");
+    }
+    bool threw = false;
+    try {
+        const Bytes junk(0x60, 0);
+        (void)recom::collision_scene(junk.data(), junk.size(), "x");
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    expect(threw, "a file that is no .mcd refused");
+}
+
 void test_picture_list() {
     Writer w;
     w.u32(0x40);
@@ -173,6 +243,7 @@ int main() {
     try {
         test_room();
         test_picture_list();
+        test_collision();
         std::cout << "Re:CoM map test passed\n";
         return 0;
     } catch (const std::exception& e) {

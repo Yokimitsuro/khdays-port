@@ -27,6 +27,14 @@ constexpr std::size_t kPlace = 0x40;
 constexpr std::size_t kVertex = 64;
 constexpr std::uint32_t kStripStart = 0xffff, kOdd = 0x20;
 constexpr float kTenthDegree = 3.14159265358979323846F / 1800.0F;
+// .mcd: "@MCD", u32 3, u16 its pieces' count at +8, the pieces' section at the u32 at +0x4c (its pieces 0x10 after),
+// 0xc0 bytes a piece: u32 0, u32 1, u32 its number, u32 its mesh's offset (from the end of the pieces), its move,
+// turn and scale (f32 x4 each), its matrix (f32 x16, by columns) and its inverse. A mesh: a grid (0x20 bytes), its
+// sections' offsets (u32 x8, from the mesh: 0x40 first) -- the grid's cells, its planes (f32 x4: normal, distance),
+// its vertices (f32 x4), ..., its faces from the sixth, 24 bytes each: u16 x2 (0, what it is), u16 its plane, u16 x4
+// its edges', u16 x4 its corners (a corner repeated: a triangle), u16.
+constexpr std::size_t kMcdPiece = 0xc0;
+constexpr std::size_t kMcdFace = 24;
 
 class Reader {
 public:
@@ -240,6 +248,85 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     for (auto& [mat, mesh] : by_material)
         room.scene.meshes.push_back(std::move(mesh));
     return room;
+}
+
+Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::string& name) {
+    const Reader r(data, size);
+    if (size < 0x50 || std::memcmp(data, "@MCD", 4) != 0)
+        throw std::runtime_error("not an .mcd");
+    const auto pieces = r.get<std::uint16_t>(8);
+    const std::size_t first = std::size_t{r.get<std::uint32_t>(0x4c)} + 0x10;
+    const std::size_t meshes = first + pieces * kMcdPiece;
+    Scene scene;
+    scene.name = name + " collision";
+    scene.nodes.push_back({"room"});
+    SceneMaterial mat;
+    mat.name = "recom collision";
+    mat.double_sided = true;  // a wall stops from both sides
+    scene.materials.push_back(mat);
+    ScenePrimitive prim;
+    auto corner = [&](const std::array<float, 3>& p) {
+        prim.indices.push_back(static_cast<std::uint32_t>(prim.positions.size()));
+        prim.positions.push_back({p[0], -p[1], -p[2]});  // Re:CoM's axes, y down, turned upright
+        prim.uvs.push_back({0.0F, 0.0F});
+        prim.colors.push_back({255, 255, 255, 255});
+    };
+    for (std::size_t k = 0; k < pieces; ++k) {
+        const std::size_t piece = first + k * kMcdPiece;
+        M4 matrix{};
+        for (std::size_t i = 0; i < 16; ++i)
+            matrix[i] = r.get<float>(piece + 0x40 + 4 * i);
+        const std::size_t mesh = meshes + r.get<std::uint32_t>(piece + 12);
+        std::array<std::uint32_t, 8> at{};
+        for (std::size_t i = 0; i < 8; ++i)
+            at[i] = r.get<std::uint32_t>(mesh + 0x20 + 4 * i);
+        if (at[0] != 0x40)
+            throw std::runtime_error("piece " + std::to_string(k) + "'s mesh is not where its offset says");
+        const std::size_t planes = (at[2] - at[1]) / 16, vertices = (at[3] - at[2]) / 16;
+        const std::size_t faces = (at[6] - at[5]) / kMcdFace;
+        auto vertex = [&](std::uint16_t i) {
+            const std::size_t v = mesh + at[2] + std::size_t{i} * 16;
+            return apply(matrix, {r.get<float>(v), r.get<float>(v + 4), r.get<float>(v + 8)});
+        };
+        for (std::size_t f = 0; f < faces; ++f) {
+            const std::size_t face = mesh + at[5] + f * kMcdFace;
+            const auto plane = r.get<std::uint16_t>(face + 4);
+            std::vector<std::uint16_t> c;
+            for (std::size_t i = 0; i < 4; ++i) {
+                const auto v = r.get<std::uint16_t>(face + 14 + 2 * i);
+                if (v >= vertices)
+                    throw std::runtime_error("a face's corner past its mesh's vertices");
+                if (std::find(c.begin(), c.end(), v) == c.end())
+                    c.push_back(v);
+            }
+            if (c.size() < 3 || plane >= planes)
+                continue;
+            // turned to face its plane's normal (placed by the piece's matrix, without its move)
+            const std::size_t p = mesh + at[1] + std::size_t{plane} * 16;
+            std::array<float, 3> n{r.get<float>(p), r.get<float>(p + 4), r.get<float>(p + 8)};
+            n = {matrix[0] * n[0] + matrix[4] * n[1] + matrix[8] * n[2],
+                 matrix[1] * n[0] + matrix[5] * n[1] + matrix[9] * n[2],
+                 matrix[2] * n[0] + matrix[6] * n[1] + matrix[10] * n[2]};
+            auto triangle = [&](std::uint16_t a, std::uint16_t b, std::uint16_t d) {
+                const auto pa = vertex(a), pb = vertex(b), pd = vertex(d);
+                const std::array<float, 3> e0{pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]};
+                const std::array<float, 3> e1{pd[0] - pa[0], pd[1] - pa[1], pd[2] - pa[2]};
+                const std::array<float, 3> m{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                             e0[0] * e1[1] - e0[1] * e1[0]};
+                const bool turn = m[0] * n[0] + m[1] * n[1] + m[2] * n[2] < 0;
+                corner(pa);
+                corner(turn ? pd : pb);
+                corner(turn ? pb : pd);
+            };
+            triangle(c[0], c[1], c[2]);
+            if (c.size() == 4)
+                triangle(c[0], c[2], c[3]);
+        }
+    }
+    if (prim.positions.empty())
+        throw std::runtime_error("an .mcd with no faces");
+    scene.meshes.push_back({"collision", 0, {}, {std::move(prim)}});
+    return scene;
 }
 
 }  // namespace khdays::assets::recom

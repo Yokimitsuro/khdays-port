@@ -278,7 +278,7 @@ Not the game's: KINGDOM HEARTS Re:Chain of Memories' rooms, in the player's KING
 all of it our own reading of the player's files.
 
 - **Where**: `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF` (the room), `.VTM` and `.RTM` (its pictures; the remaster's HD ones are
-  the `.RTM`'s, `<name>_tm2.dds`), `.mcd` (its floors and walls, "@MCD" version 3: not read yet), `.ALF`, `.AFF`. 627
+  the `.RTM`'s, `<name>_tm2.dds`), `.mcd` (its floors and walls, below), `.ALF`, `.AFF`. 627
   rooms in 18 groups (MAP00 to MAP30).
 - **.VTM, .RTM**: 32-byte entries, as many as the first one's offset says: u32 the picture's offset, its name
   (`gai_a_00.tm2`, 24 bytes), u32; each picture a TIM2.
@@ -290,4 +290,12 @@ all of it our own reading of the player's files.
   +4 its vertex count), the GIF tag, then 64 bytes a vertex: u32 what it ends (0xffff nothing: a strip starts; 0x20
   an odd triangle; 0 an even one), position f32 x3 at +0x10, colour u32 x4 at +0x20 (0x80 is 1), s, t, q f32 at
   +0x30 and its texture (u32, among the piece's) at +0x3c.
+- **.mcd** ("@MCD", version 3): u16 its pieces' count at +8, then a grid of the room (an origin and a cell size, f32 x3
+  each); the pieces 0x10 past the u32 at +0x4c, 0xc0 bytes each: u32 0, u32 1, u32 its number, u32 its mesh's offset
+  (from the end of the pieces), its move, turn and scale (f32 x4 each), its matrix (f32 x16, by columns: its move in
+  the fourth) and that matrix's inverse. A mesh: a grid of its own (0x20 bytes), its sections' offsets (u32 x8, from
+  the mesh, the first 0x40): its cells (u16 first face, count), its planes (f32 x4: normal, distance; a floor's normal
+  -y), its vertices (f32 x4), two empty in the rooms read, its faces, 24 bytes each -- u16 0, u16 what it is (0x80),
+  u16 its plane, u16 x4 its edges', u16 x4 its corners (one repeated: a triangle), u16 --, and a seventh. Every face's
+  corners lie on its plane (1,369 faces of three rooms); 98% of the floors lie on the model's.
 - **Units and axes**: metres (stairs rise 0.25 and 0.27), y down: turned upright as (x, -y, -z).

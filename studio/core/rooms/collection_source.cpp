@@ -527,7 +527,20 @@ bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, c
             made->triangles += p.indices.size() / 3;
     made->report = std::move(room.report);
     made->report.insert(made->report.end(), notes.begin(), notes.end());
-    made->report.push_back("no collision of its own read yet (.mcd): made from the model when it replaces a room");
+    // its floors and walls: the .mcd
+    const auto mcd = read_all(folder / "original" / path_u8(base + ".mcd"));
+    try {
+        if (mcd.empty())
+            throw std::runtime_error("not taken out");
+        const auto scene = khdays::assets::recom::collision_scene(mcd.data(), mcd.size(), map.name);
+        std::ofstream file(collection_made_collision(settings.root, game, map.name), std::ios::binary);
+        file << khdays::assets::scene_to_gltf(scene);
+        made->collision = static_cast<bool>(file);
+        if (!made->collision)
+            made->report.push_back("its collision cannot be written");
+    } catch (const std::exception& e) {
+        made->report.push_back(base + ".mcd: " + e.what() + "; its collision made from the model instead");
+    }
     return true;
 }
 

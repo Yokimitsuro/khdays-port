@@ -40,4 +40,8 @@ using PictureSink = std::function<void(const std::string& file, const DecodedTex
 Room room_model(const std::uint8_t* data, std::size_t size, const std::string& name, const PictureSource& picture,
                 const PictureSink& write_picture);
 
+// `data` a room's .mcd ("@MCD" version 3): every face of its pieces' floors and walls, each piece by its matrix, turned
+// upright as the model is, as KH2's collision scene is made. Throws std::runtime_error when it is no .mcd.
+Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::string& name);
+
 }  // namespace khdays::assets::recom
