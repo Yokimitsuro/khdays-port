@@ -242,3 +242,31 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   triangle), then what it is (u32 at +0x20 1 on floors; the low four bits of +0x24, 1 a floor, 2 a wall).
 - **Units**: metres, as Days's: the stairs rise 0.17 to 0.25 (eh_01, nd_02); the floors and walls lie in the model's
   space (eh_01: 47,075 of its 48,852 vertices inside the BCD's box).
+
+## KINGDOM HEARTS FINAL MIX's rooms
+
+Not the game's: KINGDOM HEARTS FINAL MIX's rooms, in the player's KINGDOM HEARTS HD 1.5+2.5 ReMIX (kh1_first to
+kh1_third), as `assets/src/kh1_map.cpp` reads them for the studio. No public documentation of them was found: all of it
+our own reading of the player's files. The room's model is the remaster's own (its `.mvbl` asset), not the PS2's.
+
+- **Where**: `<w>00_<nn>.bin` and `.img` (`<w>.wdt` the world's). The `.bin`: u32 entry count, then from +0x10 each
+  entry's offset and size. In the rooms read its first entry is the floors and walls, its second the PS2's room model
+  (the remaster's `.mvbl` asset in its place, named by its offset), its third and fourth skies (`.gvbl` assets, not
+  read yet).
+- **The .img**: its palettes from +0x100, its texture pages from the u32 at +0x18 (their bytes at +0x1c), 64 KB each.
+  Its HD pictures are named `<that + page x 0x10000 + n>` in hexadecimal (`-f900.dds`, `-1f903.dds`), n a texture's
+  place among its page's, the pages counted as the remaster numbers them: the plain ones from the lowest address,
+  sixteen at most (0x2600 to 0x3500), then those kept in the picture buffer's spare bits (PSMT8H at 0x0, 0x400...). A
+  plain page past the sixteen (dc00_01's 0x3600) has the one HD picture without a number, `-_NoName.dds`. Checked on
+  22 rooms of the 15 worlds.
+- **The .mvbl**: u32 0x9696, its mesh table's length and its textures' count; the textures from +0x10, 16 bytes each
+  (the PS2's TEX0 and CLAMP words: the page in TEX0's bits 0-13, its kind in bits 20-25; CLAMP 3 repeats); each mesh's
+  box (0x80 bytes); the marks 0x11111111 to 0x44444444; the mesh table (16 bytes a mesh: u32 0x30000000, its offset).
+  A mesh: u32 0x01234567, u32 1, the vertex count at +0x14, its texture's 16 bytes at +0x20, then 32-byte vertices:
+  position f32 x3, colour (0x80 is 1), u, v f32 over its own texture, u32 0x1000 where a strip starts, else a
+  triangle ends there (2 on the strip's odd ones).
+- **Floors and walls** (the `.bin`'s first entry): u32 0x48, then eight sections' offsets and lengths, each after the
+  last; the second its vertices (f32 x3), the fourth its faces, 20 bytes each: corners (i16 x4, the fourth -1 for a
+  triangle), u32 its normal's place in a table of its own, f32 its plane's distance, u32 what it is. Each face's plane
+  agrees with its corners (95 to 100% of the faces of the 22 rooms; the others thin or flat).
+- **Units and axes**: centimetres (stairs rise 20), y down: turned upright as (x, -y, -z).

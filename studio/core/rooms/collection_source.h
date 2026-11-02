@@ -21,8 +21,8 @@ enum class CollectionGame { kh1, kh2, recom, ddd };
 
 // A game whose rooms are read: its code (a room of it is named "<code>:<map>"), its name, its collection's key in the
 // install's record (setup/state.json: "1.5+2.5", "2.8"), its own executable, the packages its maps are in, and one of
-// its units in Days's (KH2's are centimetres, 0.01; Dream Drop Distance's metres, as Days's: its stairs rise 0.17 to
-// 0.25; 0 while not measured).
+// its units in Days's (KH1's and KH2's are centimetres, 0.01: KH1's stairs rise 20; Dream Drop Distance's metres, as
+// Days's: its stairs rise 0.17 to 0.25; 0 while not measured).
 struct CollectionGameInfo {
     CollectionGame game;
     const char* code;
@@ -62,7 +62,7 @@ std::filesystem::path collection_folder(const std::filesystem::path& root, const
 bool collection_maps(const Settings& settings, const CollectionGameInfo& game, std::vector<CollectionMap>* maps,
                      std::string* why);
 
-// Whether the studio reads `game`'s rooms (KH2's and Dream Drop Distance's so far).
+// Whether the studio reads `game`'s rooms (KH1's, KH2's and Dream Drop Distance's so far).
 bool collection_rooms_read(const CollectionGameInfo& game);
 
 // Whether `map` is a stage the player falls through rather than walks (Dream Drop Distance's Dive, its worlds' _60 to

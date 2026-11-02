@@ -98,6 +98,7 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/kh2_room.cpp"           # made into a scene for glTF
     "${ROOT}/assets/src/dds.cpp"                # and their HD pictures
     "${ROOT}/assets/src/ddd_map.cpp"            # Dream Drop Distance's rooms, from the player's 2.8 copy
+    "${ROOT}/assets/src/kh1_map.cpp"            # KINGDOM HEARTS FINAL MIX's rooms, from the player's 1.5+2.5 copy
     "${ROOT}/assets/src/kh2_sequence.cpp"       # KH2's sequences' quads (the prizes' effects)
     "${ROOT}/port/gfx/kh2_sequence.cpp"         # ... drawn by the port's reference renderer
     "${ROOT}/port/ui/prize_effects_model.cpp"   # a prize's effect, as the port reads it

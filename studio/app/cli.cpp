@@ -633,9 +633,12 @@ int replace_room(const fs::path& root, const std::vector<std::string>& args) {
         given[4] = u8(collection_made_model(root, *game, name));
         // own-collision: the map's own game's floors and walls, placed like its model
         if (args.size() >= 6 && args[5] == "own-collision") {
-            if (!made.collision)
-                return print_outcome(false, {}, args[4] + " has no collision of its own to use");
-            given[5] = u8(collection_made_collision(root, *game, name));
+            if (made.collision) {
+                given[5] = u8(collection_made_collision(root, *game, name));
+            } else {
+                std::printf("%s has no collision of its own read: made from its model\n", args[4].c_str());
+                given[5].clear();
+            }
         }
     }
     if (args.size() >= 5 && args[4].rfind("kh2:", 0) == 0) {

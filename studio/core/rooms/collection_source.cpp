@@ -6,6 +6,7 @@
 #include "core/rooms/kh2_source.h"
 
 #include "khdays/assets/ddd_map.h"
+#include "khdays/assets/kh1_map.h"
 #include "khdays/assets/gltf_export.h"
 
 extern "C" {
@@ -77,7 +78,7 @@ fs::path package_base(const fs::path& copy, const std::string& package) {
 const std::vector<CollectionGameInfo>& collection_games() {
     static const std::vector<CollectionGameInfo> games = {
         {CollectionGame::kh1, "kh1", "KINGDOM HEARTS FINAL MIX", "1.5+2.5", "KINGDOM HEARTS FINAL MIX.exe",
-         {"kh1_first", "kh1_second", "kh1_third"}, 0.0F},
+         {"kh1_first", "kh1_second", "kh1_third"}, 0.01F},
         {CollectionGame::kh2, "kh2", "KINGDOM HEARTS II FINAL MIX", "1.5+2.5", "KINGDOM HEARTS II FINAL MIX.exe",
          {"kh2_first", "kh2_fifth", "kh2_sixth"}, 0.01F},
         {CollectionGame::recom, "recom", "KINGDOM HEARTS Re:Chain of Memories", "1.5+2.5",
@@ -258,7 +259,7 @@ bool take_out_collection_map(const Settings& settings, const CollectionGameInfo&
 }
 
 bool collection_rooms_read(const CollectionGameInfo& game) {
-    return game.game == CollectionGame::kh2 || game.game == CollectionGame::ddd;
+    return game.game == CollectionGame::kh2 || game.game == CollectionGame::ddd || game.game == CollectionGame::kh1;
 }
 
 bool collection_map_falling(const CollectionGameInfo& game, const CollectionMap& map) {
@@ -369,6 +370,80 @@ bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, con
     return true;
 }
 
+// A KINGDOM HEARTS FINAL MIX room: the remaster's model of it (the .bin entry's .mvbl asset), its textures the
+// .img's HD pictures.
+bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
+                   const fs::path& out, CollectionMade* made, std::string* why) {
+    const fs::path folder = collection_folder(settings.root, game);
+    const std::string bin = map.name + ".bin", img = map.name + ".img";
+    const auto img_data = read_all(folder / "original" / path_u8(img));
+    if (img_data.empty()) {
+        *why = "no " + img + " taken out of the collection";
+        return false;
+    }
+    // the room's model: the .bin's one .mvbl asset
+    fs::path mvbl;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(folder / "remastered" / path_u8(bin), ec)) {
+        if (e.path().extension() == ".mvbl")
+            mvbl = e.path();
+    }
+    const auto data = mvbl.empty() ? std::vector<std::uint8_t>() : read_all(mvbl);
+    if (data.empty()) {
+        *why = "no HD model (.mvbl) of " + bin + " taken out of the collection";
+        return false;
+    }
+    fs::create_directories(out.parent_path(), ec);
+    std::string failed;
+    khdays::assets::kh1::Room room;
+    try {
+        room = khdays::assets::kh1::room_model(
+            data.data(), data.size(), map.name, khdays::assets::kh1::img_pages(img_data.data(), img_data.size()),
+            [&](const std::string& name) {
+                std::error_code exists;
+                const fs::path hd = folder / "remastered" / path_u8(img) / path_u8("-" + name + ".dds");
+                return fs::is_regular_file(hd, exists) ? hd : fs::path();
+            },
+            [&](const std::string& file, const khdays::assets::DecodedTexture& picture) {
+                const char* e = khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), picture.rgba.data(),
+                                                 picture.width, picture.height);
+                if (e != nullptr && failed.empty())
+                    failed = file + ": " + e;
+                ++made->pictures;
+            });
+    } catch (const std::exception& e) {
+        *why = u8(mvbl.filename()) + ": " + e.what();
+        return false;
+    }
+    if (!failed.empty()) {
+        *why = "a picture cannot be written: " + failed;
+        return false;
+    }
+    std::ofstream gltf(out, std::ios::binary);
+    gltf << khdays::assets::scene_to_gltf(room.scene);
+    if (!gltf) {
+        *why = "cannot write " + u8(out);
+        return false;
+    }
+    for (const auto& mesh : room.scene.meshes)
+        for (const auto& p : mesh.primitives)
+            made->triangles += p.indices.size() / 3;
+    made->report = std::move(room.report);
+    // its floors and walls: the .bin's collision entry
+    const auto bin_data = read_all(folder / "original" / path_u8(bin));
+    try {
+        const auto scene = khdays::assets::kh1::collision_scene(bin_data.data(), bin_data.size(), map.name);
+        std::ofstream file(collection_made_collision(settings.root, game, map.name), std::ios::binary);
+        file << khdays::assets::scene_to_gltf(scene);
+        made->collision = static_cast<bool>(file);
+        if (!made->collision)
+            made->report.push_back("its collision cannot be written");
+    } catch (const std::exception& e) {
+        made->report.push_back(bin + ": " + e.what() + "; its collision made from the model instead");
+    }
+    return true;
+}
+
 }  // namespace
 
 bool make_collection_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
@@ -394,6 +469,7 @@ bool make_collection_room(const Settings& settings, const CollectionGameInfo& ga
     const fs::path out = collection_made_model(settings.root, game, map.name);
     switch (game.game) {
     case CollectionGame::ddd: return make_ddd_room(settings, game, map, out, made, why);
+    case CollectionGame::kh1: return make_kh1_room(settings, game, map, out, made, why);
     default: *why = std::string(game.name) + "'s rooms are not read yet"; return false;
     }
 }
