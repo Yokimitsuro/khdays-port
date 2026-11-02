@@ -230,7 +230,10 @@ replaced room's are, on room 0's records and markers). Another game's map is pla
 floor at height 0 and one of its floors under the origin; the modder's own model as it is. A new mission plays there
 with `room = <key>` (its waves, start and places in the room's own coordinates: `start = 0 0 0 0` is on its floor);
 the port puts the rooms after the world's own when it reads the world (docs/RUNTIME_MAP.md section 34). Added rooms
-have no exits: only missions reach them.
+have no exits: only missions reach them. Each is given its map on the lower screen, drawn from its floors as the
+game's are (`core/rooms/room_map.h`: `map.png` in the map's colours, a prop's few pixels drawn as the floor, and
+`map.txt`: where its origin falls, its scale -- the finest of the game's that holds it -- and its name,
+`name.<language>` for one language); both can be edited (docs/FORMATS.md, "Room maps").
 
     khdays-studio --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]
     khdays-studio --remove-room <Mod> <world> <key>

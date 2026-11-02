@@ -10,6 +10,10 @@ static const struct {
 } worlds[KHDAYS_GAME_WORLDS] = {{"tt", 1}, {"aw", 1}, {"he", 1}, {"al", 1}, {"eh", 1}, {"nm", 1},
                                 {"hb", 0}, {"zz", 1}, {"pp", 1}, {"bb", 1}, {"tw", 1}, {"pi", 0}};
 
+/* The game's map chains by world (data_ov002_0207ee08, read by Ov002_QueuePanelGraphics): each world's member of
+ * UI/btl/<language>/map.p2, -1 none. */
+static const int map_chains[KHDAYS_GAME_WORLDS] = {0, 1, 2, 3, 4, 5, -1, -1, 6, 7, -1, -1};
+
 int khdays_world_index(const char *code)
 {
     for (int i = 0; code != NULL && i < KHDAYS_GAME_WORLDS; ++i) {
@@ -23,4 +27,9 @@ int khdays_world_index(const char *code)
 const char *khdays_world_code(int index)
 {
     return index >= 0 && index < KHDAYS_GAME_WORLDS ? worlds[index].code : NULL;
+}
+
+int khdays_world_map_chain(int index)
+{
+    return index >= 0 && index < KHDAYS_GAME_WORLDS ? map_chains[index] : -1;
 }

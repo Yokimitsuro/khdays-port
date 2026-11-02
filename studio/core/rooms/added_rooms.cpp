@@ -3,6 +3,7 @@
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
 #include "core/rooms/room_collision.h"
+#include "core/rooms/room_map.h"
 #include "core/rooms/worlds.h"
 
 #include <fstream>
@@ -116,12 +117,11 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
     khdays::assets::ImportedModel placed;
     if (!placed_model(collision_model.empty() ? model : collision_model, place, &placed, why))
         return false;
+    const CollisionSource source = collision_source(placed, collision_model.empty());
     RoomCollision built;
     CollisionReport report;
-    if (!build_collision(collision_source(placed, collision_model.empty()), original, CollisionRules{}, &built, &report,
-                         why)) {
+    if (!build_collision(source, original, CollisionRules{}, &built, &report, why))
         return false;
-    }
     const std::string problem = check_collision(built, original);
     if (!problem.empty())
         return fail_with(why, "the collision made is not one the game reads: " + problem);
@@ -145,6 +145,10 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
         });
     if (!saved.ok)
         return fail_with(why, "collision.bin: " + saved.why);
+    // its map on the lower screen, from its floors
+    const RoomMap map = room_map(source, CollisionRules{}.ground_limit);
+    if (!write_room_map(map, folder, key, room_map_palette(nitrofs), why))
+        return false;
     // the model drawn
     khdays::assets::ImportedModel drawn;
     if (!placed_model(model, place, &drawn, why))
@@ -171,6 +175,8 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
                          " ceilings, " + std::to_string(report.bytes) + " bytes");
         for (const auto& warning : report.warnings)
             lines->push_back(world + " room " + key + ": " + warning_text(warning));
+        lines->push_back(world + " room " + key + ": its map at " + std::to_string(map.cell) + " a pixel, " +
+                         std::to_string(map.width) + " x " + std::to_string(map.height) + " tiles");
         lines->push_back(u8(folder) + " written");
     }
     return true;

@@ -5644,8 +5644,11 @@ and the `missions_waves` mission played in one, 2026-11-02. The port puts the ro
 - **A room's collision is LZ-packed** where the game loads it (`Entity_LoadAndAttach`, `Archive_LoadFile` streaming
   it unpacked into `ModelGroup_Open`): an added room's is written LZ11 (literals, `lz11_literals`).
 - **The lower screen's chain** (`Ov002_ShowSlotSummary` through `Ov002_SnapshotChainEntry`, looked up by the field
-  state's +0x86) has no entry for a room the game does not know: its null entry was read. Joined: no entry, nothing
-  shown.
+  state's +0x86, the room's id) is the room's map (docs/FORMATS.md, "Room maps"): its box and scale, its picture, its
+  name. A room the game does not know has no entry: its null entry was read. Joined: no entry, nothing shown. An added
+  room with a map (`map.png`, `map.txt`) is given one: its picture after `UI/btl/mapchr.p2`'s, its entry in its world's
+  chain of each `UI/btl/<language>/map.p2` (`khdays_rooms_merge`, its id and picture planned from the game's files
+  whichever is read first). Seen: the waves mission in the added plaza with its map in the corner, the player on it.
 - **An added room's model** is a copy of room 0's model member (the game loads and draws a model there), drawn as the
   mod's (`graphics` keyed by its member, `khdays_rooms_model`); its names are known from the start
   (`khdays_origin_want`).

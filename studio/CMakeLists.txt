@@ -181,6 +181,7 @@ add_library(khdays-studio-core STATIC
     core/rooms/room_change.cpp
     core/rooms/room_collision.cpp
     core/rooms/room_export.cpp
+    core/rooms/room_map.cpp
     core/mods/settings.cpp
     core/sheets/sheets.cpp
     core/rooms/worlds.cpp)

@@ -868,8 +868,10 @@ if(KHDAYS_DECOMPRESSED)
 endif()
 add_test(NAME khdays-missions COMMAND khdays-missions-test "${KHDAYS_DECOMPRESSED_FIRST}")
 # The rooms the mods add (runtime/rooms/): a world's archive with them, their indices and models; the slots past 24.
-add_executable(khdays-rooms-test tests/rooms_test.cpp runtime/rooms/added.cpp runtime/rooms/slots.c ../assets/src/message.cpp)
-target_include_directories(khdays-rooms-test PRIVATE ../assets/include)
+add_executable(khdays-rooms-test tests/rooms_test.cpp runtime/rooms/added.cpp runtime/rooms/slots.c
+               runtime/missions/worlds.c host/render/png_io.c ../assets/src/message.cpp)
+target_include_directories(khdays-rooms-test PRIVATE ../assets/include "${stb_SOURCE_DIR}")
+target_link_libraries(khdays-rooms-test PRIVATE SDL3::SDL3)
 target_compile_options(khdays-rooms-test PRIVATE $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17> $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-rooms COMMAND khdays-rooms-test)
 # The mods' characters (runtime/characters/): descriptions, refusals, numbers, movesets.

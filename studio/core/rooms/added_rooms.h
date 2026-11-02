@@ -1,7 +1,8 @@
 // The rooms a mod adds to a world (spec 040): mods/<Mod>/rooms/rooms.txt lists them, a line "<key> <world>" each, their
 // files in rooms/<world>/<key>/ -- room.gltf and its pictures (the model drawn), collision.bin (its floors and walls
-// as the game reads them). The port puts them after the world's own rooms (port/runtime/rooms/added.cpp); a new
-// mission names one as its room (`room = <key>`).
+// as the game reads them), map.png and map.txt (its map on the lower screen, core/rooms/room_map.h). The port puts
+// them after the world's own rooms (port/runtime/rooms/added.cpp); a new mission names one as its room
+// (`room = <key>`).
 #pragma once
 
 #include "core/rooms/room_change.h"
@@ -32,7 +33,8 @@ bool added_room_place(const khdays::assets::ImportedModel& floors, float units, 
 
 // Adds room `key` to `world` (or makes it again): `model` placed by `place` written as its room.gltf with its
 // pictures, its floors and walls built from `collision_model` (empty: the model's own visible triangles) as a replaced
-// room's are, on room 0's records and markers, written as collision.bin; the room listed. `lines` what was done.
+// room's are, on room 0's records and markers, written as collision.bin, its map on the lower screen drawn from its
+// floors (map.png, map.txt); the room listed. `lines` what was done.
 bool add_room(const std::filesystem::path& nitrofs, const std::filesystem::path& mod_dir, const std::string& world,
               const std::string& key, const std::filesystem::path& model, const RoomPlacement& place,
               const std::filesystem::path& collision_model, std::vector<std::string>* lines, std::string* why);

@@ -166,6 +166,28 @@ entry 1 the gate models, then each room's collision and its KAPH models.
 
 What is not read is kept byte for byte and written back as it was.
 
+## Room maps
+
+A room's map on the lower screen (`Ov002_QueuePanelGraphics`, `Ov002_ShowSlotSummary`, `Ov002_SwapOwnerBlock`,
+`Ov002_ScreenToCell`), read from the decompilation and the game's files. Two P2 archives hold them:
+`UI/btl/<language>/map.p2` (a world's rooms' chain, names in that language) and `UI/btl/mapchr.p2` (the pictures).
+
+- **A world's chain**: `map.p2`'s member by world (`data_ov002_0207ee08`: tt to nm 0-5, pp 6, bb 7; hb, zz, tw and pi
+  none), looked up by the field's room id (`Ov002_FindChainEntryById`; the room table's id byte: tt's thirteen entries
+  are thirteen of its seventeen rooms' ids). An entry: u32 its length (-1 ends the chain), u16 where its name starts
+  (0x18), u16 the room's id, u16 x2 the pixel of the picture the room's x = z = 0 falls on, u16 x2 the part of the
+  picture the map holds in 8-pixel tiles (15 x 10, the panel's 120 x 80 pixels, for most), u32 the game units a pixel
+  spans (20.12: 0x666 = 0.4 and 0xccd = 0.8 in tt), u32 its picture's member of `mapchr.p2`, its name (UTF-16, ended
+  by 0), the entry padded to 4 bytes. A position on the map: x / that + the origin's pixel, z the same down.
+- **A picture**: an NCGR, 24 x 20 tiles of 8 x 8 pixels at 4 bits (192 x 160), its pixels the map's colours: 15 none
+  (see-through), 14 a floor, 13 a floor of another level, 10 an edge (black), 11 and 12 greys (12 a stair's lines),
+  1 to 4 marks at the room's exits. They show in `UI/btl/bm_lo_bg000.NCLR.z`'s sub-palette 13 (white floors with black
+  edges, as on the game's lower screen); `mapchr.p2`'s other members are the panel's own pictures (D2KP packs).
+- A room a mod adds has one when its folder holds `map.png` (the colours above, 192 x 160) and `map.txt` (`origin x y`,
+  `size w h` in tiles, `cell` the game units a pixel spans, `name` and `name.<language>`): the studio draws both from
+  the room's floors; the port puts its picture after `mapchr.p2`'s and its entry in its world's chain in each
+  language's `map.p2` (docs/RUNTIME_MAP.md, "A world's rooms").
+
 ## Animations (BCA0)
 
 A BCA0 (NSBCA), as `assets/src/animation.cpp` reads it (after apicula): a JNT0

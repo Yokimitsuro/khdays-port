@@ -1,9 +1,17 @@
 /* The rooms the mods add (runtime/rooms/added.cpp) and the rooms' slots (runtime/rooms/slots.c): a synthetic world
  * archive of one room, a mod adding one, the archive as served read back -- its room table one room longer, the new
  * record (an id none of the world's, no exits, its collision and model members), its collision LZ-packed as the
- * game's, room 0's model copied -- the added room's index and model; and the slots past 24 rooms. */
+ * game's, room 0's model copied -- the added room's index and model; its map's picture after the game's map pictures
+ * and its entry in its world's chain; and the slots past 24 rooms. */
+extern "C" {
+#include "../runtime/missions/worlds.h"
+}
 #include "../runtime/rooms/added.h"
 #include "../runtime/rooms/slots.h"
+
+extern "C" {
+#include "../host/render/png_io.h"
+}
 
 #include "khdays/assets/message.h"
 
@@ -107,6 +115,15 @@ static void a_mods_room_added_to_a_world(void)
     const std::vector<unsigned char> collision(0x123, 0x5a);
     std::ofstream(mod / "rooms" / "eh" / "plaza" / "collision.bin", std::ios::binary)
         .write(reinterpret_cast<const char *>(collision.data()), static_cast<std::streamsize>(collision.size()));
+    // its map: see-through but its first two pixels (a floor, an edge)
+    std::vector<unsigned char> map(192 * 160, 15);
+    map[0] = 14;
+    map[1] = 10;
+    std::vector<unsigned char> greys(16 * 3, 128);
+    CHECK(khdays_png_write_indexed((mod / "rooms" / "eh" / "plaza" / "map.png").string().c_str(), map.data(), 192, 160,
+                                   greys.data(), 16, 0) == nullptr);
+    std::ofstream(mod / "rooms" / "eh" / "plaza" / "map.txt")
+        << "# its map\norigin 60 40\nsize 15 10\ncell 0.4\nname Plaza\nname.es Plaza mayor\n";
 
     // the world: its room table (one room, id 0: its collision member 2, its model member 3), packed
     std::vector<unsigned char> table(8 + 0x28, 0);
@@ -152,6 +169,57 @@ static void a_mods_room_added_to_a_world(void)
     char path[512];
     CHECK(khdays_rooms_model("mi/wd/wd_eh#5/mdl/eh_00", path, sizeof(path)) && std::strstr(path, "room.gltf") != nullptr);
     CHECK(!khdays_rooms_model("mi/wd/wd_eh#3/mdl/eh_00", path, sizeof(path)));
+
+    // its map: an NCGR as the game's (20 x 24 tiles of 4 bits), the picture after it
+    std::vector<unsigned char> ncgr(0x30 + 0x3c00 + 0x10, 0xff);
+    std::memcpy(ncgr.data(), "RGCN", 4);
+    std::memcpy(ncgr.data() + 0x10, "RAHC", 4);
+    put16(ncgr, 0x18, 20);
+    put16(ncgr, 0x1a, 24);
+    put32(ncgr, 0x1c, 3);
+    put32(ncgr, 0x28, 0x3c00);
+    put32(ncgr, 0x2c, 0x18);
+    const auto pictures = p2({{ncgr, static_cast<unsigned>(ncgr.size())}});
+    KhdaysGameFiles game;
+    game.read = [&](const std::string &file) {
+        return file == "UI/btl/mapchr.p2" ? pictures : file == "mi/wd/wd_eh" ? world : std::vector<unsigned char>();
+    };
+    CHECK(khdays_rooms_serves("UI/btl/mapchr.p2") && khdays_rooms_serves("UI/btl/es/map.p2") &&
+          khdays_rooms_serves("mi/wd/wd_eh") && !khdays_rooms_serves("UI/btl/es/mapx.p2"));
+    CHECK(khdays_rooms_merge("UI/btl/mapchr.p2", pictures, out, game));
+    CHECK((le16(out, 2) & 0x1ff) == 2);
+    const auto picture = entry(out, 1, &desc);
+    CHECK(picture.size() == ncgr.size() && picture[0x30] == (14 | (10 << 4)) && picture[0x31] == 0xff &&
+          picture[0x30 + 0x3c00] == 0xff);
+    // its world's chain (eh's, the game's fifth): one entry of the game's (id 7, "A"), ended by -1
+    std::vector<unsigned char> chain(0x1c + 4, 0);
+    put32(chain, 0, 0x1c);
+    put16(chain, 4, 0x18);
+    put16(chain, 6, 7);
+    chain[0x18] = 'A';
+    put32(chain, 0x1c, 0xffffffffu);
+    const auto packed_chain = khdays::assets::lz11_literals(chain);
+    const std::vector<unsigned char> none{0xff, 0xff, 0xff, 0xff};
+    const auto maps = p2({{none, 4},
+                          {none, 4},
+                          {none, 4},
+                          {none, 4},
+                          {packed_chain, static_cast<unsigned>(packed_chain.size()) | 0x80000000u}});
+    CHECK(khdays_rooms_merge("UI/btl/es/map.p2", maps, out, game));
+    const auto merged = entry(out, 4, &desc);
+    const std::size_t at = le32(merged, 0);
+    CHECK((desc & 0x80000000u) == 0 && at == 0x1c);
+    // after the game's: its id, where its origin falls, the part held, its scale, its picture, its Spanish name
+    CHECK(le16(merged, at + 6) == 1 && le16(merged, at + 8) == 60 && le16(merged, at + 0xa) == 40 &&
+          le16(merged, at + 0xc) == 15 && le16(merged, at + 0xe) == 10 && le32(merged, at + 0x10) == 1638 &&
+          le32(merged, at + 0x14) == 1);
+    const char *spanish = "Plaza mayor";
+    for (std::size_t i = 0; i <= std::strlen(spanish); ++i)
+        CHECK(le16(merged, at + 0x18 + 2 * i) == static_cast<unsigned char>(spanish[i]));
+    CHECK(le32(merged, at + le32(merged, at)) == 0xffffffffu);
+    CHECK(entry(out, 1, &desc) == none);
+    CHECK(khdays_rooms_merge("UI/btl/en/map.p2", maps, out, game));
+    CHECK(le16(entry(out, 4, &desc), at + 0x18) == 'P');
     fs::remove_all(mod, ec);
 }
 
