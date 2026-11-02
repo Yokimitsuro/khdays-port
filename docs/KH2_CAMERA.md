@@ -95,8 +95,12 @@ sides (`RENDERING.md`).
   `khdays_kh2_camera_claims` allows: Type A, camera flag 2 set, none of the flags for a script's camera or a
   pending reset, and mode 0, 3 (a shake) or 8. `Ov002_TickCameraTransition` then runs
   it just before the shake: Days' camera has done all its own work, and it is overwritten, so its flags, its
-  shake and its fades go on as ever. A frame not marked is plain Days'; coming back, the camera starts from where
-  Days' left it and the springs carry it over.
+  shake and its fades go on as ever. A frame not marked is plain Days'. How the camera comes back depends on what
+  those frames did (`kh2_camera_takeover`). If Days' camera never ran, nothing moved it: a pause holds every
+  object (`gPauseMode` 1), and the camera goes on as it was. If it ran a few frames it only set itself up, as in
+  a new field or leaving the camp (`Ov002_InitWorldState`'s `Ov002_Camera_SetAnchor`), and the camera goes
+  straight to its place with its own FOV. After a third of a second or more they were seen, as in a cutscene, and
+  the springs carry it over from where they ended.
 - **Collision** is KH2's rule on the game's casts (`khdays_kh2_camera_collide`), at the two places KH2 casts: the
   wanted eye, then the eye the springs reached. `Ov002_ResolveCameraAgainstCollision` would hold the eye 0xc00
   (75 of KH2's units) off the floor and sweep a sphere that drags it in along the line, which is what cut the

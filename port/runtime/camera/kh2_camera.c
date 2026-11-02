@@ -30,8 +30,9 @@ const Kh2CameraParams kh2_camera_indoor = {1.04719758f, 600.0f, 520.0f, 400.0f, 
 #define SPRING_LENGTH 1.0f
 #define EYE_RATE 0.07f
 #define AT_RATE_ADD 0.03f
-#define UPDATE_TICKS 2.0f /* dk::Vsync::setLimit(1): the field updates every other vsync */
-#define FOV_EASE 0.25f    /* the port's: two of these in a row start and end the blend gently */
+#define DAYS_CAMERA_SEEN 10u /* the port's: game frames of Days' camera, a third of a second, that were seen */
+#define UPDATE_TICKS 2.0f    /* dk::Vsync::setLimit(1): the field updates every other vsync */
+#define FOV_EASE 0.25f       /* the port's: two of these in a row start and end the blend gently */
 
 static Kh2CameraVec sub(Kh2CameraVec a, Kh2CameraVec b)
 {
@@ -95,6 +96,14 @@ static void ease_radius(Kh2Camera *c, float to, float rate)
     if (fabsf(c->radius - to) >= 1.0f) {
         c->radius = clamp_radius(c, c->radius + (c->radius > to ? -rate : rate));
     }
+}
+
+int kh2_camera_takeover(int started, unsigned days_frames)
+{
+    if (started && days_frames == 0u) {
+        return KH2_CAMERA_RESUME;
+    }
+    return days_frames >= DAYS_CAMERA_SEEN ? KH2_CAMERA_BLEND : KH2_CAMERA_SNAP;
 }
 
 float kh2_camera_half_angle(float horizontal_fov)

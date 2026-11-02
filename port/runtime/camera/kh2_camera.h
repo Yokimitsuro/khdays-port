@@ -57,6 +57,13 @@ enum {
 /* The vertical half angle of a horizontal FOV in KH2's 4:3 frame. */
 float kh2_camera_half_angle(float horizontal_fov);
 
+/* How this camera comes back after frames that were not its own. `started`: it was running when they began;
+ * `days_frames`: how many of them ran Days' camera. None: nothing moved it (the pause holds every object), so
+ * it goes on as it was. A few: Days' camera only set itself up (a new field, the camp's exit), so it goes
+ * straight to its place. More: they were seen (a cutscene), so it blends from where they ended. */
+enum { KH2_CAMERA_RESUME, KH2_CAMERA_SNAP, KH2_CAMERA_BLEND };
+int kh2_camera_takeover(int started, unsigned days_frames);
+
 /* Takes over from where the camera is, keeping the radius when `radius` is above 0. */
 void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec at, Kh2CameraVec eye, float yaw,
                       float fov_half, float radius);

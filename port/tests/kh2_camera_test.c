@@ -159,6 +159,30 @@ static void test_springs(void)
     CHECK(near_value(c.at.y, 1170.0f - 0.10f * 2.5f * 999.0f, 0.01f));
 }
 
+/* After frames that were not its own: nothing ran (a pause), a few of Days' (a new field), many (a cutscene). */
+static void test_takeover(void)
+{
+    CHECK(kh2_camera_takeover(1, 0u) == KH2_CAMERA_RESUME);
+    CHECK(kh2_camera_takeover(0, 0u) == KH2_CAMERA_SNAP);
+    CHECK(kh2_camera_takeover(0, 2u) == KH2_CAMERA_SNAP);
+    CHECK(kh2_camera_takeover(0, 300u) == KH2_CAMERA_BLEND);
+}
+
+/* A snap puts the eye and look-at on their targets at once, from anywhere. */
+static void test_start_snap(void)
+{
+    Kh2CameraInput in = still();
+    Kh2Camera c;
+    const Kh2CameraVec at = {900.0f, 40.0f, -700.0f}, eye = {-500.0f, 800.0f, 300.0f};
+    kh2_camera_start(&c, &kh2_camera_outdoor, at, eye, 0.0f, kh2_camera_half_angle(kh2_camera_outdoor.fov), 0.0f);
+    c.snap = 1;
+    in.manual = 1;
+    kh2_camera_follow(&c, &in);
+    kh2_camera_settle(&c, 2.0f);
+    CHECK(near_value(c.at.y, 170.0f, 2.0f) && near_value(c.at.x, 0.0f, 2.0f));
+    CHECK(near_value(c.eye.z, 420.0f, 2.0f) && near_value(c.eye.y, 251.2f, 2.0f));
+}
+
 /* At 20 fps a frame is one and a half of KH2's updates: more than one, less than two. */
 static void test_springs_at_20_fps(void)
 {
@@ -293,6 +317,8 @@ int main(void)
     test_chase();
     test_home();
     test_springs();
+    test_takeover();
+    test_start_snap();
     test_springs_at_20_fps();
     test_zoom_fov();
     test_lock_home();

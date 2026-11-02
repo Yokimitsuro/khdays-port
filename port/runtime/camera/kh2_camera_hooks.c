@@ -84,6 +84,7 @@ static struct {
     int home, center, input_off, bits;
     int active;
     u32 frame;
+    unsigned days_frames; /* Days' camera's frames since this camera's last */
     Kh2CameraVec last_player;
     int fov_held; /* the FOV is this camera's; Days' goes back when the game's camera takes over */
     int written_eye[3];
@@ -239,20 +240,27 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
         }
         s.center = 0;
         s.active = 0;
+        ++s.days_frames;
         return 0;
     }
 
     in->player = read_vec(KHDAYS_W(player));
     in->ticks = (float)ticks_a_frame();
-    if (!s.active || frame - s.frame > 2u) {
-        const float radius = s.active || frame - s.frame <= KEEP_RADIUS_FRAMES ? s.camera.radius : 0.0f;
-        s.fov_held = 1;
-        /* outdoors everywhere: Days has no indoor maps that this could read (docs/KH2_CAMERA.md) */
-        kh2_camera_start(&s.camera, &kh2_camera_outdoor, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
-                         angle_radians(cam[WORD_YAW]), atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]),
-                         s.frame != 0u ? radius : 0.0f);
-        s.last_player = in->player;
-        s.active = 1;
+    {
+        const int takeover = kh2_camera_takeover(s.active, s.days_frames);
+        if (takeover != KH2_CAMERA_RESUME) {
+            const float radius = s.frame != 0u && frame - s.frame <= KEEP_RADIUS_FRAMES ? s.camera.radius : 0.0f;
+            /* outdoors everywhere: Days has no indoor maps that this could read (docs/KH2_CAMERA.md) */
+            const float fov = takeover == KH2_CAMERA_SNAP ? kh2_camera_half_angle(kh2_camera_outdoor.fov)
+                                                          : atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
+            kh2_camera_start(&s.camera, &kh2_camera_outdoor, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
+                             angle_radians(cam[WORD_YAW]), fov, radius);
+            s.camera.snap = takeover == KH2_CAMERA_SNAP;
+            s.fov_held = 1;
+            s.last_player = in->player;
+            s.active = 1;
+        }
+        s.days_frames = 0u;
     }
     {
         const float dx = in->player.x - s.last_player.x, dz = in->player.z - s.last_player.z;
