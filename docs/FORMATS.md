@@ -276,6 +276,38 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   (di_05, fa_03, nd_03, rg_08, tm_04); a texture the room's model has not (tm_04's, fa_03's `g_` ones) is left out.
 - **Units**: metres, as Days's: the stairs rise 0.17 to 0.25 (eh_01, nd_02); the floors and walls lie in the model's
   space (eh_01: 47,075 of its 48,852 vertices inside the BCD's box).
+- **Skies**: an object whose textures are named a sky (`tm01_sky01`, `pi_sky_c`, `di_05_sky`) or a far backdrop
+  (`tm01_fore01`: "fore" and a digit) is the room's sky: tm_01's a dome of 200 metres, its backdrops cylinders of 120
+  and 135, about the room's middle; drawn around the camera.
+
+## Birth by Sleep's rooms
+
+Not the game's: KINGDOM HEARTS Birth by Sleep FINAL MIX's rooms, in the player's KINGDOM HEARTS HD 1.5+2.5 ReMIX, as
+`assets/src/ddd_map.cpp` reads them for the studio: its engine is Dream Drop Distance's (above), its models of an
+older version. Read from the player's files.
+
+- **Where**: `arc/map/<w><nn>.arc` in bbs_first to bbs_fourth (`Image/dt`; 202 rooms in 16 worlds, among them `jb`'s
+  eight, a world never finished -- The Jungle Book's, few of its pictures). The HD pictures are the archive's own
+  remastered assets, `<...>_arc<n>.dds` the PMP's n-th texture (di03: its 61 textures' shapes those of its 61
+  pictures).
+- **The archive** ("ARC\0"): u16 its version (1), u16 its members' count at +6; from +0x10 a member's 0x20 bytes:
+  u32, u32 its offset, u32 its size, u32, its name (16 bytes). A room's members: `<w>_<nn>.pmp`, `.pvd`, `.mss`,
+  `<w>_<nn>a.bcd`, and some a `.env`, a `.tm2` and an `.nmd`.
+- **PMP**: as Dream Drop Distance's; its textures are TIM2 pictures within it.
+- **PMO** (version 3, the byte at +6): its textures as version 4's; its scale (f32 at +0x18), its first pass at
+  +0x10 and its second (drawn see-through) at +0x1c, each a run of meshes: a mesh's header -- u16 its vertex count (0
+  ends the run), u8 its texture, u8 its vertex's size, u32 its vertex form (the PSP's own: texture coordinates in bits
+  0-1, colour 2-4, normal 5-6, position 7-8, weights 9-10 and their count less one in 14-16; with bit 24 one colour
+  for the whole mesh after the header; the primitive in the top four bits, 3 triangles, 4 strips), u8, u8 its strips'
+  count, u16 its drawing (as version 4's) -- then that colour (R G B A as version 4's), each strip's length (u16),
+  and from the next 4 bytes its vertices; the next mesh from the next 4 bytes after them. A vertex holds its parts in
+  the PSP's order (weights, texture coordinates, colour, normal, position), each on a multiple of its own size and the
+  vertex on its widest: 8-bit values 1 at 128, 16-bit at 32768 (positions signed), floats as they are, times the
+  model's scale. Read this way the forms of di03's 212 meshes (8-bit or float coordinates, colours 8888 or the
+  mesh's, float positions) each give the size their header says.
+- **BCD** (version 2): as version 0x0a, a part 0x40 bytes, its counts at +0x24 / +0x26 and its vertices' and faces'
+  offsets at +0x28 / +0x2c (jb_20a: 2,328 vertices ending where its 2,703 faces of 48 bytes start).
+- **Units**: metres, as Dream Drop Distance's.
 
 ## KINGDOM HEARTS FINAL MIX's rooms
 

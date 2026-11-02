@@ -214,6 +214,7 @@ add_executable(khdays-studio
     app/views/plugin_parameters_view.cpp
     app/views/prizes_view.cpp
     app/views/model_view.cpp
+    app/model_shot.cpp
     app/preview3d.cpp
     app/save_dialog.cpp
     app/views/sheet_view.cpp

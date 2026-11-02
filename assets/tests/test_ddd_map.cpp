@@ -8,6 +8,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "khdays/assets/ddd_map.h"
@@ -15,7 +16,9 @@
 // A Dream Drop Distance room made here byte by byte as the reader expects it (docs/FORMATS.md, "Dream Drop
 // Distance's rooms"): a PMP placing one PMO, whose section's first group holds a record of triangles and a strip
 // stitched by a degenerate triangle and its second group a blended triangle, its texture found as a plain 32-bit DDS;
-// a BCD of a triangle and a four-sided face; a TXA animating its texture.
+// a BCD of a triangle and a four-sided face; a TXA animating its texture. Birth by Sleep's (docs/FORMATS.md, "Birth by
+// Sleep's rooms"): a version 3 PMO of a mesh of triangles in their own colours and a mesh of two strips in the mesh's
+// colour, positions in floats and in 16 bits; a version 2 BCD; a map archive.
 
 namespace {
 
@@ -64,7 +67,7 @@ void vertex(Writer& w, float u, float v, float x, float y, float z) {
     w.f32(z * 32768);
 }
 
-Bytes room() {
+Bytes room(const char* texture = "tex_a") {
     Writer w;
     w.text("PMP", 4);
     w.zeros(0x0c);
@@ -103,7 +106,7 @@ Bytes room() {
     w.u32(0);  // no second pass
     w.zeros(0xa0 - (w.b.size() - pmo));
     w.u32(0);
-    w.text("tex_a", 12);
+    w.text(texture, 12);
     w.zeros(16);
     // the section: the first group's 2 records at 0x100 (9 vertices), the second's 1 at 0x148 (3), 12 vertices at 0x180
     w.u32(0x100);
@@ -146,25 +149,28 @@ Bytes room() {
     // the PMP's texture list
     w.at(texture_list_field, static_cast<std::uint32_t>(w.b.size()));
     w.u32(0);
-    w.text("tex_a", 12);
+    w.text(texture, 12);
     w.zeros(16);
     return w.b;
 }
 
 // A BCD: one part of four vertices, a triangle and a four-sided face.
-Bytes collision() {
+Bytes collision(bool version2 = false) {
     Writer w;
     w.text("@bcd", 4);
-    w.u32(0x0a);
+    w.u32(version2 ? 2 : 0x0a);
     w.u32(1);
     w.u32(0x10);
     for (int i = 0; i < 6; ++i)
         w.f32(i < 3 ? 0.0F : 1.0F);  // its box
+    if (version2)
+        w.zeros(0x0c);  // (version 2's part is 0x40 bytes, its counts after 12 more)
+    const std::uint32_t vertices = version2 ? 0x50 : 0x40;
     w.u16(4);
     w.u16(2);
-    w.u32(0x40);
-    w.u32(0x80);
-    w.zeros(0x40 - w.b.size());
+    w.u32(vertices);
+    w.u32(vertices + 0x40);
+    w.zeros(vertices - w.b.size());
     for (const auto& v : {std::array<float, 3>{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}) {
         w.f32(v[0]);
         w.f32(v[1]);
@@ -204,6 +210,27 @@ Bytes plain_dds() {
     for (int i = 0; i < 8; ++i)
         w.u8(i < 4 ? 200 : 100);
     return w.b;
+}
+
+// A room's sky (its texture named so): its meshes under a sky node, drawn around the camera.
+void test_sky() {
+    const Bytes pmp = room("eh99_sky01");
+    const auto made = ddd::room_model(
+        pmp.data(), pmp.size(), "eh_99", [](const std::string&) { return std::filesystem::path(); },
+        [](const std::string&, const khdays::assets::DecodedTexture&) {});
+    const auto& scene = made.scene;
+    bool all_sky = !scene.meshes.empty();
+    for (const auto& mesh : scene.meshes)
+        all_sky = all_sky && mesh.node > 0 && scene.nodes[static_cast<std::size_t>(mesh.node)].sky;
+    expect(all_sky, "a sky's meshes under a sky node");
+    const Bytes forest = room("sw01_forest");
+    const auto trees = ddd::room_model(
+        forest.data(), forest.size(), "sw_01", [](const std::string&) { return std::filesystem::path(); },
+        [](const std::string&, const khdays::assets::DecodedTexture&) {});
+    bool none_sky = true;
+    for (const auto& mesh : trees.scene.meshes)
+        none_sky = none_sky && mesh.node == 0;
+    expect(none_sky, "a forest is no backdrop");
 }
 
 void test_room() {
@@ -364,9 +391,156 @@ void test_texture_animation() {
 
 }  // namespace
 
+// A Birth by Sleep room: a PMP placing a version 3 PMO moved by (10, 0, 0), its scale 2.
+Bytes bbs_room() {
+    Writer w;
+    w.text("PMP", 4);
+    w.zeros(0x0c);
+    w.u16(1);  // objects
+    w.u16(1);
+    w.zeros(6);
+    w.u16(1);  // textures
+    const std::size_t texture_list_field = w.b.size();
+    w.u32(0);
+    w.f32(10);
+    w.zeros(20);
+    w.f32(1);
+    w.f32(1);
+    w.f32(1);
+    const std::size_t pmo_field = w.b.size();
+    w.u32(0);
+    w.zeros(8);
+    const std::size_t pmo = w.b.size();
+    w.at(pmo_field, static_cast<std::uint32_t>(pmo));
+    w.text("PMO", 4);
+    w.u8(1);
+    w.u8(1);
+    w.u8(3);  // version 3
+    w.u8(0);
+    w.u8(1);  // its textures
+    w.zeros(3);
+    w.u32(0);     // no skeleton
+    w.u32(0xc0);  // first pass
+    w.u16(4);
+    w.u16(10);
+    w.f32(2);  // its scale
+    w.u32(0);  // no second pass
+    w.zeros(0xa0 - (w.b.size() - pmo));
+    w.u32(0);
+    w.text("tex_b", 12);
+    w.zeros(16);
+    // a mesh of triangles: texture coordinates in 8 bits, colours 8888, positions in floats (20 bytes)
+    w.u16(3);
+    w.u8(0);
+    w.u8(20);
+    w.u32(0x3000019DU);
+    w.zeros(4);
+    for (const auto& p : {std::array<float, 3>{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}) {
+        w.u8(64);
+        w.u8(128);
+        w.zeros(2);
+        w.u32(0xFFFF8040U);  // R 0x40, G 0x80, B 0xff, A 0xff
+        w.f32(p[0]);
+        w.f32(p[1]);
+        w.f32(p[2]);
+    }
+    // a mesh of two strips (3 and 4 vertices) in the mesh's colour: coordinates in 8 bits, positions in 16 (8 bytes)
+    w.u16(7);
+    w.u8(0);
+    w.u8(8);
+    w.u32(0x41000101U);
+    w.u8(0);
+    w.u8(2);  // its strips
+    w.u16(0);
+    w.u32(0x80808080U);  // its colour
+    w.u16(3);
+    w.u16(4);
+    for (int k = 0; k < 7; ++k) {
+        w.u8(0);
+        w.u8(0);
+        w.u16(static_cast<unsigned>(k * 4096) & 0xFFFF);
+        w.u16(k % 2 == 0 ? 16384U : 0U);
+        w.u16(static_cast<unsigned>(k) * 1000U);
+    }
+    w.u32(0);  // no more meshes
+    w.at(texture_list_field, static_cast<std::uint32_t>(w.b.size()));
+    w.u32(0);
+    w.text("tex_b", 12);
+    w.zeros(16);
+    return w.b;
+}
+
+void test_bbs_room() {
+    const Bytes pmp = bbs_room();
+    const auto made = ddd::room_model(
+        pmp.data(), pmp.size(), "jb_99", [](const std::string&) { return std::filesystem::path(); },
+        [](const std::string&, const khdays::assets::DecodedTexture&) {});
+    expect(made.report.size() == 1, "only its missing picture said: " + std::to_string(made.report.size()));
+    const auto& scene = made.scene;
+    expect(scene.meshes.size() == 1 && scene.meshes[0].primitives.size() == 1, "one mesh of its texture");
+    const auto& p = scene.meshes[0].primitives[0];
+    expect(p.indices.size() == 12, "a triangle and two strips' three: " + std::to_string(p.indices.size() / 3));
+    expect(std::fabs(p.positions[0][0] - 12) < 1e-4F, "a float position times its scale, moved by the object");
+    expect(std::fabs(p.uvs[0][0] - 0.5F) < 1e-4F && std::fabs(p.uvs[0][1] - 1) < 1e-4F, "8-bit coordinates, 128 is 1");
+    expect(p.colors[0] == std::array<std::uint8_t, 4>{0x80, 0xFF, 0xFF, 0xFF}, "its colour doubled, alpha as written");
+    expect(std::fabs(p.positions[3][1] - 1) < 1e-4F && std::fabs(p.positions[3][0] - 10) < 1e-4F,
+           "a 16-bit position: 32768 is 1, times its scale");
+    expect(p.colors[3] == std::array<std::uint8_t, 4>{0xFF, 0xFF, 0xFF, 0x80}, "the mesh's colour for its vertices");
+}
+
+void test_bbs_collision() {
+    const Bytes bcd = collision(true);
+    const auto scene = ddd::collision_scene(bcd.data(), bcd.size(), "jb_99");
+    expect(scene.meshes.size() == 1 && scene.meshes[0].primitives[0].indices.size() == 9,
+           "a version 2 BCD's triangle and four-sided face");
+}
+
+void test_arc() {
+    Writer w;
+    w.text("ARC", 4);
+    w.u16(1);
+    w.u16(2);
+    w.zeros(8);
+    for (const auto& [name, at, size] :
+         {std::tuple<const char*, unsigned, unsigned>{"jb_99.pmp", 0x50, 4}, {"jb_99a.bcd", 0x54, 8}}) {
+        w.u32(0);
+        w.u32(at);
+        w.u32(size);
+        w.u32(0);
+        w.text(name, 16);
+    }
+    w.zeros(12);
+    const auto members = ddd::arc_members(w.b.data(), w.b.size());
+    expect(members.size() == 2 && members[0].name == "jb_99.pmp" && members[1].offset == 0x54 && members[1].size == 8,
+           "the archive's members");
+    Writer link;  // a room another archive holds
+    link.text("ARC", 4);
+    link.u16(1);
+    link.u16(1);
+    link.zeros(8);
+    link.u32(ddd::kArcMapLink);
+    link.zeros(12);
+    link.text("sb05", 16);
+    const auto linked = ddd::arc_members(link.b.data(), link.b.size());
+    expect(linked.size() == 1 && linked[0].kind == ddd::kArcMapLink && linked[0].name == "sb05" && linked[0].size == 0,
+           "a link to another map's room");
+    w.at(0x10 + 0x20 + 8, 0x1000);  // a member past its end
+    bool threw = false;
+    try {
+        (void)ddd::arc_members(w.b.data(), w.b.size());
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    expect(threw, "a member past the archive's end refused");
+}
+
 int main() {
     try {
         test_room();
+        test_sky();
+        test_bbs_room();
+        test_bbs_collision();
+        test_arc();
         test_collision();
         test_texture_animation();
         std::cout << "DDD map test passed\n";

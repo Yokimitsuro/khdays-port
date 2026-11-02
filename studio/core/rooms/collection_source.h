@@ -17,7 +17,7 @@
 
 namespace studio {
 
-enum class CollectionGame { kh1, kh2, recom, ddd };
+enum class CollectionGame { kh1, kh2, recom, ddd, bbs };
 
 // A game whose rooms are read: its code (a room of it is named "<code>:<map>"), its name, its collection's key in the
 // install's record (setup/state.json: "1.5+2.5", "2.8"), its own executable, the packages its maps are in, and one of

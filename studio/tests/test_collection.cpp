@@ -49,13 +49,16 @@ TEST(md5_as_rfc_1321_gives_it) {
     CHECK(hex(md5(std::string(1000, 'a'))) == "cabe45dcc9ae5b66ba86600cca6b8ba8");  // past one block
 }
 
-TEST(the_four_games_and_their_collections) {
-    CHECK(collection_games().size() == 4);
+TEST(the_five_games_and_their_collections) {
+    CHECK(collection_games().size() == 5);
     const auto* kh1 = collection_game("kh1");
     const auto* ddd = collection_game("ddd");
     CHECK(kh1 != nullptr && std::string(kh1->collection) == "1.5+2.5" && kh1->packages.size() == 3);
     CHECK(ddd != nullptr && std::string(ddd->collection) == "2.8");
-    CHECK(collection_game("recom") != nullptr && collection_game("kh2") != nullptr && collection_game("bbs") == nullptr);
+    CHECK(collection_game("recom") != nullptr && collection_game("kh2") != nullptr &&
+          collection_game("bbs") != nullptr);
+    CHECK(std::string(collection_game("bbs")->collection) == "1.5+2.5" && collection_game("bbs")->packages.size() == 4);
+    CHECK(collection_game("bbsfm") == nullptr);
     // their units in Days's: KH2's centimetres, DDD's metres
     CHECK(collection_game("kh2")->units == 0.01f && ddd->units == 1.0f);
     // a DDD map with no collision among its files is a stage fallen through (Dive)
@@ -88,4 +91,9 @@ TEST(a_packages_maps_found_by_each_games_pattern) {
     const auto kh2 = package_keys(index_of({"map/tt02.map", "map/eh14.map"}));
     CHECK(names(maps_in_package(*collection_game("kh2"), "kh2_first", kh2)) ==
           std::vector<std::string>({"eh/eh14", "tt/tt02"}));
+    // Birth by Sleep: arc/map/<w><nn>.arc, the room's files in one
+    const auto bbs = package_keys(index_of({"arc/map/jb20.arc", "arc/map/di03.arc", "arc/boss/b60ex.arc"}));
+    const auto bbs_maps = maps_in_package(*collection_game("bbs"), "bbs_third", bbs);
+    CHECK(names(bbs_maps) == std::vector<std::string>({"di/di03", "jb/jb20"}));
+    CHECK(bbs_maps[1].paths == std::vector<std::string>({"arc/map/jb20.arc"}));
 }

@@ -3,7 +3,9 @@
 // KINGDOM HEARTS Dream Drop Distance's rooms (the 2.8 collection's map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp), read from the
 // player's own copy: a PMP places PMO models (version 4, read from the data itself: docs/FORMATS.md, "Dream Drop
 // Distance's rooms"), their textures named and found as HD pictures beside the room, those its .txa animates shown
-// frame by frame.
+// frame by frame. Birth by Sleep's rooms are its engine's too (the 1.5+2.5 collection's arc/map/<w><nn>.arc holding
+// the PMP): their PMOs version 3, each mesh's vertices in the PSP's own forms (docs/FORMATS.md, "Birth by Sleep's
+// rooms").
 
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +28,20 @@ struct Room final {
 using PictureFinder = std::function<std::filesystem::path(const std::string& name)>;
 // A picture the scene names, handed over as it is made (file name beside the .gltf, picture).
 using PictureSink = std::function<void(const std::string& file, const DecodedTexture& picture)>;
+
+// A Birth by Sleep map archive's member: its name (di_03.pmp), where its bytes are in the archive, and its first word:
+// "MAP" (kArcMapLink) for a member of no bytes naming the map whose room this one uses (sb20's sb05).
+struct ArcMember final {
+    std::string name;
+    std::size_t offset = 0, size = 0;
+    std::uint32_t kind = 0;
+};
+constexpr std::uint32_t kArcMapLink = 0x0050414D;  // "MAP\0"
+
+// `data` a map archive (.arc: "ARC\0", u16 its members' count at +6, a member's 0x20 bytes from +0x10 -- u32, u32
+// offset, u32 size, u32, its name in 16): its members. Throws std::runtime_error when it is no ARC or a member lies
+// past its end.
+std::vector<ArcMember> arc_members(const std::uint8_t* data, std::size_t size);
 
 // The names of the textures a room's PMP lists (its own and those its models use).
 std::vector<std::string> texture_names(const std::uint8_t* data, std::size_t size);

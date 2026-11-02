@@ -1714,6 +1714,8 @@ bool take_port_argument(std::vector<std::string>& args, fs::path* root) {
     return true;
 }
 
+int render_model_command(const std::vector<std::string>& args);  // app/model_shot.cpp
+
 int run_command_line(const fs::path& root, const std::vector<std::string>& args) {
     if (args.size() == 2 && args[0] == "--list")
         return list(root, args[1]);
@@ -1768,6 +1770,8 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         return collection_take(root, args);
     if (args.size() == 2 && args[0] == "--collection-room")
         return collection_room(root, args);
+    if ((args.size() == 3 || args.size() == 4) && args[0] == "--render-model")
+        return render_model_command(args);
     if (args.size() == 2 && args[0] == "--rebuild-worlds")
         return rebuild_worlds(root, args);
     if (args.size() >= 4 && args[0] == "--assemble")
@@ -1818,12 +1822,14 @@ int run_command_line(const fs::path& root, const std::vector<std::string>& args)
         "                                                  a room's change and what it wrote removed\n"
         "       khdays-studio [--port <dir>] --rebuild-worlds <Mod>\n"
         "                                                  every world the mod changes written again\n"
-        "       khdays-studio [--port <dir>] --collection-rooms kh1|kh2|recom|ddd [<world>]\n"
+        "       khdays-studio [--port <dir>] --collection-rooms kh1|kh2|recom|ddd|bbs [<world>]\n"
         "                                                  the maps of a game in the player's collections\n"
         "       khdays-studio [--port <dir>] --collection-take <game>:<map>\n"
         "                                                  a map's files taken out of the player's copy\n"
         "       khdays-studio [--port <dir>] --collection-room <game>:<map>\n"
         "                                                  a map made into a model (and its own collision)\n"
+        "       khdays-studio --render-model <model> <png> [<collision model>]\n"
+        "                                                  the model drawn as the previews draw it, from two sides\n"
         "       khdays-studio [--port <dir>] --model-animations <model>\n"
         "                                                  a model's animations, those made for it apart\n"
         "       khdays-studio [--port <dir>] --export-model <model> <out.gltf> [animations]\n"

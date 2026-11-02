@@ -143,17 +143,20 @@ another model's, placed as the model is (the Usual Spot's: 334 grounds, 847
 walls, 155 ceilings, a fifth of the floors made from its visible model).
 
 **Rooms from the collections** (`core/rooms/collection_source.h`). The maps of KINGDOM HEARTS FINAL MIX, KINGDOM
-HEARTS II FINAL MIX and Re:Chain of Memories (KINGDOM HEARTS HD 1.5+2.5 ReMIX, setting `collection_1525`) and of
+HEARTS II FINAL MIX, Re:Chain of Memories and Birth by Sleep FINAL MIX (KINGDOM HEARTS HD 1.5+2.5 ReMIX, setting
+`collection_1525`) and of
 Dream Drop Distance (KINGDOM HEARTS HD 2.8 Final Chapter Prologue, setting `collection_28`; else the folders the
 install recorded with the game's executable there) are found in the player's own packages: a package's index keys
 each file by the MD5 of its path, so each game's name pattern (KH2's `map/<w><nn>.map`, DDD's
-`map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`) is tried for
+`map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`, Birth by
+Sleep's `arc/map/<w><nn>.arc`) is tried for
 every world code and number and asked for (a game's maps listed in about a second, no list of the games' files
 kept). A map is taken out by the installer's reader with the game's own executable into
 `saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
 with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
-`.bcd`, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of Memories' from its `.mcd`: docs/FORMATS.md, "Dream
-Drop Distance's rooms", "KINGDOM HEARTS FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
+`.bcd`, Birth by Sleep's from the `.bcd` in its archive, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of
+Memories' from its `.mcd`: docs/FORMATS.md, "Dream Drop Distance's rooms", "Birth by Sleep's rooms", "KINGDOM HEARTS
+FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
 FINAL MIX's skies come with the model (KH1's its `.gvbl` assets), drawn around the camera behind everything; Dream
 Drop Distance's textures its `.txa` animates change picture as in the game (thunder, clouds, sparks). The change
 names it `source <game>:<map>` (KH2's keep their `kh2 <map>`). Its first place: in its game's units (KH1's and KH2's
@@ -167,9 +170,13 @@ ticked (from outside, a sky's dome hides the room); **Frame the room** puts the 
 picture's lower edge is dragged to make it taller (a double click: big or half).
 
 ```
-khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections
+khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections (kh1, kh2,
+                                                     recom, ddd, bbs)
 khdays-studio --collection-take ddd:eh_01            its files taken out
 khdays-studio --collection-room ddd:eh_01            made into a model (and its own collision)
+khdays-studio --render-model <model> <png> [<collision model>]
+                                                     drawn as the previews draw it, from two sides (its sky
+                                                     left out; framed by the collision's floors when given)
 khdays-studio --replace-room <Mod> tt 0 ddd:eh_01 own-collision
 python port/tools/collection_room_walk.py ddd:eh_01 --walk-save OLD.sav
                                                      in place of Twilight Town's room 0, played, frames saved

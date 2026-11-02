@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -43,12 +44,13 @@ std::array<std::uint8_t, 4> gltf_color(std::uint8_t r, std::uint8_t g, std::uint
     const auto lit = [](std::uint8_t c) { return static_cast<std::uint8_t>(std::min(255, c * 2)); };
     return {lit(r), lit(g), lit(b), a};
 }
-// A BCD: "@bcd", its version (0x0a), its parts' count and offset at +8 / +0xc. A part, 0x30 bytes: its box (min, max:
-// f32 x3 each), u16 vertex and face counts at +0x18 / +0x1a, the vertices' offset at +0x1c and the faces' at +0x20
-// (from the file), then what speeds up the game's look-ups (a tree, its lists). A vertex: f32 x4 (w 1). A face, 48
-// bytes: its plane (normal f32 x3, distance), its corners (i16 x4, the fourth -1 for a triangle; their order not
-// always the normal's), then what it is (a floor, a wall).
-constexpr std::size_t kBcdPartSize = 0x30;
+// A BCD: "@bcd", its version (0x0a Dream Drop Distance's, 2 Birth by Sleep's), its parts' count and offset at +8 /
+// +0xc. A part, 0x30 bytes (version 2's 0x40): its box (min, max: f32 x3 each), u16 vertex and face counts at +0x18 /
+// +0x1a (version 2: +0x24 / +0x26), the vertices' offset at +0x1c and the faces' at +0x20 (+0x28 / +0x2c; from the
+// file), then what speeds up the game's look-ups (a tree, its lists). A vertex: f32 x4 (w 1). A face, 48 bytes: its
+// plane (normal f32 x3, distance), its corners (i16 x4, the fourth -1 for a triangle; their order not always the
+// normal's), then what it is (a floor, a wall).
+constexpr std::size_t kBcdPartSize = 0x30, kBcd2PartSize = 0x40;
 constexpr std::size_t kBcdVertexSize = 16;
 constexpr std::size_t kBcdFaceSize = 48;
 // A TXA: "TXA\0", u16 its version (2), u16 its entries' count, the entries from +0x10, 0x38 bytes each: its name (16
@@ -90,6 +92,23 @@ struct Record {
     bool blended = false;
 };
 
+// A model's mesh as read, before it is placed: its texture (in its PMO's list), whether blended, triangles or strips,
+// the strips' lengths (none: one strip, its parts stitched by degenerate triangles), its vertices in the model's own
+// units.
+struct ReadVertex {
+    std::array<float, 2> uv{};
+    std::array<std::uint8_t, 4> color{255, 255, 255, 255};
+    std::array<float, 3> position{};
+};
+
+struct ReadMesh {
+    std::uint8_t texture = 0;
+    bool blended = false;
+    unsigned primitive = 0;
+    std::vector<std::uint16_t> strips;
+    std::vector<ReadVertex> vertices;
+};
+
 // A section's records, its first group's then its second's.
 std::vector<Record> records(const Reader& r, std::size_t pmo, std::size_t section) {
     std::vector<Record> out;
@@ -100,6 +119,154 @@ std::vector<Record> records(const Reader& r, std::size_t pmo, std::size_t sectio
             const std::size_t rec = at + i * kRecordSize;
             out.push_back({r.get<std::uint16_t>(rec), r.get<std::uint8_t>(rec + 2), r.get<std::uint8_t>(rec + 3),
                            r.get<std::uint32_t>(rec + 4) >> 28, (r.get<std::uint16_t>(rec + 10) & kBlended) != 0});
+        }
+    }
+    return out;
+}
+
+// A version 4 model's meshes (Dream Drop Distance's): its section's records, its vertices of 20 bytes after them;
+// `problem` says why none were read.
+std::vector<ReadMesh> pmo4_meshes(const Reader& r, std::size_t pmo, std::string* problem) {
+    // its section (+0x1c, when +0x10 has none, is a model's only one; else it points within the vertices)
+    std::uint32_t at = r.get<std::uint32_t>(pmo + 0x10);
+    if (at == 0)
+        at = r.get<std::uint32_t>(pmo + 0x1c);
+    if (at == 0)
+        return {};
+    const std::size_t s = pmo + at;
+    const auto vertices_at = r.get<std::uint32_t>(s + 0x18);
+    const auto bytes = r.get<std::uint32_t>(s + 0x1c);
+    const std::vector<Record> recs = records(r, pmo, s);
+    std::size_t held = 0;
+    bool readable = true;
+    for (const Record& rec : recs) {
+        held += std::size_t{rec.count} * rec.vertex_size;
+        readable =
+            readable && rec.vertex_size == kVertexSize && (rec.primitive == kTriangles || rec.primitive == kStrip);
+    }
+    if (!readable || held != bytes) {
+        *problem = std::to_string(recs.size()) + " records, " + std::to_string(held) + " of " + std::to_string(bytes) +
+                   " vertex bytes, or a vertex of another size";
+        return {};
+    }
+    std::vector<ReadMesh> out;
+    std::size_t v = pmo + vertices_at;
+    for (const Record& rec : recs) {
+        ReadMesh m;
+        m.texture = rec.texture;
+        m.blended = rec.blended;
+        m.primitive = rec.primitive;
+        for (std::size_t k = 0; k < rec.count; ++k, v += kVertexSize) {
+            ReadVertex rv;
+            rv.uv = {r.get<std::uint16_t>(v) / kUvUnit, r.get<std::uint16_t>(v + 2) / kUvUnit};
+            rv.color = gltf_color(r.get<std::uint8_t>(v + 4), r.get<std::uint8_t>(v + 5), r.get<std::uint8_t>(v + 6),
+                                  r.get<std::uint8_t>(v + 7));
+            rv.position = {r.get<float>(v + 8) / kPositionUnit, r.get<float>(v + 12) / kPositionUnit,
+                           r.get<float>(v + 16) / kPositionUnit};
+            m.vertices.push_back(rv);
+        }
+        out.push_back(std::move(m));
+    }
+    return out;
+}
+
+// A version 3 model's meshes (Birth by Sleep's): each of its two passes (+0x10 the first, +0x1c the second, drawn
+// see-through) a run of meshes, each its header -- u16 its vertex count (0 ends the run), u8 its texture, u8 its
+// vertex's size, u32 its vertex form (the PSP's: texture coordinates in bits 0-1, colour 2-4, normal 5-6, position
+// 7-8, weights 9-10 and their count 14-16; one colour of the mesh's after the header with bit 24; the primitive in
+// the top four bits), u8, u8 its strips' count, u16 its drawing (as version 4's) -- then its colour, its strips'
+// lengths (u16 each), and from the next 4 bytes its vertices; the next mesh after them, from the next 4 bytes.
+// Positions times the model's scale (f32 at +0x18). `problem` says why none were read.
+std::vector<ReadMesh> pmo3_meshes(const Reader& r, std::size_t pmo, std::string* problem) {
+    static constexpr std::size_t kTexCoord[] = {0, 1, 2, 4}, kColour[] = {0, 0, 0, 0, 2, 2, 2, 4},
+                                 kNormal[] = {0, 1, 2, 4}, kPosition[] = {0, 1, 2, 4}, kWeight[] = {0, 1, 2, 4};
+    const float model_scale = r.get<float>(pmo + 0x18);
+    // a value of `size` bytes (signed but texture coordinates and weights) as a fraction: the PSP's 8 and 16 bits
+    // are 1 at 128 and 32768
+    const auto fraction = [&](std::size_t at, std::size_t size, bool is_signed) {
+        switch (size) {
+        case 1: return (is_signed ? r.get<std::int8_t>(at) : r.get<std::uint8_t>(at)) / 128.0F;
+        case 2: return (is_signed ? r.get<std::int16_t>(at) : r.get<std::uint16_t>(at)) / 32768.0F;
+        default: return r.get<float>(at);
+        }
+    };
+    const auto colour = [&](std::size_t at, unsigned form) -> std::array<std::uint8_t, 4> {
+        if (form == 7)  // 8888
+            return gltf_color(r.get<std::uint8_t>(at), r.get<std::uint8_t>(at + 1), r.get<std::uint8_t>(at + 2),
+                              r.get<std::uint8_t>(at + 3));
+        const auto c = r.get<std::uint16_t>(at);
+        const auto wide = [](unsigned v, unsigned bits) {
+            return static_cast<std::uint8_t>(v * 255 / ((1U << bits) - 1));
+        };
+        if (form == 4)  // 5650
+            return {wide(c & 31, 5), wide((c >> 5) & 63, 6), wide(c >> 11, 5), 255};
+        if (form == 5)  // 5551
+            return {wide(c & 31, 5), wide((c >> 5) & 31, 5), wide((c >> 10) & 31, 5),
+                    static_cast<std::uint8_t>(c >> 15 ? 255 : 0)};
+        return {wide(c & 15, 4), wide((c >> 4) & 15, 4), wide((c >> 8) & 15, 4), wide(c >> 12, 4)};  // 4444
+    };
+    std::vector<ReadMesh> out;
+    for (const std::size_t pass : {0x10, 0x1c}) {
+        const auto first = r.get<std::uint32_t>(pmo + pass);
+        if (first == 0)
+            continue;
+        std::size_t at = pmo + first;
+        for (;;) {
+            const auto count = r.get<std::uint16_t>(at);
+            if (count == 0)
+                break;
+            const auto size = r.get<std::uint8_t>(at + 3);
+            const auto form = r.get<std::uint32_t>(at + 4);
+            const auto strips = r.get<std::uint8_t>(at + 9);
+            ReadMesh m;
+            m.texture = r.get<std::uint8_t>(at + 2);
+            m.primitive = form >> 28;
+            m.blended = pass == 0x1c || (r.get<std::uint16_t>(at + 10) & kBlended) != 0;
+            std::size_t h = at + 12;
+            std::array<std::uint8_t, 4> mesh_colour{255, 255, 255, 255};
+            if (form & 0x01000000U) {
+                mesh_colour = colour(h, 7);
+                h += 4;
+            }
+            for (std::size_t s = 0; s < strips; ++s, h += 2)
+                m.strips.push_back(r.get<std::uint16_t>(h));
+            h = (h + 3) & ~std::size_t{3};
+            // the vertex's parts in the PSP's order, each on its own size
+            const std::size_t uv = kTexCoord[form & 3], col = kColour[(form >> 2) & 7], nrm = kNormal[(form >> 5) & 3],
+                              pos = kPosition[(form >> 7) & 3], wgt = kWeight[(form >> 9) & 3];
+            const std::size_t weights = wgt != 0 ? ((form >> 14) & 7) + 1 : 0;
+            std::size_t offset = 0, widest = 1;
+            const auto place = [&](std::size_t n, std::size_t part) {
+                if (part == 0)
+                    return std::size_t{0};
+                offset = (offset + part - 1) / part * part;
+                const std::size_t here = offset;
+                offset += n * part;
+                widest = std::max(widest, part);
+                return here;
+            };
+            place(weights, wgt);
+            const std::size_t uv_at = place(2, uv), col_at = place(1, col);
+            place(3, nrm);
+            const std::size_t pos_at = place(3, pos);
+            if (pos == 0 || (offset + widest - 1) / widest * widest != size ||
+                (m.primitive != kTriangles && m.primitive != kStrip)) {
+                *problem = "a mesh of vertex form " + std::to_string(form) + " not read";
+                return {};
+            }
+            for (std::size_t k = 0; k < count; ++k) {
+                const std::size_t v = h + k * size;
+                ReadVertex rv;
+                if (uv != 0)
+                    rv.uv = {fraction(v + uv_at, uv, false), fraction(v + uv_at + uv, uv, false)};
+                rv.color = col != 0 ? colour(v + col_at, (form >> 2) & 7)
+                                    : gltf_color(mesh_colour[0], mesh_colour[1], mesh_colour[2], mesh_colour[3]);
+                for (std::size_t c = 0; c < 3; ++c)
+                    rv.position[c] = fraction(v + pos_at + c * pos, pos, true) * model_scale;
+                m.vertices.push_back(rv);
+            }
+            out.push_back(std::move(m));
+            at = (h + std::size_t{count} * size + 3) & ~std::size_t{3};
         }
     }
     return out;
@@ -137,6 +304,26 @@ DecodedTexture cut(const DecodedTexture& from, int x, int y, int width, int heig
 
 }  // namespace
 
+std::vector<ArcMember> arc_members(const std::uint8_t* data, std::size_t size) {
+    const Reader r(data, size);
+    if (size < 0x10 || std::memcmp(data, "ARC", 4) != 0)
+        throw std::runtime_error("not an ARC");
+    std::vector<ArcMember> out;
+    const auto count = r.get<std::uint16_t>(6);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t at = 0x10 + i * 0x20;
+        ArcMember m;
+        m.kind = r.get<std::uint32_t>(at);
+        m.offset = r.get<std::uint32_t>(at + 4);
+        m.size = r.get<std::uint32_t>(at + 8);
+        m.name = r.name(at + 16, 16);
+        if (m.offset > size || m.size > size - m.offset)
+            throw std::runtime_error("an ARC member past its end: " + m.name);
+        out.push_back(std::move(m));
+    }
+    return out;
+}
+
 std::vector<std::string> texture_names(const std::uint8_t* data, std::size_t size) {
     const Reader r(data, size);
     if (size < 0x20 || std::memcmp(data, "PMP\0", 4) != 0)
@@ -160,7 +347,8 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     // a material for each texture, blended or not: its picture written once
     std::map<std::pair<std::string, bool>, int> material_of;
     std::map<std::string, bool> picture_alpha;  // written pictures: whether they hold see-through texels
-    std::map<int, SceneMesh> meshes;            // by material
+    std::map<std::pair<int, bool>, SceneMesh> meshes;  // by material, and whether a sky's
+    int sky_node = -1;
     auto material = [&](const std::string& texture, bool blended) {
         const auto key = std::make_pair(texture, blended);
         if (auto found = material_of.find(key); found != material_of.end())
@@ -218,73 +406,75 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
         std::vector<std::string> textures;
         for (std::size_t t = 0; t < r.get<std::uint8_t>(pmo + 8); ++t)
             textures.push_back(r.name(pmo + kPmoTextures + t * kTextureInfoSize + 4, 12));
-        {
-            // its section (+0x1c, when +0x10 has none, is a model's only one; else it points within the vertices)
-            std::uint32_t at = r.get<std::uint32_t>(pmo + 0x10);
-            if (at == 0)
-                at = r.get<std::uint32_t>(pmo + 0x1c);
-            if (at == 0)
-                continue;
-            const std::size_t s = pmo + at;
-            const auto vertices_at = r.get<std::uint32_t>(s + 0x18);
-            const auto bytes = r.get<std::uint32_t>(s + 0x1c);
-            const std::vector<Record> recs = records(r, pmo, s);
-            std::size_t held = 0;
-            bool readable = true;
-            for (const Record& rec : recs) {
-                held += std::size_t{rec.count} * rec.vertex_size;
-                readable = readable && rec.vertex_size == kVertexSize &&
-                           (rec.primitive == kTriangles || rec.primitive == kStrip);
+        // a sky, or a far backdrop, by its textures' names (tm01_sky01, pi_sky_c; tm01_fore01): drawn around the
+        // camera, behind everything (a dome of 200 metres would hide the room from outside)
+        const bool sky = std::any_of(textures.begin(), textures.end(), [](const std::string& t) {
+            const auto fore = t.find("fore");
+            return t.find("sky") != std::string::npos || (fore != std::string::npos && fore + 4 < t.size() &&
+                                                          std::isdigit(static_cast<unsigned char>(t[fore + 4])));
+        });
+        if (sky && sky_node < 0) {
+            SceneNode node;
+            node.name = "sky";
+            node.parent = 0;
+            node.sky = true;
+            room.scene.nodes.push_back(node);
+            sky_node = static_cast<int>(room.scene.nodes.size() - 1);
+        }
+        // its meshes, as its version keeps them
+        std::string problem;
+        const std::vector<ReadMesh> read =
+            r.get<std::uint8_t>(pmo + 6) == 3 ? pmo3_meshes(r, pmo, &problem) : pmo4_meshes(r, pmo, &problem);
+        if (!problem.empty()) {
+            room.report.push_back("object " + std::to_string(i) + ": its meshes not read (" + problem + ")");
+            continue;
+        }
+        for (const ReadMesh& rm : read) {
+            const std::string texture = rm.texture < textures.size() ? textures[rm.texture] : std::string();
+            const int m = material(texture, rm.blended);
+            SceneMesh& mesh = meshes[{m, sky}];
+            if (mesh.primitives.empty()) {
+                mesh.name = room.scene.materials[static_cast<std::size_t>(m)].name + (sky ? "_sky" : "");
+                mesh.node = sky ? sky_node : 0;
+                mesh.primitives.push_back({m});
             }
-            if (!readable || held != bytes) {
-                room.report.push_back("object " + std::to_string(i) + ": its meshes not read (" +
-                                      std::to_string(recs.size()) + " records, " + std::to_string(held) + " of " +
-                                      std::to_string(bytes) + " vertex bytes, or a vertex of another size)");
+            ScenePrimitive& prim = mesh.primitives.front();
+            const auto base = static_cast<std::uint32_t>(prim.positions.size());
+            std::vector<std::array<float, 3>> placed;
+            for (const ReadVertex& rv : rm.vertices) {
+                prim.uvs.push_back(rv.uv);
+                prim.colors.push_back(rv.color);
+                std::array<float, 3> q{rv.position[0] * scale[0], rv.position[1] * scale[1], rv.position[2] * scale[2]};
+                q = turned(q, turn);
+                q = {q[0] + move[0], q[1] + move[1], q[2] + move[2]};
+                prim.positions.push_back(q);
+                placed.push_back(q);
+            }
+            const auto count = static_cast<std::uint32_t>(rm.vertices.size());
+            if (rm.primitive == kTriangles) {
+                for (std::uint32_t t = 0; t + 2 < count; t += 3)
+                    prim.indices.insert(prim.indices.end(), {base + t, base + t + 1, base + t + 2});
                 continue;
             }
-            const std::size_t v0 = pmo + vertices_at;
-            std::size_t first = 0;
-            for (const Record& rec : recs) {
-                const std::string texture = rec.texture < textures.size() ? textures[rec.texture] : std::string();
-                const int m = material(texture, rec.blended);
-                SceneMesh& mesh = meshes[m];
-                if (mesh.primitives.empty()) {
-                    mesh.name = room.scene.materials[static_cast<std::size_t>(m)].name;
-                    mesh.primitives.push_back({m});
+            // strips: each its own (version 3 gives their lengths), else one stitched by degenerate triangles
+            std::vector<std::uint32_t> lengths(rm.strips.begin(), rm.strips.end());
+            if (lengths.empty())
+                lengths.push_back(count);
+            std::uint32_t from = 0;
+            for (const std::uint32_t length : lengths) {
+                for (std::uint32_t t = 0; t + 2 < length && from + t + 2 < count; ++t) {
+                    const std::uint32_t k = from + t;
+                    const auto& a = placed[k];
+                    const auto& b = placed[k + 1];
+                    const auto& c = placed[k + 2];
+                    if (a == b || b == c || a == c)
+                        continue;  // a stitch between two strips
+                    if (t % 2 == 0)
+                        prim.indices.insert(prim.indices.end(), {base + k, base + k + 1, base + k + 2});
+                    else
+                        prim.indices.insert(prim.indices.end(), {base + k + 1, base + k, base + k + 2});
                 }
-                ScenePrimitive& prim = mesh.primitives.front();
-                const auto base = static_cast<std::uint32_t>(prim.positions.size());
-                std::vector<std::array<float, 3>> placed;
-                for (std::size_t k = 0; k < rec.count; ++k) {
-                    const std::size_t v = v0 + (first + k) * kVertexSize;
-                    prim.uvs.push_back({r.get<std::uint16_t>(v) / kUvUnit, r.get<std::uint16_t>(v + 2) / kUvUnit});
-                    prim.colors.push_back(gltf_color(r.get<std::uint8_t>(v + 4), r.get<std::uint8_t>(v + 5),
-                                                     r.get<std::uint8_t>(v + 6), r.get<std::uint8_t>(v + 7)));
-                    std::array<float, 3> p{r.get<float>(v + 8) / kPositionUnit * scale[0],
-                                           r.get<float>(v + 12) / kPositionUnit * scale[1],
-                                           r.get<float>(v + 16) / kPositionUnit * scale[2]};
-                    p = turned(p, turn);
-                    p = {p[0] + move[0], p[1] + move[1], p[2] + move[2]};
-                    prim.positions.push_back(p);
-                    placed.push_back(p);
-                }
-                if (rec.primitive == kTriangles) {
-                    for (std::uint32_t t = 0; t + 2 < rec.count; t += 3)
-                        prim.indices.insert(prim.indices.end(), {base + t, base + t + 1, base + t + 2});
-                } else {
-                    for (std::uint32_t t = 0; t + 2 < rec.count; ++t) {
-                        const auto& a = placed[t];
-                        const auto& b = placed[t + 1];
-                        const auto& c = placed[t + 2];
-                        if (a == b || b == c || a == c)
-                            continue;  // a stitch between two strips
-                        if (t % 2 == 0)
-                            prim.indices.insert(prim.indices.end(), {base + t, base + t + 1, base + t + 2});
-                        else
-                            prim.indices.insert(prim.indices.end(), {base + t + 1, base + t, base + t + 2});
-                    }
-                }
-                first += rec.count;
+                from += length;
             }
         }
     }
@@ -407,14 +597,16 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
         prim.uvs.push_back({0.0F, 0.0F});
         prim.colors.push_back({255, 255, 255, 255});
     };
+    const bool v2 = r.get<std::uint32_t>(4) == 2;
+    const std::size_t counts = v2 ? 0x24 : 0x18;  // then the faces', the vertices' offset, the faces'
     const auto parts = r.get<std::uint32_t>(8);
     const auto parts_at = r.get<std::uint32_t>(0xc);
     for (std::size_t part = 0; part < parts; ++part) {
-        const std::size_t p = parts_at + part * kBcdPartSize;
-        const auto vertices = r.get<std::uint16_t>(p + 0x18);
-        const auto faces = r.get<std::uint16_t>(p + 0x1a);
-        const auto vertices_at = r.get<std::uint32_t>(p + 0x1c);
-        const auto faces_at = r.get<std::uint32_t>(p + 0x20);
+        const std::size_t p = parts_at + part * (v2 ? kBcd2PartSize : kBcdPartSize);
+        const auto vertices = r.get<std::uint16_t>(p + counts);
+        const auto faces = r.get<std::uint16_t>(p + counts + 2);
+        const auto vertices_at = r.get<std::uint32_t>(p + counts + 4);
+        const auto faces_at = r.get<std::uint32_t>(p + counts + 8);
         auto vertex = [&](std::int16_t i) {
             if (i < 0 || i >= vertices)
                 throw std::runtime_error("a face's corner past the vertices");
