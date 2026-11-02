@@ -7,11 +7,13 @@
 //
 //   khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> [options]
 //     --out <dir>            contact sheets and the report go here
-//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, attack, jump, guard, air_front, air_back, wall,
+//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall,
 //                            spawn, teleport, cut, platform, all (default all)
+//     --slot-offset <n>      the scenarios' P_EX110 slots from slot n on (motions.txt adds P_EX110.mset there)
 //     --actors <n>           simulate n actors at once (the benchmark; default 1)
 //     --draw-hz <hz>         draws a second (default 60); --repeat <n> draws each n times
-//     --reference <B.mdlx> <B.mset> <slot,...>   compare the coat with a baked KH2 coat (same coat bones)
+//     --reference <B.mdlx> <B.mset> <slot,...>   compare the coat with a baked KH2 coat (same coat bones; all the
+//                            bones when it has this model's count), its slot seen by the controls' `slot` lines
 //
 // Diagnostics (stderr): KHDAYS_REPLAY_DEBUG=<strain> the worst links once strain passes it, and every leg
 // in a coarse face with its side; KHDAYS_REPLAY_LEGS=1 each frame's deepest leg in the coat (cm);
@@ -30,6 +32,7 @@
 
 #include "actor.h"
 
+#include "khdays/assets/kh2_bar.h"
 #include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/kh2_motion.h"
 
@@ -69,10 +72,21 @@ std::vector<std::uint8_t> read_file(const std::filesystem::path &p)
 
 struct Motions {
     std::unique_ptr<kh2::MotionSet> set;
-    std::unique_ptr<kh2::MotionSkeleton> skeleton;
+    std::unique_ptr<kh2::MotionSkeleton> skeleton, own_skeleton;
     std::unique_ptr<kh2::Retarget> retarget;
+    std::vector<std::pair<std::size_t, std::size_t>> own_slots; // `own` msets' slots, [from, to): not retargeted
     std::map<std::size_t, std::unique_ptr<kh2::MotionPlayer>> players;
     bool leg_printed = false;
+
+    bool own(std::size_t slot) const
+    {
+        if (!retarget)
+            return true;
+        for (const auto &[from, to] : own_slots)
+            if (slot >= from && slot < to)
+                return true;
+        return false;
+    }
 
     // the model's bones (KH2 cm, model space) for `slot` at `ticks`, the root motion taken out
     bool pose(std::size_t slot, float ticks, std::vector<kh2::Mat4> &out)
@@ -82,7 +96,7 @@ struct Motions {
             return false;
         auto &p = players[slot];
         if (!p)
-            p = std::make_unique<kh2::MotionPlayer>(*skeleton);
+            p = std::make_unique<kh2::MotionPlayer>(own(slot) ? *own_skeleton : *skeleton);
         const float end = m->length_ticks(), from = m->loop_ticks();
         if (std::getenv("KHDAYS_REPLAY_JITTER") != nullptr && ticks > end) {
             const float wrapped = from >= 0.0F && from < end ? from + std::fmod(ticks - from, end - from) : end;
@@ -96,7 +110,7 @@ struct Motions {
         const kh2::Mat4 unit{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         p->evaluate(*m, ticks, unit, nullptr);
         std::vector<kh2::Mat4> g;
-        if (retarget)
+        if (!own(slot))
             retarget->apply(p->joints(), g);
         else
             g = p->joints();
@@ -148,8 +162,16 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
     if (!in)
         throw std::runtime_error("cannot open " + list.string());
     std::string line, mset, skeleton;
+    bool mset_own = false;
     std::vector<std::pair<int, int>> bones;
     std::vector<kh2::Retarget::Limb> limbs;
+    struct Extra { // `motions <file> [<entry>] at <slot> [own]`
+        std::string file, entry;
+        std::size_t at = 0;
+        bool own = false;
+    };
+    std::vector<Extra> extras;
+    std::vector<std::array<int, 3>> carries; // `carry <bone> <by bone> at <slot>`
     const auto span = [](const std::string &s, int &a, int &b) {
         const auto dash = s.find('-');
         a = std::atoi(s.c_str());
@@ -162,9 +184,23 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
         std::string a, b, c, d, r;
         if (!(w >> a >> b))
             continue;
-        if (a == "mset")
+        if (a == "mset") {
             mset = b;
-        else if (a == "skeleton")
+            mset_own = static_cast<bool>(w >> c) && c == "own";
+        } else if (a == "motions") {
+            Extra x{b, {}, 0, false};
+            if (w >> c && c != "at") {
+                x.entry = c;
+                w >> c;
+            }
+            if (c == "at" && w >> d) {
+                x.at = static_cast<std::size_t>(std::atoi(d.c_str()));
+                x.own = static_cast<bool>(w >> r) && r == "own";
+                extras.push_back(x);
+            }
+        } else if (a == "carry" && w >> c >> d >> r && d == "at") {
+            carries.push_back({std::atoi(b.c_str()), std::atoi(c.c_str()), std::atoi(r.c_str())});
+        } else if (a == "skeleton")
             skeleton = b;
         else if (a == "bone" && w >> c) {
             int t0, t1, s0, s1;
@@ -186,6 +222,25 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
     const auto folder = list.parent_path();
     const auto own = read_file(model);
     const kh2::MotionSkeleton target = kh2::read_motion_skeleton(own.data(), own.size());
+    m.own_skeleton = std::make_unique<kh2::MotionSkeleton>(target);
+    const auto set = read_file(folder / mset);
+    m.set = std::make_unique<kh2::MotionSet>(set.data(), set.size());
+    if (mset_own)
+        m.own_slots.emplace_back(0, m.set->slots());
+    for (const Extra &x : extras) { // as models.cpp's load_kh2_motions
+        const auto bytes = read_file(folder / x.file);
+        if (x.entry.empty()) {
+            m.set->add(x.at, kh2::MotionSet(bytes.data(), bytes.size()));
+        } else {
+            for (const kh2::BarEntry &e : kh2::bar_entries(bytes.data(), bytes.size()))
+                if (e.name == x.entry && kh2::is_bar(bytes.data(), bytes.size(), e.offset)) {
+                    m.set->add(x.at, kh2::MotionSet(bytes.data() + e.offset, e.size));
+                    break;
+                }
+        }
+        if (x.own && m.set->slots() > x.at)
+            m.own_slots.emplace_back(x.at, m.set->slots());
+    }
     if (skeleton.empty()) {
         m.skeleton = std::make_unique<kh2::MotionSkeleton>(target);
     } else {
@@ -195,9 +250,27 @@ Motions load_motions(const std::filesystem::path &list, const std::filesystem::p
         for (const auto &[t, s] : bones)
             source_of[static_cast<std::size_t>(t)] = s;
         m.retarget = std::make_unique<kh2::Retarget>(*m.skeleton, target, source_of, limbs);
+        for (const auto &[bone, by, at] : carries) { // the bone on the other where the own slot's first frame has it
+            const kh2::Motion *motion = m.set->motion(static_cast<std::size_t>(at));
+            if (motion == nullptr || !m.own(static_cast<std::size_t>(at)))
+                throw std::runtime_error("carry " + std::to_string(bone) + " " + std::to_string(by) +
+                                         ": no own motion in slot " + std::to_string(at));
+            kh2::MotionPlayer p(target);
+            const kh2::Mat4 unit{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            p.evaluate(*motion, 0.0F, unit, nullptr);
+            const auto unscaled = [](Mat4 x) {
+                for (std::size_t c = 0; c < 3; ++c) {
+                    const float l = std::hypot(x[c * 4], x[c * 4 + 1], x[c * 4 + 2]);
+                    for (std::size_t r = 0; r < 3 && l > 0.0F; ++r)
+                        x[c * 4 + r] /= l;
+                }
+                return x;
+            };
+            m.retarget->carry(bone, by,
+                              mul(inverse_affine(unscaled(p.joints()[static_cast<std::size_t>(by)])),
+                                  unscaled(p.joints()[static_cast<std::size_t>(bone)])));
+        }
     }
-    const auto set = read_file(folder / mset);
-    m.set = std::make_unique<kh2::MotionSet>(set.data(), set.size());
     return m;
 }
 
@@ -264,6 +337,25 @@ std::vector<Scenario> scenarios()
                      if (t < 5.0F)
                          return yaw_at({0, 0, 2.0F * speed - (t - 3.2F) * speed}, kPi);
                      return yaw_at({0, 0, 2.0F * speed - 1.8F * speed}, kPi); // a dead stop
+                 },
+                 floor_plane(40),
+                 nullptr});
+    // running round a circle, turning all the while (the stick held to one side while the camera turns the
+    // other way); KHDAYS_REPLAY_TURN=<degrees a second> (default 120), negative turning the other way
+    static const float turn = [] {
+        const char *v = std::getenv("KHDAYS_REPLAY_TURN");
+        return (v != nullptr ? static_cast<float>(std::atof(v)) : 120.0F) * kPi / 180.0F;
+    }();
+    s.push_back({"circle",
+                 8.0F,
+                 {{0.0F, 0, "b_ro_A000"}, {1.0F, 10, "b_ro_A001"}, {7.0F, 0, "b_ro_A000", 0.1F}},
+                 [](float t) {
+                     constexpr float speed = 5.5F;
+                     const float u = std::fmin(std::fmax(t - 1.0F, 0.0F), 6.0F), h = turn * u;
+                     const float r = std::fabs(turn) > 1e-4F ? speed / turn : 0.0F;
+                     const Vec3 at = std::fabs(turn) > 1e-4F ? Vec3{r * (1.0F - std::cos(h)), 0, r * std::sin(h)}
+                                                             : Vec3{0, 0, speed * u};
+                     return yaw_at(at, h);
                  },
                  floor_plane(40),
                  nullptr});
@@ -1234,7 +1326,8 @@ void compare_reference(Run &run, const std::filesystem::path &mdlx, const std::f
     const kh2::MotionSet set(set_bytes.data(), set_bytes.size());
     const Rig &rig = *run.rig;
     const std::size_t nb = rig.skeleton.names.size();
-    constexpr std::size_t shared = 95; // N_EX830, B_EX390 and P_EX100 share bones 0-94 (body and coat)
+    // N_EX830, B_EX390 and P_EX100 share bones 0-94 (body and coat); a reference with this model's bones shares all
+    const std::size_t shared = sk.joints.size() == nb ? nb : 95;
     std::vector<Frame> rest(nb);
     for (std::size_t b = 0; b < nb; ++b)
         rest[b] = frame_of(rig.skeleton.rest[b]);
@@ -1272,6 +1365,8 @@ void compare_reference(Run &run, const std::filesystem::path &mdlx, const std::f
             ActorInput in;
             in.seconds = ticks / 60.0;
             in.pose = &pose;
+            in.animations = {
+                {"reference", static_cast<int>(slot), -1.0F, ticks / 60.0F, m->length_ticks() / 60.0F, 1.0F}};
             actor.update(in);
             std::fill(written.begin(), written.end(), std::uint8_t{0});
             out = pose;
@@ -1347,7 +1442,7 @@ int main(int argc, char **argv)
     if (argc < 4) {
         std::fprintf(stderr, "usage: khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> "
                              "[--out dir] [--scenario name] [--actors n] [--draw-hz hz] [--repeat n] "
-                             "[--reference B.mdlx B.mset slot,slot]\n");
+                             "[--slot-offset n] [--reference B.mdlx B.mset slot,slot]\n");
         return 2;
     }
     std::filesystem::path out = ".";
@@ -1356,10 +1451,13 @@ int main(int argc, char **argv)
     float hz = 60.0F;
     std::filesystem::path ref_mdlx, ref_mset;
     std::vector<std::size_t> ref_slots;
+    std::size_t slot_offset = 0;
     for (int i = 4; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--out" && i + 1 < argc)
             out = argv[++i];
+        else if (a == "--slot-offset" && i + 1 < argc)
+            slot_offset = static_cast<std::size_t>(std::max(0, std::atoi(argv[++i])));
         else if (a == "--scenario" && i + 1 < argc)
             which = argv[++i];
         else if (a == "--actors" && i + 1 < argc)
@@ -1452,9 +1550,11 @@ int main(int argc, char **argv)
                      static_cast<double>(run.rig->config.rate), run.rig->config.substeps, run.rig->config.iterations,
                      static_cast<double>(hz), repeat, actors);
         Profile all;
-        for (const auto &sc : scenarios()) {
+        for (auto sc : scenarios()) {
             if (which != "all" && which != sc.name)
                 continue;
+            for (Segment &s : sc.segments) // P_EX110's slots where motions.txt adds its mset from a slot on
+                s.slot += slot_offset;
             Profile p;
             const Metrics m = play(run, sc, actors, hz, repeat, out, p, true);
             all.totals.insert(all.totals.end(), p.totals.begin(), p.totals.end());

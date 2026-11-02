@@ -703,7 +703,21 @@ void Reader::control(const std::vector<Line> &lines, std::size_t &i)
             k.animations.assign(l.words.begin() + 1, l.words.end());
             if (k.animations.empty())
                 error(l.number, "write `animation <game animation>... ` (`*`: any)");
-        } else if (w == "slot" && l.words.size() == 2 && integer(l.words[1], k.slot) && k.slot >= 0) {
+        } else if (w == "slot" && l.words.size() >= 2) { // slot <slot>|<from>-<to>...
+            for (std::size_t s = 1; s < l.words.size(); ++s) {
+                const std::string &range = l.words[s];
+                const auto dash = range.find('-', 1);
+                int from = 0, to = 0;
+                bool ok = integer(range.substr(0, dash), from);
+                to = from;
+                if (ok && dash != std::string::npos)
+                    ok = integer(range.substr(dash + 1), to);
+                if (!ok || from < 0 || to < from) {
+                    error(l.number, "write `slot <slot>|<from>-<to>...` (KH2 mset slots, from the first up)");
+                    break;
+                }
+                k.slots.emplace_back(from, to);
+            }
         } else if (w == "section" && l.words.size() == 2 && number(l.words[1], k.section) && k.section >= 0.0F) {
         } else if (w == "time" && l.words.size() >= 3) {
             if (!number(l.words[1], k.from) || (l.words[2] != "end" && !number(l.words[2], k.to)) || k.from < 0.0F ||

@@ -194,16 +194,24 @@ public:
     Retarget(const MotionSkeleton& source, const MotionSkeleton& target, std::vector<int> source_of,
              std::vector<Limb> limbs);
 
+    // Target bone `bone` placed on target bone `by` as `local` (in by's unscaled frame) instead of by its own source
+    // or its parent: a weapon bone held in a hand as another skeleton's motions hold it. Throws when either is not
+    // a target bone, or `by` is `bone` or below it.
+    void carry(int bone, int by, const Mat4& local);
+
     // The target's gmatrix (model space) for the source's (MotionPlayer::joints).
     void apply(const std::vector<Mat4>& source, std::vector<Mat4>& target) const;
 
 private:
+    void order_bones();  // order_: parents and carriers first
     Mat4 pose(std::size_t t, const std::vector<Mat4>& source, const std::vector<Mat4>& out,
               const std::vector<Mat4>& swing, const std::vector<Vec4>& heads, const std::vector<char>& moved,
               const std::vector<float>& stretch) const;
     Vec4 carried(const std::vector<Mat4>& source, int t, int by) const;
     std::vector<int> parent_, source_of_, source_parent_;
-    std::vector<Vec4> stretch_axis_;  // per target bone: its length way (unit, its rest space), for `lengths`
+    std::vector<int> carrier_;         // per target bone: `carry`'s bone, -1 none
+    std::vector<Mat4> carried_local_;  // and its frame on it
+    std::vector<Vec4> stretch_axis_;   // per target bone: its length way (unit, its rest space), for `lengths`
     std::vector<Vec4> source_rest_head_;
     std::vector<std::size_t> order_;  // parents first
     std::vector<Limb> limbs_;

@@ -1455,15 +1455,9 @@ Retarget::Retarget(const MotionSkeleton& source, const MotionSkeleton& target, s
                          ? target.joints[t].parent
                          : -1;
     }
-    std::vector<char> done(n, 0);
-    for (std::size_t pass = 0; pass <= n && order_.size() < n; ++pass) {
-        for (std::size_t t = 0; t < n; ++t) {
-            if (!done[t] && (parent_[t] < 0 || done[static_cast<std::size_t>(parent_[t])])) {
-                order_.push_back(t);
-                done[t] = 1;
-            }
-        }
-    }
+    carrier_.assign(n, -1);
+    carried_local_.assign(n, kUnit);
+    order_bones();
     const auto below = [&](int b, int a) {
         for (int up = parent_[static_cast<std::size_t>(b)]; up >= 0; up = parent_[static_cast<std::size_t>(up)]) {
             if (up == a) {
@@ -1512,14 +1506,54 @@ Retarget::Retarget(const MotionSkeleton& source, const MotionSkeleton& target, s
     }
 }
 
+void Retarget::order_bones() {
+    const std::size_t n = parent_.size();
+    order_.clear();
+    std::vector<char> done(n, 0);
+    const auto ready = [&](int b) { return b < 0 || done[static_cast<std::size_t>(b)] != 0; };
+    for (std::size_t pass = 0; pass <= n && order_.size() < n; ++pass) {
+        for (std::size_t t = 0; t < n; ++t) {
+            if (!done[t] && ready(parent_[t]) && ready(carrier_[t])) {
+                order_.push_back(t);
+                done[t] = 1;
+            }
+        }
+    }
+}
+
+void Retarget::carry(const int bone, const int by, const Mat4& local) {
+    const int n = static_cast<int>(parent_.size());
+    bool below = false;  // `by` at or under `bone`: it would carry itself
+    for (int up = by; up >= 0 && up < n && !below; up = parent_[static_cast<std::size_t>(up)]) {
+        below = up == bone;
+    }
+    if (bone < 0 || bone >= n || by < 0 || by >= n || below) {
+        throw std::runtime_error("KH2 retarget: bone " + std::to_string(bone) + " carried by bone " +
+                                 std::to_string(by) + ": two of the target's " + std::to_string(n) +
+                                 " bones are needed, the carrier not the bone or below it");
+    }
+    carrier_[static_cast<std::size_t>(bone)] = by;
+    carried_local_[static_cast<std::size_t>(bone)] = local;
+    order_bones();
+    if (order_.size() < parent_.size()) {
+        carrier_[static_cast<std::size_t>(bone)] = -1;
+        order_bones();
+        throw std::runtime_error("KH2 retarget: bone " + std::to_string(bone) + " carried by bone " +
+                                 std::to_string(by) + " closes a loop of carried bones");
+    }
+}
+
 // Target bone t turned from its rest as its source bone is (then by `swing`), its head where its parent
 // carries it (the target's own lengths; a root's moved as its source moves) or where a limb's bend put
-// it (`heads`, when `moved`); an unmapped bone at rest under its parent.
+// it (`heads`, when `moved`); an unmapped bone at rest under its parent; a carried one on its carrier.
 Mat4 Retarget::pose(const std::size_t t, const std::vector<Mat4>& source, const std::vector<Mat4>& out,
                     const std::vector<Mat4>& swing, const std::vector<Vec4>& heads, const std::vector<char>& moved,
                     const std::vector<float>& stretch) const {
     const int p = parent_[t];
     const int s = source_of_[t];
+    if (carrier_[t] >= 0) {
+        return mul(out[static_cast<std::size_t>(carrier_[t])], carried_local_[t]);
+    }
     if (s < 0 || static_cast<std::size_t>(s) >= source.size()) {
         return p >= 0 ? mul(out[static_cast<std::size_t>(p)], target_local_[t]) : target_rest_[t];
     }

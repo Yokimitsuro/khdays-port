@@ -510,6 +510,37 @@ void free_chain_upside_down()
     CHECK(worst_step < 2.0F);
 }
 
+// `slot` with several slots and ranges: the control holds while any of them plays, not another slot or the game's
+void control_slots()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    const std::string text =
+        skirt_config(s, "") + "control own\n  animation *\n  slot 3 10-12\n  groups skirt\n  mode guided\nend\n";
+    auto rig = cooked(text, s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 5);
+    std::vector<Frame> pose = pose_of(s.sk, {0.0F, 0.0F, 0.0F});
+    ActorInput in;
+    in.pose = &pose;
+    const auto weight = [&](int slot, float t) {
+        in.seconds = t;
+        in.animations = {{"idle", slot, -1.0F, t, 0.0F, 1.0F}};
+        a.update(in);
+        return a.control_weights().empty() ? -1.0F : a.control_weights()[0];
+    };
+    CHECK(weight(11, 0.0F) > 0.99F);
+    CHECK(weight(3, 1.0F / 60.0F) > 0.99F);
+    CHECK(weight(5, 2.0F / 60.0F) == 0.0F);
+    CHECK(weight(-1, 3.0F / 60.0F) == 0.0F);
+    Diagnostics bad;
+    CHECK(cooked(skirt_config(s, "") + "control own\n  animation *\n  slot 12-10\n  groups skirt\nend\n", s.sk, s.mesh,
+                 bad) == nullptr);
+    CHECK(has_text(bad, "write `slot <slot>|<from>-<to>...`"));
+}
+
 void authored_and_release()
 {
     const Skirt s = make_skirt(6, 3);
@@ -1493,6 +1524,7 @@ int main()
     partial_jump();
     free_chain_upside_down();
     floor_over_body();
+    control_slots();
     authored_and_release();
     guided_stretch();
     cutscene_sim_shell();

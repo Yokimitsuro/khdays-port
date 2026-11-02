@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace khdays::secondary {
@@ -218,9 +219,9 @@ enum class TimeUnit { seconds, frames, ticks }; // frames: the game's animation 
 
 struct ControlConfig {
     std::string name;
-    std::vector<std::string> animations;                            // the game's animation names; `*` any
-    int slot = -1;                                                  // a KH2 mset slot it must play (-1 any)
-    float section = -1.0F;                                          // a motions.txt section's first frame (-1 any)
+    std::vector<std::string> animations;    // the game's animation names; `*` any
+    std::vector<std::pair<int, int>> slots; // the KH2 mset slots it plays in, each [from, to] (none: any)
+    float section = -1.0F;                  // a motions.txt section's first frame (-1 any)
     float from = 0.0F, to = std::numeric_limits<float>::infinity(); // within the animation
     TimeUnit unit = TimeUnit::seconds;
     bool loop = false; // `to` past the animation's end wraps (looping animations)

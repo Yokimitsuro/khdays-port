@@ -39,7 +39,9 @@ bool matches(const ControlConfig &k, const AnimationState &a)
         named = named || n == "*" || n == a.name;
     if (!named)
         return false;
-    if (k.slot >= 0 && k.slot != a.slot)
+    if (!k.slots.empty() && std::none_of(k.slots.begin(), k.slots.end(), [&](const std::pair<int, int> &r) {
+            return a.slot >= r.first && a.slot <= r.second;
+        }))
         return false;
     if (k.section >= 0.0F && std::fabs(k.section - a.section) > 1e-3F)
         return false;

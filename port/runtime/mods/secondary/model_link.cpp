@@ -182,10 +182,12 @@ struct ModelSecondary {
         Mat4 root_held = kIdentity4;
         bool has_root = false;
         float root_off = 0.0F, root_turn = 0.0F; // m, degrees
-        // the camera at the last draw (its place in the world) and how far it jumped to this one (m, degrees)
+        // the camera at the last draw (its place in the world, and from the actor's root) and how far it jumped to
+        // this one: in the world (m, degrees), round the actor (degrees) and nearer or further from it (m)
         Mat4 camera_world = kIdentity4;
+        Vec3 camera_from{};
         bool has_camera = false;
-        float camera_step = 0.0F, camera_turn = 0.0F;
+        float camera_step = 0.0F, camera_turn = 0.0F, camera_swing = 0.0F, camera_reach = 0.0F;
         u32 marked = 0; // the F12 mark last logged (khdays_log_marks)
     };
     std::map<const void *, ActorState> actors; // by render object; dropped when unseen (sweep)
@@ -1259,12 +1261,14 @@ static void trace_draw(ModelSecondary &m, ModelSecondary::ActorState &state, con
         return b >= 0 ? rig.skeleton.names[static_cast<std::size_t>(b)] : std::string("-");
     };
     khdays_log("secondary trace: %s v%u t%.3f epoch %llu;%s; hips %.2f cm, body %.1f cm (%s), cloth %.1f cm (%s); "
-               "root %.2f mm %.3f deg off held; camera %.2f m %.1f deg; placed by %s; at %.4f %.4f %.4f%s",
+               "root %.2f mm %.3f deg off held; camera %.2f m %.1f deg (round it %.1f deg, %.2f m nearer or further); "
+               "placed by %s; at %.4f %.4f %.4f%s",
                m.name.c_str(), now, a.seconds, static_cast<unsigned long long>(a.epoch), anims.c_str(),
                static_cast<double>(hips * 100.0F), static_cast<double>(body * 100.0F), name(body_bone).c_str(),
                static_cast<double>(cloth * 100.0F), name(cloth_bone).c_str(),
                static_cast<double>(state.root_off * 1000.0F), static_cast<double>(state.root_turn),
-               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn), state.placement,
+               static_cast<double>(state.camera_step), static_cast<double>(state.camera_turn),
+               static_cast<double>(state.camera_swing), static_cast<double>(state.camera_reach), state.placement,
                static_cast<double>(at.x), static_cast<double>(at.y), static_cast<double>(at.z),
                a.cut        ? " (a cut)"
                : a.pose_cut ? " (a pose cut)"
@@ -1444,10 +1448,15 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     a.camera_distance = length(Vec3{in.root[12], in.root[13], in.root[14]}) / units;
     a.player = false;
     a.environment = rig.config.environment ? &room_ : nullptr;
-    // a camera cut: the camera jumped further in one draw than a camera moves (a new shot; cutscenes re-stage
-    // their actors across one, and the cloth would take that as a fling)
+    // a camera cut: the camera's view of the actor jumped further in one draw than a camera moves (a new shot;
+    // cutscenes re-stage their actors across one, and the cloth would take that as a fling). Judged about the
+    // actor, not in the world: the field camera swinging round him while he ran moved 0.76-0.85 m a game frame
+    // (6.3 degrees round him, his own run 18-26 cm), each draw a cut, the cloth restarted and settled mid-run
     if (in.has_camera) {
         const Mat4 camera_world = inverse_affine(in.camera);
+        const Vec3 from =
+            (Vec3{camera_world[12], camera_world[13], camera_world[14]} - Vec3{root[12], root[13], root[14]}) *
+            (1.0F / units); // the camera's place from the actor's root (world axes, model units)
         if (state.has_camera) {
             const Frame was = frame_of(state.camera_world), is = frame_of(camera_world);
             state.camera_step = length(is.t - was.t) / units;
@@ -1455,9 +1464,17 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
                                 std::acos(std::fmin(1.0F, std::fabs(was.q.x * is.q.x + was.q.y * is.q.y +
                                                                     was.q.z * is.q.z + was.q.w * is.q.w))) *
                                 57.29578F;
-            a.cut = state.camera_step > kCutDistance || state.camera_turn > kCutDegrees;
+            const float near = length(state.camera_from), far = length(from);
+            state.camera_swing =
+                near > 1e-4F && far > 1e-4F
+                    ? std::acos(clampf(dot(state.camera_from, from) / (near * far), -1.0F, 1.0F)) * 57.29578F
+                    : 0.0F;
+            state.camera_reach = std::fabs(far - near);
+            a.cut = state.camera_turn > kCutDegrees || state.camera_swing > kCutDegrees ||
+                    state.camera_reach > kCutDistance;
         }
         state.camera_world = camera_world;
+        state.camera_from = from;
         state.has_camera = true;
     }
     a.pose_cut = in.pose_cut;

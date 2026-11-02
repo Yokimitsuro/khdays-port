@@ -304,6 +304,25 @@ void test_retarget() {
         refused = true;
     }
     expect(refused, "a limb reaching with an unmapped bone");
+    // `carry`: the unmapped bone on the end at a frame 2 along its x, turned 90 degrees, its children with it
+    target.joints.push_back(bone(4, 1.0F));
+    kh2::Retarget carrying(source, target, {0, 1, 2, 3, -1, -1}, {{1, 2, 3}});
+    carrying.carry(4, 3, turned_z(90.0F, 2.0F, 0.0F));
+    carrying.apply(pose, out);
+    // the end at (10, 11) turned 180: 2 along its x is (8, 11), its turn 270 in all
+    expect(near(out.at(4)[12], 8.0F, 1e-2F) && near(out.at(4)[13], 11.0F, 1e-2F) && near(out.at(4)[0], 0.0F, 1e-3F) &&
+               near(out.at(4)[1], -1.0F, 1e-3F),
+           "the carried bone on its carrier");
+    expect(near(out.at(5)[12], 9.0F, 1e-2F) && near(out.at(5)[13], 11.0F, 1e-2F), "its child carried with it");
+    for (const auto& [bone_at, by] : std::vector<std::pair<int, int>>{{4, 5}, {4, 4}, {4, 9}}) {
+        refused = false;
+        try {
+            carrying.carry(bone_at, by, kUnit);
+        } catch (const std::runtime_error&) {
+            refused = true;
+        }
+        expect(refused, "a carrier below the bone, the bone itself or no bone");
+    }
 }
 
 void test_attributes() {

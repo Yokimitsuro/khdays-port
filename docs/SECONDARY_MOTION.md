@@ -208,7 +208,7 @@ constraints.
 ```text
 control <name>
   animation b_ro_Ca003 ...  # the game's animation names (KHDAYS_TRACE_MODELS=1 logs them); * any
-  slot 644                  # only while that KH2 mset slot plays it (motions.txt)
+  slot 644                  # only while that KH2 mset slot plays it (motions.txt); several, ranges: slot 3 10-12
   section 12                # only in the motions.txt section from that frame
   time 0 1.2 seconds        # within the animation: seconds, frames (30 a second) or ticks (60); `end`
   loop on                   # the time wraps at the animation's length
@@ -359,14 +359,20 @@ and a bent first pose (a cutscene's) flung them.
 A camera cut is a new shot: cutscenes re-stage their actors across one (a restarted
 animation, a step aside, a turn), and under `teleport`'s limits the cloth took that
 for a move made in one frame. The draw compares the flushed camera with the last
-draw's; a jump of more than 0.75 m (the model's units) or 25 degrees is a cut
-(`model_link.cpp` `kCutDistance`, `kCutDegrees`): the state is rebased as for a
+draw's, as the actor sees it: the camera turning more than 25 degrees, or its place
+from the actor's root swinging round it more than 25 degrees or coming nearer or going
+further by more than 0.75 m (the model's units), is a cut (`model_link.cpp`
+`kCutDistance`, `kCutDegrees`). Judged by its jump in the world (0.75 m), the field
+camera swinging round Roxas as he ran (the stick held sideways, the camera turned the
+other way) moved 0.76-0.85 m a game frame (6.3 degrees round him, his run 18-26 cm),
+so every draw was a cut: the cloth restarted and settled mid-run, clipping into the
+legs (114 cuts in a traced session). A cut: the state is rebased as for a
 teleport and the hanging groups settled in the new pose. In the replay's `cut`
 scenario (the battle idle restarted, the actor moved 45 cm and 30 degrees
 turned) a drawstring tip moved 30 cm in the frame after the cut and 2.6 cm a frame
 on average over the next second; with it, 4.3 cm (the restart itself) and 0.26 cm.
 A battle-idle start: 3.5 cm at most in its first second, now 0.5. A cut costs one
-update about 9 ms longer. `KHDAYS_SECONDARY_TRACE` prints each draw's camera jump
+update about 9 ms longer. `KHDAYS_SECONDARY_TRACE` prints each draw's camera jump (in the world and round the actor)
 and marks a cut.
 
 Actors are the drawn render objects, each with its own state; an actor unseen for
@@ -534,7 +540,10 @@ khdays-secondary-replay ... --scenario run --actors 8 --draw-hz 30 --repeat 2
 khdays-secondary-replay ... --reference B_EX390.mdlx B_EX390.mset 0,10,140,208
 ```
 
-Plays the scenarios (idle, run with a 180 degree turn and a dead stop, attack with
+Plays the scenarios (idle, run with a 180 degree turn and a dead stop, a run round a
+circle turning all the while (`circle`, `KHDAYS_REPLAY_TURN=<degrees a second>`, default 120: the
+stick held sideways while the camera turns; the coat Roxas clips no more there than in a straight
+run, up to 180 a second), attack with
 lunges, jump with landing, guard, launched into KH2's aerial damage front and back
 and cut to its landing (`air_front`, `air_back`; `KHDAYS_REPLAY_AIR=<s>` the time in
 the air, `KHDAYS_REPLAY_FROM=<slot>` the motion launched out of, no-fade segments
@@ -545,7 +554,13 @@ motion taken out, the actor placed on a path), and writes `report.txt` (clipping
 of the skinned simulated vertices beyond their rest overlap with the colliders
 their group uses, vertices under the room, coat strain, recoveries, rebases, cost
 percentiles, per-phase cost) and a contact sheet per scenario of the proxies
-(colliders, coarse faces, links, anchors).
+(colliders, coarse faces, links, anchors). It reads motions.txt's `mset ... own`,
+`motions` and `carry` lines as the port does; the scenarios name P_EX110's slots,
+so for a model that adds P_EX110.mset from a slot on, `--slot-offset <slot>` moves
+them there. `--reference`'s slots are seen by the controls' `slot` lines, and a
+reference model with this model's bone count drives all of them (else bones 0-94):
+the dual wield Roxas (B_EX390 on its own motions) is checked against its own bake
+with `--reference roxas_bf_h.mdlx B_EX390.mset 0,1,4,5`.
 
 ## Results
 
@@ -648,7 +663,11 @@ Each was found by measuring the legs against the coat's faces and reading why:
   not used.
 - B_EX390's authored flares are larger than any body-driven setting produces;
   matching one motion closely needs an authored control (`mode guided` on a
-  model whose motions carry coat tracks).
+  model whose motions carry coat tracks). The dual wield Roxas does this for
+  B_EX390's own slots (`control own_motions`, `slot 0-256`, `mode guided`,
+  `follow_frequency 6 hem 3`, `follow_damping 0.8`, `follow_bone_scale 0`): the
+  coat's RMS from the bake in slots 0, 1, 4, 5 is 4.3, 4.1, 6.0 and 14.7 cm against
+  20.9, 14.1, 14.4 and 34.4 simulated on the hips and thighs.
 - The calm stance in game still flares (hem about 1.7x the rest drape) where
   P_EX110's motions, mapped onto N_EX830 with IK, hold the knees 7-8 cm further
   apart than KH2's own coat Roxas (P_EX100) stands; the rigid-on-the-hips target

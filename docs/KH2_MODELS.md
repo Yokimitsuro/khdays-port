@@ -277,9 +277,10 @@ than the game's. With `KHDAYS_SECONDARY_TRACE=1` a section's first draw logs whe
 the joints the game drives are in the game's pose and in the motion's (cm, the
 root's space), to tell whether it needs one.
 
-`motions <file> [<entry>] at <slot>` adds another mset's motions from that slot
+`motions <file> [<entry>] at <slot> [own]` adds another mset's motions from that slot
 on (past the `mset`'s last; its slots then play as the `mset`'s do, on the same
-`skeleton`); with an entry, that entry of a BAR of sets. KH2's GAMEOVER.mset is
+`skeleton`, or with `own` on this model's own bones, below); with an entry, that
+entry of a BAR of sets. KH2's GAMEOVER.mset is
 such a BAR: AK10 (#252) and AK12 (#253) are sets of their own, AK10's slots 2, 14,
 26 and 34 moving 228, 229, 133 and 238 model joints, AK12's 2 and 14 228 and 133.
 Slot 14 (`0140`, 300 ticks looping from 0) is Roxas's: P_EX110's 229 joints, lying
@@ -403,6 +404,25 @@ with) carries this end's rest place, its middle toward where the other's middle
 carries this middle's: the law of cosines about an up vector, as
 `Motion::calcIKJoint`.
 
+**Two skeletons.** `mset <file> own` and `motions ... at <slot> own` mark an
+mset made for this model's own bones: its slots play on this model's skeleton
+and are not retargeted, while the others play on the `skeleton`'s and are
+(`own_slot`, `skeleton_of`, `pose_on_model` in `models.cpp`; a track's player is
+made anew when its slot's skeleton changes). So one model plays KH2's motions
+made for it and another model's at once: the dual wield Roxas below plays
+B_EX390.mset on its own bones and P_EX110's and GAMEOVER's retargeted. Without a
+`skeleton` line every slot is the model's own, as before. A bone the other
+skeleton has no match for can ride another of this model's bones as an own
+motion holds it:
+
+```text
+carry 95 149 at 0   # bone 95 on bone 149, at its frame on 149 in slot 0's first frame
+```
+
+`kh2::Retarget::carry` then places it on that bone's posed frame (unscaled) in
+every retargeted motion, its children with it, instead of by its own source or
+parent; the slot must be an `own` mset's.
+
 A bone that carries others (its children, its own vertices) must follow a bone
 that moves the same body part. A bone no vertex follows can sit far from its
 rest frame in a motion: P_EX110's hip bone 3 turns about 90 degrees from its
@@ -429,8 +449,10 @@ files are N_EX830's renumbered: N 0-94 the same, 95-99 +22, 107-158 +15, 165-170
 under the head's base, 176, hanging straight down a centimetre into the coat's
 chest at rest); `docs/examples/secondary/B_EX390.secondary.txt` hangs them forward
 against a collider of their own over the chest. The keyblades are skinned to bones
-96-105 and 107-116 alone and hang 60 cm beside him at rest: `mesh_scale <bone> 0 0
-0` on each (a thousandth) hides them.
+96-105 and 107-116 alone and hang 60 cm beside him at rest; bones.txt's `hide`
+over every height (`hide kh2_95 ... kh2_116 from 1000 to -1000`) drops their
+triangles. Shrunk to a thousandth with `mesh_scale <bone> 0 0 0`, they still showed
+in game as one-pixel lines.
 
 Its collar is skinned rigidly to the neck (175, from 133 to 145 cm, blended into
 the hood's 178 only at the top), and P_EX110 turns its head 20-75 degrees on the
@@ -440,6 +462,38 @@ on 110, the hood turned that far off the collar. 176-177 carry the drawstrings:
 left on 111-112, they turned with the neck while the collar turned with the head,
 and the strings ran back along the neck before they fell. In bones.txt, 175 pairs with Days'
 `Bip01_Head` and 176-178 have no pair of their own: they ride 175.
+
+B_EX390 is also Days' dual wield Roxas (`ba/ch/r2/def_h.p.z`, `roxas_bf_h`), which
+plays KH2's own motions for B_EX390 (`mset B_EX390.mset own`, 257 slots) as well as
+P_EX110's (`motions P_EX110.mset at 1000`) and the game over (`motions
+GAMEOVER.mset AK10 at 2000`, `ro_con00 2014`), those two retargeted as for
+`roxas_ho_h`. Days' model (the game's animations `b_bf_*`) holds its keyblades at
+`ro_h_L` and `ro_h_R`, not `ro_w_tg_*`. B_EX390's keyblades hang from bones 95
+(left) and 106 (right), each blade along its bone's -x, the flat across z. In every
+B_EX390 motion checked (slots 0, 1, 4, 5, 20), 95 rides the left weapon bone 149
+and 106 the right one 222 rigidly (5.3 and 5.1 cm out, one turn throughout). So:
+
+- `weapon ro_h_L 95 rotate 180 90 0` and `weapon ro_h_R 106 rotate 180 90 0`: the
+  turn of the hooded model's `weapon ro_w_tg_R 222 rotate 0 -90 90` taken onto 106's
+  axes, so Days' keyblade (along its +z, teeth +y) lies along the baked blade
+  (along -x, teeth toward -y, where the blade reaches further: 25 cm against 15);
+- `carry 95 149 at 0` and `carry 106 222 at 0`: in P_EX110's motions the keyblade
+  bones ride its weapon bones (P_EX110's 63 and 172) at that frame (offline: 6.2
+  and 5.5 cm from them in slots 0, 2, 8, 604, the frame on them B_EX390's exactly);
+- bones.txt pairs `kh2_95 ro_h_L` and `kh2_106 ro_h_R` with `place`: in the game's
+  own animations the bones sit on its weapon joints, and the keyblades take the
+  game's own frame there (its share of the pose is whole). A placed joint holding
+  its own node's weapon is turned at load so the `weapon` line's frame on it is the
+  node's (`load_kh2_motions`: its correction N (W T)^-1, N the node's rest turn, W
+  the joint's, T the line's). With the joint's own rest turn left in, a fade
+  between a B_EX390 motion and a game animation spun the keyblades a whole turn:
+  the joint's blend and the hold's turn toward the game's frame went opposite ways.
+  Neither node is a paired joint's only paired child, so nothing above them is
+  turned or stretched.
+
+The left blade's turn is the right's, unchecked in game: Days' left keyblade may be
+made the other way about.
+
 
 **Weapons.** The game places what an actor holds on joints of its own model:
 `Ov030_CreateActor` looks up `ro_w_tg_L`, `ro_w_tg_R` and `roxas_R` (actor

@@ -471,6 +471,9 @@ struct Model {
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton>
         kh2_skeleton;                                                  // the mset's model's (its own, else `skeleton`)
     std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_retarget; // from the `skeleton`'s bones to the model's
+    // `own` msets' slots, [from, to): made for this model's own bones (kh2_own_skeleton), played without the retarget
+    std::shared_ptr<const khdays::assets::kh2::MotionSkeleton> kh2_own_skeleton;
+    std::vector<std::pair<std::size_t, std::size_t>> kh2_own_slots;
     std::map<std::string, std::vector<Kh2Section>> kh2_sections;
     std::vector<std::string> kh2_idle; // motions.txt's `idle`: the game's idles a `finish` plays out into
     // `<game animation> blend <frames>` (no slot): its fade into an idle, for the game's own animations
@@ -524,6 +527,7 @@ bool drawn_has_camera = false;
 // ticks (60 a second).
 struct Kh2Track {
     std::unique_ptr<khdays::assets::kh2::MotionPlayer> player;
+    const khdays::assets::kh2::MotionSkeleton *skeleton = nullptr; // the player's
     float ticks = 0.0F;
     std::vector<khdays::assets::kh2::Mat4> joints; // the pose shown: the model's bones
     float face_ticks = -1.0F;                      // the motion time last shown, for its triggers (-1 none)
@@ -903,6 +907,42 @@ Mat in_metres(Mat g)
     return g;
 }
 
+// A KH2 mset slot made for the model's own bones (an `own` mset's, or every slot without a `skeleton`)
+bool own_slot(const Model &m, std::size_t slot)
+{
+    if (!m.kh2_retarget)
+        return true;
+    for (const auto &[from, to] : m.kh2_own_slots)
+        if (slot >= from && slot < to)
+            return true;
+    return false;
+}
+
+// The skeleton a slot's motion plays on, and its pose given to the model's bones (retargeted unless its own)
+const khdays::assets::kh2::MotionSkeleton &skeleton_of(const Model &m, std::size_t slot)
+{
+    return own_slot(m, slot) ? *m.kh2_own_skeleton : *m.kh2_skeleton;
+}
+
+void pose_on_model(const Model &m, std::size_t slot, const std::vector<khdays::assets::kh2::Mat4> &played,
+                   std::vector<khdays::assets::kh2::Mat4> &out)
+{
+    if (own_slot(m, slot))
+        out = played;
+    else
+        m.kh2_retarget->apply(played, out);
+}
+
+// A track's player for a slot, made anew when the slot plays on another skeleton than its last
+void ready_player(const Model &m, Kh2Track &track, std::size_t slot)
+{
+    const khdays::assets::kh2::MotionSkeleton &skeleton = skeleton_of(m, slot);
+    if (!track.player || track.skeleton != &skeleton) {
+        track.player = std::make_unique<khdays::assets::kh2::MotionPlayer>(skeleton);
+        track.skeleton = &skeleton;
+    }
+}
+
 // A turn of `degrees` about x, then y, then z (each about the fixed axes of the frame it is applied in)
 Mat turn_of(const std::array<float, 3> &degrees)
 {
@@ -948,13 +988,10 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
             model.kh2_motions ? model.kh2_motions->motion(static_cast<std::size_t>(slot)) : nullptr;
         if (motion == nullptr)
             return nullptr;
-        kh2::MotionPlayer player(*model.kh2_skeleton);
+        kh2::MotionPlayer player(skeleton_of(model, static_cast<std::size_t>(slot)));
         player.evaluate(*motion, frame * 2.0F, kIdentity, nullptr);
         std::vector<kh2::Mat4> &out = poses[key];
-        if (model.kh2_retarget)
-            model.kh2_retarget->apply(player.joints(), out);
-        else
-            out = player.joints();
+        pose_on_model(model, static_cast<std::size_t>(slot), player.joints(), out);
         return &out;
     };
     const auto turn_only = [](Mat m) { // its rotation: the axes made unit, no translation
@@ -1037,10 +1074,18 @@ void load_kh2_motions(Model &model, const std::string &path)
     std::vector<std::pair<int, int>> bones; // this model's bone, the skeleton's
     std::vector<khdays::assets::kh2::Retarget::Limb> limbs;
     struct Extra {
-        std::string file, entry; // `motions <file> [<entry>] at <slot>`: an entry of a BAR of sets (GAMEOVER.mset)
+        std::string file,
+            entry; // `motions <file> [<entry>] at <slot> [own]`: an entry of a BAR of sets (GAMEOVER.mset)
         std::size_t at = 0;
+        bool own = false; // made for this model's bones, not the `skeleton`'s
     };
     std::vector<Extra> extras;
+    bool mset_own = false; // `mset <file> own`
+    struct Carry {         // `carry <bone> <by bone> at <slot>`
+        int bone = 0, by = 0;
+        std::size_t at = 0;
+    };
+    std::vector<Carry> carries;
     std::string weapon_mset, weapon_mdlx; // `weapon_motions <mset> <mdlx> <bone>`
     int weapon_bone = -1;
     const auto number = [](const std::string &s, float &out) {
@@ -1088,7 +1133,23 @@ void load_kh2_motions(Model &model, const std::string &path)
             b = slot;
         }
         if (a == "mset") {
+            std::string w;
             mset = b;
+            mset_own = static_cast<bool>(words >> w) && w == "own";
+            if (!w.empty() && w != "own")
+                say("\"" + line + "\": write `mset <file> [own]`; read as `mset " + b + "`");
+        } else if (a == "carry") { // carry <bone> <by bone> at <slot>
+            Carry c;
+            std::string by, w, at;
+            int to = 0, slot = 0;
+            const bool ok = static_cast<bool>(words >> by >> w >> at) && w == "at" && span(b, c.bone, to) &&
+                            to == c.bone && span(by, c.by, to) && to == c.by && span(at, slot, to) && to == slot;
+            c.at = static_cast<std::size_t>(slot);
+            if (ok)
+                carries.push_back(c);
+            else
+                say("\"" + line +
+                    "\": write `carry <bone> <by bone> at <slot>` (the slot an `own` mset's); the line is ignored");
         } else if (a == "weapon_motions") { // weapon_motions <mset> <mdlx> <bone>
             std::string mdlx, bone;
             char *end = nullptr;
@@ -1102,18 +1163,21 @@ void load_kh2_motions(Model &model, const std::string &path)
                 weapon_mset = b;
                 weapon_mdlx = mdlx;
             }
-        } else if (a == "motions") { // motions <file> [<entry>] at <slot>
-            Extra x{b, {}, 0};
-            std::string w, v;
+        } else if (a == "motions") { // motions <file> [<entry>] at <slot> [own]
+            Extra x{b, {}, 0, false};
+            std::string w, v, o;
             if (words >> w && w != "at") {
                 x.entry = w;
                 words >> w;
             }
             char *end = nullptr;
-            if (w != "at" || !(words >> v) || (x.at = std::strtoul(v.c_str(), &end, 10), end == v.c_str() || *end))
-                say("\"" + line + "\": write `motions <file> [<entry>] at <first slot>`; the line is ignored");
-            else
+            if (w != "at" || !(words >> v) || (x.at = std::strtoul(v.c_str(), &end, 10), end == v.c_str() || *end) ||
+                (words >> o && o != "own"))
+                say("\"" + line + "\": write `motions <file> [<entry>] at <first slot> [own]`; the line is ignored");
+            else {
+                x.own = o == "own";
                 extras.push_back(x);
+            }
         } else if (a == "root_motion") {
             model.kh2_root_motion = b == "on";
         } else if (a == "idle") { // idle <game animation>...
@@ -1403,6 +1467,30 @@ void load_kh2_motions(Model &model, const std::string &path)
             static_cast<int>(j - model.kh2_bone.begin());
         model.kh2_weapon_turn[static_cast<std::size_t>(g - model.node_names.begin())] = turn_of(weapon_degrees[node]);
     }
+    // a `place`d joint holding its own node's weapon: turned so the line's frame on it is the node's own (its place
+    // already is), so a fade between a KH2 motion and the game's animation turns the weapon the short way. Its rest
+    // turn left in, the joint's blend and the hold's turn toward the game's frame added up to a whole turn
+    const auto turn_only = [](Mat x) {
+        for (std::size_t c = 0; c < 3; ++c) {
+            const float l = length({x[c * 4], x[c * 4 + 1], x[c * 4 + 2]});
+            for (std::size_t r = 0; r < 3 && l > 0.0F; ++r)
+                x[c * 4 + r] /= l;
+        }
+        x[12] = x[13] = x[14] = 0.0F;
+        return x;
+    };
+    for (std::size_t g = 0; g < model.kh2_weapon.size() && g < model.node_rest_inverse.size(); ++g) {
+        if (model.kh2_weapon[g] < 0)
+            continue;
+        Joint &joint = model.joints[static_cast<std::size_t>(model.kh2_weapon[g])];
+        if (joint.node != static_cast<int>(g) || !joint.placed)
+            continue;
+        // the pose turns it by the node's turn from rest (d) times this: d C W T = d N, N the node's rest turn
+        const Mat rest = turn_only(mul(joint.bind, inverse(joint.inverse_bind)));
+        const Mat node_rest = turn_only(inverse(model.node_rest_inverse[g]));
+        joint.correction = mul(node_rest, inverse(mul(rest, model.kh2_weapon_turn[g])));
+        joint.to_node = mul(inverse(turn_only(mul(joint.correction, rest))), node_rest);
+    }
     if (mset.empty()) {
         if (!sections.empty())
             say("motions.txt names no mset (a line `mset <file>.mset`); the game's animations are played");
@@ -1420,38 +1508,82 @@ void load_kh2_motions(Model &model, const std::string &path)
         };
         const auto mdlx = read(file);
         const auto set = read(file.parent_path() / u8(mset));
-        const kh2::MotionSkeleton own = kh2::read_motion_skeleton(mdlx.data(), mdlx.size());
+        auto own = std::make_shared<kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
+        model.kh2_own_skeleton = own;
+        model.kh2_own_slots.clear();
+        auto motions = std::make_shared<kh2::MotionSet>(set.data(), set.size());
+        if (mset_own)
+            model.kh2_own_slots.emplace_back(0, motions->slots());
+        // `motions`: another mset's slots from a slot on; with an entry, that entry of it, a set of its own
+        for (const Extra &x : extras) {
+            const auto bytes = read(file.parent_path() / u8(x.file));
+            const std::size_t before = motions->slots();
+            if (x.entry.empty()) {
+                motions->add(x.at, kh2::MotionSet(bytes.data(), bytes.size()));
+            } else {
+                bool found = false;
+                for (const kh2::BarEntry &e : kh2::bar_entries(bytes.data(), bytes.size()))
+                    if (!found && e.name == x.entry && kh2::is_bar(bytes.data(), bytes.size(), e.offset)) {
+                        motions->add(x.at, kh2::MotionSet(bytes.data() + e.offset, e.size));
+                        found = true;
+                    }
+                if (!found)
+                    throw std::runtime_error(x.file + " has no set named " + x.entry);
+            }
+            if (x.own && motions->slots() > before)
+                model.kh2_own_slots.emplace_back(x.at, motions->slots());
+        }
         if (skeleton.empty()) {
-            model.kh2_skeleton = std::make_shared<kh2::MotionSkeleton>(own);
+            model.kh2_skeleton = own;
+            if (!carries.empty())
+                say("`carry` places a bone in the `skeleton`'s motions, and there is no `skeleton` line; ignored");
         } else { // the mset plays on its own model's bones, given to this one's
             const auto other = read(file.parent_path() / u8(skeleton));
             model.kh2_skeleton =
                 std::make_shared<kh2::MotionSkeleton>(kh2::read_motion_skeleton(other.data(), other.size()));
-            std::vector<int> source_of(own.joints.size(), -1);
+            std::vector<int> source_of(own->joints.size(), -1);
             for (const auto &[t, s] : bones) {
                 if (static_cast<std::size_t>(t) >= source_of.size())
                     throw std::runtime_error("bone " + std::to_string(t) + ": the model has " +
-                                             std::to_string(own.joints.size()) + " bones");
+                                             std::to_string(own->joints.size()) + " bones");
                 source_of[static_cast<std::size_t>(t)] = s;
             }
-            model.kh2_retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, own, source_of, limbs);
-        }
-        auto motions = std::make_shared<kh2::MotionSet>(set.data(), set.size());
-        // `motions`: another mset's slots from a slot on; with an entry, that entry of it, a set of its own
-        for (const Extra &x : extras) {
-            const auto bytes = read(file.parent_path() / u8(x.file));
-            if (x.entry.empty()) {
-                motions->add(x.at, kh2::MotionSet(bytes.data(), bytes.size()));
-                continue;
-            }
-            bool found = false;
-            for (const kh2::BarEntry &e : kh2::bar_entries(bytes.data(), bytes.size()))
-                if (!found && e.name == x.entry && kh2::is_bar(bytes.data(), bytes.size(), e.offset)) {
-                    motions->add(x.at, kh2::MotionSet(bytes.data() + e.offset, e.size));
-                    found = true;
+            auto retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, *own, source_of, limbs);
+            // `carry`: the bone on the other where an `own` slot's first frame has it (both unscaled)
+            for (const Carry &c : carries) {
+                const kh2::Motion *motion = motions->motion(c.at);
+                const bool in_own = std::any_of(model.kh2_own_slots.begin(), model.kh2_own_slots.end(),
+                                                [&](const auto &r) { return c.at >= r.first && c.at < r.second; });
+                const std::size_t n = own->joints.size();
+                if (motion == nullptr || !in_own || static_cast<std::size_t>(c.bone) >= n ||
+                    static_cast<std::size_t>(c.by) >= n) {
+                    say("carry " + std::to_string(c.bone) + " " + std::to_string(c.by) + " at " + std::to_string(c.at) +
+                        ": " +
+                        (motion == nullptr || !in_own ? "no motion of an `own` mset in that slot"
+                                                      : "the model has " + std::to_string(n) + " bones") +
+                        "; the line is ignored");
+                    continue;
                 }
-            if (!found)
-                throw std::runtime_error(x.file + " has no set named " + x.entry);
+                kh2::MotionPlayer player(*own);
+                player.evaluate(*motion, 0.0F, kIdentity, nullptr);
+                const auto unscaled = [](Mat m) {
+                    for (std::size_t col = 0; col < 3; ++col) {
+                        const float l = length({m[col * 4], m[col * 4 + 1], m[col * 4 + 2]});
+                        for (std::size_t r = 0; r < 3 && l > 0.0F; ++r)
+                            m[col * 4 + r] /= l;
+                    }
+                    return m;
+                };
+                const auto &g = player.joints();
+                try {
+                    retarget->carry(c.bone, c.by,
+                                    mul(inverse(unscaled(g[static_cast<std::size_t>(c.by)])),
+                                        unscaled(g[static_cast<std::size_t>(c.bone)])));
+                } catch (const std::runtime_error &e) {
+                    say(std::string(e.what()) + "; the `carry` line is ignored");
+                }
+            }
+            model.kh2_retarget = std::move(retarget);
         }
         model.kh2_motions = std::move(motions);
         // `weapon_motions`: the weapon's mset and skeleton, and its held pose (slot 0's first frame)
@@ -1479,6 +1611,7 @@ void load_kh2_motions(Model &model, const std::string &path)
         say(std::string("its motions cannot be read (") + e.what() + "); the game's animations are played");
         model.kh2_motions.reset();
         model.kh2_retarget.reset();
+        model.kh2_own_slots.clear();
         model.weapon_motions.reset();
         resolve_ds_poses(model, ds_rules, say);
         return;
@@ -2577,8 +2710,9 @@ Floor floor_of(const Model &m, const Mat &base)
 {
     Floor f;
     float camera[16];
-    if (!m.kh2_ik_adjust || m.kh2_skeleton == nullptr || m.kh2_skeleton->feet.empty() || drawn_object == nullptr ||
-        !khdays_g3d_camera(camera)) {
+    const bool feet = (m.kh2_skeleton != nullptr && !m.kh2_skeleton->feet.empty()) ||
+                      (m.kh2_own_skeleton != nullptr && !m.kh2_own_skeleton->feet.empty() && !m.kh2_own_slots.empty());
+    if (!m.kh2_ik_adjust || !feet || drawn_object == nullptr || !khdays_g3d_camera(camera)) {
         trace_floor(m, "off: ik_adjust off, no feet in the model or no camera yet");
         return f;
     }
@@ -3484,8 +3618,7 @@ void play_kh2(Model &m, const Mat &base)
             else
                 a.fade.clear();
         }
-        if (!track.player)
-            track.player = std::make_unique<kh2::MotionPlayer>(*m.kh2_skeleton);
+        ready_player(m, track, section.slot);
         float ticks = track.ticks;
         const float end = motion->length_ticks(), from = motion->loop_ticks();
         if (ticks > end)
@@ -3494,10 +3627,7 @@ void play_kh2(Model &m, const Mat &base)
         const Mat taken = m.kh2_root_motion ? kIdentity : inverse(motion->root_motion(ticks));
         const Mat world = ground.on ? mul(ground.world, taken) : kIdentity;
         track.player->evaluate(*motion, ticks, world, ground.on ? &ground.ray : nullptr);
-        if (m.kh2_retarget) // the mset's model's pose on this model's bones
-            m.kh2_retarget->apply(track.player->joints(), track.joints);
-        else
-            track.joints = track.player->joints();
+        pose_on_model(m, section.slot, track.player->joints(), track.joints); // the mset's model's pose on this one
         a.shown = ticks;
         if (trace_kh2) {
             std::snprintf(part, sizeof(part), " | %s slot %zu t%.1f w%.2f%s%s", key.c_str(), section.slot,
@@ -3592,16 +3722,12 @@ void play_kh2(Model &m, const Mat &base)
             const kh2::Motion *motion = slot >= 0 ? m.kh2_motions->motion(static_cast<std::size_t>(slot)) : nullptr;
             if (motion == nullptr)
                 return nullptr;
-            if (!t.player)
-                t.player = std::make_unique<kh2::MotionPlayer>(*m.kh2_skeleton);
+            ready_player(m, t, static_cast<std::size_t>(slot));
             ticks = std::fmin(ticks, motion->length_ticks());
             const Mat taken = m.kh2_root_motion ? kIdentity : inverse(motion->root_motion(ticks));
             const Mat world = ground.on ? mul(ground.world, taken) : kIdentity;
             t.player->evaluate(*motion, ticks, world, ground.on ? &ground.ray : nullptr);
-            if (m.kh2_retarget)
-                m.kh2_retarget->apply(t.player->joints(), t.joints);
-            else
-                t.joints = t.player->joints();
+            pose_on_model(m, static_cast<std::size_t>(slot), t.player->joints(), t.joints);
             t.ticks = ticks;
             return motion;
         };
