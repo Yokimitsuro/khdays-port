@@ -9,6 +9,7 @@ extern "C" {
 #include "missions/worlds.h"
 }
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iterator>
@@ -27,6 +28,9 @@ constexpr int kWaveCheckMission = 4;  // defeat the Mega-Shadow: the "all defeat
 constexpr int kTargetMission = 402;   // defeat seven Fire Plants: the enemy class its gauge counts (2.73)
 constexpr int kReachMission = 1;      // reach Axel's position: a player coming within reach of a place (2.8)
 constexpr int kEmblemMission = 451;   // find the Organization emblems: their overlay, class and pieces (17.2, 17.3)
+// The enemies a spawner holds: Ov107_Spawner_AddSlot ends the game (OS_Terminate) at a ninth, its slots inside the
+// spawner's object. A wave's line with more is made into several spawners at its place.
+constexpr int kSpawnerEnemies = 8;
 
 // The events the built area files: the clock's end (as 1354's), the ending's (its field raised, as 1354's), the last
 // wave defeated, and each wave's start from the second on.
@@ -349,9 +353,22 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
         const KhdaysMissionSpawner& s = m.spawners[i];
         WaveSpawner w;
         w.at = {s.at[0], s.at[1], s.at[2]};
-        for (int e = 0; e < s.enemy_count; ++e)
-            w.enemies.push_back({s.enemies[e].enemy_class, s.enemies[e].count});
-        waves[s.wave].push_back(w);
+        int held = 0;
+        for (int e = 0; e < s.enemy_count; ++e) {
+            for (int left = s.enemies[e].count; left > 0;) {
+                const int take = std::min(left, kSpawnerEnemies - held);
+                w.enemies.push_back({s.enemies[e].enemy_class, take});
+                held += take;
+                left -= take;
+                if (held == kSpawnerEnemies) {  // full: the rest in another at the same place
+                    waves[s.wave].push_back(w);
+                    w.enemies.clear();
+                    held = 0;
+                }
+            }
+        }
+        if (!w.enemies.empty())
+            waves[s.wave].push_back(w);
     }
     for (auto& [n, spawners] : waves)
         plan.waves.push_back(spawners);

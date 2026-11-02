@@ -1213,3 +1213,25 @@ TEST(the_games_missions_named_from_its_list) {
     CHECK(!names.at(102).mission_mode && names.at(102).number == 8 && names.at(102).category == 9);
     CHECK(studio::game_mission_names(root / "nitrofs", "fr").empty());  // no list: none
 }
+
+TEST(a_waves_line_of_more_enemies_than_a_spawner_holds_split_at_its_place) {
+    // Ov107_Spawner_AddSlot ends the game at a spawner's ninth enemy: 20 Shadows and a Soldier are three spawners
+    static const char text[] = "[mission many]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "wave 1 = 0x20 4x1 at 1 0 2\nwave 2 = 0x3 at 0 0 0\n";
+    KhdaysMissions r{};
+    CHECK(khdays_missions_read(&r, "test.many", "many", text, sizeof(text) - 1, nullptr, nullptr) == 1);
+    studio::MissionPlan plan;
+    std::string why;
+    CHECK(studio::plan_of(r.list[0], &plan, &why));
+    CHECK(plan.waves.size() == 2 && plan.waves[0].size() == 3 && plan.waves[1].size() == 1);
+    int total = 0;
+    for (const auto& sp : plan.waves[0]) {
+        int held = 0;
+        for (const auto& e : sp.enemies)
+            held += e.count;
+        CHECK(held <= 8 && sp.at[0] == 1.0 && sp.at[2] == 2.0);
+        total += held;
+    }
+    CHECK(total == 21 && plan.waves[0][2].enemies.size() == 2 && plan.waves[0][2].enemies[1].enemy_class == 4);
+    khdays_missions_free(&r);
+}
