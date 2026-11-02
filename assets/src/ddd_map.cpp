@@ -1,5 +1,6 @@
 #include "khdays/assets/ddd_map.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -42,6 +43,13 @@ constexpr std::uint16_t kBlended = 0x60;  // blended, added or taken away: drawn
 constexpr std::size_t kBcdPartSize = 0x30;
 constexpr std::size_t kBcdVertexSize = 16;
 constexpr std::size_t kBcdFaceSize = 48;
+// A TXA: "TXA\0", u16 its version (2), u16 its entries' count, the entries from +0x10, 0x38 bytes each: its name (16
+// bytes), the texture it shows on (16), 8 bytes, u16 the sheet's width and height and a frame's, u32 its animations'
+// count and the first's offset. An animation: its name (16 bytes), s16 where it plays again from, back from its end, u16
+// its frames' count, u32 their offset; a frame, 12 bytes: u16 x, y (in the sheet), u16 its shortest and longest
+// length (0: the shortest), 4 bytes. Then the sheets' own pixels (the HD pictures are used instead).
+constexpr std::size_t kTxaEntry = 0x38;
+constexpr std::size_t kTxaFrame = 12;
 
 class Reader {
 public:
@@ -99,6 +107,24 @@ std::array<float, 3> turned(const std::array<float, 3>& p, const std::array<floa
     float x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
     float x3 = x2 * cz - y1 * sz, y3 = x2 * sz + y1 * cz;
     return {x3, y3, z2};
+}
+
+// `from`'s part at (x, y), `width` x `height`, kept within it.
+DecodedTexture cut(const DecodedTexture& from, int x, int y, int width, int height) {
+    x = std::clamp(x, 0, from.width);
+    y = std::clamp(y, 0, from.height);
+    width = std::clamp(width, 1, std::max(1, from.width - x));
+    height = std::clamp(height, 1, std::max(1, from.height - y));
+    DecodedTexture out;
+    out.width = width;
+    out.height = height;
+    out.rgba.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4, 0);
+    for (int row = 0; row < height && y + row < from.height; ++row) {
+        const auto src = from.rgba.begin() + (static_cast<std::ptrdiff_t>(y + row) * from.width + x) * 4;
+        const auto n = static_cast<std::ptrdiff_t>(std::min(width, from.width - x)) * 4;
+        std::copy(src, src + n, out.rgba.begin() + static_cast<std::ptrdiff_t>(row) * width * 4);
+    }
+    return out;
 }
 
 }  // namespace
@@ -257,6 +283,102 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     for (auto& [m, mesh] : meshes)
         room.scene.meshes.push_back(std::move(mesh));
     return room;
+}
+
+std::vector<TextureAnimation> texture_animations(const std::uint8_t* data, std::size_t size) {
+    const Reader r(data, size);
+    if (size < 0x10 || std::memcmp(data, "TXA\0", 4) != 0)
+        throw std::runtime_error("not a TXA");
+    std::vector<TextureAnimation> out;
+    const auto entries = r.get<std::uint16_t>(6);
+    for (std::size_t e = 0; e < entries; ++e) {
+        const std::size_t at = 0x10 + e * kTxaEntry;
+        if (r.get<std::uint32_t>(at + 0x30) == 0)
+            continue;  // (none seen without one)
+        TextureAnimation a;
+        a.texture = r.name(at + 0x10, 16);
+        a.sheet_width = r.get<std::uint16_t>(at + 0x28);
+        a.sheet_height = r.get<std::uint16_t>(at + 0x2a);
+        a.frame_width = r.get<std::uint16_t>(at + 0x2c);
+        a.frame_height = r.get<std::uint16_t>(at + 0x2e);
+        const std::size_t animation = r.get<std::uint32_t>(at + 0x34);
+        const auto back = r.get<std::int16_t>(animation + 0x10);
+        const auto count = r.get<std::uint16_t>(animation + 0x12);
+        const std::size_t frames = r.get<std::uint32_t>(animation + 0x14);
+        const int target = back < 0 ? std::max(0, count + back) : 0;  // (back by its count, its start, in all read)
+        int again = target;
+        for (std::size_t f = 0; f < count; ++f) {
+            const std::size_t fr = frames + f * kTxaFrame;
+            const int shortest = r.get<std::uint16_t>(fr + 4), longest = r.get<std::uint16_t>(fr + 6);
+            const int length = longest > shortest ? (shortest + longest + 1) / 2 : shortest;
+            if (length == 0) {  // shown for no time: left out
+                again -= static_cast<int>(f) < target ? 1 : 0;
+                continue;
+            }
+            a.frames.push_back({r.get<std::uint16_t>(fr), r.get<std::uint16_t>(fr + 2), length});
+        }
+        a.loop_from = std::clamp(again, 0, std::max(0, static_cast<int>(a.frames.size()) - 1));
+        if (!a.frames.empty() && a.sheet_width > 0 && a.sheet_height > 0)
+            out.push_back(std::move(a));
+    }
+    return out;
+}
+
+void animate_textures(Room* room, const std::vector<TextureAnimation>& animations,
+                      const std::vector<std::string>& sheets, const PictureFinder& find,
+                      const PictureSink& write_picture) {
+    for (const TextureAnimation& a : animations) {
+        const std::string file = a.texture + ".png";
+        std::vector<SceneMaterial*> on;
+        for (auto& m : room->scene.materials)
+            if (m.texture == file)
+                on.push_back(&m);
+        if (on.empty())
+            continue;  // a texture of the world's pieces, not the room's
+        // its sheet: the texture's name with one character more or less
+        const auto sheet_of = std::find_if(sheets.begin(), sheets.end(), [&](const std::string& s) {
+            const std::string& longer = s.size() > a.texture.size() ? s : a.texture;
+            const std::string& shorter = s.size() > a.texture.size() ? a.texture : s;
+            return longer.size() == shorter.size() + 1 && longer.compare(0, shorter.size(), shorter) == 0;
+        });
+        const std::filesystem::path hd = sheet_of == sheets.end() ? std::filesystem::path() : find(*sheet_of);
+        if (hd.empty()) {
+            room->report.push_back(a.texture + ": no HD sheet of its animation in the copy; shown still");
+            continue;
+        }
+        DecodedTexture sheet;
+        try {
+            sheet = read_dds(hd);
+        } catch (const std::exception& e) {
+            room->report.push_back(a.texture + "'s animation: " + e.what() + "; shown still");
+            continue;
+        }
+        // each place cut once, at the HD sheet's scale
+        const float sx = static_cast<float>(sheet.width) / static_cast<float>(a.sheet_width);
+        const float sy = static_cast<float>(sheet.height) / static_cast<float>(a.sheet_height);
+        std::vector<std::string> pictures;
+        std::map<std::pair<int, int>, int> picture_of;
+        std::vector<std::array<int, 2>> frames;
+        for (const auto& f : a.frames) {
+            auto found = picture_of.find({f.x, f.y});
+            if (found == picture_of.end()) {
+                const std::string name = a.texture + "_" + std::to_string(pictures.size()) + ".png";
+                write_picture(name, cut(sheet, static_cast<int>(std::lround(static_cast<float>(f.x) * sx)),
+                                        static_cast<int>(std::lround(static_cast<float>(f.y) * sy)),
+                                        static_cast<int>(std::lround(static_cast<float>(a.frame_width) * sx)),
+                                        static_cast<int>(std::lround(static_cast<float>(a.frame_height) * sy))));
+                found = picture_of.emplace(std::make_pair(f.x, f.y), static_cast<int>(pictures.size())).first;
+                pictures.push_back(name);
+            }
+            frames.push_back({found->second, f.length});
+        }
+        for (SceneMaterial* m : on) {
+            m->frame_pictures = pictures;
+            m->frames = frames;
+            m->frames_loop = true;
+            m->frames_loop_from = a.loop_from;
+        }
+    }
 }
 
 Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::string& name) {

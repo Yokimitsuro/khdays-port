@@ -240,6 +240,17 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   then a tree the game's look-ups use (16-byte nodes: a split, its axis, two offsets) and its u16 face lists. A
   vertex: f32 x4 (w 1). A face, 48 bytes: its plane (normal, distance), its corners (i16 x4, the fourth -1 for a
   triangle), then what it is (u32 at +0x20 1 on floors; the low four bits of +0x24, 1 a floor, 2 a wall).
+- **TXA** (a room's textures shown frame by frame): "TXA\0", u16 its version (2), u16 its entries' count, the
+  entries from +0x10, 0x38 bytes each: its name (16 bytes), the texture it shows on (16), 8 bytes, u16 the sheet's
+  width and height and a frame's (the original's pixels: a texture is one frame, the sheet holds them all), u32 its
+  animations' count (1 in all read) and the first's offset. An animation: its name (16 bytes), s16 where it plays
+  again from, back from its end (minus its frame count, its start, in all read), u16 its frames' count, u32 their
+  offset; a frame, 12 bytes: u16 x, y in the sheet, u16 its shortest and longest length (0: the shortest; taken as
+  60ths of a second, a random one at its middle; 0 long, left out), 4 bytes (one set on a thunder's flash: its sound,
+  not read). Then the sheets' own pixels. The remaster's HD sheets are the `.txa`'s assets, each named as its texture
+  with one character more or less (`fa03_01a`, `di_05_thu1` for `di_05_thu1a`, `tw04_fir01_`), at their own scale
+  (rg_08's twice the original, its texture four times). Read on the five rooms of the eight taken out that have one
+  (di_05, fa_03, nd_03, rg_08, tm_04); a texture the room's model has not (tm_04's, fa_03's `g_` ones) is left out.
 - **Units**: metres, as Days's: the stairs rise 0.17 to 0.25 (eh_01, nd_02); the floors and walls lie in the model's
   space (eh_01: 47,075 of its 48,852 vertices inside the BCD's box).
 

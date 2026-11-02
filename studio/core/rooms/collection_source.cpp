@@ -283,7 +283,8 @@ fs::path collection_made_collision(const fs::path& root, const CollectionGameInf
 namespace {
 
 // A Dream Drop Distance room: its textures taken out by the names its PMP lists (kh3d_third's rooms keep each as a
-// .ctt beside the room, its HD picture its asset; kh3d_first's keep them as the .pmp's own assets), then made.
+// .ctt beside the room, its HD picture its asset; kh3d_first's keep them as the .pmp's own assets), then made; those
+// its .txa animates shown frame by frame.
 bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
                    const fs::path& out, CollectionMade* made, std::string* why) {
     const fs::path folder = collection_folder(settings.root, game);
@@ -318,20 +319,37 @@ bool make_ddd_room(const Settings& settings, const CollectionGameInfo& game, con
     std::error_code ec;
     fs::create_directories(out.parent_path(), ec);
     std::string failed;
+    const auto write_picture = [&](const std::string& file, const khdays::assets::DecodedTexture& picture) {
+        const char* e = khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), picture.rgba.data(),
+                                         picture.width, picture.height);
+        if (e != nullptr && failed.empty())
+            failed = file + ": " + e;
+        ++made->pictures;
+    };
     khdays::assets::ddd::Room room;
     try {
-        room = khdays::assets::ddd::room_model(
-            data.data(), data.size(), map.name, hd_of,
-            [&](const std::string& file, const khdays::assets::DecodedTexture& picture) {
-                const char* e = khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), picture.rgba.data(),
-                                                 picture.width, picture.height);
-                if (e != nullptr && failed.empty())
-                    failed = file + ": " + e;
-                ++made->pictures;
-            });
+        room = khdays::assets::ddd::room_model(data.data(), data.size(), map.name, hd_of, write_picture);
     } catch (const std::exception& e) {
         *why = pmp_path + ": " + e.what();
         return false;
+    }
+    // its textures shown frame by frame: <map>.txa, its sheets its own HD pictures
+    const std::string txa_path = dir + map.name + ".txa";
+    const auto txa = read_all(folder / "original" / path_u8(txa_path));
+    if (!txa.empty()) {
+        const fs::path sheets_folder = folder / "remastered" / path_u8(txa_path);
+        std::vector<std::string> sheets;
+        for (const auto& e : fs::directory_iterator(sheets_folder, ec))
+            if (e.path().extension() == ".dds")
+                sheets.push_back(u8(e.path().stem()));
+        std::sort(sheets.begin(), sheets.end());
+        try {
+            khdays::assets::ddd::animate_textures(
+                &room, khdays::assets::ddd::texture_animations(txa.data(), txa.size()), sheets,
+                [&](const std::string& name) { return sheets_folder / path_u8(name + ".dds"); }, write_picture);
+        } catch (const std::exception& e) {
+            room.report.push_back(txa_path + ": " + e.what() + "; its textures shown still");
+        }
     }
     if (!failed.empty()) {
         *why = "a picture cannot be written: " + failed;

@@ -154,7 +154,8 @@ kept). A map is taken out by the installer's reader with the game's own executab
 with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
 `.bcd`, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of Memories' from its `.mcd`: docs/FORMATS.md, "Dream
 Drop Distance's rooms", "KINGDOM HEARTS FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
-FINAL MIX's skies come with the model (KH1's its `.gvbl` assets), drawn around the camera behind everything. The change
+FINAL MIX's skies come with the model (KH1's its `.gvbl` assets), drawn around the camera behind everything; Dream
+Drop Distance's textures its `.txa` animates change picture as in the game (thunder, clouds, sparks). The change
 names it `source <game>:<map>` (KH2's keep their `kh2 <map>`). Its first place: in its game's units (KH1's and KH2's
 centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres at 1), its lowest main floor (the lowest height
 holding a quarter of the floor area the most held one does) at the room's ground, then moved across until most of the

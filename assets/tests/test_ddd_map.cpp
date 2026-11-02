@@ -15,7 +15,7 @@
 // A Dream Drop Distance room made here byte by byte as the reader expects it (docs/FORMATS.md, "Dream Drop
 // Distance's rooms"): a PMP placing one PMO, whose section's first group holds a record of triangles and a strip
 // stitched by a degenerate triangle and its second group a blended triangle, its texture found as a plain 32-bit DDS;
-// and a BCD of a triangle and a four-sided face.
+// a BCD of a triangle and a four-sided face; a TXA animating its texture.
 
 namespace {
 
@@ -275,12 +275,98 @@ void test_collision() {
     expect(threw, "a corner past the vertices refused");
 }
 
+// A TXA of two entries: one on the room's texture (a sheet of two frames, four steps -- one shown for no time, one of
+// a random length), one on a texture the room has not.
+Bytes txa() {
+    Writer w;
+    w.text("TXA", 4);
+    w.u16(2);
+    w.u16(2);  // entries
+    w.zeros(8);
+    for (const auto& [name, texture] : {std::pair<const char*, const char*>{"anim_a", "tex_a"}, {"other", "tex_b"}}) {
+        w.text(name, 16);
+        w.text(texture, 16);
+        w.zeros(8);
+        w.u16(4);  // the sheet: 4 x 2, a frame 2 x 2
+        w.u16(2);
+        w.u16(2);
+        w.u16(2);
+        w.u32(1);
+        w.u32(0);  // its animation's offset, set below
+    }
+    const std::array<std::array<unsigned, 4>, 4> steps{{{0, 0, 10, 0}, {2, 0, 0, 0}, {2, 0, 5, 15}, {0, 0, 20, 0}}};
+    for (std::size_t e = 0; e < 2; ++e) {
+        w.at(0x10 + e * 0x38 + 0x34, static_cast<std::uint32_t>(w.b.size()));
+        const std::size_t count = e == 0 ? steps.size() : 1;
+        w.text(e == 0 ? "01" : "02", 16);
+        w.u16(static_cast<unsigned>(-static_cast<int>(count)) & 0xFFFF);
+        w.u16(static_cast<unsigned>(count));
+        w.u32(static_cast<std::uint32_t>(w.b.size() + 4));
+        for (std::size_t f = 0; f < count; ++f) {
+            for (const unsigned v : steps[f])
+                w.u16(v);
+            w.zeros(4);
+        }
+    }
+    return w.b;
+}
+
+void test_texture_animation() {
+    const Bytes data = txa();
+    const auto animations = ddd::texture_animations(data.data(), data.size());
+    expect(animations.size() == 2 && animations[0].texture == "tex_a" && animations[1].texture == "tex_b",
+           "each entry's animation");
+    const auto& a = animations[0];
+    expect(a.frames.size() == 3 && a.frames[1].x == 2 && a.frames[1].length == 10 && a.loop_from == 0,
+           "the step shown for no time left out, the random one at its middle");
+    const Bytes pmp = room();
+    const auto folder = std::filesystem::temp_directory_path() / "khdays_ddd_txa_test";
+    std::filesystem::create_directories(folder);
+    const auto sheet = folder / "tex_aa.dds";
+    {
+        const Bytes dds = plain_dds();  // 2 x 1: the sheet at half its size
+        std::ofstream(sheet, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
+                                                    static_cast<std::streamsize>(dds.size()));
+    }
+    std::map<std::string, khdays::assets::DecodedTexture> written;
+    const auto write = [&](const std::string& file, const khdays::assets::DecodedTexture& t) { written[file] = t; };
+    auto made = ddd::room_model(
+        pmp.data(), pmp.size(), "eh_99", [&](const std::string&) { return std::filesystem::path(); }, write);
+    // the room's texture as the reader names it, its picture not in the copy
+    for (auto& m : made.scene.materials)
+        m.texture = "tex_a.png";
+    made.report.clear();
+    ddd::animate_textures(
+        &made, animations, {"tex_b_00", "tex_aa"},
+        [&](const std::string& name) { return name == "tex_aa" ? sheet : std::filesystem::path(); }, write);
+    expect(made.report.empty(), "nothing left out: " + (made.report.empty() ? std::string() : made.report.front()));
+    expect(written.size() == 2 && written["tex_a_0.png"].width == 1 && written["tex_a_0.png"].rgba[0] == 200 &&
+               written["tex_a_1.png"].rgba[0] == 100,
+           "each place cut once, at the sheet's scale");
+    for (const auto& m : made.scene.materials)
+        expect(m.frame_pictures == std::vector<std::string>{"tex_a_0.png", "tex_a_1.png"} &&
+                   m.frames == std::vector<std::array<int, 2>>{{0, 10}, {1, 10}, {0, 20}} && m.frames_loop,
+               "both materials of the texture shown frame by frame");
+    ddd::animate_textures(&made, animations, {}, {}, write);
+    expect(made.report.size() == 1, "a sheet the copy has not said");
+    bool threw = false;
+    try {
+        const Bytes junk(64, 0);
+        (void)ddd::texture_animations(junk.data(), junk.size());
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    expect(threw, "a file that is no TXA refused");
+    std::filesystem::remove_all(folder);
+}
+
 }  // namespace
 
 int main() {
     try {
         test_room();
         test_collision();
+        test_texture_animation();
         std::cout << "DDD map test passed\n";
         return 0;
     } catch (const std::exception& e) {
