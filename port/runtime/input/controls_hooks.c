@@ -4,6 +4,7 @@
  * KHDAYS_TRACE_CONTROLS=1 reports what the game does with its controls, only when something changes;
  * docs/RUNTIME_MAP.md records what those traces showed. */
 #include "controls_hooks.h"
+#include "../camera/kh2_camera_hooks.h"
 #include "../core/window.h"
 #include "../mods/models.h"
 #include "analog.h"
@@ -11,6 +12,7 @@
 #include "walk.h"
 #include "../net/net_session.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -218,11 +220,15 @@ static int mouse_share(const KhdaysInputSnapshot *in, int axis, int rate)
  * frame; `inverted` its horizontal inversion, Config 0x37c3): returns the right stick's share of the
  * game's rate to add to the yaw target. Right on the stick turns as every "right" of the game's does
  * (bit 4). */
-int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2, int yaw, int target, int pitch)
+int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2, int mode, int yaw, int target,
+                                int pitch)
 {
     static int last_target = -1, last_pitch = -1, last_bits = -1;
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
     int turn = 0;
+    if (khdays_kh2_camera_claims(flags, flags2, mode)) {
+        return 0; /* the KH2 camera reads them (khdays_controls_camera_look) */
+    }
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_x != 0) {
         turn = -scaled(rate, in->camera_x, in->camera_speed);
     }
@@ -243,10 +249,13 @@ int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int
 /* After the game's own tilt (its tilt a frame, its vertical inversion, Config 0x37c2): returns what
  * to add to the pitch, which the game keeps within its limits. Up on the stick does what the look
  * view's Up does. */
-int khdays_controls_camera_pitch(int rate, int inverted)
+int khdays_controls_camera_pitch(int rate, int inverted, int flags, int flags2, int mode)
 {
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
     int tilt = 0;
+    if (khdays_kh2_camera_claims(flags, flags2, mode)) {
+        return 0;
+    }
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_y != 0) {
         tilt = -scaled(rate, in->camera_y, in->camera_speed);
     }
@@ -255,6 +264,37 @@ int khdays_controls_camera_pitch(int rate, int inverted)
         tilt = -tilt;
     }
     return tilt;
+}
+
+/* YS::HARDPAD::get_stick_value's dead zone is 60 of 127.5 on each axis. The snapshot's axes have the port's
+ * (30 % by default) taken out, so a quarter of them is about that. */
+#define KH2_AXIS_DEAD_ZONE 0.25f
+
+static float kh2_axis(int axis)
+{
+    const float pushed = fabsf((float)axis) / 32767.0f;
+    return pushed > KH2_AXIS_DEAD_ZONE ? (pushed - KH2_AXIS_DEAD_ZONE) / (1.0f - KH2_AXIS_DEAD_ZONE) : 0.0f;
+}
+
+void khdays_controls_camera_look(float *x, float *y)
+{
+    const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    const float across = kh2_axis(in->camera_x), along = kh2_axis(in->camera_y);
+    float amount = sqrtf(across * across + along * along);
+    *x = *y = 0.0f;
+    if (amount > 1.0f) {
+        amount = 1.0f;
+    }
+    if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open) {
+        if (across > 0.0f) {
+            *x = in->camera_x > 0 ? amount : -amount;
+        }
+        if (along > 0.0f) {
+            *y = in->camera_y > 0 ? amount : -amount;
+        }
+    }
+    *x += (float)mouse_share(in, 0, 0x1000) / 4096.0f;
+    *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
 }
 
 void khdays_trace_camera_request(int found, int x, int y, int kind, int state)

@@ -874,6 +874,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         int low, high; /* both 0: an on/off switch */
     } settings[] = {
         {"analog_camera", offsetof(KhdaysEnhancements, analog_camera), 0, 0},
+        {"kh2_camera", offsetof(KhdaysEnhancements, kh2_camera), 0, 0},
         {"camera_speed", offsetof(KhdaysEnhancements, camera_speed), 10, 300},
         {"camera_invert_x", offsetof(KhdaysEnhancements, camera_invert_x), 0, 0},
         {"camera_invert_y", offsetof(KhdaysEnhancements, camera_invert_y), 0, 0},
@@ -1520,6 +1521,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add_unknown(&t, "sticks");
     add(&t, "\n[enhancements]\n");
     add(&t, "analog_camera = %s\ncamera_speed = %d\n", e->analog_camera ? "on" : "off", e->camera_speed);
+    add(&t, "kh2_camera = %s\n", e->kh2_camera ? "on" : "off");
     add(&t, "camera_invert_x = %s\ncamera_invert_y = %s\n", e->camera_invert_x ? "on" : "off",
         e->camera_invert_y ? "on" : "off");
     add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);

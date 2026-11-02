@@ -12,6 +12,7 @@
 #include "../net/roomlist.h"
 #include "../net/net_session.h"
 #include "controls_hooks.h"
+#include "../camera/kh2_camera_hooks.h"
 #include "../movies/movie_hd.h"
 #include "../menus/newgame.h"
 #include "../menus/mission_start.h"
@@ -311,6 +312,17 @@ static u16 player_buttons(void)
     const int field = on && pad_samples > 0 && game->command_input_frame == pad_samples;
     const u16 dpad = KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
     u16 buttons = field ? snapshot.ds_buttons_field : snapshot.ds_buttons;
+    /* The KH2 camera with lock-on on its own buttons: the player's own R (the right stick's click) centres the
+     * camera and does not reach the game, whose R is the lock-on's: two quick clicks would lock on. */
+    static int own_r_held;
+    const int own_r = (buttons & KHDAYS_KEY_R) != 0;
+    if ((snapshot.enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) != 0 && khdays_kh2_camera_active()) {
+        if (own_r && !own_r_held) {
+            khdays_kh2_camera_center();
+        }
+        buttons &= (u16)~KHDAYS_KEY_R;
+    }
+    own_r_held = own_r;
     const uint32_t directions = ((snapshot.actions & KHDAYS_ACTION_MENU_UP) ? 1u << KHDAYS_MENU_UP : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_DOWN) ? 1u << KHDAYS_MENU_DOWN : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_LEFT) ? 1u << KHDAYS_MENU_LEFT : 0) |

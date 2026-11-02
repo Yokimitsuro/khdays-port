@@ -21,4 +21,9 @@ typedef struct KhdaysGameControls {
 
 const KhdaysGameControls *khdays_controls_state(void);
 
+/* The KH2 camera's look: the right stick and the mouse as shares of its full turn, right and up positive.
+ * KH2's stick has a dead zone on each axis and moves both axes by how far it is pushed overall. Normal is
+ * KH2's own speed, so the percentage the stick has for Days' camera does not apply. */
+void khdays_controls_camera_look(float *x, float *y);
+
 #endif

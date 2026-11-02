@@ -1284,10 +1284,10 @@ HOOKS = {
             "  if ((piVar7[0xe] & 0x200U) == 0) {\n    if ((piVar7[0xe] & 2U) != 0) {\n",
             "  if ((piVar7[0xe] & 0x200U) == 0) {\n    if ((piVar7[0xe] & 2U) != 0) {\n"
             "      { extern int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2,"
-            " int yaw, int target, int pitch);\n"
+            " int mode, int yaw, int target, int pitch);\n"
             "        int turn = (uVar23 & 0x400) != 0 ? 0 : khdays_controls_camera_turn(piVar7[0x2a],"
-            " (piVar7[0xf] & 0x10U) != 0, uVar20, piVar7[0xe], piVar7[0xf], piVar7[0x16], piVar7[0x20],"
-            " piVar7[0x21]);\n"
+            " (piVar7[0xf] & 0x10U) != 0, uVar20, piVar7[0xe], piVar7[0xf], piVar7[0x10], piVar7[0x16],"
+            " piVar7[0x20], piVar7[0x21]);\n"
             "        if (turn != 0) {\n"
             "          piVar7[0x20] = (piVar7[0x20] + turn) & 0xffff;\n"
             "          if ((piVar7[0xe] & 0x10000U) != 0) func_ov022_02088280(idx, piVar7[0x20]);\n"
@@ -1297,9 +1297,10 @@ HOOKS = {
         (
             "        piVar7[0x21] = piVar7[0x21] - (piVar7[0x2b] + iVar12);\n      }\n",
             "        piVar7[0x21] = piVar7[0x21] - (piVar7[0x2b] + iVar12);\n      }\n"
-            "      { extern int khdays_controls_camera_pitch(int rate, int inverted);\n"
+            "      { extern int khdays_controls_camera_pitch(int rate, int inverted, int flags, int flags2,"
+            " int mode);\n"
             "        int tilt = (uVar23 & 0x400) != 0 ? 0 : khdays_controls_camera_pitch(piVar7[0x2b] + iVar12,"
-            " (piVar7[0xf] & 8U) != 0);\n"
+            " (piVar7[0xf] & 8U) != 0, piVar7[0xe], piVar7[0xf], piVar7[0x10]);\n"
             "        if (tilt > 0 && FX_Mul(fxRatio, 0x3400) > piVar7[0x21]) piVar7[0x21] += tilt;\n"
             "        if (tilt < 0 && FX_Mul(fxRatio, -0x2000) < piVar7[0x21]) piVar7[0x21] += tilt;\n"
             "        if (tilt != 0) uVar20 |= 0x10; }\n",
@@ -1320,6 +1321,60 @@ HOOKS = {
             "          if (GameState_GetField(CONFIG_CHASE_CAM, 1) == 0 || !khdays_camp_chase_free())\n"
             "              piVar7[0x21] = iVar11; }\n"
             "        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
+        ),
+        # The KH2 camera (runtime/camera/kh2_camera_hooks.c): this frame is its own, unless a script's or the
+        # look view's; the reset (flag 8) is KH2's then, not Ov002_TickLockedCamera's.
+        (
+            "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
+            "    { extern int khdays_kh2_camera_follow(int flags, int flags2, int mode, int input_off, int bits);\n"
+            "      if (khdays_kh2_camera_follow(piVar7[0xe], piVar7[0xf], piVar7[0x10],"
+            " (uVar23 & 0x400) != 0 || (PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0), uVar20))\n"
+            "        piVar7[0xe] &= ~8U; }\n"
+            "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
+        ),
+    ],
+    # Locked on: the KH2 camera keeps its look-at between the player and this target, and the stick works.
+    "ov002@0204f0a8": [  # Ov002_TickCamera
+        (
+            "        if (pObj != 0) {\n            bHeld = 0;\n",
+            "        if (pObj != 0) {\n"
+            "            { extern void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off);\n"
+            "              extern int PauseMenu_GetMode(void);\n"
+            "              extern short Session_GetLocalPlayerIndex(void);\n"
+            "              khdays_kh2_camera_lock((int)pObj, *(int *)(pCam + 0x38), *(int *)(pCam + 0x3c), *(int *)(pCam + 0x40),"
+            " PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0); }\n"
+            "            bHeld = 0;\n",
+        ),
+        (
+            "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n",
+            "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n"
+            "            { extern void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off);\n"
+            "              extern int PauseMenu_GetMode(void);\n"
+            "              extern short Session_GetLocalPlayerIndex(void);\n"
+            "              khdays_kh2_camera_lock((int)pObj, *(int *)(pCam + 0x38), *(int *)(pCam + 0x3c), *(int *)(pCam + 0x40),"
+            " PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0); }\n",
+        ),
+    ],
+    # Every camera's frame ends here. The KH2 camera's frames take its eye and look-at, through its own collision
+    # (runtime/camera/kh2_camera_hooks.c), before the shake goes on top of them. The vectors it is handed are this
+    # function's, free at this point: the game's casts take them in the game's memory.
+    "ov002@0204ff18": [  # Ov002_TickCameraTransition
+        (
+            "    if (pCam->nHoldTicks == 3) {\n",
+            "    { extern int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye);\n"
+            "      extern void khdays_kh2_camera_collide(int origin, int eye, int dir, int hit, int normal);\n"
+            "      extern void khdays_kh2_camera_settle(int origin, int eye);\n"
+            "      extern void khdays_kh2_camera_publish(int camera, int eye);\n"
+            "      if (khdays_kh2_camera_prepare((int)pCam, (int)pTarget, func_ov022_02088254(nPlayer), (int)&vDelta,"
+            " (int)&vEye)) {\n"
+            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye, (int)&vToTarget, (int)&vShakeDir,"
+            " (int)&vShakeAxis);\n"
+            "        khdays_kh2_camera_settle((int)&vDelta, (int)&vEye);\n"
+            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye, (int)&vToTarget, (int)&vShakeDir,"
+            " (int)&vShakeAxis);\n"
+            "        khdays_kh2_camera_publish((int)pCam, (int)&vEye);\n"
+            "      } }\n"
+            "    if (pCam->nHoldTicks == 3) {\n",
         ),
     ],
     # Lock-on: whether a target is locked, the lock-on scheme (Config option 0), and whether the

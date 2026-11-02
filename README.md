@@ -215,6 +215,10 @@ of the game:
   (adjustable, and invertible, under Sticks and camera). On the DS the camera
   is turned by dragging on the touch screen, by Select's look view, or with
   L/R when the game's Config sets them to the camera.
+- **KH2 camera:** the field camera moves as Kingdom Hearts II's: further back the
+  higher it is, and free to turn while locked on, the view kept between you and the
+  target. Cutscenes keep the game's camera, and it needs the game's Controls on Type
+  A ([docs/KH2_CAMERA.md](docs/KH2_CAMERA.md)).
 - **Mouse camera:** moving the mouse turns and tilts the field camera, through
   the same part of the game as the analog camera, at a speed of its own
   (Sticks and camera -> Mouse camera speed) and with the camera's inversions.
@@ -885,7 +889,7 @@ the connection error -- the port boots it again in the same window.
 | Path | What it is |
 |---|---|
 | `port/` | The port. `build.py` builds it; `tools/prepare.py` turns the decompilation's C into the game's PC sources |
-| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
+| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `camera/` the KH2 camera; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
 | `port/host/` | The PC's side. `app/` window, devices, profile, audio out; `render/` the graphics card and the one-screen picture; `screens/` the port's own screens; `settings/` the settings menu; `net/` sockets; `movies/` video decoding |
 | `port/hal/` | The NitroSDK's hardware layer, in C |
 | `port/gfx/`, `port/gpu/` | The 2D's description and composition and the 3D's geometry; the DS's graphics engines in software, the reference the picture is checked against |

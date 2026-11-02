@@ -121,6 +121,7 @@ typedef struct KhdaysStick {
 
 typedef struct KhdaysEnhancements {
     int analog_camera;
+    int kh2_camera;   /* the field camera moves as KH2's */
     int camera_speed; /* percent of the game's own turn rate, 10..300 */
     int camera_invert_x;
     int camera_invert_y;

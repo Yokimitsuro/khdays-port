@@ -81,6 +81,7 @@ enum {
     KHDAYS_ENH_ANALOG_MOVEMENT = 1 << 3,
     KHDAYS_ENH_MOUSE_CAMERA = 1 << 4, /* the camera turned by the mouse's motion (the analog camera's join) */
     KHDAYS_ENH_CHASE_FREE = 1 << 5,   /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
+    KHDAYS_ENH_KH2_CAMERA = 1 << 6,   /* the field camera moves as KH2's (runtime/camera/kh2_camera.c) */
 };
 
 /* Everything the game needs to know about the player's input at one moment.

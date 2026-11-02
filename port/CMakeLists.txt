@@ -523,6 +523,8 @@ add_executable(khdays-native
     runtime/core/clock.c
     runtime/input/controls_hooks.c
     runtime/input/walk.c               # the Walk mod's analog walk animation
+    runtime/camera/kh2_camera.c
+    runtime/camera/kh2_camera_hooks.c
     runtime/core/diag.c
     runtime/display/character_shadows.c
     runtime/display/display.c
@@ -853,6 +855,10 @@ target_compile_options(khdays-input-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-input COMMAND khdays-input-test)
+# The KH2 camera's arithmetic against KH2's numbers.
+add_executable(khdays-kh2-camera-test tests/kh2_camera_test.c runtime/camera/kh2_camera.c)
+target_compile_options(khdays-kh2-camera-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-kh2-camera COMMAND khdays-kh2-camera-test)
 # The course of an HD movie against a scripted game and video.
 add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
                runtime/core/clock.c)

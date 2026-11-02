@@ -273,6 +273,7 @@ both were 0. What only the decompilation's C says, not a trace, is marked
     Config `0x37bf` sets how it starts); with a direction held and no camera
     bits the pitch goes back to the preset height every frame.
   - The rate was 0x300 in the mission's field and 0x180 in challenge 07's.
+  - The KH2 camera option replaces what comes of all this in gameplay: `KH2_CAMERA.md`.
 - **Command deck** (`Ov022_UpdateCommandInput`). With option 6 = 1 ("X Only"),
   X pressed with no HUD panel open calls `Ov002_PanelCursorNext` (traced).
   With option 6 = 0 ("X + D-pad", traced in challenge 07): X pressed alone
