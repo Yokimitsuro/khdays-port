@@ -91,6 +91,7 @@ static void sort_numbered(void)
 }
 
 extern void *khdays_native_at(u32 address);
+extern int khdays_overlay_function_at(u32 address, int *module);
 
 /* The native functions last found, by reference. A new overlay load moves the generation on
  * (overlays.c); the ITCM's are never kept (the MobiClip decoder goes over it). The game's threads,
@@ -146,9 +147,43 @@ khdays_function_pointer khdays_function_lookup(KhdaysRef reference)
     return native;
 }
 
+/* What a call into an overlay that is not loaded runs: nothing, its answer 0. */
+static int not_loaded(void)
+{
+    return 0;
+}
+
 khdays_function_pointer khdays_function(KhdaysRef reference)
 {
     const khdays_function_pointer native = khdays_function_lookup(reference);
+    int module;
+    if (native == NULL && khdays_overlay_function_at(reference, &module)) {
+        /* a handler of an overlay its scene did not load (a mission built by the port in a room, or with an enemy,
+         * whose objects want one the template mission did not ask for): left out rather than the game stopped, said
+         * once for each */
+        static KhdaysRef *said;
+        static size_t said_count, said_capacity;
+        size_t i = 0;
+        while (i < said_count && said[i] != reference) {
+            ++i;
+        }
+        if (i == said_count) {
+            if (said_count == said_capacity) {
+                const size_t grown = said_capacity == 0 ? 16 : said_capacity * 2;
+                KhdaysRef *more = realloc(said, grown * sizeof(*more));
+                if (more != NULL) {
+                    said = more;
+                    said_capacity = grown;
+                }
+            }
+            if (said_count < said_capacity) {
+                said[said_count++] = reference;
+            }
+            khdays_log("overlays: a call into overlay %d's function %#x while it is not loaded: left out (from %p)",
+                       module, (unsigned)reference, CALLER());
+        }
+        return (khdays_function_pointer)not_loaded;
+    }
     if (native == NULL) {
         stop("a call through a function reference with no native function:", reference, CALLER());
     }

@@ -5279,6 +5279,19 @@ The port adds a mod's missions to the game's own list and plays them as the game
   its own actor (2.49). A spawner made by a later wave would never run (section 18, "Spawners"): the join at
   `Ov002_CreateSlotObjectAndStart` sets it running with its region in the port's missions only (session log:
   `missions: <mission>: a spawner made after its region started, running with it`).
+- **A spawner holds eight enemies** (`Ov107_Spawner_AddSlot`: its slots inside its object, a ninth `OS_Terminate`,
+  the field never shown -- a mission of 9 Shadows on one line stayed black, 8 played): a wave's line of more is built
+  as several spawners at its place, eight each (100 Shadows played, 2026-11-02).
+- **An enemy its mission's script ends**: Xigbar (ov283) at his defeat (`Ov283_OnDamage`: health at the fight's limit
+  or none, state 3) only stands (`Ov283_AiEnterPatrol`, an empty step), waiting for his mission to end the fight; a
+  built mission's "all defeated" never came. Joined: in the mods' missions he is finished as Riku and the Shadow are
+  at theirs (flags `+0x1ae` bits 0-1); seen: "Misión completada" at his defeat. Zero's state 3 is a grab, not his
+  defeat.
+- **A call into an overlay not loaded** (a function reference whose address starts an overlay's function while
+  another, or none, is loaded there): skipped (answer 0) and said once in the session log (`overlays: a call into
+  overlay N's function ...`) instead of the game stopped. A tester's mission in a replaced Twilight Town room with
+  Xion stopped so, at 0x0207fd2c (`Ov013_SpawnAtOrientedOffset` / `Ov014_DispatchTouchAction`: the field's panel
+  overlays, which a game mission's script loads with `Ov002_SwitchPanelOverlay` and a built one does not).
 - **Chests and emblems of a new mission**: their sets are added to `mi/mi/trbox` and `mi/mi/evi` as they load (the
   key the mission's file number; a chest's room byte is the mission's room, its opened flag one of the port's past
   the flag array, kept in the save part). Seven places of ov002 leave chests and emblems out in Mission Mode (mode flag

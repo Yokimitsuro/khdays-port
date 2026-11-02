@@ -187,6 +187,29 @@ static int itcm_is_the_games(const KhdaysDsFunction *f)
            memcmp(KHDAYS_W(f->address), itcm_image + at, f->size) == 0;
 }
 
+/* Whether `address` starts a function of an overlay (its id into *module): one not loaded there when nothing native
+ * answers for it. */
+int khdays_overlay_function_at(u32 address, int *module)
+{
+    unsigned lo = 0, hi = khdays_ds_function_count;
+    address &= ~1u;
+    while (lo < hi) {
+        const unsigned mid = (lo + hi) / 2;
+        if (khdays_ds_functions[mid].address < address) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    for (; lo < khdays_ds_function_count && khdays_ds_functions[lo].address == address; ++lo) {
+        if (khdays_ds_functions[lo].module >= 0) {
+            *module = khdays_ds_functions[lo].module;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void *khdays_native_at(u32 address)
 {
     unsigned lo = 0, hi = khdays_ds_function_count;
