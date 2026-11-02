@@ -8,6 +8,7 @@
 #include "core/models/game_model.h"
 #include "core/models/model_files.h"
 #include "core/files/paths.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/collection_source.h"
 #include "core/rooms/kh2_source.h"
 #include "core/rooms/room_change.h"
@@ -29,6 +30,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <atomic>
 #include <map>
@@ -95,6 +97,8 @@ struct MapView {
 
     // as the game shows it first; the collision laid over it when asked
     bool show_models = true, show_ground = false, show_walls = false, show_ceilings = false, show_markers = true;
+    bool show_sky = false;    // a sky around the room hides it from outside: drawn only when asked
+    float view_share = 0.5f;  // the picture's share of the panel's height (dragged below it)
     float yaw = 30.0f, pitch = 35.0f, distance = 40.0f;
     std::array<float, 3> target{0, 0, 0};
     int picked_list = -1, picked_face = -1, picked_marker = -1;
@@ -164,6 +168,50 @@ struct OtherPicker {
     }
 };
 OtherPicker other;
+
+// A map of another game, or the modder's own model, added to the mod as a room of its own (core/rooms/added_rooms.h)
+// instead of replacing this one: the world and the room's key asked for, the room made and added on a thread of its
+// own. A mission is then played there (its Room, above its map).
+struct RoomAdder {
+    const CollectionGameInfo* game = nullptr;  // the map's game; none: the modder's model
+    CollectionMap map;
+    fs::path model;
+    std::string world, key;
+    bool ask = false;  // the window opened on the next frame
+    std::thread worker;
+    std::atomic<bool> busy{false};
+    // left by the worker, or by the file dialog
+    std::mutex mutex;
+    bool done = false, ok = false;
+    std::vector<std::string> lines;
+    std::string why, picked;
+    ~RoomAdder() {
+        if (worker.joinable())
+            worker.join();
+    }
+};
+RoomAdder adder;
+
+// A room's key from a map's or a file's name: its letters, digits, _ and -, anything else as _.
+std::string room_key_from(const std::string& name) {
+    std::string key;
+    for (const char c : name)
+        key += std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' || c == '-' ? c : '_';
+    return key.empty() ? std::string("room") : key;
+}
+
+// The window asked for `map` of `game`, or (no game) the modder's `model`, added to `world` (the room shown's).
+void adder_ask(const CollectionGameInfo* game, const CollectionMap& map, const fs::path& model,
+               const std::string& world) {
+    if (adder.busy)
+        return;
+    adder.game = game;
+    adder.map = map;
+    adder.model = model;
+    adder.world = world;
+    adder.key = room_key_from(game != nullptr ? map.name : u8(model.stem()));
+    adder.ask = true;
+}
 
 std::vector<const CollectionGameInfo*> other_games() {
     std::vector<const CollectionGameInfo*> out;
@@ -622,6 +670,8 @@ void draw_room(App& app, ImVec2 size) {
                 }
             }
             for (const auto& mesh : placed.model.meshes) {
+                if (mesh.sky && !m.show_sky)
+                    continue;  // from outside, its sky hides it
                 std::string shown = mesh.texture_name;
                 if (!mesh.texture_frames.empty()) {
                     shown = mesh.texture_frames[khdays::room::frame_at(mesh.texture_frames, mesh.texture_frames_loop,
@@ -1468,9 +1518,15 @@ void draw_kh2_picker(App& app) {
             ImGui::TextUnformatted(name.c_str());
         if (!kh2.out[name])
             ImGui::TextDisabled("%s", tr(lang, S::map_kh2_not_out));
-        ImGui::BeginDisabled(kh2.busy);
+        ImGui::BeginDisabled(kh2.busy || adder.busy);
         if (ImGui::SmallButton(tr(lang, S::map_kh2_use)))
             kh2_start(app, name, {});
+        ImGui::SameLine();
+        if (ImGui::SmallButton(tr(lang, S::map_add_room))) {
+            CollectionMap map;
+            map.name = name;
+            adder_ask(collection_game("kh2"), map, {}, m.world.code);
+        }
         ImGui::EndDisabled();
         ImGui::EndGroup();
         ImGui::PopID();
@@ -1574,6 +1630,143 @@ void other_start(App& app, const CollectionGameInfo* game, const CollectionMap* 
     });
 }
 
+// The modder's model chosen for a room of its own (SDL's file dialog, on its thread).
+void adder_choose_model(App& app) {
+    static const SDL_DialogFileFilter models[] = {{"FBX, glTF, glb, OBJ", "fbx;gltf;glb;obj"}};
+    SDL_ShowOpenFileDialog(
+        [](void*, const char* const* files, int) {
+            if (files == nullptr || files[0] == nullptr)
+                return;
+            std::lock_guard lock(adder.mutex);
+            adder.picked = files[0];
+        },
+        nullptr, app.window, models, 1, nullptr, false);
+}
+
+void adder_start(App& app, const Mod& mod) {
+    if (adder.worker.joinable())
+        adder.worker.join();
+    adder.busy = true;
+    const Settings settings = app.settings;
+    const fs::path game_files = nitrofs(), mod_dir = mod.dir, model = adder.model;
+    const CollectionGameInfo* game = adder.game;
+    const CollectionMap map = adder.map;
+    const std::string world = adder.world, key = adder.key;
+    adder.worker = std::thread([settings, game_files, mod_dir, model, game, map, world, key] {
+        std::vector<std::string> lines;
+        std::string why;
+        const bool ok = game != nullptr ? add_collection_room(settings, game_files, mod_dir, world, key, *game, map, {},
+                                                              &lines, &why)
+                                        : add_model_room(game_files, mod_dir, world, key, model, {}, &lines, &why);
+        std::lock_guard lock(adder.mutex);
+        adder.done = true;
+        adder.ok = ok;
+        adder.lines = std::move(lines);
+        adder.why = why;
+        adder.busy = false;
+    });
+}
+
+// The window adding a room of the mod's own: the world it goes to (the game's, or one the mod adds) and its key.
+void draw_room_adder(App& app) {
+    const auto lang = app.language;
+    const ImVec4 warn(0.95f, 0.8f, 0.35f, 1);
+    bool done = false, ok = false;
+    std::vector<std::string> lines;
+    std::string why, picked;
+    {
+        std::lock_guard lock(adder.mutex);
+        std::swap(done, adder.done);
+        std::swap(picked, adder.picked);
+        ok = adder.ok;
+        if (done) {
+            lines.swap(adder.lines);
+            why = adder.why;
+        }
+    }
+    if (!picked.empty())
+        adder_ask(nullptr, {}, path_u8(picked), m.world.code);
+    const std::string source =
+        adder.game != nullptr ? std::string(adder.game->code) + ":" + adder.map.name : u8(adder.model.filename());
+    if (done) {
+        if (adder.worker.joinable())
+            adder.worker.join();
+        for (const auto& line : lines)
+            app.tell(source + ": " + line, true);
+        if (ok)
+            app.tell(fmt(lang, S::map_add_room_done, {source, adder.world, adder.key}), true);
+        else
+            app.tell(fmt(lang, S::save_failed, {why}), false);
+    }
+    if (adder.ask) {
+        ImGui::OpenPopup("###addroom");
+        adder.ask = false;
+    }
+    if (!ImGui::BeginPopupModal((fmt(lang, S::map_add_room_title, {source}) + "###addroom").c_str(), nullptr,
+                                ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    if (done && ok) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+    const float em = ImGui::GetFontSize();
+    ImGui::PushTextWrapPos(34 * em);
+    ImGui::TextUnformatted(tr(lang, S::map_add_room_hint));
+    ImGui::PopTextWrapPos();
+    const Mod* mod = app.current_mod();
+    if (mod == nullptr) {
+        ImGui::TextColored(warn, "%s", tr(lang, S::choose_mod_first));
+    } else {
+        std::vector<std::string> notes;
+        const auto worlds = read_added_worlds(mod->dir, &notes);
+        const auto label = [&](const AddedWorld& w) {
+            const auto named = w.names.find("");
+            return (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
+        };
+        std::string shown = world_name(lang, adder.world) + "  (" + adder.world + ")";
+        for (const auto& w : worlds)
+            if (w.key == adder.world)
+                shown = label(w);
+        ImGui::BeginDisabled(adder.busy);
+        ImGui::SetNextItemWidth(20 * em);
+        if (ImGui::BeginCombo(tr(lang, S::mw_new_world), shown.c_str())) {
+            for (const auto& w : world_codes())
+                if (w != "hb" && w != "pi" &&
+                    ImGui::Selectable((world_name(lang, w) + "  (" + w + ")").c_str(), adder.world == w))
+                    adder.world = w;
+            for (const auto& w : worlds)
+                if (ImGui::Selectable(label(w).c_str(), adder.world == w.key))
+                    adder.world = w.key;
+            ImGui::EndCombo();
+        }
+        ImGui::TextDisabled("%s", tr(lang, S::mw_new_key));
+        ImGui::SetNextItemWidth(20 * em);
+        ImGui::InputText("##addroomkey", &adder.key);
+        ImGui::EndDisabled();
+        const bool valid = added_room_key(adder.key);
+        if (!valid)
+            ImGui::TextColored(warn, "%s", tr(lang, S::map_add_room_key_bad));
+        bool exists = false;
+        for (const auto& r : read_added_rooms(mod->dir, &notes))
+            exists = exists || (r.key == adder.key && r.world == adder.world);
+        if (exists)
+            ImGui::TextColored(warn, "%s", fmt(lang, S::map_add_room_exists, {adder.key}).c_str());
+        if (adder.busy)
+            ImGui::TextDisabled("%s", fmt(lang, S::map_add_room_busy, {source}).c_str());
+        ImGui::BeginDisabled(adder.busy || !valid || other.busy || kh2.busy);
+        if (ImGui::Button(tr(lang, S::map_add_room_go)))
+            adder_start(app, *mod);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+    }
+    ImGui::BeginDisabled(adder.busy);
+    if (ImGui::Button(tr(lang, S::cancel)))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndDisabled();
+    ImGui::EndPopup();
+}
+
 // The other games' rooms of the player's copies to take as the room's model: a game, its worlds, their maps.
 void draw_other_picker(App& app) {
     const auto lang = app.language;
@@ -1642,9 +1835,12 @@ void draw_other_picker(App& app) {
             ImGui::TextDisabled("%s", tr(lang, S::map_kh2_not_out));
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled(other.busy);
+        ImGui::BeginDisabled(other.busy || adder.busy);
         if (ImGui::SmallButton(tr(lang, S::map_kh2_use)))
             other_start(app, game, &mp);
+        ImGui::SameLine();
+        if (ImGui::SmallButton(tr(lang, S::map_add_room)))
+            adder_ask(game, mp, {}, m.world.code);
         ImGui::EndDisabled();
         ImGui::PopID();
     }
@@ -1716,12 +1912,19 @@ void draw_replace(App& app, const Item& item) {
     ImGui::TextWrapped("%s", tr(lang, S::map_replace_hint));
     kh2_take(app, item);
     other_take(app, item);
+    draw_room_adder(app);
     if (ImGui::Button(tr(lang, S::choose_file))) {
         p.next_is_collision = false;
         p.r.kh2.clear();  // the modder's own model, not a KH2 room nor another game's
         p.r.source.clear();
         choose_file(app, item);
     }
+    // or, none of the game's replaced, as a room of the mod's own
+    same_line_if_room(button_width(tr(lang, S::map_add_model_room)));
+    ImGui::BeginDisabled(adder.busy);
+    if (ImGui::Button(tr(lang, S::map_add_model_room)))
+        adder_choose_model(app);
+    ImGui::EndDisabled();
     same_line_if_room(button_width(tr(lang, S::map_export)));
     if (ImGui::Button(tr(lang, S::map_export)))
         choose_room_export(app, item);
@@ -2026,8 +2229,37 @@ void draw_map_view(App& app, const Item& item) {
     ImGui::Checkbox(tr(lang, S::map_ceilings), &m.show_ceilings);
     same_line_if_room(check_width(tr(lang, S::map_markers)));
     ImGui::Checkbox(tr(lang, S::map_markers), &m.show_markers);
+    bool sky = false;
+    for (const auto& mesh : m.rep.placed.model.meshes)
+        sky = sky || mesh.sky;
+    if (sky && m.rep.active && m.rep.view != 1) {
+        same_line_if_room(check_width(tr(lang, S::map_sky)));
+        ImGui::Checkbox(tr(lang, S::map_sky), &m.show_sky);
+    }
+    same_line_if_room(button_width(tr(lang, S::map_frame)));
+    if (ImGui::Button(tr(lang, S::map_frame)))
+        frame_camera();
+    // the picture, as tall as the person drags its lower edge
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    draw_room(app, ImVec2(avail.x, std::max(260.0f, avail.y * 0.5f)));
+    draw_room(app, ImVec2(avail.x, std::max(200.0f, avail.y * m.view_share)));
+    ImGui::InvisibleButton("##viewsplit", ImVec2(avail.x, 0.5f * ImGui::GetFontSize()));
+    if (ImGui::IsItemActive() && avail.y > 0)
+        m.view_share = std::clamp(m.view_share + ImGui::GetIO().MouseDelta.y / avail.y, 0.2f, 0.95f);
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        m.view_share = m.view_share < 0.7f ? 0.9f : 0.5f;
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+        ImGui::SetTooltip("%s", tr(lang, S::map_view_size));
+    }
+    {
+        const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        const float y = (a.y + b.y) * 0.5f;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x, y), ImVec2(b.x, y),
+                                            ImGui::GetColorU32(ImGui::IsItemHovered() || ImGui::IsItemActive()
+                                                                   ? ImGuiCol_SeparatorHovered
+                                                                   : ImGuiCol_Separator),
+                                            2.0f);
+    }
     ImGui::TextDisabled("%s", tr(lang, S::map_controls));
     ImGui::BeginChild("##room_controls", ImVec2(0, 0), ImGuiChildFlags_None);
     draw_replace(app, item);

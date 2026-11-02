@@ -2,6 +2,7 @@
 
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
+#include "core/models/model_files.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/room_map.h"
 #include "core/rooms/worlds.h"
@@ -290,6 +291,52 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
         lines->push_back(u8(folder) + " written");
     }
     return true;
+}
+
+bool add_collection_room(const Settings& settings, const fs::path& nitrofs, const fs::path& mod_dir,
+                         const std::string& world, const std::string& key, const CollectionGameInfo& game,
+                         const CollectionMap& map, const fs::path& collision_model, std::vector<std::string>* lines,
+                         std::string* why) {
+    if (!added_room_key(key))
+        return fail_with(why, "a room's key is letters, digits, _ and -: " + key);
+    CollectionMade made;
+    if (!make_collection_room(settings, game, map, &made, why))
+        return false;
+    const std::string source = std::string(game.code) + ":" + map.name;
+    lines->push_back(source + ": " + std::to_string(made.triangles) + " triangles, " + std::to_string(made.pictures) +
+                     " pictures");
+    if (collection_map_falling(game, map))
+        lines->push_back(source + " is a stage the player falls through (Dive): it has no floor to walk on");
+    const fs::path model = collection_made_model(settings.root, game, map.name);
+    fs::path collision = made.collision ? collection_made_collision(settings.root, game, map.name) : fs::path();
+    // its lowest main floor at height 0, a floor under the origin (a mission's start = 0 0 0)
+    RoomPlacement place;
+    khdays::assets::ImportedModel floors;
+    std::string note;
+    if (game.units > 0 && import_model(collision.empty() ? model : collision, &floors, &note)) {
+        const bool on = added_room_place(floors, game.units, &place);
+        char scale[32];
+        std::snprintf(scale, sizeof(scale), "%g", place.scale);
+        lines->push_back(std::string("placed by its game's units (scale ") + scale + "), its lowest main floor at 0: " +
+                         (on ? "a floor under the origin" : "no floor found under the origin (move it in its change)"));
+    }
+    if (!collision_model.empty())
+        collision = collision_model;
+    return add_room(nitrofs, mod_dir, world, key, model, place, collision, lines, why);
+}
+
+bool add_model_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::string& world, const std::string& key,
+                    const fs::path& model, const fs::path& collision_model, std::vector<std::string>* lines,
+                    std::string* why) {
+    RoomPlacement place;
+    khdays::assets::ImportedModel floors;
+    std::string note;
+    if (import_model(collision_model.empty() ? model : collision_model, &floors, &note)) {
+        const bool on = added_room_place(floors, 1.0f, &place);
+        lines->push_back(std::string("its lowest main floor at 0: ") +
+                         (on ? "a floor under the origin" : "no floor found under the origin (move it in its change)"));
+    }
+    return add_room(nitrofs, mod_dir, world, key, model, place, collision_model, lines, why);
 }
 
 bool remove_added_room(const fs::path& mod_dir, const std::string& world, const std::string& key, std::string* why) {

@@ -74,6 +74,8 @@ struct MapState {
     float yaw = 30.0f, pitch = 60.0f, distance = 40.0f;
     std::array<float, 3> target{0, 0, 0};
     bool show_floor = true, show_room = true;
+    bool show_sky = false;  // a sky around the room hides it from outside: drawn only when asked
+    bool has_sky = false;
     std::unique_ptr<Preview> preview;
 };
 
@@ -363,6 +365,8 @@ void draw_room(App& app, ImVec2 size) {
         }
         if (s.mod_room) {
             for (const auto& mesh : s.mod_model.model.meshes) {
+                if (mesh.sky && !s.show_sky)
+                    continue;  // from outside, its sky hides it
                 const assets::DecodedTexture* t = nullptr;
                 for (const auto& [name, decoded] : s.mod_model.textures)
                     if (name == mesh.texture_name && !decoded.rgba.empty())
@@ -758,6 +762,16 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
     ImGui::Checkbox(tr(lang, S::mmap_show_room), &s.show_room);
     ImGui::SameLine();
     ImGui::Checkbox(tr(lang, S::mmap_show_floor), &s.show_floor);
+    s.has_sky = false;
+    for (const auto& mesh : s.mod_model.model.meshes)
+        s.has_sky = s.has_sky || (s.mod_room && mesh.sky);
+    if (s.has_sky) {
+        ImGui::SameLine();
+        ImGui::Checkbox(tr(lang, S::map_sky), &s.show_sky);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::map_frame)))
+        look_at_floor();
     // saving: all at once, when it reads and builds
     const bool changed = mission_map_unsaved() || where.changed;
     ImGui::BeginDisabled(!changed);

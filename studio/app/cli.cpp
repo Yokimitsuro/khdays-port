@@ -752,11 +752,13 @@ int add_room_command(const fs::path& root, const std::vector<std::string>& args)
         return 1;
     const std::string world = args[2], key = args[3];
     std::string why;
-    fs::path model = path_u8(args[4]), collision;
-    RoomPlacement place;
+    const fs::path model = path_u8(args[4]);
+    fs::path collision;
     const auto colon = args[4].find(':');
     const CollectionGameInfo* game = colon == std::string::npos || colon < 2 ? nullptr
                                                                            : collection_game(args[4].substr(0, colon));
+    if (args.size() >= 6 && args[5] != "own-collision")
+        collision = path_u8(args[5]);
     if (game != nullptr) {
         const std::string name = args[4].substr(colon + 1);
         std::string note;
@@ -769,36 +771,18 @@ int add_room_command(const fs::path& root, const std::vector<std::string>& args)
             map = m.name == name ? &m : map;
         if (map == nullptr)
             return print_outcome(false, {}, "no map " + name + " in this copy of " + game->name);
-        CollectionMade made;
-        if (!make_collection_room(settings, *game, *map, &made, &why))
-            return print_outcome(false, {}, why);
-        std::printf("%s: %zu triangles, %zu pictures\n", args[4].c_str(), made.triangles, made.pictures);
-        if (collection_map_falling(*game, *map))
-            std::printf("%s is a stage the player falls through (Dive): it has no floor to walk on\n", args[4].c_str());
-        model = collection_made_model(root, *game, name);
-        if (made.collision && (args.size() < 6 || args[5] == "own-collision"))
-            collision = collection_made_collision(root, *game, name);
-        // its lowest main floor at height 0, a floor under the origin (a mission's start = 0 0 0)
-        khdays::assets::ImportedModel floors;
-        if (game->units > 0 && import_model(collision.empty() ? model : collision, &floors, &why)) {
-            const bool on = added_room_place(floors, game->units, &place);
-            std::printf("placed by its game's units (scale %g), its lowest main floor at 0: %s\n", place.scale,
-                        on ? "a floor under the origin" : "no floor found under the origin (move it in its change)");
-        }
-        why.clear();
+        std::vector<std::string> lines;
+        const bool ok =
+            add_collection_room(settings, nitrofs, mod_dir, world, key, *game, *map, collision, &lines, &why);
+        for (const auto& line : lines)
+            std::printf("%s\n", line.c_str());
+        if (!ok)
+            std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
+        return ok ? 0 : 1;
     }
-    if (args.size() >= 6 && args[5] != "own-collision")
-        collision = path_u8(args[5]);
     // the modder's own model, in the game's units: its lowest main floor at 0, a floor under the origin
-    khdays::assets::ImportedModel floors;
-    if (game == nullptr && import_model(collision.empty() ? model : collision, &floors, &why)) {
-        const bool on = added_room_place(floors, 1.0f, &place);
-        std::printf("its lowest main floor at 0: %s\n",
-                    on ? "a floor under the origin" : "no floor found under the origin (move it in its change)");
-    }
-    why.clear();
     std::vector<std::string> lines;
-    const bool ok = add_room(nitrofs, mod_dir, world, key, model, place, collision, &lines, &why);
+    const bool ok = add_model_room(nitrofs, mod_dir, world, key, model, collision, &lines, &why);
     for (const auto& line : lines)
         std::printf("%s\n", line.c_str());
     if (!ok)

@@ -5,6 +5,7 @@
 // (`room = <key>`).
 #pragma once
 
+#include "core/rooms/collection_source.h"
 #include "core/rooms/room_change.h"
 
 #include <filesystem>
@@ -56,6 +57,22 @@ bool added_room_place(const khdays::assets::ImportedModel& floors, float units, 
 bool add_room(const std::filesystem::path& nitrofs, const std::filesystem::path& mod_dir, const std::string& world,
               const std::string& key, const std::filesystem::path& model, const RoomPlacement& place,
               const std::filesystem::path& collision_model, std::vector<std::string>* lines, std::string* why);
+
+// Map `map` of `game` (a collection the player has) added to `world` as room `key`: made (make_collection_room),
+// placed in its game's units with its lowest main floor at height 0 and a floor under the origin, its floors and walls
+// its own when it has them, else built from its model -- or `collision_model` when given; `lines` what was done.
+bool add_collection_room(const Settings& settings, const std::filesystem::path& nitrofs,
+                         const std::filesystem::path& mod_dir, const std::string& world, const std::string& key,
+                         const CollectionGameInfo& game, const CollectionMap& map,
+                         const std::filesystem::path& collision_model, std::vector<std::string>* lines,
+                         std::string* why);
+
+// The modder's own `model` (FBX, glTF, GLB, OBJ) added to `world` as room `key`, in the game's units as it is: its
+// lowest main floor at height 0 and a floor under the origin; its floors and walls built from `collision_model` (empty:
+// its own visible triangles); `lines` what was done.
+bool add_model_room(const std::filesystem::path& nitrofs, const std::filesystem::path& mod_dir,
+                    const std::string& world, const std::string& key, const std::filesystem::path& model,
+                    const std::filesystem::path& collision_model, std::vector<std::string>* lines, std::string* why);
 
 // Removes room `key` of `world` from the mod: its folder and its line.
 bool remove_added_room(const std::filesystem::path& mod_dir, const std::string& world, const std::string& key,
