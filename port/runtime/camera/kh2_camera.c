@@ -122,9 +122,9 @@ static void ease_radius(Kh2Camera *c, float to, float rate)
     }
 }
 
-int kh2_camera_takeover(int started, unsigned days_frames)
+int kh2_camera_takeover(int started, unsigned days_frames, int same_place)
 {
-    if (started && days_frames == 0u) {
+    if ((started && days_frames == 0u) || (days_frames < DAYS_CAMERA_SEEN && same_place)) {
         return KH2_CAMERA_RESUME;
     }
     return days_frames >= DAYS_CAMERA_SEEN ? KH2_CAMERA_BLEND : KH2_CAMERA_SNAP;

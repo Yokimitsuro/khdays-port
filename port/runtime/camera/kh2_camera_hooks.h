@@ -24,6 +24,12 @@ void khdays_kh2_camera_center(void);
  * of the player being faded and how far (0 when none is, runtime/display/character_shadows.c). */
 void khdays_kh2_camera_toggle_first_person(void);
 
+/* Ov002_ReaimActor: the camera is about to be committed; while the game's tick is gated this is its only frame. */
+void khdays_kh2_camera_commit(int camera);
+
+/* Ov002_Camera_UpdateFollow, each frame: a hold (camera flag 0x200) is still this camera's. */
+void khdays_kh2_camera_held(int flags, int flags2, int mode);
+
 /* Ov022_EnterActorState: the local player's actor enters `state`. */
 void khdays_kh2_camera_player_state(int state);
 int khdays_kh2_camera_strafing(int actor);
@@ -32,9 +38,9 @@ unsigned khdays_kh2_camera_faded_node(float *fade);
 /* Ov002_TickCameraTransition, before the shake. prepare: the wanted eye, and where to cast from (returns 0
  * when the camera stays the game's); collide: the eye off what lies between; settle: what collision left of it,
  * and the eye the springs reached, to collide again; publish: the camera's fields from the result. All are DS
- * addresses of vectors; dir, hit and normal are the function's own, for the game's casts to work in. */
+ * addresses of vectors. */
 int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye);
-void khdays_kh2_camera_collide(int origin, int eye, int dir, int hit, int normal);
+void khdays_kh2_camera_collide(int origin, int eye);
 void khdays_kh2_camera_settle(int origin, int eye);
 void khdays_kh2_camera_publish(int camera, int eye);
 

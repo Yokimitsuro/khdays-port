@@ -3,6 +3,7 @@
  * reports each frame's numbers. docs/KH2_CAMERA.md has the whole. */
 #include "kh2_camera_hooks.h"
 #include "kh2_camera.h"
+#include "../core/session_log.h"
 #include "../core/window.h"
 #include "../input/controls_hooks.h"
 #include "../input/input.h"
@@ -11,20 +12,23 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int GetFrameRateMode(void); /* 0: 30 fps, 1: 20 fps, 2: 60 fps */
 extern int QueryActiveStateOrDelegate(void);
 extern int GetEntryField20ByIndex(int idx);
 extern int Ov022_GetEntryField66(int player);
 extern void func_ov022_02088280(int player, short heading); /* sets a player's heading, as a camera's yaw */
+extern int func_ov022_020881f8(int player);                 /* a player's position */
+extern unsigned short func_ov022_02088254(int player);      /* the yaw behind a player */
 extern short Session_GetLocalPlayerIndex(void);
 extern int Ov002_GetSlotTableByte(int world);
 extern int Ov002_GetPeerRecordValue(int slot);
-extern int Ov002_CastRayAlongMotion(KhdaysRef start, KhdaysRef motion, KhdaysRef hit, KhdaysRef normal,
-                                    KhdaysRef exclude);
-extern int Ov002_SweepSphereAlongMotion(KhdaysRef start, KhdaysRef motion, KhdaysRef hit, KhdaysRef normal,
-                                        KhdaysRef exclude);
-extern int Ov002_CastRayForContactPoint(KhdaysRef origin, KhdaysRef dir, KhdaysRef hit, KhdaysRef exclude);
+extern KhdaysRef GetTrackEntryBase(int index);
+extern KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
+extern KhdaysRef Collision_RunSphereCast(KhdaysRef world, KhdaysRef params);
+extern KhdaysRef Actor_GetRecord(KhdaysRef hit, int slot);
+extern KhdaysRef Collision_CastNearest(KhdaysRef world, KhdaysRef params);
 
 /* The game's held buttons (src/engine/Pad_Sample.c) */
 #define PAD_HELD (*(volatile u16 *)KHDAYS_W(0x0204c18c))
@@ -33,10 +37,12 @@ extern int Ov002_CastRayForContactPoint(KhdaysRef origin, KhdaysRef dir, KhdaysR
 enum {
     WORD_FOV_SIN = 0,
     WORD_FOV_COS = 1,
+    WORD_NEAR = 0xc / 4,
     WORD_FOCUS = 0x14 / 4,
     WORD_EYE = 0x20 / 4,
     WORD_FLAGS = 0x38 / 4,
     WORD_FLAGS2 = 0x3c / 4,
+    WORD_MODE = 0x40 / 4,
     WORD_DISTANCE = 0x54 / 4,
     WORD_YAW = 0x58 / 4,
     WORD_EYE_HEIGHT = 0x5c / 4,
@@ -50,9 +56,10 @@ enum {
     FLAG_CONTROL = 0x2,
     FLAG_HELD_POINT = 0x100,
     FLAG_SELECT_VIEW = 0x2000,
-    /* switched off (4), a script's hold (0x200), a pending reset (0x400), a script's camera (0x8000), the
-     * heading tied to it (0x10000), its transition (0x20000), modes 9 and 10 */
-    FLAGS_NOT_GAMEPLAY = 0x4 | 0x200 | 0x400 | 0x8000 | 0x10000 | 0x20000 | 0x08000000 | 0x20000000,
+    FLAG_HOLD = 0x200, /* Ov002_SetOrClearFlag200: a talk, an event, a panel, the results: no control */
+    /* switched off (4), a script's camera (0x8000), the heading tied to it (0x10000), its transition (0x20000),
+     * modes 9 and 10 */
+    FLAGS_NOT_GAMEPLAY = 0x4 | 0x8000 | 0x10000 | 0x20000 | 0x08000000 | 0x20000000,
     /* Chase Cam's Config alone: Days' hold of R (flag 0x10000000) and KH2's R2 swap it, and neither is free
      * on the port's controls */
     FLAG2_MANUAL = 0x1,
@@ -73,10 +80,19 @@ enum { BIT_HIGHER = 1, BIT_LOWER = 2, BIT_RIGHT = 4, BIT_LEFT = 8 };
 #define WARP_DISTANCE 500.0f
 /* How far off what it hits the eye stays (dk::ObjCamera::collision) */
 #define OFF_SURFACE 5.0f
-/* How far off a wall: the radius of Ov002_SweepSphereAlongMotion, Days' own clearance (fx32) */
-#define WALL_CLEARANCE 0x500
-/* A normal's y inside this is a wall's, steeper than 60 degrees: the port's choice */
-#define WALL_NORMAL_Y 0x800
+/* The near plane while this camera runs, 2.5 of KH2's units. KH2's is 1 (kn::Camera::init), Days' 10, which would let
+ * a wall 5 off the eye through at the screen's sides. 1 would leave the DS's 20.12 clip space little depth (fx32). */
+#define NEAR_PLANE 0x66
+#define DAYS_NEAR_PLANE 0x19a /* Ov002_InitWorldState */
+#define PAST_FACE 0x40
+#define CAST_TRIES 8
+/* A face's plane's normal, and its slots: 1 and 2 name records whose first tag is their kind (Ov002_LoadPeerIntoSlot) */
+#define FACE_NORMAL 0x14
+#define FACE_SLOTS 0x80
+#define RECORD_TAG 0xc
+/* nohit: drawn on about 1 % of its area (the rooms' models), so the invisible walls; nocam is the map's own word;
+ * sicon, a climb's mark, drawn on as little (data_ov002_0207e640) */
+enum { TAG_NOHIT = 2, TAG_NOCAM = 5, TAG_SICON = 8 };
 /* A pause this long (a cutscene) starts again from the start radius. */
 #define KEEP_RADIUS_FRAMES 30u
 
@@ -91,6 +107,17 @@ enum { ACTOR_NODE = 0x20, NODE_SCENE = 4 };
 
 enum { WANT_NONE, WANT_FOLLOW, WANT_LOCK };
 
+/* CollCastParams. `map_only` is the decomp's directionIsUnit: what Coll_WalkTreeForHit and Coll_WalkSphereTreeForHit
+ * read to leave the objects out (the actors, what moves), and nothing else reads. */
+typedef struct CastParams {
+    KhdaysRef origin, direction;
+    int radius;
+    u16 map_only, flags;
+    KhdaysRef exclude;
+} CastParams;
+
+typedef KhdaysRef (*CastFunction)(KhdaysRef world, KhdaysRef params);
+
 static struct {
     Kh2Camera camera;
     Kh2CameraInput in;
@@ -99,6 +126,9 @@ static struct {
     int home, center, input_off, bits;
     int first_person, toggle;
     int player_state;
+    int held;      /* this frame's camera flag 0x200: the player's controls are not the camera's */
+    int republish; /* Days re-placed its camera in the middle of this one's: only write this one back */
+    int room;
     float fade; /* the player's, as YS::OBJ's +0x834: 1 seen, 0 hidden */
     int active;
     u32 frame;
@@ -148,12 +178,12 @@ int khdays_kh2_camera_claims(int flags, int flags2, int mode)
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
     return (in->enhancements & KHDAYS_ENH_KH2_CAMERA) != 0 && (flags2 & FLAG2_TYPE_B) == 0 &&
            (flags & FLAG_CONTROL) != 0 && (flags & FLAGS_NOT_GAMEPLAY) == 0 &&
-           (mode == 0 || mode == 3 || mode == 8); /* 3 is a shake over the ordinary camera */
+           (mode == 0 || mode == 1 || mode == 3 || mode == 8); /* 1 a talk's, 3 a shake over the ordinary camera */
 }
 
 int khdays_kh2_camera_active(void)
 {
-    return s.active && khdays_input_game_frames() - s.frame <= 2u;
+    return s.active && !s.held && khdays_input_game_frames() - s.frame <= 2u;
 }
 
 void khdays_kh2_camera_center(void)
@@ -232,6 +262,17 @@ void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int inp
     }
 }
 
+/* A hold skips what marks a frame (Ov002_Camera_UpdateFollow): the camera stays, without control. */
+void khdays_kh2_camera_held(int flags, int flags2, int mode)
+{
+    if ((flags & FLAG_HOLD) != 0 && khdays_kh2_camera_claims(flags, flags2, mode)) {
+        s.want = WANT_FOLLOW;
+        s.input_off = 1;
+        s.bits = 0;
+        s.home = 0;
+    }
+}
+
 /* The movement stick as KH2's Stick[1] has it: a unit direction, y down, and how far. */
 static void read_movement(Kh2CameraInput *in)
 {
@@ -269,7 +310,7 @@ static void read_look(Kh2CameraInput *in, int flags2)
     } else {
         khdays_controls_camera_look(&x, &y);
     }
-    if (s.input_off) {
+    if (s.input_off || s.held) {
         x = y = 0.0f;
     }
     x += (float)(((s.bits & BIT_RIGHT) != 0) - ((s.bits & BIT_LEFT) != 0));
@@ -290,6 +331,29 @@ static int ticks_a_frame(void)
     return mode == 1 ? 3 : mode == 2 ? 1 : 2;
 }
 
+/* The session log: each change of whose frame this is and what the game's flags say, to read beside an F12 mark. */
+static void log_owner(const int *cam, int want)
+{
+    static int last_want = -1, last_flags, last_mode;
+    if (want != last_want || cam[WORD_FLAGS] != last_flags || cam[WORD_MODE] != last_mode) {
+        khdays_log("kh2 camera: frame %u %s flags %#x flags2 %#x mode %d stage %d", khdays_input_game_frames(),
+                   want == WANT_NONE   ? "days"
+                   : want == WANT_LOCK ? "lock"
+                                       : "follow",
+                   (unsigned)cam[WORD_FLAGS], (unsigned)cam[WORD_FLAGS2], cam[WORD_MODE], cam[WORD_STAGE]);
+        last_want = want;
+        last_flags = cam[WORD_FLAGS];
+        last_mode = cam[WORD_MODE];
+    }
+}
+
+static int same_place(Kh2CameraVec player)
+{
+    const float dx = player.x - s.last_player.x, dz = player.z - s.last_player.z;
+    return s.frame != 0u && s.room == Ov022_GetEntryField66(QueryActiveStateOrDelegate()) &&
+           dx * dx + dz * dz <= WARP_DISTANCE * WARP_DISTANCE;
+}
+
 int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye)
 {
     int *cam = KHDAYS_W(camera);
@@ -299,16 +363,29 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     int warp = 0;
 
     s.want = WANT_NONE;
+    log_owner(cam, want);
     /* Days' second camera (data_0204be04, the 3D on both screens): plain Days', leaving this one's state alone */
     if (cam[WORD_STAGE] != 0) {
         return 0;
     }
+    /* Ov002_Camera_SetOrbitAngle, _SetAnchor (leaving a menu, an event's end), Ov002_ResetCamera: no frame of a camera
+     * of Days', only its place set anew. Where the player has not moved, this camera stands. */
+    if (want == WANT_NONE && s.active && khdays_kh2_camera_claims(cam[WORD_FLAGS], cam[WORD_FLAGS2], cam[WORD_MODE]) &&
+        same_place(read_vec(KHDAYS_W(player)))) {
+        s.republish = 1;
+        write_vec(KHDAYS_W(origin), s.camera.pivot);
+        write_vec(s.written_eye, s.camera.eye);
+        write_vec(KHDAYS_W(eye), s.camera.eye);
+        return 1;
+    }
+    s.held = want != WANT_NONE && (cam[WORD_FLAGS] & FLAG_HOLD) != 0;
     if (want == WANT_NONE) {
         if (s.fov_held) {
             /* from the angles Ov002_Camera_UpdateFollow keeps at +0xa0 and +0xa2 */
             const u16 *angles = (const u16 *)((const char *)cam + 0xa0);
             cam[WORD_FOV_SIN] = (int)lroundf(sinf(angle_radians(angles[0])) * 4096.0f);
             cam[WORD_FOV_COS] = (int)lroundf(cosf(angle_radians(angles[1])) * 4096.0f);
+            cam[WORD_NEAR] = DAYS_NEAR_PLANE;
             s.fov_held = 0;
         }
         s.center = 0;
@@ -323,23 +400,24 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     in->player = read_vec(KHDAYS_W(player));
     in->ticks = (float)ticks_a_frame();
     {
-        const int takeover = kh2_camera_takeover(s.active, s.days_frames);
+        const int takeover = kh2_camera_takeover(s.active, s.days_frames, same_place(in->player));
         if (takeover != KH2_CAMERA_RESUME) {
             const float radius = s.frame != 0u && frame - s.frame <= KEEP_RADIUS_FRAMES ? s.camera.radius : 0.0f;
             /* outdoors everywhere: Days has no indoor maps that this could read (docs/KH2_CAMERA.md) */
             const float fov = takeover == KH2_CAMERA_SNAP ? kh2_camera_half_angle(kh2_camera_outdoor.fov)
                                                           : atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
+            /* a new field starts behind the player (YS::PLAYER::start_player_camera) */
             kh2_camera_start(&s.camera, &kh2_camera_outdoor, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
-                             angle_radians(cam[WORD_YAW]), fov, radius);
+                             angle_radians(takeover == KH2_CAMERA_SNAP ? behind_yaw : cam[WORD_YAW]), fov, radius);
             s.camera.snap = takeover == KH2_CAMERA_SNAP;
             s.first_person = 0;
             if (takeover == KH2_CAMERA_SNAP) {
                 s.fade = 1.0f; /* a new field */
             }
-            s.fov_held = 1;
             s.last_player = in->player;
-            s.active = 1;
         }
+        s.fov_held = 1;
+        s.active = 1;
         s.days_frames = 0u;
     }
     {
@@ -350,13 +428,15 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     }
     s.last_player = in->player;
     s.frame = frame;
+    s.room = Ov022_GetEntryField66(QueryActiveStateOrDelegate());
     in->behind_yaw = angle_radians(behind_yaw);
-    in->zoomed = (cam[WORD_FLAGS] & FLAG_SELECT_VIEW) != 0;
+    /* mode 1: a talk, an examined object (Ov002_ElementChoiceStep, Ov002_SpareEntryStep) */
+    in->zoomed = (cam[WORD_FLAGS] & FLAG_SELECT_VIEW) != 0 || cam[WORD_MODE] == 1;
     in->manual = (cam[WORD_FLAGS2] & FLAG2_MANUAL) != 0 || in->zoomed;
     in->home = s.home || s.center;
     s.home = s.center = 0;
-    /* Into first person only from following, as objective_control; locking on leaves it (cancelSubjective) */
-    if (want == WANT_LOCK || (khdays_input_snapshot()->enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) == 0) {
+    /* Into first person only from following, as objective_control; locking on and talks leave it (cancelSubjective) */
+    if (want == WANT_LOCK || s.held || (khdays_input_snapshot()->enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) == 0) {
         s.first_person = 0;
     } else if (s.toggle) {
         s.first_person = !s.first_person;
@@ -368,6 +448,9 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     s.toggle = 0;
     step_fade(in->ticks);
     read_movement(in);
+    if (s.held) {
+        in->move_amount = 0.0f; /* what moves the player now is not the stick: no chase */
+    }
     read_look(in, cam[WORD_FLAGS2]);
 
     if (want == WANT_LOCK) {
@@ -406,120 +489,139 @@ static void fx_along(int *out, const int *from, const double *direction, double 
     }
 }
 
-/* The eye off a surface: along its normal when the line meets the front of it, else back along the line. */
-static void off_surface(int *out, const int *contact, const int *normal, const double *unit, double by)
+/* Whether the eye goes through this face of a hit (Ov002_CollCastResolvePassThrough has nocam alone). */
+static int eye_passes(KhdaysRef hit, KhdaysRef face)
 {
-    const double surface[3] = {normal[0] / 4096.0, normal[1] / 4096.0, normal[2] / 4096.0};
-    if (surface[0] * unit[0] + surface[1] * unit[1] + surface[2] * unit[2] < 0.0) {
-        fx_along(out, contact, surface, by);
-    } else {
-        fx_along(out, contact, unit, -by);
+    const unsigned char *slots = KHDAYS_W(face + FACE_SLOTS);
+    for (int i = 1; i < 3; ++i) {
+        const KhdaysRef record = Actor_GetRecord(hit, slots[i]);
+        if (record != 0) {
+            const int tag = *(const unsigned char *)KHDAYS_W(record + RECORD_TAG);
+            if (tag == TAG_NOHIT || tag == TAG_NOCAM || tag == TAG_SICON) {
+                return 1;
+            }
+        }
     }
+    return 0;
 }
 
-/* How far along the eye's line a wall stops it, or `reach`. Only the sweep's faces have upright walls. Its line ends
- * a radius above the eye, so the sphere clears the floor the eye may go near, and a radius further on, as the sweep
- * stops that short. What it gives is the sphere's centre, a radius off the wall: the eye takes the same share. */
-static double wall_distance(int origin, const int *origin_words, const int *eye_words, int dir, int hit, int normal,
-                            KhdaysRef exclude, double reach)
+/* A cast along `motion` from `from`, of the map alone, past the faces the eye goes through: how far along it the first
+ * other face is (0 to 1) and that face's normal, or 0. Nothing excludes a map's face, so the next try starts beyond it. */
+static int cast_map(CastFunction cast, KhdaysRef world, const int *from, const double *motion, int radius,
+                    double *fraction, double *normal)
 {
-    int *dir_words = KHDAYS_W(dir);
-    const double raised[3] = {(double)eye_words[0] - origin_words[0],
-                              (double)eye_words[1] - origin_words[1] + WALL_CLEARANCE,
-                              (double)eye_words[2] - origin_words[2]};
-    const double length = sqrt(raised[0] * raised[0] + raised[1] * raised[1] + raised[2] * raised[2]);
-    for (int i = 0; i < 3; ++i) {
-        dir_words[i] = (int)lround(raised[i] * (length + WALL_CLEARANCE) / length);
-    }
-    if (Ov002_SweepSphereAlongMotion((KhdaysRef)origin, (KhdaysRef)dir, (KhdaysRef)hit, (KhdaysRef)normal, exclude) !=
-            0 &&
-        abs(((const int *)KHDAYS_W(normal))[1]) < WALL_NORMAL_Y) {
-        const double share = fx_distance(KHDAYS_W(hit), origin_words) / length;
-        return share < 1.0 ? share * reach : reach;
-    }
-    return reach;
-}
-
-/* As dk::ObjCamera::collision: a line from the look-at, the eye a little off what it hits. Not
- * Ov002_ResolveCameraAgainstCollision: its sphere and its 0xc00 off the floor keep the eye from going as low as
- * KH2's. The ray's faces are floors and slopes (RoomPoly_BuildPlanesVertical), the plain cast's a list a map may not
- * have (CollCast_TestModel), walls the sweep's. The cast back from the eye is for an eye already behind a surface.
- * The map's ceiling stays. */
-void khdays_kh2_camera_collide(int origin, int eye, int dir, int hit, int normal)
-{
-    int *eye_words = KHDAYS_W(eye), *dir_words = KHDAYS_W(dir);
-    const int *origin_words = KHDAYS_W(origin), *hit_words = KHDAYS_W(hit), *normal_words = KHDAYS_W(normal);
-    const int player = QueryActiveStateOrDelegate();
-    const int world = Ov022_GetEntryField66(player);
-    const double reach = fx_distance(eye_words, origin_words);
-    const double off = OFF_SURFACE / KH2_UNITS_A_DAYS_UNIT * 4096.0;
-    KhdaysRef exclude = 0;
-    /* setCamera only moves the look-at along this line in first person, which turns nothing */
-    if (s.first_person || player < 0 || world < 0) {
-        return;
-    }
-    if (GetEntryField20ByIndex(player) != 0) {
-        exclude = *(const KhdaysRef *)KHDAYS_W((KhdaysRef)GetEntryField20ByIndex(player) + 0x20);
-    }
-    if (reach > 0.0) {
-        const double unit[3] = {(eye_words[0] - origin_words[0]) / reach, (eye_words[1] - origin_words[1]) / reach,
-                                (eye_words[2] - origin_words[2]) / reach};
-        double nearest = reach;
-        int found = 0, best[3] = {0, 0, 0};
+    const double length = sqrt(motion[0] * motion[0] + motion[1] * motion[1] + motion[2] * motion[2]);
+    const double step = (2.0 * radius + PAST_FACE) / length;
+    double done = 0.0;
+    int origin[3], direction[3];
+    CastParams params = {KHDAYS_REF(origin), KHDAYS_REF(direction), radius, 1, 0xf, 0};
+    for (int tries = 0; tries < CAST_TRIES && done < 1.0; ++tries) {
+        KhdaysRef hit;
         for (int i = 0; i < 3; ++i) {
-            dir_words[i] = eye_words[i] - origin_words[i];
+            origin[i] = from[i] + (int)lround(motion[i] * done);
+            direction[i] = (int)lround(motion[i] * (1.0 - done));
         }
-        if (Ov002_CastRayAlongMotion((KhdaysRef)origin, (KhdaysRef)dir, (KhdaysRef)hit, 0, exclude) != 0) {
-            const double distance = fx_distance(hit_words, origin_words);
-            if (distance < nearest) {
-                const int contact[3] = {hit_words[0], hit_words[1], hit_words[2]};
-                nearest = distance;
-                found = 1;
-                if (Ov002_CastRayAlongMotion((KhdaysRef)origin, (KhdaysRef)dir, (KhdaysRef)hit, (KhdaysRef)normal,
-                                             exclude) != 0 &&
-                    (normal_words[0] | normal_words[1] | normal_words[2]) != 0) {
-                    off_surface(best, contact, normal_words, unit, off);
-                } else {
-                    fx_along(best, contact, unit, -off);
-                }
-            }
-        }
-        if (Ov002_CastRayForContactPoint((KhdaysRef)origin, (KhdaysRef)dir, (KhdaysRef)hit, exclude) != 0) {
-            const double distance = fx_distance(hit_words, origin_words);
-            if (distance < nearest) {
-                nearest = distance;
-                found = 1;
-                fx_along(best, hit_words, unit, -off);
-            }
+        hit = cast(world, KHDAYS_REF(&params));
+        if (hit == 0) {
+            return 0;
         }
         {
-            const double distance = wall_distance(origin, origin_words, eye_words, dir, hit, normal, exclude, reach);
-            if (distance < nearest) {
-                nearest = distance;
-                found = 1;
-                fx_along(best, origin_words, unit, distance);
+            const int *record = KHDAYS_W(hit);
+            const KhdaysRef face = (KhdaysRef)record[1];
+            const double at = done + record[3] / 134217728.0 * (1.0 - done); /* the hit's distance is Q27 */
+            if (!eye_passes(hit, face)) {
+                const short *plane = KHDAYS_W(face + FACE_NORMAL);
+                const double size =
+                    sqrt((double)plane[0] * plane[0] + (double)plane[1] * plane[1] + (double)plane[2] * plane[2]);
+                *fraction = at;
+                for (int i = 0; i < 3; ++i) {
+                    normal[i] = size > 0.0 ? plane[i] / size : 0.0;
+                }
+                return 1;
             }
+            done = at + step;
         }
-        if (!found) {
-            for (int i = 0; i < 3; ++i) {
-                dir_words[i] = origin_words[i] - eye_words[i];
+    }
+    return 0;
+}
+
+/* The first face of the map along a line from `from`, of the three lists: the ray's floors and slopes
+ * (RoomPoly_BuildPlanesVertical), the sphere cast's walls, with no radius a line, and the plain cast's ceilings. As
+ * dk::Ray::intersectPolygon they count only from their front. */
+static int line_hit(KhdaysRef world, const int *from, const double *motion, double *fraction, double *normal,
+                    int *ceiling)
+{
+    double at, other[3];
+    int found = 0;
+    *fraction = 2.0;
+    *ceiling = 0;
+    if (cast_map(Collision_RunRayCast, world, from, motion, 0, &at, other) && at < *fraction) {
+        *fraction = at;
+        memcpy(normal, other, sizeof(other));
+        found = 1;
+    }
+    if (cast_map(Collision_RunSphereCast, world, from, motion, 0, &at, other) && at < *fraction) {
+        *fraction = at;
+        memcpy(normal, other, sizeof(other));
+        found = 1;
+    }
+    if (cast_map(Collision_CastNearest, world, from, motion, 0, &at, other) && at < *fraction) {
+        *fraction = at;
+        memcpy(normal, other, sizeof(other));
+        *ceiling = 1;
+        found = 1;
+    }
+    return found;
+}
+
+/* dk::ObjCamera::collision (no BlindCollision: Days' objects have none of its spheres): one line from the look-at, and
+ * the eye 5 off what it hits along that surface's normal. A ceiling sends the line to under the eye at the hit's height
+ * first. Not Ov002_ResolveCameraAgainstCollision: its sphere and 0xc00 off the floor are Days'. The map's top stays. */
+void khdays_kh2_camera_collide(int origin, int eye)
+{
+    int *eye_words = KHDAYS_W(eye);
+    const int *origin_words = KHDAYS_W(origin);
+    const int player = QueryActiveStateOrDelegate();
+    const int room = Ov022_GetEntryField66(player);
+    const double off = OFF_SURFACE / KH2_UNITS_A_DAYS_UNIT * 4096.0;
+    /* setCamera only moves the look-at along this line in first person, which turns nothing */
+    if (s.republish || s.first_person || player < 0 || room < 0) {
+        return;
+    }
+    /* a room not loaded yet: a field's first commit (TrackEntryGroup's wCount) */
+    if (((const u16 *)KHDAYS_W(GetTrackEntryBase(room)))[1] == 0) {
+        return;
+    }
+    if (fx_distance(eye_words, origin_words) > 0.0) {
+        const KhdaysRef world = GetTrackEntryBase(room);
+        const double motion[3] = {(double)eye_words[0] - origin_words[0], (double)eye_words[1] - origin_words[1],
+                                  (double)eye_words[2] - origin_words[2]};
+        double fraction, normal[3];
+        int ceiling;
+        if (line_hit(world, origin_words, motion, &fraction, normal, &ceiling) && fraction < 1.0) {
+            double point[3] = {origin_words[0] + motion[0] * fraction, origin_words[1] + motion[1] * fraction,
+                               origin_words[2] + motion[2] * fraction};
+            if (ceiling) {
+                const double under[3] = {motion[0], point[1] - origin_words[1], motion[2]};
+                double again, ignored[3];
+                int above;
+                point[0] = eye_words[0];
+                point[2] = eye_words[2];
+                if (line_hit(world, origin_words, under, &again, ignored, &above) && again < 1.0) {
+                    for (int i = 0; i < 3; ++i) {
+                        point[i] = origin_words[i] + under[i] * again;
+                    }
+                }
             }
-            if (Ov002_CastRayAlongMotion((KhdaysRef)eye, (KhdaysRef)dir, (KhdaysRef)hit, 0, exclude) != 0 &&
-                fx_distance(hit_words, eye_words) < reach) {
-                found = 1;
-                fx_along(best, hit_words, unit, -off);
-            }
-        }
-        if (found) {
             for (int i = 0; i < 3; ++i) {
-                eye_words[i] = best[i];
+                eye_words[i] = (int)lround(point[i] + normal[i] * off);
             }
         }
     }
     {
-        const int ceiling = Ov002_GetPeerRecordValue(Ov002_GetSlotTableByte(world));
-        if (ceiling < eye_words[1]) {
-            eye_words[1] = ceiling;
+        const int top = Ov002_GetPeerRecordValue(Ov002_GetSlotTableByte(room));
+        if (top < eye_words[1]) {
+            eye_words[1] = top;
         }
     }
 }
@@ -527,6 +629,9 @@ void khdays_kh2_camera_collide(int origin, int eye, int dir, int hit, int normal
 void khdays_kh2_camera_settle(int origin, int eye)
 {
     int *words = KHDAYS_W(eye);
+    if (s.republish) {
+        return;
+    }
     if (moved_from(words, s.written_eye)) {
         s.camera.eye_target = read_vec(words); /* ObjCamera::collision moved it */
     }
@@ -536,11 +641,41 @@ void khdays_kh2_camera_settle(int origin, int eye)
     write_vec(words, s.camera.eye);
 }
 
+void khdays_kh2_camera_publish(int camera, int eye);
+
+/* Ov002_ReaimActor, before each commit of the camera to the matrices. While a mission sets up, a tutorial's page among
+ * it, the game's tick returns early (Ov002_Camera_UpdateFollow's first gates) and what shows is what was last committed:
+ * Days' first place. A commit no frame of this camera came before gets one, without control. */
+void khdays_kh2_camera_commit(int camera)
+{
+    const int *cam = KHDAYS_W(camera);
+    const int player = QueryActiveStateOrDelegate();
+    if (s.frame != 0u && khdays_input_game_frames() - s.frame <= 1u) {
+        return;
+    }
+    if (cam[WORD_STAGE] == 0 && khdays_kh2_camera_claims(cam[WORD_FLAGS], cam[WORD_FLAGS2], cam[WORD_MODE]) &&
+        player >= 0 && GetEntryField20ByIndex(player) != 0) {
+        int origin[3], eye[3];
+        s.want = WANT_FOLLOW;
+        s.input_off = 1;
+        s.bits = 0;
+        s.home = 0;
+        if (khdays_kh2_camera_prepare(camera, func_ov022_020881f8(player), func_ov022_02088254(player),
+                                      (int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye))) {
+            khdays_kh2_camera_collide((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
+            khdays_kh2_camera_settle((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
+            khdays_kh2_camera_collide((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
+            khdays_kh2_camera_publish(camera, (int)KHDAYS_REF(eye));
+        }
+    }
+}
+
 void khdays_kh2_camera_publish(int camera, int eye)
 {
     int *cam = KHDAYS_W(camera);
     const int *words = KHDAYS_W(eye);
     Kh2Camera *c = &s.camera;
+    s.republish = 0;
     if (moved_from(words, s.written_eye)) {
         c->eye = c->eye_target = read_vec(words); /* setCamera: the eye is where collision left it */
     }
@@ -557,6 +692,7 @@ void khdays_kh2_camera_publish(int camera, int eye)
     }
     cam[WORD_FOV_SIN] = (int)lroundf(sinf(c->fov_half) * 4096.0f);
     cam[WORD_FOV_COS] = (int)lroundf(cosf(c->fov_half) * 4096.0f);
+    cam[WORD_NEAR] = NEAR_PLANE;
 
     if (s.tracing < 0) {
         s.tracing = getenv("KHDAYS_TRACE_KH2_CAMERA") != NULL;

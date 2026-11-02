@@ -1,9 +1,8 @@
 # The KH2 camera
 
 The **KH2 camera** switch (Settings → Enhancements, under Analog camera; `kh2_camera` in the settings
-file, off by default) makes the field's gameplay camera move as Kingdom Hearts II's does. Cutscenes,
-scripted cameras and the Select look view stay Days' own. It needs the game's Controls on Type A; with
-Type B the camera stays Days'.
+file, off by default) makes the field's gameplay camera move as Kingdom Hearts II's does. Cutscenes and
+scripted cameras stay Days' own. It needs the game's Controls on Type A; with Type B the camera stays Days'.
 
 The arithmetic is `port/runtime/camera/kh2_camera.c`, on its own and tested by
 `port/tests/kh2_camera_test.c`. `kh2_camera_hooks.c` joins it to the game through `prepare.py`'s `HOOKS`.
@@ -111,20 +110,50 @@ sides (`RENDERING.md`).
   it just before the shake: Days' camera has done all its own work, and it is overwritten, so its flags, its
   shake and its fades go on as ever. A frame not marked is plain Days'. How the camera comes back depends on what
   those frames did (`kh2_camera_takeover`). If Days' camera never ran, nothing moved it: a pause holds every
-  object (`gPauseMode` 1), and the camera goes on as it was. If it ran a few frames it only set itself up, as in
-  a new field or leaving the camp (`Ov002_InitWorldState`'s `Ov002_Camera_SetAnchor`), and the camera goes
-  straight to its place with its own FOV. After a third of a second or more they were seen, as in a cutscene, and
-  the springs carry it over from where they ended.
-- **Collision** is KH2's rule on the game's casts (`khdays_kh2_camera_collide`), at the two places KH2 casts: the
-  wanted eye, then the eye the springs reached. `Ov002_ResolveCameraAgainstCollision` would hold the eye 0xc00
-  (75 of KH2's units) off the floor and sweep a sphere that drags it in along the line, which is what cut the
-  player off at the knees. `Ov002_CastRayAlongMotion`'s faces are floors and slopes: their edge planes are
-  built against the up axis (`RoomPoly_BuildPlanesVertical`), so an upright wall has no area to hit.
-  `Ov002_CastRayForContactPoint` tests a list a map may not have (`CollCast_TestModel`, the count at the model's
-  +0x80). Walls come from `Ov002_SweepSphereAlongMotion`, along a line ending one radius (0x500) above the eye so
-  the sphere clears the floor, keeping hits with a normal's y inside 0x800 (the port's choice); the eye stays that
-  radius off a wall. KH2's 5 units stay for floors. The map's ceiling is kept.
-  KH2's `BlindCollision` has no counterpart.
+  object (`gPauseMode` 1), and the camera goes on as it was. If it ran a few frames with the player in the room
+  and within 500 of where it was (leaving the camp, `Ov002_InitWorldState`'s `Ov002_Camera_SetAnchor`), the same.
+  A few frames elsewhere: a new field, and the camera goes straight to its place with its own FOV. After a third
+  of a second or more they were seen, and the springs carry it over from where they ended.
+- **Holds and re-places.** Camera flag 0x200 (`Ov002_SetOrClearFlag200`) is read only by
+  `Ov002_Camera_UpdateFollow`, which then skips the stick, the chase and the reset. Its setters: talks and examined
+  objects (`Ov002_BeginRequest`, `Ov002_ElementPromptStep`, `Ov002_ElementChoiceStep`), spare entries
+  (`Ov002_SpareEntryTryBegin`, `Ov002_SpareEntryStep`), session events (`Ov002_StepSessionEvent`), panels
+  (`Ov002_TakeBattleViewFocus`) and the results (`Ov022_StateBeginResultSequence`). The camera used to give those
+  frames to Days', whose FOV and eye came back at once: the cut at a trigger or a tutorial. Now `khdays_kh2_camera_held`
+  keeps them, without the stick or the chase, leaving first person; Select and the reset stay the game's. Event
+  scripts have their own cameras (`Ov023_CmdPlayCameraScript`), which this does not touch. `Ov002_Camera_SetOrbitAngle`,
+  `Ov002_Camera_SetAnchor` and `Ov002_ResetCamera` re-place Days' camera (`Ov022_StateWaitForAction` on leaving a menu
+  puts it behind the player: the cut at the camp); where the player has not moved, this camera writes itself back.
+- **A mission's setup.** A tutorial's page opens as a mission starts, while `Ov002_Camera_UpdateFollow` still returns at
+  its first gates: in the session log of 2026-11-02 the first camera frame came only after the page closed (150 game
+  frames), and what showed was Days' first place. `Ov002_ReaimActor` commits the camera in that time
+  (`Ov022_UpdateCameraAndViews`, `Ov002_Camera_SetAnchor`), so `khdays_kh2_camera_commit` gives a commit with no frame
+  of this camera before it one, without control. Which gate holds the tick was not traced. A new field starts
+  behind the player (`YS::PLAYER::start_player_camera`). The session log has each change of owner, flags and mode.
+- **Talks.** Mode 1 (`Ov002_Camera_SetMode`, Days' own zoom for a talk or an examined object, an entry's flag 0x20
+  for a spare entry) takes the indoor row as the Select view does, the same blend in and out. A hold without mode 1
+  keeps the row it had.
+- **Collision** is `dk::ObjCamera::collision` on the game's casts (`khdays_kh2_camera_collide`), at the two places KH2
+  casts: from the look-at's target to the wanted eye (`objective`), then from the look-at to the eye the springs reached
+  (`setCamera`), locked on from the head (`TargetCamera::updateCollision`). One line, its first hit counted only from
+  the face's front (`dk::Ray::intersectPolygon`), the eye that hit plus 5 along the face's normal. KH2 tests one
+  camera mesh (`Octree::s_cameraTree`). Days has three lists, tested together: `Collision_RunRayCast`'s floors and
+  slopes, `Collision_RunSphereCast`'s walls with a radius of 0, which is a line, and `Collision_CastNearest`'s ceilings.
+  A ceiling is KH2's attribute kind 5: the line goes again to under the eye at the hit's height, and the normal stays
+  the first's. `Ov002_ResolveCameraAgainstCollision` is not used: it would hold the eye 0xc00 off the floor and sweep
+  a sphere, which cut the player off at the knees. KH2's `BlindCollision`, its objects' spheres, has no counterpart.
+  The map's top (`Ov002_GetPeerRecordValue`) is Days' own and stays.
+- **Near plane.** 5 off a wall needs a near plane closer than that at the screen's corners: KH2's is 1
+  (`kn::Camera::init`), Days' 10 (0x19a, `Ov002_InitWorldState`). The camera holds it at 2.5 (0x66) and gives Days' back
+  with its frames. 1 is not used: the game's clip space is 20.12, and depth far off gets too coarse. The field sets no fog,
+  which reads depth (`Ov022_SetupRenderState`). Not seen in game.
+- **What it ignores.** A cast with the word the decomp calls `directionIsUnit` set leaves out the objects
+  (`Coll_WalkTreeForHit`, `Coll_WalkSphereTreeForHit`): actors, gates, what moves. `eye_passes` adds to the map's own
+  `nocam` faces those named `nohit` and `sicon` (`data_ov002_0207e640`). The port's measure of the game's 10 worlds
+  against their models: of a `nohit` wall's area 1 % has a triangle drawn within 20 units, of `nocam` 1 %, `sicon` under
+  1 %, of a wall with no name 36 %, and 11 % of `nohit`'s has something drawn within 300 behind it, 57 % of an
+  unnamed wall's. So `nohit` marks invisible walls, but not all of them: unnamed walls with nothing drawn on them
+  still stop the eye, as nothing in the data tells them apart.
 - **Config.** Flags at +0x3c: 1 Manual (Config `0x37bf`), 2 slow, 4 fast, 8 Y inverted, 0x10 X inverted, 0x20 Type
   B. There is no switch between Auto and Manual in play: KH2's R2 is target switching on the port's controls, and
   Days' hold of R (camera flag 0x10000000) is not read. Normal is KH2's speed; Slow is 0.8x, Fast 1.25x (the

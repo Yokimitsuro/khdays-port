@@ -1332,6 +1332,13 @@ HOOKS = {
             "        piVar7[0xe] &= ~8U; }\n"
             "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
         ),
+        # A hold (flag 0x200) skips the block above; the KH2 camera stays through it.
+        (
+            "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
+            "  { extern void khdays_kh2_camera_held(int flags, int flags2, int mode);\n"
+            "    khdays_kh2_camera_held(piVar7[0xe], piVar7[0xf], piVar7[0x10]); }\n"
+            "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
+        ),
     ],
     # Locked on: the KH2 camera keeps its look-at between the player and this target, and the stick works.
     "ov002@0204f0a8": [  # Ov002_TickCamera
@@ -1355,6 +1362,15 @@ HOOKS = {
             " PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0); }\n",
         ),
     ],
+    # What commits the camera. While a mission sets up the camera's tick is gated, and this is the KH2 camera's only frame.
+    "ov002@0204cac0": [  # Ov002_ReaimActor
+        (
+            "    Camera_CommitMatrices(actor);\n",
+            "    { extern void khdays_kh2_camera_commit(int camera);\n"
+            "      khdays_kh2_camera_commit((int)actor); }\n"
+            "    Camera_CommitMatrices(actor);\n",
+        ),
+    ],
     # Every camera's frame ends here. The KH2 camera's frames take its eye and look-at, through its own collision
     # (runtime/camera/kh2_camera_hooks.c), before the shake goes on top of them. The vectors it is handed are this
     # function's, free at this point: the game's casts take them in the game's memory.
@@ -1362,16 +1378,14 @@ HOOKS = {
         (
             "    if (pCam->nHoldTicks == 3) {\n",
             "    { extern int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye);\n"
-            "      extern void khdays_kh2_camera_collide(int origin, int eye, int dir, int hit, int normal);\n"
+            "      extern void khdays_kh2_camera_collide(int origin, int eye);\n"
             "      extern void khdays_kh2_camera_settle(int origin, int eye);\n"
             "      extern void khdays_kh2_camera_publish(int camera, int eye);\n"
             "      if (khdays_kh2_camera_prepare((int)pCam, (int)pTarget, func_ov022_02088254(nPlayer), (int)&vDelta,"
             " (int)&vEye)) {\n"
-            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye, (int)&vToTarget, (int)&vShakeDir,"
-            " (int)&vShakeAxis);\n"
+            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye);\n"
             "        khdays_kh2_camera_settle((int)&vDelta, (int)&vEye);\n"
-            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye, (int)&vToTarget, (int)&vShakeDir,"
-            " (int)&vShakeAxis);\n"
+            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye);\n"
             "        khdays_kh2_camera_publish((int)pCam, (int)&vEye);\n"
             "      } }\n"
             "    if (pCam->nHoldTicks == 3) {\n",

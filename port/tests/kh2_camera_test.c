@@ -162,10 +162,12 @@ static void test_springs(void)
 /* After frames that were not its own: nothing ran (a pause), a few of Days' (a new field), many (a cutscene). */
 static void test_takeover(void)
 {
-    CHECK(kh2_camera_takeover(1, 0u) == KH2_CAMERA_RESUME);
-    CHECK(kh2_camera_takeover(0, 0u) == KH2_CAMERA_SNAP);
-    CHECK(kh2_camera_takeover(0, 2u) == KH2_CAMERA_SNAP);
-    CHECK(kh2_camera_takeover(0, 300u) == KH2_CAMERA_BLEND);
+    CHECK(kh2_camera_takeover(1, 0u, 0) == KH2_CAMERA_RESUME);
+    CHECK(kh2_camera_takeover(0, 0u, 0) == KH2_CAMERA_SNAP);
+    CHECK(kh2_camera_takeover(0, 2u, 0) == KH2_CAMERA_SNAP);
+    CHECK(kh2_camera_takeover(0, 2u, 1) == KH2_CAMERA_RESUME); /* the camp's exit */
+    CHECK(kh2_camera_takeover(0, 300u, 0) == KH2_CAMERA_BLEND);
+    CHECK(kh2_camera_takeover(0, 300u, 1) == KH2_CAMERA_BLEND);
 }
 
 /* A snap puts the eye and look-at on their targets at once, from anywhere. */

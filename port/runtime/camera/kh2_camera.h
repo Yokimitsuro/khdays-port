@@ -63,11 +63,11 @@ enum {
 float kh2_camera_half_angle(float horizontal_fov);
 
 /* How this camera comes back after frames that were not its own. `started`: it was running when they began;
- * `days_frames`: how many of them ran Days' camera. None: nothing moved it (the pause holds every object), so
- * it goes on as it was. A few: Days' camera only set itself up (a new field, the camp's exit), so it goes
- * straight to its place. More: they were seen (a cutscene), so it blends from where they ended. */
+ * `days_frames`: how many of them ran Days' camera; `same_place`: the player is in the room and about the place it
+ * was. None, or a few at the same place (the camp's exit): it goes on as it was. A few elsewhere: Days' camera set
+ * itself up in a new field, so it goes straight to its place. More: they were seen, so it blends from there. */
 enum { KH2_CAMERA_RESUME, KH2_CAMERA_SNAP, KH2_CAMERA_BLEND };
-int kh2_camera_takeover(int started, unsigned days_frames);
+int kh2_camera_takeover(int started, unsigned days_frames, int same_place);
 
 /* Takes over from where the camera is, keeping the radius when `radius` is above 0. */
 void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec at, Kh2CameraVec eye, float yaw,
