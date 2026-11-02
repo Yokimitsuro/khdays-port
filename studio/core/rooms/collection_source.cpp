@@ -6,7 +6,10 @@
 #include "core/rooms/kh2_source.h"
 
 #include "khdays/assets/ddd_map.h"
+#include "khdays/assets/dds.h"
 #include "khdays/assets/kh1_map.h"
+#include "khdays/assets/kh2_map.h"
+#include "khdays/assets/recom_map.h"
 #include "khdays/assets/gltf_export.h"
 
 extern "C" {
@@ -82,7 +85,7 @@ const std::vector<CollectionGameInfo>& collection_games() {
         {CollectionGame::kh2, "kh2", "KINGDOM HEARTS II FINAL MIX", "1.5+2.5", "KINGDOM HEARTS II FINAL MIX.exe",
          {"kh2_first", "kh2_fifth", "kh2_sixth"}, 0.01F},
         {CollectionGame::recom, "recom", "KINGDOM HEARTS Re:Chain of Memories", "1.5+2.5",
-         "KINGDOM HEARTS Re_Chain of Memories.exe", {"Recom"}, 0.0F},
+         "KINGDOM HEARTS Re_Chain of Memories.exe", {"Recom"}, 1.0F},
         {CollectionGame::ddd, "ddd", "KINGDOM HEARTS Dream Drop Distance", "2.8", "KINGDOM HEARTS Dream Drop Distance.exe",
          {"kh3d_first", "kh3d_third"}, 1.0F},
     };
@@ -256,10 +259,6 @@ bool take_out_collection_map(const Settings& settings, const CollectionGameInfo&
     if (why->empty())
         *why = lines.empty() ? "the collection's reader failed" : lines.back();
     return false;
-}
-
-bool collection_rooms_read(const CollectionGameInfo& game) {
-    return game.game == CollectionGame::kh2 || game.game == CollectionGame::ddd || game.game == CollectionGame::kh1;
 }
 
 bool collection_map_falling(const CollectionGameInfo& game, const CollectionMap& map) {
@@ -444,6 +443,94 @@ bool make_kh1_room(const Settings& settings, const CollectionGameInfo& game, con
     return true;
 }
 
+// A Re:Chain of Memories room: its pieces placed by its layout (.AZF), its textures the .VTM's and .RTM's TIM2
+// pictures, the .RTM's HD ones where the copy has them (<name>_tm2.dds, its remastered assets).
+bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
+                     const fs::path& out, CollectionMade* made, std::string* why) {
+    const fs::path folder = collection_folder(settings.root, game);
+    const std::string base = map.paths.front().substr(0, map.paths.front().size() - 4);  // MAP01/0001/MP010001
+    const auto azf = read_all(folder / "original" / path_u8(base + ".AZF"));
+    if (azf.empty()) {
+        *why = "no " + base + ".AZF taken out of the collection";
+        return false;
+    }
+    const auto vtm = read_all(folder / "original" / path_u8(base + ".VTM"));
+    const auto rtm = read_all(folder / "original" / path_u8(base + ".RTM"));
+    std::vector<khdays::assets::recom::PictureEntry> vtm_list, rtm_list;
+    try {
+        if (!vtm.empty())
+            vtm_list = khdays::assets::recom::picture_list(vtm.data(), vtm.size());
+        if (!rtm.empty())
+            rtm_list = khdays::assets::recom::picture_list(rtm.data(), rtm.size());
+    } catch (const std::exception& e) {
+        *why = base + ": its pictures' list: " + e.what();
+        return false;
+    }
+    std::error_code ec;
+    fs::create_directories(out.parent_path(), ec);
+    std::vector<std::string> notes;
+    // a texture's picture: its HD one, else its TIM2 in the .VTM or the .RTM
+    auto picture = [&](const std::string& name) -> std::optional<khdays::assets::DecodedTexture> {
+        std::error_code exists;
+        const fs::path hd = folder / "remastered" / path_u8(base + ".RTM") / path_u8(name + "_tm2.dds");
+        if (fs::is_regular_file(hd, exists)) {
+            try {
+                return khdays::assets::read_dds(hd);
+            } catch (const std::exception& e) {
+                notes.push_back(name + ": its HD picture: " + e.what());
+            }
+        }
+        for (const auto* list : {&vtm_list, &rtm_list}) {
+            const auto& data = list == &vtm_list ? vtm : rtm;
+            for (const auto& entry : *list) {
+                if (entry.name != name)
+                    continue;
+                try {
+                    auto pictures = khdays::assets::kh2::read_tim2(data.data(), data.size(), entry.offset);
+                    if (!pictures.empty())
+                        return std::move(pictures.front());
+                } catch (const std::exception& e) {
+                    notes.push_back(name + ": " + e.what());
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    std::string failed;
+    khdays::assets::recom::Room room;
+    try {
+        room = khdays::assets::recom::room_model(
+            azf.data(), azf.size(), map.name, picture,
+            [&](const std::string& file, const khdays::assets::DecodedTexture& p) {
+                const char* e =
+                    khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), p.rgba.data(), p.width, p.height);
+                if (e != nullptr && failed.empty())
+                    failed = file + ": " + e;
+                ++made->pictures;
+            });
+    } catch (const std::exception& e) {
+        *why = base + ".AZF: " + e.what();
+        return false;
+    }
+    if (!failed.empty()) {
+        *why = "a picture cannot be written: " + failed;
+        return false;
+    }
+    std::ofstream gltf(out, std::ios::binary);
+    gltf << khdays::assets::scene_to_gltf(room.scene);
+    if (!gltf) {
+        *why = "cannot write " + u8(out);
+        return false;
+    }
+    for (const auto& mesh : room.scene.meshes)
+        for (const auto& p : mesh.primitives)
+            made->triangles += p.indices.size() / 3;
+    made->report = std::move(room.report);
+    made->report.insert(made->report.end(), notes.begin(), notes.end());
+    made->report.push_back("no collision of its own read yet (.mcd): made from the model when it replaces a room");
+    return true;
+}
+
 }  // namespace
 
 bool make_collection_room(const Settings& settings, const CollectionGameInfo& game, const CollectionMap& map,
@@ -470,8 +557,11 @@ bool make_collection_room(const Settings& settings, const CollectionGameInfo& ga
     switch (game.game) {
     case CollectionGame::ddd: return make_ddd_room(settings, game, map, out, made, why);
     case CollectionGame::kh1: return make_kh1_room(settings, game, map, out, made, why);
-    default: *why = std::string(game.name) + "'s rooms are not read yet"; return false;
+    case CollectionGame::recom: return make_recom_room(settings, game, map, out, made, why);
+    case CollectionGame::kh2: break;  // (made above)
     }
+    *why = std::string(game.name) + ": no reader of its rooms";
+    return false;
 }
 
 int run_collection_reader(const fs::path& root, const std::vector<std::string>& args, std::vector<std::string>* lines,

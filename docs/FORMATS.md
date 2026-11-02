@@ -270,3 +270,24 @@ our own reading of the player's files. The room's model is the remaster's own (i
   triangle), u32 its normal's place in a table of its own, f32 its plane's distance, u32 what it is. Each face's plane
   agrees with its corners (95 to 100% of the faces of the 22 rooms; the others thin or flat).
 - **Units and axes**: centimetres (stairs rise 20), y down: turned upright as (x, -y, -z).
+
+## Re:Chain of Memories' rooms
+
+Not the game's: KINGDOM HEARTS Re:Chain of Memories' rooms, in the player's KINGDOM HEARTS HD 1.5+2.5 ReMIX (the
+`Recom` package), as `assets/src/recom_map.cpp` reads them for the studio. No public documentation of them was found:
+all of it our own reading of the player's files.
+
+- **Where**: `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF` (the room), `.VTM` and `.RTM` (its pictures; the remaster's HD ones are
+  the `.RTM`'s, `<name>_tm2.dds`), `.mcd` (its floors and walls, "@MCD" version 3: not read yet), `.ALF`, `.AFF`. 627
+  rooms in 18 groups (MAP00 to MAP30).
+- **.VTM, .RTM**: 32-byte entries, as many as the first one's offset says: u32 the picture's offset, its name
+  (`gai_a_00.tm2`, 24 bytes), u32; each picture a TIM2.
+- **.AZF**: an offset table (its first offset its length; 0 none). Entry 0 the layout: u16 its places' count, then from
+  +0x20 a place each 64 bytes: u32 the piece (an entry of the table), s16 its parent (-1 none), u16, s16 x3 its turn
+  in tenths of a degree, u16, f32 x4 its move, f32 x4 its scale. The other entries pieces: u32 x8 (the fourth its
+  textures' count, the fifth their names' offset, the sixth its drawing's), a ROOT bone (its matrix at +0x50), the
+  textures' names (32 bytes each), then the PS2's DMA and VIF stream. Each UNPACK V4-32 holds a header qword (u16 at
+  +4 its vertex count), the GIF tag, then 64 bytes a vertex: u32 what it ends (0xffff nothing: a strip starts; 0x20
+  an odd triangle; 0 an even one), position f32 x3 at +0x10, colour u32 x4 at +0x20 (0x80 is 1), s, t, q f32 at
+  +0x30 and its texture (u32, among the piece's) at +0x3c.
+- **Units and axes**: metres (stairs rise 0.25 and 0.27), y down: turned upright as (x, -y, -z).

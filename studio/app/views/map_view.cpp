@@ -1605,9 +1605,6 @@ void draw_other_picker(App& app) {
         return;
     }
     ImGui::TextDisabled("%s", u8(other.copy).c_str());
-    const bool read = collection_rooms_read(*game);
-    if (!read)
-        ImGui::TextColored(warn, "%s", fmt(lang, S::map_other_unread, {game->name}).c_str());
     ImGui::BeginDisabled(other.busy);
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         other_start(app, game, nullptr);
@@ -1645,7 +1642,7 @@ void draw_other_picker(App& app) {
             ImGui::TextDisabled("%s", tr(lang, S::map_kh2_not_out));
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled(other.busy || !read);
+        ImGui::BeginDisabled(other.busy);
         if (ImGui::SmallButton(tr(lang, S::map_kh2_use)))
             other_start(app, game, &mp);
         ImGui::EndDisabled();

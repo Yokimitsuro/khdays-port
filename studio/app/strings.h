@@ -361,7 +361,6 @@ enum class S {
     map_other_game,
     map_other_world,
     map_other_no_copy,
-    map_other_unread,
     map_other_falling,
     map_other_made,
     map_collision_own,
