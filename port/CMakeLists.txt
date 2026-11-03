@@ -924,6 +924,10 @@ add_executable(khdays-hand-pose-test tests/hand_pose_test.cpp)
 target_compile_options(khdays-hand-pose-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-hand-pose COMMAND khdays-hand-pose-test)
 
+add_executable(khdays-cuff-fit-test tests/cuff_fit_test.cpp)
+target_compile_options(khdays-cuff-fit-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-cuff-fit COMMAND khdays-cuff-fit-test)
+
 add_executable(khdays-kh2-tail-test tests/kh2_tail_test.cpp)
 target_compile_options(khdays-kh2-tail-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-kh2-tail COMMAND khdays-kh2-tail-test)

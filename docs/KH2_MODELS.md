@@ -681,6 +681,62 @@ joint and the joints under it swung about its head by a share of how far the oth
 joint's x has swung off where `frame` would carry it. e_rox_hb's cuff roots tilt 0.7
 with the hand (`twist` alone leaves them straight on the forearm as the wrist bends).
 
+**Cuffs.** N_EX830's and B_EX390's sleeve cuffs are fitted round the hand each draw,
+not simulated (`models.cpp` `pose_cuffs`, the maths in `cuff_fit.h`):
+
+```text
+cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120   # root, hand, the four flaps in order round the ring
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2                  # for all a model's cuffs; an 8th number shares shortening
+```
+
+`cuff_fit`: clearance (cm), most open (degrees), shortest (of a flap's length), how much of
+a flap's opening its neighbours take, where along the cuff a point starts being cleared
+by shortening and where only by it (of its length), most slide (cm).
+
+`cuff_thumb <more clearance cm> [<most open degrees> [<always open degrees>]]` tunes the last
+flap of each `cuff` line, the thumb's tab, alone: its neighbours copy none of it. Clearance
+counts by how much of a point's surface the tab carries; most open 0 or left out is
+`cuff_fit`'s. Over 3 scenes on e_rox_hb, `cuff_thumb 0.5 28 0` took the tab's mean opening from
+9.3 to 12.0 degrees with the others unchanged, and the hand through the cuff from a median
+0.43 cm to 0.33 (99th percentile 1.27 to 0.96).
+
+Why not cloth: the cuff is 11.8 cm long from the wrist, almost to the knuckles, four flaps
+of eight points in all. At rest the thumb stands about 1 cm outside the thumb-side flap, so
+contact never rested: the follow spring pulled the flap into the thumb and contact threw
+it out, a cycle of 10 vblanks with the hand still (1.8 cm in `e_rox_102`). So nothing
+collides. The cuff's rest surface is baked by distance along its axis and angle round it,
+with how far each flap moves it per radian; the far end's tabs have real gaps, which stay
+gaps. Each draw the hand's vertices (thinned to a centimetre apart) are read in the cuff's
+frame. The whole cuff first slides across its axis, since near the wrist a flap has no
+leverage (B_EX390's animators move theirs up to 2-3 cm); near the far end a point is cleared
+by the flap drawing back past it; the flaps open for the rest. All of it on critically
+damped springs, with a soft spring on each flap for sway and droop on top, so there is
+nothing to fight and it cannot overshoot.
+
+Sharing a flap's shortening with its neighbours was measured and left off (the 8th
+number, default 0): the same clipping and jitter over 3 scenes, with the flaps shortened more
+often. B_EX390's own motions scale neighbouring flaps far apart too (0.3 on the palm side,
+1.0 on the thumb side, read from its motions), and the shortening here falls the same
+way: palm flap 0.82 of its length on average, thumb tab 0.86, the others about 0.97.
+
+Against the drawn mesh, over 3 scenes on e_rox_hb, the hand's vertices through the cuff went
+from a median 2.83 cm to 0.43 (99th percentile 6.23 to 1.27), and the flaps' ends' jitter
+p99 from 0.79 to 0.66 cm (the baseline over 6 scenes). What is left is mostly the thumb's outer
+joints where the thumb stands far out (`e_rox_102`). Flaps open a median 10 degrees, 20 at
+most. B_EX390's own-motion slots scale their flaps as authored and the fit does not read
+that, so it may open more than they need. roxas_ho_h and roxas_bf_h share N_EX830's cuff
+layout (bones +15 left, -29 right, checked at rest) but no headless scene draws them.
+
+Over all 161 cutscenes (before `cuff_thumb`): through a median 0.59 cm, 99th percentile
+1.27, worst 5.93, past 0.3 cm in 69 % of frames; the ends' jitter p99 0.36 cm, none over 3 cm.
+So jitter is gone and clipping is reduced, not gone: `e_rox_962` (p99 4.84), `e_rox_960` (3.04)
+and `e_rox_974` (2.90) are the worst, most at the opening's limit. Measured by numbers; the user
+judged the result in game.
+
+`KHDAYS_CUFF_RECORD=<file>` writes a line a draw: each cuff's depth through what is really
+drawn, each flap's opening, length and sway, and its end. `KHDAYS_CUFF_DUMP=1` adds the points
+near the surface now and then, `KHDAYS_CUFF_OFF=1` leaves the fit out.
+
 **The format** (`kn::MotionPrototype0RAW`, all offsets from the header after the
 0x90 bytes the game keeps): u32 type +0 (`kn::motionSetup` 0xf8e8c: 0
 `MotionPrototype0`, 1 `MotionRAW`, every bone's matrix baked per frame, not
