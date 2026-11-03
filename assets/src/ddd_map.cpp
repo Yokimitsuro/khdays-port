@@ -406,13 +406,17 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
         std::vector<std::string> textures;
         for (std::size_t t = 0; t < r.get<std::uint8_t>(pmo + 8); ++t)
             textures.push_back(r.name(pmo + kPmoTextures + t * kTextureInfoSize + 4, 12));
-        // a sky, or a far backdrop, by its textures' names (tm01_sky01, pi_sky_c; tm01_fore01): drawn around the
-        // camera, behind everything (a dome of 200 metres would hide the room from outside)
-        const bool sky = std::any_of(textures.begin(), textures.end(), [](const std::string& t) {
-            const auto fore = t.find("fore");
-            return t.find("sky") != std::string::npos || (fore != std::string::npos && fore + 4 < t.size() &&
-                                                          std::isdigit(static_cast<unsigned char>(t[fore + 4])));
-        });
+        // a sky: the object's bit 0 at +0x2c (a sphere of a metre or two about the origin, drawn around the camera:
+        // di_01's lp_sky2, nd_02's sora01, Birth by Sleep's lp_he01_11), or its textures named a sky or a far
+        // backdrop (tm_01's dome of 200 metres, tm01_sky01, and its tm01_fore01 cylinders have no bit): drawn
+        // behind everything, they would hide the room from outside
+        const bool sky =
+            (r.get<std::uint8_t>(o + 0x2c) & 1) != 0 ||
+            std::any_of(textures.begin(), textures.end(), [](const std::string& t) {
+                const auto fore = t.find("fore");
+                return t.find("sky") != std::string::npos || (fore != std::string::npos && fore + 4 < t.size() &&
+                                                              std::isdigit(static_cast<unsigned char>(t[fore + 4])));
+            });
         if (sky && sky_node < 0) {
             SceneNode node;
             node.name = "sky";

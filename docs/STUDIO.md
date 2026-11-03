@@ -319,7 +319,9 @@ emblem's pickup is made at its place, but it is not drawn nor picked up yet).
 
 **Places on the map** (`app/views/mission_map.cpp`) chooses, above the map, where
 the mission is played -- its world (the game's, or one of the mod's own) and its
-room (the world's own, or one the mod adds to it) -- and the map follows at once;
+room (the world's own, or one the mod adds to it; the list's last entry adds one -- another game's map, chosen by
+game, world and map, or the modder's model -- and chooses it, as the New mission form's Room list does) -- and the
+map follows at once;
 the choice is saved with the places (first, so the mission is built on the room
 shown) or with **Save to the mod**. It shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces

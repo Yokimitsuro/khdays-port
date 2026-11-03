@@ -276,9 +276,11 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   (di_05, fa_03, nd_03, rg_08, tm_04); a texture the room's model has not (tm_04's, fa_03's `g_` ones) is left out.
 - **Units**: metres, as Days's: the stairs rise 0.17 to 0.25 (eh_01, nd_02); the floors and walls lie in the model's
   space (eh_01: 47,075 of its 48,852 vertices inside the BCD's box).
-- **Skies**: an object whose textures are named a sky (`tm01_sky01`, `pi_sky_c`, `di_05_sky`) or a far backdrop
-  (`tm01_fore01`: "fore" and a digit) is the room's sky: tm_01's a dome of 200 metres, its backdrops cylinders of 120
-  and 135, about the room's middle; drawn around the camera.
+- **Skies**: an object with bit 0 of its byte at +0x2c set is drawn around the camera: a sphere of a metre or two
+  about the origin (di_01's `lp_sky2`, nd_02's `sora01`, di_05's sky, sea and black; Birth by Sleep's the same:
+  vs02's `lp_he01_11`, dp01's `sora02`). One whose textures are named a sky (`tm01_sky01`, `pi_sky_c`) or a far
+  backdrop (`tm01_fore01`: "fore" and a digit) is one too: tm_01's dome of 200 metres and its backdrops, cylinders of
+  120 and 135 about the room's middle, have no bit.
 
 ## Birth by Sleep's rooms
 

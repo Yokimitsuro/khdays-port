@@ -1244,7 +1244,18 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
                 e.room_key = key;
             }
         }
+        ImGui::Separator();
+        if (ImGui::Selectable(tr(lang, S::mission_room_add)))
+            room_adder_open("missions", e.world);
         ImGui::EndCombo();
+    }
+    // a room just added for it: chosen
+    std::string added_world, added_key;
+    if (draw_room_adder(app, "missions", &added_world, &added_key)) {
+        e.world = added_world;
+        e.room = 0;
+        e.room_key = added_key;
+        choices.mod.clear();  // read again
     }
 }
 
@@ -1325,6 +1336,8 @@ struct NewMissionForm {
     std::string key;
     std::string world = "tt";
     int room = 0, rooms = 0;
+    std::string room_key;            // a room the mod adds, else empty: `room` the world's
+    std::vector<std::string> added;  // the rooms the mod adds to `world`
     std::string rooms_for;
     std::vector<int> templates;  // the game's mission files
     int template_file = 0;       // 0: none, the mission made from its map
@@ -1345,6 +1358,13 @@ void draw_new_mission_form(App& app, const Mod& m) {
         const std::string played_in = world_played_in(m.dir, world);
         form.rooms =
             !played_in.empty() && load_world(nitrofs(), played_in, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
+        form.added.clear();
+        std::vector<std::string> notes;
+        for (const AddedRoom& r : read_added_rooms(m.dir, &notes))
+            if (r.world == world)
+                form.added.push_back(r.key);
+        if (std::find(form.added.begin(), form.added.end(), form.room_key) == form.added.end())
+            form.room_key.clear();
         form.rooms_for = world;
     }
     const int rooms = form.rooms;
@@ -1372,9 +1392,34 @@ void draw_new_mission_form(App& app, const Mod& m) {
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-    ImGui::SliderInt(tr(lang, S::mw_new_room), &room, 0, std::max(0, rooms - 1));
+    // its room: the world's own, one the mod adds to it, or one added now (another game's map or the modder's model)
     room = std::clamp(room, 0, std::max(0, rooms - 1));
+    const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
+    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mw_new_room),
+                          form.room_key.empty() ? std::to_string(room).c_str() : (form.room_key + added).c_str())) {
+        for (int r = 0; r < rooms; ++r) {
+            if (ImGui::Selectable(std::to_string(r).c_str(), form.room_key.empty() && room == r)) {
+                room = r;
+                form.room_key.clear();
+            }
+        }
+        for (const std::string& k : form.added)
+            if (ImGui::Selectable((k + added).c_str(), form.room_key == k))
+                form.room_key = k;
+        ImGui::Separator();
+        if (ImGui::Selectable(tr(lang, S::mission_room_add)))
+            room_adder_open("missions-new", world);
+        ImGui::EndCombo();
+    }
+    {
+        std::string added_world, added_key;
+        if (draw_room_adder(app, "missions-new", &added_world, &added_key)) {
+            world = added_world;
+            form.room_key = added_key;
+            form.rooms_for.clear();  // read again
+        }
+    }
     const auto label = [&](int file) {
         if (file == 0)
             return std::string(tr(lang, S::mw_new_no_template));
@@ -1401,10 +1446,11 @@ void draw_new_mission_form(App& app, const Mod& m) {
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(key.empty() || rooms == 0);
+    ImGui::BeginDisabled(key.empty() || (rooms == 0 && form.room_key.empty()));
     if (ImGui::Button(tr(lang, S::mw_new_create))) {
         std::string why;
-        if (new_mod_mission(nitrofs(), m.dir, key, template_file, world, room, &why)) {
+        if (new_mod_mission(nitrofs(), m.dir, key, template_file, world, room, &why) &&
+            (form.room_key.empty() || set_mod_mission(m.dir, key, "room", "", form.room_key, &why))) {
             app.tell(fmt(lang, S::mw_new_created, {key}), true);
             read_new_missions(&m);
             for (std::size_t i = 0; i < nm.missions.size(); ++i)

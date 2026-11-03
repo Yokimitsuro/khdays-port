@@ -213,6 +213,7 @@ add_executable(khdays-studio
     app/views/mods_console.cpp
     app/views/plugin_parameters_view.cpp
     app/views/prizes_view.cpp
+    app/views/room_adder.cpp
     app/views/model_view.cpp
     app/model_shot.cpp
     app/preview3d.cpp

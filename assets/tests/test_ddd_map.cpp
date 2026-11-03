@@ -231,6 +231,15 @@ void test_sky() {
     for (const auto& mesh : trees.scene.meshes)
         none_sky = none_sky && mesh.node == 0;
     expect(none_sky, "a forest is no backdrop");
+    Bytes flagged = room("dp01_ball");
+    flagged[0x20 + 0x2c] = 1;  // the object's bit: drawn around the camera
+    const auto ball = ddd::room_model(
+        flagged.data(), flagged.size(), "dp_01", [](const std::string&) { return std::filesystem::path(); },
+        [](const std::string&, const khdays::assets::DecodedTexture&) {});
+    bool ball_sky = !ball.scene.meshes.empty();
+    for (const auto& mesh : ball.scene.meshes)
+        ball_sky = ball_sky && mesh.node > 0 && ball.scene.nodes[static_cast<std::size_t>(mesh.node)].sky;
+    expect(ball_sky, "an object its bit marks a sky, whatever its texture's name");
 }
 
 void test_room() {
