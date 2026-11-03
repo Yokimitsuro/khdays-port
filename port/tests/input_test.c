@@ -1894,6 +1894,32 @@ static void test_analog(void)
     CHECK(khdays_analog_heading_turned(0x1555, game_heading(DOWN | RIGHT)) == 0x9555);
     CHECK(khdays_analog_heading_turned(0x1555, game_heading(DOWN)) == 0x9555);
 
+    /* KH2's stick: an axis under 60 of 127.5 is exactly 0, the rest rescaled to full travel */
+    {
+        int x = 15383, y = 28931; /* 28 degrees right of up, at full tilt */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y > 0);
+        CHECK(khdays_analog_heading(x, y) == 0);
+        x = 28931, y = -15383; /* the same off right */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x > 0 && y == 0);
+        CHECK(khdays_analog_heading(x, y) == 0xbfff);
+        x = -23170, y = 23170; /* a diagonal stays one */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == -y && y > 0);
+        CHECK(khdays_analog_heading(x, y) == 0x2000);
+        x = 15000, y = -15000; /* both under it: no direction */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y == 0);
+        CHECK(khdays_analog_heading(x, y) == -1);
+        x = 15419, y = 15420; /* its edge */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y == 1);
+        x = -FULL, y = FULL;
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == -FULL && y == FULL);
+    }
+
     CHECK(khdays_analog_tilt(0, 0) == 0);
     CHECK(khdays_analog_tilt(FULL, 0) == 100);
     CHECK(khdays_analog_tilt(FULL, FULL) == 100); /* a square gate's corner */

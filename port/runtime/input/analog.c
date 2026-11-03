@@ -5,6 +5,8 @@
 
 #define PI 3.14159265358979323846
 #define FULL_TURN 0x10000
+#define FULL_STICK 32767
+#define KH2_STICK_SENSE (FULL_STICK * 8 / 17) /* YS::StickSense, 60 of 127.5 (YS::PAD::Init) */
 
 int khdays_analog_heading(int x, int y)
 {
@@ -32,6 +34,24 @@ int khdays_analog_heading_turned(int stick, int dpad)
         return (stick + FULL_TURN / 2) & (FULL_TURN - 1);
     }
     return stick;
+}
+
+static int kh2_axis(int value)
+{
+    const int pushed = value < 0 ? -value : value;
+    const int reach = pushed > FULL_STICK ? FULL_STICK : pushed;
+    int out;
+    if (reach <= KH2_STICK_SENSE) {
+        return 0;
+    }
+    out = (int)((long long)(reach - KH2_STICK_SENSE) * FULL_STICK / (FULL_STICK - KH2_STICK_SENSE));
+    return value < 0 ? -out : out;
+}
+
+void khdays_analog_kh2_stick(int *x, int *y)
+{
+    *x = kh2_axis(*x);
+    *y = kh2_axis(*y);
 }
 
 int khdays_analog_tilt(int x, int y)

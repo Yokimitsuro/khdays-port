@@ -49,6 +49,11 @@ sides (`RENDERING.md`).
   (`OBJECTIVE_MOVE_SPEED`), the radius by 8 a tick, each times how far the stick is pushed overall, within
   the radius's limits. `YS::HARDPAD::get_stick_value` (0x473da8) takes a dead zone of 60 of 127.5 off each
   axis (`YS::PAD::Init` 0x474304) and keeps the length as `w`, at most 1.
+- **The movement stick** (`YS::PLAYER::PadToMovement` 0x47e210) is that same stick: under the dead zone an axis is
+  exactly 0, so the player runs exactly where the camera faces and Auto has nothing to chase. At full tilt on a
+  round path, 0-28° from a cardinal direction is that direction and 28-62° sweeps the 90° between two (35° gives
+  16.5°). Both axes under it is no movement at all, up to 66.5 % tilt on a diagonal. Which of two speeds
+  `_OVR_make_movement` (0x47e548) takes turns on `w` >= 0.8; read as run and walk, not checked further.
 - **Auto** (`auto_camera` 0x66768): when the player moved, the movement stick is on, the look stick is off and
   the movement stick's y (down) is under 0.9, the yaw turns to behind the player, by
   `(|x|+1) * 2 * (|y|+1) * amount * (0.25° + 0.01° * (speed - 8))` a tick (1° sideways at speed 8), and the
@@ -159,6 +164,11 @@ sides (`RENDERING.md`).
   Days' hold of R (camera flag 0x10000000) is not read. Normal is KH2's speed; Slow is 0.8x, Fast 1.25x (the
   port's choice), on the stick and mouse alone. The percentage in Sticks and camera is for Days' camera and does
   not apply: at 150 %, Normal would not be KH2's.
+- **Movement.** Only the chase reads the stick through KH2's dead zone (`khdays_analog_kh2_stick`, `read_movement`).
+  The player's heading keeps the stick's exact angle, the port's choice: on the heading too, the player ran rounded
+  squares when the stick went round and stood at a gentle push (tried in game). So where KH2's x is 0 the yaw does
+  not turn, as there KH2's yaw has nothing to turn to, and the radius still eases: a stick a little off is a straight
+  line at that angle, not a curve. Both axes under the dead zone is no chase. The look stick keeps its round one.
 - **Reset.** With lock-on on its own buttons, the player's own R (the right stick's click in the KH2 preset) is the
   reset: `input.c` takes it before the game sees it, because the game's R is the lock-on's and two quick clicks
   would lock on. The R presses the lock-on's sequencer plays raise camera flag 8 too; the hook clears that without

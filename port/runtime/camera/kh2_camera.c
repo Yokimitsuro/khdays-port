@@ -208,9 +208,13 @@ void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in)
     }
     /* ObjCamera::auto_camera */
     if (!c->snap && !in->manual && in->moved && in->move_amount != 0.0f && !look_on && in->move_y < 0.9f) {
-        const float step =
-            (fabsf(in->move_x) + 1.0f) * 2.0f * (fabsf(in->move_y) + 1.0f) * in->move_amount * AUTO_TURN * in->ticks;
-        c->yaw = c->yaw_target = turn_towards(c->yaw, in->behind_yaw, step);
+        /* x 0 is KH2's player running where the camera faces, nothing to turn to. The port's player keeps the
+         * stick's own angle, a little off that: turning to it would bring the same angle back, a curve. */
+        if (in->move_x != 0.0f) {
+            const float step = (fabsf(in->move_x) + 1.0f) * 2.0f * (fabsf(in->move_y) + 1.0f) * in->move_amount *
+                               AUTO_TURN * in->ticks;
+            c->yaw = c->yaw_target = turn_towards(c->yaw, in->behind_yaw, step);
+        }
         ease_radius(c, c->params->start_radius, AUTO_RADIUS * in->ticks);
     }
     c->at_target = above(in->player, AT_HEIGHT);

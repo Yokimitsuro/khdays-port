@@ -123,6 +123,14 @@ static void test_chase(void)
     c = started(300.0f);
     kh2_camera_follow(&c, &in);
     CHECK(near_value(c.radius, 301.0f, 0.001f));
+
+    /* straight ahead on KH2's stick, wherever the player's own angle is: only the radius moves */
+    in.move_x = 0.0f;
+    in.move_y = -1.0f;
+    c = started(300.0f);
+    kh2_camera_follow(&c, &in);
+    CHECK(c.yaw == 0.0f);
+    CHECK(near_value(c.radius, 301.0f, 0.001f));
 }
 
 /* The reset: to behind the player and the start radius; at once when the player is moving. */

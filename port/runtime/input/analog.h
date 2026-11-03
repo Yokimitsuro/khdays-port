@@ -13,6 +13,11 @@ int khdays_analog_heading(int x, int y);
  * Left/Right (Ov022_SwapPairedStateFlags), so the stick must turn around too. */
 int khdays_analog_heading_turned(int stick, int dpad);
 
+/* The stick as KH2 reads it (YS::HARDPAD::get_stick_value, 0x473da8): a dead zone off each axis alone, the rest
+ * rescaled to full travel. An axis under it is exactly 0; both under it is 0 0, no direction at all. For the KH2
+ * camera's chase: the player's heading keeps the stick's own angle. */
+void khdays_analog_kh2_stick(int *x, int *y);
+
 /* How far the stick is pushed, in percent of its travel (0..100). */
 int khdays_analog_tilt(int x, int y);
 

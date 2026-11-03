@@ -5,6 +5,7 @@
 #include "kh2_camera.h"
 #include "../core/session_log.h"
 #include "../core/window.h"
+#include "../input/analog.h"
 #include "../input/controls_hooks.h"
 #include "../input/input.h"
 #include "../../host/app/host.h"
@@ -280,8 +281,10 @@ static void read_movement(Kh2CameraInput *in)
     float x = 0.0f, y = 0.0f, amount = 0.0f;
     if ((snapshot->enhancements & KHDAYS_ENH_ANALOG_MOVEMENT) != 0 &&
         (snapshot->move_x != 0 || snapshot->move_y != 0)) {
-        x = (float)snapshot->move_x / 32767.0f;
-        y = (float)-snapshot->move_y / 32767.0f;
+        int stick_x = snapshot->move_x, stick_y = snapshot->move_y;
+        khdays_analog_kh2_stick(&stick_x, &stick_y);
+        x = (float)stick_x / 32767.0f;
+        y = (float)-stick_y / 32767.0f;
         amount = sqrtf(x * x + y * y);
     } else {
         const u16 held = PAD_HELD;
