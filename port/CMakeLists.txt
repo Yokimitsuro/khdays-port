@@ -417,7 +417,7 @@ target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/inclu
 target_compile_options(khdays-kh2-limit-timing-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-kh2-limit-timing COMMAND khdays-kh2-limit-timing-test)
 
-add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c)
+add_executable(khdays-kh2-gpu-test tests/kh2_sequence_gpu_test.cpp ui/heart_points.cpp host/render/kh2_sequence_gpu.c host/render/gpu_hd.c host/render/gpu_raster3d.c host/render/gpu_native3d.c)
 target_link_libraries(khdays-kh2-gpu-test PRIVATE khdays-kh2-gauge khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-kh2-gpu-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
@@ -628,6 +628,7 @@ add_executable(khdays-native
     host/render/gpu_present.c
     host/render/two_screens.c             # the two screens' places: stacked or side by side
     host/render/gpu_raster3d.c
+    host/render/gpu_native3d.c
     host/render/gfx_render.c
     host/render/kh2_sequence_gpu.c
     host/render/onescreen.c               # the one picture's situation and composition
@@ -1117,7 +1118,7 @@ add_test(NAME khdays-sound COMMAND khdays-sound-test "${KHDAYS_ARM7_BIN_FIRST}")
 # Recorded frame packages (KHDAYS_RECORD_FRAMES, in saves/frames: the
 # player's game data, never in the repository) checked against the pictures
 # the game showed; skipped without recordings.
-add_executable(khdays-render-test tests/render_test.c host/render/gpu_raster3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
+add_executable(khdays-render-test tests/render_test.c host/render/gpu_raster3d.c host/render/gpu_native3d.c host/render/gpu_hd.c host/render/kh2_sequence_gpu.c runtime/display/frame_package.c)
 target_link_libraries(khdays-render-test PRIVATE khdays-gpu khdays-gfx SDL3::SDL3)
 target_compile_options(khdays-render-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-render COMMAND khdays-render-test "${CMAKE_CURRENT_SOURCE_DIR}/../saves/frames")

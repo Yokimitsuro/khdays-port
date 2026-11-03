@@ -86,7 +86,8 @@ static SDL_GPUBuffer *make_buffer(void)
 {
     SDL_GPUBufferCreateInfo info;
     SDL_zero(info);
-    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE |
+                 SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
     info.size = (table_capacity * 4u + texel_capacity) * 4u;
     return SDL_CreateGPUBuffer(device, &info);
 }

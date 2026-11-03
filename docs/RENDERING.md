@@ -199,9 +199,11 @@ A frame: both screens' 2D are composed by `gfx_render.c` from the package's
 descriptions (`shaders/compose2d.hlsl`: an output pixel takes the 2D of the DS
 pixel it lies in, so the pixel art stays sharp, and the 3D of its own place),
 and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`. Each
-frame uploads the package's polygons, an index of which may cover each 8x8 tile
-(in drawing order), the composition records and the texture pages that changed.
-`raster3d.hlsl` runs `gpu3d.c`'s rasterizer for each pixel -- each thread owns
+frame uploads the package's polygons, the composition records and the texture
+pages that changed; the card's own rasterizer draws the 3D (below, "The native
+3D"). `KHDAYS_3D=compute` draws it the way before it: with an index of which
+polygons may cover each 8x8 tile (in drawing order), `raster3d.hlsl` runs
+`gpu3d.c`'s rasterizer for each pixel -- each thread owns
 one pixel and goes through the polygons that may cover it in drawing order,
 keeping its state as `gpu3d.c`'s `Pixel` does, so translucent IDs, the shadow
 mask and blending over alpha 0 are exactly the reference's; where `gpu3d.c`
@@ -259,7 +261,53 @@ at the resolution drawn; each at the first frame presented from it on, named
 by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
-the time preparing the 3D took).
+the time preparing the 3D took); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
+3D's and the composition's time on the card, each picture waited for);
+`KHDAYS_3D=compute` (the 3D by `raster3d.hlsl` alone).
+
+### The native 3D
+
+`gpu_native3d.c` draws the list with the card's own rasterizer, so a picture
+costs what its pixels cost and not, as `raster3d.hlsl`'s, every pixel times
+the polygons near it. Each polygon is a fan of triangles in the list's order,
+its corners a vertex and its polygon (`native3d.hlsl`'s vertex shader reads the
+vertex from the list); the clip space's w is the DS's, so the card interpolates
+colours and texture coordinates as the DS does, and the Z buffer's depth is the
+DS's over 2^24 (the W buffer's, and the depth test "equal", from the shader:
+`SV_Depth`). The fragment shader colours a pixel with `gpu3d.c`'s rules, shared
+with `raster3d.hlsl` (`g3d_vram.hlsli`: texels of every format, the rear plane;
+`g3d_polygon.hlsli`: the polygon's alpha and colour, the replacements).
+
+What a fragment shader cannot do the pipelines do. The stencil holds the last
+polygon ID drawn (bits 0-5), whether it was translucent (6) and the shadow
+masks' bit (7): a translucent polygon is not drawn over a translucent pixel of
+its own ID; a run of shadow masks first clears bit 7 over the whole target,
+each mask sets it where its depth test fails, and a shadow is drawn where it is
+set, after its polygon ID has cleared it from the pixels of that ID; the first
+selection marker clears bit 6. The DS blends a translucent pixel over what is
+there, but gives an empty pixel (alpha 0) its colour whole: target 0 keeps the
+colour blended (rgb) and how much of the first translucent colour drawn over an
+empty pixel still shows (alpha, multiplied down by each later blend), target 1
+that first colour, and `native3d_pack.hlsl` adds it back (the DS's result,
+however many layers). The alpha is the largest drawn (blend MAX); the fog bit
+and the opaque polygon's ID and edge are written where the shader's alpha says.
+A polygon whose texture or replacement may give both opaque and translucent
+pixels is drawn twice, its opaque pixels first (writing the depth, as the DS
+does) and then its translucent ones; runs of such polygons drawn alike are
+drawn as two draws. The rest of the polygons drawn alike (pipeline, stencil
+reference) are one draw.
+
+A picture writes only the targets what finishes it reads: the colour, alpha
+and flags always; the first translucent colour when the rear plane can be empty;
+the fog bit with fog on, the polygon IDs and edges with edge marking on, the
+depth for either (`finish3d.hlsli`). Without the clear image the rear plane is
+the targets' clear values. `native3d_pack.hlsl` then writes `raster3d.hlsl`'s
+two targets, which `compose.hlsl`, the one-screen picture and the capture read
+as before. The native sequences (a mod's KH2-style HUD) blend with the scene in
+ways the card's blending cannot, so the list from the first of them on is drawn
+by `raster3d.hlsl`, starting from what the targets hold. The pictures are
+`gpu3d.c`'s but where the card's interpolation moves a texel or an edge by a
+pixel (the render test's limits, docs/BUILD.md).
 
 ## Mods' graphics
 

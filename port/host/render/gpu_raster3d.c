@@ -1,9 +1,11 @@
 /* Engine A's screen at N x, drawn by the graphics card (gpu_raster3d.h): each frame uploads the
- * polygons, a per-tile index of them, the composition records and the changed texture pages;
- * raster3d.hlsl draws the 3D, compose.hlsl makes the screen. In widescreen the HUD's polygons move to
- * the sides as the 2D's pieces do (docs/RENDERING.md, "On the graphics card"). */
+ * polygons, the composition records and the changed texture pages; the card's own rasterizer draws the
+ * 3D (gpu_native3d.c), raster3d.hlsl the native sequences after it (or all of it, KHDAYS_3D=compute,
+ * from a per-tile index of the polygons), compose.hlsl makes the screen. In widescreen the HUD's polygons
+ * move to the sides as the 2D's pieces do (docs/RENDERING.md, "On the graphics card"). */
 #include "gpu_raster3d.h"
 #include "gpu_hd.h"
+#include "gpu_native3d.h"
 #include "../../runtime/display/frame_package.h"
 #include "../../runtime/mods/textures.h"
 #include "../../ui/composition.h"
@@ -31,6 +33,8 @@ typedef struct RasterParams {
     uint32_t clear_color, clear_depth, smooth;
     int32_t origin_x;
     uint32_t fine, npolys, nverts, entries; /* how much was uploaded: the shader stays within it */
+    uint32_t resume;                        /* start from the targets (the native 3D drew before) */
+    uint32_t unused0, unused1, unused2;
     uint32_t toon[16];
 } RasterParams;
 
@@ -51,6 +55,8 @@ static SDL_GPUComputePipeline *raster, *compose;
 static SDL_GPUBuffer *polys, *verts, *tiles, *vram, *records, *sequences;
 static uint32_t polys_capacity, verts_capacity; /* entries in `polys` and `verts`: the most any list has had */
 static int fine;                                /* draw the 3D in 8 bits per channel (khdays_raster3d_set_fine) */
+static int native;                              /* the card's rasterizer draws the 3D (gpu_native3d.c) */
+static int native_ready;                        /* gpu_native3d.c is open */
 static uint32_t tiles_capacity;                 /* entries in `tiles` */
 static SDL_GPUTransferBuffer *upload;
 static uint32_t upload_size;
@@ -146,7 +152,7 @@ static SDL_GPUBuffer *make_buffer(Uint32 size)
 {
     SDL_GPUBufferCreateInfo info;
     SDL_zero(info);
-    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
+    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
     info.size = size;
     return SDL_CreateGPUBuffer(device, &info);
 }
@@ -181,6 +187,13 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
         SDL_SetError("%s", why);
         return 0;
     }
+    native_ready = khdays_native3d_open(device);
+    if (!native_ready) {
+        fprintf(stderr, "host: the card's rasterizer cannot draw the 3D (%s): raster3d.hlsl draws it\n",
+                SDL_GetError());
+    }
+    /* KHDAYS_3D=compute: raster3d.hlsl draws all the 3D, as before the native renderer */
+    native = native_ready && (SDL_getenv("KHDAYS_3D") == NULL || SDL_strcmp(SDL_getenv("KHDAYS_3D"), "compute") != 0);
     return 1;
 }
 
@@ -207,6 +220,8 @@ void khdays_raster3d_close(void)
         return;
     }
     drop_targets();
+    khdays_native3d_close();
+    native = native_ready = 0;
     if (raster != NULL)
         SDL_ReleaseGPUComputePipeline(device, raster);
     if (compose != NULL)
@@ -481,8 +496,8 @@ static const KhdaysG3dVertex *stretch_overlay(const KhdaysG3dList *list, const K
     return moved;
 }
 
-/* Builds the index of which polygons may cover each tile, in drawing order, for a target `tiles_x`
- * tiles wide whose first column is DS column `origin_x`: tiles_x * TILES_Y + 1 start offsets, then the
+/* Builds the index of which polygons from `first` on may cover each tile, in drawing order, for a target
+ * `tiles_x` tiles wide whose first column is DS column `origin_x`: tiles_x * TILES_Y + 1 start offsets, then the
  * polygon indices. A box is one DS pixel wider each side than its vertices (at N x a polygon covers
  * pixels within half a target pixel of its edges). Returns the number of entries. */
 /* What the last draws sent to the graphics card, for a report when it stops
@@ -512,7 +527,8 @@ static int unusable(const KhdaysG3dList *list, const KhdaysG3dPolygon *p)
     return 1;
 }
 
-static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *vertices, int tiles_x, int origin_x)
+static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *vertices, int tiles_x, int origin_x,
+                            int first)
 {
     static uint32_t count[MAX_TILES], cursor[MAX_TILES];
     const int tile_count = tiles_x * TILES_Y;
@@ -523,9 +539,9 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
         const KhdaysG3dPolygon *p = &list->polys[i];
         float xmin = 1e9f, xmax = -1e9f;
         int tx0, tx1, ty0, ty1;
-        if (unusable(list, p)) {
+        if (i < first || unusable(list, p)) {
             box[i][0] = 1;
-            box[i][1] = 0; /* empty */
+            box[i][1] = 0; /* empty: drawn before (the native 3D's) or unusable */
             continue;
         }
         for (int k = 0; k < p->count; ++k) {
@@ -765,6 +781,35 @@ void khdays_raster3d_use_list(const KhdaysG3dList *list)
     list_instead = list;
 }
 
+/* KHDAYS_PROFILE_GPU: the 3D's time on the card, said every 300 pictures in the log. */
+static int gpu_profile(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = SDL_getenv("KHDAYS_PROFILE_GPU") != NULL;
+    }
+    return on;
+}
+
+static void gpu_profile_add(double ms, int w, int h, int32_t npolys)
+{
+    static double total, most;
+    static int64_t polygons;
+    static int n;
+    total += ms;
+    most = ms > most ? ms : most;
+    polygons += npolys;
+    if (++n == 300) {
+        fprintf(stderr,
+                "raster3d: 300 pictures of %d x %d drawn on the card in %.2f ms on average, %.2f at most "
+                "(%lld polygons a picture)\n",
+                w, h, total / n, most, (long long)(polygons / n));
+        total = most = 0.0;
+        polygons = 0;
+        n = 0;
+    }
+}
+
 static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
 {
     const KhdaysG3dList *list = list_instead != NULL ? list_instead : &p->list3d;
@@ -793,8 +838,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     const uint32_t record_bytes =
         compose_too ? (uint32_t)(record_columns * KHDAYS_FRAME_H) * (uint32_t)sizeof(KhdaysGpu2dComposition) : 0;
     const uint8_t *io3d = p->io3d;
-    uint32_t entries, tile_bytes, size, at;
-    int changed[VRAM_PAGES], nchanged = 0;
+    uint32_t entries = 0, tile_bytes, size, at, corner_bytes = 0;
+    int changed[VRAM_PAGES], nchanged = 0, drawn_natively = 0, rest;
+    KhdaysNative3dFrame frame;
     SDL_GPUCommandBuffer *cmd;
     uint8_t *mapped;
     if (device == NULL || !scratch_ok || !targets(scale, columns)) {
@@ -819,10 +865,41 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
             return 0;
         }
     }
-    entries = build_tiles(list, vertices, tiles_x, origin_x);
-    if (entries == 0) {
-        SDL_SetError("out of memory for the tiles");
-        return 0;
+    /* the card's rasterizer draws the polygons before the first native sequence, raster3d.hlsl the rest
+     * (all of them without the native 3D) */
+    SDL_zero(frame);
+    frame.scale = scale;
+    frame.width = w;
+    frame.height = h;
+    frame.origin_x = origin_x;
+    frame.disp3dcnt = p->disp3dcnt;
+    frame.swap_params = list->swap_params;
+    frame.alpha_ref = io3d[0x40];
+    frame.clear_color = io32(io3d, 0x50);
+    frame.clear_depth = io32(io3d, 0x54);
+    frame.smooth = (uint32_t)(texture_smoothing != 0) | (stretched ? 2u : 0u);
+    frame.fine = (uint32_t)fine;
+    for (int i = 0; i < 16; ++i) {
+        frame.toon[i] = io32(io3d, 0x80 + 4u * (unsigned)i);
+    }
+    if (native) {
+        drawn_natively = khdays_native3d_count(list);
+        if (!khdays_native3d_prepare(list, drawn_natively, &frame, &corner_bytes)) {
+            fprintf(stderr, "host: the card's rasterizer cannot draw the 3D (%s): raster3d.hlsl draws it\n",
+                    SDL_GetError());
+            khdays_native3d_close();
+            native = native_ready = 0;
+            drawn_natively = 0;
+            corner_bytes = 0;
+        }
+    }
+    rest = !native || drawn_natively < list->npolys;
+    if (rest) {
+        entries = build_tiles(list, vertices, tiles_x, origin_x, drawn_natively);
+        if (entries == 0) {
+            SDL_SetError("out of memory for the tiles");
+            return 0;
+        }
     }
     tile_bytes = entries * 4u;
     if (entries > tiles_capacity) {
@@ -843,7 +920,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     }
     vram_valid = 1;
     const uint32_t sequence_bytes = (uint32_t)sizeof(p->sequence3d_images);
-    size = poly_bytes + vert_bytes + tile_bytes + record_bytes + sequence_bytes +
+    size = poly_bytes + vert_bytes + tile_bytes + record_bytes + sequence_bytes + corner_bytes +
            (uint32_t)nchanged * KHDAYS_FRAME_VRAM_PAGE;
     if (size > upload_size) {
         SDL_GPUTransferBufferCreateInfo info;
@@ -879,6 +956,10 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     at += record_bytes;
     memcpy(mapped + at, p->sequence3d_images, sequence_bytes);
     at += sequence_bytes;
+    if (corner_bytes != 0) {
+        memcpy(mapped + at, khdays_native3d_corners(), corner_bytes);
+    }
+    at += corner_bytes;
     for (int k = 0; k < nchanged; ++k) {
         const int n = changed[k];
         const uint8_t *page = n < TEX_PAGES ? p->tex + (size_t)n * KHDAYS_FRAME_VRAM_PAGE
@@ -918,6 +999,8 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         UPLOAD(records, record_bytes, true)
         UPLOAD(sequences, sequence_bytes, true)
 #undef UPLOAD
+        khdays_native3d_upload(copy, upload, at, corner_bytes);
+        at += corner_bytes;
         for (int k = 0; k < nchanged; ++k) {
             /* the pages that changed, into the card's copy of the memory */
             src.offset = at + (uint32_t)k * KHDAYS_FRAME_VRAM_PAGE;
@@ -929,7 +1012,10 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         at += (uint32_t)nchanged * KHDAYS_FRAME_VRAM_PAGE;
         SDL_EndGPUCopyPass(copy);
     }
-    {
+    if (native) {
+        khdays_native3d_draw(cmd, &frame, polys, verts, vram, khdays_gpu_hd_buffer(), color3d, attr3d);
+    }
+    if (rest) {
         RasterParams rp;
         SDL_GPUStorageTextureReadWriteBinding out[2];
         SDL_GPUBuffer *in[6] = {polys, verts, tiles, vram, khdays_gpu_hd_buffer(), sequences};
@@ -951,6 +1037,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         rp.npolys = (uint32_t)list->npolys;
         rp.nverts = (uint32_t)list->nverts;
         rp.entries = entries;
+        rp.resume = (uint32_t)native;
         {
             Recent *r = &recent[recent_next++ % SDL_arraysize(recent)];
             r->frame = p->frame;
@@ -968,9 +1055,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         }
         SDL_zeroa(out);
         out[0].texture = color3d;
-        out[0].cycle = true;
+        out[0].cycle = !native; /* resumed: what the native 3D drew stays */
         out[1].texture = attr3d;
-        out[1].cycle = true;
+        out[1].cycle = !native;
         pass = SDL_BeginGPUComputePass(cmd, out, 2, NULL, 0);
         SDL_BindGPUComputePipeline(pass, raster);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 6);
@@ -1020,11 +1107,35 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);
     }
+    if (gpu_profile()) {
+        /* KHDAYS_PROFILE_GPU: the 3D's time on the card, waited for (it slows the frame it measures) */
+        const Uint64 start = SDL_GetPerformanceCounter();
+        SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+        if (fence == NULL) {
+            vram_valid = 0;
+            return 0;
+        }
+        SDL_WaitForGPUFences(device, true, &fence, 1);
+        SDL_ReleaseGPUFence(device, fence);
+        gpu_profile_add((double)(SDL_GetPerformanceCounter() - start) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
+                        w, h, p->list3d.npolys);
+        return 1;
+    }
     if (!SDL_SubmitGPUCommandBuffer(cmd)) {
         vram_valid = 0;
         return 0;
     }
     return 1;
+}
+
+int khdays_raster3d_native(void)
+{
+    return native;
+}
+
+void khdays_raster3d_set_native(int on)
+{
+    native = on && native_ready;
 }
 
 void khdays_raster3d_set_fine(int on)

@@ -32,6 +32,11 @@ int khdays_raster3d_rasterize(const KhdaysFramePackage *package, int scale, int 
 struct KhdaysG3dList;
 void khdays_raster3d_use_list(const struct KhdaysG3dList *list);
 
+/* Whether the card's own rasterizer draws the 3D (gpu_native3d.h) rather than raster3d.hlsl alone, and
+ * switching it (KHDAYS_3D=compute starts with it off): on only when the native renderer could be made. */
+int khdays_raster3d_native(void);
+void khdays_raster3d_set_native(int on);
+
 /* Sets whether the 3D is drawn in 8 bits per channel instead of the DS's 6 (when HD textures are
  * drawn), and says whether it is. */
 void khdays_raster3d_set_fine(int on);
@@ -39,7 +44,8 @@ int khdays_raster3d_fine(void);
 
 /* The 3D's last drawn targets (the colour, and the depth with the polygon
  * ID, edge and fog flags) and how many DS columns they cover. Returns 0 if
- * there are none. */
+ * there are none. The card's rasterizer keeps the depth, IDs, edges and fog
+ * only when the picture's finishing reads them (fog, edge marking). */
 int khdays_raster3d_targets(SDL_GPUTexture **color, SDL_GPUTexture **attr, int *columns);
 
 /* The last drawn screen, as a texture of `renderer` (NULL if none). */

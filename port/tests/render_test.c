@@ -1,6 +1,7 @@
 /* khdays-render-test [DIR]: recorded frame packages (KHDAYS_RECORD_FRAMES=saves/frames), checked
- * against the pictures the game showed and drawn again on the graphics card at 1x, 2x and 4x, then put
- * through the 3D interpolation; KHDAYS_RENDER_OUT=DIR writes what the GPU drew. Recordings hold the
+ * against the pictures the game showed and drawn again on the graphics card at 1x, 2x and 4x (by
+ * raster3d.hlsl, then by the card's own rasterizer), then put through the 3D interpolation; KHDAYS_RENDER_OUT=DIR writes what the GPU drew, KHDAYS_RENDER_TIMES=N times
+ * each package drawn N times more at KHDAYS_RENDER_SCALE (8) x. Recordings hold the
  * player's data, so they live in saves/frames; without any the test is skipped (exit 77). What each
  * part checks and its limits: docs/BUILD.md, "The port's tests". */
 #include "../host/render/gpu_raster3d.h"
@@ -47,6 +48,9 @@ void khdays_textures_read_end(int id)
 /* The limits of part 2 (see above). */
 #define MAX_DIFFERING_AT_1X 0.0001 /* a share of the pixels where the 3D takes part */
 #define MAX_MEAN_AT_NX 4.0         /* a colour channel, of 255 (see) */
+/* The card's own rasterizer (gpu_native3d.c) interpolates as the card does: its texels and edges move by a
+ * pixel here and there, so at 1x only the mean is bounded. */
+#define MAX_MEAN_NATIVE_AT_1X 1.0
 
 static char names[MAX_FILES][64];
 static int name_count;
@@ -70,7 +74,7 @@ static int SDLCALL by_name(const void *a, const void *b)
  * one scale: `only2d` counts the target pixels where the 3D cannot show that
  * are not the 2D engine's; the rest is where the 3D takes part. */
 typedef struct Distance {
-    int scale, frames;
+    int scale, native, frames;
     long long only2d;
     long long pixels, differing, channel_sum;
     int channel_max;
@@ -123,11 +127,11 @@ static void measure(Distance *d, const uint32_t *gpu, int width, const KhdaysFra
 }
 
 /* KHDAYS_RENDER_OUT: the GPU's picture as a BMP. */
-static void write_picture(const char *out, uint32_t frame, int scale, const uint32_t *pixels, int w, int h)
+static void write_picture(const char *out, uint32_t frame, int scale, int native, const uint32_t *pixels, int w, int h)
 {
     char path[1100];
     SDL_Surface *surface = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_XRGB8888, (void *)pixels, w * 4);
-    SDL_snprintf(path, sizeof(path), "%s/frame_%05u_%dx.bmp", out, frame, scale);
+    SDL_snprintf(path, sizeof(path), "%s/frame_%05u_%dx%s.bmp", out, frame, scale, native ? "_native" : "");
     if (surface == NULL || !SDL_SaveBMP(surface, path)) {
         fprintf(stderr, "cannot write %s: %s\n", path, SDL_GetError());
     }
@@ -156,7 +160,9 @@ int main(int argc, char **argv)
 {
     char dir[1024];
     int failures = 0, packages = 0, composed = 0, gpu = 0;
-    Distance distance[3] = {{1, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}};
+    Distance distance[6] = {{1, 0, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0, 0},
+                            {1, 1, 0, 0, 0, 0, 0, 0}, {2, 1, 0, 0, 0, 0, 0, 0}, {4, 1, 0, 0, 0, 0, 0, 0}};
+    int native = 0; /* the card's own rasterizer can draw */
     SDL_GPUDevice *device = NULL;
     const char *out = SDL_getenv("KHDAYS_RENDER_OUT");
     KhdaysFramePackage *recorded = NULL; /* each package as recorded, then the rest zero */
@@ -166,6 +172,10 @@ int main(int argc, char **argv)
     int have_before = 0, pairs = 0;
     long long pair_polygons = 0, pair_matched = 0, pair_jumped = 0;
     KhdaysG3dInterp interp;
+    const int times = SDL_getenv("KHDAYS_RENDER_TIMES") != NULL ? SDL_atoi(SDL_getenv("KHDAYS_RENDER_TIMES")) : 0;
+    const int timed_scale = SDL_getenv("KHDAYS_RENDER_SCALE") != NULL ? SDL_atoi(SDL_getenv("KHDAYS_RENDER_SCALE")) : 8;
+    double timed_ms = 0.0;
+    int timed = 0;
     SDL_memset(&before, 0, sizeof(before));
     SDL_memset(&interp, 0, sizeof(interp));
 
@@ -190,7 +200,10 @@ int main(int argc, char **argv)
                                   SDL_getenv("KHDAYS_GPU_DEBUG") != NULL, NULL);
     if (device != NULL && khdays_raster3d_open(device)) {
         gpu = 1;
-        printf("graphics card: %s\n", SDL_GetGPUDeviceDriver(device));
+        khdays_raster3d_set_native(1);
+        native = khdays_raster3d_native();
+        printf("graphics card: %s%s\n", SDL_GetGPUDeviceDriver(device),
+               native ? "" : " (its own rasterizer cannot draw the 3D)");
     } else {
         printf("no graphics card to draw with (%s): the GPU part is skipped\n", SDL_GetError());
     }
@@ -365,9 +378,13 @@ int main(int argc, char **argv)
                 fprintf(stderr, "%s: %d pixels of engine A differ when composed again\n", path, bad);
                 ++failures;
             }
-            for (int s = 0; gpu && s < 3; ++s) {
+            for (int s = 0; gpu && s < 6; ++s) {
                 int w, h;
                 uint32_t *pixels;
+                if (distance[s].native && !native) {
+                    continue;
+                }
+                khdays_raster3d_set_native(distance[s].native);
                 if (!khdays_raster3d_draw(p, distance[s].scale, 0) || (pixels = khdays_raster3d_read(&w, &h)) == NULL) {
                     fprintf(stderr, "%s: the graphics card could not draw it at %dx: %s\n", path, distance[s].scale,
                             SDL_GetError());
@@ -378,12 +395,37 @@ int main(int argc, char **argv)
                     measure(&distance[s], pixels, w, p); /* a wide one has no software picture to match */
                 }
                 if (out != NULL) {
-                    write_picture(out, p->frame, distance[s].scale, pixels, w, h);
+                    write_picture(out, p->frame, distance[s].scale, distance[s].native, pixels, w, h);
                 }
                 SDL_free(pixels);
             }
+            if (gpu && times > 0) {
+                /* drawn `times` times, then read back: the card's time a picture, the queue kept full (by the
+                 * renderer KHDAYS_3D says) */
+                const Uint64 start = SDL_GetPerformanceCounter();
+                int w = 0, h = 0, drawn = 1;
+                uint32_t *pixels;
+                khdays_raster3d_set_native(SDL_getenv("KHDAYS_3D") == NULL ||
+                                           SDL_strcmp(SDL_getenv("KHDAYS_3D"), "compute") != 0);
+                for (int k = 0; k < times && drawn; ++k) {
+                    drawn = khdays_raster3d_draw(p, timed_scale, 0);
+                }
+                pixels = drawn ? khdays_raster3d_read(&w, &h) : NULL;
+                if (pixels != NULL) {
+                    const double ms = (double)(SDL_GetPerformanceCounter() - start) * 1000.0 /
+                                      (double)SDL_GetPerformanceFrequency() / (double)times;
+                    printf("%s: %d polygons at %dx (%dx%d, DISP3DCNT %04x, SWAP_BUFFERS %x), %.3f ms a picture\n",
+                           names[f], p->list3d.npolys, timed_scale, w, h, p->disp3dcnt, p->list3d.swap_params, ms);
+                    timed_ms += ms;
+                    ++timed;
+                    SDL_free(pixels);
+                }
+            }
         }
         SDL_free(data);
+    }
+    if (timed > 0) {
+        printf("drawn %d times each at %dx: %.3f ms a picture on average\n", times, timed_scale, timed_ms / timed);
     }
 
     printf("%d packages, %d composed again with the 3D, %d failed; %d 3D lists (%d polygons) built again "
@@ -398,25 +440,29 @@ int main(int argc, char **argv)
     SDL_free(before.pre_info);
     SDL_free(before.pre_verts);
     khdays_g3d_interp_free(&interp);
-    for (int s = 0; gpu && s < 3; ++s) {
+    for (int s = 0; gpu && s < 6; ++s) {
         const Distance *d = &distance[s];
+        const char *by = d->native ? "the card's rasterizer" : "raster3d.hlsl";
+        const double mean = (double)d->channel_sum / (double)(d->pixels ? d->pixels * 3 : 1);
         if (d->frames == 0) {
             continue;
         }
-        printf("GPU at %dx, %d frames: where the 3D takes part %.3f%% of pixels differ from the software's, "
+        printf("GPU (%s) at %dx, %d frames: where the 3D takes part %.3f%% of pixels differ from the software's, "
                "a channel by %.3f on average and %d at most (of 255); where it cannot show, %lld pixels differ\n",
-               d->scale, d->frames, 100.0 * (double)d->differing / (double)(d->pixels ? d->pixels : 1),
-               (double)d->channel_sum / (double)(d->pixels ? d->pixels * 3 : 1), d->channel_max, d->only2d);
+               by, d->scale, d->frames, 100.0 * (double)d->differing / (double)(d->pixels ? d->pixels : 1), mean,
+               d->channel_max, d->only2d);
         if (d->only2d != 0) {
-            fprintf(stderr, "GPU at %dx: the 2D where the 3D cannot show is not the 2D engine's\n", d->scale);
+            fprintf(stderr, "GPU (%s) at %dx: the 2D where the 3D cannot show is not the 2D engine's\n", by, d->scale);
             ++failures;
         }
-        if (d->pixels != 0 && d->scale == 1 && (double)d->differing / (double)d->pixels > MAX_DIFFERING_AT_1X) {
-            fprintf(stderr, "GPU at 1x: more pixels differ than the limit (%.3f%%)\n", 100.0 * MAX_DIFFERING_AT_1X);
+        if (!d->native && d->pixels != 0 && d->scale == 1 &&
+            (double)d->differing / (double)d->pixels > MAX_DIFFERING_AT_1X) {
+            fprintf(stderr, "GPU (%s) at 1x: more pixels differ than the limit (%.3f%%)\n", by,
+                    100.0 * MAX_DIFFERING_AT_1X);
             ++failures;
         }
-        if (d->pixels != 0 && d->scale > 1 && (double)d->channel_sum / (double)(d->pixels * 3) > MAX_MEAN_AT_NX) {
-            fprintf(stderr, "GPU at %dx: the mean difference is beyond the limit (%.1f)\n", d->scale, MAX_MEAN_AT_NX);
+        if (d->pixels != 0 && mean > (d->scale > 1 ? MAX_MEAN_AT_NX : d->native ? MAX_MEAN_NATIVE_AT_1X : 255.0)) {
+            fprintf(stderr, "GPU (%s) at %dx: the mean difference is beyond the limit\n", by, d->scale);
             ++failures;
         }
     }
