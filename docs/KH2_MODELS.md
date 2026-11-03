@@ -700,6 +700,65 @@ counts by how much of a point's surface the tab carries; most open 0 or left out
 9.3 to 12.0 degrees with the others unchanged, and the hand through the cuff from a median
 0.43 cm to 0.33 (99th percentile 1.27 to 0.96).
 
+`cuff_pose` gives the cuff an authored pose for a hand bent up, toward the back of the hand,
+blended by how far it is bent, with the fit answering what is left on top:
+
+```text
+cuff_pose 110 2.66                              # the hand's bend the pose is for, degrees, toward each cuff's third flap; its pivot, cm; the bend it carries on to
+cuff_pose_bone kh2_244 0 0 68.3 0.69 1 1        # a bone's turn from its parent there (x y z degrees, as `hand_pose`) and scale
+swing kh2_233 kh2_250 kh2_230 0.8 kh2_240       # the root swings for every bend but toward kh2_240, which the pose answers
+```
+
+A bone's change is its rest turn and scale against its parent's, so children ride it and a
+scaled parent carries them in. Its share is the hand's bend in the plane toward the third
+flap, as measured in the root's frame, over the pose's bend: 0 for a hand bent the other
+way, carried on past it to the third number (turns and scales keep going, the same rate) and held
+there, eased by a critically damped spring. The surface is baked at six even shares; each draw fits on the two either side and mixes their answers, and each flap
+opens from where it stands there, so nothing is corrected twice. Lines for a joint a model
+lacks do nothing; bones with no line keep their rest place but ride their parents.
+
+With a `cuff_pose`, the hand's `flat` pose is the fingers at its full bend: over the last tenth of the
+way they go to it by the bend alone (`cuff_pose_straight`, not while gripping). Below that, the bend
+brings in the `open` pose, and only contact straightens the fingers toward `flat`: the palm's nearness
+to a surface, and each finger opening to clear what it would go into. The `open` installed is halfway
+from `flat` to `relaxed`, slerped per bone.
+
+A `cuff_pose_bone` also takes the root and the root's parent, the sleeve's ring (kh2_232, kh2_115),
+which holds the coat's forearm from a head far up the arm: scaled along its x, it shrinks the forearm
+and brings the cuff up with it (0.67 takes the root 4.9 cm up). Its change goes on last, in its own
+frame, since `swing` turns the root apart from it.
+
+Over the last quarter of the way to the pose (`cuff_pose_hold`), what moves the cuff and hand on
+top of it fades out, so at the full bend the pose shows as authored: the cuff's fit and sway, and
+the fingers' fists and lag. Nothing then clears the hand, so what clips there stays. Past the full
+bend the cuff's fit and sway come back over the next tenth of the way; the fingers' stay off. Hands
+in the recorded scenes bend up to 108 degrees. Offline, with the hand as authored, carrying on took
+the mesh edges through from 124 to 52 at 105 degrees, before the fit, at about the same depth (2 cm).
+Still on top:
+`twist`, `swing` to the side, the grip when holding, animation overrides, and the surfaces' turn.
+
+The pose covers one direction. A hand bent palm-down or sideways keeps the `swing`: without
+it, about a quarter of the frames over 4 scenes were palm-down 15 to 40 degrees, and they were
+the deepest by far. The direction it leaves out is read from the root's own frame, since `twist` has
+already turned that; and what it swings to the side keeps its size rather than being scaled
+back up, or the little left of a hand bent near square swings the root 50 degrees.
+
+The pose installed is hand-authored, a full bend of 110 degrees (a posed FBX of the right hand): each flap bone's local turn
+and scale read against the rest FBX, rebuilt within 0.001 cm with no shear, and the flat hand's
+`hand_pose flat` lines from the same file. In that file the hand pivots at its helper, 2.86 cm past
+its head, so at a bend of 86.6 degrees the head stands 3.9 cm from the wrist; in game it stays within about
+1 cm, where 46 of the hand's mesh edges stand through the cuff against none as authored. So the
+cuff slides the other way along that arc (`cuff_pose_slide`, the second number of `cuff_pose`, in
+the model's own scale), the hand staying where the game puts it, with the wrist ring and all under
+it, the sleeve above stretching to meet it. Rest axes are the same on all four models'
+cuffs, read from the files: 0.02 degrees at most, with bones +15 left, -29 right on B_EX390. The
+left's lines are the right's mirrored: rest frames are right's with x negated and y flipped,
+checked per bone, and clipping over the same bends matches within 0.01 cm.
+
+`KHDAYS_CUFF_RECORD`'s `T` field is the measure to use: each hand mesh edge through a cuff
+triangle, how far its end outside the surface (seen from the root) stands, not a reading along an
+axis, which fails on a flap standing square to it.
+
 Why not cloth: the cuff is 11.8 cm long from the wrist, almost to the knuckles, four flaps
 of eight points in all. At rest the thumb stands about 1 cm outside the thumb-side flap, so
 contact never rested: the follow spring pulled the flap into the thumb and contact threw

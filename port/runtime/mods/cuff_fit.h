@@ -39,6 +39,13 @@ struct CuffFit {
         // what it carries, its own most open (0: as the others), and an opening it always has on top (radians)
         int own_flap = -1;
         float own_clearance = 0.0F, own_most_open = 0.0F, own_always = 0.0F;
+        float pose_bend = 0.0F;  // `cuff_pose`: the hand's bend its pose is for, degrees; 0 none
+        float pose_pivot = 0.0F; // and how far along the hand from its head it pivots in that pose (metres)
+        float pose_most = 0.0F;  // the bend the pose carries on to, degrees; 0 stops at `pose_bend`
+        float pose_most_share() const
+        {
+            return pose_bend > 0.0F ? std::max(1.0F, pose_most / pose_bend) : 1.0F;
+        }
     };
     struct Target {
         Shares open{};
@@ -259,6 +266,40 @@ struct CuffFit {
         return slot.reach;
     }
 
+    // A hand's mesh edge against the cuff's triangles: how far its end outside the surface (seen from `middle`, inside the
+    // cuff) stands past the deepest it crosses, 0 if it crosses none
+    static float edge_outside(const HandVec &middle, const HandVec &start, const HandVec &end,
+                              const std::vector<Triangle> &triangles)
+    {
+        const HandVec line = hand_sub(end, start);
+        const float l = hand_length(line);
+        if (l < 1e-6F)
+            return 0.0F;
+        const HandVec way = hand_add({0.0F, 0.0F, 0.0F}, line, 1.0F / l);
+        float depth = 0.0F;
+        for (const Triangle &t : triangles) {
+            const HandVec e1 = hand_sub(t.at[1], t.at[0]), e2 = hand_sub(t.at[2], t.at[0]);
+            const HandVec p = hand_cross(way, e2);
+            const float det = hand_dot(e1, p);
+            if (std::fabs(det) < 1e-10F)
+                continue;
+            const HandVec s = hand_sub(start, t.at[0]);
+            const float a = hand_dot(s, p) / det;
+            const HandVec q = hand_cross(s, e1);
+            const float b = hand_dot(way, q) / det;
+            if (a < 0.0F || a > 1.0F || b < 0.0F || a + b > 1.0F)
+                continue;
+            const float hit = hand_dot(e2, q) / det;
+            if (hit <= 0.0F || hit >= l)
+                continue;
+            HandVec n = hand_unit(hand_cross(e1, e2));
+            if (hand_dot(n, hand_sub(t.at[0], middle)) < 0.0F)
+                n = {-n[0], -n[1], -n[2]};
+            depth = std::max({depth, hand_dot(hand_sub(start, t.at[0]), n), hand_dot(hand_sub(end, t.at[0]), n)});
+        }
+        return depth;
+    }
+
 private:
     mutable std::vector<Reading> readings_;
 
@@ -301,8 +342,107 @@ private:
     }
 };
 
+// `cuff_pose`: a bone's change from its parent at the pose. `up`: its parent among the list (parents first), -1 one at rest
+struct CuffPoseBone {
+    std::size_t joint = 0;
+    int up = -1;
+    Mat up_rest = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, 0.0F, 0.0F, 0.0F);
+    Mat local = up_rest, back = up_rest; // its rest frame from its parent's; the rest frame's inverse
+    Quat turn{0.0F, 0.0F, 0.0F, 1.0F};
+    HandVec scale{1.0F, 1.0F, 1.0F};
+};
+
+// What each of these bones does to the model at rest, `share` of the way to the pose (`moved`, as `bones`)
+inline void cuff_pose_at(const std::vector<CuffPoseBone> &bones, float share, std::vector<Mat> &moved)
+{
+    static thread_local std::vector<Mat> frames;
+    const auto times = [](const Mat &a, const Mat &b) {
+        Mat o{};
+        for (std::size_t c = 0; c < 4; ++c)
+            for (std::size_t r = 0; r < 4; ++r)
+                for (std::size_t k = 0; k < 4; ++k)
+                    o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+        return o;
+    };
+    frames.resize(bones.size());
+    moved.resize(bones.size());
+    for (std::size_t i = 0; i < bones.size(); ++i) {
+        const CuffPoseBone &b = bones[i];
+        const HandVec scale = {1.0F + (b.scale[0] - 1.0F) * share, 1.0F + (b.scale[1] - 1.0F) * share,
+                               1.0F + (b.scale[2] - 1.0F) * share};
+        const Mat change =
+            frame_detail::frame_of(hand_mix({0.0F, 0.0F, 0.0F, 1.0F}, b.turn, share), scale, 0.0F, 0.0F, 0.0F);
+        frames[i] = times(b.up >= 0 ? frames[static_cast<std::size_t>(b.up)] : b.up_rest, times(b.local, change));
+        moved[i] = times(frames[i], b.back);
+    }
+}
+
+// How far into its pose the cuff is: the hand's way, bent from its rest way toward the pose's side, against the pose's bend
+inline float cuff_pose_share(const HandVec &rest_way, const HandVec &toward, const HandVec &now_way, float bend_degrees,
+                             float most_share = 1.0F)
+{
+    if (bend_degrees <= 0.0F)
+        return 0.0F;
+    const float bend = std::atan2(hand_dot(now_way, toward), hand_dot(now_way, rest_way)) * 57.29578F;
+    return std::clamp(bend / bend_degrees, 0.0F, most_share);
+}
+
+// A `swing`'s way with what it would do toward `up` (square to `kept`) left out: the side `cuff_pose` answers instead.
+// What it does to the side keeps its size: scaled back up, the little left of a hand bent near square swings it far.
+inline HandVec cuff_swing_way(const HandVec &kept, const HandVec &gone, const HandVec &up)
+{
+    const float toward = hand_dot(gone, up);
+    if (toward <= 0.0F)
+        return gone;
+    const HandVec side = hand_add(hand_add(gone, up, -toward), kept, -hand_dot(gone, kept));
+    return hand_add(side, kept, std::sqrt(std::max(0.0F, 1.0F - hand_dot(side, side))));
+}
+
+// How much of what moves a cuff and hand on top of the pose is held off: none until the last quarter of the way, all at
+// the full bend, where the pose shows as authored (even if the hand then stands through it)
+inline float cuff_pose_hold(float share)
+{
+    return hand_share(share, 0.75F, 1.0F);
+}
+
+// Where the cuff slides so the hand, staying where the game puts it, stands in it as it does when pivoting `pivot` past
+// its head: at this share of the pose, back up the arm and toward the back of the hand, along the same arc
+inline HandVec cuff_pose_slide(const HandVec &way, const HandVec &toward, float pivot, float share, float bend_degrees)
+{
+    const float angle = share * bend_degrees * 0.0174532925F;
+    return hand_add(hand_add({0.0F, 0.0F, 0.0F}, way, -pivot * (1.0F - std::cos(angle))), toward,
+                    pivot * std::sin(angle));
+}
+
+// How straight the fingers go by the bend alone, to the flat pose: only just before the full bend. Below it, what
+// straightens them is touching something
+inline float cuff_pose_straight(float share)
+{
+    return hand_share(share, 0.9F, 1.0F);
+}
+
+// The same for the cuff's fit and sway, which come back over the tenth of the way past the full bend: the pose as
+// authored is for that bend, and past it the hand needs clearing again
+inline float cuff_pose_fit_hold(float share)
+{
+    return cuff_pose_hold(share) * (1.0F - hand_share(share, 1.0F, 1.1F));
+}
+
+inline CuffFit::Target cuff_target_mix(const CuffFit::Target &a, const CuffFit::Target &b, float t)
+{
+    CuffFit::Target o;
+    for (std::size_t k = 0; k < CuffFit::kFlaps; ++k) {
+        o.open[k] = a.open[k] + (b.open[k] - a.open[k]) * t;
+        o.length[k] = a.length[k] + (b.length[k] - a.length[k]) * t;
+    }
+    for (std::size_t c = 0; c < 3; ++c)
+        o.shift[c] = a.shift[c] + (b.shift[c] - a.shift[c]) * t;
+    return o;
+}
+
 // A cuff's state from draw to draw: the fit eased, each flap's sway round it
 struct CuffMotion {
+    float pose = 0.0F, pose_speed = 0.0F; // how far into its `cuff_pose`
     CuffFit::Shares open{}, open_speed{}, length{1.0F, 1.0F, 1.0F, 1.0F}, length_speed{};
     CuffFit::Shares sway{}, sway_speed{}, sway_late{};
     HandVec shift{}, shift_speed{};

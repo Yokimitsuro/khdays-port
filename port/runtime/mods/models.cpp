@@ -72,6 +72,7 @@ constexpr Mat kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 // take is smaller than this: such differences are the two models' shapes,
 // not their poses (a T-pose's arms are 70-90 degrees from arms-down).
 constexpr float kPoseDegrees = 20.0F;
+constexpr int kCuffSurfaces = 6; // the `cuff_pose` surface baked at this many shares of the way
 
 Mat mul(const Mat &a, const Mat &b)
 {
@@ -279,13 +280,16 @@ struct Limb {
 // about the way from one joint to the other (at rest, as the joint's parent carries it) by a share of the other
 // joint's twist about it against that parent (a forearm's end turning with the hand: N_EX830's cuffs ride the wrist,
 // P_EX110's motions turn the hand alone)
-// `swing <joint> <by joint> <frame joint> [<share>]`: the joint and the joints under it swung about its head by a share
-// of how far the other joint's x has swung off where `frame` would carry it (a cuff's root tilting with the hand)
+// `swing <joint> <by joint> <frame joint> [<share> [<except toward joint>]]`: the joint and the joints under it swung about
+// its head by a share of how far the other joint's x has swung off where `frame` would carry it (a cuff's root tilting
+// with the hand), leaving out any swing toward the last joint from it (the side a `cuff_pose` answers)
 struct Twist {
     std::size_t joint = 0, by = 0, parent = 0, to = 0;
     float share = 1.0F;
     bool swing = false;
-    std::array<float, 3> axis{}; // model space at rest
+    bool except = false;
+    std::array<float, 3> except_way{}; // model space at rest
+    std::array<float, 3> axis{};       // model space at rest
     std::vector<std::size_t> turned;
 };
 
@@ -439,8 +443,15 @@ struct Model {
     std::vector<Twist> twists; // bones.txt's `twist`
     // bones.txt's `cuff`: a sleeve cuff fitted round its hand (cuff_fit.h)
     struct Cuff {
-        std::size_t root = 0;
+        std::size_t root = 0, hand = 0;
         khdays::models::CuffFit fit;
+        // bones.txt's `cuff_pose`: the flaps' bones, what each flap joint is among them (-1 none), the surface baked at
+        // even shares of the way to the pose, and the hand's way and the way it bends to reach it, at rest
+        std::vector<khdays::models::CuffPoseBone> pose;
+        int pose_ring = -1; // the root's parent among them: the sleeve's ring, which scaling shrinks the coat's forearm
+        std::array<std::vector<int>, khdays::models::CuffFit::kFlaps> flap_pose;
+        std::vector<khdays::models::CuffFit> surfaces;
+        std::array<float, 3> hand_way{}, toward{};
         std::array<std::vector<std::size_t>, khdays::models::CuffFit::kFlaps> flap_joints, tip_joints;
         std::vector<std::pair<std::size_t, std::array<float, 3>>>
             points; // the hand's: a joint, a vertex as it holds it
@@ -449,7 +460,8 @@ struct Model {
             std::array<float, 3> position{};
             int flap = -1;
         };
-        std::vector<std::array<Corner, 3>> triangles; // the cuff's own, for the recording
+        std::vector<std::array<Corner, 3>> triangles;      // the cuff's own, for the recording
+        std::vector<std::array<Corner, 3>> hand_triangles; // the hand's, for the recording
         std::array<std::size_t, khdays::models::CuffFit::kFlaps> tip{};
         std::vector<std::size_t>
             slides; // what slides with it: its root's parent, the ring its edge is made of, and under
@@ -726,9 +738,14 @@ struct LimbLine {
 struct CuffLine { // cuff <root> <hand> <flap> <flap> <flap> <flap>: the flaps in order round the ring
     std::array<std::string, 6> joints;
 };
+struct CuffPoseLine { // cuff_pose_bone <joint> <x> <y> <z> <scale x> <y> <z>: its change from its parent at the pose
+    std::string joint;
+    std::array<float, 3> degrees{}, scale{1.0F, 1.0F, 1.0F};
+};
 
 struct TwistLine {
     bool swing = false;
+    std::string except;                // `swing`: the joint it does not swing toward
     std::array<std::string, 4> joints; // the joint, the one it turns with, the axis's from and to
     float share = 1.0F;
 };
@@ -750,6 +767,7 @@ struct BonesFile {
     std::vector<TwistLine> twists;
     std::string held;
     std::vector<CuffLine> cuffs;
+    std::vector<CuffPoseLine> cuff_pose;
     khdays::models::CuffFit::Settings cuff_settings;
 };
 
@@ -766,6 +784,7 @@ void read_bones(const std::string &model_file, BonesFile &bones)
     auto &spine = bones.spine;
     auto &held = bones.held;
     auto &cuffs = bones.cuffs;
+    auto &cuff_pose = bones.cuff_pose;
     auto &cuff_settings = bones.cuff_settings;
     auto &twists = bones.twists;
     auto &hides = bones.hides;
@@ -933,6 +952,34 @@ void read_bones(const std::string &model_file, BonesFile &bones)
                              "degrees>]]`; the line is ignored\n",
                              path.c_str());
             }
+        } else if (a == "cuff_pose") {
+            // cuff_pose <the hand's bend degrees> [<its pivot past its head, cm>], toward each `cuff`'s third flap;
+            // `cuff_pose_bone`s say the pose
+            std::istringstream first(b);
+            float pivot = 0.0F;
+            if (!(first >> cuff_settings.pose_bend) || cuff_settings.pose_bend <= 0.0F) {
+                cuff_settings.pose_bend = 0.0F;
+                std::fprintf(
+                    stderr,
+                    "models: %s: write `cuff_pose <the hand's bend, degrees> [<its pivot past its head, cm>]`; "
+                    "the line is ignored\n",
+                    path.c_str());
+            } else if (words >> pivot) {
+                cuff_settings.pose_pivot = pivot * 0.01F;
+                float most = 0.0F;
+                if (words >> most)
+                    cuff_settings.pose_most = most;
+            }
+        } else if (a == "cuff_pose_bone") {
+            CuffPoseLine p;
+            p.joint = b;
+            if (words >> p.degrees[0] >> p.degrees[1] >> p.degrees[2] >> p.scale[0] >> p.scale[1] >> p.scale[2])
+                cuff_pose.push_back(p);
+            else
+                std::fprintf(stderr,
+                             "models: %s: write `cuff_pose_bone <joint> <x> <y> <z degrees> <scale x> <y> <z>`; the "
+                             "line is ignored\n",
+                             path.c_str());
         } else if (a == "cuff") {
             CuffLine c;
             c.joints[0] = b;
@@ -955,12 +1002,14 @@ void read_bones(const std::string &model_file, BonesFile &bones)
             t.joints[3] = t.joints[2];
             if (ok && !(words >> t.share))
                 t.share = 1.0F;
+            else if (ok)
+                words >> t.except;
             if (ok && t.share >= 0.0F && t.share <= 1.0F) {
                 twists.push_back(t);
             } else {
                 std::fprintf(stderr,
-                             "models: %s: write `swing <joint> <by joint> <frame joint> [<share, 0 to 1>]`; the line "
-                             "is ignored\n",
+                             "models: %s: write `swing <joint> <by joint> <frame joint> [<share, 0 to 1> [<except "
+                             "toward joint>]]`; the line is ignored\n",
                              path.c_str());
             }
         } else if (a == "held") { // held <joint>: a weapon posed by the weapon motions of the body holding it
@@ -1435,7 +1484,8 @@ void resolve_hands(Model &model, const std::vector<HandRule> &rules, const std::
 }
 
 // bones.txt's `cuff` lines: the cuff's surface and flaps at rest, and the hand's vertices that must stay inside it
-void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::string &name)
+void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::vector<CuffPoseLine> &pose_lines,
+                   const std::string &name)
 {
     using namespace khdays::models;
     const auto joint_named = [&](const std::string &wanted) {
@@ -1470,6 +1520,7 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
             continue;
         Model::Cuff cuff;
         cuff.root = static_cast<std::size_t>(at[0]);
+        cuff.hand = static_cast<std::size_t>(at[1]);
         std::vector<int> flap_of(model.joints.size(), -1);
         std::array<HandVec, CuffFit::kFlaps> hinges{}, tips{};
         for (std::size_t f = 0; f < CuffFit::kFlaps; ++f) {
@@ -1539,9 +1590,74 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
                     triangles.push_back(triangle);
                     cuff.triangles.push_back(corners);
                 }
+                if (std::all_of(corners.begin(), corners.end(), [&](const Model::Cuff::Corner &c) {
+                        return c.joint < on_hand.size() && on_hand[c.joint];
+                    }))
+                    cuff.hand_triangles.push_back(corners);
             }
         }
         cuff.fit.bake(model.joints[cuff.root].head, hinges, tips, triangles);
+        if (model.cuff_settings.pose_bend > 0.0F && !pose_lines.empty() && cuff.fit.ready) {
+            // the flaps' bones, parents first: a rest frame is the joint's axes at its head, in the model's own space
+            const auto frame_at = [&](std::size_t j) {
+                Mat f = axes_of(inverse(model.joints[j].inverse_bind));
+                f[12] = model.joints[j].head[0];
+                f[13] = model.joints[j].head[1];
+                f[14] = model.joints[j].head[2];
+                return f;
+            };
+            std::vector<int> among(model.joints.size(), -1);
+            const int ring_joint = model.joints[cuff.root].parent;
+            for (std::size_t j = 0; j < model.joints.size(); ++j) {
+                if (flap_of[j] < 0 && j != cuff.root && static_cast<int>(j) != ring_joint)
+                    continue;
+                CuffPoseBone bone;
+                bone.joint = j;
+                const int up = model.joints[j].parent;
+                bone.up = up >= 0 ? among[static_cast<std::size_t>(up)] : -1;
+                bone.up_rest = up >= 0 ? frame_at(static_cast<std::size_t>(up)) : kIdentity;
+                bone.local = mul(inverse(bone.up_rest), frame_at(j));
+                bone.back = inverse(frame_at(j));
+                for (const CuffPoseLine &p : pose_lines)
+                    if (p.joint == model.joints[j].name) {
+                        bone.turn = frame_detail::quat_of(turn_of(p.degrees));
+                        bone.scale = p.scale;
+                    }
+                among[j] = static_cast<int>(cuff.pose.size());
+                cuff.pose.push_back(bone);
+            }
+            if (ring_joint >= 0)
+                cuff.pose_ring = among[static_cast<std::size_t>(ring_joint)];
+            for (std::size_t f = 0; f < CuffFit::kFlaps; ++f)
+                for (const std::size_t j : cuff.flap_joints[f])
+                    cuff.flap_pose[f].push_back(among[j]);
+            const Mat hand_axes = axes_of(inverse(model.joints[cuff.hand].inverse_bind));
+            cuff.hand_way = hand_unit({hand_axes[0], hand_axes[1], hand_axes[2]});
+            const HandVec back = cuff.fit.out[2];
+            cuff.toward = hand_unit(hand_add(back, cuff.hand_way, -hand_dot(back, cuff.hand_way)));
+            std::vector<Mat> moved;
+            for (int s = 0; s < kCuffSurfaces; ++s) {
+                cuff_pose_at(cuff.pose,
+                             model.cuff_settings.pose_most_share() * static_cast<float>(s) /
+                                 static_cast<float>(kCuffSurfaces - 1),
+                             moved);
+                const auto at_share = [&](std::size_t j, const HandVec &p) {
+                    return among[j] >= 0 ? point(moved[static_cast<std::size_t>(among[j])], p) : p;
+                };
+                std::array<HandVec, CuffFit::kFlaps> posed_hinges{}, posed_tips{};
+                for (std::size_t f = 0; f < CuffFit::kFlaps; ++f) {
+                    posed_hinges[f] = at_share(static_cast<std::size_t>(at[f + 2]), hinges[f]);
+                    posed_tips[f] = at_share(cuff.tip[f], tips[f]);
+                }
+                std::vector<CuffFit::Triangle> posed = triangles;
+                for (std::size_t t = 0; t < posed.size(); ++t)
+                    for (std::size_t i = 0; i < 3; ++i)
+                        posed[t].at[i] = at_share(cuff.triangles[t][i].joint, posed[t].at[i]);
+                cuff.surfaces.emplace_back();
+                cuff.surfaces.back().bake(at_share(cuff.root, model.joints[cuff.root].head), posed_hinges, posed_tips,
+                                          posed);
+            }
+        }
         if (!cuff.fit.ready || cuff.points.empty()) {
             khdays_log(
                 "models: %s: cuff %s: %zu triangles and %zu of the hand's vertices: check the line's joints; the line "
@@ -2476,6 +2592,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &twists = bones.twists;
     model->held_name = bones.held;
     const auto &cuff_lines = bones.cuffs;
+    const auto &cuff_pose_lines = bones.cuff_pose;
     model->cuff_settings = bones.cuff_settings;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
@@ -2870,6 +2987,18 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         t.to = at[3];
         t.share = line.share;
         t.swing = line.swing;
+        if (!line.except.empty()) {
+            const auto named = std::find_if(model->joints.begin(), model->joints.end(),
+                                            [&](const Joint &j) { return j.name == line.except; });
+            if (named == model->joints.end()) {
+                khdays_log("models: %s: swing: no joint %s; check its name in bones.txt; it swings every way",
+                           name.c_str(), line.except.c_str());
+            } else {
+                const auto &a = model->joints[at[0]].head;
+                t.except = true;
+                t.except_way = {named->head[0] - a[0], named->head[1] - a[1], named->head[2] - a[2]};
+            }
+        }
         const Mat from = inverse(model->joints[at[2]].inverse_bind), to = inverse(model->joints[at[3]].inverse_bind);
         const std::array<float, 3> d{to[12] - from[12], to[13] - from[13], to[14] - from[14]};
         const float l = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
@@ -3250,7 +3379,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         }
     }
     set_rest_size(*model);
-    resolve_cuffs(*model, cuff_lines, name);
+    resolve_cuffs(*model, cuff_lines, cuff_pose_lines, name);
     load_kh2_motions(*model, path);
     return model;
 }
@@ -4061,6 +4190,11 @@ void pose_hands(const Model &m)
         const Mat axes = axes_of(mul(k[h.joint], h.frame));
         const auto forearm_way = vec(axes_of(mul(k[h.forearm], h.forearm_frame)), h.forearm_way);
         const float bend = hand_bend_degrees(vec(inverse(axes), forearm_way), h.back);
+        // near the `cuff_pose`'s full bend the hand shows its pose as authored: no fist, no lag
+        const float pose_hold =
+            m.cuff_settings.pose_bend > 0.0F ? cuff_pose_hold(bend / m.cuff_settings.pose_bend) : 0.0F;
+        const float pose_straight =
+            m.cuff_settings.pose_bend > 0.0F ? cuff_pose_straight(bend / m.cuff_settings.pose_bend) : 0.0F;
         const auto wrist_view = head(h.joint), elbow_view = head(h.forearm), shoulder_view = head(h.upper);
         const auto wrist = point(world, wrist_view), elbow = point(world, elbow_view);
         const auto back = vec(world, vec(axes, h.back));
@@ -4132,7 +4266,8 @@ void pose_hands(const Model &m)
         HandShares target{};
         target[kHandOpen] = hand_share(bend, m.hand_bend_from, m.hand_bend_to);
         target[kHandFist] = std::fmax(hand_share(speed, m.hand_fist_from, m.hand_fist_to),
-                                      m.hand_walk_share * hand_share(body_speed, m.hand_walk_from, m.hand_walk_to));
+                                      m.hand_walk_share * hand_share(body_speed, m.hand_walk_from, m.hand_walk_to)) *
+                            (1.0F - pose_hold);
         target[kHandFlat] = contact_share;
         target[kHandGrip] = holds ? 1.0F : 0.0F;
         if (forced != nullptr && (*forced)[i] >= 0 && !holds) { // the animation says; the grip still wins
@@ -4244,8 +4379,9 @@ void pose_hands(const Model &m)
             for (std::size_t f = digit.first; f <= digit.last; ++f) {
                 const Model::HandFinger &finger = h.fingers[f];
                 Quat q = hand_pose_turn(finger.poses, shares);
-                if (open > 0.0F)
-                    q = hand_mix(q, finger.poses[kHandFlat], open);
+                const float straight = std::fmax(open, pose_straight * (1.0F - shares[kHandGrip]));
+                if (straight > 0.0F)
+                    q = hand_mix(q, finger.poses[kHandFlat], straight);
                 if (!digit.thumb && f > digit.first)
                     q = hand_curled(q, curl);
                 k[finger.joint] =
@@ -4266,7 +4402,7 @@ void pose_hands(const Model &m)
         const std::size_t digits = std::min(h.digits.size(), state.digit_open.size());
         const auto curl_of = [&](std::size_t n) {
             return std::clamp(m.hand_lag * (bend - state.digit_bend[n]) + state.travel * 6.0F, -14.0F, 14.0F) *
-                   (1.0F - state.shares[kHandGrip]);
+                   (1.0F - state.shares[kHandGrip]) * (1.0F - pose_hold);
         };
         std::array<float, 5> need{};
         for (std::size_t n = 0; n < digits; ++n) {
@@ -4477,6 +4613,7 @@ void pose_cuffs(const Model &m)
     actor.cuff_motions.resize(m.cuffs.size());
     const float dt = static_cast<float>(gap) / 60.0F;
     static std::vector<HandVec> points;
+    static std::vector<Mat> posed;
     for (std::size_t c = 0; c < m.cuffs.size(); ++c) {
         const Model::Cuff &cuff = m.cuffs[c];
         CuffMotion &motion = actor.cuff_motions[c];
@@ -4485,7 +4622,42 @@ void pose_cuffs(const Model &m)
         points.resize(cuff.points.size());
         for (std::size_t p = 0; p < cuff.points.size(); ++p)
             points[p] = point(before_back, point(skin[cuff.points[p].first], cuff.points[p].second));
-        const CuffFit::Target target = cuff.fit.fit(points, m.cuff_settings);
+        // how far into its pose: from the hand's bend, eased; the fit answers on the surface baked nearest there
+        if (!cuff.surfaces.empty()) {
+            const HandVec now_way =
+                vec(before_back, vec(mul(skin[cuff.hand], inverse(m.joints[cuff.hand].bind)), cuff.hand_way));
+            const float wanted = cuff_pose_share(cuff.hand_way, cuff.toward, hand_unit(now_way),
+                                                 m.cuff_settings.pose_bend, m.cuff_settings.pose_most_share());
+            if (fresh) {
+                motion.pose = wanted;
+                motion.pose_speed = 0.0F;
+            } else if (dt > 0.0F) {
+                hand_spring(motion.pose, motion.pose_speed, wanted, 30.0F, dt);
+            }
+            motion.pose = std::clamp(motion.pose, 0.0F, m.cuff_settings.pose_most_share());
+            cuff_pose_at(cuff.pose, motion.pose, posed);
+        }
+        // the cuff stands off round the hand as in the pose: what it fits round is the hand from there
+        const HandVec pose_slide = cuff.surfaces.empty()
+                                       ? HandVec{}
+                                       : cuff_pose_slide(cuff.hand_way, cuff.toward, m.cuff_settings.pose_pivot,
+                                                         motion.pose, m.cuff_settings.pose_bend);
+        for (HandVec &p : points)
+            p = hand_sub(p, pose_slide);
+        const float along = cuff.surfaces.empty() ? 0.0F
+                                                  : motion.pose / m.cuff_settings.pose_most_share() *
+                                                        static_cast<float>(cuff.surfaces.size() - 1);
+        const std::size_t near_a = static_cast<std::size_t>(along),
+                          near_b = cuff.surfaces.empty() ? 0U : std::min(near_a + 1U, cuff.surfaces.size() - 1U);
+        const float between = along - static_cast<float>(near_a);
+        const CuffFit &fit_a = cuff.surfaces.empty() ? cuff.fit : cuff.surfaces[near_a],
+                      &fit_b = cuff.surfaces.empty() ? cuff.fit : cuff.surfaces[near_b];
+        const float hold = cuff.surfaces.empty() ? 0.0F : cuff_pose_fit_hold(motion.pose);
+        const CuffFit::Target target =
+            cuff_target_mix(cuff.surfaces.empty() ? cuff.fit.fit(points, m.cuff_settings)
+                                                  : cuff_target_mix(fit_a.fit(points, m.cuff_settings),
+                                                                    fit_b.fit(points, m.cuff_settings), between),
+                            CuffFit::Target{}, hold);
         // the wrist's acceleration throws each flap; its weight hangs it
         const auto at = point(world, point(before, cuff.fit.center));
         HandVec accel{};
@@ -4516,28 +4688,51 @@ void pose_cuffs(const Model &m)
         }
         cuff_motion_step(motion, target, push, droop, dt, fresh);
         // the whole cuff slid, then its flaps from there
-        const Mat slide = mul(before, mul(moved_by(motion.shift), before_back));
+        const Mat slide = mul(before, mul(moved_by(hand_add(motion.shift, pose_slide)), before_back));
         for (const std::size_t j : cuff.slides)
             skin[j] = mul(slide, skin[j]);
         const Mat frame = mul(slide, before);
         const Mat back = inverse(frame);
+        // the ring's own change goes on last, in its frame, which a `swing` has left apart from the root's: the flaps
+        // take the rest of theirs in the root's
+        Mat ring_now = kIdentity, ring_undone = kIdentity;
+        if (cuff.pose_ring >= 0) {
+            const std::size_t ring = cuff.pose[static_cast<std::size_t>(cuff.pose_ring)].joint;
+            ring_now = mul(skin[ring], inverse(m.joints[ring].bind));
+            ring_undone = inverse(posed[static_cast<std::size_t>(cuff.pose_ring)]);
+        }
         for (std::size_t f = 0; f < CuffFit::kFlaps; ++f) {
-            const float open = motion.open[f] + motion.sway[f],
-                        bend = std::clamp((motion.sway[f] - motion.sway_late[f]) * 1.2F, -0.2F, 0.2F);
-            const HandVec way =
-                hand_add(hand_add({0.0F, 0.0F, 0.0F}, cuff.fit.along[f], std::cos(open) * motion.length[f]),
-                         cuff.fit.out[f], std::sin(open) * motion.length[f]);
-            const Mat flap = turned_onto(cuff.fit.hinge[f], cuff.fit.along[f], way);
-            const Mat tip = turned_onto(cuff.fit.tip[f], cuff.fit.along[f],
-                                        hand_add(hand_add({0.0F, 0.0F, 0.0F}, cuff.fit.along[f], std::cos(bend)),
-                                                 cuff.fit.out[f], std::sin(bend)));
-            const Mat whole = mul(frame, mul(flap, back)), ends = mul(frame, mul(flap, mul(tip, back)));
-            for (const std::size_t j : cuff.flap_joints[f])
-                skin[j] =
-                    mul(std::find(cuff.tip_joints[f].begin(), cuff.tip_joints[f].end(), j) != cuff.tip_joints[f].end()
-                            ? ends
-                            : whole,
-                        skin[j]);
+            const float open = motion.open[f] + motion.sway[f] * (1.0F - hold),
+                        bend = std::clamp((motion.sway[f] - motion.sway_late[f]) * 1.2F, -0.2F, 0.2F) * (1.0F - hold);
+            // the flap as it now stands in its pose, between the two surfaces either side
+            const auto mixed = [&](const HandVec &a, const HandVec &b) { return hand_add(a, hand_sub(b, a), between); };
+            const HandVec along_now = hand_unit(mixed(fit_a.along[f], fit_b.along[f]));
+            const HandVec out_mixed = mixed(fit_a.out[f], fit_b.out[f]);
+            const HandVec out_now = hand_unit(hand_add(out_mixed, along_now, -hand_dot(out_mixed, along_now)));
+            const HandVec tip_now = mixed(fit_a.tip[f], fit_b.tip[f]);
+            const HandVec way = hand_add(hand_add({0.0F, 0.0F, 0.0F}, along_now, std::cos(open) * motion.length[f]),
+                                         out_now, std::sin(open) * motion.length[f]);
+            const Mat flap = turned_onto(mixed(fit_a.hinge[f], fit_b.hinge[f]), along_now, way);
+            const Mat tip =
+                turned_onto(tip_now, along_now,
+                            hand_add(hand_add({0.0F, 0.0F, 0.0F}, along_now, std::cos(bend)), out_now, std::sin(bend)));
+            for (std::size_t n = 0; n < cuff.flap_joints[f].size(); ++n) {
+                const std::size_t j = cuff.flap_joints[f][n];
+                const bool far =
+                    std::find(cuff.tip_joints[f].begin(), cuff.tip_joints[f].end(), j) != cuff.tip_joints[f].end();
+                const Mat rest_to_fit = far ? mul(flap, tip) : flap;
+                const int in_pose = cuff.surfaces.empty() ? -1 : cuff.flap_pose[f][n];
+                const Mat all = in_pose >= 0
+                                    ? mul(ring_undone, mul(rest_to_fit, posed[static_cast<std::size_t>(in_pose)]))
+                                    : rest_to_fit;
+                skin[j] = mul(frame, mul(all, mul(back, skin[j])));
+            }
+        }
+        if (cuff.pose_ring >= 0) {
+            const Mat ring_move =
+                mul(ring_now, mul(posed[static_cast<std::size_t>(cuff.pose_ring)], inverse(ring_now)));
+            for (const std::size_t j : cuff.slides)
+                skin[j] = mul(ring_move, skin[j]);
         }
     }
 }
@@ -4578,19 +4773,27 @@ void record_cuffs(const Model &m)
         }
         float deepest = 0.0F;
         int through = 0;
+        // read along the axis of the surface nearest the pose: the rest one's rays run along a flap standing up
+        const float pose_now = c < actor.cuff_motions.size() ? actor.cuff_motions[c].pose : 0.0F;
+        const CuffFit &near_fit =
+            cuff.surfaces.empty()
+                ? cuff.fit
+                : cuff.surfaces[static_cast<std::size_t>(pose_now / m.cuff_settings.pose_most_share() *
+                                                             static_cast<float>(cuff.surfaces.size() - 1) +
+                                                         0.5F)];
         for (const auto &[joint, position] : cuff.points) {
             const HandVec p = point(back, point(skin[joint], position));
-            const auto r = cuff.fit.read(p);
+            const auto r = near_fit.read(p);
             if (!r.within)
                 continue;
-            const HandVec off = hand_sub(p, hand_add(cuff.fit.center, cuff.fit.axis, r.x));
-            const float reach = cuff.fit.surface(r.x, hand_unit(off), drawn);
+            const HandVec off = hand_sub(p, hand_add(near_fit.center, near_fit.axis, r.x));
+            const float reach = near_fit.surface(r.x, hand_unit(off), drawn);
             if (std::getenv("KHDAYS_CUFF_DUMP") != nullptr && khdays_events_vblank_count() % 300U < 2U &&
                 r.r > reach - 0.01F)
                 std::fprintf(
                     file, "P %zu %d x %.1f r %.1f a %.0f reach %.1f share %.0f %.0f %.0f %.0f\n", c, m.kh2_bone[joint],
                     static_cast<double>(r.x * 100.0F), static_cast<double>(r.r * 100.0F),
-                    static_cast<double>(std::atan2(hand_dot(off, cuff.fit.v), hand_dot(off, cuff.fit.u)) * 57.3F),
+                    static_cast<double>(std::atan2(hand_dot(off, near_fit.v), hand_dot(off, near_fit.u)) * 57.3F),
                     static_cast<double>(reach * 100.0F), static_cast<double>(r.share[0] * 100.0F),
                     static_cast<double>(r.share[1] * 100.0F), static_cast<double>(r.share[2] * 100.0F),
                     static_cast<double>(r.share[3] * 100.0F));
@@ -4613,6 +4816,32 @@ void record_cuffs(const Model &m)
             std::fprintf(file, " %.4f %.4f %.4f", static_cast<double>(end[0]), static_cast<double>(end[1]),
                          static_cast<double>(end[2]));
         }
+        // the hand's own mesh edges against what is drawn: how far outside the surface the ends of those through it stand
+        float through_line = 0.0F;
+        int lines = 0, worst_bone = -1;
+        for (const auto &t : cuff.hand_triangles) {
+            std::array<HandVec, 3> at{};
+            for (std::size_t i = 0; i < 3; ++i)
+                at[i] = point(back, point(skin[t[i].joint], t[i].position));
+            for (std::size_t i = 0; i < 3; ++i) {
+                const float outside = CuffFit::edge_outside(cuff.fit.center, at[i], at[(i + 1) % 3], drawn);
+                lines += outside > 0.002F ? 1 : 0;
+                if (outside > through_line) {
+                    through_line = outside;
+                    worst_bone = m.kh2_bone[t[i].joint];
+                }
+            }
+        }
+        // the hand's way against its way at rest: bent toward the back of the hand, and to the side
+        const HandVec rest_way = cuff.surfaces.empty() ? cuff.fit.axis : cuff.hand_way;
+        const HandVec up = cuff.surfaces.empty() ? cuff.fit.out[2] : cuff.toward;
+        const HandVec side = hand_cross(rest_way, up);
+        const HandVec now_way =
+            hand_unit(vec(back, vec(mul(skin[cuff.hand], inverse(m.joints[cuff.hand].bind)), rest_way)));
+        std::fprintf(file, " T %.4f %d %.3f %d %.1f %.1f", static_cast<double>(through_line), lines,
+                     static_cast<double>(c < actor.cuff_motions.size() ? actor.cuff_motions[c].pose : 0.0F), worst_bone,
+                     static_cast<double>(std::atan2(hand_dot(now_way, up), hand_dot(now_way, rest_way)) * 57.3F),
+                     static_cast<double>(std::atan2(hand_dot(now_way, side), hand_dot(now_way, rest_way)) * 57.3F));
     }
     std::fprintf(file, "\n");
     std::fflush(file);
@@ -5612,7 +5841,14 @@ void draw(Model &m)
         if (t.swing) {
             const Mat frame_now = mul(axes_of(now(t.to)), inverse(axes_of(rest(t.to))));
             const auto kept = vec(frame_now, vec(axes_of(rest(t.by)), {1.0F, 0.0F, 0.0F}));
-            const auto gone = vec(axes_of(now(t.by)), {1.0F, 0.0F, 0.0F});
+            auto gone = vec(axes_of(now(t.by)), {1.0F, 0.0F, 0.0F});
+            if (t.except) {
+                // from the joint's own frame: a `twist` has already turned it against `frame`
+                const auto way = vec(mul(axes_of(now(t.joint)), inverse(axes_of(rest(t.joint)))), t.except_way);
+                gone = khdays::models::cuff_swing_way(kept, gone,
+                                                      khdays::models::hand_unit(khdays::models::hand_add(
+                                                          way, kept, -khdays::models::hand_dot(way, kept))));
+            }
             const auto toward = khdays::models::hand_unit(khdays::models::hand_add(
                 khdays::models::hand_add({0.0F, 0.0F, 0.0F}, kept, 1.0F - t.share), gone, t.share));
             const Mat at = now(t.joint);

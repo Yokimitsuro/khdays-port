@@ -133,6 +133,134 @@ int main()
         cuff_motion_step(motion, target, none, droop, 1.0F / 30.0F, false);
     check(std::fabs(motion.sway[0] - 0.05F) < 0.005F, "and settles");
 
+    // the pose: nothing at no share, its turn and scale at all of it, a child carried by its parent
+    {
+        const Mat one = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, 0.0F, 0.0F, 0.0F);
+        std::vector<CuffPoseBone> bones(2);
+        const float s = std::sqrt(0.5F);
+        bones[0].turn = {0.0F, 0.0F, s, s}; // a quarter turn about z, half length along its x
+        bones[0].scale = {0.5F, 1.0F, 1.0F};
+        bones[1].up = 0;
+        bones[1].local = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, 2.0F, 0.0F, 0.0F);
+        bones[1].back = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, -2.0F, 0.0F, 0.0F);
+        std::vector<Mat> moved;
+        cuff_pose_at(bones, 0.0F, moved);
+        bool still = true;
+        for (const Mat &m : moved)
+            for (std::size_t i = 0; i < 16; ++i)
+                still = still && std::fabs(m[i] - one[i]) < 1e-5F;
+        check(still, "no share: nothing moves");
+        cuff_pose_at(bones, 1.0F, moved);
+        // the child's head, 2 along x at rest: its parent's half length and quarter turn take it to 1 along y
+        const Mat &c = moved[1];
+        const float x = c[0] * 2.0F + c[12], y = c[1] * 2.0F + c[13];
+        check(std::fabs(x) < 1e-4F && std::fabs(y - 1.0F) < 1e-4F,
+              "all of it: the child rides its parent's turn and scale");
+    }
+    check(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 60.0F) == 0.0F,
+          "straight: no share");
+    check(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.5F, 0.8660254F, 0.0F}, 60.0F) > 0.99F,
+          "at its bend: all");
+    check(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.5F, -0.8660254F, 0.0F}, 60.0F) == 0.0F,
+          "the other way: none");
+    check(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 60.0F) == 1.0F, "past it: held");
+    {
+        const HandVec way{1.0F, 0.0F, 0.0F}, up{0.0F, 1.0F, 0.0F};
+        const HandVec straight = cuff_pose_slide(way, up, 0.03F, 0.0F, 90.0F);
+        check(hand_length(straight) < 1e-6F, "a straight hand: the cuff stays");
+        const HandVec full = cuff_pose_slide(way, up, 0.03F, 1.0F, 90.0F);
+        check(std::fabs(full[0] + 0.03F) < 1e-5F && std::fabs(full[1] - 0.03F) < 1e-5F,
+              "bent square: back up the arm and toward the back of the hand, by the pivot");
+        const HandVec half = cuff_pose_slide(way, up, 0.03F, 0.5F, 90.0F);
+        check(hand_length(half) < 0.03F && half[1] > -half[0], "part way: along the arc, mostly toward the back first");
+    }
+    check(std::fabs(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 60.0F, 1.2F) - 1.2F) <
+              1e-5F,
+          "past its bend: carried on to its limit");
+    check(cuff_pose_fit_hold(1.0F) == 1.0F && cuff_pose_fit_hold(1.1F) == 0.0F,
+          "the fit: off at the full bend, back past it");
+    check(cuff_pose_hold(1.1F) == 1.0F, "the fingers': still held past it");
+    {
+        CuffFit::Settings given;
+        given.pose_bend = 80.0F;
+        check(given.pose_most_share() == 1.0F, "no limit given: stops at its bend");
+        given.pose_most = 100.0F;
+        check(std::fabs(given.pose_most_share() - 1.25F) < 1e-5F, "a limit: that far past");
+    }
+    {
+        std::vector<CuffPoseBone> bones(1);
+        const float s = std::sqrt(0.5F);
+        bones[0].turn = {0.0F, 0.0F, s, s}; // a quarter turn about z
+        std::vector<Mat> moved;
+        cuff_pose_at(bones, 1.5F, moved);
+        check(std::fabs(moved[0][0] + s) < 1e-4F && std::fabs(moved[0][1] - s) < 1e-4F,
+              "carried on: the turn keeps going");
+    }
+    {
+        // the sleeve's ring scaled along the arm: what hangs off it comes up the arm with it
+        std::vector<CuffPoseBone> bones(2);
+        bones[0].scale = {0.67F, 1.0F, 1.0F};
+        bones[1].up = 0;
+        bones[1].local = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, 14.9F, 0.0F, 0.0F);
+        bones[1].back = frame_detail::frame_of({0.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F, 1.0F}, -14.9F, 0.0F, 0.0F);
+        std::vector<Mat> moved;
+        cuff_pose_at(bones, 1.0F, moved);
+        check(std::fabs(moved[1][0] * 14.9F + moved[1][12] - 9.983F) < 1e-3F, "the root comes up with its ring");
+        cuff_pose_at(bones, 0.5F, moved);
+        check(std::fabs(moved[1][0] * 14.9F + moved[1][12] - 12.4415F) < 1e-3F, "by the share");
+    }
+    check(cuff_pose_straight(0.89F) == 0.0F && cuff_pose_straight(1.0F) == 1.0F,
+          "the fingers straight by the bend alone only just before its end");
+    check(cuff_pose_hold(0.75F) == 0.0F && cuff_pose_hold(1.0F) == 1.0F,
+          "held only over the last quarter, all at the end");
+    {
+        const CuffFit::Target fitted = [] {
+            CuffFit::Target t;
+            t.open[2] = 0.3F;
+            t.length[2] = 0.8F;
+            t.shift[1] = 0.02F;
+            return t;
+        }();
+        const CuffFit::Target held = cuff_target_mix(fitted, CuffFit::Target{}, 1.0F);
+        check(held.open[2] == 0.0F && held.length[2] == 1.0F && held.shift[1] == 0.0F, "held: the fit moves nothing");
+    }
+    {
+        const HandVec kept{1.0F, 0.0F, 0.0F}, up{0.0F, 1.0F, 0.0F};
+        const HandVec down = cuff_swing_way(kept, {0.8F, -0.6F, 0.0F}, up);
+        check(down[1] < -0.59F, "a swing away from the excepted side stays");
+        const HandVec raised = cuff_swing_way(kept, {0.6F, 0.8F, 0.0F}, up);
+        check(std::fabs(raised[0] - 1.0F) < 1e-5F, "toward it, none");
+        const HandVec mixed = cuff_swing_way(kept, hand_unit({0.6F, 0.6F, 0.5F}), up);
+        check(mixed[1] == 0.0F && mixed[2] > 0.5F, "to the side as well: the side stays");
+        const HandVec past = cuff_swing_way(kept, {-0.5F, 0.8660254F, 0.0F}, up);
+        check(past[0] > 0.99F, "bent past square: never backward");
+        const HandVec square = cuff_swing_way(kept, hand_unit({0.02F, 1.0F, 0.1F}), up);
+        check(square[2] < 0.11F && square[0] > 0.99F, "bent near square: the little to the side stays little");
+    }
+    {
+        CuffFit::Target a, b;
+        b.open[1] = 0.4F;
+        b.length[2] = 0.8F;
+        b.shift[0] = 0.02F;
+        const CuffFit::Target m = cuff_target_mix(a, b, 0.5F);
+        check(std::fabs(m.open[1] - 0.2F) < 1e-5F && std::fabs(m.length[2] - 0.9F) < 1e-5F &&
+                  std::fabs(m.shift[0] - 0.01F) < 1e-5F,
+              "the fit between two surfaces");
+    }
+    {
+        std::vector<CuffFit::Triangle> wall(1);
+        wall[0].at = {HandVec{1.0F, -1.0F, -1.0F}, HandVec{1.0F, 2.0F, -1.0F}, HandVec{1.0F, -1.0F, 2.0F}};
+        const HandVec middle{0.0F, 0.0F, 0.0F};
+        check(CuffFit::edge_outside(middle, {0.2F, 0.0F, 0.0F}, {0.5F, 0.0F, 0.0F}, wall) == 0.0F,
+              "an edge short of the surface is not through");
+        check(std::fabs(CuffFit::edge_outside(middle, {0.5F, 0.0F, 0.0F}, {1.2F, 0.0F, 0.0F}, wall) - 0.2F) < 1e-5F,
+              "through: by how far its outer end stands out, not its inner");
+        check(std::fabs(CuffFit::edge_outside(middle, {1.2F, 0.0F, 0.0F}, {0.5F, 0.0F, 0.0F}, wall) - 0.2F) < 1e-5F,
+              "whichever way round");
+        check(CuffFit::edge_outside(middle, {0.5F, 5.0F, 0.0F}, {1.5F, 5.0F, 0.0F}, wall) == 0.0F,
+              "beside it: not through");
+    }
+
     if (failures == 0)
         std::printf("cuff_fit: all checks passed\n");
     return failures == 0 ? 0 : 1;
