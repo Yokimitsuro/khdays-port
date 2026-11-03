@@ -180,6 +180,7 @@ void Cook::group(std::size_t gi)
     gr.settle = g.settle;
     gr.settle_steps = g.settle_steps;
     gr.shell_push_from = g.shell_push_from;
+    gr.environment = g.environment;
     gr.clip_world = g.clip_world && g.kind == GroupKind::surface;
     gr.clip_inset = g.clip_inset;
     gr.twist_from_neighbours = g.twist_from_neighbours && g.kind == GroupKind::surface;

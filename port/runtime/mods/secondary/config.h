@@ -163,6 +163,7 @@ struct GroupConfig {
     bool collide_given = false;
     std::string self_collision; // groups sharing this name collide with each other (and themselves)
     bool self_given = false;
+    bool environment = true; // `environment off`: the room's collision leaves this group alone
     // `shell_push <tag>... [from <0-1>]`: `cutscene_sim`'s shell pushed out of these colliders (from that far down
     // each, its start left out), never the cloth itself
     std::vector<std::string> shell_push;

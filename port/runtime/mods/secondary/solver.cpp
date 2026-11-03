@@ -1605,9 +1605,13 @@ void Simulation::collide_environment(const TickSettings &s)
         return hit;
     };
     const auto unsimulated = [&](std::size_t i) { return drive_[i].params.get(Param::no_sim) >= 0.5F || shelled(i); };
+    const auto ignores_room = [&](std::size_t i) {
+        return !rig_.groups[static_cast<std::size_t>(rig_.particles[i].group)].environment;
+    };
     for (std::size_t i = 0; i < x_.size(); ++i) {
         const Particle &p = rig_.particles[i];
-        if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact) || unsimulated(i))
+        if (!p.dynamic || (w(i) <= 0.0F && drive_[i].params.policy == AuthoredPolicy::exact) || unsimulated(i) ||
+            ignores_room(i))
             continue;
         const float th = maxf(p.thickness, s.environment_thickness);
         const Vec3 body =
@@ -1634,7 +1638,7 @@ void Simulation::collide_environment(const TickSettings &s)
                                   static_cast<std::size_t>(f.c)};
         const float wv[3] = {w(v[0]), w(v[1]), w(v[2])};
         const float wsum = wv[0] + wv[1] + wv[2];
-        if (wsum <= 0.0F || unsimulated(v[0]) || unsimulated(v[1]) || unsimulated(v[2]))
+        if (wsum <= 0.0F || unsimulated(v[0]) || unsimulated(v[1]) || unsimulated(v[2]) || ignores_room(v[0]))
             continue;
         const Vec3 c = (x_[v[0]] + x_[v[1]] + x_[v[2]]) * (1.0F / 3.0F);
         const Vec3 cb = (prev_[v[0]] + prev_[v[1]] + prev_[v[2]]) * (1.0F / 3.0F);

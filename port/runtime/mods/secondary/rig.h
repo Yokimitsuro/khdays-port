@@ -139,6 +139,7 @@ struct GroupRig {
     AuthoredPolicy policy = AuthoredPolicy::exact;
     std::uint32_t shell_push = 0; // `shell_push`: the collider tags pushing `cutscene_sim`'s shell
     float shell_push_from = 0.0F;
+    bool environment = true;   // `environment off`: the room's collision leaves it alone
     bool clip_world = false;   // `clip_world`: the room left out inside its volume (model_link.cpp clip_volumes)
     float clip_inset = 0.0F;   // metres
     bool outward_axis = false; // `outward axis`: its axis, in its reference bone's rest space

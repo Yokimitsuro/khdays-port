@@ -587,6 +587,94 @@ without `for`; later lines win). It changes only the game's share of the pose:
 a KH2 motion's fingers are its own. Bones paired with a game node in
 `bones.txt` are left to it.
 
+**Hands that respond.** `hand` lines in `motions.txt` pose the fingers each draw
+under the game's own animations (a KH2 motion's fingers stay its own), move the
+hand out of the body and the room, and rest it on what it presses. They win over
+`ds_pose` for the bones they name (`models.cpp` `pose_hands`, the maths in
+`hand_pose.h`):
+
+```text
+hand 250 229 252-273 back 0 0 -1   # hand bone, forearm bone, fingers; `back`: out of the back of the hand, its axes
+hand_bend 10 45                    # the open pose's share of the wrist's bend back, degrees
+hand_fist 1.5 3                    # the fist's share of the hand's speed against the body, m/s
+hand_walk 2 0.45 0.85 0.8          # the fist's share of how fast that bone travels: from, to, the most it gives
+hand_contact 0.07 0.13 0.8         # the palm's distance to a surface for the flat pose, all to none; most speed
+hand_grip_fade 0.15                # seconds for the grip to close or open
+hand_lag 0.6                       # of the wrist's turn the fingers lag by
+hand_body 98 axis 98 166 margin 1  # a part of the body: the bones carrying it, its axis, a margin in cm
+hand_pose fist rotate 2 80 -3 259  # relaxed|open|fist|flat|grip: degrees about the bone's axes, x then y then z
+hand_anim fist both e_rox_911a     # one animation's pose whatever the rules say (the grip still wins)
+```
+
+A bone a pose does not list is at rest in it. Later poses win over earlier ones by
+their shares: relaxed, open, fist, flat, grip. On e_rox_hb the poses are means of
+frames of KH2's 191 loose cutscene motions (`.anb`: a BAR holding one motion, not an
+mset's entry), and the grip is P_EX110's battle stance on the keyblade (slot 0). What
+those motions show, over 28,940 hand frames: fingers curl a median 120 degrees (the
+sum of a finger's three joints), 68 past a 50 degree bend back, and 200 above 2 m/s
+of hand speed. Their resting hand curls more toward the little finger. The right hand's turns are the
+left's with x and z negated. Measured on Days' side, over the scenes recorded: walks travel about 1
+m/s (`e_rox_908a`-`910a`), runs about 5 (`e_rox_911a`), shuffling steps under 0.5.
+
+The bend is read from the forearm's direction in the hand's axes (+x along the
+fingers, checked on N_EX830: bones 134 and 251 lie along it), so only a bend toward
+the back of the hand counts: not one toward the palm, one sideways, or a twist about
+the forearm. N_EX830's left hand has its back along +z and its right along -z (from
+the fingers' curl in the grip).
+
+The grip takes over while something is attached to the hand. The game has one
+place for that: `SceneNode_AttachToModelJoint` links a child under its parent's
+scene node by a joint name, and `Ov023_CmdAttachWeapons` and
+`Ov023_Cmd_ParentEntityToEntity` (the event script's commands) both go through it.
+A scene node (a drawn object's render object at +0x20) has its parent at +0xbc,
+first child at +0xc0, next sibling at +0xc4 and joint at +0xc8. A child counts while
+its own render object was drawn in the last 6 vblanks. Its flags are no guide: the
+byte `Render_DrawViewLists` tests (the entity's +8, bit 8) read 7, clear, on every
+attached child recorded over 58 scenes, drawn or not, so why that draw path passes it
+is not understood. The joint is on a hand when it is that hand's game node or under
+it, or when a `weapon` line puts it on a bone under the hand's. `ro_w_tg_R` is a
+child of `Bip01_R_Hand` (on roxas_b_h, session log; not read off e_rox_hb's own
+nodes).
+
+Contact: the room's collision (the cloth's, `gather_room`) holds the bed, as floor
+faces. A face counts when it lies straight under the palm (within 4 cm of the
+palm's foot on its plane: nearest by distance took a pillow's or the bed frame's
+height, and the hand jumped 4.6 cm), the palm faces it and the elbow is in front of
+it. Once found it is kept 3 cm further and at a lower facing, and its plane eased
+over 0.12 s, so the hand glides over a step. The hand then turns at most 50 degrees
+onto it and its palm's middle comes to 2.2 cm over it.
+
+The push: the wrist moved out of the body's parts and the room, onto a surface it
+rests on, on a critically damped spring (22 per second), the upper arm and forearm
+bent to reach it at their own lengths and the hand moved whole. So it may lag what
+pushes it for a moment. A part of the body (`hand_body`) is how far its vertices
+reach by distance along an axis and angle round it, ten stations of sixteen, so the
+chest is its own shape and not a capsule; a point passing its end comes out without
+a jump. Each finger opens toward the flat pose as far as it must to clear them, found
+by bisection, and eased both ways (0.06 s opening, 0.2 s closing), from 1.1 cm away.
+It stays in the grip while the hand holds something. The fingers lag the wrist's turn
+and the hand's travel by up to 14 degrees, the index first.
+
+Not covered: `Ov023_Cmd_AttachEntityToEntity` hangs an actor off a parent's track
+by its position alone, with no scene link (`Ov023_ActorFollowParent`), so it does
+not count as held; whether a cutscene uses it for something in a hand is not
+checked. A prop only animated near the hand is not attached either. The other arm is
+no part of the body here. Checked by numbers, not by eye: a headless run's shots leave
+out replaced models. Last measured on 5 scenes (the bed's and the ice cream's); before
+the smoothing, one deep frame of 17 cm was left unexplained.
+
+`KHDAYS_TRACE_MODELS=1` logs each hand's bend, shares, hold and push twice a second, and
+names a joint something is attached to that is on no hand. `KHDAYS_HAND_RECORD=<file>`
+writes a line a draw: its animations, the attached children (raw), each hand's joints,
+axes, shares and pass time, the room's nearest point, the body's joints and the cuffs'
+ends and root. With `tools/hd/scene_census.py`'s way of playing a scene headless, that
+covers every cutscene.
+
+`swing <joint> <by joint> <frame joint> [<share>]` in `bones.txt`, beside `twist`: the
+joint and the joints under it swung about its head by a share of how far the other
+joint's x has swung off where `frame` would carry it. e_rox_hb's cuff roots tilt 0.7
+with the hand (`twist` alone leaves them straight on the forearm as the wrist bends).
+
 **The format** (`kn::MotionPrototype0RAW`, all offsets from the header after the
 0x90 bytes the game keeps): u32 type +0 (`kn::motionSetup` 0xf8e8c: 0
 `MotionPrototype0`, 1 `MotionRAW`, every bone's matrix baked per frame, not

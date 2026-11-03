@@ -157,6 +157,18 @@ bool room_read_ = false;
 
 } // namespace
 
+void gather_room(const Aabb &box, std::vector<Triangle> &out)
+{
+    const u32 now = khdays_events_vblank_count();
+    if (!room_read_ || now != room_vblank_) {
+        room_read_ = true;
+        room_vblank_ = now;
+        room_.refresh();
+    }
+    room_.set_scale(1.0F); // each actor's cloth sets its own before it gathers
+    room_.gather(box, out);
+}
+
 struct ModelSecondary {
     std::string name, file;
     SkeletonDesc skeleton;

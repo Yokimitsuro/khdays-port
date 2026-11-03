@@ -526,6 +526,11 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
         } else if (w == "self_collision" && l.words.size() == 2) {
             g.self_collision = l.words[1] == "off" ? std::string() : l.words[1];
             g.self_given = true;
+        } else if (w == "environment") {
+            if (l.words.size() == 2 && (l.words[1] == "on" || l.words[1] == "off"))
+                g.environment = l.words[1] == "on";
+            else
+                error(l.number, "write `environment on|off`");
         } else if (w == "settle") {
             if (l.words.size() >= 2 && (l.words[1] == "on" || l.words[1] == "off"))
                 g.settle = l.words[1] == "on";

@@ -3,6 +3,7 @@
 // retargeted and blended) and before the skinning (docs/SECONDARY_MOTION.md, "In the game").
 #pragma once
 
+#include "collision.h"
 #include "vecmath.h"
 
 #include <memory>
@@ -27,6 +28,9 @@ using ModelSecondaryPtr = std::unique_ptr<ModelSecondary, ModelSecondaryDeleter>
 ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std::string &name,
                                        const assets::ImportedModel &model, const std::vector<int> &joint_of_bone,
                                        const std::vector<Mat4> &inverse_bind);
+
+// The room's collision near a box in Days' world units (what the cloth reads), added to `out`.
+void gather_room(const Aabb &box, std::vector<Triangle> &out);
 
 struct DrawAnimation {
     std::string name;

@@ -27,6 +27,7 @@ void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, Khdays
 }
 #include "face.h"
 #include "attached_frame.h"
+#include "hand_pose.h"
 #include "kh2_clock.h"
 #include "kh2_moves.h"
 #include "kh2_tail.h"
@@ -43,6 +44,7 @@ void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, Khdays
 #include "khdays/assets/mesh.h"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -276,9 +278,12 @@ struct Limb {
 // about the way from one joint to the other (at rest, as the joint's parent carries it) by a share of the other
 // joint's twist about it against that parent (a forearm's end turning with the hand: N_EX830's cuffs ride the wrist,
 // P_EX110's motions turn the hand alone)
+// `swing <joint> <by joint> <frame joint> [<share>]`: the joint and the joints under it swung about its head by a share
+// of how far the other joint's x has swung off where `frame` would carry it (a cuff's root tilting with the hand)
 struct Twist {
     std::size_t joint = 0, by = 0, parent = 0, to = 0;
     float share = 1.0F;
+    bool swing = false;
     std::array<float, 3> axis{}; // model space at rest
     std::vector<std::size_t> turned;
 };
@@ -490,6 +495,47 @@ struct Model {
     // motions.txt's `ds_pose`: while the game's own animations pose it, unpaired joints turned from rest about
     // their heads; per game animation ("" every other), each joint and its turn (model space, at rest)
     std::map<std::string, std::vector<std::pair<std::size_t, Mat>>> ds_turns;
+    // motions.txt's `hand` lines (docs/KH2_MODELS.md, "Hands that respond"); they win over `ds_pose`
+    struct HandFinger {
+        std::size_t joint = 0, parent = 0;
+        Mat frame = kIdentity, frame_inverse = kIdentity; // the joint's rest frame, as the joints' K take it
+        khdays::models::HandPoseTurns poses{};
+    };
+    // a finger: its joints in `Hand::fingers`, and where its spheres sit (a joint's rest head, in that joint's K)
+    struct HandDigit {
+        std::size_t first = 0, last = 0;
+        bool thumb = false;
+        std::vector<std::pair<std::size_t, std::array<float, 3>>> spheres;
+    };
+    struct Hand {
+        std::size_t joint = 0, forearm = 0, upper = 0;
+        int node = -1;
+        Mat frame = kIdentity, forearm_frame = kIdentity;
+        std::array<float, 3> forearm_way{}; // from the forearm's head to the hand's, in the forearm's axes
+        std::array<float, 3> back{};        // out of the back of the hand, in its axes
+        std::vector<HandFinger> fingers;    // parents first
+        std::vector<HandDigit> digits;
+        std::vector<std::size_t> upper_joints, forearm_joints, hand_joints; // what each bone of the arm carries alone
+        std::array<float, 3> palm{};                                        // its middle at rest
+        std::vector<std::array<float, 4>> samples;                          // what stays out: rest places and radii
+    };
+    std::vector<Hand> hands;
+    std::vector<int> node_hand; // per game node: the hand what is attached to it is held by (-1 none)
+    struct HandBody {
+        std::size_t joint = 0; // what carries it
+        khdays::models::HandBodyShape shape;
+        float margin = 0.0F;
+    };
+    std::vector<HandBody> hand_body;
+    float hand_bend_from = 10.0F, hand_bend_to = 45.0F; // degrees: the open pose's share of the wrist's bend
+    float hand_grip_fade = 0.15F;                       // seconds
+    float hand_fist_from = 1.5F, hand_fist_to = 3.0F;   // the hand's speed against the body: the fist's share
+    int hand_walk_joint = -1;                           // `hand_walk`: the body's joint, how fast it travels
+    float hand_walk_from = 0.5F, hand_walk_to = 1.5F, hand_walk_share = 1.0F;
+    float hand_contact_near = 0.07F, hand_contact_far = 0.13F, hand_contact_speed = 0.8F; // of the palm to a surface
+    float hand_lag = 0.6F;                                                                // of the wrist's turn lagging
+    // `hand_anim`: per game animation, each hand's pose whatever the rules say (-1 none)
+    std::map<std::string, std::array<int, 2>> hand_anim;
     // its secondary motion (<model>.secondary.txt: cloth, cords, hair), on top of whatever poses it
     khdays::secondary::ModelSecondaryPtr secondary;
     // its face (one for all its actors), on the game's clock
@@ -517,7 +563,10 @@ std::vector<std::string> materials_playing; // the texture pattern animations on
 std::map<u32, std::string> animation_names; // by the J0AC's DS address
 std::map<const void *, std::vector<std::pair<bool, Mat>>> node_results; // by render object: draw()'s per node
 const void *drawn_object = nullptr; // the render object being drawn: which actor's model
-Mat drawn_start = kIdentity;        // the position matrix as the draw starts: the view times the actor's world matrix
+// every render object the game draws, replaced or not, and the vblank it was last drawn: whether what is attached
+// to a hand shows, whatever the path that draws it
+std::unordered_map<KhdaysRef, u32> drawn_lately;
+Mat drawn_start = kIdentity; // the position matrix as the draw starts: the view times the actor's world matrix
 // the latest flush's base transform (khdays_g3d_base) and camera as the draw starts, and the base's kind
 Mat drawn_base = kIdentity, drawn_camera = kIdentity;
 int drawn_base_kind = 0;
@@ -588,6 +637,26 @@ struct Kh2Actor {
     std::size_t tail_piece = 0;
     // `weapon_motions`: the weapon's motion players, by slot (a player keeps its pose from one draw to the next)
     std::map<int, std::unique_ptr<khdays::assets::kh2::MotionPlayer>> weapon_players;
+    // `hand`: each hand's state from draw to draw
+    struct HandState {
+        khdays::models::HandShares shares{};
+        std::array<float, 3> push_speed{}; // the wrist's move's spring's speed
+        bool touching = false;             // a surface under the palm
+        float surface_height = 0.0F;       // that surface along its way out, eased across seams
+        std::array<float, 3> push{};       // the wrist moved, in the world
+        std::array<float, 3> at{};         // where it was, in the world
+        std::array<float, 3> surface{};    // the surface's way out while on it
+        float bend = 0.0F, travel = 0.0F;  // the wrist's bend, its way along the back of the hand a second
+        std::array<float, 5> digit_bend{}; // each finger's wrist's bend, lagging
+        std::array<float, 5> digit_open{}; // each finger lifted off what it would go into
+        float before = 0.0F, after = 0.0F,
+              tips = 0.0F; // how deep in anything: the hand as it came, as left, its fingers
+    };
+    std::vector<HandState> hand_states;
+    std::array<float, 3> hand_body_at{};
+    u32 hand_vblank = 0;
+    unsigned hands_held = 0;
+    float hand_micros = 0.0F; // the hand pass's time at the last draw (the recording)
 };
 std::map<const void *, Kh2Actor> kh2_actors; // by render object
 // The KH2 motion with the most weight in this draw, for the face: its attributes, its time and the time it
@@ -633,6 +702,7 @@ struct LimbLine {
 };
 
 struct TwistLine {
+    bool swing = false;
     std::array<std::string, 4> joints; // the joint, the one it turns with, the axis's from and to
     float share = 1.0F;
 };
@@ -792,6 +862,22 @@ void read_bones(const std::string &model_file, BonesFile &bones)
                 std::fprintf(stderr,
                              "models: %s: write `twist <joint> <by joint> <axis from joint> <axis to joint> "
                              "[<share, 0 to 1>]`; the line is ignored\n",
+                             path.c_str());
+            }
+        } else if (a == "swing") {
+            TwistLine t;
+            t.swing = true;
+            t.joints[0] = b;
+            bool ok = static_cast<bool>(words >> t.joints[1] >> t.joints[2]);
+            t.joints[3] = t.joints[2];
+            if (ok && !(words >> t.share))
+                t.share = 1.0F;
+            if (ok && t.share >= 0.0F && t.share <= 1.0F) {
+                twists.push_back(t);
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `swing <joint> <by joint> <frame joint> [<share, 0 to 1>]`; the line "
+                             "is ignored\n",
                              path.c_str());
             }
         } else if (a == "held") { // held <joint>: a weapon posed by the weapon motions of the body holding it
@@ -962,6 +1048,36 @@ Mat turn_of(const std::array<float, 3> &degrees)
 
 // The rules as each joint's turn per game animation (Model::ds_turns): later lines win for a bone, and an
 // animation's own lines over the default's
+// motions.txt's `hand <hand bone> <forearm bone> <finger bones> back <x> <y> <z>`
+struct HandRule {
+    int hand = 0, forearm = 0;
+    std::vector<int> fingers;
+    std::array<float, 3> back{};
+};
+// `hand_pose relaxed|open|fist|flat|grip rotate <x> <y> <z> <bones>`
+struct HandPoseRule {
+    std::size_t pose = 0;
+    std::array<float, 3> degrees{};
+    std::vector<int> bones;
+};
+// `hand_body <bones> axis <from bone> <to bone> [margin <cm>]`: a part of the body the hands stay out of
+struct HandBodyRule {
+    std::vector<int> bones;
+    int from = 0, to = 0;
+    float margin = 0.0F;
+};
+
+std::size_t hand_pose_index(const std::string &name)
+{
+    using namespace khdays::models;
+    return name == "relaxed" ? kHandRelaxed
+           : name == "open"  ? kHandOpen
+           : name == "fist"  ? kHandFist
+           : name == "flat"  ? kHandFlat
+           : name == "grip"  ? kHandGrip
+                             : kHandPoses;
+}
+
 void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
                       const std::function<void(const std::string &)> &say)
 {
@@ -1051,6 +1167,190 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
     }
 }
 
+// A frame's axes made unit, no translation
+Mat axes_of(const Mat &m)
+{
+    std::array<float, 3> scale{};
+    return khdays::models::frame_detail::turn_of(m, scale);
+}
+
+void resolve_hands(Model &model, const std::vector<HandRule> &rules, const std::vector<HandPoseRule> &poses,
+                   const std::vector<HandBodyRule> &body, const std::function<void(const std::string &)> &say)
+{
+    using khdays::models::kHandPoses;
+    const auto joint_of = [&](int bone) {
+        const auto it = std::find(model.kh2_bone.begin(), model.kh2_bone.end(), bone);
+        return it != model.kh2_bone.end() ? static_cast<int>(it - model.kh2_bone.begin()) : -1;
+    };
+    const auto frame_of = [&](std::size_t j) {
+        return mul(model.joints[j].bind, inverse(model.joints[j].inverse_bind));
+    };
+    const auto under = [&](int j, std::size_t top) {
+        for (; j >= 0; j = model.joints[static_cast<std::size_t>(j)].parent)
+            if (static_cast<std::size_t>(j) == top)
+                return true;
+        return false;
+    };
+    static const char *const kPoseNames[] = {"relaxed", "open", "fist", "flat", "grip"};
+    for (const HandRule &rule : rules) {
+        const int hand = joint_of(rule.hand), forearm = joint_of(rule.forearm);
+        if (hand < 0 || forearm < 0 || model.joints[static_cast<std::size_t>(forearm)].parent < 0) {
+            say("hand: the model has no bone " + std::to_string(hand < 0 ? rule.hand : rule.forearm) +
+                " or it has no parent; check the `hand` line's bone numbers; the line is ignored");
+            continue;
+        }
+        const float back = length(rule.back);
+        if (back <= 0.0F) {
+            say("hand " + std::to_string(rule.hand) +
+                ": `back` has no length; write the axis out of the back of the hand in its own axes; the line is ignored");
+            continue;
+        }
+        Model::Hand h;
+        h.joint = static_cast<std::size_t>(hand);
+        h.forearm = static_cast<std::size_t>(forearm);
+        h.upper = static_cast<std::size_t>(model.joints[h.forearm].parent);
+        h.node = model.joints[h.joint].node;
+        h.frame = frame_of(h.joint);
+        h.forearm_frame = frame_of(h.forearm);
+        h.back = {rule.back[0] / back, rule.back[1] / back, rule.back[2] / back};
+        const auto &hh = model.joints[h.joint].head, &fh = model.joints[h.forearm].head;
+        const std::array<float, 3> way = {hh[0] - fh[0], hh[1] - fh[1], hh[2] - fh[2]};
+        const float reach = length(way);
+        if (reach <= 0.0F) {
+            say("hand " + std::to_string(rule.hand) +
+                ": the hand and forearm bones are in one place; name the bones at the elbow and wrist; the line is ignored");
+            continue;
+        }
+        h.forearm_way = vec(inverse(axes_of(h.forearm_frame)), {way[0] / reach, way[1] / reach, way[2] / reach});
+        std::vector<int> fingers = rule.fingers;
+        std::sort(fingers.begin(), fingers.end(), [&](int a, int b) { return joint_of(a) < joint_of(b); });
+        for (const int bone : fingers) {
+            const int j = joint_of(bone);
+            if (j < 0 || model.joints[static_cast<std::size_t>(j)].node >= 0 ||
+                model.joints[static_cast<std::size_t>(j)].parent < 0) {
+                say("hand: finger bone " + std::to_string(bone) +
+                    (j < 0 ? ": the model has no such bone"
+                           : ": it follows a game node (bones.txt) or has no parent; take it off the `hand` line") +
+                    "; the bone is left out");
+                continue;
+            }
+            Model::HandFinger f;
+            f.joint = static_cast<std::size_t>(j);
+            f.parent = static_cast<std::size_t>(model.joints[f.joint].parent);
+            f.frame = frame_of(f.joint);
+            f.frame_inverse = inverse(f.frame);
+            f.poses.fill({0.0F, 0.0F, 0.0F, 1.0F});
+            for (const HandPoseRule &pose : poses)
+                if (std::find(pose.bones.begin(), pose.bones.end(), bone) != pose.bones.end())
+                    f.poses[pose.pose] = khdays::models::frame_detail::quat_of(turn_of(pose.degrees));
+            h.fingers.push_back(f);
+        }
+        // each finger: a run of joints from one whose parent is no finger joint; the first, the one furthest behind
+        // the fingers' way, is the thumb. Its spheres at its joints that are apart, and past its last by half that bone
+        const auto is_finger = [&](std::size_t j) {
+            return std::any_of(h.fingers.begin(), h.fingers.end(), [&](const auto &f) { return f.joint == j; });
+        };
+        for (std::size_t i = 0; i < h.fingers.size(); ++i) {
+            if (is_finger(h.fingers[i].parent)) {
+                h.digits.back().last = i;
+                continue;
+            }
+            Model::HandDigit digit;
+            digit.first = digit.last = i;
+            h.digits.push_back(digit);
+        }
+        for (std::size_t n = 0; n < h.digits.size(); ++n) {
+            Model::HandDigit &digit = h.digits[n];
+            digit.thumb = n == 0;
+            std::array<float, 3> last = model.joints[h.fingers[digit.first].joint].head;
+            std::array<float, 3> along{};
+            digit.spheres.emplace_back(h.fingers[digit.first].joint, last);
+            for (std::size_t i = digit.first + 1; i <= digit.last; ++i) {
+                const auto &at = model.joints[h.fingers[i].joint].head;
+                const std::array<float, 3> d = {at[0] - last[0], at[1] - last[1], at[2] - last[2]};
+                if (length(d) < 0.001F)
+                    continue;
+                along = d;
+                last = at;
+                digit.spheres.emplace_back(h.fingers[i].joint, at);
+            }
+            digit.spheres.emplace_back(
+                h.fingers[digit.last].joint,
+                std::array<float, 3>{last[0] + along[0] * 0.8F, last[1] + along[1] * 0.8F, last[2] + along[2] * 0.8F});
+        }
+        // the palm: the wrist and the fingers' roots (all but the thumb's), what the arm moves out of things
+        std::array<float, 3> sum = hh;
+        float n = 1.0F;
+        h.samples.push_back({hh[0], hh[1], hh[2], 0.025F});
+        for (std::size_t d = 1; d < h.digits.size(); ++d) {
+            const auto &root = model.joints[h.fingers[h.digits[d].first].joint].head;
+            sum = {sum[0] + root[0], sum[1] + root[1], sum[2] + root[2]};
+            n += 1.0F;
+            h.samples.push_back({root[0], root[1], root[2], 0.012F});
+        }
+        h.palm = {sum[0] / n, sum[1] / n, sum[2] / n};
+        h.samples.push_back({h.palm[0], h.palm[1], h.palm[2], 0.022F});
+        for (std::size_t j = 0; j < model.joints.size(); ++j) {
+            const int at = static_cast<int>(j);
+            if (under(at, h.joint))
+                h.hand_joints.push_back(j);
+            else if (under(at, h.forearm))
+                h.forearm_joints.push_back(j);
+            else if (under(at, h.upper))
+                h.upper_joints.push_back(j);
+        }
+        model.hands.push_back(std::move(h));
+    }
+    if (model.hands.empty())
+        return;
+    for (std::size_t p = 0; p < kHandPoses; ++p)
+        if (std::none_of(poses.begin(), poses.end(), [&](const HandPoseRule &r) { return r.pose == p; }))
+            say(std::string("hand: no `hand_pose ") + kPoseNames[p] + "` lines: that pose is the fingers at rest");
+    // a game node on a hand: under the hand's node, or carried by a joint under the hand's (its `weapon` line)
+    model.node_hand.assign(model.node_names.size(), -1);
+    for (std::size_t g = 0; g < model.node_hand.size(); ++g)
+        for (std::size_t i = 0; i < model.hands.size(); ++i) {
+            bool on = g < model.kh2_weapon.size() && model.kh2_weapon[g] >= 0 &&
+                      under(model.kh2_weapon[g], model.hands[i].joint);
+            int a = static_cast<int>(g);
+            for (std::size_t up = 0; !on && a >= 0 && up < model.node_parent.size(); ++up) {
+                on = a == model.hands[i].node;
+                a = model.node_parent[static_cast<std::size_t>(a)];
+            }
+            if (on)
+                model.node_hand[g] = static_cast<int>(i);
+        }
+    // the body's parts: their vertices as they stand at rest
+    for (const HandBodyRule &rule : body) {
+        const int first = joint_of(rule.bones.front()), from = joint_of(rule.from), to = joint_of(rule.to);
+        if (first < 0 || from < 0 || to < 0) {
+            say("hand_body: a bone of the line is not in the model; check its numbers; the line is ignored");
+            continue;
+        }
+        std::vector<khdays::models::HandVec> points;
+        for (const Mesh &mesh : model.meshes)
+            for (const auto &v : mesh.vertices) {
+                std::size_t most = 0;
+                for (std::size_t w = 1; w < 4; ++w)
+                    if (v.weights[w] > v.weights[most])
+                        most = w;
+                const std::uint32_t j = v.joints[most];
+                if (j < model.kh2_bone.size() &&
+                    std::find(rule.bones.begin(), rule.bones.end(), model.kh2_bone[j]) != rule.bones.end())
+                    points.push_back(point(model.joints[j].bind, v.position));
+            }
+        Model::HandBody part;
+        part.joint = static_cast<std::size_t>(first);
+        part.margin = rule.margin * 0.01F;
+        part.shape.bake(model.joints[static_cast<std::size_t>(from)].head,
+                        model.joints[static_cast<std::size_t>(to)].head, points);
+        if (points.empty())
+            say("hand_body: no vertices are carried by bone " + std::to_string(rule.bones.front()) +
+                " and the others of its line; check their numbers");
+        model.hand_body.push_back(std::move(part));
+    }
+}
+
 void load_kh2_motions(Model &model, const std::string &path)
 {
     namespace kh2 = khdays::assets::kh2;
@@ -1070,6 +1370,9 @@ void load_kh2_motions(Model &model, const std::string &path)
     std::vector<std::pair<std::string, int>> weapons;           // the game's joint, the KH2 bone
     std::map<std::string, std::array<float, 3>> weapon_degrees; // its `rotate`, by the game's joint
     std::vector<DsPoseRule> ds_rules;
+    std::vector<HandRule> hand_rules;
+    std::vector<HandPoseRule> hand_poses;
+    std::vector<HandBodyRule> hand_body;
     std::string skeleton;                   // the mdlx the mset was made for, when not this one
     std::vector<std::pair<int, int>> bones; // this model's bone, the skeleton's
     std::vector<khdays::assets::kh2::Retarget::Limb> limbs;
@@ -1322,6 +1625,118 @@ void load_kh2_motions(Model &model, const std::string &path)
                     "\": write `face talk <slot>`, `face speaker <portrait>...`, `face ds <pattern animation> <slot>`, "
                     "`face portrait <portrait> [last|<slot>...] [talk <slot>]`, `face closed <slot>...` or `face ranges on|off`; the line is "
                     "ignored");
+        } else if (a == "hand") {
+            // hand <hand bone> <forearm bone> <finger bones> back <x> <y> <z>
+            HandRule rule;
+            int to = 0, from = 0, last = 0;
+            std::string fingers, w;
+            const bool ok = span(b, rule.hand, to) && to == rule.hand &&
+                            static_cast<bool>(words >> rule.forearm >> fingers >> w) && w == "back" &&
+                            static_cast<bool>(words >> rule.back[0] >> rule.back[1] >> rule.back[2]) &&
+                            span(fingers, from, last);
+            if (!ok) {
+                say("\"" + line +
+                    "\": write `hand <hand bone> <forearm bone> <finger bones> back <x> <y> <z>`; the line is ignored");
+                continue;
+            }
+            for (int x = from; x <= last; ++x)
+                rule.fingers.push_back(x);
+            hand_rules.push_back(std::move(rule));
+        } else if (a == "hand_pose") {
+            // hand_pose relaxed|open|fist|flat|grip rotate <x> <y> <z> <bones>
+            HandPoseRule rule;
+            rule.pose = hand_pose_index(b);
+            std::string w;
+            bool ok = rule.pose < khdays::models::kHandPoses && static_cast<bool>(words >> w) && w == "rotate" &&
+                      static_cast<bool>(words >> rule.degrees[0] >> rule.degrees[1] >> rule.degrees[2]);
+            while (ok && words >> w) {
+                int from = 0, to = 0;
+                ok = span(w, from, to);
+                for (int x = from; ok && x <= to; ++x)
+                    rule.bones.push_back(x);
+            }
+            if (!ok || rule.bones.empty()) {
+                say("\"" + line +
+                    "\": write `hand_pose relaxed|open|fist|flat|grip rotate <x> <y> <z> <bones>`; the line is ignored");
+                continue;
+            }
+            hand_poses.push_back(std::move(rule));
+        } else if (a == "hand_bend" || a == "hand_fist") {
+            // hand_bend <from degrees> <to degrees>: the open pose's share of the wrist's bend;
+            // hand_fist <from> <to>: the fist's share of the hand's speed against the body
+            std::string w;
+            float from = 0.0F, to = 0.0F;
+            if (number(b, from) && (words >> w) && number(w, to)) {
+                (a == "hand_bend" ? model.hand_bend_from : model.hand_fist_from) = from;
+                (a == "hand_bend" ? model.hand_bend_to : model.hand_fist_to) = to;
+            } else {
+                say("\"" + line + "\": write `" + a + " <from> <to>`; the line is ignored");
+            }
+        } else if (a == "hand_grip_fade" || a == "hand_lag") {
+            if (!number(b, a == "hand_lag" ? model.hand_lag : model.hand_grip_fade))
+                say("\"" + line + "\": write `" + a + " <number>`; the line is ignored");
+        } else if (a == "hand_walk") {
+            // hand_walk <body bone> <from> <to> <share>: the fist's share of how fast that bone travels
+            int bone = 0, to_bone = 0;
+            float from = 0.0F, to = 0.0F, share = 0.0F;
+            if (span(b, bone, to_bone) && (words >> from >> to >> share)) {
+                model.hand_walk_joint = bone;
+                model.hand_walk_from = from;
+                model.hand_walk_to = to;
+                model.hand_walk_share = share;
+            } else {
+                say("\"" + line + "\": write `hand_walk <body bone> <from> <to> <share>`; the line is ignored");
+            }
+        } else if (a == "hand_contact") {
+            // hand_contact <near> <far> <most speed>: the palm's distance to a surface for its flat pose, all to none
+            std::string far, fast;
+            float near = 0.0F, f = 0.0F, v = 0.0F;
+            if (number(b, near) && (words >> far >> fast) && number(far, f) && number(fast, v)) {
+                model.hand_contact_near = near;
+                model.hand_contact_far = f;
+                model.hand_contact_speed = v;
+            } else {
+                say("\"" + line + "\": write `hand_contact <near> <far> <most speed>`; the line is ignored");
+            }
+        } else if (a == "hand_body") {
+            // hand_body <bones> axis <from bone> <to bone> [margin <cm>]
+            HandBodyRule rule;
+            std::string w = b;
+            bool ok = true;
+            do {
+                if (w == "axis")
+                    break;
+                int from = 0, to = 0;
+                ok = span(w, from, to);
+                for (int x = from; ok && x <= to; ++x)
+                    rule.bones.push_back(x);
+            } while (ok && words >> w);
+            ok = ok && w == "axis" && !rule.bones.empty() && static_cast<bool>(words >> rule.from >> rule.to);
+            if (ok && words >> w)
+                ok = w == "margin" && static_cast<bool>(words >> rule.margin);
+            if (!ok) {
+                say("\"" + line +
+                    "\": write `hand_body <bones> axis <from bone> <to bone> [margin <cm>]`; the line is ignored");
+                continue;
+            }
+            hand_body.push_back(std::move(rule));
+        } else if (a == "hand_anim") {
+            // hand_anim relaxed|open|fist|flat|grip left|right|both <game animation>...
+            const std::size_t pose = hand_pose_index(b);
+            std::string side, name;
+            if (pose >= khdays::models::kHandPoses || !(words >> side) ||
+                (side != "left" && side != "right" && side != "both") || !(words >> name)) {
+                say("\"" + line +
+                    "\": write `hand_anim relaxed|open|fist|flat|grip left|right|both <game animation>...`; the line is ignored");
+                continue;
+            }
+            do {
+                auto &sides = model.hand_anim.try_emplace(name, std::array<int, 2>{-1, -1}).first->second;
+                if (side != "right")
+                    sides[0] = static_cast<int>(pose);
+                if (side != "left")
+                    sides[1] = static_cast<int>(pose);
+            } while (words >> name);
         } else if (a == "ds_pose") {
             // ds_pose <slot>[@<frame>] | rotate <x> <y> <z>, then bones (`135-156`), then [for <animation>...]
             DsPoseRule rule;
@@ -1495,6 +1910,7 @@ void load_kh2_motions(Model &model, const std::string &path)
         if (!sections.empty())
             say("motions.txt names no mset (a line `mset <file>.mset`); the game's animations are played");
         resolve_ds_poses(model, ds_rules, say);
+        resolve_hands(model, hand_rules, hand_poses, hand_body, say);
         return;
     }
     try {
@@ -1614,6 +2030,7 @@ void load_kh2_motions(Model &model, const std::string &path)
         model.kh2_own_slots.clear();
         model.weapon_motions.reset();
         resolve_ds_poses(model, ds_rules, say);
+        resolve_hands(model, hand_rules, hand_poses, hand_body, say);
         return;
     }
     for (auto &[name, parts] : sections) {
@@ -1662,6 +2079,7 @@ void load_kh2_motions(Model &model, const std::string &path)
         ++it;
     }
     resolve_ds_poses(model, ds_rules, say);
+    resolve_hands(model, hand_rules, hand_poses, hand_body, say);
     khdays_log("models: %s: %zu of the game's animations play KH2 motions from %s (root motion %s)", path.c_str(),
                model.kh2_sections.size(), mset.c_str(), model.kh2_root_motion ? "on" : "off");
 }
@@ -2242,15 +2660,17 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         t.parent = static_cast<std::size_t>(model->joints[at[0]].parent);
         t.to = at[3];
         t.share = line.share;
+        t.swing = line.swing;
         const Mat from = inverse(model->joints[at[2]].inverse_bind), to = inverse(model->joints[at[3]].inverse_bind);
         const std::array<float, 3> d{to[12] - from[12], to[13] - from[13], to[14] - from[14]};
         const float l = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        if (l < 1e-6F) {
+        if (!line.swing && l < 1e-6F) {
             std::fprintf(stderr, "models: %s: twist: %s and %s are in one place (no axis); the line is ignored\n",
                          name.c_str(), line.joints[2].c_str(), line.joints[3].c_str());
             continue;
         }
-        t.axis = {d[0] / l, d[1] / l, d[2] / l};
+        if (!line.swing)
+            t.axis = {d[0] / l, d[1] / l, d[2] / l};
         std::vector<char> under(model->joints.size(), 0);
         for (std::size_t j = 0; j < model->joints.size(); ++j) {
             const int up = model->joints[j].parent;
@@ -3269,6 +3689,548 @@ const Mat *moved_world(const Joint &joint, const std::vector<Mat> &moved)
     return &moved[static_cast<std::size_t>(joint.room_node)];
 }
 
+// The hands something is attached to in this draw (a bit per Model::hands). The drawn object's scene node (its render
+// object at +0x20) lists its children: first at +0xc0, next at +0xc4, parent at +0xbc, the joint at +0xc8
+// (SceneNode_AttachToModelJoint: Ov023_CmdAttachWeapons, Ov023_Cmd_ParentEntityToEntity). A child counts while its own
+// render object was drawn lately: its flags byte at node - 8 read 7 for a keyblade on screen (161 scenes).
+unsigned held_hands(const Model &m)
+{
+    const auto word = [](KhdaysRef a, u32 &out) {
+        if (!khdays_game_ram(a) || !khdays_game_ram(a + 3U))
+            return false;
+        std::memcpy(&out, KHDAYS_W(a), 4);
+        return true;
+    };
+    if (drawn_object == nullptr)
+        return 0U;
+    const u32 now = khdays_events_vblank_count();
+    const KhdaysRef node = KHDAYS_REF(drawn_object) - 0x20U;
+    unsigned held = 0U;
+    u32 child = 0U;
+    if (!word(node + 0xc0U, child))
+        return 0U;
+    for (int n = 0; child != 0U && n < 32; ++n) {
+        u32 parent = 0U, joint = 0U, next = 0U;
+        if (!word(child + 0xbcU, parent) || parent != node || !word(child + 0xc8U, joint) || !word(child + 0xc4U, next))
+            break; // not a scene node's list (a render object the game keeps elsewhere)
+        const std::size_t g = joint & 0xffffU;
+        const auto seen = drawn_lately.find(child + 0x20U);
+        if (seen != drawn_lately.end() && now - seen->second <= 6U && g < m.node_hand.size()) {
+            if (m.node_hand[g] >= 0) {
+                held |= 1U << static_cast<unsigned>(m.node_hand[g]);
+            } else if (tracing()) {
+                static std::set<std::string> told;
+                if (told.insert(m.name + "/" + m.node_names[g]).second)
+                    khdays_log("models: %s: something is attached to %s, not on a hand", m.name.c_str(),
+                               m.node_names[g].c_str());
+            }
+        }
+        child = next;
+    }
+    return held;
+}
+
+constexpr float kPalmOver = 0.022F; // the palm's middle over what it rests on
+
+// How deep a sphere is in the room, world space, and its way out (the push adds up as faces are met); a face only
+// counts while `from` (further up the arm) stands in front of it, so a wall the arm is already through is left alone.
+float room_depth(const std::vector<khdays::secondary::Triangle> &room, std::array<float, 3> p, float radius,
+                 const std::array<float, 3> &from, std::array<float, 3> &push)
+{
+    namespace sc = khdays::secondary;
+    using khdays::models::hand_add;
+    float deepest = 0.0F;
+    const sc::Vec3 elbow{from[0], from[1], from[2]};
+    for (const sc::Triangle &t : room) {
+        const std::array<float, 3> at = hand_add(p, push);
+        const sc::Vec3 x{at[0], at[1], at[2]};
+        if (sc::dot(elbow - t.a, t.n) < 0.0F)
+            continue;
+        const float side = sc::dot(x - t.a, t.n);
+        if (side >= radius || side < -0.2F)
+            continue;
+        const sc::Vec3 q = sc::closest_on_triangle(x, t.a, t.b, t.c);
+        const float dist = sc::length(x - q);
+        if (dist >= radius && side >= 0.0F)
+            continue;
+        if (side < 0.0F && sc::length((x - t.n * side) - q) > 1e-3F)
+            continue; // behind its plane, past its edge
+        const float deep = side >= 0.0F ? radius - dist : radius - side;
+        const sc::Vec3 way = side >= 0.0F && dist > 1e-5F ? (x - q) * (1.0F / dist) : t.n;
+        push = hand_add(push, {way.x, way.y, way.z}, deep);
+        deepest = std::fmax(deepest, deep);
+    }
+    return deepest;
+}
+
+// How deep a point (the K's output) is in the body, and its way out. The arms move, the parts do not: their K's inverses
+// are worked out once a draw (pose_hands)
+std::vector<Mat> hand_body_inverse;
+float body_depth(const Model &m, const std::array<float, 3> &p, float radius, std::array<float, 3> &way)
+{
+    float deepest = 0.0F;
+    for (std::size_t b = 0; b < m.hand_body.size(); ++b) {
+        const Model::HandBody &part = m.hand_body[b];
+        const std::array<float, 3> local = point(hand_body_inverse[b], p);
+        std::array<float, 3> out{};
+        const float deep = part.shape.depth(local, part.margin + radius, out);
+        if (deep > deepest) {
+            deepest = deep;
+            way = khdays::models::hand_unit(vec(k[part.joint], out));
+        }
+    }
+    return deepest;
+}
+
+// motions.txt's `hand`: after the arms have reached, each hand moved out of the body and the room, turned onto a surface
+// it rests on, and its fingers between their poses, each lifted off what it would go into
+void pose_hands(const Model &m)
+{
+    using namespace khdays::models;
+    namespace sc = khdays::secondary;
+    float camera[16];
+    if (!khdays_g3d_camera(camera))
+        return;
+    const auto started = std::chrono::steady_clock::now();
+    hand_body_inverse.resize(m.hand_body.size());
+    for (std::size_t b = 0; b < m.hand_body.size(); ++b)
+        hand_body_inverse[b] = inverse(k[m.hand_body[b].joint]);
+    Mat view;
+    std::copy(camera, camera + 16, view.begin());
+    const Mat world = inverse(view);
+    Kh2Actor &actor = kh2_actors[drawn_object];
+    const u32 now = khdays_events_vblank_count();
+    const u32 gap = now - actor.hand_vblank;
+    // a body newly drawn takes its shares at once: nothing shows closing the hand
+    const bool fresh = actor.hand_states.size() != m.hands.size() || gap > 12U;
+    actor.hand_vblank = now;
+    actor.hand_states.resize(m.hands.size());
+    const float dt = static_cast<float>(gap) / 60.0F;
+    const unsigned held = held_hands(m);
+    const bool report = tracing() && (fresh || held != actor.hands_held || now / 30U != (now - gap) / 30U);
+    actor.hands_held = held;
+    // how fast the body travels: a cut's jump does not count
+    std::array<float, 3> body_way{};
+    float body_speed = 0.0F;
+    if (m.hand_walk_joint >= 0) {
+        const auto it = std::find(m.kh2_bone.begin(), m.kh2_bone.end(), m.hand_walk_joint);
+        if (it != m.kh2_bone.end()) {
+            const auto j = static_cast<std::size_t>(it - m.kh2_bone.begin());
+            const auto at = point(world, point(k[j], m.joints[j].head));
+            if (!fresh && gap > 0U) {
+                body_way = {(at[0] - actor.hand_body_at[0]) / dt, (at[1] - actor.hand_body_at[1]) / dt,
+                            (at[2] - actor.hand_body_at[2]) / dt};
+                body_speed = std::sqrt(body_way[0] * body_way[0] + body_way[2] * body_way[2]);
+                if (body_speed > 12.0F) {
+                    body_speed = 0.0F;
+                    body_way = {};
+                }
+            }
+            if (gap > 0U || fresh)
+                actor.hand_body_at = at;
+        }
+    }
+    // the animation with the most weight, for `hand_anim`
+    const std::array<int, 2> *forced = nullptr;
+    {
+        float most = 0.0F;
+        for (const Playing &p : playing)
+            if (p.ratio > most) {
+                most = p.ratio;
+                const auto f = m.hand_anim.find(p.name);
+                forced = f != m.hand_anim.end() ? &f->second : nullptr;
+            }
+    }
+    std::vector<sc::Triangle> room;
+    for (std::size_t i = 0; i < m.hands.size(); ++i) {
+        const Model::Hand &h = m.hands[i];
+        Kh2Actor::HandState &state = actor.hand_states[i];
+        const auto head = [&](std::size_t j) { return point(k[j], m.joints[j].head); };
+        // the wrist's bend and the hand in the world, as the animation left them
+        const Mat axes = axes_of(mul(k[h.joint], h.frame));
+        const auto forearm_way = vec(axes_of(mul(k[h.forearm], h.forearm_frame)), h.forearm_way);
+        const float bend = hand_bend_degrees(vec(inverse(axes), forearm_way), h.back);
+        const auto wrist_view = head(h.joint), elbow_view = head(h.forearm), shoulder_view = head(h.upper);
+        const auto wrist = point(world, wrist_view), elbow = point(world, elbow_view);
+        const auto back = vec(world, vec(axes, h.back));
+        const auto palm_view = point(k[h.joint], h.palm);
+        const auto palm = point(world, palm_view);
+        std::array<float, 3> moving{};
+        if (!fresh && gap > 0U)
+            moving = {(wrist[0] - state.at[0]) / dt, (wrist[1] - state.at[1]) / dt, (wrist[2] - state.at[2]) / dt};
+        if (hand_length(moving) > 12.0F) // a cut
+            moving = {};
+        if (gap > 0U || fresh)
+            state.at = wrist;
+        const auto against_body = hand_sub(moving, body_way);
+        const float speed = hand_length(against_body);
+        // the room about the palm: the surface it could rest on
+        room.clear();
+        sc::Aabb box;
+        const float r = m.hand_contact_far + 0.2F;
+        box.add({palm[0] - r, palm[1] - r, palm[2] - r});
+        box.add({palm[0] + r, palm[1] + r, palm[2] + r});
+        sc::gather_room(box, room);
+        const bool holds = ((held >> i) & 1U) != 0U;
+        float contact_share = 0.0F;
+        std::array<float, 3> surface_at{};
+        bool found = false;
+        std::array<float, 3> normal{0.0F, 1.0F, 0.0F};
+        if (!holds) {
+            float best = m.hand_contact_far + (state.touching ? 0.03F : 0.0F);
+            const float least_facing = state.touching ? -0.4F : -0.55F;
+            const sc::Vec3 at{palm[0], palm[1], palm[2]}, from{elbow[0], elbow[1], elbow[2]};
+            for (const sc::Triangle &t : room) {
+                if (sc::dot(from - t.a, t.n) < 0.0F)
+                    continue;
+                // the palm's way out (against the back of the hand) toward the face
+                const float faces = -(back[0] * t.n.x + back[1] * t.n.y + back[2] * t.n.z);
+                if (faces > least_facing)
+                    continue;
+                const float side = sc::dot(at - t.a, t.n);
+                // straight under the palm: a nearer edge beside it (a pillow, the bed's frame) is another height
+                const sc::Vec3 q = sc::closest_on_triangle(at, t.a, t.b, t.c);
+                if (sc::length((at - t.n * side) - q) > 0.04F)
+                    continue;
+                const float dist = std::fabs(side);
+                if (dist < best) {
+                    best = dist;
+                    found = true;
+                    surface_at = {t.a.x, t.a.y, t.a.z};
+                    normal = {t.n.x, t.n.y, t.n.z};
+                    contact_share = 1.0F - hand_share(dist, m.hand_contact_near, m.hand_contact_far);
+                }
+            }
+            contact_share *= 1.0F - hand_share(speed, m.hand_contact_speed, m.hand_contact_speed * 2.0F);
+        }
+        // the surface eased as the palm crosses from one face to another: the hand glides over the step
+        if (found) {
+            const float height = hand_dot(surface_at, normal);
+            if (fresh || !state.touching) {
+                state.surface = normal;
+                state.surface_height = height;
+            } else if (gap > 0U) {
+                const float kept = std::exp(-dt / 0.12F);
+                state.surface =
+                    hand_unit(hand_add(hand_add({0.0F, 0.0F, 0.0F}, normal, 1.0F - kept), state.surface, kept));
+                state.surface_height = height + (state.surface_height - height) * kept;
+            }
+        }
+        state.touching = found;
+        // the shares
+        HandShares target{};
+        target[kHandOpen] = hand_share(bend, m.hand_bend_from, m.hand_bend_to);
+        target[kHandFist] = std::fmax(hand_share(speed, m.hand_fist_from, m.hand_fist_to),
+                                      m.hand_walk_share * hand_share(body_speed, m.hand_walk_from, m.hand_walk_to));
+        target[kHandFlat] = contact_share;
+        target[kHandGrip] = holds ? 1.0F : 0.0F;
+        if (forced != nullptr && (*forced)[i] >= 0 && !holds) { // the animation says; the grip still wins
+            const int p = (*forced)[i];
+            target[kHandOpen] = p == kHandOpen ? 1.0F : 0.0F;
+            target[kHandFist] = p == kHandFist ? 1.0F : 0.0F;
+            target[kHandFlat] = p == kHandFlat ? 1.0F : 0.0F;
+            target[kHandGrip] = p == kHandGrip ? 1.0F : 0.0F;
+        }
+        if (fresh) {
+            state.shares = target;
+            state.push = {};
+            state.bend = bend;
+            state.digit_bend.fill(bend);
+            state.travel = 0.0F;
+        } else {
+            state.shares[kHandOpen] = hand_fade(state.shares[kHandOpen], target[kHandOpen], dt, 0.12F, 0.25F);
+            state.shares[kHandFist] = hand_fade(state.shares[kHandFist], target[kHandFist], dt, 0.12F, 0.35F);
+            state.shares[kHandFlat] = hand_fade(state.shares[kHandFlat], target[kHandFlat], dt, 0.12F, 0.25F);
+            state.shares[kHandGrip] =
+                hand_fade(state.shares[kHandGrip], target[kHandGrip], dt, m.hand_grip_fade, m.hand_grip_fade);
+        }
+        const float flat = state.shares[kHandFlat];
+        // the hand turned so its palm lies on the surface, by the flat pose's share, at most 50 degrees
+        if (flat > 0.001F) {
+            const auto back_view = vec(axes, h.back);
+            const auto wanted = vec(view, state.surface);
+            const float cosine = std::clamp(hand_dot(back_view, wanted), -1.0F, 1.0F);
+            const float degrees = std::acos(cosine) * 57.2957795F;
+            const float share = flat * std::fmin(1.0F, 50.0F / std::fmax(degrees, 1e-3F));
+            const auto toward =
+                hand_unit(hand_add(hand_add({0.0F, 0.0F, 0.0F}, back_view, 1.0F - share), wanted, share));
+            const Mat turn = turned_onto(head(h.joint), back_view, toward);
+            for (const std::size_t j : h.hand_joints)
+                k[j] = mul(turn, k[j]);
+        }
+        // the wrist's move: out of the body and the room; onto a surface it rests on, the palm as it now lies
+        std::array<float, 3> push{};
+        if (flat > 0.001F) {
+            const auto turned = point(world, point(k[h.joint], h.palm));
+            const float over = hand_dot(turned, state.surface) - state.surface_height;
+            push = hand_add(push, state.surface, (kPalmOver - over) * flat);
+        }
+        const auto sample_at = [&](const std::array<float, 4> &s, const std::array<float, 3> &by) {
+            return hand_add(point(world, point(k[h.joint], {s[0], s[1], s[2]})), by);
+        };
+        float before = 0.0F;
+        for (int round = 0; round < 3; ++round) {
+            for (const auto &s : h.samples) {
+                const auto at = sample_at(s, push);
+                std::array<float, 3> way{};
+                const float deep = body_depth(m, point(view, at), s[3], way);
+                if (deep > 0.0F) {
+                    if (round == 0)
+                        before = std::fmax(before, deep);
+                    push = hand_add(push, vec(world, way), deep);
+                }
+            }
+            for (const auto &s : h.samples) {
+                std::array<float, 3> moved{};
+                const float deep = room_depth(room, sample_at(s, push), s[3], elbow, moved);
+                if (deep > 0.0F) {
+                    if (round == 0)
+                        before = std::fmax(before, deep);
+                    push = hand_add(push, moved);
+                }
+            }
+        }
+        if (const float l = hand_length(push); l > 0.2F)
+            push = hand_add({0.0F, 0.0F, 0.0F}, push, 0.2F / l);
+        // by a spring: the wrist never jumps and never overshoots, however what pushes it changes
+        if (fresh) {
+            state.push = push;
+            state.push_speed = {};
+        } else if (gap > 0U) {
+            for (std::size_t c = 0; c < 3; ++c)
+                hand_spring(state.push[c], state.push_speed[c], push[c], 22.0F, dt);
+        }
+        // the arm bent to it: the upper arm and forearm swung, the hand moved whole
+        if (hand_length(state.push) > 1e-4F) {
+            HandVec moved = hand_add(wrist_view, vec(view, state.push));
+            const HandVec new_elbow = hand_arm_elbow(shoulder_view, elbow_view, wrist_view, moved);
+            const Mat swing =
+                turned_onto(shoulder_view, hand_sub(elbow_view, shoulder_view), hand_sub(new_elbow, shoulder_view));
+            const Mat fore = mul(moved_by(hand_sub(new_elbow, elbow_view)),
+                                 turned_onto(elbow_view, hand_sub(wrist_view, elbow_view), hand_sub(moved, new_elbow)));
+            const Mat whole = moved_by(hand_sub(moved, wrist_view));
+            for (const std::size_t j : h.upper_joints)
+                k[j] = mul(swing, k[j]);
+            for (const std::size_t j : h.forearm_joints)
+                k[j] = mul(fore, k[j]);
+            for (const std::size_t j : h.hand_joints)
+                k[j] = mul(whole, k[j]);
+        }
+        // the fingers lag the wrist's turn and the hand's travel: curled as it bends back or moves that way
+        if (fresh || gap > 0U) {
+            const float kept = fresh ? 0.0F : std::exp(-dt / 0.09F);
+            state.travel = hand_dot(against_body, back) + (state.travel - hand_dot(against_body, back)) * kept;
+            for (std::size_t n = 0; n < state.digit_bend.size(); ++n) {
+                const float lag = 0.04F + 0.012F * static_cast<float>(n); // the index first, the little finger last
+                state.digit_bend[n] = fresh ? bend : bend + (state.digit_bend[n] - bend) * std::exp(-dt / lag);
+            }
+            state.bend = bend;
+        }
+        // each finger: its pose, and how far toward the flat one it must open to clear what it would go into
+        float tips = 0.0F;
+        const auto pose_digit = [&](const Model::HandDigit &digit, float open, float curl) {
+            HandShares shares = state.shares;
+            for (std::size_t f = digit.first; f <= digit.last; ++f) {
+                const Model::HandFinger &finger = h.fingers[f];
+                Quat q = hand_pose_turn(finger.poses, shares);
+                if (open > 0.0F)
+                    q = hand_mix(q, finger.poses[kHandFlat], open);
+                if (!digit.thumb && f > digit.first)
+                    q = hand_curled(q, curl);
+                k[finger.joint] =
+                    mul(k[finger.parent], mul(finger.frame, mul(hand_turn_matrix(q), finger.frame_inverse)));
+            }
+        };
+        const auto digit_depth = [&](const Model::HandDigit &digit) {
+            float deepest = 0.0F;
+            for (const auto &[j, rest] : digit.spheres) {
+                const auto at_view = point(k[j], rest);
+                std::array<float, 3> way{}, moved{};
+                deepest = std::fmax(deepest, body_depth(m, at_view, 0.011F, way));
+                deepest = std::fmax(deepest, room_depth(room, point(world, at_view), 0.011F, elbow, moved));
+            }
+            return deepest;
+        };
+        for (std::size_t n = 0; n < h.digits.size() && n < state.digit_open.size(); ++n) {
+            const Model::HandDigit &digit = h.digits[n];
+            const float curl =
+                std::clamp(m.hand_lag * (bend - state.digit_bend[n]) + state.travel * 6.0F, -14.0F, 14.0F) *
+                (1.0F - state.shares[kHandGrip]);
+            // the grip stays on what it holds: nothing lifts it
+            float open = 0.0F;
+            if (state.shares[kHandGrip] < 0.5F) {
+                pose_digit(digit, 0.0F, curl);
+                const float deep = digit_depth(digit);
+                tips = std::fmax(tips, deep);
+                if (deep > 0.0F) {
+                    float low = 0.0F, high = 1.0F;
+                    for (int step = 0; step < 6; ++step) {
+                        const float mid = (low + high) * 0.5F;
+                        pose_digit(digit, mid, curl);
+                        (digit_depth(digit) > 0.0F ? low : high) = mid;
+                    }
+                    open = high;
+                }
+            }
+            // eased both ways: a finger is pushed open as it meets something, not put there
+            float &opened = state.digit_open[n];
+            if (fresh)
+                opened = open;
+            else if (gap > 0U)
+                opened = open + (opened - open) * std::exp(-dt / (open > opened ? 0.06F : 0.2F));
+            pose_digit(digit, opened, curl);
+        }
+        // what is left, for the recording
+        float after = 0.0F;
+        for (const auto &s : h.samples) {
+            const auto at = point(k[h.joint], {s[0], s[1], s[2]});
+            std::array<float, 3> way{}, moved{};
+            after = std::fmax(after, body_depth(m, at, s[3], way));
+            after = std::fmax(after, room_depth(room, point(world, at), s[3], elbow, moved));
+        }
+        state.before = before;
+        state.after = after;
+        state.tips = tips;
+        if (report)
+            khdays_log(
+                "models: %s: hand %zu: bend %.0f degrees, speed %.2f, open %.2f, fist %.2f, flat %.2f, grip %.2f%s, "
+                "wrist moved %.1f cm, %.1f cm deep",
+                m.name.c_str(), i, static_cast<double>(bend), static_cast<double>(speed),
+                static_cast<double>(state.shares[kHandOpen]), static_cast<double>(state.shares[kHandFist]),
+                static_cast<double>(state.shares[kHandFlat]), static_cast<double>(state.shares[kHandGrip]),
+                holds ? ", holding" : "", static_cast<double>(hand_length(state.push) * 100.0F),
+                static_cast<double>(after * 100.0F));
+    }
+    actor.hand_micros = std::chrono::duration<float, std::micro>(std::chrono::steady_clock::now() - started).count();
+}
+
+// KHDAYS_HAND_RECORD=<file>: each draw of a model with `hand` lines, one line of what the hands' rules read: its
+// animations, what is attached to its scene node (raw), and in Days' world each hand's joints and axes, the room's
+// nearest point to its palm, the body's joints and the cuffs' ends (tools: docs/KH2_MODELS.md)
+void record_hands(const Model &m)
+{
+    static FILE *const file = [] {
+        const char *path = std::getenv("KHDAYS_HAND_RECORD");
+        return path != nullptr && *path != '\0' ? std::fopen(path, "w") : nullptr;
+    }();
+    float camera[16];
+    if (file == nullptr || !khdays_g3d_camera(camera))
+        return;
+    Mat view;
+    std::copy(camera, camera + 16, view.begin());
+    const Mat world = inverse(view);
+    const auto at = [&](std::size_t j) { return point(world, point(k[j], m.joints[j].head)); };
+    std::fprintf(file, "D %u %08x %s", khdays_events_vblank_count(),
+                 drawn_object != nullptr ? KHDAYS_REF(drawn_object) : 0U, m.name.c_str());
+    for (const Playing &p : playing)
+        std::fprintf(file, " A %s %.2f %.3f", p.name.c_str(), static_cast<double>(p.frame),
+                     static_cast<double>(p.ratio));
+    const auto word = [](KhdaysRef a, u32 &out) {
+        if (!khdays_game_ram(a) || !khdays_game_ram(a + 3U))
+            return false;
+        std::memcpy(&out, KHDAYS_W(a), 4);
+        return true;
+    };
+    const KhdaysRef node = KHDAYS_REF(drawn_object) - 0x20U;
+    u32 child = 0U, node_flags = 0U;
+    const bool first = word(node + 0xc0U, child);
+    word(node, node_flags);
+    std::fprintf(file, " N %u %x %08x", first ? 1U : 0U, node_flags, child);
+    for (int n = 0; child != 0U && n < 16; ++n) {
+        u32 parent = 0U, shown = 0U, flags = 0U, joint = 0U, next = 0U;
+        word(child + 0xbcU, parent);
+        word(child - 8U, shown);
+        word(child - 4U, flags);
+        word(child + 0xc8U, joint);
+        word(child + 0xc4U, next);
+        const std::size_t g = joint & 0xffffU;
+        const auto seen = drawn_lately.find(child + 0x20U);
+        std::fprintf(file, " C %08x %08x %x %x %s %d", child, parent, shown & 0xffU, flags,
+                     g < m.node_names.size() ? m.node_names[g].c_str() : "?",
+                     seen != drawn_lately.end() ? static_cast<int>(khdays_events_vblank_count() - seen->second) : -1);
+        child = next;
+    }
+    std::vector<khdays::secondary::Triangle> room;
+    const Kh2Actor &actor = kh2_actors[drawn_object];
+    for (std::size_t hi = 0; hi < m.hands.size(); ++hi) {
+        const Model::Hand &h = m.hands[hi];
+        if (hi < actor.hand_states.size()) {
+            const auto &st = actor.hand_states[hi];
+            std::fprintf(file, " S %.2f %.2f %.2f %.2f %.4f %.4f %.4f %.4f", static_cast<double>(st.shares[1]),
+                         static_cast<double>(st.shares[2]), static_cast<double>(st.shares[3]),
+                         static_cast<double>(st.shares[4]), static_cast<double>(khdays::models::hand_length(st.push)),
+                         static_cast<double>(st.before), static_cast<double>(st.after), static_cast<double>(st.tips));
+        }
+        // the cuff's root against the hand, degrees from where it sits at rest: off its fingers' way, and twisted
+        const auto cuff_bone = std::find(m.kh2_bone.begin(), m.kh2_bone.end(), hi == 0U ? 116 : 233);
+        if (cuff_bone != m.kh2_bone.end()) {
+            const auto c = static_cast<std::size_t>(cuff_bone - m.kh2_bone.begin());
+            const auto rest = [&](std::size_t j) { return axes_of(inverse(m.joints[j].inverse_bind)); };
+            const auto now = [&](std::size_t j) { return axes_of(mul(skin[j], inverse(m.joints[j].inverse_bind))); };
+            const Mat off = mul(inverse(mul(inverse(rest(h.joint)), rest(c))), mul(inverse(now(h.joint)), now(c)));
+            std::fprintf(file, " Q %.1f %.1f",
+                         static_cast<double>(std::acos(std::clamp(off[0], -1.0F, 1.0F)) * 57.2957795F),
+                         static_cast<double>(std::atan2(off[6], off[5]) * 57.2957795F));
+        }
+        const Mat axes = mul(world, axes_of(mul(k[h.joint], h.frame)));
+        const auto x = vec(axes, {1.0F, 0.0F, 0.0F}), back = vec(axes, h.back);
+        const auto w = at(h.joint), e = at(h.forearm);
+        const std::size_t shoulder = static_cast<std::size_t>(m.joints[h.forearm].parent);
+        const auto s = at(shoulder);
+        const std::array<float, 3> palm = {w[0] + x[0] * 0.08F, w[1] + x[1] * 0.08F, w[2] + x[2] * 0.08F};
+        khdays::secondary::Aabb box;
+        box.add({palm[0] - 0.4F, palm[1] - 0.4F, palm[2] - 0.4F});
+        box.add({palm[0] + 0.4F, palm[1] + 0.4F, palm[2] + 0.4F});
+        room.clear();
+        khdays::secondary::gather_room(box, room);
+        float best = 9.0F, side = 0.0F;
+        khdays::secondary::Vec3 normal{};
+        int kind = -1;
+        const khdays::secondary::Vec3 p{palm[0], palm[1], palm[2]};
+        for (const auto &t : room) {
+            const auto q = khdays::secondary::closest_on_triangle(p, t.a, t.b, t.c);
+            const float l = khdays::secondary::length(p - q);
+            if (l < best) {
+                best = l;
+                side = khdays::secondary::dot(p - t.a, t.n);
+                normal = t.n;
+                kind = static_cast<int>(t.kind);
+            }
+        }
+        std::fprintf(
+            file,
+            " H %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f R %zu %.4f %.4f %.3f %.3f %.3f %d",
+            static_cast<double>(w[0]), static_cast<double>(w[1]), static_cast<double>(w[2]), static_cast<double>(x[0]),
+            static_cast<double>(x[1]), static_cast<double>(x[2]), static_cast<double>(back[0]),
+            static_cast<double>(back[1]), static_cast<double>(back[2]), static_cast<double>(e[0]),
+            static_cast<double>(e[1]), static_cast<double>(e[2]), static_cast<double>(s[0]), static_cast<double>(s[1]),
+            static_cast<double>(s[2]), room.size(), static_cast<double>(best), static_cast<double>(side),
+            static_cast<double>(normal.x), static_cast<double>(normal.y), static_cast<double>(normal.z), kind);
+    }
+    std::fprintf(file, " T %.0f B", static_cast<double>(actor.hand_micros));
+    for (const int bone : {2, 98, 166, 169, 5, 6, 9, 14, 15, 18}) {
+        const auto it = std::find(m.kh2_bone.begin(), m.kh2_bone.end(), bone);
+        if (it == m.kh2_bone.end())
+            continue;
+        const auto b = at(static_cast<std::size_t>(it - m.kh2_bone.begin()));
+        std::fprintf(file, " %.4f %.4f %.4f", static_cast<double>(b[0]), static_cast<double>(b[1]),
+                     static_cast<double>(b[2]));
+    }
+    // the cuffs' ends as drawn, the cloth's solve in `skin`
+    std::fprintf(file, " F");
+    for (const int bone : {119, 122, 125, 128, 236, 239, 242, 245}) {
+        const auto it = std::find(m.kh2_bone.begin(), m.kh2_bone.end(), bone);
+        if (it == m.kh2_bone.end())
+            continue;
+        const auto j = static_cast<std::size_t>(it - m.kh2_bone.begin());
+        const auto f = point(world, point(mul(skin[j], inverse(m.joints[j].bind)), m.joints[j].head));
+        std::fprintf(file, " %.4f %.4f %.4f", static_cast<double>(f[0]), static_cast<double>(f[1]),
+                     static_cast<double>(f[2]));
+    }
+    std::fprintf(file, "\n");
+    std::fflush(file);
+}
+
 // The picture a mesh shows after `frames` game frames: its own, or the one its changing texture is on.
 Mesh::Picture picture_now(const Mesh &mesh, std::uint64_t frames)
 {
@@ -4176,6 +5138,8 @@ void draw(Model &m)
         for (const int r : st.riders)
             k[static_cast<std::size_t>(r)] = mul(x, k[static_cast<std::size_t>(r)]);
     }
+    if (!m.hands.empty())
+        pose_hands(m);
     for (std::size_t j = 0; j < m.joints.size(); ++j) {
         const Joint &joint = m.joints[j];
         const Mat *w = moved_world(joint, moved);
@@ -4258,6 +5222,18 @@ void draw(Model &m)
         namespace kh2 = khdays::assets::kh2;
         const auto rest = [&](std::size_t j) { return inverse(m.joints[j].inverse_bind); };
         const auto now = [&](std::size_t j) { return mul(skin[j], rest(j)); };
+        if (t.swing) {
+            const Mat frame_now = mul(axes_of(now(t.to)), inverse(axes_of(rest(t.to))));
+            const auto kept = vec(frame_now, vec(axes_of(rest(t.by)), {1.0F, 0.0F, 0.0F}));
+            const auto gone = vec(axes_of(now(t.by)), {1.0F, 0.0F, 0.0F});
+            const auto toward = khdays::models::hand_unit(khdays::models::hand_add(
+                khdays::models::hand_add({0.0F, 0.0F, 0.0F}, kept, 1.0F - t.share), gone, t.share));
+            const Mat at = now(t.joint);
+            const Mat turn = turned_onto({at[12], at[13], at[14]}, kept, toward);
+            for (const std::size_t j : t.turned)
+                skin[j] = mul(turn, skin[j]);
+            continue;
+        }
         const Mat parent_rest = rest(t.parent), parent_now = now(t.parent), to = now(t.to);
         const float angle = t.share * kh2::twist_about(parent_rest, rest(t.by), parent_now, now(t.by), t.axis);
         const Mat turn = kh2::twist_turn(parent_rest, parent_now, t.axis, angle, {to[12], to[13], to[14]});
@@ -4286,6 +5262,8 @@ void draw(Model &m)
             in.animations.push_back(std::move(a));
         }
         khdays::secondary::apply_model_secondary(*m.secondary, in, skin);
+        if (!m.hands.empty())
+            record_hands(m);
     }
     // a joint's frame as drawn, without bones.txt's `scale`: what the game attaches to it keeps the game's size
     Mat unscale = kIdentity;
@@ -4609,6 +5587,8 @@ extern "C" void khdays_walk_model_draw_end(void);
 
 extern "C" void khdays_models_draw_begin(const void *resource, const void *render_obj)
 {
+    if (render_obj != nullptr)
+        drawn_lately[KHDAYS_REF(render_obj)] = khdays_events_vblank_count();
     if (depth == 0) {
         khdays_g3d_draw_begin(resource); /* the polygons' key */
         if (resource != nullptr) {
