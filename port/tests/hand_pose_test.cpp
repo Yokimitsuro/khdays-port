@@ -81,6 +81,18 @@ int main()
     check(near(mixed(0, 0, 0, 0.5F), 40.0F), "the shorter way round");
     check(near(y_degrees(hand_curled(about_y(30.0F), 15.0F)), 45.0F), "a curl adds about y");
 
+    const auto linked = hand_linked_open({0.9F, 0.0F, 0.0F, 0.8F, 0.0F}, 0.5F);
+    check(near(linked[0], 0.9F), "the thumb keeps its own");
+    check(near(linked[3], 0.8F), "a finger keeps its own need");
+    check(near(linked[2], 0.4F) && near(linked[4], 0.4F), "its neighbours open by the link");
+    check(near(linked[1], 0.2F), "further off, less");
+    const auto thumb_alone = hand_linked_open({1.0F, 0.0F, 0.0F, 0.0F, 0.0F}, 1.0F);
+    check(thumb_alone[1] == 0.0F && thumb_alone[4] == 0.0F, "the thumb opens no finger");
+    const auto apart = hand_linked_open({0.0F, 0.0F, 0.6F, 0.0F, 0.0F}, 0.0F);
+    check(apart[1] == 0.0F && near(apart[2], 0.6F), "no link: each alone");
+    const auto untouched = hand_linked_open({0.0F, 0.0F, 0.0F, 0.0F, 0.0F}, 0.8F);
+    check(untouched[1] == 0.0F && untouched[4] == 0.0F, "nothing in the way: nothing opens");
+
     // a part 10 wide on x, 5 deep on z, 20 long on y
     std::vector<HandVec> points;
     for (int k = 0; k < 64; ++k) {

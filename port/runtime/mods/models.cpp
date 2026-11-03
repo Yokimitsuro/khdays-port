@@ -529,8 +529,9 @@ struct Model {
     std::vector<HandBody> hand_body;
     float hand_bend_from = 10.0F, hand_bend_to = 45.0F; // degrees: the open pose's share of the wrist's bend
     float hand_grip_fade = 0.15F;                       // seconds
-    float hand_fist_from = 1.5F, hand_fist_to = 3.0F;   // the hand's speed against the body: the fist's share
-    int hand_walk_joint = -1;                           // `hand_walk`: the body's joint, how fast it travels
+    float hand_finger_link = 0.8F; // how much of a finger's opening for collision each finger beside it takes
+    float hand_fist_from = 1.5F, hand_fist_to = 3.0F; // the hand's speed against the body: the fist's share
+    int hand_walk_joint = -1;                         // `hand_walk`: the body's joint, how fast it travels
     float hand_walk_from = 0.5F, hand_walk_to = 1.5F, hand_walk_share = 1.0F;
     float hand_contact_near = 0.07F, hand_contact_far = 0.13F, hand_contact_speed = 0.8F; // of the palm to a surface
     float hand_lag = 0.6F;                                                                // of the wrist's turn lagging
@@ -1672,8 +1673,10 @@ void load_kh2_motions(Model &model, const std::string &path)
             } else {
                 say("\"" + line + "\": write `" + a + " <from> <to>`; the line is ignored");
             }
-        } else if (a == "hand_grip_fade" || a == "hand_lag") {
-            if (!number(b, a == "hand_lag" ? model.hand_lag : model.hand_grip_fade))
+        } else if (a == "hand_grip_fade" || a == "hand_lag" || a == "hand_finger_link") {
+            if (!number(b, a == "hand_lag"           ? model.hand_lag
+                           : a == "hand_finger_link" ? model.hand_finger_link
+                                                     : model.hand_grip_fade))
                 say("\"" + line + "\": write `" + a + " <number>`; the line is ignored");
         } else if (a == "hand_walk") {
             // hand_walk <body bone> <from> <to> <share>: the fist's share of how fast that bone travels
@@ -3766,14 +3769,15 @@ float room_depth(const std::vector<khdays::secondary::Triangle> &room, std::arra
 // How deep a point (the K's output) is in the body, and its way out. The arms move, the parts do not: their K's inverses
 // are worked out once a draw (pose_hands)
 std::vector<Mat> hand_body_inverse;
-float body_depth(const Model &m, const std::array<float, 3> &p, float radius, std::array<float, 3> &way)
+float body_depth(const Model &m, const std::array<float, 3> &p, float radius, std::array<float, 3> &way,
+                 float margins = 1.0F)
 {
     float deepest = 0.0F;
     for (std::size_t b = 0; b < m.hand_body.size(); ++b) {
         const Model::HandBody &part = m.hand_body[b];
         const std::array<float, 3> local = point(hand_body_inverse[b], p);
         std::array<float, 3> out{};
-        const float deep = part.shape.depth(local, part.margin + radius, out);
+        const float deep = part.shape.depth(local, part.margin * margins + radius, out);
         if (deep > deepest) {
             deepest = deep;
             way = khdays::models::hand_unit(vec(k[part.joint], out));
@@ -4046,16 +4050,21 @@ void pose_hands(const Model &m)
             for (const auto &[j, rest] : digit.spheres) {
                 const auto at_view = point(k[j], rest);
                 std::array<float, 3> way{}, moved{};
-                deepest = std::fmax(deepest, body_depth(m, at_view, 0.011F, way));
+                // the body's own surface: the parts' margins are for the wrist, or a hand hanging by the thigh opens
+                deepest = std::fmax(deepest, body_depth(m, at_view, 0.009F, way, 0.0F));
                 deepest = std::fmax(deepest, room_depth(room, point(world, at_view), 0.011F, elbow, moved));
             }
             return deepest;
         };
-        for (std::size_t n = 0; n < h.digits.size() && n < state.digit_open.size(); ++n) {
+        const std::size_t digits = std::min(h.digits.size(), state.digit_open.size());
+        const auto curl_of = [&](std::size_t n) {
+            return std::clamp(m.hand_lag * (bend - state.digit_bend[n]) + state.travel * 6.0F, -14.0F, 14.0F) *
+                   (1.0F - state.shares[kHandGrip]);
+        };
+        std::array<float, 5> need{};
+        for (std::size_t n = 0; n < digits; ++n) {
             const Model::HandDigit &digit = h.digits[n];
-            const float curl =
-                std::clamp(m.hand_lag * (bend - state.digit_bend[n]) + state.travel * 6.0F, -14.0F, 14.0F) *
-                (1.0F - state.shares[kHandGrip]);
+            const float curl = curl_of(n);
             // the grip stays on what it holds: nothing lifts it
             float open = 0.0F;
             if (state.shares[kHandGrip] < 0.5F) {
@@ -4072,13 +4081,18 @@ void pose_hands(const Model &m)
                     open = high;
                 }
             }
-            // eased both ways: a finger is pushed open as it meets something, not put there
+            need[n] = open;
+        }
+        // the four fingers give way together, the thumb alone; eased both ways: pushed open as they meet something,
+        // not put there
+        const std::array<float, 5> open = hand_linked_open(need, m.hand_finger_link);
+        for (std::size_t n = 0; n < digits; ++n) {
             float &opened = state.digit_open[n];
             if (fresh)
-                opened = open;
+                opened = open[n];
             else if (gap > 0U)
-                opened = open + (opened - open) * std::exp(-dt / (open > opened ? 0.06F : 0.2F));
-            pose_digit(digit, opened, curl);
+                opened = open[n] + (opened - open[n]) * std::exp(-dt / (open[n] > opened ? 0.06F : 0.2F));
+            pose_digit(h.digits[n], opened, curl_of(n));
         }
         // what is left, for the recording
         float after = 0.0F;
@@ -4160,6 +4174,9 @@ void record_hands(const Model &m)
                          static_cast<double>(st.shares[2]), static_cast<double>(st.shares[3]),
                          static_cast<double>(st.shares[4]), static_cast<double>(khdays::models::hand_length(st.push)),
                          static_cast<double>(st.before), static_cast<double>(st.after), static_cast<double>(st.tips));
+            std::fprintf(file, " O %.3f %.3f %.3f %.3f %.3f", static_cast<double>(st.digit_open[0]),
+                         static_cast<double>(st.digit_open[1]), static_cast<double>(st.digit_open[2]),
+                         static_cast<double>(st.digit_open[3]), static_cast<double>(st.digit_open[4]));
         }
         // the cuff's root against the hand, degrees from where it sits at rest: off its fingers' way, and twisted
         const auto cuff_bone = std::find(m.kh2_bone.begin(), m.kh2_bone.end(), hi == 0U ? 116 : 233);

@@ -75,6 +75,24 @@ inline void hand_spring(float &value, float &speed, float target, float rate, fl
     speed = (speed - rate * carried) * kept;
 }
 
+// How far each finger opens for what it would go into, the thumb [0] apart: a finger opens at least as far as its own
+// need and `link` per finger of the others' (1 all alike, 0 each alone). Each opens from its own curl, so they stay apart.
+inline std::array<float, 5> hand_linked_open(const std::array<float, 5> &need, float link)
+{
+    std::array<float, 5> out = need;
+    for (std::size_t i = 1; i < 5; ++i) {
+        float carried = 1.0F;
+        for (std::size_t step = 1; step < 4; ++step) {
+            carried *= link;
+            if (i > step && i - step >= 1)
+                out[i] = std::max(out[i], need[i - step] * carried);
+            if (i + step < 5)
+                out[i] = std::max(out[i], need[i + step] * carried);
+        }
+    }
+    return out;
+}
+
 // A quaternion from `a` toward `b`, the shorter way round.
 inline Quat hand_mix(const Quat &a, Quat b, float t)
 {

@@ -601,6 +601,7 @@ hand_walk 2 0.45 0.85 0.8          # the fist's share of how fast that bone trav
 hand_contact 0.07 0.13 0.8         # the palm's distance to a surface for the flat pose, all to none; most speed
 hand_grip_fade 0.15                # seconds for the grip to close or open
 hand_lag 0.6                       # of the wrist's turn the fingers lag by
+hand_finger_link 0.8               # how much of a finger's opening for collision each beside it takes; 0 each alone
 hand_body 98 axis 98 166 margin 1  # a part of the body: the bones carrying it, its axis, a margin in cm
 hand_pose fist rotate 2 80 -3 259  # relaxed|open|fist|flat|grip: degrees about the bone's axes, x then y then z
 hand_anim fist both e_rox_911a     # one animation's pose whatever the rules say (the grip still wins)
@@ -651,7 +652,12 @@ pushes it for a moment. A part of the body (`hand_body`) is how far its vertices
 reach by distance along an axis and angle round it, ten stations of sixteen, so the
 chest is its own shape and not a capsule; a point passing its end comes out without
 a jump. Each finger opens toward the flat pose as far as it must to clear them, found
-by bisection, and eased both ways (0.06 s opening, 0.2 s closing), from 1.1 cm away.
+by bisection, from 0.9 cm off the body's own surface (the parts' margins are the wrist's:
+with them, a hand hanging by the thigh stood open, 0.33 on average in `e_rox_951`, now
+0.02). The four fingers give way together: each opens at least `hand_finger_link` (0.8)
+per finger of what the others need, the thumb alone, so one finger is not left curled
+while the next lies flat. Each opens from its own curl, so they keep their differences,
+and with nothing in the way none opens. Eased both ways (0.06 s opening, 0.2 s closing).
 It stays in the grip while the hand holds something. The fingers lag the wrist's turn
 and the hand's travel by up to 14 degrees, the index first.
 
