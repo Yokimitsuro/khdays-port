@@ -191,6 +191,7 @@ void khdays_events_update(void)
             }
         }
         khdays_arm7_frame();
+        khdays_clock_vblank(next_vblank); /* the screen's lock */
         ++vblank_count;
         next_vblank += KHDAYS_CYCLES_PER_FRAME;
         if (vblank_count % 600 == 0 && khdays_timing_on()) {

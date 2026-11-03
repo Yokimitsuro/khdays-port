@@ -5704,3 +5704,15 @@ and the `missions_waves` mission played in one, 2026-11-02. The port puts the ro
   (`khdays_mission_slot_shown`); its name is put after the game's in each language's `world_id` file. Its rooms are
   added to its game world's archive and its missions played there (`world = <key>`: the port gives the mission its
   game world and the world's slot as its category), with that world's sky, music and sounds.
+
+## 35. A press's way to the screen
+
+Measured 2026-11-03 (`KHDAYS_TRACE_LATENCY`, the run07 walk's field in a window, Direct3D 12, a
+165 Hz screen): a press reaches the window at once (0.0-0.1 ms), waits 14-20 ms (17 on average) for
+the game's pad sample -- the game reads the pad once a logic frame, 30 a second, as on the DS -- and
+the first picture made after that sample is presented 33.7-34.1 ms later: two VBlanks, the game's
+logic frame. 48-54 ms on average, 67 at most, before the screen's own refresh; loads add their
+pauses (0.2-1.2 s). The port adds nothing a frame of its own: the picture is presented as soon as
+the package arrives (one frame in flight). What waits is the screen's refresh after it, which the
+screen's lock (PLATFORM.md, "Threads, interrupts and time") keeps short and the same each time on a
+60 Hz screen.

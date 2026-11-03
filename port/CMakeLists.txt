@@ -802,14 +802,14 @@ add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
 target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-kh2-portrait)
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3 dbghelp winmm delayimp
-                      mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp)
+                      mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp dwmapi)
 # The DS's own addresses are held, inaccessible, first thing in main
 # (memory.c), so that an access at one stops the game. DLLs loaded with the
 # process could take them first: user32 maps the 20 MB desktop heap at the
 # lowest free address, right over main RAM's. So SDL's system DLLs (and
 # everything that pulls in user32) load on first use.
 foreach(dll user32 gdi32 imm32 ole32 oleaut32 version setupapi shell32 winmm dbghelp mfplat mfreadwrite ws2_32
-            iphlpapi winhttp)
+            iphlpapi winhttp dwmapi)
     target_link_options(khdays-native PRIVATE /DELAYLOAD:${dll}.dll)
 endforeach()
 
@@ -840,7 +840,7 @@ add_test(NAME khdays-input COMMAND khdays-input-test)
 # The course of an HD movie against a scripted game and video.
 add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
                runtime/core/clock.c)
-target_link_libraries(khdays-movie-hd-test PRIVATE winmm)
+target_link_libraries(khdays-movie-hd-test PRIVATE winmm dwmapi)
 target_compile_options(khdays-movie-hd-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-movie-hd COMMAND khdays-movie-hd-test)
 # the Walk mod's clip from its folder (KHDAYS_WALK_CLIP: a Roxas walk, animations/walk/ro.khw); skipped without one

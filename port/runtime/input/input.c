@@ -402,6 +402,7 @@ void khdays_input_pad_sample(void)
     latched = (u16)khdays_plugins_buttons(latched);  /* the native plugins read them, and may hide some */
     latched_unread = 1;
     ++pad_samples;
+    khdays_host_latency_sampled(last_frame);
     /* Pad_Sample reads X and Y from here right after: the same moment as the
      * other buttons. */
     ARM7_XY = xy_word(latched);

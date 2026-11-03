@@ -79,6 +79,24 @@ interrupt (`runtime/core/events.c`); `prepare.py`'s hooks put these in place of
 the timer registers. The alarm queue, its handler and their callers stay the
 decomp's C.
 
+The DS's time is the PC's counter at a rate (`runtime/core/clock.c`): 1, but
+while the screen's lock holds it. The DS shows a picture 59.83 times a second, a
+screen refreshes 60 times: free, a picture's wait for the refresh drifts from
+nothing to a whole refresh and back every few seconds, when one waits a refresh
+more. At each VBlank the lock runs the DS's time a little faster or slower (at
+most half a percent around the screen's rate) so that the VBlank comes 6 ms
+before the screen's refresh, as Windows' compositor times it
+(`DwmGetCompositionTimingInfo`): the picture made at it is shown at that
+refresh, every time. Only with a screen at a whole multiple of about the DS's
+rate (60, 120, 240 Hz: within 1%; not at 75 or 144 Hz), while a window shows the
+game, outside a multiplayer session (the players' games keep one time) and while
+the time is not held. The sound output plays the DS's sound at the same rate
+(`SDL_SetAudioStreamFrequencyRatio`), so its queue stays as long. Knobs:
+`KHDAYS_SCREEN_LOCK=off`, `=HZ` (a screen at that rate, for testing on
+another), `KHDAYS_TRACE_LOCK` (where the VBlanks fall, every 300),
+`KHDAYS_TRACE_LATENCY` (a press of F24 every 370 ms timed to the window, to the
+game's pad sample and to the picture presented after it, said every 20 presses).
+
 ## The display
 
 The game's work for a frame ends long before the DS's line-by-line drawing

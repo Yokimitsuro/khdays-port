@@ -120,6 +120,9 @@ void khdays_host_input_take(KhdaysInputSnapshot *out);
  * snapshot. */
 uint16_t khdays_host_buttons(void);
 
+/* KHDAYS_TRACE_LATENCY: the game sampled the pad at VBlank `vblank` (game thread). */
+void khdays_host_latency_sampled(uint32_t vblank);
+
 /* Where the mouse is held on the lower screen, in its pixels; returns 0 when
  * not touching. */
 int khdays_host_touch(int *x, int *y);

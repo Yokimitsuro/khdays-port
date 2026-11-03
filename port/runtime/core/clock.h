@@ -19,6 +19,22 @@ void khdays_clock_init(void);
 /* Cycles since the game started (not counting the time it was paused). */
 u64 khdays_clock_cycles(void);
 
+/* How fast the DS's time runs against the PC's: 1 but while the screen's lock holds it (below). The
+ * sound output plays the DS's sound at this rate. */
+double khdays_clock_rate(void);
+
+/* The screen's lock: at each VBlank (`vblank`, its cycle), the DS's time is run a little faster or
+ * slower -- by at most half a percent around the screen's own rate -- so that the VBlank comes a few
+ * milliseconds before the screen's refresh, where the picture made at it is shown at once: a press
+ * reaches the screen sooner and as soon each time, and no picture waits a refresh more every few
+ * seconds (the DS's 59.83 Hz against a 60 Hz screen). Only with a screen at a whole multiple of about
+ * the DS's rate (60, 120 Hz: 59.83 within 1%), as Windows' compositor reports it; the host turns it on
+ * while a window shows the game outside a multiplayer session (khdays_clock_lock_screen), and it
+ * stays off while the time is held. KHDAYS_SCREEN_LOCK=off turns it off; =HZ takes the screen for one
+ * at that rate (testing on another screen); KHDAYS_TRACE_LOCK says where the VBlanks fall. */
+void khdays_clock_lock_screen(int on);
+void khdays_clock_vblank(u64 vblank);
+
 /* The game is held by stopping its time: nothing comes due, and let go, time goes on from the same
  * cycle with nothing to catch up. The time stands still while any reason holds it (the settings
  * screen, the game waiting at a movie's end for its HD video). Safe from any thread. */
