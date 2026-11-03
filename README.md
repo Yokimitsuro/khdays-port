@@ -287,6 +287,10 @@ once:
   game alone, at your desktop's resolution). **Alt+Enter** switches between
   the window and the full screen you chose last (the borderless window if
   none) while the settings menu is closed, and keeps it.
+- **Screen resolution**: the desktop's (the default) or one of your screen's
+  own resolutions: full screen switches the screen to it, a window takes that
+  size (a borderless window always covers the screen at the desktop's). With
+  the internal resolution "The window's", the game is drawn at it.
 - **Internal resolution** (1x, 2x, 3x, 4x, 6x, 8x, or the window's own
   size): the 3D -- the field, the characters, the effects -- drawn at
   that many times the DS's pixels. "The window's" draws at the next whole
@@ -347,6 +351,7 @@ The choices are kept in the `[video]` section of `saves/settings.ini`:
 
 ```ini
 [video]
+resolution = desktop      # the desktop's (the default), or WIDTHxHEIGHT: full screen's mode, the window's size
 internal_resolution = window   # the window's size (the default), or a multiple: 2 to 16 in the settings
 antialiasing = off        # off, 2x, 3x or 4x: made that many times larger and shrunk
 aspect = 16:9             # 4:3 (the DS's), 16:9, 16:10, or window

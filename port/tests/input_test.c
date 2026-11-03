@@ -920,6 +920,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_RUN_FROM, KHDAYS_ROW_NUMBER, 50, 95, 5},
         {KHDAYS_SET_WALK_SPEED, KHDAYS_ROW_NUMBER, 20, 90, 5},
         {KHDAYS_SET_DISPLAY, KHDAYS_ROW_CHOICE, 0, KHDAYS_DISPLAY_COUNT - 1, 0},
+        {KHDAYS_SET_SCREEN_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 0, 0}, /* the desktop's: no screen without the video */
         {KHDAYS_SET_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 15, 0},  /* as the window allows, 2x-16x: 1x is not offered */
         {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 3, 0}, /* off, 2x, 3x, 4x */
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
@@ -1018,14 +1019,22 @@ static void test_settings_model(void)
         khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
         CHECK(rows[0].id == KHDAYS_SET_DISPLAY && rows[0].high == KHDAYS_DISPLAY_COUNT - 1 &&
               khdays_model_choice_of(&rows[0]) == KHDAYS_DISPLAY_WINDOW);
-        CHECK(rows[1].id == KHDAYS_SET_RESOLUTION && rows[1].high == 15);
-        CHECK(khdays_model_choice_of(&rows[1]) == 0 && rows[1].values[0] == KHDAYS_RESOLUTION_WINDOW);
-        CHECK(rows[1].values[1] == 2 && rows[1].values[15] == 16);
+        /* the screen's resolution: the desktop's, and a profile's own size kept as a choice */
+        CHECK(rows[1].id == KHDAYS_SET_SCREEN_RESOLUTION && rows[1].high == 0 && rows[1].values[0] == 0);
+        p.video.screen_resolution = KHDAYS_SCREEN_RESOLUTION(1600, 900);
+        khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
+        CHECK(rows[1].high == 1 && khdays_model_choice_of(&rows[1]) == 1 &&
+              strcmp(rows[1].choices[1], "1600 x 900") == 0);
+        p.video.screen_resolution = 0;
+        khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
+        CHECK(rows[2].id == KHDAYS_SET_RESOLUTION && rows[2].high == 15);
+        CHECK(khdays_model_choice_of(&rows[2]) == 0 && rows[2].values[0] == KHDAYS_RESOLUTION_WINDOW);
+        CHECK(rows[2].values[1] == 2 && rows[2].values[15] == 16);
         p.video.internal_resolution = 1;
         khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
-        CHECK(rows[1].high == 16 && khdays_model_choice_of(&rows[1]) == 0 &&
-              strcmp(rows[1].choices[0], "1x (DS)") == 0);
-        khdays_model_set_choice(&p, &rows[1], khdays_model_choice_of(&rows[1]) + 1);
+        CHECK(rows[2].high == 16 && khdays_model_choice_of(&rows[2]) == 0 &&
+              strcmp(rows[2].choices[0], "1x (DS)") == 0);
+        khdays_model_set_choice(&p, &rows[2], khdays_model_choice_of(&rows[2]) + 1);
         CHECK(p.video.internal_resolution == KHDAYS_RESOLUTION_WINDOW);
     }
     /* the texts the rows edit hold what the settings file does */
@@ -1387,6 +1396,7 @@ static void test_face_buttons(void)
         }
         CHECK(pad_press(cases[c].accept) == 0);  /* in */
         pad_press(SDL_GAMEPAD_BUTTON_DPAD_DOWN); /* past the display mode */
+        pad_press(SDL_GAMEPAD_BUTTON_DPAD_DOWN); /* and the screen's resolution */
         pad_press(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
         CHECK(v->internal_resolution == 2); /* on the video section */
         pad_press(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
@@ -1418,6 +1428,9 @@ static void test_video_page(void)
     CHECK(v->display == KHDAYS_DISPLAY_FULLSCREEN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->display == KHDAYS_DISPLAY_WINDOW);
+    key(SDL_SCANCODE_DOWN); /* the screen's resolution: only the desktop's without the video */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->screen_resolution == 0);
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->internal_resolution == 2);
@@ -1491,7 +1504,8 @@ static void test_video_page(void)
     khdays_settings_open(&p);
     to_section(KHDAYS_SECTION_VIDEO);
     shot("8-video-no-card");
-    key(SDL_SCANCODE_DOWN); /* past the display mode, which needs no card */
+    key(SDL_SCANCODE_DOWN); /* past the display mode and the screen's resolution, which need no card */
+    key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->internal_resolution == KHDAYS_RESOLUTION_WINDOW);
     key(SDL_SCANCODE_DOWN); /* nor the antialiasing */

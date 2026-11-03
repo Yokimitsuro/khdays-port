@@ -270,6 +270,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->hud_size = 4;
     v->subtitles = 1; /* as the DS showed them */
     v->display = KHDAYS_DISPLAY_WINDOW;
+    v->screen_resolution = 0; /* the desktop's */
 }
 
 /* The display values as the file writes them. */
@@ -1016,6 +1017,19 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         }
         return;
     }
+    if (SDL_strcasecmp(key, "resolution") == 0) {
+        int w = 0, h = 0;
+        char extra = 0;
+        if (SDL_strcasecmp(value, "desktop") == 0) {
+            v->screen_resolution = 0;
+        } else if (SDL_sscanf(value, "%dx%d%c", &w, &h, &extra) == 2 && w > 0 && h > 0 && w <= 0xffff && h <= 0xffff) {
+            v->screen_resolution = KHDAYS_SCREEN_RESOLUTION(w, h);
+        } else {
+            say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "desktop");
+            v->screen_resolution = defaults.screen_resolution;
+        }
+        return;
+    }
     if (SDL_strcasecmp(key, "display") == 0) {
         int d = -1;
         for (int i = 0; i < KHDAYS_DISPLAY_COUNT; ++i) {
@@ -1535,11 +1549,17 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;
-        char resolution[16], antialiasing[8];
+        char resolution[16], antialiasing[8], screen[24];
         if (v->internal_resolution == KHDAYS_RESOLUTION_WINDOW) {
             SDL_strlcpy(resolution, "window", sizeof(resolution));
         } else {
             SDL_snprintf(resolution, sizeof(resolution), "%d", v->internal_resolution);
+        }
+        if (v->screen_resolution != 0) {
+            SDL_snprintf(screen, sizeof(screen), "%dx%d", KHDAYS_SCREEN_WIDTH(v->screen_resolution),
+                         KHDAYS_SCREEN_HEIGHT(v->screen_resolution));
+        } else {
+            SDL_strlcpy(screen, "desktop", sizeof(screen));
         }
         if (v->antialiasing > 1) {
             SDL_snprintf(antialiasing, sizeof(antialiasing), "%dx", v->antialiasing);
@@ -1550,6 +1570,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "\n[video]\n"
             "# display: window, borderless (a window without borders over the whole screen) or fullscreen\n"
             "display = %s\n"
+            "# resolution: desktop (the screen's own, the default) or WIDTHxHEIGHT: the full screen's mode, or\n"
+            "# the window's size (a borderless window covers the screen at the desktop's)\n"
+            "resolution = %s\n"
             "# internal_resolution: window (the window's size, the default) or a whole multiple of the DS's\n"
             "# picture: the settings offer 2 to 16; 1, the DS's own, only for comparing with the DS\n"
             "internal_resolution = %s\n"
@@ -1581,9 +1604,10 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# backend: the graphics API -- auto (Direct3D 12 on Windows, Vulkan under Wine or Proton),\n"
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
-            displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], resolution, antialiasing,
-            v->one_screen ? "one" : "two", v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked",
-            v->hud_size, aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
+            displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], screen, resolution,
+            antialiasing, v->one_screen ? "one" : "two",
+            v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size,
+            aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
             v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS   ? "ds"

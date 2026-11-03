@@ -652,6 +652,20 @@ static const char *const texts[TXT_COUNT][5] = {
          "Ventana: se puede mover y cambiar de tamaño. Ventana sin bordes: sin bordes, ocupando "
          "toda la pantalla. Pantalla completa: la pantalla solo para el juego, a la resolución del "
          "escritorio."},
+    [TXT_VIDEO_SCREEN_RESOLUTION] = {"Screen resolution", "Résolution de l'écran", "Bildschirmauflösung",
+                                     "Risoluzione dello schermo", "Resolución de pantalla"},
+    [TXT_VIDEO_SCREEN_DESKTOP] = {"Desktop", "Bureau", "Desktop", "Desktop", "Escritorio"},
+    [TXT_VIDEO_SCREEN_RESOLUTION_NOTE] =
+        {"Full screen: the screen's mode. Window: its size. With the internal resolution Window, the game "
+         "is drawn at it.",
+         "Plein écran : le mode de l'écran. Fenêtre : sa taille. Avec la résolution interne Fenêtre, le "
+         "jeu est dessiné à cette résolution.",
+         "Vollbild: der Modus des Bildschirms. Fenster: seine Größe. Mit der internen Auflösung Fenster "
+         "wird das Spiel in ihr gezeichnet.",
+         "Schermo intero: la modalità dello schermo. Finestra: la sua dimensione. Con la risoluzione "
+         "interna Finestra, il gioco è disegnato a questa risoluzione.",
+         "Pantalla completa: el modo de la pantalla. Ventana: su tamaño. Con la resolución interna "
+         "Ventana, el juego se dibuja a ella."},
     [TXT_VIDEO_SUBTITLES] = {"Subtitles", "Sous-titres", "Untertitel", "Sottotitoli", "Subtítulos"},
     [TXT_VIDEO_SUBTITLES_NOTE] = {"The subtitles over the game's movies. A new game asks for it too.",
                                   "Les sous-titres des cinématiques du jeu. Une nouvelle partie le demande aussi.",

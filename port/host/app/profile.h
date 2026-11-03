@@ -174,7 +174,14 @@ typedef struct KhdaysVideo {
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */
+    int screen_resolution; /* [video] resolution: the full screen's mode or the window's size, width << 16 |
+                              height; 0 the desktop's (full screen) or as the player sized it (window) */
 } KhdaysVideo;
+
+/* [video] resolution's width and height. */
+#define KHDAYS_SCREEN_RESOLUTION(w, h) ((int)((unsigned)(w) << 16 | (unsigned)(h)))
+#define KHDAYS_SCREEN_WIDTH(r) ((int)((unsigned)(r) >> 16))
+#define KHDAYS_SCREEN_HEIGHT(r) ((int)((unsigned)(r) & 0xffffu))
 
 /* The window ([video] display): one that moves and resizes, one without borders
  * over the whole screen, or the screen the game's alone at the desktop's mode. */
