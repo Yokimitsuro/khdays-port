@@ -1,0 +1,109 @@
+# KH2 bones (kh2_<index>) to Days' Roxas nodes, one pair a line: <joint> <node>.
+# This model is the hooded coat Roxas (B_EX390), drawn as Days' dual wield Roxas, roxas_bf_h. Its bones are
+# N_EX830's renumbered (same rest places; roxas_b_h.bones.txt's pairs). Matched by hierarchy and rest positions;
+# KH2's left is +x like Days'. Unpaired KH2 bones (coat, sleeves, twists, fingers,
+# hood) follow their parents. These pairs pose the model for Days animations
+# without a KH2 motion; a mapped KH2 motion poses every bone itself. Size: KH2
+# centimetres are imported as metres, no `scale`.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, roxas_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default
+# 20). KH2's legs hang straight where Days' splay 10-11 degrees.
+pose_degrees 5
+
+# Hips and spine
+kh2_2 Bip01_Pelvis
+kh2_119 Bip01_Spine
+kh2_120 Bip01_Spine1
+kh2_175 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_122 Bip01_L_Clavicle
+kh2_126 Bip01_L_UpperArm
+kh2_127 Bip01_L_Forearm
+kh2_148 Bip01_L_Hand
+
+# Right arm
+kh2_195 Bip01_R_Clavicle
+kh2_199 Bip01_R_UpperArm
+kh2_200 Bip01_R_Forearm
+kh2_221 Bip01_R_Hand
+
+# The weapon bones: B_EX390's keyblades' (95 left, 106 right, the blades along their -x) on the game's
+# weapon joints ro_h_L and ro_h_R, exactly where they are (`place`: on the node itself, turned as it turns),
+# so what the game holds there is where Days puts it in its own animations. B_EX390's motions move them
+# themselves; P_EX110's carry them in the hands (motions.txt's `carry`).
+kh2_95 ro_h_L
+kh2_106 ro_h_R
+place kh2_95
+place kh2_106
+
+# Two-bone limbs: bent so feet and hands reach as Days' do, scaled to KH2's limbs,
+# knees and elbows bending the way Days' do (KH2's IK solve).
+ik kh2_5 kh2_6 kh2_9 exact 0 5.0 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 5.0 1.6
+ik kh2_126 kh2_127 kh2_148
+ik kh2_199 kh2_200 kh2_221
+
+# The pelvis's vertices 5% thinner front to back (its local y points backward), so the
+# butt stays under the coat; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+
+# `exact` (the legs): the feet go where the game's are (on the floor), the leg bending to reach, not the
+# game's leg scaled onto KH2's (knees about 11 degrees straighter, feet planted). Not the arms: from KH2's
+# shoulders (2.4 cm over the game's, +-4.7 by pose) the game's hand was out of reach in 54% of the cutscenes'
+# frames, the elbow locked straight, and a hand brought to the chest went into his; the scaled arm keeps the
+# game's elbow and lands within those centimetres. The feet's offset (cm, rest axes, turned with the foot)
+# keeps KH2's sole on the game's: KH2's ankle stands higher over its sole and its heel reaches less far back.
+# `align`: the hands and feet turned onto the game's at rest by their shape (toes outward as the game's;
+# the fingers' way and the flat of the hand), which the bone pairs above cannot (they turn a bone only toward
+# its one paired child, and these have none).
+align kh2_9 foot
+align kh2_18 foot
+align kh2_148 hand
+align kh2_221 hand
+
+# The cuffs turn with the hand: the wrist ring of the sleeve (kh2_130, under 129) and the cuff (131 on) take the
+# hand's twist about the forearm (P_EX110's motions and the Days animations turn the hand alone)
+twist kh2_129 kh2_148 kh2_127 kh2_128
+twist kh2_202 kh2_221 kh2_200 kh2_201
+
+# B_EX390's two keyblades are part of its mesh, hanging at rest beside him (bones 95-116, 60 cm to his
+# right: 96 and 107 the blades, 97-105 and 108-116 their keychains; 95 and 106 carry no vertices). Their
+# triangles are not drawn (`hide` over every height; shrunk with `mesh_scale 0` they still showed as
+# one-pixel lines). The game's keyblade is drawn as before (the `weapon` line in motions.txt).
+hide kh2_95 kh2_96 kh2_97 kh2_98 kh2_99 kh2_100 kh2_101 kh2_102 kh2_103 kh2_104 kh2_105 kh2_106 kh2_107 kh2_108 kh2_109 kh2_110 kh2_111 kh2_112 kh2_113 kh2_114 kh2_115 kh2_116 from 1000 to -1000
+# The cuff's root tilts with the hand as it bends, most of the way (it sits at the wrist)
+swing kh2_131 kh2_148 kh2_128 0.7 kh2_138
+swing kh2_204 kh2_221 kh2_201 0.7 kh2_211
+# The cuffs fitted round the hands, not simulated: `cuff <root> <hand> <flaps in order round the ring>`
+cuff kh2_131 kh2_148 kh2_132 kh2_141 kh2_138 kh2_135
+cuff kh2_204 kh2_221 kh2_205 kh2_214 kh2_211 kh2_208
+# clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+# the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees, degrees it always opens
+cuff_thumb 0.5 28 0
+cuff_pose 110 2.86
+cuff_pose_bone kh2_130 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_133 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_135 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_136 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_139 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_203 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_206 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_208 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_209 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_212 0.02 -78.02 -0.03 0.322 1.000 1.000

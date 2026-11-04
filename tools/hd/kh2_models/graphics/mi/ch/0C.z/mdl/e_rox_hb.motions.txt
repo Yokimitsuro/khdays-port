@@ -1,0 +1,217 @@
+# The cutscene Roxas (e_rox_hb) as the coat Roxas (N_EX830). Cutscenes play the game's own animations:
+# no `<animation> <slot>` lines. The mset (and P_EX110.mdlx, its skeleton) is here only for the fingers'
+# pose (ds_pose) under the game's animations; it overrides none of them.
+mset P_EX110.mset
+root_motion off
+weapon ro_w_tg_R 251 rotate 0 -90 90
+
+# The hands (docs/KH2_MODELS.md, "Hands that respond"): `hand <hand bone> <forearm bone> <finger bones> back <x> <y> <z>`.
+# The grip while the game attaches something to that hand; flat on a surface the palm faces, near and slow;
+# a fist by the hand's speed and the body's travel; open by the wrist's bend back; else relaxed.
+# Measured over KH2's 191 cutscene motions (fingers curl least past a 50 degree bend, most past 2 m/s).
+hand 133 112 135-156 back 0 0 1
+hand 250 229 252-273 back 0 0 -1
+hand_bend 10 45
+hand_fist 1.5 3
+hand_walk 2 0.45 0.85 0.8
+hand_contact 0.07 0.13 0.8
+hand_grip_fade 0.15
+hand_lag 0.6
+
+# What the hands stay out of: each part's vertices round an axis; the legs and hips with the coat's thickness.
+hand_body 2 axis 2 96 margin 1.5
+hand_body 96 97 axis 96 98 margin 1
+hand_body 98 axis 98 166 margin 1
+hand_body 169 axis 166 169 margin 0.5
+hand_body 5 axis 5 6 margin 2
+hand_body 14 axis 14 15 margin 2
+hand_body 6 axis 6 9 margin 2
+hand_body 15 axis 15 18 margin 2
+
+# relaxed: the commonest resting hand, KH2's mean
+hand_pose relaxed rotate 0.36 4.87 -15.65 136
+hand_pose relaxed rotate -0.36 4.87 15.65 253
+hand_pose relaxed rotate 1.47 -13.99 -14.55 139
+hand_pose relaxed rotate -1.47 -13.99 14.55 256
+hand_pose relaxed rotate 0.00 17.27 -0.03 140
+hand_pose relaxed rotate -0.00 17.27 0.03 257
+hand_pose relaxed rotate 1.24 9.08 -0.73 142
+hand_pose relaxed rotate -1.24 9.08 0.73 259
+hand_pose relaxed rotate 0.62 24.79 -0.07 143
+hand_pose relaxed rotate -0.62 24.79 0.07 260
+hand_pose relaxed rotate 0.00 12.17 0.00 144
+hand_pose relaxed rotate -0.00 12.17 -0.00 261
+hand_pose relaxed rotate 0.33 17.15 10.37 146
+hand_pose relaxed rotate -0.33 17.15 -10.37 263
+hand_pose relaxed rotate -0.00 33.71 -0.00 147
+hand_pose relaxed rotate 0.00 33.71 0.00 264
+hand_pose relaxed rotate 0.00 18.94 0.00 148
+hand_pose relaxed rotate -0.00 18.94 -0.00 265
+hand_pose relaxed rotate -0.51 22.45 12.53 150
+hand_pose relaxed rotate 0.51 22.45 -12.53 267
+hand_pose relaxed rotate -0.01 33.98 -0.00 151
+hand_pose relaxed rotate 0.01 33.98 0.00 268
+hand_pose relaxed rotate 0.00 24.18 0.00 152
+hand_pose relaxed rotate -0.00 24.18 -0.00 269
+hand_pose relaxed rotate -1.31 30.16 13.11 154
+hand_pose relaxed rotate 1.31 30.16 -13.11 271
+hand_pose relaxed rotate 0.06 31.25 0.01 155
+hand_pose relaxed rotate -0.06 31.25 -0.01 272
+hand_pose relaxed rotate 0.00 23.90 0.00 156
+hand_pose relaxed rotate -0.00 23.90 -0.00 273
+
+# open: a bent-back wrist's nearly open hand, KH2's mean
+hand_pose open rotate -2.46 -6.64 -3.03 136
+hand_pose open rotate 2.46 -6.64 3.03 253
+hand_pose open rotate 1.19 -20.56 -7.48 139
+hand_pose open rotate -1.19 -20.56 7.48 256
+hand_pose open rotate 0.00 0.51 -0.01 140
+hand_pose open rotate -0.00 0.51 0.01 257
+hand_pose open rotate 0.33 4.57 -7.43 142
+hand_pose open rotate -0.33 4.57 7.43 259
+hand_pose open rotate 0.31 12.39 -0.07 143
+hand_pose open rotate -0.31 12.39 0.07 260
+hand_pose open rotate -0.00 6.08 -0.00 144
+hand_pose open rotate 0.00 6.08 0.00 261
+hand_pose open rotate -0.23 8.58 5.11 146
+hand_pose open rotate 0.23 8.58 -5.11 263
+hand_pose open rotate -0.00 16.86 -0.00 147
+hand_pose open rotate 0.00 16.86 0.00 264
+hand_pose open rotate -0.00 9.47 -0.00 148
+hand_pose open rotate 0.00 9.47 0.00 265
+hand_pose open rotate -0.13 11.23 13.81 150
+hand_pose open rotate 0.13 11.23 -13.81 267
+hand_pose open rotate -0.00 16.99 0.00 151
+hand_pose open rotate 0.00 16.99 -0.00 268
+hand_pose open rotate -0.00 12.09 -0.00 152
+hand_pose open rotate 0.00 12.09 0.00 269
+hand_pose open rotate 0.60 15.13 22.51 154
+hand_pose open rotate -0.60 15.13 -22.51 271
+hand_pose open rotate 0.03 15.63 0.00 155
+hand_pose open rotate -0.03 15.63 -0.00 272
+hand_pose open rotate -0.00 11.95 -0.00 156
+hand_pose open rotate 0.00 11.95 0.00 273
+
+# fist: the closed fist, KH2's mean
+hand_pose fist rotate -2.41 9.70 -21.00 136
+hand_pose fist rotate 2.41 9.70 21.00 253
+hand_pose fist rotate 2.40 -10.21 -17.09 139
+hand_pose fist rotate -2.40 -10.21 17.09 256
+hand_pose fist rotate 0.01 53.84 0.02 140
+hand_pose fist rotate -0.01 53.84 -0.02 257
+hand_pose fist rotate 7.17 70.18 5.26 142
+hand_pose fist rotate -7.17 70.18 -5.26 259
+hand_pose fist rotate -179.90 87.92 179.99 143
+hand_pose fist rotate 179.90 87.92 -179.99 260
+hand_pose fist rotate -0.00 88.98 -0.00 144
+hand_pose fist rotate 0.00 88.98 0.00 261
+hand_pose fist rotate 1.09 78.83 1.70 146
+hand_pose fist rotate -1.09 78.83 -1.70 263
+hand_pose fist rotate -179.88 85.41 -179.88 147
+hand_pose fist rotate 179.88 85.41 179.88 264
+hand_pose fist rotate -180.00 88.70 -180.00 148
+hand_pose fist rotate 180.00 88.70 180.00 265
+hand_pose fist rotate -8.74 80.21 -5.73 150
+hand_pose fist rotate 8.74 80.21 5.73 267
+hand_pose fist rotate -179.60 86.59 -179.61 151
+hand_pose fist rotate 179.60 86.59 179.61 268
+hand_pose fist rotate -180.00 86.34 180.00 152
+hand_pose fist rotate 180.00 86.34 -180.00 269
+hand_pose fist rotate -20.23 81.57 -13.92 154
+hand_pose fist rotate 20.23 81.57 13.92 271
+hand_pose fist rotate 0.31 88.82 0.31 155
+hand_pose fist rotate -0.31 88.82 -0.31 272
+hand_pose fist rotate -180.00 85.25 180.00 156
+hand_pose fist rotate 180.00 85.25 -180.00 273
+
+# flat: the flattest hands, KH2's mean
+hand_pose flat rotate -7.94 -17.22 10.69 136
+hand_pose flat rotate 7.94 -17.22 -10.69 253
+hand_pose flat rotate -0.00 -27.05 0.00 139
+hand_pose flat rotate 0.00 -27.05 -0.00 256
+hand_pose flat rotate -0.00 -16.25 0.00 140
+hand_pose flat rotate 0.00 -16.25 -0.00 257
+hand_pose flat rotate -0.04 -0.01 -14.04 142
+hand_pose flat rotate 0.04 -0.01 14.04 259
+hand_pose flat rotate -0.01 0.00 15.00 150
+hand_pose flat rotate 0.01 0.00 -15.00 267
+hand_pose flat rotate 0.00 -0.00 31.08 154
+hand_pose flat rotate -0.00 -0.00 -31.08 271
+
+# grip: P_EX110's battle stance on the keyblade, KH2's mean
+hand_pose grip rotate 3.00 8.50 -24.40 136
+hand_pose grip rotate -3.00 8.50 24.40 253
+hand_pose grip rotate 38.00 -16.70 -24.90 139
+hand_pose grip rotate -38.00 -16.70 24.90 256
+hand_pose grip rotate 0.00 43.00 0.00 140
+hand_pose grip rotate -0.00 43.00 -0.00 257
+hand_pose grip rotate -2.50 43.30 2.00 142
+hand_pose grip rotate 2.50 43.30 -2.00 259
+hand_pose grip rotate 0.00 42.30 0.00 143
+hand_pose grip rotate -0.00 42.30 -0.00 260
+hand_pose grip rotate 0.00 40.00 0.00 144
+hand_pose grip rotate -0.00 40.00 -0.00 261
+hand_pose grip rotate -1.50 53.00 1.80 146
+hand_pose grip rotate 1.50 53.00 -1.80 263
+hand_pose grip rotate 0.00 65.20 0.00 147
+hand_pose grip rotate -0.00 65.20 -0.00 264
+hand_pose grip rotate 0.00 47.70 0.00 148
+hand_pose grip rotate -0.00 47.70 -0.00 265
+hand_pose grip rotate 0.00 54.70 10.00 150
+hand_pose grip rotate -0.00 54.70 -10.00 267
+hand_pose grip rotate -0.10 64.70 -0.10 151
+hand_pose grip rotate 0.10 64.70 0.10 268
+hand_pose grip rotate 0.00 38.70 0.00 152
+hand_pose grip rotate -0.00 38.70 -0.00 269
+hand_pose grip rotate 7.50 63.70 21.00 154
+hand_pose grip rotate -7.50 63.70 -21.00 271
+hand_pose grip rotate 0.00 41.70 0.00 155
+hand_pose grip rotate -0.00 41.70 -0.00 272
+hand_pose grip rotate 0.00 30.70 0.00 156
+hand_pose grip rotate -0.00 30.70 -0.00 273
+
+skeleton P_EX110.mdlx
+
+bone 0-2 0-2
+bone 5 16
+bone 6 8
+bone 7 11
+bone 8 11
+bone 9 11
+bone 12 14
+bone 14 31
+bone 15 23
+bone 16 26
+bone 17 26
+bone 18 26
+bone 21 29
+bone 95 40
+bone 96 41
+bone 97 44
+bone 98 45
+bone 99 46
+bone 107-113 51-57
+bone 129-156 58-85
+bone 224-230 160-166
+bone 246-273 167-194
+bone 165-215 109-159
+
+ik 5 6 7 lengths
+ik 14 15 16 lengths
+ik 111 112 113
+ik 228 229 230
+
+# KH2 face (the eyes and mouth in the mdlx's texture, blinking as KH2 does): `face talk <slot>` while his
+# dialogue types (portraits named by `face speaker`), `face portrait <portrait> [last|<slot>...] [talk <slot>]`
+# slots held while his portrait shows (`talk`: its talk instead of `face talk`), held across boxes until his next portrait (talking still moves the mouth), `face closed
+# <slot>...` eyes already closed (the game's eye close leaves them), `face ranges off` to leave out the
+# motions' face ranges.
+# Eye slots: 12 blink (the default), 1/3/5/7 shapes held, 13/15/17/19 the same shapes blinking, 10 closed,
+# 65-162 the special eyes; mouth: 30 closed (default), 33 talking, 64/161 other talk, 66-163 shapes.
+face talk 33
+face speaker 30 131-141
+face portrait 141 last talk 161
+# Cutscenes closing his eyes (the game's pattern animation e_ro_eye02) hold the closed eyes.
+face ds e_ro_eye02 10
+# Eyes already closed (half, closed, blinking shut, the squint): the cutscene's eye close leaves them.
+face closed 9-11 162

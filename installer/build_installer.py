@@ -49,6 +49,7 @@ TOOLS = [
     "tools/hd/kh2_gauge.py",
     "tools/hd/minimap_icons.py",
     "tools/hd/heart_points.py",
+    "tools/hd/kh2_models.py",
     "port/tools/heart_model_export.cpp",
     "port/tools/kh2_center_gauge.py",
     "port/tools/kh2_add_limit_gauge.py",
@@ -289,6 +290,9 @@ def main() -> int:
     for source in tracked("tools/mods"):
         if "tests" not in source.relative_to(ROOT).parts:
             copy(source, STAGE / source.relative_to(ROOT), packed)
+    # kh2_models.py's settings (text of the port's own: its models and motions come from the player's collection)
+    for source in tracked("tools/hd/kh2_models"):
+        copy(source, STAGE / source.relative_to(ROOT), packed)
     # the port's license and the third parties' notices, at the install's root
     for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
         copy(ROOT / name, STAGE / name, packed)

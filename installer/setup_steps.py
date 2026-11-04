@@ -266,6 +266,8 @@ def tool_made_by(tool: str, template: list[str]) -> str:
         waiting += [module + ".py" for module in IMPORTS.findall(source.decode("utf-8"))]
     if tool in ("kh2_gauge.py", "heart_points.py"):
         parts += [(HERE.parent / rel).read_bytes() for rel in HD_MENU_SUPPORT]
+    if tool == "kh2_models.py":
+        parts += [(HERE.parent / rel).read_bytes() for rel in model_settings()]
     return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
@@ -491,6 +493,7 @@ HD_MENU_TOOLS = [
     ("kh2_gauge.py", ["{kh2_gauge}", "--settings", "{gauge_settings}"]),
     ("heart_points.py", ["--settings", "{gauge_settings}"]),
     ("minimap_icons.py", ["--settings", "{minimap_settings}", "--kh2", "{kh2}"]),
+    ("kh2_models.py", ["{kh2}", "{kh2_gauge}"]),
 ]
 HD_MENU_SUPPORT = (
     "port/tools/kh2_center_gauge.py",
@@ -500,6 +503,15 @@ HD_MENU_SUPPORT = (
     "docs/examples/kh2-gauge.json",
     "port/tools/heart_model_export.cpp",
 )
+MODEL_SETTINGS = "tools/hd/kh2_models"  # kh2_models.py's: the port's settings for KH2's models, by their place
+
+
+def model_settings() -> list[str]:
+    """Each of kh2_models.py's settings files, by its place in the repository (and in an install)."""
+    folder = HERE.parent / MODEL_SETTINGS
+    return sorted(p.relative_to(HERE.parent).as_posix() for p in folder.rglob("*") if p.is_file())
+
+
 HD_VIDEO_TOOLS = [
     ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles", "--music"]),
 ]
@@ -596,7 +608,7 @@ def tool_arguments(template: list[str], places: dict[str, Path]) -> list[str]:
 def tools_digest(repository: Path) -> str:
     """What the trace depends on: the HD tools and the scene map, as they are in `repository`."""
     parts = [(repository / "tools" / "hd" / t).read_bytes() for t, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS]
-    parts += [(repository / rel).read_bytes() for rel in HD_MENU_SUPPORT]
+    parts += [(repository / rel).read_bytes() for rel in (*HD_MENU_SUPPORT, *model_settings())]
     return hashlib.sha256(b"".join(parts + [(repository / SCENE_MAP).read_bytes()])).hexdigest()
 
 
@@ -661,6 +673,7 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
             "tools/decompress_data.py",
             SCENE_MAP,
             *HD_MENU_SUPPORT,
+            *model_settings(),
         ]
         for rel in copied:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -998,7 +1011,7 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
         for tool, _ in HD_MENU_TOOLS + HD_VIDEO_TOOLS:
             (root / "tools" / "hd").mkdir(parents=True, exist_ok=True)
             shutil.copy2(tools["hd"] / tool, root / "tools" / "hd" / tool)
-        for rel in HD_MENU_SUPPORT:
+        for rel in (*HD_MENU_SUPPORT, *model_settings()):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(HERE.parent / rel, root / rel)
         shutil.copy2(tools["rom"] / "decompress_data.py", root / "tools")

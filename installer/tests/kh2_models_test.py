@@ -1,0 +1,98 @@
+"""The KH2 models in the HD pack: made from the collection's files alone, each setting's file provided."""
+
+import re
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "installer"))
+sys.path.insert(0, str(ROOT / "tools" / "hd"))
+import build_installer as installer  # noqa: E402
+import kh2_models as models  # noqa: E402
+import setup_steps as setup  # noqa: E402
+
+# the settings' lines that name a file beside them
+NAMES_A_FILE = re.compile(r"^\s*(?:mset|motions|skeleton|include)\s+(\S+)|^\s*weapon_motions\s+(\S+)\s+(\S+)", re.M)
+
+
+def collection(root: Path, without: str = "") -> tuple[Path, Path]:
+    """The two archives' extractions, each file its own name as its bytes."""
+    first, fifth = root / "kh2_first.hed_out", root / "kh2_fifth.hed_out"
+    places = {models.FIRST: first, models.FIFTH: fifth}
+    for name, archive in models.SOURCES.items():
+        if name == without:
+            continue
+        target = places[archive] / "original" / "obj" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(name.encode())
+        if name.endswith(".mdlx"):
+            pictures = places[archive] / "remastered" / "obj" / name
+            pictures.mkdir(parents=True)
+            for n in range(2):
+                (pictures / f"-{n}.dds").write_bytes(f"{name} {n}".encode())
+    return first, fifth
+
+
+class Models(unittest.TestCase):
+    def test_made_from_the_collection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first, fifth = collection(root)
+            mod = root / "mod"
+            models.make(first, fifth, mod)
+            place = mod / "graphics/ba/ch/ro/def_hb.p.z/mdl"
+            self.assertEqual((place / "roxas_b_h.mdlx").read_bytes(), b"N_EX830.mdlx")
+            self.assertEqual((place / "roxas_b_h" / "-1.dds").read_bytes(), b"N_EX830.mdlx 1")
+            self.assertEqual((place / "P_EX110.mset").read_bytes(), b"P_EX110.mset")
+            self.assertEqual((mod / "graphics/ba/ch/ro/w_.p2#0/mdl/ro_w00600/-0.dds").read_bytes(), b"W_EX010.mdlx 0")
+            self.assertEqual((mod / "graphics/ba/ch/r2/def_h.p.z/mdl/roxas_bf_h.mdlx").read_bytes(), b"B_EX390.mdlx")
+            for source in models.SETTINGS.rglob("*"):
+                if source.is_file():
+                    target = mod / source.relative_to(models.SETTINGS)
+                    self.assertEqual(target.read_bytes(), source.read_bytes())
+
+    def test_a_missing_file_is_named(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first, fifth = collection(root, without="GAMEOVER.mset")
+            with self.assertRaises(SystemExit) as stop:
+                models.make(first, fifth, root / "mod")
+            self.assertIn("GAMEOVER.mset", str(stop.exception))
+
+    def test_each_settings_file_is_provided(self):
+        for folder, model, _, files in models.MODELS:
+            place = models.SETTINGS / folder
+            self.assertTrue((place / f"{model}.bones.txt").is_file(), model)
+            provided = set(files) | {f"{model}.mdlx"}
+            for settings in place.glob("*.txt"):
+                for line in NAMES_A_FILE.findall(settings.read_text(encoding="utf-8")):
+                    for name in filter(None, line):
+                        self.assertTrue(name in provided or (place / name).is_file(), f"{settings.name}: {name}")
+
+    def test_every_source_is_used(self):
+        used = {kh2 for _, _, kh2, _ in models.MODELS} | {n for *_, files in models.MODELS for n in files}
+        self.assertEqual(used, set(models.SOURCES))
+
+    def test_nothing_of_the_game_in_the_repository(self):
+        files = [p for p in models.SETTINGS.rglob("*") if p.is_file()]
+        self.assertTrue(files)
+        for path in files:
+            self.assertEqual(path.suffix, ".txt", path)
+            self.assertTrue(path.read_bytes().isascii(), path)
+
+    def test_wiring(self):
+        self.assertIn(("kh2_models.py", ["{kh2}", "{kh2_gauge}"]), setup.HD_MENU_TOOLS)
+        self.assertIn("tools/hd/kh2_models.py", installer.TOOLS)
+        self.assertEqual(
+            set(setup.model_settings()),
+            {p.relative_to(ROOT).as_posix() for p in models.SETTINGS.rglob("*") if p.is_file()},
+        )
+        inputs = setup.hd_inputs()
+        for name, archive in models.SOURCES.items():
+            self.assertIn(f"obj/{name}", inputs[f"kh2_{archive}"])
+
+
+if __name__ == "__main__":
+    unittest.main()

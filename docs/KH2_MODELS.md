@@ -970,6 +970,26 @@ A texture under a face block changes as it plays, so its whole picture is sent t
 change of sprite, and it has no smaller copies (`gpu_hd.c` `has_smaller`: not for pictures that
 change). At 1024 x 1024 and drawn small it may flicker as a still picture without them would.
 
+## In the HD pack
+
+`tools/hd/kh2_models.py` puts the models in `mods/HD PACK/graphics/`, run by the installer with the
+other HD tools. The models, motions and HD pictures are the player's: copied as they are from
+1.5+2.5's `kh2_first` and `kh2_fifth` (`obj/<name>`, its pictures among the entry's remastered assets),
+as `installer/hd_inputs.txt` lists them. The settings are the port's own, in the repository under
+`tools/hd/kh2_models/`, a tree laid out as the mod's: **change them there**, as a rebuild overwrites the
+mod's copies (to try a change, edit the mod's copy in game, then bring it back).
+
+| Days' model | Place under `graphics/` | KH2's | Also read from the collection |
+|---|---|---|---|
+| `roxas_b_h` | `ba/ch/ro/def_hb.p.z/mdl` | N_EX830 | P_EX110 (mdlx, mset), GAMEOVER.mset, W_EX010.mdlx, W_EX010_RX.mset |
+| `roxas_ho_h` | `ba/ch/ro/def_hho.p.z/mdl` | B_EX390 | the same |
+| `roxas_bf_h` | `ba/ch/r2/def_h.p.z/mdl` | B_EX390 | B_EX390.mset, P_EX110 (mdlx, mset), GAMEOVER.mset |
+| `e_rox_hb` | `mi/ch/0C.z/mdl` | N_EX830 | P_EX110 (mdlx, mset) |
+| `ro_w00600` | `ba/ch/ro/w_.p2#0/mdl` | W_EX010 | |
+
+A new file a setting names is added to `SOURCES` and `MODELS` in the tool
+(`installer/tests/kh2_models_test.py` fails until it is), and to `hd_inputs.txt` by tracing.
+
 ## Not yet
 
 - 4-bit textures (PSMT4) and other formats: reported and drawn white.
