@@ -110,9 +110,10 @@ sides (`RENDERING.md`).
 - **speed.** Taken as 8, the base KH2's formulas subtract, on the assumption that it is Sora's stat. So the eye's
   rate is 0.07 and the chase 1° a tick sideways, whoever plays.
 - **Frames.** `Ov002_Camera_UpdateFollow` and `Ov002_TickCamera` mark a frame as the KH2 camera's when
-  `khdays_kh2_camera_claims` allows: Type A, camera flag 2 set, none of the flags for a script's camera or a
-  pending reset, and mode 0, 3 (a shake) or 8. `Ov002_TickCameraTransition` then runs
-  it just before the shake: Days' camera has done all its own work, and it is overwritten, so its flags, its
+  `khdays_kh2_camera_claims` allows: Type A, camera flag 2 set, none of the flags for a script's camera, the
+  first screen's 3D running (`data_0204be04` 0), and mode 0, 1 (a talk), 3 (a shake) or 8, which
+  `Ov002_Camera_SetMode` treats as 0. `Ov002_TickCameraTransition` then runs it (`khdays_kh2_camera_frame`)
+  just before the shake: Days' camera has done all its own work, and it is overwritten, so its flags, its
   shake and its fades go on as ever. A frame not marked is plain Days'. How the camera comes back depends on what
   those frames did (`kh2_camera_takeover`). If Days' camera never ran, nothing moved it: a pause holds every
   object (`gPauseMode` 1), and the camera goes on as it was. If it ran a few frames with the player in the room
@@ -123,22 +124,24 @@ sides (`RENDERING.md`).
   `Ov002_Camera_UpdateFollow`, which then skips the stick, the chase and the reset. Its setters: talks and examined
   objects (`Ov002_BeginRequest`, `Ov002_ElementPromptStep`, `Ov002_ElementChoiceStep`), spare entries
   (`Ov002_SpareEntryTryBegin`, `Ov002_SpareEntryStep`), session events (`Ov002_StepSessionEvent`), panels
-  (`Ov002_TakeBattleViewFocus`) and the results (`Ov022_StateBeginResultSequence`). The camera used to give those
-  frames to Days', whose FOV and eye came back at once: the cut at a trigger or a tutorial. Now `khdays_kh2_camera_held`
-  keeps them, without the stick or the chase, leaving first person; Select and the reset stay the game's. Event
+  (`Ov002_TakeBattleViewFocus`) and the results (`Ov022_StateBeginResultSequence`). `khdays_kh2_camera_held`
+  keeps those frames, without the stick or the chase, leaving first person; Select and the reset stay the game's. Event
   scripts have their own cameras (`Ov023_CmdPlayCameraScript`), which this does not touch. `Ov002_Camera_SetOrbitAngle`,
   `Ov002_Camera_SetAnchor` and `Ov002_ResetCamera` re-place Days' camera (`Ov022_StateWaitForAction` on leaving a menu
-  puts it behind the player: the cut at the camp); where the player has not moved, this camera writes itself back.
+  puts it behind the player); where the player has not moved, this camera writes itself back.
 - **A mission's setup.** A tutorial's page opens as a mission starts, while `Ov002_Camera_UpdateFollow` still returns at
-  its first gates: in the session log of 2026-11-02 the first camera frame came only after the page closed (150 game
-  frames), and what showed was Days' first place. `Ov002_ReaimActor` commits the camera in that time
-  (`Ov022_UpdateCameraAndViews`, `Ov002_Camera_SetAnchor`), so `khdays_kh2_camera_commit` gives a commit with no frame
-  of this camera before it one, without control. Which gate holds the tick was not traced. A new field starts
-  behind the player (`YS::PLAYER::start_player_camera`). The session log has each change of owner, flags and mode.
+  its first gates, so no frame of the camera runs until the page closes. `Ov002_ReaimActor` commits the camera in that
+  time (`Ov022_UpdateCameraAndViews`, `Ov002_Camera_SetAnchor`), so `khdays_kh2_camera_commit` gives a commit with no
+  frame of this camera before it one, without control. Which gate holds the tick was not traced. A new field starts
+  behind the player (`YS::PLAYER::start_player_camera`). The session log has each change of owner, of the flags that
+  decide it, and of the mode.
+- **Without control.** In those frames, a session's pause (`PauseMenu_GetMode` 2 on the host) and whatever else the
+  game takes the camera's input in (`Ov022_GetStreamTimestamp` bit 0x400), `khdays_kh2_camera_active` is false: R and
+  Select reach the game, and a press made just before does not reset the camera or switch first person.
 - **Talks.** Mode 1 (`Ov002_Camera_SetMode`, Days' own zoom for a talk or an examined object, an entry's flag 0x20
   for a spare entry) takes the indoor row as the Select view does, the same blend in and out. A hold without mode 1
   keeps the row it had.
-- **Collision** is `dk::ObjCamera::collision` on the game's casts (`khdays_kh2_camera_collide`), at the two places KH2
+- **Collision** is `dk::ObjCamera::collision` on the game's casts (`frame_collide` in `kh2_camera_hooks.c`), at the two places KH2
   casts: from the look-at's target to the wanted eye (`objective`), then from the look-at to the eye the springs reached
   (`setCamera`), locked on from the head (`TargetCamera::updateCollision`). One line, its first hit counted only from
   the face's front (`dk::Ray::intersectPolygon`), the eye that hit plus 5 along the face's normal. KH2 tests one
@@ -165,8 +168,8 @@ sides (`RENDERING.md`).
   port's choice), on the stick and mouse alone. The percentage in Sticks and camera is for Days' camera and does
   not apply: at 150 %, Normal would not be KH2's.
 - **Movement.** Only the chase reads the stick through KH2's dead zone (`khdays_analog_kh2_stick`, `read_movement`).
-  The player's heading keeps the stick's exact angle, the port's choice: on the heading too, the player ran rounded
-  squares when the stick went round and stood at a gentle push (tried in game). So where KH2's x is 0 the yaw does
+  The player's heading keeps the stick's exact angle, the port's choice: KH2's dead zone on the heading would make the
+  player run rounded squares as the stick goes round, and stand at a gentle push. So where KH2's x is 0 the yaw does
   not turn, as there KH2's yaw has nothing to turn to, and the radius still eases: a stick a little off is a straight
   line at that angle, not a curve. Both axes under the dead zone is no chase. The look stick keeps its round one.
 - **Reset.** With lock-on on its own buttons, the player's own R (the right stick's click in the KH2 preset) is the
@@ -202,9 +205,6 @@ sides (`RENDERING.md`).
   and the guests see that as it is, a run sliding sideways, as nothing hides it there. A guest's actor is the host's
   to move and turn (`Ov022_SendActorStatePacket` sends every heading each frame), so it turns as it moves, and a
   guest's view has a yaw of its own and writes no heading.
-  The fade is `khdays_g3d_set_fade` around the player's draws (`character_shadows.c`, its scopes already cover the
-  body, the weapons and the shadow), not `NNS_G3dMdlSetMdlAlphaAll`: a mod's model has its own, and the DS's alpha
-  0 is a wireframe. A faded-out polygon is not drawn at all. Days' FOV row stays the outdoor one.
 - **FOV.** Days has one field FOV: a half angle of 0x1555 (30°, so 60° vertical) from `Ov002_InitWorldState`, and
   0xe39 in the look view. No indoor flag was found, so the outdoor row is used everywhere, the Select view
   aside. The hook writes the FOV's sine and cosine (words 0 and 1) and, when the game's camera takes over,

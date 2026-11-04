@@ -33,7 +33,6 @@ typedef struct Kh2CameraInput {
 } Kh2CameraInput;
 
 typedef struct Kh2Camera {
-    const Kh2CameraParams *params;
     float yaw, yaw_target, radius;
     float pitch;       /* first person, up positive */
     float zoom_radius; /* the Select view's own radius, in the indoor row's limits; `radius` waits meanwhile */
@@ -70,8 +69,7 @@ enum { KH2_CAMERA_RESUME, KH2_CAMERA_SNAP, KH2_CAMERA_BLEND };
 int kh2_camera_takeover(int started, unsigned days_frames, int same_place);
 
 /* Takes over from where the camera is, keeping the radius when `radius` is above 0. */
-void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec at, Kh2CameraVec eye, float yaw,
-                      float fov_half, float radius);
+void kh2_camera_start(Kh2Camera *c, Kh2CameraVec at, Kh2CameraVec eye, float yaw, float fov_half, float radius);
 
 /* A frame's targets, without a target (ObjCamera::objective) or locked on (TargetCamera::update). */
 void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in);

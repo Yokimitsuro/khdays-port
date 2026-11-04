@@ -13,7 +13,7 @@ const Kh2CameraParams kh2_camera_indoor = {1.04719758f, 600.0f, 520.0f, 400.0f, 
 
 #define AT_HEIGHT 170.0f         /* calcAtTarget */
 #define EYE_BELOW_AT 150.0f      /* calcEyeTarget */
-#define SUBJECTIVE_HEIGHT 150.0f /* the player's YS::PREF::Party SubjectiveOffset, by the user */
+#define SUBJECTIVE_HEIGHT 150.0f /* the player's YS::PREF::Party SubjectiveOffset: the maintainer's value, not read from KH2's data here */
 #define SUBJECTIVE_REACH 350.0f  /* calcSubjective */
 #define SUBJECTIVE_PITCH DEGREES(70.0f)
 #define BODY_HEIGHT 100.0f /* updateTargetCamera: the point of the player it keeps on screen */
@@ -93,9 +93,9 @@ static float clamp_to(const Kh2CameraParams *params, float radius)
     return radius > params->max_radius ? params->max_radius : radius;
 }
 
-static float clamp_radius(const Kh2Camera *c, float radius)
+static float clamp_radius(float radius)
 {
-    return clamp_to(c->params, radius);
+    return clamp_to(&kh2_camera_outdoor, radius);
 }
 
 /* calcEyeTarget's parabola: how far above its lowest place the eye is at a radius. */
@@ -118,7 +118,7 @@ static void set_zoomed(Kh2Camera *c, const Kh2CameraInput *in)
 static void ease_radius(Kh2Camera *c, float to, float rate)
 {
     if (fabsf(c->radius - to) >= 1.0f) {
-        c->radius = clamp_radius(c, c->radius + (c->radius > to ? -rate : rate));
+        c->radius = clamp_radius(c->radius + (c->radius > to ? -rate : rate));
     }
 }
 
@@ -135,12 +135,10 @@ float kh2_camera_half_angle(float horizontal_fov)
     return atanf(tanf(horizontal_fov * 0.5f) * 0.75f); /* kn::Camera::init's frame: 640x480 */
 }
 
-void kh2_camera_start(Kh2Camera *c, const Kh2CameraParams *params, Kh2CameraVec at, Kh2CameraVec eye, float yaw,
-                      float fov_half, float radius)
+void kh2_camera_start(Kh2Camera *c, Kh2CameraVec at, Kh2CameraVec eye, float yaw, float fov_half, float radius)
 {
-    c->params = params;
     c->yaw = c->yaw_target = wrap(yaw);
-    c->radius = radius > 0.0f ? radius : params->start_radius;
+    c->radius = radius > 0.0f ? radius : kh2_camera_outdoor.start_radius;
     c->pitch = 0.0f;
     c->zoom_radius = kh2_camera_indoor.start_radius;
     c->zoom_blend = c->zoom_ease = 0.0f;
@@ -164,7 +162,7 @@ static void apply_look(Kh2Camera *c, const Kh2CameraInput *in)
         if (c->zoomed) {
             c->zoom_radius = clamp_to(&kh2_camera_indoor, c->zoom_radius + change);
         } else {
-            c->radius = clamp_radius(c, c->radius + change);
+            c->radius = clamp_radius(c->radius + change);
         }
     }
 }
@@ -178,7 +176,7 @@ static void eye_from(Kh2Camera *c, Kh2CameraVec base, float ticks)
     c->zoom_ease += ((c->zoomed ? 1.0f : 0.0f) - c->zoom_ease) * FOV_EASE * share;
     c->zoom_blend += (c->zoom_ease - c->zoom_blend) * FOV_EASE * share;
     radius = c->radius + (c->zoom_radius - c->radius) * c->zoom_blend;
-    height = height_at(c->params, c->radius);
+    height = height_at(&kh2_camera_outdoor, c->radius);
     height += (height_at(&kh2_camera_indoor, c->zoom_radius) - height) * c->zoom_blend;
     c->yaw = c->snap ? c->yaw_target : turn_towards(c->yaw, c->yaw_target, HOME_TURN * ticks);
     c->eye_target.x = base.x + radius * sinf(c->yaw);
@@ -199,7 +197,7 @@ void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in)
         if (c->zoomed) {
             c->zoom_radius = kh2_camera_indoor.start_radius;
         } else {
-            c->radius = c->params->start_radius;
+            c->radius = kh2_camera_outdoor.start_radius;
         }
         c->eye = c->eye_target;
         c->snap = in->move_amount != 0.0f;
@@ -215,7 +213,7 @@ void kh2_camera_follow(Kh2Camera *c, const Kh2CameraInput *in)
                                AUTO_TURN * in->ticks;
             c->yaw = c->yaw_target = turn_towards(c->yaw, in->behind_yaw, step);
         }
-        ease_radius(c, c->params->start_radius, AUTO_RADIUS * in->ticks);
+        ease_radius(c, kh2_camera_outdoor.start_radius, AUTO_RADIUS * in->ticks);
     }
     c->at_target = above(in->player, AT_HEIGHT);
     eye_from(c, c->at_target, in->ticks);
@@ -244,11 +242,11 @@ void kh2_camera_lock(Kh2Camera *c, const Kh2CameraInput *in, Kh2CameraVec target
     if (body_low) {
         c->radius -= LOCK_ZOOM * in->ticks;
     }
-    c->radius = clamp_radius(c, c->radius);
+    c->radius = clamp_radius(c->radius);
     if (reach_length <= LOCK_FAR || reach.y / reach_length <= LOCK_STEEP) {
         const unsigned off = target_flags != 0 ? target_flags : body_flags;
         if (!target_low && !body_low) {
-            ease_radius(c, c->params->lock_radius, LOCK_RADIUS * in->ticks);
+            ease_radius(c, kh2_camera_outdoor.lock_radius, LOCK_RADIUS * in->ticks);
         }
         if (off != 0) {
             /* KH2 adds 20 degrees for a point off its left: its y down turns its yaw the other way round
@@ -268,7 +266,7 @@ void kh2_camera_lock(Kh2Camera *c, const Kh2CameraInput *in, Kh2CameraVec target
     apply_look(c, in);
     if (in->home) { /* TargetCamera::control */
         c->yaw_target = wrap(atan2f(line.x, line.z));
-        c->radius = c->params->lock_radius;
+        c->radius = kh2_camera_outdoor.lock_radius;
     }
     eye_from(c, head, in->ticks);
 }
@@ -325,7 +323,7 @@ static Kh2CameraVec spring(Kh2CameraVec current, Kh2CameraVec target, Kh2CameraV
 
 void kh2_camera_settle(Kh2Camera *c, float ticks)
 {
-    const float wanted_fov = kh2_camera_half_angle(c->zoomed ? kh2_camera_indoor.fov : c->params->fov);
+    const float wanted_fov = kh2_camera_half_angle(c->zoomed ? kh2_camera_indoor.fov : kh2_camera_outdoor.fov);
     const float updates = ticks / UPDATE_TICKS;
     const int steps = updates > 1.0f ? (int)ceilf(updates) : 1;
     const float share = updates / (float)steps; /* a frame that is not a whole number of KH2's updates */

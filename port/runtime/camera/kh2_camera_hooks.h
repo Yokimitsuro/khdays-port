@@ -4,18 +4,18 @@
 #define KHDAYS_KH2_CAMERA_HOOKS_H
 
 /* Whether the option is on and this is the gameplay camera, from the camera's flags (+0x38, +0x3c)
- * and mode (+0x40): Controls Type A, no script's camera. The Select view is its too. */
+ * and mode (+0x40): Controls Type A, no script's camera, the first screen's. The Select view is its too. */
 int khdays_kh2_camera_claims(int flags, int flags2, int mode);
 
-/* Ov002_Camera_UpdateFollow, before it picks its next handler: this frame is the KH2 camera's. Returns 1
- * when the game's camera reset (flag 8) must not start Ov002_TickLockedCamera: always, with this camera. */
-int khdays_kh2_camera_follow(int flags, int flags2, int mode, int input_off, int bits);
+/* Ov002_Camera_UpdateFollow, before it picks its next handler, `camera` a DS address: this frame is the KH2 camera's,
+ * and the game's camera reset (flag 8) is too, so it does not start Ov002_TickLockedCamera. */
+void khdays_kh2_camera_follow(int camera, int input_off, int bits);
 
 /* Ov002_TickCamera, locked on to the point at DS address `target`. */
-void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off);
+void khdays_kh2_camera_lock(int target, int camera);
 
-/* Whether the last game frames were this camera's, and the player's own press that centres it, which the
- * input layer takes from R while lock-on has its own buttons (input.c). */
+/* Whether the last game frames were this camera's with the player in control of it, and the player's own press that
+ * centres it, which the input layer takes from R while lock-on has its own buttons (input.c). */
 int khdays_kh2_camera_active(void);
 void khdays_kh2_camera_center(void);
 
@@ -28,20 +28,15 @@ void khdays_kh2_camera_toggle_first_person(void);
 void khdays_kh2_camera_commit(int camera);
 
 /* Ov002_Camera_UpdateFollow, each frame: a hold (camera flag 0x200) is still this camera's. */
-void khdays_kh2_camera_held(int flags, int flags2, int mode);
+void khdays_kh2_camera_held(int camera);
 
 /* Ov022_EnterActorState: the local player's actor enters `state`. */
 void khdays_kh2_camera_player_state(int state);
 int khdays_kh2_camera_strafing(int actor);
 unsigned khdays_kh2_camera_faded_node(float *fade);
 
-/* Ov002_TickCameraTransition, before the shake. prepare: the wanted eye, and where to cast from (returns 0
- * when the camera stays the game's); collide: the eye off what lies between; settle: what collision left of it,
- * and the eye the springs reached, to collide again; publish: the camera's fields from the result. All are DS
- * addresses of vectors. */
-int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye);
-void khdays_kh2_camera_collide(int origin, int eye);
-void khdays_kh2_camera_settle(int origin, int eye);
-void khdays_kh2_camera_publish(int camera, int eye);
+/* Ov002_TickCameraTransition, before the shake: this frame's eye and look-at in the camera's fields, when it is this
+ * camera's. `player`, `origin` and `eye` are DS addresses of vectors, the last two free for it to use. */
+void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye);
 
 #endif

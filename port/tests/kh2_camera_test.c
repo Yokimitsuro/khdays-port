@@ -35,7 +35,7 @@ static Kh2Camera started(float radius)
 {
     Kh2Camera c;
     const Kh2CameraVec at = {0.0f, 170.0f, 0.0f}, eye = {0.0f, 251.0f, 420.0f};
-    kh2_camera_start(&c, &kh2_camera_outdoor, at, eye, 0.0f, kh2_camera_half_angle(kh2_camera_outdoor.fov), radius);
+    kh2_camera_start(&c, at, eye, 0.0f, kh2_camera_half_angle(kh2_camera_outdoor.fov), radius);
     return c;
 }
 
@@ -184,7 +184,7 @@ static void test_start_snap(void)
     Kh2CameraInput in = still();
     Kh2Camera c;
     const Kh2CameraVec at = {900.0f, 40.0f, -700.0f}, eye = {-500.0f, 800.0f, 300.0f};
-    kh2_camera_start(&c, &kh2_camera_outdoor, at, eye, 0.0f, kh2_camera_half_angle(kh2_camera_outdoor.fov), 0.0f);
+    kh2_camera_start(&c, at, eye, 0.0f, kh2_camera_half_angle(kh2_camera_outdoor.fov), 0.0f);
     c.snap = 1;
     in.manual = 1;
     kh2_camera_follow(&c, &in);

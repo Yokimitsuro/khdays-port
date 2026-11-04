@@ -270,50 +270,49 @@ int khdays_controls_camera_pitch(int rate, int inverted, int flags, int flags2, 
  * (30 % by default) taken out, so a quarter of them is about that. */
 #define KH2_AXIS_DEAD_ZONE 0.25f
 
-static float kh2_axis(int axis)
+static float look_axis(int axis)
 {
     const float pushed = fabsf((float)axis) / 32767.0f;
     return pushed > KH2_AXIS_DEAD_ZONE ? (pushed - KH2_AXIS_DEAD_ZONE) / (1.0f - KH2_AXIS_DEAD_ZONE) : 0.0f;
 }
 
-void khdays_controls_camera_look(float *x, float *y)
+/* How far the look stick is pushed overall, past that dead zone. */
+static float look_pushed(const KhdaysInputSnapshot *in)
 {
-    const KhdaysInputSnapshot *in = khdays_input_snapshot();
-    const float across = kh2_axis(in->camera_x), along = kh2_axis(in->camera_y);
-    float amount = sqrtf(across * across + along * along);
+    const float across = look_axis(in->camera_x), along = look_axis(in->camera_y);
+    return sqrtf(across * across + along * along);
+}
+
+/* The stick's shares where its axis is past the dead zone, with the axis's sign, and the mouse's on top. */
+static void look_shares(const KhdaysInputSnapshot *in, float across, float along, float *x, float *y)
+{
     *x = *y = 0.0f;
-    if (amount > 1.0f) {
-        amount = 1.0f;
-    }
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open) {
-        if (across > 0.0f) {
-            *x = in->camera_x > 0 ? amount : -amount;
+        if (look_axis(in->camera_x) > 0.0f) {
+            *x = in->camera_x > 0 ? across : -across;
         }
-        if (along > 0.0f) {
-            *y = in->camera_y > 0 ? amount : -amount;
+        if (look_axis(in->camera_y) > 0.0f) {
+            *y = in->camera_y > 0 ? along : -along;
         }
     }
     *x += (float)mouse_share(in, 0, 0x1000) / 4096.0f;
     *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
 }
 
+void khdays_controls_camera_look(float *x, float *y)
+{
+    const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    const float pushed = look_pushed(in);
+    const float amount = pushed < 1.0f ? pushed : 1.0f;
+    look_shares(in, amount, amount, x, y);
+}
+
 void khdays_controls_first_person_look(float *x, float *y)
 {
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
-    const float across = kh2_axis(in->camera_x), along = kh2_axis(in->camera_y);
-    const float pushed = sqrtf(across * across + along * along);
-    *x = *y = 0.0f;
-    if (pushed > 0.0f && (in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open) {
-        const float tilt = along / pushed * (pushed < 1.0f ? pushed : 1.0f);
-        if (across > 0.0f) {
-            *x = in->camera_x > 0 ? 1.0f : -1.0f;
-        }
-        if (along > 0.0f) {
-            *y = in->camera_y > 0 ? tilt : -tilt;
-        }
-    }
-    *x += (float)mouse_share(in, 0, 0x1000) / 4096.0f;
-    *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
+    const float pushed = look_pushed(in);
+    const float tilt = pushed > 0.0f ? look_axis(in->camera_y) / pushed * (pushed < 1.0f ? pushed : 1.0f) : 0.0f;
+    look_shares(in, 1.0f, tilt, x, y);
 }
 
 void khdays_trace_camera_request(int found, int x, int y, int kind, int state)
@@ -426,14 +425,14 @@ int khdays_controls_move_rate(int actor, int rate)
         const int tilt = khdays_analog_tilt(in.x, in.y);
         walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
     }
-    khdays_walk_movement(actor, walk < rate ? walk : rate, rate); /* (the Walk mod's animation: walk.h) */
+    khdays_walk_movement(actor, walk, rate); /* (the Walk mod's animation: walk.h) */
     Walking *w = walking_of(actor, walk < rate);
     if (w != NULL) {
         w->frame = khdays_input_game_frames();
         w->rate = rate;
         w->walk = walk < rate ? walk : 0;
     }
-    return walk < rate ? walk : rate;
+    return walk;
 }
 
 /* The walk of the actor whose scene node (its +0x20) is `node`, steered this game frame or the one before
@@ -493,7 +492,8 @@ void khdays_trace_steer(int actor, int aim, int bias, int angle, int step, int r
 
 /* ---- The actor's states and the frame rate ------------------------------- */
 
-void khdays_trace_actor_state(int actor, int state)
+/* Ov022_EnterActorState: tells the KH2 model and, for the local player, the KH2 camera what state an actor entered. */
+void khdays_controls_actor_entered_state(int actor, int state)
 {
     khdays_models_actor_state(actor, state); /* its KH2 model's `air` lines (runtime/mods/models.cpp) */
     if (actor == local_actor()) {

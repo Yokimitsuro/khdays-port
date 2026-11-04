@@ -348,9 +348,9 @@ enum {
     /* The notice of an autosave, in the game's font (ui/autosave_notice.cpp): %d the file */
     TXT_AUTOSAVE_DONE,
     TXT_AUTOSAVE_FAILED,
-    /* The mouse camera (the controls' enhancements) */
     TXT_CHARACTER_SHADOWS,
     TXT_CHARACTER_SHADOWS_NOTE,
+    /* The mouse camera (the controls' enhancements) */
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,
     TXT_MOUSE_SPEED,

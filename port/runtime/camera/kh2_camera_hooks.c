@@ -9,6 +9,7 @@
 #include "../input/controls_hooks.h"
 #include "../input/input.h"
 #include "../../host/app/host.h"
+#include "khdays_ds_symbols.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -23,6 +24,7 @@ extern void func_ov022_02088280(int player, short heading); /* sets a player's h
 extern int func_ov022_020881f8(int player);                 /* a player's position */
 extern unsigned short func_ov022_02088254(int player);      /* the yaw behind a player */
 extern short Session_GetLocalPlayerIndex(void);
+extern int PauseMenu_GetMode(void);
 extern int Ov002_GetSlotTableByte(int world);
 extern int Ov002_GetPeerRecordValue(int slot);
 extern KhdaysRef GetTrackEntryBase(int index);
@@ -69,6 +71,8 @@ enum {
     FLAG2_INVERT_Y = 0x8,
     FLAG2_INVERT_X = 0x10,
     FLAG2_TYPE_B = 0x20,
+    /* what the session log follows: not the lock-on's on-screen bits, which change as the target moves */
+    FLAGS_LOGGED = FLAG_CONTROL | FLAG_SELECT_VIEW | FLAG_HOLD | FLAGS_NOT_GAMEPLAY,
 };
 
 /* Days' turn bits (Ov002_Camera_UpdateFollow), from a drag on the touch screen */
@@ -128,6 +132,7 @@ static struct {
     int first_person, toggle;
     int player_state;
     int held;      /* this frame's camera flag 0x200: the player's controls are not the camera's */
+    int committed; /* the last frame came from a commit, no tick before it (khdays_kh2_camera_commit) */
     int republish; /* Days re-placed its camera in the middle of this one's: only write this one back */
     int room;
     float fade; /* the player's, as YS::OBJ's +0x834: 1 seen, 0 hidden */
@@ -177,14 +182,22 @@ static int moved_from(const int *words, const int *written)
 int khdays_kh2_camera_claims(int flags, int flags2, int mode)
 {
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    /* data_0204be04: the screen whose 3D runs this frame; the second's camera stays plain Days'. Modes: 1 a talk's, 3 a
+     * shake over the ordinary camera, 8 what Ov002_Camera_SetMode treats as 0 (set by Ov032_ApplyMode and others). */
     return (in->enhancements & KHDAYS_ENH_KH2_CAMERA) != 0 && (flags2 & FLAG2_TYPE_B) == 0 &&
            (flags & FLAG_CONTROL) != 0 && (flags & FLAGS_NOT_GAMEPLAY) == 0 &&
-           (mode == 0 || mode == 1 || mode == 3 || mode == 8); /* 1 a talk's, 3 a shake over the ordinary camera */
+           *(const volatile unsigned char *)KHDAYS_W(KHDAYS_DS_data_0204be04) == 0 &&
+           (mode == 0 || mode == 1 || mode == 3 || mode == 8);
+}
+
+static int claims_camera(const int *cam)
+{
+    return khdays_kh2_camera_claims(cam[WORD_FLAGS], cam[WORD_FLAGS2], cam[WORD_MODE]);
 }
 
 int khdays_kh2_camera_active(void)
 {
-    return s.active && !s.held && khdays_input_game_frames() - s.frame <= 2u;
+    return s.active && !s.held && !s.input_off && khdays_input_game_frames() - s.frame <= 2u;
 }
 
 void khdays_kh2_camera_center(void)
@@ -239,34 +252,44 @@ int khdays_kh2_camera_strafing(int actor)
            Session_GetLocalPlayerIndex() == 0;
 }
 
-int khdays_kh2_camera_follow(int flags, int flags2, int mode, int input_off, int bits)
+/* A session's pause runs the objects behind the menu, and takes the host's controls (Ov002_Camera_UpdateFollow). */
+static int host_paused(void)
 {
-    if (!khdays_kh2_camera_claims(flags, flags2, mode)) {
-        return 0;
-    }
-    s.want = WANT_FOLLOW;
-    s.input_off = input_off;
-    s.bits = bits;
-    /* With lock-on on its own buttons the game's R presses are the lock's (input.c) */
-    s.home = (flags & FLAG_RESET) != 0 && (khdays_input_snapshot()->enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) == 0;
-    return (flags & FLAG_RESET) != 0;
+    return PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0;
 }
 
-void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off)
+void khdays_kh2_camera_follow(int camera, int input_off, int bits)
 {
-    if (khdays_kh2_camera_claims(flags, flags2, mode) && (flags & FLAG_HELD_POINT) == 0) {
+    int *cam = KHDAYS_W(camera);
+    if (!claims_camera(cam)) {
+        return;
+    }
+    s.want = WANT_FOLLOW;
+    s.input_off = input_off || host_paused();
+    s.bits = bits;
+    /* With lock-on on its own buttons the game's R presses are the lock's (input.c) */
+    s.home = (cam[WORD_FLAGS] & FLAG_RESET) != 0 &&
+             (khdays_input_snapshot()->enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) == 0;
+    cam[WORD_FLAGS] &= ~FLAG_RESET; /* the reset is this camera's, not Ov002_TickLockedCamera's */
+}
+
+void khdays_kh2_camera_lock(int target, int camera)
+{
+    const int *cam = KHDAYS_W(camera);
+    if (claims_camera(cam) && (cam[WORD_FLAGS] & FLAG_HELD_POINT) == 0) {
         s.want = WANT_LOCK;
         s.target = (KhdaysRef)target;
-        s.input_off = input_off;
+        s.input_off = host_paused();
         s.bits = 0;
         s.home = 0;
     }
 }
 
 /* A hold skips what marks a frame (Ov002_Camera_UpdateFollow): the camera stays, without control. */
-void khdays_kh2_camera_held(int flags, int flags2, int mode)
+void khdays_kh2_camera_held(int camera)
 {
-    if ((flags & FLAG_HOLD) != 0 && khdays_kh2_camera_claims(flags, flags2, mode)) {
+    const int *cam = KHDAYS_W(camera);
+    if ((cam[WORD_FLAGS] & FLAG_HOLD) != 0 && claims_camera(cam)) {
         s.want = WANT_FOLLOW;
         s.input_off = 1;
         s.bits = 0;
@@ -338,14 +361,15 @@ static int ticks_a_frame(void)
 static void log_owner(const int *cam, int want)
 {
     static int last_want = -1, last_flags, last_mode;
-    if (want != last_want || cam[WORD_FLAGS] != last_flags || cam[WORD_MODE] != last_mode) {
-        khdays_log("kh2 camera: frame %u %s flags %#x flags2 %#x mode %d stage %d", khdays_input_game_frames(),
+    const int flags = cam[WORD_FLAGS] & FLAGS_LOGGED;
+    if (want != last_want || flags != last_flags || cam[WORD_MODE] != last_mode) {
+        khdays_log("kh2 camera: frame %u %s flags %#x flags2 %#x mode %d", khdays_input_game_frames(),
                    want == WANT_NONE   ? "days"
                    : want == WANT_LOCK ? "lock"
                                        : "follow",
-                   (unsigned)cam[WORD_FLAGS], (unsigned)cam[WORD_FLAGS2], cam[WORD_MODE], cam[WORD_STAGE]);
+                   (unsigned)cam[WORD_FLAGS], (unsigned)cam[WORD_FLAGS2], cam[WORD_MODE]);
         last_want = want;
-        last_flags = cam[WORD_FLAGS];
+        last_flags = flags;
         last_mode = cam[WORD_MODE];
     }
 }
@@ -357,7 +381,8 @@ static int same_place(Kh2CameraVec player)
            dx * dx + dz * dz <= WARP_DISTANCE * WARP_DISTANCE;
 }
 
-int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye)
+/* The wanted eye, and where to cast from; 0 when the camera stays the game's. */
+static int frame_prepare(int camera, int player, int behind_yaw, int origin, int eye)
 {
     int *cam = KHDAYS_W(camera);
     const u32 frame = khdays_input_game_frames();
@@ -366,15 +391,14 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     int warp = 0;
 
     s.want = WANT_NONE;
-    log_owner(cam, want);
     /* Days' second camera (data_0204be04, the 3D on both screens): plain Days', leaving this one's state alone */
     if (cam[WORD_STAGE] != 0) {
         return 0;
     }
+    log_owner(cam, want);
     /* Ov002_Camera_SetOrbitAngle, _SetAnchor (leaving a menu, an event's end), Ov002_ResetCamera: no frame of a camera
      * of Days', only its place set anew. Where the player has not moved, this camera stands. */
-    if (want == WANT_NONE && s.active && khdays_kh2_camera_claims(cam[WORD_FLAGS], cam[WORD_FLAGS2], cam[WORD_MODE]) &&
-        same_place(read_vec(KHDAYS_W(player)))) {
+    if (want == WANT_NONE && s.active && claims_camera(cam) && same_place(read_vec(KHDAYS_W(player)))) {
         s.republish = 1;
         write_vec(KHDAYS_W(origin), s.camera.pivot);
         write_vec(s.written_eye, s.camera.eye);
@@ -410,7 +434,7 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
             const float fov = takeover == KH2_CAMERA_SNAP ? kh2_camera_half_angle(kh2_camera_outdoor.fov)
                                                           : atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]);
             /* a new field starts behind the player (YS::PLAYER::start_player_camera) */
-            kh2_camera_start(&s.camera, &kh2_camera_outdoor, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
+            kh2_camera_start(&s.camera, read_vec(cam + WORD_FOCUS), read_vec(cam + WORD_EYE),
                              angle_radians(takeover == KH2_CAMERA_SNAP ? behind_yaw : cam[WORD_YAW]), fov, radius);
             s.camera.snap = takeover == KH2_CAMERA_SNAP;
             s.first_person = 0;
@@ -431,11 +455,17 @@ int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin
     }
     s.last_player = in->player;
     s.frame = frame;
+    s.committed = 0;
     s.room = Ov022_GetEntryField66(QueryActiveStateOrDelegate());
     in->behind_yaw = angle_radians(behind_yaw);
     /* mode 1: a talk, an examined object (Ov002_ElementChoiceStep, Ov002_SpareEntryStep) */
     in->zoomed = (cam[WORD_FLAGS] & FLAG_SELECT_VIEW) != 0 || cam[WORD_MODE] == 1;
     in->manual = (cam[WORD_FLAGS2] & FLAG2_MANUAL) != 0 || in->zoomed;
+    /* Without control a press is not this camera's: a tutorial's page, a session's pause */
+    if (s.input_off) {
+        s.center = 0;
+        s.toggle = 0;
+    }
     in->home = s.home || s.center;
     s.home = s.center = 0;
     /* Into first person only from following, as objective_control; locking on and talks leave it (cancelSubjective) */
@@ -580,15 +610,14 @@ static int line_hit(KhdaysRef world, const int *from, const double *motion, doub
 /* dk::ObjCamera::collision (no BlindCollision: Days' objects have none of its spheres): one line from the look-at, and
  * the eye 5 off what it hits along that surface's normal. A ceiling sends the line to under the eye at the hit's height
  * first. Not Ov002_ResolveCameraAgainstCollision: its sphere and 0xc00 off the floor are Days'. The map's top stays. */
-void khdays_kh2_camera_collide(int origin, int eye)
+static void frame_collide(int origin, int eye)
 {
     int *eye_words = KHDAYS_W(eye);
     const int *origin_words = KHDAYS_W(origin);
-    const int player = QueryActiveStateOrDelegate();
-    const int room = Ov022_GetEntryField66(player);
+    const int room = Ov022_GetEntryField66(QueryActiveStateOrDelegate());
     const double off = OFF_SURFACE / KH2_UNITS_A_DAYS_UNIT * 4096.0;
     /* setCamera only moves the look-at along this line in first person, which turns nothing */
-    if (s.republish || s.first_person || player < 0 || room < 0) {
+    if (s.republish || s.first_person || room < 0) {
         return;
     }
     /* a room not loaded yet: a field's first commit (TrackEntryGroup's wCount) */
@@ -629,7 +658,8 @@ void khdays_kh2_camera_collide(int origin, int eye)
     }
 }
 
-void khdays_kh2_camera_settle(int origin, int eye)
+/* What collision left of the wanted eye, and the eye the springs reached, to collide again. */
+static void frame_settle(int origin, int eye)
 {
     int *words = KHDAYS_W(eye);
     if (s.republish) {
@@ -644,36 +674,8 @@ void khdays_kh2_camera_settle(int origin, int eye)
     write_vec(words, s.camera.eye);
 }
 
-void khdays_kh2_camera_publish(int camera, int eye);
-
-/* Ov002_ReaimActor, before each commit of the camera to the matrices. While a mission sets up, a tutorial's page among
- * it, the game's tick returns early (Ov002_Camera_UpdateFollow's first gates) and what shows is what was last committed:
- * Days' first place. A commit no frame of this camera came before gets one, without control. */
-void khdays_kh2_camera_commit(int camera)
-{
-    const int *cam = KHDAYS_W(camera);
-    const int player = QueryActiveStateOrDelegate();
-    if (s.frame != 0u && khdays_input_game_frames() - s.frame <= 1u) {
-        return;
-    }
-    if (cam[WORD_STAGE] == 0 && khdays_kh2_camera_claims(cam[WORD_FLAGS], cam[WORD_FLAGS2], cam[WORD_MODE]) &&
-        player >= 0 && GetEntryField20ByIndex(player) != 0) {
-        int origin[3], eye[3];
-        s.want = WANT_FOLLOW;
-        s.input_off = 1;
-        s.bits = 0;
-        s.home = 0;
-        if (khdays_kh2_camera_prepare(camera, func_ov022_020881f8(player), func_ov022_02088254(player),
-                                      (int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye))) {
-            khdays_kh2_camera_collide((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
-            khdays_kh2_camera_settle((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
-            khdays_kh2_camera_collide((int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
-            khdays_kh2_camera_publish(camera, (int)KHDAYS_REF(eye));
-        }
-    }
-}
-
-void khdays_kh2_camera_publish(int camera, int eye)
+/* The camera's fields from the result. */
+static void frame_publish(int camera, int eye)
 {
     int *cam = KHDAYS_W(camera);
     const int *words = KHDAYS_W(eye);
@@ -711,5 +713,38 @@ void khdays_kh2_camera_publish(int camera, int eye)
                 (double)(c->fov_half * 2.0f * 360.0f / TWO_PI), (double)s.in.turn, (double)s.in.zoom, s.in.manual,
                 s.in.home, s.in.zoomed, (double)c->zoom_radius, (double)c->zoom_blend, s.first_person, (double)c->pitch,
                 (double)s.fade);
+    }
+}
+
+void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye)
+{
+    if (frame_prepare(camera, player, behind_yaw, origin, eye)) {
+        frame_collide(origin, eye);
+        frame_settle(origin, eye);
+        frame_collide(origin, eye);
+        frame_publish(camera, eye);
+    }
+}
+
+/* Ov002_ReaimActor, before each commit of the camera to the matrices. While a mission sets up, a tutorial's page among
+ * it, the game's tick returns early (Ov002_Camera_UpdateFollow's first gates) and what shows is what was last committed:
+ * Days' first place. A commit no frame of this camera came before gets one, without control. A commit can come before
+ * the tick of its game frame, so a tick's frame counts for the next game frame too; a commit's only for its own. */
+void khdays_kh2_camera_commit(int camera)
+{
+    const int *cam = KHDAYS_W(camera);
+    const int player = QueryActiveStateOrDelegate();
+    if (s.frame != 0u && khdays_input_game_frames() - s.frame <= (s.committed ? 0u : 1u)) {
+        return;
+    }
+    if (cam[WORD_STAGE] == 0 && claims_camera(cam) && GetEntryField20ByIndex(player) != 0) {
+        int origin[3], eye[3];
+        s.want = WANT_FOLLOW;
+        s.input_off = 1;
+        s.bits = 0;
+        s.home = 0;
+        khdays_kh2_camera_frame(camera, func_ov022_020881f8(player), func_ov022_02088254(player),
+                                (int)KHDAYS_REF(origin), (int)KHDAYS_REF(eye));
+        s.committed = 1;
     }
 }

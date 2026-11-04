@@ -1032,12 +1032,7 @@ HOOKS = {
             "        NNS_G3dGeRestoreMtx((int)stackID);\n"
             "        { extern int khdays_models_result_matrix(const void *render_obj, unsigned node,"
             " int *position, int *direction);\n"
-            "          MtxFx43 mine; MtxFx33 turn;\n"
-            "          if (khdays_models_result_matrix(pRenderObj, nodeID, (int *)&mine, (int *)&turn)) {\n"
-            "              if (pos) *pos = mine;\n"
-            "              if (nrm) *nrm = turn;\n"
-            "              return 1;\n"
-            "          } }\n",
+            "          if (khdays_models_result_matrix(pRenderObj, nodeID, (int *)pos, (int *)nrm)) return 1; }\n",
         )
     ],
     "main@020157c4": [
@@ -1326,17 +1321,14 @@ HOOKS = {
         # look view's; the reset (flag 8) is KH2's then, not Ov002_TickLockedCamera's.
         (
             "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
-            "    { extern int khdays_kh2_camera_follow(int flags, int flags2, int mode, int input_off, int bits);\n"
-            "      if (khdays_kh2_camera_follow(piVar7[0xe], piVar7[0xf], piVar7[0x10],"
-            " (uVar23 & 0x400) != 0 || (PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0), uVar20))\n"
-            "        piVar7[0xe] &= ~8U; }\n"
+            "    { extern void khdays_kh2_camera_follow(int camera, int input_off, int bits);\n"
+            "      khdays_kh2_camera_follow((int)state, (uVar23 & 0x400) != 0, uVar20); }\n"
             "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
         ),
         # A hold (flag 0x200) skips the block above; the KH2 camera stays through it.
         (
             "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
-            "  { extern void khdays_kh2_camera_held(int flags, int flags2, int mode);\n"
-            "    khdays_kh2_camera_held(piVar7[0xe], piVar7[0xf], piVar7[0x10]); }\n"
+            "  { extern void khdays_kh2_camera_held(int camera); khdays_kh2_camera_held((int)state); }\n"
             "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
         ),
     ],
@@ -1345,21 +1337,15 @@ HOOKS = {
         (
             "        if (pObj != 0) {\n            bHeld = 0;\n",
             "        if (pObj != 0) {\n"
-            "            { extern void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off);\n"
-            "              extern int PauseMenu_GetMode(void);\n"
-            "              extern short Session_GetLocalPlayerIndex(void);\n"
-            "              khdays_kh2_camera_lock((int)pObj, *(int *)(pCam + 0x38), *(int *)(pCam + 0x3c), *(int *)(pCam + 0x40),"
-            " PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0); }\n"
+            "            { extern void khdays_kh2_camera_lock(int target, int camera);\n"
+            "              khdays_kh2_camera_lock((int)pObj, (int)pCam); }\n"
             "            bHeld = 0;\n",
         ),
         (
             "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n",
             "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n"
-            "            { extern void khdays_kh2_camera_lock(int target, int flags, int flags2, int mode, int input_off);\n"
-            "              extern int PauseMenu_GetMode(void);\n"
-            "              extern short Session_GetLocalPlayerIndex(void);\n"
-            "              khdays_kh2_camera_lock((int)pObj, *(int *)(pCam + 0x38), *(int *)(pCam + 0x3c), *(int *)(pCam + 0x40),"
-            " PauseMenu_GetMode() == 2 && Session_GetLocalPlayerIndex() == 0); }\n",
+            "            { extern void khdays_kh2_camera_lock(int target, int camera);\n"
+            "              khdays_kh2_camera_lock((int)pObj, (int)pCam); }\n",
         ),
     ],
     # What commits the camera. While a mission sets up the camera's tick is gated, and this is the KH2 camera's only frame.
@@ -1377,17 +1363,9 @@ HOOKS = {
     "ov002@0204ff18": [  # Ov002_TickCameraTransition
         (
             "    if (pCam->nHoldTicks == 3) {\n",
-            "    { extern int khdays_kh2_camera_prepare(int camera, int player, int behind_yaw, int origin, int eye);\n"
-            "      extern void khdays_kh2_camera_collide(int origin, int eye);\n"
-            "      extern void khdays_kh2_camera_settle(int origin, int eye);\n"
-            "      extern void khdays_kh2_camera_publish(int camera, int eye);\n"
-            "      if (khdays_kh2_camera_prepare((int)pCam, (int)pTarget, func_ov022_02088254(nPlayer), (int)&vDelta,"
-            " (int)&vEye)) {\n"
-            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye);\n"
-            "        khdays_kh2_camera_settle((int)&vDelta, (int)&vEye);\n"
-            "        khdays_kh2_camera_collide((int)&vDelta, (int)&vEye);\n"
-            "        khdays_kh2_camera_publish((int)pCam, (int)&vEye);\n"
-            "      } }\n"
+            "    { extern void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye);\n"
+            "      khdays_kh2_camera_frame((int)pCam, (int)pTarget, func_ov022_02088254(nPlayer), (int)&vDelta,"
+            " (int)&vEye); }\n"
             "    if (pCam->nHoldTicks == 3) {\n",
         ),
     ],
@@ -1534,14 +1512,14 @@ HOOKS = {
             "                  Ov022_SetAnimSpeed(pActor, (short)khdays_controls_move_anim((int)pActor, nRate)); }\n",
         ),
     ],
-    # The states an actor enters (jump, guard, ...), traced for the local
-    # player's actor: what each button makes Roxas do.
+    # The states an actor enters (jump, guard, ...), for its KH2 model and the KH2 camera, and traced for
+    # the local player's actor: what each button makes Roxas do (runtime/input/controls_hooks.c).
     "ov022@02098834": [
         (  # Ov022_EnterActorState
             "int Ov022_EnterActorState(struct Actor *pActor, int nState, u32 nPrevTimer)\n{\n",
             "int Ov022_EnterActorState(struct Actor *pActor, int nState, u32 nPrevTimer)\n{\n"
-            "    { extern void khdays_trace_actor_state(int actor, int state);"
-            " khdays_trace_actor_state((int)pActor, nState); }\n",
+            "    { extern void khdays_controls_actor_entered_state(int actor, int state);"
+            " khdays_controls_actor_entered_state((int)pActor, nState); }\n",
         )
     ],
     # The frame-rate mode field play runs at, traced.
@@ -4368,6 +4346,8 @@ PORT_DS_SYMBOLS = (
     "data_0204c2d0",
     "data_0204c3d8",
     "data_ov022_020b2e78",
+    # the screen whose 3D runs this frame: the KH2 camera is the first's (runtime/camera/kh2_camera_hooks.c)
+    "data_0204be04",
     # the pause's context and Mission Mode's flags (runtime/menus/retry.c)
     "data_0204be08",
     "data_0204c240",

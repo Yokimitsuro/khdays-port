@@ -390,7 +390,6 @@ int khdays_profile_repair(KhdaysProfile *p)
     }
     changed += clamp(&p->enh.camera_speed, 10, 300);
     changed += clamp(&p->enh.mouse_speed, 10, 300);
-    changed += clamp(&p->enh.character_shadows, 0, 1);
     changed += clamp(&p->enh.run_threshold, 50, 95);
     changed += clamp(&p->enh.walk_speed, 20, 90);
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
