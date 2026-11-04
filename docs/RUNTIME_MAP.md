@@ -4196,8 +4196,15 @@ arrows, every setting there ("?" where the game has it), the hand at the
 one chosen, a scroll bar's thumb past ten; the help and the value's help in
 the description's place. Its directions and L and R are the port's
 (`khdays_camp_buttons`): a step over a section's settings, or a section's
-first, pressing the game's own R, L, DOWN and UP to take its cursor there
-(the game's sounds); RIGHT, LEFT and B the game's. Seen (2026-10-10): the
+first, pressing the game's own R, L, DOWN and UP to take its cursor there;
+RIGHT, LEFT and B the game's. Those presses' cursor and page sounds are kept
+from the game and the port plays one cursor sound for the move
+(`khdays_camp_navigation_sound`; before the Menu Overhaul's own commit each
+press sounded: the external review's "sound doubling in mission config"). Seen
+(2026-11-04, Mission Mode's Preferences with the HD PACK, `KHDAYS_TRACE_CAMP`
+and `KHDAYS_LOG`, whose lines say each sound played or kept): one
+`se_sys_click` a move, R and L over two tabs and a held DOWN's repeats
+included, one for RIGHT and LEFT, one `se_sys_kettei` for A and B. Seen (2026-10-10): the
 story's sections from Controls to Command List over two tabs and round,
 Combat Partner Behavior's Support changed (Damage to Recovery); Mission
 Mode's fifteen rules with the five "?", scrolled to Lives; four copies on one PC

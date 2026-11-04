@@ -650,8 +650,12 @@ static void story_cursor(const Camp *c, int screen, u32 state)
  * setting (steer) make none of the game's cursor and page sounds -- one cursor sound is played for the move. */
 int khdays_camp_navigation_sound(int kind, int sound)
 {
-    return !(config.on && steer.on && kind == 0 && (sound == 0 || sound == 2) &&
-             khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL));
+    const int play = !(config.on && steer.on && kind == 0 && (sound == 0 || sound == 2) &&
+                       khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL));
+    if (kind == 0 && tracing()) {
+        khdays_log("camp: menu sound %d %s", sound, play ? "played" : "kept from the game (steering)");
+    }
+    return play;
 }
 
 /* The rows shown's locks: the story's options or the two of its option open, Mission Mode's. */
