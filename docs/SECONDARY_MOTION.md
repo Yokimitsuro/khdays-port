@@ -1,7 +1,7 @@
 # Secondary motion (cloth, cords, hair)
 
 A mod's model can move parts of itself that its animation does not: a coat's
-skirt, sleeve cuffs, drawstrings, short hair. The port simulates them on the
+skirt, drawstrings, short hair. The port simulates them on the
 CPU after the pose is final (the game's animation, or KH2 motions retargeted and
 cross-faded, `KH2_MODELS.md`) and before skinning: the simulation rebuilds the
 bones that carry those parts, and the model is drawn through its bones as
@@ -11,7 +11,7 @@ code.
 
 Code: `port/runtime/mods/secondary/`. Tests: `port/tests/secondary_motion_test.cpp`
 (`khdays-secondary-motion`). Tool: `port/tools/secondary_replay.cpp`
-(`khdays-secondary-replay`). Example setup: `docs/examples/secondary/`.
+(`khdays-secondary-replay`). The setups in use: `tools/hd/kh2_models/`, each model's `mdl` folder.
 
 ## Using it
 
@@ -25,8 +25,10 @@ mods/<Mod>/graphics/<file>/mdl/kh2_secondary_presets.txt   presets it includes
 do. Its problems are written to the session log and stderr with file and line
 (`secondary: roxas_b_h: roxas_b_h.secondary.txt:41: error: there is no bone
 kh2_999 ...`); a file with errors leaves the model drawn without secondary
-motion. The file and its includes are read again within a second of being saved
-(the actors start afresh on the new setup).
+motion. The file and its includes, one that could not be opened too, are read
+again within a second of being saved (the actors start afresh on the new setup);
+saved with errors while running, the model keeps its last good setup until they
+are fixed.
 
 | Variable | Effect |
 |---|---|
@@ -34,6 +36,7 @@ motion. The file and its includes are read again within a second of being saved
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
 | `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked, how it found its place in the world (`placed by ...`) and where it is (`at`, metres); a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; with `weapon_motions`, `hand trace` (the weapon's joint, the frame written and the game's own, moved and turned since the last draw, in the root's space); a `held` weapon's `held trace` (its start against the frame written, its nodes from the first); for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
+| `KHDAYS_SECONDARY_NO_PREWARM=1` | rigs are cooked as their models load, not ahead on a thread of their own once the first loads (`model_link.cpp` prewarm_model_secondary: a later load takes its rig from there when its files are unchanged) |
 
 ## The model it works on
 
@@ -79,8 +82,7 @@ simulation rate 60 substeps 4 iterations 2 max_catchup 4
 gravity 0 -9.81 0           # m/s^2, the world's y up
 environment on thickness 2  # the room's collision; its contact thickness
 teleport 150 100            # a jump this far (or turn, degrees) in a tick rebases
-# environment on [thickness <t>] [ground]: the room's floors, walls, ceilings and objects; `ground` the floors
-# alone (N_EX830: a wall caught the coat against a leg, the replay's wall scenario 22-84 cm jitter, 4 alone)
+# environment on [thickness <t>] [ground]: the room's floors, walls, ceilings and objects; `ground` the floors alone
 idle_reset 1                # s unseen before an actor starts afresh
 first_pose_iterations 30    # contact relaxation before the first picture
 wind world 1 0 0 speed 2 gust 0.4 frequency 0.3 turbulence 0.2
@@ -98,7 +100,6 @@ profile off
 | `strip <bone>...` | a surface's controls, anchor to hem (not necessarily parent to child) |
 | `chain <bone>...` | a chain's controls |
 | `tuft <bone>...` / `tufts <bone>...` | hair: one tuft (a short chain), or one single-bone tuft each |
-| `ring <bone>...` | controls joined around in a closed loop (a cuff's circumference) |
 | `topology mesh` | neighbours from the triangles whose corners' heaviest bones are its controls |
 | `connect <a> <b>` / `disconnect <a> <b>` | a link added, or a mesh link cut (a slit, a seam) |
 | `exclude <bone>...` | left out of its strips |
@@ -108,13 +109,18 @@ profile off
 | `hang <x y z>` | chains: hung straight that way (model space at rest) before settling |
 | `settle on [steps <n>]` | its reference shape hung under gravity against the colliders at load |
 | `twist neighbours|reference` | surfaces: a control's twist from its row (default) or its reference |
-| `collide <tag>...` | the collider tags it collides with (none named: every collider) |
+| `collide <tag>...` | the collider tags it collides with (no `collide` line: every collider; a bare `collide` or `collide none`: none) |
 | `self_collision <name>` | groups with one name collide with each other and themselves |
+| `environment on\|off` | `off`: the room's collision leaves the group alone (default on) |
+| `clip_world [inset <length>]` | surfaces: the room's polygons inside the closed volume its strips make are not drawn (below) |
+| `shell_push <tag>... [from <0-1>]` | `cutscene_sim`: the shell pushed out of the colliders with these tags (below) |
 | `mode`, `authored_policy`, `wind`, any setting | as below |
 
-**Settings** (in groups, presets, `bone` lines and controls). A value may end
-`hem <value>`: the setting runs from its plain value at the anchor to that one at
-the free end, by depth along the strip.
+**Settings** (in groups, presets, `bone` lines and controls; `mass` and `thickness`
+are read once at load, so a control setting them is an error). A value may end
+`hem <value> [curve <n>]`: the setting runs from its plain value at the anchor to
+that one at the free end, by depth along the strip raised to `curve` (above 0, up
+to 8; default 1, linear).
 
 | Setting | Unit | Default | |
 |---|---|---|---|
@@ -137,24 +143,17 @@ the free end, by depth along the strip.
 | `guided_inertia` | 0..2 | 0.5 | the same in guided mode |
 | `max_speed` | m/s | 20 | relative to the target |
 | `smoothing` | s | 0 | the drawn shape eased toward the solved one, in its reference bone's space (below) |
-| `follow_bone_scale` | 0..3 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`); over 1 the legs carry it more than `always` and `weight` give, 95 % at most in all (a thigh swung up and forward, away from where the coat hangs, takes the panels in front of it along) |
+| `follow_bone_scale` | 0..3 | 1 | of its `follow_bone` shares it takes; by depth (`hem`), per bone or per animation (`control`); over 1 the legs carry it more than `always` and `weight` give, 95 % at most in all |
 | `drape` | 0 or 1 | 1 | its target swung out of the body colliders down its strip (eased, below) |
 | `draw_guard` | 0 or 1 | 1 | a smoothed drawn face cutting into the body deeper than the solved one moved out (below) |
 | `thickness` | length | 0.01 m | contact radius of controls, edges and faces |
 | `friction` | 0..1 | 0.2 | of a control against a collider |
 | `face_friction` | 0..1 | 0 | of a face resting on a collider, from at most 1 cm of its push (below) |
-| `no_sim` | 0..1 | 0 | not simulated: each substep on its target (its reference bones, the legs' `follow_bone` carry, the drape round the body) instead of where its motion would take it, that far of the way (`no_sim` alone is 1); contact with the body still keeps it out of the legs (from the last substep, so it keeps its side), the room does not touch it. N_EX830's coat: legs in it 0 in the idles, jump and wall, 7 cm in 23 frames of the run (on its targets alone: up to 20 cm in most frames); jitter as the simulated coat's (the drawn shape still smoothed) |
-| `game_shape` | 0..1 | 0 | the coat locked on the replaced game model's coat (a cutscene model's), and at 1 kept there after the links and contact, unsmoothed (`set_game_mesh`, model_link.cpp). In a group with follow bones and one forked strip (the front): the game coat is the triangles on the reference bone's node, those above it, its children and the follow bones' nodes and their children, in the pieces reaching the hips (not the game's own legs); its places welded within 2 cm (its skirt and back flap meet). The back, each side's middle strip and the strips in front of them are locked: each laid from its fixed point (the waist) down two paths of the game coat's edges (shortest along them), its top to its knee vertex and on to its bottom vertex, each the place nearest its way around at the coat's top, the game's knee height and the coat's bottom, each place taken once (the front's first, then the back, the sides, the strips in front); each bone from the last one's end to the first place on the path its length away, the bones of each section scaled alike (bisection) so the knee row (the strip point nearest the mod's knee) ends exactly on the knee vertex and the last on the bottom. The forked front: down its middle to the slit's top (the highest open place in front, under the top), its two panels down the slit's edges to their corners (where the edge stops falling steeper than it runs). Its points below its first down to the fork (the slit's top as drawn) halfway between the strips in front of the sides at that row, its bones there turned halfway between theirs (their tails kept on their points), so the slit's top sits between its neighbours. Each panel's points between the fork and the corner take their neighbour's bow: on the line from the point above to the one below (their share of the way at rest), out by as much as the strip beside the panel stands out of its own such line at that row; the slit's edge is one straight game edge, which cuts across a raised knee, and its neighbour bends over it (the knee row moved 4.4 cm median, 31 max over the cutscenes). The strips behind the sides: row by row on an arc between their side's and the back's points now, at their share of the angle between them at rest, bowed outward from the coat's middle by tan(angle / 4) / 2 of the gap times 4t(1 - t). e_rox_hb: the back's knee row (the head of kh2_31) on the game's back knee vertex (0, 46, -25 cm), its last on (0, 8, -34); the sides' on (25, 45, -6), (32, 12, -9); in front of them (16, 45, 11), (21, 12, 10); the fork halfway between kh2_37's and kh2_61's tails (0, 65, 9 at rest), the panels from there down the slit's edges to its corners (8, 12, 12). Its legs are placed on the game's (RENDERING.md), so the coat covers them. Over the cutscenes a section's bones are 0.57-1.54 their length (median 0.97) |
-| `cutscene_sim` | 0 or 1 | 0 | simulated about the coat's places on the game model (`game_shape`'s, which are then its targets, not its bones' or the legs' carry, and not draped), and never inside the shell they make: the coat's strips (each from its fixed point down) beside each other round the body, closed across the slit (`set_game_mesh`); each substep a particle behind its place's tangent plane (the shell's faces round it, by area) is put back on it, after the constraints and last, so it slides along the shell and swings out freely. It moves in its hips' frame, as a coat the legs push about does: its damping, inertia, the pull's damping and the contact's velocity clamp are about its place as the hips carry it (`reference_bone_frame`), not its place's own motion, and the shell's push is contact (`pushed_`), so the shell (the game's legs) pushes it without throwing it. In its place's own frame a leg kicking a strip's places out 20 cm and back threw the hem 4.9 cm past them; in the hips', 2.4 (test `cutscene_sim_kick`). Its strips' links and tethers take the places' lengths, whatever they are scaled to; so do its rows and faces, with the group's compliances (kh2_coat's rows: stiff at the belt, free at the hem), so it moves as one cloth: the kick carried the strips beside it 3 cm, 0.7 when the rows were only kept from stretching past their limit (the strips then hung as separate ribbons). Only the colliders its group's `collide` names touch it (e_rox_hb: `collide none`; calf colliders made the coat twitch violently as he dropped to his knees); not the room, not itself; drawn unsmoothed. At a start, a cut, a jump and when the game's pose snaps (a place moving more than 0.35 m about its group's hips in one draw: a cutscene's first frames; treated as a camera cut, `actor.cpp` kGameSnap) it is put on its places, still. A cut within 0.5 s of the last settle is not settled again (kSettleGap). The stall at a cutscene model's spawn (156-280 ms in the session logs) was its load: `prepare_references` hangs the settling groups for 240-360 steps (107 of e_rox_hb's 115 ms); every other mod model's rig is now cooked and prepared on a thread of its own once the first loads (`model_link.cpp` prewarm_model_secondary), and a load takes it from there when its files are unchanged (KHDAYS_SECONDARY_NO_PREWARM turns that off). In its places' frame kh2_coat's weak pull at the hem flung a walking cutscene coat's hem far forward, a stiff one (3.5 Hz down to 2.5 at the hem, critically damped) hardly moved and 3.5 down to 1.2 (curve 1.5) was stiff at the top and rubbery at the hem; in the hips' frame e_rox_hb's coat takes kh2_coat's material with an evener pull: 2.5 Hz down to 0.9 (curve 1), follow_damping 0.9, max_strain 0.3, max_distance 20 cm (not yet checked in the game). Alone on a line: 1. The test's flared skirt: 9 mm inside its places without the shell, none with it; spun, 2 cm out off it, 0.3 mm in |
-| `environment on\|off` | group line | on | `off`: the room's collision leaves the group alone (e_rox_hb's cuffs) |
-| `clip_world [inset <length>]` | group line | off | surfaces: the room's polygons inside the closed volume the group's strips make are not drawn, so a coat through a wall shows its own inside (black) there and not the wall; a wall really in front of the model still covers it. The volume (`rig.cpp` clip_volumes_of): each strip from its fixed point down to its end a column (a forked strip's shared top in both branches), the columns round the body by their ends' angle about the coat's axis at rest, each stitched to the next by its share of the way down, a quad split along the diagonal the drawn mesh's faces use (split the other way, the floor showed through as a line along the quads; closed all round, across a slit too), capped by fans from the middle of the fixed points and of the ends, wound outward at rest; the session log says its faces and that it is closed. Each draw it is posed with the model's skin, each corner `inset` inside the drawn controls along its side faces' normals (default 0, on them; negative: outside, at most 5 cm either way; 1.5 cm in, with the caps' normals turning the hem's corners up too, let the floor show through as thin slivers where it met the coat's inside; on them, the skin's blending still left a line of it: the mods' coats take -2 mm), and sent as not-drawn polygons (gfx/g3d.h `khdays_g3d_clip_polygon`, docs/RENDERING.md "Clip volumes"). N_EX830's coat: 9 columns, 102 faces. The floor inside the hem (a kneel taking the hem under it) is left out too |
-| `turn <bone> <degrees>` or `turn <bone> clear <collider> [margin <length>]` | group line | none, margin 2 mm | the strip from that bone down turned at rest about the line across that bone's head, perpendicular to the strip and to its way out from the group's reference bone (positive: out; -90 to 90 degrees), or by the least turn (a quarter degree at a time, up to 90) that has the strip, its head through each control, outside that collider by the controls' thickness and `margin` (at most 5 cm). The strip's bones' rest frames are turned (`rig.cpp` Cook::group), so its links, its reference shape, the solver's rest (its relaxation, its collider exclusions) and the drawn rest are the turned strip's; the session log's rig line says each angle. Testing its controls alone missed a collider between them, through the flap. The mods' coats turn each cuff's thumb-side strip (121, 238) just clear of a thumb capsule (bone 139/256, `fit 0.95`): 6.5 degrees, the rim 1.35 cm out |
-| `outward axis` or `outward vertical` | group line | vertical | surfaces round an axis (a cuff of three strips or more): its rest side (where `side rest` colliders push it, `Simulation` outward_) is away from its own axis (the strips' heads' middle, along the middle of the vertices on its controls), not from its reference bone's vertical (a cuff on a T-pose arm lies along x); its edges and faces too back out that way from a rest-side collider, not only its controls (an edge was pushed along its nearest way, a face to the side it started on: a thumb through the cuff's wall at rest pushed the wall in). Its links between strips (rows round it, diagonals, bends across) are not solved, so a strip pushed out swings on its own and moves no other. N_EX830's cuffs with the hand and thumb colliders `side rest`: the rest shape's thumb-side rim 9.5 to 12.1 cm from the axis, the palm side 7.1 to 8.4, the pinky side unmoved (with rigid rows it was dragged in to 5.6) |
-| `leg_carry` | 0..1 | 0 | `game_shape` / `cutscene_sim`: the back strip's game vertices from its knee vertex down skinned anew, that share carried by both legs alike (the follow bones' game nodes at and above the game's knee height, their children below) and the rest as the game skins them (`set_game_mesh`; read from the back's knee row). The game's back flap rides its hips and one calf carries its hem, so a calf came through the back as he knelt. Measured offline it made the calves worse (141 of 1524 cutscene frames crossing the back's shell, 569 at 0.8: both legs averaged put the back's middle where one calf swings through); e_rox_hb leaves it at 0 |
-| `shell_push <tag>... [from <0-1>]` | group line | | `cutscene_sim`: the shell pushed out of the colliders with these tags each substep, before the cloth moves (`Simulation::push_shell`): a face within a core's radius plus the particle's thickness has its corners moved out, by where on it the core comes nearest (barycentric), four passes; `from` leaves each core's start out (the knee, on the game's knee vertex). The faces across the slit are left out. The places move, not the cloth, so nothing squeezes it (calf colliders on the cloth itself made it twitch violently in a kneel). e_rox_hb: `shell_push calves from 0.25`, the calf colliders tagged `calves`. Offline (a 7 cm calf below the knee): the back's crossings 141 of 1524 frames to 1, the front's 38 to 1; most frames push nothing, p90 2 cm, at most 16 |
+| `no_sim` | 0..1 | 0 | not simulated: each substep on its target (its reference bones, the legs' `follow_bone` carry, the drape round the body) instead of where its motion would take it, that far of the way (`no_sim` alone is 1); contact with the body still keeps it out of the legs (from the last substep, so it keeps its side), the room does not touch it |
+| `game_shape` | 0..1 | 0 | its target taken that far onto its place on the replaced game model's coat, and at 1 kept there after the links and contact, unsmoothed (below) |
+| `cutscene_sim` | 0 or 1 | 0 | simulated about its place on the game model's coat, never inside the shell those places make (below); alone on a line: 1 |
 | `rotate_only` | 0 or 1 | 0 | a rebuilt bone only turns toward its point; its head stays where its simulated parent carries it or the animation has it (1: no stretch) |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
-| `wind_lift` | 0..1 | 0.5 | (kept for surfaces' normal force; not used yet) |
 
 Values outside a setting's range are errors (`damping -1 is out of range (0 to
 200)`). **Precedence**, lowest first: the defaults; a preset's base (`extends`)
@@ -166,7 +165,7 @@ controls by priority (below).
 ```text
 collider <name> sphere <bone> radius <r> [offset x y z] [tags ...]
 collider <name> capsule <bone> <end bone>|length <l> radius <r> [<end r>]
-         [offset x y z] [end_offset x y z] [fit [<percentile>] [scale <s>]] [clear] [tags ...]
+         [offset x y z] [end_offset x y z] [fit [<percentile>] [scale <s>]] [clear] [side rest|motion] [tags ...]
 ```
 
 A capsule runs from its bone's point (`offset`, bone-local) to its end bone's
@@ -176,8 +175,75 @@ percentile of their distances, per half for the two radii; vertices past its end
 belong to its neighbours: a thigh measured to its hip end came out 13.6 cm where
 the thigh is 9-10); `clear` shrinks it so every control it
 collides with starts outside it at rest. A control still inside a collider at
-rest is left out of it, with a warning naming both and the depth. Tags (default
-`body`) are what groups' `collide` lines name.
+rest is left out of it, with a warning naming both and the depth. `side rest` (the
+default) keeps what it touches on the side it has at rest, `side motion` on the
+side it came from (below, "How contact keeps the legs out"). Tags (default `body`)
+are what groups' `collide` lines name.
+
+**The game model's coat** (`game_shape`, `cutscene_sim`, `set_game_mesh` in
+`model_link.cpp`). Only a group that sets one of them, or that an animation control
+sets them on, is locked, and only with follow bones and one forked strip (the
+front). The game coat is the triangles on the reference bone's node, those above it,
+its children and the follow bones' nodes and their children, in the pieces reaching
+the hips (not the game's own legs); its places welded within 2 cm.
+
+- The back, each side's middle strip and the strips in front of them are each laid
+  from their fixed point (the waist) down two paths of the game coat's edges (shortest
+  along them), top to knee vertex and on to bottom vertex, each the place nearest its
+  way around at the coat's top, the game's knee height and the coat's bottom, each
+  place taken once (the front's first, then the back, the sides, the strips in front).
+  Each bone runs from the last one's end to the first place on the path its length
+  away, the bones of each section scaled alike (bisection) so the knee row (the strip
+  point nearest the mod's knee) ends exactly on the knee vertex and the last on the
+  bottom.
+- The forked front runs down its middle to the slit's top (the highest open place in
+  front, under the top), its two panels down the slit's edges to their corners (where
+  the edge stops falling steeper than it runs). Its points below its first down to the
+  fork lie halfway between the strips in front of the sides at that row, its bones
+  there turned halfway between theirs (their tails kept on their points). Each panel's
+  points between the fork and the corner take their neighbour's bow: on the line from
+  the point above to the one below (their share of the way at rest), out by as much as
+  the strip beside the panel stands out of its own such line at that row.
+- The strips behind the sides lie row by row on an arc between their side's and the
+  back's points, at their share of the angle between them at rest, bowed outward from
+  the coat's middle by tan(angle / 4) / 2 of the gap times 4t(1 - t).
+
+`game_shape` takes the target that far onto those places (at 1, the particle too,
+after the links and contact). With `cutscene_sim` the places are the targets (not the
+bones' or the legs' carry, and not draped), and the strips side by side round the body,
+closed across the slit, make a shell: each substep a particle behind its place's
+tangent plane (the shell's faces round it, by area) is put back on it, after the
+constraints and last, so it slides along the shell and swings out freely. It moves in
+its hips' frame: its damping, inertia, the pull's damping and the contact's velocity
+clamp are about its place as the hips carry it (`reference_bone_frame`), and the
+shell's push is contact (`pushed_`), so the game's legs push it without throwing it.
+Its links, tethers, rows and faces take the places' lengths, with the group's
+compliances. Only the colliders its group's `collide` names touch it; not the room, not
+itself; drawn unsmoothed. At a start, a cut, a jump and when the game's pose snaps (a
+place a particle takes moving more than 0.35 m about its group's hips in one draw,
+treated as a camera cut, `actor.cpp` kGameSnap) it is put on its places, still, and
+drawn there. A cut within 0.5 s of the last settle is not settled again (kSettleGap).
+
+`shell_push <tag>... [from <0-1>]` pushes that shell out of the colliders with these
+tags each substep, before the cloth moves (`Simulation::push_shell`): a face within a
+core's radius plus the particle's thickness has its corners moved out, by where on it
+the core comes nearest (barycentric), four passes; `from` leaves each core's start out.
+The faces across the slit are left out. The places move, not the cloth, so nothing
+squeezes it.
+
+**`clip_world [inset <length>]`** (surfaces): the room's polygons inside the closed
+volume the group's strips make are not drawn, so a coat through a wall shows its own
+inside there and not the wall; a wall really in front of the model still covers it. The
+volume (`rig.cpp` clip_volumes_of): each strip from its fixed point down to its end a
+column (a forked strip's shared top in both branches), the columns round the body by
+their ends' angle about the coat's axis at rest, each stitched to the next by its share
+of the way down, a quad split along the diagonal the drawn mesh's faces use, closed all
+round across a slit too, capped by fans from the middle of the fixed points and of the
+ends, wound outward at rest; the session log says its faces and that it is closed. Each
+draw it is posed with the model's skin, each corner `inset` inside the drawn controls
+along its side faces' normals (default 0, on them; negative: outside; at most 5 cm
+either way), and sent as not-drawn polygons (gfx/g3d.h `khdays_g3d_clip_polygon`,
+docs/RENDERING.md "Clip volumes"). The floor inside the hem is left out too.
 
 **Reference shape and modes.** A group's target shape is its rest shape (or the
 settled one) carried by its first `attach` bone. `follow_bone` lets controls near
@@ -227,26 +293,28 @@ animations does not pop. Settings are blended toward its values by that weight;
 mode by authority; its wind replaces the group's by weight.
 
 **Wind**: `wind world|actor|bone <bone> <x y z> speed <m/s> [gust <f>]
-[frequency <Hz>] [turbulence <f>]` (global, per group, per control). Gusts and
-turbulence are smooth sums of sines with a per-actor phase; the air drags each
-control by its velocity relative to the air (`wind_drag`).
+[frequency <Hz>] [turbulence <f>]` or `wind off` (global, per group, per control).
+Gusts and turbulence are smooth sums of sines with a per-actor phase; the air drags
+each control by its velocity relative to the air (`wind_drag`).
 
 ## Solver
 
-XPBD (Macklin et al. 2016) on contiguous arrays sized at load; no allocation in a
-tick once the room's triangle buffer has its working size. A tick (fixed 60 Hz):
+XPBD (Macklin et al. 2016) on contiguous arrays sized at load. A tick allocates
+little: the room's triangle buffer until it has its working size, the controls'
+order, and the copies of the game's places an actor that has them takes. A tick
+(`simulation rate`, 60 Hz in the shipped files):
 
 1. The room's triangles near the actor gathered once.
-2. Per substep (4): each needed bone's frame interpolated between the tick's
+2. Per substep (`substeps`, 3 in the shipped files): each needed bone's frame interpolated between the tick's
    two poses (positions linearly, rotations nlerp); the colliders and anchors
    placed; each control's target computed; its velocity integrated relative to
    its target's: the target's acceleration not felt scaled by `1 - inertia`,
    damping `exp(-damping h)`, gravity, the air (`wind_drag`), and `max_speed`.
-3. Per iteration (2), multipliers reset each substep: links (compliance / h²),
+3. Per iteration (`iterations`), multipliers reset each substep: links (compliance / h²),
    the pull toward the target (XPBD with damping: compliance 1/(m w^2), gamma =
    2 zeta / (w h)), tethers, `max_distance`, swing cones, strain limits; then
-   contact: body colliders (controls each iteration; edges and four samples per
-   coarse face on the substep's last), the room, self-contact (last iteration);
+   contact: body colliders (controls each iteration; edges and each coarse face,
+   exactly, on the substep's last), the room, self-contact (last iteration);
    then anchors re-projected (the body attachment wins over contact).
 4. Twice more: strain limits, control contacts, anchors (a push spreads to the
    neighbours instead of tearing one control off them).
@@ -254,8 +322,9 @@ tick once the room's triangle buffer has its working size. A tick (fixed 60 Hz):
    from its target, starts again on its targets (counted as a recovery).
 
 Contact: a control crossing a capsule's core in one substep is pushed back to the
-side it came from; an edge or face contact moves no corner more than twice the
-overlap (a corner near a fixed anchor would otherwise be thrown). Friction removes
+side it came from; an edge contact moves no end more than twice the overlap (an end
+near a fixed anchor would otherwise be thrown), a face contact moves all its corners
+alike, past the core's end when pierced, at most 50 cm. Friction removes
 tangential motion relative to the collider's surface up to `friction` x the
 overlap. A one-sided room face pushes back to its front a control that crossed it
 this substep, sits less than 5 cm behind it, or belongs in front (a floor is solid
@@ -336,10 +405,10 @@ and the actor starts afresh, as after `idle_reset` unseen. A jump of every
 group's reference bone past `teleport` within a tick (the character moved or
 turned by the game) rebases the state rigidly (shape kept, relative velocity
 zero) and skips the tick. When only some jump (an arm snapping to an animation
-with no blend carries a cuff's), those groups alone are rebased, their bones
+with no blend carries a chain on it), those groups alone are rebased, their bones
 (the reference bone, those under it, the colliders they touch) start the ticks
 in the new pose, and the rest is simulated through the draw (`Actor::update`):
-rebasing everything for a cuff skipped the coat's tick, and going from the calm
+rebasing everything for it skipped the coat's tick, and going from the calm
 idle to the guard (no blend; the replay with an instant 60 degree turn) the legs
 jumped through the coat, 13-20 cm deep on that frame, a leg left outside it in
 game. A pose cut the model says it made (`ActorInput::pose_cut`: a KH2 motion taking
@@ -471,9 +540,9 @@ plaza's flares stopped with it. F12's lines name the room and group taken.
 
 ## N_EX830 (the coat Roxas)
 
-`docs/examples/secondary/N_EX830.secondary.txt`, installed as
-`roxas_b_h.secondary.txt` beside `roxas_b_h.mdlx` (byte for byte N_EX830) in the
-test mod; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
+`tools/hd/kh2_models/graphics/ba/ch/ro/def_hb.p.z/mdl/roxas_b_h.secondary.txt`, beside
+`roxas_b_h.mdlx` (byte for byte N_EX830) in the
+HD pack; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
 
 - Coat: 8 strips under the belt (26-32, 34-40, 42-48, 50-56, 58-64, 66-72,
   74-80, 82-85-88-90), the front forking under 85 (85-92-94); 43 controls, 44
@@ -492,8 +561,7 @@ test mod; its motions stay `roxas_b_h.motions.txt`'s (P_EX110's, retargeted).
   Simulated: P_EX110 has no coat tracks.
 - Drawstrings 103-106 and 220-223 from helpers 102 and 219 (bind pose points
   forward): hung down and settled against the chest at load.
-- Cuffs 118-128 / 235-245: four two-control strips joined by two rings each,
-  stiff, colliding with the hands only.
+- Cuffs 118-128 / 235-245: not simulated, fitted round the hands by bones.txt's `cuff`.
 - Hair: single-bone tufts under 170, guided (`kh2_hair`). P_EX110's motions key
   the hair's sway (its tufts 116-159 are N_EX830's 172-215 less 56; motions.txt
   maps them): 2-3 degrees in the calm idle at 0.3 Hz, up to 19 rms in the battle
@@ -536,7 +604,7 @@ control (RMS 33-45 cm), as the earlier fits found.
 ## Replay tool
 
 ```bash
-khdays-secondary-replay N_EX830.mdlx N_EX830.secondary.txt roxas_b_h.motions.txt --out out
+khdays-secondary-replay roxas_b_h.mdlx roxas_b_h.secondary.txt roxas_b_h.motions.txt --out out
 khdays-secondary-replay ... --scenario run --actors 8 --draw-hz 30 --repeat 2
 khdays-secondary-replay ... --reference B_EX390.mdlx B_EX390.mset 0,10,140,208
 ```
@@ -562,6 +630,34 @@ them there. `--reference`'s slots are seen by the controls' `slot` lines, and a
 reference model with this model's bone count drives all of them (else bones 0-94):
 the dual wield Roxas (B_EX390 on its own motions) is checked against its own bake
 with `--reference roxas_bf_h.mdlx B_EX390.mset 0,1,4,5`.
+
+Options: `--out <dir>` (contact sheets and the report), `--scenario <name>` (idle, calm,
+idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall, spawn,
+teleport, cut, platform, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
+at once, the benchmark; default 1), `--draw-hz <hz>` (default 60), `--repeat <n>` (draws
+each n times), `--reference <B.mdlx> <B.mset> <slot,...>`.
+
+Diagnostics, on stderr:
+
+| Variable | Effect |
+|---|---|
+| `KHDAYS_REPLAY_DEBUG=<strain>` | the worst links once strain passes it, and every leg in a coarse face with its side |
+| `KHDAYS_REPLAY_LEGS=1` | each frame's deepest leg in the coat (cm) |
+| `KHDAYS_REPLAY_DUMP=<frame>` | the coat's controls and targets in the hips' space (`KHDAYS_REPLAY_DUMP_WORLD`: in the world) |
+| `KHDAYS_REPLAY_REFDUMP=<frame>` | the bake's and the simulated coat there (`--reference`) |
+| `KHDAYS_REPLAY_JITTER=1` | each frame's worst drawn control, the legs' largest step and any coat bone turning over 60 deg past its last step |
+| `KHDAYS_REPLAY_LEGPOSE=<slot>` | the mset skeleton's legs and this model's after the retarget (knee bends), once |
+| `KHDAYS_REPLAY_TRACE=<bone,...>` | those controls each frame (drawn, solved, targets, nearest collider) |
+| `KHDAYS_REPLAY_CLIP=<name>` | each frame's deepest simulated vertex in the colliders so named (`KHDAYS_REPLAY_CLIP_BY=<collider>`: of the groups that collide with it) |
+| `KHDAYS_REPLAY_POKE=<bone,...>` | those bones' body vertices through the coat's drawn surface |
+| `KHDAYS_REPLAY_NO_SIM=1` | draws the animation alone |
+| `KHDAYS_REPLAY_ROLL=<degrees>`, `KHDAYS_REPLAY_LIFT=<m>`, `KHDAYS_REPLAY_NOISE=<mm>` | turn the actor about its x, raise it, shake it each draw |
+| `KHDAYS_REPLAY_GROUP=<group>` | the group whose bones' turns the jitter measures (coat) |
+| `KHDAYS_REPLAY_TWIST=1` | their largest roll about their own length each frame |
+| `KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]` | the contact sheet's frames |
+
+The test's real-model checks: `KHDAYS_SECONDARY_ASSETS` names the folder the HD pack
+installs `roxas_b_h` in (`mods/<Mod>/graphics/ba/ch/ro/def_hb.p.z/mdl`).
 
 ## Results
 
@@ -613,7 +709,7 @@ Each was found by measuring the legs against the coat's faces and reading why:
 - Colliders with `side motion` (arms, hands) only push away from where a part came
   from and come first; the body (`side rest`) comes last, so cloth caught between
   a hand and a leg stays out of the leg. N_EX830's coat collides only with the
-  waist, hips and legs (pelvis, thighs, calves, feet); the cuffs with the hands.
+  waist, hips and legs (pelvis, thighs, calves, feet).
 - Contact closes every substep (after the strain limits), and its push changes a
   control's velocity by no more than `max_speed` past its target's (a push moves
   cloth, it does not launch it).
@@ -640,7 +736,6 @@ Each was found by measuring the legs against the coat's faces and reading why:
 
 ## Not yet / residual cases
 
-- Wind's surface lift (`wind_lift`) is parsed, not applied.
 - A room box's turn sense is unverified; characters' cylinders are not colliders.
 - The heels still come through the back hem now and then in a run, a jump and
   against a wall (replay, `KHDAYS_REPLAY_POKE=9,18`, vertices behind the ankle:
@@ -653,15 +748,6 @@ Each was found by measuring the legs against the coat's faces and reading why:
   the coat by up to about 1 cm in nearly every frame but the calm idle's.
 - A draw placed by the flushed camera (neither an actor's matrix nor the base
   transform) still feels the camera turn (the GE's rounding).
-- The thumbs go into the sleeve cuffs up to about 1.5 cm in about a third of the
-  frames of the battle idle, run, attack, jump and wall scenarios (replay,
-  `KHDAYS_REPLAY_CLIP=thumb KHDAYS_REPLAY_CLIP_BY=hand_l` with capsules on bones
-  136-139-140 and 253-256-257 measured only). Fully rigid cuffs clip as much, and
-  KH2's own coat Roxas motion (P_EX100 battle idle, as a reference) puts them 1.4 cm
-  in, in 55 of 121 frames: it is the hand's pose against the cuff's root at the
-  wrist. Thumb colliders the cuffs collide with cut some frames but made the cuffs
-  flip round the thumb (battle idle jitter 3 to 7-16 cm) and the calm idle worse;
-  not used.
 - B_EX390's authored flares are larger than any body-driven setting produces;
   matching one motion closely needs an authored control (`mode guided` on a
   model whose motions carry coat tracks). The dual wield Roxas does this for

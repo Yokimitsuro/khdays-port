@@ -10,6 +10,8 @@ namespace khdays::secondary {
 // Ericson, Real-Time Collision Detection 5.1.5: by the Voronoi regions of the triangle
 Vec3 closest_on_triangle(Vec3 p, Vec3 a, Vec3 b, Vec3 c)
 {
+    // an edge with no length (two corners on one place) has no share along it
+    const auto share = [](float part, float whole) { return whole > 0.0F ? part / whole : 0.0F; };
     const Vec3 ab = b - a, ac = c - a, ap = p - a;
     const float d1 = dot(ab, ap), d2 = dot(ac, ap);
     if (d1 <= 0.0F && d2 <= 0.0F)
@@ -20,17 +22,17 @@ Vec3 closest_on_triangle(Vec3 p, Vec3 a, Vec3 b, Vec3 c)
         return b;
     const float vc = d1 * d4 - d3 * d2;
     if (vc <= 0.0F && d1 >= 0.0F && d3 <= 0.0F)
-        return a + ab * (d1 / (d1 - d3));
+        return a + ab * share(d1, d1 - d3);
     const Vec3 cp = p - c;
     const float d5 = dot(ab, cp), d6 = dot(ac, cp);
     if (d6 >= 0.0F && d5 <= d6)
         return c;
     const float vb = d5 * d2 - d1 * d6;
     if (vb <= 0.0F && d2 >= 0.0F && d6 <= 0.0F)
-        return a + ac * (d2 / (d2 - d6));
+        return a + ac * share(d2, d2 - d6);
     const float va = d3 * d6 - d5 * d4;
     if (va <= 0.0F && (d4 - d3) >= 0.0F && (d5 - d6) >= 0.0F)
-        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+        return b + (c - b) * share(d4 - d3, (d4 - d3) + (d5 - d6));
     const float denom = 1.0F / (va + vb + vc);
     return a + ab * (vb * denom) + ac * (vc * denom);
 }
@@ -68,26 +70,6 @@ void closest_segments(Vec3 p0, Vec3 p1, Vec3 q0, Vec3 q1, float &s, float &t)
     }
 }
 
-namespace {
-
-// the first parameter in [0, 1] at which from + (to - from) * u is within r of point c, or -1
-float sweep_sphere(Vec3 from, Vec3 to, Vec3 c, float r)
-{
-    const Vec3 d = to - from, m = from - c;
-    const float a = dot(d, d), b = dot(m, d), cc = dot(m, m) - r * r;
-    if (cc <= 0.0F)
-        return 0.0F;
-    if (a < 1e-12F || b > 0.0F)
-        return -1.0F;
-    const float disc = b * b - a * cc;
-    if (disc < 0.0F)
-        return -1.0F;
-    const float u = (-b - std::sqrt(disc)) / a;
-    return u >= 0.0F && u <= 1.0F ? u : -1.0F;
-}
-
-} // namespace
-
 float closest_segment_triangle(Vec3 p0, Vec3 p1, Vec3 a, Vec3 b, Vec3 c, Vec3 &on_segment, Vec3 &on_triangle,
                                bool &crosses)
 {
@@ -124,35 +106,6 @@ float closest_segment_triangle(Vec3 p0, Vec3 p1, Vec3 a, Vec3 b, Vec3 c, Vec3 &o
         keep(lerp(p0, p1, s), lerp(e[0], e[1], t));
     }
     return std::sqrt(best);
-}
-
-float sweep_capsule(Vec3 from, Vec3 to, Vec3 a, Vec3 b, float r)
-{
-    // the cylinder's side (Ericson 5.3.7, simplified), then its two caps
-    const Vec3 d = b - a, m = from - a, n = to - from;
-    const float md = dot(m, d), nd = dot(n, d), dd = dot(d, d);
-    float best = -1.0F;
-    if (dd > 1e-12F) {
-        const float nn = dot(n, n), mn = dot(m, n);
-        const float A = dd * nn - nd * nd, k = dot(m, m) - r * r, c = dd * k - md * md;
-        if (std::fabs(A) > 1e-12F) {
-            const float B = dd * mn - nd * md, disc = B * B - A * c;
-            if (disc >= 0.0F) {
-                const float u = (-B - std::sqrt(disc)) / A;
-                if (u >= 0.0F && u <= 1.0F) {
-                    const float along = md + u * nd;
-                    if (along >= 0.0F && along <= dd)
-                        best = u;
-                }
-            }
-        }
-    }
-    for (const Vec3 cap : {a, b}) {
-        const float u = sweep_sphere(from, to, cap, r);
-        if (u >= 0.0F && (best < 0.0F || u < best))
-            best = u;
-    }
-    return best;
 }
 
 void TriangleBvh::build(std::vector<Triangle> triangles)
@@ -253,7 +206,6 @@ void StaticEnvironment::translate(Vec3 delta)
         x.c += delta;
     }
     bvh_.build(std::move(t));
-    ++generation_;
 }
 
 void box_triangles(Vec3 lo, Vec3 hi, Surface kind, std::vector<Triangle> &out)

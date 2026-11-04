@@ -76,12 +76,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
 // `inset` inside the drawn controls; none without one
 void clip_volumes(ModelSecondary &m, const std::vector<Mat4> &skin, std::vector<std::array<Vec3, 3>> &out);
 
-// `game_shape`: in a group with follow bones (a coat on the legs, its front strip forked), the coat locked on the
-// game model's coat (the triangles on the reference bone's node, those above and below it and the follow bones'
-// nodes and their children, in pieces reaching the hips): the back, the sides (each side's middle strip), the
-// strips in front of them and the forked front each laid down the game coat's edges from its top through the
-// game's knee vertex (the fork: the slit's top) to its bottom (the slit's corners); the strips behind the sides
-// on outward arcs between their side and the back. Kept for a reload.
+// `game_shape`, `cutscene_sim`: in a group that asks for them, with follow bones and a forked front strip (a coat),
+// its strips locked on the game model's coat: the back, the sides, the strips in front of them and the front each
+// laid down the game coat's edges from its top through the game's knee vertex to its bottom, the strips behind the
+// sides on outward arcs (docs/SECONDARY_MOTION.md). Kept for a reload.
 void set_game_mesh(ModelSecondary &m, const GameMesh &game);
 
 } // namespace khdays::secondary

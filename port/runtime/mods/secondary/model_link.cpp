@@ -48,7 +48,7 @@ bool flag(const char *name)
 void log_room_contacts(const std::string &name, u32 mark, const void *actor, const Mat4 &root, float units,
                        const Simulation &sim, const std::string &collision)
 {
-    const float facing = std::atan2(root[8], root[10]) * 57.29578F;
+    const float facing = std::atan2(root[8], root[10]) / kDegrees;
     const auto &room = sim.room();
     const auto &push = sim.room_push();
     std::vector<std::size_t> order;
@@ -65,7 +65,7 @@ void log_room_contacts(const std::string &name, u32 mark, const void *actor, con
     for (std::size_t n = 0; n < order.size() && n < 8; ++n) {
         const Triangle &t = room[order[n]];
         const Vec3 c = (t.a + t.b + t.c) * (units / 3.0F);
-        const float steep = std::acos(std::fmax(-1.0F, std::fmin(1.0F, t.n.y))) * 57.29578F;
+        const float steep = std::acos(std::fmax(-1.0F, std::fmin(1.0F, t.n.y))) / kDegrees;
         khdays_log("secondary: %s: mark %u:   %s %.0f degrees steep pushed %.1f cm; centre (%.2f %.2f %.2f), normal "
                    "(%.2f %.2f %.2f)",
                    name.c_str(), mark, kKinds[static_cast<int>(t.kind) & 3], static_cast<double>(steep),
@@ -176,7 +176,7 @@ struct ModelSecondary {
     std::vector<int> joint_of_bone;
     std::vector<Mat4> inverse_bind, bind_inverse; // per bone
     std::shared_ptr<const Rig> rig;
-    std::vector<std::filesystem::file_time_type> stamps;
+    ConfigWatch watch; // its configuration's files, read again when one changes
     u32 checked = 0, swept = 0, reported = 0;
     bool debug = false, profile = false, trace = false;
     bool said_placement = false, said_base = false, said_camera = false, said_shared = false;
@@ -230,8 +230,6 @@ struct ModelSecondary {
     std::vector<std::uint8_t> game_shell_open;  // per shell face: across the slit (not pushed out of the legs)
     GameMesh game;
     bool has_game = false;
-    // `leg_carry`: game vertices skinned anew (the back's below the hips, partly on both legs)
-    std::map<int, std::array<std::pair<int, float>, 4>> game_reskin;
     std::vector<Frame> pose, out;
     std::vector<std::uint8_t> written;
     std::vector<ClipVolume> clip; // `clip_world`'s volumes, made for `clip_rig`
@@ -250,8 +248,7 @@ namespace {
 struct Prepared {
     std::shared_ptr<const Rig> rig;
     Diagnostics diagnostics;
-    std::vector<std::filesystem::path> files;
-    std::vector<std::filesystem::file_time_type> stamps;
+    ConfigWatch watch;
     std::size_t bones = 0, vertices = 0; // the model it was cooked against
 };
 std::mutex prepared_lock;
@@ -291,11 +288,11 @@ void prewarm_model_secondary(const std::string &skip)
         if (!std::filesystem::is_directory(graphics, ec))
             continue;
         for (const auto &e : std::filesystem::recursive_directory_iterator(graphics, ec)) {
-            const std::string fname = e.path().filename().string();
-            const std::string tail = ".secondary.txt";
+            const std::u8string fname = e.path().filename().u8string(); // any name a mod's file may have
+            const std::u8string tail = u8".secondary.txt";
             if (fname.size() <= tail.size() || fname.compare(fname.size() - tail.size(), tail.size(), tail) != 0)
                 continue;
-            const auto model = e.path().parent_path() / (fname.substr(0, fname.size() - tail.size()) + ".mdlx");
+            const auto model = e.path().parent_path() / (fname.substr(0, fname.size() - tail.size()) + u8".mdlx");
             const std::string key = prepared_key(e.path());
             if (key == prepared_key(u8(skip)) || !std::filesystem::exists(model, ec))
                 continue;
@@ -325,11 +322,7 @@ void prewarm_model_secondary(const std::string &skip)
                         p.rig = std::move(cooked);
                     }
                 }
-                std::error_code ec2;
-                for (const auto &f : config.files) {
-                    p.files.push_back(f);
-                    p.stamps.push_back(std::filesystem::last_write_time(f, ec2));
-                }
+                p.watch.record(config.files);
             } catch (...) {
                 p.rig.reset(); // cooked again when loaded, which reports why
             }
@@ -353,15 +346,11 @@ std::shared_ptr<const Rig> take_prepared(ModelSecondary &m)
     if (it == prepared.end())
         return nullptr;
     const Prepared &p = it->second;
-    if (p.bones != m.skeleton.names.size() || p.vertices != m.mesh.vertices.size())
+    if (p.bones != m.skeleton.names.size() || p.vertices != m.mesh.vertices.size() || p.watch.changed())
         return nullptr;
-    std::error_code ec;
-    for (std::size_t i = 0; i < p.files.size(); ++i)
-        if (std::filesystem::last_write_time(p.files[i], ec) != p.stamps[i])
-            return nullptr;
     for (const auto &x : p.diagnostics)
         say(m.name + ": " + format(x));
-    m.stamps = p.stamps;
+    m.watch = p.watch;
     return p.rig;
 }
 
@@ -386,12 +375,11 @@ std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
     }
     for (const auto &x : d)
         say(m.name + ": " + format(x));
-    m.stamps.clear();
-    std::error_code ec;
-    for (const auto &f : config.files)
-        m.stamps.push_back(std::filesystem::last_write_time(f, ec));
+    m.watch.record(config.files);
     if (!rig) {
-        say(m.name + ": " + m.file + " has errors; the model is drawn without secondary motion until it is fixed");
+        say(m.name + ": " + m.file +
+            (m.rig ? " has errors; the model keeps its last good setup until it is fixed"
+                   : " has errors; the model is drawn without secondary motion until it is fixed"));
         return nullptr;
     }
     say(m.name + ": " + rig->summary);
@@ -404,18 +392,7 @@ std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
 // the configuration's files changed: cooked again; its actors start afresh on the new rig
 void reload(ModelSecondary &m)
 {
-    if (!m.rig && m.stamps.empty())
-        return;
-    std::error_code ec;
-    const Config *cfg = m.rig ? &m.rig->config : nullptr;
-    bool changed = false;
-    if (cfg != nullptr) {
-        for (std::size_t i = 0; i < cfg->files.size() && i < m.stamps.size(); ++i)
-            changed = changed || std::filesystem::last_write_time(cfg->files[i], ec) != m.stamps[i];
-    } else {
-        changed = !m.stamps.empty() && std::filesystem::last_write_time(u8(m.file), ec) != m.stamps[0];
-    }
-    if (!changed)
+    if (!m.watch.changed())
         return;
     say(m.name + ": " + m.file + " changed; reloading it");
     auto rig = cook_file(m);
@@ -627,7 +604,6 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
     m.game_arcs.clear();
     m.game_shell.clear();
     m.game_shell_open.clear();
-    m.game_reskin.clear();
     if (!m.rig)
         return;
     const Rig &rig = *m.rig;
@@ -666,6 +642,8 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
         if (p.dynamic && p.anchor >= 0 && rig.particles[static_cast<std::size_t>(p.anchor)].dynamic)
             has_next[static_cast<std::size_t>(p.anchor)] = 1;
     for (std::size_t g = 0; g < rig.groups.size(); ++g) {
+        if (!group_follows_game(rig, g)) // `game_shape` and `cutscene_sim` alone ask for it
+            continue;
         // the legs carrying it (its follow bones) and its reference bone's node (the hips)
         std::vector<int> follow;
         for (const Particle &p : rig.particles)
@@ -688,7 +666,6 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
                 allowed[c] = 1;
         float knee_own = 0.0F, knee_game = 0.0F;
         int knees = 0;
-        std::vector<int> thighs, calves; // the legs' game nodes, above and below the knee
         for (const int f : follow) {
             const int fn = node_of(f);
             if (fn < 0)
@@ -714,8 +691,6 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
                 knee_own += head(own).y;
                 knee_game += game.node_place[static_cast<std::size_t>(its)].y;
                 ++knees;
-                thighs.push_back(fn);
-                calves.push_back(its);
             }
         }
         if (knees == 0)
@@ -994,40 +969,6 @@ void set_game_mesh(ModelSecondary &m, const GameMesh &game)
             return static_cast<int>(m.game_chains.size()) - 1;
         };
         chain_at[0] = locked(back);
-        // `leg_carry`: the back's vertices from the knee down (the game's back flap rides its hips, and one calf
-        // carries its hem) carried that much by both legs alike, the thighs from the knee up and the calves below
-        {
-            const auto &bc = m.game_chains[static_cast<std::size_t>(chain_at[0])];
-            const float carry =
-                bc.paths.size() == 2 && !bc.particles.empty()
-                    ? rig.params[static_cast<std::size_t>(
-                                     rig.particles[static_cast<std::size_t>(bc.particles[bc.ends[0]])].params)]
-                          .get(Param::leg_carry)
-                    : 0.0F;
-            if (carry > 0.0F && !thighs.empty())
-                for (const int v : bc.paths[1]) {
-                    std::map<int, float> w;
-                    for (const auto &[node, x] : game.weights[static_cast<std::size_t>(v)])
-                        if (node >= 0 && x > 0.0F)
-                            w[node] += (1.0F - carry) * x;
-                    const auto &legs =
-                        game.positions[static_cast<std::size_t>(v)].y >= knee_game - 1e-3F ? thighs : calves;
-                    for (const int node : legs)
-                        w[node] += carry / static_cast<float>(legs.size());
-                    std::vector<std::pair<int, float>> sorted(w.begin(), w.end());
-                    std::sort(sorted.begin(), sorted.end(),
-                              [](const auto &a, const auto &b) { return a.second > b.second; });
-                    std::array<std::pair<int, float>, 4> kept{};
-                    float total = 0.0F;
-                    for (std::size_t k = 0; k < 4; ++k) {
-                        kept[k] = k < sorted.size() ? sorted[k] : std::pair<int, float>{-1, 0.0F};
-                        total += kept[k].second;
-                    }
-                    for (auto &k : kept)
-                        k.second = total > 0.0F ? k.second / total : 0.0F;
-                    m.game_reskin[v] = kept;
-                }
-        }
         chain_at[1] = locked(lateral[0]);
         chain_at[2] = locked(lateral[1]);
         std::array<int, 2> beside{-1, -1}; // each side's front strip nearest the front: the front's middle between them
@@ -1314,9 +1255,7 @@ Mat4 hold_root(ModelSecondary::ActorState &state, const Mat4 &now)
     const Frame a = frame_of(state.root_held), b = frame_of(now);
     const float per = length(Vec3{now[0], now[1], now[2]}); // its units a model unit (a model unit: 1 m)
     state.root_off = per > 1e-9F ? length(b.t - a.t) / per : 0.0F;
-    state.root_turn =
-        2.0F * std::acos(std::fmin(1.0F, std::fabs(a.q.x * b.q.x + a.q.y * b.q.y + a.q.z * b.q.z + a.q.w * b.q.w))) *
-        57.29578F;
+    state.root_turn = angle_between(a.q, b.q) / kDegrees;
     const bool scaled = std::fabs(length(b.s) / std::fmax(length(a.s), 1e-9F) - 1.0F) > 0.01F;
     if (!state.has_root || state.root_off > 0.01F || state.root_turn > 1.0F || scaled) {
         state.root_held = now;
@@ -1428,9 +1367,8 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
                        m.actors.size());
     }
     state.seen = now;
-    // world units a model unit as the actor started (another scale past 2 % starts a new one): measured each draw,
-    // it took the root's fixed-point rounding (a weapon's root, the game's hand matrix: about 0.1 %), and since it
-    // divides the whole world position a keychain 40 m from the map's origin shook by centimetres, 6 m by millimetres
+    // world units a model unit as the actor started (another scale past 2 % starts a new one), not this draw's: it
+    // divides the whole world position, and the root's fixed-point rounding would shake the cloth far from the origin
     const float units = state.units;
     room_.set_scale(units);
     if (camera_free) // the root node held through the GE's rounding (hold_root)
@@ -1458,12 +1396,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     a.pose = &m.pose;
     a.placement = frame_of(mul(to_sim, root));
     a.camera_distance = length(Vec3{in.root[12], in.root[13], in.root[14]}) / units;
-    a.player = false;
     a.environment = rig.config.environment ? &room_ : nullptr;
     // a camera cut: the camera's view of the actor jumped further in one draw than a camera moves (a new shot;
     // cutscenes re-stage their actors across one, and the cloth would take that as a fling). Judged about the
-    // actor, not in the world: the field camera swinging round him while he ran moved 0.76-0.85 m a game frame
-    // (6.3 degrees round him, his own run 18-26 cm), each draw a cut, the cloth restarted and settled mid-run
+    // actor, not in the world: a field camera swinging round a running actor moves far in the world each frame
     if (in.has_camera) {
         const Mat4 camera_world = inverse_affine(in.camera);
         const Vec3 from =
@@ -1472,14 +1408,11 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         if (state.has_camera) {
             const Frame was = frame_of(state.camera_world), is = frame_of(camera_world);
             state.camera_step = length(is.t - was.t) / units;
-            state.camera_turn = 2.0F *
-                                std::acos(std::fmin(1.0F, std::fabs(was.q.x * is.q.x + was.q.y * is.q.y +
-                                                                    was.q.z * is.q.z + was.q.w * is.q.w))) *
-                                57.29578F;
+            state.camera_turn = angle_between(was.q, is.q) / kDegrees;
             const float near = length(state.camera_from), far = length(from);
             state.camera_swing =
                 near > 1e-4F && far > 1e-4F
-                    ? std::acos(clampf(dot(state.camera_from, from) / (near * far), -1.0F, 1.0F)) * 57.29578F
+                    ? std::acos(clampf(dot(state.camera_from, from) / (near * far), -1.0F, 1.0F)) / kDegrees
                     : 0.0F;
             state.camera_reach = std::fabs(far - near);
             a.cut = state.camera_turn > kCutDegrees || state.camera_swing > kCutDegrees ||
@@ -1504,9 +1437,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         const auto game_vertex = [&](int v) {
             Vec3 at{};
             const Vec3 r = m.game.positions[static_cast<std::size_t>(v)];
-            const auto reskin = m.game_reskin.find(v);
-            for (const auto &[node, w] :
-                 reskin != m.game_reskin.end() ? reskin->second : m.game.weights[static_cast<std::size_t>(v)]) {
+            for (const auto &[node, w] : m.game.weights[static_cast<std::size_t>(v)]) {
                 if (node < 0 || w <= 0.0F || static_cast<std::size_t>(node) >= in.game_nodes->size())
                     continue;
                 const Mat4 &dn = (*in.game_nodes)[static_cast<std::size_t>(node)];
@@ -1673,7 +1604,6 @@ void clip_volumes(ModelSecondary &m, const std::vector<Mat4> &skin, std::vector<
         return;
     const Rig &rig = *m.rig;
     std::vector<Vec3> at, normal;
-    const float inset_units = rig.model_units > 0.0F ? 1.0F / rig.model_units : 1.0F; // model units a metre
     for (const ClipVolume &cv : m.clip) {
         const std::size_t n = cv.particles.size();
         at.assign(n + 2, {});
@@ -1708,7 +1638,7 @@ void clip_volumes(ModelSecondary &m, const std::vector<Mat4> &skin, std::vector<
                 normal[static_cast<std::size_t>(k)] += nrm;
         }
         for (std::size_t k = 0; k < n; ++k)
-            at[k] -= normalized(normal[k], {}) * (cv.inset * inset_units * scale);
+            at[k] -= normalized(normal[k], {}) * (cv.inset * scale);
         for (const auto &f : cv.faces)
             out.push_back({at[static_cast<std::size_t>(f[0])], at[static_cast<std::size_t>(f[1])],
                            at[static_cast<std::size_t>(f[2])]});

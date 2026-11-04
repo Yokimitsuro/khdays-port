@@ -111,7 +111,6 @@ struct Collider {
 struct SimBone {
     int bone = -1;
     int particle = -1;
-    int head = -1;       // the particle at its head when it is an anchor of a chain (or -1: carried)
     int parent_sim = -1; // the nearest simulated ancestor, an index into bones_out (-1: none)
     int group = 0;
     Frame reference; // its rest (or settled) frame in its group's reference bone space
@@ -126,31 +125,25 @@ struct Carried {
 struct GroupRig {
     std::string name;
     GroupKind kind = GroupKind::chain;
-    int reference_bone = -1;           // the first `attach` (hair: the tufts' common parent)
-    int first = 0, last = 0;           // its particles
-    int first_bone = 0, last_bone = 0; // its bones_out
+    int reference_bone = -1; // the first `attach` (hair: the tufts' common parent)
+    int first = 0, last = 0; // its particles
     Wind wind;
     int wind_bone = -1; // a `wind bone <b>`'s bone
     bool settle = false;
     int settle_steps = 0;
     bool twist_from_neighbours = true;
     int self_group = -1;
-    Mode mode = Mode::simulated;
-    AuthoredPolicy policy = AuthoredPolicy::exact;
     std::uint32_t shell_push = 0; // `shell_push`: the collider tags pushing `cutscene_sim`'s shell
     float shell_push_from = 0.0F;
-    bool environment = true;   // `environment off`: the room's collision leaves it alone
-    bool clip_world = false;   // `clip_world`: the room left out inside its volume (model_link.cpp clip_volumes)
-    float clip_inset = 0.0F;   // metres
-    bool outward_axis = false; // `outward axis`: its axis, in its reference bone's rest space
-    Vec3 outward_origin, outward_dir;
+    bool environment = true; // `environment off`: the room's collision leaves it alone
+    bool clip_world = false; // `clip_world`: the room left out inside its volume (model_link.cpp clip_volumes)
+    float clip_inset = 0.0F; // metres
 };
 
 struct ControlRig {
     const ControlConfig *config = nullptr;
     std::vector<int> particles; // the particles it governs
     std::vector<int> groups;
-    ParamSet params;
     int wind_bone = -1;
 };
 
@@ -169,9 +162,8 @@ struct Rig {
     std::vector<ControlRig> controls;
     std::vector<ReferenceBlend> blends;
     std::vector<int> needed; // the bones whose animated frames the solver reads, ascending
-    // self-collision: pairs never tested (neighbours), and pairs close at rest held at least their rest distance
+    // self-collision: pairs never tested (neighbours)
     std::vector<std::uint64_t> self_excluded; // sorted keys (a << 32 | b), a < b
-    std::vector<std::pair<std::uint64_t, float>> self_closest;
     // particle-collider pairs a control starts inside, left out (collider index << 32 | particle)
     std::vector<std::uint64_t> collider_excluded;
     // face-collider pairs a body passes through at rest (a face across the inside): collider << 32 | face
@@ -182,7 +174,6 @@ struct Rig {
     std::vector<float> point_clearance, face_clearance;
     std::vector<std::string> tag_names; // collider tags by bit
     int wind_bone = -1;                 // the global wind's bone (`wind bone <b>`)
-    float model_units = 1.0F;           // metres a model unit (the importer's metres: 1)
     std::string summary;                // counts, for the log
 };
 
@@ -190,6 +181,10 @@ struct Rig {
 // groups claim, rigs without the freedom asked of them) are reported in `out`; with any, the result
 // is not usable (has_errors).
 Rig cook(const Config &config, const SkeletonDesc &skeleton, const MeshDesc &mesh, Diagnostics &out);
+
+// Whether group `g` takes the replaced game model's places: `game_shape` or `cutscene_sim` on one of its controls,
+// or set on them by an animation control
+bool group_follows_game(const Rig &rig, std::size_t g);
 
 // `clip_world`: a group's closed volume (vertices: its particles, then its top and bottom rings' middles), its
 // faces wound outward at rest

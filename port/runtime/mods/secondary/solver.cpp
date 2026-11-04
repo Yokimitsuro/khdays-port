@@ -45,10 +45,8 @@ std::array<float, 3> barycentric(Vec3 q, Vec3 a, Vec3 b, Vec3 c)
 // the closest point of a (tapered) capsule's core to p: its parameter, point and radius there
 void core_point(const Simulation::Shape &s, Vec3 p, float &t, Vec3 &q, float &r)
 {
-    const Vec3 ab = s.b - s.a;
-    const float ll = dot(ab, ab);
-    t = ll > 1e-12F ? minf(1.0F, maxf(0.0F, dot(p - s.a, ab) / ll)) : 0.0F;
-    q = s.a + ab * t;
+    t = along_segment(p, s.a, s.b);
+    q = lerp(s.a, s.b, t);
     r = s.ra + (s.rb - s.ra) * t;
 }
 
@@ -139,27 +137,13 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
                 collider_faces_[c].push_back(static_cast<int>(f));
         }
     }
-    // outward: a garment is a shell around the body, so a control's or a face's way out is away from its
-    // group's reference bone's vertical axis at rest (kept in that bone's space), or its own axis (`outward
-    // axis`: a cuff on a T-pose arm lies along x); body colliders (rest side) push there whichever part of the
-    // body meets it
+    // outward: a garment is a shell around the body, so a control's way out is away from its group's reference
+    // bone's vertical axis at rest (kept in that bone's space); body colliders (rest side) push there whichever part
+    // of the body meets it
     {
         std::vector<Frame> rest(rig.skeleton.rest.size());
         for (std::size_t b = 0; b < rest.size(); ++b)
             rest[b] = frame_of(rig.skeleton.rest[b]);
-        const auto out_of = [&](std::size_t group, Vec3 at) {
-            const GroupRig &g = rig.groups[group];
-            const Frame &f = rest[static_cast<std::size_t>(g.reference_bone)];
-            if (g.outward_axis) {
-                const Vec3 axis = normalized(rotate(f.q, g.outward_dir), {1.0F, 0.0F, 0.0F});
-                const Vec3 d = at - apply(f, g.outward_origin);
-                return normalized(d - axis * dot(d, axis), {0.0F, 0.0F, 1.0F});
-            }
-            Vec3 d = at - f.t;
-            d.y = 0.0F;
-            return normalized(d, {0.0F, 0.0F, 1.0F});
-        };
-        std::vector<Vec3> at(n);
         outward_.assign(n, {});
         for (std::size_t i = 0; i < n; ++i) {
             const Particle &p = rig.particles[i];
@@ -167,25 +151,10 @@ Simulation::Simulation(const Rig &rig) : rig_(rig)
                 continue;
             const auto g = static_cast<std::size_t>(p.group);
             const Frame &f = rest[static_cast<std::size_t>(rig.groups[g].reference_bone)];
-            at[i] = apply(f, p.reference);
-            outward_[i] = rotate(conjugate(f.q), out_of(g, at[i]));
+            Vec3 d = apply(f, p.reference) - f.t;
+            d.y = 0.0F;
+            outward_[i] = rotate(conjugate(f.q), normalized(d, {0.0F, 0.0F, 1.0F}));
         }
-        face_out_.assign(rig.faces.size(), 1);
-        for (std::size_t fi = 0; fi < rig.faces.size(); ++fi) {
-            const Face &f = rig.faces[fi];
-            const Vec3 a = at[static_cast<std::size_t>(f.a)], b = at[static_cast<std::size_t>(f.b)],
-                       c = at[static_cast<std::size_t>(f.c)];
-            const Vec3 out = out_of(static_cast<std::size_t>(rig.particles[static_cast<std::size_t>(f.a)].group),
-                                    (a + b + c) * (1.0F / 3.0F));
-            face_out_[fi] = dot(cross(b - a, c - a), out) >= 0.0F ? std::int8_t{1} : std::int8_t{-1};
-        }
-    }
-    loose_.assign(rig.distances.size(), 0);
-    for (std::size_t c = 0; c < rig.distances.size(); ++c) {
-        const Particle &pa = rig.particles[static_cast<std::size_t>(rig.distances[c].a)],
-                       &pb = rig.particles[static_cast<std::size_t>(rig.distances[c].b)];
-        loose_[c] = pa.dynamic && pb.dynamic && pa.root != pb.root &&
-                    rig.groups[static_cast<std::size_t>(pa.group)].outward_axis;
     }
     // the drape: each particle's colliders, the particles anchors first
     particle_colliders_.assign(n, {});
@@ -367,6 +336,12 @@ bool Simulation::shelled(std::size_t i) const
            drive_[i].params.get(Param::cutscene_sim) >= 0.5F;
 }
 
+bool Simulation::follows_game(std::size_t i) const
+{
+    const ParamBlock &k = drive_[i].params;
+    return rig_.particles[i].dynamic && (k.get(Param::game_shape) > 0.0F || k.get(Param::cutscene_sim) >= 0.5F);
+}
+
 void Simulation::set_game_shell(const std::vector<std::array<int, 3>> &triangles, const std::vector<std::uint8_t> &open)
 {
     shell_faces_ = triangles;
@@ -435,12 +410,13 @@ void Simulation::push_shell()
         }
 }
 
-void Simulation::snap_to_game()
+void Simulation::snap_to_game(const std::vector<Frame> &pose)
 {
     for (std::size_t i = 0; i < x_.size(); ++i)
         if (shelled(i)) {
             x_[i] = prev_[i] = target_[i] = target_prev_[i] = game_now_[i];
             v_[i] = target_vel_[i] = {};
+            shown_[i] = apply_inverse(reference_bone_frame(i, pose), game_now_[i]);
         }
 }
 
@@ -558,16 +534,15 @@ Frame Simulation::bone_frame(int si, const std::vector<Frame> &pose, bool twist)
     const Vec3 d_sol = x_[pi] - base.t;
     Quat q = base.q;
     const float lr = length(d_ref), ls = length(d_sol);
-    // no swing limit (a keychain): it may hang anywhere about its reference or its parent, opposite too (a blade
-    // held tip down, a link folded back), and is turned onto its point however far. Past 90 degrees from the way
-    // it is carried that turn has no clear axis and its roll flipped draw to draw (115 degrees), so it turns from
-    // where it pointed last instead, wholly so folded back past 120 (the two turns differ only in their roll)
+    // no swing limit (a keychain): it may hang anywhere about its reference or its parent, opposite too, and is
+    // turned onto its point however far. Past 90 degrees from the way it is carried that turn has no clear axis and
+    // its roll would flip from draw to draw, so it turns from where it pointed last instead, wholly so folded back
+    // past 120 (the two turns differ only in their roll)
     const bool free = d.params.get(Param::swing_limit) >= kPi - 0.01F;
     if (lr > 1e-7F && ls > 1e-7F) {
         // turned onto its solved point; a link squeezed short (a thigh pushing the coat up under the belt)
         // or folded back past its head gives that turn no clear direction, so it eases back to the
-        // reference's instead of spinning with the noise (a free one eases back to its last turn instead:
-        // to its reference, a keychain's first link pointed away from the chain in a hover)
+        // reference's instead of spinning with the noise (a free one eases back to its last turn instead)
         const Vec3 a = d_ref * (1.0F / lr), b = d_sol * (1.0F / ls);
         const float squeezed = clampf((ls / lr - 0.2F) / 0.3F, 0.0F, 1.0F);
         if (!free) {
@@ -673,20 +648,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     for (std::size_t i = 0; i < x_.size(); ++i)
         bounds_.add(x_[i]);
     bounds_.grow(0.5F);
-    env_.clear();
-    if (s.environment && s.env != nullptr)
-        s.env->gather(bounds_, env_);
-    if (s.ground_only)
-        std::erase_if(env_, [](const Triangle &t) { return t.kind != Surface::ground; });
-    env_boxes_.clear();
-    for (const auto &t : env_) {
-        Aabb b;
-        b.add(t.a);
-        b.add(t.b);
-        b.add(t.c);
-        b.grow(s.environment_thickness + kDeepBehind); // what a face may push out reaches this far
-        env_boxes_.push_back(b);
-    }
+    read_room(bounds_, s);
     room_push_.assign(env_.size(), 0.0F);
     // bounded relaxation: links and contacts settle before anything is drawn. The colliders sweep in from
     // where the rest pose has them on the first group's reference bone, so a pose that starts with the legs
@@ -714,12 +676,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
         for (std::size_t i = 0; i < x_.size(); ++i)
             if (rig_.particles[i].dynamic)
                 prev_[i] = x_[i];
-        for (std::size_t f = 0; f < rig_.faces.size(); ++f) { // the side each face is on, as a substep keeps it
-            const Face &face = rig_.faces[f];
-            face_normal_prev_[f] =
-                normalized(cross(x_[static_cast<std::size_t>(face.b)] - x_[static_cast<std::size_t>(face.a)],
-                                 x_[static_cast<std::size_t>(face.c)] - x_[static_cast<std::size_t>(face.a)]));
-        }
+        face_normals(); // the side each face is on, as a substep keeps it
         std::fill(lambda_.begin(), lambda_.end(), 0.0F);
         for (std::size_t c = 0; c < compliance_.size(); ++c)
             compliance_[c] = 0.0F;
@@ -741,12 +698,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     shape0_ = shape1_ = arrived;
     for (std::size_t i = 0; i < x_.size(); ++i)
         prev_[i] = x_[i];
-    for (std::size_t f = 0; f < rig_.faces.size(); ++f) {
-        const Face &face = rig_.faces[f];
-        face_normal_prev_[f] =
-            normalized(cross(x_[static_cast<std::size_t>(face.b)] - x_[static_cast<std::size_t>(face.a)],
-                             x_[static_cast<std::size_t>(face.c)] - x_[static_cast<std::size_t>(face.a)]));
-    }
+    face_normals();
     fresh_ = true;
     shown_.assign(x_.size(), {});
     for (std::size_t i = 0; i < x_.size(); ++i)
@@ -755,11 +707,40 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
     times.startup += us(t0, Clock::now());
 }
 
+void Simulation::face_normals()
+{
+    for (std::size_t f = 0; f < rig_.faces.size(); ++f) {
+        const Face &face = rig_.faces[f];
+        face_normal_prev_[f] =
+            normalized(cross(x_[static_cast<std::size_t>(face.b)] - x_[static_cast<std::size_t>(face.a)],
+                             x_[static_cast<std::size_t>(face.c)] - x_[static_cast<std::size_t>(face.a)]));
+    }
+}
+
+void Simulation::read_room(const Aabb &box, const TickSettings &s)
+{
+    env_.clear();
+    env_boxes_.clear();
+    if (!s.environment || s.env == nullptr)
+        return;
+    s.env->gather(box, env_);
+    if (s.ground_only)
+        std::erase_if(env_, [](const Triangle &t) { return t.kind != Surface::ground; });
+    for (const auto &t : env_) {
+        Aabb b;
+        b.add(t.a);
+        b.add(t.b);
+        b.add(t.c);
+        b.grow(s.environment_thickness + kDeepBehind); // what a face may push out reaches this far
+        env_boxes_.push_back(b);
+    }
+}
+
 void Simulation::settle(const std::vector<Frame> &pose, const TickSettings &s, int ticks)
 {
     // only the groups that hang (`settle on`: cords, a hood) start in a shape the pose may not have; the others
-    // start on their targets, which follow the pose, and are put back as they were
-    const std::vector<Vec3> x0 = x_, prev0 = prev_, v0 = v_;
+    // start on their targets, which follow the pose, and are put back as they were, drawn shape too
+    const std::vector<Vec3> x0 = x_, prev0 = prev_, v0 = v_, shown0 = shown_;
     const auto settles = [&](std::size_t i) {
         return rig_.particles[i].dynamic && rig_.groups[static_cast<std::size_t>(rig_.particles[i].group)].settle;
     };
@@ -774,8 +755,9 @@ void Simulation::settle(const std::vector<Frame> &pose, const TickSettings &s, i
             x_[i] = x0[i];
             prev_[i] = prev0[i];
             v_[i] = v0[i];
+            shown_[i] = shown0[i];
         }
-    for (std::size_t i = 0; i < x_.size() && shown_.size() == x_.size(); ++i)
+    for (std::size_t i = 0; i < x_.size(); ++i)
         if (settles(i))
             shown_[i] = apply_inverse(reference_bone_frame(i, pose), x_[i]);
     fresh_ = true; // its first tick takes up the body's velocity, as a start's does (spawned while running)
@@ -804,7 +786,6 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
 {
     const int n = std::max(1, s.substeps);
     const float h = s.dt / static_cast<float>(n);
-    contacts = 0;
     // the room's triangles near where the particles can reach this tick
     if (s.environment && s.env != nullptr) {
         const auto t0 = Clock::now();
@@ -820,24 +801,11 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
             if (rig_.particles[i].dynamic)
                 box.add(target_of(i, sub1_));
         box.grow(minf(reach * s.dt, 1.0F) + s.environment_thickness + kDeepBehind);
-        env_.clear();
-        s.env->gather(box, env_);
-        if (s.ground_only) // walls caught the cloth (pinned between a leg and a wall): floors alone
-            std::erase_if(env_, [](const Triangle &t) { return t.kind != Surface::ground; });
-        env_boxes_.clear();
-        for (const auto &t : env_) {
-            Aabb b;
-            b.add(t.a);
-            b.add(t.b);
-            b.add(t.c);
-            b.grow(s.environment_thickness + kDeepBehind);
-            env_boxes_.push_back(b);
-        }
+        read_room(box, s);
         environment_triangles = env_.size();
         times.environment_gather += us(t0, Clock::now());
     } else {
-        env_.clear();
-        env_boxes_.clear();
+        read_room(Aabb{}, s);
         environment_triangles = 0;
     }
     room_push_.assign(env_.size(), 0.0F);
@@ -864,12 +832,7 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
         shapes(sub1_, shape1_);
         push_shell();
         shell_normals();
-        for (std::size_t f = 0; f < rig_.faces.size(); ++f) {
-            const Face &face = rig_.faces[f];
-            face_normal_prev_[f] =
-                normalized(cross(x_[static_cast<std::size_t>(face.b)] - x_[static_cast<std::size_t>(face.a)],
-                                 x_[static_cast<std::size_t>(face.c)] - x_[static_cast<std::size_t>(face.a)]));
-        }
+        face_normals();
         const auto t1 = Clock::now();
         times.pose += us(t0, t1);
         bounds_ = {};
@@ -1027,6 +990,8 @@ void Simulation::tick(const std::vector<Frame> &from, const std::vector<Frame> &
             continue;
         }
         shown_[i] = shown_[i] + (local - shown_[i]) * (1.0F - std::exp(-s.dt / tau));
+        if (!finite(shown_[i])) // eased, a lost value would stay lost
+            shown_[i] = local;
         // never drawn inside the body where the solved point is clear of it: out on the solved point's side
         Vec3 w = apply(ref, shown_[i]);
         bool moved = false;
@@ -1090,9 +1055,7 @@ void Simulation::guard_drawn_faces()
                 Vec3 on_core, on_face;
                 const float d =
                     closest_segment_triangle(sh.a, sh.b, at[v[0]], at[v[1]], at[v[2]], on_core, on_face, crosses);
-                const float ab2 = dot(sh.b - sh.a, sh.b - sh.a);
-                const float t = ab2 > 1e-12F ? clampf(dot(on_core - sh.a, sh.b - sh.a) / ab2, 0.0F, 1.0F) : 0.0F;
-                const float r = sh.ra + (sh.rb - sh.ra) * t;
+                const float r = sh.ra + (sh.rb - sh.ra) * along_segment(on_core, sh.a, sh.b);
                 return pair_reach(r + thick, face_clearance(c, static_cast<std::size_t>(fi), sh), 0.5F * r + thick) - d;
             };
             bool drawn_crosses = false, solved_crosses = false;
@@ -1135,26 +1098,26 @@ void Simulation::guard_drawn_faces()
     }
 }
 
-// The targets at `pose` draped down each strip: a control's segment from its anchor kept as the target
-// shape has it, swung out of any collider it would enter to the side it belongs on, its length kept. The
-// pull then leads around a raised knee instead of through it.
 // The drape's swing of each target eased in its reference bone's space: where the drape's answer jumps (a
 // target between a thigh and a calf swung out of one into the other, step to step) the target glides over
-// kDrapeEase instead of snapping, and the coat no longer chases it back and forth once a cycle
+// kDrapeEase instead of snapping, and the coat does not chase it back and forth. `exact`: taken as it is
 void Simulation::ease_drape(float h, bool exact)
 {
     drape_off_.resize(x_.size());
-    const float k = exact ? 1.0F : 1.0F - std::exp(-h / kDrapeEase);
+    const float k = 1.0F - std::exp(-h / kDrapeEase);
     for (std::size_t i = 0; i < x_.size(); ++i) {
         if (!rig_.particles[i].dynamic)
             continue;
         const Quat q = reference_bone_frame(i, sub1_).q;
         const Vec3 off = rotate(conjugate(q), draped_[i] - raw_[i]);
-        drape_off_[i] = drape_off_[i] + (off - drape_off_[i]) * k;
+        drape_off_[i] = exact ? off : drape_off_[i] + (off - drape_off_[i]) * k;
         draped_[i] = raw_[i] + rotate(q, drape_off_[i]);
     }
 }
 
+// The targets at `pose` draped down each strip: a control's segment from its anchor kept as the target
+// shape has it, swung out of any collider it would enter to the side it belongs on, its length kept. The
+// pull then leads around a raised knee instead of through it.
 void Simulation::drape(const std::vector<Frame> &pose, const std::vector<Shape> &shapes, std::vector<Vec3> &out)
 {
     for (std::size_t i = 0; i < x_.size(); ++i) {
@@ -1238,7 +1201,7 @@ void Simulation::solve_links(float h)
         const Distance &d = rig_.distances[c];
         const auto a = static_cast<std::size_t>(d.a), b = static_cast<std::size_t>(d.b);
         const float wa = w(a), wb = w(b);
-        if (wa + wb <= 0.0F || loose_[c])
+        if (wa + wb <= 0.0F)
             continue;
         const Vec3 delta = x_[b] - x_[a];
         const float len = length(delta);
@@ -1261,7 +1224,7 @@ void Simulation::limit_strain(bool anchors_only)
 {
     for (std::size_t c = 0; c < rig_.distances.size(); ++c) {
         const Distance &d = rig_.distances[c];
-        if (d.kind == Link::bend || (anchors_only && d.kind != Link::anchor) || loose_[c])
+        if (d.kind == Link::bend || (anchors_only && d.kind != Link::anchor))
             continue;
         const auto a = static_cast<std::size_t>(d.a), b = static_cast<std::size_t>(d.b);
         const float wa = w(a), wb = w(b);
@@ -1408,7 +1371,6 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             const float pen = th - dist;
             x_[i] += nrm * pen;
             pushed_[i] += nrm * pen;
-            ++contacts;
             const float mu = drive_[i].params.get(Param::friction) * friction_scale;
             if (mu > 0.0F) {
                 const Vec3 surface = (s1.a + (s1.b - s1.a) * t) - (s0.a + (s0.b - s0.a) * t);
@@ -1446,20 +1408,10 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             const float ca0 = point_clearance(c, a, s1), cb0 = point_clearance(c, b, s1);
             const float th = pair_reach(re + te, ca0 > 0.0F && cb0 > 0.0F ? minf(ca0, cb0) : 0.0F, 0.5F * re + te);
             const Vec3 d = pe - q;
-            float dist = length(d);
+            const float dist = length(d);
             if (dist >= th || dist < 1e-7F)
                 continue;
-            Vec3 nrm = d * (1.0F / dist);
-            const GroupRig &eg = rig_.groups[static_cast<std::size_t>(rig_.particles[a].group)];
-            if (rig_.colliders[c].rest_side && eg.outward_axis) { // `outward axis`: back out on its way out
-                const Vec3 axis = normalized(s1.b - s1.a, {0.0F, 0.0F, 0.0F});
-                Vec3 out = rotate(sub1_[static_cast<std::size_t>(eg.reference_bone)].q, outward_[a] + outward_[b]);
-                out = normalized(out - axis * dot(out, axis), nrm);
-                if (dot(nrm, out) < 0.0F) {
-                    nrm = out;
-                    dist = -dist;
-                }
-            }
+            const Vec3 nrm = d * (1.0F / dist);
             const float ca = (1.0F - u) * wa, cb = u * wb, den = (1.0F - u) * ca + u * cb;
             if (den <= 0.0F)
                 continue;
@@ -1471,9 +1423,8 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             x_[b] += nrm * mb;
             pushed_[a] += nrm * ma;
             pushed_[b] += nrm * mb;
-            ++contacts;
         }
-        // faces: sample points inside each coarse face, pushed out and shared by its corners
+        // faces: each coarse face against the core exactly, pushed out whole
         for (std::size_t lf = 0; lf < collider_faces_[c].size(); ++lf) {
             const int fi = collider_faces_[c][lf];
             const Face &f = rig_.faces[static_cast<std::size_t>(fi)];
@@ -1500,8 +1451,7 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             bool crosses = false;
             const float dist =
                 closest_segment_triangle(s1.a, s1.b, x_[v[0]], x_[v[1]], x_[v[2]], on_core, on_face, crosses);
-            const float ab2 = dot(s1.b - s1.a, s1.b - s1.a);
-            const float tcore = ab2 > 1e-12F ? clampf(dot(on_core - s1.a, s1.b - s1.a) / ab2, 0.0F, 1.0F) : 0.0F;
+            const float tcore = along_segment(on_core, s1.a, s1.b);
             const float rf = s1.ra + (s1.rb - s1.ra) * tcore;
             const float th =
                 pair_reach(rf + thick, face_clearance(c, static_cast<std::size_t>(fi), s1), 0.5F * rf + thick);
@@ -1511,8 +1461,7 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
             Vec3 side = normalized(cross(x_[v[1]] - x_[v[0]], x_[v[2]] - x_[v[0]]),
                                    face_normal_prev_[static_cast<std::size_t>(fi)]);
             const GroupRig &fg = rig_.groups[static_cast<std::size_t>(rig_.particles[v[0]].group)];
-            if (rig_.colliders[c].rest_side &&
-                (crosses || fg.outward_axis)) { // pierced (`outward axis`: any): the sign agreeing with its way out
+            if (rig_.colliders[c].rest_side && crosses) { // pierced: the sign agreeing with its way out
                 const Quat ref = sub1_[static_cast<std::size_t>(fg.reference_bone)].q;
                 const Vec3 out = rotate(ref, outward_[v[0]] + outward_[v[1]] + outward_[v[2]]);
                 if (dot(side, out) < 0.0F)
@@ -1539,8 +1488,7 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
                     x_[v[j]] += side * pen;
                     pushed_[v[j]] += side * pen;
                 }
-            // friction, as a control's: a face resting on a knee slides only as the knee moves it. Without
-            // it the face slid freely round the knee, climbing it and dropping back off (battle idle)
+            // friction, as a control's: a face resting on a knee slides only as the knee moves it
             const Vec3 surface = (s1.a + (s1.b - s1.a) * tcore) - (s0.a + (s0.b - s0.a) * tcore);
             for (std::size_t j = 0; j < 3; ++j) {
                 const float mu = drive_[v[j]].params.get(Param::face_friction) * friction_scale;
@@ -1552,7 +1500,6 @@ void Simulation::collide_model(float friction_scale, bool surfaces)
                 if (ls > 1e-9F)
                     x_[v[j]] -= slide * minf(1.0F, mu * minf(pen, kFaceFrictionReach) / ls);
             }
-            ++contacts;
         }
     }
 }
@@ -1591,8 +1538,8 @@ void Simulation::collide_environment(const TickSettings &s)
                 continue;
             const float was = dot(before - tri.a, tri.n);
             // a floor the body stands over is solid below it; a wall or ceiling only where the shape belongs in front
-            // of it. A floor over the body (a ramp's or a platform's underside) is passed from below: pushed up
-            // through it, the cloth stayed on its top, stretched up from the body (2.5 m in game)
+            // of it. A floor over the body (a ramp's or a platform's underside) is passed from below, so cloth is not
+            // left on its top, stretched up from the body
             const bool over_body = tri.kind == Surface::ground && dot(body - tri.a, tri.n) < 0.0F;
             const bool belongs_in_front =
                 -side < kDeepBehind && (tri.kind == Surface::ground || dot(goal - tri.a, tri.n) >= 0.0F);
@@ -1620,7 +1567,6 @@ void Simulation::collide_environment(const TickSettings &s)
         if (!point_vs_room(x_[i], prev_[i], target_[i], body, th, push))
             continue;
         x_[i] += push;
-        ++contacts;
         const float pen = length(push);
         const float mu = drive_[i].params.get(Param::friction);
         if (mu > 0.0F && pen > 0.0F) {
@@ -1652,7 +1598,6 @@ void Simulation::collide_environment(const TickSettings &s)
         const float den = (wv[0] + wv[1] + wv[2]) / 9.0F;
         for (int j = 0; j < 3; ++j)
             x_[v[j]] += push * ((1.0F / 3.0F) * wv[j] / den);
-        ++contacts;
     }
 }
 
@@ -1708,32 +1653,44 @@ void Simulation::collide_self()
             x_[i] += nrm * (s * wi);
             for (int j = 0; j < 3; ++j)
                 x_[v[j]] -= nrm * (s * bc[static_cast<std::size_t>(j)] * wv[j]);
-            ++contacts;
         }
     }
 }
 
 void Simulation::recover()
 {
+    bool broken = false; // a non-finite value somewhere: what it may have reached is cleared too
     for (std::size_t g = 0; g < rig_.groups.size(); ++g) {
         const GroupRig &gr = rig_.groups[g];
-        bool lost = false;
-        for (int i = gr.first; i < gr.last && !lost; ++i) {
+        bool lost = false, bad = false;
+        for (int i = gr.first; i < gr.last && !bad; ++i) {
             const auto k = static_cast<std::size_t>(i);
             if (!rig_.particles[k].dynamic)
                 continue;
-            lost = !finite(x_[k]) || !finite(v_[k]) || length(x_[k] - target_[k]) > kLostDistance;
+            bad = !finite(x_[k]) || !finite(v_[k]) || !finite(target_[k]);
+            lost = lost || bad || length(x_[k] - target_[k]) > kLostDistance;
         }
         if (!lost)
             continue;
         ++resets;
+        broken = broken || bad;
         for (int i = gr.first; i < gr.last; ++i) {
             const auto k = static_cast<std::size_t>(i);
             if (!rig_.particles[k].dynamic)
                 continue;
+            if (!finite(drape_off_[k])) // eased from step to step, it would keep the target lost
+                drape_off_[k] = {};
+            if (!finite(target_[k]))
+                target_[k] = finite(raw_[k]) ? raw_[k] : animated_of(k, sub1_);
+            if (!finite(target_vel_[k]))
+                target_vel_[k] = {};
             x_[k] = prev_[k] = target_[k];
             v_[k] = target_vel_[k];
         }
+    }
+    if (broken) { // the anchors riding rebuilt bones, and a free bone's last turn
+        std::fill(swung_valid_.begin(), swung_valid_.end(), std::uint8_t{0});
+        place_kinematic(sub1_);
     }
 }
 
@@ -1838,9 +1795,7 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
                 const float d = closest_segment_triangle(
                     a, b, at[static_cast<std::size_t>(face.a)], at[static_cast<std::size_t>(face.b)],
                     at[static_cast<std::size_t>(face.c)], on_core, on_face, crosses);
-                const float ab2 = dot(b - a, b - a);
-                const float t = ab2 > 0.0F ? clampf(dot(on_core - a, b - a) / ab2, 0.0F, 1.0F) : 0.0F;
-                const float r = k.radius + (k.end_radius - k.radius) * t;
+                const float r = k.radius + (k.end_radius - k.radius) * along_segment(on_core, a, b);
                 if (crosses || d < 0.5F * r) {
                     rig.face_excluded.push_back((static_cast<std::uint64_t>(c) << 32) | f);
                     ++across;
@@ -1854,10 +1809,10 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
                           "%d face-collider pairs pass through each other at rest (faces across the body's inside) "
                           "and are left out of each other",
                           across);
-            diagnostics->push_back({false,
-                                    rig.config.files.empty() ? std::string("secondary motion")
-                                                             : rig.config.files.front().filename().string(),
-                                    0, text});
+            diagnostics->push_back(
+                {false,
+                 rig.config.files.empty() ? std::string("secondary motion") : file_name(rig.config.files.front()), 0,
+                 text});
         }
     }
     const std::vector<std::uint8_t> all(rig.groups.size(), 1);
@@ -1915,14 +1870,12 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
             const Particle &p = rig.particles[i];
             if (!p.dynamic || !(p.collide & k.tags))
                 continue;
-            const Vec3 ab = b - a;
-            const float ll = dot(ab, ab);
-            const float t = ll > 0.0F ? clampf(dot(at[i] - a, ab) / ll, 0.0F, 1.0F) : 0.0F;
+            const float t = along_segment(at[i], a, b);
             const float r = k.radius + (k.end_radius - k.radius) * t;
             const float clearance =
                 rig.point_clearance.empty() ? 0.0F : rig.point_clearance[c * rig.particles.size() + i];
             const float inside =
-                pair_reach(r + p.thickness, clearance, 0.5F * r + p.thickness) - length(at[i] - (a + ab * t));
+                pair_reach(r + p.thickness, clearance, 0.5F * r + p.thickness) - length(at[i] - lerp(a, b, t));
             if (inside <= 0.002F)
                 continue;
             rig.collider_excluded.push_back((static_cast<std::uint64_t>(c) << 32) | i);
@@ -1933,10 +1886,10 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
                               "anchor) and is left out of it; shrink or move the collider to keep that contact",
                               k.name.c_str(), rig.skeleton.names[static_cast<std::size_t>(p.bone)].c_str(),
                               static_cast<double>(inside * 100.0F));
-                diagnostics->push_back({false,
-                                        rig.config.files.empty() ? std::string("secondary motion")
-                                                                 : rig.config.files.front().filename().string(),
-                                        0, text});
+                diagnostics->push_back(
+                    {false,
+                     rig.config.files.empty() ? std::string("secondary motion") : file_name(rig.config.files.front()),
+                     0, text});
             }
         }
     }

@@ -15,14 +15,14 @@ constexpr std::size_t kProfileRing = 1024;
 constexpr double kTickSlack = 1e-3;
 // ticks a fresh start or a camera cut settles the cloth in its pose for (Simulation::settle)
 constexpr int kSettleTicks = 40;
-// m: a place on the game model moving this far about its hips in one draw is the game's pose snapping (a leg
-// swinging at 6 m/s moves 0.2 m in a 30 Hz draw)
+// m: a place on the game model moving this far about its hips in one draw is the game's pose snapping (further than
+// a leg swinging at 6 m/s moves in a 30 Hz draw)
 constexpr float kGameSnap = 0.35F;
-// s: a cut this soon after the last settle is not settled again (a cutscene's first frames snap the pose over
-// several draws, each a cut: 40 ticks apiece in one frame, a stall)
+// s: a cut this soon after the last settle is not settled again (a pose snapping over several draws would settle
+// on each, a stall)
 constexpr double kSettleGap = 0.5;
 // m: a body collider's end moving this far about the first group's reference bone across a pose cut starts the
-// cloth afresh (KH2's aerial damage starting from an attack: a foot 0.9 m in one draw, and its landing 0.4 m)
+// cloth afresh
 constexpr float kPoseCutJump = 0.12F;
 
 // settling: one substep a tick (it only has to come to rest, not follow motion)
@@ -118,8 +118,6 @@ Actor::Actor(std::shared_ptr<const Rig> rig, std::uint32_t seed) : rig_(std::mov
 const LodConfig &Actor::lod(const ActorInput &in) const
 {
     const LodConfig *best = &full_;
-    if (in.player)
-        return *best;
     for (const auto &l : rig_->config.lods)
         if (in.camera_distance >= l.distance)
             best = &l;
@@ -217,9 +215,8 @@ void Actor::drive(const ActorInput &in, float dt)
     }
 }
 
-void Actor::start(const ActorInput &in)
+TickSettings Actor::tick_settings(const LodConfig &l, const ActorInput &in) const
 {
-    const LodConfig &l = lod(in);
     TickSettings s;
     s.dt = 1.0F / rig_->config.rate;
     s.substeps = l.substeps;
@@ -230,6 +227,12 @@ void Actor::start(const ActorInput &in)
     s.environment_thickness = rig_->config.environment_thickness;
     s.ground_only = rig_->config.environment_ground_only;
     s.env = in.environment;
+    return s;
+}
+
+void Actor::start(const ActorInput &in)
+{
+    const TickSettings s = tick_settings(lod(in), in);
     drive(in, 0.0F);
     if (in.game_targets != nullptr && in.game_weight != nullptr) {
         last_game_ = *in.game_targets;
@@ -243,7 +246,7 @@ void Actor::start(const ActorInput &in)
     // first pose flung the cords)
     sim_.settle(*in.pose, settling(s), kSettleTicks);
     settled_at_ = in.seconds;
-    sim_.snap_to_game();
+    sim_.snap_to_game(*in.pose);
     for (const int b : rig_->needed)
         last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
     last_seconds_ = sim_seconds_ = in.seconds;
@@ -267,19 +270,27 @@ void Actor::update(const ActorInput &in)
         return;
     }
     frozen_ = false;
-    const double gap = in.seconds - last_seconds_;
-    if (!started_ || in.epoch != epoch_ || gap < 0.0 || gap > rig.config.idle_reset) {
+    const auto restart = [&] {
+        cut_waiting_ = pose_cut_waiting_ = false;
         sim_.times.startup = 0.0;
         start(in);
         profile_.phases.startup += sim_.times.startup;
         profile_.add(static_cast<float>(std::chrono::duration<double, std::micro>(Clock::now() - t0).count()));
+    };
+    const double gap = in.seconds - last_seconds_;
+    if (!started_ || in.epoch != epoch_ || gap < 0.0 || gap > rig.config.idle_reset) {
+        restart();
         return;
     }
+    cut_waiting_ = cut_waiting_ || in.cut;
+    pose_cut_waiting_ = pose_cut_waiting_ || in.pose_cut;
     if (gap <= 0.0)
         return; // the same moment drawn again: nothing moves
-    // a pose cut jumping the legs: carried on, the cloth was left on the wrong side of a leg (it kept the side it
-    // came from); started afresh, the colliders sweep in from rest and drape it round them (Simulation::initialize)
-    if (in.pose_cut && !rig.groups.empty()) {
+    const bool view_cut = cut_waiting_, pose_cut = pose_cut_waiting_;
+    cut_waiting_ = pose_cut_waiting_ = false;
+    // a pose cut jumping the legs: carried on, the cloth would be left on the wrong side of a leg (it keeps the side
+    // it came from); started afresh, the colliders sweep in from rest and drape it round them (Simulation::initialize)
+    if (pose_cut && !rig.groups.empty()) {
         std::uint32_t touch = 0;
         for (const Particle &p : rig.particles)
             if (p.dynamic)
@@ -296,17 +307,14 @@ void Actor::update(const ActorInput &in)
         for (const Collider &c : rig.colliders)
             if (c.rest_side && (c.tags & touch) != 0 &&
                 (jumped(c.bone, c.offset) || (c.kind == ShapeKind::capsule && jumped(c.end_bone, c.end_offset)))) {
-                sim_.times.startup = 0.0;
-                start(in);
-                profile_.phases.startup += sim_.times.startup;
-                profile_.add(static_cast<float>(std::chrono::duration<double, std::micro>(Clock::now() - t0).count()));
+                restart();
                 return;
             }
     }
     const float dt = 1.0F / rig.config.rate;
-    // a teleport: every group's reference bone jumping further than a tick could carry it. Some alone (a cuff on an
+    // a teleport: every group's reference bone jumping further than a tick could carry it. Some alone (a chain on an
     // arm snapping to a new animation) are rebased by themselves below and the rest simulated: rebasing the whole
-    // coat for a cuff skipped the tick, and the legs jumped to the new pose through it
+    // coat for them would skip the tick, and the legs jump to the new pose through it
     jumped_.assign(rig.groups.size(), 0);
     std::size_t jumps = 0;
     for (std::size_t g = 0; g < rig.groups.size(); ++g) {
@@ -319,19 +327,19 @@ void Actor::update(const ActorInput &in)
         }
     }
     const bool jump = jumps > 0 && jumps == rig.groups.size();
-    // the game's pose snapping (a cutscene's first frames): a place on the game model jumping further in one draw,
-    // about its group's hips, than a leg carries it; a new shot like a camera cut
+    // the game's pose snapping (a cutscene's first frames): a place on the game model a particle takes jumping further
+    // in one draw, about its group's hips, than a leg carries it; a new shot like a camera cut
     bool snap = false;
     if (in.game_targets != nullptr && in.game_weight != nullptr && last_game_.size() == in.game_targets->size())
         for (std::size_t i = 0; i < last_game_.size() && i < rig.particles.size() && !snap; ++i) {
-            if ((*in.game_weight)[i] <= 0.0F)
+            if ((*in.game_weight)[i] <= 0.0F || !sim_.follows_game(i))
                 continue;
             const auto b =
                 static_cast<std::size_t>(rig.groups[static_cast<std::size_t>(rig.particles[i].group)].reference_bone);
             snap = length(apply_inverse((*in.pose)[b], (*in.game_targets)[i]) -
                           apply_inverse(last_pose_[b], last_game_[i])) > kGameSnap;
         }
-    const bool cut = in.cut || snap;
+    const bool cut = view_cut || snap;
     if (jump || cut) {
         if (in.game_targets != nullptr && in.game_weight != nullptr) {
             last_game_ = *in.game_targets;
@@ -344,20 +352,10 @@ void Actor::update(const ActorInput &in)
         // a new shot: settled in its pose (a jump keeps the cloth's swing shape, carried), not again right after one
         if (cut && in.seconds - settled_at_ > kSettleGap) {
             settled_at_ = in.seconds;
-            TickSettings s;
-            s.dt = dt;
-            s.substeps = l.substeps;
-            s.iterations = l.iterations;
-            s.gravity = rig.config.gravity;
-            s.environment = rig.config.environment && l.environment && in.environment != nullptr;
-            s.self_collision = l.self_collision;
-            s.environment_thickness = rig.config.environment_thickness;
-            s.ground_only = rig.config.environment_ground_only;
-            s.env = in.environment;
             drive(in, 0.0F);
-            sim_.settle(*in.pose, settling(s), kSettleTicks);
+            sim_.settle(*in.pose, settling(tick_settings(l, in)), kSettleTicks);
         }
-        sim_.snap_to_game();
+        sim_.snap_to_game(*in.pose);
         ++profile_.rebases;
         for (const int b : rig.needed)
             last_pose_[static_cast<std::size_t>(b)] = (*in.pose)[static_cast<std::size_t>(b)];
@@ -402,16 +400,7 @@ void Actor::update(const ActorInput &in)
         ticks = rig.config.max_catchup;
     }
     sim_seconds_ = static_cast<double>(ticks_done_) / static_cast<double>(rig.config.rate);
-    TickSettings s;
-    s.dt = dt;
-    s.substeps = l.substeps;
-    s.iterations = l.iterations;
-    s.gravity = rig.config.gravity;
-    s.environment = rig.config.environment && l.environment && in.environment != nullptr;
-    s.self_collision = l.self_collision;
-    s.environment_thickness = rig.config.environment_thickness;
-    s.ground_only = rig.config.environment_ground_only;
-    s.env = in.environment;
+    const TickSettings s = tick_settings(l, in);
     for (int k = 0; k < ticks; ++k) {
         // the poses at the tick's start and end, between the last pose received and this one
         const double a = (sim_seconds_ - last_seconds_) / gap, b = (sim_seconds_ + dt - last_seconds_) / gap;

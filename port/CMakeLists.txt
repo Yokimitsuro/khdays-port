@@ -942,13 +942,15 @@ set(KHDAYS_SECONDARY_SOURCES
     runtime/mods/secondary/config.cpp runtime/mods/secondary/rig.cpp runtime/mods/secondary/collision.cpp
     runtime/mods/secondary/solver.cpp runtime/mods/secondary/actor.cpp)
 add_executable(khdays-secondary-motion-test tests/secondary_motion_test.cpp ${KHDAYS_SECONDARY_SOURCES}
-    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp)
-target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/include runtime/mods/secondary)
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
 target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
 # The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
 add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
-    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp)
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
 target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
 target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.

@@ -1,9 +1,8 @@
 // The game's loaded rooms as a secondary-motion environment (days_environment.h). Layouts from the
-// decompilation: the entity manager (gEntityMgr, EntityManager_ReleaseViews, Entity_LoadAndAttach),
-// its eight model groups (GetTrackEntryBase = manager + 4 + i * 8: u16 flags, u16 count, u32 blobs;
-// ModelGroup_Open), a collision blob's header (Coll_ResolveModelBlobPointers), its face records
-// (RoomPoly_BuildPlanes*, Coll_TestRayFace, Coll_TestSweptSphereFace) and room boxes
-// (RoomBox_UpdateBounds). Only memory is read: no cast, no callback. docs/SECONDARY_MOTION.md.
+// decompilation (docs/SECONDARY_MOTION.md, "The game's rooms"): gEntityMgr's eight model groups (GetTrackEntryBase,
+// ModelGroup_Open), a collision blob's header (Coll_ResolveModelBlobPointers), its face records (RoomPoly_BuildPlanes*,
+// Coll_TestRayFace, Coll_TestSweptSphereFace) and room boxes (RoomBox_UpdateBounds). Only memory is read: no cast,
+// no callback.
 
 #include "days_environment.h"
 
@@ -174,8 +173,6 @@ void DaysEnvironment::refresh()
 {
     const std::uint32_t manager = ram(KHDAYS_DS_gEntityMgr) ? u32(KHDAYS_DS_gEntityMgr) : 0;
     std::vector<Room> next;
-    bool changed = manager != manager_;
-    manager_ = manager;
     if (manager != 0 && ram(manager, 0x44)) {
         for (std::uint32_t g = 0; g < kGroups; ++g) {
             const std::uint32_t blob = blob_of(manager, g);
@@ -198,11 +195,9 @@ void DaysEnvironment::refresh()
             std::memcpy(r.key, key, sizeof(key));
             build(r);
             next.push_back(std::move(r));
-            changed = true;
         }
     }
-    changed = changed || !rooms_.empty(); // rooms left over were unloaded
-    rooms_ = std::move(next);
+    rooms_ = std::move(next); // rooms left over were unloaded
     // the player's room's group alone, as its ground casts take it; every group when it is not known or not loaded
     int room = -1;
     int current = current_slot(room);
@@ -211,7 +206,6 @@ void DaysEnvironment::refresh()
         current = -1;
         room = -1;
     }
-    changed = changed || current != current_;
     current_ = current;
     room_ = room;
     // room boxes (opening walls, moving blocks) from each room's tree nodes: their place now
@@ -236,15 +230,7 @@ void DaysEnvironment::refresh()
             }
         }
     }
-    if (boxes.size() != boxes_.size() ||
-        !std::equal(boxes.begin(), boxes.end(), boxes_.begin(), [](const Box &a, const Box &b) {
-            return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.pos.z == b.pos.z && a.angle == b.angle &&
-                   a.height == b.height;
-        }))
-        changed = true;
     boxes_ = std::move(boxes);
-    if (changed)
-        ++generation_;
 }
 
 void DaysEnvironment::gather(const Aabb &box, std::vector<Triangle> &out)

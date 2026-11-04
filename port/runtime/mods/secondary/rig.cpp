@@ -110,7 +110,7 @@ void Cook::colliders()
         for (const auto &t : c.tags)
             if (std::find(rig.tag_names.begin(), rig.tag_names.end(), t) == rig.tag_names.end()) {
                 if (rig.tag_names.size() >= 32) {
-                    error(c.line, "more than 32 collider tags");
+                    error(c.line, "more than 32 collider tags: share a tag between colliders that act alike");
                     break;
                 }
                 rig.tag_names.push_back(t);
@@ -184,8 +184,6 @@ void Cook::group(std::size_t gi)
     gr.clip_world = g.clip_world && g.kind == GroupKind::surface;
     gr.clip_inset = g.clip_inset;
     gr.twist_from_neighbours = g.twist_from_neighbours && g.kind == GroupKind::surface;
-    gr.mode = g.mode.mode;
-    gr.policy = g.policy.policy;
     gr.first = static_cast<int>(rig.particles.size());
     const int group_index = static_cast<int>(rig.groups.size());
     std::vector<int> attach;
@@ -380,81 +378,6 @@ void Cook::group(std::size_t gi)
         rig.groups.push_back(gr);
         return;
     }
-    // `turn`: a strip from a bone down turned at rest about the line across that bone's head, out from the group's
-    // reference bone when positive (by its angle, or the least that starts its controls outside a collider): its
-    // bones' rest frames turned, so its links, its reference shape and its drawn rest are the turned strip's
-    for (const StripTurn &t : g.turns) {
-        const int b = resolve_bone(sk, t.bone, file, out);
-        if (b < 0)
-            continue;
-        std::vector<int> turned;
-        for (const auto &s : strips)
-            for (std::size_t i = 0; i < s.size(); ++i)
-                if (s[i] == b)
-                    turned.assign(s.begin() + static_cast<std::ptrdiff_t>(i), s.end());
-        if (turned.empty()) {
-            error(t.line, "turn: " + t.bone.text + " is not in a strip of group " + g.name);
-            continue;
-        }
-        const Vec3 pivot = head(b);
-        const Vec3 along =
-            normalized(rotate(rest[static_cast<std::size_t>(b)].q, {1.0F, 0.0F, 0.0F}), {1.0F, 0.0F, 0.0F});
-        const Vec3 from = pivot - head(gr.reference_bone);
-        const Vec3 away = normalized(from - along * dot(from, along), perpendicular(along));
-        const Vec3 hinge = normalized(cross(along, away), perpendicular(along)); // a positive turn tips it outward
-        float radians = t.radians;
-        if (!t.clear.empty()) {
-            const auto k = std::find_if(rig.colliders.begin(), rig.colliders.end(),
-                                        [&](const Collider &c) { return c.name == t.clear; });
-            if (k == rig.colliders.end()) {
-                error(t.line, "turn " + t.bone.text + ": there is no collider " + t.clear);
-                continue;
-            }
-            const Vec3 a = world(k->bone, k->offset);
-            const Vec3 e = k->kind == ShapeKind::capsule ? world(k->end_bone, k->end_offset) : a;
-            const Vec3 &sc = rest[static_cast<std::size_t>(k->bone)].s; // its radius scales with its bone, as posed
-            const float scale = (std::fabs(sc.x) + std::fabs(sc.y) + std::fabs(sc.z)) / 3.0F;
-            // the least turn (a quarter degree at a time) that has the strip, its head through each control in
-            // turn, outside it (its controls alone: the collider lay between them, through the flap)
-            const auto clear_at = [&](float angle) {
-                const Quat q = axis_angle(hinge, angle);
-                Vec3 from_x = pivot;
-                for (const int c : turned) {
-                    const int pi = particle_of[static_cast<std::size_t>(c)];
-                    if (pi < 0)
-                        continue;
-                    const Particle &p = rig.particles[static_cast<std::size_t>(pi)];
-                    const Vec3 x = pivot + rotate(q, world(c, p.offset) - pivot);
-                    float u, v;
-                    closest_segments(from_x, x, a, e, u, v);
-                    const float r = (k->radius + (k->end_radius - k->radius) * v) * scale;
-                    if (length(lerp(from_x, x, u) - lerp(a, e, v)) < r + p.thickness + t.margin)
-                        return false;
-                    from_x = x;
-                }
-                return true;
-            };
-            radians = -1.0F;
-            for (int step = 0; step <= 360 && radians < 0.0F; ++step)
-                if (clear_at(static_cast<float>(step) * 0.25F * kDegrees))
-                    radians = static_cast<float>(step) * 0.25F * kDegrees;
-            if (radians < 0.0F) {
-                warn(t.line,
-                     "turn " + t.bone.text + ": no turn up to 90 degrees starts it outside " + t.clear + "; turned 90");
-                radians = 0.5F * kPi;
-            }
-            rig.summary += "; turn " + t.bone.text + " " + std::to_string(std::lround(radians / kDegrees)) + " degrees";
-        }
-        const Quat q = axis_angle(hinge, radians);
-        for (const int c : turned) {
-            Frame &f = rest[static_cast<std::size_t>(c)];
-            f.t = pivot + rotate(q, f.t - pivot);
-            f.q = normalized(q * f.q);
-            // the solver's rest (its relaxation, collider exclusions) is the turned strip's too
-            rig.skeleton.rest[static_cast<std::size_t>(c)] = matrix_of(f);
-        }
-    }
-
     // anchors and links down each strip
     std::set<std::uint64_t> linked;
     const auto add_distance = [&](int a, int b, Link kind) {
@@ -561,18 +484,6 @@ void Cook::group(std::size_t gi)
             else
                 mesh_edges.insert(pair_key(x, y));
         }
-    }
-    for (const auto &ring : g.rings) {
-        std::vector<int> r;
-        for (const auto &ref : ring) {
-            const int b = resolve_bone(sk, ref, file, out);
-            if (b >= 0 && owner_group[static_cast<std::size_t>(b)] == group_index)
-                r.push_back(b);
-            else if (b >= 0)
-                error(ref.line, "ring: " + ref.text + " is not a control of group " + g.name);
-        }
-        for (std::size_t k = 0; k < r.size(); ++k)
-            mesh_edges.insert(pair_key(r[k], r[(k + 1) % r.size()]));
     }
     for (const std::uint64_t e : mesh_edges) {
         const int x = static_cast<int>(e >> 32), y = static_cast<int>(e & 0xffffffffU);
@@ -704,7 +615,6 @@ void Cook::group(std::size_t gi)
             ReferenceBlend blend;
             blend.bone[0] = gr.reference_bone;
             blend.point[0] = p.reference;
-            float total = 0.0F;
             for (const Seg &s : segs) {
                 if (blend.count >= 4)
                     break;
@@ -723,11 +633,9 @@ void Cook::group(std::size_t gi)
                 blend.end[k] = local(s.bone, s.b);
                 blend.gap[k] = rest_gap;
                 blend.always[k] = s.always * near_by;
-                total += s.weight;
             }
             if (blend.count == 1)
                 continue;
-            (void)total;
             blend.weight[0] = 1.0F;
             for (int k = 0; k < blend.count; ++k) // the control bone's frame in each, for rebuilding it
                 blend.frame[static_cast<std::size_t>(k)] =
@@ -756,31 +664,6 @@ void Cook::group(std::size_t gi)
             }
         }
     }
-    // `outward axis`: the strips' heads' middle, along the middle of the vertices on its controls
-    if (g.outward_axis) {
-        Vec3 heads, mean;
-        int count = 0;
-        for (const auto &st : strips)
-            if (!st.empty())
-                heads += head(st.front());
-        for (std::size_t v = 0; v < mesh.vertices.size(); ++v)
-            if (dominant[v] >= 0 && owner_group[static_cast<std::size_t>(dominant[v])] == group_index) {
-                mean += mesh.vertices[v].position;
-                ++count;
-            }
-        if (g.kind != GroupKind::surface || strips.size() < 3 || count == 0) {
-            error(g.outward_line, "group " + g.name +
-                                      ": `outward axis` needs a surface of at least three strips round an axis (a "
-                                      "cuff) with vertices on its controls; write `outward vertical` or leave it out");
-        } else {
-            heads = heads * (1.0F / static_cast<float>(strips.size()));
-            const Frame &ref = rest[static_cast<std::size_t>(gr.reference_bone)];
-            gr.outward_axis = true;
-            gr.outward_origin = local(gr.reference_bone, heads);
-            gr.outward_dir = rotate(conjugate(ref.q),
-                                    normalized(mean * (1.0F / static_cast<float>(count)) - heads, {1.0F, 0.0F, 0.0F}));
-        }
-    }
     rig.groups.push_back(gr);
     // rig freedom: a surface whose controls are mostly unconnected cannot fold as one piece
     if (g.kind == GroupKind::surface) {
@@ -793,7 +676,7 @@ void Cook::group(std::size_t gi)
             warn(g.line, "group " + g.name + ": " + std::to_string(lonely) + " of its " +
                              std::to_string(controls.size()) +
                              " controls have fewer than three neighbours: the rig lacks the connections for a "
-                             "coordinated surface (add `topology mesh`, `connect` or `ring` lines)");
+                             "coordinated surface (add `topology mesh` or `connect` lines)");
     }
 }
 
@@ -820,22 +703,12 @@ void Cook::finish()
         s.particle = particle_of[static_cast<std::size_t>(b)];
         const Particle &p = rig.particles[static_cast<std::size_t>(s.particle)];
         s.group = p.group;
-        s.head = p.anchor;
         for (int up = sk.parent[static_cast<std::size_t>(b)]; up >= 0 && s.parent_sim < 0;
              up = sk.parent[static_cast<std::size_t>(up)])
             s.parent_sim = sim_index[static_cast<std::size_t>(up)];
         const GroupRig &gr = rig.groups[static_cast<std::size_t>(s.group)];
         s.reference = relative(rest[static_cast<std::size_t>(gr.reference_bone)], rest[static_cast<std::size_t>(b)]);
         rig.bones_out.push_back(s);
-    }
-    for (auto &gr : rig.groups) {
-        gr.first_bone = static_cast<int>(rig.bones_out.size());
-        gr.last_bone = 0;
-    }
-    for (std::size_t i = 0; i < rig.bones_out.size(); ++i) {
-        GroupRig &gr = rig.groups[static_cast<std::size_t>(rig.bones_out[i].group)];
-        gr.first_bone = std::min(gr.first_bone, static_cast<int>(i));
-        gr.last_bone = std::max(gr.last_bone, static_cast<int>(i) + 1);
     }
     // anchors under a simulated bone ride it
     for (auto &p : rig.particles) {
@@ -910,21 +783,7 @@ void Cook::finish()
         }
     }
     rig.self_excluded.assign(excluded.begin(), excluded.end());
-    // pairs closer at rest than their thickness (a slit's two sides): kept at their rest distance
     const auto rest_point = [&](std::size_t i) { return world(rig.particles[i].bone, rig.particles[i].offset); };
-    for (std::size_t a = 0; a < rig.particles.size(); ++a)
-        for (std::size_t b = a + 1; b < rig.particles.size(); ++b) {
-            const Particle &pa = rig.particles[a], &pb = rig.particles[b];
-            if (pa.self_group < 0 || pa.self_group != pb.self_group || (!pa.dynamic && !pb.dynamic))
-                continue;
-            const auto key = pair_key(static_cast<int>(a), static_cast<int>(b));
-            if (std::binary_search(rig.self_excluded.begin(), rig.self_excluded.end(), key))
-                continue;
-            const float d = length(rest_point(a) - rest_point(b));
-            if (d < pa.thickness + pb.thickness)
-                rig.self_closest.push_back({key, d * 0.95F});
-        }
-    std::sort(rig.self_closest.begin(), rig.self_closest.end());
     // `clear` colliders shrunk so that every control they collide with starts outside them
     for (std::size_t c = 0; c < rig.colliders.size(); ++c) {
         Collider &k = rig.colliders[c];
@@ -939,12 +798,11 @@ void Cook::finish()
             const Particle &p = rig.particles[i];
             if (!p.dynamic || !(p.collide & k.tags))
                 continue;
-            const Vec3 x = rest_point(i), ab = b - a;
-            const float ll = dot(ab, ab);
-            const float t = ll > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(x - a, ab) / ll)) : 0.0F;
+            const Vec3 x = rest_point(i);
+            const float t = along_segment(x, a, b);
             const float r = k.radius + (k.end_radius - k.radius) * t;
             if (r > 0.0F)
-                scale = std::fmin(scale, (length(x - (a + ab * t)) - p.thickness - 0.002F) / r);
+                scale = std::fmin(scale, (length(x - lerp(a, b, t)) - p.thickness - 0.002F) / r);
         }
         // and every face between them: the coat's surface, not only its controls, clear of it at rest
         for (const Face &f : rig.faces) {
@@ -956,10 +814,7 @@ void Cook::finish()
             const float d = closest_segment_triangle(
                 a, b, rest_point(static_cast<std::size_t>(f.a)), rest_point(static_cast<std::size_t>(f.b)),
                 rest_point(static_cast<std::size_t>(f.c)), on_core, on_face, crosses);
-            const Vec3 ab = b - a;
-            const float ll = dot(ab, ab);
-            const float t = ll > 0.0F ? std::fmin(1.0F, std::fmax(0.0F, dot(on_core - a, ab) / ll)) : 0.0F;
-            const float r = k.radius + (k.end_radius - k.radius) * t;
+            const float r = k.radius + (k.end_radius - k.radius) * along_segment(on_core, a, b);
             if (r > 0.0F)
                 scale = std::fmin(scale, crosses ? 0.0F : (d - p.thickness - 0.002F) / r);
         }
@@ -1009,7 +864,10 @@ void Cook::finish()
     for (const auto &k : config.controls) {
         ControlRig r;
         r.config = &k;
-        r.params = k.params;
+        for (const Param p : {Param::mass, Param::thickness}) // read here, once: blending them would do nothing
+            if (k.params.given[static_cast<std::size_t>(p)])
+                error(k.line, "control " + k.name + ": `" + param_info(p).name +
+                                  "` is fixed when the model loads; set it on the group or on a `bone` line");
         if (k.wind.given && k.wind.space == WindSpace::bone)
             r.wind_bone = resolve_bone(sk, k.wind.bone, file, out);
         for (const auto &name : k.groups)
@@ -1042,10 +900,31 @@ void Cook::finish()
       << rig.particles.size() - static_cast<std::size_t>(dyn) << " anchors, " << rig.distances.size() << " links, "
       << rig.faces.size() << " faces, " << rig.colliders.size() << " colliders, " << rig.bones_out.size()
       << " bones rebuilt, " << rig.carried.size() << " carried";
-    rig.summary = s.str() + rig.summary; // the turns' notes after the counts
+    rig.summary = s.str();
 }
 
 } // namespace
+
+bool group_follows_game(const Rig &rig, std::size_t g)
+{
+    const GroupRig &group = rig.groups[g];
+    for (int i = group.first; i < group.last; ++i) {
+        const Particle &p = rig.particles[static_cast<std::size_t>(i)];
+        const ParamBlock &b = rig.params[static_cast<std::size_t>(p.params)];
+        if (p.dynamic && (b.get(Param::game_shape) > 0.0F || b.get(Param::cutscene_sim) >= 0.5F))
+            return true;
+    }
+    for (const ControlRig &c : rig.controls) {
+        const auto &given = c.config->params.given;
+        if (!given[static_cast<std::size_t>(Param::game_shape)] &&
+            !given[static_cast<std::size_t>(Param::cutscene_sim)])
+            continue;
+        for (const int i : c.particles)
+            if (i >= group.first && i < group.last)
+                return true;
+    }
+    return false;
+}
 
 int resolve_bone(const SkeletonDesc &skeleton, const BoneRef &ref, const std::string &file, Diagnostics &out)
 {
@@ -1132,16 +1011,18 @@ Rig cook(const Config &config, const SkeletonDesc &skeleton, const MeshDesc &mes
     rig.config = config;
     rig.skeleton = skeleton;
     Cook c{rig.config, rig.skeleton, mesh, out, rig, {}, {}, {}, {}, {}, {}};
-    c.file = config.files.empty() ? std::string("secondary motion") : config.files.front().filename().string();
+    c.file = config.files.empty() ? std::string("secondary motion") : file_name(config.files.front());
     const std::size_t nb = skeleton.names.size();
     if (skeleton.parent.size() != nb || skeleton.rest.size() != nb) {
-        out.push_back({true, c.file, 0, "the model's skeleton is malformed"});
+        out.push_back({true, c.file, 0, "the model's skeleton is malformed: export or extract the model again"});
         return rig;
     }
     for (std::size_t b = 0; b < nb; ++b) {
         c.rest.push_back(frame_of(skeleton.rest[b]));
         if (skeleton.parent[b] >= static_cast<int>(nb)) {
-            out.push_back({true, c.file, 0, "the model's bone " + skeleton.names[b] + " has a parent out of range"});
+            out.push_back({true, c.file, 0,
+                           "the model's bone " + skeleton.names[b] +
+                               " has a parent out of range: export or extract the model again"});
             return rig;
         }
     }

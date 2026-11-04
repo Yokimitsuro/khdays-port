@@ -54,9 +54,6 @@ public:
     // velocity relative to it zeroed. `groups`: only those groups (1 each), the others left as they are.
     void rebase(const std::vector<Frame> &a, const std::vector<Frame> &b,
                 const std::vector<std::uint8_t> *groups = nullptr);
-    // Each particle carried along with its target from pose `a` to pose `b` (the time between the last
-    // tick and the draw).
-    void carry(const std::vector<Frame> &a, const std::vector<Frame> &b);
     // Ticks with `pose` held and the swing damped each tick, so the cloth hangs as this pose has it before it is
     // shown (a fresh start, a camera cut); the drawn shape then starts on it.
     void settle(const std::vector<Frame> &pose, const TickSettings &settings, int ticks);
@@ -66,8 +63,11 @@ public:
     // `cutscene_sim`: the shell over those places (triangles of particles, wound outward; a fixed particle at its
     // own place), which such a particle never goes inside
     void set_game_shell(const std::vector<std::array<int, 3>> &triangles, const std::vector<std::uint8_t> &open);
-    // `cutscene_sim`: each such particle on its place, still (a new shot, the game's pose snapping)
-    void snap_to_game();
+    // `cutscene_sim`: each such particle on its place at `pose`, still and drawn there (a new shot, the game's pose
+    // snapping)
+    void snap_to_game(const std::vector<Frame> &pose);
+    // Whether this particle's settings take the game model's places (`game_shape`, `cutscene_sim`)
+    bool follows_game(std::size_t i) const;
 
     // The bones at `pose` from the solved particles: each rebuilt bone and each bone it carries, in
     // `out` (sized like the skeleton), flagged in `written`.
@@ -118,7 +118,7 @@ public:
         return shape1_;
     }
     PhaseTimes times;
-    int contacts = 0, resets = 0;
+    int resets = 0;
     std::size_t environment_triangles = 0;
 
 private:
@@ -139,6 +139,8 @@ private:
     void collide_self();
     void limit_strain(bool anchors_only);
     void animated_lengths();
+    void face_normals();                                    // face_normal_prev_ from where the particles are now
+    void read_room(const Aabb &box, const TickSettings &s); // env_ and env_boxes_: the room's triangles in `box`
     Frame bone_frame(int sim, const std::vector<Frame> &pose, bool twist);
     void recover();
     float w(std::size_t i) const; // the particle's inverse mass as the constraints see it
@@ -183,13 +185,9 @@ private:
     // a pair's authored clearance (Rig::point_clearance, face_clearance) at the collider's size now, or 0
     float point_clearance(std::size_t c, std::size_t i, const Shape &s) const;
     float face_clearance(std::size_t c, std::size_t f, const Shape &s) const;
-    // the way out of the body: a control's in its group's reference bone space, a face's sign along its
-    // normal; body (rest-side) contact pushes there however the body moved
+    // the way out of the body: a control's in its group's reference bone space; body (rest-side) contact pushes
+    // there however the body moved
     std::vector<Vec3> outward_;
-    std::vector<std::int8_t> face_out_;
-    // per link: between two strips of an `outward axis` group (a cuff's rim, its diagonals, a bend across it): not
-    // solved, so a strip pushed out swings on its own and moves no other
-    std::vector<std::uint8_t> loose_;
     // the targets draped around the colliders down each strip (drape): order (anchors first), each
     // particle's colliders (collider, index into its candidates), raw and draped targets
     std::vector<int> drape_order_;

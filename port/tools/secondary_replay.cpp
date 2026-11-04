@@ -1,34 +1,7 @@
-// khdays-secondary-replay: a model's secondary motion played offline on KH2 motions, for tuning,
-// validation and profiling without the game (docs/SECONDARY_MOTION.md, "Replay tool"). It drives the
-// solver exactly as the port does (models.cpp): the motion evaluated, retargeted and cross-faded by
-// matrices, the root motion taken out and the actor placed by a scripted path (run, turn, stop, jump,
-// wall contact, teleport), the actor updated per draw on a game clock; then it skins the model with the
-// bones the solver rebuilt, measures clipping, stretch and cost, and draws contact sheets (PNG).
-//
-//   khdays-secondary-replay <model.mdlx> <model.secondary.txt> <model.motions.txt> [options]
-//     --out <dir>            contact sheets and the report go here
-//     --scenario <name>      idle, calm, idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall,
-//                            spawn, teleport, cut, platform, all (default all)
-//     --slot-offset <n>      the scenarios' P_EX110 slots from slot n on (motions.txt adds P_EX110.mset there)
-//     --actors <n>           simulate n actors at once (the benchmark; default 1)
-//     --draw-hz <hz>         draws a second (default 60); --repeat <n> draws each n times
-//     --reference <B.mdlx> <B.mset> <slot,...>   compare the coat with a baked KH2 coat (same coat bones; all the
-//                            bones when it has this model's count), its slot seen by the controls' `slot` lines
-//
-// Diagnostics (stderr): KHDAYS_REPLAY_DEBUG=<strain> the worst links once strain passes it, and every leg
-// in a coarse face with its side; KHDAYS_REPLAY_LEGS=1 each frame's deepest leg in the coat (cm);
-// KHDAYS_REPLAY_DUMP=<frame> the coat's controls and targets in the hips' space; KHDAYS_REPLAY_REFDUMP=<frame>
-// the bake's and the simulated coat there (--reference); KHDAYS_REPLAY_JITTER=1 each frame's worst drawn
-// control, the legs' largest step and any coat bone turning over 60 deg past its last step;
-// KHDAYS_REPLAY_LEGPOSE=<slot> the mset skeleton's legs and this model's after the retarget (knee bends) once; KHDAYS_REPLAY_TRACE=<bone,bone,...>
-// those controls each frame (drawn, solved, targets, nearest collider); KHDAYS_REPLAY_CLIP=<name> each frame's
-// deepest simulated vertex in the colliders so named (KHDAYS_REPLAY_CLIP_BY=<collider>: of the groups that
-// collide with it); KHDAYS_REPLAY_POKE=<bone,...> those bones' body vertices through the coat's drawn surface;
-// KHDAYS_REPLAY_NO_SIM=1 draws the animation alone; KHDAYS_REPLAY_ROLL=<degrees> turns the actor about its x,
-// KHDAYS_REPLAY_LIFT=<m> raises it, KHDAYS_REPLAY_NOISE=<mm> shakes it each draw;
-// KHDAYS_REPLAY_GROUP=<group> the group whose bones' turns the jitter measures (coat); KHDAYS_REPLAY_TWIST=1
-// their largest roll about their own length each frame; KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>] the
-// contact sheet's frames.
+// khdays-secondary-replay: a model's secondary motion played offline on KH2 motions, for tuning, validation and
+// profiling without the game. It drives the solver as the port does (models.cpp), skins the model with the bones the
+// solver rebuilt, measures clipping, stretch and cost and draws contact sheets. Its options and diagnostics:
+// docs/SECONDARY_MOTION.md, "Replay tool".
 
 #include "actor.h"
 
@@ -987,23 +960,24 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
             if (std::getenv("KHDAYS_REPLAY_TWIST") != nullptr && jq1.size() == out.size()) {
                 const std::string measured =
                     std::getenv("KHDAYS_REPLAY_GROUP") != nullptr ? std::getenv("KHDAYS_REPLAY_GROUP") : "coat";
-                float roll = 0.0F, swing = 0.0F;
+                float most_roll = 0.0F, swing = 0.0F;
                 std::size_t rb = 0;
                 for (const auto &sb : rig.bones_out) {
                     const auto b = static_cast<std::size_t>(sb.bone);
                     if (rig.groups[static_cast<std::size_t>(sb.group)].name != measured)
                         continue;
-                    const Vec3 was = rotate(jq1[b], Vec3{1, 0, 0}), now = rotate(q[b], Vec3{1, 0, 0});
-                    const Quat rest = normalized(conjugate(arc(was, now) * jq1[b]) * q[b]); // what is left: the roll
+                    const Vec3 was = rotate(jq1[b], Vec3{1, 0, 0}), moved = rotate(q[b], Vec3{1, 0, 0});
+                    const Quat rest = normalized(conjugate(arc(was, moved) * jq1[b]) * q[b]); // what is left: the roll
                     const float r = 2.0F * std::acos(std::fmin(1.0F, std::fabs(rest.w))) * 57.2958F;
-                    if (r > roll) {
-                        roll = r;
+                    if (r > most_roll) {
+                        most_roll = r;
                         rb = b;
-                        swing = std::acos(std::fmax(-1.0F, std::fmin(1.0F, dot(was, now)))) * 57.2958F;
+                        swing = std::acos(std::fmax(-1.0F, std::fmin(1.0F, dot(was, moved)))) * 57.2958F;
                     }
                 }
                 std::fprintf(stderr, "jtwist %s f%d %.1f deg %s (its length %.1f deg)\n", sc.name.c_str(), f,
-                             static_cast<double>(roll), rig.skeleton.names[rb].c_str(), static_cast<double>(swing));
+                             static_cast<double>(most_roll), rig.skeleton.names[rb].c_str(),
+                             static_cast<double>(swing));
             }
             jq1 = q;
         }

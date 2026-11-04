@@ -10,6 +10,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <system_error>
 
 namespace khdays::secondary {
 
@@ -18,38 +19,21 @@ namespace {
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
 const ParamInfo kParams[kParamCount] = {
-    {"mass", 0.05F, 1e-4F, 100.0F, Unit::none},
-    {"stretch_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"shear_compliance", 1e-5F, 0.0F, 1.0F, Unit::none},
-    {"bend_compliance", 1e-3F, 0.0F, 1.0F, Unit::none},
-    {"damping", 1.0F, 0.0F, 200.0F, Unit::none},
-    {"follow_frequency", 2.0F, 0.0F, 60.0F, Unit::none},
-    {"follow_damping", 0.6F, 0.0F, 10.0F, Unit::none},
-    {"gravity_scale", 1.0F, -10.0F, 10.0F, Unit::none},
-    {"max_distance", 0.0F, 0.0F, 10.0F, Unit::length},
-    {"tether_slack", 0.05F, 0.0F, 2.0F, Unit::none},
-    {"swing_limit", kPi, 0.0F, kPi, Unit::angle},
-    {"twist_limit", kPi, 0.0F, kPi, Unit::angle},
-    {"inertia", 1.0F, 0.0F, 2.0F, Unit::none},
-    {"guided_inertia", 0.5F, 0.0F, 2.0F, Unit::none},
-    {"max_speed", 20.0F, 0.01F, 1000.0F, Unit::none},
-    {"thickness", 0.01F, 0.0F, 1.0F, Unit::length},
-    {"friction", 0.2F, 0.0F, 1.0F, Unit::none},
-    {"wind_drag", 1.0F, 0.0F, 100.0F, Unit::none},
-    {"wind_lift", 0.5F, 0.0F, 1.0F, Unit::none},
-    {"row_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"max_strain", 0.08F, 0.0F, 4.0F, Unit::none},
-    {"row_max_strain", 0.08F, 0.0F, 8.0F, Unit::none},
-    {"smoothing", 0.0F, 0.0F, 0.5F, Unit::none},
-    {"follow_bone_scale", 1.0F, 0.0F, 3.0F, Unit::none},
-    {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
-    {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},
-    {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"cutscene_sim", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"leg_carry", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"mass", 0.05F, 1e-4F, 100.0F, Unit::none},          {"stretch_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"shear_compliance", 1e-5F, 0.0F, 1.0F, Unit::none}, {"bend_compliance", 1e-3F, 0.0F, 1.0F, Unit::none},
+    {"damping", 1.0F, 0.0F, 200.0F, Unit::none},         {"follow_frequency", 2.0F, 0.0F, 60.0F, Unit::none},
+    {"follow_damping", 0.6F, 0.0F, 10.0F, Unit::none},   {"gravity_scale", 1.0F, -10.0F, 10.0F, Unit::none},
+    {"max_distance", 0.0F, 0.0F, 10.0F, Unit::length},   {"tether_slack", 0.05F, 0.0F, 2.0F, Unit::none},
+    {"swing_limit", kPi, 0.0F, kPi, Unit::angle},        {"twist_limit", kPi, 0.0F, kPi, Unit::angle},
+    {"inertia", 1.0F, 0.0F, 2.0F, Unit::none},           {"guided_inertia", 0.5F, 0.0F, 2.0F, Unit::none},
+    {"max_speed", 20.0F, 0.01F, 1000.0F, Unit::none},    {"thickness", 0.01F, 0.0F, 1.0F, Unit::length},
+    {"friction", 0.2F, 0.0F, 1.0F, Unit::none},          {"wind_drag", 1.0F, 0.0F, 100.0F, Unit::none},
+    {"row_compliance", 0.0F, 0.0F, 1.0F, Unit::none},    {"max_strain", 0.08F, 0.0F, 4.0F, Unit::none},
+    {"row_max_strain", 0.08F, 0.0F, 8.0F, Unit::none},   {"smoothing", 0.0F, 0.0F, 0.5F, Unit::none},
+    {"follow_bone_scale", 1.0F, 0.0F, 3.0F, Unit::none}, {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
+    {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},        {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},       {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},        {"cutscene_sim", 0.0F, 0.0F, 1.0F, Unit::none},
 };
 
 struct Line {
@@ -425,14 +409,6 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             if (bone_list(l, 1, s))
                 for (auto &b : s)
                     g.strips.push_back({b});
-        } else if (w == "ring") {
-            std::vector<BoneRef> s;
-            if (bone_list(l, 1, s)) {
-                if (s.size() < 3)
-                    error(l.number, "a ring joins at least 3 controls");
-                else
-                    g.rings.push_back(std::move(s));
-            }
         } else if (w == "topology") {
             if (l.words.size() == 2 && (l.words[1] == "mesh" || l.words[1] == "explicit"))
                 g.mesh_topology = l.words[1] == "mesh";
@@ -484,35 +460,6 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             if (!ok || g.shell_push.empty())
                 error(l.number, "write `shell_push <collider tag>... [from <0 to 1>]`");
             g.shell_push_from = from;
-        } else if (w == "turn") { // turn <bone> <degrees> | turn <bone> clear <collider> [margin <length>]
-            StripTurn t;
-            float degrees = 0.0F, margin = 0.002F / c_.units;
-            bool ok = l.words.size() >= 3;
-            if (ok && l.words[2] == "clear") {
-                ok =
-                    l.words.size() == 4 || (l.words.size() == 6 && l.words[4] == "margin" &&
-                                            number(l.words[5], margin) && margin >= 0.0F && margin * c_.units <= 0.05F);
-                if (ok)
-                    t.clear = l.words[3];
-            } else {
-                ok = ok && l.words.size() == 3 && number(l.words[2], degrees) && std::fabs(degrees) <= 90.0F;
-            }
-            if (!ok) {
-                error(l.number, "write `turn <bone> <degrees, -90 to 90>` or `turn <bone> clear <collider> [margin "
-                                "<length, at most 5 cm>]`");
-                continue;
-            }
-            t.bone = {l.words[1], l.number};
-            t.radians = degrees * kDegrees;
-            t.margin = margin * c_.units;
-            t.line = l.number;
-            g.turns.push_back(t);
-        } else if (w == "outward") {
-            const bool ok = l.words.size() == 2 && (l.words[1] == "axis" || l.words[1] == "vertical");
-            if (!ok)
-                error(l.number, "write `outward axis` (away from the group's own axis) or `outward vertical`");
-            g.outward_axis = ok && l.words[1] == "axis";
-            g.outward_line = l.number;
         } else if (w == "clip_world") {
             float inset = 0.0F;
             const bool off = l.words.size() == 2 && l.words[1] == "off";
@@ -801,17 +748,17 @@ void Reader::run(const std::vector<Line> &lines, int depth)
                 continue;
             }
             if (depth >= 4) {
-                error(l.number, "includes nest too deeply");
+                error(l.number, "includes nest too deeply: at most 4 levels, so include this file from one further up");
                 continue;
             }
             const auto path = folder_ / std::filesystem::path(std::u8string(l.words[1].begin(), l.words[1].end()));
+            c_.files.push_back(path); // watched even when it cannot be opened: putting it right reloads the model
             std::ifstream in(path, std::ios::binary);
             if (!in) {
-                error(l.number, "cannot open " + l.words[1] + " (looked beside this file)");
+                error(l.number, "cannot open " + l.words[1] + ": put it beside this file, or correct the name");
                 continue;
             }
             const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-            c_.files.push_back(path);
             const float units = c_.units;
             Reader inner(c_, out_, l.words[1], folder_);
             inner.run(lines_of(text), depth + 1);
@@ -1043,14 +990,39 @@ Config read_config(const std::filesystem::path &path, Diagnostics &out)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        out.push_back({true, path.filename().string(), 0, "cannot open the file"});
-        return {};
+        out.push_back({true, file_name(path), 0, "cannot open the file: check that it is there and can be read"});
+        Config c;
+        c.files.push_back(path);
+        return c;
     }
     const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-    const auto name = path.filename().u8string();
-    Config c = parse_config(text, std::string(name.begin(), name.end()), out, path.parent_path());
+    Config c = parse_config(text, file_name(path), out, path.parent_path());
     c.files.insert(c.files.begin(), path);
     return c;
+}
+
+std::string file_name(const std::filesystem::path &path)
+{
+    const auto name = path.filename().u8string();
+    return {name.begin(), name.end()};
+}
+
+void ConfigWatch::record(const std::vector<std::filesystem::path> &read)
+{
+    files = read;
+    stamps.clear();
+    std::error_code ec; // a file that cannot be read has the earliest time, until it can
+    for (const auto &f : files)
+        stamps.push_back(std::filesystem::last_write_time(f, ec));
+}
+
+bool ConfigWatch::changed() const
+{
+    std::error_code ec;
+    for (std::size_t i = 0; i < files.size(); ++i)
+        if (std::filesystem::last_write_time(files[i], ec) != stamps[i])
+            return true;
+    return false;
 }
 
 } // namespace khdays::secondary

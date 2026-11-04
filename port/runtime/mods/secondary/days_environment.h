@@ -24,14 +24,6 @@ public:
     // Call on the game's thread once a frame, before gathering.
     void refresh();
     void gather(const Aabb &box, std::vector<Triangle> &out) override;
-    std::uint64_t generation() const override
-    {
-        return generation_;
-    }
-    std::size_t rooms() const
-    {
-        return rooms_.size();
-    }
     // Which collision the gathers take, for the session log: the player's room and its group, or every group
     std::string describe() const;
 
@@ -54,8 +46,6 @@ private:
     std::vector<int> hits_;
     std::vector<Triangle> box_tris_;
     float scale_ = 1.0F;
-    std::uint64_t generation_ = 1;
-    std::uint32_t manager_ = 0;
     int current_ = -1; // the group of the room the player is in (-1: not known, every group is taken)
     int room_ = -1;    // that room's index in its world
 };

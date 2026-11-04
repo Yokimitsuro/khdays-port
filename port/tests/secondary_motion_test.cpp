@@ -1,14 +1,18 @@
 // Secondary motion (runtime/mods/secondary, docs/SECONDARY_MOTION.md): configuration, cooking, the
-// solver, its clock and its contacts on small synthetic rigs; and the N_EX830 setup when
-// KHDAYS_SECONDARY_ASSETS names the folder holding N_EX830.mdlx and its .secondary.txt.
+// solver, its clock and its contacts on small synthetic rigs; and the coat Roxas's setup when
+// KHDAYS_SECONDARY_ASSETS names the folder the HD pack installs it in (n_ex830 below).
 
 #include "actor.h"
 
 #include "khdays/assets/kh2_mdlx.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -202,6 +206,62 @@ void configuration()
     t = "secondary_motion 1\ngroup g chain\n  attach hips\n  chain s0_0 s0_1 helper\nend\n";
     cook(parse_config(t, "e.txt", d), h.sk, h.mesh, d);
     CHECK(has_text(d, "zero-length helper"));
+    // a control cannot change what is read once at load
+    for (const char *fixed : {"mass 0.2", "thickness 0.02"}) {
+        d.clear();
+        t = skirt_config(s, "") + "control c\n  animation *\n  groups skirt\n  " + fixed + "\nend\n";
+        CHECK(cooked(t, s.sk, s.mesh, d) == nullptr);
+        CHECK(has_text(d, "is fixed when the model loads"));
+    }
+    // a file name the code page may not hold, as UTF-8
+    CHECK(file_name(std::filesystem::path(u8"dir/\u8868.secondary.txt")) == "\xE8\xA1\xA8.secondary.txt");
+}
+
+// A configuration's files watched: a broken include's repair, an edit of an include alone, the file going and coming
+void config_watch()
+{
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "khdays_secondary_watch_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir);
+    const fs::path main_file = dir / "m.secondary.txt", include = dir / "p.txt";
+    const auto write = [](const fs::path &path, const std::string &text) {
+        std::ofstream(path, std::ios::binary) << text;
+    };
+    write(main_file, "secondary_motion 1\ninclude p.txt\n");
+    Diagnostics d;
+    Config c = read_config(main_file, d);
+    CHECK(has_errors(d)); // its include is not there yet
+    CHECK(c.files.size() == 2U);
+    ConfigWatch watch;
+    watch.record(c.files);
+    CHECK(!watch.changed());
+    write(include, "secondary_motion 1\nunits cm\n");
+    CHECK(watch.changed());
+    d.clear();
+    c = read_config(main_file, d);
+    CHECK(!has_errors(d));
+    watch.record(c.files);
+    CHECK(!watch.changed());
+    fs::last_write_time(include, fs::last_write_time(include) + std::chrono::hours(1));
+    CHECK(watch.changed());
+    d.clear();
+    c = read_config(main_file, d);
+    watch.record(c.files);
+    CHECK(!watch.changed());
+    // gone (an editor saving by replacing it): seen once, not forgotten, and seen again when it is back
+    fs::remove(main_file);
+    CHECK(watch.changed());
+    d.clear();
+    c = read_config(main_file, d);
+    CHECK(has_errors(d));
+    CHECK(c.files.size() == 1U);
+    watch.record(c.files);
+    CHECK(!watch.changed());
+    write(main_file, "secondary_motion 1\n");
+    CHECK(watch.changed());
+    fs::remove_all(dir, ec);
 }
 
 void reconstruction_at_rest()
@@ -927,6 +987,262 @@ void cutscene_sim_kick()
     CHECK(neighbour > 0.02F); // free rows: 0.7 cm
 }
 
+// The places `cutscene_sim` takes (a ring of radius `r` about the hips, moved by `by`) and the shell over them
+struct Places {
+    std::vector<Vec3> at;
+    std::vector<float> weight;
+    std::vector<std::array<int, 3>> shell;
+};
+
+Places places_of(const Skirt &s, const Rig &rig, float r, Vec3 by = {})
+{
+    Places p;
+    p.at.assign(rig.particles.size(), {});
+    p.weight.assign(rig.particles.size(), 0.0F);
+    std::vector<std::vector<int>> columns;
+    for (int k = 0; k < s.strips; ++k) {
+        const float a = 2.0F * kPi * static_cast<float>(k) / static_cast<float>(s.strips);
+        std::vector<int> col;
+        for (int l = 0; l < s.levels; ++l)
+            for (std::size_t j = 0; j < rig.particles.size(); ++j) {
+                if (!rig.particles[j].dynamic || rig.particles[j].bone != s.bone(k, l))
+                    continue;
+                if (l == 0)
+                    col.push_back(rig.particles[j].anchor);
+                p.at[j] = Vec3{r * std::cos(a), 0.85F - 0.15F * static_cast<float>(l), r * std::sin(a)} + by;
+                p.weight[j] = 1.0F;
+                col.push_back(static_cast<int>(j));
+            }
+        columns.push_back(col);
+    }
+    for (std::size_t c = 0; c < columns.size(); ++c) {
+        const auto &l = columns[c], &m = columns[(c + 1) % columns.size()];
+        for (std::size_t q = 0; q + 1 < l.size(); ++q) {
+            p.shell.push_back({l[q], m[q], l[q + 1]}); // wound outward (a ring turning +x to +z, rows down)
+            p.shell.push_back({m[q], m[q + 1], l[q + 1]});
+        }
+    }
+    return p;
+}
+
+// The first draw of a start and of a new shot: `cutscene_sim` on its places, not where the settling left it or the
+// last shot had it; other groups as they were before the settling, not eased after it
+void drawn_at_start_and_cut()
+{
+    const Skirt s = make_skirt(8, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "", "  collide none\n  cutscene_sim\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Places p = places_of(s, *rig, 0.2F);
+    Actor a(rig, 3);
+    std::vector<Frame> pose = pose_of(s.sk, {}), out;
+    std::vector<std::uint8_t> written;
+    ActorInput in;
+    in.pose = &pose;
+    in.game_targets = &p.at;
+    in.game_weight = &p.weight;
+    in.game_shell = &p.shell;
+    const auto off_places = [&] {
+        out = pose;
+        written.assign(pose.size(), 0);
+        a.output(pose, out, written);
+        float worst = 0.0F;
+        for (std::size_t i = 0; i < p.at.size(); ++i)
+            if (p.weight[i] > 0.0F) {
+                const Particle &q = rig->particles[i];
+                worst = maxf(worst, length(apply(out[static_cast<std::size_t>(q.bone)], q.offset) - p.at[i]));
+            }
+        return worst;
+    };
+    a.update(in);
+    CHECK(off_places() < 1e-3F);
+    for (int f = 1; f <= 30; ++f) {
+        in.seconds = f / 60.0;
+        a.update(in);
+    }
+    // a new shot, settled there
+    pose = pose_of(s.sk, {1.0F, 0.0F, 0.0F});
+    p = places_of(s, *rig, 0.2F, {1.0F, 0.0F, 0.0F});
+    in.seconds = 31 / 60.0;
+    in.cut = true;
+    a.update(in);
+    CHECK(a.profile().rebases == 1U);
+    CHECK(off_places() < 1e-3F);
+    // one right after it, not settled again, its places moved about the hips
+    p = places_of(s, *rig, 0.25F, {1.0F, 0.0F, 0.0F});
+    in.seconds = 32 / 60.0;
+    a.update(in);
+    CHECK(a.profile().rebases == 2U);
+    CHECK(off_places() < 1e-3F);
+    // a smoothed group that does not settle: drawn where it is solved at a start
+    d.clear();
+    auto soft = cooked(skirt_config(s, "", "  smoothing 0.05\n"), s.sk, s.mesh, d);
+    CHECK(soft != nullptr);
+    if (!soft)
+        return;
+    Actor b(soft, 3);
+    pose = pose_of(s.sk, {});
+    ActorInput plain;
+    plain.pose = &pose;
+    b.update(plain);
+    out = pose;
+    written.assign(pose.size(), 0);
+    b.output(pose, out, written);
+    float apart = 0.0F;
+    for (std::size_t i = 0; i < soft->particles.size(); ++i) {
+        const Particle &q = soft->particles[i];
+        if (q.dynamic)
+            apart = maxf(
+                apart, length(apply(out[static_cast<std::size_t>(q.bone)], q.offset) - b.simulation().positions()[i]));
+    }
+    CHECK(apart < 1e-3F);
+}
+
+// A non-finite value met once (here the game's places) does not stay: the eased drape and the target recover with
+// the particles, and once it is gone nothing is recovered again
+void non_finite_recovery()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "", "  game_shape 0.5\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    const std::size_t n = rig->particles.size();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const std::vector<Vec3> bad(n, Vec3{nan, nan, nan});
+    std::vector<Vec3> good(n);
+    std::vector<float> weight(n, 0.0F);
+    for (std::size_t i = 0; i < n; ++i) {
+        const Particle &p = rig->particles[i];
+        good[i] = point(s.sk.rest[static_cast<std::size_t>(p.bone)], p.offset);
+        weight[i] = p.dynamic ? 1.0F : 0.0F;
+    }
+    Simulation sim(*rig);
+    TickSettings ts;
+    const auto pose = pose_of(s.sk, {});
+    sim.set_game_targets(good, good, weight);
+    sim.initialize(pose, ts, 0);
+    sim.tick(pose, pose, ts);
+    CHECK(sim.resets == 0);
+    sim.set_game_targets(bad, bad, weight);
+    sim.tick(pose, pose, ts);
+    CHECK(sim.resets > 0);
+    sim.set_game_targets(good, good, weight);
+    sim.tick(pose, pose, ts);
+    const int after = sim.resets;
+    for (int t = 0; t < 10; ++t)
+        sim.tick(pose, pose, ts);
+    CHECK(sim.resets == after);
+    bool all = true;
+    for (std::size_t i = 0; i < n; ++i)
+        all = all && finite(sim.positions()[i]) && finite(sim.targets()[i]);
+    CHECK(all);
+    // two corners on one place: a closest point all the same
+    CHECK(finite(closest_on_triangle({0.0F, 0.5F, 0.0F}, {}, {}, {0.0F, 1.0F, 0.0F})));
+}
+
+// The game's places matter only to a group that takes them: its pose snapping is no cut for any other
+void game_places_gate()
+{
+    const Skirt s = make_skirt(8, 3);
+    Diagnostics d;
+    auto plain = cooked(skirt_config(s, ""), s.sk, s.mesh, d);
+    auto shelled = cooked(skirt_config(s, "", "  collide none\n  cutscene_sim\n"), s.sk, s.mesh, d);
+    auto locked = cooked(skirt_config(s, "", "  game_shape 1\n"), s.sk, s.mesh, d);
+    auto controlled = cooked(skirt_config(s, "") + "control c\n  animation cut\n  groups skirt\n  game_shape 1\nend\n",
+                             s.sk, s.mesh, d);
+    CHECK(plain && shelled && locked && controlled);
+    if (!plain || !shelled || !locked || !controlled)
+        return;
+    CHECK(!group_follows_game(*plain, 0));
+    CHECK(group_follows_game(*shelled, 0));
+    CHECK(group_follows_game(*locked, 0));
+    CHECK(group_follows_game(*controlled, 0));
+    const auto rebases = [&](const std::shared_ptr<Rig> &rig) {
+        Places p = places_of(s, *rig, 0.2F);
+        Actor a(rig, 3);
+        const std::vector<Frame> pose = pose_of(s.sk, {});
+        ActorInput in;
+        in.pose = &pose;
+        in.game_targets = &p.at;
+        in.game_weight = &p.weight;
+        in.game_shell = &p.shell;
+        a.update(in);
+        p = places_of(s, *rig, 0.8F); // further in one draw than a leg carries a place
+        in.seconds = 1.0 / 60.0;
+        a.update(in);
+        return a.profile().rebases;
+    };
+    CHECK(rebases(plain) == 0U);
+    CHECK(rebases(shelled) == 1U);
+    CHECK(rebases(locked) == 1U);
+}
+
+// A camera cut on a draw that moved no time is kept for the next that does
+void cut_on_a_held_moment()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, ""), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 3);
+    const std::vector<Frame> pose = pose_of(s.sk, {});
+    ActorInput in;
+    in.pose = &pose;
+    a.update(in);
+    in.seconds = 1.0 / 60.0;
+    a.update(in);
+    in.cut = true; // the same moment
+    a.update(in);
+    CHECK(a.profile().rebases == 0U);
+    in.cut = false;
+    in.seconds = 2.0 / 60.0;
+    a.update(in);
+    CHECK(a.profile().rebases == 1U);
+    in.seconds = 3.0 / 60.0;
+    a.update(in);
+    CHECK(a.profile().rebases == 1U); // once
+}
+
+// `lod ... frozen`: past that distance drawn as animated, started afresh on coming back
+void level_of_detail()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "lod 5 frozen\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 3);
+    const std::vector<Frame> pose = pose_of(s.sk, {});
+    std::vector<Frame> out(pose);
+    ActorInput in;
+    in.pose = &pose;
+    in.camera_distance = 1.0F;
+    const auto written_after_update = [&] {
+        a.update(in);
+        std::vector<std::uint8_t> written(pose.size(), 0);
+        a.output(pose, out, written);
+        return std::count(written.begin(), written.end(), std::uint8_t{1});
+    };
+    CHECK(written_after_update() > 0);
+    CHECK(!a.frozen());
+    const auto generation = a.generation();
+    in.seconds = 1.0 / 60.0;
+    in.camera_distance = 10.0F;
+    CHECK(written_after_update() == 0);
+    CHECK(a.frozen());
+    in.seconds = 2.0 / 60.0;
+    in.camera_distance = 1.0F;
+    CHECK(written_after_update() > 0);
+    CHECK(a.generation() == generation + 1);
+}
+
 // A `clip_world` volume over the particles' places `rest`: closed (each edge on two faces, once each way) and wound
 // outward (its signed volume positive); that volume (m^3, model units cubed)
 float clip_volume_check(const ClipVolume &cv, const std::vector<Vec3> &rest)
@@ -973,92 +1289,6 @@ void clip_world_volume()
                 volumes[0].faces.size(), v, volumes[0].inset);
     CHECK(volumes[0].columns == 8U);
     CHECK(std::fabs(volumes[0].inset - 0.02F) < 1e-6F);
-}
-
-// `turn`: a strip turned out at rest, by an angle or just clear of a collider; the drawn rest follows it
-void strip_turn()
-{
-    const Skirt s = make_skirt(8, 3);
-    const std::string post = "collider post sphere hips offset 0.15 -0.3 0 radius 0.03\n";
-    Diagnostics d;
-    auto rig = cooked(skirt_config(s, post, "  turn s0_0 clear post\n"), s.sk, s.mesh, d);
-    CHECK(rig != nullptr);
-    if (!rig)
-        return;
-    // the turned strip's segments (its head through each control) clear the post; the next strip as it was
-    const Vec3 centre{0.15F, 0.7F, 0.0F};
-    Vec3 from = point(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))], {0, 0, 0});
-    float least = 1.0F;
-    for (int l = 0; l < 3; ++l) {
-        const auto b = static_cast<std::size_t>(s.bone(0, l));
-        const Vec3 x = point(rig->skeleton.rest[b], {s.link, 0, 0});
-        float u, v;
-        closest_segments(from, x, centre, centre, u, v);
-        least = std::fmin(least, length(lerp(from, x, u) - centre));
-        from = x;
-    }
-    const float turned = angle_between(frame_of(rig->skeleton.rest[static_cast<std::size_t>(s.bone(0, 0))]).q,
-                                       frame_of(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))]).q);
-    std::printf("turn: %.2f degrees, %.4f m from the post's centre\n", turned / kDegrees, least);
-    CHECK(turned > 1.0F * kDegrees && turned < 30.0F * kDegrees);
-    CHECK(least >= 0.03F + rig->particles[0].thickness);
-    CHECK(from.x > s.radius); // out, away from the hips
-    CHECK(rig->skeleton.rest[static_cast<std::size_t>(s.bone(1, 2))] ==
-          s.sk.rest[static_cast<std::size_t>(s.bone(1, 2))]);
-    // rebuilt at rest, the strip's bones are its turned rest
-    Simulation sim(*rig);
-    const auto pose = pose_of(s.sk, {});
-    TickSettings ts;
-    ts.gravity = {};
-    sim.initialize(pose, ts, 0);
-    std::vector<Frame> out(pose);
-    std::vector<std::uint8_t> written(pose.size(), 0);
-    sim.reconstruct(pose, out, written);
-    const auto b = static_cast<std::size_t>(s.bone(0, 1));
-    CHECK(written[b] && angle_between(out[b].q, frame_of(rig->skeleton.rest[b]).q) < 1e-3F);
-    // by an angle; a bone outside the group's strips refused
-    d.clear();
-    rig = cooked(skirt_config(s, "", "  turn s0_0 20\n"), s.sk, s.mesh, d);
-    CHECK(rig != nullptr);
-    if (rig)
-        CHECK(std::fabs(angle_between(frame_of(rig->skeleton.rest[static_cast<std::size_t>(s.bone(0, 0))]).q,
-                                      frame_of(s.sk.rest[static_cast<std::size_t>(s.bone(0, 0))]).q) -
-                        20.0F * kDegrees) < 1e-3F);
-    d.clear();
-    CHECK(cooked(skirt_config(s, "", "  turn hips 20\n"), s.sk, s.mesh, d) == nullptr);
-    CHECK(has_text(d, "not in a strip"));
-}
-
-void outward_axis()
-{
-    // a post through strip 0's wall at rest: `outward axis` pushes that strip out alone (no links between
-    // its strips), the strip opposite it as without the post
-    const Skirt s = make_skirt(8, 3);
-    const std::string post = "collider post sphere hips offset 0.14 -0.3 0 radius 0.03\n";
-    Diagnostics d;
-    const auto rig = cooked(skirt_config(s, post, "  outward axis\n"), s.sk, s.mesh, d);
-    CHECK(rig != nullptr);
-    if (!rig)
-        return;
-    const auto bare = cooked(skirt_config(s, "", "  outward axis\n"), s.sk, s.mesh, d); // the post left out
-    CHECK(bare != nullptr);
-    if (!bare)
-        return;
-    const auto moved = [&](int k, int l) {
-        for (std::size_t i = 0; i < rig->particles.size(); ++i)
-            if (rig->particles[i].dynamic && rig->particles[i].bone == s.bone(k, l))
-                return length(rig->particles[i].reference - bare->particles[i].reference);
-        return -1.0F;
-    };
-    std::printf("outward axis: strip 0 out %.4f m, opposite %.6f m\n", moved(0, 1),
-                std::fmax(moved(4, 0), std::fmax(moved(4, 1), moved(4, 2))));
-    CHECK(moved(0, 1) > 0.01F);
-    CHECK(moved(4, 0) >= 0.0F && moved(4, 0) < 1e-5F && moved(4, 1) < 1e-5F && moved(4, 2) < 1e-5F);
-    d.clear();
-    CHECK(
-        cooked("secondary_motion 1\nunits m\ngroup tail chain\n  attach hips\n  chain s0_0 s0_1\n  outward axis\nend\n",
-               s.sk, s.mesh, d) == nullptr);
-    CHECK(has_text(d, "outward axis"));
 }
 
 void floor_over_body()
@@ -1386,6 +1616,14 @@ void pose_cut_restart()
     }
     std::printf("pose cut: deepest %.3f m inside a leg after the restart\n", static_cast<double>(inside));
     CHECK(inside < 0.005F);
+    // one on a draw that moved no time is kept for the next that does
+    const auto started = a.generation();
+    pose = legs(0.0F);
+    in.pose_cut = true;
+    a.update(in);
+    CHECK(a.generation() == started);
+    draw(0.0F, false);
+    CHECK(a.generation() == started + 1);
 }
 
 void stress()
@@ -1423,7 +1661,8 @@ void stress()
     CHECK(far < 4.0F); // bounded: anything further is recovered
 }
 
-// N_EX830's configuration (docs/examples/secondary) on the real model, when it is at hand.
+// The coat Roxas (N_EX830) on the real model, when it is at hand: KHDAYS_SECONDARY_ASSETS names the folder tools/hd
+// kh2_models.py installs it in (mods/<Mod>/graphics/ba/ch/ro/def_hb.p.z/mdl: roxas_b_h.mdlx, its settings beside it).
 void n_ex830()
 {
     const char *folder = std::getenv("KHDAYS_SECONDARY_ASSETS");
@@ -1432,13 +1671,13 @@ void n_ex830()
         return;
     }
     const std::filesystem::path dir(folder);
-    const auto model = khdays::assets::kh2::import_mdlx(dir / "N_EX830.mdlx");
+    const auto model = khdays::assets::kh2::import_mdlx(dir / "roxas_b_h.mdlx");
     SkeletonDesc sk;
     MeshDesc mesh;
     describe(model, sk, mesh);
     CHECK(sk.names.size() == 308U);
     Diagnostics d;
-    const Config c = read_config(dir / "N_EX830.secondary.txt", d);
+    const Config c = read_config(dir / "roxas_b_h.secondary.txt", d);
     Rig rig = cook(c, sk, mesh, d);
     for (const auto &x : d)
         if (x.error)
@@ -1516,6 +1755,7 @@ void n_ex830()
 int main()
 {
     configuration();
+    config_watch();
     reconstruction_at_rest();
     slit_and_helpers();
     clock_independence();
@@ -1530,9 +1770,12 @@ int main()
     cutscene_sim_shell();
     shell_push_shin();
     cutscene_sim_kick();
+    drawn_at_start_and_cut();
+    non_finite_recovery();
+    game_places_gate();
+    cut_on_a_held_moment();
+    level_of_detail();
     clip_world_volume();
-    strip_turn();
-    outward_axis();
     contacts();
     spread_start();
     pose_cut_restart();

@@ -31,7 +31,6 @@ struct ActorInput {
     Frame placement;                          // the actor's own frame (actor-relative wind), the solver's space
     std::vector<AnimationState> animations;
     float camera_distance = 0.0F; // m, for the level of detail
-    bool player = true;           // the player keeps the full detail
     // the view cut (a camera cut): what the body did since the last draw is a new shot, not motion; the cloth is
     // carried with it and settled in the new pose instead of being flung
     bool cut = false;
@@ -101,6 +100,7 @@ public:
 private:
     void start(const ActorInput &in);
     void drive(const ActorInput &in, float dt);
+    TickSettings tick_settings(const LodConfig &l, const ActorInput &in) const;
     Vec3 wind_of(const Wind &w, int bone, const ActorInput &in, std::size_t group) const;
     const LodConfig &lod(const ActorInput &in) const;
 
@@ -108,6 +108,8 @@ private:
     Simulation sim_;
     std::uint32_t seed_;
     bool started_ = false, frozen_ = false;
+    // a cut seen on a draw that moved no time (ActorInput cut, pose_cut), kept for the next that does
+    bool cut_waiting_ = false, pose_cut_waiting_ = false;
     std::uint64_t epoch_ = 0, generation_ = 0;
     double last_seconds_ = 0.0, sim_seconds_ = 0.0;
     double settled_at_ = -1e9;    // the game's time of the last settle (a start, a cut)

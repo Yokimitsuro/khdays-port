@@ -33,13 +33,12 @@ enum class Param : int {
     tether_slack,       // fraction: a control's reach past its rest distance from its anchor
     swing_limit,        // rad: from the target direction about the bone's head (pi: none)
     twist_limit,        // rad: about its own axis, from the target's (pi: none)
-    inertia,            // 0..1: how much of the attachment's acceleration it feels
-    guided_inertia,     // 0..1: the same in guided mode (the authored motion carries its own sway)
+    inertia,            // 0..2: how much of the attachment's acceleration it feels (1 physical)
+    guided_inertia,     // 0..2: the same in guided mode (the authored motion carries its own sway)
     max_speed,          // m/s relative to the target
     thickness,          // m: collision radius of controls, edges and faces
     friction,           // 0..1
     wind_drag,          // 1/s: how quickly it takes up the air's velocity
-    wind_lift,          // 0..1: of the air's push across a surface's normal kept (surfaces)
     row_compliance,     // m/N: links around a surface's rows, between strips (a skirt's flare)
     max_strain,         // fraction a strip's links (and anchors) may stretch under contact
     row_max_strain,     // fraction row and shear links may stretch (KH2's coats flare their rows)
@@ -53,7 +52,6 @@ enum class Param : int {
     game_shape,         // 0..1: its target taken that far from the replaced game model's own surface (its coat)
     cutscene_sim,       // 0 or 1: simulated about the game model's coat (its target there), never inside the shell
                         // those targets make; only its group's colliders touch it (no room, not itself)
-    leg_carry,          // 0..1: the coat's back below its hips on the game model carried that much by both legs
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);
@@ -135,17 +133,6 @@ struct FollowBone {
     float always = 0.0F; // in every pose, by the control's rest nearness: the leg carries the coat's shape
 };
 
-// `turn <bone> <degrees>|clear <collider> [margin <length>]`: a strip from that bone down turned at rest about the
-// line across that bone's head (out, away from its group's reference bone, when positive), so far, or just so far
-// that its controls start outside that collider
-struct StripTurn {
-    BoneRef bone;
-    float radians = 0.0F;
-    std::string clear; // a collider's name, or empty
-    float margin = 0.002F;
-    int line = 0;
-};
-
 struct BoneOverride {
     BoneRef bone;
     ParamSet params;
@@ -159,7 +146,7 @@ struct GroupConfig {
     ParamSet params;
     ModeSetting mode;
     PolicySetting policy;
-    std::vector<std::string> collide; // collider tags; none given: every collider
+    std::vector<std::string> collide; // collider tags; no `collide` line: every collider, a bare one: none
     bool collide_given = false;
     std::string self_collision; // groups sharing this name collide with each other (and themselves)
     bool self_given = false;
@@ -176,17 +163,11 @@ struct GroupConfig {
     std::vector<BoneRef> attach;              // body bones the group hangs from (its reference frame first)
     std::vector<FollowBone> follow_bones;     // body bones its reference shape partly rides
     std::vector<std::vector<BoneRef>> strips; // surfaces: control sequences anchor-to-hem; chains: chains
-    std::vector<std::vector<BoneRef>> rings;  // controls joined around (a cuff's circumference)
     bool mesh_topology = false;               // surfaces: neighbours from the triangles skinned to them
     std::vector<std::pair<BoneRef, BoneRef>> connect, disconnect;
     std::vector<BoneRef> exclude;
     std::vector<std::pair<BoneRef, Vec3>> offsets; // explicit control points, bone-local, metres
     std::vector<BoneOverride> overrides;
-    std::vector<StripTurn> turns;
-    // `outward axis` (a surface round an axis, a cuff): its rest side (body colliders') is away from its own axis
-    // (its strips' heads' middle, along the middle of its controls' vertices), not from the vertical
-    bool outward_axis = false;
-    int outward_line = 0;
     bool settle = false;               // prepare a settled reference shape under gravity at load
     Vec3 hang{0.0F, -1.0F, 0.0F};      // startup hanging direction, model space at rest
     bool hang_given = false;           // chains: hang straight that way before settling
@@ -285,5 +266,17 @@ bool has_errors(const Diagnostics &d);
 Config read_config(const std::filesystem::path &path, Diagnostics &out);
 Config parse_config(const std::string &text, const std::string &name, Diagnostics &out,
                     const std::filesystem::path &folder = {});
+
+// A path's file name as UTF-8, for messages: `path::string()` throws on a name the code page cannot hold.
+std::string file_name(const std::filesystem::path &path);
+
+// The files a configuration was read from (Config::files: also one that could not be opened) and their times, so
+// an edit to any of them, or one appearing or going, is seen once.
+struct ConfigWatch {
+    std::vector<std::filesystem::path> files;
+    std::vector<std::filesystem::file_time_type> stamps;
+    void record(const std::vector<std::filesystem::path> &read);
+    bool changed() const;
+};
 
 } // namespace khdays::secondary
