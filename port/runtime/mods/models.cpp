@@ -1100,6 +1100,8 @@ void set_rest_size(Model &model)
                 model.high[c] = std::fmax(model.high[c], p[c]);
             }
         }
+}
+
 // A KH2 model's own motions: `<model>.motions.txt` beside the .mdlx, a line each -- `mset <file>` (beside
 // it), `root_motion on|off` (off: the game places the model, KH2's root motion taken out of the bones as
 // KH2 takes it out; on: drawn as the motion moves it) and `<game animation>[@<frame>] <mset slot>
@@ -3662,6 +3664,10 @@ void apply_clip(const Clip &source, float t, std::vector<Trs> &pose)
             for (std::size_t c = 0; c < 3; ++c)
                 v[c] = track.values[k0 * 3 + c] + (track.values[k1 * 3 + c] - track.values[k0 * 3 + c]) * w;
             (track.path == Path::translation ? out.t : out.s) = v;
+        }
+    }
+}
+
 // An `ik` limb (bones.txt) bent so its end joint reaches as the game's nodes reach: their way from the
 // upper node scaled to the model's limb, bent in the plane the game's middle node bends in -- the
 // law of cosines about an up vector, as KH2's Motion::calcIKJoint (0xf56a0) bends its chains. The
@@ -3947,6 +3953,8 @@ std::vector<Mat> own_pose(Model &m)
                        : local;
     }
     return world;
+}
+
 // `spine` (Spine), on the pose pass's k: the base moved where the game's node carries it (the whole body with
 // it); the pelvis turned as that node and swung onto the hips; the chain, as the game's turns pose it, turned
 // about the base onto the end's place and its bones lengthened alike to reach it. The joints off the chain posed
@@ -6366,6 +6374,8 @@ extern "C" void khdays_models_node_placed(unsigned node, int sent)
         words[i] =
             static_cast<uint32_t>(static_cast<int32_t>(std::lround(hand[static_cast<std::size_t>(i)] * 4096.0F)));
     khdays_g3d_command(0x16, words);
+}
+
 // Ov022_EnterActorState (through controls_hooks.c's khdays_trace_actor_state): an actor's state as it entered it,
 // by its scene node (actor +0x20, whose render object is at +0x24 as the ground's link has it), when it entered it,
 // and when it last left state 5 (damage in the air, a launch included: Ov022_ResolveGuardBreakState)
