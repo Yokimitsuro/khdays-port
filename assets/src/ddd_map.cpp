@@ -19,8 +19,9 @@ namespace {
 // What a PMP and its PMOs hold (docs/FORMATS.md, "Dream Drop Distance's rooms"):
 // PMP: "PMP\0", objects at +0x10 (u16), textures at +0x1a (u16) listed at +0x1c; an object of 0x30 bytes from +0x20:
 // position, rotation (radians), scale (f32 x3 each), its PMO's offset (u32, 0 none).
-// PMO: "PMO\0", textures at +8 (u8) listed from +0xa0 (0x20 each, the name at +4), its section at +0x10 (else at
-// +0x1c, a model with see-through parts only; offsets from the PMO).
+// PMO: "PMO\0", textures at +8 (u8) listed from +0xa0 (0x20 each, the name at +4, then f32 x2 how far its texture
+// coordinates move each 60th of a second: water, waves, clouds), its section at +0x10 (else at +0x1c, a model with
+// see-through parts only; offsets from the PMO).
 // A section: two groups of records, pairs of u32 (the first group's, then the second's): the records' offset at +0 / +4,
 // their vertex count at +8 / +0xc, the records' count at +0x10 / +0x14; then the vertices' offset at +0x18 and their
 // bytes at +0x1c, the first group's vertices then the second's. A record, 24 bytes: u16 vertex count, u8 texture (in
@@ -50,7 +51,20 @@ std::array<std::uint8_t, 4> gltf_color(std::uint8_t r, std::uint8_t g, std::uint
 // file), then what speeds up the game's look-ups (a tree, its lists). A vertex: f32 x4 (w 1). A face, 48 bytes: its
 // plane (normal f32 x3, distance), its corners (i16 x4, the fourth -1 for a triangle; their order not always the
 // normal's), then what it is (a floor, a wall).
+// Version 2's face: at +0x24 a u32 of what it is -- bits 0-3 its kind (1 a floor, 2 a wall), 4-7 its material (9
+// water), bits 9-13 whom it stops (0x200 and 0x400 every floor and wall that does stop the characters; a sea's
+// surface 0x2000 alone: the characters go through it).
 constexpr std::size_t kBcdPartSize = 0x30, kBcd2PartSize = 0x40;
+constexpr std::uint32_t kBcd2Stops = 0x3E00, kBcd2StopsCharacters = 0x0600;
+// Under a water's surface the floors deeper than this get walls at that depth: the game keeps its characters out of
+// deep water (Days has no swimming); the depth a character wades to.
+constexpr float kWadingDepth = 0.6F;
+// The walls made there: from this far under that depth to this far above it.
+constexpr float kWaterWallBelow = 1.0F, kWaterWallAbove = 3.0F;
+// The floors under a water's surface: within this far of its faces' box.
+constexpr float kWaterReach = 5.0F;
+// A floor's open edge: a step this far across it finds no floor there, at any height.
+constexpr float kStepOut = 0.3F;
 constexpr std::size_t kBcdVertexSize = 16;
 constexpr std::size_t kBcdFaceSize = 48;
 // A TXA: "TXA\0", u16 its version (2), u16 its entries' count, the entries from +0x10, 0x38 bytes each: its name (16
@@ -344,17 +358,19 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     Room room;
     room.scene.name = name;
     room.scene.nodes.push_back({name, -1});
-    // a material for each texture, blended or not: its picture written once
-    std::map<std::pair<std::string, bool>, int> material_of;
+    // a material for each texture, blended or not, and its scroll: its picture written once
+    std::map<std::tuple<std::string, bool, std::array<float, 2>>, int> material_of;
     std::map<std::string, bool> picture_alpha;  // written pictures: whether they hold see-through texels
     std::map<std::pair<int, bool>, SceneMesh> meshes;  // by material, and whether a sky's
     int sky_node = -1;
-    auto material = [&](const std::string& texture, bool blended) {
-        const auto key = std::make_pair(texture, blended);
+    auto material = [&](const std::string& texture, bool blended, const std::array<float, 2>& scroll) {
+        const auto key = std::make_tuple(texture, blended, scroll);
         if (auto found = material_of.find(key); found != material_of.end())
             return found->second;
         SceneMaterial m;
-        m.name = texture + (blended ? "_blend" : "");
+        const bool scrolls = scroll[0] != 0.0F || scroll[1] != 0.0F;
+        m.name = texture + (blended ? "_blend" : "") + (scrolls ? "_scroll" : "");
+        m.scroll = scroll;
         auto written = picture_alpha.find(texture);
         if (written == picture_alpha.end() && texture.empty()) {
             room.report.push_back("a mesh with no texture: in its colours");
@@ -404,8 +420,15 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
             continue;
         }
         std::vector<std::string> textures;
-        for (std::size_t t = 0; t < r.get<std::uint8_t>(pmo + 8); ++t)
-            textures.push_back(r.name(pmo + kPmoTextures + t * kTextureInfoSize + 4, 12));
+        std::vector<std::array<float, 2>> scrolls;
+        for (std::size_t t = 0; t < r.get<std::uint8_t>(pmo + 8); ++t) {
+            const std::size_t info = pmo + kPmoTextures + t * kTextureInfoSize;
+            textures.push_back(r.name(info + 4, 12));
+            std::array<float, 2> s{r.get<float>(info + 16), r.get<float>(info + 20)};
+            for (float& c : s)
+                c = std::isfinite(c) && std::fabs(c) < 1.0F ? c : 0.0F;  // (a texture's width a frame at most)
+            scrolls.push_back(s);
+        }
         // a sky: the object's bit 0 at +0x2c (a sphere of a metre or two about the origin, drawn around the camera:
         // di_01's lp_sky2, nd_02's sora01, Birth by Sleep's lp_he01_11), or its textures named a sky or a far
         // backdrop (tm_01's dome of 200 metres, tm01_sky01, and its tm01_fore01 cylinders have no bit): drawn
@@ -435,7 +458,8 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
         }
         for (const ReadMesh& rm : read) {
             const std::string texture = rm.texture < textures.size() ? textures[rm.texture] : std::string();
-            const int m = material(texture, rm.blended);
+            const int m = material(texture, rm.blended,
+                                   rm.texture < scrolls.size() ? scrolls[rm.texture] : std::array<float, 2>{});
             SceneMesh& mesh = meshes[{m, sky}];
             if (mesh.primitives.empty()) {
                 mesh.name = room.scene.materials[static_cast<std::size_t>(m)].name + (sky ? "_sky" : "");
@@ -605,6 +629,30 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
     const std::size_t counts = v2 ? 0x24 : 0x18;  // then the faces', the vertices' offset, the faces'
     const auto parts = r.get<std::uint32_t>(8);
     const auto parts_at = r.get<std::uint32_t>(0xc);
+    // version 2: the water's surfaces (left out) and the floors kept, for the walls at the wading depth
+    struct Water {
+        float height;
+        std::array<float, 4> box;  // x, z least and most
+    };
+    std::vector<Water> waters;
+    struct Floor {
+        std::array<std::array<float, 3>, 3> corners;
+        std::array<float, 3> facing;
+    };
+    std::vector<Floor> floors;  // (put in last, but those wholly in deep water)
+    // a triangle turned to face where its face's plane does (a floor up, a wall out): the corners' order varies
+    auto triangle = [&](const std::array<float, 3>& a, std::array<float, 3> b, std::array<float, 3> c,
+                        const std::array<float, 3>& facing) {
+        const std::array<float, 3> e0{b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+        const std::array<float, 3> e1{c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+        const std::array<float, 3> n{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                     e0[0] * e1[1] - e0[1] * e1[0]};
+        if (n[0] * facing[0] + n[1] * facing[1] + n[2] * facing[2] < 0)
+            std::swap(b, c);
+        corner(a);
+        corner(b);
+        corner(c);
+    };
     for (std::size_t part = 0; part < parts; ++part) {
         const std::size_t p = parts_at + part * (v2 ? kBcd2PartSize : kBcdPartSize);
         const auto vertices = r.get<std::uint16_t>(p + counts);
@@ -617,29 +665,153 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
             const std::size_t v = vertices_at + static_cast<std::size_t>(i) * kBcdVertexSize;
             return std::array<float, 3>{r.get<float>(v), r.get<float>(v + 4), r.get<float>(v + 8)};
         };
-        // a triangle turned to face where its face's plane does (a floor up, a wall out): the corners' order varies
-        auto triangle = [&](const std::array<float, 3>& a, std::array<float, 3> b, std::array<float, 3> c,
-                            const std::array<float, 3>& facing) {
-            const std::array<float, 3> e0{b[0] - a[0], b[1] - a[1], b[2] - a[2]};
-            const std::array<float, 3> e1{c[0] - a[0], c[1] - a[1], c[2] - a[2]};
-            const std::array<float, 3> n{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
-                                         e0[0] * e1[1] - e0[1] * e1[0]};
-            if (n[0] * facing[0] + n[1] * facing[1] + n[2] * facing[2] < 0)
-                std::swap(b, c);
-            corner(a);
-            corner(b);
-            corner(c);
-        };
         for (std::size_t f = 0; f < faces; ++f) {
             const std::size_t face = faces_at + f * kBcdFaceSize;
             const std::array<float, 3> facing{r.get<float>(face), r.get<float>(face + 4), r.get<float>(face + 8)};
             const std::size_t at = face + 0x10;
             const std::array<std::int16_t, 4> c{r.get<std::int16_t>(at), r.get<std::int16_t>(at + 2),
                                                 r.get<std::int16_t>(at + 4), r.get<std::int16_t>(at + 6)};
+            if (v2) {
+                const auto what = r.get<std::uint32_t>(face + 0x24);
+                if ((what & kBcd2Stops) != 0 && (what & kBcd2StopsCharacters) == 0) {
+                    // a face that stops none of the characters: left out; a water's surface kept apart
+                    if ((what & 0xF0U) == 0x90U && (what & 0x0FU) == 1U && facing[1] > 0.5F) {
+                        Water w{0.0F, {1e30F, 1e30F, -1e30F, -1e30F}};
+                        float sum = 0.0F;
+                        int n = 0;
+                        for (const std::int16_t i : c) {
+                            if (i < 0)
+                                continue;
+                            const auto v = vertex(i);
+                            sum += v[1];
+                            ++n;
+                            w.box = {std::min(w.box[0], v[0]), std::min(w.box[1], v[2]), std::max(w.box[2], v[0]),
+                                     std::max(w.box[3], v[2])};
+                        }
+                        w.height = sum / static_cast<float>(n);
+                        waters.push_back(w);
+                    }
+                    continue;
+                }
+            }
+            if (facing[1] > 0.5F) {
+                floors.push_back({{vertex(c[0]), vertex(c[1]), vertex(c[2])}, facing});
+                if (c[3] >= 0)
+                    floors.push_back({{vertex(c[0]), vertex(c[2]), vertex(c[3])}, facing});
+                continue;
+            }
             triangle(vertex(c[0]), vertex(c[1]), vertex(c[2]), facing);
             if (c[3] >= 0)  // a four-sided face, as two triangles
                 triangle(vertex(c[0]), vertex(c[2]), vertex(c[3]), facing);
         }
+    }
+    // walls where a floor under a water's surface goes deeper than a character wades: along the line the floor
+    // crosses that depth, each floor triangle crossing it giving one wall; a floor wholly deeper is left out (no one
+    // stands there, and a room is placed by its floors)
+    std::vector<bool> deep(floors.size(), false);
+    for (const Water& w : waters) {
+        const float depth = w.height - kWadingDepth;
+        for (std::size_t i = 0; i < floors.size(); ++i) {
+            const auto& t = floors[i].corners;
+            const float mx = (t[0][0] + t[1][0] + t[2][0]) / 3.0F, mz = (t[0][2] + t[1][2] + t[2][2]) / 3.0F;
+            if (mx < w.box[0] - kWaterReach || mx > w.box[2] + kWaterReach || mz < w.box[1] - kWaterReach ||
+                mz > w.box[3] + kWaterReach)
+                continue;
+            if (t[0][1] < depth && t[1][1] < depth && t[2][1] < depth) {
+                deep[i] = true;
+                continue;
+            }
+            std::vector<std::array<float, 3>> crossing;
+            for (int e = 0; e < 3; ++e) {
+                const auto& a = t[static_cast<std::size_t>(e)];
+                const auto& b = t[static_cast<std::size_t>((e + 1) % 3)];
+                if ((a[1] - depth) * (b[1] - depth) >= 0.0F)
+                    continue;  // (an edge touching the depth at a corner crosses nothing)
+                const float k = (depth - a[1]) / (b[1] - a[1]);
+                crossing.push_back({a[0] + (b[0] - a[0]) * k, depth, a[2] + (b[2] - a[2]) * k});
+            }
+            if (crossing.size() != 2)
+                continue;
+            const auto& p = crossing[0];
+            const auto& q = crossing[1];
+            const std::array<float, 3> p0{p[0], depth - kWaterWallBelow, p[2]}, p1{p[0], depth + kWaterWallAbove, p[2]};
+            const std::array<float, 3> q0{q[0], depth - kWaterWallBelow, q[2]}, q1{q[0], depth + kWaterWallAbove, q[2]};
+            const std::array<float, 3> out{q[2] - p[2], 0.0F, p[0] - q[0]};  // (either side: the wall stops both)
+            triangle(p0, q0, q1, out);
+            triangle(p0, q1, p1, out);
+        }
+    }
+    // walls on the floors' open edges: an edge no other floor shares, past which a step finds no floor under it at
+    // all -- where the game goes on into the next room (an exit of its own, not Days's) or the floor just ends; a
+    // character would walk off and fall out of the room. An edge with a floor past it, lower (a ledge) or higher, stays
+    // open.
+    std::map<std::array<long long, 6>, int> shared;
+    const auto key = [](const std::array<float, 3>& a, const std::array<float, 3>& b) {
+        std::array<long long, 3> p{std::llround(a[0] * 1000.0F), std::llround(a[1] * 1000.0F),
+                                   std::llround(a[2] * 1000.0F)};
+        std::array<long long, 3> q{std::llround(b[0] * 1000.0F), std::llround(b[1] * 1000.0F),
+                                   std::llround(b[2] * 1000.0F)};
+        if (q < p)
+            std::swap(p, q);
+        return std::array<long long, 6>{p[0], p[1], p[2], q[0], q[1], q[2]};
+    };
+    for (std::size_t i = 0; i < floors.size(); ++i) {
+        if (deep[i])
+            continue;
+        for (std::size_t e = 0; e < 3; ++e)
+            ++shared[key(floors[i].corners[e], floors[i].corners[(e + 1) % 3])];
+    }
+    // whether a floor (not deep) is at (x, z), at any height: a ledge's lower floor, a higher one to jump onto
+    const auto floor_at = [&](float x, float z) {
+        for (std::size_t i = 0; i < floors.size(); ++i) {
+            if (deep[i])
+                continue;
+            const auto& t = floors[i].corners;
+            const float d = (t[1][0] - t[0][0]) * (t[2][2] - t[0][2]) - (t[2][0] - t[0][0]) * (t[1][2] - t[0][2]);
+            if (std::fabs(d) < 1e-9F)
+                continue;
+            const float u = ((x - t[0][0]) * (t[2][2] - t[0][2]) - (t[2][0] - t[0][0]) * (z - t[0][2])) / d;
+            const float v = ((t[1][0] - t[0][0]) * (z - t[0][2]) - (x - t[0][0]) * (t[1][2] - t[0][2])) / d;
+            if (u >= 0.0F && v >= 0.0F && u + v <= 1.0F)
+                return true;
+        }
+        return false;
+    };
+    for (std::size_t i = 0; i < floors.size(); ++i) {
+        if (deep[i])
+            continue;
+        const auto& t = floors[i].corners;
+        for (std::size_t e = 0; e < 3; ++e) {
+            const auto& a = t[e];
+            const auto& b = t[(e + 1) % 3];
+            const auto& other = t[(e + 2) % 3];
+            if (shared[key(a, b)] != 1)
+                continue;
+            // a step out across the edge's middle, away from the triangle's third corner
+            float ox = b[2] - a[2], oz = a[0] - b[0];
+            const float length = std::sqrt(ox * ox + oz * oz);
+            if (length < 1e-4F)
+                continue;
+            ox /= length;
+            oz /= length;
+            const float mx = (a[0] + b[0]) / 2.0F, mz = (a[2] + b[2]) / 2.0F;
+            if ((other[0] - mx) * ox + (other[2] - mz) * oz > 0.0F) {
+                ox = -ox;
+                oz = -oz;
+            }
+            if (floor_at(mx + ox * kStepOut, mz + oz * kStepOut))
+                continue;
+            const float low = std::min(a[1], b[1]) - kWaterWallBelow, high = std::max(a[1], b[1]) + kWaterWallAbove;
+            const std::array<float, 3> a0{a[0], low, a[2]}, a1{a[0], high, a[2]}, b0{b[0], low, b[2]},
+                b1{b[0], high, b[2]};
+            const std::array<float, 3> out{ox, 0.0F, oz};
+            triangle(a0, b0, b1, out);
+            triangle(a0, b1, a1, out);
+        }
+    }
+    for (std::size_t i = 0; i < floors.size(); ++i) {
+        if (!deep[i])
+            triangle(floors[i].corners[0], floors[i].corners[1], floors[i].corners[2], floors[i].facing);
     }
     if (prim.positions.empty())
         throw std::runtime_error("a BCD with no faces");

@@ -290,19 +290,28 @@ void test_room() {
     std::filesystem::remove_all(folder);
 }
 
+// A collision's triangles: those turned up (floors), those standing (walls), any turned down.
+std::array<int, 3> floors_walls_down(const khdays::assets::ScenePrimitive& p) {
+    std::array<int, 3> n{0, 0, 0};
+    for (std::size_t i = 0; i + 2 < p.indices.size(); i += 3) {
+        const auto& a = p.positions[p.indices[i]];
+        const auto& b = p.positions[p.indices[i + 1]];
+        const auto& c = p.positions[p.indices[i + 2]];
+        const float up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+        ++n[up > 1e-4F ? 0 : up > -1e-4F ? 1 : 2];
+    }
+    return n;
+}
+
 void test_collision() {
     Bytes bcd = collision();
     const auto scene = ddd::collision_scene(bcd.data(), bcd.size(), "eh_99");
     expect(scene.meshes.size() == 1, "one collision mesh");
-    const auto& p = scene.meshes[0].primitives[0];
-    expect(p.indices.size() == 9, "a triangle and a four-sided face as two: " + std::to_string(p.indices.size() / 3));
-    for (std::size_t i = 0; i < p.indices.size(); i += 3) {
-        const auto& a = p.positions[i];
-        const auto& b = p.positions[i + 1];
-        const auto& c = p.positions[i + 2];
-        const float up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
-        expect(up > 0, "triangle " + std::to_string(i / 3) + " turned up as its plane");
-    }
+    // the triangle and the four-sided face as two, all turned up as their planes; the square's two edges the
+    // triangle does not share open over nothing: a wall of two triangles on each
+    const auto n = floors_walls_down(scene.meshes[0].primitives[0]);
+    expect(n[0] == 3 && n[2] == 0, "a triangle and a four-sided face as two, turned up: " + std::to_string(n[0]));
+    expect(n[1] == 4, "walls on the two open edges: " + std::to_string(n[1]));
     bcd[0x80 + 48 + 0x10] = 9;  // a corner past the vertices
     bool threw = false;
     try {
@@ -437,7 +446,9 @@ Bytes bbs_room() {
     w.zeros(0xa0 - (w.b.size() - pmo));
     w.u32(0);
     w.text("tex_b", 12);
-    w.zeros(16);
+    w.f32(0.0F);
+    w.f32(0.002F);  // its texture moves down
+    w.zeros(8);
     // a mesh of triangles: texture coordinates in 8 bits, colours 8888, positions in floats (20 bytes)
     w.u16(3);
     w.u8(0);
@@ -495,13 +506,97 @@ void test_bbs_room() {
     expect(std::fabs(p.positions[3][1] - 1) < 1e-4F && std::fabs(p.positions[3][0] - 10) < 1e-4F,
            "a 16-bit position: 32768 is 1, times its scale");
     expect(p.colors[3] == std::array<std::uint8_t, 4>{0xFF, 0xFF, 0xFF, 0x80}, "the mesh's colour for its vertices");
+    expect(scene.materials.size() == 1 && scene.materials[0].scroll[0] == 0.0F &&
+               std::fabs(scene.materials[0].scroll[1] - 0.002F) < 1e-7F,
+           "its texture's scroll on its material");
+}
+
+// A version 2 BCD of a shore: a floor sloping from y 0 at z 0 down to y -3 at z 6 (stopping the characters, 0x43e51)
+// and on from there flat to z 10 (the sea's floor, 0x43e01), a sea's surface at y -1 over it (0x2091: stopping none),
+// and a wall for the camera alone (0x2002).
+Bytes shore() {
+    Writer w;
+    w.text("@bcd", 4);
+    w.u32(2);
+    w.u32(1);
+    w.u32(0x10);
+    for (int i = 0; i < 6; ++i)
+        w.f32(0.0F);
+    w.zeros(0x0c);
+    const std::uint32_t vertices = 0x50;
+    w.u16(12);
+    w.u16(4);
+    w.u32(vertices);
+    w.u32(vertices + 12 * 16);
+    w.zeros(vertices - w.b.size());
+    for (const auto& v : {std::array<float, 3>{0, 0, 0},
+                          {4, 0, 0},
+                          {4, -3, 6},
+                          {0, -3, 6},
+                          {0, -1, 0},
+                          {4, -1, 0},
+                          {4, -1, 6},
+                          {0, -1, 6},
+                          {5, 0, 0},
+                          {5, 2, 0},
+                          {4, -3, 10},
+                          {0, -3, 10}}) {
+        w.f32(v[0]);
+        w.f32(v[1]);
+        w.f32(v[2]);
+        w.f32(1);
+    }
+    const auto face = [&](const std::array<float, 3>& plane, const std::array<int, 4>& corners, std::uint32_t what) {
+        w.f32(plane[0]);
+        w.f32(plane[1]);
+        w.f32(plane[2]);
+        w.f32(0);
+        for (int c : corners)
+            w.u16(static_cast<unsigned>(c) & 0xFFFF);
+        w.zeros(12);
+        w.u32(what);
+        w.zeros(8);
+    };
+    face({0, 0.894F, 0.447F}, {0, 1, 2, 3}, 0x43E51);  // the shore
+    face({0, 1, 0}, {4, 5, 6, 7}, 0x2091);             // the sea's surface
+    face({0, 0, 1}, {1, 8, 9, -1}, 0x2002);            // a wall for the camera
+    face({0, 1, 0}, {3, 2, 10, 11}, 0x43E01);          // the sea's floor, wholly deep
+    return w.b;
 }
 
 void test_bbs_collision() {
     const Bytes bcd = collision(true);
     const auto scene = ddd::collision_scene(bcd.data(), bcd.size(), "jb_99");
-    expect(scene.meshes.size() == 1 && scene.meshes[0].primitives[0].indices.size() == 9,
-           "a version 2 BCD's triangle and four-sided face");
+    expect(scene.meshes.size() == 1 && floors_walls_down(scene.meshes[0].primitives[0]) == std::array<int, 3>{3, 4, 0},
+           "a version 2 BCD's triangle and four-sided face, its open edges walled");
+    // a shore: the floor kept, the sea's surface, its deep floor and the camera's wall left out, a wall where the
+    // water is 0.6 deep
+    const Bytes sea = shore();
+    const auto sea_scene = ddd::collision_scene(sea.data(), sea.size(), "di_99");
+    const auto& p = sea_scene.meshes[0].primitives[0];
+    int up = 0, water_walls = 0, edge_walls = 0, at_surface = 0;
+    for (std::size_t i = 0; i + 2 < p.indices.size(); i += 3) {
+        const auto& a = p.positions[p.indices[i]];
+        const auto& b = p.positions[p.indices[i + 1]];
+        const auto& c = p.positions[p.indices[i + 2]];
+        const float ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+        if (std::fabs(a[1] + 1) < 1e-4F && std::fabs(b[1] + 1) < 1e-4F && std::fabs(c[1] + 1) < 1e-4F)
+            ++at_surface;
+        if (ny > 1e-4F) {
+            ++up;
+        } else if (std::fabs(ny) < 1e-4F) {
+            const bool at_depth =
+                std::fabs(a[2] - 3.2F) < 1e-3F && std::fabs(b[2] - 3.2F) < 1e-3F && std::fabs(c[2] - 3.2F) < 1e-3F;
+            ++(at_depth ? water_walls : edge_walls);
+        }
+    }
+    expect(up == 2, "the shore's two triangles kept, the deep floor's left out: " + std::to_string(up));
+    expect(at_surface == 0, "the sea's surface left out");
+    expect(water_walls == 4, "a wall where the shore is 0.6 under the surface (z 3.2), two triangles for each of the "
+                             "shore's crossing it: " +
+                                 std::to_string(water_walls));
+    expect(edge_walls == 8, "the shore's four open edges walled (its deep end too), the camera's wall left out: " +
+                                std::to_string(edge_walls));
 }
 
 void test_arc() {

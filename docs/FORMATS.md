@@ -262,7 +262,11 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   u16 vertex and face counts at +0x18 / +0x1a, the vertices' and faces' offsets at +0x1c / +0x20 (from the file),
   then a tree the game's look-ups use (16-byte nodes: a split, its axis, two offsets) and its u16 face lists. A
   vertex: f32 x4 (w 1). A face, 48 bytes: its plane (normal, distance), its corners (i16 x4, the fourth -1 for a
-  triangle), then what it is (u32 at +0x20 1 on floors; the low four bits of +0x24, 1 a floor, 2 a wall).
+  triangle), then what it is (u32 at +0x20 1 on floors; the low four bits of +0x24, 1 a floor, 2 a wall). Made into a
+  room's collision, a floor's open edge -- one no other floor shares, a step of 0.3 m past it finding no floor at any
+  height -- gets a wall from 1 m under it to 3 m above: where the game goes on into the next room by an exit of its
+  own (not Days's), or the floor just ends, a character walked off and fell out of the room (eh_01 and Birth by
+  Sleep's di01 walled so, a ledge over a lower floor left open).
 - **TXA** (a room's textures shown frame by frame): "TXA\0", u16 its version (2), u16 its entries' count, the
   entries from +0x10, 0x38 bytes each: its name (16 bytes), the texture it shows on (16), 8 bytes, u16 the sheet's
   width and height and a frame's (the original's pixels: a texture is one frame, the sheet holds them all), u32 its
@@ -307,8 +311,22 @@ older version. Read from the player's files.
   vertex on its widest: 8-bit values 1 at 128, 16-bit at 32768 (positions signed), floats as they are, times the
   model's scale. Read this way the forms of di03's 212 meshes (8-bit or float coordinates, colours 8888 or the
   mesh's, float positions) each give the size their header says.
+- **PMO's textures**: after a texture's name, two f32 at +0x10 / +0x14 of its 0x20 bytes, how far its texture
+  coordinates move each frame (di01: the sea's foam `lplm06009a` 0 / 0.002, `lp_di1mt05` 0.001 / 0.001, the clouds
+  `lp_sky2` 0.0002 / 0); the room's material scrolls by them each 60th of a second (not compared with the game's
+  speed). Nothing else in a room moves: no member of its archive holds an animation, and none of di01's 96 objects
+  has a mesh with weights.
 - **BCD** (version 2): as version 0x0a, a part 0x40 bytes, its counts at +0x24 / +0x26 and its vertices' and faces'
-  offsets at +0x28 / +0x2c (jb_20a: 2,328 vertices ending where its 2,703 faces of 48 bytes start).
+  offsets at +0x28 / +0x2c (jb_20a: 2,328 vertices ending where its 2,703 faces of 48 bytes start). A face's u32 at
+  +0x24 says what it is: bits 0-3 its kind (1 a floor, 2 a wall, whatever its plane), 4-7 its material (9 water), 9-13
+  whom it stops -- 0x200 and 0x400 in every floor and wall of the 202 rooms that does stop the characters (0x3e00 and
+  0x3600 the most common), a sea's surface 0x2000 alone (di01-03's at y -0.96, 30 faces each, over a sea floor down to
+  -2.8 with no wall round it). Read so: a face with bits 9-13 but neither 0x200 nor 0x400 is left out, and under a
+  water's surface (material 9, a floor, so left out) walls stand where the floors go deeper than 0.6 m below it, from
+  1 m under that depth to 3 m above, along the line each floor triangle crosses it (within 5 m of the surface's
+  faces), and the floors wholly deeper are left out: the game keeps its characters out of deep water and Days has no
+  swimming (and the studio places a room by its lowest main floor: di01's sea floor would have been it). Faces with none of bits 9-13
+  (14,046 floors marked 0x2xxxx) are kept, their use not read.
 - **Units**: metres, as Dream Drop Distance's.
 
 ## KINGDOM HEARTS FINAL MIX's rooms
