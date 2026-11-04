@@ -288,6 +288,20 @@ both read (SDL's GPU API binds at most 8 storage buffers to a pass): a table of
 four words per replacement (its first texel's place, width, height, what it is),
 then all the texels, one word each; a still picture's and a 2D sheet in its own
 colours are followed by smaller copies, each half the one before (info bit 0x8).
+The buffer holds what has been shown since the game started and grows as new
+pictures come (`host/render/gpu_hd.c`): a larger one is made and what the card
+had is copied over on the card, its places moved past the larger table, so a
+growth uploads only the new pictures (it uploaded everything again, a stall of
+the whole buffer's size, and its sizes were 32-bit sums that wrapped past 2 GB
+of texels). The most it holds is 4 GB, the shaders' byte addresses being 32 bits
+(`hd.Load`) as SDL's buffer sizes are; past that, or when the card refuses a
+larger buffer, a new picture is left out: its entry is the first texel, white,
+so it shows the game's colours untextured, and the session log says it once.
+Each growth is in the session log (`hd: the card's replacement memory grown`).
+Seen (2026-11-04, the maintainer's HD PACK and two mods: 3.5 GB of pictures with
+their smaller copies on disk): 66 MB on the card after the title, the camp and
+Mission Mode's world map; with the most lowered to 48 MB for a check, the five
+pictures past it left out and the frames drawn on.
 
 With the 3D on both screens the game moves engine A to the other screen at
 every VBlank (POWCNT1 bit 15), drawing each screen's view in turn while the

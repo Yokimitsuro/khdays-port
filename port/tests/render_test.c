@@ -42,6 +42,12 @@ void khdays_textures_read_end(int id)
     (void)id;
 }
 
+/* (gpu_hd.c says in the session log when its memory is made anew) */
+void khdays_log(const char *format, ...)
+{
+    (void)format;
+}
+
 #define SKIPPED 77
 #define MAX_FILES 4096
 
