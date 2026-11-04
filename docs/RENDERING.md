@@ -288,20 +288,35 @@ both read (SDL's GPU API binds at most 8 storage buffers to a pass): a table of
 four words per replacement (its first texel's place, width, height, what it is),
 then all the texels, one word each; a still picture's and a 2D sheet in its own
 colours are followed by smaller copies, each half the one before (info bit 0x8).
-The buffer holds what has been shown since the game started and grows as new
-pictures come (`host/render/gpu_hd.c`): a larger one is made and what the card
-had is copied over on the card, its places moved past the larger table, so a
-growth uploads only the new pictures (it uploaded everything again, a stall of
-the whole buffer's size, and its sizes were 32-bit sums that wrapped past 2 GB
-of texels). The most it holds is 4 GB, the shaders' byte addresses being 32 bits
-(`hd.Load`) as SDL's buffer sizes are; past that, or when the card refuses a
-larger buffer, a new picture is left out: its entry is the first texel, white,
-so it shows the game's colours untextured, and the session log says it once.
-Each growth is in the session log (`hd: the card's replacement memory grown`).
-Seen (2026-11-04, the maintainer's HD PACK and two mods: 3.5 GB of pictures with
-their smaller copies on disk): 66 MB on the card after the title, the camp and
-Mission Mode's world map; with the most lowered to 48 MB for a check, the five
-pictures past it left out and the frames drawn on.
+The buffer grows as new pictures come (`host/render/gpu_hd.c`): a larger one is
+made and what the card had is copied over on the card, its places moved past the
+larger table and the whole table uploaded again, so a growth uploads only the new
+pictures (it uploaded everything again, a stall of the whole buffer's size, and
+its sizes were 32-bit sums that wrapped past 2 GB of texels). The most one buffer
+holds is 4 GB, the shaders' byte addresses being 32 bits (`hd.Load`) as SDL's
+buffer sizes are, so the card keeps the pictures as a cache. The 3D's pictures
+(`KHDAYS_REPLACEMENT_ON_DEMAND`: a mod's texture for one of the game's, a mod's
+model's or room's, a texture bank's -- drawn by the 3D's polygons only) are
+uploaded when a list's polygons first draw them (`khdays_gpu_hd_sync_drawn`, before
+each 3D pass); every other picture (2D sheets, the HUD's atlases, movies, the
+pictures the card itself draws) is uploaded as it is added and stays. Below the
+most nothing leaves. At the most, room for a picture is found in the stretches
+pictures let go, and else by letting go of the 3D's pictures not drawn in this
+picture (`khdays_gpu_hd_next_frame`, once a presented picture), the least lately
+drawn first; they come back when drawn again. The table reaching the most takes
+room for four times the pictures; a larger table there takes room from the top
+of the texels, letting the 3D's pictures there go. A picture with no room yet
+reads the first texel, white -- the game's colours untextured -- until it fits,
+and the KH2 HUD's pass (`kh2_sequence_gpu.c`) does not draw into a picture not on
+the card (it wrote through the white texel's entry over the pictures after it: a
+model drawn with it vanished). Each growth, and the most reached, is in the
+session log (`hd: the card's replacement memory ...`). Checked by
+`tests/gpu_hd_test.c` on the card (growth keeping every picture, pictures coming
+and going, a table at the most). Seen (2026-11-04, the maintainer's HD PACK and
+two mods: 3.5 GB of pictures with their smaller copies on disk): 55-66 MB on the
+card in the mission and camp walks; with the most lowered to 40 MB, Roxas's model
+let go in the field and drawn white (the 2D's pictures, which stay, filled the
+rest), the walk's scenes the same.
 
 With the 3D on both screens the game moves engine A to the other screen at
 every VBlank (POWCNT1 bit 15), drawing each screen's view in turn while the

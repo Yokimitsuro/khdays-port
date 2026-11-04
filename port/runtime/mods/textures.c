@@ -327,6 +327,7 @@ static int replacement_for(const char *name, u32 param)
     e->texture.width = width;
     e->texture.height = height;
     e->texture.rgba = (const uint32_t *)pixels; /* 8-bit RGBA, red first: little-endian words */
+    e->texture.info = KHDAYS_REPLACEMENT_ON_DEMAND; /* drawn by the 3D's polygons only */
     InterlockedExchange(&nreplacements, n + 1);
     if (trace) {
         fprintf(stderr, "textures: %s drawn instead from %s (%dx%d)\n", name, path, width, height);
@@ -341,7 +342,7 @@ int khdays_textures_mod_replacement(const char *name, uint32_t param)
 
 int khdays_textures_add(const char *name, int width, int height, const uint8_t *rgba)
 {
-    return khdays_textures_add_info(name, width, height, (const uint32_t *)rgba, 0);
+    return khdays_textures_add_info(name, width, height, (const uint32_t *)rgba, KHDAYS_REPLACEMENT_ON_DEMAND);
 }
 
 /* A new entry, counted once whole: one that changes has its version and lock

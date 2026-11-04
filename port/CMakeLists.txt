@@ -424,6 +424,12 @@ target_compile_options(khdays-kh2-gpu-test PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-kh2-gpu COMMAND khdays-kh2-gpu-test)
 set_tests_properties(khdays-kh2-gpu PROPERTIES SKIP_RETURN_CODE 77)
+# the HD pictures on the card: growth, the 3D's pictures coming and going past the most (needs a card)
+add_executable(khdays-gpu-hd-test tests/gpu_hd_test.c host/render/gpu_hd.c)
+target_link_libraries(khdays-gpu-hd-test PRIVATE SDL3::SDL3)
+target_compile_options(khdays-gpu-hd-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-gpu-hd COMMAND khdays-gpu-hd-test)
+set_tests_properties(khdays-gpu-hd PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(khdays-kh2-sequence-viewer tools/kh2_sequence_viewer.cpp host/render/png_io.c)
 target_include_directories(khdays-kh2-sequence-viewer PRIVATE "${stb_SOURCE_DIR}")

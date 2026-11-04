@@ -1124,7 +1124,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         vram_valid = 0;
         return 0;
     }
-    if (!khdays_gpu_hd_sync(cmd)) { /* upload the HD replacements the card does not have yet */
+    if (!khdays_gpu_hd_sync_drawn(cmd, list->polys, list->npolys)) { /* the HD replacements these polygons draw */
         SDL_CancelGPUCommandBuffer(cmd);
         vram_valid = 0;
         return 0;

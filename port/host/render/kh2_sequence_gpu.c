@@ -70,6 +70,10 @@ int khdays_sequence_gpu_draw(SDL_GPUDevice *d, SDL_GPUCommandBuffer *cmd, const 
 {
     if (image->words[KSI_COUNT] == 0 && !image->words[KSI_CLEAR])
         return 1;
+    /* its picture not on the card (no room for it yet): drawn there it would cover the pictures after the
+     * place its entry gives */
+    if (!khdays_gpu_hd_on_card(image->words[KSI_OUTPUT]))
+        return 1;
     if (image->words[KSI_COUNT] > KSI_MAX_QUADS || !khdays_sequence_gpu_open(d))
         return 0;
     const Uint32 bytes = (KSI_HEADER + image->words[KSI_COUNT] * KSI_QUAD_WORDS) * 4u;

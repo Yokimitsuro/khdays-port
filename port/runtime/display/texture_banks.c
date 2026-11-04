@@ -366,7 +366,7 @@ static int32_t decoded(const Bank *b, u32 param, u32 pltt)
         hash = (hash ^ rgba[i]) * 1099511628211ull;
     }
     snprintf(name, sizeof(name), "texture bank/%016llx-%dx%d", hash, width, height);
-    id = khdays_textures_add_info(name, width, height, rgba, 0);
+    id = khdays_textures_add_info(name, width, height, rgba, KHDAYS_REPLACEMENT_ON_DEMAND);
     if (id < 0 || khdays_textures_replacement(id)->rgba != rgba) {
         free(rgba); /* none, or the same texture already there */
     }

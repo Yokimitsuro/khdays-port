@@ -42,6 +42,10 @@ typedef struct KhdaysTextureReplacement {
  * units drawn instead are numbered from the bitmap's start (tiles2d.h). */
 #define KHDAYS_REPLACEMENT_BITMAP 0x4u
 #define KHDAYS_REPLACEMENT_NO_MIPS 0x10u /* atlas regions are sampled explicitly at their logical size */
+/* A 3D texture (a mod's for the game's, a mod's model's or room's, a texture bank's): drawn only by the 3D's
+ * polygons, so the graphics card holds it while the polygons drawn use it and may let it go past the most
+ * its memory holds (host/render/gpu_hd.c). Every other picture stays on the card once there. */
+#define KHDAYS_REPLACEMENT_ON_DEMAND 0x20u
 
 /* A texture from a file's data, as the port draws it, into `rgba` (width x
  * height x 4 bytes, the sizes of `param`): `param` its TEXIMAGE_PARAM (the
@@ -72,8 +76,9 @@ const char *khdays_textures_dump_dir(void);
 int khdays_textures_hd(void);
 
 /* `rgba` (8-bit RGBA, red first, rows top to bottom; kept, never freed) as
- * a texture drawn instead under `name` -- a mod's model's own (models.h):
- * its id, the one already added under that name, or -1 when there is no room. */
+ * a texture drawn instead under `name` -- a mod's model's own (models.h), a 3D
+ * texture (KHDAYS_REPLACEMENT_ON_DEMAND): its id, the one already added under
+ * that name, or -1 when there is no room. */
 int khdays_textures_add(const char *name, int width, int height, const uint8_t *rgba);
 
 /* The same for texels of any kind, with what they are (`info`). */

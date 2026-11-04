@@ -5,6 +5,7 @@
 #include "gpu_present.h"
 #include "../app/devices.h"
 #include "gfx_render.h"
+#include "gpu_hd.h"
 #include "gpu_raster3d.h"
 #include "../movies/movie_hd.h"
 #include "../movies/movie_subtitles.h"
@@ -1269,6 +1270,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         const int can_raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
                                n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame);
         const int n2d = scale2d_now(n);
+        khdays_gpu_hd_next_frame(); /* (what the last picture drew may leave the card) */
         /* the 3D coarser than the 2D (an internal resolution below the window's): the HUD's polygons (the
          * command menu) drawn apart at the 2D's scale, as sharp as the rest of the HUD */
         khdays_raster3d_set_hud_apart(n2d > n);
