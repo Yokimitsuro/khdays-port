@@ -1176,6 +1176,13 @@ if(KHDAYS_ASAN)
     foreach(target IN LISTS KHDAYS_PORT_TARGETS)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE $<$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>:/fsanitize=address>)
+            # (the sanitizer's sections take ds_names.c past an object file's usual count)
+            target_compile_options(${target} PRIVATE $<$<NOT:$<COMPILE_LANGUAGE:ASM_MASM>>:/bigobj>)
+            # the libraries it links are built without the sanitizer: the standard containers' annotations off
+            # on both sides, so they link (overflows of the heap are still caught, only a container's own
+            # unused room is not)
+            target_compile_definitions(${target} PRIVATE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION
+                                                         _DISABLE_OPTIONAL_ANNOTATION)
             target_link_options(${target} PRIVATE /DEBUG /INCREMENTAL:NO)  # a report's lines
         endif()
     endforeach()
