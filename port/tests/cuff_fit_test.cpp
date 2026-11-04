@@ -91,10 +91,6 @@ int main()
     const CuffFit::Target more = fit.fit({{5.0F, 9.0F, 0.0F}}, tab);
     check(more.open[0] > plain.open[0] + 0.05F, "more clearance opens it further");
     check(more.open[1] == plain.open[1] && more.open[2] == plain.open[2], "and no other flap");
-    tab.own_clearance = 0.0F;
-    tab.own_always = 0.1F;
-    const CuffFit::Target always = fit.fit({{5.0F, 3.0F, 0.0F}}, tab);
-    check(std::fabs(always.open[0] - 0.1F) < 0.001F && always.open[1] == 0.0F, "an opening it always has, it alone");
     tab = settings;
     tab.most_open = 0.1F;
     tab.own_flap = 0;
@@ -174,28 +170,7 @@ int main()
         const HandVec half = cuff_pose_slide(way, up, 0.03F, 0.5F, 90.0F);
         check(hand_length(half) < 0.03F && half[1] > -half[0], "part way: along the arc, mostly toward the back first");
     }
-    check(std::fabs(cuff_pose_share({1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 60.0F, 1.2F) - 1.2F) <
-              1e-5F,
-          "past its bend: carried on to its limit");
-    check(cuff_pose_fit_hold(1.0F) == 1.0F && cuff_pose_fit_hold(1.1F) == 0.0F,
-          "the fit: off at the full bend, back past it");
-    check(cuff_pose_hold(1.1F) == 1.0F, "the fingers': still held past it");
-    {
-        CuffFit::Settings given;
-        given.pose_bend = 80.0F;
-        check(given.pose_most_share() == 1.0F, "no limit given: stops at its bend");
-        given.pose_most = 100.0F;
-        check(std::fabs(given.pose_most_share() - 1.25F) < 1e-5F, "a limit: that far past");
-    }
-    {
-        std::vector<CuffPoseBone> bones(1);
-        const float s = std::sqrt(0.5F);
-        bones[0].turn = {0.0F, 0.0F, s, s}; // a quarter turn about z
-        std::vector<Mat> moved;
-        cuff_pose_at(bones, 1.5F, moved);
-        check(std::fabs(moved[0][0] + s) < 1e-4F && std::fabs(moved[0][1] - s) < 1e-4F,
-              "carried on: the turn keeps going");
-    }
+    check(cuff_pose_hold(1.1F) == 1.0F, "still held past it");
     {
         // the sleeve's ring scaled along the arm: what hangs off it comes up the arm with it
         std::vector<CuffPoseBone> bones(2);
@@ -246,19 +221,6 @@ int main()
         check(std::fabs(m.open[1] - 0.2F) < 1e-5F && std::fabs(m.length[2] - 0.9F) < 1e-5F &&
                   std::fabs(m.shift[0] - 0.01F) < 1e-5F,
               "the fit between two surfaces");
-    }
-    {
-        std::vector<CuffFit::Triangle> wall(1);
-        wall[0].at = {HandVec{1.0F, -1.0F, -1.0F}, HandVec{1.0F, 2.0F, -1.0F}, HandVec{1.0F, -1.0F, 2.0F}};
-        const HandVec middle{0.0F, 0.0F, 0.0F};
-        check(CuffFit::edge_outside(middle, {0.2F, 0.0F, 0.0F}, {0.5F, 0.0F, 0.0F}, wall) == 0.0F,
-              "an edge short of the surface is not through");
-        check(std::fabs(CuffFit::edge_outside(middle, {0.5F, 0.0F, 0.0F}, {1.2F, 0.0F, 0.0F}, wall) - 0.2F) < 1e-5F,
-              "through: by how far its outer end stands out, not its inner");
-        check(std::fabs(CuffFit::edge_outside(middle, {1.2F, 0.0F, 0.0F}, {0.5F, 0.0F, 0.0F}, wall) - 0.2F) < 1e-5F,
-              "whichever way round");
-        check(CuffFit::edge_outside(middle, {0.5F, 5.0F, 0.0F}, {1.5F, 5.0F, 0.0F}, wall) == 0.0F,
-              "beside it: not through");
     }
 
     if (failures == 0)

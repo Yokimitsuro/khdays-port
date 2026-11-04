@@ -111,7 +111,8 @@ b_ro_E005@12 14 blend 3   # ... the fall from BCA frame 12, cross-faded over 3 f
 
 A slot is the mset's BAR entry number (0 first). A game animation with no line,
 an empty slot (`DUMM`) or one it cannot play keeps the game's animation (named
-once in the log). `KHDAYS_TRACE_MODELS=1` logs the names of the animations each
+once in the log); a motion whose data turns out unreadable when it plays (a cut-short file)
+is named once too, and the game's pose stands in for it. `KHDAYS_TRACE_MODELS=1` logs the names of the animations each
 replaced model plays as they change.
 
 **Sections.** `<animation>@<frame>` plays a slot from that BCA frame (30 a
@@ -201,7 +202,7 @@ the air or the fall it times out into. The game's state says it: an actor enters
 state 5 for a hit in the air or one that launches it, state 4 for one that leaves it
 standing (`Ov022_ResolveGuardBreakState`), and lands in state 0x16 (animation 4,
 `b_ro_A004`); `Ov022_EnterActorState`'s hook (prepare.py, `controls_hooks.c`'s
-`khdays_trace_actor_state`) hands each change to `khdays_models_actor_state`, by the
+`khdays_controls_actor_entered_state`) hands each change to `khdays_models_actor_state`, by the
 actor's scene node (+0x20), whose render object (+0x24) is the model drawn:
 
 ```text
@@ -367,7 +368,9 @@ restarted the run after each cross-fade, snapping it (worse with haste). Past it
 continues from its loop point (retFrame), or holds when there is none. During
 the game's cross-fade (two animations, their ratios summing to 1) each side is
 blended at the game's weight, the game's own pose standing in for an unmapped one.
-Each actor (render object) keeps its own pose.
+Each actor (render object) keeps its own pose, started afresh when the render object draws
+another model or has not drawn for 12 vblanks (`actor_of`), so nothing of a pose or tail from
+before shows.
 
 **Root motion.** Days' animations never move Roxas's root node (`roxas_R`; all
 12 of def_hb's checked): their movement is on `Bip01`, and the actor's place is
@@ -447,7 +450,7 @@ and hair (171-223) and 276-281, with two keyblades of its own (95-116). So its
 files are N_EX830's renumbered: N 0-94 the same, 95-99 +22, 107-158 +15, 165-170
 +9, 224-275 -29, 282-307 -35. Its drawstrings are its own (182-186, 187-191,
 under the head's base, 176, hanging straight down a centimetre into the coat's
-chest at rest); `docs/examples/secondary/B_EX390.secondary.txt` hangs them forward
+chest at rest); `tools/hd/kh2_models/graphics/ba/ch/ro/def_hho.p.z/mdl/roxas_ho_h.secondary.txt` hangs them forward
 against a collider of their own over the chest. The keyblades are skinned to bones
 96-105 and 107-116 alone and hang 60 cm beside him at rest; bones.txt's `hide`
 over every height (`hide kh2_95 ... kh2_116 from 1000 to -1000`) drops their
@@ -670,11 +673,7 @@ out replaced models. Last measured on 5 scenes (the bed's and the ice cream's); 
 the smoothing, one deep frame of 17 cm was left unexplained.
 
 `KHDAYS_TRACE_MODELS=1` logs each hand's bend, shares, hold and push twice a second, and
-names a joint something is attached to that is on no hand. `KHDAYS_HAND_RECORD=<file>`
-writes a line a draw: its animations, the attached children (raw), each hand's joints,
-axes, shares and pass time, the room's nearest point, the body's joints and the cuffs'
-ends and root. With `tools/hd/scene_census.py`'s way of playing a scene headless, that
-covers every cutscene.
+names a joint something is attached to that is on no hand.
 
 `swing <joint> <by joint> <frame joint> [<share>]` in `bones.txt`, beside `twist`: the
 joint and the joints under it swung about its head by a share of how far the other
@@ -686,17 +685,17 @@ not simulated (`models.cpp` `pose_cuffs`, the maths in `cuff_fit.h`):
 
 ```text
 cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120   # root, hand, the four flaps in order round the ring
-cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2                  # for all a model's cuffs; an 8th number shares shortening
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2                  # for all a model's cuffs
 ```
 
 `cuff_fit`: clearance (cm), most open (degrees), shortest (of a flap's length), how much of
 a flap's opening its neighbours take, where along the cuff a point starts being cleared
 by shortening and where only by it (of its length), most slide (cm).
 
-`cuff_thumb <more clearance cm> [<most open degrees> [<always open degrees>]]` tunes the last
+`cuff_thumb <more clearance cm> [<most open degrees>]` tunes the last
 flap of each `cuff` line, the thumb's tab, alone: its neighbours copy none of it. Clearance
 counts by how much of a point's surface the tab carries; most open 0 or left out is
-`cuff_fit`'s. Over 3 scenes on e_rox_hb, `cuff_thumb 0.5 28 0` took the tab's mean opening from
+`cuff_fit`'s. Over 3 scenes on e_rox_hb, `cuff_thumb 0.5 28` took the tab's mean opening from
 9.3 to 12.0 degrees with the others unchanged, and the hand through the cuff from a median
 0.43 cm to 0.33 (99th percentile 1.27 to 0.96).
 
@@ -704,7 +703,7 @@ counts by how much of a point's surface the tab carries; most open 0 or left out
 blended by how far it is bent, with the fit answering what is left on top:
 
 ```text
-cuff_pose 110 2.66                              # the hand's bend the pose is for, degrees, toward each cuff's third flap; its pivot, cm; the bend it carries on to
+cuff_pose 110 2.66                              # the hand's bend the pose is for, degrees, toward each cuff's third flap; its pivot, cm
 cuff_pose_bone kh2_244 0 0 68.3 0.69 1 1        # a bone's turn from its parent there (x y z degrees, as `hand_pose`) and scale
 swing kh2_233 kh2_250 kh2_230 0.8 kh2_240       # the root swings for every bend but toward kh2_240, which the pose answers
 ```
@@ -712,8 +711,7 @@ swing kh2_233 kh2_250 kh2_230 0.8 kh2_240       # the root swings for every bend
 A bone's change is its rest turn and scale against its parent's, so children ride it and a
 scaled parent carries them in. Its share is the hand's bend in the plane toward the third
 flap, as measured in the root's frame, over the pose's bend: 0 for a hand bent the other
-way, carried on past it to the third number (turns and scales keep going, the same rate) and held
-there, eased by a critically damped spring. The surface is baked at six even shares; each draw fits on the two either side and mixes their answers, and each flap
+way, held at all of it past that, eased by a critically damped spring. The surface is baked at six even shares; each draw fits on the two either side and mixes their answers, and each flap
 opens from where it stands there, so nothing is corrected twice. Lines for a joint a model
 lacks do nothing; bones with no line keep their rest place but ride their parents.
 
@@ -730,10 +728,8 @@ frame, since `swing` turns the root apart from it.
 
 Over the last quarter of the way to the pose (`cuff_pose_hold`), what moves the cuff and hand on
 top of it fades out, so at the full bend the pose shows as authored: the cuff's fit and sway, and
-the fingers' fists and lag. Nothing then clears the hand, so what clips there stays. Past the full
-bend the cuff's fit and sway come back over the next tenth of the way; the fingers' stay off. Hands
-in the recorded scenes bend up to 108 degrees. Offline, with the hand as authored, carrying on took
-the mesh edges through from 124 to 52 at 105 degrees, before the fit, at about the same depth (2 cm).
+the fingers' fists and lag. Nothing then clears the hand, so what clips there stays, and past the
+full bend it stays so. Hands in the recorded scenes bend up to 108 degrees.
 Still on top:
 `twist`, `swing` to the side, the grip when holding, animation overrides, and the surfaces' turn.
 
@@ -755,10 +751,6 @@ cuffs, read from the files: 0.02 degrees at most, with bones +15 left, -29 right
 left's lines are the right's mirrored: rest frames are right's with x negated and y flipped,
 checked per bone, and clipping over the same bends matches within 0.01 cm.
 
-`KHDAYS_CUFF_RECORD`'s `T` field is the measure to use: each hand mesh edge through a cuff
-triangle, how far its end outside the surface (seen from the root) stands, not a reading along an
-axis, which fails on a flap standing square to it.
-
 Why not cloth: the cuff is 11.8 cm long from the wrist, almost to the knuckles, four flaps
 of eight points in all. At rest the thumb stands about 1 cm outside the thumb-side flap, so
 contact never rested: the follow spring pulled the flap into the thumb and contact threw
@@ -772,8 +764,7 @@ by the flap drawing back past it; the flaps open for the rest. All of it on crit
 damped springs, with a soft spring on each flap for sway and droop on top, so there is
 nothing to fight and it cannot overshoot.
 
-Sharing a flap's shortening with its neighbours was measured and left off (the 8th
-number, default 0): the same clipping and jitter over 3 scenes, with the flaps shortened more
+Sharing a flap's shortening with its neighbours was measured and left out: the same clipping and jitter over 3 scenes, with the flaps shortened more
 often. B_EX390's own motions scale neighbouring flaps far apart too (0.3 on the palm side,
 1.0 on the thumb side, read from its motions), and the shortening here falls the same
 way: palm flap 0.82 of its length on average, thumb tab 0.86, the others about 0.97.
@@ -791,10 +782,6 @@ Over all 161 cutscenes (before `cuff_thumb`): through a median 0.59 cm, 99th per
 So jitter is gone and clipping is reduced, not gone: `e_rox_962` (p99 4.84), `e_rox_960` (3.04)
 and `e_rox_974` (2.90) are the worst, most at the opening's limit. Measured by numbers; the user
 judged the result in game.
-
-`KHDAYS_CUFF_RECORD=<file>` writes a line a draw: each cuff's depth through what is really
-drawn, each flap's opening, length and sway, and its end. `KHDAYS_CUFF_DUMP=1` adds the points
-near the surface now and then, `KHDAYS_CUFF_OFF=1` leaves the fit out.
 
 **The format** (`kn::MotionPrototype0RAW`, all offsets from the header after the
 0x90 bytes the game keeps): u32 type +0 (`kn::motionSetup` 0xf8e8c: 0
@@ -976,8 +963,9 @@ change). At 1024 x 1024 and drawn small it may flicker as a still picture withou
 other HD tools. The models, motions and HD pictures are the player's: copied as they are from
 1.5+2.5's `kh2_first` and `kh2_fifth` (`obj/<name>`, its pictures among the entry's remastered assets),
 as `installer/hd_inputs.txt` lists them. The settings are the port's own, in the repository under
-`tools/hd/kh2_models/`, a tree laid out as the mod's: **change them there**, as a rebuild overwrites the
-mod's copies (to try a change, edit the mod's copy in game, then bring it back).
+`tools/hd/kh2_models/`, a tree laid out as the mod's, with `kh2_secondary_presets.txt` once at its top and
+copied beside each model: **change them there**, as a rebuild overwrites the mod's copies (to try a
+change, edit the mod's copy in game, then bring it back).
 
 | Days' model | Place under `graphics/` | KH2's | Also read from the collection |
 |---|---|---|---|

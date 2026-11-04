@@ -33,19 +33,13 @@ struct CuffFit {
         float neighbours = 0.35F; // of a flap's opening, each flap beside it opens at least
         float band_from = 0.82F;  // of the cuff's length: past here a point is cleared by shortening, not opening
         float band_to = 0.9F;
-        float most_shift = 0.015F;      // how far the whole cuff slides across its axis (KH2's own moves up to 2-3 cm)
-        float neighbours_length = 0.0F; // of a flap's shortening, each flap beside it takes
+        float most_shift = 0.015F; // how far the whole cuff slides across its axis (KH2's own moves up to 2-3 cm)
         // one flap on its own (`cuff_thumb`: the thumb's tab), none of it copied by its neighbours: more clearance from
-        // what it carries, its own most open (0: as the others), and an opening it always has on top (radians)
+        // what it carries, and its own most open (0: as the others)
         int own_flap = -1;
-        float own_clearance = 0.0F, own_most_open = 0.0F, own_always = 0.0F;
+        float own_clearance = 0.0F, own_most_open = 0.0F;
         float pose_bend = 0.0F;  // `cuff_pose`: the hand's bend its pose is for, degrees; 0 none
         float pose_pivot = 0.0F; // and how far along the hand from its head it pivots in that pose (metres)
-        float pose_most = 0.0F;  // the bend the pose carries on to, degrees; 0 stops at `pose_bend`
-        float pose_most_share() const
-        {
-            return pose_bend > 0.0F ? std::max(1.0F, pose_most / pose_bend) : 1.0F;
-        }
     };
     struct Target {
         Shares open{};
@@ -55,7 +49,7 @@ struct CuffFit {
 
     HandVec center{}, axis{1.0F, 0.0F, 0.0F}, u{0.0F, 1.0F, 0.0F}, v{0.0F, 0.0F, 1.0F};
     float from = 0.0F, to = 0.0F;
-    std::array<HandVec, kFlaps> hinge{}, tip{}, along{}, out{}, turn_axis{};
+    std::array<HandVec, kFlaps> hinge{}, tip{}, along{}, out{};
     Shares hinge_x{};
     std::array<Slot, kStations * kBins> slots{};
     bool ready = false;
@@ -82,9 +76,8 @@ struct CuffFit {
             hinge_x[idx(k)] = hand_dot(hand_sub(hinges[idx(k)], center), axis);
             const HandVec d = hand_sub(hinges[idx(k)], center);
             const HandVec radial = hand_unit(hand_add(d, axis, -hand_dot(d, axis)), u);
-            // out: square to the flap, on its radial side; the turn about the axis that takes `along` toward it
+            // out: square to the flap, on its radial side
             out[idx(k)] = hand_unit(hand_add(radial, along[idx(k)], -hand_dot(radial, along[idx(k)])), radial);
-            turn_axis[idx(k)] = hand_cross(along[idx(k)], out[idx(k)]);
         }
         from = 1e30F;
         to = -1e30F;
@@ -224,12 +217,7 @@ struct CuffFit {
                     target.open[k] = std::min(settings.most_open, target.open[k] + wants * give[k] / sum);
             }
         // the ring stretches: each flap comes along with its neighbours (flaps are in ring order)
-        const Shares own = target.open, own_length = target.length;
-        for (std::size_t k = 0; k < kFlaps; ++k)
-            target.length[k] =
-                std::min(own_length[k],
-                         1.0F - settings.neighbours_length *
-                                    (1.0F - std::min(own_length[(k + 1) % kFlaps], own_length[(k + 3) % kFlaps])));
+        const Shares own = target.open;
         for (std::size_t k = 0; k < kFlaps; ++k)
             target.open[k] =
                 std::max(own[k], settings.neighbours * std::max(own[(k + 1) % kFlaps], own[(k + 3) % kFlaps]));
@@ -251,53 +239,9 @@ struct CuffFit {
                     if (need > 0.0F)
                         target.open[t] = std::min(most, target.open[t] + need * carried / r.share[t]);
                 }
-            target.open[t] = std::min(target.open[t], most) + settings.own_always;
+            target.open[t] = std::min(target.open[t], most);
         }
         return target;
-    }
-
-    // The outermost of these triangles out from the axis at `x`, at that angle (0 none): what is really drawn there
-    float surface(float x, const HandVec &way, const std::vector<Triangle> &triangles) const
-    {
-        Slot slot;
-        const HandVec start = hand_add(center, axis, x);
-        for (const Triangle &t : triangles)
-            cast(start, way, t, slot);
-        return slot.reach;
-    }
-
-    // A hand's mesh edge against the cuff's triangles: how far its end outside the surface (seen from `middle`, inside the
-    // cuff) stands past the deepest it crosses, 0 if it crosses none
-    static float edge_outside(const HandVec &middle, const HandVec &start, const HandVec &end,
-                              const std::vector<Triangle> &triangles)
-    {
-        const HandVec line = hand_sub(end, start);
-        const float l = hand_length(line);
-        if (l < 1e-6F)
-            return 0.0F;
-        const HandVec way = hand_add({0.0F, 0.0F, 0.0F}, line, 1.0F / l);
-        float depth = 0.0F;
-        for (const Triangle &t : triangles) {
-            const HandVec e1 = hand_sub(t.at[1], t.at[0]), e2 = hand_sub(t.at[2], t.at[0]);
-            const HandVec p = hand_cross(way, e2);
-            const float det = hand_dot(e1, p);
-            if (std::fabs(det) < 1e-10F)
-                continue;
-            const HandVec s = hand_sub(start, t.at[0]);
-            const float a = hand_dot(s, p) / det;
-            const HandVec q = hand_cross(s, e1);
-            const float b = hand_dot(way, q) / det;
-            if (a < 0.0F || a > 1.0F || b < 0.0F || a + b > 1.0F)
-                continue;
-            const float hit = hand_dot(e2, q) / det;
-            if (hit <= 0.0F || hit >= l)
-                continue;
-            HandVec n = hand_unit(hand_cross(e1, e2));
-            if (hand_dot(n, hand_sub(t.at[0], middle)) < 0.0F)
-                n = {-n[0], -n[1], -n[2]};
-            depth = std::max({depth, hand_dot(hand_sub(start, t.at[0]), n), hand_dot(hand_sub(end, t.at[0]), n)});
-        }
-        return depth;
     }
 
 private:
@@ -378,13 +322,12 @@ inline void cuff_pose_at(const std::vector<CuffPoseBone> &bones, float share, st
 }
 
 // How far into its pose the cuff is: the hand's way, bent from its rest way toward the pose's side, against the pose's bend
-inline float cuff_pose_share(const HandVec &rest_way, const HandVec &toward, const HandVec &now_way, float bend_degrees,
-                             float most_share = 1.0F)
+inline float cuff_pose_share(const HandVec &rest_way, const HandVec &toward, const HandVec &now_way, float bend_degrees)
 {
     if (bend_degrees <= 0.0F)
         return 0.0F;
     const float bend = std::atan2(hand_dot(now_way, toward), hand_dot(now_way, rest_way)) * 57.29578F;
-    return std::clamp(bend / bend_degrees, 0.0F, most_share);
+    return std::clamp(bend / bend_degrees, 0.0F, 1.0F);
 }
 
 // A `swing`'s way with what it would do toward `up` (square to `kept`) left out: the side `cuff_pose` answers instead.
@@ -419,13 +362,6 @@ inline HandVec cuff_pose_slide(const HandVec &way, const HandVec &toward, float 
 inline float cuff_pose_straight(float share)
 {
     return hand_share(share, 0.9F, 1.0F);
-}
-
-// The same for the cuff's fit and sway, which come back over the tenth of the way past the full bend: the pose as
-// authored is for that bend, and past it the hand needs clearing again
-inline float cuff_pose_fit_hold(float share)
-{
-    return cuff_pose_hold(share) * (1.0F - hand_share(share, 1.0F, 1.1F));
 }
 
 inline CuffFit::Target cuff_target_mix(const CuffFit::Target &a, const CuffFit::Target &b, float t)

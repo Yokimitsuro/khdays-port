@@ -25,6 +25,11 @@ void khdays_models_node(unsigned node, int sent);
 /* NNSi_G3dFuncSbc_NODEDESC, node `node`'s matrix made, before its callback reads it: a mod's character's
  * weapon node is put on its own skeleton's weapon bone. */
 void khdays_models_node_placed(unsigned node, int sent);
+
+/* NNS_G3dGetResultMtx: a replaced model's node `node` of `render_obj` as the model's joint carries it, into
+ * `position` (an MtxFx43) and `direction` (an MtxFx33), either of them null; 0 when it is drawn as the game's. */
+int khdays_models_result_matrix(const void *render_obj, unsigned node, int *position, int *direction);
+
 /* Obj_CaptureSelectedJointMtx: node `node`'s matrix was saved at `matrix` (an
  * MtxFx43) for what the game attaches to it; a KH2 model's `weapon` line puts
  * it on a KH2 bone at the draw's end. */
