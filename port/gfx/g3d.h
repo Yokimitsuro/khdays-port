@@ -125,6 +125,12 @@ void khdays_g3d_draw_begin(const void *resource);
  * VRAM. */
 void khdays_g3d_texture_bank(int32_t bank);
 
+/* A PLTT_BASE carrying a bank (texture_banks.h khdays_texture_banks_tag_pltt): the DS reads only its 13 low
+ * bits, so the port puts the bank above them for the textures the game sets apart from a model's draw (the
+ * field's prize pictures): the bit, and the bank in bits 16-30. The texture set before it is the bank's. */
+#define KHDAYS_G3D_PLTT_BANK_TAG 0x80000000u
+#define KHDAYS_G3D_PLTT_BANK(word) ((int32_t)(((word) >> 16) & 0x7fffu))
+
 /* NNS_G3dGlbFlushP (prepare.py HOOKS): the camera of the list being built. */
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12]);
 void khdays_g3d_draw_end(void);

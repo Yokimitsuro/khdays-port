@@ -34,6 +34,11 @@ void khdays_texture_banks_close(void *file, void *tex, int allocated);
 void khdays_texture_banks_draw_begin(const void *model);
 void khdays_texture_banks_draw_end(void);
 
+/* Tex0_GetTexPlttParams' PLTT_BASE for `file` (the game's own TEXIMAGE_PARAM and PLTT_BASE of its first
+ * texture, which the field's prize pictures are drawn with outside a model's draw): `pltt` with the file's
+ * bank above the DS's bits (g3d.h KHDAYS_G3D_PLTT_BANK_TAG) when the file is in a bank, else as it is. */
+uint32_t khdays_texture_banks_tag_pltt(const void *file, uint32_t pltt);
+
 /* The replacement (textures.h) a polygon of bank `bank` with TEXIMAGE_PARAM `param` and PLTT_BASE `pltt`
  * is drawn with: the bank's texture decoded (or a mod's for its name while HD graphics are on); -1 when
  * the bank is gone or the polygon is untextured. */

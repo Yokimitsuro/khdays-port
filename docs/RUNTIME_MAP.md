@@ -5321,8 +5321,13 @@ The port adds a mod's missions to the game's own list and plays them as the game
   one replacement per picture whatever bank shows it). A file is kept only up to its texture images once they are
   in VRAM (`ModelArchive_DropTextureImage` shrinks the block to `texInfo.ofsTex`) and other files go after that,
   so a bank is dropped only when a file is set up over its model's part. Seen (2026-11-02): 73 files in banks in
-  that mission, everything textured; `KHDAYS_TRACE_TEXTURE_BANKS=1` says each bank dropped and first drawn. Not
-  covered: textures drawn outside model draws from a file in a bank (`Tex0_GetTexPlttParams`'s, the shop's).
+  that mission, everything textured; `KHDAYS_TRACE_TEXTURE_BANKS=1` says each bank dropped and first drawn. The
+  textures the game sets apart from a model's draw (`Tex0_GetTexPlttParams`: the first texture's TEXIMAGE_PARAM and
+  PLTT_BASE of a file, kept in the field's table at +0x60 by `Ov002_LoadShopTable` and sent by `Billboard_DrawList`
+  for each prize) carry their file's bank in PLTT_BASE's bits the DS does not read (bit 31, the bank in 16-30:
+  `gfx/g3d.h` `KHDAYS_G3D_PLTT_BANK_TAG`), and the geometry takes the texture set before it as the bank's. Not
+  covered: the menus' own texture words (`Ov005_ResolveTextureParams`, `Ov025_ResolveTextureParams`, the noise
+  quads of ov023/ov106), set up in scenes that start with the VRAM empty.
 - **A call into an overlay not loaded** (a function reference whose address starts an overlay's function while
   another, or none, is loaded there): skipped (answer 0) and said once in the session log (`overlays: a call into
   overlay N's function ...`) instead of the game stopped. A tester's mission in a replaced Twilight Town room with

@@ -247,6 +247,15 @@ int main(void)
     khdays_texture_banks_draw_end();
     CHECK(sent_bank == 0);
 
+    /* a texture set apart from a model's draw (Tex0_GetTexPlttParams, the prizes' billboards): its PLTT_BASE
+     * carries the file's bank above the DS's bits; one of a file in the DS's VRAM is left as it is */
+    {
+        const uint32_t tagged = khdays_texture_banks_tag_pltt(KHDAYS_W(0x02100000u), 0x20 >> 4);
+        CHECK((tagged & KHDAYS_G3D_PLTT_BANK_TAG) != 0 && KHDAYS_G3D_PLTT_BANK(tagged) == 1);
+        CHECK((tagged & 0x1fffu) == (0x20 >> 4));
+        CHECK(khdays_texture_banks_tag_pltt(KHDAYS_W(0x02000000u), 0x20 >> 4) == (0x20 >> 4));
+    }
+
     /* the bank's texture decoded: texel i is colour i % 16 of its palette (red i % 16), once */
     id = khdays_texture_banks_replacement(1, param | 1u << 16, 0x20 >> 4);
     CHECK(id == 0 && nadded == 1);
@@ -291,6 +300,7 @@ int main(void)
     khdays_texture_banks_file(KHDAYS_W(0x02100100u));
     CHECK(tex_state == 1 && pltt_state == 1);
     CHECK(khdays_texture_banks_replacement(1, param, 0x20 >> 4) == -1);
+    CHECK(khdays_texture_banks_tag_pltt(KHDAYS_W(0x02100000u), 2) == 2);
     khdays_texture_banks_draw_begin(KHDAYS_W(0x02100010u));
     CHECK(sent_bank == 0);
     khdays_texture_banks_draw_end();

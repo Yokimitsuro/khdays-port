@@ -520,6 +520,16 @@ HOOKS = {
             "                }\n",
         ),
     ],
+    # (the textures the game sets apart from a model's draw, the field's prize pictures: their PLTT_BASE
+    # carries the file's bank, g3d.h KHDAYS_G3D_PLTT_BANK_TAG)
+    "main@02028670": [  # Tex0_GetTexPlttParams
+        (
+            "    out[1] = (u16)(plttOfs + plttBase);\n",
+            "    out[1] = (u16)(plttOfs + plttBase);\n"
+            "    { extern u32 khdays_texture_banks_tag_pltt(const void *file, u32 pltt);\n"
+            "      out[1] = khdays_texture_banks_tag_pltt(file, out[1]); }\n",
+        )
+    ],
     "main@0203c304": [  # InstancedModel_Draw
         (
             "            NNS_G3dDraw1Mat1Shp(this->modelHolder->model, 0, 0, 1);\n",

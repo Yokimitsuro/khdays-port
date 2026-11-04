@@ -1401,7 +1401,12 @@ void khdays_g3d_command(unsigned cmd, const uint32_t *p)
         g.teximage = p[0];
         g.tex_bank = g.bank;
         break;
-    case 0x2b: g.pltt = p[0] & 0x1fff; break;
+    case 0x2b:
+        g.pltt = p[0] & 0x1fff;
+        if (p[0] & KHDAYS_G3D_PLTT_BANK_TAG) {
+            g.tex_bank = KHDAYS_G3D_PLTT_BANK(p[0]); /* a bank's texture set apart from a model's draw */
+        }
+        break;
     case 0x30:
         g.diffuse[0] = p[0] & 31;
         g.diffuse[1] = (p[0] >> 5) & 31;

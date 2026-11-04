@@ -258,6 +258,30 @@ void khdays_texture_banks_close(void *file, void *tex, int allocated)
     give_states_back();
 }
 
+/* The live bank holding the game's memory at `at` (0: none). */
+static int32_t bank_at(KhdaysRef at)
+{
+    for (int i = 0; live > 0 && i < nbanks; ++i) {
+        if (banks[i].live && at >= banks[i].start && at < banks[i].end) {
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+uint32_t khdays_texture_banks_tag_pltt(const void *file, uint32_t pltt)
+{
+    const int32_t bank = file != NULL ? bank_at(KHDAYS_REF(file)) : 0;
+    if (bank == 0) {
+        return pltt;
+    }
+    if (!banks[bank - 1].drawn && tracing()) {
+        khdays_log("texture memory: bank %d's first texture set apart (file %#x)", bank, KHDAYS_REF(file));
+    }
+    banks[bank - 1].drawn = 1;
+    return (pltt & 0x1fffu) | KHDAYS_G3D_PLTT_BANK_TAG | ((uint32_t)bank << 16);
+}
+
 void khdays_texture_banks_draw_begin(const void *model)
 {
     int32_t bank = 0;
@@ -273,18 +297,11 @@ void khdays_texture_banks_draw_begin(const void *model)
         outer[nouter] = current;
     }
     ++nouter;
-    if (live > 0 && model != NULL) {
-        const KhdaysRef at = KHDAYS_REF(model);
-        for (int i = 0; i < nbanks; ++i) {
-            if (banks[i].live && at >= banks[i].start && at < banks[i].end) {
-                bank = i + 1;
-                if (!banks[i].drawn && tracing()) {
-                    khdays_log("texture memory: bank %d drawn (model %#x)", bank, at);
-                }
-                banks[i].drawn = 1;
-                break;
-            }
+    if (model != NULL && (bank = bank_at(KHDAYS_REF(model))) != 0) {
+        if (!banks[bank - 1].drawn && tracing()) {
+            khdays_log("texture memory: bank %d drawn (model %#x)", bank, KHDAYS_REF(model));
         }
+        banks[bank - 1].drawn = 1;
     }
     current = bank;
     khdays_g3d_texture_bank(bank);
