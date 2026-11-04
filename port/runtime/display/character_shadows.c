@@ -20,6 +20,8 @@ static KhdaysRef reference_at(const void *p, size_t offset)
     return value;
 }
 
+/* A scene node's parent is at +0xbc: SceneNode_AttachToModelJoint (main) sets it, SceneNode_Detach clears it. The
+ * decompilation's Scene_DrawNode names that offset `displayList`, a name these two contradict. */
 static KhdaysRef scene_owner(const void *node)
 {
     KhdaysRef owner = KHDAYS_REF(node);
@@ -64,7 +66,7 @@ static void fade_end(void)
 void khdays_character_shadow(const void *volume, const void *node)
 {
     fade_begin(scene_owner(node));
-    khdays_shadow_volume_begin(KHDAYS_REF(node), volume, khdays_character_shadows_enabled());
+    khdays_shadow_volume_begin(KHDAYS_REF(node), khdays_character_shadows_enabled());
     ShadowVolume_Draw(KHDAYS_REF(volume));
     khdays_shadow_volume_end();
     fade_end();
@@ -136,6 +138,8 @@ void khdays_character_object_begin(const void *object)
                 }
             if (found)
                 break;
+            /* +0 is a node's owner (Node_UnlinkAndClearRefs reads it so, Node_BaseInit clears it). Assumed, not
+             * traced in the game: that it leads from an enemy's attachments to its model tree (actor +0x9c). */
             KhdaysRef next = reference_at(KHDAYS_W(parent), 0);
             if (next == parent || !khdays_game_ram(next))
                 break;

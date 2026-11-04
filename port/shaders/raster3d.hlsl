@@ -15,8 +15,8 @@ ByteAddressBuffer verts : register(t1, space0);
 ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, then polygon indices
 ByteAddressBuffer vram : register(t3, space0);         // the texture slots (512 KB), then the palette slots (96 KB)
 ByteAddressBuffer hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
-ByteAddressBuffer shadow_mask : register(t6, space0);
 ByteAddressBuffer sequences : register(t5, space0); // retained native sequences in this 3D list
+ByteAddressBuffer shadow_mask : register(t6, space0); // declared in register order: MSL numbers them as declared
 #define KSI_SHADER
 #include "../gfx/sequence_image.h"
 uint seq_word(uint program, uint at) { return sequences.Load((program*KSI_WORDS+at)*4u); }
@@ -599,13 +599,11 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     }
 }
 
-// Whether polygon `p` covers pixel (x, y) of the target, gpu3d.c's
-// draw_polygon on the target's grid (the vertices scaled by N), and if so
-// its attributes there and whether it is an edge pixel. Each polygon covers
-// what it covers at N x, no more (a quarter of a DS pixel more on each side
-// bloated every model, a mod's many small triangles most). `grow` target pixels
-// more on each side (a clip volume's: two triangles' shared edge can leave a
-// pixel to neither, and the volume then lets the room through there).
+// Whether polygon `p` covers pixel (x, y) of the target, gpu3d.c's draw_polygon on the target's
+// grid (the vertices scaled by N), and if so its attributes there and whether it is an edge pixel.
+// It covers what it covers at N x, no more (more bloats a mod's many small triangles). `grow` target
+// pixels more on each side: a clip volume's, whose triangles' shared edge can leave a pixel to neither,
+// and the volume then lets the room through there.
 bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge, float grow)
 {
     const float n = (float)scale;

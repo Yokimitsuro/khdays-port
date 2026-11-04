@@ -16,7 +16,6 @@ typedef struct Capture {
 } Capture;
 typedef struct Shadow {
     uintptr_t owner;
-    float ground[3];
     int sprite;
 } Shadow;
 static Capture *captures;
@@ -100,7 +99,7 @@ void khdays_shadow_capture_end(void)
         caster = 0;
 }
 
-void khdays_shadow_volume_begin(uintptr_t owner, const int32_t *position, int on)
+void khdays_shadow_volume_begin(uintptr_t owner, int on)
 {
     enabled |= on;
     volume = -1;
@@ -118,8 +117,6 @@ void khdays_shadow_volume_begin(uintptr_t owner, const int32_t *position, int on
     }
     shadows[volume].owner = owner;
     shadows[volume].sprite = 0;
-    for (int k = 0; k < 3; ++k)
-        shadows[volume].ground[k] = (float)position[k] / 4096;
 }
 
 void khdays_shadow_volume_end(void)

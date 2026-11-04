@@ -16,7 +16,7 @@ void khdays_shadow_reset(void);
 void khdays_shadow_camera(const int32_t projection[16], const int32_t camera[12]);
 void khdays_shadow_capture_begin(uintptr_t owner, int enabled);
 void khdays_shadow_capture_end(void);
-void khdays_shadow_volume_begin(uintptr_t owner, const int32_t position[3], int enabled);
+void khdays_shadow_volume_begin(uintptr_t owner, int enabled);
 void khdays_shadow_volume_end(void);
 void khdays_shadow_sprite_begin(void);
 int khdays_shadow_sprite_active(void);

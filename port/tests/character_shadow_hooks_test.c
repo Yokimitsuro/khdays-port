@@ -42,10 +42,9 @@ void khdays_shadow_capture_end(void)
 {
     --depth;
 }
-void khdays_shadow_volume_begin(uintptr_t owner, const int32_t *pos, int enabled)
+void khdays_shadow_volume_begin(uintptr_t owner, int enabled)
 {
     (void)owner;
-    (void)pos;
     (void)enabled;
 }
 void khdays_shadow_volume_end(void) {}

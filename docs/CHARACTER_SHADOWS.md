@@ -74,6 +74,12 @@ Days integration was researched against `khdays-decomp` commit
 `a2b0478b87e3102732094c34f6ca89595f98ab93`:
 
 - `Scene_DrawNode` (`main@0202aa9c`): animated render object draw.
+- `SceneNode_AttachToModelJoint` and `SceneNode_Detach`: a scene node's parent at
+  +0xbc, the path from a weapon's node to its owner. The decompilation's
+  `Scene_DrawNode` calls the same offset `displayList`, which these two contradict.
+- `Node_BaseInit` and `Node_UnlinkAndClearRefs`: a node's owner at +0. Assumed, not
+  traced in the game: that this link leads from an enemy's attachments to its
+  model tree (`khdays_character_object_begin`); only synthetic memory tests it.
 - `Render_DrawViewLists` (`main@0202bc90`) and `Entity_Tick`
   (`main@0202c624`): entity shadow at +0x168, scene node at +0x10.
 - `Ov022_DropGroundMark` (`ov022@0209c870`): floor raycast and alpha selection.
@@ -96,6 +102,9 @@ projection. Its default projector is effectively overhead. This implementation
 uses that rendering approach with Days' existing receiver range and appearance;
 it does not claim identical KH2 floor selection, resolution, or filtering at
 every distance. No extracted shaders, binaries, or assets are included.
+
+If the mask's buffers cannot be made for a frame, that frame keeps the native
+shadows and draws no receivers (`prepare_shadows` in `gpu_raster3d.c`).
 
 The receivers are rendered opaque surfaces, not collision meshes. Very steep
 surfaces, translucent floors, models with no existing shadow draw, and poses

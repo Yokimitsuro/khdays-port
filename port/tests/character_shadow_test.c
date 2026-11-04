@@ -56,8 +56,7 @@ static void run(int on, int native, int floor_present, int caster_present)
     if (floor_present)
         triangle(floor, 0xc0u | ((floor_present == 2 ? 30u : 31u) << 16) | (2u << 24), native);
     khdays_shadow_capture_end();
-    const int32_t pos[3] = {0};
-    khdays_shadow_volume_begin(1, pos, on);
+    khdays_shadow_volume_begin(1, on);
     triangle(volume, 0xf0u | (10u << 16) | (63u << 24), native);
     khdays_shadow_volume_end();
     khdays_shadow_capture_begin(1, on);
