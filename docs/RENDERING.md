@@ -153,6 +153,16 @@ with the same texture, palette and attributes but alpha -- get their vertices
 placed between the two lists' at `alpha`, linearly in clip space, nothing
 extrapolated; then the list is clipped and put through the viewport like the
 game's (`khdays_g3d_finish`), so at `alpha` = 1 it is exactly the newer list.
+Their places, colours and alpha go between; their texture coordinates are the
+newer's (a texture scrolled round, a door's barrier or a Dark Corridor, ran back
+between the two). A model drawn more than once in a list (the field's prizes,
+the enemies) is matched to its nearest drawing in the older list, nearest pairs
+first, not to the one of its place in the order, which changes as one comes or
+goes (the prizes flew between each other). What moved more than an eighth of
+the view -- a model's drawing, or a polygon outside a model (an effect's piece
+taken for another of its material) -- and the selection markers (the reticle
+going from one target to the next) are drawn where the newer list has them.
+`tests/g3d_interp_test.c` checks each.
 
 The graphics card draws the lists (`host/render/gpu_raster3d.c`); the software
 rasterizer (`port/gpu/gpu3d.c`, GBATEK's "DS 3D Video") draws them as the

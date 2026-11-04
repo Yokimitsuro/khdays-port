@@ -941,6 +941,11 @@ add_executable(khdays-texture-banks-test tests/texture_banks_test.c runtime/disp
 target_link_libraries(khdays-texture-banks-test PRIVATE khdays-gpu)
 target_compile_options(khdays-texture-banks-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-texture-banks COMMAND khdays-texture-banks-test)
+# A picture between two 3D lists: drawings matched by place, markers and jumps as the newer list.
+add_executable(khdays-g3d-interp-test tests/g3d_interp_test.c)
+target_link_libraries(khdays-g3d-interp-test PRIVATE khdays-gfx)
+target_compile_options(khdays-g3d-interp-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-g3d-interp COMMAND khdays-g3d-interp-test)
 # A mod's polygons into a list: the near plane only, a sky behind everything else.
 add_executable(khdays-mod-polygon-test tests/mod_polygon_test.c)
 target_link_libraries(khdays-mod-polygon-test PRIVATE khdays-gfx)
