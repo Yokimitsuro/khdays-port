@@ -478,8 +478,10 @@ For the sound (section 6):
   (section 8); `card`: through the emulated card, as before, the reference.
 - `KHDAYS_LOG` -- the session log, `saves/logs/session-<date>-<time>.log`: on
   in the Debug build unless `KHDAYS_LOG=0`, in Release with `KHDAYS_LOG=1`.
-  One line per event, `<seconds> f<frame> <what>`: the scene changes, the
-  overlays started, the game's file reads (one line per file and second, with
+  It starts with the PC's memory and how much of it is free, and its first
+  frame drawn says the graphics API, the card and its driver (a laptop has
+  two cards). One line per event, `<seconds> f<frame> <what>`: the scene
+  changes, the overlays started, the game's file reads (one line per file and second, with
   bytes and milliseconds), each stream asked for and its delays, each sequence
   started (music, effects or voices; the battle music is one) and each player
   stopped, each movie stream the game opens (`movie stream N opened: <path>`)
@@ -487,7 +489,8 @@ For the sound (section 6):
   stopped`, or why not (a second stream, a file it cannot read) -- and the
   channels its sound takes and releases (`sound: a movie's sound on the
   channels of mask 0x3`), every stretch over 50 ms the game ran without a wait
-  (after the reads made in it), a call into DS code with no native function
+  (after the reads made in it; with the memory free then: a PC short of it
+  pages), a call into DS code with no native function
   (`stop:`), a crash, and F12's marks -- each with the DS's two screens two
   VBlanks later in `saves/marks/mark_<n>_frame_<frame>.bmp` and, for that
   frame, engine A's DISPCNT, BG controls and scrolls, blending and windows

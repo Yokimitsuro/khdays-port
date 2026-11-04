@@ -66,6 +66,14 @@ static void open_now(void)
     fprintf(stderr, "log: this session's log is %s (F12 marks it)\n", path);
     fprintf(file, "khdays-native session log, %04u-%02u-%02u %02u:%02u:%02u\n", now.wYear, now.wMonth, now.wDay,
             now.wHour, now.wMinute, now.wSecond);
+    {
+        MEMORYSTATUSEX memory;
+        memory.dwLength = sizeof(memory);
+        if (GlobalMemoryStatusEx(&memory)) {
+            fprintf(file, "memory: the PC has %llu MB, %llu MB of them free\n",
+                    (unsigned long long)(memory.ullTotalPhys >> 20), (unsigned long long)(memory.ullAvailPhys >> 20));
+        }
+    }
     if (kept) {
         fprintf(file, "log: the port's messages (stderr, its stops' reasons among them) go to %s\n", err_path);
     }

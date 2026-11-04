@@ -45,6 +45,8 @@ static uint32_t shown[2 * W * H]; /* what it holds, to upload it again after a r
 static KhdaysVideo video;
 static KhdaysNotice notice;
 static int said_backend;
+static char card_line[320]; /* the graphics API, the card and its driver, for the session log */
+static int card_logged;     /* card_line written to it */
 
 /* The older HD path: engine A's screen at N x, and which screen it goes on. */
 static int raster_ready;      /* gpu_raster3d.c opened on this device */
@@ -199,10 +201,15 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
         static char said[32];
         const char *now = SDL_GetGPUDeviceDriver(device);
         if (!said_backend || SDL_strcmp(said, now) != 0) {
-            fprintf(stderr, "host: the picture goes through the graphics card (%s)\n", now);
-            if (said_backend) {
-                khdays_log("graphics: the picture goes through %s", now);
-            }
+            /* which card and driver (a laptop has two: the session log says which one plays, once it is open) */
+            const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(device);
+            const char *driver = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "");
+            SDL_snprintf(card_line, sizeof(card_line), "%s on %s (driver %s%s%s)", now,
+                         SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, "an unnamed card"), driver,
+                         driver[0] != '\0' ? " " : "",
+                         SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "of no version"));
+            card_logged = 0;
+            fprintf(stderr, "host: the picture goes through the graphics card: %s\n", card_line);
             SDL_strlcpy(said, now, sizeof(said));
             said_backend = 1;
         }
@@ -1273,6 +1280,10 @@ static void present_now(const KhdaysFramePackage *p, int first)
                            SDL_GetError());
             }
             khdays_raster3d_set_hud_apart(0); /* drawn with the rest */
+        }
+        if (!card_logged && khdays_log_on()) {
+            khdays_log("graphics: the picture goes through %s", card_line);
+            card_logged = 1;
         }
         {
             static int last_apart = -1;
