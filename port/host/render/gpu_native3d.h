@@ -23,6 +23,10 @@ typedef struct KhdaysNative3dFrame {
     uint32_t toon[16];
 } KhdaysNative3dFrame;
 
+/* Keeps the targets of a second size aside (1) while the 3D is drawn at two sizes a frame (the HUD apart,
+ * gpu_raster3d.h), or lets them go (0, the default). */
+void khdays_native3d_keep_two(int on);
+
 /* How many of `list`'s polygons it draws: those before the first native sequence. */
 int khdays_native3d_count(const struct KhdaysG3dList *list);
 

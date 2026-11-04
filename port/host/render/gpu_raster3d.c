@@ -67,6 +67,15 @@ static SDL_GPUTextureUsageFlags target_usage;
 static int target_scale, target_columns;
 static SDL_Texture *wrapped;
 static SDL_Renderer *wrapped_for;
+/* The HUD apart (khdays_raster3d_set_hud_apart): the other size's targets kept aside, which is drawing now, and
+ * the HUD's picture of this frame (among the two sizes' targets while it is valid). */
+static SDL_GPUTexture *spare_color3d, *spare_attr3d, *spare_screen;
+static int spare_scale, spare_columns;
+static SDL_Texture *spare_wrapped;
+static SDL_Renderer *spare_wrapped_for;
+static int hud_apart, drawing_hud;
+static SDL_GPUTexture *hud_color3d, *hud_attr3d;
+static int hud_columns;
 static uint32_t *tile_list;
 static uint32_t tile_list_capacity;
 /* Work space that grows with the lists: the vertices with the HUD moved, the
@@ -199,6 +208,9 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
 
 static void drop_targets(void)
 {
+    if (hud_color3d != NULL && hud_color3d == color3d) {
+        hud_color3d = hud_attr3d = NULL;
+    }
     if (wrapped != NULL) {
         SDL_DestroyTexture(wrapped);
         wrapped = NULL;
@@ -214,12 +226,38 @@ static void drop_targets(void)
     target_scale = target_columns = 0;
 }
 
+#define SWAP(type, a, b)                                                                                               \
+    do {                                                                                                               \
+        type swapped_ = (a);                                                                                           \
+        (a) = (b);                                                                                                     \
+        (b) = swapped_;                                                                                                \
+    } while (0)
+
+static void swap_spare(void)
+{
+    SWAP(SDL_GPUTexture *, color3d, spare_color3d);
+    SWAP(SDL_GPUTexture *, attr3d, spare_attr3d);
+    SWAP(SDL_GPUTexture *, screen, spare_screen);
+    SWAP(int, target_scale, spare_scale);
+    SWAP(int, target_columns, spare_columns);
+    SWAP(SDL_Texture *, wrapped, spare_wrapped);
+    SWAP(SDL_Renderer *, wrapped_for, spare_wrapped_for);
+}
+
+static void drop_spare(void)
+{
+    swap_spare();
+    drop_targets();
+    swap_spare();
+}
+
 void khdays_raster3d_close(void)
 {
     if (device == NULL) {
         return;
     }
     drop_targets();
+    drop_spare();
     khdays_native3d_close();
     native = native_ready = 0;
     if (raster != NULL)
@@ -282,6 +320,14 @@ static int targets(int scale, int columns)
 {
     const int w = columns * scale, h = KHDAYS_FRAME_H * scale;
     if (scale != target_scale || columns != target_columns) {
+        if (hud_apart && spare_color3d != NULL && scale == spare_scale && columns == spare_columns) {
+            swap_spare(); /* the other size drawn this frame */
+            return 1;
+        }
+        if (hud_apart && color3d != NULL) {
+            drop_spare(); /* the size drawn last kept aside, the one before it let go */
+            swap_spare();
+        }
         drop_targets();
         color3d = make_target(SDL_GPU_TEXTUREFORMAT_R32_UINT, target_usage, w, h);
         attr3d = make_target(SDL_GPU_TEXTUREFORMAT_R32_UINT, target_usage, w, h);
@@ -810,6 +856,34 @@ static void gpu_profile_add(double ms, int w, int h, int32_t npolys)
     }
 }
 
+/* With the HUD apart: `list` with the other part's polygons hidden (as place_all hides them) -- the HUD's
+ * drawn alone, or everything but the HUD. */
+static KhdaysG3dPolygon *layer_polys;
+static int32_t layer_capacity;
+
+static int layer_of(const KhdaysG3dList *list, int hud, KhdaysG3dList *out)
+{
+    if (list->npolys > layer_capacity) {
+        KhdaysG3dPolygon *grown =
+            (KhdaysG3dPolygon *)SDL_realloc(layer_polys, (size_t)list->npolys * 2 * sizeof(KhdaysG3dPolygon));
+        if (grown == NULL) {
+            return 0;
+        }
+        layer_polys = grown;
+        layer_capacity = list->npolys * 2;
+    }
+    for (int32_t i = 0; i < list->npolys && i < layer_capacity; ++i) {
+        KhdaysG3dPolygon q = list->polys[i];
+        if (((q.flags & KHDAYS_G3D_HUD) != 0) != (hud != 0)) {
+            q.ymin = q.ymax = -100000.0f;
+        }
+        layer_polys[i] = q;
+    }
+    *out = *list;
+    out->polys = layer_polys;
+    return 1;
+}
+
 static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, int compose_too)
 {
     const KhdaysG3dList *list = list_instead != NULL ? list_instead : &p->list3d;
@@ -846,6 +920,14 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     if (device == NULL || !scratch_ok || !targets(scale, columns)) {
         return 0;
     }
+    KhdaysG3dList layered;
+    if (hud_apart) {
+        if (!layer_of(list, drawing_hud, &layered)) {
+            SDL_SetError("out of memory for the HUD's polygons");
+            return 0;
+        }
+        list = &layered;
+    }
     /* the polygon and vertex buffers grow with the lists: no limit but memory */
     if ((uint32_t)list->npolys > polys_capacity) {
         SDL_ReleaseGPUBuffer(device, polys);
@@ -881,6 +963,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
     frame.fine = (uint32_t)fine;
     for (int i = 0; i < 16; ++i) {
         frame.toon[i] = io32(io3d, 0x80 + 4u * (unsigned)i);
+    }
+    if (drawing_hud) {
+        /* the HUD's polygons alone, over nothing: no clear colour's alpha or fog, no rear plane */
+        frame.clear_color &= ~(0x1fu << 16 | 0x8000u);
+        frame.disp3dcnt &= ~0x4000u;
     }
     if (native) {
         drawn_natively = khdays_native3d_count(list);
@@ -1024,12 +1111,12 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         rp.scale = (uint32_t)scale;
         rp.width = (uint32_t)w;
         rp.height = (uint32_t)h;
-        rp.disp3dcnt = p->disp3dcnt;
+        rp.disp3dcnt = frame.disp3dcnt;
         rp.swap_params = list->swap_params;
         rp.tiles_x = (uint32_t)tiles_x;
         rp.tiles_y = TILES_Y;
         rp.alpha_ref = io3d[0x40];
-        rp.clear_color = io32(io3d, 0x50);
+        rp.clear_color = frame.clear_color;
         rp.clear_depth = io32(io3d, 0x54);
         rp.smooth = (uint32_t)(texture_smoothing != 0) | (stretched ? 2u : 0u); /* the shader's pixel_art flags */
         rp.origin_x = origin_x;
@@ -1173,6 +1260,46 @@ int khdays_raster3d_draw(const KhdaysFramePackage *p, int scale, int texture_smo
 int khdays_raster3d_rasterize(const KhdaysFramePackage *p, int scale, int texture_smoothing)
 {
     return draw(p, scale, texture_smoothing, 0);
+}
+
+void khdays_raster3d_set_hud_apart(int on)
+{
+    if (!on && hud_apart) {
+        drop_spare();
+        hud_color3d = hud_attr3d = NULL;
+    }
+    hud_apart = on != 0;
+    khdays_native3d_keep_two(hud_apart);
+}
+
+int khdays_raster3d_rasterize_hud(const KhdaysFramePackage *p, int scale, int texture_smoothing)
+{
+    int ok;
+    hud_color3d = hud_attr3d = NULL;
+    if (!hud_apart) {
+        SDL_SetError("the HUD is not drawn apart");
+        return 0;
+    }
+    drawing_hud = 1;
+    ok = draw(p, scale, texture_smoothing, 0);
+    drawing_hud = 0;
+    if (ok) {
+        hud_color3d = color3d;
+        hud_attr3d = attr3d;
+        hud_columns = target_columns;
+    }
+    return ok;
+}
+
+int khdays_raster3d_hud_targets(SDL_GPUTexture **color, SDL_GPUTexture **attr, int *columns)
+{
+    if (!hud_apart || hud_color3d == NULL || (hud_color3d != color3d && hud_color3d != spare_color3d)) {
+        return 0;
+    }
+    *color = hud_color3d;
+    *attr = hud_attr3d;
+    *columns = hud_columns;
+    return 1;
 }
 
 int khdays_raster3d_targets(SDL_GPUTexture **color, SDL_GPUTexture **attr, int *columns)

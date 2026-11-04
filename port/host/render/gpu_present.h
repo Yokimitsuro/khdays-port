@@ -35,7 +35,7 @@ int khdays_present_wants(void);
  * widescreen): for khdays_host_frame_widen. */
 int khdays_present_columns(void);
 
-/* The internal resolution the port's 2D is composed at (1 without it). */
+/* The scale the port's 2D is composed at (1 without it): the window's, or the 3D's when that is finer. */
 int khdays_present_scale(void);
 
 /* The window changed size: the "window" resolution and aspect follow it. */

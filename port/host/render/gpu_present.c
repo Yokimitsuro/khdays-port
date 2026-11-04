@@ -397,6 +397,20 @@ static int scale_now(void)
     return n;
 }
 
+/* The 2D's scale over a 3D at `n3d`: the window's own (smooth scaling: the whole multiple at least as large,
+ * shrunk on the card; sharp: the largest that fits), so the HUD, menus and text stay as sharp as the window
+ * whatever the internal resolution; the 3D's when that is finer (the antialiasing, an internal resolution
+ * above the window's). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
+static int scale2d_now(int n3d)
+{
+    const float s = shown_scale();
+    int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
+    if (port2d_mode == 2 || n < n3d) {
+        n = n3d;
+    }
+    return n < 1 ? 1 : n;
+}
+
 /* Whether engine A's 3D is drawn on the graphics card: at an internal
  * resolution above 1, or wider than the DS's. */
 static int drawing_3d(void)
@@ -426,7 +440,7 @@ int khdays_present_columns(void)
 
 int khdays_present_scale(void)
 {
-    return port2d_ready && device != NULL ? scale_now() : 1;
+    return port2d_ready && device != NULL ? scale2d_now(scale_now()) : 1;
 }
 
 /* Lays out the picture for its width now: the two screens one above the other or side by side
@@ -1263,12 +1277,37 @@ static void present_now(const KhdaysFramePackage *p, int first)
         khdays_raster3d_set_hud_shapes(picture ? composition.shapes3d : NULL, picture ? composition.shape3d_count : 0);
         /* a screen blend's frame: engine A shows a VRAM bank, drawn from its 3D at this resolution too */
         const int blend_frame = khdays_gfx_render_capture_frame(p);
-        const int raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) && n != refused_scale &&
-                           (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame) &&
-                           khdays_raster3d_rasterize(p, n, video.texture_smoothing);
+        const int can_raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
+                               n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame);
+        const int n2d = scale2d_now(n);
+        /* the 3D coarser than the 2D (an internal resolution below the window's): the HUD's polygons (the
+         * command menu) drawn apart at the 2D's scale, as sharp as the rest of the HUD */
+        khdays_raster3d_set_hud_apart(n2d > n);
+        if (can_raster && n2d > n && !khdays_raster3d_rasterize_hud(p, n2d, video.texture_smoothing)) {
+            static int told;
+            if (!told) {
+                told = 1;
+                khdays_log("graphics: the HUD's 3D could not be drawn apart at %dx (%s): drawn with the rest", n2d,
+                           SDL_GetError());
+            }
+            khdays_raster3d_set_hud_apart(0); /* drawn with the rest */
+        }
+        {
+            static int last_apart = -1;
+            const int apart = can_raster && n2d > n;
+            if (apart != last_apart) {
+                khdays_log("graphics: the 2D at %dx, the 3D at %dx%s", n2d, n,
+                           apart ? ", the HUD's 3D apart at the 2D's" : "");
+                last_apart = apart;
+            }
+        }
+        const int raster = can_raster && khdays_raster3d_rasterize(p, n, video.texture_smoothing);
         /* shrunk to the size the window shows it at (smooth scaling: its own pixels), or by the
          * antialiasing (sharp: the DS's pixels kept square, then stretched by whole pixels) */
-        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale() : (float)n / (float)antialiasing_now());
+        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale()
+                                    : n2d > n            ? (float)n2d
+                                                         : (float)n / (float)antialiasing_now());
+        khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
         if (picture) {
             SDL_GPUTexture *c3d = NULL, *a3d = NULL;
             int raster_columns = one.columns;
@@ -1280,7 +1319,8 @@ static void present_now(const KhdaysFramePackage *p, int first)
             }
             /* at the DS's own size without 3D, but for a picture with a backdrop of its own (the
              * camp's Preferences page: an HD picture, no model) or a mod's tiles */
-            drawn = khdays_gfx_render_draw_one(p, raster || one.backdrop != NULL || hd_tiles ? n : 1, raster, &one);
+            drawn = khdays_gfx_render_draw_one(
+                p, raster || one.backdrop != NULL || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster, &one);
             one_drawn = drawn;
             one_made = one_made || drawn;
             /* the room change's quad, in the list this picture was drawn from, when its 3D shows in it */
@@ -1298,7 +1338,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 wipe = wipe_next;
             }
         } else {
-            drawn = khdays_gfx_render_draw(p, raster || hd_tiles ? n : 1, raster);
+            drawn = khdays_gfx_render_draw(p, raster || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster);
         }
         if (drawn) {
             port2d_drawn = 1;

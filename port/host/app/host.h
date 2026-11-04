@@ -38,8 +38,9 @@ int khdays_host_frame_wants(void);
  * changes between frames. */
 float khdays_host_frame_widen(void);
 
-/* The internal resolution the picture is composed at (1 to 8; 1 when headless), for what the game
- * thread draws at that resolution (the port's own elements). It only changes between frames. */
+/* The scale the picture's 2D is composed at (the window's, or the internal resolution when that is
+ * finer; 1 when headless), for what the game thread draws at that resolution (the port's own elements:
+ * HD text, the KH2 HUD's pictures). It only changes between frames. */
 int khdays_host_frame_scale(void);
 
 /* The video settings the game thread reads (KHDAYS_HOST_*): HD graphics from

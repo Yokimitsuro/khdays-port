@@ -52,8 +52,8 @@ bitmap's 32-byte units per row in bits 8-15 and its rows in bits 16-31.
 
 Elements are things the port draws itself (`port/gfx/elements.h`): each takes
 one slot of the DS's composition (a BG layer, or the sprites at a priority),
-with an image the port drew at the internal resolution and a place in DS
-pixels. The description's `KD_ELEMENTS` word says how many follow it (on the
+with an image the port drew at the 2D's scale (`khdays_ui_scale`: the window's,
+below) and a place in DS pixels. The description's `KD_ELEMENTS` word says how many follow it (on the
 card after the description and its palettes; on the CPU in their own array),
 `KE_WORDS` words each, the topmost of a slot first. A texel is 0 transparent;
 indexed, `KET_OPAQUE` | the palette index (the slot's palette), with
@@ -208,7 +208,27 @@ does not start (`host/render/gpu_present.c`).
 A frame: both screens' 2D are composed by `gfx_render.c` from the package's
 descriptions (`shaders/compose2d.hlsl`: an output pixel takes the 2D of the DS
 pixel it lies in, so the pixel art stays sharp, and the 3D of its own place),
-and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`. Each
+and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`.
+The 2D is composed at the window's scale whatever the internal resolution
+(`scale2d_now`, gpu_present.c: smooth scaling the whole multiple at least as
+large, sharp the largest that fits; the 3D's when that is finer, the
+antialiasing or an internal resolution above the window's), so the HUD, the
+menus and the text stay as sharp as the window when the 3D is drawn coarser to
+save the card's time. Where the 2D is finer than the 3D, each output pixel reads
+the 3D at its middle (`finished3d_at`, finish3d.hlsli): the nearest texel with
+sharp scaling; with smooth scaling the four nearest, weighed by place and by
+their alpha, so a texel without 3D gives no colour. The HUD's own 3D (the
+polygons the field's panel and the game over screen send, `KHDAYS_G3D_HUD`) is
+then drawn apart at the 2D's scale (`khdays_raster3d_rasterize_hud`: those
+polygons alone, over no clear colour's alpha or fog and no rear plane; each size
+keeps its targets, gpu_native3d.c and gpu_raster3d.c holding the other aside),
+the rest at the internal resolution without them, and the composition puts the
+HUD's over the rest as the DS draws a polygon over what is there (`over3d`). The
+game draws its own pictures (HD text, the KH2 HUD's) at the 2D's scale too
+(`khdays_host_frame_scale`), with no upper bound. Seen (2026-11-04, the HD PACK,
+internal resolution 1 on a 2736x1536 window, the 2D at 8x): the command menu's
+HD words and the panels as sharp as at the window's resolution, the 3D at the
+DS's size, smoothed or square by the scaling. Each
 frame uploads the package's polygons, the composition records and the texture
 pages that changed; the card's own rasterizer draws the 3D (below, "The native
 3D"). `KHDAYS_3D=compute` draws it the way before it: with an index of which
@@ -362,9 +382,9 @@ shown (an output pixel inside one texel: a 6x sheet at a 4K window's 12x) is rea
 through Catmull-Rom over the 4 x 4 texels round the pixel, those past the tile's
 edge taken at its edge (the tile beside it in the sheet is not the one beside it
 on the screen), so its edges stay smooth instead of showing the texels' steps. A
-frame whose 2D memory holds a replaced tile is composed at the internal resolution
-even without 3D (`has_hd_tiles`, gpu_present.c): at the DS's own size, which a
-frame of 2D alone keeps otherwise, the sheet was averaged down to the DS's pixels
+frame of 2D is composed at the 2D's scale (above) even without 3D: at the DS's own
+size, which a frame of 2D alone kept before (now only the 2D check,
+`KHDAYS_GFX=check`, compares there), the sheet was averaged down to the DS's pixels
 and stretched (the Journal's pages, seen blurred at 4K). The map of replaced tiles
 holds, where a replaced sheet's tile starts, the replacement's id + 1 in bits
 20-31 and the tile's number in bits 0-19; a page is mapped again when its

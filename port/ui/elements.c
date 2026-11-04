@@ -94,7 +94,7 @@ void khdays_ui_image_end(int image)
 int khdays_ui_scale(void)
 {
     const int n = khdays_host_frame_scale();
-    return n < 1 ? 1 : n > 8 ? 8 : n;
+    return n < 1 ? 1 : n;
 }
 
 const uint32_t *khdays_ui_texels(uint32_t image)

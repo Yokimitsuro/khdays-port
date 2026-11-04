@@ -27,6 +27,18 @@ int khdays_raster3d_draw(const KhdaysFramePackage *package, int scale, int textu
  * same targets as khdays_raster3d_draw. */
 int khdays_raster3d_rasterize(const KhdaysFramePackage *package, int scale, int texture_smoothing);
 
+/* The HUD apart, for a 2D drawn finer than the 3D (gpu_present.c): with it on,
+ * khdays_raster3d_rasterize_hud draws the list's HUD polygons alone (the command
+ * menu, gfx/g3d.h KHDAYS_G3D_HUD) at the 2D's scale into a picture of their own,
+ * over nothing (no clear colour's alpha or fog, no rear plane), and
+ * khdays_raster3d_rasterize every other polygon at its scale; the 2D composes the
+ * HUD over the rest (khdays_raster3d_hud_targets: 0 when there is no HUD picture
+ * of this frame). Each size keeps its own targets while it is on; off (the
+ * default), the list is drawn whole. */
+void khdays_raster3d_set_hud_apart(int on);
+int khdays_raster3d_rasterize_hud(const KhdaysFramePackage *package, int scale, int texture_smoothing);
+int khdays_raster3d_hud_targets(SDL_GPUTexture **color, SDL_GPUTexture **attr, int *columns);
+
 /* Sets a 3D list to draw instead of the package's (a picture between two logic frames); NULL goes back
  * to the package's. */
 struct KhdaysG3dList;

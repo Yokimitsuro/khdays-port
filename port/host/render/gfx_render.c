@@ -25,6 +25,8 @@ typedef struct Compose2dParams {
     uint32_t fog_color, fog_offset, fine, offset3d;
     uint32_t edge_colors[4];
     uint32_t fog_table[8];
+    uint32_t scale3d, width3d, height3d, smooth3d;  /* the 3D's own scale (the 2D finer than it) */
+    uint32_t hud3d, hud_width, hud_height, unused5; /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
 } Compose2dParams;
 
 /* onescreen.hlsl's constant buffer, register for register. */
@@ -38,6 +40,8 @@ typedef struct OneScreenParams {
     float backdrop_scale, backdrop_x, backdrop_y; /* picture texels per its texel, its top-left */
     uint32_t piece_count;                         /* an animated picture's pieces this frame */
     uint32_t animated, unused[3];                 /* 1: an animated picture (`backdrop` its ground) */
+    uint32_t scale3d, width3d, height3d, smooth3d; /* the 3D's own scale (the picture finer than it) */
+    uint32_t hud3d, unused5[3];                    /* the HUD's 3D apart (gpu_raster3d.h), at `scale` */
 } OneScreenParams;
 
 /* The areas of the package's 2D memory, each in a buffer of its own. */
@@ -73,7 +77,8 @@ static Uint32 area_bytes(int a)
 {
     return (Uint32)area[a].pages * (PAGE + (a <= BOBJ ? HD2D_PAGE : 0u));
 }
-static SDL_GPUTexture *dummy3d[2]; /* bound in place of the 3D targets at 1x */
+static SDL_GPUTexture *dummy3d[2];   /* bound in place of the 3D targets at 1x */
+static SDL_GPUTexture *dummy_hud[2]; /* and of the HUD's apart when there is none */
 static SDL_GPUTexture *screen[2];
 static int screen_scale, screen_columns[2]; /* their scale, and each one's width in DS columns */
 static SDL_Texture *wrapped[2];
@@ -216,7 +221,7 @@ static SDL_GPUComputePipeline *make_pipeline_of(const unsigned char *dxil, unsig
 static SDL_GPUComputePipeline *make_pipeline(void)
 {
     return make_pipeline_of(compose2d_cs_dxil, compose2d_cs_dxil_size, compose2d_cs_spirv, compose2d_cs_spirv_size,
-                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 3);
+                            compose2d_cs_msl, compose2d_cs_msl_size, COMPOSE2D_CS_ENTRY, 8, 5);
 }
 
 static void drop_shrunk(Shrunk *s)
@@ -491,7 +496,7 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
     shrinker = make_pipeline_of(shrink_cs_dxil, shrink_cs_dxil_size, shrink_cs_spirv, shrink_cs_spirv_size,
                                 shrink_cs_msl, shrink_cs_msl_size, SHRINK_CS_ENTRY, 0, 2);
     onescreen = make_pipeline_of(onescreen_cs_dxil, onescreen_cs_dxil_size, onescreen_cs_spirv, onescreen_cs_spirv_size,
-                                 onescreen_cs_msl, onescreen_cs_msl_size, ONESCREEN_CS_ENTRY, 4, 6);
+                                 onescreen_cs_msl, onescreen_cs_msl_size, ONESCREEN_CS_ENTRY, 4, 8);
     /* without it the screen blends show the DS's bank, as before */
     capturer = make_pipeline_of(capture_cs_dxil, capture_cs_dxil_size, capture_cs_spirv, capture_cs_spirv_size,
                                 capture_cs_msl, capture_cs_msl_size, CAPTURE_CS_ENTRY, 0, 3);
@@ -514,7 +519,8 @@ int khdays_gfx_render_open(SDL_GPUDevice *d)
         desc_bytes[e] = DESC_BYTES;
 
         dummy3d[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
-        ok = ok && desc[e] != NULL && dummy3d[e] != NULL;
+        dummy_hud[e] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, 1, 1);
+        ok = ok && desc[e] != NULL && dummy3d[e] != NULL && dummy_hud[e] != NULL;
     }
     layer3d = make_buffer(KHDAYS_FRAME_PIXELS * 4);
     ok = ok && layer3d != NULL && khdays_gpu_hd_open(d);
@@ -651,8 +657,11 @@ void khdays_gfx_render_close(void)
             SDL_ReleaseGPUBuffer(device, desc[e]);
         if (dummy3d[e] != NULL)
             SDL_ReleaseGPUTexture(device, dummy3d[e]);
+        if (dummy_hud[e] != NULL)
+            SDL_ReleaseGPUTexture(device, dummy_hud[e]);
         desc[e] = NULL;
         dummy3d[e] = NULL;
+        dummy_hud[e] = NULL;
     }
     if (layer3d != NULL)
         SDL_ReleaseGPUBuffer(device, layer3d);
@@ -949,7 +958,10 @@ static void hold_capture(const KhdaysFramePackage *p)
     drawn_any = 1;
 }
 
-static int draw(const KhdaysFramePackage *p, int scale, int raster, const KhdaysOneScreenDraw *one)
+/* The 3D read between its texels where the 2D is drawn finer than it (khdays_gfx_render_set_smooth_3d). */
+static int smooth3d;
+
+static int draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster, const KhdaysOneScreenDraw *one)
 {
     int changed[KHDAYS_FRAME_2D_PAGES], nchanged = 0;
     int hd_changed[KHDAYS_FRAME_HD2D_PAGES], nhd = 0;
@@ -1004,6 +1016,15 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         SDL_SetError("the 3D is not as wide as the 2D's description");
         return 0;
     }
+    if (raster && (scale3d < 1 || scale3d > scale)) {
+        SDL_SetError("the 3D is drawn finer than the 2D");
+        return 0;
+    }
+    /* the HUD's 3D drawn apart at the 2D's scale (gpu_raster3d.h), when the rest is coarser */
+    SDL_GPUTexture *hud_color = NULL, *hud_attr = NULL;
+    int hud_columns = 0;
+    const int hud = raster && scale3d < scale && khdays_raster3d_hud_targets(&hud_color, &hud_attr, &hud_columns) &&
+                    hud_columns == raster_columns;
     if (device == NULL || !(p->wants & KHDAYS_WANT_2D) || !screens(scale, columns_a)) {
         if (device != NULL && !(p->wants & KHDAYS_WANT_2D)) {
             SDL_SetError("the package has no 2D descriptions");
@@ -1344,7 +1365,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     }
     for (int e = 0; e < 2; ++e) {
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[5];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         const int b = e == 1;
@@ -1357,6 +1378,13 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
          * to know where the game's 3D is transparent (kd_split). */
         cp.source3d = e != 0 ? 0u : raster ? 2u : one != NULL && !whole_a ? 0u : has3d ? 1u : 0u;
         cp.offset3d = e == 0 && raster && one != NULL ? (uint32_t)(raster_columns - KHDAYS_FRAME_W) / 2u : 0u;
+        cp.scale3d = e == 0 && raster ? (uint32_t)scale3d : (uint32_t)scale;
+        cp.width3d = e == 0 && raster ? (uint32_t)(raster_columns * scale3d) : cp.width;
+        cp.height3d = e == 0 && raster ? (uint32_t)(KHDAYS_FRAME_H * scale3d) : cp.height;
+        cp.smooth3d = (uint32_t)smooth3d;
+        cp.hud3d = (uint32_t)(e == 0 && hud);
+        cp.hud_width = (uint32_t)(raster_columns * scale);
+        cp.hud_height = (uint32_t)(KHDAYS_FRAME_H * scale);
         if (e == 0 && raster) {
             const uint8_t *io3d = p->io3d;
             cp.disp3dcnt = p->disp3dcnt;
@@ -1386,7 +1414,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[1].texture = e == 0 && raster ? attr3d : dummy3d[1];
         io[2].texture = screen[e];
         io[2].cycle = true;
-        pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+        io[3].texture = e == 0 && hud ? hud_color : dummy_hud[0]; /* read only */
+        io[4].texture = e == 0 && hud ? hud_attr : dummy_hud[1];
+        pass = SDL_BeginGPUComputePass(cmd, io, 5, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1405,13 +1435,16 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     for (int i = 0; i < shop_count; ++i) {
         const int s = shop_s[i], v = shop_v[i], b = engine_on(p, s) == 1;
         Compose2dParams cp;
-        SDL_GPUStorageTextureReadWriteBinding io[3];
+        SDL_GPUStorageTextureReadWriteBinding io[5];
         SDL_GPUBuffer *in[8];
         SDL_GPUComputePass *pass;
         SDL_zero(cp);
         cp.scale = (uint32_t)shop_scale;
         cp.width = (uint32_t)(KHDAYS_FRAME_W * shop_scale);
         cp.height = (uint32_t)(KHDAYS_FRAME_H * shop_scale);
+        cp.scale3d = cp.scale; /* no 3D drawn on the card in them */
+        cp.width3d = cp.width;
+        cp.height3d = cp.height;
         /* its 3D at 1x, as two screens have it without the 3D drawn (engine A's) */
         cp.source3d = v == KHDAYS_SHOP_NORMAL && one->shop_with3d[s] && !b && has3d ? 1u : 0u;
         in[0] = shop_desc[s][v];
@@ -1427,7 +1460,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[1].texture = dummy3d[1];
         io[2].texture = shop_screen[s][v];
         io[2].cycle = true;
-        pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+        io[3].texture = dummy_hud[0];
+        io[4].texture = dummy_hud[1];
+        pass = SDL_BeginGPUComputePass(cmd, io, 5, NULL, 0);
         SDL_BindGPUComputePipeline(pass, compose);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 8);
         SDL_PushGPUComputeUniformData(cmd, 0, &cp, sizeof(cp));
@@ -1438,7 +1473,7 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     if (one != NULL) {
         /* the one-screen picture, from both screens and the 3D (onescreen.hlsl) */
         OneScreenParams op;
-        SDL_GPUStorageTextureReadWriteBinding io[6];
+        SDL_GPUStorageTextureReadWriteBinding io[8];
         SDL_GPUBuffer *in[4];
         SDL_GPUTexture *backdrop = backdrop_on_card(cmd, one);
         SDL_GPUComputePass *pass;
@@ -1450,6 +1485,11 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         op.width = (uint32_t)(one->columns * scale);
         op.height = (uint32_t)(KHDAYS_FRAME_H * scale);
         op.has3d = (uint32_t)(raster != 0);
+        op.scale3d = raster ? (uint32_t)scale3d : (uint32_t)scale;
+        op.width3d = raster ? (uint32_t)(one->columns * scale3d) : op.width;
+        op.height3d = raster ? (uint32_t)(KHDAYS_FRAME_H * scale3d) : op.height;
+        op.smooth3d = (uint32_t)smooth3d;
+        op.hud3d = (uint32_t)hud;
         if (raster) {
             const uint8_t *io3d = p->io3d;
             op.disp3dcnt = p->disp3dcnt;
@@ -1507,7 +1547,9 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
         io[4].texture = picture;
         io[4].cycle = true;
         io[5].texture = backdrop; /* read only */
-        pass = SDL_BeginGPUComputePass(cmd, io, 6, NULL, 0);
+        io[6].texture = hud ? hud_color : dummy_hud[0];
+        io[7].texture = hud ? hud_attr : dummy_hud[1];
+        pass = SDL_BeginGPUComputePass(cmd, io, 8, NULL, 0);
         SDL_BindGPUComputePipeline(pass, onescreen);
         SDL_BindGPUComputeStorageBuffers(pass, 0, in, 4);
         SDL_PushGPUComputeUniformData(cmd, 0, &op, sizeof(op));
@@ -1541,14 +1583,20 @@ static int draw(const KhdaysFramePackage *p, int scale, int raster, const Khdays
     return 1;
 }
 
-int khdays_gfx_render_draw(const KhdaysFramePackage *p, int scale, int raster)
+int khdays_gfx_render_draw(const KhdaysFramePackage *p, int scale, int scale3d, int raster)
 {
-    return draw(p, scale, raster, NULL);
+    return draw(p, scale, scale3d, raster, NULL);
 }
 
-int khdays_gfx_render_draw_one(const KhdaysFramePackage *p, int scale, int raster, const KhdaysOneScreenDraw *one)
+int khdays_gfx_render_draw_one(const KhdaysFramePackage *p, int scale, int scale3d, int raster,
+                               const KhdaysOneScreenDraw *one)
 {
-    return draw(p, scale, raster, one);
+    return draw(p, scale, scale3d, raster, one);
+}
+
+void khdays_gfx_render_set_smooth_3d(int on)
+{
+    smooth3d = on != 0;
 }
 
 SDL_Texture *khdays_gfx_render_picture(SDL_Renderer *renderer, int *columns)

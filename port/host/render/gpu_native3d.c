@@ -70,6 +70,10 @@ static SDL_GPUGraphicsPipeline *pipelines[KEYS], *rears[OUTPUTS], *clear_masks, 
 static SDL_GPUTextureFormat depth_format;
 static SDL_GPUTexture *target[TARGETS], *depth;
 static int target_w, target_h;
+/* A second size's targets kept aside while the 3D is drawn at two sizes a frame (khdays_native3d_keep_two:
+ * the HUD apart at the 2D's scale), so that neither is made again each frame. */
+static SDL_GPUTexture *spare_target[TARGETS], *spare_depth;
+static int spare_w, spare_h, keep_two;
 static int outputs; /* the prepared picture's OUT_* */
 static SDL_GPUBuffer *corner_buffer;
 static uint32_t corner_buffer_size;
@@ -342,10 +346,53 @@ static void drop_targets(void)
     target_w = target_h = 0;
 }
 
+static void swap_spare(void)
+{
+    SDL_GPUTexture *t;
+    int n;
+    for (int i = 0; i < TARGETS; ++i) {
+        t = target[i];
+        target[i] = spare_target[i];
+        spare_target[i] = t;
+    }
+    t = depth;
+    depth = spare_depth;
+    spare_depth = t;
+    n = target_w;
+    target_w = spare_w;
+    spare_w = n;
+    n = target_h;
+    target_h = spare_h;
+    spare_h = n;
+}
+
+static void drop_spare(void)
+{
+    swap_spare();
+    drop_targets();
+    swap_spare();
+}
+
+void khdays_native3d_keep_two(int on)
+{
+    keep_two = on != 0;
+    if (!keep_two && device != NULL) {
+        drop_spare();
+    }
+}
+
 static int make_targets(int w, int h)
 {
     if (w == target_w && h == target_h && depth != NULL) {
         return 1;
+    }
+    if (keep_two && w == spare_w && h == spare_h && spare_depth != NULL) {
+        swap_spare();
+        return 1;
+    }
+    if (keep_two && depth != NULL) {
+        drop_spare(); /* the size drawn last kept aside, the one before it let go */
+        swap_spare();
     }
     drop_targets();
     for (int i = 0; i < TARGETS; ++i) {
@@ -380,6 +427,7 @@ void khdays_native3d_close(void)
         return;
     }
     drop_targets();
+    drop_spare();
     for (int i = 0; i < KEYS; ++i) {
         if (pipelines[i] != NULL) {
             SDL_ReleaseGPUGraphicsPipeline(device, pipelines[i]);
