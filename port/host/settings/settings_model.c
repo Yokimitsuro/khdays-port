@@ -122,13 +122,11 @@ void khdays_model_refresh(const KhdaysProfile *work)
         languages[l] = khdays_language_name(l);
     }
     {
-        /* each multiple with the 3D's lines: 2x is twice the DS's picture, not the window's */
-        static char names[RESOLUTION_CHOICES - 2][48];
+        static char names[RESOLUTION_CHOICES - 2][8];
         resolutions[0] = "1x (DS)";
         resolutions[1] = khdays_text(TXT_VIDEO_RESOLUTION_WINDOW);
         for (int i = 2; i < RESOLUTION_CHOICES; ++i) {
-            SDL_snprintf(names[i - 2], sizeof(names[i - 2]), khdays_text(TXT_VIDEO_RESOLUTION_LINES),
-                         resolution_values[i], resolution_values[i] * 192);
+            SDL_snprintf(names[i - 2], sizeof(names[i - 2]), "%dx", resolution_values[i]);
             resolutions[i] = names[i - 2];
         }
     }

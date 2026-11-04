@@ -488,9 +488,6 @@ static const char *const texts[TXT_COUNT][5] = {
                                    "ventana; menús y textos conservan los suyos."},
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
-    /* %d: the multiple, then the 3D's lines (the DS's 192 times it) */
-    [TXT_VIDEO_RESOLUTION_LINES] = {"%dx (%d lines)", "%dx (%d lignes)", "%dx (%d Zeilen)", "%dx (%d righe)",
-                                    "%dx (%d líneas)"},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
     [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
                                      "card's work. The HUD, the menus and the text stay sharp.",
