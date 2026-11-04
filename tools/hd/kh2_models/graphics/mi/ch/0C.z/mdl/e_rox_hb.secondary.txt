@@ -35,7 +35,7 @@ collider heel_r   capsule 18 length 11 radius 6 6 offset 0 4.3 0 tags legs
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
 collider hand_l   sphere 133 offset 7 0 0 radius 4.5 side rest tags hands left_hand
-# the thumb, its root to past its tip: the cuff's thumb-side strip starts outside it (`turn ... clear`)
+# the thumb, its root to past its tip
 collider thumb_l  capsule 139 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
 collider arm_r    capsule 228 229 fit 0.85 side motion tags arms
 collider forearm_r capsule 229 230 fit 0.85 side motion tags arms
@@ -99,8 +99,7 @@ group coat surface preset kh2_coat
   # `shell_push`: the shell its places make pushed out of the calves (their colliders' `calves` tag, from a
   # quarter of the way down: the knee left on the game's knee vertex), the coat's thickness clear, the slit
   # left open. The places move, not the cloth, so nothing squeezes it: the backs of the calves came through
-  # between the back and side strips (141 of 1524 cutscene frames offline; pushed, 1). (`leg_carry` made it
-  # worse: both legs averaged put the back's middle where one calf swings through.)
+  # between the back and side strips.
   shell_push calves from 0.25
   # kh2_coat's material (its damping, inertia and rows, stiff at the belt, free at the hem), moving in the
   # hips' frame: the shell (the legs) pushes it without throwing it. Its pull toward its places evener

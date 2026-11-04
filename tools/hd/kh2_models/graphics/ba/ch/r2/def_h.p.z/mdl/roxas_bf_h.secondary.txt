@@ -34,7 +34,7 @@ collider heel_r   capsule 18 length 11 radius 6 6 offset 0 4.3 0 tags legs
 collider arm_l    capsule 126 127 fit 0.85 side motion tags arms
 collider forearm_l capsule 127 128 fit 0.85 side motion tags arms
 collider hand_l   sphere 148 offset 7 0 0 radius 4.5 side rest tags hands left_hand
-# the thumb, its root to past its tip: the cuff's thumb-side strip starts outside it (`turn ... clear`)
+# the thumb, its root to past its tip
 collider thumb_l  capsule 154 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
 collider arm_r    capsule 199 200 fit 0.85 side motion tags arms
 collider forearm_r capsule 200 201 fit 0.85 side motion tags arms

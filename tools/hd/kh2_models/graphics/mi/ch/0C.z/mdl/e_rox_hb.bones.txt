@@ -110,7 +110,7 @@ cuff kh2_233 kh2_250 kh2_234 kh2_243 kh2_240 kh2_237
 # clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
 cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
 # the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees, degrees it always opens
-cuff_thumb 0.5 28 0
+cuff_thumb 0.5 28
 cuff_pose 110 2.66
 cuff_pose_bone kh2_115 -0.02 0.00 0.00 0.669 1.000 1.000
 cuff_pose_bone kh2_118 -0.03 16.22 -0.01 1.258 1.000 1.000

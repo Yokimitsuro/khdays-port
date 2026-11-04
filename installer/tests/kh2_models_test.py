@@ -48,10 +48,12 @@ class Models(unittest.TestCase):
             self.assertEqual((place / "P_EX110.mset").read_bytes(), b"P_EX110.mset")
             self.assertEqual((mod / "graphics/ba/ch/ro/w_.p2#0/mdl/ro_w00600/-0.dds").read_bytes(), b"W_EX010.mdlx 0")
             self.assertEqual((mod / "graphics/ba/ch/r2/def_h.p.z/mdl/roxas_bf_h.mdlx").read_bytes(), b"B_EX390.mdlx")
-            for source in models.SETTINGS.rglob("*"):
+            for source in (models.SETTINGS / "graphics").rglob("*"):
                 if source.is_file():
                     target = mod / source.relative_to(models.SETTINGS)
                     self.assertEqual(target.read_bytes(), source.read_bytes())
+            for folder, *_ in models.MODELS:
+                self.assertEqual((mod / folder / models.PRESETS.name).read_bytes(), models.PRESETS.read_bytes())
 
     def test_a_missing_file_is_named(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -69,7 +71,8 @@ class Models(unittest.TestCase):
             for settings in place.glob("*.txt"):
                 for line in NAMES_A_FILE.findall(settings.read_text(encoding="utf-8")):
                     for name in filter(None, line):
-                        self.assertTrue(name in provided or (place / name).is_file(), f"{settings.name}: {name}")
+                        known = name in provided or name == models.PRESETS.name or (place / name).is_file()
+                        self.assertTrue(known, f"{settings.name}: {name}")
 
     def test_every_source_is_used(self):
         used = {kh2 for _, _, kh2, _ in models.MODELS} | {n for *_, files in models.MODELS for n in files}

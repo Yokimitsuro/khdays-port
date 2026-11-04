@@ -13,6 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SETTINGS = HERE / "kh2_models"  # the mod's tree: only the port's own text files
+PRESETS = SETTINGS / "kh2_secondary_presets.txt"  # one here, beside each model in the mod (`include` reads it there)
 
 FIRST, FIFTH = "first", "fifth"
 # Which archive holds each file, under obj/. Verified on the Steam copy: each the same, byte for byte, as the
@@ -68,7 +69,8 @@ def make(first: Path, fifth: Path, mod: Path) -> None:
             sys.exit(f"kh2_models: {pictures} has no HD pictures: extract them from your 1.5+2.5 ReMIX")
         for picture in found:
             put(picture, place / model / picture.name)
-    for source in sorted(SETTINGS.rglob("*")):
+        put(PRESETS, place / PRESETS.name)
+    for source in sorted((SETTINGS / "graphics").rglob("*")):
         if source.is_file():
             put(source, mod / source.relative_to(SETTINGS))
 
