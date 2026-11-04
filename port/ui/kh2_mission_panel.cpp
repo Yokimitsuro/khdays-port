@@ -758,7 +758,7 @@ extern "C" void khdays_ui_mission_panel_frame(unsigned frame)
     now = frame;
     khdays_situation_take(&context, frame);
     bool event = context.event_status >= 0 && !(context.event_status & 8) &&
-                 (khdays_situation_ran(&context, KHDAYS_UPD_Ov023_SceneRun) || context.pause_mode);
+                 (context.event_runs != 0u || context.pause_mode);
     allowed = context.scene == 2 && (context.overlays & (1ull << 2)) && !context.movie && !context.tutorial && !event &&
               context.mission_start != 10 && context.camp_screen == KHDAYS_CAMP_NONE &&
               !(context.overlays & ((1ull << 8) | (1ull << 25) | (1ull << 26) | (1ull << 27)));

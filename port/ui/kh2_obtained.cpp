@@ -210,7 +210,7 @@ struct Notification {
         khdays_situation_take(&context, frame);
         const auto overlay = [&](int id) { return (context.overlays & (1ull << id)) != 0; };
         const bool event = context.event_status >= 0 && !(context.event_status & 8) &&
-                           (khdays_situation_ran(&context, KHDAYS_UPD_Ov023_SceneRun) || context.pause_mode);
+                           (context.event_runs != 0u || context.pause_mode);
         const bool field = context.scene == 2 && overlay(2) && context.camp_screen == KHDAYS_CAMP_NONE && !overlay(8) &&
                            !overlay(25) && !overlay(26) && !overlay(27);
         const bool was_allowed = allowed;

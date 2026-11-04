@@ -1535,7 +1535,7 @@ void khdays_display_vblank(u32 frame)
         /* the 3D on both screens: the game swaps engine A's screen (POWCNT1 bit 15) every VBlank,
          * skipping one now and then when its frame runs late */
         const int a_upper = (IO16(0x304) & 0x8000) != 0;
-        engine_swaps = khdays_situation_swaps(&swap_history, a_upper != engine_upper);
+        engine_swaps = khdays_situation_recent(&swap_history, a_upper != engine_upper);
         engine_upper = a_upper;
     }
     if (InterlockedExchange(&mark_requests, 0) != 0 && mark_frame == ~0u) {

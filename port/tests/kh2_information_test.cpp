@@ -265,7 +265,7 @@ void context_tests()
         case 7: situation.mission_start = 10; break;
         case 8:
             situation.event_status = 0;
-            situation.updates[KHDAYS_UPD_Ov023_SceneRun / 64] |= 1ull << (KHDAYS_UPD_Ov023_SceneRun % 64);
+            situation.event_runs = 1;
             break;
         }
         step(false);
