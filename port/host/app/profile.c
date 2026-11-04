@@ -1594,7 +1594,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "subtitles = %s\n"
             "# picture_pace: smooth (the 3D at the monitor's rate, up to a logic frame behind) or ds\n"
             "picture_pace = %s\n"
-            "# show_fps: the pictures and the game's frames a second, in a corner\n"
+            "# show_fps: the pictures drawn a second, in a corner\n"
             "show_fps = %s\n"
             "# backend: the graphics API -- auto (Direct3D 12 on Windows, Vulkan under Wine or Proton),\n"
             "#          direct3d12 or vulkan\n"

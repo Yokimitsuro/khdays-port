@@ -463,7 +463,7 @@ static void theater_music_line(const char *line)
  * it). */
 static void redraw(SDL_Window *window, SDL_Renderer *renderer)
 {
-    int pictures, frames, fps, corner_rows;
+    int pictures, fps, corner_rows;
     char *ping;
     const Uint64 began = SDL_GetTicksNS();
     Uint64 drawn;
@@ -499,9 +499,9 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) && !khdays_movie_hd_showing()) {
         draw_voice_subtitles(renderer); /* a monologue's voice: what it says */
     }
-    fps = khdays_present_fps(&pictures, &frames);
+    fps = khdays_present_fps(&pictures);
     if (fps) {
-        khdays_settings_fps_draw(renderer, pictures, frames);
+        khdays_settings_fps_draw(renderer, pictures);
     }
     ping = ping_line();
     corner_rows = (fps != 0) + (ping != NULL);

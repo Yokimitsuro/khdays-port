@@ -677,7 +677,7 @@ static const char *const texts[TXT_COUNT][5] = {
                              "l'API grafica %s non può funzionare qui (%s); si usa la scelta del sistema",
                              "la API gráfica %s no puede funcionar aquí (%s); se usa la elección del sistema"},
     /* the corner's line: the pictures a second, then the game's frames a second */
-    [TXT_FPS_LINE] = {"%d FPS  game %d", "%d IPS  jeu %d", "%d FPS  Spiel %d", "%d FPS  gioco %d", "%d FPS  juego %d"},
+    [TXT_FPS_LINE] = {"%d FPS", "%d IPS", "%d FPS", "%d FPS", "%d FPS"},
     [TXT_VIDEO_NEEDS_GPU] = {"Needs the graphics card.", "Nécessite la carte graphique.", "Braucht die Grafikkarte.",
                              "Richiede la scheda grafica.", "Necesita la tarjeta gráfica."},
     [TXT_RESTORE_VIDEO] = {"Restore the video settings", "Rétablir la vidéo", "Video zurücksetzen",

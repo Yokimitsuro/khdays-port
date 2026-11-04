@@ -759,7 +759,7 @@ static void draw_wipe(const SDL_FRect *at)
     }
 }
 
-static void fps_count(int picture); /* Video: Show FPS (below) */
+static void fps_count(void); /* Video: Show FPS (below) */
 
 /* How the camera went from list `a` to list `b` (their view matrices: a world point w is w R + t in
  * the camera's space, which looks down -z): the cosine of the angle it turned, how far its matrix's
@@ -831,7 +831,6 @@ static void note_logic_frame(const KhdaysFramePackage *p)
     } else if (logic_count < 2) {
         ++logic_count;
     }
-    fps_count(0);
     logic_time[1] = p->list3d_time;
     logic_arrival = p->time; /* the VBlank of the package that brought it */
     logic_serial = p->list3d_serial;
@@ -923,35 +922,27 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
 
 static void present(const KhdaysFramePackage *p, int first);
 
-/* Video: Show FPS -- counts the pictures shown (khdays_present_draw) and the
- * game frames that arrived, over half a second at a time. */
-static unsigned fps_pictures, fps_frames;
-static int fps_shown[2];
+/* Video: Show FPS -- counts the pictures shown (khdays_present_draw), over half a second at a time. */
+static unsigned fps_pictures;
+static int fps_shown;
 static Uint64 fps_since;
 
-static void fps_count(int picture)
+static void fps_count(void)
 {
     const Uint64 now = SDL_GetTicksNS();
-    if (picture) {
-        ++fps_pictures;
-    } else {
-        ++fps_frames;
-    }
+    ++fps_pictures;
     if (fps_since == 0) {
         fps_since = now;
     } else if (now - fps_since >= 500000000u) {
-        const double seconds = (double)(now - fps_since) / 1e9;
-        fps_shown[0] = (int)(fps_pictures / seconds + 0.5);
-        fps_shown[1] = (int)(fps_frames / seconds + 0.5);
-        fps_pictures = fps_frames = 0;
+        fps_shown = (int)(fps_pictures / ((double)(now - fps_since) / 1e9) + 0.5);
+        fps_pictures = 0;
         fps_since = now;
     }
 }
 
-int khdays_present_fps(int *pictures, int *frames)
+int khdays_present_fps(int *pictures)
 {
-    *pictures = fps_shown[0];
-    *frames = fps_shown[1];
+    *pictures = fps_shown;
     return video.show_fps;
 }
 
@@ -1569,7 +1560,7 @@ void khdays_present_draw(void)
     if (device_lost) {
         return;
     }
-    fps_count(1);
+    fps_count();
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     /* the game's pause over a scene's paused video: on one screen its panel over the video's picture

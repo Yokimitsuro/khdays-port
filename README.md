@@ -339,7 +339,7 @@ once:
   game frame. Camera cuts and scene changes are not smoothed across. The 2D
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
-  second and the game's own frames a second.
+  second.
 - **Graphics API**: what draws the picture -- automatic (Direct3D 12 on
   Windows, Vulkan on a Steam Deck or under Proton), Direct3D 12 or Vulkan,
   changed at once. If
