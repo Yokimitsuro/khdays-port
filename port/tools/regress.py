@@ -222,6 +222,20 @@ WALKS = [
             "mission end\tcleared",
         ),
     ),
+    # ... and a second wave of bosses drawn as several models (port/tests/mods_v2/multiplayer_boss_waves: two each of
+    # Darkside, Dual Blade and Guard Armor once the first wave's Shadow is defeated) played by a host and a guest,
+    # both from the player's save: the host picks the mod's mission (the waves walk's route through the members'
+    # screen) and attacks. Its frames' messages pass the DS's 480 bytes, which the guest's bosses' poses were lost to
+    Walk(
+        "multiplayer_boss_waves",
+        300,
+        player_save=True,
+        players=2,
+        script="multiplayer_boss",
+        mods="port/tests/mods_v2/multiplayer_boss_waves",
+        window=True,
+        marks=("the mod's mission\t3595",),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

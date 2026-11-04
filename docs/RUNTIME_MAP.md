@@ -3810,6 +3810,20 @@ message by its gate, the first halfword of the game's packet on port 12):
   third above the one-screen shape's top of 84 of the time; with the
   battle's member count at 4 (`data_ov022_020b2e78`[1] + 0x34, what
   `func_ov022_020882f8` returns) the shape starts at 64.
+- **A wave of bosses on a guest (2026-11-04).** A mod's mission whose second
+  wave makes two each of Darkside, Dual Blade and Guard Armor (the walk
+  `multiplayer_boss_waves`, two copies on one PC): on the guest the first Dual
+  Blade, its parts and the second Darkside's summons (ids 21 to 41) stood at
+  0,0,0 with full HP, the low byte of their +0x60 flags never set -- in their
+  T pose -- while the host's fought. Their poses (`Ov107_SendPoseMessage`,
+  about 32 bytes each) went in the frame's buffer of 0x1e0 bytes
+  (`MsgQueue_Enqueue`), which dropped what was past it. With the buffer grown
+  (to 3,840 bytes), a frame of 1,982 bytes was copied past the guest's slot for
+  frames received (`ChannelBuf_Append`; `Session_LayoutPacketSlots` gave it
+  0x3c0) and the guest stopped (a call through a function reference 0x1 from
+  `CmdPacket_Dispatch`). With both grown, every boss's position, HP and state
+  byte the same on both copies. The 32 reliable slots (`MsgQueue_Post`) never
+  filled in the walk. `MULTIPLAYER.md`, "The reliable messages".
 
 ### 16.2 The port's list of rooms (2026-10-09)
 

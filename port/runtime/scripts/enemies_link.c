@@ -199,6 +199,22 @@ static unsigned ref_of(const void *p)
     return p != NULL ? (unsigned)KHDAYS_REF(p) : 0;
 }
 
+static unsigned ids_table, ids_count; /* the actors' table by id, and the ids it was made for */
+
+void khdays_enemies_ids_built(const void *table, int count)
+{
+    ids_table = ref_of(table);
+    ids_count = count > 0 ? (unsigned)count : 0u;
+    if (traced()) {
+        fprintf(stderr, "enemies: f%u the actors' table by id made for %u ids\n", khdays_link_frame(), ids_count);
+    }
+}
+
+int khdays_enemies_ids_room(const void *table)
+{
+    return ref_of(table) == ids_table ? (int)ids_count : 0;
+}
+
 static int clamp(long long v, int low, int high)
 {
     return v < low ? low : v > high ? high : (int)v;

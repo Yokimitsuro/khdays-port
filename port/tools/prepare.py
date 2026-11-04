@@ -1710,6 +1710,128 @@ HOOKS = {
             "      if (khdays_link_music_request(3, 0, arg)) return; }\n",
         )
     ],
+    # The game's reliable messages past its 32 slots (runtime/net/msg_overflow.h): a message the slots have no room
+    # for waits, in order and numbered as the game would number it, and takes a slot as one frees -- the game lost it
+    # (MsgQueue_Post's 0xffff), and a mod's wave can make any number of enemies at once.
+    "main@02031384": [
+        (  # MsgQueue_Post: behind the waiting ones, or waiting when the slots are taken
+            "    if (idx == 0x20) {\n",
+            "    { extern int khdays_msgqueue_waiting(void);\n"
+            "      extern void khdays_msgqueue_drain(void *ctx);\n"
+            "      extern unsigned short khdays_msgqueue_wait(void *ctx, int kind, const void *cmd, unsigned short size);\n"
+            "      if (khdays_msgqueue_waiting()) {\n"
+            "          khdays_msgqueue_drain(ctx);\n"
+            "          freeMask = ctx->freeMask;\n"
+            "          idx = Clz(freeMask);\n"
+            "      }\n"
+            "      if (khdays_msgqueue_waiting() || idx == 0x20) {\n"
+            "          return khdays_msgqueue_wait(ctx, nKind, pCmd, nSize);\n"
+            "      } }\n"
+            "    if (idx == 0x20) {\n",
+        )
+    ],
+    # (and a frame's messages past the DS's 0x1e0 bytes, the size of its wireless frame: the buffer grows -- the game
+    # dropped them, and with many enemies standing the last ones' poses never reached a guest, frame after frame: a
+    # second wave's bosses stood in their T pose where they came out)
+    "main@02030fdc": [
+        (  # MsgQueue_Enqueue: the frame's buffer as large as the messages need
+            "    if (need >= cap) return 0;\n    if (buf->state == 1) return 0;\n",
+            "    { extern int khdays_msgframe_room(const void *buffer, int room);\n"
+            "      extern void khdays_msgframe_grown(const void *old, const void *buffer, int room);\n"
+            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
+            "      extern int ExpHeap_Free(int block, int *heap);\n"
+            "      extern int **data_0204c024;\n"
+            "      if (cap == 0x1e0) {\n"
+            "          cap = khdays_msgframe_room(buf->pBuffer, cap);\n"
+            "      }\n"
+            "      if (need >= cap && cap >= 0x1e0 && buf->state != 1) {\n"
+            "          int room = cap;\n"
+            "          unsigned char *more;\n"
+            "          while (room <= need && room < 0x8000) {\n"
+            "              room *= 2;\n"
+            "          }\n"
+            "          if (room <= need) {\n"
+            "              room = 0xffe0; /* (its sizes are 16 bits) */\n"
+            "          }\n"
+            "          more = need < room ? (unsigned char *)ExpHeap_AllocOrDefault((unsigned)room, 0x20, data_0204c024) : 0;\n"
+            "          if (more != 0) {\n"
+            "              MI_CpuCopy8(buf->pBuffer, more, (unsigned int)off);\n"
+            "              ExpHeap_Free((int)buf->pBuffer, (int *)data_0204c024);\n"
+            "              khdays_msgframe_grown(buf->pBuffer, more, room);\n"
+            "              buf->pBuffer = more;\n"
+            "              cap = room;\n"
+            "          }\n"
+            "      } }\n"
+            "    if (need >= cap) return 0;\n    if (buf->state == 1) return 0;\n",
+        )
+    ],
+    # (the frames received: each player's slot held the DS's frames, 0x3c0 or 0x3d8 bytes from a fixed area, and
+    # ChannelBuf_Append copied past it -- a grown frame wrote over what follows; the slot grows instead)
+    "itcm@01fffa60": [
+        (  # ChannelBuf_Append: the slot as large as what it holds
+            "    dst = *(char **)slot;\n",
+            "    { extern int khdays_msgslot_grown(const void *old, const void *buffer, unsigned int room, unsigned int need);\n"
+            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
+            "      extern int ExpHeap_Free(int block, int *heap);\n"
+            "      extern int **data_0204c024;\n"
+            "      extern void MI_CpuCopy8(const void *src, void *dst, unsigned int size);\n"
+            "      const unsigned int used = *(unsigned short *)(slot + 4), need = used + size;\n"
+            "      if (need > *(unsigned short *)(slot + 6)) {\n"
+            "          unsigned int room = *(unsigned short *)(slot + 6);\n"
+            "          char *more;\n"
+            "          while (room < need && room < 0x8000) {\n"
+            "              room = room * 2;\n"
+            "          }\n"
+            "          if (room < need) {\n"
+            "              room = 0xfffc; /* (its sizes are 16 bits) */\n"
+            "          }\n"
+            "          more = need <= room ? (char *)ExpHeap_AllocOrDefault(room, 0x20, data_0204c024) : 0;\n"
+            "          if (more == 0) {\n"
+            "              return; /* no room: dropped */\n"
+            "          }\n"
+            "          MI_CpuCopy8(*(char **)slot, more, used);\n"
+            "          if (khdays_msgslot_grown(*(char **)slot, more, room, need)) {\n"
+            "              ExpHeap_Free((int)*(char **)slot, (int *)data_0204c024);\n"
+            "          }\n"
+            "          *(char **)slot = more;\n"
+            "          *(unsigned short *)(slot + 6) = (unsigned short)room;\n"
+            "      } }\n"
+            "    dst = *(char **)slot;\n",
+        )
+    ],
+    "main@020308a0": [
+        (  # Session_LayoutPacketSlots: each message's copy as large as a message's 10-bit size
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x3c0, data_0204c024);\n",
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x400, data_0204c024);\n",
+        )
+    ],
+    "main@02031130": [
+        (  # MsgQueue_ResendForPeer: each frame, the waiting ones into the slots freed
+            "    if (*(unsigned int *)((char *)base + 0xc) == 0xffffffff) return;\n",
+            "    { extern void khdays_msgqueue_drain(void *ctx); khdays_msgqueue_drain((char *)base + 0xc); }\n"
+            "    if (*(unsigned int *)((char *)base + 0xc) == 0xffffffff) return;\n",
+        )
+    ],
+    "main@02031440": [
+        (  # MsgQueue_Contains: a waiting message is not had by everyone yet
+            "    idx = Clz(used);\n    while (idx < 0x20) {\n",
+            "    { extern int khdays_msgqueue_holds(unsigned int handle); if (khdays_msgqueue_holds(id)) return 1; }\n"
+            "    idx = Clz(used);\n    while (idx < 0x20) {\n",
+        )
+    ],
+    "main@02030e7c": [
+        (  # MsgQueue_Init_2: a new queue, nothing waiting
+            "    gMsgQueue = ctx[n];\n",
+            "    gMsgQueue = ctx[n];\n"
+            "    { extern void khdays_msgqueue_reset(void); khdays_msgqueue_reset(); }\n",
+        )
+    ],
+    "main@02030f58": [
+        (  # Session_Shutdown: the queue gone, nothing waiting
+            "end:\n    gMsgQueue = 0;\n",
+            "end:\n    { extern void khdays_msgqueue_reset(void); khdays_msgqueue_reset(); }\n    gMsgQueue = 0;\n",
+        )
+    ],
     "main@020336e8": [
         (  # SoundMgr_QueueRequest: requests 4 and 5 (SoundMgr_SwitchBgm, SoundMgr_SwitchBgmResume)
             "    unsigned char *ptr;\n",
@@ -1781,6 +1903,30 @@ HOOKS = {
             "    Ov002Res *r = data_ov002_0207fa14;\n"
             "    { extern void khdays_enemies_area_left(void); khdays_enemies_area_left(); }\n",
         )
+    ],
+    # The actors' table by id (runtime/scripts/enemies_link.h khdays_enemies_ids_room): made with the ids there
+    # were then, it was read for any id under the count now, past its end for an actor made after it -- a mission's
+    # later wave, a mod's enemy. A guest finds the host's messages' actors through it: a later actor's went to
+    # whatever lay past the table.
+    "ov107@020c9bd4": [
+        (  # Ov107_Scene_BuildIdTable: the ids it is made for
+            "    *(void **)(ctx + 0x48) = CallocInstance(*(int *)(ctx + 0x24) * 4);\n",
+            "    *(void **)(ctx + 0x48) = CallocInstance(*(int *)(ctx + 0x24) * 4);\n"
+            "    { extern void khdays_enemies_ids_built(const void *table, int count);\n"
+            "      khdays_enemies_ids_built(*(void **)(ctx + 0x48), *(int *)(ctx + 0x24)); }\n",
+        )
+    ],
+    "ov107@020c9b68": [
+        (  # Ov107_FindMessageHandler: the table for the ids it holds, the actors' list for the others
+            "    if (mgr->table != 0 && id < (u16)mgr->count) {\n",
+            "    if (mgr->table != 0 && id < (u16)mgr->count &&\n"
+            "        id < (unsigned int)khdays_enemies_ids_room(mgr->table)) {\n",
+        ),
+        (
+            "struct HandlerMgr *mgr = gOv107ActorManager;\n",
+            "struct HandlerMgr *mgr = gOv107ActorManager;\n"
+            "    extern int khdays_enemies_ids_room(const void *table);\n",
+        ),
     ],
 }
 

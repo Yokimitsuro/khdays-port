@@ -682,6 +682,7 @@ add_executable(khdays-native
     host/movies/music_schedule.c
     runtime/net/net_session.c          # the multiplayer's session
     runtime/net/mp_predict.c           # a guest's prediction of its own character
+    runtime/net/msg_overflow.c         # the game's reliable messages past its 32 slots
     host/net/net_win.c                 # ... on Winsock
     ui/elements.c                  # the port's own presentation
     ui/layout.c

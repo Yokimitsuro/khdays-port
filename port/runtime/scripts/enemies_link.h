@@ -64,4 +64,10 @@ void khdays_enemies_hold_mission(int on);
 /* The frame point (scripts.c): the enemies sent away settled, the field left. */
 void khdays_enemies_frame(void);
 
+/* The actors' table by id (Ov107_Scene_BuildIdTable, prepare.py's joins): made for `count` ids, and how many
+ * ids `table` holds (0 for another): Ov107_FindMessageHandler reads it for those only and finds an actor made
+ * after it -- a later wave's, a mod's -- in the actors' list, as with no table. */
+void khdays_enemies_ids_built(const void *table, int count);
+int khdays_enemies_ids_room(const void *table);
+
 #endif
