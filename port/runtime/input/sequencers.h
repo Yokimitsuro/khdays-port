@@ -1,6 +1,7 @@
-/* The command menu on the gamepad's D-pad (sequencers.c), pure C: a press of a menu direction becomes
- * the presses the game's Config option 6 wants (X, or X held with a direction), one game frame a step
- * (docs/PLATFORM.md, "The controls the DS did not have"). */
+/* The command menu on the gamepad's D-pad (sequencers.c), pure C: a press of a menu direction is a step
+ * of the menu, which Ov022_UpdateCommandInput takes to the game's own cursor routines that frame
+ * (prepare.py; docs/PLATFORM.md, "The controls the DS did not have") -- not the DS's presses for it,
+ * which hold X and so stop Roxas while they play. Lock-on on its own buttons plays the DS's presses. */
 #ifndef KHDAYS_SEQUENCERS_H
 #define KHDAYS_SEQUENCERS_H
 
@@ -8,31 +9,24 @@
 
 enum { KHDAYS_MENU_UP, KHDAYS_MENU_DOWN, KHDAYS_MENU_LEFT, KHDAYS_MENU_RIGHT, KHDAYS_MENU_DIRECTIONS };
 
-typedef struct KhdaysMenuSequencer {
-    int direction;         /* the direction being played, -1 for none */
-    int step;              /* its next step */
-    int queued;            /* the direction pressed while one played, -1 for none (one at most) */
-    uint32_t last_actions; /* the menu directions held last frame (to see new presses) */
-} KhdaysMenuSequencer;
+typedef struct KhdaysMenuStepper {
+    int held;   /* the direction held last frame, -1 for none */
+    int frames; /* the game frames it has been held since its press */
+} KhdaysMenuStepper;
 
-/* What the sequencer gives the game this frame. */
-typedef struct KhdaysMenuFrame {
-    uint16_t buttons; /* DS buttons to press (added to the player's) */
-    int dpad_own;     /* 1: the frame's D-pad bits are these alone (the player's are dropped) */
-} KhdaysMenuFrame;
+void khdays_menu_stepper_reset(KhdaysMenuStepper *s);
 
-void khdays_menu_sequencer_reset(KhdaysMenuSequencer *s);
-
-/* Whether the game can move through the menu in this direction under this
- * option 6 at all (option 6 = 1 only moves down). */
+/* Whether the game's menu moves in this direction under this Config option 6 at all (option 6 = 1
+ * only moves down). */
 int khdays_menu_direction_exists(int direction, int command_scheme);
 
-/* One game frame. `directions`: a bit per menu direction held now. `field`: the player had field
- * control in the game's last frame (without it nothing plays and a sequence stops).
- * `command_scheme`, `lockon_scheme`: Config options 6 and 0. A sequence waits while the player holds
- * X, or what makes X a shortcut (L with option 0 = 0, L and R with option 0 = 1). */
-KhdaysMenuFrame khdays_menu_sequencer_frame(KhdaysMenuSequencer *s, uint32_t directions, int field, int command_scheme,
-                                            int lockon_scheme, uint16_t held);
+/* One game frame: the direction the menu steps (KHDAYS_MENU_*), -1 for none -- a new press, and up and
+ * down again while held (after KHDAYS_MENU_REPEAT_AFTER game frames, every KHDAYS_MENU_REPEAT_EVERY).
+ * `directions`: a bit per menu direction held. `field`: the player had field control in the game's last
+ * frame (without it nothing steps). `command_scheme`: Config option 6. */
+#define KHDAYS_MENU_REPEAT_AFTER 8
+#define KHDAYS_MENU_REPEAT_EVERY 2
+int khdays_menu_stepper_frame(KhdaysMenuStepper *s, uint32_t directions, int field, int command_scheme);
 
 /* Lock-on on its own buttons: the presses of R (twice to lock or let go, once for the next target) and
  * L (Type B's previous target) the game's Ov022_ReadSelectionInput takes (docs/PLATFORM.md). */

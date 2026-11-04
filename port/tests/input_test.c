@@ -1955,70 +1955,41 @@ static void test_analog_axes(void)
     CHECK(out.move_x == 0 && out.move_y == 0 && out.ds_buttons == 0);
 }
 
-static KhdaysMenuFrame menu_frame(KhdaysMenuSequencer *s, int direction, int scheme, uint16_t held)
+/* The D-pad's command menu is a step a press (and up and down again while held), for the game's own
+ * cursor routines. */
+static void test_menu_stepper(void)
 {
-    return khdays_menu_sequencer_frame(s, direction >= 0 ? 1u << direction : 0, 1, scheme, 0, held);
-}
+    KhdaysMenuStepper s;
+    const uint32_t down = 1u << KHDAYS_MENU_DOWN, left = 1u << KHDAYS_MENU_LEFT, up = 1u << KHDAYS_MENU_UP;
 
-/* The D-pad's command menu is the DS's own presses for it. */
-static void test_menu_sequencer(void)
-{
-    const uint16_t X = DS(KHDAYS_ACT_X), DOWN = DS(KHDAYS_ACT_DOWN), UP = DS(KHDAYS_ACT_UP);
-    KhdaysMenuSequencer s;
-    KhdaysMenuFrame f;
+    /* A press: a step; held, down again after the delay, then every other frame. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    for (int f = 1; f < KHDAYS_MENU_REPEAT_AFTER; ++f) {
+        CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
+    }
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    CHECK(khdays_menu_stepper_frame(&s, 0, 1, 0) == -1);
 
-    /* Option 6 = 0: X alone, then X with the direction, then let go. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == X && f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0); /* still held: no second press */
-    CHECK(f.buttons == (X | DOWN) && f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0 && !f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0);
+    /* Left and right change column once however long held. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, left, 1, 0) == KHDAYS_MENU_LEFT);
+    for (int f = 0; f < 3 * KHDAYS_MENU_REPEAT_AFTER; ++f) {
+        CHECK(khdays_menu_stepper_frame(&s, left, 1, 0) == -1);
+    }
 
-    /* Option 6 = 1: a press of X moves down; up has no DS press. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 1, 0);
-    CHECK(f.buttons == X);
-    f = menu_frame(&s, -1, 1, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_UP, 1, 0);
-    CHECK(f.buttons == 0 && !f.dpad_own);
+    /* Option 6 = 1 only moves down. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, up, 1, 1) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 1) == KHDAYS_MENU_DOWN);
     CHECK(!khdays_menu_direction_exists(KHDAYS_MENU_UP, 1) && khdays_menu_direction_exists(KHDAYS_MENU_UP, 0));
 
-    /* A second press waits for the first sequence. */
-    khdays_menu_sequencer_reset(&s);
-    menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_UP, 1, 0, 0, 0);
-    CHECK(f.buttons == (X | DOWN));
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == X);
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == (X | UP));
-
-    /* The player's own X, or L (a shortcut with option 0 = 0), holds it back. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, X);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, DS(KHDAYS_ACT_L));
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == X);
-
-    /* Out of field control nothing plays, and a sequence stops. */
-    khdays_menu_sequencer_reset(&s);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_DOWN, 0, 0, 0, 0);
-    CHECK(f.buttons == 0);
-    khdays_menu_sequencer_reset(&s);
-    menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_DOWN, 0, 0, 0, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0); /* held all along: not a new press */
+    /* Out of field control nothing steps; a press held into it is not a new one. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, down, 0, 0) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
 }
 
 /* Lock-on on its own buttons is the DS's own R presses for it. */
@@ -2211,7 +2182,7 @@ int main(void)
     test_default_profile();
     test_analog();
     test_analog_axes();
-    test_menu_sequencer();
+    test_menu_stepper();
     test_lock_sequencer();
     test_presets();
     test_languages();

@@ -1427,6 +1427,22 @@ HOOKS = {
             " pActor->nMenuState, gPadHeld, gPadPressed, pMenu[0], pMenu[1], Ov022_GetRepeatKeys()); }\n"
             "    if (pActor->nMenuState == 2 || pActor->nMenuState == 3) {\n",
         ),
+        (  # the command menu on the D-pad (runtime/input/sequencers.h): a step through the game's own
+            # cursor routines, as X with a direction moves it but with no button held, so Roxas goes on
+            "            if (GameState_GetField(CONFIG_COMMAND_LIST, 1) != 0) {\n",
+            "            { extern int khdays_controls_command_step(void);\n"
+            "              const int nStep = khdays_controls_command_step();\n"
+            "              const int nHeld = nStep != 0 ? func_ov022_02083f0c() : -1;\n"
+            "              if (nStep != 0 && Ov002_Hud_IsPanelOpen() == 0 && bCommandChosen == 0\n"
+            "                  && (gPadHeld & 0x400) == 0 && (nHeld == -1 || Ov002_IsObjectFlag2000Set(nHeld) == 0)) {\n"
+            "                  pMenu[0] = 0;\n"
+            "                  if (nStep == 1) Ov002_PanelCursorPrev();\n"
+            "                  else if (nStep == 2) Ov002_PanelCursorNext();\n"
+            "                  else if (nStep == 3) Ov002_PanelCursorStepLeft();\n"
+            "                  else Ov002_PanelCursorStepRight();\n"
+            "              } }\n"
+            "            if (GameState_GetField(CONFIG_COMMAND_LIST, 1) != 0) {\n",
+        ),
         (  # Retained INFORMATION leaves command navigation, shortcuts and command kinds intact.
             "Ov002_Hud_IsPanelOpen",
             "khdays_ui_command_panel_open",

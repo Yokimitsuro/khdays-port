@@ -215,8 +215,13 @@ The gamepad's enhancements play the DS's own presses (`runtime/input`):
   through the menu with presses that depend on Config option 6
   (`Ov022_UpdateCommandInput`) -- with 1, a press of X moves the cursor down;
   with 0, X pressed alone, then a direction with X held (Up and Down step, Left
-  and Right change column). The sequencer turns a press of a menu direction into
-  those presses, one game frame per step.
+  and Right change column). Played as presses, X held stopped Roxas for their
+  frames; so a press of a menu direction is a step instead (and Up and Down
+  again while held, after 8 game frames every 2), which the game's own command
+  input takes that frame (`prepare.py`): with field control, no panel open, no
+  command chosen and X not held, the cursor routines X with a direction calls
+  (`Ov002_PanelCursorPrev`, `Next`, `StepLeft`, `StepRight`); option 6 = 1
+  steps only down. Nothing else of the player's input changes.
 - **Lock-on on its own buttons**: the game locks on with R
   (`Ov022_ReadSelectionInput`): not locked, R twice within 9 game frames locks
   on to the target the game picked; locked, R twice lets go, R once moves to the

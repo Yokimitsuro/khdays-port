@@ -293,8 +293,8 @@ never belong in the repository.
   composed by `gfx/compose.h` as the game's frames are.
 - `input_test.c`: the control profile and its presets, the bindings, the
   devices (SDL's virtual gamepads, no window), the settings menu, and the pure
-  parts of the enhancements (analog movement's arithmetic, the command-menu
-  sequencer). Each failing CHECK prints where and what.
+  parts of the enhancements (analog movement's arithmetic, the command menu's
+  steps on the D-pad). Each failing CHECK prints where and what.
 - `movie_hd_test.c`: the HD movies' course (`runtime/movies/movie_hd.c`)
   against a scripted game and video: the ids from the game's paths, the lookup,
   every transition, the buttons the game is given, the clock's pause reasons.

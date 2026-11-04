@@ -227,6 +227,14 @@ both were 0. What only the decompilation's C says, not a trace, is marked
   state. Moving plays the actor's pre-draw animation 1, standing 0. A walk
   animation: *not identified* (Roxas's set names its animations only by
   number, `b_ro_A000`…, and no code found picks another one to move).
+- **The command menu on the gamepad's D-pad** (seen 2026-11-04, windowed,
+  `KHDAYS_TRACE_CONTROLS` and `KHDAYS_TRACE_PAD`, option 6 = 0, Right held all
+  along): `MENU_DOWN` read in game frame 2564 called `Ov002_PanelCursorNext` in
+  2565 (`MENU_UP` `Ov002_PanelCursorPrev`, `MENU_LEFT`
+  `Ov002_PanelCursorStepLeft`); the game was given Right alone in those
+  frames, no X, and the step rate stayed 0x333 -- Roxas did not stop. A
+  press while the command input does not run (an event took the field from
+  2675 to 2732) makes no step; held, it repeats once the input is back.
 - **Buttons, with option 0 = 0 and option 6 = 1:**
   - A: `Ov002_Hud_ActivatePanelSlot` (the selected command); states 3, then
     14, back to 0 some 20 game frames later.
