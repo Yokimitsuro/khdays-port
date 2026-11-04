@@ -135,9 +135,10 @@ sides (`RENDERING.md`).
   frame of this camera before it one, without control. Which gate holds the tick was not traced. A new field starts
   behind the player (`YS::PLAYER::start_player_camera`). The session log has each change of owner, of the flags that
   decide it, and of the mode.
-- **Without control.** In those frames, a session's pause (`PauseMenu_GetMode` 2 on the host) and whatever else the
-  game takes the camera's input in (`Ov022_GetStreamTimestamp` bit 0x400), `khdays_kh2_camera_active` is false: R and
-  Select reach the game, and a press made just before does not reset the camera or switch first person.
+- **Without control.** In those frames and a session's pause (`PauseMenu_GetMode` 2 on the host)
+  `khdays_kh2_camera_active` is false: R and Select reach the game, and a press made just before does not reset the
+  camera or switch first person. `Ov022_GetStreamTimestamp` bit 0x400 (set by `Ov022_StepAnchorReadyState`) only takes
+  the stick: Select and R stay the camera's.
 - **Talks.** Mode 1 (`Ov002_Camera_SetMode`, Days' own zoom for a talk or an examined object, an entry's flag 0x20
   for a spare entry) takes the indoor row as the Select view does, the same blend in and out. A hold without mode 1
   keeps the row it had.

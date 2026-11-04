@@ -369,8 +369,8 @@ continues from its loop point (retFrame), or holds when there is none. During
 the game's cross-fade (two animations, their ratios summing to 1) each side is
 blended at the game's weight, the game's own pose standing in for an unmapped one.
 Each actor (render object) keeps its own pose, started afresh when the render object draws
-another model or has not drawn for 12 vblanks (`actor_of`), so nothing of a pose or tail from
-before shows.
+another model or has not drawn for 6 game frames (`actor_of`), so nothing of a pose or tail from
+before shows. A pause does not count: no game frame passes in it.
 
 **Root motion.** Days' animations never move Roxas's root node (`roxas_R`; all
 12 of def_hb's checked): their movement is on `Bip01`, and the actor's place is

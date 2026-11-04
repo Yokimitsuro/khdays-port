@@ -632,8 +632,8 @@ struct Kh2Finish {
 };
 struct Kh2Actor {
     const Model *model = nullptr; // what it draws (actor_of)
-    u32 last_drawn = 0;           // the vblank of its last draw (actor_of)
-    std::uint64_t draws = 0;
+    unsigned drawn_frame = 0;     // the game frame of its last draw (actor_of)
+    std::uint64_t draws = 1;      // from 1: no animation's `seen` follows it, so a first draw is a start
     std::map<std::string, Kh2Animation> animations; // by game animation
     std::map<std::string, float> frames;            // each game animation's frame at the draw it was last in
     Kh2Finish finish;
@@ -684,21 +684,21 @@ struct Kh2Actor {
     u32 cuff_vblank = 0;
 };
 std::map<const void *, Kh2Actor> kh2_actors; // by render object
-constexpr u32 kActorGap = 12U;               // vblanks undrawn after which an actor starts afresh
+constexpr unsigned kActorGap = 6U;           // game frames undrawn after which an actor starts afresh
 
-// This draw's actor, started afresh when its render object now draws another model or has not drawn for kActorGap (the
-// hands' and cuffs' own limit): a tail or a held pose from before would show on what it draws now.
+// This draw's actor, started afresh when its render object now draws another model or has not drawn for kActorGap: a
+// tail or a held pose from before would show on what it draws now. In game frames, which a pause and a stall don't count.
 Kh2Actor &actor_of(const Model &m)
 {
     if (kh2_actors.size() > 64)
         kh2_actors.clear();
     Kh2Actor &actor = kh2_actors[drawn_object];
-    const u32 now = khdays_events_vblank_count();
-    if (actor.model != &m || now - actor.last_drawn > kActorGap) {
+    const unsigned now = khdays_link_frame();
+    if (actor.model != &m || now - actor.drawn_frame > kActorGap) {
         actor = Kh2Actor{};
         actor.model = &m;
     }
-    actor.last_drawn = now;
+    actor.drawn_frame = now;
     return actor;
 }
 // The KH2 motion with the most weight in this draw, for the face: its attributes, its time and the time it
