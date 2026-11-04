@@ -74,7 +74,8 @@ Mat inverse_affine(const Mat& m) {
     const float a = m[0], b = m[4], c = m[8], d = m[1], e = m[5], f = m[9], g = m[2], h = m[6], i = m[10];
     const float det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
     if (std::fabs(det) < 1e-12F) {
-        throw std::runtime_error("KH2 model: a bone with no inverse (a scale of 0)");
+        throw std::runtime_error(
+            "KH2 model: a bone with no inverse (a scale of 0); the file is damaged: extract it again from your game");
     }
     const float k = 1.0F / det;
     Mat r = kIdentity;
@@ -229,12 +230,12 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         }
     }
     if (model_entry == nullptr) {
-        throw std::runtime_error("KH2 model: the BAR has no model entry (type 4)");
+        throw std::runtime_error("KH2 model: the BAR has no model entry (type 4); name a KH2 obj/*.mdlx");
     }
     const Model model = read_model(data, size, model_entry->offset);
     if (model.kind != 3) {
         throw std::runtime_error("KH2 model: a map model (kind " + std::to_string(model.kind) +
-                                 "), not a character's or an object's");
+                                 "), not a character's or an object's; name one from KH2's obj/ folder");
     }
 
     ImportedModel result;
@@ -274,6 +275,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
     std::vector<HdPicture> hd;
     if (texture_entry != nullptr) {
         container = read_textures(data, size, texture_entry->offset);
+        TexturePictures pictures(data, size, texture_entry->offset);
         std::error_code no_folder;
         const bool has_hd = !hd_folder.empty() && std::filesystem::is_directory(hd_folder, no_folder);
         int hd_pictures = 0, hd_sheets = 0;
@@ -289,8 +291,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                              static_cast<float>(big->height) / static_cast<float>(gs.region_height)};
                     ++hd_pictures;
                 }
-                DecodedTexture picture =
-                    big ? std::move(*big) : read_texture_picture(data, size, texture_entry->offset, t);
+                DecodedTexture picture = big ? std::move(*big) : pictures.picture(t);
                 picture.name = key;
                 result.textures.emplace_back(key, std::move(picture));
             } catch (const std::exception& e) {
@@ -349,7 +350,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                     out.sprites = sprites_of_sheet(*sheet, a.sprite_count, out.width, out.height);
                     ++hd_sheets;
                 } else {
-                    out.sprites = read_texture_sprites(data, size, texture_entry->offset, a);
+                    out.sprites = pictures.sprites(a);
                     if (over_hd) {
                         for (auto& sprite : out.sprites) {
                             sprite = resized(sprite.data(), a.width, a.height, out.width, out.height);
@@ -409,7 +410,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         }
     }
     if (result.model.meshes.empty()) {
-        throw std::runtime_error("KH2 model: no triangles");
+        throw std::runtime_error("KH2 model: no triangles; name a KH2 obj/*.mdlx that draws something");
     }
     return result;
 }

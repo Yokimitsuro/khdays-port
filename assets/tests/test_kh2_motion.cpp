@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -122,10 +123,10 @@ struct Constraint final {
     int type, passive, active;
 };
 
-// One motion (kn::MotionPrototype0RAW) in an .mset: `flags` the joints in
-// order (with IK bits), `times` the time table, a root motion moving x by `root_x`.
-Bytes mset(int joints, const std::vector<std::uint32_t>& flags, const std::vector<float>& times,
-           const std::vector<Curve>& curves, const std::vector<Constraint>& constraints, float root_x) {
+// One motion's bytes (kn::MotionPrototype0RAW): `flags` the joints in order (with IK
+// bits), `times` the time table, a root motion moving x by `root_x`.
+Bytes motion_body(int joints, const std::vector<std::uint32_t>& flags, const std::vector<float>& times,
+                  const std::vector<Curve>& curves, const std::vector<Constraint>& constraints, float root_x) {
     Writer m;
     m.zeros(0xB0);
     const auto here = [&] { return static_cast<std::uint32_t>(m.size()); };
@@ -201,9 +202,19 @@ Bytes mset(int joints, const std::vector<std::uint32_t>& flags, const std::vecto
     };
     set_f(0x94, 30.0F);  // end
     set_f(0x98, 30.0F);  // fps
+    return m.b;
+}
+
+// A motion's bytes as the only motion of an .mset, and an empty slot after it.
+Bytes in_set(const Bytes& body) {
     Bytes motion(0x90, 0);
-    motion.insert(motion.end(), m.b.begin(), m.b.end());
+    motion.insert(motion.end(), body.begin(), body.end());
     return bar({{0x11, bar({{0x09, motion}})}, {0x10011, {}}});
+}
+
+Bytes mset(int joints, const std::vector<std::uint32_t>& flags, const std::vector<float>& times,
+           const std::vector<Curve>& curves, const std::vector<Constraint>& constraints, float root_x) {
+    return in_set(motion_body(joints, flags, times, curves, constraints, root_x));
 }
 
 const kh2::Mat4& joint(const kh2::MotionPlayer& p, std::size_t j) {
@@ -226,8 +237,7 @@ void test_curves() {
     player.evaluate(*motions.motion(0), 90.0F, kWorld, nullptr);
     expect(near(joint(player, 1)[0], 0.0F) && near(joint(player, 1)[1], 1.0F), "after the last key: held");
     const kh2::Mat4 root = motions.motion(0)->root_motion(0.0F);
-    expect(motions.motion(0)->has_root_motion() && near(root[12], 5.0F) && near(root[0], 1.0F),
-           "the root motion's translation");
+    expect(near(root[12], 5.0F) && near(root[0], 1.0F), "the root motion's translation");
 }
 
 void test_ik() {
@@ -358,7 +368,8 @@ void test_added() {
     expect(set.slots() == 12 && set.motion(0) != nullptr && set.motion(5) == nullptr && set.motion(10) != nullptr &&
                set.motion(11) == nullptr,
            "added from slot 10, the slots between empty");
-    expect(!set.motion(10)->has_root_motion() && set.motion(0)->has_root_motion(), "each its own motion");
+    expect(near(set.motion(10)->root_motion(0.0F)[12], 0.0F) && near(set.motion(0)->root_motion(0.0F)[12], 5.0F),
+           "each its own motion");
     bool refused = false;
     try {
         set.add(4, other);
@@ -379,6 +390,199 @@ void test_refusals() {
     expect(refused, "not an mdlx");
 }
 
+constexpr kh2::Mat4 kUnit4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+constexpr int kTurnZ = 5, kMoveX = 6;  // an F-curve's or an expression's tracks
+
+Bytes two_bones() {
+    return mdlx({{-1, 0.0F, 0.0F, 0.0F}, {0, 0.0F, 0.0F, 0.0F}});
+}
+
+// Joint 1's matrix at `ticks`, its `track` on a linear curve with a key per entry of `values`, 60 ticks apart
+kh2::Mat4 turned(const std::vector<float>& values, int track, int post, float ticks) {
+    std::vector<float> times;
+    std::vector<std::pair<int, float>> keys;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        times.push_back(static_cast<float>(i) * 60.0F);
+        keys.emplace_back(static_cast<int>(i), values[i]);
+    }
+    const Bytes model = two_bones();
+    const Bytes set = mset(2, {0, 1}, times, {{1, track, post, keys, 1}}, {}, 0.0F);
+    const kh2::MotionSet motions(set.data(), set.size());
+    expect(motions.motion(0) != nullptr, "a motion to play");
+    kh2::MotionPlayer player(kh2::read_motion_skeleton(model.data(), model.size()));
+    player.evaluate(*motions.motion(0), ticks, kUnit4, nullptr);
+    return joint(player, 1);
+}
+
+bool finite_matrix(const kh2::Mat4& m) {
+    for (const float f : m) {
+        if (!std::isfinite(f)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A turn so large that one turn at a time never gets it in range, or infinite: played, not hung; an ordinary one
+// wrapped as ever.
+void test_huge_angles() {
+    const kh2::Mat4 ordinary = turned({7.0F}, kTurnZ, 0, 0.0F);
+    expect(near(ordinary[0], std::cos(7.0F)) && near(ordinary[1], std::sin(7.0F)), "7 radians: as 7 radians turn");
+    for (const float huge :
+         {1e10F, -1e10F, 1e30F, std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()}) {
+        expect(finite_matrix(turned({huge}, kTurnZ, 0, 0.0F)), "a huge angle: a pose, in finite time");
+    }
+}
+
+// An F-curve's repeats: near and far as the periods say, and any time at all in finite time.
+void test_repeats() {
+    const float quarter = 1.5707964F;
+    const auto at = [&](float ticks) { return turned({0.0F, quarter}, kTurnZ, 2, ticks); };
+    constexpr float kEighth = 0.70710677F;
+    expect(near(at(150.0F)[0], kEighth), "two periods on: as 30 ticks in");
+    expect(near(at(300030.0F)[0], kEighth), "5,000 periods on: as 30 ticks in");
+    expect(finite_matrix(at(1e30F)), "a time past any period");
+    (void)at(std::numeric_limits<float>::infinity());  // it returns; no pose is asked of an infinite time
+    const int pre_repeat = kTurnZ | (2 << 4);          // the curve's modes share the track's byte
+    const auto before = [&](float ticks) { return turned({0.0F, quarter}, pre_repeat, 0, ticks); };
+    expect(near(before(-30.0F)[0], kEighth), "before the first key: as 30 ticks in");
+    expect(finite_matrix(before(-1e30F)), "a time before any period");
+}
+
+struct Node final {
+    int type;
+    float value;
+    int car, cdr;
+};
+
+// `body` with joint 1's `track` set by an expression: its tree, from node 0.
+Bytes with_expression(Bytes body, const std::vector<Node>& nodes, int track) {
+    Writer w{std::move(body)};
+    w.pad(4);
+    w.set_u32(0x68, static_cast<std::uint32_t>(w.size()));
+    w.set_u32(0x6C, static_cast<std::uint32_t>(nodes.size()));
+    for (const Node& n : nodes) {
+        w.u32(static_cast<std::uint32_t>(n.type));
+        w.f32(n.value);
+        w.u16(static_cast<unsigned>(n.car));
+        w.u16(static_cast<unsigned>(n.cdr));
+    }
+    w.set_u32(0x60, static_cast<std::uint32_t>(w.size()));
+    w.set_u32(0x64, 1);
+    w.u16(1);  // its joint
+    w.u16(static_cast<unsigned>(track));
+    w.u16(0);
+    w.u16(0);  // its tree's node
+    return w.b;
+}
+
+kh2::Mat4 expressed(const std::vector<Node>& nodes, int track) {
+    const Bytes model = two_bones();
+    const Bytes set = in_set(with_expression(motion_body(2, {0, 1}, {0.0F}, {}, {}, 0.0F), nodes, track));
+    const kh2::MotionSet motions(set.data(), set.size());
+    expect(motions.motion(0) != nullptr, "a motion with an expression");
+    kh2::MotionPlayer player(kh2::read_motion_skeleton(model.data(), model.size()));
+    player.evaluate(*motions.motion(0), 0.0F, kUnit4, nullptr);
+    return joint(player, 1);
+}
+
+constexpr int kAdd = 18, kAbs = 8, kRemainder = 22, kConstant = 31;
+
+void test_expressions() {
+    const Node seven{kConstant, 7.0F, 0, 0}, three{kConstant, 3.0F, 0, 0};
+    expect(near(expressed({{kAdd, 0.0F, 1, 2}, seven, three}, kMoveX)[12], 10.0F), "a well-formed tree: 7 + 3");
+    expect(near(expressed({{kRemainder, 0.0F, 1, 2}, seven, three}, kMoveX)[12], 1.0F), "7 % 3");
+    // the int-less remainders: undefined casts, and INT_MIN % -1, which traps on x64
+    for (const float x : {1e30F, -2147483648.0F, std::numeric_limits<float>::infinity()}) {
+        const kh2::Mat4 m =
+            expressed({{kRemainder, 0.0F, 1, 2}, {kConstant, x, 0, 0}, {kConstant, -1.0F, 0, 0}}, kMoveX);
+        expect(near(m[12], 0.0F), "a remainder of what no int holds: 0");
+    }
+    expect(near(expressed({{kRemainder, 0.0F, 1, 2}, seven, {kConstant, -1.0F, 0, 0}}, kMoveX)[12], 0.0F), "7 % -1");
+    // a node that reaches itself: cut short, not a stack overflow
+    expect(finite_matrix(expressed({{kAbs, 0.0F, 0, 0}}, kMoveX)), "a node under itself");
+    // nodes shared twice over at every level: 2^40 visits if each were followed
+    std::vector<Node> doubling;
+    for (int i = 0; i < 40; ++i) {
+        doubling.push_back({kAdd, 0.0F, i + 1, i + 1});
+    }
+    doubling.push_back({kConstant, 1.0F, 0, 0});
+    expect(finite_matrix(expressed(doubling, kMoveX)), "nodes shared to no end: cut short");
+}
+
+// A motion's model with more joints than the skeleton it is played on, and a helper: `flags` in calc order, joint 1
+// placed where joint `active` is. Before the helper table, bytes no joint should read.
+kh2::Mat4 played_on_a_smaller_skeleton(int active) {
+    constexpr int kModelJoints = 3, kJoints = 4;
+    const std::vector<std::uint32_t> flags{0, 2, 3, 1};
+    Writer w{motion_body(kModelJoints, flags, {0.0F}, {}, {{0, 1, active}}, 0.0F)};
+    w.set_u32(0x10, static_cast<std::uint32_t>(kModelJoints | (kJoints << 16)));
+    w.pad(4);
+    for (int i = 0; i < 16; ++i) {
+        w.f32(99.0F);
+    }
+    w.set_u32(0x18, static_cast<std::uint32_t>(w.size()));
+    w.zeros(4);
+    w.u32(0);  // parent 0 (i16) at +4
+    w.zeros(8);
+    for (const float f : {1.0F, 1.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 7.0F, 0.0F, 0.0F, 1.0F}) {
+        w.f32(f);
+    }
+    const Bytes set = in_set(w.b);
+    const kh2::MotionSet motions(set.data(), set.size());
+    expect(motions.motion(0) != nullptr, "a motion of three joints and a helper");
+    const Bytes model = two_bones();
+    kh2::MotionPlayer player(kh2::read_motion_skeleton(model.data(), model.size()));
+    player.evaluate(*motions.motion(0), 0.0F, kUnit4, nullptr);
+    expect(player.joints().size() == 2, "the skeleton's joints");
+    return joint(player, 1);
+}
+
+void test_more_joints_than_the_skeleton() {
+    expect(near(played_on_a_smaller_skeleton(3)[12], 7.0F), "the helper as its table has it");
+    expect(near(played_on_a_smaller_skeleton(2)[12], 0.0F), "a joint the skeleton lacks: neutral, not read from bytes");
+}
+
+// An offset in a motion's header
+std::size_t word_at(const Bytes& b, std::size_t at) {
+    return static_cast<std::size_t>(b.at(at)) | (static_cast<std::size_t>(b.at(at + 1)) << 8U);
+}
+
+// Each table a motion's header points at, past the end: the slot has no motion, rather than throwing while drawn.
+void test_bad_tables() {
+    const auto refused = [](const Bytes& body) {
+        const Bytes set = in_set(body);
+        const kh2::MotionSet motions(set.data(), set.size());
+        return motions.motion(0) == nullptr;
+    };
+    const std::vector<Curve> hermite{{1, kTurnZ, 0, {{0, 0.0F}, {1, 1.0F}}, 2}};
+    const Bytes good = motion_body(2, {0, 1}, {0.0F, 60.0F}, hermite, {}, 5.0F);
+    expect(!refused(good), "the unchanged motion plays");
+    const auto far_off = [](Bytes body, std::size_t field) {
+        Writer w{std::move(body)};
+        w.set_u32(field, static_cast<std::uint32_t>(w.size()) + 16U);
+        return w.b;
+    };
+    for (const std::size_t field : {0x40U, 0x48U, 0x4CU, 0x2CU}) {
+        expect(refused(far_off(good, field)), "keys, values, slopes or root motion past the end");
+    }
+    const Bytes linear = motion_body(2, {0, 1}, {0.0F, 60.0F}, {{1, kTurnZ, 0, {{0, 0.0F}, {1, 1.0F}}, 1}}, {}, 0.0F);
+    expect(!refused(far_off(linear, 0x4C)), "slopes no key reads are not looked at");
+    expect(refused(motion_body(2, {0, 5}, {0.0F}, {}, {}, 0.0F)), "a joint id past the joints");
+    const std::uint32_t ik_external = (1U << 16U) | (1U << 23U);
+    const Bytes external = motion_body(2, {0, 1U | ik_external}, {0.0F}, {}, {}, 0.0F);
+    expect(!refused(external), "an external effector in its table");
+    expect(refused(far_off(external, 0xA0)), "the external effectors past the end");
+    const Bytes limited = motion_body(2, {0, 1}, {0.0F}, {}, {{13, 1, 0}}, 0.0F);
+    expect(refused(far_off(limited, 0x5C)), "a limiter past the end");
+    Writer activated{motion_body(2, {0, 1}, {0.0F}, {}, {{0, 1, 0}}, 0.0F)};
+    activated.b.at(word_at(activated.b, 0x50) + 8) = 1;  // one activation entry
+    expect(refused(far_off(activated.b, 0x58)), "activations past the end");
+    Writer rooted{motion_body(2, {0, 1}, {0.0F}, {}, {}, 5.0F)};
+    rooted.set_u32(word_at(rooted.b, 0x2C) + 48, 99);
+    expect(refused(rooted.b), "a root motion on an F-curve the motion does not have");
+}
+
 }  // namespace
 
 int main() {
@@ -389,6 +593,11 @@ int main() {
         test_attributes();
         test_added();
         test_refusals();
+        test_huge_angles();
+        test_repeats();
+        test_expressions();
+        test_more_joints_than_the_skeleton();
+        test_bad_tables();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;

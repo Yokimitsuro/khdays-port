@@ -225,12 +225,11 @@ void packet_triangles(const VuMemory& mem, const std::vector<int>& bone_of, cons
     }
 }
 
-// A character packet's blended vertices (kn::SKLPOLYGONDATA::setVertexWithWeight
-// in KH2's PS3 build): q2 says how many weight groups (q2[2], up to seven) and
-// where their counts are (q2[3]); group g holds that many vertices of g + 1
-// positions each, their indices listed from q3[2], each group's list starting
-// on a quadword. Each position (x, y, z, weight) goes with its matrix's bone.
-// Empty for a packet without weights.
+// A character packet's blended vertices (kn::SKLPOLYGONDATA::setVertexWithWeight,
+// PS3): q2[2] weight groups (up to seven), their counts at q2[3]; group g holds that
+// many vertices of g + 1 positions each, their indices listed from q3[2], each list
+// on a quadword. Each position (x, y, z, weight) goes with its matrix's bone. Empty
+// for a packet without weights.
 std::vector<std::vector<Influence>> blended_vertices(const VuMemory& mem, const std::vector<int>& bone_of) {
     const std::uint32_t groups = mem[2][2];
     std::vector<std::vector<Influence>> out;
@@ -397,7 +396,6 @@ std::vector<TextureFrame> read_frames(const Bytes& b, std::size_t at, const std:
 TextureAnimation read_texa(const Bytes& b, const std::size_t t, const std::size_t size) {
     TextureAnimation a;
     a.target = b.u16(t + 2);
-    a.layers = b.u16(t + 4);
     a.bits_per_pixel = b.u16(t + 6);
     const std::uint16_t first_slot = b.u16(t + 8), last_slot = b.u16(t + 10);
     const std::uint16_t animations = b.u16(t + 12);
@@ -409,7 +407,7 @@ TextureAnimation read_texa(const Bytes& b, const std::size_t t, const std::size_
     const std::uint32_t slots = b.u32(t + 24), table = b.u32(t + 28), sprites = b.u32(t + 32);
     a.default_animation = static_cast<int>(b.u32(t + 36));
     // an entry is 8 bytes and a sprite index per further layer (kn::TEXAnmWork::play)
-    const std::size_t stride = 8U + 2U * a.layers;
+    const std::size_t stride = 8U + 2U * b.u16(t + 4);
     for (std::uint16_t i = 0; i < animations; ++i) {
         const std::uint32_t first = b.u32(t + table + i * 4U);
         a.animations.push_back(read_frames(b, t + first, t + size, stride));
@@ -680,21 +678,41 @@ std::array<std::array<std::uint8_t, 4>, 256> palette_of(GsMemory& gs, const std:
 
 }  // namespace
 
-DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t size, const std::size_t at,
-                                    const std::size_t index) {
+struct TexturePictures::Memory final {
+    GsMemory gs;
+};
+
+TexturePictures::TexturePictures(const std::uint8_t* data, const std::size_t size, const std::size_t at)
+    : data_(data), size_(size), at_(at) {}
+
+TexturePictures::~TexturePictures() = default;
+
+TexturePictures::Memory& TexturePictures::memory() {
+    if (!memory_) {
+        memory_ = std::make_unique<Memory>(Memory{upload_pictures(Bytes(data_, size_), at_)});
+    }
+    return *memory_;
+}
+
+DecodedTexture TexturePictures::picture(const std::size_t index) {
     // kn::Texture (KH2's PS3 build): u16 type, u16 flag, u32 counts of colours,
     // pictures and GS infos, then the offsets of the pictures' numbers, their
     // send packets (0x90 bytes each; the palette's first), the GS infos (0xA0),
     // the pixels and the palette.
-    const Bytes b(data, size);
-    const std::uint64_t tex0 = texture_register(b, at, index);
-    GsMemory gs = upload_pictures(b, at);
+    const std::uint64_t tex0 = texture_register(Bytes(data_, size_), at_, index);
+    const int width_log = static_cast<int>(field(tex0, 26, 4)), height_log = static_cast<int>(field(tex0, 30, 4));
+    if (width_log > 10 || height_log > 10) {  // TEX0's TW and TH: the GS's own limit
+        throw std::runtime_error("KH2 textures: GS info " + std::to_string(index) + " is " +
+                                 std::to_string(1 << width_log) + " x " + std::to_string(1 << height_log) +
+                                 ", past the GS's 1024 x 1024; the file is damaged: extract it again from your game");
+    }
+    GsMemory& gs = memory().gs;
     const auto tbp = static_cast<unsigned>(field(tex0, 0, 14)), tbw = static_cast<unsigned>(field(tex0, 14, 6));
     const auto palette = palette_of(gs, tex0);
     DecodedTexture out;
     out.format_name = "kh2 psmt8";
-    out.width = 1 << static_cast<int>(field(tex0, 26, 4));
-    out.height = 1 << static_cast<int>(field(tex0, 30, 4));
+    out.width = 1 << width_log;
+    out.height = 1 << height_log;
     out.rgba.reserve(static_cast<std::size_t>(out.width) * static_cast<std::size_t>(out.height) * 4U);
     for (int y = 0; y < out.height; ++y) {
         for (int x = 0; x < out.width; ++x) {
@@ -705,9 +723,8 @@ DecodedTexture read_texture_picture(const std::uint8_t* data, const std::size_t 
     return out;
 }
 
-std::vector<std::vector<std::uint8_t>> read_texture_sprites(const std::uint8_t* data, const std::size_t size,
-                                                            const std::size_t at, const TextureAnimation& animation) {
-    const Bytes b(data, size);
+std::vector<std::vector<std::uint8_t>> TexturePictures::sprites(const TextureAnimation& animation) {
+    const Bytes b(data_, size_);
     std::vector<std::vector<std::uint8_t>> out;
     if (animation.sprites_at == 0 || animation.sprite_count <= 0 || animation.width <= 0 || animation.height <= 0) {
         return out;
@@ -716,9 +733,8 @@ std::vector<std::vector<std::uint8_t>> read_texture_sprites(const std::uint8_t* 
         throw std::runtime_error("KH2 textures: a texture animation's sprites are " +
                                  std::to_string(animation.bits_per_pixel) + "-bit; only 8-bit sprites are decoded");
     }
-    const std::uint64_t tex0 = texture_register(b, at, static_cast<std::size_t>(animation.target));
-    GsMemory gs = upload_pictures(b, at);
-    const auto palette = palette_of(gs, tex0);
+    const std::uint64_t tex0 = texture_register(b, at_, static_cast<std::size_t>(animation.target));
+    const auto palette = palette_of(memory().gs, tex0);
     const std::size_t pixels = static_cast<std::size_t>(animation.width) * static_cast<std::size_t>(animation.height);
     for (int n = 0; n < animation.sprite_count; ++n) {
         const std::uint8_t* src = b.at(animation.sprites_at + static_cast<std::size_t>(n) * pixels, pixels);

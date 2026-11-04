@@ -9,12 +9,10 @@
 #include <vector>
 
 // KH2's character motions (an .mset: a BAR of anb, each a BAR whose type 0x09
-// entry is a motion), played as KH2's PS3 build plays them
-// (kn::MotionPrototype0, motion_prototype0.cpp): keys, constants, expressions,
-// constraints with their activation, IK chains, limiters and the root motion
-// (MotionPrototype0RAWPositionInfo). docs/KH2_MODELS.md has the layout and the
-// functions each part follows. Matrices are column-major for column vectors,
-// as KH2's FMATRIX44 lies in memory; KH2 units (centimetres), the model's Y up.
+// entry is a motion), played as KH2's PS3 build plays them (kn::MotionPrototype0,
+// motion_prototype0.cpp); docs/KH2_MODELS.md has the layout and the functions each
+// part follows. Matrices are column-major for column vectors, as KH2's FMATRIX44
+// lies in memory; KH2 units (centimetres), the model's Y up.
 namespace khdays::assets::kh2 {
 
 using Mat4 = std::array<float, 16>;
@@ -45,7 +43,8 @@ MotionSkeleton read_motion_skeleton(const std::uint8_t* data, std::size_t size);
 // One motion (kn::MotionPrototype0RAW), its bytes kept as the file has them.
 class Motion final {
 public:
-    // The motion at `at` (after the 0x90 bytes the game keeps for itself).
+    // The motion at `at` (after the 0x90 bytes the game keeps for itself). Throws std::runtime_error when its
+    // tables do not fit the file, so that a bad file fails at load.
     Motion(const std::uint8_t* data, std::size_t size, std::size_t at);
 
     int model_joints() const {
@@ -77,7 +76,6 @@ public:
     // MotionPrototype0::getPosition: the root motion at `ticks` (0 = the motion's
     // start); identity when the motion has none (PositionInfo not_unit 0).
     Mat4 root_motion(float ticks) const;
-    bool has_root_motion() const;
 
 private:
     friend class MotionPlayer;
@@ -87,12 +85,11 @@ private:
     float start_ = 0.0F, end_ = 0.0F, fps_ = 30.0F, ret_ = 0.0F;
 };
 
-// A motion's attributes (its entry's inner BAR entry of type 0x10, KH2's YS::ANMATR): what happens between two
-// of its frames (ranges) and on one (triggers), each an id and its 16-bit parameters. u8 range count, u8 trigger
-// count, u16 the triggers' offset; a range u16 start, u16 end, u8 id, u8 parameter count, the parameters; a
-// trigger u16 frame, u8 id, u8 parameter count, the parameters (YS::ANMATR::CheckRangeCallback and
-// ExecTriggerCallback act on them: range 23 holds a texture animation's slot, trigger 4 sets its default, 5
-// puts the file's back).
+// A motion's attributes (inner BAR entry 0x10, KH2's YS::ANMATR): ranges of frames and triggers on one, each an id
+// and its 16-bit parameters. u8 range count, u8 trigger count, u16 the triggers' offset; a range u16 start, u16 end,
+// u8 id, u8 parameter count, the parameters; a trigger u16 frame, u8 id, u8 parameter count, the parameters
+// (YS::ANMATR::CheckRangeCallback, ExecTriggerCallback: range 23 holds a texture animation's slot, trigger 4 sets
+// its default, 5 puts the file's back).
 struct MotionAttributes final {
     struct Range {
         int start = 0, end = 0;  // the motion's ticks (Motion::length_ticks)
@@ -155,30 +152,24 @@ private:
     void curves(const Motion& m, float t);
     void activation(const Motion& m, float t);
     void matrices(const Motion& m, const Mat4& world, const GroundRay* ground);
-    float expression(const Motion& m, int node);
+    float expression(const Motion& m, int node, int depth);
 
     MotionSkeleton skeleton_;
     const Motion* current_ = nullptr;
-    float frame_ = 0.0F;                // the expressions' time (LS_57_buff in calc)
-    std::vector<std::uint8_t> active_;  // each constraint's temporary_active_flag
+    float frame_ = 0.0F;                   // the expressions' time (LS_57_buff in calc)
+    std::uint32_t expression_visits_ = 0;  // this evaluation's, against a malformed file's endless ones
+    std::vector<std::uint8_t> active_;     // each constraint's temporary_active_flag
     // per joint (model joints first, then the motion's helpers)
     std::vector<Vec4> scale_, rotation_, translation_, gscale_;
     std::vector<Mat4> lmatrix_, ugm_, all_gmatrix_;
     std::vector<Mat4> gmatrix_;  // the model joints' gmatrix
 };
 
-// A pose of one model's bones (the source: the model an mset was made for) given to another's (the
-// target): each mapped target bone turned from its rest as its source bone is, its head where its
-// parent carries it (the target's own lengths; map a bone that carries others to a source bone that
-// carries the same body part's vertices: an unskinned source bone's frame may be anywhere); an
-// unmapped one kept at rest under its parent; and each limb (three mapped bones) bent at the target's own lengths so its end
-// reaches where the source's end bone carries the target end's rest place, its middle bending toward
-// where the source's middle carries it (the law of cosines about an up vector, as
-// Motion::calcIKJoint 0xf56a0 bends a chain). A limb with `lengths` takes the source limb's lengths
-// instead (its upper and lower bones stretched along their length only, their children not) and
-// reaches along the source's own way from its upper joint to its end: the same bend, the end where the
-// source's is. A mapped root is placed where its source is plus the rests' difference, not turned by
-// the source root's turn (a root whose rest stands higher would otherwise move the hips forward).
+// One model's pose (the source: the model an mset was made for) given to another's bones (the target): a mapped
+// bone turned from rest as its source bone is, its head where its parent carries it; an unmapped one at rest under
+// its parent; a limb (three mapped bones) bent at the target's lengths toward where the source carries its end (the
+// law of cosines, as Motion::calcIKJoint 0xf56a0), or with `lengths` at the source's own; a mapped root where its
+// source is plus the rests' difference. Map a bone that carries others to a source bone carrying the same body part.
 class Retarget final {
 public:
     struct Limb final {
@@ -218,12 +209,10 @@ private:
     std::vector<Mat4> source_rest_inverse_, target_rest_, target_rest_inverse_, target_local_;
 };
 
-// bones.txt's `twist`: a joint and those under it turned about an axis by a share of another joint's twist about
-// it (a forearm's end turning with the hand). `twist_about`: how far joint b has turned about `axis` (unit, model
-// space at rest) against joint a since rest, radians, from their matrices at rest and now (their scale left out);
-// past 135 degrees eased back to none at half a turn, where it is ambiguous (+180 and -180 degrees are one
-// pose: a hand passing it flipped the cuff a whole turn in one frame). `twist_turn`: a turn by `radians` about that
-// axis as joint a carries it now, through `pivot`, to put before the turned joints' matrices.
+// bones.txt's `twist`: a joint and those under it turned about an axis by a share of another joint's twist.
+// `twist_about`: how far b has turned about `axis` (unit, model space at rest) against a since rest, radians, their
+// scale left out; past 135 degrees eased back to none at half a turn, where +180 and -180 are one pose. `twist_turn`:
+// a turn by `radians` about that axis as a carries it now, through `pivot`, to put before the turned joints' matrices.
 float twist_about(const Mat4& rest_a, const Mat4& rest_b, const Mat4& now_a, const Mat4& now_b,
                   const std::array<float, 3>& axis);
 Mat4 twist_turn(const Mat4& rest_a, const Mat4& now_a, const std::array<float, 3>& axis, float radians,

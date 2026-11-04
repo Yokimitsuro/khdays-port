@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -88,7 +89,6 @@ struct TextureAnimation final {
     // (kn::ModelObj::setTexanm); an id outside the table is not this animation's
     int first_slot = 0;
     std::vector<int> slot_animation;
-    int layers = 0;              // sprites shown at once (one more than this); only the first is read
     int bits_per_pixel = 8;      // the sprites' pixels: indices into the target's palette
     std::size_t sprites_at = 0;  // where the sprites' pixels start in the file (0: none)
 };
@@ -106,17 +106,26 @@ struct TextureContainer final {
 
 TextureContainer read_textures(const std::uint8_t* data, std::size_t size, std::size_t at);
 
-// GS info `index` of the container at `at` decoded to RGBA (its whole TW x TH,
-// PS2 alpha widened): its pictures uploaded into a model of the GS's memory as
-// the container's packets send them, then read back as the texture's format.
-// 8-bit textures only; throws std::runtime_error naming what it cannot decode.
-DecodedTexture read_texture_picture(const std::uint8_t* data, std::size_t size, std::size_t at, std::size_t index);
+// A container's pictures in a model of the GS's memory, uploaded once as its packets send them, on first need. The
+// data must outlive this. Both throw std::runtime_error naming what they cannot decode.
+class TexturePictures final {
+public:
+    TexturePictures(const std::uint8_t* data, std::size_t size, std::size_t at);
+    ~TexturePictures();
 
-// TEXA `animation`'s sprites decoded to RGBA (width x height each) through the palette of the GS info it is
-// drawn over, as KH2 uploads them into that texture (kn::TEXAnmWork::getPixelData). 8-bit sprites only; throws
-// std::runtime_error as read_texture_picture does.
-std::vector<std::vector<std::uint8_t>> read_texture_sprites(const std::uint8_t* data, std::size_t size, std::size_t at,
-                                                            const TextureAnimation& animation);
+    // GS info `index` decoded to RGBA (its whole TW x TH, PS2 alpha widened). 8-bit textures only.
+    DecodedTexture picture(std::size_t index);
+    // TEXA `animation`'s sprites decoded to RGBA (width x height each) through the palette of the GS info it is drawn
+    // over, as KH2 uploads them into that texture (kn::TEXAnmWork::getPixelData). 8-bit sprites only.
+    std::vector<std::vector<std::uint8_t>> sprites(const TextureAnimation& animation);
+
+private:
+    struct Memory;
+    Memory& memory();
+    const std::uint8_t* data_;
+    std::size_t size_, at_;
+    std::unique_ptr<Memory> memory_;
+};
 
 // TIM2 pictures (radar): 4-bit, 8-bit (palette in the PS2's order) or 32-bit;
 // PS2 alpha (0x80 = opaque) widened to 0..255.

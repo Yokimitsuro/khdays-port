@@ -179,7 +179,7 @@ void send(Writer& w, std::size_t at, unsigned dbp, unsigned dbw, unsigned width,
 // One 16 x 16 8-bit texture (TBP0 100, TBW 2, palette at CBP 200; or 4-bit),
 // sent as an 8 x 8 PSMCT32 picture whose bytes count 0..255; the palette sent
 // as 16 x 16 PSMCT32, colour k = (k, 255 - k, 7, 0x40).
-Bytes textures(unsigned psm) {
+Bytes textures(unsigned psm, unsigned size_log = 4U) {
     Writer w;
     w.u16(0);
     w.u16(0);
@@ -194,8 +194,9 @@ Bytes textures(unsigned psm) {
     w.zeros(0x700 - w.size());
     send(w, 0x40, 200, 1, 16, 16, 0x300);
     send(w, 0xD0, 100, 1, 8, 8, 0x200);
-    const std::uint64_t tex0 =
-        100U | (2U << 14U) | (static_cast<std::uint64_t>(psm) << 20U) | (4ULL << 26U) | (4ULL << 30U) | (200ULL << 37U);
+    const std::uint64_t tex0 = 100U | (2U << 14U) | (static_cast<std::uint64_t>(psm) << 20U) |
+                               (static_cast<std::uint64_t>(size_log) << 26U) |
+                               (static_cast<std::uint64_t>(size_log) << 30U) | (200ULL << 37U);
     w.set_u64(0x160 + 112, tex0);
     for (unsigned k = 0; k < 256; ++k) {
         w.b[0x200 + k] = static_cast<std::uint8_t>(k);
@@ -478,6 +479,11 @@ void test_refusals() {
     const Bytes four_bit = bar({{0x04, model(true)}, {0x07, textures(0x14)}});
     const auto m = kh2::import_mdlx(four_bit.data(), four_bit.size(), "test");
     expect(m.textures.empty() && m.missing_textures.size() == 1, "a texture it cannot decode is reported");
+    const Bytes huge = bar({{0x04, model(true)}, {0x07, textures(0x13, 15U)}});
+    const auto past = kh2::import_mdlx(huge.data(), huge.size(), "test");
+    expect(past.textures.empty() && past.missing_textures.size() == 1 &&
+               past.missing_textures[0].second.find("1024") != std::string::npos,
+           "a texture past the GS's limit is reported, not allocated");
 }
 
 }  // namespace

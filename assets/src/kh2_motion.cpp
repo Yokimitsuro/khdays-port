@@ -18,6 +18,10 @@ namespace {
 
 constexpr Mat4 kUnit{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 constexpr float kPi = 3.1415927F;
+// Past these a malformed file is cut short; the 388 motions of the HD pack's msets reach depth 13 and 190 visits.
+constexpr int kExpressionDepth = 64;
+constexpr std::uint32_t kExpressionVisits = 1U << 20U;  // per evaluation
+constexpr int kMostRepeats = 4096;                      // an F-curve's repeats counted out, before fmod
 
 // The motion's header fields (kn::MotionPrototype0RAW), offsets from the header.
 enum : std::size_t {
@@ -58,7 +62,9 @@ public:
     Reader(const std::uint8_t* data, std::size_t size) : data_(data), size_(size) {}
     const std::uint8_t* at(std::size_t o, std::size_t n) const {
         if (o > size_ || n > size_ - o) {
-            throw std::runtime_error("KH2 motion: read past the end of its data");
+            throw std::runtime_error(
+                "KH2 motion: a table runs past the end of its data; the file is damaged: extract it again from your "
+                "game");
         }
         return data_ + o;
     }
@@ -181,6 +187,10 @@ Mat4 inverse(const Mat4& m) {
 }
 
 float wrap(float a) {
+    // only a malformed file's are this far out: one turn at a time would never end
+    if (std::fabs(a) >= 1e4F) {
+        a = std::isfinite(a) ? std::fmod(a, 6.2831855F) : 0.0F;
+    }
     if (a <= 0.0F) {
         while (a < -kPi) {
             a += 6.2831855F;
@@ -372,12 +382,90 @@ MotionSkeleton read_motion_skeleton(const std::uint8_t* data, const std::size_t 
         }
     }
     if (s.joints.empty()) {
-        throw std::runtime_error("KH2 model: the BAR has no model entry (type 4) to move");
+        throw std::runtime_error("KH2 model: the BAR has no model entry (type 4) to move; name a KH2 obj/*.mdlx");
     }
     return s;
 }
 
 // --- A motion ---
+
+namespace {
+
+// Every F-curve's keys, as fcurve reads them: a slope only where the key's type or the curve's mode uses it.
+void validate_curves(const Reader& m, const std::size_t table, const std::uint32_t count) {
+    const std::size_t keys = m.u32(kKeys), times = m.u32(kTimes), values = m.u32(kValues), slopes = m.u32(kSlopes);
+    const auto left = [&](std::size_t k) { (void)m.at(slopes + m.u16(keys + k * 8U + 4) * 4U, 4); };
+    const auto right = [&](std::size_t k) { (void)m.at(slopes + m.u16(keys + k * 8U + 6) * 4U, 4); };
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const std::size_t f = table + i * 6U;
+        const unsigned modes = m.u8(f + 2);
+        const std::size_t num = m.u8(f + 3), first = m.u16(f + 4);
+        if (num == 0) {
+            continue;
+        }
+        const std::size_t last = first + num - 1;
+        for (std::size_t k = first; k <= last; ++k) {
+            const std::uint16_t word = m.u16(keys + k * 8U);
+            (void)m.at(times + (word & 0xFFFCU), 4);
+            (void)m.at(values + m.u16(keys + k * 8U + 2) * 4U, 4);
+            if ((word & 3U) == 2U) {
+                right(k);
+                left(std::min(k + 1, last));
+            }
+        }
+        if (((modes >> 4U) & 3U) == 1U) {
+            left(first);
+        }
+        if ((modes >> 6U) == 1U) {
+            right(last);
+        }
+    }
+}
+
+// What each pass reads through an offset the motion's header gives, so a bad file fails at load, not while drawn.
+void validate_tables(const Reader& m, const std::size_t joints) {
+    const std::uint32_t direct = m.u32(kDirectNum), indirect = m.u32(kIndirectNum);
+    validate_curves(m, m.u32(kDirect), direct);
+    validate_curves(m, m.u32(kIndirect), indirect);
+    const std::size_t position = m.u32(kPositionInfo);
+    (void)m.at(position, 16);
+    if (m.i32(position + 12) != 0) {
+        (void)m.at(position, 84);
+        for (std::size_t i = 0; i < 9; ++i) {
+            const std::int64_t f = m.i32(position + 48 + i * 4);
+            if (f != -1 && (f < 0 || f >= std::int64_t{direct} + indirect)) {
+                throw std::runtime_error("KH2 motion: its root motion names F-curve " + std::to_string(f) +
+                                         "; the file is damaged: extract it again from your game");
+            }
+        }
+    }
+    const std::size_t constraints = m.u32(kConstraints), active = m.u32(kActive), limiters = m.u32(kLimiters);
+    for (std::uint32_t i = 0; i < m.u32(kConstraintNum); ++i) {
+        const std::size_t c = constraints + i * 12U;
+        const std::size_t num = m.u16(c + 8), base = m.u16(c + 10);
+        if (num != 0) {
+            (void)m.at(active + base * 8U, num * 8U);
+        }
+        if (const std::uint8_t type = m.u8(c); type == 12 || type == 13) {
+            (void)m.at(limiters + m.u16(c + 6) * 48U, 48);
+        }
+    }
+    std::size_t effectors = 0;
+    for (std::size_t k = 0; k < joints; ++k) {
+        const std::uint32_t flag = m.u32(m.u32(kFlags) + k * 4U);
+        if ((flag & 0xFFFFU) >= joints) {
+            throw std::runtime_error("KH2 motion: its joint list names joint " + std::to_string(flag & 0xFFFFU) +
+                                     " of " + std::to_string(joints) +
+                                     "; the file is damaged: extract it again from your game");
+        }
+        effectors += ((flag >> 16U) & 3U) != 0 && ((flag >> 23U) & 1U) != 0 ? 1U : 0U;
+    }
+    if (effectors != 0) {
+        (void)m.at(m.u32(kExtEffector), effectors * 2U);
+    }
+}
+
+}  // namespace
 
 Motion::Motion(const std::uint8_t* data, const std::size_t size, const std::size_t at) {
     const Reader b(data, size);
@@ -396,7 +484,9 @@ Motion::Motion(const std::uint8_t* data, const std::size_t size, const std::size
     fps_ = m.f32(kFps);
     ret_ = m.f32(kRet);
     if (calc_num_ < model_num_ || !(fps_ > 0.0F)) {
-        throw std::runtime_error("KH2 motion: a header it cannot use");
+        throw std::runtime_error(
+            "KH2 motion: a header with fewer joints than its model's, or no frame rate; the file is damaged: extract "
+            "it again from your game");
     }
     // the tables each pass reads, whole
     (void)m.at(m.u32(kHrc), static_cast<std::size_t>(calc_num_ - model_num_) * 64U);
@@ -408,6 +498,7 @@ Motion::Motion(const std::uint8_t* data, const std::size_t size, const std::size
     (void)m.at(m.u32(kConstraints), static_cast<std::size_t>(m.u32(kConstraintNum)) * 12U);
     (void)m.at(m.u32(kExpressions), static_cast<std::size_t>(m.u32(kExpressionNum)) * 8U);
     (void)m.at(m.u32(kNodes), static_cast<std::size_t>(m.u32(kNodeNum)) * 12U);
+    validate_tables(m, static_cast<std::size_t>(calc_num_));
 }
 
 namespace {
@@ -445,6 +536,29 @@ void time_index(const Reader& m, float t, int& before, int& after) {
     after = hi;
 }
 
+// `t` before `first` brought up to it by whole periods, as the PS3 build loops; fmod once it is far out, where a
+// malformed `t` would never get there.
+float repeat_up(float t, const float first, const float period) {
+    if (first - t > period * kMostRepeats) {
+        t = first - std::fmod(first - t, period);
+    }
+    for (int i = 0; i <= kMostRepeats && t < first; ++i) {
+        t += period;
+    }
+    return t;
+}
+
+// `t` after `last` brought down to it
+float repeat_down(float t, const float last, const float period) {
+    if (t - last > period * kMostRepeats) {
+        t = last + std::fmod(t - last, period);
+    }
+    for (int i = 0; i <= kMostRepeats && t > last; ++i) {
+        t -= period;
+    }
+    return t;
+}
+
 // MotionPrototype0::calcFcurveValue (0xfa118): an F-curve (6 bytes at `f`) at
 // `t`; before its first key and after its last as its pre and post modes say
 // (hold, the end key's slope, repeat).
@@ -474,9 +588,8 @@ float fcurve(const Reader& m, std::size_t f, int before, int after, float t) {
         if (pre == 3) {
             return 0.0F;  // asserted against
         }
-        const float period = when(last) - when(first);
-        while (t < when(first) && period > 0.0F) {
-            t += period;
+        if (const float period = when(last) - when(first); period > 0.0F) {
+            t = repeat_up(t, when(first), period);
         }
         time_index(m, t, before, after);
     } else if (before >= index(last)) {
@@ -490,9 +603,8 @@ float fcurve(const Reader& m, std::size_t f, int before, int after, float t) {
         if (post == 3) {
             return 0.0F;
         }
-        const float period = when(last) - when(first);
-        while (t > when(last) && period > 0.0F) {
-            t -= period;
+        if (const float period = when(last) - when(first); period > 0.0F) {
+            t = repeat_down(t, when(last), period);
         }
         time_index(m, t, before, after);
     }
@@ -581,11 +693,6 @@ void limit(const Reader& m, std::size_t l, const Vec4& base, Vec4& value) {
 }
 
 }  // namespace
-
-bool Motion::has_root_motion() const {
-    const Reader m(bytes_.data(), bytes_.size());
-    return m.i32(m.u32(kPositionInfo) + 12) != 0;
-}
 
 Mat4 Motion::root_motion(const float ticks) const {
     // MotionPrototype0::getPosition (0x1028c0): scale, rotation, translation and
@@ -736,8 +843,16 @@ void MotionPlayer::constants(const Motion& motion) {
         }
         (track < 3 ? scale_ : track < 6 ? rotation_ : translation_)[id][track % 3] = m.f32(c + 4);
     }
-    for (std::size_t j = model; j < n; ++j) {
-        const std::size_t h = m.u32(kHrc) + (j - static_cast<std::size_t>(motion.model_joints())) * 64U;
+    // bones the motion's model has and this skeleton lacks: neutral, as they have no rest here
+    const auto own = static_cast<std::size_t>(motion.model_joints());
+    for (std::size_t j = model; j < own; ++j) {
+        const MotionSkeleton::Joint neutral;
+        scale_[j] = neutral.scale;
+        rotation_[j] = neutral.rotation;
+        translation_[j] = neutral.translation;
+    }
+    for (std::size_t j = own; j < n; ++j) {
+        const std::size_t h = m.u32(kHrc) + (j - own) * 64U;
         scale_[j] = m.vec(h + 16);
         rotation_[j] = m.vec(h + 32);
         translation_[j] = m.vec(h + 48);
@@ -808,14 +923,14 @@ void MotionPlayer::activation(const Motion& motion, const float t) {
     }
 }
 
-float MotionPlayer::expression(const Motion& motion, const int node) {
+float MotionPlayer::expression(const Motion& motion, const int node, const int depth) {
     // MotionPrototype0::evalExpression (0xfb048): a tree of 12-byte nodes (u32:
     // type in its low byte, global in bit 8, a joint in the high half; f32
     // value; u16 car, cdr). Angles in degrees.
     const Reader m(motion.bytes_.data(), motion.bytes_.size());
     const auto count = static_cast<int>(m.u32(kNodeNum));
-    if (node < 0 || node >= count) {
-        return 0.0F;
+    if (node < 0 || node >= count || depth >= kExpressionDepth || ++expression_visits_ > kExpressionVisits) {
+        return 0.0F;  // the two limits: a node that reaches itself, or nodes shared to no end
     }
     const std::size_t nodes = m.u32(kNodes);
     const auto at = [&](int n) { return nodes + static_cast<std::size_t>(n) * 12U; };
@@ -825,8 +940,8 @@ float MotionPlayer::expression(const Motion& motion, const int node) {
     const bool global = (word & 0x100U) != 0;
     const std::size_t joint = word >> 16U;
     const int car = m.u16(p + 8), cdr = m.u16(p + 10);
-    const auto a = [&] { return expression(motion, car); };
-    const auto b = [&] { return expression(motion, cdr); };
+    const auto a = [&] { return expression(motion, car, depth + 1); };
+    const auto b = [&] { return expression(motion, cdr, depth + 1); };
     constexpr float kDeg = 57.295776F, kRad = 0.017453292F;
     const auto in_joints = [&](std::size_t j) { return j < scale_.size(); };
     switch (type) {
@@ -862,7 +977,7 @@ float MotionPlayer::expression(const Motion& motion, const int node) {
         float sum = 0.0F;
         int n = 0;
         for (int l = car; l < count && m.u16(at(l) + 8) < count && n < count; l = m.u16(at(l) + 10)) {
-            sum += expression(motion, m.u16(at(l) + 8));
+            sum += expression(motion, m.u16(at(l) + 8), depth + 1);
             ++n;
         }
         return n != 0 ? sum / static_cast<float>(n) : 0.0F;
@@ -875,11 +990,11 @@ float MotionPlayer::expression(const Motion& motion, const int node) {
         if (l2 >= count) {
             return 0.0F;
         }
-        if (expression(motion, m.u16(at(l1) + 8)) == 0.0F) {
+        if (expression(motion, m.u16(at(l1) + 8), depth + 1) == 0.0F) {
             const int l3 = m.u16(at(l2) + 10);
-            return l3 < count ? expression(motion, m.u16(at(l3) + 8)) : 0.0F;
+            return l3 < count ? expression(motion, m.u16(at(l3) + 8), depth + 1) : 0.0F;
         }
-        return expression(motion, m.u16(at(l2) + 8));
+        return expression(motion, m.u16(at(l2) + 8), depth + 1);
     }
     case 15:
     case 43: {  // an F-curve at a time in the motion's frames (43: in degrees)
@@ -916,7 +1031,11 @@ float MotionPlayer::expression(const Motion& motion, const int node) {
         return x / b();
     }
     case 22: {
-        const int x = static_cast<int>(a()), y = static_cast<int>(b());
+        const float fx = a(), fy = b();
+        if (!(std::fabs(fx) < 2147483648.0F) || !(std::fabs(fy) < 2147483648.0F)) {
+            return 0.0F;  // no int holds it: the cast is undefined, and INT_MIN % -1 traps
+        }
+        const int x = static_cast<int>(fx), y = static_cast<int>(fy);
         return y != 0 ? static_cast<float>(x % y) : 0.0F;
     }
     case 23: {
@@ -979,6 +1098,7 @@ void MotionPlayer::evaluate(const Motion& motion, const float ticks, const Mat4&
         constants(motion);
         current_ = &motion;
     }
+    expression_visits_ = 0;
     const float t = ticks + motion.start() * 60.0F / motion.fps();
     frame_ = t * motion.fps() * 0.016666668F + motion.start();
     curves(motion, t);
@@ -1034,7 +1154,8 @@ void MotionPlayer::matrices(const Motion& motion, const Mat4& world, const Groun
         std::uint32_t flag = m.u32(m.u32(kFlags) + k * 4U);
         const std::size_t id = flag & 0xFFFFU;
         if (id >= n) {
-            throw std::runtime_error("KH2 motion: joint " + std::to_string(id) + " of " + std::to_string(n));
+            throw std::runtime_error("KH2 motion: joint " + std::to_string(id) + " of " + std::to_string(n) +
+                                     "; the file is damaged: extract it again from your game");
         }
         const int parent = parent_of(id);
         const Mat4& pg = ok(parent) ? all_gmatrix_[static_cast<std::size_t>(parent)] : kUnit;
@@ -1043,7 +1164,7 @@ void MotionPlayer::matrices(const Motion& motion, const Mat4& world, const Groun
         // its expressions (sorted by target)
         for (; e < expression_num && m.u16(expressions + e * 8U) == id; ++e) {
             const std::size_t x = expressions + e * 8U;
-            const float v = expression(motion, m.u16(x + 6));
+            const float v = expression(motion, m.u16(x + 6), 0);
             const unsigned track = m.u16(x + 2);
             if (track < 3) {
                 scale_[id][track] = v;
