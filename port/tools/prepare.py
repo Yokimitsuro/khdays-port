@@ -2102,7 +2102,7 @@ HOOKS["ov022@0208a464"] = [
 ]
 # A player another's Stop holds (friendly fire on) stands still: on the host its input, state and motion (the
 # guests' copies follow the host's), on every copy its animation.
-HOOKS["ov022@020a0008"] = [
+HOOKS["ov022@020a0008"] += [
     (  # Ov022_ActorUpdate
         "    void *pNext;\n\n    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
         "    void *pNext;\n"
@@ -3463,14 +3463,15 @@ HOOKS["ov008@0206ec2c"] = [  # Ov008_DrawPageBWidget
 ]
 # Preferences' steering (runtime/menus/camp.c khdays_camp_navigation_sound): the port's presses on the way to a
 # setting make no sound of their own.
-HOOKS["main@02033b78"] = [  # PlaySound
+HOOKS["main@02033b78"].insert(  # PlaySound, before its hook point renames it
+    0,
     (
         "int PlaySound(int arg0, int arg1) {",
         "int PlaySound(int arg0, int arg1) {\n"
         "    extern int khdays_camp_navigation_sound(int kind, int sound);\n"
         "    if (!khdays_camp_navigation_sound(arg0, arg1)) return 0;",
-    )
-]
+    ),
+)
 # The day's monologue in the theater's voice with its subtitles (runtime/movies/scene_trace.c): the DS's words
 # and the page's arrow left out (Roxas's picture, BG1, stays), A not turning the page while the voice speaks,
 # START taken by the window's pause, and the monologue left once the voice has said it all.
@@ -3506,16 +3507,16 @@ HOOKS["ov027@0208344c"].append(  # Ov027_UpdateFlushForward
 # The Walk mod's (runtime/input/walk.h): the local player's model drawn with its walk, each joint the model sends
 # taken from the walk's clip over the game's own result and given back after (the result is the motion's cache).
 # Without the mod no clip is read and both answer at once.
-HOOKS["main@0202aa9c"] = [  # Scene_DrawNode
+HOOKS["main@0202aa9c"].append(  # Scene_DrawNode, inside the shadow and fade scope
     (
-        "    NNS_G3dDraw(node->object);",
-        "    { extern void khdays_walk_draw_begin(int node);\n"
+        "NNS_G3dDraw(node->object);",
+        "{ extern void khdays_walk_draw_begin(int node);\n"
         "      extern void khdays_walk_draw_end(void);\n"
         "      khdays_walk_draw_begin((int)node);\n"
         "      NNS_G3dDraw(node->object);\n"
         "      khdays_walk_draw_end(); }",
     )
-]
+)
 HOOKS["itcm@01ffc164"].append(  # NNSi_G3dFuncSbc_NODEDESC
     (
         "        state->sendJnt(result);",
