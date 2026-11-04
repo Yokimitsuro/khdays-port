@@ -487,32 +487,16 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
-    [TXT_VIDEO_ANTIALIASING_NOTE] = {"The picture is made this many times larger and shrunk: the 3D's edges come out "
-                                     "smooth. 2x is four times the work for the graphics card, 4x sixteen.",
-                                     "L'image est faite autant de fois plus grande puis réduite : les bords de la 3D "
-                                     "sont lisses. 2x demande quatre fois plus à la carte graphique, 4x seize.",
-                                     "Das Bild wird so viel größer gemacht und verkleinert: die Kanten des 3D werden "
-                                     "glatt. 2x ist die vierfache Arbeit für die Grafikkarte, 4x die sechzehnfache.",
-                                     "L'immagine è fatta tante volte più grande e poi ridotta: i bordi del 3D escono "
-                                     "lisci. 2x è quattro volte il lavoro per la scheda grafica, 4x sedici.",
-                                     "La imagen se hace tantas veces más grande y se reduce: los bordes del 3D salen "
-                                     "suaves. 2x es cuatro veces el trabajo de la tarjeta gráfica, 4x dieciséis."},
-    [TXT_VIDEO_ANTIALIASING_WARNING] =
-        {"The internal resolution already draws the 3D at the window's size or larger: antialiasing "
-         "multiplies that work, so the game can slow down and use much more of the graphics card. "
-         "Leave it Off unless your card has power to spare.",
-         "La résolution interne dessine déjà la 3D à la taille de la fenêtre ou plus : l'anticrénelage "
-         "multiplie ce travail, le jeu peut ralentir et solliciter bien plus la carte graphique. "
-         "Laissez-le sur Non si votre carte n'a pas de puissance à revendre.",
-         "Die interne Auflösung zeichnet das 3D schon in Fenstergröße oder größer: die Kantenglättung "
-         "vervielfacht diese Arbeit, das Spiel kann langsamer werden und die Grafikkarte viel stärker "
-         "belasten. Lass sie auf Aus, wenn deine Karte keine Leistung übrig hat.",
-         "La risoluzione interna disegna già il 3D alla dimensione della finestra o più: l'antialiasing "
-         "moltiplica quel lavoro, il gioco può rallentare e impegnare molto di più la scheda grafica. "
-         "Lascialo su No se la tua scheda non ha potenza da vendere.",
-         "La resolución interna ya dibuja el 3D al tamaño de la ventana o mayor: el antialiasing "
-         "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
-         "Déjalo en No salvo que tu tarjeta vaya sobrada."},
+    [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
+                                     "card's work. The HUD, the menus and the text stay sharp.",
+                                     "Le FXAA lisse les bords de la 3D une fois dessinée, pour peu de travail de la "
+                                     "carte graphique. Le HUD, les menus et le texte restent nets.",
+                                     "FXAA glättet die Kanten des 3D, sobald es gezeichnet ist, mit wenig Arbeit für "
+                                     "die Grafikkarte. HUD, Menüs und Text bleiben scharf.",
+                                     "L'FXAA ammorbidisce i bordi del 3D una volta disegnato, con poco lavoro per la "
+                                     "scheda grafica. L'HUD, i menu e il testo restano nitidi.",
+                                     "El FXAA suaviza los bordes del 3D una vez dibujado, con poco trabajo para la "
+                                     "tarjeta gráfica. El HUD, los menús y el texto siguen nítidos."},
     [TXT_VIDEO_SCREENS] = {"Screens", "Écrans", "Bildschirme", "Schermi", "Pantallas"},
     [TXT_VIDEO_SCREENS_TWO] = {"Two (DS)", "Deux (DS)", "Zwei (DS)", "Due (DS)", "Dos (DS)"},
     [TXT_VIDEO_SCREENS_ONE] = {"One", "Un", "Einer", "Uno", "Una"},

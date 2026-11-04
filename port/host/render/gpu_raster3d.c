@@ -10,6 +10,7 @@
 #include "../../runtime/mods/textures.h"
 #include "../../ui/composition.h"
 #include "generated/compose_cs.h"
+#include "generated/fxaa3d_cs.h"
 #include "generated/raster3d_cs.h"
 
 #include <math.h>
@@ -38,6 +39,10 @@ typedef struct RasterParams {
     uint32_t toon[16];
 } RasterParams;
 
+typedef struct FxaaParams {
+    uint32_t width, height, fine, unused;
+} FxaaParams;
+
 typedef struct ComposeParams {
     uint32_t scale, width, height, disp3dcnt, swap_params, clear_color, clear_depth, fog_color;
     uint32_t fog_offset, eva, evb, evy, master_bright, bg0_hofs;
@@ -52,6 +57,10 @@ typedef struct ComposeParams {
 
 static SDL_GPUDevice *device;
 static SDL_GPUComputePipeline *raster, *compose;
+static SDL_GPUComputePipeline *fxaa; /* the antialiasing's pass (fxaa3d.hlsl); NULL: the card could not make it */
+static SDL_GPUTexture *fxaa_out;     /* its output, as large as the colour target */
+static int fxaa_width, fxaa_height;
+static int fxaa_on; /* khdays_raster3d_set_fxaa */
 static SDL_GPUBuffer *polys, *verts, *tiles, *vram, *records, *sequences;
 static uint32_t polys_capacity, verts_capacity; /* entries in `polys` and `verts`: the most any list has had */
 static int fine;                                /* draw the 3D in 8 bits per channel (khdays_raster3d_set_fine) */
@@ -196,6 +205,11 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
         SDL_SetError("%s", why);
         return 0;
     }
+    fxaa = make_pipeline(fxaa3d_cs_dxil, fxaa3d_cs_dxil_size, fxaa3d_cs_spirv, fxaa3d_cs_spirv_size, fxaa3d_cs_msl,
+                         fxaa3d_cs_msl_size, FXAA3D_CS_ENTRY, 0, 0, 2);
+    if (fxaa == NULL) {
+        fprintf(stderr, "host: the antialiasing's pass cannot be made (%s): drawn without it\n", SDL_GetError());
+    }
     native_ready = khdays_native3d_open(device);
     if (!native_ready) {
         fprintf(stderr, "host: the card's rasterizer cannot draw the 3D (%s): raster3d.hlsl draws it\n",
@@ -264,6 +278,13 @@ void khdays_raster3d_close(void)
         SDL_ReleaseGPUComputePipeline(device, raster);
     if (compose != NULL)
         SDL_ReleaseGPUComputePipeline(device, compose);
+    if (fxaa != NULL)
+        SDL_ReleaseGPUComputePipeline(device, fxaa);
+    if (fxaa_out != NULL)
+        SDL_ReleaseGPUTexture(device, fxaa_out);
+    fxaa = NULL;
+    fxaa_out = NULL;
+    fxaa_width = fxaa_height = 0;
     if (polys != NULL)
         SDL_ReleaseGPUBuffer(device, polys);
     if (verts != NULL)
@@ -657,6 +678,49 @@ static uint32_t io32(const uint8_t *io3d, unsigned offset)
 {
     return (uint32_t)io3d[offset] | (uint32_t)io3d[offset + 1] << 8 | (uint32_t)io3d[offset + 2] << 16 |
            (uint32_t)io3d[offset + 3] << 24;
+}
+
+/* The antialiasing over the colour just drawn, `w` x `h`: FXAA into a texture of that size, copied back over
+ * the colour so whatever reads the 3D gets it smoothed. Returns 0 when the texture cannot be made. */
+static int smooth_edges(SDL_GPUCommandBuffer *cmd, int w, int h)
+{
+    FxaaParams fp;
+    SDL_GPUStorageTextureReadWriteBinding io[2];
+    SDL_GPUComputePass *pass;
+    SDL_GPUCopyPass *copy;
+    SDL_GPUTextureLocation from, to;
+    if (fxaa_out == NULL || fxaa_width != w || fxaa_height != h) {
+        if (fxaa_out != NULL) {
+            SDL_ReleaseGPUTexture(device, fxaa_out);
+        }
+        fxaa_out = make_target(SDL_GPU_TEXTUREFORMAT_R32_UINT, SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE, w, h);
+        fxaa_width = fxaa_out != NULL ? w : 0;
+        fxaa_height = fxaa_out != NULL ? h : 0;
+        if (fxaa_out == NULL) {
+            return 0;
+        }
+    }
+    SDL_zero(fp);
+    fp.width = (uint32_t)w;
+    fp.height = (uint32_t)h;
+    fp.fine = (uint32_t)fine;
+    SDL_zeroa(io);
+    io[0].texture = color3d; /* read only here */
+    io[1].texture = fxaa_out;
+    io[1].cycle = true;
+    pass = SDL_BeginGPUComputePass(cmd, io, 2, NULL, 0);
+    SDL_BindGPUComputePipeline(pass, fxaa);
+    SDL_PushGPUComputeUniformData(cmd, 0, &fp, sizeof(fp));
+    SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
+    SDL_EndGPUComputePass(pass);
+    copy = SDL_BeginGPUCopyPass(cmd);
+    SDL_zero(from);
+    SDL_zero(to);
+    from.texture = fxaa_out;
+    to.texture = color3d;
+    SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)w, (Uint32)h, 1, false);
+    SDL_EndGPUCopyPass(copy);
+    return 1;
 }
 
 static const KhdaysG3dList *list_instead; /* a list to draw instead of the package's (khdays_raster3d_use_list) */
@@ -1152,6 +1216,12 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
         SDL_EndGPUComputePass(pass);
     }
+    /* the antialiasing: the 3D's edges smoothed before anything reads it (the HUD drawn apart left sharp) */
+    if (fxaa_on && fxaa != NULL && !drawing_hud && !smooth_edges(cmd, w, h)) {
+        fprintf(stderr, "host: no texture for the antialiasing at %dx%d (%s): drawn without it\n", w, h,
+                SDL_GetError());
+        fxaa_on = 0;
+    }
     if (compose_too) {
         ComposeParams cp;
         SDL_GPUStorageTextureReadWriteBinding io[3];
@@ -1223,6 +1293,11 @@ int khdays_raster3d_native(void)
 void khdays_raster3d_set_native(int on)
 {
     native = on && native_ready;
+}
+
+void khdays_raster3d_set_fxaa(int on)
+{
+    fxaa_on = on != 0;
 }
 
 void khdays_raster3d_set_fine(int on)

@@ -594,12 +594,14 @@ static void test_video_settings(void)
     CHECK(load_text("[video]\naspect = 16:9\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_16_9);
     CHECK(load_text("[video]\naspect = window\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_WINDOW);
 
-    /* Antialiasing: off by default; 2x to 4x, written back as read; a bad value says so and is off. */
+    /* Antialiasing: off by default; fxaa written back as read; the old 2x to 4x read as fxaa; a bad value says so
+     * and is off. */
     CHECK(p.video.antialiasing == 1);
-    CHECK(load_text("[video]\nantialiasing = 3x\n", &q) == 0 && q.video.antialiasing == 3);
+    CHECK(load_text("[video]\nantialiasing = fxaa\n", &q) == 0 && q.video.antialiasing == 2);
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
     khdays_profile_load(&r, path, count_notice);
-    CHECK(r.video.antialiasing == 3);
+    CHECK(r.video.antialiasing == 2);
+    CHECK(load_text("[video]\nantialiasing = 3x\n", &q) == 0 && q.video.antialiasing == 2);
     CHECK(load_text("[video]\nantialiasing = off\n", &q) == 0 && q.video.antialiasing == 1);
     CHECK(load_text("[video]\nantialiasing = 8x\n", &q) == 1 && q.video.antialiasing == 1);
 
@@ -922,7 +924,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_DISPLAY, KHDAYS_ROW_CHOICE, 0, KHDAYS_DISPLAY_COUNT - 1, 0},
         {KHDAYS_SET_SCREEN_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 0, 0}, /* the desktop's: no screen without the video */
         {KHDAYS_SET_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 15, 0},  /* as the window allows, 2x-16x: 1x is not offered */
-        {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 3, 0}, /* off, 2x, 3x, 4x */
+        {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 1, 0}, /* off, FXAA */
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
         {KHDAYS_SET_SCREENS, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_TWO_SCREENS, KHDAYS_ROW_CHOICE, 0, KHDAYS_TWO_SCREENS_COUNT - 1, 0},
@@ -993,9 +995,9 @@ static void test_settings_model(void)
                         CHECK(r->label != NULL && r->label[0] != '\0');
                     }
                 }
-                /* antialiasing warns while it is on: the internal resolution already scales the 3D */
+                /* antialiasing: off by default, FXAA costs little, so no warning */
                 if (r->id == KHDAYS_SET_ANTIALIASING) {
-                    CHECK(r->warning != NULL && r->warning[0] != '\0' && r->safe == 1 && *r->value == 1);
+                    CHECK(r->warning == NULL && r->safe == 1 && *r->value == 1);
                 }
             }
         }
@@ -1443,13 +1445,14 @@ static void test_video_page(void)
     key(SDL_SCANCODE_LEFT);
     key(SDL_SCANCODE_LEFT);
     CHECK(v->internal_resolution == 16);
-    key(SDL_SCANCODE_DOWN); /* the antialiasing: off, 2x, 3x, 4x, and round */
+    key(SDL_SCANCODE_DOWN); /* the antialiasing: off, FXAA, and round */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->antialiasing == 2);
-    key(SDL_SCANCODE_LEFT);
-    key(SDL_SCANCODE_LEFT);
-    CHECK(v->antialiasing == 4);
     key(SDL_SCANCODE_RIGHT);
+    CHECK(v->antialiasing == 1);
+    key(SDL_SCANCODE_LEFT);
+    CHECK(v->antialiasing == 2);
+    key(SDL_SCANCODE_LEFT);
     CHECK(v->antialiasing == 1);
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);

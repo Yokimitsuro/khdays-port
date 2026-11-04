@@ -355,13 +355,6 @@ static int columns_now(void)
     }
 }
 
-/* The antialiasing: the picture made this many times larger, then shrunk
- * (gfx_render.c); never at the DS's own 1x, kept for comparing with the DS. */
-static int antialiasing_now(void)
-{
-    return video.internal_resolution != 1 && video.antialiasing > 1 ? video.antialiasing : 1;
-}
-
 /* The window's pixels a DS pixel the picture is shown at: the presentation
  * (the picture's columns, one screen's rows or two) fitted into the window. */
 static float shown_scale(void)
@@ -378,18 +371,14 @@ static float shown_scale(void)
 
 /* The internal resolution now: the setting, or for "window" the window's own size (smooth scaling:
  * the whole multiple at least as large, shrunk on the card; sharp: the largest that fits with square
- * DS pixels), times the antialiasing. If the card could not make a scale (refused_scale) the next one
- * down is used. */
+ * DS pixels). If the card could not make a scale (refused_scale) the next one down is used. */
 static int scale_now(void)
 {
     int n = video.internal_resolution;
     if (n == KHDAYS_RESOLUTION_WINDOW) {
         const float s = shown_scale();
-        n = video.smooth_scaling ? (int)SDL_ceilf(s * (float)antialiasing_now() - 0.01f)
-                                 : (int)SDL_floorf(s) * antialiasing_now();
+        n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
         n = n < 1 ? 1 : n;
-    } else {
-        n *= antialiasing_now();
     }
     if (refused_scale > 1 && n >= refused_scale) {
         n = refused_scale - 1;
@@ -399,8 +388,8 @@ static int scale_now(void)
 
 /* The 2D's scale over a 3D at `n3d`: the window's own (smooth scaling: the whole multiple at least as large,
  * shrunk on the card; sharp: the largest that fits), so the HUD, menus and text stay as sharp as the window
- * whatever the internal resolution; the 3D's when that is finer (the antialiasing, an internal resolution
- * above the window's). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
+ * whatever the internal resolution; the 3D's when that is finer (an internal resolution above the
+ * window's). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
 static int scale2d_now(int n3d)
 {
     const float s = shown_scale();
@@ -1301,12 +1290,11 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 last_apart = apart;
             }
         }
+        khdays_raster3d_set_fxaa(video.antialiasing > 1);
         const int raster = can_raster && khdays_raster3d_rasterize(p, n, video.texture_smoothing);
-        /* shrunk to the size the window shows it at (smooth scaling: its own pixels), or by the
-         * antialiasing (sharp: the DS's pixels kept square, then stretched by whole pixels) */
-        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale()
-                                    : n2d > n            ? (float)n2d
-                                                         : (float)n / (float)antialiasing_now());
+        /* shrunk to the size the window shows it at (smooth scaling: its own pixels; sharp: the DS's
+         * pixels kept square, then stretched by whole pixels) */
+        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale() : n2d > n ? (float)n2d : (float)n);
         khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
         if (picture) {
             SDL_GPUTexture *c3d = NULL, *a3d = NULL;
@@ -1438,7 +1426,7 @@ void khdays_present_set_video(const KhdaysVideo *v)
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
         (v->movies == KHDAYS_MOVIES_HD ? KHDAYS_HOST_MOVIES_HD : 0) | (v->one_screen ? KHDAYS_HOST_ONE_SCREEN : 0);
     khdays_subtitles_set(v->subtitles);
-    if (v->internal_resolution != video.internal_resolution || v->antialiasing != video.antialiasing) {
+    if (v->internal_resolution != video.internal_resolution) {
         refused_scale = 0; /* try the new choice */
     }
     if (v->backend != video.backend && renderer != NULL) {

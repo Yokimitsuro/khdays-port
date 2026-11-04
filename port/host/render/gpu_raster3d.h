@@ -49,6 +49,10 @@ void khdays_raster3d_use_list(const struct KhdaysG3dList *list);
 int khdays_raster3d_native(void);
 void khdays_raster3d_set_native(int on);
 
+/* The antialiasing (FXAA, shaders/fxaa3d.hlsl): on, each 3D drawn has its edges smoothed before anything
+ * reads it (khdays_raster3d_targets gives it so); the HUD drawn apart is left sharp. Off by default. */
+void khdays_raster3d_set_fxaa(int on);
+
 /* Sets whether the 3D is drawn in 8 bits per channel instead of the DS's 6 (when HD textures are
  * drawn), and says whether it is. */
 void khdays_raster3d_set_fine(int on);

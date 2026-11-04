@@ -255,7 +255,7 @@ void khdays_video_default(KhdaysVideo *v)
     /* the window's own size: on a PC the DS's 1x is too small to read, and HD models and textures need the
      * pixels to show */
     v->internal_resolution = KHDAYS_RESOLUTION_WINDOW;
-    v->antialiasing = 1;            /* off: 2x is four times the 3D's work */
+    v->antialiasing = 1;            /* off */
     v->aspect = KHDAYS_ASPECT_16_9; /* for one screen; two screens use 4:3 */
     v->smooth_scaling = 0;
     v->texture_smoothing = 0;
@@ -937,9 +937,9 @@ static void read_video(Reader *r, const char *key, const char *value, const char
     if (SDL_strcasecmp(key, "antialiasing") == 0) {
         if (SDL_strcasecmp(value, "off") == 0) {
             v->antialiasing = 1;
-        } else if ((value[0] == '2' || value[0] == '3' || value[0] == '4') && (value[1] == 'x' || value[1] == 'X') &&
-                   value[2] == '\0') {
-            v->antialiasing = value[0] - '0';
+        } else if (SDL_strcasecmp(value, "fxaa") == 0 || SDL_strcasecmp(value, "2x") == 0 ||
+                   SDL_strcasecmp(value, "3x") == 0 || SDL_strcasecmp(value, "4x") == 0) {
+            v->antialiasing = 2; /* (2x to 4x drew the picture larger and shrank it: FXAA in its place) */
         } else {
             say_localized(r, TXT_VIDEO_BAD_VALUE, key, value, "off");
             v->antialiasing = defaults.antialiasing;
@@ -1549,7 +1549,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;
-        char resolution[16], antialiasing[8], screen[24];
+        char resolution[16], screen[24];
         if (v->internal_resolution == KHDAYS_RESOLUTION_WINDOW) {
             SDL_strlcpy(resolution, "window", sizeof(resolution));
         } else {
@@ -1561,11 +1561,6 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         } else {
             SDL_strlcpy(screen, "desktop", sizeof(screen));
         }
-        if (v->antialiasing > 1) {
-            SDL_snprintf(antialiasing, sizeof(antialiasing), "%dx", v->antialiasing);
-        } else {
-            SDL_strlcpy(antialiasing, "off", sizeof(antialiasing));
-        }
         add(&t,
             "\n[video]\n"
             "# display: window, borderless (a window without borders over the whole screen) or fullscreen\n"
@@ -1576,8 +1571,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# internal_resolution: window (the window's size, the default) or a whole multiple of the DS's\n"
             "# picture: the settings offer 2 to 16; 1, the DS's own, only for comparing with the DS\n"
             "internal_resolution = %s\n"
-            "# antialiasing: off, 2x, 3x or 4x -- the picture made that many times larger and shrunk,\n"
-            "# the 3D's edges smooth (2x is four times the work, 4x sixteen)\n"
+            "# antialiasing: off or fxaa -- the 3D's edges smoothed once it is drawn (FXAA), the HUD\n"
+            "# and the text left sharp\n"
             "antialiasing = %s\n"
             "# screens: two (the DS's) or one (one picture)\n"
             "screens = %s\n"
@@ -1605,7 +1600,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "#          direct3d12 or vulkan\n"
             "backend = %s\n",
             displays[v->display >= 0 && v->display < KHDAYS_DISPLAY_COUNT ? v->display : 0], screen, resolution,
-            antialiasing, v->one_screen ? "one" : "two",
+            v->antialiasing > 1 ? "fxaa" : "off", v->one_screen ? "one" : "two",
             v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",

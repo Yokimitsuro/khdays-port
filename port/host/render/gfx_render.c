@@ -132,10 +132,10 @@ typedef struct HdBank {
 } HdBank;
 static SDL_GPUComputePipeline *capturer;
 static HdBank hd_bank[4], hd_scratch, hd_source;
-/* What the window shows: the screens and the picture made larger than shown (the antialiasing, or the
- * internal resolution rounded up) are shrunk on the card (shrink.hlsl) to `shown` window pixels a DS
- * pixel, into these. The 3D's edges come out smooth, and the window shows the picture at its own
- * pixels rather than a smaller one stretched. */
+/* What the window shows: the screens and the picture made larger than shown (the internal resolution
+ * rounded up, or above the window's) are shrunk on the card (shrink.hlsl) to `shown` window pixels a DS
+ * pixel, into these: the window shows the picture at its own pixels rather than a smaller one
+ * stretched. */
 typedef struct Shrunk {
     SDL_GPUTexture *texture;
     int w, h;

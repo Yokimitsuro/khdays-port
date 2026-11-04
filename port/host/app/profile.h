@@ -159,7 +159,7 @@ typedef enum KhdaysTwoScreens {
 
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
-    int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
+    int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
     int texture_smoothing;

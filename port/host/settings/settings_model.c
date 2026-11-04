@@ -30,8 +30,8 @@ static const char *languages[KHDAYS_LANGUAGE_LAST + 1];
 enum { RESOLUTION_CHOICES = 17 };
 static const char *resolutions[RESOLUTION_CHOICES], *aspects[KHDAYS_ASPECT_COUNT], *scalings[2],
     *movies[KHDAYS_MOVIES_COUNT], *paces[2], *screens_choices[2], *two_screens_choices[KHDAYS_TWO_SCREENS_COUNT],
-    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[4];
-static const int antialiasing_values[4] = {1, 2, 3, 4};
+    *backends[KHDAYS_BACKEND_COUNT], *displays[KHDAYS_DISPLAY_COUNT], *antialiasings[2];
+static const int antialiasing_values[2] = {1, 2};
 static const char *autosaves[3], *save_files[2];
 static const char *hud_anchors[9], *mission_visibility[2];
 static const int hud_anchor_values[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -131,9 +131,7 @@ void khdays_model_refresh(const KhdaysProfile *work)
         }
     }
     antialiasings[0] = khdays_text(TXT_OFF);
-    antialiasings[1] = "2x";
-    antialiasings[2] = "3x";
-    antialiasings[3] = "4x";
+    antialiasings[1] = "FXAA";
     displays[KHDAYS_DISPLAY_WINDOW] = khdays_text(TXT_VIDEO_DISPLAY_WINDOW);
     displays[KHDAYS_DISPLAY_BORDERLESS] = khdays_text(TXT_VIDEO_DISPLAY_BORDERLESS);
     displays[KHDAYS_DISPLAY_FULLSCREEN] = khdays_text(TXT_VIDEO_DISPLAY_FULLSCREEN);
@@ -452,11 +450,10 @@ static void build_video(Builder *b, KhdaysProfile *w)
                    RESOLUTION_CHOICES - first);
     r->values = resolution_values + first;
     needs_graphics_card(b, r, TXT_VIDEO_RESOLUTION_NOTE);
-    r = add_choice(b, KHDAYS_SET_ANTIALIASING, TXT_VIDEO_ANTIALIASING, &v->antialiasing, antialiasings, 4);
+    r = add_choice(b, KHDAYS_SET_ANTIALIASING, TXT_VIDEO_ANTIALIASING, &v->antialiasing, antialiasings, 2);
     r->values = antialiasing_values;
     needs_graphics_card(b, r, TXT_VIDEO_ANTIALIASING_NOTE);
-    r->warning = khdays_text(TXT_VIDEO_ANTIALIASING_WARNING); /* on top of the internal resolution's */
-    r->safe = 1;                                              /* off */
+    r->safe = 1; /* off */
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_ASPECT, TXT_VIDEO_ASPECT, &v->aspect, aspects, KHDAYS_ASPECT_COUNT),
                         TXT_VIDEO_ASPECT_NOTE);
     needs_graphics_card(b, add_choice(b, KHDAYS_SET_SCREENS, TXT_VIDEO_SCREENS, &v->one_screen, screens_choices, 2),

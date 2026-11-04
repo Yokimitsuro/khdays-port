@@ -211,8 +211,8 @@ pixel it lies in, so the pixel art stays sharp, and the 3D of its own place),
 and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`.
 The 2D is composed at the window's scale whatever the internal resolution
 (`scale2d_now`, gpu_present.c: smooth scaling the whole multiple at least as
-large, sharp the largest that fits; the 3D's when that is finer, the
-antialiasing or an internal resolution above the window's), so the HUD, the
+large, sharp the largest that fits; the 3D's when that is finer, an
+internal resolution above the window's), so the HUD, the
 menus and the text stay as sharp as the window when the 3D is drawn coarser to
 save the card's time. Where the 2D is finer than the 3D, each output pixel reads
 the 3D at its middle (`finished3d_at`, finish3d.hlsli): the nearest texel with
@@ -243,8 +243,23 @@ integer steps, its coverage and interpolation kept from being fused
 need the finished neighbours, and `compose.hlsl` composes it with the 2D as
 `gpu2d.c` does from the composition records, the master brightness last. A
 picture made larger than it is shown is shrunk by `shrink.hlsl` (each texel the
-area-weighted average under it): the 3D's edges come out smooth (the
-antialiasing setting) and the window shows the picture at its own pixels.
+area-weighted average under it): the window shows the picture at its own pixels.
+
+The antialiasing setting (FXAA, `shaders/fxaa3d.hlsl`) smooths the 3D once it is
+drawn, before anything reads it: a texel whose neighbours' brightness changes
+enough (an eighth of the brightest, and at least 0.03) lies on an edge; the edge
+runs across or down by which way the change is larger, its run is followed both
+ways (steps of 1 to 8 texels) between the texel's row and the steeper side's until
+the brightness leaves the edge's, and the texel is blended with the one across
+the edge by how near the run's nearer end it lies (a texel finer than one, a lone
+point or line, by how far it stands from its neighbours). Brightness and blending
+count each texel by its alpha, so an outline over no 3D becomes partial alpha and
+a texel without 3D gives no colour; the texel keeps its flags (over the 2D,
+translucent), and the edge marking and the fog come after from the other target.
+The result is copied back over the colour, so every reader (the composition, the
+one-screen picture) gets it; the HUD's 3D drawn apart is left sharp. It replaced
+the antialiasing that drew the picture 2x to 4x larger and shrunk it (four to
+sixteen times the 3D's work; settings files holding 2x, 3x or 4x read as FXAA).
 
 In widescreen the 3D target is that many columns wide (`origin_x` the DS
 column of its first, negative), the list clipped wide enough to fill it

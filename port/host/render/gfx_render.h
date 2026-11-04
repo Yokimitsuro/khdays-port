@@ -68,8 +68,8 @@ int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int
 void khdays_gfx_render_set_smooth_3d(int on);
 
 /* The size the window shows the draws that follow at, in window pixels a DS pixel. What is made larger
- * (the antialiasing, the window's size rounded up) is shrunk to it on the card (shrink.hlsl), each
- * pixel the average of the area under it. 0: as made. */
+ * (the window's size rounded up, an internal resolution above it) is shrunk to it on the card
+ * (shrink.hlsl), each pixel the average of the area under it. 0: as made. */
 void khdays_gfx_render_set_shown(float pixels_per_ds_pixel);
 
 /* The last one-screen picture made, as a texture of `renderer`, and its width
