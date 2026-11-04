@@ -90,6 +90,8 @@ struct ImportedModel final {
     // Textures the model uses that were not found or could not be read (each
     // drawn white), with the reason, for the caller to report.
     std::vector<std::pair<std::string, std::string>> missing_textures;
+    // Anything else about its textures for the caller to report (HD pictures used, or left out and why).
+    std::vector<std::string> notes;
     // The file's nodes and its own animations of them (a room's moving pieces).
     std::vector<ImportedNode> nodes;
     std::vector<ImportedAnimation> animations;

@@ -2571,6 +2571,10 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
         khdays_log("models: %s: texture %s not found or not readable (%s); drawn white", path.c_str(), texture.c_str(),
                    why.c_str());
     }
+    for (const std::string &note : mod.notes) {
+        std::fprintf(stderr, "models: %s: %s\n", path.c_str(), note.c_str());
+        khdays_log("models: %s: %s", path.c_str(), note.c_str());
+    }
     // a mod's character with a skeleton of its own: none of its joints follows a node of the game's
     const KhdaysCharacter *character = khdays_characters_of_model(name.c_str());
     const bool own_skeleton = character != nullptr && character->own_skeleton;

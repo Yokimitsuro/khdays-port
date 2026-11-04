@@ -944,10 +944,35 @@ A KH2 model's coat, cords and hair can be simulated over its motions (or the
 game's animation) from `<model>.secondary.txt` beside it: `SECONDARY_MOTION.md`,
 with N_EX830's setup.
 
+## HD pictures
+
+A folder beside the model with its name (`roxas_b_h.mdlx`, `roxas_b_h/`) replaces its textures, as the
+remaster's `remastered/obj/<name>.mdlx/` holds them: `-N.png` or `-N.dds` (the PNG first; `image.h`,
+`dds.h`: BC3 or plain 32-bit). The numbering is the rooms' (`TextureContainer`, `kh2_map.h`): each GS
+info in turn, each followed by one sprite sheet per TEXA drawn over it. N_EX830 (verified by the sizes
+against its GS infos and TEXAs, and by each sheet's alpha equal to the model's sprites'):
+
+| File | What | Size | The model's |
+|---|---|---|---|
+| `-0` | tex0 | 1024 x 1024 | 256 x 256 |
+| `-1` | tex1 (the face) | 1024 x 1024 | 256 x 256 |
+| `-2` | the eyes over tex1, 18 sprites stacked upright | 384 x 3456 | 96 x 48 each |
+| `-3` | the mouth over tex1, 17 sprites | 192 x 2176 | 48 x 32 each |
+
+A picture may be any size: it covers the texture's region (`region_uv`), the model's texture
+coordinates and its blocks' places go by the scale. A sprite sheet's rows must divide by its sprites;
+a sprite not at the block's size is resized (nearest), so a sheet still fits a picture of another
+scale, and the model's own sprites are used, resized, where there is no sheet. A file missing leaves
+the model's own; one unreadable, or a sheet that does not divide, is reported in the log, as is what
+was used. Each model has its own folder: only the model beside it changes.
+
+A texture under a face block changes as it plays, so its whole picture is sent to the card at each
+change of sprite, and it has no smaller copies (`gpu_hd.c` `has_smaller`: not for pictures that
+change). At 1024 x 1024 and drawn small it may flicker as a still picture without them would.
+
 ## Not yet
 
 - 4-bit textures (PSMT4) and other formats: reported and drawn white.
 - Region clamp is drawn as repeat (the renderer repeats mods' textures).
 - Normals, UV scroll and the chained shadow model are not read; of entry 0x17
   only the feet (types 10 and 11).
-- The remastered HD textures (`remastered/obj/<name>.mdlx/-N.dds`) are not used.
