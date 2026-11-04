@@ -2971,8 +2971,17 @@ static void build_extra(Canvas *c, const KhdaysBgLayer *l, int ox, int oy, int s
         return;
     const int hide_ds = hd_enabled() && (!c->display_count || m->hd_image >= 0);
     uint32_t *base = NULL, *hd = NULL;
-    /* Submission is serial; share one scratch tile at the maximum UI scale. */
-    static uint32_t tile[64 * 64];
+    /* Submission is serial; one scratch tile shared, grown to the UI's scale (it has no upper bound). */
+    static uint32_t *tile;
+    static size_t tile_texels;
+    const size_t need = (size_t)(8 * scale) * (size_t)(8 * scale);
+    if (tile_texels < need) {
+        uint32_t *grown = (uint32_t *)realloc(tile, need * sizeof(uint32_t));
+        if (grown == NULL)
+            return;
+        tile = grown;
+        tile_texels = need;
+    }
     int rendered[EXTRA_CELLS], rendered_count = 0;
     for (int i = 0; i < EXTRA_CELLS; ++i) {
         const int k = sources[i];
