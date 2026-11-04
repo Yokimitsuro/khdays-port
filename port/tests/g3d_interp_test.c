@@ -68,6 +68,18 @@ static void begin(Lists *l)
     l->list.widen = 1.0f;
 }
 
+/* A polygon of draw `draw` beside the eye (a room's wall the camera stands at): before projection about
+ * x `x`, its w only `w` -- its place on the view far out, and far from one list to the next. */
+static void beside_eye(Lists *l, int32_t x, int32_t w, uint64_t draw, uint32_t ordinal)
+{
+    square(l, 0.0, 0, draw, 0, ordinal, 0);
+    for (int k = 0; k < 4; ++k) {
+        int32_t *v = l->verts[l->pre[l->list.npre - 1].first + k].word;
+        v[0] = x + ((k & 1) ? 200 : -200);
+        v[3] = w;
+    }
+}
+
 /* The picture's first vertex of the newer list's polygon `i`: its x on the view and its s. */
 static double x_of(const KhdaysG3dInterp *work, const Lists *newer, int i, int32_t *s)
 {
@@ -105,6 +117,12 @@ int main(void)
     /* an effect's piece outside a model that jumped across the view (another of its material's) */
     square(&older, -0.8, 0, 0, 7, 0, 0);
     square(&newer, 0.8, 0, 0, 7, 0, 0);
+    /* a room drawn once, moving a little as the camera turns, one of its walls beside the eye: the wall's
+     * place on the view runs from -83 to -250, the room's middle hardly moves -- drawn between */
+    square(&older, 0.0, 0, 0x4000, 0, 0, 0);
+    beside_eye(&older, -300, 6, 0x4000, 1);
+    square(&newer, 0.1, 0, 0x4000, 0, 0, 0);
+    beside_eye(&newer, -300, 2, 0x4000, 1);
     CHECK(khdays_g3d_interpolate(&work, &older.list, &newer.list, 0.5f, &out));
     CHECK(near(x_of(&work, &newer, 0, &s), 0.51)); /* between itself, not the other drawing */
     CHECK(near(x_of(&work, &newer, 1, &s), -0.49));
@@ -113,6 +131,7 @@ int main(void)
     CHECK(s == 4 * 16);                            /* its texture where it is now */
     CHECK(near(x_of(&work, &newer, 4, &s), 0.8));  /* the jump not drawn between */
     CHECK(work.jumped == 1);
+    CHECK(near(x_of(&work, &newer, 5, &s), 0.05)); /* the room between, its wall's far place not a jump */
     khdays_g3d_list_free(&out);
     khdays_g3d_interp_free(&work);
     if (failures == 0) {

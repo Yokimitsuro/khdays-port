@@ -161,7 +161,13 @@ first, not to the one of its place in the order, which changes as one comes or
 goes (the prizes flew between each other). What moved more than an eighth of
 the view -- a model's drawing, or a polygon outside a model (an effect's piece
 taken for another of its material) -- and the selection markers (the reticle
-going from one target to the next) are drawn where the newer list has them.
+going from one target to the next) are drawn where the newer list has them. A
+drawing's place is the middle of its polygons' first vertices before projection,
+projected: the average of their places on the view ran to the hundreds for a room
+whose walls stand beside the eye, so the field's room (some 500 polygons) passed
+for one that jumped in a third of the game's frames and was drawn at the game's 30
+a second under Roxas moving smoothly (seen 2026-11-04 at 165 Hz, the play walk:
+322 polygons a picture left out where any were, 0.08% of all after).
 `tests/g3d_interp_test.c` checks each.
 
 The graphics card draws the lists (`host/render/gpu_raster3d.c`); the software

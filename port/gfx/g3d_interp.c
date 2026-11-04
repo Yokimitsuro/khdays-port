@@ -70,11 +70,10 @@ static int32_t find_older(const KhdaysG3dInterp *work, int32_t size, const Khday
     return -1;
 }
 
-/* A vertex's place on the view, x/w and y/w (-1..1 the view); 0 when it is
- * behind the eye. A mod's words are floats, the game's fixed point. */
-static int view_place(const KhdaysG3dPreVertex *v, int32_t flags, double *x, double *y)
+/* A vertex's place before projection, x, y, z, w; 0 when it is behind the eye. A mod's words are
+ * floats, the game's fixed point (one scale for both lists). */
+static int clip_place(const KhdaysG3dPreVertex *v, int32_t flags, double c[4])
 {
-    double c[4];
     for (int i = 0; i < 4; ++i) {
         if (flags & KHDAYS_G3D_MOD) {
             float f;
@@ -84,7 +83,15 @@ static int view_place(const KhdaysG3dPreVertex *v, int32_t flags, double *x, dou
             c[i] = (double)v->word[i];
         }
     }
-    if (c[3] <= 0.0)
+    return c[3] > 0.0;
+}
+
+/* A vertex's place on the view, x/w and y/w (-1..1 the view); 0 when it is
+ * behind the eye. */
+static int view_place(const KhdaysG3dPreVertex *v, int32_t flags, double *x, double *y)
+{
+    double c[4];
+    if (!clip_place(v, flags, c))
         return 0;
     *x = c[0] / c[3];
     *y = c[1] / c[3];
@@ -113,13 +120,16 @@ static int32_t between_fixed(int32_t a, int32_t b, double t)
     return (int32_t)llround((double)a + ((double)b - (double)a) * t); /* t = 1: b exactly */
 }
 
-/* A model drawing of one of the lists (a draw and its occurrence): its place on the view (its polygons'
- * first vertices on average), and for a newer one the older drawing it is taken for. */
+/* A model drawing of one of the lists (a draw and its occurrence): its place on the view -- the middle of
+ * its polygons' first vertices before projection, projected: a room's vertices beside the eye, whose own
+ * places on the view run to the hundreds, moved an average of them past FAR between two frames and the
+ * room was drawn where the newer list has it, a step at the game's 30 a second under the rest moving
+ * smoothly --, and for a newer one the older drawing it is taken for. */
 typedef struct KhdaysG3dInterpGroup {
     uint64_t draw;
     uint32_t occurrence;
     int newer;        /* of the newer list */
-    double x, y;      /* the sums, then the average */
+    double x, y, w;   /* the sums of the vertices' x, y and w, then the place on the view */
     int32_t placed;   /* how many vertices the place was taken from */
     int32_t match;    /* newer: the older drawing it is taken for, -1 none (drawn where the newer has it) */
     int32_t taken;    /* older: a newer drawing took it */
@@ -187,7 +197,7 @@ static int32_t match_drawings(KhdaysG3dInterp *work, const KhdaysG3dList *older,
         for (int32_t i = 0; i < l->npre; ++i) {
             const KhdaysG3dPreInfo *info = &l->pre_info[i];
             int32_t g;
-            double x, y;
+            double c[4];
             if (list == 1) {
                 work->group_of[i] = -1;
             }
@@ -201,9 +211,10 @@ static int32_t match_drawings(KhdaysG3dInterp *work, const KhdaysG3dList *older,
             if (list == 1) {
                 work->group_of[i] = g;
             }
-            if (view_place(&l->pre_verts[l->pre[i].first], l->pre[i].flags, &x, &y)) {
-                work->groups[g].x += x;
-                work->groups[g].y += y;
+            if (clip_place(&l->pre_verts[l->pre[i].first], l->pre[i].flags, c)) {
+                work->groups[g].x += c[0];
+                work->groups[g].y += c[1];
+                work->groups[g].w += c[3];
                 ++work->groups[g].placed;
             }
         }
@@ -213,8 +224,8 @@ static int32_t match_drawings(KhdaysG3dInterp *work, const KhdaysG3dList *older,
     }
     for (int32_t g = 0; g < count; ++g) {
         if (work->groups[g].placed > 0) {
-            work->groups[g].x /= work->groups[g].placed;
-            work->groups[g].y /= work->groups[g].placed;
+            work->groups[g].x /= work->groups[g].w;
+            work->groups[g].y /= work->groups[g].w;
         }
     }
     /* the pairs of drawings of one model near enough, nearest first; a drawing with no place (behind the
