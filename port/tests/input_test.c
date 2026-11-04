@@ -1032,6 +1032,8 @@ static void test_settings_model(void)
         CHECK(rows[2].id == KHDAYS_SET_RESOLUTION && rows[2].high == 15);
         CHECK(khdays_model_choice_of(&rows[2]) == 0 && rows[2].values[0] == KHDAYS_RESOLUTION_WINDOW);
         CHECK(rows[2].values[1] == 2 && rows[2].values[15] == 16);
+        /* a multiple says the 3D's lines: 2x is the DS's picture doubled, not the window's */
+        CHECK(strncmp(rows[2].choices[1], "2x (384 ", 8) == 0 && strncmp(rows[2].choices[15], "16x (3072 ", 10) == 0);
         p.video.internal_resolution = 1;
         khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
         CHECK(rows[2].high == 16 && khdays_model_choice_of(&rows[2]) == 0 &&

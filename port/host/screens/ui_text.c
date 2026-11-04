@@ -476,16 +476,21 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO] = {"Video", "Vidéo", "Video", "Video", "Vídeo"},
     [TXT_VIDEO_RESOLUTION] = {"Internal resolution", "Résolution interne", "Interne Auflösung", "Risoluzione interna",
                               "Resolución interna"},
-    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's pixels; menus and text keep theirs.",
-                                   "La 3D est dessinée à ce multiple des pixels de la DS ; menus et textes gardent "
-                                   "les leurs.",
-                                   "Das 3D wird mit so vielen DS-Pixeln gezeichnet; Menüs und Text behalten ihre.",
-                                   "Il 3D viene disegnato a questo multiplo dei pixel del DS; menu e testi tengono i "
-                                   "loro.",
-                                   "El 3D se dibuja a este múltiplo de los píxeles de la DS; menús y textos "
-                                   "conservan los suyos."},
+    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's 256x192, not the window's size; menus "
+                                   "and text keep theirs.",
+                                   "La 3D est dessinée à ce multiple des 256x192 de la DS, pas de la taille de la "
+                                   "fenêtre ; menus et textes gardent les leurs.",
+                                   "Das 3D wird mit diesem Vielfachen der 256x192 des DS gezeichnet, nicht der "
+                                   "Fenstergröße; Menüs und Text behalten ihre.",
+                                   "Il 3D viene disegnato a questo multiplo dei 256x192 del DS, non della finestra; "
+                                   "menu e testi tengono i loro.",
+                                   "El 3D se dibuja a este múltiplo de los 256x192 de la DS, no del tamaño de la "
+                                   "ventana; menús y textos conservan los suyos."},
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
+    /* %d: the multiple, then the 3D's lines (the DS's 192 times it) */
+    [TXT_VIDEO_RESOLUTION_LINES] = {"%dx (%d lines)", "%dx (%d lignes)", "%dx (%d Zeilen)", "%dx (%d righe)",
+                                    "%dx (%d líneas)"},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
     [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
                                      "card's work. The HUD, the menus and the text stay sharp.",
