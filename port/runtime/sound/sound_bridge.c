@@ -238,10 +238,42 @@ static int sequence_category[16] = {
     KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS,
     KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS, KHDAYS_SOUND_EFFECTS};
 static int stream_category[4] = {KHDAYS_SOUND_MUSIC, KHDAYS_SOUND_MUSIC, KHDAYS_SOUND_MUSIC, KHDAYS_SOUND_MUSIC};
-static int channel_category[16];
-static int channel_replaced[16]; /* a mod's file plays instead (sound_mods.c): this channel is silenced */
-static u32 channel_starts[16];
-static float channel_gain[16];
+/* Each channel's (the voices' too: as many as the channels, channel_room), grown with them. */
+static int *channel_category;
+static int *channel_replaced; /* a mod's file plays instead (sound_mods.c): this channel is silenced */
+static u32 *channel_starts;
+static float *channel_gain;
+static int channel_room;
+
+/* The channels' arrays for every channel there is; 0 when they cannot grow (the voices then unheard). */
+static int channels_for(int count)
+{
+    if (count > channel_room) {
+        const int room = count * 2;
+        int *category = (int *)realloc(channel_category, sizeof(int) * (size_t)room);
+        int *replaced = category != NULL ? (int *)realloc(channel_replaced, sizeof(int) * (size_t)room) : NULL;
+        u32 *starts = replaced != NULL ? (u32 *)realloc(channel_starts, sizeof(u32) * (size_t)room) : NULL;
+        float *gain = starts != NULL ? (float *)realloc(channel_gain, sizeof(float) * (size_t)room) : NULL;
+        if (category != NULL)
+            channel_category = category;
+        if (replaced != NULL)
+            channel_replaced = replaced;
+        if (starts != NULL)
+            channel_starts = starts;
+        if (gain == NULL) {
+            return 0;
+        }
+        channel_gain = gain;
+        for (int n = channel_room; n < room; ++n) {
+            channel_category[n] = KHDAYS_SOUND_MUSIC;
+            channel_replaced[n] = 0;
+            channel_starts[n] = 0;
+            channel_gain[n] = 0.0f;
+        }
+        channel_room = room;
+    }
+    return 1;
+}
 static float player_gain[16], stream_gain[4];
 
 static int delay_on(void);
@@ -419,8 +451,11 @@ static void update_gains(void)
     for (int s = 0; s < 4; ++s) {
         stream_gain[s] = (streams_held >> s & 1) ? 0.0f : bus.category[stream_category[s]];
     }
-    for (int n = 0; n < 16; ++n) {
-        const KhdaysSoundChannel *c = &hw.channels[n];
+    if (!channels_for(khdays_sound_hw_count(&hw))) {
+        return;
+    }
+    for (int n = 0; n < khdays_sound_hw_count(&hw); ++n) {
+        const KhdaysSoundChannel *c = khdays_sound_hw_channel_of(&hw, n);
         int category = channel_category[n];
         int replaced = channel_replaced[n];
         if (c->source >= 0 && !(c->source & KHDAYS_WAVE_HANDLE)) {
@@ -432,13 +467,13 @@ static void update_gains(void)
             if (player >= 0) {
                 category = sequence_category[player];
                 replaced = khdays_sound_mods_replaces_player(player) || (players_held >> player & 1);
-            } else if (movie_channels & 1 << n) {
+            } else if (n < 16 && (movie_channels & 1 << n)) {
                 category = KHDAYS_SOUND_MOVIES;      /* a movie's sound: one of the channels its player locked */
                 replaced = khdays_video_mod_sound(); /* a mod's movie plays its own sound instead */
             } else if (c->starts != channel_starts[n]) {
                 category = KHDAYS_SOUND_EFFECTS;
                 replaced = 0;
-                if (!(told & 1 << n)) {
+                if (n < 16 && !(told & 1 << n)) { /* (a voice's notes are always a sequence's) */
                     told |= 1 << n;
                     fprintf(stderr,
                             "sound: channel %d plays a sound no sequence or stream started (the game set "
@@ -496,9 +531,10 @@ static void run(void *context, u64 cycle)
         const int mods = khdays_sound_mods_present() || movie;
         const int unity = khdays_sound_bus_unity(&bus) && !mods && !(held_players | held_streams);
         float extra[2] = {0.0f, 0.0f};
-        hw.smooth = output_pc; /* the PC's output reads the channels between their samples */
+        hw.smooth = output_pc;       /* the PC's output reads the channels between their samples */
+        hw.allow_voices = output_pc; /* and plays the voices past the sixteen (snd7_channel_alloc_wave) */
         khdays_sound_hw_step(&hw, cycles);
-        if (!unity && (frame_count & 63) == 0) {
+        if (!unity && ((frame_count & 63) == 0 || khdays_sound_hw_count(&hw) > channel_room)) {
             update_gains(); /* what a channel plays changes when its notes start: check every 64 samples */
         }
         if (mods && khdays_sound_mods_present()) {
@@ -510,8 +546,8 @@ static void run(void *context, u64 cycle)
             khdays_video_mod_mix(output_rate, bus.category[KHDAYS_SOUND_MOVIES], extra);
         }
         if (output_pc) {
-            khdays_sound_mix_pc(&hw, unity ? NULL : channel_gain, bus.volume, mods ? extra : NULL, &limiter,
-                                &pc_frames[2 * frame_count]);
+            khdays_sound_mix_pc(&hw, unity || khdays_sound_hw_count(&hw) > channel_room ? NULL : channel_gain,
+                                bus.volume, mods ? extra : NULL, &limiter, &pc_frames[2 * frame_count]);
         } else {
             int16_t *out = &frames[2 * frame_count];
             khdays_sound_mix_ds(&hw, unity ? NULL : channel_gain, bus.volume, out);

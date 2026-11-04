@@ -431,8 +431,9 @@ static int has_folder(const KhdaysSoundArchive *archive, int number)
     return known[number] > 0;
 }
 
-/* What each channel bound to a wave plays, and how it was last heard. */
-static struct {
+/* What each channel bound to a wave plays, and how it was last heard: a record a channel, the port's voices
+ * past the sixteen too (grown with them, wave_channel_room). */
+typedef struct WaveChannel {
     Entry *entry;
     u32 rate;      /* the original's */
     double at;     /* where its file was last heard, in its samples */
@@ -441,7 +442,25 @@ static struct {
     int player;    /* the sequence player of that start's note (-1 none), and that player's stops then */
     u32 stops;
     int heard; /* at the last output sample */
-} wave_channel[16];
+} WaveChannel;
+static WaveChannel *wave_channel;
+static int wave_channel_room;
+
+/* Records for channels 0 to `channel`; 0 without the memory. */
+static int wave_channels_for(int channel)
+{
+    if (channel >= wave_channel_room) {
+        const int room = (channel + 1) * 2 > 16 ? (channel + 1) * 2 : 16;
+        WaveChannel *grown = (WaveChannel *)realloc(wave_channel, sizeof(WaveChannel) * (size_t)room);
+        if (grown == NULL) {
+            return 0;
+        }
+        memset(grown + wave_channel_room, 0, sizeof(WaveChannel) * (size_t)(room - wave_channel_room));
+        wave_channel = grown;
+        wave_channel_room = room;
+    }
+    return 1;
+}
 
 /* Where wave `w` of the SWAR at `address` is; 0 while it is not loaded. */
 static u32 wave_of(u32 address, int w)
@@ -533,7 +552,7 @@ void khdays_sound_mods_wave_archive(const KhdaysSoundArchive *archive, int numbe
 int khdays_sound_mods_bind_wave(int channel, uint32_t sad, uint32_t len, int format)
 {
     (void)len;
-    if (channel < 0 || channel > 15) {
+    if (channel < 0 || !wave_channels_for(channel)) {
         return -1;
     }
     if (wave_channel[channel].entry != NULL) {
@@ -581,8 +600,8 @@ static float wave_value(const KhdaysReplacement *r, double at)
 
 int khdays_sound_mods_wave_sample(int handle, uint64_t index, int32_t *sample)
 {
-    const int channel = handle & 15;
-    const Entry *e = wave_channel[channel].entry;
+    const int channel = handle & ~KHDAYS_WAVE_HANDLE;
+    const Entry *e = channel < wave_channel_room ? wave_channel[channel].entry : NULL;
     const KhdaysReplacement *r;
     double at;
     float v;
@@ -925,11 +944,11 @@ static void tail_add(Entry *e, int n)
 /* The waves. At the PC's output each is read from its file at this instant, between its samples, through its
  * channel's volume and pan; at the DS's the channel reads it itself. A file longer than its original plays on to its
  * end once the original ended by itself, at its last volume and pan, unless the game stops its note's player. */
-static void mix_waves(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, uint32_t rate,
-                      const float channel_gain[16], float master, float out[2])
+static void mix_waves(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, uint32_t rate, const float *channel_gain,
+                      float master, float out[2])
 {
-    for (int n = 0; n < 16; ++n) {
-        const KhdaysSoundChannel *c = &hw->channels[n];
+    for (int n = 0; n < khdays_sound_hw_count(hw) && n < wave_channel_room; ++n) {
+        const KhdaysSoundChannel *c = khdays_sound_hw_channel_of(hw, n);
         Entry *e = wave_channel[n].entry;
         const int bound = e != NULL && e->state == READY && c->source >= 0 && (c->source & KHDAYS_WAVE_HANDLE);
         if (!bound || !c->playing || c->played == 0) {
@@ -980,7 +999,7 @@ static void mix_waves(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, u
 
 void khdays_sound_mods_mix(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, uint32_t rate,
                            uint32_t finished_tag, const float player_gain[16], const float stream_gain[4],
-                           const float channel_gain[16], float out[2])
+                           const float *channel_gain, float out[2])
 {
     const uint32_t soundcnt = khdays_sound_hw_read(hw, 0x100, 2);
     const float master = (soundcnt & 0x8000) ? factor(soundcnt & 0x7f) : 0.0f;

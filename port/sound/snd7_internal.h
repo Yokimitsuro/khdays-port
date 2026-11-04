@@ -91,7 +91,7 @@ typedef struct Snd7Lfo {  /* +0x28 in the ARM7's channel */
 /* The ARM7's channel record (0x54 bytes each at 0x03807d18), field for
  * field, the offsets in the comments. */
 struct Snd7Channel {
-    uint8_t number;          /* +0x00 */
+    uint16_t number;         /* +0x00 (a byte; the port's voices are 16 on) */
     uint8_t type;            /* +0x01: 0 PCM, 1 PSG, 2 noise */
     uint8_t envelope_status; /* +0x02: 0 attack, 1 decay, 2 sustain, 3 release */
     /* +0x03: bit 0 active, bit 1 start asked, bit 2 auto sweep, bits 3-7
@@ -136,6 +136,17 @@ struct Snd7Channel {
 enum { SND7_SYNC_START = 1, SND7_SYNC_STOP = 2, SND7_SYNC_TIMER = 4, SND7_SYNC_VOLUME = 8, SND7_SYNC_PAN = 16 };
 
 extern Snd7Channel snd7_channel[16];
+
+/* The channels: the DS's sixteen, then the port's voices (snd7_channel_alloc_wave), each record where it
+ * was made (a track's notes point at them). */
+int snd7_channel_count(void);
+Snd7Channel *snd7_channel_at(int n);
+
+/* A channel for a note of a wave (snd7_channel_alloc's arguments): with the hardware's voices allowed
+ * (KhdaysSoundHw allow_voices: the PC's output), when none of the note's channels is free one of the
+ * port's voices -- a free one, or a new one -- so that the note takes no channel still sounding nor is
+ * left out; else snd7_channel_alloc's, as the DS's. */
+Snd7Channel *snd7_channel_alloc_wave(uint32_t mask, int priority, int strong, Snd7ChannelCallback callback, void *data);
 
 void snd7_channel_init(void);                                                                         /* 0x037ff164 */
 void snd7_channel_sync(void);                                                                         /* 0x037ff1c0 */

@@ -58,6 +58,6 @@ int khdays_sound_mods_replaces_stream(int s);
  * longer than its original plays on to its end once the original ends by itself (docs/SOUND.md). */
 void khdays_sound_mods_mix(const KhdaysSoundHw *hw, const KhdaysSnd7Driver *driver, uint32_t rate,
                            uint32_t finished_tag, const float player_gain[16], const float stream_gain[4],
-                           const float channel_gain[16], float out[2]);
+                           const float *channel_gain, float out[2]);
 
 #endif

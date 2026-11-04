@@ -433,8 +433,10 @@ static Snd7Channel *start_note(Track *t, Player *p, int key, int velocity, int32
     case 3: mask = 0xc000; break;
     default: return NULL;
     }
-    c = snd7_channel_alloc(mask & t->channel_mask, p->priority + t->priority, (t->flags & TRACK_OWN_CHANNELS) != 0,
-                           channel_event, t);
+    /* a wave's note may take one of the port's voices past the sixteen (the PC's output); PSG and noise
+     * the DS's channels that have them */
+    c = (mask == 0xffff ? snd7_channel_alloc_wave : snd7_channel_alloc)(
+        mask & t->channel_mask, p->priority + t->priority, (t->flags & TRACK_OWN_CHANNELS) != 0, channel_event, t);
     if (c == NULL) {
         return NULL;
     }
@@ -1114,9 +1116,9 @@ void snd7_seq_set_global_variable(int variable_number, int16_t value)
  * that track. */
 int snd7_seq_channel_player(int channel)
 {
-    const Snd7Channel *c = &snd7_channel[channel];
+    const Snd7Channel *c = channel >= 0 && channel < snd7_channel_count() ? snd7_channel_at(channel) : NULL;
     int track;
-    if (c->callback != channel_event) {
+    if (c == NULL || c->callback != channel_event) {
         return -1;
     }
     track = (int)((const Track *)c->callback_data - tracks);
