@@ -15,6 +15,7 @@
 
 typedef struct Line {
     int first, end, x, y, u, v, w, h;
+    int fade_in, fade_out; /* frames it takes to come and to go (the theater's animated lines'), 0 none */
 } Line;
 
 typedef struct Subtitles {
@@ -57,11 +58,15 @@ static int read_file(const char *path, Subtitles *s)
     s->rate = 30;
     while (fgets(line, sizeof(line), f) != NULL) {
         Line l;
+        int read;
         if (sscanf(line, "picture %d %d", &s->picture_w, &s->picture_h) == 2 ||
             sscanf(line, "rate %d", &s->rate) == 1 || sscanf(line, "atlas %255s", atlas) == 1) {
             continue;
         }
-        if (sscanf(line, "line %d %d %d %d %d %d %d %d", &l.first, &l.end, &l.x, &l.y, &l.u, &l.v, &l.w, &l.h) == 8) {
+        l.fade_in = l.fade_out = 0;
+        read = sscanf(line, "line %d %d %d %d %d %d %d %d %d %d", &l.first, &l.end, &l.x, &l.y, &l.u, &l.v, &l.w, &l.h,
+                      &l.fade_in, &l.fade_out);
+        if (read == 8 || read == 10) {
             if (s->count == capacity) {
                 const int grown = capacity ? capacity * 2 : 64;
                 Line *more = realloc(s->lines, (size_t)grown * sizeof(Line));
@@ -180,7 +185,16 @@ void khdays_movie_subtitles_draw(SDL_Renderer *renderer, double time, double fps
         if (frame >= l->first && frame < l->end) {
             const SDL_FRect from = {(float)l->u, (float)l->v, (float)l->w, (float)l->h};
             const SDL_FRect at = {(float)l->x * kx, (float)l->y * ky, (float)l->w * kx, (float)l->h * ky};
+            float alpha = 1.0f;
+            if (l->fade_in > 0 && frame - l->first < l->fade_in) {
+                alpha = (float)(frame - l->first + 1) / (float)(l->fade_in + 1);
+            }
+            if (l->fade_out > 0 && l->end - frame <= l->fade_out) {
+                alpha = SDL_min(alpha, (float)(l->end - frame) / (float)(l->fade_out + 1));
+            }
+            SDL_SetTextureAlphaModFloat(texture, alpha);
             SDL_RenderTexture(renderer, texture, &from, &at);
         }
     }
+    SDL_SetTextureAlphaModFloat(texture, 1.0f);
 }
