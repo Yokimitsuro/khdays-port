@@ -722,6 +722,19 @@ Pixel rear_plane(int x, int y)
     return px;
 }
 
+// A clip volume showing here: the coat's inside (black, as N_EX830's lining), not what lies behind it (the rear
+// plane, the room seen through a crack in its floor). The depth stays the rear plane's, for the coat to draw on
+void lay_clip_inside(inout Pixel px, uint clips, uint clip_near)
+{
+    if (clips >= 2u && px.depth > clip_near) {
+        px.r = 0;
+        px.g = 0;
+        px.b = 0;
+        px.a = 31;
+        px.fog = 1u; // what blends on it takes this down, cs_main the owner's at the end
+    }
+}
+
 [numthreads(8, 8, 1)]
 void cs_main(uint3 id : SV_DispatchThreadID)
 {
@@ -738,10 +751,10 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     last = min(tiles.Load((tile + 1u) * 4u), entries);
     bool marker_started=false;
     // the clip volumes this pixel shows (KHDAYS_G3D_CLIP, docs/RENDERING.md): their nearest depth, how many of
-    // their triangles cover it, and whether what was drawn here last is one never left out (an owner's), with
-    // the last owner's polygon ID and fog
+    // their triangles cover it, whether the coat's inside is laid yet and whether a surface has been drawn on it,
+    // with the last owner's polygon ID and fog
     uint clip_near = 0xffffffffu, clips = 0u, owner_id = px.opaque_id, owner_fog = px.fog;
-    bool kept = false;
+    bool inside_laid = false, surface = false;
     for (uint k = first; k < last; ++k) {
         const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
@@ -750,6 +763,11 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         const Polygon p = polygon_at(index);
         Attrs at;
         uint edge;
+        // the volumes come first: past them, the inside goes under all that is drawn, so an effect blends over it
+        if (((uint)p.flags & G3D_CLIP) == 0u && !inside_laid) {
+            inside_laid = true;
+            lay_clip_inside(px, clips, clip_near);
+        }
         if (cover(p, x, y, at, edge, ((uint)p.flags & G3D_CLIP) != 0u ? 1.0f : 0.0f)) {
             if (((uint)p.flags & G3D_CLIP) != 0u) {
                 if (((uint)p.flags & 1u) == 0u) {
@@ -770,29 +788,23 @@ void cs_main(uint3 id : SV_DispatchThreadID)
                 const uint was_depth = px.depth;
                 const int3 was = int3(px.r, px.g, px.b);
                 plot(p, px, at, edge, wbuffer);
-                if (px.depth != was_depth || any(int3(px.r, px.g, px.b) != was)) {
-                    kept = unclipped;
-                    if (((uint)p.flags & G3D_CLIP_OWNER) != 0u) {
-                        owner_id = (p.attr >> 24) & 63u;
-                        owner_fog = (p.attr >> 15) & 1u;
-                    }
+                surface = surface || px.depth != was_depth;
+                if (((uint)p.flags & G3D_CLIP_OWNER) != 0u &&
+                    (px.depth != was_depth || any(int3(px.r, px.g, px.b) != was))) {
+                    owner_id = (p.attr >> 24) & 63u;
+                    owner_fog = (p.attr >> 15) & 1u;
                 }
             }
         }
     }
-    // a clip volume showing here with nothing of its model's in front of its near side: the coat's inside (black,
-    // as N_EX830's lining), not what lies behind it (the rear plane, the room seen through a crack in its floor)
-    if (clips >= 2u && !kept && px.depth > clip_near) {
-        px.r = 0;
-        px.g = 0;
-        px.b = 0;
-        px.a = 31;
+    if (!inside_laid) {
+        lay_clip_inside(px, clips, clip_near);
+    }
+    // no surface drawn on the inside (blending writes none): it is the surface here, at the volume's near depth
+    if (clips >= 2u && !surface && px.depth > clip_near) {
         px.depth = clip_near;
         px.opaque_id = owner_id;
-        px.translucent = 0u;
-        px.edge = 0u;
-        px.fog = owner_fog;
-        px.over2d = 0u;
+        px.fog &= owner_fog;
     }
     out_color[id.xy] = (uint)px.r | ((uint)px.g << 8) | ((uint)px.b << 16) | ((uint)px.a << 24) |
                        (px.over2d << 29) | (px.translucent << 31);

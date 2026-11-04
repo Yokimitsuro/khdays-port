@@ -429,6 +429,103 @@ void scene_blending()
     std::cout << "Scene normal/add/subtract, ordered mixtures, black glow, full alpha ramp and depth checks passed\n";
 }
 
+// A clip volume (docs/RENDERING.md): the coat and its black inside, with a translucent effect in front of both
+void clip_volume_under_effect()
+{
+    khdays_gpu_hd_close();
+    require(khdays_raster3d_open(device));
+    khdays_raster3d_set_fine(1);
+    auto p = std::make_unique<KhdaysFramePackage>();
+    const unsigned clear = (31u << 10) | (31u << 16), clear_depth = 32767;
+    std::memcpy(p->io3d + 0x50, &clear, 4);
+    std::memcpy(p->io3d + 0x54, &clear_depth, 4);
+    p->disp3dcnt = 9;
+    constexpr float near_z = -0.2F;
+    struct Quad {
+        float x0, x1, y0, y1, z, r, g, b;
+        int flags;
+        unsigned attr;
+        int translucent;
+    };
+    const unsigned solid = 31u << 16;
+    const Quad quads[]{
+        {24, 72, 32, 80, near_z, 0, 0, 0, KHDAYS_G3D_MOD | KHDAYS_G3D_CLIP, solid, 0}, // the volume's front
+        {24, 72, 32, 80, 0.3F, 0, 0, 0, KHDAYS_G3D_MOD | KHDAYS_G3D_CLIP, solid, 0},   // and its back
+        {16, 80, 24, 88, 0.1F, 0, 63, 0, 0, solid | (5u << 24), 0},                    // the room
+        {24, 48, 32, 80, -0.1F, 63, 0, 0, KHDAYS_G3D_MOD | KHDAYS_G3D_CLIP_OWNER, solid | (7u << 24), 0}, // the coat
+        {64, 70, 62, 76, -0.1F, 0, 0, 63, KHDAYS_G3D_MOD | KHDAYS_G3D_CLIP_OWNER, (16u << 16) | (7u << 24),
+         1},                                                                 // faded coat
+        {16, 80, 24, 56, -0.5F, 63, 63, 63, 0, (16u << 16) | (9u << 24), 1}, // the effect
+    };
+    constexpr int count = 6;
+    KhdaysG3dPolygon polygons[count]{};
+    KhdaysG3dVertex vertices[count * 4]{};
+    constexpr int corners[]{0, 1, 3, 2};
+    for (int i = 0; i < count; ++i) {
+        const Quad &q = quads[i];
+        auto &poly = polygons[i];
+        poly.first = i * 4;
+        poly.count = 4;
+        poly.ymin = q.y0;
+        poly.ymax = q.y1;
+        poly.attr = 0xc0u | q.attr;
+        poly.flags = q.flags;
+        poly.replacement = -1;
+        poly.translucent = q.translucent;
+        for (int k = 0; k < 4; ++k) {
+            auto &v = vertices[i * 4 + k];
+            v.x = (corners[k] & 1) ? q.x1 : q.x0;
+            v.y = (corners[k] & 2) ? q.y1 : q.y0;
+            v.z = q.z;
+            v.w = 4096;
+            v.r = q.r;
+            v.g = q.g;
+            v.b = q.b;
+            v.a = 1;
+        }
+    }
+    p->list3d.polys = polygons;
+    p->list3d.npolys = count;
+    p->list3d.verts = vertices;
+    p->list3d.nverts = count * 4;
+    p->list3d.widen = 1;
+    for (int resolution : {1, 4}) {
+        require(khdays_raster3d_rasterize(p.get(), resolution, 0));
+        const auto color = scene_pixels(resolution), attr = scene_pixels(resolution, true);
+        const auto at = [&](const std::vector<std::uint32_t> &from, int x, int y) {
+            return from[std::size_t(y - 24) * resolution * 64u * resolution + std::size_t(x - 16) * resolution];
+        };
+        const auto expect = [&](const char *what, int x, int y, int r, int g, int b) {
+            const auto c = at(color, x, y);
+            if (std::abs(int(c & 255) - r) > 2 || std::abs(int((c >> 8) & 255) - g) > 2 ||
+                std::abs(int((c >> 16) & 255) - b) > 2)
+                throw std::runtime_error(std::string("clip volume: ") + what + ": got " +
+                                         std::to_string(c & 0xffffffu));
+        };
+        constexpr int over_black = (255 * 17) / 32; // a = 16 of 31, as plot's blend, over 0
+        expect("the coat", 36, 70, 255, 0, 0);
+        expect("the inside", 60, 70, 0, 0, 0);
+        expect("the faded coat over the inside", 67, 70, 0, 0, over_black);
+        expect("the effect over the coat", 36, 44, 255, over_black, over_black);
+        expect("the effect over the inside", 60, 44, over_black, over_black, over_black);
+        expect("the room", 20, 84, 0, 255, 0);
+        expect("the effect over the room", 20, 40, over_black, 255, over_black);
+        // the inside, under what blends on it or not, is a surface at the volume's near depth; with the ID of a
+        // piece of the coat blended on it, the rear plane's without
+        const auto near_depth = int(std::floor(near_z * 8388608.0F)) + 8388096;
+        const auto inside = [&](int x, int y, unsigned id) {
+            const auto a = at(attr, x, y);
+            if (std::abs(int(a & 0xffffffu) - near_depth) > 16 || ((a >> 24) & 63u) != id)
+                throw std::runtime_error("clip volume: the inside's depth or ID: " + std::to_string(a));
+        };
+        inside(60, 70, 0);
+        inside(60, 44, 0);
+        inside(67, 70, 7);
+    }
+    khdays_raster3d_close();
+    std::cout << "Clip volume under a translucent effect passed\n";
+}
+
 void native_marker_depth()
 {
     set_image(1, 1, 1, {0xffffffffu});
@@ -1266,6 +1363,7 @@ int main(int argc, char **argv)
         radar_mask();
         scene_blending();
         character_shadows();
+        clip_volume_under_effect();
         native_marker_depth();
         if (argc == 5 && std::string(argv[1]) == "--heart-compare")
             compare_heart_layouts(argv[2], argv[3], argv[4]);

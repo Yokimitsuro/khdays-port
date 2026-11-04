@@ -196,11 +196,15 @@ polygons: as `raster3d.hlsl` goes through a pixel's polygons it keeps the
 nearest depth of the volumes' triangles covering it, and where two or more do,
 any later polygon that is not an owner's, the HUD's, a sequence or a marker is
 left out behind that depth -- inside the volume, or behind it, where the coat's
-far wall would hide it. Where nothing of an owner's was drawn last in front of
-it, the pixel is then the coat's inside: black, at the volume's nearest depth,
-with the last owner polygon's ID and fog (leaving out only what lay inside the
-volume showed whatever was behind it: the rear plane, or the room under a bed
-through the crack along its quad's diagonal). A volume's triangles cover a target
+far wall would hide it. Where the volume's nearest depth lies before the rear
+plane, the pixel starts as the coat's inside: black, under everything drawn after
+the volumes, so a translucent effect in front blends over it as over any surface
+(painted after the polygons, it covered the effects, and the coat under them
+wherever an effect had blended last). Its depth stays the rear plane's for the
+coat to draw on; if no polygon writes a depth there, the inside is the surface:
+the volume's nearest depth, with the last owner polygon's ID and fog (leaving out
+only what lay inside the volume showed whatever was behind it: the rear plane, or
+the room under a bed through the crack along its quad's diagonal). A volume's triangles cover a target
 pixel more on each side than a drawn polygon does: two of them sharing an edge
 could leave a pixel to neither, and a pixel that misses the volume's front shows
 the room through it (a dashed line across the coat's inside); a pixel covered
