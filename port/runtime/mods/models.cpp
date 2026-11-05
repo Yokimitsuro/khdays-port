@@ -582,7 +582,13 @@ struct Playing {
 };
 std::vector<Playing> playing;
 std::vector<std::string> materials_playing; // the texture pattern animations on its anmMat chain (the eyes)
-std::map<u32, std::string> animation_names; // by the J0AC's DS address
+// by the J0AC's DS address, with the file and place it was named from: the game loads another character's file over it
+struct AnimationName {
+    std::string file;
+    u32 offset = 0;
+    std::string name;
+};
+std::map<u32, AnimationName> animation_names;
 std::map<const void *, std::vector<std::pair<bool, Mat>>> node_results; // by render object: draw()'s per node
 const void *drawn_object = nullptr; // the render object being drawn: which actor's model
 const void *begun_object = nullptr; // the outermost render object begun, replaced or not (khdays_models_draw_end)
@@ -3753,17 +3759,19 @@ struct GameAnimation {
 // The name of the animation whose data the game has at `anm` (a J0AC, a PAT0's animation), "" unknown
 const std::string &animation_name(u32 anm)
 {
-    auto known = animation_names.find(anm);
-    if (known == animation_names.end()) {
-        const char *file = nullptr;
-        u32 offset = 0, run = 0;
+    static const std::string unknown;
+    const char *file = nullptr;
+    u32 offset = 0, run = 0;
+    if (anm == 0 || !khdays_origin_of_ram(anm, &file, &offset, &run))
+        return unknown;
+    AnimationName &known = animation_names[anm];
+    if (known.file != file || known.offset != offset) {
         char name[64] = "";
-        if (anm == 0 || !khdays_origin_of_ram(anm, &file, &offset, &run) ||
-            !khdays_names_animation(file, offset, name, static_cast<int>(sizeof(name))))
+        if (!khdays_names_animation(file, offset, name, static_cast<int>(sizeof(name))))
             name[0] = '\0';
-        known = animation_names.emplace(anm, name).first;
+        known = {file, offset, name};
     }
-    return known->second;
+    return known.name;
 }
 
 GameAnimation game_animation(u32 anm)
