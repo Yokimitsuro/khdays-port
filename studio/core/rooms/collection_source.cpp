@@ -181,8 +181,8 @@ std::vector<CollectionMap> maps_in_package(const CollectionGameInfo& game, const
                     } else {  // map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp and its siblings
                         name = w + "_" + number;
                         const std::string dir = "map/" + w + "/" + name + "/bin/";
-                        paths = {dir + name + ".pmp", dir + name + ".pvd", dir + name + ".mss", dir + name + "a.bcd",
-                                 dir + name + ".bcd", dir + name + ".txa"};
+                        paths = {dir + name + ".pmp",  dir + name + ".pvd", dir + name + ".mss",
+                                 dir + name + "a.bcd", dir + name + ".bcd", dir + name + ".txa"};
                         for (int k = 0; k <= 99; ++k)
                             paths.push_back(dir + name + printed("_%02d.mcv", k));
                     }
@@ -191,8 +191,9 @@ std::vector<CollectionMap> maps_in_package(const CollectionGameInfo& game, const
                 }
             }
     }
-    std::sort(out.begin(), out.end(),
-              [](const CollectionMap& x, const CollectionMap& y) { return std::tie(x.world, x.name) < std::tie(y.world, y.name); });
+    std::sort(out.begin(), out.end(), [](const CollectionMap& x, const CollectionMap& y) {
+        return std::tie(x.world, x.name) < std::tie(y.world, y.name);
+    });
     return out;
 }
 
@@ -214,8 +215,7 @@ std::vector<fs::path> recorded_collections(const fs::path& root, const std::stri
 
 fs::path collection_copy(const Settings& settings, const CollectionGameInfo& game) {
     std::error_code ec;
-    const std::string& set =
-        std::string(game.collection) == "2.8" ? settings.collection_28 : settings.collection_1525;
+    const std::string& set = std::string(game.collection) == "2.8" ? settings.collection_28 : settings.collection_1525;
     if (!set.empty()) {
         const fs::path folder = resolve(settings, set);
         return fs::is_directory(folder, ec) ? folder : fs::path();
@@ -234,8 +234,9 @@ bool collection_maps(const Settings& settings, const CollectionGameInfo& game, s
                      std::string* why) {
     const fs::path copy = collection_copy(settings, game);
     if (copy.empty()) {
-        *why = std::string("no ") + (std::string(game.collection) == "2.8" ? "KINGDOM HEARTS HD 2.8 Final Chapter Prologue"
-                                                                          : "KINGDOM HEARTS HD 1.5+2.5 ReMIX") +
+        *why = std::string("no ") +
+               (std::string(game.collection) == "2.8" ? "KINGDOM HEARTS HD 2.8 Final Chapter Prologue"
+                                                      : "KINGDOM HEARTS HD 1.5+2.5 ReMIX") +
                " folder with " + game.executable + ": set it in the settings";
         return false;
     }
@@ -272,7 +273,8 @@ bool take_out_collection_map(const Settings& settings, const CollectionGameInfo&
     const fs::path copy = collection_copy(settings, game);
     std::error_code ec;
     if (copy.empty() || !fs::is_regular_file(copy / path_u8(game.executable), ec)) {
-        *why = std::string("no ") + game.executable + " in the collection's folder (its packages are read with its table)";
+        *why =
+            std::string("no ") + game.executable + " in the collection's folder (its packages are read with its table)";
         return false;
     }
     const fs::path base = package_base(copy, map.package);
@@ -688,15 +690,15 @@ bool make_recom_room(const Settings& settings, const CollectionGameInfo& game, c
     std::string failed;
     khdays::assets::recom::Room room;
     try {
-        room = khdays::assets::recom::room_model(
-            azf.data(), azf.size(), map.name, picture,
-            [&](const std::string& file, const khdays::assets::DecodedTexture& p) {
-                const char* e =
-                    khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(), p.rgba.data(), p.width, p.height);
-                if (e != nullptr && failed.empty())
-                    failed = file + ": " + e;
-                ++made->pictures;
-            });
+        room = khdays::assets::recom::room_model(azf.data(), azf.size(), map.name, picture,
+                                                 [&](const std::string& file, const khdays::assets::DecodedTexture& p) {
+                                                     const char* e =
+                                                         khdays_png_write(u8(out.parent_path() / path_u8(file)).c_str(),
+                                                                          p.rgba.data(), p.width, p.height);
+                                                     if (e != nullptr && failed.empty())
+                                                         failed = file + ": " + e;
+                                                     ++made->pictures;
+                                                 });
     } catch (const std::exception& e) {
         *why = base + ".AZF: " + e.what();
         return false;

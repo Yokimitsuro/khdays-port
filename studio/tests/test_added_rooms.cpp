@@ -1,4 +1,4 @@
-// The rooms a mod adds (spec 040): their list read and written back, their keys, and an added room's first place --
+// The rooms a mod adds: their list read and written back, their keys, and an added room's first place --
 // its lowest main floor at height 0, one of its floors under the origin -- and its map from its floors. Synthetic only.
 #include "test.h"
 

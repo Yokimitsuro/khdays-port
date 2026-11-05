@@ -1,4 +1,4 @@
-// The rooms of the KINGDOM HEARTS games in the player's collections (spec 040): KH1, KH2 and Re:Chain of Memories from
+// The rooms of the KINGDOM HEARTS games in the player's collections: KH1, KH2 and Re:Chain of Memories from
 // KINGDOM HEARTS HD 1.5+2.5 ReMIX, Dream Drop Distance from KINGDOM HEARTS HD 2.8 Final Chapter Prologue. A map is
 // found by testing the names its game's pattern makes against a package's index (each entry keyed by the MD5 of its
 // path), so no list of the games' files is kept here; it is taken out by the installer's own reader

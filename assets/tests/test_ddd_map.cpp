@@ -32,7 +32,9 @@ void expect(bool ok, const std::string& what) {
 
 struct Writer final {
     Bytes b;
-    void u8(unsigned v) { b.push_back(static_cast<std::uint8_t>(v)); }
+    void u8(unsigned v) {
+        b.push_back(static_cast<std::uint8_t>(v));
+    }
     void u16(unsigned v) {
         u8(v & 0xFF);
         u8(v >> 8);
@@ -50,7 +52,9 @@ struct Writer final {
         for (std::size_t i = 0; i < n; ++i)
             u8(i < std::strlen(s) ? static_cast<unsigned char>(s[i]) : 0);
     }
-    void zeros(std::size_t n) { b.insert(b.end(), n, 0); }
+    void zeros(std::size_t n) {
+        b.insert(b.end(), n, 0);
+    }
     void at(std::size_t offset, std::uint32_t v) {
         for (int i = 0; i < 4; ++i)
             b[offset + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (8 * i));
@@ -129,10 +133,10 @@ Bytes room(const char* texture = "tex_a") {
         w.zeros(8);
     };
     w.zeros(0x100 - (w.b.size() - pmo));
-    record(3, 0x32000182U, 0);       // three vertices: a triangle
-    record(6, 0x42000182U, 1);       // six: a strip a, b, c, c, d, e -- one triangle, two degenerate, then d's
-    w.zeros(24);                     // the group's end
-    record(3, 0x32000182U, 0x20);    // the second group's: blended
+    record(3, 0x32000182U, 0);     // three vertices: a triangle
+    record(6, 0x42000182U, 1);     // six: a strip a, b, c, c, d, e -- one triangle, two degenerate, then d's
+    w.zeros(24);                   // the group's end
+    record(3, 0x32000182U, 0x20);  // the second group's: blended
     w.zeros(0x180 - (w.b.size() - pmo));
     vertex(w, 0, 0, 0, 0, 0);
     vertex(w, 1, 0, 1, 0, 0);
@@ -250,8 +254,8 @@ void test_room() {
     const auto picture = folder / "tex_a.dds";
     {
         const Bytes dds = plain_dds();
-        std::ofstream(picture, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
-                                                      static_cast<std::streamsize>(dds.size()));
+        std::ofstream(picture, std::ios::binary)
+            .write(reinterpret_cast<const char*>(dds.data()), static_cast<std::streamsize>(dds.size()));
     }
     std::map<std::string, int> written;
     const auto made = ddd::room_model(
@@ -372,8 +376,8 @@ void test_texture_animation() {
     const auto sheet = folder / "tex_aa.dds";
     {
         const Bytes dds = plain_dds();  // 2 x 1: the sheet at half its size
-        std::ofstream(sheet, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
-                                                    static_cast<std::streamsize>(dds.size()));
+        std::ofstream(sheet, std::ios::binary)
+            .write(reinterpret_cast<const char*>(dds.data()), static_cast<std::streamsize>(dds.size()));
     }
     std::map<std::string, khdays::assets::DecodedTexture> written;
     const auto write = [&](const std::string& file, const khdays::assets::DecodedTexture& t) { written[file] = t; };

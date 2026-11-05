@@ -13,4 +13,7 @@ const char *khdays_scene_current(void);
 /* Whether a day's monologue runs now (any thread). */
 int khdays_monologue_running(void);
 
+/* Game_RunActionScript's step (diag.c khdays_trace_script): `st` the machine's state. */
+void khdays_scene_step(void *st);
+
 #endif

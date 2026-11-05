@@ -3351,7 +3351,7 @@ HOOKS["ov022@020a48c8"] = [
 # after-functions. Arguments and results as 64-bit slots: integers widened ("int" sign-extended, "uint" not),
 # the game's pointers as references ("ref"). A point's number is its place in this list; the port's catalogue is
 # generated from it (khdays_hook_points.h). Points are added as plugins need them, across the game's subsystems.
-# A world's rooms past the game's 24 (rooms a mod adds, spec 040): which slot each room is loaded in, kept by the
+# A world's rooms past the game's 24 (rooms a mod adds): which slot each room is loaded in, kept by the
 # port (runtime/rooms/slots.c) instead of the 24 bytes at +0x17 of the ov002 link context, which a 25th room's
 # aSlotMappings[nPeer] would write past. The five functions that touch them: the two that set, the three that fill.
 _ROOM_SLOTS = "extern int khdays_room_slot(int); extern void khdays_room_slot_set(int, int); extern void khdays_room_slots_clear(void);\n"

@@ -517,14 +517,6 @@ static double fx_distance(const int *a, const int *b)
     return sqrt(x * x + y * y + z * z);
 }
 
-/* `from` moved `by` (fx32) along `direction`. */
-static void fx_along(int *out, const int *from, const double *direction, double by)
-{
-    for (int i = 0; i < 3; ++i) {
-        out[i] = from[i] + (int)lround(direction[i] * by);
-    }
-}
-
 /* Whether the eye goes through this face of a hit (Ov002_CollCastResolvePassThrough has nocam alone). */
 static int eye_passes(KhdaysRef hit, KhdaysRef face)
 {

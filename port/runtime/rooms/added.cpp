@@ -7,7 +7,7 @@ extern "C" {
 }
 #include "../mods/list.h"
 
-#include "khdays/assets/message.h"  // lz_decompress, lz11_literals
+#include "khdays/assets/message.h" // lz_decompress, lz11_literals
 
 #include <algorithm>
 #include <cstdio>
@@ -98,7 +98,7 @@ void put32(std::vector<unsigned char> &b, std::size_t at, unsigned v)
 
 // A P2 archive's entries as stored (each one's bytes and its descriptor: bit 31 LZ-packed).
 struct P2 {
-    unsigned flags = 0;  // the count's word above its 9 bits
+    unsigned flags = 0; // the count's word above its 9 bits
     unsigned word4 = 0, word8 = 0;
     std::vector<std::vector<unsigned char>> entries;
     std::vector<unsigned> descs;
@@ -575,7 +575,7 @@ bool merge_world_names(const std::string &language, const std::vector<unsigned c
     return true;
 }
 
-}  // namespace
+} // namespace
 
 extern "C" void khdays_rooms_load(void)
 {
@@ -742,9 +742,9 @@ bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned
         made[at + 2] = 1;
         made[at + 3] = static_cast<unsigned char>(a.collision_member);
         made.resize(at + kRecord + 8, 0);
-        put32(made, at + 0x1c, static_cast<unsigned>(kRecord + 4));  // its exits (none) after its objects' offsets
+        put32(made, at + 0x1c, static_cast<unsigned>(kRecord + 4)); // its exits (none) after its objects' offsets
         put32(made, at + kRecord, static_cast<unsigned>(kRecord + 4));
-        made[at + kRecord + 4] = table[object];  // the object's flags, as room 0's
+        made[at + kRecord + 4] = table[object]; // the object's flags, as room 0's
         made[at + kRecord + 5] = static_cast<unsigned char>(a.model_member);
         made[at + kRecord + 6] = table[object + 2];
         made[at + kRecord + 7] = table[object + 3];
@@ -752,7 +752,7 @@ bool khdays_rooms_merge(const std::string &game_path, const std::vector<unsigned
                    a.key.c_str(), world.c_str(), count + k, a.id, a.collision_member, a.model_member);
     }
     p.entries[0] = std::move(made);
-    p.descs[0] = static_cast<unsigned>(p.entries[0].size());  // written unpacked
+    p.descs[0] = static_cast<unsigned>(p.entries[0].size()); // written unpacked
     out = write_p2(p);
     // KHDAYS_ROOMS_DUMP=<folder>: the archive as served, to look at
     if (const char *dump = std::getenv("KHDAYS_ROOMS_DUMP")) {

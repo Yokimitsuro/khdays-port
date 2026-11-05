@@ -576,10 +576,9 @@ void set_cloth_game_shape(Model *model, const Loading &loading)
                 std::array<std::pair<int, float>, 4> w{};
                 for (auto &x : w)
                     x = {-1, 0.0F};
-                std::size_t n_w = 0;
-                for (const auto &bw : game.palette_bones[pal])
-                    if (n_w < 4)
-                        w[n_w++] = {static_cast<int>(bw.first), bw.second};
+                const auto &weights = game.palette_bones[pal]; // its first four, heaviest first below
+                for (std::size_t j = 0; j < weights.size() && j < w.size(); ++j)
+                    w[j] = {static_cast<int>(weights[j].first), weights[j].second};
                 std::sort(w.begin(), w.end(), [](const auto &x, const auto &y) { return x.second > y.second; });
                 gm.positions.push_back({at[0], at[1], at[2]});
                 gm.weights.push_back(w);

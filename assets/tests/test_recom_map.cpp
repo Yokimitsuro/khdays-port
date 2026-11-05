@@ -27,7 +27,9 @@ void expect(bool ok, const std::string& what) {
 
 struct Writer final {
     Bytes b;
-    void u8(unsigned v) { b.push_back(static_cast<std::uint8_t>(v)); }
+    void u8(unsigned v) {
+        b.push_back(static_cast<std::uint8_t>(v));
+    }
     void u16(unsigned v) {
         u8(v & 0xFF);
         u8((v >> 8) & 0xFF);
@@ -45,8 +47,12 @@ struct Writer final {
         for (std::size_t i = 0; i < n; ++i)
             u8(i < std::strlen(s) ? static_cast<unsigned char>(s[i]) : 0);
     }
-    void zeros(std::size_t n) { b.insert(b.end(), n, 0); }
-    void pad_to(std::size_t at) { zeros(at - b.size()); }
+    void zeros(std::size_t n) {
+        b.insert(b.end(), n, 0);
+    }
+    void pad_to(std::size_t at) {
+        zeros(at - b.size());
+    }
 };
 
 Bytes azf() {
@@ -57,12 +63,12 @@ Bytes azf() {
     const std::size_t layout = w.b.size();
     w.u16(1);
     w.pad_to(layout + 0x20);
-    w.u32(1);         // the piece
-    w.u16(0xFFFF);    // no parent
+    w.u32(1);       // the piece
+    w.u16(0xFFFF);  // no parent
     w.u16(0);
-    w.u16(0);         // turn x
-    w.u16(900);       // turn y: a quarter
-    w.u16(0);         // turn z
+    w.u16(0);    // turn x
+    w.u16(900);  // turn y: a quarter
+    w.u16(0);    // turn z
     w.u16(0);
     w.f32(10);
     w.f32(0);
@@ -166,8 +172,8 @@ Bytes mcd() {
     w.zeros(0x60 - w.b.size());
     w.u32(0);
     w.u32(1);
-    w.u32(0);  // its number
-    w.u32(0);  // its mesh: right after the pieces
+    w.u32(0);       // its number
+    w.u32(0);       // its mesh: right after the pieces
     w.zeros(0x30);  // move, turn, scale (not read)
     for (int c = 0; c < 4; ++c)
         for (int r = 0; r < 4; ++r)

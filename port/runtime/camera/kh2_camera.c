@@ -11,10 +11,11 @@
 const Kh2CameraParams kh2_camera_outdoor = {1.5f, 420.0f, 380.0f, 250.0f, 500.0f, 0.008f};
 const Kh2CameraParams kh2_camera_indoor = {1.04719758f, 600.0f, 520.0f, 400.0f, 700.0f, 0.005f};
 
-#define AT_HEIGHT 170.0f         /* calcAtTarget */
-#define EYE_BELOW_AT 150.0f      /* calcEyeTarget */
-#define SUBJECTIVE_HEIGHT 150.0f /* the player's YS::PREF::Party SubjectiveOffset: the maintainer's value, not read from KH2's data here */
-#define SUBJECTIVE_REACH 350.0f  /* calcSubjective */
+#define AT_HEIGHT 170.0f    /* calcAtTarget */
+#define EYE_BELOW_AT 150.0f /* calcEyeTarget */
+#define SUBJECTIVE_HEIGHT                                                                                              \
+    150.0f /* the player's YS::PREF::Party SubjectiveOffset: chosen for the port, not read from KH2's data */
+#define SUBJECTIVE_REACH 350.0f /* calcSubjective */
 #define SUBJECTIVE_PITCH DEGREES(70.0f)
 #define BODY_HEIGHT 100.0f /* updateTargetCamera: the point of the player it keeps on screen */
 #define HOME_TURN DEGREES(10.0f)

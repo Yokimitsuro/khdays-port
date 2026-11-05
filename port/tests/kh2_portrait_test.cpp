@@ -614,8 +614,8 @@ void labels_runtime()
     collect_labels(142);
     khdays_ui_kh2_labels_commands(programs);
     for (int i = 0; i < 5; ++i) {
-        KhdaysUiElement box{};
-        expect(!programs[i].words[KSI_CLEAR] && !khdays_ui_kh2_label_box(i, &box),
+        KhdaysUiElement label{};
+        expect(!programs[i].words[KSI_CLEAR] && !khdays_ui_kh2_label_box(i, &label),
                "HD graphics off retained label drawing or suppression");
     }
     hd_graphics = true;

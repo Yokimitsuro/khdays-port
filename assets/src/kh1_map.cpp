@@ -238,7 +238,7 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     Room room;
     room.scene.name = name;
     room.scene.nodes.push_back({name, -1});
-    std::map<std::size_t, int> material_of;  // by texture
+    std::map<std::size_t, int> material_of;     // by texture
     std::map<std::string, bool> picture_alpha;  // written pictures (textures may share one): whether they cut out
     std::map<int, SceneMesh> by_material;
     auto material = [&](std::size_t texture) {

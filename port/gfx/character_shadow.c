@@ -398,8 +398,8 @@ int khdays_shadow_finish(KhdaysG3dList *list)
                 v[k].w = 1;
             }
             p.attr = (p.attr & ~0xc0u) | 0xc0u;
-            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_SOURCE |
-                      ((p.flags & KHDAYS_G3D_MOD) ? 0 : KHDAYS_G3D_SHADOW_NATIVE);
+            p.flags =
+                KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_SOURCE | ((p.flags & KHDAYS_G3D_MOD) ? 0 : KHDAYS_G3D_SHADOW_NATIVE);
             p.shadow = s;
             KhdaysG3dPreInfo key = list->pre_info[r->pre];
             key.draw ^= (uint64_t)shadows[s].owner << 32;

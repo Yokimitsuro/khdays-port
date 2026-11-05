@@ -1,4 +1,4 @@
-/* The rooms the mods add to the game's mission worlds (spec 040): mods/<Mod>/rooms/rooms.txt names each (a line
+/* The rooms the mods add to the game's mission worlds: mods/<Mod>/rooms/rooms.txt names each (a line
  * "<key> <world>"), its files in rooms/<world>/<key>/: room.gltf (or .glb, .fbx) the model drawn, collision.bin its
  * floors and walls in the game's form (the studio's --add-room writes both). When the game reads a world's archive
  * (mi/wd/wd_<code>), its added rooms are put after the world's own: each a room record of its own id (no exits: only

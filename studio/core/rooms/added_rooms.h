@@ -1,4 +1,4 @@
-// The rooms a mod adds to a world (spec 040): mods/<Mod>/rooms/rooms.txt lists them, a line "<key> <world>" each, their
+// The rooms a mod adds to a world: mods/<Mod>/rooms/rooms.txt lists them, a line "<key> <world>" each, their
 // files in rooms/<world>/<key>/ -- room.gltf and its pictures (the model drawn), collision.bin (its floors and walls
 // as the game reads them), map.png and map.txt (its map on the lower screen, core/rooms/room_map.h). The port puts
 // them after the world's own rooms (port/runtime/rooms/added.cpp); a new mission names one as its room

@@ -91,7 +91,9 @@ public:
             out += static_cast<char>(d_[at + i]);
         return out;
     }
-    std::size_t size() const { return n_; }
+    std::size_t size() const {
+        return n_;
+    }
 
 private:
     const std::uint8_t* d_;
@@ -360,7 +362,7 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
     room.scene.nodes.push_back({name, -1});
     // a material for each texture, blended or not, and its scroll: its picture written once
     std::map<std::tuple<std::string, bool, std::array<float, 2>>, int> material_of;
-    std::map<std::string, bool> picture_alpha;  // written pictures: whether they hold see-through texels
+    std::map<std::string, bool> picture_alpha;         // written pictures: whether they hold see-through texels
     std::map<std::pair<int, bool>, SceneMesh> meshes;  // by material, and whether a sky's
     int sky_node = -1;
     auto material = [&](const std::string& texture, bool blended, const std::array<float, 2>& scroll) {

@@ -211,8 +211,8 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
                 const auto p = apply(m, {r.get<float>(q + 16), r.get<float>(q + 20), r.get<float>(q + 24)});
                 pt.position = {p[0], -p[1], -p[2]};  // Re:CoM's axes, y down, turned upright
                 for (std::size_t i = 0; i < 4; ++i)
-                    pt.colour[i] =
-                        static_cast<std::uint8_t>(std::min<std::uint32_t>(255, r.get<std::uint32_t>(q + 32 + 4 * i) * 2));
+                    pt.colour[i] = static_cast<std::uint8_t>(
+                        std::min<std::uint32_t>(255, r.get<std::uint32_t>(q + 32 + 4 * i) * 2));
                 const float w = r.get<float>(q + 0x38);
                 const float div = w != 0 ? w : 1.0F;
                 pt.uv = {r.get<float>(q + 0x30) / div, r.get<float>(q + 0x34) / div};
@@ -224,8 +224,7 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
             for (std::size_t v = 2; v < strip.size(); ++v) {
                 if (strip[v].kind == kStripStart)
                     continue;
-                const std::string texture =
-                    strip[v].texture < names.size() ? names[strip[v].texture] : std::string();
+                const std::string texture = strip[v].texture < names.size() ? names[strip[v].texture] : std::string();
                 const int mat = material(texture);
                 SceneMesh& mesh = by_material[mat];
                 if (mesh.primitives.empty()) {
@@ -233,9 +232,9 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
                     mesh.primitives.push_back({mat});
                 }
                 ScenePrimitive& prim = mesh.primitives.front();
-                const std::array<std::size_t, 3> corners =
-                    strip[v].kind == kOdd ? std::array<std::size_t, 3>{v - 1, v - 2, v}
-                                          : std::array<std::size_t, 3>{v - 2, v - 1, v};
+                const std::array<std::size_t, 3> corners = strip[v].kind == kOdd
+                                                               ? std::array<std::size_t, 3>{v - 1, v - 2, v}
+                                                               : std::array<std::size_t, 3>{v - 2, v - 1, v};
                 for (const std::size_t c : corners) {
                     prim.indices.push_back(static_cast<std::uint32_t>(prim.positions.size()));
                     prim.positions.push_back(strip[c].position);

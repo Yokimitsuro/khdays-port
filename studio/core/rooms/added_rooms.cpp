@@ -46,8 +46,8 @@ bool added_room_key(const std::string& key) {
     if (key.empty())
         return false;
     for (const char c : key) {
-        const bool fine = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-                          c == '-';
+        const bool fine =
+            (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
         if (!fine)
             return false;
     }
@@ -82,7 +82,8 @@ std::vector<AddedRoom> read_added_rooms(const fs::path& mod_dir, std::vector<std
 }
 
 bool write_added_rooms(const fs::path& mod_dir, const std::vector<AddedRoom>& rooms, std::string* why) {
-    std::string text = "# The rooms this mod adds to the game's worlds: <key> <world>; their files in rooms/<world>/<key>/\n";
+    std::string text =
+        "# The rooms this mod adds to the game's worlds: <key> <world>; their files in rooms/<world>/<key>/\n";
     for (const auto& r : rooms)
         text += r.key + " " + r.world + "\n";
     const auto result = write_into_mod(
@@ -265,8 +266,8 @@ bool add_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::strin
     if (!placed_model(model, place, &drawn, why))
         return false;
     std::set<std::string> written;
-    if (!write_model_as(mod_dir, folder / "room.gltf", "room",
-                        "rooms/" + world + "/" + key + "/", drawn, &written, why)) {
+    if (!write_model_as(mod_dir, folder / "room.gltf", "room", "rooms/" + world + "/" + key + "/", drawn, &written,
+                        why)) {
         return false;
     }
     // listed once

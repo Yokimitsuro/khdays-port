@@ -137,11 +137,11 @@ static void a_mods_room_added_to_a_world(void)
     std::vector<unsigned char> table(8 + 0x28, 0);
     table[0] = 1;
     put32(table, 4, 8);
-    table[8] = 0;     // id
-    table[9] = 0;     // exits
-    table[10] = 1;    // objects
-    table[11] = 2;    // collision
-    put32(table, 8 + 0x14, 0x1234);  // a word not read, kept
+    table[8] = 0;                   // id
+    table[9] = 0;                   // exits
+    table[10] = 1;                  // objects
+    table[11] = 2;                  // collision
+    put32(table, 8 + 0x14, 0x1234); // a word not read, kept
     put32(table, 8 + 0x1c, 0x24);
     put32(table, 8 + 0x20, 0x24);
     table[8 + 0x24] = 0x80;
@@ -175,7 +175,8 @@ static void a_mods_room_added_to_a_world(void)
     CHECK(khdays_rooms_index(mod_path.c_str(), "plaza", "eh") == 1);
     CHECK(khdays_rooms_index(mod_path.c_str(), "plaza", "tt") == -1);
     char path[512];
-    CHECK(khdays_rooms_model("mi/wd/wd_eh#5/mdl/eh_00", path, sizeof(path)) && std::strstr(path, "room.gltf") != nullptr);
+    CHECK(khdays_rooms_model("mi/wd/wd_eh#5/mdl/eh_00", path, sizeof(path)) &&
+          std::strstr(path, "room.gltf") != nullptr);
     CHECK(!khdays_rooms_model("mi/wd/wd_eh#3/mdl/eh_00", path, sizeof(path)));
 
     // its map: an NCGR as the game's (20 x 24 tiles of 4 bits), the picture after it

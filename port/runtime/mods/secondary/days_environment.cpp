@@ -25,7 +25,7 @@ constexpr std::uint32_t kBlobReady = 0x8000;     // header +0x74: its pointers r
 constexpr std::uint16_t kFaceDisabled = 0x4000;  // a wall that opened (Ov002_SetWidgetHidden)
 constexpr std::uint8_t kPassThrough = 5;         // a named record's tag the camera passes through
 constexpr std::uint32_t kBoxVtable = 0x02042928; // a room box (kind 3)
-constexpr std::uint32_t kLinkCtx = 0x0207fa10; // data_ov002_0207fa10 (overlay 2's BSS): the field's Ov002LinkCtx *
+constexpr std::uint32_t kLinkCtx = 0x0207fa10;   // data_ov002_0207fa10 (overlay 2's BSS): the field's Ov002LinkCtx *
 constexpr int kFieldOverlay = 2, kRoomSlots = 4;
 
 bool ram(std::uint32_t at, std::uint32_t size = 4)

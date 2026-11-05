@@ -29,7 +29,9 @@ void expect(bool ok, const std::string& what) {
 
 struct Writer final {
     Bytes b;
-    void u8(unsigned v) { b.push_back(static_cast<std::uint8_t>(v)); }
+    void u8(unsigned v) {
+        b.push_back(static_cast<std::uint8_t>(v));
+    }
     void u32(std::uint32_t v) {
         for (int i = 0; i < 4; ++i)
             u8((v >> (8 * i)) & 0xFF);
@@ -43,7 +45,9 @@ struct Writer final {
         std::memcpy(&w, &v, 4);
         u32(w);
     }
-    void zeros(std::size_t n) { b.insert(b.end(), n, 0); }
+    void zeros(std::size_t n) {
+        b.insert(b.end(), n, 0);
+    }
 };
 
 // TEX0 of a page at `page` of kind `kind`; CLAMP region-clamped (2) or repeated (3) both ways.
@@ -128,8 +132,8 @@ void test_room() {
     const auto picture = folder / "-1f900.dds";
     {
         const Bytes dds = plain_dds();
-        std::ofstream(picture, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
-                                                      static_cast<std::streamsize>(dds.size()));
+        std::ofstream(picture, std::ios::binary)
+            .write(reinterpret_cast<const char*>(dds.data()), static_cast<std::streamsize>(dds.size()));
     }
     std::map<std::string, int> written;
     std::vector<std::string> asked;
@@ -141,8 +145,8 @@ void test_room() {
         },
         [&](const std::string& file, const khdays::assets::DecodedTexture& t) { written[file] = t.width; });
     // the plain page first (f900), the spare bits' page after it (1f900): the mesh's texture is the second
-    expect(asked == std::vector<std::string>{"1f900"}, "its texture named by its page's place: " +
-                                                           (asked.empty() ? std::string("-") : asked.front()));
+    expect(asked == std::vector<std::string>{"1f900"},
+           "its texture named by its page's place: " + (asked.empty() ? std::string("-") : asked.front()));
     expect(made.report.empty(), "nothing left out: " + (made.report.empty() ? std::string() : made.report.front()));
     expect(written.size() == 1 && written["1f900.png"] == 1, "its picture written once");
     const auto& scene = made.scene;
@@ -175,15 +179,14 @@ void test_seventeenth_plain_page() {
         textures.push_back({0x2600 + page * 0x100, 0x13, 2});
     const Bytes data = mvbl(textures, 16);
     std::vector<std::string> asked;
-    (void)kh1::room_model(
-        data.data(), data.size(), "dc99_01", kh1::ImgPages{0x13100, 17},
-        [&](const std::string& name) {
-            asked.push_back(name);
-            return std::filesystem::path();
-        },
-        {});
-    expect(asked == std::vector<std::string>{"_NoName"}, "the seventeenth plain page's picture: " +
-                                                             (asked.empty() ? std::string("-") : asked.front()));
+    (void)kh1::room_model(data.data(), data.size(), "dc99_01", kh1::ImgPages{0x13100, 17},
+                          [&](const std::string& name) {
+                              asked.push_back(name);
+                              return std::filesystem::path();
+                          },
+                          {});
+    expect(asked == std::vector<std::string>{"_NoName"},
+           "the seventeenth plain page's picture: " + (asked.empty() ? std::string("-") : asked.front()));
 }
 
 // A .bin whose one entry is a collision: a triangle and a four-sided face on four vertices, y down, their corners
@@ -311,8 +314,8 @@ void test_sky() {
     const auto picture = folder / "-1e2a50.dds";
     {
         const Bytes dds = plain_dds();
-        std::ofstream(picture, std::ios::binary).write(reinterpret_cast<const char*>(dds.data()),
-                                                      static_cast<std::streamsize>(dds.size()));
+        std::ofstream(picture, std::ios::binary)
+            .write(reinterpret_cast<const char*>(dds.data()), static_cast<std::streamsize>(dds.size()));
     }
     kh1::Room room;
     room.scene.name = "tw99_02";
@@ -323,7 +326,9 @@ void test_sky() {
         asked.push_back(name);
         return name == "1e2a50" ? picture : std::filesystem::path();
     };
-    const auto write = [&](const std::string& file, const khdays::assets::DecodedTexture& t) { written[file] = t.width; };
+    const auto write = [&](const std::string& file, const khdays::assets::DecodedTexture& t) {
+        written[file] = t.width;
+    };
     kh1::add_sky(&room, w.b.data(), w.b.size(), find, write);
     kh1::add_sky(&room, w.b.data(), w.b.size(), find, write);  // a second sky on the same picture
     const auto& scene = room.scene;

@@ -1,4 +1,4 @@
-// The collections' rooms (spec 040): the games' table, MD5 as the packages key their paths, and the maps a package's
+// The collections' rooms: the games' table, MD5 as the packages key their paths, and the maps a package's
 // index holds found by each game's pattern. Synthetic only: an index made here of the paths' keys.
 #include "test.h"
 
@@ -63,7 +63,8 @@ TEST(the_five_games_and_their_collections) {
     CHECK(collection_game("kh2")->units == 0.01f && ddd->units == 1.0f);
     // a DDD map with no collision among its files is a stage fallen through (Dive)
     const CollectionMap dive{"eh", "eh_60", "kh3d_third", {"map/eh/eh_60/bin/eh_60.pmp", "map/eh/eh_60/bin/eh_60.pvd"}};
-    const CollectionMap walked{"eh", "eh_01", "kh3d_third", {"map/eh/eh_01/bin/eh_01.pmp", "map/eh/eh_01/bin/eh_01a.bcd"}};
+    const CollectionMap walked{
+        "eh", "eh_01", "kh3d_third", {"map/eh/eh_01/bin/eh_01.pmp", "map/eh/eh_01/bin/eh_01a.bcd"}};
     CHECK(collection_map_falling(*ddd, dive) && !collection_map_falling(*ddd, walked));
 }
 
@@ -75,8 +76,8 @@ TEST(a_packages_maps_found_by_each_games_pattern) {
     CHECK(kh1_maps[1].paths == std::vector<std::string>({"tw00_02.bin", "tw00_02.img", "tw.wdt"}));
     CHECK(kh1_maps[0].paths == std::vector<std::string>({"al00_09.bin"}));  // only what the package holds
     // Re:CoM: MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF and its siblings
-    const auto recom = package_keys(index_of({"MAP01/0001/MP010001.AZF", "MAP01/0001/MP010001.mcd",
-                                              "MAP30/2004/MP302004.AZF", "MAP01/0002/MP010002.VTM"}));
+    const auto recom = package_keys(index_of(
+        {"MAP01/0001/MP010001.AZF", "MAP01/0001/MP010001.mcd", "MAP30/2004/MP302004.AZF", "MAP01/0002/MP010002.VTM"}));
     const auto recom_maps = maps_in_package(*collection_game("recom"), "Recom", recom);
     CHECK(names(recom_maps) == std::vector<std::string>({"MAP01/MP010001", "MAP30/MP302004"}));
     CHECK(recom_maps[0].paths == std::vector<std::string>({"MAP01/0001/MP010001.AZF", "MAP01/0001/MP010001.mcd"}));
