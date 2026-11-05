@@ -99,6 +99,10 @@ class Models(unittest.TestCase):
             self.assertFalse((mod / "graphics/ba/ch/ro/w_.p2#27/mdl/ro_w9999b.secondary.txt").exists())
             # the cutscene's: the hooded Roxas on B_EX390, its keyblades with chains, F_TT580 without
             self.assertEqual((mod / "graphics/mi/ch/47.z/mdl/e_roh_hb.mdlx").read_bytes(), b"B_EX390.mdlx")
+            axel = mod / "graphics/ba/ch/ax"
+            self.assertEqual((axel / "def_h.p.z/mdl/axel_h.mdlx").read_bytes(), b"B_EX110.mdlx")
+            self.assertEqual((axel / "def.p.z/mdl/axel.mdlx").read_bytes(), b"B_EX110.mdlx")
+            self.assertTrue((axel / "def.p.z/mdl/axel.secondary.txt").is_file())
             cutscene = mod / "graphics/mi/ob"
             self.assertEqual((cutscene / "B0.z/mdl/ro_w13600.mdlx").read_bytes(), b"W_EX010_10.mdlx")
             self.assertEqual((cutscene / "17.z/mdl/e_ro_w.mdlx").read_bytes(), b"W_EX010.mdlx")

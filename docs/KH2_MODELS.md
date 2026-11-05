@@ -186,12 +186,17 @@ Its clock is the game's animation frames (`kh2_moves.h`, `play_kh2`). The pose i
 relative to the model's root, where the game puts it now: held in the view's space,
 it stayed where he was while he moved on (an attack's lunge) and he slid forward and
 back. Every mix of poses on the model (the game's fades, a `finish` tail, these)
-mixes each joint's frames, turns the shorter way round (`attached_frame.h`
-`blend_frames`): a mix of the matrices shrank a joint between turns far apart (his
-head squashed in the game's fade from the aerial damage into the death, `b_ro_e003`).
+mixes each joint's frames as KH2 does (`attached_frame.h` `blend_frames`, PS3
+`kn::blend` 0xF659C, called from `kn::Motion::calc`): x and y axes each mixed and made
+unit, z = x cross y, y = z cross x. A plain mix of the matrices shrank a joint between
+turns far apart (his head squashed in the game's fade into the death, `b_ro_e003`).
+KH2's weight is linear, time over blend frames (`YS::MOTION::calc` 0x45C068); the
+weights here stay the game's and `blend` lines'. Not ported: `kn::no_envelope_blend`
+(0xF66A8), the same mix starting from the axes that agree most, for helper bones only.
 The motions' poses (and the game's own, at its share) are mixed joint by joint on the
 parent's mixed frame, each pose's joint taken from its parent in that pose (the root in
-the model's space): mixed in the model's space, the keyblade arm crossing from the
+the model's space), a joint skipping helper bones up to its envelope parent as
+`kn::Model::getParentEnvelope` (0xF11DC; bone +0xC bit 0 marks a helper): mixed in the model's space, the keyblade arm crossing from the
 battle idle into the weapon walk lost its length and twisted, each hand's place the mean
 of two, off the forearm's mixed turn. The idle fade's held pose still mixes in the
 model's space.
@@ -483,9 +488,10 @@ and 106 the right one 222 rigidly (5.3 and 5.1 cm out, one turn throughout). So:
 - `carry 95 149 at 0` and `carry 106 222 at 0`: in P_EX110's motions the keyblade
   bones ride its weapon bones (P_EX110's 63 and 172) at that frame (offline: 6.2
   and 5.5 cm from them in slots 0, 2, 8, 604, the frame on them B_EX390's exactly);
-- bones.txt pairs `kh2_95 ro_h_L` and `kh2_106 ro_h_R` with `place`: in the game's
-  own animations the bones sit on its weapon joints, and the keyblades take the
-  game's own frame there (its share of the pose is whole). A placed joint holding
+- bones.txt pairs `kh2_95 ro_h_L` and `kh2_106 ro_h_R` with `place ... ride`: in the
+  game's own animations the bones take the game's weapon joints' turn, and their
+  place moved by how far each KH2 hand is from the game's (on the nodes alone, his
+  hands left the keyblades in a run). A placed joint holding
   its own node's weapon is turned at load so the `weapon` line's frame on it is the
   node's (`load_kh2_motions`: its correction N (W T)^-1, N the node's rest turn, W
   the joint's, T the line's). With the joint's own rest turn left in, a fade
@@ -987,6 +993,8 @@ models drawn while it is off. A new model's settings carry the same line.
 | `e_roh_hb` | `mi/ch/47.z/mdl` | B_EX390 | as `roxas_ho_h`, whose cloth it takes, at `scale 0.93` (he never sits or kneels), with `e_rox_hb`'s dynamic hands |
 | `roxas_b` | `ba/ch/ro/def.p.z/mdl` | N_EX830 | as `roxas_b_h`, whose settings it takes |
 | `roxas_bf` | `ba/ch/r2/def.p.z/mdl` | B_EX390 | as `roxas_bf_h`, whose settings it takes |
+| `axel_h` | `ba/ch/ax/def_h.p.z/mdl` | B_EX110 | B_EX110.mset; its weapon bones 147 and 234 placed on `ax_h_L` and `ax_h_R` (`place ... ride`: they stand from his hands as the nodes from the game's, and Days' animations move those nodes up to 2.8 m from them, measured; the nodes hang from the root, not the hands), its baked weapons hidden; the hair on its own `scalp` collider; no cuffs yet |
+| `axel` | `ba/ch/ax/def.p.z/mdl` | B_EX110 | as `axel_h`, whose settings it takes |
 | `ro_w00600` | `ba/ch/ro/w_.p2#0/mdl` | W_EX010 | |
 | `ro_w13600` | `ba/ch/ro/w_.p2#21/mdl` | W_EX010_10 | `ro_w00600`'s settings |
 | `ro_w15600` | `ba/ch/ro/w_.p2#22/mdl` | W_EX010_W0 | nothing on its keychain's bones: no `.secondary.txt` |

@@ -19,6 +19,8 @@ FIRST, FIFTH, SIXTH = "first", "fifth", "sixth"
 # Which archive holds each file, under obj/. Verified on the Steam copy: each the same, byte for byte, as the
 # files the settings were tuned with.
 SOURCES = {
+    "B_EX110.mdlx": FIFTH,
+    "B_EX110.mset": FIFTH,
     "B_EX390.mdlx": FIFTH,
     "B_EX390.mset": FIFTH,
     "F_TT580.mdlx": FIRST,
@@ -45,6 +47,8 @@ MODELS = (
     ("graphics/ba/ch/r2/def.p.z/mdl", "roxas_bf", "B_EX390.mdlx", DUAL_FILES),
     ("graphics/mi/ch/0C.z/mdl", "e_rox_hb", "N_EX830.mdlx", ("P_EX110.mset", "P_EX110.mdlx")),
     ("graphics/mi/ch/47.z/mdl", "e_roh_hb", "B_EX390.mdlx", PLAYER_FILES),
+    ("graphics/ba/ch/ax/def_h.p.z/mdl", "axel_h", "B_EX110.mdlx", ("B_EX110.mset",)),
+    ("graphics/ba/ch/ax/def.p.z/mdl", "axel", "B_EX110.mdlx", ("B_EX110.mset",)),
     ("graphics/ba/ch/ro/w_.p2#0/mdl", "ro_w00600", "W_EX010.mdlx", ()),
     ("graphics/ba/ch/ro/w_.p2#21/mdl", "ro_w13600", "W_EX010_10.mdlx", ()),
     ("graphics/ba/ch/ro/w_.p2#22/mdl", "ro_w15600", "W_EX010_W0.mdlx", ()),
@@ -64,6 +68,7 @@ SAME_SETTINGS = {
     ("graphics/ba/ch/ro/def.p.z/mdl", "roxas_b"): ("graphics/ba/ch/ro/def_hb.p.z/mdl", "roxas_b_h"),
     ("graphics/ba/ch/r2/def.p.z/mdl", "roxas_bf"): ("graphics/ba/ch/r2/def_h.p.z/mdl", "roxas_bf_h"),
     ("graphics/mi/ch/47.z/mdl", "e_roh_hb"): ("graphics/ba/ch/ro/def_hho.p.z/mdl", "roxas_ho_h"),
+    ("graphics/ba/ch/ax/def.p.z/mdl", "axel"): ("graphics/ba/ch/ax/def_h.p.z/mdl", "axel_h"),
     ("graphics/ba/ch/ro/w_.p2#21/mdl", "ro_w13600"): KEYBLADE,
     ("graphics/ba/ch/ro/w_.p2#26/mdl", "ro_w9999a"): KEYBLADE,
     ("graphics/ba/ch/r2/w_.p2#0/mdl", "ro_w13600"): KEYBLADE,
