@@ -358,6 +358,9 @@ static u16 player_buttons(void)
     const u16 lock_buttons =
         khdays_lock_sequencer_frame(&lock, lock_on ? lock_actions : 0, lock_field, game->lock_active,
                                     game->lockon_scheme, (u16)(buttons | script_keys), r_free);
+    if (lock.let_go) {
+        khdays_controls_lock_let_go();
+    }
     if (step.dpad_own) {
         buttons &= (u16)~dpad;
     }

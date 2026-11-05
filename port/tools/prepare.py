@@ -1403,6 +1403,12 @@ HOOKS = {
             "    { extern void khdays_controls_selection_live(int live);\n"
             "      if (runtimeMode == 0) khdays_controls_selection_live(!suppressInput); }\n",
         ),
+        (  # the lock-on's own button lets go with one R (runtime/input/controls_hooks.c)
+            "        suppressInput = pressed & 0x100;\n",
+            "        { extern int khdays_controls_selection_repeat(int repeat, int pressed);\n"
+            "          context->repeatAny = khdays_controls_selection_repeat(context->repeatAny, pressed); }\n"
+            "        suppressInput = pressed & 0x100;\n",
+        ),
         (
             "Ov022_SetSelectionEnabled(0);",
             '(khdays_trace_call_arg("SetSelectionEnabled", 0), Ov022_SetSelectionEnabled(0));',

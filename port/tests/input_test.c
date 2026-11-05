@@ -2062,7 +2062,15 @@ static void test_lock_sequencer(void)
     const uint32_t on = 1u << KHDAYS_LOCK_ON, next = 1u << KHDAYS_LOCK_NEXT, prev = 1u << KHDAYS_LOCK_PREV;
     KhdaysLockSequencer s;
 
-    /* Lock on (or let go): R pressed twice within the game's 9 frames. */
+    /* Let go: one R, marked for the game to take as its double press (the first of two would move on). */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, on, 1, 0, 0, 1) == R);
+    CHECK(s.let_go);
+    CHECK(lock_frame(&s, on, 1, 0, 0, 0) == 0);
+    CHECK(!s.let_go);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+
+    /* Lock on: R pressed twice within the game's 9 frames. */
     khdays_lock_sequencer_reset(&s);
     CHECK(lock_frame(&s, on, 0, 0, 0, 1) == R);
     CHECK(lock_frame(&s, on, 0, 0, 0, 0) == 0);

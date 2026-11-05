@@ -107,6 +107,27 @@ int khdays_controls_selection_pressed(int pressed, int other_screen)
     return pressed;
 }
 
+static int let_go;
+static uint32_t let_go_at;
+
+void khdays_controls_lock_let_go(void)
+{
+    let_go = 1;
+    let_go_at = khdays_input_game_frames();
+}
+
+/* Ov022_ReadSelectionInput, locked on: an R within 9 frames of the last lets go before it can move to the next target,
+ * and that counter is repeatAny. Type A moves at the first R, Type B as it is released. */
+int khdays_controls_selection_repeat(int repeat, int pressed)
+{
+    if ((pressed & 0x100) == 0) {
+        return repeat;
+    }
+    const int letting_go = let_go && khdays_input_game_frames() - let_go_at <= KEPT_FRAMES;
+    let_go = 0;
+    return letting_go ? 0 : repeat;
+}
+
 void khdays_controls_selection_live(int live)
 {
     if (live) {

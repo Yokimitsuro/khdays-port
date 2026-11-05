@@ -201,9 +201,12 @@ The gamepad's enhancements play the DS's own presses (`runtime/input`):
 - **Lock-on on its own buttons**: the game locks on with R
   (`Ov022_ReadSelectionInput`): not locked, R twice within 9 game frames locks
   on to the target the game picked; locked, R twice lets go, R once moves to the
-  next target, and with Type B (option 0 = 1) L once to the previous one. R also
-  works the camera; the presses played are a player's, so the camera does what
-  it does for them.
+  next target, and with Type B (option 0 = 1) L once to the previous one. The first
+  of two R while locked moves to the next target as well (Type A at the press, Type
+  B at the release), so the lock-on button lets go with one R, its `repeatAny` set
+  to 0 to count as the second (`khdays_controls_selection_repeat`). R also works
+  the camera; the presses played are a player's, so the camera does what it does
+  for them.
 
 ## The PC's side
 
