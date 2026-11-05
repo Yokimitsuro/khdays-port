@@ -153,8 +153,53 @@ static void sprite_and_weapon(int on, int floor_present, int sprite_present, int
     CHECK(replaced == enhanced);
 }
 
+/* More casters than the 32 masks there once were: each one its own mask and its own receiver, none left native. */
+static void many(int native)
+{
+    enum { CASTERS = 40 };
+    const float floor[9] = {-.9f, 0, -.9f, .9f, 0, -.9f, 0, 0, .9f};
+    const float volume[9] = {-.5f, -.1f, -.5f, .5f, .1f, -.5f, 0, .1f, .5f};
+    const float pose[9] = {-.2f, .2f, -.2f, .2f, .3f, -.2f, 0, .5f, .2f};
+    khdays_g3d_reset();
+    khdays_g3d_frame_camera(projection, camera);
+    khdays_shadow_capture_begin(9, 1);
+    triangle(floor, 0xc0u | (31u << 16) | (2u << 24), native);
+    khdays_shadow_capture_end();
+    for (int c = 0; c < CASTERS; ++c) {
+        khdays_shadow_volume_begin(100 + (uintptr_t)c, 1);
+        triangle(volume, 0xf0u | (10u << 16) | (63u << 24), native);
+        khdays_shadow_volume_end();
+        khdays_shadow_capture_begin(100 + (uintptr_t)c, 1);
+        triangle(pose, 0xc0u | (31u << 16) | (1u << 24), native);
+        khdays_shadow_capture_end();
+    }
+    uint32_t zero = 0;
+    khdays_g3d_command(0x50, &zero);
+    khdays_g3d_vblank();
+    const KhdaysG3dList *list = khdays_g3d_shown();
+    int source[CASTERS] = {0}, receiver[CASTERS] = {0}, replaced = 0;
+    for (int i = 0; i < list->npre; ++i) {
+        const KhdaysG3dPolygon *p = &list->pre[i];
+        replaced += !!(p->flags & KHDAYS_G3D_SHADOW_REPLACED);
+        if (!(p->flags & (KHDAYS_G3D_SHADOW_SOURCE | KHDAYS_G3D_SHADOW_RECEIVER)))
+            continue;
+        CHECK(p->shadow >= 0 && p->shadow < CASTERS);
+        if (p->shadow < 0 || p->shadow >= CASTERS)
+            continue;
+        if (p->flags & KHDAYS_G3D_SHADOW_SOURCE)
+            ++source[p->shadow];
+        else
+            ++receiver[p->shadow];
+    }
+    for (int c = 0; c < CASTERS; ++c)
+        CHECK(source[c] > 0 && receiver[c] > 0);
+    CHECK(replaced == CASTERS);
+}
+
 int main(void)
 {
+    many(0);
+    many(1);
     for (int native = 0; native <= 1; ++native) {
         run(0, native, 1, 1);
         run(1, native, 1, 1);

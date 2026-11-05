@@ -412,7 +412,7 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
         const float2 uv = float2(at.s, at.t)*w/16.0f-0.5f;
         const int2 q = (int2)floor(uv);
         const float2 f = frac(uv);
-        const uint base = (((uint)p.flags >> 24)&31u)*128u*128u;
+        const uint base = p.shadow*128u*128u;
         float coverage = 0;
         for (int k=0;k<4;++k) {
             const int2 a=q+int2(k&1,k>>1);

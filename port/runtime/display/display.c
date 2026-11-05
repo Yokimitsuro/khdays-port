@@ -974,8 +974,8 @@ static void record_package(const KhdaysFramePackage *p)
 {
     char path[MAX_PATH];
     FILE *f;
-    /* version 14: a vertex has an alpha (ten words) */
-    const u32 header[4] = {0x474b5046u /* "FPKG" */, 14, (u32)KHDAYS_FRAME_RECORDED, p->frame};
+    /* version 15: a polygon names its character shadow's mask (version 14: a vertex has an alpha, ten words) */
+    const u32 header[4] = {0x474b5046u /* "FPKG" */, 15, (u32)KHDAYS_FRAME_RECORDED, p->frame};
     snprintf(path, sizeof(path), "%s/frame_%05u.pkg", record_dir, p->frame);
     if (fopen_s(&f, path, "wb") != 0) {
         fprintf(stderr, "display: cannot write %s\n", path);

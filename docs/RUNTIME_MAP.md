@@ -623,7 +623,7 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   `DIR/frame_NNNNN.pkg`, the 3D list's polygons and vertices after it, then
   the same polygons before clipping with their keys, then the port's elements
   (each screen's records, what they stand for left out, and each
-  image they draw once) (format 13; nothing in it has a fixed size). The packages hold the game's data: record into
+  image they draw once) (format 15; nothing in it has a fixed size). The packages hold the game's data: record into
   `saves/frames`, which git ignores, never into the repository.
   `khdays-render-test` reads them there.
 - `KHDAYS_CHECK_COMPOSITION=1` -- every frame drawn (even headless), and

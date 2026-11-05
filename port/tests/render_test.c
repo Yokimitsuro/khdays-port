@@ -208,7 +208,7 @@ int main(int argc, char **argv)
             ++failures;
             continue;
         }
-        if (size < 16 + KHDAYS_FRAME_RECORDED || data[0] != 0x474b5046u || data[1] != 14 ||
+        if (size < 16 + KHDAYS_FRAME_RECORDED || data[0] != 0x474b5046u || data[1] != 15 ||
             data[2] != KHDAYS_FRAME_RECORDED || recorded == NULL) {
             fprintf(stderr, "%s: not a frame package of this build (%u bytes)\n", path, (unsigned)size);
             ++failures;

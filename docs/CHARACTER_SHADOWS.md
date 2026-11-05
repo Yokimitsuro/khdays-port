@@ -49,12 +49,15 @@ original volume's Y range. Walls and other registered casters are excluded.
 The resulting receiver geometry reuses the floor's clip positions and depth;
 it follows slopes and stops at rendered floor edges. Its material retains the
 original shadow color and opacity. The original volume remains the fallback
-when no matching pose or usable receiver is available, including casters beyond
-the current limit of 32 enhanced shadows in one geometry list.
+when no matching pose or usable receiver is available, or when the graphics card
+could not make the masks (their pipelines, or memory for one more mask). A list
+has as many enhanced shadows as it has casters: the masks and their tile index
+grow with them.
 
 Source and receiver triangles travel in the existing geometry lists, including
 frame copies, recordings, and interpolation. New flags distinguish the hidden
-mask geometry, projected receivers, and original volumes replaced on the GPU.
+mask geometry, projected receivers, and original volumes replaced on the GPU;
+a polygon's `shadow` field names its caster's mask.
 The reference DS rasterizer continues drawing the original volume and ignores
 the added floating-point polygons. Enhanced pictures intentionally differ from
 that reference; comparisons should leave this enhancement off.

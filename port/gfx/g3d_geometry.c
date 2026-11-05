@@ -692,6 +692,7 @@ static void finish_polygon(List *out, int32_t ds[2], const Clip *v, int n, const
     p = &out->polys[out->npolys++];
     p->flags = in->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_OVER_2D | KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_REPLACED);
     p->replacement = in->replacement;
+    p->shadow = 0; /* a game's polygon is no shadow's caster or receiver */
     /* the DS keeps a polygon while its RAM has room for it, and drops the rest */
     if (ds[0] < KHDAYS_G3D_DS_POLYS && ds[1] + count <= KHDAYS_G3D_DS_VERTS) {
         ++ds[0];
@@ -1025,6 +1026,7 @@ static void finish_mod_polygon(List *out, const KhdaysG3dClipVertex *v, int n, c
     p = &out->polys[out->npolys++];
     p->flags = in->flags;
     p->replacement = in->replacement;
+    p->shadow = in->shadow;
     p->attr = attr;
     p->tex = in->tex;
     p->pltt = in->pltt;

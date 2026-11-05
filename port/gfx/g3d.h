@@ -32,6 +32,7 @@ typedef struct KhdaysG3dPolygon {
     int32_t translucent;
     int32_t flags;       /* KHDAYS_G3D_HUD, KHDAYS_G3D_BEYOND_DS, KHDAYS_G3D_MOD */
     int32_t replacement; /* the texture drawn instead (runtime/mods/textures.h), or -1 */
+    int32_t shadow;      /* a character shadow's caster or receiver: its mask (gfx/character_shadow.h) */
 } KhdaysG3dPolygon;
 
 /* A polygon as the game sent it, before clipping, in a list's `pre` arrays: its vertices in clip space

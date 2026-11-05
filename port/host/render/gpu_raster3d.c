@@ -56,6 +56,10 @@ static SDL_GPUTransferBuffer *shadow_upload;
 static uint32_t shadow_tile_capacity;
 static uint32_t *shadow_index;
 static uint32_t shadow_index_capacity;
+static uint32_t shadow_masks;            /* the masks shadow_raw and shadow_soft hold, grown to the most a list has had */
+static uint32_t *shadow_counts;          /* prepare_shadows' entries per tile of each mask, then where each goes */
+static uint32_t shadow_cells_capacity;
+static int shadows_off;                  /* their pipelines could not be made: the native shadows stay */
 static int shadows_ready; /* this list's mask can be drawn; if not, its native shadows stay and no receiver is drawn */
 static uint32_t shadow_groups, shadow_bytes, shadow_entries; /* prepare_shadows' for draw_shadows */
 
@@ -164,6 +168,41 @@ static SDL_GPUBuffer *make_buffer(Uint32 size)
     return SDL_CreateGPUBuffer(device, &info);
 }
 
+/* Room for `n` shadow masks (KHDAYS_SHADOW_SIZE squared, 4 bytes a texel) in shadow_raw and shadow_soft, grown as a
+ * list has more casters: the new ones made before the old go, so the raster always has a mask to bind. 0: no memory
+ * for them (this list's casters keep their native shadows). */
+static int shadow_masks_for(uint32_t n)
+{
+    if (n <= shadow_masks && shadow_soft != NULL)
+        return 1;
+    uint32_t want = shadow_masks ? shadow_masks : 1;
+    while (want < n)
+        want *= 2;
+    const uint64_t bytes = (uint64_t)want * KHDAYS_SHADOW_SIZE * KHDAYS_SHADOW_SIZE * 4u;
+    if (bytes > UINT32_MAX) {
+        SDL_SetError("%u character shadows' masks do not fit one buffer", n);
+        return 0;
+    }
+    SDL_GPUBufferCreateInfo info = {0};
+    info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+    info.size = (Uint32)bytes;
+    SDL_GPUBuffer *raw = SDL_CreateGPUBuffer(device, &info);
+    SDL_GPUBuffer *soft = raw != NULL ? SDL_CreateGPUBuffer(device, &info) : NULL;
+    if (raw == NULL || soft == NULL) {
+        if (raw != NULL)
+            SDL_ReleaseGPUBuffer(device, raw);
+        return 0;
+    }
+    if (shadow_raw != NULL)
+        SDL_ReleaseGPUBuffer(device, shadow_raw);
+    if (shadow_soft != NULL)
+        SDL_ReleaseGPUBuffer(device, shadow_soft);
+    shadow_raw = raw;
+    shadow_soft = soft;
+    shadow_masks = want;
+    return 1;
+}
+
 int khdays_raster3d_open(SDL_GPUDevice *d)
 {
     device = d;
@@ -171,17 +210,18 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
                            raster3d_cs_msl, raster3d_cs_msl_size, RASTER3D_CS_ENTRY, 0, 7, 2, 0);
     compose = make_pipeline(compose_cs_dxil, compose_cs_dxil_size, compose_cs_spirv, compose_cs_spirv_size,
                             compose_cs_msl, compose_cs_msl_size, COMPOSE_CS_ENTRY, 0, 1, 3, 0);
+    /* the character shadows' (an enhancement): without them the 3D still draws, with the native shadows */
     shadow_raster =
         make_pipeline(shadow_mask_cs_dxil, shadow_mask_cs_dxil_size, shadow_mask_cs_spirv, shadow_mask_cs_spirv_size,
                       shadow_mask_cs_msl, shadow_mask_cs_msl_size, SHADOW_MASK_CS_ENTRY, 0, 5, 0, 1);
     shadow_blur =
         make_pipeline(shadow_blur_cs_dxil, shadow_blur_cs_dxil_size, shadow_blur_cs_spirv, shadow_blur_cs_spirv_size,
                       shadow_blur_cs_msl, shadow_blur_cs_msl_size, SHADOW_BLUR_CS_ENTRY, 0, 1, 0, 1);
-    SDL_GPUBufferCreateInfo shadow_info = {0};
-    shadow_info.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
-    shadow_info.size = KHDAYS_SHADOW_MAX * KHDAYS_SHADOW_SIZE * KHDAYS_SHADOW_SIZE * 4u;
-    shadow_raw = SDL_CreateGPUBuffer(device, &shadow_info);
-    shadow_soft = SDL_CreateGPUBuffer(device, &shadow_info);
+    shadows_off = shadow_raster == NULL || shadow_blur == NULL || !shadow_masks_for(1);
+    if (shadows_off) {
+        fprintf(stderr, "host: the enhanced character shadows cannot be drawn on this graphics card (%s)\n",
+                SDL_GetError());
+    }
     polys_capacity = KHDAYS_G3D_DS_POLYS;
     verts_capacity = KHDAYS_G3D_DS_VERTS;
     polys = make_buffer(polys_capacity * (Uint32)sizeof(KhdaysG3dPolygon));
@@ -198,8 +238,8 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
         target_usage |= SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE;
     }
     if (raster == NULL || compose == NULL || polys == NULL || verts == NULL || vram == NULL || records == NULL ||
-        tiles == NULL || sequences == NULL || shadow_raster == NULL || shadow_blur == NULL || shadow_raw == NULL ||
-        shadow_soft == NULL || !khdays_gpu_hd_open(device)) {
+        tiles == NULL || sequences == NULL || (shadow_soft == NULL && !shadow_masks_for(1)) ||
+        !khdays_gpu_hd_open(device)) {
         char why[256];
         SDL_strlcpy(why, SDL_GetError(), sizeof(why));
         khdays_raster3d_close();
@@ -248,9 +288,13 @@ void khdays_raster3d_close(void)
     shadow_raw = shadow_soft = shadow_tiles = NULL;
     shadow_upload = NULL;
     shadow_tile_capacity = 0;
+    shadow_masks = 0;
     SDL_free(shadow_index);
     shadow_index = NULL;
     shadow_index_capacity = 0;
+    SDL_free(shadow_counts);
+    shadow_counts = NULL;
+    shadow_cells_capacity = 0;
     if (raster != NULL)
         SDL_ReleaseGPUComputePipeline(device, raster);
     if (compose != NULL)
@@ -643,18 +687,37 @@ static uint32_t build_tiles(const KhdaysG3dList *list, const KhdaysG3dVertex *ve
  * reuses `box` and hides what depends on this. 0: no buffers for it this frame. */
 static int prepare_shadows(const KhdaysG3dList *list)
 {
-    enum { CELLS = KHDAYS_SHADOW_MAX * 256 };
-    static uint32_t counts[CELLS], cursor[CELLS];
     uint32_t groups = 0, total = 0;
     shadow_groups = 0;
-    memset(counts, 0, sizeof(counts));
+    for (int i = 0; i < list->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &list->polys[i];
+        if ((p->flags & KHDAYS_G3D_SHADOW_SOURCE) && !unusable(list, p) && groups <= (uint32_t)p->shadow)
+            groups = (uint32_t)p->shadow + 1;
+    }
+    if (!groups)
+        return 1;
+    /* each mask's 16 x 16 tiles: how many polygons each tile has, then (cursor) where the next goes */
+    if (shadows_off) {
+        SDL_SetError("this graphics card cannot make their masks");
+        return 0;
+    }
+    if (groups > UINT32_MAX / 256u || !shadow_masks_for(groups))
+        return 0;
+    const uint32_t cells = groups * 256u;
+    if (cells > shadow_cells_capacity) {
+        uint32_t *grown = SDL_realloc(shadow_counts, (size_t)cells * sizeof(*grown));
+        if (!grown)
+            return 0;
+        shadow_counts = grown;
+        shadow_cells_capacity = cells;
+    }
+    uint32_t *counts = shadow_counts, *cursor = shadow_counts;
+    memset(counts, 0, (size_t)cells * sizeof(*counts));
     for (int i = 0; i < list->npolys; ++i) {
         const KhdaysG3dPolygon *p = &list->polys[i];
         if (!(p->flags & KHDAYS_G3D_SHADOW_SOURCE) || unusable(list, p))
             continue;
-        const uint32_t group = KHDAYS_SHADOW_INDEX(p->flags);
-        if (groups <= group)
-            groups = group + 1;
+        const uint32_t group = (uint32_t)p->shadow;
         float x0 = 128, x1 = 0;
         for (int k = 0; k < p->count; ++k) {
             const float x = list->verts[p->first + k].x;
@@ -671,11 +734,10 @@ static int prepare_shadows(const KhdaysG3dList *list)
             for (int x = a; x <= b; ++x)
                 ++counts[group * 256u + (unsigned)y * 16u + (unsigned)x];
     }
-    if (!groups)
-        return 1;
-    const uint32_t cells = groups * 256u;
     for (uint32_t i = 0; i < cells; ++i)
         total += counts[i];
+    if (total > UINT32_MAX / 4u - cells - 1u)
+        return 0;
     const uint32_t entries = cells + 1 + total, bytes = entries * 4u;
     if (entries > shadow_index_capacity) {
         uint32_t *grown = SDL_realloc(shadow_index, (size_t)bytes);
@@ -686,15 +748,16 @@ static int prepare_shadows(const KhdaysG3dList *list)
     }
     uint32_t at = cells + 1;
     for (uint32_t i = 0; i < cells; ++i) {
-        shadow_index[i] = cursor[i] = at;
-        at += counts[i];
+        const uint32_t here = counts[i];
+        shadow_index[i] = cursor[i] = at; /* (cursor and counts share their memory: each count read first) */
+        at += here;
     }
     shadow_index[cells] = at;
     for (int i = 0; i < list->npolys; ++i) {
         const KhdaysG3dPolygon *p = &list->polys[i];
         if (!(p->flags & KHDAYS_G3D_SHADOW_SOURCE) || unusable(list, p))
             continue;
-        const uint32_t group = KHDAYS_SHADOW_INDEX(p->flags);
+        const uint32_t group = (uint32_t)p->shadow;
         for (int y = box[i][2]; y <= box[i][3]; ++y)
             for (int x = box[i][0]; x <= box[i][1]; ++x)
                 shadow_index[cursor[group * 256u + (unsigned)y * 16u + (unsigned)x]++] = (uint32_t)i;

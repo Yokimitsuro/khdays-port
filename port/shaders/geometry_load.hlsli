@@ -6,17 +6,18 @@ struct Polygon {
     int translucent;
     int flags; // gfx/g3d.h KHDAYS_G3D_*: OVER_2D marks its pixels (bit 29 of the colour), the rest the host reads
     int replacement; // the replacement texture drawn instead (host/render/gpu_hd.h's entry), or -1
+    uint shadow; // a character shadow's caster or receiver: its mask
 };
 
 struct Vertex {
     float x, y, z, w, r, g, b, s, t, a;
 };
 
-// gfx/g3d.h's KhdaysG3dPolygon (40 bytes) and KhdaysG3dVertex (40 bytes), word by word
+// gfx/g3d.h's KhdaysG3dPolygon (44 bytes) and KhdaysG3dVertex (40 bytes), word by word
 Polygon polygon_at(uint i)
 {
-    const uint4 a = polys.Load4(i * 40u), b = polys.Load4(i * 40u + 16u);
-    const uint2 c = polys.Load2(i * 40u + 32u);
+    const uint4 a = polys.Load4(i * 44u), b = polys.Load4(i * 44u + 16u);
+    const uint3 c = polys.Load3(i * 44u + 32u);
     Polygon p;
     p.attr = a.x;
     p.tex = a.y;
@@ -28,6 +29,7 @@ Polygon polygon_at(uint i)
     p.translucent = (int)b.w;
     p.flags = (int)c.x;
     p.replacement = (int)c.y;
+    p.shadow = c.z;
     return p;
 }
 

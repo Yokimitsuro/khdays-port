@@ -21,8 +21,8 @@ typedef struct Shadow {
 static Capture *captures;
 static int count, capacity, depth, enabled, volume = -1;
 static uintptr_t caster;
-static Shadow shadows[KHDAYS_SHADOW_MAX];
-static int shadow_count;
+static Shadow *shadows;
+static int shadow_count, shadow_capacity;
 static int sprite;
 static float camera[16], inverse[16];
 static int32_t last_projection[16];
@@ -99,6 +99,20 @@ void khdays_shadow_capture_end(void)
         caster = 0;
 }
 
+/* A new shadow's place in the list, grown as more casters come; -1 out of memory (that one has none) */
+static int new_shadow(void)
+{
+    if (shadow_count == shadow_capacity) {
+        const int n = shadow_capacity ? shadow_capacity * 2 : 32;
+        Shadow *grown = realloc(shadows, (size_t)n * sizeof(*grown));
+        if (!grown)
+            return -1;
+        shadows = grown;
+        shadow_capacity = n;
+    }
+    return shadow_count++;
+}
+
 void khdays_shadow_volume_begin(uintptr_t owner, int on)
 {
     enabled |= on;
@@ -110,11 +124,8 @@ void khdays_shadow_volume_begin(uintptr_t owner, int on)
             volume = i;
             break;
         }
-    if (volume < 0) {
-        if (shadow_count == KHDAYS_SHADOW_MAX)
-            return;
-        volume = shadow_count++;
-    }
+    if (volume < 0 && (volume = new_shadow()) < 0)
+        return;
     shadows[volume].owner = owner;
     shadows[volume].sprite = 0;
 }
@@ -136,9 +147,10 @@ void khdays_shadow_sprite_begin(void)
             volume = i;
             return;
         }
-    if (shadow_count == KHDAYS_SHADOW_MAX)
+    const int added = new_shadow();
+    if (added < 0)
         return;
-    volume = shadow_count++;
+    volume = added;
     memset(&shadows[volume], 0, sizeof(shadows[volume]));
     shadows[volume].owner = caster;
     shadows[volume].sprite = 1;
@@ -337,13 +349,14 @@ int khdays_shadow_finish(KhdaysG3dList *list)
                 continue;
             KhdaysG3dPreInfo key = list->pre_info[r->pre];
             key.draw ^= (uint64_t)shadows[s].owner << 32;
-            key.occurrence |= 0x80000000u | ((unsigned)s << 20);
+            key.occurrence |= 0x80000000u | (((unsigned)s & 0x3ffu) << 20); /* the draw's owner tells shadows apart */
             p.pltt = (p.attr >> 24) & 63;
             p.attr = (shade.attr & ~0x8f0u) | 0x4000u | 0xc0u;
             p.tex = 0;
             p.replacement = -1;
             p.translucent = 1;
-            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_RECEIVER | (s << 24);
+            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_RECEIVER;
+            p.shadow = s;
             if (shadows[s].sprite) {
                 p.flags |= KHDAYS_G3D_SHADOW_SPRITE | (p.pltt << 18);
                 p.tex = shade.tex;
@@ -385,11 +398,12 @@ int khdays_shadow_finish(KhdaysG3dList *list)
                 v[k].w = 1;
             }
             p.attr = (p.attr & ~0xc0u) | 0xc0u;
-            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_SOURCE | (s << 24) |
+            p.flags = KHDAYS_G3D_MOD | KHDAYS_G3D_SHADOW_SOURCE |
                       ((p.flags & KHDAYS_G3D_MOD) ? 0 : KHDAYS_G3D_SHADOW_NATIVE);
+            p.shadow = s;
             KhdaysG3dPreInfo key = list->pre_info[r->pre];
             key.draw ^= (uint64_t)shadows[s].owner << 32;
-            key.occurrence |= 0x40000000u | ((unsigned)s << 20);
+            key.occurrence |= 0x40000000u | (((unsigned)s & 0x3ffu) << 20);
             key.viewport[0] = 0;
             key.viewport[1] = 192 - KHDAYS_SHADOW_SIZE;
             key.viewport[2] = KHDAYS_SHADOW_SIZE - 1;

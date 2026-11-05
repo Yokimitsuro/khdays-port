@@ -3,14 +3,13 @@
 #define KHDAYS_CHARACTER_SHADOW_H
 #include "g3d.h"
 
+/* Each caster's mask: KHDAYS_SHADOW_SIZE squared, one per shadow a list has (a polygon's `shadow` names it) */
 #define KHDAYS_SHADOW_SIZE 128
-#define KHDAYS_SHADOW_MAX 32
 #define KHDAYS_G3D_SHADOW_SOURCE 0x80
 #define KHDAYS_G3D_SHADOW_RECEIVER 0x10000
 #define KHDAYS_G3D_SHADOW_REPLACED 0x20000
 #define KHDAYS_G3D_SHADOW_NATIVE 0x40000
 #define KHDAYS_G3D_SHADOW_SPRITE 0x100
-#define KHDAYS_SHADOW_INDEX(flags) (((unsigned)(flags) >> 24) & 31u)
 
 void khdays_shadow_reset(void);
 void khdays_shadow_camera(const int32_t projection[16], const int32_t camera[12]);

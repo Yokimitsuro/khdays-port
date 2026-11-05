@@ -308,10 +308,11 @@ void character_shadows()
             if ((attr & 0xffffffu) != 8388096u)
                 throw std::runtime_error("shadow changed receiver depth");
     }
-    // Both native and replacement alpha cutouts must reach the silhouette in a nonzero atlas slot.
-    polygons[1].flags |= 1 << 24;
-    polygons[2].flags |= 1 << 24;
-    polygons[3].flags |= 1 << 24;
+    // Both native and replacement alpha cutouts must reach the silhouette in a mask past the 32 there once were (the
+    // masks grow to hold it).
+    polygons[1].shadow = 40;
+    polygons[2].shadow = 40;
+    polygons[3].shadow = 40;
     polygons[1].tex = 7u << 26;
     for (int k = 0; k < 4; ++k) {
         vertices[4 + k].s = (k == 1 || k == 2) ? 128.0f : 0;
