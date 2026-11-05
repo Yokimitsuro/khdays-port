@@ -51,12 +51,14 @@ typedef struct KhdaysG3dPreInfo {
     int32_t widen;       /* the clip factor, in 1/4096 */
 } KhdaysG3dPreInfo;
 
-#define KHDAYS_G3D_HUD 0x1       /* sent by the HUD's own drawing (khdays_g3d_set_hud) */
-#define KHDAYS_G3D_BEYOND_DS 0x2 /* the DS's polygon or vertex RAM would not have held it */
-#define KHDAYS_G3D_MOD 0x4       /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
-#define KHDAYS_G3D_SKY 0x10      /* a mod's sky: behind everything else, its layer in bits 8-15 */
-#define KHDAYS_G3D_SEQUENCE 0x20 /* ordered native sequence commands; pltt identifies the retained program */
-#define KHDAYS_G3D_MARKER 0x40   /* screen-projected selection art: after world geometry, inside the 3D layer */
+#define KHDAYS_G3D_HUD 0x1         /* sent by the HUD's own drawing (khdays_g3d_set_hud) */
+#define KHDAYS_G3D_BEYOND_DS 0x2   /* the DS's polygon or vertex RAM would not have held it */
+#define KHDAYS_G3D_MOD 0x4         /* a mod's model's, drawn instead of the game's (runtime/mods/models.h): no DS's */
+#define KHDAYS_G3D_SKY 0x10        /* a mod's sky: behind everything else, its layer in bits 8-15 */
+#define KHDAYS_G3D_SEQUENCE 0x20   /* ordered native sequence commands; pltt identifies the retained program */
+#define KHDAYS_G3D_MARKER 0x40     /* screen-projected selection art: after world geometry, inside the 3D layer */
+#define KHDAYS_G3D_CLIP 0x20000000 /* a mod model's clip volume: not drawn; the world inside it left out */
+#define KHDAYS_G3D_CLIP_OWNER 0x40000000 /* a polygon of a model with a clip volume: drawn inside one */
 #define KHDAYS_G3D_SKY_LAYER(flags) (((flags) & KHDAYS_G3D_SKY) ? ((flags) >> 8) & 0xff : 0)
 #define KHDAYS_G3D_OVER_2D                                                                                             \
     0x8 /* a HUD polygon the DS shows over all its 2D (its BG0 the top layer): the one
@@ -72,7 +74,7 @@ typedef struct KhdaysG3dPreInfo {
         uint64_t name##_slot;                                                                                          \
     }
 
-/* A list in drawing order: opaque, then translucent (Y-sorted unless manual), then selection
+/* A list in drawing order: opaque, projected shadows, translucent (Y-sorted unless manual), then selection
  * markers in submission order. It holds its polygons and vertices in memory of its own. */
 typedef struct KhdaysG3dList {
     int32_t npolys, nverts;
@@ -119,6 +121,22 @@ void khdays_g3d_draw_begin(const void *resource);
 /* NNS_G3dGlbFlushP (prepare.py HOOKS): the camera of the list being built. */
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12]);
 void khdays_g3d_draw_end(void);
+
+/* The camera (world to view) of the latest flush, the draws' after it, as a
+ * float matrix like khdays_g3d_matrices'; 0 before the first flush. */
+int khdays_g3d_camera(float camera[16]);
+
+/* NNS_G3dGlbFlush and NNS_G3dGlbFlushP (prepare.py HOOKS): the base transform
+ * the flush sends (NNSG3dGlb +0x94: rotation 3x3, translation, scale, fx32).
+ * Flush multiplies it onto the camera in the position matrix; FlushP folds
+ * camera and base into the projection and leaves the position at identity
+ * (`in_projection`). */
+void khdays_g3d_flush_base(const int32_t base[15], int in_projection);
+/* The latest flush's base transform (a model's place in the world, without the
+ * camera) as a float matrix like khdays_g3d_matrices': translation x rotation x
+ * scale. 1: Flush's (the position matrix starts at camera x base), 2: FlushP's
+ * (it starts at identity), 0: none yet. */
+int khdays_g3d_base(float base[16]);
 
 void khdays_g3d_reset(void);
 
@@ -185,6 +203,9 @@ void khdays_g3d_set_widen(float k);
  * to the sides and the one picture's 3D shapes place it (host/render/gpu_raster3d.c). */
 void khdays_g3d_set_hud(int on);
 
+/* What the polygons drawn from now on are faded by, 0..1 (1: as they are; a polygon faded out is not drawn). */
+void khdays_g3d_set_fade(float fade);
+
 /* Selection-marker draws only. Does not change HUD placement or the ordering of the 2D layers. */
 void khdays_g3d_set_marker(int on);
 
@@ -230,6 +251,13 @@ typedef struct KhdaysG3dClipVertex {
  * (runtime/mods/textures.h), -1 for none. */
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
+
+/* A triangle of a mod model's closed clip volume (runtime/mods/secondary model_link.h clip_volumes), both sides,
+ * first in the drawing order: not drawn; a polygon not of such a model (not KHDAYS_G3D_CLIP_OWNER) is left out
+ * where it lies between the nearest and the farthest of the volumes a pixel shows (docs/RENDERING.md). */
+void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *v);
+/* While on, the mod polygons sent are a clip volume's owner's (KHDAYS_G3D_CLIP_OWNER). */
+void khdays_g3d_set_clip_owner(int on);
 
 /* A screen-projected sequence in the 3D layer; its program is retained in the frame package.
  * The shader samples the atlas and blends each element against the scene at full alpha precision. */

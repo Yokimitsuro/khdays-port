@@ -534,12 +534,71 @@ HOOKS = {
         ),
     ],
     # Replace only the heart panel's own node draws; its bookkeeping and other widgets still run.
+    "main@0202bc90": [  # Render_DrawViewLists
+        (
+            "            ShadowVolume_Draw((char *)p + 0x168);\n",
+            "            { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow((char *)p + 0x168, p + 4); }\n",
+        ),
+    ],
+    "main@0202c624": [  # Entity_Tick
+        (
+            "        ShadowVolume_Draw(entity + 0x168);\n",
+            "        { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow(entity + 0x168, entity + 0x10); }\n",
+        ),
+    ],
+    "ov022@0209c870": [  # Ov022_DropGroundMark
+        (
+            "        ShadowVolume_Draw(&pActor->mark.vecPos);\n",
+            "        { extern void khdays_character_shadow(const void *, const void *); khdays_character_shadow(&pActor->mark.vecPos, (char *)pActor->pNode + 4); }\n",
+        ),
+    ],
     "main@0202aa9c": [  # Scene_DrawNode
+        (
+            "    NNS_G3dDraw(node->object);\n",
+            "    { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "      khdays_character_caster_begin(node); NNS_G3dDraw(node->object); khdays_character_caster_end(); }\n",
+        ),
         (
             "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n",
             "void Scene_DrawNode(SceneNode *node)\n{\n    SceneNode *child;\n"
             "    { extern int khdays_heart_node(const void *node);\n"
             "      if (khdays_heart_node(node)) return; }\n",
+        ),
+    ],
+    "main@0203bc78": [  # Obj_RenderModel: the enemy framework's model and attachment draw
+        (
+            "    NNS_G3dDraw(&self->renderCtx->objFlags);\n",
+            "    { extern void khdays_character_object_begin(const void *); extern void khdays_character_object_end(void);\n"
+            "      khdays_character_object_begin(self); NNS_G3dDraw(&self->renderCtx->objFlags); khdays_character_object_end(); }\n",
+        ),
+    ],
+    "ov107@020c6624": [  # enemy construction: keep ownership outside the game's objects
+        (
+            "    self->field_1a8->flags_5c |= 2;\n",
+            "    self->field_1a8->flags_5c |= 2;\n"
+            "    { extern void khdays_character_bind_enemy(const void *); khdays_character_bind_enemy(self); }\n",
+        ),
+    ],
+    "ov107@020c68ec": [  # release ownership before the flat shadow object is freed
+        (
+            "    DestroyInstance(self->field_1a8);\n",
+            "    { extern void khdays_character_forget_enemy(const void *); khdays_character_forget_enemy(self->field_1a8); }\n"
+            "    DestroyInstance(self->field_1a8);\n",
+        ),
+    ],
+    "ov002@02051cbc": [  # independently drawn player parts use the same scene-node layout
+        (
+            "    NNS_G3dDraw((unsigned int *)(pActor + 0x24));\n",
+            "    { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "      khdays_character_caster_begin(pActor + 4); NNS_G3dDraw((unsigned int *)(pActor + 0x24)); khdays_character_caster_end(); }\n",
+        ),
+    ],
+    "ov022@0209c9fc": [  # the two equipped weapon slots, associated with the actor's body
+        (
+            "            Ov002_SubmitActorDraw(iVar4);\n",
+            "            { extern void khdays_character_caster_begin(const void *); extern void khdays_character_caster_end(void);\n"
+            "              khdays_character_caster_begin((char *)*(int *)(param_1 + 0x20) + 4);\n"
+            "              Ov002_SubmitActorDraw(iVar4); khdays_character_caster_end(); }\n",
         ),
     ],
     "ov002@0205f980": [  # Ov002_Hud_RewindWidget: repeated pickups restart the pulse
@@ -948,7 +1007,8 @@ HOOKS = {
         )
     ],
     # The camera of each 3D list (gfx/g3d.h khdays_g3d_frame_camera):
-    # what NitroSystem's flush sends, as it sends it.
+    # what NitroSystem's flush sends, as it sends it; and the base transform it
+    # sends (khdays_g3d_flush_base: a model's place without the camera).
     # NitroSystem's NNS_G3dGlbFlush, which the decomp calls
     # Gfx_SubmitCachedCommandBlock: the whole NNSG3dGlb block at once, the
     # projection at +0x08 and the camera at +0x4c.
@@ -958,7 +1018,21 @@ HOOKS = {
             "    unsigned int *p = (unsigned int *)&NNS_G3dGlb;\n"
             "    { extern void khdays_g3d_frame_camera(const int *projection, const int *camera);\n"
             "      khdays_g3d_frame_camera((const int *)((const char *)&NNS_G3dGlb + 0x08),\n"
-            "                              (const int *)((const char *)&NNS_G3dGlb + 0x4c)); }\n",
+            "                              (const int *)((const char *)&NNS_G3dGlb + 0x4c)); }\n"
+            "    { extern void khdays_g3d_flush_base(const int *base, int in_projection);\n"
+            "      khdays_g3d_flush_base((const int *)((const char *)&NNS_G3dGlb + 0x94), 0); }\n",
+        )
+    ],
+    # What the game attaches to a model's node (Obj_RenderModel's objList, Scene_DrawNode's children) reads the
+    # node's matrix back after the draw: for a model the mods replace, the node where the model's joint carries it
+    # (runtime/mods/models.cpp khdays_models_result_matrix).
+    "main@02016320": [
+        (  # NNS_G3dGetResultMtx
+            "        NNS_G3dGeRestoreMtx((int)stackID);\n",
+            "        NNS_G3dGeRestoreMtx((int)stackID);\n"
+            "        { extern int khdays_models_result_matrix(const void *render_obj, unsigned node,"
+            " int *position, int *direction);\n"
+            "          if (khdays_models_result_matrix(pRenderObj, nodeID, (int *)pos, (int *)nrm)) return 1; }\n",
         )
     ],
     "main@020157c4": [
@@ -966,7 +1040,9 @@ HOOKS = {
             "void NNS_G3dGlbFlushP(void)\n{\n",
             "void NNS_G3dGlbFlushP(void)\n{\n"
             "    { extern void khdays_g3d_frame_camera(const int *projection, const int *camera);\n"
-            "      khdays_g3d_frame_camera((const int *)&NNS_G3dGlb.projMtx, (const int *)&NNS_G3dGlb.cameraMtx); }\n",
+            "      khdays_g3d_frame_camera((const int *)&NNS_G3dGlb.projMtx, (const int *)&NNS_G3dGlb.cameraMtx); }\n"
+            "    { extern void khdays_g3d_flush_base(const int *base, int in_projection);\n"
+            "      khdays_g3d_flush_base((const int *)&NNS_G3dGlb.prmBaseRot, 1); }\n",
         )
     ],
     # The card's chip ID, read after every ROM read to see the card is still in: with the port's
@@ -1203,10 +1279,10 @@ HOOKS = {
             "  if ((piVar7[0xe] & 0x200U) == 0) {\n    if ((piVar7[0xe] & 2U) != 0) {\n",
             "  if ((piVar7[0xe] & 0x200U) == 0) {\n    if ((piVar7[0xe] & 2U) != 0) {\n"
             "      { extern int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2,"
-            " int yaw, int target, int pitch);\n"
+            " int mode, int yaw, int target, int pitch);\n"
             "        int turn = (uVar23 & 0x400) != 0 ? 0 : khdays_controls_camera_turn(piVar7[0x2a],"
-            " (piVar7[0xf] & 0x10U) != 0, uVar20, piVar7[0xe], piVar7[0xf], piVar7[0x16], piVar7[0x20],"
-            " piVar7[0x21]);\n"
+            " (piVar7[0xf] & 0x10U) != 0, uVar20, piVar7[0xe], piVar7[0xf], piVar7[0x10], piVar7[0x16],"
+            " piVar7[0x20], piVar7[0x21]);\n"
             "        if (turn != 0) {\n"
             "          piVar7[0x20] = (piVar7[0x20] + turn) & 0xffff;\n"
             "          if ((piVar7[0xe] & 0x10000U) != 0) func_ov022_02088280(idx, piVar7[0x20]);\n"
@@ -1216,9 +1292,10 @@ HOOKS = {
         (
             "        piVar7[0x21] = piVar7[0x21] - (piVar7[0x2b] + iVar12);\n      }\n",
             "        piVar7[0x21] = piVar7[0x21] - (piVar7[0x2b] + iVar12);\n      }\n"
-            "      { extern int khdays_controls_camera_pitch(int rate, int inverted);\n"
+            "      { extern int khdays_controls_camera_pitch(int rate, int inverted, int flags, int flags2,"
+            " int mode);\n"
             "        int tilt = (uVar23 & 0x400) != 0 ? 0 : khdays_controls_camera_pitch(piVar7[0x2b] + iVar12,"
-            " (piVar7[0xf] & 8U) != 0);\n"
+            " (piVar7[0xf] & 8U) != 0, piVar7[0xe], piVar7[0xf], piVar7[0x10]);\n"
             "        if (tilt > 0 && FX_Mul(fxRatio, 0x3400) > piVar7[0x21]) piVar7[0x21] += tilt;\n"
             "        if (tilt < 0 && FX_Mul(fxRatio, -0x2000) < piVar7[0x21]) piVar7[0x21] += tilt;\n"
             "        if (tilt != 0) uVar20 |= 0x10; }\n",
@@ -1239,6 +1316,57 @@ HOOKS = {
             "          if (GameState_GetField(CONFIG_CHASE_CAM, 1) == 0 || !khdays_camp_chase_free())\n"
             "              piVar7[0x21] = iVar11; }\n"
             "        iVar11 = Ov002_GetCameraDistance(piVar7[0x11]);",
+        ),
+        # The KH2 camera (runtime/camera/kh2_camera_hooks.c): this frame is its own, unless a script's or the
+        # look view's; the reset (flag 8) is KH2's then, not Ov002_TickLockedCamera's.
+        (
+            "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
+            "    { extern void khdays_kh2_camera_follow(int camera, int input_off, int bits);\n"
+            "      khdays_kh2_camera_follow((int)state, (uVar23 & 0x400) != 0, uVar20); }\n"
+            "    if (((piVar7[0xe] & 8U) != 0) && ((piVar7[0xe] & 0x20008000U) == 0)) {\n",
+        ),
+        # A hold (flag 0x200) skips the block above; the KH2 camera stays through it.
+        (
+            "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
+            "  { extern void khdays_kh2_camera_held(int camera); khdays_kh2_camera_held((int)state); }\n"
+            "  iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);\n  piVar19 = piVar7 + 0x1f;\n",
+        ),
+    ],
+    # Locked on: the KH2 camera keeps its look-at between the player and this target, and the stick works.
+    "ov002@0204f0a8": [  # Ov002_TickCamera
+        (
+            "        if (pObj != 0) {\n            bHeld = 0;\n",
+            "        if (pObj != 0) {\n"
+            "            { extern void khdays_kh2_camera_lock(int target, int camera);\n"
+            "              khdays_kh2_camera_lock((int)pObj, (int)pCam); }\n"
+            "            bHeld = 0;\n",
+        ),
+        (
+            "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n",
+            "    } else {\n        pObj = func_ov022_020865b4();\n        if (pObj != 0) {\n"
+            "            { extern void khdays_kh2_camera_lock(int target, int camera);\n"
+            "              khdays_kh2_camera_lock((int)pObj, (int)pCam); }\n",
+        ),
+    ],
+    # What commits the camera. While a mission sets up the camera's tick is gated, and this is the KH2 camera's only frame.
+    "ov002@0204cac0": [  # Ov002_ReaimActor
+        (
+            "    Camera_CommitMatrices(actor);\n",
+            "    { extern void khdays_kh2_camera_commit(int camera);\n"
+            "      khdays_kh2_camera_commit((int)actor); }\n"
+            "    Camera_CommitMatrices(actor);\n",
+        ),
+    ],
+    # Every camera's frame ends here. The KH2 camera's frames take its eye and look-at, through its own collision
+    # (runtime/camera/kh2_camera_hooks.c), before the shake goes on top of them. The vectors it is handed are this
+    # function's, free at this point: the game's casts take them in the game's memory.
+    "ov002@0204ff18": [  # Ov002_TickCameraTransition
+        (
+            "    if (pCam->nHoldTicks == 3) {\n",
+            "    { extern void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye);\n"
+            "      khdays_kh2_camera_frame((int)pCam, (int)pTarget, func_ov022_02088254(nPlayer), (int)&vDelta,"
+            " (int)&vEye); }\n"
+            "    if (pCam->nHoldTicks == 3) {\n",
         ),
     ],
     # Lock-on: whether a target is locked, the lock-on scheme (Config option 0), and whether the
@@ -1274,6 +1402,12 @@ HOOKS = {
             "    if (suppressInput != 0) {\n        held = 0;\n        pressed = 0;\n    }\n"
             "    { extern void khdays_controls_selection_live(int live);\n"
             "      if (runtimeMode == 0) khdays_controls_selection_live(!suppressInput); }\n",
+        ),
+        (  # the lock-on's own button lets go with one R (runtime/input/controls_hooks.c)
+            "        suppressInput = pressed & 0x100;\n",
+            "        { extern int khdays_controls_selection_repeat(int repeat, int pressed);\n"
+            "          context->repeatAny = khdays_controls_selection_repeat(context->repeatAny, pressed); }\n"
+            "        suppressInput = pressed & 0x100;\n",
         ),
         (
             "Ov022_SetSelectionEnabled(0);",
@@ -1355,6 +1489,16 @@ HOOKS = {
     # The speed an idle actor moves toward and the animation speed it moves
     # with: analog movement's walk slows both; traced with the heading's
     # reference (the bias the game adds to it).
+    # The KH2 camera's first person strafes: every steer asks here how far it may turn, and gets the stick's angle at
+    # once (runtime/camera/kh2_camera_hooks.c), the facing being set back to the camera's each frame.
+    "ov022@020ad4e8": [  # Ov022_ClampAngleTowardTarget
+        (
+            "    if ((int)arg1 < 0) return 0xffffffff;\n",
+            "    if ((int)arg1 < 0) return 0xffffffff;\n"
+            "    { extern int khdays_kh2_camera_strafing(int actor);\n"
+            "      if (khdays_kh2_camera_strafing(arg0)) return arg1; }\n",
+        ),
+    ],
     "ov022@020a3ccc": [  # Ov022_SteerIdleByAim
         (
             "            nRate = pActor->nWalkSpeed;\n",
@@ -1374,14 +1518,14 @@ HOOKS = {
             "                  Ov022_SetAnimSpeed(pActor, (short)khdays_controls_move_anim((int)pActor, nRate)); }\n",
         ),
     ],
-    # The states an actor enters (jump, guard, ...), traced for the local
-    # player's actor: what each button makes Roxas do.
+    # The states an actor enters (jump, guard, ...), for its KH2 model and the KH2 camera, and traced for
+    # the local player's actor: what each button makes Roxas do (runtime/input/controls_hooks.c).
     "ov022@02098834": [
         (  # Ov022_EnterActorState
             "int Ov022_EnterActorState(struct Actor *pActor, int nState, u32 nPrevTimer)\n{\n",
             "int Ov022_EnterActorState(struct Actor *pActor, int nState, u32 nPrevTimer)\n{\n"
-            "    { extern void khdays_trace_actor_state(int actor, int state);"
-            " khdays_trace_actor_state((int)pActor, nState); }\n",
+            "    { extern void khdays_controls_actor_entered_state(int actor, int state);"
+            " khdays_controls_actor_entered_state((int)pActor, nState); }\n",
         )
     ],
     # The frame-rate mode field play runs at, traced.
@@ -1461,14 +1605,66 @@ HOOKS = {
             # plays its clip for it
             "    { extern void khdays_models_draw_animation(unsigned animation);\n"
             "      khdays_models_draw_animation(*(unsigned *)(renderObj->pad08_20 + 8)); }\n"
-            "    { extern void khdays_models_draw_begin(const void *model);\n"
-            "      khdays_models_draw_begin(renderObj->pResMdl); }\n"
+            "    { extern void khdays_models_draw_begin(const void *model, const void *render_obj);\n"
+            "      khdays_models_draw_begin(renderObj->pResMdl, renderObj); }\n"
             "    do {\n        u32 command;\n",
         ),
         (
             "    renderObj->flags &= ~1;\n",
             "    { extern void khdays_models_draw_end(void); khdays_models_draw_end(); }\n"
             "    renderObj->flags &= ~1;\n",
+        ),
+    ],
+    # A mover put on its floor this frame (Mover_Step calls it every frame for one with
+    # gravity, standing or falling): its owner at +0, vertical speed at +0x38 (0x80000000
+    # on the floor) and floor collision index at +0x46, for a KH2 model's IKAdjust at its
+    # draw (runtime/mods/models.cpp, docs/KH2_MODELS.md).
+    "main@0202cf64": [
+        (  # Mover_ResolveFloor
+            "    if (mover->active < 0) {\n        return 0;\n    }\n",
+            "    if (mover->active < 0) {\n        return 0;\n    }\n"
+            "    { extern void khdays_models_actor_ground(void *mover); khdays_models_actor_ground(mover); }\n",
+        )
+    ],
+    # A joint's matrix saved for what the game attaches to it (an actor's weapons at
+    # ro_w_tg_L/_R): a KH2 model's motions.txt can put it on a KH2 bone instead
+    # (runtime/mods/models.cpp, written over at the body's draw end).
+    "itcm@01fffe68": [
+        (  # Obj_CaptureSelectedJointMtx
+            "            NNS_G3dGetCurrentMtx(&cache->matrices528[index], 0);\n",
+            "            NNS_G3dGetCurrentMtx(&cache->matrices528[index], 0);\n"
+            "            { extern void khdays_models_joint_saved(void *matrix, unsigned node);\n"
+            "              khdays_models_joint_saved(&cache->matrices528[index], selected); }\n",
+        )
+    ],
+    # The camp menus' model (ov025, its twin ov008) saves its hand joints' matrices for the keyblade from its own
+    # node callback, not Obj_CaptureSelectedJointMtx: the same note, so a KH2 model's `weapon` line holds there too.
+    "ov025@0208c868": [
+        (  # Ov025_RefreshMatchingMatrices
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n",
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n"
+            "            { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "              khdays_models_joint_saved_at((unsigned)(ctx + 0x150), key); }\n",
+        ),
+        (
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n",
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n"
+            "    { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "      khdays_models_joint_saved_at((unsigned)(ctx + 0x180), key); }\n",
+        ),
+    ],
+    "ov008@0205a0bc": [
+        (  # Ov008_RefreshMatchingMatrices
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n",
+            "            NNS_G3dGetCurrentMtx((void *)(ctx + 0x150), (void *)0);\n"
+            "            { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "              khdays_models_joint_saved_at((unsigned)(ctx + 0x150), key); }\n",
+        ),
+        (
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n",
+            "    NNS_G3dGetCurrentMtx((void *)(ctx + 0x180), (void *)0);\n"
+            "    { extern void khdays_models_joint_saved_at(unsigned matrix, unsigned node);\n"
+            "      khdays_models_joint_saved_at((unsigned)(ctx + 0x180), key); }\n",
         ),
     ],
     "itcm@01ffc164": [
@@ -1487,9 +1683,12 @@ HOOKS = {
         (  # NNSi_G3dFuncSbcSHP
             "        NNS_G3dGeSendDL((u8 *)data + data->payloadOffset08, data->payloadSize0c);\n",
             "        { extern int khdays_models_shape(const void *list, unsigned int size);\n"
+            "          extern int khdays_character_sprite_begin(const void *); extern void khdays_character_sprite_end(void);\n"
+            "          int khdays_sprite = khdays_character_sprite_begin(state);\n"
             "          if (!khdays_models_shape((u8 *)data + data->payloadOffset08, data->payloadSize0c)) {\n"
             "              NNS_G3dGeSendDL((u8 *)data + data->payloadOffset08, data->payloadSize0c);\n"
-            "          } }\n",
+            "          }\n"
+            "          if (khdays_sprite) khdays_character_sprite_end(); }\n",
         )
     ],
     # Gameplay mods' scripts (runtime/scripts/scripts.h): the frame point, once the game's logic of the
@@ -1909,7 +2108,7 @@ HOOKS["ov022@0208a464"] = [
 ]
 # A player another's Stop holds (friendly fire on) stands still: on the host its input, state and motion (the
 # guests' copies follow the host's), on every copy its animation.
-HOOKS["ov022@020a0008"] = [
+HOOKS["ov022@020a0008"] += [
     (  # Ov022_ActorUpdate
         "    void *pNext;\n\n    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
         "    void *pNext;\n"
@@ -3270,14 +3469,15 @@ HOOKS["ov008@0206ec2c"] = [  # Ov008_DrawPageBWidget
 ]
 # Preferences' steering (runtime/menus/camp.c khdays_camp_navigation_sound): the port's presses on the way to a
 # setting make no sound of their own.
-HOOKS["main@02033b78"] = [  # PlaySound
+HOOKS["main@02033b78"].insert(  # PlaySound, before its hook point renames it
+    0,
     (
         "int PlaySound(int arg0, int arg1) {",
         "int PlaySound(int arg0, int arg1) {\n"
         "    extern int khdays_camp_navigation_sound(int kind, int sound);\n"
         "    if (!khdays_camp_navigation_sound(arg0, arg1)) return 0;",
-    )
-]
+    ),
+)
 # The day's monologue in the theater's voice with its subtitles (runtime/movies/scene_trace.c): the DS's words
 # and the page's arrow left out (Roxas's picture, BG1, stays), A not turning the page while the voice speaks,
 # START taken by the window's pause, and the monologue left once the voice has said it all.
@@ -3313,16 +3513,16 @@ HOOKS["ov027@0208344c"].append(  # Ov027_UpdateFlushForward
 # The Walk mod's (runtime/input/walk.h): the local player's model drawn with its walk, each joint the model sends
 # taken from the walk's clip over the game's own result and given back after (the result is the motion's cache).
 # Without the mod no clip is read and both answer at once.
-HOOKS["main@0202aa9c"] = [  # Scene_DrawNode
+HOOKS["main@0202aa9c"].append(  # Scene_DrawNode, inside the shadow and fade scope
     (
-        "    NNS_G3dDraw(node->object);",
-        "    { extern void khdays_walk_draw_begin(int node);\n"
+        "NNS_G3dDraw(node->object);",
+        "{ extern void khdays_walk_draw_begin(int node);\n"
         "      extern void khdays_walk_draw_end(void);\n"
         "      khdays_walk_draw_begin((int)node);\n"
         "      NNS_G3dDraw(node->object);\n"
         "      khdays_walk_draw_end(); }",
     )
-]
+)
 HOOKS["itcm@01ffc164"].append(  # NNSi_G3dFuncSbc_NODEDESC
     (
         "        state->sendJnt(result);",
@@ -3684,7 +3884,13 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
         "void Ov002_SceneApplyPanelRequest(int *pReq)",
         "extern void khdays_ui_text_scope_push(const char *scope);\n"
         "extern void khdays_ui_text_scope_pop(void);\n"
+        "extern void khdays_models_dialogue_speaker(int portrait);\n"
         "void Ov002_SceneApplyPanelRequest(int *pReq)",
+    ),
+    # the panel's portrait, for a KH2 face (models.cpp, motions.txt's `face` lines)
+    (
+        "    ctx = *(int **)&data_ov002_0207f624;",
+        "    ctx = *(int **)&data_ov002_0207f624;\n    khdays_models_dialogue_speaker(pReq[5]);",
     ),
     (
         "        Resource_BindByName(f.aBind, gOv002TextFontEu10SPath);",
@@ -3694,6 +3900,18 @@ FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneApplyPanelRequest.c"] = [
     (
         "        FreeFieldAt8(f.aBind);",
         "        FreeFieldAt8(f.aBind);\n        khdays_ui_text_scope_pop();",
+    ),
+]
+
+# The panel folded away: no portrait shows (a KH2 face's `face portrait` ends).
+FILE_HOOKS["src/overlays/scenes/ov002_field/Ov002_SceneClosePanelStep.c"] = [
+    (
+        "void *Ov002_SceneClosePanelStep(void)",
+        "extern void khdays_models_dialogue_speaker(int portrait);\nvoid *Ov002_SceneClosePanelStep(void)",
+    ),
+    (
+        "        pNext = Ov002_PanelIdleState;",
+        "        pNext = Ov002_PanelIdleState;\n        khdays_models_dialogue_speaker(-1);",
     ),
 ]
 
@@ -4135,6 +4353,8 @@ PORT_DS_SYMBOLS = (
     "data_0204c2d0",
     "data_0204c3d8",
     "data_ov022_020b2e78",
+    # the screen whose 3D runs this frame: the KH2 camera is the first's (runtime/camera/kh2_camera_hooks.c)
+    "data_0204be04",
     # the pause's context and Mission Mode's flags (runtime/menus/retry.c)
     "data_0204be08",
     "data_0204c240",
@@ -4149,6 +4369,9 @@ PORT_DS_SYMBOLS = (
     "gSoundMgr",
     # the room's rules, friendly fire first (runtime/battle/stop_magic.c)
     "data_0204c248",
+    # the entity manager: the rooms' collision blobs, read (never cast) for mods' cloth
+    # (runtime/mods/secondary/days_environment.cpp)
+    "gEntityMgr",
 )
 
 

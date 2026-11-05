@@ -21,4 +21,16 @@ typedef struct KhdaysGameControls {
 
 const KhdaysGameControls *khdays_controls_state(void);
 
+/* The lock-on's own button is letting go of the target: the game takes the coming R as its double press. */
+void khdays_controls_lock_let_go(void);
+
+/* The KH2 camera's look: the right stick and the mouse as shares of its full turn, right and up positive.
+ * KH2's stick has a dead zone on each axis and moves both axes by how far it is pushed overall. Normal is
+ * KH2's own speed, so the percentage the stick has for Days' camera does not apply. */
+void khdays_controls_camera_look(float *x, float *y);
+
+/* In first person KH2 turns at its one rate once the stick leaves the dead zone (YS::PLAYER::_OVR_post_exec), and
+ * tilts by the stick's up and down share of how far it is pushed (ObjCamera::subjective_control). */
+void khdays_controls_first_person_look(float *x, float *y);
+
 #endif

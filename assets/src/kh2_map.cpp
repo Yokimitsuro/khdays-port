@@ -13,6 +13,7 @@
 // count, address, ...), q2 (colour count, address), q3 (position count,
 // address, ...). A vertex's flag ends a triangle with the two before it: 0x20,
 // 0x30 the same turned, 0x00 the same seen from both sides; 0x10 none.
+// Characters' packets may also blend vertices from several bones (q2, q3[2]).
 
 namespace khdays::assets::kh2 {
 
@@ -171,9 +172,10 @@ private:
 };
 
 // The triangles of one packet's lists. `bone_of` gives a position's bone
-// (object models), empty for map models.
+// (object models), empty for map models; `blended`, when not empty, the
+// vertices the strip indexes instead of the positions.
 void packet_triangles(const VuMemory& mem, const std::vector<int>& bone_of, const std::uint32_t index_mask,
-                      std::vector<Triangle>& out) {
+                      const std::vector<std::vector<Influence>>& blended, std::vector<Triangle>& out) {
     const std::uint32_t count = mem[1][0];
     const std::uint32_t list = mem[1][1];
     const std::uint32_t colors = mem[2][0];
@@ -194,7 +196,17 @@ void packet_triangles(const VuMemory& mem, const std::vector<int>& bone_of, cons
             v.color = {static_cast<std::uint8_t>(c[0]), static_cast<std::uint8_t>(c[1]),
                        static_cast<std::uint8_t>(c[2]), static_cast<std::uint8_t>(c[3])};
         }
-        if (index < bone_of.size()) {
+        if (!blended.empty()) {
+            if (index >= blended.size() || blended[index].empty()) {
+                throw std::runtime_error("KH2 model: strip vertex " + std::to_string(index) + " of " +
+                                         std::to_string(blended.size()) + " blended ones");
+            }
+            v.influences = blended[index];
+            const Influence& first = v.influences.front();
+            v.bone = first.bone;
+            v.position = {first.position[0] / first.position[3], first.position[1] / first.position[3],
+                          first.position[2] / first.position[3]};
+        } else if (index < bone_of.size()) {
             v.bone = bone_of[index];
         }
         strip.push_back(v);
@@ -211,6 +223,46 @@ void packet_triangles(const VuMemory& mem, const std::vector<int>& bone_of, cons
         t.two_sided = flag == 0x00;
         out.push_back(t);
     }
+}
+
+// A character packet's blended vertices (kn::SKLPOLYGONDATA::setVertexWithWeight,
+// PS3): q2[2] weight groups (up to seven), their counts at q2[3]; group g holds that
+// many vertices of g + 1 positions each, their indices listed from q3[2], each list
+// on a quadword. Each position (x, y, z, weight) goes with its matrix's bone. Empty
+// for a packet without weights.
+std::vector<std::vector<Influence>> blended_vertices(const VuMemory& mem, const std::vector<int>& bone_of) {
+    const std::uint32_t groups = mem[2][2];
+    std::vector<std::vector<Influence>> out;
+    if (groups == 0) {
+        return out;
+    }
+    if (groups > 7) {
+        throw std::runtime_error("KH2 model: " + std::to_string(groups) + " weight groups (at most 7)");
+    }
+    const std::uint32_t counts = mem[2][3];
+    const std::uint32_t positions = mem[3][0];
+    const std::uint32_t position_list = mem[3][1];
+    std::uint32_t list = mem[3][2];
+    for (std::uint32_t g = 0; g < groups; ++g) {
+        const std::uint32_t vertices = mem[counts + g / 4U][g % 4U] & 0xFFU;
+        for (std::uint32_t k = 0; k < vertices; ++k) {
+            std::vector<Influence> influences;
+            for (std::uint32_t i = 0; i <= g; ++i) {
+                const std::uint32_t at = k * (g + 1U) + i;
+                const std::uint32_t index = mem[list + at / 4U][at % 4U];
+                if (index >= positions || index >= bone_of.size()) {
+                    throw std::runtime_error("KH2 model: blended position " + std::to_string(index) + " of " +
+                                             std::to_string(positions));
+                }
+                const Quad& pos = mem[position_list + index];
+                influences.push_back(
+                    {bone_of[index], {as_float(pos[0]), as_float(pos[1]), as_float(pos[2]), as_float(pos[3])}});
+            }
+            out.push_back(std::move(influences));
+        }
+        list += (vertices * (g + 1U) + 3U) / 4U;
+    }
+    return out;
 }
 
 void read_map_model(const Bytes& b, const std::size_t h, Model& model) {
@@ -235,7 +287,7 @@ void read_map_model(const Bytes& b, const std::size_t h, Model& model) {
             }
             VuMemory mem;
             mem.run(b, p + 8, p + 16 + qwc * 16U);
-            packet_triangles(mem, {}, 0xFFU, group.triangles);
+            packet_triangles(mem, {}, 0xFFU, {}, group.triangles);
             p += 16 + qwc * 16U;
         }
         model.groups.push_back(std::move(group));
@@ -258,6 +310,7 @@ void read_object_model(const Bytes& b, const std::size_t h, Model& model) {
     for (std::uint16_t s = 0; s < subparts; ++s) {
         const std::size_t entry = h + 0x20 + s * 0x20U;
         Group group;
+        group.attribute = b.u32(entry);
         group.texture = static_cast<int>(b.u32(entry + 4));
         // its flags: 0x400000 its light added over the model (a glow)
         group.light = (b.u32(entry) & 0x400000U) != 0;
@@ -307,7 +360,7 @@ void read_object_model(const Bytes& b, const std::size_t h, Model& model) {
                 const int bone = m < matrices.size() ? matrices[m].second : 0;
                 bone_of.insert(bone_of.end(), n, bone);
             }
-            packet_triangles(mem, bone_of, 0xFFFFU, group.triangles);
+            packet_triangles(mem, bone_of, 0xFFFFU, blended_vertices(mem, bone_of), group.triangles);
             stream.clear();
             matrices.clear();
         }
@@ -343,19 +396,31 @@ std::vector<TextureFrame> read_frames(const Bytes& b, std::size_t at, const std:
 TextureAnimation read_texa(const Bytes& b, const std::size_t t, const std::size_t size) {
     TextureAnimation a;
     a.target = b.u16(t + 2);
-    const std::uint16_t stride = b.u16(t + 4);
+    a.bits_per_pixel = b.u16(t + 6);
+    const std::uint16_t first_slot = b.u16(t + 8), last_slot = b.u16(t + 10);
     const std::uint16_t animations = b.u16(t + 12);
     a.sprite_count = b.u16(t + 14);
-    a.x = b.u16(t + 16);
+    a.x = b.u16(t + 16) & 0xFFFU;
     a.y = b.u16(t + 18);
     a.width = b.u16(t + 20);
     a.height = b.u16(t + 22);
-    const std::uint32_t table = b.u32(t + 28);
+    const std::uint32_t slots = b.u32(t + 24), table = b.u32(t + 28), sprites = b.u32(t + 32);
     a.default_animation = static_cast<int>(b.u32(t + 36));
+    // an entry is 8 bytes and a sprite index per further layer (kn::TEXAnmWork::play)
+    const std::size_t stride = 8U + 2U * b.u16(t + 4);
     for (std::uint16_t i = 0; i < animations; ++i) {
         const std::uint32_t first = b.u32(t + table + i * 4U);
-        a.animations.push_back(read_frames(b, t + first, t + size, stride == 0 ? 8U : stride * 2U));
+        a.animations.push_back(read_frames(b, t + first, t + size, stride));
     }
+    // the slot table: per id from the first, its animation's number plus one (0: none)
+    a.first_slot = first_slot;
+    if (slots != 0 && last_slot >= first_slot) {
+        for (unsigned id = first_slot; id <= last_slot; ++id) {
+            const std::uint16_t n = b.u16(t + slots + (id - first_slot) * 2U);
+            a.slot_animation.push_back(n != 0 && n <= animations ? n - 1 : -1);
+        }
+    }
+    a.sprites_at = sprites != 0 ? t + sprites : 0;
     return a;
 }
 
@@ -489,6 +554,199 @@ TextureContainer read_textures(const std::uint8_t* data, const std::size_t size,
         }
     }
     return c;
+}
+
+namespace {
+
+// The GS's local memory (4 MB of 32-bit words) as a container's pictures fill
+// it. PSMCT32 pages are 64 x 32 pixels of 32 blocks of 8 x 8; PSMT8 pages 128
+// x 64 of 16 x 16 blocks numbered the same, each block the same 256 bytes as
+// a PSMCT32 block. Buffer widths (BW) count 64 pixels.
+class GsMemory final {
+public:
+    GsMemory() : bytes_(4U * 1024U * 1024U, 0) {}
+
+    std::uint8_t* ct32(const unsigned x, const unsigned y, const unsigned bp, const unsigned bw) {
+        const unsigned page = (y / 32U) * bw + x / 64U;
+        return word(bp, page, kBlocks[(y % 32U) / 8U][(x % 64U) / 8U], kColumns[y % 8U][x % 8U]);
+    }
+
+    std::uint8_t* t8(const unsigned x, const unsigned y, const unsigned bp, const unsigned bw) {
+        const unsigned page = (y / 64U) * (bw / 2U) + x / 128U;
+        // within a 16 x 16 block: which 32-bit word of the block's 8 x 8, and which of its bytes
+        const unsigned bx = x % 16U, by = y % 16U;
+        const unsigned swap = ((by + 2U) >> 2U & 1U) * 4U;
+        const unsigned wy = ((by & ~3U) >> 1U) + (by & 1U);
+        const unsigned wx = (bx + swap) & 7U;
+        const unsigned byte = (by >> 1U & 1U) + (bx >> 2U & 2U);
+        return word(bp, page, kBlocks[(y % 64U) / 16U][(x % 128U) / 16U], kColumns[wy & 7U][wx]) + byte;
+    }
+
+private:
+    static constexpr unsigned kBlocks[4][8] = {{0, 1, 4, 5, 16, 17, 20, 21},
+                                               {2, 3, 6, 7, 18, 19, 22, 23},
+                                               {8, 9, 12, 13, 24, 25, 28, 29},
+                                               {10, 11, 14, 15, 26, 27, 30, 31}};
+    static constexpr unsigned kColumns[8][8] = {{0, 1, 4, 5, 8, 9, 12, 13},       {2, 3, 6, 7, 10, 11, 14, 15},
+                                                {16, 17, 20, 21, 24, 25, 28, 29}, {18, 19, 22, 23, 26, 27, 30, 31},
+                                                {32, 33, 36, 37, 40, 41, 44, 45}, {34, 35, 38, 39, 42, 43, 46, 47},
+                                                {48, 49, 52, 53, 56, 57, 60, 61}, {50, 51, 54, 55, 58, 59, 62, 63}};
+
+    std::uint8_t* word(const unsigned bp, const unsigned page, const unsigned block, const unsigned column) {
+        const std::size_t w = (static_cast<std::size_t>(bp) * 64U + page * 2048U + block * 64U + column) & 0xFFFFFU;
+        return bytes_.data() + w * 4U;
+    }
+
+    std::vector<std::uint8_t> bytes_;
+};
+
+std::uint64_t field(const std::uint64_t reg, const unsigned low, const unsigned bits) {
+    return (reg >> low) & ((std::uint64_t{1} << bits) - 1U);
+}
+
+}  // namespace
+
+namespace {
+
+// The container's pictures uploaded into a model of the GS's memory, as its packets send them
+GsMemory upload_pictures(const Bytes& b, const std::size_t at) {
+    const std::uint32_t pictures = b.u32(at + 8);
+    const std::size_t sends = at + b.u32(at + 20);
+    GsMemory gs;
+    // Each packet: BITBLTBUF at 0x20, TRXPOS at 0x30, TRXREG at 0x40, and the
+    // image's DMA tag at 0x70 (its address, from the container, at 0x74).
+    for (std::uint32_t p = 0; p <= pictures; ++p) {
+        const std::size_t s = sends + p * 0x90U;
+        const std::uint64_t bitblt = b.u64(s + 0x20), trxpos = b.u64(s + 0x30), trxreg = b.u64(s + 0x40);
+        const auto bp = static_cast<unsigned>(field(bitblt, 32, 14)), bw = static_cast<unsigned>(field(bitblt, 48, 6));
+        const auto psm = static_cast<unsigned>(field(bitblt, 56, 6));
+        const auto x0 = static_cast<unsigned>(field(trxpos, 32, 11)), y0 = static_cast<unsigned>(field(trxpos, 48, 11));
+        const auto w = static_cast<unsigned>(field(trxreg, 0, 12)), h = static_cast<unsigned>(field(trxreg, 32, 12));
+        const std::size_t pixels = at + b.u32(s + 0x74);
+        if (psm == 0x00) {  // PSMCT32
+            // the palettes' upload sends a whole 64 x 32 block though the file keeps only its colours (W_EX010:
+            // 976, 3,904 of 8,192 bytes, the file ending before the rest): what the file has, the rest left 0
+            const std::size_t texels = std::size_t{w} * h;
+            const std::size_t kept = pixels < b.size() ? std::min(texels, (b.size() - pixels) / 4U) : 0U;
+            const std::uint8_t* src = b.at(pixels, kept * 4U);
+            for (std::size_t i = 0; i < kept; ++i, src += 4) {
+                std::memcpy(gs.ct32(x0 + static_cast<unsigned>(i % w), y0 + static_cast<unsigned>(i / w), bp, bw), src,
+                            4);
+            }
+        } else if (psm == 0x13) {  // PSMT8
+            const std::uint8_t* src = b.at(pixels, std::size_t{w} * h);
+            for (unsigned y = 0; y < h; ++y) {
+                for (unsigned x = 0; x < w; ++x) {
+                    *gs.t8(x0 + x, y0 + y, bp, bw) = *src++;
+                }
+            }
+        } else {
+            throw std::runtime_error("KH2 textures: picture " + std::to_string(p) + " sent as GS format " + hex(psm) +
+                                     ", not read");
+        }
+    }
+    return gs;
+}
+
+// GS info `index`'s TEX0, checked to be an 8-bit texture with a 32-bit palette
+std::uint64_t texture_register(const Bytes& b, const std::size_t at, const std::size_t index) {
+    const std::uint32_t infos = b.u32(at + 12);
+    if (index >= infos) {
+        throw std::runtime_error("KH2 textures: no GS info " + std::to_string(index) + " of " + std::to_string(infos));
+    }
+    const std::uint64_t tex0 = b.u64(at + b.u32(at + 24) + index * 0xA0U + 112U);
+    const auto psm = static_cast<unsigned>(field(tex0, 20, 6));
+    if (psm != 0x13 || field(tex0, 51, 4) != 0 || field(tex0, 55, 1) != 0) {
+        throw std::runtime_error("KH2 textures: GS info " + std::to_string(index) + " is GS format " + hex(psm) +
+                                 " (palette " + hex(static_cast<std::uint32_t>(field(tex0, 51, 4))) +
+                                 "); only 8-bit textures with 32-bit palettes are decoded");
+    }
+    return tex0;
+}
+
+// The palette (CSM1) a TEX0 names: 16 x 16 PSMCT32 at CBP, entries 8-15 and 16-23 of each 32 swapped
+std::array<std::array<std::uint8_t, 4>, 256> palette_of(GsMemory& gs, const std::uint64_t tex0) {
+    const auto cbp = static_cast<unsigned>(field(tex0, 37, 14));
+    std::array<std::array<std::uint8_t, 4>, 256> palette{};
+    for (unsigned k = 0; k < 256; ++k) {
+        const unsigned at_k = (k & ~0x18U) | ((k & 8U) << 1U) | ((k & 16U) >> 1U);
+        const std::uint8_t* c = gs.ct32(at_k % 16U, at_k / 16U, cbp, 1);
+        palette[k] = {c[0], c[1], c[2], static_cast<std::uint8_t>(std::min(255, c[3] * 2))};
+    }
+    return palette;
+}
+
+}  // namespace
+
+struct TexturePictures::Memory final {
+    GsMemory gs;
+};
+
+TexturePictures::TexturePictures(const std::uint8_t* data, const std::size_t size, const std::size_t at)
+    : data_(data), size_(size), at_(at) {}
+
+TexturePictures::~TexturePictures() = default;
+
+TexturePictures::Memory& TexturePictures::memory() {
+    if (!memory_) {
+        memory_ = std::make_unique<Memory>(Memory{upload_pictures(Bytes(data_, size_), at_)});
+    }
+    return *memory_;
+}
+
+DecodedTexture TexturePictures::picture(const std::size_t index) {
+    // kn::Texture (KH2's PS3 build): u16 type, u16 flag, u32 counts of colours,
+    // pictures and GS infos, then the offsets of the pictures' numbers, their
+    // send packets (0x90 bytes each; the palette's first), the GS infos (0xA0),
+    // the pixels and the palette.
+    const std::uint64_t tex0 = texture_register(Bytes(data_, size_), at_, index);
+    const int width_log = static_cast<int>(field(tex0, 26, 4)), height_log = static_cast<int>(field(tex0, 30, 4));
+    if (width_log > 10 || height_log > 10) {  // TEX0's TW and TH: the GS's own limit
+        throw std::runtime_error("KH2 textures: GS info " + std::to_string(index) + " is " +
+                                 std::to_string(1 << width_log) + " x " + std::to_string(1 << height_log) +
+                                 ", past the GS's 1024 x 1024; the file is damaged: extract it again from your game");
+    }
+    GsMemory& gs = memory().gs;
+    const auto tbp = static_cast<unsigned>(field(tex0, 0, 14)), tbw = static_cast<unsigned>(field(tex0, 14, 6));
+    const auto palette = palette_of(gs, tex0);
+    DecodedTexture out;
+    out.format_name = "kh2 psmt8";
+    out.width = 1 << width_log;
+    out.height = 1 << height_log;
+    out.rgba.reserve(static_cast<std::size_t>(out.width) * static_cast<std::size_t>(out.height) * 4U);
+    for (int y = 0; y < out.height; ++y) {
+        for (int x = 0; x < out.width; ++x) {
+            const auto& c = palette[*gs.t8(static_cast<unsigned>(x), static_cast<unsigned>(y), tbp, tbw)];
+            out.rgba.insert(out.rgba.end(), c.begin(), c.end());
+        }
+    }
+    return out;
+}
+
+std::vector<std::vector<std::uint8_t>> TexturePictures::sprites(const TextureAnimation& animation) {
+    const Bytes b(data_, size_);
+    std::vector<std::vector<std::uint8_t>> out;
+    if (animation.sprites_at == 0 || animation.sprite_count <= 0 || animation.width <= 0 || animation.height <= 0) {
+        return out;
+    }
+    if (animation.bits_per_pixel != 8) {
+        throw std::runtime_error("KH2 textures: a texture animation's sprites are " +
+                                 std::to_string(animation.bits_per_pixel) + "-bit; only 8-bit sprites are decoded");
+    }
+    const std::uint64_t tex0 = texture_register(b, at_, static_cast<std::size_t>(animation.target));
+    const auto palette = palette_of(memory().gs, tex0);
+    const std::size_t pixels = static_cast<std::size_t>(animation.width) * static_cast<std::size_t>(animation.height);
+    for (int n = 0; n < animation.sprite_count; ++n) {
+        const std::uint8_t* src = b.at(animation.sprites_at + static_cast<std::size_t>(n) * pixels, pixels);
+        std::vector<std::uint8_t> rgba;
+        rgba.reserve(pixels * 4U);
+        for (std::size_t k = 0; k < pixels; ++k) {
+            const auto& c = palette[src[k]];
+            rgba.insert(rgba.end(), c.begin(), c.end());
+        }
+        out.push_back(std::move(rgba));
+    }
+    return out;
 }
 
 std::vector<DecodedTexture> read_tim2(const std::uint8_t* data, const std::size_t size, const std::size_t at) {

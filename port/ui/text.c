@@ -13,6 +13,7 @@
 #include "kh2_mission_panel.h"
 #include "../gpu/gpu2d.h"
 #include "../runtime/mods/font_runtime.h"
+#include "../runtime/mods/models.h"
 #include "../runtime/mods/tiles2d.h"
 #include "../runtime/mods/textures.h"
 #include "../runtime/menus/camp.h"
@@ -382,6 +383,8 @@ void khdays_ui_text_crawl_begin(const void *context, const void *text, int index
         for (int hd = 0; hd < 2; ++hd)
             crawl_measure(pen, index, hd, &pen->positions[hd][0], &pen->positions[hd][1]);
     }
+    if (index != pen->index)
+        khdays_models_dialogue_typed(); /* a letter typed: a KH2 face talks */
     pen->index = index;
     pen->y = y;
     crawl_x = x;

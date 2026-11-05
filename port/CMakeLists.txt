@@ -287,10 +287,18 @@ target_compile_options(khdays-hud-settings PRIVATE /W4 /std:c17)
 add_library(khdays-gfx STATIC
     gfx/compose_cpu.c
     gfx/describe.c
+    gfx/character_shadow.c
     gfx/g3d_geometry.c
     gfx/g3d_interp.c)
 target_compile_options(khdays-gfx PRIVATE /W4 /std:c17)
 target_link_libraries(khdays-gfx PUBLIC khdays-hud-settings)
+add_executable(khdays-character-shadow-test tests/character_shadow_test.c)
+target_link_libraries(khdays-character-shadow-test PRIVATE khdays-gfx)
+target_compile_options(khdays-character-shadow-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow COMMAND khdays-character-shadow-test)
+add_executable(khdays-character-shadow-hooks-test tests/character_shadow_hooks_test.c runtime/display/character_shadows.c)
+target_compile_options(khdays-character-shadow-hooks-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-character-shadow-hooks COMMAND khdays-character-shadow-hooks-test)
 
 # KH2's native 2D sequences and their reference renderer; also used by the
 # independent viewer, without the game or its generated sources.
@@ -515,7 +523,10 @@ add_executable(khdays-native
     runtime/core/clock.c
     runtime/input/controls_hooks.c
     runtime/input/walk.c               # the Walk mod's analog walk animation
+    runtime/camera/kh2_camera.c
+    runtime/camera/kh2_camera_hooks.c
     runtime/core/diag.c
+    runtime/display/character_shadows.c
     runtime/display/display.c
     runtime/display/field_wipe.c      # the field's room change being drawn (the window covers widescreen beside it)
     runtime/core/events.c
@@ -656,6 +667,14 @@ add_executable(khdays-native
     runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
+    runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
+    runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
+    runtime/mods/secondary/rig.cpp      # ... cooked against the model
+    runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp   # ... the XPBD solver
+    runtime/mods/secondary/actor.cpp    # ... per actor, on the game's clock
+    runtime/mods/secondary/days_environment.cpp # ... the game's rooms, read
+    runtime/mods/secondary/model_link.cpp       # ... on models.cpp's draws
     runtime/mods/tiles2d.c
     runtime/mods/sheet_colours.c        # the colours each 2D sheet is drawn with, for the studio
     runtime/core/files.c
@@ -726,6 +745,9 @@ add_executable(khdays-native
     ../assets/src/gltf_export.cpp
     ../assets/src/gltf.cpp         # a mod's models (runtime/mods/models.cpp)
     ../assets/src/fbx.cpp          # ... as FBX
+    ../assets/src/kh2_mdlx.cpp     # ... as KH2's (.mdlx; its BAR from khdays-kh2-sequence)
+    ../assets/src/kh2_map.cpp      # ... its model and textures
+    ../assets/src/kh2_motion.cpp   # ... and KH2's motions for it
     ../assets/src/image.cpp        # their textures in PNG, JPEG, TGA, BMP (its own stb_image)
     ../assets/src/graphics2d.cpp   # the game's 2D sheets, for the rooms' signal
     ../assets/src/cell.cpp         # their cells
@@ -833,6 +855,10 @@ target_compile_options(khdays-input-test PRIVATE
     $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
     $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
 add_test(NAME khdays-input COMMAND khdays-input-test)
+# The KH2 camera's arithmetic against KH2's numbers.
+add_executable(khdays-kh2-camera-test tests/kh2_camera_test.c runtime/camera/kh2_camera.c)
+target_compile_options(khdays-kh2-camera-test PRIVATE /W4 /std:c17)
+add_test(NAME khdays-kh2-camera COMMAND khdays-kh2-camera-test)
 # The course of an HD movie against a scripted game and video.
 add_executable(khdays-movie-hd-test tests/movie_hd_test.c runtime/movies/movie_hd.c runtime/movies/scene_map.c
                runtime/core/clock.c)
@@ -880,6 +906,53 @@ add_executable(khdays-room-animation-test tests/room_animation_test.cpp runtime/
 target_include_directories(khdays-room-animation-test PRIVATE ../assets/include)
 target_compile_options(khdays-room-animation-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-room-animation COMMAND khdays-room-animation-test)
+# A KH2 face's texture animation (runtime/mods/face.cpp): scripts, held slots, defaults, jumps and stops.
+add_executable(khdays-face-test tests/face_test.cpp runtime/mods/face.cpp)
+target_include_directories(khdays-face-test PRIVATE ../assets/include)
+target_compile_options(khdays-face-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-face COMMAND khdays-face-test)
+
+add_executable(khdays-kh2-clock-test tests/kh2_clock_test.cpp)
+target_compile_options(khdays-kh2-clock-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-clock COMMAND khdays-kh2-clock-test)
+
+add_executable(khdays-attached-frame-test tests/attached_frame_test.cpp)
+target_compile_options(khdays-attached-frame-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-attached-frame COMMAND khdays-attached-frame-test)
+
+add_executable(khdays-hand-pose-test tests/hand_pose_test.cpp)
+target_compile_options(khdays-hand-pose-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-hand-pose COMMAND khdays-hand-pose-test)
+
+add_executable(khdays-cuff-fit-test tests/cuff_fit_test.cpp)
+target_compile_options(khdays-cuff-fit-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-cuff-fit COMMAND khdays-cuff-fit-test)
+
+add_executable(khdays-kh2-tail-test tests/kh2_tail_test.cpp)
+target_compile_options(khdays-kh2-tail-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-tail COMMAND khdays-kh2-tail-test)
+
+add_executable(khdays-kh2-moves-test tests/kh2_moves_test.cpp)
+target_compile_options(khdays-kh2-moves-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-moves COMMAND khdays-kh2-moves-test)
+
+# Secondary motion (runtime/mods/secondary): configuration, cooking, the solver and its clock, on
+# synthetic rigs; and on N_EX830 when KHDAYS_SECONDARY_ASSETS names the folder holding it.
+set(KHDAYS_SECONDARY_SOURCES
+    runtime/mods/secondary/config.cpp runtime/mods/secondary/rig.cpp runtime/mods/secondary/collision.cpp
+    runtime/mods/secondary/solver.cpp runtime/mods/secondary/actor.cpp)
+add_executable(khdays-secondary-motion-test tests/secondary_motion_test.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
+# The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
+add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)

@@ -121,11 +121,14 @@ typedef struct KhdaysStick {
 
 typedef struct KhdaysEnhancements {
     int analog_camera;
-    int camera_speed; /* percent of the game's own turn rate, 10..300 */
+    int kh2_camera;       /* the field camera moves as KH2's */
+    int kh2_first_person; /* with it, Select is KH2's first person view */
+    int camera_speed;     /* percent of the game's own turn rate, 10..300 */
     int camera_invert_x;
     int camera_invert_y;
-    int mouse_camera; /* the camera turned by the mouse's motion, the mouse held by the window */
-    int mouse_speed;  /* percent, 10..300 */
+    int character_shadows; /* animated overhead silhouettes */
+    int mouse_camera;      /* the camera turned by the mouse's motion, the mouse held by the window */
+    int mouse_speed;       /* percent, 10..300 */
     int separate_lock_on;
     int dpad_command_menu;
     int analog_movement;

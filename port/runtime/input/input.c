@@ -12,6 +12,7 @@
 #include "../net/roomlist.h"
 #include "../net/net_session.h"
 #include "controls_hooks.h"
+#include "../camera/kh2_camera_hooks.h"
 #include "../movies/movie_hd.h"
 #include "../menus/newgame.h"
 #include "../menus/mission_start.h"
@@ -304,6 +305,8 @@ static u16 pressed(void)
 /* The player's DS buttons for this game frame. With the command menu on the D-pad, while the player
  * has field control the gamepad's D-pad becomes the presses that move the menu (sequencers.h) and
  * does not move Roxas. */
+static int select_taken; /* first person has this frame's Select, a script's too */
+
 static u16 player_buttons(void)
 {
     const KhdaysGameControls *game = khdays_controls_state();
@@ -311,6 +314,29 @@ static u16 player_buttons(void)
     const int field = on && pad_samples > 0 && game->command_input_frame == pad_samples;
     const u16 dpad = KHDAYS_KEY_UP | KHDAYS_KEY_DOWN | KHDAYS_KEY_LEFT | KHDAYS_KEY_RIGHT;
     u16 buttons = field ? snapshot.ds_buttons_field : snapshot.ds_buttons;
+    /* The KH2 camera with lock-on on its own buttons: the player's own R (the right stick's click) centres the
+     * camera and does not reach the game, whose R is the lock-on's: two quick clicks would lock on. */
+    static int own_r_held;
+    const int own_r = (buttons & KHDAYS_KEY_R) != 0;
+    if ((snapshot.enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) != 0 && khdays_kh2_camera_active()) {
+        if (own_r && !own_r_held) {
+            khdays_kh2_camera_center();
+        }
+        buttons &= (u16)~KHDAYS_KEY_R;
+    }
+    own_r_held = own_r;
+    /* First person: Select is the camera's, so the game's look view, which holds the player still, never opens. */
+    static int own_select_held;
+    const int own_select = ((buttons | script_keys) & KHDAYS_KEY_SELECT) != 0;
+    select_taken = 0;
+    if ((snapshot.enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) != 0 && khdays_kh2_camera_active()) {
+        if (own_select && !own_select_held) {
+            khdays_kh2_camera_toggle_first_person();
+        }
+        buttons &= (u16)~KHDAYS_KEY_SELECT;
+        select_taken = 1;
+    }
+    own_select_held = own_select;
     const uint32_t directions = ((snapshot.actions & KHDAYS_ACTION_MENU_UP) ? 1u << KHDAYS_MENU_UP : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_DOWN) ? 1u << KHDAYS_MENU_DOWN : 0) |
                                 ((snapshot.actions & KHDAYS_ACTION_MENU_LEFT) ? 1u << KHDAYS_MENU_LEFT : 0) |
@@ -332,6 +358,9 @@ static u16 player_buttons(void)
     const u16 lock_buttons =
         khdays_lock_sequencer_frame(&lock, lock_on ? lock_actions : 0, lock_field, game->lock_active,
                                     game->lockon_scheme, (u16)(buttons | script_keys), r_free);
+    if (lock.let_go) {
+        khdays_controls_lock_let_go();
+    }
     if (step.dpad_own) {
         buttons &= (u16)~dpad;
     }
@@ -388,6 +417,9 @@ void khdays_input_pad_sample(void)
      * game's (the script's still is: headless runs have no screen). */
     latched = khdays_movie_hd_game_buttons(
         (u16)(khdays_press_edges_take(&script_edges, script_keys) | (snapshot.ui_open ? 0 : player_buttons())));
+    if (select_taken) {
+        latched &= (u16)~KHDAYS_KEY_SELECT;
+    }
     latched = khdays_newgame_buttons(latched);       /* the port's question in the new game takes them */
     latched = khdays_savelist_buttons(latched);      /* the port's save list takes the files' rows */
     khdays_cinelist_frame();                         /* MODO CINE's list, for the port to draw */

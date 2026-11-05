@@ -101,6 +101,7 @@ void khdays_devices_init(const KhdaysProfile *p, KhdaysPublish to)
 {
     profile = *p;
     khdays_hud_settings_publish(p->enh.hud);
+    khdays_character_shadows_publish(p->enh.character_shadows);
     publish = to;
     khdays_bindings_reset(&state);
     send();
@@ -110,6 +111,7 @@ void khdays_devices_set_profile(const KhdaysProfile *p)
 {
     profile = *p;
     khdays_hud_settings_publish(p->enh.hud);
+    khdays_character_shadows_publish(p->enh.character_shadows);
     send();
 }
 

@@ -254,6 +254,8 @@ void khdays_bindings_resolve(const KhdaysProfile *p, KhdaysDeviceState *s, Khday
     }
     out->enhancements = (uint16_t)((p->enh.analog_camera ? KHDAYS_ENH_ANALOG_CAMERA : 0) |
                                    (p->enh.mouse_camera ? KHDAYS_ENH_MOUSE_CAMERA : 0) |
+                                   (p->enh.kh2_camera ? KHDAYS_ENH_KH2_CAMERA : 0) |
+                                   (p->enh.kh2_first_person ? KHDAYS_ENH_KH2_FIRST_PERSON : 0) |
                                    (p->enh.separate_lock_on ? KHDAYS_ENH_SEPARATE_LOCK_ON : 0) |
                                    (p->enh.dpad_command_menu ? KHDAYS_ENH_DPAD_COMMAND_MENU : 0) |
                                    (p->enh.analog_movement ? KHDAYS_ENH_ANALOG_MOVEMENT : 0) |

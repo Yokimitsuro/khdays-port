@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -69,7 +70,11 @@ struct TextureFrame final {
     int sprite = 0;
 };
 
-// TEXA: sprites drawn over part of a texture in turn (blinking lights, eyes).
+// TEXA: sprites drawn over part of a texture in turn (blinking lights, eyes). Laid out as KH2's PS3 build
+// reads it (kn::TEXAnmWork::getSequenceNo, set, play, getPixelData): u16 target at +2, layers +4, bits per
+// pixel +6, first and last slot id +8 and +10, animation count +12, sprite count +14, x (low 12 bits) +16,
+// y +18, width +20, height +22; offsets of the slot table +24, the animation table +28, the sprites' pixels +32;
+// the default animation +36.
 struct TextureAnimation final {
     int target = 0;  // GS info index in the container
     int sprite_count = 0;
@@ -80,6 +85,12 @@ struct TextureAnimation final {
     int default_animation = 0;
     std::vector<std::vector<TextureFrame>> animations;
     int hd_sheet = -1;  // its sprites' HD sheet, numbered within the container (see TextureContainer)
+    // the animation a slot id picks (ids first_slot + k, -1 none): what a motion's range or an event names
+    // (kn::ModelObj::setTexanm); an id outside the table is not this animation's
+    int first_slot = 0;
+    std::vector<int> slot_animation;
+    int bits_per_pixel = 8;      // the sprites' pixels: indices into the target's palette
+    std::size_t sprites_at = 0;  // where the sprites' pixels start in the file (0: none)
 };
 
 struct TextureContainer final {
@@ -95,17 +106,49 @@ struct TextureContainer final {
 
 TextureContainer read_textures(const std::uint8_t* data, std::size_t size, std::size_t at);
 
+// A container's pictures in a model of the GS's memory, uploaded once as its packets send them, on first need. The
+// data must outlive this. Both throw std::runtime_error naming what they cannot decode.
+class TexturePictures final {
+public:
+    TexturePictures(const std::uint8_t* data, std::size_t size, std::size_t at);
+    ~TexturePictures();
+
+    // GS info `index` decoded to RGBA (its whole TW x TH, PS2 alpha widened). 8-bit textures only.
+    DecodedTexture picture(std::size_t index);
+    // TEXA `animation`'s sprites decoded to RGBA (width x height each) through the palette of the GS info it is drawn
+    // over, as KH2 uploads them into that texture (kn::TEXAnmWork::getPixelData). 8-bit sprites only.
+    std::vector<std::vector<std::uint8_t>> sprites(const TextureAnimation& animation);
+
+private:
+    struct Memory;
+    Memory& memory();
+    const std::uint8_t* data_;
+    std::size_t size_, at_;
+    std::unique_ptr<Memory> memory_;
+};
+
 // TIM2 pictures (radar): 4-bit, 8-bit (palette in the PS2's order) or 32-bit;
 // PS2 alpha (0x80 = opaque) widened to 0..255.
 std::vector<DecodedTexture> read_tim2(const std::uint8_t* data, std::size_t size, std::size_t at);
 
 // --- Models ---
 
+// One bone's share of a blended vertex: the vertex in that bone's space, scaled
+// by its weight, and the weight in w (the bone's matrix times this, summed over
+// the shares, places the vertex).
+struct Influence final {
+    int bone = 0;
+    std::array<float, 4> position{};
+};
+
 struct Vertex final {
     std::array<float, 3> position{};                            // KH2 units; object models: in its bone's space
     std::array<float, 2> uv{};                                  // over the whole texture, as stored
     std::array<std::uint8_t, 4> color{0x80, 0x80, 0x80, 0x80};  // as stored: 0x80 = 1.0
     int bone = 0;
+    // A vertex blended from several bones (characters), up to seven; empty
+    // for one of a single bone. `position` and `bone` are then its first's.
+    std::vector<Influence> influences;
 };
 
 struct Triangle final {
@@ -119,6 +162,9 @@ struct Group final {
     bool transparent = false;
     bool light = false;          // an object's light added over the model (its chain's flag 0x400000)
     std::uint8_t uv_option = 0;  // as stored: bit 1 scrolls, bits 2-5 the UVSC index
+    // Object models: the subpart's attribute word as stored (kn::ModelSKLRAWAttribute):
+    // bit 1 translucent, bits 16-20 its drawing priority, bit 27 additive.
+    std::uint32_t attribute = 0;
     std::vector<Triangle> triangles;
 
     std::optional<int> scroll_index() const;

@@ -297,6 +297,10 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                  khdays_text(TXT_GAME_COMMAND_LIST), khdays_text(TXT_GAME_ONLY));
     add_switch(b, KHDAYS_SET_ENH_CAMERA, TXT_ENH_CAMERA, &e->analog_camera, built(KHDAYS_ENH_ANALOG_CAMERA),
                khdays_text(TXT_ENH_CAMERA_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_KH2_CAMERA, TXT_ENH_KH2_CAMERA, &e->kh2_camera, 1,
+               khdays_text(TXT_ENH_KH2_CAMERA_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_KH2_FIRST_PERSON, TXT_ENH_KH2_FIRST_PERSON, &e->kh2_first_person, 1,
+               khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
@@ -310,6 +314,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
      * for two screens, where the game draws its own page */
     add_switch(b, KHDAYS_SET_ENH_CHASE_FREE, TXT_ENH_CHASE_FREE, &e->chase_free, 1,
                khdays_text(TXT_ENH_CHASE_FREE_NOTE));
+    add_switch(b, KHDAYS_SET_CHARACTER_SHADOWS, TXT_CHARACTER_SHADOWS, &e->character_shadows, 1,
+               khdays_text(TXT_CHARACTER_SHADOWS_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_REPLACEMENTS));
     add_switch(b, KHDAYS_SET_HUD_FONT, TXT_HUD_FONT, &e->hud[KHDAYS_OPT_FONT], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));

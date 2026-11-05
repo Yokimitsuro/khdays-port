@@ -1,0 +1,5 @@
+# KH2's Kingdom Key (W_EX010) as Days' Kingdom Key (ro_w00600).
+# `held <joint>`: the body holding it poses its bones from the root to that joint with its `weapon_motions`
+# (the player's motions.txt): kh2_2 is the weapon itself (the blade, 834 vertices); kh2_3 to kh2_11 are the
+# keychain, carried by it and left to the cloth (ro_w00600.secondary.txt).
+held kh2_2

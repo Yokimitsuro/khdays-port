@@ -1,0 +1,173 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is the hooded coat Roxas (B_EX390), as Days' hooded roxas_ho_h; the mset is the street-clothes
+# Roxas's (P_EX110). Set up as roxas_b_h (N_EX830), its bones renumbered: B_EX390 has N_EX830's bones at the
+# same rest places, without the hood's (N 100-106), the face and hair (N 171-223) and N 276-281.
+mset P_EX110.mset
+# More motions from another mset, its slots numbered from a slot on: GAMEOVER.mset holds a set per
+# character; AK10's slot 14 (entry 0140) is Roxas's game over (229 joints, P_EX110's), here slot 1014
+motions GAMEOVER.mset AK10 at 1000
+# off: the game places Roxas and KH2's root motion is taken out of the bones (as KH2 does);
+# on: the body also travels as the KH2 motion moves it.
+root_motion off
+# The game's keyblade on KH2's weapon bone, turned from that bone's axes into the frame the game's
+# keyblade is made in (x, then y, then z, degrees): the blade along the bone's -y, its flat facing z.
+weapon ro_w_tg_R 222 rotate 0 -90 90
+# What he holds plays W_EX010_RX.mset's slots as his own play P_EX110's (on W_EX010's bones; bone 2 the
+# blade): the keyblade turns in his hand as KH2's does. A slot it has none for, and the game's own animations, hold
+# it as Days does. A replaced keyblade with `held` in its bones.txt is posed by it.
+weapon_motions W_EX010_RX.mset W_EX010.mdlx 2
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the
+# calm idle) turns them at its first frame. `ds_pose <slot>[@<frame>] <bones> for <animation>...`
+# or `ds_pose rotate <x> <y> <z> <bones> [for ...]` overrides them for some animations.
+ds_pose 2 150-171 223-244
+
+b_ro_A000 0
+# The game's idle a `finish` plays out into
+idle b_ro_A000
+# The game's landing animation (`air` lines' `land`)
+landing b_ro_A004
+b_ro_A001 8
+b_ro_A002 14
+b_ro_A003 14
+b_ro_A003@12 18 blend 8
+b_ro_A004 22 finish 24 blend 8
+# Ledge: KH2's grab (30) holds its loop from tick 110, so the game's hang starts there; the hand on the
+# ledge moved onto the game's (KH2 cm, the model's axes: x left, y up, z forward). The climb (34) glides
+# from there to where the game's climb ends against its idle.
+b_ro_A009 30 offset -0.8 -5.4 -42.4
+b_ro_A010 30 start_loop offset -0.8 -5.4 -42.4
+b_ro_A011 34 offset -0.8 -5.4 -42.4 to -0.8 -10.8 2.6
+# Damage: KH2 returns to its calm idle after these, then readies (slot 24, R010) back into the battle stance:
+# `finish 24` plays the rest of the damage and that readying when the game goes back to its idle (any action
+# drops it, as it leaves the idle)
+b_ro_A008 50 finish 24 blend 8
+b_ro_A005 42 finish 24 blend 8
+b_ro_A007 54 finish 24 blend 8
+b_ro_A006 46 finish 24 blend 8
+# Damage in the air (a launch included: the game's state 5), where Days holds the ground damage on a frame:
+# KH2's aerial damage loops (66 front, 74 back); landing straight out of it plays KH2's landing (70, 78), then
+# readies (24); a recovery or the fall comes when Days' does
+air b_ro_A005 66 land 70 finish 24 blend 8
+air b_ro_A006 66 land 70 finish 24 blend 8
+air b_ro_A007 74 land 78 finish 24 blend 8
+air b_ro_A008 74 land 78 finish 24 blend 8
+
+b_ro_Ca003 644 follow blend 8 loop_blend 32
+b_ro_Ca004 168
+b_ro_Ca007 162
+b_ro_Ca008 162
+
+b_ro_A012 164 finish blend 8
+b_ro_A013 172
+
+# Ground attacks: KH2's are longer, or the game goes back to its idle before they end: `finish` plays the
+# rest when it does (another attack, a move, a jump or a fall cancels them where Days lets it)
+b_ro_B000 604 finish blend 8
+b_ro_B001 612 finish blend 8
+b_ro_B002 616 finish blend 8
+b_ro_B003 728
+b_ro_B004 724
+b_ro_B005 736
+b_ro_B007 608 finish blend 8
+# Days' own B006 (no KH2 motion): an 8-frame fade into the idle when it goes back to it
+b_ro_B006 blend 8
+b_ro_B008 blend 8
+b_ro_B009 blend 8
+b_ro_B013 blend 8
+b_ro_B014 blend 8
+
+b_ro_E011 38
+
+b_ro_e000 2
+b_ro_e002 10
+# The death: KH2 takes its pose at once, wherever the game fades into it
+b_ro_e003 66 start_loop cut
+b_ro_E004 14
+b_ro_E005 14
+b_ro_E005@12 18 blend 8
+b_ro_E006 22
+b_ro_E007 54
+b_ro_E008 42
+b_ro_E009 46
+b_ro_E010 50
+
+air b_ro_E007 66 land 70 finish 24 blend 8
+air b_ro_E008 66 land 70 finish 24 blend 8
+air b_ro_E009 74 land 78 finish 24 blend 8
+air b_ro_E010 74 land 78 finish 24 blend 8
+
+b_ro_D000 38
+
+# The mset plays on P_EX110's bones, then each line gives one of this model's bones (or a
+# range) the turn of one of P_EX110's: bone <B_EX390 bone> <P_EX110 bone>. Bones without a
+# line (the coat, sleeves, collar) stay at rest under their parents.
+skeleton P_EX110.mdlx
+
+# Root and waist. Not bone 3: P_EX110's bone 3 carries no vertices and turns about 90
+# degrees from its hips' mesh in motions, and B_EX390's carries its coat and legs, so it
+# follows the waist (2) instead.
+bone 0-2 0-2
+# Left leg: thigh (on P_EX110's thigh skin bone 16, not its IK bone 7), shin, ankle and
+# foot, toe. The hip joint (4) and toe joints (10, 11) follow their parents.
+bone 5 16
+bone 6 8
+bone 7 11
+bone 8 11
+bone 9 11
+bone 12 14
+# Right leg
+bone 14 31
+bone 15 23
+bone 16 26
+bone 17 26
+bone 18 26
+bone 21 29
+# Spine to chest (B_EX390 has fewer spine bones: the lower spine takes P_EX110's top one)
+bone 117 40
+bone 118 41
+bone 119 44
+bone 120 45
+bone 121 46
+# Left arm: clavicle to wrist (B_EX390's shoulders are 2 cm wider)
+bone 122-128 51-57
+# Left wrist twist, hand and fingers
+bone 144-171 58-85
+# Right arm
+bone 195-201 160-166
+# Right wrist twist, hand and fingers
+bone 217-244 167-194
+# Neck and head (the hood's bones, 180-181, and the drawstrings' follow the head). The neck (175, the
+# collar's bone) turns as P_EX110's head (113), not its neck (110): the collar and hood turn as one about the
+# neck's base and stay joined (P_EX110 turns its head 20-75 degrees on the neck; the collar is rigid on 175
+# from 133 to 145 cm, blended into 178 at the top). 176-177 (the drawstrings' parent) too: P_EX110's 111-112
+# turn with its neck, which swung the strings' roots back into the neck.
+bone 174 109
+bone 175 113
+bone 176 113
+bone 177 113
+bone 178-179 113-114
+
+# Limbs bent so feet and hands land where P_EX110's carry them. `lengths` (the legs): B_EX390's
+# thigh and shin take P_EX110's lengths (thigh 33.4 -> 30.4 cm, shin 40.4 -> 43.0, stretched along
+# the bone only) and reach along P_EX110's own leg, so the knee bends as P_EX110's does.
+# (the knees and ankles
+# sit 6-7 cm further back on B_EX390, the hands 2 cm further out): upper, lower, end.
+ik 5 6 7 lengths
+ik 14 15 16 lengths
+ik 126 127 128
+ik 199 200 201
+
+# No `face` lines: the hood hides his face.
+
+# The game over screen: KH2's lying Roxas, lying as Days' does (`rotate <x> <y> <z>` would turn it)
+ro_con00 1014
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walks at their
+# own pace, 4 with the keyblade and 6 without, crossing from and to the run over 6 frames
+walk b_ro_A001 4 blend 6
+walk b_ro_e002 6 blend 6
+# The camp menu: the battle idle there as KH2 slot 7 (the keyblade plays W_EX010_RX's 7 with it)
+camp b_ro_A000 7

@@ -17,6 +17,9 @@ struct BarEntry final {
 };
 
 bool is_bar(const std::uint8_t* data, std::size_t size, std::size_t at = 0);
-std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, std::size_t at = 0);
+// Throws on an entry past the archive's end, or with `skip_bad` leaves it out (some PC motion sets
+// carry effect entries whose offsets run past their motion's archive).
+std::vector<BarEntry> bar_entries(const std::uint8_t* data, std::size_t size, std::size_t at = 0,
+                                  bool skip_bad = false);
 
 }  // namespace khdays::assets::kh2

@@ -218,6 +218,9 @@ keys the Proton mapping and finds the entry again to remove it. In `config.vdf` 
 tools live at `InstallConfigStore/Software/Valve/Steam/CompatToolMapping`, one block per app id; the
 port's entry is inserted into or removed from that block as text, so every other byte stays as
 Steam wrote it, and only when the block exists (the player has run a game under Proton).
+The HD menu/HUD build also runs `kh2_models.py`: KH2's Roxas and keyblade over Days', their models,
+motions and HD pictures copied from the player's `kh2_first` and `kh2_fifth`, with the port's settings for
+them from `tools/hd/kh2_models/` (docs/KH2_MODELS.md, "In the HD pack").
 The HD menu/HUD build also runs `heart_points.py` against the extracted Days ROM.
 It assembles the heart counter's palettes into an editable PNG and creates its
 `hart` BAR image/sequence entries. The installed native executable provides a

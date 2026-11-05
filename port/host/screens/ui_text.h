@@ -110,6 +110,10 @@ enum {
     TXT_KEYBOARD_UNCHANGED,
     TXT_ENH_CAMERA,
     TXT_ENH_CAMERA_NOTE,
+    TXT_ENH_KH2_CAMERA,
+    TXT_ENH_KH2_CAMERA_NOTE,
+    TXT_ENH_KH2_FIRST_PERSON,
+    TXT_ENH_KH2_FIRST_PERSON_NOTE,
     TXT_ENH_LOCK_ON,
     TXT_ENH_LOCK_ON_NOTE,
     TXT_ENH_MENU,
@@ -344,6 +348,8 @@ enum {
     /* The notice of an autosave, in the game's font (ui/autosave_notice.cpp): %d the file */
     TXT_AUTOSAVE_DONE,
     TXT_AUTOSAVE_FAILED,
+    TXT_CHARACTER_SHADOWS,
+    TXT_CHARACTER_SHADOWS_NOTE,
     /* The mouse camera (the controls' enhancements) */
     TXT_ENH_MOUSE,
     TXT_ENH_MOUSE_NOTE,

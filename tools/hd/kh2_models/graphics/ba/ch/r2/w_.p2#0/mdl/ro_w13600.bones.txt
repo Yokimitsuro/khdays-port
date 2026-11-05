@@ -1,0 +1,4 @@
+# KH2's W_EX010_10 in the dual wield Roxas's left hand. B_EX390 has no weapon mset; its weapon bones are baked, at
+# rest exactly where W_EX010's bone 2 is. So the weapon rides them, under the game's own animations too (`place`):
+# `rest`: kh2_2 is the weapon itself and moves as the holding bone moves from rest. docs/KH2_MODELS.md
+held kh2_2 rest

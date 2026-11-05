@@ -28,6 +28,8 @@ extern const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT];
 void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT]);
 void khdays_hud_settings_publish(const int values[KHDAYS_OPT_COUNT]);
 int khdays_hud_setting(int setting);
+void khdays_character_shadows_publish(int enabled);
+int khdays_character_shadows_enabled(void);
 unsigned khdays_hud_settings_generation(void);
 #ifdef __cplusplus
 }

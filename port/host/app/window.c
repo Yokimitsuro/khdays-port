@@ -3,6 +3,7 @@
  * player's profile, the settings menu opens on Esc or the pad's settings button, sound_output.c plays.
  * Closing the window ends the process (docs/PLATFORM.md, "The PC's side"). */
 #include "host.h"
+#include "hud_settings.h"
 #include "devices.h"
 #include "press_edges.h"
 #include "../render/gpu_present.h"
@@ -1060,6 +1061,7 @@ int khdays_host_start(void)
             KhdaysDeviceState nothing;
             khdays_profile_load(&profile, path, notice);
             khdays_plugins_set_native_code(profile.mods.native_code);
+            khdays_character_shadows_publish(profile.enh.character_shadows);
             khdays_bindings_reset(&nothing);
             SDL_LockMutex(input_lock);
             khdays_bindings_resolve(&profile, &nothing, &input);

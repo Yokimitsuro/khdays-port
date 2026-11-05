@@ -873,9 +873,12 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         int low, high; /* both 0: an on/off switch */
     } settings[] = {
         {"analog_camera", offsetof(KhdaysEnhancements, analog_camera), 0, 0},
+        {"kh2_camera", offsetof(KhdaysEnhancements, kh2_camera), 0, 0},
+        {"kh2_first_person", offsetof(KhdaysEnhancements, kh2_first_person), 0, 0},
         {"camera_speed", offsetof(KhdaysEnhancements, camera_speed), 10, 300},
         {"camera_invert_x", offsetof(KhdaysEnhancements, camera_invert_x), 0, 0},
         {"camera_invert_y", offsetof(KhdaysEnhancements, camera_invert_y), 0, 0},
+        {"character_shadows", offsetof(KhdaysEnhancements, character_shadows), 0, 0},
         {"mouse_camera", offsetof(KhdaysEnhancements, mouse_camera), 0, 0},
         {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
@@ -1518,6 +1521,8 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add_unknown(&t, "sticks");
     add(&t, "\n[enhancements]\n");
     add(&t, "analog_camera = %s\ncamera_speed = %d\n", e->analog_camera ? "on" : "off", e->camera_speed);
+    add(&t, "kh2_camera = %s\n", e->kh2_camera ? "on" : "off");
+    add(&t, "kh2_first_person = %s\n", e->kh2_first_person ? "on" : "off");
     add(&t, "camera_invert_x = %s\ncamera_invert_y = %s\n", e->camera_invert_x ? "on" : "off",
         e->camera_invert_y ? "on" : "off");
     add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);
@@ -1532,6 +1537,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
         else
             add(&t, "%s = %d\n", khdays_hud_setting_keys[i], e->hud[i]);
     }
+    add(&t, "character_shadows = %s\n", e->character_shadows ? "on" : "off");
     add_unknown(&t, "enhancements");
     {
         const KhdaysVideo *v = &p->video;

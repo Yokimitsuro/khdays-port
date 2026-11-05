@@ -146,6 +146,7 @@ void khdays_lock_sequencer_reset(KhdaysLockSequencer *s)
     s->step = 0;
     s->queued = 0;
     s->last_actions = 0;
+    s->let_go = 0;
 }
 
 static const Sequence *lock_sequence(int action)
@@ -163,6 +164,7 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
     const uint32_t pressed = actions & ~s->last_actions;
     uint16_t out = 0;
     s->last_actions = actions;
+    s->let_go = 0;
     if (!field) {
         /* no lock-on here (a menu, a tutorial, the pause): the buttons are
          * the DS's R and L they stand in for, as long as they are held */
@@ -193,6 +195,11 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
         }
         s->action = s->queue[0];
         s->step = 0;
+        /* Letting go: one R the game takes as a double press. The first of two would move to the next target. */
+        if (s->action == KHDAYS_LOCK_ON && locked) {
+            s->action = KHDAYS_LOCK_NEXT;
+            s->let_go = 1;
+        }
         for (int i = 1; i < s->queued; ++i) {
             s->queue[i - 1] = s->queue[i];
         }

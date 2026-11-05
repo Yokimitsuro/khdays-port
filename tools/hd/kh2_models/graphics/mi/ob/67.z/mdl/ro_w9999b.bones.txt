@@ -1,0 +1,2 @@
+# KH2's F_TT580 as a cutscene's own object: three bones, no keychain, made at the origin with its length along +z,
+# as the game's keyblades are, so it is drawn where the game draws its own.

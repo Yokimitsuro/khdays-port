@@ -57,6 +57,26 @@ struct ImportedAnimation final {
     std::vector<ImportedTrack> tracks;
 };
 
+// Sprites drawn over a rectangle of one of the model's textures in turn, each run of them a script picked by a
+// slot id (a KH2 face's eyes or mouth: TEXA, docs/KH2_MODELS.md); `default_script` plays while none is asked for.
+struct ImportedTextureAnimation final {
+    struct Step {
+        enum class Kind { sprite, base, jump, stop };
+        Kind kind = Kind::sprite;  // a sprite shown, the texture's own picture, a jump in the script, its end
+        int jump = 0;              // steps (negative: back)
+        int min_frames = 0;        // game frames shown; a length between min and max at random
+        int max_frames = 0;
+        int sprite = 0;
+    };
+    std::string texture;                             // its key in ImportedModel::textures
+    int x = 0, y = 0, width = 0, height = 0;         // texels
+    std::vector<std::vector<std::uint8_t>> sprites;  // RGBA, width x height each
+    std::vector<std::vector<Step>> scripts;
+    int default_script = 0;
+    int first_slot = 0;
+    std::vector<int> slot_script;  // per slot id from first_slot: its script, -1 none
+};
+
 // A model imported from a mod's file (glTF, FBX) in glTF's frame (Y up, metres), with the textures it
 // ships with: each skin a block of palette matrices (jointGlobal * inverseBind) and its vertices up to
 // four bones, so it renders in its authored pose and can be re-posed; static meshes baked. Texture
@@ -70,9 +90,12 @@ struct ImportedModel final {
     // Textures the model uses that were not found or could not be read (each
     // drawn white), with the reason, for the caller to report.
     std::vector<std::pair<std::string, std::string>> missing_textures;
+    // Anything else about its textures for the caller to report (HD pictures used, or left out and why).
+    std::vector<std::string> notes;
     // The file's nodes and its own animations of them (a room's moving pieces).
     std::vector<ImportedNode> nodes;
     std::vector<ImportedAnimation> animations;
+    std::vector<ImportedTextureAnimation> texture_animations;
 };
 
 }  // namespace khdays::assets

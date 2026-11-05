@@ -4,12 +4,15 @@
  * KHDAYS_TRACE_CONTROLS=1 reports what the game does with its controls, only when something changes;
  * docs/RUNTIME_MAP.md records what those traces showed. */
 #include "controls_hooks.h"
+#include "../camera/kh2_camera_hooks.h"
 #include "../core/window.h"
+#include "../mods/models.h"
 #include "analog.h"
 #include "input.h"
 #include "walk.h"
 #include "../net/net_session.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +105,27 @@ int khdays_controls_selection_pressed(int pressed, int other_screen)
     }
     kept = 0;
     return pressed;
+}
+
+static int let_go;
+static uint32_t let_go_at;
+
+void khdays_controls_lock_let_go(void)
+{
+    let_go = 1;
+    let_go_at = khdays_input_game_frames();
+}
+
+/* Ov022_ReadSelectionInput, locked on: an R within 9 frames of the last lets go before it can move to the next target,
+ * and that counter is repeatAny. Type A moves at the first R, Type B as it is released. */
+int khdays_controls_selection_repeat(int repeat, int pressed)
+{
+    if ((pressed & 0x100) == 0) {
+        return repeat;
+    }
+    const int letting_go = let_go && khdays_input_game_frames() - let_go_at <= KEPT_FRAMES;
+    let_go = 0;
+    return letting_go ? 0 : repeat;
 }
 
 void khdays_controls_selection_live(int live)
@@ -217,11 +241,15 @@ static int mouse_share(const KhdaysInputSnapshot *in, int axis, int rate)
  * frame; `inverted` its horizontal inversion, Config 0x37c3): returns the right stick's share of the
  * game's rate to add to the yaw target. Right on the stick turns as every "right" of the game's does
  * (bit 4). */
-int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2, int yaw, int target, int pitch)
+int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int flags2, int mode, int yaw, int target,
+                                int pitch)
 {
     static int last_target = -1, last_pitch = -1, last_bits = -1;
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
     int turn = 0;
+    if (khdays_kh2_camera_claims(flags, flags2, mode)) {
+        return 0; /* the KH2 camera reads them (khdays_controls_camera_look) */
+    }
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_x != 0) {
         turn = -scaled(rate, in->camera_x, in->camera_speed);
     }
@@ -242,10 +270,13 @@ int khdays_controls_camera_turn(int rate, int inverted, int bits, int flags, int
 /* After the game's own tilt (its tilt a frame, its vertical inversion, Config 0x37c2): returns what
  * to add to the pitch, which the game keeps within its limits. Up on the stick does what the look
  * view's Up does. */
-int khdays_controls_camera_pitch(int rate, int inverted)
+int khdays_controls_camera_pitch(int rate, int inverted, int flags, int flags2, int mode)
 {
     const KhdaysInputSnapshot *in = khdays_input_snapshot();
     int tilt = 0;
+    if (khdays_kh2_camera_claims(flags, flags2, mode)) {
+        return 0;
+    }
     if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open && in->camera_y != 0) {
         tilt = -scaled(rate, in->camera_y, in->camera_speed);
     }
@@ -254,6 +285,55 @@ int khdays_controls_camera_pitch(int rate, int inverted)
         tilt = -tilt;
     }
     return tilt;
+}
+
+/* YS::HARDPAD::get_stick_value's dead zone is 60 of 127.5 on each axis. The snapshot's axes have the port's
+ * (30 % by default) taken out, so a quarter of them is about that. */
+#define KH2_AXIS_DEAD_ZONE 0.25f
+
+static float look_axis(int axis)
+{
+    const float pushed = fabsf((float)axis) / 32767.0f;
+    return pushed > KH2_AXIS_DEAD_ZONE ? (pushed - KH2_AXIS_DEAD_ZONE) / (1.0f - KH2_AXIS_DEAD_ZONE) : 0.0f;
+}
+
+/* How far the look stick is pushed overall, past that dead zone. */
+static float look_pushed(const KhdaysInputSnapshot *in)
+{
+    const float across = look_axis(in->camera_x), along = look_axis(in->camera_y);
+    return sqrtf(across * across + along * along);
+}
+
+/* The stick's shares where its axis is past the dead zone, with the axis's sign, and the mouse's on top. */
+static void look_shares(const KhdaysInputSnapshot *in, float across, float along, float *x, float *y)
+{
+    *x = *y = 0.0f;
+    if ((in->enhancements & KHDAYS_ENH_ANALOG_CAMERA) != 0 && !in->ui_open) {
+        if (look_axis(in->camera_x) > 0.0f) {
+            *x = in->camera_x > 0 ? across : -across;
+        }
+        if (look_axis(in->camera_y) > 0.0f) {
+            *y = in->camera_y > 0 ? along : -along;
+        }
+    }
+    *x += (float)mouse_share(in, 0, 0x1000) / 4096.0f;
+    *y += (float)mouse_share(in, 1, 0x1000) / 4096.0f;
+}
+
+void khdays_controls_camera_look(float *x, float *y)
+{
+    const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    const float pushed = look_pushed(in);
+    const float amount = pushed < 1.0f ? pushed : 1.0f;
+    look_shares(in, amount, amount, x, y);
+}
+
+void khdays_controls_first_person_look(float *x, float *y)
+{
+    const KhdaysInputSnapshot *in = khdays_input_snapshot();
+    const float pushed = look_pushed(in);
+    const float tilt = pushed > 0.0f ? look_axis(in->camera_y) / pushed * (pushed < 1.0f ? pushed : 1.0f) : 0.0f;
+    look_shares(in, 1.0f, tilt, x, y);
 }
 
 void khdays_trace_camera_request(int found, int x, int y, int kind, int state)
@@ -329,33 +409,73 @@ int khdays_controls_move_heading(int actor, int heading)
     return result;
 }
 
-/* A walk this frame: its actor, the game's speed and the walk's (the animation slows as much). */
-static struct {
+/* Each actor's walk: the game frame of its last steer, the game's speed and the walk's (0 when it ran
+ * or stood). One per actor: every actor steers each frame, and another's steer must not end this one's. */
+typedef struct {
     int actor;
     u32 frame;
     int rate, walk;
-} walking;
+} Walking;
+static Walking walking[8];
+
+static Walking *walking_of(int actor, int add)
+{
+    Walking *oldest = &walking[0];
+    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+        if (walking[i].actor == actor) {
+            return &walking[i];
+        }
+        if (walking[i].frame < oldest->frame) {
+            oldest = &walking[i];
+        }
+    }
+    if (!add) {
+        return NULL;
+    }
+    oldest->actor = actor;
+    return oldest;
+}
 
 /* The speed the actor moves toward (its nWalkSpeed): with the stick pushed less than the run
  * threshold, the walk speed's share of it, never more than the game's own. */
 int khdays_controls_move_rate(int actor, int rate)
 {
     Stick in;
-    walking.actor = 0;
+    int walk = rate;
     if (rate > 0 && analog_moving(actor, &in)) {
         const int tilt = khdays_analog_tilt(in.x, in.y);
-        const int walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
-        khdays_walk_movement(actor, walk, rate); /* (the Walk mod's animation: walk.h) */
-        if (walk < rate) {
-            walking.actor = actor;
-            walking.frame = khdays_input_game_frames();
-            walking.rate = rate;
-            walking.walk = walk;
-            return walk;
+        walk = khdays_analog_rate(rate, tilt, in.run_threshold, in.walk_speed);
+    }
+    khdays_walk_movement(actor, walk, rate); /* (the Walk mod's animation: walk.h) */
+    Walking *w = walking_of(actor, walk < rate);
+    if (w != NULL) {
+        w->frame = khdays_input_game_frames();
+        w->rate = rate;
+        w->walk = walk < rate ? walk : 0;
+    }
+    return walk;
+}
+
+/* The walk of the actor whose scene node (its +0x20) is `node`, steered this game frame or the one before
+ * (its draw can follow the next frame's pad sample): its speed as a share of the game's, in 1/4096 (a KH2
+ * model's `walk` lines, runtime/mods/models.cpp); 0 when it does not walk. */
+int khdays_controls_walk_share(unsigned node)
+{
+    static int last = -1;
+    int share = 0;
+    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+        const Walking *w = &walking[i];
+        if (w->actor != 0 && w->walk > 0 && w->rate > 0 && khdays_input_game_frames() - w->frame <= 1u &&
+            khdays_game_ram((KhdaysRef)w->actor + 0x20U) && *(u32 *)KHDAYS_W((KhdaysRef)w->actor + 0x20U) == node) {
+            share = (int)((long long)w->walk * 4096 / w->rate);
+            break;
         }
     }
-    khdays_walk_movement(actor, rate, rate);
-    return rate;
+    if (trace_on() && share != last) {
+        trace("walk share %d/4096 at the draw of node %08x", share, node);
+        last = share;
+    }
+    return share;
 }
 
 /* The animation speed scale (0x1000 normal): while walking it slows as the speed did, so the steps
@@ -364,8 +484,9 @@ int khdays_controls_move_anim(int actor, int scale)
 {
     static int last = -1;
     int result = scale;
-    if (walking.actor == actor && walking.frame == khdays_input_game_frames()) {
-        result = (int)((long long)scale * walking.walk / walking.rate);
+    const Walking *w = walking_of(actor, 0);
+    if (w != NULL && w->walk > 0 && w->frame == khdays_input_game_frames()) {
+        result = (int)((long long)scale * w->walk / w->rate);
     }
     if (trace_on() && actor == local_actor() && result != last) {
         trace("move animation scale %x (the game's %x)", result, scale);
@@ -392,8 +513,13 @@ void khdays_trace_steer(int actor, int aim, int bias, int angle, int step, int r
 
 /* ---- The actor's states and the frame rate ------------------------------- */
 
-void khdays_trace_actor_state(int actor, int state)
+/* Ov022_EnterActorState: tells the KH2 model and, for the local player, the KH2 camera what state an actor entered. */
+void khdays_controls_actor_entered_state(int actor, int state)
 {
+    khdays_models_actor_state(actor, state); /* its KH2 model's `air` lines (runtime/mods/models.cpp) */
+    if (actor == local_actor()) {
+        khdays_kh2_camera_player_state(state);
+    }
     if (trace_on() && actor == local_actor()) {
         trace("state %d (%#x)", state, state);
     }

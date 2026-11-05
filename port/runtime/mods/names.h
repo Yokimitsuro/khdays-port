@@ -43,7 +43,8 @@ int khdays_names_dump_sheet(const char *file, u32 offset, const char *directory)
 int khdays_names_model(const char *file, u32 offset, char *out, int size);
 
 /* The joint animation whose data (NNSG3dResJntAnm) starts at `offset` into `file`'s data: its name as its
- * BCA0's JNT0 dictionary gives it ("b_ro_A001"), into `out`. 0 if none starts there. */
+ * BCA0's JNT0 dictionary gives it ("b_ro_A001"), or the texture pattern animation starting there as its
+ * BTP0's PAT0 names it ("e_ro_eye02"), into `out`. 0 if none starts there. */
 int khdays_names_animation(const char *file, u32 offset, char *out, int size);
 
 /* khdays-native --dump-graphics [DIR] (default saves/dump/graphics), without the game running: every

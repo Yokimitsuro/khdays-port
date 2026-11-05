@@ -1,0 +1,335 @@
+# The hooded cutscene Roxas e_roh_hb: roxas_ho_h's motions.txt, with e_rox_hb's dynamic hands on B_EX390's bones.
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is the hooded coat Roxas (B_EX390), as Days' hooded roxas_ho_h; the mset is the street-clothes
+# Roxas's (P_EX110). Set up as roxas_b_h (N_EX830), its bones renumbered: B_EX390 has N_EX830's bones at the
+# same rest places, without the hood's (N 100-106), the face and hair (N 171-223) and N 276-281.
+mset P_EX110.mset
+# More motions from another mset, its slots numbered from a slot on: GAMEOVER.mset holds a set per
+# character; AK10's slot 14 (entry 0140) is Roxas's game over (229 joints, P_EX110's), here slot 1014
+motions GAMEOVER.mset AK10 at 1000
+# off: the game places Roxas and KH2's root motion is taken out of the bones (as KH2 does);
+# on: the body also travels as the KH2 motion moves it.
+root_motion off
+# The game's keyblade on KH2's weapon bone, turned from that bone's axes into the frame the game's
+# keyblade is made in (x, then y, then z, degrees): the blade along the bone's -y, its flat facing z.
+weapon ro_w_tg_R 222 rotate 0 -90 90
+# What he holds plays W_EX010_RX.mset's slots as his own play P_EX110's (on W_EX010's bones; bone 2 the
+# blade): the keyblade turns in his hand as KH2's does. A slot it has none for, and the game's own animations, hold
+# it as Days does. A replaced keyblade with `held` in its bones.txt is posed by it.
+weapon_motions W_EX010_RX.mset W_EX010.mdlx 2
+
+# The hands (docs/KH2_MODELS.md, "Hands that respond"): `hand <hand bone> <forearm bone> <finger bones> back <x> <y> <z>`.
+# The grip while the game attaches something to that hand; flat on a surface the palm faces, near and slow;
+# a fist by the hand's speed and the body's travel; open by the wrist's bend back; else relaxed.
+# Measured over KH2's 191 cutscene motions (fingers curl least past a 50 degree bend, most past 2 m/s).
+hand 148 127 150-171 back 0 0 1
+hand 221 200 223-244 back 0 0 -1
+hand_bend 10 45
+hand_fist 1.5 3
+hand_walk 2 0.45 0.85 0.8
+hand_contact 0.07 0.13 0.8
+hand_grip_fade 0.15
+hand_lag 0.6
+
+# What the hands stay out of: each part's vertices round an axis; the legs and hips with the coat's thickness.
+hand_body 2 axis 2 118 margin 1.5
+hand_body 118 119 axis 118 120 margin 1
+hand_body 120 axis 120 175 margin 1
+hand_body 178 axis 175 178 margin 0.5
+hand_body 5 axis 5 6 margin 2
+hand_body 14 axis 14 15 margin 2
+hand_body 6 axis 6 9 margin 2
+hand_body 15 axis 15 18 margin 2
+
+# relaxed: the commonest resting hand, KH2's mean
+hand_pose relaxed rotate 0.36 4.87 -15.65 151
+hand_pose relaxed rotate -0.36 4.87 15.65 224
+hand_pose relaxed rotate 1.47 -13.99 -14.55 154
+hand_pose relaxed rotate -1.47 -13.99 14.55 227
+hand_pose relaxed rotate 0.00 17.27 -0.03 155
+hand_pose relaxed rotate -0.00 17.27 0.03 228
+hand_pose relaxed rotate 1.24 9.08 -0.73 157
+hand_pose relaxed rotate -1.24 9.08 0.73 230
+hand_pose relaxed rotate 0.62 24.79 -0.07 158
+hand_pose relaxed rotate -0.62 24.79 0.07 231
+hand_pose relaxed rotate 0.00 12.17 0.00 159
+hand_pose relaxed rotate -0.00 12.17 -0.00 232
+hand_pose relaxed rotate 0.33 17.15 10.37 161
+hand_pose relaxed rotate -0.33 17.15 -10.37 234
+hand_pose relaxed rotate -0.00 33.71 -0.00 162
+hand_pose relaxed rotate 0.00 33.71 0.00 235
+hand_pose relaxed rotate 0.00 18.94 0.00 163
+hand_pose relaxed rotate -0.00 18.94 -0.00 236
+hand_pose relaxed rotate -0.51 22.45 12.53 165
+hand_pose relaxed rotate 0.51 22.45 -12.53 238
+hand_pose relaxed rotate -0.01 33.98 -0.00 166
+hand_pose relaxed rotate 0.01 33.98 0.00 239
+hand_pose relaxed rotate 0.00 24.18 0.00 167
+hand_pose relaxed rotate -0.00 24.18 -0.00 240
+hand_pose relaxed rotate -1.31 30.16 13.11 169
+hand_pose relaxed rotate 1.31 30.16 -13.11 242
+hand_pose relaxed rotate 0.06 31.25 0.01 170
+hand_pose relaxed rotate -0.06 31.25 -0.01 243
+hand_pose relaxed rotate 0.00 23.90 0.00 171
+hand_pose relaxed rotate -0.00 23.90 -0.00 244
+
+# open: a bent-back wrist's nearly open hand, KH2's mean
+hand_pose open rotate -2.46 -6.64 -3.03 151
+hand_pose open rotate 2.46 -6.64 3.03 224
+hand_pose open rotate 1.19 -20.56 -7.48 154
+hand_pose open rotate -1.19 -20.56 7.48 227
+hand_pose open rotate 0.00 0.51 -0.01 155
+hand_pose open rotate -0.00 0.51 0.01 228
+hand_pose open rotate 0.33 4.57 -7.43 157
+hand_pose open rotate -0.33 4.57 7.43 230
+hand_pose open rotate 0.31 12.39 -0.07 158
+hand_pose open rotate -0.31 12.39 0.07 231
+hand_pose open rotate -0.00 6.08 -0.00 159
+hand_pose open rotate 0.00 6.08 0.00 232
+hand_pose open rotate -0.23 8.58 5.11 161
+hand_pose open rotate 0.23 8.58 -5.11 234
+hand_pose open rotate -0.00 16.86 -0.00 162
+hand_pose open rotate 0.00 16.86 0.00 235
+hand_pose open rotate -0.00 9.47 -0.00 163
+hand_pose open rotate 0.00 9.47 0.00 236
+hand_pose open rotate -0.13 11.23 13.81 165
+hand_pose open rotate 0.13 11.23 -13.81 238
+hand_pose open rotate -0.00 16.99 0.00 166
+hand_pose open rotate 0.00 16.99 -0.00 239
+hand_pose open rotate -0.00 12.09 -0.00 167
+hand_pose open rotate 0.00 12.09 0.00 240
+hand_pose open rotate 0.60 15.13 22.51 169
+hand_pose open rotate -0.60 15.13 -22.51 242
+hand_pose open rotate 0.03 15.63 0.00 170
+hand_pose open rotate -0.03 15.63 -0.00 243
+hand_pose open rotate -0.00 11.95 -0.00 171
+hand_pose open rotate 0.00 11.95 0.00 244
+
+# fist: the closed fist, KH2's mean
+hand_pose fist rotate -2.41 9.70 -21.00 151
+hand_pose fist rotate 2.41 9.70 21.00 224
+hand_pose fist rotate 2.40 -10.21 -17.09 154
+hand_pose fist rotate -2.40 -10.21 17.09 227
+hand_pose fist rotate 0.01 53.84 0.02 155
+hand_pose fist rotate -0.01 53.84 -0.02 228
+hand_pose fist rotate 7.17 70.18 5.26 157
+hand_pose fist rotate -7.17 70.18 -5.26 230
+hand_pose fist rotate -179.90 87.92 179.99 158
+hand_pose fist rotate 179.90 87.92 -179.99 231
+hand_pose fist rotate -0.00 88.98 -0.00 159
+hand_pose fist rotate 0.00 88.98 0.00 232
+hand_pose fist rotate 1.09 78.83 1.70 161
+hand_pose fist rotate -1.09 78.83 -1.70 234
+hand_pose fist rotate -179.88 85.41 -179.88 162
+hand_pose fist rotate 179.88 85.41 179.88 235
+hand_pose fist rotate -180.00 88.70 -180.00 163
+hand_pose fist rotate 180.00 88.70 180.00 236
+hand_pose fist rotate -8.74 80.21 -5.73 165
+hand_pose fist rotate 8.74 80.21 5.73 238
+hand_pose fist rotate -179.60 86.59 -179.61 166
+hand_pose fist rotate 179.60 86.59 179.61 239
+hand_pose fist rotate -180.00 86.34 180.00 167
+hand_pose fist rotate 180.00 86.34 -180.00 240
+hand_pose fist rotate -20.23 81.57 -13.92 169
+hand_pose fist rotate 20.23 81.57 13.92 242
+hand_pose fist rotate 0.31 88.82 0.31 170
+hand_pose fist rotate -0.31 88.82 -0.31 243
+hand_pose fist rotate -180.00 85.25 180.00 171
+hand_pose fist rotate 180.00 85.25 -180.00 244
+
+# flat: the flattest hands, KH2's mean
+hand_pose flat rotate -7.94 -17.22 10.69 151
+hand_pose flat rotate 7.94 -17.22 -10.69 224
+hand_pose flat rotate -0.00 -27.05 0.00 154
+hand_pose flat rotate 0.00 -27.05 -0.00 227
+hand_pose flat rotate -0.00 -16.25 0.00 155
+hand_pose flat rotate 0.00 -16.25 -0.00 228
+hand_pose flat rotate -0.04 -0.01 -14.04 157
+hand_pose flat rotate 0.04 -0.01 14.04 230
+hand_pose flat rotate -0.01 0.00 15.00 165
+hand_pose flat rotate 0.01 0.00 -15.00 238
+hand_pose flat rotate 0.00 -0.00 31.08 169
+hand_pose flat rotate -0.00 -0.00 -31.08 242
+
+# grip: P_EX110's battle stance on the keyblade, KH2's mean
+hand_pose grip rotate 3.00 8.50 -24.40 151
+hand_pose grip rotate -3.00 8.50 24.40 224
+hand_pose grip rotate 38.00 -16.70 -24.90 154
+hand_pose grip rotate -38.00 -16.70 24.90 227
+hand_pose grip rotate 0.00 43.00 0.00 155
+hand_pose grip rotate -0.00 43.00 -0.00 228
+hand_pose grip rotate -2.50 43.30 2.00 157
+hand_pose grip rotate 2.50 43.30 -2.00 230
+hand_pose grip rotate 0.00 42.30 0.00 158
+hand_pose grip rotate -0.00 42.30 -0.00 231
+hand_pose grip rotate 0.00 40.00 0.00 159
+hand_pose grip rotate -0.00 40.00 -0.00 232
+hand_pose grip rotate -1.50 53.00 1.80 161
+hand_pose grip rotate 1.50 53.00 -1.80 234
+hand_pose grip rotate 0.00 65.20 0.00 162
+hand_pose grip rotate -0.00 65.20 -0.00 235
+hand_pose grip rotate 0.00 47.70 0.00 163
+hand_pose grip rotate -0.00 47.70 -0.00 236
+hand_pose grip rotate 0.00 54.70 10.00 165
+hand_pose grip rotate -0.00 54.70 -10.00 238
+hand_pose grip rotate -0.10 64.70 -0.10 166
+hand_pose grip rotate 0.10 64.70 0.10 239
+hand_pose grip rotate 0.00 38.70 0.00 167
+hand_pose grip rotate -0.00 38.70 -0.00 240
+hand_pose grip rotate 7.50 63.70 21.00 169
+hand_pose grip rotate -7.50 63.70 -21.00 242
+hand_pose grip rotate 0.00 41.70 0.00 170
+hand_pose grip rotate -0.00 41.70 -0.00 243
+hand_pose grip rotate 0.00 30.70 0.00 171
+hand_pose grip rotate -0.00 30.70 -0.00 244
+
+
+b_ro_A000 0
+# The game's idle a `finish` plays out into
+idle b_ro_A000
+# The game's landing animation (`air` lines' `land`)
+landing b_ro_A004
+b_ro_A001 8
+b_ro_A002 14
+b_ro_A003 14
+b_ro_A003@12 18 blend 8
+b_ro_A004 22 finish 24 blend 8
+# Ledge: KH2's grab (30) holds its loop from tick 110, so the game's hang starts there; the hand on the
+# ledge moved onto the game's (KH2 cm, the model's axes: x left, y up, z forward). The climb (34) glides
+# from there to where the game's climb ends against its idle.
+b_ro_A009 30 offset -0.8 -5.4 -42.4
+b_ro_A010 30 start_loop offset -0.8 -5.4 -42.4
+b_ro_A011 34 offset -0.8 -5.4 -42.4 to -0.8 -10.8 2.6
+# Damage: KH2 returns to its calm idle after these, then readies (slot 24, R010) back into the battle stance:
+# `finish 24` plays the rest of the damage and that readying when the game goes back to its idle (any action
+# drops it, as it leaves the idle)
+b_ro_A008 50 finish 24 blend 8
+b_ro_A005 42 finish 24 blend 8
+b_ro_A007 54 finish 24 blend 8
+b_ro_A006 46 finish 24 blend 8
+# Damage in the air (a launch included: the game's state 5), where Days holds the ground damage on a frame:
+# KH2's aerial damage loops (66 front, 74 back); landing straight out of it plays KH2's landing (70, 78), then
+# readies (24); a recovery or the fall comes when Days' does
+air b_ro_A005 66 land 70 finish 24 blend 8
+air b_ro_A006 66 land 70 finish 24 blend 8
+air b_ro_A007 74 land 78 finish 24 blend 8
+air b_ro_A008 74 land 78 finish 24 blend 8
+
+b_ro_Ca003 644 follow blend 8 loop_blend 32
+b_ro_Ca004 168
+b_ro_Ca007 162
+b_ro_Ca008 162
+
+b_ro_A012 164 finish blend 8
+b_ro_A013 172
+
+# Ground attacks: KH2's are longer, or the game goes back to its idle before they end: `finish` plays the
+# rest when it does (another attack, a move, a jump or a fall cancels them where Days lets it)
+b_ro_B000 604 finish blend 8
+b_ro_B001 612 finish blend 8
+b_ro_B002 616 finish blend 8
+b_ro_B003 728
+b_ro_B004 724
+b_ro_B005 736
+b_ro_B007 608 finish blend 8
+# Days' own B006 (no KH2 motion): an 8-frame fade into the idle when it goes back to it
+b_ro_B006 blend 8
+b_ro_B008 blend 8
+b_ro_B009 blend 8
+b_ro_B013 blend 8
+b_ro_B014 blend 8
+
+b_ro_E011 38
+
+b_ro_e000 2
+b_ro_e002 10
+# The death: KH2 takes its pose at once, wherever the game fades into it
+b_ro_e003 66 start_loop cut
+b_ro_E004 14
+b_ro_E005 14
+b_ro_E005@12 18 blend 8
+b_ro_E006 22
+b_ro_E007 54
+b_ro_E008 42
+b_ro_E009 46
+b_ro_E010 50
+
+air b_ro_E007 66 land 70 finish 24 blend 8
+air b_ro_E008 66 land 70 finish 24 blend 8
+air b_ro_E009 74 land 78 finish 24 blend 8
+air b_ro_E010 74 land 78 finish 24 blend 8
+
+b_ro_D000 38
+
+# The mset plays on P_EX110's bones, then each line gives one of this model's bones (or a
+# range) the turn of one of P_EX110's: bone <B_EX390 bone> <P_EX110 bone>. Bones without a
+# line (the coat, sleeves, collar) stay at rest under their parents.
+skeleton P_EX110.mdlx
+
+# Root and waist. Not bone 3: P_EX110's bone 3 carries no vertices and turns about 90
+# degrees from its hips' mesh in motions, and B_EX390's carries its coat and legs, so it
+# follows the waist (2) instead.
+bone 0-2 0-2
+# Left leg: thigh (on P_EX110's thigh skin bone 16, not its IK bone 7), shin, ankle and
+# foot, toe. The hip joint (4) and toe joints (10, 11) follow their parents.
+bone 5 16
+bone 6 8
+bone 7 11
+bone 8 11
+bone 9 11
+bone 12 14
+# Right leg
+bone 14 31
+bone 15 23
+bone 16 26
+bone 17 26
+bone 18 26
+bone 21 29
+# Spine to chest (B_EX390 has fewer spine bones: the lower spine takes P_EX110's top one)
+bone 117 40
+bone 118 41
+bone 119 44
+bone 120 45
+bone 121 46
+# Left arm: clavicle to wrist (B_EX390's shoulders are 2 cm wider)
+bone 122-128 51-57
+# Left wrist twist, hand and fingers
+bone 144-171 58-85
+# Right arm
+bone 195-201 160-166
+# Right wrist twist, hand and fingers
+bone 217-244 167-194
+# Neck and head (the hood's bones, 180-181, and the drawstrings' follow the head). The neck (175, the
+# collar's bone) turns as P_EX110's head (113), not its neck (110): the collar and hood turn as one about the
+# neck's base and stay joined (P_EX110 turns its head 20-75 degrees on the neck; the collar is rigid on 175
+# from 133 to 145 cm, blended into 178 at the top). 176-177 (the drawstrings' parent) too: P_EX110's 111-112
+# turn with its neck, which swung the strings' roots back into the neck.
+bone 174 109
+bone 175 113
+bone 176 113
+bone 177 113
+bone 178-179 113-114
+
+# Limbs bent so feet and hands land where P_EX110's carry them. `lengths` (the legs): B_EX390's
+# thigh and shin take P_EX110's lengths (thigh 33.4 -> 30.4 cm, shin 40.4 -> 43.0, stretched along
+# the bone only) and reach along P_EX110's own leg, so the knee bends as P_EX110's does.
+# (the knees and ankles
+# sit 6-7 cm further back on B_EX390, the hands 2 cm further out): upper, lower, end.
+ik 5 6 7 lengths
+ik 14 15 16 lengths
+ik 126 127 128
+ik 199 200 201
+
+# No `face` lines: the hood hides his face.
+
+# The game over screen: KH2's lying Roxas, lying as Days' does (`rotate <x> <y> <z>` would turn it)
+ro_con00 1014
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walks at their
+# own pace, 4 with the keyblade and 6 without, crossing from and to the run over 6 frames
+walk b_ro_A001 4 blend 6
+walk b_ro_e002 6 blend 6
+# The camp menu: the battle idle there as KH2 slot 7 (the keyblade plays W_EX010_RX's 7 with it)
+camp b_ro_A000 7

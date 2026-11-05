@@ -375,6 +375,8 @@ static void test_settings_file(void)
     /* The defaults go out and come back unchanged, byte for byte. */
     khdays_profile_default(&p);
     path_of("round.ini", path, sizeof(path));
+    CHECK(p.enh.character_shadows == 0);
+    p.enh.character_shadows = 1;
     CHECK(khdays_profile_save(&p, path, count_notice) == 0);
     notices = 0;
     khdays_profile_load(&q, path, count_notice);
@@ -389,6 +391,7 @@ static void test_settings_file(void)
     SDL_free(b);
 
     /* No file: the defaults, silently. */
+    khdays_profile_default(&p);
     path_of("missing.ini", path, sizeof(path));
     notices = 0;
     khdays_profile_load(&q, path, count_notice);
@@ -488,6 +491,9 @@ static void test_settings_file(void)
     CHECK(load_text("[sticks]\nleft_dead_zone = 200\n", &q) == 1 && q.stick[0].dead_zone == 90);
     CHECK(load_text("[enhancements]\ncamera_speed = 1\nwalk_speed = 99\n", &q) == 2);
     CHECK(q.enh.camera_speed == 10 && q.enh.walk_speed == 90);
+    CHECK(!q.enh.kh2_camera && !q.enh.kh2_first_person); /* off unless asked for */
+    CHECK(load_text("[enhancements]\nkh2_camera = on\nkh2_first_person = on\n", &q) == 0);
+    CHECK(q.enh.kh2_camera && q.enh.kh2_first_person);
     CHECK(load_text("[sticks]\nright = sideways\n", &q) == 1 && q.stick[1].role == KHDAYS_STICK_CAMERA);
 
     /* One input for two actions: the first keeps it. */
@@ -904,6 +910,8 @@ static void test_settings_model(void)
         {KHDAYS_SET_RESTORE_KEYBOARD, KHDAYS_ROW_COMMAND, 0, 0, 0},
         {KHDAYS_SET_RESTORE_GAMEPAD, KHDAYS_ROW_COMMAND, 0, 0, 0},
         {KHDAYS_SET_ENH_CAMERA, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_ENH_KH2_CAMERA, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_ENH_KH2_FIRST_PERSON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_LOCK_ON, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MENU, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_ENH_MOVEMENT, KHDAYS_ROW_SWITCH, 0, 1, 0},
@@ -1886,6 +1894,32 @@ static void test_analog(void)
     CHECK(khdays_analog_heading_turned(0x1555, game_heading(DOWN | RIGHT)) == 0x9555);
     CHECK(khdays_analog_heading_turned(0x1555, game_heading(DOWN)) == 0x9555);
 
+    /* KH2's stick: an axis under 60 of 127.5 is exactly 0, the rest rescaled to full travel */
+    {
+        int x = 15383, y = 28931; /* 28 degrees right of up, at full tilt */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y > 0);
+        CHECK(khdays_analog_heading(x, y) == 0);
+        x = 28931, y = -15383; /* the same off right */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x > 0 && y == 0);
+        CHECK(khdays_analog_heading(x, y) == 0xbfff);
+        x = -23170, y = 23170; /* a diagonal stays one */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == -y && y > 0);
+        CHECK(khdays_analog_heading(x, y) == 0x2000);
+        x = 15000, y = -15000; /* both under it: no direction */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y == 0);
+        CHECK(khdays_analog_heading(x, y) == -1);
+        x = 15419, y = 15420; /* its edge */
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == 0 && y == 1);
+        x = -FULL, y = FULL;
+        khdays_analog_kh2_stick(&x, &y);
+        CHECK(x == -FULL && y == FULL);
+    }
+
     CHECK(khdays_analog_tilt(0, 0) == 0);
     CHECK(khdays_analog_tilt(FULL, 0) == 100);
     CHECK(khdays_analog_tilt(FULL, FULL) == 100); /* a square gate's corner */
@@ -1921,6 +1955,15 @@ static void test_analog_axes(void)
     CHECK(out.camera_x == 32767 && out.camera_y == 0);
     CHECK((out.enhancements & (KHDAYS_ENH_ANALOG_MOVEMENT | KHDAYS_ENH_ANALOG_CAMERA)) ==
           (KHDAYS_ENH_ANALOG_MOVEMENT | KHDAYS_ENH_ANALOG_CAMERA));
+    CHECK((out.enhancements & KHDAYS_ENH_KH2_CAMERA) == 0);
+    p.enh.kh2_camera = 1;
+    p.enh.kh2_first_person = 1;
+    out = resolve(&p, &s);
+    CHECK((out.enhancements & KHDAYS_ENH_KH2_CAMERA) != 0);
+    CHECK((out.enhancements & KHDAYS_ENH_KH2_FIRST_PERSON) != 0);
+    p.enh.kh2_camera = 0;
+    p.enh.kh2_first_person = 0;
+    out = resolve(&p, &s);
     s.stick[1][0] = 0;
     s.stick[1][1] = -32767; /* full up (SDL's y grows downwards) */
     out = resolve(&p, &s);
@@ -2019,7 +2062,15 @@ static void test_lock_sequencer(void)
     const uint32_t on = 1u << KHDAYS_LOCK_ON, next = 1u << KHDAYS_LOCK_NEXT, prev = 1u << KHDAYS_LOCK_PREV;
     KhdaysLockSequencer s;
 
-    /* Lock on (or let go): R pressed twice within the game's 9 frames. */
+    /* Let go: one R, marked for the game to take as its double press (the first of two would move on). */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, on, 1, 0, 0, 1) == R);
+    CHECK(s.let_go);
+    CHECK(lock_frame(&s, on, 1, 0, 0, 0) == 0);
+    CHECK(!s.let_go);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+
+    /* Lock on: R pressed twice within the game's 9 frames. */
     khdays_lock_sequencer_reset(&s);
     CHECK(lock_frame(&s, on, 0, 0, 0, 1) == R);
     CHECK(lock_frame(&s, on, 0, 0, 0, 0) == 0);
@@ -2181,8 +2232,18 @@ static void test_hud_settings(void)
             CHECK(*rows[i].value != old);
         }
     CHECK(found == KHDAYS_OPT_COUNT);
+    int shadow_found = 0;
+    for (int i = 0; i < count; ++i)
+        if (rows[i].id == KHDAYS_SET_CHARACTER_SHADOWS) {
+            ++shadow_found;
+            CHECK(rows[i].available && rows[i].value == &q.enh.character_shadows);
+            CHECK(khdays_model_adjust(&q, &rows[i], 1));
+            CHECK(q.enh.character_shadows == 1);
+        }
+    CHECK(shadow_found == 1);
     CHECK(khdays_model_changes(&p, &q) & KHDAYS_CHANGE_CONTROLS);
     khdays_devices_set_profile(&q);
+    CHECK(khdays_character_shadows_enabled() == q.enh.character_shadows);
     CHECK(khdays_hud_settings_generation() != generation);
     for (int i = 0; i < KHDAYS_OPT_COUNT; ++i)
         CHECK(khdays_hud_setting(i) == q.enh.hud[i]);

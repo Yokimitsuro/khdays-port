@@ -3,20 +3,10 @@
 // per-pixel rules are exactly gpu3d.c's (docs/RENDERING.md, "On the graphics card"). In widescreen
 // `origin_x` is the DS column of the target's first (negative).
 
-struct Polygon {
-    uint attr, tex, pltt;
-    int first, count;
-    float ymin, ymax;
-    int translucent;
-    int flags; // gfx/g3d.h KHDAYS_G3D_*: OVER_2D marks its pixels (bit 29 of the colour), the rest the host reads
-    int replacement; // the replacement texture drawn instead (host/render/gpu_hd.h's entry), or -1
-};
-
-struct Vertex {
-    float x, y, z, w, r, g, b, s, t, a;
-};
-
 static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
+static const uint G3D_CLIP = 0x20000000u;       // KHDAYS_G3D_CLIP: a clip volume's, first in the list, not drawn
+static const uint G3D_CLIP_OWNER = 0x40000000u; // KHDAYS_G3D_CLIP_OWNER: a clip volume's model's, drawn inside
+static const uint G3D_UNCLIPPED = 0x61u | G3D_CLIP_OWNER; // HUD, sequence, marker and owners: never left out
 
 // Every storage buffer is read by its bytes: SDL's Direct3D 12 views them raw (no stride), and AMD's
 // cards (vkd3d too) read a StructuredBuffer by the view's stride, so all its elements were the first.
@@ -26,6 +16,7 @@ ByteAddressBuffer tiles : register(t2, space0);   // tiles_x*tiles_y+1 starts, t
 ByteAddressBuffer vram : register(t3, space0);         // the texture slots (512 KB), then the palette slots (96 KB)
 ByteAddressBuffer hd : register(t4, space0); // the replacements (host/render/gpu_hd.h): 4 words each, then their texels (RGBA8, red low)
 ByteAddressBuffer sequences : register(t5, space0); // retained native sequences in this 3D list
+ByteAddressBuffer shadow_mask : register(t6, space0); // declared in register order: MSL numbers them as declared
 #define KSI_SHADER
 #include "../gfx/sequence_image.h"
 uint seq_word(uint program, uint at) { return sequences.Load((program*KSI_WORDS+at)*4u); }
@@ -57,145 +48,9 @@ cbuffer Params : register(b0, space2) {
 
 #define TEX_PAL 0x80000u
 
-// gfx/g3d.h's KhdaysG3dPolygon (40 bytes) and KhdaysG3dVertex (40 bytes), word by word
-Polygon polygon_at(uint i)
-{
-    const uint4 a = polys.Load4(i * 40u), b = polys.Load4(i * 40u + 16u);
-    const uint2 c = polys.Load2(i * 40u + 32u);
-    Polygon p;
-    p.attr = a.x;
-    p.tex = a.y;
-    p.pltt = a.z;
-    p.first = (int)a.w;
-    p.count = (int)b.x;
-    p.ymin = asfloat(b.y);
-    p.ymax = asfloat(b.z);
-    p.translucent = (int)b.w;
-    p.flags = (int)c.x;
-    p.replacement = (int)c.y;
-    return p;
-}
+#include "geometry_load.hlsli"
 
-Vertex vertex_at(int i)
-{
-    const uint at = (uint)i * 40u;
-    const float4 a = asfloat(verts.Load4(at)), b = asfloat(verts.Load4(at + 16u));
-    Vertex v;
-    v.x = a.x;
-    v.y = a.y;
-    v.z = a.z;
-    v.w = a.w;
-    v.r = b.x;
-    v.g = b.y;
-    v.b = b.z;
-    v.s = b.w;
-    const uint2 c = verts.Load2(at + 32u);
-    v.t = asfloat(c.x);
-    v.a = asfloat(c.y);
-    return v;
-}
-
-// ---- VRAM (texdecode.h) ----
-
-uint tex8(uint address)
-{
-    address &= 0x7ffffu;
-    return (vram.Load(address & ~3u) >> ((address & 3u) * 8u)) & 0xffu;
-}
-
-uint tex16(uint address)
-{
-    return tex8(address) | (tex8(address + 1u) << 8);
-}
-
-// A palette address is always even: both bytes are in one word.
-uint pal16(uint address)
-{
-    address = TEX_PAL + address % 0x18000u;
-    return (vram.Load(address & ~3u) >> ((address & 2u) * 8u)) & 0xffffu;
-}
-
-int wrap(int c, int size, uint repeat, uint flip)
-{
-    if (repeat == 0u) {
-        return c < 0 ? 0 : c >= size ? size - 1 : c;
-    }
-    if (flip != 0u) {
-        const int period = c & (2 * size - 1);
-        return period >= size ? 2 * size - 1 - period : period;
-    }
-    return c & (size - 1);
-}
-
-// A texel: RGB 5 bits each in bits 0-14, alpha 0-31 in bits 16-20.
-uint texel(uint param, uint pltt, int s, int t)
-{
-    const uint base = (param & 0xffffu) * 8u;
-    const int ss = 8 << ((param >> 20) & 7u), ts = 8 << ((param >> 23) & 7u);
-    const uint format = (param >> 26) & 7u;
-    const uint zero_transparent = (param >> 29) & 1u;
-    const uint pal = pltt * (format == 2u ? 8u : 16u);
-    uint index;
-    s = wrap(s, ss, (param >> 16) & 1u, (param >> 18) & 1u);
-    t = wrap(t, ts, (param >> 17) & 1u, (param >> 19) & 1u);
-    switch (format) {
-    case 1u: {
-        const uint v = tex8(base + (uint)(t * ss + s));
-        const uint a3 = v >> 5;
-        return (pal16(pal + (v & 31u) * 2u) & 0x7fffu) | ((a3 * 4u + a3 / 2u) << 16);
-    }
-    case 2u:
-        index = (tex8(base + (uint)(t * ss + s) / 4u) >> (2u * ((uint)s & 3u))) & 3u;
-        break;
-    case 3u:
-        index = (tex8(base + (uint)(t * ss + s) / 2u) >> (4u * ((uint)s & 1u))) & 15u;
-        break;
-    case 4u:
-        index = tex8(base + (uint)(t * ss + s));
-        break;
-    case 5u: {
-        const uint block = base + (uint)((t / 4) * (ss / 4) + s / 4) * 4u;
-        const uint bits = (tex8(block + ((uint)t & 3u)) >> (2u * ((uint)s & 3u))) & 3u;
-        const uint slot1 = 0x20000u + ((block & 0x1ffffu) / 2u) + ((block >= 0x40000u) ? 0x10000u : 0u);
-        const uint info = tex16(slot1);
-        const uint pa = pltt * 16u + (info & 0x3fffu) * 4u;
-        const uint mode = info >> 14;
-        if (bits == 3u && (mode == 0u || mode == 1u)) {
-            return 0u;
-        }
-        if (bits < 2u || mode == 0u || mode == 2u) {
-            return (pal16(pa + bits * 2u) & 0x7fffu) | (31u << 16);
-        }
-        {
-            const uint c0 = pal16(pa), c1 = pal16(pa + 2u);
-            uint o = 0u;
-            for (uint sh = 0u; sh < 15u; sh += 5u) {
-                const uint a = (c0 >> sh) & 31u, b = (c1 >> sh) & 31u;
-                uint v;
-                if (mode == 1u) v = (a + b) / 2u;
-                else if (bits == 2u) v = (a * 5u + b * 3u) / 8u;
-                else v = (a * 3u + b * 5u) / 8u;
-                o |= v << sh;
-            }
-            return o | (31u << 16);
-        }
-    }
-    case 6u: {
-        const uint v = tex8(base + (uint)(t * ss + s));
-        return (pal16(pal + (v & 7u) * 2u) & 0x7fffu) | ((v >> 3) << 16);
-    }
-    case 7u: {
-        const uint v = tex16(base + (uint)(t * ss + s) * 2u);
-        return (v & 0x7fffu) | ((v & 0x8000u) != 0u ? (31u << 16) : 0u);
-    }
-    default:
-        return 0x7fffu | (31u << 16);
-    }
-    if (index == 0u && zero_transparent != 0u) {
-        return 0u;
-    }
-    return (pal16(pal + index * 2u) & 0x7fffu) | (31u << 16);
-}
+#include "texture_decode.hlsli"
 
 // The texels polygon `p` maps: its vertices' coordinates bound what any of
 // its pixels reads (an interpolation stays between them). x, y the first
@@ -549,6 +404,45 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
         if (marker || depth<px.depth) plot_sequence(p,px,at,depth);
         return;
     }
+    if (((uint)p.flags & 0x10000u) != 0u) {
+        const int diff = (int)depth - (int)px.depth;
+        const bool sprite = ((uint)p.flags & 0x100u) != 0u;
+        const uint receiver = sprite ? (((uint)p.flags >> 18)&63u) : p.pltt;
+        if (abs(diff) > 0x200 || px.trans_id == 63u || px.opaque_id != receiver || px.translucent != 0u) return;
+        const float2 uv = float2(at.s, at.t)*w/16.0f-0.5f;
+        const int2 q = (int2)floor(uv);
+        const float2 f = frac(uv);
+        const uint base = (((uint)p.flags >> 24)&31u)*128u*128u;
+        float coverage = 0;
+        for (int k=0;k<4;++k) {
+            const int2 a=q+int2(k&1,k>>1);
+            if (any(a<0) || any(a>=128)) continue;
+            coverage += (float)shadow_mask.Load((base+(uint)a.y*128u+(uint)a.x)*4u)*
+                        ((k&1)!=0?f.x:1-f.x)*((k>>1)!=0?f.y:1-f.y)/255.0f;
+        }
+        float alpha=coverage*(float)((p.attr>>16)&31u)/31.0f;
+        const float vscale=fine!=0u?255.0f/63.0f:1.0f;
+        float3 shade=float3(at.r,at.g,at.b)*w*vscale;
+        if (sprite && ((p.tex >> 26)&7u)!=0u) {
+            int4 tint;
+            if (p.replacement>=0) {
+                const uint4 e=hd.Load4((uint)p.replacement*16u);
+                tint=hd_at(e,(int)(e.y/2u),(int)(e.z/2u));
+            } else {
+                const int ss=8<<((p.tex>>20)&7u), ts=8<<((p.tex>>23)&7u);
+                const uint tex=texel(p.tex,p.pltt,ss/2,ts/2);
+                tint=int4(channel5((int)(tex&31u)),channel5((int)((tex>>5)&31u)),
+                          channel5((int)((tex>>10)&31u)),(int)((tex>>16)&31u));
+            }
+            alpha*=(float)tint.a/31.0f;
+            shade=floor(((shade+1.0f)*(float3(tint.rgb)+1.0f)-1.0f)/(fine!=0u?256.0f:64.0f));
+        }
+        if (alpha<=0.0f) return;
+        const int3 color=(int3)round(lerp(float3(px.r,px.g,px.b),shade,alpha));
+        px.r=color.r; px.g=color.g; px.b=color.b;
+        px.trans_id=63u;
+        return;
+    }
     const uint mode = (p.attr >> 4) & 3u;
     const uint id = (p.attr >> 24) & 63u;
     int alpha = (int)((p.attr >> 16) & 31u);
@@ -705,19 +599,19 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     }
 }
 
-// Whether polygon `p` covers pixel (x, y) of the target, gpu3d.c's
-// draw_polygon on the target's grid (the vertices scaled by N), and if so
-// its attributes there and whether it is an edge pixel. Each polygon covers
-// what it covers at N x, no more (a quarter of a DS pixel more on each side
-// bloated every model, a mod's many small triangles most).
-bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
+// Whether polygon `p` covers pixel (x, y) of the target, gpu3d.c's draw_polygon on the target's
+// grid (the vertices scaled by N), and if so its attributes there and whether it is an edge pixel.
+// It covers what it covers at N x, no more (more bloats a mod's many small triangles). `grow` target
+// pixels more on each side: a clip volume's, whose triangles' shared edge can leave a pixel to neither,
+// and the volume then lets the room through there.
+bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge, float grow)
 {
     const float n = (float)scale;
     const int rows = (int)height, columns = (int)width;
     precise float ymin = p.ymin * n;
     precise float ymax = p.ymax * n;
-    int y0 = (int)ceil(ymin - 0.5f);
-    int y1 = (int)ceil(ymax - 0.5f) - 1;
+    int y0 = (int)ceil(ymin - 0.5f - grow);
+    int y1 = (int)ceil(ymax - 0.5f + grow) - 1;
     float xl = 1e9f, xr = -1e9f;
     Attrs al = (Attrs)0, ar = (Attrs)0;
     bool found = false;
@@ -736,6 +630,9 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
     }
     {
         precise float cy = (float)y + 0.5f;
+        if (grow > 0.0f) {
+            cy = clamp(cy, ymin, ymax); // a grown row: the polygon's nearest
+        }
         for (int i = 0; i < p.count; ++i) {
             const Vertex va = vertex_at(p.first + i);
             const Vertex vb = vertex_at(p.first + (i + 1) % p.count);
@@ -770,8 +667,8 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge)
     }
     {
         // the pixels covered
-        const int x0 = (int)ceil(xl - 0.5f);
-        int x1 = (int)ceil(xr - 0.5f) - 1;
+        const int x0 = (int)ceil(xl - 0.5f - grow);
+        int x1 = (int)ceil(xr - 0.5f + grow) - 1;
         precise float span = xr - xl;
         if (x1 < x0) x1 = x0;  // at least a pixel: lines and dots
         if (x < x0 || x > x1 || x >= columns) {
@@ -823,6 +720,19 @@ Pixel rear_plane(int x, int y)
     return px;
 }
 
+// A clip volume showing here: the coat's inside (black, as N_EX830's lining), not what lies behind it (the rear
+// plane, the room seen through a crack in its floor). The depth stays the rear plane's, for the coat to draw on
+void lay_clip_inside(inout Pixel px, uint clips, uint clip_near)
+{
+    if (clips >= 2u && px.depth > clip_near) {
+        px.r = 0;
+        px.g = 0;
+        px.b = 0;
+        px.a = 31;
+        px.fog = 1u; // what blends on it takes this down, cs_main the owner's at the end
+    }
+}
+
 [numthreads(8, 8, 1)]
 void cs_main(uint3 id : SV_DispatchThreadID)
 {
@@ -838,6 +748,11 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     first = tiles.Load(tile * 4u);
     last = min(tiles.Load((tile + 1u) * 4u), entries);
     bool marker_started=false;
+    // the clip volumes this pixel shows (KHDAYS_G3D_CLIP, docs/RENDERING.md): their nearest depth, how many of
+    // their triangles cover it, whether the coat's inside is laid yet and whether a surface has been drawn on it,
+    // with the last owner's polygon ID and fog
+    uint clip_near = 0xffffffffu, clips = 0u, owner_id = px.opaque_id, owner_fog = px.fog;
+    bool inside_laid = false, surface = false;
     for (uint k = first; k < last; ++k) {
         const uint index = tiles.Load(k * 4u);
         if (index >= npolys) {
@@ -846,13 +761,48 @@ void cs_main(uint3 id : SV_DispatchThreadID)
         const Polygon p = polygon_at(index);
         Attrs at;
         uint edge;
-        if (cover(p, x, y, at, edge)) {
+        // the volumes come first: past them, the inside goes under all that is drawn, so an effect blends over it
+        if (((uint)p.flags & G3D_CLIP) == 0u && !inside_laid) {
+            inside_laid = true;
+            lay_clip_inside(px, clips, clip_near);
+        }
+        if (cover(p, x, y, at, edge, ((uint)p.flags & G3D_CLIP) != 0u ? 1.0f : 0.0f)) {
+            if (((uint)p.flags & G3D_CLIP) != 0u) {
+                if (((uint)p.flags & 1u) == 0u) {
+                    clip_near = min(clip_near, depth_of(at.z, 1.0f / at.iw, wbuffer));
+                    ++clips;
+                }
+                continue;
+            }
+            const bool unclipped = ((uint)p.flags & G3D_UNCLIPPED) != 0u;
+            if (clips >= 2u && !unclipped && depth_of(at.z, 1.0f / at.iw, wbuffer) > clip_near) {
+                continue; // inside a clip volume or behind it (its far wall, the coat's inside, covers it)
+            }
             if (((uint)p.flags&0x40u)!=0u && !marker_started) {
                 px.trans_id=0xffu; // The first marker must not share a translucent ID with the world.
                 marker_started=true;
             }
-            plot(p, px, at, edge, wbuffer);
+            {
+                const uint was_depth = px.depth;
+                const int3 was = int3(px.r, px.g, px.b);
+                plot(p, px, at, edge, wbuffer);
+                surface = surface || px.depth != was_depth;
+                if (((uint)p.flags & G3D_CLIP_OWNER) != 0u &&
+                    (px.depth != was_depth || any(int3(px.r, px.g, px.b) != was))) {
+                    owner_id = (p.attr >> 24) & 63u;
+                    owner_fog = (p.attr >> 15) & 1u;
+                }
+            }
         }
+    }
+    if (!inside_laid) {
+        lay_clip_inside(px, clips, clip_near);
+    }
+    // no surface drawn on the inside (blending writes none): it is the surface here, at the volume's near depth
+    if (clips >= 2u && !surface && px.depth > clip_near) {
+        px.depth = clip_near;
+        px.opaque_id = owner_id;
+        px.fog &= owner_fog;
     }
     out_color[id.xy] = (uint)px.r | ((uint)px.g << 8) | ((uint)px.b << 16) | ((uint)px.a << 24) |
                        (px.over2d << 29) | (px.translucent << 31);

@@ -1,0 +1,141 @@
+# Secondary motion of KH2's hooded coat Roxas (B_EX390) drawn as Days' hooded roxas_ho_h: roxas_b_h's
+# (N_EX830's) on B_EX390's bone numbers, without the hood and hair (the hood is up, on the head).
+# Copy beside the model as <model>.secondary.txt (roxas_ho_h.secondary.txt), with
+# kh2_secondary_presets.txt. Bones are KH2 bone numbers (kh2_<n>).
+# docs/SECONDARY_MOTION.md explains every line.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes: measured in the replay tool to clip no more than 4 at a quarter
+# less cost (docs/SECONDARY_MOTION.md, "Results")
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone: walls caught the cloth (pinned against a leg)
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones; radii fitted to the vertices skinned to them) ---
+# The body's true size, fitted beside each bone's segment. Contact holds the coat no further out than
+# it hangs at rest where that is nearer (its authored clearance), so a calm pose keeps its drape.
+collider pelvis   capsule 2 length 17.9 fit 0.85 tags body
+collider spine    capsule 118 120 fit 0.85 tags torso
+collider chest    capsule 120 length 14.4 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 12 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 12 radius 4.5 3.5 tags legs
+collider thigh_r  capsule 14 15 offset 12 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 12 radius 4.5 3.5 tags legs
+# the heels: the foot capsules run down from the ankle and the shoe reaches 8.6 cm behind it;
+# these keep the back hem off the heel kicking up in a run (6 cm: 8 pinned the coat at a wall)
+collider heel_l   capsule 9 length 11 radius 6 6 offset 0 4.3 0 tags legs
+collider heel_r   capsule 18 length 11 radius 6 6 offset 0 4.3 0 tags legs
+collider arm_l    capsule 126 127 fit 0.85 side motion tags arms
+collider forearm_l capsule 127 128 fit 0.85 side motion tags arms
+collider hand_l   sphere 148 offset 7 0 0 radius 4.5 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 154 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 199 200 fit 0.85 side motion tags arms
+collider forearm_r capsule 200 201 fit 0.85 side motion tags arms
+collider hand_r   sphere 221 offset 7 0 0 radius 4.5 side rest tags hands right_hand
+collider thumb_r  capsule 227 length 6.3 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
+# the drawstrings' alone: over the chest's front, which B_EX390's coat bulges out to 7.6 cm (z, at rest, where
+# the strings hang 5 cm either side of the middle) while its strings rest at 6-6.5 (in it); held on this, they
+# rest at 8.3 or more. The torso's colliders (fit to 85 % of the vertices) lie inside the coat there
+collider chest_strings capsule 120 121 radius 12.3 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface ---
+# Each strip runs from just under the belt to the hem. 85 is shared: the front
+# forks under it into two panels (88-90 and 92-94) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 85 88 89 90
+  strip 85 92 93 94
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 30 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  follow_bone 5 radius 30 weight 0.9 always 0.7
+  follow_bone 14 radius 30 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 88 92        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back
+  # hangs. `follow_bone_scale` can also be set by group (with `hem`) or per animation (control)
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  mode simulated          # P_EX110's motions carry no coat tracks
+  # `no_sim`: the coat not simulated, each control on its target (the hips, the thighs' carry, the drape
+  # round the legs) every tick; here for the whole coat, or in a `control` for some animations
+  # no_sim
+  # `clip_world`: the room inside the coat's closed volume not drawn, so a wall it goes through shows the
+  # coat's inside, not the wall; 2 mm outside its drawn controls (on them, the skin's blending left a line
+  # of floor showing where it met the coat's inside)
+  # off in gameplay (the room drawn over the coat as it is); the cutscene coat (e_rox_hb) keeps it
+  # clip_world inset -0.2
+end
+
+# --- Drawstrings: chains from the hood's neck bone (176), hung at load. B_EX390's hang straight down at rest,
+# a centimetre into the coat's chest; hung forward, they settle against `chest_strings` ---
+group string_l chain preset kh2_string
+  collide torso body strings
+  attach 176
+  chain 183 184 185 186
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+group string_r chain preset kh2_string
+  collide torso body strings
+  attach 176
+  chain 188 189 190 191
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+
+# No hood group: the hood is up, skinned to the head.
+
+# --- Sleeve cuffs: fitted round the hands by bones.txt's `cuff`, not simulated ---
+
+# No hair: under the hood.
+
+# --- Animation controls ---
+# The guard holds still and tight: the coat follows its reference closely.
+control guard_tight
+  animation b_ro_Ca003
+  groups coat
+  follow_frequency 5 hem 3.5
+  blend 0.15 0.3
+end
+
+# KH2's front landing (slot 70, out of the aerial damage) throws a thigh up and forward into a deep crouch,
+# away from where the coat hangs: the thighs' carry fell to its `always` share and the leg came out in front of
+# the coat. In the crouch (its first 0.4 s) the front and side strips ride the thighs (95 % at most), then ease
+# back to their hang.
+control land_front
+  animation b_ro_A004
+  slot 70
+  bones 34 37 38 39 40 58 61 62 63 64 82 85 88 89 90 92 93 94 42 45 46 47 48 66 69 70 71 72
+  follow_bone_scale 3
+  time 0 0.4 seconds
+  blend 0.05 0.25
+end

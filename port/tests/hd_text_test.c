@@ -9,6 +9,7 @@ static unsigned information_revision;
 static unsigned information_epoch = 1;
 static int mission_panel_owned;
 void khdays_ui_mission_panel_emit(void) {}
+void khdays_models_dialogue_typed(void) {}
 int khdays_ui_mission_panel_cell(int engine, int bg, int x, int y)
 {
     (void)x;

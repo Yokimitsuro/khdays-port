@@ -215,6 +215,12 @@ of the game:
   (adjustable, and invertible, under Sticks and camera). On the DS the camera
   is turned by dragging on the touch screen, by Select's look view, or with
   L/R when the game's Config sets them to the camera.
+- **KH2 camera:** the field camera moves as Kingdom Hearts II's: further back the
+  higher it is, and free to turn while locked on, the view kept between you and the
+  target. Cutscenes keep the game's camera, and it needs the game's Controls on Type
+  A ([docs/KH2_CAMERA.md](docs/KH2_CAMERA.md)).
+- **KH2 first person view:** with the KH2 camera on, Select switches to first person
+  as in Kingdom Hearts II: the player fades out, and you can look around and strafe.
 - **Mouse camera:** moving the mouse turns and tilts the field camera, through
   the same part of the game as the analog camera, at a speed of its own
   (Sticks and camera -> Mouse camera speed) and with the camera's inversions.
@@ -588,7 +594,7 @@ any resolution, with a file named after it:
 mods/<Mod>/graphics/<file>[#<entry>]/
 ├── tex/<texture>[@<palette>].png  # a 3D texture, any size (with any palette: <texture>.png)
 ├── chr/<n>.png                    # a 2D tile sheet, a whole multiple of its size
-└── mdl/<model>.gltf               # a model -- or .glb, or .fbx (<model>.bones.txt beside it pairs its joints)
+└── mdl/<model>.gltf               # a model -- or .glb, .fbx, or KH2's .mdlx (<model>.bones.txt beside it pairs its joints)
 ```
 
 `<file>` is the game file the graphic is loaded from and `#<entry>` its
@@ -609,10 +615,14 @@ the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is
 converted to glTF's metres and Y up, so the same model measures the same in
-either. Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
+either. A KH2 model (`.mdlx`, from your KINGDOM HEARTS II copy) comes with its
+own textures, its bones named `kh2_<index>`, KH2's centimetres made metres
+([`docs/KH2_MODELS.md`](docs/KH2_MODELS.md)). Its textures are PNG, JPEG, TGA or BMP, embedded or beside it -- one
 the file stores under another machine's path is found by its name beside the
 model -- and one that is missing is drawn white and named once in the log.
-The model's own animations are not used: the game's move it. While a mod's graphics are drawn,
+The model's own animations are not used: the game's move it. A model can also
+simulate its coat, cords and hair over that animation, set up in a text file
+beside it ([`docs/SECONDARY_MOTION.md`](docs/SECONDARY_MOTION.md)). While a mod's graphics are drawn,
 the 3D and the 2D's blending and brightness work in 8 bits a channel instead
 of the DS's 6 and 5. A file that cannot be used is named once in the log,
 and the original is drawn.
@@ -881,7 +891,7 @@ the connection error -- the port boots it again in the same window.
 | Path | What it is |
 |---|---|
 | `port/` | The port. `build.py` builds it; `tools/prepare.py` turns the decompilation's C into the game's PC sources |
-| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
+| `port/runtime/` | The game's side: what stands in for the DS while the game runs. `core/` memory, I/O registers, events, clock, ARM7, threads, overlays, ROM and files, logs; `input/` the controls as the game reads them; `camera/` the KH2 camera; `display/` each frame handed to the window; `sound/` the game's sound driver; `net/` the multiplayer session; `menus/` the port's menus over the game's; `movies/` the game's movies and their HD or mod replacements; `mods/` textures, models and 2D sheets mods replace; `scripts/` gameplay mods' Lua scripts, each in its own sandbox |
 | `port/host/` | The PC's side. `app/` window, devices, profile, audio out; `render/` the graphics card and the one-screen picture; `screens/` the port's own screens; `settings/` the settings menu; `net/` sockets; `movies/` video decoding |
 | `port/hal/` | The NitroSDK's hardware layer, in C |
 | `port/gfx/`, `port/gpu/` | The 2D's description and composition and the 3D's geometry; the DS's graphics engines in software, the reference the picture is checked against |

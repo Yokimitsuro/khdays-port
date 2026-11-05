@@ -186,6 +186,44 @@ a pixel of its own ID. A mask reaching a pixel after any other polygon starts
 from no mark there, so one volume's marks where its shadow did not draw shade
 nothing of the next.
 
+### Clip volumes
+
+A mod model's `clip_world` group (SECONDARY_MOTION.md) sends a closed volume, the
+coat's, as triangles flagged `KHDAYS_G3D_CLIP`, both sides, first in the drawing
+order, and the model's own polygons flagged `KHDAYS_G3D_CLIP_OWNER`
+(`khdays_g3d_set_clip_owner` around its meshes). The volumes are not drawn as
+polygons: as `raster3d.hlsl` goes through a pixel's polygons it keeps the
+nearest depth of the volumes' triangles covering it, and where two or more do,
+any later polygon that is not an owner's, the HUD's, a sequence or a marker is
+left out behind that depth -- inside the volume, or behind it, where the coat's
+far wall would hide it. Where the volume's nearest depth lies before the rear
+plane, the pixel starts as the coat's inside: black, under everything drawn after
+the volumes, so a translucent effect in front blends over it as over any surface
+(painted after the polygons, it covered the effects, and the coat under them
+wherever an effect had blended last). Its depth stays the rear plane's for the
+coat to draw on; if no polygon writes a depth there, the inside is the surface:
+the volume's nearest depth, with the last owner polygon's ID and fog (leaving out
+only what lay inside the volume showed whatever was behind it: the rear plane, or
+the room under a bed through the crack along its quad's diagonal). A volume's triangles cover a target
+pixel more on each side than a drawn polygon does: two of them sharing an edge
+could leave a pixel to neither, and a pixel that misses the volume's front shows
+the room through it (a dashed line across the coat's inside); a pixel covered
+twice changes nothing. So the room inside a coat is not
+drawn and the coat's inside shows there, while a wall in front of the coat lies
+before the nearest depth and still covers it; the order of the list does not
+matter. Two volumes a pixel shows act as one from the nearest (the room behind
+the nearer model is left out, as it is behind its coat). The software rasterizer (`gpu3d.c`) draws no mod model and
+so no volume. The cost is a volume's triangles (about a hundred) in the tiles it
+covers.
+
+The optional **Enhanced character shadows** setting replaces that footprint on
+the GPU with a softened overhead silhouette of the current model pose. It uses
+the original shadow's color, opacity and receiver height range, including mod
+model geometry and equipped weapons. NPC and enemy flat shadow materials also
+use this path, retaining native visibility, tint and opacity. See
+[CHARACTER_SHADOWS.md](CHARACTER_SHADOWS.md) for the hooks,
+projection and mask passes, fallback behavior, provenance and validation.
+
 ## On the graphics card
 
 The GPU device is made with every shader format the build carries
@@ -324,7 +362,117 @@ K_j = T(where its head is now) x linear(D_G) x C_j x T(-head_j): its rest turned
 by C_j (the rest pose correction, for a T-pose unlike the game's), then as the
 game turns G; its head is where its parent's K puts it, so the mod keeps its
 own proportions. A joint at G's place with no correction is drawn with D_G
-itself; one that follows no node moves with its parent. A mesh is drawn both
+itself; one that follows no node moves with its parent. C_j turns a joint at
+rest when its way to its one following child points more than 20 degrees from
+the game's; `pose_degrees <n>` in `<model>.bones.txt` sets that threshold for
+the model (KH2's Roxas: legs hanging straight against Days' 10-11 degree splay
+came out with the ankles crossed under 20). `ik <upper> <lower> <end>` bends a
+two-bone limb of paired joints after that, so the end reaches as the game's
+nodes reach: the target is the game's end node seen from its upper node, scaled
+by the two limbs' lengths, bent in the plane of the game's middle node (the law
+of cosines about an up vector, as KH2's `Motion::calcIKJoint`); the upper and
+lower joints are swung to it, keeping their nodes' twist. `ik ... exact [<x> <y>
+<z>]` aims the end at the game's end node itself instead (plus an offset, in
+centimetres on the rest axes, turned as that node turns), so what the game's
+animation puts in contact stays there: a hand on a bed, a foot on the floor. The
+scaled limb missed it: KH2 Roxas's shoulders stand 8.5-10 cm over Days' and his
+arms are 7-9 % longer, so even at rest his hands hung 5-8 cm from the game's. For
+the feet the offset keeps the soles together: KH2's ankle stands 15.1 cm over its
+sole and its heel reaches 8.6 cm behind it, Days' 9.3-10.0 and 10.2-10.6, so
+`exact 0 5.0 1.6` (roxas_b_h) and `0 5.7 2.0` (e_rox_hb). It trades the bend for
+the place: over the 161 cutscene animations of `mi/mo/ro.p2` on e_rox_hb (scale
+0.93), where the game bends more than 10 degrees, the exact hand lands 0.7 cm
+from the game's (p90 3.8) with the elbow 18 degrees straighter (p10 40), the
+scaled one 5.2 cm (p90 11) with the game's bend; the feet 0.0 cm with the knee
+11 degrees straighter, scaled 3.3 cm (p90 9). KH2's shoulders follow his own
+torso, 2.4 cm over the game's (+-4.7 by pose), which put the exact hand out of
+reach in 54 % of arm frames (the elbow locked straight) and a hand brought to
+the chest inside his; so the arms keep the scaled reach and the legs `exact`. `align <joint> foot|hand`
+turns an end whole onto the game's at rest by its shape, the vertices weighted
+to the joint and its unpaired children against those of its node: a foot about
+the vertical by the way to its front fifth, a hand by the way to its far fifth
+(the fingers) and its flattest axis. The rest correction above only turns a bone
+toward its one paired child, never about itself, and hands, feet and the head
+have none, so each copied the game's turn from rest onto a rest that differed:
+Days' feet stand 11.7-12.5 degrees toed out where KH2's corrected 4.5, and the
+flat of the hand was 27-31 degrees off (fingers 11-12), in every pose. The joints
+then carry what the game attaches to its nodes: `NNS_G3dGetResultMtx`, which
+`Obj_RenderModel` and `Scene_DrawNode` read after the draw to place a model's
+attached objects (a held prop), returns for a replaced model each node's frame
+where the joint of that node, or of its nearest ancestor with one, carries it
+(the joint's frame turned to the node's as at rest, then the node's rest place
+under it; a `weapon` line's turn for its node); the game's own nodes were
+otherwise followed (`models.cpp` `khdays_models_result_matrix`). `scale <n>` sizes
+the model and, through the root node it is placed on, its KH2 motions (their
+`offset`s too) and its secondary motion (which simulates in the model's own
+units); an `ik exact` offset scales with it, and what the game attaches (a
+`weapon` line, the result matrices) keeps the game's size. The cutscene Roxas
+(`e_rox_hb`) is 0.93: game/KH2 height 0.95, shoulders 0.93, arms 0.93, head
+joint 0.91, legs 0.89, hip joint 0.83 (one scale cannot match his short legs; the
+upper body, where cutscenes touch things, does). `twist <joint> <by joint> <axis
+from> <axis to> [<share>]` turns the joint and those under it about the way from one
+joint to the other (at rest, as the joint's parent carries it) by a share (default 1)
+of the other joint's twist about it against that parent (past 135 degrees eased back to none at half a
+turn, where +180 and -180 degrees are one pose: passing it flipped the cuff a whole turn in a frame), after the pose and before
+the secondary motion (`models.cpp` draw, `kh2::twist_about` / `twist_turn`): N_EX830's
+cuffs ride the wrist (113: the sleeve's last ring on 115 and the cuff on 116), and
+P_EX110's motions and Days' animations turn the hand alone, so `twist kh2_114 kh2_133
+kh2_112 kh2_113` (and 231 250 229 230) turns them with it. `mesh_scale <joint>
+<x> <y> <z>` scales that joint's own vertices in its own rest axes, applied last
+(skin x B x S x inverse(B), B its rest frame): its bone, its children, the
+weapons and the secondary motion's colliders keep their sizes (the secondary motion
+runs on the unscaled skin; its colliders are sized in its own file). roxas_b_h's
+pelvis, kh2_2, is 0.9 along its y, which points backward, to keep the butt under
+the coat. A 0 is drawn as a
+thousandth, so the normals stay finite.
+`hide <joint>... from <top> to <bottom> [fade <length>]` (the model's own
+centimetres at rest) leaves out what those joints carry most between the two
+heights and fades it back in below over `fade`: a triangle with a hidden corner is
+dropped (but at the bottom edge, within `fade` of it, where it fades from clear: a
+faded top edge showed the hips through the coat), one in the fade goes to a blended mesh of its own (the same picture, its vertex
+alpha the fade's), the rest stay as they were (the whole body blended would be
+drawn translucent, its parts covering each other wrongly). e_rox_hb: `hide kh2_2
+kh2_5 kh2_6 kh2_14 kh2_15 from 99 to 35 fade 8`, its legs from below the coat's
+waist ring down to halfway down the calves, fading into the coat's dark inside
+(206 triangles dropped, 28 fading).
+`place <joint> [<x> <y> <z>]` puts a paired joint on its game node's own place
+(plus the offset, the game's centimetres in the node's rest axes) instead of where
+its parent carries it, and the bone above it, when that is its only paired child,
+swings and stretches along itself to reach it, with the unpaired joints riding it
+(a twist bone); a limb with a placed joint is not reached (`ik`). e_rox_hb places
+its elbows and hands, so a hand the cutscene brings to the chest lands where the
+game's does; its legs keep `ik exact`. Placing its shoulders tore them from the
+chest (the clavicle swung out to the game's shoulder, the chest and hood stayed on
+KH2's torso). A bone with several paired children (the pelvis) is not stretched.
+`spine <base> <end> [hips <joint>]` makes the torso follow the game's: the base
+goes where the game node of the chain's first paired joint carries it (the whole
+body with it), and the chain, as the game's turns pose it, is turned about the base
+onto the end's place and every bone lengthened or shortened alike to reach it: the
+game's curve kept. Bending it further instead (FABRIK) folded it over in close
+reaches, a turn of 5-23 degrees past the game's own in 59 of 5933 stored frames;
+lengthened, 17, all inside the game's own fast turns of 45-66 degrees. `hips`: the
+pelvis (that joint's nearest paired joint above) turned as the base's node, then
+swung and stretched so the joint is where the pelvis's own node carries it. The
+joints off the chain are posed again from their parents, so the shoulders and
+head keep the game's turn from wherever the bent spine puts them
+(`models.cpp` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. Over the
+161 cutscene animations its neck was 3.7 cm from the game's (p90 13.5, max 36) and
+its shoulders 4.9 (max 36); bent, the neck 0.0 (max 0.4), the shoulders 2.5 (max
+6), the chest 0.3; the spine 0.94-1.28 its length (1st-99th percentile, max 1.36). On the
+game's pelvis the waist needed up to 1.9; on its lower spine (`Bip01_Spine`,
+81 cm, where the game bends, below KH2's waist at 99) 0.88-1.05, and the pelvis
+turned as that node puts the hip joint within 0.6 cm (median, p90 5) of the
+game's pelvis's carry, the swing a median 2 degrees (max 21; turned as the
+game's pelvis it would be 10, max 110). The legs cannot match: at 0.93 KH2's
+hip joint stands at 82.3 cm and its knee at 51.2, the game's at 73.1 and 44.8
+(KH2's ankle stands 5 cm higher in its boot, its thigh is 31.1 cm to 28.7, its shin
+37.6 to 37.2), so with the soles on the game's (`ik exact`) KH2's knee is 7.0 cm
+from the game's (median, max 15.5), outside the game's coat. So e_rox_hb places
+its hips, knees and ankles on the game's leg nodes (`place kh2_5`, `kh2_6`, `kh2_9
+0 5.3 1.86`: the ankle's offset keeps KH2's sole on the game's), each thigh and
+shin stretched or shrunk to reach; its coat is locked on the game's coat
+(SECONDARY_MOTION.md, `game_shape`), which then always covers its legs. A mesh
+is drawn both
 sides or front only as its file says (glTF `doubleSided`; FBX both), unless
 `<model>.bones.txt` says `cull back` or `cull none`. The game's own shapes are
 left unsent but for those `keep <node> ...` names: a shape whose vertices all
@@ -343,7 +491,8 @@ the clip volume but for the game's far plane, which neither cuts nor hides them
 floor, a few large triangles, went at once); what lies past it is drawn at its
 depth (`gfx/g3d_geometry.c` `finish_mod_polygon`). A room of a mission world
 whose world the same mod replaces is drawn with HD graphics off too: its new
-ground is played either way.
+ground is played either way. A KH2 model (`.mdlx`) is imported into the same
+neutral form, its bones as the joints (`KH2_MODELS.md`).
 
 **A model that moves by itself** (`runtime/mods/room_animation.cpp`; the
 studio's KH2 rooms are made so). Its glTF's own animations move its nodes: a
