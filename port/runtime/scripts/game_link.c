@@ -183,7 +183,7 @@ int khdays_link_mission(void)
     if (khdays_link_scene(NULL) != FIELD_SCENE) {
         return -1;
     }
-    return *(const volatile unsigned short *)KHDAYS_W(KHDAYS_DS_data_0204c23c);
+    return *(const volatile unsigned short *)KHDAYS_W(KHDAYS_DS_gMissionNumber);
 }
 
 unsigned khdays_link_seat_actor(int seat)

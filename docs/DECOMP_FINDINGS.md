@@ -19,7 +19,7 @@ overlay). Names are the decomp's own at the revision below. Sections marked
 *generated* are refreshed by `python port/tools/decomp_findings.py`.
 
 <!-- BEGIN generated:revision -->
-Checked against khdays-decomp `a4891aa59`.
+Checked against khdays-decomp `93535afd7`.
 <!-- END generated:revision -->
 
 ## 1. Open
@@ -177,19 +177,7 @@ the port follows its names since. Left open:
   bottom screen shows +8 as PLATINES (157,458 on the maintainer's save) and
   +0xc as PUNTOS CORAZÓN (46,509). Same finding.
 - The missions' list (`UI/cm/msl_&.msi.z`, `docs/RUNTIME_MAP.md` 29), found for the port's new missions,
-  2026-10-24:
-  - `Ov008_BuildRecordNode`'s source is a list record (`MissionListRecord`: `+2` fileNumber, `+4` missionNumber,
-    `+6` firstDay, `+8` lastDay, `+0xa` category, `+0xc` hidden, `+0xe` shownNumber, `+0x10` tier, `+0x18`
-    timeLimitSeconds, `+0x23` kind, `+0x28` rewardKind, then four texts: name, briefing, objective, format), its
-    node `MissionListEntry` (`+0` fileNumber, `+2` missionNumber, `+4` category, `+6` shownNumber, `+0x18` kind,
-    `+0x3c`-`+0x48` the texts). The decomp's `Ov008MissionListEntry` calls `+4` `nTextSlot`/`nSlot` and `+6`
-    `nRank`; `Ov008_CalcMissionCompletionPercent`'s `statusFlags` at `+0x18` is the kind (`& 3`: kinds 1 and 2).
-  - The game state's 4 bits at `0x92b + 4n` (`FIELD_MISSION_REWARDS` in `Ov008_DrawMissionRow`) open mission n's
-    rows, a bit for each kind; status `0x28e4 + 3n`, crown `0x2a4c + 3n`, Mission Mode rank `0x2ca4 + 3n`.
-  - `Ov008_AnyEntryFlagged` decides between the list of rows and the tutorial's alone.
-  - `Ov002_SpawnStateSpots` takes the emblems' set by the field's key (the mission's file) but their bits at
-    `0x92b + 4 x data_0204c23c`, the mission's number; an `evi` row's bit is 0, 1 or 3 (the list's kinds 1, 2
-    and 4), its s16 at +2 is 1 for the bit-3 ones.
+  2026-10-24: `Ov008_AnyEntryFlagged` decides between the list of rows and the tutorial's alone.
 - The characters (2026-10-28):
   - `Ov022_RunContactMode0`'s `ScaledFanSlot.nFace` (+0x00) is the hit's damage factor (fx32, given to
     `Ov022_ComputeStrengthDamage`), not a face; with `Ov022_UnpackChannelGrid`'s `Channel` it is `nA`, whose
@@ -302,6 +290,17 @@ Taken up (for the record of what the old names were):
   (`Ov002_FormatResultLine`: `Ov002_FormatEventScriptName`) and the game's heaps (`data_0204c024`,
   `data_0204c02c`, `data_0204c044`, `data_0204c030`, `func_ov001_0204cf5c`: `gMainHeap`, `gSubHeap`,
   their handles `gMainHeapHandle`, `gSubHeapHandle`, `Ov001_InitGameHeaps`).
+- Later on 2026-11-05 (`-4.tsv`, `-5.tsv`): the Shadow's sink and rise in its copies (ov244, ov277: `*_AiEnterFadeIn`,
+  `*_AiEnterFadeOut`, `*_FadeInSubObject`, `*_EasePursuitSpeed`, `*_AiFadeInTick`, `*_AiFadeOutTick`: `*_AiEnterSink`,
+  `*_AiEnterSinkAndStay`, `*_SinkIntoGround`, `*_RiseFromGround`, `*_AiRiseTick`, `*_AiSinkTick`) and the Mega and
+  Gigas Shadows' height scale (ov181-184, ov250, ov251: `*_AiRiseTick`, `*_AiRiseSlowTick`, `*_AiSinkTick`); the
+  seat's HP gauge (`Ov002_GetPanelWord0220Alt`, `_Idx`: `Ov002_ShowSeatHpGauge`, `Ov002_GetSeatHpGauge`);
+  `Ov008_SetupItemMenu` (`Ov008_Config_Setup`); `data_0204c23c` (`gMissionNumber`); a mission's badges
+  (`*_BuildRankMask`, `*_BuildRankMask2`: `*_BuildBadgeMask`, `*_BuildBadgeMask2`; `FIELD_MISSION_REWARDS`:
+  `FIELD_MISSION_BADGES`, with `FIELD_MISSION_STATUS`, `_CROWNS`, `_MODE_RANK`); the missions' list record and
+  node (`Ov008MissionListRecord`, `Ov008MissionListEntry`'s `nCategory`, `nShownNumber`; `nKind`, which
+  `Ov008_CalcMissionCompletionPercent` tests, and `Ov002_SpawnStateSpots`' badge bits); the enemy's hooks
+  (`func_ov107_020c6624`: `Ov107_AiState_Init`; `Ov244_RelaySlotEvent`, `Ov277_RelaySlotEvent`: `*_SetAttackPower`).
 
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 

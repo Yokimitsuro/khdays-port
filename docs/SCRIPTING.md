@@ -384,7 +384,7 @@ print(memory.u32(state + 0xc) == game.munny)  -- its munny (+0xc), as game.munny
 Where things are:
 
 - **Main RAM** (0x02000000 to 0x02400000) holds the game's objects at the addresses the decompilation
-  gives them: `gGameState` at 0x0204be18, `data_0204c23c` at 0x0204c23c. An overlay's objects are
+  gives them: `gGameState` at 0x0204be18, `gMissionNumber` at 0x0204c23c. An overlay's objects are
   there only while it is loaded (`memory.loaded`); other overlays use the same addresses.
 - **The game's heaps** are the port's own: the main heap from 0x20000000, the sub heap from 0x30000000,
   the headers' heaps from 0x02800000. A block is not where it would be on a DS or an emulator, but the

@@ -2579,7 +2579,7 @@ the five walks every 300 frames (Release, 2026-10-04):
   count, then records led by their u16 size -- +2 the room key (the word the
   list starts the mission with, `data_0204c240` +2), +4 the mission's number,
   +0xc 1 for a record the list does not count, +0x23 the kind: 0 the mission,
-  1 its ordeal badge, 2 its blazon, 4 its unity badge; `Ov008_BuildRankMask`
+  1 its ordeal badge, 2 its blazon, 4 its unity badge; `Ov008_BuildBadgeMask`
   sets bit kind - 1 for every record of the room key. 82 room keys have
   badges: the ordeal badge only, the unity badge only, both, or all three
   (the blazon's record carries the challenge's number, 100 + the mission's).
@@ -4189,7 +4189,7 @@ the same in ov008). The port reads that bit for the rows it shows and dims their
 Tutorials DOWN to Config and Save and back; the maintainer's save (day 357) none.
 
 **The Preferences page** (both camps' screen 5: `Ov025_Config_Setup`,
-`Ov008_SetupItemMenu`) keeps in the screen's state (the context's +0x959c, as
+`Ov008_Config_Setup`) keeps in the screen's state (the context's +0x959c, as
 the menu's) +0 the tab shown, +2 its list of tabs (0 the story's, 1 Mission
 Mode's; 2 has the first two tabs only), +0x4c the setting the cursor is on,
 +0x4e each setting's value (two bytes each; `Ov025_Config_LoadValues` fills
@@ -4658,7 +4658,7 @@ with `KHDAYS_TRACE_MODS=1`, the example mods (`port/mods_examples`) and the walk
 - **The field begins**: `Ov002_ConstructGameplayScene`, again after Retry. `Ov002_BeginMissionRun`
   starts a run of it more than once a mission (its gameplay state 2 entered again: mission 94 started
   two runs 32 frames apart), so the mission's start is the first run after the field is made. In
-  Story Mode the Grey Area is a field too: walking into it raised a start with `data_0204c23c` 0.
+  Story Mode the Grey Area is a field too: walking into it raised a start with `gMissionNumber` 0.
 - **The results**: `Ov005_CommitMissionResults` runs after a give-up as well (mission 94 given up
   from the pause: rank -1, `rewardMode` not 255), with flag 0x2087 (`Ov002_RetireSubFlow`) set from
   the game over on. A cleared or lost mission is not traced yet.
@@ -4846,7 +4846,7 @@ Read in the decompilation, then traced with `KHDAYS_TRACE_ENEMIES=1` (2026-10-22
 - **A Shadow starts flat** (ov114): made, its height scale (`+0x390`, 0x1000 whole) is 1, a dark
   shape on the ground (`Ov114_InitNodeAndRegisterHandlers`), and it waits for its +0x60 bit 0
   (`Ov114_SetVisFlagsEnterState`); then its stored action, its entry (`+0x1c9`, the spawner's slot's
-  `+3`; 1 as it is made, `func_ov107_020c6624`), is queued and any action but 0 gives it its whole
+  `+3`; 1 as it is made, `Ov107_AiState_Init`), is queued and any action but 0 gives it its whole
   height (`Ov114_DispatchSubStateByte`). Entry 1 makes it flat again and lets it rise in about a
   second (`Ov114_AiTargetAndFace`, `Ov114_AiRiseTick`), 2 sidestep at its height
   (`Ov114_StartSidestep`), 6 a dark shape that bounces out (7, `Ov114_BounceEntry`). While flat or sunk
@@ -4913,7 +4913,7 @@ units along x, then kept within 6 units of a point while chasing enemies.
 ## 23. The player's defeat and how a run ends
 
 Read in the decompilation, then traced in the game (2026-10-22: the play walk opening
-mission 2 with `KHDAYS_TEST_EVENT=2/0` -- Mission Mode, `data_0204c23c` still 94 -- with the test mod
+mission 2 with `KHDAYS_TEST_EVENT=2/0` -- Mission Mode, `gMissionNumber` still 94 -- with the test mod
 `port/tests/mods_v2/last-stand`, and the mission walk's give-up).
 
 - **A hit on the player** comes through `Ov022_ReceiveHit(actor, request)` on the host alone: the
@@ -4957,7 +4957,7 @@ Read in the decompilation, then traced with `KHDAYS_TRACE_UPDATES` and `KHDAYS_T
 - **The player's way in**: Holo-Missions (the menu's first option) opens the list of a world's
   missions (the play walk's save: Villa Crepúsculo, "Tutorial del modo Misión"); A shows its details,
   A asks "¿Emprender esta misión?" (No by default), LEFT and A answer Yes:
-  `Ov008_StartSelectedMission` writes the mission (`data_0204c23c` its Mission Mode number,
+  `Ov008_StartSelectedMission` writes the mission (`gMissionNumber` its Mission Mode number,
   `data_0204c240` the field record: flags 0xf alone, 0x13, the mission file, kind; the thresholds at
   `data_0204c254`). Back on the menu the camp shows "MISIÓN ACEPTADA, Pulsa START" -- alone, with no
   flag the port's view reads (0x200c stays clear) -- and START leaves for the field. The list of
@@ -4968,7 +4968,7 @@ Read in the decompilation, then traced with `KHDAYS_TRACE_UPDATES` and `KHDAYS_T
   `Ov002_ConstructGameplayScene` (as `KHDAYS_TEST_EVENT` does). Seen: asked at the camp's arrival,
   Holo-Missions 90 game frames later, the list 45, the details 45, Yes 57, START 45, the field 78 later
   with the record `0f 13 02 00 00 00 04 00` -- mission file 2 in place of the tutorial's 10, its first
-  area's Shadows -- and `data_0204c23c` the tutorial's 94 (the results' mission).
+  area's Shadows -- and `gMissionNumber` the tutorial's 94 (the results' mission).
 - **Leaving** as the pause's Give Up does: `PauseMenu_ConfirmFrame`'s Yes on the entry calls
   `Ov002_PauseMissionScene` (the field's root `+0x8b64` bit 0, `+0x8b68` |= 0x10) and sets game field
   0x20ef; the field's session tick then goes through the game over's sub-flow (ov027, flag 0x2087) to

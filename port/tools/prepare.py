@@ -2359,8 +2359,8 @@ HOOKS["ov022@0208a830"] = [
 
 
 def _magic_track_reads(signature: str, field: str, as_type: str = "") -> list[tuple[str, str]]:
-    """A handler of the magics reading the pool's level animation entry (its `pCtx->nTrack`, `->pOwner` or
-    `->pTrack`, of type `as_type`): the port's."""
+    """A handler of the magics reading the pool's level animation entry (its `pCtx->pLevelAnim`, of type
+    `as_type`): the port's."""
     read = "khdays_magic_track((unsigned)pCtx)"
     return [
         (signature, "extern int khdays_magic_track(unsigned int pool);\n" + signature),
@@ -2369,17 +2369,17 @@ def _magic_track_reads(signature: str, field: str, as_type: str = "") -> list[tu
 
 
 for _key, _signature, _field, _type in (
-    ("ov022@0208e404", "void Ov022_ArmSlotAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208f888", "void Ov022_EnterBlockReaction(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208de14", "void Ov022_EnterReactionAtActor(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208c9b4", "void Ov022_EnterReactionAtOffset(struct ReactionCtx *pCtx)\n", "nTrack", ""),
-    ("ov022@0208fe40", "int Ov022_StepReaction(struct ReactionCtx *pCtx, int nDelta)\n", "nTrack", ""),
-    ("ov022@0208eee8", "void Ov022_EnterChainReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208f2d4", "void Ov022_EnterGroundReaction(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208b848", "void Ov022_LaunchSlotPart(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208be38", "void Ov022_LaunchSlotPartArc(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208d764", "void Ov022_LaunchSlotPartFlat(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
-    ("ov022@0208cfbc", "void Ov022_LaunchSlotPartTracked(struct ReactionCtx *pCtx)\n", "pOwner", "void *"),
+    ("ov022@0208e404", "void Ov022_ArmSlotAtActor(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208f888", "void Ov022_EnterBlockReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208de14", "void Ov022_EnterReactionAtActor(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208c9b4", "void Ov022_EnterReactionAtOffset(struct ReactionCtx *pCtx)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208fe40", "int Ov022_StepReaction(struct ReactionCtx *pCtx, int nDelta)\n", "pLevelAnim", "u8 *"),
+    ("ov022@0208eee8", "void Ov022_EnterChainReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208f2d4", "void Ov022_EnterGroundReaction(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208b848", "void Ov022_LaunchSlotPart(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208be38", "void Ov022_LaunchSlotPartArc(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208d764", "void Ov022_LaunchSlotPartFlat(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
+    ("ov022@0208cfbc", "void Ov022_LaunchSlotPartTracked(struct ReactionCtx *pCtx)\n", "pLevelAnim", "void *"),
 ):
     HOOKS[_key] = _magic_track_reads(_signature, _field, _type)
 # The panels' pictures loaded (the camp's two menus, the results): the clock Stop's panels show, in the magics' purple.
@@ -2407,7 +2407,7 @@ HOOKS["ov005@02052a7c"] = [  # Ov005_AllocateResultTextures
 ]
 # The cast's message (kind 0xc, its slot in five bits) carries the cell, Stop's level with it: a copy that receives
 # it takes Stop's place and that level, as the caster's does (Ov022_SetRecordValue).
-HOOKS["ov022@0208a2b4"] = _magic_track_reads("void Ov022_OnEndMessage(struct EndMessage *pMsg)\n", "pTrack", "u8 *") + [
+HOOKS["ov022@0208a2b4"] = _magic_track_reads("void Ov022_OnEndMessage(struct EndMessage *pMsg)\n", "pLevelAnim", "u8 *") + [
     (  # Ov022_OnEndMessage, a cast begun on another copy: its slot
         "        pCtx->nSlot = pMsg->nSlot;\n",
         "        { extern int khdays_stop_record(unsigned int pool, int value);\n"
@@ -2541,7 +2541,7 @@ HOOKS["ov022@0209045c"] = [
         "extern int khdays_magic_track(unsigned int pool);\n"
         "void Ov022_StepReactionState(struct ReactionCtx *pCtx, int nDelta)\n",
     ),
-    ("pCtx->pOwner", "((void *)khdays_magic_track((unsigned)pCtx))"),
+    ("pCtx->pLevelAnim", "((u8 *)khdays_magic_track((unsigned)pCtx))"),
     (  # the cast slot's step, Stop's Cure's
         "data_ov022_020b2a5c[pCtx->nSlot]",
         "data_ov022_020b2a5c[pCtx->nSlot == 15 ? 12 : pCtx->nSlot]",
@@ -4788,7 +4788,7 @@ PORT_DS_SYMBOLS = (
     # count, the current mission, the sound manager (its track playing)
     "gGameState",
     "gObjSystem",
-    "data_0204c23c",
+    "gMissionNumber",
     "gSoundMgr",
     # the room's rules, friendly fire first (runtime/battle/stop_magic.c)
     "data_0204c248",

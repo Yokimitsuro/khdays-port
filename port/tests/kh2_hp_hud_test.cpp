@@ -129,7 +129,7 @@ unsigned Session_GetLocalPlayerIndex(void)
 {
     return 0;
 }
-int Ov002_GetPanelWord0220Idx(int)
+int Ov002_GetSeatHpGauge(int)
 {
     return slot;
 }

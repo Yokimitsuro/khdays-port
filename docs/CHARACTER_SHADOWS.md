@@ -89,7 +89,7 @@ Days integration was researched against `khdays-decomp` commit
 - `ShadowVolume_Draw` (`main@0202df34`): native mask ID 0 and shadow ID 63.
 - `NNS_G3dGlbFlushP`: camera/base transforms in the projection stack.
 - `Obj_RenderModel` (`main@0203bc78`): ModelObj draw and parent association.
-- `func_ov107_020c6624` (`ov107@020c6624`): enemy model tree at +0x9c and
+- `Ov107_AiState_Init` (`ov107@020c6624`): enemy model tree at +0x9c and
   separate flat shadow object at +0x1a8; `Ov107_DestroyObject`
   (`ov107@020c68ec`) releases the association before shadow destruction.
 - `NNSi_G3dFuncSbc_SHP` (`itcm@01ffc0d0`): current material at SBC state

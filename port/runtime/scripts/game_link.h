@@ -46,7 +46,7 @@ void khdays_link_set_item(int id, int count);
 int khdays_link_flag(int n);
 void khdays_link_set_flag(int n, int on);
 
-/* The current mission (data_0204c23c) while the field is the scene; -1 otherwise. */
+/* The current mission (gMissionNumber) while the field is the scene; -1 otherwise. */
 int khdays_link_mission(void);
 
 /* The local player's battle actor is GetEntryField20ByIndex(Session_GetLocalPlayerIndex()): the field

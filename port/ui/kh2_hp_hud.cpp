@@ -18,7 +18,7 @@ extern "C" {
 int khdays_settings_game_language(void);
 int khdays_overlay_loaded(int);
 unsigned Session_GetLocalPlayerIndex(void);
-int Ov002_GetPanelWord0220Idx(int);
+int Ov002_GetSeatHpGauge(int);
 }
 
 #include <algorithm>
@@ -151,7 +151,7 @@ extern "C" void khdays_ui_kh2_hp_frame(unsigned frame)
         last_frame = frame;
         return;
     }
-    gauge_slot = Ov002_GetPanelWord0220Idx(int(Session_GetLocalPlayerIndex()));
+    gauge_slot = Ov002_GetSeatHpGauge(int(Session_GetLocalPlayerIndex()));
     valid = gauge_slot >= 0 && gauge_slot < 4;
     if (!valid) {
         if (was)

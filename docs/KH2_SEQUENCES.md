@@ -210,7 +210,7 @@ avoiding a fractional crack between the rotated and rectangular masks.
 The original fill is identified from `Ov002_InitGauges`' offsets and lengths,
 `Ov002_TickScene`'s queue 7 upload, and the transfer table at `data_02041934`
 (queue 7 is `GX_LoadBG3Char`). The local slot is
-`Ov002_GetPanelWord0220Idx(Session_GetLocalPlayerIndex())`. The static frame/label
+`Ov002_GetSeatHpGauge(Session_GetLocalPlayerIndex())`. The static frame/label
 occupy the portrait's strip from y 183 down. The challenge's OBJ path is matched
 against the live gauge tiles; that path still needs an in-game challenge capture.
 
