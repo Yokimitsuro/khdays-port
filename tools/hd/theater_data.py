@@ -86,7 +86,7 @@ def lines(mare: Path, lang: str) -> dict[str, list[tuple[int, int, str | None]]]
     for event in sorted((root / "event" / name / "hd").glob("hd*/hd*.exia2")):
         out[event.stem] = [
             (first, end, None if (t := words.get((text_id >> 16, text_id & 0xFFFF))) is None else t.replace("\r", ""))
-            for first, end, text_id in tm.schedule(event, language)
+            for first, end, text_id, *_fades in tm.schedule(event, language)
         ]
     return out
 
