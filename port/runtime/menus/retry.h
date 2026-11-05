@@ -89,6 +89,12 @@ void khdays_retry_confirmed(void);
 int khdays_retry_pending(void);
 int khdays_retry_take(void);
 
+/* A camp launches a mission (Ov025_MissionList_StartMission, Ov008_StartSelectedMission): the party as it
+ * sends it, given back to a Retry. A challenge's level (data_0204c254 + 2) brings the members' stats down
+ * as the mission starts (Ov022_ApplyMissionLevelStats, over their records), and a Retry built the field
+ * again over the stats brought down: the HP maximum at 1, a hit the end. */
+void khdays_retry_mission_launched(void);
+
 #ifdef __cplusplus
 }
 #endif

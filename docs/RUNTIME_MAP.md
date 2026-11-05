@@ -2107,7 +2107,17 @@ its u16 at +0xe is 0 (`Ov002_ConstructGameplayScene`), and only the challenge's
 start copies them in, so a Retry would leave them 100 times larger each time; the
 port divides them back by 100 when it takes the Retry. Seen: targets 105 and 140,
 10500 and 14000 in play, the same after a Retry; the field again, without the
-results.
+results. And a challenge's level (`data_0204c254 + 2`) brings the members' stats
+down as the player's actor is made (`Ov022_ApplyMissionLevelStats`: the row of
+that level plus the member's bonus, written over the member's record in
+`gPartyMembers`, four of 0x104 bytes at 0x0204c678, and flag 0x20ec set so it is
+done once); the field built again clears the flag, and the stats came down a
+second time from the ones already down: the HP maximum at 1 (its floor), the
+alarm zone the whole gauge, a hit the end (players, 2026-11-04, missions 1005
+and 0304's challenges; with mission 0101's challenge given level 10: 359 HP, 89
+in the first try, 1 after a Retry). The port keeps the party as the camp sends
+the mission (`Ov025_MissionList_StartMission`, `Ov008_StartSelectedMission`) and
+gives it back with the Retry.
 
 What the pause draws is in its panel's draw entries
 (`SubObject_SetDrawParams`: the context's +0xc, then +0x18 a slot, 0x18

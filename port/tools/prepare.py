@@ -219,6 +219,23 @@ HOOKS = {
             "    pNext = 0;\n",
         )
     ],
+    # (and the party as the camp sends the mission, for the Retry to give back: a challenge's level brings the
+    # members' stats down over their records as the mission starts, and the field built again brought them down
+    # twice -- the HP maximum at 1)
+    "ov025@020a9bc4": [
+        (  # Ov025_MissionList_StartMission
+            "    pMenu = Ov025_GetPageB();\n",
+            "    { extern void khdays_retry_mission_launched(void); khdays_retry_mission_launched(); }\n"
+            "    pMenu = Ov025_GetPageB();\n",
+        )
+    ],
+    "ov008@020745c4": [
+        (  # Ov008_StartSelectedMission
+            "    pEntry = Ov008_GetNextMissionEntry_5(Ov008_GetCtxField967c());\n",
+            "    { extern void khdays_retry_mission_launched(void); khdays_retry_mission_launched(); }\n"
+            "    pEntry = Ov008_GetNextMissionEntry_5(Ov008_GetCtxField967c());\n",
+        )
+    ],
     "ov002@02068720": [
         (  # Ov002_StepSessionMenu
             "        case 0:\n            Ov002_FillMissionResult();\n",
