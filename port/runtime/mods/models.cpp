@@ -695,8 +695,9 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             if (mesh.sky != 0 && mesh.translucent == blended)
                 mesh.sky = ++sky_layer;
     // its own animation: the nodes its skinned meshes' joints are (with their parents) move; one that moves
-    // another node would move a mesh made still on loading, which is not played
-    if (!mod.animations.empty()) {
+    // another node would move a mesh made still on loading, which is not played (an own skeleton keeps its nodes,
+    // below, and plays its description's clips)
+    if (!own_skeleton && !mod.animations.empty()) {
         std::vector<char> moving(mod.nodes.size(), 0);
         for (const Joint &joint : model->joints) {
             for (int up = joint.node < 0 ? joint.room_node : -1;
