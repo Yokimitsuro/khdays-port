@@ -1050,6 +1050,8 @@ add_test(NAME khdays-onescreen COMMAND khdays-onescreen-test)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME khdays-references
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/references_test.py")
+add_test(NAME khdays-prepare
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/prepare_test.py")
 include(tests/hd_fonts.cmake)
 # The installer's tools (installer/): one test each, in Python, named after its file.
 file(GLOB KHDAYS_INSTALLER_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../installer/tests/*_test.py")

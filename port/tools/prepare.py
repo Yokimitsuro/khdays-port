@@ -5154,6 +5154,41 @@ def definitions(text: str) -> list[re.Match]:
     return out
 
 
+# A file-scope object whose definition spells out its struct or union (`struct { ... } name[2] = ...;`):
+# the type gets a name of its own (typedef), so the object reads as a definition DEFINITION_RE finds and
+# goes to its DS address like any other. Unnamed, it went to the port's data area: the game, reading it
+# by its DS address (a neighbour's index running into it), found the card's bytes there -- a US card's
+# function addresses in ov016's kickables' rows.
+OBJECT_TYPE_RE = re.compile(r"^((?:(?:const|volatile)[ \t]+)*)((?:struct|union)\b[^;{}()=\n]*)\{", re.MULTILINE)
+OBJECT_AFTER_TYPE_RE = re.compile(r"[ \t]*([A-Za-z_]\w*)((?:[ \t]*\[[^\]\n]*\])*)[ \t]*(?==|;)")
+
+
+def name_object_types(text: str) -> str:
+    """`text` with each file-scope `struct {...} name = ...;` as `typedef struct {...} khdays_type_name;`
+    and `khdays_type_name name = ...;`."""
+    changes = brace_depths(text)
+    starts = [i for i, _ in changes]
+    pieces = []
+    done = 0
+    for m in OBJECT_TYPE_RE.finditer(text):
+        if m.start() < done or changes[bisect.bisect_right(starts, m.start()) - 1][1] != 0:
+            continue
+        opened = bisect.bisect_left(starts, m.end())  # the change the type's `{` makes
+        closed = next((i for i, depth in changes[opened + 1 :] if depth == 0), None)
+        if closed is None:
+            break
+        after = OBJECT_AFTER_TYPE_RE.match(text, closed)
+        if after is None:
+            continue
+        name = after[1]
+        type_name = f"khdays_type_{name}"
+        pieces.append(text[done : m.start()])
+        pieces.append(f"typedef {m[2]}{text[m.end() - 1 : closed]} {type_name};\n{m[1]}{type_name} {name}{after[2]} ")
+        done = after.end()
+    pieces.append(text[done:])
+    return "".join(pieces)
+
+
 def statement_end(text: str, start: int) -> int:
     """Index just past the `;` that ends the declaration starting at `start`,
     skipping braces, strings and comments inside an initializer."""
@@ -5494,7 +5529,7 @@ def main() -> int:
             if rel.endswith(".cpp"):
                 new = cpp_to_c(new, rel)  # rewritten as C (T005a)
                 as_c.add(rel)
-            texts[rel] = new
+            texts[rel] = name_object_types(new)
             module_of[rel] = m.name
             compiled.append((src, rel))
 
@@ -5513,7 +5548,7 @@ def main() -> int:
         rel = path.relative_to(DECOMP).as_posix()
         if rel in listed:
             continue
-        text = transform(path.read_text(encoding="utf-8", errors="replace"))
+        text = name_object_types(transform(path.read_text(encoding="utf-8", errors="replace")))
         names = [
             n
             for n in re.findall(r"(?:^|\})[ \t\w\*]*?\b(data_\w+)\s*(?:\[[^\]\n]*\])*\s*=", text, re.MULTILINE)
