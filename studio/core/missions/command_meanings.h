@@ -25,7 +25,7 @@ struct StepMeaning {
         load_room,        // slot {0} <- room {1} (Ov002_LoadPeerIntoSlot)
         load_enemies,     // the enemy table em0 / em0m and eid.z (Ov002_LoadObjectRecordsAndDrops)
         enemy_at,         // the enemy of row {1} at source {0} (Ov002_CreateActorFromMarker)
-        spawner,          // a spawner of group {0} at ({2}, {3}, {4}), source {1} (Ov002_ScriptCreateSlotObject)
+        spawner,          // a spawner of group {0} at ({2}, {3}, {4}), source {1} (Ov002_ScriptCreateSpawner)
         go_to,            // go to {0} (ScriptCmd_SetElemOffset)
         branch_unless,    // unless {0} (the expression, or its place), go to {1} (CommitRecordCursor)
         pending_jump,     // a jump kept for later, to {0} (Game_ActionSetBranchTarget)
@@ -68,7 +68,7 @@ struct StepMeaning {
 StepMeaning step_meaning(const ScriptStep& s, const Script* script = nullptr, int language = 1);
 
 // The places a script sets, as its steps read them: the world it loads, the
-// rooms it puts in slots, its spawners (Ov002_ScriptCreateSlotObject: an enemy
+// rooms it puts in slots, its spawners (Ov002_ScriptCreateSpawner: an enemy
 // group of the mission's table at a point, 20.12).
 struct ScriptPlaces {
     int world = -1;                          // data_ov002_0207f0a4's index

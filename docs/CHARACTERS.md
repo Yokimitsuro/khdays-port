@@ -203,7 +203,7 @@ damage = 1.5                         # its Limit's damage, times its base's
   `b_ro_A004` between them (seen; `KHDAYS_TRACE_MODELS=1` names them for any base); its shouts are its base's
   attack shouts (`seqarc/PLY_ROX/vo_rs02at01`, `vo_rs02at03`), which `[sounds]` gives files of its own.
 - `[limit] damage = <times>` -- the damage of the moves its base's own code makes (the Limit's hits, and any other
-  move of the base's own: `Ov022_ScaleRowValues`), times the base's. The combos' attacks are `[moveset]`'s.
+  move of the base's own: `Ov022_ScaleMoveDamage`), times the base's. The combos' attacks are `[moveset]`'s.
 - Its effects and its animations' file are its base's, read from its base's folder (`ba/ch/ro/li*.p.z`: the
   overlay names them itself), so `data/` does not replace them.
 - Its length, its button and the way it is started are its base's.

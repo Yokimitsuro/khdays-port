@@ -28,7 +28,7 @@ extern "C" {
 #define KHDAYS_LIST_TEXTS 0x30u
 
 /* A record's kind: the story's row of a mission (its calendar's lists, by its days), Mission Mode's row of it
- * (Ov008_IsEncounterEligible), or one of its other entries there (kinds 1 and 2: not read yet, and counted in the
+ * (Ov008_IsMissionModeRowListed), or one of its other entries there (kinds 1 and 2: not read yet, and counted in the
  * camp's completion percentage, so a new mission has none). Mission Mode's rows reward by the transfer field's
  * rank. */
 #define KHDAYS_ENTRY_STORY 0

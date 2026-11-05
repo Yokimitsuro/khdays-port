@@ -1186,9 +1186,9 @@ B ov008@0205475c main@0203243c arm9_ov008::0205475e r0 <- entry:r0
 B ov008@0205475c main@0203243c arm9_ov008::0205475e r1 <- entry:r1
 B ov008@0205652c ov008@02056478 arm9_ov008::02056580 r3 <- arm9_ov008::0205656c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B ov008@020566f4 ov008@02056478 arm9_ov008::02056710 r3 <- arm9_ov008::02056700 bl 0x02056418 => 0x2056418 ov008_DestroyAllListObjects
-B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r1 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_MainMenu_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
-B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r2 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_MainMenu_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
-B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r3 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_MainMenu_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
+B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r1 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_WorldMap_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
+B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r2 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_WorldMap_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
+B ov008@0205b230 ov008@0205a8c4 arm9_ov008::0205b2d8 r3 <- arm9_ov008::0205b2c0 bl 0x0205b19c => 0x205b19c Ov008_WorldMap_InitObjectListRetry | arm9_ov008::0205b2d0 bl 0x0205652c => 0x205652c Ov008_InitMissionList
 B ov008@0205b720 ov008@0205a8c4 arm9_ov008::0205b768 r1 <- arm9_ov008::0205b760 bl 0x020566f4 => 0x20566f4 Ov008_RebuildQueryList
 B ov008@0205b720 ov008@0205a8c4 arm9_ov008::0205b768 r2 <- arm9_ov008::0205b760 bl 0x020566f4 => 0x20566f4 Ov008_RebuildQueryList
 B ov008@0205b720 ov008@0205a8c4 arm9_ov008::0205b768 r3 <- arm9_ov008::0205b760 bl 0x020566f4 => 0x20566f4 Ov008_RebuildQueryList
@@ -1208,9 +1208,9 @@ B ov024@0208349c main@02021980 arm9_ov024::0208349e r1 <- entry:r1
 B ov025@02088410 main@0203243c arm9_ov025::02088412 r1 <- entry:r1
 B ov025@0208a13c ov025@0208a088 arm9_ov025::0208a190 r3 <- arm9_ov025::0208a17c bl 0x0201ef9c => 0x201ef9c Archive_LoadFile
 B ov025@0208a304 ov025@0208a088 arm9_ov025::0208a320 r3 <- arm9_ov025::0208a310 bl 0x0208a028 => 0x208a028 ov025_DestroyAllListObjects
-B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r1 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_MainMenu_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
-B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r2 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_MainMenu_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
-B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r3 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_MainMenu_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
+B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r1 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_WorldMap_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
+B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r2 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_WorldMap_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
+B ov025@0208d730 ov025@0208cdc4 arm9_ov025::0208d844 r3 <- arm9_ov025::0208d828 bl 0x0208d69c => 0x208d69c Ov025_WorldMap_InitObjectListRetry | arm9_ov025::0208d83c bl 0x0208a13c => 0x208a13c ov025_InitObjectWithList
 B ov025@0208dc8c ov025@0208cdc4 arm9_ov025::0208dcd4 r1 <- arm9_ov025::0208dccc bl 0x0208a304 => 0x208a304 Ov025_RebuildQueryList
 B ov025@0208dc8c ov025@0208cdc4 arm9_ov025::0208dcd4 r2 <- arm9_ov025::0208dccc bl 0x0208a304 => 0x208a304 Ov025_RebuildQueryList
 B ov025@0208dc8c ov025@0208cdc4 arm9_ov025::0208dcd4 r3 <- arm9_ov025::0208dccc bl 0x0208a304 => 0x208a304 Ov025_RebuildQueryList

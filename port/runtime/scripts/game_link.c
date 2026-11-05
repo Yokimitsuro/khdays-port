@@ -283,7 +283,7 @@ const char *khdays_link_set_actor_hp(unsigned actor, int hp)
     if (actor == 0) {
         return "no player";
     }
-    /* Ov022_ActorSetHp shows the HP on the player's gauge (Ov002_GetPanelWord0220), which the field's panel and
+    /* Ov022_ActorSetHp shows the HP on the player's gauge (Ov002_SetSeatHpGauge), which the field's panel and
      * its gauges have only once they are set up: while the field loads the actor is there before them */
     if (!khdays_overlay_loaded(OV_FIELD) || !khdays_game_ram(rd32(PANEL)) || !khdays_game_ram(rd32(GAUGES))) {
         return "not now";

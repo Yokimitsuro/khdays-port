@@ -23,14 +23,14 @@ void khdays_camp_remember_entry(int story, int entry);
 int khdays_camp_restore_entry(int story, int fallback);
 void Ov008_RouteCommittedPageState(void) {}
 void Ov025_GetIdleHandler(void) {}
-int Ov008_SelectTierIfActive(int a, unsigned b, int c)
+int Ov008_Config_GetTabTitleRecord(int a, unsigned b, int c)
 {
     (void)a;
     (void)b;
     (void)c;
     return 0;
 }
-int Ov025_SelectTierIfActive(int a, unsigned b, int c)
+int Ov025_Config_GetTabTitleRecord(int a, unsigned b, int c)
 {
     (void)a;
     (void)b;

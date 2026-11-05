@@ -784,7 +784,7 @@ int khdays_characters_sound_file(int index, char *path, int size, char *name, in
     return 0;
 }
 
-/* The select's place of each game character by its data folder's number (Ov006_MenuEntryToSlot's inverse). */
+/* The select's place of each game character by its data folder's number (Ov006_SelectPlaceToCharacter's inverse). */
 static const int menu_of_base[KHDAYS_CHARACTER_BASES] = {12, 7,  1, 6, 2,  15, 8,  11, 4, 9,
                                                          10, 16, 3, 0, 13, 5,  14, 17, 18};
 

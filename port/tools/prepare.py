@@ -573,10 +573,10 @@ HOOKS = {
     ],
     "main@02023604": [  # HeapState_Recreate
         (
-            "    NNS_FndInitAllocatorForExpHeap(&s->allocator, s->heap, 4);\n}",
-            "    NNS_FndInitAllocatorForExpHeap(&s->allocator, s->heap, 4);\n"
+            "    NNS_FndInitAllocatorForExpHeap(heap->allocator, heap->handle, 4);\n}",
+            "    NNS_FndInitAllocatorForExpHeap(heap->allocator, heap->handle, 4);\n"
             "    { extern void khdays_game_heap_recreated(void *heap);  /* runtime/core/game_heap.c */\n"
-            "      khdays_game_heap_recreated(s->heap); }\n}",
+            "      khdays_game_heap_recreated(heap->handle); }\n}",
         ),
     ],
     "main@020250bc": [  # Archive_OpenSubfileByHandle
@@ -589,10 +589,10 @@ HOOKS = {
     ],
     "main@02025074": [  # Archive_SubfileIsCompressed
         (
-            "    unsigned short lo = param_1 & (mask >> 15);\n",
-            "    unsigned short lo = param_1 & (mask >> 15);\n"
+            "    unsigned short lo = handle & (mask >> 15);\n",
+            "    unsigned short lo = handle & (mask >> 15);\n"
             "    { extern void khdays_handle_check(unsigned int handle, unsigned int base);  /* runtime/core/game_heap.c */\n"
-            "      khdays_handle_check(param_1, base); }\n",
+            "      khdays_handle_check(handle, base); }\n",
         ),
     ],
     # The game's main heap (0xc8000 bytes) and sub heap (the rest of the arena), made by the port
@@ -886,9 +886,9 @@ HOOKS = {
     # in one language (runtime/core/language.c).
     "main@0202099c": [
         (  # Scene_AdvanceToPending
-            "            HeapState_Recreate(data_0204c02c);\n",
+            "            HeapState_Recreate(gSubHeap);\n",
             "            { extern void khdays_language_scene_ending(void); khdays_language_scene_ending(); }\n"
-            "            HeapState_Recreate(data_0204c02c);\n",
+            "            HeapState_Recreate(gSubHeap);\n",
         )
     ],
     # The game reads its buttons once per game frame, here (KEYINPUT and the
@@ -1755,7 +1755,7 @@ HOOKS = {
             # the render object's joint animation first (its anmJnt, +0x10): a mod character's own skeleton
             # plays its clip for it
             "    { extern void khdays_models_draw_animation(unsigned animation);\n"
-            "      khdays_models_draw_animation(*(unsigned *)(renderObj->pad08_20 + 8)); }\n"
+            "      khdays_models_draw_animation(*(unsigned *)((unsigned char *)renderObj + 0x10)); }\n"
             "    { extern void khdays_models_draw_begin(const void *model, const void *render_obj);\n"
             "      khdays_models_draw_begin(renderObj->pResMdl, renderObj); }\n"
             # the textures from the model's texture bank when its file's are past the DS's VRAM
@@ -1886,8 +1886,8 @@ HOOKS = {
             "    if (nValue != pSelf->nHp) {\n",
         ),
         (
-            "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n}\n",
-            "    Ov002_GetPanelWord0220(pSelf->nId, pSelf->nHp);\n"
+            "    Ov002_SetSeatHpGauge(pSelf->nId, pSelf->nHp);\n}\n",
+            "    Ov002_SetSeatHpGauge(pSelf->nId, pSelf->nHp);\n"
             "    { extern void khdays_scripts_hp(void *entity, int before); khdays_scripts_hp(pEnt, khdays_before); }\n"
             "}\n",
         ),
@@ -1954,9 +1954,7 @@ HOOKS = {
             "    if (need >= cap) return 0;\n    if (buf->state == 1) return 0;\n",
             "    { extern int khdays_msgframe_room(const void *buffer, int room);\n"
             "      extern void khdays_msgframe_grown(const void *old, const void *buffer, int room);\n"
-            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
-            "      extern int ExpHeap_Free(int block, int *heap);\n"
-            "      extern int **data_0204c024;\n"
+            "      extern struct GameHeap *gMainHeap;\n"
             "      if (cap == 0x1e0) {\n"
             "          cap = khdays_msgframe_room(buf->pBuffer, cap);\n"
             "      }\n"
@@ -1969,10 +1967,10 @@ HOOKS = {
             "          if (room <= need) {\n"
             "              room = 0xffe0; /* (its sizes are 16 bits) */\n"
             "          }\n"
-            "          more = need < room ? (unsigned char *)ExpHeap_AllocOrDefault((unsigned)room, 0x20, data_0204c024) : 0;\n"
+            "          more = need < room ? (unsigned char *)ExpHeap_AllocOrDefault((unsigned)room, 0x20, gMainHeap) : 0;\n"
             "          if (more != 0) {\n"
             "              MI_CpuCopy8(buf->pBuffer, more, (unsigned int)off);\n"
-            "              ExpHeap_Free((int)buf->pBuffer, (int *)data_0204c024);\n"
+            "              ExpHeap_Free(buf->pBuffer, gMainHeap);\n"
             "              khdays_msgframe_grown(buf->pBuffer, more, room);\n"
             "              buf->pBuffer = more;\n"
             "              cap = room;\n"
@@ -1987,9 +1985,9 @@ HOOKS = {
         (  # ChannelBuf_Append: the slot as large as what it holds
             "    dst = *(char **)slot;\n",
             "    { extern int khdays_msgslot_grown(const void *old, const void *buffer, unsigned int room, unsigned int need);\n"
-            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
-            "      extern int ExpHeap_Free(int block, int *heap);\n"
-            "      extern int **data_0204c024;\n"
+            "      extern void *ExpHeap_AllocOrDefault(unsigned int size, int alignment, struct GameHeap *heap);\n"
+            "      extern int ExpHeap_Free(void *block, struct GameHeap *heap);\n"
+            "      extern struct GameHeap *gMainHeap;\n"
             "      extern void MI_CpuCopy8(const void *src, void *dst, unsigned int size);\n"
             "      const unsigned int used = *(unsigned short *)(slot + 4), need = used + size;\n"
             "      if (need > *(unsigned short *)(slot + 6)) {\n"
@@ -2001,13 +1999,13 @@ HOOKS = {
             "          if (room < need) {\n"
             "              room = 0xfffc; /* (its sizes are 16 bits) */\n"
             "          }\n"
-            "          more = need <= room ? (char *)ExpHeap_AllocOrDefault(room, 0x20, data_0204c024) : 0;\n"
+            "          more = need <= room ? (char *)ExpHeap_AllocOrDefault(room, 0x20, gMainHeap) : 0;\n"
             "          if (more == 0) {\n"
             "              return; /* no room: dropped */\n"
             "          }\n"
             "          MI_CpuCopy8(*(char **)slot, more, used);\n"
             "          if (khdays_msgslot_grown(*(char **)slot, more, room, need)) {\n"
-            "              ExpHeap_Free((int)*(char **)slot, (int *)data_0204c024);\n"
+            "              ExpHeap_Free(*(char **)slot, gMainHeap);\n"
             "          }\n"
             "          *(char **)slot = more;\n"
             "          *(unsigned short *)(slot + 6) = (unsigned short)room;\n"
@@ -2017,8 +2015,8 @@ HOOKS = {
     ],
     "main@020308a0": [
         (  # Session_LayoutPacketSlots: each message's copy as large as a message's 10-bit size
-            "    ctx->scratch = AllocFromExpHeapWrapper(0x3c0, data_0204c024);\n",
-            "    ctx->scratch = AllocFromExpHeapWrapper(0x400, data_0204c024);\n",
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x3c0, gMainHeap);\n",
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x400, gMainHeap);\n",
         )
     ],
     "main@02031130": [
@@ -2685,7 +2683,7 @@ for _key in ("ov008@02074c40", "ov025@020aa298"):  # Ov008_MissionMenu_DrawInfo,
     ]
 # ... their rows in Mission Mode's list: shown by the port's own test (their numbers past the game's 900)
 HOOKS["ov008@02056048"] = [
-    (  # Ov008_IsEncounterEligible
+    (  # Ov008_IsMissionModeRowListed
         "    unsigned int bit;\n    unsigned int m;\n",
         "    unsigned int bit;\n    unsigned int m;\n"
         "    { extern int khdays_missions_eligible(const void *record, unsigned int flags);\n"
@@ -2696,7 +2694,7 @@ HOOKS["ov008@02056048"] = [
 # ... a later wave's spawners, made after their region was enabled: running as the first wave's (the port's
 # missions only)
 HOOKS["ov002@02073a10"] = [
-    (  # Ov002_CreateSlotObjectAndStart
+    (  # Ov002_CreateSpawner
         "        pCtx->pSlots[nIndex].nActiveEvent=-1;\n",
         "        pCtx->pSlots[nIndex].nActiveEvent=-1;\n"
         "        { extern void khdays_missions_spawner_made(void *node);\n"
@@ -2750,10 +2748,10 @@ HOOKS["main@0200acb0"] = [
         "        extern int khdays_rom_added_file(const char *path, unsigned int *bounds);\n"
         "        extern int FS_OpenFileDirect(void *file, void *arc, unsigned int top, unsigned int bottom,\n"
         "                                     unsigned int index);\n"
-        "        extern char data_02046334[]; /* fsi_arc_rom */\n"
+        "        extern char fsi_arc_rom[];\n"
         "        unsigned int khdays_bounds[3];\n"
         "        if (khdays_rom_added_file(path, khdays_bounds))\n"
-        "            return FS_OpenFileDirect(file, data_02046334, khdays_bounds[0], khdays_bounds[1],\n"
+        "            return FS_OpenFileDirect(file, fsi_arc_rom, khdays_bounds[0], khdays_bounds[1],\n"
         "                                     khdays_bounds[2]);\n"
         "    }\n",
     )
@@ -2892,12 +2890,12 @@ for ov, address in (("002", "020522c8"), ("008", "0208b890")):
     ]
 for ov, address in (("006", "0204d610"), ("008", "0207928c")):
     HOOKS[f"ov{ov}@{address}"] = [
-        (  # Ov00N_MenuEntryToSlot: a new character's place is its base's character
-            f"int Ov{ov}_MenuEntryToSlot(int id) {{\n    int slot = 0;\n",
+        (  # Ov00N_SelectPlaceToCharacter: a new character's place is its base's character
+            f"int Ov{ov}_SelectPlaceToCharacter(int nPlace) {{\n    int nCharacter = 0;\n",
             "extern int khdays_characters_known(int number);\n"
             "extern int khdays_characters_base(int number);\n"
-            f"int Ov{ov}_MenuEntryToSlot(int id) {{\n    int slot = 0;\n"
-            "    if (khdays_characters_known(id & 0xff)) {\n        return khdays_characters_base(id & 0xff);\n    }\n",
+            f"int Ov{ov}_SelectPlaceToCharacter(int nPlace) {{\n    int nCharacter = 0;\n"
+            "    if (khdays_characters_known(nPlace & 0xff)) {\n        return khdays_characters_base(nPlace & 0xff);\n    }\n",
         )
     ]
 # ... the seats written from the select's places: the port keeps which is a new character's
@@ -2935,8 +2933,8 @@ HOOKS["ov008@0207a424"] = [
         "static inline void Ov008_BuildGroupMessage(MissionContext *pCtx)\n",
     ),
     (
-        "pPacket[i].characterId = Ov008_MenuSlotToEntry(pInfo->nMemberKind);",
-        "pPacket[i].characterId = khdays_characters_place(i, Ov008_MenuSlotToEntry(pInfo->nMemberKind));",
+        "pPacket[i].characterId = Ov008_CharacterToSelectPlace(pInfo->nMemberKind);",
+        "pPacket[i].characterId = khdays_characters_place(i, Ov008_CharacterToSelectPlace(pInfo->nMemberKind));",
     ),
 ]
 # ... Mission Mode's camp: the chosen character's model and weapon texts from its own folder -- the local player's
@@ -2948,37 +2946,37 @@ HOOKS["ov008@0205a3dc"] = [
         "extern char gOv008BaChDefHPackPathFmt[];\n" + CHARACTER_DECLARATIONS + _LOCAL_SEAT,
     ),
     (
-        "    val = *(int *)(val + sceneId * 0x34);\n",
+        "    pszFolder = *(int *)(pszFolder + nCharacter * 0x34);\n",
         "    {\n"
-        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), sceneId);\n"
-        "        val = own != sceneId ? (int)Port_CharacterCode(own) : *(int *)(val + sceneId * 0x34);\n"
+        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), nCharacter);\n"
+        "        pszFolder = own != nCharacter ? (int)Port_CharacterCode(own) : *(int *)(pszFolder + nCharacter * 0x34);\n"
         "    }\n",
     ),
 ]
 HOOKS["ov008@0205a138"] = [
     (  # Ov008_Menu_LoadSceneText
-        "extern SceneParam data_ov008_0208e9c4[];\n",
-        "extern SceneParam data_ov008_0208e9c4[];\n" + CHARACTER_DECLARATIONS + _LOCAL_SEAT,
+        "extern Ov008CampCharacterRecord gOv008CampCharacterRecords[];\n",
+        "extern Ov008CampCharacterRecord gOv008CampCharacterRecords[];\n" + CHARACTER_DECLARATIONS + _LOCAL_SEAT,
     ),
     (
-        "    v = data_ov008_0208e9c4[sceneId].f0;\n",
+        "    v = gOv008CampCharacterRecords[nCharacter].pszFolder;\n",
         "    {\n"
-        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), sceneId);\n"
-        "        v = own != sceneId ? (int)Port_CharacterCode(own) : data_ov008_0208e9c4[sceneId].f0;\n"
+        "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), nCharacter);\n"
+        "        v = own != nCharacter ? (int)Port_CharacterCode(own) : gOv008CampCharacterRecords[nCharacter].pszFolder;\n"
         "    }\n",
     ),
 ]
-# ... the camp makes the local seat's character word (Ov008_GetEntryStatusByte: the game's own choice first, its
+# ... the camp makes the local seat's character word (Ov008_GetSeatCharacter: the game's own choice first, its
 # dual-wield Roxas, 0x13, for a Roxas whose deck sets flag 0x2010): a mod's character's seat gets the base of the
 # form its rules choose (runtime/characters/forms.c; docs/RUNTIME_MAP.md section 32)
 HOOKS["ov008@0204d6a8"] = [
-    (  # Ov008_RefreshSaveSlotWidget
-        "extern int  Ov008_GetEntryStatusByte(int slot);\n",
-        "extern int  Ov008_GetEntryStatusByte(int slot);\nextern int khdays_characters_seat_form(int seat, int word);\n",
+    (  # Ov008_RefreshSeatCharacter
+        "extern int  Ov008_GetSeatCharacter(int slot);\n",
+        "extern int  Ov008_GetSeatCharacter(int slot);\nextern int khdays_characters_seat_form(int seat, int word);\n",
     ),
     (
-        "        int summary = Ov008_GetEntryStatusByte(slot);\n",
-        "        int summary = khdays_characters_seat_form(slot, Ov008_GetEntryStatusByte(slot));\n",
+        "        int nCharacter = Ov008_GetSeatCharacter(slot);\n",
+        "        int nCharacter = khdays_characters_seat_form(slot, Ov008_GetSeatCharacter(slot));\n",
     ),
 ]
 # ... the game's own select screens (scene 7's, the camp's): what they draw of a place on a new character -- the
@@ -3314,14 +3312,14 @@ HOOKS["ov027@02083168"] = [
 _SPEAKER = "extern void khdays_characters_speaker(int seat, int kind);\n"
 HOOKS["ov022@020a4490"] = [
     (  # Ov022_PlayEntityVoice: an actor's cues and voices
-        "        nRet = Slot_Spawn(nFirst, nSecond, &pActor->vecPos, nFlags);\n",
-        "        { " + _SPEAKER + "        khdays_characters_speaker(((u8 *)pActor)[9], pActor->nState);\n"
-        "        nRet = Slot_Spawn(nFirst, nSecond, &pActor->vecPos, nFlags);\n"
+        "        nRet = Slot_Spawn(nArc, nSeqOut, &pActor->vecPos, nFlags);\n",
+        "        { " + _SPEAKER + "        khdays_characters_speaker(pActor->nSeat, pActor->nCharacter);\n"
+        "        nRet = Slot_Spawn(nArc, nSeqOut, &pActor->vecPos, nFlags);\n"
         "        khdays_characters_speaker(-1, -1); }\n",
     )
 ]
 HOOKS["ov022@020a23a4"] = [
-    (  # Ov022_ScaleRowValues: the damage of a move a player overlay's own code makes (a Limit, a special)
+    (  # Ov022_ScaleMoveDamage: the damage of a move a player overlay's own code makes (a Limit, a special)
         "    kind = *(unsigned char *)(obj + 9);\n",
         "    { extern int khdays_characters_own_moves(int seat, int kind, int factor);\n"
         "      factor = khdays_characters_own_moves(*(unsigned char *)(obj + 9), *(int *)(obj + 0xc), factor); }\n"
@@ -3433,7 +3431,7 @@ HOOKS["ov008@02070c58"] = [
     )
 ]
 HOOKS["ov008@0205b4ec"] = [
-    (  # Ov008_MainMenu_UpdateSelectionText: a mod world open (its slot has no flag of the game's)
+    (  # Ov008_WorldMap_UpdateSelectionText: a mod world open (its slot has no flag of the game's)
         "    isEntryUnlocked = GameState_IsFlagSet(entryId + 0x3bc9);\n",
         "    isEntryUnlocked = entryId >= 12 ? 1 : GameState_IsFlagSet(entryId + 0x3bc9);\n",
     )
@@ -3618,7 +3616,7 @@ for _module, _prefix in (
 ):
     for _function, _role in (
         ("DrawMissionSummaryHeading", "instruction"),
-        ("MainMenu_UpdateSelectionText", "world"),
+        ("WorldMap_UpdateSelectionText", "world"),
         ("DrawMissionDetail", "header"),
         ("MissionMenu_DrawMissionText", "summary"),
         ("MissionMenu_DrawInfo", "objectives"),
@@ -4426,12 +4424,12 @@ for _module, _prefix in (
     ("screens/ov025_camp_menu_2", "Ov025"),
 ):
     _root = f"src/overlays/{_module}/{_prefix}_"
-    FILE_HOOKS[_root + "MainMenu_SetupTextSurfaces.c"] = [
+    FILE_HOOKS[_root + "WorldMap_SetupTextSurfaces.c"] = [
         (
-            f"void {_prefix}_MainMenu_SetupTextSurfaces(int obj)",
+            f"void {_prefix}_WorldMap_SetupTextSurfaces(int obj)",
             "extern void khdays_ui_text_scope_push(const char *scope);\n"
             "extern void khdays_ui_text_scope_pop(void);\n"
-            f"void {_prefix}_MainMenu_SetupTextSurfaces(int obj)",
+            f"void {_prefix}_WorldMap_SetupTextSurfaces(int obj)",
         ),
         (
             "    if (*(int *)(obj + 0x14e0) == 0 || Session_IsReady() != 0) {",

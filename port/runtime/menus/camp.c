@@ -29,8 +29,8 @@ extern int Ov008_GetLocalPlayerIndex(void);
 extern void Ov008_RouteCommittedPageState(void);
 extern void Ov025_GetIdleHandler(void);
 extern int Ov025_GetLocalPlayerCharacter(int unused);
-extern int Ov008_SelectTierIfActive(int list, unsigned tab, int c);
-extern int Ov025_SelectTierIfActive(int list, unsigned tab, int c);
+extern int Ov008_Config_GetTabTitleRecord(int list, unsigned tab, int c);
+extern int Ov025_Config_GetTabTitleRecord(int list, unsigned tab, int c);
 extern int GetFrameRateMode(void);
 extern int GameState_IsFlagSet(int flag);
 extern int Ov008_IsSessionReady(void);
@@ -116,9 +116,9 @@ typedef struct Camp {
 
 static const Camp camps[] = {
     {8, Ov008_RouteCommittedPageState, 0x02090f0cu, 0x02090f04u, 0, 0x02090598u, 0x0209051cu, 0x02090504u,
-     Ov008_SelectTierIfActive, 0x02090f20u, 1},
+     Ov008_Config_GetTabTitleRecord, 0x02090f20u, 1},
     {25, Ov025_GetIdleHandler, 0x020b574cu, 0x020b5744u, 1, 0x020b4f64u, 0x020b4ee8u, 0x020b4ed0u,
-     Ov025_SelectTierIfActive, 0x020b575cu, 0},
+     Ov025_Config_GetTabTitleRecord, 0x020b575cu, 0},
 };
 #define CAMPS ((int)(sizeof(camps) / sizeof(camps[0])))
 

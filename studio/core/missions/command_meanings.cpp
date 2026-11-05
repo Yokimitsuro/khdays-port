@@ -288,9 +288,9 @@ StepMeaning step_meaning(const ScriptStep& s, const Script* script, int language
                 {int_text(op(0)), int_text(op(1)), int_text(op(2)), value_text(op(4)), value_text(op(5)),
                  value_text(op(6)), value_text(op(3))}};
     }
-    // Ov002_ScriptCreateSlotObject: (group, source, mask, mode, gate, x, y, z, a, tag, b, c, x, y, z, mode)
-    // -> Ov002_CreateSlotObjectAndStart: a spawner object at (x, y, z) adding the group's enemies
-    if (is("Ov002_ScriptCreateSlotObject") && slots >= 8) {
+    // Ov002_ScriptCreateSpawner: (group, source, mask, mode, gate, x, y, z, a, tag, b, c, x, y, z, mode)
+    // -> Ov002_CreateSpawner: a spawner object at (x, y, z) adding the group's enemies
+    if (is("Ov002_ScriptCreateSpawner") && slots >= 8) {
         return {StepMeaning::spawner,
                 {int_text(op(0)), int_text(op(1)), value_text(op(5)), value_text(op(6)), value_text(op(7))}};
     }
@@ -331,7 +331,7 @@ ScriptPlaces script_places(const Script& s) {
                 continue;
             }
             p.starts.push_back(st0);
-        } else if (std::strcmp(n->handler, "Ov002_ScriptCreateSlotObject") == 0 && slots >= 8 && op(0).mode == 1) {
+        } else if (std::strcmp(n->handler, "Ov002_ScriptCreateSpawner") == 0 && slots >= 8 && op(0).mode == 1) {
             ScriptPlaces::Spawner sp;
             sp.step = k;
             sp.group = op(0).value;

@@ -146,11 +146,11 @@ int Ov025_GetIdleHandler(void)
 {
     return 0;
 }
-int Ov008_SelectTierIfActive(int a, unsigned b, int c)
+int Ov008_Config_GetTabTitleRecord(int a, unsigned b, int c)
 {
     return a + (int)b + c;
 }
-int Ov025_SelectTierIfActive(int a, unsigned b, int c)
+int Ov025_Config_GetTabTitleRecord(int a, unsigned b, int c)
 {
     return a + (int)b + c;
 }

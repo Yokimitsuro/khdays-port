@@ -11,8 +11,8 @@
 extern "C" {
 #endif
 
-/* The camp made seat `seat`'s character word `word` (Ov008_RefreshSaveSlotWidget's join, after
- * Ov008_GetEntryStatusByte): a mod's character's seat gets the base of the form its rules choose (its own base when
+/* The camp made seat `seat`'s character word `word` (Ov008_RefreshSeatCharacter's join, after
+ * Ov008_GetSeatCharacter): a mod's character's seat gets the base of the form its rules choose (its own base when
  * none holds, also when the game chose its dual-wield Roxas for it); in a room, of its first form on the base the
  * game chose (`word`, the same on every copy), else its own. Any other seat keeps `word`. */
 int khdays_characters_seat_form(int seat, int word);

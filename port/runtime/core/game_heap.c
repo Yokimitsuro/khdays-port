@@ -24,7 +24,7 @@ extern KhdaysRef OS_GetArenaLo(int arena);
 #define OS_ARENA_MAIN 0
 #define HEAP_ALIGN 0x10 /* Ov001_CreateMainAndSubHeaps's */
 
-/* the handles func_ov001_0204cf5c keeps; gCurrentHeap points at one of them */
+/* the handles Ov001_InitGameHeaps keeps; gCurrentHeap points at one of them */
 #define MAIN_HEAP_HANDLE 0x0204c044u
 #define SUB_HEAP_HANDLE 0x0204c030u
 #define CURRENT_HEAP 0x0204c028u

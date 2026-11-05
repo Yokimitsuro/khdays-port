@@ -5,7 +5,7 @@
 #include <string.h>
 
 /* The game's progress fields of mission n, each at its block's start + its width x n (Ov005_CommitMissionResults,
- * Ov005_CommitMenuRewards, Ov008_IsEncounterEligible). */
+ * Ov005_CommitMenuRewards, Ov008_IsMissionModeRowListed). */
 #define STATUS_FIELDS 0x28e4u   /* 1 seen, 2 cleared, 3 complete */
 #define STAGE_FIELDS 0x2a4cu    /* its crown in the list */
 #define TRANSFER_FIELDS 0x2ca4u /* its rank in Mission Mode (a row whose reward kind is 8) */

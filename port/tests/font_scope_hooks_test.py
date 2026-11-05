@@ -173,7 +173,7 @@ class ScopeHooks(unittest.TestCase):
     def test_initial_instruction_and_world(self):
         count = 0
         for rel, hooks in prepare.FILE_HOOKS.items():
-            if not rel.endswith("MainMenu_SetupTextSurfaces.c"):
+            if not rel.endswith("WorldMap_SetupTextSurfaces.c"):
                 continue
             text = prepare.transform((prepare.DECOMP / rel).read_text(encoding="utf-8"))
             for before, after in hooks:

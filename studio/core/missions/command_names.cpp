@@ -74,7 +74,7 @@ const CommandName kNames[] = {
     {2, 28, "Ov002_ScriptCmd_ThreeOperandStub", ""},
     {2, 29, "Ov002_ScriptCmd_RestorePanel", ""},
     {2, 31, "Ov002_ScriptCmd_LoadObjectRecords", ""},
-    {2, 32, "Ov002_ScriptCreateSlotObject", ""},
+    {2, 32, "Ov002_ScriptCreateSpawner", ""},
     {2, 33, "Ov002_SubmitRequestBlockKind4", ""},
     {2, 34, "Ov002_ResolveFourDescriptors", ""},
     {2, 36, "Ov002_ScriptCmd_InitObjectTables", ""},

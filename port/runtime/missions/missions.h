@@ -30,7 +30,7 @@ void khdays_missions_set_best(int number, int value);
  * << 8, the kinds it shows); -1 for the game's rows (the game's own test). */
 int khdays_missions_eligible(const void *record, unsigned int flags);
 void *khdays_missions_file_loaded(unsigned top, void *buffer, unsigned size, void *heap);
-/* A spawner node made (Ov002_CreateSlotObjectAndStart): in a mission the port built, one made after its region was
+/* A spawner node made (Ov002_CreateSpawner): in a mission the port built, one made after its region was
  * enabled -- a later wave's -- takes the region's state, so that it runs. */
 void khdays_missions_spawner_made(void *node);
 /* Whether the mission being played puts out its chests and emblems in Mission Mode (a new one's), which the

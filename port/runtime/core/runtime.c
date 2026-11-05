@@ -127,7 +127,7 @@ static void trace_player(u32 frame)
 }
 
 /* KHDAYS_TRACE_HEAP: the game's two heaps every 60 frames (where, size, use, free bytes, largest free
- * block) and how much the PC has given. Handles: main data_0204c044, sub data_0204c030, the current
+ * block) and how much the PC has given. Handles: main gMainHeapHandle, sub gSubHeapHandle, the current
  * one at gCurrentHeap (0x0204c028). A head's start and end at +0x18 and +0x1c, its free blocks from
  * +0x24 (size +4, next +0xc). */
 static void trace_heap(u32 frame)

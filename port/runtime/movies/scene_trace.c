@@ -4,7 +4,7 @@
  *
  * The field's root (data_ov002_0207fa00) holds the mission it opened (u16 at +0x8ba8, the file
  * mi/mi/%04d) and the script it runs there (u16 at +0x8baa, the script's name as "%d",
- * Ov002_FormatResultLine). The event scene's root is data_ov023_0208a784's second word while ov023
+ * Ov002_FormatEventScriptName). The event scene's root is data_ov023_0208a784's second word while ov023
  * is loaded; its script runs on the game's script machine with its state at +0x4b88: the depth at
  * +0x124, the entries from +4 (0x48 bytes each: +0xc the script's start, +0x10 the next command),
  * the skip target at +0x584 with its depth at +0x580 (Game_ActionSetBranchTarget) and the skip

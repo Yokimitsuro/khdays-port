@@ -88,7 +88,7 @@ struct EnemyGroupPart {
     }
 };
 struct EnemyGroup {
-    std::uint8_t state = 0;   // +1 (bit 0: the group already made, Ov002_CreateSlotObjectAndStart skips it)
+    std::uint8_t state = 0;   // +1 (bit 0: the group already made, Ov002_CreateSpawner skips it)
     std::uint16_t total = 0;  // +2, not read by the code
     std::vector<EnemyGroupPart> parts;
 };

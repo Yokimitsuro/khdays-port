@@ -72,7 +72,7 @@ const KhdaysCharacter *khdays_characters_of_model(const char *name);
 int khdays_characters_room_entry(int index, unsigned char digest[32], const char **name, const char **identity);
 
 /* The damage factor (fx32) of a move of seat `seat`'s actor, which plays as `kind`, that its base's own code makes
- * (Ov022_ScaleRowValues's join: the player overlays' Limits and specials): a new character's [limit] damage
+ * (Ov022_ScaleMoveDamage's join: the player overlays' Limits and specials): a new character's [limit] damage
  * times `factor`, else `factor`. */
 int khdays_characters_own_moves(int seat, int kind, int factor);
 

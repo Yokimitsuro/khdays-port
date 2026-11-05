@@ -75,7 +75,7 @@ itself cancels an inherited rule. Mappings do not chain (A → B does not apply 
 | N | Screen handler class / typical page |
 | --- | --- |
 | 0 | Root/options (`SetupScene`) |
-| 1 | Mission list (`MainMenu_StateTick`) |
+| 1 | Mission list (`WorldMap_StateTick`) |
 | 2 | Panels/grid list |
 | 3 | Transition |
 | 4 | Save (`SaveMenuInitStep`) |
@@ -262,8 +262,8 @@ and `DrawMissionInfoText`, which populate the three canvases at menu `+0xc`
 (targets `+0x138`, `+0x13c`, `+0x140`). `SwitchMenuTab` selects among them.
 The outer draw's name/rank/count surfaces form the red header; its hint surface
 at `+0xfc` is scoped separately for button prompts. `DrawMissionSummaryHeading`
-handles upper-right instructions. `MainMenu_UpdateSelectionText` handles the
-world caption, including its fitting/measurement. `MainMenu_SetupTextSurfaces`
+handles upper-right instructions. `WorldMap_UpdateSelectionText` handles the
+world caption, including its fitting/measurement. `WorldMap_SetupTextSurfaces`
 scopes those same initial instruction/world draws individually. This covers
 initial construction, selection changes, and redraws, rather than identifying
 strings, screen rectangles, or particular missions.
