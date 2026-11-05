@@ -609,7 +609,9 @@ drawn translucent, its parts covering each other wrongly). e_rox_hb: `hide kh2_2
 kh2_5 kh2_6 kh2_14 kh2_15 from 99 to 35 fade 8`, its legs from below the coat's
 waist ring down to halfway down the calves, fading into the coat's dark inside
 (206 triangles dropped, 28 fading).
-`place <joint> [<x> <y> <z>]` puts a paired joint on its game node's own place
+`place <joint> [<x> <y> <z>] [ride [<bone>]]` (`ride`, for a weapon bone: the paired bone
+named, or the nearest above, is left as it is, and the joint moves by how far that bone
+is from its own node, so it stands from the KH2 hand as the node from the game's) puts a paired joint on its game node's own place
 (plus the offset, the game's centimetres in the node's rest axes) instead of where
 its parent carries it, and the bone above it, when that is its only paired child,
 swings and stretches along itself to reach it, with the unpaired joints riding it

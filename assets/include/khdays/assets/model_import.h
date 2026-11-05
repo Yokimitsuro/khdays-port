@@ -23,7 +23,8 @@ struct ImportedJoint final {
     // the same skin, as an index into ImportedModel::joints, or -1.
     std::array<float, 16> world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     int parent = -1;
-    int node = -1;  // its node, an index into ImportedModel::nodes
+    bool no_envelope = false;  // a KH2 helper bone: motions mix the bones below it past it (kh2_map.h)
+    int node = -1;             // its node, an index into ImportedModel::nodes
 };
 
 // A node of the file at rest under its parent: what a model's own animations

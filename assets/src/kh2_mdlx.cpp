@@ -266,6 +266,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         joint.world = w;
         joint.inverse_bind = inverse_affine(w);
         joint.parent = model.bones[b].parent;
+        joint.no_envelope = model.bones[b].no_envelope;
         result.joints.push_back(joint);
         result.model.palette.push_back(kIdentity);
     }

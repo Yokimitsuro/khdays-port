@@ -1423,7 +1423,7 @@ void play_kh2(Model &m, const Mat &base)
         const int bone = m.kh2_bone[j];
         if (bone < 0)
             continue;
-        const int parent = m.joints[j].parent;
+        const int parent = m.joints[j].mix_parent;
         const bool on_parent = parent >= 0 && static_cast<std::size_t>(parent) < j && is_mixed[parent] != 0;
         const auto b = static_cast<std::size_t>(bone);
         const auto pb = on_parent ? static_cast<std::size_t>(m.kh2_bone[static_cast<std::size_t>(parent)]) : 0U;

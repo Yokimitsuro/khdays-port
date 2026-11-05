@@ -293,6 +293,12 @@ void add_joints(Model *model, Loading &loading)
         out.inverse_bind = ibm;
         const auto h = translation(world);
         out.head = {h[0] * k, h[1] * k, h[2] * k};
+        out.mix_parent = out.parent;
+        for (int up = in.no_envelope ? -1 : in.parent;
+             up >= 0 && mod.joints[static_cast<std::size_t>(up)].no_envelope;) {
+            up = mod.joints[static_cast<std::size_t>(up)].parent;
+            out.mix_parent = up >= 0 ? placed[static_cast<std::size_t>(up)] : -1;
+        }
         joint_of_palette[in.palette_index] = static_cast<int>(model->joints.size());
         model->joints.push_back(std::move(out));
     }
@@ -535,15 +541,25 @@ void place_joints(Model *model, const Loading &loading)
         }
         const auto j = static_cast<std::size_t>(found);
         model->joints[j].placed = true;
+        if (const auto ride = bones.places_riding.find(joint_name); ride != bones.places_riding.end()) {
+            const int on = ride->second.empty() ? paired_above(*model, found) : joint_named(*model, ride->second);
+            if (on < 0 || model->joints[static_cast<std::size_t>(on)].node < 0)
+                khdays_log("models: %s: place %s ride %s: no paired joint to ride; pair it in bones.txt or name "
+                           "another; the joint stays on its node",
+                           name.c_str(), joint_name.c_str(), ride->second.c_str());
+            else
+                model->joints[j].rides = on;
+        }
         model->joints[j].place_offset = {by[0] * 0.01F, by[1] * 0.01F, by[2] * 0.01F};
     }
     for (std::size_t c = 0; c < model->joints.size(); ++c) {
-        if (!model->joints[c].placed)
+        if (!model->joints[c].placed || bones.places_riding.contains(model->joints[c].name))
             continue;
         const int p = paired_above(*model, static_cast<int>(c));
         int children = 0;
         for (std::size_t o = 0; o < model->joints.size(); ++o)
-            if (model->joints[o].node >= 0 && paired_above(*model, static_cast<int>(o)) == p)
+            if (model->joints[o].node >= 0 && paired_above(*model, static_cast<int>(o)) == p &&
+                !bones.places_riding.contains(model->joints[o].name))
                 ++children;
         if (p < 0 || children != 1)
             continue; // a bone with several paired children (the pelvis) is left; its mesh takes up the difference
@@ -557,6 +573,9 @@ void place_joints(Model *model, const Loading &loading)
                 st.riders.push_back(static_cast<int>(o));
         model->stretches.push_back(std::move(st));
     }
+    for (Joint &joint : model->joints) // parents first
+        joint.after_rides = joint.rides >= 0 ||
+                            (joint.parent >= 0 && model->joints[static_cast<std::size_t>(joint.parent)].after_rides);
     std::sort(model->stretches.begin(), model->stretches.end(),
               [](const Stretch &x, const Stretch &y) { return x.joint < y.joint; });
 }

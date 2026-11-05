@@ -438,9 +438,16 @@ void draw(Model &m)
             const Mat &dg = node_move[static_cast<std::size_t>(joint.node)];
             if (joint.placed) { // on the game's node itself (its offset turned as the node is)
                 const auto &at = m.node_rest_place[static_cast<std::size_t>(joint.node)];
-                return place(point(dg, {at[0] + joint.place_offset[0], at[1] + joint.place_offset[1],
-                                        at[2] + joint.place_offset[2]}),
-                             dg, joint.correction, joint.head);
+                auto where = point(
+                    dg, {at[0] + joint.place_offset[0], at[1] + joint.place_offset[1], at[2] + joint.place_offset[2]});
+                if (joint.rides >= 0) {
+                    const auto r = static_cast<std::size_t>(joint.rides);
+                    const auto by = static_cast<std::size_t>(m.joints[r].node);
+                    const auto bone = point(joint_place[r], m.joints[r].head), node = point(node_move[by], m.node_rest_place[by]);
+                    for (std::size_t c = 0; c < 3; ++c)
+                        where[c] += bone[c] - node[c];
+                }
+                return place(where, dg, joint.correction, joint.head);
             }
             if (joint.travels) { // a mod's character's: carried, then moved as its node travels, at its size
                 const auto &at_rest = m.node_rest_place[static_cast<std::size_t>(joint.node)];
@@ -480,6 +487,9 @@ void draw(Model &m)
     }
     if (!m.hands.empty())
         pose_hands(m);
+    for (std::size_t j = 0; j < m.joints.size(); ++j)
+        if (m.joints[j].after_rides)
+            joint_place[j] = pose(j);
     for (std::size_t j = 0; j < m.joints.size(); ++j) {
         const Joint &joint = m.joints[j];
         const Mat *w = moved_world(joint, moved);
@@ -608,6 +618,11 @@ void draw(Model &m)
         held_weapon.vblank = khdays_events_vblank_count();
         return mul(joint_frame(j), weapon);
     };
+    // a joint placed on its weapon's own node is already the weapon's frame in every mix, as KH2 hangs a weapon on the
+    // holder's mixed bone: turning it toward the game's again by its share would mix the game's pose in twice
+    const auto own_place = [&](std::size_t j, std::size_t g) {
+        return !m.weapon_motions && m.joints[j].placed && m.joints[j].node == static_cast<int>(g);
+    };
     // node g's frame where the model's joint carries it: its frame under that joint's node at rest; a mod's character's
     // as the game moves it under that node now (a weapon node turning in the hand), its place at the joint's size
     const auto on_joint = [&](std::size_t g) {
@@ -642,10 +657,11 @@ void draw(Model &m)
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
-        const Mat at =
-            weapon_sized(node, line ? khdays::models::attached_frame(
-                                          hold(static_cast<std::size_t>(m.kh2_weapon[node]), node), game, weapon_share)
-                                    : on_joint(node));
+        const auto j = line ? static_cast<std::size_t>(m.kh2_weapon[node]) : 0U;
+        const Mat at = weapon_sized(
+            node, !line                 ? on_joint(node)
+                  : own_place(j, node) ? hold(j, node)
+                                       : khdays::models::attached_frame(hold(j, node), game, weapon_share));
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 fx[c * 3 + r] = static_cast<s32>(std::lround(at[static_cast<std::size_t>(c * 4 + r)] * 4096.0F));
@@ -686,7 +702,9 @@ void draw(Model &m)
         for (std::size_t g = 0; g < nodes && g < m.node_joint.size(); ++g) {
             if (g < m.kh2_weapon.size() && m.kh2_weapon[g] >= 0) {
                 const auto j = static_cast<std::size_t>(m.kh2_weapon[g]);
-                results[g] = {true, khdays::models::attached_frame(hold(j, g), node_matrix[g], weapon_share)};
+                results[g] = {true, own_place(j, g)
+                                        ? hold(j, g)
+                                        : khdays::models::attached_frame(hold(j, g), node_matrix[g], weapon_share)};
             } else if (m.node_joint[g] >= 0) {
                 results[g] = {true, on_joint(g)};
             }

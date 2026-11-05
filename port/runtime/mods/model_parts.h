@@ -90,6 +90,14 @@ struct Joint {
     // where its parent carries it
     bool placed = false;
     std::array<float, 3> place_offset{};
+    // `place ... ride`: a paired joint (a weapon's hand; the nearest above unless named), left as it is: this one is
+    // moved by how far that joint is from its own node, so it stands from the KH2 hand as the game's node from the
+    // game's. Posed last, with what hangs from it (`after_rides`), once that joint is where it ends up
+    int rides = -1;
+    bool after_rides = false;
+    // what a mix of poses takes this joint from (KH2's kn::Motion::calc): past helper bones (no_envelope); those
+    // from their own parents
+    int mix_parent = -1;
     // a mod's character's paired joint, not `exact`: carried from its parent, then moved as far as its node travels
     // beyond where the node of its nearest paired joint above (`travel_from`; -1: the model's root) carries it (the
     // hips' rise and fall), at the joint's `size` to the game's (its length from that joint against the nodes'); what
@@ -619,6 +627,7 @@ struct BonesFile {
     std::vector<MeshScale> mesh_scales; // its joints' mesh scales
     std::map<std::string, std::string> aligns;
     std::map<std::string, std::array<float, 3>> places;
+    std::map<std::string, std::string> places_riding; // `place <joint> ride [<bone>]`: see Joint::rides
     std::array<std::string, 3> spine;
     std::vector<HideLine> hides;
     std::vector<TwistLine> twists;

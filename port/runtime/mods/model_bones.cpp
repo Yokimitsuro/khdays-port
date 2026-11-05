@@ -79,13 +79,26 @@ BonesFile read_bones(const std::string &model_file)
             }
         } else if (a == "place") {
             std::array<float, 3> at{};
-            if (words >> at[0] && !(words >> at[1] >> at[2])) {
-                std::fprintf(stderr,
-                             "models: %s: write `place <joint> [<x> <y> <z>]` (the offset in the game's centimetres); "
-                             "the line is ignored\n",
-                             path.c_str());
+            std::vector<std::string> rest;
+            for (std::string w; words >> w;)
+                rest.push_back(w);
+            const auto ride = std::find(rest.begin(), rest.end(), "ride");
+            const bool riding = ride != rest.end();
+            const std::string ridden = riding && ride + 1 != rest.end() ? *(ride + 1) : std::string{};
+            const bool extra = riding && ride + 1 != rest.end() && ride + 2 != rest.end();
+            if (riding)
+                rest.erase(ride, rest.end());
+            std::istringstream offset(rest.size() == 3 ? rest[0] + " " + rest[1] + " " + rest[2] : "");
+            if (extra || (!rest.empty() && !(offset >> at[0] >> at[1] >> at[2]))) {
+                std::fprintf(
+                    stderr,
+                    "models: %s: write `place <joint> [<x> <y> <z>] [ride [<bone>]]` (the offset in the game's "
+                    "centimetres); the line is ignored\n",
+                    path.c_str());
             } else {
                 bones.places[b] = at;
+                if (riding)
+                    bones.places_riding[b] = ridden;
             }
         } else if (a == "hide") {
             HideLine h;

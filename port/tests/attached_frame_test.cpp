@@ -67,6 +67,15 @@ int main()
     check(near(angle_of(part), 25.0F) && near(std::hypot(part[0], part[1]), 2.0F), "a weight of 0 leaves a pose out");
     const Mat flipped[2] = {about_z(-170.0F, 1.0F, 0, 0, 0), about_z(170.0F, 1.0F, 0, 0, 0)};
     check(near(std::fabs(angle_of(blend_frames(flipped, even, 2))), 180.0F), "the shorter way round, mixed");
+    // as KH2's kn::blend: the axes mixed, not the turn, so a quarter of 90 degrees is atan(1/3), 18.43
+    const Mat right[2] = {about_z(0.0F, 1.0F, 0, 0, 0), about_z(90.0F, 1.0F, 0, 0, 0)};
+    const float quarter[2] = {3.0F, 1.0F};
+    check(std::fabs(angle_of(blend_frames(right, quarter, 2)) - 18.435F) < 0.01F, "the axes are mixed, as kn::blend");
+    const Mat opposite[2] = {about_z(0.0F, 1.0F, 0, 0, 0), about_z(180.0F, 1.0F, 0, 0, 0)};
+    const float more_first[2] = {2.0F, 1.0F}, half_each[2] = {1.0F, 1.0F};
+    check(near(angle_of(blend_frames(opposite, more_first, 2)), 0.0F), "a lean still mixes across 180 degrees");
+    const Mat cancelled = blend_frames(opposite, half_each, 2);
+    check(near(std::hypot(cancelled[0], cancelled[1]), 1.0F), "axes that cancel take a pose's turn, whole");
     if (failures == 0)
         std::printf("attached_frame: all checks passed\n");
     return failures == 0 ? 0 : 1;
