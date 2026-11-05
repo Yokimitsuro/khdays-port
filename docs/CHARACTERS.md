@@ -142,9 +142,13 @@ seqarc/PLY_ROX/vo_* = none                         # his other voices: not heard
 
 - `<the base's sound> = <file>` (`.wav`, `.flac` or `.ogg`, decoded when the game starts) or `none`. A name ending in
   `*` is every sound it begins; a sound's own line wins over those, and the longest of those over the others.
-- The names are a sound mod's (SOUND.md, "Mods' sounds"): `seqarc/<archive>/<sound>`. Roxas's voices are in
-  `PLY_ROX`; his swings (`WEP_ROX26/...`) and steps are effects, not his voice, but can be given files the same
-  way. With the session log on, it names each sound as it starts (`sound: seqarc/PLY_ROX/vo_rs02at07 starts on
+- The names are a sound mod's (SOUND.md, "Mods' sounds"): `seqarc/<archive>/<sound>`. Each base speaks from an
+  archive of its own, and only its sounds are the character's: Roxas `PLY_ROX`, Axel `PLY_AXL`, Xigbar `PLY_XIG`,
+  Saïx `PLY_SAX`, Xaldin `PLY_XAL`, Sora `PLY_SOR`, Demyx `PLY_DMX`, Larxene `PLY_LAX`, Lexaeus `PLY_LEX`, Luxord
+  `PLY_LUX`, Marluxia `PLY_MAR`, Riku `PLY_RIK`, Vexen `PLY_VEX`, Xemnas `PLY_XEM`, Xion `PLY_XIN`, Zexion `PLY_ZEX`,
+  Mickey `PLY_MIC`, Donald `PLY_DNL`, Goofy `PLY_GFY` (a Sora-based character's lines on `PLY_ROX` are never heard;
+  the studio's Characters window offers the base's, and moves another's lines to it). Roxas's swings
+  (`WEP_ROX26/...`) and steps are effects, not his voice, but can be given files the same way. With the session log on, it names each sound as it starts (`sound: seqarc/PLY_ROX/vo_rs02at07 starts on
   player 6`); `KHDAYS_TRACE_CHARACTERS=1` also names the character's line chosen for it.
 - What is the character's: the sounds the game starts for its actor (`Ov022_PlayEntityVoice`,
   `Ov022_SpawnVoiceCue`). A file that cannot be read is told; the base's sound plays in its place.

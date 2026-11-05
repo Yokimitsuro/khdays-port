@@ -1212,11 +1212,48 @@ bool own_section(App& app, const char* section, const std::pair<std::string, std
     return own;
 }
 
-void draw_more_tab(App& app) {
+// The voices' lines name the base's own sounds (each base speaks from an archive of its own: a Sora-based
+// character's lines on Roxas's sounds were never heard); a line naming another base's is shown, and can be moved.
+void draw_sounds(App& app) {
     const auto lang = app.language;
     ImGui::TextUnformatted(tr(lang, S::chars_sounds));
-    if (own_section(app, "sounds", {"seqarc/PLY_ROX/vo_*", "none"}))
-        draw_pairs(app, part("sounds"), "seqarc/PLY_ROX/vo_*", "none", true);
+    const std::string base = shown_base();
+    const std::string archive = character_voice_archive(base);
+    const std::string prefix = archive.empty() ? std::string("seqarc/") : "seqarc/" + archive + "/";
+    if (!archive.empty())
+        ImGui::TextDisabled("%s", fmt(lang, S::chars_sounds_base, {base_display(lang, base), archive}).c_str());
+    const std::string every = prefix + "*";
+    if (!own_section(app, "sounds", {every, "none"}))
+        return;
+    draw_pairs(app, part("sounds"), every.c_str(), "none", true);
+    if (archive.empty())
+        return;
+    auto entries = v.ini.entries(part("sounds"));
+    bool other = false;
+    for (const auto& [key, value] : entries) {
+        if (key.rfind("seqarc/PLY_", 0) == 0 && key.rfind(prefix, 0) != 0) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s",
+                               fmt(lang, S::chars_sounds_other, {key, base_display(lang, base)}).c_str());
+            ImGui::PopTextWrapPos();
+            other = true;
+        }
+    }
+    if (other && ImGui::SmallButton(fmt(lang, S::chars_sounds_to_base, {base_display(lang, base)}).c_str())) {
+        // seqarc/PLY_ROX/vo_rs02at07 -> seqarc/<the base's>/vo_rs02at07: the same place in the base's archive
+        for (auto& [key, value] : entries) {
+            if (key.rfind("seqarc/PLY_", 0) != 0 || key.rfind(prefix, 0) == 0)
+                continue;
+            const std::size_t slash = key.find('/', 7);
+            key = prefix + (slash == std::string::npos ? std::string("*") : key.substr(slash + 1));
+        }
+        v.ini.set_entries(part("sounds"), entries);
+    }
+}
+
+void draw_more_tab(App& app) {
+    const auto lang = app.language;
+    draw_sounds(app);
     ImGui::Separator();
     ImGui::TextUnformatted(tr(lang, S::chars_moveset));
     // a form of another base than its default's: its default's moveset names the other base's attacks

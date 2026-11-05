@@ -63,6 +63,9 @@ bool valid_character_key(const std::string& key);
 // folder code (ro ...).
 const std::vector<std::string>& character_bases();
 std::string character_base_code(const std::string& base);
+// The sound archive a base speaks from (sora: PLY_SOR): the voices a character on it is given files for are
+// `seqarc/<it>/<sound>`; empty for a base not known.
+std::string character_voice_archive(const std::string& base);
 
 // A new character `key` in the mod: its folder and its character.ini (format 1, `base`, `name`), read back. False
 // with the reason (a key taken among them).
