@@ -28,7 +28,7 @@ int khdays_menu_direction_exists(int direction, int command_scheme);
 #define KHDAYS_MENU_REPEAT_EVERY 2
 int khdays_menu_stepper_frame(KhdaysMenuStepper *s, uint32_t directions, int field, int command_scheme);
 
-/* Lock-on on its own buttons: the presses of R (twice to lock or let go, once for the next target) and
+/* Lock-on on its own buttons: the presses of R (twice to lock, once to let go or for the next target) and
  * L (Type B's previous target) the game's Ov022_ReadSelectionInput takes (docs/PLATFORM.md). */
 enum { KHDAYS_LOCK_ON, KHDAYS_LOCK_NEXT, KHDAYS_LOCK_PREV, KHDAYS_LOCK_ACTIONS };
 
@@ -40,6 +40,7 @@ typedef struct KhdaysLockSequencer {
     int queue[KHDAYS_LOCK_QUEUE]; /* the ones pressed since, in order */
     int queued;                   /* how many */
     uint32_t last_actions;        /* held last frame (to see new presses) */
+    int let_go;                   /* this frame's R is to let go of the target, not to move to the next */
 } KhdaysLockSequencer;
 
 void khdays_lock_sequencer_reset(KhdaysLockSequencer *s);

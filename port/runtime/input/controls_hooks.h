@@ -21,4 +21,7 @@ typedef struct KhdaysGameControls {
 
 const KhdaysGameControls *khdays_controls_state(void);
 
+/* The lock-on's own button is letting go of the target: the game takes the coming R as its double press. */
+void khdays_controls_lock_let_go(void);
+
 #endif
