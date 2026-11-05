@@ -1,5 +1,6 @@
 """Check scope hook generation without regenerating the complete port."""
 
+import ast
 import sys
 import unittest
 from pathlib import Path
@@ -47,6 +48,38 @@ class ScopeHooks(unittest.TestCase):
         dialogue = "src/overlays/scenes/ov002_field/Ov002_SceneDrawEntryLines.c"
         self.assertNotIn(dialogue, prepare.UI_HOOKS)
         self.assertNotIn(dialogue, prepare.FILE_HOOKS)
+
+    def test_scene_draw_node_keeps_every_hook(self):
+        rel = "src/engine/Scene_DrawNode.c"
+        text = prepare.transform((prepare.DECOMP / rel).read_text(encoding="utf-8"))
+        for before, after in prepare.HOOKS["main@0202aa9c"]:
+            self.assertEqual(text.count(before), 1)
+            text = text.replace(before, after)
+        self.assertIn("if (khdays_heart_node(node)) return;", text)
+        self.assertLess(text.index("khdays_walk_draw_begin((int)node);"), text.index("NNS_G3dDraw(node->object);"))
+
+    def test_no_hook_table_entry_is_assigned_over(self):
+        tree = ast.parse(Path(prepare.__file__).read_text(encoding="utf-8"))
+        seen = set()
+        overwritten = []
+        for node in tree.body:
+            if isinstance(node, ast.For) and "HOOK_POINTS" in ast.dump(node.iter):
+                seen |= {key for key, *_ in prepare.HOOK_POINTS}
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+            if getattr(target, "id", "") == "HOOKS":
+                seen |= {key.value for key in node.value.keys if isinstance(key, ast.Constant)}
+            elif (
+                isinstance(node.value, ast.List)
+                and isinstance(target, ast.Subscript)
+                and getattr(target.value, "id", "") == "HOOKS"
+                and isinstance(target.slice, ast.Constant)
+            ):
+                if target.slice.value in seen:
+                    overwritten.append(f"line {node.lineno}: {target.slice.value}")
+                seen.add(target.slice.value)
+        self.assertEqual(overwritten, [], "use .append or += : `=` drops the hooks already there")
 
     def test_item_fit_hooks(self):
         source = prepare.transform((prepare.DECOMP / font_fit.ITEMS).read_text(encoding="utf-8"))
