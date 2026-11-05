@@ -113,10 +113,6 @@ void set_mods_root(const std::filesystem::path& root) {
     g_mods_set = false;
 }
 
-const std::filesystem::path& mods_root() {
-    return g_mods_root;
-}
-
 bool autodetect_data_root(const std::filesystem::path& extracted_dir) {
     std::error_code ec;
     if (!std::filesystem::is_directory(extracted_dir, ec)) {

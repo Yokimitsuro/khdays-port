@@ -9,7 +9,6 @@
 
 #include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/model_import.h"
-#include "khdays/vfs/filesystem.h"
 
 extern "C" {
 #include "../../../gfx/g3d.h"
@@ -17,6 +16,7 @@ extern "C" {
 #include "../../core/window.h" // KHDAYS_W, khdays_game_ram
 #include "../../core/session_log.h"
 #include "../../scripts/game_link.h" // the game's frame count and rate
+#include "../list.h"                 // the mods on as the game started
 }
 
 #include <algorithm>
@@ -277,17 +277,21 @@ struct Prewarm {
     }
 } prewarm;
 
-// Every mod model with secondary motion (mods/<Mod>/graphics/.../<name>.secondary.txt beside <name>.mdlx), but
-// `skip` (cooked already), cooked and prepared on a thread of its own
+// Every model with secondary motion of the mods on (mods/<Mod>/graphics/.../<name>.secondary.txt beside <name>.mdlx),
+// but `skip` (cooked already), cooked and prepared on a thread of its own
 void prewarm_model_secondary(const std::string &skip)
 {
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> work; // .secondary.txt, .mdlx
     std::error_code ec;
-    for (const auto &mod : std::filesystem::directory_iterator(khdays::vfs::mods_root(), ec)) {
-        const auto graphics = mod.path() / "graphics";
+    for (int m = 0; m < khdays_mods_started_count(); ++m) {
+        const char *mod = khdays_mods_started_path(m);
+        if (mod == nullptr)
+            continue;
+        const auto graphics = u8(mod) / "graphics";
         if (!std::filesystem::is_directory(graphics, ec))
             continue;
-        for (const auto &e : std::filesystem::recursive_directory_iterator(graphics, ec)) {
+        for (std::filesystem::recursive_directory_iterator it(graphics, ec), end; !ec && it != end; it.increment(ec)) {
+            const auto &e = *it;
             const std::u8string fname = e.path().filename().u8string(); // any name a mod's file may have
             const std::u8string tail = u8".secondary.txt";
             if (fname.size() <= tail.size() || fname.compare(fname.size() - tail.size(), tail.size(), tail) != 0)
