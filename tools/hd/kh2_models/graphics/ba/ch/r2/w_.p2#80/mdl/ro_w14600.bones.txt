@@ -1,2 +1,4 @@
 # KH2's W_EX010_20 in the dual wield Roxas's right hand: as ro_w13600.bones.txt in w_.p2#0.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 held kh2_2 rest

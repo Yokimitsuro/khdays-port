@@ -1,3 +1,5 @@
 # KH2's F_TT580: three bones, no keychain, and made at the origin with its length along +z, as the game's keyblades
 # are. W_EX010_RX's motions are for W_EX010's rest, so no `held`: it is drawn at the frame the game draws it at, which
 # the body's `weapon_motions` already turn in the hand as they turn Days' own keyblade.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models

@@ -339,6 +339,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PRIZES, TXT_HUD_PRIZES, &e->hud[KHDAYS_OPT_PRIZES], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_KH2_MODELS, TXT_HUD_KH2_MODELS, &e->hud[KHDAYS_OPT_KH2_MODELS], 1,
+               khdays_text(TXT_HUD_KH2_MODELS_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,

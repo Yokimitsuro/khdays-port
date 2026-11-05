@@ -118,6 +118,14 @@ class Models(unittest.TestCase):
             self.assertEqual(path.suffix, ".txt", path)
             self.assertTrue(path.read_bytes().isascii(), path)
 
+    def test_each_model_follows_its_switch(self):
+        # Settings, Enhancements, KH2 models (hud_settings.h kh2_models): every model of the pack, off together
+        bones = sorted(models.SETTINGS.rglob("*.bones.txt"))
+        self.assertTrue(bones)
+        for path in bones:
+            lines = [line.split("#")[0].split() for line in path.read_text(encoding="utf-8").splitlines()]
+            self.assertIn(["switch", "kh2_models"], lines, path)
+
     def test_wiring(self):
         self.assertIn(("kh2_models.py", ["{kh2}", "{kh2_gauge}", "{kh2_sixth}"]), setup.HD_MENU_TOOLS)
         self.assertIn("tools/hd/kh2_models.py", installer.TOOLS)

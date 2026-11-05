@@ -16,6 +16,7 @@ enum {
     KHDAYS_OPT_NOTIFICATIONS,
     KHDAYS_OPT_HEART_POINTS,
     KHDAYS_OPT_PRIZES, /* KH2's prizes: the prize pictures a mod gives an effect (ui/prize_effects.h) */
+    KHDAYS_OPT_KH2_MODELS, /* KH2's Roxas and keyblades: the models whose bones.txt says `switch kh2_models` */
     KHDAYS_OPT_PAUSE_TARGET,
     KHDAYS_OPT_INFORMATION_HUD,
     KHDAYS_OPT_UI_PADDING,

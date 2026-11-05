@@ -80,6 +80,18 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Sequenza contatore cuori", "Secuencia del contador de corazones"},
     [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
                         "Premi e forzieri di KH2", "Premios y cofres de KH2"},
+    [TXT_HUD_KH2_MODELS] = {"KH2 models", "Modèles de KH2", "Modelle aus KH2", "Modelli di KH2", "Modelos de KH2"},
+    [TXT_HUD_KH2_MODELS_NOTE] =
+        {"Roxas and his keyblades with KH2's models, motions and clothes, made by the HD PACK from your 1.5+2.5. Off "
+         "shows Days' own. Changes apply at once.",
+         "Roxas et ses Keyblades avec les modèles, mouvements et vêtements de KH2, créés par le HD PACK depuis votre "
+         "1.5+2.5. Désactivé, ceux de Days sont affichés. S’applique aussitôt.",
+         "Roxas und seine Schlüsselschwerter mit Modellen, Bewegungen und Kleidung aus KH2, vom HD PACK aus deiner "
+         "1.5+2.5 erstellt. Aus zeigt die von Days. Gilt sofort.",
+         "Roxas e i suoi Keyblade con modelli, movimenti e abiti di KH2, creati dall’HD PACK dalla tua 1.5+2.5. "
+         "Disattivato mostra quelli di Days. Si applica subito.",
+         "Roxas y sus llaves espada con los modelos, movimientos y ropa de KH2, hechos por el HD PACK desde tu 1.5+2.5. "
+         "Desactivado muestra los de Days. Se aplica al momento."},
     [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
                               "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
     [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",

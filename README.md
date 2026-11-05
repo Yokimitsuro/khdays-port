@@ -221,6 +221,9 @@ of the game:
   A ([docs/KH2_CAMERA.md](docs/KH2_CAMERA.md)).
 - **KH2 first person view:** with the KH2 camera on, Select switches to first person
   as in Kingdom Hearts II: the player fades out, and you can look around and strafe.
+- **KH2 models:** with the HD menus' HD PACK, Roxas and his keyblades are KH2's,
+  with their motions and cloth, from your own 1.5+2.5 ([docs/KH2_MODELS.md](docs/KH2_MODELS.md)).
+  On by default; off shows Days' own models.
 - **Mouse camera:** moving the mouse turns and tilts the field camera, through
   the same part of the game as the analog camera, at a speed of its own
   (Sticks and camera -> Mouse camera speed) and with the camera's inversions.
@@ -610,7 +613,7 @@ game's animations: its joints named like the original's nodes follow them,
 sizes the model; `keep <node> ...` still draws the game's own shapes of
 those nodes, a chest's light rays under a new chest; `switch <setting>`
 draws the model only while that HD replacement of the settings is on, such
-as `kh2_prizes`), the rest move with their parents, and a rest pose far from
+as `kh2_prizes` or `kh2_models`), the rest move with their parents, and a rest pose far from
 the game's (a T-pose) is turned to match. A model may be glTF (`.gltf`, or
 `.glb` with its textures inside) or FBX (`.fbx`, binary or ASCII), taken in
 that order when more than one is there; an FBX in centimetres or with Z up is

@@ -974,6 +974,10 @@ as `installer/hd_inputs.txt` lists them. The settings are the port's own, in the
 copied beside each model: **change them there**, as a rebuild overwrites the mod's copies (to try a
 change, edit the mod's copy in game, then bring it back).
 
+Each model's `bones.txt` says `switch kh2_models`: the player turns them all off and on in Settings,
+Enhancements, **KH2 models** (`kh2_models` in the settings file, on by default), at once, the game's own
+models drawn while it is off. A new model's settings carry the same line.
+
 | Days' model | Place under `graphics/` | KH2's | Also read from the collection |
 |---|---|---|---|
 | `roxas_b_h` | `ba/ch/ro/def_hb.p.z/mdl` | N_EX830 | P_EX110 (mdlx, mset), GAMEOVER.mset, W_EX010.mdlx, W_EX010_RX.mset |

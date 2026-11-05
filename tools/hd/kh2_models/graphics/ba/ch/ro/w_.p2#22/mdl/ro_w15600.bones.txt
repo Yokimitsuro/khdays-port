@@ -1,3 +1,5 @@
 # KH2's W_EX010_W0, posed by the body's `weapon_motions` as ro_w00600 is. Its model has nothing on the keychain's
 # bones, so it has no .secondary.txt.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 held kh2_2

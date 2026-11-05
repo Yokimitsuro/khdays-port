@@ -4,6 +4,8 @@
 # hair) follow their parents. These pairs pose the model for Days animations
 # without a KH2 motion; a mapped KH2 motion poses every bone itself. Size: KH2
 # centimetres are imported as metres, no `scale`.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, roxas_R, whatever this says).

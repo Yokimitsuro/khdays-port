@@ -1387,6 +1387,8 @@ The saved keys in `[enhancements]` are:
 | `locked_on_sequence` | off | Top-screen LOCKED ON notice |
 | `notification_sequences` | off | Obtained, Backpack Full and Recon Breakthrough |
 | `heart_points_sequence` | off | Heart total, effects and chain counter |
+| `kh2_prizes` | on | KH2's prizes and chests, as the HD PACK makes them |
+| `kh2_models` | on | KH2's Roxas and keyblades, as the HD PACK makes them (docs/KH2_MODELS.md) |
 | `pause_target` | off | Mission target in ordinary pause menus |
 | `information_hud` | off | Configured HUD/control retention during upper INFORMATION |
 | `ui_padding` | off | Off removes the single-screen HD presentation inset |
