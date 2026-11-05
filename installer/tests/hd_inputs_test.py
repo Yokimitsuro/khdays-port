@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import setup_steps as s  # noqa: E402
 
-ARCHIVES = {"Mare", "SettingMenu", "kh2_first", "kh2_fifth", "kh3d_first", "movies"}
+ARCHIVES = {"Mare", "SettingMenu", "kh2_first", "kh2_fifth", "kh2_sixth", "kh3d_first", "movies"}
 
 
 class Inputs(unittest.TestCase):

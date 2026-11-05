@@ -568,7 +568,11 @@ bones from the root to that joint placed from the same pose and the bones under 
 carried (W_EX010 as `w_.p2#0/mdl/ro_w00600.mdlx` with `held kh2_2`, its keychain in
 its own `.secondary.txt` as a chain); a weapon model drawn before its body takes
 the last frame's pose, and one whose body has not been drawn for a second stands
-as the game's nodes place it. Days' own keyblade, unreplaced, gets the turns
+as the game's nodes place it. `held <joint> rest` needs no motions, for a weapon
+made at rest where the bone holding it is at rest (measured: W_EX010's, _10's and
+_20's bone 2 and B_EX390's 95 and 106 have one head and axes): it moves as that bone
+has moved from rest, under the game's animations too, as `place` keeps those bones
+on the game's weapon joints. The log says so if the two rests differ. Days' own keyblade, unreplaced, gets the turns
 through the frame it is drawn at; dumped to glTF and put back as the mod its
 keychain (one bone, `ro_w_01` at the handle's end, under `ro_w_00`) can be
 simulated as well.
@@ -961,7 +965,7 @@ change). At 1024 x 1024 and drawn small it may flicker as a still picture withou
 
 `tools/hd/kh2_models.py` puts the models in `mods/HD PACK/graphics/`, run by the installer with the
 other HD tools. The models, motions and HD pictures are the player's: copied as they are from
-1.5+2.5's `kh2_first` and `kh2_fifth` (`obj/<name>`, its pictures among the entry's remastered assets),
+1.5+2.5's `kh2_first`, `kh2_fifth` and `kh2_sixth` (`obj/<name>`, its pictures among the entry's remastered assets),
 as `installer/hd_inputs.txt` lists them. The settings are the port's own, in the repository under
 `tools/hd/kh2_models/`, a tree laid out as the mod's, with `kh2_secondary_presets.txt` once at its top and
 copied beside each model: **change them there**, as a rebuild overwrites the mod's copies (to try a
@@ -973,7 +977,19 @@ change, edit the mod's copy in game, then bring it back).
 | `roxas_ho_h` | `ba/ch/ro/def_hho.p.z/mdl` | B_EX390 | the same |
 | `roxas_bf_h` | `ba/ch/r2/def_h.p.z/mdl` | B_EX390 | B_EX390.mset, P_EX110 (mdlx, mset), GAMEOVER.mset |
 | `e_rox_hb` | `mi/ch/0C.z/mdl` | N_EX830 | P_EX110 (mdlx, mset) |
+| `roxas_b` | `ba/ch/ro/def.p.z/mdl` | N_EX830 | as `roxas_b_h`, whose settings it takes |
+| `roxas_bf` | `ba/ch/r2/def.p.z/mdl` | B_EX390 | as `roxas_bf_h`, whose settings it takes |
 | `ro_w00600` | `ba/ch/ro/w_.p2#0/mdl` | W_EX010 | |
+| `ro_w13600` | `ba/ch/ro/w_.p2#21/mdl` | W_EX010_10 | `ro_w00600`'s settings |
+| `ro_w15600` | `ba/ch/ro/w_.p2#22/mdl` | W_EX010_W0 | nothing on its keychain's bones: no `.secondary.txt` |
+| `ro_w9999a` | `ba/ch/ro/w_.p2#26/mdl` | W_EX010_P0 | `ro_w00600`'s settings |
+| `ro_w9999b` | `ba/ch/ro/w_.p2#27/mdl` | F_TT580 | three bones, made at the origin along +z: no `held` |
+| `ro_w13600` | `ba/ch/r2/w_.p2#0/mdl` | W_EX010_10 | left hand, `held kh2_2 rest` |
+| `ro_w14600` | `ba/ch/r2/w_.p2#80/mdl` | W_EX010_20 | right hand, `held kh2_2 rest` |
+
+`SAME_SETTINGS` in the tool gives a model another's settings under its own name; what it has of its own stays.
+The low poly bodies have the same nodes and animation names as the high poly ones (read from `def.p`, `def_h.p`
+and `def_hb.p`).
 
 A new file a setting names is added to `SOURCES` and `MODELS` in the tool
 (`installer/tests/kh2_models_test.py` fails until it is), and to `hd_inputs.txt` by tracing.

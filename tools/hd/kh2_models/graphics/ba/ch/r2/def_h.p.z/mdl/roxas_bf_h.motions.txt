@@ -48,7 +48,7 @@ air b_bf_A008 18 land 19 finish
 
 b_bf_B005 210
 
-b_bf_E003 start_loop cut
+b_bf_E003 1066 start_loop cut
 
 # The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk
 # with the keyblades (01A) at its own pace, crossing from and to the run over 6 frames

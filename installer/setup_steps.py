@@ -493,7 +493,7 @@ HD_MENU_TOOLS = [
     ("kh2_gauge.py", ["{kh2_gauge}", "--settings", "{gauge_settings}"]),
     ("heart_points.py", ["--settings", "{gauge_settings}"]),
     ("minimap_icons.py", ["--settings", "{minimap_settings}", "--kh2", "{kh2}"]),
-    ("kh2_models.py", ["{kh2}", "{kh2_gauge}"]),
+    ("kh2_models.py", ["{kh2}", "{kh2_gauge}", "{kh2_sixth}"]),
 ]
 HD_MENU_SUPPORT = (
     "port/tools/kh2_center_gauge.py",
@@ -618,6 +618,7 @@ def _inputs_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ddd", type=Path, required=True, help="<2.8>/Image/dt (or en)/kh3d_first.hed_out")
     p.add_argument("--kh2", type=Path, required=True, help="<1.5+2.5>/Image/dt (or en)/kh2_first.hed_out")
     p.add_argument("--kh2-gauge", type=Path, help="kh2_fifth.hed_out (default: beside --kh2)")
+    p.add_argument("--kh2-sixth", type=Path, help="kh2_sixth.hed_out (default: beside --kh2)")
     p.add_argument(
         "--movies", type=Path, required=True, help="<1.5+2.5>/STEAM/Mare/MOVIE/Days/dt (or EPIC/.../en, MSSTORE/...)"
     )
@@ -650,6 +651,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
     }
     kh2_gauge = args.kh2_gauge or args.kh2.with_name("kh2_fifth.hed_out")
     places["kh2_gauge"] = kh2_gauge
+    kh2_sixth = args.kh2_sixth or args.kh2.with_name("kh2_sixth.hed_out")
+    places["kh2_sixth"] = kh2_sixth
     places["gauge_settings"] = Path("no-existing-gauge-settings")
     places["minimap_settings"] = Path("no-existing-minimap-settings")
     # the archives the sources are extractions of, and how a file there names its entry
@@ -662,6 +665,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         ("kh2_first", args.kh2 / "remastered", "remastered"),
         ("kh2_fifth", kh2_gauge / "original", "original"),
         ("kh2_fifth", kh2_gauge / "remastered", "remastered"),
+        ("kh2_sixth", kh2_sixth / "original", "original"),
+        ("kh2_sixth", kh2_sixth / "remastered", "remastered"),
         ("movies", args.movies, "plain"),
     ]
     entries: dict[str, set[str]] = {}
@@ -1025,6 +1030,7 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             "kh2": src / "kh2_first.hed_out",
             "hand": src / "kh2_first.hed_out" / "remastered" / HAND / HAND_ASSET,
             "kh2_gauge": src / "kh2_fifth.hed_out",
+            "kh2_sixth": src / "kh2_sixth.hed_out",
             "gauge_settings": install / "mods" / HD_MOD / "layouts" / "gauge",
             "minimap_settings": install / "mods" / HD_MOD / "layouts" / "minimap",
         }

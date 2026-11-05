@@ -17,10 +17,10 @@ import setup_steps as setup  # noqa: E402
 NAMES_A_FILE = re.compile(r"^\s*(?:mset|motions|skeleton|include)\s+(\S+)|^\s*weapon_motions\s+(\S+)\s+(\S+)", re.M)
 
 
-def collection(root: Path, without: str = "") -> tuple[Path, Path]:
+def collection(root: Path, without: str = "") -> tuple[Path, Path, Path]:
     """The two archives' extractions, each file its own name as its bytes."""
-    first, fifth = root / "kh2_first.hed_out", root / "kh2_fifth.hed_out"
-    places = {models.FIRST: first, models.FIFTH: fifth}
+    first, fifth, sixth = root / "kh2_first.hed_out", root / "kh2_fifth.hed_out", root / "kh2_sixth.hed_out"
+    places = {models.FIRST: first, models.FIFTH: fifth, models.SIXTH: sixth}
     for name, archive in models.SOURCES.items():
         if name == without:
             continue
@@ -32,16 +32,16 @@ def collection(root: Path, without: str = "") -> tuple[Path, Path]:
             pictures.mkdir(parents=True)
             for n in range(2):
                 (pictures / f"-{n}.dds").write_bytes(f"{name} {n}".encode())
-    return first, fifth
+    return first, fifth, sixth
 
 
 class Models(unittest.TestCase):
     def test_made_from_the_collection(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            first, fifth = collection(root)
+            first, fifth, sixth = collection(root)
             mod = root / "mod"
-            models.make(first, fifth, mod)
+            models.make(first, fifth, sixth, mod)
             place = mod / "graphics/ba/ch/ro/def_hb.p.z/mdl"
             self.assertEqual((place / "roxas_b_h.mdlx").read_bytes(), b"N_EX830.mdlx")
             self.assertEqual((place / "roxas_b_h" / "-1.dds").read_bytes(), b"N_EX830.mdlx 1")
@@ -58,21 +58,45 @@ class Models(unittest.TestCase):
     def test_a_missing_file_is_named(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            first, fifth = collection(root, without="GAMEOVER.mset")
+            first, fifth, sixth = collection(root, without="GAMEOVER.mset")
             with self.assertRaises(SystemExit) as stop:
-                models.make(first, fifth, root / "mod")
+                models.make(first, fifth, sixth, root / "mod")
             self.assertIn("GAMEOVER.mset", str(stop.exception))
 
     def test_each_settings_file_is_provided(self):
         for folder, model, _, files in models.MODELS:
             place = models.SETTINGS / folder
-            self.assertTrue((place / f"{model}.bones.txt").is_file(), model)
+            from_folder, from_model = models.SAME_SETTINGS.get((folder, model), (folder, model))
+            self.assertTrue(
+                (place / f"{model}.bones.txt").is_file()
+                or (models.SETTINGS / from_folder / f"{from_model}.bones.txt").is_file(),
+                model,
+            )
             provided = set(files) | {f"{model}.mdlx"}
             for settings in place.glob("*.txt"):
                 for line in NAMES_A_FILE.findall(settings.read_text(encoding="utf-8")):
                     for name in filter(None, line):
                         known = name in provided or name == models.PRESETS.name or (place / name).is_file()
                         self.assertTrue(known, f"{settings.name}: {name}")
+
+    def test_same_settings(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first, fifth, sixth = collection(root)
+            mod = root / "mod"
+            models.make(first, fifth, sixth, mod)
+            for (folder, model), (from_folder, from_model) in models.SAME_SETTINGS.items():
+                for source in (models.SETTINGS / from_folder).glob(f"{from_model}.*.txt"):
+                    name = model + source.name[len(from_model) :]
+                    own = models.SETTINGS / folder / name
+                    expected = own if own.is_file() else source
+                    self.assertEqual((mod / folder / name).read_bytes(), expected.read_bytes())
+            # the dual wield's keyblades ride its weapon bones; a low poly body plays as its high poly one
+            left = mod / "graphics/ba/ch/r2/w_.p2#0/mdl"
+            self.assertIn("held kh2_2 rest", (left / "ro_w13600.bones.txt").read_text(encoding="utf-8"))
+            self.assertEqual((left / "ro_w13600.mdlx").read_bytes(), b"W_EX010_10.mdlx")
+            self.assertTrue((mod / "graphics/ba/ch/ro/def.p.z/mdl/roxas_b.motions.txt").is_file())
+            self.assertFalse((mod / "graphics/ba/ch/ro/w_.p2#27/mdl/ro_w9999b.secondary.txt").exists())
 
     def test_every_source_is_used(self):
         used = {kh2 for _, _, kh2, _ in models.MODELS} | {n for *_, files in models.MODELS for n in files}
@@ -86,7 +110,7 @@ class Models(unittest.TestCase):
             self.assertTrue(path.read_bytes().isascii(), path)
 
     def test_wiring(self):
-        self.assertIn(("kh2_models.py", ["{kh2}", "{kh2_gauge}"]), setup.HD_MENU_TOOLS)
+        self.assertIn(("kh2_models.py", ["{kh2}", "{kh2_gauge}", "{kh2_sixth}"]), setup.HD_MENU_TOOLS)
         self.assertIn("tools/hd/kh2_models.py", installer.TOOLS)
         self.assertEqual(
             set(setup.model_settings()),

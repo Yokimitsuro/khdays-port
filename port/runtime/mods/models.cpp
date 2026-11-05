@@ -460,6 +460,8 @@ struct Model {
     // bones.txt's `held <joint>`: a weapon whose bones from its root to that joint (the weapon itself) the body
     // holding it poses with its `weapon_motions`; per joint whether it is one of them, and its KH2 bone
     std::string held_name;
+    bool held_rest = false;         // `held <joint> rest`: the joint at rest is the holding bone at rest
+    bool held_rest_checked = false; // (said once if it is not)
     std::vector<int> held_bone;
     // motions.txt's `weapon_motions <mset> <mdlx> <bone>`: what this body holds plays that mset's slots as its
     // own motions play theirs, on that mdlx's bones; <bone> is the weapon itself. Its held pose under the game's
@@ -815,6 +817,7 @@ struct BonesFile {
     std::vector<HideLine> hides;
     std::vector<TwistLine> twists;
     std::string held;
+    bool held_rest = false;
     std::vector<CuffLine> cuffs;
     std::vector<CuffPoseLine> cuff_pose;
     khdays::models::CuffFit::Settings cuff_settings;
@@ -1043,6 +1046,8 @@ BonesFile read_bones(const std::string &model_file)
             }
         } else if (a == "held") { // held <joint>: a weapon posed by the weapon motions of the body holding it
             bones.held = b;
+            std::string how;
+            bones.held_rest = words >> how && how == "rest"; // ... rest: its rest is the holding bone's, no motions
         } else if (a == "align") {
             std::string kind;
             if (words >> kind && (kind == "foot" || kind == "hand")) {
@@ -2593,6 +2598,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     model->pose_degrees = bones.pose_degrees;
     const auto &spine_line = bones.spine;
     model->held_name = bones.held;
+    model->held_rest = bones.held_rest;
     model->cuff_settings = bones.cuff_settings;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
@@ -3365,6 +3371,14 @@ struct HeldWeapon {
     u32 vblank = 0;
 };
 HeldWeapon held_weapon;
+// the last bone a `weapon` line held something on (`held <joint> rest`): the turn from it to the game's weapon frame,
+// its rest (metres) and the vblank of that body's draw
+struct HoldingBone {
+    Mat from_game = kIdentity;
+    Mat rest = kIdentity;
+    u32 vblank = 0;
+};
+HoldingBone holding_bone;
 // this draw: each game animation's KH2 slot and its section's first frame, `air` and `land` ones included
 std::map<std::string, std::pair<std::size_t, float>> kh2_played;
 
@@ -5351,6 +5365,41 @@ void play_face(Model &m)
         block->shown = block->player->sprite();
 }
 
+// `held <joint> rest`: a weapon made at rest where the bone holding it is at rest (B_EX390's baked keyblade bones and
+// W_EX010's bone 2), so it moves as that bone has moved from rest. `root` is the game's weapon frame, the `weapon`
+// line's turn on the bone; the joint, those above it and those under it not on a node of the game's are carried.
+void hold_on_bone(Model &m, const Mat &root)
+{
+    const auto held =
+        std::find_if(m.joints.begin(), m.joints.end(), [&](const Joint &j) { return j.name == m.held_name; });
+    if (held == m.joints.end())
+        return;
+    if (!m.held_rest_checked) {
+        m.held_rest_checked = true;
+        const auto own = translation(inverse(held->inverse_bind)), bone = translation(holding_bone.rest);
+        const float off = length({own[0] - bone[0], own[1] - bone[1], own[2] - bone[2]});
+        if (off > 0.01F)
+            khdays_log(
+                "models: %s: `held %s rest`: its rest is %.1f cm from the holding bone's, so it sits that far off "
+                "the hand; give it `held %s` with the body's `weapon_motions`, or a model made at that bone's rest",
+                m.name.c_str(), m.held_name.c_str(), static_cast<double>(off * 100.0F), m.held_name.c_str());
+    }
+    Mat by = kIdentity;
+    by[0] = by[5] = by[10] = m.scale;
+    const Mat on_bone = mul(root, mul(holding_bone.from_game, mul(by, held->inverse_bind)));
+    std::vector<char> carried(m.joints.size(), 0);
+    for (int up = static_cast<int>(held - m.joints.begin()); up >= 0;
+         up = m.joints[static_cast<std::size_t>(up)].parent)
+        carried[static_cast<std::size_t>(up)] = 1;
+    for (std::size_t j = 0; j < m.joints.size(); ++j) {
+        const int parent = m.joints[j].parent;
+        if (carried[j] || (m.joints[j].node < 0 && parent >= 0 && carried[static_cast<std::size_t>(parent)])) {
+            carried[j] = 1;
+            skin[j] = on_bone;
+        }
+    }
+}
+
 void draw(Model &m)
 {
     float pos[16], vecm[16], proj_f[16];
@@ -5517,7 +5566,12 @@ void draw(Model &m)
     // bones.txt's `held`: a weapon's bones from its root to the weapon itself where the body holding it puts them
     // (its `weapon_motions` pose, from the frame the game draws the weapon at), the bones under them carried
     // (a chain, for the cloth); a body unseen for a second leaves the model as the game's nodes place it
-    if (!m.held_name.empty() && !held_weapon.pose.empty() && khdays_events_vblank_count() - held_weapon.vblank < 60U) {
+    const u32 held_now = khdays_events_vblank_count();
+    const bool on_bone = !m.held_name.empty() && m.held_rest && held_now - holding_bone.vblank < 60U;
+    if (on_bone) {
+        hold_on_bone(m, root);
+    } else if (!m.held_name.empty() && !m.held_rest && !held_weapon.pose.empty() &&
+               held_now - held_weapon.vblank < 60U) {
         if (m.held_bone.size() != m.joints.size()) { // the held joint and those above it, by their KH2 bones
             m.held_bone.assign(m.joints.size(), -1);
             for (std::size_t j = 0; j < m.joints.size(); ++j)
@@ -5621,6 +5675,7 @@ void draw(Model &m)
     const float weapon_share = m.weapon_motions && !kh2_weapon_pose.empty() ? kh2_weapon_share : kh2_game_share;
     const auto hold = [&](std::size_t j, std::size_t g) {
         const Mat turn = g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity;
+        holding_bone = {inverse(turn), inverse(m.joints[j].inverse_bind), khdays_events_vblank_count()};
         if (!m.weapon_motions || static_cast<std::size_t>(m.weapon_blade) >= weapon_pose.size())
             return mul(joint_frame(j), turn);
         const auto b = static_cast<std::size_t>(m.weapon_blade);

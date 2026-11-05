@@ -1,0 +1,2 @@
+# KH2's W_EX010_20 in the dual wield Roxas's right hand: as ro_w13600.bones.txt in w_.p2#0.
+held kh2_2 rest
