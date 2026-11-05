@@ -43,11 +43,13 @@ constexpr unsigned kHalfPicture = 0x1b;  // PSMT8H: a page kept in the picture b
 constexpr const char* kNoName = "_NoName";
 constexpr std::uint32_t kPlainPagesNumbered = 16;
 // A .bin's collision entry: u32 0x48 (its header's length), then each section's offset and length (u32 each, from
-// the entry), each section after the one before: the second its vertices (f32 x3), the fourth its faces, 20 bytes
-// each: corners (i16 x4, the fourth -1 for a triangle), u32 its normal's (in a table of its own), f32 its plane's
-// distance, u32 what it is.
+// the entry), each section after the one before: the second its vertices (f32 x3), the third its normals (i16 x4: x, y,
+// z at 8192, then one more), the fourth its faces, 20 bytes each: corners (i16 x4, the fourth -1 for a triangle), u16
+// its normal's index, u16, f32 its plane's distance, u32 what it is. The corners run against the normal (every face of
+// al00_02's 6463): a face is turned to its normal, as the game reads it.
 constexpr std::uint32_t kCollisionHeader = 0x48;
 constexpr std::size_t kCollisionVertex = 12;
+constexpr std::size_t kCollisionNormal = 8;
 constexpr std::size_t kCollisionFace = 20;
 // A .gvbl (a sky): u32 0x4989, its group count at +0x14, the groups from +0x20, each after the one before: u32 its
 // kind (0x25c; 0x21c in Deep Jungle's tz00_08, laid out the same), u32 its vertex count, 8 bytes, u32 its picture's
@@ -136,7 +138,8 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
         }
         if (!chained)
             continue;
-        const std::size_t vertices = length[1] / kCollisionVertex, faces = length[3] / kCollisionFace;
+        const std::size_t vertices = length[1] / kCollisionVertex, normals = length[2] / kCollisionNormal;
+        const std::size_t faces = length[3] / kCollisionFace;
         Scene scene;
         scene.name = name + " collision";
         scene.nodes.push_back({"room"});
@@ -162,14 +165,30 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
             auto within = [&](std::int16_t i) { return i >= 0 && static_cast<std::size_t>(i) < vertices; };
             if (!within(c[0]) || !within(c[1]) || !within(c[2]) || (c[3] >= 0 && !within(c[3])))
                 continue;  // (none seen in the rooms read)
-            corner(vertex(c[0]));
-            corner(vertex(c[1]));
-            corner(vertex(c[2]));
-            if (c[3] >= 0) {  // a four-sided face, as two triangles
-                corner(vertex(c[0]));
-                corner(vertex(c[2]));
-                corner(vertex(c[3]));
+            // its normal, turned upright as the vertices are; without one, the corners' order turned (as every face
+            // read runs against its normal)
+            const std::size_t index = r.get<std::uint16_t>(face + 8);
+            std::array<float, 3> n{0.0F, 0.0F, 0.0F};
+            const bool has_normal = index < normals;
+            if (has_normal) {
+                const std::size_t at_n = e.offset + at[2] + index * kCollisionNormal;
+                n = {static_cast<float>(r.get<std::int16_t>(at_n)), -static_cast<float>(r.get<std::int16_t>(at_n + 2)),
+                     -static_cast<float>(r.get<std::int16_t>(at_n + 4))};
             }
+            auto triangle = [&](std::int16_t a, std::int16_t b, std::int16_t d) {
+                const auto pa = vertex(a), pb = vertex(b), pd = vertex(d);
+                const std::array<float, 3> e0{pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]};
+                const std::array<float, 3> e1{pd[0] - pa[0], pd[1] - pa[1], pd[2] - pa[2]};
+                const std::array<float, 3> m{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
+                                             e0[0] * e1[1] - e0[1] * e1[0]};
+                const bool turn = has_normal ? m[0] * n[0] + m[1] * n[1] + m[2] * n[2] < 0 : true;
+                corner(pa);
+                corner(turn ? pd : pb);
+                corner(turn ? pb : pd);
+            };
+            triangle(c[0], c[1], c[2]);
+            if (c[3] >= 0)  // a four-sided face, as two triangles
+                triangle(c[0], c[2], c[3]);
         }
         if (prim.positions.empty())
             throw std::runtime_error("a collision with no faces");

@@ -186,7 +186,8 @@ void test_seventeenth_plain_page() {
                                                              (asked.empty() ? std::string("-") : asked.front()));
 }
 
-// A .bin whose one entry is a collision: a triangle and a four-sided face on four vertices, y down.
+// A .bin whose one entry is a collision: a triangle and a four-sided face on four vertices, y down, their corners
+// against their normal (up: -y), as KH1's run.
 void test_collision() {
     Writer w;
     w.u32(1);
@@ -196,8 +197,8 @@ void test_collision() {
     w.u32(0);
     w.zeros(0x20 - w.b.size());
     const std::size_t entry = w.b.size();
-    // its sections: none, the vertices (4 x 12), none, the faces (2 x 20), four none
-    const std::array<std::uint32_t, 8> lengths{0, 48, 0, 40, 0, 0, 0, 0};
+    // its sections: none, the vertices (4 x 12), the normals (1 x 8), the faces (2 x 20), four none
+    const std::array<std::uint32_t, 8> lengths{0, 48, 8, 40, 0, 0, 0, 0};
     std::uint32_t at = 0x48;
     for (const auto length : lengths) {
         w.u32(at);
@@ -211,12 +212,16 @@ void test_collision() {
         w.f32(v[1]);
         w.f32(v[2]);
     }
-    for (const auto& c : {std::array<int, 4>{0, 1, 2, -1}, {0, 1, 2, 3}}) {
+    for (const int c : {0, -8192, 0, 0}) {  // up, y down
+        w.u8(static_cast<unsigned>(c) & 0xFF);
+        w.u8((static_cast<unsigned>(c) >> 8) & 0xFF);
+    }
+    for (const auto& c : {std::array<int, 4>{0, 2, 1, -1}, {0, 3, 2, 1}}) {
         for (const int i : c) {
             w.u8(static_cast<unsigned>(i) & 0xFF);
             w.u8((static_cast<unsigned>(i) >> 8) & 0xFF);
         }
-        w.zeros(12);
+        w.zeros(12);  // its normal: the first
     }
     const auto length = static_cast<std::uint32_t>(w.b.size() - entry);
     for (int i = 0; i < 4; ++i)
@@ -224,8 +229,17 @@ void test_collision() {
     const auto scene = kh1::collision_scene(w.b.data(), w.b.size(), "tw99_01");
     const auto& p = scene.meshes.at(0).primitives.at(0);
     expect(p.indices.size() == 9, "a triangle and a four-sided face as two: " + std::to_string(p.indices.size() / 3));
-    expect(std::fabs(p.positions[8][1] - 50) < 1e-4F && std::fabs(p.positions[8][2] + 100) < 1e-4F,
-           "turned upright as the model");
+    bool upright = false;  // its fourth corner (0, -50, 100) at (0, 50, -100)
+    for (const auto& q : p.positions)
+        upright = upright || (std::fabs(q[1] - 50) < 1e-4F && std::fabs(q[2] + 100) < 1e-4F);
+    expect(upright, "turned upright as the model");
+    for (std::size_t i = 0; i < p.positions.size(); i += 3) {
+        const auto& a = p.positions[i];
+        const auto& b = p.positions[i + 1];
+        const auto& c = p.positions[i + 2];
+        const float up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+        expect(up > 0, "triangle " + std::to_string(i / 3) + " facing up, as its normal");
+    }
     bool threw = false;
     try {
         Writer bin;  // no entries

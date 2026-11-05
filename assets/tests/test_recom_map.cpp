@@ -153,7 +153,8 @@ void test_room() {
     expect(threw, "a file that is no .AZF refused");
 }
 
-// An .mcd of one piece moved by 10 on x: a floor quad and a triangle on its plane (y down: its normal -y).
+// An .mcd of one piece moved by 10 on x: a floor quad and a triangle on its plane (y down; its normal +y: into the
+// floor, as the .mcd's point).
 Bytes mcd() {
     Writer w;
     w.text("@MCD", 4);
@@ -178,7 +179,7 @@ Bytes mcd() {
         w.u32(at);
     w.zeros(mesh + 0x40 - w.b.size());
     w.f32(0);
-    w.f32(-1);
+    w.f32(1);
     w.f32(0);
     w.f32(0);  // its plane
     for (const auto& v : {std::array<float, 3>{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}) {

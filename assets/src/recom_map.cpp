@@ -32,7 +32,8 @@ constexpr float kTenthDegree = 3.14159265358979323846F / 1800.0F;
 // turn and scale (f32 x4 each), its matrix (f32 x16, by columns) and its inverse. A mesh: a grid (0x20 bytes), its
 // sections' offsets (u32 x8, from the mesh: 0x40 first) -- the grid's cells, its planes (f32 x4: normal, distance),
 // its vertices (f32 x4), ..., its faces from the sixth, 24 bytes each: u16 x2 (0, what it is), u16 its plane, u16 x4
-// its edges', u16 x4 its corners (a corner repeated: a triangle), u16.
+// its edges', u16 x4 its corners (a corner repeated: a triangle), u16. A plane's normal points into the solid (a
+// floor's down: of the flat faces of five rooms' collisions, 1 % of the area faced up turned to it).
 constexpr std::size_t kMcdPiece = 0xc0;
 constexpr std::size_t kMcdFace = 24;
 
@@ -301,7 +302,7 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
             }
             if (c.size() < 3 || plane >= planes)
                 continue;
-            // turned to face its plane's normal (placed by the piece's matrix, without its move)
+            // turned to face away from its plane's normal (placed by the piece's matrix, without its move)
             const std::size_t p = mesh + at[1] + std::size_t{plane} * 16;
             std::array<float, 3> n{r.get<float>(p), r.get<float>(p + 4), r.get<float>(p + 8)};
             n = {matrix[0] * n[0] + matrix[4] * n[1] + matrix[8] * n[2],
@@ -313,7 +314,7 @@ Scene collision_scene(const std::uint8_t* data, std::size_t size, const std::str
                 const std::array<float, 3> e1{pd[0] - pa[0], pd[1] - pa[1], pd[2] - pa[2]};
                 const std::array<float, 3> m{e0[1] * e1[2] - e0[2] * e1[1], e0[2] * e1[0] - e0[0] * e1[2],
                                              e0[0] * e1[1] - e0[1] * e1[0]};
-                const bool turn = m[0] * n[0] + m[1] * n[1] + m[2] * n[2] < 0;
+                const bool turn = m[0] * n[0] + m[1] * n[1] + m[2] * n[2] > 0;
                 corner(pa);
                 corner(turn ? pd : pb);
                 corner(turn ? pb : pd);
