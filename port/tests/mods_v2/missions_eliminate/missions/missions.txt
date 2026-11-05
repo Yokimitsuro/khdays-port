@@ -1,0 +1,23 @@
+# The missions_eliminate walk's mission: its target is the Shadow class and its goal one of the two Shadows ahead of
+# the start; the Yellow Opera behind it does not count. It is cleared once a Shadow is defeated, the others standing.
+[mission guardian]
+name en = The Guardian
+name fr = Le gardien
+name de = Der Wächter
+name it = Il guardiano
+name es = El guardián
+objective en = Defeat a Shadow.
+objective fr = Battez une Ombre.
+objective de = Besiege einen Schatten.
+objective it = Sconfiggi un'Ombra.
+objective es = Derrota a una sombra.
+world = eh
+room = 2
+category = 0
+time = 120000
+kind = eliminate
+target = 0
+goal = 1
+start = 0 0.049 0 -90
+wave 1 = 0x2 at 0 0.049 -3
+wave 1 = 1x1 at 0 0.049 6

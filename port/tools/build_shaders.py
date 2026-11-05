@@ -62,7 +62,9 @@ def build(source: Path, dxc: str, cross: str, versions: str, work: Path) -> None
         dxil = work / f"{base}.dxil"
         spirv = work / f"{base}.spv"
         msl = work / f"{base}.metal"
-        run([dxc, "-nologo", "-T", profile, "-E", entry, "-O3", "-Fo", str(dxil), str(source)])
+        # STAGE_VS, STAGE_PS or STAGE_CS: a file with several stages declares each one's resources
+        define = ["-D", f"STAGE_{stage.upper()}"]
+        run([dxc, "-nologo", "-T", profile, "-E", entry, *define, "-O3", "-Fo", str(dxil), str(source)])
         run(
             [
                 dxc,
@@ -73,6 +75,7 @@ def build(source: Path, dxc: str, cross: str, versions: str, work: Path) -> None
                 profile,
                 "-E",
                 entry,
+                *define,
                 "-O3",
                 "-Fo",
                 str(spirv),

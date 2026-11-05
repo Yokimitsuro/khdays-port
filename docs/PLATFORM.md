@@ -23,6 +23,7 @@ that; the rest of the window is inaccessible, the null range among it.
 | 0x03000000 | shared WRAM; 0x037f8000 the ARM7's WRAM, for its sound driver |
 | 0x04000000 | I/O registers and ports: inaccessible, the port reaches them (`BUILD.md`, "The registers") |
 | 0x05000000 | palettes; 0x06000000 VRAM; 0x07000000 OAM; 0x08000000 the empty GBA slot |
+| 0x09000000 | the enemies' overlays (114-301), 64 KB each, apart; 0x09c00000 ov107's slot tables for every class (`runtime/core/enemy_overlays.h`) |
 | 0x0b100000 | the register model's memory (`io.h`); 0x0b200000 the data area |
 | 0x0c000000 | the stacks of the game's threads (`host/app/context.h`) |
 | 0x20000000 | the game's heaps, committed a granule at a time as the game touches them |
@@ -77,6 +78,24 @@ unit, and the alarm timer a deadline at which the frame loop raises timer 1's
 interrupt (`runtime/core/events.c`); `prepare.py`'s hooks put these in place of
 the timer registers. The alarm queue, its handler and their callers stay the
 decomp's C.
+
+The DS's time is the PC's counter at a rate (`runtime/core/clock.c`): 1, but
+while the screen's lock holds it. The DS shows a picture 59.83 times a second, a
+screen refreshes 60 times: free, a picture's wait for the refresh drifts from
+nothing to a whole refresh and back every few seconds, when one waits a refresh
+more. At each VBlank the lock runs the DS's time a little faster or slower (at
+most half a percent around the screen's rate) so that the VBlank comes 6 ms
+before the screen's refresh, as Windows' compositor times it
+(`DwmGetCompositionTimingInfo`): the picture made at it is shown at that
+refresh, every time. Only with a screen at a whole multiple of about the DS's
+rate (60, 120, 240 Hz: within 1%; not at 75 or 144 Hz), while a window shows the
+game, outside a multiplayer session (the players' games keep one time) and while
+the time is not held. The sound output plays the DS's sound at the same rate
+(`SDL_SetAudioStreamFrequencyRatio`), so its queue stays as long. Knobs:
+`KHDAYS_SCREEN_LOCK=off`, `=HZ` (a screen at that rate, for testing on
+another), `KHDAYS_TRACE_LOCK` (where the VBlanks fall, every 300),
+`KHDAYS_TRACE_LATENCY` (a press of F24 every 370 ms timed to the window, to the
+game's pad sample and to the picture presented after it, said every 20 presses).
 
 ## The display
 
@@ -196,8 +215,13 @@ The gamepad's enhancements play the DS's own presses (`runtime/input`):
   through the menu with presses that depend on Config option 6
   (`Ov022_UpdateCommandInput`) -- with 1, a press of X moves the cursor down;
   with 0, X pressed alone, then a direction with X held (Up and Down step, Left
-  and Right change column). The sequencer turns a press of a menu direction into
-  those presses, one game frame per step.
+  and Right change column). Played as presses, X held stopped Roxas for their
+  frames; so a press of a menu direction is a step instead (and Up and Down
+  again while held, after 8 game frames every 2), which the game's own command
+  input takes that frame (`prepare.py`): with field control, no panel open, no
+  command chosen and X not held, the cursor routines X with a direction calls
+  (`Ov002_PanelCursorPrev`, `Next`, `StepLeft`, `StepRight`); option 6 = 1
+  steps only down. Nothing else of the player's input changes.
 - **Lock-on on its own buttons**: the game locks on with R
   (`Ov022_ReadSelectionInput`): not locked, R twice within 9 game frames locks
   on to the target the game picked; locked, R twice lets go, R once moves to the

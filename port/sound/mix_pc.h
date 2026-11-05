@@ -22,7 +22,7 @@ void khdays_sound_limiter_init(KhdaysSoundLimiter *limiter, uint32_t rate);
  * player's volumes (bus.h). `extra` (NULL: none), at the same scale, is
  * added before the clip, under `volume` too: the replaced sounds'.
  * `limiter` (NULL: clipped at full scale) keeps the result within it. */
-void khdays_sound_mix_pc(const KhdaysSoundHw *hw, const float gain[16], float volume, const float extra[2],
+void khdays_sound_mix_pc(const KhdaysSoundHw *hw, const float *gain, float volume, const float extra[2],
                          KhdaysSoundLimiter *limiter, float out[2]);
 
 #endif

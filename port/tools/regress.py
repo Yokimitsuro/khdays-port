@@ -144,6 +144,98 @@ WALKS = [
             "set_hp in the field\tdone",
         ),
     ),
+    # ... and an eliminate mission (port/tests/mods_v2/missions_eliminate): cleared once one of its two Shadows (its
+    # target class) is defeated, the mission gauge's goal, whatever the enemy that does not count; the waves walk's
+    # route
+    Walk(
+        "missions_eliminate",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_eliminate",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.eliminate/guardian is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... and a hearts mission (port/tests/mods_v2/missions_hearts): cleared once half the hearts its enemies give
+    # are collected, the first of its two enemies that give hearts defeated (a Shadow gives none); the waves walk's
+    # route
+    Walk(
+        "missions_hearts",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_hearts",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.hearts/hearts is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... an emblems mission (port/tests/mods_v2/missions_emblems): three Organization emblems and no enemy, cleared
+    # once the one where the players start is picked up (10 of its 30 points, the goal); the waves walk's route
+    Walk(
+        "missions_emblems",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_emblems",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.emblems/emblems is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... and a reach mission (port/tests/mods_v2/missions_reach): no enemy, cleared once the player, walking ahead
+    # (regress_walks/missions_reach.input: the waves walk's route to the field, then Up held), is within its place
+    Walk(
+        "missions_reach",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_reach",
+        script="missions_reach",
+        window=True,
+        marks=(
+            "missions: test.reach/reach is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... and a boss among other enemies (port/tests/mods_v2/missions_boss): a Guard Armor, whose code took all six
+    # of the DS's enemy slots, out with Shadows and a Soldier (each class's code at its own place here:
+    # runtime/core/enemy_overlays.h); cleared once a Shadow is defeated; the waves walk's route
+    Walk(
+        "missions_boss",
+        240,
+        player_save=True,
+        mods="port/tests/mods_v2/missions_boss",
+        script="missions_waves",
+        window=True,
+        marks=(
+            "missions: test.boss/boss is mission 3595",
+            "the mod's mission\t3595",
+            "mission end\tcleared",
+        ),
+    ),
+    # ... and a second wave of bosses drawn as several models (port/tests/mods_v2/multiplayer_boss_waves: two each of
+    # Darkside, Dual Blade and Guard Armor once the first wave's Shadow is defeated) played by a host and a guest,
+    # both from the player's save: the host picks the mod's mission (the waves walk's route through the members'
+    # screen) and attacks. Its frames' messages pass the DS's 480 bytes, which the guest's bosses' poses were lost to
+    Walk(
+        "multiplayer_boss_waves",
+        300,
+        player_save=True,
+        players=2,
+        script="multiplayer_boss",
+        mods="port/tests/mods_v2/multiplayer_boss_waves",
+        window=True,
+        marks=("the mod's mission\t3595",),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route

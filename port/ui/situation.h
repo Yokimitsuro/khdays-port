@@ -95,6 +95,9 @@ typedef struct KhdaysSituationInputs {
                                * Ov023_SetPendingText, Ov023_BeginClose), -1 without the event */
     uint32_t engine_swaps; /* how many of the last 8 VBlanks engine A changed screens in (the 3D on both
                                * screens) */
+    uint32_t event_runs;   /* how many of the last 8 VBlanks the field's event ran in (Ov023_SceneRun): with the 3D
+                               * on both screens some VBlanks' updates leave it out, and one VBlank's alone made the
+                               * dialog blink (day 172's Sora memory: a VBlank in three) */
     int8_t
         camp_screen; /* the loaded camp's screen (runtime/menus/camp.h khdays_camp_screen), KHDAYS_CAMP_NONE (-2) none */
     uint8_t camp_story; /* 1: the story's camp (ov025), 0 Mission Mode's (ov008) */
@@ -190,9 +193,9 @@ typedef struct KhdaysSituationFrame {
     void *ctx;
 } KhdaysSituationFrame;
 
-/* Records whether engine A `changed` screens at this VBlank (`history` bit n: n VBlanks ago) and
- * returns how many of the last 8 did. */
-uint32_t khdays_situation_swaps(uint32_t *history, int changed);
+/* Records whether something `happened` at this VBlank (`history` bit n: n VBlanks ago) and returns in
+ * how many of the last 8 it did: engine A's changes of screen, the event's runs. */
+uint32_t khdays_situation_recent(uint32_t *history, int happened);
 
 /* This frame's situation (situation_decide.c). */
 void khdays_situation_decide(const KhdaysSituationFrame *frame, KhdaysSituation *out);

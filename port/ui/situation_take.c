@@ -86,6 +86,8 @@ static const char *const watched_names[KHDAYS_UPDATES] = {
 static uint64_t ran[KHDAYS_UPDATE_WORDS], last[KHDAYS_UPDATE_WORDS];
 static uint32_t last_frame = ~0u;
 static int any_ran;
+/* the event's runs (Ov023_SceneRun) over the last 8 VBlanks, and how many */
+static uint32_t event_history, event_runs;
 
 void khdays_situation_update_ran(uintptr_t update)
 {
@@ -177,6 +179,9 @@ void khdays_situation_take(KhdaysSituationInputs *in, uint32_t frame)
     memset(in, 0, sizeof(*in));
     in->taken = 1;
     if (frame != last_frame) {
+        /* the VBlank that ended: did the event run in it */
+        event_runs = khdays_situation_recent(
+            &event_history, (int)((ran[KHDAYS_UPD_Ov023_SceneRun / 64] >> (KHDAYS_UPD_Ov023_SceneRun % 64)) & 1u));
         if (any_ran) {
             memcpy(last, ran, sizeof(last));
             memset(ran, 0, sizeof(ran));
@@ -185,6 +190,7 @@ void khdays_situation_take(KhdaysSituationInputs *in, uint32_t frame)
         last_frame = frame;
     }
     memcpy(in->updates, last, sizeof(in->updates));
+    in->event_runs = event_runs;
     in->scene = (int32_t)u32_at(KHDAYS_DS_gSceneCtl + SCENE_CUR);
     in->pending = (int32_t)u32_at(KHDAYS_DS_gSceneCtl + SCENE_PENDING);
     for (int n = 0; n < 64; ++n) {

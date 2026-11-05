@@ -13,6 +13,7 @@
 #include "core/models/bones.h"
 #include "core/models/game_model.h"
 #include "core/models/model_files.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/room_change.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
@@ -56,6 +57,7 @@ struct RoomModel {
 struct MapState {
     std::string mod, key, world = "\x01";  // what is shown
     int room = -1;
+    std::string room_key;  // a room the mod adds, else empty
     std::string error;
     bool has_collision = false;
     RoomCollision collision;
@@ -72,6 +74,8 @@ struct MapState {
     float yaw = 30.0f, pitch = 60.0f, distance = 40.0f;
     std::array<float, 3> target{0, 0, 0};
     bool show_floor = true, show_room = true;
+    bool show_sky = false;  // a sky around the room hides it from outside: drawn only when asked
+    bool has_sky = false;
     std::unique_ptr<Preview> preview;
 };
 
@@ -84,11 +88,6 @@ fs::path nitrofs() {
 std::vector<std::uint8_t> read_bytes(const fs::path& file) {
     std::ifstream in(file, std::ios::binary);
     return {std::istreambuf_iterator<char>(in), {}};
-}
-
-const std::vector<int>& buildable() {
-    static const std::vector<int> classes = buildable_enemy_classes(extracted_game_files(nitrofs()));
-    return classes;
 }
 
 // The game's items a chest can hold, named in the studio's language (read again when it changes).
@@ -143,56 +142,8 @@ const Texture* texture_of(const GameModel& g, const std::string& name) {
     return it->second.rgba.empty() ? nullptr : &it->second;
 }
 
-// The room as the mission plays it: the mod's own world file (its replaced rooms' floors) when it has one, else the
-// game's; its models the mod's model of the room when it replaces it, else the game's.
-void load_room(App& app, const Mod& m, const std::string& world, int room) {
-    s.world = world;
-    s.room = room;
-    s.error.clear();
-    s.has_collision = false;
-    s.collision = {};
-    s.models.clear();
-    s.textures.clear();
-    s.mod_room = false;
-    s.mod_model = {};
-    World w;
-    std::string why;
-    const fs::path own = m.dir / "files" / path_u8(world_path(world));
-    std::error_code ec;
-    const bool loaded = fs::is_regular_file(own, ec) ? parse_world(read_bytes(own), world, &w, &why)
-                                                     : load_world(nitrofs(), world, &w, &why);
-    if (!loaded || room < 0 || room >= static_cast<int>(w.rooms.size())) {
-        s.error = world + " " + std::to_string(room) + ": " + (why.empty() ? "no such room" : why);
-        return;
-    }
-    const WorldRoom& r = w.rooms[static_cast<std::size_t>(room)];
-    const auto& data = w.archive.entries[static_cast<std::size_t>(r.collision_member)].data;
-    s.has_collision = !data.empty() && parse_collision(data, &s.collision, &why);
-    // its models
-    const fs::path change = change_file(m.dir, world, room);
-    RoomReplacement replaced;
-    if (fs::is_regular_file(change, ec) && read_change(change, &replaced, &why) && !replaced.model.empty() &&
-        import_model(change_models(m.dir, world, room) / path_u8(replaced.model), &s.mod_model, &why)) {
-        place_model(&s.mod_model, replaced.place);
-        s.mod_room = true;
-    } else {
-        const fs::path dump = resolve(app.settings, app.settings.graphics_dump);
-        for (const auto& o : r.objects) {
-            const std::string prefix = world_path(world) + "#" + std::to_string(o.member) + "/mdl/";
-            for (const auto& it : app.catalog.items) {
-                if (it.kind != Kind::model || it.key.rfind(prefix, 0) != 0)
-                    continue;
-                RoomModel rm;
-                if (load_game_model(nitrofs(), dump, it.key, &rm.game, &why)) {
-                    std::vector<Mat> node_world;
-                    pose_game_model(rm.game, nullptr, 0.0f, &node_world, &rm.palette);
-                    s.models.push_back(std::move(rm));
-                }
-                break;
-            }
-        }
-    }
-    // the camera over the floor, looking down
+// The camera over the room's floor, looking down.
+void look_at_floor() {
     float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
     for (const auto& f : s.collision.faces[kGround]) {
         for (std::size_t v = 0; v < f.corners && v < 4; ++v) {
@@ -207,6 +158,80 @@ void load_room(App& app, const Mod& m, const std::string& world, int room) {
         s.target = {(lo[0] + hi[0]) * 0.5f, lo[1], (lo[2] + hi[2]) * 0.5f};
         s.distance = std::max({hi[0] - lo[0], hi[2] - lo[2], 4.0f}) * 1.4f;
     }
+}
+
+// A room the mod adds to `world` (core/rooms/added_rooms.h): its floors and walls, and its model.
+void load_added_room(const Mod& m, const std::string& world, const std::string& key) {
+    const fs::path folder = added_room_folder(m.dir, world, key);
+    std::string why;
+    const std::vector<std::uint8_t> collision = read_bytes(folder / "collision.bin");
+    s.has_collision = !collision.empty() && parse_collision(collision, &s.collision, &why);
+    s.mod_room = import_model(folder / "room.gltf", &s.mod_model, &why);  // placed when it was added
+    if (!s.has_collision && !s.mod_room) {
+        s.error = world + " " + key + ": " + (why.empty() ? "the mod adds no such room" : why);
+        return;
+    }
+    look_at_floor();
+}
+
+// The room as the mission plays it: an added room's own, else the mod's own world file (its replaced rooms' floors)
+// when it has one, else the game's; its models the mod's model of the room when it replaces it, else the game's.
+void load_room(App& app, const Mod& m, const std::string& world, int room, const std::string& room_key) {
+    s.world = world;
+    s.room = room;
+    s.room_key = room_key;
+    s.error.clear();
+    s.has_collision = false;
+    s.collision = {};
+    s.models.clear();
+    s.textures.clear();
+    s.mod_room = false;
+    s.mod_model = {};
+    if (!room_key.empty()) {
+        load_added_room(m, world, room_key);
+        return;
+    }
+    // a world of the mod's own: its rooms are those of the game world it is played in
+    const std::string played_in = world_played_in(m.dir, world);
+    World w;
+    std::string why;
+    const fs::path own = m.dir / "files" / path_u8(world_path(played_in));
+    std::error_code ec;
+    const bool loaded =
+        !played_in.empty() && (fs::is_regular_file(own, ec) ? parse_world(read_bytes(own), played_in, &w, &why)
+                                                            : load_world(nitrofs(), played_in, &w, &why));
+    if (!loaded || room < 0 || room >= static_cast<int>(w.rooms.size())) {
+        s.error = world + " " + std::to_string(room) + ": " + (why.empty() ? "no such room" : why);
+        return;
+    }
+    const WorldRoom& r = w.rooms[static_cast<std::size_t>(room)];
+    const auto& data = w.archive.entries[static_cast<std::size_t>(r.collision_member)].data;
+    s.has_collision = !data.empty() && parse_collision(data, &s.collision, &why);
+    // its models
+    const fs::path change = change_file(m.dir, played_in, room);
+    RoomReplacement replaced;
+    if (fs::is_regular_file(change, ec) && read_change(change, &replaced, &why) && !replaced.model.empty() &&
+        import_model(change_models(m.dir, played_in, room) / path_u8(replaced.model), &s.mod_model, &why)) {
+        place_model(&s.mod_model, replaced.place);
+        s.mod_room = true;
+    } else {
+        const fs::path dump = resolve(app.settings, app.settings.graphics_dump);
+        for (const auto& o : r.objects) {
+            const std::string prefix = world_path(played_in) + "#" + std::to_string(o.member) + "/mdl/";
+            for (const auto& it : app.catalog.items) {
+                if (it.kind != Kind::model || it.key.rfind(prefix, 0) != 0)
+                    continue;
+                RoomModel rm;
+                if (load_game_model(nitrofs(), dump, it.key, &rm.game, &why)) {
+                    std::vector<Mat> node_world;
+                    pose_game_model(rm.game, nullptr, 0.0f, &node_world, &rm.palette);
+                    s.models.push_back(std::move(rm));
+                }
+                break;
+            }
+        }
+    }
+    look_at_floor();
 }
 
 // The floor's height under a point (from a little over it), if there is floor there.
@@ -271,6 +296,8 @@ ImU32 spot_colour(const MissionSpot& p) {
     case Spot::spawner: return waves[static_cast<std::size_t>(std::max(0, p.wave - 1)) % 4];
     case Spot::chest: return IM_COL32(255, 205, 60, 255);
     case Spot::emblem: return IM_COL32(120, 255, 200, 255);
+    case Spot::collect: return IM_COL32(200, 130, 255, 255);
+    case Spot::reach: return IM_COL32(130, 255, 110, 255);
     }
     return IM_COL32_WHITE;
 }
@@ -286,6 +313,8 @@ std::string spot_label(App& app, const MissionSpot& p) {
     }
     case Spot::chest: return tr(app.language, S::mmap_chest);
     case Spot::emblem: return fmt(app.language, S::mmap_spot_badge, {std::to_string(p.emblem + 1)});
+    case Spot::collect: return tr(app.language, S::mmap_collect);
+    case Spot::reach: return tr(app.language, S::mmap_reach);
     }
     return {};
 }
@@ -336,6 +365,8 @@ void draw_room(App& app, ImVec2 size) {
         }
         if (s.mod_room) {
             for (const auto& mesh : s.mod_model.model.meshes) {
+                if (mesh.sky && !s.show_sky)
+                    continue;  // from outside, its sky hides it
                 const assets::DecodedTexture* t = nullptr;
                 for (const auto& [name, decoded] : s.mod_model.textures)
                     if (name == mesh.texture_name && !decoded.rgba.empty())
@@ -445,6 +476,27 @@ void draw_room(App& app, ImVec2 size) {
             list->AddQuadFilled(ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y), ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y),
                                 colour);
             break;
+        case Spot::collect: list->AddNgonFilled(c, r * 0.9f, colour, 6); break;
+        case Spot::reach: {
+            // its radius drawn on the ground around it
+            list->AddCircleFilled(c, r * 0.6f, colour);
+            ImVec2 last{};
+            bool has_last = false;
+            for (int k = 0; k <= 32; ++k) {
+                const double a = k * 2.0 * 3.14159265358979 / 32.0;
+                float x, y;
+                const bool seen =
+                    p.project({static_cast<float>(sp.at[0] + std::sin(a) * sp.radius), static_cast<float>(sp.at[1]),
+                               static_cast<float>(sp.at[2] + std::cos(a) * sp.radius)},
+                              &x, &y);
+                const ImVec2 here(at.x + x, at.y + y);
+                if (seen && has_last)
+                    list->AddLine(last, here, colour, 2.0f);
+                last = here;
+                has_last = seen;
+            }
+            break;
+        }
         }
         if (chosen)
             list->AddCircle(c, r * 1.7f, IM_COL32(255, 255, 255, 255), 0, 2.5f);
@@ -490,13 +542,14 @@ void draw_room(App& app, ImVec2 size) {
                         if (sp.kind == Spot::spawner)
                             last_wave = std::max(last_wave, sp.wave);
                     added.wave = last_wave;
-                    added.enemies = {{buildable().empty() ? 0 : buildable().front(), 3}};
+                    added.enemies = {{mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front(), 3}};
                 }
                 if (added.kind == Spot::chest)
                     added.contents = first_chest_item(app.language);
-                if (added.kind == Spot::start) {  // one start: moved there
+                if (added.kind == Spot::start || added.kind == Spot::reach) {  // one of each: moved there
+                    const Spot only = added.kind;
                     s.spots.erase(std::remove_if(s.spots.begin(), s.spots.end(),
-                                                 [](const MissionSpot& sp) { return sp.kind == Spot::start; }),
+                                                 [only](const MissionSpot& sp) { return sp.kind == only; }),
                                   s.spots.end());
                 }
                 if (added.kind == Spot::emblem) {  // one of each badge
@@ -603,7 +656,7 @@ void draw_chosen(App& app) {
             auto& [enemy_class, count] = sp.enemies[e];
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
             if (ImGui::BeginCombo("##class", (std::to_string(enemy_class) + ": " + enemy_name(enemy_class)).c_str())) {
-                for (const int c : buildable())
+                for (const int c : mission_enemy_classes())
                     if (ImGui::Selectable((std::to_string(c) + ": " + enemy_name(c)).c_str(), c == enemy_class))
                         enemy_class = c;
                 ImGui::EndCombo();
@@ -620,7 +673,7 @@ void draw_chosen(App& app) {
         if (gone >= 0 && sp.enemies.size() > 1)
             sp.enemies.erase(sp.enemies.begin() + gone);
         if (ImGui::SmallButton(tr(lang, S::mmap_add_enemy)))
-            sp.enemies.emplace_back(buildable().empty() ? 0 : buildable().front(), 1);
+            sp.enemies.emplace_back(mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front(), 1);
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("%s", tr(lang, S::mmap_waves_note));
         ImGui::PopTextWrapPos();
@@ -638,6 +691,14 @@ void draw_chosen(App& app) {
             sp.emblem = std::clamp(kind, 0, 2);
         break;
     }
+    case Spot::collect: break;
+    case Spot::reach: {
+        float radius = static_cast<float>(sp.radius);
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        if (ImGui::InputFloat(tr(lang, S::mmap_radius), &radius, 0.5f, 1.0f, "%.2f"))
+            sp.radius = std::max(0.1, static_cast<double>(radius));
+        break;
+    }
     }
     if (ImGui::Button(tr(lang, S::mmap_remove))) {
         s.spots.erase(s.spots.begin() + s.chosen);
@@ -646,6 +707,11 @@ void draw_chosen(App& app) {
 }
 
 }  // namespace
+
+const std::vector<int>& mission_enemy_classes() {
+    static const std::vector<int> classes = buildable_enemy_classes(extracted_game_files(nitrofs()));
+    return classes;
+}
 
 bool mission_map_unsaved() {
     if (s.key.empty())
@@ -658,10 +724,12 @@ bool mission_map_unsaved() {
     return false;
 }
 
-bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room) {
+bool draw_mission_map(App& app, const Mod& m, const std::string& key, const MissionRoom& where) {
     const auto lang = app.language;
+    const std::string& world = where.world;
+    const int room = where.room;
     bool saved = false;
-    // read again for another mission, mod, world or room (the room changed in the settings: its places kept)
+    // read again for another mission, mod, world or room (the room changed above the map: its places kept)
     if (s.mod != m.name || s.key != key) {
         s.mod = m.name;
         s.key = key;
@@ -670,16 +738,17 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
         s.chosen = s.dragged = s.placing = -1;
         s.world = "\x01";
     }
-    if (s.world != world || s.room != room)
-        load_room(app, m, world, room);
+    if (s.world != world || s.room != room || s.room_key != where.room_key)
+        load_room(app, m, world, room, where.room_key);
     if (!s.error.empty()) {
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", s.error.c_str());
         return false;
     }
     // what to add, then click the floor
     ImGui::TextUnformatted(tr(lang, S::mmap_add));
-    const S adds[] = {S::mmap_start, S::mmap_spawner, S::mmap_chest, S::mmap_emblem};
-    for (int i = 0; i < 4; ++i) {
+    const S adds[] = {S::mmap_start,  S::mmap_spawner, S::mmap_chest,
+                      S::mmap_emblem, S::mmap_collect, S::mmap_reach};  // in MissionSpot::Kind's order
+    for (int i = 0; i < static_cast<int>(std::size(adds)); ++i) {
         ImGui::SameLine();
         const bool on = s.placing == i;
         if (on)
@@ -693,12 +762,27 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
     ImGui::Checkbox(tr(lang, S::mmap_show_room), &s.show_room);
     ImGui::SameLine();
     ImGui::Checkbox(tr(lang, S::mmap_show_floor), &s.show_floor);
+    s.has_sky = false;
+    for (const auto& mesh : s.mod_model.model.meshes)
+        s.has_sky = s.has_sky || (s.mod_room && mesh.sky);
+    if (s.has_sky) {
+        ImGui::SameLine();
+        ImGui::Checkbox(tr(lang, S::map_sky), &s.show_sky);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::map_frame)))
+        look_at_floor();
     // saving: all at once, when it reads and builds
-    const bool changed = mission_map_unsaved();
+    const bool changed = mission_map_unsaved() || where.changed;
     ImGui::BeginDisabled(!changed);
     if (ImGui::Button(tr(lang, S::mmap_save))) {
         std::string why;
-        if (set_mod_mission_spots(nitrofs(), m.dir, key, s.spots, &why)) {
+        // the room chosen above the map first: the mission is built on the room shown
+        const bool placed =
+            !where.changed || (set_mod_mission(m.dir, key, "world", "", world, &why) &&
+                               set_mod_mission(m.dir, key, "room", "",
+                                               where.room_key.empty() ? std::to_string(room) : where.room_key, &why));
+        if (placed && set_mod_mission_spots(nitrofs(), m.dir, key, s.spots, &why)) {
             s.saved = mod_mission_spots(m.dir, key, &s.read_error);
             s.spots = s.saved;
             s.chosen = -1;
@@ -708,7 +792,9 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std:
             app.tell(fmt(lang, S::save_failed, {why}), false);
         }
     }
+    ImGui::EndDisabled();
     ImGui::SameLine();
+    ImGui::BeginDisabled(!mission_map_unsaved());
     if (ImGui::Button(tr(lang, S::mission_undo))) {
         s.spots = s.saved;
         s.chosen = -1;

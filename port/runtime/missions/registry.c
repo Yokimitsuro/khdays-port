@@ -53,6 +53,7 @@ static void free_mission(KhdaysMission *m)
     }
     free(m->identity);
     free(m->unlock_after);
+    free(m->room_key);
 #pragma warning(push)
 #pragma warning(disable : 6001) /* the spawners up to spawner_count are read_wave's, their enemies set */
     for (int i = 0; i < m->spawner_count; ++i) {
@@ -62,6 +63,7 @@ static void free_mission(KhdaysMission *m)
     free(m->spawners);
     free(m->chests);
     free(m->emblems);
+    free(m->collects);
     memset(m, 0, sizeof(*m));
 }
 
@@ -219,11 +221,69 @@ static int read_emblem(KhdaysMission *m, char *value)
     return 1;
 }
 
+/* `collect = <x> <y> <z>`: an Organization emblem */
+static int read_collect(KhdaysMission *m, char *value)
+{
+    char *words[8];
+    if (split(value, words, 8) != 3 || !grow((void **)&m->collects, m->collect_count, sizeof(*m->collects))) {
+        return 0;
+    }
+    if (!point(words, m->collects[m->collect_count].at)) {
+        return 0;
+    }
+    ++m->collect_count;
+    return 1;
+}
+
+/* `reach = <x> <y> <z> <radius>`: the place a reach mission's player goes to */
+static int read_reach(KhdaysMission *m, char *value)
+{
+    char *words[8];
+    m->has_reach = split(value, words, 8) == 4 && point(words, m->reach) && real(words[3], &m->reach_radius) &&
+                   m->reach_radius > 0;
+    return m->has_reach;
+}
+
 static int read_start(KhdaysMission *m, char *value)
 {
     char *words[8];
     m->has_start = split(value, words, 8) == 4 && point(words, m->start) && whole(words[3], -360, 360, &m->facing);
     return m->has_start;
+}
+
+static const char *const kind_names[] = {"waves", "eliminate", "hearts", "emblems", "reach"};
+
+const char *khdays_mission_kind_name(int kind)
+{
+    return kind >= 0 && kind < (int)(sizeof(kind_names) / sizeof(kind_names[0])) ? kind_names[kind] : NULL;
+}
+
+static int read_kind(KhdaysMission *m, const char *value)
+{
+    for (int k = 0; khdays_mission_kind_name(k) != NULL; ++k) {
+        if (strcmp(value, khdays_mission_kind_name(k)) == 0) {
+            m->kind = k;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int khdays_mission_built(const KhdaysMission *m)
+{
+    return m->spawner_count > 0 || (m->kind == KHDAYS_MISSION_EMBLEMS && m->collect_count > 0) ||
+           (m->kind == KHDAYS_MISSION_REACH && m->has_reach);
+}
+
+int khdays_mission_counted(const KhdaysMission *m)
+{
+    int counted = 0;
+    for (int i = 0; i < m->spawner_count && m->has_target; ++i) {
+        for (int e = 0; e < m->spawners[i].enemy_count; ++e) {
+            counted += m->spawners[i].enemies[e].enemy_class == m->target ? m->spawners[i].enemies[e].count : 0;
+        }
+    }
+    return counted;
 }
 
 static int valid_key(const char *key)
@@ -299,6 +359,37 @@ static int close_block(Reading *g)
     }
     if (!g->bad && key_taken(g->r, g->mod, m->key)) {
         refuse(g, m->line, "the key is taken by another of the mod's missions");
+    }
+    if (!g->bad && m->kind == KHDAYS_MISSION_ELIMINATE) {
+        char why[120];
+        if (!m->has_target) {
+            refuse(g, m->line, "an eliminate mission names the enemy class to defeat (target = <class>)");
+        } else if (khdays_mission_counted(m) == 0) {
+            snprintf(why, sizeof(why), "target %d: no wave has an enemy of that class", m->target);
+            refuse(g, m->line, why);
+        } else if (m->goal > khdays_mission_counted(m)) {
+            snprintf(why, sizeof(why), "goal %d: the waves have %d of class %d", m->goal, khdays_mission_counted(m),
+                     m->target);
+            refuse(g, m->line, why);
+        }
+    }
+    /* how many hearts its enemies give is the game's (the builder reads them: khdays_missions_build) */
+    if (!g->bad && m->kind == KHDAYS_MISSION_HEARTS && m->spawner_count == 0) {
+        refuse(g, m->line, "a hearts mission has its enemies in waves (wave <n> = ...)");
+    }
+    /* an Organization emblem gives 10 points picked up while whole, 8 once it has shrunk (Ov021_EmblemStep) */
+    if (!g->bad && m->kind == KHDAYS_MISSION_EMBLEMS) {
+        char why[120];
+        if (m->collect_count == 0) {
+            refuse(g, m->line, "an emblems mission places its Organization emblems (collect = <x> <y> <z>)");
+        } else if (m->goal > 10 * m->collect_count) {
+            snprintf(why, sizeof(why), "goal %d: its %d emblems give %d points at most (10 each)", m->goal,
+                     m->collect_count, 10 * m->collect_count);
+            refuse(g, m->line, why);
+        }
+    }
+    if (!g->bad && m->kind == KHDAYS_MISSION_REACH && !m->has_reach) {
+        refuse(g, m->line, "a reach mission names its place (reach = <x> <y> <z> <radius>)");
     }
     if (g->bad) {
         char why[260];
@@ -435,21 +526,42 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
     refused_why = NULL;
     if (strcmp(name, "wave") == 0) {
         ok = language != NULL && read_wave(m, language, value);
+    } else if (strcmp(name, "kind") == 0) {
+        ok = read_kind(m, value);
+    } else if (strcmp(name, "target") == 0) {
+        ok = m->has_target = whole(value, 0, 255, &m->target);
+    } else if (strcmp(name, "goal") == 0) {
+        ok = whole(value, 0, 0x7fffffff, &m->goal);
     } else if (strcmp(name, "start") == 0) {
         ok = read_start(m, value);
     } else if (strcmp(name, "chest") == 0) {
         ok = read_chest(m, value);
     } else if (strcmp(name, "emblem") == 0) {
         ok = read_emblem(m, value);
+    } else if (strcmp(name, "collect") == 0) {
+        ok = read_collect(m, value);
+    } else if (strcmp(name, "reach") == 0) {
+        ok = read_reach(m, value);
     } else if (strcmp(name, "category") == 0) {
         ok = whole(value, 0, KHDAYS_GAME_WORLDS - 1, &m->category);
     } else if (strcmp(name, "world") == 0) {
-        ok = khdays_world_index(value) >= 0;
+        /* a game world's code, or the key of a world the mod adds (rooms/worlds.txt), resolved as the missions start */
+        ok = khdays_world_index(value) >= 0 ||
+             (value[0] != '\0' && !khdays_world_code_taken(value) && strlen(value) < sizeof(m->world) &&
+              strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == strlen(value));
         if (ok) {
             snprintf(m->world, sizeof(m->world), "%s", value);
         }
     } else if (strcmp(name, "room") == 0) {
+        /* a room's id, or the key of a room the mod adds (letters, digits, _ and -) */
         ok = whole(value, 0, 254, &m->room);
+        if (!ok && value[0] != '\0' && strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") ==
+                                           strlen(value)) {
+            free(m->room_key);
+            m->room_key = copy_span(value, strlen(value));
+            m->room = 0;
+            ok = m->room_key != NULL;
+        }
     } else if (strcmp(name, "level") == 0) {
         ok = whole(value, 1, 120, &m->level);
     } else if (strcmp(name, "time") == 0) {
@@ -465,10 +577,16 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
         return;
     }
     if (!ok) {
-        static const char *const forms[][2] = {{"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
-                                               {"start", "start = <x> <y> <z> <facing>"},
-                                               {"chest", "chest = <item> at <x> <y> <z> <heading>"},
-                                               {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};
+        static const char *const forms[][2] = {
+            {"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
+            {"target", "target = <the enemy class to defeat>"},
+            {"kind", "kind = waves, eliminate, hearts, emblems or reach"},
+            {"goal", "goal = <how many of the target class to defeat, hearts or emblem points to collect; 0 all>"},
+            {"collect", "collect = <x> <y> <z>"},
+            {"reach", "reach = <x> <y> <z> <radius>"},
+            {"start", "start = <x> <y> <z> <facing>"},
+            {"chest", "chest = <item> at <x> <y> <z> <heading>"},
+            {"emblem", "emblem = <kind 0-2> at <x> <y> <z>"}};
         const char *form = NULL;
         for (size_t i = 0; i < sizeof(forms) / sizeof(forms[0]); ++i) {
             form = strcmp(name, forms[i][0]) == 0 ? forms[i][1] : form;

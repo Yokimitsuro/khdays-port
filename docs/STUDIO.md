@@ -142,6 +142,46 @@ collision: written as `<map>_collision.gltf` beside its model and taken like
 another model's, placed as the model is (the Usual Spot's: 334 grounds, 847
 walls, 155 ceilings, a fifth of the floors made from its visible model).
 
+**Rooms from the collections** (`core/rooms/collection_source.h`). The maps of KINGDOM HEARTS FINAL MIX, KINGDOM
+HEARTS II FINAL MIX, Re:Chain of Memories and Birth by Sleep FINAL MIX (KINGDOM HEARTS HD 1.5+2.5 ReMIX, setting
+`collection_1525`) and of
+Dream Drop Distance (KINGDOM HEARTS HD 2.8 Final Chapter Prologue, setting `collection_28`; else the folders the
+install recorded with the game's executable there) are found in the player's own packages: a package's index keys
+each file by the MD5 of its path, so each game's name pattern (KH2's `map/<w><nn>.map`, DDD's
+`map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`, Birth by
+Sleep's `arc/map/<w><nn>.arc`) is tried for
+every world code and number and asked for (a game's maps listed in about a second, no list of the games' files
+kept). A map is taken out by the installer's reader with the game's own executable into
+`saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
+with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
+`.bcd`, Birth by Sleep's from the `.bcd` in its archive, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of
+Memories' from its `.mcd`: docs/FORMATS.md, "Dream Drop Distance's rooms", "Birth by Sleep's rooms", "KINGDOM HEARTS
+FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
+FINAL MIX's skies come with the model (KH1's its `.gvbl` assets), drawn around the camera behind everything; Dream
+Drop Distance's textures its `.txa` animates change picture as in the game (thunder, clouds, sparks). The change
+names it `source <game>:<map>` (KH2's keep their `kh2 <map>`). Its first place: in its game's units (KH1's and KH2's
+centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres at 1), its lowest main floor (the lowest height
+holding a quarter of the floor area the most held one does) at the room's ground, then moved across until most of the
+room's places -- its markers and its origin, where missions put the player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
+them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
+another game" lists a game's worlds and maps (taken out or not). A room with no collision of its own (a Dive
+stage) is given one made from its model (`own-collision` then says so). A room's sky is drawn only with **Its sky**
+ticked (from outside, a sky's dome hides the room); **Frame the room** puts the view back over its floors, and the
+picture's lower edge is dragged to make it taller (a double click: big or half).
+
+```
+khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections (kh1, kh2,
+                                                     recom, ddd, bbs)
+khdays-studio --collection-take ddd:eh_01            its files taken out
+khdays-studio --collection-room ddd:eh_01            made into a model (and its own collision)
+khdays-studio --render-model <model> <png> [<collision model>]
+                                                     drawn as the previews draw it, from two sides (its sky
+                                                     left out; framed by the collision's floors when given)
+khdays-studio --replace-room <Mod> tt 0 ddd:eh_01 own-collision
+python port/tools/collection_room_walk.py ddd:eh_01 --walk-save OLD.sav
+                                                     in place of Twilight Town's room 0, played, frames saved
+```
+
 ## Missions
 
 A mission is changed in place (`core/missions/mission_edit.h`): a step's
@@ -161,8 +201,8 @@ are copied when the target's sets have as many rows.
 A mission of the mod's own (`core/missions/mod_missions.h`) is listed in Mission
 Mode after the game's, in its world's category: `missions/missions.txt` holds a
 block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
-`description <lang>`, `category`, `world`, `room`, `level`, `time`, `unlock`,
-`template`). The port plays it, in this order: made from its places on the map
+`description <lang>`, `category`, `world`, `room` (an index, or the key of a room the mod adds), `level`, `time`, `unlock`,
+`template`, and for its places `kind`, `target`, `goal`). The port plays it, in this order: made from its places on the map
 (below) when it has waves; else its own file `missions/<key>/mission.p2`; else
 its template's file as the game has it -- in that mission's own world and rooms,
 whatever the block's world and room say; a mission with none of them is left
@@ -174,7 +214,11 @@ from its map; a game mission's file otherwise, copied as the mission's own, and
 choosing one sets the world to its); the window says how each mission is played;
 and for each mission its **Places on the map** (below) and its **Words and
 settings** (each one's words in the five languages, where it is listed, when it
-opens; **Save to the mod** writes and reads back each change). Another mission
+opens, its **Kind** -- with **Emblems**, the **Points to collect** (the window says
+how many emblems it has and the points they give); with **Reach**, a word on its
+place; with **Hearts**, the **Hearts to collect** (the window
+says how many its waves give); with **Eliminate**, the **Enemy to defeat** and **How
+many** --; **Save to the mod** writes and reads back each change). Another mission
 chosen, or the studio closed, with changes not saved asks first. A game mission's
 **New mission from this one** opens that window with the mission as the new one's
 template; its **Replace another game mission with this one...** puts the
@@ -188,42 +232,114 @@ mission's content in another game mission's slot instead. From the command line:
 room, its file, and the rows the port adds to the list in each language; it exits
 1 with a line for each problem.
 
+**Rooms a mod adds** (`core/rooms/added_rooms.h`). A room of the mod's own is added to a world without replacing
+any of Days's: `rooms/rooms.txt` lists them (`<key> <world>`), their files in `rooms/<world>/<key>/` -- `room.gltf`
+and its pictures (the model drawn) and `collision.bin` (its floors and walls as the game reads them, built as a
+replaced room's are, on room 0's records and markers). Another game's map is placed in its units with its lowest main
+floor at height 0 and one of its floors under the origin; the modder's own model as it is. A new mission plays there
+with `room = <key>` (its waves, start and places in the room's own coordinates: `start = 0 0 0 0` is on its floor);
+the port puts the rooms after the world's own when it reads the world (docs/RUNTIME_MAP.md section 34). Added rooms
+have no exits: only missions reach them. Each is given its map on the lower screen, drawn from its floors as the
+game's are (`core/rooms/room_map.h`: `map.png` in the map's colours, a prop's few pixels drawn as the floor, and
+`map.txt`: where its origin falls, its scale -- the finest of the game's that holds it -- and its name,
+`name.<language>` for one language); both can be edited (docs/FORMATS.md, "Room maps").
+
+In the map view, **Add as a room...** beside a collection's map (KH2's, or another game's), or **My model as a new
+room...**, asks the world (the game's, or one the mod adds) and the room's key, and adds it the same way.
+
+    khdays-studio --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]
+    khdays-studio --remove-room <Mod> <world> <key>
+
+**Worlds a mod adds** (`rooms/worlds.txt`, `core/rooms/added_rooms.h`). A world Days does not have is listed in
+Mission Mode under its own name, after the game's worlds (L and R reach it), its missions played in its rooms: its
+rooms are added (`--add-room <Mod> <its key> ...`, their folders `rooms/<its key>/<room>/`) to the game world it names
+with `like` -- whose sky, music and sounds it plays with -- and a mission is put in it with `world = <its key>` (the
+new mission's world list offers the mod's worlds after the game's). Its name per language (`name es = ...`), or one for
+all (`name = ...`); English where one is missing.
+
+    [world isle]
+    like = eh
+    name en = Isle of Waves
+    name es = Isla de las olas
+
+    khdays-studio --add-world <Mod> <key> <code> [<language>=<name> | <name>]...
+
 **Waves, chests and emblems.** A mission with waves needs no file of its own:
 the port builds it at its start (`core/missions/mission_build.h`, compiled into
 the port as it is) from its block's lines, out of the game's own steps (1354's
-area, start and ending, 0004's "all defeated" check), with its world, room, start,
+area, start and ending, 0004's "all defeated" check, 0402's tracked enemy class,
+0001's position check, 0451's Organization emblems), with its world, room, start,
 time limit, notice and objective:
 
     start = <x> <y> <z> <facing>               # where the players start, degrees
     wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
     chest = <item> at <x> <y> <z> <heading>     # a chest holding one of the game's items
     emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
+    collect = <x> <y> <z>                        # emblems: an Organization emblem
+    reach = <x> <y> <z> <radius>                 # reach: the place to reach
+    kind = waves | eliminate | hearts | emblems | reach   # how it is cleared (default waves)
+    target = <class>                             # eliminate: the enemy class to defeat
+    goal = <n>                                   # eliminate: how many of it; hearts: hearts; emblems: points (0: all)
 
 Wave 1 comes out at the start, each next wave when every enemy of the last is
-defeated, and the mission is cleared when the last wave is (or failed by its
-time). The room's own exits are closed while it is played (each of its link
+defeated. A `waves` mission is cleared when the last wave is (or failed by its
+time). An `eliminate` mission is cleared once `goal` enemies of the `target`
+class are defeated, whichever waves they are in and whatever the others still
+standing; the mission gauge on the bottom screen counts them (as the game's 0402
+"Defeat seven Fire Plants!": a counter gauge and the tracked class, script
+commands 2.34 and 2.73). Only the target class's enemies placed in the waves
+count, so a target no wave has, or a goal above how many there are, leaves the
+mission out with the reason; a waves mission keeps `target` and `goal` unused.
+A `hearts` mission is cleared once `goal` hearts are collected: every defeated
+enemy gives its class's hearts (the game's, `Ms/DP.p2f`; Shadows and Possessors
+give none), and the gauge shows them over all the waves' enemies give (as the
+game's 0101 "Defeat Heartless and collect hearts!", a hearts gauge); waves whose
+enemies give no heart, or a goal above what they give, leave the mission out with
+the reason. An `emblems` mission is cleared once its Organization emblems
+(`collect` lines) give `goal` points: one gives 10 picked up while whole and 8
+once it has shrunk (picking one up makes the others whole again), and the gauge
+counts them over 10 a piece (as the game's 0451 "Find as many Organization
+emblems as you can!": panel 12's overlay, the emblems' class and pieces, script
+commands 4.25, 17.2 and 17.3); by default the goal is 8 a piece. A `reach`
+mission is cleared once a player comes within the radius of its place (as the
+game's 0001 "Reach Axel's position!", script command 2.8). Neither needs enemies:
+their waves, if any, come out as any mission's and end nothing. The room's own exits are closed while it is played (each of its link
 rows, by its key). A chest's item is the item's number, 1 to the game's item
 count (`db/db.p2` entry 0x15): the game reads that item's record as the
 mission starts, so a chest with no item (0) or one past the last leaves the
-mission out with the reason instead of stopping the game. An area takes four enemy classes at most (the game's); a class must be
-one a game mission has (the window lists them by name). The chests and emblems
+mission out with the reason instead of stopping the game. Any of the game's
+enemy classes come out together, as many as the waves have: on the DS their code
+shared six slots of memory (a Shadow and a Hover Ghost never fitted together, a
+boss took all six), and the port gives each class's code its own place
+(`port/runtime/core/enemy_overlays.h`). A class must be one a game mission has a
+row of (its row is copied; the window lists them by name). The chests and emblems
 are added to the game's `trbox` and `evi` as they load and put out in Mission
 Mode for new missions; a chest's opened flag is kept in the port's save part (an
 emblem's pickup is made at its place, but it is not drawn nor picked up yet).
 
-**Places on the map** (`app/views/mission_map.cpp`) shows the mission's room as
+**Places on the map** (`app/views/mission_map.cpp`) chooses, above the map, where
+the mission is played -- its world (the game's, or one of the mod's own) and its
+room (the world's own, or one the mod adds to it; the list's last entry adds one -- another game's map, chosen by
+game, world and map, or the modder's model -- and chooses it, as the New mission form's Room list does) -- and the
+map follows at once;
+the choice is saved with the places (first, so the mission is built on the room
+shown) or with **Save to the mod**. It shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces
-it (the mod's world file and its model of the room), with the players' start (its
-facing drawn), each spawner (its wave and how many enemies), each chest and each
-emblem on it. A place is dragged over the floor (it stands on the floor under the
+it (the mod's world file and its model of the room), or the mod's added room
+(its model and floors), with the players' start (its
+facing drawn), each spawner (its wave and how many enemies), each chest, each
+emblem, each Organization emblem and the place to reach (its radius drawn) on it.
+A place is dragged over the floor (it stands on the floor under the
 pointer, the collision's grounds); one is added by choosing what (**Players'
-start**, **Enemies**, **Chest**, **Emblem**) and clicking the floor; the one
+start**, **Enemies**, **Chest**, **Emblem**, **Organization emblem**, **Place to
+reach**) and clicking the floor; the one
 clicked is changed beside the picture: where it is, onto the floor, its facing, a
 spawner's wave and enemies (by name, from the classes the game's missions have,
 with how many of each), what a chest holds (the game's items by name, a search
-box over them; a new chest holds a Potion), an emblem's badge, or it is removed. A
+box over them; a new chest holds a Potion), an emblem's badge, the place to
+reach's radius, or it is removed. A
 place over no floor is ringed red. **Save the places** writes the start, waves,
-chests and emblems at once where the first of them was in the mission's block
+chests, emblems, Organization emblems and place at once where the first of them was in the mission's block
 (`set_mod_mission_spots`), when the mission reads as the port reads it and builds
 as the port builds it; otherwise the file is left as it was and the reason told.
 From the command line (each change checked by building the mission):

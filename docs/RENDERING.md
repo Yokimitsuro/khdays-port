@@ -52,8 +52,8 @@ bitmap's 32-byte units per row in bits 8-15 and its rows in bits 16-31.
 
 Elements are things the port draws itself (`port/gfx/elements.h`): each takes
 one slot of the DS's composition (a BG layer, or the sprites at a priority),
-with an image the port drew at the internal resolution and a place in DS
-pixels. The description's `KD_ELEMENTS` word says how many follow it (on the
+with an image the port drew at the 2D's scale (`khdays_ui_scale`: the window's,
+below) and a place in DS pixels. The description's `KD_ELEMENTS` word says how many follow it (on the
 card after the description and its palettes; on the CPU in their own array),
 `KE_WORDS` words each, the topmost of a slot first. A texel is 0 transparent;
 indexed, `KET_OPAQUE` | the palette index (the slot's palette), with
@@ -153,6 +153,22 @@ with the same texture, palette and attributes but alpha -- get their vertices
 placed between the two lists' at `alpha`, linearly in clip space, nothing
 extrapolated; then the list is clipped and put through the viewport like the
 game's (`khdays_g3d_finish`), so at `alpha` = 1 it is exactly the newer list.
+Their places, colours and alpha go between; their texture coordinates are the
+newer's (a texture scrolled round, a door's barrier or a Dark Corridor, ran back
+between the two). A model drawn more than once in a list (the field's prizes,
+the enemies) is matched to its nearest drawing in the older list, nearest pairs
+first, not to the one of its place in the order, which changes as one comes or
+goes (the prizes flew between each other). What moved more than an eighth of
+the view -- a model's drawing, or a polygon outside a model (an effect's piece
+taken for another of its material) -- and the selection markers (the reticle
+going from one target to the next) are drawn where the newer list has them. A
+drawing's place is the middle of its polygons' first vertices before projection,
+projected: the average of their places on the view ran to the hundreds for a room
+whose walls stand beside the eye, so the field's room (some 500 polygons) passed
+for one that jumped in a third of the game's frames and was drawn at the game's 30
+a second under Roxas moving smoothly (seen 2026-11-04 at 165 Hz, the play walk:
+322 polygons a picture left out where any were, 0.08% of all after).
+`tests/g3d_interp_test.c` checks each.
 
 The graphics card draws the lists (`host/render/gpu_raster3d.c`); the software
 rasterizer (`port/gpu/gpu3d.c`, GBATEK's "DS 3D Video") draws them as the
@@ -236,10 +252,32 @@ does not start (`host/render/gpu_present.c`).
 A frame: both screens' 2D are composed by `gfx_render.c` from the package's
 descriptions (`shaders/compose2d.hlsl`: an output pixel takes the 2D of the DS
 pixel it lies in, so the pixel art stays sharp, and the 3D of its own place),
-and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`. Each
-frame uploads the package's polygons, an index of which may cover each 8x8 tile
-(in drawing order), the composition records and the texture pages that changed.
-`raster3d.hlsl` runs `gpu3d.c`'s rasterizer for each pixel -- each thread owns
+and engine A's 3D is drawn at the internal resolution by `gpu_raster3d.c`.
+The 2D is composed at the window's scale whatever the internal resolution
+(`scale2d_now`, gpu_present.c: smooth scaling the whole multiple at least as
+large, sharp the largest that fits; the 3D's when that is finer, an
+internal resolution above the window's), so the HUD, the
+menus and the text stay as sharp as the window when the 3D is drawn coarser to
+save the card's time. Where the 2D is finer than the 3D, each output pixel reads
+the 3D at its middle (`finished3d_at`, finish3d.hlsli): the nearest texel with
+sharp scaling; with smooth scaling the four nearest, weighed by place and by
+their alpha, so a texel without 3D gives no colour. The HUD's own 3D (the
+polygons the field's panel and the game over screen send, `KHDAYS_G3D_HUD`) is
+then drawn apart at the 2D's scale (`khdays_raster3d_rasterize_hud`: those
+polygons alone, over no clear colour's alpha or fog and no rear plane; each size
+keeps its targets, gpu_native3d.c and gpu_raster3d.c holding the other aside),
+the rest at the internal resolution without them, and the composition puts the
+HUD's over the rest as the DS draws a polygon over what is there (`over3d`). The
+game draws its own pictures (HD text, the KH2 HUD's) at the 2D's scale too
+(`khdays_host_frame_scale`), with no upper bound. Seen (2026-11-04, the HD PACK,
+internal resolution 1 on a 2736x1536 window, the 2D at 8x): the command menu's
+HD words and the panels as sharp as at the window's resolution, the 3D at the
+DS's size, smoothed or square by the scaling. Each
+frame uploads the package's polygons, the composition records and the texture
+pages that changed; the card's own rasterizer draws the 3D (below, "The native
+3D"). `KHDAYS_3D=compute` draws it the way before it: with an index of which
+polygons may cover each 8x8 tile (in drawing order), `raster3d.hlsl` runs
+`gpu3d.c`'s rasterizer for each pixel -- each thread owns
 one pixel and goes through the polygons that may cover it in drawing order,
 keeping its state as `gpu3d.c`'s `Pixel` does, so translucent IDs, the shadow
 mask and blending over alpha 0 are exactly the reference's; where `gpu3d.c`
@@ -249,8 +287,23 @@ integer steps, its coverage and interpolation kept from being fused
 need the finished neighbours, and `compose.hlsl` composes it with the 2D as
 `gpu2d.c` does from the composition records, the master brightness last. A
 picture made larger than it is shown is shrunk by `shrink.hlsl` (each texel the
-area-weighted average under it): the 3D's edges come out smooth (the
-antialiasing setting) and the window shows the picture at its own pixels.
+area-weighted average under it): the window shows the picture at its own pixels.
+
+The antialiasing setting (FXAA, `shaders/fxaa3d.hlsl`) smooths the 3D once it is
+drawn, before anything reads it: a texel whose neighbours' brightness changes
+enough (an eighth of the brightest, and at least 0.03) lies on an edge; the edge
+runs across or down by which way the change is larger, its run is followed both
+ways (steps of 1 to 8 texels) between the texel's row and the steeper side's until
+the brightness leaves the edge's, and the texel is blended with the one across
+the edge by how near the run's nearer end it lies (a texel finer than one, a lone
+point or line, by how far it stands from its neighbours). Brightness and blending
+count each texel by its alpha, so an outline over no 3D becomes partial alpha and
+a texel without 3D gives no colour; the texel keeps its flags (over the 2D,
+translucent), and the edge marking and the fog come after from the other target.
+The result is copied back over the colour, so every reader (the composition, the
+one-screen picture) gets it; the HUD's 3D drawn apart is left sharp. It replaced
+the antialiasing that drew the picture 2x to 4x larger and shrunk it (four to
+sixteen times the 3D's work; settings files holding 2x, 3x or 4x read as FXAA).
 
 In widescreen the 3D target is that many columns wide (`origin_x` the DS
 column of its first, negative), the list clipped wide enough to fill it
@@ -279,6 +332,35 @@ both read (SDL's GPU API binds at most 8 storage buffers to a pass): a table of
 four words per replacement (its first texel's place, width, height, what it is),
 then all the texels, one word each; a still picture's and a 2D sheet in its own
 colours are followed by smaller copies, each half the one before (info bit 0x8).
+The buffer grows as new pictures come (`host/render/gpu_hd.c`): a larger one is
+made and what the card had is copied over on the card, its places moved past the
+larger table and the whole table uploaded again, so a growth uploads only the new
+pictures (it uploaded everything again, a stall of the whole buffer's size, and
+its sizes were 32-bit sums that wrapped past 2 GB of texels). The most one buffer
+holds is 4 GB, the shaders' byte addresses being 32 bits (`hd.Load`) as SDL's
+buffer sizes are, so the card keeps the pictures as a cache. The 3D's pictures
+(`KHDAYS_REPLACEMENT_ON_DEMAND`: a mod's texture for one of the game's, a mod's
+model's or room's, a texture bank's -- drawn by the 3D's polygons only) are
+uploaded when a list's polygons first draw them (`khdays_gpu_hd_sync_drawn`, before
+each 3D pass); every other picture (2D sheets, the HUD's atlases, movies, the
+pictures the card itself draws) is uploaded as it is added and stays. Below the
+most nothing leaves. At the most, room for a picture is found in the stretches
+pictures let go, and else by letting go of the 3D's pictures not drawn in this
+picture (`khdays_gpu_hd_next_frame`, once a presented picture), the least lately
+drawn first; they come back when drawn again. The table reaching the most takes
+room for four times the pictures; a larger table there takes room from the top
+of the texels, letting the 3D's pictures there go. A picture with no room yet
+reads the first texel, white -- the game's colours untextured -- until it fits,
+and the KH2 HUD's pass (`kh2_sequence_gpu.c`) does not draw into a picture not on
+the card (it wrote through the white texel's entry over the pictures after it: a
+model drawn with it vanished). Each growth, and the most reached, is in the
+session log (`hd: the card's replacement memory ...`). Checked by
+`tests/gpu_hd_test.c` on the card (growth keeping every picture, pictures coming
+and going, a table at the most). Seen (2026-11-04, the maintainer's HD PACK and
+two mods: 3.5 GB of pictures with their smaller copies on disk): 55-66 MB on the
+card in the mission and camp walks; with the most lowered to 40 MB, Roxas's model
+let go in the field and drawn white (the 2D's pictures, which stay, filled the
+rest), the walk's scenes the same.
 
 With the 3D on both screens the game moves engine A to the other screen at
 every VBlank (POWCNT1 bit 15), drawing each screen's view in turn while the
@@ -293,10 +375,57 @@ copy of the bank instead of the DS's 256x192 one (RUNTIME_MAP, "The screen
 blends at the port's resolution").
 
 Testing knobs: `KHDAYS_SHOTS_HD=DIR` (the `KHDAYS_SHOTS` frames as presented,
-at the resolution drawn); `KHDAYS_GFX=reference` (the 2D engines' pictures);
+at the resolution drawn; each at the first frame presented from it on, named
+by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
-the time preparing the 3D took).
+the time preparing the 3D took); `KHDAYS_PROFILE_GPU` (every 300 pictures, the
+3D's and the composition's time on the card, each picture waited for);
+`KHDAYS_3D=compute` (the 3D by `raster3d.hlsl` alone).
+
+### The native 3D
+
+`gpu_native3d.c` draws the list with the card's own rasterizer, so a picture
+costs what its pixels cost and not, as `raster3d.hlsl`'s, every pixel times
+the polygons near it. Each polygon is a fan of triangles in the list's order,
+its corners a vertex and its polygon (`native3d.hlsl`'s vertex shader reads the
+vertex from the list); the clip space's w is the DS's, so the card interpolates
+colours and texture coordinates as the DS does, and the Z buffer's depth is the
+DS's over 2^24 (the W buffer's, and the depth test "equal", from the shader:
+`SV_Depth`). The fragment shader colours a pixel with `gpu3d.c`'s rules, shared
+with `raster3d.hlsl` (`g3d_vram.hlsli`: texels of every format, the rear plane;
+`g3d_polygon.hlsli`: the polygon's alpha and colour, the replacements).
+
+What a fragment shader cannot do the pipelines do. The stencil holds the last
+polygon ID drawn (bits 0-5), whether it was translucent (6) and the shadow
+masks' bit (7): a translucent polygon is not drawn over a translucent pixel of
+its own ID; a run of shadow masks first clears bit 7 over the whole target,
+each mask sets it where its depth test fails, and a shadow is drawn where it is
+set, after its polygon ID has cleared it from the pixels of that ID; the first
+selection marker clears bit 6. The DS blends a translucent pixel over what is
+there, but gives an empty pixel (alpha 0) its colour whole: target 0 keeps the
+colour blended (rgb) and how much of the first translucent colour drawn over an
+empty pixel still shows (alpha, multiplied down by each later blend), target 1
+that first colour, and `native3d_pack.hlsl` adds it back (the DS's result,
+however many layers). The alpha is the largest drawn (blend MAX); the fog bit
+and the opaque polygon's ID and edge are written where the shader's alpha says.
+A polygon whose texture or replacement may give both opaque and translucent
+pixels is drawn twice, its opaque pixels first (writing the depth, as the DS
+does) and then its translucent ones; runs of such polygons drawn alike are
+drawn as two draws. The rest of the polygons drawn alike (pipeline, stencil
+reference) are one draw.
+
+A picture writes only the targets what finishes it reads: the colour, alpha
+and flags always; the first translucent colour when the rear plane can be empty;
+the fog bit with fog on, the polygon IDs and edges with edge marking on, the
+depth for either (`finish3d.hlsli`). Without the clear image the rear plane is
+the targets' clear values. `native3d_pack.hlsl` then writes `raster3d.hlsl`'s
+two targets, which `compose.hlsl`, the one-screen picture and the capture read
+as before. The native sequences (a mod's KH2-style HUD) blend with the scene in
+ways the card's blending cannot, so the list from the first of them on is drawn
+by `raster3d.hlsl`, starting from what the targets hold. The pictures are
+`gpu3d.c`'s but where the card's interpolation moves a texel or an edge by a
+pixel (the render test's limits, docs/BUILD.md).
 
 ## Mods' graphics
 
@@ -341,9 +470,9 @@ shown (an output pixel inside one texel: a 6x sheet at a 4K window's 12x) is rea
 through Catmull-Rom over the 4 x 4 texels round the pixel, those past the tile's
 edge taken at its edge (the tile beside it in the sheet is not the one beside it
 on the screen), so its edges stay smooth instead of showing the texels' steps. A
-frame whose 2D memory holds a replaced tile is composed at the internal resolution
-even without 3D (`has_hd_tiles`, gpu_present.c): at the DS's own size, which a
-frame of 2D alone keeps otherwise, the sheet was averaged down to the DS's pixels
+frame of 2D is composed at the 2D's scale (above) even without 3D: at the DS's own
+size, which a frame of 2D alone kept before (now only the 2D check,
+`KHDAYS_GFX=check`, compares there), the sheet was averaged down to the DS's pixels
 and stretched (the Journal's pages, seen blurred at 4K). The map of replaced tiles
 holds, where a replaced sheet's tile starts, the replacement's id + 1 in bits
 20-31 and the tile's number in bits 0-19; a page is mapped again when its

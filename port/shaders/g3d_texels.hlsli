@@ -1,4 +1,9 @@
-// Native texture alpha and colour shared by the scene and silhouette passes.
+// The DS's texture memory decoded as the shaders read it (g3d_vram.hlsli, shadow_mask.hlsl): a texel of any
+// format. The includer declares `vram` (the texture slots, 512 KB, then the palette slots, 96 KB), read by
+// its bytes.
+
+#define TEX_PAL 0x80000u
+
 // ---- VRAM (texdecode.h) ----
 
 uint tex8(uint address)

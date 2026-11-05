@@ -4,14 +4,16 @@
 #include "channels.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum { PCM8, PCM16, ADPCM, PSG };
 enum { MANUAL, LOOP, ONE_SHOT };
 
-#define REG8(offset) (*(uint8_t *)(hw->regs + (offset)))
-#define REG16(offset) (*(uint16_t *)(hw->regs + (offset)))
-#define REG32(offset) (*(uint32_t *)(hw->regs + (offset)))
+#define REG8(offset) (*(uint8_t *)khdays_sound_hw_reg(hw, (offset)))
+#define REG16(offset) (*(uint16_t *)khdays_sound_hw_reg(hw, (offset)))
+#define REG32(offset) (*(uint32_t *)khdays_sound_hw_reg(hw, (offset)))
+#define BASE(n) khdays_sound_hw_base(n)
 
 /* IMA-ADPCM (GBATEK "DS Sound Notes"). */
 static const int8_t adpcm_index_table[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
@@ -49,16 +51,16 @@ static const uint8_t *memory(const KhdaysSoundHw *hw, uint32_t address, int chan
 
 static uint32_t control(const KhdaysSoundHw *hw, int n)
 {
-    return REG32(n * 16);
+    return REG32(BASE(n));
 }
 
 static void set_busy(KhdaysSoundHw *hw, int n, int busy)
 {
-    hw->channels[n].busy = busy;
+    khdays_sound_hw_channel(hw, n)->busy = busy;
     if (busy) {
-        REG8(n * 16 + 3) |= 0x80;
+        REG8(BASE(n) + 3) |= 0x80;
     } else {
-        REG8(n * 16 + 3) &= 0x7f;
+        REG8(BASE(n) + 3) &= 0x7f;
     }
 }
 
@@ -66,23 +68,24 @@ static void set_busy(KhdaysSoundHw *hw, int n, int busy)
  * while Hold is set. */
 static void silence(KhdaysSoundHw *hw, int n)
 {
-    hw->channels[n].playing = 0;
+    KhdaysSoundChannel *c = khdays_sound_hw_channel(hw, n);
+    c->playing = 0;
     if (!(control(hw, n) & 0x8000)) {
-        hw->channels[n].sample = 0;
+        c->sample = 0;
     }
 }
 
 static void start(KhdaysSoundHw *hw, int n)
 {
-    KhdaysSoundChannel *c = &hw->channels[n];
+    KhdaysSoundChannel *c = khdays_sound_hw_channel(hw, n);
     const uint32_t cnt = control(hw, n);
     const uint32_t format = (cnt >> 29) & 3;
     /* the whole address: the DS register's 27 bits would cut the game's heaps',
      * which hold its sounds; a DS address is the same either way */
-    c->sad = REG32(n * 16 + 4) & ~3u;
-    c->pnt = REG16(n * 16 + 0xa);
-    c->len = REG32(n * 16 + 0xc) & 0x3fffffu;
-    c->counter = REG16(n * 16 + 8);
+    c->sad = REG32(BASE(n) + 4) & ~3u;
+    c->pnt = REG16(BASE(n) + 0xa);
+    c->len = REG32(BASE(n) + 0xc) & 0x3fffffu;
+    c->counter = REG16(BASE(n) + 8);
     c->busy = 1;
     c->playing = 1;
     c->ended = 0;
@@ -190,7 +193,7 @@ uint32_t khdays_sound_decode(const uint8_t *data, uint32_t words, int format, in
 /* The channel's timer overflowed: its next sample. */
 static void advance(KhdaysSoundHw *hw, int n)
 {
-    KhdaysSoundChannel *c = &hw->channels[n];
+    KhdaysSoundChannel *c = khdays_sound_hw_channel(hw, n);
     const uint32_t cnt = control(hw, n);
     const uint32_t format = (cnt >> 29) & 3;
     const uint32_t per_word = format == PCM8 ? 4 : format == PCM16 ? 2 : 8;
@@ -206,7 +209,7 @@ static void advance(KhdaysSoundHw *hw, int n)
             /* eight steps, starting at the LOW part: HIGH for (duty + 1)/8 */
             const uint32_t duty = (cnt >> 24) & 7;
             c->sample = duty != 7 && (uint32_t)(c->position & 7) >= 7 - duty ? 0x7fff : -0x7fff;
-        } else if (n >= 14) {
+        } else if (n >= 14 && n < 16) {
             if (c->noise & 1) {
                 c->noise = (c->noise >> 1) ^ 0x6000;
                 c->sample = -0x7fff;
@@ -277,36 +280,68 @@ static void advance(KhdaysSoundHw *hw, int n)
 
 void khdays_sound_hw_reset(KhdaysSoundHw *hw, KhdaysSoundMemory memory_of)
 {
+    free(hw->voice_regs);
+    free(hw->voice_channels);
     memset(hw, 0, sizeof(*hw));
     hw->memory = memory_of;
+}
+
+int khdays_sound_hw_add_voice(KhdaysSoundHw *hw)
+{
+    uint8_t *regs = (uint8_t *)realloc(hw->voice_regs, (size_t)(hw->voices + 1) * 16);
+    KhdaysSoundChannel *channels;
+    if (regs == NULL) {
+        return -1;
+    }
+    hw->voice_regs = regs;
+    channels = (KhdaysSoundChannel *)realloc(hw->voice_channels, (size_t)(hw->voices + 1) * sizeof(*channels));
+    if (channels == NULL) {
+        return -1;
+    }
+    hw->voice_channels = channels;
+    memset(regs + (size_t)hw->voices * 16, 0, 16);
+    memset(&channels[hw->voices], 0, sizeof(*channels));
+    return 16 + hw->voices++;
+}
+
+/* Whether `size` bytes at `offset` are registers: the DS's, or a voice's. */
+static int is_register(const KhdaysSoundHw *hw, uint32_t offset, int size)
+{
+    return offset + (uint32_t)size <= KHDAYS_SOUND_REG_SIZE + (uint32_t)hw->voices * 16u;
 }
 
 uint32_t khdays_sound_hw_read(const KhdaysSoundHw *hw, uint32_t offset, int size)
 {
     uint32_t value = 0;
-    memcpy(&value, hw->regs + offset, (size_t)size);
+    if (is_register(hw, offset, size)) {
+        memcpy(&value, khdays_sound_hw_reg(hw, offset), (size_t)size);
+    }
     return value;
 }
 
 void khdays_sound_hw_write(KhdaysSoundHw *hw, uint32_t offset, int size, uint32_t value)
 {
-    if (offset < 0x100) {
+    if (!is_register(hw, offset, size)) {
+        return;
+    }
+    if (offset < 0x100 || offset >= KHDAYS_SOUND_REG_SIZE) {
         /* an aligned access stays inside one register of one channel */
-        const int n = (int)(offset >> 4);
+        const int n = offset < 0x100 ? (int)(offset >> 4) : 16 + (int)((offset - KHDAYS_SOUND_REG_SIZE) >> 4);
         const uint32_t reg = offset & 15;
-        const int was_busy = hw->channels[n].busy;
-        memcpy(hw->regs + offset, &value, (size_t)size);
+        KhdaysSoundChannel *c = khdays_sound_hw_channel(hw, n);
+        const int was_busy = c->busy;
+        memcpy((uint8_t *)khdays_sound_hw_reg(hw, offset), &value, (size_t)size);
         if (reg < 4) {
-            const int start_bit = (REG8(n * 16 + 3) & 0x80) != 0;
+            const int start_bit = (REG8(BASE(n) + 3) & 0x80) != 0;
             if (start_bit && !was_busy) {
                 start(hw, n);
             } else if (!start_bit && was_busy) {
-                hw->channels[n].busy = 0;
+                c->busy = 0;
                 silence(hw, n);
-            } else if (!hw->channels[n].playing && !(control(hw, n) & 0x8000)) {
-                hw->channels[n].sample = 0; /* Hold cleared: the held sample ends */
+            } else if (!c->playing && !(control(hw, n) & 0x8000)) {
+                c->sample = 0; /* Hold cleared: the held sample ends */
             }
-        } else if (reg != 8 && hw->channels[n].playing) {
+        } else if (reg != 8 && c->playing) {
             report("SAD, PNT or LEN written while playing (taken at the next start)", n);
         }
         return;
@@ -319,14 +354,14 @@ void khdays_sound_hw_write(KhdaysSoundHw *hw, uint32_t offset, int size, uint32_
 
 float khdays_sound_hw_between(const KhdaysSoundHw *hw, int n)
 {
-    const uint32_t reload = REG16(n * 16 + 8);
-    const float t = (float)((int64_t)hw->channels[n].counter - reload) / (float)(0x10000u - reload);
+    const uint32_t reload = REG16(BASE(n) + 8);
+    const float t = (float)((int64_t)khdays_sound_hw_channel_of(hw, n)->counter - reload) / (float)(0x10000u - reload);
     return t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
 }
 
 float khdays_sound_hw_smooth_sample(const KhdaysSoundHw *hw, int n)
 {
-    const KhdaysSoundChannel *c = &hw->channels[n];
+    const KhdaysSoundChannel *c = khdays_sound_hw_channel_of(hw, n);
     if (!c->playing || ((control(hw, n) >> 29) & 3) == PSG) {
         return (float)c->sample;
     }
@@ -342,10 +377,10 @@ void khdays_sound_hw_step(KhdaysSoundHw *hw, uint32_t cycles)
 {
     const uint32_t counts = (cycles + hw->half) / 2;
     hw->half = (cycles + hw->half) & 1;
-    for (int n = 0; n < 16; ++n) {
-        KhdaysSoundChannel *c = &hw->channels[n];
+    for (int n = 0; n < khdays_sound_hw_count(hw); ++n) {
+        KhdaysSoundChannel *c = khdays_sound_hw_channel(hw, n);
         if (c->playing) {
-            const uint32_t reload = REG16(n * 16 + 8);
+            const uint32_t reload = REG16(BASE(n) + 8);
             c->counter += counts;
             while (c->counter >= 0x10000u && c->playing) {
                 c->counter = c->counter - 0x10000u + reload;

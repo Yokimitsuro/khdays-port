@@ -44,6 +44,8 @@ u32 khdays_events_vblank_count(void);
 #define CONTINUE_ROW 11
 #define GIVE_UP_ROW 13
 #define QUIT_FLAG 0x2087 /* set by Ov002_RetireSubFlow on giving up */
+#define PARTY 0x0204c678u /* gPartyMembers: the game's four records of 0x104 bytes */
+#define PARTY_BYTES (4u * 0x104u)
 #define GIVE_UP 2        /* the game's entry */
 
 static struct {
@@ -406,6 +408,16 @@ int khdays_retry_pending(void)
     return retry.confirmed;
 }
 
+/* The party as the camp sent the mission (khdays_retry_mission_launched). */
+static unsigned char party_sent[PARTY_BYTES];
+static int party_kept;
+
+void khdays_retry_mission_launched(void)
+{
+    memcpy(party_sent, (const void *)KHDAYS_W(PARTY), PARTY_BYTES);
+    party_kept = 1;
+}
+
 int khdays_retry_take(void)
 {
     if (!retry.confirmed) {
@@ -430,6 +442,11 @@ int khdays_retry_take(void)
         }
         say("a challenge's targets as they were before the field", rd32(CHALLENGE_TARGETS + TARGETS),
             rd32(CHALLENGE_TARGETS + TARGETS + 4u));
+    }
+    if (party_kept) {
+        /* the members' stats as the camp sent them: the field brings a challenge's level down on them again */
+        memcpy((void *)KHDAYS_W(PARTY), party_sent, PARTY_BYTES);
+        say("the party as the camp sent it, the first member's HP maximum", *(const u16 *)(party_sent + 0xe), 0);
     }
     say("the field again instead of the results", 0, 0);
     return 1;

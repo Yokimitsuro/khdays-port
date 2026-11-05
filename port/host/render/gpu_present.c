@@ -5,6 +5,7 @@
 #include "gpu_present.h"
 #include "../app/devices.h"
 #include "gfx_render.h"
+#include "gpu_hd.h"
 #include "gpu_raster3d.h"
 #include "../movies/movie_hd.h"
 #include "../movies/movie_subtitles.h"
@@ -44,6 +45,8 @@ static uint32_t shown[2 * W * H]; /* what it holds, to upload it again after a r
 static KhdaysVideo video;
 static KhdaysNotice notice;
 static int said_backend;
+static char card_line[320]; /* the graphics API, the card and its driver, for the session log */
+static int card_logged;     /* card_line written to it */
 
 /* The older HD path: engine A's screen at N x, and which screen it goes on. */
 static int raster_ready;      /* gpu_raster3d.c opened on this device */
@@ -131,9 +134,14 @@ static struct {
     double hd_ms, hd_max_ms;
 } stats;
 
-/* KHDAYS_SHOTS_HD */
+/* KHDAYS_SHOTS_HD: each frame asked, taken at the first frame presented from it on (a frame showing what the last
+ * one did is not presented) */
+typedef struct {
+    uint32_t frame;
+    int taken;
+} Shot;
 static const char *shot_dir;
-static uint32_t shot_frames[64];
+static Shot *shots;
 static int shot_count;
 
 /* Wine or Proton (a Steam Deck, Linux): its ntdll names its version. */
@@ -193,10 +201,15 @@ static SDL_Renderer *gpu_renderer(char *why, size_t size)
         static char said[32];
         const char *now = SDL_GetGPUDeviceDriver(device);
         if (!said_backend || SDL_strcmp(said, now) != 0) {
-            fprintf(stderr, "host: the picture goes through the graphics card (%s)\n", now);
-            if (said_backend) {
-                khdays_log("graphics: the picture goes through %s", now);
-            }
+            /* which card and driver (a laptop has two: the session log says which one plays, once it is open) */
+            const SDL_PropertiesID props = SDL_GetGPUDeviceProperties(device);
+            const char *driver = SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "");
+            SDL_snprintf(card_line, sizeof(card_line), "%s on %s (driver %s%s%s)", now,
+                         SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_NAME_STRING, "an unnamed card"), driver,
+                         driver[0] != '\0' ? " " : "",
+                         SDL_GetStringProperty(props, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "of no version"));
+            card_logged = 0;
+            fprintf(stderr, "host: the picture goes through the graphics card: %s\n", card_line);
             SDL_strlcpy(said, now, sizeof(said));
             said_backend = 1;
         }
@@ -283,17 +296,24 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
     notice = tell;
     profile = SDL_getenv("KHDAYS_PROFILE") != NULL;
     shot_dir = SDL_getenv("KHDAYS_SHOTS_HD");
+    SDL_free(shots);
+    shots = NULL;
     shot_count = 0;
     if (shot_dir != NULL && SDL_getenv("KHDAYS_SHOTS") != NULL) {
         const char *text = SDL_getenv("KHDAYS_SHOTS");
-        while (*text != '\0' && shot_count < (int)SDL_arraysize(shot_frames)) {
+        while (*text != '\0') {
             char *end;
             const unsigned long frame = SDL_strtoul(text, &end, 10);
             if (end == text) {
                 ++text;
                 continue;
             }
-            shot_frames[shot_count++] = (uint32_t)frame;
+            Shot *grown = (Shot *)SDL_realloc(shots, (size_t)(shot_count + 1) * sizeof(Shot));
+            if (grown == NULL)
+                break;
+            shots = grown;
+            shots[shot_count].frame = (uint32_t)frame;
+            shots[shot_count++].taken = 0;
             text = end;
         }
         SDL_CreateDirectory(shot_dir);
@@ -343,13 +363,6 @@ static int columns_now(void)
     }
 }
 
-/* The antialiasing: the picture made this many times larger, then shrunk
- * (gfx_render.c); never at the DS's own 1x, kept for comparing with the DS. */
-static int antialiasing_now(void)
-{
-    return video.internal_resolution != 1 && video.antialiasing > 1 ? video.antialiasing : 1;
-}
-
 /* The window's pixels a DS pixel the picture is shown at: the presentation
  * (the picture's columns, one screen's rows or two) fitted into the window. */
 static float shown_scale(void)
@@ -366,23 +379,33 @@ static float shown_scale(void)
 
 /* The internal resolution now: the setting, or for "window" the window's own size (smooth scaling:
  * the whole multiple at least as large, shrunk on the card; sharp: the largest that fits with square
- * DS pixels), times the antialiasing. If the card could not make a scale (refused_scale) the next one
- * down is used. */
+ * DS pixels). If the card could not make a scale (refused_scale) the next one down is used. */
 static int scale_now(void)
 {
     int n = video.internal_resolution;
     if (n == KHDAYS_RESOLUTION_WINDOW) {
         const float s = shown_scale();
-        n = video.smooth_scaling ? (int)SDL_ceilf(s * (float)antialiasing_now() - 0.01f)
-                                 : (int)SDL_floorf(s) * antialiasing_now();
+        n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
         n = n < 1 ? 1 : n;
-    } else {
-        n *= antialiasing_now();
     }
     if (refused_scale > 1 && n >= refused_scale) {
         n = refused_scale - 1;
     }
     return n;
+}
+
+/* The 2D's scale over a 3D at `n3d`: the window's own (smooth scaling: the whole multiple at least as large,
+ * shrunk on the card; sharp: the largest that fits), so the HUD, menus and text stay as sharp as the window
+ * whatever the internal resolution; the 3D's when that is finer (an internal resolution above the
+ * window's). The 2D check (KHDAYS_GFX=check) compares at the 3D's. */
+static int scale2d_now(int n3d)
+{
+    const float s = shown_scale();
+    int n = video.smooth_scaling ? (int)SDL_ceilf(s - 0.01f) : (int)SDL_floorf(s);
+    if (port2d_mode == 2 || n < n3d) {
+        n = n3d;
+    }
+    return n < 1 ? 1 : n;
 }
 
 /* Whether engine A's 3D is drawn on the graphics card: at an internal
@@ -414,7 +437,7 @@ int khdays_present_columns(void)
 
 int khdays_present_scale(void)
 {
-    return port2d_ready && device != NULL ? scale_now() : 1;
+    return port2d_ready && device != NULL ? scale2d_now(scale_now()) : 1;
 }
 
 /* Lays out the picture for its width now: the two screens one above the other or side by side
@@ -493,11 +516,14 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
     return part;
 }
 
-/* KHDAYS_SHOTS_HD: the screens of this frame, as presented. */
+/* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken. */
 static void save_shots(const KhdaysFramePackage *p)
 {
     for (int n = 0; n < shot_count; ++n) {
-        if (shot_frames[n] == p->frame && one_drawn) {
+        if (shots[n].taken || shots[n].frame > p->frame)
+            continue;
+        shots[n].taken = 1;
+        if (one_drawn) {
             /* the one-screen picture */
             int w = 0, h = 0;
             uint32_t *pixels = khdays_gfx_render_read(2, &w, &h);
@@ -505,7 +531,7 @@ static void save_shots(const KhdaysFramePackage *p)
                 save_png(p->frame, "one", pixels, w, h);
                 SDL_free(pixels);
             }
-        } else if (shot_frames[n] == p->frame && port2d_drawn) {
+        } else if (port2d_drawn) {
             /* the port's own screens, as they are presented */
             for (int e = 0; e < 2; ++e) {
                 int w = 0, h = 0;
@@ -515,7 +541,7 @@ static void save_shots(const KhdaysFramePackage *p)
                     SDL_free(pixels);
                 }
             }
-        } else if (shot_frames[n] == p->frame) {
+        } else {
             int w = 0, h = 0;
             uint32_t *a = hd != NULL ? khdays_raster3d_read(&w, &h) : NULL;
             const char *engine_a = p->upper == 0 ? "upper" : "lower";
@@ -740,7 +766,7 @@ static void draw_wipe(const SDL_FRect *at)
     }
 }
 
-static void fps_count(int picture); /* Video: Show FPS (below) */
+static void fps_count(void); /* Video: Show FPS (below) */
 
 /* How the camera went from list `a` to list `b` (their view matrices: a world point w is w R + t in
  * the camera's space, which looks down -z): the cosine of the angle it turned, how far its matrix's
@@ -812,7 +838,6 @@ static void note_logic_frame(const KhdaysFramePackage *p)
     } else if (logic_count < 2) {
         ++logic_count;
     }
-    fps_count(0);
     logic_time[1] = p->list3d_time;
     logic_arrival = p->time; /* the VBlank of the package that brought it */
     logic_serial = p->list3d_serial;
@@ -904,35 +929,27 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
 
 static void present(const KhdaysFramePackage *p, int first);
 
-/* Video: Show FPS -- counts the pictures shown (khdays_present_draw) and the
- * game frames that arrived, over half a second at a time. */
-static unsigned fps_pictures, fps_frames;
-static int fps_shown[2];
+/* Video: Show FPS -- counts the pictures shown (khdays_present_draw), over half a second at a time. */
+static unsigned fps_pictures;
+static int fps_shown;
 static Uint64 fps_since;
 
-static void fps_count(int picture)
+static void fps_count(void)
 {
     const Uint64 now = SDL_GetTicksNS();
-    if (picture) {
-        ++fps_pictures;
-    } else {
-        ++fps_frames;
-    }
+    ++fps_pictures;
     if (fps_since == 0) {
         fps_since = now;
     } else if (now - fps_since >= 500000000u) {
-        const double seconds = (double)(now - fps_since) / 1e9;
-        fps_shown[0] = (int)(fps_pictures / seconds + 0.5);
-        fps_shown[1] = (int)(fps_frames / seconds + 0.5);
-        fps_pictures = fps_frames = 0;
+        fps_shown = (int)(fps_pictures / ((double)(now - fps_since) / 1e9) + 0.5);
+        fps_pictures = 0;
         fps_since = now;
     }
 }
 
-int khdays_present_fps(int *pictures, int *frames)
+int khdays_present_fps(int *pictures)
 {
-    *pictures = fps_shown[0];
-    *frames = fps_shown[1];
+    *pictures = fps_shown;
     return video.show_fps;
 }
 
@@ -1248,12 +1265,41 @@ static void present_now(const KhdaysFramePackage *p, int first)
         khdays_raster3d_set_hud_shapes(picture ? composition.shapes3d : NULL, picture ? composition.shape3d_count : 0);
         /* a screen blend's frame: engine A shows a VRAM bank, drawn from its 3D at this resolution too */
         const int blend_frame = khdays_gfx_render_capture_frame(p);
-        const int raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) && n != refused_scale &&
-                           (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame) &&
-                           khdays_raster3d_rasterize(p, n, video.texture_smoothing);
-        /* shrunk to the size the window shows it at (smooth scaling: its own pixels), or by the
-         * antialiasing (sharp: the DS's pixels kept square, then stretched by whole pixels) */
-        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale() : (float)n / (float)antialiasing_now());
+        const int can_raster = raster_ready && !(port2d_mode == 2 && n == 1 && columns_now() == W) &&
+                               n != refused_scale && (p->wants & KHDAYS_WANT_3D) && (p->info[0].is3d || blend_frame);
+        const int n2d = scale2d_now(n);
+        khdays_gpu_hd_next_frame(); /* (what the last picture drew may leave the card) */
+        /* the 3D coarser than the 2D (an internal resolution below the window's): the HUD's polygons (the
+         * command menu) drawn apart at the 2D's scale, as sharp as the rest of the HUD */
+        khdays_raster3d_set_hud_apart(n2d > n);
+        if (can_raster && n2d > n && !khdays_raster3d_rasterize_hud(p, n2d, video.texture_smoothing)) {
+            static int told;
+            if (!told) {
+                told = 1;
+                khdays_log("graphics: the HUD's 3D could not be drawn apart at %dx (%s): drawn with the rest", n2d,
+                           SDL_GetError());
+            }
+            khdays_raster3d_set_hud_apart(0); /* drawn with the rest */
+        }
+        if (!card_logged && khdays_log_on()) {
+            khdays_log("graphics: the picture goes through %s", card_line);
+            card_logged = 1;
+        }
+        {
+            static int last_apart = -1;
+            const int apart = can_raster && n2d > n;
+            if (apart != last_apart) {
+                khdays_log("graphics: the 2D at %dx, the 3D at %dx%s", n2d, n,
+                           apart ? ", the HUD's 3D apart at the 2D's" : "");
+                last_apart = apart;
+            }
+        }
+        khdays_raster3d_set_fxaa(video.antialiasing > 1);
+        const int raster = can_raster && khdays_raster3d_rasterize(p, n, video.texture_smoothing);
+        /* shrunk to the size the window shows it at (smooth scaling: its own pixels; sharp: the DS's
+         * pixels kept square, then stretched by whole pixels) */
+        khdays_gfx_render_set_shown(video.smooth_scaling ? shown_scale() : n2d > n ? (float)n2d : (float)n);
+        khdays_gfx_render_set_smooth_3d(video.smooth_scaling);
         if (picture) {
             SDL_GPUTexture *c3d = NULL, *a3d = NULL;
             int raster_columns = one.columns;
@@ -1265,7 +1311,8 @@ static void present_now(const KhdaysFramePackage *p, int first)
             }
             /* at the DS's own size without 3D, but for a picture with a backdrop of its own (the
              * camp's Preferences page: an HD picture, no model) or a mod's tiles */
-            drawn = khdays_gfx_render_draw_one(p, raster || one.backdrop != NULL || hd_tiles ? n : 1, raster, &one);
+            drawn = khdays_gfx_render_draw_one(
+                p, raster || one.backdrop != NULL || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster, &one);
             one_drawn = drawn;
             one_made = one_made || drawn;
             /* the room change's quad, in the list this picture was drawn from, when its 3D shows in it */
@@ -1283,7 +1330,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 wipe = wipe_next;
             }
         } else {
-            drawn = khdays_gfx_render_draw(p, raster || hd_tiles ? n : 1, raster);
+            drawn = khdays_gfx_render_draw(p, raster || hd_tiles || port2d_mode != 2 ? n2d : 1, n, raster);
         }
         if (drawn) {
             port2d_drawn = 1;
@@ -1383,7 +1430,7 @@ void khdays_present_set_video(const KhdaysVideo *v)
         (v->movies == KHDAYS_MOVIES_DS ? KHDAYS_HOST_MOVIES_DS : 0) |
         (v->movies == KHDAYS_MOVIES_HD ? KHDAYS_HOST_MOVIES_HD : 0) | (v->one_screen ? KHDAYS_HOST_ONE_SCREEN : 0);
     khdays_subtitles_set(v->subtitles);
-    if (v->internal_resolution != video.internal_resolution || v->antialiasing != video.antialiasing) {
+    if (v->internal_resolution != video.internal_resolution) {
         refused_scale = 0; /* try the new choice */
     }
     if (v->backend != video.backend && renderer != NULL) {
@@ -1524,7 +1571,7 @@ void khdays_present_draw(void)
     if (device_lost) {
         return;
     }
-    fps_count(1);
+    fps_count();
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     /* the game's pause over a scene's paused video: on one screen its panel over the video's picture

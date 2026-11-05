@@ -114,7 +114,8 @@ struct App {
     std::vector<std::string> dialog_sheet_folders;    // where every 2D sheet is exported
     std::vector<std::string> dialog_texture_exports;  // where a 3D texture is exported
     std::vector<std::string> dialog_texture_folders;  // where every 3D texture is exported
-    std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH2's rooms)
+    std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH1, KH2, Re:CoM rooms)
+    std::vector<std::string> dialog_collections_28;   // the 2.8 collection's folder (Dream Drop Distance's rooms)
     std::vector<std::string> dialog_ports;            // the port's executable (the settings)
     std::vector<std::string> dialog_characters;       // a character's model, clips, picture or sound
 
@@ -160,11 +161,34 @@ void draw_mission_view(App& app, const Item& item);
 // Whether the mod's new missions have changes not saved; asked when the window closes (true: quit anyway).
 bool new_missions_unsaved();
 // The mod's new missions in a window of their own (views/mission_view.cpp), and a mission's places on its room's map
-// (views/mission_map.cpp): the mod's mission `key` played in `world`'s room `room` (true the frame its places were
-// saved); its places changed, not saved.
+// (views/mission_map.cpp): the mod's mission `key` played where `where` says (true the frame its places were saved);
+// its places changed, not saved.
 void draw_mod_missions(App& app, bool* open);
-bool draw_mission_map(App& app, const Mod& m, const std::string& key, const std::string& world, int room);
+struct CollectionGameInfo;
+struct CollectionMap;
+// A room of the mod's own added from a collection's map or the modder's model (views/room_adder.cpp): its window
+// asked open by the view `owner` with `map` of `game` chosen (the map view's lists), with the map to choose in it
+// (room_adder_open: a game, its world and the map, or the modder's model), or with the modder's model chosen in a file
+// dialog; drawn each frame by `owner`, true the frame a room was added, its world and key given.
+void room_adder_open_map(const std::string& owner, const CollectionGameInfo* game, const CollectionMap& map,
+                         const std::string& world);
+void room_adder_open(const std::string& owner, const std::string& world);
+void room_adder_choose_model(App& app, const std::string& owner, const std::string& world);
+bool room_adder_busy();
+bool draw_room_adder(App& app, const std::string& owner, std::string* world, std::string* key);
+
+// Where a new mission is played: its world (the game's code or the mod's own world's key), its room there (or one the
+// mod adds, by its key), and whether that differs from what the mod holds (saved with the places).
+struct MissionRoom {
+    std::string world;
+    int room = 0;
+    std::string room_key;
+    bool changed = false;
+};
+bool draw_mission_map(App& app, const Mod& m, const std::string& key, const MissionRoom& where);
 bool mission_map_unsaved();
+// The enemy classes a new mission's waves can use: those the game's missions have a row of (read once).
+const std::vector<int>& mission_enemy_classes();
 // The mod's characters (views/character_view.cpp): the window, a file dropped while the pointer is over it (true
 // when it took it), and its changes not saved.
 void draw_characters(App& app, bool* open);

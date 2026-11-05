@@ -218,10 +218,10 @@ static WMPortRecvCallback sPortRecv;
 static WMPortSendCallback sPortSend;
 static WMCallback sPlainCb;
 static WMGameInfo sOwnGameInfo;
-/* A received record's bytes while its handler runs: the largest the game
- * is handed is two of the host's frames joined (ENGINE_PORT) or a menu
- * block; a longer one is dropped, said in the log. */
-static u16 sRecvData[0x800];
+/* A received record's bytes while its handler runs: two of the host's frames
+ * joined (ENGINE_PORT), a frame grown past the DS's (runtime/net/msg_overflow.h)
+ * or a menu block -- room for any record, whose size is 16 bits. */
+static u16 sRecvData[0x8000];
 
 /* A completion owed to the game at the next delivery (runtime/net/net_session.h
  * keeps them: a queue that grows). Kinds: wh.c's send callback, a WM port

@@ -2,6 +2,7 @@
 // each file through the VFS so a mod replaces it. The layout is the original's (a bigger mod file past
 // the end, the FAT patched); gaps read 0xff; the three ranges the extraction drops stop the process.
 #include "rom.h"
+#include "enemy_overlays.h"
 #include "text_patches.h"
 
 extern "C" {
@@ -13,6 +14,7 @@ extern "C" {
 #include "session_log.h"
 }
 #include "../menus/saveworld.h"
+#include "../rooms/added.h"
 
 #include "khdays/assets/message.h" // lz_decompress
 #include "khdays/vfs/filesystem.h"
@@ -80,6 +82,33 @@ void move_us_overlay_table(std::vector<u8> &table)
                 std::memcpy(table.data() + at + 4 * field, &value, 4);
             }
         }
+    }
+}
+
+// The enemies' overlays each at its own place (enemy_overlays.h): their RAM address and static initializers moved
+// in the table, the DS's address kept (khdays_rom_overlay_home).
+std::vector<u32> overlay_homes; // by overlay id; 0: not moved
+void move_enemy_overlays(std::vector<u8> &table)
+{
+    constexpr u32 ENTRY = 32;
+    for (size_t at = 0; at + ENTRY <= table.size(); at += ENTRY) {
+        u32 entry[8];
+        std::memcpy(entry, table.data() + at, sizeof(entry));
+        if (entry[0] < KHDAYS_ENEMY_OVERLAY_FIRST || entry[0] > KHDAYS_ENEMY_OVERLAY_LAST) {
+            continue;
+        }
+        const u32 home = entry[1];
+        const u32 moved = KHDAYS_ENEMY_OVERLAYS + (entry[0] - KHDAYS_ENEMY_OVERLAY_FIRST) * KHDAYS_ENEMY_OVERLAY_SPAN;
+        if (overlay_homes.size() <= entry[0]) {
+            overlay_homes.resize(entry[0] + 1, 0);
+        }
+        overlay_homes[entry[0]] = home;
+        for (const int field : {1, 4, 5}) {
+            if (entry[field] != 0) {
+                entry[field] = entry[field] - home + moved;
+            }
+        }
+        std::memcpy(table.data() + at, entry, sizeof(entry));
     }
 }
 
@@ -244,6 +273,25 @@ void read_region(KhdaysRomReader &reader, const Region &r, u32 offset, u8 *out, 
 
 } // namespace
 
+// A world's archive, the map pictures or a language's map chains with what the rooms the mods add put in them
+// (runtime/rooms/added.h) into `out`; false when they add nothing.
+static bool added_rooms(const std::string &game_path, const fs::path &source, std::vector<u8> &out)
+{
+    khdays_rooms_load();
+    std::ifstream in(source, std::ios::binary);
+    const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    KhdaysGameFiles game;
+    game.read = [](const std::string &other) {
+        std::vector<u8> b;
+        if (const auto path = khdays::vfs::resolve_original(other)) {
+            std::ifstream file(*path, std::ios::binary);
+            b.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+        }
+        return b;
+    };
+    return khdays_rooms_merge(game_path, bytes, out, game);
+}
+
 // The VFS reads the mods on as the game started, in the list's order (runtime/mods/list.h).
 static void give_vfs_the_mods()
 {
@@ -258,7 +306,7 @@ static void give_vfs_the_mods()
 
 extern "C" int khdays_rom_init(void)
 {
-    khdays_days_unpack_all("mods"); // the .days mods' files copied out where the VFS reads them
+    khdays_days_unpack_all("mods");                      // the .days mods' files copied out where the VFS reads them
     khdays_mods_scan("mods", khdays_host_user_folder()); // the VFS's mods root, beside the game
     khdays_mods_start();
     give_vfs_the_mods();
@@ -302,6 +350,7 @@ extern "C" int khdays_rom_init(void)
     if (us_card) {
         move_us_overlay_table(blobs[OVERLAY_TABLE_BLOB].bytes);
     }
+    move_enemy_overlays(blobs[OVERLAY_TABLE_BLOB].bytes);
     fat = read_whole(system / "fat.bin");
     regions.push_back({field(0x48), field(0x48) + static_cast<u32>(fat.size()), FAT, 0});
 
@@ -346,6 +395,11 @@ extern "C" int khdays_rom_init(void)
         if (khdays_text_patch(game_path, *path, worded)) {
             const u32 bytes = static_cast<u32>(worded.size());
             files[id] = {*path, bytes, std::move(worded)};
+        } else if (khdays_rooms_serves(game_path) && added_rooms(game_path, *path, worded)) {
+            const u32 bytes = static_cast<u32>(worded.size()); // the mods' rooms put after the world's own, their maps
+            files[id] = {*path, bytes, std::move(worded)};
+            if (game_path.rfind("mi/wd/wd_", 0) == 0)
+                khdays_origin_want(); // their models named from the start, drawn as the mods' (models.cpp)
         } else {
             files[id] = {*path, static_cast<u32>(fs::file_size(*path)), {}};
         }
@@ -441,6 +495,11 @@ extern "C" const u8 *khdays_rom_header(void)
 extern "C" int khdays_rom_is_us(void)
 {
     return us_card ? 1 : 0;
+}
+
+extern "C" u32 khdays_rom_overlay_home(int id)
+{
+    return id >= 0 && static_cast<size_t>(id) < overlay_homes.size() ? overlay_homes[static_cast<size_t>(id)] : 0;
 }
 
 extern "C" int khdays_rom_language(int language)

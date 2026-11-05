@@ -18,9 +18,12 @@ struct Settings {
     int cache_mb = 512;        // the previews' memory budget (grows with use up to it)
     bool browser_tree = true;  // the catalog as folders (else one list)
     std::string theme;         // the colour palette: kh1, kh2, kh3, days, mom; empty: MoM's
-    // KINGDOM HEARTS HD 1.5+2.5 ReMIX's folder, KH2's rooms come from; empty: the one the install made
-    // its HD pieces from (setup/state.json)
+    // KINGDOM HEARTS HD 1.5+2.5 ReMIX's folder, KH1's, KH2's and Re:Chain of Memories' rooms come from; empty: the one
+    // the install made its HD pieces from (setup/state.json)
     std::string collection_1525;
+    // KINGDOM HEARTS HD 2.8 Final Chapter Prologue's folder, Dream Drop Distance's rooms come from; empty: the one the
+    // install recorded
+    std::string collection_28;
 };
 
 // The settings file of a port folder.

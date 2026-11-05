@@ -34,4 +34,10 @@ void *khdays_header_heap_of(void *heap, void *block);
 void khdays_game_heap_recreated(void *heap);
 void khdays_handle_check(unsigned int handle, unsigned int base);
 
+/* The game's resource cache (ResCache_FindSlot) past its 128 entries, called from the game's C: its table `n` (0 the
+ * game's, then the port's, NULL past them) and, when every entry is in use, a new table of 128 from the main heap
+ * (its first entry; NULL when the heap has no room). */
+void *khdays_res_cache_table(int n);
+void *khdays_res_cache_grow(void);
+
 #endif

@@ -5,6 +5,7 @@
 #include "core/files/paths.h"
 #include "core/missions/mission_build.h"
 #include "core/missions/missions.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 
@@ -213,6 +214,9 @@ const std::vector<MissionSetting>& mission_settings() {
         {"start", false, "where the players start: x y z facing (degrees)"},
         {"level", false, "the enemies' level base, 1-120 (default: its template's)"},
         {"time", false, "the time limit the list shows, in milliseconds"},
+        {"kind", false, "how its places are cleared: waves (its last wave defeated) or eliminate (its goal)"},
+        {"target", false, "eliminate: the enemy class to defeat"},
+        {"goal", false, "eliminate: how many of the target class to defeat (0: all of them)"},
         {"unlock", false, "start, cleared <number> or cleared <mod id>/<key>"},
         {"template", false, "the game mission it was made from"},
     };
@@ -251,13 +255,17 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
         mm.category = m.category;
         mm.world = m.world;
         mm.room = m.room;
+        mm.room_key = m.room_key != nullptr ? m.room_key : "";
         mm.level = m.level;
         mm.time_ms = m.time_ms;
+        mm.kind = m.kind;
+        mm.target = m.has_target ? m.target : -1;
+        mm.goal = m.goal;
         mm.template_file = m.template_file;
         mm.unlock = m.unlock_after != nullptr ? std::string("cleared ") + m.unlock_after
                     : m.unlock_number != 0    ? "cleared " + std::to_string(m.unlock_number)
                                               : "start";
-        mm.built = m.spawner_count > 0;
+        mm.built = khdays_mission_built(&m) != 0;
         mm.own_file = fs::is_regular_file(mod_dir / "missions" / path_u8(mm.key) / "mission.p2", ec);
         std::size_t start = 0, end = 0;
         if (block_of(file_lines, mm.key, &start, &end)) {
@@ -271,7 +279,8 @@ std::vector<ModMission> read_mod_missions(const fs::path& mod_dir, std::vector<s
                 value = trimmed(hash == std::string::npos ? value : value.substr(0, hash));
                 if (setting == "start")
                     mm.start = value;
-                else if (setting.rfind("wave ", 0) == 0 || setting == "chest" || setting == "emblem")
+                else if (setting.rfind("wave ", 0) == 0 || setting == "chest" || setting == "emblem" ||
+                         setting == "collect" || setting == "reach")
                     mm.lines.emplace_back(setting, value);
             }
         }
@@ -296,11 +305,13 @@ bool new_mod_mission(const fs::path& nitrofs, const fs::path& mod_dir, const std
     use_game_items(nitrofs);
     if (!valid_key(key))
         return fail_with(why, "a key is letters, digits, '_' and '-'");
-    if (khdays_world_index(world.c_str()) < 0)
-        return fail_with(why, "no world " + world + " (tt, aw, he, al, eh, nm, zz, pp, bb, tw)");
+    // a game world, or one the mod adds (its rooms its game world's)
+    const std::string played_in = world_played_in(mod_dir, world);
+    if (played_in.empty())
+        return fail_with(why, "no world " + world + " (tt, aw, he, al, eh, nm, zz, pp, bb, tw, or one the mod adds)");
     World w;
     std::string world_why;
-    if (!load_world(nitrofs, world, &w, &world_why))
+    if (!load_world(nitrofs, played_in, &w, &world_why))
         return fail_with(why, "world " + world + ": " + world_why);
     if (room < 0 || room >= static_cast<int>(w.rooms.size()))
         return fail_with(why, "world " + world + " has rooms 0-" + std::to_string(w.rooms.size() - 1));
@@ -473,6 +484,19 @@ std::vector<MissionSpot> mod_mission_spots(const fs::path& mod_dir, const std::s
             s.emblem = m->emblems[i].kind;
             out.push_back(s);
         }
+        for (int i = 0; i < m->collect_count; ++i) {
+            MissionSpot s;
+            s.kind = MissionSpot::Kind::collect;
+            s.at = {m->collects[i].at[0], m->collects[i].at[1], m->collects[i].at[2]};
+            out.push_back(s);
+        }
+        if (m->has_reach) {
+            MissionSpot s;
+            s.kind = MissionSpot::Kind::reach;
+            s.at = {m->reach[0], m->reach[1], m->reach[2]};
+            s.radius = m->reach_radius;
+            out.push_back(s);
+        }
     }
     khdays_missions_free(&r);
     return out;
@@ -490,6 +514,8 @@ std::pair<std::string, std::string> mission_spot_line(const MissionSpot& s) {
     case MissionSpot::Kind::chest:
         return {"chest", std::to_string(s.contents) + " at " + at_text(s.at) + " " + std::to_string(s.heading)};
     case MissionSpot::Kind::emblem: return {"emblem", std::to_string(s.emblem) + " at " + at_text(s.at)};
+    case MissionSpot::Kind::collect: return {"collect", at_text(s.at)};
+    case MissionSpot::Kind::reach: return {"reach", at_text(s.at) + " " + number_text(s.radius)};
     }
     return {};
 }
@@ -506,7 +532,8 @@ bool set_mod_mission_spots(const fs::path& nitrofs, const fs::path& mod_dir, con
     std::size_t at = 0;
     for (std::size_t i = end; i-- > start + 1;) {
         const std::string s = setting_of(lines[i]);
-        if (s == "start" || s == "chest" || s == "emblem" || s.rfind("wave ", 0) == 0) {
+        if (s == "start" || s == "chest" || s == "emblem" || s == "collect" || s == "reach" ||
+            s.rfind("wave ", 0) == 0) {
             lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(i));
             at = i;
             --end;
@@ -537,14 +564,22 @@ bool set_mod_mission_spots(const fs::path& nitrofs, const fs::path& mod_dir, con
 namespace {
 
 // The places of mission `m` over no floor of its room, said: its start, its spawners, chests and emblems.
-std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMission& m) {
+std::vector<std::string> off_the_floor(const fs::path& nitrofs, const fs::path& mod_dir, const KhdaysMission& m) {
     std::vector<std::string> out;
-    World w;
-    std::string why;
-    if (!load_world(nitrofs, m.world, &w, &why) || m.room < 0 || m.room >= static_cast<int>(w.rooms.size()))
-        return out;
-    const auto& data =
-        w.archive.entries[static_cast<std::size_t>(w.rooms[static_cast<std::size_t>(m.room)].collision_member)].data;
+    std::vector<std::uint8_t> data;
+    if (m.room_key != nullptr) {
+        // a room the mod adds: its own floors and walls
+        std::ifstream in(added_room_folder(mod_dir, m.world, m.room_key) / "collision.bin", std::ios::binary);
+        data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    } else {
+        World w;
+        std::string why;
+        if (!load_world(nitrofs, m.world, &w, &why) || m.room < 0 || m.room >= static_cast<int>(w.rooms.size()))
+            return out;
+        data = w.archive.entries[static_cast<std::size_t>(w.rooms[static_cast<std::size_t>(m.room)].collision_member)]
+                   .data;
+    }
+    const std::string room = m.room_key != nullptr ? std::string(m.room_key) : std::to_string(m.room);
     RoomCollision c;
     if (data.empty() || !parse_collision(data, &c, nullptr))
         return out;
@@ -554,7 +589,7 @@ std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMiss
             return;
         char where[96];
         std::snprintf(where, sizeof(where), " at (%.3f, %.3f, %.3f)", at[0], at[1], at[2]);
-        out.push_back(what + where + " is over no floor of " + m.world + " room " + std::to_string(m.room));
+        out.push_back(what + where + " is over no floor of " + m.world + " room " + room);
     };
     if (m.has_start)
         check("the start", m.start);
@@ -564,6 +599,10 @@ std::vector<std::string> off_the_floor(const fs::path& nitrofs, const KhdaysMiss
         check("chest " + std::to_string(i + 1), m.chests[i].at);
     for (int i = 0; i < m.emblem_count; ++i)
         check("emblem " + std::to_string(i + 1), m.emblems[i].at);
+    for (int i = 0; i < m.collect_count; ++i)
+        check("Organization emblem " + std::to_string(i + 1), m.collects[i].at);
+    if (m.has_reach)
+        check("the place to reach", m.reach);
     return out;
 }
 
@@ -582,10 +621,10 @@ bool check_mod_mission_build(const fs::path& nitrofs, const fs::path& mod_dir, c
             m = &r.list[i];
     bool ok = true;
     if (m != nullptr && off_floor != nullptr)
-        *off_floor = off_the_floor(nitrofs, *m);
+        *off_floor = off_the_floor(nitrofs, mod_dir, *m);
     if (m == nullptr) {
         ok = fail_with(why, "the mod has no mission " + key + " that reads");
-    } else if (m->spawner_count > 0) {
+    } else if (khdays_mission_built(m)) {
         *has_waves = true;
         MissionPlan plan;
         std::vector<std::uint8_t> bytes;
@@ -605,14 +644,21 @@ bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::v
         ok = false;
     }
     for (const ModMission& m : missions) {
-        std::string about = m.key + ": " + m.world + " room " + std::to_string(m.room);
+        std::string about =
+            m.key + ": " + m.world + " room " + (m.room_key.empty() ? std::to_string(m.room) : m.room_key);
         std::error_code ec;
         World w;
         std::string world_why;
+        bool added = false;
+        for (const auto& r : read_added_rooms(mod_dir, nullptr))
+            added = added || (r.key == m.room_key && r.world == m.world);
         if (!load_world(nitrofs, m.world, &w, &world_why)) {
             lines->push_back("problem: " + m.key + ": world " + m.world + ": " + world_why);
             ok = false;
-        } else if (m.room >= static_cast<int>(w.rooms.size())) {
+        } else if (!m.room_key.empty() && !added) {
+            lines->push_back("problem: " + m.key + ": the mod adds no room " + m.room_key + " to " + m.world);
+            ok = false;
+        } else if (m.room_key.empty() && m.room >= static_cast<int>(w.rooms.size())) {
             lines->push_back("problem: " + m.key + ": world " + m.world + " has rooms 0-" +
                              std::to_string(w.rooms.size() - 1));
             ok = false;

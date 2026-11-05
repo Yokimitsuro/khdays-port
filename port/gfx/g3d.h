@@ -31,9 +31,14 @@ typedef struct KhdaysG3dPolygon {
     float ymin, ymax;
     int32_t translucent;
     int32_t flags;       /* KHDAYS_G3D_HUD, KHDAYS_G3D_BEYOND_DS, KHDAYS_G3D_MOD */
-    int32_t replacement; /* the texture drawn instead (runtime/mods/textures.h), or -1 */
+    int32_t replacement; /* the texture drawn instead (runtime/mods/textures.h), or -1 (or a bank's, below) */
     int32_t shadow;      /* a character shadow's caster or receiver: its mask (gfx/character_shadow.h) */
 } KhdaysG3dPolygon;
+
+/* A game polygon whose texture is in a texture bank past the DS's VRAM (runtime/display/texture_banks.h):
+ * its `replacement` until the frame package's list is marked (textures.h), -2 less the bank. */
+#define KHDAYS_G3D_BANK_REPLACEMENT(bank) (-2 - (int32_t)(bank))
+#define KHDAYS_G3D_BANK_OF(replacement) (-2 - (int32_t)(replacement))
 
 /* A polygon as the game sent it, before clipping, in a list's `pre` arrays: its vertices in clip space
  * (the game's in fixed point, a mod's in floats, ten words each), what it was drawn with, and the key
@@ -118,6 +123,16 @@ int khdays_g3d_finish(const KhdaysG3dList *from, const KhdaysG3dPreVertex *verti
 /* The model draws (runtime/mods/models.cpp): the polygons sent from now on come
  * from a draw of `resource`, until khdays_g3d_draw_end -- their key (above). */
 void khdays_g3d_draw_begin(const void *resource);
+
+/* The texture bank the textures sent from now on are in (runtime/display/texture_banks.h): 0 the DS's
+ * VRAM. */
+void khdays_g3d_texture_bank(int32_t bank);
+
+/* A PLTT_BASE carrying a bank (texture_banks.h khdays_texture_banks_tag_pltt): the DS reads only its 13 low
+ * bits, so the port puts the bank above them for the textures the game sets apart from a model's draw (the
+ * field's prize pictures): the bit, and the bank in bits 16-30. The texture set before it is the bank's. */
+#define KHDAYS_G3D_PLTT_BANK_TAG 0x80000000u
+#define KHDAYS_G3D_PLTT_BANK(word) ((int32_t)(((word) >> 16) & 0x7fffu))
 
 /* NNS_G3dGlbFlushP (prepare.py HOOKS): the camera of the list being built. */
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12]);

@@ -13,13 +13,16 @@ ByteAddressBuffer keys : register(t1, space0);   // the colours made transparent
 ByteAddressBuffer pieces : register(t2, space0);
 ByteAddressBuffer hd : register(t3, space0); // the existing changing image store
 
-[[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, C x 192 at N
+[[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, C x 192 at scale3d
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> upper2d : register(u2, space1); // 256 x 192 at N
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> lower2d : register(u3, space1);
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> out_picture : register(u4, space1);
 // the composition's picture behind everything (`backdrop`), read only; a texel when there is none
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> backdrop_image : register(u5, space1);
+// the HUD's 3D drawn apart at N (gpu_raster3d.h), when the 3D is drawn coarser than the picture
+[[vk::image_format("r32ui")]] RWTexture2D<uint> hud_color3d : register(u6, space1);
+[[vk::image_format("r32ui")]] RWTexture2D<uint> hud_attr3d : register(u7, space1);
 
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
@@ -52,8 +55,17 @@ cbuffer Params : register(b0, space2) {
     uint unused2;
     uint unused3;
     uint unused4;
+    uint scale3d;         // the 3D's N (`scale` but when the picture is drawn finer than the 3D)
+    uint width3d;         // its targets, texels
+    uint height3d;
+    uint smooth3d;        // 1: the 3D read between its texels (smooth scaling)
+    uint hud3d;           // 1: the HUD's 3D apart, over the rest (as wide as the picture, at N)
+    uint unused5;
+    uint unused6;
+    uint unused7;
 };
 
+#define FINISH3D_SCALED
 #include "finish3d.hlsli"
 
 uint pack(float4 c)
@@ -97,7 +109,12 @@ uint x3d_at(uint2 id)
     if (has3d == 0u || hide3d != 0u) {
         return 0u;
     }
-    c = finished3d((int)id.x, (int)id.y);
+    c = scale3d == scale ? finished3d((int)id.x, (int)id.y)
+                         : finished3d_at(((float)id.x + 0.5f) * (float)scale3d / (float)scale,
+                                         ((float)id.y + 0.5f) * (float)scale3d / (float)scale);
+    if (hud3d != 0u) {
+        c = over3d(finish3d_texel(hud_color3d, hud_attr3d, (int)width, (int)height, (int)id.x, (int)id.y), c);
+    }
     if (((c >> 24) & 31u) == 0u) {
         return 0u;
     }

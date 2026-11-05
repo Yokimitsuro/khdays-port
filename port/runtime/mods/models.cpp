@@ -13,6 +13,7 @@ extern "C" {
 #include "../core/events.h" // khdays_events_vblank_count
 #include "../core/rom.h"    // khdays_mods_find
 #include "../core/session_log.h"
+#include "../rooms/added.h"
 #include "../scripts/game_link.h" // khdays_link_paused
 #include "textures.h"
 #include "../core/window.h"
@@ -3230,8 +3231,9 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             if (mesh.sky != 0 && mesh.translucent == blended)
                 mesh.sky = ++sky_layer;
     // its own animation: the nodes its skinned meshes' joints are (with their parents) move; one that moves
-    // another node would move a mesh made still on loading, which is not played
-    if (!own_skeleton && !mod.animations.empty()) { // (an own skeleton keeps its nodes, below, and plays its clips)
+    // another node would move a mesh made still on loading, which is not played (an own skeleton keeps its nodes,
+    // below, and plays its description's clips)
+    if (!own_skeleton && !mod.animations.empty()) {
         std::vector<char> moving(mod.nodes.size(), 0);
         for (const Joint &joint : model->joints) {
             for (int up = joint.node < 0 ? joint.room_node : -1;
@@ -6033,6 +6035,12 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
             if (loaded) {
                 loaded->character = true;
                 khdays_log("models: %s drawn from %s, a mod's character", name, path);
+            }
+        } else if (named && khdays_rooms_model(name, path, sizeof(path))) {
+            loaded = load(name, path, file, offset); /* a room a mod adds: its own model */
+            if (loaded) {
+                loaded->room = true;
+                khdays_log("models: %s drawn from %s, a room a mod adds", name, path);
             }
         } else if (named) {
             /* glTF first, then binary glTF, FBX and KH2's */

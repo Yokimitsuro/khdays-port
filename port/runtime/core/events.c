@@ -191,6 +191,7 @@ void khdays_events_update(void)
             }
         }
         khdays_arm7_frame();
+        khdays_clock_vblank(next_vblank); /* the screen's lock */
         ++vblank_count;
         next_vblank += KHDAYS_CYCLES_PER_FRAME;
         if (vblank_count % 600 == 0 && khdays_timing_on()) {
@@ -298,9 +299,16 @@ void khdays_runtime_wait(void)
     profile_wait(enter);
     if (log_wait_end != 0 && enter - log_wait_end > KHDAYS_CLOCK_HZ / 20 && khdays_log_on()) {
         /* the session log: over 50 ms without a wait (so without a frame), and in which scene */
+        /* the memory free then: a PC short of it pages, and the game's thread waits on the disk */
+        MEMORYSTATUSEX memory;
+        memory.dwLength = sizeof(memory);
+        if (!GlobalMemoryStatusEx(&memory)) {
+            memory.ullAvailPhys = 0;
+        }
         khdays_files_log_reads();
-        khdays_log("stall: %.0f ms without a wait, scene %u", (enter - log_wait_end) * 1000.0 / KHDAYS_CLOCK_HZ,
-                   *(const volatile u32 *)KHDAYS_W(0x0204bdb0));
+        khdays_log("stall: %.0f ms without a wait, scene %u, %llu MB of memory free",
+                   (enter - log_wait_end) * 1000.0 / KHDAYS_CLOCK_HZ, *(const volatile u32 *)KHDAYS_W(0x0204bdb0),
+                   (unsigned long long)(memory.ullAvailPhys >> 20));
     }
     for (;;) {
         khdays_events_update();

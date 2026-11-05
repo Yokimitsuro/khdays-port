@@ -62,6 +62,7 @@ static void a_description_read(void)
                                "name en = Second\n"
                                "objective en = Win.\n"
                                "world = he\n"
+                               "room = plaza_2 # a room the mod adds\n"
                                "unlock = cleared Other/clock\n";
     KhdaysMissions r = {0};
     Reports reports = {0};
@@ -80,6 +81,8 @@ static void a_description_read(void)
     CHECK(strcmp(m->identity, "Clocks/second-one") == 0);
     CHECK(m->category == 2); /* its world's: he */
     CHECK(m->room == 0 && strcmp(m->unlock_after, "Other/clock") == 0);
+    CHECK(m->room_key != NULL && strcmp(m->room_key, "plaza_2") == 0); /* its id given as the missions start */
+    CHECK(r.list[0].room_key == NULL);
     khdays_missions_free(&r);
 }
 
@@ -180,6 +183,98 @@ static void waves_chests_and_emblems_read(void)
     CHECK(m->emblem_count == 1 && m->emblems[0].kind == 2 && m->emblems[0].at[0] == -1.0);
     /* a count of none, a start without its facing, an emblem's kind past the three: each block left out */
     CHECK(reports.count == 3);
+    khdays_missions_free(&r);
+}
+
+/* An eliminate mission: the enemies of its target class count toward its goal (all of them by default); a waves
+ * mission keeps target and goal unused (the studio switches kinds without losing them); no target, a target no wave
+ * has, or a goal past what counts leaves an eliminate mission out. */
+static void eliminate_read(void)
+{
+    static const char text[] =
+        "[mission guardian]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+        "kind = eliminate\ntarget = 38\nwave 1 = 0x2 38x1 at 1 0 1\n"
+        "[mission plants]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+        "kind = eliminate\ntarget = 0\ngoal = 3\nwave 1 = 0x2 at 1 0 1\nwave 2 = 9x2 0x3 at 2 0 2\n"
+        "[mission waves]\nname en = A\nobjective en = B\nworld = tt\nwave 1 = 0x1 at 0 0 0\n"
+        "[mission too-many]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "target = 38\ngoal = 2\nwave 1 = 38x1 0x9 at 0 0 0\n"
+        "[mission no-target]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "wave 1 = 0x1 at 0 0 0\n"
+        "[mission absent]\nname en = A\nobjective en = B\nworld = tt\nkind = eliminate\n"
+        "target = 20\nwave 1 = 0x1 at 0 0 0\n"
+        "[mission kept]\nname en = A\nobjective en = B\nworld = tt\ntarget = 4\ngoal = 9\n"
+        "wave 1 = 0x1 at 0 0 0\n"
+        "[mission bad-kind]\nname en = A\nobjective en = B\nworld = tt\nkind = tea\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Eliminate", text, &reports) == 4);
+    CHECK(r.count == 4);
+    if (r.count == 4) {
+        const KhdaysMission *g = &r.list[0], *p = &r.list[1], *w = &r.list[2], *k = &r.list[3];
+        CHECK(g->kind == KHDAYS_MISSION_ELIMINATE && g->has_target && g->target == 38 && g->goal == 0 &&
+              khdays_mission_counted(g) == 1);
+        CHECK(p->kind == KHDAYS_MISSION_ELIMINATE && p->target == 0 && p->goal == 3 && khdays_mission_counted(p) == 5);
+        CHECK(w->kind == KHDAYS_MISSION_WAVES && !w->has_target);
+        CHECK(k->kind == KHDAYS_MISSION_WAVES && k->has_target && k->target == 4 && k->goal == 9);
+    }
+    CHECK(reports.count == 4);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_ELIMINATE), "eliminate") == 0);
+    khdays_missions_free(&r);
+}
+
+/* A hearts mission: its goal how many hearts (0: all its enemies'), its enemies in waves; how many hearts they give
+ * is the game's, which the builder reads, so a goal is not checked here. */
+static void hearts_read(void)
+{
+    static const char text[] = "[mission hearts]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = hearts\ngoal = 40\nwave 1 = 1x3 at 1 0 1\n"
+                               "[mission every-heart]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = hearts\nwave 1 = 5x1 at 1 0 1\n"
+                               "[mission no-waves]\nname en = A\nobjective en = B\nworld = tt\nkind = hearts\n"
+                               "goal = 10\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Hearts", text, &reports) == 2);
+    CHECK(r.count == 2);
+    if (r.count == 2) {
+        CHECK(r.list[0].kind == KHDAYS_MISSION_HEARTS && r.list[0].goal == 40 && !r.list[0].has_target);
+        CHECK(r.list[1].kind == KHDAYS_MISSION_HEARTS && r.list[1].goal == 0);
+    }
+    CHECK(reports.count == 1);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_HEARTS), "hearts") == 0);
+    khdays_missions_free(&r);
+}
+
+/* An emblems mission places its Organization emblems (collect = x y z; a goal above 10 a piece refused), a reach
+ * mission its place (reach = x y z radius, the radius above 0); both are built without waves. */
+static void emblems_and_reach_read(void)
+{
+    static const char text[] = "[mission emblems]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = emblems\ngoal = 24\ncollect = 1 2 3\ncollect = 4 5 6\ncollect = -1 0.5 2\n"
+                               "[mission no-emblems]\nname en = A\nobjective en = B\nworld = tt\nkind = emblems\n"
+                               "[mission too-many-points]\nname en = A\nobjective en = B\nworld = tt\nkind = emblems\n"
+                               "goal = 11\ncollect = 0 0 0\n"
+                               "[mission reach]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "kind = reach\nreach = 1 0 -2.5 1.5\n"
+                               "[mission no-place]\nname en = A\nobjective en = B\nworld = tt\nkind = reach\n"
+                               "[mission flat]\nname en = A\nobjective en = B\nworld = tt\nkind = reach\n"
+                               "reach = 1 0 2 0\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    CHECK(read_text(&r, "Places", text, &reports) == 2);
+    CHECK(r.count == 2);
+    if (r.count == 2) {
+        const KhdaysMission *e = &r.list[0], *p = &r.list[1];
+        CHECK(e->kind == KHDAYS_MISSION_EMBLEMS && e->goal == 24 && e->collect_count == 3 && e->spawner_count == 0);
+        CHECK(e->collects[2].at[0] == -1 && e->collects[2].at[1] == 0.5 && khdays_mission_built(e));
+        CHECK(p->kind == KHDAYS_MISSION_REACH && p->has_reach && p->reach[2] == -2.5 && p->reach_radius == 1.5);
+        CHECK(khdays_mission_built(p));
+    }
+    CHECK(reports.count == 4);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_EMBLEMS), "emblems") == 0);
+    CHECK(strcmp(khdays_mission_kind_name(KHDAYS_MISSION_REACH), "reach") == 0);
+    CHECK(khdays_mission_kind_name(KHDAYS_MISSION_REACH + 1) == NULL);
     khdays_missions_free(&r);
 }
 
@@ -576,6 +671,9 @@ int main(int argc, char **argv)
     a_description_read();
     bad_blocks_left_out();
     waves_chests_and_emblems_read();
+    eliminate_read();
+    hearts_read();
+    emblems_and_reach_read();
     chests_hold_game_items();
     chests_kept();
     numbering();

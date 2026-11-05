@@ -293,8 +293,8 @@ never belong in the repository.
   composed by `gfx/compose.h` as the game's frames are.
 - `input_test.c`: the control profile and its presets, the bindings, the
   devices (SDL's virtual gamepads, no window), the settings menu, and the pure
-  parts of the enhancements (analog movement's arithmetic, the command-menu
-  sequencer). Each failing CHECK prints where and what.
+  parts of the enhancements (analog movement's arithmetic, the command menu's
+  steps on the D-pad). Each failing CHECK prints where and what.
 - `movie_hd_test.c`: the HD movies' course (`runtime/movies/movie_hd.c`)
   against a scripted game and video: the ids from the game's paths, the lookup,
   every transition, the buttons the game is given, the clock's pause reasons.
@@ -324,11 +324,15 @@ never belong in the repository.
   package as `display.c` hands it over after a 16-byte header. 1: each must be
   whole, and engine A composed again from its 3D and composition records must
   be the 2D engine's picture, pixel for pixel. 2: with a graphics card, engine A
-  is drawn by `gpu_raster3d.c` at 1x, 2x and 4x and compared with the
-  software's: where the 3D cannot show, every target pixel must be the 2D
-  engine's exactly; where it takes part each DS pixel is compared with the
-  average of its N x N (at 1x at most 0.01% of the pixels may differ; at N x a
-  channel by at most `MAX_MEAN_AT_NX` on average). 3: packages close together
+  is drawn by `gpu_raster3d.c` at 1x, 2x and 4x, by `raster3d.hlsl` and by the
+  card's own rasterizer, and compared with the software's: where the 3D cannot
+  show, every target pixel must be the 2D engine's exactly; where it takes part
+  each DS pixel is compared with the average of its N x N (at 1x at most 0.01% of
+  the pixels may differ by `raster3d.hlsl`, a channel by at most
+  `MAX_MEAN_NATIVE_AT_1X` on average by the card's rasterizer; at N x a channel by
+  at most `MAX_MEAN_AT_NX` on average). `KHDAYS_RENDER_TIMES=N` draws each package
+  N times more at `KHDAYS_RENDER_SCALE` (8) and says the time a picture took, by
+  the renderer `KHDAYS_3D` names. 3: packages close together
   whose lists differ are put through the interpolation at half way, and the
   matched polygons that moved more than a quarter of the view are reported by
   draw (said, not failed). `KHDAYS_RENDER_OUT=DIR` writes each frame the GPU

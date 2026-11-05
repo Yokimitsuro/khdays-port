@@ -503,43 +503,29 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO] = {"Video", "Vidéo", "Video", "Video", "Vídeo"},
     [TXT_VIDEO_RESOLUTION] = {"Internal resolution", "Résolution interne", "Interne Auflösung", "Risoluzione interna",
                               "Resolución interna"},
-    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's pixels; menus and text keep theirs.",
-                                   "La 3D est dessinée à ce multiple des pixels de la DS ; menus et textes gardent "
-                                   "les leurs.",
-                                   "Das 3D wird mit so vielen DS-Pixeln gezeichnet; Menüs und Text behalten ihre.",
-                                   "Il 3D viene disegnato a questo multiplo dei pixel del DS; menu e testi tengono i "
-                                   "loro.",
-                                   "El 3D se dibuja a este múltiplo de los píxeles de la DS; menús y textos "
-                                   "conservan los suyos."},
+    [TXT_VIDEO_RESOLUTION_NOTE] = {"The 3D is drawn at this many times the DS's 256x192, not the window's size; menus "
+                                   "and text keep theirs.",
+                                   "La 3D est dessinée à ce multiple des 256x192 de la DS, pas de la taille de la "
+                                   "fenêtre ; menus et textes gardent les leurs.",
+                                   "Das 3D wird mit diesem Vielfachen der 256x192 des DS gezeichnet, nicht der "
+                                   "Fenstergröße; Menüs und Text behalten ihre.",
+                                   "Il 3D viene disegnato a questo multiplo dei 256x192 del DS, non della finestra; "
+                                   "menu e testi tengono i loro.",
+                                   "El 3D se dibuja a este múltiplo de los 256x192 de la DS, no del tamaño de la "
+                                   "ventana; menús y textos conservan los suyos."},
     [TXT_VIDEO_RESOLUTION_WINDOW] = {"As the window allows", "Selon la fenêtre", "Wie das Fenster erlaubt",
                                      "Quanto permette la finestra", "Lo que permita la ventana"},
     [TXT_VIDEO_ANTIALIASING] = {"Antialiasing", "Anticrénelage", "Kantenglättung", "Antialiasing", "Antialiasing"},
-    [TXT_VIDEO_ANTIALIASING_NOTE] = {"The picture is made this many times larger and shrunk: the 3D's edges come out "
-                                     "smooth. 2x is four times the work for the graphics card, 4x sixteen.",
-                                     "L'image est faite autant de fois plus grande puis réduite : les bords de la 3D "
-                                     "sont lisses. 2x demande quatre fois plus à la carte graphique, 4x seize.",
-                                     "Das Bild wird so viel größer gemacht und verkleinert: die Kanten des 3D werden "
-                                     "glatt. 2x ist die vierfache Arbeit für die Grafikkarte, 4x die sechzehnfache.",
-                                     "L'immagine è fatta tante volte più grande e poi ridotta: i bordi del 3D escono "
-                                     "lisci. 2x è quattro volte il lavoro per la scheda grafica, 4x sedici.",
-                                     "La imagen se hace tantas veces más grande y se reduce: los bordes del 3D salen "
-                                     "suaves. 2x es cuatro veces el trabajo de la tarjeta gráfica, 4x dieciséis."},
-    [TXT_VIDEO_ANTIALIASING_WARNING] =
-        {"The internal resolution already draws the 3D at the window's size or larger: antialiasing "
-         "multiplies that work, so the game can slow down and use much more of the graphics card. "
-         "Leave it Off unless your card has power to spare.",
-         "La résolution interne dessine déjà la 3D à la taille de la fenêtre ou plus : l'anticrénelage "
-         "multiplie ce travail, le jeu peut ralentir et solliciter bien plus la carte graphique. "
-         "Laissez-le sur Non si votre carte n'a pas de puissance à revendre.",
-         "Die interne Auflösung zeichnet das 3D schon in Fenstergröße oder größer: die Kantenglättung "
-         "vervielfacht diese Arbeit, das Spiel kann langsamer werden und die Grafikkarte viel stärker "
-         "belasten. Lass sie auf Aus, wenn deine Karte keine Leistung übrig hat.",
-         "La risoluzione interna disegna già il 3D alla dimensione della finestra o più: l'antialiasing "
-         "moltiplica quel lavoro, il gioco può rallentare e impegnare molto di più la scheda grafica. "
-         "Lascialo su No se la tua scheda non ha potenza da vendere.",
-         "La resolución interna ya dibuja el 3D al tamaño de la ventana o mayor: el antialiasing "
-         "multiplica ese trabajo, y el juego puede ir más lento y exigir mucho más a la tarjeta gráfica. "
-         "Déjalo en No salvo que tu tarjeta vaya sobrada."},
+    [TXT_VIDEO_ANTIALIASING_NOTE] = {"FXAA smooths the 3D's edges once it is drawn, for little of the graphics "
+                                     "card's work. The HUD, the menus and the text stay sharp.",
+                                     "Le FXAA lisse les bords de la 3D une fois dessinée, pour peu de travail de la "
+                                     "carte graphique. Le HUD, les menus et le texte restent nets.",
+                                     "FXAA glättet die Kanten des 3D, sobald es gezeichnet ist, mit wenig Arbeit für "
+                                     "die Grafikkarte. HUD, Menüs und Text bleiben scharf.",
+                                     "L'FXAA ammorbidisce i bordi del 3D una volta disegnato, con poco lavoro per la "
+                                     "scheda grafica. L'HUD, i menu e il testo restano nitidi.",
+                                     "El FXAA suaviza los bordes del 3D una vez dibujado, con poco trabajo para la "
+                                     "tarjeta gráfica. El HUD, los menús y el texto siguen nítidos."},
     [TXT_VIDEO_SCREENS] = {"Screens", "Écrans", "Bildschirme", "Schermi", "Pantallas"},
     [TXT_VIDEO_SCREENS_TWO] = {"Two (DS)", "Deux (DS)", "Zwei (DS)", "Due (DS)", "Dos (DS)"},
     [TXT_VIDEO_SCREENS_ONE] = {"One", "Un", "Einer", "Uno", "Una"},
@@ -679,6 +665,20 @@ static const char *const texts[TXT_COUNT][5] = {
          "Ventana: se puede mover y cambiar de tamaño. Ventana sin bordes: sin bordes, ocupando "
          "toda la pantalla. Pantalla completa: la pantalla solo para el juego, a la resolución del "
          "escritorio."},
+    [TXT_VIDEO_SCREEN_RESOLUTION] = {"Screen resolution", "Résolution de l'écran", "Bildschirmauflösung",
+                                     "Risoluzione dello schermo", "Resolución de pantalla"},
+    [TXT_VIDEO_SCREEN_DESKTOP] = {"Desktop", "Bureau", "Desktop", "Desktop", "Escritorio"},
+    [TXT_VIDEO_SCREEN_RESOLUTION_NOTE] =
+        {"Full screen: the screen's mode. Window: its size. With the internal resolution Window, the game "
+         "is drawn at it.",
+         "Plein écran : le mode de l'écran. Fenêtre : sa taille. Avec la résolution interne Fenêtre, le "
+         "jeu est dessiné à cette résolution.",
+         "Vollbild: der Modus des Bildschirms. Fenster: seine Größe. Mit der internen Auflösung Fenster "
+         "wird das Spiel in ihr gezeichnet.",
+         "Schermo intero: la modalità dello schermo. Finestra: la sua dimensione. Con la risoluzione "
+         "interna Finestra, il gioco è disegnato a questa risoluzione.",
+         "Pantalla completa: el modo de la pantalla. Ventana: su tamaño. Con la resolución interna "
+         "Ventana, el juego se dibuja a ella."},
     [TXT_VIDEO_SUBTITLES] = {"Subtitles", "Sous-titres", "Untertitel", "Sottotitoli", "Subtítulos"},
     [TXT_VIDEO_SUBTITLES_NOTE] = {"The subtitles over the game's movies. A new game asks for it too.",
                                   "Les sous-titres des cinématiques du jeu. Une nouvelle partie le demande aussi.",
@@ -704,7 +704,7 @@ static const char *const texts[TXT_COUNT][5] = {
                              "l'API grafica %s non può funzionare qui (%s); si usa la scelta del sistema",
                              "la API gráfica %s no puede funcionar aquí (%s); se usa la elección del sistema"},
     /* the corner's line: the pictures a second, then the game's frames a second */
-    [TXT_FPS_LINE] = {"%d FPS  game %d", "%d IPS  jeu %d", "%d FPS  Spiel %d", "%d FPS  gioco %d", "%d FPS  juego %d"},
+    [TXT_FPS_LINE] = {"%d FPS", "%d IPS", "%d FPS", "%d FPS", "%d FPS"},
     [TXT_VIDEO_NEEDS_GPU] = {"Needs the graphics card.", "Nécessite la carte graphique.", "Braucht die Grafikkarte.",
                              "Richiede la scheda grafica.", "Necesita la tarjeta gráfica."},
     [TXT_RESTORE_VIDEO] = {"Restore the video settings", "Rétablir la vidéo", "Video zurücksetzen",

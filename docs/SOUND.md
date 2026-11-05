@@ -88,6 +88,22 @@ The mixers read the channels' current samples:
   32768. Seen: a walk's 148 seconds through the field peaked at the limiter's
   0.98 in 26 samples, none clipped.
 
+**The voices past the sixteen** (the PC's output only). On the DS a note that
+finds all its channels sounding takes the weakest of them (the driver's
+`snd7_channel_alloc`): a note still playing or dying away is cut. Measured
+2026-11-03 in the mission walk, 134 of 2000 notes took a channel still
+sounding. With the PC's mixer a wave's note (PCM, not PSG or noise) that finds
+none of its channels free takes one of the port's voices instead
+(`snd7_channel_alloc_wave`): a free one, or a new one, made with the hardware
+model's own (`khdays_sound_hw_add_voice`: channel 16 on, its registers past the
+DS's at `KHDAYS_SOUND_REG_SIZE + 16 v`), so no note cuts another. The voices are
+channels like the DS's -- envelope, LFO, sweep, the master pan and surround --
+heard only by the PC's mixer and a mod's waves; the game's ARM9 side never sees
+them (its channel masks, locks and status are the sixteen's). The DS's output
+keeps the DS's sixteen and its stealing. Seen: the run07 walk's field made 12
+voices (28 channels at the most) and played 167 of 864 starts on them.
+`KHDAYS_TRACE_SOUND` says each voice made.
+
 ## The categories
 
 The volume settings tell music, effects and voices apart by the sound

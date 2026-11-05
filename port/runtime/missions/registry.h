@@ -38,6 +38,15 @@ typedef struct KhdaysMissionSpawner {
     int enemy_count;
 } KhdaysMissionSpawner;
 
+/* The kinds a mission's places are built into (`kind = ...`). */
+typedef enum KhdaysMissionKind {
+    KHDAYS_MISSION_WAVES,     /* cleared once its last wave is defeated */
+    KHDAYS_MISSION_ELIMINATE, /* cleared once `goal` enemies of its target class are defeated (all of them by default) */
+    KHDAYS_MISSION_HEARTS,    /* cleared once `goal` hearts are collected (all its enemies' by default) */
+    KHDAYS_MISSION_EMBLEMS,   /* cleared once its Organization emblems give `goal` points (8 each by default) */
+    KHDAYS_MISSION_REACH,     /* cleared once a player reaches its place */
+} KhdaysMissionKind;
+
 typedef struct KhdaysMissionChest {
     int item; /* its contents: an item of the game */
     double at[3];
@@ -52,6 +61,11 @@ typedef struct KhdaysMissionEmblem {
     double at[3];
 } KhdaysMissionEmblem;
 
+/* An Organization emblem of an emblems mission (collect = x y z): 10 points picked up, 8 once it has shrunk. */
+typedef struct KhdaysMissionCollect {
+    double at[3];
+} KhdaysMissionCollect;
+
 typedef struct KhdaysMission {
     char *identity;  /* "<mod id>/<key>" */
     const char *key; /* inside identity */
@@ -63,6 +77,7 @@ typedef struct KhdaysMission {
     int category;                                /* the list's (0-11) */
     char world[16];
     int room;
+    char *room_key; /* a room the mod adds (room = <key>), its index given as the missions start; NULL: `room` */
     int level;          /* the enemies' level base, 0: the template's */
     int time_ms;        /* 0: none given */
     int unlock_number;  /* a game mission's number to clear first, 0 none */
@@ -71,12 +86,20 @@ typedef struct KhdaysMission {
     int has_start;      /* start = x y z facing */
     double start[3];
     int facing;
+    int kind;       /* KhdaysMissionKind */
+    int has_target; /* eliminate: target = <enemy class> (a waves mission keeps it unused) */
+    int target;
+    int goal; /* eliminate: how many of the target class; hearts: how many hearts; emblems: points; 0 all */
     KhdaysMissionSpawner *spawners; /* wave <n> = ... */
     int spawner_count;
     KhdaysMissionChest *chests;
     int chest_count;
     KhdaysMissionEmblem *emblems;
     int emblem_count;
+    KhdaysMissionCollect *collects; /* emblems: collect = ... */
+    int collect_count;
+    int has_reach; /* reach: reach = x y z radius */
+    double reach[3], reach_radius;
     /* this run's (khdays_missions_number); 0 not numbered */
     int number, file, shown; /* shown: the number the list and the results show (0-99) */
 } KhdaysMission;
@@ -97,6 +120,16 @@ typedef void (*KhdaysMissionsReport)(const char *mod, int line, const char *why,
 
 /* The game's two letters of language `l` (0-4): "en" ... */
 const char *khdays_mission_language(int l);
+
+/* A kind's name in missions.txt (`kind = ...`), NULL past the last. */
+const char *khdays_mission_kind_name(int kind);
+
+/* Whether the port builds mission `m` from its description: it has waves, or its kind is played without them (an
+ * emblems mission with its emblems, a reach mission with its place). */
+int khdays_mission_built(const KhdaysMission *m);
+
+/* How many of mission `m`'s enemies count toward an eliminate mission's goal: its waves' of the target class. */
+int khdays_mission_counted(const KhdaysMission *m);
 
 /* How many items the game has (db/db.p2 entry 0x15's count), set before missions are read: a chest's contents is an
  * item from 1 to it. 0 leaves it unknown (any item from 1). */

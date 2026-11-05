@@ -17,6 +17,9 @@ ByteAddressBuffer hd : register(t7, space0);         // the replacements (host/r
 [[vk::image_format("r32ui")]] RWTexture2D<uint> color3d : register(u0, space1); // raster3d's, for source3d 2
 [[vk::image_format("r32ui")]] RWTexture2D<uint> attr3d : register(u1, space1);
 [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> out_screen : register(u2, space1);
+// the HUD's 3D drawn apart at N (gpu_raster3d.h), when the 3D is drawn coarser than the 2D
+[[vk::image_format("r32ui")]] RWTexture2D<uint> hud_color3d : register(u3, space1);
+[[vk::image_format("r32ui")]] RWTexture2D<uint> hud_attr3d : register(u4, space1);
 
 cbuffer Params : register(b0, space2) {
     uint scale;         // N
@@ -33,8 +36,17 @@ cbuffer Params : register(b0, space2) {
     uint offset3d;      // source3d 2: the 3D's columns left of the DS's (the one picture's, as wide as it)
     uint4 edge_colors;  // EDGE_COLOR, two entries per uint
     uint4 fog_table[2]; // FOG_TABLE, four entries per uint
+    uint scale3d;       // source3d 2: the 3D's N (`scale` but when the 2D is drawn finer than the 3D)
+    uint width3d;       // its targets, texels
+    uint height3d;
+    uint smooth3d;      // 1: the 3D read between its texels (smooth scaling)
+    uint hud3d;         // 1: the HUD's 3D apart, over the rest
+    uint hud_width;     // its targets, texels (as wide as the 3D's at N)
+    uint hud_height;
+    uint unused5;
 };
 
+#define FINISH3D_SCALED
 #include "finish3d.hlsli"
 
 static uint g_fx, g_fy; // the output pixel's place inside its DS pixel
@@ -44,8 +56,20 @@ uint layer3d_at(uint x, int row)
     if (source3d == 1u) {
         return layer3d_mem.Load(((uint)row * 256u + x) * 4u);
     }
-    if (source3d == 2u) {
+    if (source3d == 2u && scale3d == scale) {
         return finished3d((int)((x + offset3d) * scale + g_fx), (int)((uint)row * scale + g_fy));
+    }
+    if (source3d == 2u) {
+        // the 2D finer than the 3D: the 3D at this output pixel's middle, the HUD's drawn apart over it
+        const uint world =
+            finished3d_at(((float)(x + offset3d) + ((float)g_fx + 0.5f) / (float)scale) * (float)scale3d,
+                          ((float)row + ((float)g_fy + 0.5f) / (float)scale) * (float)scale3d);
+        if (hud3d == 0u) {
+            return world;
+        }
+        return over3d(finish3d_texel(hud_color3d, hud_attr3d, (int)hud_width, (int)hud_height,
+                                     (int)((x + offset3d) * scale + g_fx), (int)((uint)row * scale + g_fy)),
+                      world);
     }
     return 0u;
 }

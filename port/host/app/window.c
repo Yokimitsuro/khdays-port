@@ -101,6 +101,91 @@ static SDL_Semaphore *closed; /* signalled when the window and the sound are gon
 static Uint32 close_event;    /* our SDL event: khdays_host_close's request */
 static Uint32 wake_event;     /* our SDL event: khdays_host_wake's, the loop looks again */
 
+/* KHDAYS_TRACE_LATENCY: a press's way to the screen, said every 20 presses -- from SDL taking it (the
+ * event's time) to the window handing it to the game, to the game's pad sample, to the presentation of
+ * the first picture made after that sample (submitted: the screen shows it at its next refresh). One
+ * press at a time: one made before the last reached the screen is not counted. */
+static int trace_latency;
+static SDL_AtomicInt latency_stage; /* 0 none, 1 handed to the game, 2 sampled by it */
+static Uint64 latency_ns[3];        /* SDL's, handed, sampled */
+static uint32_t latency_frame;      /* the VBlank the game sampled it at */
+static uint32_t latency_shown;      /* the last picture presented: its VBlank (window thread) */
+static struct {
+    int presses;
+    double handed, sampled, shown, worst;
+} latency;
+
+/* A press of a key nothing uses (F24) every 370 ms, at no fixed place in the frames: what is timed. */
+static Uint32 SDLCALL latency_press(void *userdata, SDL_TimerID timer, Uint32 interval)
+{
+    SDL_Event e;
+    (void)userdata;
+    (void)timer;
+    SDL_zero(e);
+    e.type = SDL_EVENT_KEY_DOWN;
+    e.key.scancode = SDL_SCANCODE_F24;
+    e.key.down = true;
+    SDL_PushEvent(&e);
+    e.type = SDL_EVENT_KEY_UP;
+    e.key.down = false;
+    SDL_PushEvent(&e);
+    return interval;
+}
+
+static void latency_start(void)
+{
+    trace_latency = SDL_getenv("KHDAYS_TRACE_LATENCY") != NULL;
+    if (trace_latency) {
+        SDL_AddTimer(370, latency_press, NULL);
+    }
+}
+
+static void latency_pressed(const SDL_Event *event)
+{
+    if (!trace_latency || SDL_GetAtomicInt(&latency_stage) != 0 ||
+        !((event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat) || event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)) {
+        return;
+    }
+    latency_ns[0] = event->common.timestamp;
+    latency_ns[1] = SDL_GetTicksNS();
+    SDL_SetAtomicInt(&latency_stage, 1);
+}
+
+void khdays_host_latency_sampled(uint32_t vblank)
+{
+    if (trace_latency && SDL_GetAtomicInt(&latency_stage) == 1) {
+        latency_ns[2] = SDL_GetTicksNS();
+        latency_frame = vblank;
+        SDL_SetAtomicInt(&latency_stage, 2);
+    }
+}
+
+static void latency_presented(void)
+{
+    if (!trace_latency || SDL_GetAtomicInt(&latency_stage) != 2 || latency_shown <= latency_frame) {
+        return;
+    }
+    {
+        const Uint64 now = SDL_GetTicksNS();
+        const double handed = (double)(latency_ns[1] - latency_ns[0]) / 1e6;
+        const double sampled = (double)(latency_ns[2] - latency_ns[1]) / 1e6;
+        const double shown = (double)(now - latency_ns[2]) / 1e6;
+        latency.handed += handed;
+        latency.sampled += sampled;
+        latency.shown += shown;
+        latency.worst = SDL_max(latency.worst, handed + sampled + shown);
+        if (++latency.presses == 20) {
+            fprintf(stderr,
+                    "latency: 20 presses: %.1f ms to the window, %.1f to the game's sample, %.1f to the picture "
+                    "presented (%.1f on average, %.1f at most)\n",
+                    latency.handed / 20, latency.sampled / 20, latency.shown / 20,
+                    (latency.handed + latency.sampled + latency.shown) / 20, latency.worst);
+            SDL_zero(latency);
+        }
+        SDL_SetAtomicInt(&latency_stage, 0);
+    }
+}
+
 /* Stores the latest input for the game thread to read. */
 static void publish(const KhdaysInputSnapshot *snapshot)
 {
@@ -131,34 +216,52 @@ static void tell_game(void)
     SDL_SetAtomicInt(&scale, khdays_present_scale());
 }
 
-/* The window as [video] display says (profile.h KhdaysDisplay): a window, one without borders
- * over its screen (SDL's full screen at the desktop's mode, NULL), or the screen the game's alone
- * at the desktop's mode. */
+/* The window as [video] display and resolution say (profile.h KhdaysDisplay): a window (that size,
+ * when one is set), one without borders over its screen (SDL's full screen at the desktop's mode,
+ * NULL), or the screen the game's alone at that mode (the screen's closest), else the desktop's. */
 static SDL_Window *host_window;
 static int last_full = KHDAYS_DISPLAY_BORDERLESS; /* the full screen Alt+Enter goes back to */
 
-static void display_now(int display)
+static void display_now(int display, int resolution)
 {
-    static int shown = -1;
-    if (host_window == NULL || display == shown) {
+    static int shown = -1, shown_resolution = -1;
+    if (host_window == NULL || (display == shown && resolution == shown_resolution)) {
         return;
     }
     shown = display;
+    shown_resolution = resolution;
     if (display != KHDAYS_DISPLAY_WINDOW) {
         last_full = display;
     }
     if (display == KHDAYS_DISPLAY_WINDOW) {
         SDL_SetWindowFullscreen(host_window, false);
         SDL_SetWindowBordered(host_window, true);
+        if (resolution != 0) {
+            SDL_SetWindowSize(host_window, KHDAYS_SCREEN_WIDTH(resolution), KHDAYS_SCREEN_HEIGHT(resolution));
+            SDL_SetWindowPosition(host_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        }
     } else {
-        const SDL_DisplayMode *desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(host_window));
-        SDL_SetWindowFullscreenMode(host_window, display == KHDAYS_DISPLAY_FULLSCREEN ? desktop : NULL);
+        const SDL_DisplayID screen = SDL_GetDisplayForWindow(host_window);
+        const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(screen);
+        SDL_DisplayMode closest;
+        if (display == KHDAYS_DISPLAY_FULLSCREEN && resolution != 0 &&
+            SDL_GetClosestFullscreenDisplayMode(screen, KHDAYS_SCREEN_WIDTH(resolution),
+                                                KHDAYS_SCREEN_HEIGHT(resolution), 0.0f, true, &closest)) {
+            mode = &closest;
+        }
+        SDL_SetWindowFullscreenMode(host_window, display == KHDAYS_DISPLAY_FULLSCREEN ? mode : NULL);
         SDL_SetWindowFullscreen(host_window, true);
     }
     SDL_SyncWindow(host_window);
-    khdays_log("window: %s", display == KHDAYS_DISPLAY_WINDOW       ? "a window"
-                             : display == KHDAYS_DISPLAY_BORDERLESS ? "a borderless window over the screen"
-                                                                    : "full screen");
+    {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(host_window, &w, &h);
+        khdays_log("window: %s, %d x %d",
+                   display == KHDAYS_DISPLAY_WINDOW       ? "a window"
+                   : display == KHDAYS_DISPLAY_BORDERLESS ? "a borderless window over the screen"
+                                                          : "full screen",
+                   w, h);
+    }
 }
 
 /* Applies a change in the menu's Video section at once: the picture behind
@@ -173,7 +276,7 @@ static void video_now(void)
         return;
     }
     applied = *v;
-    display_now(v->display);
+    display_now(v->display, v->screen_resolution);
     khdays_present_set_video(v);
     tell_game();
     if (packages[0] != NULL) {
@@ -361,7 +464,7 @@ static void theater_music_line(const char *line)
  * it). */
 static void redraw(SDL_Window *window, SDL_Renderer *renderer)
 {
-    int pictures, frames, fps, corner_rows;
+    int pictures, fps, corner_rows;
     char *ping;
     const Uint64 began = SDL_GetTicksNS();
     Uint64 drawn;
@@ -397,9 +500,9 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     if (khdays_mod_installed(KHDAYS_MOD_MENU_OVERHAUL) && !khdays_movie_hd_showing()) {
         draw_voice_subtitles(renderer); /* a monologue's voice: what it says */
     }
-    fps = khdays_present_fps(&pictures, &frames);
+    fps = khdays_present_fps(&pictures);
     if (fps) {
-        khdays_settings_fps_draw(renderer, pictures, frames);
+        khdays_settings_fps_draw(renderer, pictures);
     }
     ping = ping_line();
     corner_rows = (fps != 0) + (ping != NULL);
@@ -415,6 +518,7 @@ static void redraw(SDL_Window *window, SDL_Renderer *renderer)
     khdays_settings_draw(renderer, window);
     drawn = SDL_GetTicksNS();
     SDL_RenderPresent(renderer);
+    latency_presented();
     khdays_present_redraw_took(drawn - began, SDL_GetTicksNS() - drawn); /* (the shop's timings) */
 }
 
@@ -466,7 +570,7 @@ static void toggle_display(void)
     char path[512];
     p.video.display = p.video.display == KHDAYS_DISPLAY_WINDOW ? last_full : KHDAYS_DISPLAY_WINDOW;
     khdays_devices_set_profile(&p);
-    display_now(p.video.display);
+    display_now(p.video.display, p.video.screen_resolution);
     khdays_present_set_video(&p.video);
     khdays_settings_path(path, sizeof(path));
     khdays_profile_save(&p, path, notice);
@@ -754,7 +858,7 @@ static int host_thread(void *unused)
     }
     window = open_window(&profile);
     host_window = window;
-    display_now(profile.video.display);
+    display_now(profile.video.display, profile.video.screen_resolution);
     khdays_present_set_video(&profile.video);
     renderer = window ? khdays_present_open(window, notice) : NULL;
     frame_event = SDL_RegisterEvents(3);
@@ -772,6 +876,7 @@ static int host_thread(void *unused)
     SDL_SetAtomicInt(&started, 1);
     SDL_SignalSemaphore(ready);
 
+    latency_start();
     for (;;) {
         SDL_Event event;
         /* While the settings menu shows, it keeps animating even if the paused
@@ -788,6 +893,11 @@ static int host_thread(void *unused)
             }
         }
         animating = khdays_settings_is_open();
+        /* the DS's VBlank kept just before the screen's refresh (clock.h), but in a multiplayer session
+         * (the players' games keep one time) or minimized; KHDAYS_SCREEN_LOCK=off for comparing */
+        khdays_clock_lock_screen(
+            !khdays_net_in_session() && !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) &&
+            (SDL_getenv("KHDAYS_SCREEN_LOCK") == NULL || SDL_strcmp(SDL_getenv("KHDAYS_SCREEN_LOCK"), "off") != 0));
         khdays_devices_frame(); /* a wheel's notch let go */
         mouse_follow(window);
         /* The 3D at the monitor's refresh rate: draw a picture
@@ -913,6 +1023,7 @@ static int host_thread(void *unused)
             if (SDL_GetAtomicInt(&mailbox) & FRESH) {
                 host_slot = SDL_SetAtomicInt(&mailbox, host_slot) & 3;
                 khdays_present_package(packages[host_slot]);
+                latency_shown = packages[host_slot]->frame;
             } else if (SDL_SetAtomicInt(&frame_new, 0)) {
                 SDL_LockMutex(frame_lock);
                 khdays_present_screens(frame);
@@ -1008,6 +1119,7 @@ static int host_thread(void *unused)
              * behind the player). */
             continue;
         }
+        latency_pressed(&event);
         khdays_devices_handle(&event, renderer); /* keys, mouse, gamepads, focus */
         for (int n = khdays_devices_take_hud_mode_request(); n > 0; --n) {
             khdays_situation_hud_mode_next(); /* the one-screen HUD mode */

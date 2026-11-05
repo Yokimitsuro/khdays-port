@@ -239,13 +239,12 @@ void hidden_hud()
             context.tutorial = reason == 0;
             context.movie = reason == 1;
             context.event_status = reason == 2 ? 0 : -1;
-            const unsigned update = KHDAYS_UPD_Ov023_SceneRun;
-            context.updates[update / 64] |= 1ull << (update % 64);
+            context.event_runs = 1;
         };
         const auto show = [&] {
             context.tutorial = context.movie = 0;
             context.event_status = -1;
-            context.updates[KHDAYS_UPD_Ov023_SceneRun / 64] = 0;
+            context.event_runs = 0;
         };
         hide();
         step(false);

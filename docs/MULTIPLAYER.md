@@ -64,6 +64,51 @@ member's controls in store and hands them to the game one per tick:
 - after ten seconds without running dry, the depth shrinks by one (and every
   ten seconds to the longest gap if it is deeper).
 
+### The reliable messages
+
+The game keeps each reliable message (`MsgQueue_Post`: a region's join or leave,
+an enemy's status, a hit, the field's commands) in one of 32 slots, sent again
+every frame until every player has it (`MsgQueue_ResendForPeer`,
+`MsgQueue_MarkSlotReceived`). With all 32 taken it lost the message: it answered
+0xffff, and most callers -- the enemies' -- do not look. The walk below never
+filled them, but a mod's wave can bring any number of enemies at once, each with
+its parts, regions and summons, so the port lets such a message wait (`runtime/net/msg_overflow.c`, joined in `MsgQueue_Post`, `ResendForPeer`,
+`MsgQueue_Contains`, `MsgQueue_Init_2` and `Session_Shutdown`): numbered as the
+game would number it, in order -- a message posted while others wait waits
+behind them --, put in a slot as one frees, the first first; `MsgQueue_Contains`
+says a waiting one is not had by everyone yet. The session log says when they
+first wait and the most that waited.
+
+Each frame's messages, reliable or not, go out in one buffer (`MsgQueue_Enqueue`)
+of 0x1e0 bytes, the DS's wireless frame; a message past it was dropped. The
+enemies' poses (`Ov107_SendPoseMessage`: a byte of state, the position and the
+turn, about 32 bytes each) fill it with some fifteen enemies standing, and the
+ones listed after them never reached a guest, frame after frame. Seen
+(2026-11-04, the walk `multiplayer_boss_waves`: two each of Darkside, Dual Blade
+and Guard Armor in its second wave): on the guest the first Dual Blade, its parts
+and the second Darkside's summons -- ids 21 to 41 -- stood at 0,0,0 with full HP,
+their state byte never set, unmoving in their T pose, while the host's fought.
+The port grows the buffer when a frame's
+messages need more (to 0xffe0 bytes: the game's sizes are 16 bits) and the
+wireless layer's receiving one holds any record (`hal/sdk_wireless.c`); the
+session log says how large a frame grew. The receiving end had the DS's sizes
+too: each player's slot for the frames received (`Session_LayoutPacketSlots`:
+a guest's two of 0x3c0 bytes, a host's two of 0x3d8 and three of 0xc0, carved
+from a fixed area) took what `ChannelBuf_Append` copied without a look at its
+size, and the first frames past the DS's (1,982 bytes in the walk's second wave,
+the host's buffer grown to 3,840) wrote past the guest's slot and stopped it. A slot now grows in the game's heap when what
+it holds needs more (the fixed area's first, a grown one freed when it grows
+again), and each message's copy for its handler holds a message's 10-bit size
+(0x400 bytes, was 0x3c0).
+
+The guest finds each message's actor by its id (`Ov107_FindMessageHandler`) in
+the table the area made of its actors (`Ov107_Scene_BuildIdTable`). The table
+holds the ids there were then, and the game read it for any id under the count
+now: past its end for an actor made after it (a mod's enemy, a later area's).
+The port reads it for the ids it was made for and finds the others in the
+actors' list, as the game does without a table (`khdays_enemies_ids_room`,
+joined in both).
+
 ## A guest's own character, predicted
 
 Off by default (`KHDAYS_NET_PREDICT=1` turns it on: online the host corrected it

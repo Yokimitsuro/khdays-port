@@ -350,6 +350,38 @@ Taken up (for the record of what the old names were):
     that table, and +0x18..+0x22 the quad: s16 width, s16 height, the texture corners s0 t0 s1 t1 (bytes), the
     alpha (0..31) and the polygon id.
 
+- The mission gauge (spec 036, 2026-11-01; `docs/RUNTIME_MAP.md` section 18, "The mission gauge"):
+  - `Ov002_ResolveFourDescriptors` (script command 2.34) sets the mission gauge: its four operands are the
+    gauge's kind, total, goal and flags, handed to `Ov002_SetScriptRequest`, which keeps them at the field root's
+    +0x8c94 -- a "set mission gauge" pair (kind 1 targets defeated, 2 hearts, 4 a counter).
+  - `Ov002_ScriptCmd_SetEventParams` (2.73) and `Ov002_Event_SetParams` track an enemy class for the gauge: the
+    object context's +0xa is the class (`Ov002_OnPartActorRetired` names it `nTrackedRowId` and compares it with
+    the enemy row's byte 0, `bId`, which is the row's enemy class, not a row index), +0xc the defeats counted
+    (`nRetiredCount`), +0xe the second operand.
+  - `Ov002_ScriptOpInvokeSlot0` (2.38) adds to the mission tally: `Ov002_AddMissionTally(0, kind, amount)`, its
+    first operand read and left unused.
+  - `Ov002_SubmitRequestBlockKind1` (2.7) files a "defeated" watch, not a request: its third operand is the check
+    `Ov002_NodeRunCheckPhase` runs (0 one group, 1 every group), its fourth the group (single-player in the low
+    half, multiplayer in the high one). `Ov002_AllocScriptCallback` makes that node; it allocates no callback.
+  - `Ov002_TriggerOnceOnFlag`, called by `Ov002_StepProgressBar` when the gauge's done reaches its goal, raises
+    state 8326, the mission's goal reached.
+  - The spawner slot's `mask` (`Ov107_Spawner_AddSlot`, from 2.32's third operand) is the enemy's status byte
+    +0x179 (`Ov107_SetStatusAndEmit`), not a mask.
+  - `Ov022_SetPlayerScale(seat, value)` posts a defeated enemy's hearts (`Ov107_AiState_OnDefeat` hands it the
+    enemy's +0x19f): tally 2, the hearts in the high half and a bonus by the player's step in the low one; it scales
+    no player. The enemy's `field_19f` and its spawn record's `field_5d` (`Ov107_LoadSpawnRecord`, byte 0x6d of the
+    class's Ms/DP.p2f record) are the hearts it gives.
+  - `Ov002_FitsBudget` (a position check's kind 0, installed by `Ov002_CreateTaskNodePath`) tests whether a
+    player is within the node's radius (+0x20) of its point (+0x2c); there is no budget. Script command 2.8,
+    `Ov002_ScriptSubmitPathTask`, files the check (gate, event, mode, room, the place, kind, radius, height), so
+    "path task" is a position check; its node's `bOwner` (+0x18) is the players' mode (`nMode`: 0 the first, 1 all).
+  - `Ov021_VmCmd0e30` (17.2) makes the Organization emblems' class (`Ov021_CreateEmblemClass`) and
+    `Ov021_MarshalFxAndDispatch2` (17.3) puts one out (`Ov021_EmblemCreate`); `Ov021_ResetChildrenScoreExceptSelf`
+    restarts the other emblems' timers, which decide their points (10 or 8), not a score.
+  - `Ov107_EnemyTableHasEntry(class, column)` and `data_ov107_020cb6a4` (6 bytes a class) say which of the six
+    enemy code columns a class's overlay is built for (overlay 114 + the byte, 0xff none); `Ov107_LoadEnemyOverlay`
+    returns how many columns the overlay takes, `data_ov107_020cbb04` is the next free column.
+
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 
 Locals that were one buffer only in the DS's frame, taken up by the decomp

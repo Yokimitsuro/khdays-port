@@ -115,6 +115,12 @@ TEST(character_made_given_a_model_and_clips_checked) {
     CHECK(!new_character(mod, "armo", "roxas", "Armo", &why));  // taken
     CHECK(character_keys(mod) == std::vector<std::string>{"armo"});
     CHECK(character_base_code("roxas") == "ro" && character_bases().size() == 19);
+    // each base's voices from its own archive (a Sora-based character's lines on Roxas's were never heard)
+    CHECK(character_voice_archive("roxas") == "PLY_ROX" && character_voice_archive("sora") == "PLY_SOR" &&
+          character_voice_archive("xion") == "PLY_XIN" && character_voice_archive("luxord") == "PLY_LUX" &&
+          character_voice_archive("nobody").empty());
+    for (const auto& base : character_bases())
+        CHECK(!character_voice_archive(base).empty());
 
     // no model yet: the port would leave it out, and saving refuses it
     IniText ini = IniText::parse(read(character_dir(mod, "armo") / "character.ini"));

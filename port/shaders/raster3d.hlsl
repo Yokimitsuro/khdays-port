@@ -3,7 +3,6 @@
 // per-pixel rules are exactly gpu3d.c's (docs/RENDERING.md, "On the graphics card"). In widescreen
 // `origin_x` is the DS column of the target's first (negative).
 
-static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
 static const uint G3D_CLIP = 0x20000000u;       // KHDAYS_G3D_CLIP: a clip volume's, first in the list, not drawn
 static const uint G3D_CLIP_OWNER = 0x40000000u; // KHDAYS_G3D_CLIP_OWNER: a clip volume's model's, drawn inside
 static const uint G3D_UNCLIPPED = 0x61u | G3D_CLIP_OWNER; // HUD, sequence, marker and owners: never left out
@@ -43,217 +42,13 @@ cbuffer Params : register(b0, space2) {
     uint npolys;      // what the host uploaded: no polygon, vertex or tile entry past them is read
     uint nverts;
     uint entries;
+    uint resume;      // 1: start from what the targets hold (resumed), not the rear plane
+    uint unused0, unused1, unused2;
     uint4 toon[4];    // TOON_TABLE, two entries per uint
 };
 
-#define TEX_PAL 0x80000u
-
-#include "geometry_load.hlsli"
-
-#include "texture_decode.hlsli"
-
-// The texels polygon `p` maps: its vertices' coordinates bound what any of
-// its pixels reads (an interpolation stays between them). x, y the first
-// texel in s and t, z, w the last.
-int4 polygon_texels(Polygon p)
-{
-    float s0 = 1e30f, s1 = -1e30f, t0 = 1e30f, t1 = -1e30f;
-    for (int i = 0; i < p.count; ++i) {
-        const Vertex v = vertex_at(p.first + i);
-        s0 = min(s0, v.s);
-        s1 = max(s1, v.s);
-        t0 = min(t0, v.t);
-        t1 = max(t1, v.t);
-    }
-    {
-        const int a = (int)floor(s0 / 16.0f), b = (int)floor(t0 / 16.0f);
-        return int4(a, b, max(a, (int)ceil(s1 / 16.0f) - 1), max(b, (int)ceil(t1 / 16.0f) - 1));
-    }
-}
-
-// Whether polygon p shows its texture at its own size or smaller in screen space (an orthographic
-// projection): the game's 2D drawn with the 3D engine, the HUD, the day cards, the noise over Sora's
-// memories. Smoothing leaves those sharp, as the 2D layers are; a magnified texture (the title's
-// logo) is still smoothed. With screen space stretched this frame, in the DS's own pixels.
-bool pixel_art(Polygon p)
-{
-    float screen = 0.0f, texels = 0.0f;
-    for (int i = 0; i < p.count; ++i) {
-        const Vertex a = vertex_at(p.first + i), b = vertex_at(p.first + (i + 1) % p.count);
-        if (a.w != 4096.0f) {
-            return false;
-        }
-        screen += a.x * b.y - b.x * a.y;
-        texels += (a.s * b.t - b.s * a.t) / 256.0f;
-    }
-    {
-        const float stretch = (smooth & 2u) != 0u ? (float)width / (float)scale / 256.0f : 1.0f;
-        return p.count > 0 && abs(screen) <= 1.25f * stretch * abs(texels);
-    }
-}
-
-// Texture smoothing (the port's option): whether a pixel shows is the DS's (the nearest texel's alpha),
-// so cut-outs keep their shape; its colour the four texels around blended by distance and alpha, only
-// texels the polygon maps (`bounds`). The same format as texel.
-uint smoothed_texel(uint param, uint pltt, float s, float t, int4 bounds)
-{
-    const uint nearest = texel(param, pltt, (int)floor(s), (int)floor(t));
-    const float fs = s - 0.5f, ft = t - 0.5f;
-    const int s0 = (int)floor(fs), t0 = (int)floor(ft);
-    const float ds = fs - (float)s0, dt = ft - (float)t0;
-    float3 color = float3(0.0f, 0.0f, 0.0f);
-    float alpha = 0.0f;
-    if (((nearest >> 16) & 31u) == 0u) {
-        return nearest;
-    }
-    for (int k = 0; k < 4; ++k) {
-        const int ks = k & 1, kt = k >> 1;
-        const uint v = texel(param, pltt, clamp(s0 + ks, bounds.x, bounds.z), clamp(t0 + kt, bounds.y, bounds.w));
-        const float weight = (ks != 0 ? ds : 1.0f - ds) * (kt != 0 ? dt : 1.0f - dt);
-        const float a = (float)((v >> 16) & 31u) * weight;
-        color += a * float3((float)(v & 31u), (float)((v >> 5) & 31u), (float)((v >> 10) & 31u));
-        alpha += a;
-    }
-    if (alpha <= 0.0f) {
-        return nearest;
-    }
-    {
-        const uint3 c = (uint3)min(round(color / alpha), 31.0f);
-        return c.x | (c.y << 5) | (c.z << 10) | (nearest & (31u << 16));
-    }
-}
-
-// ---- Replacement textures (runtime/mods/textures.h): HD from mods ----
-
-// A coordinate wrapped as `wrap` wraps a texel's, kept fractional: in [0, size).
-float wrapf(float c, float size, uint repeat, uint flip)
-{
-    if (repeat == 0u) {
-        return clamp(c, 0.0f, size - 0.001f);
-    }
-    if (flip != 0u) {
-        const float period = c - floor(c / (2.0f * size)) * 2.0f * size;
-        return min(period >= size ? 2.0f * size - period : period, size - 0.001f);
-    }
-    return c - floor(c / size) * size;
-}
-
-// One of the replacement's texels: 6-bit RGB in xyz, alpha 0-31 in w.
-int4 hd_at(uint4 e, int x, int y)
-{
-    const uint c = hd.Load((e.x + (uint)y * e.y + (uint)x) * 4u);
-    const uint cut = fine != 0u ? 0u : 2u;
-    return int4((int)((c & 255u) >> cut), (int)(((c >> 8) & 255u) >> cut), (int)(((c >> 16) & 255u) >> cut),
-                (int)((c >> 24) >> 3));
-}
-
-// A still picture's smaller copies follow its texels, each half the one before
-// (host/render/gpu_hd.c SMALLER): level `level`'s first texel, width and height, with
-// the entry's info, as an entry.
-static const uint HD_SMALLER = 8u;
-
-uint4 hd_level(uint4 e, int level)
-{
-    uint first = e.x, w = e.y, h = e.z;
-    for (int k = 0; k < level && (w > 1u || h > 1u); ++k) {
-        first += w * h;
-        w = max(w >> 1, 1u);
-        h = max(h >> 1, 1u);
-    }
-    return uint4(first, w, h, e.w);
-}
-
-// The last level: a texel.
-int hd_levels(uint4 e)
-{
-    if ((e.w & HD_SMALLER) == 0u) {
-        return 0;
-    }
-    return (int)firstbithigh(max(e.y, e.z));
-}
-
-// Level `l` (an entry from hd_level) of polygon `p`'s replacement at (u, v),
-// its own texels: the four around it, alpha-weighted (as smoothed_texel), only
-// the polygon's own texels (polygon_texels) when they lie within one period of
-// the texture. Colour 0-255 or 0-63 (fine) in xyz, alpha 0-31 in w.
-float4 hd_blend(Polygon p, uint4 l, float u, float v, float ss, float ts)
-{
-    const uint rs = (p.tex >> 16) & 1u, rt = (p.tex >> 17) & 1u, fs = (p.tex >> 18) & 1u, ft = (p.tex >> 19) & 1u;
-    const float fu = u - 0.5f, fv = v - 0.5f;
-    const int x0 = (int)floor(fu), y0 = (int)floor(fv);
-    const float du = fu - (float)x0, dv = fv - (float)y0;
-    const int4 b = polygon_texels(p);
-    const bool inside = b.x >= 0 && b.y >= 0 && b.z < (int)ss && b.w < (int)ts;
-    const int ulo = inside ? (int)floor((float)b.x * (float)l.y / ss) : -100000;
-    const int uhi = inside ? (int)ceil((float)(b.z + 1) * (float)l.y / ss) - 1 : 100000;
-    const int vlo = inside ? (int)floor((float)b.y * (float)l.z / ts) : -100000;
-    const int vhi = inside ? (int)ceil((float)(b.w + 1) * (float)l.z / ts) - 1 : 100000;
-    float3 color = float3(0.0f, 0.0f, 0.0f);
-    float alpha = 0.0f;
-    for (int k = 0; k < 4; ++k) {
-        const int kx = k & 1, ky = k >> 1;
-        const int ux = clamp(x0 + kx, ulo, max(ulo, uhi)), vy = clamp(y0 + ky, vlo, max(vlo, vhi));
-        const int4 c = hd_at(l, wrap(ux, (int)l.y, rs, fs), wrap(vy, (int)l.z, rt, ft));
-        const float a = (float)c.w * (kx != 0 ? du : 1.0f - du) * (ky != 0 ? dv : 1.0f - dv);
-        color += a * float3((float)c.x, (float)c.y, (float)c.z);
-        alpha += a;
-    }
-    return float4(alpha > 0.0f ? color / alpha : float3(0.0f, 0.0f, 0.0f), alpha);
-}
-
-// Polygon `p`'s replacement at (s, t), the original's texels: the same place of the original's
-// mapping at the replacement's resolution, nearest or smoothed; a smaller copy where a pixel spans more
-// than one texel (`footprint`). Colours in 8 bits when `fine`, else cut to the DS's 6.
-int4 hd_texel(Polygon p, float s, float t, float footprint)
-{
-    const uint r4 = (uint)p.replacement * 4u;
-    const uint4 e = hd.Load4(r4 * 4u);
-    const float ss = (float)(8 << ((p.tex >> 20) & 7u)), ts = (float)(8 << ((p.tex >> 23) & 7u));
-    const uint rs = (p.tex >> 16) & 1u, rt = (p.tex >> 17) & 1u, fs = (p.tex >> 18) & 1u, ft = (p.tex >> 19) & 1u;
-    const float ws = wrapf(s, ss, rs, fs), wt = wrapf(t, ts, rt, ft);
-    // the level: log2 of the replacement's texels to a pixel
-    const int last = hd_levels(e);
-    const float texels = footprint * max((float)e.y / ss, (float)e.z / ts);
-    const float lod = last > 0 && texels > 1.0f ? min(log2(texels), (float)last) : 0.0f;
-    if ((smooth & 1u) == 0u) {
-        const uint4 l = hd_level(e, (int)round(lod));
-        const float u = ws * (float)l.y / ss, v = wt * (float)l.z / ts;
-        return hd_at(l, clamp((int)floor(u), 0, (int)l.y - 1), clamp((int)floor(v), 0, (int)l.z - 1));
-    }
-    {
-        const int l0 = (int)floor(lod);
-        const float f = lod - (float)l0;
-        const uint4 a = hd_level(e, l0);
-        float4 c = hd_blend(p, a, ws * (float)a.y / ss, wt * (float)a.z / ts, ss, ts);
-        if (f > 0.0f && l0 < last) {
-            const uint4 b = hd_level(e, l0 + 1);
-            const float4 d = hd_blend(p, b, ws * (float)b.y / ss, wt * (float)b.z / ts, ss, ts);
-            const float wa = c.w * (1.0f - f), wb = d.w * f;
-            c = float4(wa + wb > 0.0f ? (c.xyz * wa + d.xyz * wb) / (wa + wb) : c.xyz, wa + wb);
-        }
-        if (c.w <= 0.0f) {
-            return int4(0, 0, 0, 0);
-        }
-        return int4((int3)min(round(c.xyz), fine != 0u ? 255.0f : 63.0f), (int)min(round(c.w), 31.0f));
-    }
-}
-
-
-int expand5(int c)
-{
-    return c != 0 ? c * 2 + 1 : 0;
-}
-
-int expand_alpha(int a5)
-{
-    return a5 != 0 ? a5 * 2 + 1 : 0;
-}
-
-// A 5-bit colour channel at the pass's precision: the DS's 6 bits, or 8 when fine.
-int channel5(int c)
-{
-    return fine != 0u ? (c << 3) | (c >> 2) : expand5(c);
-}
+#include "g3d_vram.hlsli"
+#include "g3d_polygon.hlsli"
 
 // ---- The pixel (gpu3d.c Pixel) ----
 
@@ -304,27 +99,6 @@ Attrs lerp_attrs(Attrs a, Attrs b, float f)
     o.z = z;
     o.a = va;
     return o;
-}
-
-// depth_of: in Z mode the clip volume's z/w over the 15-bit range, widened to
-// 24 bits: floor(z * 2^23) + 16383 * 512, which is gpu3d.c's double result.
-uint depth_of(float z, float w, uint wbuffer)
-{
-    if (wbuffer != 0u) {
-        return w < 0.0f ? 0u : w > 16777215.0f ? 0xffffffu : (uint)w;
-    }
-    {
-        const float scaled = floor(z * 8388608.0f); // exact: a power of two, then floor
-        if (scaled < -8388096.0f) return 0u;
-        if (scaled > 8389119.0f) return 0xffffffu;   // 0xffffff - 8388096
-        return (uint)((int)scaled + 8388096);
-    }
-}
-
-uint toon_entry(uint index)
-{
-    const uint word = toon[index >> 3][(index >> 1) & 3u];
-    return (index & 1u) != 0u ? word >> 16 : word & 0xffffu;
 }
 
 // How many of the original texture's texels one pixel of the target spans
@@ -445,15 +219,7 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     }
     const uint mode = (p.attr >> 4) & 3u;
     const uint id = (p.attr >> 24) & 63u;
-    int alpha = (int)((p.attr >> 16) & 31u);
-    // the vertex colour, 6 bits as the DS's (or scaled to 8 when fine)
-    const float vscale = fine != 0u ? 255.0f / 63.0f : 1.0f;
-    const int cmax = fine != 0u ? 255 : 63;
-    precise float rf = at.r * w * vscale + 0.5f;
-    precise float gf = at.g * w * vscale + 0.5f;
-    precise float bf = at.b * w * vscale + 0.5f;
-    int rv = (int)rf, gv = (int)gf, bv = (int)bf;
-    int r, gg, b, a;
+    int r, gg, b, a, alpha;
     bool pass;
     if (mode == 3u && id == 0u) {  // a run of shadow masks starts from a clear stencil
         if (px.mask_run == 0u) px.stencil = 0u;
@@ -461,17 +227,8 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     } else {
         px.mask_run = 0u;
     }
-    if (alpha == 0) {  // wire-frame: only the edges, solid
-        if (edge == 0u) return;
-        alpha = 31;
-    } else if (((uint)p.flags & G3D_MOD) != 0u) {
-        // a mod's vertex alpha, blended across the polygon
-        alpha = (int)((float)alpha * saturate(at.a * w) + 0.5f);
-        if (alpha == 0) return;
-    }
-    rv = clamp(rv, 0, cmax);
-    gv = clamp(gv, 0, cmax);
-    bv = clamp(bv, 0, cmax);
+    alpha = polygon_alpha(p, at.a * w, edge);
+    if (alpha == 0) return;
 
     if (marker) {
         pass = true;
@@ -497,63 +254,19 @@ void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
     }
 
     {
-        const uint format = (p.tex >> 26) & 7u;
-        int rt = cmax, gt = cmax, bt = cmax, at6 = 63, at5 = 31;
-        const int unit = fine != 0u ? 256 : 64; // the modulation's divisor
-        const int av6 = expand_alpha(alpha);
-        const bool textured = format != 0u && (disp3dcnt & 1u) != 0u;
-        if (textured) {
-            precise float sf = at.s * w / 16.0f;
-            precise float tf = at.t * w / 16.0f;
-            if (p.replacement >= 0) {
-                const int4 c = hd_texel(p, sf, tf, texel_footprint(p, at));
-                rt = c.x;
-                gt = c.y;
-                bt = c.z;
-                at5 = c.w;
-            } else {
-                const uint tx = (smooth & 1u) != 0u && !pixel_art(p) ? smoothed_texel(p.tex, p.pltt, sf, tf, polygon_texels(p))
-                                             : texel(p.tex, p.pltt, (int)floor(sf), (int)floor(tf));
-                at5 = (int)((tx >> 16) & 31u);
-                rt = channel5((int)(tx & 31u));
-                gt = channel5((int)((tx >> 5) & 31u));
-                bt = channel5((int)((tx >> 10) & 31u));
-            }
-            at6 = expand_alpha(at5);
-        }
-        if (mode == 1u && textured) {  // decal
-            if (at5 == 0) { r = rv; gg = gv; b = bv; }
-            else if (at5 == 31) { r = rt; gg = gt; b = bt; }
-            else if (fine != 0u) {
-                r = (rt * at5 + rv * (31 - at5)) / 31;
-                gg = (gt * at5 + gv * (31 - at5)) / 31;
-                b = (bt * at5 + bv * (31 - at5)) / 31;
-            } else {
-                r = (rt * at5 + rv * (63 - at5)) / 64;
-                gg = (gt * at5 + gv * (63 - at5)) / 64;
-                b = (bt * at5 + bv * (63 - at5)) / 64;
-            }
-            a = av6;
-        } else if (mode == 2u) {  // toon / highlight: the red component indexes the table
-            const uint t16 = toon_entry((uint)(rv >> 1));
-            const int rs = channel5((int)(t16 & 31u)), gs = channel5((int)((t16 >> 5) & 31u)),
-                      bs = channel5((int)((t16 >> 10) & 31u));
-            r = ((rt + 1) * (rs + 1) - 1) / unit;
-            gg = ((gt + 1) * (gs + 1) - 1) / unit;
-            b = ((bt + 1) * (bs + 1) - 1) / unit;
-            if ((disp3dcnt & 2u) != 0u) {
-                r = min(r + rs, cmax);
-                gg = min(gg + gs, cmax);
-                b = min(b + bs, cmax);
-            }
-            a = ((at6 + 1) * (av6 + 1) - 1) / 64;
-        } else {  // modulation (and shadow)
-            r = ((rt + 1) * (rv + 1) - 1) / unit;
-            gg = ((gt + 1) * (gv + 1) - 1) / unit;
-            b = ((bt + 1) * (bv + 1) - 1) / unit;
-            a = ((at6 + 1) * (av6 + 1) - 1) / 64;
-        }
-        a >>= 1;  // back to 5 bits
+        const bool textured = ((p.tex >> 26) & 7u) != 0u && (disp3dcnt & 1u) != 0u;
+        const bool smoothing = (smooth & 1u) != 0u && textured;
+        const bool art = smoothing && p.replacement < 0 ? pixel_art(p) : true;
+        const int4 texels = smoothing && (p.replacement >= 0 || !art) ? polygon_texels(p) : int4(0, 0, 0, 0);
+        precise float3 shade = float3(at.r, at.g, at.b) * w;
+        precise float sf = at.s * w / 16.0f;
+        precise float tf = at.t * w / 16.0f;
+        const int4 c = polygon_color(p, alpha, shade, sf, tf,
+                                     textured && p.replacement >= 0 ? texel_footprint(p, at) : 0.0f, art, texels);
+        r = c.x;
+        gg = c.y;
+        b = c.z;
+        a = c.w;
     }
     // alpha test
     if ((disp3dcnt & 4u) != 0u ? a <= (int)(alpha_ref & 31u) : a == 0) {
@@ -683,12 +396,18 @@ bool cover(Polygon p, int x, int y, out Attrs pa, out uint edge, float grow)
     return true;
 }
 
-// The rear plane (gpu3d.c rear_plane): the clear colour, depth and polygon
-// ID, or the clear image from texture slots 2 and 3, nearest at N x.
+// The rear plane (gpu3d.c rear_plane): the clear colour, depth and polygon ID, or the clear image from
+// texture slots 2 and 3, nearest at N x.
 Pixel rear_plane(int x, int y)
 {
+    const RearPlane r = rear_plane_at(x / (int)scale + origin_x, (uint)y / scale);
     Pixel px;
-    const uint cd = clear_depth & 0x7fffu;
+    px.r = r.color.x;
+    px.g = r.color.y;
+    px.b = r.color.z;
+    px.a = r.color.w;
+    px.depth = r.depth;
+    px.fog = r.fog;
     px.opaque_id = (clear_color >> 24) & 63u;
     px.trans_id = 0xffu;
     px.edge = 0u;
@@ -696,27 +415,29 @@ Pixel rear_plane(int x, int y)
     px.translucent = 0u;
     px.mask_run = 0u;
     px.over2d = 0u;
-    if ((disp3dcnt & 0x4000u) != 0u) {
-        const uint offset = clear_depth >> 16;
-        const int sx = x / (int)scale + origin_x;
-        const uint sy = (uint)y / scale;
-        const uint i = ((((sy + (offset >> 8)) & 255u) * 256u + ((uint)(sx + (int)offset) & 255u)) * 2u);
-        const uint c = tex16(0x40000u + i), d = tex16(0x60000u + i);
-        const uint dd = d & 0x7fffu;
-        px.r = channel5((int)(c & 31u));
-        px.g = channel5((int)((c >> 5) & 31u));
-        px.b = channel5((int)((c >> 10) & 31u));
-        px.a = (c & 0x8000u) != 0u ? 31 : 0;
-        px.depth = dd * 0x200u + ((dd + 1u) / 0x8000u) * 0x1ffu;
-        px.fog = d >> 15;
-        return px;
-    }
-    px.r = channel5((int)(clear_color & 31u));
-    px.g = channel5((int)((clear_color >> 5) & 31u));
-    px.b = channel5((int)((clear_color >> 10) & 31u));
-    px.a = (int)((clear_color >> 16) & 31u);
-    px.depth = cd * 0x200u + ((cd + 1u) / 0x8000u) * 0x1ffu;
-    px.fog = (clear_color >> 15) & 1u;
+    return px;
+}
+
+// A pixel as an earlier pass left it in the targets (`resume`: the native renderer drew the list's
+// polygons before this pass's): what the targets keep of it, no translucent ID nor shadow mask.
+Pixel resumed(uint2 at)
+{
+    const uint c = out_color[at], att = out_attr[at];
+    const uint cmask = fine != 0u ? 255u : 63u;
+    Pixel px;
+    px.r = (int)(c & cmask);
+    px.g = (int)((c >> 8) & cmask);
+    px.b = (int)((c >> 16) & cmask);
+    px.a = (int)((c >> 24) & 31u);
+    px.over2d = (c >> 29) & 1u;
+    px.translucent = c >> 31;
+    px.depth = att & 0xffffffu;
+    px.opaque_id = (att >> 24) & 63u;
+    px.edge = (att >> 30) & 1u;
+    px.fog = att >> 31;
+    px.trans_id = 0xffu;
+    px.stencil = 0u;
+    px.mask_run = 0u;
     return px;
 }
 
@@ -743,7 +464,11 @@ void cs_main(uint3 id : SV_DispatchThreadID)
     if (id.x >= width || id.y >= height) {
         return;
     }
-    px = rear_plane(x, y);
+    if (resume != 0u) {
+        px = resumed(id.xy);
+    } else {
+        px = rear_plane(x, y);
+    }
     tile = min(id.y / scale / 8u, tiles_y - 1u) * tiles_x + min(id.x / scale / 8u, tiles_x - 1u);
     first = tiles.Load(tile * 4u);
     last = min(tiles.Load((tile + 1u) * 4u), entries);

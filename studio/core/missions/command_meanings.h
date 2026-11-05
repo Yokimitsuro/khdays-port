@@ -45,6 +45,21 @@ struct StepMeaning {
         player_at_marker,  // player slot {0} at the room's marker {2}, kind {1} (Ov002_ScriptMoveSlot by name)
         chests,  // the mission's chests from trbox, their class in module slot {0}, model {1} (Ov002_ScriptSpawnTimedSet)
         emblems,  // the mission's emblems from evi, those not yet found (Ov002_SpawnStateSpots)
+        // the mission gauge (Ov002_ResolveFourDescriptors -> Ov002_SetScriptRequest(kind, total, goal, flags)):
+        gauge_defeat,    // kind 1, targets defeated: goal {1} of {0}
+        gauge_hearts,    // kind 2, hearts collected: goal {1} of {0}
+        gauge_counter,   // kind 4, a counter: goal {1} of {0}
+        gauge_other,     // another kind {2}: goal {1} of {0}
+        gauge_class,     // each defeated enemy of class {0} ({1}) counts on it (Ov002_Event_SetParams: tally 3)
+        tally_add,       // the mission tally of kind {0} + {1} (Ov002_ScriptOpInvokeSlot0 -> Ov002_AddMissionTally)
+        group_defeated,  // event {0} when group {1} is defeated (Ov002_SubmitRequestBlockKind1, check 0)
+        all_defeated,    // event {0} when every enemy out is defeated (Ov002_SubmitRequestBlockKind1, check 1)
+        // a position check (Ov002_ScriptSubmitPathTask -> Ov002_CreateTaskNodePath, kind 0: Ov002_FitsBudget):
+        place_first,  // event {0} when the first player comes within {1} of ({2}, {3}, {4}), room {5} (mode 0)
+        place_all,    // event {0} when every player is within {1} of ({2}, {3}, {4}), room {5} (mode 1)
+        panel,        // panel {0}'s overlay loaded, its commands script group {1} (Ov002_SwitchPanelOverlay)
+        org_emblems,  // {1} Organization emblems, their class in module slot {0} (Ov021_CreateEmblemClass)
+        org_emblem,   // Organization emblem {1} of slot {0} at ({3}, {4}, {5}), room {2}, out while {6} is set
     } kind = none;
     std::vector<std::string> args;
 };

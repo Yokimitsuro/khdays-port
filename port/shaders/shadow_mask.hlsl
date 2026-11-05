@@ -6,9 +6,8 @@ ByteAddressBuffer vram : register(t3, space0);
 ByteAddressBuffer hd : register(t4, space0);
 RWByteAddressBuffer mask : register(u0, space1);
 cbuffer Params : register(b0, space2) { uint groups, npolys, nverts, entries; };
-#define TEX_PAL 0x80000u
-#include "geometry_load.hlsli"
-#include "texture_decode.hlsli"
+#include "g3d_list.hlsli"
+#include "g3d_texels.hlsli"
 float edge(float2 a,float2 b,float2 p) { return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x); }
 [numthreads(8,8,1)]
 void cs_main(uint3 id : SV_DispatchThreadID) {

@@ -97,6 +97,9 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/kh2_map.cpp"            # KH2's maps, from the player's 1.5+2.5 copy
     "${ROOT}/assets/src/kh2_room.cpp"           # made into a scene for glTF
     "${ROOT}/assets/src/dds.cpp"                # and their HD pictures
+    "${ROOT}/assets/src/ddd_map.cpp"            # Dream Drop Distance's rooms, from the player's 2.8 copy
+    "${ROOT}/assets/src/kh1_map.cpp"            # KINGDOM HEARTS FINAL MIX's rooms, from the player's 1.5+2.5 copy
+    "${ROOT}/assets/src/recom_map.cpp"          # Re:Chain of Memories' rooms, from the same copy
     "${ROOT}/assets/src/kh2_sequence.cpp"       # KH2's sequences' quads (the prizes' effects)
     "${ROOT}/port/gfx/kh2_sequence.cpp"         # ... drawn by the port's reference renderer
     "${ROOT}/port/ui/prize_effects_model.cpp"   # a prize's effect, as the port reads it
@@ -150,6 +153,7 @@ add_library(khdays-studio-core STATIC
     core/mods/plugin_parameters.cpp
     core/models/clip_import.cpp
     core/files/containers.cpp
+    core/files/md5.cpp
     core/files/file_write.cpp
     core/models/game_model.cpp
     core/missions/command_meanings.cpp
@@ -171,10 +175,13 @@ add_library(khdays-studio-core STATIC
     core/files/paths.cpp
     core/mods/process.cpp
     core/mods/prizes.cpp
+    core/rooms/added_rooms.cpp
+    core/rooms/collection_source.cpp
     core/rooms/kh2_source.cpp
     core/rooms/room_change.cpp
     core/rooms/room_collision.cpp
     core/rooms/room_export.cpp
+    core/rooms/room_map.cpp
     core/mods/settings.cpp
     core/sheets/sheets.cpp
     core/rooms/worlds.cpp)
@@ -206,7 +213,9 @@ add_executable(khdays-studio
     app/views/mods_console.cpp
     app/views/plugin_parameters_view.cpp
     app/views/prizes_view.cpp
+    app/views/room_adder.cpp
     app/views/model_view.cpp
+    app/model_shot.cpp
     app/preview3d.cpp
     app/save_dialog.cpp
     app/views/sheet_view.cpp
@@ -233,6 +242,8 @@ add_executable(khdays-studio-tests
     tests/test_missions.cpp
     tests/test_worlds.cpp
     tests/test_kh2.cpp
+    tests/test_collection.cpp
+    tests/test_added_rooms.cpp
     tests/test_mods_log.cpp
     tests/test_plugin_parameters.cpp
     tests/test_characters.cpp

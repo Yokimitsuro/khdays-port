@@ -162,7 +162,7 @@ typedef enum KhdaysTwoScreens {
 
 typedef struct KhdaysVideo {
     int internal_resolution; /* the 3D's scale: 1 (the DS's) or more, or KHDAYS_RESOLUTION_WINDOW */
-    int antialiasing;        /* the picture made this many times larger, then shrunk: 1 (off) to 4 */
+    int antialiasing;        /* 1 off, 2 FXAA: the 3D's edges smoothed once it is drawn */
     int aspect;              /* KhdaysAspect */
     int smooth_scaling;      /* 0 sharp (the DS's pixels), 1 smooth */
     int texture_smoothing;
@@ -177,7 +177,14 @@ typedef struct KhdaysVideo {
     int hud_size;      /* the HUD's size on one screen, 1 to 8 (4) */
     int subtitles;     /* the movies' subtitles show (runtime/menus/newgame.h: the new game asks) */
     int display;       /* KhdaysDisplay: a window, a borderless one over the screen, or full screen */
+    int screen_resolution; /* [video] resolution: the full screen's mode or the window's size, width << 16 |
+                              height; 0 the desktop's (full screen) or as the player sized it (window) */
 } KhdaysVideo;
+
+/* [video] resolution's width and height. */
+#define KHDAYS_SCREEN_RESOLUTION(w, h) ((int)((unsigned)(w) << 16 | (unsigned)(h)))
+#define KHDAYS_SCREEN_WIDTH(r) ((int)((unsigned)(r) >> 16))
+#define KHDAYS_SCREEN_HEIGHT(r) ((int)((unsigned)(r) & 0xffffu))
 
 /* The window ([video] display): one that moves and resizes, one without borders
  * over the whole screen, or the screen the game's alone at the desktop's mode. */

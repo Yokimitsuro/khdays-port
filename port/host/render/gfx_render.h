@@ -15,10 +15,12 @@ void khdays_gfx_render_close(void);
 
 /* Composes both screens of `package` (which must hold KHDAYS_WANT_2D) at
  * `scale` x 256 x 192 and submits the work. Engine A's 3D comes from the
- * package at 1x or, with `raster`, from gpu_raster3d.c's targets at `scale`
- * (drawn before by khdays_raster3d_rasterize). Returns 0 (with the reason in
- * SDL_GetError) when it cannot. */
-int khdays_gfx_render_draw(const KhdaysFramePackage *package, int scale, int raster);
+ * package at 1x or, with `raster`, from gpu_raster3d.c's targets at `scale3d`
+ * (drawn before by khdays_raster3d_rasterize): `scale`, or less when the 2D is
+ * drawn finer than the 3D (the window's resolution over a lower internal one),
+ * each output pixel then reading the 3D at its middle. Returns 0 (with the
+ * reason in SDL_GetError) when it cannot. */
+int khdays_gfx_render_draw(const KhdaysFramePackage *package, int scale, int scale3d, int raster);
 
 /* What the one-screen picture is made of: the situation's shapes (gfx/onescreen.h) and the colours
  * they make transparent (keys), the frame (KOS_*), the brightness rule (KOB_*), and the picture's width
@@ -56,14 +58,18 @@ typedef struct KhdaysOneScreenDraw {
 
 /* Like khdays_gfx_render_draw, but for one screen: the screens are composed
  * without the 3D (KDF_SPLIT) at the DS's 256 columns, then the one picture is
- * made from them and the 3D at `scale` (with `raster`, as wide as
+ * made from them at `scale` and the 3D at `scale3d` (with `raster`, as wide as
  * one->columns). */
-int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int raster,
+int khdays_gfx_render_draw_one(const KhdaysFramePackage *package, int scale, int scale3d, int raster,
                                const KhdaysOneScreenDraw *one);
 
+/* Where the 2D is drawn finer than the 3D: 1 reads the 3D between its texels (smooth scaling), 0 the
+ * nearest (sharp). */
+void khdays_gfx_render_set_smooth_3d(int on);
+
 /* The size the window shows the draws that follow at, in window pixels a DS pixel. What is made larger
- * (the antialiasing, the window's size rounded up) is shrunk to it on the card (shrink.hlsl), each
- * pixel the average of the area under it. 0: as made. */
+ * (the window's size rounded up, an internal resolution above it) is shrunk to it on the card
+ * (shrink.hlsl), each pixel the average of the area under it. 0: as made. */
 void khdays_gfx_render_set_shown(float pixels_per_ds_pixel);
 
 /* The last one-screen picture made, as a texture of `renderer`, and its width

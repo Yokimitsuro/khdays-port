@@ -271,6 +271,18 @@ static void trace_mission_fields(u32 frame)
         last[i] = v;
     }
     known = 1;
+    /* the mission gauge (Ov002_GetMissionProgress: the field state's +0x188 -- total, done, goal) */
+    static s32 gauge[3] = {-1, -1, -1};
+    const u32 state = *(const volatile u32 *)KHDAYS_W(0x0207f62c + 4);
+    if (in_game_ram(state)) {
+        const volatile s32 *now = (const volatile s32 *)KHDAYS_W(state + 0x188);
+        if (now[0] != gauge[0] || now[1] != gauge[1] || now[2] != gauge[2]) {
+            fprintf(stderr, "mission: frame %u, gauge %d of %d, goal %d\n", frame, now[1], now[0], now[2]);
+            gauge[0] = now[0];
+            gauge[1] = now[1];
+            gauge[2] = now[2];
+        }
+    }
 }
 
 /* KHDAYS_TRACE_MISSION: what a mission puts in the field, to compare with the studio's mission

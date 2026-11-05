@@ -600,12 +600,14 @@ static void test_video_settings(void)
     CHECK(load_text("[video]\naspect = 16:9\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_16_9);
     CHECK(load_text("[video]\naspect = window\n", &q) == 0 && q.video.aspect == KHDAYS_ASPECT_WINDOW);
 
-    /* Antialiasing: off by default; 2x to 4x, written back as read; a bad value says so and is off. */
+    /* Antialiasing: off by default; fxaa written back as read; the old 2x to 4x read as fxaa; a bad value says so
+     * and is off. */
     CHECK(p.video.antialiasing == 1);
-    CHECK(load_text("[video]\nantialiasing = 3x\n", &q) == 0 && q.video.antialiasing == 3);
+    CHECK(load_text("[video]\nantialiasing = fxaa\n", &q) == 0 && q.video.antialiasing == 2);
     CHECK(khdays_profile_save(&q, path, count_notice) == 0);
     khdays_profile_load(&r, path, count_notice);
-    CHECK(r.video.antialiasing == 3);
+    CHECK(r.video.antialiasing == 2);
+    CHECK(load_text("[video]\nantialiasing = 3x\n", &q) == 0 && q.video.antialiasing == 2);
     CHECK(load_text("[video]\nantialiasing = off\n", &q) == 0 && q.video.antialiasing == 1);
     CHECK(load_text("[video]\nantialiasing = 8x\n", &q) == 1 && q.video.antialiasing == 1);
 
@@ -928,8 +930,9 @@ static void test_settings_model(void)
         {KHDAYS_SET_RUN_FROM, KHDAYS_ROW_NUMBER, 50, 95, 5},
         {KHDAYS_SET_WALK_SPEED, KHDAYS_ROW_NUMBER, 20, 90, 5},
         {KHDAYS_SET_DISPLAY, KHDAYS_ROW_CHOICE, 0, KHDAYS_DISPLAY_COUNT - 1, 0},
+        {KHDAYS_SET_SCREEN_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 0, 0}, /* the desktop's: no screen without the video */
         {KHDAYS_SET_RESOLUTION, KHDAYS_ROW_CHOICE, 0, 15, 0},  /* as the window allows, 2x-16x: 1x is not offered */
-        {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 3, 0}, /* off, 2x, 3x, 4x */
+        {KHDAYS_SET_ANTIALIASING, KHDAYS_ROW_CHOICE, 0, 1, 0}, /* off, FXAA */
         {KHDAYS_SET_ASPECT, KHDAYS_ROW_CHOICE, 0, KHDAYS_ASPECT_COUNT - 1, 0},
         {KHDAYS_SET_SCREENS, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_TWO_SCREENS, KHDAYS_ROW_CHOICE, 0, KHDAYS_TWO_SCREENS_COUNT - 1, 0},
@@ -1000,9 +1003,9 @@ static void test_settings_model(void)
                         CHECK(r->label != NULL && r->label[0] != '\0');
                     }
                 }
-                /* antialiasing warns while it is on: the internal resolution already scales the 3D */
+                /* antialiasing: off by default, FXAA costs little, so no warning */
                 if (r->id == KHDAYS_SET_ANTIALIASING) {
-                    CHECK(r->warning != NULL && r->warning[0] != '\0' && r->safe == 1 && *r->value == 1);
+                    CHECK(r->warning == NULL && r->safe == 1 && *r->value == 1);
                 }
             }
         }
@@ -1026,14 +1029,22 @@ static void test_settings_model(void)
         khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
         CHECK(rows[0].id == KHDAYS_SET_DISPLAY && rows[0].high == KHDAYS_DISPLAY_COUNT - 1 &&
               khdays_model_choice_of(&rows[0]) == KHDAYS_DISPLAY_WINDOW);
-        CHECK(rows[1].id == KHDAYS_SET_RESOLUTION && rows[1].high == 15);
-        CHECK(khdays_model_choice_of(&rows[1]) == 0 && rows[1].values[0] == KHDAYS_RESOLUTION_WINDOW);
-        CHECK(rows[1].values[1] == 2 && rows[1].values[15] == 16);
+        /* the screen's resolution: the desktop's, and a profile's own size kept as a choice */
+        CHECK(rows[1].id == KHDAYS_SET_SCREEN_RESOLUTION && rows[1].high == 0 && rows[1].values[0] == 0);
+        p.video.screen_resolution = KHDAYS_SCREEN_RESOLUTION(1600, 900);
+        khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
+        CHECK(rows[1].high == 1 && khdays_model_choice_of(&rows[1]) == 1 &&
+              strcmp(rows[1].choices[1], "1600 x 900") == 0);
+        p.video.screen_resolution = 0;
+        khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
+        CHECK(rows[2].id == KHDAYS_SET_RESOLUTION && rows[2].high == 15);
+        CHECK(khdays_model_choice_of(&rows[2]) == 0 && rows[2].values[0] == KHDAYS_RESOLUTION_WINDOW);
+        CHECK(rows[2].values[1] == 2 && rows[2].values[15] == 16);
         p.video.internal_resolution = 1;
         khdays_model_rows(KHDAYS_SECTION_VIDEO, &p, &context, rows);
-        CHECK(rows[1].high == 16 && khdays_model_choice_of(&rows[1]) == 0 &&
-              strcmp(rows[1].choices[0], "1x (DS)") == 0);
-        khdays_model_set_choice(&p, &rows[1], khdays_model_choice_of(&rows[1]) + 1);
+        CHECK(rows[2].high == 16 && khdays_model_choice_of(&rows[2]) == 0 &&
+              strcmp(rows[2].choices[0], "1x (DS)") == 0);
+        khdays_model_set_choice(&p, &rows[2], khdays_model_choice_of(&rows[2]) + 1);
         CHECK(p.video.internal_resolution == KHDAYS_RESOLUTION_WINDOW);
     }
     /* the texts the rows edit hold what the settings file does */
@@ -1395,6 +1406,7 @@ static void test_face_buttons(void)
         }
         CHECK(pad_press(cases[c].accept) == 0);  /* in */
         pad_press(SDL_GAMEPAD_BUTTON_DPAD_DOWN); /* past the display mode */
+        pad_press(SDL_GAMEPAD_BUTTON_DPAD_DOWN); /* and the screen's resolution */
         pad_press(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
         CHECK(v->internal_resolution == 2); /* on the video section */
         pad_press(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
@@ -1426,6 +1438,9 @@ static void test_video_page(void)
     CHECK(v->display == KHDAYS_DISPLAY_FULLSCREEN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->display == KHDAYS_DISPLAY_WINDOW);
+    key(SDL_SCANCODE_DOWN); /* the screen's resolution: only the desktop's without the video */
+    key(SDL_SCANCODE_RIGHT);
+    CHECK(v->screen_resolution == 0);
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->internal_resolution == 2);
@@ -1438,13 +1453,14 @@ static void test_video_page(void)
     key(SDL_SCANCODE_LEFT);
     key(SDL_SCANCODE_LEFT);
     CHECK(v->internal_resolution == 16);
-    key(SDL_SCANCODE_DOWN); /* the antialiasing: off, 2x, 3x, 4x, and round */
+    key(SDL_SCANCODE_DOWN); /* the antialiasing: off, FXAA, and round */
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->antialiasing == 2);
-    key(SDL_SCANCODE_LEFT);
-    key(SDL_SCANCODE_LEFT);
-    CHECK(v->antialiasing == 4);
     key(SDL_SCANCODE_RIGHT);
+    CHECK(v->antialiasing == 1);
+    key(SDL_SCANCODE_LEFT);
+    CHECK(v->antialiasing == 2);
+    key(SDL_SCANCODE_LEFT);
     CHECK(v->antialiasing == 1);
     key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
@@ -1499,7 +1515,8 @@ static void test_video_page(void)
     khdays_settings_open(&p);
     to_section(KHDAYS_SECTION_VIDEO);
     shot("8-video-no-card");
-    key(SDL_SCANCODE_DOWN); /* past the display mode, which needs no card */
+    key(SDL_SCANCODE_DOWN); /* past the display mode and the screen's resolution, which need no card */
+    key(SDL_SCANCODE_DOWN);
     key(SDL_SCANCODE_RIGHT);
     CHECK(v->internal_resolution == KHDAYS_RESOLUTION_WINDOW);
     key(SDL_SCANCODE_DOWN); /* nor the antialiasing */
@@ -1984,70 +2001,41 @@ static void test_analog_axes(void)
     CHECK(out.move_x == 0 && out.move_y == 0 && out.ds_buttons == 0);
 }
 
-static KhdaysMenuFrame menu_frame(KhdaysMenuSequencer *s, int direction, int scheme, uint16_t held)
+/* The D-pad's command menu is a step a press (and up and down again while held), for the game's own
+ * cursor routines. */
+static void test_menu_stepper(void)
 {
-    return khdays_menu_sequencer_frame(s, direction >= 0 ? 1u << direction : 0, 1, scheme, 0, held);
-}
+    KhdaysMenuStepper s;
+    const uint32_t down = 1u << KHDAYS_MENU_DOWN, left = 1u << KHDAYS_MENU_LEFT, up = 1u << KHDAYS_MENU_UP;
 
-/* The D-pad's command menu is the DS's own presses for it. */
-static void test_menu_sequencer(void)
-{
-    const uint16_t X = DS(KHDAYS_ACT_X), DOWN = DS(KHDAYS_ACT_DOWN), UP = DS(KHDAYS_ACT_UP);
-    KhdaysMenuSequencer s;
-    KhdaysMenuFrame f;
+    /* A press: a step; held, down again after the delay, then every other frame. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    for (int f = 1; f < KHDAYS_MENU_REPEAT_AFTER; ++f) {
+        CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
+    }
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == KHDAYS_MENU_DOWN);
+    CHECK(khdays_menu_stepper_frame(&s, 0, 1, 0) == -1);
 
-    /* Option 6 = 0: X alone, then X with the direction, then let go. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == X && f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0); /* still held: no second press */
-    CHECK(f.buttons == (X | DOWN) && f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0 && !f.dpad_own);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0);
+    /* Left and right change column once however long held. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, left, 1, 0) == KHDAYS_MENU_LEFT);
+    for (int f = 0; f < 3 * KHDAYS_MENU_REPEAT_AFTER; ++f) {
+        CHECK(khdays_menu_stepper_frame(&s, left, 1, 0) == -1);
+    }
 
-    /* Option 6 = 1: a press of X moves down; up has no DS press. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 1, 0);
-    CHECK(f.buttons == X);
-    f = menu_frame(&s, -1, 1, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_UP, 1, 0);
-    CHECK(f.buttons == 0 && !f.dpad_own);
+    /* Option 6 = 1 only moves down. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, up, 1, 1) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 1) == KHDAYS_MENU_DOWN);
     CHECK(!khdays_menu_direction_exists(KHDAYS_MENU_UP, 1) && khdays_menu_direction_exists(KHDAYS_MENU_UP, 0));
 
-    /* A second press waits for the first sequence. */
-    khdays_menu_sequencer_reset(&s);
-    menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_UP, 1, 0, 0, 0);
-    CHECK(f.buttons == (X | DOWN));
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == X);
-    f = menu_frame(&s, -1, 0, 0);
-    CHECK(f.buttons == (X | UP));
-
-    /* The player's own X, or L (a shortcut with option 0 = 0), holds it back. */
-    khdays_menu_sequencer_reset(&s);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, X);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, DS(KHDAYS_ACT_L));
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == X);
-
-    /* Out of field control nothing plays, and a sequence stops. */
-    khdays_menu_sequencer_reset(&s);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_DOWN, 0, 0, 0, 0);
-    CHECK(f.buttons == 0);
-    khdays_menu_sequencer_reset(&s);
-    menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    f = khdays_menu_sequencer_frame(&s, 1u << KHDAYS_MENU_DOWN, 0, 0, 0, 0);
-    CHECK(f.buttons == 0);
-    f = menu_frame(&s, KHDAYS_MENU_DOWN, 0, 0);
-    CHECK(f.buttons == 0); /* held all along: not a new press */
+    /* Out of field control nothing steps; a press held into it is not a new one. */
+    khdays_menu_stepper_reset(&s);
+    CHECK(khdays_menu_stepper_frame(&s, down, 0, 0) == -1);
+    CHECK(khdays_menu_stepper_frame(&s, down, 1, 0) == -1);
 }
 
 /* Lock-on on its own buttons is the DS's own R presses for it. */
@@ -2258,7 +2246,7 @@ int main(void)
     test_default_profile();
     test_analog();
     test_analog_axes();
-    test_menu_sequencer();
+    test_menu_stepper();
     test_lock_sequencer();
     test_presets();
     test_languages();

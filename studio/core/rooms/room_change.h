@@ -36,6 +36,7 @@ struct RoomReplacement {
     int room = -1;          // its index in the world's table
     std::string model;      // the visible model's file, in the change's folder
     std::string kh2;        // the KH2 map it was made from (tt02); empty: a model of the modder's
+    std::string source;     // another collection's map it was made from (<game>:<map>: ddd:eh_01); empty: none
     std::string collision;  // a separate collision model's, or empty: the visible one
     // the game's own grounds, walls and ceilings kept: only what is seen is
     // replaced (a room remade in the same place needs no collision of its own)
@@ -97,11 +98,17 @@ struct RoomAlignment {
 RoomAlignment align_with_room(const std::vector<std::array<float, 3>>& room_points,
                               const khdays::assets::ImportedModel& model);
 // A KH2 room's first place over a game room (`room` its collision): lined up by its points when it shares
-// them (the Usual Spot is the same place in both games), else by `kh2_units`.
+// them (the Usual Spot is the same place in both games), else by `kh2_units` -- KH2's (0.01), or `units` for another
+// game's room.
 RoomAlignment kh2_alignment(const std::vector<std::array<float, 3>>& room_points, const RoomCollision& room,
-                            const khdays::assets::ImportedModel& kh2);
+                            const khdays::assets::ImportedModel& kh2, float units = 0.01f);
 bool placed_model(const std::filesystem::path& model, const RoomPlacement& place, khdays::assets::ImportedModel* out,
                   std::string* why);
+// Writes `model` as `gltf` under the mod, its pictures beside it named after `name`; each file written put in `written`
+// as `listed` followed by its name.
+bool write_model_as(const std::filesystem::path& mod_dir, const std::filesystem::path& gltf, const std::string& name,
+                    const std::string& listed, const khdays::assets::ImportedModel& model, std::set<std::string>* written,
+                    std::string* why);
 
 // A room from above, in cells of a quarter unit: those its grounds and walls cover, those they close in,
 // and those within `margin` units of either.
@@ -129,6 +136,13 @@ struct SurfaceMap {
     std::vector<Height> heights_at(float x, float z) const;
 };
 SurfaceMap surface_map(const khdays::assets::ImportedModel& placed);
+
+// Another game's room placed by its units (`a`'s kh2_units, `floors` its floors and walls) moved across so that most
+// of the game room's places stand on one of its floors: its markers and its origin (where missions put the player in
+// rooms with no gate). Each move that puts a floor's middle under a place is tried; the one with most places on a floor,
+// then the shortest, is kept. How many places stand on a floor then, of how many.
+std::pair<std::size_t, std::size_t> onto_floors(const khdays::assets::ImportedModel& floors, const RoomCollision& room,
+                                                RoomAlignment* a);
 
 // How far to raise the model so that most of `markers` stand on one of its floors, a tenth above it as the
 // game's do (at most 50 units either way); 0 when none can. `on`: how many markers then do.

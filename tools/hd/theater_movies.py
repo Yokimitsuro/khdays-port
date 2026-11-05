@@ -141,19 +141,33 @@ class EventFont:
 
 
 def schedule(event: Path, language: str):
-    """The language's lines: (first frame, end frame, TextID)."""
+    """The language's lines: (first frame, end frame, TextID, fade in, fade out, animated) -- its
+    subtitles (SCHEDULE_CATEGORY_TEXT_MOVIE) and its animated lines (SCHEDULE_CATEGORY_TEXT_ANIM: a
+    voice over the scene, Xion's in hd837 and hd840, coming over InFrame frames and going over
+    OutFrame, set higher by the empty rows its text ends with)."""
     xml = event.read_bytes().decode("utf-8", errors="replace")
-    for category in re.finditer(
-        r'<SCHEDULE_CATEGORY type = "SCHEDULE_CATEGORY_TEXT_MOVIE">(.*?)</SCHEDULE_CATEGORY>', xml, re.S
-    ):
-        if f'Language="{language}"' in category.group(1):  # (the file's header names a language too)
-            return [
-                (int(s), int(e), int(t, 16))
-                for s, e, t in re.findall(
-                    r'FrameStart="(\d+)" FrameEnd="(\d+)" TextID="([0-9a-fA-F]+)"', category.group(1)
-                )
-            ]
-    return []
+    out = []
+    for kind in ("TEXT_MOVIE", "TEXT_ANIM"):
+        for category in re.finditer(
+            rf'<SCHEDULE_CATEGORY type = "SCHEDULE_CATEGORY_{kind}">(.*?)</SCHEDULE_CATEGORY>', xml, re.S
+        ):
+            if f'Language="{language}"' not in category.group(1):  # (the file's header names a language too)
+                continue
+            for data in re.findall(r"<DATA ([^>]*)/>", category.group(1)):
+                a = dict(re.findall(r'(\w+)="([^"]*)"', data))
+                if "TextID" in a:
+                    out.append(
+                        (
+                            int(a["FrameStart"]),
+                            int(a["FrameEnd"]),
+                            int(a["TextID"], 16),
+                            int(a.get("InFrame", "0")),
+                            int(a.get("OutFrame", "0")),
+                            kind == "TEXT_ANIM",
+                        )
+                    )
+            break
+    return sorted(out)
 
 
 def subtitles(mare: Path, lang: str) -> int:
@@ -176,18 +190,24 @@ def subtitles(mare: Path, lang: str) -> int:
         if not lines:
             continue
         atlas, placed = tt.Atlas(), []
-        for n, (first, end, text_id) in enumerate(lines):
+        for n, (first, end, text_id, fade_in, fade_out, animated) in enumerate(lines):
             text = words.get((text_id >> 16, text_id & 0xFFFF))
             if text is None:
                 print(f"{lang} hd{movie}: no words for {text_id:x}")
                 continue
-            rows = [font.line(row) for row in (plain(r).rstrip() for r in text.replace("\r", "").split("\n")) if row]
-            if not rows:
+            rows = [plain(r).rstrip() for r in text.replace("\r", "").split("\n")]
+            if not animated:
+                rows = [r for r in rows if r]  # (an animated line's empty rows set it higher: kept)
+            images = [font.line(r) if r else None for r in rows]
+            if not any(image is not None for image in images):
                 continue
-            block = max(r.shape[1] for r in rows)
-            for i, image in enumerate(rows):
+            block = max(image.shape[1] for image in images if image is not None)
+            for i, image in enumerate(images):
+                if image is None:
+                    continue
                 atlas.add((n, i), image)
-                placed.append((first, end, (n, i), round(CENTRE - block / 2), LAST_TOP - (len(rows) - 1 - i) * PITCH))
+                y = LAST_TOP - (len(rows) - 1 - i) * PITCH
+                placed.append((first, end, (n, i), round(CENTRE - block / 2), y, fade_in, fade_out))
         if not placed:
             print(f"{lang} hd{movie}: no lines")
             continue
@@ -197,15 +217,16 @@ def subtitles(mare: Path, lang: str) -> int:
             f"# hd{movie}.mp4's subtitles as the HD collection's 358/2 Days theater draws them, made by",
             "# tools/hd/theater_movies.py from the player's own copy: each line's frames (the video's,",
             "# `rate` a second; it shows from the first to before the end), its place in the picture and",
-            "# its texels in the atlas.",
+            "# its texels in the atlas; an animated line's, the frames it takes to come and to go.",
             f"picture {PICTURE[0]} {PICTURE[1]}",
             f"rate {RATE}",
             f"atlas hd{movie}.png",
         ]
-        for first, end, region, x, y in placed:
+        for first, end, region, x, y, fade_in, fade_out in placed:
             u, v = atlas.at[region]
             h, w = atlas.pixels[region].shape[:2]
-            txt.append(f"line {first} {end} {x} {y} {u} {v} {w} {h}")
+            fades = f" {fade_in} {fade_out}" if fade_in or fade_out else ""
+            txt.append(f"line {first} {end} {x} {y} {u} {v} {w} {h}{fades}")
         (out / f"hd{movie}.txt").write_bytes(("\n".join(txt) + "\n").encode("utf-8"))
         made += 1
     if font.missing:

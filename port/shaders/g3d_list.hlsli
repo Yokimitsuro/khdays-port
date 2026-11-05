@@ -1,4 +1,6 @@
-// Geometry list layouts shared with gfx/g3d.h.
+// gfx/g3d.h's polygons and vertices as the shaders read them (raster3d.hlsl, native3d.hlsl, shadow_mask.hlsl).
+// The includer declares `polys` and `verts`, read by their bytes.
+
 struct Polygon {
     uint attr, tex, pltt;
     int first, count;
@@ -6,7 +8,7 @@ struct Polygon {
     int translucent;
     int flags; // gfx/g3d.h KHDAYS_G3D_*: OVER_2D marks its pixels (bit 29 of the colour), the rest the host reads
     int replacement; // the replacement texture drawn instead (host/render/gpu_hd.h's entry), or -1
-    uint shadow; // a character shadow's caster or receiver: its mask
+    uint shadow;     // a character shadow's caster or receiver: its mask (gfx/character_shadow.h)
 };
 
 struct Vertex {

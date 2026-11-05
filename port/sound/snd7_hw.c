@@ -4,21 +4,53 @@
  * to each write). */
 #include "snd7_internal.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 /* The layer's state, at its ARM7 addresses. */
 static int32_t master_pan;     /* 0x03807400 (initialised data): < 0, none */
 static int32_t surround_decay; /* 0x038077b8: 0, none */
 static uint8_t pan_of[16];     /* 0x038077bc: each channel's own pan */
 static uint8_t volume_of[16];  /* 0x038077cc: each channel's own volume */
+/* the port's voices' own pan and volume (channels 16 on), grown as they are made */
+static uint8_t *voice_pan, *voice_volume;
+static int voice_slots;
+
+static uint8_t *slot(uint8_t *ds, uint8_t **voice, int channel)
+{
+    static uint8_t spare;
+    if (channel < 16) {
+        return &ds[channel];
+    }
+    if (channel - 16 >= voice_slots) {
+        const int room = (channel - 16 + 1) * 2;
+        uint8_t *p = (uint8_t *)realloc(voice_pan, (size_t)room);
+        uint8_t *v = p != NULL ? (uint8_t *)realloc(voice_volume, (size_t)room) : NULL;
+        if (p != NULL)
+            voice_pan = p;
+        if (v == NULL) {
+            return &spare;
+        }
+        voice_volume = v;
+        memset(voice_pan + voice_slots, 0, (size_t)(room - voice_slots));
+        memset(voice_volume + voice_slots, 0, (size_t)(room - voice_slots));
+        voice_slots = room;
+    }
+    return &(*voice)[channel - 16];
+}
+#define PAN_OF(n) (*slot(pan_of, &voice_pan, (n)))
+#define VOLUME_OF(n) (*slot(volume_of, &voice_volume, (n)))
 
 /* The channels the surround decay leaves alone are 1 and 3 (the literal
  * 0xfff5 each routine tests). */
 #define SURROUND_CHANNELS 0xfff5u
 
-#define CNT(n) ((uint32_t)(n) * 16)
-#define SAD(n) ((uint32_t)(n) * 16 + 4)
-#define TMR(n) ((uint32_t)(n) * 16 + 8)
-#define PNT(n) ((uint32_t)(n) * 16 + 0xa)
-#define LEN(n) ((uint32_t)(n) * 16 + 0xc)
+/* (a voice's past the DS's, khdays_sound_hw_base) */
+#define CNT(n) khdays_sound_hw_base(n)
+#define SAD(n) (khdays_sound_hw_base(n) + 4)
+#define TMR(n) (khdays_sound_hw_base(n) + 8)
+#define PNT(n) (khdays_sound_hw_base(n) + 0xa)
+#define LEN(n) (khdays_sound_hw_base(n) + 0xc)
 
 void snd7_hw_reset(void)
 {
@@ -45,18 +77,18 @@ static int surround(int volume, int pan)
 
 static int decays(int channel)
 {
-    return surround_decay > 0 && (SURROUND_CHANNELS & (1u << channel)) != 0;
+    return surround_decay > 0 && (channel >= 16 || (SURROUND_CHANNELS & (1u << channel)) != 0);
 }
 
 /* 0x037fe804 */
 void snd7_hw_setup_pcm(int channel, uint32_t source, int format, int repeat, int loop_start, uint32_t length,
                        int volume, int shift, int timer, int pan)
 {
-    pan_of[channel] = (uint8_t)pan;
+    PAN_OF(channel) = (uint8_t)pan;
     if (master_pan >= 0) {
         pan = master_pan;
     }
-    volume_of[channel] = (uint8_t)volume;
+    VOLUME_OF(channel) = (uint8_t)volume;
     if (decays(channel)) {
         volume = surround(volume, pan);
     }
@@ -72,11 +104,11 @@ void snd7_hw_setup_pcm(int channel, uint32_t source, int format, int repeat, int
 /* 0x037fe8d0 */
 void snd7_hw_setup_psg(int channel, int duty, int volume, int shift, int timer, int pan)
 {
-    pan_of[channel] = (uint8_t)pan;
+    PAN_OF(channel) = (uint8_t)pan;
     if (master_pan >= 0) {
         pan = master_pan;
     }
-    volume_of[channel] = (uint8_t)volume;
+    VOLUME_OF(channel) = (uint8_t)volume;
     if (decays(channel)) {
         volume = surround(volume, pan);
     }
@@ -89,11 +121,11 @@ void snd7_hw_setup_psg(int channel, int duty, int volume, int shift, int timer, 
 /* 0x037fe97c */
 void snd7_hw_setup_noise(int channel, int volume, int shift, int timer, int pan)
 {
-    pan_of[channel] = (uint8_t)pan;
+    PAN_OF(channel) = (uint8_t)pan;
     if (master_pan >= 0) {
         pan = master_pan;
     }
-    volume_of[channel] = (uint8_t)volume;
+    VOLUME_OF(channel) = (uint8_t)volume;
     if (decays(channel)) {
         volume = surround(volume, pan);
     }
@@ -114,7 +146,7 @@ void snd7_hw_stop(int channel, int hold)
 /* 0x037fea48 */
 void snd7_hw_set_volume(int channel, int volume, int shift)
 {
-    volume_of[channel] = (uint8_t)volume;
+    VOLUME_OF(channel) = (uint8_t)volume;
     if (decays(channel)) {
         volume = surround(volume, (int)snd7_reg_read(CNT(channel) + 2, 1));
     }
@@ -130,13 +162,13 @@ void snd7_hw_set_timer(int channel, int timer)
 /* 0x037fead8 */
 void snd7_hw_set_pan(int channel, int pan)
 {
-    pan_of[channel] = (uint8_t)pan;
+    PAN_OF(channel) = (uint8_t)pan;
     if (master_pan >= 0) {
         pan = master_pan;
     }
     snd7_reg_write(CNT(channel) + 2, 1, (uint8_t)pan);
     if (decays(channel)) {
-        snd7_reg_write(CNT(channel), 1, (uint8_t)surround(volume_of[channel], pan));
+        snd7_reg_write(CNT(channel), 1, (uint8_t)surround(VOLUME_OF(channel), pan));
     }
 }
 
@@ -150,8 +182,8 @@ int snd7_hw_is_active(int channel)
 void snd7_hw_set_master_pan(int pan)
 {
     master_pan = pan;
-    for (int n = 0; n < 16; ++n) {
-        snd7_reg_write(CNT(n) + 2, 1, pan >= 0 ? (uint8_t)pan : pan_of[n]);
+    for (int n = 0; n < snd7_channel_count(); ++n) {
+        snd7_reg_write(CNT(n) + 2, 1, pan >= 0 ? (uint8_t)pan : PAN_OF(n));
     }
 }
 
@@ -165,9 +197,9 @@ uint32_t snd7_hw_control(int channel)
 void snd7_hw_set_surround_decay(int decay)
 {
     surround_decay = decay;
-    for (int n = 0; n < 16; ++n) {
-        if (SURROUND_CHANNELS & (1u << n)) {
-            snd7_reg_write(CNT(n), 1, (uint8_t)surround(volume_of[n], (int)snd7_reg_read(CNT(n) + 2, 1)));
+    for (int n = 0; n < snd7_channel_count(); ++n) {
+        if (n >= 16 || (SURROUND_CHANNELS & (1u << n))) {
+            snd7_reg_write(CNT(n), 1, (uint8_t)surround(VOLUME_OF(n), (int)snd7_reg_read(CNT(n) + 2, 1)));
         }
     }
 }

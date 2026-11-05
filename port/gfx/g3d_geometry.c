@@ -109,7 +109,8 @@ static struct {
 
     uint32_t attr_pending, attr; /* POLYGON_ATTR: set / latched at BEGIN_VTXS */
     uint32_t teximage, pltt;
-    int color[3]; /* 5 bits each */
+    int32_t bank, tex_bank; /* the texture bank in effect (khdays_g3d_texture_bank), and teximage's */
+    int color[3];           /* 5 bits each */
     int32_t raw_s, raw_t, s, t;
     int32_t vx, vy, vz; /* the last vertex (for the partial VTX forms) */
     int prim;           /* BEGIN_VTXS type, -1 outside a list */
@@ -774,7 +775,7 @@ static void emit_polygon(const Clip *v, int n)
     what.pltt = g.pltt;
     what.flags =
         (g.hud ? KHDAYS_G3D_HUD | (g.hud == 2 ? KHDAYS_G3D_OVER_2D : 0) : 0) | (g.marker ? KHDAYS_G3D_MARKER : 0);
-    what.replacement = -1;
+    what.replacement = g.tex_bank != 0 && ((g.teximage >> 26) & 7) != 0 ? KHDAYS_G3D_BANK_REPLACEMENT(g.tex_bank) : -1;
     KhdaysG3dPreInfo spare;
     finish_polygon(building, ds, v, n, &what, record_pre(v, n, &what, &spare), 1);
     ds_polys = ds[0];
@@ -1319,6 +1320,11 @@ int khdays_g3d_base(float base[16])
     return base_flushed;
 }
 
+void khdays_g3d_texture_bank(int32_t bank)
+{
+    g.bank = bank;
+}
+
 void khdays_g3d_frame_camera(const int32_t projection[16], const int32_t camera[12])
 {
     memcpy(flushed_camera, camera, sizeof(flushed_camera));
@@ -1521,8 +1527,16 @@ void khdays_g3d_command(unsigned cmd, const uint32_t *p)
                (int16_t)(g.vz + sext(p[0] >> 20, 10)));
         break;
     case 0x29: g.attr_pending = p[0]; break;
-    case 0x2a: g.teximage = p[0]; break;
-    case 0x2b: g.pltt = p[0] & 0x1fff; break;
+    case 0x2a:
+        g.teximage = p[0];
+        g.tex_bank = g.bank;
+        break;
+    case 0x2b:
+        g.pltt = p[0] & 0x1fff;
+        if (p[0] & KHDAYS_G3D_PLTT_BANK_TAG) {
+            g.tex_bank = KHDAYS_G3D_PLTT_BANK(p[0]); /* a bank's texture set apart from a model's draw */
+        }
+        break;
     case 0x30:
         g.diffuse[0] = p[0] & 31;
         g.diffuse[1] = (p[0] >> 5) & 31;

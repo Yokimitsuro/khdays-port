@@ -65,7 +65,7 @@ void khdays_ui_image_end(int image);
 uint32_t khdays_ui_palette_colour(int engine, uint32_t slot, uint32_t indexed);
 uint32_t khdays_ui_palette_hash(int engine);
 
-/* The scale the images are drawn at: the internal resolution's (1 without a window). */
+/* The scale the images are drawn at: the 2D's, the window's (1 without a window; host.h khdays_host_frame_scale). */
 int khdays_ui_scale(void);
 
 /* At VBlank, gathers the elements of every part that is not off and applies the layout

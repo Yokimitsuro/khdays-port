@@ -95,10 +95,10 @@ static void corner_line(SDL_Renderer *renderer, const char *line, int row)
     SDL_SetRenderLogicalPresentation(renderer, lw, lh, mode);
 }
 
-void khdays_settings_fps_draw(SDL_Renderer *renderer, int pictures, int frames)
+void khdays_settings_fps_draw(SDL_Renderer *renderer, int pictures)
 {
     char line[64];
-    SDL_snprintf(line, sizeof(line), khdays_text(TXT_FPS_LINE), pictures, frames);
+    SDL_snprintf(line, sizeof(line), khdays_text(TXT_FPS_LINE), pictures);
     corner_line(renderer, line, 0);
 }
 

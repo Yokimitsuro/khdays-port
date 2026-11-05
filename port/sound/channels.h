@@ -1,4 +1,5 @@
-/* The DS's sixteen sound channels, as GBATEK describes them: their registers and what each plays.
+/* The DS's sixteen sound channels, as GBATEK describes them: their registers and what each plays; and the
+ * voices the PC's mixer adds past them, channels alike that the DS did not have.
  * Plain C, no operating system and no SDL, so the tests, the offline tools and the sound driver each
  * keep a set of their own. The mixers read the channels' current samples. */
 #ifndef KHDAYS_SOUND_CHANNELS_H
@@ -46,6 +47,13 @@ typedef struct KhdaysSoundSource {
 typedef struct KhdaysSoundHw {
     uint8_t regs[KHDAYS_SOUND_REG_SIZE];
     KhdaysSoundChannel channels[16];
+    /* The voices past the sixteen (khdays_sound_hw_add_voice): channel 16 + v, its registers at offset
+     * KHDAYS_SOUND_REG_SIZE + 16 v, laid out as a channel's. The driver adds them when `allow_voices` (the
+     * PC's output: its mixer plays them, the DS's does not). */
+    int voices;
+    uint8_t *voice_regs;
+    KhdaysSoundChannel *voice_channels;
+    int allow_voices;
     KhdaysSoundMemory memory;
     const KhdaysSoundSource *source; /* NULL: every channel reads its memory */
     int trace;                       /* each channel start, on stderr */
@@ -54,7 +62,38 @@ typedef struct KhdaysSoundHw {
     uint32_t half;                   /* a cycle left over: the timers count at half the clock */
 } KhdaysSoundHw;
 
-/* Power on: every register 0 and every channel stopped. The owner sets the
+/* The channels: the DS's sixteen, then the voices. */
+static inline int khdays_sound_hw_count(const KhdaysSoundHw *hw)
+{
+    return 16 + hw->voices;
+}
+
+static inline KhdaysSoundChannel *khdays_sound_hw_channel(KhdaysSoundHw *hw, int n)
+{
+    return n < 16 ? &hw->channels[n] : &hw->voice_channels[n - 16];
+}
+
+static inline const KhdaysSoundChannel *khdays_sound_hw_channel_of(const KhdaysSoundHw *hw, int n)
+{
+    return n < 16 ? &hw->channels[n] : &hw->voice_channels[n - 16];
+}
+
+/* Channel n's registers' offset (its CNT). */
+static inline uint32_t khdays_sound_hw_base(int n)
+{
+    return n < 16 ? (uint32_t)n * 16u : KHDAYS_SOUND_REG_SIZE + (uint32_t)(n - 16) * 16u;
+}
+
+/* The register byte at `offset` (a voice's past KHDAYS_SOUND_REG_SIZE). */
+static inline const uint8_t *khdays_sound_hw_reg(const KhdaysSoundHw *hw, uint32_t offset)
+{
+    return offset < KHDAYS_SOUND_REG_SIZE ? hw->regs + offset : hw->voice_regs + (offset - KHDAYS_SOUND_REG_SIZE);
+}
+
+/* Adds a voice, stopped: its channel number, or -1 without the memory. */
+int khdays_sound_hw_add_voice(KhdaysSoundHw *hw);
+
+/* Power on: every register 0 and every channel stopped, no voices. The owner sets the
  * bias where the SoundBias BIOS call leaves it. */
 void khdays_sound_hw_reset(KhdaysSoundHw *hw, KhdaysSoundMemory memory);
 
@@ -77,7 +116,7 @@ uint32_t khdays_sound_decode(const uint8_t *data, uint32_t words, int format, in
 /* A channel's current output, PCM16, and its CNT register. */
 static inline int32_t khdays_sound_hw_sample(const KhdaysSoundHw *hw, int n)
 {
-    return hw->channels[n].sample;
+    return khdays_sound_hw_channel_of(hw, n)->sample;
 }
 
 /* How far channel `n`'s timer is towards its next sample, 0 to 1. */
@@ -90,8 +129,8 @@ float khdays_sound_hw_smooth_sample(const KhdaysSoundHw *hw, int n);
 
 static inline uint32_t khdays_sound_hw_control(const KhdaysSoundHw *hw, int n)
 {
-    return (uint32_t)hw->regs[n * 16] | (uint32_t)hw->regs[n * 16 + 1] << 8 | (uint32_t)hw->regs[n * 16 + 2] << 16 |
-           (uint32_t)hw->regs[n * 16 + 3] << 24;
+    const uint8_t *r = khdays_sound_hw_reg(hw, khdays_sound_hw_base(n));
+    return (uint32_t)r[0] | (uint32_t)r[1] << 8 | (uint32_t)r[2] << 16 | (uint32_t)r[3] << 24;
 }
 
 #endif

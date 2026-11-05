@@ -22,6 +22,9 @@ const u8 *khdays_rom_header(void);
  * Nonzero for such a card. */
 int khdays_rom_is_us(void);
 
+/* The DS's RAM address of overlay `id` when the port moved it (the enemies': enemy_overlays.h), else 0. */
+u32 khdays_rom_overlay_home(int id);
+
 /* `language` (the firmware's numbering, 1 English .. 5 Spanish) if the card has its text, else English:
  * a US card has English and French only, and its own code falls back to English as this does. */
 int khdays_rom_language(int language);

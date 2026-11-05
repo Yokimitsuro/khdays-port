@@ -35,7 +35,7 @@ int khdays_present_wants(void);
  * widescreen): for khdays_host_frame_widen. */
 int khdays_present_columns(void);
 
-/* The internal resolution the port's 2D is composed at (1 without it). */
+/* The scale the port's 2D is composed at (1 without it): the window's, or the 3D's when that is finer. */
 int khdays_present_scale(void);
 
 /* The window changed size: the "window" resolution and aspect follow it. */
@@ -67,9 +67,9 @@ int khdays_present_refresh_settling(void);
 int khdays_present_settings_button(void);
 int khdays_present_settings_button_at(float x, float y);
 
-/* Video: Show FPS. Whether it is on, and the pictures shown and the game's
- * logic frames a second, measured over the last half second. */
-int khdays_present_fps(int *pictures, int *frames);
+/* Video: Show FPS. Whether it is on, and the pictures shown a second, measured over the last half
+ * second (the game's own frames are not shown: players took them for the frame rate). */
+int khdays_present_fps(int *pictures);
 void khdays_present_screens(const uint32_t *upper_then_lower);
 
 /* The window's drawing of a picture (redraw): how long it took, and how long presenting it waited (for

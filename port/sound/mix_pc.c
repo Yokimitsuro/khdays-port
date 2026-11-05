@@ -40,26 +40,28 @@ static void limit(KhdaysSoundLimiter *limiter, float out[2])
     out[1] *= limiter->gain;
 }
 
-void khdays_sound_mix_pc(const KhdaysSoundHw *hw, const float gain[16], float volume, const float extra[2],
+void khdays_sound_mix_pc(const KhdaysSoundHw *hw, const float *gain, float volume, const float extra[2],
                          KhdaysSoundLimiter *limiter, float out[2])
 {
     static const float divider[4] = {1.0f, 2.0f, 4.0f, 16.0f};
     const uint32_t soundcnt = khdays_sound_hw_read(hw, 0x100, 2);
-    float left[16], right[16], mix_left = 0.0f, mix_right = 0.0f;
+    float left[4] = {0.0f}, right[4] = {0.0f}, mix_left = 0.0f, mix_right = 0.0f; /* (channels 1 and 3 kept) */
     float master_left, master_right, master;
 
-    for (int n = 0; n < 16; ++n) {
+    for (int n = 0; n < khdays_sound_hw_count(hw); ++n) {
         const uint32_t cnt = khdays_sound_hw_control(hw, n);
         const float pan = factor((cnt >> 16) & 0x7f);
         const float sample = hw->smooth ? khdays_sound_hw_smooth_sample(hw, n) : (float)khdays_sound_hw_sample(hw, n);
         const float v = sample / divider[(cnt >> 8) & 3] * factor(cnt & 0x7f) * (gain != NULL ? gain[n] : 1.0f);
-        left[n] = v * (1.0f - pan);
-        right[n] = v * pan;
-        if ((n == 1 && (soundcnt & 0x1000)) || (n == 3 && (soundcnt & 0x2000))) {
-            continue; /* not to the mixer */
+        if (n == 1 || n == 3) {
+            left[n] = v * (1.0f - pan);
+            right[n] = v * pan;
+            if ((n == 1 && (soundcnt & 0x1000)) || (n == 3 && (soundcnt & 0x2000))) {
+                continue; /* not to the mixer */
+            }
         }
-        mix_left += left[n];
-        mix_right += right[n];
+        mix_left += v * (1.0f - pan);
+        mix_right += v * pan;
     }
     switch ((soundcnt >> 8) & 3) {
     case 0: master_left = mix_left; break;

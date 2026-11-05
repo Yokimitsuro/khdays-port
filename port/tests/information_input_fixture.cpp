@@ -10,6 +10,7 @@ void Ov022_UpdateCommandInput(unsigned);
 namespace {
 constexpr unsigned actor = 0x02120000, menu = 0x02124000, equip = 0x02125000;
 int command_list, controls, blocked, pause_mode, navigation, shortcut, activated, command_panel;
+int command_step; /* the D-pad's menu step for the next frame (khdays_controls_command_step) */
 unsigned &word(unsigned at)
 {
     return *static_cast<unsigned *>(KHDAYS_W(at));
@@ -148,6 +149,12 @@ void Ov002_PanelCursorStepRight(void)
 {
     navigation -= 10;
 }
+int khdays_controls_command_step(void)
+{
+    const int step = command_step;
+    command_step = 0;
+    return step;
+}
 unsigned short Ov002_GetPanelField01a4(void)
 {
     return 8;
@@ -207,6 +214,14 @@ void information_input_test(bool keep, unsigned panel)
             press(0x400 | directions[i], directions[i]);
             check(navigation == (available ? moves[i] : 0), "directional menu cursor gate");
         }
+        for (int i = 0; i < 4; ++i) { /* the gamepad's D-pad: a step with no button held */
+            command_step = i + 1;
+            press(0, 0);
+            check(navigation == (available ? moves[i] : 0), "D-pad menu step gate");
+        }
+        command_step = 1;
+        press(0x400, 0);
+        check(navigation == 0, "D-pad menu step taken with X held");
         for (controls = 0; controls <= 1; ++controls) {
             constexpr unsigned short buttons[] = {1, 0x400, 0x800, 2};
             for (int i = 0; i < 4; ++i) {

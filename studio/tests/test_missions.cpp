@@ -12,6 +12,10 @@
 #include "core/missions/mission_names.h"
 #include "core/missions/mod_missions.h"
 
+extern "C" {
+#include "missions/registry.h"
+}
+
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -635,7 +639,9 @@ std::uint32_t field(int f, int bits) {
 }
 
 // The pieces the mission builder takes from the game: 1354's area 11 (its steps, c0, c1), its start, its
-// enemy table (classes 0-4); 0004's "all defeated" check (2.7).
+// enemy table (classes 0-4); 0004's "all defeated" check (2.7); 0402's tracked enemy class (2.73); the classes'
+// records (Ms/DP.p2f: classes 0-4 give 0, 13, 0, 16 and 16 hearts); 0001's position checks (2.8, the second
+// with a place); 0451's Organization emblems (4.25, 2.45, a field set, 17.2, 17.3, 2.75).
 studio::GameFiles builder_game() {
     Bytes i;
     step(i, 2, 0, {kInt, 1});
@@ -677,7 +683,7 @@ studio::GameFiles builder_game() {
         step(s, 2, static_cast<std::uint8_t>(c), {kInt, 0, kInt, 0, kInt, 0});
     step(s, 0, 0, {kField, field(8846, 1), kInt, 1});
     step(s, 4, 16, {kInt, 0});
-    step(s, 2, 34, {kInt, 0});
+    step(s, 2, 34, {kInt, 4, kInt, 1, kInt, 1, kInt, 0});  // the gauge: 1354's (kind 4, one of one)
     step(s, 2, 52, {kInt, 0, kInt, 0});
     for (const auto& [f, bits] :
          std::vector<std::pair<int, int>>{{8840, 4}, {8833, 4}, {8844, 1}, {8837, 1}, {8838, 1}, {8839, 1}, {6318, 1}})
@@ -704,6 +710,9 @@ studio::GameFiles builder_game() {
     Bytes c;
     step(c, 2, 7, {kInt, 0, kInt, 3, kInt, 1, kInt, 0xffffffffu, kInt, 5, kInt, 9});
     const Bytes check = named_p2({cakp({"_i"}, {script({c})})}, {"11.Z"});
+    Bytes tracked;
+    step(tracked, 2, 73, {kInt, 20, kInt, 100});
+    const Bytes plants = named_p2({cakp({"_i"}, {script({tracked})})}, {"_s.Z"});
 
     // world eh (index 4): three rooms, room 2's exits keyed 7 and 9 (a room record 0x24 bytes, its rows after it)
     Bytes table = {3, 0, 0, 0};
@@ -724,11 +733,41 @@ studio::GameFiles builder_game() {
         table.insert(table.end(), r.begin(), r.end());
     const Bytes world = p2({table, Bytes(4, 0)});
 
+    std::vector<Bytes> classes;
+    for (const int hearts : {0, 13, 0, 16, 16}) {
+        Bytes record(0x7c, 0);
+        record[0x6d] = static_cast<std::uint8_t>(hearts);
+        classes.push_back(record);
+    }
+    const Bytes class_records = p2(classes);
+
+    Bytes checks;
+    step(checks, 2, 8, {kInt, 0,    kInt, 0,    kInt, 0,    kInt,        11,     0, 11,     kInt, 0,    kInt,
+                        0,    kInt, 0,    kInt, 0,    kInt, 0xffffffffu, kFixed, 0, kFixed, 0,    kInt, 0});
+    step(checks, 2, 8, {kInt, 0,      kInt,    1,    kInt, 0,    kInt, 11,     0, 11,     kFixed, 0x9000, kFixed,
+                        0,    kFixed, 0x10000, kInt, 0,    kInt, 3,    kFixed, 0, kFixed, 0,      kInt,   0});
+    const Bytes reach_from = named_p2({cakp({"_i"}, {script({checks})})}, {"11.Z"});
+    Bytes pieces;
+    step(pieces, 4, 25, {kInt, 12});
+    step(pieces, 2, 45, {kInt, 392});
+    step(pieces, 0, 0, {kField, field(8888, 1), kInt, 1});
+    step(pieces, 17, 2, {kInt, 16, kInt, 16, kInt, 0, kInt, 0});
+    step(pieces, 17, 3, {kInt, 16, kInt, 0, kInt, 0, kField, field(8888, 1), kFixed, 0, kFixed, 0, kFixed, 0, kInt, 0});
+    step(pieces, 2, 75, {kInt, 392});
+    const Bytes emblems_from = named_p2({cakp({"_i"}, {script({pieces})})}, {"_s.Z"});
+
     studio::GameFiles g;
-    g.read = [base, check, world](const std::string& path) {
-        return path == "mi/mi/1354" ? base : path == "mi/mi/0004" ? check : path == "mi/wd/wd_eh" ? world : Bytes();
+    g.read = [base, check, plants, world, class_records, reach_from, emblems_from](const std::string& path) {
+        return path == "mi/mi/1354"    ? base
+               : path == "mi/mi/0004"  ? check
+               : path == "mi/mi/0402"  ? plants
+               : path == "mi/mi/0001"  ? reach_from
+               : path == "mi/mi/0451"  ? emblems_from
+               : path == "mi/wd/wd_eh" ? world
+               : path == "Ms/DP.p2f"   ? class_records
+                                       : Bytes();
     };
-    g.missions = {4, 1354};
+    g.missions = {1, 4, 402, 451, 1354};
     return g;
 }
 
@@ -759,7 +798,7 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     plan.time_ms = 120000;
     plan.notice = {"Two Waves", "", "", "", "Dos oleadas"};
     plan.objective = {"Defeat them all.", "", "", "", ""};
-    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5), spawner_of({{3, 1}}, 3.0)}};
+    plan.waves = {{spawner_of({{0, 1}}, -1.5)}, {spawner_of({{0, 2}}, 1.5), spawner_of({{4, 1}}, 3.0)}};
     Bytes built;
     std::string why;
     CHECK(studio::build_mission(game, plan, &built, &why));
@@ -777,7 +816,7 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     CHECK(operand_at(i.steps[1], 0).value == 4 && operand_at(i.steps[2], 2).value == 2);  // world, room
     EnemyTable t;
     CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(table)].data, &t, &why));
-    CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 3; three spawners
+    CHECK(t.kinds.size() == 2 && t.groups.size() == 3);  // classes 0 and 4; three spawners
     CHECK(t.kinds[0].raw[4] == 0);                       // the level: the mission's own
     // the room's own exits closed, by their keys (not the base mission's arena's five)
     std::vector<std::int32_t> closed;
@@ -807,11 +846,221 @@ TEST(a_mission_with_waves_built_of_the_games_own_steps) {
     CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("room 5") != std::string::npos);
     plan.room = 2;
 
-    // the game's limits, said: an area's four enemy classes; a class no game mission has
-    plan.waves = {{spawner_of({{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}}, 0.0)}};
-    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("four") != std::string::npos);
+    // any classes together, in the waves' order (the port gives each its own code slot); a class no game
+    // mission has, said
+    plan.waves = {{spawner_of({{1, 1}, {0, 1}, {2, 1}, {3, 1}, {4, 1}}, 0.0)}};
+    CHECK(studio::build_mission(game, plan, &built, &why) && parse_mission(built, 20000, &m, &why));
+    CHECK(parse_enemy_table(m.p2.entries[static_cast<std::size_t>(m.entry("em0"))].data, &t, &why));
+    CHECK(t.kinds.size() == 5 && t.kinds[0].raw[0] == 1 && t.kinds[1].raw[0] == 0 && t.kinds[3].raw[0] == 3);
     plan.waves = {{spawner_of({{99, 1}}, 0.0)}};
     CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("99") != std::string::npos);
+}
+
+TEST(an_eliminate_mission_counts_its_target_class_on_the_mission_gauge) {
+    const studio::GameFiles game = builder_game();
+    studio::MissionPlan plan;
+    plan.kind = KHDAYS_MISSION_ELIMINATE;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Guardian", "", "", "", ""};
+    plan.objective = {"Defeat the guardians.", "", "", "", ""};
+    plan.target = 4;
+    plan.waves = {{spawner_of({{0, 2}}, -1.5), spawner_of({{4, 2}}, 2.0)}, {spawner_of({{4, 1}, {0, 1}}, 0.0)}};
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const ScriptArchive& a = m.entries[static_cast<std::size_t>(m.entry("11"))].archive;
+    const Script& i = a.scripts.back();
+    // the first wave's "all defeated" brings the second; the last's ends nothing: the gauge's goal (its field
+    // watched, event 6) runs c0
+    CHECK(count_steps(i, 2, 7) == 1 && count_steps(a.scripts[2], 2, 7) == 0);
+    int watched = 0, ends = 0;
+    for (const ScriptStep& st : i.steps) {
+        watched += st.group == 2 && st.command == 9 && operand_at(st, 10).value == (8326 | 1 << 16) &&
+                   operand_at(st, 2).value == 6;
+        ends += st.group == 2 && st.command == 5 && operand_at(st, 2).value == 6;
+    }
+    CHECK(watched == 1 && ends == 1);
+    // the start: the gauge a counter (kind 4) of the target class's three, all of them to defeat; then the class
+    // tracked (2.73: class 4, as 402's step with its 100)
+    const Script& s = m.entries[static_cast<std::size_t>(m.entry("_s"))].archive.scripts.back();
+    std::size_t gauge = s.steps.size(), tracked = s.steps.size();
+    for (std::size_t k = 0; k < s.steps.size(); ++k) {
+        if (s.steps[k].group == 2 && s.steps[k].command == 34)
+            gauge = k;
+        if (s.steps[k].group == 2 && s.steps[k].command == 73)
+            tracked = k;
+    }
+    CHECK(gauge < tracked && tracked < s.steps.size());
+    if (tracked < s.steps.size()) {
+        CHECK(operand_at(s.steps[gauge], 0).value == 4 && operand_at(s.steps[gauge], 2).value == 3 &&
+              operand_at(s.steps[gauge], 4).value == 3);
+        CHECK(operand_at(s.steps[tracked], 0).value == 4 && operand_at(s.steps[tracked], 2).value == 100);
+    }
+    // a goal of two of the three
+    plan.goal = 2;
+    CHECK(studio::build_mission(game, plan, &built, &why) && parse_mission(built, 20000, &m, &why));
+    const Script& s2 = m.entries[static_cast<std::size_t>(m.entry("_s"))].archive.scripts.back();
+    for (const ScriptStep& st : s2.steps)
+        if (st.group == 2 && st.command == 34)
+            CHECK(operand_at(st, 2).value == 3 && operand_at(st, 4).value == 2);
+    // a target class no wave has: refused, said
+    plan.target = 1;
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("target class 1") != std::string::npos);
+}
+
+TEST(an_emblems_mission_puts_out_its_organization_emblems) {
+    const studio::GameFiles game = builder_game();
+    studio::MissionPlan plan;
+    plan.kind = KHDAYS_MISSION_EMBLEMS;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Emblems", "", "", "", ""};
+    plan.objective = {"Find the emblems.", "", "", "", ""};
+    plan.collects = {{1.0, 0.5, 2.0}, {-3.0, 1.0, 0.0}, {0.0, 2.0, -4.0}};  // no enemies
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const Script& s = m.entries[static_cast<std::size_t>(m.entry("_s"))].archive.scripts.back();
+    // panel 12 (their commands) before the enemy table, 392 before 2.46; the class of three, each emblem in the
+    // room with its own field, set first
+    std::size_t panel = s.steps.size(), table = 0, resource = s.steps.size(), keys = 0;
+    std::vector<std::int32_t> fields_set, fields_used, rooms;
+    int classes = 0, gauge_total = -1, gauge_goal = -1, named = 0;
+    for (std::size_t k = 0; k < s.steps.size(); ++k) {
+        const ScriptStep& st = s.steps[k];
+        if (st.group == 4 && st.command == 25 && operand_at(st, 0).value == 12)
+            panel = k;
+        if (st.group == 2 && st.command == 31)
+            table = k;
+        if (st.group == 2 && st.command == 45 && operand_at(st, 0).value == 392)
+            resource = k;
+        if (st.group == 2 && st.command == 46)
+            keys = k;
+        if (st.group == 0 && st.command == 0 && (operand_at(st, 0).value & 0xffff) >= 8888)
+            fields_set.push_back(operand_at(st, 0).value & 0xffff);
+        if (st.group == 17 && st.command == 2)
+            classes += operand_at(st, 0).value == 16 && operand_at(st, 2).value == 3;
+        if (st.group == 17 && st.command == 3) {
+            fields_used.push_back(operand_at(st, 6).value & 0xffff);
+            rooms.push_back(operand_at(st, 4).value);
+        }
+        if (st.group == 2 && st.command == 34) {
+            gauge_total = operand_at(st, 2).value;
+            gauge_goal = operand_at(st, 4).value;
+        }
+        named += st.group == 2 && st.command == 75;
+    }
+    CHECK(panel < table && resource < keys && classes == 1 && named == 1);
+    CHECK(fields_set == std::vector<std::int32_t>({8888, 8889, 8890}) && fields_used == fields_set);
+    CHECK(rooms == std::vector<std::int32_t>({2, 2, 2}));
+    // the gauge: 10 points a piece, by default 8 a piece to collect; the goal watched, no wave
+    CHECK(gauge_total == 30 && gauge_goal == 24);
+    const Script& i = m.entries[static_cast<std::size_t>(m.entry("11"))].archive.scripts.back();
+    int watched = 0;
+    for (const ScriptStep& st : i.steps)
+        watched += st.group == 2 && st.command == 9 && operand_at(st, 10).value == (8326 | 1 << 16);
+    CHECK(watched == 1 && count_steps(i, 2, 7) == 0 && count_steps(i, 2, 32) == 0);
+    // a goal above 10 a piece: refused
+    plan.goal = 31;
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("30 points") != std::string::npos);
+}
+
+TEST(a_reach_mission_ends_when_a_player_reaches_its_place) {
+    const studio::GameFiles game = builder_game();
+    studio::MissionPlan plan;
+    plan.kind = KHDAYS_MISSION_REACH;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Reach", "", "", "", ""};
+    plan.objective = {"Get there.", "", "", "", ""};
+    plan.has_reach = true;
+    plan.reach = {2.0, 0.049, -4.0};
+    plan.reach_radius = 1.5;
+    plan.waves = {{spawner_of({{0, 1}}, 3.0)}};
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const Script& i = m.entries[static_cast<std::size_t>(m.entry("11"))].archive.scripts.back();
+    // the position check: event 6, the first player (mode 0), the room, the place, a sphere of radius 1.5; event 6
+    // runs c0; the wave's defeat ends nothing
+    int checks = 0, ends = 0;
+    for (const ScriptStep& st : i.steps) {
+        if (st.group == 2 && st.command == 8) {
+            ++checks;
+            CHECK(operand_at(st, 2).value == 6 && operand_at(st, 4).value == 0 && operand_at(st, 6).value == 2);
+            CHECK(operand_at(st, 10).mode == 0x10 && operand_at(st, 10).value == 0x2000);
+            CHECK(operand_at(st, 14).value == -0x4000 && operand_at(st, 16).value == 0);
+            CHECK(operand_at(st, 18).mode == 0x10 && operand_at(st, 18).value == 0x1800);
+        }
+        ends += st.group == 2 && st.command == 5 && operand_at(st, 2).value == 6;
+    }
+    CHECK(checks == 1 && ends == 1 && count_steps(i, 2, 7) == 0);
+    // with no enemies at all it builds too
+    plan.waves.clear();
+    CHECK(studio::build_mission(game, plan, &built, &why));
+}
+
+TEST(a_hearts_mission_fills_the_mission_gauge_with_its_enemies_hearts) {
+    const studio::GameFiles game = builder_game();
+    CHECK(studio::enemy_hearts(game) == std::vector<int>({0, 13, 0, 16, 16}));
+    studio::MissionPlan plan;
+    plan.kind = KHDAYS_MISSION_HEARTS;
+    plan.world = 4;
+    plan.room = 2;
+    plan.start = {0.0, 0.049, 0.0};
+    plan.notice = {"Hearts", "", "", "", ""};
+    plan.objective = {"Collect hearts.", "", "", "", ""};
+    // two of class 1 and one of class 4 give 13 + 13 + 16; a Shadow would give none
+    plan.waves = {{spawner_of({{1, 2}}, -1.5)}, {spawner_of({{4, 1}}, 2.0)}};
+    CHECK(studio::waves_hearts(plan.waves, studio::enemy_hearts(game)) == 42);
+    CHECK(studio::waves_hearts({{spawner_of({{0, 5}}, 0.0)}}, studio::enemy_hearts(game)) == 0);
+    Bytes built;
+    std::string why;
+    CHECK(studio::build_mission(game, plan, &built, &why));
+    MissionFile m;
+    CHECK(parse_mission(built, 20000, &m, &why));
+    const ScriptArchive& a = m.entries[static_cast<std::size_t>(m.entry("11"))].archive;
+    // as an eliminate mission: the last wave's "all defeated" ends nothing, the gauge's goal runs c0
+    CHECK(count_steps(a.scripts.back(), 2, 7) == 1 && count_steps(a.scripts[2], 2, 7) == 0);
+    int watched = 0;
+    for (const ScriptStep& st : a.scripts.back().steps)
+        watched += st.group == 2 && st.command == 9 && operand_at(st, 10).value == (8326 | 1 << 16);
+    CHECK(watched == 1);
+    // the start: the hearts gauge (kind 2), all 42 to collect; no class tracked
+    auto gauge_of = [&](const MissionFile& f, int* kind, int* total, int* goal) {
+        const Script& s = f.entries[static_cast<std::size_t>(f.entry("_s"))].archive.scripts.back();
+        CHECK(count_steps(s, 2, 73) == 0);
+        for (const ScriptStep& st : s.steps)
+            if (st.group == 2 && st.command == 34) {
+                *kind = operand_at(st, 0).value;
+                *total = operand_at(st, 2).value;
+                *goal = operand_at(st, 4).value;
+            }
+    };
+    int kind = -1, total = -1, goal = -1;
+    gauge_of(m, &kind, &total, &goal);
+    CHECK(kind == 2 && total == 42 && goal == 42);
+    // a goal of 20 of them
+    plan.goal = 20;
+    CHECK(studio::build_mission(game, plan, &built, &why) && parse_mission(built, 20000, &m, &why));
+    gauge_of(m, &kind, &total, &goal);
+    CHECK(kind == 2 && total == 42 && goal == 20);
+    // more than the waves give, or waves that give none: refused, said
+    plan.goal = 43;
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("give 42 hearts") != std::string::npos);
+    plan.goal = 0;
+    plan.waves = {{spawner_of({{0, 3}, {2, 1}}, 0.0)}};
+    CHECK(!studio::build_mission(game, plan, &built, &why) && why.find("no heart") != std::string::npos);
 }
 
 TEST(a_new_missions_waves_chests_and_emblems_added_and_taken_away) {
@@ -842,6 +1091,27 @@ TEST(a_new_missions_waves_chests_and_emblems_added_and_taken_away) {
     CHECK(text.find("wave 1 =") == std::string::npos && text.find("wave 2 =") == std::string::npos &&
           text.find("emblem") == std::string::npos && text.find("chest = 257") != std::string::npos &&
           text.find("[mission other]") != std::string::npos);
+}
+
+TEST(a_new_missions_kind_saved_target_and_goal_first) {
+    const auto mod = studio_test::scratch("mission_kind") / "mods" / "M";
+    const auto txt = mod / "missions" / "missions.txt";
+    studio_test::write(txt, "[mission plants]\nname en = P\nobjective en = O\nworld = eh\nroom = 2\n"
+                            "start = 0 0.049 0 -90\nwave 1 = 0x2 20x3 at 0 0.049 -1.5\n");
+    std::string why;
+    // eliminate without its target: refused, the file as it was
+    const Bytes before = file_bytes(txt);
+    CHECK(!studio::set_mod_mission(mod, "plants", "kind", "", "eliminate", &why) &&
+          why.find("target") != std::string::npos);
+    CHECK(file_bytes(txt) == before);
+    // the target and goal first (a waves mission keeps them unused), then the kind; read back as written
+    CHECK(studio::set_mod_mission(mod, "plants", "target", "", "20", &why));
+    CHECK(studio::set_mod_mission(mod, "plants", "goal", "", "2", &why));
+    CHECK(studio::set_mod_mission(mod, "plants", "kind", "", "eliminate", &why));
+    const auto read = studio::read_mod_missions(mod, nullptr);
+    CHECK(read.size() == 1 && read[0].kind == KHDAYS_MISSION_ELIMINATE && read[0].target == 20 && read[0].goal == 2);
+    // a goal above the target class's three: refused
+    CHECK(!studio::set_mod_mission(mod, "plants", "goal", "", "4", &why) && why.find("goal 4") != std::string::npos);
 }
 
 TEST(a_new_missions_places_read_and_saved_at_once) {
@@ -942,4 +1212,26 @@ TEST(the_games_missions_named_from_its_list) {
     CHECK(names.at(101).mission_mode && names.at(101).shown == 5 && names.at(101).name == "Colección");
     CHECK(!names.at(102).mission_mode && names.at(102).number == 8 && names.at(102).category == 9);
     CHECK(studio::game_mission_names(root / "nitrofs", "fr").empty());  // no list: none
+}
+
+TEST(a_waves_line_of_more_enemies_than_a_spawner_holds_split_at_its_place) {
+    // Ov107_Spawner_AddSlot ends the game at a spawner's ninth enemy: 20 Shadows and a Soldier are three spawners
+    static const char text[] = "[mission many]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "wave 1 = 0x20 4x1 at 1 0 2\nwave 2 = 0x3 at 0 0 0\n";
+    KhdaysMissions r{};
+    CHECK(khdays_missions_read(&r, "test.many", "many", text, sizeof(text) - 1, nullptr, nullptr) == 1);
+    studio::MissionPlan plan;
+    std::string why;
+    CHECK(studio::plan_of(r.list[0], &plan, &why));
+    CHECK(plan.waves.size() == 2 && plan.waves[0].size() == 3 && plan.waves[1].size() == 1);
+    int total = 0;
+    for (const auto& sp : plan.waves[0]) {
+        int held = 0;
+        for (const auto& e : sp.enemies)
+            held += e.count;
+        CHECK(held <= 8 && sp.at[0] == 1.0 && sp.at[2] == 2.0);
+        total += held;
+    }
+    CHECK(total == 21 && plan.waves[0][2].enemies.size() == 2 && plan.waves[0][2].enemies[1].enemy_class == 4);
+    khdays_missions_free(&r);
 }

@@ -1,11 +1,13 @@
 /* The mods' new missions in the running game (missions.h). */
 #include "missions.h"
+#include "../rooms/added.h"
 
 #include "build.h"
 #include "field_store.h"
 #include "registry.h"
 #include "save_part.h"
 #include "tables.h"
+#include "worlds.h"
 
 #include "../../host/app/instance.h"
 #include "../core/rom.h"
@@ -157,13 +159,44 @@ void khdays_missions_start(void)
         if (m->chest_count > 0 && !khdays_field_store_place_chests(&store, i, m->chest_count, &first_chest)) {
             note(registry.mods[m->mod].id, m->line, "its chests left out: no room for their flags", NULL);
         }
+        /* a world the mod adds: played in its game world, listed in its own slot */
+        if (khdays_world_index(m->world) < 0) {
+            char mod_path[1024], like[3];
+            snprintf(mod_path, sizeof(mod_path), "%s/%s", MODS, registry.mods[m->mod].folder);
+            const int slot = khdays_mod_world(mod_path, m->world, like);
+            if (slot < 0) {
+                char why[160];
+                snprintf(why, sizeof(why), "mission %s left out: its world %s is no game world nor one the mod adds",
+                         m->key, m->world);
+                note(registry.mods[m->mod].id, m->line, why, NULL);
+                m->number = 0;
+                --numbered;
+                continue;
+            }
+            snprintf(m->world, sizeof(m->world), "%s", like);
+            m->category = slot;
+        }
+        /* a room the mod adds: its index, given when its world's archive was read */
+        if (m->room_key != NULL) {
+            char mod_path[1024];
+            snprintf(mod_path, sizeof(mod_path), "%s/%s", MODS, registry.mods[m->mod].folder);
+            const int index = khdays_rooms_index(mod_path, m->room_key, m->world);
+            if (index >= 0) {
+                m->room = index;
+            } else {
+                char why[160];
+                snprintf(why, sizeof(why), "its room %s is no room the mod adds to %s: played in the world's room 0",
+                         m->room_key, m->world);
+                note(registry.mods[m->mod].id, m->line, why, NULL);
+            }
+        }
         snprintf(disk, sizeof(disk), "%s/%s/missions/%s/mission.p2", MODS, registry.mods[m->mod].folder, m->key);
         snprintf(path, sizeof(path), "mi/mi/%04d", m->file);
         /* its waves built into its file; else its own file; else its template's as it is */
         char template_path[32], why[300] = "";
         snprintf(template_path, sizeof(template_path), "mi/mi/%04d", m->template_file);
         int served = 0;
-        if (m->spawner_count > 0) {
+        if (khdays_mission_built(m)) {
             unsigned char *built = NULL;
             size_t size = 0;
             char reason[200];
@@ -451,6 +484,11 @@ int khdays_missions_spots_shown(void)
     }
     told = m;
     return m != NULL;
+}
+
+int khdays_missions_playing(void)
+{
+    return playing() != NULL;
 }
 
 /* ---- The save part ------------------------------------------------------------------------------- */

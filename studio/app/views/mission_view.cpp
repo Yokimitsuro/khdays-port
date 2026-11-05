@@ -14,9 +14,11 @@
 #include "core/missions/mission_names.h"
 #include "core/missions/mod_missions.h"
 #include "core/characters/character_files.h"
+#include "core/rooms/added_rooms.h"
 #include "core/rooms/room_collision.h"
 #include "core/rooms/worlds.h"
 #include "core/files/paths.h"
+#include "missions/registry.h"
 
 #include "khdays/vfs/filesystem.h"
 
@@ -27,6 +29,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <sstream>
 #include <tuple>
 
 namespace studio {
@@ -135,8 +138,11 @@ std::string meaning_of(App& app, const Script& script, const ScriptStep& s) {
         S::meaning_on_event,       S::meaning_on_event_start,   S::meaning_event_when,      S::meaning_hud_on,
         S::meaning_time_limit,     S::meaning_time_limit_shown, S::meaning_time_limit_add,  S::meaning_time_limit_set,
         S::meaning_time_limit_sub, S::meaning_clock_restart,    S::meaning_player_at,       S::meaning_player_at_marker,
-        S::meaning_chests,         S::meaning_emblems};
-    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::emblems + 1, "a word per meaning");
+        S::meaning_chests,         S::meaning_emblems,          S::meaning_gauge_defeat,    S::meaning_gauge_hearts,
+        S::meaning_gauge_counter,  S::meaning_gauge_other,      S::meaning_gauge_class,     S::meaning_tally_add,
+        S::meaning_group_defeated, S::meaning_all_defeated,     S::meaning_place_first,     S::meaning_place_all,
+        S::meaning_panel,          S::meaning_org_emblems,      S::meaning_org_emblem};
+    static_assert(sizeof(words) / sizeof(words[0]) == StepMeaning::org_emblem + 1, "a word per meaning");
     if (m.kind == StepMeaning::none)
         return {};
     std::string text = tr(app.language, words[m.kind]);
@@ -981,8 +987,8 @@ std::vector<std::tuple<std::string, std::string, std::string>> new_mission_chang
         out.emplace_back("category", "", std::to_string(e.category));
     if (e.world != was.world)
         out.emplace_back("world", "", e.world);
-    if (e.room != was.room)
-        out.emplace_back("room", "", std::to_string(e.room));
+    if (e.room != was.room || e.room_key != was.room_key)
+        out.emplace_back("room", "", e.room_key.empty() ? std::to_string(e.room) : e.room_key);
     if (e.level != was.level && e.level > 0)
         out.emplace_back("level", "", std::to_string(e.level));
     if (e.time_ms != was.time_ms && e.time_ms > 0)
@@ -991,7 +997,117 @@ std::vector<std::tuple<std::string, std::string, std::string>> new_mission_chang
         out.emplace_back("unlock", "", e.unlock);
     if (e.start != was.start && !e.start.empty())
         out.emplace_back("start", "", e.start);
+    // the target and goal before the kind: an eliminate mission is read only with its target
+    if (e.target != was.target && e.target >= 0)
+        out.emplace_back("target", "", std::to_string(e.target));
+    if (e.goal != was.goal)
+        out.emplace_back("goal", "", std::to_string(e.goal));
+    if (e.kind != was.kind && khdays_mission_kind_name(e.kind) != nullptr)
+        out.emplace_back("kind", "", khdays_mission_kind_name(e.kind));
     return out;
+}
+
+// The enemy class of a mission's first wave line ("0x2 at ..." is class 0), else the first a wave can use.
+int first_wave_class(const ModMission& e) {
+    for (const auto& [setting, value] : e.lines)
+        if (setting.rfind("wave ", 0) == 0 && !value.empty() && std::isdigit(static_cast<unsigned char>(value[0])))
+            return std::atoi(value.c_str());
+    return mission_enemy_classes().empty() ? 0 : mission_enemy_classes().front();
+}
+
+std::string enemy_label(int enemy_class) {
+    const char* name = enemy_name(enemy_class);
+    return std::to_string(enemy_class) + ": " + (name != nullptr ? name : "?");
+}
+
+// How many hearts the enemies of a mission's wave lines ("1x3 5x1 at ...") give together, by their classes'.
+int mission_hearts(const ModMission& e) {
+    static const std::vector<int> hearts = enemy_hearts(extracted_game_files(nitrofs()));
+    std::vector<std::vector<WaveSpawner>> waves(1);
+    for (const auto& [setting, value] : e.lines) {
+        if (setting.rfind("wave ", 0) != 0)
+            continue;
+        WaveSpawner sp;
+        std::istringstream words(value);
+        std::string word;
+        while (words >> word && word != "at") {
+            int enemy_class = 0, count = 0;
+            char x = 0;
+            if (std::istringstream(word) >> enemy_class >> x >> count && x == 'x')
+                sp.enemies.push_back({enemy_class, count});
+        }
+        waves[0].push_back(sp);
+    }
+    return waves_hearts(waves, hearts);
+}
+
+// How many of a setting's lines a mission has ("collect": its Organization emblems).
+int mission_lines(const ModMission& e, const std::string& setting) {
+    int n = 0;
+    for (const auto& [name, value] : e.lines)
+        n += name == setting;
+    return n;
+}
+
+// How its places are cleared: its last wave defeated, or a goal of its target class's enemies (eliminate), of the
+// hearts its enemies give (hearts) or of its Organization emblems' points (emblems), or its place reached (reach).
+void draw_mission_kind(Language lang, ModMission& e) {
+    const S kinds[] = {S::mission_kind_waves, S::mission_kind_eliminate, S::mission_kind_hearts,
+                       S::mission_kind_emblems, S::mission_kind_reach};
+    const int count = static_cast<int>(std::size(kinds));
+    const int shown = e.kind >= 0 && e.kind < count ? e.kind : KHDAYS_MISSION_WAVES;
+    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_kind), tr(lang, kinds[shown]))) {
+        for (int k = 0; k < count; ++k)
+            if (ImGui::Selectable(tr(lang, kinds[k]), shown == k)) {
+                e.kind = k;  // KhdaysMissionKind's order
+                if (e.kind == KHDAYS_MISSION_ELIMINATE && e.target < 0)
+                    e.target = first_wave_class(e);
+            }
+        ImGui::EndCombo();
+    }
+    if (e.kind == KHDAYS_MISSION_EMBLEMS) {
+        const int placed = mission_lines(e, "collect");
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        ImGui::InputInt(tr(lang, S::mission_emblems_goal), &e.goal);
+        e.goal = std::max(e.goal, 0);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled(
+            "%s", fmt(lang, S::mission_emblems_help, {std::to_string(placed), std::to_string(10 * placed)}).c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (e.kind == KHDAYS_MISSION_REACH) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s",
+                            tr(lang, mission_lines(e, "reach") > 0 ? S::mission_reach_help : S::mission_reach_missing));
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (e.kind == KHDAYS_MISSION_HEARTS) {
+        ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+        ImGui::InputInt(tr(lang, S::mission_hearts_goal), &e.goal);
+        e.goal = std::max(e.goal, 0);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", fmt(lang, S::mission_hearts_help, {std::to_string(mission_hearts(e))}).c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (e.kind != KHDAYS_MISSION_ELIMINATE)
+        return;
+    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_target), enemy_label(e.target).c_str())) {
+        for (const int c : mission_enemy_classes())
+            if (ImGui::Selectable(enemy_label(c).c_str(), c == e.target))
+                e.target = c;
+        ImGui::EndCombo();
+    }
+    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    ImGui::InputInt(tr(lang, S::mission_goal), &e.goal);
+    e.goal = std::max(e.goal, 0);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", tr(lang, S::mission_goal_help));
+    ImGui::PopTextWrapPos();
 }
 
 void read_new_missions(const Mod* m) {
@@ -1046,6 +1162,101 @@ const std::map<int, GameMissionName>& mission_names(Language language) {
 std::string world_label(Language language, const std::string& code) {
     const std::string name = world_name(language, code);
     return name == code ? code : name + "  (" + code + ")";
+}
+
+// One of the mod's own worlds as the lists show it: its name, key and the game world it is played in.
+std::string mod_world_label(const AddedWorld& w) {
+    const auto named = w.names.find("");
+    return (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
+}
+
+// What a mission's world offers to play in: the rooms of the game world it is played in, the rooms the mod adds to
+// it, and the mod's own worlds; read again for another world and when the room list opens (a room just added).
+struct RoomChoices {
+    std::string mod, world;
+    int game_rooms = 0;
+    std::vector<std::string> added;
+    std::vector<AddedWorld> worlds;
+};
+
+RoomChoices choices;
+
+void read_room_choices(const Mod& m, const std::string& world) {
+    std::vector<std::string> notes;
+    choices.mod = m.name;
+    choices.world = world;
+    choices.game_rooms = 0;
+    World w;
+    std::string why;
+    const std::string played_in = world_played_in(m.dir, world);
+    if (!played_in.empty() && load_world(nitrofs(), played_in, &w, &why))
+        choices.game_rooms = static_cast<int>(w.rooms.size());
+    choices.added.clear();
+    for (const AddedRoom& r : read_added_rooms(m.dir, &notes))
+        if (r.world == world)
+            choices.added.push_back(r.key);
+    choices.worlds = read_added_worlds(m.dir, &notes);
+}
+
+// Where the mission is played, above its map: its world (one of the game's, or the mod's own) and its room (the
+// world's own, or one the mod adds to it); the map follows at once, and the choice is saved with the places or the
+// settings.
+void draw_room_choice(App& app, const Mod& m, ModMission& e) {
+    const auto lang = app.language;
+    if (choices.mod != m.name || choices.world != e.world)
+        read_room_choices(m, e.world);
+    std::string shown = world_label(lang, e.world);
+    for (const AddedWorld& w : choices.worlds)
+        if (w.key == e.world)
+            shown = mod_world_label(w);
+    ImGui::SetNextItemWidth(18 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_world), shown.c_str())) {
+        std::string chosen = e.world;
+        for (const auto& w : world_codes())
+            if (w != "hb" && w != "pi" && ImGui::Selectable(world_label(lang, w).c_str(), e.world == w))
+                chosen = w;
+        for (const AddedWorld& w : choices.worlds)
+            if (ImGui::Selectable(mod_world_label(w).c_str(), e.world == w.key))
+                chosen = w.key;
+        if (chosen != e.world) {
+            e.world = chosen;
+            e.room = 0;
+            e.room_key.clear();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
+    const std::string room = e.room_key.empty() ? std::to_string(e.room) : e.room_key + added;
+    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mission_room), room.c_str())) {
+        if (ImGui::IsWindowAppearing())
+            read_room_choices(m, e.world);
+        for (int r = 0; r < choices.game_rooms; ++r) {
+            if (ImGui::Selectable(std::to_string(r).c_str(), e.room_key.empty() && e.room == r)) {
+                e.room = r;
+                e.room_key.clear();
+            }
+        }
+        for (const std::string& key : choices.added) {
+            if (ImGui::Selectable((key + added).c_str(), e.room_key == key)) {
+                e.room = 0;
+                e.room_key = key;
+            }
+        }
+        ImGui::Separator();
+        if (ImGui::Selectable(tr(lang, S::mission_room_add)))
+            room_adder_open("missions", e.world);
+        ImGui::EndCombo();
+    }
+    // a room just added for it: chosen
+    std::string added_world, added_key;
+    if (draw_room_adder(app, "missions", &added_world, &added_key)) {
+        e.world = added_world;
+        e.room = 0;
+        e.room_key = added_key;
+        choices.mod.clear();  // read again
+    }
 }
 
 // When a mission opens: from the start, after one of the game's missions (by its number), or after one of this
@@ -1125,6 +1336,8 @@ struct NewMissionForm {
     std::string key;
     std::string world = "tt";
     int room = 0, rooms = 0;
+    std::string room_key;            // a room the mod adds, else empty: `room` the world's
+    std::vector<std::string> added;  // the rooms the mod adds to `world`
     std::string rooms_for;
     std::vector<int> templates;  // the game's mission files
     int template_file = 0;       // 0: none, the mission made from its map
@@ -1142,7 +1355,16 @@ void draw_new_mission_form(App& app, const Mod& m) {
     if (form.rooms_for != world) {
         World w;
         std::string why;
-        form.rooms = load_world(nitrofs(), world, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
+        const std::string played_in = world_played_in(m.dir, world);
+        form.rooms =
+            !played_in.empty() && load_world(nitrofs(), played_in, &w, &why) ? static_cast<int>(w.rooms.size()) : 0;
+        form.added.clear();
+        std::vector<std::string> notes;
+        for (const AddedRoom& r : read_added_rooms(m.dir, &notes))
+            if (r.world == world)
+                form.added.push_back(r.key);
+        if (std::find(form.added.begin(), form.added.end(), form.room_key) == form.added.end())
+            form.room_key.clear();
         form.rooms_for = world;
     }
     const int rooms = form.rooms;
@@ -1158,12 +1380,46 @@ void draw_new_mission_form(App& app, const Mod& m) {
         for (const auto& w : world_codes())
             if (w != "hb" && w != "pi" && ImGui::Selectable(world_label(lang, w).c_str(), world == w))
                 world = w;
+        // the mod's own worlds (rooms/worlds.txt), played in a game world's
+        std::vector<std::string> notes;
+        for (const auto& w : read_added_worlds(m.dir, &notes)) {
+            const auto named = w.names.find("");
+            const std::string label =
+                (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
+            if (ImGui::Selectable(label.c_str(), world == w.key))
+                world = w.key;
+        }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-    ImGui::SliderInt(tr(lang, S::mw_new_room), &room, 0, std::max(0, rooms - 1));
+    // its room: the world's own, one the mod adds to it, or one added now (another game's map or the modder's model)
     room = std::clamp(room, 0, std::max(0, rooms - 1));
+    const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
+    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+    if (ImGui::BeginCombo(tr(lang, S::mw_new_room),
+                          form.room_key.empty() ? std::to_string(room).c_str() : (form.room_key + added).c_str())) {
+        for (int r = 0; r < rooms; ++r) {
+            if (ImGui::Selectable(std::to_string(r).c_str(), form.room_key.empty() && room == r)) {
+                room = r;
+                form.room_key.clear();
+            }
+        }
+        for (const std::string& k : form.added)
+            if (ImGui::Selectable((k + added).c_str(), form.room_key == k))
+                form.room_key = k;
+        ImGui::Separator();
+        if (ImGui::Selectable(tr(lang, S::mission_room_add)))
+            room_adder_open("missions-new", world);
+        ImGui::EndCombo();
+    }
+    {
+        std::string added_world, added_key;
+        if (draw_room_adder(app, "missions-new", &added_world, &added_key)) {
+            world = added_world;
+            form.room_key = added_key;
+            form.rooms_for.clear();  // read again
+        }
+    }
     const auto label = [&](int file) {
         if (file == 0)
             return std::string(tr(lang, S::mw_new_no_template));
@@ -1190,10 +1446,11 @@ void draw_new_mission_form(App& app, const Mod& m) {
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(key.empty() || rooms == 0);
+    ImGui::BeginDisabled(key.empty() || (rooms == 0 && form.room_key.empty()));
     if (ImGui::Button(tr(lang, S::mw_new_create))) {
         std::string why;
-        if (new_mod_mission(nitrofs(), m.dir, key, template_file, world, room, &why)) {
+        if (new_mod_mission(nitrofs(), m.dir, key, template_file, world, room, &why) &&
+            (form.room_key.empty() || set_mod_mission(m.dir, key, "room", "", form.room_key, &why))) {
             app.tell(fmt(lang, S::mw_new_created, {key}), true);
             read_new_missions(&m);
             for (std::size_t i = 0; i < nm.missions.size(); ++i)
@@ -1308,10 +1565,22 @@ void draw_new_missions(App& app) {
     if (!ImGui::BeginTabBar("##newmissiontabs"))
         return;
     if (ImGui::BeginTabItem(tr(lang, S::mmap_tab))) {
-        if (draw_mission_map(app, *m, e.key, e.world, e.room)) {
+        draw_room_choice(app, *m, e);
+        MissionRoom where;
+        where.world = e.world;
+        where.room = e.room;
+        where.room_key = e.room_key;
+        if (nm.chosen >= 0 && nm.chosen < static_cast<int>(nm.missions.size())) {
+            const ModMission& was = nm.missions[static_cast<std::size_t>(nm.chosen)];
+            where.changed = e.world != was.world || e.room != was.room || e.room_key != was.room_key;
+        }
+        if (draw_mission_map(app, *m, e.key, where)) {
             // how it is played may have changed: that read again, the words being edited kept
             for (const ModMission& read : read_mod_missions(m->dir, &nm.problems))
                 if (read.key == e.key) {
+                    e.world = read.world;  // saved with the places
+                    e.room = read.room;
+                    e.room_key = read.room_key;
                     e.built = read.built;
                     e.start = read.start;
                     e.lines = read.lines;
@@ -1343,18 +1612,8 @@ void draw_new_missions(App& app) {
     language_text(tr(lang, S::mission_objective_field), e.objective, true);
     language_text(tr(lang, S::mission_description_field), e.description, true);
     ImGui::Separator();
-    // where it is played, where it is listed, and when it opens
+    // where it is listed and when it opens (where it is played: above its map)
     const auto& codes = world_codes();
-    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
-    if (ImGui::BeginCombo(tr(lang, S::mission_world), world_label(lang, e.world).c_str())) {
-        for (const auto& w : codes)
-            if (w != "hb" && w != "pi" && ImGui::Selectable(world_label(lang, w).c_str(), e.world == w))
-                e.world = w;
-        ImGui::EndCombo();
-    }
-    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-    ImGui::InputInt(tr(lang, S::mission_room), &e.room);
-    e.room = std::clamp(e.room, 0, 254);
     const std::string listed = e.category >= 0 && e.category < static_cast<int>(codes.size())
                                    ? world_name(lang, codes[static_cast<std::size_t>(e.category)])
                                    : std::to_string(e.category);
@@ -1373,6 +1632,7 @@ void draw_new_missions(App& app) {
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::InputInt(tr(lang, S::mission_time), &e.time_ms, 1000, 10000);
     e.time_ms = std::max(e.time_ms, 0);
+    draw_mission_kind(lang, e);
     draw_unlock(app, *m, e);
     ImGui::EndTabItem();
     ImGui::EndTabBar();

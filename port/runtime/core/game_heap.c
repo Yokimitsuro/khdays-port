@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* the game's (NitroSystem's and NitroSDK's), as the rewritten C has them */
 extern KhdaysRef NNS_FndCreateExpHeapEx(KhdaysRef start, unsigned int size, unsigned short option);
@@ -45,6 +46,12 @@ static const KhdaysRef headers_span[2][2] = {{KHDAYS_HEADERS_MID, KHDAYS_HEADERS
 #define CACHE_ENTRIES 0x80
 #define CACHE_ENTRY 0x30u
 
+/* The cache past its 128 entries: when every entry is in use (ResCache_FindSlot found none, and ResCache_Acquire read
+ * through the null it gave: many enemy kinds, several players' characters), another table of 128 from the main heap,
+ * searched after the game's. The entries never move: the game keeps pointers to them. */
+static KhdaysRef *more_tables;
+static int more_count, more_room;
+
 static struct Parked {
     KhdaysRef block;
     int which;
@@ -56,19 +63,51 @@ static unsigned rd32(KhdaysRef at)
     return *(const volatile unsigned *)KHDAYS_W(at);
 }
 
+void *khdays_res_cache_table(int n)
+{
+    if (n == 0) {
+        const KhdaysRef table = rd32(FILE_LOADER + 8u);
+        return khdays_game_ram(table) ? KHDAYS_W(table) : NULL;
+    }
+    return n - 1 < more_count ? KHDAYS_W(more_tables[n - 1]) : NULL;
+}
+
+void *khdays_res_cache_grow(void)
+{
+    const KhdaysRef heap = rd32(MAIN_HEAP_HANDLE);
+    KhdaysRef table;
+    if (more_count == more_room) {
+        const int room = more_room ? more_room * 2 : 4;
+        KhdaysRef *grown = (KhdaysRef *)realloc(more_tables, (size_t)room * sizeof(*grown));
+        if (grown == NULL) {
+            return NULL;
+        }
+        more_tables = grown;
+        more_room = room;
+    }
+    table = heap != 0 ? NNS_FndAllocFromExpHeapEx(heap, CACHE_ENTRIES * CACHE_ENTRY, 4) : 0;
+    if (table == 0) {
+        return NULL;
+    }
+    memset(KHDAYS_W(table), 0, CACHE_ENTRIES * CACHE_ENTRY);
+    more_tables[more_count++] = table;
+    khdays_log("memory: the resource cache grown to %d entries", (more_count + 1) * CACHE_ENTRIES);
+    return KHDAYS_W(table);
+}
+
 /* Whether an entry of the cache in use names a header at `at`. */
 static int named_in_cache(KhdaysRef at)
 {
-    const KhdaysRef table = rd32(FILE_LOADER + 8u);
     const unsigned key = ((at + 0x8000u) & 0xfffffcu) << 7;
-    if (!khdays_game_ram(table)) {
-        return 0;
-    }
-    for (unsigned i = 0; i < CACHE_ENTRIES; ++i) {
-        const KhdaysRef entry = table + CACHE_ENTRY * i;
-        const unsigned id = rd32(entry + 0x10u);
-        if ((rd32(entry) & 0xffffu) != 0 && (id & 0x80000000u) && (id & 0x7ffffe00u) == key) {
-            return 1;
+    void *host;
+    for (int n = 0; (host = khdays_res_cache_table(n)) != NULL; ++n) {
+        const KhdaysRef table = KHDAYS_REF(host);
+        for (unsigned i = 0; i < CACHE_ENTRIES; ++i) {
+            const KhdaysRef entry = table + CACHE_ENTRY * i;
+            const unsigned id = rd32(entry + 0x10u);
+            if ((rd32(entry) & 0xffffu) != 0 && (id & 0x80000000u) && (id & 0x7ffffe00u) == key) {
+                return 1;
+            }
         }
     }
     return 0;
@@ -226,6 +265,9 @@ void *khdays_header_heap_of(void *heap, void *block)
 void khdays_game_heap_recreated(void *heap)
 {
     const int which = which_heap(KHDAYS_REF(heap));
+    if (which == 0) {
+        more_count = 0;  /* the cache's own tables went with the main heap */
+    }
     if (which < 0 || headers[which] == 0 || khdays_game_heap_ds_memory()) {
         return;
     }

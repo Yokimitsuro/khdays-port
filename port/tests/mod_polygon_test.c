@@ -98,6 +98,32 @@ static void marker_order(void)
     }
 }
 
+/* A texture set apart from a model's draw carries its bank in PLTT_BASE above the DS's 13 bits
+ * (runtime/display/texture_banks.h): its polygon is drawn from the bank with the palette's own bits; the next
+ * texture, untagged, is the DS's VRAM's again. */
+static void banked_pltt(void)
+{
+    const uint32_t param = 0x20u | 4u << 26; /* 256 colours */
+    const uint32_t tagged = 0x2u | KHDAYS_G3D_PLTT_BANK_TAG | 3u << 16, plain = 0x2u, swap = 0;
+    khdays_g3d_reset();
+    khdays_g3d_command(0x2a, &param);
+    khdays_g3d_command(0x2b, &tagged);
+    native_triangle(31, 1);
+    khdays_g3d_command(0x2a, &param);
+    khdays_g3d_command(0x2b, &plain);
+    native_triangle(31, 2);
+    khdays_g3d_command(0x50, &swap);
+    khdays_g3d_vblank();
+    const KhdaysG3dList *l = khdays_g3d_shown();
+    CHECK(l->npolys == 2);
+    for (int i = 0; i < l->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &l->polys[i];
+        const int banked = ((p->attr >> 24) & 63u) == 1;
+        CHECK(p->pltt == 2);
+        CHECK(p->replacement == (banked ? KHDAYS_G3D_BANK_REPLACEMENT(3) : -1));
+    }
+}
+
 /* The polygon `n` of the list shown: its nearest and farthest depth (z / w). */
 static int depths(const KhdaysG3dList *l, int n, float *nearest, float *farthest)
 {
@@ -177,6 +203,7 @@ int main(void)
     khdays_g3d_list_free(&replay);
     marker_order();
     sequence_hud_bounds();
+    banked_pltt();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

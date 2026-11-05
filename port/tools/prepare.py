@@ -40,6 +40,37 @@ class Module:
     sizes: dict[str, int] = field(default_factory=dict)  # function -> bytes
 
 
+# The enemies' overlays each at its own place in the game's memory, and ov107's slot tables with room for every
+# class (port/runtime/core/enemy_overlays.h, whose defines are read here; rom.cpp moves the overlay table the same
+# way): their symbols where the game runs them (runtime_address). The analyses of the ROM keep the DS's addresses.
+ENEMY_OVERLAYS_H = ROOT / "port" / "runtime" / "core" / "enemy_overlays.h"
+ENEMY = {
+    n: int(v, 0)
+    for n, v in re.findall(
+        r"#define KHDAYS_ENEMY_(\w+) (0x[0-9a-fA-F]+|\d+)u?\b", ENEMY_OVERLAYS_H.read_text(encoding="utf-8")
+    )
+}
+MOVED_SLOT_TABLES = {
+    "data_ov107_020cbb08": ENEMY["HANDLERS"],
+    "data_ov107_020cbb98": ENEMY["OVERLAY_INFOS"],
+    "data_ov107_020cbca0": ENEMY["SPAWN_RECORDS"],
+}
+
+
+def runtime_address(m: Module, name: str, address: int) -> int:
+    """Where the game runs symbol `name` of module `m`, at `address` on the DS: an enemy overlay's moved with it
+    (its sections' start is the overlay table's RAM address), ov107's slot tables at theirs."""
+    if name in MOVED_SLOT_TABLES:
+        return MOVED_SLOT_TABLES[name]
+    mo = re.fullmatch(r"ov(\d+)", m.name)
+    if not mo or not ENEMY["OVERLAY_FIRST"] <= int(mo[1]) <= ENEMY["OVERLAY_LAST"]:
+        return address
+    offset = address - min(start for start, _ in m.sections.values())
+    if not 0 <= offset < ENEMY["OVERLAY_SPAN"]:
+        raise SystemExit(f"{m.name}: {name} at 0x{address:08x} is past its place's 0x{ENEMY['OVERLAY_SPAN']:x} bytes")
+    return ENEMY["OVERLAYS"] + (int(mo[1]) - ENEMY["OVERLAY_FIRST"]) * ENEMY["OVERLAY_SPAN"] + offset
+
+
 def load_modules() -> list[Module]:
     dirs = [CONFIG, CONFIG / "itcm", CONFIG / "dtcm"]
     dirs += sorted(p for p in (CONFIG / "overlays").iterdir() if p.is_dir())
@@ -186,6 +217,23 @@ HOOKS = {
             "    pScene = NNSi_FndGetCurrentRootHeap();\n"
             "    { extern int khdays_retry_pending(void); if (khdays_retry_pending()) { pScene->nMode = 8; } }\n"
             "    pNext = 0;\n",
+        )
+    ],
+    # (and the party as the camp sends the mission, for the Retry to give back: a challenge's level brings the
+    # members' stats down over their records as the mission starts, and the field built again brought them down
+    # twice -- the HP maximum at 1)
+    "ov025@020a9bc4": [
+        (  # Ov025_MissionList_StartMission
+            "    pMenu = Ov025_GetPageB();\n",
+            "    { extern void khdays_retry_mission_launched(void); khdays_retry_mission_launched(); }\n"
+            "    pMenu = Ov025_GetPageB();\n",
+        )
+    ],
+    "ov008@020745c4": [
+        (  # Ov008_StartSelectedMission
+            "    pEntry = Ov008_GetNextMissionEntry_5(Ov008_GetCtxField967c());\n",
+            "    { extern void khdays_retry_mission_launched(void); khdays_retry_mission_launched(); }\n"
+            "    pEntry = Ov008_GetNextMissionEntry_5(Ov008_GetCtxField967c());\n",
         )
     ],
     "ov002@02068720": [
@@ -422,6 +470,93 @@ HOOKS = {
     # so headers must lie below 0x02ff8000. The ones Msg_OpenContainerAndReadHeader reads come from
     # heaps of their own there, and the handle decoders check it (runtime/core/game_heap.c;
     # docs/RUNTIME_MAP.md).
+    # The resource cache past its 128 entries (runtime/core/game_heap.c): every table searched, and a new one when no
+    # entry is free -- the game's ResCache_Acquire read through the null a full cache gave (many enemy kinds, several
+    # players' characters).
+    "main@0201f3d8": [  # ResCache_FindSlot
+        (
+            "    unused = 0;\n    cur[n].entry = gFileLoader[2];\n\n    for (i = 0; i < 0x80; i++, cur[n].entry++) {\n",
+            "    unused = 0;\n"
+            "    { extern void *khdays_res_cache_table(int n);\n"
+            "      extern void *khdays_res_cache_grow(void);\n"
+            "      int table;\n"
+            "      for (table = 0; (cur[n].entry = (ResCacheEntry *)khdays_res_cache_table(table)) != 0; ++table)\n"
+            "    for (i = 0; i < 0x80; i++, cur[n].entry++) {\n",
+        ),
+        (
+            "        if (cur[n].refCount == 0) {\n            unused = cur[n].entry;\n        }\n    }\n    return unused;\n}",
+            "        if (cur[n].refCount == 0) {\n            unused = cur[n].entry;\n        }\n    }\n"
+            "      if (unused == 0) {\n"
+            "          unused = (ResCacheEntry *)khdays_res_cache_grow();\n"
+            "      }\n"
+            "    }\n"
+            "    return unused;\n}",
+        ),
+    ],
+    # The 3D's texture memory past the DS's (runtime/display/texture_banks.h): a file whose textures or palettes
+    # no longer fit the DS's VRAM (many enemy kinds in a mission, several players) is given places in a bank
+    # of its own -- the managers reset for it, the DS's states kept -- and copied there, instead of being left
+    # untextured (the room turned white).
+    "main@02025138": [  # G3dRes_DefaultSetup
+        (
+            "            tex = NNS_G3dGetTex(pResData);\n",
+            "            { extern void khdays_texture_banks_file(void *file); khdays_texture_banks_file(pResData); }\n"
+            "            tex = NNS_G3dGetTex(pResData);\n",
+        ),
+        (
+            "                    return 0;\n"
+            "                }\n"
+            "\n"
+            "                NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                Tex_LoadVram(tex);\n"
+            "                Gfx_UploadBlock(tex);\n",
+            "                    { extern int khdays_texture_banks_open(void);\n"
+            "                      extern void khdays_texture_banks_close(void *file, void *tex, int allocated);\n"
+            "                      if (!khdays_texture_banks_open())\n"
+            "                          return 0;\n"
+            "                      keyTex = szTex > 0 ? NNS_GfdAllocTexVram(szTex, 0, 0) : 0;\n"
+            "                      keyTex4x4 = szTex4x4 > 0 ? NNS_GfdAllocTexVram(szTex4x4, 1, 0) : 0;\n"
+            "                      keyPltt = szPltt > 0\n"
+            "                          ? NNS_GfdAllocPlttVram(szPltt, tex->tex4x4Flag & NNS_G3D_RESPLTT_USEPLTT4, 0) : 0;\n"
+            "                      sucTex = szTex == 0 || keyTex != NNS_GFD_ALLOC_ERROR_TEXKEY;\n"
+            "                      sucTex4x4 = szTex4x4 == 0 || keyTex4x4 != NNS_GFD_ALLOC_ERROR_TEXKEY;\n"
+            "                      sucPltt = szPltt == 0 || keyPltt != NNS_GFD_ALLOC_ERROR_PLTTKEY;\n"
+            "                      if (sucTex && sucTex4x4 && sucPltt) {\n"
+            "                          NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                          NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                      }\n"
+            "                      khdays_texture_banks_close(pResData, tex, sucTex && sucTex4x4 && sucPltt);\n"
+            "                      if (!sucTex || !sucTex4x4 || !sucPltt)\n"
+            "                          return 0; }\n"
+            "                } else {\n"
+            "                NNS_G3dTexSetTexKey(tex, keyTex, keyTex4x4);\n"
+            "                NNSG2d_SetOamManExDrawOrderType(tex, keyPltt);\n"
+            "                Tex_LoadVram(tex);\n"
+            "                Gfx_UploadBlock(tex);\n"
+            "                }\n",
+        ),
+    ],
+    # (the textures the game sets apart from a model's draw, the field's prize pictures: their PLTT_BASE
+    # carries the file's bank, g3d.h KHDAYS_G3D_PLTT_BANK_TAG)
+    "main@02028670": [  # Tex0_GetTexPlttParams
+        (
+            "    out[1] = (u16)(plttOfs + plttBase);\n",
+            "    out[1] = (u16)(plttOfs + plttBase);\n"
+            "    { extern u32 khdays_texture_banks_tag_pltt(const void *file, u32 pltt);\n"
+            "      out[1] = khdays_texture_banks_tag_pltt(file, out[1]); }\n",
+        )
+    ],
+    "main@0203c304": [  # InstancedModel_Draw
+        (
+            "            NNS_G3dDraw1Mat1Shp(this->modelHolder->model, 0, 0, 1);\n",
+            "            { extern void khdays_texture_banks_draw_begin(const void *model);\n"
+            "              extern void khdays_texture_banks_draw_end(void);\n"
+            "              khdays_texture_banks_draw_begin(this->modelHolder->model);\n"
+            "              NNS_G3dDraw1Mat1Shp(this->modelHolder->model, 0, 0, 1);\n"
+            "              khdays_texture_banks_draw_end(); }\n",
+        )
+    ],
     "main@02024ee8": [  # Msg_OpenContainerAndReadHeader
         (
             "    buf = (u32 *)NNS_FndAllocFromDefaultExpHeapEx((u16)(size + 0x10), 4);\n",
@@ -1453,6 +1588,22 @@ HOOKS = {
             " pActor->nMenuState, gPadHeld, gPadPressed, pMenu[0], pMenu[1], Ov022_GetRepeatKeys()); }\n"
             "    if (pActor->nMenuState == 2 || pActor->nMenuState == 3) {\n",
         ),
+        (  # the command menu on the D-pad (runtime/input/sequencers.h): a step through the game's own
+            # cursor routines, as X with a direction moves it but with no button held, so Roxas goes on
+            "            if (GameState_GetField(CONFIG_COMMAND_LIST, 1) != 0) {\n",
+            "            { extern int khdays_controls_command_step(void);\n"
+            "              const int nStep = khdays_controls_command_step();\n"
+            "              const int nHeld = nStep != 0 ? func_ov022_02083f0c() : -1;\n"
+            "              if (nStep != 0 && Ov002_Hud_IsPanelOpen() == 0 && bCommandChosen == 0\n"
+            "                  && (gPadHeld & 0x400) == 0 && (nHeld == -1 || Ov002_IsObjectFlag2000Set(nHeld) == 0)) {\n"
+            "                  pMenu[0] = 0;\n"
+            "                  if (nStep == 1) Ov002_PanelCursorPrev();\n"
+            "                  else if (nStep == 2) Ov002_PanelCursorNext();\n"
+            "                  else if (nStep == 3) Ov002_PanelCursorStepLeft();\n"
+            "                  else Ov002_PanelCursorStepRight();\n"
+            "              } }\n"
+            "            if (GameState_GetField(CONFIG_COMMAND_LIST, 1) != 0) {\n",
+        ),
         (  # Retained INFORMATION leaves command navigation, shortcuts and command kinds intact.
             "Ov002_Hud_IsPanelOpen",
             "khdays_ui_command_panel_open",
@@ -1607,11 +1758,16 @@ HOOKS = {
             "      khdays_models_draw_animation(*(unsigned *)(renderObj->pad08_20 + 8)); }\n"
             "    { extern void khdays_models_draw_begin(const void *model, const void *render_obj);\n"
             "      khdays_models_draw_begin(renderObj->pResMdl, renderObj); }\n"
+            # the textures from the model's texture bank when its file's are past the DS's VRAM
+            # (runtime/display/texture_banks.h)
+            "    { extern void khdays_texture_banks_draw_begin(const void *model);\n"
+            "      khdays_texture_banks_draw_begin(renderObj->pResMdl); }\n"
             "    do {\n        u32 command;\n",
         ),
         (
             "    renderObj->flags &= ~1;\n",
             "    { extern void khdays_models_draw_end(void); khdays_models_draw_end(); }\n"
+            "    { extern void khdays_texture_banks_draw_end(void); khdays_texture_banks_draw_end(); }\n"
             "    renderObj->flags &= ~1;\n",
         ),
     ],
@@ -1770,6 +1926,128 @@ HOOKS = {
             "      if (khdays_link_music_request(3, 0, arg)) return; }\n",
         )
     ],
+    # The game's reliable messages past its 32 slots (runtime/net/msg_overflow.h): a message the slots have no room
+    # for waits, in order and numbered as the game would number it, and takes a slot as one frees -- the game lost it
+    # (MsgQueue_Post's 0xffff), and a mod's wave can make any number of enemies at once.
+    "main@02031384": [
+        (  # MsgQueue_Post: behind the waiting ones, or waiting when the slots are taken
+            "    if (idx == 0x20) {\n",
+            "    { extern int khdays_msgqueue_waiting(void);\n"
+            "      extern void khdays_msgqueue_drain(void *ctx);\n"
+            "      extern unsigned short khdays_msgqueue_wait(void *ctx, int kind, const void *cmd, unsigned short size);\n"
+            "      if (khdays_msgqueue_waiting()) {\n"
+            "          khdays_msgqueue_drain(ctx);\n"
+            "          freeMask = ctx->freeMask;\n"
+            "          idx = Clz(freeMask);\n"
+            "      }\n"
+            "      if (khdays_msgqueue_waiting() || idx == 0x20) {\n"
+            "          return khdays_msgqueue_wait(ctx, nKind, pCmd, nSize);\n"
+            "      } }\n"
+            "    if (idx == 0x20) {\n",
+        )
+    ],
+    # (and a frame's messages past the DS's 0x1e0 bytes, the size of its wireless frame: the buffer grows -- the game
+    # dropped them, and with many enemies standing the last ones' poses never reached a guest, frame after frame: a
+    # second wave's bosses stood in their T pose where they came out)
+    "main@02030fdc": [
+        (  # MsgQueue_Enqueue: the frame's buffer as large as the messages need
+            "    if (need >= cap) return 0;\n    if (buf->state == 1) return 0;\n",
+            "    { extern int khdays_msgframe_room(const void *buffer, int room);\n"
+            "      extern void khdays_msgframe_grown(const void *old, const void *buffer, int room);\n"
+            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
+            "      extern int ExpHeap_Free(int block, int *heap);\n"
+            "      extern int **data_0204c024;\n"
+            "      if (cap == 0x1e0) {\n"
+            "          cap = khdays_msgframe_room(buf->pBuffer, cap);\n"
+            "      }\n"
+            "      if (need >= cap && cap >= 0x1e0 && buf->state != 1) {\n"
+            "          int room = cap;\n"
+            "          unsigned char *more;\n"
+            "          while (room <= need && room < 0x8000) {\n"
+            "              room *= 2;\n"
+            "          }\n"
+            "          if (room <= need) {\n"
+            "              room = 0xffe0; /* (its sizes are 16 bits) */\n"
+            "          }\n"
+            "          more = need < room ? (unsigned char *)ExpHeap_AllocOrDefault((unsigned)room, 0x20, data_0204c024) : 0;\n"
+            "          if (more != 0) {\n"
+            "              MI_CpuCopy8(buf->pBuffer, more, (unsigned int)off);\n"
+            "              ExpHeap_Free((int)buf->pBuffer, (int *)data_0204c024);\n"
+            "              khdays_msgframe_grown(buf->pBuffer, more, room);\n"
+            "              buf->pBuffer = more;\n"
+            "              cap = room;\n"
+            "          }\n"
+            "      } }\n"
+            "    if (need >= cap) return 0;\n    if (buf->state == 1) return 0;\n",
+        )
+    ],
+    # (the frames received: each player's slot held the DS's frames, 0x3c0 or 0x3d8 bytes from a fixed area, and
+    # ChannelBuf_Append copied past it -- a grown frame wrote over what follows; the slot grows instead)
+    "itcm@01fffa60": [
+        (  # ChannelBuf_Append: the slot as large as what it holds
+            "    dst = *(char **)slot;\n",
+            "    { extern int khdays_msgslot_grown(const void *old, const void *buffer, unsigned int room, unsigned int need);\n"
+            "      extern void *ExpHeap_AllocOrDefault(unsigned size, int align, int **heapPP);\n"
+            "      extern int ExpHeap_Free(int block, int *heap);\n"
+            "      extern int **data_0204c024;\n"
+            "      extern void MI_CpuCopy8(const void *src, void *dst, unsigned int size);\n"
+            "      const unsigned int used = *(unsigned short *)(slot + 4), need = used + size;\n"
+            "      if (need > *(unsigned short *)(slot + 6)) {\n"
+            "          unsigned int room = *(unsigned short *)(slot + 6);\n"
+            "          char *more;\n"
+            "          while (room < need && room < 0x8000) {\n"
+            "              room = room * 2;\n"
+            "          }\n"
+            "          if (room < need) {\n"
+            "              room = 0xfffc; /* (its sizes are 16 bits) */\n"
+            "          }\n"
+            "          more = need <= room ? (char *)ExpHeap_AllocOrDefault(room, 0x20, data_0204c024) : 0;\n"
+            "          if (more == 0) {\n"
+            "              return; /* no room: dropped */\n"
+            "          }\n"
+            "          MI_CpuCopy8(*(char **)slot, more, used);\n"
+            "          if (khdays_msgslot_grown(*(char **)slot, more, room, need)) {\n"
+            "              ExpHeap_Free((int)*(char **)slot, (int *)data_0204c024);\n"
+            "          }\n"
+            "          *(char **)slot = more;\n"
+            "          *(unsigned short *)(slot + 6) = (unsigned short)room;\n"
+            "      } }\n"
+            "    dst = *(char **)slot;\n",
+        )
+    ],
+    "main@020308a0": [
+        (  # Session_LayoutPacketSlots: each message's copy as large as a message's 10-bit size
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x3c0, data_0204c024);\n",
+            "    ctx->scratch = AllocFromExpHeapWrapper(0x400, data_0204c024);\n",
+        )
+    ],
+    "main@02031130": [
+        (  # MsgQueue_ResendForPeer: each frame, the waiting ones into the slots freed
+            "    if (*(unsigned int *)((char *)base + 0xc) == 0xffffffff) return;\n",
+            "    { extern void khdays_msgqueue_drain(void *ctx); khdays_msgqueue_drain((char *)base + 0xc); }\n"
+            "    if (*(unsigned int *)((char *)base + 0xc) == 0xffffffff) return;\n",
+        )
+    ],
+    "main@02031440": [
+        (  # MsgQueue_Contains: a waiting message is not had by everyone yet
+            "    idx = Clz(used);\n    while (idx < 0x20) {\n",
+            "    { extern int khdays_msgqueue_holds(unsigned int handle); if (khdays_msgqueue_holds(id)) return 1; }\n"
+            "    idx = Clz(used);\n    while (idx < 0x20) {\n",
+        )
+    ],
+    "main@02030e7c": [
+        (  # MsgQueue_Init_2: a new queue, nothing waiting
+            "    gMsgQueue = ctx[n];\n",
+            "    gMsgQueue = ctx[n];\n"
+            "    { extern void khdays_msgqueue_reset(void); khdays_msgqueue_reset(); }\n",
+        )
+    ],
+    "main@02030f58": [
+        (  # Session_Shutdown: the queue gone, nothing waiting
+            "end:\n    gMsgQueue = 0;\n",
+            "end:\n    { extern void khdays_msgqueue_reset(void); khdays_msgqueue_reset(); }\n    gMsgQueue = 0;\n",
+        )
+    ],
     "main@020336e8": [
         (  # SoundMgr_QueueRequest: requests 4 and 5 (SoundMgr_SwitchBgm, SoundMgr_SwitchBgmResume)
             "    unsigned char *ptr;\n",
@@ -1794,7 +2072,24 @@ HOOKS = {
             "    unsigned char state = data_ov107_020cbb20[id];\n",
             "    unsigned char state = data_ov107_020cbb20[id];\n"
             "    { extern void khdays_enemies_class(int id); khdays_enemies_class(id); }\n",
-        )
+        ),
+        (  # a class whose six columns are full takes its own slot past them, with its first column's overlay: each
+            # enemy overlay has its own place here (runtime/core/enemy_overlays.h), so any classes are out together
+            "        if (!found) {\n            goto terminate;\n        }\n",
+            "        if (!found) {\n"
+            "            int column = 0;\n"
+            "            while (column < 6 && Ov107_EnemyTableHasEntry(id, column) == 0) {\n"
+            "                column++;\n"
+            "            }\n"
+            "            if (column == 6) {\n"
+            "                goto terminate;\n"
+            "            }\n"
+            "            data_ov107_020cbb20[id] = (unsigned char)(6 + id + 1);\n"
+            "            Ov107_LoadEnemyOverlay(id, column, &data_ov107_020cbb98[6 + id]);\n"
+            "            Ov107_LoadSpawnRecord(id, &data_ov107_020cbca0[6 + id]);\n"
+            "            goto dispatch;\n"
+            "        }\n",
+        ),
     ],
     "ov107@020c1870": [
         (  # Ov107_Spawner_Run: op 0 (an idle enemy set going) skipped while a mod holds the mission's own
@@ -1824,6 +2119,30 @@ HOOKS = {
             "    Ov002Res *r = data_ov002_0207fa14;\n"
             "    { extern void khdays_enemies_area_left(void); khdays_enemies_area_left(); }\n",
         )
+    ],
+    # The actors' table by id (runtime/scripts/enemies_link.h khdays_enemies_ids_room): made with the ids there
+    # were then, it was read for any id under the count now, past its end for an actor made after it -- a mission's
+    # later wave, a mod's enemy. A guest finds the host's messages' actors through it: a later actor's went to
+    # whatever lay past the table.
+    "ov107@020c9bd4": [
+        (  # Ov107_Scene_BuildIdTable: the ids it is made for
+            "    *(void **)(ctx + 0x48) = CallocInstance(*(int *)(ctx + 0x24) * 4);\n",
+            "    *(void **)(ctx + 0x48) = CallocInstance(*(int *)(ctx + 0x24) * 4);\n"
+            "    { extern void khdays_enemies_ids_built(const void *table, int count);\n"
+            "      khdays_enemies_ids_built(*(void **)(ctx + 0x48), *(int *)(ctx + 0x24)); }\n",
+        )
+    ],
+    "ov107@020c9b68": [
+        (  # Ov107_FindMessageHandler: the table for the ids it holds, the actors' list for the others
+            "    if (mgr->table != 0 && id < (u16)mgr->count) {\n",
+            "    if (mgr->table != 0 && id < (u16)mgr->count &&\n"
+            "        id < (unsigned int)khdays_enemies_ids_room(mgr->table)) {\n",
+        ),
+        (
+            "struct HandlerMgr *mgr = gOv107ActorManager;\n",
+            "struct HandlerMgr *mgr = gOv107ActorManager;\n"
+            "    extern int khdays_enemies_ids_room(const void *table);\n",
+        ),
     ],
 }
 
@@ -3034,6 +3353,112 @@ HOOKS["ov022@020a48c8"] = [
 # after-functions. Arguments and results as 64-bit slots: integers widened ("int" sign-extended, "uint" not),
 # the game's pointers as references ("ref"). A point's number is its place in this list; the port's catalogue is
 # generated from it (khdays_hook_points.h). Points are added as plugins need them, across the game's subsystems.
+# A world's rooms past the game's 24 (rooms a mod adds, spec 040): which slot each room is loaded in, kept by the
+# port (runtime/rooms/slots.c) instead of the 24 bytes at +0x17 of the ov002 link context, which a 25th room's
+# aSlotMappings[nPeer] would write past. The five functions that touch them: the two that set, the three that fill.
+_ROOM_SLOTS = "extern int khdays_room_slot(int); extern void khdays_room_slot_set(int, int); extern void khdays_room_slots_clear(void);\n"
+HOOKS["ov002@0207285c"] = [
+    (  # Ov002_GetCtxTableByte: room i's slot
+        "    return *(signed char *)(*(int *)&data_ov002_0207fa10 + arg0 + 0x17);\n",
+        "    " + _ROOM_SLOTS + "    return khdays_room_slot(arg0);\n",
+    )
+]
+HOOKS["ov002@02071ba4"] = [
+    (  # Ov002_LoadPeerIntoSlot: the slot's last room in none, this room in the slot
+        "    if(pCtx->slots[nSlot]>=0) pCtx->aSlotMappings[pCtx->slots[nSlot]]=-1;\n"
+        "    pCtx->aSlotMappings[nPeer]=nSlot;\n",
+        "    { " + _ROOM_SLOTS + "    if(pCtx->slots[nSlot]>=0) khdays_room_slot_set(pCtx->slots[nSlot], -1);\n"
+        "    khdays_room_slot_set(nPeer, nSlot); }\n",
+    )
+]
+HOOKS["ov002@02071990"] = [
+    (  # Ov002_LoadWorldLinkResources: a world's rooms in none
+        "    MI_CpuFill8(pCtx->aSlotMappings,0xff,24);\n",
+        "    MI_CpuFill8(pCtx->aSlotMappings,0xff,24);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+HOOKS["ov002@0207185c"] = [
+    (  # Ov002_AllocSceneState
+        "    MI_CpuFill8(obj + 0x17, 0xff, 0x18);\n",
+        "    MI_CpuFill8(obj + 0x17, 0xff, 0x18);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+HOOKS["ov002@0207214c"] = [
+    (  # Ov002_ReleaseContextBuffers
+        "    MI_CpuFill8((char *)ctx + 0x17, 0xff, 0x18);\n",
+        "    MI_CpuFill8((char *)ctx + 0x17, 0xff, 0x18);\n    { " + _ROOM_SLOTS + "    khdays_room_slots_clear(); }\n",
+    )
+]
+
+# A room a mod adds has no entry of its own in the lower screen's chain (looked up by the request's value): the
+# summary not shown for it, rather than its box read through a null entry.
+HOOKS["ov002@02064a30"] = [
+    (  # Ov002_SnapshotChainEntry: no entry, nothing copied
+        "    if (copy != 0) {\n",
+        "    if (copy != 0 && entry != 0) {\n",
+    )
+]
+HOOKS["ov002@02064ac0"] = [
+    (  # Ov002_ShowSlotSummary: no entry, closed as when there is no layout
+        "    entry = Ov002_SnapshotChainEntry(*(int *)(self + 8), Ov002_Field_GetHalf86(), 1);\n",
+        "    entry = Ov002_SnapshotChainEntry(*(int *)(self + 8), Ov002_Field_GetHalf86(), 1);\n"
+        "    if (entry == 0) {\n"
+        "        Ov002_DestroyOwnedEntry(self, 1);\n"
+        "        return;\n"
+        "    }\n",
+    )
+]
+
+# Mission Mode's world slots past the game's twelve: the worlds the mods add (runtime/rooms/added.h), each listed under
+# its own name, shown on the world map at its game world's place.
+HOOKS["ov008@0206fce0"] = [
+    (  # Ov008_StepCursorToAcceptedSlot: L and R through every slot
+        "unsigned int Ov008_StepCursorToAcceptedSlot(int param_1, int param_2) {\n",
+        "extern int khdays_mission_slots(void);\n"
+        "unsigned int Ov008_StepCursorToAcceptedSlot(int param_1, int param_2) {\n",
+    ),
+    (
+        "        int x = cell + 0xc;\n        cell = x % 12;\n",
+        "        int x = cell + khdays_mission_slots();\n        cell = x % khdays_mission_slots();\n",
+    ),
+    (
+        "    } while (i < 0xc);\n",
+        "    } while (i < khdays_mission_slots());\n",
+    ),
+]
+HOOKS["ov008@02070c58"] = [
+    (  # Ov008_UpdateMissionListArrows: the arrows when two slots or more list missions
+        "    for (i = 0; i < PICK_COUNT; i++) {\n",
+        "    extern int khdays_mission_slots(void);\n    for (i = 0; i < khdays_mission_slots(); i++) {\n",
+    )
+]
+HOOKS["ov008@0205b4ec"] = [
+    (  # Ov008_MainMenu_UpdateSelectionText: a mod world open (its slot has no flag of the game's)
+        "    isEntryUnlocked = GameState_IsFlagSet(entryId + 0x3bc9);\n",
+        "    isEntryUnlocked = entryId >= 12 ? 1 : GameState_IsFlagSet(entryId + 0x3bc9);\n",
+    )
+]
+HOOKS["ov008@0205bea0"] = [
+    (  # Ov008_MenuCursor_MoveToSlot: a mod world at its game world's place on the map
+        "    if (slot < 0) {\n",
+        "    { extern int khdays_mission_slot_shown(int slot);\n      slot = khdays_mission_slot_shown(slot); }\n"
+        "    if (slot < 0) {\n",
+    )
+]
+
+# An enemy the game's own missions end by their scripts: Xigbar, at his defeat (state 3: its health at the fight's
+# limit or none), only stands, waiting for his mission's script to end the fight -- the "all defeated" of a mission
+# built by the port never came. In the mods' missions he is finished as a defeated enemy is (flags 0x1ae bits 0-1, as
+# Riku's Ov260_AiStep_SetFlags3AndEnd and the Shadow's Ov114_Action6Callback set them).
+HOOKS["ov283@020ced2c"] = [
+    (  # Ov283_AiEnterPatrol
+        "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n",
+        "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n"
+        "    { extern int khdays_missions_playing(void);\n"
+        "      if (khdays_missions_playing()) *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
+    )
+]
+
 HOOK_POINTS = [
     # (its file's key, its header as the decompilation writes it, its result's kind, its arguments' kinds)
     # combat and entities: an actor's HP set (a hit, a cure, a defeat)
@@ -5394,7 +5819,7 @@ def main() -> int:
     for m in modules:
         for n, k, a in m.symbols:
             if k in ("data", "bss"):
-                ds_data[n] = a
+                ds_data[n] = runtime_address(m, n, a)
     converted: dict[str, int] = {}
     # C-defined globals the DS names nowhere: statics of a split unit (PHANTOMS).
     phantom_names = {
@@ -5489,7 +5914,7 @@ def main() -> int:
             # the HAL's too, of any module (the ITCM's OS_IrqHandler, which the
             # BIOS vector names by its DS address)
             if k == "function" and (n in native or n in hal_names_all):
-                ds_functions.append((a, ds_module, n))
+                ds_functions.append((runtime_address(m, n, a), ds_module, n))
     ds_functions.sort()
     sizes = {n: sz for m in modules for n, sz in m.sizes.items()}
     ds_c = [
@@ -5527,7 +5952,7 @@ def main() -> int:
         start, end = m.sections[".bss"]
         for n, k, a in m.symbols:
             if start <= a < end and n not in defined:
-                absolute[n] = a
+                absolute[n] = runtime_address(m, n, a)
     bss_count = len(absolute) - len(converted) - len(PHANTOMS)
     # The decomp's own linker-absolute symbols (tools/configure.py). A data_
     # entry that another, C-defined symbol shares the address of is an alias

@@ -1,0 +1,24 @@
+# The missions_hearts walk's mission: its enemies give 28 hearts (the Yellow Opera ahead of the start 13, the Fire
+# Plant behind it 15, the Shadow beside it none) and its goal is 13. It is cleared once the first enemy that gives
+# hearts is defeated, the other standing. (A Fire Plant, not a Dire Plant: the game loads the classes' code into
+# six slots, and a Dire Plant's finds none left after the Shadow's and the Yellow Opera's.)
+[mission hearts]
+name en = Heart Hunt
+name fr = Chasse aux cœurs
+name de = Herzjagd
+name it = Caccia ai cuori
+name es = Caza de corazones
+objective en = Collect 13 hearts.
+objective fr = Récoltez 13 cœurs.
+objective de = Sammle 13 Herzen.
+objective it = Raccogli 13 cuori.
+objective es = Reúne 13 corazones.
+world = eh
+room = 2
+category = 0
+time = 120000
+kind = hearts
+goal = 13
+start = 0 0.049 0 -90
+wave 1 = 1x1 at 0 0.049 -3
+wave 1 = 0x1 20x1 at 0 0.049 6

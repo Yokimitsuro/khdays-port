@@ -400,6 +400,21 @@ std::string character_base_code(const std::string& base) {
     return {};
 }
 
+std::string character_voice_archive(const std::string& base) {
+    // each base's voices in the game's sound data (seqarc/PLY_ROX/vo_rs02at07 is Roxas's, PLY_LUX/vo_x002... Luxord's)
+    static const std::pair<const char*, const char*> archives[] = {
+        {"ro", "PLY_ROX"}, {"ax", "PLY_AXL"}, {"xi", "PLY_XIG"}, {"sa", "PLY_SAX"}, {"xa", "PLY_XAL"},
+        {"so", "PLY_SOR"}, {"de", "PLY_DMX"}, {"la", "PLY_LAX"}, {"le", "PLY_LEX"}, {"lu", "PLY_LUX"},
+        {"ma", "PLY_MAR"}, {"ri", "PLY_RIK"}, {"ve", "PLY_VEX"}, {"xe", "PLY_XEM"}, {"xo", "PLY_XIN"},
+        {"ze", "PLY_ZEX"}, {"mi", "PLY_MIC"}, {"do", "PLY_DNL"}, {"go", "PLY_GFY"},
+    };
+    const std::string code = character_base_code(base);
+    for (const auto& [c, archive] : archives)
+        if (code == c)
+            return archive;
+    return {};
+}
+
 std::string mod_id_of(const fs::path& mod_dir) {
     const IniText ini = IniText::parse(read_text(mod_dir / "mod.ini"));
     const std::string id = ini.get("", "id");

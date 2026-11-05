@@ -572,39 +572,51 @@ void native_marker_depth()
     std::array<unsigned char, 0x400> io{};
     KhdaysVramPages vram{};
     std::vector<unsigned> expected(256 * 192);
-    for (bool wbuffer : {false, true}) {
-        p->list3d.swap_params = wbuffer ? 2u : 0u;
-        for (bool marked : {false, true}) {
-            polygons[1].flags = marked ? KHDAYS_G3D_MARKER : 0;
-            io[0x60] = 9;
-            std::memcpy(io.data() + 0x300, p->io3d, 0x100);
-            khdays_gpu3d_draw(&p->list3d, io.data(), &vram, expected.data());
+    // raster3d.hlsl gives gpu3d.c's colours exactly; the card's rasterizer blends without truncating at each
+    // layer, a channel at most one step from them, and keeps the depth only for what reads it: fog on here
+    // (its table all zeros, no colour changes)
+    for (bool native : {false, true}) {
+        khdays_raster3d_set_native(native);
+        if (native && !khdays_raster3d_native())
+            continue;
+        p->disp3dcnt = native ? 9u | 0x80u : 9u;
+        for (bool wbuffer : {false, true}) {
+            p->list3d.swap_params = wbuffer ? 2u : 0u;
+            for (bool marked : {false, true}) {
+                polygons[1].flags = marked ? KHDAYS_G3D_MARKER : 0;
+                io[0x60] = 9;
+                std::memcpy(io.data() + 0x300, p->io3d, 0x100);
+                khdays_gpu3d_draw(&p->list3d, io.data(), &vram, expected.data());
+                require(khdays_raster3d_rasterize(p.get(), 1, 0));
+                auto got = scene_pixels(1);
+                for (int y = 0; y < 64; ++y)
+                    for (int x = 0; x < 64; ++x) {
+                        const auto actual = got[std::size_t(y * 64 + x)];
+                        const auto reference = expected[std::size_t((y + 24) * 256 + x + 16)];
+                        for (unsigned shift = 0; shift < 24; shift += 8) {
+                            const int a = int((actual >> shift) & 255u), b = int((reference >> shift) & 255u);
+                            require(native ? std::abs(a - b) <= 1 : a == b);
+                        }
+                        require((((actual >> 8) & 63u) != 0u) == marked);
+                        require(!(actual & (1u << 29)));
+                    }
+            }
+            // The existing HD PNG fallback still goes through the native polygon's marker stage.
+            polygons[1].tex = 7u << 26;
+            polygons[1].replacement = 1;
             require(khdays_raster3d_rasterize(p.get(), 1, 0));
-            auto got = scene_pixels(1);
-            for (int y = 0; y < 64; ++y)
-                for (int x = 0; x < 64; ++x) {
-                    const auto actual = got[std::size_t(y * 64 + x)];
-                    const auto reference = expected[std::size_t((y + 24) * 256 + x + 16)];
-                    require((actual & 0xffffffu) == (reference & 0xffffffu));
-                    require((((actual >> 8) & 63u) != 0u) == marked);
-                    require(!(actual & (1u << 29)));
-                }
+            for (const auto pixel : scene_pixels(1))
+                require(((pixel >> 8) & 63u) > 0);
+            for (const auto pixel : scene_pixels(1, true))
+                require((pixel & 0xffffffu) == (wbuffer ? 4096u : 0u));
+            polygons[1].attr = 0xc0u | (31u << 16) | (62u << 24);
+            require(khdays_raster3d_rasterize(p.get(), 1, 0));
+            for (const auto pixel : scene_pixels(1, true))
+                require((pixel & 0xffffffu) == (wbuffer ? 4096u : 0u));
+            polygons[1].attr = 0xc0u | (16u << 16) | (62u << 24) | 0x800u;
+            polygons[1].tex = 0;
+            polygons[1].replacement = -1;
         }
-        // The existing HD PNG fallback still goes through the native polygon's marker stage.
-        polygons[1].tex = 7u << 26;
-        polygons[1].replacement = 1;
-        require(khdays_raster3d_rasterize(p.get(), 1, 0));
-        for (const auto pixel : scene_pixels(1))
-            require(((pixel >> 8) & 63u) > 0);
-        for (const auto pixel : scene_pixels(1, true))
-            require((pixel & 0xffffffu) == (wbuffer ? 4096u : 0u));
-        polygons[1].attr = 0xc0u | (31u << 16) | (62u << 24);
-        require(khdays_raster3d_rasterize(p.get(), 1, 0));
-        for (const auto pixel : scene_pixels(1, true))
-            require((pixel & 0xffffffu) == (wbuffer ? 4096u : 0u));
-        polygons[1].attr = 0xc0u | (16u << 16) | (62u << 24) | 0x800u;
-        polygons[1].tex = 0;
-        polygons[1].replacement = -1;
     }
     for (unsigned role : {unsigned(KHDAYS_2D_3D_HIDDEN), unsigned(KHDAYS_2D_3D_SECOND)}) {
         for (auto &rec : p->composition) {

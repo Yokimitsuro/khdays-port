@@ -296,6 +296,10 @@ once:
   game alone, at your desktop's resolution). **Alt+Enter** switches between
   the window and the full screen you chose last (the borderless window if
   none) while the settings menu is closed, and keeps it.
+- **Screen resolution**: the desktop's (the default) or one of your screen's
+  own resolutions: full screen switches the screen to it, a window takes that
+  size (a borderless window always covers the screen at the desktop's). With
+  the internal resolution "The window's", the game is drawn at it.
 - **Internal resolution** (1x, 2x, 3x, 4x, 6x, 8x, or the window's own
   size): the 3D -- the field, the characters, the effects -- drawn at
   that many times the DS's pixels. "The window's" draws at the next whole
@@ -307,11 +311,12 @@ once:
   mod replaces it (below). It is the
   same picture, only sharper: the 3D follows the same rules as at 1x, and
   wherever the 2D covers or blends with it, it does so as on the DS.
-- **Antialiasing** (off, 2x, 3x, 4x): the picture made that many times
-  larger, then shrunk to the size shown, each pixel the average of what is
-  under it -- the 3D's edges come out smooth instead of in steps. 2x is four times the graphics
-  card's work, 4x sixteen; off by default, and the settings warn while it is on, as the internal
-  resolution already draws the 3D at the window's size or larger. (A mod's textures, and the HD
+- **Antialiasing** (off, FXAA): the 3D's edges smoothed once it is drawn,
+  at its own resolution -- each pixel on an edge blended with the one across
+  it by where it lies along the edge, so the edges come out smooth instead of
+  in steps, for little of the graphics card's time. The HUD, the menus and
+  the text stay sharp. Off by default. (A 3D drawn larger and shrunk, the
+  old way, is an internal resolution above the window's.) (A mod's textures, and the HD
   replacements, are read at the size they are drawn whatever this says:
   smaller copies of each are kept, so a model far away does not break into
   steps that flicker.)
@@ -343,7 +348,7 @@ once:
   game frame. Camera cuts and scene changes are not smoothed across. The 2D
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
-  second and the game's own frames a second.
+  second.
 - **Graphics API**: what draws the picture -- automatic (Direct3D 12 on
   Windows, Vulkan on a Steam Deck or under Proton), Direct3D 12 or Vulkan,
   changed at once. If
@@ -356,8 +361,9 @@ The choices are kept in the `[video]` section of `saves/settings.ini`:
 
 ```ini
 [video]
+resolution = desktop      # the desktop's (the default), or WIDTHxHEIGHT: full screen's mode, the window's size
 internal_resolution = window   # the window's size (the default), or a multiple: 2 to 16 in the settings
-antialiasing = off        # off, 2x, 3x or 4x: made that many times larger and shrunk
+antialiasing = off        # off or fxaa: the 3D's edges smoothed once it is drawn
 aspect = 16:9             # 4:3 (the DS's), 16:9, 16:10, or window
 two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth

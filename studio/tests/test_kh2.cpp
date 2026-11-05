@@ -1,6 +1,7 @@
 // KH2's rooms in a room change: the change's `kh2` line read back, the first place of a KH2 room that
 // shares no points with the room (KH2's units, the floors at one height, the middles together), and the
-// markers a made collision leaves inside a wall or with no ground under them, named. Synthetic only.
+// markers a made collision leaves inside a wall or with no ground under them, named; another game's room placed
+// by its units, its lowest main floor at the ground and the room's places on its floors. Synthetic only.
 #include "test.h"
 
 #include "core/rooms/kh2_source.h"
@@ -222,4 +223,37 @@ TEST(markers_in_a_wall_or_over_nothing_are_named) {
             (w.args[0] == "btl_03" ? floating : wrong) = true;
     }
     CHECK(in_wall && floating && !wrong);
+}
+
+TEST(another_games_room_stands_the_rooms_places_on_its_floors) {
+    // the game's room: a ground at 0 from -4 to 4, its origin and two markers on it
+    RoomCollision room;
+    room.faces[kGround] = {flat(-4, -4, 4, 4, 0)};
+    add_marker(&room, "pent01_0", 3, 0, 0);
+    add_marker(&room, "pent01_1", -3, 0, 0);
+    // another game's, in metres: a street at 0 (x 100 to 120, z 0 to 10), a wider level 50 up (x 100 to 130, z 20
+    // to 40) and a step's worth of floor 5 down
+    auto floor = [](float x0, float z0, float x1, float z1, float y) {
+        khdays::assets::NeutralMesh mesh;
+        for (const auto& p : {std::array<float, 3>{x0, y, z0}, std::array<float, 3>{x0, y, z1},
+                              std::array<float, 3>{x1, y, z1}, std::array<float, 3>{x1, y, z0}}) {
+            khdays::assets::NeutralVertex v;
+            v.position = p;
+            mesh.vertices.push_back(v);
+        }
+        mesh.indices = {0, 1, 2, 0, 2, 3};
+        return mesh;
+    };
+    khdays::assets::ImportedModel other;
+    other.model.meshes = {floor(100, 0, 120, 10, 0), floor(100, 20, 130, 40, 50), floor(90, 0, 91, 1, -5)};
+    RoomAlignment a = kh2_alignment({}, room, other, 1.0f);
+    CHECK(a.verdict == RoomAlignment::kh2_units && a.place.scale == 1.0f);
+    const auto [on, of] = onto_floors(other, room, &a);
+    // the street (the lowest floor holding a quarter of the widest's area) at the room's ground, under its places
+    CHECK(on == 3 && of == 3);
+    CHECK(std::abs(a.place.move[1]) < 1e-3f);
+    for (const float x : {-3.0f, 0.0f, 3.0f}) {
+        CHECK(x - a.place.move[0] >= 100 && x - a.place.move[0] <= 120);
+        CHECK(-a.place.move[2] >= 0 && -a.place.move[2] <= 10);
+    }
 }

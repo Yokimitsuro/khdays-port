@@ -1253,7 +1253,7 @@ static void test_information_image(void)
     CHECK(comp.shape3d_count == 1 && comp.shapes3d[0].hide);
     p->hud_options = KHDAYS_HUD_KEEP_INFORMATION;
     p->situation.event_status = 1; // A mission script can show INFORMATION without being a cutscene/dialog.
-    p->situation.updates[KHDAYS_UPD_Ov023_SceneRun / 64] |= 1ull << (KHDAYS_UPD_Ov023_SceneRun % 64);
+    p->situation.event_runs = 1;
     khdays_composition_set_hud_options(p->hud_options);
     khdays_onescreen_information(p, &native_upper);
     CHECK(native_upper.states & (1u << KHDAYS_ST_HUD));
@@ -1614,7 +1614,7 @@ static void test_swap_skips(void)
     KhdaysSituation s;
     for (int i = 0; screens[i] != '\0'; ++i) {
         const int now = screens[i] == '1';
-        in.engine_swaps = khdays_situation_swaps(&history, now != upper);
+        in.engine_swaps = khdays_situation_recent(&history, now != upper);
         in.powcnt1 = now ? 0x8000u : 0u;
         upper = now;
         khdays_situation_decide(&frame, &s);
@@ -1625,11 +1625,44 @@ static void test_swap_skips(void)
     }
     in.powcnt1 = 0;
     for (int i = 0; i < 8; ++i) {
-        in.engine_swaps = khdays_situation_swaps(&history, 0);
+        in.engine_swaps = khdays_situation_recent(&history, 0);
         khdays_situation_decide(&frame, &s);
         CHECK(s.scene == (i < 7 ? KHDAYS_SIT_FIELD_3D_BOTH : KHDAYS_SIT_FIELD));
     }
     CHECK((s.states & (1u << KHDAYS_ST_LOWER_3D)) != 0u);
+}
+
+/* An event's dialog over the 3D on both screens, the event's scene running in one VBlank of three (a
+ * player's day 172, Sora's memory: the dialog blinked, [dialog] then [hud] twice, for 2 s): the dialog
+ * stays. Once the event stops running, 8 VBlanks later its status no longer counts. */
+static void test_event_run_skips(void)
+{
+    KhdaysSituationInputs in;
+    memset(&in, 0, sizeof(in));
+    in.scene = 2; /* the field */
+    in.camp_screen = -2;
+    in.mission_start = -1;
+    in.event_status = 3; /* begun, its dialogue raised */
+    uint32_t swaps = 0, runs = 0;
+    const KhdaysSituationFrame frame = {&in, 0, 0, 0, NULL, NULL};
+    KhdaysSituation s;
+    for (int i = 0; i < 30; ++i) {
+        in.engine_swaps = khdays_situation_recent(&swaps, 1);
+        in.event_runs = khdays_situation_recent(&runs, i % 3 == 0);
+        in.powcnt1 = (i & 1) ? 0x8000u : 0u;
+        khdays_situation_decide(&frame, &s);
+        if (i >= 2) {
+            CHECK(s.scene == KHDAYS_SIT_FIELD_3D_BOTH);
+            CHECK((s.states & (1u << KHDAYS_ST_DIALOG)) != 0u);
+            CHECK((s.states & (1u << KHDAYS_ST_HUD)) == 0u);
+        }
+    }
+    for (int i = 0; i < 8; ++i) {
+        in.engine_swaps = khdays_situation_recent(&swaps, 1);
+        in.event_runs = khdays_situation_recent(&runs, 0);
+        khdays_situation_decide(&frame, &s);
+    }
+    CHECK((s.states & (1u << KHDAYS_ST_DIALOG)) == 0u);
 }
 
 static void test_weighted_image(void)
@@ -1902,6 +1935,7 @@ int main(void)
     test_split();
     test_split_under_3d();
     test_swap_skips();
+    test_event_run_skips();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

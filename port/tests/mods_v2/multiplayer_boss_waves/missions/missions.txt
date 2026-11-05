@@ -1,0 +1,26 @@
+# The multiplayer_boss_waves walk's mission: one Shadow ahead of the start, then, once it is defeated, two each of
+# the Darkside (70), the Dual Blade (57) and the Guard Armor (63) -- bosses drawn as several models, more than one
+# of a kind at once -- in the arena of mission 1354.
+[mission bosswaves]
+name en = Bosses Second
+name fr = Les boss ensuite
+name de = Danach die Bosse
+name it = Poi i boss
+name es = Luego los jefes
+objective en = Defeat every Heartless.
+objective fr = Battez tous les Sans-cœur.
+objective de = Besiege alle Herzlosen.
+objective it = Sconfiggi tutti gli Heartless.
+objective es = Derrota a todos los sincorazón.
+world = eh
+room = 2
+category = 0
+time = 300000
+start = 0 0.049 0 -90
+wave 1 = 0x1 at 0 0.049 -3
+wave 2 = 70x1 at -5 0.049 10
+wave 2 = 70x1 at 5 0.049 10
+wave 2 = 57x1 at 7 0.049 4
+wave 2 = 57x1 at 7 0.049 -4
+wave 2 = 63x1 at -8 0.049 4
+wave 2 = 63x1 at -8 0.049 -4
