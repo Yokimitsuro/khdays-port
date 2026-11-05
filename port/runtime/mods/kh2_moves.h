@@ -1,4 +1,4 @@
-// When a KH2 model's motions change with the game's state (models.cpp play_kh2): a landing straight out of the
+// When a KH2 model's motions change with the game's state (model_kh2_motions.cpp play_kh2): a landing straight out of the
 // damage in the air (motions.txt `air ... land`), and a fade into the game's idle (`blend`). Pure.
 #ifndef KHDAYS_KH2_MOVES_H
 #define KHDAYS_KH2_MOVES_H

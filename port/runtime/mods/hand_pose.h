@@ -1,4 +1,4 @@
-// A mod's KH2 hand under the game's animations (models.cpp, motions.txt's `hand` lines; docs/KH2_MODELS.md, "Hands that
+// A mod's KH2 hand under the game's animations (model_hands.cpp, motions.txt's `hand` lines; docs/KH2_MODELS.md, "Hands that
 // respond"): how far the wrist bends, a pose's share by a measure, a share fading, a finger joint's turn between its
 // poses, a body part's shape for the hand to stay out of, and the arm bent to a moved wrist. Pure.
 #ifndef KHDAYS_HAND_POSE_H

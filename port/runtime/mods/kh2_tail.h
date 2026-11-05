@@ -1,6 +1,6 @@
 // A KH2 motion played out after its game animation (motions.txt `finish`): when the game goes on to one of its
 // idles before the motion has ended, the rest of it plays, then each `finish` slot, then the idle's motion fades in;
-// the game leaving its idles drops it. Pure: the clock is the game's animation frames (models.cpp play_kh2).
+// the game leaving its idles drops it. Pure: the clock is the game's animation frames (model_kh2_motions.cpp play_kh2).
 #ifndef KHDAYS_KH2_TAIL_H
 #define KHDAYS_KH2_TAIL_H
 

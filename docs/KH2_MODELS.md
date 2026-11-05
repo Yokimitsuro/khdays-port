@@ -410,7 +410,7 @@ carries this middle's: the law of cosines about an up vector, as
 **Two skeletons.** `mset <file> own` and `motions ... at <slot> own` mark an
 mset made for this model's own bones: its slots play on this model's skeleton
 and are not retargeted, while the others play on the `skeleton`'s and are
-(`own_slot`, `skeleton_of`, `pose_on_model` in `models.cpp`; a track's player is
+(`own_slot`, `skeleton_of`, `pose_on_model` in `model_kh2_motions.cpp`; a track's player is
 made anew when its slot's skeleton changes). So one model plays KH2's motions
 made for it and another model's at once: the dual wield Roxas below plays
 B_EX390.mset on its own bones and P_EX110's and GAMEOVER's retargeted. Without a
@@ -600,7 +600,7 @@ a KH2 motion's fingers are its own. Bones paired with a game node in
 **Hands that respond.** `hand` lines in `motions.txt` pose the fingers each draw
 under the game's own animations (a KH2 motion's fingers stay its own), move the
 hand out of the body and the room, and rest it on what it presses. They win over
-`ds_pose` for the bones they name (`models.cpp` `pose_hands`, the maths in
+`ds_pose` for the bones they name (`model_hands.cpp` `pose_hands`, the maths in
 `hand_pose.h`):
 
 ```text
@@ -688,7 +688,7 @@ joint's x has swung off where `frame` would carry it. e_rox_hb's cuff roots tilt
 with the hand (`twist` alone leaves them straight on the forearm as the wrist bends).
 
 **Cuffs.** N_EX830's and B_EX390's sleeve cuffs are fitted round the hand each draw,
-not simulated (`models.cpp` `pose_cuffs`, the maths in `cuff_fit.h`):
+not simulated (`model_hands.cpp` `pose_cuffs`, the maths in `cuff_fit.h`):
 
 ```text
 cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120   # root, hand, the four flaps in order round the ring

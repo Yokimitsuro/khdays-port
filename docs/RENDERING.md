@@ -584,7 +584,7 @@ pelvis (that joint's nearest paired joint above) turned as the base's node, then
 swung and stretched so the joint is where the pelvis's own node carries it. The
 joints off the chain are posed again from their parents, so the shoulders and
 head keep the game's turn from wherever the bent spine puts them
-(`models.cpp` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. Over the
+(`model_parts.h` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. Over the
 161 cutscene animations its neck was 3.7 cm from the game's (p90 13.5, max 36) and
 its shoulders 4.9 (max 36); bent, the neck 0.0 (max 0.4), the shoulders 2.5 (max
 6), the chest 0.3; the spine 0.94-1.28 its length (1st-99th percentile, max 1.36). On the

@@ -1,5 +1,5 @@
 // How a game animation's frame moved between two draws, for the clock of the KH2 motion standing in for it
-// (models.cpp play_kh2). Pure: the frames are the game's (BCA, 30 a second).
+// (model_kh2_motions.cpp play_kh2). Pure: the frames are the game's (BCA, 30 a second).
 #ifndef KHDAYS_KH2_CLOCK_H
 #define KHDAYS_KH2_CLOCK_H
 

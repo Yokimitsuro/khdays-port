@@ -1,4 +1,4 @@
-// A mod's KH2 sleeve cuff fitted round its hand (models.cpp, bones.txt's `cuff`; docs/KH2_MODELS.md, "Cuffs"): the cuff's
+// A mod's KH2 sleeve cuff fitted round its hand (model_hands.cpp, bones.txt's `cuff`; docs/KH2_MODELS.md, "Cuffs"): the cuff's
 // rest surface baked by distance along its axis and angle round it, what each flap carries of it, and how far each flap
 // opens and shortens so the hand's points stay inside. Nothing collides: the fit is a function of the pose, and its
 // springs cannot overshoot, so nothing can fight or shake. Pure.

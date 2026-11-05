@@ -676,6 +676,11 @@ add_executable(khdays-native
     runtime/mods/textures.c
     runtime/mods/installed.c
     runtime/mods/models.cpp
+    runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
+    runtime/mods/model_bones.cpp        # ... its <model>.bones.txt
+    runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions
+    runtime/mods/model_own_skeleton.cpp # ... a mod's character's own skeleton
+    runtime/mods/model_hands.cpp        # ... a KH2 model's hands and cuffs
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
     runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
