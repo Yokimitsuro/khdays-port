@@ -11,7 +11,23 @@ typedef struct Binding {
 } Binding;
 static Binding *bindings;
 static int binding_count, binding_capacity;
-static int object_depth, shadow_object[16];
+static int object_depth, *shadow_object, object_capacity; /* by depth: whether that object is a flat shadow */
+
+/* Room for `need` entries of `size` bytes in a stack grown as the draws nest deeper; 0 out of memory. */
+static int stack_room(void **stack, int *capacity, int need, size_t size)
+{
+    if (need <= *capacity)
+        return 1;
+    int n = *capacity ? *capacity : 16;
+    while (n < need)
+        n *= 2;
+    void *grown = realloc(*stack, (size_t)n * size);
+    if (!grown)
+        return 0;
+    *stack = grown;
+    *capacity = n;
+    return 1;
+}
 
 static KhdaysRef reference_at(const void *p, size_t offset)
 {
@@ -20,32 +36,41 @@ static KhdaysRef reference_at(const void *p, size_t offset)
     return value;
 }
 
+/* The last of a chain of links at +`at` from `from`: up to a link that is 0, itself or out of the game's memory, or,
+ * for one that loops (garbage), where it laps a second walker going at half its pace. */
+static KhdaysRef chain_end(KhdaysRef from, size_t at)
+{
+    KhdaysRef end = from, slow = from;
+    for (unsigned walked = 1;; ++walked) {
+        const KhdaysRef next = reference_at(KHDAYS_W(end), at);
+        if (!next || next == end || !khdays_game_ram(next))
+            break;
+        end = next;
+        if (walked % 2 == 0 && (slow = reference_at(KHDAYS_W(slow), at)) == end)
+            break;
+    }
+    return end;
+}
+
 /* A scene node's parent is at +0xbc: SceneNode_AttachToModelJoint (main) sets it, SceneNode_Detach clears it. The
  * decompilation's Scene_DrawNode names that offset `displayList`, a name these two contradict. */
 static KhdaysRef scene_owner(const void *node)
 {
-    KhdaysRef owner = KHDAYS_REF(node);
-    for (int i = 0; i < 16; ++i) {
-        KhdaysRef parent = reference_at(KHDAYS_W(owner), 0xbc);
-        if (!parent || parent == owner || !khdays_game_ram(parent))
-            break;
-        owner = parent;
-    }
-    return owner;
+    return chain_end(KHDAYS_REF(node), 0xbc);
 }
 
 extern void ShadowVolume_Draw(KhdaysRef volume);
 extern KhdaysRef khdays_kh2_camera_faded_node(float *fade);
 
 /* The KH2 camera's first person fades the player out, and what the player holds: all drawn in these scopes. */
-static float fade_now = 1.0f, fade_outer[16];
-static int fade_depth;
+static float fade_now = 1.0f, *fade_outer;
+static int fade_depth, fade_capacity;
 
 static void fade_begin(KhdaysRef owner)
 {
     float fade = 1.0f;
     const KhdaysRef node = khdays_kh2_camera_faded_node(&fade);
-    if (fade_depth < 16) {
+    if (stack_room((void **)&fade_outer, &fade_capacity, fade_depth + 1, sizeof(*fade_outer))) {
         fade_outer[fade_depth] = fade_now;
     }
     ++fade_depth;
@@ -57,7 +82,7 @@ static void fade_begin(KhdaysRef owner)
 
 static void fade_end(void)
 {
-    if (fade_depth > 0 && --fade_depth < 16 && fade_outer[fade_depth] != fade_now) {
+    if (fade_depth > 0 && --fade_depth < fade_capacity && fade_outer[fade_depth] != fade_now) {
         fade_now = fade_outer[fade_depth];
         khdays_g3d_set_fade(fade_now);
     }
@@ -118,38 +143,40 @@ void khdays_character_forget_enemy(const void *sprite_ptr)
 
 void khdays_character_object_begin(const void *object)
 {
+    const int on = khdays_character_shadows_enabled();
     const KhdaysRef ref = KHDAYS_REF(object);
-    KhdaysRef owner = ref, parent = ref;
+    KhdaysRef owner = ref, parent = ref, slow = ref;
     int is_shadow = 0;
-    for (int i = 0; i < binding_count; ++i)
+    for (int i = 0; on && i < binding_count; ++i)
         if (bindings[i].sprite == ref) {
             owner = bindings[i].owner;
             is_shadow = 1;
             break;
         }
-    if (!is_shadow) {
-        for (int depth = 0; depth < 16 && parent; ++depth) {
-            int found = 0;
-            for (int i = 0; i < binding_count; ++i)
-                if (bindings[i].owner == parent) {
-                    owner = parent;
-                    found = 1;
-                    break;
-                }
-            if (found)
+    /* +0 is a node's owner (Node_UnlinkAndClearRefs reads it so, Node_BaseInit clears it). Assumed, not traced in the
+     * game: that it leads from an enemy's attachments to its model tree (actor +0x9c). Followed up to a bound enemy's,
+     * or, in a chain that loops (garbage), to where it laps a walker going at half its pace. */
+    for (unsigned walked = 1; on && !is_shadow && parent; ++walked) {
+        int found = 0;
+        for (int i = 0; i < binding_count; ++i)
+            if (bindings[i].owner == parent) {
+                owner = parent;
+                found = 1;
                 break;
-            /* +0 is a node's owner (Node_UnlinkAndClearRefs reads it so, Node_BaseInit clears it). Assumed, not
-             * traced in the game: that it leads from an enemy's attachments to its model tree (actor +0x9c). */
-            KhdaysRef next = reference_at(KHDAYS_W(parent), 0);
-            if (next == parent || !khdays_game_ram(next))
-                break;
-            parent = next;
-        }
+            }
+        if (found)
+            break;
+        const KhdaysRef next = reference_at(KHDAYS_W(parent), 0);
+        if (next == parent || !khdays_game_ram(next))
+            break;
+        parent = next;
+        if (walked % 2 == 0 && (slow = reference_at(KHDAYS_W(slow), 0)) == parent)
+            break;
     }
-    if (object_depth < 16)
+    if (stack_room((void **)&shadow_object, &object_capacity, object_depth + 1, sizeof(*shadow_object)))
         shadow_object[object_depth] = is_shadow;
     ++object_depth;
-    khdays_shadow_capture_begin(owner, khdays_character_shadows_enabled());
+    khdays_shadow_capture_begin(owner, on);
 }
 
 void khdays_character_object_end(void)
@@ -206,7 +233,7 @@ int khdays_character_sprite_begin(const void *state)
     const unsigned char *resource = KHDAYS_W(mat);
     if (id >= resource[5])
         return 0;
-    const int enemy = object_depth > 0 && object_depth <= 16 && shadow_object[object_depth - 1];
+    const int enemy = object_depth > 0 && object_depth <= object_capacity && shadow_object[object_depth - 1];
     if (!shadow_texture(resource, id, enemy))
         return 0;
     khdays_shadow_sprite_begin();

@@ -25,7 +25,6 @@ constexpr std::uint32_t kBlobReady = 0x8000;     // header +0x74: its pointers r
 constexpr std::uint16_t kFaceDisabled = 0x4000;  // a wall that opened (Ov002_SetWidgetHidden)
 constexpr std::uint8_t kPassThrough = 5;         // a named record's tag the camera passes through
 constexpr std::uint32_t kBoxVtable = 0x02042928; // a room box (kind 3)
-constexpr std::uint32_t kMaxFaces = 20000, kMaxNodes = 8192;
 constexpr std::uint32_t kLinkCtx = 0x0207fa10; // data_ov002_0207fa10 (overlay 2's BSS): the field's Ov002LinkCtx *
 constexpr int kFieldOverlay = 2, kRoomSlots = 4;
 
@@ -133,7 +132,7 @@ void DaysEnvironment::build(Room &room)
                          {u32(b + 0xa4), u16(b + 0x7e), 0x84, Surface::wall},
                          {u32(b + 0xa8), u16(b + 0x80), 0x84, Surface::ceiling}};
     for (const Set &s : sets) {
-        if (s.count == 0 || s.count > kMaxFaces || !ram(s.table, s.count * s.size))
+        if (s.count == 0 || !ram(s.table, s.count * s.size)) // (a mod's room has as many as it has)
             continue;
         for (std::uint32_t f = 0; f < s.count; ++f) {
             const std::uint32_t face = s.table + f * s.size;
@@ -212,11 +211,19 @@ void DaysEnvironment::refresh()
     std::vector<Box> boxes;
     for (const Room &r : rooms_) {
         const std::uint32_t tree = u32(r.blob + 0x9c), nodes = u16(r.blob + 0x7a);
-        if (nodes == 0 || nodes > kMaxNodes || !ram(tree, nodes * 0x20U))
+        if (nodes == 0 || !ram(tree, nodes * 0x20U))
             continue;
         for (std::uint32_t n = 0; n < nodes; ++n) {
-            std::uint32_t obj = u32(tree + n * 0x20 + 8);
-            for (int guard = 0; ram(obj, 0x48) && guard < 256; ++guard, obj = u32(obj + 4)) {
+            // each node's objects, a list at +4 read to its end; one that loops back (garbage) ends where it laps a
+            // second pointer going at half its pace
+            const std::uint32_t first = u32(tree + n * 0x20 + 8);
+            std::uint32_t slow = first;
+            for (std::uint32_t obj = first, walked = 0; ram(obj, 0x48); obj = u32(obj + 4), ++walked) {
+                if (walked > 0 && walked % 2 == 0) {
+                    slow = u32(slow + 4);
+                    if (slow == obj)
+                        break;
+                }
                 if (u32(obj + 0x1c) != kBoxVtable)
                     continue; // characters' cylinders are not cloth colliders
                 Box x;

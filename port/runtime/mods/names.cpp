@@ -207,7 +207,7 @@ void number_repeats(std::vector<Named> &list)
 void read_models(const std::vector<u8> &d, std::size_t start, FileNames &names)
 {
     const u32 sections = le16(d, start + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && start + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t mdl0 = start + le32(d, start + 0x10 + 4 * s);
         if (mdl0 + 0x10 > d.size() || std::memcmp(&d[mdl0], "MDL0", 4) != 0)
             continue;
@@ -222,7 +222,7 @@ void read_models(const std::vector<u8> &d, std::size_t start, FileNames &names)
 void read_animations(const std::vector<u8> &d, std::size_t start, FileNames &names)
 {
     const u32 sections = le16(d, start + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && start + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t jnt0 = start + le32(d, start + 0x10 + 4 * s);
         if (jnt0 + 0x10 > d.size() || std::memcmp(&d[jnt0], "JNT0", 4) != 0)
             continue;
@@ -239,7 +239,7 @@ void read_animations(const std::vector<u8> &d, std::size_t start, FileNames &nam
 void read_pattern_animations(const std::vector<u8> &d, std::size_t start, FileNames &names)
 {
     const u32 sections = le16(d, start + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && start + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t pat0 = start + le32(d, start + 0x10 + 4 * s);
         if (pat0 + 0x10 > d.size() || std::memcmp(&d[pat0], "PAT0", 4) != 0)
             continue;
@@ -314,7 +314,7 @@ std::map<std::string, std::set<std::string>> pairs;
 void read_pairs(const std::vector<u8> &d, std::size_t bmd0)
 {
     const u32 sections = le16(d, bmd0 + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && bmd0 + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t mdl0 = bmd0 + le32(d, bmd0 + 0x10 + 4 * s);
         if (mdl0 + 0x10 > d.size() || std::memcmp(&d[mdl0], "MDL0", 4) != 0)
             continue;
@@ -358,7 +358,7 @@ void read_pairs(const std::vector<u8> &d, std::size_t bmd0)
 void read_pattern_pairs(const std::vector<u8> &d, std::size_t btp0)
 {
     const u32 sections = le16(d, btp0 + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && btp0 + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t pat0 = btp0 + le32(d, btp0 + 0x10 + 4 * s);
         if (pat0 + 0x10 > d.size() || std::memcmp(&d[pat0], "PAT0", 4) != 0)
             continue;
@@ -457,7 +457,7 @@ int dump_models(const std::vector<u8> &d, std::size_t at, const FileNames &names
     int written = 0;
     const u32 size = le32(d, at + 8);
     const u32 sections = le16(d, at + 0xe);
-    for (u32 s = 0; s < sections && s < 8; ++s) {
+    for (u32 s = 0; s < sections && at + 0x14 + 4 * s <= d.size(); ++s) {
         const std::size_t mdl0 = at + le32(d, at + 0x10 + 4 * s);
         if (mdl0 + 0x10 > d.size() || std::memcmp(&d[mdl0], "MDL0", 4) != 0)
             continue;

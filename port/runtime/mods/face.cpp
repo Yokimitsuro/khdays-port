@@ -99,7 +99,13 @@ void Player::play(float frames)
         return;
     }
     elapsed_ += frames;
-    for (int guard = 0; elapsed_ >= length_ && guard < 1024; ++guard) { // (a loop of 0-frame steps: KH2's hangs)
+    // steps of no length in a row: more than its script has is a loop that never takes time (KH2 hangs there; this
+    // player stays on the step it reached)
+    const std::size_t steps = animation_->scripts[static_cast<std::size_t>(script_)].size();
+    for (std::size_t idle = 0; elapsed_ >= length_;) {
+        idle = length_ > 0.0F ? 0 : idle + 1;
+        if (idle > steps)
+            break;
         elapsed_ -= length_;
         ++pc_;
         s = step();

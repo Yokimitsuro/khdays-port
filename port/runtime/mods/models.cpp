@@ -599,6 +599,27 @@ const void *begun_object = nullptr; // the outermost render object begun, replac
 // every render object the game draws, replaced or not, and the vblank it was last drawn: whether what is attached
 // to a hand shows, whatever the path that draws it
 std::unordered_map<KhdaysRef, u32> drawn_lately;
+
+// Each element of a list of the game's linked at +`next` (`size` bytes each), from `first` to its end (0), while
+// `visit` returns true: a link out of the game's memory ends it, and one that loops back (garbage) ends where it laps
+// a second pointer going at half its pace.
+template <typename Visit> void each_linked(KhdaysRef first, u32 next, u32 size, Visit visit)
+{
+    auto link = [&](KhdaysRef at) {
+        KhdaysRef to = 0;
+        std::memcpy(&to, KHDAYS_W(at + next), 4);
+        return to;
+    };
+    KhdaysRef slow = first;
+    for (KhdaysRef at = first, walked = 0; at != 0 && khdays_game_ram(at) && khdays_game_ram(at + size - 1);
+         at = link(at), ++walked) {
+        if (walked > 0 && walked % 2 == 0 && (slow = link(slow)) == at)
+            break;
+        if (!visit(at))
+            break;
+    }
+}
+
 Mat drawn_start = kIdentity; // the position matrix as the draw starts: the view times the actor's world matrix
 // the latest flush's base transform (khdays_g3d_base) and camera as the draw starts, and the base's kind
 Mat drawn_base = kIdentity, drawn_camera = kIdentity;
@@ -700,9 +721,7 @@ constexpr unsigned kActorGap = 6U;           // game frames undrawn after which 
 // tail or a held pose from before would show on what it draws now. In game frames, which a pause and a stall don't count.
 Kh2Actor &actor_of(const Model &m)
 {
-    if (kh2_actors.size() > 64)
-        kh2_actors.clear();
-    Kh2Actor &actor = kh2_actors[drawn_object];
+    Kh2Actor &actor = kh2_actors[drawn_object]; // (one undrawn for kActorGap is forgotten: forget_gone)
     const unsigned now = khdays_link_frame();
     if (actor.model != &m || now - actor.drawn_frame > kActorGap) {
         actor = Kh2Actor{};
@@ -3358,7 +3377,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
 std::unordered_map<std::string, std::unique_ptr<Model>> models; // by "<file>@<offset>"; null: not replaced
 Model *active;
 int depth;
-Model *outer[8]; // the draws a draw's callbacks start: theirs are the game's
+std::vector<Model *> outer; // by depth, the draws a draw's callbacks start: theirs are the game's
 int shapes;
 const unsigned char *model_start; // the draw's model (its NNSG3dResMdl): its shapes' lists are from here
 KhdaysG3dMaterial material;
@@ -4039,13 +4058,13 @@ unsigned held_hands(const Model &m)
     const u32 now = khdays_events_vblank_count();
     const KhdaysRef node = KHDAYS_REF(drawn_object) - 0x20U;
     unsigned held = 0U;
-    u32 child = 0U;
-    if (!word(node + 0xc0U, child))
+    u32 first = 0U;
+    if (!word(node + 0xc0U, first))
         return 0U;
-    for (int n = 0; child != 0U && n < 32; ++n) {
-        u32 parent = 0U, joint = 0U, next = 0U;
-        if (!word(child + 0xbcU, parent) || parent != node || !word(child + 0xc8U, joint) || !word(child + 0xc4U, next))
-            break; // not a scene node's list (a render object the game keeps elsewhere)
+    each_linked(first, 0xc4U, 0xccU, [&](KhdaysRef child) {
+        u32 parent = 0U, joint = 0U;
+        if (!word(child + 0xbcU, parent) || parent != node || !word(child + 0xc8U, joint))
+            return false; // not a scene node's list (a render object the game keeps elsewhere)
         const std::size_t g = joint & 0xffffU;
         const auto seen = drawn_lately.find(child + 0x20U);
         if (seen != drawn_lately.end() && now - seen->second <= 6U && g < m.node_hand.size()) {
@@ -4058,8 +4077,8 @@ unsigned held_hands(const Model &m)
                                m.node_names[g].c_str());
             }
         }
-        child = next;
-    }
+        return true;
+    });
     return held;
 }
 
@@ -5745,9 +5764,7 @@ void draw(Model &m)
     // what the game attaches to its nodes (NNS_G3dGetResultMtx after the draw): each node's frame where the model's
     // joint is (a `weapon` line's turn for its node), for result_matrix
     if (drawn_object != nullptr) { // (a model at a place of the port's has no render object)
-        if (node_results.size() > 64)
-            node_results.clear();
-        auto &results = node_results[drawn_object];
+        auto &results = node_results[drawn_object]; // (forgotten with its object: forget_gone)
         results.assign(nodes, {false, kIdentity});
         for (std::size_t g = 0; g < nodes && g < m.node_joint.size(); ++g) {
             if (g < m.kh2_weapon.size() && m.kh2_weapon[g] >= 0) {
@@ -5919,31 +5936,48 @@ void read_playing(const void *render_obj)
         return;
     u32 mat = 0; // anmMat (+0x08): the material animations, the eyes' pattern among them
     std::memcpy(&mat, static_cast<const unsigned char *>(render_obj) + 0x08, 4);
-    for (int n = 0; mat != 0 && n < 8; ++n) {
-        const auto *a = static_cast<const unsigned char *>(KHDAYS_W(mat));
+    each_linked(mat, 0x10U, 0x14U, [&](KhdaysRef at) {
         u32 anm = 0;
-        std::memcpy(&anm, a + 8, 4);
+        std::memcpy(&anm, KHDAYS_W(at + 8U), 4);
         materials_playing.push_back(animation_name(anm));
-        std::memcpy(&mat, a + 0x10, 4);
-    }
+        return true;
+    });
     u32 obj = 0;
     std::memcpy(&obj, static_cast<const unsigned char *>(render_obj) + 0x10, 4);
-    for (int n = 0; obj != 0 && n < 8; ++n) {
-        const auto *a = static_cast<const unsigned char *>(KHDAYS_W(obj));
+    each_linked(obj, 0x10U, 0x14U, [&](KhdaysRef at) {
+        const auto *a = static_cast<const unsigned char *>(KHDAYS_W(at));
         s32 frame = 0, ratio = 0;
-        u32 anm = 0, next = 0;
+        u32 anm = 0;
         std::memcpy(&frame, a, 4);
         std::memcpy(&ratio, a + 4, 4);
         std::memcpy(&anm, a + 8, 4);
-        std::memcpy(&next, a + 0x10, 4);
         const std::string &name = animation_name(anm);
         u16 frames = 0;
         if (anm != 0)
             std::memcpy(&frames, static_cast<const unsigned char *>(KHDAYS_W(anm)) + 4, 2);
         playing.push_back({name, static_cast<float>(frame) / 4096.0F, static_cast<float>(ratio) / 4096.0F,
                            static_cast<float>(frames)});
-        obj = next;
-    }
+        return true;
+    });
+}
+
+// What is kept by the game's objects (each render object's last draw, its node's mover and state, its nodes' frames
+// and its KH2 actor) is forgotten once the object is gone: undrawn for a minute (its memory freed or another's now),
+// or for a KH2 actor undrawn for kActorGap (it starts afresh then anyway). Looked over every ten seconds.
+void forget_gone(u32 now)
+{
+    constexpr u32 kGone = 3600, kEvery = 600; // vblanks
+    static u32 looked = 0;
+    if (now - looked < kEvery)
+        return;
+    looked = now;
+    std::erase_if(drawn_lately, [&](const auto &e) { return now - e.second > kGone; });
+    std::erase_if(grounds, [&](const auto &e) { return now - e.second.vblank > kGone; });
+    // a node's render object is 0x24 after it (the mover's link, khdays_models_actor_state)
+    std::erase_if(actor_states, [&](const auto &e) { return drawn_lately.count(e.first + 0x24U) == 0; });
+    std::erase_if(node_results, [&](const auto &e) { return drawn_lately.count(KHDAYS_REF(e.first)) == 0; });
+    const unsigned frame = khdays_link_frame();
+    std::erase_if(kh2_actors, [&](const auto &e) { return frame - e.second.drawn_frame > kActorGap; });
 }
 
 } // namespace
@@ -5956,6 +5990,7 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     if (render_obj != nullptr)
         drawn_lately[KHDAYS_REF(render_obj)] = khdays_events_vblank_count();
     if (depth == 0) {
+        forget_gone(khdays_events_vblank_count());
         begun_object = render_obj;
         khdays_g3d_draw_begin(resource); /* the polygons' key */
         if (resource != nullptr) {
@@ -5963,8 +5998,9 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
         }
     }
     if (depth > 0) {
-        if (depth < 8)
-            outer[depth] = active;
+        if (outer.size() <= static_cast<std::size_t>(depth))
+            outer.resize(static_cast<std::size_t>(depth) + 1);
+        outer[static_cast<std::size_t>(depth)] = active;
         ++depth;
         active = nullptr;
         return;
@@ -6118,9 +6154,7 @@ extern "C" void khdays_models_actor_state(int actor, int state)
     std::memcpy(&node, KHDAYS_W(a + 0x20), 4);
     if (node == 0)
         return;
-    if (actor_states.size() > 64)
-        actor_states.clear();
-    ActorState &s = actor_states[node];
+    ActorState &s = actor_states[node]; // (forgotten with its object: forget_gone)
     const u32 now = khdays_events_vblank_count();
     if (s.state == kAirDamageState && state != kAirDamageState)
         s.left_air = now;
@@ -6134,9 +6168,7 @@ extern "C" void khdays_models_actor_ground(void *mover)
     std::memcpy(&owner, mover, 4);
     if (owner == 0)
         return;
-    if (grounds.size() > 256)
-        grounds.clear();
-    grounds[owner] = {KHDAYS_REF(mover), khdays_events_vblank_count()};
+    grounds[owner] = {KHDAYS_REF(mover), khdays_events_vblank_count()}; // (forgotten unseen: forget_gone)
 }
 
 // NNS_G3dGetResultMtx (prepare.py HOOKS): a replaced model's node as the model's joint carries it, in the matrices the
@@ -6231,7 +6263,7 @@ extern "C" void khdays_models_draw_end(void)
         return;
     }
     if (--depth != 0) {
-        active = depth < 8 ? outer[depth] : nullptr;
+        active = outer[static_cast<std::size_t>(depth)];
         return;
     }
     khdays_walk_model_draw_end();

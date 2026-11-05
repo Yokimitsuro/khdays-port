@@ -119,6 +119,17 @@ int main()
         }
         check(shortest >= 2 && longest <= 4 && shortest < longest, "lengths at random within 2-4 frames");
     }
+    {
+        // a loop of steps that take no time (KH2 hangs there): the player stays on a step of it and goes on
+        Animation still = eyes();
+        still.scripts = {{sprite(3, 0, 0), sprite(6, 0, 0), jump(-2)}};
+        still.slot_script = {0};
+        still.default_script = 0;
+        khdays::face::Player p(still, 1);
+        p.play(1.0F);
+        p.play(5.0F);
+        check(p.sprite() == 3 || p.sprite() == 6, "a loop of no time ends, on one of its steps");
+    }
     if (failures == 0)
         std::printf("face: ok\n");
     return failures == 0 ? 0 : 1;

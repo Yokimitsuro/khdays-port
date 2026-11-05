@@ -416,24 +416,41 @@ typedef struct {
     u32 frame;
     int rate, walk;
 } Walking;
-static Walking walking[8];
+static Walking *walking;
+static int walking_count, walking_capacity;
 
+/* The actor's walk; with `add`, a new one when it has none: the place of one not steered for two game frames (what
+ * reads a walk wants this frame's or the one before), or one more. NULL: none (or no memory for it). */
 static Walking *walking_of(int actor, int add)
 {
-    Walking *oldest = &walking[0];
-    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+    Walking *stale = NULL;
+    for (int i = 0; i < walking_count; ++i) {
         if (walking[i].actor == actor) {
             return &walking[i];
         }
-        if (walking[i].frame < oldest->frame) {
-            oldest = &walking[i];
+        if (stale == NULL && khdays_input_game_frames() - walking[i].frame > 1u) {
+            stale = &walking[i];
         }
     }
     if (!add) {
         return NULL;
     }
-    oldest->actor = actor;
-    return oldest;
+    if (stale == NULL) {
+        if (walking_count == walking_capacity) {
+            const int n = walking_capacity ? walking_capacity * 2 : 8;
+            Walking *grown = realloc(walking, (size_t)n * sizeof(*grown));
+            if (grown == NULL) {
+                return NULL;
+            }
+            walking = grown;
+            walking_capacity = n;
+        }
+        stale = &walking[walking_count++];
+    }
+    stale->actor = actor;
+    stale->frame = khdays_input_game_frames();
+    stale->rate = stale->walk = 0;
+    return stale;
 }
 
 /* The speed the actor moves toward (its nWalkSpeed): with the stick pushed less than the run
@@ -463,7 +480,7 @@ int khdays_controls_walk_share(unsigned node)
 {
     static int last = -1;
     int share = 0;
-    for (int i = 0; i < (int)(sizeof walking / sizeof walking[0]); ++i) {
+    for (int i = 0; i < walking_count; ++i) {
         const Walking *w = &walking[i];
         if (w->actor != 0 && w->walk > 0 && w->rate > 0 && khdays_input_game_frames() - w->frame <= 1u &&
             khdays_game_ram((KhdaysRef)w->actor + 0x20U) && *(u32 *)KHDAYS_W((KhdaysRef)w->actor + 0x20U) == node) {
