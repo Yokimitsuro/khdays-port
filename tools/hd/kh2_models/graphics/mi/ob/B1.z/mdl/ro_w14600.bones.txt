@@ -1,0 +1,4 @@
+# KH2's W_EX010_20 as a cutscene's own keyblade. No body's motions pose it, and it need not be in a hand. It is
+# made at B_EX390's weapon bones' rest: `rest` moves it as the game's model moves from its rest, the three numbers
+# the turn from kh2_2's axes into the frame the game's keyblades are made in (those bones' `weapon` line's).
+held kh2_2 rest 180 90 0

@@ -44,6 +44,7 @@ MODELS = (
     ("graphics/ba/ch/r2/def_h.p.z/mdl", "roxas_bf_h", "B_EX390.mdlx", DUAL_FILES),
     ("graphics/ba/ch/r2/def.p.z/mdl", "roxas_bf", "B_EX390.mdlx", DUAL_FILES),
     ("graphics/mi/ch/0C.z/mdl", "e_rox_hb", "N_EX830.mdlx", ("P_EX110.mset", "P_EX110.mdlx")),
+    ("graphics/mi/ch/47.z/mdl", "e_roh_hb", "B_EX390.mdlx", PLAYER_FILES),
     ("graphics/ba/ch/ro/w_.p2#0/mdl", "ro_w00600", "W_EX010.mdlx", ()),
     ("graphics/ba/ch/ro/w_.p2#21/mdl", "ro_w13600", "W_EX010_10.mdlx", ()),
     ("graphics/ba/ch/ro/w_.p2#22/mdl", "ro_w15600", "W_EX010_W0.mdlx", ()),
@@ -51,16 +52,26 @@ MODELS = (
     ("graphics/ba/ch/ro/w_.p2#27/mdl", "ro_w9999b", "F_TT580.mdlx", ()),
     ("graphics/ba/ch/r2/w_.p2#0/mdl", "ro_w13600", "W_EX010_10.mdlx", ()),
     ("graphics/ba/ch/r2/w_.p2#80/mdl", "ro_w14600", "W_EX010_20.mdlx", ()),
+    ("graphics/mi/ob/17.z/mdl", "e_ro_w", "W_EX010.mdlx", ()),
+    ("graphics/mi/ob/67.z/mdl", "ro_w9999b", "F_TT580.mdlx", ()),
+    ("graphics/mi/ob/B7.z/mdl", "ro_w00600", "W_EX010.mdlx", ()),
+    ("graphics/mi/ob/B0.z/mdl", "ro_w13600", "W_EX010_10.mdlx", ()),
+    ("graphics/mi/ob/B1.z/mdl", "ro_w14600", "W_EX010_20.mdlx", ()),
 )
 # A model's settings kept under another's, each file named for it: what it has of its own in kh2_models/ stays.
 KEYBLADE = ("graphics/ba/ch/ro/w_.p2#0/mdl", "ro_w00600")
 SAME_SETTINGS = {
     ("graphics/ba/ch/ro/def.p.z/mdl", "roxas_b"): ("graphics/ba/ch/ro/def_hb.p.z/mdl", "roxas_b_h"),
     ("graphics/ba/ch/r2/def.p.z/mdl", "roxas_bf"): ("graphics/ba/ch/r2/def_h.p.z/mdl", "roxas_bf_h"),
+    ("graphics/mi/ch/47.z/mdl", "e_roh_hb"): ("graphics/ba/ch/ro/def_hho.p.z/mdl", "roxas_ho_h"),
     ("graphics/ba/ch/ro/w_.p2#21/mdl", "ro_w13600"): KEYBLADE,
     ("graphics/ba/ch/ro/w_.p2#26/mdl", "ro_w9999a"): KEYBLADE,
     ("graphics/ba/ch/r2/w_.p2#0/mdl", "ro_w13600"): KEYBLADE,
     ("graphics/ba/ch/r2/w_.p2#80/mdl", "ro_w14600"): KEYBLADE,
+    ("graphics/mi/ob/17.z/mdl", "e_ro_w"): KEYBLADE,
+    ("graphics/mi/ob/B7.z/mdl", "ro_w00600"): KEYBLADE,
+    ("graphics/mi/ob/B0.z/mdl", "ro_w13600"): KEYBLADE,
+    ("graphics/mi/ob/B1.z/mdl", "ro_w14600"): KEYBLADE,
 }
 
 

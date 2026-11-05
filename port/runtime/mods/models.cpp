@@ -462,6 +462,8 @@ struct Model {
     std::string held_name;
     bool held_rest = false;         // `held <joint> rest`: the joint at rest is the holding bone at rest
     bool held_rest_checked = false; // (said once if it is not)
+    bool held_own_turn = false; // `held <joint> rest <x> <y> <z>`: no holding bone, the game's frame this turn off it
+    Mat held_from_game = kIdentity;
     std::vector<int> held_bone;
     // motions.txt's `weapon_motions <mset> <mdlx> <bone>`: what this body holds plays that mset's slots as its
     // own motions play theirs, on that mdlx's bones; <bone> is the weapon itself. Its held pose under the game's
@@ -817,7 +819,8 @@ struct BonesFile {
     std::vector<HideLine> hides;
     std::vector<TwistLine> twists;
     std::string held;
-    bool held_rest = false;
+    bool held_rest = false, held_own_turn = false;
+    std::array<float, 3> held_turn{};
     std::vector<CuffLine> cuffs;
     std::vector<CuffPoseLine> cuff_pose;
     khdays::models::CuffFit::Settings cuff_settings;
@@ -1047,7 +1050,11 @@ BonesFile read_bones(const std::string &model_file)
         } else if (a == "held") { // held <joint>: a weapon posed by the weapon motions of the body holding it
             bones.held = b;
             std::string how;
-            bones.held_rest = words >> how && how == "rest"; // ... rest: its rest is the holding bone's, no motions
+            // ... rest: made at the holding bone's rest, no motions; rest <x> <y> <z>: the turn into the game's weapon
+            // frame given here (as a `weapon` line's), for what no `weapon` line holds (a cutscene's own object)
+            bones.held_rest = words >> how && how == "rest";
+            bones.held_own_turn = bones.held_rest && static_cast<bool>(words >> bones.held_turn[0] >>
+                                                                       bones.held_turn[1] >> bones.held_turn[2]);
         } else if (a == "align") {
             std::string kind;
             if (words >> kind && (kind == "foot" || kind == "hand")) {
@@ -2599,6 +2606,9 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     const auto &spine_line = bones.spine;
     model->held_name = bones.held;
     model->held_rest = bones.held_rest;
+    model->held_own_turn = bones.held_own_turn;
+    if (bones.held_own_turn)
+        model->held_from_game = inverse(turn_of(bones.held_turn));
     model->cuff_settings = bones.cuff_settings;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, game, bones.keep);
@@ -5374,7 +5384,7 @@ void hold_on_bone(Model &m, const Mat &root)
         std::find_if(m.joints.begin(), m.joints.end(), [&](const Joint &j) { return j.name == m.held_name; });
     if (held == m.joints.end())
         return;
-    if (!m.held_rest_checked) {
+    if (!m.held_own_turn && !m.held_rest_checked) {
         m.held_rest_checked = true;
         const auto own = translation(inverse(held->inverse_bind)), bone = translation(holding_bone.rest);
         const float off = length({own[0] - bone[0], own[1] - bone[1], own[2] - bone[2]});
@@ -5386,7 +5396,8 @@ void hold_on_bone(Model &m, const Mat &root)
     }
     Mat by = kIdentity;
     by[0] = by[5] = by[10] = m.scale;
-    const Mat on_bone = mul(root, mul(holding_bone.from_game, mul(by, held->inverse_bind)));
+    const Mat &from_game = m.held_own_turn ? m.held_from_game : holding_bone.from_game;
+    const Mat on_bone = mul(root, mul(from_game, mul(by, held->inverse_bind)));
     std::vector<char> carried(m.joints.size(), 0);
     for (int up = static_cast<int>(held - m.joints.begin()); up >= 0;
          up = m.joints[static_cast<std::size_t>(up)].parent)
@@ -5567,7 +5578,8 @@ void draw(Model &m)
     // (its `weapon_motions` pose, from the frame the game draws the weapon at), the bones under them carried
     // (a chain, for the cloth); a body unseen for a second leaves the model as the game's nodes place it
     const u32 held_now = khdays_events_vblank_count();
-    const bool on_bone = !m.held_name.empty() && m.held_rest && held_now - holding_bone.vblank < 60U;
+    const bool on_bone =
+        !m.held_name.empty() && m.held_rest && (m.held_own_turn || held_now - holding_bone.vblank < 60U);
     if (on_bone) {
         hold_on_bone(m, root);
     } else if (!m.held_name.empty() && !m.held_rest && !held_weapon.pose.empty() &&

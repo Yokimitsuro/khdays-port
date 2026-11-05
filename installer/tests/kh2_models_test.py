@@ -97,6 +97,15 @@ class Models(unittest.TestCase):
             self.assertEqual((left / "ro_w13600.mdlx").read_bytes(), b"W_EX010_10.mdlx")
             self.assertTrue((mod / "graphics/ba/ch/ro/def.p.z/mdl/roxas_b.motions.txt").is_file())
             self.assertFalse((mod / "graphics/ba/ch/ro/w_.p2#27/mdl/ro_w9999b.secondary.txt").exists())
+            # the cutscene's: the hooded Roxas on B_EX390, its keyblades with chains, F_TT580 without
+            self.assertEqual((mod / "graphics/mi/ch/47.z/mdl/e_roh_hb.mdlx").read_bytes(), b"B_EX390.mdlx")
+            cutscene = mod / "graphics/mi/ob"
+            self.assertEqual((cutscene / "B0.z/mdl/ro_w13600.mdlx").read_bytes(), b"W_EX010_10.mdlx")
+            self.assertEqual((cutscene / "17.z/mdl/e_ro_w.mdlx").read_bytes(), b"W_EX010.mdlx")
+            self.assertTrue((cutscene / "17.z/mdl/e_ro_w.secondary.txt").is_file())
+            self.assertTrue((cutscene / "B1.z/mdl/ro_w14600.secondary.txt").is_file())
+            self.assertEqual((cutscene / "67.z/mdl/ro_w9999b.mdlx").read_bytes(), b"F_TT580.mdlx")
+            self.assertFalse((cutscene / "67.z/mdl/ro_w9999b.secondary.txt").exists())
 
     def test_every_source_is_used(self):
         used = {kh2 for _, _, kh2, _ in models.MODELS} | {n for *_, files in models.MODELS for n in files}

@@ -572,7 +572,10 @@ as the game's nodes place it. `held <joint> rest` needs no motions, for a weapon
 made at rest where the bone holding it is at rest (measured: W_EX010's, _10's and
 _20's bone 2 and B_EX390's 95 and 106 have one head and axes): it moves as that bone
 has moved from rest, under the game's animations too, as `place` keeps those bones
-on the game's weapon joints. The log says so if the two rests differ. Days' own keyblade, unreplaced, gets the turns
+on the game's weapon joints. The log says so if the two rests differ. `held <joint> rest
+<x> <y> <z>` gives the turn into the game's weapon frame itself, for a cutscene's own
+object, which no `weapon` line holds and which need not be in a hand: it moves as
+the game's model moves from rest. Days' own keyblade, unreplaced, gets the turns
 through the frame it is drawn at; dumped to glTF and put back as the mod its
 keychain (one bone, `ro_w_01` at the handle's end, under `ro_w_00`) can be
 simulated as well.
@@ -977,6 +980,7 @@ change, edit the mod's copy in game, then bring it back).
 | `roxas_ho_h` | `ba/ch/ro/def_hho.p.z/mdl` | B_EX390 | the same |
 | `roxas_bf_h` | `ba/ch/r2/def_h.p.z/mdl` | B_EX390 | B_EX390.mset, P_EX110 (mdlx, mset), GAMEOVER.mset |
 | `e_rox_hb` | `mi/ch/0C.z/mdl` | N_EX830 | P_EX110 (mdlx, mset) |
+| `e_roh_hb` | `mi/ch/47.z/mdl` | B_EX390 | as `roxas_ho_h`, whose cloth it takes, at `scale 0.93` (he never sits or kneels), with `e_rox_hb`'s dynamic hands |
 | `roxas_b` | `ba/ch/ro/def.p.z/mdl` | N_EX830 | as `roxas_b_h`, whose settings it takes |
 | `roxas_bf` | `ba/ch/r2/def.p.z/mdl` | B_EX390 | as `roxas_bf_h`, whose settings it takes |
 | `ro_w00600` | `ba/ch/ro/w_.p2#0/mdl` | W_EX010 | |
@@ -986,6 +990,11 @@ change, edit the mod's copy in game, then bring it back).
 | `ro_w9999b` | `ba/ch/ro/w_.p2#27/mdl` | F_TT580 | three bones, made at the origin along +z: no `held` |
 | `ro_w13600` | `ba/ch/r2/w_.p2#0/mdl` | W_EX010_10 | left hand, `held kh2_2 rest` |
 | `ro_w14600` | `ba/ch/r2/w_.p2#80/mdl` | W_EX010_20 | right hand, `held kh2_2 rest` |
+| `e_ro_w` | `mi/ob/17.z/mdl` | W_EX010 | `held kh2_2 rest 180 90 0`, `ro_w00600`'s chain |
+| `ro_w9999b` | `mi/ob/67.z/mdl` | F_TT580 | as in `w_.p2#27`: no `held`, no chain |
+| `ro_w00600` | `mi/ob/B7.z/mdl` | W_EX010 | `held kh2_2 rest 180 90 0`, `ro_w00600`'s chain |
+| `ro_w13600` | `mi/ob/B0.z/mdl` | W_EX010_10 | the same |
+| `ro_w14600` | `mi/ob/B1.z/mdl` | W_EX010_20 | the same |
 
 `SAME_SETTINGS` in the tool gives a model another's settings under its own name; what it has of its own stays.
 The low poly bodies have the same nodes and animation names as the high poly ones (read from `def.p`, `def_h.p`
