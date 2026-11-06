@@ -2044,6 +2044,85 @@ static uint16_t lock_frame(KhdaysLockSequencer *s, uint32_t actions, int locked,
     return khdays_lock_sequencer_frame(s, actions, 1, locked, scheme, held, r_free);
 }
 
+/* Auto lock-on: a lock lost but by letting it go locks on again, as R twice; never while a target is locked. */
+static void test_lock_auto(void)
+{
+    const uint16_t R = DS(KHDAYS_ACT_R);
+    const uint32_t autolock = 1u << KHDAYS_LOCK_AUTO;
+    KhdaysLockAuto a = {0, 0, 0};
+    KhdaysLockSequencer s;
+
+    /* the target defeated: the lock lost, then once the game has another target, locked on again with R twice */
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 0) == 0); /* none yet, as right after a defeat */
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 0) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == autolock);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == 0); /* once */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, autolock, 0, 0, 0, 1) == R);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == R);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+
+    /* let go by the player: not again */
+    a = (KhdaysLockAuto){0, 0, 0};
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 1, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0); /* locked again later: its loss counts again */
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == autolock);
+
+    /* waiting for a target, let go by the player (Select): not when one comes */
+    a = (KhdaysLockAuto){0, 0, 0};
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 0) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 1, 1, 0, 0) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == 0);
+
+    /* a single R while locked (the next target) does not count against a later loss; an R as it is lost does */
+    a = (KhdaysLockAuto){0, 0, 0};
+    CHECK(khdays_lock_auto_frame(&a, 0, 1, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == autolock);
+    a = (KhdaysLockAuto){0, 0, 0};
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 1, 1, 0, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == 0);
+
+    /* out of the field it forgets */
+    a = (KhdaysLockAuto){0, 0, 0};
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 1, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 0, 0, 1) == 0);
+    CHECK(khdays_lock_auto_frame(&a, 0, 0, 1, 0, 1) == 0);
+
+    /* a target locked before its turn (the player locked on): dropped, no R twice letting go */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, autolock, 0, 0, 0, 0) == 0); /* waits for the game's window */
+    CHECK(lock_frame(&s, 0, 1, 0, 0, 1) == 0);
+    CHECK(khdays_lock_action_exists(KHDAYS_LOCK_AUTO, 0) && khdays_lock_action_exists(KHDAYS_LOCK_AUTO, 1));
+
+    /* the game locking on by itself during it (an attack): the second R is not sent */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, autolock, 0, 0, 0, 1) == R);
+    CHECK(lock_frame(&s, 0, 1, 0, 0, 0) == 0);
+    CHECK(lock_frame(&s, 0, 1, 0, 0, 0) == 0);
+    CHECK(s.action == -1);
+
+    /* turned off, or let go, while it plays: the rest is not sent */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, autolock, 0, 0, 0, 1) == R);
+    khdays_lock_sequencer_cancel(&s, KHDAYS_LOCK_AUTO);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 0) == 0);
+
+    /* turned off before its turn: dropped */
+    khdays_lock_sequencer_reset(&s);
+    CHECK(lock_frame(&s, autolock, 0, 0, 0, 0) == 0);
+    khdays_lock_sequencer_cancel(&s, KHDAYS_LOCK_AUTO);
+    CHECK(lock_frame(&s, 0, 0, 0, 0, 1) == 0);
+    CHECK(s.queued == 0);
+}
+
 static void test_lock_sequencer(void)
 {
     const uint16_t R = DS(KHDAYS_ACT_R), L = DS(KHDAYS_ACT_L);
@@ -2248,6 +2327,7 @@ int main(void)
     test_analog_axes();
     test_menu_stepper();
     test_lock_sequencer();
+    test_lock_auto();
     test_presets();
     test_languages();
     test_sources_add_up();

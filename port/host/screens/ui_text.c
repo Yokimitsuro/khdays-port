@@ -337,6 +337,13 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Erfassen und Zielwechsel auf eigenen Tasten (das Erfassen des Spiels: zweimal R).",
                               "Punta e cambio bersaglio su tasti propri (la punta del gioco: R due volte).",
                               "Fijar y cambiar de objetivo con botones propios (el fijado del juego: R dos veces)."},
+    [TXT_ENH_AUTO_LOCK] = {"Auto lock-on", "Lock-on automatique", "Automatisches Erfassen", "Puntamento automatico",
+                           "Fijado automático"},
+    [TXT_ENH_AUTO_LOCK_NOTE] = {"When your target is defeated, lock on to the next enemy automatically.",
+                                "Quand votre cible est vaincue, verrouille automatiquement l'ennemi suivant.",
+                                "Ist dein Ziel besiegt, wird automatisch der nächste Gegner erfasst.",
+                                "Quando il bersaglio è sconfitto, punta automaticamente il nemico successivo.",
+                                "Al vencer a tu objetivo, fija automáticamente al siguiente enemigo."},
     [TXT_ENH_MENU] = {"Command menu on the D-pad", "Commandes sur la croix", "Befehlsmenü auf dem Steuerkreuz",
                       "Menu comandi sulla croce", "Menú de comandos en la cruceta"},
     /* %s: the game's words, "Config", "Command List" and "X Only". */

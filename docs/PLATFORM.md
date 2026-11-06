@@ -231,6 +231,14 @@ The gamepad's enhancements play the DS's own presses (`runtime/input`):
   to 0 to count as the second (`khdays_controls_selection_repeat`). R also works
   the camera; the presses played are a player's, so the camera does what it does
   for them.
+- **Auto lock-on** (`khdays_lock_auto_frame`): a lock lost in the field while the
+  player did not let go (the target defeated, out of reach) queues the lock-on's R
+  twice again once the game has a target selected (`selected`; none for a while
+  after a defeat), dropped if a target is locked by its turn and stopped if the
+  game locks on by itself meanwhile (an attack does). Letting go is the lock-on
+  button's let-go R, or a loss within 3 frames of the player's own R or Select
+  (`Ov022_UpdateSelectionMarker`). Turned off, or Select pressed, one queued or
+  under way is dropped.
 
 ## The PC's side
 
