@@ -589,20 +589,20 @@ static void capture_2d(KhdaysFramePackage *p, const KhdaysGpuInput *in)
         khdays_gfx_describe(in->io, in->palette, in->oam, e, &latch2d[e], p->desc2d[e]);
         khdays_video_subtitles_out(in->io, e, p->desc2d[e]);
     }
-    if (p->wants & KHDAYS_WANT_3D) {
-        /* a 3D list wider than the DS's view: engine A covers its columns, the HUD goes to the sides */
-        const int columns = (int)lroundf(p->list3d.widen * KHDAYS_SCREEN_W);
-        if (columns > KHDAYS_SCREEN_W && columns <= KHDAYS_GPU2D_MAX_COLUMNS) {
-            KhdaysGfxMemory memory;
-            memset(&memory, 0, sizeof(memory));
-            memory.vram = in->vram;
-            memory.palette = in->palette;
-            for (int bank = 0; bank < 4; ++bank) {
-                memory.bank[bank] = in->bank[bank];
-            }
-            memory.layer3d = in->layer3d;
-            khdays_gfx_describe_wide(p->desc2d[0], &memory, columns & ~1);
+    {
+        /* a 3D list wider than the DS's view: engine A covers its columns, the HUD goes to the sides. Told
+         * every frame, wide or not (0 columns), so that the pieces it remembers are forgotten in between */
+        const int columns = (p->wants & KHDAYS_WANT_3D) ? (int)lroundf(p->list3d.widen * KHDAYS_SCREEN_W) : 0;
+        KhdaysGfxMemory memory;
+        memset(&memory, 0, sizeof(memory));
+        memory.vram = in->vram;
+        memory.palette = in->palette;
+        for (int bank = 0; bank < 4; ++bank) {
+            memory.bank[bank] = in->bank[bank];
         }
+        memory.layer3d = in->layer3d;
+        khdays_gfx_describe_wide(p->desc2d[0], &memory,
+                                 columns > KHDAYS_SCREEN_W && columns <= KHDAYS_GPU2D_MAX_COLUMNS ? columns & ~1 : 0);
     }
     memcpy(p->palette2d, in->palette, sizeof(p->palette2d));
     for (size_t i = 0; i < sizeof(areas) / sizeof(areas[0]); ++i) {

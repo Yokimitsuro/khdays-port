@@ -135,22 +135,38 @@ static void use(const uint32_t *desc, const KhdaysGfxMemory *memory)
     kd_desc = desc;
 }
 
+/* How many descriptions a cell is remembered as part of a piece across the middle after it last was: a
+ * piece that blinks part of itself keeps its place while it does. LOCKED ON!'s words are off 20 to 24
+ * descriptions at a time, its icon staying left of the middle; without this the icon went to the left
+ * edge each time. A piece that only shrinks to one side follows it this much later. */
+#define MIDDLE_KEPT 40
+
 void khdays_gfx_describe_wide(uint32_t desc[KHDAYS_DESC_WORDS], const KhdaysGfxMemory *memory, int columns)
 {
     static uint8_t covered[24][32], seen[24][32];
     static int8_t side[24][32];
     static int stack[24 * 32];
+    /* the descriptions since each cell was last in a piece across the middle (MIDDLE_KEPT or more: not
+     * lately), and this description's pieces across it */
+    static uint8_t since_middle[24][32], across[24][32];
+    static int middle_started;
     const uint32_t flags = desc[KD_FLAGS];
     desc[KD_WIDE] = 0;
     memset(desc + KD_SIDES, 0, 48 * sizeof(uint32_t));
     if (columns <= 256 || (flags & KDF_ENGINE_B) || (flags & KDF_DISPLAY_MASK) != 1 || (flags & KDF_FORCED_BLANK) ||
         !(flags & KDF_BG0_IS_3D) || !(flags & (1u << KDF_BG_ON_SHIFT))) {
+        middle_started = 0; /* the pieces seen before are forgotten */
         return;
     }
     use(desc, memory);
+    if (!middle_started) {
+        memset(since_middle, MIDDLE_KEPT, sizeof(since_middle));
+        middle_started = 1;
+    }
     memset(covered, 0, sizeof(covered));
     memset(seen, 0, sizeof(seen));
     memset(side, 0, sizeof(side));
+    memset(across, 0, sizeof(across));
     /* the cells layers 1-3 cover */
     for (int cy = 0; cy < 24; ++cy) {
         for (int cx = 0; cx < 32; ++cx) {
@@ -190,8 +206,28 @@ void khdays_gfx_describe_wide(uint32_t desc[KHDAYS_DESC_WORDS], const KhdaysGfxM
             }
             s = x1 < 16 ? -1 : x0 >= 16 ? 1 : 0;
             for (int i = 0; i < top; ++i) {
+                across[stack[i] / 32][stack[i] % 32] = s == 0;
+            }
+            /* a piece on one side with cells in a piece across the middle a moment ago is taken for what is
+             * left of that piece (the rest of it blinked off): it stays in the middle rather than jump to the
+             * edge. (Only a piece across the middle itself renews that, so a piece kept here is not kept for
+             * good.) */
+            for (int i = 0; i < top && s != 0; ++i) {
+                if (since_middle[stack[i] / 32][stack[i] % 32] < MIDDLE_KEPT) {
+                    s = 0;
+                }
+            }
+            for (int i = 0; i < top; ++i) {
                 side[stack[i] / 32][stack[i] % 32] = s;
             }
+        }
+    }
+    for (int cell = 0; cell < 24 * 32; ++cell) {
+        uint8_t *since = &since_middle[cell / 32][cell % 32];
+        if (across[cell / 32][cell % 32]) {
+            *since = 0;
+        } else if (*since < MIDDLE_KEPT) {
+            ++*since;
         }
     }
     for (int cell = 0; cell < 24 * 32; ++cell) {
