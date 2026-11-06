@@ -5329,7 +5329,11 @@ The port adds a mod's missions to the game's own list and plays them as the game
   or none, state 3) only stands (`Ov283_AiEnterPatrol`, an empty step), waiting for his mission to end the fight; a
   built mission's "all defeated" never came. Joined: in the mods' missions he is finished as Riku and the Shadow are
   at theirs (flags `+0x1ae` bits 0-1); seen: "Misión completada" at his defeat. Zero's state 3 is a grab, not his
-  defeat.
+  defeat. The fight's limit is 70 % of his health (`Ov283_Construct`'s `+0x3e8`; a spawner's data block may give
+  another, `Ov283_Slot38_StoreValue`): the story's fight (mission file 0304, the only table with his class 0x68) ends
+  there, by its script. In a mods' mission he fell there too, a third of his health gone (seen 2026-11-06: 1295 of
+  1377 a few hits before); joined: there the limit is 0, and the finish is given at no health only, since ov107's
+  event 1 (a spawner sending him away) also queues his state 3.
 - **The resource cache holds 128 files** (`ResCache_FindSlot`, `FileLoader_Init`'s 0x1800-byte table of 0x30-byte
   entries): full, it gave 0 and `ResCache_Acquire` read through it (a crash reading DS address 0 as an enemy's model
   was built: ten enemy kinds in one mission, or a mission of six with three players' characters). The port adds tables

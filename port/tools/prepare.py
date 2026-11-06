@@ -3448,12 +3448,25 @@ HOOKS["ov008@0205bea0"] = [
 # limit or none), only stands, waiting for his mission's script to end the fight -- the "all defeated" of a mission
 # built by the port never came. In the mods' missions he is finished as a defeated enemy is (flags 0x1ae bits 0-1, as
 # Riku's Ov260_AiStep_SetFlags3AndEnd and the Shadow's Ov114_Action6Callback set them).
+# The fight's limit is 70 % of his health (Ov283_Construct; his mission's spawner may give another,
+# Ov283_Slot38_StoreValue): there the story's script takes over. The mods' missions have no such script, so there
+# the limit is none and he falls with no health left, not with a third of it gone; and only then, since state 3 is
+# also where a spawner sending him away puts him (ov107's event 1).
+HOOKS["ov283@020cc690"] = [
+    (  # Ov283_OnDamage
+        "    limit = *(short *)(self + 0x218) * *(int *)(*state + 0x3e8) / 100;\n",
+        "    limit = *(short *)(self + 0x218) * *(int *)(*state + 0x3e8) / 100;\n"
+        "    { extern int khdays_missions_playing(void);\n"
+        "      if (khdays_missions_playing()) limit = 0; }\n",
+    )
+]
 HOOKS["ov283@020ced2c"] = [
     (  # Ov283_AiEnterPatrol
         "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n",
         "    SetIndexedSlot(param_1, *(signed char *)(param_1 + 0x20), (void *)&Ov283_PatrolIdleStep);\n"
         "    { extern int khdays_missions_playing(void);\n"
-        "      if (khdays_missions_playing()) *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
+        "      if (khdays_missions_playing() && *(short *)(*(int *)owner + 0x21a) <= 0)\n"
+        "          *(unsigned short *)(*(int *)owner + 0x1ae) |= 3; }\n",
     )
 ]
 
