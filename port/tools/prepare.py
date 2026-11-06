@@ -3379,6 +3379,14 @@ HOOKS["ov022@020a5570"] = [
         "      khdays_characters_attack(pActor, pActor->nId, ((int *)pActor)[3], *(u16 *)pRecord); }\n",
     )
 ]
+HOOKS["ov022@020976f4"] = [
+    (  # Ov022_StepLocalActorCues: the local player's reaction 0x2e, its Limit's voice (seqarc/LMT_VO0N_<code>_MULTI)
+        "                pActor->hSpawn = Slot_Spawn(pActor->nKindId, 0, &pActor->vecAim, nSpawnFlags);\n",
+        "                { " + _SPEAKER + "                khdays_characters_speaker(((u8 *)pActor)[9], *(int *)((u8 *)pActor + 0xc));\n"
+        "                pActor->hSpawn = Slot_Spawn(pActor->nKindId, 0, &pActor->vecAim, nSpawnFlags);\n"
+        "                khdays_characters_speaker(-1, -1); }\n",
+    )
+]
 HOOKS["ov022@020a48c8"] = [
     (  # Ov022_SpawnVoiceCue: the cue of an actor's action
         "        Slot_Spawn(nHandlerId, nCue, pPos, nFlags);\n",

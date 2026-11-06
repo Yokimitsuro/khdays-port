@@ -5574,7 +5574,13 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   its +0xc (`PlayEntityVoice`'s switch on it picks Roxas, Sora, Riku, Xion, Mickey, Donald). Roxas's attack
   shouts: `seqarc/PLY_ROX/vo_rs02atNN` on a voices' player; his swings `seqarc/WEP_ROX26/se_rox_weap_swingNN`
   and run steps `seqarc/FIELD_ROX_FS_LAST/se_rox_fs_last_run01/02` are effects. The port is told the actor
-  around those two `Slot_Spawn`s, and a new character's `[sounds]` choose the entry's file then.
+  around those two `Slot_Spawn`s, and a new character's `[sounds]` choose the entry's file then. What it says
+  as its Limit begins comes a third way (seen 2026-11-06, a tester's Limit lines never heard; the stack at the
+  start of `seqarc/LMT_VO02_ROX_MULTI/vo_rs_lb02_multi`): `Ov022_StepLocalActorCues`, the local player's actor
+  in reaction 0x2e, `Slot_Spawn(actor +0x7a8, 0, ...)` -- after `seqarc/COMMON_SYS_BATTLE/se_limit_action`,
+  before the Limit's swings (`LMT_ROX/...`, through `PlayEntityVoice`). Its archives:
+  `LMT_VO01_<three letters>_MULTI`, `LMT_VO02_..._MULTI` for every base (Roxas's also 03 and 04; the
+  `_MULTI`-less ones are the story's), the letters its `PLY_` archive's. Joined the same way since.
 - **Its combos** (`ba/ch/<code>/ci.b.z`, unpacked by its name's `.z`; read 2026-10-28 from Roxas's): a word
   counting the keyblades (Roxas 18), then 0x34 bytes each -- the six pools' places from the file's start, their
   counts (u16 x3 a graph), each graph's four entry points into its first pool (s16 x4) -- then the pools, 8

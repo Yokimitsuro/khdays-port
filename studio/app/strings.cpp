@@ -2360,11 +2360,16 @@ constexpr Row rows[] =
           "La sua voce: i suoni della base sostituiti da file propri (.wav, .flac, .ogg), o none per il silenzio; * vale per ogni suono che un nome inizia.",
           "Su voz: los sonidos de la base cambiados por archivos propios (.wav, .flac, .ogg), o none para silencio; * vale por todos los sonidos que empieza un nombre."}},
         {S::chars_sounds_base,
-         {"{0} speaks from seqarc/{1}/: its lines name those sounds.",
-          "{0} parle depuis seqarc/{1}/ : ses lignes nomment ces sons.",
-          "{0} spricht aus seqarc/{1}/: seine Zeilen nennen diese Klänge.",
-          "{0} parla da seqarc/{1}/: le sue righe nominano quei suoni.",
-          "{0} habla desde seqarc/{1}/: sus líneas nombran esos sonidos."}},
+         {"{0} speaks from seqarc/{1}/, and as its Limit begins from seqarc/{2}/ and seqarc/{3}/: its lines name those "
+          "sounds.",
+          "{0} parle depuis seqarc/{1}/, et quand sa Limite commence depuis seqarc/{2}/ et seqarc/{3}/ : ses lignes "
+          "nomment ces sons.",
+          "{0} spricht aus seqarc/{1}/ und zu Beginn seines Limits aus seqarc/{2}/ und seqarc/{3}/: seine Zeilen "
+          "nennen diese Klänge.",
+          "{0} parla da seqarc/{1}/, e all'inizio del suo Limite da seqarc/{2}/ e seqarc/{3}/: le sue righe nominano "
+          "quei suoni.",
+          "{0} habla desde seqarc/{1}/, y al empezar su Límite desde seqarc/{2}/ y seqarc/{3}/: sus líneas nombran "
+          "esos sonidos."}},
         {S::chars_sounds_other,
          {"{0}: another character's voices; {1} never starts them.",
           "{0} : les voix d'un autre personnage ; {1} ne les lance jamais.",

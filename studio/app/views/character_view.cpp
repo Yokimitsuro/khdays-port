@@ -1223,8 +1223,16 @@ void draw_sounds(App& app) {
     const std::string base = shown_base();
     const std::string archive = character_voice_archive(base);
     const std::string prefix = archive.empty() ? std::string("seqarc/") : "seqarc/" + archive + "/";
-    if (!archive.empty())
-        ImGui::TextDisabled("%s", fmt(lang, S::chars_sounds_base, {base_display(lang, base), archive}).c_str());
+    if (!archive.empty()) {
+        // its Limit's first words: LMT_VO01/02_<the archive's three letters>_MULTI (Ov022_StepLocalActorCues)
+        const std::string letters = archive.rfind("PLY_", 0) == 0 ? archive.substr(4) : archive;
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", fmt(lang, S::chars_sounds_base,
+                                      {base_display(lang, base), archive, "LMT_VO01_" + letters + "_MULTI",
+                                       "LMT_VO02_" + letters + "_MULTI"})
+                                      .c_str());
+        ImGui::PopTextWrapPos();
+    }
     const std::string every = prefix + "*";
     if (!own_section(app, "sounds", {every, "none"}))
         return;

@@ -142,6 +142,7 @@ the same room, keeps its voice.
 [sounds]
 seqarc/PLY_ROX/vo_rs02at07 = voices/attack1.wav   # one of Roxas's shouts
 seqarc/PLY_ROX/vo_* = none                         # his other voices: not heard
+seqarc/LMT_VO02_ROX_MULTI/* = voices/limit.wav     # what he says as his Limit begins
 ```
 
 - `<the base's sound> = <file>` (`.wav`, `.flac` or `.ogg`, decoded when the game starts) or `none`. A name ending in
@@ -151,11 +152,15 @@ seqarc/PLY_ROX/vo_* = none                         # his other voices: not heard
   Saïx `PLY_SAX`, Xaldin `PLY_XAL`, Sora `PLY_SOR`, Demyx `PLY_DMX`, Larxene `PLY_LAX`, Lexaeus `PLY_LEX`, Luxord
   `PLY_LUX`, Marluxia `PLY_MAR`, Riku `PLY_RIK`, Vexen `PLY_VEX`, Xemnas `PLY_XEM`, Xion `PLY_XIN`, Zexion `PLY_ZEX`,
   Mickey `PLY_MIC`, Donald `PLY_DNL`, Goofy `PLY_GFY` (a Sora-based character's lines on `PLY_ROX` are never heard;
-  the studio's Characters window offers the base's, and moves another's lines to it). Roxas's swings
+  the studio's Characters window offers the base's, and moves another's lines to it). What a base says as its Limit
+  begins is in archives of its own, the same three letters: `LMT_VO01_<them>_MULTI` and `LMT_VO02_<them>_MULTI`
+  (`seqarc/LMT_VO02_ROX_MULTI/vo_rs_lb02_multi`, `seqarc/LMT_VO01_SAX_MULTI/vo_x7_lb01_multi`), Roxas's also
+  `LMT_VO03_ROX_MULTI` and `LMT_VO04_ROX_MULTI`; its Limit's swings (`LMT_ROX/...`) are effects. Roxas's swings
   (`WEP_ROX26/...`) and steps are effects, not his voice, but can be given files the same way. With the session log on, it names each sound as it starts (`sound: seqarc/PLY_ROX/vo_rs02at07 starts on
   player 6`); `KHDAYS_TRACE_CHARACTERS=1` also names the character's line chosen for it.
 - What is the character's: the sounds the game starts for its actor (`Ov022_PlayEntityVoice`,
-  `Ov022_SpawnVoiceCue`). A file that cannot be read is told; the base's sound plays in its place.
+  `Ov022_SpawnVoiceCue`, and the Limit's voice from `Ov022_StepLocalActorCues`). A file that cannot be read is told;
+  the base's sound plays in its place.
 
 ## Its moveset (`[moveset]`)
 
