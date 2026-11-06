@@ -44,7 +44,7 @@ void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT])
     values[KHDAYS_OPT_PRIZES] = 1;     /* made only with the HD menus' HD PACK: shown once made */
     values[KHDAYS_OPT_KH2_MODELS] = 1; /* the same */
     values[KHDAYS_OPT_MISSION_ANCHOR] = 1;
-    values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 8;
+    values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 7; /* the bottom left, as the one-screen pause has it */
 }
 void khdays_hud_settings_publish(const int values[KHDAYS_OPT_COUNT])
 {

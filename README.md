@@ -379,7 +379,10 @@ backend = auto            # auto, direct3d12 or vulkan
 **The field on one screen.** With one screen (`[video] screens = one`, the
 default) the field's HUD is laid out for a PC screen, made of the game's own
 pieces: the mission's objective and gauge at the top left, its badges and
-chests counted at the right of the objective, the hearts counter under it;
+chests counted at the right of the objective, the hearts counter under it
+(Settings → Enhancements, Mission panel in gameplay and while paused, put the
+panel elsewhere, the hearts counter then in the corner; Mission panel
+visibility "Pause only" shows it in the pause alone);
 in the top right corner the map, drawn over the field as in Kingdom Hearts
 II, with the enemy's health over it; the command deck at the bottom left and
 the party at the bottom right. The panels' dark ground is half see-through,

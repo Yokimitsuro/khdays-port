@@ -409,14 +409,17 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     add_switch(b, KHDAYS_SET_HUD_UI_PADDING, TXT_HUD_UI_PADDING, &e->hud[KHDAYS_OPT_UI_PADDING], 1,
                khdays_text(TXT_HUD_UI_PADDING_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_MISSION_LAYOUT));
-    add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY, &e->hud[KHDAYS_OPT_MISSION_VISIBILITY],
-               mission_visibility, 2);
-    add_choice(b, KHDAYS_SET_HUD_MISSION_ANCHOR, TXT_HUD_MISSION_ANCHOR, &e->hud[KHDAYS_OPT_MISSION_ANCHOR],
-               hud_anchors, 9)
-        ->values = hud_anchor_values;
-    add_choice(b, KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR, TXT_HUD_MISSION_PAUSE_ANCHOR,
-               &e->hud[KHDAYS_OPT_MISSION_PAUSE_ANCHOR], hud_anchors, 9)
-        ->values = hud_anchor_values;
+    KhdaysRow *r = add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY,
+                              &e->hud[KHDAYS_OPT_MISSION_VISIBILITY], mission_visibility, 2);
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
+    r = add_choice(b, KHDAYS_SET_HUD_MISSION_ANCHOR, TXT_HUD_MISSION_ANCHOR, &e->hud[KHDAYS_OPT_MISSION_ANCHOR],
+                   hud_anchors, 9);
+    r->values = hud_anchor_values;
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
+    r = add_choice(b, KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR, TXT_HUD_MISSION_PAUSE_ANCHOR,
+                   &e->hud[KHDAYS_OPT_MISSION_PAUSE_ANCHOR], hud_anchors, 9);
+    r->values = hud_anchor_values;
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
 }
 
 static void build_sticks(Builder *b, KhdaysProfile *w)

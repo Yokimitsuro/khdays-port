@@ -1394,7 +1394,17 @@ The saved keys in `[enhancements]` are:
 | `ui_padding` | off | Off removes the single-screen HD presentation inset |
 | `mission_panel_visibility` | 0 | 0: Always; 1: Pause only |
 | `mission_panel_anchor` | 1 | Gameplay anchor, 1..9 |
-| `mission_panel_pause_anchor` | 8 | Pause anchor, 1..9 |
+| `mission_panel_pause_anchor` | 7 | Pause anchor, 1..9 |
+
+The last three place the game's own mission panel on one screen too (`at
+mission-panel` in `port/ui/compositions/port_days.txt`, docs/COMPOSITIONS.md):
+the panel and its lower edge move together to the anchor, the margin from the
+edges they meet the top left's, the hearts counter under it goes up into the
+corner when the panel is not over it, and the pieces of the corner it is put in
+(the map, the enemy's health, the deck, the party; in the pause the INFORMATION
+banner and the map) make room for it. On two screens the game's panel stays on
+the lower screen. The pause's default is the bottom left, where the one-screen
+pause had it.
 
 The main HD graphics switch also gates gauges, portraits and labels. Turning it
 off releases their native tiles; turning it back on reuses the loaded resources.

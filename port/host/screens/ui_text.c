@@ -118,6 +118,17 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_HUD_MISSION_LAYOUT] = {"Mission panel placement", "Position du panneau de mission",
                                 "Position der Missionsanzeige", "Posizione pannello missione",
                                 "Posición del panel de misión"},
+    [TXT_HUD_MISSION_LAYOUT_NOTE] =
+        {"The mission panel on one screen, the game's or a mod's. With two screens the game's stays on the lower "
+         "screen. Changes apply at once.",
+         "Le panneau de mission sur un écran, celui du jeu ou d'un mod. Avec deux écrans, celui du jeu reste sur "
+         "l'écran inférieur. S'applique aussitôt.",
+         "Die Missionsanzeige auf einem Bildschirm, die des Spiels oder eines Mods. Mit zwei Bildschirmen bleibt "
+         "die des Spiels auf dem unteren. Gilt sofort.",
+         "Il pannello missione su uno schermo, quello del gioco o di una mod. Con due schermi quello del gioco "
+         "resta sullo schermo inferiore. Si applica subito.",
+         "El panel de misión en una pantalla, el del juego o el de un mod. Con dos pantallas el del juego se queda "
+         "en la pantalla inferior. Se aplica al momento."},
     [TXT_HUD_REPLACEMENT_NOTE] =
         {"Use an enabled replacement from the mod JSON. Off keeps the original. Changes apply without restarting; JSON files are never modified.",
          "Utilise un remplacement activé dans le JSON du mod. Désactivé conserve l’original. Aucun redémarrage ni modification du JSON.",

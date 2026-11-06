@@ -45,6 +45,17 @@ void khdays_composition_set_hud_options(unsigned options)
     hud_options = options;
 }
 
+/* The mission's panel's place the player chose (the settings' Mission panel in gameplay / while paused: 1 to 9,
+ * top left to bottom right a row at a time; out of it, the defaults) and whether it shows in play or only in
+ * the pause. */
+static int panel_anchor[2] = {1, 7}, panel_pause_only;
+void khdays_composition_set_mission_panel(int field_anchor, int pause_anchor, int pause_only)
+{
+    panel_anchor[0] = field_anchor >= 1 && field_anchor <= 9 ? field_anchor : 1;
+    panel_anchor[1] = pause_anchor >= 1 && pause_anchor <= 9 ? pause_anchor : 7;
+    panel_pause_only = pause_only != 0;
+}
+
 /* `push <state>[|<state>...] <dx> <dy> <frames>`: a shape moved by dx, dy (the port's units) while one of the
  * states holds, easing there and back over that many of the game's frames; its progress kept from frame to
  * frame. */
@@ -63,6 +74,8 @@ typedef struct ShapeDef {
     int whole; /* no rectangle: the whole screen */
     float x, y, w, h;
     int corner;
+    int mission_panel;     /* `at mission-panel`: placed as at the top left, then moved with its section's others */
+    int away_from_panel;   /* `away-from-panel`: makes room for the mission's panel (place_panel) */
     float margin[4];       /* left, top, right, bottom */
     float margin_fixed[4]; /* their `fixed(N)` parts */
     float sx, sy;
@@ -473,7 +486,11 @@ static int read_shape(char **t, int n, ShapeDef *s, const char **why)
         s->w = 256.0f;
         s->h = 192.0f;
     }
-    if (i + 1 >= n || strcmp(t[i], "at") != 0 || (s->corner = named(corner_names, COUNT(corner_names), t[i + 1])) < 0) {
+    if (i + 1 < n && strcmp(t[i], "at") == 0 && strcmp(t[i + 1], "mission-panel") == 0) {
+        s->corner = CORNER_TOP_LEFT;
+        s->mission_panel = 1;
+    } else if (i + 1 >= n || strcmp(t[i], "at") != 0 ||
+               (s->corner = named(corner_names, COUNT(corner_names), t[i + 1])) < 0) {
         *why = "`at` and a corner";
         return 0;
     }
@@ -568,6 +585,9 @@ static int read_shape(char **t, int n, ShapeDef *s, const char **why)
             i += 5;
         } else if (strcmp(w, "push") == 0 && read_push(t, n, i, &s->push)) {
             i += 5;
+        } else if (strcmp(w, "away-from-panel") == 0) {
+            s->away_from_panel = 1;
+            ++i;
         } else {
             *why = "an effect this version does not know, or its values";
             return 0;
@@ -1752,6 +1772,184 @@ static void add_halves(int columns, int key_count, int *shape_count, int *shape3
     }
 }
 
+static int field_scene(const KhdaysSituation *situation)
+{
+    return situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH;
+}
+
+/* The hearts' counter and the item notices, under the mission's panel at the top left (the field's
+ * `shape upper 0 0 108 86`): 24 higher, in the corner, while the panel is not there. */
+static int counter_shape(const ShapeDef *d)
+{
+    return !d->lower && d->x == 0 && d->y == 0 && d->w == 108 && d->h == 86;
+}
+
+/* A shape as this frame places it: the counters raised, and the field's margins against the picture's edges
+ * (gauge.json's align_hud_to_edges). */
+static ShapeDef adjusted_shape(const ShapeDef *from, const KhdaysSituation *situation, int counters_up)
+{
+    ShapeDef adjusted = *from;
+    const int field = field_scene(situation);
+    if (field && counters_up && counter_shape(&adjusted))
+        adjusted.margin[1] -= 24;
+    const int pause_map = situation->scene == KHDAYS_SIT_PAUSE && adjusted.lower &&
+                          ((adjusted.x == 112 && adjusted.y == 64 && adjusted.w == 104 && adjusted.h == 64) ||
+                           (adjusted.x == 186 && adjusted.y == 156 && adjusted.w == 2 && adjusted.h == 12));
+    if ((field || pause_map) && (hud_options & KHDAYS_HUD_ALIGN_EDGES)) {
+        for (int edge = 0; edge < 4; ++edge)
+            if (adjusted.margin[edge] > 0)
+                adjusted.margin[edge] -= edge == 3 ? 6 : 5;
+    }
+    return adjusted;
+}
+
+/* The rectangle a shape covers in the picture, built without its push: x1, y1, x2, y2. */
+static void shape_box(const ShapeDef *d, int columns, float box[4])
+{
+    KhdaysShape built;
+    build_shape(d, columns, &built, 0, 0.0f, 0.0f);
+    memcpy(&box[0], &built.words[KO_DST_X1], 4);
+    memcpy(&box[1], &built.words[KO_DST_Y1], 4);
+    memcpy(&box[2], &built.words[KO_DST_X2], 4);
+    memcpy(&box[3], &built.words[KO_DST_Y2], 4);
+}
+
+static int boxes_meet(const float a[4], const float b[4])
+{
+    return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
+/* The game's mission panel this frame (`at mission-panel`), placed before any shape is built: the shapes before
+ * it in the file and after it know where it is. */
+typedef struct PanelNow {
+    int shown;       /* a section that holds has the panel's shapes, shown */
+    float dx, dy;    /* their move from the top left, picture dots */
+    float box[4];    /* where they end: x1, y1, x2, y2 */
+    int row;         /* 0 the top row, 1 the middle, 2 the bottom */
+    int moved[10];   /* by CORNER_*: the `away-from-panel` pieces there make room */
+    float room;      /* how far they move, in the port's units: its height and 2 */
+    float push;      /* the panel's push now (the top row's), in the port's units */
+    int counters_up; /* the counters under it at the top left raised into the corner */
+} PanelNow;
+
+/* The sections that hold this frame, in the file's order up to a `stop`: calls `visit` with each shape of them
+ * until it returns 1. */
+static void each_shape(const KhdaysSituation *situation, int (*visit)(const ShapeDef *, void *), void *context)
+{
+    for (int s = 0; s < section_count; ++s) {
+        if (!holds(&sections[s], situation) || !backdrop_there(&sections[s], situation))
+            continue;
+        for (int i = 0; i < sections[s].directives; ++i) {
+            const Directive *d = &directives[sections[s].first_directive + i];
+            if (d->kind == D_STOP)
+                return;
+            if (d->kind == D_SHAPE && visit(&shape_defs[d->value], context))
+                return;
+        }
+    }
+}
+
+typedef struct PanelVisit {
+    const KhdaysSituation *situation;
+    int columns;
+    PanelNow *panel;
+    int found;
+    float box[4];
+} PanelVisit;
+
+/* The panel's shapes as at the top left: their box, and their push now. */
+static int visit_panel(const ShapeDef *d, void *context)
+{
+    PanelVisit *v = context;
+    if (!d->mission_panel)
+        return 0;
+    const ShapeDef def = adjusted_shape(d, v->situation, 0);
+    float box[4];
+    shape_box(&def, v->columns, box);
+    for (int c = 0; c < 4; ++c)
+        v->box[c] = !v->found ? box[c] : c < 2 ? fminf(v->box[c], box[c]) : fmaxf(v->box[c], box[c]);
+    if (!v->found && d->push.states != 0u)
+        v->panel->push = d->push.dy * push_now(&shape_defs[d - shape_defs].push, v->situation);
+    v->found = 1;
+    return 0;
+}
+
+/* The pieces `away-from-panel`: in the middle row the panel goes up clear of those under it; in a top or
+ * bottom corner the pieces there move when the panel is in that corner or meets one of them. */
+static int visit_away(const ShapeDef *d, void *context)
+{
+    PanelVisit *v = context;
+    PanelNow *p = v->panel;
+    if (!d->away_from_panel)
+        return 0;
+    const ShapeDef def = adjusted_shape(d, v->situation, p->counters_up);
+    float box[4];
+    shape_box(&def, v->columns, box);
+    const int top = d->corner == CORNER_TOP_LEFT || d->corner == CORNER_TOP || d->corner == CORNER_TOP_RIGHT;
+    const int bottom =
+        d->corner == CORNER_BOTTOM_LEFT || d->corner == CORNER_BOTTOM || d->corner == CORNER_BOTTOM_RIGHT;
+    if (p->row == 1 && bottom && box[0] < p->box[2] && p->box[0] < box[2]) {
+        const float clear = box[1] - 2.0f * hud_factor() - p->box[3];
+        if (clear < 0.0f) {
+            const float up = fminf(-clear, p->box[1] - v->box[1]); /* never above the top left's margin */
+            if (up > 0.0f) {
+                p->dy -= up;
+                p->box[1] -= up;
+                p->box[3] -= up;
+            }
+        }
+    } else if (((p->row == 0 && top) || (p->row == 2 && bottom)) && boxes_meet(box, p->box)) {
+        p->moved[d->corner] = 1;
+    }
+    return 0;
+}
+
+/* `at mission-panel`: the section's shapes laid out as at the top left (the panel and its lower edge), moved
+ * together to the place the player chose, the same margin from the edges they meet as from the top left's; in
+ * the top row they make room for the INFORMATION banner (`push`), elsewhere not. Mission panel visibility "Pause
+ * only" leaves them out in the field. */
+static void place_panel(const KhdaysSituation *situation, int columns, PanelNow *p)
+{
+    PanelVisit v = {situation, columns, p, 0, {0.0f, 0.0f, 0.0f, 0.0f}};
+    memset(p, 0, sizeof(*p));
+    p->counters_up = (hud_options & KHDAYS_HUD_PANEL_HIDDEN) != 0;
+    each_shape(situation, visit_panel, &v);
+    if (!v.found)
+        return;
+    if (field_scene(situation) && panel_pause_only) {
+        p->counters_up = 1;
+        return;
+    }
+    const int anchor = panel_anchor[situation->scene == KHDAYS_SIT_PAUSE] - 1;
+    static const int corners[9] = {CORNER_TOP_LEFT,    CORNER_TOP,    CORNER_TOP_RIGHT,
+                                   CORNER_LEFT,        CORNER_CENTRE, CORNER_RIGHT,
+                                   CORNER_BOTTOM_LEFT, CORNER_BOTTOM, CORNER_BOTTOM_RIGHT};
+    const float ax = (float)(anchor % 3) * 0.5f, ay = (float)(anchor / 3) * 0.5f;
+    p->shown = 1;
+    p->row = anchor / 3;
+    p->dx = ax * ((float)columns - v.box[0] - v.box[2]);
+    p->dy = ay * (192.0f - v.box[1] - v.box[3]);
+    for (int c = 0; c < 4; ++c)
+        p->box[c] = v.box[c] + (c % 2 == 0 ? p->dx : p->dy);
+    p->room = (v.box[3] - v.box[1]) / hud_factor() + 2.0f;
+    p->push = p->row == 0 ? p->push : 0.0f;
+    if (p->row != 1)
+        p->moved[corners[anchor]] = 1;
+    each_shape(situation, visit_away, &v);
+    if (field_scene(situation)) {
+        /* the counters raised into the corner, unless the panel is over them there */
+        for (int i = 0; i < shape_def_count; ++i) {
+            if (!counter_shape(&shape_defs[i]))
+                continue;
+            const ShapeDef raised = adjusted_shape(&shape_defs[i], situation, 1);
+            float box[4];
+            shape_box(&raised, columns, box);
+            p->counters_up = p->counters_up || !boxes_meet(box, p->box);
+            break;
+        }
+    }
+}
+
 void khdays_composition_for(const KhdaysSituation *situation, int columns, KhdaysComposition *out)
 {
     KhdaysSituation presentation = *situation;
@@ -1786,6 +1984,8 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
         khdays_composition_load();
     }
     current_columns = columns;
+    PanelNow panel;
+    place_panel(situation, columns, &panel);
     for (int s = 0; s < section_count && !stopped; ++s) {
         if (!holds(&sections[s], situation) || !backdrop_there(&sections[s], situation)) {
             continue;
@@ -1797,22 +1997,19 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
             case D_SCREENS: out->screens = out->screens < 0 ? d->value : out->screens; break;
             case D_BRIGHTNESS: out->brightness = out->brightness < 0 ? d->value : out->brightness; break;
             case D_SHAPE: {
-                ShapeDef adjusted = shape_defs[d->value];
+                const ShapeDef adjusted = adjusted_shape(&shape_defs[d->value], situation, panel.counters_up);
                 /* its push's state is the definition's own (push_now keeps it there frame to frame) */
                 const float pushed = push_now(&shape_defs[d->value].push, situation);
-                const int field = situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH;
-                const int counter =
-                    !adjusted.lower && adjusted.x == 0 && adjusted.y == 0 && adjusted.w == 108 && adjusted.h == 86;
-                if (field && (hud_options & KHDAYS_HUD_PANEL_HIDDEN) && counter)
-                    adjusted.margin[1] -= 24;
-                const int pause_map =
-                    situation->scene == KHDAYS_SIT_PAUSE && adjusted.lower &&
-                    ((adjusted.x == 112 && adjusted.y == 64 && adjusted.w == 104 && adjusted.h == 64) ||
-                     (adjusted.x == 186 && adjusted.y == 156 && adjusted.w == 2 && adjusted.h == 12));
-                if ((field || pause_map) && (hud_options & KHDAYS_HUD_ALIGN_EDGES)) {
-                    for (int edge = 0; edge < 4; ++edge)
-                        if (adjusted.margin[edge] > 0)
-                            adjusted.margin[edge] -= edge == 3 ? 6 : 5;
+                float move_x = adjusted.push.dx * pushed, move_y = adjusted.push.dy * pushed;
+                if (adjusted.mission_panel) {
+                    if (!panel.shown)
+                        break; /* "Pause only", in the field */
+                    move_x = panel.dx / hud_factor();
+                    move_y = panel.dy / hud_factor() + panel.push;
+                } else if (adjusted.away_from_panel && panel.moved[adjusted.corner]) {
+                    const int bottom = adjusted.corner == CORNER_BOTTOM_LEFT || adjusted.corner == CORNER_BOTTOM ||
+                                       adjusted.corner == CORNER_BOTTOM_RIGHT;
+                    move_y += bottom ? -panel.room : panel.room + panel.push;
                 }
                 const ShapeDef *def = &adjusted;
                 if (!grow((void **)&shapes, &shape_room, shape_count, sizeof(KhdaysShape))) {
@@ -1823,8 +2020,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
                         keys[key_count + k] = def_keys[def->key_first + k];
                     }
                 }
-                build_shape(def, columns, &shapes[shape_count++], key_count, def->push.dx * pushed,
-                            def->push.dy * pushed);
+                build_shape(def, columns, &shapes[shape_count++], key_count, move_x, move_y);
                 key_count += def->key_count;
                 break;
             }
@@ -1835,7 +2031,7 @@ void khdays_composition_for(const KhdaysSituation *situation, int columns, Khday
                     const int field =
                         situation->scene == KHDAYS_SIT_FIELD || situation->scene == KHDAYS_SIT_FIELD_3D_BOTH;
                     if (field && adjusted.x == -64 && adjusted.y == -64 && adjusted.group == KHDAYS_SHAPE3D_HUD) {
-                        if (hud_options & KHDAYS_HUD_PANEL_HIDDEN)
+                        if (panel.counters_up)
                             adjusted.margin[1] -= 24;
                         if (hud_options & KHDAYS_HUD_ALIGN_EDGES) {
                             adjusted.margin[0] -= 5;

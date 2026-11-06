@@ -7,6 +7,7 @@
 #include "../screens/camp_screen.h"
 #include "../screens/shop_screen.h"
 #include "../app/devices.h"
+#include "../app/hud_settings.h"
 #include "../../runtime/menus/newgame.h"
 #include "../../runtime/menus/retry.h"
 #include "../../runtime/core/events.h"
@@ -1309,6 +1310,9 @@ void khdays_onescreen_prepare(const KhdaysFramePackage *p, int columns, KhdaysCo
         khdays_events_vblank_count(); /* an animated backdrop's clock: it moves when the frames are alike */
     settings_prompt();
     khdays_composition_set_hud_options(p->hud_options | ((p->mission_panel_state & 4u) ? KHDAYS_HUD_PANEL_HIDDEN : 0u));
+    khdays_composition_set_mission_panel(khdays_hud_setting(KHDAYS_OPT_MISSION_ANCHOR),
+                                         khdays_hud_setting(KHDAYS_OPT_MISSION_PAUSE_ANCHOR),
+                                         khdays_hud_setting(KHDAYS_OPT_MISSION_VISIBILITY) == 1);
     khdays_composition_for(&situation, columns, composition);
     model_window(p, columns, composition);
     shop_window(p, columns, composition);

@@ -355,8 +355,9 @@ static void test_real_file(void)
 /* The field's HUD at the default HUD size as the port's own file lays it out, digested: for each
  * of its states and the 16:9, 16:10 and 4:3 pictures, every shape's rectangles, scale, effects
  * and colours, every 3D shape's place, each length rounded to 1/64 of a dot: a change of the file
- * changes it (the last, the INFORMATION banners as the game draws them, fading out where cut). */
-#define FIELD_HUD_REFERENCE 0xf556c443eacec027ull
+ * changes it (the last, the countdown at 4:3 under the mission's panel, not over its right end:
+ * `away-from-panel`). */
+#define FIELD_HUD_REFERENCE 0x39abd4f03bf71ae7ull
 
 static uint64_t digest_word(uint64_t d, uint32_t v)
 {
@@ -635,6 +636,109 @@ static void test_hud_edge_alignment(void)
     khdays_composition_set_hud_options(0);
     khdays_composition_set_hud_size(3);
     mods_file = NULL;
+}
+
+/* A shape whose source is the rectangle given, from the lower screen or the upper; NULL if none. */
+static const uint32_t *source_shape(const KhdaysComposition *c, int lower, float x, float y, float w, float h)
+{
+    for (int i = 0; i < c->shape_count; ++i) {
+        const uint32_t *s = c->shapes[i].words;
+        if (((s[KO_FLAGS] & KOF_LOWER) != 0u) == (lower != 0) && word_float(s, KO_SRC_X) == x &&
+            word_float(s, KO_SRC_Y) == y && word_float(s, KO_SRC_W) == w && word_float(s, KO_SRC_H) == h)
+            return s;
+    }
+    return NULL;
+}
+
+/* The game's mission panel where the player puts it (the settings' 1 to 9), in play and in the pause, at every
+ * HUD size and aspect: its lower edge under it, the two inside the picture, the margin from the edges they meet
+ * the top left's; the hearts' counter raised into the corner when the panel is not over it; "pause only" leaves
+ * it out in play. */
+static void test_mission_panel_place(void)
+{
+    static const int columns[] = {256, 308, 342, 456};
+    const uint32_t panel = 1u << KHDAYS_ST_HUD | 1u << KHDAYS_ST_MISSION_PANEL;
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    for (int size = 1; size <= 8; ++size) {
+        khdays_composition_set_hud_size(size);
+        const float f = khdays_composition_hud_factor(), gap = 5.0f * f;
+        for (size_t n = 0; n < sizeof(columns) / sizeof(columns[0]); ++n) {
+            const float c = (float)columns[n];
+            for (int anchor = 1; anchor <= 9; ++anchor) {
+                const float ax = (float)((anchor - 1) % 3) * 0.5f, ay = (float)((anchor - 1) / 3) * 0.5f;
+                for (int pause = 0; pause < 2; ++pause) {
+                    KhdaysSituation s = {pause ? KHDAYS_SIT_PAUSE : KHDAYS_SIT_FIELD, pause ? 0u : panel};
+                    KhdaysComposition comp;
+                    khdays_composition_set_mission_panel(pause ? 1 : anchor, pause ? anchor : 7, 0);
+                    khdays_composition_for(&s, columns[n], &comp);
+                    const uint32_t *body = source_shape(&comp, 1, 4, 152, 248, 40);
+                    const uint32_t *edge = pause ? body : source_shape(&comp, 1, 4, 152, 248, 4);
+                    CHECK(body != NULL && edge != NULL);
+                    if (body == NULL || edge == NULL)
+                        continue;
+                    const float x1 = word_float(body, KO_DST_X1), y1 = word_float(body, KO_DST_Y1);
+                    const float x2 = word_float(body, KO_DST_X2), y2 = word_float(edge, KO_DST_Y2);
+                    if (!pause) {
+                        CHECK(fabsf(word_float(edge, KO_DST_X1) - x1) < 0.01f);
+                        CHECK(fabsf(word_float(edge, KO_DST_Y1) - word_float(body, KO_DST_Y2)) < 0.01f);
+                    }
+                    CHECK(x1 >= -0.01f && y1 >= -0.01f && x2 <= c + 0.01f && y2 <= 192.01f);
+                    const float want_x = ax == 0.0f ? x1 : ax == 1.0f ? c - x2 : (x1 + x2) / 2.0f;
+                    const float want_y = ay == 0.0f ? y1 : ay == 1.0f ? 192.0f - y2 : (y1 + y2) / 2.0f;
+                    /* in the middle row it may go up, clear of the pieces under it */
+                    if (fabsf(want_x - (ax == 0.5f ? c / 2.0f : gap)) > 0.01f ||
+                        (ay == 0.5f ? want_y > 96.01f || y1 < gap - 0.01f : fabsf(want_y - gap) > 0.01f)) {
+                        fprintf(stderr, "  panel %d (%s), HUD %d, %d columns: %.2f,%.2f-%.2f,%.2f\n", anchor,
+                                pause ? "pause" : "play", size, columns[n], x1, y1, x2, y2);
+                        CHECK(0);
+                    }
+                    /* where the HUD's pieces keep apart (test_apart), none meets it -- but the pause's menu, in the
+                     * middle, which the middle row shares */
+                    if (size <= (columns[n] == 256 ? 2 : 4) && columns[n] <= 342) {
+                        for (int i = 0; i < comp.shape_count; ++i) {
+                            const uint32_t *o = comp.shapes[i].words;
+                            if (o == body || o == edge || (word_float(o, KO_SRC_X) == 72.0f && pause))
+                                continue;
+                            const float o1 = word_float(o, KO_DST_X1), p1 = word_float(o, KO_DST_Y1);
+                            const float o2 = word_float(o, KO_DST_X2), p2 = word_float(o, KO_DST_Y2);
+                            if (x1 < o2 && o1 < x2 && y1 < p2 && p1 < y2) {
+                                fprintf(stderr, "  panel %d (%s), HUD %d, %d columns: meets %.0f,%.0f %.0fx%.0f\n",
+                                        anchor, pause ? "pause" : "play", size, columns[n], word_float(o, KO_SRC_X),
+                                        word_float(o, KO_SRC_Y), word_float(o, KO_SRC_W), word_float(o, KO_SRC_H));
+                                CHECK(0);
+                            }
+                        }
+                    }
+                    if (pause)
+                        continue;
+                    const uint32_t *counter = source_shape(&comp, 0, 0, 0, 108, 86);
+                    CHECK(counter != NULL);
+                    if (counter == NULL)
+                        continue;
+                    /* raised: 5 from the top, as wide as the counter is; kept under the panel when they meet */
+                    const float cw = word_float(counter, KO_DST_X2) - word_float(counter, KO_DST_X1);
+                    const float ch = word_float(counter, KO_DST_Y2) - word_float(counter, KO_DST_Y1);
+                    const int meets = anchor == 1 || (x1 < cw && gap < y2 && y1 < gap + ch);
+                    CHECK(fabsf(word_float(counter, KO_DST_Y1) - (meets ? 29.0f : 5.0f) * f) < 0.01f);
+                }
+            }
+            /* pause only: none in play, the counter in the corner; in the pause where it is put */
+            KhdaysSituation play = {KHDAYS_SIT_FIELD, panel}, paused = {KHDAYS_SIT_PAUSE, 0};
+            KhdaysComposition comp;
+            khdays_composition_set_mission_panel(1, 7, 1);
+            khdays_composition_for(&play, columns[n], &comp);
+            CHECK(source_shape(&comp, 1, 4, 152, 248, 40) == NULL && source_shape(&comp, 1, 4, 152, 248, 4) == NULL);
+            const uint32_t *counter = source_shape(&comp, 0, 0, 0, 108, 86);
+            CHECK(counter != NULL && fabsf(word_float(counter, KO_DST_Y1) - gap) < 0.01f);
+            khdays_composition_for(&paused, columns[n], &comp);
+            CHECK(source_shape(&comp, 1, 4, 152, 248, 40) != NULL);
+        }
+    }
+    khdays_composition_set_mission_panel(1, 7, 0);
+    khdays_composition_set_hud_size(4);
+    mods_file = NULL;
+    khdays_composition_load();
 }
 
 static void test_pause_target_placement(void)
@@ -1913,6 +2017,7 @@ int main(void)
     test_real_file();
     test_field_hud_reference();
     test_hud_edge_alignment();
+    test_mission_panel_place();
     test_pause_target_placement();
     test_inside();
     CHECK(outside_pieces == 0 && inside_pieces > 1000);
