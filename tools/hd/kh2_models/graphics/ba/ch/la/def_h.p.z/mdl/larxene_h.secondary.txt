@@ -1,0 +1,127 @@
+# Secondary motion of KH2's Larxene (B_EX400) drawn as Days' larxene_h and larxene: marluxia_h's coat, drawstrings and
+# hood on her bones (the same numbers), and her short hair. Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md
+# explains every line. Her cuffs are fitted in bones.txt (`cuff`); her antennae's strands follow Days' hair nodes there.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. The fixed sizes are axel_h's,
+# scaled by her parts' vertices against Axel's: pelvis 0.71 as long, chest bone 0.84, thighs 1.04, her fists 0.75 of
+# his hands; her feet (on heels) are his size. No thumbs: her fists have no finger bones. ---
+collider pelvis   capsule 2 length 19 fit 0.85 tags body
+collider spine    capsule 94 96 fit 0.85 tags torso
+collider chest    capsule 96 length 18.9 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 16.4 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
+collider thigh_r  capsule 14 15 offset 16.4 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
+collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider arm_l    capsule 109 110 fit 0.85 side motion tags arms
+collider forearm_l capsule 110 111 fit 0.85 side motion tags arms
+collider hand_l   sphere 127 offset 5 0 0 radius 4.5 side rest tags hands left_hand
+collider arm_r    capsule 170 171 fit 0.85 side motion tags arms
+collider forearm_r capsule 171 172 fit 0.85 side motion tags arms
+collider hand_r   sphere 188 offset 5 0 0 radius 4.5 side rest tags hands right_hand
+# the head's vertices stand 163-188 cm high, 14 behind to 10 in front of the head bone (165.99, z -3.0)
+collider head     sphere 140 offset 9.5 1 0 radius 11.5 tags head
+# the hair's alone, a little inside the head's, as axel_h's
+collider scalp    sphere 140 offset 9.5 1 0 radius 9.5 tags scalp
+# the drawstrings' alone: over the chest's front, which stands as far out as Axel's (z 11)
+collider chest_strings capsule 96 97 radius 15.5 tags strings
+
+# --- The lower coat: eight strips from the waist, one connected surface ---
+# Each strip runs from just under the belt to the hem. 83 is shared: the front
+# forks under it into two panels (86-88 and 90-92) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 83 86 87 88
+  strip 83 90 91 92
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 34 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  follow_bone 5 radius 34 weight 0.9 always 0.7
+  follow_bone 14 radius 34 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 86 90        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  mode simulated
+end
+
+# --- Drawstrings: chains from the collar (97), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  collide torso body strings
+  attach 97
+  chain 101 102 103 104
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+group string_r chain preset kh2_string
+  collide torso body strings
+  attach 97
+  chain 162 163 164 165
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+
+# --- Hood: one bone (99) hanging behind the neck; it swings and lies on the back as one piece ---
+group hood chain preset kh2_hood
+  attach 97
+  chain 99
+  settle on steps 240
+  mode simulated
+end
+
+# --- Hair: single-bone locks on the head's end (141): the back (143) and the sides (145, 152). The antennae (147, 154)
+# stand stiff, and their strands follow Days' hair nodes (bones.txt) ---
+group hair hair preset kh2_hair
+  attach 141
+  collide scalp
+  tufts 143 145 152
+end
+
+# --- Animation controls ---
+# B_EX400's own motions carry its coat and drawstrings as KH2 animated them: there they guide the cloth, and the thighs
+# carry none of it. The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end

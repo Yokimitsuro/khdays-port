@@ -448,6 +448,34 @@ void pose_cuffs(const Model &m)
     for (std::size_t c = 0; c < m.cuffs.size(); ++c) {
         const Model::Cuff &cuff = m.cuffs[c];
         CuffMotion &motion = actor.cuff_motions[c];
+        // the fit opens each flap from its rest on the root: each bone back on its parent as at rest, the motion's turn
+        // left out but not its scale (KH2 motions shorten the flaps: N_CM040_BTL's idle to 0.41 of their length, its
+        // walk 0.7), each axis as the motion scales it against its parent, so a shortened bone brings its children in
+        if (!m.cuff_motion_flaps)
+            for (const auto &flap : cuff.flap_joints) {
+                std::map<std::size_t, std::pair<Mat, Mat>> placed; // a bone: its frame now, and the motion's
+                for (const std::size_t j : flap) {                 // parents first
+                    const int up = m.joints[j].parent;
+                    if (up < 0)
+                        continue;
+                    const auto u = static_cast<std::size_t>(up);
+                    const Mat rest = inverse(m.joints[j].inverse_bind), up_rest = inverse(m.joints[u].inverse_bind);
+                    const Mat moved = mul(skin[j], rest); // as the motion poses it
+                    const auto above = placed.find(u);
+                    const Mat up_now = above != placed.end() ? above->second.first : mul(skin[u], up_rest);
+                    const Mat up_moved = above != placed.end() ? above->second.second : up_now;
+                    Mat frame = mul(up_now, mul(inverse(up_rest), rest));
+                    for (std::size_t a = 0; a < 3; ++a) {
+                        const float has = length({moved[a * 4], moved[a * 4 + 1], moved[a * 4 + 2]}),
+                                    under = length({up_moved[a * 4], up_moved[a * 4 + 1], up_moved[a * 4 + 2]});
+                        const float by = under > 1e-9F ? has / under : 1.0F;
+                        for (std::size_t e = 0; e < 3; ++e)
+                            frame[a * 4 + e] *= by;
+                    }
+                    placed[j] = {frame, moved};
+                    skin[j] = mul(frame, m.joints[j].inverse_bind);
+                }
+            }
         const Mat before = mul(skin[cuff.root], inverse(m.joints[cuff.root].bind));
         const Mat before_back = inverse(before);
         points.resize(cuff.points.size());

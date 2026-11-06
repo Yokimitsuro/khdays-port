@@ -238,6 +238,7 @@ void read_settings(Model *model, Loading &loading)
     if (bones.held_own_turn)
         model->held_from_game = inverse(turn_of(bones.held_turn));
     model->cuff_settings = bones.cuff_settings;
+    model->cuff_motion_flaps = bones.cuff_motion_flaps;
     model->setting = setting_named(name, bones.setting);
     model->kept_lists = kept_lists(name, loading.game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
@@ -293,6 +294,7 @@ void add_joints(Model *model, Loading &loading)
         out.inverse_bind = ibm;
         const auto h = translation(world);
         out.head = {h[0] * k, h[1] * k, h[2] * k};
+        out.length = in.length * k;
         out.mix_parent = out.parent;
         for (int up = in.no_envelope ? -1 : in.parent;
              up >= 0 && mod.joints[static_cast<std::size_t>(up)].no_envelope;) {
@@ -895,6 +897,18 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
 }
 
 // `hide`: the vertices these joints carry most, between those heights at rest, not drawn, and faded back in
+    // `hide_mesh`: the file's meshes by number (still its own order here), their triangles dropped and their vertices
+    // kept, as `hide` leaves them
+    for (const int at : bones.hide_meshes) {
+        if (at < 0 || static_cast<std::size_t>(at) >= model->meshes.size()) {
+            khdays_log("models: %s: hide_mesh %d: the file has %zu meshes (0 to %zu); it is left out", name.c_str(), at,
+                       model->meshes.size(), model->meshes.empty() ? 0U : model->meshes.size() - 1U);
+            continue;
+        }
+        khdays_log("models: %s: hide_mesh %d: %zu triangles not drawn", name.c_str(), at,
+                   model->meshes[static_cast<std::size_t>(at)].indices.size() / 3U);
+        model->meshes[static_cast<std::size_t>(at)].indices.clear();
+    }
 // below over `fade` (a gradient into the coat's dark inside). A triangle all hidden is dropped; one in
 // the fade goes to a blended mesh of its own (the same picture), the rest kept as they were: the whole
 // body blended would be drawn translucent, its parts covering each other wrongly.

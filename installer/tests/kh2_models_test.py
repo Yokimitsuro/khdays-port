@@ -103,6 +103,30 @@ class Models(unittest.TestCase):
             self.assertEqual((axel / "def_h.p.z/mdl/axel_h.mdlx").read_bytes(), b"B_EX110.mdlx")
             self.assertEqual((axel / "def.p.z/mdl/axel.mdlx").read_bytes(), b"B_EX110.mdlx")
             self.assertTrue((axel / "def.p.z/mdl/axel.secondary.txt").is_file())
+            marluxia = mod / "graphics/ba/ch/ma"
+            self.assertEqual((marluxia / "def_h.p.z/mdl/marluxia_h.mdlx").read_bytes(), b"N_CM000_BTL.mdlx")
+            self.assertEqual((marluxia / "def.p.z/mdl/marluxia.mdlx").read_bytes(), b"N_CM000_BTL.mdlx")
+            self.assertEqual((marluxia / "def.p.z/mdl/N_CM000_BTL.mset").read_bytes(), b"N_CM000_BTL.mset")
+            self.assertTrue((marluxia / "def.p.z/mdl/marluxia.bones.txt").is_file())
+            larxene = mod / "graphics/ba/ch/la"
+            self.assertEqual((larxene / "def_h.p.z/mdl/larxene_h.mdlx").read_bytes(), b"B_EX400.mdlx")
+            self.assertEqual((larxene / "def.p.z/mdl/larxene.mdlx").read_bytes(), b"B_EX400.mdlx")
+            self.assertTrue((larxene / "def.p.z/mdl/larxene.motions.txt").is_file())
+            zexion = mod / "graphics/ba/ch/ze"
+            self.assertEqual((zexion / "def_h.p.z/mdl/zexion_h.mdlx").read_bytes(), b"B_EX370.mdlx")
+            self.assertEqual((zexion / "def.p.z/mdl/zexion.mdlx").read_bytes(), b"B_EX370.mdlx")
+            self.assertTrue((zexion / "def.p.z/mdl/zexion.secondary.txt").is_file())
+            vexen = mod / "graphics/ba/ch/ve"
+            self.assertEqual((vexen / "def_h.p.z/mdl/vexen_h.mdlx").read_bytes(), b"N_CM040.mdlx")
+            self.assertEqual((vexen / "def.p.z/mdl/N_CM040_BTL.mset").read_bytes(), b"N_CM040_BTL.mset")
+            self.assertTrue((vexen / "def.p.z/mdl/vexen.bones.txt").is_file())
+            lexaeus = mod / "graphics/ba/ch/le"
+            self.assertEqual((lexaeus / "def_h.p.z/mdl/lexaeus_h.mdlx").read_bytes(), b"N_CM020_BTL.mdlx")
+            self.assertEqual((lexaeus / "def.p.z/mdl/lexaeus.mdlx").read_bytes(), b"N_CM020_BTL.mdlx")
+            self.assertTrue((lexaeus / "def.p.z/mdl/lexaeus.motions.txt").is_file())
+            # the cutscene Axels are not in the pack
+            self.assertFalse((mod / "graphics/mi/ch/07.z").exists())
+            self.assertFalse((mod / "graphics/mi/ch/50.z").exists())
             cutscene = mod / "graphics/mi/ob"
             self.assertEqual((cutscene / "B0.z/mdl/ro_w13600.mdlx").read_bytes(), b"W_EX010_10.mdlx")
             self.assertEqual((cutscene / "17.z/mdl/e_ro_w.mdlx").read_bytes(), b"W_EX010.mdlx")

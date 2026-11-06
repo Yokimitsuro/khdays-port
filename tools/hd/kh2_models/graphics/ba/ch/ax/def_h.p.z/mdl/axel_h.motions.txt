@@ -15,28 +15,63 @@ weapon ax_h_R 234
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
 ds_pose 0 121-142 208-229
 
-# KH2's battle idle (00A) for the game's idle
-b_ax_A000 0
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_ax_A000 0 blend 8
 # The game's idle a `finish` plays out into
 idle b_ax_A000
-
-# Yours to fill in: the game's other animations in this file, and B_EX110's slots that hold motions with their names.
-# As roxas_bf_h has them, should the same slots suit him:
-#   b_ax_A001 <slot>        # the run (01A: slots 1, 2)
-#   b_ax_A002 <slot>        # the jump's take-off
-#   b_ax_A003 <slot>        # in the air
-b_ax_A004 5             # landing (05A)
 # The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
 landing b_ax_A004
-b_ax_A005 10 finish     # hit reactions (20A-23A: slots 10-13)
-b_ax_A006 11 finish
-b_ax_A007 13 finish
-b_ax_A008 12 finish
-#   b_ax_A009 <slot>        # ledge
-#   b_ax_A010 <slot>
-#   b_ax_A011 <slot>
-air b_ax_A005 16 land 17 finish     # the aerial damage (30A, 31A; 32A, 33A)
-air b_ax_A006 16 land 17 finish
-air b_ax_A007 18 land 19 finish
-air b_ax_A008 18 land 19 finish
-
+# The jump: B_EX110 has no KH2 jump (slot 3, 03A, is empty), so the take-off and the air stay the game's. As
+# marluxia_h, should one suit him: `b_ax_A002 <slot>`, `b_ax_A003 <slot>`, `b_ax_A003@12 4` (the fall, 04A).
+# The landing (05A), played out into the idle
+b_ax_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_ax_A005 10 finish blend 8
+b_ax_A006 11 finish blend 8
+b_ax_A007 13 finish blend 8
+b_ax_A008 12 finish blend 8
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# jump, the ledge (A009-A011: yours to give slots), the item and the magic (D000-D003), the limits (L000-L002)
+b_ax_A001 blend 8
+b_ax_A002 blend 8
+b_ax_A003 blend 8
+b_ax_A009 blend 8
+b_ax_A010 blend 8
+b_ax_A011 blend 8
+b_ax_D000 blend 8
+b_ax_D001 blend 8
+b_ax_D002 blend 8
+b_ax_D003 blend 8
+b_ax_L000 blend 8
+b_ax_L001 blend 8
+b_ax_L002 blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_ax_A005 16 land 17 finish blend 8
+air b_ax_A006 16 land 17 finish blend 8
+air b_ax_A007 18 land 19 finish blend 8
+air b_ax_A008 18 land 19 finish blend 8
+# The attacks (B000-B011, ba/ch/ax/am.p2), the guard and the other actions (Ca000-Ca008, A012, A013;
+# ab.p2): the game's own, each fading into the idle over 8 frames
+b_ax_A012 blend 8
+b_ax_A013 blend 8
+b_ax_B000 blend 8
+b_ax_B001 blend 8
+b_ax_B002 blend 8
+b_ax_B003 blend 8
+b_ax_B004 blend 8
+b_ax_B005 blend 8
+b_ax_B006 blend 8
+b_ax_B007 blend 8
+b_ax_B008 blend 8
+b_ax_B009 blend 8
+b_ax_B010 blend 8
+b_ax_B011 blend 8
+b_ax_Ca000 blend 8
+b_ax_Ca001 blend 8
+b_ax_Ca002 blend 8
+b_ax_Ca003 blend 8
+b_ax_Ca004 blend 8
+b_ax_Ca005 blend 8
+b_ax_Ca006 blend 8
+b_ax_Ca007 blend 8
+b_ax_Ca008 blend 8

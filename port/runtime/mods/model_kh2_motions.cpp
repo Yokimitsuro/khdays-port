@@ -70,6 +70,9 @@ void load_kh2_motions(Model &model, const std::string &path)
     std::map<std::string, std::vector<Kh2Section>> sections;
     std::vector<std::pair<std::string, int>> weapons;           // the game's joint, the KH2 bone
     std::map<std::string, std::array<float, 3>> weapon_degrees; // its `rotate`, by the game's joint
+    std::vector<std::pair<std::string, int>> weapon_hands;      // `weapon <joint> hand <bone>`
+    int weapon_model_bone = -1, weapon_model_hand_bone = -1;    // `weapon_model`'s
+    std::array<float, 3> weapon_model_degrees{}, weapon_model_offset{};
     std::vector<DsPoseRule> ds_rules;
     std::vector<HandRule> hand_rules;
     std::vector<HandPoseRule> hand_poses;
@@ -260,11 +263,48 @@ void load_kh2_motions(Model &model, const std::string &path)
             }
             limbs.push_back(
                 {static_cast<int>(u), static_cast<int>(l), static_cast<int>(e), static_cast<int>(reach), lengths});
+        } else if (a == "weapon_model") {
+            // weapon_model <the game's weapon file> <its node> <KH2 bone> hand <KH2 bone> [rotate <x> <y> <z>]
+            // [offset <x> <y> <z>]
+            std::string node, bone, w;
+            float n = 0.0F, hand = -1.0F;
+            bool ok = !b.empty() && static_cast<bool>(words >> node >> bone) && number(bone, n);
+            std::array<float, 3> by{}, offset{};
+            while (ok && words >> w) {
+                if (w == "hand") {
+                    std::string h;
+                    ok = static_cast<bool>(words >> h) && number(h, hand);
+                    continue;
+                }
+                auto &into = w == "rotate" ? by : offset;
+                ok = (w == "rotate" || w == "offset") && static_cast<bool>(words >> into[0] >> into[1] >> into[2]);
+            }
+            if (!ok || hand < 0.0F) {
+                say("\"" + line +
+                    "\": write `weapon_model <the game's weapon file, e.g. ba/ch/ze/w_> <its node, e.g. ze_w00> <KH2 "
+                    "bone> hand <KH2 bone> [rotate <x> <y> <z>] [offset <x> <y> <z>]`; the line is ignored");
+                continue;
+            }
+            weapon_model_hand_bone = static_cast<int>(hand);
+            model.weapon_model_file = b;
+            model.weapon_model_node = node;
+            weapon_model_bone = static_cast<int>(n);
+            weapon_model_degrees = by;
+            weapon_model_offset = offset;
         } else if (a == "weapon") {
             std::string bone, r;
             float n = 0.0F;
             std::array<float, 3> by{};
-            if (!(words >> bone) || !number(bone, n) ||
+            if (words >> bone && bone == "hand") {
+                // weapon <the game's joint> hand <KH2 bone>: carried by that hand (a model with no weapon bones)
+                if (!(words >> bone) || !number(bone, n)) {
+                    say("\"" + line + "\": write `weapon <the game's joint> hand <KH2 bone>`; the line is ignored");
+                    continue;
+                }
+                weapon_hands.emplace_back(b, static_cast<int>(n));
+                continue;
+            }
+            if (bone.empty() || !number(bone, n) ||
                 (words >> r && !(r == "rotate" && words >> by[0] >> by[1] >> by[2]))) {
                 say("\"" + line +
                     "\": write `weapon <the game's joint> <KH2 bone> [rotate <x> <y> <z>]`; the line is ignored");
@@ -586,6 +626,50 @@ void load_kh2_motions(Model &model, const std::string &path)
         model.kh2_weapon[static_cast<std::size_t>(g - model.node_names.begin())] =
             static_cast<int>(j - model.kh2_bone.begin());
         model.kh2_weapon_turn[static_cast<std::size_t>(g - model.node_names.begin())] = turn_of(weapon_degrees[node]);
+    }
+    // `weapon <node> hand <bone>`: a paired hand, and the paired joint above it (its forearm) as the yardstick
+    for (const auto &[node, bone] : weapon_hands) {
+        const auto g = std::find(model.node_names.begin(), model.node_names.end(), node);
+        const auto j = std::find(model.kh2_bone.begin(), model.kh2_bone.end(), bone);
+        int up =
+            j == model.kh2_bone.end() ? -1 : model.joints[static_cast<std::size_t>(j - model.kh2_bone.begin())].parent;
+        while (up >= 0 && model.joints[static_cast<std::size_t>(up)].node < 0)
+            up = model.joints[static_cast<std::size_t>(up)].parent;
+        if (g == model.node_names.end() || j == model.kh2_bone.end() ||
+            model.joints[static_cast<std::size_t>(j - model.kh2_bone.begin())].node < 0 || up < 0) {
+            say("weapon " + node + " hand " + std::to_string(bone) + ": " +
+                (g == model.node_names.end() ? "the game's model has no joint " + node
+                 : j == model.kh2_bone.end() ? "the model has no bone " + std::to_string(bone)
+                                             : "the bone and one above it must be paired with the game's nodes in "
+                                               "bones.txt") +
+                "; the game's place is kept");
+            continue;
+        }
+        const auto at = static_cast<std::size_t>(g - model.node_names.begin());
+        model.kh2_weapon_hand.resize(model.node_names.size(), -1);
+        model.kh2_weapon_hand_up.resize(model.node_names.size(), -1);
+        model.kh2_weapon_hand[at] = static_cast<int>(j - model.kh2_bone.begin());
+        model.kh2_weapon_hand_up[at] = up;
+    }
+    // `weapon_model`: the bone's joint, and the line's turn with its offset in the weapon's own axes after it
+    if (weapon_model_bone >= 0) {
+        const auto j = std::find(model.kh2_bone.begin(), model.kh2_bone.end(), weapon_model_bone);
+        const auto h = std::find(model.kh2_bone.begin(), model.kh2_bone.end(), weapon_model_hand_bone);
+        if (j == model.kh2_bone.end() || h == model.kh2_bone.end()) {
+            say("weapon_model: the model has no bone " +
+                std::to_string(j == model.kh2_bone.end() ? weapon_model_bone : weapon_model_hand_bone) +
+                "; check the line; the game's weapon is drawn where the game puts it");
+            model.weapon_model_file.clear();
+        } else {
+            model.weapon_model_joint = static_cast<int>(j - model.kh2_bone.begin());
+            model.weapon_model_hand = static_cast<int>(h - model.kh2_bone.begin());
+            Mat turn = turn_of(weapon_model_degrees);
+            const auto shift = vec(
+                turn, {weapon_model_offset[0] * 0.01F, weapon_model_offset[1] * 0.01F, weapon_model_offset[2] * 0.01F});
+            for (std::size_t c = 0; c < 3; ++c)
+                turn[12 + c] = shift[c];
+            model.weapon_model_turn = turn;
+        }
     }
     // a `place`d joint holding its own node's weapon: turned so the line's frame on it is the node's own (its place
     // already is), so a fade between a KH2 motion and the game's animation turns the weapon the short way
@@ -1032,6 +1116,7 @@ void play_kh2(Model &m, const Mat &base)
                                                        : 0.0F;
         }
         if (now < 0) {
+            actor.animations[key].game_seen = actor.draws;
             game += ratio;
             if (trace_kh2) {
                 std::snprintf(part, sizeof(part), " | %s game's w%.2f", p.name.c_str(), static_cast<double>(ratio));
@@ -1051,6 +1136,10 @@ void play_kh2(Model &m, const Mat &base)
             starts ? kh2_clock::FrameMove::on : kh2_clock::frame_move(a.last_frame, p.frame, own_loop);
         const bool back = move != kh2_clock::FrameMove::on;
         const bool enters = starts || now != a.section || (move == kh2_clock::FrameMove::restart && !section.follow);
+        // straight out of the game's own pose for this animation (its frames before the first section: Larxene's rise,
+        // then her fall at `b_la_A003@12`): no KH2 pose to fade from, so the game's fades out instead
+        if (enters && a.game_seen != 0 && a.game_seen + 1 == actor.draws && section.blend > 0.0F)
+            a.game_left = a.game_frames = section.blend;
         float step = 0.0F; // BCA frames since the last draw
         if (!starts) {
             step = p.frame - a.last_frame;
@@ -1120,8 +1209,14 @@ void play_kh2(Model &m, const Mat &base)
         a.section = now;
         kh2_played[p.name] = {section.slot, section.from};
         // a cut: the whole pose a new motion's (or one started over), nothing fading from the last
-        if (enters && ratio >= 0.999F && a.fade.empty())
+        if (enters && ratio >= 0.999F && a.fade.empty() && !(a.game_left > 0.0F))
             kh2_pose_cut = true;
+        // the game's own pose fading out under it, on the same BCA frames as a fade between sections
+        float from_game = 0.0F;
+        if (a.game_left > 0.0F) {
+            a.game_left -= section.realtime ? realtime * 0.5F : step;
+            from_game = a.game_left > 0.0F && a.game_frames > 0.0F ? a.game_left / a.game_frames : 0.0F;
+        }
         float faded = 0.0F; // the weight of the pose fading out
         if (!a.fade.empty()) {
             a.fade_left -= section.realtime ? realtime * 0.5F : step; // BCA frames
@@ -1174,10 +1269,12 @@ void play_kh2(Model &m, const Mat &base)
             }
             khdays_log("kh2 trace: %s %s starts slot %zu:%s", m.name.c_str(), key.c_str(), section.slot, where.c_str());
         }
+        game += ratio * from_game;
+        const float kh2_ratio = ratio * (1.0F - from_game);
         if (faded > 0.0F)
             poses.push_back(
-                {ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}, a.fade_turn, a.fade_slot});
-        poses.push_back({ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face, a.shown_turn,
+                {kh2_ratio * faded, &a.fade, a.fade_motion, a.fade_ticks, a.fade_offset, {}, a.fade_turn, a.fade_slot});
+        poses.push_back({kh2_ratio * (1.0F - faded), &track.joints, motion, ticks, a.shown_offset, face, a.shown_turn,
                          static_cast<int>(section.slot)});
         if (section.finish && !any_idle && !is_idle(p.name) && ratio > finishing_ratio) {
             finishing = {p.name, section.slot, section.then, section.blend, ticks};
@@ -1409,6 +1506,28 @@ void play_kh2(Model &m, const Mat &base)
             joints.push_back(mul(base, w));
         }
         placed.push_back(std::move(joints));
+    }
+    // `weapon_model ... hand`: the bone's frame on the hand as the KH2 motions alone pose it (the game's pose leaves an
+    // unpaired bone where its parent carries it at rest: Zexion's book over his head), each pose's by its own share
+    if (m.weapon_model_joint >= 0 && m.weapon_model_hand >= 0) {
+        const int book = m.kh2_bone[static_cast<std::size_t>(m.weapon_model_joint)],
+                  hand = m.kh2_bone[static_cast<std::size_t>(m.weapon_model_hand)];
+        std::vector<Mat> rels;
+        std::vector<float> shares;
+        float kh2 = 0.0F;
+        for (std::size_t p = 0; p < poses.size(); ++p)
+            if (book >= 0 && hand >= 0 && static_cast<std::size_t>(std::max(book, hand)) < placed[p].size()) {
+                rels.push_back(
+                    mul(inverse(placed[p][static_cast<std::size_t>(hand)]), placed[p][static_cast<std::size_t>(book)]));
+                shares.push_back(poses[p].weight);
+                kh2 += poses[p].weight;
+            }
+        if (kh2 > 0.0F) {
+            for (float &s : shares)
+                s /= kh2;
+            m.weapon_model_rel = khdays::models::blend_frames(rels.data(), shares.data(), rels.size());
+            m.weapon_model_rel_valid = true;
+        }
     }
     // each joint's frames mixed (turns the shorter way round), the game's own pose at its share, on its parent's mixed
     // frame as each pose holds it from its parent (docs/KH2_MODELS.md, "Into the idle")

@@ -1,0 +1,79 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Lexaeus (N_CM020_BTL) as Days' lexaeus_h and lexaeus, playing KH2's own motions for him (`own`: on his
+# own bones). Its slots are B_EX370's (0, 4, 5, 10-21 the same names); 1-3 are empty: no walk, run or jump, so the
+# game's stay.
+mset N_CM020_BTL.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# What the game holds at its weapon joint (le_h_R), on N_CM020_BTL's weapon bone (227; bones.txt places it on that
+# joint). Under KH2 motions it follows the bone; under the game's own animations the joint. The turn lays Days' weapon
+# (le_w00600: along its +y, from -44 to 147 cm) along the baked one (along 227's +x, -48 to 149): Days x to 227's y, y
+# to x, z to -z; of the 24 axis-aligned turns it lays Days' vertices nearest the baked ones (5.1 cm mean, against 9.9
+# turned about its length the other way)
+weapon le_h_R 227 rotate 0 180 -90
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 133-154 204-225
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_le_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_le_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_le_A004
+# The fall (04A) from the game's 12th frame in the air, from its loop (tick 10 of 38: before it, it comes out of a KH2
+# jump he has none of), as larxene_h's; the take-off and the rise stay the game's. The landing (05A), played out
+b_le_A003@12 4 start_loop blend 8
+b_le_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_le_A005 10 finish blend 8
+b_le_A006 11 finish blend 8
+b_le_A007 13 finish blend 8
+b_le_A008 12 finish blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_le_A005 16 land 17 finish blend 8
+air b_le_A006 16 land 17 finish blend 8
+air b_le_A007 18 land 19 finish blend 8
+air b_le_A008 18 land 19 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B011, ba/ch/le/am.p2), the guard and the other
+# actions (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L003)
+b_le_A001 blend 8
+b_le_A002 blend 8
+b_le_A009 blend 8
+b_le_A010 blend 8
+b_le_A011 blend 8
+b_le_A012 blend 8
+b_le_A013 blend 8
+b_le_B000 blend 8
+b_le_B001 blend 8
+b_le_B002 blend 8
+b_le_B003 blend 8
+b_le_B004 blend 8
+b_le_B005 blend 8
+b_le_B006 blend 8
+b_le_B007 blend 8
+b_le_B008 blend 8
+b_le_B009 blend 8
+b_le_B010 blend 8
+b_le_B011 blend 8
+b_le_Ca000 blend 8
+b_le_Ca001 blend 8
+b_le_Ca002 blend 8
+b_le_Ca003 blend 8
+b_le_Ca004 blend 8
+b_le_Ca005 blend 8
+b_le_Ca006 blend 8
+b_le_Ca007 blend 8
+b_le_Ca008 blend 8
+b_le_D000 blend 8
+b_le_D001 blend 8
+b_le_D002 blend 8
+b_le_D003 blend 8
+b_le_L000 blend 8
+b_le_L001 blend 8
+b_le_L002 blend 8
+b_le_L003 blend 8

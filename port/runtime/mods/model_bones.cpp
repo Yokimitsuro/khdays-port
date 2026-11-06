@@ -100,6 +100,26 @@ BonesFile read_bones(const std::string &model_file)
                 if (riding)
                     bones.places_riding[b] = ridden;
             }
+        } else if (a == "hide_mesh") {
+            // hide_mesh <index>...: whole meshes of the file not drawn (a weapon made into the hand's own mesh)
+            std::vector<int> meshes;
+            bool ok = true;
+            std::string w = b;
+            do {
+                char *end = nullptr;
+                const long n = std::strtol(w.c_str(), &end, 10);
+                ok = ok && !w.empty() && end != nullptr && *end == '\0' && n >= 0;
+                if (ok)
+                    meshes.push_back(static_cast<int>(n));
+            } while (ok && words >> w);
+            if (ok) {
+                bones.hide_meshes.insert(bones.hide_meshes.end(), meshes.begin(), meshes.end());
+            } else {
+                std::fprintf(stderr,
+                             "models: %s: write `hide_mesh <index>...` (the file's meshes, whole numbers from 0); the "
+                             "line is ignored\n",
+                             path.c_str());
+            }
         } else if (a == "hide") {
             HideLine h;
             h.joints.push_back(b);
@@ -165,6 +185,15 @@ BonesFile read_bones(const std::string &model_file)
                     "models: %s: write `cuff_fit <clearance cm> <most open degrees> <shortest> <neighbours> <band "
                     "from> <band to> <most shift cm>`; the line is ignored\n",
                     path.c_str());
+            }
+        } else if (a == "cuff_motion_flaps") {
+            // cuff_motion_flaps on|off: off, the flaps stand at rest on the cuff before the fit opens them, as in the
+            // game's own animations; a KH2 motion flaring them (N_CM000_BTL's right, up to 58 degrees) was opened twice
+            if (b == "on" || b == "off") {
+                bones.cuff_motion_flaps = b == "on";
+            } else {
+                std::fprintf(stderr, "models: %s: write `cuff_motion_flaps on` or `off`; the line is ignored\n",
+                             path.c_str());
             }
         } else if (a == "cuff_thumb") {
             // cuff_thumb <more clearance cm> [<most open degrees>]: the last flap of each `cuff`
@@ -683,6 +712,21 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
             tips[f] = model.joints[tip_joint[f]].head;
             cuff.tip_joints[f] = subtree(tip_joint[f]);
         }
+        // a flap whose bones all stand at its hinge (B_EX400's: one bone each, its head the root's, no tip bone) ends
+        // its last bone's own length along that bone's x (the file's: 7.3 cm there), and has no tip of its own to bend
+        for (std::size_t f = 0; f < CuffFit::kFlaps; ++f) {
+            if (length(hand_sub(tips[f], hinges[f])) > 1e-4F)
+                continue;
+            for (const std::size_t j : cuff.flap_joints[f]) {
+                if (model.joints[j].length <= 0.0F)
+                    continue;
+                const Mat axes = axes_of(inverse(model.joints[j].inverse_bind));
+                const HandVec x = hand_unit({axes[0], axes[1], axes[2]});
+                tips[f] = hand_add(model.joints[j].head, x, model.joints[j].length);
+                tip_joint[f] = j;
+            }
+            cuff.tip_joints[f].clear();
+        }
         cuff.slides = subtree(
             model.joints[cuff.root].parent >= 0 ? static_cast<std::size_t>(model.joints[cuff.root].parent) : cuff.root);
         std::vector<char> ring(model.joints.size(), 0); // what the cuff's surface is: the flaps and the root's own
@@ -697,9 +741,16 @@ void resolve_cuffs(Model &model, const std::vector<CuffLine> &lines, const std::
         std::vector<std::array<std::size_t, 3>> triangle_joints; // each corner's joint
         std::set<std::array<int, 3>> taken; // the hand's vertices, thinned to a centimetre apart at rest
         for (const Mesh &mesh : model.meshes) {
-            for (const auto &v : mesh.vertices) {
+            // only what is drawn: a `hide`n weapon baked into the hand (N_CM000_BTL's scythe, 2 m long) is not fitted
+            // round, its vertices kept after its triangles are dropped
+            std::vector<char> drawn(mesh.vertices.size(), 0);
+            for (const std::uint32_t i : mesh.indices)
+                if (i < drawn.size())
+                    drawn[i] = 1;
+            for (std::size_t vi = 0; vi < mesh.vertices.size(); ++vi) {
+                const auto &v = mesh.vertices[vi];
                 const std::uint32_t j = v.joints[heaviest_weight(v)];
-                if (j >= on_hand.size() || !on_hand[j])
+                if (j >= on_hand.size() || !on_hand[j] || !drawn[vi])
                     continue;
                 const auto rest = point(model.joints[j].bind, v.position);
                 const std::array<int, 3> cell = {static_cast<int>(std::floor(rest[0] * 100.0F)),

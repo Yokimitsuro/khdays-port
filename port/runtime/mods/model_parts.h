@@ -79,6 +79,7 @@ struct Joint {
     int node = -1;      // the game's node it follows
     bool exact = false; // at its node's rest place, uncorrected: drawn with D_G
     std::array<float, 3> head{};
+    float length = 0.0F;  // a KH2 bone's own length along its x (the file's, scaled as the model): 0 none
     float degrees = 0.0F; // its pose's turn from its node's (the session log's diagnosis)
     Mat correction = kIdentity;
     Mat bind = kIdentity; // the joint's vertices to the model at rest: scale * world * inverse bind
@@ -327,6 +328,7 @@ struct Model {
     };
     std::vector<Cuff> cuffs;
     khdays::models::CuffFit::Settings cuff_settings;
+    bool cuff_motion_flaps = true; // `cuff_motion_flaps off`: a KH2 motion's own turns of the flaps left out
     // bones.txt's `held <joint>`: a weapon whose bones from its root to that joint (the weapon itself) the body
     // holding it poses with its `weapon_motions`; per joint whether it is one of them, and its KH2 bone
     std::string held_name;
@@ -393,6 +395,20 @@ struct Model {
     std::vector<int> kh2_bone;
     std::vector<int> kh2_weapon;      // per game node: the joint what the game attaches to it is put on (-1 none)
     std::vector<Mat> kh2_weapon_turn; // per game node: `weapon ... rotate`, about that joint's own axes
+    // per game node: `weapon <node> hand <bone>`: the KH2 hand joint that carries what the game attaches there as the
+    // game's hand node carries it (-1 none), and the paired joint above that hand, the yardstick for how far is held
+    std::vector<int> kh2_weapon_hand, kh2_weapon_hand_up;
+    // `weapon_model <the game's weapon file> <bone> [rotate x y z] [offset x y z]`: a weapon the game draws as an object
+    // of its own, on no joint of the body (Zexion's book): in KH2 motions, where that bone is (its joint, -1 none),
+    // turned and moved by the line (its own axes, metres)
+    std::string weapon_model_file, weapon_model_node; // the file, and the weapon's node that carries its place
+    int weapon_model_joint = -1;
+    Mat weapon_model_turn = kIdentity;
+    // `hand <bone>`: the hand it is held on (its joint, -1 none), and the bone's frame on that hand as the KH2 motions
+    // alone pose them (play_kh2: each pose's, mixed by their own shares; kept while none plays)
+    int weapon_model_hand = -1;
+    Mat weapon_model_rel = kIdentity;
+    bool weapon_model_rel_valid = false;
     // motions.txt's `ds_pose`: while the game's own animations pose it, unpaired joints turned from rest about
     // their heads; per game animation ("" every other), each joint and its turn (model space, at rest)
     std::map<std::string, std::vector<std::pair<std::size_t, Mat>>> ds_turns;
@@ -508,6 +524,10 @@ struct Kh2Animation {
     float last_frame = 0.0F;
     float step = 1.0F;
     std::uint64_t seen = 0;
+    // the game's own pose shown for it, before its first section (the draw; 0 never), and that pose's fade out once
+    // a section starts straight after it (BCA frames left of the section's `blend`)
+    std::uint64_t game_seen = 0;
+    float game_left = 0.0F, game_frames = 0.0F;
     std::map<int, Kh2Track> tracks; // by section
 };
 // A `finish` section the game played before going on to its idles, and its motion played out after it (kh2_tail.h)
@@ -630,6 +650,7 @@ struct BonesFile {
     std::map<std::string, std::string> places_riding; // `place <joint> ride [<bone>]`: see Joint::rides
     std::array<std::string, 3> spine;
     std::vector<HideLine> hides;
+    std::vector<int> hide_meshes; // `hide_mesh <index>...`: the file's meshes, from 0
     std::vector<TwistLine> twists;
     std::string held;
     bool held_rest = false, held_own_turn = false;
@@ -637,6 +658,7 @@ struct BonesFile {
     std::vector<CuffLine> cuffs;
     std::vector<CuffPoseLine> cuff_pose;
     khdays::models::CuffFit::Settings cuff_settings;
+    bool cuff_motion_flaps = true;
 };
 
 // A motions.txt `ds_pose` line: bones turned from rest as a slot's pose turns them (its frame, 30 a second),
@@ -704,6 +726,19 @@ struct HoldingBone {
     Mat rest = kIdentity;
     u32 vblank = 0;
 };
+// `weapon_model`: the last body's hand and KH2 grip for it (the nodes' space), its KH2 motions' share of the pose then
+// and the file and node it names; and whether the model being drawn is such a weapon, and its node of that name
+struct WeaponModelHold {
+    std::string file, node;
+    Mat hand = kIdentity; // the hand's frame (the nodes' space, the body's mixed pose)
+    Mat grip = kIdentity; // KH2's: the bone on the hand as the KH2 motions pose it, the line's turn and offset on it
+    bool grip_valid = false;
+    float kh2_share = 0.0F;
+    u32 vblank = 0;
+};
+WeaponModelHold weapon_model_hold;
+bool weapon_model_drawing = false;
+int weapon_model_node_index = -1; // the drawn weapon model's node of that name
 inline HoldingBone holding_bone;
 // this draw: each game animation's KH2 slot and its section's first frame, `air` and `land` ones included
 inline std::map<std::string, std::pair<std::size_t, float>> kh2_played;

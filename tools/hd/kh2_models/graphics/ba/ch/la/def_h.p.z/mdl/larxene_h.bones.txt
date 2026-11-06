@@ -1,0 +1,97 @@
+# KH2 bones (kh2_<index>) to Days' Larxene nodes, one pair a line: <joint> <node>.
+# This model is Larxene (B_EX400), drawn as Days' larxene_h and larxene. Bones 0-104 (the legs, the coat's strips, the
+# spine, hood and drawstrings) are numbered as N_CM000_BTL's. She has no finger bones: her hands are made as fists. No
+# weapon bones either: her knives are meshes of their own on the hands (hidden below). Unpaired KH2 bones follow their
+# parents. No `scale`: her legs are 6% shorter than the game's (her heels make up most of it), her arms 14% longer.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, larxene_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips, spine, neck and head (kh2_96 carries the chest; the hair hangs from the head's end, 141)
+kh2_2 Bip01_Pelvis
+kh2_94 Bip01_Spine
+kh2_96 Bip01_Spine1
+kh2_137 Bip01_Neck
+kh2_140 Bip01_Head
+
+# Her two antennae's long strands (149, 156) on Days' hair nodes, which stand where they start (1 cm off): Days'
+# animations sway them as Days' own; KH2's motions pose them themselves
+kh2_149 la_hair_L
+kh2_156 la_hair_R
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_105 Bip01_L_Clavicle
+kh2_109 Bip01_L_UpperArm
+kh2_110 Bip01_L_Forearm
+kh2_127 Bip01_L_Hand
+
+# Right arm
+kh2_166 Bip01_R_Clavicle
+kh2_170 Bip01_R_UpperArm
+kh2_171 Bip01_R_Forearm
+kh2_188 Bip01_R_Hand
+
+# Two-bone limbs, knees and elbows bending the way Days' do. `exact` (the legs): the feet go where the game's are. The
+# offset keeps KH2's sole on the game's: her ankle stands 18.2 over its sole on her heels, the game's 10.4 (the 1.6 is
+# roxas_bf_h's).
+ik kh2_5 kh2_6 kh2_9 exact 0 7.7 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 7.7 1.6
+ik kh2_109 kh2_110 kh2_127
+ik kh2_170 kh2_171 kh2_188
+
+# The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
+# roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+
+# `align`: the feet turned onto the game's at rest by their shape. Not the hands: their bones carry the knives' vertices
+# too, and at rest they lie within 3 degrees of the game's.
+align kh2_9 foot
+align kh2_18 foot
+
+# Her knives, each a mesh on its hand alone (texture 3): 3 and 5 the left blade and grip, 4 and 7 the right. Not drawn;
+# the game's own knives are, carried by the hands (motions.txt's `weapon ... hand`).
+hide_mesh 3 4 5 7
+
+# The cuffs, as roxas_bf_h's (her arms and cuffs are B_EX390's, each flap a bone shorter, so renumbered bone by bone:
+# B_EX390's left root 131 is her 114, its hand 148 her 127; right 204 is 175, 221 is 188). Each flap is one bone, its
+# head at the root's, so its tip is that bone's own length (7.3 cm). They turn with the hand: the wrist ring of the
+# sleeve (kh2_113, under 112) and the cuff (114 on) take the hand's twist about the forearm
+twist kh2_112 kh2_127 kh2_110 kh2_111
+twist kh2_173 kh2_188 kh2_171 kh2_172
+# The cuff's root tilts with the hand as it bends, most of the way (it sits at the wrist)
+swing kh2_114 kh2_127 kh2_111 0.7 kh2_119
+swing kh2_175 kh2_188 kh2_172 0.7 kh2_180
+# The cuffs fitted round the hands, not simulated: `cuff <root> <hand> <flaps in order round the ring>`
+cuff kh2_114 kh2_127 kh2_115 kh2_121 kh2_119 kh2_117
+cuff kh2_175 kh2_188 kh2_176 kh2_182 kh2_180 kh2_178
+# clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+# the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees
+cuff_thumb 0.5 28
+# The fit opens the flaps from rest, as in the game's own animations, not on top of what her own motions turn them by
+cuff_motion_flaps off
+cuff_pose 110 2.86
+cuff_pose_bone kh2_113 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_116 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_117 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_118 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_120 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_174 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_177 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_178 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_179 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_181 0.02 -78.02 -0.03 0.322 1.000 1.000

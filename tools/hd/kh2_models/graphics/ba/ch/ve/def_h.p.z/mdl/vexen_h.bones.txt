@@ -1,0 +1,97 @@
+# KH2 bones (kh2_<index>) to Days' Vexen nodes, one pair a line: <joint> <node>.
+# This model is Vexen (N_CM040), drawn as Days' vexen_h and vexen, with N_CM040_BTL's motions (its skeleton the same,
+# bone for bone). Bones 0-154 are N_CM000_BTL's (legs, coat, spine, hood, drawstrings, left arm, cuff and fingers);
+# his shield is 155-156 under the left hand; from 157 on he is N_CM000_BTL +2 to the head (169), with his own hair
+# strands under 170, and +9 from the chest piece on (right arm 216-242, its fingers 244-265). Unpaired KH2 bones
+# follow their parents. No `scale`: his legs are 4% shorter than the game's, his arms 9% shorter.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, vexen_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips, spine, neck and head (kh2_96 carries the chest; the hair hangs from the head's end, 170)
+kh2_2 Bip01_Pelvis
+kh2_94 Bip01_Spine
+kh2_96 Bip01_Spine1
+kh2_166 Bip01_Neck
+kh2_169 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_105 Bip01_L_Clavicle
+kh2_109 Bip01_L_UpperArm
+kh2_110 Bip01_L_Forearm
+kh2_131 Bip01_L_Hand
+
+# Right arm
+kh2_216 Bip01_R_Clavicle
+kh2_220 Bip01_R_UpperArm
+kh2_221 Bip01_R_Forearm
+kh2_242 Bip01_R_Hand
+
+# Two-bone limbs, knees and elbows bending the way Days' do. `exact` (the legs): the feet go where the game's are. The
+# offset keeps KH2's sole on the game's: his ankle stands 15.4 over its sole, the game's 13.3 (the 1.6 is roxas_bf_h's).
+ik kh2_5 kh2_6 kh2_9 exact 0 2.1 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 2.1 1.6
+ik kh2_109 kh2_110 kh2_131
+ik kh2_220 kh2_221 kh2_242
+
+# The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
+# roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
+mesh_scale kh2_2 1 0.9 1
+
+# `align`: the hands and feet turned onto the game's at rest by their shape.
+align kh2_9 foot
+align kh2_18 foot
+align kh2_131 hand
+align kh2_242 hand
+
+# His shield bone (156, its 828 vertices; under 155 at the left hand's end) on the game's weapon joint, ve_w_tg (which
+# hangs from the root, on Days' left hand at rest), exactly where it is, so what the game holds there is where Days puts
+# it. `ride`: moved by how far the KH2 hand is from the game's, so it stands from his hand as the game's from its own.
+kh2_156 ve_w_tg
+place kh2_156 ride
+
+# N_CM040's shield is part of its mesh, on his left hand (155-156). Its triangles are not drawn; the game's shield is
+# drawn on that bone instead (the `weapon` line in motions.txt).
+hide kh2_155 kh2_156 from 1000 to -1000
+
+# The cuffs, as marluxia_h's (the left the same bones; the right +9). They turn with the hand: the wrist ring of the
+# sleeve (kh2_113, under 112) and the cuff (114 on) take the hand's twist about the forearm
+twist kh2_112 kh2_131 kh2_110 kh2_111
+twist kh2_223 kh2_242 kh2_221 kh2_222
+# The cuff's root tilts with the hand as it bends, most of the way (it sits at the wrist)
+swing kh2_114 kh2_131 kh2_111 0.7 kh2_121
+swing kh2_225 kh2_242 kh2_222 0.7 kh2_232
+# The cuffs fitted round the hands, not simulated: `cuff <root> <hand> <flaps in order round the ring>`
+cuff kh2_114 kh2_131 kh2_115 kh2_124 kh2_121 kh2_118
+cuff kh2_225 kh2_242 kh2_226 kh2_235 kh2_232 kh2_229
+# clearance cm, most open degrees, shortest, neighbours, where a point starts being cleared by shortening (from, to), most slide cm
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+# the thumb's tab alone (each `cuff`'s last flap): more clearance cm, its most open degrees
+cuff_thumb 0.5 28
+# The fit opens the flaps from rest, as in the game's own animations, not on top of what his own motions turn them by
+cuff_motion_flaps off
+cuff_pose 110 2.86
+cuff_pose_bone kh2_113 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_116 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_118 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_119 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_122 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_224 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_227 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_229 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_230 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_233 0.02 -78.02 -0.03 0.322 1.000 1.000

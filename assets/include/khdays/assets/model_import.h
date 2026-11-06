@@ -24,6 +24,7 @@ struct ImportedJoint final {
     std::array<float, 16> world{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     int parent = -1;
     bool no_envelope = false;  // a KH2 helper bone: motions mix the bones below it past it (kh2_map.h)
+    float length = 0.0F;       // a KH2 bone's own length along its x, in the model's units (0: none given)
     int node = -1;             // its node, an index into ImportedModel::nodes
 };
 

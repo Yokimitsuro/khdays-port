@@ -122,7 +122,9 @@ animation the game starts partway in starts in that section, and one the game
 sets back plays the earlier section again. A section's motion starts from its
 own beginning when the game's frame enters it. `blend <frames>` cross-fades
 from the pose last shown (default: a cut). Before the first section the game's
-animation plays.
+animation plays; the first section entered straight from it fades the game's pose
+out over its `blend` (Larxene's rise is the game's, then her fall at
+`b_la_A003@12`: with no KH2 pose to fade from, it cut).
 
 **Follow.** A Days action that lasts while a button is held (the guard,
 `b_ro_Ca003` in `ba/ch/ro/ab.p2` entry 3, 36 frames) does so by the game
@@ -462,6 +464,12 @@ over every height (`hide kh2_95 ... kh2_116 from 1000 to -1000`) drops their
 triangles. Shrunk to a thousandth with `mesh_scale <bone> 0 0 0`, they still showed
 in game as one-pixel lines.
 
+A weapon with no bones of its own, skinned to the hand with it, cannot be hidden by
+bone: `hide_mesh <index>...` drops whole meshes of the file, numbered from 0 in its
+own order (B_EX400's knives are meshes 3, 5 and 4, 7, each on one hand alone, its
+texture 3). Their vertices stay, as `hide` leaves them; what fits round the hand
+(a `cuff`) takes only the vertices a drawn triangle uses.
+
 Its collar is skinned rigidly to the neck (175, from 133 to 145 cm, blended into
 the hood's 178 only at the top), and P_EX110 turns its head 20-75 degrees on the
 neck in its idles, all of it in bone 113 (111 and 112 stay still on the neck,
@@ -514,7 +522,44 @@ the KH2 bones, not those joints, so `motions.txt` can name the bone instead:
 
 ```text
 weapon ro_w_tg_R 172   # <the game's joint> <KH2 bone>
+weapon la_h_L hand 127 # <the game's joint> hand <KH2 bone>: no bone of its own to hold it
 ```
+
+`hand`: the game's frame for what it attaches to that joint carried by the KH2
+hand as the game's hand node carries it (the bone and one paired joint above it
+must be paired): KH2 hand x (game hand)^-1 x the game's frame. Held, it stays in
+the KH2 fist in KH2 motions and the game's own animations alike. Sent away from the
+game's hand (a throw), from 0.6 to 1.5 forearms off, it is only moved by how far
+the KH2 hand stands from the game's, keeping the game's turn, so a knife metres away
+does not swing round as the hand turns. Days' Larxene throws hers in her own
+animations (`la_h_L`, `la_h_R` hang from her root); B_EX400 has no weapon bones.
+
+Some players hold their weapon on no joint at all: the game draws it as an object of
+its own on the player's base, its own animation keeping a joint of it on the hand
+(Zexion's book, `ba/ch/ze/w_.p2`: root `ze_w_R` at the base, `ze_w00` exactly on
+Days' `Bip01_R_Hand` at rest, the covers `ze_w00_L`, `ze_w00_R` under it; ov045
+looks up no weapon joint). `weapon_model` puts it on a KH2 bone in KH2 motions:
+
+```text
+weapon_model ba/ch/ze/w_ ze_w00 94 hand 254 rotate -90 180 0 offset -9.5 -0.1 5.0
+# <the game's weapon file> <its node that carries its place> <KH2 bone> hand <KH2 bone> [rotate] [offset cm, its own axes]
+```
+
+While a model of that file with a node of that name is drawn (its body drawn within
+the last second; the file's pages, effects and swing traces have none, read from the
+model's node dictionary at `NNSG3dResMdl` +0x40), that node's matrix is loaded where
+the game has just placed it (`NNSi_G3dFuncSbc_NODEDESC`, `khdays_models_node_placed`:
+after the joint is sent, before the matrix is stored for what hangs from it, in the
+space `khdays_models_node` reads). Both grips are read on the body's `hand` as drawn:
+the game's, from that matrix, and KH2's, the bone on the hand as the KH2 motions alone
+pose them (`play_kh2`, each pose by its own share), times the line's turn and offset.
+The node goes on the hand by the two mixed by the KH2 motions' share, its own scale
+kept, so a fade turns it once from one grip to the other. Tried first and dropped:
+the bone's frame from the mixed pose (an unpaired bone swings between the motion's
+place and where the game's pose leaves it: Zexion's book's rest, 2.3 m up), and
+rewriting the node's result in the joint send (its space taken from the draw's start
+matrix, it landed 1.5 m off, and one cover, which restores the node's stored matrix,
+stayed with the game's).
 
 A hook after the save hands the port the matrix; at the body's draw end it is
 written over with the bone as drawn (its joint's skinning matrix times its rest
@@ -700,6 +745,19 @@ not simulated (`model_hands.cpp` `pose_cuffs`, the maths in `cuff_fit.h`):
 cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120   # root, hand, the four flaps in order round the ring
 cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2                  # for all a model's cuffs
 ```
+
+A cuff fits round the hand's drawn vertices: those of a `hide`n weapon baked into the hand stay in the mesh, and
+N_CM000_BTL's scythe (1101 of them, 2 m long, under the right hand) threw its right cuff open in his own motions.
+The fit opens each flap from its rest on the root; a KH2 motion that flares the flaps itself (his own, the right up
+to 58 degrees; B_EX390's, up to 75) has them opened twice. `cuff_motion_flaps off` puts them back at rest first, so
+they fit as in the game's own animations (marluxia_h; roxas_bf_h keeps them). The motion's scale stays: each bone
+goes back on its parent as at rest, each axis scaled as the motion scales it against its parent (N_CM040_BTL's idle
+shortens Vexen's 27 cm flaps to 0.41 of their length, its walk to 0.7: reset whole, they hung at full length).
+
+A flap whose bones all stand at its hinge (B_EX400's: one bone each, its head the
+root's, no tip bone) ends its last bone's own length along that bone's x (KH2's
+`kn::ModelHRC` scale w, bone +0x1C: 7.3 cm there; B_EX390's 5.94 matches where its
+tip bone stands, 5.91), with no tip of its own to bend.
 
 `cuff_fit`: clearance (cm), most open (degrees), shortest (of a flap's length), how much of
 a flap's opening its neighbours take, where along the cuff a point starts being cleared
@@ -995,6 +1053,16 @@ models drawn while it is off. A new model's settings carry the same line.
 | `roxas_bf` | `ba/ch/r2/def.p.z/mdl` | B_EX390 | as `roxas_bf_h`, whose settings it takes |
 | `axel_h` | `ba/ch/ax/def_h.p.z/mdl` | B_EX110 | B_EX110.mset; its weapon bones 147 and 234 placed on `ax_h_L` and `ax_h_R` (`place ... ride`: they stand from his hands as the nodes from the game's, and Days' animations move those nodes up to 2.8 m from them, measured; the nodes hang from the root, not the hands), its baked weapons hidden; the hair on its own `scalp` collider; no cuffs yet |
 | `axel` | `ba/ch/ax/def.p.z/mdl` | B_EX110 | as `axel_h`, whose settings it takes |
+| `marluxia_h` | `ba/ch/ma/def_h.p.z/mdl` | N_CM000_BTL | N_CM000_BTL.mset: the idle, the port's walk (1; the run stays the game's), jump (3, the take-off and the rise), fall (4, from the game's 12th frame in the air) and landing (5) as `roxas_b_h`'s jump, the damage on `axel_h`'s slots (the two msets' slots 0-21 hold the same names); every line blended over 8 frames, and each of the game's own animations given an 8-frame fade into the idle; `cuff_motion_flaps off`; his legs and coat strips numbered as B_EX110's, his arms and cuffs as B_EX390's (left -17, right +12), so the cuffs are `roxas_bf_h`'s; the scythe's bone 258 (under 257, at the right hand's end; his motions turn it 6.6 degrees off 257) placed on `ma_h_R` (`place ... ride`; Days' node hangs from the hand), the baked scythe hidden; `weapon ma_h_R 258 rotate -90 0 -90` lays Days' scythe along the baked one: at rest the baked shaft runs along 258's +x, the blade across it toward -z (measured on both meshes) |
+| `marluxia` | `ba/ch/ma/def.p.z/mdl` | N_CM000_BTL | as `marluxia_h`, whose settings it takes |
+| `larxene_h` | `ba/ch/la/def_h.p.z/mdl` | B_EX400 | B_EX400.mset: the idle, fall (4, from the game's 12th frame in the air, from its loop: its first 16 ticks come out of a KH2 jump she has none of), landing (5) and damage on `marluxia_h`'s slots, no walk or jump (slot 3 is empty, her 1-2 not a walk); every line blended over 8 frames, the game's own animations fading into the idle. No finger bones (fists) and no weapon bones: her knives, meshes 3, 4, 5, 7, hidden (`hide_mesh`), Days' carried by her hands (`weapon ... hand`). Cuffs as `roxas_bf_h`'s on one-bone flaps, `cuff_motion_flaps off`. Her antennae's strands (149, 156) on Days' `la_hair_L`, `la_hair_R`. Heels: the feet's offset 7.7 cm |
+| `larxene` | `ba/ch/la/def.p.z/mdl` | B_EX400 | as `larxene_h`, whose settings it takes |
+| `zexion_h` | `ba/ch/ze/def_h.p.z/mdl` | B_EX370 | B_EX370.mset on `larxene_h`'s slots, with the port's walk on 1 (01A; the run stays the game's) and the fall (4, a loop from its first tick, so no `start_loop`); every line blended over 8 frames, the game's own animations fading into the idle. Legs and coat as N_CM000_BTL's (the front strip from 83: 82 has no vertices), spine and collar +21, arms, cuffs and fingers B_EX390's +4 left, +33 right, so `roxas_bf_h`'s cuffs, `cuff_motion_flaps off`. His book (bones 93-113, meshes 5 and 6, over his head at rest) hidden; Days' book, drawn as an object of its own, put on KH2's (bone 94) in KH2 motions with `weapon_model`. Feet's offset 9.8 cm |
+| `zexion` | `ba/ch/ze/def.p.z/mdl` | B_EX370 | as `zexion_h`, whose settings it takes |
+| `vexen_h` | `ba/ch/ve/def_h.p.z/mdl` | N_CM040 | with N_CM040_BTL.mset (its skeleton N_CM040's, bone for bone; N_CM040.mset does not exist) on `zexion_h`'s slots but the walk and run, both 02A (slot 2; his slot 1 is empty), and the fall from its loop (`start_loop`, 18 of 38 ticks); every line blended over 8 frames. Bones 0-154 N_CM000_BTL's, then +2 to the head, +9 from the chest piece; cuffs `marluxia_h`'s. His shield bone 156 (under 155 at the left hand's end) placed on `ve_w_tg` (`place ... ride`; the node hangs from the root, on Days' left hand at rest), baked shield hidden; `weapon ve_w_tg 156` with no turn: Days' ve_w00600 lies in its axes as the baked shield in 156's. Hair: seven strands, each a `tuft` chain, on a scalp inside every root. Feet's offset 2.1 cm |
+| `vexen` | `ba/ch/ve/def.p.z/mdl` | N_CM040 | as `vexen_h`, whose settings it takes |
+| `lexaeus_h` | `ba/ch/le/def_h.p.z/mdl` | N_CM020_BTL | N_CM020_BTL.mset on `vexen_h`'s slots but no walk or run (1-3 empty); the fall from its loop (10 of 38 ticks); every line blended over 8 frames. N_CM000_BTL's skeleton without its 31 hair bones (0-167 the same, -31 from the chest piece on), so `marluxia_h`'s cuffs. His weapon bone 227 (under 226 at the right hand's end) placed on `le_h_R` (`place ... ride`; the node hangs from Days' right hand), baked weapon hidden; `weapon le_h_R 227 rotate 0 180 -90`: of the 24 axis-aligned turns it lays Days' le_w00600 nearest the baked one (5.1 cm mean, against 9.9 turned about its length the other way). Feet's offset 2.3 cm |
+| `lexaeus` | `ba/ch/le/def.p.z/mdl` | N_CM020_BTL | as `lexaeus_h`, whose settings it takes |
 | `ro_w00600` | `ba/ch/ro/w_.p2#0/mdl` | W_EX010 | |
 | `ro_w13600` | `ba/ch/ro/w_.p2#21/mdl` | W_EX010_10 | `ro_w00600`'s settings |
 | `ro_w15600` | `ba/ch/ro/w_.p2#22/mdl` | W_EX010_W0 | nothing on its keychain's bones: no `.secondary.txt` |

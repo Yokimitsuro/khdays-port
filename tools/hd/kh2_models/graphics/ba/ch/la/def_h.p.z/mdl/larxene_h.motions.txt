@@ -1,0 +1,73 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Larxene (B_EX400) as Days' larxene_h and larxene, playing KH2's own motions for her (`own`: on her own
+# bones). Her mset's slots are N_CM000_BTL's where she has them (slots 0, 4, 5, 10-21 the same names); she has no jump
+# (slot 3 is empty) and her 1-2 are not a walk, so the game's run and jump stay.
+mset B_EX400.mset own
+# off: the game places her and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# Her knives (Days' la_h_L, la_h_R, which hang from the root) carried by her KH2 hands as the game's hands carry them:
+# in her fists in KH2 motions; thrown, they leave with the game's (bones.txt hides her own, made into her meshes)
+weapon la_h_L hand 127
+weapon la_h_R hand 188
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_la_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_la_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_la_A004
+# The fall (04A) from the game's 12th frame in the air, as marluxia_h's; the take-off and the rise stay the game's.
+# From its loop (tick 16 of 40): its first 16 ticks come out of KH2's jump, which she has none of.
+# The landing (05A), played out into the idle
+b_la_A003@12 4 start_loop blend 8
+b_la_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_la_A005 10 finish blend 8
+b_la_A006 11 finish blend 8
+b_la_A007 13 finish blend 8
+b_la_A008 12 finish blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_la_A005 16 land 17 finish blend 8
+air b_la_A006 16 land 17 finish blend 8
+air b_la_A007 18 land 19 finish blend 8
+air b_la_A008 18 land 19 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B011, ba/ch/la/am.p2), the guard and the other
+# actions (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000, L001)
+b_la_A001 blend 8
+b_la_A002 blend 8
+b_la_A009 blend 8
+b_la_A010 blend 8
+b_la_A011 blend 8
+b_la_A012 blend 8
+b_la_A013 blend 8
+b_la_B000 blend 8
+b_la_B001 blend 8
+b_la_B002 blend 8
+b_la_B003 blend 8
+b_la_B004 blend 8
+b_la_B005 blend 8
+b_la_B006 blend 8
+b_la_B007 blend 8
+b_la_B008 blend 8
+b_la_B009 blend 8
+b_la_B010 blend 8
+b_la_B011 blend 8
+b_la_Ca000 blend 8
+b_la_Ca001 blend 8
+b_la_Ca002 blend 8
+b_la_Ca003 blend 8
+b_la_Ca004 blend 8
+b_la_Ca005 blend 8
+b_la_Ca006 blend 8
+b_la_Ca007 blend 8
+b_la_Ca008 blend 8
+b_la_D000 blend 8
+b_la_D001 blend 8
+b_la_D002 blend 8
+b_la_D003 blend 8
+b_la_L000 blend 8
+b_la_L001 blend 8
