@@ -276,7 +276,7 @@ def make(inputs: Inputs, mod: Path) -> None:
 
     panel_count = 0
     for lang in LANGS:
-        icons, panel_count = panels.panel_sheet(inputs.ds(f"UI/pnl/3d_{lang}.pak.z"))
+        icons, panel_count = panels.panel_sheet(inputs.ds_language("UI/pnl/3d_{lang}.pak.z", lang))
         (out / lang).mkdir(exist_ok=True)
         icons.save(out / lang / "panels.png", optimize=True)
     (out / "panels.txt").write_text(panels.panel_table(inputs.nitrofs / "db" / "db.p2"), "utf-8", newline="\r\n")

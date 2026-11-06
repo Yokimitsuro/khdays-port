@@ -259,6 +259,9 @@ int main(int argc, char **argv)
         if (MODULE_PARAMS[5] != 0) {
             MIi_UncompressBackward(MODULE_PARAMS[5]);
         }
+        /* a US card's image where the build reads it (the sound archive's path, the tables): unmoved, the path read
+         * was another string ("no 2 in the ROM") and the Menu Overhaul's menu sounds were not made */
+        move_us_image();
         return khdays_sound_dump(argc >= 3 ? argv[2] : KHDAYS_SOUND_DUMP_DIRECTORY, (const char *const *)argv + 3,
                                  argc > 3 ? argc - 3 : 0);
     }

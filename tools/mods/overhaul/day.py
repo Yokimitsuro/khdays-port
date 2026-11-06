@@ -224,7 +224,7 @@ class Card:
 def ds_titles(inputs: Inputs, lang: str) -> list[str]:
     """UI/cal/ttl_<lang>: u32 its header's size, u32 the count, then each record's u32 length (these 4 bytes in it)
     and its UTF-16LE text."""
-    b = inputs.ds(f"UI/cal/ttl_{lang}.z")
+    b = inputs.ds_language("UI/cal/ttl_{lang}.z", lang)
     at, n = struct.unpack_from("<II", b, 0)
     out = []
     for _ in range(n):

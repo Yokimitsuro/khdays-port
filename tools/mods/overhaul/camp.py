@@ -88,7 +88,7 @@ PAGE_RIGHT = 20  # the right edge's texels
 # digits -- as high (the place's 18), spaced alike, light grey -- drawn four times larger and brought down. The picture
 # is twice the place's size, with room for accents above the capitals (0.45 of them) and 0.15 below (as
 # overhaul_camp_screen.c draws it).
-HEARTS_STRINGS = "UI/cm/str/status_{}.s"
+HEARTS_STRINGS = "UI/cm/str/status_{lang}.s"
 HEARTS_STRING = 11
 GUMMI = "KHGummi.otf"
 GUMMI_CAP = 0.8  # KH Gummi's capitals: 800 of its 1000 units
@@ -226,5 +226,6 @@ def make(inputs: Inputs, mod: Path) -> None:
         Image.fromarray(page_backdrop(lines, menu, page), "RGB").save(out / "camp_page_backdrop.png")
         for name in ("camp_backdrop.png", "camp_font.png"):
             shutil.copyfile(hd / name, out / name)
-        word = ddd_camp.strings(inputs.data, HEARTS_STRINGS.format(lang))[HEARTS_STRING].upper()
+        strings = HEARTS_STRINGS.format(lang=inputs.language(HEARTS_STRINGS, lang))
+        word = ddd_camp.strings(inputs.data, strings)[HEARTS_STRING].upper()
         hearts_label(font, word).save(out / "hearts_label.png")

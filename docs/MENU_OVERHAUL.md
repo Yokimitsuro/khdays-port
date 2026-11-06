@@ -65,6 +65,13 @@ Sleep's camp, Re:Chain of Memories' Moogle Shop, the theater's day card) as the 
 - the pictures made for the mod by its author (`tools/mods/overhaul/art/`: buttons, the shop's block, the
   pattern's tile...), the only pictures in the repository.
 
+Without the HD menus' camp, save, settings, rooms and title pieces (`ddd_camp.py` and `save_screen.py` need the 2.8
+collection too) the installer leaves the Menu Overhaul out, makes the other mods and says so; a tool that fails
+keeps all it said in `setup/mods-errors.log` for a report (only its last line was kept before 2026-11-06). A US
+card holds only English's and French's texts: the other languages' pieces take English's game texts (its German
+panels were asked of it and the mod was not made), and its menu cues are rendered from its own sound archive
+(`--dump-sounds` reads the US card's static module where the build does, as a game run moves it).
+
 `installer/setup_steps.py trace-mod-inputs "<install>" --src <extractions> --1525 "<1.5+2.5>" [--fonts DIR]`
 writes `mod_inputs.txt` again from the tools as they are (`installer/tests/mod_inputs_test.py` fails when they
 changed since). `tools/mods/tests/menu_overhaul_test.py` checks the pieces' wiring without any game data.

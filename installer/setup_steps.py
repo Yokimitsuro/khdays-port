@@ -1197,8 +1197,35 @@ MESSAGES.update(
             "de": "Das Menu Overhaul braucht die Sammlung 1.5+2.5 und zuerst die HD-Menüs.",
             "it": "Il Menu Overhaul richiede la raccolta 1.5+2.5 e i menu HD fatti prima.",
         },
+        "mod-overhaul-skipped": {
+            "en": "The other mods are ready; the Menu Overhaul was left out: it is made from the HD menus' camp, save, "
+            "settings, rooms and title screens, and {tools} were not made (they need the 2.8 collection too).",
+            "es": "Los otros mods están listos; el Menu Overhaul se ha dejado fuera: se hace con las pantallas HD del "
+            "campamento, partidas, ajustes, salas y título, y {tools} no se hicieron (necesitan también la colección "
+            "2.8).",
+            "fr": "Les autres mods sont prêts ; le Menu Overhaul a été laissé de côté : il est fait à partir des écrans "
+            "HD du camp, des sauvegardes, des réglages, des salons et du titre, et {tools} n'ont pas été faits (ils "
+            "ont aussi besoin de la collection 2.8).",
+            "de": "Die anderen Mods sind fertig; das Menu Overhaul wurde ausgelassen: Es entsteht aus den HD-Bildschirmen "
+            "von Lager, Spielständen, Einstellungen, Räumen und Titel, und {tools} wurden nicht erstellt (sie brauchen "
+            "auch die Sammlung 2.8).",
+            "it": "Le altre mod sono pronte; il Menu Overhaul è stato escluso: si crea dalle schermate HD di campo, "
+            "salvataggi, impostazioni, stanze e titolo, e {tools} non sono stati creati (richiedono anche la raccolta "
+            "2.8).",
+        },
+        "mod-tool-failed": {
+            "en": "{tool}: {error} (all it said is in {log}; please attach it to a report)",
+            "es": "{tool}: {error} (todo lo que dijo está en {log}; adjúntalo si lo reportas)",
+            "fr": "{tool} : {error} (tout ce qu'il a dit est dans {log} ; joignez-le à un rapport)",
+            "de": "{tool}: {error} (alles, was es sagte, steht in {log}; häng es an einen Bericht)",
+            "it": "{tool}: {error} (tutto ciò che ha detto è in {log}; allegalo a una segnalazione)",
+        },
     }
 )
+# the HD menus' tools whose pieces the Menu Overhaul is made from (tools/mods/overhaul: the camp, save, settings,
+# rooms and title layouts); without them (ddd_camp.py and save_screen.py need 2.8) it is left out, the rest made
+OVERHAUL_HD_TOOLS = ("ddd_camp.py", "save_screen.py", "theater_settings.py", "theater_mission.py", "theater_title.py")
+MODS_ERRORS = "mods-errors.log"  # under setup/: what each of the port's own mods' tools that failed said
 
 
 def mod_inputs() -> dict[str, list[str]]:
@@ -1309,10 +1336,19 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         raise Refusal("mod-needs-1525")
     if "menu-overhaul" in wanted and (args.c1525 is None or not any(p.is_file() for p in hd.rglob("*"))):
         raise Refusal("mod-needs-hd")
+    skipped = None
+    if "menu-overhaul" in wanted:
+        hd_tools = load_state(install).get("steps", {}).get("hd-menus", {}).get("tools", {})
+        lacking = [t for t in OVERHAUL_HD_TOOLS if t not in hd_tools]
+        if lacking:  # (an HD PACK made without 2.8: the overhaul read a missing camp_backdrop.png and failed)
+            wanted.remove("menu-overhaul")
+            skipped = words("mod-overhaul-skipped", args.language, tools=", ".join(lacking))
     for folder, _ in PORT_MODS.values():
         remove(install / "mods" / folder)  # where an earlier installer put each, apart from the HD PACK
     made: list[str] = []
     failed = None
+    log = install / "setup" / MODS_ERRORS
+    errors: list[str] = []
     work = install / "setup" / "mod-work"
     remove(work)
     try:
@@ -1336,16 +1372,26 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
             line += [places[a[1:-1]] if a.startswith("{") else a for a in template[1:]] + ["--mod", folder]
             done = subprocess.run(line, cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if done.returncode != 0:
-                said = done.stderr.strip().splitlines()
-                failed = failed or RuntimeError(f"{template[0]}: {said[-1] if said else done.returncode}")
+                # its whole output kept for a report (only its last line was, and that did not say where)
+                said = done.stderr.strip()
+                last = said.splitlines()[-1] if said else f"exit status {done.returncode}"
+                errors.append(f"== {template[0]} ({' '.join(line[2:])})" + chr(10) + (said or last) + chr(10))
+                what = words("mod-tool-failed", args.language, tool=template[0], error=last, log=str(log))
+                failed = failed or RuntimeError(what)
                 continue  # the others made still go in
             made.append(mod)
         merge_port_mods(install, [work / "mods" / PORT_MODS[m][0] for m in made], {"mods": made})
     finally:
         remove(work)
+        log.unlink(missing_ok=True)
+        if errors:
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_bytes(chr(10).join(errors).encode("utf-8"))
     if failed is not None:
         raise failed
     progress(1, 1, words("mod-ready", args.language))
+    if skipped is not None:
+        return {"mods": made, "into": HD_MOD, "missing": PORT_MODS["menu-overhaul"][0], "message": skipped}
     return {"mods": made, "into": HD_MOD, "message": words("mod-ready", args.language)}
 
 

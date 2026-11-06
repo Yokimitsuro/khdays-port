@@ -39,5 +39,16 @@ class Inputs:
             return dd.decompress_nitro(data)[1]
         return data
 
+    def language(self, pattern: str, lang: str) -> str:
+        """`lang`, or English when the game's data has no file of `lang`'s ({lang} in `pattern`, with or without its
+        .z): the US ROM has only English's and French's (UI/pnl/3d_de.pak.z was asked of it and the Menu Overhaul was
+        not made)."""
+        path = pattern.format(lang=lang)
+        return lang if any((self.nitrofs / p).is_file() for p in (path, path + ".z")) else "en"
+
+    def ds_language(self, pattern: str, lang: str) -> bytes:
+        """The file of language `lang`'s ({lang} in `pattern`), else English's (language)."""
+        return self.ds(pattern.format(lang=self.language(pattern, lang)))
+
     def font(self, name: str) -> Path:
         return self.fonts / name
