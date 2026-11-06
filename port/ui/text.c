@@ -3341,9 +3341,8 @@ static int emit_information(Canvas *c, int ox, int oy, const KhdaysBgLayer *laye
         py -= lh;
     if (py < -16 || py >= 24 || px >= 256 || px + c->area_w * 8 <= 0)
         return 0;
+    /* at any scale: a picture taller than 1536 (scale 9 and up) once lost the caption to a cap here */
     const int width = c->area_w * 8 * scale, height = c->area_h * 8 * scale;
-    if (width > 4096 || height > 512)
-        return 0;
     unsigned coverage = 0;
     for (int i = 0; i < c->display_count; ++i) {
         const GlyphOp *op = &c->display_ops[i];
