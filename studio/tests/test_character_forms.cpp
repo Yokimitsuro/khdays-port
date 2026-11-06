@@ -87,6 +87,9 @@ TEST(character_forms_found_changed_and_ordered) {
     // what is not a form's is as written
     CHECK(ini.text().rfind("[character]\nformat = 2\nbase = roxas\nname = Ventus\n\n[model]\n", 0) == 0);
     CHECK(form_base_code("roxas_dual") == "r2" && form_bases().size() == 20);
+    // Xion's keyblades are in Roxas's weapon file
+    CHECK(form_weapon_folders("xion") == (std::vector<std::string>{"ro", "xo"}));
+    CHECK(form_weapon_folders("saix") == (std::vector<std::string>{"sa"}) && form_weapon_folders("nobody").empty());
 }
 
 TEST(character_form_rules_as_rows) {

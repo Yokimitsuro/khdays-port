@@ -143,8 +143,10 @@ typedef struct KhdaysCharacter {
     int attack_count;
     float own_moves_damage; /* [limit] damage: its base's own moves' (its Limit's), times the base's (1 unchanged) */
     char *fallback;         /* the clip of an animation with none */
-    char *weapon_bone;      /* skeleton = own: its bone the weapon follows; NULL: the base's hand's place */
-    char *base_weapon_node; /* the base model's node the game puts the weapon on; NULL: its *_w_tg_R */
+    char *weapon_bone;      /* skeleton = own: its bone the right hand's weapon follows; NULL: its bone named as the
+                             * base's node */
+    char *base_weapon_node; /* the base model's node the game puts the right hand's weapon on; NULL: the camp's
+                             * name (khdays_character_base_hand) */
     int has_weapon_turn;    /* the weapon follows its bone's own axes, turned by weapon_turn (degrees x y z);
                              * else it is held as the base holds it */
     float weapon_turn[3];
@@ -188,6 +190,15 @@ const char *khdays_character_language(int l);
  * "roxas_dual", only a form's). */
 const char *khdays_character_base_name(int number);
 const char *khdays_character_base_code(int number);
+
+/* Base `number`'s hand node the game puts a weapon on, as the camp's records name it: `hand` 0 the right, 1 the
+ * left ("sa_h_R", "ax_h_L"); NULL when it has none there (Xaldin, Demyx, Luxord and Zexion hold theirs from their
+ * model's root). A model may lack one its record names (Saix's left). */
+const char *khdays_character_base_hand(int number, int hand);
+
+/* The folder whose w_.p2 holds base `number`'s weapon models: its own code, but Roxas's ("ro") for Xion, whose
+ * overlays open ba/ch/ro/w_.p2 (her own w_.p2 holds only the swings' traces). */
+const char *khdays_character_weapons_code(int number);
 
 /* Reads the description `text` (`size` bytes) of the character in folder `key` of mod `mod_id` (folder
  * `mod_folder`). Returns 1 when it is taken; 0 with the reason told through `report`. */

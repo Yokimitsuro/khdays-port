@@ -988,10 +988,15 @@ extern "C" void khdays_models_node(unsigned node, int sent)
 
 extern "C" void khdays_models_node_placed(unsigned node, int sent)
 {
-    if (active == nullptr || !active->own || !sent || static_cast<int>(node) != active->own->game_weapon_node)
+    if (active == nullptr || !active->own || !sent)
         return;
     const OwnSkeleton &o = *active->own;
-    if (o.weapon_bone < 0 || static_cast<std::size_t>(o.weapon_bone) >= o.world_now.size())
+    const OwnSkeleton::Held *held = nullptr;
+    for (const OwnSkeleton::Held &h : o.held) {
+        if (h.game_node == static_cast<int>(node))
+            held = &h;
+    }
+    if (held == nullptr || held->bone < 0 || static_cast<std::size_t>(held->bone) >= o.world_now.size())
         return;
     // the model's place: its first node drawn so far, as the joints' (draw)
     int first = -1;
@@ -1005,7 +1010,7 @@ extern "C" void khdays_models_node_placed(unsigned node, int sent)
     s[0] = s[5] = s[10] = active->scale;
     const Mat root =
         mul(node_matrix[static_cast<std::size_t>(first)], active->node_rest_inverse[static_cast<std::size_t>(first)]);
-    const Mat hand = mul(mul(root, s), mul(o.world_now[static_cast<std::size_t>(o.weapon_bone)], o.weapon_fix));
+    const Mat hand = mul(mul(root, s), mul(o.world_now[static_cast<std::size_t>(held->bone)], held->fix));
     // MTX_MODE 2 (the position and vector matrices), MTX_LOAD_4x4: the DS's rows are these columns
     const uint32_t mode = 2;
     khdays_g3d_command(0x10, &mode);

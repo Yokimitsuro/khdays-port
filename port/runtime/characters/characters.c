@@ -301,26 +301,39 @@ static int own_data(const KhdaysCharacter *c, const KhdaysCharacter *owner, cons
 
 /* Its folder ba/ch/<code>/: every file of its base's folder, the mod's data/<file> when there, else its
  * [moveset]'s combo files or its [stats]' level table, else a copy of the base's bytes (its own place in the ROM:
- * what is loaded from it is known as the character's). A form's, the same from its own base's folder. */
+ * what is loaded from it is known as the character's). A form's, the same from its own base's folder. A base whose
+ * weapon models are another folder's (Xion's, Roxas's ba/ch/ro/w_.p2) has that file there too, as
+ * ba/ch/<code>/ro/w_.p2 (the mod's data/ro/w_.p2 when there). */
 static int serve_folder(const KhdaysCharacter *c, const KhdaysCharacter *owner)
 {
-    char base[24], own[24], path[256], target[256], disk[1024];
+    char base[24], own[24], lent[40], lent_rest[24], path[256], target[256], disk[1024];
     Moveset moveset;
     size_t levels_size = 0;
     unsigned char *levels;
-    snprintf(base, sizeof(base), "ba/ch/%s/", khdays_character_base_code(c->base));
+    const char *code = khdays_character_base_code(c->base);
+    const char *weapons = khdays_character_weapons_code(c->base);
+    snprintf(base, sizeof(base), "ba/ch/%s/", code);
     snprintf(own, sizeof(own), "ba/ch/c%02x/", c->number);
+    lent[0] = '\0';
+    if (weapons != NULL && strcmp(weapons, code) != 0) {
+        snprintf(lent, sizeof(lent), "ba/ch/%s/w_.p2", weapons);
+        snprintf(lent_rest, sizeof(lent_rest), "%s/w_.p2", weapons);
+    }
     const size_t base_length = strlen(base);
     int served = 0;
     moveset_files(c, &moveset);
     levels = stats_file(c, &levels_size);
     for (int id = 0; id < khdays_rom_file_count(); ++id) {
         u32 offset, bytes;
-        if (!khdays_rom_file_info(id, path, (int)sizeof(path), &offset, &bytes) ||
-            strncmp(path, base, base_length) != 0) {
+        if (!khdays_rom_file_info(id, path, (int)sizeof(path), &offset, &bytes)) {
             continue;
         }
-        const char *rest = path + base_length;
+        const char *rest = strncmp(path, base, base_length) == 0        ? path + base_length
+                           : lent[0] != '\0' && strcmp(path, lent) == 0 ? lent_rest
+                                                                        : NULL;
+        if (rest == NULL) {
+            continue;
+        }
         snprintf(target, sizeof(target), "%s%s", own, rest);
         if (own_data(c, owner, rest, disk, (int)sizeof(disk))) {
             if ((moveset.ci != NULL && strcmp(rest, "ci.b.z") == 0) ||
@@ -836,7 +849,8 @@ int khdays_characters_model(const char *name, char *path, int size)
     if (c != NULL) {
         return c->model != NULL && khdays_characters_file(c, c->model, path, size);
     }
-    /* a weapon of its folder's (ba/ch/c<number>/w_.p2#<entry>/mdl/<model>): its [weapons] file for the model */
+    /* a weapon of its folder's (ba/ch/c<number>/w_.p2#<entry>/mdl/<model>, or the file of another folder's its
+     * base's weapons are in: ba/ch/c<number>/ro/w_.p2#...): its [weapons] file for the model */
     static const char head[] = "ba/ch/c";
     char *end;
     const size_t n = sizeof(head) - 1;
@@ -845,7 +859,11 @@ int khdays_characters_model(const char *name, char *path, int size)
     }
     const long number = strtol(name + n, &end, 16);
     const char *model = strstr(name, "/mdl/");
-    if (end == name + n || strncmp(end, "/w_.p2", 6) != 0 || model == NULL) {
+    const char *file = end;
+    if (end != name + n && end[0] == '/' && strncmp(end, "/w_.p2", 6) != 0 && strchr(end + 1, '/') != NULL) {
+        file = strchr(end + 1, '/'); /* past the lending folder's code */
+    }
+    if (end == name + n || strncmp(file, "/w_.p2", 6) != 0 || model == NULL) {
         return 0;
     }
     const KhdaysCharacter *owner = khdays_characters_numbered((int)number);

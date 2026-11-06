@@ -575,6 +575,16 @@ static void the_bases(void)
     CHECK(strcmp(khdays_character_base_name(KHDAYS_CHARACTER_DUAL), "roxas_dual") == 0); /* a form's only */
     CHECK(strcmp(khdays_character_base_code(KHDAYS_CHARACTER_DUAL), "r2") == 0);
     CHECK(khdays_character_base_name(KHDAYS_CHARACTER_FOLDERS) == NULL);
+    /* the hand nodes the game puts weapons on (the camp's records), and where the weapon models are */
+    CHECK(strcmp(khdays_character_base_hand(3, 0), "sa_h_R") == 0);    /* Saix's right */
+    CHECK(strcmp(khdays_character_base_hand(1, 1), "ax_h_L") == 0);    /* Axel's left */
+    CHECK(strcmp(khdays_character_base_hand(0, 0), "ro_w_tg_R") == 0); /* Roxas's */
+    CHECK(khdays_character_base_hand(4, 0) == NULL);                   /* Xaldin: from his root */
+    CHECK(khdays_character_base_hand(11, 1) == NULL && khdays_character_base_hand(11, 2) == NULL);
+    CHECK(strcmp(khdays_character_weapons_code(14), "ro") == 0); /* Xion's: Roxas's file */
+    CHECK(strcmp(khdays_character_weapons_code(3), "sa") == 0);
+    CHECK(khdays_character_base_hand(KHDAYS_CHARACTER_FOLDERS, 0) == NULL &&
+          khdays_character_weapons_code(KHDAYS_CHARACTER_FOLDERS) == NULL);
 }
 
 /* A clip naming one animation of its file: the '#' right after the extension, not one of a name's own. */

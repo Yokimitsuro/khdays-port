@@ -74,13 +74,17 @@ skeleton = paired
   its own clips (below); nothing of it is paired with the base's.
 - `[model] scale` -- its size to the game's: 100 for an FBX made in centimetres (the game's characters are about
   1.4 tall in its units, a model in metres 1.4); with either skeleton, over a `.bones.txt`'s `scale`.
-- `[model] weapon_bone` -- its bone the weapon follows (`R_buki`); without it, its node named as the base model's
-  weapon node (a skeleton made like the game's: `so_w_tg00`), else the weapon stays where the base's hand is.
-  `weapon_turn = x y z` -- the weapon held on the bone's own axes, turned by these degrees (a weapon bone made for
-  its own weapon: the grip the model was made with); without it, the weapon is held as the base holds it.
-  `base_weapon_node` -- the base model's node the game puts the weapon on, when not the one the players' code
-  names: `ro_w_tg_R` (Roxas), `so_w_tg00` (Sora), `mi_w_tg_R` (Mickey), `ve_w_tg` (Vexen). Either one not found is
-  told in the session log.
+- `[model] weapon_bone` -- with `skeleton = own`, its bone the right hand's weapon follows (`R_buki`); without it,
+  its bone named as the base model's hand node the game puts that weapon on (a skeleton made like the game's, as the
+  studio exports it). The base's hand nodes are the camp's: `ro_w_tg_R` (Roxas), `ax_h_R` and `ax_h_L` (Axel),
+  `xig_h_R` and `xig_h_L` (Xigbar), `sa_h_R` (Saix), `so_w_tg00` (Sora), `la_h_R` and `la_h_L` (Larxene), `le_h_R`,
+  `ma_h_R`, `ri_h_R`, `ve_w_tg` (Vexen), `xe_h_R` and `xe_h_L` (Xemnas), `xo_h_R` (Xion), `mi_w_tg_R` (Mickey),
+  `do_h_R`, `go_h_R`; Xaldin, Demyx, Luxord and Zexion hold theirs from their model's root, where the game puts
+  them. A left hand's weapon follows its bone of the same name. A hand whose bone is not found keeps its weapon where
+  the base's hand is (moved by the base's animations, not the clips), told in the session log.
+  `weapon_turn = x y z` -- the right hand's weapon held on the bone's own axes, turned by these degrees (a weapon
+  bone made for its own weapon: the grip the model was made with); without it, the weapon is held as the base holds
+  it. `base_weapon_node` -- the base model's node the game puts the right hand's weapon on, when not the camp's.
 
 `#` starts a comment (at a line's start or after a space). A name or part the port does not know is told in the
 mods' log with its line and left out; a character with a missing `format`, `base`, `name` or `[model] file`, a bad
@@ -232,7 +236,8 @@ The gauges are what the select shows; what the character plays with at each leve
 ## Its weapons (`[weapons]`, format 2)
 
 The weapons the character holds are its base's models (`ba/ch/<code>/w_.p2`: Roxas's keyblades, the dual-wield
-Roxas's two); each one can be drawn as a model of the character's own:
+Roxas's two; Xion's keyblades are Roxas's, from his `ba/ch/ro/w_.p2`, hers holding only the swings' trails); each
+one can be drawn as a model of the character's own:
 
 ```ini
 [weapons]
@@ -242,7 +247,8 @@ ro_w00600 = weapons/stick.glb           # the game's weapon model it draws inste
 - `<the base's weapon model> = <file>` (glTF, GLB or FBX). Its joints follow the game's model's nodes by name (a
   model exported from KH Studio keeps them: `ro_w13600_a` ...), as a paired model's do; drawn where and when the
   game draws its own. With `KHDAYS_TRACE_MODELS=1` the log names each weapon model as it is drawn
-  (`ba/ch/c100/w_.p2#0/mdl/ro_w13600`); KH Studio lists the base's.
+  (`ba/ch/c100/w_.p2#0/mdl/ro_w13600`; on Xion's code `ba/ch/c16/ro/w_.p2#1/mdl/ro_w01000`); KH Studio lists the
+  base's.
 - The swing trails (`so_w00_trace`, `so_w01600_trace` ...) and the hits' flashes (`so_w01600_hit` ...) are models of
   the same file and are drawn the same way, where the game draws them from the weapon's places. Sora's: `so_w00600`,
   `so_w01600`, `so_w02600`, their trails `so_w00_trace`, `so_w01600_trace`, `so_w02600_trace`.

@@ -92,6 +92,18 @@ std::string form_base_code(const std::string& base) {
     return {};
 }
 
+std::vector<std::string> form_weapon_folders(const std::string& base) {
+    for (int i = 0; i < KHDAYS_CHARACTER_FOLDERS; ++i) {
+        if (base != khdays_character_base_name(i))
+            continue;
+        std::vector<std::string> folders{khdays_character_weapons_code(i)};
+        if (folders[0] != khdays_character_base_code(i))
+            folders.emplace_back(khdays_character_base_code(i));
+        return folders;
+    }
+    return {};
+}
+
 void raise_format(IniText* ini) {
     if (std::atoi(ini->get("character", "format").c_str()) < KHDAYS_CHARACTER_FORMAT)
         ini->set("character", "format", std::to_string(KHDAYS_CHARACTER_FORMAT));

@@ -940,54 +940,65 @@ void take_own_animation(Model *model, Loading &loading)
             }
         }
         model->nodes = std::move(mod.nodes);
-        // its weapon: the game's on its base's hand node, moved onto its own bone (the two at rest the same). The
-        // players' overlays name it: ro_w_tg_R, mi_w_tg_R, so_w_tg00, ve_w_tg (the left hand's ro_w_tg_L is not it)
-        auto ends = [](const std::string &s, const char *end) {
-            const std::size_t n = std::strlen(end);
-            return s.size() > n && s.compare(s.size() - n, n, end) == 0;
-        };
-        for (std::size_t g = 0; g < model->node_names.size() && o.game_weapon_node < 0; ++g) {
-            const std::string &node_name = model->node_names[g];
-            if (character->base_weapon_node != nullptr
-                    ? node_name == character->base_weapon_node
-                    : ends(node_name, "_w_tg_R") || ends(node_name, "_w_tg00") || ends(node_name, "_w_tg"))
-                o.game_weapon_node = static_cast<int>(g);
-        }
-        // its bone named by weapon_bone; without one, its node named as the base's (a skeleton made like the game's)
-        const std::string bone = character->weapon_bone != nullptr ? character->weapon_bone
-                                 : o.game_weapon_node >= 0
-                                     ? model->node_names[static_cast<std::size_t>(o.game_weapon_node)]
-                                     : std::string();
-        for (std::size_t i = 0; !bone.empty() && i < model->nodes.size(); ++i) {
-            if (model->nodes[i].name == bone)
-                o.weapon_bone = static_cast<int>(i);
-        }
-        if (o.weapon_bone >= 0 && o.game_weapon_node >= 0) {
-            const std::vector<Mat> at_rest = own_places(model->nodes, o.rest);
-            Mat s = kIdentity;
-            s[0] = s[5] = s[10] = k;
-            if (character->has_weapon_turn) {
+        // its weapons: the game's on its base's hand nodes (the camp's names: sa_h_R, ax_h_L ...; the right's named
+        // by base_weapon_node when given), each moved onto its own bone of the same name (a skeleton made like the
+        // game's; the right's named by weapon_bone when given). A hand the base model lacks has no weapon there.
+        std::vector<Mat> at_rest;
+        Mat s = kIdentity;
+        s[0] = s[5] = s[10] = k;
+        for (int hand = 0; hand < 2; ++hand) {
+            const bool right = hand == 0;
+            const char *game_name = right && character->base_weapon_node != nullptr
+                                        ? character->base_weapon_node
+                                        : khdays_character_base_hand(character->base, hand);
+            if (game_name == nullptr)
+                continue;
+            OwnSkeleton::Held held;
+            for (std::size_t g = 0; g < model->node_names.size() && held.game_node < 0; ++g) {
+                if (model->node_names[g] == game_name)
+                    held.game_node = static_cast<int>(g);
+            }
+            if (held.game_node < 0) {
+                if (right && character->base_weapon_node != nullptr)
+                    khdays_log("characters: %s: the base's node %s not found; check base_weapon_node in its "
+                               "description: the weapon stays where the base's hand is",
+                               character->identity, game_name);
+                continue;
+            }
+            const char *bone = right && character->weapon_bone != nullptr ? character->weapon_bone : game_name;
+            for (std::size_t i = 0; i < model->nodes.size() && held.bone < 0; ++i) {
+                if (model->nodes[i].name == bone)
+                    held.bone = static_cast<int>(i);
+            }
+            if (held.bone < 0) {
+                khdays_log("characters: %s: its skeleton has no bone %s: the weapon at the base's %s stays where the "
+                           "base's hand is%s",
+                           character->identity, bone, game_name,
+                           right ? " (weapon_bone in its description names the bone)" : "");
+                continue;
+            }
+            if (at_rest.empty())
+                at_rest = own_places(model->nodes, o.rest);
+            if (right && character->has_weapon_turn) {
                 // the bone's own axes, unscaled, turned (x, then y, then z)
                 const auto *by = character->weapon_turn;
-                o.weapon_fix = mul(inverse(s), turn_of({by[0], by[1], by[2]}));
+                held.fix = mul(inverse(s), turn_of({by[0], by[1], by[2]}));
             } else {
                 // held as the base holds it: turned from the bone's axes at rest to the base node's at rest (the
                 // weapon at the bone itself: the two rests' arms are not where each other's are)
-                const Mat turn = axes_of(mul(inverse(at_rest[static_cast<std::size_t>(o.weapon_bone)]),
-                                             rest[static_cast<std::size_t>(o.game_weapon_node)]));
-                o.weapon_fix = mul(inverse(s), turn);
+                const Mat turn = axes_of(mul(inverse(at_rest[static_cast<std::size_t>(held.bone)]),
+                                             rest[static_cast<std::size_t>(held.game_node)]));
+                held.fix = mul(inverse(s), turn);
             }
-        } else if (character->weapon_bone != nullptr) {
-            khdays_log(
-                "characters: %s: %s not found; check the name in its description: the weapon stays where the base's hand is",
-                character->identity,
-                o.weapon_bone < 0 ? (std::string("its bone ") + character->weapon_bone).c_str()
-                : character->base_weapon_node != nullptr
-                    ? (std::string("the base's node ") + character->base_weapon_node).c_str()
-                    : "the base's weapon node (base_weapon_node names it)");
+            o.held.push_back(held);
         }
-        khdays_log("models: %s: %s's own skeleton (%zu nodes), its %d clips by the base's animations", name.c_str(),
-                   character->identity, model->nodes.size(), character->action_count);
+        std::string weapons;
+        for (const OwnSkeleton::Held &h : o.held)
+            weapons += (weapons.empty() ? ", its weapons on its bones " : ", ") +
+                       model->nodes[static_cast<std::size_t>(h.bone)].name + " (the base's " +
+                       model->node_names[static_cast<std::size_t>(h.game_node)] + ")";
+        khdays_log("models: %s: %s's own skeleton (%zu nodes), its %d clips by the base's animations%s", name.c_str(),
+                   character->identity, model->nodes.size(), character->action_count, weapons.c_str());
     }
 }
 

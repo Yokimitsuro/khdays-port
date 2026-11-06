@@ -2834,6 +2834,32 @@ HOOKS["ov022@0209c5ec"] = [
     ),
     ("data_02042a70[pActor->nKind]", actor_folder("pActor->nId", "pActor->nKind")),
 ]
+# ... Xion's weapon models: her overlays open Roxas's ba/ch/ro/w_.p2 by its name (her own w_.p2 holds only the swings'
+# traces); a new character's seat on her code opens its own folder's copy, ba/ch/<code>/ro/w_.p2 (characters.c), so
+# that its [weapons] give its keyblades
+for ov, address in (("044", "020b355c"), ("063", "020b5d5c"), ("082", "020b843c"), ("099", "020baafc")):
+    HOOKS[f"ov{ov}@{address}"] = [
+        (  # Ov0NN_ReloadSceneResources
+            f"extern int gOv{ov}RoxasWPath;\n",
+            f"extern int gOv{ov}RoxasWPath;\n"
+            "extern int khdays_characters_of(int slot, int kind);\n"
+            "extern const char *Port_CharacterCode(int number);\n"
+            "extern int OS_SPrintf(char *dst, const char *fmt, ...);\n"
+            f"static char sPortXionWeapons{ov}[0x20];\n",
+        ),
+        (
+            f"    *(int *)(self + 0x2bd0) = Msg_OpenContainerAndReadHeader(&gOv{ov}RoxasWPath, 6);\n",
+            "    {\n"
+            f"        void *khdays_path = &gOv{ov}RoxasWPath;\n"
+            "        int n = khdays_characters_of(*(unsigned char *)(self + 9), 14); /* 14: Xion's number */\n"
+            "        if (n != 14) {\n"
+            f'            OS_SPrintf(sPortXionWeapons{ov}, "ba/ch/%s/ro/w_.p2", Port_CharacterCode(n));\n'
+            f"            khdays_path = sPortXionWeapons{ov};\n"
+            "        }\n"
+            "        *(int *)(self + 0x2bd0) = Msg_OpenContainerAndReadHeader(khdays_path, 6);\n"
+            "    }\n",
+        ),
+    ]
 HOOKS["ov022@020b0720"] = [
     (  # Ov022_BuildActionTable: its weapon, combos and links
         "extern char *data_02042a70[];\n",
@@ -2973,6 +2999,16 @@ HOOKS["ov008@0205a138"] = [
         "        const int own = khdays_characters_of(Session_GetLocalPlayerIndex(), nCharacter);\n"
         "        v = own != nCharacter ? (int)Port_CharacterCode(own) : gOv008CampCharacterRecords[nCharacter].pszFolder;\n"
         "    }\n",
+    ),
+    (  # Xion's weapon models, Roxas's (her overlays' join above): a new character's own folder's copy, named in
+        # the first file's buffer, free again
+        "        *(void **)(obj + 0x1b4) = Msg_OpenContainerAndReadHeader(gOv008RoxasWPath, 0xe);\n",
+        "        if (v != gOv008CampCharacterRecords[nCharacter].pszFolder) {\n"
+        '            OS_SPrintf(buf, "ba/ch/%s/ro/w_.p2", v);\n'
+        "            *(void **)(obj + 0x1b4) = Msg_OpenContainerAndReadHeader(buf, 0xe);\n"
+        "        } else {\n"
+        "            *(void **)(obj + 0x1b4) = Msg_OpenContainerAndReadHeader(gOv008RoxasWPath, 0xe);\n"
+        "        }\n",
     ),
 ]
 # ... the camp makes the local seat's character word (Ov008_GetSeatCharacter: the game's own choice first, its

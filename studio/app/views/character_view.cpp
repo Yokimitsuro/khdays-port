@@ -762,16 +762,19 @@ void draw_character_tab(App& app, const Mod& m) {
     }
 }
 
-// Its weapons: each of its base's weapon models (the graphics dump's ba/ch/<code>/w_.p2), drawn as a model of its
-// own or as the base's.
+// Its weapons: each of its base's weapon models (the graphics dump's ba/ch/<code>/w_.p2, and Roxas's for Xion), drawn
+// as a model of its own or as the base's.
 void draw_weapons(App& app) {
     const auto lang = app.language;
-    const std::string prefix = "ba/ch/" + form_base_code(shown_base()) + "/w_.p2";
     std::vector<std::string> names;
-    for (const auto& it : app.catalog.items) {
-        const auto mdl = it.key.find("/mdl/");
-        if (it.kind == Kind::model && it.key.rfind(prefix, 0) == 0 && mdl != std::string::npos)
-            names.push_back(it.key.substr(mdl + 5));
+    for (const auto& folder : form_weapon_folders(shown_base())) {
+        const std::string prefix = "ba/ch/" + folder + "/w_.p2";
+        for (const auto& it : app.catalog.items) {
+            const auto mdl = it.key.find("/mdl/");
+            if (it.kind == Kind::model && it.key.rfind(prefix, 0) == 0 && mdl != std::string::npos &&
+                std::find(names.begin(), names.end(), it.key.substr(mdl + 5)) == names.end())
+                names.push_back(it.key.substr(mdl + 5));
+        }
     }
     // and those the description names that the dump does not have
     const bool own = gives_section("weapons");

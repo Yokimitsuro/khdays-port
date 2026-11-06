@@ -5506,10 +5506,23 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   `Ov008_RefreshMatchingMatrices`; the field's actor finds the node by name in `Ov030_CreateActor`). The
   port loads the character's own weapon bone's matrix there first, so the game's weapon follows it, and its
   swing trail (`so_w00_trace` ...), drawn by the game from the weapon's places, with it. The nodes' names are
-  the players' overlays' strings: `ro_w_tg_R` (and `ro_w_tg_L`, the dual-wield Roxas's left), `so_w_tg00`,
-  `mi_w_tg_R`, `ve_w_tg` (ov030, ov035, ov046, ov042 and their copies); the other bases' models have no such
-  node (their weapons are part of them). Only `*_w_tg_R` was looked for until 2026-10-31: on Sora the weapon
-  stayed at the base's hand, its trail with it.
+  the players' overlays' strings, the same as the camp's records (`gOv008CampCharacterRecords`: a left and a
+  right hand by character): `ro_w_tg_R`, `so_w_tg00`, `mi_w_tg_R`, `ve_w_tg`, and `<code>_h_R` for the others
+  that hold theirs in a hand (`ax`, `xig`, `sa`, `la`, `le`, `ma`, `ri`, `xe`, `xo`, `do`, `go`; the dual-wield
+  Roxas `ro_h_R`), with a left `<code>_h_L` for Axel, Xigbar, Larxene, Xemnas and the dual-wield Roxas (Saix's
+  is named but his model has no such node); Xaldin, Demyx, Luxord and Zexion have none (the camp names their
+  model's root, `xaldin_R` ...). Only `*_w_tg_R` was looked for until 2026-10-31 (on Sora the weapon stayed at
+  the base's hand, its trail with it), then `*_w_tg00` and `*_w_tg` until 2026-11-06: on a modder's Terra on Saix
+  the claymore followed Saix's hand, so with the clips the character's own (idle, run) it hung away from the hand
+  while the clips made from Saix's animations looked right. The port now takes the camp's names, both hands.
+- **Xion's weapon models** are Roxas's: her overlays (ov044, ov063, ov082, ov099) open `ba/ch/ro/w_.p2` by its
+  name in `Ov0NN_ReloadSceneResources` (her actor's container then, the one `Ov022_BuildActorSlot` builds her
+  weapon from); her own `ba/ch/xo/w_.p2` holds only the swings' traces (`ro_w00_trace` ..., entries 40-66), read
+  for the animation tables and freed; the camp's model does the same (`Ov008_Menu_LoadSceneText`, character
+  0xe: `gOv008RoxasWPath` over the record's file). A mod's character on her code opens its own folder's copy,
+  `ba/ch/c<number>/ro/w_.p2`, in both (the joins; the port serves it with the folder), so its `[weapons]`
+  reach its keyblades (seen 2026-11-06: a tester found only the traces offered for Xion; a test character on
+  her code drew its own `ro_w00600` in the field).
 - **The camp's model in a room**: `Ov008_Menu_InitSceneObject` and `Ov008_Menu_LoadSceneText` draw the local
   player's character; the joins ask its seat (`Session_GetLocalPlayerIndex`), not seat 0 -- asked seat 0, a guest
   on a mod's character's base saw itself as the host's character.

@@ -8,14 +8,33 @@
 
 static const char *const languages[KHDAYS_CHARACTER_LANGUAGES] = {"en", "fr", "de", "it", "es"};
 
-/* The data folders' order (data_02042a70), with the names a description gives them. */
+/* The data folders' order (data_02042a70), with the names a description gives them; the hand nodes the game puts
+ * their weapons on, right and left, as the camp's records name them (ov008's gOv008CampCharacterRecords; Xaldin,
+ * Demyx, Luxord and Zexion hold theirs from their model's root); the folder whose w_.p2 holds their weapon models
+ * when not their own (Xion's overlays open ba/ch/ro/w_.p2). */
 static const struct {
-    const char *name, *code;
+    const char *name, *code, *right, *left, *weapons;
 } bases[KHDAYS_CHARACTER_FOLDERS] = {
-    {"roxas", "ro"},    {"axel", "ax"},   {"xigbar", "xi"},  {"saix", "sa"},    {"xaldin", "xa"},
-    {"sora", "so"},     {"demyx", "de"},  {"larxene", "la"}, {"lexaeus", "le"}, {"luxord", "lu"},
-    {"marluxia", "ma"}, {"riku", "ri"},   {"vexen", "ve"},   {"xemnas", "xe"},  {"xion", "xo"},
-    {"zexion", "ze"},   {"mickey", "mi"}, {"donald", "do"},  {"goofy", "go"},   {"roxas_dual", "r2"},
+    {"roxas", "ro", "ro_w_tg_R", "ro_w_tg_L", NULL},
+    {"axel", "ax", "ax_h_R", "ax_h_L", NULL},
+    {"xigbar", "xi", "xig_h_R", "xig_h_L", NULL},
+    {"saix", "sa", "sa_h_R", "sa_h_L", NULL},
+    {"xaldin", "xa", NULL, NULL, NULL},
+    {"sora", "so", "so_w_tg00", "so_left_dummy", NULL},
+    {"demyx", "de", NULL, NULL, NULL},
+    {"larxene", "la", "la_h_R", "la_h_L", NULL},
+    {"lexaeus", "le", "le_h_R", NULL, NULL},
+    {"luxord", "lu", NULL, NULL, NULL},
+    {"marluxia", "ma", "ma_h_R", NULL, NULL},
+    {"riku", "ri", "ri_h_R", NULL, NULL},
+    {"vexen", "ve", "ve_w_tg", NULL, NULL},
+    {"xemnas", "xe", "xe_h_R", "xe_h_L", NULL},
+    {"xion", "xo", "xo_h_R", NULL, "ro"},
+    {"zexion", "ze", NULL, NULL, NULL},
+    {"mickey", "mi", "mi_w_tg_R", NULL, NULL},
+    {"donald", "do", "do_h_R", NULL, NULL},
+    {"goofy", "go", "go_h_R", NULL, NULL},
+    {"roxas_dual", "r2", "ro_h_R", "ro_h_L", NULL},
 };
 
 /* [stats]' names, in KhdaysCharacterStat's order. */
@@ -37,6 +56,22 @@ const char *khdays_character_base_name(int number)
 const char *khdays_character_base_code(int number)
 {
     return number >= 0 && number < KHDAYS_CHARACTER_FOLDERS ? bases[number].code : NULL;
+}
+
+const char *khdays_character_base_hand(int number, int hand)
+{
+    if (number < 0 || number >= KHDAYS_CHARACTER_FOLDERS) {
+        return NULL;
+    }
+    return hand == 0 ? bases[number].right : hand == 1 ? bases[number].left : NULL;
+}
+
+const char *khdays_character_weapons_code(int number)
+{
+    if (number < 0 || number >= KHDAYS_CHARACTER_FOLDERS) {
+        return NULL;
+    }
+    return bases[number].weapons != NULL ? bases[number].weapons : bases[number].code;
 }
 
 static char *copy_n(const char *s, size_t n)

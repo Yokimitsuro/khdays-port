@@ -194,9 +194,14 @@ struct OwnSkeleton {
     std::set<std::string> looping;
     std::set<std::string> told; // the animations told to have no clip
     std::vector<Mat> world_now; // this draw's nodes' places (own_pose)
-    int weapon_bone = -1;       // its node the weapon follows
-    int game_weapon_node = -1;  // the base model's node the game puts the weapon on
-    Mat weapon_fix = kIdentity; // the bone's rest to that node's rest
+    // its weapons: each base model's node the game puts one on (a hand's), its own node that weapon follows, and the
+    // turn from that bone's rest to the base node's
+    struct Held {
+        int game_node = -1;
+        int bone = -1;
+        Mat fix = kIdentity;
+    };
+    std::vector<Held> held;
 };
 
 // The KH2 motion a game animation plays from its frame `from` (BCA frames) until the next section's,

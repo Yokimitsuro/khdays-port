@@ -25,6 +25,9 @@ std::vector<std::string> form_part_names(const IniText& ini, const std::string& 
 // The game's characters a form plays as: a character's bases and the dual-wield Roxas (roxas_dual, r2).
 const std::vector<std::string>& form_bases();
 std::string form_base_code(const std::string& base);
+// The folders whose w_.p2 hold a base's weapon models: its own; Roxas's, then hers, for Xion (her overlays open his
+// for her keyblades; hers holds only the swings' traces).
+std::vector<std::string> form_weapon_folders(const std::string& base);
 
 // Changes of a form's parts; each keeps the rest of the text as written. False with the reason (an id taken ...).
 bool add_form(IniText* ini, const std::string& id, std::string* why);
