@@ -108,7 +108,7 @@ struct Targets {
     float4 fog : SV_Target2;
     float4 opaque : SV_Target3;
     float4 flags : SV_Target4;
-    uint depth24 : SV_Target5;
+    float depth24 : SV_Target5; // a whole number of 24 bits, exact in a float (gpu_native3d.c formats)
 #if !defined(NATIVE3D_RASTER_DEPTH)
     float depth : SV_Depth;
 #endif
@@ -136,7 +136,7 @@ Targets ps_main(Corner i)
 #if !defined(NATIVE3D_RASTER_DEPTH)
     o.depth = (float)((p.attr & 0x4000u) != 0u ? max((int)depth - 0x200, 0) : (int)depth) / 16777216.0f;
 #endif
-    o.depth24 = depth;
+    o.depth24 = (float)depth;
     if (mode == 3u && id == 0u) {
         return o; // a shadow mask: only its depth test counts (it writes no target)
     }

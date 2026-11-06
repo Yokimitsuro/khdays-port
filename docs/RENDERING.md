@@ -419,7 +419,14 @@ A picture writes only the targets what finishes it reads: the colour, alpha
 and flags always; the first translucent colour when the rear plane can be empty;
 the fog bit with fog on, the polygon IDs and edges with edge marking on, the
 depth for either (`finish3d.hlsli`). Without the clear image the rear plane is
-the targets' clear values. `native3d_pack.hlsl` then writes `raster3d.hlsl`'s
+the targets' clear values. The depth target is a float one holding the DS's
+24-bit depth as a whole number (exact in a float): a render pass clears with
+float values, which Direct3D 12 converts for an integer format and Vulkan hands
+over as their bits, so an `R32_UINT` cleared to the rear plane's depth held about
+half of it on Vulkan, and `raster3d.hlsl`, resuming from it in a scene with KH2
+Roxas's coat (its clip volume comes first in the list), left out the whole room
+(a black screen under the dialog boxes, fixed 2026-11-06).
+`native3d_pack.hlsl` then writes `raster3d.hlsl`'s
 two targets, which `compose.hlsl`, the one-screen picture and the capture read
 as before. The native sequences (a mod's KH2-style HUD) blend with the scene in
 ways the card's blending cannot, so the list from the first of them on is drawn

@@ -57,9 +57,13 @@ enum {
 #define CLEAR_MASKS (-1)
 #define CLEAR_TRANSLUCENT (-2)
 
+/* the depth (a whole number of 24 bits, exact in a float) in a float target: a render pass clears a target with
+ * float values, which Direct3D 12 converts for an integer format and Vulkan gives as their bits -- an R32_UINT
+ * cleared to the rear plane's depth held another (about half way) on Vulkan, and raster3d.hlsl resuming from it
+ * left out all that lay behind that */
 static const SDL_GPUTextureFormat formats[TARGETS] = {
     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R32_UINT};
+    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R32_FLOAT};
 /* the targets each output needs written */
 static const int target_output[TARGETS] = {0, OUT_FIRST, OUT_FOG, OUT_IDS, 0, OUT_DEPTH};
 #define TARGET_USAGE (SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE)

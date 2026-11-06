@@ -22,7 +22,7 @@ struct Targets {
     float4 fog : SV_Target2;
     float4 opaque : SV_Target3;
     float4 flags : SV_Target4;
-    uint depth24 : SV_Target5;
+    float depth24 : SV_Target5; // a whole number of 24 bits, exact in a float
     float depth : SV_Depth;
 };
 
@@ -38,7 +38,7 @@ Targets ps_main(float4 at : SV_Position)
     o.fog = float4((float)r.fog, 0.0f, 0.0f, 1.0f);
     o.opaque = float4((float)((clear_color >> 24) & 63u) / 255.0f, 0.0f, 0.0f, 1.0f);
     o.flags = float4(0.0f, 0.0f, 0.0f, (float)r.color.w / 31.0f);
-    o.depth24 = r.depth;
+    o.depth24 = (float)r.depth;
     o.depth = (float)r.depth / 16777216.0f;
     return o;
 }
