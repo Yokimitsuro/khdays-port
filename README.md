@@ -111,10 +111,10 @@ To build the port from source instead:
    The data goes to `data/extracted/<hash>/`, which is never committed.
 
 2. Build (Windows, Visual Studio 2026 with the C++ workload, CMake, Ninja,
-   and for the preparation Python's `pycparser`):
+   and for the preparation Python's `pycparser` 3 or newer):
 
    ```powershell
-   py -m pip install pycparser
+   py -m pip install "pycparser>=3"
    py .\port\build.py --config Release
    ```
 
