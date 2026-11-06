@@ -643,7 +643,8 @@ and the original is drawn.
 writes, without starting the game, every texture (with each palette it is
 drawn with), every model as glTF with its skeleton, and every 2D tile sheet
 as an indexed PNG, under those names (default `saves/dump/graphics`). A
-dumped 2D tile sheet put back unchanged is drawn as the original.
+dumped 2D tile sheet put back unchanged is drawn as the original, and one at
+the original's size in true colour keeps its pixels sharp, as the game's.
 `khdays-native --kh2-object <mdlx> <out.gltf> [--hd <folder>] [--picture <n>
 <file>]... [--pose <mset> <motion>] [--turn <degrees>]` makes a KINGDOM HEARTS
 II object of the player's 1.5+2.5 copy into a glTF model with its skeleton,

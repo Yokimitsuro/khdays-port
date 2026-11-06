@@ -476,7 +476,10 @@ composed with the tile and without it, as the elements are. A sheet smaller than
 shown (an output pixel inside one texel: a 6x sheet at a 4K window's 12x) is read
 through Catmull-Rom over the 4 x 4 texels round the pixel, those past the tile's
 edge taken at its edge (the tile beside it in the sheet is not the one beside it
-on the screen), so its edges stay smooth instead of showing the texels' steps. A
+on the screen), so its edges stay smooth instead of showing the texels' steps --
+but a sheet at the DS's own size (1x, a texel to a DS pixel) is read at the texel
+under the pixel, sharp, as the game's own pixels are (smoothed, a mod's 1x
+sprite in colour came out blurred in the camp's menus, a tester, 2026-11-07). A
 frame of 2D is composed at the 2D's scale (above) even without 3D: at the DS's own
 size, which a frame of 2D alone kept before (now only the 2D check,
 `KHDAYS_GFX=check`, compares there), the sheet was averaged down to the DS's pixels
