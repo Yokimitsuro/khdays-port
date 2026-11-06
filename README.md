@@ -344,8 +344,8 @@ once:
 - **Picture pace**: smooth, the default -- the 3D drawn at your monitor's
   refresh rate (60, 120, 144, 165 Hz...), placed between the game's last two
   frames (the game itself runs at 30 frames a second, as on the DS), the
-  picture up to one game frame behind -- or as on the DS, a new picture each
-  game frame. Camera cuts and scene changes are not smoothed across. The 2D
+  picture a steady game frame and a half or so behind -- or as on the DS, a
+  new picture each game frame. Camera cuts and scene changes are not smoothed across. The 2D
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
   second.

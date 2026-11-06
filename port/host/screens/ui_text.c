@@ -616,16 +616,17 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO_MOVIES_PC] = {"Full colour", "Couleurs complètes", "Volle Farben", "Colori pieni", "Color completo"},
     [TXT_VIDEO_MOVIES_DS] = {"As on the DS", "Comme sur DS", "Wie auf dem DS", "Come sul DS", "Como en la DS"},
     [TXT_VIDEO_PACE] = {"Picture pace", "Rythme de l'image", "Bildrate", "Ritmo dell'immagine", "Ritmo de imagen"},
-    [TXT_VIDEO_PACE_NOTE] = {"Smooth draws the 3D at the monitor's rate, up to a game frame behind; the DS shows 30 "
-                             "pictures a second.",
-                             "Fluide dessine la 3D à la fréquence de l'écran, jusqu'à une image du jeu de retard ; "
-                             "la DS affiche 30 images par seconde.",
-                             "Flüssig zeichnet das 3D mit der Bildrate des Monitors, bis zu ein Spielbild später; "
-                             "der DS zeigt 30 Bilder pro Sekunde.",
-                             "Fluido disegna il 3D alla frequenza dello schermo, fino a un fotogramma di gioco in "
-                             "ritardo; il DS mostra 30 immagini al secondo.",
-                             "Fluido dibuja la 3D al ritmo del monitor, hasta un fotograma del juego por detrás; "
-                             "la DS muestra 30 imágenes por segundo."},
+    [TXT_VIDEO_PACE_NOTE] =
+        {"Smooth draws the 3D at the monitor's rate, about a game frame behind; the DS shows 30 "
+         "pictures a second.",
+         "Fluide dessine la 3D à la fréquence de l'écran, avec environ une image du jeu de retard ; "
+         "la DS affiche 30 images par seconde.",
+         "Flüssig zeichnet das 3D mit der Bildrate des Monitors, etwa ein Spielbild später; "
+         "der DS zeigt 30 Bilder pro Sekunde.",
+         "Fluido disegna il 3D alla frequenza dello schermo, circa un fotogramma di gioco in "
+         "ritardo; il DS mostra 30 immagini al secondo.",
+         "Fluido dibuja la 3D al ritmo del monitor, un fotograma del juego por detrás más o menos; "
+         "la DS muestra 30 imágenes por segundo."},
     [TXT_VIDEO_PACE_SMOOTH] = {"Smooth", "Fluide", "Flüssig", "Fluido", "Fluido"},
     [TXT_VIDEO_PACE_DS] = {"As on the DS", "Comme sur DS", "Wie auf dem DS", "Come sul DS", "Como en la DS"},
     [TXT_VIDEO_PACE_WARNING] =

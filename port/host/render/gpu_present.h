@@ -46,8 +46,9 @@ void khdays_present_resized(void);
 void khdays_present_package(const KhdaysFramePackage *package);
 
 /* The 3D at the monitor's rate: whether the newest package is drawn again at each refresh
- * (picture_pace smooth), the 3D placed between the two latest logic frames at the refresh's time (at
- * most one logic frame behind). Returns 0 when there is nothing new to draw. */
+ * (picture_pace smooth), the 3D placed between two of the latest logic frames at the game's time a steady
+ * while ago (a logic frame and the longest the latest took to reach the window). Returns 0 when there is
+ * nothing new to draw. */
 int khdays_present_smooth(void);
 int khdays_present_refresh(void);
 

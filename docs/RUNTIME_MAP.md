@@ -398,9 +398,9 @@ The native build prints these to stderr when the variable is set:
   named once (section 10).
 - `KHDAYS_FRAME_LOG=1` -- a line per picture the window draws, in
   `saves/logs/frames-<date>-<time>.log`: the game's time (ms), the newest
-  logic frame, where the picture falls between the two latest (`alpha`), the
-  polygons placed between of all, `between`/`newest`/`cut`, the two logic
-  frames' VBlank times, and the camera's translation and turn between them
+  logic frame, where the picture falls between the two lists it is placed
+  between (`alpha`), the polygons placed between of all,
+  `between`/`newest`/`cut`, those two lists' times, and the camera's translation and turn between them
   (section 7, "The picture at the monitor's rate").
 - `KHDAYS_TRACE_UPDATES` -- each object update's change to the next.
 - `KHDAYS_TRACE_CAPTURE` -- each screen blend's frame as the window draws it:
@@ -626,7 +626,9 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   before them) are drawn at all.
 - `KHDAYS_SHOTS_HD=DIR` -- with a window, at the same frames, both screens as
   the window presents them, at the resolution they were drawn:
-  `DIR/frame_NNNNN_upper.png` and `_lower.png`.
+  `DIR/frame_NNNNN_upper.png` and `_lower.png`. `KHDAYS_SHOTS_BETWEEN=1`: also,
+  on one screen, five pictures between the frame and the one before at
+  `picture_pace = smooth` (`_one_<k>_a<alpha x 1000>.png`, section 7).
 - `KHDAYS_RECORD_FRAMES=DIR` -- (with `KHDAYS_SHOTS`, only the frames it
   lists) each frame drawn as the frame package the
   game thread hands the host (`port/runtime/display/frame_package.h`: the screens,
@@ -1715,9 +1717,17 @@ vertices -- in the field the median share is all of them) have their vertices
 placed between the older's and the newer's, in clip space, then the list is
 clipped and drawn as the game's. The newer list reaches the host in the
 package of the VBlank after the one that first shows it (median 20.6 ms
-after); the picture moves to it over one logic frame from that package's
-VBlank -- up to one logic frame behind the DS's pace's picture. Nothing is
-interpolated into a new scene or across a camera cut: a camera that turned
+after), and the window takes it at its next refresh. Until 2026-11-06 the
+picture moved to it over one logic frame from that package's VBlank, so it
+stood still for a refresh whenever a list reached the window later than the
+one before: at 165 Hz the window takes the game's 30 lists a second 5 and 6
+refreshes apart (30.3 and 36.4 ms), and the camera stuttered (427 stills of
+one or two refreshes in 157 s of the field, a tester's report at a high refresh
+rate). The picture now shows the game's time a steady while ago: a logic frame
+and the longest any of the last 32 lists took from being made to being taken
+(57 ms at 165 Hz, 6.5 more than before), between the two of the three kept
+lists about that time -- none still since. Nothing is interpolated into a new
+scene or across a camera cut (the lists before one are let go): a camera that turned
 more than the field camera can in a logic frame (0xa00, 14.06 degrees: the
 cap in section 3) or moved more than 1.0 in its translation (a bound the
 camera code does not give: the gap measured on the story walk, normal frames
@@ -1728,7 +1738,11 @@ is in flight, so a picture is drawn for the refresh that shows it.
 Measured on the maintainer's 165 Hz monitor (`KHDAYS_FRAME_LOG`, the play
 walk's field, 25 s): 165 pictures a second, none more than 1.5 times the
 period apart (8.9 ms the largest), each a new one save while the next logic
-frame was late (192 of 4,125 the newest list held).
+frame was late (192 of 4,125 the newest list held, before the steady delay).
+`KHDAYS_SHOTS_BETWEEN=1` (with `KHDAYS_SHOTS_HD`) shows the pictures it makes:
+after each frame asked, five pictures of the same two lists at 0, 0.25, 0.5,
+0.75 and 0.999 of the way. A Dark Corridor's (a mission's start, 2026-11-06)
+came out whole at each.
 
 ## 8. Files
 
