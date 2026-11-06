@@ -589,6 +589,7 @@ add_executable(khdays-native
     runtime/missions/save_part.c       # ... kept beside each save file,
     runtime/missions/tables.c          # ... their rows in the game's tables,
     runtime/missions/worlds.c          # ... the worlds they are played in
+    runtime/missions/room.c            # ... the ones a room's copies all have
     runtime/rooms/slots.c              # a world's rooms' loaded slots, past the game's 24
     runtime/rooms/added.cpp            # ... and the rooms the mods add to them
     runtime/missions/missions.c        # ... and all of it in the game
@@ -899,7 +900,8 @@ target_compile_options(khdays-stop-magic-test PRIVATE /W4 /std:c17)
 add_test(NAME khdays-stop-magic COMMAND khdays-stop-magic-test)
 # The mods' new missions (runtime/missions/): descriptions, numbers, progress, the save part, the tables' rows.
 add_executable(khdays-missions-test tests/missions_test.c runtime/missions/registry.c runtime/missions/field_store.c
-               runtime/missions/save_part.c runtime/missions/tables.c runtime/missions/worlds.c)
+               runtime/missions/save_part.c runtime/missions/tables.c runtime/missions/worlds.c
+               runtime/missions/room.c)
 target_compile_options(khdays-missions-test PRIVATE /W4 /std:c17)
 # ... with the game's own list and table when the player's data is extracted (decompressed/ of data/).
 file(GLOB KHDAYS_DECOMPRESSED "${CMAKE_CURRENT_SOURCE_DIR}/../data/extracted/*/decompressed")

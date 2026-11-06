@@ -4,6 +4,7 @@
 #include "worlds.h"
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,27 @@ static char *copy_text(const char *p, size_t n)
     return s;
 }
 
+/* A line of mission `m`'s block added to its text (KhdaysMission.block): the line as trimmed, then a line feed. A
+ * text that cannot grow is dropped for good (block NULL, its size SIZE_MAX), so a part of it never passes for all
+ * of it. */
+static void keep_line(KhdaysMission *m, const char *line, size_t n)
+{
+    if (m->block_size == SIZE_MAX) {
+        return;
+    }
+    char *grown = realloc(m->block, m->block_size + n + 1);
+    if (grown == NULL) {
+        free(m->block);
+        m->block = NULL;
+        m->block_size = SIZE_MAX;
+        return;
+    }
+    memcpy(grown + m->block_size, line, n);
+    grown[m->block_size + n] = '\n';
+    m->block = grown;
+    m->block_size += n + 1;
+}
+
 static void free_mission(KhdaysMission *m)
 {
     for (int l = 0; l < KHDAYS_MISSION_LANGUAGES; ++l) {
@@ -52,6 +74,7 @@ static void free_mission(KhdaysMission *m)
         free(m->description[l]);
     }
     free(m->identity);
+    free(m->block);
     free(m->unlock_after);
     free(m->room_key);
 #pragma warning(push)
@@ -669,6 +692,8 @@ int khdays_missions_read(KhdaysMissions *r, const char *id, const char *folder, 
             trim(&key, &key_end);
             *key_end = '\0';
             open_block(&g, key, line);
+            keep_line(&g.m, "[mission", 8);
+            keep_line(&g.m, key, strlen(key));
             continue;
         }
         if (!g.open) {
@@ -677,6 +702,7 @@ int khdays_missions_read(KhdaysMissions *r, const char *id, const char *folder, 
             }
             continue;
         }
+        keep_line(&g.m, p, strlen(p));
         char *equals = strchr(p, '=');
         if (equals == NULL) {
             refuse(&g, line, "not a \"setting = value\" line");

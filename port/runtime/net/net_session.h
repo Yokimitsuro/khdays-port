@@ -117,6 +117,17 @@ int khdays_net_seed(unsigned long long *seed);
 int khdays_net_share(const void *data, unsigned int size);
 int khdays_net_shared(unsigned char **data, unsigned int *size);
 
+/* The new missions this copy brings to a room (runtime/missions/room.h's list; copied), set as the game starts: a
+ * guest's sent to the host as it is welcomed, the host's to each member as it joins. */
+void khdays_net_set_missions(const unsigned char *list, unsigned int size);
+/* The lists of the room's other copies, each handed to `each` with the session's lock held (`each` only reads
+ * them): a host's members', a guest's host's; `known` 0 while a copy's has not come (an older port never sends
+ * one). Returns 1 on a host, 2 on a guest, 0 out of a room. */
+int khdays_net_room_missions(void (*each)(const unsigned char *list, unsigned int size, int known, void *context),
+                             void *context);
+/* Another value each time a list comes, a copy joins or leaves, or this copy's role changes. */
+unsigned int khdays_net_missions_version(void);
+
 /* Whether we are in a room or joining one (the settings menu does not pause the game then). */
 int khdays_net_in_session(void);
 

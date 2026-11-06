@@ -27,8 +27,12 @@ int khdays_missions_flag_set(unsigned int flag, int on);
 int khdays_missions_best(int number);
 void khdays_missions_set_best(int number, int value);
 /* Mission Mode's list: whether the row `record` of a new mission is shown for the list's `flags` (its category
- * << 8, the kinds it shows); -1 for the game's rows (the game's own test). */
+ * << 8, the kinds it shows); -1 for the game's rows (the game's own test). In a room the host lists only the
+ * missions every member has, the same (room.h). */
 int khdays_missions_eligible(const void *record, unsigned int flags);
+/* In a room, as a copy takes the host's choice (Ov008_CommitSynchronizedSnapshotState): on a guest, a new mission's
+ * number and file, the host's, made this copy's own for the same mission. */
+void khdays_missions_from_host(void);
 void *khdays_missions_file_loaded(unsigned top, void *buffer, unsigned size, void *heap);
 /* A spawner node made (Ov002_CreateSpawner): in a mission the port built, one made after its region was
  * enabled -- a later wave's -- takes the region's state, so that it runs. */

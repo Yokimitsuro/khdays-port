@@ -1,0 +1,21 @@
+# The multiplayer_room_missions walk: a mod of missions alone (no mod.ini, as KH Studio makes one) that only the
+# host has. Its folder's name sorts before multiplayer_boss_waves, so its mission is numbered first on the host and
+# the mission both copies have gets another number there. It is listed in the same tab: shown, the host's route
+# would pick it.
+[mission extra]
+name en = The Host's Own
+name fr = Celle de l'hôte
+name de = Die des Gastgebers
+name it = Quella dell'ospite
+name es = La del anfitrión
+objective en = Defeat every Heartless.
+objective fr = Battez tous les Sans-cœur.
+objective de = Besiege alle Herzlosen.
+objective it = Sconfiggi tutti gli Heartless.
+objective es = Derrota a todos los sincorazón.
+world = eh
+room = 2
+category = 0
+time = 300000
+start = 0 0.049 0 -90
+wave 1 = 0x3 at 0 0.049 -3

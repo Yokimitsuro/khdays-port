@@ -5,6 +5,7 @@
 #include "build.h"
 #include "field_store.h"
 #include "registry.h"
+#include "room.h"
 #include "save_part.h"
 #include "tables.h"
 #include "worlds.h"
@@ -12,8 +13,10 @@
 #include "../../host/app/instance.h"
 #include "../core/rom.h"
 #include "../core/session_log.h"
+#include "../core/sha256.h"
 #include "../core/window.h"
 #include "../mods/list.h"
+#include "../net/net_session.h"
 #include "../menus/savelist.h"
 #include "../menus/saveslots.h"
 #include "../scripts/folders.h"
@@ -30,6 +33,11 @@ extern void NNSi_FndFreeFromDefaultHeap(KhdaysRef block);
 extern int GameState_GetField(int field, int bits);
 
 #define MODS "mods"
+
+/* Mission Mode's choice (data_0204c240: its mode flags, then the mission's file number, the one
+ * Ov002_ConstructGameplayScene formats mi/mi/%04d with); the mission's number (gMissionNumber) just before it. */
+#define MISSION_CHOICE 0x0204c240u
+#define MISSION_CHOICE_FILE 2u
 
 static KhdaysMissions registry;
 static KhdaysFieldStore store;
@@ -139,6 +147,26 @@ static int game_items(void)
     return count;
 }
 
+/* Mission `m`'s digest (KhdaysMission.digest), what a room's copies compare: its block's lines and, played from a
+ * file of its own, that file's bytes. */
+static void mission_digest(KhdaysMission *m, const char *own_file)
+{
+    KhdaysSha256 sha;
+    khdays_sha256_begin(&sha);
+    if (m->block != NULL) {
+        khdays_sha256_add(&sha, m->block, m->block_size);
+    }
+    if (own_file != NULL) {
+        size_t size = 0;
+        char *bytes = khdays_folders_read(own_file, &size);
+        if (bytes != NULL) {
+            khdays_sha256_add(&sha, bytes, size);
+        }
+        free(bytes);
+    }
+    khdays_sha256_end(&sha, m->digest);
+}
+
 void khdays_missions_start(void)
 {
     /* a chest's contents must be one of the game's items: the game reads its record as the mission starts */
@@ -151,6 +179,7 @@ void khdays_missions_start(void)
     for (int i = 0; i < registry.count; ++i) {
         KhdaysMission *m = &registry.list[i];
         char disk[1024], path[32];
+        int own_file = 0;
         if (m->number == 0) {
             continue;
         }
@@ -207,7 +236,7 @@ void khdays_missions_start(void)
                 snprintf(why, sizeof(why), "mission %s left out: its waves do not build: %s", m->key, reason);
             }
         } else if (khdays_folders_is_file(disk)) {
-            served = khdays_rom_add_file(path, disk);
+            served = own_file = khdays_rom_add_file(path, disk);
         } else if (m->template_file != 0) {
             served = khdays_rom_add_alias(path, template_path);
         }
@@ -220,8 +249,15 @@ void khdays_missions_start(void)
             note(registry.mods[m->mod].id, m->line, why, NULL);
             m->number = 0;
             --numbered;
+        } else {
+            mission_digest(m, own_file ? disk : NULL);
         }
     }
+    /* what this copy brings to a multiplayer room (room.h) */
+    size_t room_size = 0;
+    unsigned char *room_list = khdays_missions_room_list(&registry, &room_size);
+    khdays_net_set_missions(room_list, (unsigned)room_size);
+    free(room_list);
 }
 
 void khdays_missions_report(void)
@@ -360,6 +396,88 @@ static int unlocked(const KhdaysMission *m)
     return m->unlock_number == 0 || cleared(m->unlock_number);
 }
 
+/* ---- Multiplayer rooms (room.h) ------------------------------------------------------------------ */
+
+typedef struct RoomCheck {
+    const KhdaysMission *m;
+    int all; /* 1 while every member has it */
+} RoomCheck;
+
+static void member_has(const unsigned char *list, unsigned int size, int known, void *context)
+{
+    RoomCheck *c = context;
+    if (!known || !khdays_missions_room_holds(list, size, c->m)) {
+        c->all = 0;
+    }
+}
+
+/* Whether mission `m` is offered here: always out of a room and on a guest (only the host chooses); on a host, when
+ * every member has it, the same. Each one left out is told once for each change of the room. */
+static int room_offers(const KhdaysMission *m)
+{
+    static unsigned int told_version;
+    static unsigned char *told; /* by the registry's index */
+    RoomCheck c = {m, 1};
+    if (khdays_net_room_missions(member_has, &c) != 1 || c.all) {
+        return 1;
+    }
+    const unsigned int version = khdays_net_missions_version();
+    if (told == NULL || version != told_version) {
+        free(told);
+        told = calloc((size_t)registry.count, 1);
+        told_version = version;
+    }
+    const ptrdiff_t i = m - registry.list;
+    if (told != NULL && !told[i]) {
+        told[i] = 1;
+        khdays_log("missions: %s left out of the room's list: not every member has it, the same", m->identity);
+    }
+    return 0;
+}
+
+/* The host's list (a guest's room has one other copy, the host), copied out of the session's lock. */
+typedef struct HostList {
+    unsigned char *list;
+    unsigned int size;
+    int known;
+} HostList;
+
+static void host_list(const unsigned char *list, unsigned int size, int known, void *context)
+{
+    HostList *h = context;
+    h->known = known;
+    if (known && list != NULL && size > 0 && (h->list = malloc(size)) != NULL) {
+        memcpy(h->list, list, size);
+        h->size = size;
+    }
+}
+
+void khdays_missions_from_host(void)
+{
+    volatile u16 *number = (volatile u16 *)KHDAYS_W(MISSION_CHOICE - 4u);
+    volatile u16 *file = (volatile u16 *)KHDAYS_W(MISSION_CHOICE + MISSION_CHOICE_FILE);
+    const int host_number = *number, host_file = *file;
+    HostList h = {NULL, 0, 0};
+    if (host_number < KHDAYS_MISSION_FIRST || khdays_net_room_missions(host_list, &h) != 2) {
+        free(h.list);
+        return; /* the game's own mission, or not a guest */
+    }
+    int named = 0;
+    const KhdaysMission *m = khdays_missions_room_local(&registry, h.list, h.size, host_number, &named);
+    if (m != NULL) {
+        *number = (u16)m->number;
+        *file = (u16)m->file;
+        khdays_log("missions: the host's mission %d (file %d) is %s: mission %d here (file %d)", host_number, host_file,
+                   m->identity, m->number, m->file);
+    } else if (!h.known) {
+        khdays_log("missions: the host's mission %d: the host never said which it is (an older port)", host_number);
+    } else {
+        khdays_log("missions: the host's mission %d is %s this copy does not have, the same", host_number,
+                   named ? "one" : "none");
+    }
+    free(h.list);
+}
+
 int khdays_missions_eligible(const void *record, unsigned int flags)
 {
     const unsigned char *r = record;
@@ -374,7 +492,7 @@ int khdays_missions_eligible(const void *record, unsigned int flags)
         rd16(r + KHDAYS_LIST_CATEGORY) != LIST_CATEGORY(flags)) {
         return 0;
     }
-    return unlocked(m);
+    return unlocked(m) && room_offers(m);
 }
 
 /* ---- The game's tables --------------------------------------------------------------------------- */
@@ -434,11 +552,6 @@ void *khdays_missions_file_loaded(unsigned top, void *buffer, unsigned size, voi
 }
 
 /* ---- The mission being played ------------------------------------------------------------------- */
-
-/* Mission Mode's choice (data_0204c240: its mode flags, then the mission's file number, the one
- * Ov002_ConstructGameplayScene formats mi/mi/%04d with). */
-#define MISSION_CHOICE 0x0204c240u
-#define MISSION_CHOICE_FILE 2u
 
 /* The new mission being played, or NULL (a game's). */
 static const KhdaysMission *playing(void)

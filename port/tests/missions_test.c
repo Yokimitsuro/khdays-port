@@ -3,6 +3,7 @@
  * on made-up tables, and on the game's own when the player's data is extracted (argument: its decompressed/). */
 #include "../runtime/missions/field_store.h"
 #include "../runtime/missions/registry.h"
+#include "../runtime/missions/room.h"
 #include "../runtime/missions/save_part.h"
 #include "../runtime/missions/tables.h"
 
@@ -364,6 +365,92 @@ static void numbering(void)
     khdays_field_store_free(&sb);
 }
 
+/* A stand-in for the port's digest (SHA-256 in missions.c): a function of the block alone. */
+static void fake_digest(KhdaysMission *m)
+{
+    unsigned h = 2166136261u;
+    for (size_t i = 0; m->block != NULL && i < m->block_size; ++i) {
+        h = (h ^ (unsigned char)m->block[i]) * 16777619u;
+    }
+    for (int i = 0; i < 32; ++i) {
+        h = h * 16777619u + (unsigned)i;
+        m->digest[i] = (unsigned char)(h >> 24);
+    }
+}
+
+static void read_copy(KhdaysMissions *r, KhdaysFieldStore *s, const char *const *mods, const char *const *texts, int n)
+{
+    for (int i = 0; i < n; ++i) {
+        CHECK(khdays_missions_read(r, mods[i], mods[i], texts[i], strlen(texts[i]), NULL, NULL) == 1);
+    }
+    CHECK(khdays_missions_number(r, s, NULL, NULL) == n);
+    for (int i = 0; i < r->count; ++i) {
+        fake_digest(&r->list[i]);
+    }
+}
+
+/* A room's copies with different mods: the host has one more, numbered before the mission both have, so that
+ * mission has another number on each copy; the guest's text of it differs only in comments, blank lines and line
+ * ends. */
+static void room_lists(void)
+{
+    static const char extra[] = "[mission x]\nname en = X\nobjective en = O\nworld = eh\n";
+    static const char shared[] = "# the mission both have\n[mission s]\nname en = S\n\nobjective en = O\n"
+                                 "world = eh\nwave 1 = 0x1 at 0 0 3\n";
+    static const char shared_again[] = "[mission s]  \r\n  name en = S   \r\n# a comment of the guest's\r\n"
+                                       "objective en = O\r\nworld = eh\r\n\r\nwave 1 = 0x1 at 0 0 3\r\n";
+    static const char shared_other[] =
+        "[mission s]\nname en = S\nobjective en = O\nworld = eh\nwave 1 = 0x2 at 0 0 3\n";
+    const char *host_mods[] = {"Extra", "Shared"}, *guest_mods[] = {"Shared"};
+    const char *host_texts[] = {extra, shared}, *guest_texts[] = {shared_again}, *other_texts[] = {shared_other};
+    KhdaysMissions host = {0}, guest = {0}, other = {0};
+    KhdaysFieldStore hs = {0}, gs = {0}, os = {0};
+    read_copy(&host, &hs, host_mods, host_texts, 2);
+    read_copy(&guest, &gs, guest_mods, guest_texts, 1);
+    read_copy(&other, &os, guest_mods, other_texts, 1);
+    const KhdaysMission *hx = &host.list[0], *hsm = &host.list[1], *gsm = &guest.list[0];
+    /* the block: its lines trimmed, no comments nor blank lines */
+    static const char kept[] = "[mission\ns\nname en = S\nobjective en = O\nworld = eh\nwave 1 = 0x1 at 0 0 3\n";
+    CHECK(hsm->block != NULL && hsm->block_size == sizeof(kept) - 1 && memcmp(hsm->block, kept, sizeof(kept) - 1) == 0);
+    CHECK(gsm->block_size == hsm->block_size && memcmp(gsm->block, hsm->block, hsm->block_size) == 0);
+    CHECK(hsm->number == 3596 && gsm->number == 3595 && hsm->file != gsm->file);
+
+    size_t host_size = 0, guest_size = 0, other_size = 0;
+    unsigned char *host_list = khdays_missions_room_list(&host, &host_size);
+    unsigned char *guest_list = khdays_missions_room_list(&guest, &guest_size);
+    unsigned char *other_list = khdays_missions_room_list(&other, &other_size);
+    KhdaysRoomMission e;
+    size_t at = 0;
+    CHECK(khdays_missions_room_next(host_list, host_size, &at, &e) && e.identity_size == 7 &&
+          memcmp(e.identity, "Extra/x", 7) == 0 && e.number == hx->number && e.file == hx->file);
+    CHECK(khdays_missions_room_next(host_list, host_size, &at, &e) && e.number == hsm->number);
+    CHECK(!khdays_missions_room_next(host_list, host_size, &at, &e) && at == host_size);
+    /* the host lists only what the guest has, the same */
+    CHECK(!khdays_missions_room_holds(guest_list, guest_size, hx));
+    CHECK(khdays_missions_room_holds(guest_list, guest_size, hsm));
+    CHECK(!khdays_missions_room_holds(other_list, other_size, hsm)); /* another wave: not the same */
+    CHECK(!khdays_missions_room_holds(NULL, 0, hsm));
+    /* the guest plays the host's choice as its own */
+    int named = 0;
+    CHECK(khdays_missions_room_local(&guest, host_list, host_size, hsm->number, &named) == gsm && named);
+    CHECK(khdays_missions_room_local(&guest, host_list, host_size, hx->number, &named) == NULL && named);
+    CHECK(khdays_missions_room_local(&guest, host_list, host_size, 94, &named) == NULL && !named);
+    CHECK(khdays_missions_room_local(&other, host_list, host_size, hsm->number, &named) == NULL && named);
+    /* a list cut short reads to its last whole entry */
+    at = 0;
+    CHECK(khdays_missions_room_next(host_list, host_size - 1, &at, &e) &&
+          !khdays_missions_room_next(host_list, host_size - 1, &at, &e));
+    free(host_list);
+    free(guest_list);
+    free(other_list);
+    khdays_missions_free(&host);
+    khdays_missions_free(&guest);
+    khdays_missions_free(&other);
+    khdays_field_store_free(&hs);
+    khdays_field_store_free(&gs);
+    khdays_field_store_free(&os);
+}
+
 static void the_field_store(void)
 {
     KhdaysFieldStore s = {0};
@@ -677,6 +764,7 @@ int main(int argc, char **argv)
     chests_hold_game_items();
     chests_kept();
     numbering();
+    room_lists();
     the_field_store();
     the_save_part();
     list_rows();

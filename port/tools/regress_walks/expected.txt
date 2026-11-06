@@ -29,6 +29,7 @@ missions_emblems: 1 7 19 2 6 19
 missions_reach: 1 7 19 2 6 19
 missions_boss: 1 7 19 2 6 19
 multiplayer_boss_waves: 1 7 19 2
+multiplayer_room_missions: 1 7 19 2
 character: 1 7 19 2 6 19
 character_forms: 1 7 19 2 6 19
 character_forms_two: 1 7 19 2 6 19

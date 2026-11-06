@@ -2691,6 +2691,15 @@ HOOKS["ov008@02056048"] = [
         "      if (khdays_shown >= 0) return khdays_shown; }\n",
     )
 ]
+# ... in a room, the host's choice taken by each copy: on a guest, a new mission's number and file made its own for
+# the same mission (each copy numbers the mods' missions in its own mods' order: runtime/missions/room.h)
+HOOKS["ov008@0204e6f8"] = [
+    (  # Ov008_CommitSynchronizedSnapshotState
+        "            data_0204c248 = context->sharedSnapshot.tallyRules;\n",
+        "            data_0204c248 = context->sharedSnapshot.tallyRules;\n"
+        "            { extern void khdays_missions_from_host(void); khdays_missions_from_host(); }\n",
+    )
+]
 # ... a later wave's spawners, made after their region was enabled: running as the first wave's (the port's
 # missions only)
 HOOKS["ov002@02073a10"] = [

@@ -410,6 +410,11 @@ to join), and the same mods' characters with the same descriptions and data (CHA
 room"). A player with other gameplay mods is not let in and the room list says which mods the room
 plays with. Visual mods are each player's own and never keep anyone out.
 
+The mods' new missions (`missions/missions.txt`) are not part of that check (a mod's scripts still
+are): in a room, the host's Mission Mode list shows only the new missions every player has, with the
+same description and file (comments, blank lines and line ends do not count), and each player plays the
+host's choice as its own copy of it, whatever other missions either has.
+
 In a room, a guest's scripts still run and hear the events, but what they would change in the game
 is refused (`nil, "guest"`): the host's mods make those changes, with the host's option values, and
 they reach the guests as the rest of the game does. A guest's gameplay mods' options are shown locked

@@ -92,8 +92,10 @@ enum { GAME_PORT = 12, GATES = 32 };
  * data port 14), handed to the scripts and never to the game: a kind byte, then
  *   MODS_SEED: the room's seed (u64), the host's to each member as it joins and whenever it changes;
  *   MODS_SHARE: a piece of a message the host's mods share, a byte 1 on its last piece, then its bytes;
- *               a message's pieces come in order, as every port's records do. */
-enum { MODS_PORT = 15, MODS_SEED = 1, MODS_SHARE };
+ *               a message's pieces come in order, as every port's records do;
+ *   MODS_MISSIONS: a piece of a copy's new missions (runtime/missions/room.h), as MODS_SHARE's pieces: the
+ *               host's to each member as it joins, a guest's to the host as it is welcomed. */
+enum { MODS_PORT = 15, MODS_SEED = 1, MODS_SHARE, MODS_MISSIONS };
 #define MODS_PIECE 1024 /* a share's bytes in one record: a datagram's worth */
 /* Online: a host registers its room every 2 s (the server forgets it after
  * 10 s of silence), and a guest asks for the rooms every second while the
@@ -172,6 +174,13 @@ typedef struct Peer {
     int play_filling, play_started, play_trim;
     unsigned int play_calm, play_window, play_least;
     unsigned int play_dry, play_trimmed;
+    /* the new missions this copy has (MODS_MISSIONS): a host's guest's, a guest's host's; known once its last
+     * piece came (an older port never sends them), and the pieces being put together */
+    unsigned char *missions;
+    unsigned int missions_size;
+    int missions_known;
+    unsigned char *missions_part;
+    int missions_part_size, missions_part_room;
     /* Host only: when the last control arrived (in battle ticks), and the
      * longest gap between two controls in this ten-second window and the one
      * before. The store never grows deeper than that gap: deep enough to ride
@@ -285,6 +294,8 @@ static struct {
         unsigned int size;
     } *shares;
     int share_count, shares_room;
+    /* counted up each time a copy's new missions come, or a copy joins or leaves (khdays_net_missions_version) */
+    unsigned int missions_version;
     /* guest: this copy's movement stick (the game's thread sets it), the one sent last and when */
     KhdaysNetStick own_stick, sent_stick;
     u64 stick_sent;
@@ -377,6 +388,7 @@ static u64 since(u64 now, u64 then)
 static void ping_levels(Peer *p, const unsigned char *body, unsigned int size);
 static void send_stick(void);
 static void send_seed(Peer *p);
+static void send_missions(Peer *p);
 static void mods_forget(void);
 
 /* Makes room for `need` items, doubling, the new part zeroed. Out of memory,
@@ -500,6 +512,9 @@ static SDL_Mutex *mods_lock;
 static SDL_InitState mods_once;
 static unsigned int mods_fingerprint, mods_count, mods_size;
 static unsigned char *mods_list;
+/* this copy's new missions for the rooms (runtime/missions/room.h), set as the game starts */
+static unsigned char *own_missions;
+static unsigned int own_missions_size;
 
 static void mods_ready(void)
 {
@@ -640,7 +655,10 @@ static void free_peer(Peer *p)
         free_records(&p->streams[i].unacked);
         free_records(&p->streams[i].early);
     }
+    free(p->missions);
+    free(p->missions_part);
     memset(p, 0, sizeof(*p));
+    ++net.missions_version;
 }
 
 /* The peer at `index`, making room for it if needed. */
@@ -800,12 +818,34 @@ static void send_ack(Peer *p, unsigned int port)
 
 static void control_came(Peer *p, unsigned int port, const unsigned char *data, unsigned int size);
 
-/* A record arrived. If it is the next in order it goes to the game, followed
- * by any early ones that now follow on. An early record waits; one already
- * received is ignored. */
-/* A mods' record from the host (MODS_PORT): the room's seed kept, a share's piece added. */
-static void mods_record(const unsigned char *data, unsigned int size)
+/* A piece of copy `p`'s new missions (MODS_MISSIONS): added, and the list kept once its last piece came. */
+static void missions_record(Peer *p, const unsigned char *data, unsigned int size)
 {
+    const int bytes = (int)size - 2;
+    p->missions_part =
+        (unsigned char *)grow(p->missions_part, &p->missions_part_room, p->missions_part_size + bytes, 1);
+    memcpy(p->missions_part + p->missions_part_size, data + 2, (size_t)bytes);
+    p->missions_part_size += bytes;
+    if (data[1] == 1) {
+        free(p->missions);
+        p->missions = p->missions_part_size > 0 ? copy_of(p->missions_part, (unsigned int)p->missions_part_size) : NULL;
+        p->missions_size = p->missions != NULL ? (unsigned int)p->missions_part_size : 0;
+        p->missions_known = 1;
+        p->missions_part_size = 0;
+        ++net.missions_version;
+        khdays_log("net: %s %u's new missions came (%u bytes)", net.role == HOST ? "member" : "host", p->aid,
+                   p->missions_size);
+    }
+}
+
+/* A mods' record (MODS_PORT): from the host, the room's seed kept or a share's piece added; from any copy, a piece
+ * of its new missions. */
+static void mods_record(Peer *p, const unsigned char *data, unsigned int size)
+{
+    if (size >= 2 && data[0] == MODS_MISSIONS) {
+        missions_record(p, data, size);
+        return;
+    }
     if (net.role != GUEST || size < 1) {
         return;
     }
@@ -830,13 +870,16 @@ static void mods_record(const unsigned char *data, unsigned int size)
 static void record_in_order(Peer *p, unsigned int port, const unsigned char *data, unsigned int size)
 {
     if (port == MODS_PORT) {
-        mods_record(data, size);
+        mods_record(p, data, size);
         return;
     }
     push(KHDAYS_NET_RECORD, p->aid, data, size)->event.port = port;
     control_came(p, port, data, size);
 }
 
+/* A record arrived. If it is the next in order it goes to the game, followed
+ * by any early ones that now follow on. An early record waits; one already
+ * received is ignored. */
 static void received_record(Peer *p, unsigned int port, unsigned int seq, const unsigned char *data, unsigned int size)
 {
     Stream *s = &p->streams[port];
@@ -1478,6 +1521,7 @@ static void on_datagram(const Route *from, const unsigned char *d, long got, u64
          * through the server */
         new_peer(peer_slot(0), 0, sender, from);
         net.peers[0].state = MEMBER;
+        send_missions(&net.peers[0]);
         push(KHDAYS_NET_JOINED, net.own_aid, NULL, 0);
         khdays_log("net: joined as member %u%s", net.own_aid, from->relay != 0 ? ", through the server" : "");
         return;
@@ -2304,6 +2348,7 @@ void khdays_net_accept(unsigned int aid, int accepted)
             if (net.mods_seed_known) {
                 send_seed(p);
             }
+            send_missions(p);
             push(KHDAYS_NET_JOINED, aid, NULL, 0);
             khdays_log("net: member %u in", aid);
         } else {
@@ -2548,6 +2593,74 @@ static void send_seed(Peer *p)
     unsigned char record[9] = {MODS_SEED};
     put64(record + 1, net.mods_seed);
     queue_record(p, MODS_PORT, record, sizeof(record));
+}
+
+/* This copy's new missions to copy `p`, in pieces; an empty list as one empty last piece, so that `p` knows there
+ * are none (the caller holds net.lock). */
+static void send_missions(Peer *p)
+{
+    unsigned char record[2 + MODS_PIECE];
+    unsigned int at = 0;
+    mods_ready();
+    SDL_LockMutex(mods_lock);
+    do {
+        const unsigned int piece = own_missions_size - at < MODS_PIECE ? own_missions_size - at : MODS_PIECE;
+        record[0] = MODS_MISSIONS;
+        record[1] = at + piece == own_missions_size;
+        if (piece > 0) {
+            memcpy(record + 2, own_missions + at, piece);
+        }
+        queue_record(p, MODS_PORT, record, 2 + piece);
+        at += piece;
+    } while (at < own_missions_size);
+    SDL_UnlockMutex(mods_lock);
+}
+
+void khdays_net_set_missions(const unsigned char *list, unsigned int size)
+{
+    unsigned char *copy = size > 0 ? (unsigned char *)malloc(size) : NULL;
+    if (copy != NULL) {
+        memcpy(copy, list, size);
+    }
+    mods_ready();
+    SDL_LockMutex(mods_lock);
+    free(own_missions);
+    own_missions = copy;
+    own_missions_size = copy != NULL ? size : 0;
+    SDL_UnlockMutex(mods_lock);
+}
+
+int khdays_net_room_missions(void (*each)(const unsigned char *list, unsigned int size, int known, void *context),
+                             void *context)
+{
+    int role = 0;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    if (net.role != NONE && members() > 0) {
+        role = net.role == HOST ? 1 : 2;
+        for (int i = 0; i < net.peer_room; ++i) {
+            const Peer *p = &net.peers[i];
+            if (p->used && p->state == MEMBER) {
+                each(p->missions, p->missions_size, p->missions_known, context);
+            }
+        }
+    }
+    SDL_UnlockMutex(net.lock);
+    return role;
+}
+
+unsigned int khdays_net_missions_version(void)
+{
+    unsigned int version;
+    if (!net.started) {
+        return 0;
+    }
+    SDL_LockMutex(net.lock);
+    version = net.missions_version + (unsigned int)net.role * 0x10000u;
+    SDL_UnlockMutex(net.lock);
+    return version;
 }
 
 /* The room's seed and the shares waiting, forgotten (the caller holds net.lock). */

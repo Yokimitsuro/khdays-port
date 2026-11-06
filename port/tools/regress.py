@@ -41,8 +41,11 @@ class Walk:
     # the host straight
     server: str | None = None
     mods: str | None = None  # one mod's folder (from the repository's root) it plays with, alone
+    # each player's own mods, in place of `mods`: the mod folders (from the repository's root) in its mods/
+    player_mods: tuple[tuple[str, ...], ...] = ()
     window: bool = False  # in a window (a mission's opening dialogs wait for the window's picture)
     marks: tuple[str, ...] = ()  # what each player's session log must say (KHDAYS_LOG on)
+    player_marks: tuple[tuple[str, ...], ...] = ()  # and what player N's must say besides
     env: tuple[tuple[str, str], ...] = ()  # its own NAME=VALUE pairs for the game
 
 
@@ -236,6 +239,29 @@ WALKS = [
         window=True,
         marks=("the mod's mission\t3595",),
     ),
+    # ... and in a room whose copies have other mods' missions: the host has one more mod
+    # (port/tests/mods_v2/extra_missions, missions alone), numbered before the boss waves' mission both have, which
+    # is 3596 there and 3595 on the guest. The host lists only what both have (the route picks the first new row),
+    # and the guest plays the host's 3596 as its own 3595
+    Walk(
+        "multiplayer_room_missions",
+        300,
+        player_save=True,
+        players=2,
+        script="multiplayer_boss",
+        player_mods=(
+            ("port/tests/mods_v2/extra_missions", "port/tests/mods_v2/multiplayer_boss_waves"),
+            ("port/tests/mods_v2/multiplayer_boss_waves",),
+        ),
+        window=True,
+        player_marks=(
+            ("the mod's mission\t3596", "missions: extra_missions/extra left out of the room's list"),
+            (
+                "the mod's mission\t3595",
+                "missions: the host's mission 3596 (file 20001) is test.bosswaves/bosswaves: mission 3595 here",
+            ),
+        ),
+    ),
     # a mod's character (port/tests/mods_v2/character, a made-up figure on three of Roxas's bones): offered after
     # the game's characters, chosen (KHDAYS_TEST_CHARACTER: the walk has no layout for the port's select),
     # played on Roxas's code from its own folder ba/ch/c16/, its own model drawn; the mission walk's route
@@ -360,7 +386,7 @@ def player_saves(work: Path, player: int) -> Path:
 
 def make_workdir(
     save: Path | None,
-    mods: Path | None = None,
+    mods: Path | list[Path] | None = None,
     settings: Path | None = None,
     player: int = 1,
     data: Path = ROOT / "data",
@@ -368,13 +394,21 @@ def make_workdir(
     """A fresh directory with data/ (`data`) linked in and, if given, a copy of the save
     (where player `player` keeps it), the mods folder linked in as mods/ and a
     copy of a settings file as saves/settings.ini (screens = one for the
-    one-screen walks)."""
+    one-screen walks). A list of mod folders: each linked in mods/ by its name."""
     work = Path(tempfile.mkdtemp(prefix="khdays-run-"))
     link = work / "data"
     # A junction, not a copy: data/ is gigabytes. `mklink /J` needs no
     # administrator rights.
     subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(data.resolve())], check=True, capture_output=True)
-    if mods is not None and (mods / "mod.ini").exists():
+    if isinstance(mods, list):
+        (work / "mods").mkdir()
+        for one in mods:
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(work / "mods" / one.resolve().name), str(one.resolve())],
+                check=True,
+                capture_output=True,
+            )
+    elif mods is not None and (mods / "mod.ini").exists():
         # one mod's own folder: alone in a mods/ of the run's
         (work / "mods").mkdir()
         subprocess.run(
@@ -567,12 +601,13 @@ def run_walks(args: argparse.Namespace) -> int:
             players = []
             mods = ROOT / walk.mods if walk.mods is not None else args.mods
             for player, (name, script_name) in enumerate(zip(names, scripts), start=1):
-                works.append(make_workdir(save, mods, args.settings, player, args.data))
+                own = [ROOT / m for m in walk.player_mods[player - 1]] if walk.player_mods else mods
+                works.append(make_workdir(save, own, args.settings, player, args.data))
                 script = (WALKS_DIR / f"{script_name}.input").read_text(encoding="utf-8").strip()
                 players.append((works[-1], script, works[-1] / "game.log"))
             env = extra_env_of(args)
             env.update(dict(walk.env))
-            if walk.marks:
+            if walk.marks or walk.player_marks:
                 env["KHDAYS_LOG"] = "1"
             if walk.server is not None:
                 server, port = start_server(args.exe, works[0] / "server.log")
@@ -591,7 +626,8 @@ def run_walks(args: argparse.Namespace) -> int:
                 log = work / "game.log"
                 kept_save = player_saves(work, player) / "khdays.sav"
                 scenes, trouble = scenes_and_trouble(log)
-                missing = [mark for mark in walk.marks if mark not in session_text(work)]
+                marks = walk.marks + (walk.player_marks[player - 1] if walk.player_marks else ())
+                missing = [mark for mark in marks if mark not in session_text(work)]
                 verdict = save_check(walk, save, kept_save) or (f"MISSING {missing[0]!r}" if missing else None)
                 outcomes.append((name, scenes, trouble, exit_code, verdict))
                 if args.logs is not None:

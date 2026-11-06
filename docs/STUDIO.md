@@ -206,7 +206,9 @@ block for each (`[mission <key>]`: `name <lang>`, `objective <lang>`,
 (below) when it has waves; else its own file `missions/<key>/mission.p2`; else
 its template's file as the game has it -- in that mission's own world and rooms,
 whatever the block's world and room say; a mission with none of them is left
-out ("nothing to play yet"). The tool writes the files and reads them back with
+out ("nothing to play yet"). In a multiplayer room the host's list shows only
+the missions every player has, the same: players may have others too. The tool
+writes the files and reads them back with
 the port's own reader (`port/runtime/missions/registry.c`) before it says they
 are saved. In the window **Missions** (top right): **New mission** (a key, a
 world, a room of it, and a template -- **None** by default: the mission is made

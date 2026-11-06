@@ -102,6 +102,11 @@ typedef struct KhdaysMission {
     double reach[3], reach_radius;
     /* this run's (khdays_missions_number); 0 not numbered */
     int number, file, shown; /* shown: the number the list and the results show (0-99) */
+    /* its block's lines as trimmed, each with a line feed (comments and blank lines left out): what a room compares
+     * between copies; NULL (block_size SIZE_MAX) when it could not be kept */
+    char *block;
+    size_t block_size;
+    unsigned char digest[32]; /* the port's (missions.c): SHA-256 of its block and its own mission file */
 } KhdaysMission;
 
 typedef struct KhdaysMissionMod {
