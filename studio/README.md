@@ -361,7 +361,8 @@ is chosen). It changes at once and is kept in the settings.
     - *Model*: its model (FBX, glTF or glb, chosen or dropped on the window:
       copied into `model/` with the files it needs); its own skeleton or its
       bones paired with its base's; its size, with **As tall as its base**;
-      the bone holding its weapon and how the weapon turns on it; its
+      its weapons' size, with **As its size to its base's**; the bone
+      holding its weapon and how the weapon turns on it; its
       weapons: each of its base's weapon models (read from the graphics
       dump) drawn as a model of its own, or the base's.
     - *Animations*: its clips (**Add clips...**, or dropped: copied into

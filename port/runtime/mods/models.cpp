@@ -426,6 +426,16 @@ void draw(Model &m)
                                         at[2] + joint.place_offset[2]}),
                              dg, joint.correction, joint.head);
             }
+            if (joint.travels) { // a mod's character's: carried, then moved as its node travels, at its size
+                const auto &at_rest = m.node_rest_place[static_cast<std::size_t>(joint.node)];
+                const Mat &from =
+                    joint.travel_from >= 0 ? node_move[static_cast<std::size_t>(joint.travel_from)] : root;
+                const auto now = point(dg, at_rest), carried = point(from, at_rest);
+                auto at = point(parent != nullptr ? *parent : root, joint.head);
+                for (std::size_t c = 0; c < 3; ++c)
+                    at[c] += joint.size * (now[c] - carried[c]);
+                return place(at, dg, joint.correction, joint.head);
+            }
             return place(point(parent != nullptr ? *parent : dg, joint.head), dg, joint.correction, joint.head);
         }
         const Mat &carried = parent != nullptr ? *parent : root;
@@ -582,19 +592,44 @@ void draw(Model &m)
         held_weapon.vblank = khdays_events_vblank_count();
         return mul(joint_frame(j), weapon);
     };
-    // what the game attaches to a node (its weapons) on the joint a `weapon` line names, as it is drawn:
-    // its saved matrix (MtxFx43, the same space as the nodes') written over
+    // node g's frame where the model's joint carries it: its frame under that joint's node at rest; a mod's character's
+    // as the game moves it under that node now (a weapon node turning in the hand), its place at the joint's size
+    const auto on_joint = [&](std::size_t g) {
+        const auto j = static_cast<std::size_t>(m.node_joint[g]);
+        Mat local = m.node_local[g];
+        if (m.attached_on_joints) {
+            const auto a = static_cast<std::size_t>(m.joints[j].node);
+            local = mul(inverse(mul(node_move[a], inverse(m.node_rest_inverse[a]))),
+                        mul(node_move[g], inverse(m.node_rest_inverse[g])));
+            for (std::size_t c = 12; c < 15; ++c)
+                local[c] *= m.joints[j].size;
+        }
+        return mul(mul(joint_frame(j), m.joints[j].to_node), local);
+    };
+    // a mod's character's hands' weapons at its weapon_scale
+    const auto weapon_sized = [&](std::size_t g, Mat at) {
+        if (g < m.weapon_node.size() && m.weapon_node[g] && m.weapon_scale != 1.0F)
+            for (std::size_t c = 0; c < 11; ++c)
+                at[c] *= m.weapon_scale;
+        return at;
+    };
+    // what the game attaches to a node (its weapons) on the joint a `weapon` line names, as it is drawn, or (a mod's
+    // character's paired skeleton) where the model's joint carries the node: its saved matrix (MtxFx43, the same space
+    // as the nodes') written over
     for (const auto &[saved, node] : saved_joints) {
-        if (node >= m.kh2_weapon.size() || m.kh2_weapon[node] < 0)
+        const bool line = node < m.kh2_weapon.size() && m.kh2_weapon[node] >= 0;
+        if (!line && !(m.attached_on_joints && node < m.node_joint.size() && m.node_joint[node] >= 0))
             continue;
-        const auto j = static_cast<std::size_t>(m.kh2_weapon[node]);
         s32 fx[12];
         std::memcpy(fx, saved, sizeof(fx)); // the game's own frame for it, as it saved it
         Mat game = kIdentity;
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
-        const Mat at = khdays::models::attached_frame(hold(j, node), game, weapon_share);
+        const Mat at =
+            weapon_sized(node, line ? khdays::models::attached_frame(
+                                          hold(static_cast<std::size_t>(m.kh2_weapon[node]), node), game, weapon_share)
+                                    : on_joint(node));
         for (int c = 0; c < 4; ++c)
             for (int r = 0; r < 3; ++r)
                 fx[c * 3 + r] = static_cast<s32>(std::lround(at[static_cast<std::size_t>(c * 4 + r)] * 4096.0F));
@@ -637,8 +672,7 @@ void draw(Model &m)
                 const auto j = static_cast<std::size_t>(m.kh2_weapon[g]);
                 results[g] = {true, khdays::models::attached_frame(hold(j, g), node_matrix[g], weapon_share)};
             } else if (m.node_joint[g] >= 0) {
-                const auto j = static_cast<std::size_t>(m.node_joint[g]);
-                results[g] = {true, mul(mul(joint_frame(j), m.joints[j].to_node), m.node_local[g])};
+                results[g] = {true, on_joint(g)};
             }
         }
     }
@@ -1010,7 +1044,9 @@ extern "C" void khdays_models_node_placed(unsigned node, int sent)
     s[0] = s[5] = s[10] = active->scale;
     const Mat root =
         mul(node_matrix[static_cast<std::size_t>(first)], active->node_rest_inverse[static_cast<std::size_t>(first)]);
-    const Mat hand = mul(mul(root, s), mul(o.world_now[static_cast<std::size_t>(held->bone)], held->fix));
+    Mat hand = mul(mul(root, s), mul(o.world_now[static_cast<std::size_t>(held->bone)], held->fix));
+    for (std::size_t c = 0; c < 11 && active->weapon_scale != 1.0F; ++c)
+        hand[c] *= active->weapon_scale; // [model] weapon_scale: its weapons at that size
     // MTX_MODE 2 (the position and vector matrices), MTX_LOAD_4x4: the DS's rows are these columns
     const uint32_t mode = 2;
     khdays_g3d_command(0x10, &mode);
@@ -1075,7 +1111,9 @@ extern "C" int khdays_models_result_matrix(const void *render_obj, unsigned node
 
 extern "C" void khdays_models_joint_saved(void *matrix, unsigned node)
 {
-    if (active != nullptr && depth == 1 && node < active->kh2_weapon.size() && active->kh2_weapon[node] >= 0)
+    if (active != nullptr && depth == 1 &&
+        ((node < active->kh2_weapon.size() && active->kh2_weapon[node] >= 0) ||
+         (active->attached_on_joints && node < active->node_joint.size() && active->node_joint[node] >= 0)))
         saved_joints.emplace_back(matrix, node);
 }
 

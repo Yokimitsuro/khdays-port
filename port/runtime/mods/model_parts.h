@@ -90,6 +90,13 @@ struct Joint {
     // where its parent carries it
     bool placed = false;
     std::array<float, 3> place_offset{};
+    // a mod's character's paired joint, not `exact`: carried from its parent, then moved as far as its node travels
+    // beyond where the node of its nearest paired joint above (`travel_from`; -1: the model's root) carries it (the
+    // hips' rise and fall), at the joint's `size` to the game's (its length from that joint against the nodes'); what
+    // the game attaches to its node is that far from it at that size too
+    bool travels = false;
+    int travel_from = -1;
+    float size = 1.0F;
 };
 
 // A bone stretched to reach its one paired child where `place` puts that child: the joint, the child, and the
@@ -334,6 +341,12 @@ struct Model {
     std::array<float, 3> low{}, high{}; // its size at rest (a placed model's, khdays_models_placed_bounds)
     bool character = false;             // a mod's character's (runtime/characters): the same
     std::unique_ptr<OwnSkeleton> own;   // its own skeleton, posed by its clips (else following the game's nodes)
+    // a mod's character's: its hands' weapons' size to the game's ([model] weapon_scale) and the game nodes they are
+    // on (its base's hands); with a paired skeleton, the frames the game keeps of its nodes for what it attaches (its
+    // weapons) put where the model's joints carry those nodes
+    float weapon_scale = 1.0F;
+    std::vector<char> weapon_node;
+    bool attached_on_joints = false;
     // its own animation (a room's): the file's nodes and animations, and its clock in game frames,
     // counted from its first draw while the game is not paused
     std::vector<khdays::assets::ImportedNode> nodes;

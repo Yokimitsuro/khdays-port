@@ -5515,6 +5515,17 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   the base's hand, its trail with it), then `*_w_tg00` and `*_w_tg` until 2026-11-06: on a modder's Terra on Saix
   the claymore followed Saix's hand, so with the clips the character's own (idle, run) it hung away from the hand
   while the clips made from Saix's animations looked right. The port now takes the camp's names, both hands.
+- **A paired character of another size** (seen 2026-11-06: a tester's character scaled up on Xion floated; a test
+  copy of Xion's own model, 1.3 times her size, on the `mission` walk with jumps and a combo): Days's animations
+  move the hips by `Bip01`'s travel under the never-moved `xion_R`, and a paired bone not on its node's rest place
+  was carried rigidly from its parent, so the hips kept their height while the legs bent as the game's: in a
+  landing's crouch the feet hung above the shadow. The keyblade's frame, saved at the hand node's draw
+  (`Obj_CaptureSelectedJointMtx`), was the game's own node, so it hung at the smaller Xion's hand. Each paired bone
+  now also moves as far as its node travels beyond where the node above carries it, times its length against the
+  nodes', and the saved frames go where the model's bones carry those nodes, as the game moves them under the
+  bone's node; in the combo's finisher the keyblade still hung off the hand while a bone with no length to measure
+  (at its parent's place at rest) kept the game's size, until it took the model's (the middle of its bones'). At
+  the model's own size nothing changed (the same pictures).
 - **Xion's weapon models** are Roxas's: her overlays (ov044, ov063, ov082, ov099) open `ba/ch/ro/w_.p2` by its
   name in `Ov0NN_ReloadSceneResources` (her actor's container then, the one `Ov022_BuildActorSlot` builds her
   weapon from); her own `ba/ch/xo/w_.p2` holds only the swings' traces (`ro_w00_trace` ..., entries 40-66), read

@@ -73,7 +73,15 @@ skeleton = paired
   as `<name>.bones.txt` pairs them), moved by its base's animations. `skeleton = own`: its own skeleton, moved by
   its own clips (below); nothing of it is paired with the base's.
 - `[model] scale` -- its size to the game's: 100 for an FBX made in centimetres (the game's characters are about
-  1.4 tall in its units, a model in metres 1.4); with either skeleton, over a `.bones.txt`'s `scale`.
+  1.4 tall in its units, a model in metres 1.4); with either skeleton, over a `.bones.txt`'s `scale`. With
+  `skeleton = paired`, a model bigger or smaller than its base (scaled, or made so) rises and falls with the base's
+  hips at its own size, so its feet stay on the ground as it crouches, lands or lies down, and the game's weapons
+  are held in its own hands: each paired bone not on its game node's place moves, beyond where its parent carries
+  it, as far as its node moves beyond where the node of the paired bone above carries it, times the bone's length
+  against the nodes' (a bone with no length to measure: the middle of the model's).
+- `[model] weapon_scale` -- its hands' weapons' size, times the game's (default 1: the game's size, whatever the
+  character's): `1.3` for a character made 1.3 times its base's size. The studio's button sets it to the
+  character's height against its base's.
 - `[model] weapon_bone` -- with `skeleton = own`, its bone the right hand's weapon follows (`R_buki`); without it,
   its bone named as the base model's hand node the game puts that weapon on (a skeleton made like the game's, as the
   studio exports it). The base's hand nodes are the camp's: `ro_w_tg_R` (Roxas), `ax_h_R` and `ax_h_L` (Axel),
@@ -106,8 +114,10 @@ b_ro_B009 = clips/200.fbx root keep time game  # the combo's first hit: its forw
 
 - `<the base's animation> = <clip> [blend <ms>] [root keep|remove] [time own|game] [loop game|no|yes|<s>]`: the
   clip (its file's first animation, or the one a `#<name>` right after the file's `.gltf`, `.glb` or `.fbx` names --
-  `clips/all.gltf#run`, for a file holding many; a name with spaces cannot be named this way; its bones by name) plays
-  while the game plays that animation. The studio offers each animation of such a file by its name.
+  `clips/all.gltf#run`, for a file holding many; its bones by name) plays while the game plays that animation. The
+  studio offers each animation of such a file by its name. A file's path and an animation's name may have spaces
+  (`clips/aqua animations.glb#b_xo_A000_2`): the options begin at the word after the file's name, or at an
+  option's word followed by a value it takes (`clips/aqua root motion.glb` is one file).
 - `time own` (the default): at the speed it was made with, from the point the game begins its animation at (the game
   begins some past their start: Sora's running a third of the way in, his jump again after an air move), standing
   while the game holds its animation short of its end (a hit's stop, the pause), going on while the game holds it
@@ -288,7 +298,8 @@ moves = base                            # the dual-wield Roxas's own combos
 
 - `[form <id>]` -- an id of letters, digits, `_` and `-` (not `default`), with `base` (any base above, or
   `roxas_dual`), `priority` (a whole number, 0 when not given), `when` (its rule, below) and the model's lines of
-  `[model]` (`model` or `file`, `skeleton`, `scale`, `weapon_bone`, `weapon_turn`, `base_weapon_node`).
+  `[model]` (`model` or `file`, `skeleton`, `scale`, `weapon_bone`, `weapon_turn`, `base_weapon_node`,
+  `weapon_scale`).
 - `[form <id> actions]`, `[form <id> sounds]`, `[form <id> moveset]`, `[form <id> limit]`, `[form <id> stats]`,
   `[form <id> weapons]` -- the default's parts, for the form. A part a form does not give is its default's, whole
   (its weapons only on the same base: they name the base's models); so is each model line.

@@ -30,6 +30,15 @@ std::vector<std::string> clip_animation_names(const std::filesystem::path& file)
 // A clip's reference split: its file and the animation a "#<name>" after it names (empty: the file's first).
 std::pair<std::string, std::string> clip_reference(const std::string& clip);
 
+// An [actions] line split as the port reads it (port/runtime/characters/registry.c read_action): its clip, whose
+// path and animation's name may have spaces, and its options' words, which begin at the word after the clip's file
+// name (.gltf, .glb, .fbx) or at an option's word (blend, root, time, loop) followed by a value it takes.
+struct ActionLine {
+    std::string clip;
+    std::vector<std::string> options;
+};
+ActionLine split_action_line(const std::string& value);
+
 // Each of the model's nodes' world matrix `seconds` into `clip` (looped over its length), or at rest without one.
 std::vector<Mat> character_pose(const khdays::assets::ImportedModel& model, const CharacterClip* clip, double seconds);
 

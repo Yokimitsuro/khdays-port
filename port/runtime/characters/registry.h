@@ -66,6 +66,7 @@ typedef struct KhdaysCharacterStatPoint {
 #define KHDAYS_FORM_GIVES_LIMIT 0x200u
 #define KHDAYS_FORM_GIVES_STATS 0x400u
 #define KHDAYS_FORM_GIVES_WEAPONS 0x800u
+#define KHDAYS_FORM_GIVES_WEAPON_SCALE 0x1000u
 
 /* The select's nine numbers for a character (data_ov006_020561e0's row). */
 #define KHDAYS_CHARACTER_GAUGES 9
@@ -150,6 +151,7 @@ typedef struct KhdaysCharacter {
     int has_weapon_turn;    /* the weapon follows its bone's own axes, turned by weapon_turn (degrees x y z);
                              * else it is held as the base holds it */
     float weapon_turn[3];
+    float weapon_scale; /* its hands' weapons' size, times the game's; 0 not given (the game's) */
     int has_gauges;
     unsigned char gauges[KHDAYS_CHARACTER_GAUGES];
     int locked_with_base; /* offered only when its base is */
