@@ -129,22 +129,30 @@ std::vector<Mat> node_worlds(const std::vector<assets::ImportedNode> &nodes,
         if (moved[i])
             local[i] = compose(t[i], r[i], s[i]);
     }
-    // under their parents, whatever order the file lists them in
-    std::vector<Mat> world(nodes.size(), kIdentity);
-    std::vector<char> done(nodes.size(), 0);
-    for (std::size_t i = 0; i < nodes.size(); ++i) {
-        std::vector<std::size_t> chain;
-        for (std::size_t up = i; !done[up];) {
+    return chain_worlds(nodes, local);
+}
+
+std::vector<Mat> chain_worlds(const std::vector<assets::ImportedNode> &nodes, const std::vector<Mat> &local)
+{
+    const std::size_t count = std::min(nodes.size(), local.size());
+    std::vector<Mat> world(count, kIdentity);
+    std::vector<char> done(count, 0); // 1 placed, 2 on the walk up being made
+    std::vector<std::size_t> chain;
+    for (std::size_t i = 0; i < count; ++i) {
+        // up to a node already placed, a root or one of this walk's own (a loop), then placed down from there
+        chain.clear();
+        for (std::size_t up = i; done[up] == 0;) {
             chain.push_back(up);
+            done[up] = 2;
             const int p = nodes[up].parent;
-            if (p < 0 || static_cast<std::size_t>(p) >= nodes.size() || chain.size() > nodes.size())
+            if (p < 0 || static_cast<std::size_t>(p) >= count)
                 break;
             up = static_cast<std::size_t>(p);
         }
         for (auto c = chain.rbegin(); c != chain.rend(); ++c) {
             const int p = nodes[*c].parent;
             const bool has_parent =
-                p >= 0 && static_cast<std::size_t>(p) < nodes.size() && done[static_cast<std::size_t>(p)];
+                p >= 0 && static_cast<std::size_t>(p) < count && done[static_cast<std::size_t>(p)] == 1;
             world[*c] = has_parent ? mul(world[static_cast<std::size_t>(p)], local[*c]) : local[*c];
             done[*c] = 1;
         }

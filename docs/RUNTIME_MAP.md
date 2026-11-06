@@ -5496,6 +5496,11 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   at the game's point, stands only for a hold short of the end (or the pause), goes on through a hold at the end,
   and begins again when the game's frame goes back from elsewhere than its last few (`runtime/mods/models.cpp`
   `own_pose`).
+  A model exported from Blender lists its nodes children first (seen 2026-11-06 with a modder's Terra on Saïx,
+  Days's own skeleton names: `Bip01_L_Foot` first, the root `saix_h` last). The pose and the weapon bone's rest
+  placed a node under its parent only when the parent came before it, so every other bone lost its chain and the
+  body lay folded on the ground while the studio's preview showed it right; they now chain the nodes whatever
+  their order (`chain_worlds`, as the rooms' animations did).
 - **Its weapon**: the game puts the weapon on the base model's weapon node, read during the body's draw
   by the node's callback (`NNS_G3dGetCurrentMtx` at `NODEDESC`, timing 3: the camp's
   `Ov008_RefreshMatchingMatrices`; the field's actor finds the node by name in `Ov030_CreateActor`). The

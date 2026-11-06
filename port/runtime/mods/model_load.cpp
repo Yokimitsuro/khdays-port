@@ -963,14 +963,7 @@ void take_own_animation(Model *model, Loading &loading)
                 o.weapon_bone = static_cast<int>(i);
         }
         if (o.weapon_bone >= 0 && o.game_weapon_node >= 0) {
-            std::vector<Mat> at_rest(model->nodes.size(), kIdentity);
-            for (std::size_t i = 0; i < model->nodes.size(); ++i) {
-                const int parent = model->nodes[i].parent;
-                const Mat local = compose(o.rest[i]);
-                at_rest[i] = parent >= 0 && static_cast<std::size_t>(parent) < i
-                                 ? mul(at_rest[static_cast<std::size_t>(parent)], local)
-                                 : local;
-            }
+            const std::vector<Mat> at_rest = own_places(model->nodes, o.rest);
             Mat s = kIdentity;
             s[0] = s[5] = s[10] = k;
             if (character->has_weapon_turn) {

@@ -284,15 +284,15 @@ std::vector<Mat> own_pose(Model &m)
             pose[n] = mix(o.from[n], pose[n], w);
     }
     o.shown = pose;
-    std::vector<Mat> world(pose.size(), kIdentity);
-    for (std::size_t n = 0; n < pose.size(); ++n) {
-        const int parent = n < m.nodes.size() ? m.nodes[n].parent : -1;
-        const Mat local = compose(pose[n]);
-        world[n] = parent >= 0 && static_cast<std::size_t>(parent) < n
-                       ? mul(world[static_cast<std::size_t>(parent)], local)
-                       : local;
-    }
-    return world;
+    return own_places(m.nodes, pose);
+}
+
+std::vector<Mat> own_places(const std::vector<khdays::assets::ImportedNode> &nodes, const std::vector<Trs> &pose)
+{
+    std::vector<Mat> local(pose.size());
+    for (std::size_t n = 0; n < pose.size(); ++n)
+        local[n] = compose(pose[n]);
+    return khdays::room::chain_worlds(nodes, local);
 }
 
 } // namespace khdays::model_parts

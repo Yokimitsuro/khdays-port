@@ -21,6 +21,10 @@ using Mat = std::array<float, 16>; // column-major, for column vectors
 std::vector<Mat> node_worlds(const std::vector<assets::ImportedNode> &nodes,
                              const std::vector<assets::ImportedAnimation> &animations, double seconds);
 
+// Every node's world matrix from each one's own (`local`, by node), under its parent's whatever order the file lists
+// the nodes in (Blender writes children before their parents); a node whose parents loop back is placed as a root.
+std::vector<Mat> chain_worlds(const std::vector<assets::ImportedNode> &nodes, const std::vector<Mat> &local);
+
 // A texture's offset (texels) after `frames` game frames of `scroll` texels each, kept within the
 // texture's size (it repeats).
 std::array<float, 2> scroll_offset(const std::array<float, 2> &scroll, std::uint64_t frames, float width, float height);

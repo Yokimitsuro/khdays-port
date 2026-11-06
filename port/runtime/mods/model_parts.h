@@ -784,6 +784,8 @@ const std::string &animation_name(u32 anm);
 GameAnimation game_animation(u32 anm);
 float clip_time(float t, float length, bool loops, float from);
 std::vector<Mat> own_pose(Model &m);
+// Each node's place from `pose` (each one's own, under its parent's), whatever order the file lists them in.
+std::vector<Mat> own_places(const std::vector<khdays::assets::ImportedNode> &nodes, const std::vector<Trs> &pose);
 
 // model_hands.cpp
 const Mat *moved_world(const Joint &joint, const std::vector<Mat> &moved);
