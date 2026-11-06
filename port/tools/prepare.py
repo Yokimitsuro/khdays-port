@@ -5172,6 +5172,8 @@ DEFINITION_RE = re.compile(
     re.MULTILINE,
 )
 KEYWORDS = {"else", "goto", "case", "do", "break", "continue", "return", "struct"}
+# a brace, or where a comment, string or character literal may start: brace_depths jumps between them
+BRACE_OR_NOT_CODE = re.compile(r"[{}\"']|/\*|//")
 
 
 def brace_depths(text: str) -> list[tuple[int, int]]:
@@ -5182,6 +5184,10 @@ def brace_depths(text: str) -> list[tuple[int, int]]:
     i = 0
     n = len(text)
     while i < n:
+        start = BRACE_OR_NOT_CODE.search(text, i)
+        if start is None:
+            break
+        i = start.start()
         c = text[i]
         if c in "\"'":
             j = i + 1
@@ -5669,12 +5675,15 @@ def main() -> int:
     # `return g();` passes none. Such a body forwards four.
     tail_report = []
     tail_targets: dict[str, str] = {}
+    by_stem: dict[str, str] = {}  # each file name's first source
+    for r in texts:
+        by_stem.setdefault(Path(r).stem, r)
     for line in (ROOT / "port" / "abi" / "tail_calls.txt").read_text(encoding="utf-8").splitlines():
         key = line.strip()
         if not key or key.startswith("#"):
             continue
         name = key_name.get(key)
-        rel = next((r for r in texts if Path(r).stem == name), None) if name else None
+        rel = by_stem.get(name) if name else None
         if rel is None:
             tail_report.append(f"{key} {name}: no source")
             continue
