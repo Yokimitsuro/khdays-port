@@ -163,7 +163,10 @@ void draw_choice(App& app) {
             if (mp.world == world)
                 in_world.push_back(&mp);
         ImGui::SetNextItemWidth(8 * em);
-        if (ImGui::BeginCombo(tr(lang, S::map_other_world), world.c_str())) {
+        // an ID of its own: the Days world the room is added to below is labelled "World" too, and two combos
+        // of one ID open together, the two lists in one popup
+        const std::string world_label = std::string(tr(lang, S::map_other_world)) + "##collection_world";
+        if (ImGui::BeginCombo(world_label.c_str(), world.c_str())) {
             for (std::size_t w = 0; w < worlds.size(); ++w)
                 if (ImGui::Selectable(worlds[w].c_str(), static_cast<int>(w) == adder.world_shown)) {
                     adder.world_shown = static_cast<int>(w);
