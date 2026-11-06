@@ -364,6 +364,7 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_AUTO_LOCK, TXT_ENH_AUTO_LOCK, &e->auto_lock, 1, khdays_text(TXT_ENH_AUTO_LOCK_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
                menu_note);
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
