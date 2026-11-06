@@ -439,6 +439,10 @@ def init_self_subtracted(texts: dict[str, str]) -> tuple[dict[str, str], int]:
     return out, changed
 
 
+# a name before `(`: as `\bname\s*\(` finds it, each such name once per place
+CALLED_NAME = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+
+
 def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     """Calls passing fewer arguments than the definition takes pass zeros for every missing word:
     natively those words are the caller's own stack slots, which the callee (or an optimizing
@@ -470,14 +474,18 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
         code = strip_comments_code(texts[rel][d.body[0] : d.body[1]], mask(rel)[d.body[0] : d.body[1]])
         return [param_words(p) for p in params], [names[k] for k in written_params(code, names)]
 
+    # The files naming each defined function before a `(`, in the order of `texts`: one pass over
+    # each file, not a search of every file for every name.
+    named_in: dict[str, list[str]] = collections.defaultdict(list)
+    for rel, text in texts.items():
+        for name in {m[1] for m in CALLED_NAME.finditer(text)} & defined_in.keys():
+            named_in[name].append(rel)
     edits: dict[str, list[tuple[int, int, str]]] = collections.defaultdict(list)
     report = []
     for name in sorted(defined_in):
-        pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
         linked = taken(name, def_file[name]) if name in def_file else None
-        for rel, text in texts.items():
-            if name not in text or not pattern.search(text):
-                continue
+        for rel in named_in[name]:
+            text = texts[rel]
             definition = taken(name, rel) if rel in defined_in[name] else linked
             if not definition or not definition[0]:
                 continue
