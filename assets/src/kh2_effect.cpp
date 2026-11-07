@@ -557,7 +557,8 @@ unsigned words(std::uint32_t code)
         return W1;
     case 0x83: case 0x86: case 0x89: case 0x8a:
         return W3;
-    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0xda: case 0xdb:
+    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c:
+    case 0x9d: case 0xda: case 0xdb:
         return W1 | W3;
     case 0xc9: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -737,6 +738,17 @@ struct EffectInstance::State {
         case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
+        case 0x99: case 0x9a: case 0x9b: // FUN_1404cc930 ...: 31 places, the newest first; the shape's frame
+            zero(0, 8);
+            *o.at(c.slots[0], 1) = 0x1f;
+            break;
+        case 0x9c: case 0x9d: // FUN_1404ce110 / FUN_1404cee40: the colours, the time, a seed from rand()
+            zero(0, 0x30);
+            o.seti(c.slots[0] + 0x1f0, 0, 0);
+            wr(o.at(c.slots[0] + 0x1f4, 2), std::uint16_t(0));
+            wr(o.at(c.slots[0] + 0x1f8, 2), std::uint16_t(crand()));
+            *o.at(c.slots[0] + 0x1fa, 1) = 0;
+            break;
         default: break;
         }
     }
@@ -816,6 +828,7 @@ struct EffectInstance::State {
         case 0xb1: case 0xb2: std::memset(o.at(c.slots[0], 4), 0, 4); break;
         case 0xd2: std::memset(o.at(c.slots[1], 12), 0, 12); break;
         case 0xed: std::memset(o.at(c.slots[0], 0x3c), 0, 0x3c); break;
+        case 0x9c: case 0x9d: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break;
         default: break;
         }
     }
@@ -1157,7 +1170,8 @@ struct EffectInstance::State {
             }
             break;
         }
-        case 0x8d: case 0x8e: shape_step(o, c, k); break;
+        case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
+        case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
         case 0xc9: mega_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
@@ -1483,13 +1497,14 @@ struct EffectInstance::State {
     }
 
     // ---------------------------------------------------------------------------------- shapes
-    void shape_step(Obj &o, const EffectCommand &c, const Key &k) // pppDrawShapeX (FUN_1404c9b30)
+    // pppDrawShapeX (FUN_1404c9b30; the tails' FUN_1404cc750 ... the same at their +2): the time, the frame, the
+    // frame drawn
+    void shape_step(Obj &o, const Key &k, std::int32_t s)
     {
         const std::int32_t shape = k.s32(4);
-        if (shape == 0xffff)
+        if (shape == 0xffff || !live(o))
             return;
         const auto &frames = block->shapes.at(std::size_t(shape)).frames;
-        const std::int32_t s = c.slots[0];
         std::uint16_t t = rd<std::uint16_t>(o.at(s, 2)), fr = rd<std::uint16_t>(o.at(s + 2, 2));
         const std::uint16_t prev = fr;
         t = std::uint16_t(t + k.u16(8));
@@ -1505,6 +1520,279 @@ struct EffectInstance::State {
         wr(o.at(s, 2), t);
         wr(o.at(s + 2, 2), fr);
         wr(o.at(s + 4, 2), prev);
+    }
+
+
+    // ---------------------------------------------------------------------------------- the tails
+    // pppKeShpTail... (FUN_1404cc750, FUN_1404cce70, FUN_1404cd550, FUN_1404cdd80, FUN_1404ceab0): a ring of the
+    // object's last places (or their world places), the newest first: 31 at +0x10 (byte 0 their count, byte 1 the
+    // newest; the shape's frame as pppDrawShapeX's at +2) or, the "3" ones, 28 at +0x30 (the newest at +0x1fa) with
+    // two colours that move by themselves (head and tail, each with its rate and its rate's rate, shorts / 128)
+    std::size_t tail_world_flag(std::uint32_t code) const
+    {
+        switch (code) {
+        case 0x99: return 0x21;
+        case 0x9a: return 0x23;
+        case 0x9b: return 0x26;
+        case 0x9d: return 0x53;
+        default: return 0; // 0x9c: always the object's own place
+        }
+    }
+
+    void tail_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const bool three = c.code == 0x9c || c.code == 0x9d;
+        const std::int32_t s = c.slots[0];
+        const std::size_t flag = tail_world_flag(c.code);
+        std::array<float, 4> here{o.local[12], o.local[13], o.local[14], 1.0F};
+        if (flag != 0 && k.b(flag) != 0) {
+            here = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, world);
+            here[3] = 1.0F;
+        }
+        const int count = three ? 28 : *o.at(s, 1);
+        const std::int32_t ring = s + (three ? 0x30 : 0x10);
+        const std::int32_t newest = three ? s + 0x1fa : s + 1;
+        if (o.age == 0) // every place the first one
+            for (int i = 0; i < count; ++i)
+                for (int j = 0; j < 4; ++j)
+                    o.setf(ring + 16 * i, j, here[std::size_t(j)]);
+        std::uint8_t at = *o.at(newest, 1);
+        at = std::uint8_t((at == 0 ? count : at) - 1);
+        *o.at(newest, 1) = at;
+        for (int j = 0; j < 4; ++j)
+            o.setf(ring + 16 * at, j, here[std::size_t(j)]);
+        if (!three) {
+            shape_step(o, k, s + 2);
+            return;
+        }
+        // the colours: rates += their rates, values += rates; a key adds to all six
+        for (int j = 0; j < 4; ++j) {
+            o.seth(s, 8 + j, o.h(s, 8 + j) + o.h(s, 0xc + j));
+            o.seth(s, 0x10 + j, o.h(s, 0x10 + j) + o.h(s, 0x14 + j));
+            o.seth(s, j, o.h(s, j) + o.h(s, 8 + j));
+            o.seth(s, 4 + j, o.h(s, 4 + j) + o.h(s, 0x10 + j));
+        }
+        if (hit(o, k))
+            for (int j = 0; j < 4; ++j) {
+                const std::size_t o2 = 2 * std::size_t(j);
+                o.seth(s, j, o.h(s, j) + k.s16(0x20 + o2));
+                o.seth(s, 4 + j, o.h(s, 4 + j) + k.s16(0x28 + o2));
+                o.seth(s, 8 + j, o.h(s, 8 + j) + k.s16(0x30 + o2));
+                o.seth(s, 0xc + j, o.h(s, 0xc + j) + k.s16(0x38 + o2));
+                o.seth(s, 0x10 + j, o.h(s, 0x10 + j) + k.s16(0x40 + o2));
+                o.seth(s, 0x14 + j, o.h(s, 0x14 + j) + k.s16(0x48 + o2));
+            }
+    }
+
+    std::array<float, 4> ring_at(Obj &o, std::int32_t ring, int i)
+    {
+        return {o.f(ring + 16 * i, 0), o.f(ring + 16 * i, 1), o.f(ring + 16 * i, 2), o.f(ring + 16 * i, 3)};
+    }
+
+    static std::array<float, 4> minus(const std::array<float, 4> &a, const std::array<float, 4> &b)
+    {
+        return {a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]};
+    }
+
+    static float length3(const std::array<float, 4> &v)
+    {
+        return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    }
+
+    // the walk along the ring every tail shares: the sprites spaced by a length that shrinks as they do, each
+    // `place`d where its length along the ring falls (FUN_1404cd760's and FUN_1404ceef0's loops, as written: the
+    // first spacing the tail's length, then each the one before less its share)
+    template <class Place>
+    void tail_walk(Obj &o, std::int32_t ring, int count, int newest, unsigned sprites, bool first, float length,
+                   float d_length, Place &&place)
+    {
+        std::array<float, 4> a = ring_at(o, ring, newest);
+        int next = newest == count - 1 ? 0 : newest + 1;
+        std::array<float, 4> b = ring_at(o, ring, next), seg = minus(b, a), pos = a;
+        float along = length3(seg), seg_length = along, into = length;
+        if (first)
+            place(pos);
+        for (;;) {
+            if (--sprites == 0)
+                return;
+            length -= d_length;
+            if (length <= 0)
+                return;
+            while (along < length) {
+                const int further = next == count - 1 ? 0 : next + 1;
+                if (further == newest)
+                    return;
+                a = b;
+                b = ring_at(o, ring, further);
+                seg = minus(b, a);
+                into -= seg_length;
+                seg_length = length3(seg);
+                along += seg_length;
+                next = further;
+            }
+            for (int j = 0; j < 4; ++j)
+                pos[std::size_t(j)] = seg[std::size_t(j)] * (into / seg_length) + a[std::size_t(j)];
+            into += length;
+            along -= length;
+            place(pos);
+        }
+    }
+
+    static std::uint8_t byte_of(float v) // (undefined1)(longlong)v
+    {
+        return std::uint8_t(std::int64_t(v));
+    }
+
+    // pppKeShpTailX / Tail2 / Tail2X's draw (FUN_1404cc960, FUN_1404cd080, FUN_1404cd760): the shape's current
+    // frame at each place, sized and coloured from the head to the tail
+    void tail_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (k.s32(4) == 0xffff || out == nullptr)
+            return;
+        const bool x = c.code == 0x99, two_x = c.code == 0x9b;
+        const std::int32_t s = c.slots[0];
+        const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
+        std::array<std::uint8_t, 4> slot_colour{};
+        std::memcpy(slot_colour.data(), o.at(c.slots[1] + 8, 4), 4);
+        std::array<float, 4> head{}, tail{};
+        unsigned sprites;
+        float size, d_size, length, d_length;
+        if (x) {
+            for (int j = 0; j < 4; ++j) {
+                head[std::size_t(j)] = float(slot_colour[std::size_t(j)]);
+                tail[std::size_t(j)] = float(k.s16(0xc + 2 * std::size_t(j)) >> 7);
+            }
+            sprites = k.u16(0x1c);
+            size = 1.0F;
+            d_size = (1.0F - k.f32(0x14)) / float(int(sprites) - 1);
+            length = k.f32(0x18);
+            d_length = d_size * length;
+        } else {
+            const float alpha = float(slot_colour[3]) * (1.0F / 128.0F);
+            for (int j = 0; j < 4; ++j) {
+                head[std::size_t(j)] = float(k.b(0x14 + std::size_t(j)));
+                tail[std::size_t(j)] = float(k.b(0x18 + std::size_t(j)));
+            }
+            head[3] *= alpha;
+            tail[3] *= alpha;
+            sprites = k.u16(0x20);
+            size = k.f32(0xc);
+            d_size = (size - k.f32(0x10)) / float(int(sprites) - 1);
+            length = k.f32(0x1c);
+            d_length = (d_size / size) * length;
+        }
+        std::array<float, 4> step{};
+        for (int j = 0; j < 4; ++j) {
+            const float n = float(int(sprites) - 1);
+            step[std::size_t(j)] = (head[std::size_t(j)] - tail[std::size_t(j)]) * (1.0F / (n == 0 ? 1e-6F : n));
+        }
+        if (length == 0)
+            sprites = 0;
+        const std::size_t flag = tail_world_flag(c.code);
+        const M4 &to_view = k.b(flag) != 0 ? view : wv;
+        const int frame = rd<std::uint16_t>(o.at(s + 6, 2));
+        std::array<float, 4> colour = head;
+        float sprite_size = size;
+        const bool first = x || k.b(0x22) != 0;
+        bool placed = false;
+        tail_walk(o, s + 0x10, *o.at(s, 1), *o.at(s + 1, 1), sprites, first, length, d_length,
+                  [&](const std::array<float, 4> &pos) {
+                      if (placed || !first) {
+                          for (int j = 0; j < 4; ++j)
+                              colour[std::size_t(j)] -= step[std::size_t(j)];
+                          sprite_size -= d_size;
+                      }
+                      placed = true;
+                      M4 m = identity();
+                      for (int r = 0; r < (two_x ? 3 : 2); ++r)
+                          for (int j = 0; j < 4; ++j)
+                              m[std::size_t(r * 4 + j)] =
+                                  o.local[std::size_t(r * 4 + j)] * (sprite_size * world_scale[std::size_t(r)]);
+                      const auto p = apply(pos, to_view);
+                      for (int j = 0; j < 4; ++j)
+                          m[std::size_t(12 + j)] = p[std::size_t(j)];
+                      draw_shape(shape, frame, mul(m, proj),
+                                 {byte_of(colour[0]) / 128.0F, byte_of(colour[1]) / 128.0F,
+                                  byte_of(colour[2]) / 128.0F, byte_of(colour[3]) / 128.0F},
+                                 *out);
+                  });
+    }
+
+    // pppKeShpTail3 / 3X's draw (FUN_1404ce1c0, FUN_1404ceef0): at each place a frame picked by the time and the
+    // sprite's own number (a 16-bit LCG from the seed, x 0x80d + 7), its size jittered by that number, turned by it
+    // when the record says, the colours from the ring's own
+    void tail3_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (k.s32(4) == 0xffff)
+            return;
+        const std::int32_t s = c.slots[0];
+        if (out != nullptr) {
+            const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
+            unsigned sprites = k.b(0x1c);
+            const float n = float(int(sprites) - 1), alpha = float(*o.at(c.slots[1] + 0xb, 1)) * (1.0F / 128.0F);
+            std::array<float, 4> colour{}, tail{}, step{};
+            for (int j = 0; j < 4; ++j) {
+                colour[std::size_t(j)] = float(o.h(s, j) >> 7);
+                tail[std::size_t(j)] = float(o.h(s, 4 + j) >> 7);
+            }
+            colour[3] *= alpha;
+            tail[3] *= alpha;
+            for (int j = 0; j < 4; ++j)
+                step[std::size_t(j)] = (colour[std::size_t(j)] - tail[std::size_t(j)]) * (1.0F / (n == 0 ? 1e-6F : n));
+            float size = k.f32(0xc);
+            const float length = k.f32(0x18), d_size = (size - k.f32(0x10)) / n, d_length = (d_size / size) * length;
+            if (length == 0)
+                sprites = 0;
+            const bool x = c.code == 0x9d;
+            const M4 &to_view = k.b(x ? 0x53 : 0x50) != 0 ? view : wv;
+            std::array<float, 4> r0{}, r1{};
+            for (int j = 0; j < 4; ++j) {
+                r0[std::size_t(j)] = o.local[std::size_t(j)] * world_scale[0];
+                r1[std::size_t(j)] = o.local[std::size_t(4 + j)] * world_scale[1];
+            }
+            const std::uint32_t time = std::uint32_t(o.i(s + 0x1f0, 0));
+            std::uint32_t seed = rd<std::uint16_t>(o.at(s + 0x1f8, 2));
+            const std::uint32_t wait = std::max<std::uint32_t>(1, shape.frames.front().wait);
+            const std::uint32_t frames = std::uint32_t(shape.frames.size());
+            const bool first = k.b(0x1d) != 0;
+            bool placed = false;
+            tail_walk(o, s + 0x30, 28, *o.at(s + 0x1fa, 1), sprites, first, length, d_length,
+                      [&](const std::array<float, 4> &pos) {
+                          if (placed || !first) {
+                              for (int j = 0; j < 4; ++j)
+                                  colour[std::size_t(j)] -= step[std::size_t(j)];
+                              size -= d_size;
+                          }
+                          placed = true;
+                          seed = (seed * 0x80d + 7) & 0xffff;
+                          const int frame = int(((time + seed) / wait) % frames);
+                          const float sz = (1.0F - (float(seed) / 65535.0F) * k.f32(0x14)) * size;
+                          M4 m{};
+                          for (int j = 0; j < 4; ++j) {
+                              m[std::size_t(j)] = r0[std::size_t(j)] * sz;
+                              m[std::size_t(4 + j)] = r1[std::size_t(j)] * sz;
+                          }
+                          const auto p = apply({pos[0], pos[1], pos[2], 1.0F}, to_view);
+                          for (int j = 0; j < 4; ++j)
+                              m[std::size_t(12 + j)] = p[std::size_t(j)];
+                          if (k.s16(0x1e) != 0) { // turned by the sprite's number (KH2's sine table)
+                              const auto [sn, cs] = sin_cos(std::int32_t(seed));
+                              for (int j = 0; j < 4; ++j) {
+                                  const float a0 = m[std::size_t(j)], a1 = m[std::size_t(4 + j)];
+                                  m[std::size_t(j)] = a0 * cs + a1 * sn;
+                                  m[std::size_t(4 + j)] = a1 * cs - a0 * sn;
+                              }
+                          }
+                          draw_shape(shape, frame, mul(m, proj),
+                                     {byte_of(colour[0]) / 128.0F, byte_of(colour[1]) / 128.0F,
+                                      byte_of(colour[2]) / 128.0F, byte_of(colour[3]) / 128.0F},
+                                     *out);
+                      });
+        }
+        if (live(o))
+            o.seti(s + 0x1f0, 0, o.i(s + 0x1f0, 0) + k.s32(8));
     }
 
     // ---------------------------------------------------------------------------------- the particle spawner
@@ -1909,6 +2197,8 @@ struct EffectInstance::State {
             draw_model(o, c, k, out);
             break;
         case 0x31: vt_mime(o, c, k); break;
+        case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
+        case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
                 return;
