@@ -582,7 +582,7 @@ unsigned words(std::uint32_t code)
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
     case 0xbc:
         return W1;
-    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee:
+    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
     case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
@@ -770,6 +770,7 @@ struct EffectInstance::State {
         case 0xed: zero(0, 0x3c); break;
         case 0x91: case 0xa0: case 0xee: zero(0, 12); break; // the strength, its rate, the rate's
         case 0xbc: zero(0, 8); break;
+        case 0xef: game_state = 3; break; // FUN_1404db5c0: the instance's state 3
         case 0xbd: case 0xdd: // FUN_1404d6cb0 / FUN_1404d6ef0 / FUN_1404e2690: the line made anew (state 2)
             std::memset(o.at(c.slots[0], 0xb0), 0, 0xb0);
             for (int j = 0; j < 16; ++j)
@@ -3245,6 +3246,58 @@ struct EffectInstance::State {
         }
     }
 
+    // pppRyjMegaBirthUserCtrl (FUN_1404db590): the record's shape at each of the game's points, facing the screen.
+    // A point's bytes: its alpha (0: not drawn; the record's +0xb when 0xff is not there), its frame (moved on
+    // each tick, back to 0 at the end when the frame loops), a turn (x 256, KH2's angle) and a size (x 0.1); a
+    // point whose fourth word is 1.0 drawn plain (frame 0, no turn, size 1). The colour the record's +8..+0xa.
+    void user_sprites(const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (points.empty() || k.s32(4) == 0xffff)
+            return;
+        const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
+        for (auto &pt : points) {
+            float w;
+            std::memcpy(&w, pt.bytes.data(), 4);
+            const bool plain = w == 1.0F;
+            int frame = 0;
+            float size = 1.0F;
+            M4 m = identity();
+            std::uint8_t alpha = k.b(0xb);
+            if (!plain) {
+                if (pt.bytes[0] == 0)
+                    continue;
+                alpha = pt.bytes[0];
+                frame = pt.bytes[1];
+                size = float(pt.bytes[3]) * 0.1F;
+                if (pt.bytes[2] != 0) {
+                    const auto [sn, cs] = sin_cos(std::int32_t(pt.bytes[2]) << 8);
+                    m[0] = cs, m[1] = sn, m[4] = -sn, m[5] = cs;
+                }
+            }
+            for (int r = 0; r < 3; ++r)
+                for (int j = 0; j < 4; ++j)
+                    m[std::size_t(r * 4 + j)] *= size;
+            const auto p = transformed({pt.place[0], pt.place[1], pt.place[2], 1}, view);
+            for (int j = 0; j < 4; ++j)
+                m[std::size_t(12 + j)] = p[std::size_t(j)];
+            if (out != nullptr)
+                draw_shape(shape, frame, mul(m, proj),
+                           {k.b(8) / 128.0F, k.b(9) / 128.0F, k.b(10) / 128.0F, alpha / 128.0F}, *out);
+            if (!plain && frozen == 0) { // the frame moved on
+                std::uint8_t next = std::uint8_t(pt.bytes[1] + 1);
+                if (int(shape.frames.size()) <= next) {
+                    const std::size_t was = std::min<std::size_t>(pt.bytes[1], shape.frames.size() - 1);
+                    const bool loops = shape.frames.at(was).loop;
+                    pt.bytes[1] = 0;
+                    if (!loops)
+                        pt.bytes[0] = 0;
+                    continue;
+                }
+                pt.bytes[1] = next;
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -3664,6 +3717,7 @@ struct EffectInstance::State {
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;
+        case 0xef: user_sprites(k, out); break;
         case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
         case 0xbd: case 0xdd: flare_line(o, c); break;
         case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: flare_element(o, c, k, out); break;
