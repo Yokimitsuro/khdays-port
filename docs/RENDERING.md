@@ -441,7 +441,8 @@ A KH2 effect's triangles (`runtime/mods/kh2_corridors.cpp`, the Dark Corridor) a
 markers, in the order sent (KH2's: its layers', a model's primitives far to near), each with the PS2's blend its GS
 ALPHA byte names (`pltt`) and its depth rules: tested nearer unless `_NO_DEPTH_TEST`, written with `_DEPTH_WRITE`,
 the depth alone with `_DEPTH_ONLY` (the corridor's mask, which hides its bowl outside its opening). The colour is the
-picture's times the vertex colour (x 2 at most, as the GS's 0x80 is 1), its alpha the source alpha of the blend.
+picture's times the vertex colour (x 2 at most, as the GS's 0x80 is 1); without a picture it is the vertex colour
+itself (0x80 half of full, as the GS draws with textures off). Its alpha is the source alpha of the blend.
 `gpu_native3d.c` draws them into the colour target alone, the blend by the card's (0x44 mixed, 0x48 added, 0x42
 `Cd - Cs x As` reversed subtraction, 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`; another byte as 0x44, said once), the
 stencil untouched; `raster3d.hlsl` the same formula per pixel (`g3d_polygon.hlsli` `gs_blend`). `gpu3d.c`, as for

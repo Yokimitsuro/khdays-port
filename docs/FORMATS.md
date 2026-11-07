@@ -260,8 +260,9 @@ same layout's first effect, read only as far as its pictures and shapes.
 - **A model**: its header at +0x10: u8 flags (bit 0 clear: depth written), offsets of its primitives, vertices and
   normals, the counts, at +0x16 its GS ALPHA byte and at +0x17 its FIX. Vertices are three s16; primitives come in
   packets `{u8, u8 kind, s16 count, 4 bytes, TEX0}`, kinds 0-3 triangles and 4-7 quads (a quad a strip: 0-1-2,
-  1-3-2), from 2 textured: RGBA per corner (0x80 = 1), vertex numbers, and for the textured u16 UV pairs in 1/4096 of
-  the page; a kind 0xff ends them.
+  1-3-2), from 2 textured: RGBA per corner, vertex numbers, and for the textured u16 UV pairs in 1/4096 of the page;
+  a kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it is); an untextured
+  one's is the colour drawn (0x80 half of full). Alpha 0x80 is a blend's 1 either way.
 - **A shape**: frames `{wait in 1/256 of a frame, a loop flag, TEX0}` of layers, each four corners in 12.4 fixed
   point (x 1/16), its part of the page, its colour and its own GS ALPHA byte.
 - **Drawing**: the GS blend `(A - B) x C / 128 + D` by the ALPHA byte: 0x44 mixed by alpha, 0x48 added, 0x42

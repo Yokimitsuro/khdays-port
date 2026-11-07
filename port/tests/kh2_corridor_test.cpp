@@ -1,6 +1,6 @@
 // KH2's Dark Corridor in Days's ovals (runtime/mods/kh2_corridor_fit.h): its axes, size and units in an oval's place
-// -- KH2's floor on Days's, its oval's top (430 up, y down) at Days's seen top, its front on the oval's front, its
-// clip space back in Days's units -- and when it closes: how long its closing takes, measured on a made-up effect
+// -- KH2's floor on Days's own floor shadow, its oval's top (430 up, y down) on Days's seen top, its front on the
+// oval's front, its clip space back in Days's units -- and when it closes: how long its closing takes, measured on a made-up effect
 // (kh2_effect_made_up.h), and the moment within the oval's closing clip that ends both together.
 #include "../runtime/mods/kh2_corridor_fit.h"
 #include "kh2_effect_made_up.h"
@@ -52,13 +52,15 @@ void test_axes_and_size()
     // the oval drawn at the view's origin, no projection: what comes out is the oval's own space
     Matrix view = identity();
     const float units = corridor_units(view);
-    expect(near(units, kDaysOvalTop / kKh2OvalTop), "Days's units a KH2 unit: the seen top over KH2's oval's");
+    expect(near(units, (kDaysOvalTop - kDaysFloorLift) / kKh2OvalTop),
+           "Days's units a KH2 unit: Days's floor shadow to its seen top over KH2's oval's");
     const auto cam = corridor_camera(view, identity(), units);
     const auto top = through(cam, units, 0, -kKh2OvalTop, 0);
     expect(near(top[0], 0) && near(top[1], kDaysOvalTop) && near(top[2], 0) && near(top[3], 1),
            "KH2's oval's top (y down) on Days's oval's seen top");
     const auto floor = through(cam, units, 0, 0, 0);
-    expect(near(floor[1], 0), "KH2's floor on Days's");
+    expect(near(floor[0], 0) && near(floor[1], kDaysFloorLift) && near(floor[2], 0),
+           "KH2's floor on Days's floor shadow, above the oval's floor");
     const auto front = through(cam, units, 0, 0, 100);
     expect(front[2] > 0 && near(front[2], 100 * units), "KH2's front (+z, where its mask's opening looks) on Days's");
     const auto side = through(cam, units, 150, 0, 0);
@@ -79,11 +81,12 @@ void test_scaled_and_moved()
     view[0] = view[5] = view[10] = 2.0F;
     view[12] = 5, view[13] = 6, view[14] = 7;
     const float units = corridor_units(view);
-    expect(near(units, 2.0F * kDaysOvalTop / kKh2OvalTop), "the oval's own scale taken into the units");
+    expect(near(units, 2.0F * kDaysPerKh2), "the oval's own scale taken into the units");
     expect(near(view[0], 1.0F) && near(view[12], 5.0F), "the view made unit, its place kept");
     const auto cam = corridor_camera(view, identity(), units);
     const auto top = through(cam, units, 0, -kKh2OvalTop, 0);
     expect(near(top[0], 5) && near(top[1], 6 + 2 * kDaysOvalTop) && near(top[2], 7), "placed and sized");
+    expect(near(through(cam, units, 0, 0, 0)[1], 6 + 2 * kDaysFloorLift), "its floor lifted at the oval's scale");
 }
 
 void test_closing()

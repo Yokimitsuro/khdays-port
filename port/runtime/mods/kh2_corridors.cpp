@@ -40,7 +40,6 @@ namespace {
 namespace kh2 = khdays::assets::kh2;
 using khdays::kh2_corridor::kClosingClip;
 using khdays::kh2_corridor::kDaysOvalTop;
-using khdays::kh2_corridor::kKh2OvalTop;
 using khdays::kh2_corridor::Matrix;
 
 // The files the KH2 Prizes mod copies from the player's KH2 (tools/mods/kh2_prizes.py): the dark corridor is
@@ -359,7 +358,25 @@ void submit(const Corridor &c, float units)
 void draw_at(Corridor &c, Place p)
 {
     const float units = khdays::kh2_corridor::corridor_units(p.view);
-    advance(c, khdays::kh2_corridor::corridor_camera(p.view, p.projection, units));
+    const kh2::EffectCamera camera = khdays::kh2_corridor::corridor_camera(p.view, p.projection, units);
+    if (trace_level() >= 3 && khdays_link_frame() % 20u == 0u) {
+        // KH2's camera as the effect sees it (view, then projection, row vectors), to draw the effect with a
+        // reference player from the game's own point of view
+        std::string m;
+        char one[24];
+        for (float v : camera.view) {
+            std::snprintf(one, sizeof(one), " %.6g", static_cast<double>(v));
+            m += one;
+        }
+        m += " |";
+        for (float v : camera.projection) {
+            std::snprintf(one, sizeof(one), " %.6g", static_cast<double>(v));
+            m += one;
+        }
+        khdays_log("kh2 corridors: %s at frame %u: camera units %.6g view+projection%s", c.name.c_str(),
+                   khdays_link_frame(), static_cast<double>(units), m.c_str());
+    }
+    advance(c, camera);
     if (c.fx.done())
         c.draws.clear(); // closed before its oval's end: nothing (the oval stays left out)
     submit(c, units);
@@ -434,6 +451,20 @@ bool oval(const void *resource, std::string &name)
 extern "C" int khdays_kh2_corridors_begin(const void *resource, const void *render_obj)
 {
     std::string name;
+    if (trace_level() >= 3 && resource != nullptr && khdays_link_frame() % 40u == 0u) {
+        // every model's place in the world now and then: where the ground is beside an oval (the characters' feet)
+        const char *file = nullptr;
+        u32 offset = 0, run = 0;
+        float camera[16];
+        if (khdays_origin_of_ram(KHDAYS_REF(resource), &file, &offset, &run) && khdays_g3d_camera(camera)) {
+            Matrix cam;
+            std::copy(camera, camera + 16, cam.begin());
+            const Matrix w = multiply(place_now().view, inverse_affine(cam));
+            khdays_log("kh2 corridors: a model of %s@%x at frame %u, at %.4f %.4f %.4f in the world", file, offset,
+                       khdays_link_frame(), static_cast<double>(w[12]), static_cast<double>(w[13]),
+                       static_cast<double>(w[14]));
+        }
+    }
     if (resource == nullptr || !oval(resource, name))
         return 0;
     const void *object = render_obj != nullptr ? render_obj : resource;
@@ -491,7 +522,7 @@ extern "C" int khdays_kh2_corridors_begin(const void *resource, const void *rend
     }
     if (tracing()) {
         Place p = c.place;
-        const float scale = khdays::kh2_corridor::corridor_units(p.view) * kKh2OvalTop / kDaysOvalTop;
+        const float scale = khdays::kh2_corridor::corridor_units(p.view) / khdays::kh2_corridor::kDaysPerKh2;
         if (std::fabs(scale - c.scale) > 0.01F * std::max(scale, c.scale) ||
             (trace_level() >= 2 && khdays_link_frame() % 10u == 0u)) {
             // where the oval's floor and its model's top fall on the screen (-1..1, y up): what its fit is checked

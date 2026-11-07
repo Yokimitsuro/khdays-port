@@ -5835,7 +5835,7 @@ screen's lock (PLATFORM.md, "Threads, interrupts and time") keeps short and the 
 ## 36. The Dark Corridors
 
 Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `mission.start(6)`; the play walk's input;
-`KHDAYS_TRACE_CORRIDORS=2`):
+`KHDAYS_TRACE_CORRIDORS=2`, `=3`):
 
 - **Days's standing oval** is a model: `mi/ob/06.z`'s `E000_xx_000` (13 nodes: `Box01`-`Box04`, the floor's
   `Plane01`-`04`, `bilbord` with `S1`, `Plane02`, `s3`, `cs`), drawn as a field object through the 3D engine's Flush
@@ -5846,10 +5846,12 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
   it meanwhile. `mi/ob/09.z` has the same model with `E010_xx_000` alone; `mi/ob/07.z`'s `E_100_xx_000` (the same
   look, one clip of 167 frames) was not seen in play. `mi/ob/08.z`'s `E110_xx_000` (thorns, a whirlpool) is another
   effect. The floor swirl (`mo/mo#45`, `E040_xx_000`) and the corridor home's floor hole (`mo/mo#46`) are others.
-- **Its size as seen**: its smoke lines' model reaches 7.556 above its floor (its floor discs at 0.04-0.14), but its
-  pictures fade out well inside it: on the frames its darkness (each pixel's change from the frame before it showed)
-  reaches 3.6-3.8 above its floor at its middle and is 2.4 across, the screen's rows taken to the model's heights
-  through the oval's own matrices.
+- **Its size as seen**: its smoke lines' model reaches 7.556 above its floor, but its pictures fade out well inside
+  it: on the frames its darkness (each pixel's change from the frame before it showed) reaches 3.6-3.8 above its floor
+  at its middle and is 2.4 across, the screen's rows taken to the model's heights through the oval's own matrices.
+- **Its floor**: the oval stands sunk in the ground -- its floor at the world's -0.090, Vexen and Roxas beside it at
+  0.000 (every model's place, `=3`). Its flat floor pieces lie above its floor: `smog_c` at 0.039 and 0.083 (under
+  the ground there) and its floor shadow `smog_d` at 0.135, the one seen.
 - **KH2's corridor** is the first effect of KH2's `event/effect/tt_event_904.pax` (docs/FORMATS.md, "KH2's effects"):
   one repeating emitter of 34 layers and 150 frames. Its oval -- a bowl behind a depth-only mask holed in its shape,
   seen through the hole from its +z -- reaches 430 above its floor (its y 0, y down) and is 300 across; told to stop,
@@ -5857,11 +5859,16 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
 - **The port** (`port/runtime/mods/kh2_corridors.cpp`, with the KH2 Prizes mod's `kh2fx/` files and the settings'
   "KH2 Dark Corridors" on): the oval's draw is taken (`khdays_models_draw_begin`), its shapes left out
   (`khdays_models_shape`, their matrix commands still run), and the corridor run 60 times a second of the game's
-  frames (two ticks a frame at 30) and drawn there: KH2's floor on the oval's, as tall as the oval is seen (3.7 / 430
-  of the oval's units a KH2 unit, then 2.6 across), its axes the oval's turned half a turn about z (y up, its front on
-  the oval's +z), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
+  frames (two ticks a frame at 30) and drawn there: KH2's floor on Days's floor shadow (0.135 above the oval's floor;
+  on the oval's own, KH2's shadow -- discs and rings at its y 0 -- lay under the ground and was hidden), its top on
+  the oval's seen top ((3.7 - 0.135) / 430 of the oval's units a KH2 unit, then 2.5 across), its axes the oval's
+  turned half a turn about z (y up, its front on the oval's +z), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
   scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
   46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
   added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
   ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
   own game; nothing is sent.
+- **Checked against a reference player** drawing the same effect with KH2's own pictures from the game's camera
+  (`=3` logs it) over the frame before the oval showed: the hole's inside within 1-2% (each region's mean colour),
+  once its bare-colour triangles took the GS's rule (the vertex colour itself without a picture: they had been twice
+  as bright).

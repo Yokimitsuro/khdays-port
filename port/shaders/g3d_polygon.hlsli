@@ -259,10 +259,11 @@ int4 polygon_color(Polygon p, int alpha, float3 shade, float s, float t, float f
 
 // A KH2 effect's pixel before its blend (the GS's MODULATE): its picture's texel (a replacement) times the vertex
 // colour as a factor (`shade`: 63 the GS's 0x80, 1, up to twice that), its alpha the texel's times the vertex's.
-// Colour and alpha 0..1.
+// Without a picture (TME off) the vertex colour is the colour itself, 0x80 of 0xff: half the factor's. Colour and
+// alpha 0..1.
 float4 effect_color(Polygon p, float3 shade, float valpha, float s, float t, float footprint, int4 texels)
 {
-    float3 rgb = float3(1.0f, 1.0f, 1.0f);
+    float3 rgb = float3(128.0f, 128.0f, 128.0f) / 255.0f;
     float a = 1.0f;
     if (((p.tex >> 26) & 7u) != 0u && p.replacement >= 0) {
         const int4 c = hd_texel(p, s, t, footprint, texels);

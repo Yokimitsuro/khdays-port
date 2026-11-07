@@ -19,9 +19,18 @@ using Matrix = kh2::EffectMatrix; // row vectors, as the port's float matrices l
 // down; 300 across; khdays-kh2-effect-dump --extent). Days's oval as it is seen reaches 3.7 of its model's units above
 // its floor (2.4 across): its darkness on mission 6's frames against the frame before it, the screen's rows taken to
 // the model's heights through the oval's own matrices (KHDAYS_TRACE_CORRIDORS=2) -- its pictures fade out well inside
-// its model, whose smoke lines reach 7.556. KH2's floor goes on Days's and its oval is as tall (and then 2.6 across).
+// its model, whose smoke lines reach 7.556.
 inline constexpr float kKh2OvalTop = 430.0F;
 inline constexpr float kDaysOvalTop = 3.7F;
+
+// Days's oval's own floor shadow, the flat smog_d of mi/ob/06.z E000_xx_000 (1.1 across), lies 0.135 of its units
+// above the oval's floor; its smaller flat smog_c lie at 0.039 and 0.083. The oval stands sunk in the ground: in
+// mission 6 its floor is at the world's -0.090 and the characters beside it stand at 0.000 (KHDAYS_TRACE_CORRIDORS=3),
+// so smog_d is the one seen. KH2's shadow (discs and rings at its y 0) would lie on its floor, under the game's floor,
+// which hides it (both drawn nearer only): KH2's floor goes on Days's floor shadow, its top on Days's seen top.
+inline constexpr float kDaysFloorLift = 0.135F;
+// Days's units a KH2 unit at the oval's own scale: KH2's floor-to-top over Days's (2.5 across)
+inline constexpr float kDaysPerKh2 = (kDaysOvalTop - kDaysFloorLift) / kKh2OvalTop;
 
 // Days's oval's own closing clip: mi/ob/06.z's oval plays E000_xx_000 (opening, 70 frames), E010_xx_000 (holding,
 // 60) and E020_xx_000 (closing, 61; the oval seen until its 53rd), and is gone at its end (traced in mission 6).
@@ -43,7 +52,7 @@ inline float corridor_units(Matrix &view)
     for (std::size_t r = 0; r < 3; ++r)
         for (std::size_t k = 0; k < 3; ++k)
             view[r * 4 + k] /= length;
-    return kDaysOvalTop / kKh2OvalTop * length;
+    return kDaysPerKh2 * length;
 }
 
 // KH2's camera for a corridor in an oval drawn at `view` (made unit by corridor_units) and `projection`. The
@@ -64,8 +73,10 @@ inline kh2::EffectCamera corridor_camera(const Matrix &view, const Matrix &proje
     for (std::size_t r = 0; r < 3; ++r)
         for (std::size_t k = 0; k < 3; ++k)
             c.view[r * 4 + k] = model[r] * view[r * 4 + k] * turn[k];
+    // the effect's floor raised by kDaysFloorLift along its up (-y), in KH2's units
+    const float lift = kDaysFloorLift / kDaysPerKh2;
     for (std::size_t k = 0; k < 3; ++k)
-        c.view[12 + k] = view[12 + k] / units * turn[k];
+        c.view[12 + k] = view[12 + k] / units * turn[k] - lift * c.view[4 + k];
     c.view[15] = 1.0F;
     for (std::size_t k = 0; k < 4; ++k) {
         for (std::size_t r = 0; r < 3; ++r)

@@ -21,7 +21,9 @@ int khdays_kh2_corridors_begin(const void *resource, const void *render_obj);
 
 /* For the fit's measurements, with KHDAYS_TRACE_CORRIDORS=2 (the session log): the oval's node `node` placed by its
  * draw (khdays_models_node) -- its size and, once a second, its matrix under the oval's own: the oval's pose as Days
- * draws it -- and one of its shapes reached (khdays_models_shape), with its alpha. */
+ * draws it -- and one of its shapes reached (khdays_models_shape), with its alpha. =3 also logs KH2's camera as the
+ * effect sees it (to draw it with a reference player from the game's point of view) and every model's place in the
+ * world (where the ground is beside an oval). */
 void khdays_kh2_corridors_node(unsigned node);
 void khdays_kh2_corridors_shape(void);
 

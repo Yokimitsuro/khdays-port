@@ -110,10 +110,11 @@ int main(int argc, char **argv)
                 continue;
             }
             const auto &v = d.triangles.front();
-            std::printf("tex %04x alpha %02x%s%s%s tris %zu first %.4f %.4f %.4f %.4f colour %.3f %.3f %.3f %.3f\n",
+            std::printf("tex %04x alpha %02x%s%s%s tris %zu first %.4f %.4f %.4f %.4f colour %.3f %.3f %.3f %.3f uv %.4f "
+                        "%.4f\n",
                         unsigned(d.tex0 & 0x3fff), unsigned(d.alpha), d.depth_only ? " depth-only" : "",
                         d.depth_write ? " depth-write" : "", d.depth_test ? "" : " no-test", d.triangles.size() / 3, v.x,
-                        v.y, v.z, v.w, v.r, v.g, v.b, v.a);
+                        v.y, v.z, v.w, v.r, v.g, v.b, v.a, v.u, v.v);
         }
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect dump: %s\n", e.what());
