@@ -355,6 +355,31 @@ void test_lightning()
     expect(bolt_vertices(30, head) == 12 + 24 + 12, "4 points: it ends where it reaches the point");
 }
 
+// pppRyjMegaBirthUserCtrl2: its model at each of the game's matrices (none given: nothing drawn)
+void test_game_matrices()
+{
+    MadeLayer L;
+    L.commands.push_back(command(0xf0, 0x1c, {}, [](auto &k) {
+        put(k, 4, std::int32_t(0xffff)); // no shape
+        put(k, 0x10, std::int32_t(0));    // model 0
+        for (int j = 0; j < 4; ++j)
+            put(k, std::size_t(0x14 + j), std::uint8_t(0x80));
+    }));
+    EffectInstance fx(block_of(made_block({L}, {triangle(1, 2, 3)}, {}, 10, false)), 0, 1);
+    const EffectCamera cam{identity(), identity(), identity()};
+    std::vector<EffectDraw> draws;
+    fx.tick(cam, &draws);
+    expect(draws.empty(), "no matrices, nothing drawn");
+    EffectGameMatrix g;
+    g.matrix = identity();
+    g.matrix[12] = 5, g.matrix[13] = 6, g.matrix[14] = 7;
+    fx.set_matrices({g});
+    draws.clear();
+    fx.tick(cam, &draws);
+    expect(draws.size() == 1 && near(draws[0].triangles[0].x, 6) && near(draws[0].triangles[0].z, 10),
+           "the model at the matrix's place");
+}
+
 int main()
 {
     try {
@@ -368,6 +393,7 @@ int main()
         test_vt_mime();
         test_textured_triangle();
         test_lightning();
+        test_game_matrices();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect: %s\n", e.what());
         return 1;

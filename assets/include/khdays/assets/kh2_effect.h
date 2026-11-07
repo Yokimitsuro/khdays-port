@@ -127,6 +127,16 @@ struct EffectPoint final {
     std::array<std::uint8_t, 4> bytes{};
 };
 
+// A matrix the game gives an effect (KINGDOM HEARTS II's list at 0x140b60270, as many as at 0x140b60278: the gummi
+// ships' game's, Xemnas's): its rows (row vectors, its place the fourth); plain (KH2's last float 1.0) or the four
+// bytes KH2 keeps there: an alpha (0: not drawn), a frame, one unused, a size x 10. pppRyjMegaBirthUserCtrl2 and 3
+// draw at them.
+struct EffectGameMatrix final {
+    EffectMatrix matrix{};
+    bool plain = true;
+    std::array<std::uint8_t, 4> bytes{};
+};
+
 struct EffectCamera final {
     EffectMatrix world{}, view{}, projection{}; // the instance's place, the camera, the projection
 };
@@ -146,6 +156,8 @@ public:
     void stop();
     // The points the game gives the effect (EffectPoint), kept until given again.
     void set_points(std::vector<EffectPoint> points);
+    // The matrices the game gives the effect (EffectGameMatrix), kept until given again.
+    void set_matrices(std::vector<EffectGameMatrix> matrices);
     bool done() const;
     std::size_t objects() const;
     const EffectBlock &block() const;

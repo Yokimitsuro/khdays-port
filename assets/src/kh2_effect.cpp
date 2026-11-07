@@ -631,7 +631,7 @@ unsigned words(std::uint32_t code)
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
     case 0xbc: case 0x7e: case 0x80:
         return W1;
-    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef:
+    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef: case 0xf0: case 0xf2:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
     case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
@@ -699,6 +699,7 @@ struct EffectInstance::State {
     // steps; +0xc2 its place follows the camera's: FUN_1404b1280 adds the eye, 0x142b0ed20)
     std::uint8_t game_state = 0, frozen = 0, follow = 0;
     std::vector<EffectPoint> points; // the game's (set_points)
+    std::vector<EffectGameMatrix> matrices; // the game's (set_matrices)
 
     float rand01() // FUN_1404dc710: 24 random bits x 2^-24
     {
@@ -833,6 +834,7 @@ struct EffectInstance::State {
         case 0x91: case 0xa0: case 0xee: zero(0, 12); break; // the strength, its rate, the rate's
         case 0xbc: zero(0, 8); break;
         case 0xef: game_state = 3; break; // FUN_1404db5c0: the instance's state 3
+        case 0xf0: case 0xf2: game_state = 3; break; // FUN_1404db640 / FUN_1404db6c0 (and +0xc3 set, unused here)
         case 0xbd: case 0xdd: // FUN_1404d6cb0 / FUN_1404d6ef0 / FUN_1404e2690: the line made anew (state 2)
             std::memset(o.at(c.slots[0], 0xb0), 0, 0xb0);
             for (int j = 0; j < 16; ++j)
@@ -4008,6 +4010,109 @@ struct EffectInstance::State {
         out.push_back(std::move(d));
     }
 
+    // a game's matrix's (or point's) frame moved on each tick, back to 0 after the last; then, when that frame does
+    // not loop, the alpha 0 (no longer drawn)
+    void next_frame(std::array<std::uint8_t, 4> &bytes, const EffectShape &shape) const
+    {
+        if (frozen != 0 || shape.frames.empty())
+            return;
+        const std::uint8_t next = std::uint8_t(bytes[1] + 1);
+        if (int(shape.frames.size()) <= next) {
+            const bool loops = shape.frames.at(std::min<std::size_t>(bytes[1], shape.frames.size() - 1)).loop;
+            bytes[1] = 0;
+            if (!loops)
+                bytes[0] = 0;
+            return;
+        }
+        bytes[1] = next;
+    }
+
+    // a shape at `place` facing the screen at `size`, its frame and colour (FUN_1404e2c90 / FUN_1404e2fe0's draw:
+    // the place through the view, then the projection)
+    void sprite_at(const EffectShape &shape, int frame, const std::array<float, 4> &place, float size,
+                   const std::array<float, 4> &colour, std::vector<EffectDraw> &out)
+    {
+        M4 m = identity();
+        m[0] = m[5] = m[10] = size;
+        const auto p = transformed({place[0], place[1], place[2], 1}, view);
+        for (int j = 0; j < 4; ++j)
+            m[std::size_t(12 + j)] = p[std::size_t(j)];
+        draw_shape(shape, frame, mul(m, proj), colour, out);
+    }
+
+    // pppRyjMegaBirthUserCtrl2 (FUN_1404db5e0): at each of the game's matrices its model (FUN_1404e3880: the
+    // matrix, its rows x the size, through the view and projection; the record's colour at +0x14, a matrix's alpha;
+    // its depth written unless the model says not) and its shape (FUN_1404e2c90: at the matrix's place, facing the
+    // screen, the record's colour at +8; the frame moved on)
+    void user_ctrl2(const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (matrices.empty())
+            return;
+        const std::int32_t model = k.s32(0x10), shape = k.s32(4);
+        if (model != 0xffff && out != nullptr) {
+            const auto &mdl = block->models.at(std::size_t(model));
+            const M4 vp = mul(view, proj);
+            for (const auto &g : matrices) {
+                if (!g.plain && g.bytes[0] == 0)
+                    continue;
+                const float size = g.plain ? 1.0F : float(g.bytes[3]) * 0.1F;
+                M4 m{};
+                std::copy(g.matrix.begin(), g.matrix.end(), m.begin());
+                m[15] = 1;
+                for (int r = 0; r < 3; ++r)
+                    for (int j = 0; j < 4; ++j)
+                        m[std::size_t(r * 4 + j)] *= size;
+                const float alpha = g.plain ? float(k.b(0x17)) : float(g.bytes[0]);
+                draw_model_with(nullptr, mdl, mul(m, vp), {float(k.b(0x14)), float(k.b(0x15)), float(k.b(0x16)), alpha},
+                                (mdl.flags & 1) == 0 ? 8u : 0u, 0, 0, 0, 0, 0, *out);
+            }
+        }
+        if (shape == 0xffff)
+            return;
+        const auto &shp = block->shapes.at(std::size_t(shape));
+        for (auto &g : matrices) {
+            if (!g.plain && g.bytes[0] == 0)
+                continue;
+            const int frame = g.plain ? 0 : g.bytes[1];
+            const float size = g.plain ? 1.0F : float(g.bytes[3]) * 0.1F;
+            const float alpha = g.plain ? float(k.b(0xb)) : float(g.bytes[0]);
+            if (out != nullptr)
+                sprite_at(shp, frame, {g.matrix[12], g.matrix[13], g.matrix[14], 1}, size,
+                          {k.b(8) / 128.0F, k.b(9) / 128.0F, k.b(10) / 128.0F, alpha / 128.0F}, *out);
+            if (!g.plain)
+                next_frame(g.bytes, shp);
+        }
+    }
+
+    // pppRyjMegaBirthUserCtrl3 (FUN_1404db660 + FUN_1404e2fe0): at each of the game's matrices a row of its shape
+    // along the matrix's z row: the record's +0x14 of them, +0x10 apart, centred on the matrix's place; each at
+    // the record's +0xc x the matrix's size, the frame moved on
+    void user_ctrl3(const Key &k, std::vector<EffectDraw> *out)
+    {
+        const std::int32_t shape = k.s32(4);
+        if (matrices.empty() || shape == 0xffff)
+            return;
+        const auto &shp = block->shapes.at(std::size_t(shape));
+        const float scale = k.f32(0xc), step = k.f32(0x10);
+        const std::int32_t count = k.s32(0x14);
+        for (auto &g : matrices) {
+            if (!g.plain && g.bytes[0] == 0)
+                continue;
+            const int frame = g.plain ? 0 : g.bytes[1];
+            const float size = g.plain ? 1.0F : float(g.bytes[3]) * scale * 0.1F;
+            const float alpha = g.plain ? float(k.b(0xb)) : float(g.bytes[0]);
+            float along = float(count) * 0.5F * step * -1.0F;
+            for (std::int32_t n = 0; n < count && out != nullptr; ++n, along += step) {
+                const std::array<float, 4> place{g.matrix[12] + g.matrix[8] * along, g.matrix[13] + g.matrix[9] * along,
+                                                 g.matrix[14] + g.matrix[10] * along, 1};
+                sprite_at(shp, frame, place, size, {k.b(8) / 128.0F, k.b(9) / 128.0F, k.b(10) / 128.0F, alpha / 128.0F},
+                          *out);
+            }
+            if (!g.plain)
+                next_frame(g.bytes, shp);
+        }
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -4428,6 +4533,8 @@ struct EffectInstance::State {
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;
         case 0xef: user_sprites(k, out); break;
+        case 0xf0: user_ctrl2(k, out); break;
+        case 0xf2: user_ctrl3(k, out); break;
         case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
         case 0xbd: case 0xdd: flare_line(o, c); break;
         case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: flare_element(o, c, k, out); break;
@@ -4637,6 +4744,11 @@ void EffectInstance::stop()
 void EffectInstance::set_points(std::vector<EffectPoint> points)
 {
     state->points = std::move(points);
+}
+
+void EffectInstance::set_matrices(std::vector<EffectGameMatrix> matrices)
+{
+    state->matrices = std::move(matrices);
 }
 
 bool EffectInstance::done() const

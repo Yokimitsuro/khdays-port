@@ -306,10 +306,10 @@ its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executab
 | 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites, prizes (crowds here: the game's points), models; Prize and ModelFilter read, not played yet |
 | 0xca | `pppRyjMngFlag` | The instance's bytes: its state for the game, frozen, its place following the camera |
 | 0xed | `pppSnoScaleAll` | Three sizes and one for all, each with rates; their products |
-| 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 a list of the game's matrices (the gummi game, Xemnas), not played yet |
+| 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 at the game's matrices (KH2's list at 0x140b60270, the gummi ships' game's and Xemnas's: `EffectInstance::set_matrices`): 2 its model through each matrix and its shape at each one's place, 3 a row of its shape along each matrix's z, centred on its place; a matrix's last float 1.0 drawn plain, else its bytes an alpha, a frame (moved on), a size x 10 |
 | 0xf1 | `pppEiDrawShipoly` | A ribbon along the object's last places (two edges a place, or one and edges across the screen): width, drift and a pull that move, a natural cubic spline, thinner and faded to the tail, pieces along and across with UV ranges and scroll |
 
-The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`.
+The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`; and matrices (0x140b60270): `EffectInstance::set_matrices`.
 
 ## KH2's sound banks and its scenes' sounds
 
