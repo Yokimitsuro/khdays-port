@@ -1315,7 +1315,10 @@ over the model, are drawn blended by their own brightness (glTF has no added lig
 The tool also copies KH2's Dark Corridor -- `event/effect/tt_event_904.pax` and the pictures KH2 keeps resident,
 `effect/texcommon.dpd`, with their HD pages -- into the mod's `kh2fx/`, where the port plays it as KH2 does in place
 of Days's standing ovals (docs/RUNTIME_MAP.md, "The Dark Corridors"; the setting "KH2 Dark Corridors",
-`kh2_corridors`).
+`kh2_corridors`), and its sounds: from `se/se2984.win32.scd` (Twilight Town's scene 904, which plays them with
+the corridor; docs/FORMATS.md, "KH2's sound banks and its scenes' sounds") decoded into the mod's
+`sounds/seqarc/EV_DARK_APPEAR/` and `EV_DARK_DISAPPEAR/` in place of Days's oval's, `sounds/switches.txt`
+tying them to the same setting.
 
 A prize picture with no effect may have a model instead:
 

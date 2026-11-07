@@ -274,6 +274,33 @@ same layout's first effect, read only as far as its pictures and shapes.
   128 x 64 pages from that tbp. The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
   of the pictures' tbps.
 
+## KH2's sound banks and its scenes' sounds
+
+Not the game's: KINGDOM HEARTS II's PC sound banks (`se/se<bank>.win32.scd`), as `tools/mods/kh2_scd.py` reads them
+for the Dark Corridor's sounds (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of the files, checked
+sample for sample against ffmpeg's decoding of the same recordings.
+
+- **The bank**: `SEDBSSCF`, a 0x30-byte header, then at 0x30 the tables' header: four u16 counts (the third the
+  recordings'), then u32 offsets (the second the recordings' table's). The table: a u32 offset a recording, 0 an
+  empty place.
+- **A recording**: `{u32 data size, channels, rate, codec, loop start, loop end, extra size, -}`, the codec's extra
+  header, then its data. Codec 12 is Microsoft ADPCM, its extra a WAVEFORMATEX (`wFormatTag` 2, the block's bytes,
+  `wSamplesPerBlock` 32, the seven predictor pairs); codec 6 is Ogg Vorbis. Rates are the files' own (47,995-48,005
+  in bank 2984).
+- **Microsoft ADPCM**, as Microsoft's description of the format gives it: a block holds per channel a predictor
+  number (u8), then per channel the step, sample 1 and sample 2 (s16 each); sample 2 then sample 1 are the first out;
+  then a nibble a sample, high nibble first, the channels interleaved. A sample is `(s1 c1 + s2 c2) / 256` -- the
+  division toward zero, as C's (ffmpeg's decoding agrees; rounding down is off by one at negative values) -- plus the
+  nibble (signed) times the step, held to 16 bits; the step becomes `max(16, step x adapt[nibble] / 256)`.
+- **A scene's sounds**: a KH2 event (an `.ard` area's entry of type 22) is records `{u16 size, u16 op}`, run by the
+  executable's event runner (its records' dispatch at `FUN_1402cb5d0`, a jump table at 0x1402cbc2c by `op - 2`). Op
+  0x2a names the scene's bank (an s16 at +6); op 0x24 loads a block of sub-records `{op, size}` (0x38 an object, 0x25
+  an animation, 0x26 a voice, 0x39 an effect slot and its file's name); op 0x9 runs an effect: +4 its frame, +0xa
+  its slot, +0xc the file's element, +0xe 4 bind, 0 start, 1 or 2 stop (`FUN_1402d9340` starts the element); op
+  0x2b a sound: +4 its slot, +6 0 start or 1 stop, +8 a u32 sound -- below 1001 the scene's bank's, its recording
+  `n - 1` -- and +0xc its frame (`FUN_1402d8be0` plays it). A PAX element's own sound (its +0x18, -1 none) plays
+  with it; the Dark Corridor's names none.
+
 ## KH2's objects (a chest, a prize box)
 
 Not the game's: KINGDOM HEARTS II's objects (`obj/<name>.mdlx` in the player's 1.5+2.5 copy), as

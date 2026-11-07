@@ -1217,7 +1217,7 @@ endforeach()
 # replacements; no game data needed.
 add_executable(khdays-sound-test tests/sound_test.c runtime/sound/sound_bridge.c runtime/sound/sound_mods.c
     runtime/core/session_log.c host/app/instance_win.c)
-target_link_libraries(khdays-sound-test PRIVATE khdays-sound)
+target_link_libraries(khdays-sound-test PRIVATE khdays-sound khdays-hud-settings)
 target_compile_options(khdays-sound-test PRIVATE /W4 /std:c17)
 # The native driver's part reads its tables from the ROM's ARM7 binary
 # (the player's, extracted into data/; skipped without it).

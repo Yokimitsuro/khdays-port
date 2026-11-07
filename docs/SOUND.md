@@ -179,6 +179,16 @@ a 2 s tone over a 0.08 s menu click now plays its 2 s. The voices' streams
 (those of a voices' stream player, PLAYER_STRM_V01's lines) are decoded ahead
 with the sequence archives' entries.
 
+A mod's `sounds/switches.txt` ties some of its files to a setting: lines
+`<identifier or folder> <setting>` (`seqarc/EV_DARK_APPEAR kh2_corridors`; a
+key of `port/host/app/hud_settings.h`, the settings' Enhancements switches;
+`#` begins a comment), the first line naming a file or a folder of it counting.
+Those files are heard only while that setting is on, the originals otherwise,
+from the next time each sound starts (`khdays_sound_mods_switch`,
+`port/runtime/sound/sound_mods.c`; a key that is no setting's is told and the
+file heard always). The KH2 Prizes mod's Dark Corridor sounds follow KH2 Dark
+Corridors this way (RUNTIME_MAP.md, "The Dark Corridors").
+
 A mod's character gives its base's sounds files of its own (or silence) for its
 own actor only (CHARACTERS.md, `[sounds]`): the game names the actor whose
 sound it starts (its seat, from `Ov022_PlayEntityVoice` and

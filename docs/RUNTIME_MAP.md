@@ -5869,6 +5869,18 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
   added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
   ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
   own game; nothing is sent.
+- **Its sounds** (`KHDAYS_TRACE_SOUND=1`): Days's oval starts `seqarc/EV_DARK_APPEAR/se_ev_dark_appear` (2.5 s) and
+  `se_ev_dark_loop` (a 5.2 s loop) together as it opens, `seqarc/EV_DARK_DISAPPEAR/se_ev_dark_disappear` (3.2 s) as
+  it closes, and stops the loop 8 frames (60 a second) after that -- in mission 6 and the scenes that load
+  `mi/ob/06.z`; the play walk's arrival (the floor swirl) starts none of them. KH2's corridor effect names no sound
+  (its element's is -1): KH2's scenes play their own (docs/FORMATS.md, "KH2's sound banks and its scenes' sounds").
+  Twilight Town's event 904 (tt04, bank 2984) starts its sound 10 (10.4 s: it rises, holds about 7 s and fades) at
+  frame 1953 and the corridor at 1954, and its sounds 16 (6.4 s) and 17 (3.6 s, footsteps) at 2874, stopping the
+  corridor at 2892; di02's event 899 (a variant of the corridor, bank 3101) starts none at its corridors, and no
+  sound of the other banks goes with one (those the Organization's banks share are their attacks'). The KH2 Prizes
+  mod (`tools/mods/kh2_prizes.py`) plays KH2's sound 10 as the loop -- heard from the opening, stopped with the
+  loop -- leaves the appear silent and plays sound 16 as the disappear (on to its end), its `sounds/switches.txt`
+  tying the three to "KH2 Dark Corridors" (docs/SOUND.md, "Mods' sounds").
 - **Checked against a reference player** drawing the same effect with KH2's own pictures from the game's camera
   (`=3` logs it) over the frame before the oval showed: the hole's inside within 1-2% (each region's mean colour),
   once its bare-colour triangles took the GS's rule (the vertex colour itself without a picture: they had been twice

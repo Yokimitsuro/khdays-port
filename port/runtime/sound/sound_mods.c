@@ -5,6 +5,7 @@
 #include "../core/rom.h"
 #include "../core/session_log.h"
 #include "../mods/list.h"
+#include "../../host/app/hud_settings.h"
 #include "../../sound/categories.h"
 #include "../../sound/stream_reader.h"
 
@@ -32,6 +33,7 @@ typedef struct Entry {
     int users; /* players and streams playing it */
     u64 used;  /* when it was last given to one */
     struct Entry *next;
+    int setting; /* the setting its mod's sounds/switches.txt ties it to (hud_settings.h), -1 none */
 } Entry;
 
 static Entry *entries;
@@ -173,6 +175,77 @@ static int mods_sounds(void)
     return present;
 }
 
+/* The span of the word at `p` (before `stop`), its spaces before it skipped: *p moved past it. */
+static size_t next_word(const char **p, const char *stop, const char **word)
+{
+    while (*p < stop && (**p == ' ' || **p == '\t' || **p == '\r')) {
+        ++*p;
+    }
+    *word = *p;
+    while (*p < stop && **p != ' ' && **p != '\t' && **p != '\r') {
+        ++*p;
+    }
+    return (size_t)(*p - *word);
+}
+
+int khdays_sound_mods_switch(const char *text, const char *identifier)
+{
+    for (const char *line = text; line != NULL && *line != '\0';) {
+        const char *end = strchr(line, '\n');
+        const char *stop = end != NULL ? end : line + strlen(line), *p = line, *folder, *key;
+        size_t folder_n = next_word(&p, stop, &folder);
+        const size_t key_n = next_word(&p, stop, &key);
+        line = end != NULL ? end + 1 : NULL;
+        while (folder_n > 0 && folder[folder_n - 1] == '/') {
+            --folder_n; /* a folder written with its slash */
+        }
+        if (folder_n == 0 || key_n == 0 || folder[0] == '#' || strncmp(identifier, folder, folder_n) != 0 ||
+            (identifier[folder_n] != '\0' && identifier[folder_n] != '/')) {
+            continue;
+        }
+        for (int s = 0; s < KHDAYS_OPT_COUNT; ++s) {
+            if (strlen(khdays_hud_setting_keys[s]) == key_n && strncmp(key, khdays_hud_setting_keys[s], key_n) == 0) {
+                return s;
+            }
+        }
+        fprintf(stderr, "sound: switches.txt: %.*s is no setting's key (hud_settings.h); %s heard always\n",
+                (int)key_n, key, identifier);
+        return -1;
+    }
+    return -1;
+}
+
+/* The setting the switches.txt of the mod the file at `path` is in ties it to (`relative` the file's place in the
+ * mod), -1 none. */
+static int switch_of(const char *path, const char *relative, const char *identifier)
+{
+    static const char switches[] = "sounds/switches.txt";
+    const size_t n = strlen(path), tail = strlen(relative);
+    char *file, *text = NULL;
+    FILE *f = NULL;
+    long size;
+    int setting = -1;
+    if (n < tail || (file = (char *)malloc(n - tail + sizeof(switches))) == NULL) {
+        return -1;
+    }
+    memcpy(file, path, n - tail);
+    memcpy(file + (n - tail), switches, sizeof(switches));
+    if (fopen_s(&f, file, "rb") == 0 && f != NULL) {
+        if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) == 0 &&
+            (text = (char *)malloc((size_t)size + 1)) != NULL) {
+            text[fread(text, 1, (size_t)size, f)] = '\0';
+            setting = khdays_sound_mods_switch(text, identifier);
+            free(text);
+        }
+        fclose(f);
+    }
+    if (setting >= 0) {
+        khdays_log("sound: %s heard while %s is on (%s)", identifier, khdays_hud_setting_keys[setting], file);
+    }
+    free(file);
+    return setting;
+}
+
 /* The entry for an identifier, looked for in the mods once (its state
  * NO_FILE if no mod has a file for it). */
 static Entry *entry_find(const char *identifier)
@@ -191,11 +264,13 @@ static Entry *entry_find(const char *identifier)
         }
         snprintf(e->identifier, sizeof(e->identifier), "%s", identifier);
         e->state = NO_FILE;
+        e->setting = -1;
         for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
             char relative[200];
             snprintf(relative, sizeof(relative), "sounds/%s%s", identifier, extensions[i]);
             if (khdays_mods_find(relative, e->path, sizeof(e->path))) {
                 e->state = LET_GO; /* to decode */
+                e->setting = switch_of(e->path, relative, identifier);
                 khdays_log("sound: %s replaced by %s", identifier, e->path);
                 break;
             }
@@ -207,11 +282,12 @@ static Entry *entry_find(const char *identifier)
 }
 
 /* The entry wanted now: NULL if there is no file for it (or it cannot be
- * decoded); decoded again if it was let go, with the original's loop for a
- * file that gives none. */
+ * decoded, or the setting its mod ties it to is off); decoded again if it was
+ * let go, with the original's loop for a file that gives none. */
 static Entry *entry_want(Entry *e, const KhdaysOriginalLoop *loop)
 {
-    if (e == NULL || e->state == NO_FILE || e->state == FAILED) {
+    if (e == NULL || e->state == NO_FILE || e->state == FAILED ||
+        (e->setting >= 0 && !khdays_hud_setting(e->setting))) {
         return NULL;
     }
     if (e->state == LET_GO && loop != NULL) {
@@ -246,6 +322,7 @@ static Entry *entry_of_file(const char *path, const char *name)
     snprintf(e->identifier, sizeof(e->identifier), "%s", name);
     snprintf(e->path, sizeof(e->path), "%s", path);
     e->state = LET_GO; /* to decode */
+    e->setting = -1;
     e->next = entries;
     entries = e;
     return e;
@@ -253,7 +330,7 @@ static Entry *entry_of_file(const char *path, const char *name)
 
 /* What a character's `none` plays in place of the game's sound: nothing, as long as it lasts. Never let go (it is
  * not among the entries). */
-static Entry silence = {"silence", "none", {0}, READY, {32768, 1, 0, NULL, 0, 0, 0}, 0, 0, NULL};
+static Entry silence = {"silence", "none", {0}, READY, {32768, 1, 0, NULL, 0, 0, 0}, 0, 0, NULL, -1};
 
 /* Whether a found file is a folder of its own (not "." or ".."). */
 static int is_folder(const WIN32_FIND_DATAA *found)

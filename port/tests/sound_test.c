@@ -1270,8 +1270,34 @@ static void test_smoothing(void)
     }
 }
 
+/* --- A mod's sounds tied to a setting ------------------------------------------------- */
+
+#include "../host/app/hud_settings.h"
+#include "../runtime/sound/sound_mods.h"
+
+/* sounds/switches.txt: a file or a folder of them (slash or not) to a setting's key, the first line naming it; a
+ * comment, a key that is no setting's and a name that only begins the same are none of them. */
+static void test_switches(void)
+{
+    const char *text = "# a comment\r\n"
+                       "seqarc/EV_DARK_APPEAR kh2_corridors\r\n"
+                       "  seqarc/EV_DARK_DISAPPEAR/ kh2_prizes\n"
+                       "seqarc/EV_DARK_APPEAR/se_ev_dark_loop hd_font\n"
+                       "seqarc/COMMON_SYS no_such_setting\n"
+                       "seq/TwilightR_F\tkh2_models";
+    CHECK(khdays_sound_mods_switch(text, "seqarc/EV_DARK_APPEAR/se_ev_dark_loop") == KHDAYS_OPT_CORRIDORS);
+    CHECK(khdays_sound_mods_switch(text, "seqarc/EV_DARK_APPEAR/se_ev_dark_appear") == KHDAYS_OPT_CORRIDORS);
+    CHECK(khdays_sound_mods_switch(text, "seqarc/EV_DARK_DISAPPEAR/se_ev_dark_disappear") == KHDAYS_OPT_PRIZES);
+    CHECK(khdays_sound_mods_switch(text, "seqarc/EV_DARK_APPEARS/se_x") == -1);
+    CHECK(khdays_sound_mods_switch(text, "seqarc/COMMON_SYS/se_sys_click") == -1);
+    CHECK(khdays_sound_mods_switch(text, "seq/TwilightR_F") == KHDAYS_OPT_KH2_MODELS);
+    CHECK(khdays_sound_mods_switch(text, "# a comment") == -1);
+    CHECK(khdays_sound_mods_switch("", "seq/TwilightR_F") == -1);
+}
+
 int main(int argc, char **argv)
 {
+    test_switches();
     test_channels_golden();
     test_bridge();
     test_volumes();

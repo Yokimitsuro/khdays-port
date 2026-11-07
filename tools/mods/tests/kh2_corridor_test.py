@@ -1,17 +1,21 @@
 """KINGDOM HEARTS II's Dark Corridor copied into the KH2 Prizes mod (tools/mods/kh2_prizes.py make_corridor): the
 effect and the resident pictures as they are, with their HD pages, where the port reads them
-(port/runtime/mods/kh2_corridors.cpp); refused with the reason when a file is missing or not an effect. Made-up
-files: every byte written by the test, nothing of KH2's."""
+(port/runtime/mods/kh2_corridors.cpp); refused with the reason when a file is missing or not an effect. Its sounds
+(make_corridor_sounds) decoded into the mod's sounds/ with their switch. Made-up files: every byte written by the
+test, nothing of KH2's."""
 
 import struct
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kh2_pax  # noqa: E402
 import kh2_prizes  # noqa: E402
+import kh2_scd_test  # noqa: E402
 
 EFFECT, RESIDENT = "event/effect/tt_event_904.pax", "effect/texcommon.dpd"
 
@@ -86,6 +90,49 @@ class Corridor(unittest.TestCase):
             (kh2 / "original" / RESIDENT).unlink()
             made, left_out = kh2_prizes.make_corridor(kh2, root / "mod")
             self.assertEqual(left_out, [f"the Dark Corridor: KH2's {RESIDENT} is not there"])
+
+
+class CorridorSounds(unittest.TestCase):
+    """Its sounds: the bank's recordings 9 (sound 10, the opening) and 15 (sound 16, the closing) as Days's oval's
+    loop and disappear, its appear silent, all tied to the KH2 Dark Corridors switch."""
+
+    def bank(self, root: Path, count: int) -> Path:
+        kh2 = root / "kh2.hed_out"
+        mono = kh2_scd_test.adpcm_format(1, 4, 8, rate=48001)
+        recordings = [(1, 48001, 12, mono, kh2_scd_test.block([0], [16], [n], [0], [1, 2])) for n in range(count)]
+        path = kh2 / "original" / kh2_prizes.CORRIDOR_BANK
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(kh2_scd_test.made_up_bank(recordings))
+        return kh2
+
+    def test_made(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mod = root / "mod"
+            made, left_out = kh2_prizes.make_corridor_sounds(self.bank(root, 16), mod)
+            self.assertEqual(left_out, [])
+            self.assertEqual(made, ["the Dark Corridor's sounds: KH2's, from Twilight Town's scene 904"])
+            sounds = mod / "sounds" / "seqarc"
+            for name, first in (("EV_DARK_APPEAR/se_ev_dark_loop", 9), ("EV_DARK_DISAPPEAR/se_ev_dark_disappear", 15)):
+                with wave.open(str(sounds / f"{name}.wav")) as w:
+                    self.assertEqual((w.getnchannels(), w.getframerate(), w.getnframes()), (1, 48001, 4))
+                    self.assertEqual(struct.unpack("<4h", w.readframes(4)), (0, first, first + 16, first + 48))
+            with wave.open(str(sounds / "EV_DARK_APPEAR" / "se_ev_dark_appear.wav")) as w:
+                self.assertEqual(w.readframes(w.getnframes()), bytes(4))  # one silent frame
+            switches = (mod / "sounds" / "switches.txt").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                switches[1:], ["seqarc/EV_DARK_APPEAR kh2_corridors", "seqarc/EV_DARK_DISAPPEAR kh2_corridors"]
+            )
+
+    def test_left_out(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            made, left_out = kh2_prizes.make_corridor_sounds(root / "kh2.hed_out", root / "mod")
+            self.assertEqual(left_out, [f"the Dark Corridor's sounds: KH2's {kh2_prizes.CORRIDOR_BANK} is not there"])
+            made, left_out = kh2_prizes.make_corridor_sounds(self.bank(root, 12), root / "mod")
+            self.assertEqual(made, [])
+            self.assertIn("it has no recording 15", left_out[0])
+            self.assertFalse((root / "mod" / "sounds").exists())
 
 
 if __name__ == "__main__":
