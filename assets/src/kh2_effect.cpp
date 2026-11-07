@@ -585,7 +585,8 @@ unsigned words(std::uint32_t code)
     case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
-    case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb:
+    case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
+    case 0xdf: case 0xe0: case 0xe1:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -769,16 +770,16 @@ struct EffectInstance::State {
         case 0xed: zero(0, 0x3c); break;
         case 0x91: case 0xa0: case 0xee: zero(0, 12); break; // the strength, its rate, the rate's
         case 0xbc: zero(0, 8); break;
-        case 0xbd: // FUN_1404d6cb0 / FUN_1404e2690: the flare's line made anew (the instance's state 2)
+        case 0xbd: case 0xdd: // FUN_1404d6cb0 / FUN_1404d6ef0 / FUN_1404e2690: the line made anew (state 2)
             std::memset(o.at(c.slots[0], 0xb0), 0, 0xb0);
             for (int j = 0; j < 16; ++j)
                 o.setf(c.slots[0] + 0x40, j, identity()[std::size_t(j)]);
             o.setf(c.slots[0] + 0xac, 0, 1.0F);
             game_state = 2;
             break;
-        case 0xbe: case 0xbf: case 0xc0: case 0xc1: // not tied to a line yet, no shape
+        case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: // not tied yet, no shape
             std::memset(o.at(c.slots[0], 0x10), 0, 0x10);
-            if (c.code == 0xbf)
+            if (c.code == 0xbf || c.code == 0xdf)
                 *o.at(c.slots[0] + 8, 1) = 4;
             break;
         case 0xc8: // FUN_1404d1c60: the history's cursor, its size (none yet), still filling
@@ -884,7 +885,7 @@ struct EffectInstance::State {
         case 0x9c: case 0x9d: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break;
         case 0x91: case 0xa0: case 0xee: std::memset(o.at(c.slots[0], 12), 0, 12); break;
         case 0xbc: std::memset(o.at(c.slots[0], 8), 0, 8); break;
-        case 0xbd: o.setf(c.slots[0] + 0x9c, 0, 0); o.setf(c.slots[0] + 0xa8, 0, 0); break;
+        case 0xbd: case 0xdd: o.setf(c.slots[0] + 0x9c, 0, 0); o.setf(c.slots[0] + 0xa8, 0, 0); break;
         case 0xf1: ribbon_reset(o, c); break;
         default: break;
         }
@@ -1234,7 +1235,9 @@ struct EffectInstance::State {
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
         case 0xc8: case 0xa0: break; // pppRyjDrawShipolyBone's and pppKeShpDtt's steps: none
-        case 0xbc: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: flare_step(o, c, k); break;
+        case 0xbc: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdd: case 0xdf: case 0xe0: case 0xe1:
+            flare_step(o, c, k);
+            break;
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
         case 0xf1: ribbon_step(o, c, k); break;
@@ -2960,12 +2963,28 @@ struct EffectInstance::State {
     // the source (pppKeLnsArnd, FUN_1404e18a0), columns along the line (pppKeLnsClm, FUN_1404e1b30), a streak to
     // the middle (pppKeLnsCrn, FUN_1404e2010), a flash (pppKeLnsFls, FUN_1404e2370) -- each a shape's frames
     // tied to a line (slot 1 of theirs) on their key; pppKeLnsLpSft moves the reach and the brightness' distance.
+    // the T ones (pppKeLnsLpT, ClmT, CrnT, FlsT: FUN_1404d6e10, FUN_1404d61d0, FUN_1404d65a0, FUN_1404d6970) keep
+    // their record's values on its key and call the plain ones; pppKeLnsLpT's line also numbers itself and tests,
+    // drawing a square at the source and reading it back (FUN_1404d7120), how much of it is seen: not made here,
+    // the source always seen
+    static std::uint32_t plain_flare(std::uint32_t code)
+    {
+        switch (code) {
+        case 0xdd: return 0xbd;
+        case 0xdf: return 0xbf;
+        case 0xe0: return 0xc0;
+        case 0xe1: return 0xc1;
+        default: return code;
+        }
+    }
+
     void flare_step(Obj &o, const EffectCommand &c, const Key &k)
     {
         if (!live(o))
             return;
         const std::int32_t s = c.slots[0];
-        if (c.code == 0xbc) { // FUN_1404d5c20
+        const std::uint32_t code = plain_flare(c.code);
+        if (code == 0xbc) { // FUN_1404d5c20
             if (hit(o, k)) {
                 o.setf(s, 0, o.f(s, 0) + k.f32(4));
                 o.setf(s, 1, o.f(s, 1) + k.f32(8));
@@ -2978,7 +2997,7 @@ struct EffectInstance::State {
         }
         if (!hit(o, k))
             return;
-        if (c.code == 0xbd) { // FUN_1404d6c30
+        if (code == 0xbd) { // FUN_1404d6c30
             o.setf(s + 0xa8, 0, k.f32(8) + o.f(s + 0xa8, 0));
             *o.at(s + 0x8e, 1) = k.b(0xc);
             o.setf(s + 0x9c, 0, k.f32(4) + o.f(s + 0x9c, 0));
@@ -2989,11 +3008,11 @@ struct EffectInstance::State {
         o.seti(s, 0, 1); // tied
         if (k.s32(4) == 0xffff) {
             o.seti(s, 1, -1);
-        } else if (o.i(s, 1) != k.s32(4) + 1 || c.code != 0xbf) {
+        } else if (o.i(s, 1) != k.s32(4) + 1 || code != 0xbf) {
             const bool fresh = o.i(s, 1) != k.s32(4) + 1;
             o.seti(s, 1, k.s32(4) + 1);
             const auto &frames = block->shapes.at(std::size_t(k.s32(4))).frames;
-            if (c.code == 0xbf) { // FUN_1404e1f40: each column its time, frame and size (a 16-bit LCG)
+            if (code == 0xbf) { // FUN_1404e1f40: each column its time, frame and size (a 16-bit LCG)
                 std::uint16_t seed = k.b(0x16);
                 const int columns = *o.at(s + 8, 1);
                 for (int i = 0; i < columns; ++i) {
@@ -3008,7 +3027,7 @@ struct EffectInstance::State {
                 *o.at(s + 10, 1) = 0;
             }
         }
-        if (c.code == 0xbf) {
+        if (code == 0xbf) {
             wr(o.at(s + 10, 2), k.u16(0x12));
             wr(o.at(s + 0xc, 2), std::uint16_t(k.s16(0x10)));
             *o.at(s + 0xe, 1) = k.b(0x17);
@@ -3127,11 +3146,12 @@ struct EffectInstance::State {
 
     void flare_element(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
     {
+        const std::uint32_t code = plain_flare(c.code);
         const std::int32_t e = c.slots[0], f = c.slots[1];
         if (o.i(e, 0) == 0 || o.i(e, 1) <= 0)
             return;
         const float bright = o.f(f + 0x7c, 0);
-        if (bright == 0 && c.code != 0xbf)
+        if (bright == 0 && code != 0xbf)
             return;
         const auto &shape = block->shapes.at(std::size_t(o.i(e, 1) - 1));
         const bool facing = *o.at(f + 0x8f, 1) != 0;
@@ -3155,14 +3175,14 @@ struct EffectInstance::State {
                             float(std::uint8_t(int(alpha))) / 128.0F},
                            *out);
         };
-        if (c.code == 0xbe) { // around the source
+        if (code == 0xbe) { // around the source
             M4 m = at_source();
             m[0] *= size;
             m[5] *= size;
             scale_rows(m, world_scale);
             frame_clock(o, e + 8, shape);
             draw_it(*o.at(e + 10, 1), m, colour[3] * bright);
-        } else if (c.code == 0xc0) { // a streak toward the middle
+        } else if (code == 0xc0) { // a streak toward the middle
             M4 m = identity();
             const float n = (size * o.f(f + 0xa4, 0)) / float(std::max<int>(1, k.u16(0x10)));
             for (int j = 0; j < 4; ++j) {
@@ -3178,7 +3198,7 @@ struct EffectInstance::State {
             const float r = std::min(1.0F, o.f(f + 0xa4, 0) / float(std::max<int>(1, k.u16(0x12))));
             frame_clock(o, e + 8, shape);
             draw_it(*o.at(e + 10, 1), m, r * colour[3] * bright);
-        } else if (c.code == 0xc1) { // a flash, sized by how near the middle the source is
+        } else if (code == 0xc1) { // a flash, sized by how near the middle the source is
             const float r = o.f(f + 0xa4, 0) / float(std::max<int>(1, k.u16(0x10))), left = r <= 1.0F ? 1.0F - r : 0.0F;
             M4 m = at_source();
             const auto scaled = [&](std::uint8_t mode) {
@@ -3645,8 +3665,8 @@ struct EffectInstance::State {
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;
         case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
-        case 0xbd: flare_line(o, c); break;
-        case 0xbe: case 0xbf: case 0xc0: case 0xc1: flare_element(o, c, k, out); break;
+        case 0xbd: case 0xdd: flare_line(o, c); break;
+        case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: flare_element(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
