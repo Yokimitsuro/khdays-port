@@ -370,7 +370,7 @@ M4 mul(const M4 &a, const M4 &b)
     return o;
 }
 
-std::array<float, 4> apply(const std::array<float, 4> &v, const M4 &m)
+std::array<float, 4> transformed(const std::array<float, 4> &v, const M4 &m)
 {
     std::array<float, 4> o{};
     for (int j = 0; j < 4; ++j)
@@ -532,6 +532,7 @@ struct Obj {
     std::vector<std::array<float, 3>> morph;
     bool morphed = false;
     std::map<const EffectCommand *, ModelPool> model_pools; // pppRyjMegaBirthModel's, one a command
+    std::map<const EffectCommand *, std::vector<std::array<float, 4>>> rings; // pppEiDrawShipoly's places
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -583,7 +584,7 @@ unsigned words(std::uint32_t code)
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c:
     case 0x9d: case 0xda: case 0xdb:
         return W1 | W3;
-    case 0xc9: case 0xd0: return W1 | W3 | SPAWNER;
+    case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
     }
 }
@@ -762,6 +763,11 @@ struct EffectInstance::State {
         case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
+        case 0xf1: // FUN_1404ba790: the ring's cursor, size and count, its width, drift and pull, all none
+            std::memset(o.at(c.slots[3], 0xe0), 0, 0xe0);
+            *o.at(c.slots[3] + 5, 1) = 1;
+            o.rings.erase(&c);
+            break;
         case 0x99: case 0x9a: case 0x9b: // FUN_1404cc930 ...: 31 places, the newest first; the shape's frame
             zero(0, 8);
             *o.at(c.slots[0], 1) = 0x1f;
@@ -853,6 +859,7 @@ struct EffectInstance::State {
         case 0xd2: std::memset(o.at(c.slots[1], 12), 0, 12); break;
         case 0xed: std::memset(o.at(c.slots[0], 0x3c), 0, 0x3c); break;
         case 0x9c: case 0x9d: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break;
+        case 0xf1: ribbon_reset(o, c); break;
         default: break;
         }
     }
@@ -985,7 +992,7 @@ struct EffectInstance::State {
                         turn[std::size_t(r * 4 + j)] = n != 0 ? turn[std::size_t(r * 4 + j)] / n : 0.0F;
                     turn[std::size_t(r * 4 + 3)] = 0;
                 }
-                const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, o.parent->local);
+                const auto p = transformed({o.local[12], o.local[13], o.local[14], o.local[15]}, o.parent->local);
                 o.local = mul(o.local, turn);
                 for (int j = 0; j < 4; ++j)
                     o.local[std::size_t(12 + j)] = p[std::size_t(j)];
@@ -1011,7 +1018,7 @@ struct EffectInstance::State {
         case 0x75: { // pppKeDMatFr (FUN_1404c6760): rows x the world's size, the position . W.V, kept, then . P
             M4 m = o.local;
             scale_rows(m, world_scale);
-            const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, wv);
+            const auto p = transformed({o.local[12], o.local[13], o.local[14], o.local[15]}, wv);
             for (int j = 0; j < 4; ++j)
                 m[std::size_t(12 + j)] = p[std::size_t(j)];
             for (int j = 0; j < 16; ++j)
@@ -1035,7 +1042,7 @@ struct EffectInstance::State {
             scale_rows(m, {o.f(s(1) + 0x10, 0), o.f(s(1) + 0x10, 1), o.f(s(1) + 0x10, 2)});
             if (c.code == 0x7b)
                 m = mul(m, wood);
-            const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, at);
+            const auto p = transformed({o.local[12], o.local[13], o.local[14], o.local[15]}, at);
             for (int j = 0; j < 4; ++j)
                 m[std::size_t(12 + j)] = p[std::size_t(j)];
             o.draw = c.code == 0x79 ? mul(m, proj) : m;
@@ -1122,7 +1129,7 @@ struct EffectInstance::State {
         }
         case 0x69: // pppParMatrix (FUN_1404c60c0): the position through the parent's matrix
             if (o.parent) {
-                const auto p = apply({o.local[12], o.local[13], o.local[14], 1}, o.parent->local);
+                const auto p = transformed({o.local[12], o.local[13], o.local[14], 1}, o.parent->local);
                 o.local[12] = p[0];
                 o.local[13] = p[1];
                 o.local[14] = p[2];
@@ -1134,7 +1141,7 @@ struct EffectInstance::State {
             for (int r = 0; r < 3; ++r)
                 for (int j = 0; j < 3; ++j)
                     m[std::size_t(r * 4 + j)] *= world_scale[std::size_t(r)];
-            const auto p = apply({o.local[12], o.local[13], o.local[14], 1}, wv);
+            const auto p = transformed({o.local[12], o.local[13], o.local[14], 1}, wv);
             for (int j = 0; j < 4; ++j)
                 m[std::size_t(12 + j)] = p[std::size_t(j)];
             o.draw = mul(m, proj);
@@ -1146,7 +1153,7 @@ struct EffectInstance::State {
                 for (int j = 0; j < 3; ++j)
                     m[std::size_t(r * 4 + j)] *= world_scale[std::size_t(r)];
             m = mul(m, wood);
-            const auto p = apply({o.local[12], o.local[13], o.local[14], 1}, wvp);
+            const auto p = transformed({o.local[12], o.local[13], o.local[14], 1}, wvp);
             for (int j = 0; j < 4; ++j)
                 m[std::size_t(12 + j)] = p[std::size_t(j)];
             o.draw = m;
@@ -1202,6 +1209,7 @@ struct EffectInstance::State {
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
+        case 0xf1: ribbon_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
     }
@@ -1293,7 +1301,7 @@ struct EffectInstance::State {
             wr(o.at(c.slots[0], 2), i);
         }
         const auto &v = block->models.at(vl.model).vertices.at(vl.vertices[i]);
-        const auto p = apply({v[0], v[1], v[2], 1}, o.parent->local);
+        const auto p = transformed({v[0], v[1], v[2], 1}, o.parent->local);
         for (int j = 0; j < 3; ++j)
             o.setf(c.slots[1], j, p[std::size_t(j)]);
     }
@@ -1430,7 +1438,7 @@ struct EffectInstance::State {
         if (!child)
             return;
         if (three || five) { // FUN_1404d4830 / FUN_1404d4f80
-            const auto p = apply({v[0], v[1], v[2], 1}, o.local);
+            const auto p = transformed({v[0], v[1], v[2], 1}, o.local);
             const std::int32_t at = k.s32(five ? 0x14 : 0x10), way = k.s32(five ? 0x1c : 0x18);
             const float size = five ? k.f32(8) : 1.0F;
             std::array<float, 3> d{};
@@ -1516,7 +1524,7 @@ struct EffectInstance::State {
         auto child = child_of(o, k.s32(0xc));
         if (!child)
             return;
-        const auto p = apply({v[0], v[1], v[2], 1}, o.local);
+        const auto p = transformed({v[0], v[1], v[2], 1}, o.local);
         for (int j = 0; j < 3; ++j)
             child->setf(k.s32(0x10), j, p[std::size_t(j)]);
     }
@@ -1581,7 +1589,7 @@ struct EffectInstance::State {
         const std::size_t flag = tail_world_flag(c.code);
         std::array<float, 4> here{o.local[12], o.local[13], o.local[14], 1.0F};
         if (flag != 0 && k.b(flag) != 0) {
-            here = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, world);
+            here = transformed({o.local[12], o.local[13], o.local[14], o.local[15]}, world);
             here[3] = 1.0F;
         }
         const int count = three ? 28 : *o.at(s, 1);
@@ -1743,7 +1751,7 @@ struct EffectInstance::State {
                           for (int j = 0; j < 4; ++j)
                               m[std::size_t(r * 4 + j)] =
                                   o.local[std::size_t(r * 4 + j)] * (sprite_size * world_scale[std::size_t(r)]);
-                      const auto p = apply(pos, to_view);
+                      const auto p = transformed(pos, to_view);
                       for (int j = 0; j < 4; ++j)
                           m[std::size_t(12 + j)] = p[std::size_t(j)];
                       draw_shape(shape, frame, mul(m, proj),
@@ -1807,7 +1815,7 @@ struct EffectInstance::State {
                               m[std::size_t(j)] = r0[std::size_t(j)] * sz;
                               m[std::size_t(4 + j)] = r1[std::size_t(j)] * sz;
                           }
-                          const auto p = apply({pos[0], pos[1], pos[2], 1.0F}, to_view);
+                          const auto p = transformed({pos[0], pos[1], pos[2], 1.0F}, to_view);
                           for (int j = 0; j < 4; ++j)
                               m[std::size_t(12 + j)] = p[std::size_t(j)];
                           if (k.s16(0x1e) != 0) { // turned by the sprite's number (KH2's sine table)
@@ -1900,7 +1908,7 @@ struct EffectInstance::State {
                 x = ((rand01() * (spread + spread) - spread) * pi) / 180.0F;
             if (kind == 2 || kind == 3)
                 a[0] = 0;
-            const auto d = apply({k.f32(0xc4), k.f32(0xc8), k.f32(0xcc), 1.0F}, radians_xyz(a[0], a[1], a[2]));
+            const auto d = transformed({k.f32(0xc4), k.f32(0xc8), k.f32(0xcc), 1.0F}, radians_xyz(a[0], a[1], a[2]));
             for (int j = 0; j < 3; ++j)
                 p.m[std::size_t(4 + j)] = d[std::size_t(j)] * axes[std::size_t(j)];
             frame_rows(p.m);
@@ -2207,14 +2215,14 @@ struct EffectInstance::State {
             const std::array<float, 4> pos{m[12], m[13], m[14], m[15]};
             std::array<float, 4> q;
             if (facing) {
-                q = apply(pos, place);
+                q = transformed(pos, place);
                 m = mul(m, upright);
             } else if (!pool.born_world) {
-                q = apply(pos, place);
+                q = transformed(pos, place);
                 m = mul(m, wv);
             } else {
-                const M4 born_view = mul(mul(o.local, p.born), view); // an lvalue: not std::apply by ADL
-                q = apply(pos, born_view);
+                const M4 born_view = mul(mul(o.local, p.born), view);
+                q = transformed(pos, born_view);
                 m = mul(m, wv);
             }
             for (int j = 0; j < 4; ++j)
@@ -2233,6 +2241,454 @@ struct EffectInstance::State {
             colour[3] = float(std::clamp(a, 0, 0x7f));
             draw_model_with(o, model, draw_m, colour, flags, k.b(0xc), k.b(0x10a), 0, p.u, p.v, *out);
         }
+    }
+
+    // ---------------------------------------------------------------------------------- the ribbon
+    // pppEiDrawShipoly (FUN_1404b9c00, FUN_1404b9260, FUN_1404b8380): a ribbon along the object's last places. Its
+    // fourth slot keeps: +0 the ring's cursor, +4 its size (4 to 128), +6 how many it holds, +0xc the width with
+    // its rate and the rate's (+0x10, +0x14), +0x18 a v the reset takes back, +0x24 / +0x28 the UV scroll, +0x30
+    // the object's matrix as last taken, +0x70 a drift with its rate and the rate's (+0x80, +0x90), +0xa0 a point
+    // the places are pulled to with its rate and the rate's (+0xb0, +0xc0) and the pull (+0xd0, +0xd4, +0xd8).
+    // Record: +9 0 two edges a place (+-0.5 x the width across the object's y), 1 or 2 the place alone and edges
+    // made across the screen; +0xa the object's places not taken; +0xb the ring's size; +0x10 thinner toward the
+    // tail; +0x11 0 the object's own space, 1 the world's (2: a matrix the game gives, the view here); +0x12 how
+    // many pieces along, +0x13 across; +0x14 no depth test; +0x15 the blend; +0x16 / +0x17 faded across / along
+    // (+0x18 the share along that fades in); +0x1c each place pushed out from their middle by its width; +0x1d
+    // the drift; +0x1e the pull (2: to the point as it is, 1: through the object's matrix; +0x8c the pull's
+    // reach); +0x90 the u by the length along; +0x94 / +0x98 the scroll's rates; +0x9c..+0xa1 the u and v ranges.
+    static std::array<float, 4> add4(const std::array<float, 4> &a, const std::array<float, 4> &b)
+    {
+        return {a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]};
+    }
+
+    std::array<float, 4> slot4(Obj &o, std::int32_t s)
+    {
+        return {o.f(s, 0), o.f(s, 1), o.f(s, 2), o.f(s, 3)};
+    }
+
+    void set4(Obj &o, std::int32_t s, const std::array<float, 4> &v)
+    {
+        for (int j = 0; j < 4; ++j)
+            o.setf(s, j, v[std::size_t(j)]);
+    }
+
+    void ribbon_reset(Obj &o, const EffectCommand &c) // FUN_1404ba8c0: the first key's taken off again
+    {
+        const std::int32_t s = c.slots[3];
+        if (c.keys.empty())
+            return;
+        const Key k{c.keys[0].data(), c.keys[0].size()};
+        for (int j = 0; j < 3; ++j) {
+            o.setf(s + 0xa0, j, o.f(s + 0xa0, j) - k.f32(0x5c + 4 * std::size_t(j)));
+            o.setf(s + 0x70, j, o.f(s + 0x70, j) - k.f32(0x38 + 4 * std::size_t(j)));
+        }
+        std::memset(o.at(s + 0xb0, 0x20), 0, 0x20);
+        std::memset(o.at(s + 0xd4, 8), 0, 8);
+        o.setf(s + 0xd0, 0, o.f(s + 0xd0, 0) - k.f32(0x80));
+        std::memset(o.at(s + 0x80, 0x20), 0, 0x20);
+        o.setf(s + 0xc, 0, o.f(s + 0xc, 0) - k.f32(0x2c));
+        std::memset(o.at(s + 0x10, 8), 0, 8);
+        o.setf(s + 0x18, 0, o.f(s + 0x18, 0) - k.f32(0x20));
+        std::memset(o.at(s + 0x1c, 8), 0, 8);
+    }
+
+    // the ring's i-th place back from the newest (0 the newest), its edge `side` (0 or 1; single: 0)
+    static int ring_back(int cursor, int size, int i)
+    {
+        int at = cursor - 1 - i;
+        while (at < 0)
+            at += size;
+        return at;
+    }
+
+    void ribbon_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const std::int32_t s = c.slots[3];
+        const bool single = k.b(9) != 0, keep = k.b(10) == 0;
+        if (keep)
+            for (int j = 0; j < 16; ++j)
+                o.setf(s + 0x30, j, o.local[std::size_t(j)]);
+        auto &ring = o.rings[&c];
+        if (ring.empty()) {
+            const int size = std::clamp<int>(k.b(0xb), 4, 0x80);
+            *o.at(s + 4, 1) = std::uint8_t(size);
+            ring.assign(std::size_t(size * (single ? 1 : 2)), std::array<float, 4>{});
+            switch (k.b(0x9f)) { // random UV starts
+            case 1: o.setf(s + 0x24, 0, rand01()); break;
+            case 2: o.setf(s + 0x28, 0, rand01()); break;
+            case 3:
+                o.setf(s + 0x24, 0, rand01());
+                o.setf(s + 0x28, 0, rand01());
+                break;
+            default: break;
+            }
+        }
+        const int size = *o.at(s + 4, 1);
+        int cursor = o.i(s, 0);
+        std::uint16_t filled = rd<std::uint16_t>(o.at(s + 6, 2));
+        M4 m;
+        for (int j = 0; j < 16; ++j)
+            m[std::size_t(j)] = o.f(s + 0x30, j);
+        const auto to_space = [&](std::array<float, 4> v) {
+            if (k.b(0x11) == 1 || k.b(0x11) == 3) // the world's (3: its own matrix after, not known: the world)
+                v = transformed(v, world);
+            return v;
+        };
+        if (keep) {
+            if (!single) {
+                const float w = k.f32(0xc);
+                ring[std::size_t(2 * cursor)] = to_space(transformed({0, w * 0.5F, 0, 1}, m));
+                ring[std::size_t(2 * cursor + 1)] = to_space(transformed({0, w * -0.5F, 0, 1}, m));
+            } else {
+                auto v = to_space({m[12], m[13], m[14], m[15]});
+                if (k.b(0x1c) != 0)
+                    v[3] = o.f(s + 0xc, 0);
+                ring[std::size_t(cursor)] = v;
+            }
+            filled = std::uint16_t(std::min<int>(filled + 1, size));
+            wr(o.at(s + 6, 2), filled);
+        }
+        if (k.b(0x1c) != 0 && single && filled > 0) { // pushed out from their middle
+            std::array<float, 4> mid{};
+            for (int i = 0; i < filled; ++i)
+                mid = add4(mid, ring[std::size_t(ring_back(cursor + 1, size, i))]);
+            for (auto &x : mid)
+                x /= float(filled);
+            for (int i = 1; i < int(filled) - 2; ++i) {
+                auto &v = ring[std::size_t(ring_back(cursor + 1, size, i))];
+                std::array<float, 4> d = minus(v, mid);
+                unit3(d.data());
+                const float w = v[3];
+                v = add4(v, {d[0] * w, d[1] * w, d[2] * w, 0});
+                v[3] = w;
+            }
+        }
+        { // the width
+            const float rr = o.f(s + 0x14, 0), r = rr + o.f(s + 0x10, 0), w = r + o.f(s + 0xc, 0);
+            o.setf(s + 0x10, 0, r);
+            o.setf(s + 0xc, 0, w);
+            if (hit(o, k)) {
+                o.setf(s + 0xc, 0, w + k.f32(0x2c));
+                o.setf(s + 0x10, 0, r + k.f32(0x30));
+                o.setf(s + 0x14, 0, rr + k.f32(0x34));
+            }
+        }
+        if (k.b(0x1d) != 0 && single) { // the drift
+            const auto drift = slot4(o, s + 0x70);
+            for (int i = 1; i < filled; ++i) {
+                auto &v = ring[std::size_t(ring_back(cursor + 1, size, i))];
+                v = add4(v, drift);
+            }
+            set4(o, s + 0x80, add4(slot4(o, s + 0x80), slot4(o, s + 0x90)));
+            set4(o, s + 0x70, add4(slot4(o, s + 0x70), slot4(o, s + 0x80)));
+            if (hit(o, k))
+                for (int j = 0; j < 3; ++j) {
+                    o.setf(s + 0x70, j, o.f(s + 0x70, j) + k.f32(0x38 + 4 * std::size_t(j)));
+                    o.setf(s + 0x80, j, o.f(s + 0x80, j) + k.f32(0x44 + 4 * std::size_t(j)));
+                    o.setf(s + 0x90, j, o.f(s + 0x90, j) + k.f32(0x50 + 4 * std::size_t(j)));
+                }
+        }
+        if (k.b(0x1e) != 0 && single) { // the pull
+            std::array<float, 4> target = slot4(o, s + 0xa0);
+            if (k.b(0x1e) != 2)
+                target = transformed(target, m);
+            for (int i = 1; i < filled; ++i) {
+                auto &v = ring[std::size_t(ring_back(cursor + 1, size, i))];
+                std::array<float, 4> d = minus(target, v);
+                const float n = length3(d);
+                unit3(d.data());
+                float f = n / k.f32(0x8c);
+                f = f < 0 ? 0.0F : std::min(f, 1.0F);
+                const float pull = (1.0F - f) * o.f(s + 0xd0, 0);
+                v = add4(v, {d[0] * pull, d[1] * pull, d[2] * pull, 0});
+            }
+            set4(o, s + 0xb0, add4(slot4(o, s + 0xb0), slot4(o, s + 0xc0)));
+            set4(o, s + 0xa0, add4(slot4(o, s + 0xa0), slot4(o, s + 0xb0)));
+            const float pr = o.f(s + 0xd4, 0) + o.f(s + 0xd8, 0);
+            o.setf(s + 0xd4, 0, pr);
+            o.setf(s + 0xd0, 0, pr + o.f(s + 0xd0, 0));
+            if (hit(o, k)) {
+                for (int j = 0; j < 3; ++j) {
+                    o.setf(s + 0xa0, j, o.f(s + 0xa0, j) + k.f32(0x5c + 4 * std::size_t(j)));
+                    o.setf(s + 0xb0, j, o.f(s + 0xb0, j) + k.f32(0x68 + 4 * std::size_t(j)));
+                    o.setf(s + 0xc0, j, o.f(s + 0xc0, j) + k.f32(0x74 + 4 * std::size_t(j)));
+                }
+                for (int j = 0; j < 3; ++j)
+                    o.setf(s + 0xd0, j, o.f(s + 0xd0, j) + k.f32(0x80 + 4 * std::size_t(j)));
+            }
+        }
+        if (keep) {
+            ++cursor;
+            o.seti(s, 0, size <= cursor ? 0 : cursor);
+        }
+    }
+
+    // FUN_1404b8f90 / FUN_1404baa90 (and FUN_1404d1480's for one axis): a natural cubic spline through the points
+    // at unit spacing, then its value t of the way along (t from 0 to the count - 1)
+    static std::vector<std::array<float, 4>> spline_moments(const std::vector<std::array<float, 4>> &y)
+    {
+        const std::size_t n = y.size();
+        std::vector<std::array<float, 4>> m(n), rhs(n);
+        std::vector<float> diag(n, 4.0F);
+        if (n < 3)
+            return m;
+        for (std::size_t i = 1; i + 1 < n; ++i)
+            for (int j = 0; j < 4; ++j)
+                rhs[i][std::size_t(j)] = (y[i + 1][std::size_t(j)] - y[i][std::size_t(j)]) -
+                                         (y[i][std::size_t(j)] - y[i - 1][std::size_t(j)]);
+        for (std::size_t i = 2; i + 1 < n; ++i) {
+            const float w = 1.0F / diag[i - 1];
+            diag[i] = 4.0F - w;
+            for (int j = 0; j < 4; ++j)
+                rhs[i][std::size_t(j)] -= w * rhs[i - 1][std::size_t(j)];
+        }
+        for (std::size_t i = n - 2; i >= 1; --i) {
+            for (int j = 0; j < 4; ++j)
+                m[i][std::size_t(j)] = (rhs[i][std::size_t(j)] - m[i + 1][std::size_t(j)]) / diag[i];
+            if (i == 1)
+                break;
+        }
+        return m;
+    }
+
+    static std::array<float, 4> spline_at(const std::vector<std::array<float, 4>> &y,
+                                          const std::vector<std::array<float, 4>> &m, float t)
+    {
+        std::size_t i = std::size_t(std::max(0, int(t)));
+        if (i + 1 >= y.size())
+            i = y.size() >= 2 ? y.size() - 2 : 0;
+        const float f = t - float(i);
+        std::array<float, 4> out{};
+        if (y.size() < 2) {
+            if (!y.empty())
+                out = y[0];
+            return out;
+        }
+        for (int j = 0; j < 4; ++j) {
+            const float y0 = y[i][std::size_t(j)], y1 = y[i + 1][std::size_t(j)], m0 = m[i][std::size_t(j)],
+                        m1 = m[i + 1][std::size_t(j)];
+            out[std::size_t(j)] = (((y1 - y0) - (m0 + m0 + m1)) + ((m1 - m0) * f + m0 * 3.0F) * f) * f + y0;
+        }
+        return out;
+    }
+
+    void ribbon_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        const std::int32_t s = c.slots[3];
+        const auto it = o.rings.find(&c);
+        const std::uint16_t filled = rd<std::uint16_t>(o.at(s + 6, 2));
+        const int pieces = k.b(0x12);
+        if (out != nullptr && it != o.rings.end() && filled > 2 && pieces > 0) {
+            const auto &ring = it->second;
+            const int size = *o.at(s + 4, 1), cursor = o.i(s, 0);
+            const M4 &space = k.b(0x11) == 0 ? wv : view; // 2: the game's matrix (none here), then the view
+            std::vector<std::array<float, 4>> a(std::size_t(pieces) + 1), b(std::size_t(pieces) + 1);
+            const float step_t = float(int(filled) - 1) / float(pieces);
+            if (k.b(9) == 0) {
+                for (int side = 0; side < 2; ++side) {
+                    std::vector<std::array<float, 4>> pts(filled);
+                    for (int i = 0; i < filled; ++i) {
+                        auto v = ring[std::size_t(2 * ring_back(cursor, size, i) + side)];
+                        v[3] = 1.0F;
+                        pts[std::size_t(i)] = transformed(v, space);
+                    }
+                    const auto m = spline_moments(pts);
+                    for (int q = 0; q <= pieces; ++q) {
+                        auto v = spline_at(pts, m, float(q) * step_t);
+                        v[3] = 1.0F;
+                        (side == 0 ? a : b)[std::size_t(q)] = v;
+                    }
+                }
+            } else {
+                std::vector<std::array<float, 4>> pts(filled);
+                for (int i = 0; i < filled; ++i) {
+                    auto v = ring[std::size_t(ring_back(cursor, size, i))];
+                    v[3] = 1.0F;
+                    pts[std::size_t(i)] = v;
+                }
+                const auto mo = spline_moments(pts);
+                std::vector<std::array<float, 4>> mid(std::size_t(pieces) + 1);
+                for (int q = 0; q <= pieces; ++q) {
+                    auto v = spline_at(pts, mo, float(q) * step_t);
+                    v[3] = 1.0F;
+                    mid[std::size_t(q)] = transformed(v, space);
+                }
+                if (k.f32(0x90) > 0) { // each piece's length, for the u along
+                    for (int q = 0; q < pieces; ++q)
+                        mid[std::size_t(q)][3] = length3(minus(mid[std::size_t(q)], mid[std::size_t(q) + 1]));
+                    mid[std::size_t(pieces)][3] = 0;
+                }
+                const float half = k.f32(0xc) * o.f(s + 0xc, 0) * world_scale[0];
+                std::array<float, 4> last{};
+                for (int q = 0; q <= pieces; ++q) {
+                    std::array<float, 4> d{};
+                    if (k.b(9) == 1) { // the way between this place and the next (the last: the one before)
+                        d = q != pieces ? minus(mid[std::size_t(q)], mid[std::size_t(q) + 1])
+                                        : minus(mid[std::size_t(q) - 1], mid[std::size_t(q)]);
+                        d[3] = 0; // made unit with its depth, the edges then across x and y alone
+                        unit3(d.data());
+                        for (int j = 0; j < 2; ++j)
+                            d[std::size_t(j)] *= half;
+                    } else { // the sum of the ways in and out
+                        std::array<float, 4> e{};
+                        if (q != pieces)
+                            e = minus(mid[std::size_t(q)], mid[std::size_t(q) + 1]);
+                        e[2] = e[3] = 0;
+                        unit3(e.data());
+                        for (int j = 0; j < 2; ++j)
+                            e[std::size_t(j)] *= half;
+                        d = add4(last, e);
+                        last = e;
+                    }
+                    const std::array<float, 4> perp{-d[1], d[0], 0, 0};
+                    a[std::size_t(q)] = add4(mid[std::size_t(q)], perp);
+                    b[std::size_t(q)] = minus(mid[std::size_t(q)], perp);
+                    a[std::size_t(q)][3] = b[std::size_t(q)][3] = mid[std::size_t(q)][3];
+                }
+            }
+            if (k.b(0x10) != 0) { // thinner toward the tail
+                float f = 1.0F;
+                for (int q = 0; q <= pieces; ++q) {
+                    for (int j = 0; j < 3; ++j) {
+                        const float mid = (a[std::size_t(q)][std::size_t(j)] + b[std::size_t(q)][std::size_t(j)]) *
+                                          0.5F;
+                        a[std::size_t(q)][std::size_t(j)] = mid * (1.0F - f) + a[std::size_t(q)][std::size_t(j)] * f;
+                        b[std::size_t(q)][std::size_t(j)] = mid * (1.0F - f) + b[std::size_t(q)][std::size_t(j)] * f;
+                    }
+                    f = std::max(0.0F, f - 1.0F / float(pieces));
+                }
+            }
+            ribbon_strips(o, c, k, a, b, filled, size, *out);
+        }
+        if (it != o.rings.end() && filled > 2 && frozen == 0) { // the UV scroll, kept between 0 and 1
+            float v = k.f32(0x98) + o.f(s + 0x28, 0), u = k.f32(0x94) + o.f(s + 0x24, 0);
+            while (v > 1.0F)
+                v -= 1.0F;
+            while (v < 0.0F)
+                v += 1.0F;
+            while (u > 1.0F)
+                u -= 1.0F;
+            while (u < 0.0F)
+                u += 1.0F;
+            o.setf(s + 0x28, 0, v);
+            o.setf(s + 0x24, 0, u);
+        }
+    }
+
+    // FUN_1404b8380: the pieces along, each a strip across from edge a to edge b, the u along and the v across
+    // in the ranges the record gives, the colour slot's colour faded along and across
+    void ribbon_strips(Obj &o, const EffectCommand &c, const Key &k, const std::vector<std::array<float, 4>> &a,
+                       const std::vector<std::array<float, 4>> &b, int filled, int size, std::vector<EffectDraw> &out)
+    {
+        const std::int32_t s = c.slots[3];
+        const int pieces = k.b(0x12), across = k.b(0x13) + 1;
+        const auto range = [](std::uint8_t r) { return r == 1 ? 0.5F : r == 2 ? 0.25F : 1.0F; };
+        float u_hi = range(k.b(0x9c)), v_hi = range(k.b(0x9d)), u_lo = 0;
+        switch (k.b(0x9e)) { // as FUN_1404b8380 has it
+        case 1: u_hi += 0.25F; u_lo = 0.5F; break;
+        case 2: u_hi += 0.5F; u_lo = 0.5F; break;
+        case 3: u_hi += 0.75F; u_lo = 0.75F; break;
+        default: break;
+        }
+        u_lo += 0.01F;
+        u_hi -= 0.01F;
+        v_hi -= 0.01F;
+        float du = 0, u = 0;
+        const float share = k.b(0xa1) != 0 ? float(filled) / float(size) : 1.0F;
+        switch (k.b(0xa0)) {
+        case 0: case 2: du = share * (u_hi - u_lo) / float(pieces); u = u_lo; break;
+        case 1: case 3: du = -(share * (u_hi - u_lo) / float(pieces)); u = u_hi; break;
+        default: break;
+        }
+        float fade = 1.0F, fade_in = 0, fade_out = 0;
+        if (k.b(0x17) != 0) {
+            const float in = float(int(float(pieces) * k.f32(0x18))), rest = float(pieces) - in;
+            if (in > 0) {
+                fade = 0;
+                fade_in = 1.0F / in;
+            }
+            if (rest > 0)
+                fade_out = 1.0F / rest;
+        }
+        std::array<std::uint8_t, 4> colour{};
+        std::memcpy(colour.data(), o.at(c.slots[2] + 8, 4), 4);
+        EffectDraw d;
+        if (k.s32(4) != 0xffff) { // the model's first packet's page
+            const auto &model = block->models.at(std::size_t(k.s32(4)));
+            if (!model.primitives.empty())
+                d.tex0 = model.primitives.front().tex0;
+        }
+        static const std::uint8_t blends[5] = {0x44, 0x48, 0x42, 0x41, 0x46};
+        d.alpha = blends[std::min<int>(k.b(0x15), 4)];
+        d.depth_test = k.b(0x14) == 0;
+        d.depth_write = false;
+        bool falling = false;
+        const float u_scroll = o.f(s + 0x24, 0), v_scroll = o.f(s + 0x28, 0);
+        for (int q = 0; q < pieces; ++q) {
+            const float alpha = float(colour[3]);
+            float a0 = alpha, a1 = alpha;
+            if (k.b(0x17) != 0) { // up to 1 over the share that fades in, then down to the tail
+                a0 = alpha * fade;
+                if (!falling && 1.0F <= fade)
+                    falling = true;
+                fade = std::clamp(falling ? fade - fade_out : fade + fade_in, 0.0F, 1.0F);
+                a1 = alpha * fade;
+            }
+            float u1, u_next;
+            if (k.f32(0x90) > 0) {
+                u1 = u + (a[std::size_t(q)][3] / k.f32(0x90)) * (u_hi - u_lo);
+                u_next = u_hi < u1 ? (u1 - u_hi) + u_lo : u1;
+            } else {
+                u1 = u + du;
+                u_next = std::min(u1, u_hi);
+            }
+            const float s0 = u + u_scroll, s1 = u1 + u_scroll;
+            float side = 0, side_step = 0;
+            if (k.b(0x16) != 0)
+                side_step = 2.0F / float(across - 1);
+            std::vector<EffectVertex> strip;
+            for (int i = 0; i < across; ++i) {
+                const float t = across > 1 ? float(i) / float(across - 1) : 0.0F;
+                const float v = (v_hi - 0.01F) * t + 0.01F + v_scroll;
+                float e0 = a0, e1 = a1;
+                if (k.b(0x16) != 0) {
+                    e0 = a0 * side;
+                    e1 = a1 * side;
+                    const float n = side + side_step;
+                    if (n < 1.0F) {
+                        side = std::max(0.0F, n);
+                    } else {
+                        side_step = -side_step;
+                        side = 1.0F;
+                    }
+                }
+                std::array<float, 4> p0{}, p1{};
+                for (int j = 0; j < 4; ++j) {
+                    p0[std::size_t(j)] = a[std::size_t(q)][std::size_t(j)] * (1.0F - t) +
+                                         b[std::size_t(q)][std::size_t(j)] * t;
+                    p1[std::size_t(j)] = a[std::size_t(q) + 1][std::size_t(j)] * (1.0F - t) +
+                                         b[std::size_t(q) + 1][std::size_t(j)] * t;
+                }
+                p0[3] = p1[3] = 1.0F;
+                const bool swap = k.b(0xa0) > 1;
+                const std::array<float, 4> rgb0{colour[0] / 128.0F, colour[1] / 128.0F, colour[2] / 128.0F,
+                                                e0 / 128.0F};
+                const std::array<float, 4> rgb1{colour[0] / 128.0F, colour[1] / 128.0F, colour[2] / 128.0F,
+                                                e1 / 128.0F};
+                strip.push_back(vertex(transformed(p0, proj), swap ? v : s0, swap ? s0 : v, rgb0));
+                strip.push_back(vertex(transformed(p1, proj), swap ? v : s1, swap ? s1 : v, rgb1));
+            }
+            for (std::size_t i = 0; i + 2 < strip.size(); ++i) { // the strip's triangles
+                d.triangles.push_back(strip[i]);
+                d.triangles.push_back(strip[i + 1]);
+                d.triangles.push_back(strip[i + 2]);
+            }
+            u = u_next;
+        }
+        if (!d.triangles.empty())
+            out.push_back(std::move(d));
     }
 
     // ---------------------------------------------------------------------------------- the particle spawner
@@ -2309,7 +2765,7 @@ struct EffectInstance::State {
                 ang[0] = 0;
             const auto to = [](float r) { return std::int32_t(r / (2 * pi) * 65536.0F); };
             const M4 m = mul(mul(rot_x(to(ang[0])), rot_y(to(ang[1]))), rot_z(to(ang[2])));
-            const auto d = apply({base[0], base[1], base[2], 0}, m);
+            const auto d = transformed({base[0], base[1], base[2], 0}, m);
             std::array<float, 3> v{d[0] * axes[0], d[1] * axes[1], d[2] * axes[2]};
             const float n = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
             p.dir = n > 0 ? std::array<float, 3>{v[0] / n, v[1] / n, v[2] / n} : v;
@@ -2557,7 +3013,7 @@ struct EffectInstance::State {
         std::vector<std::array<float, 4>> clip(model.vertices.size());
         for (std::size_t i = 0; i < clip.size(); ++i) {
             const auto &v = i < vertices.size() ? vertices[i] : model.vertices[i];
-            clip[i] = apply({v[0], v[1], v[2], 1}, m);
+            clip[i] = transformed({v[0], v[1], v[2], 1}, m);
         }
         // a model's primitives far to near (the depth buckets of FUN_1404af7d0)
         std::vector<std::pair<float, const EffectPrimitive *>> order;
@@ -2633,7 +3089,7 @@ struct EffectInstance::State {
             for (int j = 0; j < 4; ++j)
                 c[std::size_t(j)] = float(l.colour[std::size_t(j)]) / 128.0F * colour[std::size_t(j)];
             for (const int q : {0, 1, 2, 1, 3, 2}) {
-                const auto p = apply({l.corners[std::size_t(q)][0], l.corners[std::size_t(q)][1], 0, 1}, m);
+                const auto p = transformed({l.corners[std::size_t(q)][0], l.corners[std::size_t(q)][1], 0, 1}, m);
                 d.triangles.push_back(vertex(p, uv[q][0], uv[q][1], c));
             }
             out.push_back(std::move(d));
@@ -2651,6 +3107,7 @@ struct EffectInstance::State {
         case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0xd0: model_birth_draw(o, c, k, out); break;
+        case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
                 return;
@@ -2682,7 +3139,7 @@ struct EffectInstance::State {
                 bill[1] = s * sw;
                 bill[4] = -s * sh;
                 bill[5] = cs * sh;
-                auto pos = apply({p.pos[0], p.pos[1], p.pos[2], 1}, to_view);
+                auto pos = transformed({p.pos[0], p.pos[1], p.pos[2], 1}, to_view);
                 if (k.b(0xe)) // a view-space offset (toward the camera)
                     for (int j = 0; j < 3; ++j)
                         pos[std::size_t(j)] += k.f32(0x10 + 4 * std::size_t(j));
