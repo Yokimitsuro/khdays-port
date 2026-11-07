@@ -581,9 +581,10 @@ unsigned words(std::uint32_t code)
     case 0xb5: case 0xb7: case 0xb8: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
         return W1;
-    case 0x83: case 0x86: case 0x89: case 0x8a:
+    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee:
         return W3;
-    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xc8:
+    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
+    case 0xc8:
     case 0x9d: case 0xda: case 0xdb:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
@@ -766,6 +767,7 @@ struct EffectInstance::State {
         case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
+        case 0x91: case 0xa0: case 0xee: zero(0, 12); break; // the strength, its rate, the rate's
         case 0xc8: // FUN_1404d1c60: the history's cursor, its size (none yet), still filling
             std::memset(o.at(c.slots[1], 12), 0, 12);
             *o.at(c.slots[1] + 5, 1) = 1;
@@ -867,6 +869,7 @@ struct EffectInstance::State {
         case 0xd2: std::memset(o.at(c.slots[1], 12), 0, 12); break;
         case 0xed: std::memset(o.at(c.slots[0], 0x3c), 0, 0x3c); break;
         case 0x9c: case 0x9d: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break;
+        case 0x91: case 0xa0: case 0xee: std::memset(o.at(c.slots[0], 12), 0, 12); break;
         case 0xf1: ribbon_reset(o, c); break;
         default: break;
         }
@@ -1215,7 +1218,7 @@ struct EffectInstance::State {
         }
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
-        case 0xc8: break; // pppRyjDrawShipolyBone's step (FUN_1404d1c50): none
+        case 0xc8: case 0xa0: break; // pppRyjDrawShipolyBone's and pppKeShpDtt's steps: none
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
         case 0xf1: ribbon_step(o, c, k); break;
@@ -2849,6 +2852,88 @@ struct EffectInstance::State {
                         flags, k.b(0xc), k.b(0x13), 0, 0, 0, *out);
     }
 
+    // ---------------------------------------------------------------------------------- the screen's distortions
+    // pppKeMdlDtt (FUN_1404ca9e0), pppKeShpDtt (FUN_1404cfa90), pppSnoMdlDttNorm (FUN_1404cbba0): the screen behind
+    // drawn again through a model or a sprite, moved by a strength (slot 0, with its rate and the rate's, keyed):
+    // the picture KH2's frame buffer (a TEX0 of its own), the model's corners moved along their normals
+    // (FUN_1404cad20) or by the strength alone (FUN_1404c9e90, a sprite's FUN_1404e0330). Given here as draws
+    // marked `screen`, each corner's u, v where it lies on the screen; the movement is not worked out here.
+    void distortion(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        const std::int32_t s = c.slots[0];
+        const bool sprite = c.code == 0xa0;
+        const std::size_t at = sprite ? 4 : 8;
+        if (c.code == 0xee ? frozen == 0 : live(o)) {
+            const float ddt = o.f(s, 2), dt = ddt + o.f(s, 1), t = dt + o.f(s, 0);
+            o.setf(s, 1, dt);
+            o.setf(s, 0, t);
+            if (hit(o, k)) {
+                o.setf(s, 0, t + k.f32(at));
+                o.setf(s, 1, dt + k.f32(at + 4));
+                if (c.code != 0x91 || k.b(0x14) < 4)
+                    o.setf(s, 2, ddt + k.f32(at + 8));
+            }
+        }
+        if (out == nullptr)
+            return;
+        std::array<std::uint8_t, 4> colour{};
+        std::memcpy(colour.data(), o.at(c.slots[1] + 8, 4), 4);
+        const auto screen_uv = [](const std::array<float, 4> &clip) {
+            const float w = clip[3] != 0 ? clip[3] : 1e-6F;
+            return std::pair<float, float>{clip[0] / w * 0.5F + 0.5F, 0.5F - clip[1] / w * 0.5F};
+        };
+        EffectDraw d;
+        d.screen = true;
+        d.alpha = 0x44;
+        if (sprite) { // a quad across the view at the place pppKeDMat kept (or slot 3's x and y)
+            std::array<float, 4> centre{};
+            if (k.b(0x19) & 2) {
+                centre = {o.f(c.slots[3], 0), o.f(c.slots[3], 1), 0, 1};
+            } else {
+                for (int j = 0; j < 4; ++j)
+                    centre[std::size_t(j)] = o.f(c.slots[2] + 0x30, j);
+            }
+            const float w = world_scale[0] * k.f32(0x10), h = world_scale[1] * k.f32(0x14);
+            const std::array<float, 4> tint{colour[0] / 128.0F, colour[1] / 128.0F, colour[2] / 128.0F,
+                                            colour[3] / 128.0F};
+            std::array<EffectVertex, 4> q;
+            const float dx[4] = {-0.5F, 0.5F, -0.5F, 0.5F}, dy[4] = {-0.5F, -0.5F, 0.5F, 0.5F};
+            for (int i = 0; i < 4; ++i) {
+                const auto clip = transformed({centre[0] + dx[i] * w, centre[1] + dy[i] * h, centre[2], 1}, proj);
+                const auto [u, v] = screen_uv(clip);
+                q[std::size_t(i)] = vertex(clip, u, v, tint);
+            }
+            for (const int i : {0, 1, 2, 1, 3, 2})
+                d.triangles.push_back(q[std::size_t(i)]);
+            out->push_back(std::move(d));
+            return;
+        }
+        if (k.s32(4) == 0xffff || colour[3] == 0)
+            return;
+        const auto &model = block->models.at(std::size_t(k.s32(4)));
+        const auto &vertices = o.morphed ? o.morph : model.vertices;
+        const std::array<float, 4> tint{colour[0] / 128.0F, colour[1] / 128.0F, colour[2] / 128.0F,
+                                        colour[3] / 128.0F};
+        for (const auto &pr : model.primitives) {
+            std::array<EffectVertex, 4> q;
+            for (int i = 0; i < pr.corners; ++i) {
+                const auto &v = vertices.at(pr.vertex[std::size_t(i)]);
+                const auto clip = transformed({v[0], v[1], v[2], 1}, o.draw);
+                const auto [u, vv] = screen_uv(clip);
+                q[std::size_t(i)] = vertex(clip, u, vv, tint);
+            }
+            if (pr.corners == 4) {
+                for (const int i : {0, 1, 2, 1, 3, 2})
+                    d.triangles.push_back(q[std::size_t(i)]);
+            } else {
+                for (const int i : {0, 1, 2})
+                    d.triangles.push_back(q[std::size_t(i)]);
+            }
+        }
+        if (!d.triangles.empty())
+            out->push_back(std::move(d));
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -3268,6 +3353,7 @@ struct EffectInstance::State {
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;
+        case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)

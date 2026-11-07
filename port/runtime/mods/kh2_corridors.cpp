@@ -328,6 +328,8 @@ void submit(const Corridor &c, float units)
 {
     const bool hd = khdays_textures_hd() != 0;
     for (const kh2::EffectDraw &d : c.draws) {
+        if (d.screen) // the screen behind as its picture: not drawn by the port yet
+            continue;
         const int id = d.tex0 != 0 ? page(d.tex0, hd) : -1;
         if (d.tex0 != 0 && id < 0)
             continue; // its picture not made: not drawn as bare colour

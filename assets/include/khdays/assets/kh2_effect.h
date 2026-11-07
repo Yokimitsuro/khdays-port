@@ -113,6 +113,9 @@ struct EffectDraw final {
     bool depth_test = true;      // only nearer than what is drawn (TEST 0x7000d); false: always (0x3000d)
     bool depth_write = false;    // the ZBUF's ZMSK clear
     bool depth_only = false;     // TEST 0x72001: the depth alone, no colour
+    // the picture is the screen behind it (KH2's frame buffer: pppKeMdlDtt, pppKeShpDtt, pppSnoMdlDttNorm), each
+    // corner's u, v its own place on the screen (0..1); the port's renderer cannot draw these yet
+    bool screen = false;
     std::vector<EffectVertex> triangles;
 };
 
