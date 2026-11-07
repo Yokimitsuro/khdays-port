@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools ee5e0e58f152254f1bfedb3bb4a9c05ecfb7ea2f822b8a4a9d5d1ba36f29136c
+# tools e9c63e3caf3672b7a6c5129cc17ffa996f0f7fce14280f3a60cf1704dd5647d4
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -27,6 +27,7 @@ Recom FORM/0109/FO0109.SPR
 Recom c1f677b2925314aa87af10f1f21557f0.dat
 bbs_first cba7b0396c9efe756ba1e069e6dd603e.dat
 bbs_second ForEventJP/gimmick/g01pp/00/g01pp00.pmo
+kh2_fifth event/effect/tt_event_904.pax
 kh2_fifth field2d/us/al0field.2dd
 kh2_fifth field2d/us/bb0field.2dd
 kh2_fifth field2d/us/eh0field.2dd
@@ -44,6 +45,7 @@ kh2_fifth obj/F_EX040_HE.mdlx
 kh2_fifth obj/F_EX040_NM.mdlx
 kh2_fifth obj/F_EX040_TT.mdlx
 kh2_fifth obj/F_EX040_TT.mset
+kh2_first effect/texcommon.dpd
 kh2_first field2d/us/tt0field.2dd
 kh2_first menu/fr/pause.2ld
 kh2_first menu/fr/save.2ld

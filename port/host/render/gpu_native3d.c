@@ -37,8 +37,12 @@ enum {
     STENCIL_ANY_ID,     /* translucent, a mod's: over any */
     STENCIL_MASK,       /* a shadow mask: where its depth test fails, the mask's bit */
     STENCIL_SHADOW_PRE, /* before a shadow: the mask's bit cleared on its own polygon ID */
-    STENCIL_SHADOW      /* a shadow: where the mask's bit is, translucent */
+    STENCIL_SHADOW,     /* a shadow: where the mask's bit is, translucent */
+    STENCIL_EFFECT      /* a KH2 effect's: the stencil neither tested nor written */
 };
+/* A KH2 effect's blend (its GS ALPHA byte, gfx/g3d.h KHDAYS_G3D_EFFECT) as the colour target's, the shader's colour
+ * premultiplied: (A - B) * As + D for the byte's five the effects use, and its depth alone. 0: not an effect. */
+enum { EFFECT_NONE, EFFECT_ALPHA, EFFECT_ADD, EFFECT_SUBTRACT, EFFECT_DARKEN, EFFECT_REPLACE, EFFECT_DEPTH_ONLY };
 /* The targets a picture writes besides the colour (0) and the flags (4) (native3d.hlsl says what each
  * holds): the first translucent colour on an empty pixel (1) when the rear plane may be empty, the fog bit
  * (2) with fog on, the opaque polygons' IDs and edges (3) with edge marking on or raster3d.hlsl drawing
@@ -51,7 +55,9 @@ enum {
 /* ... and with `z`, the depth the rasterizer interpolates (native3d_z.hlsl): the Z buffer's, not "equal" */
 #define KEY(depth, write, stencil, blending, outputs, z)                                                               \
     ((depth) | (write) << 2 | (stencil) << 3 | (blending) << 6 | (outputs) << 7 | (z) << 11)
-#define KEYS (128 * OUTPUTS * 2)
+/* ... and a KH2 effect's blend (EFFECT_*) above */
+#define EFFECT_KEY(key, effect) ((key) | (effect) << 12)
+#define KEYS (128 * OUTPUTS * 2 * 8)
 /* Draws over the whole target: the shadow masks' bit cleared (a run of masks starts), or the
  * translucent bit (the first selection marker blends over the world's pixels whatever their ID). */
 #define CLEAR_MASKS (-1)
@@ -205,6 +211,75 @@ static void polygon_targets(SDL_GPUColorTargetDescription *t, int colours, int d
     t[5].blend_state.color_write_mask = colours && depth_written && (out & OUT_DEPTH) ? SDL_GPU_COLORCOMPONENT_R : 0;
 }
 
+/* A KH2 effect's targets: its colour blended into the colour target alone as its GS byte says (the shader's colour
+ * premultiplied by its alpha), what the colour target's alpha holds kept; the depth target written with the
+ * depth; nothing else -- its pixels keep the world's IDs, fog and flags. */
+static void effect_targets(SDL_GPUColorTargetDescription *t, int effect, int depth_written, int out)
+{
+    const SDL_GPUColorComponentFlags all =
+        SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B | SDL_GPU_COLORCOMPONENT_A;
+    SDL_GPUBlendFactor src = SDL_GPU_BLENDFACTOR_ONE, dst = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    SDL_GPUBlendOp op = SDL_GPU_BLENDOP_ADD;
+    memset(t, 0, sizeof(*t) * TARGETS);
+    for (int i = 0; i < TARGETS; ++i) {
+        t[i].format = formats[i];
+        t[i].blend_state.enable_color_write_mask = true;
+        t[i].blend_state.color_write_mask = 0;
+    }
+    switch (effect) {
+    case EFFECT_ADD: /* Cs As + Cd */
+        dst = SDL_GPU_BLENDFACTOR_ONE;
+        break;
+    case EFFECT_SUBTRACT: /* Cd - Cs As */
+        dst = SDL_GPU_BLENDFACTOR_ONE;
+        op = SDL_GPU_BLENDOP_REVERSE_SUBTRACT;
+        break;
+    case EFFECT_DARKEN: /* Cd (1 - As) */
+        src = SDL_GPU_BLENDFACTOR_ZERO;
+        break;
+    case EFFECT_REPLACE: /* Cs As */
+        dst = SDL_GPU_BLENDFACTOR_ZERO;
+        break;
+    default: /* Cs As + Cd (1 - As) */
+        break;
+    }
+    if (effect != EFFECT_DEPTH_ONLY) {
+        t[0].blend_state.color_write_mask = all;
+        t[0].blend_state.enable_blend = true;
+        t[0].blend_state.src_color_blendfactor = src;
+        t[0].blend_state.dst_color_blendfactor = dst;
+        t[0].blend_state.color_blend_op = op;
+        t[0].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        t[0].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        t[0].blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    }
+    t[5].blend_state.color_write_mask = depth_written && (out & OUT_DEPTH) ? SDL_GPU_COLORCOMPONENT_R : 0;
+}
+
+/* A KH2 effect polygon's EFFECT_*: its GS ALPHA byte (in `pltt`) as the five the effects use; another byte drawn as
+ * the plain blend, said once. */
+static int effect_blend(const KhdaysG3dPolygon *p)
+{
+    static int said;
+    if (p->flags & KHDAYS_G3D_EFFECT_DEPTH_ONLY) {
+        return EFFECT_DEPTH_ONLY;
+    }
+    switch (p->pltt & 0xffu) {
+    case 0x44: return EFFECT_ALPHA;
+    case 0x48: return EFFECT_ADD;
+    case 0x42: return EFFECT_SUBTRACT;
+    case 0x46: return EFFECT_DARKEN;
+    case 0x88: return EFFECT_REPLACE;
+    default:
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "native 3D: a KH2 effect's GS blend %02x drawn as 44 (said once)\n",
+                    (unsigned)(p->pltt & 0xffu));
+        }
+        return EFFECT_ALPHA;
+    }
+}
+
 static SDL_GPUStencilOpState stencil_ops(SDL_GPUCompareOp compare, SDL_GPUStencilOp pass, SDL_GPUStencilOp depth_fail)
 {
     SDL_GPUStencilOpState s;
@@ -268,7 +343,7 @@ static SDL_GPUGraphicsPipeline *polygon_pipeline(int key)
                                                   SDL_GPU_COMPAREOP_ALWAYS}; /* the key's 2 bits */
     if (pipelines[key] == NULL) {
         const int compare = key & 3, write = (key >> 2) & 1, rules = (key >> 3) & 7, blending = (key >> 6) & 1;
-        const int out = (key >> 7) & (OUTPUTS - 1), z = key >> 11;
+        const int out = (key >> 7) & (OUTPUTS - 1), z = (key >> 11) & 1, effect = key >> 12;
         SDL_GPUColorTargetDescription t[TARGETS];
         SDL_GPUStencilOpState s;
         Uint8 compare_mask = 0xff, write_mask = 0x7f;
@@ -290,11 +365,19 @@ static SDL_GPUGraphicsPipeline *polygon_pipeline(int key)
             s = stencil_ops(SDL_GPU_COMPAREOP_EQUAL, SDL_GPU_STENCILOP_REPLACE, SDL_GPU_STENCILOP_KEEP);
             compare_mask = 0x80;
             break;
+        case STENCIL_EFFECT:
+            s = stencil_ops(SDL_GPU_COMPAREOP_ALWAYS, SDL_GPU_STENCILOP_KEEP, SDL_GPU_STENCILOP_KEEP);
+            write_mask = 0;
+            break;
         default: /* STENCIL_OPAQUE, STENCIL_ANY_ID */
             s = stencil_ops(SDL_GPU_COMPAREOP_ALWAYS, SDL_GPU_STENCILOP_REPLACE, SDL_GPU_STENCILOP_KEEP);
             break;
         }
-        polygon_targets(t, rules != STENCIL_MASK && rules != STENCIL_SHADOW_PRE, write, blending, out);
+        if (effect != EFFECT_NONE) {
+            effect_targets(t, effect, write, out);
+        } else {
+            polygon_targets(t, rules != STENCIL_MASK && rules != STENCIL_SHADOW_PRE, write, blending, out);
+        }
         pipelines[key] = make_graphics(polygon_vs, z ? polygon_ps_z : polygon_ps, t, depth_ops[compare], write, s,
                                        compare_mask, write_mask);
     }
@@ -688,6 +771,20 @@ static int build(const KhdaysG3dList *list, int count, int32_t hidden, uint32_t 
         }
         if (p->count < 3) {
             ++lines;
+            continue;
+        }
+        if (p->flags & KHDAYS_G3D_EFFECT) { /* a KH2 effect's: its own blend and depth rules, as sent */
+            const int effect_depth = (p->flags & KHDAYS_G3D_EFFECT_NO_DEPTH_TEST) ? DEPTH_ALWAYS : DEPTH_LESS;
+            const int effect_write = (p->flags & KHDAYS_G3D_EFFECT_DEPTH_WRITE) != 0;
+            if (run_count > 0 && !flush_run(list)) {
+                return 0;
+            }
+            if (!add_polygon(p, i, PIXELS_ALL,
+                             EFFECT_KEY(KEY(effect_depth, effect_write, STENCIL_EFFECT, blending, out, zbuffer),
+                                        effect_blend(p)),
+                             0, 0)) {
+                return 0;
+            }
             continue;
         }
         if (mode != 3u && alpha == 31u &&

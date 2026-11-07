@@ -6,7 +6,12 @@
 
 #include "model_parts.h"
 
+#include "kh2_corridors.h"
+
 namespace khdays::model_parts {
+
+// The draw is one of Days's ovals drawn as KH2's corridor (kh2_corridors.h): its shapes left out.
+bool corridor_drawn = false;
 
 void trace_floor(const Model &m, const std::string &state)
 {
@@ -914,6 +919,10 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     if (resource == nullptr) {
         return;
     }
+    corridor_drawn = khdays_kh2_corridors_begin(resource, render_obj) != 0;
+    if (corridor_drawn) {
+        return; /* KH2's corridor drawn in its place, with or without HD graphics */
+    }
     const char *file = nullptr;
     u32 offset = 0, run = 0;
     if (!khdays_origin_of_ram(KHDAYS_REF(resource), &file, &offset, &run)) { // its DS address
@@ -1011,6 +1020,8 @@ extern "C" void khdays_models_draw_animation(unsigned animation)
 
 extern "C" void khdays_models_node(unsigned node, int sent)
 {
+    if (corridor_drawn && depth == 1 && sent)
+        khdays_kh2_corridors_node(node);
     if (active == nullptr || !sent || node >= node_matrix.size()) {
         return;
     }
@@ -1125,24 +1136,11 @@ extern "C" void khdays_models_joint_saved_at(unsigned matrix, unsigned node)
         khdays_models_joint_saved(KHDAYS_W(matrix), node);
 }
 
-extern "C" int khdays_models_shape(const void *list, unsigned int size)
+namespace {
+// A shape's list with its matrix commands run and its drawing left out: packed words of up to four command
+// numbers, each command's parameters after them in order. 1: left out.
+int matrices_only(const void *list, unsigned int size)
 {
-    if (active == nullptr) {
-        return 0;
-    }
-    if (shapes++ == 0) {
-        khdays_g3d_material(&material);
-    }
-    // a shape of a node the mod's model keeps: the game's own, sent
-    if (!active->kept_lists.empty() && model_start != nullptr && list != nullptr &&
-        active->kept_lists.count(static_cast<std::uint32_t>(static_cast<const unsigned char *>(list) - model_start)) !=
-            0) {
-        return 0;
-    }
-    if (khdays_shadow_sprite_active())
-        return 0; // retain the original flat shadow until its animated replacement is ready
-    // the list's matrix commands run, its drawing left out: packed words of up
-    // to four command numbers, each command's parameters after them in order
     const auto *words = static_cast<const uint32_t *>(list);
     const unsigned int count = list != nullptr ? size / 4U : 0U;
     for (unsigned int i = 0; i < count;) {
@@ -1160,6 +1158,29 @@ extern "C" int khdays_models_shape(const void *list, unsigned int size)
         }
     }
     return 1;
+}
+} // namespace
+
+extern "C" int khdays_models_shape(const void *list, unsigned int size)
+{
+    if (active == nullptr) {
+        if (!corridor_drawn || depth != 1)
+            return 0; /* the game's own (or a draw inside the oval's) */
+        khdays_kh2_corridors_shape();
+        return matrices_only(list, size);
+    }
+    if (shapes++ == 0) {
+        khdays_g3d_material(&material);
+    }
+    // a shape of a node the mod's model keeps: the game's own, sent
+    if (!active->kept_lists.empty() && model_start != nullptr && list != nullptr &&
+        active->kept_lists.count(static_cast<std::uint32_t>(static_cast<const unsigned char *>(list) - model_start)) !=
+            0) {
+        return 0;
+    }
+    if (khdays_shadow_sprite_active())
+        return 0; // retain the original flat shadow until its animated replacement is ready
+    return matrices_only(list, size);
 }
 
 extern "C" void khdays_models_dialogue_speaker(int portrait)
@@ -1194,6 +1215,7 @@ extern "C" void khdays_models_draw_end(void)
     }
     khdays_g3d_draw_end();
     active = nullptr;
+    corridor_drawn = false;
 }
 
 namespace {

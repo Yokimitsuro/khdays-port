@@ -313,8 +313,9 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
         const int32_t g = work->group_of[i];
         int32_t j;
         const KhdaysG3dPolygon *q;
-        if (p->flags & KHDAYS_G3D_MARKER) {
-            continue; /* a selection marker: where the newer list puts it (it moves from target to target) */
+        if (p->flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_EFFECT)) {
+            continue; /* a selection marker (it moves from target to target) or a KH2 effect's triangle (as many as
+                       * its tick has): where the newer list puts it */
         }
         if (g >= 0) {
             /* a model's: its polygon in the older drawing it is taken for */

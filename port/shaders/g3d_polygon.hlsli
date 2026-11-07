@@ -7,6 +7,11 @@
 #include "g3d_list.hlsli"
 
 static const uint G3D_MOD = 4u; // gfx/g3d.h KHDAYS_G3D_MOD: a mod's model's polygon
+// gfx/g3d.h KHDAYS_G3D_EFFECT*: a KINGDOM HEARTS II effect's triangle, blended as the GS's ALPHA byte in its pltt
+static const uint G3D_EFFECT = 0x1000000u;
+static const uint G3D_EFFECT_DEPTH_WRITE = 0x2000000u;
+static const uint G3D_EFFECT_DEPTH_ONLY = 0x4000000u;
+static const uint G3D_EFFECT_NO_DEPTH_TEST = 0x8000000u;
 
 // The texels polygon `p` maps: its vertices' coordinates bound what any of
 // its pixels reads (an interpolation stays between them). x, y the first
@@ -250,4 +255,32 @@ int4 polygon_color(Polygon p, int alpha, float3 shade, float s, float t, float f
         a >>= 1;  // back to 5 bits
     }
     return int4(r, gg, b, a);
+}
+
+// A KH2 effect's pixel before its blend (the GS's MODULATE): its picture's texel (a replacement) times the vertex
+// colour as a factor (`shade`: 63 the GS's 0x80, 1, up to twice that), its alpha the texel's times the vertex's.
+// Colour and alpha 0..1.
+float4 effect_color(Polygon p, float3 shade, float valpha, float s, float t, float footprint, int4 texels)
+{
+    float3 rgb = float3(1.0f, 1.0f, 1.0f);
+    float a = 1.0f;
+    if (((p.tex >> 26) & 7u) != 0u && p.replacement >= 0) {
+        const int4 c = hd_texel(p, s, t, footprint, texels);
+        rgb = (float3)c.xyz / (fine != 0u ? 255.0f : 63.0f);
+        a = (float)c.w / 31.0f;
+    }
+    return float4(saturate(rgb * shade / 63.0f), saturate(a * valpha));
+}
+
+// The GS's blend of an effect's pixel (`alpha` its ALPHA byte): (A - B) * C + D, A, B and D the source colour,
+// the colour there or 0, C the source alpha, the colour there's alpha or FIX (0 here: no effect sets it).
+float3 gs_blend(uint alpha, float3 cs, float as_, float3 cd, float ad)
+{
+    const uint A = alpha & 3u, B = (alpha >> 2) & 3u, C = (alpha >> 4) & 3u, D = (alpha >> 6) & 3u;
+    const float3 none = float3(0.0f, 0.0f, 0.0f);
+    const float3 a = A == 0u ? cs : (A == 1u ? cd : none);
+    const float3 b = B == 0u ? cs : (B == 1u ? cd : none);
+    const float3 d = D == 0u ? cs : (D == 1u ? cd : none);
+    const float c = C == 0u ? as_ : (C == 1u ? ad : 0.0f);
+    return saturate((a - b) * c + d);
 }

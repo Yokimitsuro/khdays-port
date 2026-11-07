@@ -222,6 +222,57 @@ needs is read.
   the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS
   blend byte (0x44 mixed by alpha, 0x48 added).
 
+## KH2's effects
+
+Not the game's: KINGDOM HEARTS II's effects (PAX), as `assets/src/kh2_effect.cpp` reads and plays them for the
+Dark Corridor (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of the files and of the player's
+`KINGDOM HEARTS II FINAL MIX.exe`, whose loader and effect interpreter it follows. The prize effect above is the
+same layout's first effect, read only as far as its pictures and shapes.
+
+- **The file**: `PAX_`, at +0xC where its element table ends: a directory `{0x82, 0, 0, n}`, `n` entries of 32 bytes
+  (the elements placing an effect in a scene), then a list -- a count and offsets from the directory -- of effects.
+  An effect is a block `{0x96}` and five lists, each a count and offsets from the block: emitters, pictures, shapes,
+  models and vertex lists (`{u32 id, u32 model, u32 count, u16 vertex numbers}`). `effect/texcommon.dpd` is a bare
+  block of pictures alone: those KH2 keeps resident, which the effects' shapes may cut.
+- **An emitter**: its offsets count from its +0x110: there its length (frames x 4096), at +0x114 a word whose bit 0
+  makes it repeat until told to stop, at +0x11c the list of its layers. A layer: +0x10 when it starts, +0x14 its life,
+  +0x18/+0x1c a loop's start and end (0x70000000: never; a layer that never starts is born by another), +0x20 where
+  its commands' cursors sit in a running layer, +0x24 its drawing order, +0x26 the command count, the commands from
+  +0x28: 16 bytes `{u32 code, u16 record size, u16 record count, u32 records, u32 slots}`. A command's records each
+  start with their frame (x 4096), the last followed by `0xfffff000`; its slots list where in a running layer's
+  memory its values are kept.
+- **The commands**: a code indexes the executable's table of 0x50-byte descriptors (at 0x140779a00), the first word
+  KH2's name for it, the others its functions: word 1 a step, 3 a draw (or a particle's step), 7 and 8 the reset on
+  a birth, 9 the release. Places, turns, scales and colours (`pppPoint`, `pppAngle`, `pppScale`, `pppColor` and
+  their `Move`, `Accele` and `...Loop` forms, a record's values applied on its frame and integrated each frame after;
+  random values), matrices (`pppMatrixXYZ` turns about x, then y, then z; `pppMatrixLoop` z, x, y; `pppMatrixScl`;
+  `pppParMatrix` through a parent's), drawing matrices (`pppDrawMatrix` through the
+  world, view and projection; `pppDrawMatrixFront` facing the view, its rows sized by the world's scale;
+  `pppDrawMatrixWood` upright, the world's y kept), draws (`pppDrawMdl3`, `pppDrawMdlTs3` with its pictures
+  scrolled, `pppDrawMdlLoopZ`, `pppDrawShapeX`), vertices (`pppVertexAp`: children born at a model's vertices) and
+  the particle spawner `pppRyjMegaBirth` (a pool of view-space sprites; the prizes' is `pppRyjMegaBirthPrize`).
+  A command the reader does not know is refused with its code, as a primitive kind it does not read.
+- **The run**, at KH2's 60 ticks a second: a layer is born when its start comes; each tick every running layer's
+  commands without a draw step, then those with one step and draw, in the layers' order; a layer whose loop's end
+  comes goes back to its loop's start (the frames between run without their spawners); one whose life is over goes.
+  A repeating emitter runs until told to stop, then its layers stop looping and it ends when none is left -- KH2's
+  own opening, hold and closing.
+- **A model**: its header at +0x10: u8 flags (bit 0 clear: depth written), offsets of its primitives, vertices and
+  normals, the counts, at +0x16 its GS ALPHA byte and at +0x17 its FIX. Vertices are three s16; primitives come in
+  packets `{u8, u8 kind, s16 count, 4 bytes, TEX0}`, kinds 0-3 triangles and 4-7 quads (a quad a strip: 0-1-2,
+  1-3-2), from 2 textured: RGBA per corner (0x80 = 1), vertex numbers, and for the textured u16 UV pairs in 1/4096 of
+  the page; a kind 0xff ends them.
+- **A shape**: frames `{wait in 1/256 of a frame, a loop flag, TEX0}` of layers, each four corners in 12.4 fixed
+  point (x 1/16), its part of the page, its colour and its own GS ALPHA byte.
+- **Drawing**: the GS blend `(A - B) x C / 128 + D` by the ALPHA byte: 0x44 mixed by alpha, 0x48 added, 0x42
+  `Cd - Cs x As` (dark smoke), 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`. Drawn nearer only (`TEST 0x7000d`); a
+  `pppDrawMdl3` whose record has +0xd (and not +0xe) set writes the depth alone, no colour (`TEST 0x72001`: the
+  corridor's mask), +0xe drawn without the depth test. A model's primitives far to near, the layers in their order.
+- **Pictures and pages**: a picture is `{u16 tbp, cbp, tbw, psm, x, y, w, h}`, its indices and palette as the prize
+  effect's; a draw names a page by its TEX0 (tbp, width, height, palette): its view of the pictures placed on the
+  128 x 64 pages from that tbp. The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
+  of the pictures' tbps.
+
 ## KH2's objects (a chest, a prize box)
 
 Not the game's: KINGDOM HEARTS II's objects (`obj/<name>.mdlx` in the player's 1.5+2.5 copy), as

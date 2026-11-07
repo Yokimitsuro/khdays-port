@@ -304,6 +304,7 @@ add_test(NAME khdays-character-shadow-hooks COMMAND khdays-character-shadow-hook
 # independent viewer, without the game or its generated sources.
 add_library(khdays-kh2-sequence STATIC
     ../assets/src/kh2_bar.cpp
+    ../assets/src/kh2_effect.cpp
     ../assets/src/kh2_sequence.cpp
     ../assets/src/dds.cpp
     ../assets/src/image.cpp
@@ -419,6 +420,20 @@ add_executable(khdays-prize-effects-test tests/prize_effects_test.cpp ui/prize_e
 target_link_libraries(khdays-prize-effects-test PRIVATE khdays-kh2-gauge)
 target_compile_options(khdays-prize-effects-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-prize-effects COMMAND khdays-prize-effects-test)
+
+# KH2's effects (PAX) read and played, and KH2's Dark Corridor fitted in Days's ovals: made-up effects; the dump
+# prints an effect's draws (to check it against KH2's pictures and to measure it).
+add_executable(khdays-kh2-effect-test tests/kh2_effect_test.cpp)
+target_link_libraries(khdays-kh2-effect-test PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-effect-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-effect COMMAND khdays-kh2-effect-test)
+add_executable(khdays-kh2-corridor-test tests/kh2_corridor_test.cpp)
+target_link_libraries(khdays-kh2-corridor-test PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-corridor-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-corridor COMMAND khdays-kh2-corridor-test)
+add_executable(khdays-kh2-effect-dump tools/kh2_effect_dump.cpp)
+target_link_libraries(khdays-kh2-effect-dump PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-effect-dump PRIVATE /W4 /std:c++20 /EHsc)
 
 add_executable(khdays-kh2-limit-timing-test tests/kh2_limit_timing_test.c)
 target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/include")
@@ -677,6 +692,7 @@ add_executable(khdays-native
     runtime/mods/textures.c
     runtime/mods/installed.c
     runtime/mods/models.cpp
+    runtime/mods/kh2_corridors.cpp      # Days's standing ovals as KH2's Dark Corridor
     runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
     runtime/mods/model_bones.cpp        # ... its <model>.bones.txt
     runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions

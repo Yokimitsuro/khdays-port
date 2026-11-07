@@ -5831,3 +5831,37 @@ pauses (0.2-1.2 s). The port adds nothing a frame of its own: the picture is pre
 the package arrives (one frame in flight). What waits is the screen's refresh after it, which the
 screen's lock (PLATFORM.md, "Threads, interrupts and time") keeps short and the same each time on a
 60 Hz screen.
+
+## 36. The Dark Corridors
+
+Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `mission.start(6)`; the play walk's input;
+`KHDAYS_TRACE_CORRIDORS=2`):
+
+- **Days's standing oval** is a model: `mi/ob/06.z`'s `E000_xx_000` (13 nodes: `Box01`-`Box04`, the floor's
+  `Plane01`-`04`, `bilbord` with `S1`, `Plane02`, `s3`, `cs`), drawn as a field object through the 3D engine's Flush
+  at scale 1. Its file's joint clips are `E000_xx_000` (opening, 70 frames), `E010_xx_000` (holding, 60) and
+  `E020_xx_000` (closing, 61), with material and texture animations of the same names. In mission 6 it is first drawn
+  at the game's frame 1659 (E000), holds from 1727 (E010), closes from 1787 (E020) -- its `bilbord` parts fading from
+  that clip's 40th frame, nothing seen from its 53rd -- and is no longer drawn from 1847; Roxas and Vexen step out of
+  it meanwhile. `mi/ob/09.z` has the same model with `E010_xx_000` alone; `mi/ob/07.z`'s `E_100_xx_000` (the same
+  look, one clip of 167 frames) was not seen in play. `mi/ob/08.z`'s `E110_xx_000` (thorns, a whirlpool) is another
+  effect. The floor swirl (`mo/mo#45`, `E040_xx_000`) and the corridor home's floor hole (`mo/mo#46`) are others.
+- **Its size as seen**: its smoke lines' model reaches 7.556 above its floor (its floor discs at 0.04-0.14), but its
+  pictures fade out well inside it: on the frames its darkness (each pixel's change from the frame before it showed)
+  reaches 3.6-3.8 above its floor at its middle and is 2.4 across, the screen's rows taken to the model's heights
+  through the oval's own matrices.
+- **KH2's corridor** is the first effect of KH2's `event/effect/tt_event_904.pax` (docs/FORMATS.md, "KH2's effects"):
+  one repeating emitter of 34 layers and 150 frames. Its oval -- a bowl behind a depth-only mask holed in its shape,
+  seen through the hole from its +z -- reaches 430 above its floor (its y 0, y down) and is 300 across; told to stop,
+  it closes in 92 ticks (KH2's 60 a second).
+- **The port** (`port/runtime/mods/kh2_corridors.cpp`, with the KH2 Prizes mod's `kh2fx/` files and the settings'
+  "KH2 Dark Corridors" on): the oval's draw is taken (`khdays_models_draw_begin`), its shapes left out
+  (`khdays_models_shape`, their matrix commands still run), and the corridor run 60 times a second of the game's
+  frames (two ticks a frame at 30) and drawn there: KH2's floor on the oval's, as tall as the oval is seen (3.7 / 430
+  of the oval's units a KH2 unit, then 2.6 across), its axes the oval's turned half a turn about z (y up, its front on
+  the oval's +z), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
+  scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
+  46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
+  added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
+  ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
+  own game; nothing is sent.

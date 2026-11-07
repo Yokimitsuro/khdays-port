@@ -97,6 +97,28 @@ def read_pax(data: bytes) -> Pax:
     return Pax(pictures, animations)
 
 
+def data_block(pax: bytes) -> int:
+    """The first effect's 0x96 block in a raw PAX: the element table ends at +0xC with a directory {0x82, 0, 0, a
+    count of 32-byte entries, the entries, then a list of blocks: a count and offsets from the directory}
+    (docs/FORMATS.md, "KH2's effects"); PaxError naming what breaks the layout."""
+    try:
+        if pax[:4] != b"PAX_":
+            raise PaxError("not a PAX (no 'PAX_')")
+        end = struct.unpack_from("<I", pax, 0xC)[0]
+        if struct.unpack_from("<I", pax, end)[0] != 0x82:
+            raise PaxError("no 0x82 directory where the element table ends")
+        entries = struct.unpack_from("<I", pax, end + 0xC)[0]
+        blocks_at = end + 0x10 + 32 * entries
+        if struct.unpack_from("<I", pax, blocks_at)[0] < 1:
+            raise PaxError("the directory lists no effect")
+        block = end + struct.unpack_from("<I", pax, blocks_at + 4)[0]
+        if struct.unpack_from("<I", pax, block)[0] != 0x96:
+            raise PaxError("the directory does not lead to a 0x96 effect block")
+    except struct.error as e:
+        raise PaxError(f"truncated ({e})") from None
+    return block
+
+
 def _picture(pax: bytes, at: int) -> Picture:
     tbp, cbp, _tbw, psm, x, y, w, h = struct.unpack_from("<8H", pax, at)
     if psm != 0x13:

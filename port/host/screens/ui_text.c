@@ -81,6 +81,20 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
                         "Premi e forzieri di KH2", "Premios y cofres de KH2"},
     [TXT_HUD_KH2_MODELS] = {"KH2 models", "Modèles de KH2", "Modelle aus KH2", "Modelli di KH2", "Modelos de KH2"},
+    [TXT_HUD_CORRIDORS] = {"KH2 Dark Corridors", "Couloirs des Ténèbres de KH2", "Korridore der Finsternis aus KH2",
+                           "Corridoi Oscuri di KH2", "Pasillos Oscuros de KH2"},
+    [TXT_HUD_CORRIDORS_NOTE] =
+        {"The Organization's corridors as KH2 draws them -- its own effect, played as KH2 plays it -- made by the HD "
+         "PACK from your 1.5+2.5. Off shows Days' own. Applies from the next corridor.",
+         "Les couloirs de l'Organisation comme KH2 les dessine -- son propre effet, joué comme KH2 le joue -- créés "
+         "par le HD PACK depuis votre 1.5+2.5. Désactivé, ceux de Days sont affichés. S’applique au couloir suivant.",
+         "Die Korridore der Organisation, wie KH2 sie zeichnet -- sein eigener Effekt, wie KH2 ihn abspielt -- vom HD "
+         "PACK aus deiner 1.5+2.5 erstellt. Aus zeigt die von Days. Gilt ab dem nächsten Korridor.",
+         "I corridoi dell'Organizzazione come li disegna KH2 -- il suo effetto, riprodotto come lo riproduce KH2 -- "
+         "creati dall'HD PACK dalla tua 1.5+2.5. Disattivato mostra quelli di Days. Vale dal corridoio successivo.",
+         "Los pasillos de la Organización como los dibuja KH2 -- su propio efecto, reproducido como lo reproduce KH2 "
+         "-- creados por el HD PACK desde tu 1.5+2.5. Desactivado muestra los de Days. Se aplica desde el siguiente "
+         "pasillo."},
     [TXT_HUD_KH2_MODELS_NOTE] =
         {"Roxas and his keyblades with KH2's models, motions and clothes, made by the HD PACK from your 1.5+2.5. Off "
          "shows Days' own. Changes apply at once.",

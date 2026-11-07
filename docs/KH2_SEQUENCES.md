@@ -1312,6 +1312,11 @@ Days's, with its HD pictures, and paired by `<world>_box_b.bones.txt`: its lid j
 for Days's light rays and `switch kh2_prizes`. The World That Never Was's chest's glowing lines, light KH2 adds
 over the model, are drawn blended by their own brightness (glTF has no added light).
 
+The tool also copies KH2's Dark Corridor -- `event/effect/tt_event_904.pax` and the pictures KH2 keeps resident,
+`effect/texcommon.dpd`, with their HD pages -- into the mod's `kh2fx/`, where the port plays it as KH2 does in place
+of Days's standing ovals (docs/RUNTIME_MAP.md, "The Dark Corridors"; the setting "KH2 Dark Corridors",
+`kh2_corridors`).
+
 A prize picture with no effect may have a model instead:
 
 ```text
@@ -1389,6 +1394,7 @@ The saved keys in `[enhancements]` are:
 | `heart_points_sequence` | off | Heart total, effects and chain counter |
 | `kh2_prizes` | on | KH2's prizes and chests, as the HD PACK makes them |
 | `kh2_models` | on | KH2's Roxas and keyblades, as the HD PACK makes them (docs/KH2_MODELS.md) |
+| `kh2_corridors` | on | KH2's Dark Corridor in place of Days's standing ovals, as the HD PACK makes it (docs/RUNTIME_MAP.md, "The Dark Corridors") |
 | `pause_target` | off | Mission target in ordinary pause menus |
 | `information_hud` | off | Configured HUD/control retention during upper INFORMATION |
 | `ui_padding` | off | Off removes the single-screen HD presentation inset |

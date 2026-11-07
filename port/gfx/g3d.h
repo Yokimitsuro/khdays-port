@@ -64,6 +64,15 @@ typedef struct KhdaysG3dPreInfo {
 #define KHDAYS_G3D_SEQUENCE 0x20   /* ordered native sequence commands; pltt identifies the retained program */
 #define KHDAYS_G3D_MARKER 0x40     /* screen-projected selection art: after world geometry, inside the 3D layer */
 #define KHDAYS_G3D_CLIP 0x20000000 /* a mod model's clip volume: not drawn; the world inside it left out */
+/* A KINGDOM HEARTS II effect's triangle (assets/kh2_effect.h, runtime/mods/kh2_corridors.h): after the translucent
+ * polygons, before the markers, in the order sent, depth-tested; blended as the GS's ALPHA byte in its `pltt` says,
+ * (A - B) * C / 128 + D, with A, B, D the source colour, the colour there or 0 and C the source alpha. Its own
+ * depth rules below. (Bits 0x80, 0x100 and 0x10000-0x40000 are the shadows', and a sprite shadow's receiver ID is in
+ * bits 18-23: character_shadow.h.) */
+#define KHDAYS_G3D_EFFECT 0x1000000
+#define KHDAYS_G3D_EFFECT_DEPTH_WRITE 0x2000000   /* writes its depth (the GS's ZBUF without ZMSK) */
+#define KHDAYS_G3D_EFFECT_DEPTH_ONLY 0x4000000    /* its depth alone, no colour (the GS's TEST 0x72001) */
+#define KHDAYS_G3D_EFFECT_NO_DEPTH_TEST 0x8000000 /* drawn whatever lies nearer (TEST 0x3000d) */
 #define KHDAYS_G3D_CLIP_OWNER 0x40000000 /* a polygon of a model with a clip volume: drawn inside one */
 #define KHDAYS_G3D_SKY_LAYER(flags) (((flags) & KHDAYS_G3D_SKY) ? ((flags) >> 8) & 0xff : 0)
 #define KHDAYS_G3D_OVER_2D                                                                                             \
@@ -268,6 +277,13 @@ typedef struct KhdaysG3dClipVertex {
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
 
+/* A KH2 effect's triangle or quad (KHDAYS_G3D_EFFECT): `gs_alpha` the GS ALPHA byte it blends with, `effect_flags`
+ * its KHDAYS_G3D_EFFECT_* depth rules, `replacement` its picture (runtime/mods/textures.h, -1 for none: its vertex
+ * colours alone). Its vertices' colours are factors x 63 (the GS's 0x80, 1, is 63; up to twice that), their
+ * alpha 0..1, s and t as a mod model's (a 1024 x 1024 texture repeated). */
+void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t replacement, uint32_t gs_alpha,
+                               uint32_t effect_flags);
+
 /* A triangle of a mod model's closed clip volume (runtime/mods/secondary model_link.h clip_volumes), both sides,
  * first in the drawing order: not drawn; a polygon not of such a model (not KHDAYS_G3D_CLIP_OWNER) is left out
  * where it lies between the nearest and the farthest of the volumes a pixel shows (docs/RENDERING.md). */
@@ -278,6 +294,12 @@ void khdays_g3d_set_clip_owner(int on);
 /* A screen-projected sequence in the 3D layer; its program is retained in the frame package.
  * The shader samples the atlas and blends each element against the scene at full alpha precision. */
 void khdays_g3d_sequence_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, int32_t atlas, uint32_t program);
+
+/* What runs as the game closes each 3D list (its SwapBuffers), before the list is put in its drawing order: the
+ * port's polygons that belong to no model's draw of that list (runtime/mods/kh2_corridors.h's corridors closing
+ * where their oval was). NULL: nothing. */
+typedef void (*KhdaysG3dSwapHook)(void);
+void khdays_g3d_set_swap_hook(KhdaysG3dSwapHook hook);
 
 /* For traces: `hook` hears of each polygon added to the list being built,
  * as it is added (NULL: none). */

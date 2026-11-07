@@ -1184,11 +1184,11 @@ MESSAGES.update(
             "it": "Le mod sono pronte.",
         },
         "mod-needs-1525": {
-            "en": "KH2's prizes and chests need the 1.5+2.5 collection.",
-            "es": "Los premios y cofres de KH2 necesitan la colección 1.5+2.5.",
-            "fr": "Les prix et coffres de KH2 ont besoin de la collection 1.5+2.5.",
-            "de": "Die Preise und Truhen aus KH2 brauchen die Sammlung 1.5+2.5.",
-            "it": "I premi e i forzieri di KH2 richiedono la raccolta 1.5+2.5.",
+            "en": "KH2's prizes, chests and Dark Corridors need the 1.5+2.5 collection.",
+            "es": "Los premios, cofres y Pasillos Oscuros de KH2 necesitan la colección 1.5+2.5.",
+            "fr": "Les prix, coffres et Couloirs des Ténèbres de KH2 ont besoin de la collection 1.5+2.5.",
+            "de": "Die Preise, Truhen und Korridore der Finsternis aus KH2 brauchen die Sammlung 1.5+2.5.",
+            "it": "I premi, i forzieri e i Corridoi Oscuri di KH2 richiedono la raccolta 1.5+2.5.",
         },
         "mod-needs-hd": {
             "en": "The Menu Overhaul needs the 1.5+2.5 collection and the HD menus made first.",
@@ -1268,7 +1268,7 @@ def _mods_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
     p.add_argument("--walk", action="store_true", help="the Walk (docs/WALK_MOD.md): the game's data")
     p.add_argument("--menu-overhaul", action="store_true", help="the Menu Overhaul: 1.5+2.5, the HD menus")
-    p.add_argument("--kh2-prizes", action="store_true", help="KH2's prizes and chests: 1.5+2.5")
+    p.add_argument("--kh2-prizes", action="store_true", help="KH2's prizes, chests and Dark Corridors: 1.5+2.5")
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
 
 
