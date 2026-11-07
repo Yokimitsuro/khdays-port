@@ -55,6 +55,42 @@ inline float corridor_units(Matrix &view)
     return kDaysPerKh2 * length;
 }
 
+// The oval at `view` (its model to the view) turned about its own up so that its front (+z) looks at the camera (the
+// view's origin) across the floor, as KH2's corridors are seen, from the front (the maintainer's choice, 2026-11-07);
+// its place, up and size kept, never mirrored. Left as it is when the camera is straight above or below it.
+inline void face_camera(Matrix &view)
+{
+    float length[3];
+    for (std::size_t r = 0; r < 3; ++r)
+        length[r] = std::sqrt(view[r * 4] * view[r * 4] + view[r * 4 + 1] * view[r * 4 + 1] +
+                              view[r * 4 + 2] * view[r * 4 + 2]);
+    if (!(length[0] > 1e-6F && length[1] > 1e-6F && length[2] > 1e-6F))
+        return;
+    float up[3], front[3], to[3];
+    for (std::size_t k = 0; k < 3; ++k) {
+        up[k] = view[4 + k] / length[1];
+        front[k] = view[8 + k] / length[2];
+        to[k] = -view[12 + k];
+    }
+    const float along = to[0] * up[0] + to[1] * up[1] + to[2] * up[2];
+    for (std::size_t k = 0; k < 3; ++k)
+        to[k] -= along * up[k];
+    const float n = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+    if (!(n > 1e-4F * std::sqrt(view[12] * view[12] + view[13] * view[13] + view[14] * view[14])) || !(n > 0.0F))
+        return;
+    for (float &v : to)
+        v /= n;
+    // its x as its own was to its up and front: up x front, or the other way for a mirrored model
+    const float was[3] = {up[1] * front[2] - up[2] * front[1], up[2] * front[0] - up[0] * front[2],
+                          up[0] * front[1] - up[1] * front[0]};
+    const float hand = was[0] * view[0] + was[1] * view[1] + was[2] * view[2] < 0.0F ? -1.0F : 1.0F;
+    const float side[3] = {up[1] * to[2] - up[2] * to[1], up[2] * to[0] - up[0] * to[2], up[0] * to[1] - up[1] * to[0]};
+    for (std::size_t k = 0; k < 3; ++k) {
+        view[k] = hand * side[k] * length[0];
+        view[8 + k] = to[k] * length[2];
+    }
+}
+
 // KH2's camera for a corridor in an oval drawn at `view` (made unit by corridor_units) and `projection`. The
 // effect's axes are the oval's turned half a turn about z: its y points down and its front -- where KH2's camera
 // looks into the corridor through the opening its depth-only mask leaves (the mask a plane at z 0 holed in the

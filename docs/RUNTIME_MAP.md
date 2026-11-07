@@ -5862,7 +5862,8 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
   frames (two ticks a frame at 30) and drawn there: KH2's floor on Days's floor shadow (0.135 above the oval's floor;
   on the oval's own, KH2's shadow -- discs and rings at its y 0 -- lay under the ground and was hidden), its top on
   the oval's seen top ((3.7 - 0.135) / 430 of the oval's units a KH2 unit, then 2.5 across), its axes the oval's
-  turned half a turn about z (y up, its front on the oval's +z), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
+  turned half a turn about z (y up, its front on the oval's +z) and the oval turned about its up so that its front
+  looks at the camera (seen from the front, as KH2's are: the maintainer's choice), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
   scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
   46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
   added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD

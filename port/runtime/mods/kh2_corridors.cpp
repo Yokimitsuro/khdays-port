@@ -357,6 +357,7 @@ void submit(const Corridor &c, float units)
 
 void draw_at(Corridor &c, Place p)
 {
+    khdays::kh2_corridor::face_camera(p.view); // seen from the front, as KH2's
     const float units = khdays::kh2_corridor::corridor_units(p.view);
     const kh2::EffectCamera camera = khdays::kh2_corridor::corridor_camera(p.view, p.projection, units);
     if (trace_level() >= 3 && khdays_link_frame() % 20u == 0u) {

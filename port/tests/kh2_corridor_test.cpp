@@ -1,7 +1,8 @@
 // KH2's Dark Corridor in Days's ovals (runtime/mods/kh2_corridor_fit.h): its axes, size and units in an oval's place
 // -- KH2's floor on Days's own floor shadow, its oval's top (430 up, y down) on Days's seen top, its front on the
 // oval's front, its clip space back in Days's units -- and when it closes: how long its closing takes, measured on a made-up effect
-// (kh2_effect_made_up.h), and the moment within the oval's closing clip that ends both together.
+// (kh2_effect_made_up.h), and the moment within the oval's closing clip that ends both together; and the oval
+// turned about its up to face the camera.
 #include "../runtime/mods/kh2_corridor_fit.h"
 #include "kh2_effect_made_up.h"
 
@@ -89,6 +90,37 @@ void test_scaled_and_moved()
     expect(near(through(cam, units, 0, 0, 0)[1], 6 + 2 * kDaysFloorLift), "its floor lifted at the oval's scale");
 }
 
+float dot3(const float *a, const float *b)
+{
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+void test_faces_the_camera()
+{
+    // an oval at (5, 0, -10) in the view, turned its own way about its up and twice its size: its front (+z) turned
+    // to look at the camera (the view's origin) across the floor, its up, place and size kept, not mirrored
+    Matrix view = identity();
+    const float c = std::cos(0.7F), s = std::sin(0.7F);
+    view[0] = 2 * c, view[2] = -2 * s; // x
+    view[5] = 2;                        // y
+    view[8] = 2 * s, view[10] = 2 * c;  // z
+    view[12] = 5, view[13] = 0, view[14] = -10;
+    face_camera(view);
+    const float n = std::sqrt(125.0F), to[3] = {-5 / n, 0, 10 / n};
+    expect(near(dot3(&view[8], to), 2.0F), "its front looks at the camera");
+    expect(near(view[4], 0) && near(view[5], 2) && near(view[6], 0), "its up kept");
+    expect(near(view[12], 5) && near(view[13], 0) && near(view[14], -10), "its place kept");
+    const float *x = &view[0], *y = &view[4], *z = &view[8];
+    const float yz[3] = {y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]};
+    expect(near(dot3(x, yz), 8.0F), "its size kept, not mirrored");
+
+    // seen from straight above: nothing to turn to, left as it is
+    Matrix above = identity();
+    above[12] = 0, above[13] = -10, above[14] = 0;
+    face_camera(above);
+    expect(near(above[0], 1) && near(above[10], 1), "straight above: unchanged");
+}
+
 void test_closing()
 {
     const auto bytes = khdays_test::made_up(0, 4, true);
@@ -118,6 +150,7 @@ int main()
     try {
         test_axes_and_size();
         test_scaled_and_moved();
+        test_faces_the_camera();
         test_closing();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 corridor: %s\n", e.what());

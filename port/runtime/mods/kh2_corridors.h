@@ -2,9 +2,9 @@
  * copies from the player's own KH2 (mods/<mod>/kh2fx/tt_event_904.pax, KH2's event/effect/tt_event_904.pax, with
  * kh2fx/texcommon.dpd, its effect/texcommon.dpd, and their HD pictures kh2fx/<file's stem>/-<n>.dds) played as KH2
  * plays it (assets/kh2_effect.h) where the game draws one of its ovals (mi/ob/'s E000_xx_000 and E_100_xx_000), its
- * floor on the oval's and as tall as the oval is seen (kh2_corridor_fit.h): opening when the oval shows, holding
- * while it is drawn, closing within the oval's own closing clip so as to end with it, or where the oval was once it
- * is no longer drawn (docs/RUNTIME_MAP.md, "The Dark Corridors"). The setting kh2_corridors (Enhancements) leaves
+ * floor on the oval's floor shadow, as tall as the oval is seen and facing the camera (kh2_corridor_fit.h):
+ * opening when the oval shows, holding while it is drawn, closing within the oval's own closing clip so as to end
+ * with it, or where the oval was once it is no longer drawn (docs/RUNTIME_MAP.md, "The Dark Corridors"). The setting kh2_corridors (Enhancements) leaves
  * Days's own from the next oval on. Main thread, from runtime/mods/models.cpp and the 3D lists' SwapBuffers. */
 #ifndef KHDAYS_KH2_CORRIDORS_H
 #define KHDAYS_KH2_CORRIDORS_H
