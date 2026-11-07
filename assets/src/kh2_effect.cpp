@@ -106,6 +106,10 @@ EffectPicture read_picture(const Reader &r, std::size_t at)
         for (int i = 0; i < 16; ++i)
             for (int c = 0; c < 4; ++c)
                 p.palette[std::size_t(i)][std::size_t(c)] = r.data[pixels + bytes + 4 * std::size_t(i) + c];
+    } else if (p.psm == 0) { // PSMCT32: its colours themselves
+        p.indices.clear();
+        r.need(pixels, n * 4);
+        p.rgba.assign(r.data + pixels, r.data + pixels + n * 4);
     } else {
         fail("a picture of format " + std::to_string(p.psm));
     }
@@ -319,10 +323,28 @@ EffectPage effect_page(const std::vector<const EffectPicture *> &pictures, std::
     page.width = 1 << ((tex0 >> 26) & 15);
     page.height = 1 << ((tex0 >> 30) & 15);
     const int cbp = int((tex0 >> 37) & 0x3fff);
+    if (((tex0 >> 20) & 0x3f) == 0) { // PSMCT32: the pictures' colours placed by page (64 x 32, 0x20 blocks)
+        page.rgba.assign(std::size_t(page.width) * std::size_t(page.height) * 4, 0);
+        const int row = std::max(1, tbw);
+        for (const auto *p : pictures) {
+            if (p->psm != 0 || p->tbw != tbw || p->tbp < tbp)
+                continue;
+            const int k = (p->tbp - tbp) / 0x20;
+            const int ox = (k % row) * 64 + p->x, oy = (k / row) * 32 + p->y;
+            for (int y = 0; y < p->h && oy + y < page.height; ++y)
+                for (int x = 0; x < p->w && ox + x < page.width; ++x)
+                    for (int c = 0; c < 4; ++c) {
+                        const std::uint8_t v = p->rgba[(std::size_t(y) * p->w + std::size_t(x)) * 4 + std::size_t(c)];
+                        page.rgba[(std::size_t(oy + y) * std::size_t(page.width) + std::size_t(ox + x)) * 4 +
+                                  std::size_t(c)] = c == 3 ? std::uint8_t(std::min(255, v * 2)) : v;
+                    }
+        }
+        return page;
+    }
     std::vector<std::uint8_t> idx(std::size_t(page.width) * std::size_t(page.height));
     const int per_row = std::max(1, tbw / 2); // PSMT8 pages are 128 wide
     for (const auto *p : pictures) {
-        if (p->tbw != tbw || p->tbp < tbp)
+        if (p->psm == 0 || p->tbw != tbw || p->tbp < tbp)
             continue;
         const int k = (p->tbp - tbp) / 0x20;
         const int ox = (k % per_row) * 128 + p->x, oy = (k / per_row) * 64 + p->y;
@@ -559,6 +581,27 @@ struct BoltState {
     std::vector<int> live;
 };
 
+// pppRyjMegaBirthModelFilter's particle (0xa0 bytes in KH2, FUN_1404da600): its place and way, its life, colour
+// jitter, a turn (with its rate and their random parts), three sizes (likewise), a speed, a UV scroll (with its
+// rates and random parts), a fade, the fade's counter and flags (1 behind the camera, 2 fading in, 4 fading out)
+struct FilterParticle {
+    std::array<float, 4> place{}, dir{};
+    std::int16_t life = 0;
+    std::array<std::int8_t, 4> jitter{};
+    std::array<std::int32_t, 3> rot{}, rot_v{}, rot_r{};
+    std::array<float, 3> size{}, size_v{}, size_r{};
+    float speed = 0, u = 0, v = 0, du = 0, dv = 0, du_r = 0, dv_r = 0, fade = 0;
+    std::uint8_t counter = 0, flags = 0;
+    std::array<float, 8> colour{}; // the record's own colour and its rate, when it asks for them
+};
+
+struct FilterPool {
+    std::vector<FilterParticle> particles;
+    bool made = false, own_colour = false, active = true;
+    float far_fade = 1.0F;
+    std::uint16_t timer = 0;
+};
+
 struct Obj {
     const EffectLayer *layer = nullptr;
     std::int32_t age = 0;
@@ -584,6 +627,7 @@ struct Obj {
     std::map<std::int32_t, BoltState> bolt_states;
     std::map<std::int32_t, BoltPool> bolt_pools;
     std::map<std::int32_t, BoltTarget> next_targets;
+    std::map<std::int32_t, FilterPool> filter_pools; // pppRyjMegaBirthModelFilter's, by its third slot
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -631,11 +675,11 @@ unsigned words(std::uint32_t code)
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
     case 0xbc: case 0x7e: case 0x80:
         return W1;
-    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef: case 0xf0: case 0xf2:
+    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef: case 0xf0: case 0xf2: case 0xcb:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
     case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
-    case 0xdf: case 0xe0: case 0xe1: case 0x81:
+    case 0xdf: case 0xe0: case 0xe1: case 0x81: case 0xe5:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -714,6 +758,15 @@ struct EffectInstance::State {
     bool live(const Obj &o) const // what the keyed steps check: not frozen, an even age (odd while paused)
     {
         return frozen == 0 && (o.age & 1) == 0;
+    }
+
+    // a vertex list's vertex: KH2 reads past a model's vertices when a list asks for more than it has (some
+    // blocks' lists name the wrong model); here such a vertex is taken round
+    static const std::array<float, 3> &vertex_at(const std::vector<std::array<float, 3>> &vs, std::size_t i)
+    {
+        if (vs.empty())
+            fail("a vertex list's model without vertices");
+        return vs[i % vs.size()];
     }
 
     const std::vector<std::array<float, 3>> &vertices_of(const Obj &o, std::size_t model) const
@@ -805,6 +858,7 @@ struct EffectInstance::State {
             o.setf(c.slots[0], 3, 0);
             break;
         case 0x80: zero(0, 0x30); break; // pppKeThSft (FUN_1404c78f0): its rates
+        case 0xe5: o.filter_pools.erase(c.slots[2]); break; // FUN_1404db460: none made, active, the far fade 1
         case 0x81: // pppKeTh (FUN_1404beed0): no bolts, its flags, colours, size, rate, reach and pull none
             o.bolt_states.erase(c.slots[0]);
             *o.at(c.slots[0] + 4, 1) = 0;
@@ -1315,6 +1369,7 @@ struct EffectInstance::State {
         case 0x7e: bolt_target_step(o, c, k); break;
         case 0x80: bolt_shift_step(o, c, k); break;
         case 0x81: bolt_step(o, c, k); break;
+        case 0xe5: filter_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
     }
@@ -1405,7 +1460,7 @@ struct EffectInstance::State {
             i = std::uint16_t(i % vl.vertices.size());
             wr(o.at(c.slots[0], 2), i);
         }
-        const auto &v = block->models.at(vl.model).vertices.at(vl.vertices[i]);
+        const auto &v = vertex_at(block->models.at(vl.model).vertices, vl.vertices[i]);
         const auto p = transformed({v[0], v[1], v[2], 1}, o.parent->local);
         for (int j = 0; j < 3; ++j)
             o.setf(c.slots[1], j, p[std::size_t(j)]);
@@ -1458,7 +1513,7 @@ struct EffectInstance::State {
                     wr(child->at(k.s32(0x10), 2), std::uint16_t(i));
                     return;
                 }
-                const auto &v = vertices_of(o, vl.model).at(vl.vertices.at(i));
+                const auto &v = vertex_at(vertices_of(o, vl.model), vl.vertices.at(i));
                 for (int j = 0; j < 3; ++j)
                     child->setf(k.s32(0x10), j, v[std::size_t(j)]);
             };
@@ -1525,7 +1580,7 @@ struct EffectInstance::State {
         std::uint16_t *counter = reinterpret_cast<std::uint16_t *>(o.at(c.slots[0], 2));
         int i = pick ? crand() % count : int(*counter);
         for (int n = k.b(count_at); n > 0; --n) {
-            const auto &v = vs.at(vl.vertices.at(std::size_t(std::min(i, count - 1))));
+            const auto &v = vertex_at(vs, vl.vertices.at(std::size_t(std::min(i, count - 1))));
             born_one(o, c, k, v);
             if (pick) {
                 i = crand() % count;
@@ -1611,13 +1666,13 @@ struct EffectInstance::State {
                 for (int b = 0; b < n; ++b) {
                     if (vl.vertices.size() <= i)
                         i = 0;
-                    spawn(o, k, vs.at(vl.vertices[i]));
+                    spawn(o, k, vertex_at(vs, vl.vertices[i]));
                     ++i;
                 }
                 wr(o.at(s, 2), i);
             } else if (k.b(8) == 1) {
                 for (int b = 0; b < n; ++b)
-                    spawn(o, k, vs.at(vl.vertices[std::size_t(float(vl.vertices.size()) * rand01())]));
+                    spawn(o, k, vertex_at(vs, vl.vertices[std::size_t(float(vl.vertices.size()) * rand01())]));
             }
             wait = k.b(7);
         }
@@ -2083,7 +2138,7 @@ struct EffectInstance::State {
                         pool.vertex_k = 0;
                     i = pool.vertex_k++;
                 }
-                const auto &v = vs.at(vl.vertices.at(std::size_t(i)));
+                const auto &v = vertex_at(vs, vl.vertices.at(std::size_t(i)));
                 for (int j = 0; j < 3; ++j)
                     p.m[std::size_t(12 + j)] = v[std::size_t(j)] * axes[std::size_t(j)];
                 p.m[15] = 1;
@@ -4113,6 +4168,345 @@ struct EffectInstance::State {
         }
     }
 
+    // pppRyjMegaBirthPrize (FUN_1404d7ed0): a crowd of prizes at the game's points, each a sprite facing the screen.
+    // A point's bytes: its kind (0-9), its alpha (0: not drawn), its size (/ 255), its frame (0xff: a random first
+    // frame when the shape's last frame loops). The record has a 12-byte entry a kind from +4: its shape (0xffff
+    // none), its colour, a byte, its size; the sprite is the kind's size x the point's, at the point's place through
+    // the view, then the projection. Each live tick the frame moves on, back to 0 after the last when that frame
+    // loops, else held. (KH2 batches crowds of over 1000 points; the picture is the same.)
+    void prize_crowd(Obj &o, const Key &k, std::vector<EffectDraw> *out)
+    {
+        for (auto &pt : points) {
+            const std::uint8_t kind = pt.bytes[0], alpha = pt.bytes[1];
+            if (alpha == 0 || kind >= 10)
+                continue;
+            const std::size_t e = 4 + std::size_t(kind) * 0xc;
+            const std::int32_t shape = k.s32(e);
+            if (shape == 0xffff)
+                continue;
+            const auto &shp = block->shapes.at(std::size_t(shape));
+            if (shp.frames.empty())
+                continue;
+            const int n = int(shp.frames.size());
+            if (pt.bytes[3] == 0xff && shp.frames.back().loop) {
+                int f = int(rand01() * float(n - 1));
+                if (f < 0 || n <= f)
+                    f = 0;
+                pt.bytes[3] = std::uint8_t(f);
+            }
+            const int frame = std::min<int>(pt.bytes[3], n - 1);
+            const float size = k.f32(e + 8) * (float(pt.bytes[2]) / 255.0F);
+            if (out != nullptr) {
+                M4 m = identity();
+                m[0] = m[5] = m[10] = size;
+                const auto at = transformed({pt.place[0], pt.place[1], pt.place[2], 1}, view);
+                for (int j = 0; j < 4; ++j)
+                    m[std::size_t(12 + j)] = at[std::size_t(j)];
+                draw_shape(shp, frame, mul(m, proj),
+                           {k.b(e + 4) / 128.0F, k.b(e + 5) / 128.0F, k.b(e + 6) / 128.0F, alpha / 128.0F}, *out);
+            }
+            if (live(o)) {
+                const int next = frame + 1;
+                pt.bytes[3] = std::uint8_t(n <= next ? (shp.frames.at(std::size_t(frame)).loop ? 0 : frame) : next);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------- the camera's model crowd
+    // pppRyjMegaBirthModelFilter (FUN_1404db2c0, FUN_1404da3d0, FUN_1404d9dd0, FUN_1404dad90): models in a ball
+    // round the camera (a map's falling leaves or dust), those leaving it brought back on its far side; shown while
+    // the camera is within a distance of the effect, faded near the camera and at the ball's edge. Record: +4 the
+    // model, +8 its flag, +0xa how many, +0xc born at most a tick after +0xe ticks, +0x10 the life (0 for ever),
+    // +0x12 / +0x13 the fades in and out, +0x14 / +0x24 a colour's rate and the rate's (from 0; when +0xf2), +0x34
+    // the jitter, +0x38.. the turn, its rate, the rate's and their random parts (+0xf4 how), +0x68.. the sizes
+    // likewise (+0xf3), +0x98.. the UV scroll (+0xf5), +0xb8 the way, +0xc4 the speed with its rate and random
+    // part, +0xd0 / +0xd4 the near fade (view depth), +0xd8 / +0xdc the ball's radius and edge, +0xe0 / +0xe4 the
+    // view's y scaled and moved, +0xe8 / +0xec the distance it shows within and its fade (when +0xf0).
+
+    // FUN_1404da600: a particle's start from the record (its place and way already set)
+    void filter_birth(const Key &k, FilterParticle &p, bool own)
+    {
+        for (int j = 0; j < 4; ++j) {
+            const int b = k.b(0x34 + std::size_t(j));
+            p.jitter[std::size_t(j)] = std::int8_t(int(rand01() * float(b * 2) - float(b >> 1)));
+        }
+        if (k.b(0x12) != 0) {
+            p.flags |= 2;
+            p.counter = k.b(0x12);
+        }
+        for (int j = 0; j < 3; ++j) {
+            p.rot[std::size_t(j)] = k.s32(0x38 + 4 * std::size_t(j));
+            p.rot_v[std::size_t(j)] = k.s32(0x44 + 4 * std::size_t(j));
+        }
+        // a random part: one for all (0x20) or each its own; signs flipped each by chance (3) or all (2); added
+        // to the start (4) and the rate (8)
+        const auto flip = [&](auto &r, std::uint8_t f, int n) {
+            if ((f & 3) == 3) {
+                if (f & 0x20) {
+                    if (rand01() > 0.5F)
+                        for (int j = 0; j < n; ++j)
+                            r[std::size_t(j)] = -r[std::size_t(j)];
+                } else {
+                    for (int j = 0; j < n; ++j)
+                        if (rand01() > 0.5F)
+                            r[std::size_t(j)] = -r[std::size_t(j)];
+                }
+            } else if (f & 2) {
+                for (int j = 0; j < n; ++j)
+                    r[std::size_t(j)] = -r[std::size_t(j)];
+            }
+        };
+        if (const std::uint8_t f = k.b(0xf4); f != 0) {
+            const float first = rand01() * float(k.s32(0x5c));
+            if (!(f & 0x20)) {
+                p.rot_r[0] = std::int32_t(first);
+                p.rot_r[1] = std::int32_t(float(k.s32(0x60)) * rand01());
+                p.rot_r[2] = std::int32_t(float(k.s32(0x64)) * rand01());
+            } else {
+                p.rot_r = {std::int32_t(first), std::int32_t(first), std::int32_t(first)};
+            }
+            flip(p.rot_r, f, 3);
+        }
+        for (int j = 0; j < 3; ++j) {
+            if (k.b(0xf4) & 4)
+                p.rot[std::size_t(j)] += p.rot_r[std::size_t(j)];
+            if (k.b(0xf4) & 8)
+                p.rot_v[std::size_t(j)] += p.rot_r[std::size_t(j)];
+            if (p.rot[std::size_t(j)] < -0x8000 || p.rot[std::size_t(j)] > 0x7fff)
+                p.rot[std::size_t(j)] %= 0x8000;
+        }
+        for (int j = 0; j < 3; ++j) {
+            p.size[std::size_t(j)] = k.f32(0x68 + 4 * std::size_t(j));
+            p.size_v[std::size_t(j)] = k.f32(0x74 + 4 * std::size_t(j));
+        }
+        if (const std::uint8_t f = k.b(0xf3); f != 0) {
+            const float first = rand01() * k.f32(0x8c);
+            if (!(f & 0x20)) {
+                p.size_r[0] = first;
+                p.size_r[1] = rand01() * k.f32(0x90);
+                p.size_r[2] = rand01() * k.f32(0x94);
+            } else {
+                p.size_r = {first, first, first};
+            }
+            flip(p.size_r, f, 3);
+        }
+        for (int j = 0; j < 3; ++j) {
+            if (k.b(0xf3) & 4)
+                p.size[std::size_t(j)] += p.size_r[std::size_t(j)];
+            if (k.b(0xf3) & 8)
+                p.size_v[std::size_t(j)] += p.size_r[std::size_t(j)];
+        }
+        p.speed = k.f32(0xc4);
+        if (k.f32(0xcc) != 0)
+            p.speed += (k.f32(0xcc) + k.f32(0xcc)) * rand01() - k.f32(0xcc);
+        p.u = k.f32(0x98);
+        p.v = k.f32(0xa8);
+        p.du = k.f32(0x9c);
+        p.dv = k.f32(0xac);
+        if (const std::uint8_t f = k.b(0xf5); f != 0) {
+            std::array<float, 2> r{rand01() * k.f32(0xa4), 0};
+            r[1] = (f & 0x20) ? r[0] : rand01() * k.f32(0xb4);
+            flip(r, f, 2);
+            p.du_r = r[0];
+            p.dv_r = r[1];
+        }
+        if (k.b(0xf5) & 4) {
+            p.u += p.du_r;
+            p.v += p.dv_r;
+        }
+        if (k.b(0xf5) & 8) {
+            p.du += p.du_r;
+            p.dv += p.dv_r;
+        }
+        p.life = k.s16(0x10) == 0 ? std::int16_t(-1) : k.s16(0x10);
+        if (own)
+            for (int j = 0; j < 4; ++j)
+                p.colour[std::size_t(4 + j)] = k.f32(0x14 + 4 * std::size_t(j)); // the rate (the colour from 0)
+        p.fade = 0;
+        switch (k.b(0xf6)) { // the sizes' signs flipped by chance
+        case 1: if (rand01() > 0.5F) p.size[0] = -p.size[0]; break;
+        case 2: if (rand01() > 0.5F) p.size[1] = -p.size[1]; break;
+        case 3:
+            if (rand01() > 0.5F)
+                p.size[0] = -p.size[0];
+            if (rand01() > 0.5F)
+                p.size[1] = -p.size[1];
+            break;
+        default: break;
+        }
+    }
+
+    // FUN_1404db2c0 + FUN_1404da3d0 + FUN_1404d9dd0: the pool made, shown within the distance, its particles born
+    // and moved
+    void filter_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        FilterPool &pool = o.filter_pools[c.slots[2]];
+        if (!pool.made) {
+            pool.made = true;
+            pool.particles.assign(k.u16(0xa), FilterParticle{});
+            pool.own_colour = k.b(0xf2) != 0;
+        }
+        const M4 cam = rigid_inverse(view); // the camera: its place (0x142b0ed20) and the way it looks
+        const std::array<float, 4> eye{cam[12], cam[13], cam[14], 1};
+        std::array<float, 4> look{cam[8], cam[9], cam[10], 0};
+        unit3(look.data());
+        if (k.b(0xf0) != 0) {
+            const float d = length3(minus(eye, {world[12], world[13], world[14], 1}));
+            if (d <= k.f32(0xe8)) {
+                const float in = k.f32(0xe8) - d;
+                pool.active = true;
+                pool.far_fade = k.f32(0xec) <= in ? 1.0F : in / k.f32(0xec);
+            } else {
+                pool.active = false;
+            }
+        }
+        if (!pool.active || frozen != 0 || k.s32(4) == 0xffff)
+            return;
+        ++pool.timer;
+        const float radius = k.f32(0xd8) + k.f32(0xdc);
+        int born = 0;
+        for (auto &p : pool.particles) {
+            if (p.life == 0) { // born when the wait is over, so many a tick: in the ball, through the camera
+                if (pool.timer < k.u16(0xe) || born >= int(k.u16(0xc)))
+                    continue;
+                p = FilterParticle{};
+                std::array<float, 4> d{k.f32(0xb8), k.f32(0xbc), k.f32(0xc0), 1};
+                unit3(d.data());
+                p.dir = d;
+                const float r = k.f32(0xdc) + k.f32(0xd8), twice = r + r;
+                do {
+                    p.place[0] = rand01() * twice - r;
+                    p.place[1] = rand01() * twice - r;
+                    p.place[2] = rand01() * twice - r;
+                } while (r < length3(p.place));
+                p.place[3] = 1;
+                p.place = transformed(p.place, cam);
+                filter_birth(k, p, pool.own_colour);
+                ++born;
+                continue;
+            }
+            if (pool.own_colour) {
+                for (int j = 0; j < 4; ++j) {
+                    p.colour[std::size_t(j)] += p.colour[std::size_t(4 + j)];
+                    p.colour[std::size_t(4 + j)] += k.f32(0x24 + 4 * std::size_t(j));
+                }
+            }
+            for (int j = 0; j < 3; ++j) {
+                p.rot[std::size_t(j)] += p.rot_v[std::size_t(j)];
+                p.rot_v[std::size_t(j)] +=
+                    ((k.b(0xf4) & 0x10) ? p.rot_r[std::size_t(j)] : 0) + k.s32(0x50 + 4 * std::size_t(j));
+                while (p.rot[std::size_t(j)] > 0x7fff)
+                    p.rot[std::size_t(j)] -= 0x10000;
+                p.size[std::size_t(j)] += p.size_v[std::size_t(j)];
+                p.size_v[std::size_t(j)] +=
+                    ((k.b(0xf3) & 0x10) ? p.size_r[std::size_t(j)] : 0.0F) + k.f32(0x80 + 4 * std::size_t(j));
+            }
+            p.speed += k.f32(0xc8);
+            for (int j = 0; j < 3; ++j)
+                p.place[std::size_t(j)] += p.dir[std::size_t(j)] * p.speed;
+            p.place[3] = 1;
+            auto to = minus(p.place, eye);
+            const float d = length3(to);
+            unit3(to.data());
+            p.u += p.du;
+            p.v += p.dv;
+            p.du += k.f32(0xa0);
+            p.dv += k.f32(0xb0);
+            while (p.u > 2048.0F)
+                p.u -= 2048.0F;
+            while (p.v > 2048.0F)
+                p.v -= 2048.0F;
+            p.du = std::min(p.du, 2048.0F);
+            p.dv = std::min(p.dv, 2048.0F);
+            if (std::uint16_t(k.s16(0x10) - 1) < 0xfffe)
+                --p.life;
+            float f = 1.0F;
+            if (!(p.flags & 2)) {
+                if (!(p.flags & 4)) {
+                    if (k.b(0x13) != 0 && std::uint16_t(p.life) <= k.b(0x13)) {
+                        p.counter = k.b(0x13);
+                        p.flags |= 4;
+                    }
+                    p.fade = 1.0F;
+                } else if (p.counter == 0) {
+                    p.flags = std::uint8_t(p.flags & ~4);
+                    p.fade = f = 0.0F;
+                } else {
+                    f = float(p.counter--) / float(k.b(0x12));
+                    p.fade = f;
+                }
+            } else if (p.counter == 0) {
+                p.flags = std::uint8_t(p.flags & ~2);
+                p.fade = 1.0F;
+            } else {
+                f = 1.0F - float(p.counter--) / float(k.b(0x12));
+                p.fade = f;
+            }
+            if (radius < d)
+                p.fade = 0;
+            else if (k.f32(0xd8) < d)
+                p.fade = (1.0F - (d - k.f32(0xd8)) / k.f32(0xd4)) * f;
+            const float facing = to[0] * look[0] + to[1] * look[1] + to[2] * look[2];
+            p.flags = std::uint8_t(facing < 0 ? p.flags | 1 : p.flags & ~1);
+            if (radius < d) { // out of the ball: back on its far side, a little turned
+                const float a = rand01() * 1.25664F - 0.628319F, b = rand01() * 1.25664F - 0.628319F,
+                            e = rand01() * 1.25664F - 0.628319F;
+                auto back = transformed(to, radians_xyz(a, b, e));
+                for (int j = 0; j < 3; ++j)
+                    p.place[std::size_t(j)] = eye[std::size_t(j)] + back[std::size_t(j)] * -radius;
+                p.place[3] = 1;
+                filter_birth(k, p, pool.own_colour);
+            }
+        }
+        if (born > 0)
+            pool.timer = 0;
+    }
+
+    // FUN_1404dad90: each live particle in front of the camera its model turned (x pi / 32768, the real sine),
+    // sized, at its place in the view (its y x +0xe0 + +0xe4), faded by its view depth, the colour slot's colour
+    // with its jitter (and own colour), the alpha x its fade x the far fade, the UV scrolled
+    void filter_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        const auto it = o.filter_pools.find(c.slots[2]);
+        if (out == nullptr || it == o.filter_pools.end() || !it->second.made || !it->second.active ||
+            k.s32(4) == 0xffff)
+            return;
+        FilterPool &pool = it->second;
+        const auto &model = block->models.at(std::size_t(k.s32(4)));
+        std::array<std::uint8_t, 4> slot{};
+        std::memcpy(slot.data(), o.at(c.slots[1] + 8, 4), 4);
+        const unsigned flags = 0x20u | ((model.flags & 1) == 0 ? 8u : 0u);
+        constexpr float turn = 3.1415927410125732F * 3.0517578125e-05F;
+        for (auto &p : pool.particles) {
+            if (p.life == 0 || (p.flags & 1))
+                continue;
+            M4 m = radians_xyz(float(p.rot[0]) * turn, float(p.rot[1]) * turn, float(p.rot[2]) * turn);
+            for (int r = 0; r < 3; ++r)
+                for (int j = 0; j < 4; ++j)
+                    m[std::size_t(r * 4 + j)] *= p.size[std::size_t(r)];
+            auto at = transformed(p.place, view);
+            at[1] = at[1] * k.f32(0xe0) + k.f32(0xe4);
+            for (int j = 0; j < 4; ++j)
+                m[std::size_t(12 + j)] = at[std::size_t(j)];
+            const float z = at[2], near_at = k.f32(0xd0), near_len = k.f32(0xd4);
+            if (z < near_at - near_len)
+                p.fade = 0;
+            else if (z < near_at)
+                p.fade = (1.0F - (near_at - z) / near_len) * p.fade;
+            std::array<float, 4> colour{};
+            for (int j = 0; j < 4; ++j) {
+                int v = p.jitter[std::size_t(j)] + slot[std::size_t(j)];
+                if (pool.own_colour)
+                    v += int(p.colour[std::size_t(j)]);
+                colour[std::size_t(j)] = float(std::clamp(v, 0, j == 3 ? 0x7f : 0xff));
+            }
+            colour[3] = float(int(colour[3] * p.fade * pool.far_fade) & 0xff);
+            if (colour[3] == 0)
+                continue;
+            draw_model_with(nullptr, model, mul(m, proj), colour, flags, 0, 0, 0, p.u, p.v, *out);
+        }
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -4230,7 +4624,7 @@ struct EffectInstance::State {
                 }
                 i = std::min(vl.vertices.size() - 1, std::size_t(float(vl.vertices.size()) * f));
             }
-            const auto &v = vs.at(vl.vertices.at(i));
+            const auto &v = vertex_at(vs, vl.vertices.at(i));
             for (int j = 0; j < 3; ++j)
                 p.pos[std::size_t(j)] = v[std::size_t(j)] * axes[std::size_t(j)];
             if (kind >= 8) {
@@ -4374,7 +4768,8 @@ struct EffectInstance::State {
     void draw_model(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
     {
         const std::int32_t m = k.s32(4);
-        if (m == 0xffff || out == nullptr)
+        // a model the block has not (KH2 reads past its table: two of its event effects ask for one): nothing drawn
+        if (m == 0xffff || out == nullptr || m < 0 || std::size_t(m) >= block->models.size())
             return;
         const auto &model = block->models.at(std::size_t(m));
         const std::uint8_t *colour = o.at(c.slots[0] + 8, 4);
@@ -4534,12 +4929,14 @@ struct EffectInstance::State {
         case 0xc8: swing_draw(o, c, k, out); break;
         case 0xef: user_sprites(k, out); break;
         case 0xf0: user_ctrl2(k, out); break;
+        case 0xcb: prize_crowd(o, k, out); break;
         case 0xf2: user_ctrl3(k, out); break;
         case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
         case 0xbd: case 0xdd: flare_line(o, c); break;
         case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: flare_element(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x81: bolt_draw(o, c, k, out); break;
+        case 0xe5: filter_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
                 return;

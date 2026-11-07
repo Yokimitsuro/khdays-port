@@ -267,8 +267,10 @@ same layout's first effect, read only as far as its pictures and shapes.
   `pppDrawMdl3` whose record has +0xd (and not +0xe) set writes the depth alone, no colour (`TEST 0x72001`: the
   corridor's mask), +0xe drawn without the depth test. A model's primitives far to near, the layers in their order.
 - **Pictures and pages**: a picture is `{u16 tbp, cbp, tbw, psm, x, y, w, h}`, its indices and palette as the prize
-  effect's; a draw names a page by its TEX0 (tbp, width, height, palette): its view of the pictures placed on the
-  128 x 64 pages from that tbp. The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
+  effect's (psm 0x13, 8 bits; 0x14, 4 bits, the low nibble first, 16 palette entries), or its colours themselves
+  (psm 0, PSMCT32: w x h RGBA; two of KH2's PAX have them); a draw names a page by its TEX0 (tbp, width, height,
+  format, palette): its view of the pictures placed on the pages from that tbp (128 x 64 for the indexed ones, 64 x
+  32 for the direct ones). The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
   of the pictures' tbps.
 
 ### KH2's effect commands
@@ -303,7 +305,7 @@ its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executab
 | 0xb5, 0xb7, 0xb8 | `pppKeBornRnd3`, `5`, `6` | Children born at a list's vertices picked by `rand()`: with their unit way out (sized), or facing out along it |
 | 0xbc-0xc1, 0xdd, 0xdf-0xe1 | `pppKeLnsLpSft`, `LnsLp`, `LnsArnd`, `LnsClm`, `LnsCrn`, `LnsFls` and the T ones | A lens flare: a line from the source to the screen's middle and how bright, elements around the source, as columns along the line, a streak, a flash; the T ones keep their key's values (the maps' suns). LpT's test of how much of the source is seen is not made |
 | 0xc8 | `pppRyjDrawShipolyBone` | A weapon's swing trail from the game's two points (base, tip): a history bent into the model's quads by a natural cubic spline |
-| 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites, prizes (crowds here: the game's points), models; Prize and ModelFilter read, not played yet |
+| 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites; prizes (a crowd at the game's points: each point's kind picks one of ten entries, a shape, colour and size, its alpha, size / 255 and frame in the point's bytes, the frame moved on); models; and models in a ball round the camera (a map's falling leaves or dust: born in the ball, brought back on its far side when they leave it, shown while the camera is within a distance of the effect, faded near the camera and at the ball's edge) |
 | 0xca | `pppRyjMngFlag` | The instance's bytes: its state for the game, frozen, its place following the camera |
 | 0xed | `pppSnoScaleAll` | Three sizes and one for all, each with rates; their products |
 | 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 at the game's matrices (KH2's list at 0x140b60270, the gummi ships' game's and Xemnas's: `EffectInstance::set_matrices`): 2 its model through each matrix and its shape at each one's place, 3 a row of its shape along each matrix's z, centred on its place; a matrix's last float 1.0 drawn plain, else its bytes an alpha, a frame (moved on), a size x 10 |

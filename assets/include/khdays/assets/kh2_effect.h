@@ -72,6 +72,7 @@ struct EffectPicture final {
     std::uint16_t tbp = 0, cbp = 0, tbw = 0, psm = 0, x = 0, y = 0, w = 0, h = 0;
     std::vector<std::uint8_t> indices;                         // w x h, rows top to bottom
     std::array<std::array<std::uint8_t, 4>, 256> palette{};    // RGBA, alpha 0x80 = 1
+    std::vector<std::uint8_t> rgba; // a direct-colour one's (PSMCT32): w x h RGBA, alpha 0x80 = 1; no indices
 };
 
 struct EffectEmitter final {
@@ -93,7 +94,8 @@ std::vector<EffectBlock> read_effect(const std::uint8_t *data, std::size_t size)
 // A bare 0x96 block at `at` (effect/texcommon.dpd, KH2's resident pictures).
 EffectBlock read_effect_block(const std::uint8_t *data, std::size_t size, std::size_t at);
 
-// A TEX0's view of the pictures' pages (PSMT8, a page 128 x 64): width x height RGBA, alpha 0..255 (0x80 = 255).
+// A TEX0's view of the pictures' pages (PSMT8, a page 128 x 64; PSMCT32, a page 64 x 32): width x height RGBA,
+// alpha 0..255 (0x80 = 255).
 struct EffectPage final {
     int width = 0, height = 0;
     std::vector<std::uint8_t> rgba;
