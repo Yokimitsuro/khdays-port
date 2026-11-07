@@ -153,28 +153,23 @@ EffectModel read_model(const Reader &r, std::size_t at)
             const std::size_t it = p + 0x10 + size * std::size_t(q);
             EffectPrimitive e;
             e.kind = std::uint8_t(kind);
-            if (kind == 6 || kind == 4) { // quads: 4 RGBA, 4 vertices (6: 4 UV in 1/4096 of the page)
-                e.corners = 4;
-                for (int c = 0; c < 4; ++c) {
-                    for (int k = 0; k < 4; ++k)
-                        e.colour[std::size_t(c)][std::size_t(k)] = r.u8(it + 4 * std::size_t(c) + std::size_t(k));
-                    e.vertex[std::size_t(c)] = r.u16(it + 0x10 + 2 * std::size_t(c));
-                }
-                if (kind == 6) {
-                    e.tex0 = tex0;
-                    for (int c = 0; c < 4; ++c)
-                        e.uv[std::size_t(c)] = {float(r.u16(it + 0x18 + 4 * std::size_t(c))) / 4096.0F,
-                                                float(r.u16(it + 0x1a + 4 * std::size_t(c))) / 4096.0F};
-                }
-            } else if (kind == 0) { // an untextured triangle: 3 RGBA, 3 vertices
-                e.corners = 3;
-                for (int c = 0; c < 3; ++c) {
-                    for (int k = 0; k < 4; ++k)
-                        e.colour[std::size_t(c)][std::size_t(k)] = r.u8(it + 4 * std::size_t(c) + std::size_t(k));
-                    e.vertex[std::size_t(c)] = r.u16(it + 0xc + 2 * std::size_t(c));
-                }
-            } else {
-                fail("a primitive of kind " + std::to_string(kind) + " (not read yet)");
+            // 0, 1, 2 triangles, 4 to 7 quads: RGBA each corner first, then the vertices (+0xc a triangle's, +0x10
+            // a quad's); 1, 5 and 7 add each corner's normal (lighting, not drawn here); 2, 6 and 7 are textured,
+            // their UV in 1/4096 of the page (+0x14 a triangle's, +0x18 a quad's). Kind 3 is in none of KH2's.
+            if (kind == 3)
+                fail("a primitive of kind 3 (none in KINGDOM HEARTS II's files)");
+            e.corners = kind >= 4 ? 4 : 3;
+            const std::size_t vertices = e.corners == 4 ? 0x10 : 0xc, uvs = e.corners == 4 ? 0x18 : 0x14;
+            for (int c = 0; c < e.corners; ++c) {
+                for (int k = 0; k < 4; ++k)
+                    e.colour[std::size_t(c)][std::size_t(k)] = r.u8(it + 4 * std::size_t(c) + std::size_t(k));
+                e.vertex[std::size_t(c)] = r.u16(it + vertices + 2 * std::size_t(c));
+            }
+            if (kind == 2 || kind == 6 || kind == 7) {
+                e.tex0 = tex0;
+                for (int c = 0; c < e.corners; ++c)
+                    e.uv[std::size_t(c)] = {float(r.u16(it + uvs + 4 * std::size_t(c))) / 4096.0F,
+                                            float(r.u16(it + uvs + 2 + 4 * std::size_t(c))) / 4096.0F};
             }
             for (int c = 0; c < e.corners; ++c)
                 if (e.vertex[std::size_t(c)] >= m.vertices.size())
@@ -431,6 +426,44 @@ float row_length(const M4 &m, int r)
                      m[std::size_t(r * 4 + 2)] * m[std::size_t(r * 4 + 2)]);
 }
 
+// the rotation orders (FUN_1404be820, FUN_1404e0010, FUN_1404e0150, FUN_1404e00b0, FUN_1404e01f0,
+// FUN_1404e0290): the letters the order the axes turn a vertex in (row vectors: the first letter's matrix first)
+enum class Order { XYZ, XZY, YXZ, YZX, ZXY, ZYX };
+
+M4 rotation(Order order, const std::array<std::int32_t, 3> &a)
+{
+    const M4 x = rot_x(a[0]), y = rot_y(a[1]), z = rot_z(a[2]);
+    switch (order) {
+    case Order::XYZ: return mul(mul(x, y), z);
+    case Order::XZY: return mul(mul(x, z), y);
+    case Order::YXZ: return mul(mul(y, x), z);
+    case Order::YZX: return mul(mul(y, z), x);
+    case Order::ZXY: return mul(mul(z, x), y);
+    case Order::ZYX: return mul(mul(z, y), x);
+    }
+    return identity();
+}
+
+// a rigid matrix's inverse (FUN_140478ce0 / FUN_14013f3a0): the rotation transposed, the place turned back
+M4 rigid_inverse(const M4 &m)
+{
+    M4 o = identity();
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            o[std::size_t(i * 4 + j)] = m[std::size_t(j * 4 + i)];
+    for (int j = 0; j < 3; ++j)
+        o[std::size_t(12 + j)] =
+            -(m[12] * o[std::size_t(j)] + m[13] * o[std::size_t(4 + j)] + m[14] * o[std::size_t(8 + j)]);
+    return o;
+}
+
+void scale_rows(M4 &m, const std::array<float, 3> &s)
+{
+    for (int r = 0; r < 3; ++r)
+        for (int j = 0; j < 3; ++j)
+            m[std::size_t(r * 4 + j)] *= s[std::size_t(r)];
+}
+
 std::int32_t key_frame(const std::vector<std::uint8_t> &k)
 {
     std::int32_t v;
@@ -463,7 +496,7 @@ struct Particle {
 struct Obj {
     const EffectLayer *layer = nullptr;
     std::int32_t age = 0;
-    bool skip = true, restart = false;
+    bool skip = true, restart = false, gone = false;
     std::vector<std::uint8_t> mem;     // its memory from +0xa0
     std::vector<std::size_t> cursor;   // each command's key
     std::map<std::int32_t, const std::vector<std::uint8_t> *> first; // the loop commands' first keys
@@ -473,6 +506,9 @@ struct Obj {
     int pool_count = 0, vertex_k = 0;
     std::array<float, 3> wind{};
     bool pool_made = false;
+    // its own vertices (+0x90: pppVtMime's blend of two models, shorts), drawn and spawned at in the model's place
+    std::vector<std::array<float, 3>> morph;
+    bool morphed = false;
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -501,21 +537,68 @@ struct Key {
     float f32(std::size_t o) const { return o + 4 <= n ? rd<float>(p + o) : 0.0F; }
 };
 
-// which descriptor words a command has (KH2's table at 0x140779a00): the step (1), the draw / particle step (3)
-enum : unsigned { W1 = 1, W3 = 2, SPAWNER = 4 };
+// which descriptor words a command has (KH2's table at 0x140779a00): the step (1), the draw (3: run every tick,
+// drawn or not, some keep their state there), a birth alone (7); SPAWNER: the steps the fast-forward of a loop
+// leaves out (the list at 0x140779990)
+enum : unsigned { W1 = 1, W3 = 2, SPAWNER = 4, BIRTH = 8 };
 unsigned words(std::uint32_t code)
 {
     switch (code) {
+    case 0x02: case 0x03: case 0x06: case 0x09: case 0x0a: case 0x0b: case 0x0e: case 0x10: case 0x11:
+        return BIRTH;
     case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x24: case 0x25: case 0x26: case 0x27: case 0x28: case 0x29:
-    case 0x2a: case 0x2b: case 0x33: case 0x3f: case 0x42: case 0x4b: case 0x54: case 0x57: case 0x5e: case 0x69:
-    case 0x70: case 0x71: case 0x73: case 0x7c: case 0x7d: case 0xae: case 0xd3: case 0xd4: case 0xd5: case 0xd6:
-    case 0xd7: case 0xd8: case 0xd9: case 0xea:
+    case 0x2a: case 0x2b: case 0x2d: case 0x2f: case 0x30: case 0x33: case 0x34: case 0x35: case 0x3f: case 0x40:
+    case 0x41: case 0x42: case 0x43: case 0x44: case 0x48: case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x51:
+    case 0x52: case 0x54: case 0x55: case 0x57: case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0x5d:
+    case 0x5e: case 0x60: case 0x63: case 0x69: case 0x6a: case 0x70: case 0x71: case 0x72: case 0x73: case 0x74:
+    case 0x75: case 0x78: case 0x79: case 0x7b: case 0x7c: case 0x7d: case 0xac: case 0xae: case 0xb1: case 0xb2:
+    case 0xb5: case 0xb7: case 0xb8: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
+    case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
         return W1;
-    case 0x89: return W3;
-    case 0x8b: case 0x8e: case 0xdb: return W1 | W3;
+    case 0x83: case 0x86: case 0x89: case 0x8a:
+        return W3;
+    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0xda: case 0xdb:
+        return W1 | W3;
     case 0xc9: return W1 | W3 | SPAWNER;
     default: return 0;
     }
+}
+
+Order order_of(std::uint32_t code)
+{
+    switch (code) {
+    case 0x58: case 0xe7: return Order::XZY;
+    case 0x59: case 0xe9: return Order::YZX;
+    case 0x5a: case 0xe8: return Order::YXZ;
+    case 0x5b: case 0xea: return Order::ZXY;
+    case 0x5c: case 0xeb: return Order::ZYX;
+    default: return Order::XYZ; // 0x57 pppMatrixXYZ, 0xd8 pppMatrixLoop, 0xe6
+    }
+}
+
+// KH2's atan2 (FUN_1404c1510): the angle of (x, y), false for (0, 0)
+bool angle_of(float x, float y, float &out)
+{
+    constexpr float half = 1.5707963705062866F, pi = 3.1415927410125732F;
+    const float p = x * y;
+    if (p > 0) {
+        out = float(std::atan(double(y / x)) + double(x <= 0 ? -pi : 0.0F));
+    } else if (p < 0) {
+        out = float(double(y > 0 ? half : -half) - std::atan(double(x / y)));
+    } else if (x == 0) {
+        if (y == 0)
+            return false;
+        out = y > 0 ? half : -half;
+    } else {
+        out = x <= 0 ? pi : 0.0F;
+    }
+    return true;
+}
+
+// radians to KH2's angles (0x10000 a turn): x 32768 / pi, toward zero
+std::int32_t to_angle(float radians)
+{
+    return std::int32_t((radians * 32768.0F) / 3.1415927410125732F);
 }
 
 } // namespace
@@ -532,10 +615,28 @@ struct EffectInstance::State {
     // upright view (eda0) . projection, the world's row lengths (0x142b0f010)
     M4 world = identity(), view = identity(), proj = identity(), wv = identity(), wvp = identity(), wood = identity();
     std::array<float, 3> world_scale{1, 1, 1};
+    // the instance's bytes pppRyjMngFlag sets (+0xc0 its state for the game, +0xc1 frozen: no ageing, no keyed
+    // steps; +0xc2 its place follows the camera's: FUN_1404b1280 adds the eye, 0x142b0ed20)
+    std::uint8_t game_state = 0, frozen = 0, follow = 0;
 
     float rand01() // FUN_1404dc710: 24 random bits x 2^-24
     {
         return float(random() & 0xffffffu) * (1.0F / 16777216.0F);
+    }
+
+    int crand() // FUN_1404dced0: the C library's rand() & 0x7fff (drawn from the instance's stream here)
+    {
+        return int(random() & 0x7fffu);
+    }
+
+    bool live(const Obj &o) const // what the keyed steps check: not frozen, an even age (odd while paused)
+    {
+        return frozen == 0 && (o.age & 1) == 0;
+    }
+
+    const std::vector<std::array<float, 3>> &vertices_of(const Obj &o, std::size_t model) const
+    {
+        return o.morphed ? o.morph : block->models.at(model).vertices;
     }
 
     Key key(Obj &o, std::size_t ci)
@@ -609,12 +710,78 @@ struct EffectInstance::State {
         case 0x1f: case 0x27: zero(1, 8); break;
         case 0x2b: zero(0, 8); break;
         case 0xd5: case 0xd6: case 0xd7: o.seti(c.slots[0], 3, 0); break; // the first key forgotten
-        case 0xae: zero(0, 8); break;
-        case 0x8b: zero(2, 24); break;
-        case 0x8e: zero(0, 8); break;
-        case 0xdb: o.seti(c.slots[2], 0, 0); break;
+        case 0xae: case 0xb1: case 0xb2: case 0xec: zero(0, 4); break;
+        case 0x85: case 0x8b: zero(2, 24); break;
+        case 0x8d: case 0x8e: zero(0, 6); break;
+        case 0xda: case 0xdb: o.seti(c.slots[2], 0, 0); break;
+        case 0x02: case 0x03: case 0x06: case 0x09: case 0x0a: case 0x0b: case 0x0e: case 0x10: case 0x11:
+            trail_resource(o, c);
+            break;
+        case 0x30: o.setf(c.slots[0], 3, 1.0F); break; // pppKeDrct (FUN_1404c1790): w = 1
+        case 0x31: zero(0, 16); o.morphed = false; break; // pppVtMime (FUN_1404c1a00): t, dt, ddt, no buffer
+        case 0x55: std::memset(o.at(c.slots[0] + 0x80, 12), 0, 12); break; // pppKeMatSN: the angles last seen
+        case 0x63: born_world(o, c.slots[3]); break;
+        case 0x78: { // pppRyjDrawMatrixWorld (FUN_1404c6a50): the world's matrix at its birth
+            for (int j = 0; j < 16; ++j)
+                o.setf(c.slots[1], j, world[std::size_t(j)]);
+            break;
+        }
+        case 0x79: case 0x7b: // FUN_1404c6b90 / FUN_1404c6ed0: the world's place and its rows' sizes at its birth
+            for (int j = 0; j < 3; ++j) {
+                o.setf(c.slots[1], j, world[std::size_t(12 + j)]);
+                o.setf(c.slots[1] + 0x10, j, world_scale[std::size_t(j)]);
+            }
+            break;
+        case 0xac: *o.at(c.slots[1] + 1, 1) = 0; break; // pppPointAp: the wait
+        case 0xb5: zero(0, 2); break;
+        case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
+        case 0xd2: zero(1, 12); break;
+        case 0xed: zero(0, 0x3c); break;
         default: break;
         }
+    }
+
+    // pppKeThRes... (FUN_1404bf300 ...): a trail's points: how many sets (1 or 4), how many points, their bytes
+    void trail_resource(Obj &o, const EffectCommand &c)
+    {
+        int sets = 1, points = 0;
+        switch (c.code) {
+        case 0x02: points = 3; break;
+        case 0x03: points = 8; break;
+        case 0x06: points = 16; break;
+        case 0x09: points = 24; break;
+        case 0x0a: points = 24; sets = 4; break;
+        case 0x0b: points = 32; break;
+        case 0x0e: points = 40; break;
+        case 0x10: points = 48; break;
+        default: points = 48; sets = 4; break; // 0x11
+        }
+        std::uint8_t *p = o.at(c.slots[0], 4);
+        p[0] = std::uint8_t(sets);
+        p[1] = std::uint8_t(points);
+        wr(p + 2, std::uint16_t(points * 48 + 96));
+    }
+
+    // FUN_1404c5460: the world's turn (its angles, 0x142b0f000, made a matrix) and place (0x142b0eff0) at the
+    // birth, a matrix at the slot: the world's rows without their sizes
+    void born_world(Obj &o, std::int32_t slot)
+    {
+        const M4 m = unsized_world();
+        for (int j = 0; j < 16; ++j)
+            o.setf(slot, j, m[std::size_t(j)]);
+    }
+
+    M4 unsized_world() const // the world's turn and place (FUN_1404b1280's angles and 0x142b0eff0)
+    {
+        M4 m = world;
+        for (int r = 0; r < 3; ++r) {
+            const float size = world_scale[std::size_t(r)];
+            for (int j = 0; j < 3; ++j)
+                m[std::size_t(r * 4 + j)] = size != 0 ? world[std::size_t(r * 4 + j)] / size : 0.0F;
+            m[std::size_t(r * 4 + 3)] = 0;
+        }
+        m[15] = 1;
+        return m;
     }
 
     void reset_command(Obj &o, const EffectCommand &c) // word 8
@@ -639,11 +806,16 @@ struct EffectInstance::State {
             }
             break;
         }
-        case 0x8e: std::memset(o.at(c.slots[0], 8), 0, 8); break;
-        case 0xdb:
+        case 0x8d: case 0x8e: std::memset(o.at(c.slots[0], 6), 0, 6); break;
+        case 0x85: case 0x8b: std::memset(o.at(c.slots[2], 24), 0, 24); break;
+        case 0xda: case 0xdb:
             std::memset(o.at(c.slots[2] + 8, 8), 0, 8);
             std::memset(o.at(c.slots[2] + 0x14, 8), 0, 8);
             break;
+        case 0x31: std::memset(o.at(c.slots[0], 12), 0, 12); break;
+        case 0xb1: case 0xb2: std::memset(o.at(c.slots[0], 4), 0, 4); break;
+        case 0xd2: std::memset(o.at(c.slots[1], 12), 0, 12); break;
+        case 0xed: std::memset(o.at(c.slots[0], 0x3c), 0, 0x3c); break;
         default: break;
         }
     }
@@ -726,19 +898,178 @@ struct EffectInstance::State {
             }
             break;
         }
-        case 0x33: case 0x3f: case 0x4b: case 0x42: random_command(o, c, k); break;
-        case 0x57: case 0xd8: case 0xea: { // [position, angle, scale] -> the object's matrix
-            const std::array<std::int32_t, 3> a{o.i(s(1), 0), o.i(s(1), 1), o.i(s(1), 2)};
-            M4 m = c.code == 0xea ? mul(mul(rot_z(a[2]), rot_x(a[0])), rot_y(a[1]))  // FUN_1404e01f0
-                                  : mul(mul(rot_x(a[0]), rot_y(a[1])), rot_z(a[2])); // FUN_1404be820
-            for (int r = 0; r < 3; ++r)
-                for (int j = 0; j < 3; ++j)
-                    m[std::size_t(r * 4 + j)] *= o.f(s(2), r);
+        case 0x33: case 0x34: case 0x35: case 0x3f: case 0x40: case 0x41: case 0x42: case 0x43: case 0x44:
+        case 0x48: case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x51: case 0x52:
+            random_command(o, c, k);
+            break;
+        case 0x57: case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0xd8: case 0xe6: case 0xe7:
+        case 0xe8: case 0xe9: case 0xea: case 0xeb: { // [position, angle, scale] -> the object's matrix
+            M4 m = rotation(order_of(c.code), {o.i(s(1), 0), o.i(s(1), 1), o.i(s(1), 2)});
+            scale_rows(m, {o.f(s(2), 0), o.f(s(2), 1), o.f(s(2), 2)});
             for (int j = 0; j < 3; ++j)
                 m[std::size_t(12 + j)] = o.f(s(0), j);
             o.local = m;
             break;
         }
+        case 0x5d: { // pppMatrixLoc (FUN_1404c4fc0): no turn, the position
+            o.local = identity();
+            for (int j = 0; j < 3; ++j)
+                o.local[std::size_t(12 + j)] = o.f(s(0), j);
+            break;
+        }
+        case 0x60: { // pppRyjMatrixNoRot (FUN_1404c50e0): the view turned back (facing the camera), sized, placed
+            M4 m = rigid_inverse(view);
+            scale_rows(m, {o.f(s(1), 0), o.f(s(1), 1), o.f(s(1), 2)});
+            for (int j = 0; j < 3; ++j)
+                m[std::size_t(12 + j)] = o.f(s(0), j);
+            o.local = m;
+            break;
+        }
+        case 0x63: { // pppRyjMatrixWorldXYZ (FUN_1404c52e0): where the world was at the birth, the world now undone
+            M4 m = rotation(Order::XYZ, {o.i(s(1), 0), o.i(s(1), 1), o.i(s(1), 2)});
+            for (int j = 0; j < 3; ++j)
+                m[std::size_t(12 + j)] = o.f(s(0), j);
+            M4 born;
+            for (int j = 0; j < 16; ++j)
+                born[std::size_t(j)] = o.f(s(3), j);
+            m = mul(mul(born, m), rigid_inverse(unsized_world()));
+            scale_rows(m, {o.f(s(2), 0), o.f(s(2), 1), o.f(s(2), 2)});
+            o.local = m;
+            break;
+        }
+        case 0x6a: // pppKeParMatR (FUN_1404c60f0): turned and placed by the parent's matrix
+            if (o.parent) {
+                M4 turn = o.parent->local;
+                for (int j = 0; j < 4; ++j)
+                    turn[std::size_t(12 + j)] = j == 3 ? 1.0F : 0.0F;
+                for (int r = 0; r < 3; ++r)
+                    turn[std::size_t(r * 4 + 3)] = 0;
+                const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, o.parent->local);
+                o.local = mul(o.local, turn);
+                for (int j = 0; j < 4; ++j)
+                    o.local[std::size_t(12 + j)] = p[std::size_t(j)];
+            }
+            break;
+        case 0x72: { // pppDrawMatrixNoRot (FUN_1404c6530): rows and position sized by the world, no view turn
+            M4 m = o.local;
+            scale_rows(m, world_scale);
+            for (int j = 0; j < 3; ++j)
+                m[std::size_t(12 + j)] =
+                    o.local[std::size_t(12 + j)] * world_scale[std::size_t(j)] + wv[std::size_t(12 + j)];
+            m[15] = 1;
+            o.draw = mul(m, proj);
+            break;
+        }
+        case 0x74: { // pppKeDMat (FUN_1404c66f0): local . W.V kept in its slot, then . P
+            const M4 m = mul(o.local, wv);
+            for (int j = 0; j < 16; ++j)
+                o.setf(s(1), j, m[std::size_t(j)]);
+            o.draw = mul(m, proj);
+            break;
+        }
+        case 0x75: { // pppKeDMatFr (FUN_1404c6760): rows x the world's size, the position . W.V, kept, then . P
+            M4 m = o.local;
+            scale_rows(m, world_scale);
+            const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, wv);
+            for (int j = 0; j < 4; ++j)
+                m[std::size_t(12 + j)] = p[std::size_t(j)];
+            for (int j = 0; j < 16; ++j)
+                o.setf(s(1), j, m[std::size_t(j)]);
+            o.draw = mul(m, proj);
+            break;
+        }
+        case 0x78: { // pppRyjDrawMatrixWorld (FUN_1404c69e0): local . (the birth's world . V . P)
+            M4 born;
+            for (int j = 0; j < 16; ++j)
+                born[std::size_t(j)] = o.f(s(1), j);
+            o.draw = mul(o.local, mul(mul(born, view), proj));
+            break;
+        }
+        case 0x79: case 0x7b: { // ...WorldFront (FUN_1404c6a70), ...WorldWood (FUN_1404c6d90): 0x71 / 0x73 at
+            M4 at = identity(); // the birth's place and size
+            for (int j = 0; j < 3; ++j)
+                at[std::size_t(12 + j)] = o.f(s(1), j);
+            at = c.code == 0x79 ? mul(at, view) : mul(mul(at, view), proj);
+            M4 m = o.local;
+            scale_rows(m, {o.f(s(1) + 0x10, 0), o.f(s(1) + 0x10, 1), o.f(s(1) + 0x10, 2)});
+            if (c.code == 0x7b)
+                m = mul(m, wood);
+            const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, at);
+            for (int j = 0; j < 4; ++j)
+                m[std::size_t(12 + j)] = p[std::size_t(j)];
+            o.draw = c.code == 0x79 ? mul(m, proj) : m;
+            break;
+        }
+        case 0x2d: vertex_attend(o, c, k); break;
+        case 0x2f: { // pppKeMvYpEff (FUN_1404c15f0): turned to face its way (z about the way's xy, x its rise)
+            if (!live(o))
+                break;
+            const float vx = o.f(s(1), 0), vy = o.f(s(1), 1), vz = o.f(s(1), 2);
+            if (vx == 0 && vy == 0 && vz == 0)
+                break;
+            float a;
+            if (angle_of(-vy, vx, a))
+                o.seti(s(0), 2, to_angle(a));
+            if (angle_of(std::sqrt(vx * vx + vy * vy), -vz, a))
+                o.seti(s(0), 0, to_angle(a));
+            break;
+        }
+        case 0x30: // pppKeDrct (FUN_1404c1750): a direction set on its key
+            if (hit(o, k))
+                for (int j = 0; j < 3; ++j)
+                    o.seti(s(0), j, k.s32(4 + 4 * std::size_t(j)));
+            break;
+        case 0x31: { // pppVtMime (FUN_1404c1940): the blend t (with its rate and the rate's), keyed
+            if (!live(o))
+                break;
+            const float ddt = o.f(s(0), 2), dt = ddt + o.f(s(0), 1), t = dt + o.f(s(0), 0);
+            o.setf(s(0), 1, dt);
+            o.setf(s(0), 0, t);
+            if (hit(o, k)) {
+                o.setf(s(0), 0, t + k.f32(0xc));
+                if (double(k.f32(0x10)) >= -1e38)
+                    o.setf(s(0), 1, dt + k.f32(0x10));
+                o.setf(s(0), 2, ddt + k.f32(0x14));
+            }
+            break;
+        }
+        case 0x55: { // pppKeMatSN (FUN_1404c4380): a turn by how much the angles changed since the last tick
+            const std::int32_t at = s(0) + 0x80;
+            std::array<std::int32_t, 3> d{};
+            for (int j = 0; j < 3; ++j) {
+                const std::int32_t now = o.i(s(1), j);
+                d[std::size_t(j)] = std::int32_t(std::uint32_t(o.i(at, j)) - std::uint32_t(now));
+                o.seti(at, j, now);
+            }
+            M4 m = rotation(Order::XYZ, d);
+            m[12] = m[13] = m[14] = 0;
+            m[15] = 1;
+            for (int j = 0; j < 16; ++j)
+                o.setf(s(0) + 0x40, j, m[std::size_t(j)]);
+            break;
+        }
+        case 0xac: point_ap(o, c, k); break;
+        case 0xb1: case 0xb2: case 0xec: vertex_spawner(o, c, k); break;
+        case 0xb5: case 0xb7: case 0xb8: born_at_random(o, c, k); break;
+        case 0xca: // pppRyjMngFlag (FUN_1404be8c0): the instance's bytes on its key
+            if (hit(o, k)) {
+                follow = k.b(4);
+                frozen = k.b(5);
+                game_state = k.b(6);
+            }
+            break;
+        case 0xd2: { // pppMoveLoop (FUN_1404c0510): pppMove's [value, rate], the rate not added when fast-forwarding
+            if (!live(o))
+                break;
+            if (hit(o, k))
+                for (int j = 0; j < 3; ++j)
+                    o.setf(s(1), j, o.f(s(1), j) + k.f32(4 + 4 * std::size_t(j)));
+            if (!fastforward)
+                for (int j = 0; j < 3; ++j)
+                    o.setf(s(0), j, o.f(s(0), j) + o.f(s(1), j));
+            break;
+        }
+        case 0xed: sno_scale_all(o, c, k); break;
         case 0x5e: { // pppMatrixScl (FUN_1404c5030): the scale on the diagonal, the position
             M4 m = identity();
             for (int j = 0; j < 3; ++j) {
@@ -782,7 +1113,7 @@ struct EffectInstance::State {
         }
         case 0x54: case 0x7c: case 0x7d: break; // a shared vector; the depth order's corrections (sorting only)
         case 0xae: vertex_ap(o, c, k); break;
-        case 0x8b: { // pppDrawMdlTs3's scroll (FUN_1404c8da0): u (pos, vel, acc) at +0, v at +0xc
+        case 0x85: case 0x8b: { // pppDrawMdlTs3's scroll (FUN_1404c8da0; pppDrawMdlTs's too): u (pos, vel, acc), v
             float u = o.f(s(2), 0), du = o.f(s(2), 1), ddu = o.f(s(2), 2), v = o.f(s(2), 3), dv = o.f(s(2), 4),
                   ddv = o.f(s(2), 5);
             du += ddu;
@@ -802,7 +1133,8 @@ struct EffectInstance::State {
                 o.setf(s(2), j, all[j]);
             break;
         }
-        case 0xdb: { // pppDrawMdlLoopZ's scroll (FUN_1404c9350): handle, u, du, ddu, v, dv, ddv; wrapped
+        case 0xda: case 0xdb: { // pppDrawMdlLoopZ's scroll (FUN_1404c9350; pppDrawMdlLoop's too): handle, u, du,
+                                // ddu, v, dv, ddv; wrapped
             if (o.i(s(2), 0) == 0) {
                 o.setf(s(2), 1, k.f32(8));
                 o.setf(s(2), 4, k.f32(0x14));
@@ -825,59 +1157,294 @@ struct EffectInstance::State {
             }
             break;
         }
-        case 0x8e: shape_step(o, c, k); break;
+        case 0x8d: case 0x8e: shape_step(o, c, k); break;
         case 0xc9: mega_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
     }
 
+    // the random ones (pppRand... FUN_1404c1ae0 ...): a value drawn, kept in the slot, then target += base x value
+    // (- base when it runs both ways). Floats are drawn at the start and kept (applied again on each key); ints and
+    // the four-short colours are drawn anew on each key. "S" ones draw each component apart.
     void random_command(Obj &o, const EffectCommand &c, const Key &k)
     {
-        const std::int32_t s = c.slots[0];
-        const auto draw2 = [&](std::uint8_t sum) { // two draws summed, or one doubled (DAT_140623b18)
-            const float x = rand01();
-            return sum ? x + rand01() : x * 2.0F;
-        };
-        if (c.code == 0x42) { // pppRandIV (FUN_1404c2950): a new value on each key
-            if (!hit(o, k))
-                return;
-            const float x = draw2(k.b(0x14));
-            o.setf(s, 0, x);
-            const std::int32_t t = k.s32(4);
-            if (t == -1)
-                return;
-            for (int j = 0; j < 3; ++j) {
-                const std::int32_t b = k.s32(8 + 4 * std::size_t(j));
-                o.seti(t, j, o.i(t, j) + std::int32_t(float(b) * x - float(b)));
-            }
-            return;
+        enum Kind { FLOAT, INT, SHORT };
+        enum Range { BOTH, UP, DOWN };
+        Kind kind = FLOAT;
+        Range range = BOTH;
+        int n = 3;
+        bool apart = false;
+        std::size_t flag = 0x14;
+        switch (c.code) {
+        case 0x33: n = 1; flag = 0xc; break;
+        case 0x34: n = 1; flag = 0xc; range = UP; break;
+        case 0x35: n = 1; flag = 0xc; range = DOWN; break;
+        case 0x3f: break;
+        case 0x40: range = UP; break;
+        case 0x41: range = DOWN; break;
+        case 0x42: kind = INT; break;
+        case 0x43: kind = INT; range = UP; break;
+        case 0x44: kind = INT; range = DOWN; break;
+        case 0x48: kind = SHORT; n = 4; flag = 0x10; break;
+        case 0x4a: kind = SHORT; n = 4; flag = 0x10; range = DOWN; break;
+        case 0x4b: apart = true; break;
+        case 0x4c: apart = true; range = UP; break;
+        case 0x4d: apart = true; range = DOWN; break;
+        case 0x51: kind = SHORT; n = 4; flag = 0x10; apart = true; break;
+        default: kind = SHORT; n = 4; flag = 0x10; apart = true; range = UP; break; // 0x52
         }
-        const int n = c.code == 0x33 ? 1 : 3;
-        const std::size_t flag = c.code == 0x33 ? 0xc : 0x14;
-        if (o.age == 0) { // the value drawn at the start, kept
-            for (int j = 0; j < (c.code == 0x4b ? 3 : 1); ++j)
-                o.setf(s, j, draw2(k.b(flag)));
+        if (!live(o))
+            return;
+        const bool sum = k.b(flag) != 0;
+        const auto draw = [&]() { // DAT_140623b18 2, DAT_140623a4c 0.5
+            const float x = rand01();
+            switch (range) {
+            case BOTH: return sum ? x + rand01() : x * 2.0F;
+            case UP: return sum ? (rand01() + x) * 0.5F : x;
+            default: return sum ? (-x - rand01()) * 0.5F : -x;
+            }
+        };
+        const std::int32_t s = c.slots[0];
+        if (kind == FLOAT && o.age == 0) {
+            for (int j = 0; j < (apart ? n : 1); ++j)
+                o.setf(s, j, draw());
         } else if (!hit(o, k)) {
             return;
+        } else if (kind != FLOAT) {
+            for (int j = 0; j < (apart ? n : 1); ++j)
+                o.setf(s, j, draw());
         }
         const std::int32_t t = k.s32(4);
-        if (t == -1)
+        if (t == -1) // a scratch value in the game's data (0x140b607e8)
             return;
         for (int j = 0; j < n; ++j) {
-            const float x = o.f(s, c.code == 0x4b ? j : 0), b = k.f32(8 + 4 * std::size_t(j));
-            o.setf(t, j, o.f(t, j) + (b * x - b));
+            const float x = o.f(s, apart ? j : 0);
+            if (kind == FLOAT) {
+                const float b = k.f32(8 + 4 * std::size_t(j));
+                o.setf(t, j, o.f(t, j) + (range == BOTH ? b * x - b : b * x));
+            } else if (kind == INT) {
+                const float b = float(k.s32(8 + 4 * std::size_t(j)));
+                o.seti(t, j, o.i(t, j) + std::int32_t(range == BOTH ? b * x - b : b * x));
+            } else {
+                const float b = float(k.s16(8 + 2 * std::size_t(j)));
+                std::int32_t v = std::int32_t(range == BOTH ? b * x - b : b * x);
+                if (c.code == 0x52) // its sum cut to a byte (FUN_1404c3d80)
+                    v = std::int8_t(std::uint8_t(v));
+                o.seth(t, j, o.h(t, j) + v);
+            }
         }
     }
 
-    void vertex_ap(Obj &o, const EffectCommand &c, const Key &k) // pppVertexAp (FUN_1404d3b30)
+    // pppVertexAttend (FUN_1404c1240): a vertex of a list (its number in the slot, kept in the list's range)
+    // through the parent's matrix: where a child of pppVertexApAt stays on its parent's model
+    void vertex_attend(Obj &o, const EffectCommand &c, const Key &k)
     {
-        if (fastforward || k.s16(4) < 0)
+        if (k.s16(0xc) < 0 || !o.parent)
+            return;
+        const auto &vl = block->vertex_lists.at(std::size_t(k.s16(0xc)));
+        if (vl.vertices.empty())
+            return;
+        std::uint16_t i = rd<std::uint16_t>(o.at(c.slots[0], 2));
+        if (vl.vertices.size() <= i) {
+            i = std::uint16_t(i % vl.vertices.size());
+            wr(o.at(c.slots[0], 2), i);
+        }
+        const auto &v = block->models.at(vl.model).vertices.at(vl.vertices[i]);
+        const auto p = apply({v[0], v[1], v[2], 1}, o.parent->local);
+        for (int j = 0; j < 3; ++j)
+            o.setf(c.slots[1], j, p[std::size_t(j)]);
+    }
+
+    // a child of the layer given, its parent this object (FUN_1404b02f0); null when there is no such layer
+    std::shared_ptr<Obj> child_of(Obj &o, std::int32_t layer)
+    {
+        if (layer < 0 || std::size_t(layer) >= emitter->layers.size())
+            return nullptr;
+        auto child = birth(emitter->layers[std::size_t(layer)]);
+        child->skip = true;
+        child->parent = find(o);
+        return child;
+    }
+
+    // pppPointAp (FUN_1404d36e0): every wait, children placed at its own point (slot 0)
+    void point_ap(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        std::uint8_t *wait = o.at(c.slots[1] + 1, 1);
+        if (*wait == 0) {
+            for (int n = 0; n < k.b(0xd); ++n)
+                if (auto child = child_of(o, k.s32(4)))
+                    for (int j = 0; j < 3; ++j)
+                        child->setf(k.s32(8), j, o.f(c.slots[0], j));
+            *wait = k.b(0xc);
+        }
+        *wait = std::uint8_t(*wait - 1);
+    }
+
+    // pppVertexApLc (FUN_1404d3e00; 0xec the same) and pppVertexApAt (FUN_1404d4080): pppVertexAp's walk of a
+    // vertex list, the children given the vertex as it is in the model (Lc, FUN_1404d3d50) or its number (At,
+    // FUN_1404d4000)
+    void vertex_spawner(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (fastforward || !live(o) || k.s16(4) < 0)
             return;
         const std::int32_t s = c.slots[0];
         std::uint16_t wait = rd<std::uint16_t>(o.at(s + 2, 2));
         if (wait == 0) {
             const auto &vl = block->vertex_lists.at(std::size_t(k.s16(4)));
-            const auto &vs = block->models.at(vl.model).vertices;
+            const std::size_t count = vl.vertices.size();
+            const auto give = [&](std::size_t i) {
+                auto child = child_of(o, k.s32(0xc));
+                if (!child)
+                    return;
+                if (c.code == 0xb2) {
+                    wr(child->at(k.s32(0x10), 2), std::uint16_t(i));
+                    return;
+                }
+                const auto &v = vertices_of(o, vl.model).at(vl.vertices.at(i));
+                for (int j = 0; j < 3; ++j)
+                    child->setf(k.s32(0x10), j, v[std::size_t(j)]);
+            };
+            if (k.b(8) == 0) {
+                for (int b = 0; b < k.b(6) && count > 0; ++b) {
+                    std::uint16_t i = rd<std::uint16_t>(o.at(s, 2));
+                    if (count <= i)
+                        i = 0;
+                    wr(o.at(s, 2), std::uint16_t(i + 1));
+                    give(i);
+                }
+            } else if (k.b(8) == 1) {
+                for (int b = 0; b < k.b(6) && count > 0; ++b)
+                    give(std::min(count - 1, std::size_t(float(count) * rand01())));
+            }
+            wait = k.b(7);
+        }
+        wr(o.at(s + 2, 2), std::uint16_t(wait - 1));
+    }
+
+    // pppKeBornRnd3 / 5 / 6 (FUN_1404d4760, FUN_1404d4ea0, FUN_1404d51a0 through FUN_1404e1780): children born at
+    // a vertex list's vertices, walked or picked by rand(); 3 on a chance (its mask against rand()'s high byte),
+    // 5 and 6 every wait. Each child gets the vertex through the object's matrix and its way from the object's
+    // centre (3; 5 that way sized), or the vertex as in the model and the angles facing out along it (6).
+    void born_at_random(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (fastforward || !live(o))
+            return;
+        const bool five = c.code == 0xb7;
+        const std::size_t layer_at = five ? 0x10 : 0xc, count_at = five ? 0xc : 6, pick_at = five ? 0xe : 8;
+        const std::int32_t s = c.slots[0];
+        if (c.code == 0xb5) {
+            if (k.b(7) == 0xff)
+                return;
+            if ((k.b(7) & ((crand() >> 8) & 0xff)) != 0 || k.s32(0xc) == -1 || k.s32(0x14) == -1)
+                return;
+        } else {
+            const std::size_t wait_at = five ? 0xd : 7;
+            if (k.b(wait_at) == 0)
+                return;
+            std::uint8_t *wait = o.at(s + 2, 1);
+            if (*wait == 0) {
+                *wait = k.b(wait_at);
+                if (k.s32(layer_at) == -1 || k.s32(layer_at + 8) == -1)
+                    return;
+                born_walk(o, c, k, count_at, pick_at);
+            }
+            *wait = std::uint8_t(*wait - 1);
+            return;
+        }
+        born_walk(o, c, k, count_at, pick_at);
+    }
+
+    void born_walk(Obj &o, const EffectCommand &c, const Key &k, std::size_t count_at, std::size_t pick_at)
+    {
+        if (k.s16(4) < 0)
+            return;
+        const auto &vl = block->vertex_lists.at(std::size_t(k.s16(4)));
+        const int count = int(vl.vertices.size());
+        if (count == 0)
+            return;
+        const auto &vs = vertices_of(o, vl.model);
+        const bool pick = k.b(pick_at) != 0;
+        std::uint16_t *counter = reinterpret_cast<std::uint16_t *>(o.at(c.slots[0], 2));
+        int i = pick ? crand() % count : int(*counter);
+        for (int n = k.b(count_at); n > 0; --n) {
+            const auto &v = vs.at(vl.vertices.at(std::size_t(std::min(i, count - 1))));
+            born_one(o, c, k, v);
+            if (pick) {
+                i = crand() % count;
+            } else if (count <= ++i) {
+                i = 0;
+            }
+        }
+        wr(reinterpret_cast<std::uint8_t *>(counter), std::uint16_t(i));
+    }
+
+    void born_one(Obj &o, const EffectCommand &c, const Key &k, const std::array<float, 3> &v)
+    {
+        const bool three = c.code == 0xb5, five = c.code == 0xb7;
+        auto child = child_of(o, k.s32(five ? 0x10 : 0xc));
+        if (!child)
+            return;
+        if (three || five) { // FUN_1404d4830 / FUN_1404d4f80
+            const auto p = apply({v[0], v[1], v[2], 1}, o.local);
+            const std::int32_t at = k.s32(five ? 0x14 : 0x10), way = k.s32(five ? 0x1c : 0x18);
+            const float size = five ? k.f32(8) : 1.0F;
+            for (int j = 0; j < 3; ++j) {
+                child->setf(at, j, p[std::size_t(j)]);
+                child->setf(way, j, (p[std::size_t(j)] - o.local[std::size_t(12 + j)]) * size);
+            }
+            return;
+        }
+        // FUN_1404d5280: the vertex, and the angles of its way out (z about the xy way, x its rise; y none)
+        for (int j = 0; j < 3; ++j)
+            child->setf(k.s32(0x10), j, v[std::size_t(j)]);
+        const std::int32_t a = k.s32(0x18);
+        float r;
+        if (angle_of(-v[1], v[0], r))
+            child->seti(a, 2, to_angle(r));
+        if (angle_of(std::sqrt(v[0] * v[0] + v[1] * v[1]), -v[2], r))
+            child->seti(a, 0, to_angle(r));
+        child->seti(a, 1, 0);
+    }
+
+    // pppSnoScaleAll (FUN_1404c4080): three sizes and one size for all, each with its rate and the rate's rate;
+    // the slot's first three floats their products
+    void sno_scale_all(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const std::int32_t s = c.slots[0];
+        // the slot: out[3] 0, rate[3] 0xc, rate's rate[3] 0x18, size[3] 0x24, all 0x30, its rate 0x34, its rate's 0x38
+        if (hit(o, k)) {
+            for (int j = 0; j < 3; ++j) {
+                o.setf(s + 0x18, j, o.f(s + 0x18, j) + k.f32(0x1c + 4 * std::size_t(j)));
+                o.setf(s + 0xc, j, o.f(s + 0xc, j) + k.f32(0x10 + 4 * std::size_t(j)));
+                o.setf(s + 0x24, j, o.f(s + 0x24, j) + k.f32(4 + 4 * std::size_t(j)));
+            }
+            for (int j = 0; j < 3; ++j)
+                o.setf(s + 0x30, j, o.f(s + 0x30, j) + k.f32(0x28 + 4 * std::size_t(j)));
+        }
+        const float all_rate = o.f(s + 0x30, 2) + o.f(s + 0x30, 1), all = all_rate + o.f(s + 0x30, 0);
+        o.setf(s + 0x30, 1, all_rate);
+        o.setf(s + 0x30, 0, all);
+        for (int j = 0; j < 3; ++j) {
+            const float rate = o.f(s + 0x18, j) + o.f(s + 0xc, j), size = rate + o.f(s + 0x24, j);
+            o.setf(s + 0xc, j, rate);
+            o.setf(s + 0x24, j, size);
+            o.setf(s, j, all * size);
+        }
+    }
+
+    void vertex_ap(Obj &o, const EffectCommand &c, const Key &k) // pppVertexAp (FUN_1404d3b30)
+    {
+        if (fastforward || !live(o) || k.s16(4) < 0)
+            return;
+        const std::int32_t s = c.slots[0];
+        std::uint16_t wait = rd<std::uint16_t>(o.at(s + 2, 2));
+        if (wait == 0) {
+            const auto &vl = block->vertex_lists.at(std::size_t(k.s16(4)));
+            const auto &vs = vertices_of(o, vl.model);
             const int n = k.b(6);
             if (k.b(8) == 0) {
                 std::uint16_t i = rd<std::uint16_t>(o.at(s, 2));
@@ -899,12 +1466,9 @@ struct EffectInstance::State {
 
     void spawn(Obj &o, const Key &k, const std::array<float, 3> &v) // FUN_1404d3a20
     {
-        const std::int32_t layer = k.s32(0xc);
-        if (layer < 0 || std::size_t(layer) >= emitter->layers.size())
+        auto child = child_of(o, k.s32(0xc));
+        if (!child)
             return;
-        auto child = birth(emitter->layers[std::size_t(layer)]);
-        child->skip = true;
-        child->parent = find(o);
         const auto p = apply({v[0], v[1], v[2], 1}, o.local);
         for (int j = 0; j < 3; ++j)
             child->setf(k.s32(0x10), j, p[std::size_t(j)]);
@@ -1194,40 +1758,68 @@ struct EffectInstance::State {
         return e;
     }
 
-    void draw_model(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> &out) // FUN_1404c8660..
+    // the model draws (FUN_1404c7940 pppDrawMdl, FUN_1404c7c70 pppDrawMdlTs, FUN_1404c7f80 pppDrawMdl2,
+    // FUN_1404c8660 pppDrawMdl3, FUN_1404c88c0 pppDrawMdlSemi3, FUN_1404c8b10 pppDrawMdlTs3, FUN_1404c90f0
+    // pppDrawMdlLoop, FUN_1404c9540 pppDrawMdlLoopZ): each fills the renderer's request (FUN_1404dc760 ->
+    // FUN_1404b6860) from its record. Its flags: 8 the depth written (the model's flag bit 0 clear), 0x80 not (and
+    // the GS's TEST left as it is), 4 the depth rule two record bytes give (the first: the depth alone, 0x72001;
+    // the second: always, 0x3000d). The scene's light colours (flags 0x100, 0x200) and the view-space normals'
+    // matrix (0x2000) are not drawn here: KH2's lights are not the port's.
+    void draw_model(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
     {
         const std::int32_t m = k.s32(4);
-        if (m == 0xffff)
+        if (m == 0xffff || out == nullptr)
             return;
         const auto &model = block->models.at(std::size_t(m));
         const std::uint8_t *colour = o.at(c.slots[0] + 8, 4);
         if (colour[3] == 0)
             return;
-        EffectDraw d;
-        d.alpha = model.alpha;
-        d.depth_write = (model.flags & 1) == 0;
+        const bool writes = (model.flags & 1) == 0;
+        unsigned flags = 0;
+        std::uint8_t only = 0, always = 0;
+        std::uint16_t alpha = 0; // 0: the model's (FUN_1404b6860), else ALPHA in its low byte, FIX in its high
         float su = 0, sv = 0;
-        if (c.code == 0x89 && (k.b(8) & 2)) { // FUN_1404dc760: +0xd with +0xe clear the depth alone, +0xe always
-            if (k.b(0xe))
-                d.depth_test = false;
-            else if (k.b(0xd))
-                d.depth_only = true;
+        const auto keyed = [&](std::uint8_t kb) {
+            if (kb & 2)
+                flags = writes ? 0xc : 4;
+            else
+                flags = ((kb & 1) ? 0x80u : 0u) | (writes ? 8u : 0u);
+        };
+        switch (c.code) {
+        case 0x83: case 0x85: flags = writes ? 0xc : 0x80; break;
+        case 0x86: keyed(k.b(8)); only = k.b(9); always = k.b(0xa); break;
+        case 0x89: keyed(k.b(8)); only = k.b(0xd); always = k.b(0xe); break;
+        case 0x8a: keyed(k.b(0xa)); always = k.b(0xf); alpha = k.u16(8); break;
+        case 0x8b: keyed(k.b(0x20)); always = k.b(0x25); break;
+        default: // 0xda, 0xdb
+            flags = (k.b(0x22) & 2) ? 4u : ((k.b(0x22) & 1) ? 0x80u : 0u);
+            flags |= writes ? 8u : 0u;
+            if (k.b(0x20) != 0xff)
+                alpha = k.u16(0x20);
+            break;
         }
-        if (c.code == 0x8b) {
-            if ((k.b(0x20) & 2) && k.b(0x25))
-                d.depth_test = false;
+        if (c.code == 0x85 || c.code == 0x8b) {
             su = o.f(c.slots[2], 0);
             sv = o.f(c.slots[2], 3);
-        }
-        if (c.code == 0xdb) {
-            if (k.b(0x20) != 0xff)
-                d.alpha = k.b(0x20); // the record's ALPHA in place of the model's (FUN_1404c9540)
+        } else if (c.code == 0xda || c.code == 0xdb) {
             su = o.f(c.slots[2], 1);
             sv = o.f(c.slots[2], 4);
         }
+        EffectDraw d;
+        d.alpha = alpha != 0 ? std::uint8_t(alpha & 0xff) : model.alpha;
+        d.depth_write = (flags & 8) != 0 && (flags & 0x80) == 0;
+        if (flags & 4) {
+            if (always)
+                d.depth_test = false;
+            else if (only)
+                d.depth_only = true;
+        }
+        const auto &vertices = o.morphed ? o.morph : model.vertices;
         std::vector<std::array<float, 4>> clip(model.vertices.size());
-        for (std::size_t i = 0; i < clip.size(); ++i)
-            clip[i] = apply({model.vertices[i][0], model.vertices[i][1], model.vertices[i][2], 1}, o.draw);
+        for (std::size_t i = 0; i < clip.size(); ++i) {
+            const auto &v = i < vertices.size() ? vertices[i] : model.vertices[i];
+            clip[i] = apply({v[0], v[1], v[2], 1}, o.draw);
+        }
         // a model's primitives far to near (the depth buckets of FUN_1404af7d0)
         std::vector<std::pair<float, const EffectPrimitive *>> order;
         for (const auto &p : model.primitives) {
@@ -1243,7 +1835,7 @@ struct EffectInstance::State {
         for (const auto &[z, p] : order) {
             if (p->tex0 != tex) {
                 if (!d.triangles.empty())
-                    out.push_back(d);
+                    out->push_back(d);
                 d.triangles.clear();
                 d.tex0 = p->tex0;
                 tex = p->tex0;
@@ -1265,7 +1857,27 @@ struct EffectInstance::State {
             }
         }
         if (!d.triangles.empty())
-            out.push_back(std::move(d));
+            out->push_back(std::move(d));
+    }
+
+    // pppVtMime's draw (FUN_1404c17b0): the object's vertices a blend of two models', t of the way from the
+    // first to the second, made shorts; drawn and spawned at in the model's place from then on
+    void vt_mime(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        const std::int32_t a = k.s32(4), b = k.s32(8);
+        if (a == 0xffff && b == 0xffff)
+            return;
+        if (a < 0 || b < 0 || std::size_t(a) >= block->models.size() || std::size_t(b) >= block->models.size())
+            return;
+        const auto &from = block->models[std::size_t(a)].vertices, &to = block->models[std::size_t(b)].vertices;
+        const float t = o.f(c.slots[0], 0);
+        o.morph.resize(from.size());
+        for (std::size_t i = 0; i < from.size(); ++i)
+            for (int j = 0; j < 3; ++j) {
+                const float f = from[i][std::size_t(j)], g = i < to.size() ? to[i][std::size_t(j)] : f;
+                o.morph[i][std::size_t(j)] = float(std::int16_t(std::int32_t((g - f) * t + f)));
+            }
+        o.morphed = true;
     }
 
     void draw_shape(const EffectShape &shape, int frame, const M4 &m, const std::array<float, 4> &colour,
@@ -1289,20 +1901,24 @@ struct EffectInstance::State {
         }
     }
 
-    void draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> &out) // word 3
+    // word 3, every tick (FUN_1404b09e0): `out` null when nothing is drawn, the commands' own state kept all the same
+    void draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
     {
         switch (c.code) {
-        case 0x89: case 0x8b: case 0xdb: draw_model(o, c, k, out); break;
-        case 0x8e: { // pppDrawShapeX (FUN_1404c99c0): the shape's frame through the object's matrix
-            if (k.s32(4) == 0xffff)
+        case 0x83: case 0x85: case 0x86: case 0x89: case 0x8a: case 0x8b: case 0xda: case 0xdb:
+            draw_model(o, c, k, out);
+            break;
+        case 0x31: vt_mime(o, c, k); break;
+        case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
+            if (k.s32(4) == 0xffff || out == nullptr)
                 return;
             const std::uint8_t *col = o.at(c.slots[1] + 8, 4);
             draw_shape(block->shapes.at(std::size_t(k.s32(4))), rd<std::uint16_t>(o.at(c.slots[0] + 2, 2)), o.draw,
-                       {col[0] / 128.0F, col[1] / 128.0F, col[2] / 128.0F, col[3] / 128.0F}, out);
+                       {col[0] / 128.0F, col[1] / 128.0F, col[2] / 128.0F, col[3] / 128.0F}, *out);
             break;
         }
         case 0xc9: { // FUN_1404bbdb0 + FUN_1404bc710: each particle a sprite in view space
-            if (k.s32(4) == 0xffff || !o.pool_made)
+            if (k.s32(4) == 0xffff || !o.pool_made || out == nullptr)
                 return;
             const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
             const std::uint8_t *col = o.at(c.slots[1] + 8, 4);
@@ -1334,7 +1950,7 @@ struct EffectInstance::State {
                 for (int j = 0; j < 3; ++j)
                     tint[std::size_t(j)] = float(std::clamp(col[j] + p.jitter[std::size_t(j)], 0, 255)) / 128.0F;
                 tint[3] = std::clamp(float(col[3] + p.jitter[3]) - p.fade, 0.0F, 127.0F) / 128.0F;
-                draw_shape(shape, p.frame, mul(bill, proj), tint, out);
+                draw_shape(shape, p.frame, mul(bill, proj), tint, *out);
             }
             break;
         }
@@ -1380,8 +1996,7 @@ struct EffectInstance::State {
                 const Key k = (words(c.code) & W1) ? advance(o, ci) : key(o, ci);
                 if (words(c.code) & W1)
                     step(o, c, k);
-                if (draws != nullptr)
-                    draw(o, c, k, *draws);
+                draw(o, c, k, draws);
             }
         }
         for (const auto &po : objs) {
@@ -1390,10 +2005,11 @@ struct EffectInstance::State {
             else
                 grow_age(*po);
         }
-        // lives and loops
+        // lives and loops; a loop's fast-forward may bear children (pppPointAp's steps run then), kept in their place
         std::int32_t lives = 0;
-        std::vector<std::shared_ptr<Obj>> keep;
-        for (const auto &po : objs) {
+        bool any_gone = false;
+        const auto current = objs;
+        for (const auto &po : current) {
             Obj &o = *po;
             const EffectLayer &L = *o.layer;
             if (!stopping && L.loop_end <= o.age && L.loop_start < kNever && L.loop_end < kNever) {
@@ -1408,14 +2024,14 @@ struct EffectInstance::State {
                         step_one(o);
                 }
                 fastforward = false;
-                keep.push_back(po);
             } else {
                 lives |= L.life;
-                if (o.age < L.life)
-                    keep.push_back(po);
+                o.gone = L.life <= o.age;
+                any_gone |= o.gone;
             }
         }
-        objs = std::move(keep);
+        if (any_gone)
+            objs.erase(std::remove_if(objs.begin(), objs.end(), [](const auto &po) { return po->gone; }), objs.end());
         if (emitter->repeat && stopping && lives == kNever)
             objs.clear();
         // FUN_1404b08e0: the instance's age and its end

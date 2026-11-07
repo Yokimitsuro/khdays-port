@@ -1,6 +1,8 @@
 // KINGDOM HEARTS II's effects read and played (assets/kh2_effect.h): a made-up PAX in the layout KH2's own have
 // (docs/FORMATS.md, "KH2's effects") -- one block, one emitter, a model and a picture -- and its run: a layer's
-// keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped.
+// keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped; then
+// blocks made from parts for the commands read since: the rotation orders, the random ones' ranges, pppPointAp's
+// children, pppVtMime's blend of two models, a textured triangle (primitive kind 2).
 #include "khdays/assets/kh2_effect.h"
 #include "kh2_effect_made_up.h"
 
@@ -8,12 +10,15 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <functional>
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
 using namespace khdays::assets::kh2;
 using khdays_test::made_up;
+using namespace khdays_test;
 
 namespace {
 
@@ -110,7 +115,7 @@ void test_unknown_command_refused()
     auto bytes = made_up(0, 0, false);
     // the first command's code -> one not read
     const std::size_t L = 0x40 + 0x80 + 0x110 + 0x20;
-    bytes[L + 0x28] = 0xf0;
+    bytes[L + 0x28] = 0x01; // in KH2's table, in none of its files
     auto block = std::make_shared<const EffectBlock>(read_effect(bytes.data(), bytes.size())[0]);
     bool refused = false;
     try {
@@ -119,6 +124,180 @@ void test_unknown_command_refused()
         refused = true;
     }
     expect(refused, "a command not read refused");
+}
+
+// a command with one key at frame 0 whose bytes after the frame are given
+MadeCommand command(std::uint32_t code, std::uint16_t size, std::initializer_list<std::int32_t> slots,
+                    const std::function<void(std::vector<std::uint8_t> &)> &fill = {})
+{
+    MadeCommand c;
+    c.code = code;
+    c.size = size;
+    c.keys.push_back(made_key(0, size));
+    if (fill)
+        fill(c.keys[0]);
+    int i = 0;
+    for (const auto s : slots)
+        c.slots[i++] = s;
+    return c;
+}
+
+// placed at the position slot 0x20 (pppPoint), angles 0x30, scale 1 at 0x40, colour 0x50; a matrix of `order`,
+// pppDrawMatrix, pppDrawMdl3 of model `model`
+std::vector<MadeCommand> placed(std::uint32_t order, float x, float y, float z, std::int32_t ax, std::int32_t ay,
+                                int model = 0)
+{
+    std::vector<MadeCommand> out;
+    out.push_back(command(0x28, 0x10, {0x20}, [&](auto &k) {
+        put(k, 4, x);
+        put(k, 8, y);
+        put(k, 12, z);
+    }));
+    out.push_back(command(0x29, 0x10, {0x30}, [&](auto &k) {
+        put(k, 4, ax);
+        put(k, 8, ay);
+    }));
+    out.push_back(command(0x2a, 0x10, {0x40}, [](auto &k) {
+        put(k, 4, 1.0F);
+        put(k, 8, 1.0F);
+        put(k, 12, 1.0F);
+    }));
+    out.push_back(command(0x2b, 0xc, {0x50}, [](auto &k) {
+        for (int c = 0; c < 4; ++c)
+            put(k, 4 + 2 * std::size_t(c), std::uint16_t(0x4000));
+    }));
+    out.push_back(command(order, 4, {0x20, 0x30, 0x40}));
+    out.push_back(command(0x70, 4, {}));
+    out.push_back(command(0x89, 0x10, {0x50}, [&](auto &k) { put(k, 4, std::int32_t(model)); }));
+    return out;
+}
+
+MadeModel triangle(std::int16_t x, std::int16_t y, std::int16_t z, std::uint8_t kind = 0)
+{
+    MadeModel m;
+    m.vertices = {{x, y, z}, {0, 0, 0}, {0, 1, 0}};
+    MadePrimitive p;
+    p.kind = kind;
+    p.vertex[0] = 0;
+    p.vertex[1] = 1;
+    p.vertex[2] = 2;
+    p.uv[0][0] = 4096;
+    p.uv[2][1] = 2048;
+    m.primitives.push_back(p);
+    return m;
+}
+
+std::shared_ptr<const EffectBlock> block_of(const std::vector<std::uint8_t> &bytes)
+{
+    return std::make_shared<const EffectBlock>(read_effect(bytes.data(), bytes.size()).at(0));
+}
+
+EffectVertex first_corner(EffectInstance &fx, std::vector<EffectDraw> &draws)
+{
+    draws.clear();
+    fx.tick(EffectCamera{identity(), identity(), identity()}, &draws);
+    expect(!draws.empty() && !draws[0].triangles.empty(), "something drawn");
+    return draws[0].triangles[0];
+}
+
+void test_rotation_orders()
+{
+    // (100, 0, 0) turned 90 degrees about x and about y: x first (pppMatrixXYZ) it ends at (0, 0, -100); z, y,
+    // then x (pppMatrixZYX), at (0, 100, 0)
+    const struct {
+        std::uint32_t code;
+        float x, y, z;
+    } cases[] = {{0x57, 0, 0, -100}, {0x5c, 0, 100, 0}, {0xe6, 0, 0, -100}, {0xeb, 0, 100, 0}};
+    for (const auto &c : cases) {
+        MadeLayer L;
+        L.commands = placed(c.code, 0, 0, 0, 0x4000, 0x4000);
+        EffectInstance fx(block_of(made_block({L}, {triangle(100, 0, 0)}, {}, 10, false)), 0, 1);
+        std::vector<EffectDraw> draws;
+        const auto v = first_corner(fx, draws);
+        expect(near(v.x, c.x) && near(v.y, c.y) && near(v.z, c.z), "a rotation order");
+    }
+}
+
+void test_random_ranges()
+{
+    // pppRandUpFV / pppRandDownFV on the position: base (10, 20, 30) x one draw in [0, 1) or (-1, 0]
+    for (const std::uint32_t code : {0x40u, 0x41u}) {
+        for (std::uint32_t seed = 1; seed < 20; ++seed) {
+            MadeLayer L;
+            L.commands = placed(0x57, 0, 0, 0, 0, 0);
+            L.commands.insert(L.commands.begin() + 1, command(code, 0x18, {0x60}, [](auto &k) {
+                put(k, 4, std::int32_t(0x20));
+                put(k, 8, 10.0F);
+                put(k, 12, 20.0F);
+                put(k, 16, 30.0F);
+            }));
+            EffectInstance fx(block_of(made_block({L}, {triangle(0, 0, 0)}, {}, 10, false)), 0, seed);
+            std::vector<EffectDraw> draws;
+            const auto v = first_corner(fx, draws);
+            const float s = code == 0x40 ? 1.0F : -1.0F;
+            expect(s * v.x >= 0 && s * v.x <= 10 && s * v.y >= 0 && s * v.y <= 20, "a range");
+            expect(near(v.y, 2 * v.x) && near(v.z, 3 * v.x), "one draw for the three");
+        }
+    }
+}
+
+void test_point_ap()
+{
+    // layer 0 at (5, 6, 7) bears two of layer 1 every 3 ticks; they start where it is
+    MadeLayer parent;
+    parent.commands.push_back(command(0x28, 0x10, {0x20}, [](auto &k) {
+        put(k, 4, 5.0F);
+        put(k, 8, 6.0F);
+        put(k, 12, 7.0F);
+    }));
+    parent.commands.push_back(command(0xac, 0x10, {0x20, 0x70}, [](auto &k) {
+        put(k, 4, std::int32_t(1));    // the layer
+        put(k, 8, std::int32_t(0x20)); // the child's slot
+        put(k, 0xc, std::uint8_t(3));  // the wait
+        put(k, 0xd, std::uint8_t(2));  // how many
+    }));
+    MadeLayer child;
+    child.start = 0x7fffffff;
+    child.life = 100 * 0x1000;
+    child.commands = placed(0x57, 0, 0, 0, 0, 0);
+    child.commands.erase(child.commands.begin()); // its position from the parent, not a pppPoint
+    EffectInstance fx(block_of(made_block({parent, child}, {triangle(1, 0, 0)}, {}, 30, false)), 0, 1);
+    const EffectCamera cam{identity(), identity(), identity()};
+    fx.tick(cam, nullptr);
+    expect(fx.objects() == 3, "two children born");
+    std::vector<EffectDraw> draws;
+    fx.tick(cam, &draws);
+    expect(draws.size() == 2 && near(draws[0].triangles[0].x, 6) && near(draws[0].triangles[0].z, 7),
+           "each where its parent's point is");
+    fx.tick(cam, nullptr);
+    fx.tick(cam, nullptr);
+    expect(fx.objects() == 5, "two more after the wait");
+}
+
+void test_vt_mime()
+{
+    // vertex 0 half way from (0, 0, 0) to (100, 50, -20)
+    MadeLayer L;
+    L.commands = placed(0x57, 0, 0, 0, 0, 0);
+    L.commands.insert(L.commands.end() - 1, command(0x31, 0x18, {0x60}, [](auto &k) {
+        put(k, 4, std::int32_t(0));
+        put(k, 8, std::int32_t(1));
+        put(k, 0xc, 0.5F);
+    }));
+    EffectInstance fx(block_of(made_block({L}, {triangle(0, 0, 0), triangle(100, 50, -20)}, {}, 10, false)), 0, 1);
+    std::vector<EffectDraw> draws;
+    const auto v = first_corner(fx, draws);
+    expect(near(v.x, 50) && near(v.y, 25) && near(v.z, -10), "the blend of two models");
+}
+
+void test_textured_triangle()
+{
+    MadeLayer L;
+    L.commands = placed(0x57, 0, 0, 0, 0, 0);
+    EffectInstance fx(block_of(made_block({L}, {triangle(3, 0, 0, 2)}, {}, 10, false)), 0, 1);
+    std::vector<EffectDraw> draws;
+    const auto v = first_corner(fx, draws);
+    expect(draws[0].tex0 != 0 && near(v.u, 1.0F) && near(draws[0].triangles[2].v, 0.5F), "kind 2's page and UV");
 }
 
 } // namespace
@@ -130,6 +309,11 @@ int main()
         test_run();
         test_hold_and_stop();
         test_unknown_command_refused();
+        test_rotation_orders();
+        test_random_ranges();
+        test_point_ap();
+        test_vt_mime();
+        test_textured_triangle();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect: %s\n", e.what());
         return 1;

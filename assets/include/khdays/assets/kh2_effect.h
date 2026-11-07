@@ -31,7 +31,7 @@ struct EffectLayer final {
 };
 
 struct EffectPrimitive final {
-    std::uint8_t kind = 0;                 // 0-3 triangles, 4-7 quads; odd from 2 textured
+    std::uint8_t kind = 0;                 // 0-2 triangles, 4-7 quads; 2, 6, 7 textured
     std::uint64_t tex0 = 0;                // the GS TEX0 of its packet (0 untextured)
     std::uint8_t corners = 3;              // 3 or 4 (a quad a strip: 0-1-2, 1-3-2)
     std::array<std::uint16_t, 4> vertex{}; // the model's vertices

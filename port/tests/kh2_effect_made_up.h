@@ -2,6 +2,7 @@
 // player (kh2_effect_test.cpp) and of the corridors' rules (kh2_corridor_test.cpp).
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -127,6 +128,172 @@ inline std::vector<std::uint8_t> made_up(int life, int loop_end, bool repeat)
     x.u32(pic + 36 + 4 * 1, 0x800000ffu);
     x.u32(pic + 36 + 4 * 3, 0x40ffffffu);
     return x.b;
+}
+
+} // namespace khdays_test
+
+namespace khdays_test {
+
+// A made-up block built from parts, for the commands' own tests: its layers (each its commands with their keys and
+// slots), models (vertices, then primitives of one kind each: a kind, its corners' vertices, their UV in 1/4096) and
+// vertex lists. Laid out as KH2's: the directory at 0x10, the block at 0x40, everything else after it.
+struct MadeCommand {
+    std::uint32_t code = 0;
+    std::uint16_t size = 4;                     // a key's bytes (its frame first)
+    std::vector<std::vector<std::uint8_t>> keys; // each `size` bytes
+    std::int32_t slots[4] = {0, 0, 0, 0};
+};
+struct MadeLayer {
+    std::int32_t start = 0, life = 0x70000000, loop_start = 0x70000000, loop_end = 0x70000000;
+    std::uint16_t order = 0;
+    std::vector<MadeCommand> commands;
+};
+struct MadePrimitive {
+    std::uint8_t kind = 0; // 0, 2 triangles; 4, 6 quads
+    std::uint16_t vertex[4] = {0, 0, 0, 0};
+    std::uint16_t uv[4][2] = {};
+};
+struct MadeModel {
+    std::vector<std::array<std::int16_t, 3>> vertices;
+    std::vector<MadePrimitive> primitives;
+    std::uint8_t flags = 7, alpha = 0x44;
+};
+struct MadeVertexList {
+    std::uint32_t model = 0;
+    std::vector<std::uint16_t> vertices;
+};
+
+// a key: its frame (in KH2 frames) and the bytes after it, `size` in all
+inline std::vector<std::uint8_t> made_key(int frame, std::size_t size)
+{
+    std::vector<std::uint8_t> k(size, 0);
+    const std::int32_t f = frame * 0x1000;
+    std::memcpy(k.data(), &f, 4);
+    return k;
+}
+template <class T> void put(std::vector<std::uint8_t> &k, std::size_t at, T v)
+{
+    std::memcpy(&k.at(at), &v, sizeof v);
+    (void)k.at(at + sizeof v - 1);
+}
+
+inline std::vector<std::uint8_t> made_block(const std::vector<MadeLayer> &layers, const std::vector<MadeModel> &models,
+                                            const std::vector<MadeVertexList> &lists, int length, bool repeat)
+{
+    std::vector<std::uint8_t> out(0x40, 0);
+    std::memcpy(out.data(), "PAX_", 4);
+    const auto u32 = [&](std::size_t at, std::uint32_t v) { std::memcpy(&out.at(at), &v, 4); };
+    const auto grow = [&](std::size_t n) {
+        const std::size_t at = (out.size() + 15) & ~std::size_t(15);
+        out.resize(at + n, 0);
+        return at;
+    };
+    u32(0xc, 0x10);
+    u32(0x10, 0x82);
+    u32(0x20, 1);
+    u32(0x24, 0x30);
+    const std::size_t B = grow(4 + 5 * 4 + 4 * (1 + models.size() + lists.size()));
+    // the block's lists: emitters (1), pictures (0), shapes (0), models, vertex lists; filled below
+    std::size_t at = B;
+    u32(at, 0x96);
+    at += 4;
+    const std::size_t emitter_list = at;
+    u32(at, 1);
+    at += 8;
+    u32(at, 0); // pictures
+    at += 4;
+    u32(at, 0); // shapes
+    at += 4;
+    const std::size_t model_list = at;
+    u32(at, std::uint32_t(models.size()));
+    at += 4 + 4 * models.size();
+    const std::size_t vl_list = at;
+    u32(at, std::uint32_t(lists.size()));
+    // the emitter
+    const std::size_t E = grow(0x110 + 0x20 + 4 * layers.size());
+    u32(emitter_list + 4, std::uint32_t(E - B));
+    const std::size_t base = E + 0x110;
+    u32(base, std::uint32_t(length * 0x1000));
+    u32(base + 4, repeat ? 1u : 0u);
+    u32(base + 0xc, 0x10);
+    u32(base + 0x10, std::uint32_t(layers.size()));
+    for (std::size_t l = 0; l < layers.size(); ++l) {
+        const auto &L = layers[l];
+        const std::size_t la = grow(0x28 + 16 * L.commands.size());
+        u32(base + 0x14 + 4 * l, std::uint32_t(la - base));
+        u32(la + 0x10, std::uint32_t(L.start));
+        u32(la + 0x14, std::uint32_t(L.life));
+        u32(la + 0x18, std::uint32_t(L.loop_start));
+        u32(la + 0x1c, std::uint32_t(L.loop_end));
+        std::memcpy(&out.at(la + 0x24), &L.order, 2);
+        const std::uint16_t n = std::uint16_t(L.commands.size());
+        std::memcpy(&out.at(la + 0x26), &n, 2);
+        for (std::size_t c = 0; c < L.commands.size(); ++c) {
+            const auto &C = L.commands[c];
+            const std::size_t data = grow(C.size * C.keys.size() + 4), slots = grow(16);
+            for (std::size_t k = 0; k < C.keys.size(); ++k)
+                std::memcpy(&out.at(data + C.size * k), C.keys[k].data(), C.size);
+            u32(data + C.size * C.keys.size(), 0xfffff000u);
+            for (int s = 0; s < 4; ++s)
+                u32(slots + 4 * std::size_t(s), std::uint32_t(C.slots[s]));
+            const std::size_t ca = la + 0x28 + 16 * c;
+            u32(ca, C.code);
+            const std::uint16_t size = C.size, keys = std::uint16_t(C.keys.size());
+            std::memcpy(&out.at(ca + 4), &size, 2);
+            std::memcpy(&out.at(ca + 6), &keys, 2);
+            u32(ca + 8, std::uint32_t(data - base));
+            u32(ca + 12, std::uint32_t(slots - base));
+        }
+    }
+    for (std::size_t m = 0; m < models.size(); ++m) {
+        const auto &M = models[m];
+        std::size_t prims = 0;
+        for (const auto &p : M.primitives)
+            prims += 0x10 + (p.kind == 0 ? 0x14 : p.kind == 2 ? 0x20 : p.kind == 4 ? 0x18 : 0x28);
+        const std::size_t mo = grow(0x30 + prims + 0x10 + 6 * M.vertices.size());
+        u32(model_list + 4 + 4 * m, std::uint32_t(mo - B));
+        const std::size_t h = mo + 0x10;
+        out[h] = M.flags;
+        u32(h + 4, 0x20);
+        u32(h + 8, std::uint32_t(0x20 + prims + 0x10));
+        const std::int16_t nv = std::int16_t(M.vertices.size());
+        std::memcpy(&out.at(h + 0x12), &nv, 2);
+        out[h + 0x16] = M.alpha;
+        std::size_t p = h + 0x20;
+        for (const auto &P : M.primitives) {
+            out[p + 1] = P.kind;
+            out[p + 2] = 1;
+            if (P.kind == 2 || P.kind == 6)
+                u32(p + 8, 0x3000u | (2u << 14) | (0x13u << 20) | (1u << 26) | (1u << 30));
+            const std::size_t it = p + 0x10;
+            const int corners = P.kind >= 4 ? 4 : 3;
+            const std::size_t vat = corners == 4 ? 0x10 : 0xc, uvat = corners == 4 ? 0x18 : 0x14;
+            for (int c = 0; c < corners; ++c) {
+                for (int k = 0; k < 4; ++k)
+                    out[it + 4 * std::size_t(c) + std::size_t(k)] = 0x80;
+                std::memcpy(&out.at(it + vat + 2 * std::size_t(c)), &P.vertex[c], 2);
+                if (P.kind == 2 || P.kind == 6) {
+                    std::memcpy(&out.at(it + uvat + 4 * std::size_t(c)), &P.uv[c][0], 2);
+                    std::memcpy(&out.at(it + uvat + 2 + 4 * std::size_t(c)), &P.uv[c][1], 2);
+                }
+            }
+            p = it + (P.kind == 0 ? 0x14 : P.kind == 2 ? 0x20 : P.kind == 4 ? 0x18 : 0x28);
+        }
+        out[p + 1] = 0xff;
+        for (std::size_t v = 0; v < M.vertices.size(); ++v)
+            std::memcpy(&out.at(h + 0x20 + prims + 0x10 + 6 * v), M.vertices[v].data(), 6);
+    }
+    for (std::size_t l = 0; l < lists.size(); ++l) {
+        const auto &V = lists[l];
+        const std::size_t vo = grow(12 + 2 * V.vertices.size());
+        u32(vl_list + 4 + 4 * l, std::uint32_t(vo - B));
+        u32(vo + 4, V.model);
+        u32(vo + 8, std::uint32_t(V.vertices.size()));
+        for (std::size_t k = 0; k < V.vertices.size(); ++k)
+            std::memcpy(&out.at(vo + 12 + 2 * k), &V.vertices[k], 2);
+    }
+    // the block's offsets are from the directory (0x10): the directory's list said 0x30 -> the block at 0x40
+    return out;
 }
 
 } // namespace khdays_test

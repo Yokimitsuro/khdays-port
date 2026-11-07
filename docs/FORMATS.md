@@ -259,9 +259,11 @@ same layout's first effect, read only as far as its pictures and shapes.
   own opening, hold and closing.
 - **A model**: its header at +0x10: u8 flags (bit 0 clear: depth written), offsets of its primitives, vertices and
   normals, the counts, at +0x16 its GS ALPHA byte and at +0x17 its FIX. Vertices are three s16; primitives come in
-  packets `{u8, u8 kind, s16 count, 4 bytes, TEX0}`, kinds 0-3 triangles and 4-7 quads (a quad a strip: 0-1-2,
-  1-3-2), from 2 textured: RGBA per corner, vertex numbers, and for the textured u16 UV pairs in 1/4096 of the page;
-  a kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it is); an untextured
+  packets `{u8, u8 kind, s16 count, 4 bytes, TEX0}`, kinds 0-2 triangles and 4-7 quads (a quad a strip: 0-1-2,
+  1-3-2): RGBA per corner first, then the vertex numbers (+0xc a triangle's, +0x10 a quad's); 2, 6 and 7 are
+  textured, u16 UV pairs in 1/4096 of the page (+0x14 a triangle's, +0x18 a quad's); 1, 5 and 7 add a normal's
+  number per corner (+0x12, +0x18, +0x28: the scene's lighting, which the port does not draw). Their sizes are
+  0x14, 0x1c, 0x20, -, 0x18, 0x20, 0x28 and 0x30; kind 3 (0x28) is in none of KH2's files. A kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it is); an untextured
   one's is the colour drawn (0x80 half of full). Alpha 0x80 is a blend's 1 either way.
 - **A shape**: frames `{wait in 1/256 of a frame, a loop flag, TEX0}` of layers, each four corners in 12.4 fixed
   point (x 1/16), its part of the page, its colour and its own GS ALPHA byte.

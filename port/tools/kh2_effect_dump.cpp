@@ -2,11 +2,15 @@
 // player's file (a PAX the player has), the block and emitter, the frame, an optional stop frame; a camera looking
 // at the effect. Prints each draw: its picture page, blend, depth state, triangle count and first vertex. With
 // --extent the camera is none (the effect's own space: world, view and projection identities) and each draw's
-// bounds are printed instead: what the port's fitting of an effect to a model is measured on.
+// bounds are printed instead: what the port's fitting of an effect to a model is measured on. --survey plays every
+// emitter of every block of the files given for that many frames (a repeating one stopped half way) and prints a
+// line for each: played (its most objects, the triangles drawn, any not-a-number corner) or refused and why.
 //
 //   khdays-kh2-effect-dump [--extent] <file.pax> <block> <emitter> <frame> [stop frame]
+//   khdays-kh2-effect-dump --survey <frames> <file.pax>...
 #include "khdays/assets/kh2_effect.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -56,10 +60,65 @@ EffectMatrix perspective(float fovy, float aspect, float near, float far)
     return m;
 }
 
+EffectCamera looking()
+{
+    const float eye[3] = {0, -150, -1000}, target[3] = {0, -150, 0};
+    EffectCamera cam;
+    cam.world = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    cam.view = look_at(eye, target);
+    cam.projection = perspective(40.0F * 3.14159265F / 180.0F, 1.0F, 10.0F, 10000.0F);
+    return cam;
+}
+
+int survey(int frames, int count, char **files)
+{
+    const EffectCamera cam = looking();
+    for (int i = 0; i < count; ++i) {
+        std::ifstream in(files[i], std::ios::binary);
+        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::vector<EffectBlock> blocks;
+        try {
+            blocks = read_effect(bytes.data(), bytes.size());
+        } catch (const std::exception &e) {
+            std::printf("%s - - unread %s\n", files[i], e.what());
+            continue;
+        }
+        for (std::size_t b = 0; b < blocks.size(); ++b) {
+            auto block = std::make_shared<const EffectBlock>(blocks[b]);
+            for (std::size_t e = 0; e < block->emitters.size(); ++e) {
+                try {
+                    EffectInstance fx(block, e, 3);
+                    std::size_t most = 0, triangles = 0, nan = 0;
+                    std::vector<EffectDraw> draws;
+                    for (int f = 0; f < frames && !fx.done(); ++f) {
+                        if (f == frames / 2 && block->emitters[e].repeat)
+                            fx.stop();
+                        draws.clear();
+                        fx.tick(cam, &draws);
+                        most = std::max(most, fx.objects());
+                        for (const auto &d : draws) {
+                            triangles += d.triangles.size() / 3;
+                            for (const auto &v : d.triangles)
+                                nan += std::isnan(v.x) || std::isnan(v.y) || std::isnan(v.z) || std::isnan(v.w);
+                        }
+                    }
+                    std::printf("%s %zu %zu played %zu %zu%s%s\n", files[i], b, e, most, triangles,
+                                nan ? " nan" : "", fx.done() ? "" : " running");
+                } catch (const std::exception &x) {
+                    std::printf("%s %zu %zu refused %s\n", files[i], b, e, x.what());
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
 {
+    if (argc > 3 && std::string(argv[1]) == "--survey")
+        return survey(std::atoi(argv[2]), argc - 3, argv + 3);
     const bool extent = argc > 1 && std::string(argv[1]) == "--extent";
     if (extent) {
         --argc;
@@ -77,15 +136,9 @@ int main(int argc, char **argv)
         auto block = std::make_shared<const EffectBlock>(blocks.at(std::size_t(std::atoi(argv[2]))));
         EffectInstance fx(block, std::size_t(std::atoi(argv[3])), 3);
         const int frame = std::atoi(argv[4]), stop = argc > 5 ? std::atoi(argv[5]) : -1;
-        const float eye[3] = {0, -150, -1000}, target[3] = {0, -150, 0};
-        EffectCamera cam;
-        cam.world = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        cam.view = cam.world;
-        cam.projection = cam.world;
-        if (!extent) {
-            cam.view = look_at(eye, target);
-            cam.projection = perspective(40.0F * 3.14159265F / 180.0F, 1.0F, 10.0F, 10000.0F);
-        }
+        EffectCamera cam = looking();
+        if (extent)
+            cam.view = cam.projection = cam.world;
         std::vector<EffectDraw> draws;
         for (int f = 0; f <= frame; ++f) {
             if (f == stop)
