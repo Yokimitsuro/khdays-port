@@ -116,6 +116,14 @@ struct EffectDraw final {
     std::vector<EffectVertex> triangles;
 };
 
+// A point the game gives an effect (KINGDOM HEARTS II's list at 0x140b60268, as many as at 0x140b60264): its place
+// and four bytes. pppRyjDrawShipolyBone reads the first two, a weapon's base and tip, for its swing's trail; the
+// prizes' and users' spawners read them as where to start.
+struct EffectPoint final {
+    std::array<float, 3> place{};
+    std::array<std::uint8_t, 4> bytes{};
+};
+
 struct EffectCamera final {
     EffectMatrix world{}, view{}, projection{}; // the instance's place, the camera, the projection
 };
@@ -133,6 +141,8 @@ public:
     void tick(const EffectCamera &camera, std::vector<EffectDraw> *draws);
     // A repeating effect closes: its layers stop looping and it ends when its objects have.
     void stop();
+    // The points the game gives the effect (EffectPoint), kept until given again.
+    void set_points(std::vector<EffectPoint> points);
     bool done() const;
     std::size_t objects() const;
     const EffectBlock &block() const;

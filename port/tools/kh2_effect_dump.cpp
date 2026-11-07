@@ -3,8 +3,9 @@
 // at the effect. Prints each draw: its picture page, blend, depth state, triangle count and first vertex. With
 // --extent the camera is none (the effect's own space: world, view and projection identities) and each draw's
 // bounds are printed instead: what the port's fitting of an effect to a model is measured on. --survey plays every
-// emitter of every block of the files given for that many frames (a repeating one stopped half way) and prints a
-// line for each: played (its most objects, the triangles drawn, any not-a-number corner) or refused and why.
+// emitter of every block of the files given for that many frames (a repeating one stopped half way; the game's
+// points a weapon swung round) and prints a line for each: played (its most objects, the triangles drawn, any
+// not-a-number corner) or refused and why.
 //
 //   khdays-kh2-effect-dump [--extent] <file.pax> <block> <emitter> <frame> [stop frame]
 //   khdays-kh2-effect-dump --survey <frames> <file.pax>...
@@ -93,6 +94,10 @@ int survey(int frames, int count, char **files)
                     for (int f = 0; f < frames && !fx.done(); ++f) {
                         if (f == frames / 2 && block->emitters[e].repeat)
                             fx.stop();
+                        // the game's points: a weapon swung round (its base, its tip), for those that read them
+                        const float a = 0.1F * float(f);
+                        fx.set_points({{{0, -100, 0}, {}},
+                                       {{100 * std::cos(a), -100 + 100 * std::sin(a), 0}, {}}});
                         draws.clear();
                         fx.tick(cam, &draws);
                         most = std::max(most, fx.objects());

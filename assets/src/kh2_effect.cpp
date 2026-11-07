@@ -533,6 +533,8 @@ struct Obj {
     bool morphed = false;
     std::map<const EffectCommand *, ModelPool> model_pools; // pppRyjMegaBirthModel's, one a command
     std::map<const EffectCommand *, std::vector<std::array<float, 4>>> rings; // pppEiDrawShipoly's places
+    // pppRyjDrawShipolyBone's: the points' history (two a sample) and its own copy of the model it bends
+    std::map<const EffectCommand *, std::pair<std::vector<std::array<float, 4>>, EffectModel>> swings;
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -581,7 +583,7 @@ unsigned words(std::uint32_t code)
         return W1;
     case 0x83: case 0x86: case 0x89: case 0x8a:
         return W3;
-    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c:
+    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xc8:
     case 0x9d: case 0xda: case 0xdb:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
@@ -644,6 +646,7 @@ struct EffectInstance::State {
     // the instance's bytes pppRyjMngFlag sets (+0xc0 its state for the game, +0xc1 frozen: no ageing, no keyed
     // steps; +0xc2 its place follows the camera's: FUN_1404b1280 adds the eye, 0x142b0ed20)
     std::uint8_t game_state = 0, frozen = 0, follow = 0;
+    std::vector<EffectPoint> points; // the game's (set_points)
 
     float rand01() // FUN_1404dc710: 24 random bits x 2^-24
     {
@@ -763,6 +766,11 @@ struct EffectInstance::State {
         case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
+        case 0xc8: // FUN_1404d1c60: the history's cursor, its size (none yet), still filling
+            std::memset(o.at(c.slots[1], 12), 0, 12);
+            *o.at(c.slots[1] + 5, 1) = 1;
+            o.swings.erase(&c);
+            break;
         case 0xf1: // FUN_1404ba790: the ring's cursor, size and count, its width, drift and pull, all none
             std::memset(o.at(c.slots[3], 0xe0), 0, 0xe0);
             *o.at(c.slots[3] + 5, 1) = 1;
@@ -786,22 +794,22 @@ struct EffectInstance::State {
     // pppKeThRes... (FUN_1404bf300 ...): a trail's points: how many sets (1 or 4), how many points, their bytes
     void trail_resource(Obj &o, const EffectCommand &c)
     {
-        int sets = 1, points = 0;
+        int sets = 1, count = 0;
         switch (c.code) {
-        case 0x02: points = 3; break;
-        case 0x03: points = 8; break;
-        case 0x06: points = 16; break;
-        case 0x09: points = 24; break;
-        case 0x0a: points = 24; sets = 4; break;
-        case 0x0b: points = 32; break;
-        case 0x0e: points = 40; break;
-        case 0x10: points = 48; break;
-        default: points = 48; sets = 4; break; // 0x11
+        case 0x02: count = 3; break;
+        case 0x03: count = 8; break;
+        case 0x06: count = 16; break;
+        case 0x09: count = 24; break;
+        case 0x0a: count = 24; sets = 4; break;
+        case 0x0b: count = 32; break;
+        case 0x0e: count = 40; break;
+        case 0x10: count = 48; break;
+        default: count = 48; sets = 4; break; // 0x11
         }
         std::uint8_t *p = o.at(c.slots[0], 4);
         p[0] = std::uint8_t(sets);
-        p[1] = std::uint8_t(points);
-        wr(p + 2, std::uint16_t(points * 48 + 96));
+        p[1] = std::uint8_t(count);
+        wr(p + 2, std::uint16_t(count * 48 + 96));
     }
 
     // FUN_1404c5460: the world's turn (its angles, 0x142b0f000, made a matrix) and place (0x142b0eff0) at the
@@ -1207,6 +1215,7 @@ struct EffectInstance::State {
         }
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
+        case 0xc8: break; // pppRyjDrawShipolyBone's step (FUN_1404d1c50): none
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
         case 0xf1: ribbon_step(o, c, k); break;
@@ -2239,7 +2248,8 @@ struct EffectInstance::State {
             if (pool.own_colour)
                 a += int(p.colour[3]);
             colour[3] = float(std::clamp(a, 0, 0x7f));
-            draw_model_with(o, model, draw_m, colour, flags, k.b(0xc), k.b(0x10a), 0, p.u, p.v, *out);
+            draw_model_with(o.morphed ? &o.morph : nullptr, model, draw_m, colour, flags, k.b(0xc), k.b(0x10a), 0,
+                            p.u, p.v, *out);
         }
     }
 
@@ -2691,6 +2701,154 @@ struct EffectInstance::State {
             out.push_back(std::move(d));
     }
 
+    // ---------------------------------------------------------------------------------- the swing's trail
+    // pppRyjDrawShipolyBone (FUN_1404d1960, FUN_1404d11e0, FUN_1404d1d00): the trail of a weapon's swing from the
+    // game's first two points (its base and tip). Each tick they join a history of the record's +0xe samples; the
+    // record's model (quads, two vertices a sample) is bent along it: every axis of base and tip a natural cubic
+    // spline through the history, relative to the base now, the quads strung 2k..2k+3, faded to the tail (and
+    // its UV laid along it while the history fills: +0x10 / +0x11 the u and v ranges, +0x12 the u's start), thinner
+    // to the tail with +0xf; drawn at the base through the view. +0xd keeps the history from moving on.
+    void swing_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (k.s32(4) == 0xffff || points.size() < 2)
+            return;
+        const std::int32_t s = c.slots[1];
+        auto &[history, model] = o.swings[&c];
+        const auto point = [&](int i) {
+            return std::array<float, 4>{points[std::size_t(i)].place[0], points[std::size_t(i)].place[1],
+                                        points[std::size_t(i)].place[2], 1.0F};
+        };
+        if (history.empty()) {
+            const int n = k.b(0xe);
+            *o.at(s + 4, 1) = std::uint8_t(n);
+            for (int i = 0; i < n; ++i) {
+                history.push_back(point(0));
+                history.push_back(point(1));
+            }
+            model = block->models.at(std::size_t(k.s32(4)));
+            std::uint16_t at = 0;
+            for (auto &q : model.primitives) {
+                if (q.kind != 4 && q.kind != 6) // FUN_1404d11e0 bends quads alone
+                    return;
+                for (int c2 = 0; c2 < 4; ++c2) {
+                    q.colour[std::size_t(c2)][0] = q.colour[std::size_t(c2)][1] = q.colour[std::size_t(c2)][2] = 0xff;
+                    q.vertex[std::size_t(c2)] = std::uint16_t(at + c2);
+                }
+                at = std::uint16_t(at + 2);
+            }
+        }
+        const int n = *o.at(s + 4, 1), quads = int(model.primitives.size());
+        if (n <= 0 || int(model.vertices.size()) != 2 * quads + 2)
+            return;
+        const int cursor = o.i(s, 0) % n;
+        history[std::size_t(2 * cursor)] = point(0);
+        history[std::size_t(2 * cursor + 1)] = point(1);
+        const auto base = point(0);
+        for (int axis = 0; axis < 3; ++axis)
+            for (int which = 0; which < 2; ++which) {
+                std::vector<std::array<float, 4>> y(static_cast<std::size_t>(n));
+                for (int j = 0; j < n; ++j) {
+                    int at = cursor - j;
+                    if (at < 0)
+                        at += n;
+                    y[std::size_t(j)][0] =
+                        history[std::size_t(2 * at + which)][std::size_t(axis)] - base[std::size_t(axis)];
+                }
+                const auto m = spline_moments(y);
+                for (int i = 0; i <= quads; ++i) {
+                    const float t = (float(i) / float(quads)) * float(n - 1);
+                    model.vertices[std::size_t(2 * i + which)][std::size_t(axis)] =
+                        float(std::int16_t(std::int32_t(spline_at(y, m, t)[0])));
+                }
+            }
+        int trimmed = 0;
+        const bool filling = *o.at(s + 5, 1) != 0;
+        if (filling) // the samples the history has not yet replaced: the trail as long as it is
+            for (int i = quads; i > 0; --i) {
+                if (model.vertices[std::size_t(2 * i)] != model.vertices[std::size_t(2 * i - 2)])
+                    break;
+                ++trimmed;
+            }
+        if (k.b(0xf) != 0) { // the base drawn toward the tip
+            const int left = quads - trimmed;
+            const float step = left > 0 ? 1.0F / float(left) : 1.0F;
+            float f = 1.0F;
+            for (int i = 0; i <= quads; ++i) {
+                auto &b0 = model.vertices[std::size_t(2 * i)];
+                const auto &tip = model.vertices[std::size_t(2 * i + 1)];
+                for (int j = 0; j < 3; ++j)
+                    b0[std::size_t(j)] = float(std::int16_t(std::int32_t(tip[std::size_t(j)] * (1.0F - f) +
+                                                                          b0[std::size_t(j)] * f)));
+                f = std::max(0.0F, f - step);
+            }
+        }
+        if (filling) {
+            const auto range = [](std::uint8_t r) { return r == 1 ? 0x800 : r == 2 ? 0x400 : 0x1000; };
+            int u_end = range(k.b(0x10)), u = 0;
+            const int v_end = range(k.b(0x11));
+            switch (k.b(0x12)) {
+            case 1: u = 0x400; break;
+            case 2: u = 0x800; break;
+            case 3: u = 0xc00; break;
+            default: break;
+            }
+            u_end += u;
+            u += 0x10;
+            u_end -= 0x10;
+            const int left = quads - trimmed;
+            const int du = left >= 1 ? (u_end - u) / left : 0;
+            const float d_alpha = left >= 1 ? 128.0F / float(left) : 0.0F;
+            float alpha = left >= 1 ? 128.0F : 0.0F;
+            for (int i = 0; i < quads; ++i) {
+                auto &q = model.primitives[std::size_t(i)];
+                std::uint8_t near_a = 0, far_a = 0;
+                if (i < left) {
+                    near_a = std::uint8_t(int(alpha));
+                    far_a = std::uint8_t(int(float(int(alpha) & 0xff) - d_alpha));
+                }
+                q.colour[0][3] = q.colour[1][3] = near_a;
+                q.colour[2][3] = q.colour[3][3] = far_a;
+                const int next = std::min(u + du, u_end);
+                if (q.kind == 6) { // the far corners' u not held at the end (FUN_1404d1d00)
+                    const float u0 = float(u) / 4096.0F, u1 = float(u + du - 1) / 4096.0F;
+                    const float v0 = float(v_end - 0x10) / 4096.0F, v1 = float(0x10) / 4096.0F;
+                    q.uv[0] = {u0, v0};
+                    q.uv[1] = {u0, v1};
+                    q.uv[2] = {u1, v0};
+                    q.uv[3] = {u1, v1};
+                }
+                alpha = std::max(0.0F, alpha - d_alpha);
+                u = next;
+            }
+        }
+        if (k.b(0xd) == 0 && frozen == 0) {
+            int next = o.i(s, 0) + 1;
+            if (n <= next) {
+                *o.at(s + 5, 1) = 0;
+                next = 0;
+            }
+            o.seti(s, 0, next);
+        }
+        if (out == nullptr)
+            return;
+        std::array<std::uint8_t, 4> colour{};
+        std::memcpy(colour.data(), o.at(c.slots[0] + 8, 4), 4);
+        if (colour[3] == 0)
+            return;
+        const bool writes = (model.flags & 1) == 0;
+        unsigned flags;
+        if (k.b(8) & 2)
+            flags = writes ? 0xc : 4;
+        else
+            flags = ((k.b(8) & 1) ? 0x80u : 0u) | (writes ? 8u : 0u);
+        M4 at = identity(); // FUN_1404d1960: no turn, at the base, through the view (0x142b0ef20)
+        for (int j = 0; j < 3; ++j)
+            at[std::size_t(12 + j)] = base[std::size_t(j)];
+        const M4 m = mul(mul(at, view), proj);
+        draw_model_with(nullptr, model, m, {float(colour[0]), float(colour[1]), float(colour[2]), float(colour[3])},
+                        flags, k.b(0xc), k.b(0x13), 0, 0, 0, *out);
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -2990,13 +3148,15 @@ struct EffectInstance::State {
             sv = o.f(c.slots[2], 4);
         }
         const std::array<float, 4> tint{float(colour[0]), float(colour[1]), float(colour[2]), float(colour[3])};
-        draw_model_with(o, model, o.draw, tint, flags, only, always, alpha, su, sv, *out);
+        draw_model_with(o.morphed ? &o.morph : nullptr, model, o.draw, tint, flags, only, always, alpha, su, sv,
+                        *out);
     }
 
-    // a model through `m` (FUN_1404b6860's work): its vertices (the object's own when pppVtMime made them), each
+    // a model through `m` (FUN_1404b6860's work): its vertices (`own` when given: pppVtMime's blend), each
     // primitive's corner colour x `tint` (0x80 = 1 both), the request's flags and depth bytes, its ALPHA (0: the
     // model's), the UV scroll added; the primitives far to near, a draw a page
-    void draw_model_with(const Obj &o, const EffectModel &model, const M4 &m, const std::array<float, 4> &tint,
+    void draw_model_with(const std::vector<std::array<float, 3>> *own, const EffectModel &model, const M4 &m,
+                         const std::array<float, 4> &tint,
                          unsigned flags, std::uint8_t only, std::uint8_t always, std::uint16_t alpha, float su,
                          float sv, std::vector<EffectDraw> &out)
     {
@@ -3009,7 +3169,7 @@ struct EffectInstance::State {
             else if (only)
                 d.depth_only = true;
         }
-        const auto &vertices = o.morphed ? o.morph : model.vertices;
+        const auto &vertices = own != nullptr ? *own : model.vertices;
         std::vector<std::array<float, 4>> clip(model.vertices.size());
         for (std::size_t i = 0; i < clip.size(); ++i) {
             const auto &v = i < vertices.size() ? vertices[i] : model.vertices[i];
@@ -3107,6 +3267,7 @@ struct EffectInstance::State {
         case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0xd0: model_birth_draw(o, c, k, out); break;
+        case 0xc8: swing_draw(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
@@ -3303,6 +3464,11 @@ void EffectInstance::tick(const EffectCamera &camera, std::vector<EffectDraw> *d
 void EffectInstance::stop()
 {
     state->stopping = true;
+}
+
+void EffectInstance::set_points(std::vector<EffectPoint> points)
+{
+    state->points = std::move(points);
 }
 
 bool EffectInstance::done() const
