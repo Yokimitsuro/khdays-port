@@ -515,6 +515,50 @@ struct ModelPool {
     bool made = false, born_world = false, own_colour = false;
 };
 
+struct Obj;
+
+// a pppKeThTp's point another object's bolt grows toward (KH2's pointer into that object's memory): none, KH2's
+// static zero point (a key's object -1), or an object's slot
+struct BoltTarget {
+    enum Kind { None, Zero, Slot } kind = None;
+    std::weak_ptr<Obj> obj;
+    std::int32_t slot = 0;
+};
+
+// one place of a bolt (0x30 bytes in KH2's record from +0x50): its place, way, brightness and the branches grown
+// from it
+struct BoltPoint {
+    std::array<float, 4> place{}, dir{};
+    float bright = 0;
+    std::vector<int> children;
+};
+
+// a bolt (a ThRes record, FUN_1404dd010): its points a ring, `first` the oldest live one, `end` the newest; how far
+// it has grown (`grown`, in segments) and how many it has let go from its tail (`dropped`); the points drawn
+// (`draw_a` from `first`, then `draw_b` from 0); its branch depth and where it is tied (a point of `parent`)
+struct Bolt {
+    std::uint16_t flags = 0, first = 0, dropped = 0, draw_a = 0, draw_b = 0;
+    std::uint8_t ring = 0, depth = 0, end = 0;
+    float grown = 0, advance = 0;
+    BoltTarget target;
+    int parent = -1, parent_point = -1;
+    std::vector<BoltPoint> points;
+};
+
+// a ThRes's records (one or four sets of its points) and the free ones, the next taken first
+struct BoltPool {
+    int count = 0;
+    std::vector<Bolt> records;
+    std::vector<int> free;
+};
+
+// a pppKeTh's bolts: its target, its pool (the ThRes's slot) and the live records in KH2's order
+struct BoltState {
+    BoltTarget target;
+    std::int32_t pool = -1;
+    std::vector<int> live;
+};
+
 struct Obj {
     const EffectLayer *layer = nullptr;
     std::int32_t age = 0;
@@ -535,6 +579,11 @@ struct Obj {
     std::map<const EffectCommand *, std::vector<std::array<float, 4>>> rings; // pppEiDrawShipoly's places
     // pppRyjDrawShipolyBone's: the points' history (two a sample) and its own copy of the model it bends
     std::map<const EffectCommand *, std::pair<std::vector<std::array<float, 4>>, EffectModel>> swings;
+    // the lightning: each pppKeTh's bolts (by its slot), each ThRes's records (by its slot), each pppKeThTp's next
+    // point (by its slot; KH2's +0x1c)
+    std::map<std::int32_t, BoltState> bolt_states;
+    std::map<std::int32_t, BoltPool> bolt_pools;
+    std::map<std::int32_t, BoltTarget> next_targets;
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -580,13 +629,13 @@ unsigned words(std::uint32_t code)
     case 0x75: case 0x78: case 0x79: case 0x7b: case 0x7c: case 0x7d: case 0xac: case 0xae: case 0xb1: case 0xb2:
     case 0xb5: case 0xb7: case 0xb8: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
-    case 0xbc:
+    case 0xbc: case 0x7e: case 0x80:
         return W1;
     case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
     case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
-    case 0xdf: case 0xe0: case 0xe1:
+    case 0xdf: case 0xe0: case 0xe1: case 0x81:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -640,6 +689,7 @@ struct EffectInstance::State {
     bool stopping = false, finished = false, fastforward = false;
     std::vector<std::shared_ptr<Obj>> objs;
     std::vector<bool> started;
+    std::vector<std::weak_ptr<Obj>> layer_objs; // each layer's own object (KH2's table at the instance's +0x88)
     // the camera's matrices (FUN_1402c3310): world, view, projection, world.view, world.view.projection, the
     // upright view (eda0) . projection, the world's row lengths (0x142b0f010)
     M4 world = identity(), view = identity(), proj = identity(), wv = identity(), wvp = identity(), wood = identity(),
@@ -749,6 +799,18 @@ struct EffectInstance::State {
             trail_resource(o, c);
             break;
         case 0x30: o.setf(c.slots[0], 3, 1.0F); break; // pppKeDrct (FUN_1404c1790): w = 1
+        case 0x7e: // pppKeThTp (FUN_1404bf440): no next point, the place's w 0
+            o.next_targets.erase(c.slots[0]);
+            o.setf(c.slots[0], 3, 0);
+            break;
+        case 0x80: zero(0, 0x30); break; // pppKeThSft (FUN_1404c78f0): its rates
+        case 0x81: // pppKeTh (FUN_1404beed0): no bolts, its flags, colours, size, rate, reach and pull none
+            o.bolt_states.erase(c.slots[0]);
+            *o.at(c.slots[0] + 4, 1) = 0;
+            std::memset(o.at(c.slots[0] + 0x70, 0x20), 0, 0x20);
+            for (const int at : {0x6c, 0x1c, 0x34, 0x3c})
+                o.setf(c.slots[0] + at, 0, 0);
+            break;
         case 0x31: zero(0, 16); o.morphed = false; break; // pppVtMime (FUN_1404c1a00): t, dt, ddt, no buffer
         case 0x55: std::memset(o.at(c.slots[0] + 0x80, 12), 0, 12); break; // pppKeMatSN: the angles last seen
         case 0x63: born_world(o, c.slots[3]); break;
@@ -888,6 +950,12 @@ struct EffectInstance::State {
         case 0xbc: std::memset(o.at(c.slots[0], 8), 0, 8); break;
         case 0xbd: case 0xdd: o.setf(c.slots[0] + 0x9c, 0, 0); o.setf(c.slots[0] + 0xa8, 0, 0); break;
         case 0xf1: ribbon_reset(o, c); break;
+        case 0x80: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break; // FUN_1404c78f0
+        case 0x81: // FUN_1404bef20: the colours, size, rate, reach and pull (its bolts go on)
+            std::memset(o.at(c.slots[0] + 0x70, 0x20), 0, 0x20);
+            for (const int at : {0x6c, 0x1c, 0x34, 0x3c})
+                o.setf(c.slots[0] + at, 0, 0);
+            break;
         default: break;
         }
     }
@@ -1242,6 +1310,9 @@ struct EffectInstance::State {
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
         case 0xf1: ribbon_step(o, c, k); break;
+        case 0x7e: bolt_target_step(o, c, k); break;
+        case 0x80: bolt_shift_step(o, c, k); break;
+        case 0x81: bolt_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
     }
@@ -3298,6 +3369,645 @@ struct EffectInstance::State {
         }
     }
 
+    // ---------------------------------------------------------------------------------- the lightning
+    // A pppKeTh grows bolts from its object's place along its pppKeDrct's way, a segment at a time, toward a
+    // pppKeThTp's point (another layer's object): each segment's way pulled toward the point (harder within its
+    // reach), turned by a random angle about x, y or z and blended with the way the point had; new points fade by
+    // a rate, and some branch into new bolts from the ThRes's spare records. Every tick the whole bolt is walked
+    // again from its oldest point (it flickers); once grown it lets its tail go. Drawn as a ribbon facing the
+    // screen: a bright core between two edges, pointed at both ends.
+
+    BoltTarget target_at(std::int32_t layer, std::int32_t offset) const // a key's object (a layer) and slot
+    {
+        BoltTarget t;
+        if (layer == -1) {
+            t.kind = BoltTarget::Zero;
+            return t;
+        }
+        if (layer < 0 || std::size_t(layer) >= layer_objs.size())
+            return t;
+        t.kind = BoltTarget::Slot;
+        t.obj = layer_objs[std::size_t(layer)];
+        t.slot = offset;
+        return t;
+    }
+
+    struct BoltAim {
+        std::array<float, 4> place{};
+        float near = 0, strength = 0, reach = 0;
+        BoltTarget next;
+    };
+
+    static BoltAim aim_of(const BoltTarget &t) // the point's place, +0x10 near, +0x14 strength, +0x18 reach
+    {
+        BoltAim a;
+        if (t.kind != BoltTarget::Slot)
+            return a;
+        const auto o = t.obj.lock();
+        if (!o)
+            return a;
+        for (int j = 0; j < 4; ++j)
+            a.place[std::size_t(j)] = o->f(t.slot, j);
+        a.near = o->f(t.slot + 0x10, 0);
+        a.strength = o->f(t.slot + 0x14, 0);
+        a.reach = o->f(t.slot + 0x18, 0);
+        const auto it = o->next_targets.find(t.slot);
+        if (it != o->next_targets.end())
+            a.next = it->second;
+        return a;
+    }
+
+    // pppKeThTp (FUN_1404bf320): on its key the point's near, reach and strength and the next point; each live
+    // tick the object's place, x, y and z (its w left 0 from the birth: a bolt ends once within its reach)
+    void bolt_target_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        const std::int32_t st = c.slots[0];
+        if (hit(o, k)) {
+            o.seti(st + 0x10, 0, k.s32(8));
+            o.seti(st + 0x18, 0, k.s32(4));
+            o.seti(st + 0x14, 0, k.s32(0xc));
+            BoltTarget next = target_at(k.s32(0x10), k.s32(0x14));
+            if (next.kind == BoltTarget::Zero)
+                next = {};
+            o.next_targets[st] = next;
+        }
+        if (live(o))
+            for (int j = 0; j < 3; ++j)
+                o.setf(st, j, o.local[std::size_t(12 + j)]);
+    }
+
+    // pppKeThSft (FUN_1404c75d0): rates (on its key) added each live tick to a pppKeTh's size, rate, reach, pull
+    // and colours; its key sets the most branches. A layer's own object takes its first key's rates at age 0
+    // without adding them yet.
+    void bolt_shift_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const std::int32_t s0 = c.slots[0], s1 = c.slots[1];
+        if (hit(o, k)) {
+            *o.at(s1 + 0x50, 1) = k.b(0x34);
+            o.setf(s0 + 0x28, 0, o.f(s0 + 0x28, 0) + k.f32(0x2c));
+            o.setf(s0 + 0x20, 0, o.f(s0 + 0x20, 0) + k.f32(0x24));
+            o.setf(s0 + 0x24, 0, o.f(s0 + 0x24, 0) + k.f32(0x28));
+            o.setf(s0 + 0x2c, 0, o.f(s0 + 0x2c, 0) + k.f32(0x30));
+            for (int j = 0; j < 16; ++j)
+                o.seth(s0, j, o.h(s0, j) + k.s16(4 + 2 * std::size_t(j)));
+            if (o.age == 0 && !o.parent)
+                return;
+        }
+        o.setf(s1 + 0x6c, 0, o.f(s1 + 0x6c, 0) + o.f(s0 + 0x28, 0));
+        o.setf(s1 + 0x1c, 0, o.f(s1 + 0x1c, 0) + o.f(s0 + 0x20, 0));
+        o.setf(s1 + 0x34, 0, o.f(s1 + 0x34, 0) + o.f(s0 + 0x24, 0));
+        o.setf(s1 + 0x3c, 0, o.f(s1 + 0x3c, 0) + o.f(s0 + 0x2c, 0));
+        for (int j = 0; j < 16; ++j)
+            o.seth(s1 + 0x70, j, o.h(s1 + 0x70, j) + o.h(s0, j));
+    }
+
+    static void bolt_record(Bolt &b, int ring) // FUN_1404dd010 (its advance kept)
+    {
+        const float advance = b.advance;
+        b = Bolt{};
+        b.advance = advance;
+        b.ring = std::uint8_t(ring);
+        b.points.assign(std::size_t(std::max(ring, 1)), BoltPoint{});
+        b.points[0].place[3] = 1;
+    }
+
+    BoltPool &bolt_pool(Obj &o, std::int32_t slot) // a ThRes's records, made the first time (FUN_1404bf300 ...)
+    {
+        auto [it, made] = o.bolt_pools.try_emplace(slot);
+        if (made) {
+            const std::uint8_t *r = o.at(slot, 2);
+            const int sets = r[0];
+            it->second.count = r[1];
+            it->second.records.resize(std::size_t(sets));
+            for (int i = 0; i < sets; ++i) {
+                bolt_record(it->second.records[std::size_t(i)], r[1]);
+                it->second.free.push_back(i);
+            }
+        }
+        return it->second;
+    }
+
+    static void let_go(BoltPool &pool, BoltPoint &pt, std::uint32_t keep) // a point's branches told to end
+    {
+        for (const int id : pt.children) {
+            Bolt &ch = pool.records[std::size_t(id)];
+            ch.flags = std::uint16_t(ch.flags | keep | 8);
+            ch.parent = ch.parent_point = -1;
+        }
+        pt.children.clear();
+    }
+
+    static void xyz(std::array<float, 4> &to, const std::array<float, 4> &from) // FUN_140140010: x, y, z alone
+    {
+        to[0] = from[0], to[1] = from[1], to[2] = from[2];
+    }
+
+    static std::array<float, 4> mix(const std::array<float, 4> &a, const std::array<float, 4> &b, float t)
+    {
+        std::array<float, 4> o{}; // FUN_140141ae0: b (1 - t) + a t
+        for (int j = 0; j < 4; ++j)
+            o[std::size_t(j)] = b[std::size_t(j)] * (1.0F - t) + a[std::size_t(j)] * t;
+        return o;
+    }
+
+    // pppKeTh (FUN_1404be900): its key (frame 0) starts a bolt toward its point; each key adds to its colours
+    // (16 shorts / 128: the core's and the edges' bytes and their rates), sets its length, adds to its size,
+    // rate, reach and pull; then its bolts grow (FUN_1404de9b0)
+    void bolt_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const std::int32_t st = c.slots[0], P = st + 0x10;
+        auto &bs = o.bolt_states[st];
+        BoltPool &pool = bolt_pool(o, c.slots[1]);
+        if (pool.records.empty() || pool.count < 2)
+            return;
+        std::array<float, 4> dir = transformed(
+            {o.f(c.slots[2], 0), o.f(c.slots[2], 1), o.f(c.slots[2], 2), o.f(c.slots[2], 3)}, o.local);
+        unit3(dir.data());
+        const std::array<float, 4> place{o.local[12], o.local[13], o.local[14], o.local[15]};
+        if (hit(o, k)) {
+            if (k.frame() == 0) {
+                if (bs.target.kind == BoltTarget::Zero)
+                    return; // KH2: an instance aimed at nothing earlier skips the tick
+                bs.target = target_at(k.s32(4), k.s32(8));
+                bs.pool = c.slots[1];
+                std::uint8_t &f = *o.at(st + 4, 1);
+                if (k.b(0x56) == 0)
+                    f |= 8;
+                if (k.b(0x55) != 0)
+                    f |= 4;
+                if (k.b(0x58) != 0)
+                    f |= 0x10;
+                if (k.b(0x57) != 0)
+                    f |= 0x20;
+                bolt_start(o, bs, pool, st, place, dir);
+            }
+            for (int j = 0; j < 16; ++j)
+                o.seth(st + 0x70, j, o.h(st + 0x70, j) + k.s16(0xc + 2 * std::size_t(j)));
+            o.seti(st + 0x68, 0, k.s32(0x2c));
+            o.setf(st + 0x6c, 0, k.f32(0x48) + o.f(st + 0x6c, 0));
+            const std::uint8_t segs = std::uint8_t(pool.count - 1);
+            *o.at(P + 0x42, 1) = segs;
+            const float w = k.f32(0x30) + o.f(P + 0xc, 0);
+            o.setf(P + 0xc, 0, w);
+            o.seti(P + 0x30, 0, k.s32(0x38));
+            o.seti(P + 0x38, 0, k.s32(0x3c));
+            o.seti(P + 0x3c, 0, k.s32(0x40));
+            o.setf(P + 0x24, 0, k.f32(0x44) + o.f(P + 0x24, 0));
+            o.setf(P + 0x2c, 0, k.f32(0x4c) + o.f(P + 0x2c, 0));
+            o.setf(P + 0x28, 0, float(k.u16(0x50)) * 3.1415927410125732F * 0.01745329238474369F);
+            *o.at(P + 0x40, 1) = k.b(0x52);
+            *o.at(P + 0x41, 1) = k.b(0x53);
+            o.setf(P + 0x1c, 0, -((w - w * k.f32(0x34)) / float(segs)));
+        }
+        const float seg = o.f(st + 0x68, 0) / float(*o.at(P + 0x42, 1));
+        o.setf(P + 0x20, 0, seg);
+        o.setf(P + 0x34, 0, o.f(st + 0x6c, 0) / seg);
+        for (int j = 0; j < 8; ++j) {
+            *o.at(P + j, 1) = std::uint8_t(o.h(st + 0x70, j) >> 7);
+            *o.at(P + 0x10 + j, 1) = std::uint8_t(o.h(st + 0x80, j) >> 7);
+        }
+        // FUN_1404de9b0: each bolt: tied to the object (0x200), released (0x100 takes the state's 2), grown,
+        // freed when done
+        std::uint8_t &f = *o.at(st + 4, 1);
+        std::uint16_t release = 0;
+        if (f & 2) {
+            release = 0x20;
+            f = std::uint8_t(f & ~2);
+        }
+        for (std::size_t i = 0; i < bs.live.size();) {
+            const int id = bs.live[i];
+            {
+                Bolt &b = pool.records[std::size_t(id)];
+                if (b.flags & 0x200) {
+                    xyz(b.points[b.first].place, place);
+                    xyz(b.points[b.first].dir, dir);
+                }
+                if (b.flags & 0x100)
+                    b.flags = std::uint16_t(b.flags | release);
+            }
+            bolt_grow(o, bs, pool, i, P);
+            Bolt &b = pool.records[std::size_t(id)];
+            if (b.flags & 0x10) { // FUN_1404dd790: its live points' branches let go, untied, back to the pool
+                const std::uint32_t keep = b.flags & 0x20u;
+                for (int n = 0; n < b.draw_b; ++n)
+                    let_go(pool, b.points[std::size_t(n)], keep);
+                for (int n = 0; n < b.draw_a; ++n)
+                    let_go(pool, b.points[std::size_t((b.first + n) % std::max<int>(b.ring, 1))], keep);
+                if (b.parent >= 0) {
+                    auto &ch = pool.records[std::size_t(b.parent)].points[std::size_t(b.parent_point)].children;
+                    ch.erase(std::remove(ch.begin(), ch.end(), id), ch.end());
+                    b.parent = b.parent_point = -1;
+                }
+                bs.live.erase(bs.live.begin() + std::ptrdiff_t(i));
+                pool.free.insert(pool.free.begin(), id);
+                continue;
+            }
+            ++i;
+        }
+    }
+
+    // FUN_1404de490: a free record started at the object's place and way, its flags from the state's (4: it
+    // may end grown, 0x10 tied to the object, 8 its ways unit, 0x20 drawn newest first)
+    void bolt_start(Obj &o, BoltState &bs, BoltPool &pool, std::int32_t st, const std::array<float, 4> &place,
+                    const std::array<float, 4> &dir)
+    {
+        if (pool.free.empty())
+            return;
+        const int id = pool.free.front();
+        pool.free.erase(pool.free.begin());
+        Bolt &b = pool.records[std::size_t(id)];
+        bolt_record(b, pool.count);
+        b.points[0].bright = 0;
+        b.advance = 0;
+        const std::uint8_t f = *o.at(st + 4, 1);
+        std::uint16_t fl = std::uint16_t(((f & 4) | 8) << 5);
+        if (f & 0x10)
+            fl |= 0x200;
+        if (f & 8)
+            fl |= 0x400;
+        if (f & 0x20)
+            fl |= 0x1000;
+        b.flags = std::uint16_t(b.flags | fl);
+        xyz(b.points[0].place, place);
+        xyz(b.points[0].dir, dir);
+        bs.live.insert(bs.live.begin(), id);
+    }
+
+    // FUN_1404dd8e0: one bolt's tick. P is the state's +0x10: +0x20 a segment's length, +0x24 how much of the
+    // last way is kept, +0x28 the random turn's most, +0x2c the pull, +0x34 the segments grown a tick, +0x3c the
+    // brightness rate, +0x40 the most branches, +0x41 the branch mask (0xff none), +0x42 the segments.
+    void bolt_grow(Obj &o, BoltState &bs, BoltPool &pool, std::size_t at, std::int32_t P)
+    {
+        const int id = bs.live[at];
+        Bolt *b = &pool.records[std::size_t(id)];
+        std::uint32_t flags = b->flags;
+        if (flags & 0x800)
+            flags = (flags & ~0x800u) | 0x40;
+        if (flags & 8) { // its parent let it go: it ends, or (0x20) goes on alone
+            if (!(flags & 0x20)) {
+                b->flags = std::uint16_t(flags | 0x10);
+                return;
+            }
+            flags = (flags & ~8u) | 0x100;
+        }
+        const int ring = std::max<int>(b->ring, 1);
+        const float grown = b->grown;
+        int dropped = b->dropped;
+        const std::uint8_t mask = *o.at(P + 0x41, 1), most = *o.at(P + 0x40, 1), segs = *o.at(P + 0x42, 1);
+        bool branch = mask != 0xff && b->depth < most;
+        const bool unit = (b->flags & 0x400) != 0;
+        const int gi = int(grown);
+        float to = grown + o.f(P + 0x34, 0);
+        const int ti = int(to);
+        int steps = ti - gi, over = steps;
+        if (flags & 2) {
+            steps = 0;
+            to = grown;
+        } else if (!(flags & 4) && int(segs) <= ti) {
+            if (flags & 0x80)
+                flags |= 0x20;
+            over = ti - int(segs);
+            if (!(flags & 0x20)) {
+                steps -= over;
+                to = float(segs);
+            } else {
+                flags = (flags & ~0x200u) | 4;
+            }
+        }
+        const std::uint32_t entry = flags;
+        BoltTarget target;
+        if (!(flags & 0x20)) {
+            over = 0;
+            if (!(flags & 0x100)) {
+                target = b->target;
+            } else {
+                target = bs.target;
+                b->target = target;
+            }
+        } else {
+            dropped += over;
+            target = b->target;
+            if (target.kind == BoltTarget::None || gi <= dropped) {
+                b->flags = std::uint16_t(b->flags | 0x10);
+                return;
+            }
+        }
+        int idx = b->first;
+        for (int n = 0; n < over; ++n) { // its tail let go
+            let_go(pool, b->points[std::size_t(idx)], flags & 0x20u);
+            idx = (idx + 1) % ring;
+        }
+        b->first = std::uint16_t(idx);
+        b->advance += float(over);
+        const float seg = o.f(P + 0x20, 0), pull0 = o.f(P + 0x2c, 0), keep = o.f(P + 0x24, 0);
+        BoltAim aim = aim_of(target);
+        std::array<float, 4> dir = b->points[std::size_t(idx)].dir;
+        dir[3] = 0;
+        std::array<float, 4> cur = b->points[std::size_t(idx)].place;
+        const int live_n = gi - dropped;
+        steps += live_n;
+        int done = 0;
+        const auto pull = [&](float d) {
+            return d < aim.near ? aim.strength - ((d - aim.reach) * aim.strength) / (aim.near - aim.reach) + pull0
+                                : pull0;
+        };
+        const auto turn = [&](std::array<float, 4> &v) { // a random turn about x, y or z (KH2's table 0x140782710)
+            const int r = crand();
+            const float a = (float(r % 1001 - 500) * o.f(P + 0x28, 0)) / 500.0F;
+            const M4 m = r % 3 == 0 ? radians_xyz(a, 0, 0) : r % 3 == 1 ? radians_xyz(0, a, 0) : radians_xyz(0, 0, a);
+            v = transformed(v, m);
+            return r;
+        };
+        if ((flags & 0x120) == 0x100) { // started this tick: its first way aimed
+            auto v = minus(aim.place, cur);
+            const float d = length3(v);
+            unit3(v.data());
+            dir = mix(v, dir, pull(d));
+            if (unit)
+                unit3(dir.data());
+            turn(dir);
+            dir = mix(dir, b->points[std::size_t(idx)].dir, keep);
+            if (unit)
+                unit3(dir.data());
+        }
+        int p_idx = idx;
+        for (;;) {
+            auto v = minus(aim.place, cur);
+            const float d = length3(v);
+            const bool inside = aim.place[3] == 0 ? aim.reach < d : d < aim.reach;
+            if (!inside && aim.reach != d) {
+                if (aim.next.kind != BoltTarget::None) { // on to the next point
+                    target = aim.next;
+                    aim = aim_of(target);
+                    if (done == 0)
+                        b->target = target;
+                } else { // there: the bolt ends at this point
+                    flags |= 0x800;
+                    b->end = std::uint8_t(p_idx);
+                    to = float(dropped + done);
+                    int q = p_idx;
+                    for (int n = done + 1; n <= live_n; ++n) {
+                        q = (q + 1) % ring;
+                        let_go(pool, b->points[std::size_t(q)], entry & 0x20u);
+                    }
+                    if (entry & 0x80)
+                        flags = entry | 0x820;
+                    break;
+                }
+            }
+            const int n1 = done + 1;
+            if (steps < n1) {
+                b->end = std::uint8_t(p_idx);
+                break;
+            }
+            const int q_idx = (p_idx + 1) % ring;
+            const auto old_place = cur, old_dir = dir;
+            for (int j = 0; j < 4; ++j)
+                cur[std::size_t(j)] += dir[std::size_t(j)] * seg;
+            xyz(b->points[std::size_t(q_idx)].place, cur);
+            unit3(v.data());
+            dir = mix(v, dir, pull(d));
+            if (unit)
+                unit3(dir.data());
+            const int r = turn(dir);
+            const float wave = (float(r) * 4.656612873077393e-10F + float(r) * 4.656612873077393e-10F) - 1.0F;
+            const float prev_bright = b->points[std::size_t(p_idx)].bright;
+            if (live_n < n1) { // a new point
+                BoltPoint &q = b->points[std::size_t(q_idx)];
+                q.children.clear();
+                q.place[3] = 1;
+                q.bright = std::clamp(wave * o.f(P + 0x3c, 0) + prev_bright, 0.0F, 1.0F);
+                if (branch && (mask & r) == 0) {
+                    if (pool.free.empty()) {
+                        branch = false;
+                    } else { // a branch from here, after this bolt in the list
+                        const int cid = pool.free.front();
+                        pool.free.erase(pool.free.begin());
+                        b->depth++;
+                        Bolt &ch = pool.records[std::size_t(cid)];
+                        bolt_record(ch, pool.count);
+                        b = &pool.records[std::size_t(id)];
+                        ch.flags = std::uint16_t(ch.flags | (b->flags & 0x1400));
+                        ch.target = target;
+                        ch.depth = b->depth;
+                        ch.advance = float(gi) + b->advance + float(n1) - float(live_n);
+                        xyz(ch.points[0].place, old_place);
+                        xyz(ch.points[0].dir, old_dir);
+                        ch.points[0].bright = prev_bright;
+                        ch.parent = id;
+                        ch.parent_point = q_idx;
+                        bs.live.insert(bs.live.begin() + std::ptrdiff_t(at + 1), cid);
+                        auto &kids = b->points[std::size_t(q_idx)].children;
+                        kids.insert(kids.begin(), cid);
+                    }
+                    if (most <= b->depth)
+                        branch = false;
+                }
+            } else { // a point walked again: moved toward its new place
+                BoltPoint &q = b->points[std::size_t(q_idx)];
+                dir = mix(dir, q.dir, keep);
+                if (unit)
+                    unit3(dir.data());
+                const float to_bright = std::clamp(wave * o.f(P + 0x3c, 0) + prev_bright, 0.0F, 1.0F);
+                q.bright = (to_bright - q.bright) * keep + q.bright;
+                for (const int cid : q.children) {
+                    Bolt &ch = pool.records[std::size_t(cid)];
+                    BoltPoint &root = ch.points[ch.first];
+                    xyz(root.place, old_place);
+                    xyz(root.dir, old_dir);
+                    root.bright = q.bright;
+                    ch.target = target;
+                }
+            }
+            xyz(b->points[std::size_t(q_idx)].dir, dir);
+            p_idx = q_idx;
+            done = n1;
+        }
+        // the points drawn: from the oldest to the newest, the ring wrapped
+        const int e = b->end;
+        int a = 0, w = 0;
+        if (b->first < e) {
+            a = e - b->first + 1;
+        } else if (e < b->first) {
+            w = e + 1;
+            a = ring - b->first;
+        }
+        b->draw_a = std::uint16_t(a);
+        b->draw_b = std::uint16_t(w);
+        b->dropped = std::uint16_t(dropped);
+        b->grown = to;
+        b->flags = std::uint16_t(flags);
+    }
+
+    // pppKeTh's draw (FUN_1404bef80 + FUN_1404de5c0): each bolt a ribbon (FUN_1404dd100); its key's +0x54 the
+    // blend: 0 added (0x48), 1 taken away (0x42), else as it is (0xa8 with FIX 0x80: drawn as 0x88, alpha 1)
+    void bolt_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        if (out == nullptr)
+            return;
+        const auto it = o.bolt_states.find(c.slots[0]);
+        if (it == o.bolt_states.end())
+            return;
+        const auto pit = o.bolt_pools.find(it->second.pool);
+        if (pit == o.bolt_pools.end())
+            return;
+        const std::uint8_t mode = k.b(0x54);
+        const std::uint8_t alpha = mode == 0 ? 0x48 : mode == 1 ? 0x42 : 0x88;
+        for (const int id : it->second.live)
+            bolt_ribbon(o, c.slots[0] + 0x10, pit->second.records[std::size_t(id)], alpha, mode > 1, *out);
+    }
+
+    // FUN_1404dd100 and its pieces (FUN_1404dff80, FUN_1404df640, FUN_1404deca0, FUN_1404df370): the bolt's
+    // points through world, view and projection; at each a sideways offset on the screen (the turn between its
+    // two segments, its size x the world's x and y sizes, x 1 - P+0x38 x the next point's brightness); the core
+    // colour (P's bytes 0-3) at the middle, the edges' (4-7) at the offset and at P+0x30 of it, each moved by its
+    // rate (P+0x10.., P+0x14..) a point and clamped to 0..255; the size by P+0x1c a point. A fan from the first
+    // point, strips of ten between the points, a fan to the last. KH2's projection gives its screen's pixels (512
+    // x 416, a focal length of 256 / tan 0.75: FUN_14019d050), the size and the ways across in them; here the ways
+    // are taken across the projection's x and y units (its x / P[0][0], y / P[1][1]) and the size given back in
+    // them (x P[0][0] / that focal length).
+    void bolt_ribbon(Obj &o, std::int32_t P, const Bolt &b, std::uint8_t alpha, bool opaque,
+                     std::vector<EffectDraw> &out)
+    {
+        const int n = b.draw_a + b.draw_b;
+        if (n < 3)
+            return;
+        const int ring = std::max<int>(b.ring, 1);
+        std::vector<const BoltPoint *> pts;
+        if (!(b.flags & 0x1000)) {
+            for (int i = 0; i < b.draw_a; ++i)
+                pts.push_back(&b.points[std::size_t((b.first + i) % ring)]);
+            for (int i = 0; i < b.draw_b; ++i)
+                pts.push_back(&b.points[std::size_t(i)]);
+        } else {
+            for (int i = b.draw_b - 1; i >= 0; --i)
+                pts.push_back(&b.points[std::size_t(i)]);
+            for (int i = b.first + b.draw_a - 1; i >= b.first; --i)
+                pts.push_back(&b.points[std::size_t(i % ring)]);
+        }
+        std::array<float, 4> A{}, B{}, C{}, D{};
+        for (int j = 0; j < 4; ++j) {
+            A[std::size_t(j)] = float(*o.at(P + j, 1));
+            B[std::size_t(j)] = float(*o.at(P + 4 + j, 1));
+            C[std::size_t(j)] = float(std::int8_t(*o.at(P + 0x10 + j, 1)));
+            D[std::size_t(j)] = float(std::int8_t(*o.at(P + 0x14 + j, 1)));
+        }
+        const auto clamp255 = [](std::array<float, 4> &v) {
+            for (auto &x : v)
+                x = std::clamp(x, 0.0F, 255.0F);
+        };
+        const auto added = [](std::array<float, 4> &v, const std::array<float, 4> &d, float t) {
+            for (int j = 0; j < 4; ++j)
+                v[std::size_t(j)] += d[std::size_t(j)] * t;
+        };
+        float width = o.f(P + 0xc, 0);
+        const float shrink = o.f(P + 0x1c, 0), core = o.f(P + 0x30, 0), dim = o.f(P + 0x38, 0);
+        if (!(b.flags & 0x1000)) {
+            added(A, C, b.advance);
+            clamp255(A);
+            added(B, D, b.advance);
+            clamp255(B);
+            width = std::max(b.advance * shrink + width, 0.0F);
+        }
+        constexpr float kh2_focal = 274.79F; // 256 / tan(0.75)
+        const float px = std::abs(proj[0]) != 0 ? std::abs(proj[0]) : 1.0F,
+                    py = std::abs(proj[5]) != 0 ? std::abs(proj[5]) : 1.0F;
+        const float sx = world_scale[0] * px / kh2_focal, sy = world_scale[1] * py / kh2_focal;
+        const auto colour = [&](const std::array<float, 4> &v) {
+            std::array<float, 4> c{};
+            for (int j = 0; j < 4; ++j)
+                c[std::size_t(j)] = float(int(v[std::size_t(j)])) / 128.0F;
+            if (opaque)
+                c[3] = 1.0F;
+            return c;
+        };
+        const auto at = [&](const std::array<float, 4> &p, const std::array<float, 2> &off, float t) {
+            auto q = p;
+            q[0] += off[0] * t;
+            q[1] += off[1] * t;
+            return q;
+        };
+        const auto unit2 = [](float x, float y) {
+            const float l = std::sqrt(x * x + y * y);
+            return l != 0 ? std::array<float, 2>{x * (1.0F / l), (1.0F / l) * y} : std::array<float, 2>{0, 0};
+        };
+        EffectDraw d;
+        d.alpha = alpha;
+        const auto put = [&](const std::array<float, 4> &p, const std::array<float, 4> &c) {
+            d.triangles.push_back(vertex(p, 0, 0, colour(c)));
+        };
+        const auto fan = [&](const std::vector<std::pair<std::array<float, 4>, std::array<float, 4>>> &v) {
+            for (std::size_t i = 1; i + 1 < v.size(); ++i)
+                for (const std::size_t j : {std::size_t(0), i, i + 1})
+                    put(v[j].first, v[j].second);
+        };
+        const auto strip = [&](const std::vector<std::pair<std::array<float, 4>, std::array<float, 4>>> &v) {
+            for (std::size_t i = 0; i + 2 < v.size(); ++i)
+                for (const std::size_t j : {i, i + 1, i + 2})
+                    put(v[j].first, v[j].second);
+        };
+        const auto clip = [&](const BoltPoint *p) { return transformed(p->place, wvp); };
+        // the first two points and the first segment's way (not divided by w)
+        std::array<float, 4> c_prev = clip(pts[0]), c_cur = clip(pts[1]);
+        auto d_prev = unit2((c_cur[0] - c_prev[0]) / px, (c_cur[1] - c_prev[1]) / py);
+        float inv_cur = 1.0F / c_cur[3];
+        std::array<float, 2> o_prev{};
+        const auto offset = [&](const std::array<float, 4> &c_next, std::size_t next) {
+            const float fade = 1.0F - dim * pts[next]->bright;
+            const float inv_next = 1.0F / c_next[3];
+            const auto dd = unit2((c_next[0] * inv_next - c_cur[0] * inv_cur) / px,
+                                  (c_next[1] * inv_next - c_cur[1] * inv_cur) / py);
+            const auto m = unit2(d_prev[0] + dd[0], d_prev[1] + dd[1]);
+            width = std::max(width + shrink, 0.0F);
+            d_prev = dd;
+            inv_cur = inv_next;
+            return std::array<float, 2>{m[1] * width * sx * fade, -(m[0] * width) * sy * fade};
+        };
+        { // the first fan: the first point to the second's five
+            const auto a0 = A;
+            const auto c_next = clip(pts[2]);
+            added(B, D, 1);
+            clamp255(B);
+            const auto o1 = offset(c_next, 2);
+            const auto b1 = B;
+            added(A, C, 1);
+            clamp255(A);
+            fan({{c_prev, a0}, {at(c_cur, o1, 1), b1}, {at(c_cur, o1, core), b1}, {c_cur, A},
+                 {at(c_cur, o1, -core), b1}, {at(c_cur, o1, -1), b1}});
+            o_prev = o1;
+            c_prev = c_cur;
+            c_cur = c_next;
+        }
+        for (std::size_t i = 3; i < pts.size(); ++i) { // the strips: the segment before the point read
+            const auto c_next = clip(pts[i]);
+            const auto b0 = B;
+            added(B, D, 1);
+            clamp255(B);
+            const auto oc = offset(c_next, i);
+            const auto a0 = A;
+            added(A, C, 1);
+            clamp255(A);
+            strip({{at(c_prev, o_prev, 1), b0}, {at(c_cur, oc, 1), B}, {at(c_prev, o_prev, core), b0},
+                   {at(c_cur, oc, core), B}, {c_prev, a0}, {c_cur, A}, {at(c_prev, o_prev, -core), b0},
+                   {at(c_cur, oc, -core), B}, {at(c_prev, o_prev, -1), b0}, {at(c_cur, oc, -1), B}});
+            o_prev = oc;
+            c_prev = c_cur;
+            c_cur = c_next;
+        }
+        { // the last fan: the last point from the one before's five
+            const auto a0 = A;
+            added(A, C, 1);
+            clamp255(A);
+            fan({{c_cur, A}, {at(c_prev, o_prev, 1), B}, {at(c_prev, o_prev, core), B}, {c_prev, a0},
+                 {at(c_prev, o_prev, -core), B}, {at(c_prev, o_prev, -1), B}});
+        }
+        out.push_back(std::move(d));
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -3722,6 +4432,7 @@ struct EffectInstance::State {
         case 0xbd: case 0xdd: flare_line(o, c); break;
         case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdf: case 0xe0: case 0xe1: flare_element(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
+        case 0x81: bolt_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
                 return;
@@ -3778,7 +4489,11 @@ struct EffectInstance::State {
         for (std::size_t i = 0; i < emitter->layers.size(); ++i)
             if (!started[i] && emitter->layers[i].start <= age) {
                 started[i] = true;
-                birth(emitter->layers[i])->skip = false;
+                auto o = birth(emitter->layers[i]);
+                o->skip = false;
+                if (layer_objs.size() < emitter->layers.size())
+                    layer_objs.resize(emitter->layers.size());
+                layer_objs[i] = o;
             }
         // FUN_1404b0fd0: each object's steps of the commands without a draw
         const auto snapshot = objs;

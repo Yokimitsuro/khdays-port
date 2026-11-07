@@ -302,6 +302,59 @@ void test_textured_triangle()
 
 } // namespace
 
+// a bolt (pppKeTh) up from the origin, 10 a segment, toward a pppKeThTp's point on another layer at (0, aim, 0);
+// its ribbon's vertices: a fan at each end, ten-vertex strips between (12 + (points - 3) x 24 + 12)
+std::size_t bolt_vertices(float aim, EffectVertex &head)
+{
+    MadeLayer target;
+    target.commands.push_back(command(0x28, 0x10, {0x20}, [&](auto &k) { put(k, 8, aim); }));
+    target.commands.push_back(command(0x5d, 4, {0x20}));
+    target.commands.push_back(command(0x7e, 0x18, {0x40}, [](auto &k) {
+        put(k, 4, 5.0F);              // its reach
+        put(k, 8, 50.0F);             // near
+        put(k, 0xc, 0.0F);            // strength
+        put(k, 0x10, std::int32_t(-1)); // no next point
+    }));
+    MadeLayer bolt;
+    bolt.commands.push_back(command(0x03, 4, {0x10}));                                // ThRes8: 8 points
+    bolt.commands.push_back(command(0x30, 0x10, {0x20}, [](auto &k) { put(k, 8, 1.0F); })); // up
+    bolt.commands.push_back(command(0x81, 0x5c, {0x40, 0x10, 0x20}, [](auto &k) {
+        put(k, 4, std::int32_t(0));    // the point: layer 0's
+        put(k, 8, std::int32_t(0x40)); // its slot
+        for (int j = 0; j < 4; ++j) {
+            put(k, std::size_t(0xc + 2 * j), std::int16_t(128 * 128)); // the core 128 a byte
+            put(k, std::size_t(0x14 + 2 * j), std::int16_t(64 * 128)); // the edges 64
+        }
+        put(k, 0x2c, 70.0F);   // 7 segments of 10
+        put(k, 0x30, 1000.0F); // its size
+        put(k, 0x34, 1.0F);    // as wide at the tail
+        put(k, 0x38, 0.25F);   // the core's part
+        put(k, 0x48, 100.0F);  // 10 segments a tick: grown at once
+        put(k, 0x53, std::uint8_t(0xff)); // no branches
+    }));
+    EffectInstance fx(block_of(made_block({target, bolt}, {}, {}, 30, false)), 0, 1);
+    const EffectCamera cam{identity(), identity(), identity()};
+    std::vector<EffectDraw> draws;
+    fx.tick(cam, &draws);
+    for (const auto &d : draws)
+        if (d.alpha == 0x48) {
+            for (const auto &v : d.triangles)
+                expect(std::isfinite(v.x) && std::isfinite(v.y), "the ribbon finite");
+            head = d.triangles.at(0);
+            return d.triangles.size();
+        }
+    return 0;
+}
+
+void test_lightning()
+{
+    EffectVertex head;
+    expect(bolt_vertices(500, head) == 12 + 5 * 24 + 12, "8 points grown, far from the point");
+    expect(near(head.x, 0) && near(head.y, 0) && near(head.r, 1) && near(head.a, 1),
+           "its head fan at its start, the core's colour");
+    expect(bolt_vertices(30, head) == 12 + 24 + 12, "4 points: it ends where it reaches the point");
+}
+
 int main()
 {
     try {
@@ -314,6 +367,7 @@ int main()
         test_point_ap();
         test_vt_mime();
         test_textured_triangle();
+        test_lightning();
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect: %s\n", e.what());
         return 1;
