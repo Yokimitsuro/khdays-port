@@ -242,16 +242,11 @@ same layout's first effect, read only as far as its pictures and shapes.
   start with their frame (x 4096), the last followed by `0xfffff000`; its slots list where in a running layer's
   memory its values are kept.
 - **The commands**: a code indexes the executable's table of 0x50-byte descriptors (at 0x140779a00), the first word
-  KH2's name for it, the others its functions: word 1 a step, 3 a draw (or a particle's step), 7 and 8 the reset on
-  a birth, 9 the release. Places, turns, scales and colours (`pppPoint`, `pppAngle`, `pppScale`, `pppColor` and
-  their `Move`, `Accele` and `...Loop` forms, a record's values applied on its frame and integrated each frame after;
-  random values), matrices (`pppMatrixXYZ` turns about x, then y, then z; `pppMatrixLoop` z, x, y; `pppMatrixScl`;
-  `pppParMatrix` through a parent's), drawing matrices (`pppDrawMatrix` through the
-  world, view and projection; `pppDrawMatrixFront` facing the view, its rows sized by the world's scale;
-  `pppDrawMatrixWood` upright, the world's y kept), draws (`pppDrawMdl3`, `pppDrawMdlTs3` with its pictures
-  scrolled, `pppDrawMdlLoopZ`, `pppDrawShapeX`), vertices (`pppVertexAp`: children born at a model's vertices) and
-  the particle spawner `pppRyjMegaBirth` (a pool of view-space sprites; the prizes' is `pppRyjMegaBirthPrize`).
-  A command the reader does not know is refused with its code, as a primitive kind it does not read.
+  KH2's name for it, the others its functions: word 1 a step, 3 a draw (run every tick, drawn or not: some keep
+  their state there), 5 a hook on the instance, 7 the reset on a birth, 8 on a loop, 9 the release. The 130 codes
+  KH2's 3166 PAX use are in the table below ("KH2's effect commands"); a command the reader does not know is
+  refused with its code, as a primitive kind it does not read. The names' middle letters are their authors'
+  (`Ke`, `Ryj`, `Sno`, `Ei`, `Vt`).
 - **The run**, at KH2's 60 ticks a second: a layer is born when its start comes; each tick every running layer's
   commands without a draw step, then those with one step and draw, in the layers' order; a layer whose loop's end
   comes goes back to its loop's start (the frames between run without their spawners); one whose life is over goes.
@@ -275,6 +270,46 @@ same layout's first effect, read only as far as its pictures and shapes.
   effect's; a draw names a page by its TEX0 (tbp, width, height, palette): its view of the pictures placed on the
   128 x 64 pages from that tbp. The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
   of the pictures' tbps.
+
+### KH2's effect commands
+
+Each command's slots are offsets in its object's memory (from the object's +0xa0); "a key" is a keyed record on
+its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executable, our own reading).
+
+| Codes | Commands | What they do |
+| --- | --- | --- |
+| 0x02-0x11 | `pppKeThRes`, `8`, `16`, `24`, `24x4`, `32`, `40`, `48`, `48x4` | At a birth: a lightning bolt's points (one or four sets of 3 to 48, 48 bytes each) |
+| 0x1c-0x1f, 0x24-0x27 | `pppAccele`, `AngAccele`, `SclAccele`, `ColAccele`, `Move`, `AngMove`, `SclMove`, `ColMove` | A value and its rate: a key adds to the rate, the rate adds to the value each tick |
+| 0x28-0x2b | `pppPoint`, `pppAngle`, `pppScale`, `pppColor` | A key adds its values (the colour's four shorts / 128 the bytes at +8) |
+| 0xd2-0xd7 | `pppMoveLoop`, `AngMoveLoop`, `SclMoveLoop`, `PointLoop`, `AngleLoop`, `ScaleLoop` | The same for a looping layer (a loop's fast-forward leaves the rate out; the first key taken off again) |
+| 0x33-0x35, 0x3f-0x44, 0x48-0x4d, 0x51, 0x52 | `pppRand...`, `pppSRand...` | A random draw times the key's base added to a target: both ways (base x draw - base), `Up` (0 to base), `Down` (-base to 0); floats drawn at the start and kept, ints (`IV`) and four-short colours (`HCV`) drawn on each key; `S` each component its own draw |
+| 0x2d | `pppVertexAttend` | A vertex of a list through the parent's matrix (where a `pppVertexApAt` child stays) |
+| 0x2f | `pppKeMvYpEff` | The angles that face its way (z about the way's x and y, x its rise) |
+| 0x30 | `pppKeDrct` | A direction set on its key |
+| 0x31 | `pppVtMime` | The object's vertices a blend of two models, t moving with its rate; drawn and spawned at in the model's place |
+| 0x54, 0x55 | `pppSMatrix`, `pppKeMatSN` | A shared matrix; a turn by how much angles changed since the last tick |
+| 0x57-0x5c, 0xd8, 0xe6-0xeb | `pppMatrixXYZ`, `XZY`, `YZX`, `YXZ`, `ZXY`, `ZYX`, `pppMatrixLoop`, `pppMatrixLoopXYZ`... | The object's matrix from place, angles and scale; the letters the order the turns apply (row vectors) |
+| 0x5d, 0x5e, 0x60, 0x63 | `pppMatrixLoc`, `pppMatrixScl`, `pppRyjMatrixNoRot`, `pppRyjMatrixWorldXYZ` | No turn; the scale on the diagonal; the view's turn undone (facing the camera); kept where the world was at the birth |
+| 0x69, 0x6a | `pppParMatrix`, `pppKeParMatR` | Placed through the parent's matrix; turned by its unit rows too |
+| 0x70-0x75, 0xd9 | `pppDrawMatrix`, `Front`, `NoRot`, `Wood`, `pppKeDMat`, `pppKeDMatFr`, `pppDrawMatrixLoop` | The matrix drawn with: through world, view and projection; facing the view; no view turn; upright; kept in a slot |
+| 0x78, 0x79, 0x7b | `pppRyjDrawMatrixWorld`, `Front`, `Wood` | The same at the world's place and size at the birth |
+| 0x7c, 0x7d | `pppKeZCrct`, `pppKeZCrctShp` | Depth order corrections (KH2's sorting alone) |
+| 0x7e, 0x80, 0x81 | `pppKeThTp`, `pppKeThSft`, `pppKeTh` | Lightning: a bolt grown from the object toward a target point, segment by segment with random kinks and branches, drawn as a glowing ribbon (FUN_1404be900, FUN_1404dd8e0, FUN_1404de5c0); read, not played yet |
+| 0x83, 0x85, 0x86, 0x89, 0x8a, 0x8b, 0xda, 0xdb | `pppDrawMdl`, `MdlTs`, `Mdl2`, `Mdl3`, `MdlSemi3`, `MdlTs3`, `MdlLoop`, `MdlLoopZ` | A model through the object's matrix and colour; each its depth rules (8 written, 0x80 not, 4 two record bytes: the depth alone / always), the Ts and Loop ones their UV scroll, Semi3 and LoopZ the record's blend |
+| 0x8d, 0x8e | `pppDrawShape`, `pppDrawShapeX` | A shape's frames through the matrix |
+| 0x91, 0xa0, 0xee | `pppKeMdlDtt`, `pppKeShpDtt`, `pppSnoMdlDttNorm` | The screen behind drawn again through a model or a sprite, moved by a strength (along the normals for the last): given as draws of the screen, the movement not worked out; the port does not draw them yet |
+| 0x99-0x9d | `pppKeShpTailX`, `Tail2`, `Tail2X`, `Tail3`, `Tail3X` | Sprites along the object's last places (a ring of 31 or 28), spaced by a length shrinking with their size, coloured head to tail; the 3 ones each sprite's frame, size and turn from a 16-bit LCG |
+| 0xac, 0xae, 0xb1, 0xb2, 0xec | `pppPointAp`, `pppVertexAp`, `ApLc`, `ApAt`, `ApLcLoop` | Children born every wait: at its point; at a list's vertices through its matrix, as in the model, or tied to a vertex number |
+| 0xb5, 0xb7, 0xb8 | `pppKeBornRnd3`, `5`, `6` | Children born at a list's vertices picked by `rand()`: with their unit way out (sized), or facing out along it |
+| 0xbc-0xc1, 0xdd, 0xdf-0xe1 | `pppKeLnsLpSft`, `LnsLp`, `LnsArnd`, `LnsClm`, `LnsCrn`, `LnsFls` and the T ones | A lens flare: a line from the source to the screen's middle and how bright, elements around the source, as columns along the line, a streak, a flash; the T ones keep their key's values (the maps' suns). LpT's test of how much of the source is seen is not made |
+| 0xc8 | `pppRyjDrawShipolyBone` | A weapon's swing trail from the game's two points (base, tip): a history bent into the model's quads by a natural cubic spline |
+| 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites, prizes (crowds here: the game's points), models; Prize and ModelFilter read, not played yet |
+| 0xca | `pppRyjMngFlag` | The instance's bytes: its state for the game, frozen, its place following the camera |
+| 0xed | `pppSnoScaleAll` | Three sizes and one for all, each with rates; their products |
+| 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 a list of the game's matrices (the gummi game, Xemnas), not played yet |
+| 0xf1 | `pppEiDrawShipoly` | A ribbon along the object's last places (two edges a place, or one and edges across the screen): width, drift and a pull that move, a natural cubic spline, thinner and faded to the tail, pieces along and across with UV ranges and scroll |
+
+The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`.
 
 ## KH2's sound banks and its scenes' sounds
 
