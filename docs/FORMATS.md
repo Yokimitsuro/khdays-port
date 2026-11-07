@@ -353,6 +353,58 @@ lines). A chest's rest pose has its lid open: its motion set (`obj/<name>.mset`,
 holding the motion, type 9) has it closed in `00A`'s first frame; the lid is its last bone (`j3`), 100 degrees from
 closed when open.
 
+## KH2's objects and their AI
+
+Not the game's: how KINGDOM HEARTS II's objects (its enemies among them) are made and driven, from the player's
+1.5+2.5 copy and our reading of its executable (KH2FM.exe, the PC release); `tools/research/kh2_ai.py` reads the
+scripts. Nothing of it is used by the game yet.
+
+- **An object** is `obj/<name>.mdlx` (a BAR: its model, type 4; its textures, 7; its AI script, 3; a small entry, 23)
+  and `obj/<name>.mset` (its motions: BARs of type 17 holding each motion). The name's prefix says what it is: `M_`
+  an enemy, `B_` a boss, `N_` a person, `P_` the party, `F_` a thing, `W_` a weapon. The game's object table
+  (`00objentry.bin`) gives each object its id, kind (4 an enemy, 3 a boss, 0x0c a large boss, 0x15 a large enemy),
+  model and motion names, weight and shadow, as OpenKH's documentation lays it out.
+- **The battle tables** (`00battle.bin`, a BAR of tables; layouts as OpenKH's documentation gives them, sizes and
+  counts checked against the player's copy): `enmp`, 229 enemies of 92 bytes (id, level, 32 health values, a damage
+  cap and a minimum, seven weaknesses in percent: physical, fire, blizzard, thunder, dark, light, general; the
+  experience multiplier, the prize table and a bonus level); `atkp`, 2713 attacks of 48 bytes (power, element, the
+  reaction caused, knockback, the hit's sound, the interval between hits, ...), named by the motions' hit events;
+  `lvpm`, the multipliers by level; `przt`, 184 drop tables of 24 bytes. An object's script picks its `enmp` entry.
+- **A script** (BAR type 3): a name (16 bytes), three sizes in bytes (+0x10 its work area, shared by the object's
+  threads; +0x14 its frame area; +0x18 its value stack), then its triggers `{s32 key, s32 entry}` until (0, 0). Code
+  is 16-bit words counted from +0x10 (an entry is such a word's number). A word: its operation in bits 0-3, a
+  sub-kind in bits 4-5, an argument in bits 6-15.
+
+  | Op | What it does (FUN_14041b400) |
+  | --- | --- |
+  | 0 | Push: sub 0 a 32-bit integer, 1 a float (the next two words); 2 the address of, 3 the value at, a base + the next word (the argument the base: 0 the frame, 1 the work area, 2 the address in the frame's first word, 3 the script's own words) |
+  | 1 | Pop into a base + the next word |
+  | 2 | Copy the next word's bytes from a popped address to a base + the word after |
+  | 3 | Push the value at a popped address + the next word |
+  | 4 | Store a popped value at a popped address (an argument: copy that many bytes) |
+  | 5 | One value: sub 0 on integers (to float, negate, not, = 0, abs, < 0, <= 0, != 0, >= 0, > 0), 1 on floats |
+  | 6 | Two values: sub 0 integers (add, sub, mul, div, mod, and, or, xor, shift left and right, logical and, or), 1 floats (add, sub, mul, div, mod) |
+  | 7 | Jump by the next word (signed, from the instruction after): always, if zero, if not zero |
+  | 8 | Call by the next word; the argument the words its frame takes; 11 the same with a 32-bit distance |
+  | 9 | 0 yield (the thread waits for the next tick), 1 exit, 2 return, 3 drop, 5 duplicate, 6 sin, 7 cos, 8 degrees to radians, 9 back |
+  | 10 | Call into the game: the argument a table, the next word the entry |
+
+  The PC release keeps each value on the stack as 8 bytes, the value and a tag (`@INT`, `@FLT`, `@ADR`, `@???` for
+  not set), and adjusts a few constants of named scripts, by their place in the code, for its 60 frames a second.
+- **Threads and triggers**: an object with a script gets a thread (FUN_1403e1240): it runs trigger 0 at once with the
+  object's address, then trigger 1 as its own thread, resumed every tick (FUN_1403e1c80) until it exits; a script's
+  routines can be run as child threads. The game runs other triggers at events, each with its own arguments: 6 (to
+  every listening thread, FUN_1403f47b0), 10 (FUN_1403b3030), 11 (FUN_1403b5fa0), 13 and 14 (FUN_1403b7920,
+  FUN_1403b79d0), 15 (FUN_1403d5500), 16 and 17 (a motion's events, FUN_14040dd70), 19 to 27; enemies' scripts
+  have 0, 1, 6, 11, 13, 16 most.
+- **The game's calls**: tables of 16-byte entries `{function, u16 its arguments, 0x40000000 when it gives back a
+  value}` from a list of eleven at 0x140753490 (two filled in by the game: 9 by FUN_14026ace0); 105, 368, 98, 59, 35,
+  72, 37, 9, 41 and 60 entries. The arguments are popped (in order), the value pushed. Of KH2's 922 scripts the
+  enemies' (142) make 191 different calls, the bosses' (98) 263, all 570. Some read so far: 0:3 the tick's length,
+  0:16 / 0:17 / 0:18 random numbers (below n, times n, between two), 0:47 memory of n bytes, 0:6 a vector's length,
+  0:21 the turn between two ways on the ground; 1:8, 1:9 and 1:10 the object's state machine (a state set at once,
+  one queued, 16 at most, whether one is pending).
+
 ## Dream Drop Distance's rooms
 
 Not the game's: KINGDOM HEARTS Dream Drop Distance's rooms, in the player's KINGDOM HEARTS HD 2.8 Final Chapter

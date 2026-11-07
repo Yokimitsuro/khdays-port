@@ -1095,6 +1095,14 @@ foreach(mod_test ${KHDAYS_MOD_TOOL_TESTS})
     string(REPLACE "_" "-" mod_test_name "${mod_test_name}")
     add_test(NAME khdays-mods-${mod_test_name} COMMAND "${Python3_EXECUTABLE}" "${mod_test}")
 endforeach()
+# The readers for studying the games' files (tools/research/): the same.
+file(GLOB KHDAYS_RESEARCH_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/research/tests/*_test.py")
+foreach(research_test ${KHDAYS_RESEARCH_TESTS})
+    get_filename_component(research_test_name "${research_test}" NAME_WE)
+    string(REGEX REPLACE "_test$" "" research_test_name "${research_test_name}")
+    string(REPLACE "_" "-" research_test_name "${research_test_name}")
+    add_test(NAME khdays-research-${research_test_name} COMMAND "${Python3_EXECUTABLE}" "${research_test}")
+endforeach()
 
 # The execution contexts the game's threads run on (host/app/context.h): more of
 # them than the old fixed table held, each resumed in turn.
