@@ -580,12 +580,12 @@ unsigned words(std::uint32_t code)
     case 0x75: case 0x78: case 0x79: case 0x7b: case 0x7c: case 0x7d: case 0xac: case 0xae: case 0xb1: case 0xb2:
     case 0xb5: case 0xb7: case 0xb8: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
+    case 0xbc:
         return W1;
     case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee:
         return W3;
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
-    case 0xc8:
-    case 0x9d: case 0xda: case 0xdb:
+    case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -768,6 +768,19 @@ struct EffectInstance::State {
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
         case 0x91: case 0xa0: case 0xee: zero(0, 12); break; // the strength, its rate, the rate's
+        case 0xbc: zero(0, 8); break;
+        case 0xbd: // FUN_1404d6cb0 / FUN_1404e2690: the flare's line made anew (the instance's state 2)
+            std::memset(o.at(c.slots[0], 0xb0), 0, 0xb0);
+            for (int j = 0; j < 16; ++j)
+                o.setf(c.slots[0] + 0x40, j, identity()[std::size_t(j)]);
+            o.setf(c.slots[0] + 0xac, 0, 1.0F);
+            game_state = 2;
+            break;
+        case 0xbe: case 0xbf: case 0xc0: case 0xc1: // not tied to a line yet, no shape
+            std::memset(o.at(c.slots[0], 0x10), 0, 0x10);
+            if (c.code == 0xbf)
+                *o.at(c.slots[0] + 8, 1) = 4;
+            break;
         case 0xc8: // FUN_1404d1c60: the history's cursor, its size (none yet), still filling
             std::memset(o.at(c.slots[1], 12), 0, 12);
             *o.at(c.slots[1] + 5, 1) = 1;
@@ -870,6 +883,8 @@ struct EffectInstance::State {
         case 0xed: std::memset(o.at(c.slots[0], 0x3c), 0, 0x3c); break;
         case 0x9c: case 0x9d: std::memset(o.at(c.slots[0], 0x30), 0, 0x30); break;
         case 0x91: case 0xa0: case 0xee: std::memset(o.at(c.slots[0], 12), 0, 12); break;
+        case 0xbc: std::memset(o.at(c.slots[0], 8), 0, 8); break;
+        case 0xbd: o.setf(c.slots[0] + 0x9c, 0, 0); o.setf(c.slots[0] + 0xa8, 0, 0); break;
         case 0xf1: ribbon_reset(o, c); break;
         default: break;
         }
@@ -1219,6 +1234,7 @@ struct EffectInstance::State {
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
         case 0xc8: case 0xa0: break; // pppRyjDrawShipolyBone's and pppKeShpDtt's steps: none
+        case 0xbc: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: flare_step(o, c, k); break;
         case 0xc9: mega_step(o, c, k); break;
         case 0xd0: model_birth_step(o, c, k); break;
         case 0xf1: ribbon_step(o, c, k); break;
@@ -2934,6 +2950,281 @@ struct EffectInstance::State {
             out->push_back(std::move(d));
     }
 
+    // ---------------------------------------------------------------------------------- the lens flare
+    // pppKeLnsLp (FUN_1404d6c30, FUN_1404d6d10, FUN_1404e26c0): a flare's line, kept in its slot ("the line"): +0
+    // a matrix at the source's place in the view, +0x40 its way across the screen (unit, toward the screen's
+    // middle) and the rows across it, +0x70 that way times the depth / 512, +0x78 the depth / 512, +0x7c how
+    // bright (1 at the middle, 0 at +0xa8 from it; facing ones by their angle too), +0x80 the source's place,
+    // +0x8e a near distance, +0x8f 1: the source the object itself, facing (+0x90 the object's z axis' point),
+    // +0x9c the facing's reach, +0xa4 the source's distance from the middle on the screen. The elements -- around
+    // the source (pppKeLnsArnd, FUN_1404e18a0), columns along the line (pppKeLnsClm, FUN_1404e1b30), a streak to
+    // the middle (pppKeLnsCrn, FUN_1404e2010), a flash (pppKeLnsFls, FUN_1404e2370) -- each a shape's frames
+    // tied to a line (slot 1 of theirs) on their key; pppKeLnsLpSft moves the reach and the brightness' distance.
+    void flare_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!live(o))
+            return;
+        const std::int32_t s = c.slots[0];
+        if (c.code == 0xbc) { // FUN_1404d5c20
+            if (hit(o, k)) {
+                o.setf(s, 0, o.f(s, 0) + k.f32(4));
+                o.setf(s, 1, o.f(s, 1) + k.f32(8));
+                if (o.age == 0)
+                    return;
+            }
+            o.setf(c.slots[1] + 0x9c, 0, o.f(c.slots[1] + 0x9c, 0) + o.f(s, 0));
+            o.setf(c.slots[1] + 0xa8, 0, o.f(s, 1) + o.f(c.slots[1] + 0xa8, 0));
+            return;
+        }
+        if (!hit(o, k))
+            return;
+        if (c.code == 0xbd) { // FUN_1404d6c30
+            o.setf(s + 0xa8, 0, k.f32(8) + o.f(s + 0xa8, 0));
+            *o.at(s + 0x8e, 1) = k.b(0xc);
+            o.setf(s + 0x9c, 0, k.f32(4) + o.f(s + 0x9c, 0));
+            *o.at(s + 0x8f, 1) = k.b(0xd);
+            return;
+        }
+        // the elements (FUN_1404d5fc0, FUN_1404d63a0, ...): tied to the line, their shape and its first wait
+        o.seti(s, 0, 1); // tied
+        if (k.s32(4) == 0xffff) {
+            o.seti(s, 1, -1);
+        } else if (o.i(s, 1) != k.s32(4) + 1 || c.code != 0xbf) {
+            const bool fresh = o.i(s, 1) != k.s32(4) + 1;
+            o.seti(s, 1, k.s32(4) + 1);
+            const auto &frames = block->shapes.at(std::size_t(k.s32(4))).frames;
+            if (c.code == 0xbf) { // FUN_1404e1f40: each column its time, frame and size (a 16-bit LCG)
+                std::uint16_t seed = k.b(0x16);
+                const int columns = *o.at(s + 8, 1);
+                for (int i = 0; i < columns; ++i) {
+                    wr(o.at(s + 0x10 + 8 * i, 2), frames.front().wait);
+                    *o.at(s + 0x12 + 8 * i, 1) = 0;
+                    seed = std::uint16_t(seed * 0x80d + 7);
+                    if ((*o.at(s + 9, 1) & 1) == 0)
+                        o.setf(s + 0x14 + 8 * i, 0, float(seed) / 65535.0F);
+                }
+            } else if (fresh) {
+                wr(o.at(s + 8, 2), frames.front().wait);
+                *o.at(s + 10, 1) = 0;
+            }
+        }
+        if (c.code == 0xbf) {
+            wr(o.at(s + 10, 2), k.u16(0x12));
+            wr(o.at(s + 0xc, 2), std::uint16_t(k.s16(0x10)));
+            *o.at(s + 0xe, 1) = k.b(0x17);
+        }
+    }
+
+    void flare_line(Obj &o, const EffectCommand &c) // FUN_1404d6d10 + FUN_1404e26c0
+    {
+        const std::int32_t f = c.slots[0];
+        const bool facing = *o.at(f + 0x8f, 1) != 0;
+        if (facing) {
+            const auto z = transformed({0, 0, 1, 1}, o.local);
+            for (int j = 0; j < 3; ++j)
+                o.setf(f + 0x90, j, z[std::size_t(j)]);
+        }
+        for (int j = 0; j < 3; ++j)
+            o.setf(f + 0x80, j, o.local[std::size_t(12 + j)]);
+        const std::array<float, 4> pos{o.local[12], o.local[13], o.local[14], o.local[15]};
+        std::array<float, 4> a{}, b{}, e{};
+        if (!facing) {
+            M4 t = identity();
+            for (int j = 0; j < 3; ++j)
+                t[std::size_t(12 + j)] = wv[std::size_t(12 + j)] + o.f(f + 0x80, j);
+            a = transformed({0, 0, 0, 1}, mul(t, proj));
+            for (auto &x : a)
+                x /= a[3] != 0 ? a[3] : 1e-6F;
+            M4 u = identity();
+            for (int j = 0; j < 3; ++j)
+                u[std::size_t(12 + j)] = wv[std::size_t(12 + j)];
+            b = transformed({0, 0, 0, 1}, mul(u, proj));
+            for (auto &x : b)
+                x /= b[3] != 0 ? b[3] : 1e-6F;
+            e = minus(b, a);
+            e[2] = 512.0F;
+        } else {
+            M4 t = wv;
+            t[12] = t[13] = t[14] = 0;
+            a = transformed(pos, t);
+            b = {-wv[12], -wv[13], -wv[14], -wv[15]};
+            e = minus(b, a);
+        }
+        M4 m = identity();
+        const auto p = transformed(pos, wv);
+        for (int j = 0; j < 4; ++j)
+            m[std::size_t(12 + j)] = p[std::size_t(j)];
+        for (int j = 0; j < 16; ++j)
+            o.setf(f, j, m[std::size_t(j)]);
+        if (e[0] == 0 && e[1] == 0) {
+            for (int j = 0; j < 4; ++j)
+                o.setf(f + 0x70, j, p[std::size_t(j)]);
+        } else {
+            const float n = std::sqrt(e[0] * e[0] + e[1] * e[1]);
+            const float r0[4] = {e[0] / n, e[1] / n, 0, 0}, r2[4] = {0, 0, 1, 0};
+            float r1[4];
+            cross3(r1, r0, r2);
+            for (int j = 0; j < 4; ++j) {
+                o.setf(f + 0x40, j, r0[j]);
+                o.setf(f + 0x50, j, r1[j]);
+                o.setf(f + 0x60, j, r2[j]);
+                o.setf(f + 0x70, j, p[std::size_t(j)]);
+            }
+        }
+        const float depth = (facing ? p[2] : wv[14] + o.f(f + 0x88, 0)) * 0.001953125F;
+        o.setf(f + 0x78, 0, depth);
+        std::array<float, 4> d = e;
+        unit3(d.data());
+        o.setf(f + 0x70, 0, d[0] * depth);
+        o.setf(f + 0x74, 0, d[1] * depth);
+        const std::array<float, 4> b2 = minus(b, a);
+        const float dist = length3(b2), screen = std::sqrt(b2[0] * b2[0] + b2[1] * b2[1]);
+        o.setf(f + 0xa4, 0, screen);
+        std::array<float, 4> way = b2;
+        unit3(way.data());
+        float bright = 0;
+        if (!facing) {
+            if (o.f(f + 0xa8, 0) > 0) {
+                const float r = screen / o.f(f + 0xa8, 0);
+                bright = r <= 1.0F ? 1.0F - r : 0.0F;
+            }
+        } else {
+            const float x = (1.0F - (1.0F - way[2]) * 0.5F) / 0.3F; // as FUN_1404e26c0 writes it
+            bright = x <= 1.0F ? 1.0F - x : 0.0F;
+            if (o.f(f + 0x9c, 0) >= 0) {
+                const float dz = o.f(f + 0x90, 0) * way[0] + o.f(f + 0x90, 1) * way[1] + o.f(f + 0x90, 2) * way[2];
+                const float y = ((1.0F - dz) * 0.5F) / o.f(f + 0x9c, 0);
+                bright *= y <= 1.0F ? 1.0F - y : 0.0F;
+            }
+            const float reach = o.f(f + 0xa8, 0) - float(*o.at(f + 0x8e, 1));
+            if (reach > 0) {
+                const float r = dist / reach;
+                bright *= r < 1.0F ? 1.0F - r : 0.0F;
+            } else {
+                bright = 0;
+            }
+        }
+        o.setf(f + 0x7c, 0, bright);
+    }
+
+    // a shape's frame clock (each element's and each column's: +0 the time, +2 the frame), one frame a tick
+    void frame_clock(Obj &o, std::int32_t at, const EffectShape &shape)
+    {
+        std::int16_t t = std::int16_t(rd<std::uint16_t>(o.at(at, 2)) + 0x200);
+        std::uint8_t fr = *o.at(at + 2, 1);
+        const auto &f = shape.frames.at(std::min<std::size_t>(fr, shape.frames.size() - 1));
+        if (std::int16_t(f.wait) <= t) {
+            t = std::int16_t(t - std::int16_t(f.wait));
+            ++fr;
+            if (int(shape.frames.size()) <= fr) {
+                t = 0;
+                fr = f.loop ? 0 : std::uint8_t(fr - 1);
+            }
+        }
+        wr(o.at(at, 2), std::uint16_t(t));
+        *o.at(at + 2, 1) = fr;
+    }
+
+    void flare_element(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        const std::int32_t e = c.slots[0], f = c.slots[1];
+        if (o.i(e, 0) == 0 || o.i(e, 1) <= 0)
+            return;
+        const float bright = o.f(f + 0x7c, 0);
+        if (bright == 0 && c.code != 0xbf)
+            return;
+        const auto &shape = block->shapes.at(std::size_t(o.i(e, 1) - 1));
+        const bool facing = *o.at(f + 0x8f, 1) != 0;
+        const float size = k.f32(0xc);
+        const std::array<float, 4> colour{float(k.b(8)), float(k.b(9)), float(k.b(10)), float(k.b(0xb))};
+        const auto at_source = [&]() {
+            M4 m = identity();
+            if (!facing) {
+                for (int j = 0; j < 3; ++j)
+                    m[std::size_t(12 + j)] = wv[std::size_t(12 + j)] + o.f(f + 0x80, j);
+            } else {
+                for (int j = 0; j < 16; ++j)
+                    m[std::size_t(j)] = o.f(f, j);
+            }
+            return m;
+        };
+        const auto draw_it = [&](int frame, const M4 &m, float alpha) {
+            if (out != nullptr)
+                draw_shape(shape, frame, mul(m, proj),
+                           {colour[0] / 128.0F, colour[1] / 128.0F, colour[2] / 128.0F,
+                            float(std::uint8_t(int(alpha))) / 128.0F},
+                           *out);
+        };
+        if (c.code == 0xbe) { // around the source
+            M4 m = at_source();
+            m[0] *= size;
+            m[5] *= size;
+            scale_rows(m, world_scale);
+            frame_clock(o, e + 8, shape);
+            draw_it(*o.at(e + 10, 1), m, colour[3] * bright);
+        } else if (c.code == 0xc0) { // a streak toward the middle
+            M4 m = identity();
+            const float n = (size * o.f(f + 0xa4, 0)) / float(std::max<int>(1, k.u16(0x10)));
+            for (int j = 0; j < 4; ++j) {
+                m[std::size_t(j)] = o.f(f + 0x40, j) * -n;
+                m[std::size_t(4 + j)] = o.f(f + 0x50, j) * n;
+                m[std::size_t(8 + j)] = o.f(f + 0x60, j);
+                m[std::size_t(12 + j)] = o.f(f + 0x30, j);
+            }
+            if (!facing)
+                for (int j = 0; j < 3; ++j)
+                    m[std::size_t(12 + j)] = wv[std::size_t(12 + j)] + o.f(f + 0x80, j);
+            scale_rows(m, world_scale);
+            const float r = std::min(1.0F, o.f(f + 0xa4, 0) / float(std::max<int>(1, k.u16(0x12))));
+            frame_clock(o, e + 8, shape);
+            draw_it(*o.at(e + 10, 1), m, r * colour[3] * bright);
+        } else if (c.code == 0xc1) { // a flash, sized by how near the middle the source is
+            const float r = o.f(f + 0xa4, 0) / float(std::max<int>(1, k.u16(0x10))), left = r <= 1.0F ? 1.0F - r : 0.0F;
+            M4 m = at_source();
+            const auto scaled = [&](std::uint8_t mode) {
+                return mode == 1 ? size * left : mode == 2 ? (r + 1.0F) * size : size;
+            };
+            m[0] = k.b(0x12) == 1 || k.b(0x12) == 2 ? scaled(k.b(0x12)) : size;
+            m[5] = scaled(k.b(0x13));
+            scale_rows(m, world_scale);
+            frame_clock(o, e + 8, shape);
+            draw_it(*o.at(e + 10, 1), m, colour[3] * bright * left);
+        } else { // 0xbf: columns along the line, from the middle by the record's offset, each its own size
+            if (bright == 0)
+                return;
+            M4 m = identity();
+            if (facing)
+                for (int j = 0; j < 16; ++j)
+                    m[std::size_t(j)] = o.f(f, j);
+            else
+                m[14] = wv[14] + o.f(f + 0x88, 0);
+            const float sx = o.f(f + 0x70, 0), sy = o.f(f + 0x74, 0);
+            const float offset = float(std::int16_t(rd<std::uint16_t>(o.at(e + 0xc, 2))));
+            float x = (facing ? 0.0F : wv[12]) + offset * sx, y = (facing ? 0.0F : wv[13]) + offset * sy;
+            const float spacing = float(std::int16_t(rd<std::uint16_t>(o.at(e + 10, 2))));
+            float fade = 0;
+            const float near = o.f(f + 0xa4, 0) - float(*o.at(f + 0x8e, 1));
+            if (near > 0)
+                fade = std::min(1.0F, near / (float(k.u16(0x14)) * o.f(f + 0x78, 0)));
+            if (*o.at(e + 0xe, 1) != 0)
+                fade = 1.0F - fade;
+            const int columns = *o.at(e + 8, 1);
+            for (int i = 0; i < columns; ++i) {
+                frame_clock(o, e + 0x10 + 8 * i, shape);
+                const float scale = o.f(e + 0x14 + 8 * i, 0);
+                x += scale * spacing * sx;
+                y += scale * spacing * sy;
+                const float a = float(int((double(scale) * 0.75 + 0.25) * double(fade * colour[3] * bright)));
+                M4 cm = m;
+                cm[0] = scale * size * m[0] * world_scale[0];
+                cm[5] = scale * size * m[5] * world_scale[1];
+                cm[12] = x;
+                cm[13] = y;
+                draw_it(*o.at(e + 0x12 + 8 * i, 1), cm, a);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -3354,6 +3645,8 @@ struct EffectInstance::State {
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;
         case 0x91: case 0xa0: case 0xee: distortion(o, c, k, out); break;
+        case 0xbd: flare_line(o, c); break;
+        case 0xbe: case 0xbf: case 0xc0: case 0xc1: flare_element(o, c, k, out); break;
         case 0xf1: ribbon_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
