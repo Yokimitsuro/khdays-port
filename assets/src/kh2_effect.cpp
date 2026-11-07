@@ -493,6 +493,28 @@ struct Particle {
     int t = 0, frame = 0, prev = 0;
 };
 
+// pppRyjMegaBirthModel's particle (FUN_1404bc9e0's 0xb0-byte record): a matrix (its rows the way it flies and two
+// across it, its place), a life, colour jitter, a turn with its rate, three sizes with theirs, its speeds, a UV
+// scroll, a fade; and, when the record asks, the world at its birth and a colour of its own that moves
+struct ModelParticle {
+    M4 m{};
+    std::int16_t life = 0;
+    std::array<std::int8_t, 4> jitter{};
+    std::array<std::int32_t, 3> rot{}, rot_v{}, rot_r{};
+    std::array<float, 3> size{}, size_v{}, size_r{};
+    float speed = 0, speed2 = 0, u = 0, v = 0, du = 0, dv = 0, fade = 0;
+    std::uint8_t age = 0, fade_in = 0, fade_out = 0;
+    M4 born{};
+    std::array<float, 4> colour{}, colour_v{};
+};
+
+struct ModelPool {
+    std::vector<ModelParticle> particles;
+    std::array<float, 3> wind{};
+    std::uint16_t timer = 0, vertex_k = 0;
+    bool made = false, born_world = false, own_colour = false;
+};
+
 struct Obj {
     const EffectLayer *layer = nullptr;
     std::int32_t age = 0;
@@ -509,6 +531,7 @@ struct Obj {
     // its own vertices (+0x90: pppVtMime's blend of two models, shorts), drawn and spawned at in the model's place
     std::vector<std::array<float, 3>> morph;
     bool morphed = false;
+    std::map<const EffectCommand *, ModelPool> model_pools; // pppRyjMegaBirthModel's, one a command
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -560,7 +583,7 @@ unsigned words(std::uint32_t code)
     case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c:
     case 0x9d: case 0xda: case 0xdb:
         return W1 | W3;
-    case 0xc9: return W1 | W3 | SPAWNER;
+    case 0xc9: case 0xd0: return W1 | W3 | SPAWNER;
     default: return 0;
     }
 }
@@ -614,7 +637,8 @@ struct EffectInstance::State {
     std::vector<bool> started;
     // the camera's matrices (FUN_1402c3310): world, view, projection, world.view, world.view.projection, the
     // upright view (eda0) . projection, the world's row lengths (0x142b0f010)
-    M4 world = identity(), view = identity(), proj = identity(), wv = identity(), wvp = identity(), wood = identity();
+    M4 world = identity(), view = identity(), proj = identity(), wv = identity(), wvp = identity(), wood = identity(),
+       upright = identity();
     std::array<float, 3> world_scale{1, 1, 1};
     // the instance's bytes pppRyjMngFlag sets (+0xc0 its state for the game, +0xc1 frozen: no ageing, no keyed
     // steps; +0xc2 its place follows the camera's: FUN_1404b1280 adds the eye, 0x142b0ed20)
@@ -950,13 +974,17 @@ struct EffectInstance::State {
             o.local = m;
             break;
         }
-        case 0x6a: // pppKeParMatR (FUN_1404c60f0): turned and placed by the parent's matrix
-            if (o.parent) {
+        case 0x6a: // pppKeParMatR (FUN_1404c60f0): turned by the parent's rows (made unit, FUN_140478d80) and
+            if (o.parent) { // placed by its whole matrix
                 M4 turn = o.parent->local;
                 for (int j = 0; j < 4; ++j)
                     turn[std::size_t(12 + j)] = j == 3 ? 1.0F : 0.0F;
-                for (int r = 0; r < 3; ++r)
+                for (int r = 0; r < 3; ++r) {
+                    const float n = row_length(turn, r);
+                    for (int j = 0; j < 3; ++j)
+                        turn[std::size_t(r * 4 + j)] = n != 0 ? turn[std::size_t(r * 4 + j)] / n : 0.0F;
                     turn[std::size_t(r * 4 + 3)] = 0;
+                }
                 const auto p = apply({o.local[12], o.local[13], o.local[14], o.local[15]}, o.parent->local);
                 o.local = mul(o.local, turn);
                 for (int j = 0; j < 4; ++j)
@@ -1173,6 +1201,7 @@ struct EffectInstance::State {
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
         case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
         case 0xc9: mega_step(o, c, k); break;
+        case 0xd0: model_birth_step(o, c, k); break;
         default: fail("command " + std::to_string(c.code) + " not read yet");
         }
     }
@@ -1339,7 +1368,7 @@ struct EffectInstance::State {
 
     // pppKeBornRnd3 / 5 / 6 (FUN_1404d4760, FUN_1404d4ea0, FUN_1404d51a0 through FUN_1404e1780): children born at
     // a vertex list's vertices, walked or picked by rand(); 3 on a chance (its mask against rand()'s high byte),
-    // 5 and 6 every wait. Each child gets the vertex through the object's matrix and its way from the object's
+    // 5 and 6 every wait. Each child gets the vertex through the object's matrix and its unit way from the object's
     // centre (3; 5 that way sized), or the vertex as in the model and the angles facing out along it (6).
     void born_at_random(Obj &o, const EffectCommand &c, const Key &k)
     {
@@ -1404,9 +1433,13 @@ struct EffectInstance::State {
             const auto p = apply({v[0], v[1], v[2], 1}, o.local);
             const std::int32_t at = k.s32(five ? 0x14 : 0x10), way = k.s32(five ? 0x1c : 0x18);
             const float size = five ? k.f32(8) : 1.0F;
+            std::array<float, 3> d{};
+            for (int j = 0; j < 3; ++j)
+                d[std::size_t(j)] = p[std::size_t(j)] - o.local[std::size_t(12 + j)];
+            const float n = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]); // made unit (FUN_140478d80)
             for (int j = 0; j < 3; ++j) {
                 child->setf(at, j, p[std::size_t(j)]);
-                child->setf(way, j, (p[std::size_t(j)] - o.local[std::size_t(12 + j)]) * size);
+                child->setf(way, j, (n != 0 ? d[std::size_t(j)] / n : d[std::size_t(j)]) * size);
             }
             return;
         }
@@ -1795,6 +1828,413 @@ struct EffectInstance::State {
             o.seti(s + 0x1f0, 0, o.i(s + 0x1f0, 0) + k.s32(8));
     }
 
+    // ---------------------------------------------------------------------------------- the model particles
+    // pppRyjMegaBirthModel (FUN_1404be1f0, FUN_1404bc9e0, FUN_1404bd910, FUN_1404bdd50, FUN_1404be590): a pool of
+    // particles each drawing the record's model, born like pppRyjMegaBirth's (the same kinds: a spray, a box, a
+    // vertex list's vertices) from their own record layout, turned, sized and scrolled on their own
+    static M4 radians_xyz(float x, float y, float z) // FUN_140140560: the real sine, x then y then z
+    {
+        const float sx = std::sin(x), cx = std::cos(x), sy = std::sin(y), cy = std::cos(y), sz = std::sin(z),
+                    cz = std::cos(z);
+        M4 rx = identity(), ry = identity(), rz = identity();
+        rx[5] = cx, rx[6] = sx, rx[9] = -sx, rx[10] = cx;
+        ry[0] = cy, ry[2] = -sy, ry[8] = sy, ry[10] = cy;
+        rz[0] = cz, rz[1] = sz, rz[4] = -sz, rz[5] = cz;
+        return mul(mul(rx, ry), rz);
+    }
+
+    static void unit3(float *v) // FUN_140478d80: made unit, w 0
+    {
+        const float n = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (n != 0)
+            for (int j = 0; j < 3; ++j)
+                v[j] /= n;
+        v[3] = 0;
+    }
+
+    static void cross3(float *out, const float *a, const float *b) // FUN_140142120: a x b
+    {
+        const float x = a[1] * b[2] - a[2] * b[1], y = a[2] * b[0] - a[0] * b[2], z = a[0] * b[1] - a[1] * b[0];
+        out[0] = x, out[1] = y, out[2] = z, out[3] = 0;
+    }
+
+    // the rows across the way it flies (row 1): row 2 = 1 x 0, row 0 = 2 x 1, all made unit
+    static void frame_rows(M4 &m)
+    {
+        unit3(&m[4]);
+        cross3(&m[8], &m[4], &m[0]);
+        unit3(&m[8]);
+        cross3(&m[0], &m[8], &m[4]);
+        unit3(&m[0]);
+    }
+
+    float spread_draw(int kind, float radius) // the distributions of FUN_1404bc9e0 (b 0x100)
+    {
+        switch (kind) {
+        case 1: rand01(); return rand01() * radius;
+        case 2: { const float a = rand01(); return a * radius * rand01(); }
+        case 3: { const float a = rand01(), b = rand01(); return radius - radius * a * b * 0.7F; }
+        case 4: {
+            const float a = rand01(), b = rand01(), c = rand01(), d = rand01();
+            return a * radius * b * c * d;
+        }
+        case 5: {
+            const float a = rand01(), b = rand01(), c = rand01();
+            return radius - radius * a * b * c * 0.5F;
+        }
+        default: return radius;
+        }
+    }
+
+    ModelParticle model_particle_birth(Obj &o, ModelPool &pool, const EffectCommand &c, const Key &k)
+    {
+        ModelParticle p;
+        p.m = identity();
+        const int kind = k.b(0x26), dist = k.b(0x100);
+        const std::array<float, 3> axes{k.f32(0xf4), k.f32(0xf8), k.f32(0xfc)};
+        constexpr float pi = 3.1415927410125732F;
+        if (kind < 8) {
+            const float spread = float(k.b(0x27));
+            std::array<float, 3> a{};
+            for (auto &x : a)
+                x = ((rand01() * (spread + spread) - spread) * pi) / 180.0F;
+            if (kind == 2 || kind == 3)
+                a[0] = 0;
+            const auto d = apply({k.f32(0xc4), k.f32(0xc8), k.f32(0xcc), 1.0F}, radians_xyz(a[0], a[1], a[2]));
+            for (int j = 0; j < 3; ++j)
+                p.m[std::size_t(4 + j)] = d[std::size_t(j)] * axes[std::size_t(j)];
+            frame_rows(p.m);
+        }
+        const float radius = k.f32(0xf0);
+        if (kind < 4 || kind > 9) {
+            if (radius != 0) {
+                const float f = spread_draw(dist, radius);
+                for (int j = 0; j < 3; ++j)
+                    p.m[std::size_t(12 + j)] = p.m[std::size_t(4 + j)] * f;
+                p.m[15] = 1;
+            }
+        } else if (kind < 6) {
+            if (radius != 0) {
+                const float half = radius * 0.5F;
+                if (dist == 1)
+                    rand01();
+                for (int j = 0; j < 3; ++j) {
+                    float f;
+                    switch (dist) {
+                    case 2: { const float a = rand01(); f = a * radius * rand01(); break; }
+                    case 3: { const float a = rand01(), b = rand01(); f = radius - radius * a * b * 0.7F; break; }
+                    case 4: {
+                        const float a = rand01(), b = rand01(), cc = rand01(), d = rand01();
+                        f = a * radius * b * cc * d;
+                        break;
+                    }
+                    case 5: {
+                        const float a = rand01(), b = rand01(), cc = rand01();
+                        f = radius - radius * a * b * cc * 0.5F;
+                        break;
+                    }
+                    default: f = rand01() * radius; break;
+                    }
+                    p.m[std::size_t(12 + j)] = (f - half) * axes[std::size_t(j)];
+                }
+                p.m[15] = 1;
+            }
+        } else if (k.s16(0x108) >= 0) { // at a vertex list's vertex
+            const auto &vl = block->vertex_lists.at(std::size_t(k.s16(0x108)));
+            const auto &vs = vertices_of(o, vl.model);
+            const int count = int(vl.vertices.size());
+            if (count > 0) {
+                int i;
+                if (dist >= 1 && dist <= 5) {
+                    float f = 1.0F;
+                    switch (dist) {
+                    case 1: rand01(); f = rand01(); break;
+                    case 2: { const float a = rand01(), b = rand01(); f = rand01() * b * a; break; }
+                    case 3: { const float a = rand01(), b = rand01(), cc = rand01(); f = 1.0F - cc * b * a; break; }
+                    case 4: {
+                        const float a = rand01(), b = rand01(), cc = rand01(), d = rand01();
+                        f = d * b * a * cc;
+                        break;
+                    }
+                    default: {
+                        const float a = rand01(), b = rand01(), cc = rand01(), d = rand01(), e = rand01();
+                        f = 1.0F - e * b * a * cc * d;
+                        break;
+                    }
+                    }
+                    if (count <= pool.vertex_k)
+                        pool.vertex_k = 0;
+                    i = std::min(count - 1, int(float(count) * f));
+                } else {
+                    if (count <= pool.vertex_k)
+                        pool.vertex_k = 0;
+                    i = pool.vertex_k++;
+                }
+                const auto &v = vs.at(vl.vertices.at(std::size_t(i)));
+                for (int j = 0; j < 3; ++j)
+                    p.m[std::size_t(12 + j)] = v[std::size_t(j)] * axes[std::size_t(j)];
+                p.m[15] = 1;
+                if (kind == 8 || kind == 9) { // flying out from the centre through the vertex
+                    for (int j = 0; j < 3; ++j)
+                        p.m[std::size_t(4 + j)] = p.m[std::size_t(12 + j)];
+                    unit3(&p.m[4]);
+                    for (int j = 0; j < 3; ++j)
+                        p.m[std::size_t(4 + j)] *= axes[std::size_t(j)];
+                    frame_rows(p.m);
+                }
+            }
+        }
+        for (int j = 0; j < 4; ++j) { // one draw left out, then the jitter
+            const int b = k.b(0x48 + std::size_t(j));
+            rand01();
+            p.jitter[std::size_t(j)] = std::int8_t(int(rand01() * float(b * 2) - float(b >> 1)));
+        }
+        if (k.b(0x24) != 0) {
+            p.fade = float(*o.at(c.slots[1] + 0xb, 1));
+            p.fade_in = k.b(0x24);
+        }
+        if (k.b(0x25) != 0)
+            p.fade_out = k.b(0x25);
+        for (int j = 0; j < 3; ++j) {
+            p.rot[std::size_t(j)] = k.s32(0x4c + 4 * std::size_t(j));
+            p.rot_v[std::size_t(j)] = k.s32(0x58 + 4 * std::size_t(j));
+        }
+        const std::uint8_t rf = k.b(0x103);
+        if (rf != 0) {
+            p.rot_r[0] = std::int32_t(float(k.s32(0x70)) * rand01());
+            if ((rf & 0x20) == 0) {
+                p.rot_r[1] = std::int32_t(float(k.s32(0x74)) * rand01());
+                p.rot_r[2] = std::int32_t(float(k.s32(0x78)) * rand01());
+                if ((rf & 3) == 3) {
+                    for (auto &r : p.rot_r)
+                        if (rand01() > 0.5F)
+                            r = -r;
+                } else if (rf & 2) {
+                    for (auto &r : p.rot_r)
+                        r = -r;
+                }
+            } else {
+                p.rot_r[1] = p.rot_r[2] = p.rot_r[0];
+                if ((rf & 3) == 3) {
+                    if (rand01() > 0.5F)
+                        for (auto &r : p.rot_r)
+                            r = -r;
+                } else if (rf & 2) {
+                    for (auto &r : p.rot_r)
+                        r = -r;
+                }
+            }
+        }
+        for (int j = 0; j < 3; ++j) {
+            if (rf & 4)
+                p.rot[std::size_t(j)] += p.rot_r[std::size_t(j)];
+            if (rf & 8)
+                p.rot_v[std::size_t(j)] += p.rot_r[std::size_t(j)];
+            if (0xffffu < std::uint32_t(p.rot[std::size_t(j)]) + 0x8000u)
+                p.rot[std::size_t(j)] %= 0x8000; // C's remainder, as FUN_1404bc9e0's mask
+        }
+        for (int j = 0; j < 3; ++j) {
+            p.size[std::size_t(j)] = k.f32(0x7c + 4 * std::size_t(j));
+            p.size_v[std::size_t(j)] = k.f32(0x88 + 4 * std::size_t(j));
+        }
+        const std::uint8_t sf = k.b(0x102);
+        if (sf != 0) {
+            p.size_r[0] = k.f32(0xa0) * rand01();
+            if ((sf & 0x20) == 0) {
+                p.size_r[1] = rand01() * k.f32(0xa4);
+                p.size_r[2] = rand01() * k.f32(0xa8);
+                if ((sf & 3) == 3) {
+                    for (auto &r : p.size_r)
+                        if (rand01() > 0.5F)
+                            r = -r;
+                } else if (sf & 2) {
+                    for (auto &r : p.size_r)
+                        r = -r;
+                }
+            } else {
+                p.size_r[1] = p.size_r[2] = p.size_r[0];
+                if ((sf & 3) == 3) {
+                    if (rand01() > 0.5F)
+                        for (auto &r : p.size_r)
+                            r = -r;
+                } else if (sf & 2) {
+                    for (auto &r : p.size_r)
+                        r = -r;
+                }
+            }
+        }
+        for (int j = 0; j < 3; ++j) {
+            if (sf & 4)
+                p.size[std::size_t(j)] += p.size_r[std::size_t(j)];
+            if (sf & 8)
+                p.size_v[std::size_t(j)] += p.size_r[std::size_t(j)];
+        }
+        p.speed = k.f32(0xdc);
+        p.speed2 = k.f32(0xe8);
+        if (const float j = k.f32(0xe4); j != 0) {
+            const float r = rand01();
+            p.speed += (j + j) * r - j;
+        }
+        p.u = k.f32(0xac);
+        p.v = k.f32(0xb8);
+        p.du = k.f32(0xb0);
+        p.dv = k.f32(0xbc);
+        switch (k.b(0x104)) {
+        case 1: p.u *= rand01(); break;
+        case 2: p.v *= rand01(); break;
+        case 3: { const float r = rand01(); p.u *= r; p.v *= r; break; }
+        case 4: { p.u *= rand01(); p.v *= rand01(); break; }
+        default: break;
+        }
+        const std::int16_t life = k.s16(0x22);
+        p.life = life == 0 ? -1 : life;
+        if (pool.born_world)
+            p.born = world;
+        if (pool.own_colour)
+            for (int j = 0; j < 4; ++j)
+                p.colour_v[std::size_t(j)] = k.f32(0x28 + 4 * std::size_t(j));
+        return p;
+    }
+
+    void model_particle_step(Obj &o, ModelPool &pool, const EffectCommand &c, const Key &k, ModelParticle &p)
+    {
+        int base = *o.at(c.slots[1] + 0xb, 1);
+        if (pool.own_colour) {
+            for (int j = 0; j < 4; ++j) {
+                p.colour[std::size_t(j)] += p.colour_v[std::size_t(j)];
+                p.colour_v[std::size_t(j)] += k.f32(0x38 + 4 * std::size_t(j));
+            }
+            base = std::min(0xff, int(p.colour[3]) + base);
+        }
+        for (int j = 0; j < 3; ++j) {
+            p.rot[std::size_t(j)] += p.rot_v[std::size_t(j)];
+            p.rot_v[std::size_t(j)] += k.s32(0x64 + 4 * std::size_t(j)) +
+                                       ((k.b(0x103) & 0x10) ? p.rot_r[std::size_t(j)] : 0);
+            while (p.rot[std::size_t(j)] > 0x7fff)
+                p.rot[std::size_t(j)] -= 0x10000;
+            p.size[std::size_t(j)] += p.size_v[std::size_t(j)];
+            p.size_v[std::size_t(j)] += k.f32(0x94 + 4 * std::size_t(j)) +
+                                        ((k.b(0x102) & 0x10) ? p.size_r[std::size_t(j)] : 0.0F);
+        }
+        float sp = p.speed + k.f32(0xe0);
+        p.speed = sp;
+        if (k.b(0x10b) == 0) {
+            const float a = k.f32(0xdc), b = k.f32(0xe0);
+            if ((a > 0 && b < 0 && sp < 0) || (a < 0 && b > 0 && sp > 0))
+                p.speed = sp = 0;
+        }
+        p.speed2 += k.f32(0xec);
+        for (int j = 0; j < 3; ++j)
+            p.m[std::size_t(12 + j)] += p.m[std::size_t(4 + j)] * sp + pool.wind[std::size_t(j)] * p.speed2;
+        p.u += p.du;
+        p.v += p.dv;
+        p.du += k.f32(0xb4);
+        p.dv += k.f32(0xc0);
+        if (k.s16(0x22) != 0)
+            --p.life;
+        ++p.age;
+        if (p.fade_in != 0 && p.age <= p.fade_in)
+            p.fade -= float(base) / float(p.fade_in);
+        if (p.fade_out != 0 && std::uint16_t(p.life) <= p.fade_out)
+            p.fade += float(base) / float(std::max<int>(1, k.b(0x25)));
+    }
+
+    void model_birth_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        ModelPool &pool = o.model_pools[&c];
+        if (!pool.made) {
+            pool.particles.assign(k.u16(0x1c), ModelParticle{});
+            pool.born_world = k.b(0x106) != 0;
+            pool.own_colour = k.b(0x101) != 0;
+            std::array<float, 4> w{k.f32(0xd0), k.f32(0xd4), k.f32(0xd8), 0};
+            unit3(w.data());
+            pool.wind = {w[0], w[1], w[2]};
+            pool.made = true;
+        }
+        if (frozen != 0)
+            return;
+        ++pool.timer;
+        int born = 0;
+        for (auto &p : pool.particles) {
+            if (p.life == 0) {
+                if (k.u16(0x20) <= pool.timer && born < k.u16(0x1e)) {
+                    p = model_particle_birth(o, pool, c, k);
+                    ++born;
+                }
+            } else {
+                model_particle_step(o, pool, c, k, p);
+            }
+        }
+        if (born > 0)
+            pool.timer = 0;
+    }
+
+    void model_birth_draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
+    {
+        const auto it = o.model_pools.find(&c);
+        if (out == nullptr || k.s32(4) == 0xffff || it == o.model_pools.end() || !it->second.made)
+            return;
+        const ModelPool &pool = it->second;
+        const int kind = k.b(0x26);
+        const bool facing = kind == 1 || kind == 3 || kind == 5 || kind == 7 || kind == 9;
+        const M4 place = (facing || !pool.born_world) ? mul(o.local, wv) : identity();
+        const auto &model = block->models.at(std::size_t(k.s32(4)));
+        std::array<std::uint8_t, 4> slot{};
+        std::memcpy(slot.data(), o.at(c.slots[1] + 8, 4), 4);
+        const bool writes = (model.flags & 1) == 0;
+        unsigned flags = 0x20;
+        if (k.b(8) & 2)
+            flags = writes ? 0x2c : 0x24;
+        else
+            flags |= ((k.b(8) & 1) ? 0x80u : 0u) | (writes ? 8u : 0u);
+        for (const auto &p : pool.particles) {
+            if (p.life == 0)
+                continue;
+            // FUN_1404be590: its rows (or none), turned, sized, then through the view as its kind says
+            M4 m = identity();
+            if (k.b(0x105) != 0)
+                m = p.m;
+            else
+                for (int j = 0; j < 4; ++j)
+                    m[std::size_t(12 + j)] = p.m[std::size_t(12 + j)];
+            if (p.rot[0] != 0 || p.rot[1] != 0 || p.rot[2] != 0) {
+                constexpr float to_rad = 3.1415927410125732F * 3.0517578125e-05F;
+                m = mul(radians_xyz(float(p.rot[0]) * to_rad, float(p.rot[1]) * to_rad, float(p.rot[2]) * to_rad), m);
+            }
+            for (int r = 0; r < 3; ++r)
+                for (int j = 0; j < 4; ++j)
+                    m[std::size_t(r * 4 + j)] *= p.size[std::size_t(r)];
+            const std::array<float, 4> pos{m[12], m[13], m[14], m[15]};
+            std::array<float, 4> q;
+            if (facing) {
+                q = apply(pos, place);
+                m = mul(m, upright);
+            } else if (!pool.born_world) {
+                q = apply(pos, place);
+                m = mul(m, wv);
+            } else {
+                const M4 born_view = mul(mul(o.local, p.born), view); // an lvalue: not std::apply by ADL
+                q = apply(pos, born_view);
+                m = mul(m, wv);
+            }
+            for (int j = 0; j < 4; ++j)
+                m[std::size_t(12 + j)] = q[std::size_t(j)];
+            const M4 draw_m = mul(m, proj);
+            std::array<float, 4> colour{};
+            for (int j = 0; j < 3; ++j) {
+                int v = p.jitter[std::size_t(j)] + slot[std::size_t(j)];
+                if (pool.own_colour)
+                    v += int(p.colour[std::size_t(j)]);
+                colour[std::size_t(j)] = float(std::clamp(v, 0, 0xff));
+            }
+            int a = int((float(p.jitter[3]) + float(slot[3])) - p.fade);
+            if (pool.own_colour)
+                a += int(p.colour[3]);
+            colour[3] = float(std::clamp(a, 0, 0x7f));
+            draw_model_with(o, model, draw_m, colour, flags, k.b(0xc), k.b(0x10a), 0, p.u, p.v, *out);
+        }
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -2093,6 +2533,17 @@ struct EffectInstance::State {
             su = o.f(c.slots[2], 1);
             sv = o.f(c.slots[2], 4);
         }
+        const std::array<float, 4> tint{float(colour[0]), float(colour[1]), float(colour[2]), float(colour[3])};
+        draw_model_with(o, model, o.draw, tint, flags, only, always, alpha, su, sv, *out);
+    }
+
+    // a model through `m` (FUN_1404b6860's work): its vertices (the object's own when pppVtMime made them), each
+    // primitive's corner colour x `tint` (0x80 = 1 both), the request's flags and depth bytes, its ALPHA (0: the
+    // model's), the UV scroll added; the primitives far to near, a draw a page
+    void draw_model_with(const Obj &o, const EffectModel &model, const M4 &m, const std::array<float, 4> &tint,
+                         unsigned flags, std::uint8_t only, std::uint8_t always, std::uint16_t alpha, float su,
+                         float sv, std::vector<EffectDraw> &out)
+    {
         EffectDraw d;
         d.alpha = alpha != 0 ? std::uint8_t(alpha & 0xff) : model.alpha;
         d.depth_write = (flags & 8) != 0 && (flags & 0x80) == 0;
@@ -2106,7 +2557,7 @@ struct EffectInstance::State {
         std::vector<std::array<float, 4>> clip(model.vertices.size());
         for (std::size_t i = 0; i < clip.size(); ++i) {
             const auto &v = i < vertices.size() ? vertices[i] : model.vertices[i];
-            clip[i] = apply({v[0], v[1], v[2], 1}, o.draw);
+            clip[i] = apply({v[0], v[1], v[2], 1}, m);
         }
         // a model's primitives far to near (the depth buckets of FUN_1404af7d0)
         std::vector<std::pair<float, const EffectPrimitive *>> order;
@@ -2123,7 +2574,7 @@ struct EffectInstance::State {
         for (const auto &[z, p] : order) {
             if (p->tex0 != tex) {
                 if (!d.triangles.empty())
-                    out->push_back(d);
+                    out.push_back(d);
                 d.triangles.clear();
                 d.tex0 = p->tex0;
                 tex = p->tex0;
@@ -2132,7 +2583,7 @@ struct EffectInstance::State {
                 std::array<float, 4> col{};
                 for (int j = 0; j < 4; ++j)
                     col[std::size_t(j)] = float(p->colour[std::size_t(q)][std::size_t(j)]) / 128.0F *
-                                          float(colour[j]) / 128.0F;
+                                          tint[std::size_t(j)] / 128.0F;
                 return vertex(clip[p->vertex[std::size_t(q)]], p->uv[std::size_t(q)][0] + su,
                               p->uv[std::size_t(q)][1] + sv, col);
             };
@@ -2145,7 +2596,7 @@ struct EffectInstance::State {
             }
         }
         if (!d.triangles.empty())
-            out->push_back(std::move(d));
+            out.push_back(std::move(d));
     }
 
     // pppVtMime's draw (FUN_1404c17b0): the object's vertices a blend of two models', t of the way from the
@@ -2199,6 +2650,7 @@ struct EffectInstance::State {
         case 0x31: vt_mime(o, c, k); break;
         case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
+        case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0x8d: case 0x8e: { // pppDrawShape(X) (FUN_1404c97c0, FUN_1404c99c0): the shape's frame, the matrix
             if (k.s32(4) == 0xffff || out == nullptr)
                 return;
@@ -2354,7 +2806,7 @@ struct EffectInstance::State {
         n = std::sqrt(z[0] * z[0] + z[1] * z[1] + z[2] * z[2]);
         if (n > 0)
             z = {z[0] / n, z[1] / n, z[2] / n};
-        M4 upright = identity();
+        upright = identity();
         for (int j = 0; j < 3; ++j) {
             upright[std::size_t(j)] = x[std::size_t(j)];
             upright[std::size_t(4 + j)] = y[std::size_t(j)];
