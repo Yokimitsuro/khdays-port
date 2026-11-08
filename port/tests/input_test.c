@@ -526,6 +526,25 @@ static void test_settings_file(void)
  * reported in the file's language and replaced by the default. */
 /* The mouse's buttons and wheel, bound in the keyboard's column: read and written by name, held as keys
  * are, masked as keys are. */
+/* Every action the settings menu binds is written to the file and read back: the one-screen HUD mode's key was
+ * bound in the menu but left out of the file, unbound again at the next start. */
+static void test_every_binding_saved(void)
+{
+    KhdaysProfile p, q;
+    char path[600];
+    khdays_profile_default(&p);
+    CHECK(khdays_profile_set(&p, KB, BASE, KHDAYS_ACT_HUD_MODE, 0, SDL_SCANCODE_H) == 0);
+    CHECK(khdays_profile_set(&p, KHDAYS_DEVICE_GAMEPAD, BASE, KHDAYS_ACT_HUD_MODE, 0, KHDAYS_PAD_PADDLE1) == 0);
+    path_of("hud_mode.ini", path, sizeof(path));
+    CHECK(khdays_profile_save(&p, path, count_notice) == 0);
+    notices = 0;
+    khdays_profile_load(&q, path, count_notice);
+    CHECK(notices == 0);
+    CHECK(q.input[KB][BASE][KHDAYS_ACT_HUD_MODE][0] == SDL_SCANCODE_H);
+    CHECK(q.input[KHDAYS_DEVICE_GAMEPAD][BASE][KHDAYS_ACT_HUD_MODE][0] == KHDAYS_PAD_PADDLE1);
+    CHECK(memcmp(&p, &q, sizeof(p)) == 0);
+}
+
 static void test_mouse_bindings(void)
 {
     KhdaysProfile p, q;
@@ -2257,6 +2276,7 @@ int main(void)
     test_masking();
     test_devices();
     test_settings_file();
+    test_every_binding_saved();
     test_mouse_bindings();
     test_video_settings();
     test_sound_settings();

@@ -1445,6 +1445,7 @@ static const int base_actions[] = {
     KHDAYS_ACT_A,       KHDAYS_ACT_B,           KHDAYS_ACT_X,           KHDAYS_ACT_Y,
     KHDAYS_ACT_L,       KHDAYS_ACT_R,           KHDAYS_ACT_START,       KHDAYS_ACT_SELECT,
     KHDAYS_ACT_LOCK_ON, KHDAYS_ACT_TARGET_NEXT, KHDAYS_ACT_TARGET_PREV, KHDAYS_ACT_OPEN_SETTINGS,
+    KHDAYS_ACT_HUD_MODE,
 };
 static const int field_actions[] = {
     KHDAYS_ACT_MENU_UP,
