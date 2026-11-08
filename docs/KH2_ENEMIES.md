@@ -240,6 +240,62 @@ also, once a second, where each of its script's threads stands (its next code wo
 lists the script), its motion, whether it jumps, its height over the ground and its fall, and each wall that stops
 its steering; `=3` also every call its script makes but those made every tick, with its arguments.
 
+## Bosses
+
+The first boss, the maintainer's choice (2026-11-08): **Cerberus**, `B_HE020` (the Olympus Coliseum's; object 351,
+kind 0x0c, a large boss, in `00objentry.bin`). Read from its files and KH2FM.exe; **nothing of it is built yet**:
+what Days lacks waits for the maintainer's approval (below, "Proposals").
+
+- **Its files**: `obj/B_HE020.mdlx` (its model, textures, script and collision -- one object, no parts of its own),
+  `.mset`, `.a.us` (its effects and sounds). `B_HE020_GM`, `H_HE020` and the `F_HE020_*` objects are the coliseum's
+  event pieces, not the fight's.
+- **Its script**: 36 states -- `appear`, `battle_start`, `mode_battle` / `mode_battle_boss` (picking `low_attack`,
+  `high_attack`, `low_short`, `high_short` or `long` by the player's distance and height), `bite_select`,
+  `turn_select`, `back_turn`, `atk_darkbreath`, `atk_bite_press` and its hit, `self_stun`, `move_target`, `jump`,
+  `jump_land`, its revenge (`revenge`, `mode_revenge`, `mode_revenge_boss`), six reaction commands' states
+  (`rc_avoid`, `rc_avoid1`, `rc_avoid2`, `rc_miss_avoid1`, `rc_miss_avoid2`, `rc_miss_stun`), `dead`, `leave`,
+  `event`, `freeze`, `idle`, `idle_time`, `footwork`. It makes 68 calls; the port answers 56. The other 12:
+
+  | Call | Read (KH2FM.exe) |
+  | --- | --- |
+  | 0:1 | nothing (`FUN_14041ca00`, empty in the PC game) |
+  | 0:32 | an effect of the screen or of time for n frames (`FUN_140156c90` on `FUN_140156dc0`'s manager: + 0x100, + 0x104, + 0x108; KH2's hit starts it for 10 frames when the player's 200-kind attacker hits) -- **what it shows is not known** |
+  | 1:107 | the actor's + 0x2a8 set |
+  | 1:130 | two objects' places in KH2's list told apart (their + 4s' difference) |
+  | 1:148 | the actor put at a point (`FUN_1403b64d0`: + 0x670, then `FUN_1403ccb90`) |
+  | 1:157 | an effect started by a four-letter name from the actor's effects' entries of type 0x16 (`FUN_1403db2f0`: `+ 0x928`'s, made an object of kind 0xb on the actor's + 0x80), on a target when given |
+  | 1:213 | a number of its object's record (`FUN_1403b5b20`: + 8's + 0x4c) |
+  | 1:220 | a step ahead with the room's collision, up to a length (`FUN_1403b9ac0`: its collision swept in 100s, `FUN_1403b6510` puts it where it stops) |
+  | 1:225 | whether its class lets hits through now (+ 0x6c8 bit 1, then its class's virtual + 0xb8: the check KH2's hit makes, `FUN_140410d60`) |
+  | 1:228, 1:229 | a 12-byte record's first, second word (as 1:230's) |
+  | 2:25 | a record's + 0x18 |
+
+- **Its body and heads**: 97 collision shapes. Its body is a cylinder 6 m high and 5.5 m round (kind 0x300), with
+  spheres on its legs, necks and heads (0x301, 0x302). Its attacks are groups 1, 2 and 3 (each head's bite), 5, 12,
+  13 (its paws) and 7 (`atk_darkbreath`: a sphere of 2.4 m). Groups 9, 10 and 11 are its three heads, each with an
+  aim point (0x307, 4 m up and 3 m ahead): KH2 locks on each head apart.
+- **Its health**: its `enmp` entry is not its object's number (no entry 351); KH2's placing of it names the entry
+  (not read). Entries with several health values exist (ids 25, 114, 138, 172, 200, 244: 2 to 6 values).
+- **Reaction commands**: the `rc_*` states take the player in hand from Cerberus's script: `1:112` runs a routine of
+  Cerberus's on the player's actor, `1:148` and `1:79` put and turn the player, `1:29` makes the player play
+  Cerberus's motion 252, `0:32` the screen's effect, `1:157` an effect by name. KH2's game enters them when the player
+  takes the command.
+- **Cameras**: none in its script. **Its end**: its `dead` state (its effect and fade), as the other enemies.
+
+**Proposals** (for the maintainer; nothing done):
+
+1. **Size**: its stand-in's collision sphere (a Days class's, under a metre) is far smaller than its body. The shell
+   would give the Days enemy KH2's body cylinder for its radius, so Roxas cannot walk into it and Days's hits land
+   on its body, not only near its centre.
+2. **Health and its bar**: the stand-in's HP as now (the mission's class, its level), shown on the KH2-style enemy
+   HUD (`port/ui/kh2_enemy_hud`) with Cerberus's name; KH2's several bars only when its `enmp` entry is found.
+3. **Reaction commands**: left out -- the states never entered, Cerberus fights without them. Days's players are not
+   KH2's actors with KH2's motions (Roxas cannot play Cerberus's motion 252). A later spec could give them Days's own
+   moves.
+4. **Lock-on**: Days locks on one enemy; its mark at the middle head's aim point (group 10), not at its feet.
+5. **0:32**: nothing (its only use is a reaction command's).
+6. **The 12 calls** answered as read above (1:157 starting the named effect through the port's effect player).
+
 ## Triggers
 
 | Trigger | Read |
