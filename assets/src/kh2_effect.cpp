@@ -632,6 +632,7 @@ struct Obj {
     std::map<std::int32_t, BoltPool> bolt_pools;
     std::map<std::int32_t, BoltTarget> next_targets;
     std::map<std::int32_t, FilterPool> filter_pools; // pppRyjMegaBirthModelFilter's, by its third slot
+    std::map<std::int32_t, BoltTarget> grav_targets; // pppKeGrvEff's pull (a pppKeGrvTgt), by its third slot
 
     std::uint8_t *at(std::int32_t slot, std::size_t n)
     {
@@ -667,23 +668,25 @@ enum : unsigned { W1 = 1, W3 = 2, SPAWNER = 4, BIRTH = 8 };
 unsigned words(std::uint32_t code)
 {
     switch (code) {
-    case 0x02: case 0x03: case 0x06: case 0x09: case 0x0a: case 0x0b: case 0x0e: case 0x10: case 0x11:
+    case 0x02: case 0x03: case 0x06: case 0x07: case 0x09: case 0x0a:
+    case 0x0b: case 0x0c: case 0x0e: case 0x10: case 0x11:
         return BIRTH;
-    case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x24: case 0x25: case 0x26: case 0x27: case 0x28: case 0x29:
-    case 0x2a: case 0x2b: case 0x2d: case 0x2f: case 0x30: case 0x33: case 0x34: case 0x35: case 0x3f: case 0x40:
-    case 0x41: case 0x42: case 0x43: case 0x44: case 0x48: case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x51:
-    case 0x52: case 0x54: case 0x55: case 0x57: case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0x5d:
-    case 0x5e: case 0x60: case 0x63: case 0x69: case 0x6a: case 0x70: case 0x71: case 0x72: case 0x73: case 0x74:
-    case 0x75: case 0x78: case 0x79: case 0x7b: case 0x7c: case 0x7d: case 0xac: case 0xae: case 0xb1: case 0xb2:
-    case 0xb5: case 0xb7: case 0xb8: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
+    case 0x1b: case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x22: case 0x24: case 0x25: case 0x26: case 0x27:
+    case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2d: case 0x2f: case 0x30: case 0x33: case 0x34: case 0x35:
+    case 0x3f: case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x48: case 0x49:
+    case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x4e: case 0x51: case 0x52: case 0x54: case 0x55: case 0x57:
+    case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0x5d: case 0x5e: case 0x60: case 0x63: case 0x69:
+    case 0x6a: case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x78: case 0x79: case 0x7b:
+    case 0x7c: case 0x7d: case 0x7e: case 0x80: case 0xac: case 0xae: case 0xb1: case 0xb2: case 0xb4: case 0xb5:
+    case 0xb7: case 0xb8: case 0xbc: case 0xca: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
     case 0xd8: case 0xd9: case 0xe6: case 0xe7: case 0xe8: case 0xe9: case 0xea: case 0xeb: case 0xec: case 0xed:
-    case 0xbc: case 0x7e: case 0x80:
         return W1;
-    case 0x83: case 0x86: case 0x89: case 0x8a: case 0x91: case 0xee: case 0xef: case 0xf0: case 0xf2: case 0xcb:
+    case 0x83: case 0x86: case 0x87: case 0x89: case 0x8a: case 0x91:
+    case 0xcb: case 0xee: case 0xef: case 0xf0: case 0xf2:
         return W3;
-    case 0x31: case 0x85: case 0x8b: case 0x8d: case 0x8e: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0xa0:
-    case 0x9d: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8: case 0xda: case 0xdb: case 0xdd:
-    case 0xdf: case 0xe0: case 0xe1: case 0x81: case 0xe5:
+    case 0x31: case 0x81: case 0x85: case 0x88: case 0x8b: case 0x8d: case 0x8e: case 0x98: case 0x99: case 0x9a:
+    case 0x9b: case 0x9c: case 0x9d: case 0xa0: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xc8:
+    case 0xda: case 0xdb: case 0xdd: case 0xdf: case 0xe0: case 0xe1: case 0xe5:
         return W1 | W3;
     case 0xc9: case 0xd0: case 0xf1: return W1 | W3 | SPAWNER;
     default: return 0;
@@ -850,10 +853,11 @@ struct EffectInstance::State {
         case 0x2b: zero(0, 8); break;
         case 0xd5: case 0xd6: case 0xd7: o.seti(c.slots[0], 3, 0); break; // the first key forgotten
         case 0xae: case 0xb1: case 0xb2: case 0xec: zero(0, 4); break;
-        case 0x85: case 0x8b: zero(2, 24); break;
+        case 0x85: case 0x88: case 0x8b: zero(2, 24); break;
         case 0x8d: case 0x8e: zero(0, 6); break;
         case 0xda: case 0xdb: o.seti(c.slots[2], 0, 0); break;
-        case 0x02: case 0x03: case 0x06: case 0x09: case 0x0a: case 0x0b: case 0x0e: case 0x10: case 0x11:
+        case 0x02: case 0x03: case 0x06: case 0x07: case 0x09: case 0x0a:
+        case 0x0b: case 0x0c: case 0x0e: case 0x10: case 0x11:
             trail_resource(o, c);
             break;
         case 0x30: o.setf(c.slots[0], 3, 1.0F); break; // pppKeDrct (FUN_1404c1790): w = 1
@@ -862,6 +866,8 @@ struct EffectInstance::State {
             o.setf(c.slots[0], 3, 0);
             break;
         case 0x80: zero(0, 0x30); break; // pppKeThSft (FUN_1404c78f0): its rates
+        case 0x1b: o.seti(c.slots[1], 2, 0); break;         // pppKeGrvTgt (FUN_1404bf680): no place yet
+        case 0x22: o.grav_targets.erase(c.slots[2]); break; // pppKeGrvEff (FUN_1404bf610): no target
         case 0xe5: o.filter_pools.erase(c.slots[2]); break; // FUN_1404db460: none made, active, the far fade 1
         case 0x81: // pppKeTh (FUN_1404beed0): no bolts, its flags, colours, size, rate, reach and pull none
             o.bolt_states.erase(c.slots[0]);
@@ -885,7 +891,7 @@ struct EffectInstance::State {
             }
             break;
         case 0xac: *o.at(c.slots[1] + 1, 1) = 0; break; // pppPointAp: the wait
-        case 0xb5: zero(0, 2); break;
+        case 0xb4: case 0xb5: zero(0, 2); break;
         case 0xb7: case 0xb8: zero(0, 3); break; // the vertex counter, the wait
         case 0xd2: zero(1, 12); break;
         case 0xed: zero(0, 0x3c); break;
@@ -915,7 +921,7 @@ struct EffectInstance::State {
             *o.at(c.slots[3] + 5, 1) = 1;
             o.rings.erase(&c);
             break;
-        case 0x99: case 0x9a: case 0x9b: // FUN_1404cc930 ...: 31 places, the newest first; the shape's frame
+        case 0x98: case 0x99: case 0x9a: case 0x9b: // FUN_1404cc230, FUN_1404cc930 ...: 31 places, the newest first
             zero(0, 8);
             *o.at(c.slots[0], 1) = 0x1f;
             break;
@@ -938,9 +944,11 @@ struct EffectInstance::State {
         case 0x02: count = 3; break;
         case 0x03: count = 8; break;
         case 0x06: count = 16; break;
+        case 0x07: count = 16; sets = 4; break;
         case 0x09: count = 24; break;
         case 0x0a: count = 24; sets = 4; break;
         case 0x0b: count = 32; break;
+        case 0x0c: count = 32; sets = 4; break;
         case 0x0e: count = 40; break;
         case 0x10: count = 48; break;
         default: count = 48; sets = 4; break; // 0x11
@@ -996,7 +1004,7 @@ struct EffectInstance::State {
             break;
         }
         case 0x8d: case 0x8e: std::memset(o.at(c.slots[0], 6), 0, 6); break;
-        case 0x85: case 0x8b: std::memset(o.at(c.slots[2], 24), 0, 24); break;
+        case 0x85: case 0x88: case 0x8b: std::memset(o.at(c.slots[2], 24), 0, 24); break;
         case 0xda: case 0xdb:
             std::memset(o.at(c.slots[2] + 8, 8), 0, 8);
             std::memset(o.at(c.slots[2] + 0x14, 8), 0, 8);
@@ -1098,8 +1106,8 @@ struct EffectInstance::State {
             }
             break;
         }
-        case 0x33: case 0x34: case 0x35: case 0x3f: case 0x40: case 0x41: case 0x42: case 0x43: case 0x44:
-        case 0x48: case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x51: case 0x52:
+        case 0x33: case 0x34: case 0x35: case 0x3f: case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+        case 0x46: case 0x48: case 0x49: case 0x4a: case 0x4b: case 0x4c: case 0x4d: case 0x4e: case 0x51: case 0x52:
             random_command(o, c, k);
             break;
         case 0x57: case 0x58: case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0xd8: case 0xe6: case 0xe7:
@@ -1254,7 +1262,7 @@ struct EffectInstance::State {
         }
         case 0xac: point_ap(o, c, k); break;
         case 0xb1: case 0xb2: case 0xec: vertex_spawner(o, c, k); break;
-        case 0xb5: case 0xb7: case 0xb8: born_at_random(o, c, k); break;
+        case 0xb4: case 0xb5: case 0xb7: case 0xb8: born_at_random(o, c, k); break;
         case 0xca: // pppRyjMngFlag (FUN_1404be8c0): the instance's bytes on its key
             if (hit(o, k)) {
                 follow = k.b(4);
@@ -1317,7 +1325,7 @@ struct EffectInstance::State {
         }
         case 0x54: case 0x7c: case 0x7d: break; // a shared vector; the depth order's corrections (sorting only)
         case 0xae: vertex_ap(o, c, k); break;
-        case 0x85: case 0x8b: { // pppDrawMdlTs3's scroll (FUN_1404c8da0; pppDrawMdlTs's too): u (pos, vel, acc), v
+        case 0x85: case 0x88: case 0x8b: { // pppDrawMdlTs3's scroll (FUN_1404c8da0; Ts's, Ts2's FUN_1404c8530): u, v
             float u = o.f(s(2), 0), du = o.f(s(2), 1), ddu = o.f(s(2), 2), v = o.f(s(2), 3), dv = o.f(s(2), 4),
                   ddv = o.f(s(2), 5);
             du += ddu;
@@ -1362,7 +1370,9 @@ struct EffectInstance::State {
             break;
         }
         case 0x8d: case 0x8e: shape_step(o, k, c.slots[0]); break;
-        case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
+        case 0x98: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: tail_step(o, c, k); break;
+        case 0x1b: grav_target_step(o, c, k); break;
+        case 0x22: grav_step(o, c, k); break;
         case 0xc8: case 0xa0: break; // pppRyjDrawShipolyBone's and pppKeShpDtt's steps: none
         case 0xbc: case 0xbd: case 0xbe: case 0xbf: case 0xc0: case 0xc1: case 0xdd: case 0xdf: case 0xe0: case 0xe1:
             flare_step(o, c, k);
@@ -1380,10 +1390,10 @@ struct EffectInstance::State {
 
     // the random ones (pppRand... FUN_1404c1ae0 ...): a value drawn, kept in the slot, then target += base x value
     // (- base when it runs both ways). Floats are drawn at the start and kept (applied again on each key); ints and
-    // the four-short colours are drawn anew on each key. "S" ones draw each component apart.
+    // the colours (four shorts, or four bytes) are drawn anew on each key. "S" ones draw each component apart.
     void random_command(Obj &o, const EffectCommand &c, const Key &k)
     {
-        enum Kind { FLOAT, INT, SHORT };
+        enum Kind { FLOAT, INT, SHORT, BYTE };
         enum Range { BOTH, UP, DOWN };
         Kind kind = FLOAT;
         Range range = BOTH;
@@ -1400,11 +1410,15 @@ struct EffectInstance::State {
         case 0x42: kind = INT; break;
         case 0x43: kind = INT; range = UP; break;
         case 0x44: kind = INT; range = DOWN; break;
+        case 0x45: kind = BYTE; n = 4; flag = 0xc; break;              // pppRandCV (FUN_1404c2c60)
+        case 0x46: kind = BYTE; n = 4; flag = 0xc; range = UP; break;  // pppRandUpCV (FUN_1404c2da0)
         case 0x48: kind = SHORT; n = 4; flag = 0x10; break;
+        case 0x49: kind = SHORT; n = 4; flag = 0x10; range = UP; break; // pppRandUpHCV (FUN_1404c3120)
         case 0x4a: kind = SHORT; n = 4; flag = 0x10; range = DOWN; break;
         case 0x4b: apart = true; break;
         case 0x4c: apart = true; range = UP; break;
         case 0x4d: apart = true; range = DOWN; break;
+        case 0x4e: kind = BYTE; n = 4; flag = 0xc; apart = true; break; // pppSRandCV (FUN_1404c3760)
         case 0x51: kind = SHORT; n = 4; flag = 0x10; apart = true; break;
         default: kind = SHORT; n = 4; flag = 0x10; apart = true; range = UP; break; // 0x52
         }
@@ -1440,6 +1454,10 @@ struct EffectInstance::State {
             } else if (kind == INT) {
                 const float b = float(k.s32(8 + 4 * std::size_t(j)));
                 o.seti(t, j, o.i(t, j) + std::int32_t(range == BOTH ? b * x - b : b * x));
+            } else if (kind == BYTE) { // four signed bytes, added to the target's bytes
+                const float b = float(std::int8_t(k.b(8 + std::size_t(j))));
+                std::uint8_t &t8 = *o.at(t + j, 1);
+                t8 = std::uint8_t(t8 + std::uint8_t(std::int8_t(std::int32_t(range == BOTH ? b * x - b : b * x))));
             } else {
                 const float b = float(k.s16(8 + 2 * std::size_t(j)));
                 std::int32_t v = std::int32_t(range == BOTH ? b * x - b : b * x);
@@ -1538,40 +1556,54 @@ struct EffectInstance::State {
         wr(o.at(s + 2, 2), std::uint16_t(wait - 1));
     }
 
-    // pppKeBornRnd3 / 5 / 6 (FUN_1404d4760, FUN_1404d4ea0, FUN_1404d51a0 through FUN_1404e1780): children born at
-    // a vertex list's vertices, walked or picked by rand(); 3 on a chance (its mask against rand()'s high byte),
-    // 5 and 6 every wait. Each child gets the vertex through the object's matrix and its unit way from the object's
-    // centre (3; 5 that way sized), or the vertex as in the model and the angles facing out along it (6).
+    // pppKeBornRnd2 / 3 / 5 / 6 (FUN_1404d4550, FUN_1404d4760, FUN_1404d4ea0, FUN_1404d51a0 through FUN_1404e1780):
+    // children born at a vertex list's vertices, walked or picked by rand(); 2 and 3 on a chance (a mask against
+    // rand()'s high byte), 5 and 6 every wait. Each child gets the vertex through the object's matrix and its unit
+    // way from the object's centre (3; 2 and 5 that way sized), or the vertex as in the model and the angles facing
+    // out along it (6).
+    // where each one's key keeps its fields: the child's layer (the child's slots for its place and way at +4 and
+    // +0xc), how many a time, picked or walked, and the chance's mask or the wait
+    struct BornKey {
+        std::size_t layer, count, pick, when;
+        bool on_chance, sized, facing_out;
+    };
+
+    static BornKey born_key(std::uint32_t code)
+    {
+        switch (code) {
+        case 0xb4: return {0x10, 0xe, 0xc, 0xd, true, true, false}; // pppKeBornRnd2
+        case 0xb5: return {0xc, 6, 8, 7, true, false, false};       // pppKeBornRnd3
+        case 0xb7: return {0x10, 0xc, 0xe, 0xd, false, true, false}; // pppKeBornRnd5
+        default: return {0xc, 6, 8, 7, false, false, true};          // pppKeBornRnd6
+        }
+    }
+
     void born_at_random(Obj &o, const EffectCommand &c, const Key &k)
     {
         if (fastforward || !live(o))
             return;
-        const bool five = c.code == 0xb7;
-        const std::size_t layer_at = five ? 0x10 : 0xc, count_at = five ? 0xc : 6, pick_at = five ? 0xe : 8;
-        const std::int32_t s = c.slots[0];
-        if (c.code == 0xb5) {
-            if (k.b(7) == 0xff)
-                return;
-            if ((k.b(7) & ((crand() >> 8) & 0xff)) != 0 || k.s32(0xc) == -1 || k.s32(0x14) == -1)
-                return;
-        } else {
-            const std::size_t wait_at = five ? 0xd : 7;
-            if (k.b(wait_at) == 0)
-                return;
-            std::uint8_t *wait = o.at(s + 2, 1);
-            if (*wait == 0) {
-                *wait = k.b(wait_at);
-                if (k.s32(layer_at) == -1 || k.s32(layer_at + 8) == -1)
-                    return;
-                born_walk(o, c, k, count_at, pick_at);
-            }
-            *wait = std::uint8_t(*wait - 1);
+        const BornKey f = born_key(c.code);
+        const bool no_child = k.s32(f.layer) == -1 || k.s32(f.layer + 8) == -1;
+        if (f.on_chance) { // the mask against rand()'s high byte (0xff: never)
+            const std::uint8_t mask = k.b(f.when);
+            if (mask != 0xff && (mask & ((crand() >> 8) & 0xff)) == 0 && !no_child)
+                born_walk(o, c, k, f);
             return;
         }
-        born_walk(o, c, k, count_at, pick_at);
+        const std::uint8_t every = k.b(f.when);
+        if (every == 0)
+            return;
+        std::uint8_t *wait = o.at(c.slots[0] + 2, 1);
+        if (*wait == 0) {
+            *wait = every;
+            if (no_child)
+                return;
+            born_walk(o, c, k, f);
+        }
+        *wait = std::uint8_t(*wait - 1);
     }
 
-    void born_walk(Obj &o, const EffectCommand &c, const Key &k, std::size_t count_at, std::size_t pick_at)
+    void born_walk(Obj &o, const EffectCommand &c, const Key &k, const BornKey &f)
     {
         if (k.s16(4) < 0)
             return;
@@ -1580,12 +1612,12 @@ struct EffectInstance::State {
         if (count == 0)
             return;
         const auto &vs = vertices_of(o, vl.model);
-        const bool pick = k.b(pick_at) != 0;
+        const bool pick = k.b(f.pick) != 0;
         std::uint16_t *counter = reinterpret_cast<std::uint16_t *>(o.at(c.slots[0], 2));
         int i = pick ? crand() % count : int(*counter);
-        for (int n = k.b(count_at); n > 0; --n) {
+        for (int n = k.b(f.count); n > 0; --n) {
             const auto &v = vertex_at(vs, vl.vertices.at(std::size_t(std::min(i, count - 1))));
-            born_one(o, c, k, v);
+            born_one(o, k, f, v);
             if (pick) {
                 i = crand() % count;
             } else if (count <= ++i) {
@@ -1595,16 +1627,15 @@ struct EffectInstance::State {
         wr(reinterpret_cast<std::uint8_t *>(counter), std::uint16_t(i));
     }
 
-    void born_one(Obj &o, const EffectCommand &c, const Key &k, const std::array<float, 3> &v)
+    void born_one(Obj &o, const Key &k, const BornKey &f, const std::array<float, 3> &v)
     {
-        const bool three = c.code == 0xb5, five = c.code == 0xb7;
-        auto child = child_of(o, k.s32(five ? 0x10 : 0xc));
+        auto child = child_of(o, k.s32(f.layer));
         if (!child)
             return;
-        if (three || five) { // FUN_1404d4830 / FUN_1404d4f80
+        if (!f.facing_out) { // FUN_1404d4620 / FUN_1404d4830 / FUN_1404d4f80
             const auto p = transformed({v[0], v[1], v[2], 1}, o.local);
-            const std::int32_t at = k.s32(five ? 0x14 : 0x10), way = k.s32(five ? 0x1c : 0x18);
-            const float size = five ? k.f32(8) : 1.0F;
+            const std::int32_t at = k.s32(f.layer + 4), way = k.s32(f.layer + 0xc);
+            const float size = f.sized ? k.f32(8) : 1.0F;
             std::array<float, 3> d{};
             for (int j = 0; j < 3; ++j)
                 d[std::size_t(j)] = p[std::size_t(j)] - o.local[std::size_t(12 + j)];
@@ -1617,8 +1648,8 @@ struct EffectInstance::State {
         }
         // FUN_1404d5280: the vertex, and the angles of its way out (z about the xy way, x its rise; y none)
         for (int j = 0; j < 3; ++j)
-            child->setf(k.s32(0x10), j, v[std::size_t(j)]);
-        const std::int32_t a = k.s32(0x18);
+            child->setf(k.s32(f.layer + 4), j, v[std::size_t(j)]);
+        const std::int32_t a = k.s32(f.layer + 0xc);
         float r;
         if (angle_of(-v[1], v[0], r))
             child->seti(a, 2, to_angle(r));
@@ -1732,10 +1763,13 @@ struct EffectInstance::State {
     // pppKeShpTail... (FUN_1404cc750, FUN_1404cce70, FUN_1404cd550, FUN_1404cdd80, FUN_1404ceab0): a ring of the
     // object's last places (or their world places), the newest first: 31 at +0x10 (byte 0 their count, byte 1 the
     // newest; the shape's frame as pppDrawShapeX's at +2) or, the "3" ones, 28 at +0x30 (the newest at +0x1fa) with
-    // two colours that move by themselves (head and tail, each with its rate and its rate's rate, shorts / 128)
+    // two colours that move by themselves (head and tail, each with its rate and its rate's rate, shorts / 128).
+    // pppKeShpTail (0x98, FUN_1404cc050 / FUN_1404cc260) is drawn as pppKeShpTailX, its flag for the world's places
+    // at its record's +0x1e.
     std::size_t tail_world_flag(std::uint32_t code) const
     {
         switch (code) {
+        case 0x98: return 0x1e;
         case 0x99: return 0x21;
         case 0x9a: return 0x23;
         case 0x9b: return 0x26;
@@ -1856,7 +1890,7 @@ struct EffectInstance::State {
     {
         if (k.s32(4) == 0xffff || out == nullptr)
             return;
-        const bool x = c.code == 0x99, two_x = c.code == 0x9b;
+        const bool x = c.code == 0x99 || c.code == 0x98, two_x = c.code == 0x9b;
         const std::int32_t s = c.slots[0];
         const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
         std::array<std::uint8_t, 4> slot_colour{};
@@ -4511,6 +4545,49 @@ struct EffectInstance::State {
         }
     }
 
+    // ---------------------------------------------------------------------------------- a pull toward a point
+    // pppKeGrvTgt (FUN_1404bf620): on its key its second slot keeps a radius, a strength and where its object's
+    // place is (its first slot). pppKeGrvEff (FUN_1404bf480): on its key it takes such a target (a layer's object
+    // and its slot; -1 none); each live tick, within the radius of the target's place, its velocity (its second
+    // slot) gains the way from its place (its first slot) toward it, x (1 - distance / radius) x the strength. A
+    // layer's own object takes its first key at age 0 without pulling yet.
+    void grav_target_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (!hit(o, k))
+            return;
+        o.seti(c.slots[1], 0, k.s32(4));
+        o.seti(c.slots[1], 1, k.s32(8));
+        o.seti(c.slots[1], 2, c.slots[0] + 1); // where the place is, + 1 (0: not yet)
+    }
+
+    void grav_step(Obj &o, const EffectCommand &c, const Key &k)
+    {
+        if (hit(o, k)) {
+            o.grav_targets[c.slots[2]] = target_at(k.s32(4), k.s32(8));
+            if (o.age == 0 && !o.parent)
+                return;
+        }
+        if (!live(o))
+            return;
+        const auto it = o.grav_targets.find(c.slots[2]);
+        if (it == o.grav_targets.end() || it->second.kind != BoltTarget::Slot)
+            return;
+        const auto t = it->second.obj.lock();
+        if (!t)
+            return;
+        const std::int32_t ts = it->second.slot, place = t->i(ts, 2) - 1;
+        if (place < 0)
+            return;
+        const float radius = t->f(ts, 0), strength = t->f(ts, 1);
+        std::array<float, 4> v{t->f(place, 0) - o.f(c.slots[0], 0), t->f(place, 1) - o.f(c.slots[0], 1),
+                               t->f(place, 2) - o.f(c.slots[0], 2), 0};
+        const float d = length3(v);
+        unit3(v.data());
+        if (d < radius)
+            for (int j = 0; j < 3; ++j)
+                o.setf(c.slots[1], j, o.f(c.slots[1], j) + v[std::size_t(j)] * (1.0F - d / radius) * strength);
+    }
+
     // ---------------------------------------------------------------------------------- the particle spawner
     void mega_step(Obj &o, const EffectCommand &c, const Key &k) // FUN_1404bc3b0 + FUN_1404bbbe0
     {
@@ -4793,6 +4870,8 @@ struct EffectInstance::State {
         switch (c.code) {
         case 0x83: case 0x85: flags = writes ? 0xc : 0x80; break;
         case 0x86: keyed(k.b(8)); only = k.b(9); always = k.b(0xa); break;
+        case 0x87: keyed(k.b(0xa)); always = k.b(0xb); alpha = k.u16(8); break; // pppDrawMdlSemi2 (FUN_1404c8150)
+        case 0x88: keyed(k.b(0x20)); always = k.b(0x21); break;                // pppDrawMdlTs2 (FUN_1404c8320)
         case 0x89: keyed(k.b(8)); only = k.b(0xd); always = k.b(0xe); break;
         case 0x8a: keyed(k.b(0xa)); always = k.b(0xf); alpha = k.u16(8); break;
         case 0x8b: keyed(k.b(0x20)); always = k.b(0x25); break;
@@ -4803,7 +4882,7 @@ struct EffectInstance::State {
                 alpha = k.u16(0x20);
             break;
         }
-        if (c.code == 0x85 || c.code == 0x8b) {
+        if (c.code == 0x85 || c.code == 0x88 || c.code == 0x8b) {
             su = o.f(c.slots[2], 0);
             sv = o.f(c.slots[2], 3);
         } else if (c.code == 0xda || c.code == 0xdb) {
@@ -4923,11 +5002,11 @@ struct EffectInstance::State {
     void draw(Obj &o, const EffectCommand &c, const Key &k, std::vector<EffectDraw> *out)
     {
         switch (c.code) {
-        case 0x83: case 0x85: case 0x86: case 0x89: case 0x8a: case 0x8b: case 0xda: case 0xdb:
+        case 0x83: case 0x85: case 0x86: case 0x87: case 0x88: case 0x89: case 0x8a: case 0x8b: case 0xda: case 0xdb:
             draw_model(o, c, k, out);
             break;
         case 0x31: vt_mime(o, c, k); break;
-        case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
+        case 0x98: case 0x99: case 0x9a: case 0x9b: tail_draw(o, c, k, out); break;
         case 0x9c: case 0x9d: tail3_draw(o, c, k, out); break;
         case 0xd0: model_birth_draw(o, c, k, out); break;
         case 0xc8: swing_draw(o, c, k, out); break;

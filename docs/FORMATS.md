@@ -246,8 +246,9 @@ same layout's first effect, read only as far as its pictures and shapes.
 - **The commands**: a code indexes the executable's table of 0x50-byte descriptors (at 0x140779a00), the first word
   KH2's name for it, the others its functions: word 1 a step, 3 a draw (run every tick, drawn or not: some keep
   their state there), 5 a hook on the instance, 7 the reset on a birth, 8 on a loop, 9 the release. The 130 codes
-  KH2's 3166 PAX use are in the table below ("KH2's effect commands"); a command the reader does not know is
-  refused with its code, as a primitive kind it does not read. The names' middle letters are their authors'
+  KH2's 3166 PAX use are in the table below ("KH2's effect commands"), with the few KH1's and Re:CoM's effects add
+  (KH2's executable still has them all); a command the reader does not know is refused with its code, as a
+  primitive kind it does not read. The names' middle letters are their authors'
   (`Ke`, `Ryj`, `Sno`, `Ei`, `Vt`).
 - **The run**, at KH2's 60 ticks a second: a layer is born when its start comes; each tick every running layer's
   commands without a draw step, then those with one step and draw, in the layers' order; a layer whose loop's end
@@ -260,8 +261,9 @@ same layout's first effect, read only as far as its pictures and shapes.
   1-3-2): RGBA per corner first, then the vertex numbers (+0xc a triangle's, +0x10 a quad's); 2, 6 and 7 are
   textured, u16 UV pairs in 1/4096 of the page (+0x14 a triangle's, +0x18 a quad's); 1, 5 and 7 add a normal's
   number per corner (+0x12, +0x18, +0x28: the scene's lighting, which the port does not draw). Their sizes are
-  0x14, 0x1c, 0x20, -, 0x18, 0x20, 0x28 and 0x30; kind 3 (0x28) is in none of KH2's files. A kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it is); an untextured
-  one's is the colour drawn (0x80 half of full). Alpha 0x80 is a blend's 1 either way.
+  0x14, 0x1c, 0x20, -, 0x18, 0x20, 0x28 and 0x30; kind 3 (0x28) is in none of KH2's files (two of Re:CoM's have
+  it; not read yet). A kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it
+  is); an untextured one's is the colour drawn (0x80 half of full). Alpha 0x80 is a blend's 1 either way.
 - **A shape**: frames `{wait in 1/256 of a frame, a loop flag, TEX0}` of layers, each four corners in 12.4 fixed
   point (x 1/16), its part of the page, its colour and its own GS ALPHA byte.
 - **Drawing**: the GS blend `(A - B) x C / 128 + D` by the ALPHA byte: 0x44 mixed by alpha, 0x48 added, 0x42
@@ -282,11 +284,12 @@ its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executab
 
 | Codes | Commands | What they do |
 | --- | --- | --- |
-| 0x02-0x11 | `pppKeThRes`, `8`, `16`, `24`, `24x4`, `32`, `40`, `48`, `48x4` | At a birth: a lightning pool, one or four records of 3 to 48 points (48 bytes each, 96 more a record); a bolt and its branches take records from it |
+| 0x02-0x11 | `pppKeThRes`, `8`, `16`, `16x4`, `24`, `24x4`, `32`, `32x4`, `40`, `48`, `48x4` | At a birth: a lightning pool, one or four records of 3 to 48 points (48 bytes each, 96 more a record); a bolt and its branches take records from it |
+| 0x1b, 0x22 | `pppKeGrvTgt`, `pppKeGrvEff` | A pull: `GrvTgt` keeps a radius, a strength and where its object is; each tick within that radius of such a target (its key's layer and slot), `GrvEff` adds to its velocity the way toward it times (1 - distance / radius) times the strength |
 | 0x1c-0x1f, 0x24-0x27 | `pppAccele`, `AngAccele`, `SclAccele`, `ColAccele`, `Move`, `AngMove`, `SclMove`, `ColMove` | A value and its rate: a key adds to the rate, the rate adds to the value each tick |
 | 0x28-0x2b | `pppPoint`, `pppAngle`, `pppScale`, `pppColor` | A key adds its values (the colour's four shorts / 128 the bytes at +8) |
 | 0xd2-0xd7 | `pppMoveLoop`, `AngMoveLoop`, `SclMoveLoop`, `PointLoop`, `AngleLoop`, `ScaleLoop` | The same for a looping layer (a loop's fast-forward leaves the rate out; the first key taken off again) |
-| 0x33-0x35, 0x3f-0x44, 0x48-0x4d, 0x51, 0x52 | `pppRand...`, `pppSRand...` | A random draw times the key's base added to a target: both ways (base x draw - base), `Up` (0 to base), `Down` (-base to 0); floats drawn at the start and kept, ints (`IV`) and four-short colours (`HCV`) drawn on each key; `S` each component its own draw |
+| 0x33-0x35, 0x3f-0x46, 0x48-0x4e, 0x51, 0x52 | `pppRand...`, `pppSRand...` | A random draw times the key's base added to a target: both ways (base x draw - base), `Up` (0 to base), `Down` (-base to 0); floats drawn at the start and kept, ints (`IV`), four-short colours (`HCV`) and four-byte colours (`CV`, signed bytes added to the bytes) drawn on each key; `S` each component its own draw |
 | 0x2d | `pppVertexAttend` | A vertex of a list through the parent's matrix (where a `pppVertexApAt` child stays) |
 | 0x2f | `pppKeMvYpEff` | The angles that face its way (z about the way's x and y, x its rise) |
 | 0x30 | `pppKeDrct` | A direction set on its key |
@@ -299,12 +302,12 @@ its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executab
 | 0x78, 0x79, 0x7b | `pppRyjDrawMatrixWorld`, `Front`, `Wood` | The same at the world's place and size at the birth |
 | 0x7c, 0x7d | `pppKeZCrct`, `pppKeZCrctShp` | Depth order corrections (KH2's sorting alone) |
 | 0x7e, 0x80, 0x81 | `pppKeThTp`, `pppKeThSft`, `pppKeTh` | Lightning. `pppKeThTp` a point another layer's bolt grows toward (its place's x, y, z; w left 0, so a bolt ends once within its reach), its key the near radius (pulled harder inside), the reach, the pull's strength and a next point; `pppKeThSft` rates added each tick to a bolt's size, speed, reach, pull and colours. `pppKeTh` (FUN_1404be900) starts a bolt from a ThRes's free record at its object's place along its `pppKeDrct`'s way (through the object's matrix, made unit) toward the point (its key's layer and slot; -1 KH2's zero point), and each key sets its length, size, how wide its tail is, its core's part, brightness and its rate, how much of the last way is kept, speed, pull, the random turn's most (u16 x pi x pi / 180), the most branches and their mask, the blend, and four flags. Each tick (FUN_1404dd8e0) the bolt is walked again from its oldest point: each segment's way pulled toward the point, turned by a random angle about x, y or z, blended with what the point had; new points fade by the rate and may branch into the pool's spare records; once grown it lets its tail go. Drawn (FUN_1404dd100) as a ribbon facing the screen: a fan from the first point, ten-vertex strips between, a fan to the last; the core's colour in the middle, the edges' at the size and at the core's part of it, each with a rate a point; the size in KH2's screen pixels (512 x 416, focal length 256 / tan 0.75), given back in the projection's units here |
-| 0x83, 0x85, 0x86, 0x89, 0x8a, 0x8b, 0xda, 0xdb | `pppDrawMdl`, `MdlTs`, `Mdl2`, `Mdl3`, `MdlSemi3`, `MdlTs3`, `MdlLoop`, `MdlLoopZ` | A model through the object's matrix and colour; each its depth rules (8 written, 0x80 not, 4 two record bytes: the depth alone / always), the Ts and Loop ones their UV scroll, Semi3 and LoopZ the record's blend |
+| 0x83, 0x85-0x8b, 0xda, 0xdb | `pppDrawMdl`, `MdlTs`, `Mdl2`, `MdlSemi2`, `MdlTs2`, `Mdl3`, `MdlSemi3`, `MdlTs3`, `MdlLoop`, `MdlLoopZ` | A model through the object's matrix and colour; each its depth rules (8 written, 0x80 not, 4 two record bytes: the depth alone / always), the Ts and Loop ones their UV scroll, the Semi ones and LoopZ the record's blend |
 | 0x8d, 0x8e | `pppDrawShape`, `pppDrawShapeX` | A shape's frames through the matrix |
 | 0x91, 0xa0, 0xee | `pppKeMdlDtt`, `pppKeShpDtt`, `pppSnoMdlDttNorm` | The screen behind drawn again through a model or a sprite, moved by a strength (along the normals for the last): given as draws of the screen, the movement not worked out; the port does not draw them yet |
-| 0x99-0x9d | `pppKeShpTailX`, `Tail2`, `Tail2X`, `Tail3`, `Tail3X` | Sprites along the object's last places (a ring of 31 or 28), spaced by a length shrinking with their size, coloured head to tail; the 3 ones each sprite's frame, size and turn from a 16-bit LCG |
+| 0x98-0x9d | `pppKeShpTail`, `TailX`, `Tail2`, `Tail2X`, `Tail3`, `Tail3X` | Sprites along the object's last places (a ring of 31 or 28), spaced by a length shrinking with their size, coloured head to tail; the 3 ones each sprite's frame, size and turn from a 16-bit LCG |
 | 0xac, 0xae, 0xb1, 0xb2, 0xec | `pppPointAp`, `pppVertexAp`, `ApLc`, `ApAt`, `ApLcLoop` | Children born every wait: at its point; at a list's vertices through its matrix, as in the model, or tied to a vertex number |
-| 0xb5, 0xb7, 0xb8 | `pppKeBornRnd3`, `5`, `6` | Children born at a list's vertices picked by `rand()`: with their unit way out (sized), or facing out along it |
+| 0xb4, 0xb5, 0xb7, 0xb8 | `pppKeBornRnd2`, `3`, `5`, `6` | Children born at a list's vertices, walked or picked by `rand()`, on a chance (2, 3) or every wait (5, 6): with their unit way out (sized: 2, 5), or facing out along it (6) |
 | 0xbc-0xc1, 0xdd, 0xdf-0xe1 | `pppKeLnsLpSft`, `LnsLp`, `LnsArnd`, `LnsClm`, `LnsCrn`, `LnsFls` and the T ones | A lens flare: a line from the source to the screen's middle and how bright, elements around the source, as columns along the line, a streak, a flash; the T ones keep their key's values (the maps' suns). LpT's test of how much of the source is seen is not made |
 | 0xc8 | `pppRyjDrawShipolyBone` | A weapon's swing trail from the game's two points (base, tip): a history bent into the model's quads by a natural cubic spline |
 | 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites; prizes (a crowd at the game's points: each point's kind picks one of ten entries, a shape, colour and size, its alpha, size / 255 and frame in the point's bytes, the frame moved on); models; and models in a ball round the camera (a map's falling leaves or dust: born in the ball, brought back on its far side when they leave it, shown while the camera is within a distance of the effect, faded near the camera and at the ball's edge) |
