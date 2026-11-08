@@ -330,7 +330,7 @@ void test_motions_and_moving()
     call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, -100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(1)});
     CHECK(actor.motion.id == 7 && actor.motion.after == 8 && actor.motion.landing == 9);
     t = actor.step(1.0F);
-    CHECK(t[1] < 0.0F && std::fabs(t[2] - 2.0F) < 1e-4F);
+    CHECK(t[1] < 0.0F && std::fabs(t[2] - 1.9F) < 1e-4F); // its speed along, slowed to 0.95 by its first evaluation
     CHECK(call(rig, actor, 1, 60, {self}).i() == 1);
     float top = t[1], y = t[1];
     for (int k = 0; k < 40; ++k) {
@@ -340,6 +340,19 @@ void test_motions_and_moving()
     CHECK(top < -95.0F && top > -105.0F); // the height asked
     actor.land();
     CHECK(!actor.jump.on && call(rig, actor, 1, 60, {self}).i() == 0);
+
+    // the way made one long, then times its w; a positive y rises as well (the Fiery Globe's hops: the way to the
+    // player 230 off, 70 high, 7 a tick)
+    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, 70.0F, 230.0F, 7.0F)), i(7), f(0.0F), i(0)});
+    t = actor.step(1.0F);
+    CHECK(t[1] < 0.0F && std::fabs(t[2] - 6.65F) < 1e-3F); // 7 along, slowed to 0.95 by its first evaluation
+    top = t[1], y = t[1];
+    for (int k = 0; k < 40; ++k) {
+        y += actor.step(1.0F)[1];
+        top = std::min(top, y);
+    }
+    CHECK(top < -65.0F && top > -75.0F);
+    actor.land();
 }
 
 // The calls the other enemies need (US2): two ways' turn apart, a vector scaled, KH2's running number, a jump's
@@ -397,7 +410,28 @@ void test_more_enemies_calls()
         top = std::min(top, y);
     }
     CHECK(top < -145.0F && top > -155.0F); // its top 150 up (KH2's y down) after its 20 ticks
-    CHECK(std::fabs(along - 60.0F) < 1.0F);
+    // 3 along, slowed to 0.95 every two ticks (FUN_1403b7ad0 with no steering): 2 x 3 x (0.95 + ... + 0.95^10)
+    CHECK(std::fabs(along - 45.75F) < 0.5F);
+    // 1:111 steers: on the ground its speed a tick, kept; in the air the velocity approaches it a tenth at a time
+    actor.land();
+    call(rig, actor, 1, 111, {self, adr(vec(rig.memory, 0.0F, 0.0F, 2.0F)), f(5.0F)});
+    float ground = 0.0F;
+    for (int k = 0; k < 4; ++k)
+        ground += actor.step(1.0F)[2];
+    CHECK(std::fabs(ground - 20.0F) < 1e-3F); // 5 a tick, still 5 after the call's tick
+    call(rig, actor, 1, 111, {self, adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), f(0.0F)});
+    float still = 0.0F;
+    for (int k = 0; k < 4; ++k)
+        still += std::fabs(actor.step(1.0F)[2]);
+    CHECK(still < 1e-3F);
+    // in 1:156's jump (class 9) the steering is approached by its own value's rest: 0.95 keeps 95 % (the Wight
+    // Knight's tear steered at 100: 5 a tick after the first evaluation, not 10 as class 1's)
+    call(rig, actor, 1, 156, {self, adr(vec(rig.memory, 0.0F, 150.0F, 0.0F, 0.0F)), f(20.0F), f(0.95F), i(7), f(0.0F),
+                              i(0)});
+    call(rig, actor, 1, 111, {self, adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), f(100.0F)});
+    CHECK(std::fabs(actor.step(1.0F)[2] - 5.0F) < 1e-3F);
+    call(rig, actor, 1, 111, {self, adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), f(0.0F)});
+    actor.land();
     // 1:63: a motion of 30 ticks (APPEAR, played once) at its end, no blend left
     call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
     CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
@@ -411,6 +445,62 @@ void test_more_enemies_calls()
     CHECK(call(rig, actor, 1, 151, {self, i(3)}).i() == 1);
 }
 
+// A state whose flag bit 0 is clear begins only once its actor is no longer held by a reaction (FUN_1403ca550), one
+// with the bit at once; Days's players are KH2's player to 1:309 (+ 0x6c8 bit 7)
+void test_state_waits()
+{
+    for (const bool at_once : {false, true}) {
+        Rig rig;
+        const Words names = text("a");
+        const unsigned at_a = unsigned(first(2));
+        Words start, main, ra;
+        std::uint32_t routine_a = 0;
+        const std::int32_t flags = at_once ? 0x10064 : 100; // + 4 its priority, + 6 bit 0
+        for (int pass = 0; pass < 2; ++pass) {
+            Words reg = push_addr(1, 0x74) + push_addr(3, at_a) + push_int(flags) + push_int(std::int32_t(routine_a));
+            for (int i = 0; i < 8; ++i)
+                reg = reg + push_int(0);
+            start = push_addr(1, 0x74) + sys(1, 5) + reg + sys(1, 6) + push_addr(1, 8) + push_addr(1, 0x74) +
+                    sys(1, 7) + misc(1);
+            main = push_addr(1, 8) + push_addr(3, at_a) + sys(1, 8) + misc(0) + misc(0) + misc(0) + misc(0) + misc(0) +
+                   misc(1);
+            ra = push_int(1) + rec() + misc(1);
+            routine_a = std::uint32_t(first(2) + names.size() + start.size() + main.size());
+        }
+        ai::Memory &mem = rig.memory;
+        kh::Actor actor(script({{0, names.size()}, {1, names.size() + start.size()}}, names + start + main + ra), mem,
+                        rig.calls, "made_up");
+        mem.set_u32(actor.machine().work_area() + 0xc, actor.address());
+        actor.set_bits(kh::field::kStatus, kh::bit::kHeld, true);
+        actor.start();
+        for (int i = 0; i < 3; ++i)
+            actor.tick();
+        CHECK(rig.recorded.size() == (at_once ? 1u : 0u)); // held: only the state with the bit has begun
+        actor.set_bits(kh::field::kStatus, kh::bit::kHeld, false);
+        actor.tick();
+        CHECK(rig.recorded.size() == 1); // let go: it begins
+    }
+    Rig rig;
+    const Words code = push_addr(1, 0x40) + load(0) + sys(1, 309) + rec() + misc(1);
+    rig.calls.set_shape(1, 309, 1, true);
+    kh::Actor actor(script({{0, 0}}, code), rig.memory, rig.calls, "made_up");
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    rig.memory.set_u32(actor.machine().work_area() + 0x40, player.address());
+    actor.machine().raise(0);
+    CHECK(rig.recorded.size() == 1 && rig.recorded[0].i() == 1);
+    // 2:8 a hit's reaction past 1: a small one (2) is, a weak one (1, 12) is not
+    rig.calls.set_shape(2, 8, 1, true);
+    const Words asks = push_addr(1, 0x40) + load(0) + sys(2, 8) + rec() + misc(1);
+    kh::Actor asker(script({{0, 0}}, asks), rig.memory, rig.calls, "made_up");
+    for (const std::uint32_t kind : {2u, 12u}) {
+        player.set_u32(0x24, kind << 16);
+        rig.memory.set_u32(asker.machine().work_area() + 0x40, player.address());
+        asker.machine().raise(0);
+    }
+    CHECK(rig.recorded.size() == 3 && rig.recorded[1].i() == 1 && rig.recorded[2].i() == 0);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -418,6 +508,7 @@ int main()
     test_kinds();
     test_motions_and_moving();
     test_more_enemies_calls();
+    test_state_waits();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

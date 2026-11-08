@@ -52,7 +52,7 @@ Words operator+(Words a, const Words &b)
     return a;
 }
 
-constexpr unsigned kRecord = 0, kCount = 1, kGive = 2, kNoFn = 3; // the test's calls (kind 0)
+constexpr unsigned kRecord = 0, kCount = 1, kGive = 2, kNoFn = 3, kEndSelf = 4; // the test's calls (kind 0)
 
 // A script: its name, sizes, triggers {key, offset in `code`}, the code. Word 0 is at +0x10, so the code starts after
 // the header and the triggers; first() says at which word.
@@ -100,6 +100,8 @@ struct Rig {
         calls.set_shape(0, kGive, 1, true);
         calls.set(0, kGive, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(a[0].i() * 10); });
         calls.set_shape(0, kNoFn, 2, true); // KH2 has it, the port does not handle it
+        calls.set_shape(0, kEndSelf, 0, false); // the running thread ended by its own call (a state it leaves)
+        calls.set(0, kEndSelf, [](ai::Machine &m, std::span<ai::Value>) { m.stop(m.current()); });
     }
 };
 
@@ -190,6 +192,16 @@ void test_threads()
     m.tick();
     expect(rig.count == 7, "the child ended and was dropped");
     expect(m.main_thread()->children.empty(), "no child left");
+
+    // a thread ended by a call of its own runs on to its yield, then no more (KH2: FUN_1403e1910 only lists it)
+    Rig own;
+    const Words ends = sys(0, kEndSelf) + sys(0, kCount) + misc(0) + sys(0, kCount) + misc(1);
+    ai::Machine e(script({{1, 0}}, ends), own.memory, own.calls);
+    e.start_main(1);
+    e.tick();
+    expect(own.count == 1 && e.main_thread()->status == ai::Status::Stopped, "ended, it ran on to its yield");
+    e.tick();
+    expect(own.count == 1, "and no further");
 }
 
 void test_faults()

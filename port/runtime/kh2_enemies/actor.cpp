@@ -106,6 +106,23 @@ void StateMachine::leave(Actor &a)
     current_.reset();
     thread_id_ = 0;
     locked_ = false;
+    waiting_ = false;
+}
+
+// FUN_1403ca550: a state whose flag bit 0 is clear begins only once the actor is not held by a reaction (+ 0x18c bit
+// 9) and is on the ground (FUN_1403ba9a0: its class's bit 0, + 0x18c & 0x1000020, + 0x120 bit 23), unless it is
+// carried (FUN_1403da520: + 0x6a0); once begun it runs on whatever happens (the bit, + 300's bit 2, cleared). Its
+// routine's thread is made at once and held until then.
+void StateMachine::wait_or_begin(Actor &a)
+{
+    if (waiting_) {
+        const bool off_ground = a.jump.on || (a.u32(field::kFlags) & bit::kInAir) != 0 ||
+                                (a.u32(field::kStatus) & 0x1000020u) != 0;
+        const bool carried = a.u32(field::kCarrier) != 0;
+        waiting_ = (a.u32(field::kStatus) & bit::kHeld) != 0 || (off_ground && !carried);
+    }
+    if (ai::Thread *t = find_thread(a.machine().main_thread(), thread_id_))
+        t->held = waiting_;
 }
 
 // FUN_1403cad00: the current left, the state's routine a child of the object's thread, its enter routine run at once
@@ -121,6 +138,8 @@ void StateMachine::go(Actor &a, const StateEntry &e)
     thread_id_ = t != nullptr ? t->id : 0;
     current_ = e;
     locked_ = (e.flags & 2) != 0;
+    waiting_ = (e.flags & 1) == 0;
+    wait_or_begin(a);
     if (entered)
         entered(e.name);
     if (e.on_enter != 0)
@@ -169,8 +188,11 @@ void StateMachine::tick(Actor &a)
             current_.reset();
             thread_id_ = 0;
             locked_ = false;
+            waiting_ = false;
         }
     }
+    if (current_ && waiting_)
+        wait_or_begin(a);
     while (!current_ && !queued_.empty()) {
         const std::string name = queued_.front();
         queued_.erase(queued_.begin());
@@ -361,9 +383,32 @@ Vec3 Actor::step(float ticks)
         travel[i] += move[i] * move_speed * ticks;
     move = {};
     move_speed = 0.0F;
+    // its class's movement, evaluated for two ticks at a time (every tick when steered past 100), its travel a tick
+    // kept between evaluations: on the ground the steering, in the air the velocity steered or slowed (the jump's arc
+    // its height)
+    move_clock -= ticks;
+    if (steer_speed > 100.0F)
+        move_clock = -2.0F;
+    if (move_clock < 0.0F) {
+        const bool air = jump.on || (u32(field::kFlags) & bit::kInAir) != 0;
+        if (!air) {
+            for (int i = 0; i < 3; ++i)
+                velocity[std::size_t(i)] = steer_speed > 0.0F ? steer[std::size_t(i)] * steer_speed : 0.0F;
+        } else {
+            // along only: both jumping classes give their height of the jump's own arc (FUN_1403cb360, FUN_1403cbdd0)
+            const float keep = jump.on ? jump.keep : 0.9F, slow = jump.on ? jump.slow : 0.95F;
+            for (int i = 0; i < 3; i += 2) {
+                float &v = velocity[std::size_t(i)];
+                v = steer_speed > 0.0F ? (1.0F - keep) * steer[std::size_t(i)] * steer_speed + keep * v : slow * v;
+            }
+            velocity[1] = 0.0F;
+        }
+        steered = velocity; // the travel a tick (the class gives two ticks' travel, halved)
+        move_clock += 2.0F;
+    }
+    for (int i = 0; i < 3; ++i)
+        travel[i] += steered[std::size_t(i)] * ticks;
     if (jump.on) {
-        for (int i = 0; i < 3; ++i)
-            travel[i] += jump.along[i] * ticks;
         travel[1] += jump.up * ticks + 0.5F * jump.gravity * ticks * ticks;
         jump.up += jump.gravity * ticks;
         set_bits(field::kFlags, bit::kInAir, true);

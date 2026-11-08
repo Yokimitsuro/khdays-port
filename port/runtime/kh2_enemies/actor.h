@@ -28,7 +28,8 @@ constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
 constexpr std::uint32_t kStatus = 0x18c;    // bit 1 the motion ended (1:14), bit 9 held by a reaction (1:78, 2:5)
 constexpr std::uint32_t kPlace = 0x670;     // vec4: 1:147
-constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 read by 1:309
+constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's maker, FUN_1403a7a40), read by 1:309
+constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
 constexpr std::uint32_t kFacing = 0x680;    // vec4, its w the yaw: 1:79, 1:201
 constexpr std::uint32_t kYaw = 0x7a8;       // float: 1:4, 1:79
 constexpr std::uint32_t kFlags8c8 = 0x8c8;  // bit 6 set and cleared by 1:104, 1:105
@@ -46,6 +47,7 @@ namespace bit {
 constexpr std::uint32_t kMotionEnded = 1u << 1; // kStatus: the motion played to its end (1:14 waits on it)
 constexpr std::uint32_t kHeld = 1u << 9;        // kStatus: a reaction holds it (1:78: no moving)
 constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1403ba9a0, 1:60)
+constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
 } // namespace bit
 
@@ -54,7 +56,8 @@ struct StateEntry final {
     std::uint32_t at = 0;        // its address
     std::string name;            // its id: a name in the script's code
     std::uint16_t priority = 0;  // +4
-    std::uint16_t flags = 0;     // +6: bit 1 locks it while it is the state (FUN_1403cad00)
+    std::uint16_t flags = 0;     // +6: bit 1 locks it while it is the state, bit 0 lets it begin while the actor is
+                                 // held or off the ground (FUN_1403cad00, FUN_1403ca550)
     std::uint16_t routine = 0;   // +8: run as a child thread while it is the state
     std::uint16_t on_leave = 0;  // +0xa: run at once when it is left (FUN_1403caec0)
     std::uint16_t on_enter = 0;  // +0x16: run at once after it is entered (FUN_1403cad00)
@@ -88,12 +91,14 @@ public:
 private:
     void leave(Actor &a);
     void go(Actor &a, const StateEntry &e);
+    void wait_or_begin(Actor &a);
 
     std::uint32_t table_ = 0, handle_ = 0;
     std::vector<std::string> queued_;
     std::optional<StateEntry> current_;
     std::uint32_t thread_id_ = 0;
     bool locked_ = false;
+    bool waiting_ = false; // its routine not begun: the actor held or off the ground (FUN_1403ca550, + 300 bit 2)
 };
 
 // Every access a script makes to an actor's memory directly, kept to learn which offsets it reads (the research's
@@ -191,6 +196,10 @@ struct Jump final {
     Vec3 along{};    // the speed along the ground a tick
     // its pull a tick a tick: KH2's (FUN_1403cbb00's sqrt: 2 / 0.408163 is 2 g; DAT_1405ce184), or 1:156's own
     float gravity = 1.0F / 0.408163F;
+    // its class's steering in the air (FUN_1403b7ad0's): the velocity kept an evaluation when steered (the rest the
+    // steering's), and kept unsteered -- class 1's (1:55) 0.9 and 0.95 (DAT_1405aaa40, DAT_1405b1c74), class 9's
+    // (1:156) its own value at + 0x108 for both (FUN_1403cbdd0)
+    float keep = 0.9F, slow = 0.95F;
 };
 
 // What the scripts reach of the world around an actor (the shell's: Days's players and ground; a made-up one in the
@@ -206,6 +215,11 @@ public:
     virtual std::uint32_t effect(Actor &, int /*number*/, int, int)
     {
         return 0;
+    }
+    // Whether the actor is on the screen (1:56: FUN_1403ba4a0 tests it against the camera's view, FUN_1403f3ed0)
+    virtual bool on_screen(Actor &)
+    {
+        return false;
     }
 };
 
@@ -242,10 +256,20 @@ public:
     const Motions *motions = nullptr;
     Playing motion;
     Jump jump;
-    // the move a script asks for this tick (1:89, 1:111): a direction made unit and a speed (KH2's units a tick),
-    // cleared after each tick as KH2 clears + 0xa48 .. + 0xa64 (FUN_1403b8e4d)
+    // the move a script asks for this tick (1:89): a direction made unit and a speed (KH2's units a tick), cleared
+    // after each tick as KH2 clears + 0xa48 .. + 0xa64 (FUN_1403b8e4d)
     Vec3 move{};
     float move_speed = 0.0F;
+    // its steering (1:111, FUN_1403b9da0: + 0x10 a direction made unit, + 0x1c a speed), kept until the script
+    // changes it, and its velocity (+ 0x20), which its class's movement makes of it every two ticks (FUN_1403b89a0:
+    // + 0xba8 the clock, every tick past a speed of 100; + 0xb98 the travel a tick): on the ground the steering
+    // itself (FUN_140422350), in the air approached by a tenth an evaluation, or slowed to 0.95 without it
+    // (FUN_1403b7ad0), a jump's own speed along first (FUN_1403cbd30 copies + 0xe0)
+    Vec3 steer{};
+    float steer_speed = 0.0F;
+    Vec3 velocity{};
+    float move_clock = 0.0F;
+    Vec3 steered{}; // the travel a tick of the last evaluation
     // its fading (+ 0xa08, FUN_1403b7810: a value and its change a tick; 1:19, 1:20, 1:28): 1 seen, 0 gone
     float fade = 1.0F, fade_step = 0.0F;
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use

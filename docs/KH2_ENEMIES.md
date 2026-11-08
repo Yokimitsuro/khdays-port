@@ -94,12 +94,31 @@ name too. The Soldier registers 27 at its start with `1:6` (`appear`, `mode_batt
 `atk_kick`, `atk_jump`, `move_roll`, `move_back`, `move_step`, `move_target`, `freeze`, `revenge`, `dead`, `leave`,
 `event`, `idle`, `footwork` ...): each name, flags, the routine run as a child thread while it is the state (+8), a
 routine run at once when it is left (+0xa, `FUN_1403caec0`), one run at once once it is entered (+0x16,
-`FUN_1403cad00`), a priority (+4). Flag 2 of the high half locks a state while it runs (`1:8` and `1:9` refused). Its
-main thread enters `appear`, queues `mode_battle`, and every tick enters `mode_battle` again when nothing is queued or
-running (`1:10`); the battle states pick the attacks and moves.
+`FUN_1403cad00`), a routine run when the actor is hit while it is the state (+0x10, `FUN_1403ca470`), a priority
+(+4: 100 the modes and moves, 200 the attacks, 300 `revenge`, `dead`, `leave`, `event`). Flag 2 of the high half locks
+a state while it runs (`1:8` and `1:9` refused). A state without flag 1 of the high half begins only once the actor is
+not held by a reaction (+ 0x18c bit 9) and is on the ground (`FUN_1403ba9a0`), unless another object carries it
+(+ 0x6a0); once begun it runs on (`FUN_1403ca550`: + 300's bit 2 cleared). A state's routine that leaves its own state
+(`1:8` from inside it) runs on to its yield or its end: `FUN_1403caec0` only lists its thread to be freed
+(`FUN_1403e1910`), so what follows the `1:8` still runs (`mode_revenge` enters `rvg_short` then queues `mode_battle`,
+`rvg_short` enters `move_counter` then queues `atk_rush`). Its main thread enters `appear`, queues `mode_battle`, and
+every tick enters `mode_battle` again when nothing is queued or running (`1:10`); the battle states pick the attacks
+and moves.
 
 The game asks for states by name: `dead` (`FUN_140410af0`, the defeat), `leave` (`FUN_1403de080`), `reraise`,
 `dead_crash`, `after_talk`, `before_check`; a hit asks for the reaction state its attack names (below).
+
+**Revenge.** KH2 tells a hit to the actor twice (`FUN_140410d60`): its attack's own reaction (`FUN_140410700`,
+`FUN_140411060`: the attacker kept at + 0xd38, trigger 19, the reaction's motion, the queue cleared, then the state
+the attack's data names at its + 0x18 entered by name -- a small hit's `revenge`), then the current state's hit
+routine and **trigger 6** (its argument the hit), the native reaction (the class's virtual + 0xc8,
+`FUN_1403d2fe0`) and 8 listening threads. Every enemy script's trigger 6 asks `1:309` of `2:88` -- + 0x6c8 bit 7 of
+the last to hit it, set only by the player's maker (`FUN_1403a7a40`): struck by the player, it enters
+`mode_revenge`, otherwise `mode_battle`. `mode_revenge` (a state that waits for the reaction to end) picks its revenge
+moves: the Rabid Dog's `rvg_short` (`move_counter`, then `atk_rush`) or `rvg_long` (`atk_dive`) by the player's
+distance against its handle's + 0x34 (450). `revenge` itself picks `rst_normal`, `rst_hard` or `rst_super_hard` by
+its handle's + 0x18; the Rabid Dog registers none of them, and KH2's lookup (`FUN_1403ca700`) then enters nothing.
+The port does the same: Days's hit enters `revenge`, then raises trigger 6; Days's players carry the player's bit.
 
 ## The Soldier's and the Shadow's calls
 
@@ -126,26 +145,26 @@ scripts take as "nothing there", named in the table.
 | 1:12 | the same, left as it is when it already plays (`FUN_1403c6dc0`): the scripts call it every tick while they walk | as KH2 |
 | 1:14, 1:15 | + 0x18c bit 1, the motion played to its end; + 0x180, the number of the motion playing: the scripts wait on both | as KH2 |
 | 1:67, 1:68 | a motion's length in ticks (the motion controller's virtuals + 8 and + 0x30; -1 the one playing) | as KH2 |
-| 1:55, 1:168 | a jump (`FUN_1403cbb00`, `FUN_1404233f0`): a vector -- its x, z the way, its y the height (negative up: the speed up `sqrt(-y x 2 / 0.408163)`), its w the speed along -- then a motion; a flag sets the motions after it (+ 0x118 its fall, + 0x11c its landing, 5 `LAND` by default) | as KH2, under KH2's gravity (2.45 a tick a tick) |
+| 1:55, 1:168 | a jump (`FUN_1403cbb00`, `FUN_1404233f0`): a vector -- its x, z the way (made one long, then times its w, the speed along), its y the height it rises, either sign (the speed up `sqrt(abs(2 y / 0.408163))`: + 0xf0 for a negative y, + 0xf4 for a positive one) -- then a motion; a flag sets the motions after it (+ 0x118 its fall, + 0x11c its landing, 5 `LAND` by default). KH2 leaves the ground at the motion's take-off event (`FUN_14040dd70` event 0: + 0x648 1 makes it class 1); in the air class 1's movement (`FUN_1403cb360`) keeps 0.9 of its velocity an evaluation when steered, 0.95 unsteered, its height the jump's arc | as KH2, under KH2's gravity (2.45 a tick a tick), from the call |
 | 1:19, 1:20, 1:28 | its fading (+ 0xa08 and its change a tick, `FUN_1403b7810`; a time of 2 or less is 1): from 1 to 0, from 0 to 1; 1:28 to 0 at once and held (+ 0x9b8 bit 4) | drawn as the model's alpha |
 | 1:78, 2:5 | + 0x18c bit 9: a reaction holds it (no moving) | set while a Days hit's reaction plays |
 | 1:60 | off the ground or held (`FUN_1403ba9a0`: the class's bit 0, + 0x18c & 0x1000020, + 0x120 bit 23; then + 0x18c bit 6) | + 0x120 bit 23 while it jumps or falls |
 | 1:65, 1:70, 1:71 | flag 0x4000000 at + 0x120 set; any bit there set; cleared | as KH2 |
-| 1:89, 1:111 | a move this tick: a direction made unit and a speed (+ 0xa58 / + 0xa64, cleared after each tick by `FUN_1403b8e4d`; 1:111 through + 0x10 / + 0x1c) | the travel added that tick |
+| 1:89, 1:111 | 1:89 a move this tick: a direction made unit and a speed (+ 0xa58 / + 0xa64, cleared after each tick by `FUN_1403b8e4d`); 1:111 the steering, kept (`FUN_1403b9da0`: + 0x10 made unit, + 0x1c its speed), which the class's movement makes the velocity (+ 0x20) of every two ticks (every tick past 100): on the ground the steering itself (`FUN_140422350`), in the air approached (`FUN_1403b7ad0`). Speeds are centimetres a 60th of a second | as KH2 |
 | 1:147, 1:201 | its place (+ 0x670) and its facing as a direction | as KH2 |
 | 1:62, 1:64 | the travel of the tick before (+ 0xa38) and of this one (+ 0xa28) | as KH2 |
 | 2:23, 1:121, 1:120, 1:131 | its target slot (+ 0xbf8): made "itself" (2) while empty; a target chosen for an owner by a mode (`FUN_1403be2b0`: 2 the owner, else the player); the target's place; the slot as KH2's pool keeps it | the nearest player |
 | 2:88 | the last to hit it (+ 0xd38), the player's actor when none | the player nearest at the hit |
 | 1:87 | an effect on the actor (`FUN_1403b6670` -> `FUN_1402c6b30` on + 0x80): the element of that number in its effects, and two values passed on to the effect (**not known**) | that element started: the "dead" state's `1:87(2, 1, 0)` the Soldier's element 2 and the Shadow's (its dying smoke and sound), the leaving's `(1, 1, 0)` element 1 |
 | 1:57 | bit 0 of the actor's class's byte + 0x0c (the class at + 0x0c; KH2's classes at 0x140750d30, 16 bytes each: class 1 off the ground -- a jump, `FUN_140409ad0`, or a fall, `FUN_14053b920` -- has it, class 0 on the ground, the landing's `FUN_1403cb940`, not): the scripts wait for it after a jump and act on it in the air (US1 read it as the class's own, always 0: a jump's wait never ended) | whether it is off the ground |
-| 1:124, 1:56 | its entry's flag; `FUN_1403ba4a0`'s value | 0 |
+| 1:124, 1:56 | its entry's flag; whether it is on the screen (`FUN_1403ba4a0`: with + 0x9b8 bit 10, `FUN_1403f3ed0` tests it against the camera's view; 0 without the bit): the enemies leave once the player is farther than a distance, the shorter off the screen | 0; whether Days drew its model this frame or the one before |
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
 | 1:39 | its battle number n (+ 0x9f4 + 4 n; the Shadow tests 99) | 0 |
-| 1:104, 1:105, 1:309 | + 0x8c8 bit 6 set and cleared; + 0x6c8 bit 7 | as KH2 |
+| 1:104, 1:105, 1:309 | + 0x8c8 bit 6 set and cleared; + 0x6c8 bit 7 of an actor: the player (set by its maker, `FUN_1403a7a40`) | as KH2; Days's players have the bit |
 | 1:23, 1:34, 1:301, 1:171, 1:206 | KH2's field busy: `DAT_140717008` (tested == 10), `DAT_142a11478`, `FUN_1403bbea0`, `DAT_142a11400`'s bits 2 and 7 | 0: Days's field is never busy for its enemies |
 | 1:119 | a way toward a point at a height (`FUN_1403b7f10`): 1 or 2 a jump on the way, 3 none | 0: Days's rooms have no KH2 paths; the room's collision keeps the actor out of the walls |
 | 1:92 | a point of the ground ahead (a ray, then `FUN_1403dc170` with a number) | nothing |
-| 2:8 | whether an object's kind (+ 0x26) is in the groups past 1 (trigger 6's sender) | 0 |
+| 2:8 | whether a hit's reaction kind (+ 0x26, `FUN_1403ce980`'s groups) is past 1: trigger 6's hit, which the Strafer and the cubes turn to their revenge on | as KH2: Days's hits are small reactions (2) |
 | 1:128, 1:133, 1:134 | the object's class's virtuals + 0x20, + 0x80, + 0x88 (its native code) | nothing |
 | 2:9 | the actor's + 0x5c0 made from a number (`FUN_140411350`) | nothing |
 | 2:20 | a routine of the script started as a thread of its own (`FUN_1403c5ec0`) | as KH2 |
@@ -159,7 +178,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 2:67 | KH2's next running number (`FUN_1403cf490`: `DAT_142a24afc`, 0 at the start, 0x100 again past 0x10000000) | as KH2 |
 | 1:63 | its motion at its end with no blend left (`FUN_1403c7e70` on + 0x158: the time + 0x44 against the motion's length, the blend + 0x48 run out) | as KH2 |
 | 1:100 | the speed a jump needs to rise a height: `sqrt(abs(2 h / 0.408163))` (`FUN_1403b73f0`) | as KH2 |
-| 1:156 | a jump of its own (`FUN_1403cbec0`): a vector -- its x, z the way (made one long, times its w), its y how high -- the ticks to its top (its pull + 0x10c `2 y / t^2`, its rise the pull times t), a value at + 0x108 (**not known**), a motion and its blend, and with the flag the two after it as 1:55's | as KH2 (the jump's own pull) |
+| 1:156 | a jump of its own (`FUN_1403cbec0`): a vector -- its x, z the way (made one long, times its w), its y how high -- the ticks to its top (its pull + 0x10c `2 y / t^2`, its rise the pull times t), a value at + 0x108, a motion and its blend, and with the flag the two after it as 1:55's. It leaves the ground as class 9 (+ 0x648 2) at the motion's take-off; class 9's movement (`FUN_1403cbdd0`) keeps + 0x108 of its velocity an evaluation, steered or not (the Wight Knight's tear: up 5 m, then steered ahead at 100, or 250 when far, keeping 0.95: a lunge of some 15 m) | as KH2 (the jump's own pull and keep), from the call |
 | 1:150, 1:151 | bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad: set by the native code that places it (the Strafer's and the Magnum Loader's ways of attacking) | the bytes, 0 in Days's field |
 | 2:45 | an object's entry number (its + 0x20 record's u16 at + 2): the Wight Knight asks it of a message's sender (492, 1149, 568) | 0: no KH2 object sends one |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
@@ -177,23 +196,30 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   Wight Knight `M_EX200` -- the mod's kinds (`tools/mods/kh2_enemies.py`). Played in a test mission of their own
   (the `missions_waves` walk's route, 2026-11-08): each appears with its effect and sounds, runs its script's states
   (the Rabid Dog's howl, the Wight Knight's leap, the Strafer's slides, the flyers' rises and leaving), is hit and
-  defeated with its end. **Not seen yet**: their attacks reaching Roxas (none hit in those runs: the scripts chose
-  other moves, the Wight Knight's leap came down on its own place) -- the next to look at, kind by kind.
+  defeated with its end, and hits Roxas: at level 99 (their HP to last), Roxas only attacking where he stands, in
+  200 seconds the Rabid Dog 34 hits, the Wight Knight 11, the Strafer 5, the Fiery Globe 14, the Icy Cube 11. What
+  made them reach him, all from KH2FM.exe: their revenge (trigger 6 after a hit, Days's players KH2's player to
+  `1:309`, `2:8`'s hit; above, "Revenge"), a state waiting for the reaction to end and a state's routine running on
+  after it leaves its own state ("States"), a shape on no bone in the actor's axes ("Collision"), `1:55`'s way made
+  one long and either sign of its height rising, `1:156`'s own steering (class 9), the steering stopped by a wall,
+  `1:56` on the screen, and an enemy that leaves coming back.
 - **Next**: the Magnum Loader `M_EX600` (0:21, 1:29 a motion played on another object, 1:112 an object made and
   attached, 1:151: its children), the white Magnum Loader `M_EX600_LC` (1:222, 1:268, 1:269), the Assault Rider
   `M_EX570`, the Cannon Gun `M_EX650`, the Creeper `M_EX880`, the Nightwalker `M_EX580`, the Dusk `M_EX990` (6-7
   calls each); then the rest, 8 calls and more each.
 
 `KHDAYS_TRACE_KH2_ENEMIES=1` says what each enemy does (its states, effects, sounds, hits, the stand-in's sounds
-kept quiet); `=2` also, once a second, where each of its script's threads stands (its next code word, as
-`tools/research/kh2_ai.py` lists the script), its motion, whether it jumps, its height over the ground and its fall.
+kept quiet, each attack's window with its spheres and the nearest player, where it leaves and comes back); `=2`
+also, once a second, where each of its script's threads stands (its next code word, as `tools/research/kh2_ai.py`
+lists the script), its motion, whether it jumps, its height over the ground and its fall, and each wall that stops
+its steering; `=3` also every call its script makes but those made every tick, with its arguments.
 
 ## Triggers
 
 | Trigger | Read |
 | --- | --- |
 | 0, 1 | start (once, with the object's address) and main (its own thread, every tick) |
-| 6 | sent to every one of 8 listening threads (`FUN_1403f47b0`, reached by tail jumps from `FUN_1403d2ba0`): **not known** what event |
+| 6 | **a hit taken** (`FUN_140410d60`: after the current state's hit routine, before the native reaction), its argument the hit; also sent to every one of 8 listening threads (`FUN_1403f47b0`). The enemies turn to their revenge mode on it ("Revenge" above) |
 | 11 | a message from another object: raised by the call `FUN_14042c0d0` (one script to another object: its sender, a number, a target) and two native callers |
 | 13, 14 | `FUN_1403b7920`, `FUN_1403b79d0`: no direct reference in the executable (called through something built at run time). 13 clears the actor's flag 0x4000000, leaves the current state, runs trigger 13, then the class's virtual + 0x28 and the object's + 0x50. The Shadow's 13 plays motion 4 (`FALL` in KH2's motion list) and sets 0x4000000 again: most likely the actor leaving the ground. **Not confirmed** |
 | 10, 15 | `FUN_1403b3030`, `FUN_1403d5500` (pointers in `.rdata` tables): **not known** |
@@ -220,7 +246,9 @@ landing `5`, its damage `10`-`21`, its own from `200`.
 ## Collision
 
 An object's `.mdlx` holds its collision shapes in its BAR entry of type 0x17: a 64-byte header (its count first) and
-20-byte records. Read from the Soldier's 17 and the Shadow's 10: a group (byte 0), a kind word (+4: 0x300 the body's
+20-byte records. A shape on no bone is in the actor's own axes, KH2's world's (y down): the model's turned half round
+its x, its y and z the other way -- the Rabid Dog's rush sphere (kind 6, group 2) at (0, -55, -170) is 55 up and 170
+ahead, every kind's aim point (0x307) above it (-50 the Rabid Dog, -80 the Soldier, -140 the Wight Knight). Read from the Soldier's 17 and the Shadow's 10: a group (byte 0), a kind word (+4: 0x300 the body's
 cylinder, 0x302 a sphere on a bone, 0x306 an attack's sphere, 5 a large box), a bone (+6; 0x4000 none), an offset x, y,
 z, then sizes (height, radius). The Soldier's body is group 0 (a cylinder 115 high, 90 round; spheres on bones 2, 28,
 31); its attacks are groups 1, 2, 3, 4 and 7 (spheres of radius 40 to 110 on bones 88, 63, 2); group 6 is five boxes
@@ -301,7 +329,8 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   keeps it out of the walls and on the ground. Its attacks' spheres hit the players they reach once a range
   (`Ov107_InvokeHitCallback` with its stand-in's first attack slot with a power, as `Ov120_SweepAttack_Step` does).
 - **Hit** (`Ov107_AiState_ApplyHit`, joined after its class's handler took the hit): its HP down, KH2's small
-  reaction plays (the queue cleared, + 0x18c bit 9 set, its script waiting) unless a locked state runs; its HP gone,
+  reaction plays (the queue cleared, + 0x18c bit 9 set, `revenge` entered, then trigger 6: "Revenge" above; a kind
+  without `revenge` has its script wait) unless a locked state runs; its HP gone,
   the state `dead` is entered (unlocked: the game's own entry). Days defeats it at once and reuses it for the next
   wave: the KH2 enemy's end goes on where it was, drawn as the 3D list closes, until it has faded out.
 - **Taken by its wave** (`Ov107_Spawner_FindFreeActor`, joined): a wave's spawner takes an idle actor whose class
@@ -311,6 +340,11 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   objects << 8 | its group, names the row: `khdays_enemies_slot_row`).
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
   fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
+- **Leaving and coming back**: KH2's enemies enter `leave` when the player is far (their `mode_battle` measures it
+  against their handle's + 0x3c on the screen, 12 or 18 m, or + 0x38 off it, 20 or 25 m; `1:56` says which): they
+  fade out and wait for KH2's spawner to bring them back. Days's field has none, so once faded out the enemy comes
+  back where its wave placed it, its script anew, its Days HP as it was (a Wight Knight's lunge can end 12 m past
+  the player).
 - **Drawn once a frame**: its stand-in's other model in the same file (`Ms/04.p`'s at + 0xca00) is left out, the
   KH2 model and its effects drawn once.
 - **Heard** (`Slot_Spawn`, joined): the sounds Days starts for it of its own -- its class's `MON_` archive, the

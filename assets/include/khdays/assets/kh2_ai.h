@@ -142,6 +142,7 @@ struct Thread final {
     std::uint32_t fp = 0;          // the frame pointer (an address in its frame region)
     std::vector<Value> stack;      // the value stack
     Status status = Status::Running;
+    bool held = false;             // not run while set (a state waiting to begin: FUN_1403ca550)
     Thread *parent = nullptr;
     std::vector<std::unique_ptr<Thread>> children;
     std::uint32_t id = 0;

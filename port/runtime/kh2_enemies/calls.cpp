@@ -420,7 +420,12 @@ void add_actor_fields(ai::Calls &calls)
     // 1:124 its entry's flag (FUN_1403ba700); 1:56 FUN_1403ba4a0's value; 1:110 its battle record's byte + 0x1c
     // (FUN_1403b50d0: -1 without one): none of these is Days's, so the plain answers -- 0, and -1 for no record
     calls.set(1, 124, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    calls.set(1, 56, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:56 whether it is on the screen (the enemies leave sooner off it: their "leave" distance off the screen is the
+    // shorter): the world's answer
+    calls.set(1, 56, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x != nullptr && x->world != nullptr && x->world->on_screen(*x) ? 1 : 0);
+    });
     calls.set(1, 110, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(-1); });
     // 1:60 off the ground or held (FUN_14042efc0: FUN_1403ba9a0's class bit 0, + 0x18c & 0x1000020, + 0x120 bit 23;
     // then + 0x18c bit 6)
@@ -445,9 +450,15 @@ void add_actor_fields(ai::Calls &calls)
     // 2:45 an object's entry number (its + 0x20 record's u16 at + 2; FUN_1404320a0): the Wight Knight asks it of a
     // message's sender, which in Days's field is none of KH2's objects: 0
     calls.set(2, 45, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 2:8 whether an object's kind (+ 0x26) is in the groups past 1 (FUN_1403ce980): trigger 6's sender, never one
-    // of Days's
-    calls.set(2, 8, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 2:8 whether a hit's reaction kind (+ 0x26) is past 1 (FUN_140431f70, FUN_1403ce980: 1 and 12 are 1; 3, 6, 8,
+    // 10, 13, 16, 18 are 3; 4, 7, 9, 11, 15, 17 are 4; the others themselves): trigger 6's hit, a Days hit a small
+    // reaction (2)
+    calls.set(2, 8, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint8_t kind = 0;
+        m.memory().read(a[0].bits + 0x26, &kind, 1);
+        const unsigned group = kind == 1 || kind == 12 ? 1u : kind;
+        a[0] = ai::Value::of_int(group > 1 ? 1 : 0);
+    });
     // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:34 DAT_142a11478 (FUN_1403ac220), 1:301
     // FUN_1403bbea0, 1:171 / 1:206 DAT_142a11400's bits 2 / 7 -- KH2's field busy (an event, a pause), which Days's
     // field never is for its enemies: 0
@@ -479,16 +490,23 @@ void add_motions(ai::Calls &calls)
     calls.set(1, 67, length);
     // 1:68 the same through its other virtual (FUN_1403c7950); -1 the motion playing
     calls.set(1, 68, length);
-    // 1:55, 1:168 a jump (FUN_1403cbb00, FUN_1404233f0): a vector (its x, z the way, its y the height -- negative up
-    // -- its w the speed along), then a motion; the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing)
+    // 1:55, 1:168 a jump (FUN_1403cbb00, FUN_1404233f0): a vector -- its x, z the way (made one long, then times its
+    // w, the speed along: + 0xe0), its y the height it rises, either sign (negative: + 0xf0 the speed up
+    // sqrt(|2 y / 0.408163|), + 0xf8 y; positive: + 0xf4 the same speed, FUN_1403b73f0, + 0xfc -y) -- then a motion;
+    // the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing)
     const auto jump = [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         x->jump.on = true;
         x->jump.gravity = Jump{}.gravity;
-        x->jump.up = v.v[1] < 0.0F ? -std::sqrt(-v.v[1] * 2.0F / 0.408163F) : 0.0F;
-        const float speed = v.v[3] != 0.0F ? v.v[3] : 1.0F;
-        x->jump.along = {v.v[0] * speed, 0.0F, v.v[2] * speed};
+        x->jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
+        x->jump.slow = Jump{}.slow;
+        x->jump.up = -std::sqrt(std::fabs(2.0F * v.v[1] / 0.408163F));
+        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
+        x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        x->velocity = x->jump.along;
+        x->move_clock = 0.0F;
+        x->steered = x->jump.along;
         x->set_bits(field::kFlags, bit::kInAir, true);
         x->play(std::int32_t(a[2].bits), a[3].f(), 0.0F);
         x->motion.after = -1;
@@ -502,8 +520,9 @@ void add_motions(ai::Calls &calls)
     calls.set(1, 168, jump);
     // 1:156 a jump of the actor's own (FUN_14042ce60 -> FUN_1403cbec0): a vector -- its x, z the way along the
     // ground (made one long, then times its w), its y how high it rises -- the ticks to its top (its pull + 0x10c
-    // 2 y / t^2, its rise the pull times t), a value kept at + 0x108 (**not known**); then a motion (FUN_1403c86a0 on
-    // + 0x158) and, the flag set, the two after it as 1:55's
+    // 2 y / t^2, its rise the pull times t), a value kept at + 0x108 (class 9's steering in the air keeps that much of
+    // its velocity: FUN_1403cbdd0); then a motion (FUN_1403c86a0 on + 0x158) and, the flag set, the two after it as
+    // 1:55's. KH2 leaves the ground at the motion's take-off event (FUN_14040dd70, + 0x648 2: class 9); the port at once
     calls.set(1, 156, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
@@ -513,7 +532,11 @@ void add_motions(ai::Calls &calls)
         x->jump.gravity = t != 0.0F ? 2.0F * v.v[1] / (t * t) : 0.0F;
         x->jump.up = -(x->jump.gravity * t);
         x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        x->velocity = x->jump.along;
+        x->move_clock = 0.0F;
+        x->steered = x->jump.along;
         x->set_u32(0x108, a[3].bits);
+        x->jump.keep = x->jump.slow = a[3].f(); // class 9's steering in the air (FUN_1403cbdd0)
         x->set_bits(field::kFlags, bit::kInAir, true);
         x->play(std::int32_t(a[4].bits), a[5].f(), 0.0F);
         x->motion.after = -1; // FUN_1403cbd00: + 0x118 -1, + 0x11c 5, the move's way + 0x648 2
@@ -588,9 +611,9 @@ void add_moving(ai::Calls &calls)
         x->set_yaw(yaw);
         a[0] = ai::Value::of_int(turning);
     });
-    // 1:89 a move this tick: a direction made unit and a speed (FUN_1403b9a70: + 0xa58, + 0xa64); 1:111 the same way
-    // asked through + 0x10 / + 0x1c (FUN_1403b9da0), read as a move as well
-    const auto move = [](ai::Machine &m, std::span<ai::Value> a) {
+    // 1:89 a move this tick: a direction made unit and a speed (FUN_1403b9a70: + 0xa58, + 0xa64, cleared after the
+    // tick); 1:111 its steering, kept (FUN_1403b9da0: + 0x10, + 0x1c; Actor::steer)
+    calls.set(1, 89, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
@@ -598,9 +621,14 @@ void add_moving(ai::Calls &calls)
             return;
         x->move = {v.v[0] / n, v.v[1] / n, v.v[2] / n};
         x->move_speed = a[2].f();
-    };
-    calls.set(1, 89, move);
-    calls.set(1, 111, move);
+    });
+    calls.set(1, 111, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec v = read_vec(m, a[1].bits);
+        const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+        x->steer = n != 0.0F ? Vec3{v.v[0] / n, v.v[1] / n, v.v[2] / n} : Vec3{v.v[0], v.v[1], v.v[2]};
+        x->steer_speed = a[2].f();
+    });
     // 1:119 a way toward a point at a height (FUN_1403b7f10): 0, the way clear -- Days's rooms have no KH2 paths;
     // the room's own collision keeps the actor out of the walls
     calls.set(1, 119, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });

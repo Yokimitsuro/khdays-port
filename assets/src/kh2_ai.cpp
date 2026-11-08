@@ -419,7 +419,7 @@ void Machine::stop(Thread *thread)
 // FUN_1403e1c80: the thread until it yields or ends, then its children, each once, the new ones too
 void Machine::tick_tree(Thread &t)
 {
-    if (t.status == Status::Running || t.status == Status::Yielded)
+    if (!t.held && (t.status == Status::Running || t.status == Status::Yielded))
         t.status = run(t);
     for (std::size_t i = 0; i < t.children.size(); ++i)
         tick_tree(*t.children[i]);
@@ -515,8 +515,8 @@ Status Machine::run(Thread &t)
             fault(t, "it ran " + std::to_string(budget) + " instructions without yielding");
             return Status::Stopped;
         }
-        if (t.status == Status::Stopped)
-            return Status::Stopped;
+        // a thread ended while it runs (a state it is left by a call of its own: FUN_1403caec0 -> FUN_1403e1910 only
+        // lists it to be freed) runs on to its yield or its end, as KH2's interpreter does
         const std::uint32_t at = t.pc;
         if (at >= s.words()) {
             fault(t, "its code ran out at word " + std::to_string(at));
@@ -792,7 +792,7 @@ Status Machine::run(Thread &t)
         case 9: { // yield, exit, return, drop, duplicate, the angles
             t.pc = at + 1;
             switch (arg) {
-            case 0: return Status::Yielded;
+            case 0: return t.status == Status::Stopped ? Status::Stopped : Status::Yielded;
             case 1: return Status::Done;
             case 2: {
                 const std::uint32_t back = memory_.u32(t.fp - 4), slots = memory_.u32(t.fp - 8);
@@ -867,8 +867,6 @@ Status Machine::run(Thread &t)
                     memory_.report("kh2 ai: " + s.name + " calls " + name + ", not handled");
                 args[0] = Value{0, Tag::Int};
             }
-            if (t.status == Status::Stopped)
-                return Status::Stopped;
             if (e->returns && !push(args[0]))
                 return Status::Stopped;
             break;
