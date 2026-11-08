@@ -243,8 +243,8 @@ its steering; `=3` also every call its script makes but those made every tick, w
 ## Bosses
 
 The first boss, the maintainer's choice (2026-11-08): **Cerberus**, `B_HE020` (the Olympus Coliseum's; object 351,
-kind 0x0c, a large boss, in `00objentry.bin`). Read from its files and KH2FM.exe; **nothing of it is built yet**:
-what Days lacks waits for the maintainer's approval (below, "Proposals").
+kind 0x0c, a large boss, in `00objentry.bin`). The proposals below were approved ("tal cual en kh2 como todos los
+enemigos"); what is built is under "Played" at the end of this section.
 
 - **Its files**: `obj/B_HE020.mdlx` (its model, textures, script and collision -- one object, no parts of its own),
   `.mset`, `.a.us` (its effects and sounds). `B_HE020_GM`, `H_HE020` and the `F_HE020_*` objects are the coliseum's
@@ -274,8 +274,17 @@ what Days lacks waits for the maintainer's approval (below, "Proposals").
   spheres on its legs, necks and heads (0x301, 0x302). Its attacks are groups 1, 2 and 3 (each head's bite), 5, 12,
   13 (its paws) and 7 (`atk_darkbreath`: a sphere of 2.4 m). Groups 9, 10 and 11 are its three heads, each with an
   aim point (0x307, 4 m up and 3 m ahead): KH2 locks on each head apart.
-- **Its health**: its `enmp` entry is not its object's number (no entry 351); KH2's placing of it names the entry
-  (not read). Entries with several health values exist (ids 25, 114, 138, 172, 200, 244: 2 to 6 values).
+- **Its health**: its script picks its `enmp` entry with `2:9` -- 19 (1000 health), or 199 (1500) when its battle
+  number 1 is 1 (the cup's) -- and reads its share left from the record `2:9` makes (`1:84`, `1:228` / `1:229`:
+  `hp_rate`, `AngryRate`). Entries with several health values exist (ids 25, 114, 138, 172, 200, 244: 2 to 6).
+- **Where KH2 places it**: `ard/us/he07.ard` at (-611, 236, -731) -- the Underworld's entrance, its floor 2.36 m
+  under KH2's origin -- and `he09.ard` at (0, 0, -700) (the cup's arena, its floor at the origin). `mode_battle`
+  picks `high_attack` when the ground under the player is above 2 m under the origin (KH2's y less than 200), else
+  `low_attack`: on a floor at Days's height (KH2's 0), the cup's `high_attack`, as in its arena.
+- **Reaction commands, how KH2 starts them**: its trigger 15 (a command the player took: the record's + 0x18 its
+  number, 359 Cerberus's) enters `rc_avoid` when the player is the one who took it (`1:130`, `1:225`, `1:213`). Its
+  motions carry no reaction-command range of their own (OpenKH's ANB page: range 20); where KH2 offers its command
+  is **not read yet**.
 - **Reaction commands**: the `rc_*` states take the player in hand from Cerberus's script: `1:112` runs a routine of
   Cerberus's on the player's actor, `1:148` and `1:79` put and turn the player, `1:29` makes the player play
   Cerberus's motion 252, `0:32` the screen's effect, `1:157` an effect by name. KH2's game enters them when the player
@@ -295,6 +304,34 @@ what Days lacks waits for the maintainer's approval (below, "Proposals").
 4. **Lock-on**: Days locks on one enemy; its mark at the middle head's aim point (group 10), not at its feet.
 5. **0:32**: nothing (its only use is a reaction command's).
 6. **The 12 calls** answered as read above (1:157 starting the named effect through the port's effect player).
+
+**Played** (2026-11-08, `kh2:B_HE020x1` at level 99, Roxas attacking where he stands, 200 seconds): it appears, opens
+with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `mode_battle` 75 times, `high_attack`
+73, `atk_bite_press` 32, `back_turn` 25, `bite_select` 16, `atk_darkbreath` (its effect drawn) -- taking 58 hits. What
+it needed, all as KH2 does it:
+
+- **Its 12 calls** (above) and **`2:9`'s health record**, Days's health kept in it each frame (`World::health`).
+- **Its size**: every KH2 enemy's Days collision sphere is its KH2 body cylinder's radius (kind 0x300), sitting on the
+  ground: Cerberus's 5.5 m, the Soldier's 0.9 m (`khdays_kh2_shell_size`, + 0x70 and + 0x64).
+- **Its lock-on mark** at its aim point (its first 0x307 shape, 4 m up over its middle): a join in
+  `Ov022_UpdateSelectionMarker` (`khdays_kh2_enemies_lock_point`) for every KH2 enemy.
+- **The motions' state ranges** as + 0x18c's bits while the motion's time lies in them and it plays (OpenKH's ANB
+  page: range 0 bit 2, 1 bit 3, 3 bit 5, 9 bit 9, 24 bit 6, 30 bit 24, ...; a loop always plays, a motion held on its
+  last frame sets none -- a landing's range 9 "to its end" held the Fiery Globe for ever): `1:60`'s "off the ground"
+  is bits 5 and 24 (`FUN_1403ba9a0`), which its leap's motion 171 sets from frame 92 on; ranges 3 and 24 are "no
+  gravity"; bit 9 (range 9, a jump's start and its landing) is what `2:5` and `1:78` wait on.
+- **A fall's landing**: a fall from higher than a step (30 cm: its leap, a ledge) ending on the ground plays its
+  landing motion (`FUN_1403cb940`: + 0x11c, 5 `LAND`), as KH2's falling class does; that ends the leap's loop. A
+  smaller one -- Days's ground found a few centimetres off -- lands without it (with it, every enemy kept landing).
+- **The ground**: never into it (KH2's ground class keeps it there).
+- **A hit without a reaction motion of its own** (Cerberus has no 10 or 12): KH2's flow all the same -- the queue
+  cleared, `revenge` entered, trigger 6 -- with no motion and no hold (`FUN_140411060`: the controller plays nothing
+  for a slot its set lacks). That ends its opening leap: its leap's state never ends of itself (it yields forever
+  after landing); KH2's own first hit ends it.
+- **Not yet**: its bites and paws reach Roxas seldom (3 hits): its heads bite 2.4 m up and more in `high_attack`,
+  above Days's player sphere (half a metre round, on the ground) -- which of KH2's player's shapes its attacks are
+  tried against (Sora's: a cylinder 85 high and 35 round, kind 1; 70 by 55, kind 0x303) is **not read yet**. Its
+  reaction commands (where KH2 offers them, the player's side), its name on the enemy HUD (the stand-in's shows).
 
 ## Triggers
 

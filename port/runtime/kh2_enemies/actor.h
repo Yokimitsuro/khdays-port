@@ -232,6 +232,8 @@ public:
     // A state every object enters, at once or each after a time at random below `delay` (1:90: FUN_1403cacd0's list,
     // FUN_1403c9d40 sends it to every object)
     virtual void broadcast(Actor &, const std::string & /*name*/, float /*delay*/) {}
+    // Its health record (2:9's, at + 0x5c0) given its health now and at most
+    virtual void health(Actor &) {}
 };
 
 class Actor final : public Object {
@@ -303,6 +305,9 @@ public:
     Vec3 step(float ticks);
     // The shell found it on the ground while it jumps: the jump over, its landing motion (+ 0x11c) played.
     void land();
+    // A fall (no jump of its own) ended on the ground: its landing motion as KH2's falling class plays it
+    // (FUN_1403cb940: + 0x11c, then 5 again for the next)
+    void touch_down();
 
     static Actor *of_handle(ai::Machine &m, std::uint32_t handle);
 

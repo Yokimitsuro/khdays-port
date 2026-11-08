@@ -475,6 +475,7 @@ struct Enemy final {
     float place[3] = {};
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
     bool placed = false; // its place given to Days (e.place) at least once
+    float fall_from = 0.0F; // how high above the ground its fall began (KH2's cm)
     std::string sent_state; // a state another enemy sent it (1:90), entered once `sent_after` ticks have gone
     float sent_after = 0.0F;
     float pure[16] = {};
@@ -563,6 +564,18 @@ public:
         days_point(e, s, bone, local, d);
         out = to_kh2(d);
         return true;
+    }
+
+    // 2:9: its health record given Days's health of it (now, at most), as KH2's record of it holds its own
+    void health(Actor &a) override
+    {
+        const auto it = by_actor.find(&a);
+        const std::uint32_t record = a.u32(0x5c0);
+        KhdaysKh2Shell s;
+        if (it == by_actor.end() || record == 0 || !khdays_kh2_shell_read(it->second->days, &s))
+            return;
+        a.memory().set_u32(record, std::uint32_t(std::max(0, s.hp)));
+        a.memory().set_u32(record + 4, std::uint32_t(std::max(1, s.hp_max)));
     }
 
     // 1:98, 1:99: the ground Days last found under it (its place's height when none yet)
@@ -704,6 +717,18 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
                            the_field().on_screen(*raw->actor) ? ", on the screen" : "");
             }
         };
+    // its body's size, KH2's: its cylinder (kind 0x300, on no bone: its radius, its height) the Days enemy's
+    // collision sphere, that round, sitting on the ground (Cerberus's 5.5 m, not the stand-in's)
+    for (const Shape &sh : k.shapes)
+        if (sh.kind == 0x300 && sh.bone == kNoBone && sh.radius > 0.0F) {
+            float was_radius = 0.0F, was_centre = 0.0F;
+            const float radius = sh.radius / kKh2PerDays;
+            khdays_kh2_shell_size(days, radius, radius, &was_radius, &was_centre);
+            if (tracing())
+                khdays_log("kh2 enemies: %08x's body %.2f round (its stand-in's %.2f, its centre %.2f up)", days,
+                           double(radius), double(was_radius), double(was_centre));
+            break;
+        }
     a.start();
     if (tracing())
         khdays_log("kh2 enemies: %08x set going as %s, attack slot %d", days, k.name.c_str(), raw->slot);
@@ -841,6 +866,10 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
             }
             khdays_log("kh2 enemies: %08x's attack spheres:%s", e.days, where.c_str());
         }
+        if (trace_level() >= 2 && e.windows_told.count(r) != 0 && nearest >= 0.0F)
+            khdays_log("kh2 enemies: %08x's motion %d at %.1f still attacks (group %d): nearest player %.2f away, "
+                       "reached within %.2f, the sphere %.2f up", e.days, a.motion.id, double(a.motion.time), group,
+                       double(nearest), double(reach), double(centre[1] - s.place[1]));
         if (tracing() && e.windows_told.insert(r).second)
             khdays_log("kh2 enemies: %08x's motion %d attacks at %.1f (atkp %d, group %d): %d spheres, nearest player "
                        "%.2f away, reached within %.2f; the sphere at %.2f %.2f %.2f, the body at %.2f %.2f %.2f "
@@ -917,6 +946,39 @@ void threads_of(const ai::Thread &t, std::string &out)
     }
 }
 
+// The motion's state ranges, each a bit of + 0x18c while the motion's time lies in it (OpenKH's ANB page: range 0
+// grounded at bit 2, 1 in the air 3, 3 no gravity 5, 9 jumping or landing 9, 24 no gravity keeping its speed 6, 30 24
+// ...): what the scripts read -- 1:60's "off the ground" is bits 5 and 24 (FUN_1403ba9a0: + 0x18c & 0x1000020), 2:5's
+// and 1:78's bit 9. A Days hit's reaction holds bit 9 too.
+constexpr std::pair<int, int> kStateRanges[] = {{0, 2},   {1, 3},   {2, 4},   {3, 5},   {9, 9},   {11, 10},
+                                                 {12, 11}, {13, 15}, {14, 19}, {15, 16}, {21, 18}, {24, 6},
+                                                 {27, 22}, {29, 23}, {30, 24}, {31, 25}, {32, 26}, {34, 27},
+                                                 {38, 28}, {39, 29}, {40, 30}, {41, 31}};
+constexpr std::uint32_t kNoGravity = (1u << 5) | (1u << 6); // ranges 3 and 24
+constexpr float kStep = 30.0F; // a fall from higher than this (KH2's cm) lands with the landing motion
+
+void motion_states(Enemy &e)
+{
+    Actor &a = *e.actor;
+    std::uint32_t on = 0, all = 0;
+    for (const auto &[id, b] : kStateRanges)
+        all |= 1u << b;
+    // while the motion plays (a loop always does): one played to its end (held on its last frame) sets none -- a landing's
+    // range 9 to its end ("65535") would hold it for ever after
+    const bool loops = a.motion.id >= 0 && a.motions != nullptr && a.motions->has(a.motion.id) &&
+                       a.motions->loop_from(a.motion.id) < a.motions->length(a.motion.id);
+    if (const kh2::MotionAttributes *attr = a.motion.id >= 0 && (!a.motion.ended || loops)
+                                                ? e.kind->set->attributes(std::size_t(a.motion.id))
+                                                : nullptr)
+        for (const auto &r : attr->ranges)
+            for (const auto &[id, b] : kStateRanges)
+                if (int(r.id) == id && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
+                    on |= 1u << b;
+    if (e.reacting)
+        on |= bit::kHeld;
+    a.set_u32(field::kStatus, (a.u32(field::kStatus) & ~all) | on);
+}
+
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
 {
     Actor &a = *e.actor;
@@ -935,19 +997,36 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         a.tick();
     Vec3 travel = a.step(1.0F);
     cues(e);
+    motion_states(e);
+    const bool no_gravity = (a.u32(field::kStatus) & kNoGravity) != 0;
     if (a.jump.on) {
         if (a.jump.up > 0.0F && e.floor_known && place[1] + travel[1] >= e.floor) {
             travel[1] = e.floor - place[1]; // on it, not through it
             a.land();
         }
-    } else if (e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays) {
+    } else if (!no_gravity && e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays) {
+        if (e.fall == 0.0F)
+            e.fall_from = e.floor - place[1];
         e.fall += kGravity;
         travel[1] += std::min(e.fall, e.floor - place[1]);
         a.set_bits(field::kFlags, bit::kInAir, true);
     } else if (e.fall > 0.0F) {
+        // on the ground again: a fall from higher than a step (Cerberus's leap, its motion's root up; a ledge) lands
+        // as KH2's falling class does, with its landing motion (FUN_1403cb940: + 0x11c, 5 by default); a step's
+        // gap (Days's ground found a few centimetres off) does not
+        if (e.fall_from > kStep)
+            a.touch_down();
         e.fall = 0.0F;
         a.set_bits(field::kFlags, bit::kInAir, false);
     }
+    // never into the ground (KH2's ground class keeps it on it): a motion's root going down, or Days's ground found
+    // above it, puts it back on the floor
+    if (trace_level() >= 2 && std::fabs(travel[1]) > 0.5F && !a.jump.on)
+        khdays_log("kh2 enemies: %08x's motion %d at %.1f moves it %.1f up (KH2's cm), %.1f above the ground", e.days,
+                   a.motion.id, double(a.motion.time), double(-travel[1]),
+                   double(e.floor_known ? e.floor - place[1] : 0.0F));
+    if (!a.jump.on && e.floor_known && place[1] + travel[1] > e.floor)
+        travel[1] = e.floor - place[1];
     for (int i = 0; i < 3; ++i)
         place[i] += travel[i];
     a.set_place(place);
@@ -1382,6 +1461,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
                            double(std::sqrt(dx * dx + dz * dz)));
         }
     }
+    the_field().health(*e->actor);
     Vec3 place = to_kh2(s.place);
     if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it)
         e->floor = place[1] + s.above * kKh2PerDays;
@@ -1461,34 +1541,54 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         const Vec3 to = p->place(), at = a.place(), f = facing_of(a.yaw());
         front = (to[0] - at[0]) * f[0] + (to[2] - at[2]) * f[2] >= 0.0F;
     }
-    const int motion = front ? 10 : 12;
-    if (!a.motions->has(motion)) {
-        if (tracing())
-            khdays_log("kh2 enemies: %08x hit (%d to %d), no motion %d", days, hp_before, s.hp, motion);
-        return;
-    }
-    // KH2's hit (FUN_140410700): the reaction applied -- its motion, the actor held (FUN_1403d4650) -- the queue
-    // cleared and the reaction state the attack names entered by name: a small hit's "revenge" (every enemy script
-    // has it: its reaction, then its revenge mode's attacks). A kind without one waits on the motion, its script paused.
-    a.states().clear(a);
-    a.jump = {};
-    a.play(motion, 2.0F, 0.0F);
-    a.set_bits(field::kStatus, bit::kHeld, true);
-    e->reacting = true;
-    StateEntry reaction;
-    e->paused = !a.states().find(a, "revenge", reaction) || !a.states().enter(a, "revenge");
-    // then trigger 6, the hit told to the script (FUN_140410d60, the hit its argument: a small one): KH2's
-    // enemies turn to their revenge mode on it when the player struck them (1:309 of 2:88's), which begins once the
-    // reaction is over (the state waits while the actor is held)
     if (!days_hit) {
         days_hit = std::make_unique<Object>(mod().memory, "a Days hit");
         days_hit->set_u32(0x24, 2u << 16); // + 0x26: a small reaction
     }
+    const int motion = front ? 10 : 12;
+    // KH2's hit (FUN_140411060): the reaction applied -- its motion asked, the actor held while it plays
+    // (FUN_1403d4650; a set without the motion, a boss's, plays nothing and goes on), the queue cleared -- and the
+    // reaction state the attack names entered by name: a small hit's "revenge" (every enemy script has it: its
+    // reaction, then its revenge mode's attacks; Cerberus's leaves its opening leap so). A kind with the motion and
+    // without "revenge" waits on the motion, its script paused.
+    const bool moves = a.motions->has(motion);
+    a.states().clear(a);
+    if (moves) {
+        a.jump = {};
+        a.play(motion, 2.0F, 0.0F);
+        a.set_bits(field::kStatus, bit::kHeld, true);
+        e->reacting = true;
+    }
+    StateEntry reaction;
+    const bool revenge = a.states().find(a, "revenge", reaction) && a.states().enter(a, "revenge");
+    e->paused = moves && !revenge;
+    // then trigger 6, the hit told to the script (FUN_140410d60, the hit its argument: a small one): KH2's
+    // enemies turn to their revenge mode on it when the player struck them (1:309 of 2:88's), which begins once the
+    // reaction is over (the state waits while the actor is held)
     const ai::Value packet = ai::Value::of_address(days_hit->address());
     a.event(6, {&packet, 1});
     if (tracing())
-        khdays_log("kh2 enemies: %08x hit (%d to %d), motion %d%s", days, hp_before, s.hp, motion,
+        khdays_log("kh2 enemies: %08x hit (%d to %d), %s%s", days, hp_before, s.hp,
+                   moves ? (motion == 10 ? "motion 10" : "motion 12") : "no reaction motion of its own",
                    e->paused ? ", its script waiting" : "");
+}
+
+extern "C" unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point)
+{
+    Enemy *e = find(actor);
+    KhdaysKh2Shell s;
+    if (e == nullptr || e->dying || !khdays_kh2_shell_read(actor, &s))
+        return point;
+    for (const Shape &sh : e->kind->shapes)
+        if ((sh.kind & 0xff) == 7) { // its aim point (0x307)
+            if (e->pose.empty())
+                pose(*e);
+            float at[3];
+            days_point(*e, s, sh.bone, sh.at, at);
+            const unsigned put = khdays_kh2_shell_point(at);
+            return put != 0 ? put : point;
+        }
+    return point;
 }
 
 extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj)

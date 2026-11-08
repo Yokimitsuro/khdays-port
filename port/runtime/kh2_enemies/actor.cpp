@@ -448,6 +448,15 @@ Vec3 Actor::step(float ticks)
 }
 
 // A jump's end on the ground (FUN_1403cbb00's follow-on): its landing motion, the air bit cleared
+void Actor::touch_down()
+{
+    const int landing = motion.landing;
+    motion.after = -1;
+    motion.landing = 5;
+    if (landing >= 0)
+        play(landing, 2.0F, 0.0F);
+}
+
 void Actor::land()
 {
     if (!jump.on)

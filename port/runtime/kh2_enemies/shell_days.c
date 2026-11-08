@@ -15,6 +15,8 @@ extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
 #define ACTOR_SCENE 0x4u
 #define ACTOR_MODE 0x50u    /* 1: this game's own */
 #define ACTOR_FLAGS60 0x60u /* 0x100 standing; its low bit: collision on */
+#define ACTOR_SPHERE_OFFSET 0x64u /* the sphere's centre from its place (fx32 x3) */
+#define ACTOR_BASE_RADIUS 0x70u   /* the sphere's radius, made + 0x80 each frame */
 #define ACTOR_SPHERE 0x74u  /* centre (fx32 x3), radius */
 #define ACTOR_RADIUS 0x80u
 #define ACTOR_SRT 0xa0u /* rotation (4), translation (+0x10), scale */
@@ -100,6 +102,37 @@ void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw)
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(place[i]);
     }
     Srt_SetTranslation(actor + ACTOR_SRT, v);
+    Ov107_UpdateCollisionSphere(actor);
+}
+
+unsigned khdays_kh2_shell_point(const float place[3])
+{
+    static KhdaysRef at;
+    if (at == 0) {
+        at = NNSi_FndAllocFromDefaultExpHeap(16);
+    }
+    if (at == 0) {
+        return 0;
+    }
+    for (int i = 0; i < 3; ++i) {
+        *(int *)KHDAYS_W(at + 4u * (unsigned)i) = to_fx(place[i]);
+    }
+    return at;
+}
+
+void khdays_kh2_shell_size(unsigned actor, float radius, float centre, float *old_radius, float *old_centre)
+{
+    if (!khdays_game_ram(actor) || !khdays_game_ram(actor + ACTOR_SPHERE_OFFSET + 8u)) {
+        return;
+    }
+    if (old_radius != NULL) {
+        *old_radius = fx(actor + ACTOR_BASE_RADIUS);
+    }
+    if (old_centre != NULL) {
+        *old_centre = fx(actor + ACTOR_SPHERE_OFFSET + 4u);
+    }
+    *(int *)KHDAYS_W(actor + ACTOR_BASE_RADIUS) = to_fx(radius);
+    *(int *)KHDAYS_W(actor + ACTOR_SPHERE_OFFSET + 4u) = to_fx(centre);
     Ov107_UpdateCollisionSphere(actor);
 }
 

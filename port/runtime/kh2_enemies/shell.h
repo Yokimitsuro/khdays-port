@@ -29,6 +29,10 @@ int khdays_kh2_enemies_held(void *actor);
 /* Ov107_AiState_ApplyHit (prepare.py's joins): the hit taken through its class's handler, its HP before it. */
 void khdays_kh2_enemies_hit(void *actor, int hp_before);
 
+/* Days's lock-on mark's point for the enemy `actor` locked on (Ov022_UpdateSelectionMarker's): a KH2 enemy's aim point
+ * (its 0x307 shape: the Soldier's chest, Cerberus's heads) in the game's memory, else `point` as it was. DS addresses. */
+unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point);
+
 /* khdays_models_draw_begin (runtime/mods/models.cpp): when `render_obj` is a KH2 enemy's shell's model, its KH2 model
  * is drawn in its place now and 1 is returned (the shell's own shapes left out). */
 int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj);

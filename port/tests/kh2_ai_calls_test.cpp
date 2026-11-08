@@ -241,6 +241,12 @@ struct MadeUpWorld final : kh::World {
         sent = name;
         sent_delay = delay;
     }
+    int hp = 0, hp_max = 1; // the health 2:9's record is given
+    void health(kh::Actor &a) override
+    {
+        a.memory().set_u32(a.u32(0x5c0), std::uint32_t(hp));
+        a.memory().set_u32(a.u32(0x5c0) + 4, std::uint32_t(hp_max));
+    }
 };
 
 // a call made as a script makes it: its handler with these arguments, args[0] given back
@@ -593,6 +599,49 @@ void test_batch_two()
     CHECK(first_ended);
 }
 
+// The first boss's calls (Cerberus): its health's record (2:9, read by 1:84, 1:228, 1:229), a record's + 0x18, + 0x2a8,
+// two objects told apart, put at a point, a step ahead
+void test_boss_calls()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "2:9 3 0\n1:84 1 1\n1:228 2 1\n1:229 2 1\n2:25 1 1\n1:107 2 0\n1:130 2 1\n1:148 2 0\n"
+                               "1:220 3 0\n");
+    MadeUpWorld world;
+    world.hp = 750;
+    world.hp_max = 1000;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "made_up");
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+
+    // 2:9: its health's record, the world's health in it: 75 % as the script works it out
+    call(rig, actor, 2, 9, {self, i(19), i(0)});
+    const std::uint32_t record = call(rig, actor, 1, 84, {self}).bits;
+    CHECK(record != 0 && rig.memory.u32(record + 0x268) == actor.address());
+    CHECK(call(rig, actor, 1, 228, {adr(record), i(0)}).i() == 750 && call(rig, actor, 1, 229, {adr(record), i(0)}).i() == 1000);
+    call(rig, actor, 2, 9, {self, i(19), i(0)}); // made again: the same record
+    CHECK(call(rig, actor, 1, 84, {self}).bits == record);
+    // 2:25: a record's + 0x18
+    rig.memory.set_u32(record + 0x18, 359);
+    CHECK(call(rig, actor, 2, 25, {adr(record)}).i() == 359);
+    // 1:107: + 0x2a8
+    call(rig, actor, 1, 107, {self, f(0.05F)});
+    CHECK(actor.f(0x2a8) == 0.05F);
+    // 1:130: two handles' + 4s apart; 0 with none
+    const std::uint32_t one = rig.memory.add(8, "a handle"), two = rig.memory.add(8, "another");
+    rig.memory.set_u32(one + 4, 0x500);
+    rig.memory.set_u32(two + 4, 0x480);
+    CHECK(call(rig, actor, 1, 130, {adr(one), adr(two)}).i() == 0x80 && call(rig, actor, 1, 130, {adr(one), adr(0)}).i() == 0);
+    // 1:148: put at a point; 1:220: a step ahead (facing +z)
+    call(rig, actor, 1, 148, {self, adr(vec(rig.memory, 10.0F, -20.0F, 30.0F, 1.0F))});
+    CHECK(actor.place()[0] == 10.0F && actor.place()[1] == -20.0F && actor.place()[2] == 30.0F);
+    actor.set_yaw(0.0F);
+    call(rig, actor, 1, 220, {self, f(100.0F), i(0)});
+    CHECK(std::fabs(actor.place()[2] - 130.0F) < 1e-3F && actor.place()[0] == 10.0F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -602,6 +651,7 @@ int main()
     test_more_enemies_calls();
     test_state_waits();
     test_batch_two();
+    test_boss_calls();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

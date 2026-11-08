@@ -4347,6 +4347,13 @@ HOOKS["ov022@02085380"] += [
     ("    Ov022_UpdateSelectionMarker();\n", "    Ov022_UpdateSelectionMarker();\n    khdays_reticles_end(0);\n"),
 ]
 FILE_HOOKS["src/overlays/field/ov022_battle/Ov022_UpdateSelectionMarker.c"] = [
+    (  # a KH2 enemy's lock-on mark at its aim point (runtime/kh2_enemies/shell.h)
+        "        target = (char *)*context->type1List10 + 4;\n",
+        "        target = (char *)*context->type1List10 + 4;\n"
+        "        { extern unsigned int khdays_kh2_enemies_lock_point(unsigned int actor, unsigned int point);\n"
+        "          target = (void *)khdays_kh2_enemies_lock_point((unsigned int)context->type1SourceC,\n"
+        "                                                         (unsigned int)target); }\n",
+    ),
     (
         "    void *target = 0;\n",
         "    void *target = 0;\n"

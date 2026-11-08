@@ -259,13 +259,28 @@ void add_math(ai::Calls &calls)
     // 0:0, 0:2 nothing in the PC game (FUN_14041c9f0, FUN_14041ca10: empty; a debugging print once); 0:85 an
     // effect's handle let go (FUN_14041e1c0 -> FUN_1402be8f0): the port's effects end of their own
     calls.set(0, 0, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 1, [](ai::Machine &, std::span<ai::Value>) {}); // FUN_14041ca00: empty too
     calls.set(0, 2, [](ai::Machine &, std::span<ai::Value>) {});
+    // 0:32 an effect of the screen or of time for n frames (FUN_14041ddb0 -> FUN_140156c90 on FUN_140156dc0's
+    // manager; KH2's hit starts it for 10 frames): what it shows is not known -- nothing here
+    calls.set(0, 32, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 85, [](ai::Machine &, std::span<ai::Value>) {});
     // 0:15 a bit of KH2's story (FUN_14039a980: DAT_1409ab540's bits, 0xffff none): none of them in Days's field
     calls.set(0, 15, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 0:23 a value without its sign (FUN_14041ca90; given back marked a whole number, as KH2 marks it)
     calls.set(0, 23, [](ai::Machine &, std::span<ai::Value> a) {
         a[0] = ai::Value{a[0].bits & 0x7fffffffu, ai::Tag::Int};
+    });
+    // 1:228 / 1:229 a table's record of 12 bytes: its first, its second word (FUN_140431030, FUN_140431070); 2:25 a
+    // record's + 0x18 (FUN_140432b00)
+    calls.set(1, 228, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits)));
+    });
+    calls.set(1, 229, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits + 4u)));
+    });
+    calls.set(2, 25, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 0x18u)));
     });
     // 1:230 a table's record of 12 bytes (its first two words whole numbers): the first over the second
     // (FUN_1404310f0; marked a whole number)
@@ -477,6 +492,21 @@ void add_actor_fields(ai::Calls &calls)
     });
     calls.set(1, 143, [](ai::Machine &m, std::span<ai::Value> a) { m.memory().set_u32(a[0].bits + 4, 0); });
     calls.set(1, 162, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:107 + 0x2a8 set (FUN_14042fce0); 1:130 two objects told apart by their places in KH2's list (FUN_14042b5d0:
+    // their + 4s' difference, 0 when either is none); 1:213 a number of its object's record (FUN_1403b5b20: + 8's
+    // + 0x4c), none of Days's: 0; 1:225 whether its class lets hits through now (+ 0x6c8 bit 1, then its class's
+    // virtual + 0xb8): the port's let them, 0
+    calls.set(1, 107, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->set_u32(0x2a8, a[1].bits); });
+    calls.set(1, 130, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t one = a[0].bits != 0 ? m.memory().u32(a[0].bits + 4) : 0;
+        const std::uint32_t two = a[1].bits != 0 ? m.memory().u32(a[1].bits + 4) : 0;
+        a[0] = ai::Value::of_int(one != 0 && two != 0 ? std::int32_t(one - two) : 0);
+    });
+    calls.set(1, 213, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    calls.set(1, 225, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:157 an effect started by a four-letter name from its effects' entries of type 0x16 (FUN_1403db2f0); only a
+    // reaction command's state starts one (Cerberus's), which the port does not enter: nothing here
+    calls.set(1, 157, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
     calls.set(1, 133, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 134, [](ai::Machine &, std::span<ai::Value>) {});
@@ -677,6 +707,21 @@ void add_moving(ai::Calls &calls)
 {
     // 1:2 steered toward a point along the ground at a speed (FUN_1403b9c60: the way there, its height 0, made one
     // long at + 0x10, the speed at + 0x1c), the way's length given back; its first value the actor itself
+    // 1:148 the actor put at a point (FUN_1403b64d0: + 0x670, its w 1); 1:220 a step ahead up to a length, the room's
+    // collision stopping it (FUN_1403b9ac0: Days's collision puts it back out of the walls after)
+    calls.set(1, 148, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v = read_vec(m, a[1].bits);
+        for (float &c : v.v)
+            if (std::isnan(c))
+                c = 0.0F;
+        if (Object *o = object_of(m, a[0]))
+            o->set_place(xyz(v));
+    });
+    calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec3 at = x->place(), f = facing_of(x->yaw());
+        x->set_place({at[0] + f[0] * a[1].f(), at[1], at[2] + f[2] * a[1].f()});
+    });
     calls.set(1, 2, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec to = read_vec(m, a[1].bits);
@@ -856,7 +901,19 @@ void add_world(ai::Calls &calls)
     // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
     // **likely its prizes** -- Days gives its stand-in's own
     calls.set(1, 278, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(2, 9, [](ai::Machine &, std::span<ai::Value>) {});
+    // 2:9 its health's record made from a battle entry (FUN_140411350 -> FUN_1403c0280: + 0x5c0; 12 bytes a value,
+    // the first its health now and at most -- what 1:84, 1:228 and 1:229 read, the scripts' "hp_rate"; + 0x268 the
+    // actor): Days's health in it, kept by the shell each frame (World::health)
+    calls.set(2, 9, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x->u32(0x5c0) == 0) {
+            const std::uint32_t record = m.memory().add(0x270, x->name() + "'s health");
+            m.memory().set_u32(record + 0x268, x->address());
+            x->set_u32(0x5c0, record);
+        }
+        if (x->world != nullptr)
+            x->world->health(*x);
+    });
     // 2:20 a routine of the script started as a thread of its own (FUN_1403c5ec0), with one value; a handle back
     calls.set(2, 20, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint32_t entry = a[0].bits;

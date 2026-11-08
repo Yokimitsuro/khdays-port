@@ -27,6 +27,15 @@ int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out);
  * tick). */
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw);
 
+/* A point of Days's world (metres) put in the game's memory as its vectors are (fx32 x3), for its own code to read:
+ * the place it lies in, 0 when there is no room for it. The same place each call. */
+unsigned khdays_kh2_shell_point(const float place[3]);
+
+/* Its collision sphere's radius and its centre's height over its place (+ 0x70, + 0x64's y; Days makes the sphere of
+ * them each frame, Ov107_UpdateCollisionSphere): what the room's collision, the players' pushes and Days's hits use.
+ * The old ones given back in `old_radius`, `old_centre` when not null. */
+void khdays_kh2_shell_size(unsigned actor, float radius, float centre, float *old_radius, float *old_centre);
+
 /* The players standing near it (the field's players, Ov107_FindNearestObject's list): up to `room` into `out` (NULL
  * to count) as {object, place (its collision sphere's centre less its radius: its feet), radius}; how many. */
 typedef struct KhdaysKh2Player {
