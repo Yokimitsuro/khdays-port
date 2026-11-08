@@ -9,30 +9,40 @@ list of kinds with which of them the port covers (every call its script makes an
 
 --kh2 is KH2's entries as the installer extracts them: original/obj/<name>.mdlx, .mset and .a.us, the HD pages
 remastered/obj/<name>.mdlx/-N.dds (its model's) and remastered/obj/<name>.a.us/-N.dds (its effects'), and KH2's
-resident effect pictures original/effect/texcommon.dpd with remastered/effect/texcommon.dpd/-N.dds. --exe gives the
-calls the port answers (khdays-native --kh2-ai-calls); without it no kind is covered. Writes mods/<mod>/kh2_enemies.txt,
-mods/<mod>/kh2/calls.txt, mods/<mod>/kh2/obj/ (each model's HD pages in kh2/obj/<name>/, where the port's model reader
-looks), mods/<mod>/kh2/effect/texcommon.dpd and the effects' HD pages in mods/<mod>/kh2/fx/<name>/ and
-kh2/fx/texcommon/; says what it made and what it left out.
+resident effect pictures original/effect/texcommon.dpd with remastered/effect/texcommon.dpd/-N.dds; the sounds' banks
+are each kind's own (remastered/obj/<name>.a.us/se/obj/se<bank>) and KH2's common one (original/se/se000.win32.scd).
+--exe gives the calls the port answers (khdays-native --kh2-ai-calls); without it no kind is covered. Writes
+mods/<mod>/kh2_enemies.txt, mods/<mod>/kh2/calls.txt, mods/<mod>/kh2/obj/ (each model's HD pages in kh2/obj/<name>/,
+where the port's model reader looks), mods/<mod>/kh2/effect/texcommon.dpd, the effects' HD pages in
+mods/<mod>/kh2/fx/<name>/ and kh2/fx/texcommon/, and the sounds the kinds play in mods/<mod>/kh2/se/<id>.wav (KH2's
+sound id: bank x 1000 + its number); says what it made and what it left out.
 """
 
 from __future__ import annotations
 
 import argparse
 import shutil
+import struct
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import kh2_bdx  # noqa: E402
+import kh2_scd  # noqa: E402
 
 # The kinds the mod holds and the names authors see: KH2's own data has no object's enemy name (docs/KH2_ENEMIES.md,
 # "Names"), so each is named here. The Soldier and the Shadow first (US1); more as the port answers their calls.
 KINDS = {"M_EX010": "Soldier", "M_EX020": "Shadow"}
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
+COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
+PAX_ENTRY = 0x12  # an .a.us's PAX
+ELEMENT = 0x50  # a PAX's elements, from its + 0x10 (their count at + 8): each one's sound at + 0x18 (none: 0 or -1)
+SOUND_TRIGGER = 8  # a motion's single-frame trigger: a sound, (bank, number, ...)
 
 
 def run_exe(line: list[str]) -> str:
@@ -65,6 +75,94 @@ def copy_pages(source: Path, to: Path) -> int:
     for page in pages:
         shutil.copy2(page, to / page.name)
     return len(pages)
+
+
+def bar_entries(data: bytes, base: int = 0) -> list[tuple[int, int, int]]:
+    """A BAR's entries at `base` as (type, offset, size), the offsets from the file's start; none if it is no BAR."""
+    if data[base : base + 4] != kh2_bdx.BAR:
+        return []
+    out = []
+    for k in range(struct.unpack_from("<I", data, base + 4)[0]):
+        at = base + 16 + 16 * k
+        if at + 16 > len(data):
+            break
+        kind, _, _, offset, size = struct.unpack_from("<HH4sII", data, at)
+        out.append((kind, base + offset, size))
+    return out
+
+
+def motion_sounds(mset: bytes) -> set[int]:
+    """The sounds a motion set's triggers 8 play (bank x 1000 + number). Each motion a BAR; its attributes (type
+    0x10): u8 ranges, u8 triggers, u16 the triggers' offset; a range u16 start, u16 end, u8 id, u8 n, n u16; a
+    trigger u16 frame, u8 id, u8 n, n u16 (as assets/src/kh2_motion.cpp reads them)."""
+    out = set()
+    for _, at, size in bar_entries(mset):
+        for kind, a, s in bar_entries(mset, at) if size else []:
+            end = a + s
+            if kind != 0x10 or s < 4 or end > len(mset):
+                continue
+            ranges, triggers, offset = struct.unpack_from("<BBH", mset, a)
+            p = a + 4
+            for _ in range(ranges):
+                p += 6 + 2 * mset[p + 5] if p + 6 <= end else 0
+            if offset:
+                p = a + offset
+            for _ in range(triggers):
+                if p + 4 > end or p + 4 + 2 * mset[p + 3] > end:
+                    break
+                params = struct.unpack_from(f"<{mset[p + 3]}h", mset, p + 4)
+                if mset[p + 2] == SOUND_TRIGGER and len(params) >= 2 and params[0] >= 0 and params[1] >= 0:
+                    out.add(params[0] * 1000 + params[1])
+                p += 4 + 2 * mset[p + 3]
+    return out
+
+
+def effect_sounds(a_us: bytes) -> set[int]:
+    """The sounds an .a.us's effects' elements play with them (each one's + 0x18 above 0)."""
+    for kind, at, size in bar_entries(a_us):
+        if kind == PAX_ENTRY and a_us[at : at + 4] == b"PAX_" and at + 0x10 <= len(a_us):
+            count = struct.unpack_from("<I", a_us, at + 8)[0]
+            places = [at + 0x10 + ELEMENT * k for k in range(count) if 0x10 + ELEMENT * (k + 1) <= size]
+            return {s for p in places if (s := struct.unpack_from("<i", a_us, p + 0x18)[0]) > 0}
+    return set()
+
+
+def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
+    """Each sound in `ids` into to/<id>.wav, its first track's recording at the sound's volume, from its bank: bank 0
+    KH2's common one, the others the kind's own (its .a.us's remastered se/obj/se<bank>); what was left out."""
+    left_out = []
+    banks: dict[int, tuple[list, list] | str] = {}
+    for sound_id in sorted(ids):
+        bank, number = divmod(sound_id, 1000)
+        path = (
+            kh2 / "original" / COMMON_BANK
+            if bank == 0
+            else kh2 / "remastered" / "obj" / f"{name}.a.us" / "se" / "obj" / f"se{bank}"
+        )
+        if bank not in banks:
+            try:
+                data = path.read_bytes()
+                banks[bank] = (kh2_scd.sounds(data), kh2_scd.recordings(data))
+            except (OSError, kh2_scd.ScdError) as e:
+                banks[bank] = str(e)
+        read = banks[bank]
+        if isinstance(read, str):
+            left_out.append(f"{name}'s sound {sound_id}: its bank {path.name} is not read ({read})")
+            continue
+        sounds, recordings = read
+        sound = sounds[number] if number < len(sounds) else None
+        recording = recordings[sound.recordings[0]] if sound is not None and sound.recordings else None
+        if recording is None:
+            left_out.append(f"{name}'s sound {sound_id}: {path.name} has no recording for it")
+            continue
+        try:
+            samples = kh2_scd.decode(recording).astype(np.float64) * sound.volume
+        except kh2_scd.ScdError as e:
+            left_out.append(f"{name}'s sound {sound_id}: {e}")
+            continue
+        scaled = np.clip(np.rint(samples), -32768, 32767).astype(np.int16)
+        kh2_scd.write_wav(to / f"{sound_id}.wav", scaled, recording.rate)
+    return left_out
 
 
 def make(
@@ -102,9 +200,11 @@ def make(
         if not copy_pages(kh2 / "remastered" / "obj" / f"{name}.mdlx", obj / name):
             left_out.append(f"{name} ({title}): its model's HD pictures (its own PS2 pictures used)")
         copy_pages(kh2 / "remastered" / "obj" / f"{name}.a.us", mod / "kh2" / "fx" / name)
+        sounds = motion_sounds(sources[1].read_bytes()) | effect_sounds(sources[2].read_bytes())
+        left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         calls = calls_in(sources[0].read_bytes())
         listed.append(kinds_line(name, title, calls, handled))
-        print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls", file=sys.stderr)
+        print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     return left_out
 

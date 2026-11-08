@@ -33,9 +33,13 @@ void khdays_kh2_enemies_hit(void *actor, int hp_before);
  * is drawn in its place now and 1 is returned (the shell's own shapes left out). */
 int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj);
 
-/* Whether the KH2 enemy kind `name` can be made now: the setting on, the mod there, the kind covered (the missions'
- * check for a `kh2:<name>` with no stand-in, registry.h khdays_missions_set_kh2_ready). */
+/* Whether the KH2 enemy kind `name` can be made now: the mod there, the kind covered (the missions' check for a
+ * `kh2:<name>` with no stand-in, registry.h khdays_missions_set_kh2_ready). */
 int khdays_kh2_enemies_ready(const char *name);
+
+/* Slot_Spawn (prepare.py's join): whether a positioned sound the game starts (its sequence archive and entry, its
+ * place: three fx32) is one of a stand-in's own at a KH2 enemy's place, not to be heard -- KH2's own sounds play. */
+int khdays_kh2_enemies_quiet(unsigned archive, unsigned entry, const void *place);
 
 #ifdef __cplusplus
 }

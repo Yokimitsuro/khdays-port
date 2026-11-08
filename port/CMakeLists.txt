@@ -665,6 +665,7 @@ add_executable(khdays-native
     runtime/sound/sound_bridge.c
     runtime/sound/sound_dump.c
     runtime/sound/sound_mods.c
+    runtime/sound/sound_shots.c        # the port's own sounds (a KH2 enemy's)
     runtime/core/start.c
     runtime/core/vram.c
     host/app/window.c
@@ -1246,6 +1247,7 @@ endforeach()
 # bridge's queues, and (to come) the drivers, the stream reader and the
 # replacements; no game data needed.
 add_executable(khdays-sound-test tests/sound_test.c runtime/sound/sound_bridge.c runtime/sound/sound_mods.c
+    runtime/sound/sound_shots.c
     runtime/core/session_log.c host/app/instance_win.c)
 target_link_libraries(khdays-sound-test PRIVATE khdays-sound khdays-hud-settings)
 target_compile_options(khdays-sound-test PRIVATE /W4 /std:c17)

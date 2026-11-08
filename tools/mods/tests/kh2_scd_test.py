@@ -41,6 +41,36 @@ def made_up_bank(recordings: list[tuple[int, int, int, bytes, bytes] | None]) ->
     return bytes(out)
 
 
+def made_up_sounds_bank(
+    sounds: list[tuple[float, list[tuple[int, int]]] | None],
+    recordings: list[tuple[int, int, int, bytes, bytes] | None],
+    head: int = 0x10,
+    tracks: int = 4,
+) -> bytes:
+    """A bank with its sounds' table at 0x50 (each sound `head` bytes, its volume at +8, then its (track, recording)
+    references; None one with no track) and its recordings' table after them, as made_up_bank lays recordings."""
+    out = bytearray(0x50 + 4 * len(sounds))
+    out[:8] = kh2_scd.MAGIC
+    for n, s in enumerate(sounds):
+        struct.pack_into("<I", out, 0x50 + 4 * n, len(out))
+        volume, refs = s if s is not None else (1.0, [])
+        entry = bytearray(head)
+        entry[0] = len(refs)
+        struct.pack_into("<fI", entry, 8, volume, n)
+        out += entry + b"".join(struct.pack("<HH", *r) for r in refs)
+    table = len(out)
+    struct.pack_into("<4H", out, 0x30, len(sounds), tracks, len(recordings), 0)
+    struct.pack_into("<6I", out, 0x38, 0, table, 0, 0, 0, 0)
+    out += bytes(4 * len(recordings))
+    for n, r in enumerate(recordings):
+        if r is None:
+            continue
+        channels, rate, codec, extra, data = r
+        struct.pack_into("<I", out, table + 4 * n, len(out))
+        out += struct.pack("<8I", len(data), channels, rate, codec, 0, 0, len(extra), 0) + extra + data
+    return bytes(out)
+
+
 def block(predictors: list[int], steps: list[int], s1: list[int], s2: list[int], nibbles: list[int]) -> bytes:
     """One block: per channel predictor, then steps, samples 1, samples 2; then the nibbles, high first."""
     out = bytes(predictors)
@@ -88,6 +118,25 @@ class Bank(unittest.TestCase):
             with wave.open(str(path)) as w:
                 self.assertEqual((w.getnchannels(), w.getsampwidth(), w.getframerate()), (2, 2, 48001))
                 self.assertEqual(np.frombuffer(w.readframes(2), "<i2").tolist(), [1, -1, 2, -2])
+
+    def test_reads_the_sounds(self):
+        mono = adpcm_format(1, 4, 8)
+        recording = (1, 48000, 12, mono, block([0], [16], [1], [1], [0, 0]))
+        for head in (0x10, 0x40):  # the PC's banks have either
+            bank = made_up_sounds_bank(
+                [(0.5, [(0, 1)]), None, (1.0, [(1, 0), (2, 1)])], [recording, recording], head=head
+            )
+            sounds = kh2_scd.sounds(bank)
+            self.assertEqual(len(sounds), 3, head)
+            self.assertEqual((sounds[0].number, sounds[0].volume, sounds[0].recordings), (0, 0.5, [1]))
+            self.assertIsNone(sounds[1])
+            # the last sound's references found after a header as long as the others'
+            self.assertEqual(sounds[2].recordings, [0, 1])
+            self.assertEqual(len(kh2_scd.recordings(bank)), 2)
+        with self.assertRaises(kh2_scd.ScdError):
+            kh2_scd.sounds(made_up_sounds_bank([(1.0, [(0, 5)])], [recording]))  # a recording it has not
+        with self.assertRaises(kh2_scd.ScdError):
+            kh2_scd.sounds(made_up_sounds_bank([(1.0, [(9, 0)])], [recording]))  # a track it has not
 
     def test_refused(self):
         with self.assertRaises(kh2_scd.ScdError):

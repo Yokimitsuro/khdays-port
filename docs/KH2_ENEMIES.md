@@ -16,13 +16,14 @@ read of KH2, what the port does with it, and what is not known yet.
       python tools/mods/kh2_enemies.py --kh2 <kh2.hed_out> --exe khdays-native.exe \
           --kh2-exe "<1.5+2.5>/KINGDOM HEARTS II FINAL MIX.exe"
 
-  It copies each kind's `obj/<name>.mdlx` (model, script, collision), `.mset` (motions) and `.a.us` (effects,
-  sounds), their HD pictures and KH2's resident effect pictures (`effect/texcommon.dpd`), reads the shapes of KH2's
-  calls from KH2's executable (`kh2/calls.txt`) and lists the kinds with whether the port answers every call their
-  scripts make (`kh2_enemies.txt`: the Soldier `M_EX010` and the Shadow `M_EX020` both covered). Nothing of the games
-  is in the repository or the installer.
-- **The setting**: "KH2 enemies" (Settings, the `[gameplay]` `kh2_enemies`, on by default). Off, without the mod or
-  without HD graphics (the port's own polygons are drawn only with them), every KH2 enemy plays its stand-in.
+  It copies each kind's `obj/<name>.mdlx` (model, script, collision), `.mset` (motions) and `.a.us` (effects), their
+  HD pictures and KH2's resident effect pictures (`effect/texcommon.dpd`), decodes the sounds each kind plays into
+  `kh2/se/<id>.wav` (below, "Sounds"), reads the shapes of KH2's calls from KH2's executable (`kh2/calls.txt`) and
+  lists the kinds with whether the port answers every call their scripts make (`kh2_enemies.txt`: the Soldier
+  `M_EX010` and the Shadow `M_EX020` both covered). Nothing of the games is in the repository or the installer.
+- **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
+  the mod (or with one that does not cover the kind) gets the class written after the name in its place; without a
+  class the mission is left out for that player.
 - **In a mission** (`missions.txt`, docs/STUDIO.md): `wave <n> = kh2:M_EX010/4x3 at <x> <y> <z>` puts three KH2
   Soldiers in Days Soldiers' places (class 4 standing in); `kh2:M_EX020/0x2` two KH2 Shadows in Days Shadows'. Without
   a class (`kh2:M_EX010x3`) the stand-in is Days's Soldier, and the mission needs KH2's enemies: it is left out without
@@ -31,8 +32,8 @@ read of KH2, what the port does with it, and what is not known yet.
 - **What plays**: KH2's own script drives each one -- appearing with its effect, closing in, its claw, kick and jump
   attacks, rolls, steps back, turning to face its target -- with its KH2 model (HD pictures), motions and effects; its
   attacks hit Days's players as Days's enemies' do (their damage the stand-in's attack power); Days's hits make it
-  flinch (KH2's small damage motions, from the front or the back) and its end is KH2's ("dead": its fading), then
-  Days's (the heart, the rewards). Its sounds are its stand-in's for now (below).
+  flinch (KH2's small damage motions, from the front or the back) and its end is KH2's ("dead": its effect and its
+  fading), then Days's (the heart, the rewards). Its sounds are KH2's: its motions', its effects' and its end's.
 
 ## The first enemy: the Soldier
 
@@ -133,7 +134,7 @@ scripts take as "nothing there", named in the table.
 | 1:62, 1:64 | the travel of the tick before (+ 0xa38) and of this one (+ 0xa28) | as KH2 |
 | 2:23, 1:121, 1:120, 1:131 | its target slot (+ 0xbf8): made "itself" (2) while empty; a target chosen for an owner by a mode (`FUN_1403be2b0`: 2 the owner, else the player); the target's place; the slot as KH2's pool keeps it | the nearest player |
 | 2:88 | the last to hit it (+ 0xd38), the player's actor when none | the player nearest at the hit |
-| 1:87 | an effect on the actor (`FUN_1402c6b30` on + 0x80): a group and a number | **not known** which effects the groups name: none |
+| 1:87 | an effect on the actor (`FUN_1403b6670` -> `FUN_1402c6b30` on + 0x80): the element of that number in its effects, and two values passed on to the effect (**not known**) | that element started: the "dead" state's `1:87(2, 1, 0)` the Soldier's element 2 and the Shadow's (its dying smoke and sound), the leaving's `(1, 1, 0)` element 1 |
 | 1:57 | the class's byte + 0x0c bit 0 (a kind that moves by its speed: the Soldier walks by its motions) | 0 |
 | 1:124, 1:56 | its entry's flag; `FUN_1403ba4a0`'s value | 0 |
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
@@ -189,21 +190,56 @@ that tick, against Days's players' collision spheres. The record's other bytes a
 
 ## Effects
 
-An object's effects are its `.a.us`'s PAX (its BAR entry 0x12; docs/FORMATS.md, "KH2's effects"). The PAX's elements
-(its 0x82 directory's 32-byte entries) are `{u32 its effect's offset from the directory, u32 its emitter, u32 its
-number}`: the Soldier's 9 elements over 4 effects, the Shadow's 3 over 3. A motion's trigger 1 names an element by its
-number. The port runs each element started on the enemy at the enemy's place (`runtime/mods/kh2_fx_draw.h`, the Dark
-Corridor's way: the effect in KH2's axes and centimetres, its view the enemy's); **not known**: whether KH2 puts some
-of them on a bone, and which effects `1:87`'s groups name (the "dead" state's `1:87(2, 1)`, the leaving's `(1, 1)`),
-so those are not played.
+An object's effects are its `.a.us`'s PAX (its BAR entry 0x12; docs/FORMATS.md, "KH2's effects"). Its 0x82
+directory's 32-byte entries are `{u32 its effect's offset from the directory, u32 its emitter, u32 its number}` (the
+Soldier's 9 over 4 effects, the Shadow's 3 over 3). What a motion's trigger 1 and the script's `1:87` start is an
+**element**: the PAX's records before the directory (0x50 bytes each from + 0x10, their count at + 8; the Soldier's
+11, the Shadow's 3), as `FUN_1402c6b30` reads them:
+
+| Offset | Read |
+| --- | --- |
+| + 0 | u16 its effect: the directory's entry of that number |
+| + 2 | u16 its number (what trigger 1 and `1:87` name; the Shadow's are 2, 3 and 4 over its effects 0, 1, 2) |
+| + 6 | u16 the bone it follows (`FUN_1403b50f0`: 0x4000 none, the actor itself; bit 15 a bone the class gives) |
+| + 0x10 | flags (bit 0 it follows its actor every tick, `FUN_1402c5f70`; 0x10000 two bones' more at + 0x40; others **not known**) |
+| + 0x14 | when its sound starts, its effect's ticks (`FUN_1402c58f0`) |
+| + 0x18 | its sound: KH2's id, played above 0 at the effect's place and moved with it (`FUN_1401de150`) |
+| + 0x1c, + 0x28, + 0x34 | its place, turn (radians) and size: KH2's axes (y down), centimetres |
+
+The port runs each element started on the enemy (`runtime/mods/kh2_fx_draw.h`, the Dark Corridor's way: the effect
+in KH2's axes and centimetres, its view the enemy's) at its size, turn (x, then y, then z: the order **not known**,
+the Soldier's and the Shadow's turn about one axis only) and place, on its bone in the pose of the tick it is drawn
+at; its sound starts when its time comes. **Not known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1,
+2, 4), and the two values `1:87` passes on.
 
 ## Sounds
 
 An `.a.us` holds a PS2 wave bank (`wave`, `WD`), a small `se20` entry `ORIGIN` naming its bank (`0xc8` = 200 for the
 Soldier, 201 the Shadow), how many sounds it has (25, 22) and the PC's bank (`se/obj/se200`: the remaster's
 `remastered/obj/<name>.a.us/se/obj/se200`, an SCD of 13 recordings for the Soldier, docs/FORMATS.md "KH2's sound
-banks"). **Not known**: how a sound's number (a motion's trigger 8: 21, 22) leads to a recording; until it is, a KH2
-enemy sounds as its stand-in (Days's hit and defeat sounds play as Days plays them).
+banks").
+
+- **A sound's id** is `bank x 1000 + number` (`FUN_1401de150` splits it: the bank the id / 1000, looked up among
+  those loaded, the number the id % 1000). Bank 0 is KH2's common one (`se/se000.win32.scd`, 314 sounds: the
+  Heartless's appearing 105, leaving 106 and dying 109 are there); 200 and 201 the Soldier's and the Shadow's own.
+- **The bank's sound** of that number is the sounds' table's entry of that place (the corridor's sound 10 is entry
+  10, its recording 9), which names its tracks' recordings and gives its volume (docs/FORMATS.md). The Soldier's 25
+  sounds play 13 recordings: 0-3 and 16-24 one each (16 -> 4 ... 24 -> 12), 4-15 empty.
+- **What plays them**: a motion's trigger 8 `(bank, number, 0, 0)` -- the Soldier's 200021 in two of its damage motions
+  (`31A`, `33A`) and 200022 appearing (`80A`), the Shadow's 201021 and 201020 -- and an effect's element, its own
+  (+ 0x18): the Soldier's appearing 105 (element 0), leaving 106 (1) and end 109 (2), its kick's 200020 (`52A`
+  starts element 6) and `53A`'s 200017 (element 5), and 200016, 200018, 200019, 200023 (elements no motion of its
+  starts: **not known** what does); the Shadow's end 201019 and 201016, 201017.
+- **The mod** has each as `kh2/se/<id>.wav` (`tools/mods/kh2_enemies.py`: the first track's recording, at the
+  sound's volume); the port hears it among the effects (their volume) where the enemy was last drawn, to the left or
+  right of the camera (`runtime/sound/sound_shots.h`).
+- **The stand-in's own sounds** (its class's `MON_` archive: its hits' voice, its appearing and defeat, and the
+  enemies' common `COMMON_SYS/se_all_enemy_*`) are not heard at a KH2 enemy's place: the game starts them through
+  `Slot_Spawn` there, whose join asks the port (docs/RUNTIME_MAP.md section 37); the players' sounds (their weapons'
+  hits) and the rest are heard as ever. **Not known**: what a sound's several tracks mean (one of
+  se000's has five recordings: likely a choice; the port plays the first), the tracks' own commands (a pitch range,
+  1.06 and 0.944, in most of the Soldier's), how KH2 makes a sound quieter far away, and the sounds 0-3 of the
+  Soldier's and the Shadow's banks (no motion or element of theirs names them).
 
 ## Days's side: the shell
 
@@ -228,6 +264,9 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   reaction plays (the queue cleared, + 0x18c bit 9 set, its script waiting) unless a locked state runs; its HP gone,
   the state `dead` is entered (unlocked: the game's own entry). Days defeats it at once and reuses it for the next
   wave: the KH2 enemy's end goes on where it was, drawn as the 3D list closes, until it has faded out.
+- **Heard** (`Slot_Spawn`, joined): the sounds Days starts for it of its own -- its class's `MON_` archive, the
+  enemies' common appearing and defeat -- are not heard within its body's radius of its place; KH2's own sounds
+  play instead (above, "Sounds").
 - **Drawn**: Days's draw of its model (`khdays_models_draw_begin`) is taken when it is its class's own model (in
   `Ms/<class>.p`) drawn within 25 cm of the shell's place, the nearest shell of that class -- no link from the actor
   to its render object was found: its node's + 0x24 (a battle actor's) is not one; the Shadow's model lies 6 cm from

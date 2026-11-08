@@ -199,9 +199,9 @@ public:
     // The object the actor goes for (1:3 the player's actor, FUN_1403b3e80; 1:121's choice): one of Days's players
     // as KH2 sees it, null when none stands.
     virtual Object *player(Actor &a) = 0;
-    // An effect on the actor (1:87, FUN_1402c6b30 on actor + 0x80): its group and number in the object's effects;
-    // a handle the script gives back with 0:79, 0 for none.
-    virtual std::uint32_t effect(Actor &, int /*group*/, int /*number*/, int /*how*/)
+    // An effect on the actor (1:87, FUN_1402c6b30 on actor + 0x80): the element of that number in the object's
+    // effects, and two values FUN_1402c6b30 passes on to the effect; a handle the script gives back with 0:79, 0 none.
+    virtual std::uint32_t effect(Actor &, int /*number*/, int, int)
     {
         return 0;
     }

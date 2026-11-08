@@ -71,6 +71,56 @@ def recordings(bank: bytes) -> list[Recording | None]:
     return out
 
 
+@dataclass
+class Sound:
+    number: int  # its place in the bank's sounds: KH2's sound id % 1000 (FUN_1401de150: the bank the id / 1000)
+    volume: float  # its +8 float
+    recordings: list[int]  # the recordings its tracks play
+
+
+def sounds(bank: bytes) -> list[Sound | None]:
+    """The bank's sounds in order, None for an empty place or one with no track. The sounds' table is the first
+    after the tables' header (at 0x50, its count the header's first): a u32 offset a sound. A sound: u8 its tracks'
+    count, ..., +8 a float (its volume), +0xc its number; its tracks' references last, a u16 track and a u16
+    recording each. The sounds lie end to end, each header as long as the bank's others (16 or 64 bytes in the PC's
+    banks): a sound's references are the bytes before the next sound, the last one's after the bank's header."""
+    if bank[:8] != MAGIC:
+        raise ScdError("not a SEDBSSCF sound bank")
+    if len(bank) < TABLES + 0x20:
+        raise ScdError("its tables' header is cut short")
+    count, tracks_count, recordings_count = struct.unpack_from("<3H", bank, TABLES)
+    table = TABLES + 0x20
+    if table + 4 * count > len(bank):
+        raise ScdError("its sounds' table lies past its end")
+    places = list(struct.unpack_from(f"<{count}I", bank, table))
+    heads: dict[int, int] = {}
+    for n, at in enumerate(places[:-1]):
+        after = places[n + 1]
+        if at and after > at and at < len(bank):
+            head = after - at - 4 * bank[at]
+            heads[head] = heads.get(head, 0) + 1
+    usual = max(heads, key=lambda h: heads[h]) if heads else 0x10
+    out: list[Sound | None] = []
+    for n, at in enumerate(places):
+        if at == 0 or at + 0x10 > len(bank) or bank[at] == 0:
+            out.append(None)
+            continue
+        tracks = bank[at]
+        after = places[n + 1] if n + 1 < len(places) and places[n + 1] > at else at + usual + 4 * tracks
+        refs = after - 4 * tracks
+        if refs < at + 0x10 or after > len(bank):
+            raise ScdError(f"sound {n}'s tracks lie outside it")
+        volume = struct.unpack_from("<f", bank, at + 8)[0]
+        played = []
+        for t in range(tracks):
+            track, recording = struct.unpack_from("<HH", bank, refs + 4 * t)
+            if track >= tracks_count or recording >= recordings_count:
+                raise ScdError(f"sound {n}'s track {t} names a track or recording the bank has not")
+            played.append(recording)
+        out.append(Sound(n, volume, played))
+    return out
+
+
 def decode(recording: Recording) -> np.ndarray:
     """A Microsoft ADPCM recording's samples, (frames, channels) int16. A block: per channel a predictor (u8), then
     per channel the step, sample 1 and sample 2 (s16 each); sample 2 then sample 1 come out first; then a nibble a

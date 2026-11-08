@@ -10,6 +10,7 @@
 #include "../core/events.h"
 #include "../core/rom.h"
 #include "sound_mods.h"
+#include "sound_shots.h"
 #include "sound.h"
 #include "../../host/app/host.h"
 #include "../../sound/archive.h"
@@ -528,7 +529,8 @@ static void run(void *context, u64 cycle)
     while (next_sample <= cycle) {
         const u32 cycles = cycles_to_next_sample();
         const int movie = khdays_video_mod_sound(); /* a mod's movie's sound (video_mod.h) */
-        const int mods = khdays_sound_mods_present() || movie;
+        const int shots = khdays_sound_shots_playing(); /* the port's own sounds (sound_shots.h) */
+        const int mods = khdays_sound_mods_present() || movie || shots;
         const int unity = khdays_sound_bus_unity(&bus) && !mods && !(held_players | held_streams);
         float extra[2] = {0.0f, 0.0f};
         hw.smooth = output_pc;       /* the PC's output reads the channels between their samples */
@@ -544,6 +546,9 @@ static void run(void *context, u64 cycle)
         }
         if (movie) {
             khdays_video_mod_mix(output_rate, bus.category[KHDAYS_SOUND_MOVIES], extra);
+        }
+        if (shots) {
+            khdays_sound_shots_mix(output_rate, bus.category[KHDAYS_SOUND_EFFECTS], extra);
         }
         if (output_pc) {
             khdays_sound_mix_pc(&hw, unity || khdays_sound_hw_count(&hw) > channel_room ? NULL : channel_gain,

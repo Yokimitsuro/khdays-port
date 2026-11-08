@@ -108,22 +108,6 @@ static const char *const texts[TXT_COUNT][5] = {
          "Disattivato mostra quelli di Days. Si applica subito.",
          "Roxas y sus llaves espada con los modelos, movimientos y ropa de KH2, hechos por el HD PACK desde tu 1.5+2.5. "
          "Desactivado muestra los de Days. Se aplica al momento."},
-    [TXT_HUD_KH2_ENEMIES] = {"KH2 enemies", "Ennemis de KH2", "Gegner aus KH2", "Nemici di KH2", "Enemigos de KH2"},
-    [TXT_HUD_KH2_ENEMIES_NOTE] =
-        {"KINGDOM HEARTS II enemies in custom missions that place them, fighting with their own AI, made from your "
-         "1.5+2.5. Off plays the Days enemies each mission names in their place. Applies from the next mission.",
-         "Les ennemis de KINGDOM HEARTS II dans les missions personnalisées qui les placent, combattant avec leur "
-         "propre IA, créés depuis votre 1.5+2.5. Désactivé, les ennemis de Days que chaque mission indique les "
-         "remplacent. S’applique à la mission suivante.",
-         "Gegner aus KINGDOM HEARTS II in eigenen Missionen, die sie platzieren, mit ihrer eigenen KI, aus deiner "
-         "1.5+2.5 erstellt. Aus spielt an ihrer Stelle die Gegner aus Days, die jede Mission nennt. Gilt ab der "
-         "nächsten Mission.",
-         "I nemici di KINGDOM HEARTS II nelle missioni personalizzate che li piazzano, con la loro IA, creati dalla "
-         "tua 1.5+2.5. Disattivato li sostituiscono i nemici di Days indicati da ogni missione. Vale dalla missione "
-         "successiva.",
-         "Los enemigos de KINGDOM HEARTS II en las misiones personalizadas que los colocan, luchando con su propia "
-         "IA, creados desde tu 1.5+2.5. Desactivado juegan en su lugar los enemigos de Days que nombra cada misión. "
-         "Se aplica desde la siguiente misión."},
     [TXT_HUD_PAUSE_TARGET] = {"Target in pause menu", "Cible dans le menu Pause", "Ziel im Pausenmenü",
                               "Bersaglio nel menu pausa", "Objetivo en el menú de pausa"},
     [TXT_HUD_INFORMATION_HUD] = {"HUD and control during INFORMATION", "ATH et commandes pendant INFORMATION",

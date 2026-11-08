@@ -2293,6 +2293,14 @@ HOOKS["ov002@02078bac"] = [
 # The Stop magic (runtime/battle/stop_magic.c): Days's unfinished sixth magic made whole on what the game
 # left. Its three panels are written over three blank records as the panels' table loads, the camp lets
 # them in, and the battle's list of magic names gets the names the game left empty.
+HOOKS["main@02033d0c"] = [
+    (  # Slot_Spawn: a positioned sound started -- a stand-in's own at a KH2 enemy's place not heard
+        "    if (param_1 == 0)\n        param_1 = *(unsigned int *)(base + 0x9c);\n",
+        "    if (param_1 == 0)\n        param_1 = *(unsigned int *)(base + 0x9c);\n"
+        "    { extern int khdays_kh2_enemies_quiet(unsigned int archive, unsigned int entry, const void *place);\n"
+        "      if (khdays_kh2_enemies_quiet(param_1, param_2, param_3)) return 0; }\n",
+    )
+]
 HOOKS["main@02034150"] = [
     (  # MsgDb_LoadDb: a database loaded whole
         "            ResSlot_Release_2(id);\n            return 0;\n        }\n    }\n    return 1;\n}\n",

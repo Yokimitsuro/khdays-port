@@ -1,18 +1,24 @@
 """tools/mods/kh2_enemies.py with no collection: a made-up KH2 object (a BAR holding an AI script that makes two calls),
 its motions and effects files, its HD pages, the calls' shapes given in place of an executable's and the port's
-handled calls given in place of khdays-native's: the mod's files, its list of kinds and which are covered."""
+handled calls given in place of khdays-native's: the mod's files, its list of kinds and which are covered; the sounds
+its motions and effects play, decoded from made-up banks."""
 
 import struct
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 MODS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kh2_bdx  # noqa: E402
 import kh2_enemies  # noqa: E402
+import kh2_scd_test  # noqa: E402
 
 
 def script(code: list[int]) -> bytes:
@@ -85,6 +91,37 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-")
             self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-")
             self.assertEqual(left, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
+
+    def test_the_sounds(self):
+        # a motion whose trigger 8 plays (200, 21), an effect's element playing 105 (bank 0), another none (-1)
+        attributes = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 30, 8, 4, 200, 21, 0, 0)
+        mset = bar([(17, b"00A", bar([(9, b"00A", b"motion"), (0x10, b"00A", attributes)]))])
+        elements = [struct.pack("<HHI", 0, 0, 0x40000000).ljust(0x18, b"\0") + struct.pack("<i", 105)]
+        elements.append(struct.pack("<HHI", 1, 1, 0x40000000).ljust(0x18, b"\0") + struct.pack("<i", -1))
+        records = b"".join(e.ljust(0x50, b"\0") for e in elements)
+        pax = b"PAX_" + struct.pack("<3I", 0, len(elements), 0x10 + len(records)) + records
+        self.assertEqual(kh2_enemies.motion_sounds(mset), {200021})
+        self.assertEqual(kh2_enemies.effect_sounds(bar([(0x12, b"m_ex", pax)])), {105})
+        mono = kh2_scd_test.adpcm_format(1, 4, 8)
+        recording = (1, 48000, 12, mono, kh2_scd_test.block([0], [16], [100], [50], [1, 2]))
+        with tempfile.TemporaryDirectory() as d:
+            kh2 = Path(d) / "kh2.hed_out"
+            own = kh2 / "remastered" / "obj" / "M_EX010.a.us" / "se" / "obj" / "se200"
+            own.parent.mkdir(parents=True)
+            sounds = [None] * 21 + [(0.5, [(0, 0)])]
+            own.write_bytes(kh2_scd_test.made_up_sounds_bank(sounds, [recording]))
+            common = kh2 / "original" / kh2_enemies.COMMON_BANK
+            common.parent.mkdir(parents=True)
+            common.write_bytes(kh2_scd_test.made_up_sounds_bank([None] * 105 + [(1.0, [(0, 0)])], [recording]))
+            to = Path(d) / "se"
+            left = kh2_enemies.make_sounds(kh2, "M_EX010", {200021, 105, 200022, 7001}, to)
+            with wave.open(str(to / "200021.wav")) as w:  # at its volume: half
+                self.assertEqual(np.frombuffer(w.readframes(4), "<i2").tolist(), [25, 50, 58, 74])
+            with wave.open(str(to / "105.wav")) as w:
+                self.assertEqual(np.frombuffer(w.readframes(4), "<i2").tolist(), [50, 100, 116, 148])
+            self.assertEqual(len(left), 2)
+            self.assertTrue(any("200022" in line and "no recording" in line for line in left), left)
+            self.assertTrue(any("7001" in line and "se7" in line for line in left), left)
 
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):

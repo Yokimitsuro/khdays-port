@@ -1398,7 +1398,6 @@ The saved keys in `[enhancements]` are:
 | `kh2_prizes` | on | KH2's prizes and chests, as the HD PACK makes them |
 | `kh2_models` | on | KH2's Roxas and keyblades, as the HD PACK makes them (docs/KH2_MODELS.md) |
 | `kh2_corridors` | on | KH2's Dark Corridor in place of Days's standing ovals, as the HD PACK makes it (docs/RUNTIME_MAP.md, "The Dark Corridors") |
-| `kh2_enemies` | on | KH2's enemies in custom missions that place them, else the Days enemies standing in for them (docs/KH2_ENEMIES.md) |
 | `pause_target` | off | Mission target in ordinary pause menus |
 | `information_hud` | off | Configured HUD/control retention during upper INFORMATION |
 | `ui_padding` | off | Off removes the single-screen HD presentation inset |

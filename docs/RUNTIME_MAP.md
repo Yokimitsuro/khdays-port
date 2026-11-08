@@ -5903,4 +5903,9 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   render object here).
 - **Its lock-on mark** turns with the actor's srt rotation: left unturned, it stood off the KH2 model.
 - **Days's hit and defeat sounds** (`MON_SOLDIER/se_soldier_dmg_*`, `COMMON_SYS/se_all_enemy_dead01`) and its defeat's
-  effects (the dark burst, the heart rising) play from Days's side of a hit, its Days tasks held or not.
+  effects (the dark burst, the heart rising) play from Days's side of a hit, its Days tasks held or not; its appearing
+  sounds (`MON_SOLDIER/se_soldier_ex`, `COMMON_SYS/se_all_enemy_syutsugen`) as its spawner sets it going; the Shadow's
+  `MON_SHADOW/se_shadow_dmg_*`, `se_shadow_dead`. Each is started through `Slot_Spawn` at the enemy's place (the y
+  0.55 above its feet, the x and z within 0.25 of its srt's, a hit's at the hit), the player's weapon's
+  (`WEP_ROX26/se_rox_weap_hit`) at the same moment elsewhere: the port's join there keeps the stand-in's own quiet at a
+  KH2 enemy's place (`khdays_kh2_enemies_quiet`).

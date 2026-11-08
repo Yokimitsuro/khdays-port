@@ -331,9 +331,14 @@ Not the game's: KINGDOM HEARTS II's PC sound banks (`se/se<bank>.win32.scd`), as
 for the Dark Corridor's sounds (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of the files, checked
 sample for sample against ffmpeg's decoding of the same recordings.
 
-- **The bank**: `SEDBSSCF`, a 0x30-byte header, then at 0x30 the tables' header: four u16 counts (the third the
-  recordings'), then u32 offsets (the second the recordings' table's). The table: a u32 offset a recording, 0 an
-  empty place.
+- **The bank**: `SEDBSSCF`, a 0x30-byte header, then at 0x30 the tables' header: four u16 counts (the sounds', the
+  tracks', the recordings', the bank's number), then u32 offsets (the tracks' table's, the recordings' table's, ...).
+  Each table: a u32 offset an entry, 0 an empty place. The sounds' table is right after the header (at 0x50).
+- **A sound**: u8 its tracks' count (0 none), ..., + 8 a float (its volume: 0.32 to 1 in the banks read), + 0xc its
+  number; its tracks' references last, `{u16 track, u16 recording}` each. A bank's sounds lie end to end, every
+  header as long as the others (16 or 64 bytes, the longer one holding the sound's name): a sound's references are
+  the bytes before the next sound's, the last one's after a header of that length. KH2's sound id `bank x 1000 + n`
+  is bank `bank`'s sound `n` (docs/KH2_ENEMIES.md, "Sounds"). The tracks (their commands) are not read.
 - **A recording**: `{u32 data size, channels, rate, codec, loop start, loop end, extra size, -}`, the codec's extra
   header, then its data. Codec 12 is Microsoft ADPCM, its extra a WAVEFORMATEX (`wFormatTag` 2, the block's bytes,
   `wSamplesPerBlock` 32, the seven predictor pairs); codec 6 is Ogg Vorbis. Rates are the files' own (47,995-48,005
@@ -348,9 +353,9 @@ sample for sample against ffmpeg's decoding of the same recordings.
   0x2a names the scene's bank (an s16 at +6); op 0x24 loads a block of sub-records `{op, size}` (0x38 an object, 0x25
   an animation, 0x26 a voice, 0x39 an effect slot and its file's name); op 0x9 runs an effect: +4 its frame, +0xa
   its slot, +0xc the file's element, +0xe 4 bind, 0 start, 1 or 2 stop (`FUN_1402d9340` starts the element); op
-  0x2b a sound: +4 its slot, +6 0 start or 1 stop, +8 a u32 sound -- below 1001 the scene's bank's, its recording
-  `n - 1` -- and +0xc its frame (`FUN_1402d8be0` plays it). A PAX element's own sound (its +0x18, -1 none) plays
-  with it; the Dark Corridor's names none.
+  0x2b a sound: +4 its slot, +6 0 start or 1 stop, +8 a u32 sound -- below 1001 the scene's bank's sound `n` (bank
+  2984's sound n plays its recording n - 1: its sounds' table) -- and +0xc its frame (`FUN_1402d8be0` plays it). A
+  PAX element's own sound (its +0x18, none at 0 or -1) plays with it; the Dark Corridor's names none.
 
 ## KH2's objects (a chest, a prize box)
 

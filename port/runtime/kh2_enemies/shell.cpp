@@ -11,6 +11,7 @@
 #include "khdays/assets/kh2_motion.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +29,6 @@
 extern "C" {
 #include "../scripts/game_link.h"
 #include "../../gfx/g3d.h"
-#include "../../host/app/hud_settings.h"
 #include "../battle/stop_magic.h"
 #include "../core/rom.h"
 #include "../core/session_log.h"
@@ -37,6 +37,9 @@ extern "C" {
 #include "../missions/missions.h"
 #include "../missions/registry.h"
 #include "../mods/textures.h"
+#include "../sound/sound_bridge.h"
+#include "../sound/sound_shots.h"
+#include "../../sound/archive.h"
 }
 #include "../mods/kh2_fx_draw.h"
 #include "../mods/models.h"
@@ -130,6 +133,20 @@ std::vector<Shape> read_shapes(const std::vector<std::uint8_t> &mdlx)
     return out;
 }
 
+// An effect's element, as KH2FM.exe's FUN_1402c6b30 starts one (the PAX's records of 0x50 bytes from + 0x10, their
+// count at + 8): u16 its effect (the 0x82 directory's entry of that number), u16 its number (what a motion's trigger 1
+// and 1:87 name), + 6 u16 the bone it follows (0x4000 none: the actor itself; FUN_1403b50f0), + 0x10 flags, + 0x14
+// when its sound starts (its time, ticks), + 0x18 its sound (KH2's id, played above 0: FUN_1402c58f0), + 0x1c its
+// place, + 0x28 its turn (radians), + 0x34 its size -- KH2's axes (y down), centimetres
+struct Element final {
+    std::size_t effect = 0, emitter = 0; // in KindFiles::fx
+    int bone = kNoBone;
+    std::uint32_t flags = 0;
+    float start = 0.0F;
+    int sound = 0;
+    std::array<float, 3> place{}, turn{}, size{1.0F, 1.0F, 1.0F};
+};
+
 // An enemy kind's files, read once: its script (the .mdlx's AI, BAR entry 3), its motions and skeleton, its shapes.
 struct KindFiles final {
     std::string name, mdlx;
@@ -137,23 +154,32 @@ struct KindFiles final {
     std::shared_ptr<const kh2::MotionSet> set;
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
     std::vector<Shape> shapes;
-    // its effects (its .a.us's PAX): the effects, each element's (by its number: the motions' trigger 1 names one)
-    // effect and emitter, the pages of its pictures and of KH2's resident ones (effect/texcommon.dpd)
+    // its effects (its .a.us's PAX): the effects, the elements by their number, the pages of its pictures and of KH2's
+    // resident ones (effect/texcommon.dpd)
     std::vector<std::shared_ptr<const kh2::EffectBlock>> fx;
-    std::map<int, std::pair<std::size_t, std::size_t>> fx_elements;
+    std::map<int, Element> fx_elements;
+    // the sounds it plays (its motions' triggers 8, its elements'): KH2's sound id -> the mod's kh2/se/<id>.wav
+    std::map<int, int> sounds;
     kh2::EffectBlock common;
     std::unique_ptr<khdays::kh2_fx::Pages> fx_pages;
 };
 
 // A PAX's elements (docs/FORMATS.md, "KH2's effects"): its 0x82 directory's 32-byte entries, each the offset of its
-// effect from the directory (+0), its emitter (+4) and its number (+8); the effects listed after them by offset
-std::map<int, std::pair<std::size_t, std::size_t>> pax_elements(const std::vector<std::uint8_t> &pax)
+// effect from the directory (+0), its emitter (+4) and its number (+8), the effects listed after them by offset; then
+// the records before the directory (Element), each naming a directory entry by its number. A PAX without records: the
+// directory's entries themselves, by their numbers.
+std::map<int, Element> pax_elements(const std::vector<std::uint8_t> &pax)
 {
-    std::map<int, std::pair<std::size_t, std::size_t>> out;
     const auto u32 = [&](std::size_t o) {
         return o + 4 <= pax.size()
                    ? std::uint32_t(pax[o] | (pax[o + 1] << 8) | (pax[o + 2] << 16) | (std::uint32_t(pax[o + 3]) << 24))
                    : 0u;
+    };
+    const auto f32 = [&](std::size_t o) {
+        const std::uint32_t b = u32(o);
+        float f;
+        std::memcpy(&f, &b, 4);
+        return std::isfinite(f) ? f : 0.0F;
     };
     const std::size_t d = u32(0xc);
     const std::uint32_t n = u32(d + 12);
@@ -162,13 +188,71 @@ std::map<int, std::pair<std::size_t, std::size_t>> pax_elements(const std::vecto
     std::map<std::uint32_t, std::size_t> index_of;
     for (std::uint32_t i = 0; i < effects; ++i)
         index_of[u32(list + 4 + 4 * i)] = i;
+    std::map<int, std::pair<std::size_t, std::size_t>> directory; // by number: the effect and its emitter
     for (std::uint32_t i = 0; i < n; ++i) {
         const std::size_t e = d + 16 + 32 * std::size_t(i);
         const auto it = index_of.find(u32(e));
         if (it != index_of.end())
-            out[int(u32(e + 8))] = {it->second, u32(e + 4)};
+            directory[int(u32(e + 8))] = {it->second, u32(e + 4)};
     }
+    std::map<int, Element> out;
+    const std::uint32_t records = u32(8);
+    for (std::uint32_t i = 0; i < records && 0x10 + 0x50 * std::size_t(i + 1) <= d; ++i) {
+        const std::size_t r = 0x10 + 0x50 * std::size_t(i);
+        const auto it = directory.find(int(u32(r) & 0xffffu));
+        if (it == directory.end())
+            continue;
+        Element el;
+        el.effect = it->second.first;
+        el.emitter = it->second.second;
+        el.bone = int(u32(r + 4) >> 16);
+        el.flags = u32(r + 0x10);
+        el.start = f32(r + 0x14);
+        el.sound = int(std::int32_t(u32(r + 0x18)));
+        for (int k = 0; k < 3; ++k) {
+            el.place[std::size_t(k)] = f32(r + 0x1c + 4 * std::size_t(k));
+            el.turn[std::size_t(k)] = f32(r + 0x28 + 4 * std::size_t(k));
+            el.size[std::size_t(k)] = f32(r + 0x34 + 4 * std::size_t(k));
+        }
+        out[int(u32(r) >> 16)] = el;
+    }
+    if (records == 0)
+        for (const auto &[number, at] : directory) {
+            Element el;
+            el.effect = at.first;
+            el.emitter = at.second;
+            out[number] = el;
+        }
     return out;
+}
+
+// A motion's trigger 8, a sound: (bank, number, ...) -- KH2's sound id bank x 1000 + number (FUN_1401de150); 0 none
+int trigger_sound(const kh2::MotionAttributes::Trigger &t)
+{
+    if (t.id != 8 || t.params.size() < 2 || std::int16_t(t.params[0]) < 0 || std::int16_t(t.params[1]) < 0)
+        return 0;
+    return std::int16_t(t.params[0]) * 1000 + std::int16_t(t.params[1]);
+}
+
+// The kind's sounds (its motions' triggers 8, its elements'), each the mod's kh2/se/<id>.wav, decoded once
+void read_sounds(KindFiles &k, const fs::path &folder)
+{
+    std::set<int> ids;
+    for (std::size_t slot = 0; slot < k.set->slots(); ++slot)
+        if (const kh2::MotionAttributes *attr = k.set->attributes(slot))
+            for (const auto &t : attr->triggers)
+                if (const int id = trigger_sound(t); id > 0)
+                    ids.insert(id);
+    for (const auto &[number, el] : k.fx_elements)
+        if (el.sound > 0)
+            ids.insert(el.sound);
+    for (const int id : ids) {
+        const std::u8string p8 = (folder / "kh2" / "se" / (std::to_string(id) + ".wav")).u8string();
+        const int file = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
+        if (file >= 0)
+            k.sounds[id] = file;
+    }
+    khdays_log("kh2 enemies: %s's sounds: %zu of %zu (kh2/se/<id>.wav)", k.name.c_str(), k.sounds.size(), ids.size());
 }
 
 // The BAR entry of `type` in `bar` (its bytes), none: empty
@@ -323,6 +407,7 @@ KindFiles *files_of(const std::string &name)
                 std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
             k->shapes = read_shapes(mdlx);
             read_effects(*k, u8(m.folder));
+            read_sounds(*k, u8(m.folder));
             khdays_log("kh2 enemies: %s read (%zu motions' slots, %zu bones, %zu shapes)", name.c_str(),
                        k->set->slots(), k->skeleton->joints.size(), k->shapes.size());
         } catch (const std::exception &e) {
@@ -347,14 +432,23 @@ struct Enemy final {
     bool down = false; // released and no longer standing: made again if its Days enemy is set going once more
     unsigned end_ticks = 0;
     float fall = 0.0F;      // its fall's speed off the ground (KH2's units a tick)
+    float radius = 0.0F;    // its Days enemy's collision sphere's, last read (Days's units)
     int attack_motion = -1; // the motion its attacks' hits below were made in, and its time then
     float attack_time = 0.0F;
     std::map<std::size_t, std::set<unsigned>> struck; // by attack range: the players it hit (each once)
     int slot = 0;                                     // its stand-in's attack slot its hits use
     bool told_draw = false;
-    // its effects running (started by its motions' trigger 1), moved on as it is drawn (KH2's 60 a second)
-    std::vector<std::unique_ptr<kh2::EffectInstance>> fx;
-    std::vector<std::vector<kh2::EffectDraw>> fx_draws;
+    // its effects running (started by its motions' trigger 1 and its script's 1:87), moved on as it is drawn (KH2's
+    // 60 a second): each its element, its ticks run, whether its sound has started
+    struct Running final {
+        std::unique_ptr<kh2::EffectInstance> fx;
+        std::vector<kh2::EffectDraw> draws;
+        const Element *element = nullptr;
+        float age = 0.0F;
+        bool sounded = false;
+    };
+    std::vector<Running> fx;
+    float pan = 0.0F; // where it was last drawn, left (-1) to right (1) of the camera: its sounds' pan
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
     int cue_motion = -1; // the motion its triggers were last looked at in, and its time then
@@ -371,8 +465,20 @@ std::map<unsigned, std::unique_ptr<Enemy>> enemies; // those set going, by their
 std::map<const Actor *, Enemy *> by_actor;
 std::map<unsigned, std::unique_ptr<Object>> players; // each of Days's players as KH2's scripts see them
 
+void cast(Enemy &e, int number);
+
 class Field final : public World {
 public:
+    // 1:87: the actor's element `number` started (FUN_1403b6670 -> FUN_1402c6b30 on its effects); the handle the
+    // script gives back to 0:79 none
+    std::uint32_t effect(Actor &a, int number, int, int) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it != by_actor.end())
+            cast(*it->second, number);
+        return 0;
+    }
+
     Object *player(Actor &a) override
     {
         const auto it = by_actor.find(&a);
@@ -564,25 +670,36 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
 
 // A KH2 tick of the enemy: its script (not while a reaction plays), its motion and travel; KH2's gravity off the ground
 // (the room's collision puts it back on it), a jump's landing
+// KH2's sound `id` of the enemy's kind heard where the enemy was last drawn
+void sound(const Enemy &e, int id)
+{
+    const auto it = e.kind->sounds.find(id);
+    const bool heard = it != e.kind->sounds.end() && khdays_sound_shot_start(it->second, 1.0F, e.pan) != 0;
+    if (tracing())
+        khdays_log("kh2 enemies: %08x's sound %d%s", e.days, id, heard ? "" : " (not heard: the mod has no kh2/se file)");
+}
+
 // Element `number` of the kind's effects started on the enemy
 void cast(Enemy &e, int number)
 {
     const KindFiles &k = *e.kind;
     const auto it = k.fx_elements.find(number);
-    if (it == k.fx_elements.end() || it->second.first >= k.fx.size())
+    if (it == k.fx_elements.end() || it->second.effect >= k.fx.size())
         return;
     try {
-        e.fx.push_back(std::make_unique<kh2::EffectInstance>(k.fx[it->second.first], it->second.second, e.fx_seed++));
-        e.fx_draws.emplace_back();
+        Enemy::Running r;
+        r.fx = std::make_unique<kh2::EffectInstance>(k.fx[it->second.effect], it->second.emitter, e.fx_seed++);
+        r.element = &it->second;
+        e.fx.push_back(std::move(r));
         if (tracing())
-            khdays_log("kh2 enemies: %08x casts effect %d (effect %zu, emitter %zu)", e.days, number, it->second.first,
-                       it->second.second);
+            khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days, number,
+                       it->second.effect, it->second.emitter, it->second.bone, it->second.sound);
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: %s's effect %d cannot be played (%s)", k.name.c_str(), number, x.what());
     }
 }
 
-// The current motion's single-frame triggers its time passed this tick (KH2's ANB triggers): 1 an effect
+// The current motion's single-frame triggers its time passed this tick (KH2's ANB triggers): 1 an effect, 8 a sound
 void cues(Enemy &e)
 {
     const Actor &a = *e.actor;
@@ -592,9 +709,14 @@ void cues(Enemy &e)
     const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
     if (attr == nullptr)
         return;
-    for (const auto &t : attr->triggers)
-        if (t.id == 1 && !t.params.empty() && float(t.frame) > from && float(t.frame) <= a.motion.time)
+    for (const auto &t : attr->triggers) {
+        if (float(t.frame) <= from || float(t.frame) > a.motion.time)
+            continue;
+        if (t.id == 1 && !t.params.empty())
             cast(e, std::int16_t(t.params[0]));
+        else if (const int id = trigger_sound(t); id > 0)
+            sound(e, id);
+    }
 }
 
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
@@ -639,11 +761,6 @@ Enemy *find(unsigned days)
 {
     const auto it = enemies.find(days);
     return it == enemies.end() ? nullptr : it->second.get();
-}
-
-bool usable()
-{
-    return khdays_hud_setting(KHDAYS_OPT_KH2_ENEMIES) != 0 && khdays_textures_hd() != 0;
 }
 
 void row_matrix_mul(const float a[16], const float b[16], float out[16])
@@ -732,10 +849,53 @@ kh2::EffectCamera effect_camera(const float view_in[16], const float projection[
     return cam;
 }
 
-// Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), the
-// last tick's drawn at the camera now; those over let go
+// An element's place in its enemy's effects' space (KH2's axes, y down, cm; the enemy's root at 0, turned as it is):
+// its size, its turn (x, then y, then z), its place, then the bone it follows (the pose's, KH2's model space y up)
+kh2::EffectMatrix element_world(const Enemy &e, const Element &el)
+{
+    const auto turn = [](int axis, float a) {
+        const float c = std::cos(a), n = std::sin(a);
+        std::array<float, 16> m{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const int i = (axis + 1) % 3, j = (axis + 2) % 3;
+        m[std::size_t(i * 4 + i)] = c;
+        m[std::size_t(i * 4 + j)] = n;
+        m[std::size_t(j * 4 + i)] = -n;
+        m[std::size_t(j * 4 + j)] = c;
+        return m;
+    };
+    std::array<float, 16> m{el.size[0], 0, 0, 0, 0, el.size[1], 0, 0, 0, 0, el.size[2], 0, 0, 0, 0, 1};
+    for (int axis = 0; axis < 3; ++axis) {
+        if (el.turn[std::size_t(axis)] == 0.0F)
+            continue;
+        std::array<float, 16> t;
+        row_matrix_mul(m.data(), turn(axis, el.turn[std::size_t(axis)]).data(), t.data());
+        m = t;
+    }
+    for (int k = 0; k < 3; ++k)
+        m[std::size_t(12 + k)] += el.place[std::size_t(k)];
+    if (el.bone >= 0 && el.bone < kNoBone && std::size_t(el.bone) < e.pose.size()) {
+        std::array<float, 16> bone;
+        std::copy(e.pose[std::size_t(el.bone)].begin(), e.pose[std::size_t(el.bone)].end(), bone.begin());
+        static constexpr float flip[3] = {1.0F, -1.0F, 1.0F}; // y down <-> y up
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 3; ++c)
+                bone[std::size_t(r * 4 + c)] *= (r < 3 ? flip[r] : 1.0F) * flip[c];
+        std::array<float, 16> t;
+        row_matrix_mul(m.data(), bone.data(), t.data());
+        m = t;
+    }
+    kh2::EffectMatrix out;
+    std::copy(m.begin(), m.end(), out.begin());
+    return out;
+}
+
+// Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
+// at its element's place, its sound started when its time comes; the last tick's drawn at the camera now; those over
+// let go. Where it is drawn gives its sounds' pan.
 void draw_effects(Enemy &e, const float view[16], const float projection[16])
 {
+    const float across = std::sqrt(view[12] * view[12] + view[14] * view[14]);
+    e.pan = across > 1e-6F && std::isfinite(across) ? std::clamp(view[12] / across, -1.0F, 1.0F) : 0.0F;
     if (e.fx.empty() || !e.kind->fx_pages)
         return;
     const unsigned now = khdays_link_frame();
@@ -744,20 +904,26 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
     e.fx_frame = now;
     float units = 1.0F;
     const kh2::EffectCamera cam = effect_camera(view, projection, units);
-    for (std::size_t i = 0; i < e.fx.size(); ++i) {
+    kh2::EffectCamera placed = cam;
+    for (Enemy::Running &r : e.fx) {
+        placed.world = element_world(e, *r.element);
         for (unsigned t = 0; t < ticks; ++t) {
             const bool last = t + 1 == ticks;
             if (last)
-                e.fx_draws[i].clear();
-            e.fx[i]->tick(cam, last ? &e.fx_draws[i] : nullptr);
+                r.draws.clear();
+            if (!r.sounded && r.age >= r.element->start) {
+                r.sounded = true;
+                if (r.element->sound > 0)
+                    sound(e, r.element->sound);
+            }
+            r.fx->tick(placed, last ? &r.draws : nullptr);
+            r.age += 1.0F;
         }
-        khdays::kh2_fx::submit(e.fx_draws[i], units, *e.kind->fx_pages);
+        khdays::kh2_fx::submit(r.draws, units, *e.kind->fx_pages);
     }
     for (std::size_t i = e.fx.size(); i-- > 0;)
-        if (e.fx[i]->done()) {
+        if (e.fx[i].fx->done())
             e.fx.erase(e.fx.begin() + std::ptrdiff_t(i));
-            e.fx_draws.erase(e.fx_draws.begin() + std::ptrdiff_t(i));
-        }
 }
 
 // How the model whose draw begins is placed, from the matrices the game left (khdays_g3d.h): three ways are seen --
@@ -936,6 +1102,7 @@ extern "C" void khdays_kh2_enemies_gone(void *actor)
 
 extern "C" void khdays_kh2_enemies_area_left(void)
 {
+    khdays_sound_shots_stop();
     enemies.clear();
     ghosts.clear();
     by_actor.clear();
@@ -967,7 +1134,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         }
     }
     if (e == nullptr) {
-        if (!s.standing || !s.own || !usable())
+        if (!s.standing || !s.own)
             return;
         KindFiles *k = files_of(kind->second);
         if (k == nullptr) {
@@ -992,6 +1159,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         attack(*e, s);
     }
     to_days(place, e->place);
+    e->radius = s.radius;
     khdays_kh2_shell_place(days, e->place, e->actor->yaw());
 }
 
@@ -1142,10 +1310,47 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     return 1;
 }
 
+// The Days sounds a stand-in makes of its own (its class's MON_ archive, the enemies' common appearing and defeat:
+// docs/RUNTIME_MAP.md section 37): those KH2's own sounds take the place of
+bool stand_ins_own(const char *identifier)
+{
+    return std::strncmp(identifier, "seqarc/MON_", 11) == 0 ||
+           std::strncmp(identifier, "seqarc/COMMON_SYS/se_all_enemy_", 31) == 0;
+}
+
+extern "C" int khdays_kh2_enemies_quiet(unsigned archive, unsigned entry, const void *place)
+{
+    if ((enemies.empty() && ghosts.empty()) || place == nullptr || khdays_sound_bridge_archive() == nullptr)
+        return 0;
+    char identifier[160];
+    if (!khdays_sound_archive_identifier(khdays_sound_bridge_archive(), KHDAYS_SOUND_SEQUENCE_ARCHIVE_ENTRY,
+                                         int(archive), int(entry), identifier, int(sizeof(identifier))) ||
+        !stand_ins_own(identifier))
+        return 0;
+    std::int32_t fixed[3];
+    std::memcpy(fixed, place, sizeof(fixed));
+    const float at[3] = {float(fixed[0]) / 4096.0F, float(fixed[1]) / 4096.0F, float(fixed[2]) / 4096.0F};
+    const Enemy *nearest = nullptr;
+    float best = 0.0F;
+    const auto look = [&](const Enemy &e) {
+        const float d = std::hypot(at[0] - e.place[0], at[2] - e.place[2]);
+        if (nearest == nullptr || d < best)
+            nearest = &e, best = d;
+    };
+    for (const auto &[days, e] : enemies)
+        look(*e);
+    for (const auto &g : ghosts)
+        look(*g);
+    const bool quiet = nearest != nullptr && best <= std::max(kNearEnough, nearest->radius); // its body's
+    if (tracing())
+        khdays_log("kh2 enemies: %s at %.3f %.3f %.3f, %.3f from %08x: %s", identifier, double(at[0]), double(at[1]),
+                   double(at[2]), double(best), nearest != nullptr ? nearest->days : 0u,
+                   quiet ? "not heard (KH2's own sounds play)" : "heard");
+    return quiet ? 1 : 0;
+}
+
 extern "C" int khdays_kh2_enemies_ready(const char *name)
 {
-    if (khdays_hud_setting(KHDAYS_OPT_KH2_ENEMIES) == 0)
-        return 0;
     Mod &m = mod();
     const Kind *k = m.folder.empty() ? nullptr : find_kind(m.kinds, name);
     return k != nullptr && k->covered;

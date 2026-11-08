@@ -580,7 +580,7 @@ void add_world(ai::Calls &calls)
         a[0] = give_vec(m, "shared", v);
     });
     calls.set(1, 131, [](ai::Machine &, std::span<ai::Value>) {});
-    // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its group, number and how
+    // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const std::uint32_t h = x->world != nullptr ? x->world->effect(*x, std::int32_t(a[1].bits),
