@@ -306,13 +306,19 @@ enemigos"); what is built is under "Played" at the end of this section.
 6. **The 12 calls** answered as read above (1:157 starting the named effect through the port's effect player).
 
 **Played** (2026-11-08, `kh2:B_HE020x1` at level 99, Roxas attacking where he stands, 200 seconds): it appears, opens
-with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `mode_battle` 75 times, `high_attack`
-73, `atk_bite_press` 32, `back_turn` 25, `bite_select` 16, `atk_darkbreath` (its effect drawn) -- taking 58 hits. What
-it needed, all as KH2 does it:
+with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `mode_battle`, `high_attack`,
+`atk_bite_press`, `back_turn`, `bite_select`, `atk_darkbreath` (its effect drawn) -- taking Roxas's hits and giving
+18. What it needed, all as KH2 does it:
 
 - **Its 12 calls** (above) and **`2:9`'s health record**, Days's health kept in it each frame (`World::health`).
-- **Its size**: every KH2 enemy's Days collision sphere is its KH2 body cylinder's radius (kind 0x300), sitting on the
-  ground: Cerberus's 5.5 m, the Soldier's 0.9 m (`khdays_kh2_shell_size`, + 0x70 and + 0x64).
+- **Its size**: every KH2 enemy's Days collision sphere is its largest body shape's radius (kind 1: a cylinder on no
+  bone -- Sora's 35 cm, the Soldier's 45 -- or spheres on its bones, Cerberus's torso's 2.4 m), sitting on the ground
+  (`khdays_kh2_shell_size`, + 0x70 and + 0x64); a kind without one keeps its stand-in's. Kind 0x300 is not the body
+  (90 cm round for every small enemy, 5.5 m Cerberus's; Sora has none): sized by it, Cerberus kept Roxas out of its
+  paws' reach.
+- **The player as KH2's attacks find him**: a body from his feet to 1.45 m (Sora's shapes: his cylinder 85 cm high,
+  spheres on his bones up to his head), his Days radius round -- Days's own sphere (half a metre, on the ground) left
+  the attacks KH2 aims at a standing Sora's chest and head above Roxas (Cerberus's bites 2.4 m up and more).
 - **Its lock-on mark** at its aim point (its first 0x307 shape, 4 m up over its middle): a join in
   `Ov022_UpdateSelectionMarker` (`khdays_kh2_enemies_lock_point`) for every KH2 enemy.
 - **The motions' state ranges** as + 0x18c's bits while the motion's time lies in them and it plays (OpenKH's ANB
@@ -328,10 +334,9 @@ it needed, all as KH2 does it:
   cleared, `revenge` entered, trigger 6 -- with no motion and no hold (`FUN_140411060`: the controller plays nothing
   for a slot its set lacks). That ends its opening leap: its leap's state never ends of itself (it yields forever
   after landing); KH2's own first hit ends it.
-- **Not yet**: its bites and paws reach Roxas seldom (3 hits): its heads bite 2.4 m up and more in `high_attack`,
-  above Days's player sphere (half a metre round, on the ground) -- which of KH2's player's shapes its attacks are
-  tried against (Sora's: a cylinder 85 high and 35 round, kind 1; 70 by 55, kind 0x303) is **not read yet**. Its
-  reaction commands (where KH2 offers them, the player's side), its name on the enemy HUD (the stand-in's shows).
+- **Its attacks reach Roxas**: 18 hits in the 200 seconds (its paws and bites), with the two above.
+- **Not yet**: its reaction commands (where KH2 offers them, the player's side), its name on the enemy HUD (the
+  stand-in's shows).
 
 ## Triggers
 

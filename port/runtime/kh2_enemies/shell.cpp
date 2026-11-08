@@ -717,18 +717,21 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
                            the_field().on_screen(*raw->actor) ? ", on the screen" : "");
             }
         };
-    // its body's size, KH2's: its cylinder (kind 0x300, on no bone: its radius, its height) the Days enemy's
-    // collision sphere, that round, sitting on the ground (Cerberus's 5.5 m, not the stand-in's)
+    // its body's size, KH2's: its body shapes (kind 1 -- Sora's a cylinder 35 round, the Soldier's 45; Cerberus's
+    // spheres on its torso and legs, the torso's 2.4 m), the largest one's radius the Days enemy's collision sphere,
+    // sitting on the ground: what keeps the players off it and what Days's hits find. Kind 0x300 (90 round for the
+    // small ones, 5.5 m Cerberus's) is not its body: sized by it, Cerberus kept Roxas out of its paws' reach.
+    float body = 0.0F;
     for (const Shape &sh : k.shapes)
-        if (sh.kind == 0x300 && sh.bone == kNoBone && sh.radius > 0.0F) {
-            float was_radius = 0.0F, was_centre = 0.0F;
-            const float radius = sh.radius / kKh2PerDays;
-            khdays_kh2_shell_size(days, radius, radius, &was_radius, &was_centre);
-            if (tracing())
-                khdays_log("kh2 enemies: %08x's body %.2f round (its stand-in's %.2f, its centre %.2f up)", days,
-                           double(radius), double(was_radius), double(was_centre));
-            break;
-        }
+        if (sh.kind == 0x0001)
+            body = std::max(body, sh.radius / kKh2PerDays);
+    if (body > 0.0F) {
+        float was_radius = 0.0F, was_centre = 0.0F;
+        khdays_kh2_shell_size(days, body, body, &was_radius, &was_centre);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x's body %.2f round (its stand-in's %.2f, its centre %.2f up)", days,
+                       double(body), double(was_radius), double(was_centre));
+    }
     a.start();
     if (tracing())
         khdays_log("kh2 enemies: %08x set going as %s, attack slot %d", days, k.name.c_str(), raw->slot);
@@ -794,8 +797,14 @@ void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &a
     out[2] = s.place[2] + t[2] / kKh2PerDays;
 }
 
+// KH2's player as its enemies' attacks find him: Sora's shapes (P_EX100's: a cylinder 85 cm high, 35 round, and
+// spheres on his bones up to his head) stand about 1.45 m high. Days's player's own sphere (half a metre round, on
+// the ground) left the attacks KH2 aims at a standing Sora's chest and head above him (Cerberus's bites).
+constexpr float kPlayerHeight = 1.45F;
+
 // The current motion's attacks (its ranges 10 and 33: an atkp entry and a collision group) that cover its time: each
-// of the group's attack spheres hits the players it reaches, each player once a range (KH2's hit's own "once")
+// of the group's attack spheres hits the players it reaches -- each one a body from his feet to KH2's player's
+// height, his Days radius round -- each player once a range (KH2's hit's own "once")
 void attack(Enemy &e, const KhdaysKh2Shell &s)
 {
     const Actor &a = *e.actor;
@@ -827,7 +836,9 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
             const float radius = sh.radius / kKh2PerDays;
             for (int i = 0; i < n && i < int(list.size()); ++i) {
                 const KhdaysKh2Player &p = list[std::size_t(i)];
-                const float d[3] = {p.place[0] - c[0], p.place[1] + p.radius - c[1], p.place[2] - c[2]};
+                // the nearest point of his body's middle line (from his feet, a radius up, to his top, a radius down)
+                const float low = p.place[1] + p.radius, high = std::max(low, p.place[1] + kPlayerHeight - p.radius);
+                const float d[3] = {p.place[0] - c[0], std::clamp(c[1], low, high) - c[1], p.place[2] - c[2]};
                 const float dist = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
                 if (nearest < 0.0F || dist - radius - p.radius < nearest - reach) {
                     nearest = dist;
