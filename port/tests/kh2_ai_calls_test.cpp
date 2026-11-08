@@ -342,12 +342,82 @@ void test_motions_and_moving()
     CHECK(!actor.jump.on && call(rig, actor, 1, 60, {self}).i() == 0);
 }
 
+// The calls the other enemies need (US2): two ways' turn apart, a vector scaled, KH2's running number, a jump's
+// speed for a height, off the ground (1:57) through a jump, a jump of the actor's own (1:156) to its top and back,
+// a motion at its end, the actor's way bytes
+void test_more_enemies_calls()
+{
+    Rig rig;
+    MadeUpMotions motions;
+    MadeUpWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "made_up");
+    actor.motions = &motions;
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    const float pi = 3.14159265F;
+
+    // 0:21: from +z to +x is a quarter turn; from +x to -z (through the back) wraps into (-pi, pi]
+    const std::uint32_t z = vec(rig.memory, 0.0F, 0.0F, 1.0F), x = vec(rig.memory, 1.0F, 0.0F, 0.0F);
+    CHECK(std::fabs(call(rig, actor, 0, 21, {adr(z), adr(x)}).f() - pi / 2.0F) < 1e-5F);
+    const std::uint32_t back = vec(rig.memory, -0.01F, 0.0F, -1.0F);
+    const float wrapped = call(rig, actor, 0, 21, {adr(x), adr(back)}).f();
+    CHECK(wrapped > -pi && wrapped <= pi && std::fabs(std::fabs(wrapped) - (pi / 2.0F + 0.01F)) < 1e-3F);
+    // 0:35: scaled where it lies, all four
+    const std::uint32_t v = vec(rig.memory, 1.0F, -2.0F, 3.0F, 4.0F);
+    call(rig, actor, 0, 35, {adr(v), f(0.5F)});
+    float got[4];
+    rig.memory.read(v, got, sizeof got);
+    CHECK(got[0] == 0.5F && got[1] == -1.0F && got[2] == 1.5F && got[3] == 2.0F);
+    // 2:67: one more each time
+    const int n1 = call(rig, actor, 2, 67, {}).i(), n2 = call(rig, actor, 2, 67, {}).i();
+    CHECK(n2 == n1 + 1);
+    // 1:100: the speed to rise 100 under KH2's pull, that rise's own
+    const float speed = call(rig, actor, 1, 100, {f(-100.0F)}).f();
+    CHECK(std::fabs(speed - std::sqrt(200.0F / 0.408163F)) < 1e-3F);
+    // 1:57 on the ground, then in a jump until it lands
+    CHECK(call(rig, actor, 1, 57, {self}).i() == 0);
+    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, -100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(0)});
+    CHECK(call(rig, actor, 1, 57, {self}).i() == 1);
+    CHECK(actor.motion.after == -1 && actor.motion.landing == 5);
+    actor.land();
+    CHECK(call(rig, actor, 1, 57, {self}).i() == 0);
+    // 1:156: up 150 (its y) in 20 ticks, along +x at 3 a tick (its w), motion 7 then 8 and 9 after
+    call(rig, actor, 1, 156,
+         {self, adr(vec(rig.memory, 4.0F, 150.0F, 0.0F, 3.0F)), f(20.0F), f(0.95F), i(7), f(0.0F), i(1)});
+    CHECK(actor.jump.on && actor.motion.id == 7 && actor.motion.after == 8 && actor.motion.landing == 9);
+    CHECK(call(rig, actor, 1, 57, {self}).i() == 1);
+    float y = 0.0F, top = 0.0F, along = 0.0F;
+    for (int k = 0; k < 20; ++k) {
+        const kh::Vec3 t = actor.step(1.0F);
+        y += t[1];
+        along += t[0];
+        top = std::min(top, y);
+    }
+    CHECK(top < -145.0F && top > -155.0F); // its top 150 up (KH2's y down) after its 20 ticks
+    CHECK(std::fabs(along - 60.0F) < 1.0F);
+    // 1:63: a motion of 30 ticks (APPEAR, played once) at its end, no blend left
+    call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
+    CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
+    for (int k = 0; k < 40; ++k)
+        actor.step(1.0F);
+    CHECK(call(rig, actor, 1, 63, {self}).i() == 1);
+    // 1:150 / 1:151: bit n - 1 of the bytes + 0x2ac / + 0x2ad
+    CHECK(call(rig, actor, 1, 150, {self, i(1)}).i() == 0);
+    actor.set_u32(0x2ac, 0x0401);
+    CHECK(call(rig, actor, 1, 150, {self, i(1)}).i() == 1 && call(rig, actor, 1, 150, {self, i(2)}).i() == 0);
+    CHECK(call(rig, actor, 1, 151, {self, i(3)}).i() == 1);
+}
+
 int main()
 {
     test_vectors_and_chance();
     test_states();
     test_kinds();
     test_motions_and_moving();
+    test_more_enemies_calls();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

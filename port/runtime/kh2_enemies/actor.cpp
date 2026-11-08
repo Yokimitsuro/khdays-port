@@ -21,9 +21,6 @@ constexpr std::uint32_t kStates = 128;      // a state table's entries (FUN_1403
 constexpr std::uint32_t kStateSize = 0x20;
 constexpr std::size_t kQueue = 15;          // the ring of 16 keeps one free (FUN_1403cab00)
 
-// KH2's fall a tick, a tick: 2 / 0.408163 is 2 g in FUN_1403cbb00's sqrt (DAT_140623c60 -2.0, DAT_1405ce184)
-constexpr float kGravity = 1.0F / 0.408163F;
-
 ai::Thread *find_thread(ai::Thread *t, std::uint32_t id)
 {
     if (t == nullptr)
@@ -367,8 +364,8 @@ Vec3 Actor::step(float ticks)
     if (jump.on) {
         for (int i = 0; i < 3; ++i)
             travel[i] += jump.along[i] * ticks;
-        travel[1] += jump.up * ticks + 0.5F * kGravity * ticks * ticks;
-        jump.up += kGravity * ticks;
+        travel[1] += jump.up * ticks + 0.5F * jump.gravity * ticks * ticks;
+        jump.up += jump.gravity * ticks;
         set_bits(field::kFlags, bit::kInAir, true);
     }
     // the travels KH2 keeps (+ 0xa28 this tick's, + 0xa38 the one before), a tick's worth

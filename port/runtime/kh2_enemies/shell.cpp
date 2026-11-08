@@ -36,6 +36,7 @@ extern "C" {
 #include "../core/window.h"
 #include "../missions/missions.h"
 #include "../missions/registry.h"
+#include "../scripts/enemies_link.h"
 #include "../mods/textures.h"
 #include "../sound/sound_bridge.h"
 #include "../sound/sound_shots.h"
@@ -59,14 +60,20 @@ constexpr int kNoBone = 0x4000;
 // how long an enemy's end may take before its Days defeat goes on without it (a script that never fades out): ticks
 constexpr unsigned kLongestEnd = 60u * 10u;
 
+// KHDAYS_TRACE_KH2_ENEMIES: 1 what each enemy does; 2 also where each of its script's threads stands, once a second
+int trace_level()
+{
+    static int level = -1;
+    if (level < 0) {
+        const char *v = std::getenv("KHDAYS_TRACE_KH2_ENEMIES");
+        level = v != nullptr && *v >= '0' && *v <= '9' ? *v - '0' : v != nullptr && *v != '\0' ? 1 : 0;
+    }
+    return level;
+}
+
 bool tracing()
 {
-    static int on = -1;
-    if (on < 0) {
-        const char *v = std::getenv("KHDAYS_TRACE_KH2_ENEMIES");
-        on = v != nullptr && *v != '\0' && *v != '0';
-    }
-    return on != 0;
+    return trace_level() > 0;
 }
 
 Vec3 to_kh2(const float d[3])
@@ -432,6 +439,10 @@ struct Enemy final {
     bool down = false; // released and no longer standing: made again if its Days enemy is set going once more
     unsigned end_ticks = 0;
     float fall = 0.0F;      // its fall's speed off the ground (KH2's units a tick)
+    // the ground under it, KH2's y (down), from the last frame Days found one: a jump or a fall stops there (Days's
+    // collision lets a fast one through: the Wight Knight's 5 m leap fell on under the room)
+    float floor = 0.0F;
+    bool floor_known = false;
     float radius = 0.0F;    // its Days enemy's collision sphere's, last read (Days's units)
     int attack_motion = -1; // the motion its attacks' hits below were made in, and its time then
     float attack_time = 0.0F;
@@ -458,9 +469,26 @@ struct Enemy final {
     float pure[16] = {};
     bool seen = false;
     unsigned ghost_frame = 0;
+    unsigned drawn_frame = ~0u; // the frame its KH2 model was last drawn in: once a frame, whatever matched it
+    unsigned ticks_traced = 0;  // KHDAYS_TRACE_KH2_ENEMIES=2: its ticks, its threads told once a second
 };
 
 std::map<unsigned, std::string> kind_of;            // a Days enemy made from a KH2 row -> its KH2 kind
+std::map<unsigned, int> made_row;                   // every Days enemy made in this area -> its row
+std::map<int, std::string> row_kinds;               // the rows' KH2 enemies ("" none), asked once a row
+bool kh2_rows = false;                              // whether this area made any actor for a KH2 row
+
+// The KH2 enemy a mission's row places ("" none): khdays_missions_kh2_enemy makes the mission's plan each time
+const std::string &row_kind(int row)
+{
+    auto it = row_kinds.find(row);
+    if (it == row_kinds.end()) {
+        char name[128];
+        it = row_kinds.emplace(row, row >= 0 && khdays_missions_kh2_enemy(row, name, int(sizeof(name))) ? name : "")
+                 .first;
+    }
+    return it->second;
+}
 std::map<unsigned, std::unique_ptr<Enemy>> enemies; // those set going, by their Days actor
 std::map<const Actor *, Enemy *> by_actor;
 std::map<unsigned, std::unique_ptr<Object>> players; // each of Days's players as KH2's scripts see them
@@ -572,7 +600,8 @@ void row_matrix_mul(const float a[16], const float b[16], float out[16]);
 void inverse_affine(const float m[16], float out[16]);
 
 // A motion's pose at a time with its root's travel taken out (MotionPrototype0::getPosition's inverse first): the
-// actor's place carries that travel (Actor::step), as KH2's actor does (model_kh2_motions.cpp takes it out the same way)
+// actor's place carries that travel (Actor::step), as KH2's actor does (model_kh2_motions.cpp takes it out the same
+// way)
 std::vector<kh2::Mat4> pose_at(kh2::MotionPlayer &player, const kh2::Motion &motion, float ticks)
 {
     const kh2::Mat4 identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -676,7 +705,8 @@ void sound(const Enemy &e, int id)
     const auto it = e.kind->sounds.find(id);
     const bool heard = it != e.kind->sounds.end() && khdays_sound_shot_start(it->second, 1.0F, e.pan) != 0;
     if (tracing())
-        khdays_log("kh2 enemies: %08x's sound %d%s", e.days, id, heard ? "" : " (not heard: the mod has no kh2/se file)");
+        khdays_log("kh2 enemies: %08x's sound %d%s", e.days, id,
+                   heard ? "" : " (not heard: the mod has no kh2/se file)");
 }
 
 // Element `number` of the kind's effects started on the enemy
@@ -692,8 +722,8 @@ void cast(Enemy &e, int number)
         r.element = &it->second;
         e.fx.push_back(std::move(r));
         if (tracing())
-            khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days, number,
-                       it->second.effect, it->second.emitter, it->second.bone, it->second.sound);
+            khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days,
+                       number, it->second.effect, it->second.emitter, it->second.bone, it->second.sound);
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: %s's effect %d cannot be played (%s)", k.name.c_str(), number, x.what());
     }
@@ -719,19 +749,42 @@ void cues(Enemy &e)
     }
 }
 
+// Where each of a script's threads stands (its next code word), its children after it
+void threads_of(const ai::Thread &t, std::string &out)
+{
+    char at[24];
+    std::snprintf(at, sizeof(at), " %#x", t.pc);
+    out += at;
+    if (!t.children.empty()) {
+        out += " (";
+        for (const auto &c : t.children)
+            threads_of(*c, out);
+        out += " )";
+    }
+}
+
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
 {
     Actor &a = *e.actor;
+    if (trace_level() >= 2 && ++e.ticks_traced % 60 == 0 && a.machine().main_thread() != nullptr) {
+        std::string at;
+        threads_of(*a.machine().main_thread(), at);
+        khdays_log("kh2 enemies: %08x's threads at%s; motion %d at %.1f%s%s; %.3f above the ground, %.1f its fall", e.days,
+                   at.c_str(), a.motion.id, double(a.motion.time), a.jump.on ? ", in a jump" : "",
+                   e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall));
+    }
     if (!e.reacting)
         a.tick();
     Vec3 travel = a.step(1.0F);
     cues(e);
     if (a.jump.on) {
-        if (a.jump.up > 0.0F && s.above >= 0.0F && s.above * kKh2PerDays <= a.jump.up)
+        if (a.jump.up > 0.0F && e.floor_known && place[1] + travel[1] >= e.floor) {
+            travel[1] = e.floor - place[1]; // on it, not through it
             a.land();
-    } else if (s.above > 0.01F) {
+        }
+    } else if (e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays) {
         e.fall += kGravity;
-        travel[1] += std::min(e.fall, s.above * kKh2PerDays);
+        travel[1] += std::min(e.fall, e.floor - place[1]);
         a.set_bits(field::kFlags, bit::kInAir, true);
     } else if (e.fall > 0.0F) {
         e.fall = 0.0F;
@@ -1088,8 +1141,10 @@ extern "C" void khdays_kh2_enemies_made(int row, void *actor)
     char name[128];
     forget(days);
     kind_of.erase(days);
+    made_row[days] = row;
     if (!khdays_missions_kh2_enemy(row, name, int(sizeof(name))))
         return;
+    kh2_rows = true;
     kind_of[days] = name;
     if (tracing())
         khdays_log("kh2 enemies: %08x made from row %d, a KH2 %s's stand-in", days, row, name);
@@ -1103,6 +1158,9 @@ extern "C" void khdays_kh2_enemies_gone(void *actor)
 extern "C" void khdays_kh2_enemies_area_left(void)
 {
     khdays_sound_shots_stop();
+    made_row.clear();
+    row_kinds.clear();
+    kh2_rows = false;
     enemies.clear();
     ghosts.clear();
     by_actor.clear();
@@ -1153,6 +1211,10 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     const int ticks = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
     Vec3 place = to_kh2(s.place);
+    if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it)
+        e->floor = place[1] + s.above * kKh2PerDays;
+        e->floor_known = true;
+    }
     for (int t = 0; t < ticks; ++t) {
         one_tick(*e, s, place);
         pose(*e);
@@ -1284,6 +1346,12 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     }
     if (e == nullptr)
         return 0;
+    // its stand-in's other model in the same file (Ms/04.p's at + 0xca00), or another shell's of its class standing
+    // with it: left out, its KH2 model and effects drawn once a frame
+    const unsigned frame = khdays_link_frame();
+    if (e->drawn_frame == frame)
+        return 1;
+    e->drawn_frame = frame;
     if (e->pose.empty())
         pose(*e);
     // its model to the world (row vectors: its axes turned by its yaw, at its place), in the draw's way
@@ -1347,6 +1415,19 @@ extern "C" int khdays_kh2_enemies_quiet(unsigned archive, unsigned entry, const 
                    double(at[2]), double(best), nearest != nullptr ? nearest->days : 0u,
                    quiet ? "not heard (KH2's own sounds play)" : "heard");
     return quiet ? 1 : 0;
+}
+
+extern "C" int khdays_kh2_enemies_fits(unsigned spawner, int slot, unsigned actor)
+{
+    if (!kh2_rows)
+        return 1; // no KH2 enemy in this area: Days's own choice
+    const auto made = made_row.find(actor);
+    const std::string &has = row_kind(made != made_row.end() ? made->second : -1);
+    const std::string &want = row_kind(khdays_enemies_slot_row(spawner, slot));
+    if (tracing() && has != want)
+        khdays_log("kh2 enemies: %08x (%s) left for spawner %08x's slot %d (%s)", actor,
+                   has.empty() ? "Days's" : has.c_str(), spawner, slot, want.empty() ? "Days's" : want.c_str());
+    return has == want ? 1 : 0;
 }
 
 extern "C" int khdays_kh2_enemies_ready(const char *name)

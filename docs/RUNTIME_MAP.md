@@ -5909,3 +5909,12 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
   0.55 above its feet, the x and z within 0.25 of its srt's, a hit's at the hit), the player's weapon's
   (`WEP_ROX26/se_rox_weap_hit`) at the same moment elsewhere: the port's join there keeps the stand-in's own quiet at a
   KH2 enemy's place (`khdays_kh2_enemies_quiet`).
+- **A spawner's actor** (`Ov107_Spawner_FindFreeActor`): any idle one of the slot's kinds entry's class (+ 0x19c,
+  + 0x19d, + 0x19e against the entry's bytes), whatever row it was made from; `Ov002_UpdateSlotLookup` gives every
+  placed row its entry through `Ov107_AllocSortedEntry`, which rows of one class and level share. The slot's owner
+  tag (`Ov002_CreateSpawner`: the spawner's place among the field's objects << 8 | the group in its record, + 4 of
+  the 12-byte slot, copied to the actor's + 0x2d0) names the row: the field's objects + 0x44 (0x18 bytes each, + 0x14
+  the s8 record), the records at the enemy table + 8 (+ 4 their groups, 4 bytes each, the row first).
+- **The ground under it** (+ 0x13c the distance under its sphere's centre, + 0x140 whether found): a KH2 leap of
+  5 m came down 0.5 m and more a tick and went through the floor, Days's collision not stopping it, the ground then
+  not found under it.

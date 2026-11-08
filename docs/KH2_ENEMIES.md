@@ -20,7 +20,9 @@ read of KH2, what the port does with it, and what is not known yet.
   HD pictures and KH2's resident effect pictures (`effect/texcommon.dpd`), decodes the sounds each kind plays into
   `kh2/se/<id>.wav` (below, "Sounds"), reads the shapes of KH2's calls from KH2's executable (`kh2/calls.txt`) and
   lists the kinds with whether the port answers every call their scripts make (`kh2_enemies.txt`: the Soldier
-  `M_EX010` and the Shadow `M_EX020` both covered). Nothing of the games is in the repository or the installer.
+  `M_EX010`, the Shadow `M_EX020`, the Fiery Globe `M_AL020_FIRE`, the Icy Cube `M_AL020_ICEE`, the Rabid Dog
+  `M_EX510`, the Strafer `M_EX610` and the Wight Knight `M_EX200`, all covered; "Coverage" below). Nothing of the
+  games is in the repository or the installer.
 - **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
   the mod (or with one that does not cover the kind) gets the class written after the name in its place; without a
   class the mission is left out for that player.
@@ -135,7 +137,7 @@ scripts take as "nothing there", named in the table.
 | 2:23, 1:121, 1:120, 1:131 | its target slot (+ 0xbf8): made "itself" (2) while empty; a target chosen for an owner by a mode (`FUN_1403be2b0`: 2 the owner, else the player); the target's place; the slot as KH2's pool keeps it | the nearest player |
 | 2:88 | the last to hit it (+ 0xd38), the player's actor when none | the player nearest at the hit |
 | 1:87 | an effect on the actor (`FUN_1403b6670` -> `FUN_1402c6b30` on + 0x80): the element of that number in its effects, and two values passed on to the effect (**not known**) | that element started: the "dead" state's `1:87(2, 1, 0)` the Soldier's element 2 and the Shadow's (its dying smoke and sound), the leaving's `(1, 1, 0)` element 1 |
-| 1:57 | the class's byte + 0x0c bit 0 (a kind that moves by its speed: the Soldier walks by its motions) | 0 |
+| 1:57 | bit 0 of the actor's class's byte + 0x0c (the class at + 0x0c; KH2's classes at 0x140750d30, 16 bytes each: class 1 off the ground -- a jump, `FUN_140409ad0`, or a fall, `FUN_14053b920` -- has it, class 0 on the ground, the landing's `FUN_1403cb940`, not): the scripts wait for it after a jump and act on it in the air (US1 read it as the class's own, always 0: a jump's wait never ended) | whether it is off the ground |
 | 1:124, 1:56 | its entry's flag; `FUN_1403ba4a0`'s value | 0 |
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
 | 1:39 | its battle number n (+ 0x9f4 + 4 n; the Shadow tests 99) | 0 |
@@ -147,6 +149,44 @@ scripts take as "nothing there", named in the table.
 | 1:128, 1:133, 1:134 | the object's class's virtuals + 0x20, + 0x80, + 0x88 (its native code) | nothing |
 | 2:9 | the actor's + 0x5c0 made from a number (`FUN_140411350`) | nothing |
 | 2:20 | a routine of the script started as a thread of its own (`FUN_1403c5ec0`) | as KH2 |
+
+The calls the other enemies need (US2, "Coverage" below), read the same way:
+
+| Call | Read (KH2FM.exe) | The port |
+| --- | --- | --- |
+| 0:21 | how far one vector's way along the ground is turned from another's: `atan2(x, z)` of each, the difference into (-pi, pi] (`FUN_14041d1b0`, `FUN_1403b6f20`: pi and 2 pi at 0x140623b78, 0x140623ba4) | as KH2 |
+| 0:35 | a vector scaled where it lies, its four components (`FUN_14013fcc0`) | as KH2 |
+| 2:67 | KH2's next running number (`FUN_1403cf490`: `DAT_142a24afc`, 0 at the start, 0x100 again past 0x10000000) | as KH2 |
+| 1:63 | its motion at its end with no blend left (`FUN_1403c7e70` on + 0x158: the time + 0x44 against the motion's length, the blend + 0x48 run out) | as KH2 |
+| 1:100 | the speed a jump needs to rise a height: `sqrt(abs(2 h / 0.408163))` (`FUN_1403b73f0`) | as KH2 |
+| 1:156 | a jump of its own (`FUN_1403cbec0`): a vector -- its x, z the way (made one long, times its w), its y how high -- the ticks to its top (its pull + 0x10c `2 y / t^2`, its rise the pull times t), a value at + 0x108 (**not known**), a motion and its blend, and with the flag the two after it as 1:55's | as KH2 (the jump's own pull) |
+| 1:150, 1:151 | bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad: set by the native code that places it (the Strafer's and the Magnum Loader's ways of attacking) | the bytes, 0 in Days's field |
+| 2:45 | an object's entry number (its + 0x20 record's u16 at + 2): the Wight Knight asks it of a message's sender (492, 1149, 568) | 0: no KH2 object sends one |
+| 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
+| 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
+| 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`) | nothing (native code) |
+| 1:278 | n things made at the actor (`FUN_14042a980`: n times `FUN_1403dc950` on the manager at `DAT_142af8b48`) -- **likely its prizes** | nothing: Days gives the stand-in's |
+
+## Coverage
+
+`tools/research/kh2_ai.py --coverage` (each kind's script, its state routines walked, against
+`khdays-native --kh2-ai-calls`), over the 1.5+2.5's `obj/M_*` (names from OpenKH's object list):
+
+- **Covered**: the Soldier `M_EX010` and the Shadow `M_EX020` (and their `_NM`, `_TR`, `_WI`, `_RAW` variants), the
+  Fiery Globe `M_AL020_FIRE`, the Icy Cube `M_AL020_ICEE`, the Rabid Dog `M_EX510`, the Strafer `M_EX610`, the
+  Wight Knight `M_EX200` -- the mod's kinds (`tools/mods/kh2_enemies.py`). Played in a test mission of their own
+  (the `missions_waves` walk's route, 2026-11-08): each appears with its effect and sounds, runs its script's states
+  (the Rabid Dog's howl, the Wight Knight's leap, the Strafer's slides, the flyers' rises and leaving), is hit and
+  defeated with its end. **Not seen yet**: their attacks reaching Roxas (none hit in those runs: the scripts chose
+  other moves, the Wight Knight's leap came down on its own place) -- the next to look at, kind by kind.
+- **Next**: the Magnum Loader `M_EX600` (0:21, 1:29 a motion played on another object, 1:112 an object made and
+  attached, 1:151: its children), the white Magnum Loader `M_EX600_LC` (1:222, 1:268, 1:269), the Assault Rider
+  `M_EX570`, the Cannon Gun `M_EX650`, the Creeper `M_EX880`, the Nightwalker `M_EX580`, the Dusk `M_EX990` (6-7
+  calls each); then the rest, 8 calls and more each.
+
+`KHDAYS_TRACE_KH2_ENEMIES=1` says what each enemy does (its states, effects, sounds, hits, the stand-in's sounds
+kept quiet); `=2` also, once a second, where each of its script's threads stands (its next code word, as
+`tools/research/kh2_ai.py` lists the script), its motion, whether it jumps, its height over the ground and its fall.
 
 ## Triggers
 
@@ -264,6 +304,15 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   reaction plays (the queue cleared, + 0x18c bit 9 set, its script waiting) unless a locked state runs; its HP gone,
   the state `dead` is entered (unlocked: the game's own entry). Days defeats it at once and reuses it for the next
   wave: the KH2 enemy's end goes on where it was, drawn as the 3D list closes, until it has faded out.
+- **Taken by its wave** (`Ov107_Spawner_FindFreeActor`, joined): a wave's spawner takes an idle actor whose class
+  is its row's -- rows of one stand-in class share the spawners' kinds entry (`Ov107_AllocSortedEntry`), so Days alone
+  took any of the class's actors, and a defeated Rabid Dog's served the Strafer's row. The join takes only an actor
+  made for a row with the same KH2 enemy as the slot's (the slot's owner tag, its spawner's place among the field's
+  objects << 8 | its group, names the row: `khdays_enemies_slot_row`).
+- **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
+  fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
+- **Drawn once a frame**: its stand-in's other model in the same file (`Ms/04.p`'s at + 0xca00) is left out, the
+  KH2 model and its effects drawn once.
 - **Heard** (`Slot_Spawn`, joined): the sounds Days starts for it of its own -- its class's `MON_` archive, the
   enemies' common appearing and defeat -- are not heard within its body's radius of its place; KH2's own sounds
   play instead (above, "Sounds").

@@ -158,6 +158,25 @@ int read_shapes(ai::Calls &calls, const std::string &text)
 
 void add_math(ai::Calls &calls)
 {
+    // 0:21 how far the second vector's way along the ground is turned from the first's: atan2(x, z) of each, the
+    // difference into (-pi, pi] (FUN_14041d1b0, FUN_1403b6f20)
+    calls.set(0, 21, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec from = read_vec(m, a[0].bits), to = read_vec(m, a[1].bits);
+        a[0] = ai::Value::of_float(wrapped(std::atan2(to.v[0], to.v[2]) - std::atan2(from.v[0], from.v[2])));
+    });
+    // 0:35 a vector scaled where it lies, its four components (FUN_14041d220 -> FUN_14013fcc0)
+    calls.set(0, 35, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v = read_vec(m, a[0].bits);
+        for (float &f : v.v)
+            f *= a[1].f();
+        m.memory().write(a[0].bits, v.v, sizeof v.v);
+    });
+    // 2:67 KH2's next running number (FUN_1403cf490: DAT_142a24afc, from 0 a call before, 0x100 past 0x10000000)
+    calls.set(2, 67, [](ai::Machine &, std::span<ai::Value> a) {
+        static std::uint32_t last = 0;
+        last = last + 1 > 0x10000000u ? 0x100u : last + 1;
+        a[0] = ai::Value::of_int(std::int32_t(last));
+    });
     // 0:3 the tick's length (DAT_140717480)
     calls.set(0, 3, [](ai::Machine &m, std::span<ai::Value> a) { a[0] = ai::Value::of_float(m.tick_length); });
     // 0:4, 0:5 a + b, a - b into the call's own vector (FUN_14013fce0, FUN_14013fd20)
@@ -390,10 +409,16 @@ void add_actor_fields(ai::Calls &calls)
         }
         a[0] = give_vec(m, "shared", v);
     });
-    // 1:57 the object's class's byte + 0x0c bit 0 (a kind that moves by its speed, not its motions); 1:124 its entry's
-    // flag (FUN_1403ba700); 1:56 FUN_1403ba4a0's value; 1:110 its battle record's byte + 0x1c (FUN_1403b50d0: -1
-    // without one): none of these is Days's, so the plain answers -- 0, and -1 for no record
-    calls.set(1, 57, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:57 bit 0 of the actor's class's byte + 0x0c (its class at + 0x0c, FUN_1403b4da0; the classes at 0x140750d30):
+    // class 1, off the ground (a jump: FUN_140409ad0 is FUN_1403cbb00 then class 1; a fall, FUN_14053b920), has it,
+    // class 0, on the ground (the landing's FUN_1403cb940), not -- the scripts wait for it after a jump (`while
+    // !1:57 yield`) and act on it in the air: its jump or its fall
+    calls.set(1, 57, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Object *x = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(x != nullptr && (x->u32(field::kFlags) & bit::kInAir) != 0 ? 1 : 0);
+    });
+    // 1:124 its entry's flag (FUN_1403ba700); 1:56 FUN_1403ba4a0's value; 1:110 its battle record's byte + 0x1c
+    // (FUN_1403b50d0: -1 without one): none of these is Days's, so the plain answers -- 0, and -1 for no record
     calls.set(1, 124, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     calls.set(1, 56, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     calls.set(1, 110, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(-1); });
@@ -406,13 +431,28 @@ void add_actor_fields(ai::Calls &calls)
                              (x->u32(field::kStatus) & 0x40u) != 0);
         a[0] = ai::Value::of_int(off ? 1 : 0);
     });
+    // 1:150, 1:151 bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad (the Strafer's and the Magnum Loader's ways
+    // of attacking): set by KH2's native code where it places them, nothing of the scripts' -- 0 in Days's field
+    for (const std::uint32_t n : {150u, 151u}) {
+        const std::uint32_t at = n == 150u ? 0x2acu : 0x2adu;
+        calls.set(1, n, [at](ai::Machine &m, std::span<ai::Value> a) {
+            Object *x = object_of(m, a[0]);
+            const int bit = std::int32_t(a[1].bits) - 1;
+            const std::uint32_t byte = x != nullptr ? (x->u32(at & ~3u) >> (8 * (at & 3u))) & 0xffu : 0u;
+            a[0] = ai::Value::of_int(bit >= 0 && bit < 8 && (byte & (1u << bit)) != 0 ? 1 : 0);
+        });
+    }
+    // 2:45 an object's entry number (its + 0x20 record's u16 at + 2; FUN_1404320a0): the Wight Knight asks it of a
+    // message's sender, which in Days's field is none of KH2's objects: 0
+    calls.set(2, 45, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 2:8 whether an object's kind (+ 0x26) is in the groups past 1 (FUN_1403ce980): trigger 6's sender, never one
     // of Days's
     calls.set(2, 8, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:34 DAT_142a11478 (FUN_1403ac220), 1:301
+    // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:34 DAT_142a11478 (FUN_1403ac220), 1:301
     // FUN_1403bbea0, 1:171 / 1:206 DAT_142a11400's bits 2 / 7 -- KH2's field busy (an event, a pause), which Days's
     // field never is for its enemies: 0
-    for (const unsigned n : {23u, 34u, 301u, 171u, 206u})
+    // 1:24 DAT_140717009, the byte after 1:23's (the Wight Knight tests 9) -- the same
+    for (const unsigned n : {23u, 24u, 34u, 301u, 171u, 206u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
 }
 
@@ -445,6 +485,7 @@ void add_motions(ai::Calls &calls)
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         x->jump.on = true;
+        x->jump.gravity = Jump{}.gravity;
         x->jump.up = v.v[1] < 0.0F ? -std::sqrt(-v.v[1] * 2.0F / 0.408163F) : 0.0F;
         const float speed = v.v[3] != 0.0F ? v.v[3] : 1.0F;
         x->jump.along = {v.v[0] * speed, 0.0F, v.v[2] * speed};
@@ -459,6 +500,41 @@ void add_motions(ai::Calls &calls)
     };
     calls.set(1, 55, jump);
     calls.set(1, 168, jump);
+    // 1:156 a jump of the actor's own (FUN_14042ce60 -> FUN_1403cbec0): a vector -- its x, z the way along the
+    // ground (made one long, then times its w), its y how high it rises -- the ticks to its top (its pull + 0x10c
+    // 2 y / t^2, its rise the pull times t), a value kept at + 0x108 (**not known**); then a motion (FUN_1403c86a0 on
+    // + 0x158) and, the flag set, the two after it as 1:55's
+    calls.set(1, 156, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec v = read_vec(m, a[1].bits);
+        const float t = a[2].f();
+        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
+        x->jump.on = true;
+        x->jump.gravity = t != 0.0F ? 2.0F * v.v[1] / (t * t) : 0.0F;
+        x->jump.up = -(x->jump.gravity * t);
+        x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        x->set_u32(0x108, a[3].bits);
+        x->set_bits(field::kFlags, bit::kInAir, true);
+        x->play(std::int32_t(a[4].bits), a[5].f(), 0.0F);
+        x->motion.after = -1; // FUN_1403cbd00: + 0x118 -1, + 0x11c 5, the move's way + 0x648 2
+        x->motion.landing = 5;
+        if (a[6].bits != 0) {
+            x->motion.after = std::int32_t(a[4].bits) + 1;
+            x->motion.landing = std::int32_t(a[4].bits) + 2;
+        }
+    });
+    // 1:100 the speed a jump needs to rise `h` under KH2's pull: sqrt(|2 h / 0.408163|) (FUN_1403b73f0)
+    calls.set(1, 100, [](ai::Machine &, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_float(std::sqrt(std::fabs(2.0F * a[0].f() / 0.408163F)));
+    });
+    // 1:63 whether its motion has reached its end with no blend left (FUN_14042f120 -> FUN_1403c7e70 on + 0x158:
+    // its time + 0x44 against its motion's length, its blend + 0x48 run out)
+    calls.set(1, 63, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Actor *x = self_of(m, a[0]);
+        const bool at_end = x->motions != nullptr && x->motion.id >= 0 && x->motions->has(x->motion.id) &&
+                            x->motion.blend_left <= 0.0F && x->motion.time >= x->motions->length(x->motion.id);
+        a[0] = ai::Value::of_int(at_end ? 1 : 0);
+    });
     // 1:19, 1:20 a fade to gone / to seen over a time, unless held (FUN_1403b7810 on + 0xa08: a time of 2 or less is
     // 1); 1:28 gone in a tick and held (+ 0x9b8 bit 4)
     const auto fade = [](Actor &x, float from, float to, float time) {
@@ -591,6 +667,13 @@ void add_world(ai::Calls &calls)
     // 1:128 the object's class's virtual + 0x20 with a value (its native code; trigger 13 calls it with 0); 2:9 the
     // actor's + 0x5c0 made from a number (FUN_140411350): neither is the script's own behaviour, nothing here
     calls.set(1, 128, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:209 the class's virtual + 0xb0 unless + 0x9b8 bit 2 (FUN_1403d3f10); 1:74 the class made class 0 (the old
+    // one's virtual + 0x10, the new one's + 8; FUN_1403b4da0) and + 0xba8 cleared: native code, not the script's
+    calls.set(1, 209, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 74, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->set_u32(0xba8, 0); });
+    // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
+    // **likely its prizes** -- Days gives its stand-in's own
+    calls.set(1, 278, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(2, 9, [](ai::Machine &, std::span<ai::Value>) {});
     // 2:20 a routine of the script started as a thread of its own (FUN_1403c5ec0), with one value; a handle back
     calls.set(2, 20, [](ai::Machine &m, std::span<ai::Value> a) {

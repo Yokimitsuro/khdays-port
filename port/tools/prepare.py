@@ -2293,6 +2293,14 @@ HOOKS["ov002@02078bac"] = [
 # The Stop magic (runtime/battle/stop_magic.c): Days's unfinished sixth magic made whole on what the game
 # left. Its three panels are written over three blank records as the panels' table loads, the camp lets
 # them in, and the battle's list of magic names gets the names the game left empty.
+HOOKS["ov107@020c1744"] = [
+    (  # Ov107_Spawner_FindFreeActor: an actor made for a row with the same KH2 enemy as the slot's (shell.h)
+        "            {\n                u8 *arra0 = *(u8 **)(t5 + 0xa0);\n                arra0[key] = arra0[key] + 1;\n",
+        "            { extern int khdays_kh2_enemies_fits(unsigned int spawner, int slot, unsigned int actor);\n"
+        "              if (!khdays_kh2_enemies_fits((unsigned int)self, index, (unsigned int)n)) goto loopend; }\n"
+        "            {\n                u8 *arra0 = *(u8 **)(t5 + 0xa0);\n                arra0[key] = arra0[key] + 1;\n",
+    )
+]
 HOOKS["main@02033d0c"] = [
     (  # Slot_Spawn: a positioned sound started -- a stand-in's own at a KH2 enemy's place not heard
         "    if (param_1 == 0)\n        param_1 = *(unsigned int *)(base + 0x9c);\n",

@@ -36,8 +36,17 @@ import kh2_bdx  # noqa: E402
 import kh2_scd  # noqa: E402
 
 # The kinds the mod holds and the names authors see: KH2's own data has no object's enemy name (docs/KH2_ENEMIES.md,
-# "Names"), so each is named here. The Soldier and the Shadow first (US1); more as the port answers their calls.
-KINDS = {"M_EX010": "Soldier", "M_EX020": "Shadow"}
+# "Names"), so each is named here (as OpenKH's object list names them). The Soldier and the Shadow first (US1); more as
+# the port answers their calls (US2, docs/KH2_ENEMIES.md "Coverage").
+KINDS = {
+    "M_EX010": "Soldier",
+    "M_EX020": "Shadow",
+    "M_AL020_FIRE": "Fiery Globe",
+    "M_AL020_ICEE": "Icy Cube",
+    "M_EX510": "Rabid Dog",
+    "M_EX610": "Strafer",
+    "M_EX200": "Wight Knight",
+}
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
 PAX_ENTRY = 0x12  # an .a.us's PAX

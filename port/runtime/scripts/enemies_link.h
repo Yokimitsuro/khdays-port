@@ -57,6 +57,11 @@ void khdays_enemies_retired(void *actor);                                  /* Ov
 void khdays_enemies_defeated(void *actor);                                 /* Ov107_AiState_OnDefeat */
 void khdays_enemies_area_left(void);                                       /* Ov002_ReleaseResources */
 
+/* The mission's row a spawner's slot takes its enemy from, -1 none: Ov002_CreateSpawner gives the slot an owner tag,
+ * its spawner's place among the field's objects << 8 | its group in the spawner's record, and that group names the
+ * row (rows of one class share the slot's kinds entry, Ov107_AllocSortedEntry, so the slot's own id cannot tell). */
+int khdays_enemies_slot_row(unsigned spawner, int slot);
+
 /* While `on`, the mission's own spawners set none of their idle enemies going (their op 0 skipped): the
  * mission's areas then never end by their enemies. Those standing stay. */
 void khdays_enemies_hold_mission(int on);

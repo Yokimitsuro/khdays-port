@@ -68,6 +68,16 @@ const char *khdays_enemy_name(int id); /* enemy_names.c */
 #define SPAWNER_SLOT_BYTES 12u
 #define SLOT_ROW 0u
 #define SLOT_ENTRY 3u
+#define SLOT_OWNER_TAG 4u /* its spawner's place among the field's objects << 8 | its group in the spawner's record */
+/* the field's objects (Ov002ObjectContext): its spawners' records (+4: u8 rows, u8 records, +4 the rows, +8 a record
+ * each: s8 groups, .., +4 the groups {s8 row, u8 limit, u8 count, ..}) and its objects (+0x44, 0x18 bytes each, +0x14
+ * the s8 record it was made from) */
+#define OBJECTS_RECORDS 0x4u
+#define RECORDS_FIRST 0x8u
+#define RECORD_GROUPS 0x4u
+#define OBJECTS_SLOTS 0x44u
+#define OBJECT_SLOT_BYTES 0x18u
+#define OBJECT_SLOT_RECORD 0x14u
 #define TABLE_KINDS 0x94u
 #define TABLE_ROW_BYTES 4u
 #define TABLE_ROW_KIND 1u
@@ -681,6 +691,29 @@ int khdays_enemies_state(unsigned actor, KhdaysEnemyInfo *out)
         read_info(actor, out);
     }
     return 1;
+}
+
+int khdays_enemies_slot_row(unsigned spawner, int slot)
+{
+    const unsigned objs = rd32(OBJECTS);
+    unsigned tag, records, place, entry;
+    int record, group;
+    if (spawner == 0 || objs == 0 || slot < 0 || slot >= (int)(short)rd16(spawner + SPAWNER_COUNT)) {
+        return -1;
+    }
+    tag = rd32(spawner + SPAWNER_SLOTS + (unsigned)slot * SPAWNER_SLOT_BYTES + SLOT_OWNER_TAG);
+    place = rd32(objs + OBJECTS_SLOTS) + (tag >> 8) * OBJECT_SLOT_BYTES;
+    record = (signed char)rd8(place + OBJECT_SLOT_RECORD);
+    records = rd32(objs + OBJECTS_RECORDS);
+    group = (int)(tag & 0xffu);
+    if (record < 0 || records == 0 || record >= (int)rd8(records + 1u)) {
+        return -1;
+    }
+    entry = rd32(records + RECORDS_FIRST + 4u * (unsigned)record);
+    if (entry == 0 || group >= (signed char)rd8(entry)) {
+        return -1;
+    }
+    return (signed char)rd8(entry + RECORD_GROUPS + 4u * (unsigned)group);
 }
 
 void khdays_enemies_marker_made(int source, int row, void *actor, int id)

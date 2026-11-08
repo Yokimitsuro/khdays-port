@@ -189,6 +189,8 @@ struct Jump final {
     bool on = false;
     float up = 0.0F; // this tick's vertical speed, KH2's y (negative up)
     Vec3 along{};    // the speed along the ground a tick
+    // its pull a tick a tick: KH2's (FUN_1403cbb00's sqrt: 2 / 0.408163 is 2 g; DAT_1405ce184), or 1:156's own
+    float gravity = 1.0F / 0.408163F;
 };
 
 // What the scripts reach of the world around an actor (the shell's: Days's players and ground; a made-up one in the

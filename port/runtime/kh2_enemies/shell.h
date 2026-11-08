@@ -41,6 +41,11 @@ int khdays_kh2_enemies_ready(const char *name);
  * place: three fx32) is one of a stand-in's own at a KH2 enemy's place, not to be heard -- KH2's own sounds play. */
 int khdays_kh2_enemies_quiet(unsigned archive, unsigned entry, const void *place);
 
+/* Ov107_Spawner_FindFreeActor (prepare.py's join): whether `actor` (a DS address) may serve slot `slot` of `spawner`:
+ * made for a row with the same KH2 enemy as the slot's row, or none for both. Rows of one stand-in class share the
+ * spawners' kinds entry, so Days alone would take any of the class's actors (docs/RUNTIME_MAP.md section 37). */
+int khdays_kh2_enemies_fits(unsigned spawner, int slot, unsigned actor);
+
 #ifdef __cplusplus
 }
 #endif

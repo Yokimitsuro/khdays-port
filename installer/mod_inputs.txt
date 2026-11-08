@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 87cc8dc671425fded71d0bef278721b09a3e76d12ca11d64bba1c498fbd2cf89
+# tools 58138ae99a6bc16d3e8b5e8d7081dbd4931e9e3a7946ffbdc57ca1d04328200a
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -45,12 +45,27 @@ kh2_fifth obj/F_EX040_HE.mdlx
 kh2_fifth obj/F_EX040_NM.mdlx
 kh2_fifth obj/F_EX040_TT.mdlx
 kh2_fifth obj/F_EX040_TT.mset
+kh2_fifth obj/M_AL020_FIRE.a.us
+kh2_fifth obj/M_AL020_FIRE.mdlx
+kh2_fifth obj/M_AL020_FIRE.mset
+kh2_fifth obj/M_AL020_ICEE.a.us
+kh2_fifth obj/M_AL020_ICEE.mdlx
+kh2_fifth obj/M_AL020_ICEE.mset
 kh2_fifth obj/M_EX010.a.us
 kh2_fifth obj/M_EX010.mdlx
 kh2_fifth obj/M_EX010.mset
 kh2_fifth obj/M_EX020.a.us
 kh2_fifth obj/M_EX020.mdlx
 kh2_fifth obj/M_EX020.mset
+kh2_fifth obj/M_EX200.a.us
+kh2_fifth obj/M_EX200.mdlx
+kh2_fifth obj/M_EX200.mset
+kh2_fifth obj/M_EX510.a.us
+kh2_fifth obj/M_EX510.mdlx
+kh2_fifth obj/M_EX510.mset
+kh2_fifth obj/M_EX610.a.us
+kh2_fifth obj/M_EX610.mdlx
+kh2_fifth obj/M_EX610.mset
 kh2_first effect/texcommon.dpd
 kh2_first field2d/us/tt0field.2dd
 kh2_first menu/fr/pause.2ld

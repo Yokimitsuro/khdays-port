@@ -90,7 +90,12 @@ class Kh2EnemiesTest(unittest.TestCase):
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
             self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-")
             self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-")
-            self.assertEqual(left, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
+            ours = [line for line in left if line.startswith(("M_EX010", "M_EX020"))]
+            self.assertEqual(ours, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
+            # the other kinds the mod holds, not in this made-up collection: each said
+            others = [n for n in kh2_enemies.KINDS if n not in ("M_EX010", "M_EX020")]
+            self.assertEqual(len(left), 1 + len(others))
+            self.assertTrue(all(any(line.startswith(n) and "not there" in line for line in left) for n in others))
 
     def test_the_sounds(self):
         # a motion whose trigger 8 plays (200, 21), an effect's element playing 105 (bank 0), another none (-1)
