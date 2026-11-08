@@ -1,8 +1,9 @@
 // KINGDOM HEARTS II's effects read and played (assets/kh2_effect.h): a made-up PAX in the layout KH2's own have
 // (docs/FORMATS.md, "KH2's effects") -- one block, one emitter, a model and a picture -- and its run: a layer's
-// keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped; then
-// blocks made from parts for the commands read since: the rotation orders, the random ones' ranges, pppPointAp's
-// children, pppVtMime's blend of two models, a textured triangle (primitive kind 2).
+// keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped; the
+// same directory read without the PAX header (KH1's and Re:CoM's .dpx); then blocks made from parts for the
+// commands read since: the rotation orders, the random ones' ranges, pppPointAp's children, pppVtMime's blend of
+// two models, a textured triangle (primitive kind 2).
 #include "khdays/assets/kh2_effect.h"
 #include "kh2_effect_made_up.h"
 
@@ -68,6 +69,22 @@ void test_reading()
         refused = true;
     }
     expect(refused, "no directory refused");
+
+    // KH1's and Re:Chain of Memories' .dpx: the same directory without the PAX header
+    std::uint32_t directory = 0;
+    std::memcpy(&directory, bytes.data() + 0xc, 4);
+    const std::vector<std::uint8_t> dpx(bytes.begin() + directory, bytes.end());
+    const auto bare = read_effect(dpx.data(), dpx.size());
+    expect(bare.size() == 1 && bare[0].emitters.size() == 1 && bare[0].models.size() == 1, "a bare DPX read alike");
+    auto neither = dpx;
+    neither[0] = 0x83;
+    refused = false;
+    try {
+        read_effect(neither.data(), neither.size());
+    } catch (const std::runtime_error &) {
+        refused = true;
+    }
+    expect(refused, "neither a PAX nor a DPX refused");
 }
 
 void test_run()

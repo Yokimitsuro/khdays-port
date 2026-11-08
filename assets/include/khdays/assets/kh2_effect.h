@@ -89,7 +89,8 @@ struct EffectBlock final {
     std::vector<EffectPicture> pictures;
 };
 
-// Every 0x96 block of a PAX (`PAX_` first); throws std::runtime_error naming what breaks the layout.
+// Every 0x96 block of a PAX (`PAX_` first), or of its 0x82 directory alone (KH1's and Re:Chain of Memories'
+// .dpx); throws std::runtime_error naming what breaks the layout.
 std::vector<EffectBlock> read_effect(const std::uint8_t *data, std::size_t size);
 // A bare 0x96 block at `at` (effect/texcommon.dpd, KH2's resident pictures).
 EffectBlock read_effect_block(const std::uint8_t *data, std::size_t size, std::size_t at);

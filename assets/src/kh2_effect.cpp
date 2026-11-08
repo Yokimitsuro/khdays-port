@@ -301,9 +301,13 @@ std::vector<EffectBlock> read_effect(const std::uint8_t *data, std::size_t size)
 {
     const Reader r{data, size};
     r.need(0, 16);
-    if (std::memcmp(data, "PAX_", 4) != 0)
-        fail("not a PAX");
-    const std::size_t d = r.u32(0xc); // the element table's end: the 0x82 directory
+    // KH2's PAX (its header, then the 0x82 directory at +0xc), or the directory alone (KH1's and Re:Chain of
+    // Memories' .dpx)
+    std::size_t d = 0;
+    if (std::memcmp(data, "PAX_", 4) == 0)
+        d = r.u32(0xc); // the element table's end: the 0x82 directory
+    else if (r.u32(0) != 0x82)
+        fail("not a PAX nor a DPX");
     if (r.u32(d) != 0x82)
         fail("no 0x82 directory");
     const std::size_t count = r.u32(d + 0xc);

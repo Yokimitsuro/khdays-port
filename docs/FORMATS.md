@@ -233,7 +233,9 @@ same layout's first effect, read only as far as its pictures and shapes.
   (the elements placing an effect in a scene), then a list -- a count and offsets from the directory -- of effects.
   An effect is a block `{0x96}` and five lists, each a count and offsets from the block: emitters, pictures, shapes,
   models and vertex lists (`{u32 id, u32 model, u32 count, u16 vertex numbers}`). `effect/texcommon.dpd` is a bare
-  block of pictures alone: those KH2 keeps resident, which the effects' shapes may cut.
+  block of pictures alone: those KH2 keeps resident, which the effects' shapes may cut. KINGDOM HEARTS's `.dpx`
+  files and the effects inside Re:Chain of Memories' files are the directory alone, without the `PAX_` header; the
+  reader takes either.
 - **An emitter**: its offsets count from its +0x110: there its length (frames x 4096), at +0x114 a word whose bit 0
   makes it repeat until told to stop, at +0x11c the list of its layers. A layer: +0x10 when it starts, +0x14 its life,
   +0x18/+0x1c a loop's start and end (0x70000000: never; a layer that never starts is born by another), +0x20 where
