@@ -269,7 +269,12 @@ same layout's first effect, read only as far as its pictures and shapes.
 - **Drawing**: the GS blend `(A - B) x C / 128 + D` by the ALPHA byte: 0x44 mixed by alpha, 0x48 added, 0x42
   `Cd - Cs x As` (dark smoke), 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`. Drawn nearer only (`TEST 0x7000d`); a
   `pppDrawMdl3` whose record has +0xd (and not +0xe) set writes the depth alone, no colour (`TEST 0x72001`: the
-  corridor's mask), +0xe drawn without the depth test. A model's primitives far to near, the layers in their order.
+  corridor's mask), +0xe drawn without the depth test. The layers in their order; a model's primitives in its own
+  order, or, when it does not write the depth (0x80), in 256 depth buckets far first (FUN_1404b6860,
+  FUN_1404b42b0: a primitive's bucket `(16770000 x corners - 16769999 x the sum of its corners' z / w) / (0x300 x
+  corners)`, 0xff past the last or with a corner behind the eye, not drawn with all behind), the model's order within
+  a bucket. Sorting them by their exact depth instead swaps nearly level layers back and forth (the worlds' titles
+  flickered).
 - **Pictures and pages**: a picture is `{u16 tbp, cbp, tbw, psm, x, y, w, h}`, its indices and palette as the prize
   effect's (psm 0x13, 8 bits; 0x14, 4 bits, the low nibble first, 16 palette entries), or its colours themselves
   (psm 0, PSMCT32: w x h RGBA; two of KH2's PAX have them); a draw names a page by its TEX0 (tbp, width, height,

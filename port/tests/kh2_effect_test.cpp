@@ -3,7 +3,7 @@
 // keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped; the
 // same directory read without the PAX header (KH1's and Re:CoM's .dpx); then blocks made from parts for the
 // commands read since: the rotation orders, the random ones' ranges, pppPointAp's children, pppVtMime's blend of
-// two models, a textured triangle (primitive kind 2).
+// two models, a textured triangle (primitive kind 2), a model's primitives in its order or by depth.
 #include "khdays/assets/kh2_effect.h"
 #include "kh2_effect_made_up.h"
 
@@ -317,6 +317,30 @@ void test_textured_triangle()
     expect(draws[0].tex0 != 0 && near(v.u, 1.0F) && near(draws[0].triangles[2].v, 0.5F), "kind 2's page and UV");
 }
 
+// a model's primitives in its own order, or (0x80: the key's byte 8, bit 0) in depth buckets, far first: the near
+// triangle (z 0) first in the model, the far one (z 1, w 1: bucket 0) second
+void test_primitive_order()
+{
+    MadeModel m;
+    m.vertices = {{0, 0, 0}, {10, 0, 0}, {0, 10, 0}, {0, 0, 1}, {10, 0, 1}, {0, 10, 1}};
+    for (const int first : {0, 3}) {
+        MadePrimitive p;
+        for (int q = 0; q < 3; ++q)
+            p.vertex[q] = std::uint16_t(first + q);
+        m.primitives.push_back(p);
+    }
+    for (const bool by_depth : {false, true}) {
+        MadeLayer L;
+        L.commands = placed(0x57, 0, 0, 0, 0, 0);
+        put(L.commands.back().keys[0], 8, std::uint8_t(by_depth ? 1 : 0));
+        EffectInstance fx(block_of(made_block({L}, {m}, {}, 10, false)), 0, 1);
+        std::vector<EffectDraw> draws;
+        const auto v = first_corner(fx, draws);
+        expect(draws.size() == 1 && draws[0].triangles.size() == 6, "both triangles in one draw");
+        expect(near(v.z, by_depth ? 1.0F : 0.0F), by_depth ? "the far one first by depth" : "the model's own order");
+    }
+}
+
 } // namespace
 
 // a bolt (pppKeTh) up from the origin, 10 a segment, toward a pppKeThTp's point on another layer at (0, aim, 0);
@@ -409,6 +433,7 @@ int main()
         test_point_ap();
         test_vt_mime();
         test_textured_triangle();
+        test_primitive_order();
         test_lightning();
         test_game_matrices();
     } catch (const std::exception &e) {

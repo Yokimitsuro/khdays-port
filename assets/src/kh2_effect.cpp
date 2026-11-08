@@ -4894,9 +4894,32 @@ struct EffectInstance::State {
                         *out);
     }
 
+    // a primitive's depth bucket, one of KH2's 256 (FUN_1404b42b0 and its kinds' twins): from its corners' mean
+    // z / w, 0 the farthest; 0xff when it is too near or a corner is behind the eye, 0x100 (not drawn) when all are
+    static int depth_bucket(const EffectPrimitive &p, const std::vector<std::array<float, 4>> &clip)
+    {
+        float sum = 0;
+        int behind = 0;
+        for (int q = 0; q < p.corners; ++q) {
+            const auto &v = clip[p.vertex[std::size_t(q)]];
+            if (v[3] <= 0)
+                ++behind;
+            else
+                sum += v[2] / v[3];
+        }
+        if (behind == p.corners)
+            return 0x100;
+        if (behind != 0)
+            return 0xff;
+        // DAT_140779988, DAT_14077998c: 16770000 x (1 - z / w) a corner, 0x300 a bucket
+        const float key = -16769999.0F * sum + 16770000.0F * float(p.corners);
+        const float size = float(0x300 * p.corners);
+        return key < 0 || key >= size * 256 ? 0xff : int(key / size);
+    }
+
     // a model through `m` (FUN_1404b6860's work): its vertices (`own` when given: pppVtMime's blend), each
     // primitive's corner colour x `tint` (0x80 = 1 both), the request's flags and depth bytes, its ALPHA (0: the
-    // model's), the UV scroll added; the primitives far to near, a draw a page
+    // model's), the UV scroll added; the primitives in the model's order or by depth, a draw a page
     void draw_model_with(const std::vector<std::array<float, 3>> *own, const EffectModel &model, const M4 &m,
                          const std::array<float, 4> &tint,
                          unsigned flags, std::uint8_t only, std::uint8_t always, std::uint16_t alpha, float su,
@@ -4917,17 +4940,18 @@ struct EffectInstance::State {
             const auto &v = i < vertices.size() ? vertices[i] : model.vertices[i];
             clip[i] = transformed({v[0], v[1], v[2], 1}, m);
         }
-        // a model's primitives far to near (the depth buckets of FUN_1404af7d0)
-        std::vector<std::pair<float, const EffectPrimitive *>> order;
+        // a model that writes the depth keeps its primitives' own order; one that does not (0x80) puts them in depth
+        // buckets, far first, the model's order within a bucket
+        const bool by_depth = (flags & 0x80) != 0;
+        std::vector<std::pair<int, const EffectPrimitive *>> order;
+        order.reserve(model.primitives.size());
         for (const auto &p : model.primitives) {
-            float z = 0;
-            for (int q = 0; q < p.corners; ++q) {
-                const auto &v = clip[p.vertex[std::size_t(q)]];
-                z += v[3] != 0 ? v[2] / v[3] : 0;
-            }
-            order.emplace_back(z / float(p.corners), &p);
+            const int bucket = by_depth ? depth_bucket(p, clip) : 0;
+            if (bucket <= 0xff)
+                order.emplace_back(bucket, &p);
         }
-        std::stable_sort(order.begin(), order.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+        if (by_depth)
+            std::stable_sort(order.begin(), order.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
         std::uint64_t tex = ~0ull;
         for (const auto &[z, p] : order) {
             if (p->tex0 != tex) {
