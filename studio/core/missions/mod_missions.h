@@ -83,6 +83,10 @@ struct MissionSpot {
     int heading = 0;                           // the start's facing, a chest's heading (degrees)
     int wave = 1;                              // a spawner's (1-255)
     std::vector<std::pair<int, int>> enemies;  // a spawner's: (class, count)
+    // beside each of `enemies`: the KH2 enemy in the class's place (`kh2:<name>`, docs/KH2_ENEMIES.md), "" none;
+    // `kh2_alone` when no Days class stands in for it
+    std::vector<std::string> kh2;
+    std::vector<bool> kh2_alone;
     int contents = 0;                          // a chest's: an item of the game's
     int emblem = 0;                            // an emblem's: which of the mission's three badges (0-2)
     double radius = 1.5;                       // the place to reach's

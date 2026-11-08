@@ -187,6 +187,51 @@ static void waves_chests_and_emblems_read(void)
     khdays_missions_free(&r);
 }
 
+/* KH2 enemies in waves: `kh2:<name>/<class>x<count>` keeps the class's row with the KH2 name beside it;
+ * `kh2:<name>x<count>` (none standing in) needs KH2's enemies, the mission left out while they cannot be played. */
+static int kh2_ready_soldier(const char *name)
+{
+    return strcmp(name, "M_EX010") == 0;
+}
+
+static void kh2_enemies_in_waves_read(void)
+{
+    static const char text[] = "[mission kh2]\nname en = A\nobjective en = B\nworld = tt\n"
+                               "wave 1 = kh2:M_EX010/4x3 0x1 at 0 0 0\n"
+                               "wave 2 = kh2:m_ex020/0 at 1 0 1\n"
+                               "[mission kh2-alone]\nname en = A\nobjective en = B\nworld = tt\n"
+                               "wave 1 = kh2:M_EX010x2 at 0 0 0\n"
+                               "[mission kh2-bad]\nname en = A\nobjective en = B\nworld = tt\n"
+                               "wave 1 = kh2:M-EX010/4x1 at 0 0 0\n";
+    KhdaysMissions r = {0};
+    Reports reports = {0};
+    khdays_missions_set_kh2_ready(NULL);
+    CHECK(read_text(&r, "Kh2", text, &reports) == 1); /* kh2-alone left out: KH2's enemies not ready */
+    const KhdaysMission *m = &r.list[0];
+    CHECK(m->spawner_count == 2);
+    if (m->spawner_count == 2) {
+        const KhdaysMissionEnemies *e = m->spawners[0].enemies;
+        CHECK(m->spawners[0].enemy_count == 2 && e[0].enemy_class == 4 && e[0].count == 3 && !e[0].needs_kh2);
+        CHECK(e[0].kh2 != NULL && strcmp(e[0].kh2, "M_EX010") == 0);
+        CHECK(e[1].kh2 == NULL && e[1].enemy_class == 0);
+        const KhdaysMissionEnemies *f = m->spawners[1].enemies;
+        CHECK(f[0].kh2 != NULL && strcmp(f[0].kh2, "m_ex020") == 0 && f[0].count == 1 && f[0].enemy_class == 0);
+    }
+    CHECK(reports.count == 2); /* kh2-alone not ready, kh2-bad's name */
+    khdays_missions_free(&r);
+
+    KhdaysMissions ready = {0};
+    Reports again = {0};
+    khdays_missions_set_kh2_ready(kh2_ready_soldier);
+    CHECK(read_text(&ready, "Kh2", text, &again) == 2); /* kh2-alone now playable */
+    if (ready.count == 2) {
+        const KhdaysMissionEnemies *e = ready.list[1].spawners[0].enemies;
+        CHECK(e[0].needs_kh2 && e[0].count == 2 && strcmp(e[0].kh2, "M_EX010") == 0);
+    }
+    khdays_missions_set_kh2_ready(NULL);
+    khdays_missions_free(&ready);
+}
+
 /* An eliminate mission: the enemies of its target class count toward its goal (all of them by default); a waves
  * mission keeps target and goal unused (the studio switches kinds without losing them); no target, a target no wave
  * has, or a goal past what counts leaves an eliminate mission out. */
@@ -758,6 +803,7 @@ int main(int argc, char **argv)
     a_description_read();
     bad_blocks_left_out();
     waves_chests_and_emblems_read();
+    kh2_enemies_in_waves_read();
     eliminate_read();
     hearts_read();
     emblems_and_reach_read();

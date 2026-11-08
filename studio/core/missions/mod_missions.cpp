@@ -465,8 +465,12 @@ std::vector<MissionSpot> mod_mission_spots(const fs::path& mod_dir, const std::s
             s.kind = MissionSpot::Kind::spawner;
             s.at = {m->spawners[i].at[0], m->spawners[i].at[1], m->spawners[i].at[2]};
             s.wave = m->spawners[i].wave;
-            for (int e = 0; e < m->spawners[i].enemy_count; ++e)
-                s.enemies.emplace_back(m->spawners[i].enemies[e].enemy_class, m->spawners[i].enemies[e].count);
+            for (int e = 0; e < m->spawners[i].enemy_count; ++e) {
+                const KhdaysMissionEnemies &x = m->spawners[i].enemies[e];
+                s.enemies.emplace_back(x.enemy_class, x.count);
+                s.kh2.emplace_back(x.kh2 != nullptr ? x.kh2 : "");
+                s.kh2_alone.push_back(x.needs_kh2 != 0);
+            }
             out.push_back(s);
         }
         for (int i = 0; i < m->chest_count; ++i) {
@@ -507,8 +511,16 @@ std::pair<std::string, std::string> mission_spot_line(const MissionSpot& s) {
     case MissionSpot::Kind::start: return {"start", at_text(s.at) + " " + std::to_string(s.heading)};
     case MissionSpot::Kind::spawner: {
         std::string enemies;
-        for (const auto& [enemy_class, count] : s.enemies)
-            enemies += std::to_string(enemy_class) + "x" + std::to_string(count) + " ";
+        for (std::size_t i = 0; i < s.enemies.size(); ++i) {
+            const auto& [enemy_class, count] = s.enemies[i];
+            const std::string kh2 = i < s.kh2.size() ? s.kh2[i] : "";
+            const bool alone = i < s.kh2_alone.size() && s.kh2_alone[i];
+            if (!kh2.empty())  // a KH2 enemy kept as the author wrote it
+                enemies += "kh2:" + kh2 + (alone ? "" : "/" + std::to_string(enemy_class));
+            else
+                enemies += std::to_string(enemy_class);
+            enemies += "x" + std::to_string(count) + " ";
+        }
         return {"wave " + std::to_string(s.wave), enemies + "at " + at_text(s.at)};
     }
     case MissionSpot::Kind::chest:

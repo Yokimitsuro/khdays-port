@@ -1114,6 +1114,19 @@ TEST(a_new_missions_kind_saved_target_and_goal_first) {
     CHECK(!studio::set_mod_mission(mod, "plants", "goal", "", "4", &why) && why.find("goal 4") != std::string::npos);
 }
 
+TEST(kh2_enemies_in_a_wave_kept_through_its_places) {
+    const auto root = studio_test::scratch("mission_kh2_places");
+    const auto mod = root / "mods" / "M";
+    studio_test::write(mod / "missions" / "missions.txt",
+                       "[mission kh2]\nname en = W\nobjective en = O\nworld = tt\n"
+                       "wave 1 = kh2:M_EX010/4x3 0x1 at 0 0 1\n");
+    std::string why;
+    const auto spots = studio::mod_mission_spots(mod, "kh2", &why);
+    CHECK(spots.size() == 1 && spots[0].kh2.size() == 2 && spots[0].kh2[0] == "M_EX010" && spots[0].kh2[1].empty());
+    CHECK(studio::mission_spot_line(spots[0]) ==
+          std::make_pair(std::string("wave 1"), std::string("kh2:M_EX010/4x3 0x1 at 0 0 1")));
+}
+
 TEST(a_new_missions_places_read_and_saved_at_once) {
     const auto root = studio_test::scratch("mission_places");
     const auto mod = root / "mods" / "M";

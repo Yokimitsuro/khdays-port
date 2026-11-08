@@ -306,12 +306,11 @@ def calls_of(path: Path) -> set[tuple[int, int]]:
 
 
 def read_handled(text: str) -> set[tuple[int, int]]:
-    """A list of handled calls: `kind:number` a line; blank lines and # comments skipped."""
+    """A list of handled calls: `kind:number` a line; any other line skipped (comments, the game's own notes)."""
     out = set()
     for line in text.splitlines():
-        line = line.split("#")[0].strip()
-        if line:
-            kind, _, number = line.partition(":")
+        kind, colon, number = line.split("#")[0].strip().partition(":")
+        if colon and kind.isdigit() and number.isdigit():
             out.add((int(kind), int(number)))
     return out
 
@@ -332,20 +331,88 @@ def coverage(objects: dict[str, Path], handled: set[tuple[int, int]], names: lis
     return out
 
 
+# KH2's call tables in KH2FM.exe (the Steam release read): eleven table addresses at CALL_TABLES; kind 9's is set by the
+# game at its start (FUN_14026ace0) to CALL_TABLE_9; kind 3's too, at run time only. A record is 16 bytes: the
+# function, then a word whose low 16 bits are its arguments' count and whose bit 30 says it gives a value back.
+CALL_TABLES = 0x140753490
+CALL_TABLE_9 = 0x14073D080
+CALL_KINDS = 11
+
+
+def exe_sections(exe: bytes) -> tuple[int, list[tuple[str, int, int, int]]]:
+    """A PE's image base and sections (name, address, file offset, size in the file)."""
+    if exe[:2] != b"MZ":
+        raise AiError("not an executable")
+    pe = struct.unpack_from("<I", exe, 0x3C)[0]
+    count = struct.unpack_from("<H", exe, pe + 6)[0]
+    optional = struct.unpack_from("<H", exe, pe + 20)[0]
+    base = struct.unpack_from("<Q", exe, pe + 24 + 24)[0]
+    sections = []
+    for i in range(count):
+        name, _, va, size, raw = struct.unpack_from("<8sIIII", exe, pe + 24 + optional + 40 * i)
+        sections.append((name.rstrip(b"\0").decode("latin1"), base + va, raw, size))
+    return base, sections
+
+
+def exe_calls(exe: bytes) -> list[tuple[int, int, int, bool]]:
+    """Every call KH2's tables hold, read from the player's executable: (kind, number, arguments, gives back). A table
+    ends where the next one starts, or at a record that is not one (a function outside the code, a count word with
+    more than its arguments and flag)."""
+    _, sections = exe_sections(exe)
+
+    def read(va: int, n: int) -> bytes:
+        for _, at, raw, size in sections:
+            if at <= va and va + n <= at + size:
+                return exe[raw + va - at : raw + va - at + n]
+        raise AiError(f"{va:#x} is in no section of this executable")
+
+    code = [(at, at + size) for name, at, _, size in sections if name == ".text"]
+    if not code:
+        raise AiError("this executable has no code section")
+    lo, hi = code[0]
+    tables = list(struct.unpack("<11Q", read(CALL_TABLES, 8 * CALL_KINDS)))
+    tables[9] = CALL_TABLE_9
+    starts = sorted(t for t in tables if t)
+    out = []
+    for kind, table in enumerate(tables):
+        if not table:
+            continue
+        later = [t for t in starts if t > table]
+        end = later[0] if later else table + 0x4000
+        number = 0
+        while table + 16 * number < end:
+            fn, word = struct.unpack("<QI", read(table + 16 * number, 12))
+            if (fn and not lo <= fn < hi) or word & 0xBFFF0000:
+                break
+            if fn:
+                out.append((kind, number, word & 0xFFFF, bool(word & 0x40000000)))
+            number += 1
+    if sum(1 for k, *_ in out if k == 0) < 50:
+        raise AiError("this executable's call tables are not where KH2 FINAL MIX's (Steam) are")
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument(
         "--kh2",
         type=Path,
         action="append",
-        required=True,
+        default=[],
         help="a KH2 package's entries extracted (<kh2_*.hed_out>); once for each",
     )
+    ap.add_argument("--exe-calls", type=Path, help="KH2FM.exe: print its calls' shapes (kind:number arguments back)")
     ap.add_argument("--survey", action="store_true", help="which calls each kind of object's scripts make")
     ap.add_argument("--coverage", type=Path, help="a list of handled calls: which each object's script still misses")
     ap.add_argument("files", nargs="*", help="objects' files under --kh2 (obj/M_EX010.mdlx); with --coverage, names")
     args = ap.parse_args(argv)
     try:
+        if args.exe_calls:
+            for kind, number, count, back in exe_calls(args.exe_calls.read_bytes()):
+                print(f"{kind}:{number} {count} {int(back)}")
+            return 0
+        if not args.kh2:
+            ap.error("--kh2 is needed")
         if args.coverage:
             handled = read_handled(args.coverage.read_text(encoding="utf-8"))
             names = [Path(f).stem for f in args.files]

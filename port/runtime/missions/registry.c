@@ -80,6 +80,9 @@ static void free_mission(KhdaysMission *m)
 #pragma warning(push)
 #pragma warning(disable : 6001) /* the spawners up to spawner_count are read_wave's, their enemies set */
     for (int i = 0; i < m->spawner_count; ++i) {
+        for (int e = 0; e < m->spawners[i].enemy_count; ++e) {
+            free(m->spawners[i].enemies[e].kh2);
+        }
         free(m->spawners[i].enemies);
     }
 #pragma warning(pop)
@@ -147,7 +150,31 @@ static int point(char **words, double at[3])
     return real(words[0], &at[0]) && real(words[1], &at[1]) && real(words[2], &at[2]);
 }
 
-/* `wave <n> = <class>x<count> [...] at <x> <y> <z>`: one spawner of wave n. */
+/* `kh2:<name>[/<class>]`: a KH2 enemy's object name ([A-Za-z0-9_]) and the Days class standing in for it, if any;
+ * `entry` is what follows `kh2:`, its count already cut off. */
+static int read_kh2_enemy(KhdaysMissionEnemies *e, char *entry)
+{
+    char *slash = strchr(entry, '/');
+    if (slash != NULL) {
+        *slash++ = '\0';
+    }
+    if (entry[0] == '\0') {
+        return 0;
+    }
+    for (const char *c = entry; *c != '\0'; ++c) {
+        if (!(isalnum((unsigned char)*c) || *c == '_')) {
+            return 0;
+        }
+    }
+    if ((e->kh2 = _strdup(entry)) == NULL) {
+        return 0;
+    }
+    e->needs_kh2 = slash == NULL;
+    return slash == NULL || whole(slash, 0, 255, &e->enemy_class);
+}
+
+/* `wave <n> = <class>x<count> [...] at <x> <y> <z>`: one spawner of wave n; an entry may be `kh2:<name>/<class>x<count>`
+ * (a KH2 enemy, the class standing in for it) or `kh2:<name>x<count>` (none standing in). */
 static int read_wave(KhdaysMission *m, const char *number, char *value)
 {
     int wave, ok = 0;
@@ -167,14 +194,19 @@ static int read_wave(KhdaysMission *m, const char *number, char *value)
             ++m->spawner_count;
             ok = 1;
             for (int i = 0; i < at && ok; ++i) {
-                char *times = strchr(words[i], 'x');
+                const int kh2 = strncmp(words[i], "kh2:", 4) == 0;
+                /* the count after the last x (a KH2 name may hold an x itself) */
+                char *times = kh2 ? strrchr(words[i] + 4, 'x') : strchr(words[i], 'x');
+                if (kh2 && times != NULL && strspn(times + 1, "0123456789") != strlen(times + 1)) {
+                    times = NULL;
+                }
                 KhdaysMissionEnemies *e = &s->enemies[s->enemy_count++];
                 e->count = 1;
                 if (times != NULL) {
                     *times++ = '\0';
                     ok = whole(times, 1, 255, &e->count);
                 }
-                ok = ok && whole(words[i], 0, 255, &e->enemy_class);
+                ok = ok && (kh2 ? read_kh2_enemy(e, words[i] + 4) : whole(words[i], 0, 255, &e->enemy_class));
             }
         }
     }
@@ -191,6 +223,13 @@ static int item_count;
 void khdays_missions_set_items(int count)
 {
     item_count = count > 0 ? count : 0;
+}
+
+static int (*kh2_ready)(const char *name);
+
+void khdays_missions_set_kh2_ready(int (*ready)(const char *name))
+{
+    kh2_ready = ready;
 }
 
 /* `chest = <item> at <x> <y> <z> <heading>`, `emblem = <kind> at <x> <y> <z>`, `start = <x> <y> <z> <facing>` */
@@ -382,6 +421,17 @@ static int close_block(Reading *g)
     }
     if (!g->bad && key_taken(g->r, g->mod, m->key)) {
         refuse(g, m->line, "the key is taken by another of the mod's missions");
+    }
+    for (int i = 0; i < m->spawner_count && !g->bad; ++i) {
+        for (int e = 0; e < m->spawners[i].enemy_count && !g->bad; ++e) {
+            const KhdaysMissionEnemies *x = &m->spawners[i].enemies[e];
+            if (x->needs_kh2 && (kh2_ready == NULL || !kh2_ready(x->kh2))) {
+                char why[160];
+                snprintf(why, sizeof(why), "kh2:%s has no Days enemy standing in for it, and KH2's enemies are not "
+                         "made, off, or do not cover it", x->kh2);
+                refuse(g, m->line, why);
+            }
+        }
     }
     if (!g->bad && m->kind == KHDAYS_MISSION_ELIMINATE) {
         char why[120];
@@ -601,7 +651,7 @@ static void read_line(Reading *g, char *name, char *value_start, char *value_end
     }
     if (!ok) {
         static const char *const forms[][2] = {
-            {"wave", "wave <n> = <class>x<count> ... at <x> <y> <z>"},
+            {"wave", "wave <n> = <class>x<count> | kh2:<name>/<class>x<count> ... at <x> <y> <z>"},
             {"target", "target = <the enemy class to defeat>"},
             {"kind", "kind = waves, eliminate, hearts, emblems or reach"},
             {"goal", "goal = <how many of the target class to defeat, hearts or emblem points to collect; 0 all>"},

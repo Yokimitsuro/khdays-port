@@ -161,7 +161,8 @@ class Kh2AiTest(unittest.TestCase):
     def test_coverage(self):
         data, _ = self.stateful()
         mdlx = bar([(3, b"m_ex", data)])
-        self.assertEqual(kh2_ai.read_handled("# handled\n1:6\n\n2:7  # a state's call\n"), {(1, 6), (2, 7)})
+        handled = "khdays-native: working folder: its own\n# handled\n1:6\n\n2:7  # a state's call\n"
+        self.assertEqual(kh2_ai.read_handled(handled), {(1, 6), (2, 7)}, "only kind:number lines")
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "obj").mkdir()
             (Path(d) / "obj" / "M_TEST.mdlx").write_bytes(mdlx)

@@ -413,7 +413,9 @@ scripts. Nothing of it is used by the game yet.
   at its + 0x390, enters a state at once (1:8) or queues it in a ring of 16 (1:9); entering one (FUN_1403cad00) leaves
   the current and runs the state's routine as a child thread of the object's script (FUN_1403e1970). No jump or call
   of the script leads to those routines: a reading of the code must start from them too (`tools/research/kh2_ai.py`
-  does).
+  does). A state's id is the address of a name in the script's code, and states are found by name
+  (FUN_1403ca700), so the game asks for them by name as well: `dead` at the defeat, `leave`, a hit's reaction
+  state (docs/KH2_ENEMIES.md, "States"); a hit also runs trigger 19 with the attack and the attacker.
 - **Addresses**: the scripts' addresses are 32-bit, turned into the game's pointers by FUN_1404ad270 (as on the PS2,
   where they were the machine's own). A script's work area holds at + 8 its AI handle, whose + 4 is its object: most
   of the object's calls take that handle.

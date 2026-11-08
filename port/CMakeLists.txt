@@ -314,6 +314,25 @@ target_include_directories(khdays-kh2-sequence PUBLIC ../assets/include)
 target_include_directories(khdays-kh2-sequence PRIVATE "${stb_SOURCE_DIR}")
 target_compile_options(khdays-kh2-sequence PRIVATE /W4 /std:c++20 /EHsc)
 
+# KINGDOM HEARTS II's enemies (docs/KH2_ENEMIES.md): KH2's script machine and the port's answers to its calls, the
+# kinds the player's mod holds; nothing of the game, so the tests and tools use it alone.
+add_library(khdays-kh2-ai STATIC
+    ../assets/src/kh2_ai.cpp
+    runtime/kh2_enemies/actor.cpp
+    runtime/kh2_enemies/calls.cpp
+    runtime/kh2_enemies/kinds.cpp
+    runtime/kh2_enemies/tools.cpp)
+target_include_directories(khdays-kh2-ai PUBLIC ../assets/include)
+target_compile_options(khdays-kh2-ai PRIVATE /W4 /std:c++20 /EHsc)
+add_executable(khdays-kh2-ai-test ../assets/tests/test_kh2_ai.cpp)
+target_link_libraries(khdays-kh2-ai-test PRIVATE khdays-kh2-ai)
+target_compile_options(khdays-kh2-ai-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-ai COMMAND khdays-kh2-ai-test)
+add_executable(khdays-kh2-ai-calls-test tests/kh2_ai_calls_test.cpp)
+target_link_libraries(khdays-kh2-ai-calls-test PRIVATE khdays-kh2-ai)
+target_compile_options(khdays-kh2-ai-calls-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-ai-calls COMMAND khdays-kh2-ai-calls-test)
+
 add_library(khdays-kh2-gauge STATIC ui/kh2_hp_gauge.cpp ui/kh2_hp_config.cpp ui/kh2_enemy_gauge.cpp)
 target_link_libraries(khdays-kh2-gauge PUBLIC khdays-kh2-sequence khdays-hud-settings)
 target_compile_options(khdays-kh2-gauge PRIVATE /W4 /std:c++20 /EHsc)
@@ -851,7 +870,7 @@ target_compile_options(khdays-native PRIVATE
 # ufbx, as it is: third-party, not held to the port's warnings.
 add_library(khdays-ufbx STATIC "${ufbx_SOURCE_DIR}/ufbx.c")
 target_link_libraries(khdays-native PRIVATE khdays-ufbx)
-target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-kh2-portrait)
+target_link_libraries(khdays-native PRIVATE khdays-lua khdays-kh2-gauge khdays-kh2-portrait khdays-kh2-ai)
 target_link_libraries(khdays-native PRIVATE khdays-gfx khdays-gpu khdays-sound khdays-host-input SDL3::SDL3 dbghelp winmm delayimp
                       mfplat mfreadwrite mfuuid ole32 ws2_32 iphlpapi advapi32 winhttp dwmapi)
 # The DS's own addresses are held, inaccessible, first thing in main

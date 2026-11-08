@@ -42,6 +42,7 @@
 
 extern int khdays_export_heart_model(const char *input, const char *output);
 extern int khdays_export_kh2_object(int argc, char **argv); /* tools/kh2_object_export.cpp */
+extern int khdays_kh2_ai_tool(int argc, char **argv); /* runtime/kh2_enemies/tools.cpp */
 extern void khdays_NitroMain(void);                         /* the decomp's main, renamed at build */
 extern void _fp_init(void);
 extern void NitroStartUp(void);
@@ -278,6 +279,10 @@ int main(int argc, char **argv)
     if (argc >= 4 && strcmp(argv[1], "--kh2-object") == 0) {
         /* Headless: a KH2 object of the player's collection made into a glTF model (the KH2 prizes mod) */
         return khdays_export_kh2_object(argc - 2, argv + 2);
+    }
+    if (argc >= 2 && (strcmp(argv[1], "--kh2-ai-calls") == 0 || strcmp(argv[1], "--kh2-ai-run") == 0)) {
+        /* Headless: the KH2 calls the port handles; an object's AI script run on a made-up actor, watched */
+        return khdays_kh2_ai_tool(argc - 1, argv + 1);
     }
     /* this copy's player slot: a further copy on the PC is player N, with its own save, settings, logs
      * and gamepad (host/app/instance.h) */

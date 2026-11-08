@@ -29,6 +29,8 @@ extern "C" {
  * mission_build.h); read here so that a description that does not read is said where the port reads it. */
 typedef struct KhdaysMissionEnemies {
     int enemy_class, count;
+    char *kh2;     /* `kh2:<name>`: a KINGDOM HEARTS II enemy (its object's name) in the class's place; NULL: Days's */
+    int needs_kh2; /* `kh2:<name>` with no Days class to stand in: the mission needs KH2's enemies */
 } KhdaysMissionEnemies;
 
 typedef struct KhdaysMissionSpawner {
@@ -139,6 +141,9 @@ int khdays_mission_counted(const KhdaysMission *m);
 /* How many items the game has (db/db.p2 entry 0x15's count), set before missions are read: a chest's contents is an
  * item from 1 to it. 0 leaves it unknown (any item from 1). */
 void khdays_missions_set_items(int count);
+/* Whether a KH2 enemy kind can be played now (the player's mod has it covered and the setting is on): a mission with
+ * a KH2 enemy that has no stand-in is left out without it. NULL (the default): none can. */
+void khdays_missions_set_kh2_ready(int (*ready)(const char *name));
 
 /* Adds mod `id`'s missions (its folder under mods/) from its missions.txt, `size` bytes. A block that does not
  * read is left out and reported; the others are kept. Returns how many were added. */
