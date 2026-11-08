@@ -99,11 +99,11 @@ fr.HdPageDescription=Créés sur cet ordinateur à partir de vos propres collect
 de.HdPageDescription=Werden auf diesem Computer aus deinen eigenen Sammlungen erstellt.
 it.HdPageDescription=Creati su questo computer dalle tue raccolte.
 
-en.HdPageText=The HD menus and HUD need KINGDOM HEARTS HD 1.5+2.5 ReMIX (with 2.8 Final Chapter Prologue also the camp, save and new game screens); the HD videos need 1.5+2.5. Leave a folder empty if you do not have that collection.
-es.HdPageText=Los menús y el HUD HD necesitan KINGDOM HEARTS HD 1.5+2.5 ReMIX (con 2.8 Final Chapter Prologue también las pantallas del campamento, de partidas y de nueva partida); los vídeos HD necesitan 1.5+2.5. Deja una carpeta vacía si no tienes esa colección.
-fr.HdPageText=Les menus et l'interface HD ont besoin de KINGDOM HEARTS HD 1.5+2.5 ReMIX (avec 2.8 Final Chapter Prologue, aussi les écrans du camp, des sauvegardes et de nouvelle partie) ; les vidéos HD ont besoin de 1.5+2.5. Laissez un dossier vide si vous n'avez pas cette collection.
-de.HdPageText=Die HD-Menüs und das HD-HUD brauchen KINGDOM HEARTS HD 1.5+2.5 ReMIX (mit 2.8 Final Chapter Prologue auch die Bildschirme für Lager, Spielstände und neues Spiel); die HD-Videos brauchen 1.5+2.5. Lass einen Ordner leer, wenn du diese Sammlung nicht hast.
-it.HdPageText=I menu e l'HUD HD richiedono KINGDOM HEARTS HD 1.5+2.5 ReMIX (con 2.8 Final Chapter Prologue anche le schermate del campo, dei salvataggi e della nuova partita); i video HD richiedono 1.5+2.5. Lascia vuota una cartella se non hai quella raccolta.
+en.HdPageText=The HD menus and HUD need both collections; KH2's models, prizes, Dark Corridors and enemies and the HD videos need KINGDOM HEARTS HD 1.5+2.5 ReMIX. Leave a folder empty if you do not have that collection.
+es.HdPageText=Los menús y el HUD HD necesitan las dos colecciones; los modelos, premios, Pasillos Oscuros y enemigos de KH2 y los vídeos HD, KINGDOM HEARTS HD 1.5+2.5 ReMIX. Deja una carpeta vacía si no tienes esa colección.
+fr.HdPageText=Les menus et l'interface HD ont besoin des deux collections ; les modèles, prix, Couloirs des Ténèbres et ennemis de KH2 et les vidéos HD, de KINGDOM HEARTS HD 1.5+2.5 ReMIX. Laissez un dossier vide si vous n'avez pas cette collection.
+de.HdPageText=Die HD-Menüs und das HD-HUD brauchen beide Sammlungen; die Modelle, Preise, Korridore der Finsternis und Gegner aus KH2 und die HD-Videos brauchen KINGDOM HEARTS HD 1.5+2.5 ReMIX. Lass einen Ordner leer, wenn du diese Sammlung nicht hast.
+it.HdPageText=I menu e l'HUD HD richiedono entrambe le raccolte; i modelli, i premi, i Corridoi Oscuri e i nemici di KH2 e i video HD, KINGDOM HEARTS HD 1.5+2.5 ReMIX. Lascia vuota una cartella se non hai quella raccolta.
 
 en.Hd1525Label=KINGDOM HEARTS HD 1.5+2.5 ReMIX folder (optional):
 es.Hd1525Label=Carpeta de KINGDOM HEARTS HD 1.5+2.5 ReMIX (opcional):
@@ -117,11 +117,16 @@ fr.Hd28Label=Dossier de KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facultatif
 de.Hd28Label=Ordner von KINGDOM HEARTS HD 2.8 Final Chapter Prologue (optional):
 it.Hd28Label=Cartella di KINGDOM HEARTS HD 2.8 Final Chapter Prologue (facoltativa):
 
-en.HdMenus=HD menus and HUD, with the Menu Overhaul, Walk, KH2 prizes, chests and Dark Corridors, and KH2 enemies mods (needs 1.5+2.5)
-es.HdMenus=Menús y HUD HD, con los mods Menu Overhaul, Walk, premios, cofres y Pasillos Oscuros de KH2 y enemigos de KH2 (necesita 1.5+2.5)
-fr.HdMenus=Menus et interface HD, avec les mods Menu Overhaul, Walk, prix, coffres et Couloirs des Ténèbres de KH2 et ennemis de KH2 (1.5+2.5 nécessaire)
-de.HdMenus=HD-Menüs und HD-HUD, mit den Mods Menu Overhaul, Walk, Preise, Truhen und Korridore der Finsternis aus KH2 und Gegner aus KH2 (braucht 1.5+2.5)
-it.HdMenus=Menu e HUD HD, con le mod Menu Overhaul, Walk, premi, forzieri e Corridoi Oscuri di KH2 e nemici di KH2 (serve 1.5+2.5)
+en.HdMenus=HD menus and HUD with the Menu Overhaul (both collections)
+en.HdKh2=KH2's models, prizes, Dark Corridors and enemies, and the Walk (1.5+2.5)
+es.HdMenus=Menús y HUD HD con el Menu Overhaul (las dos colecciones)
+es.HdKh2=Modelos, premios, Pasillos Oscuros y enemigos de KH2, y Walk (1.5+2.5)
+fr.HdMenus=Menus et interface HD avec le Menu Overhaul (les deux collections)
+fr.HdKh2=Modèles, prix, Couloirs des Ténèbres et ennemis de KH2, et Walk (1.5+2.5)
+de.HdMenus=HD-Menüs und HD-HUD mit dem Menu Overhaul (beide Sammlungen)
+de.HdKh2=Modelle, Preise, Korridore der Finsternis und Gegner aus KH2, Walk (1.5+2.5)
+it.HdMenus=Menu e HUD HD con il Menu Overhaul (entrambe le raccolte)
+it.HdKh2=Modelli, premi, Corridoi Oscuri e nemici di KH2, e Walk (1.5+2.5)
 
 en.HdVideos=HD videos: movies and scenes with subtitles and music (needs 1.5+2.5, 6.5 GB)
 es.HdVideos=Vídeos HD: películas y escenas con subtítulos y música (necesita 1.5+2.5, 6,5 GB)

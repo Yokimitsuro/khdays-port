@@ -271,11 +271,6 @@ def tool_made_by(tool: str, template: list[str]) -> str:
     return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
-def needs_28(tool: str) -> bool:
-    """Whether an HD menu tool reads 2.8's pieces ({ddd}): without that collection its screens stay Days's."""
-    return any("{ddd}" in a for t, template in HD_MENU_TOOLS if t == tool for a in template)
-
-
 def menu_tools_to_make(state: dict[str, Any], folders: dict[str, str], made: Path) -> list[str]:
     """The HD menu tools to run, in their order: none when each one's files are there, made by the same
     tool from these collections; else those whose tool changed or whose files went missing, with every
@@ -482,7 +477,7 @@ def to_recycle_bin(path: Path) -> None:
 
 # ---- The HD pieces -----------------------------------------------------------------------------
 
-# The tools that make the maintainer's mods/HD PACK (the HD menus and HUD: 1.5+2.5, the {ddd} ones 2.8 too) and the
+# The tools that make the maintainer's mods/HD PACK (the HD menus and HUD, both collections; KH2's models, 1.5+2.5) and the
 # theater's videos (1.5+2.5), each with its arguments: {mare}, {settings} the 1.5+2.5 theater's and
 # settings menu's files (their original/ folder), {ddd} 2.8's kh3d_first (its original/ and
 # remastered/), {kh2} KH2's kh2_first extraction, {hand} its title sheet, {movies} the theater's videos.
@@ -508,6 +503,7 @@ HD_MENU_SUPPORT = (
     "docs/examples/kh2-gauge.json",
     "port/tools/heart_model_export.cpp",
 )
+MODEL_TOOLS = ("kh2_models.py",)  # the HD tools of KH2's models (build-hd --models), apart from the menus' (--menus)
 MODEL_SETTINGS = "tools/hd/kh2_models"  # kh2_models.py's: the port's settings for KH2's models, by their place
 
 
@@ -816,12 +812,19 @@ MESSAGES.update(
             "de": "In diesem Ordner fehlen Dateien, die die HD-Teile brauchen: {missing}",
             "it": "In questa cartella mancano file che servono ai pezzi HD: {missing}",
         },
-        "hd-menus-need-1525": {
-            "en": "The HD menus and HUD need KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
-            "es": "Los menús y el HUD HD necesitan KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
-            "fr": "Les menus et l'interface HD ont besoin de KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
-            "de": "Die HD-Menüs und das HD-HUD brauchen KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
-            "it": "I menu e l'HUD HD richiedono KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+        "hd-needs-both": {
+            "en": "The HD menus and HUD need both collections.",
+            "es": "Los menús y el HUD HD necesitan las dos colecciones.",
+            "fr": "Les menus et l'interface HD ont besoin des deux collections.",
+            "de": "Die HD-Menüs und das HD-HUD brauchen beide Sammlungen.",
+            "it": "I menu e l'HUD HD richiedono entrambe le raccolte.",
+        },
+        "hd-models-need-1525": {
+            "en": "KH2's models need KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "es": "Los modelos de KH2 necesitan KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "fr": "Les modèles de KH2 ont besoin de KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "de": "Die Modelle aus KH2 brauchen KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "it": "I modelli di KH2 richiedono KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
         },
         "hd-needs-1525": {
             "en": "The HD videos need KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
@@ -978,9 +981,8 @@ MESSAGES["data-missing"] = {
 
 def _build_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
-    p.add_argument(
-        "--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): 1.5+2.5; 2.8 for its screens too"
-    )
+    p.add_argument("--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): both collections")
+    p.add_argument("--models", action="store_true", help="KH2's models (kh2_models.py, into mods/HD PACK): 1.5+2.5")
     p.add_argument("--videos", action="store_true", help="the theater's videos and subtitles: 1.5+2.5")
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
     p.add_argument("--28", dest="c28", type=Path, help="the KINGDOM HEARTS HD 2.8 Final Chapter Prologue folder")
@@ -991,8 +993,10 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     import collection_archive
 
     install = args.install.resolve()
-    if args.menus and args.c1525 is None:
-        raise Refusal("hd-menus-need-1525")
+    if args.menus and (args.c1525 is None or args.c28 is None):
+        raise Refusal("hd-needs-both")
+    if args.models and args.c1525 is None:
+        raise Refusal("hd-models-need-1525")
     if args.videos and args.c1525 is None:
         raise Refusal("hd-needs-1525")
     # an update leaves the pieces already made from the same collections by the same tools (their folder
@@ -1001,9 +1005,10 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     menu_inputs = {"1.5+2.5": str(args.c1525), "2.8": str(args.c28) if args.c28 is not None else ""}
     video_inputs = {"1.5+2.5": str(args.c1525)}
     mod, cutscenes = install / "mods" / HD_MOD, install / "data" / "cutscenes"
-    menus = menu_tools_to_make(made_before, menu_inputs, mod) if args.menus else []
-    if args.c28 is None:  # the screens made from 2.8's pieces stay Days's own (kept if made before)
-        menus = [tool for tool in menus if not needs_28(tool)]
+    # the tools of the groups chosen: KH2's models (1.5+2.5) apart from the menus and HUD (both collections); a group
+    # not chosen keeps what it made before
+    chosen = {tool for tool, _ in HD_MENU_TOOLS if (args.models if tool in MODEL_TOOLS else args.menus)}
+    menus = [tool for tool in menu_tools_to_make(made_before, menu_inputs, mod) if tool in chosen] if chosen else []
     videos = args.videos and not hd_made(made_before, "hd-videos", video_inputs, cutscenes)
     if not menus and not videos:
         return {"pieces": [], "skipped": True, "message": words("hd-ready", args.language)}

@@ -110,7 +110,7 @@ var
   HelperReady: Boolean;
   DataOk: Boolean;
   HdPage: TInputQueryWizardPage;
-  HdMenus, HdVideos: TNewCheckBox;
+  HdMenus, HdKh2, HdVideos: TNewCheckBox;
   HdStatus: TNewStaticText;
   SteamPage: TWizardPage;
   SteamAdd: TNewCheckBox;
@@ -286,14 +286,16 @@ begin
     RomStatus.Caption := CustomMessage('RomCheckFailed');
 end;
 
-{ ---- The HD collections: the HD menus and HUD (both), the HD videos (1.5+2.5) ---- }
+{ ---- The HD collections: the HD menus and HUD (both), KH2's models and mods, the HD videos (1.5+2.5) ---- }
 
 procedure HdChanged(Sender: TObject);
 begin
   { a choice whose collection is not given is unavailable; its caption says what it needs }
-  HdMenus.Enabled := Trim(HdPage.Values[0]) <> '';  { 2.8 adds the screens made from its pieces }
+  HdMenus.Enabled := (Trim(HdPage.Values[0]) <> '') and (Trim(HdPage.Values[1]) <> '');
+  HdKh2.Enabled := Trim(HdPage.Values[0]) <> '';
   HdVideos.Enabled := Trim(HdPage.Values[0]) <> '';
   if not HdMenus.Enabled then HdMenus.Checked := False;
+  if not HdKh2.Enabled then HdKh2.Checked := False;
   if not HdVideos.Enabled then HdVideos.Checked := False;
 end;
 
@@ -351,9 +353,15 @@ begin
   HdMenus.Width := HdPage.SurfaceWidth;
   HdMenus.Height := ScaleY(20);
   HdMenus.Caption := CustomMessage('HdMenus');
+  HdKh2 := TNewCheckBox.Create(HdPage);
+  HdKh2.Parent := HdPage.Surface;
+  HdKh2.Top := HdMenus.Top + HdMenus.Height + ScaleY(6);
+  HdKh2.Width := HdPage.SurfaceWidth;
+  HdKh2.Height := ScaleY(20);
+  HdKh2.Caption := CustomMessage('HdKh2');
   HdVideos := TNewCheckBox.Create(HdPage);
   HdVideos.Parent := HdPage.Surface;
-  HdVideos.Top := HdMenus.Top + HdMenus.Height + ScaleY(6);
+  HdVideos.Top := HdKh2.Top + HdKh2.Height + ScaleY(6);
   HdVideos.Width := HdPage.SurfaceWidth;
   HdVideos.Height := ScaleY(20);
   HdVideos.Caption := CustomMessage('HdVideos');
@@ -384,8 +392,9 @@ begin
   HdPage.Edits[0].OnChange := @HdChanged;
   HdPage.Edits[1].OnChange := @HdChanged;
   HdChanged(nil);
-  Wanted := ExpandConstant('{param:HD|menus,videos}');
+  Wanted := ExpandConstant('{param:HD|menus,kh2,videos}');
   HdMenus.Checked := HdMenus.Enabled and (Pos('menus', Wanted) > 0);
+  HdKh2.Checked := HdKh2.Enabled and (Pos('kh2', Wanted) > 0);
   HdVideos.Checked := HdVideos.Enabled and (Pos('videos', Wanted) > 0);
   HdChanged(nil);
 end;
@@ -397,7 +406,7 @@ begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
   WizardForm.Refresh;
-  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked) then
+  if (HdFolder(0) <> '') and (HdMenus.Checked or HdKh2.Checked or HdVideos.Checked) then
     if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '"', Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
@@ -659,11 +668,12 @@ begin
                                 ExpandConstant('{app}') + '\data\extracted', 329000000, Json) = 0;
     if not DataOk then
       SuppressibleMsgBox(CustomMessage('DataFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
-    if DataOk and (HdMenus.Checked or HdVideos.Checked) then begin
+    if DataOk and (HdMenus.Checked or HdKh2.Checked or HdVideos.Checked) then begin
       WizardForm.StatusLabel.Caption := CustomMessage('HdMaking');
       WizardForm.Refresh;
       Args := 'build-hd "' + ExpandConstant('{app}') + '"';
       if HdMenus.Checked then Args := Args + ' --menus';
+      if HdKh2.Checked then Args := Args + ' --models';
       if HdVideos.Checked then Args := Args + ' --videos';
       if HdFolder(0) <> '' then Args := Args + ' --1525 "' + HdFolder(0) + '"';
       if HdMenus.Checked and (HdFolder(1) <> '') then Args := Args + ' --28 "' + HdFolder(1) + '"';
@@ -673,12 +683,15 @@ begin
         { made but for some screens (a tool that failed): said, with where its error was kept }
         SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
-    { the port's own mods (the Menu Overhaul, made from the HD menus' pieces, and the Walk) put inside the HD
-      PACK after the HD menus }
-    if DataOk and HdMenus.Checked then begin
+    { the port's own mods put inside the HD PACK after the HD pieces: the Menu Overhaul (made from the HD menus'
+      pieces) with the HD menus, KH2's prizes, Dark Corridors and enemies and the Walk with KH2's models }
+    if DataOk and (HdMenus.Checked or HdKh2.Checked) then begin
       WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
       WizardForm.Refresh;
-      Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --kh2-prizes --kh2-enemies --1525 "' + HdFolder(0) + '"';
+      Args := 'build-mods "' + ExpandConstant('{app}') + '"';
+      if HdMenus.Checked then Args := Args + ' --menu-overhaul';
+      if HdKh2.Checked then Args := Args + ' --walk --kh2-prizes --kh2-enemies';
+      Args := Args + ' --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
       else if JsonValue(Json, 'missing') <> '' then

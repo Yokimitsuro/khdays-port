@@ -155,6 +155,7 @@ class State(unittest.TestCase):
                 s.argparse.Namespace(
                     install=install,
                     menus=True,
+                    models=False,
                     videos=False,
                     c1525=Path(folders["1.5+2.5"]),
                     c28=Path(folders["2.8"]),
@@ -343,7 +344,13 @@ class PortModsInTheHdPack(unittest.TestCase):
             with self.assertRaises(s.Refusal):
                 s.build_hd(
                     s.argparse.Namespace(
-                        install=self.install, menus=True, videos=False, c1525=Path("a"), c28=Path("b"), language="en"
+                        install=self.install,
+                        menus=True,
+                        models=False,
+                        videos=False,
+                        c1525=Path("a"),
+                        c28=Path("b"),
+                        language="en",
                     )
                 )
         self.assertEqual(self.files(self.hd), self.pristine)  # taken out before the kept pieces are copied
@@ -426,22 +433,16 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(self.files(self.hd), self.pristine)
 
 
-class HdMenusWithout28(unittest.TestCase):
-    """The HD menus need 1.5+2.5 alone: the screens made from 2.8's pieces stay Days's without it, the others
-    (KH2's models among them) are made; a tool made again that fails keeps the pieces it made before."""
-
-    def test_which_tools_need_28(self):
-        self.assertEqual(
-            sorted(t for t, _ in s.HD_MENU_TOOLS if s.needs_28(t)),
-            ["ddd_camp.py", "newgame_dialog.py", "save_screen.py"],
-        )
-        self.assertFalse(s.needs_28("kh2_models.py"))
+class HdMenusAndKh2Models(unittest.TestCase):
+    """The HD page's choices: the HD menus and HUD need both collections, KH2's models 1.5+2.5 alone, each group's
+    tools run apart (the other's pieces kept); a tool made again that fails keeps the pieces it made before."""
 
     def args(self, install, **over):
         return s.argparse.Namespace(
             **{
                 "install": install,
-                "menus": True,
+                "menus": False,
+                "models": True,
                 "videos": False,
                 "c1525": Path("a"),
                 "c28": None,
@@ -450,14 +451,23 @@ class HdMenusWithout28(unittest.TestCase):
             }
         )
 
-    def test_refused_only_without_15_25(self):
+    def test_each_choice_with_its_collections(self):
+        self.assertEqual(s.MODEL_TOOLS, ("kh2_models.py",))
         with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(s.Refusal) as refused:
-                s.build_hd(self.args(Path(d), c1525=None, c28=Path("b")))
-            self.assertEqual(refused.exception.key, "hd-menus-need-1525")
-            # 2.8 not given: its tools left out (here the only ones to make: nothing done)
-            with mock.patch.object(s, "menu_tools_to_make", return_value=["save_screen.py", "ddd_camp.py"]):
+            for over, key in (
+                ({"menus": True, "models": False, "c28": None}, "hd-needs-both"),
+                ({"menus": True, "models": False, "c1525": None, "c28": Path("b")}, "hd-needs-both"),
+                ({"c1525": None}, "hd-models-need-1525"),
+            ):
+                with self.assertRaises(s.Refusal) as refused:
+                    s.build_hd(self.args(Path(d), **over))
+                self.assertEqual(refused.exception.key, key, over)
+            # KH2's models alone: the menus' tools not run (here the only ones to make: nothing done)
+            with mock.patch.object(s, "menu_tools_to_make", return_value=["save_screen.py", "kh2_fonts.py"]):
                 self.assertTrue(s.build_hd(self.args(Path(d)))["skipped"])
+            # the menus alone: KH2's models' tool not run
+            with mock.patch.object(s, "menu_tools_to_make", return_value=["kh2_models.py"]):
+                self.assertTrue(s.build_hd(self.args(Path(d), menus=True, models=False, c28=Path("b")))["skipped"])
 
     def test_a_tool_failing_again_keeps_its_pieces(self):
         import collection_archive
@@ -499,7 +509,7 @@ class HdMenusWithout28(unittest.TestCase):
                 mock.patch.object(collection_archive, "materialise"),
             ):
                 (Path(d) / "tools" / "decompress_data.py").write_text("")
-                s.build_hd(self.args(install))
+                s.build_hd(self.args(install, menus=True, c28=Path("b")))
             self.assertEqual((mod / "fonts" / "kh2.txt").read_text(), "new font")
             self.assertEqual((mod / "graphics" / "roxas.txt").read_text(), "kh2 roxas")  # kept, not lost
             tools = s.load_state(install)["steps"]["hd-menus"]["tools"]
