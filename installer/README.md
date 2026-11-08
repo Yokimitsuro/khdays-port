@@ -55,8 +55,9 @@ examples as a mod ready to copy, its plugin built (`mods-examples/HelloWorld`, `
 
 ## The HD pieces
 
-Optional, from the player's own copies, on the HD page: **HD menus and HUD** (both KINGDOM HEARTS
-HD 1.5+2.5 ReMIX and HD 2.8 Final Chapter Prologue: the tools' `mods/HD PACK`) and **HD videos**
+Optional, from the player's own copies, on the HD page: **HD menus and HUD** (KINGDOM HEARTS HD
+1.5+2.5 ReMIX, and HD 2.8 Final Chapter Prologue for the camp, save and new game screens made from its
+pieces, Days's own without it: the tools' `mods/HD PACK`, with the port's own mods) and **HD videos**
 (1.5+2.5: the game's movies and the theater's scenes that `port/movies/hd_scenes.txt` names, with
 their subtitles, in `data/cutscenes`, about 6.5 GB; the installer carries the scene map beside the
 tools). The helper reads the entries the tools need straight from the collections' archives (`collection_archive.py`: the

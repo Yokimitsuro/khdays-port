@@ -291,7 +291,7 @@ end;
 procedure HdChanged(Sender: TObject);
 begin
   { a choice whose collection is not given is unavailable; its caption says what it needs }
-  HdMenus.Enabled := (Trim(HdPage.Values[0]) <> '') and (Trim(HdPage.Values[1]) <> '');
+  HdMenus.Enabled := Trim(HdPage.Values[0]) <> '';  { 2.8 adds the screens made from its pieces }
   HdVideos.Enabled := Trim(HdPage.Values[0]) <> '';
   if not HdMenus.Enabled then HdMenus.Checked := False;
   if not HdVideos.Enabled then HdVideos.Checked := False;
@@ -666,7 +666,7 @@ begin
       if HdMenus.Checked then Args := Args + ' --menus';
       if HdVideos.Checked then Args := Args + ' --videos';
       if HdFolder(0) <> '' then Args := Args + ' --1525 "' + HdFolder(0) + '"';
-      if HdMenus.Checked then Args := Args + ' --28 "' + HdFolder(1) + '"';
+      if HdMenus.Checked and (HdFolder(1) <> '') then Args := Args + ' --28 "' + HdFolder(1) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
         SuppressibleMsgBox(CustomMessage('HdFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
       else if JsonValue(Json, 'missing') <> '' then
@@ -675,7 +675,7 @@ begin
     end;
     { the port's own mods (the Menu Overhaul, made from the HD menus' pieces, and the Walk) put inside the HD
       PACK after the HD menus }
-    if DataOk and HdMenus.Checked and DirExists(ExpandConstant('{app}') + '\mods\HD PACK') then begin
+    if DataOk and HdMenus.Checked then begin
       WizardForm.StatusLabel.Caption := CustomMessage('ModsMaking');
       WizardForm.Refresh;
       Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --kh2-prizes --kh2-enemies --1525 "' + HdFolder(0) + '"';

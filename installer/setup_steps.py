@@ -271,6 +271,11 @@ def tool_made_by(tool: str, template: list[str]) -> str:
     return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
+def needs_28(tool: str) -> bool:
+    """Whether an HD menu tool reads 2.8's pieces ({ddd}): without that collection its screens stay Days's."""
+    return any("{ddd}" in a for t, template in HD_MENU_TOOLS if t == tool for a in template)
+
+
 def menu_tools_to_make(state: dict[str, Any], folders: dict[str, str], made: Path) -> list[str]:
     """The HD menu tools to run, in their order: none when each one's files are there, made by the same
     tool from these collections; else those whose tool changed or whose files went missing, with every
@@ -477,7 +482,7 @@ def to_recycle_bin(path: Path) -> None:
 
 # ---- The HD pieces -----------------------------------------------------------------------------
 
-# The tools that make the maintainer's mods/HD PACK (the HD menus and HUD, both collections) and the
+# The tools that make the maintainer's mods/HD PACK (the HD menus and HUD: 1.5+2.5, the {ddd} ones 2.8 too) and the
 # theater's videos (1.5+2.5), each with its arguments: {mare}, {settings} the 1.5+2.5 theater's and
 # settings menu's files (their original/ folder), {ddd} 2.8's kh3d_first (its original/ and
 # remastered/), {kh2} KH2's kh2_first extraction, {hand} its title sheet, {movies} the theater's videos.
@@ -811,12 +816,12 @@ MESSAGES.update(
             "de": "In diesem Ordner fehlen Dateien, die die HD-Teile brauchen: {missing}",
             "it": "In questa cartella mancano file che servono ai pezzi HD: {missing}",
         },
-        "hd-needs-both": {
-            "en": "The HD menus and HUD need both collections.",
-            "es": "Los menús y el HUD HD necesitan las dos colecciones.",
-            "fr": "Les menus et l'interface HD ont besoin des deux collections.",
-            "de": "Die HD-Menüs und das HD-HUD brauchen beide Sammlungen.",
-            "it": "I menu e l'HUD HD richiedono entrambe le raccolte.",
+        "hd-menus-need-1525": {
+            "en": "The HD menus and HUD need KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "es": "Los menús y el HUD HD necesitan KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "fr": "Les menus et l'interface HD ont besoin de KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "de": "Die HD-Menüs und das HD-HUD brauchen KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
+            "it": "I menu e l'HUD HD richiedono KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
         },
         "hd-needs-1525": {
             "en": "The HD videos need KINGDOM HEARTS HD 1.5+2.5 ReMIX.",
@@ -973,7 +978,9 @@ MESSAGES["data-missing"] = {
 
 def _build_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
-    p.add_argument("--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): both collections")
+    p.add_argument(
+        "--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): 1.5+2.5; 2.8 for its screens too"
+    )
     p.add_argument("--videos", action="store_true", help="the theater's videos and subtitles: 1.5+2.5")
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
     p.add_argument("--28", dest="c28", type=Path, help="the KINGDOM HEARTS HD 2.8 Final Chapter Prologue folder")
@@ -984,16 +991,19 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     import collection_archive
 
     install = args.install.resolve()
-    if args.menus and (args.c1525 is None or args.c28 is None):
-        raise Refusal("hd-needs-both")
+    if args.menus and args.c1525 is None:
+        raise Refusal("hd-menus-need-1525")
     if args.videos and args.c1525 is None:
         raise Refusal("hd-needs-1525")
     # an update leaves the pieces already made from the same collections by the same tools (their folder
     # deleted: made again)
     made_before = load_state(install)
-    menu_inputs, video_inputs = {"1.5+2.5": str(args.c1525), "2.8": str(args.c28)}, {"1.5+2.5": str(args.c1525)}
+    menu_inputs = {"1.5+2.5": str(args.c1525), "2.8": str(args.c28) if args.c28 is not None else ""}
+    video_inputs = {"1.5+2.5": str(args.c1525)}
     mod, cutscenes = install / "mods" / HD_MOD, install / "data" / "cutscenes"
     menus = menu_tools_to_make(made_before, menu_inputs, mod) if args.menus else []
+    if args.c28 is None:  # the screens made from 2.8's pieces stay Days's own (kept if made before)
+        menus = [tool for tool in menus if not needs_28(tool)]
     videos = args.videos and not hd_made(made_before, "hd-videos", video_inputs, cutscenes)
     if not menus and not videos:
         return {"pieces": [], "skipped": True, "message": words("hd-ready", args.language)}
@@ -1074,6 +1084,17 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
             first = pieces[0]
             raise RuntimeError(f"{first['tool']}: {first['error']} ({log})")
         made = {p["tool"]: p for p in pieces if p["made"]}
+        # a tool made again that failed this time (an update's): the pieces it made before stay, under its old
+        # record (so the next run tries it again), rather than the screens going back to the DS's
+        for tool in menus:
+            old = recorded.get(tool)
+            if tool in made or old is None or not all((mod / f).is_file() for f in old["files"]):
+                continue
+            for f in old["files"]:
+                if not (root / "mods" / HD_MOD / f).exists():
+                    (root / "mods" / HD_MOD / f).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(mod / f, root / "mods" / HD_MOD / f)
+            kept[tool] = old
         # whole, into their places: the menus when any was made (one that was not keeps the DS's look,
         # unrecorded, so the next run tries it again), the videos when all were
         state = load_state(install)
@@ -1341,12 +1362,13 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     hd = install / "mods" / HD_MOD
     if ("kh2-prizes" in wanted or "kh2-enemies" in wanted) and args.c1525 is None:
         raise Refusal("mod-needs-1525")
-    if "menu-overhaul" in wanted and (args.c1525 is None or not any(p.is_file() for p in hd.rglob("*"))):
+    if "menu-overhaul" in wanted and args.c1525 is None:
         raise Refusal("mod-needs-hd")
     skipped = None
     if "menu-overhaul" in wanted:
         hd_tools = load_state(install).get("steps", {}).get("hd-menus", {}).get("tools", {})
-        lacking = [t for t in OVERHAUL_HD_TOOLS if t not in hd_tools]
+        # (none when the HD menus were not made: the others are made all the same)
+        lacking = [t for t in OVERHAUL_HD_TOOLS if t not in hd_tools or not any(p.is_file() for p in hd.rglob("*"))]
         if lacking:  # (an HD PACK made without 2.8: the overhaul read a missing camp_backdrop.png and failed)
             wanted.remove("menu-overhaul")
             skipped = words("mod-overhaul-skipped", args.language, tools=", ".join(lacking))

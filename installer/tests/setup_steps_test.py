@@ -426,6 +426,109 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(self.files(self.hd), self.pristine)
 
 
+class HdMenusWithout28(unittest.TestCase):
+    """The HD menus need 1.5+2.5 alone: the screens made from 2.8's pieces stay Days's without it, the others
+    (KH2's models among them) are made; a tool made again that fails keeps the pieces it made before."""
+
+    def test_which_tools_need_28(self):
+        self.assertEqual(
+            sorted(t for t, _ in s.HD_MENU_TOOLS if s.needs_28(t)),
+            ["ddd_camp.py", "newgame_dialog.py", "save_screen.py"],
+        )
+        self.assertFalse(s.needs_28("kh2_models.py"))
+
+    def args(self, install, **over):
+        return s.argparse.Namespace(
+            **{
+                "install": install,
+                "menus": True,
+                "videos": False,
+                "c1525": Path("a"),
+                "c28": None,
+                "language": "en",
+                **over,
+            }
+        )
+
+    def test_refused_only_without_15_25(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(s.Refusal) as refused:
+                s.build_hd(self.args(Path(d), c1525=None, c28=Path("b")))
+            self.assertEqual(refused.exception.key, "hd-menus-need-1525")
+            # 2.8 not given: its tools left out (here the only ones to make: nothing done)
+            with mock.patch.object(s, "menu_tools_to_make", return_value=["save_screen.py", "ddd_camp.py"]):
+                self.assertTrue(s.build_hd(self.args(Path(d)))["skipped"])
+
+    def test_a_tool_failing_again_keeps_its_pieces(self):
+        import collection_archive
+
+        with tempfile.TemporaryDirectory() as d:
+            install = Path(d) / "install"
+            mod = install / "mods" / s.HD_MOD
+            for rel, text in (("graphics/roxas.txt", "kh2 roxas"), ("fonts/kh2.txt", "old font")):
+                (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+                (mod / rel).write_text(text)
+            old = {
+                "kh2_models.py": {"by": "an older tool", "files": ["graphics/roxas.txt"]},
+                "kh2_fonts.py": {"by": "an older tool", "files": ["fonts/kh2.txt"]},
+            }
+            s.save_state(install, {"steps": {"hd-menus": {"complete": False, "inputs": {}, "tools": old}}})
+            hd_tools = Path(d) / "tools" / "hd"
+            hd_tools.mkdir(parents=True)
+            for tool, _ in s.HD_MENU_TOOLS + s.HD_VIDEO_TOOLS:
+                (hd_tools / tool).write_text("")
+
+            def run(runs, line_of, root, log, language, watch=None):  # the fonts made anew, the models failing
+                (watch / "fonts").mkdir(parents=True, exist_ok=True)
+                (watch / "fonts" / "kh2.txt").write_text("new font")
+                return [
+                    {"tool": "kh2_fonts.py", "made": True, "files": ["fonts/kh2.txt"]},
+                    {"tool": "kh2_models.py", "made": False, "error": "it failed", "files": []},
+                ]
+
+            with (
+                mock.patch.object(s, "menu_tools_to_make", return_value=["kh2_fonts.py", "kh2_models.py"]),
+                mock.patch.object(s, "check_folder", return_value=[]),
+                mock.patch.object(s, "data_folder", return_value=install / "data"),
+                mock.patch.object(s, "hd_inputs", return_value={}),
+                mock.patch.object(s, "tool_folders", return_value={"hd": hd_tools, "rom": Path(d) / "tools"}),
+                mock.patch.object(s, "run_hd_tools", side_effect=run),
+                mock.patch.object(collection_archive, "load_table"),
+                mock.patch.object(collection_archive, "Cipher"),
+                mock.patch.object(collection_archive, "Archive"),
+                mock.patch.object(collection_archive, "materialise"),
+            ):
+                (Path(d) / "tools" / "decompress_data.py").write_text("")
+                s.build_hd(self.args(install))
+            self.assertEqual((mod / "fonts" / "kh2.txt").read_text(), "new font")
+            self.assertEqual((mod / "graphics" / "roxas.txt").read_text(), "kh2 roxas")  # kept, not lost
+            tools = s.load_state(install)["steps"]["hd-menus"]["tools"]
+            self.assertEqual(tools["kh2_models.py"], old["kh2_models.py"])  # its old record: tried again next time
+            self.assertNotEqual(tools["kh2_fonts.py"]["by"], "an older tool")
+
+    def test_the_mods_made_with_no_hd_menus(self):
+        with tempfile.TemporaryDirectory() as d:
+            install = Path(d)
+            (install / "mods" / s.HD_MOD).mkdir(parents=True)  # empty: the HD menus not made
+            with (
+                mock.patch.object(s, "tool_folders", side_effect=RuntimeError("tools reached")),
+            ):
+                # the overhaul is left out, not the whole step refused: it goes on to the others' tools
+                with self.assertRaises(RuntimeError) as reached:
+                    s.build_mods(
+                        s.argparse.Namespace(
+                            install=install,
+                            language="en",
+                            walk=True,
+                            menu_overhaul=True,
+                            kh2_prizes=False,
+                            kh2_enemies=False,
+                            c1525=Path("c1525"),
+                        )
+                    )
+                self.assertEqual(str(reached.exception), "tools reached")
+
+
 class Results(unittest.TestCase):
     def run_command(self, *argv):
         with tempfile.TemporaryDirectory() as d:
