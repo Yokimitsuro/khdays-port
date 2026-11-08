@@ -1,12 +1,15 @@
 """KINGDOM HEARTS II's AI scripts (an object's obj/<name>.mdlx, BAR entries of type 3), as KH2FM.exe's interpreter
 runs them (our reading of it; docs/FORMATS.md, "KH2's objects and their AI"): the header, the triggers the game
-calls it by, and the code disassembled from them.
+calls it by, and the code disassembled from them and from the routines the script registers as its states.
 
     python tools/research/kh2_ai.py --kh2 <kh2_*.hed_out> ... obj/M_EX010.mdlx
     python tools/research/kh2_ai.py --kh2 <kh2_*.hed_out> ... --survey
+    python tools/research/kh2_ai.py --kh2 <kh2_*.hed_out> ... --coverage handled.txt [M_EX010 ...]
 
-The first lists the code of an object's scripts; --survey counts which calls each kind of object makes. --kh2 once
-for each of KH2's packages extracted: its objects lie in several.
+The first lists the code of an object's scripts; --survey counts which calls each kind of object makes; --coverage
+says, for each object (or those named), which of the calls its script makes are in a list of handled ones (a
+`kind:number` a line, as `khdays-native --kh2-ai-calls` prints it) and which are missing. --kh2 once for each of
+KH2's packages extracted: its objects lie in several.
 
 A script: a name (16 bytes), three sizes (+0x10 its work area, +0x14 its frame area, +0x18 its value stack, in
 bytes), then its triggers {s32 key, s32 entry} until (0, 0). Code is 16-bit words counted from +0x10 (an entry is
@@ -44,6 +47,9 @@ BINARY = {
     1: by_argument("fadd fsub fmul fdiv fmod"),
 }
 MISC = by_argument("yield exit ret drop - dup sin cos deg2rad rad2deg")
+STATE_CALL = (1, 6)  # registers a state (see state_routines)
+STATE_ARGS = 12
+STATE_ROUTINE_ARGS = (3, 10)
 # the triggers the game raises itself (KH2FM.exe's callers of its trigger runner); the others an object's own
 TRIGGERS = {0: "start, run once with the object", 1: "main, the object's thread resumed each tick"}
 
@@ -60,6 +66,7 @@ class Instruction:
     next: list[int] = field(default_factory=list)  # where the code goes on
     calls: list[int] = field(default_factory=list)  # what it calls
     syscall: tuple[int, int] | None = None  # (table, index)
+    pushed: int | None = None  # the integer a push puts on the stack
     bad: bool = False
 
 
@@ -126,7 +133,7 @@ def decode(s: Script, pc: int) -> Instruction:
             if not need(3):
                 return Instruction(pc, 1, f"push? {w:#06x}", bad=True)
             value = f"{s.long(pc + 1)}" if sub == 0 else f"{s.real(pc + 1):g}f"
-            return Instruction(pc, 3, f"push {value}", [pc + 3])
+            return Instruction(pc, 3, f"push {value}", [pc + 3], pushed=s.long(pc + 1) if sub == 0 else None)
         if not need(2):
             return Instruction(pc, 1, f"push? {w:#06x}", bad=True)
         o = s.word(pc + 1)
@@ -184,34 +191,62 @@ def decode(s: Script, pc: int) -> Instruction:
     return Instruction(pc, 1, f"bad {w:#06x}", bad=True)
 
 
+def state_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
+    """The routines the reached code registers as states: call 1:6 takes 12 arguments, pushed just before it, its 4th
+    (and sometimes its 11th) the code word where the state's routine starts. The game enters a state by running that
+    routine as a child thread (FUN_1403cad00), so no jump or call of the script leads there."""
+    order = sorted(code)
+    found = set()
+    for i, pc in enumerate(order):
+        if code[pc].syscall != STATE_CALL or i < STATE_ARGS:
+            continue
+        args = [code[p] for p in order[i - STATE_ARGS : i]]
+        if any(a.at + a.size != b.at for a, b in zip(args, [*args[1:], code[pc]])):
+            continue  # not the pushes right before it
+        for k in STATE_ROUTINE_ARGS:
+            entry = args[k].pushed
+            if entry is not None and 0 < entry < s.words:
+                found.add(entry)
+    return found
+
+
 def walk(s: Script) -> dict[int, Instruction]:
-    """Every instruction reached from the triggers, following jumps and calls."""
+    """Every instruction reached from the triggers and from the routines the reached code registers as states,
+    following jumps and calls."""
     seen: dict[int, Instruction] = {}
     todo = [entry for _, entry in s.triggers]
+    routines: set[int] = set()
     while todo:
-        pc = todo.pop()
-        if pc in seen or not 0 <= pc < s.words:
-            continue
-        ins = decode(s, pc)
-        seen[pc] = ins
-        todo += ins.next + ins.calls
+        while todo:
+            pc = todo.pop()
+            if pc in seen or not 0 <= pc < s.words:
+                continue
+            ins = decode(s, pc)
+            seen[pc] = ins
+            todo += ins.next + ins.calls
+        new = state_routines(s, seen) - routines
+        routines |= new
+        todo = sorted(new)
     return seen
 
 
 def listing(s: Script) -> list[str]:
     """The script's code as text: its triggers, then each reached instruction, labels where code is entered."""
     code = walk(s)
+    routines = state_routines(s, code)
     entered = {to for ins in code.values() for to in ins.next + ins.calls if to != ins.at + ins.size}
-    entered |= {entry for _, entry in s.triggers}
+    entered |= {entry for _, entry in s.triggers} | routines
     out = [f"{s.name}: work {s.work}, frame {s.frame}, stack {s.stack} bytes"]
     for key, entry in s.triggers:
         out.append(f"  trigger {key} at {entry:#x}" + (f": {TRIGGERS[key]}" if key in TRIGGERS else ""))
+    if routines:
+        out.append(f"  {len(routines)} state routines")
     last = None
     for pc in sorted(code):
         if last is not None and pc != last:
             out.append("")
         if pc in entered:
-            out.append(f"{pc:#06x}:")
+            out.append(f"{pc:#06x}:" + ("  state routine" if pc in routines else ""))
         out.append(f"    {code[pc].text}")
         last = pc + code[pc].size
     return out
@@ -247,17 +282,54 @@ def survey(kh2: list[Path]) -> tuple[dict[str, int], dict[str, Counter]]:
     make each call."""
     scripts: dict[str, int] = Counter()
     calls: dict[str, Counter] = defaultdict(Counter)
-    objects: dict[str, Path] = {}
-    for root in kh2:
-        for path in (root / "obj").glob("*.mdlx"):
-            objects.setdefault(path.name.lower(), path)
-    for _, path in sorted(objects.items()):
+    for _, path in sorted(objects_in(kh2).items()):
         kind = path.stem.split("_")[0].upper()
         for _, s in scripts_in(path.read_bytes()):
             scripts[kind] += 1
             for call in {ins.syscall for ins in walk(s).values() if ins.syscall is not None}:
                 calls[kind][call] += 1
     return scripts, calls
+
+
+def objects_in(kh2: list[Path]) -> dict[str, Path]:
+    """obj/*.mdlx in the packages, each name once (the first package that has it), by the name's stem in capitals."""
+    objects: dict[str, Path] = {}
+    for root in kh2:
+        for path in (root / "obj").glob("*.mdlx"):
+            objects.setdefault(path.stem.upper(), path)
+    return objects
+
+
+def calls_of(path: Path) -> set[tuple[int, int]]:
+    """Every call an object's scripts make (state routines walked)."""
+    return {i.syscall for _, s in scripts_in(path.read_bytes()) for i in walk(s).values() if i.syscall is not None}
+
+
+def read_handled(text: str) -> set[tuple[int, int]]:
+    """A list of handled calls: `kind:number` a line; blank lines and # comments skipped."""
+    out = set()
+    for line in text.splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            kind, _, number = line.partition(":")
+            out.add((int(kind), int(number)))
+    return out
+
+
+def coverage(objects: dict[str, Path], handled: set[tuple[int, int]], names: list[str]) -> list[str]:
+    """For each object (those named, else all with a script): its calls, how many are handled, the missing ones."""
+    out = []
+    for name in [n.upper() for n in names] or sorted(objects):
+        if name not in objects:
+            out.append(f"{name}: not found")
+            continue
+        calls = calls_of(objects[name])
+        if not calls:
+            continue
+        missing = sorted(calls - handled)
+        listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
+        out.append(f"{name}: {len(calls)} calls, {len(calls) - len(missing)} handled; missing {listed}")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,9 +342,15 @@ def main(argv: list[str] | None = None) -> int:
         help="a KH2 package's entries extracted (<kh2_*.hed_out>); once for each",
     )
     ap.add_argument("--survey", action="store_true", help="which calls each kind of object's scripts make")
-    ap.add_argument("files", nargs="*", help="objects' files under --kh2 (obj/M_EX010.mdlx)")
+    ap.add_argument("--coverage", type=Path, help="a list of handled calls: which each object's script still misses")
+    ap.add_argument("files", nargs="*", help="objects' files under --kh2 (obj/M_EX010.mdlx); with --coverage, names")
     args = ap.parse_args(argv)
     try:
+        if args.coverage:
+            handled = read_handled(args.coverage.read_text(encoding="utf-8"))
+            names = [Path(f).stem for f in args.files]
+            print("\n".join(coverage(objects_in(args.kh2), handled, names)))
+            return 0
         if args.survey:
             scripts, calls = survey(args.kh2)
             for kind in sorted(scripts):

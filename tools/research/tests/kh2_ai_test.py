@@ -138,6 +138,40 @@ class Kh2AiTest(unittest.TestCase):
         self.assertEqual(scripts, {"M": 1, "B": 1})
         self.assertEqual(calls["M"][(1, 7)], 1)
 
+    def stateful(self):
+        """A script whose trigger 0 registers a state (call 1:6, its 12 arguments pushed first) and exits; the state's
+        routine makes call 2:7 and returns: reached by no jump or call."""
+        s0 = start(1)
+        before = [0x0020, 0x10, 0x0020, 0x20] + push_int(100)  # the table and the id (addresses), the flags
+        after = [w for _ in range(8) for w in push_int(0)]  # the other 8 arguments
+        tail = [10 | (1 << 6), 6, 0x0049]  # syscall 1:6, exit
+        routine_at = s0 + len(before) + 3 + len(after) + len(tail)  # the routine right after: the 4th argument
+        code = before + push_int(routine_at) + after + tail
+        routine = [10 | (2 << 6), 7, 0x0089]  # syscall 2:7, ret
+        return script([(0, s0)], code + routine), routine_at
+
+    def test_state_routines(self):
+        data, routine_at = self.stateful()
+        s = kh2_ai.read_script(data)
+        code = kh2_ai.walk(s)
+        self.assertEqual(kh2_ai.state_routines(s, code), {routine_at})
+        self.assertEqual(code[routine_at].syscall, (2, 7), "the state's routine is walked")
+        self.assertIn(f"{routine_at:#06x}:  state routine", kh2_ai.listing(s))
+
+    def test_coverage(self):
+        data, _ = self.stateful()
+        mdlx = bar([(3, b"m_ex", data)])
+        self.assertEqual(kh2_ai.read_handled("# handled\n1:6\n\n2:7  # a state's call\n"), {(1, 6), (2, 7)})
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "obj").mkdir()
+            (Path(d) / "obj" / "M_TEST.mdlx").write_bytes(mdlx)
+            objects = kh2_ai.objects_in([Path(d)])
+            self.assertEqual(
+                kh2_ai.coverage(objects, {(1, 6)}, ["m_test"]), ["M_TEST: 2 calls, 1 handled; missing 2:7"]
+            )
+            self.assertEqual(kh2_ai.coverage(objects, {(1, 6), (2, 7)}, []), ["M_TEST: 2 calls, 2 handled; missing -"])
+            self.assertEqual(kh2_ai.coverage(objects, set(), ["M_NONE"]), ["M_NONE: not found"])
+
 
 if __name__ == "__main__":
     unittest.main()

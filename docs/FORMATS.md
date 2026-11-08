@@ -407,10 +407,22 @@ scripts. Nothing of it is used by the game yet.
   every listening thread, FUN_1403f47b0), 10 (FUN_1403b3030), 11 (FUN_1403b5fa0), 13 and 14 (FUN_1403b7920,
   FUN_1403b79d0), 15 (FUN_1403d5500), 16 and 17 (a motion's events, FUN_14040dd70), 19 to 27; enemies' scripts
   have 0, 1, 6, 11, 13, 16 most.
+- **States**: most of a script's behaviour is its states. Call 1:6 registers one in a table of up to 128 entries of
+  32 bytes (FUN_1403ca0e0): its id (an address in the script), flags (two halves), the code word where its routine
+  starts, a priority and further values (the 11th argument sometimes a second routine). The object's state machine,
+  at its + 0x390, enters a state at once (1:8) or queues it in a ring of 16 (1:9); entering one (FUN_1403cad00) leaves
+  the current and runs the state's routine as a child thread of the object's script (FUN_1403e1970). No jump or call
+  of the script leads to those routines: a reading of the code must start from them too (`tools/research/kh2_ai.py`
+  does).
+- **Addresses**: the scripts' addresses are 32-bit, turned into the game's pointers by FUN_1404ad270 (as on the PS2,
+  where they were the machine's own). A script's work area holds at + 8 its AI handle, whose + 4 is its object: most
+  of the object's calls take that handle.
 - **The game's calls**: tables of 16-byte entries `{function, u16 its arguments, 0x40000000 when it gives back a
   value}` from a list of eleven at 0x140753490 (two filled in by the game: 9 by FUN_14026ace0); 105, 368, 98, 59, 35,
-  72, 37, 9, 41 and 60 entries. The arguments are popped (in order), the value pushed. Of KH2's 922 scripts the
-  enemies' (142) make 191 different calls, the bosses' (98) 263, all 570. Some read so far: 0:3 the tick's length,
+  72, 37, 9, 41 and 60 entries. The arguments are popped (in order), the value pushed. Of KH2's 920 scripts (the
+  six packages' `obj/*.mdlx`, each name once), states walked, the enemies' (142) make 297 different calls, the
+  bosses' (96) 393, the two together 423, all 715. (A first count, from the triggers alone, gave 191, 263 and 570:
+  it missed the state routines.) Some read so far: 0:3 the tick's length,
   0:16 / 0:17 / 0:18 random numbers (below n, times n, between two), 0:47 memory of n bytes, 0:6 a vector's length,
   0:21 the turn between two ways on the ground; 1:8, 1:9 and 1:10 the object's state machine (a state set at once,
   one queued, 16 at most, whether one is pending).
