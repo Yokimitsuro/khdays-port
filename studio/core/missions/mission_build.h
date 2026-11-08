@@ -21,6 +21,7 @@ struct WaveSpawner {
     struct Enemies {
         int enemy_class = 0;
         int count = 1;
+        std::string kh2;  // a KH2 enemy in the class's place (docs/KH2_ENEMIES.md); empty: the class's own
     };
     std::vector<Enemies> enemies;
     std::array<double, 3> at{};
@@ -46,6 +47,14 @@ struct MissionPlan {
 // The plan a mission's description gives: false (with why) when the port does not build it (no wave, and no
 // emblems or place of its kind's) or it has no start.
 bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why);
+
+// The rows a plan's enemy table gets, in their order: one for each class and KH2 enemy in its place, as they first
+// come in the waves (the builder's rows; the port reads which KH2 enemy a row's actors are).
+struct EnemyRow {
+    int enemy_class = 0;
+    std::string kh2;
+};
+std::vector<EnemyRow> enemy_rows(const MissionPlan& plan);
 
 // The game's files as the builder reads them: a game path ("mi/mi/1354") to its bytes (empty: none), and the
 // game's mission files' numbers. khdays-studio reads the extracted files; the port, its ROM.

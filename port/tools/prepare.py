@@ -2555,6 +2555,12 @@ HOOKS["ov107@020c5cfc"] = [
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(0); }\n"
         "    { extern int khdays_stop_store(void *enemy, int amount); amount = khdays_stop_store(obj, amount); }\n",
     ),
+    (  # a KH2 enemy's shell (runtime/kh2_enemies/shell.h): KH2's reaction or its end, once its class took the hit
+        "        if (obj->field_1d0(obj, source, packet) != 0) {\n",
+        "        if (obj->field_1d0(obj, source, packet) != 0) {\n"
+        "            { extern void khdays_kh2_enemies_hit(void *enemy, int hp_before);\n"
+        "              khdays_kh2_enemies_hit(obj, previousAmount); }\n",
+    ),
 ]
 HOOKS["ov107@020c6980"] = [
     (  # Ov107_ProcessObjectTick: a held enemy updated as a frozen one is (its tasks with no time, no motion)
@@ -2564,7 +2570,26 @@ HOOKS["ov107@020c6980"] = [
     ),
     (
         "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0) &&\n",
-        "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0 || khdays_stop_holding(self)) &&\n",
+        "        if (((self->field_1c4 & 2) != 0 || (self->field_1c4 & 8) != 0 || khdays_stop_holding(self) ||\n"
+        "             khdays_kh2_enemies_held(self)) &&\n",
+    ),
+    (  # a KH2 enemy's shell (runtime/kh2_enemies/shell.h): its KH2 actor ticked first, its place moved before the
+        # room's collision resolves it (below); never one of the updates skipped by distance (KH2's run every tick)
+        "int khdays_stop_held(void *enemy);\n",
+        "int khdays_stop_held(void *enemy);\n"
+        "void khdays_kh2_enemies_tick(void *enemy, int delta);\nint khdays_kh2_enemies_held(void *enemy);\n",
+    ),
+    (
+        "    struct ThreadState *thread;\n\n",
+        "    struct ThreadState *thread;\n\n    khdays_kh2_enemies_tick(self, delta);\n",
+    ),
+    (
+        "        if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
+        "        if (self->field_004 != 0 && !khdays_kh2_enemies_held(self) && (self->field_1c4 & 0xf) == 0 &&\n",
+    ),
+    (
+        "    } else if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
+        "    } else if (self->field_004 != 0 && !khdays_kh2_enemies_held(self) && (self->field_1c4 & 0xf) == 0 &&\n",
     ),
     (
         "            } else if ((self->field_1c4 & 2) == 0) {\n",

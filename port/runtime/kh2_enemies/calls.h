@@ -14,15 +14,23 @@ namespace ai = khdays::assets::kh2::ai;
 // The shapes from a `calls.txt`'s text; returns how many were read (0: none, the text not one).
 int read_shapes(ai::Calls &calls, const std::string &text);
 
-// Every handler the port has, by group: kind 0 (math and chance), the state machine, the actor's own fields.
+// Every handler the port has, by group: kind 0 (math and chance), the state machine, the actor's own fields, its
+// motions (and jumps and fading), its moving and facing, and what it reaches of the world (its target, effects,
+// threads; the actor's World).
 void add_math(ai::Calls &calls);
 void add_states(ai::Calls &calls);
 void add_actor_fields(ai::Calls &calls);
+void add_motions(ai::Calls &calls);
+void add_moving(ai::Calls &calls);
+void add_world(ai::Calls &calls);
 inline void add_all(ai::Calls &calls)
 {
     add_math(calls);
     add_states(calls);
     add_actor_fields(calls);
+    add_motions(calls);
+    add_moving(calls);
+    add_world(calls);
 }
 
 // KH2's chance (0:16 to 0:18): x = x * 0x10dcd, 32 bits; its seed per session.

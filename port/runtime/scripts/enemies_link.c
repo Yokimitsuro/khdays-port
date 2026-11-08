@@ -5,6 +5,7 @@
 #include "enemies_link.h"
 
 #include "../battle/stop_magic.h"
+#include "../kh2_enemies/shell.h"
 #include "../plugins/actors.h"
 
 #include "api_v2.h"
@@ -685,6 +686,7 @@ int khdays_enemies_state(unsigned actor, KhdaysEnemyInfo *out)
 void khdays_enemies_marker_made(int source, int row, void *actor, int id)
 {
     made = ref_of(actor);
+    khdays_kh2_enemies_made(row, actor);
     if (traced()) {
         fprintf(stderr, "enemies: f%u marker actor %08x from source %d row %d, class 0x%02x\n", khdays_link_frame(),
                 made, source, row, id);
@@ -740,6 +742,7 @@ int khdays_enemies_spawner_run(void *spawner, int op)
 void khdays_enemies_retired(void *actor)
 {
     khdays_stop_enemy_gone(actor);
+    khdays_kh2_enemies_gone(actor);
     khdays_actors_ended(ref_of(actor));
     if (traced()) {
         fprintf(stderr, "enemies: f%u actor %08x retired\n", khdays_link_frame(), ref_of(actor));
@@ -771,6 +774,7 @@ static void forget(void)
 void khdays_enemies_area_left(void)
 {
     khdays_stop_area_left();
+    khdays_kh2_enemies_area_left();
     khdays_actors_area_left();
     forget();
 }

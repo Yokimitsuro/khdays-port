@@ -5,6 +5,8 @@
 #ifndef KHDAYS_MODELS_H
 #define KHDAYS_MODELS_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -56,6 +58,13 @@ int khdays_models_shape(const void *list, unsigned int size);
  * units), `attr` the polygons' POLYGON_ATTR (alpha, id; no lights: drawn in its own colours). Whether it
  * was drawn (else it cannot be read, named once in the log). */
 int khdays_models_draw_placed(const char *path, const float place[16], unsigned int attr);
+
+/* A KH2 model (.mdlx) drawn so at a place of the port's in a pose of the port's: `bones` its bones' model-space
+ * matrices (KH2's centimetres, column-major, 16 floats each, as kh2::MotionPlayer::joints gives them), `count` of
+ * them -- a KH2 enemy (runtime/kh2_enemies/shell.cpp); `projection` the view to the clip space (NULL: the draw's
+ * now; given when no game draw sets it, as the 3D list closes). */
+int khdays_models_draw_posed(const char *path, const float place[16], const float *projection, unsigned int attr,
+                             const float *bones, size_t count);
 
 /* That model's size at rest (its own units): its lowest and highest corners. Whether it can be read. */
 int khdays_models_placed_bounds(const char *path, float low[3], float high[3]);

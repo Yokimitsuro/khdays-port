@@ -712,6 +712,9 @@ add_executable(khdays-native
     runtime/mods/installed.c
     runtime/mods/models.cpp
     runtime/mods/kh2_corridors.cpp      # Days's standing ovals as KH2's Dark Corridor
+    runtime/mods/kh2_fx_draw.cpp        # ... KH2's effects drawn (the corridor's, the KH2 enemies')
+    runtime/kh2_enemies/shell.cpp       # KH2's enemies in Days's enemies' places
+    runtime/kh2_enemies/shell_days.c    # ... the Days enemy standing in, read and moved
     runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
     runtime/mods/model_bones.cpp        # ... its <model>.bones.txt
     runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions

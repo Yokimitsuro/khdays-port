@@ -43,5 +43,8 @@ int khdays_missions_spots_shown(void);
 /* Whether one of the mods' missions is being played: an enemy the game's own missions end by their scripts (one held
  * at its defeat, waiting for them) is defeated there as the others are. */
 int khdays_missions_playing(void);
+/* The KH2 enemy the mission being played puts in its enemy table's row `row` (a mod's mission's `kh2:<name>`), into
+ * `name`: 0 for none (a Days class's row, or a game's mission). runtime/kh2_enemies/shell.h. */
+int khdays_missions_kh2_enemy(int row, char *name, int size);
 
 #endif

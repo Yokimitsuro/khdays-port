@@ -227,6 +227,7 @@ static void kh2_enemies_in_waves_read(void)
     if (ready.count == 2) {
         const KhdaysMissionEnemies *e = ready.list[1].spawners[0].enemies;
         CHECK(e[0].needs_kh2 && e[0].count == 2 && strcmp(e[0].kh2, "M_EX010") == 0);
+        CHECK(e[0].enemy_class == KHDAYS_KH2_SHELL_CLASS); /* the shell the port puts it in */
     }
     khdays_missions_set_kh2_ready(NULL);
     khdays_missions_free(&ready);

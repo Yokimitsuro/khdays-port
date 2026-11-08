@@ -15,6 +15,7 @@
 #include "../core/session_log.h"
 #include "../core/sha256.h"
 #include "../core/window.h"
+#include "../kh2_enemies/shell.h"
 #include "../mods/list.h"
 #include "../net/net_session.h"
 #include "../menus/savelist.h"
@@ -171,6 +172,7 @@ void khdays_missions_start(void)
 {
     /* a chest's contents must be one of the game's items: the game reads its record as the mission starts */
     khdays_missions_set_items(game_items());
+    khdays_missions_set_kh2_ready(khdays_kh2_enemies_ready);
     khdays_folders_list(MODS, read_mod, NULL);
     if (registry.count == 0) {
         return;
@@ -602,6 +604,12 @@ int khdays_missions_spots_shown(void)
 int khdays_missions_playing(void)
 {
     return playing() != NULL;
+}
+
+int khdays_missions_kh2_enemy(int row, char *name, int size)
+{
+    const KhdaysMission *m = playing();
+    return m != NULL && size > 0 && khdays_missions_kh2_row(m, row, name, (size_t)size);
 }
 
 /* ---- The save part ------------------------------------------------------------------------------- */

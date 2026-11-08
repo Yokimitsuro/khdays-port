@@ -1248,3 +1248,23 @@ TEST(a_waves_line_of_more_enemies_than_a_spawner_holds_split_at_its_place) {
     CHECK(total == 21 && plan.waves[0][2].enemies.size() == 2 && plan.waves[0][2].enemies[1].enemy_class == 4);
     khdays_missions_free(&r);
 }
+
+TEST(kh2_enemies_take_rows_of_their_own_beside_their_stand_ins_class) {
+    // a KH2 enemy stands in its class's place on a row of its own (the port makes that row's enemies KH2's): a Days
+    // Soldier, two KH2 Soldiers in Soldiers' places, a KH2 Shadow in a Shadow's and one more Days Soldier are three rows
+    static const char text[] = "[mission kh2]\nname en = A\nobjective en = B\nworld = tt\nstart = 0 0 0 0\n"
+                               "wave 1 = 4x1 kh2:M_EX010/4x2 at 0 0 0\nwave 2 = kh2:M_EX020/0x1 4x1 at 1 0 1\n";
+    KhdaysMissions r{};
+    CHECK(khdays_missions_read(&r, "test.kh2", "kh2", text, sizeof(text) - 1, nullptr, nullptr) == 1);
+    studio::MissionPlan plan;
+    std::string why;
+    CHECK(studio::plan_of(r.list[0], &plan, &why));
+    const auto rows = studio::enemy_rows(plan);
+    CHECK(rows.size() == 3);
+    if (rows.size() == 3) {
+        CHECK(rows[0].enemy_class == 4 && rows[0].kh2.empty());
+        CHECK(rows[1].enemy_class == 4 && rows[1].kh2 == "M_EX010");
+        CHECK(rows[2].enemy_class == 0 && rows[2].kh2 == "M_EX020");
+    }
+    khdays_missions_free(&r);
+}

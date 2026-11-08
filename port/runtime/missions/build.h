@@ -12,6 +12,10 @@ extern "C" {
  * reason in `why`. */
 int khdays_missions_build(const KhdaysMission *m, unsigned char **out, size_t *size, char *why, size_t why_size);
 
+/* The KH2 enemy whose stand-in mission `m`'s built enemy table's row `row` is (the builder's rows: one for each class
+ * and KH2 enemy in its place), into `name`; 0 for a row of Days's own, or one the mission does not have. */
+int khdays_missions_kh2_row(const KhdaysMission *m, int row, char *name, size_t size);
+
 #ifdef __cplusplus
 }
 #endif

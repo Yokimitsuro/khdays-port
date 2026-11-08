@@ -297,9 +297,10 @@ void khdays_g3d_sequence_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t a
 
 /* What runs as the game closes each 3D list (its SwapBuffers), before the list is put in its drawing order: the
  * port's polygons that belong to no model's draw of that list (runtime/mods/kh2_corridors.h's corridors closing
- * where their oval was). NULL: nothing. */
+ * where their oval was, runtime/kh2_enemies/shell.h's enemies ending after their Days enemy is gone). Each hook
+ * added once, run in the order added. */
 typedef void (*KhdaysG3dSwapHook)(void);
-void khdays_g3d_set_swap_hook(KhdaysG3dSwapHook hook);
+void khdays_g3d_add_swap_hook(KhdaysG3dSwapHook hook);
 
 /* For traces: `hook` hears of each polygon added to the list being built,
  * as it is added (NULL: none). */

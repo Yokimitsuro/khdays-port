@@ -8,10 +8,41 @@
 
 #include "kh2_corridors.h"
 
+extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj); // runtime/kh2_enemies
+
 namespace khdays::model_parts {
 
 // The draw is one of Days's ovals drawn as KH2's corridor (kh2_corridors.h): its shapes left out.
 bool corridor_drawn = false;
+// The draw is a Days enemy standing in for a KH2 enemy, whose model was drawn in its place (runtime/kh2_enemies): its
+// shapes left out.
+bool kh2_enemy_drawn = false;
+
+// A KH2 model drawn in a pose of the port's (khdays_models_draw_posed): its bones' model-space matrices, KH2's
+// centimetres; null for every other draw.
+const std::vector<khdays::assets::kh2::Mat4> *posed_now = nullptr;
+const float *posed_projection = nullptr; // its projection, when given (else the draw's now)
+
+// Each joint of a KH2 model (the importer names them kh2_<bone>) on its bone's matrix in `posed_now`, in metres, on
+// the draw's base
+void pose_given(Model &m, const Mat &base)
+{
+    if (m.kh2_bone.size() != m.joints.size()) {
+        m.kh2_bone.assign(m.joints.size(), -1);
+        for (std::size_t j = 0; j < m.joints.size(); ++j)
+            if (m.joints[j].name.rfind("kh2_", 0) == 0)
+                m.kh2_bone[j] = std::atoi(m.joints[j].name.c_str() + 4);
+    }
+    for (std::size_t j = 0; j < m.joints.size(); ++j) {
+        const int b = m.kh2_bone[j];
+        if (b < 0 || static_cast<std::size_t>(b) >= posed_now->size())
+            continue;
+        Mat g;
+        std::copy((*posed_now)[static_cast<std::size_t>(b)].begin(), (*posed_now)[static_cast<std::size_t>(b)].end(),
+                  g.begin());
+        skin[j] = mul(mul(base, in_metres(g)), m.joints[j].inverse_bind);
+    }
+}
 
 void trace_floor(const Model &m, const std::string &state)
 {
@@ -305,6 +336,8 @@ void draw(Model &m)
 {
     float pos[16], vecm[16], proj_f[16];
     khdays_g3d_matrices(pos, vecm, proj_f);
+    if (posed_projection != nullptr)
+        std::copy(posed_projection, posed_projection + 16, proj_f);
     Mat proj;
     std::copy(proj_f, proj_f + 16, proj.begin());
     const std::size_t nodes = m.node_rest_inverse.size();
@@ -518,6 +551,8 @@ void draw(Model &m)
     kh2_weapon_share = 1.0F;
     if (m.kh2_motions && !m.kh2_sections.empty())
         play_kh2(m, scaled_root);
+    if (posed_now != nullptr)
+        pose_given(m, scaled_root);
     play_face(m);
     // bones.txt's `twist`: those joints (and the ones under them) turned with the other joint's twist, before the
     // cloth reads the pose
@@ -923,6 +958,10 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     if (corridor_drawn) {
         return; /* KH2's corridor drawn in its place, with or without HD graphics */
     }
+    kh2_enemy_drawn = khdays_kh2_enemies_draw_begin(resource, render_obj) != 0;
+    if (kh2_enemy_drawn) {
+        return; /* a KH2 enemy drawn in its place */
+    }
     const char *file = nullptr;
     u32 offset = 0, run = 0;
     if (!khdays_origin_of_ram(KHDAYS_REF(resource), &file, &offset, &run)) { // its DS address
@@ -1164,6 +1203,8 @@ int matrices_only(const void *list, unsigned int size)
 extern "C" int khdays_models_shape(const void *list, unsigned int size)
 {
     if (active == nullptr) {
+        if (kh2_enemy_drawn && depth == 1)
+            return matrices_only(list, size);
         if (!corridor_drawn || depth != 1)
             return 0; /* the game's own (or a draw inside the oval's) */
         khdays_kh2_corridors_shape();
@@ -1216,6 +1257,7 @@ extern "C" void khdays_models_draw_end(void)
     khdays_g3d_draw_end();
     active = nullptr;
     corridor_drawn = false;
+    kh2_enemy_drawn = false;
 }
 
 namespace {
@@ -1248,6 +1290,20 @@ extern "C" int khdays_models_placed_bounds(const char *path, float low[3], float
         high[c] = m->high[c];
     }
     return 1;
+}
+
+extern "C" int khdays_models_draw_posed(const char *path, const float place[16], const float *projection,
+                                        unsigned int attr, const float *bones, size_t count)
+{
+    std::vector<khdays::assets::kh2::Mat4> pose(count);
+    for (std::size_t b = 0; b < count; ++b)
+        std::copy(bones + 16 * b, bones + 16 * (b + 1), pose[b].begin());
+    posed_now = &pose;
+    posed_projection = projection;
+    const int drawn = khdays_models_draw_placed(path, place, attr);
+    posed_now = nullptr;
+    posed_projection = nullptr;
+    return drawn;
 }
 
 extern "C" int khdays_models_draw_placed(const char *path, const float place[16], unsigned int attr)

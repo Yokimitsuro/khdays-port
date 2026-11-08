@@ -5866,7 +5866,7 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
   looks at the camera (seen from the front, as KH2's are: the maintainer's choice), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
   scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
   46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
-  added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
+  added as the 3D list closes (`khdays_g3d_add_swap_hook`). The pictures are its pages as textures, the remaster's HD
   ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
   own game; nothing is sent.
 - **Its sounds** (`KHDAYS_TRACE_SOUND=1`): Days's oval starts `seqarc/EV_DARK_APPEAR/se_ev_dark_appear` (2.5 s) and
@@ -5885,3 +5885,22 @@ Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `miss
   (`=3` logs it) over the frame before the oval showed: the hole's inside within 1-2% (each region's mean colour),
   once its bare-colour triangles took the GS's rule (the vertex colour itself without a picture: they had been twice
   as bright).
+
+## 37. KH2's enemies in Days's enemies' places
+
+Traced 2026-11-08 (the `kh2_enemies` walk: Twilight Town's arena of mission 1354, a custom mission's waves of KH2
+Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
+
+- **The field's step**: `Ov107_ProcessObjectTick`'s `delta` is 4096 a frame at 30 frames a second.
+- **A wave's enemies** are made from the mission's enemy table's rows by `Ov002_CreateActorFromMarker` when the area
+  loads (each row's actors at once, idle), and set going by their spawner; a defeated one is reused for the next wave
+  0.4-0.7 s later (`Ov107_AiState_OnDefeat`, then set going again) without being made again.
+- **An enemy's model** (the Soldier's `Ms/04.p`, the Shadow's `Ms/00.p`, each the first model in its file) is drawn
+  with the position matrix its place in the world (the Soldier's its srt's translation exactly, the Shadow's 6 cm
+  from it), the camera folded into the projection; the same files hold other models drawn near it (`Ms/04.p`'s at
+  +0xca00, 0.5 away) and `Ms/SharedEffect.p2f` the enemies' shared effects; neither its actor, its node (+ 0x9c) nor its render
+  object holds a word that leads from one to the other within 0x400 bytes (a battle actor's node's + 0x24 is not its
+  render object here).
+- **Its lock-on mark** turns with the actor's srt rotation: left unturned, it stood off the KH2 model.
+- **Days's hit and defeat sounds** (`MON_SOLDIER/se_soldier_dmg_*`, `COMMON_SYS/se_all_enemy_dead01`) and its defeat's
+  effects (the dark burst, the heart rising) play from Days's side of a hit, its Days tasks held or not.

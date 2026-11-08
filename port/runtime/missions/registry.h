@@ -144,6 +144,9 @@ void khdays_missions_set_items(int count);
 /* Whether a KH2 enemy kind can be played now (the player's mod has it covered and the setting is on): a mission with
  * a KH2 enemy that has no stand-in is left out without it. NULL (the default): none can. */
 void khdays_missions_set_kh2_ready(int (*ready)(const char *name));
+/* The Days class a `kh2:<name>x<count>` with no stand-in is made in: Days's Soldier (4), a body of a KH2 enemy's
+ * size the waves spawn, target and hit as they do any other (docs/KH2_ENEMIES.md). */
+#define KHDAYS_KH2_SHELL_CLASS 4
 
 /* Adds mod `id`'s missions (its folder under mods/) from its missions.txt, `size` bytes. A block that does not
  * read is left out and reported; the others are kept. Returns how many were added. */

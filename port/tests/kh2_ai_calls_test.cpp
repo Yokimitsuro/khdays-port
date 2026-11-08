@@ -1,6 +1,7 @@
 // KH2 enemies' calls as the port answers them (runtime/kh2_enemies/calls.h) and their state machine (actor.h), on
 // made-up scripts and a made-up actor: the vector and chance calls, states registered by name, entered, queued and
-// left, a locked state, the kinds list.
+// left, a locked state, the kinds list; motions played to their end and looped with their root's travel turned by
+// the yaw, turning toward a direction, the target slot and the player, fading, a jump and its landing.
 #include "../runtime/kh2_enemies/actor.h"
 #include "../runtime/kh2_enemies/calls.h"
 #include "../runtime/kh2_enemies/kinds.h"
@@ -90,7 +91,9 @@ struct Rig {
         kh::add_all(calls);
         // the shapes the test's calls use, as KH2's tables give them
         kh::read_shapes(calls, "0:3 0 1\n0:4 2 1\n0:5 2 1\n0:6 1 1\n0:7 1 1\n0:16 1 1\n0:17 1 1\n0:18 2 1\n0:36 2 1\n"
-                               "1:5 1 0\n1:6 12 0\n1:7 2 0\n1:8 2 0\n1:9 2 0\n1:10 1 1\n1:127 1 0\n# a comment\n");
+                               "1:5 1 0\n1:6 12 0\n1:7 2 0\n1:8 2 0\n1:9 2 0\n1:10 1 1\n1:127 1 0\n# a comment\n"
+                               "1:3 0 1\n1:11 3 0\n1:12 3 0\n1:14 1 1\n1:19 2 0\n1:20 2 0\n1:28 1 0\n1:55 5 0\n"
+                               "1:60 1 1\n1:61 4 0\n1:67 2 1\n1:79 2 0\n1:80 3 1\n1:120 1 1\n1:121 3 0\n2:23 1 1\n");
         calls.set_shape(0, kRecord, 1, false);
         calls.set(0, kRecord, [this](ai::Machine &, std::span<ai::Value> a) { recorded.push_back(a[0]); });
     }
@@ -200,11 +203,151 @@ void test_kinds()
 
 } // namespace
 
+// A made-up motion set: 0 loops over 60 ticks, its root 1 cm forward a tick; 44 and 7 hold at their end (30 ticks)
+struct MadeUpMotions final : kh::Motions {
+    bool has(int id) const override
+    {
+        return id == 0 || id == 44 || id == 7;
+    }
+    float length(int id) const override
+    {
+        return id == 0 ? 60.0F : 30.0F;
+    }
+    float loop_from(int id) const override
+    {
+        return id == 0 ? 0.0F : 30.0F;
+    }
+    kh::Vec3 root(int id, float t) const override
+    {
+        return id == 0 ? kh::Vec3{0.0F, 0.0F, t} : kh::Vec3{};
+    }
+};
+
+struct MadeUpWorld final : kh::World {
+    kh::Object *standing = nullptr;
+    kh::Object *player(kh::Actor &) override
+    {
+        return standing;
+    }
+};
+
+// a call made as a script makes it: its handler with these arguments, args[0] given back
+ai::Value call(Rig &rig, kh::Actor &a, unsigned kind, unsigned n, std::vector<ai::Value> args)
+{
+    const ai::Calls::Entry *e = rig.calls.find(kind, n);
+    if (e == nullptr || !e->fn) {
+        std::printf("FAILED no handler for %u:%u\n", kind, n);
+        ++failures;
+        return {};
+    }
+    if (args.empty())
+        args.push_back({});
+    e->fn(a.machine(), args);
+    return args[0];
+}
+
+std::uint32_t vec(ai::Memory &m, float x, float y, float z, float w = 0.0F)
+{
+    const std::uint32_t at = m.add(16, "a test's vector");
+    const float v[4] = {x, y, z, w};
+    m.write(at, v, sizeof v);
+    return at;
+}
+
+void test_motions_and_moving()
+{
+    Rig rig;
+    MadeUpMotions motions;
+    MadeUpWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "made_up");
+    actor.motions = &motions;
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+
+    // APPEAR (44) to its end: the ended bit only then (1:14)
+    call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
+    for (int t = 0; t < 29; ++t)
+        actor.step(1.0F);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 0);
+    actor.step(1.0F);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
+    CHECK(actor.motion.time == 30.0F);
+    CHECK(call(rig, actor, 1, 15, {self}).i() == 44); // the motion playing's number, which the scripts wait on
+    CHECK(call(rig, actor, 1, 67, {self, i(0)}).f() == 60.0F);
+    CHECK(call(rig, actor, 1, 68, {self, i(-1)}).f() == 30.0F); // -1: the motion playing
+    CHECK(!actor.play(3, 0.0F, 0.0F));                          // not in the set: nothing
+
+    // the loop from frame 10, facing +x (1:79): its root's travel along x, on through its loop
+    call(rig, actor, 1, 61, {self, i(0), f(10.0F), f(0.0F)});
+    CHECK(actor.motion.time == 10.0F && call(rig, actor, 1, 14, {self}).i() == 0);
+    call(rig, actor, 1, 79, {self, adr(vec(rig.memory, 1.0F, 0.0F, 0.0F))});
+    kh::Vec3 t = actor.step(10.0F);
+    CHECK(std::fabs(t[0] - 10.0F) < 1e-3F && std::fabs(t[2]) < 1e-3F);
+    t = actor.step(55.0F); // 20 -> 75: 40 to its end, then 15 from its loop point
+    CHECK(std::fabs(t[0] - 55.0F) < 1e-3F && std::fabs(actor.motion.time - 15.0F) < 1e-3F);
+    call(rig, actor, 1, 12, {self, i(0), f(0.0F)}); // already playing: left as it is
+    CHECK(std::fabs(actor.motion.time - 15.0F) < 1e-3F);
+
+    // 1:80 toward yaw 0 by 2 x 0.25 a call: three steps, then there
+    const std::uint32_t ahead = vec(rig.memory, 0.0F, 0.0F, 1.0F);
+    int turning = 0;
+    for (int k = 0; k < 3; ++k)
+        turning += call(rig, actor, 1, 80, {self, adr(ahead), f(0.25F)}).i();
+    CHECK(turning == 3 && std::fabs(actor.yaw() - (1.5707963F - 1.5F)) < 1e-4F);
+    CHECK(call(rig, actor, 1, 80, {self, adr(ahead), f(0.25F)}).i() == 0 && actor.yaw() == 0.0F);
+
+    // the target: none standing, then a player at x 100 (1:3; the slot 2:23 chosen by 1:121, its place 1:120)
+    CHECK(call(rig, actor, 1, 3, {}).bits == 0);
+    kh::Object player(rig.memory, "a player");
+    player.set_place({100.0F, 0.0F, 0.0F});
+    world.standing = &player;
+    CHECK(call(rig, actor, 1, 3, {}).bits == player.address());
+    const ai::Value slot = call(rig, actor, 2, 23, {self});
+    call(rig, actor, 1, 121, {slot, self, i(0)});
+    float at[4] = {};
+    rig.memory.read(call(rig, actor, 1, 120, {slot}).bits, at, sizeof at);
+    CHECK(at[0] == 100.0F);
+    call(rig, actor, 1, 121, {slot, self, i(2)}); // itself
+    rig.memory.read(call(rig, actor, 1, 120, {slot}).bits, at, sizeof at);
+    CHECK(at[0] == 0.0F);
+
+    // fading: gone over 10 ticks (1:19), held at once by 1:28 (1:20 then does nothing)
+    call(rig, actor, 1, 19, {self, f(10.0F)});
+    actor.step(5.0F);
+    CHECK(std::fabs(actor.fade - 0.5F) < 1e-4F);
+    call(rig, actor, 1, 28, {self});
+    actor.step(1.0F);
+    CHECK(actor.fade == 0.0F);
+    call(rig, actor, 1, 20, {self, f(10.0F)});
+    actor.step(5.0F);
+    CHECK(actor.fade == 0.0F);
+
+    // a jump 100 up with its next motions (1:55's flag): up first, in the air (1:60), then landed
+    CHECK(call(rig, actor, 1, 60, {self}).i() == 0);
+    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, -100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(1)});
+    CHECK(actor.motion.id == 7 && actor.motion.after == 8 && actor.motion.landing == 9);
+    t = actor.step(1.0F);
+    CHECK(t[1] < 0.0F && std::fabs(t[2] - 2.0F) < 1e-4F);
+    CHECK(call(rig, actor, 1, 60, {self}).i() == 1);
+    float top = t[1], y = t[1];
+    for (int k = 0; k < 40; ++k) {
+        y += actor.step(1.0F)[1];
+        top = std::min(top, y);
+    }
+    CHECK(top < -95.0F && top > -105.0F); // the height asked
+    actor.land();
+    CHECK(!actor.jump.on && call(rig, actor, 1, 60, {self}).i() == 0);
+}
+
 int main()
 {
     test_vectors_and_chance();
     test_states();
     test_kinds();
+    test_motions_and_moving();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

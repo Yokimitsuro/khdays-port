@@ -170,7 +170,11 @@ static int read_kh2_enemy(KhdaysMissionEnemies *e, char *entry)
         return 0;
     }
     e->needs_kh2 = slash == NULL;
-    return slash == NULL || whole(slash, 0, 255, &e->enemy_class);
+    if (slash == NULL) {
+        e->enemy_class = KHDAYS_KH2_SHELL_CLASS; /* its row's class: the shell the port puts it in */
+        return 1;
+    }
+    return whole(slash, 0, 255, &e->enemy_class);
 }
 
 /* `wave <n> = <class>x<count> [...] at <x> <y> <z>`: one spawner of wave n; an entry may be `kh2:<name>/<class>x<count>`

@@ -1143,6 +1143,10 @@ PORT_MODS = {
         "Days - KH2 Prizes",
         ["kh2_prizes.py", "--kh2", "{kh2}", "--exe", "{exe}", "--bbs2", "{bbs2}", "--recom", "{recom}"],
     ),
+    "kh2-enemies": (
+        "Days - KH2 Enemies",
+        ["kh2_enemies.py", "--kh2", "{kh2}", "--kh2-exe", "{kh2exe}", "--exe", "{exe}"],
+    ),
     "menu-overhaul": (
         "Days - Menu Overhaul",
         [
@@ -1154,7 +1158,7 @@ PORT_MODS = {
 }
 MOD_INPUTS_FILE = HERE / "mod_inputs.txt"
 # the mods made from the 1.5+2.5 collection (installer/mod_inputs.txt's entries, extracted for them)
-COLLECTION_MODS = ("menu-overhaul", "kh2-prizes")
+COLLECTION_MODS = ("menu-overhaul", "kh2-prizes", "kh2-enemies")
 HD_ORIGINALS = "hd-originals"  # (under setup/) the HD menus' pieces the port's own mods replace in the HD PACK
 # where each archive's entries are extracted for the mods' tools (KH2's two archives into one folder)
 MOD_SOURCES = {
@@ -1249,9 +1253,11 @@ def mods_digest(repository: Path) -> str:
     return h.hexdigest()
 
 
-def mod_places(install: Path, src: Path, fonts: Path = FONTS) -> dict[str, str]:
-    """The mods' tools' places ({kh2}, {data}...) in an install, the collections' entries extracted under `src`."""
+def mod_places(install: Path, src: Path, fonts: Path = FONTS, c1525: Path | None = None) -> dict[str, str]:
+    """The mods' tools' places ({kh2}, {data}...) in an install, the collections' entries extracted under `src`;
+    {kh2exe} KH2's executable in the 1.5+2.5 folder `c1525` (its calls' shapes)."""
     return {
+        "kh2exe": str(c1525 / KH2_EXE) if c1525 is not None else "",
         "kh2": str(src / "kh2.hed_out"),
         "bbs": str(src / "bbs_first.hed_out"),
         "bbs2": str(src / "bbs_second.hed_out"),
@@ -1269,6 +1275,7 @@ def _mods_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--walk", action="store_true", help="the Walk (docs/WALK_MOD.md): the game's data")
     p.add_argument("--menu-overhaul", action="store_true", help="the Menu Overhaul: 1.5+2.5, the HD menus")
     p.add_argument("--kh2-prizes", action="store_true", help="KH2's prizes, chests and Dark Corridors: 1.5+2.5")
+    p.add_argument("--kh2-enemies", action="store_true", help="KH2's enemies for custom missions: 1.5+2.5")
     p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
 
 
@@ -1332,7 +1339,7 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
     # made again from the HD tools' own pieces, then put in the HD PACK again (only those chosen now)
     unmerge_port_mods(install)
     hd = install / "mods" / HD_MOD
-    if "kh2-prizes" in wanted and args.c1525 is None:
+    if ("kh2-prizes" in wanted or "kh2-enemies" in wanted) and args.c1525 is None:
         raise Refusal("mod-needs-1525")
     if "menu-overhaul" in wanted and (args.c1525 is None or not any(p.is_file() for p in hd.rglob("*"))):
         raise Refusal("mod-needs-hd")
@@ -1358,7 +1365,7 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copytree(tools["mods"], work / "tools" / "mods", ignore=shutil.ignore_patterns("tests"))
         shutil.copytree(tools["hd"], work / "tools" / "hd", ignore=shutil.ignore_patterns("tests"))
         shutil.copy2(tools["rom"] / "decompress_data.py", work / "tools")
-        places = mod_places(install, work / "src")
+        places = mod_places(install, work / "src", c1525=args.c1525)
         if set(COLLECTION_MODS) & set(wanted):
             # the collections' entries the tools read, extracted as the HD pieces' are
             cipher = collection_archive.Cipher(collection_archive.load_table(args.c1525 / KH2_EXE))
@@ -1418,7 +1425,7 @@ def trace_mod_inputs(args: argparse.Namespace) -> dict[str, Any]:
 
     repository = HERE.parent
     install = args.install.resolve()
-    places = mod_places(install, args.src.resolve(), args.fonts.resolve())
+    places = mod_places(install, args.src.resolve(), args.fonts.resolve(), args.c1525.resolve())
     with tempfile.TemporaryDirectory() as temp:
         log = Path(temp) / "trace.log"
         for mod in COLLECTION_MODS:  # every tool that reads the collection

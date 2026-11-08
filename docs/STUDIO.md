@@ -275,8 +275,9 @@ time limit, notice and objective:
 
     start = <x> <y> <z> <facing>               # where the players start, degrees
     wave <n> = <class>x<count> ... at <x> <y> <z>   # a spawner of wave n (1-255)
-    # an entry may be kh2:<name>/<class>x<count>: a KH2 enemy (docs/KH2_ENEMIES.md), the Days class in its place
-    # without KH2's enemies; kh2:<name>x<count> (none in its place) makes the mission need them
+    # an entry may be kh2:<name>/<class>x<count>: a KH2 enemy (docs/KH2_ENEMIES.md) in the Days class's place, the
+    # class itself without KH2's enemies; kh2:<name>x<count> stands in a Days Soldier's (class 4) and makes the
+    # mission need them
     chest = <item> at <x> <y> <z> <heading>     # a chest holding one of the game's items
     emblem = <kind 0-2> at <x> <y> <z>          # one of each kind at most
     collect = <x> <y> <z>                        # emblems: an Organization emblem

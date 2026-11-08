@@ -1,22 +1,28 @@
 // A KINGDOM HEARTS II enemy as its script sees it (actor.h): its memory at KH2's offsets, its state machine as
-// FUN_1403cae60, FUN_1403cab00, FUN_1403cad00, FUN_1403caec0 and FUN_1403ca2c0 run it, its start as FUN_1403b5f30.
+// FUN_1403cae60, FUN_1403cab00, FUN_1403cad00, FUN_1403caec0 and FUN_1403ca2c0 run it, its start as FUN_1403b5f30, its
+// motions and travel as the actor's update (FUN_1403b8ae3) adds them up.
 #include "actor.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace khdays::kh2_enemies {
 namespace {
 
-// every actor by (its memory, its address): a call names another actor by its address
-std::map<std::pair<const ai::Memory *, std::uint32_t>, Actor *> &actors()
+// every object by (its memory, its address): a call names another object by its address
+std::map<std::pair<const ai::Memory *, std::uint32_t>, Object *> &objects()
 {
-    static std::map<std::pair<const ai::Memory *, std::uint32_t>, Actor *> all;
+    static std::map<std::pair<const ai::Memory *, std::uint32_t>, Object *> all;
     return all;
 }
 
 constexpr std::uint32_t kStates = 128;      // a state table's entries (FUN_1403ca0e0, FUN_1403ca700)
 constexpr std::uint32_t kStateSize = 0x20;
 constexpr std::size_t kQueue = 15;          // the ring of 16 keeps one free (FUN_1403cab00)
+
+// KH2's fall a tick, a tick: 2 / 0.408163 is 2 g in FUN_1403cbb00's sqrt (DAT_140623c60 -2.0, DAT_1405ce184)
+constexpr float kGravity = 1.0F / 0.408163F;
 
 ai::Thread *find_thread(ai::Thread *t, std::uint32_t id)
 {
@@ -30,18 +36,34 @@ ai::Thread *find_thread(ai::Thread *t, std::uint32_t id)
     return nullptr;
 }
 
+Vec3 minus(const Vec3 &a, const Vec3 &b)
+{
+    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
+}
+
 } // namespace
 
 std::string name_at(ai::Memory &memory, std::uint32_t address)
 {
     std::string s;
-    for (std::uint32_t i = 0; i < 64; ++i) {
+    for (std::uint32_t i = 0;; ++i) {
         char c = 0;
         if (!memory.read(address + i, &c, 1) || c == 0)
             break;
         s.push_back(c);
     }
     return s;
+}
+
+Vec3 facing_of(float yaw)
+{
+    return {std::sin(yaw), 0.0F, std::cos(yaw)};
+}
+
+Vec3 turned(const Vec3 &v, float radians)
+{
+    const float c = std::cos(radians), s = std::sin(radians);
+    return {v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c};
 }
 
 // ------------------------------------------------------------------------------------------------- states
@@ -161,38 +183,35 @@ void StateMachine::tick(Actor &a)
     }
 }
 
-// ------------------------------------------------------------------------------------------------- the actor
+// ------------------------------------------------------------------------------------------------- objects
 
-Actor::Actor(std::shared_ptr<const ai::Script> script, ai::Memory &memory, const ai::Calls &calls, std::string kind)
-    : kind_(std::move(kind)), memory_(memory), bytes_(field::kSize, 0)
+Object::Object(ai::Memory &memory, std::string name) : name_(std::move(name)), memory_(memory), bytes_(field::kSize, 0)
 {
-    address_ = memory_.add_view(*this, field::kSize, kind_ + "'s actor");
-    machine_ = std::make_unique<ai::Machine>(std::move(script), memory_, calls, this);
-    actors()[{&memory_, address_}] = this;
+    address_ = memory_.add_view(*this, field::kSize, name_ + "'s actor");
+    objects()[{&memory_, address_}] = this;
 }
 
-Actor::~Actor()
+Object::~Object()
 {
-    actors().erase({&memory_, address_});
-    machine_.reset();
+    objects().erase({&memory_, address_});
     memory_.remove(address_);
 }
 
-void Actor::read(std::uint32_t offset, void *out, std::size_t n)
+void Object::read(std::uint32_t offset, void *out, std::size_t n)
 {
     std::memcpy(out, bytes_.data() + offset, n);
     if (watch.on)
         ++watch.reads[offset];
 }
 
-void Actor::write(std::uint32_t offset, const void *in, std::size_t n)
+void Object::write(std::uint32_t offset, const void *in, std::size_t n)
 {
     std::memcpy(bytes_.data() + offset, in, n);
     if (watch.on)
         ++watch.writes[offset];
 }
 
-float Actor::f(std::uint32_t offset) const
+float Object::f(std::uint32_t offset) const
 {
     float v = 0;
     if (offset + 4 <= bytes_.size())
@@ -200,7 +219,7 @@ float Actor::f(std::uint32_t offset) const
     return v;
 }
 
-std::uint32_t Actor::u32(std::uint32_t offset) const
+std::uint32_t Object::u32(std::uint32_t offset) const
 {
     std::uint32_t v = 0;
     if (offset + 4 <= bytes_.size())
@@ -208,16 +227,57 @@ std::uint32_t Actor::u32(std::uint32_t offset) const
     return v;
 }
 
-void Actor::set_f(std::uint32_t offset, float v)
+void Object::set_f(std::uint32_t offset, float v)
 {
     if (offset + 4 <= bytes_.size())
         std::memcpy(bytes_.data() + offset, &v, 4);
 }
 
-void Actor::set_u32(std::uint32_t offset, std::uint32_t v)
+void Object::set_u32(std::uint32_t offset, std::uint32_t v)
 {
     if (offset + 4 <= bytes_.size())
         std::memcpy(bytes_.data() + offset, &v, 4);
+}
+
+void Object::set_bits(std::uint32_t offset, std::uint32_t bits, bool on)
+{
+    set_u32(offset, on ? (u32(offset) | bits) : (u32(offset) & ~bits));
+}
+
+void Object::set_place(const Vec3 &p)
+{
+    for (std::uint32_t i = 0; i < 3; ++i)
+        set_f(field::kPlace + 4 * i, p[i]);
+    set_f(field::kPlace + 12, 1.0F);
+}
+
+// FUN_1403b6420's second way: the yaw at + 0x7a8, the facing at + 0x680 a direction with the yaw in its w
+void Object::set_yaw(float yaw)
+{
+    const Vec3 d = facing_of(yaw);
+    set_f(field::kYaw, yaw);
+    for (std::uint32_t i = 0; i < 3; ++i)
+        set_f(field::kFacing + 4 * i, d[i]);
+    set_f(field::kFacing + 12, yaw);
+}
+
+Object *Object::at(ai::Memory &memory, std::uint32_t address)
+{
+    const auto it = objects().find({&memory, address});
+    return it == objects().end() ? nullptr : it->second;
+}
+
+// ------------------------------------------------------------------------------------------------- the actor
+
+Actor::Actor(std::shared_ptr<const ai::Script> script, ai::Memory &memory, const ai::Calls &calls, std::string kind)
+    : Object(memory, std::move(kind))
+{
+    machine_ = std::make_unique<ai::Machine>(std::move(script), memory_, calls, this);
+}
+
+Actor::~Actor()
+{
+    machine_.reset();
 }
 
 // FUN_1403b5f30: trigger 0 at once with the object's address, then trigger 1 as its own thread
@@ -239,15 +299,103 @@ bool Actor::event(std::int32_t trigger, std::span<const ai::Value> args)
     return machine_->raise(trigger, args);
 }
 
-Actor *Actor::at(ai::Memory &memory, std::uint32_t address)
-{
-    const auto it = actors().find({&memory, address});
-    return it == actors().end() ? nullptr : it->second;
-}
-
 Actor *Actor::of_handle(ai::Machine &m, std::uint32_t handle)
 {
-    return at(m.memory(), m.memory().u32(handle + 4));
+    Object *o = at(m.memory(), m.memory().u32(handle + 4));
+    return o != nullptr ? o->actor() : nullptr;
+}
+
+// FUN_1403c86a0: the motion set going from `start`, blended over `blend` from the pose before; the ended bit cleared
+bool Actor::play(int id, float blend, float start, bool restart)
+{
+    if (motions == nullptr || !motions->has(id))
+        return false;
+    const bool loops = motions->loop_from(id) < motions->length(id);
+    if (!restart && motion.id == id && (loops || !motion.ended))
+        return true; // still playing (a loop plays on past its end)
+    motion.from_id = motion.id;
+    motion.from_time = motion.time;
+    motion.id = id;
+    motion.time = std::clamp(start, 0.0F, motions->length(id));
+    motion.blend = motion.blend_left = motion.from_id >= 0 ? std::max(0.0F, blend) : 0.0F;
+    motion.ended = false;
+    set_bits(field::kStatus, bit::kMotionEnded, false);
+    set_u32(field::kMotion, std::uint32_t(id));
+    return true;
+}
+
+// FUN_1403b8ae3's sum for one tick: the motion's root travel turned by the yaw (the model's y up is KH2's -y), the
+// script's move, the jump under KH2's gravity; then FUN_1403b8e4d clears the move
+Vec3 Actor::step(float ticks)
+{
+    Vec3 travel{};
+    if (motions != nullptr && motion.id >= 0 && motions->has(motion.id)) {
+        const int id = motion.id;
+        const float length = motions->length(id), loop = motions->loop_from(id);
+        const float t0 = motion.time;
+        float t1 = t0 + ticks;
+        Vec3 model = minus(motions->root(id, std::min(t1, length)), motions->root(id, t0));
+        if (t1 >= length) {
+            if (!motion.ended) {
+                motion.ended = true;
+                set_bits(field::kStatus, bit::kMotionEnded, true);
+            }
+            if (loop < length && length > 0.0F) { // a loop: on from its loop point
+                const float over = std::fmod(t1 - length, length - loop);
+                const Vec3 more = minus(motions->root(id, loop + over), motions->root(id, loop));
+                for (int i = 0; i < 3; ++i)
+                    model[i] += more[i];
+                t1 = loop + over;
+            } else {
+                t1 = length;
+            }
+        }
+        motion.time = t1;
+        motion.blend_left = std::max(0.0F, motion.blend_left - ticks);
+        const Vec3 along = turned({model[0], 0.0F, model[2]}, yaw());
+        travel = {along[0], -model[1], along[2]};
+        if (jump.on && motion.after >= 0 && jump.up >= 0.0F && motion.id != motion.after) {
+            const int after = motion.after;
+            motion.after = -1;
+            play(after, 4.0F, 0.0F); // the jump's top: its falling motion
+        }
+    }
+    for (int i = 0; i < 3; ++i)
+        travel[i] += move[i] * move_speed * ticks;
+    move = {};
+    move_speed = 0.0F;
+    if (jump.on) {
+        for (int i = 0; i < 3; ++i)
+            travel[i] += jump.along[i] * ticks;
+        travel[1] += jump.up * ticks + 0.5F * kGravity * ticks * ticks;
+        jump.up += kGravity * ticks;
+        set_bits(field::kFlags, bit::kInAir, true);
+    }
+    // the travels KH2 keeps (+ 0xa28 this tick's, + 0xa38 the one before), a tick's worth
+    for (std::uint32_t i = 0; i < 4; ++i)
+        set_f(field::kTravelBefore + 4 * i, f(field::kTravel + 4 * i));
+    for (std::uint32_t i = 0; i < 3; ++i)
+        set_f(field::kTravel + 4 * i, ticks > 0.0F ? travel[i] / ticks : 0.0F);
+    if (fade_step != 0.0F) {
+        fade = std::clamp(fade + fade_step * ticks, 0.0F, 1.0F);
+        if (fade <= 0.0F || fade >= 1.0F)
+            fade_step = 0.0F;
+    }
+    return travel;
+}
+
+// A jump's end on the ground (FUN_1403cbb00's follow-on): its landing motion, the air bit cleared
+void Actor::land()
+{
+    if (!jump.on)
+        return;
+    jump = {};
+    set_bits(field::kFlags, bit::kInAir, false);
+    const int landing = motion.landing;
+    motion.after = -1;
+    motion.landing = 5;
+    if (landing >= 0)
+        play(landing, 2.0F, 0.0F);
 }
 
 } // namespace khdays::kh2_enemies

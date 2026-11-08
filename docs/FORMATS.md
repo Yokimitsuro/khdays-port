@@ -230,7 +230,9 @@ Dark Corridor (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of 
 same layout's first effect, read only as far as its pictures and shapes.
 
 - **The file**: `PAX_`, at +0xC where its element table ends: a directory `{0x82, 0, 0, n}`, `n` entries of 32 bytes
-  (the elements placing an effect in a scene), then a list -- a count and offsets from the directory -- of effects.
+  (the elements placing an effect in a scene: `{u32 its effect's offset from the directory, u32 its emitter, u32 its
+  number, ...}`, the rest 0 in the enemies' read), then a list -- a count and offsets from the directory -- of
+  effects.
   An effect is a block `{0x96}` and five lists, each a count and offsets from the block: emitters, pictures, shapes,
   models and vertex lists (`{u32 id, u32 model, u32 count, u16 vertex numbers}`). `effect/texcommon.dpd` is a bare
   block of pictures alone: those KH2 keeps resident, which the effects' shapes may cut. KINGDOM HEARTS's `.dpx`

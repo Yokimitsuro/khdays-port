@@ -18,7 +18,6 @@
 #include <utility>
 #include <vector>
 
-#include "khdays/assets/dds.h"
 #include "khdays/assets/kh2_effect.h"
 
 extern "C" {
@@ -32,6 +31,7 @@ extern "C" {
 #include "textures.h"
 }
 #include "kh2_corridor_fit.h"
+#include "kh2_fx_draw.h"
 #include "model_parts.h" // read_playing: the animations a render object plays
 #include "names.h"
 
@@ -81,18 +81,11 @@ bool tracing()
 }
 
 // --------------------------------------------------------------------------------------------- the effect's files
-struct HdPage final {
-    std::uint16_t tbp = 0, cbp = 0;
-    std::string relative; // kh2fx/<stem>/-<n>.dds
-};
-
 struct Effect final {
     std::shared_ptr<const kh2::EffectBlock> block;
     kh2::EffectBlock common;
-    std::vector<const kh2::EffectPicture *> pictures; // the effect's and the resident ones: the pages' views
-    std::vector<HdPage> hd;
-    std::map<std::pair<std::uint64_t, bool>, int> pages; // (TEX0, HD) -> the texture added, -1 none
-    std::vector<std::unique_ptr<std::vector<std::uint8_t>>> texels; // theirs: textures.h keeps them, never copied
+    // the effect's pages and the resident ones', their HD pictures kh2fx/<stem>/-<n>.dds
+    khdays::kh2_fx::Pages pages{"kh2fx/tt_event_904"};
     std::uint32_t close_ticks = 0; // how long KH2's corridor takes to close once told (its run measured at load)
 };
 
@@ -113,17 +106,6 @@ std::vector<std::uint8_t> read_mod_file(const char *relative, std::string &why)
     return bytes;
 }
 
-// The HD pictures of `pictures`' pages: one a page (a distinct tbp), in ascending order, -<n>.dds under `stem`.
-void add_hd_pages(const std::vector<kh2::EffectPicture> &pictures, const std::string &stem, std::vector<HdPage> &out)
-{
-    std::map<std::uint16_t, std::uint16_t> palette_of; // tbp -> the cbp of its first picture
-    for (const auto &p : pictures)
-        palette_of.emplace(p.tbp, p.cbp);
-    int n = 0;
-    for (const auto &[tbp, cbp] : palette_of)
-        out.push_back({tbp, cbp, stem + "/-" + std::to_string(n++) + ".dds"});
-}
-
 bool load()
 {
     if (effect_tried)
@@ -142,69 +124,20 @@ bool load()
         e->block = std::make_shared<const kh2::EffectBlock>(std::move(blocks.front()));
         e->common = kh2::read_effect_block(common.data(), common.size(), 0);
         kh2::EffectInstance probe(e->block, 0, 0); // its commands all known, or it says which is not
-        for (const auto &p : e->block->pictures)
-            e->pictures.push_back(&p);
-        for (const auto &p : e->common.pictures)
-            e->pictures.push_back(&p);
-        add_hd_pages(e->block->pictures, "kh2fx/tt_event_904", e->hd);
-        add_hd_pages(e->common.pictures, "kh2fx/texcommon", e->hd);
+        e->pages.add({e->block.get()}, "kh2fx/tt_event_904");
+        e->pages.add({&e->common}, "kh2fx/texcommon");
+        e->pages.tracing = tracing();
         e->close_ticks = khdays::kh2_corridor::closing_ticks(e->block);
         effect = std::move(e);
         khdays_log("kh2 corridors: KH2's dark corridor read (%zu layers, %zu models, %zu pictures; it closes in %u "
                    "ticks)",
                    effect->block->emitters.front().layers.size(), effect->block->models.size(),
-                   effect->pictures.size(), effect->close_ticks);
+                   effect->pages.pictures(), effect->close_ticks);
         return true;
     } catch (const std::exception &e) {
         khdays_log("kh2 corridors: %s cannot be played (%s); Days's ovals drawn as they are", kEffect, e.what());
         return false;
     }
-}
-
-// A draw's picture: its TEX0's view of the pages as a texture of the port's; the HD picture of its page when HD
-// graphics are on and the mod has one that covers the same view with the same palette; -1 none.
-int page(std::uint64_t tex0, bool hd)
-{
-    const auto key = std::make_pair(tex0, hd);
-    if (const auto it = effect->pages.find(key); it != effect->pages.end())
-        return it->second;
-    const int tbp = static_cast<int>(tex0 & 0x3fffu), cbp = static_cast<int>((tex0 >> 37) & 0x3fffu);
-    const int width = 1 << ((tex0 >> 26) & 15u), height = 1 << ((tex0 >> 30) & 15u);
-    char name[96];
-    std::snprintf(name, sizeof(name), "kh2fx/tt_event_904@%llx%s", static_cast<unsigned long long>(tex0),
-                  hd ? "/hd" : "");
-    int id = -1;
-    for (const HdPage &h : effect->hd) {
-        if (!hd || h.tbp != tbp || h.cbp != cbp)
-            continue;
-        char path[512];
-        if (!khdays_mods_find(h.relative.c_str(), path, static_cast<int>(sizeof(path))))
-            break;
-        try {
-            auto t = khdays::assets::read_dds(path);
-            // the same view, larger: its fractions name the same places
-            if (static_cast<long long>(t.width) * height == static_cast<long long>(t.height) * width) {
-                effect->texels.push_back(std::make_unique<std::vector<std::uint8_t>>(std::move(t.rgba)));
-                id = khdays_textures_add(name, t.width, t.height, effect->texels.back()->data());
-            } else
-                khdays_log("kh2 corridors: %s is %d x %d, not the shape of its page's %d x %d view: the original drawn",
-                           path, t.width, t.height, width, height);
-        } catch (const std::exception &e) {
-            khdays_log("kh2 corridors: %s cannot be read (%s): the original drawn", path, e.what());
-        }
-        break;
-    }
-    const bool hd_made = id >= 0;
-    if (id < 0) {
-        kh2::EffectPage p = kh2::effect_page(effect->pictures, tex0);
-        effect->texels.push_back(std::make_unique<std::vector<std::uint8_t>>(std::move(p.rgba)));
-        id = khdays_textures_add(name, p.width, p.height, effect->texels.back()->data());
-    }
-    if (tracing())
-        khdays_log("kh2 corridors: page %04x (palette %04x, %d x %d) %s", tbp, cbp, width, height,
-                   hd_made ? "from its HD picture" : hd ? "original (no HD picture of this view)" : "original");
-    effect->pages.emplace(key, id);
-    return id;
 }
 
 // ------------------------------------------------------------------------------------------------- the matrices
@@ -326,35 +259,7 @@ void advance(Corridor &c, const kh2::EffectCamera &camera)
 
 void submit(const Corridor &c, float units)
 {
-    const bool hd = khdays_textures_hd() != 0;
-    for (const kh2::EffectDraw &d : c.draws) {
-        if (d.screen) // the screen behind as its picture: not drawn by the port yet
-            continue;
-        const int id = d.tex0 != 0 ? page(d.tex0, hd) : -1;
-        if (d.tex0 != 0 && id < 0)
-            continue; // its picture not made: not drawn as bare colour
-        const uint32_t flags = (d.depth_write ? KHDAYS_G3D_EFFECT_DEPTH_WRITE : 0u) |
-                               (d.depth_only ? KHDAYS_G3D_EFFECT_DEPTH_ONLY : 0u) |
-                               (d.depth_test ? 0u : KHDAYS_G3D_EFFECT_NO_DEPTH_TEST);
-        for (std::size_t t = 0; t + 2 < d.triangles.size(); t += 3) {
-            KhdaysG3dClipVertex tri[3];
-            for (std::size_t k = 0; k < 3; ++k) {
-                const kh2::EffectVertex &e = d.triangles[t + k];
-                KhdaysG3dClipVertex &o = tri[k];
-                o.x = e.x * units; // corridor_camera's clip space back to Days's
-                o.y = e.y * units;
-                o.z = e.z * units;
-                o.w = e.w * units;
-                o.r = e.r * 63.0F;
-                o.g = e.g * 63.0F;
-                o.b = e.b * 63.0F;
-                o.a = e.a;
-                o.s = e.u * 16384.0F; // the page as a mod model's 1024 x 1024 texture
-                o.t = e.v * 16384.0F;
-            }
-            khdays_g3d_effect_polygon(tri, 3, id, d.alpha, flags);
-        }
-    }
+    khdays::kh2_fx::submit(c.draws, units, effect->pages);
 }
 
 void draw_at(Corridor &c, Place p)
@@ -478,7 +383,7 @@ extern "C" int khdays_kh2_corridors_begin(const void *resource, const void *rend
             return 0; // Days's own (one already closing when the setting came on stays Days's)
         static bool hooked = false;
         if (!hooked) {
-            khdays_g3d_set_swap_hook(list_closing);
+            khdays_g3d_add_swap_hook(list_closing);
             hooked = true;
         }
         auto c = std::make_unique<Corridor>(++seeds);

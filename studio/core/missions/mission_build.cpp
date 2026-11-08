@@ -357,7 +357,8 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
         for (int e = 0; e < s.enemy_count; ++e) {
             for (int left = s.enemies[e].count; left > 0;) {
                 const int take = std::min(left, kSpawnerEnemies - held);
-                w.enemies.push_back({s.enemies[e].enemy_class, take});
+                w.enemies.push_back(
+                    {s.enemies[e].enemy_class, take, s.enemies[e].kh2 != nullptr ? s.enemies[e].kh2 : ""});
                 held += take;
                 left -= take;
                 if (held == kSpawnerEnemies) {  // full: the rest in another at the same place
@@ -374,6 +375,20 @@ bool plan_of(const KhdaysMission& m, MissionPlan* out, std::string* why) {
         plan.waves.push_back(spawners);
     *out = std::move(plan);
     return true;
+}
+
+std::vector<EnemyRow> enemy_rows(const MissionPlan& plan) {
+    std::vector<EnemyRow> rows;
+    for (const auto& wave : plan.waves)
+        for (const WaveSpawner& sp : wave)
+            for (const auto& e : sp.enemies) {
+                const bool known = std::any_of(rows.begin(), rows.end(), [&](const EnemyRow& r) {
+                    return r.enemy_class == e.enemy_class && r.kh2 == e.kh2;
+                });
+                if (!known)
+                    rows.push_back({e.enemy_class, e.kh2});
+            }
+    return rows;
 }
 
 GameFiles extracted_game_files(const fs::path& nitrofs) {
@@ -452,9 +467,10 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
     if (!room_exits(game, plan.world, plan.room, &exits, why))
         return false;
 
-    // the enemy table: a row for each class, a group for each spawner (in wave order)
+    // the enemy table: a row for each class and KH2 enemy in its place (enemy_rows), a group for each spawner (in
+    // wave order)
     const auto catalog = class_rows(game);
-    std::vector<int> classes;
+    const std::vector<EnemyRow> keys = enemy_rows(plan);
     std::vector<std::array<std::uint8_t, 16>> rows;
     std::vector<std::vector<std::pair<int, int>>> groups;
     // row -> its actors (2.49): one for every enemy of every wave (whether a defeated one's actor serves a later
@@ -472,13 +488,11 @@ bool build_mission(const GameFiles& game, const MissionPlan& plan, std::vector<s
                 if (e.count < 1 || e.count > 255)
                     return fail_with(why, "a count is 1-255");
                 int row = -1;
-                for (std::size_t r = 0; r < classes.size(); ++r)
-                    if (classes[r] == e.enemy_class)
+                for (std::size_t r = 0; r < keys.size() && row < 0; ++r)
+                    if (keys[r].enemy_class == e.enemy_class && keys[r].kh2 == e.kh2)
                         row = static_cast<int>(r);
-                if (row < 0) {
-                    row = static_cast<int>(classes.size());
-                    classes.push_back(e.enemy_class);
-                    auto raw = found->second;
+                while (static_cast<int>(rows.size()) <= row) {  // the rows made in enemy_rows' order
+                    auto raw = catalog.at(keys[rows.size()].enemy_class);
                     raw[4] = 0;  // its level: the mission's (mdb.z), not the row's own adjustment
                     rows.push_back(raw);
                 }

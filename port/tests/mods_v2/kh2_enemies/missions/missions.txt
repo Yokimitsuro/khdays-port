@@ -1,0 +1,22 @@
+# The kh2_enemies walk's mission: the missions_waves walk's arena and route (mission 1354's), its waves KINGDOM
+# HEARTS II's enemies in Days enemies' places (kh2:<name>/<class>): a Soldier (in a Days Soldier's) ahead of the start,
+# then a Soldier and a Shadow (in a Days Shadow's) on the other side once it is defeated; cleared when the second
+# wave is.
+[mission kh2]
+name en = KH2 Heartless
+name fr = Sans-cœur de KH2
+name de = KH2-Herzlose
+name it = Heartless di KH2
+name es = Sincorazón de KH2
+objective en = Defeat every Heartless.
+objective fr = Battez tous les Sans-cœur.
+objective de = Besiege alle Herzlosen.
+objective it = Sconfiggi tutti gli Heartless.
+objective es = Derrota a todos los sincorazón.
+world = eh
+room = 2
+category = 0
+time = 300000
+start = 0 0.049 0 -90
+wave 1 = kh2:M_EX010/4x1 at 0 0.049 -3
+wave 2 = kh2:M_EX010/4x1 kh2:M_EX020/0x1 at 0 0.049 1.5

@@ -1369,17 +1369,29 @@ static List *free_list(void)
  * it goes into the next list at once, which comes to the same picture. */
 static uint32_t swaps;
 
-static KhdaysG3dSwapHook swap_hook;
+static KhdaysG3dSwapHook *swap_hooks;
+static int swap_hook_count;
 
-void khdays_g3d_set_swap_hook(KhdaysG3dSwapHook hook)
+void khdays_g3d_add_swap_hook(KhdaysG3dSwapHook hook)
 {
-    swap_hook = hook;
+    for (int i = 0; i < swap_hook_count; ++i) {
+        if (swap_hooks[i] == hook) {
+            return;
+        }
+    }
+    KhdaysG3dSwapHook *grown = realloc(swap_hooks, sizeof(*grown) * (size_t)(swap_hook_count + 1));
+    if (grown == NULL) {
+        return;
+    }
+    swap_hooks = grown;
+    swap_hooks[swap_hook_count++] = hook;
 }
 
 static void swap_buffers(uint32_t params)
 {
-    if (swap_hook != NULL)
-        swap_hook(); /* its polygons into the list closing */
+    for (int i = 0; i < swap_hook_count; ++i) {
+        swap_hooks[i](); /* their polygons into the list closing */
+    }
     List *l = building;
     ++swaps;
     l->swap_params = g.swap_params;

@@ -349,7 +349,14 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(self.files(self.hd), self.pristine)  # taken out before the kept pieces are copied
 
     def build_mods(self, **chosen):
-        args = {"walk": False, "menu_overhaul": False, "kh2_prizes": False, "c1525": Path("c1525"), **chosen}
+        args = {
+            "walk": False,
+            "menu_overhaul": False,
+            "kh2_prizes": False,
+            "kh2_enemies": False,
+            "c1525": Path("c1525"),
+            **chosen,
+        }
         return s.build_mods(s.argparse.Namespace(install=self.install, language="en", **args))
 
     def test_kh2_prizes_need_the_collection(self):
@@ -357,6 +364,19 @@ class PortModsInTheHdPack(unittest.TestCase):
             self.build_mods(kh2_prizes=True, c1525=None)
         self.assertEqual(refused.exception.key, "mod-needs-1525")
         self.assertEqual(self.files(self.hd), self.pristine)
+
+    def test_kh2_enemies_need_the_collection_and_take_kh2s_executable(self):
+        with self.assertRaises(s.Refusal) as refused:
+            self.build_mods(kh2_enemies=True, c1525=None)
+        self.assertEqual(refused.exception.key, "mod-needs-1525")
+        with mock.patch.object(s, "data_folder", return_value=self.install / "data"):
+            places = s.mod_places(self.install, Path("src"), c1525=Path("c1525"))
+        self.assertEqual(Path(places["kh2exe"]), Path("c1525") / s.KH2_EXE)
+        folder, template = s.PORT_MODS["kh2-enemies"]
+        self.assertEqual(folder, "Days - KH2 Enemies")
+        self.assertEqual(template[0], "kh2_enemies.py")
+        self.assertIn("{kh2exe}", template)
+        self.assertIn("kh2-enemies", s.COLLECTION_MODS)
 
     def test_kh2_prizes_made_from_the_collection_into_the_hd_pack(self):
         import subprocess

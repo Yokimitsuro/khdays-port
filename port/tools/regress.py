@@ -209,6 +209,25 @@ WALKS = [
             "mission end\tcleared",
         ),
     ),
+    # ... and KINGDOM HEARTS II's Soldiers in its waves (port/tests/mods_v2/kh2_enemies, with the "Days - KH2 Enemies"
+    # mod tools/mods/kh2_enemies.py makes into mods/ from the player's own KINGDOM HEARTS II; left out without it):
+    # each in a Days Soldier's place, KH2's script driving it from its appearing, beaten by the attack button, the
+    # mission cleared when the second wave is
+    Walk(
+        "kh2_enemies",
+        300,
+        player_save=True,
+        script="missions_waves",
+        player_mods=(("port/tests/mods_v2/kh2_enemies", "mods/Days - KH2 Enemies"),),
+        window=True,
+        env=(("KHDAYS_TRACE_KH2_ENEMIES", "1"),),
+        marks=(
+            "kh2 enemies: M_EX010 read",
+            "the mod's mission\t3595",
+            "enters appear",
+            "mission end\tcleared",
+        ),
+    ),
     # ... and a boss among other enemies (port/tests/mods_v2/missions_boss): a Guard Armor, whose code took all six
     # of the DS's enemy slots, out with Shadows and a Soldier (each class's code at its own place here:
     # runtime/core/enemy_overlays.h); cleared once a Shadow is defeated; the waves walk's route
@@ -588,6 +607,10 @@ def run_walks(args: argparse.Namespace) -> int:
     results: dict[str, list[str]] = {}
     failed = False
     for walk in walks:
+        absent = [m for mods in walk.player_mods for m in mods if not (ROOT / m).is_dir()]
+        if absent:  # a mod made from the player's own games (mods/ is theirs)
+            print(f"{walk.name}: left out, {absent[0]} is not made")
+            continue
         save = args.player_save if walk.player_save else args.walk_save
         # one copy of the game per player, each in its own directory with its
         # script (<walk>.input, or <walk>_<player>.input for several) and its

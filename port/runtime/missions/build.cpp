@@ -46,6 +46,19 @@ studio::GameFiles rom_game_files()
 
 } // namespace
 
+extern "C" int khdays_missions_kh2_row(const KhdaysMission *m, int row, char *name, size_t size)
+{
+    studio::MissionPlan plan;
+    std::string reason;
+    if (row < 0 || !studio::plan_of(*m, &plan, &reason))
+        return 0;
+    const std::vector<studio::EnemyRow> rows = studio::enemy_rows(plan);
+    if (static_cast<std::size_t>(row) >= rows.size() || rows[static_cast<std::size_t>(row)].kh2.empty())
+        return 0;
+    std::snprintf(name, size, "%s", rows[static_cast<std::size_t>(row)].kh2.c_str());
+    return 1;
+}
+
 extern "C" int khdays_missions_build(const KhdaysMission *m, unsigned char **out, size_t *size, char *why,
                                      size_t why_size)
 {

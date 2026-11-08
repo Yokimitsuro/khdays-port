@@ -27,6 +27,7 @@ missions_eliminate: 1 7 19 2 6 19
 missions_hearts: 1 7 19 2 6 19
 missions_emblems: 1 7 19 2 6 19
 missions_reach: 1 7 19 2 6 19
+kh2_enemies: 1 7 19 2 6 19
 missions_boss: 1 7 19 2 6 19
 multiplayer_boss_waves: 1 7 19 2
 multiplayer_room_missions: 1 7 19 2
