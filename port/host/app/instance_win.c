@@ -1,6 +1,6 @@
 /* host/app/instance.h on Windows. Each slot is a named mutex in the session's
- * namespace (the system releases it when the process ends). Other copies are
- * found by looking for processes of the same executable. */
+ * namespace, its install's own (the system releases it when the process ends).
+ * Other copies are found by looking for processes of the same executable. */
 #include "instance.h"
 
 #include <windows.h>
@@ -8,18 +8,34 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <wctype.h>
 
 static int slot;        /* 0 until a slot is taken */
 static char folder[64]; /* "saves" or "saves/player<N>" */
 
-/* Tries to take slot `number`. Returns 1 if it is ours now (its lock stays
- * open), or 0 if another copy holds it. If the system cannot make the lock at
- * all, the slot counts as ours, so at least one copy can play. */
+/* The install the copy plays from: its working folder (where saves/ is), case folded and hashed (FNV-1a). The
+ * slots are each install's own: a copy of another folder -- another install, a developer's build, one left
+ * hanging -- does not make this one player 2, with player 2's saves and no gamepad. */
+static unsigned int install_key(void)
+{
+    wchar_t here[MAX_PATH];
+    unsigned int digest = 2166136261u;
+    const DWORD length = GetCurrentDirectoryW(MAX_PATH, here);
+    for (DWORD i = 0; i < length && i < MAX_PATH; ++i) {
+        const wchar_t c = here[i] == L'/' ? L'\\' : here[i];
+        digest = (digest ^ (unsigned int)towlower(c)) * 16777619u;
+    }
+    return digest;
+}
+
+/* Tries to take slot `number` of this install. Returns 1 if it is ours now
+ * (its lock stays open), or 0 if another copy holds it. If the system cannot
+ * make the lock at all, the slot counts as ours, so at least one copy can play. */
 static int claim(int number)
 {
     wchar_t name[64];
     HANDLE lock;
-    swprintf(name, 64, L"Local\\khdays-player-%d", number);
+    swprintf(name, 64, L"Local\\khdays-player-%08x-%d", install_key(), number);
     lock = CreateMutexW(NULL, FALSE, name);
     if (lock != NULL && GetLastError() == ERROR_ALREADY_EXISTS) {
         CloseHandle(lock);
