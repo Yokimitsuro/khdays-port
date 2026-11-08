@@ -202,6 +202,20 @@ void StateMachine::tick(Actor &a)
     }
 }
 
+void Actor::attach_thread(ai::Machine &m, std::uint32_t id)
+{
+    if (side_machine != nullptr && side_thread != 0)
+        if (ai::Thread *old = find_thread(side_machine->main_thread(), side_thread))
+            side_machine->stop(old);
+    side_machine = &m;
+    side_thread = id;
+}
+
+float World::ground(Actor &a)
+{
+    return a.place()[1];
+}
+
 // ------------------------------------------------------------------------------------------------- objects
 
 Object::Object(ai::Memory &memory, std::string name) : name_(std::move(name)), memory_(memory), bytes_(field::kSize, 0)
@@ -391,7 +405,14 @@ Vec3 Actor::step(float ticks)
         move_clock = -2.0F;
     if (move_clock < 0.0F) {
         const bool air = jump.on || (u32(field::kFlags) & bit::kInAir) != 0;
-        if (!air) {
+        if (dashing && !air) {
+            // class 5: its own velocity kept, eased toward the steering when steered (FUN_140421c80)
+            for (int i = 0; i < 3; ++i) {
+                float &v = velocity[std::size_t(i)];
+                v = steer_speed > 0.0F ? (1.0F - dash_keep) * steer[std::size_t(i)] * steer_speed + dash_keep * v
+                                       : dash_keep * v;
+            }
+        } else if (!air) {
             for (int i = 0; i < 3; ++i)
                 velocity[std::size_t(i)] = steer_speed > 0.0F ? steer[std::size_t(i)] * steer_speed : 0.0F;
         } else {

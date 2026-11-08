@@ -256,12 +256,60 @@ void add_math(ai::Calls &calls)
             ring.erase(ring.begin());
         }
     });
+    // 0:0, 0:2 nothing in the PC game (FUN_14041c9f0, FUN_14041ca10: empty; a debugging print once); 0:85 an
+    // effect's handle let go (FUN_14041e1c0 -> FUN_1402be8f0): the port's effects end of their own
+    calls.set(0, 0, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 2, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 85, [](ai::Machine &, std::span<ai::Value>) {});
+    // 0:15 a bit of KH2's story (FUN_14039a980: DAT_1409ab540's bits, 0xffff none): none of them in Days's field
+    calls.set(0, 15, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 0:23 a value without its sign (FUN_14041ca90; given back marked a whole number, as KH2 marks it)
+    calls.set(0, 23, [](ai::Machine &, std::span<ai::Value> a) {
+        a[0] = ai::Value{a[0].bits & 0x7fffffffu, ai::Tag::Int};
+    });
+    // 1:230 a table's record of 12 bytes (its first two words whole numbers): the first over the second
+    // (FUN_1404310f0; marked a whole number)
+    calls.set(1, 230, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t at = a[0].bits + 12u * a[1].bits;
+        const float ratio = float(std::int32_t(m.memory().u32(at))) / float(std::int32_t(m.memory().u32(at + 4)));
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &ratio, 4);
+        a[0] = ai::Value{bits, ai::Tag::Int};
+    });
+    // 2:21 memory several objects share by a number (FUN_1403f6df0: n + 1 bytes, zeroed, the same for the same
+    // number)
+    calls.set(2, 21, [](ai::Machine &m, std::span<ai::Value> a) {
+        static std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> shared;
+        std::uint32_t &at = shared[{&m.memory(), a[0].bits}];
+        if (at == 0)
+            at = m.memory().add(a[1].bits + 1, "2:21's shared memory");
+        a[0] = ai::Value::of_address(at);
+    });
 }
 
 // ------------------------------------------------------------------------------------------------- states
 
 void add_states(ai::Calls &calls)
 {
+    // 1:90 a state every object enters, by its name, at once or each after a time at random below the value
+    // (FUN_1403cacd0 lists it, FUN_1403c9d40 sends it to every object): the world's
+    calls.set(1, 90, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x->world != nullptr)
+            x->world->broadcast(*x, name_at(m.memory(), a[1].bits), a[2].f());
+    });
+    // 1:112 a routine of the script as the actor's attached thread (FUN_14042ca20: FUN_1403e1970, FUN_1403d76d0 on
+    // + 0xd48, the one before ended), the actor its first value, the third its second when it is an object
+    calls.set(1, 112, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        std::uint32_t entry = a[1].bits;
+        if (a[1].tag == ai::Tag::Address && entry >= m.code())
+            entry = (entry - m.code()) / 2;
+        const ai::Value values[2] = {ai::Value::of_address(x->address()), a[2]};
+        const bool second = Object::at(m.memory(), a[2].bits) != nullptr;
+        if (ai::Thread *t = m.start_routine(nullptr, entry, std::span<const ai::Value>(values, second ? 2u : 1u)))
+            x->attach_thread(m, t->id);
+    });
     // 1:5 a state table emptied: its 128 entries' ids 0 (FUN_1403ca790)
     calls.set(1, 5, [](ai::Machine &m, std::span<ai::Value> a) {
         for (std::uint32_t i = 0; i < 128; ++i)
@@ -397,6 +445,38 @@ void add_actor_fields(ai::Calls &calls)
         Object *x = object_of(m, a[0]);
         a[0] = ai::Value::of_int(x ? std::int32_t((x->u32(field::kFlags6c8) >> 7) & 1) : 0);
     });
+    // 1:66 + 0x120's 0x8000000 set (FUN_14042f250; the landing sets it too); 1:69 the float at + 0x19c; 1:84 the
+    // object at + 0x5c0 (2:9 makes it; none here); 1:97 where + 0x128 lies; 1:179 + 0x118, the motion of its fall
+    calls.set(1, 66, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->set_bits(field::kFlags, 0x8000000u, true);
+    });
+    calls.set(1, 69, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_float(self_of(m, a[0])->f(0x19c));
+    });
+    calls.set(1, 84, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_address(self_of(m, a[0])->u32(0x5c0));
+    });
+    calls.set(1, 97, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_address(self_of(m, a[0])->address() + 0x128);
+    });
+    calls.set(1, 179, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->motion.after = std::int32_t(a[1].bits);
+    });
+    // 1:211 / 1:212 bit n of + 0xd10 set / cleared (FUN_14042ba50, FUN_14042ba80)
+    calls.set(1, 211, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), true);
+    });
+    calls.set(1, 212, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+    });
+    // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
+    // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
+    // the slot left empty; 1:162 the actor put on one of KH2's lists (FUN_1403bd410): nothing here
+    calls.set(1, 140, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(Object::at(m.memory(), m.memory().u32(a[0].bits + 8)) != nullptr ? 1 : 0);
+    });
+    calls.set(1, 143, [](ai::Machine &m, std::span<ai::Value> a) { m.memory().set_u32(a[0].bits + 4, 0); });
+    calls.set(1, 162, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
     calls.set(1, 133, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 134, [](ai::Machine &, std::span<ai::Value>) {});
@@ -471,6 +551,18 @@ void add_actor_fields(ai::Calls &calls)
 
 void add_motions(ai::Calls &calls)
 {
+    // 1:29 another object plays a motion of this one's set (FUN_1403c6cc0: its motion set made this one's, + 0x2b8,
+    // its motion number + 0x180), from a frame
+    calls.set(1, 29, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Object *o = object_of(m, a[1]);
+        Actor *other = o != nullptr ? o->actor() : nullptr;
+        if (other != nullptr) {
+            other->motions = x->motions;
+            other->play(std::int32_t(a[2].bits), 0.0F, a[3].f());
+        }
+        a[0] = ai::Value::of_int(other != nullptr ? 1 : 0);
+    });
     // 1:11 a motion from its start, blended (FUN_1403c86a0 on actor + 0x158); 1:61 from a frame; 1:12 one that is not
     // already playing (FUN_1403c6dc0); 1:67 a motion's length (FUN_1403c78f0's motion)
     calls.set(1, 11, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -498,6 +590,7 @@ void add_motions(ai::Calls &calls)
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         x->jump.on = true;
+        x->dashing = false;
         x->jump.gravity = Jump{}.gravity;
         x->jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
         x->jump.slow = Jump{}.slow;
@@ -529,6 +622,7 @@ void add_motions(ai::Calls &calls)
         const float t = a[2].f();
         const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
         x->jump.on = true;
+        x->dashing = false;
         x->jump.gravity = t != 0.0F ? 2.0F * v.v[1] / (t * t) : 0.0F;
         x->jump.up = -(x->jump.gravity * t);
         x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
@@ -581,6 +675,62 @@ void add_motions(ai::Calls &calls)
 
 void add_moving(ai::Calls &calls)
 {
+    // 1:2 steered toward a point along the ground at a speed (FUN_1403b9c60: the way there, its height 0, made one
+    // long at + 0x10, the speed at + 0x1c), the way's length given back; its first value the actor itself
+    calls.set(1, 2, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec to = read_vec(m, a[1].bits);
+        const Vec3 at = x->place();
+        const float dx = to.v[0] - at[0], dz = to.v[2] - at[2], n = std::sqrt(dx * dx + dz * dz);
+        x->steer = n > 0.0F ? Vec3{dx / n, 0.0F, dz / n} : Vec3{};
+        x->steer_speed = a[2].f();
+        a[0] = ai::Value::of_float(n);
+    });
+    // 1:58 along the ground at a velocity of its own (FUN_140421ce0: + 0x20 the vector made one long times its w,
+    // + 0x108 the value, class 5), NaN components 0
+    calls.set(1, 58, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Vec v = read_vec(m, a[1].bits);
+        for (float &c : v.v)
+            if (std::isnan(c))
+                c = 0.0F;
+        const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+        x->velocity = n > 0.0F ? Vec3{v.v[0] / n * v.v[3], v.v[1] / n * v.v[3], v.v[2] / n * v.v[3]} : Vec3{};
+        x->steered = x->velocity;
+        x->move_clock = 0.0F;
+        x->dash_keep = a[2].f();
+        x->dashing = true;
+        x->jump.on = false;
+    });
+    // 1:83 a point given on a bone (0x4000 the actor itself) in the world (FUN_1403b50f0 the bone's matrix, then the
+    // point through it; NaN components 0): the shared vector
+    calls.set(1, 83, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Vec v = read_vec(m, a[2].bits);
+        for (float &c : v.v)
+            if (std::isnan(c))
+                c = 0.0F;
+        Vec3 out = x->place();
+        if (x->world == nullptr || !x->world->bone_point(*x, std::int32_t(a[1].bits), xyz(v), out))
+            out = x->place();
+        Vec r;
+        r.v[0] = out[0], r.v[1] = out[1], r.v[2] = out[2], r.v[3] = 1.0F;
+        a[0] = give_vec(m, "1:83", r);
+    });
+    // 1:98 its place on the ground under it (FUN_1403b5b40, its y FUN_1403b87e0's); 1:99 how far above it it is,
+    // KH2's way (negative up; 0 on it or below)
+    calls.set(1, 98, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec3 at = x->place();
+        Vec r;
+        r.v[0] = at[0], r.v[1] = x->world != nullptr ? x->world->ground(*x) : at[1], r.v[2] = at[2], r.v[3] = 1.0F;
+        a[0] = give_vec(m, "1:98", r);
+    });
+    calls.set(1, 99, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const float above = (x->world != nullptr ? x->world->ground(*x) : x->place()[1]) - x->place()[1];
+        a[0] = ai::Value::of_float(above <= 0.0F ? -0.0F : -above);
+    });
     // 1:4 face a direction (FUN_1403b65c0: yaw = atan2(x, z)); 1:79 the same, its facing too (FUN_1403b6420)
     const auto face = [](ai::Machine &m, std::span<ai::Value> a) {
         const Vec v = read_vec(m, a[1].bits);
@@ -698,7 +848,11 @@ void add_world(ai::Calls &calls)
     // 1:209 the class's virtual + 0xb0 unless + 0x9b8 bit 2 (FUN_1403d3f10); 1:74 the class made class 0 (the old
     // one's virtual + 0x10, the new one's + 8; FUN_1403b4da0) and + 0xba8 cleared: native code, not the script's
     calls.set(1, 209, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(1, 74, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->set_u32(0xba8, 0); });
+    calls.set(1, 74, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->set_u32(0xba8, 0);
+        x->dashing = false; // class 0
+    });
     // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
     // **likely its prizes** -- Days gives its stand-in's own
     calls.set(1, 278, [](ai::Machine &, std::span<ai::Value>) {});

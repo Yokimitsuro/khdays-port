@@ -225,9 +225,21 @@ struct MadeUpMotions final : kh::Motions {
 
 struct MadeUpWorld final : kh::World {
     kh::Object *standing = nullptr;
+    float floor = 0.0F;      // the ground's height, KH2's y
+    std::string sent;        // the last state sent to every object (1:90)
+    float sent_delay = -1.0F;
     kh::Object *player(kh::Actor &) override
     {
         return standing;
+    }
+    float ground(kh::Actor &) override
+    {
+        return floor;
+    }
+    void broadcast(kh::Actor &, const std::string &name, float delay) override
+    {
+        sent = name;
+        sent_delay = delay;
     }
 };
 
@@ -501,6 +513,86 @@ void test_state_waits()
     CHECK(rig.recorded.size() == 3 && rig.recorded[1].i() == 1 && rig.recorded[2].i() == 0);
 }
 
+// The second batch's calls: a value's size, a table's ratio, shared memory, class 5's own velocity, steering to a
+// point, the ground and the height over it, a state sent to every object, + 0xd10's bits, an attached thread
+void test_batch_two()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "0:23 1 1\n1:230 2 1\n2:21 2 1\n1:58 3 0\n1:74 1 0\n1:2 3 1\n1:98 1 1\n1:99 1 1\n"
+                               "1:90 3 0\n1:211 2 0\n1:212 2 0\n1:112 3 0\n");
+    MadeUpWorld world;
+    // its main thread a yield over and over (word 0), a routine the same (word 2)
+    const Words loop = misc(0) + Words{0x0007, 0xfffd} + misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor actor(script({{1, 0}}, loop), rig.memory, rig.calls, "made_up");
+    actor.world = &world;
+    actor.machine().start_main(1);
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+
+    // 0:23: the size of -2.5, marked a whole number as KH2 marks it
+    const ai::Value size = call(rig, actor, 0, 23, {f(-2.5F)});
+    CHECK(size.f() == 2.5F && size.tag == ai::Tag::Int);
+    // 1:230: record 1 of a table of {6, 3}s: 2
+    const std::uint32_t table = rig.memory.add(24, "a test's table");
+    const std::int32_t records[6] = {1, 1, 0, 6, 3, 0};
+    rig.memory.write(table, records, sizeof records);
+    CHECK(call(rig, actor, 1, 230, {adr(table), i(1)}).f() == 2.0F);
+    // 2:21: the same memory for the same number
+    const std::uint32_t shared = call(rig, actor, 2, 21, {i(7), i(10)}).bits;
+    CHECK(shared != 0 && call(rig, actor, 2, 21, {i(7), i(10)}).bits == shared);
+    CHECK(call(rig, actor, 2, 21, {i(8), i(10)}).bits != shared);
+
+    // 1:58: 4 a tick along +z, keeping half of it an evaluation (2 the first tick's travel), 1:74 its end
+    call(rig, actor, 1, 58, {self, adr(vec(rig.memory, 0.0F, 0.0F, 3.0F, 4.0F)), f(0.5F)});
+    CHECK(actor.dashing && std::fabs(actor.step(1.0F)[2] - 2.0F) < 1e-4F);
+    call(rig, actor, 1, 74, {self});
+    CHECK(!actor.dashing);
+    actor.step(2.0F);
+    CHECK(std::fabs(actor.step(1.0F)[2]) < 1e-4F);
+
+    // 1:2: steered toward (300, 0, 400) at 6, 500 away
+    CHECK(call(rig, actor, 1, 2, {self, adr(vec(rig.memory, 300.0F, 0.0F, 400.0F)), f(6.0F)}).f() == 500.0F);
+    CHECK(std::fabs(actor.steer[0] - 0.6F) < 1e-5F && std::fabs(actor.steer[2] - 0.8F) < 1e-5F &&
+          actor.steer_speed == 6.0F);
+    actor.steer_speed = 0.0F;
+
+    // 1:98 / 1:99: 50 above the ground at 0 (KH2's y down): its foot on it, -50
+    actor.set_place({10.0F, -50.0F, 20.0F});
+    const std::uint32_t foot = call(rig, actor, 1, 98, {self}).bits;
+    float ground[4] = {};
+    rig.memory.read(foot, ground, sizeof ground);
+    CHECK(ground[0] == 10.0F && ground[1] == 0.0F && ground[2] == 20.0F);
+    CHECK(call(rig, actor, 1, 99, {self}).f() == -50.0F);
+    actor.set_place({10.0F, 5.0F, 20.0F}); // under it: 0
+    CHECK(call(rig, actor, 1, 99, {self}).f() == 0.0F);
+
+    // 1:90: the state's name to every object, with its time
+    const std::uint32_t name = rig.memory.add(8, "a test's name");
+    rig.memory.write(name, "flee", 5);
+    call(rig, actor, 1, 90, {self, adr(name), f(30.0F)});
+    CHECK(world.sent == "flee" && world.sent_delay == 30.0F);
+
+    // 1:211 / 1:212: + 0xd10's bit 3
+    call(rig, actor, 1, 211, {self, i(3)});
+    CHECK(actor.u32(0xd10) == 8u);
+    call(rig, actor, 1, 212, {self, i(3)});
+    CHECK(actor.u32(0xd10) == 0u);
+
+    // 1:112: the routine (word 3) attached to the actor; attached again, the one before ends
+    call(rig, actor, 1, 112, {self, i(3), i(0)});
+    const std::uint32_t first = actor.side_thread;
+    CHECK(first != 0);
+    call(rig, actor, 1, 112, {self, i(3), i(0)});
+    CHECK(actor.side_thread != first);
+    bool first_ended = true;
+    for (const auto &c : actor.machine().main_thread()->children)
+        if (c->id == first && c->status != ai::Status::Stopped)
+            first_ended = false;
+    CHECK(first_ended);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -509,6 +601,7 @@ int main()
     test_motions_and_moving();
     test_more_enemies_calls();
     test_state_waits();
+    test_batch_two();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

@@ -221,6 +221,17 @@ public:
     {
         return false;
     }
+    // A point given on one of its bones (0x4000: the actor itself, in its own axes) in KH2's world (1:83,
+    // FUN_1403b50f0): false when the world cannot say
+    virtual bool bone_point(Actor &, int /*bone*/, const Vec3 & /*local*/, Vec3 & /*out*/)
+    {
+        return false;
+    }
+    // The height of the ground under it, KH2's y (1:98, 1:99: FUN_1403b87e0's ray down)
+    virtual float ground(Actor &a);
+    // A state every object enters, at once or each after a time at random below `delay` (1:90: FUN_1403cacd0's list,
+    // FUN_1403c9d40 sends it to every object)
+    virtual void broadcast(Actor &, const std::string & /*name*/, float /*delay*/) {}
 };
 
 class Actor final : public Object {
@@ -270,6 +281,15 @@ public:
     Vec3 velocity{};
     float move_clock = 0.0F;
     Vec3 steered{}; // the travel a tick of the last evaluation
+    // class 5 (1:58, FUN_140421ce0; its movement FUN_140421c80): along the ground at a velocity of its own, keeping
+    // `dash_keep` of it an evaluation (eased toward the steering when steered), until its class changes
+    bool dashing = false;
+    float dash_keep = 0.0F;
+    // the thread a script attached to it (1:112, FUN_1403d76d0: + 0xd48, the one before ended), in the machine that
+    // made it
+    ai::Machine *side_machine = nullptr;
+    std::uint32_t side_thread = 0;
+    void attach_thread(ai::Machine &m, std::uint32_t id);
     // its fading (+ 0xa08, FUN_1403b7810: a value and its change a tick; 1:19, 1:20, 1:28): 1 seen, 0 gone
     float fade = 1.0F, fade_step = 0.0F;
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use

@@ -475,6 +475,8 @@ struct Enemy final {
     float place[3] = {};
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
     bool placed = false; // its place given to Days (e.place) at least once
+    std::string sent_state; // a state another enemy sent it (1:90), entered once `sent_after` ticks have gone
+    float sent_after = 0.0F;
     float pure[16] = {};
     bool seen = false;
     unsigned ghost_frame = 0;
@@ -541,8 +543,54 @@ std::unique_ptr<Object> days_hit;
 
 void cast(Enemy &e, int number);
 
+void pose(Enemy &e);
+void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
+
 class Field final : public World {
 public:
+    // 1:83: a point on one of its bones in the pose it has now (0x4000 the actor itself, in its own axes), KH2's world
+    bool bone_point(Actor &a, int bone, const Vec3 &local, Vec3 &out) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end())
+            return false;
+        Enemy &e = *it->second;
+        if (e.pose.empty())
+            pose(e);
+        KhdaysKh2Shell s{};
+        to_days(a.place(), s.place);
+        float d[3];
+        days_point(e, s, bone, local, d);
+        out = to_kh2(d);
+        return true;
+    }
+
+    // 1:98, 1:99: the ground Days last found under it (its place's height when none yet)
+    float ground(Actor &a) override
+    {
+        const auto it = by_actor.find(&a);
+        return it != by_actor.end() && it->second->floor_known ? it->second->floor : a.place()[1];
+    }
+
+    // 1:90: a state every enemy of the field enters, at once or each after a time at random below `delay` (KH2's
+    // chance, DAT_140783ca0 x 0x10dcd)
+    void broadcast(Actor &, const std::string &name, float delay) override
+    {
+        static std::uint32_t chance = 1;
+        for (auto &[actor, e] : by_actor) {
+            if (e->dying)
+                continue;
+            if (delay > 0.0F) {
+                chance *= 0x10dcdu;
+                e->sent_state = name;
+                e->sent_after = float(chance) * (1.0F / 4294967296.0F) * delay;
+            } else {
+                Actor &x = *e->actor;
+                x.states().enter(x, name);
+            }
+        }
+    }
+
     // 1:87: the actor's element `number` started (FUN_1403b6670 -> FUN_1402c6b30 on its effects); the handle the
     // script gives back to 0:79 none
     std::uint32_t effect(Actor &a, int number, int, int) override
@@ -878,6 +926,10 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         khdays_log("kh2 enemies: %08x's threads at%s; motion %d at %.1f%s%s; %.3f above the ground, %.1f its fall", e.days,
                    at.c_str(), a.motion.id, double(a.motion.time), a.jump.on ? ", in a jump" : "",
                    e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall));
+    }
+    if (!e.sent_state.empty() && (e.sent_after -= 1.0F) <= 0.0F) {
+        a.states().enter(a, e.sent_state);
+        e.sent_state.clear();
     }
     if (!e.paused)
         a.tick();

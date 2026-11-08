@@ -46,6 +46,14 @@ KINDS = {
     "M_EX510": "Rabid Dog",
     "M_EX610": "Strafer",
     "M_EX200": "Wight Knight",
+    "M_EX570": "Assault Rider",
+    "M_EX580": "Nightwalker",
+    "M_EX600": "Magnum Loader",
+    "M_EX640": "Hot Rod",
+    "M_EX650": "Cannon Gun",
+    "M_EX760": "Armored Knight",
+    "M_EX880": "Creeper",
+    "M_EX990": "Dusk",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share

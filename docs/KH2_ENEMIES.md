@@ -21,8 +21,10 @@ read of KH2, what the port does with it, and what is not known yet.
   `kh2/se/<id>.wav` (below, "Sounds"), reads the shapes of KH2's calls from KH2's executable (`kh2/calls.txt`) and
   lists the kinds with whether the port answers every call their scripts make (`kh2_enemies.txt`: the Soldier
   `M_EX010`, the Shadow `M_EX020`, the Fiery Globe `M_AL020_FIRE`, the Icy Cube `M_AL020_ICEE`, the Rabid Dog
-  `M_EX510`, the Strafer `M_EX610` and the Wight Knight `M_EX200`, all covered; "Coverage" below). Nothing of the
-  games is in the repository or the installer.
+  `M_EX510`, the Strafer `M_EX610`, the Wight Knight `M_EX200`, the Assault Rider `M_EX570`, the Nightwalker
+  `M_EX580`, the Magnum Loader `M_EX600`, the Hot Rod `M_EX640`, the Cannon Gun `M_EX650`, the Armored Knight
+  `M_EX760`, the Creeper `M_EX880` and the Dusk `M_EX990`, all covered; "Coverage" below). Nothing of the games is
+  in the repository or the installer.
 - **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
   the mod (or with one that does not cover the kind) gets the class written after the name in its place; without a
   class the mission is left out for that player.
@@ -185,6 +187,24 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
 | 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`) | nothing (native code) |
 | 1:278 | n things made at the actor (`FUN_14042a980`: n times `FUN_1403dc950` on the manager at `DAT_142af8b48`) -- **likely its prizes** | nothing: Days gives the stand-in's |
+| 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing |
+| 0:15 | a bit of KH2's story (`FUN_14039a980`: `DAT_1409ab540`'s bits, 0xffff none) | 0: none in Days's field |
+| 0:23 | a value without its sign (`FUN_14041ca90`), marked a whole number | as KH2 |
+| 0:85 | an effect's handle let go (`FUN_14041e1c0` -> `FUN_1402be8f0`) | nothing: the port's effects end of their own |
+| 1:2 | steered toward a point along the ground at a speed (`FUN_1403b9c60`: + 0x10, + 0x1c), the way's length back; its first value the actor itself | as KH2 |
+| 1:29 | another object plays a motion of this one's set from a frame (`FUN_1403c6cc0`: its set made this one's, + 0x2b8; + 0x180) -- the Magnum Loader's rider, on its message 309 | as KH2, on another of the port's actors |
+| 1:58 | along the ground at a velocity of its own (`FUN_140421ce0`: + 0x20 the vector made one long times its w, + 0x108 a value, class 5, whose movement `FUN_140421c80` keeps + 0x108 of it an evaluation, eased toward the steering) | as KH2 (class 5 ends with 1:74 or a jump) |
+| 1:66, 1:69, 1:84, 1:97, 1:179 | + 0x120's 0x8000000 set; the float at + 0x19c; the object at + 0x5c0 (2:9's); where + 0x128 lies; + 0x118 (its fall's motion) set | as KH2 |
+| 1:83 | a point given on a bone (0x4000 the actor itself, in its own axes) in the world (`FUN_1403b50f0`: the bone's matrix, the point through it) | the pose the enemy has now |
+| 1:90 | a state every object enters by its name, at once or each after a time at random below a value (`FUN_1403cacd0` lists it, `FUN_1403c9d40` sends it to every object, KH2's chance) | every KH2 enemy of the field |
+| 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it |
+| 1:112 | a routine of the script as the actor's attached thread (`FUN_1403e1970`, `FUN_1403d76d0`: + 0xd48, the one before ended), the actor its first value | as KH2 |
+| 1:140 | whether a target record's object (its + 8) is there (`FUN_1403bde30`; its other test, the player's lock, not read) | its + 8 only |
+| 1:143 | an actor found by its placing record's number (`FUN_1403b41e0`, 0x70 for 0) | none: the slot left empty |
+| 1:162 | the actor put on one of KH2's lists (`FUN_1403bd410` -> `FUN_14040c9d0`) | nothing |
+| 1:211, 1:212 | bit n of + 0xd10 set, cleared | as KH2 |
+| 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
+| 2:21 | memory several objects share by a number (`FUN_1403f6df0`: n + 1 bytes, zeroed, the same for the same number) | as KH2 |
 
 ## Coverage
 
@@ -203,10 +223,16 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   after it leaves its own state ("States"), a shape on no bone in the actor's axes ("Collision"), `1:55`'s way made
   one long and either sign of its height rising, `1:156`'s own steering (class 9), the steering stopped by a wall,
   `1:56` on the screen, and an enemy that leaves coming back.
-- **Next**: the Magnum Loader `M_EX600` (0:21, 1:29 a motion played on another object, 1:112 an object made and
-  attached, 1:151: its children), the white Magnum Loader `M_EX600_LC` (1:222, 1:268, 1:269), the Assault Rider
-  `M_EX570`, the Cannon Gun `M_EX650`, the Creeper `M_EX880`, the Nightwalker `M_EX580`, the Dusk `M_EX990` (6-7
-  calls each); then the rest, 8 calls and more each.
+- **Covered, second batch**: the Assault Rider `M_EX570`, the Nightwalker `M_EX580`, the Magnum Loader `M_EX600`,
+  the Hot Rod `M_EX640` (`_HB`, `_WI`), the Cannon Gun `M_EX650` (`_TR`), the Armored Knight `M_EX760` (`_NM`), the
+  Creeper `M_EX880` and the Dusk `M_EX990` (the calls above from `0:0` on). Played (2026-11-08, level 99, 200
+  seconds, the four by four in one wave, the last three alone): hits on Roxas, the Assault Rider 10, the Nightwalker
+  23, the Hot Rod 25, the Armored Knight 12, the Creeper 2, the Dusk 3. **Not yet**: the Magnum Loader's and the
+  Cannon Gun's shots -- their scripts run, but their attacks are effects that hit (KH2's shots are objects and
+  effects with collision), which the port does not make yet.
+- **Next**: the white Magnum Loader `M_EX600_LC` (1:222 its object's number, 1:268 class 23, 1:269), the Graveyard
+  `M_EX790` (1:53), the Mole Driller `M_EX700` (2:1), the Neoshadow `M_EX420` (1:13, 2:10 an object made, 2:17 a hit
+  made); then the rest, 8 calls and more each, and the shots (2:10's objects, effects that hit).
 
 `KHDAYS_TRACE_KH2_ENEMIES=1` says what each enemy does (its states, effects, sounds, hits, the stand-in's sounds
 kept quiet, each attack's window with its spheres and the nearest player, where it leaves and comes back); `=2`
