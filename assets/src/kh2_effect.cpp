@@ -4917,9 +4917,19 @@ struct EffectInstance::State {
         return key < 0 || key >= size * 256 ? 0xff : int(key / size);
     }
 
+    // a UV scroll's part of a page: the draws keep it in texels (floats), hand it on x 65536 as an int
+    // (DAT_1405fbac0), and the model's packets shift it by the page's size, 2^(TW or TH) x 16, into 1/4096 of the
+    // page as its UVs are (FUN_1404c8b10 and the other scrolling draws, FUN_1404b6860)
+    static float scroll_part(float texels, unsigned log2_size)
+    {
+        const float x = texels * 65536.0F;
+        const std::int32_t fixed = std::fabs(x) < 2147483648.0F ? std::int32_t(x) : INT32_MIN;
+        return float(fixed >> (log2_size + 4)) / 4096.0F;
+    }
+
     // a model through `m` (FUN_1404b6860's work): its vertices (`own` when given: pppVtMime's blend), each
     // primitive's corner colour x `tint` (0x80 = 1 both), the request's flags and depth bytes, its ALPHA (0: the
-    // model's), the UV scroll added; the primitives in the model's order or by depth, a draw a page
+    // model's), the UV scroll (texels) added; the primitives in the model's order or by depth, a draw a page
     void draw_model_with(const std::vector<std::array<float, 3>> *own, const EffectModel &model, const M4 &m,
                          const std::array<float, 4> &tint,
                          unsigned flags, std::uint8_t only, std::uint8_t always, std::uint16_t alpha, float su,
@@ -4961,13 +4971,15 @@ struct EffectInstance::State {
                 d.tex0 = p->tex0;
                 tex = p->tex0;
             }
+            const float du = scroll_part(su, unsigned(p->tex0 >> 26) & 0xf),
+                        dv = scroll_part(sv, unsigned(p->tex0 >> 30) & 0xf);
             const auto corner = [&](int q) {
                 std::array<float, 4> col{};
                 for (int j = 0; j < 4; ++j)
                     col[std::size_t(j)] = float(p->colour[std::size_t(q)][std::size_t(j)]) / 128.0F *
                                           tint[std::size_t(j)] / 128.0F;
-                return vertex(clip[p->vertex[std::size_t(q)]], p->uv[std::size_t(q)][0] + su,
-                              p->uv[std::size_t(q)][1] + sv, col);
+                return vertex(clip[p->vertex[std::size_t(q)]], p->uv[std::size_t(q)][0] + du,
+                              p->uv[std::size_t(q)][1] + dv, col);
             };
             if (p->corners == 4) {
                 for (const int q : {0, 1, 2, 1, 3, 2})

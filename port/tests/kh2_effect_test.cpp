@@ -3,7 +3,8 @@
 // keyed records placing and colouring a quad, its life, a repeating effect's hold and its end once stopped; the
 // same directory read without the PAX header (KH1's and Re:CoM's .dpx); then blocks made from parts for the
 // commands read since: the rotation orders, the random ones' ranges, pppPointAp's children, pppVtMime's blend of
-// two models, a textured triangle (primitive kind 2), a model's primitives in its order or by depth.
+// two models, a textured triangle (primitive kind 2), a model's primitives in its order or by depth, a UV scroll's
+// texels.
 #include "khdays/assets/kh2_effect.h"
 #include "kh2_effect_made_up.h"
 
@@ -317,6 +318,21 @@ void test_textured_triangle()
     expect(draws[0].tex0 != 0 && near(v.u, 1.0F) && near(draws[0].triangles[2].v, 0.5F), "kind 2's page and UV");
 }
 
+// pppDrawMdlTs3's UV scroll is in texels: one texel of the made-up page, two texels wide, is half the page
+void test_uv_scroll()
+{
+    MadeLayer L;
+    L.commands = placed(0x57, 0, 0, 0, 0, 0);
+    L.commands.back() = command(0x8b, 0x28, {0x50, 0, 0x60}, [](auto &k) {
+        put(k, 4, std::int32_t(0)); // the model
+        put(k, 8, 1.0F);            // u: one texel
+    });
+    EffectInstance fx(block_of(made_block({L}, {triangle(3, 0, 0, 2)}, {}, 10, false)), 0, 1);
+    std::vector<EffectDraw> draws;
+    const auto v = first_corner(fx, draws);
+    expect(near(v.u, 1.5F), "a texel's scroll on a page two texels wide");
+}
+
 // a model's primitives in its own order, or (0x80: the key's byte 8, bit 0) in depth buckets, far first: the near
 // triangle (z 0) first in the model, the far one (z 1, w 1: bucket 0) second
 void test_primitive_order()
@@ -434,6 +450,7 @@ int main()
         test_vt_mime();
         test_textured_triangle();
         test_primitive_order();
+        test_uv_scroll();
         test_lightning();
         test_game_matrices();
     } catch (const std::exception &e) {
