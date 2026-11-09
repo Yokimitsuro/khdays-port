@@ -2559,6 +2559,67 @@ HOOKS["ov022@020a2978"] += [
         "    if (GameState_IsFlagSet(0x20e0) != 0) {\n",
     )
 ]
+# KH2's reaction commands for Days's own (ui/reaction_command.h, the setting on and the bar's pieces there): the thing
+# aimed at's command (Talk, Examine ...) goes to the bar over the deck, which keeps Attack; the reaction button (the
+# DS X, the pad's top one) takes it as a primary command with argument 1, chosen without A as a shortcut is (the
+# packet's bit the host's Ov022_TranslateCommandToAction takes a command by), the deck's own press with the bar showing
+# one has argument 2 (the arguments go to the host in the control packet).
+HOOKS["ov022@020a2978"] += [
+    (  # Ov022_UpdateCommandInput: the command of the thing aimed at
+        "            Ov002_PanelSelectSource(Ov022_GetSubKindIfState2(pActor) & 0xf, nArg);\n",
+        "            { extern int khdays_reaction_talk_offer(int kind, int usable);\n"
+        "              if (khdays_reaction_talk_offer(Ov022_GetSubKindIfState2(pActor) & 0xf, nArg))\n"
+        "                  Ov002_PanelSelectSource(0, func_ov022_0209fc78(pActor, -1) != 0);\n"
+        "              else\n"
+        "                  Ov002_PanelSelectSource(Ov022_GetSubKindIfState2(pActor) & 0xf, nArg); }\n",
+    ),
+    (  # the reaction button's press of it: no deck cursor, menu or shortcut from that X
+        "            bNoRepeat = 1;\n",
+        "            { extern int khdays_reaction_talk_pressed(int pressed, int panel_open);\n"
+        "              if (khdays_reaction_talk_pressed(gPadPressed, khdays_ui_command_panel_open()))\n"
+        "                  bCommandChosen = 1; }\n"
+        "            bNoRepeat = 1;\n",
+    ),
+    (
+        "        pActor->bMenuFlag = (u8)bMenuActive;\n",
+        "        pActor->bMenuFlag = (u8)bMenuActive;\n"
+        "        { extern int khdays_reaction_talk_commit(signed char *kind, unsigned short *arg);\n"
+        "          if (khdays_reaction_talk_commit(&pActor->nCommandKind, &pActor->nCmdArg))\n"
+        "              pActor->bMenuFlag = 1; }\n",
+    ),
+]
+HOOKS["ov022@020a31b4"] = [
+    (  # Ov022_TranslateCommandToAction: a primary command from the reaction button only talks, examines ...; the
+        # deck's while the bar has one only attacks
+        "            if (Ov022_IsSlotReady(&pActor->stateBlk) != 0) {\n"
+        "                pActor->nPendingAction = 6;\n"
+        "            }\n"
+        "            break;\n",
+        "            if (Ov022_IsSlotReady(&pActor->stateBlk) != 0) {\n"
+        "                pActor->nPendingAction = 6;\n"
+        "            }\n"
+        "            if (pActor->nCommandArg == 1 && pActor->nPendingAction != 2) {\n"
+        "                pActor->nPendingAction = 0;\n"
+        "            }\n"
+        "            if (pActor->nCommandArg == 2 && pActor->nPendingAction == 2) {\n"
+        "                pActor->nPendingAction =\n"
+        "                    func_ov022_0209fc78(pActor, -1) != 0 && Ov002_IsMissionClearFinished(0) == 0 ? 1 : 0;\n"
+        "            }\n"
+        "            break;\n",
+    ),
+]
+HOOKS["ov002@0205b39c"] = [
+    (  # Ov002_DrawPanelRowText: where Days cannot attack (a town) the deck's first row says Attack, not Talk, while
+        # the bar takes Days's commands
+        "                    if (Ov002_GetPanelField0058() != 0) {\n                        nSelect = 7;\n",
+        "                    if (Ov002_GetPanelField0058() != 0 && !khdays_reaction_talk_active()) {\n"
+        "                        nSelect = 7;\n",
+    ),
+    (
+        "extern int *Ov002_FindNamedEntry(int nName);\n",
+        "extern int *Ov002_FindNamedEntry(int nName);\nextern int khdays_reaction_talk_active(void);\n",
+    ),
+]
 HOOKS["ov022@0209045c"] = [
     (  # Ov022_StepReactionState: the level animation's entry from the port
         "void Ov022_StepReactionState(struct ReactionCtx *pCtx, int nDelta)\n",

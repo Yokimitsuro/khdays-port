@@ -31,6 +31,7 @@
 #include "../../ui/kh2_obtained.h"
 #include "../../ui/hud_options.h"
 #include "../../ui/kh2_mission_panel.h"
+#include "../../ui/reaction_command.h"
 #include "../../ui/minimap.h"
 #include "../../ui/pause.h"
 #include "../../ui/text.h"
@@ -920,6 +921,7 @@ static void ui_frame(KhdaysFramePackage *p, const KhdaysGpuInput *in, int refere
     khdays_ui_obtained_commands(&p->obtained_image);
     khdays_ui_notification_commands(p->notification_images);
     khdays_ui_mission_panel_commands(&p->mission_panel_image);
+    khdays_ui_reaction_command_commands(&p->reaction_command_image);
     khdays_minimap_commands(p->minimap_images);
     khdays_minimap_radar_commands(&p->radar_image);
     p->mission_panel_state = khdays_ui_mission_panel_state();
@@ -1144,6 +1146,7 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
     memset(&p->obtained_image, 0, sizeof(p->obtained_image));
     memset(p->notification_images, 0, sizeof(p->notification_images));
     memset(&p->mission_panel_image, 0, sizeof(p->mission_panel_image));
+    memset(&p->reaction_command_image, 0, sizeof(p->reaction_command_image));
     memset(p->minimap_images, 0, sizeof(p->minimap_images));
     memset(&p->radar_image, 0, sizeof(p->radar_image));
     p->mission_panel_state = 0;

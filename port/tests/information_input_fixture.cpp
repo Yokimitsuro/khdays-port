@@ -190,6 +190,19 @@ void khdays_controls_command_input(int, int panel, int, int, int, int, int, int)
 {
     command_panel = panel;
 }
+/* KH2's reaction command bar (ui/reaction_command.h): off here, Days's own deck */
+int khdays_reaction_talk_offer(int, int)
+{
+    return 0;
+}
+int khdays_reaction_talk_pressed(int, int)
+{
+    return 0;
+}
+int khdays_reaction_talk_commit(signed char *, unsigned short *)
+{
+    return 0;
+}
 }
 
 void information_input_test(bool keep, unsigned panel)

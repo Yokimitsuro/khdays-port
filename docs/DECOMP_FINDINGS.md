@@ -302,6 +302,15 @@ Taken up (for the record of what the old names were):
   `Ov008_CalcMissionCompletionPercent` tests, and `Ov002_SpawnStateSpots`' badge bits); the enemy's hooks
   (`func_ov107_020c6624`: `Ov107_AiState_Init`; `Ov244_RelaySlotEvent`, `Ov277_RelaySlotEvent`: `*_SetAttackPower`).
 
+- The deck's primary command (2026-11-09, KH2's reaction commands for Days's own, RUNTIME_MAP section 38):
+  `Ov022_GetSubKindIfState2` gives the command of the thing the player aims at (the object's + 0x17: 1 Examine,
+  2 Talk ...), not a sub-kind; `Ov002_PanelSelectSource` puts that command in the deck's first row (`wSource` the
+  row, `nPrimaryValue` whether it can be taken). `Ov022_UpdateCommandInput`'s `bMenuFlag` (+ 0x4e8 bit 1) is "chosen
+  without A", which `Ov022_SendControlPacket` sends as `bInput1` and the host's `Ov022_LoadNodeFromResource` puts at
+  + 0x4e8 bit 2, `Ov022_TranslateCommandToAction`'s `bActionRequest`; its `nCommandKind` and `nCommandArg`
+  (+ 0x4d6, + 0x4d8) are the received copies of the chosen + 0x4d0 and + 0x4d2. `Ov002_DrawPanelRowText`'s
+  `nField0024` walk reads the panel's two command words at + 0x28 (`Ov002_PanelSelectSource`'s `aWords`).
+
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 
 Locals that were one buffer only in the DS's frame, taken up by the decomp

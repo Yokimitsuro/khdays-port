@@ -97,6 +97,28 @@ static const char *const texts[TXT_COUNT][5] = {
          "Los pasillos de la Organización como los dibuja KH2 -- su propio efecto y sus sonidos, reproducidos como "
          "los reproduce KH2 -- creados por el HD PACK desde tu 1.5+2.5. Desactivado muestra los de Days. Se aplica "
          "desde el siguiente pasillo."},
+    [TXT_HUD_REACTION_COMMANDS] = {"KH2 reaction commands", "Commandes réflexes de KH2", "Reaktionsbefehle aus KH2",
+                                   "Comandi reazione di KH2", "Comandos de reacción de KH2"},
+    [TXT_HUD_REACTION_COMMANDS_NOTE] =
+        {"KH2's reaction command bar over the command deck, from your 1.5+2.5: a KH2 enemy's reaction commands, and "
+         "Days' Talk, Examine and the rest, taken with the reaction button (the pad's top one) while the deck keeps "
+         "Attack. Off: Days' own deck. The deck's label applies from the next area.",
+         "La barre des commandes réflexes de KH2 au-dessus du jeu de commandes, depuis votre 1.5+2.5 : les "
+         "commandes réflexes d'un ennemi de KH2, et Parler, Examiner et les autres de Days, prises avec le bouton "
+         "réflexe (celui du haut de la manette) pendant que le jeu de commandes garde Attaquer. Désactivé : le jeu de "
+         "commandes de Days. Son libellé s’applique à la zone suivante.",
+         "Die Reaktionsbefehlsleiste aus KH2 über dem Befehlsdeck, aus deiner 1.5+2.5: die Reaktionsbefehle eines "
+         "KH2-Gegners und Reden, Untersuchen und die anderen aus Days, mit der Reaktionstaste (der oberen des "
+         "Controllers), während das Deck Angriff behält. Aus: das Deck von Days. Seine Beschriftung gilt ab dem "
+         "nächsten Gebiet.",
+         "La barra dei comandi reazione di KH2 sopra il mazzo dei comandi, dalla tua 1.5+2.5: i comandi reazione "
+         "di un nemico di KH2, e Parla, Esamina e gli altri di Days, presi con il tasto reazione (quello in alto del "
+         "controller) mentre il mazzo tiene Attacca. Disattivato: il mazzo di Days. La sua etichetta vale dall'area "
+         "successiva.",
+         "La barra de comandos de reacción de KH2 sobre la baraja de comandos, desde tu 1.5+2.5: los comandos de "
+         "reacción de un enemigo de KH2, y Hablar, Examinar y los demás de Days, con el botón de reacción (el de "
+         "arriba del mando) mientras la baraja se queda con Atacar. Desactivado: la baraja de Days. Su rótulo se "
+         "aplica desde la siguiente zona."},
     [TXT_HUD_KH2_MODELS_NOTE] =
         {"Roxas and his keyblades with KH2's models, motions and clothes, made by the HD PACK from your 1.5+2.5. Off "
          "shows Days' own. Changes apply at once.",

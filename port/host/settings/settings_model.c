@@ -404,6 +404,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_HUD_KH2_MODELS_NOTE));
     add_switch(b, KHDAYS_SET_HUD_CORRIDORS, TXT_HUD_CORRIDORS, &e->hud[KHDAYS_OPT_CORRIDORS], 1,
                khdays_text(TXT_HUD_CORRIDORS_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_REACTION_COMMANDS, TXT_HUD_REACTION_COMMANDS, &e->hud[KHDAYS_OPT_REACTION_COMMANDS], 1,
+               khdays_text(TXT_HUD_REACTION_COMMANDS_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,

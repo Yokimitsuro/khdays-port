@@ -5918,3 +5918,27 @@ Soldiers and a Shadow, `KHDAYS_TRACE_KH2_ENEMIES=1`; docs/KH2_ENEMIES.md):
 - **The ground under it** (+ 0x13c the distance under its sphere's centre, + 0x140 whether found): a KH2 leap of
   5 m came down 0.5 m and more a tick and went through the floor, Days's collision not stopping it, the ground then
   not found under it.
+
+## 38. Days's commands on KH2's reaction command bar
+
+Read in the decompilation, then seen in story Mode (day 357's Twilight Town, the save khdays-antiguo.sav's file 1)
+with the KH2 enemies' mod's `zz0command.2dd` and KHDAYS_TRACE_CONTROLS (docs/KH2_ENEMIES.md, "The reaction command's
+bar").
+
+- **The command offered**: `Ov022_UpdateCommandInput`, each tick the local player has field control, puts the
+  command of the thing aimed at (`Ov022_GetSubKindIfState2`: the actor's + 0x4f0 2, its object's + 0x17 low bits;
+  -1 none) in the deck's first row (`Ov002_PanelSelectSource(kind, usable)`), Attack (0) otherwise. Its label is
+  `UI/btl/<language>/cmd.s` record kind + 5 (0 Attack, 6 Examine, 7 Talk, 8 Trick, 9 Bone); a town's panel (+ 0x58
+  set) has no Attack and labels the first row Talk (record 7), greyed.
+- **Its press**: A takes the first row as kind 9 (`Ov002_PanelActivateSlot`); the host's
+  `Ov022_TranslateCommandToAction` makes kind 9 an attack (pending action 1) and, with something aimed at and free
+  (`Ov002_IsObjectFree`) and no combo running (+ 0xd80), the command (pending 2), which wins. It takes the command
+  only with A among the received buttons (+ 0x18 bit 0) or the received "chosen without A" (+ 0x4e8 bit 2, the
+  sender's + 0x4e8 bit 1: the L shortcuts' way).
+- **The port** (the setting on, the bar's pieces there): the first row keeps Attack, the bar shows the command, the
+  reaction button (X) chooses kind 9 with argument 1 and "chosen without A"; the host keeps only the command (pending
+  2) for it, only the attack for argument 2 (the deck's A while the bar has a command).
+- **Seen**: Days's command 1 at the shop window by the station's stairs, offered at f2572, f3188 and f3588; X at
+  f3638 made Roxas's words ("La torre del reloj...") as Days's own A does with the setting off. The game did not
+  sample the pad for 40 VBlanks after it, its pressed buttons kept: a press counts once (X newly there at a sample).
+  A with the setting on there: no words. The deck's first row read Attack, greyed.

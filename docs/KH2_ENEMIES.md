@@ -383,9 +383,9 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
 - **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
   the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
   Days's); `1:213` 1.
-- **The command**: offered, it shows above the command deck (the button's icon, the HD PACK's or Kenney's, and its
-  KH2 name from the mod's kh2/msg/<language>/sys.bar) and over the enemy (the icon at its aim point); the pad's top
-  button (KH2's triangle, the DS X) takes it: the command's argument sent to the enemy as a message (trigger 11).
+- **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and over the enemy
+  (the button's icon, the HD PACK's or Kenney's, at its aim point); the pad's top button (KH2's triangle, the DS X)
+  takes it: the command's argument sent to the enemy as a message (trigger 11).
 - **KH2's text** (sys.bar, our reading of the files; OpenKH's MSG page gives the control codes): 01 a space, 2e-47
   A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb the small accented letters (a grave, acute, circumflex, diaeresis ... u
   diaeresis), d0-e4 the capitals, b5 oe, b6 sharp s, e5 and e6 the opening exclamation and question marks, 48 !, 49
@@ -395,7 +395,45 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   places (`kh2::match_by_rest`: Roxas's P_EX110 has Sora's bodies' rest places, renumbered), then its `bone` pairs.
   Days's own model holds its last pose (Days has no such animation).
 - **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
-  msg/<language>/sys.bar.
+  msg/<language>/sys.bar, field2d/<language>/zz0command.2dd with its HD picture.
+
+## The reaction command's bar
+
+KH2 shows a reaction command as a bar over its command menu. The world's menus have their own (field2d/<language>/
+<world><n>command.2dd, which KH2FM.exe's `FUN_140154070` loads for a world, `zz0command.2dd` otherwise); the port
+draws the general one, `zz0command.2dd`: its IMGD and SEQD named `comw`, with the HD picture
+remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png. The mod tool copies both to
+mods/<mod>/kh2/field2d/<language>/ (us, fr, gr, it, sp), and `port/ui/reaction_command.cpp` plays them through the
+port's KH2 sequence player on the GPU (docs/KH2_SEQUENCES.md), as the obtained notices are.
+
+- **comw's sequences** (our reading of the file against KH2's own play of Cerberus's commands): 1 the bar standing (its
+  circle's light at 0.157 of its length), 5 the bar coming (a ring closing on the circle, a light along it; then it
+  stands), 3 the bar coming with "COMBO!" over it (a command offered after one taken), 4 the button's flash (a
+  triangle growing out of the circle), 0 the bar leaving (16 frames), 7 and the rest the menu's own titles and slots.
+  Which of them KH2FM.exe plays when was not read in the executable: seen in KH2's play, the first command comes with 5,
+  each after a taken one with 3, a press flashes 4, the command taken stays until its enemy lets the player go, and the
+  bar leaves with 0.
+- **Drawn** as wide as the deck (84 DS dots), its foot a dot above it; over it, as KH2's, the pad's top button's icon
+  in the circle and the command's name after it in the game's 8-dot font (the HD fonts' for the deck's labels,
+  "field.command"), white over a black shadow, fading with the bar. The setting "KH2 reaction commands"
+  (`kh2_reaction_commands`, on) and the HD textures switch it; without its pieces the icon and the name show alone.
+- **Days's own commands** on the bar (the same setting): Days offers the thing the player aims at (an actor's + 0x4f0 2
+  and its object's + 0x17, `Ov022_GetSubKindIfState2`) as the deck's primary command -- 1 Examine, 2 Talk, 3 Trick,
+  4 Bone: UI/btl/<language>/cmd.s's record kind + 5 -- in place of Attack (`Ov002_PanelSelectSource`), and A then
+  talks instead of attacking (`Ov022_TranslateCommandToAction`, kind 9: the pending action 2 over 1). Joins in
+  prepare.py leave the deck its Attack and put the command on the bar: the reaction button chooses kind 9 with
+  argument 1, which only talks, examines ..., marked chosen without A as the L shortcuts' commands are (the actor's
+  + 0x4e8 bit 1, which the control packet's bit 24 takes to the host's + 0x4e8 bit 2: without it
+  `Ov022_TranslateCommandToAction` takes a command only with A held); the deck's own press while the bar has one gets
+  argument 2, which never does (the argument goes to the host in the packet's 10 bits, so each player's own setting
+  rules their presses). The game keeps its pressed buttons while it does not sample the pad (an examination's start):
+  a press is X newly there at a sample. Where Days has no Attack (a town: the panel's + 0x58), the deck's first row
+  reads Attack, greyed, in place of Talk (`Ov002_DrawPanelRowText`'s record 7 left for 0; from the next area).
+- **Seen** (story Mode, day 357's Twilight Town, the shop window by the station's stairs: Days's command 1): the bar
+  "Examinar" over the deck, its Attack greyed; the reaction button made Roxas say "La torre del reloj... ¿Habrá alguien
+  ahí arriba?" as Days's A does with the setting off; A with it on made nothing. Cerberus's three commands came with 5,
+  3 and 3 ("¡COMBO!"), each press's flash in the circle, and the bar left as the blow ended. The button's icon is the
+  player's input's; without one (a keyboard here) the game's X glyph, from the 10-dot font (the 8-dot has none).
 
 ## Event sequences
 

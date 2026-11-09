@@ -619,6 +619,8 @@ std::map<unsigned, Held> held; // by the Days player's object
 // a thread a script started on a player before taking it in hand (Cerberus's 1:112 comes before its 1:29), by object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
+unsigned local_takes = 0;      // the reaction commands this game's own player took (khdays_kh2_enemies_taken)
+int local_taken = -1;          // the last of them
 std::map<unsigned, unsigned> player_of_node; // each player's model's scene node -> its object (the models' draws)
 
 // KH2's one event player (FUN_1402cc4b0; a sequence started ends the one before): the sequence, the enemy whose script
@@ -1514,6 +1516,8 @@ void take_command(Enemy &e)
         const int id = h.offered;
         h.taken.insert(id);
         h.offered = -1;
+        ++local_takes;
+        local_taken = id;
         const Command *c = command(id);
         const int number = c != nullptr ? c->argument : id;
         const auto o = players.find(object);
@@ -2373,6 +2377,14 @@ extern "C" int khdays_kh2_enemies_offered(int *text)
     return h->second.offered;
 }
 
+// How many reaction commands this game's own player took; whether an enemy holds that player now (`held_now`)
+extern "C" unsigned khdays_kh2_enemies_taken(int *held_now)
+{
+    if (held_now != nullptr)
+        *held_now = held.count(local_player) != 0;
+    return local_takes;
+}
+
 // KH2's text as its menus' international encoding has it (msg/<language>/sys.bar; our reading of the files): 01 a
 // space, 2e-47 A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb and d0-e4 the accented small and capital letters (a grave,
 // acute, circumflex, diaeresis ... u diaeresis, each set in that order), b5 oe, b6 sharp s, e5 and e6 the opening
@@ -2464,16 +2476,31 @@ static std::u16string command_name(int text)
     return {};
 }
 
-extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room)
+namespace {
+int put_name(int text, unsigned short *out, int room)
 {
-    int text = 0;
-    if (khdays_kh2_enemies_offered(&text) == 0 || text == 0 || out == nullptr || room <= 0)
+    if (text == 0 || out == nullptr || room <= 0)
         return 0;
     const std::u16string name = command_name(text);
     const int n = std::min(int(name.size()), room);
     for (int i = 0; i < n; ++i)
         out[i] = static_cast<unsigned short>(name[std::size_t(i)]);
     return n;
+}
+} // namespace
+
+extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room)
+{
+    int text = 0;
+    return khdays_kh2_enemies_offered(&text) != 0 ? put_name(text, out, room) : 0;
+}
+
+// The name of the last reaction command this game's own player took and its id in `id` (0 none)
+extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int *id)
+{
+    const Command *c = local_taken >= 0 ? command(local_taken) : nullptr;
+    *id = c != nullptr ? local_taken : 0;
+    return c != nullptr ? put_name(c->text, out, room) : 0;
 }
 
 // Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on the enemy to land now as one Days hit (its

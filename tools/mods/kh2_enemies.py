@@ -18,7 +18,9 @@ mods/<mod>/kh2/fx/<name>/ and kh2/fx/texcommon/, and the sounds the kinds play i
 sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's player's skeleton
 (original/obj/P_EX100.mdlx, the bones the motions they make the player play are made for), KH2's commands
 (original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
-(original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out.
+(original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command menu, whose
+bar the reaction commands show (original/field2d/<language>/zz0command.2dd and its HD picture
+remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png), to mods/<mod>/kh2/field2d/<language>/.
 Says what it made and what it left out.
 """
 
@@ -68,6 +70,7 @@ SHARED = (
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
+COMMAND_MENU = "zz0command.2dd"  # field2d/<language>/: KH2's general command menu (the reaction command's bar)
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
 PAX_ENTRY = 0x12  # an .a.us's PAX
 ELEMENT = 0x50  # a PAX's elements, from its + 0x10 (their count at + 8): each one's sound at + 0x18 (none: 0 or -1)
@@ -251,6 +254,21 @@ def make(
             names += 1
     if names == 0:
         left_out.append("msg/<language>/sys.bar (the commands' names): not there; a reaction command shows its button")
+    menus = 0
+    for language in LANGUAGES:
+        archive = kh2 / "original" / "field2d" / language / COMMAND_MENU
+        picture = kh2 / "remastered" / "field2d" / language / COMMAND_MENU / f"{language.upper()}_zz0command_2dd0.png"
+        if archive.is_file() and picture.is_file():
+            folder = mod / "kh2" / "field2d" / language
+            folder.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(archive, folder / COMMAND_MENU)
+            shutil.copy2(picture, folder / picture.name)
+            menus += 1
+    if menus == 0:
+        left_out.append(
+            f"field2d/<language>/{COMMAND_MENU} and its HD picture (the reaction command's bar): not there; "
+            "Days's deck keeps its own commands"
+        )
     return left_out
 
 
