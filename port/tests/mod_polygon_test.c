@@ -1,6 +1,7 @@
 /* A mod's polygons into a list (khdays_g3d_mod_polygon): clipped at the near plane with their true
  * depth, sky layers behind everything in painting order, nothing lost at the far plane, vertex alpha
- * kept. The clip space is Days's field's: z = w - 0.2 (near plane at w 0.1, no far plane).
+ * kept; a KH2 effect's triangles drawn within a model's draw leave its polygons' keys as they were. The
+ * clip space is Days's field's: z = w - 0.2 (near plane at w 0.1, no far plane).
  *   ctest --test-dir build/port/obj-x64 -R khdays-mod-polygon --output-on-failure */
 #include "../gfx/g3d.h"
 
@@ -125,6 +126,41 @@ static void banked_pltt(void)
 }
 
 /* The polygon `n` of the list shown: its nearest and farthest depth (z / w). */
+/* A KH2 enemy's effects are drawn with its model (in its model's draw), as many triangles as their tick has:
+ * the model's polygons keep their places in the draw whatever the effects' count, the effects' are keyed as
+ * loose ones -- the picture between two lists (g3d_interp.c) took a model's triangle for another as an
+ * effect grew, and Cerberus came apart in pieces as it landed. */
+static void effect_keys(void)
+{
+    static const int resource = 0;
+    const KhdaysG3dClipVertex model[3] = {at(-1, -1, 10), at(1, -1, 10), at(0, 1, 10)};
+    const KhdaysG3dClipVertex spark[3] = {at(-0.1f, 0, 5), at(0.1f, 0, 5), at(0, 0.2f, 5)};
+    for (int sparks = 1; sparks <= 3; sparks += 2) {
+        khdays_g3d_reset();
+        khdays_g3d_draw_begin(&resource);
+        khdays_g3d_mod_polygon(model, 3, BOTH_SIDES, 0, -1, 0, 0);
+        for (int k = 0; k < sparks; ++k)
+            khdays_g3d_effect_polygon(spark, 3, -1, 0x48, 0);
+        khdays_g3d_mod_polygon(model, 3, BOTH_SIDES, 0, -1, 0, 0);
+        khdays_g3d_draw_end();
+        const uint32_t swap = 0;
+        khdays_g3d_command(0x50, &swap);
+        khdays_g3d_vblank();
+        const KhdaysG3dList *l = khdays_g3d_shown();
+        CHECK(l != NULL && l->npre == 2 + sparks);
+        if (l == NULL || l->npre != 2 + sparks)
+            continue;
+        uint32_t ordinal = 0;
+        for (int32_t i = 0; i < l->npre; ++i) {
+            if (l->pre[i].flags & KHDAYS_G3D_EFFECT) {
+                CHECK(l->pre_info[i].draw == 0); /* none of the model's */
+            } else {
+                CHECK(l->pre_info[i].draw != 0 && l->pre_info[i].ordinal == ordinal++);
+            }
+        }
+    }
+}
+
 static int depths(const KhdaysG3dList *l, int n, float *nearest, float *farthest)
 {
     if (n >= l->npolys) {
@@ -203,6 +239,7 @@ int main(void)
     khdays_g3d_list_free(&replay);
     marker_order();
     sequence_hud_bounds();
+    effect_keys();
     banked_pltt();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);

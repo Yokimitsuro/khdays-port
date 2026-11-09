@@ -178,7 +178,7 @@ void plot_effect(Polygon p, inout Pixel px, Attrs at, uint depth)
     if ((flags & G3D_EFFECT_DEPTH_ONLY) == 0u) {
         const float w = 1.0f / at.iw;
         const bool textured = ((p.tex >> 26) & 7u) != 0u && p.replacement >= 0;
-        const int4 texels = (smooth & 1u) != 0u && textured ? polygon_texels(p) : int4(0, 0, 0, 0);
+        const int4 texels = textured ? polygon_texels(p) : int4(0, 0, 0, 0); // read smoothed (hd_texel)
         const float4 c = effect_color(p, float3(at.r, at.g, at.b) * w, at.a * w, at.s * w / 16.0f, at.t * w / 16.0f,
                                       textured ? texel_footprint(p, at) : 0.0f, texels);
         if (c.a <= 0.0f) {

@@ -132,7 +132,8 @@ float4 hd_blend(Polygon p, uint4 l, float u, float v, float ss, float ts, int4 b
 
 // Polygon `p`'s replacement at (s, t), the original's texels: the same place of the original's
 // mapping at the replacement's resolution, nearest or smoothed; a smaller copy where a pixel spans more
-// than one texel (`footprint`). Colours in 8 bits when `fine`, else cut to the DS's 6.
+// than one texel (`footprint`). Colours in 8 bits when `fine`, else cut to the DS's 6. A KH2 effect's picture is
+// read smoothed whatever the setting: KH2 draws its effects so.
 int4 hd_texel(Polygon p, float s, float t, float footprint, int4 bounds)
 {
     const uint r4 = (uint)p.replacement * 4u;
@@ -144,7 +145,7 @@ int4 hd_texel(Polygon p, float s, float t, float footprint, int4 bounds)
     const int last = hd_levels(e);
     const float texels = footprint * max((float)e.y / ss, (float)e.z / ts);
     const float lod = last > 0 && texels > 1.0f ? min(log2(texels), (float)last) : 0.0f;
-    if ((smooth & 1u) == 0u) {
+    if ((smooth & 1u) == 0u && ((uint)p.flags & G3D_EFFECT) == 0u) {
         const uint4 l = hd_level(e, (int)round(lod));
         const float u = ws * (float)l.y / ss, v = wt * (float)l.z / ts;
         return hd_at(l, clamp((int)floor(u), 0, (int)l.y - 1), clamp((int)floor(v), 0, (int)l.z - 1));

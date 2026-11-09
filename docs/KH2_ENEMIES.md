@@ -374,9 +374,10 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
 - **The motion**: its '0010' variant's time on (1 tick a frame), its root's travel turned by the yaw moving the player
   (as an enemy's), held at its end (the ended bit `1:14` waits on). Its ranges: 20 a reaction command offered (when
   the command it follows, `require`, is a range 26's), 27 not to be hit (the enemies' attacks pass it). Its triggers:
-  1 the enemy's effect at its place, 8 the enemy's sound. Its weapon's ('0011' with data of its own) attack ranges:
-  the player's blow on the enemy, Days's damage the player's last hit on it times the attack's power over 100
-  (00battle.bin's atkp; Stop's way into Days's hit, `khdays_kh2_enemies_blow`).
+  1 the enemy's effect on the player's own bones (its element's bone is KH2's player's: P_EX100's skeleton in the pose
+  the motion has then, placed and turned where the player stands from the enemy), 8 the enemy's sound. Its weapon's
+  ('0011' with data of its own) attack ranges: the player's blow on the enemy, Days's damage the player's last hit on it
+  times the attack's power over 100 (00battle.bin's atkp; Stop's way into Days's hit, `khdays_kh2_enemies_blow`).
 - **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
   the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
   Days's); `1:213` 1.
@@ -458,8 +459,9 @@ Soldier's 9 over 4 effects, the Shadow's 3 over 3). What a motion's trigger 1 an
 The port runs each element started on the enemy (`runtime/mods/kh2_fx_draw.h`, the Dark Corridor's way: the effect
 in KH2's axes and centimetres, its view the enemy's) at its size, turn (x, then y, then z: the order **not known**,
 the Soldier's and the Shadow's turn about one axis only) and place, on its bone in the pose of the tick it is drawn
-at; its sound starts when its time comes. **Not known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1,
-2, 4), and the two values `1:87` passes on.
+at; its sound starts when its time comes. Their pictures are read between their texels whatever Days's texture
+setting: KH2 does not draw its effects with nearest texels, and the DS look's made a spark a block of pixels. **Not
+known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1, 2, 4), and the two values `1:87` passes on.
 
 ## Sounds
 

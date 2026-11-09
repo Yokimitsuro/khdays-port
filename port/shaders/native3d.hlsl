@@ -49,7 +49,7 @@ Corner vs_main(uint2 c : TEXCOORD0)
 {
     const Vertex v = vertex_at((int)c.x);
     const Polygon p = polygon_at(c.y & 0x3fffffffu);
-    const bool smoothing = (smooth & 1u) != 0u && ((p.tex >> 26) & 7u) != 0u;
+    const bool smoothing = ((smooth & 1u) != 0u || ((uint)p.flags & G3D_EFFECT) != 0u) && ((p.tex >> 26) & 7u) != 0u;
     Corner o;
     // the depth as the DS's Z buffer has it, over 2^24: z * 2^23 + 0x7ffe00 (depth_of), for native3d_z.hlsl
     const float depth = clamp(v.z * 0.5f + 8388096.0f / 16777216.0f, 0.0f, 1.0f);

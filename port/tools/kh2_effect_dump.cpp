@@ -2,12 +2,12 @@
 // player's file (a PAX the player has), the block and emitter, the frame, an optional stop frame; a camera looking
 // at the effect. Prints each draw: its picture page, blend, depth state, triangle count and first vertex. With
 // --extent the camera is none (the effect's own space: world, view and projection identities) and each draw's
-// bounds are printed instead: what the port's fitting of an effect to a model is measured on. --survey plays every
-// emitter of every block of the files given for that many frames (a repeating one stopped half way; the game's
-// points a weapon swung round) and prints a line for each: played (its most objects, the triangles drawn, any
-// not-a-number corner) or refused and why.
+// bounds are printed instead: what the port's fitting of an effect to a model is measured on; with --vertices every
+// corner of each draw follows its line. --survey plays every emitter of every block of the files given for that many
+// frames (a repeating one stopped half way; the game's points a weapon swung round) and prints a line for each:
+// played (its most objects, the triangles drawn, any not-a-number corner) or refused and why.
 //
-//   khdays-kh2-effect-dump [--extent] <file.pax> <block> <emitter> <frame> [stop frame]
+//   khdays-kh2-effect-dump [--extent | --vertices] <file.pax> <block> <emitter> <frame> [stop frame]
 //   khdays-kh2-effect-dump --survey <frames> <file.pax>...
 #include "khdays/assets/kh2_effect.h"
 
@@ -129,9 +129,15 @@ int main(int argc, char **argv)
         --argc;
         ++argv;
     }
+    const bool vertices = argc > 1 && std::string(argv[1]) == "--vertices";
+    if (vertices) {
+        --argc;
+        ++argv;
+    }
     if (argc < 5) {
         std::fprintf(stderr,
-                     "usage: khdays-kh2-effect-dump [--extent] <file.pax> <block> <emitter> <frame> [stop frame]\n");
+                     "usage: khdays-kh2-effect-dump [--extent | --vertices] <file.pax> <block> <emitter> <frame> [stop "
+                     "frame]\n");
         return 2;
     }
     try {
@@ -173,6 +179,10 @@ int main(int argc, char **argv)
                         unsigned(d.tex0 & 0x3fff), unsigned(d.alpha), d.depth_only ? " depth-only" : "",
                         d.depth_write ? " depth-write" : "", d.depth_test ? "" : " no-test", d.triangles.size() / 3, v.x,
                         v.y, v.z, v.w, v.r, v.g, v.b, v.a, v.u, v.v);
+            if (vertices)
+                for (const auto &c : d.triangles)
+                    std::printf("  %.4f %.4f %.4f %.4f colour %.3f %.3f %.3f %.3f uv %.4f %.4f\n", c.x, c.y, c.z, c.w,
+                                c.r, c.g, c.b, c.a, c.u, c.v);
         }
     } catch (const std::exception &e) {
         std::fprintf(stderr, "kh2 effect dump: %s\n", e.what());

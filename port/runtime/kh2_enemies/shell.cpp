@@ -470,7 +470,9 @@ struct Enemy final {
         const Element *element = nullptr;
         float age = 0.0F;
         bool sounded = false;
-        bool loose = false; // cast by a player's motion of its set: at its place, its element's bone not followed
+        unsigned player = 0; // cast by the motion of its set a player it holds plays (his object): on his bones
+        kh2::EffectMatrix last{}; // that one's place when last drawn, kept once he is let go
+        bool placed = false;
     };
     std::vector<Running> fx;
     float pan = 0.0F; // where it was last drawn, left (-1) to right (1) of the camera: its sounds' pan
@@ -603,7 +605,7 @@ unsigned days_object(const Object &o)
     return 0;
 }
 
-void cast(Enemy &e, int number, bool loose = false);
+void cast(Enemy &e, int number, unsigned player = 0);
 void sound(const Enemy &e, int id);
 
 void pose(Enemy &e);
@@ -1292,7 +1294,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             if (float(tr.frame) <= h.cued || float(tr.frame) > h.time)
                 continue;
             if (tr.id == 1 && !tr.params.empty())
-                cast(e, std::int16_t(tr.params[0]), true);
+                cast(e, std::int16_t(tr.params[0]), object);
             else if (const int id = trigger_sound(tr); id > 0)
                 sound(e, id);
         }
@@ -1362,9 +1364,9 @@ void sound(const Enemy &e, int id)
                    heard ? "" : " (not heard: the mod has no kh2/se file)");
 }
 
-// Element `number` of the kind's effects started on the enemy (`loose`: at its place, cast by a player's motion of its
-// set, whose bones its element's are)
-void cast(Enemy &e, int number, bool loose)
+// Element `number` of the kind's effects started on the enemy (`player`: cast by the motion of its set that player
+// plays in its hands, whose bones -- KH2's player's -- its element's are)
+void cast(Enemy &e, int number, unsigned player)
 {
     const KindFiles &k = *e.kind;
     const auto it = k.fx_elements.find(number);
@@ -1374,7 +1376,7 @@ void cast(Enemy &e, int number, bool loose)
         Enemy::Running r;
         r.fx = std::make_unique<kh2::EffectInstance>(k.fx[it->second.effect], it->second.emitter, e.fx_seed++);
         r.element = &it->second;
-        r.loose = loose;
+        r.player = player;
         e.fx.push_back(std::move(r));
         if (tracing())
             khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days,
@@ -1613,9 +1615,9 @@ kh2::EffectCamera effect_camera(const float view_in[16], const float projection[
     return cam;
 }
 
-// An element's place in its enemy's effects' space (KH2's axes, y down, cm; the enemy's root at 0, turned as it is):
-// its size, its turn (x, then y, then z), its place, then the bone it follows (the pose's, KH2's model space y up)
-kh2::EffectMatrix element_world(const Enemy &e, const Element &el)
+// An element's place in its model's effects' space (KH2's axes, y down, cm; the model's root at 0, turned as it is):
+// its size, its turn (x, then y, then z), its place, then the bone it follows (`pose`'s, KH2's model space y up)
+kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Element &el)
 {
     const auto turn = [](int axis, float a) {
         const float c = std::cos(a), n = std::sin(a);
@@ -1637,9 +1639,9 @@ kh2::EffectMatrix element_world(const Enemy &e, const Element &el)
     }
     for (int k = 0; k < 3; ++k)
         m[std::size_t(12 + k)] += el.place[std::size_t(k)];
-    if (el.bone >= 0 && el.bone < kNoBone && std::size_t(el.bone) < e.pose.size()) {
+    if (el.bone >= 0 && el.bone < kNoBone && std::size_t(el.bone) < pose.size()) {
         std::array<float, 16> bone;
-        std::copy(e.pose[std::size_t(el.bone)].begin(), e.pose[std::size_t(el.bone)].end(), bone.begin());
+        std::copy(pose[std::size_t(el.bone)].begin(), pose[std::size_t(el.bone)].end(), bone.begin());
         static constexpr float flip[3] = {1.0F, -1.0F, 1.0F}; // y down <-> y up
         for (int r = 0; r < 4; ++r)
             for (int c = 0; c < 3; ++c)
@@ -1651,6 +1653,43 @@ kh2::EffectMatrix element_world(const Enemy &e, const Element &el)
     kh2::EffectMatrix out;
     std::copy(m.begin(), m.end(), out.begin());
     return out;
+}
+
+// An element a held player's motion cast, in its enemy's effects' space: on KH2's player's bone (P_EX100's skeleton) in
+// the pose his motion has now, his model placed and turned where he stands from the enemy (both in KH2's world, y
+// down; a model's y up, its turn Actor's). False without KH2's player's skeleton.
+bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMatrix &out)
+{
+    const kh2::MotionSkeleton *skeleton = player_skeleton();
+    if (skeleton == nullptr || h.body == nullptr || !h.body->motion)
+        return false;
+    static std::unique_ptr<kh2::MotionPlayer> player;
+    if (!player)
+        player = std::make_unique<kh2::MotionPlayer>(*skeleton);
+    const kh2::EffectMatrix own = element_world(pose_at(*player, *h.body->motion, h.time), el);
+    // his effects' axes (his model's, y down) to the enemy's, a point at a time: the map is affine
+    const Vec3 at = e.actor->place();
+    const float yaw = e.actor->yaw();
+    const auto to_enemy = [&](const Vec3 &r) {
+        const Vec3 t = turned({r[0], 0.0F, r[2]}, h.yaw);
+        const Vec3 d = {h.place[0] + t[0] - at[0], h.place[1] + r[1] - at[1], h.place[2] + t[2] - at[2]};
+        const Vec3 m = turned({d[0], 0.0F, d[2]}, -yaw);
+        return Vec3{m[0], d[1], m[2]};
+    };
+    float map[16] = {};
+    const Vec3 origin = to_enemy({0.0F, 0.0F, 0.0F});
+    for (int r = 0; r < 3; ++r) {
+        Vec3 unit{};
+        unit[std::size_t(r)] = 1.0F;
+        const Vec3 v = to_enemy(unit);
+        for (int c = 0; c < 3; ++c)
+            map[r * 4 + c] = v[std::size_t(c)] - origin[std::size_t(c)];
+    }
+    for (int c = 0; c < 3; ++c)
+        map[12 + c] = origin[std::size_t(c)];
+    map[15] = 1.0F;
+    row_matrix_mul(own.data(), map, out.data());
+    return true;
 }
 
 // Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
@@ -1670,12 +1709,19 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
     const kh2::EffectCamera cam = effect_camera(view, projection, units);
     kh2::EffectCamera placed = cam;
     for (Enemy::Running &r : e.fx) {
-        if (r.loose) {
-            Element at = *r.element;
-            at.bone = kNoBone;
-            placed.world = element_world(e, at);
+        if (r.player != 0) {
+            if (const auto h = held.find(r.player);
+                h != held.end() && h->second.enemy == e.days && held_world(e, h->second, *r.element, r.last))
+                r.placed = true;
+            if (!r.placed) { // no KH2 player's skeleton: at the enemy's root
+                Element at = *r.element;
+                at.bone = kNoBone;
+                r.last = element_world(e.pose, at);
+                r.placed = true;
+            }
+            placed.world = r.last;
         } else {
-            placed.world = element_world(e, *r.element);
+            placed.world = element_world(e.pose, *r.element);
         }
         for (unsigned t = 0; t < ticks; ++t) {
             const bool last = t + 1 == ticks;

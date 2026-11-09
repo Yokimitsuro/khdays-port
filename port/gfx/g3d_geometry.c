@@ -627,8 +627,10 @@ static const KhdaysG3dPreInfo *record_pre(const void *vertices, int n, const Pol
     *p = *what;
     p->first = building->npre_verts;
     p->count = n;
-    info->draw = g.draw;
-    if (g.draw != 0) {
+    /* a KH2 effect's triangle is none of the model draw it comes in (an enemy's effects are drawn with its
+     * model, as many triangles as their tick has): the model's polygons keep their places in the draw */
+    info->draw = (what->flags & KHDAYS_G3D_EFFECT) ? 0 : g.draw;
+    if (info->draw != 0) {
         info->occurrence = g.occurrence;
         info->ordinal = g.draw_ordinal++;
     } else {

@@ -324,7 +324,8 @@ the noise over Sora's memories) is left sharp, as the 2D layers are; a model
 under an orthographic camera with its texture magnified (the title's logo) is
 still smoothed. A replacement texture is read at the place of the original's
 mapping at its own resolution, a smaller copy where a pixel spans more than one
-of its texels.
+of its texels. A KH2 effect's polygon (`KHDAYS_G3D_EFFECT`) is smoothed with the
+option off too: KH2 does not draw its effects with nearest texels.
 
 The replacement graphics (`runtime/mods/textures.h`: mods' 3D textures, 2D tile
 sheets, models' textures) share one buffer the 3D pass and the 2D composition
@@ -446,7 +447,9 @@ itself (0x80 half of full, as the GS draws with textures off). Its alpha is the 
 `gpu_native3d.c` draws them into the colour target alone, the blend by the card's (0x44 mixed, 0x48 added, 0x42
 `Cd - Cs x As` reversed subtraction, 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`; another byte as 0x44, said once), the
 stencil untouched; `raster3d.hlsl` the same formula per pixel (`g3d_polygon.hlsli` `gs_blend`). `gpu3d.c`, as for
-mods' models, leaves them out.
+mods' models, leaves them out. Between two of the game's lists (`g3d_interp.c`) they are where the newer list has them, and they are keyed as loose polygons even in a
+model's draw (a KH2 enemy's effects come in its model's): the model's polygons keep their places in the draw whatever
+the effects' count -- a model's triangle taken for another as an effect grew broke Cerberus into pieces as it landed.
 
 ## Mods' graphics
 
