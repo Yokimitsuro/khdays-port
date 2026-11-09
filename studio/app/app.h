@@ -196,9 +196,6 @@ bool characters_take_drop(App& app, const std::filesystem::path& file);
 bool characters_unsaved();
 std::string characters_unsaved_key();
 bool draw_unsaved_quit(App& app);
-// The mod's prizes and chests (views/prizes_view.cpp): each beside Days's, their size and turn, and the KH2 prizes
-// mod made from the player's 1.5+2.5 copy.
-void draw_prizes(App& app, bool* open);
 // The mods' console: the running game's mods' log as it grows, and their reloads.
 void draw_mods_console(App& app, bool* open);
 // The chosen mod's native plugin's parameters, as its mod describes them, and the values saved for the game.
@@ -242,6 +239,11 @@ void choose_export(App& app);
 // Lets go of the model view's pictures before the graphics device goes.
 void model_view_shutdown();
 void draw_dump_panel(App& app);
+// The port's dumps (browser.cpp): whether one can be made now (the port found, none running), one of `kind`
+// ("graphics", "sounds") started into its folder of the settings, and the one running or done with its Reload.
+bool can_make_dump(const App& app);
+void start_dump(App& app, const char* kind);
+void draw_dump_job(App& app);
 void draw_bulk_export(App& app);  // its progress, in the browser (sheet_view.cpp)
 // The progress a bulk export's thread reports, and its end (sheet_view.cpp).
 std::function<bool(std::size_t, std::size_t, const std::string&)> bulk_progress(App::BulkExport* job);

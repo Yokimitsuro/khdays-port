@@ -55,7 +55,10 @@ is chosen). It changes at once and is kept in the settings.
 1. **The catalog.** The left side lists every texture, 2D tile sheet, model,
    sound, text file and movie of the game. Graphics and sounds come from the
    port's dumps (`khdays-native --dump-graphics`, `--dump-sounds`); without
-   them the tool offers to make them with the port. Search by name, filter by
+   them, or with a graphics dump that has no models (the game's own "Dump
+   graphics" setting writes only the textures and sheets it draws, into the
+   same folder), the tool offers to make them with the port, and the settings
+   make either again whenever wanted. Search by name, filter by
    kind. "Folders" shows them as a tree -- each kind, then the folders of the
    game's files, each with how many it holds -- opened as you search and to
    whatever another view selects; "List" shows them one under the other. The
@@ -412,20 +415,6 @@ is chosen). It changes at once and is kept in the settings.
     enemies' level and the time limit the list shows; and when it opens
     (`unlock`): from the start, after one of the game's missions (chosen by
     its number and name), or after another of the mod's.
-
-14. **Prizes.** "Prizes" (top right) shows the chosen mod's prizes and chests
-    (docs/KH2_SEQUENCES.md, "Field prizes"), each beside Days's own: a prize's
-    effect playing as the port draws it, beside the game's picture; a prize's
-    model turning at its pace, beside the picture; a chest beside the game's
-    chest (from the graphics dump). A prize model's **Size** and **Turn** and a
-    chest's **Scale** are changed there and written by **Save** (the rest of
-    their files kept). **Make from my 1.5+2.5 copy** makes the KH2 prizes mod
-    -- KH2's HP orb, munny and Coliseum coin, its chests and its prize boxes,
-    and Re:CoM's crystal coloured as Days's two -- into the
-    chosen mod as the installer makes it into the HD PACK: the entries it
-    needs taken out of the copy (the settings' 1.5+2.5 folder) into
-    `saves/collection`, then `tools/mods/kh2_prizes.py` run with the port's
-    executable. What is made holds Square Enix's work: it stays the player's.
 
 Sound loops and old-format mods come next.
 

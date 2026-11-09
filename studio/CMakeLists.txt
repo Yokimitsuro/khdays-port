@@ -100,9 +100,6 @@ add_library(khdays-studio-port STATIC
     "${ROOT}/assets/src/ddd_map.cpp"            # Dream Drop Distance's rooms, from the player's 2.8 copy
     "${ROOT}/assets/src/kh1_map.cpp"            # KINGDOM HEARTS FINAL MIX's rooms, from the player's 1.5+2.5 copy
     "${ROOT}/assets/src/recom_map.cpp"          # Re:Chain of Memories' rooms, from the same copy
-    "${ROOT}/assets/src/kh2_sequence.cpp"       # KH2's sequences' quads (the prizes' effects)
-    "${ROOT}/port/gfx/kh2_sequence.cpp"         # ... drawn by the port's reference renderer
-    "${ROOT}/port/ui/prize_effects_model.cpp"   # a prize's effect, as the port reads it
     "${ROOT}/port/sound/replace.c"            # a mod's sound read as the port reads it
     "${ROOT}/port/sound/third_party_decoders.c"
     "${ROOT}/port/host/render/png_io.c"              # PNG in and out, indexed included
@@ -174,7 +171,6 @@ add_library(khdays-studio-core STATIC
     core/mods/mods_log.cpp
     core/files/paths.cpp
     core/mods/process.cpp
-    core/mods/prizes.cpp
     core/rooms/added_rooms.cpp
     core/rooms/collection_source.cpp
     core/rooms/kh2_source.cpp
@@ -212,7 +208,6 @@ add_executable(khdays-studio
     app/views/mod_panel.cpp
     app/views/mods_console.cpp
     app/views/plugin_parameters_view.cpp
-    app/views/prizes_view.cpp
     app/views/room_adder.cpp
     app/views/model_view.cpp
     app/model_shot.cpp
@@ -249,7 +244,6 @@ add_executable(khdays-studio-tests
     tests/test_characters.cpp
     tests/test_character_forms.cpp
     tests/test_texts.cpp
-    tests/test_prizes.cpp
     app/strings.cpp
     tests/test_strings.cpp)
 target_include_directories(khdays-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")

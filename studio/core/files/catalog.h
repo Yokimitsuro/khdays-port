@@ -39,6 +39,7 @@ struct CatalogSources {
 struct Catalog {
     std::vector<Item> items;  // sorted by kind, then key
     bool graphics_dump_found = false;
+    bool graphics_dump_models = false;  // it has models (the game's own Dump graphics setting writes none)
     bool sounds_dump_found = false;
     bool game_files_found = false;
 
