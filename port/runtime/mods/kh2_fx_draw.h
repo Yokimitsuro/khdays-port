@@ -23,13 +23,16 @@ struct HdPage final {
     std::string relative;
 };
 
-// An effect file's pages: its blocks' pictures (and the resident ones', effect/texcommon.dpd) and their HD pictures.
+// One effect block's pages: its pictures (and the resident ones', effect/texcommon.dpd) and their HD pictures. The
+// blocks of one file put their own pictures at the same places (Cerberus's seven all at tbp 0x3000, 0x3040 ...), as
+// KH2 loads a block's pictures when it plays it: a block's draws see its own pictures alone (the PAX viewer's way).
 class Pages final {
 public:
     explicit Pages(std::string name) : name_(std::move(name)) {}
-    // One file's blocks' pictures; their HD pictures (one a page of the file's, in ascending order) under the mods'
-    // `hd_stem`, "" none
-    void add(const std::vector<const kh2::EffectBlock *> &blocks, const std::string &hd_stem);
+    // Blocks' pictures; their HD pictures under the mods' `hd_stem` ("" none): the remaster's -<n>.dds number a file's
+    // pages block by block, each block's in ascending order, from the file's first (Cerberus's 3 + 1 + 5 + 3 + 2 + 4
+    // pages, -0 to -17), this block's first being `first`. How many HD pictures these blocks' pages take.
+    int add(const std::vector<const kh2::EffectBlock *> &blocks, const std::string &hd_stem, int first = 0);
     // A draw's picture: its TEX0's view of the pages as a texture of the port's, the HD picture of its page when
     // `hd` and a mod has one that covers the same view with the same palette; -1 none.
     int page(std::uint64_t tex0, bool hd);

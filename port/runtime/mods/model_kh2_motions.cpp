@@ -1,5 +1,6 @@
 // A KH2 model's own motions: its .motions.txt read, and its slots played on the game's animations.
 
+#include "../kh2_enemies/shell.h"
 #include "model_parts.h"
 
 namespace khdays::model_parts {
@@ -660,6 +661,8 @@ void load_kh2_motions(Model &model, const std::string &path)
                 source_of[static_cast<std::size_t>(t)] = s;
             }
             auto retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, *own, source_of, limbs);
+            model.kh2_bone_pairs = bones;
+            model.kh2_limbs = limbs;
             // `carry`: the bone on the other where an `own` slot's first frame has it (both unscaled)
             for (const Carry &c : carries) {
                 const kh2::Motion *motion = motions->motion(c.at);
@@ -818,6 +821,67 @@ bool play_track(const Model &m, Kh2Track &track, std::size_t slot, const khdays:
     }
 }
 
+// A KH2 enemy holding the player (its reaction command, runtime/kh2_enemies): its set's motion for KH2's player is the
+// whole pose -- from KH2's player's bones (P_EX100) through the `skeleton`'s by their rest places (Roxas's are Sora's,
+// renumbered), then this model's `bone` pairs; onto its own bones by their rest places when it has no `skeleton` --
+// its root's travel taken out (the player's place carries it, as the game's root motion off). False when none holds
+// it, or the motion cannot be played on it (the game's pose then).
+bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
+{
+    namespace kh2 = khdays::assets::kh2;
+    khdays::kh2_enemies::HeldMotion held;
+    if (drawn_object == nullptr || !m.kh2_own_skeleton ||
+        !khdays::kh2_enemies::held_motion(KHDAYS_REF(drawn_object) - 0x24U, held))
+        return false;
+    try {
+        if (m.kh2_held_source != held.skeleton || !m.kh2_held_retarget) {
+            const std::size_t bones = m.kh2_own_skeleton->joints.size();
+            std::vector<int> source_of(bones, -1);
+            if (m.kh2_skeleton && m.kh2_skeleton != m.kh2_own_skeleton && !m.kh2_bone_pairs.empty()) {
+                const std::vector<int> at = kh2::match_by_rest(*held.skeleton, *m.kh2_skeleton);
+                for (const auto &[t, s] : m.kh2_bone_pairs)
+                    if (t >= 0 && static_cast<std::size_t>(t) < bones && s >= 0 && static_cast<std::size_t>(s) < at.size())
+                        source_of[static_cast<std::size_t>(t)] = at[static_cast<std::size_t>(s)];
+            } else {
+                source_of = kh2::match_by_rest(*held.skeleton, *m.kh2_own_skeleton);
+            }
+            const auto paired = std::count_if(source_of.begin(), source_of.end(), [](int s) { return s >= 0; });
+            m.kh2_held_retarget = std::make_shared<kh2::Retarget>(*held.skeleton, *m.kh2_own_skeleton, source_of,
+                                                                  m.kh2_limbs);
+            m.kh2_held_source = held.skeleton;
+            khdays_log("models: %s plays a KH2 enemy's motions for KH2's player: %d of its %zu bones on the player's",
+                       m.name.c_str(), static_cast<int>(paired), bones);
+        }
+        if (!actor.held_player || actor.held_skeleton != held.skeleton) {
+            actor.held_player = std::make_unique<kh2::MotionPlayer>(*held.skeleton);
+            actor.held_skeleton = held.skeleton;
+        }
+        const float ticks = std::fmin(held.ticks, held.motion->length_ticks());
+        actor.held_player->evaluate(*held.motion, ticks, kIdentity, nullptr);
+        std::vector<kh2::Mat4> joints;
+        m.kh2_held_retarget->apply(actor.held_player->joints(), joints);
+        const Mat taken = inverse(held.motion->root_motion(ticks));
+        const std::size_t count = std::min(m.joints.size(), m.kh2_bone.size());
+        for (std::size_t j = 0; j < count; ++j) {
+            const int bone = m.kh2_bone[j];
+            if (bone < 0 || static_cast<std::size_t>(bone) >= joints.size())
+                continue;
+            Mat w = mul(taken, joints[static_cast<std::size_t>(bone)]);
+            w[12] *= 0.01F;
+            w[13] *= 0.01F;
+            w[14] *= 0.01F;
+            skin[j] = mul(mul(base, w), m.joints[j].inverse_bind);
+        }
+    } catch (const std::exception &e) {
+        say_bad_motion(m, "a KH2 enemy's motion for the player", -1, e.what());
+        return false;
+    }
+    kh2_game_share = 0.0F;
+    kh2_pose_cut = true;
+    face_motion = {};
+    return true;
+}
+
 // A KH2 model whose game animation has a KH2 motion: its joints posed by the motion (on `base`, the game's root node,
 // scaled), each motion of the game's cross-fade at the game's weight and the game's own pose (skin) at the rest of it. A
 // section's clock starts when the game's frame enters it and moves as that frame moves (a followed section's is the
@@ -844,6 +908,8 @@ void play_kh2(Model &m, const Mat &base)
         int slot = -1;         // its mset slot (the weapon's motion plays the same)
         Mat taken = kIdentity; // its root motion taken out
     };
+    if (play_held(m, actor, base))
+        return;
     std::vector<Pose> poses;
     float total = 0.0F, game = 0.0F;
     const Floor ground = floor_of(m, base);

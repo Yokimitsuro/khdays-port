@@ -281,8 +281,10 @@ same layout's first effect, read only as far as its pictures and shapes.
   effect's (psm 0x13, 8 bits; 0x14, 4 bits, the low nibble first, 16 palette entries), or its colours themselves
   (psm 0, PSMCT32: w x h RGBA; two of KH2's PAX have them); a draw names a page by its TEX0 (tbp, width, height,
   format, palette): its view of the pictures placed on the pages from that tbp (128 x 64 for the indexed ones, 64 x
-  32 for the direct ones). The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
-  of the pictures' tbps.
+  32 for the direct ones). The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, block by block:
+  each block's pages in the order of its pictures' tbps, the count going on from one block to the next (Cerberus's
+  seven blocks: 3 + 1 + 5 + 3 + 2 + 4 + 0 pages, -0 to -17). A file's blocks put their own pictures at the same tbps
+  (Cerberus's all at 0x3000, 0x3040 ...): a block's draws see its own pictures alone (and the resident ones).
 
 ### KH2's effect commands
 

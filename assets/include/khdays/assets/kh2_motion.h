@@ -120,10 +120,27 @@ public:
     // motions from several msets (GAMEOVER.mset's, each set of it a BAR of its own)
     void add(std::size_t at, const MotionSet& other);
 
+    // A slot of motions the set's object makes another play (an entry of type 0x14, KH2's 1:29: Cerberus's 252-257,
+    // the player's in its reaction command): its variants in order, each an inner BAR as a slot of the set's own is
+    // ('0010' the player's body, '0011' his weapon); an inner entry of no size shares the data of the sized one at
+    // its offset. None for a slot of the set's own.
+    struct Variant final {
+        std::string name;
+        std::shared_ptr<Motion> motion;
+        std::shared_ptr<MotionAttributes> attributes;
+        // its entry holds data of its own (no repeat mark, a size): the others repeat the slot's first data (KH2's
+        // keyblade's '0011' is the one of its own, those marked repeat the body's)
+        bool own = false;
+    };
+    const std::vector<Variant>& variants(std::size_t slot) const;
+    // The variant named `name` with data of its own and a motion, else the first so named with a motion; null none
+    const Variant* variant(std::size_t slot, const std::string& name) const;
+
 private:
     std::vector<std::shared_ptr<Motion>> motions_;
     std::vector<std::string> names_;
     std::vector<std::shared_ptr<MotionAttributes>> attributes_;
+    std::vector<std::vector<Variant>> variants_;
 };
 
 // IKAdjust's ground: a segment from `from` to `to` in the space `world` takes
@@ -208,6 +225,12 @@ private:
     std::vector<Limb> limbs_;
     std::vector<Mat4> source_rest_inverse_, target_rest_, target_rest_inverse_, target_local_;
 };
+
+// For each bone of `target`, the bone of `source` at its rest place (each skeleton's at rest, model space): a skeleton
+// made from another's and renumbered -- KH2's Roxas (P_EX110) from Sora's (P_EX100), their bodies' rest places the
+// same -- has its motions so. Of the source bones within `within` (KH2's cm) of it, the one whose parent is its
+// parent's match first, then the nearest, then the first; -1 when none lies that near.
+std::vector<int> match_by_rest(const MotionSkeleton& source, const MotionSkeleton& target, float within = 1.0F);
 
 // bones.txt's `twist`: a joint and those under it turned about an axis by a share of another joint's twist.
 // `twist_about`: how far b has turned about `axis` (unit, model space at rest) against a since rest, radians, their

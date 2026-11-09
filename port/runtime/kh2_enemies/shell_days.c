@@ -11,6 +11,8 @@ extern int Ov107_UpdateCollisionSphere(KhdaysRef actor);
 extern int Srt_SetRotationQuat(KhdaysRef srt, KhdaysRef quaternion);
 extern int Ov107_InvokeHitCallback(KhdaysRef victim, KhdaysRef a, KhdaysRef b, int mode, KhdaysRef push, int flags);
 extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
+extern int Session_GetLocalPlayerIndex(void);
+extern void Actor_SetVecAndSyncChild(KhdaysRef node, KhdaysRef pos);
 
 #define ACTOR_SCENE 0x4u
 #define ACTOR_MODE 0x50u    /* 1: this game's own */
@@ -34,6 +36,14 @@ extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
 #define NODE_NEXT 0x4u
 #define NODE_ITEM 0xcu
 #define PLAYER_ACTIVE 0x40u /* bit 1 */
+/* a player's actor (Ov022_ActorUpdate's) */
+#define PLAYER_OWNER 0x8u   /* u8: its player's number in the session */
+#define PLAYER_HP 0x12u     /* u16 */
+#define PLAYER_NODE 0x20u   /* its model's node */
+#define PLAYER_POS 0x48cu   /* its place (fx32 x3) */
+#define PLAYER_FIELD 0x4ecu /* its field object, the players' list's */
+#define NODE_ANGLE 0x80u    /* u16: the way its model looks, (sin, 0, cos) of it (Ov022_StepGlideState: the heading
+                               + 0x8000, its way (-sin, -cos) of the heading) */
 
 static unsigned rd32(KhdaysRef at)
 {
@@ -183,4 +193,39 @@ int khdays_kh2_shell_attack_slot(unsigned actor)
         }
     }
     return 0;
+}
+
+unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *node)
+{
+    if (actor == 0 || !khdays_game_ram(actor + PLAYER_FIELD)) {
+        return 0;
+    }
+    if (local != NULL) {
+        *local = *(const unsigned char *)KHDAYS_W(actor + PLAYER_OWNER) == (unsigned)Session_GetLocalPlayerIndex();
+    }
+    if (node != NULL) {
+        *node = rd32(actor + PLAYER_NODE);
+    }
+    return rd32(actor + PLAYER_FIELD);
+}
+
+void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw)
+{
+    const KhdaysRef v = scratch();
+    const unsigned node = rd32(actor + PLAYER_NODE);
+    const double turn = 6.283185307179586;
+    if (v == 0 || node == 0 || !khdays_game_ram(node + NODE_ANGLE) || !khdays_game_ram(actor + PLAYER_POS + 8u)) {
+        return;
+    }
+    for (int i = 0; i < 3; ++i) {
+        *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(place[i]);
+        *(int *)KHDAYS_W(actor + PLAYER_POS + 4u * (unsigned)i) = to_fx(place[i]);
+    }
+    Actor_SetVecAndSyncChild(node, v);
+    *(unsigned short *)KHDAYS_W(node + NODE_ANGLE) = (unsigned short)(lrint((double)yaw / turn * 65536.0) & 0xffff);
+}
+
+int khdays_kh2_shell_player_hp(unsigned actor)
+{
+    return actor != 0 && khdays_game_ram(actor + PLAYER_HP) ? (int)rd16(actor + PLAYER_HP) : -1;
 }

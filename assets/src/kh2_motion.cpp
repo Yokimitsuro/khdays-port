@@ -762,27 +762,147 @@ std::shared_ptr<MotionAttributes> read_attributes(const std::uint8_t* data, cons
 
 }  // namespace
 
+namespace {
+
+// A motion slot's inner BAR (data[at, end)): its motion (entry 0x09) and attributes (0x10), each the first of them
+void read_slot(const std::uint8_t* data, std::size_t at, std::size_t end, std::shared_ptr<Motion>& motion,
+               std::shared_ptr<MotionAttributes>& attributes) {
+    for (const BarEntry& inner : bar_entries(data, end, at, true)) {
+        if (inner.type == 0x09 && inner.size > 0x90 && !motion) {
+            try {
+                motion = std::make_shared<Motion>(data, inner.offset + inner.size, inner.offset + 0x90);
+            } catch (const std::runtime_error&) {
+                motion.reset();  // a slot it cannot play: the caller falls back
+            }
+        } else if (inner.type == 0x10 && inner.size >= 4 && !attributes) {
+            attributes = read_attributes(data, inner.offset, inner.offset + inner.size);
+        }
+    }
+}
+
+}  // namespace
+
 MotionSet::MotionSet(const std::uint8_t* data, const std::size_t size) {
     for (const BarEntry& e : bar_entries(data, size)) {
         names_.push_back(e.name);
         std::shared_ptr<Motion> motion;
         std::shared_ptr<MotionAttributes> attributes;
+        std::vector<Variant> variants;
         if (e.size != 0 && is_bar(data, size, e.offset)) {
-            for (const BarEntry& inner : bar_entries(data, e.offset + e.size, e.offset, true)) {
-                if (inner.type == 0x09 && inner.size > 0x90 && !motion) {
-                    try {
-                        motion = std::make_shared<Motion>(data, inner.offset + inner.size, inner.offset + 0x90);
-                    } catch (const std::runtime_error&) {
-                        motion.reset();  // a slot it cannot play: the caller falls back
-                    }
-                } else if (inner.type == 0x10 && inner.size >= 4 && !attributes) {
-                    attributes = read_attributes(data, inner.offset, inner.offset + inner.size);
+            const std::vector<BarEntry> inner = bar_entries(data, e.offset + e.size, e.offset, true);
+            // (a BAR entry's type in its low half; its high half marks an entry that repeats another's data)
+            const bool of_sets = !inner.empty() && std::all_of(inner.begin(), inner.end(), [](const BarEntry& i) {
+                return (i.type & 0xFFFFU) == 0x11;
+            });
+            if (of_sets) {
+                for (const BarEntry& i : inner) {
+                    // an entry of no size: the sized one at its offset
+                    std::size_t length = i.size;
+                    for (const BarEntry& j : inner)
+                        if (length == 0 && j.offset == i.offset && j.size != 0)
+                            length = j.size;
+                    Variant v;
+                    v.name = i.name;
+                    v.own = (i.type >> 16) == 0 && i.size != 0;
+                    if (length != 0 && is_bar(data, e.offset + e.size, i.offset))
+                        read_slot(data, i.offset, std::min(i.offset + length, e.offset + e.size), v.motion,
+                                  v.attributes);
+                    variants.push_back(std::move(v));
                 }
+            } else {
+                read_slot(data, e.offset, e.offset + e.size, motion, attributes);
             }
         }
         motions_.push_back(std::move(motion));
         attributes_.push_back(std::move(attributes));
+        variants_.push_back(std::move(variants));
     }
+}
+
+namespace {
+
+// A skeleton's bones' rest places in model space (KH2's bone: Rz Ry Rx, its columns scaled, then its translation,
+// on its parent's), as kh2_mdlx.cpp places them
+std::vector<std::array<float, 3>> rest_places(const MotionSkeleton& s) {
+    std::vector<Mat4> world;
+    std::vector<std::array<float, 3>> out;
+    world.reserve(s.joints.size());
+    for (const MotionSkeleton::Joint& j : s.joints) {
+        const float cx = std::cos(j.rotation[0]), sx = std::sin(j.rotation[0]);
+        const float cy = std::cos(j.rotation[1]), sy = std::sin(j.rotation[1]);
+        const float cz = std::cos(j.rotation[2]), sz = std::sin(j.rotation[2]);
+        const float r[9] = {cz * cy, sz * cy, -sy, cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx,
+                            cz * sy * cx + sz * sx, sz * sy * cx - cz * sx, cy * cx};
+        Mat4 m{};
+        for (int col = 0; col < 3; ++col)
+            for (int row = 0; row < 3; ++row)
+                m[std::size_t(col * 4 + row)] = r[col * 3 + row] * j.scale[std::size_t(col)];
+        m[12] = j.translation[0];
+        m[13] = j.translation[1];
+        m[14] = j.translation[2];
+        m[15] = 1.0F;
+        if (j.parent >= 0 && std::size_t(j.parent) < world.size()) {
+            const Mat4& p = world[std::size_t(j.parent)];
+            Mat4 w{};
+            for (int col = 0; col < 4; ++col)
+                for (int row = 0; row < 4; ++row) {
+                    float sum = 0.0F;
+                    for (int k = 0; k < 4; ++k)
+                        sum += p[std::size_t(k * 4 + row)] * m[std::size_t(col * 4 + k)];
+                    w[std::size_t(col * 4 + row)] = sum;
+                }
+            m = w;
+        }
+        world.push_back(m);
+        out.push_back({m[12], m[13], m[14]});
+    }
+    return out;
+}
+
+}  // namespace
+
+std::vector<int> match_by_rest(const MotionSkeleton& source, const MotionSkeleton& target, const float within) {
+    const auto from = rest_places(source), to = rest_places(target);
+    std::vector<int> match(target.joints.size(), -1);
+    for (std::size_t t = 0; t < to.size(); ++t) {
+        const int parent = target.joints[t].parent;
+        const int parent_match = parent >= 0 && std::size_t(parent) < t ? match[std::size_t(parent)] : -1;
+        int best = -1;
+        bool best_kin = false;
+        float best_d = 0.0F;
+        for (std::size_t s = 0; s < from.size(); ++s) {
+            const float dx = from[s][0] - to[t][0], dy = from[s][1] - to[t][1], dz = from[s][2] - to[t][2];
+            const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (d > within)
+                continue;
+            const bool kin = parent_match >= 0 && source.joints[s].parent == parent_match;
+            if (best < 0 || (kin && !best_kin) || (kin == best_kin && d < best_d)) {
+                best = int(s);
+                best_kin = kin;
+                best_d = d;
+            }
+        }
+        match[t] = best;
+    }
+    return match;
+}
+
+const std::vector<MotionSet::Variant>& MotionSet::variants(const std::size_t slot) const {
+    static const std::vector<Variant> none;
+    return slot < variants_.size() ? variants_[slot] : none;
+}
+
+const MotionSet::Variant* MotionSet::variant(const std::size_t slot, const std::string& name) const {
+    const Variant* first = nullptr;
+    for (const Variant& v : variants(slot)) {
+        if (v.name != name || !v.motion)
+            continue;
+        if (v.own)
+            return &v;
+        if (first == nullptr)
+            first = &v;
+    }
+    return first;
 }
 
 void MotionSet::add(const std::size_t at, const MotionSet& other) {
@@ -793,9 +913,11 @@ void MotionSet::add(const std::size_t at, const MotionSet& other) {
     motions_.resize(at);
     names_.resize(at);
     attributes_.resize(at);
+    variants_.resize(at);
     motions_.insert(motions_.end(), other.motions_.begin(), other.motions_.end());
     names_.insert(names_.end(), other.names_.begin(), other.names_.end());
     attributes_.insert(attributes_.end(), other.attributes_.begin(), other.attributes_.end());
+    variants_.insert(variants_.end(), other.variants_.begin(), other.variants_.end());
 }
 
 const MotionAttributes* MotionSet::attributes(const std::size_t slot) const {

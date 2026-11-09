@@ -40,6 +40,9 @@ MISC = by_argument("yield exit ret drop - dup sin cos deg2rad rad2deg")
 STATE_CALL = (1, 6)  # registers a state (see state_routines)
 STATE_ARGS = 12
 STATE_ROUTINE_ARGS = (3, 10)
+# calls that start a routine of the script as a thread: (table, index) -> (arguments, the routine's among the pushes);
+# 1:112 on an actor (the routine its attached thread: Cerberus's on the player), 2:20 a thread of its own
+THREAD_CALLS = {(1, 112): (3, 1), (2, 20): (2, 1)}
 # the triggers the game raises itself (KH2FM.exe's callers of its trigger runner); the others an object's own
 TRIGGERS = {0: "start, run once with the object", 1: "main, the object's thread resumed each tick"}
 
@@ -181,28 +184,43 @@ def decode(s: Script, pc: int) -> Instruction:
     return Instruction(pc, 1, f"bad {w:#06x}", bad=True)
 
 
-def state_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
-    """The routines the reached code registers as states: call 1:6 takes 12 arguments, pushed just before it, its 4th
-    (and sometimes its 11th) the code word where the state's routine starts. The game enters a state by running that
-    routine as a child thread (FUN_1403cad00), so no jump or call of the script leads there."""
+def _pushed_routines(s: Script, code: dict[int, Instruction], call: tuple[int, int], count: int,
+                     which: tuple[int, ...]) -> set[int]:
+    """The code words a call's arguments name as routines: its `count` arguments pushed just before it, those at
+    `which` (counted from the first pushed) integers within the code."""
     order = sorted(code)
     found = set()
     for i, pc in enumerate(order):
-        if code[pc].syscall != STATE_CALL or i < STATE_ARGS:
+        if code[pc].syscall != call or i < count:
             continue
-        args = [code[p] for p in order[i - STATE_ARGS : i]]
+        args = [code[p] for p in order[i - count : i]]
         if any(a.at + a.size != b.at for a, b in zip(args, [*args[1:], code[pc]])):
             continue  # not the pushes right before it
-        for k in STATE_ROUTINE_ARGS:
+        for k in which:
             entry = args[k].pushed
             if entry is not None and 0 < entry < s.words:
                 found.add(entry)
     return found
 
 
+def state_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
+    """The routines the reached code registers as states: call 1:6 takes 12 arguments, pushed just before it, its 4th
+    (and sometimes its 11th) the code word where the state's routine starts. The game enters a state by running that
+    routine as a child thread (FUN_1403cad00), so no jump or call of the script leads there."""
+    return _pushed_routines(s, code, STATE_CALL, STATE_ARGS, STATE_ROUTINE_ARGS)
+
+
+def thread_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
+    """The routines the reached code starts as threads (THREAD_CALLS): run by the game, not jumped or called to."""
+    found: set[int] = set()
+    for call, (count, at) in THREAD_CALLS.items():
+        found |= _pushed_routines(s, code, call, count, (at,))
+    return found
+
+
 def walk(s: Script) -> dict[int, Instruction]:
-    """Every instruction reached from the triggers and from the routines the reached code registers as states,
-    following jumps and calls."""
+    """Every instruction reached from the triggers and from the routines the reached code registers as states or
+    starts as threads, following jumps and calls."""
     seen: dict[int, Instruction] = {}
     todo = [entry for _, entry in s.triggers]
     routines: set[int] = set()
@@ -214,7 +232,7 @@ def walk(s: Script) -> dict[int, Instruction]:
             ins = decode(s, pc)
             seen[pc] = ins
             todo += ins.next + ins.calls
-        new = state_routines(s, seen) - routines
+        new = (state_routines(s, seen) | thread_routines(s, seen)) - routines
         routines |= new
         todo = sorted(new)
     return seen

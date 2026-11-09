@@ -15,7 +15,7 @@ extern "C" {
 
 namespace khdays::kh2_fx {
 
-void Pages::add(const std::vector<const kh2::EffectBlock *> &blocks, const std::string &hd_stem)
+int Pages::add(const std::vector<const kh2::EffectBlock *> &blocks, const std::string &hd_stem, int first)
 {
     std::map<std::uint16_t, std::uint16_t> palette_of; // tbp -> the cbp of its first picture
     for (const kh2::EffectBlock *block : blocks)
@@ -23,11 +23,12 @@ void Pages::add(const std::vector<const kh2::EffectBlock *> &blocks, const std::
             pictures_.push_back(&p);
             palette_of.emplace(p.tbp, p.cbp);
         }
-    if (hd_stem.empty())
-        return;
-    int n = 0;
-    for (const auto &[tbp, cbp] : palette_of)
-        hd_.push_back({tbp, cbp, hd_stem + "/-" + std::to_string(n++) + ".dds"});
+    if (!hd_stem.empty()) {
+        int n = first;
+        for (const auto &[tbp, cbp] : palette_of)
+            hd_.push_back({tbp, cbp, hd_stem + "/-" + std::to_string(n++) + ".dds"});
+    }
+    return static_cast<int>(palette_of.size());
 }
 
 int Pages::page(std::uint64_t tex0, bool hd)

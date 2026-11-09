@@ -158,6 +158,26 @@ class Kh2AiTest(unittest.TestCase):
         self.assertEqual(code[routine_at].syscall, (2, 7), "the state's routine is walked")
         self.assertIn(f"{routine_at:#06x}:  state routine", kh2_ai.listing(s))
 
+    def test_thread_routines(self):
+        """Routines a script starts as threads: 1:112's second argument of three (Cerberus's on the player), 2:20's
+        second of two -- walked, listed and counted as its states' routines are."""
+        s0 = start(1)
+        on_actor = push_int(0) + push_int(0) + push_int(0) + [10 | (1 << 6), 112]  # its routine set below
+        own = push_int(0) + push_int(0) + [10 | (2 << 6), 20, 0x0049]  # then exit
+        first = s0 + len(on_actor) + len(own)
+        second = first + 3
+        on_actor[3:6] = push_int(first)
+        own[3:6] = push_int(second)
+        routines = [10 | (2 << 6), 7, 0x0089, 10 | (2 << 6), 8, 0x0089]  # each a call, then ret
+        s = kh2_ai.read_script(script([(0, s0)], on_actor + own + routines))
+        code = kh2_ai.walk(s)
+        self.assertEqual(kh2_ai.thread_routines(s, code), {first, second})
+        self.assertEqual((code[first].syscall, code[second].syscall), ((2, 7), (2, 8)), "both walked")
+        self.assertEqual(kh2_ai.state_routines(s, code), set(), "no state's")
+        listed = kh2_ai.listing(s)
+        self.assertIn("  2 thread routines", listed)
+        self.assertIn(f"{first:#06x}:  thread routine", listed)
+
     def test_coverage(self):
         data, _ = self.stateful()
         mdlx = bar([(3, b"m_ex", data)])

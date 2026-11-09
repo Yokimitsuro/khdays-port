@@ -782,6 +782,7 @@ add_executable(khdays-native
     ui/rooms2d.c                   # the port's list of rooms on the game's own screens (prepare.py's hooks)
     ui/room_icons.cpp              # each room's signal and lock on the game's own list
     ui/player_names.cpp            # the players' names in multiplayer
+    ui/reaction_command.cpp        # a KH2 enemy's reaction command offered to the player
     ui/pause.cpp                   # the pause's Retry line in Mission Mode
     ui/text.c
     ui/button_icons.c              # the player's buttons drawn in the HD fonts' text

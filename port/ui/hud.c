@@ -17,6 +17,7 @@
 #include "save_numbers.h"
 #include "room_icons.h"
 #include "player_names.h"
+#include "reaction_command.h"
 #include "bg.h"
 #include "elements.h"
 #include "parts.h"
@@ -618,6 +619,7 @@ static void emit(void)
     khdays_ui_kh2_portrait_emit();
     khdays_ui_kh2_labels_emit();
     khdays_ui_player_names_emit(party_there); /* the port's: the players' names in multiplayer */
+    khdays_ui_reaction_command_emit();        /* the port's: a KH2 enemy's reaction command offered */
     khdays_ui_crowns_emit();                  /* the port's: the crowns on the story's day list */
     khdays_ui_save_numbers_emit();            /* the port's: the files' numbers on the game's save lists */
     khdays_ui_autosave_notice_emit();         /* the port's: an autosave written or failed */

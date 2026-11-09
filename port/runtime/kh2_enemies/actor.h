@@ -24,8 +24,10 @@ using Vec3 = std::array<float, 3>;
 
 // KH2's actor's offsets the port reads and writes (each named where a call or the game uses it)
 namespace field {
+constexpr std::uint32_t kSelf = 0x4;        // its own handle (what an AI handle's + 4 holds)
 constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 23 in the air (1:60)
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
+constexpr std::uint32_t kMotionNow = 0x184; // the motion its controller plays (1:238: a reaction command's wait)
 constexpr std::uint32_t kStatus = 0x18c;    // bit 1 the motion ended (1:14), bit 9 held by a reaction (1:78, 2:5)
 constexpr std::uint32_t kPlace = 0x670;     // vec4: 1:147
 constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's maker, FUN_1403a7a40), read by 1:309
@@ -234,7 +236,29 @@ public:
     virtual void broadcast(Actor &, const std::string & /*name*/, float /*delay*/) {}
     // Its health record (2:9's, at + 0x5c0) given its health now and at most
     virtual void health(Actor &) {}
+
+    // One of Days's players in a script's hands (KH2's player is an actor as its enemies are; Days's are the shell's):
+    // what the calls do to one goes to the world. 1:29: `player` plays motion `slot` of `by`'s set from `frame`
+    // (FUN_1403c6cc0: the set made the player's, + 0x2b8): false when the world cannot
+    virtual bool player_motion(Object & /*player*/, Actor & /*by*/, int /*slot*/, float /*frame*/)
+    {
+        return false;
+    }
+    // 1:13 on a player: a motion of its own asked for (FUN_1403c8310), 0 its idle -- the script gives it back
+    virtual void player_own_motion(Object & /*player*/, int /*id*/) {}
+    // 1:148 / 1:1, 1:4, 1:79 on a player: put at a place, turned to a yaw (KH2's)
+    virtual void player_place(Object & /*player*/, const Vec3 & /*place*/) {}
+    virtual void player_yaw(Object & /*player*/, float /*yaw*/) {}
+    // 1:112 on a player: a script's routine as the player's thread (the one before ended)
+    virtual void player_thread(Object & /*player*/, ai::Machine & /*machine*/, std::uint32_t /*thread*/) {}
+    // 1:18: `carried` put on `by` (FUN_1403d9fe0: + 0x6a0 its carrier, + 0x6a4 the bone -- 0x4000 its place, not a
+    // bone -- + 0x6a6 flags, its own place on it made 0, class 3); 1:102 taken off again (FUN_1403da250)
+    virtual void carry(Actor & /*carried*/, Object & /*by*/, int /*bone*/, int /*flags*/) {}
+    virtual void uncarry(Actor & /*carried*/) {}
 };
+
+// Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)
+bool is_player(Object *o);
 
 class Actor final : public Object {
 public:

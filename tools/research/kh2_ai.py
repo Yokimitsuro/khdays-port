@@ -1,6 +1,7 @@
 """KINGDOM HEARTS II's AI scripts (an object's obj/<name>.mdlx, BAR entries of type 3), as KH2FM.exe's interpreter
 runs them (our reading of it; docs/FORMATS.md, "KH2's objects and their AI"): the header, the triggers the game
-calls it by, and the code disassembled from them and from the routines the script registers as its states.
+calls it by, and the code disassembled from them and from the routines the script registers as its states or
+starts as threads (`1:112`, `2:20`).
 
     python tools/research/kh2_ai.py --kh2 <kh2_*.hed_out> ... obj/M_EX010.mdlx
     python tools/research/kh2_ai.py --kh2 <kh2_*.hed_out> ... --survey
@@ -52,6 +53,7 @@ from kh2_bdx import (  # noqa: E402
     read_script,
     scripts_in,
     state_routines,
+    thread_routines,
     walk,
 )
 
@@ -82,6 +84,7 @@ __all__ = [
     "read_script",
     "scripts_in",
     "state_routines",
+    "thread_routines",
     "walk",
     "listing",
     "find",
@@ -97,19 +100,22 @@ def listing(s: Script) -> list[str]:
     """The script's code as text: its triggers, then each reached instruction, labels where code is entered."""
     code = walk(s)
     routines = state_routines(s, code)
+    threads = thread_routines(s, code) - routines
     entered = {to for ins in code.values() for to in ins.next + ins.calls if to != ins.at + ins.size}
-    entered |= {entry for _, entry in s.triggers} | routines
+    entered |= {entry for _, entry in s.triggers} | routines | threads
     out = [f"{s.name}: work {s.work}, frame {s.frame}, stack {s.stack} bytes"]
     for key, entry in s.triggers:
         out.append(f"  trigger {key} at {entry:#x}" + (f": {TRIGGERS[key]}" if key in TRIGGERS else ""))
     if routines:
         out.append(f"  {len(routines)} state routines")
+    if threads:
+        out.append(f"  {len(threads)} thread routines")
     last = None
     for pc in sorted(code):
         if last is not None and pc != last:
             out.append("")
         if pc in entered:
-            out.append(f"{pc:#06x}:" + ("  state routine" if pc in routines else ""))
+            out.append(f"{pc:#06x}:" + ("  state routine" if pc in routines else "  thread routine" if pc in threads else ""))
         out.append(f"    {code[pc].text}")
         last = pc + code[pc].size
     return out

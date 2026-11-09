@@ -52,6 +52,11 @@ std::string name_at(ai::Memory &memory, std::uint32_t address)
     return s;
 }
 
+bool is_player(Object *o)
+{
+    return o != nullptr && o->actor() == nullptr && (o->u32(field::kFlags6c8) & bit::kPlayer) != 0;
+}
+
 Vec3 facing_of(float yaw)
 {
     return {std::sin(yaw), 0.0F, std::cos(yaw)};
@@ -222,6 +227,9 @@ Object::Object(ai::Memory &memory, std::string name) : name_(std::move(name)), m
 {
     address_ = memory_.add_view(*this, field::kSize, name_ + "'s actor");
     objects()[{&memory_, address_}] = this;
+    // its own handle at + 4, as KH2's actors keep it (the calls take an AI handle's + 4 as the object, and a script
+    // copies an actor's first bytes to use them as one: Cerberus's 1:3, then 1:112 on the copy)
+    set_u32(field::kSelf, address_);
 }
 
 Object::~Object()
@@ -354,6 +362,7 @@ bool Actor::play(int id, float blend, float start, bool restart)
     motion.ended = false;
     set_bits(field::kStatus, bit::kMotionEnded, false);
     set_u32(field::kMotion, std::uint32_t(id));
+    set_u32(field::kMotionNow, std::uint32_t(id));
     return true;
 }
 

@@ -256,11 +256,15 @@ void add_math(ai::Calls &calls)
             ring.erase(ring.begin());
         }
     });
-    // 0:0, 0:2 nothing in the PC game (FUN_14041c9f0, FUN_14041ca10: empty; a debugging print once); 0:85 an
+    // 0:0, 0:2 nothing in the PC game (FUN_14041c9f0, FUN_14041ca10: empty; a debugging print once): 0:2's text
+    // told where the memory tells its misses (the shell's trace: "avoid start", "high_attack_min" ...); 0:85 an
     // effect's handle let go (FUN_14041e1c0 -> FUN_1402be8f0): the port's effects end of their own
     calls.set(0, 0, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 1, [](ai::Machine &, std::span<ai::Value>) {}); // FUN_14041ca00: empty too
-    calls.set(0, 2, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 2, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (m.memory().report)
+            m.memory().report("its script prints \"" + name_at(m.memory(), a[0].bits) + "\"");
+    });
     // 0:32 an effect of the screen or of time for n frames (FUN_14041ddb0 -> FUN_140156c90 on FUN_140156dc0's
     // manager; KH2's hit starts it for 10 frames): what it shows is not known -- nothing here
     calls.set(0, 32, [](ai::Machine &, std::span<ai::Value>) {});
@@ -316,14 +320,24 @@ void add_states(ai::Calls &calls)
     // 1:112 a routine of the script as the actor's attached thread (FUN_14042ca20: FUN_1403e1970, FUN_1403d76d0 on
     // + 0xd48, the one before ended), the actor its first value, the third its second when it is an object
     calls.set(1, 112, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
         Actor *x = self_of(m, a[0]);
+        Object *on = is_player(o) ? o : x; // one of Days's players: the player's thread (Cerberus's command)
         std::uint32_t entry = a[1].bits;
         if (a[1].tag == ai::Tag::Address && entry >= m.code())
             entry = (entry - m.code()) / 2;
-        const ai::Value values[2] = {ai::Value::of_address(x->address()), a[2]};
-        const bool second = Object::at(m.memory(), a[2].bits) != nullptr;
-        if (ai::Thread *t = m.start_routine(nullptr, entry, std::span<const ai::Value>(values, second ? 2u : 1u)))
+        const ai::Value values[2] = {ai::Value::of_address(on->address()), a[2]};
+        // the second when it names an object (itself, or an AI handle whose + 4 is one)
+        std::uint32_t inner = 0;
+        const bool second = Object::at(m.memory(), a[2].bits) != nullptr ||
+                            (m.memory().read(a[2].bits + 4, &inner, 4) && Object::at(m.memory(), inner) != nullptr);
+        ai::Thread *t = m.start_routine(nullptr, entry, std::span<const ai::Value>(values, second ? 2u : 1u));
+        if (t == nullptr)
+            return;
+        if (on == x)
             x->attach_thread(m, t->id);
+        else if (running(m)->world != nullptr)
+            running(m)->world->player_thread(*on, m, t->id);
     });
     // 1:5 a state table emptied: its 128 entries' ids 0 (FUN_1403ca790)
     calls.set(1, 5, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -493,8 +507,8 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 143, [](ai::Machine &m, std::span<ai::Value> a) { m.memory().set_u32(a[0].bits + 4, 0); });
     calls.set(1, 162, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:107 + 0x2a8 set (FUN_14042fce0); 1:130 two objects told apart by their places in KH2's list (FUN_14042b5d0:
-    // their + 4s' difference, 0 when either is none); 1:213 a number of its object's record (FUN_1403b5b20: + 8's
-    // + 0x4c), none of Days's: 0; 1:225 whether its class lets hits through now (+ 0x6c8 bit 1, then its class's
+    // their + 4s' difference, 0 when either is none); 1:213 its character's number (FUN_1403b5b20: + 8's record's
+    // + 0x4c, 00objentry.bin's); 1:225 whether its class lets hits through now (+ 0x6c8 bit 1, then its class's
     // virtual + 0xb8): the port's let them, 0
     calls.set(1, 107, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->set_u32(0x2a8, a[1].bits); });
     calls.set(1, 130, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -502,10 +516,15 @@ void add_actor_fields(ai::Calls &calls)
         const std::uint32_t two = a[1].bits != 0 ? m.memory().u32(a[1].bits + 4) : 0;
         a[0] = ai::Value::of_int(one != 0 && two != 0 ? std::int32_t(one - two) : 0);
     });
-    calls.set(1, 213, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // Days's players answer KH2's player's number (+ 0x4c of P_EX100's record: Sora's 1; Roxas's is 14, Donald's 2):
+    // they stand for KH2's player, whose motions and commands the enemies' sets carry (Cerberus's reaction command
+    // begins on 1)
+    calls.set(1, 213, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(is_player(object_of(m, a[0])) ? 1 : 0);
+    });
     calls.set(1, 225, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 1:157 an effect started by a four-letter name from its effects' entries of type 0x16 (FUN_1403db2f0); only a
-    // reaction command's state starts one (Cerberus's), which the port does not enter: nothing here
+    // 1:157 an effect started by a four-letter name from its effects' entries of type 0x16 (FUN_1403db2f0): only a
+    // reaction command starts one (Cerberus's "00", "10", "20" as each of its steps begins) -- not played yet
     calls.set(1, 157, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
     calls.set(1, 133, [](ai::Machine &, std::span<ai::Value>) {});
@@ -587,11 +606,30 @@ void add_motions(ai::Calls &calls)
         Actor *x = self_of(m, a[0]);
         Object *o = object_of(m, a[1]);
         Actor *other = o != nullptr ? o->actor() : nullptr;
+        bool played = other != nullptr;
         if (other != nullptr) {
             other->motions = x->motions;
             other->play(std::int32_t(a[2].bits), 0.0F, a[3].f());
+        } else if (is_player(o) && x->world != nullptr) { // one of Days's players: the shell plays it
+            played = x->world->player_motion(*o, *x, std::int32_t(a[2].bits), a[3].f());
         }
-        a[0] = ai::Value::of_int(other != nullptr ? 1 : 0);
+        a[0] = ai::Value::of_int(played ? 1 : 0);
+    });
+    // 1:13 a motion asked of the object's controller (FUN_1403c8310: its queue of four, taken at its next update):
+    // played at once here; a player's own (Cerberus's 0, its idle, at the end of its reaction command) gives the
+    // player back to Days
+    calls.set(1, 13, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (Actor *x = o != nullptr ? o->actor() : nullptr)
+            x->play(std::int32_t(a[1].bits), a[2].f(), 0.0F);
+        else if (is_player(o) && running(m)->world != nullptr)
+            running(m)->world->player_own_motion(*o, std::int32_t(a[1].bits));
+    });
+    // 1:238 the motion its controller plays (+ 0x184, FUN_14042d3b0): Cerberus's reaction command waits for the
+    // player's to change
+    calls.set(1, 238, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr ? std::int32_t(o->u32(field::kMotionNow)) : 0);
     });
     // 1:11 a motion from its start, blended (FUN_1403c86a0 on actor + 0x158); 1:61 from a frame; 1:12 one that is not
     // already playing (FUN_1403c6dc0); 1:67 a motion's length (FUN_1403c78f0's motion)
@@ -714,8 +752,11 @@ void add_moving(ai::Calls &calls)
         for (float &c : v.v)
             if (std::isnan(c))
                 c = 0.0F;
-        if (Object *o = object_of(m, a[0]))
+        if (Object *o = object_of(m, a[0])) {
             o->set_place(xyz(v));
+            if (is_player(o) && running(m)->world != nullptr)
+                running(m)->world->player_place(*o, xyz(v));
+        }
     });
     calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -777,13 +818,20 @@ void add_moving(ai::Calls &calls)
         a[0] = ai::Value::of_float(above <= 0.0F ? -0.0F : -above);
     });
     // 1:4 face a direction (FUN_1403b65c0: yaw = atan2(x, z)); 1:79 the same, its facing too (FUN_1403b6420)
-    const auto face = [](ai::Machine &m, std::span<ai::Value> a) {
+    const auto turn = [](ai::Machine &m, Object *o, float yaw) {
+        o->set_yaw(yaw);
+        if (is_player(o) && running(m)->world != nullptr)
+            running(m)->world->player_yaw(*o, yaw);
+    };
+    const auto face = [turn](ai::Machine &m, std::span<ai::Value> a) {
         const Vec v = read_vec(m, a[1].bits);
         if (v.v[0] != 0.0F || v.v[2] != 0.0F)
-            object_of(m, a[0])->set_yaw(std::atan2(v.v[0], v.v[2]));
+            turn(m, object_of(m, a[0]), std::atan2(v.v[0], v.v[2]));
     };
     calls.set(1, 4, face);
     calls.set(1, 79, face);
+    // 1:1 turned to a yaw (FUN_14042bf60 -> FUN_1403b6560)
+    calls.set(1, 1, [turn](ai::Machine &m, std::span<ai::Value> a) { turn(m, object_of(m, a[0]), a[1].f()); });
     // 1:80 turned toward a direction by a step at most (FUN_1403b9f70: the step times DAT_1405b18ec, 2.0; 0 the
     // actor's own turn speed, + 0x134): 1 while it still turns, 0 once it faces it
     calls.set(1, 80, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -894,9 +942,32 @@ void add_world(ai::Calls &calls)
     // one's virtual + 0x10, the new one's + 8; FUN_1403b4da0) and + 0xba8 cleared: native code, not the script's
     calls.set(1, 209, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 74, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (is_player(object_of(m, a[0])))
+            return; // a Days player's class is Days's
         Actor *x = self_of(m, a[0]);
         x->set_u32(0xba8, 0);
         x->dashing = false; // class 0
+    });
+    // 1:18 an actor put on another object, which then carries it (FUN_14042c550 -> FUN_1403d9fe0): the first's actor
+    // on the second's, at a bone (0x4000 none: its place) with flags (bit 1 keeps its facing); its fifth and sixth a
+    // routine to run when it is taken off (none in the scripts read: 0). 1:102 taken off (FUN_1403da250: put where
+    // it was carried, its facing its own again)
+    calls.set(1, 18, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *carried = self_of(m, a[0]);
+        Object *by = object_of(m, a[1]);
+        if (by == nullptr || by == carried)
+            return;
+        carried->set_u32(field::kCarrier, by->address());
+        if (carried->world != nullptr)
+            carried->world->carry(*carried, *by, std::int32_t(a[2].bits & 0xffff), std::int32_t(a[3].bits & 0xffff));
+    });
+    calls.set(1, 102, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *carried = self_of(m, a[0]);
+        if (carried->u32(field::kCarrier) == 0)
+            return;
+        carried->set_u32(field::kCarrier, 0);
+        if (carried->world != nullptr)
+            carried->world->uncarry(*carried);
     });
     // 1:278 n things made at the actor (FUN_14042a980: n times FUN_1403dc950 on DAT_142af8b48 with DAT_1405d5cc0):
     // **likely its prizes** -- Days gives its stand-in's own

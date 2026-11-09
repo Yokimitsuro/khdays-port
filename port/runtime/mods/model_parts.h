@@ -361,6 +361,13 @@ struct Model {
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton>
         kh2_skeleton;                                                  // the mset's model's (its own, else `skeleton`)
     std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_retarget; // from the `skeleton`'s bones to the model's
+    // the `bone` pairs (this model's bone, the `skeleton`'s) and limbs it was made of, kept for KH2's player's motions
+    // a KH2 enemy makes the player play (its reaction command): retargeted through the `skeleton`'s bones at their rest
+    // places, then these pairs (kh2_enemies)
+    std::vector<std::pair<int, int>> kh2_bone_pairs;
+    std::vector<khdays::assets::kh2::Retarget::Limb> kh2_limbs;
+    std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_held_retarget; // made for kh2_held_source's bones
+    const khdays::assets::kh2::MotionSkeleton *kh2_held_source = nullptr;
     // `own` msets' slots, [from, to): made for this model's own bones (kh2_own_skeleton), played without the retarget
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton> kh2_own_skeleton;
     std::vector<std::pair<std::size_t, std::size_t>> kh2_own_slots;
@@ -504,6 +511,9 @@ struct Kh2Finish {
 };
 struct Kh2Actor {
     const Model *model = nullptr; // what it draws (actor_of)
+    // a KH2 enemy's motion for KH2's player it plays while the enemy holds it (play_held), on KH2's player's bones
+    std::unique_ptr<khdays::assets::kh2::MotionPlayer> held_player;
+    const khdays::assets::kh2::MotionSkeleton *held_skeleton = nullptr;
     unsigned drawn_frame = 0;     // the game frame of its last draw (actor_of)
     std::uint64_t draws = 1;      // from 1: no animation's `seen` follows it, so a first draw is a start
     std::map<std::string, Kh2Animation> animations; // by game animation

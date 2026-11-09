@@ -70,6 +70,12 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "remastered" / "effect" / "texcommon.dpd").mkdir(parents=True)
             (kh2 / "remastered" / "effect" / "texcommon.dpd" / "-0.dds").write_bytes(b"resident page 0")
             (Path(d) / "kh2.exe").write_bytes(b"MZ")
+            # what the reaction commands read: the player's skeleton, the commands, their names in one language
+            (kh2 / "original" / "obj" / "P_EX100.mdlx").write_bytes(b"the player")
+            (kh2 / "original" / "03system.bin").write_bytes(b"commands")
+            (kh2 / "original" / "00battle.bin").write_bytes(b"attacks")
+            (kh2 / "original" / "msg" / "us").mkdir(parents=True)
+            (kh2 / "original" / "msg" / "us" / "sys.bar").write_bytes(b"names")
             mod = Path(d) / "mods" / "Days - KH2 Enemies"
             asked = []
 
@@ -87,6 +93,10 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "fx" / "M_EX010" / "-0.dds").read_bytes(), b"effects' page 0")
             self.assertEqual((mod / "kh2" / "effect" / "texcommon.dpd").read_bytes(), b"resident")
             self.assertEqual((mod / "kh2" / "fx" / "texcommon" / "-0.dds").read_bytes(), b"resident page 0")
+            self.assertEqual((mod / "kh2" / "obj" / "P_EX100.mdlx").read_bytes(), b"the player")
+            self.assertEqual((mod / "kh2" / "03system.bin").read_bytes(), b"commands")
+            self.assertEqual((mod / "kh2" / "00battle.bin").read_bytes(), b"attacks")
+            self.assertEqual((mod / "kh2" / "msg" / "us" / "sys.bar").read_bytes(), b"names")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
             self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-")
             self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-")

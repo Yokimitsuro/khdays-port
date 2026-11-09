@@ -29,6 +29,14 @@ int khdays_kh2_enemies_held(void *actor);
 /* Ov107_AiState_ApplyHit (prepare.py's joins): the hit taken through its class's handler, its HP before it. */
 void khdays_kh2_enemies_hit(void *actor, int hp_before);
 
+/* Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on it to land now as one hit (the last of
+ * Cerberus's reaction command), its damage in `amount`; 0 none. */
+int khdays_kh2_enemies_blow(void *actor, int *amount);
+
+/* Ov022_ActorUpdate (prepare.py's join): whether a KH2 enemy holds the player's actor `actor` (its Days control and
+ * commands stand still), put where the enemy's script and motion have it. */
+int khdays_kh2_enemies_holding(void *actor);
+
 /* Days's lock-on mark's point for the enemy `actor` locked on (Ov022_UpdateSelectionMarker's): a KH2 enemy's aim point
  * (its 0x307 shape: the Soldier's chest, Cerberus's heads) in the game's memory, else `point` as it was. DS addresses. */
 unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point);
@@ -52,6 +60,24 @@ int khdays_kh2_enemies_fits(unsigned spawner, int slot, unsigned actor);
 
 #ifdef __cplusplus
 }
+
+namespace khdays::assets::kh2 {
+class Motion;
+struct MotionSkeleton;
+} // namespace khdays::assets::kh2
+
+namespace khdays::kh2_enemies {
+// A KH2 enemy's motion one of Days's players plays while the enemy holds it (its reaction command), for the player's
+// KH2 model (runtime/mods): the motion made for KH2's player's bones (`skeleton`, P_EX100's), its weapon's, its time
+// (KH2's ticks); its root's travel is in the player's place
+struct HeldMotion final {
+    const khdays::assets::kh2::Motion *motion = nullptr, *weapon = nullptr;
+    const khdays::assets::kh2::MotionSkeleton *skeleton = nullptr;
+    float ticks = 0.0F;
+};
+// The player whose model's scene node is `node` (a DS address): its motion now, false when no KH2 enemy holds it
+bool held_motion(unsigned node, HeldMotion &out);
+} // namespace khdays::kh2_enemies
 #endif
 
 #endif

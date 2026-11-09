@@ -2445,18 +2445,26 @@ HOOKS["ov022@020a0008"] += [
     (  # Ov022_ActorUpdate
         "    void *pNext;\n\n    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
         "    void *pNext;\n"
-        "    int khdays_held;\n\n"
+        "    int khdays_held;\n"
+        "    int khdays_kh2_held;\n\n"
         "    { extern int khdays_stop_player_holding(void *actor); khdays_held = khdays_stop_player_holding(pActor); }\n"
+        "    { extern int khdays_kh2_enemies_holding(void *actor); khdays_kh2_held = khdays_kh2_enemies_holding(pActor); }\n"
+        "    khdays_held |= khdays_kh2_held;\n"
         "    VEC_COPY(&pActor->vecPrevPos, &pActor->vecPos);\n",
     ),
     (
         "    Ov022_StepScaledAnimTracks(pActor);\n",
         "    if (!khdays_held) {\n        Ov022_StepScaledAnimTracks(pActor);\n    }\n",
     ),
+    (  # in a KH2 enemy's hands the player takes no Days command (KH2's takes only the reaction command offered,
+        # runtime/kh2_enemies): the pad's top button is the command's, not the deck's cursor or a shortcut
+        "    if (data_0204be04 == 0\n        && pActor->nOwner == Session_GetLocalPlayerIndex()\n",
+        "    if (!khdays_kh2_held && data_0204be04 == 0\n        && pActor->nOwner == Session_GetLocalPlayerIndex()\n",
+    ),
     (
         "    if (Session_GetLocalPlayerIndex() == 0) {\n        pActor->nAnimHandle = Anim_GetFrame(&pActor->pNode->anim, 0);\n",
         "    if (Session_GetLocalPlayerIndex() == 0 && khdays_held) {\n"
-        "        /* held by Stop */\n"
+        "        /* held by Stop, or in a KH2 enemy's hands (runtime/kh2_enemies) */\n"
         "    } else if (Session_GetLocalPlayerIndex() == 0) {\n"
         "        pActor->nAnimHandle = Anim_GetFrame(&pActor->pNode->anim, 0);\n",
     ),
@@ -2624,6 +2632,22 @@ HOOKS["ov107@020c6980"] = [
         "            khdays_hit.amount = khdays_amount;\n"
         "            Ov107_AiState_ApplyHit(self, self->field_25c, &khdays_hit);\n"
         "            khdays_stop_released(self);\n"
+        "        }\n"
+        "    }\n"
+        "    if (self->field_1c8 != 1 && self->currentAction == 1) {\n",
+    ),
+    (  # a KH2 enemy's player's blow (runtime/kh2_enemies: the last of Cerberus's reaction command) as one hit, as
+        # Stop's kept damage lands
+        "    if (self->field_1c8 != 1 && self->currentAction == 1) {\n",
+        "    {\n"
+        "        extern int khdays_kh2_enemies_blow(void *enemy, int *amount);\n"
+        "        int khdays_blow;\n"
+        "        if (khdays_kh2_enemies_blow(self, &khdays_blow)) {\n"
+        "            struct HitPacket khdays_hit = {0};\n"
+        "            khdays_hit.flags00 = 0x88;\n"
+        "            khdays_hit.flags02 = 0x80;\n"
+        "            khdays_hit.amount = khdays_blow;\n"
+        "            Ov107_AiState_ApplyHit(self, self->field_25c, &khdays_hit);\n"
         "        }\n"
         "    }\n"
         "    if (self->field_1c8 != 1 && self->currentAction == 1) {\n",

@@ -187,7 +187,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
 | 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`) | nothing (native code) |
 | 1:278 | n things made at the actor (`FUN_14042a980`: n times `FUN_1403dc950` on the manager at `DAT_142af8b48`) -- **likely its prizes** | nothing: Days gives the stand-in's |
-| 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing |
+| 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing; 0:2's text in the trace (`KHDAYS_TRACE_KH2_ENEMIES`: "avoid start", "high_attack_min") |
 | 0:15 | a bit of KH2's story (`FUN_14039a980`: `DAT_1409ab540`'s bits, 0xffff none) | 0: none in Days's field |
 | 0:23 | a value without its sign (`FUN_14041ca90`), marked a whole number | as KH2 |
 | 0:85 | an effect's handle let go (`FUN_14041e1c0` -> `FUN_1402be8f0`) | nothing: the port's effects end of their own |
@@ -229,7 +229,10 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   seconds, the four by four in one wave, the last three alone): hits on Roxas, the Assault Rider 10, the Nightwalker
   23, the Hot Rod 25, the Armored Knight 12, the Creeper 2, the Dusk 3. **Not yet**: the Magnum Loader's and the
   Cannon Gun's shots -- their scripts run, but their attacks are effects that hit (KH2's shots are objects and
-  effects with collision), which the port does not make yet.
+  effects with collision), which the port does not make yet. Since the research tool follows the routines a script
+  starts as threads (`1:112`, `2:20`; 2026-11-09), the Magnum Loader's threads make 3 calls the port does not answer
+  (1:13 answered since, 1:94, 1:101) and the Armored Knight's 14 (0:42, 0:44, 0:68, 1:94, 1:132, 1:149, 1:165, 1:191,
+  1:221, 1:238 answered since, 6:3, 6:5, 6:8): uncovered, their stand-ins play once the mod is made anew.
 - **Next**: the white Magnum Loader `M_EX600_LC` (1:222 its object's number, 1:268 class 23, 1:269), the Graveyard
   `M_EX790` (1:53), the Mole Driller `M_EX700` (2:1), the Neoshadow `M_EX420` (1:13, 2:10 an object made, 2:17 a hit
   made); then the rest, 8 calls and more each, and the shots (2:10's objects, effects that hit).
@@ -264,7 +267,7 @@ enemigos"); what is built is under "Played" at the end of this section.
   | 1:130 | two objects' places in KH2's list told apart (their + 4s' difference) |
   | 1:148 | the actor put at a point (`FUN_1403b64d0`: + 0x670, then `FUN_1403ccb90`) |
   | 1:157 | an effect started by a four-letter name from the actor's effects' entries of type 0x16 (`FUN_1403db2f0`: `+ 0x928`'s, made an object of kind 0xb on the actor's + 0x80), on a target when given |
-  | 1:213 | a number of its object's record (`FUN_1403b5b20`: + 8's + 0x4c) |
+  | 1:213 | its character's number (`FUN_1403b5b20`: + 8's record's + 0x4c, 00objentry.bin's: Sora 1, Roxas 14, Donald 2, Goofy 3; enemies 1000 and up) |
   | 1:220 | a step ahead with the room's collision, up to a length (`FUN_1403b9ac0`: its collision swept in 100s, `FUN_1403b6510` puts it where it stops) |
   | 1:225 | whether its class lets hits through now (+ 0x6c8 bit 1, then its class's virtual + 0xb8: the check KH2's hit makes, `FUN_140410d60`) |
   | 1:228, 1:229 | a 12-byte record's first, second word (as 1:230's) |
@@ -281,14 +284,30 @@ enemigos"); what is built is under "Played" at the end of this section.
   under KH2's origin -- and `he09.ard` at (0, 0, -700) (the cup's arena, its floor at the origin). `mode_battle`
   picks `high_attack` when the ground under the player is above 2 m under the origin (KH2's y less than 200), else
   `low_attack`: on a floor at Days's height (KH2's 0), the cup's `high_attack`, as in its arena.
-- **Reaction commands, how KH2 starts them**: its trigger 15 (a command the player took: the record's + 0x18 its
-  number, 359 Cerberus's) enters `rc_avoid` when the player is the one who took it (`1:130`, `1:225`, `1:213`). Its
-  motions carry no reaction-command range of their own (OpenKH's ANB page: range 20); where KH2 offers its command
-  is **not read yet**.
-- **Reaction commands**: the `rc_*` states take the player in hand from Cerberus's script: `1:112` runs a routine of
-  Cerberus's on the player's actor, `1:148` and `1:79` put and turn the player, `1:29` makes the player play
-  Cerberus's motion 252, `0:32` the screen's effect, `1:157` an effect by name. KH2's game enters them when the player
-  takes the command.
+- **Reaction commands, how KH2 starts them**: its trigger 15 is "an attack of mine landed" (`FUN_1403d1730`, a hit
+  applied, calls the attacker's class virtual + 0xe0, `FUN_1403d5500`, which raises it with the one hit and the
+  attack; the script reads the attack first). Its bite (`atk_bite_press`, motion 221 `60A`, attack range 10 with atkp
+  entry 359) landing on the player (`1:130`: the one hit is the player; `1:225` 0; `1:213` 1, KH2's player's
+  character number, Sora's) enters `atk_bite_press_hit`, then `rc_avoid`: Cerberus pins the player. The bite's spheres
+  stay 2.8 to 3.5 m up through it (frames 64 to 74): it catches a player in the air at its heads.
+- **Reaction commands, how they play**: `rc_avoid` plays Cerberus's motion 222 and starts a routine of its script on
+  the player (`1:112`, its code word 7435: a thread the research tool lists since it follows `1:112` and `2:20`). The
+  routine puts the player at Cerberus's place and facing (`1:147`, `1:148`, `1:201`, `1:1`), hooks Cerberus onto the
+  player (`1:18`: `FUN_1403d9fe0`, + 0x6a0 its carrier, bone 0x4002, its class 3), then plays three steps: each makes
+  the player play a motion of Cerberus's set made for KH2's player (`1:29`: slots 252-257, entries of type 0x14 whose
+  '0010' variant is the player's body, '0011' his keyblade; entries marked as repeats point at the body's data) and
+  waits until its work's + 0 is set -- its trigger 11, a message 38, 39 or 41 -- or the player's motion ends or changes
+  (`1:14`, `1:238`: + 0x184). The player's motions offer the command (range 20, OpenKH's ANB page: "Reaction Command
+  (Self)"): 38 in AM00 from frame 210, 39 in AM01 and AM04 from 160, 41 in AM02 and AM05 from 170, each following the
+  one before (03system.bin's `cmd`: 39 requires 38, 41 requires 39; range 26 carries the one followed). Taken in time,
+  the step's success (the player AM01 / AM02 / AM03, Cerberus `rc_avoid1`, `rc_avoid2`, then `self_stun`), else its
+  miss (AM04 / AM05, `rc_miss_avoid1`, `rc_miss_avoid2`, `rc_miss_stun`). AM03's keyblade ('0011') carries the
+  player's blow, attack 598 (power 300). The routine ends with `1:102` (Cerberus off the player) and `1:13` (the
+  player's own motion 0, its idle).
+- **The commands** (03system.bin's `cmd`, 0x30 bytes each, OpenKH's 03system page): 38 "Evade", 39 "Jump!", 41 "Dog
+  Paddle" (their texts 33954, 33953, 33955: sys.bar's messages 1186, 1185, 1187, the top bit cleared). Their flags
+  carry "Disable Roxas": KH2 never offers them to its own Roxas. The port offers them to Days's players, who stand
+  for KH2's player (`1:213` answers Sora's 1 for them).
 - **Cameras**: none in its script. **Its end**: its `dead` state (its effect and fade), as the other enemies.
 
 **Proposals** (for the maintainer; nothing done):
@@ -298,9 +317,8 @@ enemigos"); what is built is under "Played" at the end of this section.
    on its body, not only near its centre.
 2. **Health and its bar**: the stand-in's HP as now (the mission's class, its level), shown on the KH2-style enemy
    HUD (`port/ui/kh2_enemy_hud`) with Cerberus's name; KH2's several bars only when its `enmp` entry is found.
-3. **Reaction commands**: left out -- the states never entered, Cerberus fights without them. Days's players are not
-   KH2's actors with KH2's motions (Roxas cannot play Cerberus's motion 252). A later spec could give them Days's own
-   moves.
+3. **Reaction commands**: as KH2 plays them (below, "A player in an enemy's hands"). Roxas's KH2 model (the HD
+   PACK's) plays Cerberus's motions for KH2's player: Roxas's KH2 bones are Sora's, renumbered.
 4. **Lock-on**: Days locks on one enemy; its mark at the middle head's aim point (group 10), not at its feet.
 5. **0:32**: nothing (its only use is a reaction command's).
 6. **The 12 calls** answered as read above (1:157 starting the named effect through the port's effect player).
@@ -335,8 +353,46 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   for a slot its set lacks). That ends its opening leap: its leap's state never ends of itself (it yields forever
   after landing); KH2's own first hit ends it.
 - **Its attacks reach Roxas**: 18 hits in the 200 seconds (its paws and bites), with the two above.
-- **Not yet**: its reaction commands (where KH2 offers them, the player's side), its name on the enemy HUD (the
-  stand-in's shows).
+- **Its reaction command** (2026-11-09), played with the bite taken as landing (a test switch, not kept) and the
+  commands taken: the whole chain both ways -- the hold, its three steps' successes to `self_stun` and the blow (45 of
+  Days's damage, the last hit's 15 x 3), and the misses to `rc_miss_stun` -- the prompt above the deck in the game's
+  language ("Eludir", "¡Salta!", "Chapoteo").
+- **Not yet**: its name on the enemy HUD (the stand-in's shows); Days's camera, close behind the player, inside its
+  body (6 m) while it holds the player; its leap's loop (motion 171, from frame 63) never ends without a hit (KH2's
+  way out not read); 0:32 and 1:157 (the routine's screen effect and named effects) not played.
+
+## A player in an enemy's hands
+
+KH2's player is an actor its enemies' scripts move and make play their motions; Days's players are Days's. When a
+script makes one of them play a motion of its set (`1:29`, Cerberus's reaction command), the shell holds it
+(`shell.cpp`, "the players in hand") until the script gives it back (`1:13`, its own motion 0) or the enemy goes:
+
+- **Days's side**: a join in `Ov022_ActorUpdate` (`khdays_kh2_enemies_holding`, next to Stop's hold) stops the
+  player's Days control (its state machine, its animation, its commands: the pad's top button is the command's), and
+  puts its actor where the script and the motion have it (its place, + 0x48c and its node; its facing, the node's +
+  0x80: Days's model looks along (sin, 0, cos) of it, as KH2's yaw).
+- **The motion**: its '0010' variant's time on (1 tick a frame), its root's travel turned by the yaw moving the player
+  (as an enemy's), held at its end (the ended bit `1:14` waits on). Its ranges: 20 a reaction command offered (when
+  the command it follows, `require`, is a range 26's), 27 not to be hit (the enemies' attacks pass it). Its triggers:
+  1 the enemy's effect at its place, 8 the enemy's sound. Its weapon's ('0011' with data of its own) attack ranges:
+  the player's blow on the enemy, Days's damage the player's last hit on it times the attack's power over 100
+  (00battle.bin's atkp; Stop's way into Days's hit, `khdays_kh2_enemies_blow`).
+- **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
+  the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
+  Days's); `1:213` 1.
+- **The command**: offered, it shows above the command deck (the button's icon, the HD PACK's or Kenney's, and its
+  KH2 name from the mod's kh2/msg/<language>/sys.bar) and over the enemy (the icon at its aim point); the pad's top
+  button (KH2's triangle, the DS X) takes it: the command's argument sent to the enemy as a message (trigger 11).
+- **KH2's text** (sys.bar, our reading of the files; OpenKH's MSG page gives the control codes): 01 a space, 2e-47
+  A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb the small accented letters (a grave, acute, circumflex, diaeresis ... u
+  diaeresis), d0-e4 the capitals, b5 oe, b6 sharp s, e5 and e6 the opening exclamation and question marks, 48 !, 49
+  ?, 4f ., 50 ,, 52 :, 5a (, 5b ), 66 -, 2b +, ec and ee the apostrophe, ed the quotes.
+- **Its look**: a KH2 model (the HD PACK's Roxas) plays the motion on its own bones (`model_kh2_motions.cpp`,
+  `play_held`): from KH2's player's bones (P_EX100, the mod's kh2/obj/) through the model's `skeleton` by their rest
+  places (`kh2::match_by_rest`: Roxas's P_EX110 has Sora's bodies' rest places, renumbered), then its `bone` pairs.
+  Days's own model holds its last pose (Days has no such animation).
+- **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
+  msg/<language>/sys.bar.
 
 ## Triggers
 
@@ -346,7 +402,8 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
 | 6 | **a hit taken** (`FUN_140410d60`: after the current state's hit routine, before the native reaction), its argument the hit; also sent to every one of 8 listening threads (`FUN_1403f47b0`). The enemies turn to their revenge mode on it ("Revenge" above) |
 | 11 | a message from another object: raised by the call `FUN_14042c0d0` (one script to another object: its sender, a number, a target) and two native callers |
 | 13, 14 | `FUN_1403b7920`, `FUN_1403b79d0`: no direct reference in the executable (called through something built at run time). 13 clears the actor's flag 0x4000000, leaves the current state, runs trigger 13, then the class's virtual + 0x28 and the object's + 0x50. The Shadow's 13 plays motion 4 (`FALL` in KH2's motion list) and sets 0x4000000 again: most likely the actor leaving the ground. **Not confirmed** |
-| 10, 15 | `FUN_1403b3030`, `FUN_1403d5500` (pointers in `.rdata` tables): **not known** |
+| 10 | `FUN_1403b3030` (a pointer in an `.rdata` table): **not known** |
+| 15 | **an attack of its own landed** (`FUN_1403d1730` -> the attacker's class virtual + 0xe0, `FUN_1403d5500`): the one hit and the attack, the attack read first (its + 0x18 its atkp entry, `2:25`); Cerberus's pinning bite begins its reaction command on it. The shell raises it as a KH2 attack's hit lands on a Days player |
 | 16, 17 | a motion's events (`FUN_14040dd70`) |
 | 19 | **a hit** (`FUN_140410700`, `FUN_140411060`): the attacker kept at the actor's + 0xd38 (what `2:88` gives back), trigger 19 run with the attack and the attacker, then the attack's reaction applied (`FUN_1403d4650`), the queue cleared and the reaction state the attack's data names entered by name |
 

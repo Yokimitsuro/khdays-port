@@ -247,6 +247,44 @@ struct MadeUpWorld final : kh::World {
         a.memory().set_u32(a.u32(0x5c0), std::uint32_t(hp));
         a.memory().set_u32(a.u32(0x5c0) + 4, std::uint32_t(hp_max));
     }
+    // a player in a script's hands: what the calls told the world
+    int motion = -1, own_motion = -1;
+    float frame = -1.0F, yaw = 0.0F;
+    kh::Vec3 place{};
+    std::uint32_t thread = 0;
+    kh::Object *carrier = nullptr;
+    int bone = -1;
+    bool player_motion(kh::Object &, kh::Actor &, int slot, float from) override
+    {
+        motion = slot;
+        frame = from;
+        return true;
+    }
+    void player_own_motion(kh::Object &, int id) override
+    {
+        own_motion = id;
+    }
+    void player_place(kh::Object &, const kh::Vec3 &at) override
+    {
+        place = at;
+    }
+    void player_yaw(kh::Object &, float y) override
+    {
+        yaw = y;
+    }
+    void player_thread(kh::Object &, ai::Machine &, std::uint32_t id) override
+    {
+        thread = id;
+    }
+    void carry(kh::Actor &, kh::Object &by, int at, int) override
+    {
+        carrier = &by;
+        bone = at;
+    }
+    void uncarry(kh::Actor &) override
+    {
+        carrier = nullptr;
+    }
 };
 
 // a call made as a script makes it: its handler with these arguments, args[0] given back
@@ -642,6 +680,60 @@ void test_boss_calls()
     CHECK(std::fabs(actor.place()[2] - 130.0F) < 1e-3F && actor.place()[0] == 10.0F);
 }
 
+// What a reaction command's calls do to one of Days's players (Cerberus's on the player): an object stands for the
+// player (+ 0x6c8 bit 7, no actor of its own), the calls go to the world; + 4 every object's own handle
+void test_player_calls()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "1:29 4 1\n1:13 3 0\n1:238 1 1\n1:1 2 0\n1:148 2 0\n1:79 2 0\n1:18 6 0\n1:102 1 0\n"
+                               "1:112 3 0\n1:213 1 1\n1:74 1 0\n");
+    MadeUpWorld world;
+    // its main thread a yield over and over (word 0), a routine the same (word 3)
+    const Words loop = misc(0) + Words{0x0007, 0xfffd} + misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor actor(script({{1, 0}}, loop), rig.memory, rig.calls, "made_up");
+    actor.world = &world;
+    actor.machine().start_main(1);
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    world.standing = &player;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const ai::Value him = ai::Value::of_address(player.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    CHECK(player.u32(4) == player.address() && actor.u32(4) == actor.address());
+    CHECK(kh::is_player(&player) && !kh::is_player(&actor));
+    // 1:213: Days's players answer KH2's player's number, Sora's 1; others none
+    CHECK(call(rig, actor, 1, 213, {him}).i() == 1 && call(rig, actor, 1, 213, {self}).i() == 0);
+    // 1:29: the player plays the actor's motion 252 from frame 0: the world's to play
+    CHECK(call(rig, actor, 1, 29, {self, him, i(252), f(0.0F)}).i() == 1 && world.motion == 252 && world.frame == 0.0F);
+    // 1:238: the motion its controller plays (+ 0x184)
+    player.set_u32(kh::field::kMotionNow, 253);
+    CHECK(call(rig, actor, 1, 238, {him}).i() == 253);
+    // 1:148, 1:1, 1:79: put and turned, the world told
+    call(rig, actor, 1, 148, {him, adr(vec(rig.memory, 1.0F, 2.0F, 3.0F, 1.0F))});
+    CHECK(world.place[0] == 1.0F && world.place[2] == 3.0F && player.place()[1] == 2.0F);
+    call(rig, actor, 1, 1, {him, f(0.5F)});
+    CHECK(world.yaw == 0.5F && player.yaw() == 0.5F);
+    call(rig, actor, 1, 79, {him, adr(vec(rig.memory, 1.0F, 0.0F, 0.0F))});
+    CHECK(std::fabs(world.yaw - 1.5707964F) < 1e-5F);
+    // 1:74 on the player leaves the actor's class alone
+    actor.dashing = true;
+    call(rig, actor, 1, 74, {him});
+    CHECK(actor.dashing);
+    // 1:18: the actor carried by the player (at "bone" 0x4002); 1:102 taken off
+    call(rig, actor, 1, 18, {self, him, i(16386), i(0), i(0), i(0)});
+    CHECK(world.carrier == &player && world.bone == 16386 && actor.u32(kh::field::kCarrier) == player.address());
+    call(rig, actor, 1, 102, {self});
+    CHECK(world.carrier == nullptr && actor.u32(kh::field::kCarrier) == 0);
+    // 1:112 on the player: the routine its thread, the world told; on the actor its own attached thread
+    call(rig, actor, 1, 112, {him, i(3), self});
+    CHECK(world.thread != 0 && actor.side_thread == 0);
+    // 1:13: on the player its own motion asked for (the world gives it back); on the actor played at once
+    call(rig, actor, 1, 13, {him, i(0), f(0.0F)});
+    CHECK(world.own_motion == 0);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -652,6 +744,7 @@ int main()
     test_state_waits();
     test_batch_two();
     test_boss_calls();
+    test_player_calls();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

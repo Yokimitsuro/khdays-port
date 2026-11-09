@@ -15,7 +15,11 @@ are each kind's own (remastered/obj/<name>.a.us/se/obj/se<bank>) and KH2's commo
 mods/<mod>/kh2_enemies.txt, mods/<mod>/kh2/calls.txt, mods/<mod>/kh2/obj/ (each model's HD pages in kh2/obj/<name>/,
 where the port's model reader looks), mods/<mod>/kh2/effect/texcommon.dpd, the effects' HD pages in
 mods/<mod>/kh2/fx/<name>/ and kh2/fx/texcommon/, and the sounds the kinds play in mods/<mod>/kh2/se/<id>.wav (KH2's
-sound id: bank x 1000 + its number); says what it made and what it left out.
+sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's player's skeleton
+(original/obj/P_EX100.mdlx, the bones the motions they make the player play are made for), KH2's commands
+(original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
+(original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out.
+Says what it made and what it left out.
 """
 
 from __future__ import annotations
@@ -57,6 +61,13 @@ KINDS = {
     "B_HE020": "Cerberus",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
+# KH2's files the reaction commands read (under original/), each with what it is for
+SHARED = (
+    ("obj/P_EX100.mdlx", "the player's skeleton, which the enemies' motions for the player are made for"),
+    ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows"),
+    ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
+)
+LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
 PAX_ENTRY = 0x12  # an .a.us's PAX
 ELEMENT = 0x50  # a PAX's elements, from its + 0x10 (their count at + 8): each one's sound at + 0x18 (none: 0 or -1)
@@ -224,6 +235,22 @@ def make(
         listed.append(kinds_line(name, title, calls, handled))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
+    for part, what in SHARED:
+        source = kh2 / "original" / part
+        if source.is_file():
+            (mod / "kh2" / part).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, mod / "kh2" / part)
+        else:
+            left_out.append(f"{part} ({what}): not there; the reaction commands go without it")
+    names = 0
+    for language in LANGUAGES:
+        source = kh2 / "original" / "msg" / language / "sys.bar"
+        if source.is_file():
+            (mod / "kh2" / "msg" / language).mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, mod / "kh2" / "msg" / language / "sys.bar")
+            names += 1
+    if names == 0:
+        left_out.append("msg/<language>/sys.bar (the commands' names): not there; a reaction command shows its button")
     return left_out
 
 

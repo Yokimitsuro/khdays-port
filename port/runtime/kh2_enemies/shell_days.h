@@ -53,6 +53,18 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
 /* Its first attack slot with a power (Ov107_SetAttackPower's, +0x290 + 6 n), 0 when none has. */
 int khdays_kh2_shell_attack_slot(unsigned actor);
 
+/* A player's actor (Ov022_ActorUpdate's): its field object (+0x4ec, the one the players' list holds), 0 none; in
+ * `local` whether it is this game's own player's (its owner, +8, the session's local player), in `node` its model's
+ * scene node (+0x20: what the models' draws know it by). Either may be NULL. */
+unsigned khdays_kh2_shell_player_object(unsigned actor, int *local, unsigned *node);
+
+/* A player's actor put at `place` (its feet; its node with it, Actor_SetVecAndSyncChild) and turned by `yaw`
+ * (radians, KH2's: its model looks along (sin, 0, cos) of it, as Days's node angle at + 0x80 does). */
+void khdays_kh2_shell_put_player(unsigned actor, const float place[3], float yaw);
+
+/* A player's actor's HP (+0x12, Ov022_ActorUpdate's nHp), -1 when it is not in the game's memory. */
+int khdays_kh2_shell_player_hp(unsigned actor);
+
 #ifdef __cplusplus
 }
 #endif

@@ -379,6 +379,59 @@ void test_added() {
     expect(refused, "not over the set's own slots");
 }
 
+void test_variants() {
+    // a slot of motions for another object (an entry of type 0x14: KH2's 1:29, Cerberus's for the player): '0010'
+    // with a motion and its attributes, '0011' with another, a third '0010' of no size at the first's offset
+    const auto with_header = [](const Bytes& b) {
+        Bytes m(0x90, 0);
+        m.insert(m.end(), b.begin(), b.end());
+        return m;
+    };
+    const Bytes body = with_header(motion_body(2, {0, 1}, {0.0F, 60.0F}, {}, {}, 4.0F));
+    const Bytes weapon = with_header(motion_body(2, {0, 1}, {0.0F, 60.0F}, {}, {}, 0.0F));
+    const Bytes attributes{0, 1, 4, 0, 10, 0, 1, 1, 46, 0}; // no range, one trigger: an effect (1, 46) at 10
+    // (the third marked as repeating another's data, the type's high half, as KH2's files mark it)
+    Bytes inner =
+        bar({{0x11, bar({{0x09, body}, {0x10, attributes}})}, {0x11, bar({{0x09, weapon}})}, {0x10011, {}}});
+    const auto name = [&inner](std::size_t entry, const char* n) {
+        std::memcpy(inner.data() + 16 + 16 * entry + 4, n, 4);
+    };
+    name(0, "0010");
+    name(1, "0011");
+    name(2, "0010");
+    std::memcpy(inner.data() + 16 + 32 + 8, inner.data() + 16 + 8, 4); // the third at the first's offset
+    const Bytes own = bar({{0x09, with_header(motion_body(2, {0, 1}, {0.0F, 60.0F}, {}, {}, 0.0F))}});
+    const Bytes set = bar({{0x11, own}, {0x14, inner}});
+    const kh2::MotionSet motions(set.data(), set.size());
+    expect(motions.slots() == 2 && motions.motion(0) != nullptr && motions.motion(1) == nullptr &&
+               motions.variants(0).empty(),
+           "the variants' slot has no motion of its own, the set's own slot no variants");
+    const auto& v = motions.variants(1);
+    expect(v.size() == 3 && v[0].name == "0010" && v[1].name == "0011" && v[2].name == "0010", "three, named");
+    expect(v[0].motion && near(v[0].motion->root_motion(0.0F)[12], 4.0F) && v[1].motion &&
+               near(v[1].motion->root_motion(0.0F)[12], 0.0F),
+           "each its own motion");
+    expect(v[2].motion && v[2].attributes && v[2].attributes->triggers.size() == 1 &&
+               v[2].attributes->triggers[0].params == std::vector<std::uint16_t>{46},
+           "the entry of no size read from the sized one at its offset");
+    expect(v[0].own && v[1].own && !v[2].own, "the entries with data of their own, not the repeat");
+    expect(motions.variant(1, "0011") == &v[1] && motions.variant(1, "0010") == &v[0] &&
+               motions.variant(1, "0012") == nullptr && motions.variant(0, "0010") == nullptr,
+           "found by name");
+}
+
+void test_match_by_rest() {
+    // a source of four bones (3 at the root's place, on the root); the target the same places renumbered and one
+    // more: its 1 (on the root, at its place) is the source's 3, not the root itself; its 4 lies by no source bone
+    kh2::MotionSkeleton source, target;
+    source.joints = {bone(-1, 0.0F), bone(0, 10.0F), bone(1, 10.0F), bone(0, 0.0F)};
+    target.joints = {bone(-1, 0.0F), bone(0, 0.0F), bone(0, 10.0F), bone(2, 10.0F), bone(0, 50.0F)};
+    expect(kh2::match_by_rest(source, target) == std::vector<int>{0, 3, 1, 2, -1}, "matched by place and parent");
+    target.joints[2].translation[1] = 10.5F;
+    expect(kh2::match_by_rest(source, target)[2] == 1 && kh2::match_by_rest(source, target, 0.25F)[2] == -1,
+           "within the distance given");
+}
+
 void test_refusals() {
     const Bytes junk{1, 2, 3, 4};
     bool refused = false;
@@ -592,6 +645,8 @@ int main() {
         test_retarget();
         test_attributes();
         test_added();
+        test_variants();
+        test_match_by_rest();
         test_refusals();
         test_huge_angles();
         test_repeats();
