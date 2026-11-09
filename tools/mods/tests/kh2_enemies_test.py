@@ -81,6 +81,9 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "original" / "field2d" / "us" / "zz0command.2dd").write_bytes(b"menu")
             (kh2 / "remastered" / "field2d" / "us" / "zz0command.2dd").mkdir(parents=True)
             (kh2 / "remastered" / "field2d" / "us" / "zz0command.2dd" / "US_zz0command_2dd0.png").write_bytes(b"hd")
+            (kh2 / "original" / "field2d" / "us" / "zz0field.2dd").write_bytes(b"marks")
+            (kh2 / "remastered" / "field2d" / "us" / "zz0field.2dd").mkdir(parents=True)
+            (kh2 / "remastered" / "field2d" / "us" / "zz0field.2dd" / "US_zz0field_2dd0.png").write_bytes(b"marks hd")
             # KH2's font: its widths and HD picture
             (kh2 / "original" / "msg" / "us" / "fontinfo.bar").write_bytes(b"widths")
             (kh2 / "remastered" / "msg" / "us" / "fontimage.bar").mkdir(parents=True)
@@ -108,6 +111,8 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "msg" / "us" / "sys.bar").read_bytes(), b"names")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "zz0command.2dd").read_bytes(), b"menu")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "US_zz0command_2dd0.png").read_bytes(), b"hd")
+            self.assertEqual((mod / "kh2" / "field2d" / "us" / "zz0field.2dd").read_bytes(), b"marks")
+            self.assertEqual((mod / "kh2" / "field2d" / "us" / "US_zz0field_2dd0.png").read_bytes(), b"marks hd")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "fontinfo.bar").read_bytes(), b"widths")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "US_fontimage_bar0.png").read_bytes(), b"glyphs")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
@@ -163,6 +168,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx, M_EX020.mset, M_EX020.a.us not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
+            self.assertTrue(any("zz0field" in line for line in left))
             self.assertTrue(any("fontinfo" in line for line in left))
             # no port given: nothing covered
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod)

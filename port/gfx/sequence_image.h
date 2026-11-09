@@ -1,7 +1,9 @@
 /* A native sequence image's GPU commands. Words, copied into a frame package; no game pointers. */
 #ifndef KHDAYS_SEQUENCE_IMAGE_H
 #define KHDAYS_SEQUENCE_IMAGE_H
-#define KSI_3D_PROGRAMS 20u /* five reticles, four heart-counter batches, the prize table's eleven pictures */
+#define KSI_3D_PROGRAMS                                                                                                \
+    21u /* five reticles, four heart-counter batches, the prize table's eleven pictures, the
+                              * reaction command's mark */
 #define KSI_HEADER 40u
 #define KSI_QUAD_WORDS 24u
 #define KSI_MAX_QUADS 128u

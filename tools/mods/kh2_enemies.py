@@ -20,7 +20,8 @@ sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's p
 (original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
 (original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command menu, whose
 bar the reaction commands show (original/field2d/<language>/zz0command.2dd and its HD picture
-remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png), to mods/<mod>/kh2/field2d/<language>/,
+remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png) and the marks over its targets
+(zz0field.2dd and its first HD picture: a reaction command's mark over the enemy) to mods/<mod>/kh2/field2d/<language>/,
 and the font its names are written in (KH2's "sys": original/msg/us/fontinfo.bar, its glyphs' widths, and the HD
 picture remastered/msg/us/fontimage.bar/US_fontimage_bar0.png) to mods/<mod>/kh2/msg/us/.
 Says what it made and what it left out.
@@ -73,6 +74,7 @@ SHARED = (
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
 COMMAND_MENU = "zz0command.2dd"  # field2d/<language>/: KH2's general command menu (the reaction command's bar)
+FIELD_MARKS = "zz0field.2dd"  # field2d/<language>/: KH2's marks over its targets ("fiel": a reaction command's)
 # msg/us/: KH2's "sys" font, the bar's names' (its glyphs' widths; its HD picture under the remastered fontimage.bar)
 FONT = ("fontinfo.bar", "fontimage.bar/US_fontimage_bar0.png")
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
@@ -258,20 +260,28 @@ def make(
             names += 1
     if names == 0:
         left_out.append("msg/<language>/sys.bar (the commands' names): not there; a reaction command shows its button")
-    menus = 0
+    menus = marks = 0
     for language in LANGUAGES:
-        archive = kh2 / "original" / "field2d" / language / COMMAND_MENU
-        picture = kh2 / "remastered" / "field2d" / language / COMMAND_MENU / f"{language.upper()}_zz0command_2dd0.png"
-        if archive.is_file() and picture.is_file():
-            folder = mod / "kh2" / "field2d" / language
-            folder.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(archive, folder / COMMAND_MENU)
-            shutil.copy2(picture, folder / picture.name)
-            menus += 1
+        for name in (COMMAND_MENU, FIELD_MARKS):
+            archive = kh2 / "original" / "field2d" / language / name
+            stem = name.replace(".", "_")
+            picture = kh2 / "remastered" / "field2d" / language / name / f"{language.upper()}_{stem}0.png"
+            if archive.is_file() and picture.is_file():
+                folder = mod / "kh2" / "field2d" / language
+                folder.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(archive, folder / name)
+                shutil.copy2(picture, folder / picture.name)
+                menus += name == COMMAND_MENU
+                marks += name == FIELD_MARKS
     if menus == 0:
         left_out.append(
             f"field2d/<language>/{COMMAND_MENU} and its HD picture (the reaction command's bar): not there; "
             "Days's deck keeps its own commands"
+        )
+    if marks == 0:
+        left_out.append(
+            f"field2d/<language>/{FIELD_MARKS} and its HD picture (the reaction command's mark): not there; the "
+            "button's icon marks the enemy"
         )
     info = kh2 / "original" / "msg" / "us" / FONT[0]
     picture = kh2 / "remastered" / "msg" / "us" / FONT[1]

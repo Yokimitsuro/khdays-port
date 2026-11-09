@@ -46,6 +46,7 @@ extern "C" {
 #include "../../sound/archive.h"
 #include "../input/input.h"
 }
+#include "../../ui/reaction_command.h"
 #include "../mods/kh2_fx_draw.h"
 #include "../mods/models.h"
 
@@ -529,10 +530,6 @@ struct Enemy final {
     unsigned carrier = 0;
     int carry_bone = 0, carry_flags = 0;
     std::uint32_t attack_record = 0; // trigger 15's attack (its + 0x18 the atkp entry), made on its first hit
-    // its aim point (its 0x307 shape) on the upper screen at its last draw, DS dots, and that frame: a reaction
-    // command's mark over it
-    float mark[2] = {};
-    unsigned mark_frame = ~0u;
     int days_damage = 0; // the last Days hit's damage on it: a KH2 player's blow is worked out from it
     int blow = 0;        // a KH2 player's blow on it to land (its Days damage), 0 none
     bool blow_landing = false; // that blow's hit going through Days now
@@ -1108,26 +1105,41 @@ const Command *command(int id)
     return it != table.end() ? &it->second : nullptr;
 }
 
-// KH2's player's skeleton (the mod's kh2/obj/P_EX100.mdlx, Sora's: Roxas's P_EX110 has its bodies' rest places), which
-// the enemies' motions for the player are made for
-const kh2::MotionSkeleton *player_skeleton()
+// KH2's player's files (the mod's kh2/obj/P_EX100.mdlx, Sora's): his skeleton, which the enemies' motions for the
+// player are made for (Roxas's P_EX110 has its bodies' rest places), and his body's spheres on his bones (his shapes of
+// kind 0x302: his head, chest, waist and arms)
+struct PlayerFiles final {
+    std::shared_ptr<const kh2::MotionSkeleton> skeleton;
+    std::vector<Shape> spheres;
+};
+
+const PlayerFiles &player_files()
 {
-    static std::shared_ptr<const kh2::MotionSkeleton> skeleton;
+    static PlayerFiles files;
     static bool read = false;
     if (!read) {
         read = true;
         const std::vector<std::uint8_t> mdlx = read_file(u8(mod().folder) / "kh2" / "obj" / "P_EX100.mdlx");
         try {
             if (!mdlx.empty())
-                skeleton = std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
+                files.skeleton =
+                    std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
         } catch (const std::exception &x) {
             khdays_log("kh2 enemies: the mod's kh2/obj/P_EX100.mdlx cannot be read (%s)", x.what());
         }
-        if (!skeleton)
+        if (!files.skeleton)
             khdays_log("kh2 enemies: no KH2 player's skeleton (the mod's kh2/obj/P_EX100.mdlx): a held player's KH2 "
                        "model keeps the game's pose");
+        for (const Shape &s : read_shapes(mdlx))
+            if (s.kind == 0x302 && s.bone != kNoBone)
+                files.spheres.push_back(s);
     }
-    return skeleton.get();
+    return files;
+}
+
+const kh2::MotionSkeleton *player_skeleton()
+{
+    return player_files().skeleton.get();
 }
 
 // An attack's power in KH2's battle table (00battle.bin's atkp, 48 bytes each: + 2 its number, + 6 its power, OpenKH's
@@ -1837,15 +1849,24 @@ kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Elemen
 // An element a held player's motion cast, in its enemy's effects' space: on KH2's player's bone (P_EX100's skeleton) in
 // the pose his motion has now, his model placed and turned where he stands from the enemy (both in KH2's world, y
 // down; a model's y up, its turn Actor's). False without KH2's player's skeleton.
-bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMatrix &out)
+// A held player's pose now: his motion's (P_EX100's skeleton), empty without it
+std::vector<kh2::Mat4> held_pose(const Held &h)
 {
     const kh2::MotionSkeleton *skeleton = player_skeleton();
     if (skeleton == nullptr || h.body == nullptr || !h.body->motion)
-        return false;
+        return {};
     static std::unique_ptr<kh2::MotionPlayer> player;
     if (!player)
         player = std::make_unique<kh2::MotionPlayer>(*skeleton);
-    const kh2::EffectMatrix own = element_world(pose_at(*player, *h.body->motion, h.time), el);
+    return pose_at(*player, *h.body->motion, h.time);
+}
+
+bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMatrix &out)
+{
+    const std::vector<kh2::Mat4> pose = held_pose(h);
+    if (pose.empty())
+        return false;
+    const kh2::EffectMatrix own = element_world(pose, el);
     // his effects' axes (his model's, y down) to the enemy's, a point at a time: the map is affine
     const Vec3 at = e.actor->place();
     const float yaw = e.actor->yaw();
@@ -1869,6 +1890,34 @@ bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMat
     map[15] = 1.0F;
     row_matrix_mul(own.data(), map, out.data());
     return true;
+}
+
+// Where KH2 puts the mark of a reaction command a held player is offered (Cerberus's: on Sora in its jaws), in Days's
+// world: his body's middle, his body spheres' (P_EX100's shapes 0x302) on his bones in his pose now, placed as his
+// root's travel is (Held's place and yaw); his feet without KH2's player's skeleton or spheres
+void held_middle(const Held &h, float out[3])
+{
+    to_days(h.place, out);
+    const std::vector<kh2::Mat4> pose = held_pose(h);
+    Vec3 c{};
+    int n = 0;
+    for (const Shape &s : player_files().spheres) {
+        if (s.bone < 0 || std::size_t(s.bone) >= pose.size())
+            continue;
+        const kh2::Mat4 &m = pose[std::size_t(s.bone)];
+        for (int i = 0; i < 3; ++i)
+            c[std::size_t(i)] += m[std::size_t(i)] * s.at[0] + m[std::size_t(4 + i)] * s.at[1] +
+                                 m[std::size_t(8 + i)] * s.at[2] + m[std::size_t(12 + i)];
+        ++n;
+    }
+    if (n == 0)
+        return;
+    for (float &v : c)
+        v /= float(n);
+    const Vec3 t = turned({c[0], 0.0F, c[2]}, h.yaw);
+    out[0] += t[0] / kKh2PerDays;
+    out[1] += c[1] / kKh2PerDays;
+    out[2] += t[2] / kKh2PerDays;
 }
 
 // Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
@@ -2516,21 +2565,6 @@ extern "C" int khdays_kh2_enemies_blow(void *actor, int *amount)
     return 1;
 }
 
-// Where the enemy offering this game's own player a reaction command was drawn (its aim point, the upper screen's DS
-// dots): KH2's mark over it; 0 when none is offered or it was not drawn this frame or the one before
-extern "C" int khdays_kh2_enemies_offered_mark(float *x, float *y)
-{
-    const auto h = held.find(local_player);
-    if (h == held.end() || h->second.offered < 0)
-        return 0;
-    const auto it = enemies.find(h->second.enemy);
-    if (it == enemies.end() || it->second->mark_frame == ~0u || khdays_link_frame() - it->second->mark_frame > 1u)
-        return 0;
-    *x = it->second->mark[0];
-    *y = it->second->mark[1];
-    return 1;
-}
-
 extern "C" unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point)
 {
     Enemy *e = find(actor);
@@ -2658,28 +2692,21 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     spaces_for(d, way, mine, place, view, pure);
     std::copy(pure, pure + 16, e->pure);
     e->seen = true;
-    // its aim point on the screen (a reaction command's mark): in its model's axes, then the draw's view and
-    // projection (row vectors), the upper screen's 256 x 192 dots
-    for (const Shape &sh : e->kind->shapes) {
-        if (sh.kind != 0x307)
-            continue;
-        float w[3];
-        days_point(*e, s, sh.bone, sh.at, w);
-        const float dx = w[0] - s.place[0], dy = w[1] - s.place[1], dz = w[2] - s.place[2];
+    // this game's own player held by it: KH2's reaction command mark on him, projected as its model (its axes, then
+    // the draw's view and projection, row vectors)
+    if (const auto h = held.find(local_player); h != held.end() && h->second.enemy == e->days) {
+        float at[3];
+        held_middle(h->second, at);
+        const float dx = at[0] - s.place[0], dy = at[1] - s.place[1], dz = at[2] - s.place[2];
         const float q[4] = {c * dx - sn * dz, dy, sn * dx + c * dz, 1.0F};
-        float v[4] = {}, clip[4] = {};
+        float v[4] = {}, spot[4] = {};
         for (int col = 0; col < 4; ++col)
             for (int k = 0; k < 4; ++k)
                 v[col] += q[k] * view[k * 4 + col];
         for (int col = 0; col < 4; ++col)
             for (int k = 0; k < 4; ++k)
-                clip[col] += v[k] * pure[k * 4 + col];
-        if (clip[3] > 1e-6F) {
-            e->mark[0] = (clip[0] / clip[3] + 1.0F) * 128.0F;
-            e->mark[1] = (1.0F - clip[1] / clip[3]) * 96.0F;
-            e->mark_frame = frame;
-        }
-        break;
+                spot[col] += v[k] * pure[k * 4 + col];
+        khdays_ui_reaction_mark_draw(spot);
     }
     draw_effects(*e, view, pure);
     const float fade = std::clamp(e->actor->fade, 0.0F, 1.0F);

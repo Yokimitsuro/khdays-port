@@ -11,9 +11,11 @@
 
 #include "../gfx/kh2_sequence.h"
 #include "../host/app/hud_settings.h"
+#include "../host/app/profile.h"
 #include "../host/render/kh2_sequence_asset.h"
 
 extern "C" {
+#include "../gfx/g3d.h"
 #include "button_icons.h"
 #include "elements.h"
 #include "parts.h"
@@ -26,6 +28,7 @@ extern "C" {
 #include "../runtime/scripts/game_link.h"
 int khdays_settings_game_language(void);
 unsigned khdays_input_game_frames(void); // runtime/input/input.c
+const KhdaysProfile *khdays_devices_profile(void); // host/app/devices.h
 }
 
 #include "khdays/assets/font.h"
@@ -34,6 +37,7 @@ unsigned khdays_input_game_frames(void); // runtime/input/input.c
 #include "khdays/vfs/filesystem.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -51,7 +55,6 @@ unsigned khdays_input_game_frames(void); // runtime/input/input.c
 // the KH2 enemies' (runtime/kh2_enemies/shell.cpp)
 extern "C" int khdays_kh2_enemies_offered(int *text);
 extern "C" int khdays_kh2_enemies_offered_name(unsigned short *out, int room);
-extern "C" int khdays_kh2_enemies_offered_mark(float *x, float *y);
 extern "C" unsigned khdays_kh2_enemies_taken(int *held_now);
 extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int *id);
 
@@ -517,13 +520,20 @@ void emit_plain(const std::u16string &name)
     khdays_ui_emit(KHDAYS_UI_HUD, &e);
 }
 
-// The icon over the enemy offering a KH2 reaction command (its aim point)
+// Where the 3D build last put the reaction command's mark (khdays_ui_reaction_mark_draw): the upper screen's DS
+// dots, and that frame
+struct MarkSpot {
+    float x = 0.0f, y = 0.0f;
+    unsigned frame = ~0u;
+} mark_spot;
+
+// The icon over the enemy offering a KH2 reaction command (where KH2's mark goes), when that was drawn this frame or
+// the one before
 void emit_mark()
 {
-    float x = 0.0f, y = 0.0f;
-    if (!khdays_kh2_enemies_offered_mark(&x, &y)) {
+    if (mark_spot.frame == ~0u || khdays_link_frame() - mark_spot.frame > 1u)
         return;
-    }
+    const float x = mark_spot.x, y = mark_spot.y;
     // just above its aim point
     if (!emit_icon("hud.reaction_command_mark", x - kMarkIcon / 2.0f, y - kMarkIcon - 2.0f, kMarkIcon))
         emit_glyph(mark, "hud.reaction_command_mark", x - kMarkIcon / 2.0f, y - kMarkIcon - 2.0f, kMarkIcon);
@@ -617,6 +627,47 @@ float alpha_of(const seq::SequenceFrame &f)
     return a;
 }
 
+// A KH2 2D piece of the mod's: kh2/field2d/<region>/<name> and its HD picture <REGION>_<name with _ for .><page>.png,
+// the game's language's region first, then the English one; its sequence entry `entry` loaded and its picture
+// registered as `texture_id`. Throws when it is there but cannot be read; false when it is not there.
+bool load_piece(const char *name, int page, const char *entry, const char *texture_id,
+                std::optional<render::SequenceAsset> &asset, std::vector<std::uint32_t> &pixels, int &atlas,
+                std::string &from)
+{
+    static const char *const regions[][2] = {{"en", "us"}, {"fr", "fr"}, {"de", "gr"}, {"it", "it"}, {"es", "sp"}};
+    const char *code = khdays_language_code(khdays_settings_game_language());
+    const char *region = "us";
+    for (const auto &r : regions)
+        if (code != nullptr && std::strcmp(code, r[0]) == 0)
+            region = r[1];
+    std::string stem = name;
+    std::replace(stem.begin(), stem.end(), '.', '_');
+    char archive[128], picture[160], found[2048] = "", found_picture[2048] = "";
+    for (const char *folder : {region, "us"}) {
+        std::string upper = folder;
+        for (char &c : upper)
+            c = char(std::toupper(static_cast<unsigned char>(c)));
+        std::snprintf(archive, sizeof(archive), "kh2/field2d/%s/%s", folder, name);
+        std::snprintf(picture, sizeof(picture), "kh2/field2d/%s/%s_%s%d.png", folder, upper.c_str(), stem.c_str(),
+                      page);
+        if (khdays_mods_find(archive, found, sizeof(found)) &&
+            khdays_mods_find(picture, found_picture, sizeof(found_picture)))
+            break;
+        found[0] = '\0';
+    }
+    if (found[0] == '\0')
+        return false;
+    asset = render::load_sequence_asset(path_of(found), entry, path_of(found_picture));
+    pixels.resize(asset->texture.rgba.size() / 4);
+    std::memcpy(pixels.data(), asset->texture.rgba.data(), asset->texture.rgba.size());
+    atlas = khdays_textures_add_info(texture_id, asset->texture.width, asset->texture.height, pixels.data(),
+                                     KHDAYS_REPLACEMENT_NO_MIPS);
+    if (atlas < 0)
+        throw std::runtime_error("its picture could not be registered");
+    from = found;
+    return true;
+}
+
 struct Bar {
     bool tried = false;
     int language = -1;
@@ -650,29 +701,10 @@ struct Bar {
         language = lang;
         asset.reset();
         try {
-            // the game's language's folder in KH2's (its HD picture named after it), else the English one
-            static const char *const regions[][2] = {
-                {"en", "us"}, {"fr", "fr"}, {"de", "gr"}, {"it", "it"}, {"es", "sp"}};
-            const char *code = khdays_language_code(lang);
-            const char *region = "us";
-            for (const auto &r : regions)
-                if (code != nullptr && std::strcmp(code, r[0]) == 0)
-                    region = r[1];
-            char archive[96], picture[128], found[2048] = "", found_picture[2048] = "";
-            for (const char *folder : {region, "us"}) {
-                std::string upper = folder;
-                for (char &c : upper)
-                    c = char(std::toupper(static_cast<unsigned char>(c)));
-                std::snprintf(archive, sizeof(archive), "kh2/field2d/%s/zz0command.2dd", folder);
-                std::snprintf(picture, sizeof(picture), "kh2/field2d/%s/%s_zz0command_2dd0.png", folder, upper.c_str());
-                if (khdays_mods_find(archive, found, sizeof(found)) &&
-                    khdays_mods_find(picture, found_picture, sizeof(found_picture)))
-                    break;
-                found[0] = '\0';
-            }
-            if (found[0] == '\0')
+            std::string found;
+            if (!load_piece("zz0command.2dd", 0, "comw", "kh2:reaction_command:atlas", asset, atlas_pixels, atlas,
+                            found))
                 return;
-            asset = render::load_sequence_asset(path_of(found), "comw", path_of(found_picture));
             const auto &d = asset->sequence;
             idle = {};
             all = {};
@@ -692,13 +724,7 @@ struct Bar {
             scale = float(kDeckRight - kDeckLeft) / (idle.x1 - idle.x0);
             anchor_x = float(kDeckLeft) - idle.x0 * scale;
             anchor_y = float(kDeckTop - 1) - idle.y1 * scale;
-            atlas_pixels.resize(asset->texture.rgba.size() / 4);
-            std::memcpy(atlas_pixels.data(), asset->texture.rgba.data(), asset->texture.rgba.size());
-            atlas = khdays_textures_add_info("kh2:reaction_command:atlas", asset->texture.width, asset->texture.height,
-                                             atlas_pixels.data(), KHDAYS_REPLACEMENT_NO_MIPS);
-            if (atlas < 0)
-                throw std::runtime_error("its picture could not be registered");
-            khdays_log("ui: the reaction commands' bar from %s", found);
+            khdays_log("ui: the reaction commands' bar from %s", found.c_str());
         } catch (const std::exception &e) {
             asset.reset();
             khdays_log("ui: the reaction commands' bar left out (%s): the prompt and Days's deck as they were",
@@ -923,6 +949,167 @@ struct Bar {
 };
 Bar bar;
 
+// ---- The mark over the enemy ----------------------------------------------------------------------------------------
+
+// KH2's mark where an enemy offering a reaction command aims it: zz0field.2dd's "fiel" sequence 50 (the triangle coming, its
+// three arrows and glow, the green beams closing into a triangle round it; then it stays, from its frame 71), 49 its
+// fading, as KH2 plays them over Cerberus's head. A picture of the 3D layer (as the prizes' and the reticles' are: the
+// 3D's own camera places it, an event sequence's too), at KH2's screen's size wherever it stands (KH2's 512 dots the
+// DS's 256: half a DS dot a KH2 dot), in front of the 3D; its canvas only as large as the sequences draw.
+struct Mark {
+    static constexpr std::size_t kOn = 50, kOff = 49;
+    static constexpr int kOffFrames = 10;
+    static constexpr float kScale = 0.5F, kTexels = 4.0F;     // DS dots a KH2 dot; texels a DS dot
+    static constexpr unsigned kProgram = KSI_3D_PROGRAMS - 1; // the frame package's 3D program for it
+    bool tried = false;
+    int language = -1;
+    std::optional<render::SequenceAsset> asset;
+    std::vector<std::uint32_t> atlas_pixels;
+    int atlas = -1;
+    Bounds all; // every frame of its two sequences (KH2 dots, round its place)
+    struct Canvas {
+        int token = -1;
+        KhdaysSequenceImage commands{};
+    };
+    std::array<Canvas, 4> canvases; // a 3D list's build slot each (khdays_g3d_build_slot: its token's low 2 bits)
+    seq::SequencePlayer player;
+    bool on = false, leaving = false;
+    int leave_frames = 0;
+    unsigned last_vblank = 0;
+    bool started = false;
+
+    bool available()
+    {
+        if (!khdays_hud_setting(KHDAYS_OPT_REACTION_COMMANDS) || !khdays_textures_hd())
+            return false;
+        const int lang = khdays_settings_game_language();
+        if (!tried || lang != language) {
+            tried = true;
+            language = lang;
+            asset.reset();
+            try {
+                std::string found;
+                if (load_piece("zz0field.2dd", 0, "fiel", "kh2:reaction_mark:atlas", asset, atlas_pixels, atlas,
+                               found)) {
+                    all = {};
+                    for (const std::size_t clip : {kOn, kOff}) {
+                        const int frames = seq::sequence_frame_count(asset->sequence, clip);
+                        if (frames <= 0)
+                            throw std::runtime_error("no reaction command mark in its sequences");
+                        for (int f = 0; f < frames; ++f)
+                            all.add(seq::evaluate_sequence(asset->sequence, clip, float(f)));
+                    }
+                    if (!all.any || all.x1 - all.x0 < 1 || all.y1 - all.y0 < 1)
+                        throw std::runtime_error("the mark's sequence draws nothing");
+                    khdays_log("ui: the reaction commands' mark from %s", found.c_str());
+                }
+            } catch (const std::exception &e) {
+                asset.reset();
+                khdays_log("ui: the reaction commands' mark left out (%s): the button's icon over the enemy", e.what());
+            }
+        }
+        return asset.has_value();
+    }
+
+    // This VBlank: whether an enemy offers this game's own player a command
+    void update(bool offered)
+    {
+        const unsigned vblank = khdays_link_frame();
+        const unsigned frames = !started || khdays_link_paused() ? 0u : std::min(vblank - last_vblank, 4u);
+        started = true;
+        last_vblank = vblank;
+        if (offered) {
+            if (!on || leaving)
+                player.select(asset->sequence, kOn, true);
+            on = true;
+            leaving = false;
+        } else if (on && !leaving) {
+            player.select(asset->sequence, kOff, true);
+            leaving = true;
+            leave_frames = 0;
+        }
+        if (!on)
+            return;
+        player.advance(asset->sequence, float(frames));
+        if (leaving && (leave_frames += int(frames)) >= kOffFrames)
+            on = leaving = false;
+    }
+
+    // While the game builds its 3D list: the mark round `spot` (clip space, the 3D's projection: the enemy's draw's
+    // own)
+    void draw(const float spot[4])
+    {
+        if (!on || !asset)
+            return;
+        const int slot = khdays_g3d_build_slot();
+        Canvas &c = canvases[std::size_t(slot)];
+        c.token = int(kProgram) * 4 + slot;
+        auto f = seq::evaluate_sequence(asset->sequence, player.clip(), player.frame());
+        if (f.quads.size() > KSI_MAX_QUADS)
+            f.quads.resize(KSI_MAX_QUADS);
+        auto *w = c.commands.words;
+        std::memset(w, 0, sizeof(unsigned) * KSI_HEADER);
+        const auto number = [w](unsigned i, float v) { std::memcpy(w + i, &v, 4); };
+        w[KSI_OUTPUT] = unsigned(c.token);
+        w[KSI_ATLAS] = unsigned(atlas);
+        w[KSI_LOGICAL_W] = unsigned(asset->logical_size[0]);
+        w[KSI_LOGICAL_H] = unsigned(asset->logical_size[1]);
+        const float texels = kScale * kTexels; // texels a KH2 dot
+        w[KSI_WIDTH] = unsigned(std::ceil((all.x1 - all.x0) * texels));
+        w[KSI_HEIGHT] = unsigned(std::ceil((all.y1 - all.y0) * texels));
+        number(KSI_VIEW_X, -all.x0 * texels);
+        number(KSI_VIEW_Y, -all.y0 * texels);
+        number(KSI_SCALE, texels);
+        w[KSI_FACE] = ~0u;
+        w[KSI_HD_FACE] = ~0u;
+        w[KSI_CLEAR] = 1;
+        render::encode_sequence_quads(c.commands, f.quads);
+        // its 0, 0 on the spot, the canvas round it at KH2's size, in front of the 3D
+        const float cx = spot[0], cy = spot[1], cw = spot[3];
+        KhdaysG3dClipVertex v[4]{};
+        constexpr int corners[]{0, 1, 3, 2}; // top-left, top-right, bottom-right, bottom-left
+        for (int k = 0; k < 4; ++k) {
+            const int corner = corners[k];
+            auto &o = v[k];
+            const float dx = ((corner & 1) ? all.x1 : all.x0) * kScale, dy = ((corner & 2) ? all.y1 : all.y0) * kScale;
+            o.x = cx + dx / 128.0F * cw; // DS dots: the screen 256 x 192, its clip space 2 x 2, y up
+            o.y = cy - dy / 96.0F * cw;
+            o.z = -0.99F * cw;
+            o.w = cw;
+            o.r = o.g = o.b = 63;
+            o.a = 1;
+            o.s = (corner & 1) ? 128.0F : 0.0F;
+            o.t = (corner & 2) ? 128.0F : 0.0F;
+        }
+        constexpr unsigned kPolygonId = 62;
+        khdays_g3d_sequence_polygon(v, 4, 0xc0u | (31u << 16) | (kPolygonId << 24), atlas, unsigned(c.token));
+    }
+
+    // A frame of it that could not be played or drawn: the button's icon from now on
+    void drop(const std::exception &e)
+    {
+        asset.reset();
+        on = leaving = false;
+        khdays_log("ui: the reaction commands' mark left out (%s): the button's icon over the enemy", e.what());
+    }
+
+    // The frame package's program: the canvas whose polygon the 3D list holds
+    void commands(const KhdaysG3dList *list, KhdaysSequenceImage *out) const
+    {
+        *out = {};
+        for (const auto &c : canvases) {
+            if (c.token < 0)
+                continue;
+            for (int k = 0; k < list->npolys; ++k)
+                if ((list->polys[k].flags & KHDAYS_G3D_SEQUENCE) && list->polys[k].pltt == unsigned(c.token)) {
+                    *out = c.commands;
+                    return;
+                }
+        }
+    }
+};
+Mark mark_over;
+
 std::u16string kh2_name()
 {
     unsigned short name[64];
@@ -954,8 +1141,32 @@ extern "C" void khdays_ui_reaction_command_emit(void)
         if (on && (what & 0x10000) != 0)
             emit_plain(name);
     }
-    if (on && (what & 0x10000) != 0)
+    if (mark_over.available())
+        try {
+            mark_over.update(on && (what & 0x10000) != 0);
+        } catch (const std::exception &e) {
+            mark_over.drop(e);
+        }
+    if (!mark_over.available() && on && (what & 0x10000) != 0)
         emit_mark();
+}
+
+extern "C" void khdays_ui_reaction_mark_draw(const float spot[4])
+{
+    if (spot[3] <= 1e-4F)
+        return; // behind the camera
+    mark_spot = {(spot[0] / spot[3] + 1.0F) * 128.0F, (1.0F - spot[1] / spot[3]) * 96.0F, khdays_link_frame()};
+    if (mark_over.available())
+        try {
+            mark_over.draw(spot);
+        } catch (const std::exception &e) {
+            mark_over.drop(e);
+        }
+}
+
+extern "C" void khdays_ui_reaction_mark_commands(const KhdaysG3dList *list, KhdaysSequenceImage *out)
+{
+    mark_over.commands(list, out);
 }
 
 extern "C" void khdays_ui_reaction_command_commands(KhdaysSequenceImage *out)
@@ -998,12 +1209,14 @@ extern "C" int khdays_reaction_talk_pressed(int pressed, int panel_open)
         days.x_now = (unsigned(pressed) & kKeyX) != 0;
     }
     // while a KH2 enemy offers a reaction command or holds the player, X is that command's (the shell takes it), not
-    // the deck's cursor, its lists or a Days command
+    // the deck's cursor, its lists or a Days command; with "reaction button only" never theirs
     int held = 0;
     khdays_kh2_enemies_taken(&held);
+    const KhdaysProfile *profile = khdays_devices_profile();
+    const bool kh2 = held != 0 || khdays_kh2_enemies_offered(nullptr) != 0;
     const bool fresh = days.x_now && !days.x_before && panel_open == 0;
-    days.swallowed = fresh && (held != 0 || khdays_kh2_enemies_offered(nullptr) != 0);
-    days.pressed = fresh && !days.swallowed && days.kind != 0 && days.usable && days.frame == sample && bar.available();
+    days.pressed = fresh && !kh2 && days.kind != 0 && days.usable && days.frame == sample && bar.available();
+    days.swallowed = fresh && !days.pressed && (kh2 || (profile != nullptr && profile->enh.reaction_button_only));
     days.x_before |= days.pressed || days.swallowed; // once
     if (days.pressed) {
         ++days.presses;

@@ -3,6 +3,8 @@
 // A picture's frames sit side by side in one program and each billboard samples its own frame's column. A picture
 // with a model instead (graphics/mo/prize.pak.z/mdl/<picture>) is drawn as that model, upright and turning.
 #include "prize_effects.h"
+#include "heart_points.h"
+#include "kh2_reticles.h"
 #include "prize_effects_model.h"
 #include "../gfx/kh2_sequence.h"
 #include "../host/app/hud_settings.h"
@@ -69,7 +71,7 @@ constexpr unsigned gone_after = 30; // game frames: a second of the field
 
 std::array<Picture, KHDAYS_PRIZE_PROGRAMS> pictures;
 // the program numbers in the frame package: after the reticles' and the heart counter's
-constexpr unsigned first_program = KSI_3D_PROGRAMS - KHDAYS_PRIZE_PROGRAMS;
+constexpr unsigned first_program = KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS;
 
 bool traced()
 {

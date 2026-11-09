@@ -884,6 +884,7 @@ static void read_enhancement(Reader *r, const char *key, const char *value, cons
         {"mouse_speed", offsetof(KhdaysEnhancements, mouse_speed), 10, 300},
         {"separate_lock_on", offsetof(KhdaysEnhancements, separate_lock_on), 0, 0},
         {"dpad_command_menu", offsetof(KhdaysEnhancements, dpad_command_menu), 0, 0},
+        {"reaction_button_only", offsetof(KhdaysEnhancements, reaction_button_only), 0, 0},
         {"analog_movement", offsetof(KhdaysEnhancements, analog_movement), 0, 0},
         {"run_threshold", offsetof(KhdaysEnhancements, run_threshold), 50, 95},
         {"walk_speed", offsetof(KhdaysEnhancements, walk_speed), 20, 90},
@@ -1543,6 +1544,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
     add(&t, "mouse_camera = %s\nmouse_speed = %d\n", e->mouse_camera ? "on" : "off", e->mouse_speed);
     add(&t, "separate_lock_on = %s\n", e->separate_lock_on ? "on" : "off");
     add(&t, "dpad_command_menu = %s\n", e->dpad_command_menu ? "on" : "off");
+    add(&t, "reaction_button_only = %s\n", e->reaction_button_only ? "on" : "off");
     add(&t, "analog_movement = %s\nrun_threshold = %d\nwalk_speed = %d\n", e->analog_movement ? "on" : "off",
         e->run_threshold, e->walk_speed);
     add(&t, "chase_free = %s\n", e->chase_free ? "on" : "off");

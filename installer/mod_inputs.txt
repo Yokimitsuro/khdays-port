@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 25637d3f78c6780c622ef03e6c01a0f383042da840e5c63e9bc8211d02fc5866
+# tools cb7f9b760e3c96bca8c58c9840a1cda2cd69350b0fb60351cab20519add82d98
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -29,15 +29,20 @@ bbs_first cba7b0396c9efe756ba1e069e6dd603e.dat
 bbs_second ForEventJP/gimmick/g01pp/00/g01pp00.pmo
 kh2_fifth event/effect/tt_event_904.pax
 kh2_fifth field2d/fr/zz0command.2dd
+kh2_fifth field2d/fr/zz0field.2dd
 kh2_fifth field2d/gr/zz0command.2dd
+kh2_fifth field2d/gr/zz0field.2dd
 kh2_fifth field2d/it/zz0command.2dd
+kh2_fifth field2d/it/zz0field.2dd
 kh2_fifth field2d/sp/zz0command.2dd
+kh2_fifth field2d/sp/zz0field.2dd
 kh2_fifth field2d/us/al0field.2dd
 kh2_fifth field2d/us/bb0field.2dd
 kh2_fifth field2d/us/eh0field.2dd
 kh2_fifth field2d/us/he0field.2dd
 kh2_fifth field2d/us/nm0field.2dd
 kh2_fifth field2d/us/zz0command.2dd
+kh2_fifth field2d/us/zz0field.2dd
 kh2_fifth menu/jm_top_eh.2ld
 kh2_fifth menu/us/camp.2ld
 kh2_fifth obj/B_HE020.a.us

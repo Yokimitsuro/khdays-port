@@ -383,9 +383,9 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
 - **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
   the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
   Days's); `1:213` 1.
-- **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and over the enemy
-  (the button's icon, the HD PACK's or Kenney's, at its aim point); the pad's top button (KH2's triangle, the DS X)
-  takes it: the command's argument sent to the enemy as a message (trigger 11).
+- **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and KH2's mark on
+  the player in the enemy's hands (below, "The reaction command's mark"); the pad's top button (KH2's triangle, the DS
+  X) takes it: the command's argument sent to the enemy as a message (trigger 11).
 - **KH2's text** (sys.bar, our reading of the files; OpenKH's MSG page gives the control codes): 01 a space, 2e-47
   A-Z, 9a-b3 a-z, 90-99 the digits, b7-cb the small accented letters (a grave, acute, circumflex, diaeresis ... u
   diaeresis), d0-e4 the capitals, b5 oe, b6 sharp s, e5 and e6 the opening exclamation and question marks, 48 !, 49
@@ -403,10 +403,13 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   unseen in Cerberus's jaws).
 - **X is the command's**: while an enemy offers the player a command or holds it, a press of X (the DS's, the pad's
   top button) chooses no Days command (`khdays_reaction_talk_pressed`'s join: kind 7), so the deck's cursor and its
-  lists do not move (they did: Magic's list opened at a press).
+  lists do not move (they did: Magic's list opened at a press). KH2's triangle does nothing but reaction commands; the
+  setting "Reaction button for reaction commands only" (the profile's `reaction_button_only`, off; Settings, the
+  enhancements) makes X so everywhere: no deck cursor, no lists from it (the deck then moves with "Command menu on the
+  D-pad"), L with it still the shortcuts, Days's Talk and Examine on the bar still X's.
 - **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
-  msg/<language>/sys.bar, field2d/<language>/zz0command.2dd with its HD picture, msg/us/fontinfo.bar with
-  fontimage.bar's HD picture.
+  msg/<language>/sys.bar, field2d/<language>/zz0command.2dd and zz0field.2dd with their HD pictures,
+  msg/us/fontinfo.bar with fontimage.bar's HD picture.
 
 ## The reaction command's bar
 
@@ -449,6 +452,30 @@ port's KH2 sequence player on the GPU (docs/KH2_SEQUENCES.md), as the obtained n
   ahí arriba?" as Days's A does with the setting off; A with it on made nothing. Cerberus's three commands came with 5,
   3 and 3 ("¡COMBO!"), each press's flash in the circle, and the bar left as the blow ended. The button's icon is the
   player's input's; without one (a keyboard here) the game's X glyph, from the 10-dot font (the 8-dot has none).
+
+## The reaction command's mark
+
+KH2 marks where a reaction command is offered with a picture of its field2d/<language>/zz0field.2dd (IMGD and SEQD
+named `fiel`, the HD picture <LANGUAGE>_zz0field_2dd0.png), which the mod tool copies next to the bar's.
+
+- **fiel's sequences** (our reading of the file against KH2's play of Cerberus's commands): 50 the mark coming -- a
+  triangle with three arrows and a glow, then three green beams closing round it into a triangle -- 190 frames, from
+  its frame 71 again while it stays; 49 its going (10 frames); 52, 54 and 56 others of its kind, 57 to 66 green
+  glows. Which KH2FM.exe plays when was not read in the executable: in KH2's play, 50 while a command is offered, on
+  Sora in Cerberus's jaws, as large as a third of the screen.
+- **Placed** on the player the enemy holds: the middle of his body's spheres (P_EX100's shapes of kind 0x302 -- his
+  head, chest, waist and arms -- on his bones in the held motion's pose now, put where Held's place and yaw put him;
+  all his bones' middle sat low, the bones left at his root pulling it to the enemy's body), projected as the enemy's
+  model is drawn (its draw's own view and projection), so the event sequences' cameras carry it as they do the model. Days's own projection for its marks
+  (`func_0201653c`, as `Ov022_ProjectToScreen` uses it) gives no place during those cameras, nor for the aim point
+  (Cerberus's 0x307 is on no bone: 4 m up, 3 m ahead).
+- **Drawn** on the 3D layer as the prizes' pictures are (`khdays_g3d_sequence_polygon`, the 3D sequence package's
+  last program, KSI_3D_PROGRAMS 21): at KH2's screen size wherever it stands (KH2's 512 dots the DS's 256), in front of
+  the 3D, its canvas only as large as its two sequences draw; KH2's sequence player plays it on the GPU. The setting
+  "KH2 reaction commands" and the HD textures switch it; without its piece the button's icon shows at that spot.
+- **Seen**: Cerberus's three commands with the HD PACK and a PlayStation pad's icons (a diagnosis switch, not kept):
+  the triangle and its arrows, then the beams, on Roxas in the jaws from each offer to its press. The event sequences'
+  cameras leave him at the screen's edge in "00" and "30" (KH2's frame Sora in the middle), and the mark with him.
 
 ## Event sequences
 

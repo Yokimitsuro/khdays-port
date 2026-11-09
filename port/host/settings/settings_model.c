@@ -366,6 +366,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
                menu_note);
+    add_switch(b, KHDAYS_SET_ENH_REACTION_BUTTON, TXT_ENH_REACTION_BUTTON, &e->reaction_button_only, 1,
+               khdays_text(TXT_ENH_REACTION_BUTTON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
                khdays_text(TXT_ENH_MOVEMENT_NOTE));
     /* the mouse turns the camera where the analog camera does (runtime/input/controls_hooks.c) */

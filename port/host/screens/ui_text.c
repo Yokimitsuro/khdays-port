@@ -388,6 +388,28 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Fijar y cambiar de objetivo con botones propios (el fijado del juego: R dos veces)."},
     [TXT_ENH_MENU] = {"Command menu on the D-pad", "Commandes sur la croix", "Befehlsmenü auf dem Steuerkreuz",
                       "Menu comandi sulla croce", "Menú de comandos en la cruceta"},
+    [TXT_ENH_REACTION_BUTTON] = {"Reaction button for reaction commands only",
+                                 "Bouton réflexe pour les "
+                                 "commandes réflexes seulement",
+                                 "Reaktionstaste nur für Reaktionsbefehle",
+                                 "Tasto reazione solo per i comandi reazione",
+                                 "Botón de reacción solo para comandos de reacción"},
+    [TXT_ENH_REACTION_BUTTON_NOTE] =
+        {"As KH2's triangle: the gamepad's top button (the DS's X) takes reaction commands and nothing else -- no "
+         "deck cursor or lists from it. Move the deck with the command menu on the D-pad. L with it still takes the "
+         "shortcuts.",
+         "Comme le triangle de KH2 : le bouton du haut de la manette (le X de la DS) prend les commandes réflexes et "
+         "rien d'autre -- ni curseur ni listes du jeu de commandes. Déplacez le jeu de commandes avec les commandes "
+         "sur la croix. L avec lui prend toujours les raccourcis.",
+         "Wie das Dreieck in KH2: Die obere Taste des Controllers (das X des DS) nimmt Reaktionsbefehle und sonst "
+         "nichts -- kein Cursor und keine Listen des Decks. Bewege das Deck mit dem Befehlsmenü auf dem "
+         "Steuerkreuz. L mit ihr nimmt weiter die Kurzbefehle.",
+         "Come il triangolo di KH2: il tasto in alto del controller (la X del DS) prende i comandi reazione e "
+         "nient'altro -- né cursore né liste del mazzo. Muovi il mazzo con il menu comandi sulla croce. L con esso "
+         "prende ancora le scorciatoie.",
+         "Como el triángulo de KH2: el botón de arriba del mando (la X de la DS) toma los comandos de reacción y "
+         "nada más -- ni el cursor ni las listas de la baraja. Mueve la baraja con el menú de comandos en la "
+         "cruceta. L con él sigue tomando los atajos."},
     /* %s: the game's words, "Config", "Command List" and "X Only". */
     [TXT_ENH_MENU_NOTE] = {"In a field the gamepad's D-pad moves through the commands. With %s > %s: %s, "
                            "only Down can.",

@@ -10,13 +10,22 @@
 extern "C" {
 #endif
 
+#include "../gfx/g3d.h" /* a C header */
+
 /* Called by the HUD's emit at every VBlank: "hud.reaction_command" above the deck -- KH2's general command menu's bar
  * with the pad's top button's icon and the command's name in the game's language, or without the bar's pieces the
- * icon and the name -- and "hud.reaction_command_mark", the icon over a KH2 enemy offering one. */
+ * icon and the name -- and without KH2's mark (below) "hud.reaction_command_mark", the icon where it would be. */
 void khdays_ui_reaction_command_emit(void);
 
 /* The bar's GPU sequence program for the frame package (empty when none shows). */
 void khdays_ui_reaction_command_commands(KhdaysSequenceImage *out);
+
+/* KH2's mark where an enemy offering this game's own player a reaction command aims it, a picture of the 3D layer:
+ * drawn while the game builds its 3D list, round `spot` (clip space x, y, z, w: runtime/kh2_enemies projects it as it
+ * draws the enemy), when it shows (without KH2's piece, the button's icon there); its program for the frame package's
+ * last 3D program. */
+void khdays_ui_reaction_mark_draw(const float spot[4]);
+void khdays_ui_reaction_mark_commands(const KhdaysG3dList *list, KhdaysSequenceImage *out);
 
 /* prepare.py's joins. Whether the bar takes Days's commands (the setting on, its pieces there); in
  * Ov022_UpdateCommandInput, Days's command of the thing aimed at (1 when the bar takes it: the deck keeps Attack), the

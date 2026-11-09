@@ -51,8 +51,9 @@
 #include <string.h>
 #include <windows.h>
 
-_Static_assert(KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS + KHDAYS_PRIZE_PROGRAMS,
-               "3D sequence package capacity");
+_Static_assert(
+    KSI_3D_PROGRAMS == KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS + KHDAYS_PRIZE_PROGRAMS + 1,
+    "3D sequence package capacity: the reticles, the heart counter, the prizes, the reaction command's mark");
 
 #define PIXELS (KHDAYS_SCREEN_W * KHDAYS_SCREEN_H)
 
@@ -682,6 +683,7 @@ static void capture_3d(KhdaysFramePackage *p)
     khdays_reticles_commands(&p->list3d, p->sequence3d_images);
     khdays_heart_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT);
     khdays_prize_commands(&p->list3d, p->sequence3d_images + KHDAYS_RETICLE_COUNT + KHDAYS_HEART_PROGRAMS);
+    khdays_ui_reaction_mark_commands(&p->list3d, p->sequence3d_images + KSI_3D_PROGRAMS - 1);
     p->list3d_serial = list3d_serial;
     p->list3d_time = list3d_time;
     p->list3d_cut = (uint8_t)list3d_cut;
