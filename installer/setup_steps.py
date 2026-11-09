@@ -515,6 +515,9 @@ def model_settings() -> list[str]:
 HD_VIDEO_TOOLS = [
     ("theater_movies.py", ["{mare}", "--movies", "{movies}", "--videos", "--subtitles", "--music"]),
 ]
+# The HD pieces a player chooses: the menus (HD_MENU_TOOLS, both collections, and the port's own mods after
+# them) and the videos (HD_VIDEO_TOOLS, 1.5+2.5); each collection is checked for what the chosen ones read.
+PIECES = ("menus", "videos")
 # theater_movies.py's scene map (which of the theater's scene videos the port plays), beside the tools
 # in the repository's layout, so the videos it names are made too
 SCENE_MAP = "port/movies/hd_scenes.txt"
@@ -669,7 +672,8 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
         ("kh2_sixth", kh2_sixth / "remastered", "remastered"),
         ("movies", args.movies, "plain"),
     ]
-    entries: dict[str, set[str]] = {}
+    # each piece's own: what its tools read (an entry two pieces read is in both)
+    entries: dict[str, dict[str, set[str]]] = {piece: {} for piece in PIECES}
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
         # the tools in the repository's layout, the game's data beside them (read only: a junction to
@@ -689,10 +693,11 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
             check=True,
             capture_output=True,
         )
-        log = root / "trace.log"
+        logs = {piece: root / f"trace-{piece}.log" for piece in PIECES}
         try:
             for i, (tool, template) in enumerate(HD_MENU_TOOLS + HD_VIDEO_TOOLS):
                 progress(i, len(HD_MENU_TOOLS) + len(HD_VIDEO_TOOLS), tool)
+                log = logs["menus" if (tool, template) in HD_MENU_TOOLS else "videos"]
                 command_line = [
                     sys.executable,
                     "-c",
@@ -708,41 +713,45 @@ def trace_inputs(args: argparse.Namespace) -> dict[str, Any]:
                 if tool == "heart_points.py":
                     command_line += ["--native", str(args.native.resolve())]
                 subprocess.run(command_line, cwd=root, check=True, env={**os.environ, "KHDAYS_TRACE_LOG": str(log)})
-            for line in log.read_text(encoding="utf-8").splitlines():
-                kind, _, raw = line.partition("\t")
-                path = Path(raw).resolve()
-                for archive, folder, layout in sources:
-                    folder = folder.resolve()
-                    if path != folder and folder not in path.parents:
-                        continue
-                    files = (
-                        [path]
-                        if kind == "open"
-                        else [p for p in path.rglob("*") if p.is_file()]
-                        if path.is_dir()
-                        else []
-                    )
-                    for f in files:
-                        rel = f.relative_to(folder).as_posix()
-                        if layout == "remastered":
-                            rel = rel.rsplit("/", 1)[0]  # the asset's entry (its name follows it)
-                            while rel and not (folder.parent / "original" / rel).is_file():
-                                rel = rel.rsplit("/", 1)[0] if "/" in rel else ""
-                            if not rel:
-                                continue
-                        entries.setdefault(archive, set()).add(rel)
-                    break
+            for piece, log in logs.items():
+                for line in log.read_text(encoding="utf-8").splitlines() if log.is_file() else []:
+                    kind, _, raw = line.partition("\t")
+                    path = Path(raw).resolve()
+                    for archive, folder, layout in sources:
+                        folder = folder.resolve()
+                        if path != folder and folder not in path.parents:
+                            continue
+                        files = (
+                            [path]
+                            if kind == "open"
+                            else [p for p in path.rglob("*") if p.is_file()]
+                            if path.is_dir()
+                            else []
+                        )
+                        for f in files:
+                            rel = f.relative_to(folder).as_posix()
+                            if layout == "remastered":
+                                rel = rel.rsplit("/", 1)[0]  # the asset's entry (its name follows it)
+                                while rel and not (folder.parent / "original" / rel).is_file():
+                                    rel = rel.rsplit("/", 1)[0] if "/" in rel else ""
+                                if not rel:
+                                    continue
+                            entries[piece].setdefault(archive, set()).add(rel)
+                        break
         finally:
             subprocess.run(["cmd", "/c", "rmdir", str(root / "data" / "extracted")], capture_output=True)
     lines = [
-        "# The collection files the HD tools read (installer/setup_steps.py trace-inputs):",
-        "# '<archive> <entry>' (its data and remastered assets) or 'movies <file>'.",
+        "# The collection files the HD tools read (installer/setup_steps.py trace-inputs), each under the piece",
+        "# whose tools read it ('# piece <name>'; an entry two pieces read is under both): '<archive> <entry>'",
+        "# (its data and remastered assets) or 'movies <file>'.",
         f"# tools {tools_digest(repository)}",
     ]
-    for archive in sorted(entries):
-        lines += [f"{archive} {rel}" for rel in sorted(entries[archive])]
+    for piece in PIECES:
+        lines.append(f"# piece {piece}")
+        for archive in sorted(entries[piece]):
+            lines += [f"{archive} {rel}" for rel in sorted(entries[piece][archive])]
     args.out.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
-    return {"inputs": sum(len(v) for v in entries.values()), "out": str(args.out)}
+    return {"inputs": sum(len(v) for piece in entries.values() for v in piece.values()), "out": str(args.out)}
 
 
 # The collections' places and what each HD choice needs. Steam's copies keep their language's archives
@@ -855,25 +864,36 @@ MESSAGES.update(
 )
 
 
-def hd_inputs() -> dict[str, list[str]]:
-    """hd_inputs.txt: archive -> its entries (or movies -> its files)."""
+def hd_inputs(pieces: tuple[str, ...] = PIECES) -> dict[str, list[str]]:
+    """hd_inputs.txt: archive -> its entries (or movies -> its files) the tools of `pieces` read, each once."""
     out: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    piece = None
     for line in INPUTS_FILE.read_text(encoding="utf-8").splitlines():
-        if line and not line.startswith("#"):
+        if line.startswith("# piece "):
+            piece = line[len("# piece ") :].strip()
+        elif line and not line.startswith("#") and piece in pieces and line not in seen:
+            seen.add(line)
             archive, _, path = line.partition(" ")
             out.setdefault(archive, []).append(path)
     return out
 
 
-def check_folder(kind: str, folder: Path) -> list[str]:
-    """What `folder` lacks of what the HD pieces read from collection `kind` (empty: all there)."""
+def check_folder(kind: str, folder: Path, pieces: tuple[str, ...] = PIECES) -> list[str]:
+    """What `folder` lacks of what the HD `pieces` read from collection `kind` (empty: all there): the
+    archives and entries their tools read, with the menus the port's own mods' (made after them) and KH2's
+    executable (its table unscrambles the archives they read); the videos only the theater's archive and
+    the movies (a collection whose other archives differ, as the Japanese one's, still gives the videos)."""
     import collection_archive
 
-    inputs = hd_inputs()
-    for archive, paths in mod_inputs().items():  # the port's own mods' too
-        inputs.setdefault(archive, []).extend(paths)
+    inputs = hd_inputs(pieces)
+    if "menus" in pieces:
+        for archive, paths in mod_inputs().items():
+            inputs.setdefault(archive, []).extend(paths)
     missing = []
     for archive, rel in COLLECTION_ARCHIVES[kind].items():
+        if archive not in inputs:
+            continue  # none of the chosen pieces reads it
         base = archive_base(folder, kind, archive)
         if not (base.with_name(base.name + ".hed").is_file() and base.with_name(base.name + ".pkg").is_file()):
             missing.append(rel + ".hed/.pkg")
@@ -885,16 +905,26 @@ def check_folder(kind: str, folder: Path) -> list[str]:
             index.close()
         if absent:
             missing.append(f"{rel}: {len(absent)} entries ({absent[0]}...)")
-    if kind == "1.5+2.5":
+    if kind == "1.5+2.5" and inputs.get("movies"):
         movies = movies_folder(folder)
-        absent = [m for m in inputs.get("movies", []) if not (movies / m).is_file()]
+        absent = [m for m in inputs["movies"] if not (movies / m).is_file()]
         if absent:
             missing.append(f"{movies.relative_to(folder).as_posix()}: {len(absent)} files ({absent[0]}...)")
+    if kind == "1.5+2.5" and "menus" in pieces:
         try:
             collection_archive.load_table(folder / KH2_EXE)
         except (OSError, collection_archive.ArchiveError):
             missing.append(KH2_EXE)
     return missing
+
+
+def pieces_of(text: str) -> tuple[str, ...]:
+    """'menus,videos' (a command line's --pieces) as PIECES' names, in their order."""
+    named = {p.strip() for p in text.split(",") if p.strip()}
+    unknown = named - set(PIECES)
+    if unknown or not named:
+        raise argparse.ArgumentTypeError(f"pieces: one or more of {', '.join(PIECES)}")
+    return tuple(p for p in PIECES if p in named)
 
 
 @command(
@@ -945,11 +975,15 @@ def find_collections(args: argparse.Namespace) -> dict[str, Any]:
 
 @command(
     "check-collection",
-    "whether a folder holds what the HD pieces read from that collection (exit 1 when not)",
-    lambda p: (p.add_argument("kind", choices=sorted(COLLECTION_ARCHIVES)), p.add_argument("folder", type=Path)),
+    "whether a folder holds what the chosen HD pieces read from that collection (exit 1 when not)",
+    lambda p: (
+        p.add_argument("kind", choices=sorted(COLLECTION_ARCHIVES)),
+        p.add_argument("folder", type=Path),
+        p.add_argument("--pieces", type=pieces_of, default=PIECES, help="menus, videos or both (default: both)"),
+    ),
 )
 def check_collection(args: argparse.Namespace) -> dict[str, Any]:
-    missing = check_folder(args.kind, args.folder)
+    missing = check_folder(args.kind, args.folder, args.pieces)
     if missing:
         raise Refusal("hd-missing", missing="; ".join(missing))
     return {"valid": True, "missing": []}
@@ -997,15 +1031,18 @@ def build_hd(args: argparse.Namespace) -> dict[str, Any]:
     videos = args.videos and not hd_made(made_before, "hd-videos", video_inputs, cutscenes)
     if not menus and not videos:
         return {"pieces": [], "skipped": True, "message": words("hd-ready", args.language)}
+    # each collection checked for what the pieces made now read of it (2.8: the menus' alone)
+    chosen = tuple(p for p, wanted in (("menus", bool(menus)), ("videos", videos)) if wanted)
     for kind, folder in (("1.5+2.5", args.c1525), ("2.8", args.c28)):
-        if folder is not None and (menus or kind == "1.5+2.5"):
-            missing = check_folder(kind, folder)
+        pieces_here = chosen if kind == "1.5+2.5" else tuple(p for p in chosen if p == "menus")
+        if folder is not None and pieces_here:
+            missing = check_folder(kind, folder, pieces_here)
             if missing:
                 raise Refusal("hd-missing", missing="; ".join(missing))
     if menus:
         unmerge_port_mods(install)  # the menus kept are copied as their tools made them (build-mods puts them in again)
     data = data_folder(install)
-    inputs = hd_inputs()
+    inputs = hd_inputs(chosen)
     work = install / "setup" / "hd-work"
     remove(work)
     root, src = work / "root", work / "src"

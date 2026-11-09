@@ -392,19 +392,27 @@ end;
 
 function CheckHd: Boolean;
 var
-  Json: String;
+  Json, Pieces: String;
 begin
   Result := True;
   HdStatus.Caption := CustomMessage('HdChecking');
   WizardForm.Refresh;
-  if (HdFolder(0) <> '') and (HdMenus.Checked or HdVideos.Checked) then
-    if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '"', Json) <> 0 then begin
+  { each collection checked for what the chosen pieces read of it: the videos alone ask the 1.5+2.5 only
+    for the theater's archive and the movies }
+  Pieces := '';
+  if HdMenus.Checked then Pieces := 'menus';
+  if HdVideos.Checked then begin
+    if Pieces <> '' then Pieces := Pieces + ',';
+    Pieces := Pieces + 'videos';
+  end;
+  if (HdFolder(0) <> '') and (Pieces <> '') then
+    if RunHelper('check-collection 1.5+2.5 "' + HdFolder(0) + '" --pieces ' + Pieces, Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
       Exit;
     end;
   if (HdFolder(1) <> '') and HdMenus.Checked then
-    if RunHelper('check-collection 2.8 "' + HdFolder(1) + '"', Json) <> 0 then begin
+    if RunHelper('check-collection 2.8 "' + HdFolder(1) + '" --pieces menus', Json) <> 0 then begin
       HdStatus.Caption := JsonValue(Json, 'message');
       Result := False;
       Exit;

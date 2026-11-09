@@ -70,7 +70,11 @@ import) or whose files went missing, with any tool that wrote one of the same fi
 others' files. The videos
 already installed are linked into the tools' folder, not copied, so an installer whose scene map
 or video tool differs makes only the missing videos, and the subtitles and music again. Either folder may be left empty: a choice whose collection is not given cannot be
-ticked. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
+ticked. Each collection is checked for what the chosen pieces read of it (`hd_inputs.txt` lists each
+piece's entries apart, traced tool by tool): the menus ask for every archive their tools and the
+port's own mods read, and for KH2's executable; the videos alone ask the 1.5+2.5 only for the
+theater's archive (`Image/Mare`) and the movies, so a collection whose other archives differ (the
+Japanese one keeps KH2's fonts under `msg/jp`) still gives them; 2.8 is asked for by the menus alone. The collections are found in Steam's libraries, else in the Epic Games Store's folders (its
 launcher's manifests in `ProgramData/Epic/EpicGamesLauncher/Data/Manifests`), else in the Xbox app's
 game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names; a game in
 `<library>/<game>/Content`), and each store's copy is read: Steam's keeps its language's archives in

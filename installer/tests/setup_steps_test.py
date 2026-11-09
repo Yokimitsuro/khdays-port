@@ -406,6 +406,44 @@ class PortModsInTheHdPack(unittest.TestCase):
         self.assertEqual(self.files(self.hd), self.pristine)
 
 
+class CollectionCheck(unittest.TestCase):
+    """A 1.5+2.5 collection is checked for what the chosen pieces read: one holding only what the videos read
+    (as the Japanese one does, its other archives' entries elsewhere) gives the videos, not the menus."""
+
+    def test_the_videos_alone_ask_only_for_the_theater_and_the_movies(self):
+        from archive_test import TABLE, write_archive
+
+        import collection_archive as ca
+
+        videos = s.hd_inputs(("videos",))
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            (folder / "Image").mkdir()
+            write_archive(
+                folder / "Image" / "Mare", {e: (b"x", "stored", []) for e in videos["Mare"]}, ca.Cipher(TABLE)
+            )
+            movies = folder / s.MOVIES
+            movies.mkdir(parents=True)
+            for name in videos["movies"]:
+                (movies / name).write_bytes(b"")
+            self.assertEqual(s.check_folder("1.5+2.5", folder, ("videos",)), [])
+            menus = s.check_folder("1.5+2.5", folder, ("menus",))
+            self.assertIn("Image/dt/kh2_first.hed/.pkg", menus)
+            self.assertIn(s.KH2_EXE, menus)
+            self.assertTrue(any(m.startswith("Image/Mare: ") for m in menus), menus)  # the menus read more of it
+            self.assertEqual(s.check_folder("1.5+2.5", folder), s.check_folder("1.5+2.5", folder, ("menus", "videos")))
+            # a movie missing: the videos say so
+            (movies / videos["movies"][0]).unlink()
+            self.assertTrue(s.check_folder("1.5+2.5", folder, ("videos",)))
+
+    def test_pieces_on_the_command_line(self):
+        self.assertEqual(s.pieces_of("videos"), ("videos",))
+        self.assertEqual(s.pieces_of("videos,menus"), ("menus", "videos"))
+        for wrong in ("", "models", "menus,models"):
+            with self.assertRaises(Exception):
+                s.pieces_of(wrong)
+
+
 class Results(unittest.TestCase):
     def run_command(self, *argv):
         with tempfile.TemporaryDirectory() as d:
