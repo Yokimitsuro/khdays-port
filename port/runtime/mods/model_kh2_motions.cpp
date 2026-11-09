@@ -824,8 +824,11 @@ bool play_track(const Model &m, Kh2Track &track, std::size_t slot, const khdays:
 // A KH2 enemy holding the player (its reaction command, runtime/kh2_enemies): its set's motion for KH2's player is the
 // whole pose -- from KH2's player's bones (P_EX100) through the `skeleton`'s by their rest places (Roxas's are Sora's,
 // renumbered), then this model's `bone` pairs; onto its own bones by their rest places when it has no `skeleton` --
-// its root's travel taken out (the player's place carries it, as the game's root motion off). False when none holds
-// it, or the motion cannot be played on it (the game's pose then).
+// its root's travel taken out (the player's place carries it, as the game's root motion off). The motion is made in the
+// enemy's frame (KH2 puts the enemy at the player's place and facing: Cerberus's bite), which is half a turn about the
+// up from the frame Days's node gives this model at that facing: turned so (seen: without it Roxas hung behind
+// Cerberus's head, not in its jaws). False when none holds it, or the motion cannot be played on it (the game's pose
+// then).
 bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
 {
     namespace kh2 = khdays::assets::kh2;
@@ -860,7 +863,10 @@ bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
         actor.held_player->evaluate(*held.motion, ticks, kIdentity, nullptr);
         std::vector<kh2::Mat4> joints;
         m.kh2_held_retarget->apply(actor.held_player->joints(), joints);
-        const Mat taken = inverse(held.motion->root_motion(ticks));
+        Mat taken = inverse(held.motion->root_motion(ticks));
+        Mat half = kIdentity; // half a turn about the up: into the enemy's frame
+        half[0] = half[10] = -1.0F;
+        taken = mul(half, taken);
         const std::size_t count = std::min(m.joints.size(), m.kh2_bone.size());
         for (std::size_t j = 0; j < count; ++j) {
             const int bone = m.kh2_bone[j];

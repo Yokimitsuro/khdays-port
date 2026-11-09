@@ -20,7 +20,9 @@ sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's p
 (original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
 (original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command menu, whose
 bar the reaction commands show (original/field2d/<language>/zz0command.2dd and its HD picture
-remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png), to mods/<mod>/kh2/field2d/<language>/.
+remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png), to mods/<mod>/kh2/field2d/<language>/,
+and the font its names are written in (KH2's "sys": original/msg/us/fontinfo.bar, its glyphs' widths, and the HD
+picture remastered/msg/us/fontimage.bar/US_fontimage_bar0.png) to mods/<mod>/kh2/msg/us/.
 Says what it made and what it left out.
 """
 
@@ -71,6 +73,8 @@ SHARED = (
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
 COMMAND_MENU = "zz0command.2dd"  # field2d/<language>/: KH2's general command menu (the reaction command's bar)
+# msg/us/: KH2's "sys" font, the bar's names' (its glyphs' widths; its HD picture under the remastered fontimage.bar)
+FONT = ("fontinfo.bar", "fontimage.bar/US_fontimage_bar0.png")
 COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the sounds all enemies share
 PAX_ENTRY = 0x12  # an .a.us's PAX
 ELEMENT = 0x50  # a PAX's elements, from its + 0x10 (their count at + 8): each one's sound at + 0x18 (none: 0 or -1)
@@ -268,6 +272,16 @@ def make(
         left_out.append(
             f"field2d/<language>/{COMMAND_MENU} and its HD picture (the reaction command's bar): not there; "
             "Days's deck keeps its own commands"
+        )
+    info = kh2 / "original" / "msg" / "us" / FONT[0]
+    picture = kh2 / "remastered" / "msg" / "us" / FONT[1]
+    if info.is_file() and picture.is_file():
+        (mod / "kh2" / "msg" / "us").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(info, mod / "kh2" / "msg" / "us" / info.name)
+        shutil.copy2(picture, mod / "kh2" / "msg" / "us" / picture.name)
+    else:
+        left_out.append(
+            "msg/us/fontinfo.bar and fontimage.bar's HD picture (KH2's font): not there; the bar's names in Days's font"
         )
     return left_out
 

@@ -2549,6 +2549,18 @@ extern "C" unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point
     return point;
 }
 
+namespace {
+// Whether a model is a player character's (ba/ch/<code>/, the file it came from): never a shell's, though a player an
+// enemy holds stands at its place (1:18, the enemy carried by the player: Cerberus's bite)
+bool character_model(const void *resource)
+{
+    const char *file = nullptr;
+    u32 offset = 0, run = 0;
+    return resource != nullptr && khdays_origin_of_ram(unsigned(KHDAYS_REF(resource)), &file, &offset, &run) &&
+           file != nullptr && std::strncmp(file, "ba/ch/", 6) == 0;
+}
+} // namespace
+
 extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj)
 {
     if (render_obj == nullptr || enemies.empty())
@@ -2562,6 +2574,8 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     Way way = Way::None;
     const int model_kind = enemy_model(resource);
     const bool own_model = model_kind >= 0;
+    if (!own_model && character_model(resource))
+        return 0;
     const float near_enough = own_model ? kNearEnough : 1e-3F;
     if (const auto it = shell_draws.find(obj); it != shell_draws.end()) {
         Enemy *x = find(it->second);

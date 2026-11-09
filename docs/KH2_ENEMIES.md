@@ -393,9 +393,20 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
 - **Its look**: a KH2 model (the HD PACK's Roxas) plays the motion on its own bones (`model_kh2_motions.cpp`,
   `play_held`): from KH2's player's bones (P_EX100, the mod's kh2/obj/) through the model's `skeleton` by their rest
   places (`kh2::match_by_rest`: Roxas's P_EX110 has Sora's bodies' rest places, renumbered), then its `bone` pairs.
-  Days's own model holds its last pose (Days has no such animation).
+  The motion is made in the enemy's frame: while it carries the enemy (1:18) both stand at one place with one facing
+  and no root travel (Cerberus's "00" and "10": the player 0 -12 0 from it in its axes, both yaw 0), and the bones
+  alone put the player in the jaws. That frame is half a turn about the up from the one Days's node gives the model
+  at the same facing, so the pose is turned so (without it Roxas hung behind Cerberus's head). Days's own model holds
+  its last pose (Days has no such animation).
+- **Drawn as itself**: a model drawn at a shell's place is taken as the enemy's and left out (its stand-in's other
+  parts), but a player character's (ba/ch/) never: a player carrying its enemy stands there (it was left out, Roxas
+  unseen in Cerberus's jaws).
+- **X is the command's**: while an enemy offers the player a command or holds it, a press of X (the DS's, the pad's
+  top button) chooses no Days command (`khdays_reaction_talk_pressed`'s join: kind 7), so the deck's cursor and its
+  lists do not move (they did: Magic's list opened at a press).
 - **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
-  msg/<language>/sys.bar, field2d/<language>/zz0command.2dd with its HD picture.
+  msg/<language>/sys.bar, field2d/<language>/zz0command.2dd with its HD picture, msg/us/fontinfo.bar with
+  fontimage.bar's HD picture.
 
 ## The reaction command's bar
 
@@ -414,8 +425,12 @@ port's KH2 sequence player on the GPU (docs/KH2_SEQUENCES.md), as the obtained n
   each after a taken one with 3, a press flashes 4, the command taken stays until its enemy lets the player go, and the
   bar leaves with 0.
 - **Drawn** as wide as the deck (84 DS dots), its foot a dot above it; over it, as KH2's, the pad's top button's icon
-  in the circle and the command's name after it in the game's 8-dot font (the HD fonts' for the deck's labels,
-  "field.command"), white over a black shadow, fading with the bar. The setting "KH2 reaction commands"
+  in the circle (the player's input's: a PlayStation pad's triangle, an Xbox one's Y, a key) and the command's name
+  after it in KH2's own "sys" font, white with a dark edge, fading with the bar. The font is the mod's
+  kh2/msg/us/fontinfo.bar ("sys": 280 widths) and fontimage.bar's HD picture (US_fontimage_bar0.png: 28 columns of
+  18 x 24 dots over 512 x 256, a glyph's slot its KH2 byte - 0x20, the last the space, 6 wide; grey glyphs KH2
+  draws white); its cells 0.62 of the bar's height. Without them, Days's 8-dot font (the HD fonts' route for the
+  deck's labels, "field.command"). The setting "KH2 reaction commands"
   (`kh2_reaction_commands`, on) and the HD textures switch it; without its pieces the icon and the name show alone.
 - **Days's own commands** on the bar (the same setting): Days offers the thing the player aims at (an actor's + 0x4f0 2
   and its object's + 0x17, `Ov022_GetSubKindIfState2`) as the deck's primary command -- 1 Examine, 2 Talk, 3 Trick,

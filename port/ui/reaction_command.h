@@ -20,7 +20,8 @@ void khdays_ui_reaction_command_commands(KhdaysSequenceImage *out);
 
 /* prepare.py's joins. Whether the bar takes Days's commands (the setting on, its pieces there); in
  * Ov022_UpdateCommandInput, Days's command of the thing aimed at (1 when the bar takes it: the deck keeps Attack), the
- * reaction button's press of it (1: a command chosen) and the chosen command made from it: 9 with argument 1 the bar's
+ * reaction button's press of it (1: a command chosen; also a KH2 enemy's command's press, which chooses none, the deck
+ * left as it is) and the chosen command made from it: 9 with argument 1 the bar's
  * press (1 returned: chosen without A, as a shortcut's, so the host takes it), argument 2 the deck's own press while
  * the bar has a command (Ov022_TranslateCommandToAction attacks then). */
 int khdays_reaction_talk_active(void);

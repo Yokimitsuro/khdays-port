@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 10cb1668d20133a964070c9c81348d7dc42bde233254862236be4ca2f591ce20
+# tools 25637d3f78c6780c622ef03e6c01a0f383042da840e5c63e9bc8211d02fc5866
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -113,6 +113,8 @@ kh2_first msg/fr/sys.bar
 kh2_first msg/gr/sys.bar
 kh2_first msg/it/sys.bar
 kh2_first msg/sp/sys.bar
+kh2_first msg/us/fontimage.bar
+kh2_first msg/us/fontinfo.bar
 kh2_first msg/us/sys.bar
 kh2_first obj/M_EX990.a.us
 kh2_first obj/M_EX990.mdlx
