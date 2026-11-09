@@ -632,6 +632,8 @@ enum class S {
     chars_play,
     chars_pause,
     chars_preview_hint,
+    chars_show_weapon,
+    chars_weapon_no_bone,
     chars_copied,
     chars_choose_sound,
     chars_add_row,

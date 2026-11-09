@@ -2347,6 +2347,23 @@ constexpr Row rows[] =
           "ziehen zum Drehen, Mausrad zum Heranzoomen",
           "trascina per ruotare, rotella per avvicinarti",
           "arrastra para girar, rueda para acercarte"}},
+        {S::chars_show_weapon,
+         {"Weapon",
+          "Arme",
+          "Waffe",
+          "Arma",
+          "Arma"}},
+        {S::chars_weapon_no_bone,
+         {"Its skeleton has no bone {0}: in the game its weapon stays at {1}'s hand (Model: the bone holding the "
+          "weapon).",
+          "Son squelette n'a pas d'os {0} : en jeu, son arme reste à la main de {1} (Modèle : l'os qui tient "
+          "l'arme).",
+          "Sein Skelett hat keinen Knochen {0}: im Spiel bleibt seine Waffe an der Hand von {1} (Modell: der "
+          "Knochen, der die Waffe hält).",
+          "Il suo scheletro non ha l'osso {0}: nel gioco la sua arma resta nella mano di {1} (Modello: l'osso che "
+          "tiene l'arma).",
+          "Su esqueleto no tiene el hueso {0}: en el juego su arma se queda en la mano de {1} (Modelo: el hueso "
+          "que sujeta el arma)."}},
         {S::chars_copied,
          {"{0} copied into {1}'s folder.",
           "{0} copié dans le dossier de {1}.",

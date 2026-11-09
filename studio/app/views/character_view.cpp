@@ -70,6 +70,7 @@ struct View {
     std::string model_error;
     std::map<std::string, std::size_t> model_texture;
     std::vector<std::string> bones;
+    std::vector<Mat> model_rest;  // its nodes' places at rest (its weapon's turn is from its bone's)
     float model_height = 0.0f, model_width = 0.0f;
 
     // its base, as the game has it (the graphics dump's model, its animations)
@@ -100,6 +101,20 @@ struct View {
     std::array<float, 3> target{0, 0.8f, 0};
     std::unique_ptr<Preview> preview;
     bool hovered = false;  // the window, last frame (where a dropped file goes)
+
+    // the weapon in the preview: one of the base's models (the graphics dump's w_.p2), and the file the character
+    // draws instead of it
+    bool show_weapon = true;
+    std::string shown_weapon;  // its name in w_.p2, chosen in the Model tab; empty: the base's first
+    std::string weapon_for = "\x01";
+    bool weapon_ok = false;
+    GameModel weapon;
+    std::map<std::string, Texture> weapon_textures;
+    std::string own_weapon_for = "\x01";
+    bool have_own_weapon = false;
+    assets::ImportedModel own_weapon;
+    std::map<std::string, std::size_t> own_weapon_texture;
+    Rig own_weapon_rig;
 
     // a new character
     std::string new_key, new_name;
@@ -240,6 +255,7 @@ void take_model(const Mod& m) {
     v.model_error.clear();
     v.model_texture.clear();
     v.bones.clear();
+    v.model_rest.clear();
     v.model_height = 0.0f;
     if (file.empty())
         return;
@@ -250,19 +266,21 @@ void take_model(const Mod& m) {
         v.model_texture.emplace(v.model.textures[i].first, i);
     for (const auto& j : v.model.joints)
         v.bones.push_back(j.name);
+    v.model_rest = character_pose(v.model, nullptr, 0.0);
     std::array<float, 3> lo, hi;
     character_span(v.model, &lo, &hi);
     v.model_height = hi[1] > lo[1] ? hi[1] - lo[1] : 0.0f;
     v.model_width = hi[0] > lo[0] ? hi[0] - lo[0] : 0.0f;
 }
 
-const Texture* base_texture(const std::string& name) {
-    const auto found = v.base_textures.find(name);
-    if (found != v.base_textures.end())
+// A game model's texture by name, its dumped PNG read once into `cache`.
+const Texture* game_texture(const GameModel& g, std::map<std::string, Texture>& cache, const std::string& name) {
+    const auto found = cache.find(name);
+    if (found != cache.end())
         return found->second.rgba.empty() ? nullptr : &found->second;
     Texture t;
-    const auto file = v.base.textures.find(name);
-    if (file != v.base.textures.end()) {
+    const auto file = g.textures.find(name);
+    if (file != g.textures.end()) {
         const char* error = nullptr;
         std::uint8_t* px = khdays_png_read(u8(file->second).c_str(), &t.width, &t.height, &error);
         if (px != nullptr) {
@@ -270,8 +288,12 @@ const Texture* base_texture(const std::string& name) {
             khdays_png_free(px);
         }
     }
-    const auto it = v.base_textures.emplace(name, std::move(t)).first;
+    const auto it = cache.emplace(name, std::move(t)).first;
     return it->second.rgba.empty() ? nullptr : &it->second;
+}
+
+const Texture* base_texture(const std::string& name) {
+    return game_texture(v.base, v.base_textures, name);
 }
 
 // The base's model as the graphics dump has it, and the names of its animations (again when the base changes).
@@ -394,6 +416,232 @@ bool own_skeleton() {
     return model_value("skeleton") == "own";
 }
 
+// --- fitting the panel: a field as wide as its line leaves it, a button on the next line when it has no room ---
+
+// A field's width: `want`, or less when its line has not room for it and `after` (what follows it on the line: its
+// label, its buttons); never under a few letters.
+float fit(float want, float after = 0.0f) {
+    return std::max(3.0f * ImGui::GetFontSize(), std::min(want, ImGui::GetContentRegionAvail().x - after));
+}
+
+// What a field's label takes beside it (a "##" label none).
+float label_room(const char* label) {
+    const float text = ImGui::CalcTextSize(label, nullptr, true).x;
+    return text > 0.0f ? text + ImGui::GetStyle().ItemInnerSpacing.x : 0.0f;
+}
+
+float button_width(const char* label) {
+    return ImGui::CalcTextSize(label, nullptr, true).x + 2.0f * ImGui::GetStyle().FramePadding.x;
+}
+
+// A button's width and the gap before it.
+float button_room(const char* label) {
+    return button_width(label) + ImGui::GetStyle().ItemSpacing.x;
+}
+
+// The next item beside the last one when `width` more fits on its line, else at the start of the next.
+void beside(float width) {
+    const float edge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width <= edge)
+        ImGui::SameLine();
+}
+
+// --- its weapon, as the preview shows it ------------------------------------------------------------------------
+
+// The lines of [weapons] the page shown plays with: its own, else its default's when it plays as the same base.
+std::vector<std::pair<std::string, std::string>> weapon_entries() {
+    const bool same_base = shown_base() == v.ini.get("character", "base");
+    return v.ini.entries(gives_section("weapons") || !same_base ? part("weapons") : "weapons");
+}
+
+// A swing's trail or a hit's flash: models of the weapons' file the game draws from the weapon's places.
+bool weapon_effect(const std::string& name) {
+    return name.find("_trace") != std::string::npos || name.find("_hit") != std::string::npos;
+}
+
+// The base's node the game puts the right hand's weapon on: base_weapon_node, else the camp's; empty for a base
+// that holds its weapon from its model's root (registry.c's bases).
+std::string base_hand_node() {
+    const std::string own = model_value("base_weapon_node");
+    if (!own.empty())
+        return own;
+    const std::string base = shown_base();
+    for (int i = 0; i < KHDAYS_CHARACTER_FOLDERS; ++i) {
+        const char* name = khdays_character_base_name(i);
+        if (name != nullptr && base == name) {
+            const char* hand = khdays_character_base_hand(i, 0);
+            return hand != nullptr ? hand : "";
+        }
+    }
+    return {};
+}
+
+int game_node(const GameModel& g, const std::string& name) {
+    const auto& names = g.model.object_names;
+    const auto found = std::find(names.begin(), names.end(), name);
+    return found != names.end() ? static_cast<int>(found - names.begin()) : -1;
+}
+
+// The weapon the preview shows: the base's model chosen (else its first) from the graphics dump, and the file the
+// character draws instead of it when its description gives one, on the game model's nodes as the port pairs it
+// (again when either changes).
+void take_weapon(App& app, const Mod& m) {
+    std::string name, key;
+    for (const auto& folder : form_weapon_folders(shown_base())) {
+        const std::string prefix = "ba/ch/" + folder + "/w_.p2";
+        for (const auto& it : app.catalog.items) {
+            const auto mdl = it.key.find("/mdl/");
+            if (it.kind != Kind::model || it.key.rfind(prefix, 0) != 0 || mdl == std::string::npos)
+                continue;
+            const std::string n = it.key.substr(mdl + 5);
+            if (n == v.shown_weapon || (key.empty() && !weapon_effect(n))) {
+                name = n;
+                key = it.key;
+                if (n == v.shown_weapon)
+                    break;
+            }
+        }
+        if (!key.empty() && name == v.shown_weapon)
+            break;
+    }
+    if (key != v.weapon_for) {
+        v.weapon_for = key;
+        v.weapon_ok = false;
+        v.weapon = {};
+        v.weapon_textures.clear();
+        v.own_weapon_for = "\x01";
+        std::string why;
+        if (!key.empty())
+            v.weapon_ok = load_game_model(nitrofs(), resolve(app.settings, app.settings.graphics_dump), key, &v.weapon,
+                                          &why);
+    }
+    std::string file;
+    for (const auto& [game, value] : weapon_entries())
+        if (game == name)
+            file = value;
+    if (file == v.own_weapon_for)
+        return;
+    v.own_weapon_for = file;
+    v.have_own_weapon = false;
+    v.own_weapon = {};
+    v.own_weapon_texture.clear();
+    v.own_weapon_rig = {};
+    std::string why;
+    if (file.empty() || !v.weapon_ok)
+        return;
+    const fs::path path = character_dir(m.dir, v.key) / path_u8(file);
+    if (!import_model(path, &v.own_weapon, &why))
+        return;
+    v.have_own_weapon = true;
+    for (std::size_t i = 0; i < v.own_weapon.textures.size(); ++i)
+        v.own_weapon_texture.emplace(v.own_weapon.textures[i].first, i);
+    // its joints on the game model's nodes by name, or as its own bones.txt pairs them
+    fs::path bones_path = path;
+    bones_path.replace_extension(".bones.txt");
+    const BonesFile bones = read_bones_file(bones_path);
+    const std::map<std::string, std::string> pairs(bones.pairs.begin(), bones.pairs.end());
+    v.own_weapon_rig = build_rig(v.weapon, v.own_weapon, pairs, bones.scale);
+}
+
+// The weapon shown, its model's space put at `hand`, moved `across`: the game's model in the base's hand, the file
+// the character draws instead of it (`character`) in the character's.
+void draw_weapon(Preview& p, const Mat& hand, float across, bool character) {
+    auto placed = [&](std::array<float, 3> pos, std::array<float, 3> nrm, PreviewVertex& o) {
+        o.position = mat_point(hand, pos);
+        o.position[0] += across;
+        o.normal = mat_vec(hand, nrm);
+    };
+    std::vector<Mat> node_world, palette;
+    pose_game_model(v.weapon, nullptr, 0.0f, &node_world, &palette);
+    if (character && v.have_own_weapon) {
+        // the file drawn instead, its joints on the game model's nodes (models.cpp draw())
+        std::vector<Mat> skin;
+        Mat unskinned{};
+        pose_rig(v.weapon, v.own_weapon_rig, node_world, &skin, &unskinned);
+        for (const auto& mesh : v.own_weapon.model.meshes) {
+            const auto ti = v.own_weapon_texture.find(mesh.texture_name);
+            PreviewImage image;
+            float tw = 1.0f, th = 1.0f;
+            if (ti != v.own_weapon_texture.end()) {
+                const auto& tex = v.own_weapon.textures[ti->second].second;
+                image = {tex.rgba.data(), tex.width, tex.height};
+                tw = static_cast<float>(tex.width);
+                th = static_cast<float>(tex.height);
+            }
+            auto vertex = [&](const assets::NeutralVertex& vx) {
+                PreviewVertex o;
+                std::array<float, 3> pos{0, 0, 0}, nrm{0, 0, 0};
+                float total = 0.0f;
+                for (std::size_t k = 0; k < 4; ++k) {
+                    const float wgt = vx.weights[k];
+                    if (wgt <= 0.0f)
+                        continue;
+                    const auto found = v.own_weapon_rig.joint_of_palette.find(vx.joints[k]);
+                    const Mat& at = found != v.own_weapon_rig.joint_of_palette.end()
+                                        ? skin[static_cast<std::size_t>(found->second)]
+                                        : unskinned;
+                    const auto q = mat_point(at, vx.position);
+                    const auto n = mat_vec(at, vx.normal);
+                    for (std::size_t c = 0; c < 3; ++c) {
+                        pos[c] += wgt * q[c];
+                        nrm[c] += wgt * n[c];
+                    }
+                    total += wgt;
+                }
+                if (total <= 0.0f) {
+                    pos = mat_point(unskinned, vx.position);
+                    nrm = mat_vec(unskinned, vx.normal);
+                } else if (std::fabs(total - 1.0f) > 1e-4f) {
+                    for (auto& c : pos)
+                        c /= total;
+                }
+                placed(pos, nrm, o);
+                o.uv = {vx.texcoord[0] / tw, vx.texcoord[1] / th};
+                return o;
+            };
+            for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+                p.triangle(vertex(mesh.vertices[mesh.indices[i]]), vertex(mesh.vertices[mesh.indices[i + 1]]),
+                           vertex(mesh.vertices[mesh.indices[i + 2]]), image, !mesh.double_sided, {1, 1, 1});
+        }
+        return;
+    }
+    // the game's own model
+    for (const auto& mesh : v.weapon.model.meshes) {
+        if (mesh.material_alpha <= 0.0f)
+            continue;
+        const Texture* t = mesh.texture_name.empty() ? nullptr : game_texture(v.weapon, v.weapon_textures, mesh.texture_name);
+        PreviewImage image;
+        if (t != nullptr)
+            image = {t->rgba.data(), t->width, t->height, mesh.repeat, mesh.mirror};
+        const float tw = t != nullptr ? static_cast<float>(t->width) : 1.0f;
+        const float th = t != nullptr ? static_cast<float>(t->height) : 1.0f;
+        auto vertex = [&](const assets::NeutralVertex& vx) {
+            PreviewVertex o;
+            std::array<float, 3> pos{0, 0, 0}, nrm{0, 0, 0};
+            for (std::size_t k = 0; k < 4; ++k) {
+                const float wgt = vx.weights[k];
+                const std::uint32_t jt = vx.joints[k];
+                if (wgt <= 0.0f || jt >= palette.size())
+                    continue;
+                const auto q = mat_point(palette[jt], vx.position);
+                const auto n = mat_vec(palette[jt], vx.normal);
+                for (std::size_t c = 0; c < 3; ++c) {
+                    pos[c] += wgt * q[c];
+                    nrm[c] += wgt * n[c];
+                }
+            }
+            placed(pos, nrm, o);
+            o.uv = {vx.texcoord[0] / tw, vx.texcoord[1] / th};
+            o.colour = {vx.color[0] / 255.0f, vx.color[1] / 255.0f, vx.color[2] / 255.0f,
+                        vx.color[3] / 255.0f * mesh.material_alpha};
+            return o;
+        };
+        for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+            p.triangle(vertex(mesh.vertices[mesh.indices[i]]), vertex(mesh.vertices[mesh.indices[i + 1]]),
+                       vertex(mesh.vertices[mesh.indices[i + 2]]), image, false, {1, 1, 1});
+    }
+}
+
 // The base (the game's model, its animation shown) and the character (its clip shown, scaled as the port scales
 // it) side by side, turned and zoomed by the mouse.
 void draw_preview(App& app, const Mod& m, ImVec2 size) {
@@ -417,6 +665,12 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
     const Mat vp =
         orbit_view_projection(v.target, v.yaw, v.pitch, v.distance, static_cast<float>(w) / static_cast<float>(h));
     p.begin(w, h, vp, orbit_eye_direction(v.yaw, v.pitch));
+    // the weapon: in the base's hand (its node the game puts it on), and on the character's bone
+    if (v.show_weapon)
+        take_weapon(app, m);
+    const int hand_node = v.base_ok ? game_node(v.base, base_hand_node()) : -1;
+    const bool weapon = v.show_weapon && v.weapon_ok && hand_node >= 0;
+    std::string weapon_note;
 
     // the base, on the left (drawn both sides: the preview does not claim the DS's winding)
     if (v.base_ok) {
@@ -426,6 +680,8 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
                                 : 0.0f;
         std::vector<Mat> node_world, palette;
         pose_game_model(v.base, anim, frame, &node_world, &palette);
+        if (weapon)
+            draw_weapon(p, node_world[static_cast<std::size_t>(hand_node)], -apart, false);
         for (const auto& mesh : v.base.model.meshes) {
             if (mesh.material_alpha <= 0.0f)
                 continue;
@@ -467,7 +723,28 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
     // the character, on the right: its own clip shown (own skeleton), else at rest
     if (v.have_model) {
         const CharacterClip* clip = own_skeleton() ? clip_of(m, v.shown_clip) : nullptr;
-        const std::vector<Mat> palette = character_palette(v.model, character_pose(v.model, clip, v.time));
+        const std::vector<Mat> worlds = character_pose(v.model, clip, v.time);
+        const std::vector<Mat> palette = character_palette(v.model, worlds);
+        // its weapon on its bone (weapon_bone, else the one named as the base's hand), as the port holds it
+        if (weapon && own_skeleton()) {
+            const std::string hand = base_hand_node();
+            const std::string named = model_value("weapon_bone");
+            const std::string bone = named.empty() ? hand : named;
+            const int at = character_node(v.model, bone);
+            if (at < 0) {
+                weapon_note = fmt(app.language, S::chars_weapon_no_bone, {bone, base_display(app.language, v.base_for)});
+            } else {
+                std::array<float, 3> turn{0, 0, 0};
+                const std::string turned = model_value("weapon_turn");
+                numbers_of(turned, turn.data(), 3);
+                const std::string sized = model_value("weapon_scale");
+                const float weapon_scale = sized.empty() ? 1.0f : static_cast<float>(std::atof(sized.c_str()));
+                const Mat held = held_weapon(worlds, v.model_rest, at, k, turned.empty() ? nullptr : &turn,
+                                             v.base.rest[static_cast<std::size_t>(hand_node)],
+                                             weapon_scale > 0.0f ? weapon_scale : 1.0f);
+                draw_weapon(p, held, apart, true);
+            }
+        }
         for (const auto& mesh : v.model.model.meshes) {
             const auto ti = v.model_texture.find(mesh.texture_name);
             PreviewImage image;
@@ -552,7 +829,14 @@ void draw_preview(App& app, const Mod& m, ImVec2 size) {
     if (ImGui::SmallButton(v.playing ? tr(app.language, S::chars_pause) : tr(app.language, S::chars_play)))
         v.playing = !v.playing;
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", tr(app.language, S::chars_preview_hint));
+    ImGui::Checkbox(tr(app.language, S::chars_show_weapon), &v.show_weapon);
+    const char* hint = tr(app.language, S::chars_preview_hint);
+    beside(ImGui::CalcTextSize(hint).x);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", hint);
+    if (!weapon_note.empty())
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.35f, 1), "%s", weapon_note.c_str());
+    ImGui::PopTextWrapPos();
 }
 
 // --- the file dialogs' answers, taken on the interface's thread ---------------------------------------------
@@ -686,7 +970,7 @@ void draw_character_tab(App& app, const Mod& m) {
     const auto lang = app.language;
     // its words, for every language or one
     const char* const shown = v.language < 0 ? tr(lang, S::chars_all_languages) : kLanguages[v.language];
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(10 * ImGui::GetFontSize(), label_room(tr(lang, S::language))));
     if (ImGui::BeginCombo(tr(lang, S::language), shown)) {
         if (ImGui::Selectable(tr(lang, S::chars_all_languages), v.language < 0))
             v.language = -1;
@@ -700,7 +984,7 @@ void draw_character_tab(App& app, const Mod& m) {
     ImGui::Separator();
     // whose moves it takes: a new character, never one of the game's replaced
     const std::string base = v.ini.get("character", "base");
-    ImGui::SetNextItemWidth(12 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(12 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_moves_like))));
     if (ImGui::BeginCombo(tr(lang, S::chars_moves_like), character_display_name(base).c_str())) {
         for (const auto& b : character_bases())
             if (ImGui::Selectable(character_display_name(b).c_str(), b == base))
@@ -713,7 +997,7 @@ void draw_character_tab(App& app, const Mod& m) {
     const bool with_base = v.ini.get("character", "locked") == "base";
     int locked = with_base ? 1 : 0;
     const char* const lockings[] = {tr(lang, S::chars_locked_no), tr(lang, S::chars_locked_base)};
-    ImGui::SetNextItemWidth(18 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(18 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_locked))));
     if (ImGui::Combo(tr(lang, S::chars_locked), &locked, lockings, 2))
         v.ini.set("character", "locked", locked == 1 ? "base" : "no");
     ImGui::Separator();
@@ -787,18 +1071,23 @@ void draw_weapons(App& app) {
     if (!own)
         ImGui::TextDisabled("%s", tr(lang, same_base ? S::forms_default_section : S::forms_base_weapons));
     std::string gone;
+    const char* choose = tr(lang, S::chars_choose_model);
     for (const auto& n : names) {
         ImGui::PushID(n.c_str());
         std::string file;
         for (const auto& [game, value] : entries)
             if (game == n)
                 file = value;
-        ImGui::BulletText("%s: %s", n.c_str(), file.empty() ? tr(lang, S::forms_base_weapon) : file.c_str());
-        ImGui::SameLine();
-        if (ImGui::SmallButton(tr(lang, S::chars_choose_model)))
+        // a row clicked: that weapon in the preview
+        const std::string text = n + ": " + (file.empty() ? std::string(tr(lang, S::forms_base_weapon)) : file);
+        if (ImGui::Selectable(text.c_str(), v.shown_weapon == n, ImGuiSelectableFlags_AllowOverlap,
+                              ImVec2(ImGui::CalcTextSize(text.c_str(), nullptr, true).x, 0)))
+            v.shown_weapon = n;
+        beside(button_width(choose));
+        if (ImGui::SmallButton(choose))
             ask_files(app, Wanted::weapon, n);
         if (own && !file.empty()) {
-            ImGui::SameLine();
+            beside(button_width("x"));
             if (ImGui::SmallButton("x"))
                 gone = n;
         }
@@ -830,11 +1119,11 @@ void draw_model_tab(App& app) {
     if (ImGui::Button(tr(lang, S::chars_choose_model)))
         ask_files(app, Wanted::model);
     if (!v.form.empty() && own_file) {
-        ImGui::SameLine();
+        beside(button_width(tr(lang, S::forms_back_to_default)));
         if (ImGui::Button(tr(lang, S::forms_back_to_default)))
             v.ini.remove(mp, model_key());
     }
-    ImGui::SameLine();
+    beside(ImGui::CalcTextSize(tr(lang, S::chars_drop_hint)).x);
     ImGui::TextDisabled("%s", tr(lang, S::chars_drop_hint));
     ImGui::Separator();
     // its skeleton
@@ -845,13 +1134,13 @@ void draw_model_tab(App& app) {
         v.ini.set(mp, "skeleton", "paired");
     // its size
     float scale = model_scale();
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(10 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_scale))));
     if (ImGui::InputFloat(tr(lang, S::chars_scale), &scale, 0.0f, 0.0f, "%.4g") && scale > 0.0f) {
         char text[32];
         std::snprintf(text, sizeof(text), "%g", static_cast<double>(scale));
         v.ini.set(mp, "scale", text);
     }
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::chars_match_height)));
     ImGui::BeginDisabled(!v.base_ok || v.model_height <= 0.0f || v.base_height <= 0.0f);
     if (ImGui::Button(tr(lang, S::chars_match_height))) {
         char text[32];
@@ -862,13 +1151,13 @@ void draw_model_tab(App& app) {
     // its hands' weapons' size: the game's, or as the character is to its base
     const std::string weapons = model_value("weapon_scale");
     float weapon_scale = weapons.empty() ? 1.0f : static_cast<float>(std::atof(weapons.c_str()));
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(10 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_weapon_scale))));
     if (ImGui::InputFloat(tr(lang, S::chars_weapon_scale), &weapon_scale, 0.0f, 0.0f, "%.4g") && weapon_scale > 0.0f) {
         char text[32];
         std::snprintf(text, sizeof(text), "%g", static_cast<double>(weapon_scale));
         v.ini.set(mp, "weapon_scale", text);
     }
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::chars_weapon_scale_match)));
     ImGui::BeginDisabled(!v.base_ok || v.model_height <= 0.0f || v.base_height <= 0.0f);
     if (ImGui::Button(tr(lang, S::chars_weapon_scale_match))) {
         char text[32];
@@ -879,7 +1168,7 @@ void draw_model_tab(App& app) {
     // the bone its weapon follows (own skeleton)
     if (own == 0 && v.have_model) {
         const std::string bone = model_value("weapon_bone");
-        ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+        ImGui::SetNextItemWidth(fit(14 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_weapon_bone))));
         if (ImGui::BeginCombo(tr(lang, S::chars_weapon_bone),
                               bone.empty() ? tr(lang, S::chars_weapon_bone_none) : bone.c_str())) {
             if (ImGui::Selectable(tr(lang, S::chars_weapon_bone_none), bone.empty()))
@@ -900,7 +1189,7 @@ void draw_model_tab(App& app) {
             if (turned) {
                 float t[3] = {0, 0, 0};
                 numbers_of(model_value("weapon_turn"), t, 3);
-                ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+                ImGui::SetNextItemWidth(fit(16 * ImGui::GetFontSize()));
                 if (ImGui::DragFloat3("##turn", t, 1.0f, -180.0f, 180.0f, "%.0f")) {
                     char text[64];
                     std::snprintf(text, sizeof(text), "%g %g %g", static_cast<double>(t[0]), static_cast<double>(t[1]),
@@ -1021,8 +1310,9 @@ void draw_animations_tab(App& app, const Mod& m) {
     }
     if (ImGui::Button(tr(lang, S::chars_add_clips)))
         ask_files(app, Wanted::clips);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", fmt(lang, S::chars_clips_count, {std::to_string(clips.size())}).c_str());
+    const std::string count = fmt(lang, S::chars_clips_count, {std::to_string(clips.size())});
+    beside(ImGui::CalcTextSize(count.c_str()).x);
+    ImGui::TextDisabled("%s", count.c_str());
     // a form: its default's clips, or its own
     const std::string ap = part("actions");
     if (!gives_section("actions")) {
@@ -1044,7 +1334,7 @@ void draw_animations_tab(App& app, const Mod& m) {
     }
     auto clip_combo = [&](const char* id, std::string* clip, bool in_table = false) {
         bool changed = false;
-        ImGui::SetNextItemWidth(in_table ? -FLT_MIN : 12 * ImGui::GetFontSize());
+        ImGui::SetNextItemWidth(in_table ? -FLT_MIN : fit(12 * ImGui::GetFontSize(), label_room(id)));
         if (ImGui::BeginCombo(id, clip->empty() ? tr(lang, S::chars_no_clip) : clip->c_str())) {
             if (ImGui::Selectable(tr(lang, S::chars_no_clip), clip->empty())) {
                 clip->clear();
@@ -1129,21 +1419,27 @@ void draw_animations_tab(App& app, const Mod& m) {
     Action a = parse_action(v.ini.get(ap, v.shown_game, &found));
     if (found && !v.shown_game.empty()) {
         bool changed = false;
+        const float em = ImGui::GetFontSize();
+        // a checkbox's width: its box, the gap, its label
+        auto box = [](const char* label) {
+            return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x +
+                   ImGui::CalcTextSize(label, nullptr, true).x;
+        };
         ImGui::TextUnformatted(v.shown_game.c_str());
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+        beside(6 * em + label_room(tr(lang, S::chars_blend)));
+        ImGui::SetNextItemWidth(6 * em);
         changed |= ImGui::InputInt(tr(lang, S::chars_blend), &a.blend, 10, 100);
         changed |= ImGui::Checkbox(tr(lang, S::chars_keep_root), &a.keep);
-        ImGui::SameLine();
+        beside(box(tr(lang, S::chars_game_time)));
         changed |= ImGui::Checkbox(tr(lang, S::chars_game_time), &a.game_time);
         // past its end (its own time only: on the game's beat it is where the game's animation is)
         ImGui::BeginDisabled(a.game_time);
         const char* loops[] = {tr(lang, S::chars_loop_game), tr(lang, S::chars_loop_no), tr(lang, S::chars_loop_yes)};
-        ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+        ImGui::SetNextItemWidth(fit(16 * em, label_room(tr(lang, S::chars_loop))));
         changed |= ImGui::Combo(tr(lang, S::chars_loop), &a.loop, loops, 3);
         if (a.loop == 2) {
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+            beside(6 * em + label_room(tr(lang, S::chars_loop_from)));
+            ImGui::SetNextItemWidth(6 * em);
             changed |= ImGui::InputFloat(tr(lang, S::chars_loop_from), &a.loop_from, 0.1f, 0.5f, "%.2f");
         }
         ImGui::EndDisabled();
@@ -1166,12 +1462,17 @@ void draw_pairs(App& app, const std::string& part_name, const char* key_hint, co
     auto entries = v.ini.entries(part_name);
     bool changed = false;
     int gone = -1;
+    // the two fields share what the line's buttons leave (the file's, the one taking it away)
+    const char* choose = tr(app.language, S::chars_choose_sound);
+    const float buttons = (files ? button_room(choose) : 0.0f) + button_room("x");
+    const float each = fit(16 * ImGui::GetFontSize(), (ImGui::GetContentRegionAvail().x + buttons +
+                                                       ImGui::GetStyle().ItemSpacing.x) * 0.5f);
     for (std::size_t i = 0; i < entries.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
-        ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+        ImGui::SetNextItemWidth(each);
         changed |= ImGui::InputTextWithHint("##key", key_hint, &entries[i].first);
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+        ImGui::SetNextItemWidth(each);
         changed |= ImGui::InputTextWithHint("##value", value_hint, &entries[i].second);
         if (files) {
             ImGui::SameLine();
@@ -1210,7 +1511,7 @@ bool own_section(App& app, const char* section, const std::pair<std::string, std
     const bool own = gives_section(section);
     if (!own) {
         ImGui::TextDisabled("%s", tr(lang, S::forms_default_section));
-        ImGui::SameLine();
+        beside(button_width(tr(lang, S::forms_own_section)));
         if (ImGui::SmallButton(tr(lang, S::forms_own_section))) {
             auto entries = v.ini.entries(section);
             if (entries.empty())
@@ -1414,10 +1715,11 @@ void items_unknown(int item, void* context) {
 bool draw_condition(Language lang, RuleCondition& c) {
     static const S kinds[] = {S::forms_cond_gear, S::forms_cond_links, S::forms_cond_panel, S::forms_cond_dual,
                               S::forms_cond_level, S::forms_cond_hp, S::forms_cond_plugin};
+    const float em = ImGui::GetFontSize();
     bool changed = ImGui::Checkbox(tr(lang, S::forms_not), &c.negate);
-    ImGui::SameLine();
+    beside(10 * em);
     const int kind = static_cast<int>(c.kind);
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(10 * em);
     if (ImGui::BeginCombo("##kind", tr(lang, kinds[kind]))) {
         for (int k = 0; k < 7; ++k) {
             if (ImGui::Selectable(tr(lang, kinds[k]), k == kind) && k != kind) {
@@ -1430,33 +1732,35 @@ bool draw_condition(Language lang, RuleCondition& c) {
         }
         ImGui::EndCombo();
     }
+    // the widths of item_combo, comparison_combo and count_field
+    const float item = 11 * em, op = 3.5f * em, count = 4 * em;
     switch (c.kind) {
     case RuleCondition::gear:
-        ImGui::SameLine();
+        beside(item);
         changed |= item_combo("##gear", v.gears, &c.item, nullptr);
         break;
     case RuleCondition::links:
     case RuleCondition::panel:
-        ImGui::SameLine();
+        beside(item);
         if (c.kind == RuleCondition::links)
             changed |= item_combo("##link", v.links, &c.item, tr(lang, S::forms_any_link));
         else
             changed |= item_combo("##panel", v.panels, &c.item, nullptr);
-        ImGui::SameLine();
+        beside(op);
         changed |= comparison_combo("##op", &c.op);
-        ImGui::SameLine();
+        beside(count);
         changed |= count_field(&c.n);
         break;
     case RuleCondition::level:
     case RuleCondition::hp:
-        ImGui::SameLine();
+        beside(op);
         changed |= comparison_combo("##op", &c.op);
-        ImGui::SameLine();
+        beside(count);
         changed |= count_field(&c.n);
         break;
     case RuleCondition::plugin:
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
+        beside(14 * em);
+        ImGui::SetNextItemWidth(fit(14 * em));
         if (ImGui::InputTextWithHint("##plugin", "mod.condition", &c.name)) {
             c.name.erase(std::remove_if(c.name.begin(), c.name.end(),
                                         [](unsigned char ch) { return std::isspace(ch) || ch == '#'; }),
@@ -1560,39 +1864,39 @@ void draw_form_tab(App& app) {
     const std::string fp = part("");
     std::string why;
     // its id: renamed, copied, taken away, put earlier or later
-    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(10 * ImGui::GetFontSize()));
     ImGui::InputText("##formname", &v.form_name);
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::forms_rename)));
     if (ImGui::Button(tr(lang, S::forms_rename))) {
         if (rename_form(&v.ini, v.form, v.form_name, &why))
             v.form = v.form_name;
         else
             app.tell(fmt(lang, S::save_failed, {why}), false);
     }
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::forms_duplicate)));
     if (ImGui::Button(tr(lang, S::forms_duplicate))) {
         if (duplicate_form(&v.ini, v.form, v.form_name, &why))
             show_form(v.form_name);
         else
             app.tell(fmt(lang, S::save_failed, {why}), false);
     }
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::forms_remove)));
     if (ImGui::Button(tr(lang, S::forms_remove))) {
         remove_form(&v.ini, v.form);
         show_form({});
         return;
     }
-    ImGui::SameLine();
+    beside(ImGui::GetFrameHeight());
     if (ImGui::ArrowButton("##earlier", ImGuiDir_Up))
         move_form(&v.ini, v.form, -1);
-    ImGui::SameLine();
+    beside(ImGui::GetFrameHeight());
     if (ImGui::ArrowButton("##later", ImGuiDir_Down))
         move_form(&v.ini, v.form, +1);
     ImGui::Separator();
     // whom it plays as
     const std::string own_base = v.ini.get(fp, "base");
     const std::string default_base = fmt(lang, S::forms_default_base, {base_display(lang, v.ini.get("character", "base"))});
-    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(16 * ImGui::GetFontSize(), label_room(tr(lang, S::chars_moves_like))));
     if (ImGui::BeginCombo(tr(lang, S::chars_moves_like),
                           own_base.empty() ? default_base.c_str() : base_display(lang, own_base).c_str())) {
         if (ImGui::Selectable(default_base.c_str(), own_base.empty()))
@@ -1604,7 +1908,7 @@ void draw_form_tab(App& app) {
     }
     // its priority
     int priority = std::atoi(v.ini.get(fp, "priority").c_str());
-    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(fit(8 * ImGui::GetFontSize(), label_room(tr(lang, S::forms_priority))));
     if (ImGui::InputInt(tr(lang, S::forms_priority), &priority))
         v.ini.set(fp, "priority", std::to_string(priority));
     ImGui::PushTextWrapPos(0);
@@ -1640,7 +1944,7 @@ void draw_stats_tab(App& app) {
     ImGui::BeginDisabled(!own);
     ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
     ImGui::InputFloat("##scale", &v.stats_scale, 0.0f, 0.0f, "%.2f");
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::stats_scale)));
     if (ImGui::Button(tr(lang, S::stats_scale)) && v.stats_scale > 0.0f) {
         // every level written: its base's values times the number
         rows.clear();
@@ -1656,7 +1960,7 @@ void draw_stats_tab(App& app) {
         }
         changed = true;
     }
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::stats_clear)));
     if (ImGui::Button(tr(lang, S::stats_clear))) {
         rows.clear();
         changed = true;
@@ -1735,7 +2039,8 @@ void draw_forms_bar(App& app) {
     if (!v.form.empty() && std::find(ids.begin(), ids.end(), v.form) == ids.end())
         show_form({});  // taken away, or undone
     const std::string shown = v.form.empty() ? std::string(tr(lang, S::forms_default)) : v.form;
-    ImGui::SetNextItemWidth(12 * ImGui::GetFontSize());
+    const float em = ImGui::GetFontSize();
+    ImGui::SetNextItemWidth(fit(12 * em, label_room(tr(lang, S::forms_page))));
     if (ImGui::BeginCombo(tr(lang, S::forms_page), shown.c_str())) {
         if (ImGui::Selectable(tr(lang, S::forms_default), v.form.empty()))
             show_form({});
@@ -1744,10 +2049,10 @@ void draw_forms_bar(App& app) {
                 show_form(id);
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+    beside(8 * em);
+    ImGui::SetNextItemWidth(8 * em);
     ImGui::InputTextWithHint("##newform", tr(lang, S::forms_new_id), &v.new_form);
-    ImGui::SameLine();
+    beside(button_width(tr(lang, S::forms_add)));
     ImGui::BeginDisabled(v.new_form.empty());
     if (ImGui::Button(tr(lang, S::forms_add))) {
         std::string why;
@@ -1760,8 +2065,11 @@ void draw_forms_bar(App& app) {
         }
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", tr(lang, S::forms_help));
+    const char* help = tr(lang, S::forms_help);
+    beside(ImGui::CalcTextSize(help).x);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", help);
+    ImGui::PopTextWrapPos();
 }
 
 void draw_list(App& app, const Mod& m) {

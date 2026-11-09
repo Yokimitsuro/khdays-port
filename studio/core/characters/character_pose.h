@@ -49,4 +49,15 @@ std::vector<Mat> character_palette(const khdays::assets::ImportedModel& model, c
 // The model's span at rest, posed (its lowest and highest point): for its height against the game's.
 void character_span(const khdays::assets::ImportedModel& model, std::array<float, 3>* lo, std::array<float, 3>* hi);
 
+// The model's node named `name`, -1 when it has none (the port's look for a weapon's bone).
+int character_node(const khdays::assets::ImportedModel& model, const std::string& name);
+
+// Where the port holds a hand's weapon on a character of its own skeleton (port/runtime/mods/model_load.cpp, its
+// weapons; models.cpp khdays_models_node_placed): the weapon model's space to the character's as drawn (its model
+// at `scale`), its bone `bone` at `node_worlds` now and at `rest_worlds` at rest. `turn`: its weapon_turn's degrees
+// (x, then y, then z, on the bone's own axes); null, held as the base holds it: turned from the bone at rest to the
+// base's hand node at rest, `base_hand_rest`. `weapon_scale`: its [model] weapon_scale.
+Mat held_weapon(const std::vector<Mat>& node_worlds, const std::vector<Mat>& rest_worlds, int bone, float scale,
+                const std::array<float, 3>* turn, const Mat& base_hand_rest, float weapon_scale);
+
 }  // namespace studio
