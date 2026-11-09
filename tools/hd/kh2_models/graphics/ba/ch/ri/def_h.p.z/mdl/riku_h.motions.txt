@@ -20,6 +20,13 @@ ds_pose 2 135-156 263-284
 # game's own animations it is turned 30 degrees back about the head's left-right axis (172's own z): over the hood,
 # 1.9 cm off it at rest with no edge of it through the hood, 3.5 cm off his back
 ds_pose rotate 0 0 30 172
+# The glides (Ca000 hover, Ca001 forward): the game leans its upper spine back 33 degrees further than in its idle,
+# so on KH2's model the pelvis tipped forward on the lumbar bone (30 degrees in the hover, 36 forward; the game's run
+# -26, KH2's rest 17): the back arched at the waist and the seat, its colliders and the coat on it stood out behind
+# (user). The pelvis turned 30 degrees back (its bottom forward) there: pelvis on lumbar 3 and 6 degrees, the coat's
+# back rows 23/27/30/36 -> 13/9/12/19 cm behind the spine line in the hover (forward 23/26/29/33 -> 14/9/6/6), no
+# body through it (replay)
+ds_pose rotate 0 0 -30 2 for b_ri_Ca000 b_ri_Ca001
 
 b_ri_A000 0 blend 8
 # The game's idle a `finish` plays out into
@@ -69,7 +76,7 @@ b_ri_B006 blend 8
 b_ri_B007 blend 8
 b_ri_Ca000 blend 8
 b_ri_Ca001 blend 8
-b_ri_Ca002 blend 8
+# b_ri_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_ri_Ca003 blend 8
 b_ri_Ca004 blend 8
 b_ri_Ca005 blend 8

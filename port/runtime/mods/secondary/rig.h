@@ -129,6 +129,8 @@ struct GroupRig {
     std::string name;
     GroupKind kind = GroupKind::chain;
     int reference_bone = -1; // the first `attach` (hair: the tufts' common parent)
+    int lean_bone = -1;      // `lean_bone` (-1: none)
+    Quat lean_rest;          // the reference bone's turn as the lean bone carries it at rest: rest(lean)^-1 rest(ref)
     int first = 0, last = 0; // its particles
     Wind wind;
     int wind_bone = -1; // a `wind bone <b>`'s bone

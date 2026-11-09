@@ -17,10 +17,11 @@ first_pose_iterations 30
 collider pelvis   capsule 2 length 26.8 fit 0.85 tags body
 collider spine    capsule 96 99 fit 0.85 tags torso
 collider chest    capsule 99 length 22.3 fit 0.85 tags torso
-collider thigh_l  capsule 5 6 offset 15.7 0 0 fit 0.9 tags legs
+# the thighs sized on their thinned meshes (front/back 10-11 cm, 0.9 of it; fitted they stood 11.5)
+collider thigh_l  capsule 5 6 offset 15.7 0 0 radius 10.0 8.5 tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
 collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
-collider thigh_r  capsule 14 15 offset 15.7 0 0 fit 0.9 tags legs
+collider thigh_r  capsule 14 15 offset 15.7 0 0 radius 10.0 8.5 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
 collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
 collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
@@ -45,6 +46,11 @@ collider chest_strings capsule 99 100 radius 15.5 tags strings
 # Each strip runs from just under the belt to the hem. 85 is shared: the front
 # forks under it into two panels (88-90 and 92-94) with the slit between them.
 group coat surface preset kh2_coat
+  # replay on axel_h, the game's own animations: swings held closer (the 2-hit attack stretched the strips 411%, 66% held)
+  # and the drawn shape eased less, so the guard pulling lagging faces off the legs jumps less (B002 82->27 cm,
+  # guard 51->37, run 27->19 cm p99)
+  swing_limit 40 hem 55
+  smoothing 0.05
   attach 2
   strip 26 29 30 31 32
   strip 34 37 38 39 40

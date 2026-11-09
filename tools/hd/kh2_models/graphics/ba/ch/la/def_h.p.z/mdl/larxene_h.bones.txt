@@ -50,12 +50,22 @@ kh2_188 Bip01_R_Hand
 # roxas_bf_h's).
 ik kh2_5 kh2_6 kh2_9 exact 0 7.7 1.6
 ik kh2_14 kh2_15 kh2_18 exact 0 7.7 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (her right knee 175 degrees in the game's Ca006 (the game's 141))
+lower_hips 1
 ik kh2_109 kh2_110 kh2_127
 ik kh2_170 kh2_171 kh2_188
 
 # The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
 # roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
 mesh_scale kh2_2 1 0.9 1
+# The pelvis inside the coat's closed top hidden: from under its waist (119.2 cm) to above its front slit (108.7 cm),
+# where it closes all round, so nothing hidden shows through the slit (the hip joints at 108.3)
+hide kh2_2 from 117 to 111 fade 4
+# the thighs 0.9 front to back (their own y), as riku_h's, so they push less through the coat
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
 
 # `align`: the feet turned onto the game's at rest by their shape. Not the hands: their bones carry the knives' vertices
 # too, and at rest they lie within 3 degrees of the game's.

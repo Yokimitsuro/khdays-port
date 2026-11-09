@@ -14,9 +14,15 @@ first_pose_iterations 30
 
 # --- Body colliders (KH2 bones): roxas_b_h's, fixed sizes taken by his (about 1.12 times Roxas's: thigh 37.2 cm
 # against 33.4, chest bone 20.4 against 14.0, foot 25 cm against 22); the hands are the same size as Roxas's ---
-# the pelvis and thighs at their thinner meshes (bones.txt's `mesh_scale`): the radii `fit 0.85` and `fit 0.9` find
+# the thighs at their thinner meshes (bones.txt's `mesh_scale`): the radii `fit 0.9` finds
 # on them (85th and 90th percentile, each half), which `fit` itself would take from the unscaled vertices
-collider pelvis   capsule 2 length 21.6 radius 14.9 16.5 tags body
+# The pelvis as two capsules side by side (5 cm each way), wide across the hips and flatter front to back as its
+# mesh is (side 16.5 cm, back 13): one round capsule (radius 14.9 16.5) held the back strips 16-18 cm behind its
+# axis, and its round end (to 38 cm under the waist) stood the coat out behind the seat in the glides (Ca000 hover,
+# Ca001 forward: replay, center back row 2 behind the spine line, hover 33 -> 30 cm, forward 32 -> 29); the idle,
+# guard and attacks keep their shape (back strip within 1-2 cm). Smaller ends creased the idle's back between the legs
+collider pelvis_l capsule 2 length 21.6 offset 0 0 5 radius 12.5 14 tags body
+collider pelvis_r capsule 2 length 21.6 offset 0 0 -5 radius 12.5 14 tags body
 collider spine    capsule 96 98 fit 0.85 tags torso
 collider chest    capsule 98 length 21.1 fit 0.85 tags torso
 collider thigh_l  capsule 5 6 offset 13.4 0 0 radius 10.0 8.7 tags legs
@@ -28,6 +34,12 @@ collider foot_r   capsule 18 length 14.4 radius 5.0 3.9 tags legs
 # the heels, as roxas_b_h's (6 cm: 8 pinned Roxas's coat at a wall)
 collider heel_l   capsule 9 length 12.3 radius 6 6 offset 0 4.8 0 tags legs
 collider heel_r   capsule 18 length 12.3 radius 6 6 offset 0 4.8 0 tags legs
+# the soles to past the toes (the capsules above run down from the ankle; the toes, 18 cm ahead of it, had none).
+# The feet collide with the coat again: in the glides (Ca000/Ca001, the pelvis turned under: motions.txt) the
+# coat hangs in over the raised feet and they came 5.7 cm through it (replay, 1730 vertex-frames over 1 cm in the
+# hover); now 1.0 at most. The cost: the guard's coat jumps more (9.4 -> 13.2 cm p99), the jump pokes more often
+collider toe_l    capsule 10 12 end_offset 0 -6 0 radius 4.5 3.5 tags legs
+collider toe_r    capsule 19 21 end_offset 0 -6 0 radius 4.5 3.5 tags legs
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
 collider hand_l   sphere 133 offset 7 0 0 radius 4.5 side rest tags hands left_hand
@@ -72,17 +84,25 @@ end
 
 # --- Drawstrings: chains from the chest helpers (102, 230), hung at load ---
 group string_l chain preset kh2_string
+  collide torso body arms
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
+  collide torso body arms
   attach 99
   chain 231 232 233 234
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 
@@ -136,4 +156,33 @@ control land_front
   follow_bone_scale 3
   time 0 0.4 seconds
   blend 0.05 0.25
+end
+
+# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
+# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# B002, hem bones swept 25 cm a frame by the calves in the run)
+control days_moves
+  animation b_ri_A001 b_ri_A012 b_ri_A013 b_ri_B000 b_ri_B001 b_ri_B002 b_ri_B003 b_ri_B004 b_ri_B005 b_ri_B006 b_ri_B007 b_ri_Ca002 b_ri_Ca004 b_ri_Ca005 b_ri_Ca006 b_ri_Ca007 b_ri_Ca008 b_ri_D000 b_ri_D001 b_ri_D002 b_ri_D003 b_ri_L000 b_ri_L001 b_ri_L002 b_ri_L003
+  groups coat
+  inertia 0.6
+  follow_frequency 8 hem 3
+  blend 0.15 0.15
+end
+
+# The glide hover (Ca000) and forward glide (Ca001), held and looped by the game, out of days_moves: the game tips
+# the pelvis 19-20 degrees back against the spine in them (the idle -6, the run -3, KH2's rest +13), and the 8 Hz
+# held the coat in its shape on it, flared out behind the seat. The back strips leave the raised thighs and the coat
+# follows at 2 Hz (hem 0.7) so it hangs (replay, center back rows 2-4 behind the spine line, seat 16-20: hover
+# 33/40/47 -> 27/30/36 cm, forward 32/39/46 -> 26/29/33); at 1.5 or less the calves came 2-3 cm through in Ca001
+control glide_back
+  animation b_ri_Ca000 b_ri_Ca001
+  bones 26 29 30 31 32 50 53 54 55 56 74 77 78 79 80
+  follow_bone_scale 0
+  blend 0.15 0.15
+end
+control glide
+  animation b_ri_Ca000 b_ri_Ca001
+  groups coat
+  follow_frequency 2 hem 0.7
+  blend 0.15 0.15
 end

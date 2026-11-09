@@ -44,12 +44,22 @@ kh2_254 Bip01_R_Hand
 # offset keeps KH2's sole on the game's: his ankle stands 18.2 over its sole, the game's 8.3 (the 1.6 is roxas_bf_h's).
 ik kh2_5 kh2_6 kh2_9 exact 0 9.8 1.6
 ik kh2_14 kh2_15 kh2_18 exact 0 9.8 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (his left knee 175 degrees in the game's Ca005 (the game's 151))
+lower_hips 1
 ik kh2_130 kh2_131 kh2_152
 ik kh2_232 kh2_233 kh2_254
 
 # The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
 # roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
 mesh_scale kh2_2 1 0.9 1
+# The pelvis inside the coat's closed top hidden: from under its waist (126.6 cm) to above its front slit (115.1 cm),
+# where it closes all round, so nothing hidden shows through the slit (the hip joints at 110.0)
+hide kh2_2 from 124 to 117 fade 4
+# the thighs 0.9 front to back (their own y), as riku_h's, so they push less through the coat
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
 
 # `align`: the hands and feet turned onto the game's at rest by their shape.
 align kh2_9 foot

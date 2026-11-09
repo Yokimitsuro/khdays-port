@@ -49,6 +49,9 @@ collider chest_strings capsule 120 121 radius 12.3 tags strings
 # Each strip runs from just under the belt to the hem. 85 is shared: the front
 # forks under it into two panels (88-90 and 92-94) with the slit between them.
 group coat surface preset kh2_coat
+  # more damping toward the hem: in the replay, Days' attacks' drawn jitter p99 30 -> 26 cm (B002), KH2's run
+  # 37 -> 33, nothing else worse; higher speed caps cut the run further but let a leg through in B002
+  damping 2.5 hem 6
   attach 2
   strip 26 29 30 31 32
   strip 34 37 38 39 40
@@ -96,6 +99,9 @@ end
 # --- Drawstrings: chains from the hood's neck bone (176), hung at load. B_EX390's hang straight down at rest,
 # a centimetre into the coat's chest; hung forward, they settle against `chest_strings` ---
 group string_l chain preset kh2_string
+  # calmer tips: Days' attack B000 drawn jitter p99 19.6 -> 13.2 cm (both changes)
+  damping 3.5
+  max_speed 5
   collide torso body strings
   attach 176
   chain 183 184 185 186
@@ -104,6 +110,8 @@ group string_l chain preset kh2_string
   mode simulated
 end
 group string_r chain preset kh2_string
+  damping 3.5
+  max_speed 5
   collide torso body strings
   attach 176
   chain 188 189 190 191

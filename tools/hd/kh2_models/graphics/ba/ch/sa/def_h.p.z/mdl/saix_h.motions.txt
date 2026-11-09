@@ -11,11 +11,19 @@ root_motion off
 # What the game holds at its weapon node (sa_h_R), on his claymore's bone (379; bones.txt places it on that node).
 # Under KH2 motions it follows the bone; under the game's own animations the node. At rest Days' claymore runs along
 # its z (-37.9 to 195.2 cm), is 153 wide across its y and 11 thick along its x; KH2's (meshes 10-13, 16) along 379's x
-# (-38.6 to 199.1), 154 across its y, 10 thick along its z: Days' z to +x, y to y, x to -z, the grips together.
-weapon sa_h_R 379 rotate 0 90 0
+# (-38.6 to 199.1), 154 across its y, 10 thick along its z: Days' z to +x, y to y, x to -z, the grips together
+# (`rotate 0 90 0`). But KH2's motions hold 379 turned 179 degrees from where the game's animations hold the node in his
+# hand (about the blade, in every slot measured: the replay's 346-to-379 turn), so the claymore flipped between them
+# (user): this turn holds it in KH2 motions as the game's animations do.
+weapon sa_h_R 379 rotate 138.4 -87.4 10.9
 
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
 ds_pose 0 135-156 348-369
+# His five long strands (176-180, 213-222, 272-281) hang at rest straight down from his head, and the game's
+# animations tip his head 17 degrees further forward on his chest than KH2's idle: the hair they are guided to ran
+# through his chest and out the front of his neck (user). Turned as slot 0 turns them (back along his back), the
+# replay's crossings of his chest's mesh fell by four fifths in the game's run (A001) and B005.
+ds_pose 0 176-180 213-222 272-281
 
 # KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
 b_sa_A000 0 blend 8
@@ -67,7 +75,7 @@ b_sa_B010 blend 8
 b_sa_B011 blend 8
 b_sa_Ca000 blend 8
 b_sa_Ca001 blend 8
-b_sa_Ca002 blend 8
+# b_sa_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_sa_Ca003 blend 8
 b_sa_Ca004 blend 8
 b_sa_Ca005 blend 8
@@ -83,3 +91,11 @@ b_sa_L001 blend 8
 b_sa_L002 blend 8
 b_sa_L003 blend 8
 b_sa_L004 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (run +12, glide
+# hover +23, forward glide +29 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -10 2 for b_sa_A001
+ds_pose rotate 0 0 -21 2 for b_sa_Ca000
+ds_pose rotate 0 0 -27 2 for b_sa_Ca001

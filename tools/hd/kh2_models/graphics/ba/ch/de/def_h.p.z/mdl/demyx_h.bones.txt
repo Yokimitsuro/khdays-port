@@ -47,6 +47,9 @@ kh2_231 Bip01_R_Hand
 # offset keeps KH2's sole on the game's: his ankle stands 14.2 over its sole, the game's 9.5 (the 1.6 is roxas_bf_h's).
 ik kh2_5 kh2_6 kh2_9 exact 0 4.7 1.6
 ik kh2_14 kh2_15 kh2_18 exact 0 4.7 1.6
+# His legs bend as they did before the game's-own-leg bend (`ik_side`, docs/RENDERING.md): set up as at the last
+# commit, he looked better (user)
+ik_side kh2_hip
 ik kh2_111 kh2_112 kh2_133
 ik kh2_209 kh2_210 kh2_231
 

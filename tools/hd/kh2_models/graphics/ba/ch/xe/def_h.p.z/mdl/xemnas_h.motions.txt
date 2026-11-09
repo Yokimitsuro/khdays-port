@@ -41,13 +41,11 @@ air b_xe_A005 16 land 17 finish blend 8
 air b_xe_A006 16 land 17 finish blend 8
 air b_xe_A007 18 land 19 finish blend 8
 air b_xe_A008 18 land 19 finish blend 8
-# B_EX170_LAST's 00M (slot 256) for the game's Ca000
+# B_EX170_LAST's 00M (slot 256) for the game's glide hover (Ca000)
 b_xe_Ca000 256 blend 8
-# B_EX170_LAST's 01M (its slot 152: 408) for the game's Ca001, from its loop point (tick 60, its end: it does not loop),
-# so the pose holds its last frame while the game plays Ca001. Its bones travel two thirds as far as its root motion
-# says (688.4 cm forward of 1026.0 at tick 60; 158 of 238 at 40), so taking the root motion out left the body 337.6 cm
-# behind his place: `offset` puts it back (KH2 centimetres, z forward)
-b_xe_Ca001 408 start_loop offset 0 0 337.6 blend 8
+# The game's forward glide (Ca001) stays the game's (user: only the hover from KH2), fading into the idle over 8
+# frames; it played B_EX170_LAST's 01M (slot 408) held at its end
+b_xe_Ca001 blend 8
 
 # The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
 # take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B006, B010-B016, ba/ch/xe/am.p2), the guard and the
@@ -73,7 +71,7 @@ b_xe_B013 blend 8
 b_xe_B014 blend 8
 b_xe_B015 blend 8
 b_xe_B016 blend 8
-b_xe_Ca002 blend 8
+# b_xe_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_xe_Ca003 blend 8
 b_xe_Ca004 blend 8
 b_xe_Ca005 blend 8
@@ -88,3 +86,9 @@ b_xe_L000 blend 8
 b_xe_L001 blend 8
 b_xe_L002 blend 8
 b_xe_L003 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (forward glide +38
+# degrees, replay) taken to about +3
+ds_pose rotate 0 0 -38 2 for b_xe_Ca001

@@ -842,6 +842,9 @@ void load_kh2_motions(Model &model, const std::string &path)
                 source_of[static_cast<std::size_t>(t)] = s;
             }
             auto retarget = std::make_shared<kh2::Retarget>(*model.kh2_skeleton, *own, source_of, limbs);
+            model.kh2_retarget_keyed.assign(source_of.size(), 0);
+            for (std::size_t b = 0; b < source_of.size(); ++b)
+                model.kh2_retarget_keyed[b] = source_of[b] >= 0 ? 1 : 0;
             // `carry`: the bone on the other where an `own` slot's first frame has it (both unscaled)
             for (const Carry &c : carries) {
                 const kh2::Motion *motion = motions->motion(c.at);
@@ -872,6 +875,7 @@ void load_kh2_motions(Model &model, const std::string &path)
                     retarget->carry(c.bone, c.by,
                                     mul(inverse(unscaled(g[static_cast<std::size_t>(c.by)])),
                                         unscaled(g[static_cast<std::size_t>(c.bone)])));
+                    model.kh2_retarget_keyed[static_cast<std::size_t>(c.bone)] = 1;
                 } catch (const std::runtime_error &e) {
                     say(std::string(e.what()) + "; check its bones; the `carry` line is ignored");
                 }
@@ -905,6 +909,7 @@ void load_kh2_motions(Model &model, const std::string &path)
             "); check the files motions.txt names; the game's animations are played");
         model.kh2_motions.reset();
         model.kh2_retarget.reset();
+        model.kh2_retarget_keyed.clear();
         model.kh2_own_slots.clear();
         model.weapon_motions.reset();
         resolve_ds_poses(model, ds_rules, say);
@@ -1540,6 +1545,7 @@ void play_kh2(Model &m, const Mat &base)
                                           actor.main_blend, actor.tail.active()) &&
                    actor.shown.size() == skin.size()) {
             actor.held = actor.shown;
+            actor.held_keyed = actor.shown_keyed;
             actor.held_fade.start(actor.main_blend);
             actor.held_from = actor.main;
             actor.held_from_ratio = 1.0F;
@@ -1549,6 +1555,11 @@ void play_kh2(Model &m, const Mat &base)
         }
         // the pose held relative to the model's root (where the game puts it now), mixed as frames
         const float w = actor.held_fade.weight();
+        if (w > 0.0F && actor.held.size() == skin.size()) {
+            kh2_own_share = w * actor.held_keyed[0] + (1.0F - w) * kh2_own_share;
+            kh2_retargeted_share = w * actor.held_keyed[1] + (1.0F - w) * kh2_retargeted_share;
+        }
+        actor.shown_keyed = {kh2_own_share, kh2_retargeted_share};
         if (w > 0.0F && actor.held.size() == skin.size())
             for (std::size_t j = 0; j < skin.size(); ++j) {
                 const Mat both[2] = {mul(base, actor.held[j]), mul(skin[j], m.kh2_rest[j])};
@@ -1595,6 +1606,9 @@ void play_kh2(Model &m, const Mat &base)
         game = 0.0F;
     }
     kh2_game_share = game / total;
+    for (const Pose &pose : poses)
+        (pose.slot >= 0 && !own_slot(m, static_cast<std::size_t>(pose.slot)) ? kh2_retargeted_share : kh2_own_share) +=
+            pose.weight / total;
     // `weapon_motions`: each pose's slot played on the weapon at its time, mixed as the poses are; a slot the weapon
     // has no motion for counts as the game's own pose, held as Days holds it (the held pose, and its share)
     if (m.weapon_motions) {
@@ -1689,12 +1703,15 @@ void play_kh2(Model &m, const Mat &base)
         game_frame[j] = mul(skin[j], m.kh2_rest[j]);
     std::vector<Mat> frames;
     std::vector<float> weights;
-    for (std::size_t j = 0; j < count; ++j) {
+    for (const int at : m.mix_order) {
+        const auto j = static_cast<std::size_t>(at);
+        if (j >= count)
+            continue;
         const int bone = m.kh2_bone[j];
         if (bone < 0)
             continue;
         const int parent = m.joints[j].mix_parent;
-        const bool on_parent = parent >= 0 && static_cast<std::size_t>(parent) < j && is_mixed[parent] != 0;
+        const bool on_parent = parent >= 0 && static_cast<std::size_t>(parent) < count && is_mixed[parent] != 0;
         const auto b = static_cast<std::size_t>(bone);
         const auto pb = on_parent ? static_cast<std::size_t>(m.kh2_bone[static_cast<std::size_t>(parent)]) : 0U;
         frames.assign(1, on_parent ? mul(inverse(game_frame[static_cast<std::size_t>(parent)]), game_frame[j])

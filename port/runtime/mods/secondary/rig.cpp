@@ -242,6 +242,21 @@ void Cook::group(std::size_t gi)
         rig.groups.push_back(gr);
         return;
     }
+    if (g.lean_given) {
+        gr.lean_bone = resolve_bone(sk, g.lean_bone, file, out);
+        if (gr.lean_bone == gr.reference_bone) {
+            error(g.lean_bone.line, "group " + g.name + ": lean_bone " + g.lean_bone.text +
+                                        " is its reference bone (the first attach); name another body bone");
+            gr.lean_bone = -1;
+        } else if (gr.lean_bone >= 0) {
+            constexpr float kDeg = 0.0174532925F;
+            const Quat turn = axis_angle({0.0F, 0.0F, 1.0F}, g.lean_turn.z * kDeg) *
+                              axis_angle({0.0F, 1.0F, 0.0F}, g.lean_turn.y * kDeg) *
+                              axis_angle({1.0F, 0.0F, 0.0F}, g.lean_turn.x * kDeg);
+            gr.lean_rest = normalized(conjugate(rest[static_cast<std::size_t>(gr.lean_bone)].q) *
+                                      rest[static_cast<std::size_t>(gr.reference_bone)].q * turn);
+        }
+    }
     const std::uint32_t mask = g.collide_given ? tags(g.collide, g.line, "group " + g.name) : 0xffffffffU;
     gr.shell_push = g.shell_push.empty() ? 0U : tags(g.shell_push, g.line, "group " + g.name + ": shell_push");
     // self-collision groups by name
@@ -746,8 +761,11 @@ void Cook::finish()
     std::set<int> need;
     for (const auto &p : rig.particles)
         need.insert(p.bone);
-    for (const auto &g : rig.groups)
+    for (const auto &g : rig.groups) {
         need.insert(g.reference_bone);
+        if (g.lean_bone >= 0)
+            need.insert(g.lean_bone);
+    }
     for (const auto &b : rig.blends)
         for (int k = 0; k < b.count; ++k)
             need.insert(b.bone[static_cast<std::size_t>(k)]);

@@ -53,10 +53,18 @@ ik kh2_324 kh2_325 kh2_346
 # The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
 # roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
 mesh_scale kh2_2 1 0.9 1
+# The upper thighs 10% thinner front to back (their y), as riku_h's, so they stay under the coat in the game's
+# strides; the pelvis under the coat not drawn, from 3 cm under the coat's own top (its vertices up to 120.9 cm) down to
+# the hip joints (114.8), faded back in over 4 cm (model cm at rest)
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+hide kh2_2 from 118 to 115 fade 4
 
-# `align`: the hands and feet turned onto the game's at rest by their shape.
-align kh2_9 foot
-align kh2_18 foot
+# `align`: the hands turned onto the game's at rest by their shape; the feet given no rest correction (`rest`, as
+# xaldin_h's): by their shape the toes stood 1.4-1.6 cm over the heels on the ground in the game's run and B000 (the
+# pass, replay), with none -0.1
+align kh2_9 rest
+align kh2_18 rest
 align kh2_133 hand
 align kh2_346 hand
 

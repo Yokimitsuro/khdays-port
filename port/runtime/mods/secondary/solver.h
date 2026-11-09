@@ -128,6 +128,8 @@ private:
     Vec3 reference_point(std::size_t i, const std::vector<Frame> &pose) const;
     std::array<float, 4> blend_weights(const ReferenceBlend &b, const std::vector<Frame> &pose, float scale) const;
     Frame reference_frame(int sim, const std::vector<Frame> &pose) const;
+    // `lean`: a turn about the group's reference bone's head (identity without a `lean_bone`) and that head
+    std::pair<Quat, Vec3> lean_of(int group, float lean, const std::vector<Frame> &pose) const;
     Vec3 animated_of(std::size_t i, const std::vector<Frame> &pose) const;
     void place_kinematic(const std::vector<Frame> &pose);
     void shapes(const std::vector<Frame> &pose, std::vector<Shape> &out) const;

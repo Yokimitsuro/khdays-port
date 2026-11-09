@@ -20,12 +20,12 @@ collider spine    capsule 96 98 fit 0.85 tags torso
 collider chest    capsule 98 length 20 fit 0.85 tags torso
 collider thigh_l  capsule 5 6 offset 17.6 0 0 fit 0.9 tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
-collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
+collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags feet
 collider thigh_r  capsule 14 15 offset 17.6 0 0 fit 0.9 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
-collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
-collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
-collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags feet
+collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags feet
+collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags feet
 collider arm_l    capsule 126 127 fit 0.85 side motion tags arms
 collider forearm_l capsule 127 128 fit 0.85 side motion tags arms
 collider hand_l   sphere 148 offset 8.2 0 0 radius 4.8 side rest tags hands left_hand
@@ -90,6 +90,10 @@ group string_l chain preset kh2_string
   chain 118 119 120 121
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string (the pass, 2026-11-08: worst frame 48 -> 32 cm); his arms left out, which
+  # held a tip 8 cm inside the right arm in the spin B002
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
@@ -98,6 +102,10 @@ group string_r chain preset kh2_string
   chain 256 257 258 259
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string (the pass, 2026-11-08: worst frame 48 -> 32 cm); his arms left out, which
+  # held a tip 8 cm inside the right arm in the spin B002
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 
@@ -151,5 +159,16 @@ control own_motions
   follow_frequency 6 hem 3
   follow_damping 0.8
   follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
+# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# B002, hem bones swept 25 cm a frame by the calves in the run)
+control days_moves
+  animation b_xe_A001 b_xe_A009 b_xe_A010 b_xe_A011 b_xe_A012 b_xe_A013 b_xe_B000 b_xe_B001 b_xe_B002 b_xe_B003 b_xe_B004 b_xe_B005 b_xe_B006 b_xe_B007 b_xe_Ca002 b_xe_Ca003 b_xe_Ca004 b_xe_Ca005 b_xe_Ca006 b_xe_Ca007 b_xe_Ca008 b_xe_D000 b_xe_D001 b_xe_D002 b_xe_D003 b_xe_L000 b_xe_L001 b_xe_L002 b_xe_L003
+  groups coat
+  inertia 0.6
+  follow_frequency 8 hem 3
   blend 0.15 0.15
 end

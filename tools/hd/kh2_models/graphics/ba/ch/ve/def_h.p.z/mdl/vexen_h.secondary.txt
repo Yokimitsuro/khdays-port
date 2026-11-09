@@ -79,24 +79,33 @@ group coat surface preset kh2_coat
   bone 78 follow_bone_scale 0.4
   bone 79 follow_bone_scale 0.3
   bone 80 follow_bone_scale 0.2
+  # in the game's own animations a leg could throw the front fork (83) across the slit, up to 90 cm a frame
+  # (replay --days run): it rides its target, and contact moves no control faster than 5 m/s past its target
+  max_speed 5
+  bone 83 no_sim 1
   mode simulated
 end
 
 # --- Drawstrings: chains from the collar (97), hung at load: they stick straight forward at rest ---
 group string_l chain preset kh2_string
-  collide torso body strings
+  # the arms too, and damped: the tips no longer whip when the hands cross the chest
+  collide torso body strings arms
   attach 97
   chain 101 102 103 104
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
-  collide torso body strings
+  collide torso body strings arms
   attach 97
   chain 212 213 214 215
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 

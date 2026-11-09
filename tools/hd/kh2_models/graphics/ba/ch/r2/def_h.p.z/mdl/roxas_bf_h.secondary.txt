@@ -96,6 +96,9 @@ end
 # --- Drawstrings: chains from the hood's neck bone (176), hung at load. B_EX390's hang straight down at rest,
 # a centimetre into the coat's chest; hung forward, they settle against `chest_strings` ---
 group string_l chain preset kh2_string
+  # calmer tips: no worse anywhere, penetration lower (B000 3.3 -> 1.1 cm); the coat's extra hem damping made Days' attacks worse here
+  damping 3.5
+  max_speed 5
   collide torso body strings
   attach 176
   chain 183 184 185 186
@@ -104,6 +107,8 @@ group string_l chain preset kh2_string
   mode simulated
 end
 group string_r chain preset kh2_string
+  damping 3.5
+  max_speed 5
   collide torso body strings
   attach 176
   chain 188 189 190 191

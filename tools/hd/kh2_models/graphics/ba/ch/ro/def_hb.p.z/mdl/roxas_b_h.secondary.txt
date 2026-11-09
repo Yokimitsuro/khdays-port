@@ -45,6 +45,9 @@ collider head     sphere 169 offset 7 1 0 radius 9 tags head
 # Each strip runs from just under the belt to the hem. 85 is shared: the front
 # forks under it into two panels (88-90 and 92-94) with the slit between them.
 group coat surface preset kh2_coat
+  # more damping toward the hem: in the replay, Days' attacks' drawn jitter p99 30 -> 26 cm (B002), KH2's run
+  # 37 -> 33, nothing else worse; higher speed caps cut the run further but let a leg through in B002
+  damping 2.5 hem 6
   attach 2
   strip 26 29 30 31 32
   strip 34 37 38 39 40
@@ -91,6 +94,9 @@ end
 
 # --- Drawstrings: chains from the chest helpers, hung at load ---
 group string_l chain preset kh2_string
+  # calmer tips: Days' guard Ca003 max 21 -> 7.6 cm, attack B002's string peaks 32 -> 24
+  damping 3.5
+  max_speed 5
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
@@ -98,6 +104,8 @@ group string_l chain preset kh2_string
   mode simulated
 end
 group string_r chain preset kh2_string
+  damping 3.5
+  max_speed 5
   attach 99
   chain 220 221 222 223
   hang 0 -1 0.35

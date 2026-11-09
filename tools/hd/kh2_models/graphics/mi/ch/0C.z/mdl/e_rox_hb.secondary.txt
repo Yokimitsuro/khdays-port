@@ -118,6 +118,9 @@ end
 
 # --- Drawstrings: chains from the chest helpers, hung at load ---
 group string_l chain preset kh2_string
+  # calmer tips: KH2's run drawn jitter p99 10.1 -> 7.5 cm
+  damping 3.5
+  max_speed 5
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
@@ -125,6 +128,8 @@ group string_l chain preset kh2_string
   mode simulated
 end
 group string_r chain preset kh2_string
+  damping 3.5
+  max_speed 5
   attach 99
   chain 220 221 222 223
   hang 0 -1 0.35

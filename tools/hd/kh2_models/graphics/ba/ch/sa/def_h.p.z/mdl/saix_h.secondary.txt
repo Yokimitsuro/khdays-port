@@ -19,14 +19,14 @@ collider pelvis   capsule 2 length 22.1 fit 0.85 tags body
 collider spine    capsule 96 98 fit 0.85 tags torso
 # 21.5 of the 27.6 from 98 to the collar (99), as demyx_h's 18 of 23.2: at its full length its end reaches the hood
 collider chest    capsule 98 length 21.5 fit 0.85 tags torso
-collider thigh_l  capsule 5 6 offset 17.8 0 0 fit 0.9 tags legs
+collider thigh_l  capsule 5 6 offset 17.8 0 0 fit 0.8 tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
-collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
-collider thigh_r  capsule 14 15 offset 17.8 0 0 fit 0.9 tags legs
+collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags feet
+collider thigh_r  capsule 14 15 offset 17.8 0 0 fit 0.8 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
-collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
-collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
-collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags feet
+collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags feet
+collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags feet
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
 collider hand_l   sphere 133 offset 8.2 0 0 radius 4.8 side rest tags hands left_hand
@@ -86,19 +86,25 @@ end
 
 # --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
 group string_l chain preset kh2_string
-  collide torso body strings
+  collide torso body arms strings
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
-  collide torso body strings
+  collide torso body arms strings
   attach 99
   chain 316 317 318 319
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 
@@ -139,5 +145,16 @@ control own_motions
   follow_frequency 6 hem 3
   follow_damping 0.8
   follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
+# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# B002, hem bones swept 25 cm a frame by the calves in the run)
+control days_moves
+  animation b_sa_A001 b_sa_A009 b_sa_A010 b_sa_A011 b_sa_A012 b_sa_A013 b_sa_B000 b_sa_B001 b_sa_B002 b_sa_B003 b_sa_B004 b_sa_B005 b_sa_B006 b_sa_B007 b_sa_Ca000 b_sa_Ca001 b_sa_Ca002 b_sa_Ca003 b_sa_Ca004 b_sa_Ca005 b_sa_Ca006 b_sa_Ca007 b_sa_Ca008 b_sa_D000 b_sa_D001 b_sa_D002 b_sa_D003 b_sa_L000 b_sa_L001 b_sa_L002 b_sa_L003
+  groups coat
+  inertia 0.6
+  follow_frequency 8 hem 3
   blend 0.15 0.15
 end

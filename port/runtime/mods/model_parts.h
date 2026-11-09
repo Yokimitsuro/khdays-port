@@ -330,6 +330,12 @@ struct Model {
     // turns) before the model is posed on it, so `place`d joints and `spine ... onto` land on a skeleton of the model's
     // size; node_rest_place is scaled with it
     float game_scale = 1.0F;
+    // bones.txt's `lower_hips <share>`: in the game's own animations the body lowered by that share of what its `exact`
+    // legs lack of the game's leg lengths, so the knees bend as the game's do (feet stay on the game's)
+    float lower_hips = 0.0F;
+    // bones.txt's `ik_side kh2_hip`: an `exact` leg bends toward the game's knee as seen from the model's own hip, not
+    // the way it stands off the game's own leg (reach); the bend as it was before that (demyx_h, user)
+    bool ik_side_from_hip = false;
     int cull = 0;                       // bones.txt's `cull`: 0 the file's own, 1 back faces culled, 2 both sides drawn
     std::set<std::uint32_t> kept_lists; // bones.txt's `keep`: the game's shapes still drawn (their lists' places)
     int setting = -1;                   // bones.txt's `switch`: the HD replacement it follows (hud_settings.h)
@@ -383,8 +389,9 @@ struct Model {
     std::vector<Mat> node_local;
     std::vector<std::array<float, 3>> node_rest_place; // each game node's head at rest (model space)
     std::vector<Stretch> stretches;                    // `place`'s bones stretched to their placed child, parents first
-    Spine spine;                                       // `spine` (end -1: none)
-    int draws = 0;                                     // for the session log's diagnosis
+    std::vector<int> mix_order;         // the joints in the order poses are mixed: each after its `mix_parent`
+    Spine spine;                        // `spine` (end -1: none)
+    int draws = 0;                      // for the session log's diagnosis
     bool room = false;                  // a room of a world its own mod replaces: drawn with HD graphics off too
     std::array<float, 3> low{}, high{}; // its size at rest (a placed model's, khdays_models_placed_bounds)
     bool character = false;             // a mod's character's (runtime/characters): the same
@@ -409,6 +416,7 @@ struct Model {
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton>
         kh2_skeleton;                                                  // the mset's model's (its own, else `skeleton`)
     std::shared_ptr<const khdays::assets::kh2::Retarget> kh2_retarget; // from the `skeleton`'s bones to the model's
+    std::vector<char> kh2_retarget_keyed; // per KH2 bone: the retargeted motions turn it (a `bone` line, a `carry`)
     // `own` msets' slots, [from, to): made for this model's own bones (kh2_own_skeleton), played without the retarget
     std::shared_ptr<const khdays::assets::kh2::MotionSkeleton> kh2_own_skeleton;
     std::vector<std::pair<std::size_t, std::size_t>> kh2_own_slots;
@@ -601,6 +609,7 @@ struct Kh2Actor {
     float main_blend = 0.0F;
     bool had_idle = false;
     std::vector<Mat> held;
+    std::array<float, 2> shown_keyed{}, held_keyed{}; // their kh2_own_share and kh2_retargeted_share
     khdays::kh2_moves::IdleFade held_fade;
     float held_from_ratio = 0.0F;
     std::string held_from;
@@ -677,7 +686,9 @@ struct TwistLine {
 struct BonesFile {
     std::map<std::string, std::string> pairs;
     float scale = 1.0F;
-    float game_scale = 1.0F; // `game_scale <k>`: see Model::game_scale
+    float game_scale = 1.0F;       // `game_scale <k>`: see Model::game_scale
+    float lower_hips = 0.0F;       // `lower_hips <share>`: see Model::lower_hips
+    bool ik_side_from_hip = false; // `ik_side kh2_hip`: see Model::ik_side_from_hip
     int cull = 0;
     std::vector<std::string> keep;      // the game's nodes whose own shapes are still drawn
     std::string setting;                // the HD replacement switch it follows
@@ -747,6 +758,9 @@ inline std::vector<Mat> node_matrix;
 inline std::vector<char> node_sent;
 inline std::vector<std::pair<void *, unsigned>> saved_joints; // the draw's matrices saved for attachments, by node
 inline float kh2_game_share = 1.0F; // this draw: the game's own pose's share of a KH2 model's (play_kh2; 1 without)
+// this draw: the share of the pose from the model's own motions (which turn all its bones) and from retargeted ones
+// (which turn only the bones Model::kh2_retarget_keyed marks), the idle fade's held pose counted as it was shown
+inline float kh2_own_share = 0.0F, kh2_retargeted_share = 0.0F;
 inline bool kh2_pose_cut =
     false; // this draw: a KH2 motion took the whole pose with no fade (play_kh2): the cloth's cue
 extern "C" int khdays_controls_walk_share(unsigned node); // runtime/input/controls_hooks.c: the port's walk
@@ -1199,6 +1213,58 @@ template <typename Visit> void each_linked(KhdaysRef first, u32 next, u32 size, 
 // law of cosines about an up vector, as KH2's Motion::calcIKJoint (0xf56a0) bends its chains. The
 // upper and lower joints are swung to it, keeping the twist their nodes give them; the joints below
 // them are placed again (`pose`).
+// bones.txt's `lower_hips`: every joint moved down (the root's up) by the most any `exact` leg needs for its hip to
+// stand from its foot, over the leg's length, as far as the game's thigh from its foot over the game's leg (none raises
+// it). A KH2 leg shorter than the game's, or hips set higher, straightened where the game's knee bent
+void lower_hips(const Model &m, const Mat &root)
+{
+    using V = std::array<float, 3>;
+    V up{root[4], root[5], root[6]};
+    const float ul = length(up);
+    if (!(ul > 0.0F))
+        return;
+    for (float &c : up)
+        c /= ul;
+    const auto node_at = [&](int node) {
+        return point(node_move[static_cast<std::size_t>(node)], m.node_rest_place[static_cast<std::size_t>(node)]);
+    };
+    const auto gap = [](const V &a, const V &b) { return length({a[0] - b[0], a[1] - b[1], a[2] - b[2]}); };
+    float drop = 0.0F;
+    for (const Limb &limb : m.limbs) {
+        if (!limb.exact)
+            continue;
+        const Joint &a = m.joints[static_cast<std::size_t>(limb.joints[0])],
+                    &b = m.joints[static_cast<std::size_t>(limb.joints[1])],
+                    &c = m.joints[static_cast<std::size_t>(limb.joints[2])];
+        if (a.node < 0 || b.node < 0 || c.node < 0)
+            continue;
+        const V hip = point(joint_place[static_cast<std::size_t>(limb.joints[0])], a.head),
+                knee = point(joint_place[static_cast<std::size_t>(limb.joints[0])], b.head),
+                end = point(joint_place[static_cast<std::size_t>(limb.joints[1])], c.head);
+        const V hd = node_at(a.node), kd = node_at(b.node), ed = node_at(c.node);
+        const float game = gap(kd, hd) + gap(ed, kd);
+        if (!(game > 0.0F))
+            continue;
+        const float leg = gap(knee, hip) + gap(end, knee);
+        const float wanted = std::fmin(gap(ed, hd) / game, 0.999F) * leg; // the hip's distance from the foot wanted
+        const V shift = vec(node_move[static_cast<std::size_t>(c.node)], limb.offset);
+        const V v{hip[0] - ed[0] - shift[0], hip[1] - ed[1] - shift[1], hip[2] - ed[2] - shift[2]};
+        const float now = length(v), above = v[0] * up[0] + v[1] * up[1] + v[2] * up[2];
+        if (!(now > wanted) || !(above > 0.0F))
+            continue;
+        // the height of moving the hip toward the foot by what it lacks: down a leg that hangs, little for one that
+        // trails behind. Solving |v - t up| = wanted instead dropped the body to the foot's height where no drop could
+        // reach it, and back: marluxia_h's run (its pelvis turned, its hips forward) bobbed 39 cm, 20 in a frame
+        drop = std::fmax(drop, above * (1.0F - wanted / now));
+    }
+    drop *= m.lower_hips;
+    if (!(drop > 0.0F))
+        return;
+    for (Mat &x : k)
+        for (std::size_t c = 0; c < 3; ++c)
+            x[12 + c] -= up[c] * drop;
+}
+
 template <typename Pose> void reach(const Model &m, const Limb &limb_line, const Pose &pose)
 {
     using V = std::array<float, 3>;
@@ -1249,6 +1315,28 @@ template <typename Pose> void reach(const Model &m, const Limb &limb_line, const
     if (length(side) < kTiny * 100.0F) {
         const V own = sub(knee_was, hip);
         side = add(own, dir, -dot(own, dir));
+    }
+    // an `exact` leg bends the way the game's knee stands off the game's own hip-to-foot line (KH2's hip stands apart, so
+    // seen from it a straight game leg seemed bent aside), toward the model's front (KH2's +z, as its hips turn) where
+    // that is under a tenth of the thigh, wholly at the line: marluxia_h's right knee bent sideways and back in the
+    // game's glide hover (b_ma_Ca000: the game's leg 179 degrees, bent a degree backward)
+    if (limb_line.exact && a.parent >= 0 && !m.ik_side_from_hip) {
+        const V line = sub(ed, hd), bent = sub(kd, hd);
+        const float ll = length(line), lb = length(bent);
+        const V front = vec(joint_place[static_cast<std::size_t>(a.parent)], {0.0F, 0.0F, 1.0F});
+        const V ahead = add(front, dir, -dot(front, dir));
+        const float la = length(ahead);
+        if (ll > kTiny && lb > kTiny && la > kTiny) {
+            const V off = add(bent, line, -dot(bent, line) / (ll * ll));
+            const V game_side = add(off, dir, -dot(off, dir));
+            const float lg = length(game_side);
+            const float t = std::clamp(length(off) / (0.1F * lb), 0.0F, 1.0F), w = t * t * (3.0F - 2.0F * t);
+            V mixed{};
+            for (std::size_t i = 0; i < 3; ++i)
+                mixed[i] = (lg > kTiny ? game_side[i] / lg * w : 0.0F) + ahead[i] / la * (1.0F - w);
+            if (length(mixed) > kTiny)
+                side = mixed;
+        }
     }
     const float ls = length(side);
     if (ls < kTiny)

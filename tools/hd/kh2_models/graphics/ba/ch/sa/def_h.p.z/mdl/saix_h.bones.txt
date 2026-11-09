@@ -47,16 +47,28 @@ kh2_346 Bip01_R_Hand
 # offset keeps KH2's sole on the game's: his ankle stands 15.8 over its sole, the game's 12.3 (the 1.6 is roxas_bf_h's).
 ik kh2_5 kh2_6 kh2_9 exact 0 3.5 1.6
 ik kh2_14 kh2_15 kh2_18 exact 0 3.5 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (his left knee 149 degrees in the game's Ca005 (the game's 137))
+lower_hips 1
 ik kh2_111 kh2_112 kh2_133
 ik kh2_324 kh2_325 kh2_346
 
 # The pelvis's vertices thinner front to back (its local y points backward), so the hips stay under the coat, as on
 # roxas_bf_h; the bone itself, the legs and the cloth's colliders are unchanged.
 mesh_scale kh2_2 1 0.9 1
+# The upper thighs 10% thinner front to back (their y), as riku_h's, so they stay under the coat in the game's
+# strides; the pelvis under the coat not drawn, from 3 cm under the coat's own top (its vertices up to 120.9 cm) down to
+# the hip joints (114.8), faded back in over 4 cm (model cm at rest)
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+hide kh2_2 from 118 to 115 fade 4
 
-# `align`: the hands and feet turned onto the game's at rest by their shape.
-align kh2_9 foot
-align kh2_18 foot
+# `align`: the hands turned onto the game's at rest by their shape; the feet given no rest correction (`rest`, as
+# xaldin_h's): by their shape the toes stood 1.4-1.6 cm over the heels on the ground in the game's run and B000 (the
+# pass, replay), with none -0.1
+align kh2_9 rest
+align kh2_18 rest
 align kh2_133 hand
 align kh2_346 hand
 

@@ -45,6 +45,10 @@ kh2_261 Bip01_R_Hand
 # the game's 10.2, so 6.9 up; 1.6 forward, roxas_b_h's (not measured for him).
 ik kh2_5 kh2_6 kh2_9 exact 0 6.9 1.6
 ik kh2_14 kh2_15 kh2_18 exact 0 6.9 1.6
+
+# In the game's own animations the body lowered until each leg reaches as the game's does for its length, so
+# the knees bend as the game's: the legs alone straightened where the game's bent (his right knee 175 degrees in the game's Ca006 (the game's 159))
+lower_hips 1
 ik kh2_111 kh2_112 kh2_133
 ik kh2_239 kh2_240 kh2_261
 

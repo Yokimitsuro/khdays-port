@@ -1752,6 +1752,54 @@ void n_ex830()
 
 } // namespace
 
+// `lean`: the reference shape turned about the reference bone's head toward the turn `lean_bone` gives it (as at rest
+// against it); a control's `lean 1` with the spine turned 30 degrees on the hips turns the targets by 30 degrees
+void lean_toward_spine()
+{
+    Skirt s = make_skirt(6, 3);
+    s.sk.names.push_back("spine");
+    s.sk.parent.push_back(1);
+    s.sk.rest.push_back(s.sk.rest[1]);
+    s.sk.rest.back()[13] = 1.3F;
+    const auto spine = static_cast<std::size_t>(s.sk.rest.size() - 1);
+    Diagnostics d;
+    const std::string lean_control = "control lean\n  animation *\n  groups skirt\n  lean 1\nend\n";
+    auto leaning = cooked(skirt_config(s, "", "  lean_bone spine\n") + lean_control, s.sk, s.mesh, d);
+    auto plain = cooked(skirt_config(s, "", "  lean_bone spine\n"), s.sk, s.mesh, d);
+    CHECK(leaning != nullptr && plain != nullptr);
+    if (!leaning || !plain)
+        return;
+    std::vector<Frame> pose = pose_of(s.sk, {0.0F, 0.0F, 0.0F});
+    const Quat turn = axis_angle({0, 0, 1}, 30.0F * kPi / 180.0F);
+    pose[spine].q = normalized(turn * pose[spine].q);
+    Actor a(leaning, 5), b(plain, 5);
+    ActorInput in;
+    in.pose = &pose;
+    for (int f = 0; f < 3; ++f) {
+        in.seconds = static_cast<float>(f) / 60.0F;
+        in.animations = {{"idle", -1, -1.0F, static_cast<float>(in.seconds), 0.0F, 1.0F}};
+        a.update(in);
+        b.update(in);
+    }
+    const Vec3 hips = pose[1].t;
+    float worst = 0.0F, moved = 0.0F;
+    for (std::size_t i = 0; i < a.simulation().targets().size(); ++i) {
+        if (!leaning->particles[i].dynamic)
+            continue;
+        const Vec3 want = hips + rotate(turn, b.simulation().targets()[i] - hips);
+        worst = maxf(worst, length(a.simulation().targets()[i] - want));
+        moved = maxf(moved, length(a.simulation().targets()[i] - b.simulation().targets()[i]));
+    }
+    CHECK(worst < 1e-3F);
+    CHECK(moved > 0.05F);
+    Diagnostics bad;
+    CHECK(cooked(skirt_config(s, "", "  lean_bone hips\n"), s.sk, s.mesh, bad) == nullptr);
+    CHECK(has_text(bad, "is its reference bone"));
+    bad.clear();
+    CHECK(cooked(skirt_config(s, "", "  lean_bone spine rotate 1 2\n"), s.sk, s.mesh, bad) == nullptr);
+    CHECK(has_text(bad, "write `lean_bone <bone> [rotate <x> <y> <z>]`"));
+}
+
 int main()
 {
     configuration();
@@ -1765,6 +1813,7 @@ int main()
     free_chain_upside_down();
     floor_over_body();
     control_slots();
+    lean_toward_spine();
     authored_and_release();
     guided_stretch();
     cutscene_sim_shell();

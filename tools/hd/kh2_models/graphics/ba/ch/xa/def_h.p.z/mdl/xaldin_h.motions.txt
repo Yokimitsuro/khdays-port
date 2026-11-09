@@ -16,6 +16,12 @@ weapon_model ba/ch/xa/w_ xa_w_R01 hand 274
 
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
 ds_pose 0 135-156 276-297
+# His coat in the game's own animations: as slot 0's first frame flares it (secondary.txt's `days_shape` guides the
+# cloth to it). KH2's rest hangs it as a narrow tube (hem radius 30.5 cm, the hover's 54.5) in the game's wide
+# stance (ankles 47-49 cm out): it hung stretched over his legs. From 25: 22-24 carry a 90 degree turn about the hips.
+# Not in B000 (kept at rest; its kick crosses the bell's front: jitter 20 -> 55 cm, 70 -> 120 degrees in the replay)
+ds_pose 0 25-94
+ds_pose rotate 0 0 0 25-94 for b_xa_B000
 
 # His braids in the game's own animations: KH2's rest hangs them straight down from beside his head, through his
 # shoulders, back and hood (4.6-12.2 cm inside). Each is turned out of the body at its root, about its own axes (x
@@ -76,7 +82,7 @@ b_xa_B009 blend 8
 b_xa_B010 blend 8
 b_xa_B011 blend 8
 b_xa_Ca001 blend 8
-b_xa_Ca002 blend 8
+# b_xa_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_xa_Ca003 blend 8
 b_xa_Ca004 blend 8
 b_xa_Ca005 blend 8

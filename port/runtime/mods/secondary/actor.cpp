@@ -59,7 +59,11 @@ float envelope(const ControlConfig &k, const AnimationState &a)
     if (t < from || t > to)
         return 0.0F;
     float e = 1.0F;
-    if (k.blend_in > 0.0F)
+    // eased in from a range that starts later than the animation; one that starts with it is not eased again each
+    // time the animation starts over (a game animation looping, or played again): the control's own easing toward
+    // what the animations ask covers its turning on. Eased here, a coat guided by its KH2 motion fell back to the
+    // plain cloth at every loop of the game's run (0.6 s)
+    if (k.blend_in > 0.0F && from > 0.0F)
         e = minf(e, (t - from) / k.blend_in);
     if (k.blend_out > 0.0F && std::isfinite(to))
         e = minf(e, (to - t) / k.blend_out);

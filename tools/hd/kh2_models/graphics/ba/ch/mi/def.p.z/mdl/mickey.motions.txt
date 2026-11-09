@@ -49,7 +49,7 @@ b_mi_B006 blend 8
 b_mi_B007 blend 8
 b_mi_Ca000 blend 8
 b_mi_Ca001 blend 8
-b_mi_Ca002 blend 8
+# b_mi_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_mi_Ca003 blend 8
 b_mi_Ca004 blend 8
 b_mi_Ca005 blend 8
@@ -68,3 +68,10 @@ b_mi_L003 blend 8
 # The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk at its own
 # pace, crossing from and to the run over 6 frames
 walk b_mi_A001 4 blend 6
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (glide hover +18,
+# forward glide +37 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -16 2 for b_mi_Ca000
+ds_pose rotate 0 0 -38 2 for b_mi_Ca001

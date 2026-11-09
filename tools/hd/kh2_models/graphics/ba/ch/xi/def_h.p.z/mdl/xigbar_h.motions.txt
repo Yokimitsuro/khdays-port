@@ -59,7 +59,7 @@ b_xi_B011 blend 8
 b_xi_B012 blend 8
 b_xi_Ca000 blend 8
 b_xi_Ca001 blend 8
-b_xi_Ca002 blend 8
+# b_xi_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_xi_Ca003 blend 8
 b_xi_Ca004 blend 8
 b_xi_Ca005 blend 8
@@ -75,3 +75,10 @@ b_xi_L001 blend 8
 b_xi_L002 blend 8
 b_xi_L003 blend 8
 b_xi_L004 blend 8
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (glide hover +12,
+# forward glide +21 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -10 2 for b_xi_Ca000
+ds_pose rotate 0 0 -19 2 for b_xi_Ca001

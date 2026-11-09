@@ -19,21 +19,37 @@ namespace {
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
 const ParamInfo kParams[kParamCount] = {
-    {"mass", 0.05F, 1e-4F, 100.0F, Unit::none},          {"stretch_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"shear_compliance", 1e-5F, 0.0F, 1.0F, Unit::none}, {"bend_compliance", 1e-3F, 0.0F, 1.0F, Unit::none},
-    {"damping", 1.0F, 0.0F, 200.0F, Unit::none},         {"follow_frequency", 2.0F, 0.0F, 60.0F, Unit::none},
-    {"follow_damping", 0.6F, 0.0F, 10.0F, Unit::none},   {"gravity_scale", 1.0F, -10.0F, 10.0F, Unit::none},
-    {"max_distance", 0.0F, 0.0F, 10.0F, Unit::length},   {"tether_slack", 0.05F, 0.0F, 2.0F, Unit::none},
-    {"swing_limit", kPi, 0.0F, kPi, Unit::angle},        {"twist_limit", kPi, 0.0F, kPi, Unit::angle},
-    {"inertia", 1.0F, 0.0F, 2.0F, Unit::none},           {"guided_inertia", 0.5F, 0.0F, 2.0F, Unit::none},
-    {"max_speed", 20.0F, 0.01F, 1000.0F, Unit::none},    {"thickness", 0.01F, 0.0F, 1.0F, Unit::length},
-    {"friction", 0.2F, 0.0F, 1.0F, Unit::none},          {"wind_drag", 1.0F, 0.0F, 100.0F, Unit::none},
-    {"row_compliance", 0.0F, 0.0F, 1.0F, Unit::none},    {"max_strain", 0.08F, 0.0F, 4.0F, Unit::none},
-    {"row_max_strain", 0.08F, 0.0F, 8.0F, Unit::none},   {"smoothing", 0.0F, 0.0F, 0.5F, Unit::none},
-    {"follow_bone_scale", 1.0F, 0.0F, 3.0F, Unit::none}, {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
-    {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},        {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},       {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
-    {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},        {"cutscene_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"mass", 0.05F, 1e-4F, 100.0F, Unit::none},
+    {"stretch_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"shear_compliance", 1e-5F, 0.0F, 1.0F, Unit::none},
+    {"bend_compliance", 1e-3F, 0.0F, 1.0F, Unit::none},
+    {"damping", 1.0F, 0.0F, 200.0F, Unit::none},
+    {"follow_frequency", 2.0F, 0.0F, 60.0F, Unit::none},
+    {"follow_damping", 0.6F, 0.0F, 10.0F, Unit::none},
+    {"gravity_scale", 1.0F, -10.0F, 10.0F, Unit::none},
+    {"max_distance", 0.0F, 0.0F, 10.0F, Unit::length},
+    {"tether_slack", 0.05F, 0.0F, 2.0F, Unit::none},
+    {"swing_limit", kPi, 0.0F, kPi, Unit::angle},
+    {"twist_limit", kPi, 0.0F, kPi, Unit::angle},
+    {"inertia", 1.0F, 0.0F, 2.0F, Unit::none},
+    {"guided_inertia", 0.5F, 0.0F, 2.0F, Unit::none},
+    {"max_speed", 20.0F, 0.01F, 1000.0F, Unit::none},
+    {"thickness", 0.01F, 0.0F, 1.0F, Unit::length},
+    {"friction", 0.2F, 0.0F, 1.0F, Unit::none},
+    {"wind_drag", 1.0F, 0.0F, 100.0F, Unit::none},
+    {"row_compliance", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"max_strain", 0.08F, 0.0F, 4.0F, Unit::none},
+    {"row_max_strain", 0.08F, 0.0F, 8.0F, Unit::none},
+    {"smoothing", 0.0F, 0.0F, 0.5F, Unit::none},
+    {"follow_bone_scale", 1.0F, 0.0F, 3.0F, Unit::none},
+    {"drape", 1.0F, 0.0F, 1.0F, Unit::none},
+    {"draw_guard", 1.0F, 0.0F, 1.0F, Unit::none},
+    {"face_friction", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"rotate_only", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"no_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"game_shape", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"cutscene_sim", 0.0F, 0.0F, 1.0F, Unit::none},
+    {"lean", 0.0F, 0.0F, 1.0F, Unit::none},
 };
 
 struct Line {
@@ -376,6 +392,19 @@ void Reader::group(const std::vector<Line> &lines, std::size_t &i)
             continue;
         if (w == "attach") {
             bone_list(l, 1, g.attach);
+        } else if (w == "lean_bone") {
+            Vec3 turn{};
+            const bool ok =
+                l.words.size() == 2 || (l.words.size() == 6 && l.words[2] == "rotate" && number(l.words[3], turn.x) &&
+                                        number(l.words[4], turn.y) && number(l.words[5], turn.z));
+            if (!ok) {
+                error(l.number, "write `lean_bone <bone> [rotate <x> <y> <z>]` (a body bone, e.g. the spine above the "
+                                "hips; degrees about the reference bone's own axes)");
+            } else {
+                g.lean_bone = {l.words[1], l.number};
+                g.lean_given = true;
+                g.lean_turn = turn;
+            }
         } else if (w == "follow_bone") { // follow_bone <bone> radius <r> [weight <w>] [always <a>]
             FollowBone f;
             float r = 0.0F, wt = 0.5F, always = 0.0F;

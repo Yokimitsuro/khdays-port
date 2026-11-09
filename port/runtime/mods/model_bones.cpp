@@ -30,6 +30,21 @@ BonesFile read_bones(const std::string &model_file)
                              path.c_str());
                 bones.game_scale = 1.0F;
             }
+        } else if (a == "ik_side") {
+            if (b == "kh2_hip" || b == "game")
+                bones.ik_side_from_hip = b == "kh2_hip";
+            else
+                std::fprintf(stderr, "models: %s: write `ik_side kh2_hip` or `ik_side game`; the line is ignored\n",
+                             path.c_str());
+        } else if (a == "lower_hips") {
+            bones.lower_hips = std::strtof(b.c_str(), nullptr);
+            if (!(bones.lower_hips > 0.0F && bones.lower_hips <= 2.0F)) {
+                std::fprintf(stderr,
+                             "models: %s: write `lower_hips <share over 0, up to 2; 1 lowers the hips by all the legs "
+                             "lack>`; the line is ignored\n",
+                             path.c_str());
+                bones.lower_hips = 0.0F;
+            }
         } else if (a == "keep") {
             for (std::string node = b; !node.empty(); node.clear(), words >> node)
                 bones.keep.push_back(node);
@@ -509,11 +524,14 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
             }
             const auto j = static_cast<std::size_t>(it - model.kh2_bone.begin());
             const Joint &joint = model.joints[j];
-            if (joint.node >= 0 || joint.parent < 0) {
+            // a joint on a game node takes a `rotate` on top of the node's turn (riku_h's pelvis in his glides), not a slot's
+            if ((joint.node >= 0 && rule.slot >= 0) || joint.parent < 0) {
                 if (told.insert(bone).second)
                     say(bone +
-                        (joint.node >= 0 ? ": it follows a game node (bones.txt), which poses it"
-                                         : ": it has no parent to turn from") +
+                        (joint.node >= 0
+                             ? ": it follows a game node (bones.txt), which poses it; only `ds_pose rotate` "
+                               "turns it further"
+                             : ": it has no parent to turn from") +
                         "; take it off the line; the line leaves it");
                 continue;
             }

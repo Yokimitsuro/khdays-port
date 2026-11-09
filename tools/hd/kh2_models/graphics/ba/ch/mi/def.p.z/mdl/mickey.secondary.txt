@@ -17,10 +17,13 @@ collider spine    capsule 77 79 fit 0.85 tags torso
 collider chest    capsule 79 80 fit 0.85 tags torso
 collider thigh_l  capsule 5 6 fit 0.9 tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
-collider foot_l   capsule 9 12 fit 0.9 tags legs
+# his shoes (9-12, 18-21) carry tag `feet`, which nothing collides with: the hem hangs over them at his ankles, and in
+# the game's run and attacks the shoe capsules cut through the front panels and threw them across (58, 67: up to 37 cm
+# a frame, 44 cm p99 in the game's run, 61 in its attacks; the coat stretched 636% at rest against them)
+collider foot_l   capsule 9 12 fit 0.9 tags feet
 collider thigh_r  capsule 14 15 fit 0.9 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
-collider foot_r   capsule 18 21 fit 0.9 tags legs
+collider foot_r   capsule 18 21 fit 0.9 tags feet
 # the upper arms carry no vertices of their own (the sleeve's rings are on 118 and its helper 150, 46-57 cm high):
 # their radius given, the sleeve's half height less a centimetre
 collider arm_l    capsule 117 118 radius 4.5 side motion tags arms
@@ -58,12 +61,20 @@ group string_l chain preset kh2_string
   attach 100
   chain 103 104 105
   settle on steps 360
+  # the arms as well, and calmer than kh2_string: his hands cross his chest in the game's ledge and guard, where the
+  # tips whipped 18-25 cm a frame against the preset's (6.5 and 7.0 cm p99 here)
+  collide body torso arms
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
   attach 107
   chain 110 111 112
   settle on steps 360
+  collide body torso arms
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 

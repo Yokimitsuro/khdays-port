@@ -474,7 +474,9 @@ void draw(Model &m)
                     at[c] += joint.size * (now[c] - carried[c]);
                 return place(at, dg, joint.correction, joint.head);
             }
-            return place(point(parent != nullptr ? *parent : dg, joint.head), dg, joint.correction, joint.head);
+            const Mat on_node =
+                place(point(parent != nullptr ? *parent : dg, joint.head), dg, joint.correction, joint.head);
+            return ds_turn[j] != nullptr ? mul(on_node, *ds_turn[j]) : on_node; // `ds_pose rotate` on top
         }
         const Mat &carried = parent != nullptr ? *parent : root;
         return ds_turn[j] != nullptr ? mul(carried, *ds_turn[j]) : carried;
@@ -483,6 +485,8 @@ void draw(Model &m)
         joint_place[j] = pose(j);
     if (m.spine.end >= 0)
         bend_spine(m, pose);
+    if (m.lower_hips > 0.0F)
+        lower_hips(m, root);
     for (const auto &limb : m.limbs) {
         bool placed = false;
         for (const int j : limb.joints)
@@ -548,6 +552,7 @@ void draw(Model &m)
     // KH2 motions on the game's root node (its first: roxas_R, never animated), whatever bone 0 follows
     face_motion = {};
     kh2_game_share = 1.0F;
+    kh2_own_share = kh2_retargeted_share = 0.0F;
     kh2_pose_cut = false;
     kh2_played.clear();
     kh2_weapon_pose.clear();
@@ -559,6 +564,16 @@ void draw(Model &m)
     // cloth reads the pose
     for (const Twist &t : m.twists) {
         namespace kh2 = khdays::assets::kh2;
+        // the KH2 motions' share that already turns the joint (KH2 authors its cuff's twist), left out
+        const std::size_t kb = t.joint < m.kh2_bone.size() && m.kh2_bone[t.joint] >= 0
+                                   ? static_cast<std::size_t>(m.kh2_bone[t.joint])
+                                   : m.kh2_retarget_keyed.size();
+        const float keyed =
+            kh2_own_share +
+            (kb < m.kh2_retarget_keyed.size() && m.kh2_retarget_keyed[kb] != 0 ? kh2_retargeted_share : 0.0F);
+        const float share = t.share * std::clamp(1.0F - keyed, 0.0F, 1.0F);
+        if (!(share > 0.0F))
+            continue;
         const auto rest = [&](std::size_t j) { return inverse(m.joints[j].inverse_bind); };
         const auto now = [&](std::size_t j) { return mul(skin[j], rest(j)); };
         if (t.swing) {
@@ -573,7 +588,7 @@ void draw(Model &m)
                                                           way, kept, -khdays::models::hand_dot(way, kept))));
             }
             const auto toward = khdays::models::hand_unit(khdays::models::hand_add(
-                khdays::models::hand_add({0.0F, 0.0F, 0.0F}, kept, 1.0F - t.share), gone, t.share));
+                khdays::models::hand_add({0.0F, 0.0F, 0.0F}, kept, 1.0F - share), gone, share));
             const Mat at = now(t.joint);
             const Mat turn = turned_onto({at[12], at[13], at[14]}, kept, toward);
             for (const std::size_t j : t.turned)
@@ -581,7 +596,7 @@ void draw(Model &m)
             continue;
         }
         const Mat parent_rest = rest(t.parent), parent_now = now(t.parent), to = now(t.to);
-        const float angle = t.share * kh2::twist_about(parent_rest, rest(t.by), parent_now, now(t.by), t.axis);
+        const float angle = share * kh2::twist_about(parent_rest, rest(t.by), parent_now, now(t.by), t.axis);
         const Mat turn = kh2::twist_turn(parent_rest, parent_now, t.axis, angle, {to[12], to[13], to[14]});
         for (const std::size_t j : t.turned)
             skin[j] = mul(turn, skin[j]);
@@ -1546,11 +1561,13 @@ extern "C" void khdays_models_draw_end(void)
 // at `file`@`offset`, as khdays_models_draw_begin finds and loads it, its nodes at `nodes` (the game's world matrices,
 // model space) and the game playing `animations` (each its name, frame, share of the game's cross-fade and length in
 // frames, which a `follow` section stretches onto), posed by
-// draw() up to the cloth: each joint's frame (model space, unscaled) and its KH2 bone (-1 none). False: no mod model
-// for it, or not that many nodes.
+// draw() up to the cloth: each joint's frame (model space, unscaled) and its KH2 bone (-1 none), and per animation the
+// KH2 slot and section it plays (-1 none), as the cloth is given them in game. False: no mod model for it, or not that
+// many nodes.
 bool khdays_models_offline_pose(const char *file, unsigned offset, const std::vector<std::array<float, 16>> &nodes,
                                 const std::vector<std::tuple<std::string, float, float, float>> &animations,
-                                std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones)
+                                std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones,
+                                std::vector<std::pair<int, float>> &played)
 {
     char key[160];
     std::snprintf(key, sizeof(key), "%s@%x", file, offset);
@@ -1589,6 +1606,12 @@ bool khdays_models_offline_pose(const char *file, unsigned offset, const std::ve
     offline_joints = nullptr;
     offline_bones = nullptr;
     active = nullptr;
+    played.clear();
+    for (const auto &a : animations) {
+        const auto it_played = kh2_played.find(std::get<0>(a));
+        played.emplace_back(it_played == kh2_played.end() ? -1 : static_cast<int>(it_played->second.first),
+                            it_played == kh2_played.end() ? -1.0F : it_played->second.second);
+    }
     return !joints.empty();
 }
 

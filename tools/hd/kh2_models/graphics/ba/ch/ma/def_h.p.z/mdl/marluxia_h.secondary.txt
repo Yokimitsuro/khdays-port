@@ -18,10 +18,12 @@ first_pose_iterations 30
 collider pelvis   capsule 2 length 29.5 fit 0.85 tags body
 collider spine    capsule 94 96 fit 0.85 tags torso
 collider chest    capsule 96 length 23.8 fit 0.85 tags torso
-collider thigh_l  capsule 5 6 offset 16.8 0 0 fit 0.9 tags legs
+# the thighs from 4 cm down the bone (`clear`: no control inside at rest): started lower, the upper thigh swung
+# through the front panels before its collider reached them and the legs came out (replay --days run, attacks)
+collider thigh_l  capsule 5 6 offset 4 0 0 fit 0.9 clear tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
 collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
-collider thigh_r  capsule 14 15 offset 16.8 0 0 fit 0.9 tags legs
+collider thigh_r  capsule 14 15 offset 4 0 0 fit 0.9 clear tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
 collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
 collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
@@ -90,19 +92,24 @@ end
 
 # --- Drawstrings: chains from the collar (97), hung at load: they stick straight forward at rest, as B_EX110's ---
 group string_l chain preset kh2_string
-  collide torso body strings
+  # the arms too, and damped: the tips no longer whip when the hands cross the chest
+  collide torso body strings arms
   attach 97
   chain 101 102 103 104
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
-  collide torso body strings
+  collide torso body strings arms
   attach 97
   chain 203 204 205 206
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 

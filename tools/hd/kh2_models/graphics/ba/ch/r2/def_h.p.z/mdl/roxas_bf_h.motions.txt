@@ -27,26 +27,59 @@ carry 106 222 at 0
 # (the calm idle, here 1002) turns them at its first frame.
 ds_pose 1002 150-171 223-244
 
-# KH2's battle idle (00A) for the game's idle
-b_bf_A000 0
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_bf_A000 0 blend 8
 # The game's idle a `finish` plays out into
 idle b_bf_A000
 # 05A for the game's b_bf_A004
-b_bf_A004 5
+b_bf_A004 5 blend 8
 # The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
 landing b_bf_A004
 
-b_bf_A005 10 finish
-b_bf_A006 11 finish
-b_bf_A007 13 finish
-b_bf_A008 12 finish
+b_bf_A005 10 finish blend 8
+b_bf_A006 11 finish blend 8
+b_bf_A007 13 finish blend 8
+b_bf_A008 12 finish blend 8
 
-air b_bf_A005 16 land 17 finish
-air b_bf_A006 16 land 17 finish
-air b_bf_A007 18 land 19 finish
-air b_bf_A008 18 land 19 finish
+air b_bf_A005 16 land 17 finish blend 8
+air b_bf_A006 16 land 17 finish blend 8
+air b_bf_A007 18 land 19 finish blend 8
+air b_bf_A008 18 land 19 finish blend 8
 
-b_bf_B005 210
+b_bf_B005 210 blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run,
+# the jump (A002, A003), the ledge (A009-A011), A012 and A013, the attacks (B000-B004, ba/ch/r2/am.p2), the guard and
+# the other actions (ab.p2), the item and the magic (D000-D003), the limits (L000-L002). Not the dodge roll (Ca002):
+# the game blends out of it itself (user)
+b_bf_A001 blend 8
+b_bf_A002 blend 8
+b_bf_A003 blend 8
+b_bf_A009 blend 8
+b_bf_A010 blend 8
+b_bf_A011 blend 8
+b_bf_A012 blend 8
+b_bf_A013 blend 8
+b_bf_B000 blend 8
+b_bf_B001 blend 8
+b_bf_B002 blend 8
+b_bf_B003 blend 8
+b_bf_B004 blend 8
+b_bf_Ca000 blend 8
+b_bf_Ca001 blend 8
+b_bf_Ca003 blend 8
+b_bf_Ca004 blend 8
+b_bf_Ca005 blend 8
+b_bf_Ca006 blend 8
+b_bf_Ca007 blend 8
+b_bf_Ca008 blend 8
+b_bf_D000 blend 8
+b_bf_D001 blend 8
+b_bf_D002 blend 8
+b_bf_D003 blend 8
+b_bf_L000 blend 8
+b_bf_L001 blend 8
+b_bf_L002 blend 8
 
 b_bf_E003 1066 start_loop cut
 
@@ -116,3 +149,11 @@ ik 5 6 7 lengths
 ik 14 15 16 lengths
 ik 126 127 128
 ik 199 200 201
+
+# The pelvis turned back (its bottom forward) in the game's own run and glides: there the game leans its upper spine
+# back past its idle's, and on KH2's model the pelvis tipped forward on the lower spine, arching the back and standing
+# the coat out behind the seat (user; riku_h's fix). Its tilt on the lower spine against KH2's idle (run +35, glide
+# hover +26, forward glide +63 degrees, replay) taken to about +3
+ds_pose rotate 0 0 -36 2 for b_r2_A001
+ds_pose rotate 0 0 -25 2 for b_r2_Ca000
+ds_pose rotate 0 0 -66 2 for b_r2_Ca001

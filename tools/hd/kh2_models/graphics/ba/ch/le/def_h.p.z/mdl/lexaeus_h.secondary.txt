@@ -59,8 +59,9 @@ group coat surface preset kh2_coat
   # in its target and contact only catches what is left; a thigh coming up into it (a
   # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
   # knee the coat falls straight down off it rather than tracing the calf back
-  follow_bone 5 radius 34 weight 0.9 always 0.7
-  follow_bone 14 radius 34 weight 0.9 always 0.7
+  # radius 42: his coat hangs 1.24 times as wide as marluxia_h's (34); at 34 his legs came 25 cm out in KH2's run
+  follow_bone 5 radius 42 weight 0.9 always 0.7
+  follow_bone 14 radius 42 weight 0.9 always 0.7
   topology mesh           # neighbours from the triangles skinned to them
   disconnect 86 90        # the front slit stays open
   # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
@@ -76,24 +77,33 @@ group coat surface preset kh2_coat
   bone 78 follow_bone_scale 0.4
   bone 79 follow_bone_scale 0.3
   bone 80 follow_bone_scale 0.2
+  # in the game's own animations a leg could throw the front fork (83) across the slit, up to 90 cm a frame
+  # (replay --days run): it rides its target, and contact moves no control faster than 5 m/s past its target
+  max_speed 5
+  bone 83 no_sim 1
   mode simulated
 end
 
 # --- Drawstrings: chains from the collar (97), hung at load: they stick straight forward at rest ---
 group string_l chain preset kh2_string
-  collide torso body strings
+  # the arms too, and damped: the tips no longer whip when the hands cross the chest
+  collide torso body strings arms
   attach 97
   chain 101 102 103 104
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
-  collide torso body strings
+  collide torso body strings arms
   attach 97
   chain 172 173 174 175
   hang 0 -1 0.35
   settle on steps 360
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 
@@ -116,5 +126,19 @@ control own_motions
   follow_frequency 6 hem 3
   follow_damping 0.8
   follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# The game's own animations: his thigh comes up past the hip (B002, B006, the roll) and the swing cone (55 deg) turned
+# the panel it pushed out back into it: no cone; the waist rows stretch over the thigh (0.04 -> 0.3), inertia 0.6 (as
+# saix_h). Replay --days idle-move-idle, 10 runs each (30/60 Hz, 0.4-0.8 s lead-in), B000-B011, run, guard, roll, combo:
+# legs out of the coat 157 -> 49 cm (each one's worst, summed), frames over 0.5 cm 416 -> 72, jitter p99 summed
+# 1304 -> 915 cm; the cone alone 157 -> 68 cm
+control days_moves
+  animation b_le_A001 b_le_A002 b_le_A009 b_le_A010 b_le_A011 b_le_A012 b_le_A013 b_le_B000 b_le_B001 b_le_B002 b_le_B003 b_le_B004 b_le_B005 b_le_B006 b_le_B007 b_le_B008 b_le_B009 b_le_B010 b_le_B011 b_le_Ca000 b_le_Ca001 b_le_Ca002 b_le_Ca003 b_le_Ca004 b_le_Ca005 b_le_Ca006 b_le_Ca007 b_le_Ca008 b_le_D000 b_le_D001 b_le_D002 b_le_D003 b_le_L000 b_le_L001 b_le_L002 b_le_L003
+  groups coat
+  swing_limit 180
+  row_max_strain 0.3 hem 4
+  inertia 0.6
   blend 0.15 0.15
 end

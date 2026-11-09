@@ -65,7 +65,7 @@ b_do_B006 blend 8
 b_do_B007 blend 8
 b_do_Ca000 blend 8
 b_do_Ca001 blend 8
-b_do_Ca002 blend 8
+# b_do_Ca002 (the dodge roll) has no fade into the idle: the game blends out of it itself (user)
 b_do_Ca003 blend 8
 b_do_Ca004 blend 8
 b_do_Ca005 blend 8

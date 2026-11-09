@@ -37,7 +37,8 @@
 // port/runtime/mods/models.cpp: one draw of a mod's model posed by the game's node matrices, up to the cloth
 bool khdays_models_offline_pose(const char *file, unsigned offset, const std::vector<std::array<float, 16>> &nodes,
                                 const std::vector<std::tuple<std::string, float, float, float>> &animations,
-                                std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones);
+                                std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones,
+                                std::vector<std::pair<int, float>> &played);
 
 namespace kh2 = khdays::assets::kh2;
 using namespace khdays::secondary;
@@ -682,6 +683,9 @@ struct Run {
     Motions motions;
     Days days;
     Hair hair;
+    // the last `--days` pose's animations as the game gives them to the cloth: each its name, KH2 slot and section
+    // (models.cpp's), the game's frame (looped) and length in seconds, and its share
+    std::vector<AnimationState> days_animations;
 };
 
 // A `--days` segment's pose: the game's animation at its frame (30 a second, looped) on the game model's nodes, posed
@@ -721,9 +725,17 @@ void days_pose(Run &run, const Segment &s, float local, std::vector<kh2::Mat4> &
     replay_game_tick();
     std::vector<std::array<float, 16>> joints;
     std::vector<int> bones;
-    if (!khdays_models_offline_pose(run.days.file.c_str(), 0, nodes, animations, joints, bones))
+    std::vector<std::pair<int, float>> played;
+    if (!khdays_models_offline_pose(run.days.file.c_str(), 0, nodes, animations, joints, bones, played))
         throw std::runtime_error("models.cpp drew no mod model for " + run.days.file +
                                  ": give the model from its mod's graphics folder and the game model it replaces");
+    run.days_animations.clear();
+    for (std::size_t k = 0; k < animations.size(); ++k) {
+        const auto &[name, at, share, length] = animations[k];
+        run.days_animations.push_back({name, k < played.size() ? played[k].first : -1,
+                                       k < played.size() ? played[k].second : -1.0F, at / 30.0F, length / 30.0F,
+                                       share});
+    }
     static std::vector<kh2::Mat4> last; // KHDAYS_REPLAY_DAYS_TRACE: the joint that moved most since the last draw
     now.assign(run.model.skeleton.rest.size(), kh2::Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
     for (std::size_t j = 0; j < joints.size(); ++j) {
@@ -983,7 +995,12 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         in.seconds = static_cast<double>(t);
         in.pose = &pose;
         in.placement = place;
-        in.animations = {{s.name, s.days >= 0 ? -1 : static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
+        // `--days`: what the game gives the cloth (the KH2 slot models.cpp plays, the game's own looping frame); KH2
+        // motions alone: the slot and the time since the segment began
+        if (s.days >= 0)
+            in.animations = run.days_animations;
+        else
+            in.animations = {{s.name, static_cast<int>(s.slot), -1.0F, local, 0.0F, 1.0F}};
         in.environment = &env;
         in.cut = sc.cut_at >= 0.0F && t >= sc.cut_at && t - 1.0F / draw_hz < sc.cut_at;
         in.pose_cut = pose_cut && std::getenv("KHDAYS_REPLAY_NO_POSE_CUT") == nullptr;
@@ -998,6 +1015,23 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                 total.add(static_cast<float>(
                     std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count()));
             }
+        }
+        // KHDAYS_REPLAY_CONTROLS: each frame's control weights and the animations the cloth was given
+        if (std::getenv("KHDAYS_REPLAY_CONTROLS") != nullptr && !list.empty()) {
+            std::string line;
+            char part[160];
+            for (const float w : list.front()->control_weights()) {
+                std::snprintf(part, sizeof(part), " %.2f", static_cast<double>(w));
+                line += part;
+            }
+            line += " |";
+            for (const auto &x : in.animations) {
+                std::snprintf(part, sizeof(part), " %s slot %d f%.1f/%.1f w%.2f", x.name.c_str(), x.slot,
+                              static_cast<double>(x.seconds * 30.0F), static_cast<double>(x.length * 30.0F),
+                              static_cast<double>(x.weight));
+                line += part;
+            }
+            std::fprintf(stderr, "controls: %s f%d%s\n", sc.name.c_str(), f, line.c_str());
         }
         // measure the first actor's drawn model
         shown = out;
@@ -2031,7 +2065,10 @@ int main(int argc, char **argv)
                     worst.push_back({n, pair});
                 std::sort(worst.rbegin(), worst.rend());
                 std::string top;
-                for (std::size_t i = 0; i < worst.size() && i < 6; ++i)
+                // KHDAYS_REPLAY_HAIR_PAIRS=<n>: that many pairs (6 by default)
+                const char *listed = std::getenv("KHDAYS_REPLAY_HAIR_PAIRS");
+                const std::size_t shown = listed != nullptr ? static_cast<std::size_t>(std::atoi(listed)) : 6U;
+                for (std::size_t i = 0; i < worst.size() && i < shown; ++i)
                     top += (i ? ", " : "") + std::string("kh2_") + std::to_string(worst[i].second.first) +
                            " through kh2_" + std::to_string(worst[i].second.second) + " " +
                            std::to_string(worst[i].first);

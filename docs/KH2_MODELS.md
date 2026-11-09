@@ -191,7 +191,8 @@ Days' attacks are 24-42 frames (48-84 ticks) against 50-80 ticks.
 
 **Into the idle.** `<game animation> blend <frames>` (no slot) gives the game's
 own animation a fade into the idle; a section's `blend` is also its fade into the
-idle. When the game goes on to one of its `idle` animations (none playing the draw
+idle. Every replacement's dodge roll (`Ca002`, the full turn of its hips in 18 frames)
+has none: the game blends out of it itself, and the extra fade caused problems in game (user). When the game goes on to one of its `idle` animations (none playing the draw
 before) from the animation it played most, and that has a fade, the pose last shown
 fades into the game's over those frames, the game's own fade not counted; a KH2
 motion or the game's own pose alike. Anything else the game plays (an attack, a
@@ -212,8 +213,12 @@ parent's mixed frame, each pose's joint taken from its parent in that pose (the 
 the model's space), a joint skipping helper bones up to its envelope parent as
 `kn::Model::getParentEnvelope` (0xF11DC; bone +0xC bit 0 marks a helper): mixed in the model's space, the keyblade arm crossing from the
 battle idle into the weapon walk lost its length and twisted, each hand's place the mean
-of two, off the forearm's mixed turn. The idle fade's held pose still mixes in the
-model's space.
+of two, off the forearm's mixed turn. A weapon joint that `place ... ride`s a hand mixes on
+that hand's mixed frame instead (`Joint::mix_parent`, mixed in `Model::mix_order`, each joint
+after the one it mixes on): B_EX390's keyblades (95, 106) hang from the root, so crossing
+from his KH2 idle or walk into the game's run moved them in a line while the arms swung,
+off his hands and back. One pose at its whole weight comes out the same either way, so
+a throw still leaves the hand. The idle fade's held pose still mixes in the model's space.
 
 **In the air.** Days' damage in the air plays the ground damage animations and holds
 them on a frame (`Ov022_StepInterruptible`: frame 9) until a landing, a recovery in
@@ -732,7 +737,19 @@ map) has it against rest, about its head; the game animation with the most
 weight that plays no KH2 motion picks its own lines, else the default's (lines
 without `for`; later lines win). It changes only the game's share of the pose:
 a KH2 motion's fingers are its own. Bones paired with a game node in
-`bones.txt` are left to it.
+`bones.txt` take only `rotate`, on top of the turn their node gives them (a slot's
+pose would fight the node): riku_h's `ds_pose rotate 0 0 -30 2 for b_ri_Ca000
+b_ri_Ca001` turns his pelvis back under him in the game's glides, where the game leans
+its upper spine back 33 degrees further than in its idle and the pelvis tipped forward
+30-36 degrees on the lumbar bone (the run's -26), arching his back and standing the
+coat out behind the seat; the hips' children (the thighs) go where it carries them.
+The same turn, each animation's own, brings the pelvis's tilt on the lower spine (the bone
+paired with `Bip01_Spine`, against the model's KH2 idle) to about +3 degrees in the game's
+run and glides wherever it was over +10, for every coat model but xaldin_h (his `spine ...
+hips` places the pelvis after it), demyx_h (set up as before all
+of this: user) and larxene_h's hover (she looked worse turned: user): up to 63 degrees in roxas_bf_h's forward glide (turned 66). It costs feet
+through the coats in some glides, where the coat ignores the feet or nothing covers the toes
+(SECONDARY_MOTION.md).
 
 **Hands that respond.** `hand` lines in `motions.txt` pose the fingers each draw
 under the game's own animations (a KH2 motion's fingers stay its own), move the
@@ -1160,7 +1177,7 @@ models drawn while it is off. A new model's settings carry the same line.
 | `xigbar` | `ba/ch/xi/def.p.z/mdl` | B_EX140 | as `xigbar_h`, whose settings it takes |
 | `luxord_h` | `ba/ch/lu/def_h.p.z/mdl` | B_EX150 | B_EX150.mset, Marluxia's slots: idle 0, walk 1 (no run of its own), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on slot 5 (his 31A and 33A run 80 ticks with no loop). Skeleton and legs `demyx_h`'s (B_EX120_HB), so his pairs, feet (ankle 14.9 over its sole, the game's 11.6) and colliders; arm, cuff and hand `xaldin_h`'s numbering on the left (right +71), so its cuff lines (his cuff as wide as Marluxia's). No hair bones. His five giant cards (236-245, meshes 4-8) hidden; Days' card (`lu_w00a`, the `a` models of `w_.p2`; at rest on `Bip01_R_Hand`'s axes, 8.2 cm along the fingers) carried by his right hand in the game's own animations; in KH2 motions on his hand at its own grip (`weapon_model ... 204 hand 204 rotate -41 -33 13 offset 6.7 1.5 -4.5`: the least turn from Days' grip pointing its face, its -z, at his eyes in his KH2 idle; Days' grip faced it into his palm, and the game's own grip spun it in his idle-walk blends); the `b` models' fan left to the game |
 | `luxord` | `ba/ch/lu/def.p.z/mdl` | B_EX150 | as `luxord_h`, whose settings it takes |
-| `saix_h` | `ba/ch/sa/def_h.p.z/mdl` | B_EX160 | B_EX160.mset, Marluxia's slots: idle 0, walk 1 (no run of its own: the game's run stays; his berserk run is B_EX160_2's, unused), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19. Skeleton `luxord_h`'s to the collar, his right arm +213, so `luxord_h`'s cuffs renumbered; jaw 182. His claymore's bone 379 placed on Days' `sa_h_R` riding his right hand, Days' claymore drawn on it (`weapon sa_h_R 379 rotate 0 90 0`: Days' length along its z, KH2's along x, the grips together); KH2's two claymores (meshes 10-13, 16) hidden. Both faces in one file: the berserk face (7, on the jaw) and its yellow-eyed eye piece (5) drawn only in his limit, the normal ones (4, 6) the rest of the time (`limit_animations b_sa_L*`, `limit_show_mesh`, `limit_hide_mesh`); his rise (the game's `b_sa_A003` before its 12th frame) from 03A's loop (`start_loop always`: straight after his take-off on the same slot, `start_loop` alone carried the take-off's time on). Hair: 30 `kh2_hair` tufts, his long back strands among them; the two manes by his face held by the head |
+| `saix_h` | `ba/ch/sa/def_h.p.z/mdl` | B_EX160 | B_EX160.mset, Marluxia's slots: idle 0, walk 1 (no run of its own: the game's run stays; his berserk run is B_EX160_2's, unused), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19. Skeleton `luxord_h`'s to the collar, his right arm +213, so `luxord_h`'s cuffs renumbered; jaw 182. His claymore's bone 379 placed on Days' `sa_h_R` riding his right hand, Days' claymore drawn on it (`weapon sa_h_R 379 rotate 0 90 0`: Days' length along its z, KH2's along x, the grips together); KH2's two claymores (meshes 10-13, 16) hidden. Both faces in one file: the berserk face (7, on the jaw) and its yellow-eyed eye piece (5) drawn only in his limit, the normal ones (4, 6) the rest of the time (`limit_animations b_sa_L*`, `limit_show_mesh`, `limit_hide_mesh`); his rise (the game's `b_sa_A003` before its 12th frame) from 03A's loop (`start_loop always`: straight after his take-off on the same slot, `start_loop` alone carried the take-off's time on). Hair: 30 `kh2_hair` tufts, his long back strands among them; the two manes by his face held by the head. His KH2 motions hold 379 turned 179 degrees (about the blade) from where the game's animations hold `sa_h_R` in his hand, the same in every slot measured, so the claymore flipped between them: `weapon sa_h_R 379 rotate 138.4 -87.4 10.9` is the turn that holds it in KH2 motions as the game's do (the placed joint's correction takes the line's turn out again in the game's animations, so only KH2's change). His five long strands hang at rest straight down from the head, and the game's animations tip the head 17 degrees further forward on the chest than KH2's idle, so the hair they are guided to ran through his chest: `ds_pose 0 176-180 213-222 272-281` turns them as his idle does (the replay's crossings of the chest's mesh down by four fifths in the game's run) |
 | `saix` | `ba/ch/sa/def.p.z/mdl` | B_EX160 | as `saix_h`, whose settings it takes |
 | `xemnas_h` | `ba/ch/xe/def_h.p.z/mdl` | B_EX170 | B_EX170.mset: idle 0, walk 1 (no run of its own), no jump (slot 3 empty), the fall 4 from the game's 12th frame in the air, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19; B_EX170_LAST.mset after its 256 slots (`motions ... at 256 own`: B_EX170_LAST.mdlx's 320 bones are B_EX170's, bone for bone), its 00M for the game's `b_xe_Ca000`, its 01M (408) for `b_xe_Ca001` from its loop point, its end (`start_loop`: it does not loop, so the last frame holds), `offset 0 0 337.6`: its bones travel only two thirds of its root motion (688.4 of 1026.0 cm at tick 60), so taking the root motion out left him behind his place. Legs and coat as B_EX110's; arms, cuffs and hands `xaldin_h`'s +15 (right +138), so its cuffs; hood 116; the hair down his back (101-114) hangs from the collar. No weapon in the file; Days' (`xe_h_L`, `xe_h_R`, on the game's hands) carried by his hands with `weapon ... hand`. Hair: three `kh2_hair` groups, the top and fringe on the head's end, the side locks on the neck's end, the back hair's six strands on its base |
 | `xemnas` | `ba/ch/xe/def.p.z/mdl` | B_EX170 | as `xemnas_h`, whose settings it takes |

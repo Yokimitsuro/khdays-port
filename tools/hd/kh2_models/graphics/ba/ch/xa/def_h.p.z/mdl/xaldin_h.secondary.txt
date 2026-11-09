@@ -22,12 +22,12 @@ collider spine    capsule 96 98 fit 0.85 tags torso
 collider chest    capsule 98 length 22 fit 0.85 tags torso
 collider thigh_l  capsule 5 6 offset 17.3 0 0 fit 0.9 tags legs
 collider calf_l   capsule 6 9 fit 0.9 tags legs
-collider foot_l   capsule 9 length 13.5 radius 4.4 3.4 tags legs
+collider foot_l   capsule 9 length 13.5 radius 4.4 3.4 tags feet
 collider thigh_r  capsule 14 15 offset 17.3 0 0 fit 0.9 tags legs
 collider calf_r   capsule 15 18 fit 0.9 tags legs
-collider foot_r   capsule 18 length 13.5 radius 4.4 3.4 tags legs
-collider heel_l   capsule 9 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags legs
-collider heel_r   capsule 18 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags legs
+collider foot_r   capsule 18 length 13.5 radius 4.4 3.4 tags feet
+collider heel_l   capsule 9 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags feet
+collider heel_r   capsule 18 length 12.3 radius 5.7 5.7 offset 0 4.3 0 tags feet
 collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
 collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
 collider hand_l   sphere 133 offset 8.8 0 0 radius 5.6 side rest tags hands left_hand
@@ -119,19 +119,25 @@ end
 
 # --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
 group string_l chain preset kh2_string
-  collide torso body strings
+  collide torso body arms strings
   attach 99
   chain 103 104 105 106
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 group string_r chain preset kh2_string
-  collide torso body strings
+  collide torso body arms strings
   attach 99
   chain 244 245 246 247
   hang 0 -1 0.35
   settle on steps 360
+  # damped and slower than kh2_string: tips whipped when the hands crossed the chest (the pass, 2026-11-08)
+  damping 3.5
+  max_speed 5
   mode simulated
 end
 
@@ -218,5 +224,28 @@ control own_hair
   mode guided
   follow_frequency 6
   follow_damping 0.7
+  blend 0.15 0.15
+end
+
+# The game's own animations guide the coat to the flare his KH2 hover gives it (motions.txt's `ds_pose 0 25-94`), not
+# to KH2's narrow rest, which his wide stance pushed out of shape (the replay, the game's idle A000: hem 1.61 -> 1.80x
+# its rest radius, his KH2 idle's 1.78; 20 -> 5 cm off its targets; legs out of it in A004 25 -> 0 cm; the coat
+# bones' jitter over 28 game animations 2192 -> 1204 degrees p99). Not B000 (motions.txt)
+control days_shape
+  animation b_xa_A000 b_xa_A001 b_xa_A002 b_xa_A003 b_xa_A004 b_xa_A005 b_xa_A006 b_xa_A007 b_xa_A008 b_xa_A009 b_xa_A010 b_xa_A011 b_xa_A012 b_xa_A013 b_xa_B001 b_xa_B002 b_xa_B003 b_xa_B004 b_xa_B005 b_xa_B006 b_xa_B007 b_xa_B008 b_xa_B009 b_xa_B010 b_xa_B011 b_xa_Ca001 b_xa_Ca002 b_xa_Ca003 b_xa_Ca004 b_xa_Ca005 b_xa_Ca006 b_xa_Ca007 b_xa_Ca008 b_xa_D000 b_xa_D001 b_xa_D002 b_xa_D003 b_xa_L000 b_xa_L001 b_xa_L002 b_xa_L003 b_xa_L004
+  groups coat
+  mode guided
+  blend 0.15 0.15
+end
+
+# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
+# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# B002, hem bones swept 25 cm a frame by the calves in the run). Not his run (A001): there it turned his front
+# panels up to 137 degrees a frame, without it 76
+control days_moves
+  animation b_xa_A009 b_xa_A010 b_xa_A011 b_xa_A012 b_xa_A013 b_xa_B000 b_xa_B001 b_xa_B002 b_xa_B003 b_xa_B004 b_xa_B005 b_xa_B006 b_xa_B007 b_xa_Ca001 b_xa_Ca002 b_xa_Ca003 b_xa_Ca004 b_xa_Ca005 b_xa_Ca006 b_xa_Ca007 b_xa_Ca008 b_xa_D000 b_xa_D001 b_xa_D002 b_xa_D003 b_xa_L000 b_xa_L001 b_xa_L002 b_xa_L003
+  groups coat
+  inertia 0.6
+  follow_frequency 8 hem 3
   blend 0.15 0.15
 end

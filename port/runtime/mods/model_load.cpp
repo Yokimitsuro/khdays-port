@@ -231,6 +231,8 @@ void read_settings(Model *model, Loading &loading)
     const BonesFile &bones = loading.bones;
     model->scale = bones.scale;
     model->game_scale = bones.game_scale;
+    model->lower_hips = bones.lower_hips;
+    model->ik_side_from_hip = bones.ik_side_from_hip;
     model->cull = bones.cull;
     model->pose_degrees = bones.pose_degrees;
     model->held_name = bones.held;
@@ -594,6 +596,35 @@ void place_joints(Model *model, const Loading &loading)
                             (joint.parent >= 0 && model->joints[static_cast<std::size_t>(joint.parent)].after_rides);
     std::sort(model->stretches.begin(), model->stretches.end(),
               [](const Stretch &x, const Stretch &y) { return x.joint < y.joint; });
+    // a weapon that rides a hand mixes from that hand: B_EX390's keyblades (95, 106) hang from the root, so a cross-fade
+    // between KH2's pose and the game's moved them in a line while the arm swung, off his hands mid-fade
+    for (std::size_t j = 0; j < model->joints.size(); ++j) {
+        Joint &joint = model->joints[j];
+        for (int up = static_cast<int>(j); up >= 0 && up != joint.mix_parent;
+             up = model->joints[static_cast<std::size_t>(up)].parent)
+            if (const int hand = model->joints[static_cast<std::size_t>(up)].rides;
+                hand >= 0 && !descends(joint.mix_parent, hand)) {
+                joint.mix_parent = hand;
+                break;
+            }
+    }
+    {
+        std::vector<char> ordered(model->joints.size(), 0);
+        for (bool more = true; more;) {
+            more = false;
+            for (std::size_t j = 0; j < model->joints.size(); ++j) {
+                const int up = model->joints[j].mix_parent;
+                if (ordered[j] == 0 && (up < 0 || ordered[static_cast<std::size_t>(up)] != 0)) {
+                    ordered[j] = 1;
+                    model->mix_order.push_back(static_cast<int>(j));
+                    more = true;
+                }
+            }
+        }
+        for (std::size_t j = 0; j < model->joints.size(); ++j)
+            if (ordered[j] == 0)
+                model->mix_order.push_back(static_cast<int>(j)); // (a loop: mixed on its own)
+    }
 }
 
 // `spine`: its chain, the node carrying its base, the pelvis it swings.

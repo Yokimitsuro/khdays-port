@@ -104,6 +104,7 @@ profile off
 | `connect <a> <b>` / `disconnect <a> <b>` | a link added, or a mesh link cut (a slit, a seam) |
 | `exclude <bone>...` | left out of its strips |
 | `follow_bone <bone> radius <r> [weight <w>] [always <a>]` | its reference shape also rides a body bone near it (below) |
+| `lean_bone <bone> [rotate <x> <y> <z>]` | what `lean` turns its reference shape toward: the reference bone as that bone carries it, at their rest turn, turned by those degrees about the reference bone's own axes (x, then y, then z) (below) |
 | `offset <bone> <x y z>` | a control's point, bone-local |
 | `bone <bone> <setting> <value> [hem <value>]` | one control's own setting; `bone <bone> mode <mode>` |
 | `hang <x y z>` | chains: hung straight that way (model space at rest) before settling |
@@ -152,6 +153,7 @@ to 8; default 1, linear).
 | `no_sim` | 0..1 | 0 | not simulated: each substep on its target (its reference bones, the legs' `follow_bone` carry, the drape round the body) instead of where its motion would take it, that far of the way (`no_sim` alone is 1); contact with the body still keeps it out of the legs (from the last substep, so it keeps its side), the room does not touch it |
 | `game_shape` | 0..1 | 0 | its target taken that far onto its place on the replaced game model's coat, and at 1 kept there after the links and contact, unsmoothed (below) |
 | `cutscene_sim` | 0 or 1 | 0 | simulated about its place on the game model's coat, never inside the shell those places make (below); alone on a line: 1 |
+| `lean` | 0..1 | 0 | of the way its reference shape, and the colliders on its reference bone, turn about that bone's head toward its group's `lean_bone`'s carry (below); none without a `lean_bone` |
 | `rotate_only` | 0 or 1 | 0 | a rebuilt bone only turns toward its point; its head stays where its simulated parent carries it or the animation has it (1: no stretch) |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
 
@@ -183,6 +185,19 @@ rest is left out of it, with a warning naming both and the depth. `side rest` (t
 default) keeps what it touches on the side it has at rest, `side motion` on the
 side it came from (below, "How contact keeps the legs out"). Tags (default `body`)
 are what groups' `collide` lines name.
+
+**Lean** (`lean_bone`, `lean`): a coat hangs from the hips (its first `attach`), so an animation
+that tips the hips against the spine tips its shape with them. With `lean`, usually set by a
+control, its reference shape turns about the hips' head that share of the way to the turn the
+`lean_bone` gives the hips (as at rest against it, plus the line's `rotate`), and so do the
+colliders on the hips (the group's mean `lean`, the most of any leaning group on that bone),
+or the coat would rest on them where it was. Its anchors, smoothing space and the other
+colliders stay (`Simulation::lean_of`, `reference_point`, `reference_frame`, `shapes`).
+Tried on riku_h's glides (`lean_bone 97 rotate 0 0 -20`, `lean 0.4` in the hover: the back rows
+23-36 to 21-30 cm behind the spine line; more, or any in the forward glide, let the thighs and
+seat through, since only the hips' colliders lean), then replaced by turning the pelvis itself
+(KH2_MODELS.md, `ds_pose rotate` on a paired bone), which moves the body, its colliders and the
+coat together; no shipped file uses it now.
 
 **The game model's coat** (`game_shape`, `cutscene_sim`, `set_game_mesh` in
 `model_link.cpp`). Only a group that sets one of them, or that an animation control
@@ -293,8 +308,47 @@ end
 
 Its weight is the playing animations' blend weights (the game's cross-fade
 ratios) times its time envelope, eased by its blends, so a cut between
-animations does not pop. Settings are blended toward its values by that weight;
+animations does not pop. The envelope eases in only from a `time` range that
+starts after the animation does: one from 0 (or none) is not eased again each
+time the animation starts over, which the game's looping animations do (its run
+every 0.6 s); turning on is covered by the easing toward what the animations ask.
+Eased at every start, a coat guided by its KH2 motion (`own_motions`) fell to
+0.44 of its weight and back over 0.15 s at each loop, sagging toward the plain
+cloth (replay `--days`, Mickey's run, `KHDAYS_REPLAY_CONTROLS`). Settings are blended toward its values by that weight;
 mode by authority; its wind replaces the group's by weight.
+
+**Tuning the KH2 coats** (a pass over every coat model, replay `--days` with the KH2 slots,
+2026-11-08; each character's file says what it changed and why):
+- demyx_h is left out of all of it: set up again as before the pass, he looked better (user).
+- Foot and heel capsules inside an ankle-length hem threw the coat's front panels across the shin
+  (Mickey: 37 cm a frame, the coat stretched 636% at rest): they carry tag `feet`, which the coat does
+  not collide with, where that measured better (Mickey, Zexion, Xigbar, Saix, Xemnas, Xaldin, Riku;
+  not Axel, Larxene, Marluxia or Roxas, whose coats end higher or whose runs got worse).
+- The game's own animations with no KH2 motion (attacks, guard, magic) fling a coat on full world inertia
+  in spins: a `days_moves` control over them (inertia 0.6, follow 8 Hz, hem 3) kept the legs inside in
+  Saix's, Xemnas's, Xaldin's and Riku's spins (legs out 15-25 cm before).
+- Drawstrings: `damping 3.5`, `max_speed 5`; colliding with the arms too where the strings do not rest
+  inside the torso collider (not Roxas's or Xemnas's).
+- Thighs thinned to 0.9 front to back (`mesh_scale`) and the pelvis hidden only where the coat closes all
+  round (`hide kh2_2 from <coat waist> to <hip joints or the slit's top>`); the replay does not draw those.
+- Left open: the drawn-face guard (`draw_guard`, on or off) causes most of the remaining pops in the game's
+  animations (off: jitter halves, legs show 9-21 cm through); Lexaeus's `B002`, roxas_bf_h's
+  `b_bf_B000` and Xemnas's guard still open or jump the coat. The replay's numbers also depend on which
+  scenarios ran before in one process (each scenario does not start a fresh actor).
+- Second round (same day): a coat whose KH2 motion flares it (Xaldin's hover, hem radius 54.5 cm) hangs in the
+  game's animations round its KH2 rest, a narrow tube (30.5 cm), pulled tight over the game's wide stance: a
+  `ds_pose <slot> <coat bones>` (the motion's first frame) and a guided control over the game's animations give it
+  the motion's shape (his idle: off its targets 19.9 -> 5.1 cm, the coat's jitter summed over 28 animations about
+  halved; not his `B000`, whose kick crosses the bell's front). One round pelvis capsule's end stood the back of
+  Riku's coat out behind his seat where the hips tip back (the glides, `Ca000` and `Ca001`): two side by side
+  (`offset 0 0 +-5`, flatter front to back) and a loose control for the held glides (`follow_frequency 2 hem 0.7`,
+  the back strips not following the raised thighs) brought its back rows from 33-47 to 27-36 cm behind the spine
+  line in the hover, 32-46 to 26-33 forward (his seat 16-20). Lexaeus's legs through his coat in the game's attacks: a swing cone turned a panel
+  the leg had pushed out straight back into it; `days_moves` with `swing_limit 180` and `row_max_strain 0.3 hem
+  4` took the frames with a leg out (10 runs a move) from 416 to 72; his `B006` and the roll still let a thigh
+  raised over the hip through the top rows for a frame or two. The glides' base of the spine: the pelvis turned
+  under (KH2_MODELS.md, `ds_pose`); with the coat colliding with his feet again and capsules along the soles to
+  the toes (the ankle capsules run down from the ankle), the feet no longer come through it there (5.7 cm before).
 
 **Wind**: `wind world|actor|bone <bone> <x y z> speed <m/s> [gust <f>]
 [frequency <Hz>] [turbulence <f>]` or `wind off` (global, per group, per control).
@@ -693,7 +747,9 @@ Diagnostics, on stderr:
 | `KHDAYS_REPLAY_SPREAD=<cm>[,<bone>-<bone>...]` | each frame whose farthest drawn vertex from the root bone is past that, with its bone (a mesh stretched off the body); the bones listed left out (hidden weapons) |
 | `KHDAYS_REPLAY_DAYS_TRACE=1` | `--days`: each draw, the joint that moved most since the last |
 | `KHDAYS_REPLAY_DAYS_BONES=<bone>,...` | `--days`: each draw, those KH2 bones' places (cm, model space): feet off the ground (`lift`), a weapon bone against its hand |
-| (note) | `--days` runs give the cloth no KH2 slot, so `control` lines keyed by `slot` do not apply there (they do in game); the plain scenarios (`idle`, `run`, ...) give it |
+| `KHDAYS_REPLAY_HAIR_PAIRS=<n>` | `--hair`: the report lists that many hair-bone / body-bone pairs (6 by default) |
+| `KHDAYS_REPLAY_CONTROLS=1` | each frame, every control's weight and the animations the cloth was given (name, KH2 slot, frame, length, share) |
+| (note) | `--days` runs give the cloth what the game does: the KH2 slot and section models.cpp plays for each animation and the game's own looping frame; the plain scenarios give the slot and the time since the segment began |
 
 The test's real-model checks: `KHDAYS_SECONDARY_ASSETS` names the folder the HD pack
 installs `roxas_b_h` in (`mods/<Mod>/graphics/ba/ch/ro/def_hb.p.z/mdl`).

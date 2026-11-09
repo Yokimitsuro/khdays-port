@@ -272,12 +272,29 @@ std::array<float, 4> Simulation::blend_weights(const ReferenceBlend &b, const st
     return w;
 }
 
+// `lean`: the turn about the reference bone's head taking its turn that share of the way to the one its group's
+// `lean_bone` gives it (as at rest against that bone), and that head; none (identity) without one
+std::pair<Quat, Vec3> Simulation::lean_of(int group, float lean, const std::vector<Frame> &pose) const
+{
+    const GroupRig &g = rig_.groups[static_cast<std::size_t>(group)];
+    const Frame &ref = pose[static_cast<std::size_t>(g.reference_bone)];
+    if (g.lean_bone < 0 || !(lean > 0.0F))
+        return {Quat{}, ref.t};
+    const Quat to = normalized(pose[static_cast<std::size_t>(g.lean_bone)].q * g.lean_rest);
+    return {nlerp(Quat{}, normalized(to * conjugate(ref.q)), lean), ref.t};
+}
+
 Vec3 Simulation::reference_point(std::size_t i, const std::vector<Frame> &pose) const
 {
     const Particle &p = rig_.particles[i];
+    const auto [turn, head] = lean_of(p.group, drive_[i].params.get(Param::lean), pose);
     if (p.blend < 0)
-        return apply(pose[static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(p.group)].reference_bone)],
-                     p.reference);
+        return head +
+               rotate(
+                   turn,
+                   apply(pose[static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(p.group)].reference_bone)],
+                         p.reference) -
+                       head);
     const ReferenceBlend &b = rig_.blends[static_cast<std::size_t>(p.blend)];
     const auto w = blend_weights(b, pose, drive_[i].params.get(Param::follow_bone_scale));
     Vec3 sum;
@@ -285,16 +302,24 @@ Vec3 Simulation::reference_point(std::size_t i, const std::vector<Frame> &pose) 
         const auto j = static_cast<std::size_t>(k);
         sum += apply(pose[static_cast<std::size_t>(b.bone[j])], b.point[j]) * w[j];
     }
-    return sum;
+    return head + rotate(turn, sum - head);
 }
 
 Frame Simulation::reference_frame(int si, const std::vector<Frame> &pose) const
 {
     const SimBone &sb = rig_.bones_out[static_cast<std::size_t>(si)];
     const Particle &p = rig_.particles[static_cast<std::size_t>(sb.particle)];
+    const auto [turn, head] =
+        lean_of(sb.group, drive_[static_cast<std::size_t>(sb.particle)].params.get(Param::lean), pose);
+    const auto leaned = [&](Frame f) {
+        f.t = head + rotate(turn, f.t - head);
+        f.q = normalized(turn * f.q);
+        return f;
+    };
     if (p.blend < 0)
-        return compose(pose[static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(sb.group)].reference_bone)],
-                       sb.reference);
+        return leaned(
+            compose(pose[static_cast<std::size_t>(rig_.groups[static_cast<std::size_t>(sb.group)].reference_bone)],
+                    sb.reference));
     const ReferenceBlend &b = rig_.blends[static_cast<std::size_t>(p.blend)];
     const auto w =
         blend_weights(b, pose, drive_[static_cast<std::size_t>(sb.particle)].params.get(Param::follow_bone_scale));
@@ -306,7 +331,7 @@ Frame Simulation::reference_frame(int si, const std::vector<Frame> &pose) const
         if (total > 0.0F && w[j] > 0.0F)
             f = interpolate(f, compose(pose[static_cast<std::size_t>(b.bone[j])], b.frame[j]), w[j] / total);
     }
-    return f;
+    return leaned(f);
 }
 
 Vec3 Simulation::target_of(std::size_t i, const std::vector<Frame> &pose) const
@@ -474,12 +499,37 @@ void Simulation::shapes(const std::vector<Frame> &pose, std::vector<Shape> &out)
         const int reference = rig_.groups[static_cast<std::size_t>(rig_.bones_out[si].group)].reference_bone;
         return compose(pose[static_cast<std::size_t>(reference)], sim_relative_[si]);
     };
+    // `lean`: the colliders on a leaning group's reference bone (its hips) turned with its reference shape, by the most
+    // any such group leans now (its particles' mean)
+    std::vector<std::pair<int, float>> leaning;
+    for (std::size_t g = 0; g < rig_.groups.size(); ++g) {
+        const GroupRig &gr = rig_.groups[g];
+        if (gr.lean_bone < 0 || gr.last <= gr.first)
+            continue;
+        float sum = 0.0F;
+        for (int i = gr.first; i < gr.last; ++i)
+            sum += drive_[static_cast<std::size_t>(i)].params.get(Param::lean);
+        if (const float lean = sum / static_cast<float>(gr.last - gr.first); lean > 0.0F)
+            leaning.emplace_back(static_cast<int>(g), lean);
+    }
     for (std::size_t c = 0; c < rig_.colliders.size(); ++c) {
         const Collider &k = rig_.colliders[c];
         const Frame f = frame_of(k.bone, k.sim);
         Shape s;
         s.a = apply(f, k.offset);
         s.b = k.kind == ShapeKind::capsule ? apply(frame_of(k.end_bone, k.end_sim), k.end_offset) : s.a;
+        float most = 0.0F;
+        int by = -1;
+        for (const auto &[g, lean] : leaning)
+            if (rig_.groups[static_cast<std::size_t>(g)].reference_bone == k.bone && lean > most) {
+                most = lean;
+                by = g;
+            }
+        if (by >= 0 && k.sim < 0 && (k.kind != ShapeKind::capsule || k.end_bone == k.bone || k.end_bone < 0)) {
+            const auto [turn, head] = lean_of(by, most, pose);
+            s.a = head + rotate(turn, s.a - head);
+            s.b = head + rotate(turn, s.b - head);
+        }
         const float scale = (std::fabs(f.s.x) + std::fabs(f.s.y) + std::fabs(f.s.z)) / 3.0F;
         s.ra = k.radius * scale;
         s.rb = k.end_radius * scale;
