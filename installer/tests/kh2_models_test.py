@@ -66,12 +66,12 @@ class Models(unittest.TestCase):
     def test_each_settings_file_is_provided(self):
         for folder, model, _, files in models.MODELS:
             place = models.SETTINGS / folder
-            from_folder, from_model = models.SAME_SETTINGS.get((folder, model), (folder, model))
-            self.assertTrue(
-                (place / f"{model}.bones.txt").is_file()
-                or (models.SETTINGS / from_folder / f"{from_model}.bones.txt").is_file(),
-                model,
-            )
+            # its own bones.txt, or one through the models whose settings it takes (as make() follows them)
+            chain, taken = [(folder, model)], models.SAME_SETTINGS.get((folder, model))
+            while taken is not None:
+                chain.append(taken)
+                taken = models.SAME_SETTINGS.get(taken)
+            self.assertTrue(any((models.SETTINGS / f / f"{m}.bones.txt").is_file() for f, m in chain), model)
             provided = set(files) | {f"{model}.mdlx"}
             for settings in place.glob("*.txt"):
                 for line in NAMES_A_FILE.findall(settings.read_text(encoding="utf-8")):
@@ -158,6 +158,16 @@ class Models(unittest.TestCase):
             self.assertEqual((boss / "53.p#62/mdl/W01.mdlx").read_bytes(), b"B_EX160.mdlx")
             self.assertTrue((boss / "53.p#63/mdl/A_W01.bones.txt").is_file())
             self.assertFalse((boss / "53.p#60/mdl/W00.secondary.txt").exists())
+            # the boss Riku: riku_h's bones and cloth (through B13_01body for A_B13_01body), his own motions, and his
+            # sword object as W_EX010_20 with ri_w01600's keychain
+            self.assertEqual((boss / "54.p#0/mdl/B13_01body.mdlx").read_bytes(), b"N_EX950.mdlx")
+            self.assertEqual((boss / "54.p#0/mdl/W_EH000.mset").read_bytes(), b"W_EH000.mset")
+            self.assertTrue((boss / "54.p#0/mdl/B13_01body.bones.txt").is_file())
+            self.assertTrue((boss / "54.p#1/mdl/A_B13_01body.secondary.txt").is_file())
+            self.assertTrue((boss / "54.p#1/mdl/A_B13_01body.motions.txt").is_file())
+            self.assertEqual((boss / "54.p#33/mdl/A_B13_02w.mdlx").read_bytes(), b"W_EX010_20.mdlx")
+            self.assertTrue((boss / "54.p#32/mdl/B13_02w.secondary.txt").is_file())
+            self.assertIn("body", (boss / "54.p#33/mdl/A_B13_02w.bones.txt").read_text())
             # Riku: the coat Riku on the playable Riku's motions and weapon motions, the low poly model through riku_h
             riku = mod / "graphics/ba/ch/ri"
             self.assertEqual((riku / "def_h.p.z/mdl/riku_h.mdlx").read_bytes(), b"N_EX950.mdlx")

@@ -253,6 +253,31 @@ where it cuts (the port adds no fade), a cross-fade where it fades. `blend` on a
 `air` line is the `finish` tail's fade into the idle after the landing.
 The session log says once that the states reach the model's draws.
 
+`air_floor on` keys the `air` lines on the game's floor contact instead, for the boss Riku, who runs none of the
+player's actor states (ov260; his damage is `Ov260_SwipeEntry`, poses 4 and 5). His render object's user pointer
+(NNSG3dRenderObj +0x2c, set by `Ov260_ArmModelCallback`) is his ov107 object, checked by its body linking back to the
+render object (+0x384, its +0x88, +0x20); its +0x17a bit 0 is set every tick its floor ray hits
+(`Ov107_AiState_IntegrateVelocity`, cleared first by `Ov107_RollTransformHistory`). Off the floor for two draws he is
+in the air; back on it for two while the damage still plays, the `land` slot plays from its start on the game's
+frames until the game moves on, at whatever frame (no `landing` animation, no `finish`). Unchecked in game.
+
+**`cut_blend <frames>`.** Where the game cuts from one animation into another (the new one at its whole weight on
+its first draw, or set back from partway, not a loop wrapping round), the pose last shown is held relative to the
+root and fades into the new over that many of the game's frames (vblanks since the last draw, two a frame; standing
+while paused), the weapon's motion pose with it. Not where the new animation carries on the KH2 slot just shown (a
+`start_loop` run after its start), nor where an idle fade starts at the same draw. The boss Riku cuts everywhere
+(`Ov260_BindClip` drops the clip and binds the next at frame 0); only the drawn pose changes, not the game's
+animations, frames or timing. `cut_blend_except <animation>...` leaves cuts into those animations cuts (the game
+set one back included, and their `air` and `land` slots); a cut out of them still fades: the boss Riku's damage cuts
+in, and fades out of the damage, its landing or the recovery after them into whatever his AI plays next (user).
+
+**`after <slot>...`** on a section (or an `air` line's `land`): once its motion ends while the game still plays the
+animation, those slots play in turn from their starts, cut together, the last one looping. Unlike `finish`, which
+waits for the game's idle, this plays inside the game's own animation and ends the moment the game plays anything
+else. With it, the game's animation wrapping round from its end goes on (the last slot loops); set back from partway it
+starts over. The boss Riku's damage (`after 24 0`): P_EH000's damage motion (slot 42) is 48 ticks, Days' 60 (30
+frames), so KH2's readying (24) starts at frame 24 and the idle follows while his damage plays on (offline trace).
+
 **Cuts and the cloth.** A draw where a KH2 motion takes the whole pose with no fade
 (a new motion or section, or one started over) tells the cloth so
 (`ActorInput::pose_cut`); when a body collider's end moves more than 12 cm about the
@@ -610,7 +635,17 @@ weapon_model ba/ch/ze/w_ ze_w00 94 hand 254 rotate -90 180 0 offset -9.5 -0.1 5.
 ```
 
 A model may have several `weapon_model` lines, one a node (each its own hand), and
-the KH2 bone may be left out (`weapon_model <file> <node> hand <bone>`): the weapon is
+`weapon_model <file> <node> weapon [rotate] [offset]` loads the node on the KH2 weapon's `weapon_motions` bone as the
+body last drew it (`HeldWeapon::blade`: the `weapon` line's frame times `from_game` times the bone's pose, where a
+`held ... body` weapon's bone is drawn), times the line's turn and offset (about and along that bone's axes), its own
+scale kept: what rides the KH2 weapon rather than the hand, through every turn of its motion. The game's weapon frame
+(`HeldWeapon::frame`) would not do: under W_EH000's held pose its axes are not the keyblade's (first try, user: the
+sword through his head in the run). The boss Riku's energy sword (Ms/54.p's `B13E011`, node `EF_B13E01`) lies on his
+sword's grip `wA` within 1.5 cm and 2 degrees in all 30 of his animations, its blade along +z; on W_EH000's bone 2 the
+keyblade's blade runs along -x (its keychain, bones 3-11, along +x), so `rotate -90 0 90` (the turn about the blade
+assumed). Named by its child, not `Dummy03`, which another effect of the file (`B13E002_03`) also has.
+
+The KH2 bone may be left out (`weapon_model <file> <node> hand <bone>`): the weapon is
 then carried by its hand alone, in KH2 motions too (below). Xaldin's two lances are
 the nodes `xa_w_L` and `xa_w_R01` of one model (`ba/ch/xa/w_.p2`'s `a` models), each
 on its own hand; KH2's six lances float behind him and none is held.
@@ -721,6 +756,14 @@ weapon bone's before the pose places it (`Model::held_onto`, between the pose an
 Goofy's F_TT150 (`go_w01600`) stands at the origin, its face turned 45 degrees to +x+z and its wide end up, where
 W_EX030, whose mset poses it, lies flat at his hand, face down; `turn 135 0 90` puts F_TT150's face along W_EX030's
 bone 2's x (its centre 10.0 cm out, W_EX030's 10.9) and its wide end along that bone's -y, up in his idle.
+
+`held <joint> body` is `held <joint>` for a weapon the game draws somewhere other than the frame the body's `weapon`
+line gives it: the joints go on that frame (`HeldWeapon::frame`, the last `hold` of the body's draw) instead of the
+model's own root. The boss Riku's sword object (Ms/54.p's `B13_02w`, `Ov260_Construct`'s +0x390 part) is drawn at his
+base, its own animation keeping its grip node `wA` on his right hand (offline: 7.4-11.1 cm from `Bip01_R_Hand` and at
+most 6 degrees off one grip in all 30 of his animations; nothing reads `sa_h_R`, the node under his hand that his
+`weapon` line names). So his KH2 hand holds his keyblade (W_EX010_20, posed by W_EH000.mset) as the player's does, its motions and
+keychain included.
 
 **Fingers under the game's animations.** Days' models have no fingers, so a
 KH2 model's unpaired bones ride their parents at rest (an open hand) whenever
@@ -1213,6 +1256,9 @@ models drawn while it is off. A new model's settings carry the same line.
 | `W00` | `Ms/53.p#60/mdl` | B_EX160 | his claymore object's normal model, as B_EX160's claymore meshes 10-13 (the rest hidden): `held kh2_379 rest 0 90 0` (W00 and W01 share one frame, the blade along z from -37.9 cm; 379's along x from -38.6) |
 | `W01` | `Ms/53.p#62/mdl` | B_EX160 | the berserk one: 10, 11, 13 and the long spikes 16 for the short ones 12 (assumed from their shapes) |
 | `A_W00`, `A_W01` | `Ms/53.p#61`, `#63/mdl` | B_EX160 | Mission Mode's: `W00`'s and `W01`'s settings |
+| `B13_01body` | `Ms/54.p#0/mdl` | N_EX950 | the boss Riku's body (his skeleton is the player's node for node at rest, the hands 7.3 degrees off, its root `B13_01body`): `riku_h`'s bones and cloth; his own motions.txt with only P_EH000's idle (0), run (8), damage (42 front `005`, 50 back `006`), aerial damage (66, 74) and its landings (70, 78) by `air_floor`; the 6-frame run start `002` and stop `004` play KH2's run and idle (carried on by `003` and `001`, `start_loop`); the rest Days' own, every cut faded over 8 frames (`cut_blend`) but into his damage (`cut_blend_except`); KH2's readying and idle after his damage and its landing (`after 24 0`); his energy sword on the keyblade (`weapon_model ... weapon`); `weapon sa_h_R 262` and W_EH000's `weapon_motions` as `riku_h`'s. ov260 plays pose p as `B13_01body_<p + 1>` (`Ov260_SetPose`: clip p + 2) |
+| `A_B13_01body` | `Ms/54.p#1/mdl` | N_EX950 | Mission Mode's body: `B13_01body`'s settings |
+| `B13_02w`, `A_B13_02w` | `Ms/54.p#32`, `#33/mdl` | W_EX010_20 | his sword object as `ri_w14600`'s keyblade: `held kh2_2 body` on his KH2 hand, posed by his W_EH000.mset, `ri_w01600`'s keychain. `B13_03K` (#34: a 15-bone chain `Ov260_SetPose` shows in combat poses only, assumed his swing trail) and the effects are left to the game |
 
 `SAME_SETTINGS` in the tool gives a model another's settings under its own name; what it has of its own stays, and
 what the other takes from a third comes along (`A_016` from `016`, `016`'s cloth from `saix_h`).

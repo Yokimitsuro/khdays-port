@@ -1249,6 +1249,30 @@ bool fx_close(const Mat4 &a, const Mat4 &b)
     return true;
 }
 
+// Gfx_ApplyBaseTransform (0x0201574c), as Obj_RenderModel draws a model object (the ov107 enemies, the boss Riku):
+// the camera multiplied onto the projection, the position matrix NNS_G3dGlb's base alone, unflushed (NNS_G3dGlb at
+// 0x02047394: rotation at +0x94, translation +0xb8, scale +0xc4). Such a draw starts in the world: the live base is
+// its place, taken only when it is exactly the matrix the draw started from.
+bool live_base_world(const Mat4 &start, Mat4 &out)
+{
+    constexpr KhdaysRef kBase = 0x02047394U + 0x94U;
+    if (!khdays_game_ram(kBase) || !khdays_game_ram(kBase + 15U * 4U - 1U))
+        return false;
+    std::int32_t w[15];
+    std::memcpy(w, KHDAYS_W(kBase), sizeof(w));
+    Mat4 m = kIdentity4; // as khdays_g3d_base: turned rows times the scale, then moved
+    for (int c = 0; c < 3; ++c) {
+        for (int r = 0; r < 3; ++r)
+            m[static_cast<std::size_t>(c * 4 + r)] =
+                static_cast<float>(w[c * 3 + r]) / 4096.0F * (static_cast<float>(w[12 + c]) / 4096.0F);
+        m[static_cast<std::size_t>(12 + c)] = static_cast<float>(w[9 + c]) / 4096.0F;
+    }
+    if (!fx_close(m, start))
+        return false;
+    out = m;
+    return true;
+}
+
 // The root node in its placement's space, inverse(start) x root, is the game's own (camera-free) node
 // matrix, but rebuilt from the GE's fixed-point products of the camera with it: every turn of the camera
 // changes its rounding, and the body seen in the world shook by a fraction of a millimetre, which hair and
@@ -1296,6 +1320,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     // flushed camera (that cancels it only up to the GE's rounding, and the cloth feels the camera turn)
     Mat4 world_of_view, placed;
     bool camera_free = true, verified = false; // verified: its start is exactly its place under the camera
+    bool start_world = false;                  // the camera in the projection, the draw starting in the world
     const char *placed_by = "the camera";
     const bool own = actor_world(in.actor, placed);
     const bool shared =
@@ -1305,6 +1330,14 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         placed_by = "its actor";
         if (!m.said_placement)
             say(m.name + ": placed in the world by its actor's matrix (camera-independent)");
+        m.said_placement = true;
+    } else if (live_base_world(in.start, placed)) { // its start is its own place, the camera in the projection
+        verified = true;
+        start_world = true;
+        placed_by = "its model object";
+        if (!m.said_placement)
+            say(m.name + ": placed in the world by its model object's base transform, the camera in the projection "
+                         "(camera-independent)");
         m.said_placement = true;
     } else if (!(in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) &&
                !(in.base_kind == 2 && fx_close(kIdentity4, in.start)) && shared) {
@@ -1380,7 +1413,7 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
             mul(placed, mul(hold_root(state, mul(inverse_affine(in.start), in.root)), inverse_affine(in.root)));
     // the view's way to the world for this frame's other draws under this camera, as held: the same as this
     // model's own, so a weapon drawn from its hand's matrix lies in the world where the hand does
-    if (verified && in.has_camera)
+    if (verified && in.has_camera && !start_world) // a world start is no way from the view for the others
         shared_view = {world_of_view, in.camera, now, true};
     const Mat4 view = inverse_affine(world_of_view);
     // the needed bones in the solver's space
@@ -1399,7 +1432,8 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
     a.epoch = clock_.epoch;
     a.pose = &m.pose;
     a.placement = frame_of(mul(to_sim, root));
-    a.camera_distance = length(Vec3{in.root[12], in.root[13], in.root[14]}) / units;
+    const Mat4 seen = start_world && in.has_camera ? mul(in.camera, root) : in.root; // the root in view space
+    a.camera_distance = length(Vec3{seen[12], seen[13], seen[14]}) / units;
     a.environment = rig.config.environment ? &room_ : nullptr;
     // a camera cut: the camera's view of the actor jumped further in one draw than a camera moves (a new shot;
     // cutscenes re-stage their actors across one, and the cloth would take that as a fling). Judged about the

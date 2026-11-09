@@ -1,0 +1,6 @@
+# KH2's W_EX010_20 as the boss Riku's sword object (Ms/54.p's B13_02w, Ov260_Construct's +0x390 part;
+# Mission Mode's A_B13_02w takes these settings), posed by W_EH000.mset as ri_w14600 is (its bone 2 rests where
+# W_EH000's does; kh2_3 to kh2_11 its keychain), with ri_w01600's keychain cloth. The game draws the object at his
+# base, its own animation keeping its grip in his hand; `body` puts the keyblade on the frame his body's
+# `weapon sa_h_R 262` line gives it instead, posed by his `weapon_motions` (B13_01body.motions.txt), as the player's
+held kh2_2 body

@@ -238,6 +238,7 @@ void read_settings(Model *model, Loading &loading)
     model->held_name = bones.held;
     model->held_rest = bones.held_rest;
     model->held_own_turn = bones.held_own_turn;
+    model->held_body = bones.held_body;
     if (bones.held_own_turn)
         model->held_from_game = inverse(turn_of(bones.held_turn));
     if (bones.held_onto)

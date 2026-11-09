@@ -547,6 +547,14 @@ shook on the hill and not at its foot.
   leaked into the world and turning the camera swung the Kingdom Key's keychain.
   An actor's matrix is only taken as the start's (`fx_close`) when no such frame's
   view is at hand.
+- A model object drawn by `Obj_RenderModel` (the ov107 enemies, the boss Riku): its `Gfx_ApplyBaseTransform`
+  (0x0201574c) multiplies the camera onto the projection and starts the position matrix from `NNS_G3dGlb`'s base
+  alone, never through `NNS_G3dGlbFlush`, so the flushed base is stale. The live base (`NNS_G3dGlb` at 0x02047394:
+  rotation +0x94, translation +0xb8, scale +0xc4) is taken when it is exactly the draw's start (`live_base_world`):
+  the start is then in the world. Not shared with other draws; the level of detail measures from the camera.
+  Obj_RenderModel copies the object's +0x40 into the base's translation and +0x4c into its scale (the decomp's
+  `vecA`/`position` names are swapped). Before this the boss Riku's cloth went by the flushed camera, applied on
+  top of the projection's: turning the camera swung it (session logs, 2026-11-09).
 - Neither, and no other draw this frame: the latest flush's camera
   (`khdays_g3d_camera`), said once in the session log. Every session log until 2026-10-30 shows Roxas placed this way
   ("placed in the world by the flushed camera"): his body is not an
@@ -739,6 +747,7 @@ Diagnostics, on stderr:
 | `KHDAYS_REPLAY_CLIP=<name>` | each frame's deepest simulated vertex in the colliders so named (`KHDAYS_REPLAY_CLIP_BY=<collider>`: of the groups that collide with it) |
 | `KHDAYS_REPLAY_POKE=<bone,...>` | those bones' body vertices through the coat's drawn surface |
 | `KHDAYS_REPLAY_NO_SIM=1` | draws the animation alone |
+| `KHDAYS_REPLAY_LOG=1` | the session log's lines on stderr (with `KHDAYS_SECONDARY_TRACE=1`, models.cpp's `kh2 trace` per draw) |
 | `KHDAYS_REPLAY_ROLL=<degrees>`, `KHDAYS_REPLAY_LIFT=<m>`, `KHDAYS_REPLAY_NOISE=<mm>` | turn the actor about its x, raise it, shake it each draw |
 | `KHDAYS_REPLAY_GROUP=<group>` | the group whose bones' turns the jitter measures (coat) |
 | `KHDAYS_REPLAY_TWIST=1` | their largest roll about their own length each frame |

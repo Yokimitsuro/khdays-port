@@ -315,9 +315,11 @@ BonesFile read_bones(const std::string &model_file)
             // frame given here (as a `weapon` line's), for what no `weapon` line holds (a cutscene's own object)
             // ... turn <x> <y> <z>: posed by the motions, its joint's rest frame turned so (degrees about its own x,
             // y, z) into the weapon bone's, for a model made in other axes than the weapon the motions are for
+            // ... body: posed so, on the frame the body's `weapon` line gave its weapon (the game draws it elsewhere)
             const bool has_word = static_cast<bool>(words >> how);
             bones.held_rest = has_word && how == "rest";
             bones.held_onto = has_word && how == "turn";
+            bones.held_body = has_word && how == "body";
             const bool turn_given =
                 (bones.held_rest || bones.held_onto) &&
                 static_cast<bool>(words >> bones.held_turn[0] >> bones.held_turn[1] >> bones.held_turn[2]);

@@ -6,6 +6,7 @@
 #include "replay_game_stubs.h"
 
 #include <cstdarg>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -132,7 +133,18 @@ int khdays_log_on(void)
     return 0;
 }
 
-void khdays_log(const char *, ...) {}
+// KHDAYS_REPLAY_LOG=1: the session log's lines on stderr (models.cpp's traces among them)
+void khdays_log(const char *format, ...)
+{
+    static const bool on = std::getenv("KHDAYS_REPLAY_LOG") != nullptr;
+    if (!on)
+        return;
+    va_list args;
+    va_start(args, format);
+    std::vfprintf(stderr, format, args);
+    va_end(args);
+    std::fputc(10, stderr);
+}
 
 u32 khdays_log_marks(void)
 {

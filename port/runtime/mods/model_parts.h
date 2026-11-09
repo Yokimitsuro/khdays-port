@@ -160,6 +160,7 @@ struct Twist {
 struct WeaponModelLine {
     std::string file, node;
     int joint = -1, hand = -1, hand_up = -1;
+    bool on_weapon = false; // `weapon_model ... weapon`: on the KH2 weapon's bone as drawn (HeldWeapon::blade)
     Mat turn = kIdentity;
     Mat rel = kIdentity;
     bool rel_valid = false;
@@ -272,6 +273,9 @@ struct Kh2Section {
     std::vector<std::size_t> then;
     bool realtime = false; // its clock runs with the game's frames, not its animation's (`air`: Days holds a frame)
     bool cut = false;      // `cut`: it takes the whole pose at once where the game fades into it (the death)
+    // `after <slot>...`: once the motion ends while the game still plays the animation, these slots in turn (cut
+    // together; the last loops): the boss Riku's damage, then KH2's readying and idle until his AI moves on
+    std::vector<std::size_t> after;
     // `rotate <x> <y> <z>`: the whole pose turned about the model's origin (degrees, x then y then z, the model's
     // axes), before `offset`: a motion lying another way than the game's (KH2's game over)
     Mat turn = kIdentity;
@@ -372,6 +376,9 @@ struct Model {
     bool held_own_turn = false; // `held <joint> rest <x> <y> <z>`: no holding bone, the game's frame this turn off it
     Mat held_from_game = kIdentity;
     Mat held_onto = kIdentity; // `held <joint> turn <x> <y> <z>`: its rest frame into the weapon bone's
+    // `held <joint> body`: on the frame the holding body's `weapon` line last gave its weapon, not where the game draws
+    // this model (the boss Riku's sword object: drawn at his base, its own animation keeping it in his hand)
+    bool held_body = false;
     std::vector<int> held_bone;
     // motions.txt's `weapon_motions <mset> <mdlx> <bone>`: what this body holds plays that mset's slots as its
     // own motions play theirs, on that mdlx's bones; <bone> is the weapon itself. Its held pose under the game's
@@ -426,8 +433,15 @@ struct Model {
     std::map<std::string, float> kh2_idle_blend;
     std::string kh2_landing;               // `landing`: the game's landing animation (`air`'s `land`)
     std::map<std::string, Kh2Air> kh2_air; // `air`, by the game's animation
-    bool said_states = false;              // the game's actor states were seen reaching its draws
-    std::vector<Mat> kh2_rest;             // per joint: inverse(inverse_bind), skin to world (made on first use)
+    // `air_floor`: the `air` lines keyed on the game's floor contact (an ov107 enemy's), not the player's actor states
+    bool kh2_air_floor = false;
+    // `cut_blend <frames>`: where the game cuts from one animation into another (or `air_floor` switches a slot), the
+    // pose last shown fades into the new over that many of the game's frames
+    float kh2_cut_blend = 0.0F;
+    // `cut_blend_except <animation>...`: cuts into these (their air and land slots too) left cuts
+    std::set<std::string> kh2_cut_except;
+    bool said_states = false;  // the game's actor states were seen reaching its draws
+    std::vector<Mat> kh2_rest; // per joint: inverse(inverse_bind), skin to world (made on first use)
     bool kh2_root_motion = false;
     bool kh2_ik_adjust = true;                 // the feet on the game's floor (IKAdjust)
     bool limit_meshes = false;                 // some mesh is drawn by whether a limit animation plays (Mesh::limit)
@@ -612,6 +626,14 @@ struct Kh2Actor {
     std::array<float, 2> shown_keyed{}, held_keyed{}; // their kh2_own_share and kh2_retargeted_share
     khdays::kh2_moves::IdleFade held_fade;
     float held_from_ratio = 0.0F;
+    // `cut_blend`: the pose shown when the game last cut, its share now, and the weapon's pose and share then
+    std::vector<Mat> cut_held, cut_weapon, weapon_shown;
+    std::array<float, 2> cut_keyed{};
+    float cut_weight = 0.0F, cut_weapon_share = 1.0F, weapon_shown_share = 1.0F;
+    int main_slot = -1; // the KH2 slot the main animation played at the last draw (-1: the game's own pose)
+    // `air_floor`: the draws in a row off the floor and on it, and the animations playing their land slot
+    std::uint32_t off_floor = 0, on_floor = 0;
+    std::set<std::string> landed;
     std::string held_from;
     Kh2Track tail_track, tail_faded; // the piece playing and the one before it fading out
     std::size_t tail_piece = 0;
@@ -708,7 +730,7 @@ struct BonesFile {
     std::vector<std::string> limit_shapes; // `limit_shapes <name|prefix*>...`: or while the game draws these shapes
     std::vector<TwistLine> twists;
     std::string held;
-    bool held_rest = false, held_own_turn = false, held_onto = false;
+    bool held_rest = false, held_own_turn = false, held_onto = false, held_body = false;
     std::array<float, 3> held_turn{};
     std::vector<CuffLine> cuffs;
     std::vector<CuffPoseLine> cuff_pose;
@@ -774,6 +796,8 @@ inline float kh2_weapon_share = 1.0F;
 struct HeldWeapon {
     std::vector<Mat> pose;
     Mat from_game = kIdentity;
+    Mat frame = kIdentity; // the frame the body's `weapon` line gave the weapon (`held <joint> body` is drawn on it)
+    Mat blade = kIdentity; // the `weapon_motions` bone as the held weapon is drawn: frame x from_game x its pose
     u32 vblank = 0;
 };
 inline HeldWeapon held_weapon;
@@ -798,6 +822,7 @@ struct WeaponModelHold {
     bool carry = false;
     Mat game_hand = kIdentity, hand_node = kIdentity;
     float reach = 0.0F;
+    bool on_weapon = false; // `weapon_model ... weapon`: the node on held_weapon.blade times `grip`
 };
 std::vector<WeaponModelHold> weapon_model_holds; // the last such body's, one a `weapon_model` line
 // the weapon model being drawn: each of its nodes a line names, and that line's hold

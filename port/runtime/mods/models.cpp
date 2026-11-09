@@ -536,11 +536,12 @@ void draw(Model &m)
         }
         Mat by = kIdentity;
         by[0] = by[5] = by[10] = m.scale;
+        const Mat &on = m.held_body ? held_weapon.frame : root;
         std::vector<char> moved_joint(m.joints.size(), 0);
         for (std::size_t j = 0; j < m.joints.size(); ++j) {
             const int b = m.held_bone[j], parent = m.joints[j].parent;
             if (b >= 0 && static_cast<std::size_t>(b) < held_weapon.pose.size()) {
-                skin[j] = mul(mul(root, mul(held_weapon.from_game, held_weapon.pose[static_cast<std::size_t>(b)])),
+                skin[j] = mul(mul(on, mul(held_weapon.from_game, held_weapon.pose[static_cast<std::size_t>(b)])),
                               mul(m.held_onto, mul(by, m.joints[j].inverse_bind)));
                 moved_joint[j] = 1;
             } else if (m.joints[j].node < 0 && parent >= 0 && moved_joint[static_cast<std::size_t>(parent)]) {
@@ -656,8 +657,10 @@ void draw(Model &m)
         const Mat weapon = mul(weapon_pose[b], mul(inverse(m.weapon_rest[b]), turn));
         held_weapon.pose = weapon_pose;
         held_weapon.from_game = inverse(weapon);
+        held_weapon.frame = mul(joint_frame(j), weapon);
+        held_weapon.blade = mul(held_weapon.frame, mul(held_weapon.from_game, weapon_pose[b]));
         held_weapon.vblank = khdays_events_vblank_count();
-        return mul(joint_frame(j), weapon);
+        return held_weapon.frame;
     };
     // a joint placed on its weapon's own node is already the weapon's frame in every mix, as KH2 hangs a weapon on the
     // holder's mixed bone: turning it toward the game's again by its share would mix the game's pose in twice
@@ -671,6 +674,13 @@ void draw(Model &m)
         WeaponModelHold held;
         held.file = w.file;
         held.node = w.node;
+        if (w.on_weapon) {
+            held.on_weapon = true;
+            held.grip = w.turn;
+            held.vblank = khdays_events_vblank_count();
+            weapon_model_holds.push_back(std::move(held));
+            continue;
+        }
         held.hand = joint_frame(static_cast<std::size_t>(w.hand));
         held.grip = mul(w.rel, w.turn);
         held.grip_valid = w.joint >= 0 && w.rel_valid;
@@ -1283,6 +1293,27 @@ extern "C" void khdays_models_node(unsigned node, int sent)
 // carried by the drawn hand as the game's hand node carries it (its arms reach elsewhere), as `weapon ... hand`.
 void place_weapon_model(const WeaponModelHold &hold)
 {
+    if (hold.on_weapon) { // the KH2 weapon's bone as the body last drew it, the line's turn on it
+        if (khdays_events_vblank_count() - held_weapon.vblank >= 60U)
+            return;
+        float pos[16], vecm[16], proj[16];
+        khdays_g3d_matrices(pos, vecm, proj);
+        Mat out = mul(held_weapon.blade, hold.grip);
+        for (std::size_t c = 0; c < 3; ++c) { // the node's own scale kept, the frame's taken out
+            const float own = length({pos[c * 4], pos[c * 4 + 1], pos[c * 4 + 2]});
+            const float has = length({out[c * 4], out[c * 4 + 1], out[c * 4 + 2]});
+            for (std::size_t e = 0; e < 3; ++e)
+                out[c * 4 + e] *= has > 1e-9F ? own / has : 1.0F;
+        }
+        const uint32_t mode = 2; // MTX_MODE 2, MTX_LOAD_4x4 (as below)
+        khdays_g3d_command(0x10, &mode);
+        uint32_t words[16];
+        for (int i = 0; i < 16; ++i)
+            words[i] =
+                static_cast<uint32_t>(static_cast<int32_t>(std::lround(out[static_cast<std::size_t>(i)] * 4096.0F)));
+        khdays_g3d_command(0x16, words);
+        return;
+    }
     const float share = hold.kh2_share;
     const bool kh2 = share > 0.001F && hold.grip_valid;
     if (!kh2 && !hold.carry)
