@@ -4,6 +4,7 @@
 #pragma once
 
 #include "models.h"
+#include "../rooms/added.h" /* C++ in part (std::function): outside the extern "C" below */
 
 extern "C" {
 #include "../../gfx/g3d.h"
@@ -12,7 +13,6 @@ extern "C" {
 #include "../core/events.h" // khdays_events_vblank_count
 #include "../core/rom.h"    // khdays_mods_find
 #include "../core/session_log.h"
-#include "../rooms/added.h"
 #include "../scripts/game_link.h" // khdays_link_paused
 #include "textures.h"
 #include "../core/window.h"
