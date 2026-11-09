@@ -361,8 +361,7 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   step begins) play their cameras ("Event sequences" below).
 - **Not yet**: its name on the enemy HUD (the stand-in's shows); Days's camera, close behind the player, inside its
   body (6 m) outside the reaction command; its leap's loop (motion 171, from frame 63) never ends without a hit (KH2's
-  way out not read); 0:32 (the routine's screen effect) and the sequences' screen effects and vibration (commands
-  0x17, 0x18, 0x27) not played.
+  way out not read); 0:32 (the routine's screen effect) and the sequences' depth blur (command 0x18) not played.
 
 ## A player in an enemy's hands
 
@@ -409,10 +408,27 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
 - **Commands**: a u16 size, a u16 number, then its own; size 0 ends them. Read before the sequence starts
   (`FUN_1402cc180`): 0 its name at + 10 ("re_b_he020-00"), 0xf the start, 0x10 + 4 a number (`DAT_140b64fbc`), 8 its
   length in frames at + 4, 0x13 a camera. On their frames (`FUN_1402cb5d0`, each with its frame at + 4): 6 a camera's
-  span (+ 4 the camera, + 6 its first frame, + 8 its last), 0x17 and 0x18 a screen effect started and ended
-  (`FUN_14015f1e0`'s centre at + 0xc and + 0xe halved), 0x27 a vibration (+ 0xe), 0x31 the camera set from the
-  player's matrix (+ 6 1, `FUN_1402d27a0`) or given back to the game (+ 6 0: Cerberus's "30" at its last frame), 0x51 a
-  call back to its object, 0x3c an effect element on its object (+ 6).
+  span (+ 4 the camera, + 6 its first frame, + 8 its last), 0x17 the screen's trail, 0x18 a depth blur, 0x27 a camera
+  shake (the three below), 0x31 the camera set from the player's matrix (+ 6 1, `FUN_1402d27a0`) or given back to the
+  game (+ 6 0: Cerberus's "30" at its last frame), 0x51 a call back to its object, 0x3c an effect element on its
+  object (+ 6). The loop waits for each command's frame before it goes on to the next (`FUN_1402c87f0`), so they play
+  in the file's order.
+- **The screen's trail** (0x17, `FUN_1402da6a0`; drawn each frame by `FUN_14015f250` with `DAT_140abc690`'s quad):
+  + 6 1 ends it (`FUN_14015f170(0)`); else it starts: the screen taken (`FUN_140153430`), then each frame laid over the
+  new one as a quad of the whole view and taken again -- the picture before at the quad's vertex alpha, + 7 of 0x80
+  (Cerberus's 0x3c, 0x32; the GS's `(Cs - Cd) As + Cd`), the quad + 0xc by + 0xe of KH2's 512 x 416 screen about its
+  middle (halved, then doubled: Cerberus's 514 x 418, a little larger, so the trail spreads out), turned + 8 radians
+  more each frame for + 0x10 frames (`FUN_14015f1a0`; Cerberus's 0: square). Cerberus's: 11 frames as the bite closes
+  ("00", 98 to 109), 9 in "Jump!", 9 at the blow.
+- **The depth blur** (0x18, `FUN_1402da870` -> `FUN_140172100`; drawn by `FUN_14018a9e0`): + 6 1 ends it; else the
+  screen drawn again in four copies a little apart, at alpha 0x30 (0x20 in its other way), at the depth + 8 (at least
+  15000; Cerberus's 20000, 5000, 1000) with the depth test, so only what lies beyond it blurs; + 7 its way. **Not
+  played**: the depth is the GS's and its scale against Days's depth was not worked out.
+- **The camera shake** (0x27, `FUN_1402da950` -> `FUN_140528bc0`; moved each frame by `FUN_140528920` until its time is
+  up): the eye moved by `(r - 0.5) x amplitude x envelope` on each axis, r at random (rand()), the amplitudes + 6, + 8,
+  + 0xa (cm; Cerberus's 150, 150, 0 and 80, 100, 0), x and z turned with the camera's yaw (`FUN_1401aadc0`), for
+  + 0xc frames twice in ticks; the envelope + 0xe: 0 steady, 1 rising then falling, 2 rising, 3 falling. It is the
+  camera's, not the pad's: the pad's vibration is a motion's trigger 31.
 - **A camera** (0x13, `FUN_1402d2620` keeps it by its number at + 4): eight channels, each a u16 first key and an s16
   count at + 6 + 4n, the keys at + 0x28, 16 bytes each: a word (bits 29-31 the interpolation to the next key -- 0 held,
   1 linear, 2 to 4 Hermite; bits 0-28 the time, signed, in 1/512 s), the value, its slope in and out (a second's
@@ -437,12 +453,15 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
   length or with its enemy. Its camera replaces the frame's (`runtime/camera/kh2_camera_hooks.c`, the end of each
   camera frame and each commit, whichever camera the field has) for the player it is about -- the one the enemy holds,
   or its attack last landed on -- with KH2's event cameras' near plane; the field of view the camera had goes back
-  after, and the KH2 camera takes up again as after Days's camera's frames. The roll is not drawn (Cerberus's are 0),
-  nor commands 0x17, 0x18 and 0x27, nor 0x31's camera from the player's matrix (told in the trace when a sequence
-  starts). Played with Cerberus (2026-11-09): the four shots in turn, the HD PACK's KH2 Roxas in its mouth, in the air
-  for "Jump!" and on its heads for the blow; a room smaller than KH2's arena leaves some shots outside its walls (KH2's
-  event cameras meet no collision). Days's own Roxas model plays none of KH2's motion: it stays at the hold's place,
-  Cerberus's middle, inside its body.
+  after, and the KH2 camera takes up again as after Days's camera's frames. Its commands on frames play in the
+  file's order as the frame reaches each: the shake's offset (a new one each KH2 tick) moves the event camera's eye;
+  the trail goes to the host in the frame package (`trail`) and is laid over the field's 3D after its antialiasing
+  (`shaders/trail3d.hlsl`, docs/RENDERING.md), at KH2's 60 frames a second whatever the picture's rate. Both end
+  with the sequence. The roll is not drawn (Cerberus's are 0), nor the depth blur, nor 0x31's camera from the player's
+  matrix (told in the trace when a sequence starts). Played with Cerberus (2026-11-09): the four shots in turn, the HD
+  PACK's KH2 Roxas in its mouth, in the air for "Jump!" and on its heads for the blow; a room smaller than KH2's arena
+  leaves some shots outside its walls (KH2's event cameras meet no collision). Days's own Roxas model plays none of
+  KH2's motion: it stays at the hold's place, Cerberus's middle, inside its body.
 
 ## Triggers
 

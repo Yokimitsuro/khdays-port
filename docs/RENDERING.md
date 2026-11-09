@@ -451,6 +451,14 @@ mods' models, leaves them out. Between two of the game's lists (`g3d_interp.c`) 
 model's draw (a KH2 enemy's effects come in its model's): the model's polygons keep their places in the draw whatever
 the effects' count -- a model's triangle taken for another as an effect grew broke Cerberus into pieces as it landed.
 
+A KH2 enemy's screen trail (an event sequence's command 0x17, docs/KH2_ENEMIES.md "Event sequences") comes in the
+frame package's `trail` (its alpha, its quad's width and height over the view's, its turn). `gpu_raster3d.c` lays it
+after the field's 3D is drawn and antialiased (`shaders/trail3d.hlsl`): the trail so far, read between its texels on
+the quad about the view's middle, mixed over the new 3D at its alpha (each texel by its alpha, the new texel's flags
+kept) into a second texture, which is the next trail and is copied back over the colour. KH2 lays it once a frame at
+60 a second: a picture `dt` such frames after the last takes the alpha and the quad's size to the power of `dt` and
+the turn `dt` times. The HUD drawn apart is left out; a frame without a trail starts the next one afresh.
+
 ## Mods' graphics
 
 What a mod may replace and how it is named is in `README.md` and

@@ -629,6 +629,22 @@ struct Playing final {
     unsigned enemy = 0, player = 0, ticks = 0;
     float base[3] = {};
     float yaw = 0.0F;
+    std::size_t next = 0; // its next command on a frame (KH2's loop waits on each in turn)
+    // the screen's trail it started (command 0x17, FUN_14015f250 each tick): the picture before over the new at
+    // `alpha`, its quad `size` of the screen, turned `angle` (on by its `turn` a tick for `turn_ticks`)
+    struct Trail final {
+        float alpha = 0.0F, size[2] = {1.0F, 1.0F}, angle = 0.0F, turn = 0.0F;
+        int turn_ticks = 1, turned = 0;
+    };
+    std::optional<Trail> trail;
+    // the camera shake it started (command 0x27, FUN_140528920 each tick): its ticks gone, the eye's offset now (cm,
+    // the camera's x right, y up, z ahead)
+    struct Shake final {
+        kh2::EventShake shake;
+        int gone = 0;
+        std::array<float, 3> offset{};
+    };
+    std::optional<Shake> shake;
 };
 std::optional<Playing> playing;
 
@@ -1319,12 +1335,58 @@ void Field::event(Actor &a, const std::string &name, Object *target)
     playing = std::move(p);
 }
 
-// The event player's tick with its enemy's (KH2's 60 a second; its frames 30): over at its length
+// A shake's offset this tick (FUN_140528920): each axis at random within half its amplitude either way, times the
+// envelope at the ticks gone
+std::array<float, 3> shake_offset(const Playing::Shake &s)
+{
+    static std::uint32_t seed = 0x2545f491u;
+    const float envelope = kh2::event_shake_envelope(s.shake.shape, float(s.gone), float(s.shake.ticks));
+    std::array<float, 3> out{};
+    for (std::size_t i = 0; i < 3; ++i) {
+        seed = seed * 1664525u + 1013904223u;
+        const float r = float(seed >> 8) / float(1u << 24);
+        out[i] = (r * s.shake.amplitude[i] - s.shake.amplitude[i] * 0.5F) * envelope;
+    }
+    return out;
+}
+
+// The event player's tick with its enemy's (KH2's 60 a second; its frames 30): its commands on frames played as the
+// frame reaches each, its trail turned and its shake moved on; over at its length
 void event_tick(const Enemy &e)
 {
     if (!playing || playing->enemy != e.days)
         return;
-    if (++playing->ticks >= 2u * unsigned(std::max(playing->event->length, 0))) {
+    Playing &p = *playing;
+    const int frame = int((p.ticks + 1) / 2);
+    while (p.next < p.event->timed.size() && p.event->timed[p.next].frame <= frame) {
+        const kh2::EventTimed &c = p.event->timed[p.next++];
+        if (c.command == 0x17 && c.trail.stop) {
+            p.trail.reset(); // FUN_14015f170(0)
+        } else if (c.command == 0x17) {
+            Playing::Trail tr;
+            tr.alpha = float(c.trail.alpha) / 128.0F;
+            tr.size[0] = float(c.trail.width) / 512.0F; // of KH2's 512 x 416 screen (FUN_14015f1e0)
+            tr.size[1] = float(c.trail.height) / 416.0F;
+            tr.turn = c.trail.turn;
+            tr.turn_ticks = c.trail.turn_ticks != 0 ? c.trail.turn_ticks : 1;
+            p.trail = tr;
+        } else if (c.command == 0x27) {
+            p.shake = Playing::Shake{c.shake, 0, {}};
+        }
+        if (tracing())
+            khdays_log("kh2 enemies: event sequence %s plays command %#x at frame %d", p.event->name.c_str(), c.command,
+                       frame);
+    }
+    if (p.trail && p.trail->turn != 0.0F && p.trail->turned < p.trail->turn_ticks) {
+        p.trail->angle = std::remainder(p.trail->angle + p.trail->turn, 6.2831853F);
+        ++p.trail->turned;
+    }
+    if (p.shake) {
+        p.shake->offset = shake_offset(*p.shake);
+        if (++p.shake->gone >= p.shake->shake.ticks)
+            p.shake.reset();
+    }
+    if (++p.ticks >= 2u * unsigned(std::max(p.event->length, 0))) {
         if (tracing())
             khdays_log("kh2 enemies: event sequence %s over", playing->event->name.c_str());
         playing.reset();
@@ -2243,6 +2305,28 @@ extern "C" int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float 
     event_point(*playing, view.eye, eye);
     event_point(*playing, view.at, at);
     *fov_half = view.fov * 0.5F;
+    if (playing->shake) {
+        // the eye moved in the camera's own axes: x and z turned with its yaw, y up (FUN_140528920)
+        const float dx = at[0] - eye[0], dz = at[2] - eye[2], flat = std::sqrt(dx * dx + dz * dz);
+        const float ax = flat > 1e-6F ? dx / flat : 0.0F, az = flat > 1e-6F ? dz / flat : 1.0F;
+        const auto &o = playing->shake->offset;
+        eye[0] += (o[0] * az + o[2] * ax) / kKh2PerDays;
+        eye[1] += o[1] / kKh2PerDays;
+        eye[2] += (-o[0] * ax + o[2] * az) / kKh2PerDays;
+    }
+    return 1;
+}
+
+// The screen's trail a sequence playing for this game's player has on (runtime/display/frame_package.h, `trail`): its
+// alpha, its quad's width and height over the view's, its turn in radians; 0 when none
+extern "C" int khdays_kh2_enemies_screen_trail(float out[4])
+{
+    if (!playing || !playing->trail || playing->player == 0 || playing->player != local_player)
+        return 0;
+    out[0] = playing->trail->alpha;
+    out[1] = playing->trail->size[0];
+    out[2] = playing->trail->size[1];
+    out[3] = playing->trail->angle;
     return 1;
 }
 

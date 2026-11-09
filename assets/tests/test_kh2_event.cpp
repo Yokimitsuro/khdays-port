@@ -1,6 +1,7 @@
 // KH2's event sequences (kh2_event.h) on a made-up event: its commands read, its camera's keys (their interpolation
 // and signed times), the channels between and beyond their keys, the eye and look-at turned to KH2's axes, the field
-// of view in radians, and the cuts that say which camera shows when.
+// of view in radians, the cuts that say which camera shows when, and a screen trail and a camera shake on their
+// frames with the shake's envelopes.
 #include "khdays/assets/kh2_event.h"
 
 #include <cmath>
@@ -105,6 +106,26 @@ std::vector<std::uint8_t> made_up_event() {
     put16(body, 60);
     put16(body, 0);
     command(b, 6, body);
+    // a trail from frame 10 (Cerberus's: alpha 0x3c, its quad 514 x 418, no turn), then a shake at frame 9 (150 cm
+    // each way across, for 7 frames, rising then falling): listed after it, played after it
+    body.clear();
+    put16(body, 10);
+    body.push_back(0);
+    body.push_back(0x3c);
+    putf(body, 0.0F);
+    put16(body, 0x202);
+    put16(body, 0x1a2);
+    put16(body, 0);
+    put16(body, 0);
+    command(b, 0x17, body);
+    body.clear();
+    put16(body, 9);
+    put16(body, 150);
+    put16(body, 150);
+    put16(body, 0);
+    put16(body, 7);
+    put16(body, 1);
+    command(b, 0x27, body);
     put16(b, 0);  // the end
     put16(b, 0);
     return b;
@@ -117,7 +138,27 @@ int main() {
     const kh2::Event ev = kh2::read_event(bytes.data(), bytes.size());
     check(ev.name == "re_test-00", "the name from command 0");
     check(ev.length == 60, "the length from command 8");
-    check(ev.commands == std::vector<int>({0, 0xf, 8, 0x13, 6}), "every command in order");
+    check(ev.commands == std::vector<int>({0, 0xf, 8, 0x13, 6, 0x17, 0x27}), "every command in order");
+    check(ev.timed.size() == 2 && ev.timed[0].command == 0x17 && ev.timed[1].command == 0x27,
+          "the timed commands in the file's order");
+    if (ev.timed.size() == 2) {
+        const kh2::EventTrail& trail = ev.timed[0].trail;
+        check(ev.timed[0].frame == 10 && !trail.stop && trail.alpha == 0x3c && trail.width == 514 &&
+                  trail.height == 418 && trail.turn == 0.0F,
+              "the trail");
+        const kh2::EventShake& shake = ev.timed[1].shake;
+        check(ev.timed[1].frame == 9 && shake.amplitude[0] == 150.0F && shake.amplitude[1] == 150.0F &&
+                  shake.amplitude[2] == 0.0F && shake.ticks == 14 && shake.shape == 1,
+              "the shake (its frames twice in ticks)");
+    }
+    check(near(kh2::event_shake_envelope(0, 3.0F, 14.0F), 1.0F), "a steady shake");
+    check(near(kh2::event_shake_envelope(1, 7.0F, 14.0F), 1.0F) &&
+              near(kh2::event_shake_envelope(1, 10.5F, 14.0F), 0.5F),
+          "a shake rising then falling");
+    check(near(kh2::event_shake_envelope(2, 3.5F, 14.0F), 0.25F) &&
+              near(kh2::event_shake_envelope(3, 3.5F, 14.0F), 0.75F) &&
+              kh2::event_shake_envelope(5, 1.0F, 2.0F) == 0.0F,
+          "the ramps, and none for another shape");
     check(ev.cuts.size() == 1 && ev.cuts[0].camera == 3 && ev.cuts[0].start == 0 && ev.cuts[0].end == 60,
           "the cut");
     check(ev.cameras.size() == 1 && ev.cameras[0].id == 3, "the camera");
@@ -167,7 +208,7 @@ int main() {
     check(threw, "a cut-short entry refused");
 
     if (failures == 0) {
-        std::printf("kh2 events: commands, keys, channels, views and cuts as KH2 reads them\n");
+        std::printf("kh2 events: commands, keys, channels, views, cuts, trails and shakes as KH2 reads them\n");
     }
     return failures == 0 ? 0 : 1;
 }

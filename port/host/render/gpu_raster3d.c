@@ -14,6 +14,7 @@
 #include "../../ui/composition.h"
 #include "generated/compose_cs.h"
 #include "generated/fxaa3d_cs.h"
+#include "generated/trail3d_cs.h"
 #include "generated/raster3d_cs.h"
 
 #include <math.h>
@@ -46,6 +47,11 @@ typedef struct FxaaParams {
     uint32_t width, height, fine, unused;
 } FxaaParams;
 
+typedef struct TrailParams {
+    uint32_t width, height, fine, first;
+    float alpha, size_x, size_y, angle;
+} TrailParams;
+
 typedef struct ComposeParams {
     uint32_t scale, width, height, disp3dcnt, swap_params, clear_color, clear_depth, fog_color;
     uint32_t fog_offset, eva, evb, evy, master_bright, bg0_hofs;
@@ -77,6 +83,12 @@ static SDL_GPUComputePipeline *fxaa; /* the antialiasing's pass (fxaa3d.hlsl); N
 static SDL_GPUTexture *fxaa_out;     /* its output, as large as the colour target */
 static int fxaa_width, fxaa_height;
 static int fxaa_on; /* khdays_raster3d_set_fxaa */
+/* A KH2 enemy's screen trail (trail3d.hlsl; the package's `trail`): its pass, NULL when the card could not make it;
+ * the trail so far and the one made from it, as large as the colour target; whether one was made last, and when */
+static SDL_GPUComputePipeline *trail;
+static SDL_GPUTexture *trail_tex[2];
+static int trail_width, trail_height, trail_which, trail_had;
+static Uint64 trail_ns;
 static SDL_GPUBuffer *polys, *verts, *tiles, *vram, *records, *sequences;
 static uint32_t polys_capacity, verts_capacity; /* entries in `polys` and `verts`: the most any list has had */
 static int fine;                                /* draw the 3D in 8 bits per channel (khdays_raster3d_set_fine) */
@@ -275,6 +287,11 @@ int khdays_raster3d_open(SDL_GPUDevice *d)
     if (fxaa == NULL) {
         fprintf(stderr, "host: the antialiasing's pass cannot be made (%s): drawn without it\n", SDL_GetError());
     }
+    trail = make_pipeline(trail3d_cs_dxil, trail3d_cs_dxil_size, trail3d_cs_spirv, trail3d_cs_spirv_size,
+                          trail3d_cs_msl, trail3d_cs_msl_size, TRAIL3D_CS_ENTRY, 0, 0, 3, 0);
+    if (trail == NULL) {
+        fprintf(stderr, "host: the screen trail's pass cannot be made (%s): drawn without it\n", SDL_GetError());
+    }
     native_ready = khdays_native3d_open(device);
     if (!native_ready) {
         fprintf(stderr, "host: the card's rasterizer cannot draw the 3D (%s): raster3d.hlsl draws it\n",
@@ -373,6 +390,15 @@ void khdays_raster3d_close(void)
     fxaa = NULL;
     fxaa_out = NULL;
     fxaa_width = fxaa_height = 0;
+    if (trail != NULL)
+        SDL_ReleaseGPUComputePipeline(device, trail);
+    for (int k = 0; k < 2; ++k) {
+        if (trail_tex[k] != NULL)
+            SDL_ReleaseGPUTexture(device, trail_tex[k]);
+        trail_tex[k] = NULL;
+    }
+    trail = NULL;
+    trail_width = trail_height = trail_had = 0;
     if (polys != NULL)
         SDL_ReleaseGPUBuffer(device, polys);
     if (verts != NULL)
@@ -955,6 +981,66 @@ static int smooth_edges(SDL_GPUCommandBuffer *cmd, int w, int h)
     return 1;
 }
 
+/* A KH2 enemy's screen trail over the colour just drawn, `w` x `h` (`t`: the package's trail): the trail so far laid
+ * over it (trail3d.hlsl) into the other texture, which becomes the trail and is copied back over the colour. KH2 lays
+ * it once a frame at 60 a second: a picture drawn after `dt` of those frames takes the trail at its share to the power
+ * of `dt`, its quad's size so too and its turn `dt` times. Returns 0 when the textures cannot be made. */
+static int lay_trail(SDL_GPUCommandBuffer *cmd, int w, int h, const float t[4])
+{
+    TrailParams tp;
+    SDL_GPUStorageTextureReadWriteBinding io[3];
+    SDL_GPUComputePass *pass;
+    SDL_GPUCopyPass *copy;
+    SDL_GPUTextureLocation from, to;
+    const Uint64 now = SDL_GetTicksNS();
+    float dt;
+    if (trail_tex[0] == NULL || trail_width != w || trail_height != h) {
+        for (int k = 0; k < 2; ++k) {
+            if (trail_tex[k] != NULL)
+                SDL_ReleaseGPUTexture(device, trail_tex[k]);
+            trail_tex[k] = make_target(SDL_GPU_TEXTUREFORMAT_R32_UINT, target_usage, w, h);
+        }
+        trail_width = trail_tex[0] != NULL && trail_tex[1] != NULL ? w : 0;
+        trail_height = trail_width != 0 ? h : 0;
+        trail_had = 0;
+        if (trail_width == 0) {
+            return 0;
+        }
+    }
+    dt = trail_had ? (float)(now - trail_ns) * 60.0f / 1e9f : 1.0f;
+    dt = dt < 0.05f ? 0.05f : dt > 4.0f ? 4.0f : dt;
+    SDL_zero(tp);
+    tp.width = (uint32_t)w;
+    tp.height = (uint32_t)h;
+    tp.fine = (uint32_t)fine;
+    tp.first = trail_had ? 0u : 1u;
+    tp.alpha = SDL_powf(t[0] < 1.0f ? t[0] : 1.0f, dt);
+    tp.size_x = SDL_powf(t[1] > 0.0f ? t[1] : 1.0f, dt);
+    tp.size_y = SDL_powf(t[2] > 0.0f ? t[2] : 1.0f, dt);
+    tp.angle = t[3] * dt;
+    SDL_zeroa(io);
+    io[0].texture = color3d; /* read only here */
+    io[1].texture = trail_tex[trail_which];
+    io[2].texture = trail_tex[1 - trail_which];
+    io[2].cycle = true;
+    pass = SDL_BeginGPUComputePass(cmd, io, 3, NULL, 0);
+    SDL_BindGPUComputePipeline(pass, trail);
+    SDL_PushGPUComputeUniformData(cmd, 0, &tp, sizeof(tp));
+    SDL_DispatchGPUCompute(pass, (Uint32)(w + 7) / 8, (Uint32)(h + 7) / 8, 1);
+    SDL_EndGPUComputePass(pass);
+    copy = SDL_BeginGPUCopyPass(cmd);
+    SDL_zero(from);
+    SDL_zero(to);
+    from.texture = trail_tex[1 - trail_which];
+    to.texture = color3d;
+    SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)w, (Uint32)h, 1, false);
+    SDL_EndGPUCopyPass(copy);
+    trail_which = 1 - trail_which;
+    trail_had = 1;
+    trail_ns = now;
+    return 1;
+}
+
 static const KhdaysG3dList *list_instead; /* a list to draw instead of the package's (khdays_raster3d_use_list) */
 static int one_screen; /* khdays_raster3d_set_one_screen: do not move the HUD's polygons to the sides */
 static const KhdaysShape3d *hud_shapes; /* where the one-screen layout puts the HUD (khdays_raster3d_set_hud_shapes) */
@@ -1465,6 +1551,17 @@ static int draw(const KhdaysFramePackage *p, int scale, int texture_smoothing, i
         fprintf(stderr, "host: no texture for the antialiasing at %dx%d (%s): drawn without it\n", w, h,
                 SDL_GetError());
         fxaa_on = 0;
+    }
+    /* a KH2 enemy's screen trail over the field's 3D (not the HUD drawn apart); none: the next one starts afresh */
+    if (!drawing_hud) {
+        if (p->trail[0] > 0.0f && trail != NULL) {
+            if (!lay_trail(cmd, w, h, p->trail)) {
+                fprintf(stderr, "host: no texture for the screen trail at %dx%d (%s): drawn without it\n", w, h,
+                        SDL_GetError());
+            }
+        } else {
+            trail_had = 0;
+        }
     }
     if (compose_too) {
         ComposeParams cp;

@@ -58,6 +58,14 @@ int khdays_kh2_enemies_quiet(unsigned archive, unsigned entry, const void *place
  * spawners' kinds entry, so Days alone would take any of the class's actors (docs/RUNTIME_MAP.md section 37). */
 int khdays_kh2_enemies_fits(unsigned spawner, int slot, unsigned actor);
 
+/* The camera of a KH2 enemy's event sequence playing for this game's player (runtime/camera/kh2_camera_hooks.c): its
+ * eye and look-at in Days's world, half its vertical field of view (0: the camera's own kept); 0 when none shows. */
+int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half);
+
+/* The screen's trail such a sequence has on (runtime/display/display.c, into the frame package's `trail`): its alpha,
+ * its quad's width and height over the view's, its turn in radians; 0 when none. */
+int khdays_kh2_enemies_screen_trail(float out[4]);
+
 #ifdef __cplusplus
 }
 

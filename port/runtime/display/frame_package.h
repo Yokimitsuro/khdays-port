@@ -146,6 +146,10 @@ typedef struct KhdaysFramePackage {
     uint32_t information_hold_frames;
     uint32_t information_state;
     uint32_t hud_options;
+    /* A KH2 enemy's screen trail (runtime/kh2_enemies/shell.cpp, an event sequence's command 0x17): the 3D drawn
+     * before laid over the new at trail[0] (0: none), as a quad trail[1] x trail[2] of the view about its middle,
+     * turned trail[3] radians (host/render/gpu_raster3d.c). */
+    float trail[4];
 } KhdaysFramePackage;
 
 /* What KHDAYS_RECORD_FRAMES writes of a package (version 14): all of it but

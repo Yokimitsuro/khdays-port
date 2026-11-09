@@ -5,6 +5,7 @@
 #include "../core/events.h"
 #include "frame_package.h"
 #include "field_wipe.h"
+#include "../kh2_enemies/shell.h"
 #include "../../gfx/describe.h"
 #include "gfx_check.h"
 #include "../../gpu/gpu2d.h"
@@ -1168,6 +1169,9 @@ static void begin_package(KhdaysFramePackage *p, u32 frame, int want, int captur
     p->capture = (uint8_t)capture;
     package_capture(p);
     p->field_wipe = (uint32_t)khdays_field_wipe_running(frame);
+    if (!khdays_kh2_enemies_screen_trail(p->trail)) {
+        memset(p->trail, 0, sizeof(p->trail));
+    }
     if (want & KHDAYS_WANT_SITUATION) {
         /* the one-screen picture's inputs: a few of the game's bytes */
         khdays_situation_take(&p->situation, frame);

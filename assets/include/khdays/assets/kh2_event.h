@@ -34,12 +34,43 @@ struct EventCut final {
     int camera = 0, start = 0, end = 0;
 };
 
+// The screen's trail (command 0x17, FUN_1402da6a0, drawn by FUN_14015f250): from its frame the picture before is drawn
+// over each new one at `alpha` of 0x80 (+ 7), as a quad `width` x `height` of KH2's 512 x 416 screen about its middle
+// (+ 0xc and + 0xe, halved and doubled again), turned `turn` radians more each tick for `turn_ticks` ticks (+ 8,
+// + 0x10; a turn of 0 leaves it square). `stop` (+ 6) ends the one going.
+struct EventTrail final {
+    bool stop = false;
+    int alpha = 0;
+    int width = 0, height = 0;
+    float turn = 0.0F;
+    int turn_ticks = 0;
+};
+
+// A camera shake (command 0x27, FUN_1402da950 -> FUN_140528bc0, played each tick by FUN_140528920): the eye moved at
+// random by up to half of `amplitude` (+ 6, + 8, + 0xa: cm, x and z turned with the camera) for `ticks` (+ 0xc, its
+// frames twice), times its envelope `shape` (+ 0xe: 0 steady, 1 rising then falling, 2 rising, 3 falling).
+struct EventShake final {
+    std::array<float, 3> amplitude{};
+    int ticks = 0;
+    int shape = 0;
+};
+
+// A command played on its frame (+ 4), in the file's order: KH2's loop (FUN_1402cb5d0) waits for each command's frame
+// before it goes on to the next.
+struct EventTimed final {
+    int command = 0;  // 0x17 a trail, 0x27 a shake
+    int frame = 0;
+    EventTrail trail;
+    EventShake shake;
+};
+
 struct Event final {
     std::string name;  // command 0's, from + 10 ("re_b_he020-00")
     int length = 0;    // command 8's frames
     std::vector<EventCamera> cameras;
     std::vector<EventCut> cuts;
-    std::vector<int> commands;  // every command's number, in order (what the port does not play is told from it)
+    std::vector<EventTimed> timed;  // the commands on frames the port plays
+    std::vector<int> commands;      // every command's number, in order (what the port does not play is told from it)
 };
 
 // The event in an entry of type 0x16: its commands each a u16 size and a u16 number, to one of size 0 or the end.
@@ -59,6 +90,9 @@ struct EventView final {
     float roll = 0.0F, fov = 0.0F;
 };
 void event_view(const EventCamera& camera, float frame, EventView& out);
+
+// A shake's envelope at `ticks` of its `length` (FUN_140528920): 1 steady, a tent, a ramp up, a ramp down; 0 another
+float event_shake_envelope(int shape, float ticks, float length);
 
 // The camera an event shows at `frame` from its start, and the frame within its cut (FUN_1402d37b0: the cut whose
 // span holds the frame, its time held at the cut's end); nullptr when no cut holds it.

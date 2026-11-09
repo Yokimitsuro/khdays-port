@@ -91,6 +91,32 @@ Event read_event(const std::uint8_t* data, std::size_t size) {
                 ev.length = s16(c + 4);
             }
             break;
+        case 0x17:
+            if (length >= 0x12) {
+                EventTimed t;
+                t.command = number;
+                t.frame = s16(c + 4);
+                t.trail.stop = c[6] != 0;
+                t.trail.alpha = c[7];
+                t.trail.turn = f32(c + 8);
+                t.trail.width = ((u16(c + 0xc) >> 1U) & 0xffffU) * 2;  // FUN_14015f1e0's halves, doubled
+                t.trail.height = ((u16(c + 0xe) >> 1U) & 0xffffU) * 2;
+                t.trail.turn_ticks = s16(c + 0x10);
+                ev.timed.push_back(t);
+            }
+            break;
+        case 0x27:
+            if (length >= 0x10) {
+                EventTimed t;
+                t.command = number;
+                t.frame = s16(c + 4);
+                t.shake.amplitude = {static_cast<float>(s16(c + 6)), static_cast<float>(s16(c + 8)),
+                                     static_cast<float>(s16(c + 0xa))};
+                t.shake.ticks = 2 * s16(c + 0xc);
+                t.shake.shape = s16(c + 0xe);
+                ev.timed.push_back(t);
+            }
+            break;
         case 0x13: {
             if (length < 0x28) {
                 throw std::runtime_error("kh2 event: a camera too short for its channels");
@@ -176,6 +202,17 @@ void event_view(const EventCamera& camera, float frame, EventView& out) {
     if (!ch[5].empty()) out.at[2] = -event_channel(ch[5], seconds);
     if (!ch[6].empty()) out.roll = kPi * event_channel(ch[6], seconds) / 180.0F;
     if (!ch[7].empty()) out.fov = event_channel(ch[7], seconds) * (kPi / 180.0F);  // FUN_1402d6180
+}
+
+float event_shake_envelope(int shape, float ticks, float length) {
+    const float f = length > 0.0F ? ticks / length : 1.0F;
+    switch (shape) {
+    case 0: return 1.0F;
+    case 1: return 2.0F * (f > 0.5F ? 1.0F - f : f);
+    case 2: return f;
+    case 3: return 1.0F - f;
+    default: return 0.0F;
+    }
 }
 
 const EventCamera* event_camera_at(const Event& event, float frame, float& within) {
