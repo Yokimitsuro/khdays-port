@@ -80,7 +80,8 @@ game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names;
 page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
 fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
 others are made all the same: the installer says which, keeps what each said whole in
-`setup/hd-errors.log` for a report, and leaves the step undone so the next run tries again. The
+`setup/hd-errors.log` for a report, and leaves the step undone so the next run tries again (the port's own mods
+made after them keep theirs in `setup/mods-errors.log`). The
 pictures a tool cuts at known places are taken at their places scaled to the copy's picture, as a
 mod may have put a smaller one there.
 

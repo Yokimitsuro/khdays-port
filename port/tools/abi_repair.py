@@ -83,11 +83,19 @@ def load_findings(path: Path, names: dict[str, str] | None = None) -> Findings:
 # --- C text helpers ------------------------------------------------------------------
 
 
+# where a comment, string or character literal may start: code_mask jumps from one to the next
+NOT_CODE_START = re.compile(r"/\*|//|[\"']")
+
+
 def code_mask(text: str) -> bytearray:
     """1 for code, 0 for comments, strings and character literals."""
     mask = bytearray(b"\x01") * len(text)
     i, n = 0, len(text)
     while i < n:
+        start = NOT_CODE_START.search(text, i)
+        if start is None:
+            break
+        i = start.start()
         if text.startswith("/*", i):
             end = text.find("*/", i + 2)
             end = n if end < 0 else end + 2
@@ -98,15 +106,13 @@ def code_mask(text: str) -> bytearray:
             end = n if end < 0 else end
             mask[i:end] = bytes(end - i)
             i = end
-        elif text[i] in "\"'":
+        else:  # a quote
             j = i + 1
             while j < n and text[j] != text[i] and text[j] != "\n":
                 j += 2 if text[j] == "\\" else 1
             end = min(j + 1, n)
             mask[i:end] = bytes(end - i)
             i = end
-        else:
-            i += 1
     return mask
 
 
@@ -157,17 +163,20 @@ class Definition:
     body: tuple[int, int]  # the braces
 
 
+# after a definition's parameters: its body's brace, or first a function pointer's `)(args)`
+DEFINITION_TAIL = re.compile(r"(\s*\)\s*\([^(){};]*\))*\s*\{")
+
+
 def find_definition(text: str, mask: bytearray, name: str) -> Definition | None:
     for m in re.finditer(rf"\b{re.escape(name)}\s*\(", text):
         if not mask[m.start()] or depth_at(text, mask, m.start()) != 0:
             continue
         close = matching(text, mask, m.end() - 1)
         # a function returning a function pointer: `T (*name(params))(args) {`
-        tail = re.match(r"(\s*\)\s*\([^(){};]*\))*\s*\{", text[close + 1 :])
+        tail = DEFINITION_TAIL.match(text, close + 1)
         if not tail:
             continue
-        after = tail
-        open_brace = close + 1 + after.end() - 1
+        open_brace = tail.end() - 1
         line_start = text.rfind("\n", 0, m.start()) + 1
         return Definition(line_start, m.start(), (m.end(), close), (open_brace, matching(text, mask, open_brace)))
     return None
@@ -247,6 +256,25 @@ BASIC_TYPES = {
 }
 
 
+WORD_CHAR = re.compile(r"\w")
+WORD_AT_END = re.compile(r"([A-Za-z_]\w*)$")
+WORD_OR_STAR_AT_END = re.compile(r"([A-Za-z_]\w*|\*)$")
+SEMICOLON_NEXT = re.compile(r"\s*;")
+
+
+def word_before(text: str, start: int, pattern: re.Pattern) -> tuple[int, re.Match | None]:
+    """(len(before), pattern.search(before)) for before = text[:start].rstrip() and a pattern of what
+    ends it (WORD_AT_END, WORD_OR_STAR_AT_END), without copying or searching all of text[:start]:
+    a word there lies within the word characters ending it, and `*` is the last character."""
+    end = start
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    begin = end
+    while begin > 0 and WORD_CHAR.match(text, begin - 1):
+        begin -= 1
+    return end, pattern.search(text, max(begin - 1, 0), end)
+
+
 def call_sites(text: str, mask: bytearray, name: str, span: tuple[int, int]) -> list[tuple[int, int]]:
     """(start of the name, index of the closing parenthesis) of each call."""
     out = []
@@ -254,11 +282,10 @@ def call_sites(text: str, mask: bytearray, name: str, span: tuple[int, int]) -> 
         start = span[0] + m.start()
         if not mask[start]:
             continue
-        before = text[:start].rstrip()
-        word = re.search(r"([A-Za-z_]\w*)$", before)
+        end, word = word_before(text, start, WORD_AT_END)
         if word and word[1] not in NOT_TYPES:
             continue  # a declaration, not a call
-        if before.endswith("&"):
+        if end and text[end - 1] == "&":
             continue
         out.append((start, matching(text, mask, span[0] + m.end() - 1)))
     return out
@@ -331,12 +358,11 @@ def declarations(text: str, mask: bytearray, name: str) -> list[tuple[int, int, 
     for m in re.finditer(rf"\b{re.escape(name)}\s*\(", text):
         if not mask[m.start()]:
             continue
-        before = text[: m.start()].rstrip()
-        word = re.search(r"([A-Za-z_]\w*|\*)$", before)
+        _, word = word_before(text, m.start(), WORD_OR_STAR_AT_END)
         if not word or word[1] in NOT_TYPES:
             continue
         close = matching(text, mask, m.end() - 1)
-        if not re.match(r"\s*;", text[close + 1 :]):
+        if not SEMICOLON_NEXT.match(text, close + 1):
             continue
         out.append((text.rfind("\n", 0, m.start()) + 1, m.end() - 1, close))
     return out
@@ -439,6 +465,10 @@ def init_self_subtracted(texts: dict[str, str]) -> tuple[dict[str, str], int]:
     return out, changed
 
 
+# a name before `(`: as `\bname\s*\(` finds it, each such name once per place
+CALLED_NAME = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+
+
 def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     """Calls passing fewer arguments than the definition takes pass zeros for every missing word:
     natively those words are the caller's own stack slots, which the callee (or an optimizing
@@ -470,14 +500,18 @@ def pad_short_calls(texts: dict[str, str]) -> tuple[dict[str, str], list[str]]:
         code = strip_comments_code(texts[rel][d.body[0] : d.body[1]], mask(rel)[d.body[0] : d.body[1]])
         return [param_words(p) for p in params], [names[k] for k in written_params(code, names)]
 
+    # The files naming each defined function before a `(`, in the order of `texts`: one pass over
+    # each file, not a search of every file for every name.
+    named_in: dict[str, list[str]] = collections.defaultdict(list)
+    for rel, text in texts.items():
+        for name in {m[1] for m in CALLED_NAME.finditer(text)} & defined_in.keys():
+            named_in[name].append(rel)
     edits: dict[str, list[tuple[int, int, str]]] = collections.defaultdict(list)
     report = []
     for name in sorted(defined_in):
-        pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
         linked = taken(name, def_file[name]) if name in def_file else None
-        for rel, text in texts.items():
-            if name not in text or not pattern.search(text):
-                continue
+        for rel in named_in[name]:
+            text = texts[rel]
             definition = taken(name, rel) if rel in defined_in[name] else linked
             if not definition or not definition[0]:
                 continue

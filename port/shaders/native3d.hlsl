@@ -127,8 +127,24 @@ Targets ps_main(Corner i)
     const uint depth = depth_of(i.z, i.w, (swap_params >> 1) & 1u);
     const bool edges = (disp3dcnt & 0x20u) != 0u || ((p.attr >> 16) & 31u) == 0u;
     const uint edge = edges ? edge_at(p, i.position.xy) : 0u;
-    const int alpha = polygon_alpha(p, i.shade.w, edge);
     Targets o = (Targets)0;
+    if (((uint)p.flags & G3D_EFFECT) != 0u) {
+        // a KH2 effect's: its colour premultiplied into the colour target alone, the pipeline blending as its GS
+        // byte says (gpu_native3d.c effect_blend); a depth-only one passes whatever its alpha (AFAIL ZB_ONLY)
+#if !defined(NATIVE3D_RASTER_DEPTH)
+        o.depth = (float)depth / 16777216.0f;
+#endif
+        o.depth24 = (float)depth;
+        if (((uint)p.flags & G3D_EFFECT_DEPTH_ONLY) == 0u) {
+            const float4 c = effect_color(p, i.shade.xyz, i.shade.w, st.x, st.y, footprint, i.texels);
+            if (c.a <= 0.0f) {
+                discard; // ATST GREATER, AREF 0
+            }
+            o.colour = float4(c.rgb * c.a, c.a);
+        }
+        return o;
+    }
+    const int alpha = polygon_alpha(p, i.shade.w, edge);
     if (alpha == 0) {
         discard;
     }

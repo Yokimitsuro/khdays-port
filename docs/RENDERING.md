@@ -434,6 +434,20 @@ by `raster3d.hlsl`, starting from what the targets hold. The pictures are
 `gpu3d.c`'s but where the card's interpolation moves a texel or an edge by a
 pixel (the render test's limits, docs/BUILD.md).
 
+### KH2's effects
+
+A KH2 effect's triangles (`runtime/mods/kh2_corridors.cpp`, the Dark Corridor) are polygons of their own
+(`KHDAYS_G3D_EFFECT`, `khdays_g3d_effect_polygon`): drawn after the translucent polygons and before the selection
+markers, in the order sent (KH2's: its layers', a model's primitives far to near), each with the PS2's blend its GS
+ALPHA byte names (`pltt`) and its depth rules: tested nearer unless `_NO_DEPTH_TEST`, written with `_DEPTH_WRITE`,
+the depth alone with `_DEPTH_ONLY` (the corridor's mask, which hides its bowl outside its opening). The colour is the
+picture's times the vertex colour (x 2 at most, as the GS's 0x80 is 1); without a picture it is the vertex colour
+itself (0x80 half of full, as the GS draws with textures off). Its alpha is the source alpha of the blend.
+`gpu_native3d.c` draws them into the colour target alone, the blend by the card's (0x44 mixed, 0x48 added, 0x42
+`Cd - Cs x As` reversed subtraction, 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`; another byte as 0x44, said once), the
+stencil untouched; `raster3d.hlsl` the same formula per pixel (`g3d_polygon.hlsli` `gs_blend`). `gpu3d.c`, as for
+mods' models, leaves them out.
+
 ## Mods' graphics
 
 What a mod may replace and how it is named is in `README.md` and
@@ -476,7 +490,10 @@ composed with the tile and without it, as the elements are. A sheet smaller than
 shown (an output pixel inside one texel: a 6x sheet at a 4K window's 12x) is read
 through Catmull-Rom over the 4 x 4 texels round the pixel, those past the tile's
 edge taken at its edge (the tile beside it in the sheet is not the one beside it
-on the screen), so its edges stay smooth instead of showing the texels' steps. A
+on the screen), so its edges stay smooth instead of showing the texels' steps --
+but a sheet at the DS's own size (1x, a texel to a DS pixel) is read at the texel
+under the pixel, sharp, as the game's own pixels are (smoothed, a mod's 1x
+sprite in colour came out blurred in the camp's menus, a tester, 2026-11-07). A
 frame of 2D is composed at the 2D's scale (above) even without 3D: at the DS's own
 size, which a frame of 2D alone kept before (now only the 2D check,
 `KHDAYS_GFX=check`, compares there), the sheet was averaged down to the DS's pixels

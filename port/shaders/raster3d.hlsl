@@ -168,12 +168,45 @@ void plot_sequence(Polygon p, inout Pixel px, Attrs at, uint depth) {
     px.over2d=((uint)p.flags>>3)&1u;
 }
 
+// One pixel of a KH2 effect's polygon: its depth test and writes, its colour blended as its GS byte says.
+void plot_effect(Polygon p, inout Pixel px, Attrs at, uint depth)
+{
+    const uint flags = (uint)p.flags;
+    if ((flags & G3D_EFFECT_NO_DEPTH_TEST) == 0u && depth >= px.depth) {
+        return; // nearer only (ZTST GREATER)
+    }
+    if ((flags & G3D_EFFECT_DEPTH_ONLY) == 0u) {
+        const float w = 1.0f / at.iw;
+        const bool textured = ((p.tex >> 26) & 7u) != 0u && p.replacement >= 0;
+        const int4 texels = (smooth & 1u) != 0u && textured ? polygon_texels(p) : int4(0, 0, 0, 0);
+        const float4 c = effect_color(p, float3(at.r, at.g, at.b) * w, at.a * w, at.s * w / 16.0f, at.t * w / 16.0f,
+                                      textured ? texel_footprint(p, at) : 0.0f, texels);
+        if (c.a <= 0.0f) {
+            return; // ATST GREATER, AREF 0
+        }
+        const float cmax = fine != 0u ? 255.0f : 63.0f;
+        const float3 cd = float3((float)px.r, (float)px.g, (float)px.b) / cmax;
+        const int3 rgb = (int3)round(gs_blend(p.pltt & 0xffu, c.rgb, c.a, cd, (float)px.a / 31.0f) * cmax);
+        px.r = rgb.r;
+        px.g = rgb.g;
+        px.b = rgb.b;
+        px.over2d = (flags >> 3) & 1u;
+    }
+    if ((flags & G3D_EFFECT_DEPTH_WRITE) != 0u) {
+        px.depth = depth;
+    }
+}
+
 // One pixel of polygon `p` (gpu3d.c plot).
 void plot(Polygon p, inout Pixel px, Attrs at, uint edge, uint wbuffer)
 {
     precise float w = 1.0f / at.iw;
     const uint depth = depth_of(at.z, w, wbuffer);
     const bool marker=((uint)p.flags&0x40u)!=0u;
+    if (((uint)p.flags & G3D_EFFECT) != 0u) {
+        plot_effect(p, px, at, depth);
+        return;
+    }
     if (((uint)p.flags & 0x20u)!=0u) {
         if (marker || depth<px.depth) plot_sequence(p,px,at,depth);
         return;

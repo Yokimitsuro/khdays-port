@@ -335,28 +335,81 @@ static void read_moveset(KhdaysCharacter *c, const char *name, const char *value
     c->attacks[c->attack_count++] = a;
 }
 
-/* An [actions] line: `fallback = <clip>`, or `<the base's animation> = <clip> [blend <ms>] [root keep|remove]
- * [time own|game]`. A clip's path has no spaces. */
-static void read_action(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
+/* The next word of `p` (spaces and tabs apart): where it starts and its length (0: none left). */
+static size_t next_word(const char *p, const char **start)
 {
-    char clip[512] = "", word[32] = "", rest[64] = "";
-    int blend_ms = KHDAYS_CHARACTER_BLEND_MS, root_keep = 0, game_time = 0, loop = KHDAYS_CHARACTER_LOOP_GAME,
-        used = 0;
-    float loop_from = 0.0f;
-    if (sscanf(value, "%511s%n", clip, &used) != 1) {
-        snprintf(why, why_size, "%.60s: its clip missing", name);
-        return;
+    while (*p == ' ' || *p == '\t') {
+        ++p;
     }
-    if (!good_reference(clip)) {
-        snprintf(why, why_size, "%.60s: %.80s is not a file inside the character's folder", name, clip);
-        return;
+    *start = p;
+    while (*p != '\0' && *p != ' ' && *p != '\t') {
+        ++p;
     }
-    for (const char *p = value + used; sscanf(p, "%31s%n", word, &used) == 1; p += used) {
+    return (size_t)(p - *start);
+}
+
+/* `word value` as an [actions] option read_action takes: blend <ms>, root keep|remove, time own|game, loop
+ * game|no|yes|<s>. */
+static int action_option(const char *word, size_t word_length, const char *value, size_t value_length)
+{
+    char w[8], v[64];
+    if (word_length == 0 || word_length >= sizeof(w) || value_length == 0 || value_length >= sizeof(v)) {
+        return 0;
+    }
+    memcpy(w, word, word_length);
+    w[word_length] = '\0';
+    memcpy(v, value, value_length);
+    v[value_length] = '\0';
+    char *end;
+    if (strcmp(w, "blend") == 0) {
+        const long ms = strtol(v, &end, 10);
+        return end != v && *end == '\0' && ms >= 0;
+    }
+    if (strcmp(w, "root") == 0) {
+        return same_word(v, "keep") || same_word(v, "remove");
+    }
+    if (strcmp(w, "time") == 0) {
+        return same_word(v, "own") || same_word(v, "game");
+    }
+    if (strcmp(w, "loop") == 0) {
+        const float from = strtof(v, &end);
+        return same_word(v, "game") || same_word(v, "no") || same_word(v, "yes") ||
+               (end != v && *end == '\0' && from >= 0.0f);
+    }
+    return 0;
+}
+
+/* A word ending in a clip's file name (.gltf, .glb, .fbx): what follows it is the line's options. */
+static int ends_clip_file(const char *word, size_t length)
+{
+    static const char *const endings[] = {".gltf", ".glb", ".fbx"};
+    for (size_t i = 0; i < sizeof(endings) / sizeof(endings[0]); ++i) {
+        const size_t n = strlen(endings[i]);
+        size_t same = 0;
+        while (same < n && length >= n &&
+               tolower((unsigned char)word[length - n + same]) == (unsigned char)endings[i][same]) {
+            ++same;
+        }
+        if (length >= n && same == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* An [actions] line's options after its clip (blend <ms>, root keep|remove, time own|game, loop game|no|yes|<s>)
+ * into `a`; 0 with `why` said when one is not. */
+static int read_action_options(const char *name, const char *options, KhdaysCharacterAction *a, char *why,
+                               size_t why_size)
+{
+    char word[32] = "", rest[64] = "";
+    int used = 0;
+    for (const char *p = options; sscanf(p, "%31s%n", word, &used) == 1; p += used) {
         int more = 0;
         p += used;
         if (sscanf(p, "%63s%n", rest, &more) != 1) {
             snprintf(why, why_size, "%.60s: %.30s without its value", name, word);
-            return;
+            return 0;
         }
         used = more;
         if (strcmp(word, "blend") == 0) {
@@ -364,61 +417,95 @@ static void read_action(KhdaysCharacter *c, const char *name, const char *value,
             const long v = strtol(rest, &end, 10);
             if (end == rest || *end != '\0' || v < 0) {
                 snprintf(why, why_size, "%.60s: blend %.30s is not milliseconds", name, rest);
-                return;
+                return 0;
             }
-            blend_ms = (int)v;
+            a->blend_ms = (int)v;
         } else if (strcmp(word, "root") == 0 && (same_word(rest, "keep") || same_word(rest, "remove"))) {
-            root_keep = same_word(rest, "keep");
+            a->root_keep = same_word(rest, "keep");
         } else if (strcmp(word, "time") == 0 && (same_word(rest, "own") || same_word(rest, "game"))) {
-            game_time = same_word(rest, "game");
+            a->game_time = same_word(rest, "game");
         } else if (strcmp(word, "loop") == 0) {
             char *end;
             const float from = strtof(rest, &end);
             if (same_word(rest, "game") || same_word(rest, "no") || same_word(rest, "yes")) {
-                loop = same_word(rest, "no")    ? KHDAYS_CHARACTER_LOOP_NO
-                       : same_word(rest, "yes") ? KHDAYS_CHARACTER_LOOP_YES
-                                                : KHDAYS_CHARACTER_LOOP_GAME;
-                loop_from = 0.0f;
+                a->loop = same_word(rest, "no")    ? KHDAYS_CHARACTER_LOOP_NO
+                          : same_word(rest, "yes") ? KHDAYS_CHARACTER_LOOP_YES
+                                                   : KHDAYS_CHARACTER_LOOP_GAME;
+                a->loop_from = 0.0f;
             } else if (end != rest && *end == '\0' && from >= 0.0f) {
-                loop = KHDAYS_CHARACTER_LOOP_YES;
-                loop_from = from;
+                a->loop = KHDAYS_CHARACTER_LOOP_YES;
+                a->loop_from = from;
             } else {
                 snprintf(why, why_size, "%.60s: loop %.30s is not game, no, yes or a second of the clip", name, rest);
-                return;
+                return 0;
             }
         } else {
             snprintf(why, why_size,
                      "%.60s: %.30s %.30s is not blend <ms>, root keep|remove, time own|game or loop game|no|yes|<s>",
                      name, word, rest);
-            return;
+            return 0;
         }
+    }
+    return 1;
+}
+
+/* An [actions] line: `fallback = <clip>`, or `<the base's animation> = <clip> [blend <ms>] [root keep|remove]
+ * [time own|game] [loop game|no|yes|<s>]`. A clip's path (and its animation's name after '#') may have spaces: the
+ * options begin at the word after its file's name, or at an option's word followed by a value it takes. */
+static void read_action(KhdaysCharacter *c, const char *name, const char *value, char *why, size_t why_size)
+{
+    const char *clip_start = NULL, *at = NULL, *options = "";
+    size_t length = next_word(value, &clip_start);
+    if (length == 0) {
+        snprintf(why, why_size, "%.60s: its clip missing", name);
+        return;
+    }
+    const char *clip_end = clip_start + length;
+    int after_file = ends_clip_file(clip_start, length);
+    for (const char *p = clip_end; (length = next_word(p, &at)) != 0; p = at + length) {
+        const char *next = NULL;
+        const size_t next_length = next_word(at + length, &next);
+        if (after_file || action_option(at, length, next, next_length)) {
+            options = at;
+            break;
+        }
+        clip_end = at + length;
+        after_file = ends_clip_file(at, length);
+    }
+    KhdaysCharacterAction a = {NULL, NULL, KHDAYS_CHARACTER_BLEND_MS, 0, 0, KHDAYS_CHARACTER_LOOP_GAME, 0.0f};
+    a.clip = malloc((size_t)(clip_end - clip_start) + 1);
+    if (a.clip == NULL) {
+        snprintf(why, why_size, "out of memory");
+        return;
+    }
+    memcpy(a.clip, clip_start, (size_t)(clip_end - clip_start));
+    a.clip[clip_end - clip_start] = '\0';
+    if (!good_reference(a.clip)) {
+        snprintf(why, why_size, "%.60s: %.80s is not a file inside the character's folder", name, a.clip);
+        free(a.clip);
+        return;
+    }
+    if (!read_action_options(name, options, &a, why, why_size)) {
+        free(a.clip);
+        return;
     }
     if (strcmp(name, "fallback") == 0) {
         free(c->fallback);
-        c->fallback = copy(clip);
+        c->fallback = a.clip;
         return;
     }
     KhdaysCharacterAction *grown = realloc(c->actions, (size_t)(c->action_count + 1) * sizeof(*grown));
-    if (grown == NULL) {
+    a.game = copy(name);
+    if (grown != NULL) {
+        c->actions = grown;
+    }
+    if (grown == NULL || a.game == NULL) {
+        free(a.game);
+        free(a.clip);
         snprintf(why, why_size, "out of memory");
         return;
     }
-    c->actions = grown;
-    KhdaysCharacterAction *a = &c->actions[c->action_count];
-    a->game = copy(name);
-    a->clip = copy(clip);
-    a->blend_ms = blend_ms;
-    a->root_keep = root_keep;
-    a->game_time = game_time;
-    a->loop = loop;
-    a->loop_from = loop_from;
-    if (a->game == NULL || a->clip == NULL) {
-        free(a->game);
-        free(a->clip);
-        snprintf(why, why_size, "out of memory");
-        return;
-    }
-    ++c->action_count;
+    c->actions[c->action_count++] = a;
 }
 
 /* A [sounds] line: `<the base's sound> = <file>` or `= none`; a later line for the same sound replaces it. */
@@ -556,11 +643,15 @@ static int read_model(KhdaysCharacter *t, const char *name, char **value, char *
             *value = NULL;
             t->gives |= KHDAYS_FORM_GIVES_MODEL;
         }
-    } else if (strcmp(name, "scale") == 0) {
+    } else if (strcmp(name, "scale") == 0 || strcmp(name, "weapon_scale") == 0) {
+        const int weapons = strcmp(name, "weapon_scale") == 0;
         char *number_end;
         const double v = strtod(*value, &number_end);
         if (number_end == *value || *number_end != '\0' || !(v > 0.0)) {
-            snprintf(why, why_size, "scale %.40s: a number above 0", *value);
+            snprintf(why, why_size, "%s %.40s: a number above 0", name, *value);
+        } else if (weapons) {
+            t->weapon_scale = (float)v;
+            t->gives |= KHDAYS_FORM_GIVES_WEAPON_SCALE;
         } else {
             t->model_scale = (float)v;
             t->gives |= KHDAYS_FORM_GIVES_SCALE;
@@ -865,6 +956,9 @@ static int inherit(KhdaysCharacter *f, const KhdaysCharacter *c, char *why, size
     if (!(f->gives & KHDAYS_FORM_GIVES_WEAPON_TURN)) {
         f->has_weapon_turn = c->has_weapon_turn;
         memcpy(f->weapon_turn, c->weapon_turn, sizeof(f->weapon_turn));
+    }
+    if (!(f->gives & KHDAYS_FORM_GIVES_WEAPON_SCALE)) {
+        f->weapon_scale = c->weapon_scale;
     }
     if (!(f->gives & KHDAYS_FORM_GIVES_ACTIONS)) {
         ok &= copy_actions(f, c);

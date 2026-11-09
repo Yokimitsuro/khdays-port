@@ -139,10 +139,16 @@ static struct {
 typedef struct {
     uint32_t frame;
     int taken;
+    int after; /* KHDAYS_SHOTS_BETWEEN: the pictures after it still to be taken */
 } Shot;
 static const char *shot_dir;
 static Shot *shots;
 static int shot_count;
+/* KHDAYS_SHOTS_BETWEEN=1: of a frame asked, also the next five pictures, drawn from the same two game frames (no
+ * newer one taken meanwhile) at 0, a quarter, a half, three quarters and all but all of the way (picture_pace
+ * smooth), named frame_<n>_one_<k>_a<alpha x 1000>.png: the pictures the smoothing makes, whatever the timing */
+static int shots_between;
+static double picture_alpha; /* the picture being drawn's place between the two latest game frames (1: the newest) */
 
 /* Wine or Proton (a Steam Deck, Linux): its ntdll names its version. */
 static int under_wine(void)
@@ -296,6 +302,7 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
     notice = tell;
     profile = SDL_getenv("KHDAYS_PROFILE") != NULL;
     shot_dir = SDL_getenv("KHDAYS_SHOTS_HD");
+    shots_between = SDL_getenv("KHDAYS_SHOTS_BETWEEN") != NULL;
     SDL_free(shots);
     shots = NULL;
     shot_count = 0;
@@ -313,6 +320,7 @@ SDL_Renderer *khdays_present_open(SDL_Window *w, KhdaysNotice tell)
                 break;
             shots = grown;
             shots[shot_count].frame = (uint32_t)frame;
+            shots[shot_count].after = 0;
             shots[shot_count++].taken = 0;
             text = end;
         }
@@ -516,13 +524,31 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
     return part;
 }
 
-/* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken. */
-static void save_shots(const KhdaysFramePackage *p)
+/* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken
+ * (`first`: the frame's first picture); with KHDAYS_SHOTS_BETWEEN, the one-screen picture drawn again between it and
+ * the next game frame too. */
+static void save_shots(const KhdaysFramePackage *p, int first)
 {
+    for (int n = 0; one_drawn && n < shot_count; ++n) {
+        int w = 0, h = 0;
+        uint32_t *pixels = shots[n].after > 0 ? khdays_gfx_render_read(2, &w, &h) : NULL;
+        if (pixels != NULL) {
+            char which[48];
+            SDL_snprintf(which, sizeof(which), "one_%02d_a%03d", 6 - shots[n].after,
+                         (int)SDL_lround(picture_alpha * 1000.0));
+            save_png(shots[n].frame, which, pixels, w, h);
+            SDL_free(pixels);
+            --shots[n].after;
+        }
+    }
+    if (!first) {
+        return;
+    }
     for (int n = 0; n < shot_count; ++n) {
         if (shots[n].taken || shots[n].frame > p->frame)
             continue;
         shots[n].taken = 1;
+        shots[n].after = shots_between ? 5 : 0;
         if (one_drawn) {
             /* the one-screen picture */
             int w = 0, h = 0;
@@ -650,15 +676,25 @@ static void port2d_compare(const KhdaysFramePackage *p)
 
 /* --- The 3D at the monitor's refresh rate ---------------- */
 
-/* The 3D lists of the two latest game frames (the older first), the VBlanks they were first shown at,
- * when the newer arrived, and whether a cut separates them. The picture moves from the older to the
- * newer over one game frame from the newer's arrival: at most one game frame behind the DS. */
-static KhdaysG3dList logic_list[2];
-static uint64_t logic_time[2];
-static uint64_t logic_arrival; /* the VBlank of the package that brought the newer list */
+/* The 3D lists of the latest game frames since a cut, up to three (the oldest first), when the game made each (its
+ * clock) and the screen each is on. A picture shows the game's time a steady while ago (`picture_delay`): a game
+ * frame and the longest the latest lists took to reach the window, so the next list is there before the picture
+ * reaches the newest -- placed between the two lists about that time. Placed from each list's arrival instead, it
+ * stood still for a refresh whenever a list reached the window later than the one before: a display not a multiple
+ * of the game's 30 pictures a second (144, 165 Hz) takes them 5 and 6 refreshes apart, so the camera stuttered some
+ * three times a second (seen 2026-11-06 at 165 Hz: 427 times in 157 s of play, none since; the picture 6.5 ms
+ * later). */
+#define KEPT_LISTS 3
+static KhdaysG3dList logic_list[KEPT_LISTS];
+static uint64_t logic_time[KEPT_LISTS];
+static uint8_t logic_upper[KEPT_LISTS];
 static uint32_t logic_serial = ~0u;
 static int logic_count, logic_cut;
-static uint8_t logic_upper;   /* the screen the newer list's 3D is on (the package's `upper`) */
+static int logic_pair = -1; /* the older of the two lists the last picture was placed between (-1 none) */
+/* how long the latest lists took from being made to being taken by the window, for picture_delay */
+#define LATE_KEPT 32
+static uint64_t logic_late[LATE_KEPT];
+static int late_count, late_next;
 static KhdaysG3dList between; /* the list being drawn, interpolated */
 static KhdaysG3dInterp interp;
 static const KhdaysFramePackage *latest; /* the package shown now */
@@ -777,6 +813,7 @@ typedef struct CameraStep {
 } CameraStep;
 
 static int camera_step(const KhdaysG3dList *a, const KhdaysG3dList *b, CameraStep *step);
+static int camera_cut(const KhdaysG3dList *a, const KhdaysG3dList *b);
 
 /* KHDAYS_FRAME_LOG=1 writes a line per picture to saves/logs/frames-<time>.log. */
 static FILE *frame_log;
@@ -806,45 +843,85 @@ static void log_picture(const char *what, double alpha)
         /* the camera's step between the two lists (camera_step): the degrees it turned, its move, and
          * the point it turned about */
         CameraStep step = {1.0, 0.0, 0.0, 0.0, 0.0};
-        if (logic_count == 2) {
-            camera_step(&logic_list[0], &logic_list[1], &step);
+        const int a = logic_pair >= 0 ? logic_pair : logic_count >= 2 ? logic_count - 2 : 0, b = a + 1;
+        if (logic_count >= 2) {
+            camera_step(&logic_list[a], &logic_list[b], &step);
         }
         fprintf(frame_log,
                 "%.3f %u %.3f %d/%d %s %.3f %.3f moved %.4f turned %.3f pivot %.3f drift %.4f depth %.3f %d %d\n",
                 (double)khdays_clock_cycles() * 1000.0 / KHDAYS_CLOCK_HZ, logic_serial, alpha, interp.matched,
-                interp.polygons, what, (double)logic_time[0] * 1000.0 / KHDAYS_CLOCK_HZ,
-                (double)logic_time[1] * 1000.0 / KHDAYS_CLOCK_HZ, step.moved,
+                interp.polygons, what, (double)logic_time[a] * 1000.0 / KHDAYS_CLOCK_HZ,
+                (double)logic_time[b] * 1000.0 / KHDAYS_CLOCK_HZ, step.moved,
                 acos(step.cosine > 1.0    ? 1.0
                      : step.cosine < -1.0 ? -1.0
                                           : step.cosine) *
                     180.0 / 3.14159265358979,
-                step.pivot, step.drift, step.depth, logic_list[1].flushes, logic_cut);
+                step.pivot, step.drift, step.depth, logic_list[b].flushes, logic_cut);
     }
 }
 
 /* Takes a package's 3D list as the newest game frame's, when its serial changed. */
 static void note_logic_frame(const KhdaysFramePackage *p)
 {
-    KhdaysG3dList older;
+    int at = logic_count;
     if (!(p->wants & KHDAYS_WANT_3D) || p->list3d_serial == logic_serial) {
         return;
     }
-    older = logic_list[0];
-    logic_list[0] = logic_list[1];
-    logic_list[1] = older; /* reuse its memory for the copy */
-    logic_time[0] = logic_time[1];
-    if (!khdays_g3d_list_copy(&logic_list[1], &p->list3d)) {
-        logic_count = 0; /* out of memory: no interpolation until there are two lists again */
-    } else if (logic_count < 2) {
-        ++logic_count;
+    for (int n = 0; n < shot_count; ++n) {
+        if (shots[n].after > 0) {
+            return; /* KHDAYS_SHOTS_BETWEEN: the same game frames until its pictures are taken */
+        }
     }
-    logic_time[1] = p->list3d_time;
-    logic_arrival = p->time; /* the VBlank of the package that brought it */
+    if (at == KEPT_LISTS) {
+        const KhdaysG3dList oldest = logic_list[0]; /* its memory reused for the copy */
+        for (int i = 0; i + 1 < KEPT_LISTS; ++i) {
+            logic_list[i] = logic_list[i + 1];
+            logic_time[i] = logic_time[i + 1];
+            logic_upper[i] = logic_upper[i + 1];
+        }
+        logic_list[--at] = oldest;
+    }
     logic_serial = p->list3d_serial;
-    /* nothing between two lists drawn on different screens either (the 3D on
-     * both screens: one VBlank the upper's, the next the lower's) */
-    logic_cut = p->list3d_cut || p->upper != logic_upper;
-    logic_upper = p->upper;
+    if (!khdays_g3d_list_copy(&logic_list[at], &p->list3d)) {
+        logic_count = 0; /* out of memory: no interpolation until there are two lists again */
+        return;
+    }
+    logic_time[at] = p->list3d_time;
+    logic_upper[at] = p->upper;
+    /* a cut (the game's, the camera's, or the 3D on the other screen: the 3D on both screens, one VBlank the
+     * upper's, the next the lower's): nothing between it and the lists before, which are let go -- drawn after it,
+     * they would show what the screens had before it, their textures perhaps gone */
+    logic_cut = at > 0 && (p->list3d_cut || p->upper != logic_upper[at - 1] || logic_time[at] <= logic_time[at - 1] ||
+                           camera_cut(&logic_list[at - 1], &logic_list[at]));
+    if (logic_cut) {
+        const KhdaysG3dList kept = logic_list[0];
+        logic_list[0] = logic_list[at];
+        logic_list[at] = kept;
+        logic_time[0] = logic_time[at];
+        logic_upper[0] = logic_upper[at];
+        at = 0;
+    }
+    logic_count = at + 1;
+    if (khdays_clock_cycles() > p->list3d_time) {
+        /* (the game's time as the window takes it: the package waits for the window's next refresh) */
+        logic_late[late_next] = khdays_clock_cycles() - p->list3d_time;
+        late_next = (late_next + 1) % LATE_KEPT;
+        late_count += late_count < LATE_KEPT;
+    }
+}
+
+/* How long ago (the game's clock) a picture shows: the latest game frame's length and the longest the latest lists
+ * took to be taken (one more than two game frames late, a hitch, not counted). */
+static uint64_t picture_delay(void)
+{
+    const uint64_t period = logic_time[logic_count - 1] - logic_time[logic_count - 2];
+    uint64_t late = 0;
+    for (int i = 0; i < late_count; ++i) {
+        if (logic_late[i] <= 2 * period && logic_late[i] > late) {
+            late = logic_late[i];
+        }
+    }
+    return period + late;
 }
 
 static int camera_step(const KhdaysG3dList *a, const KhdaysG3dList *b, CameraStep *step)
@@ -899,29 +976,39 @@ static int camera_cut(const KhdaysG3dList *a, const KhdaysG3dList *b)
     return step.moved > 1.0 && !(step.pivot > 0.0 && step.drift <= 1.0 && fabs(step.depth - step.pivot) <= 1.0);
 }
 
-/* The list to draw for a picture now: one interpolated between the two
- * latest game frames, or NULL to draw the package's own (at the DS's pace,
- * after a cut, without two lists yet, or once the newest is reached). */
+/* The list to draw for a picture now: one placed between the two kept game frames about the time it shows
+ * (picture_delay), or NULL to draw the package's own (at the DS's pace, without two lists since a cut, or once the
+ * newest is reached). */
 static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *alpha)
 {
-    uint64_t now, period;
+    uint64_t now, delay, at_time;
+    int forced = 0, a;
     *alpha = 1.0;
-    if (video.picture_ds || !(p->wants & KHDAYS_WANT_3D) || logic_count < 2 || logic_cut ||
-        p->list3d_serial != logic_serial || logic_time[1] <= logic_time[0]) {
-        return NULL;
+    logic_pair = -1;
+    for (int n = 0; n < shot_count; ++n) {
+        forced |= shots[n].after > 0; /* KHDAYS_SHOTS_BETWEEN: the game frames kept */
     }
-    if (camera_cut(&logic_list[0], &logic_list[1])) {
-        logic_cut = 1; /* until the next game frame */
+    if (video.picture_ds || !(p->wants & KHDAYS_WANT_3D) || logic_count < 2 ||
+        (p->list3d_serial != logic_serial && !forced)) {
         return NULL;
     }
     now = khdays_clock_cycles();
-    period = logic_time[1] - logic_time[0];
-    *alpha = now <= logic_arrival ? 0.0 : (double)(now - logic_arrival) / (double)period;
-    if (*alpha >= 1.0) {
-        *alpha = 1.0;
-        return NULL;
+    delay = picture_delay();
+    at_time = forced ? logic_time[logic_count - 2] : now > delay ? now - delay : 0;
+    if (at_time >= logic_time[logic_count - 1]) {
+        return NULL; /* the newest reached */
     }
-    if (!khdays_g3d_interpolate(&interp, &logic_list[0], &logic_list[1], (float)*alpha, &between)) {
+    for (a = logic_count - 2; a > 0 && at_time < logic_time[a]; --a) {
+    }
+    logic_pair = a;
+    *alpha = at_time <= logic_time[a] ? 0.0
+                                      : (double)(at_time - logic_time[a]) / (double)(logic_time[a + 1] - logic_time[a]);
+    for (int n = 0; n < shot_count; ++n) {
+        if (shots[n].after > 0) {
+            *alpha = shots[n].after > 1 ? (double)(5 - shots[n].after) * 0.25 : 0.999; /* KHDAYS_SHOTS_BETWEEN */
+        }
+    }
+    if (!khdays_g3d_interpolate(&interp, &logic_list[a], &logic_list[a + 1], (float)*alpha, &between)) {
         return NULL;
     }
     return &between;
@@ -1067,7 +1154,7 @@ void khdays_present_package(const KhdaysFramePackage *p)
 
 int khdays_present_smooth(void)
 {
-    return !video.picture_ds && latest != NULL && latest_drawn_by_card && logic_count == 2;
+    return !video.picture_ds && latest != NULL && latest_drawn_by_card && logic_count >= 2;
 }
 
 int khdays_present_settings_button(void)
@@ -1183,6 +1270,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
     Uint64 start;
     double alpha;
     const KhdaysG3dList *list = picture_list(p, &alpha);
+    picture_alpha = alpha;
     {
         /* KHDAYS_TEST_GPU_LOST=FRAME: at that frame, pretend the card was lost, to check the port remakes its
          * renderer and carries on */
@@ -1345,11 +1433,9 @@ static void present_now(const KhdaysFramePackage *p, int first)
                 }
             }
             hd = NULL;
-            if (first) {
-                save_shots(p);
-                if (profile) {
-                    count_frame(p, -1.0);
-                }
+            save_shots(p, first);
+            if (first && profile) {
+                count_frame(p, -1.0);
             }
             return;
         }
@@ -1369,7 +1455,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
     if (!drawing_3d() || (p->wants & full) != full || !p->info[0].is3d || scale == refused_scale) {
         khdays_raster3d_use_list(NULL);
         if (first) {
-            save_shots(p); /* the 1x picture: no 3D this frame, or none was asked for */
+            save_shots(p, 1); /* the 1x picture: no 3D this frame, or none was asked for */
             if (profile) {
                 count_frame(p, -1.0);
             }
@@ -1403,7 +1489,7 @@ static void present_now(const KhdaysFramePackage *p, int first)
         SDL_SetTextureScaleMode(hd, video.smooth_scaling ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     }
     if (first) {
-        save_shots(p);
+        save_shots(p, 1);
     }
 }
 

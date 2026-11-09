@@ -1531,6 +1531,17 @@ static void information_planes(void)
         const int paints = paint_calls;
         emit();
         CHECK(information_calls == 2 && paint_calls == paints);
+        {
+            /* at any scale the caption is handed over whole: a cap of 4096 x 512 lost the game's (64 x 3 cells)
+             * from scale 9, a picture over 1536 tall; this one's 2 x 1 cells cross it at 65 */
+            const int was = test_scale;
+            test_scale = 65;
+            emit();
+            CHECK(information_calls == 3 && information_ink && information_right > 8 * 65);
+            test_scale = was;
+            emit();
+            information_calls = 2;
+        }
         const unsigned previous_revision = information_revision;
         int preferences[KHDAYS_OPT_COUNT];
         khdays_hud_settings_default(preferences);

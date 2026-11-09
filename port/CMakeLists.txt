@@ -304,6 +304,7 @@ add_test(NAME khdays-character-shadow-hooks COMMAND khdays-character-shadow-hook
 # independent viewer, without the game or its generated sources.
 add_library(khdays-kh2-sequence STATIC
     ../assets/src/kh2_bar.cpp
+    ../assets/src/kh2_effect.cpp
     ../assets/src/kh2_sequence.cpp
     ../assets/src/dds.cpp
     ../assets/src/image.cpp
@@ -419,6 +420,20 @@ add_executable(khdays-prize-effects-test tests/prize_effects_test.cpp ui/prize_e
 target_link_libraries(khdays-prize-effects-test PRIVATE khdays-kh2-gauge)
 target_compile_options(khdays-prize-effects-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-prize-effects COMMAND khdays-prize-effects-test)
+
+# KH2's effects (PAX) read and played, and KH2's Dark Corridor fitted in Days's ovals: made-up effects; the dump
+# prints an effect's draws (to check it against KH2's pictures and to measure it).
+add_executable(khdays-kh2-effect-test tests/kh2_effect_test.cpp)
+target_link_libraries(khdays-kh2-effect-test PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-effect-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-effect COMMAND khdays-kh2-effect-test)
+add_executable(khdays-kh2-corridor-test tests/kh2_corridor_test.cpp)
+target_link_libraries(khdays-kh2-corridor-test PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-corridor-test PRIVATE /W4 /std:c++20 /EHsc)
+add_test(NAME khdays-kh2-corridor COMMAND khdays-kh2-corridor-test)
+add_executable(khdays-kh2-effect-dump tools/kh2_effect_dump.cpp)
+target_link_libraries(khdays-kh2-effect-dump PRIVATE khdays-kh2-sequence)
+target_compile_options(khdays-kh2-effect-dump PRIVATE /W4 /std:c++20 /EHsc)
 
 add_executable(khdays-kh2-limit-timing-test tests/kh2_limit_timing_test.c)
 target_include_directories(khdays-kh2-limit-timing-test PRIVATE "${DECOMP}/include")
@@ -677,6 +692,7 @@ add_executable(khdays-native
     runtime/mods/textures.c
     runtime/mods/installed.c
     runtime/mods/models.cpp
+    runtime/mods/kh2_corridors.cpp      # Days's standing ovals as KH2's Dark Corridor
     runtime/mods/model_load.cpp         # ... a mod's model loaded and fitted to the game's skeleton
     runtime/mods/model_bones.cpp        # ... its <model>.bones.txt
     runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions
@@ -1079,6 +1095,14 @@ foreach(mod_test ${KHDAYS_MOD_TOOL_TESTS})
     string(REPLACE "_" "-" mod_test_name "${mod_test_name}")
     add_test(NAME khdays-mods-${mod_test_name} COMMAND "${Python3_EXECUTABLE}" "${mod_test}")
 endforeach()
+# The readers for studying the games' files (tools/research/): the same.
+file(GLOB KHDAYS_RESEARCH_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/research/tests/*_test.py")
+foreach(research_test ${KHDAYS_RESEARCH_TESTS})
+    get_filename_component(research_test_name "${research_test}" NAME_WE)
+    string(REGEX REPLACE "_test$" "" research_test_name "${research_test_name}")
+    string(REPLACE "_" "-" research_test_name "${research_test_name}")
+    add_test(NAME khdays-research-${research_test_name} COMMAND "${Python3_EXECUTABLE}" "${research_test}")
+endforeach()
 
 # The execution contexts the game's threads run on (host/app/context.h): more of
 # them than the old fixed table held, each resumed in turn.
@@ -1201,12 +1225,14 @@ endforeach()
 # replacements; no game data needed.
 add_executable(khdays-sound-test tests/sound_test.c runtime/sound/sound_bridge.c runtime/sound/sound_mods.c
     runtime/core/session_log.c host/app/instance_win.c)
-target_link_libraries(khdays-sound-test PRIVATE khdays-sound)
+target_link_libraries(khdays-sound-test PRIVATE khdays-sound khdays-hud-settings)
 target_compile_options(khdays-sound-test PRIVATE /W4 /std:c17)
 # The native driver's part reads its tables from the ROM's ARM7 binary
 # (the player's, extracted into data/; skipped without it).
 file(GLOB KHDAYS_ARM7_BIN "${CMAKE_CURRENT_SOURCE_DIR}/../data/extracted/*/system/arm7.bin")
-list(GET KHDAYS_ARM7_BIN 0 KHDAYS_ARM7_BIN_FIRST)
+if(KHDAYS_ARM7_BIN)
+    list(GET KHDAYS_ARM7_BIN 0 KHDAYS_ARM7_BIN_FIRST)
+endif()
 add_test(NAME khdays-sound COMMAND khdays-sound-test "${KHDAYS_ARM7_BIN_FIRST}")
 
 # Recorded frame packages (KHDAYS_RECORD_FRAMES, in saves/frames: the

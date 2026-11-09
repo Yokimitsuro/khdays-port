@@ -53,25 +53,34 @@ shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
 shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.75 fade 0 0 16 0
 
 # The mission's panel (the lower screen's 4,152-252,192) at the top left,
-# scale 0.75; the backdrop around its bevelled corners (8-bit 36 36 36) made
-# transparent. The right end of its text row holds the chest icon and its
-# counter, and on one screen the badge and its found and total count left of
-# them (ui/badges.c), as the maintainer's sketch has them (2026-10-08). Its
-# lower edge, cut by the DS's screen, is its upper edge turned over. Shown
-# whenever the lower screen has it (mission-panel), with the HUD and at a
-# mission's start, before the game draws the rest of its HUD; in a story's
-# challenge too, whose lower screen is a mission's.
+# or where the player puts it (`at mission-panel`: the settings' Mission
+# panel in gameplay, the panel and its lower edge laid out here for the top
+# left and moved together, the hearts' counter under it going up into the
+# corner when the panel is elsewhere; Mission panel visibility "Pause only"
+# leaves it out in play), scale 0.75; the backdrop around its bevelled
+# corners (8-bit 36 36 36) made transparent. The right end of its text row
+# holds the chest icon and its counter, and on one screen the badge and its
+# found and total count left of them (ui/badges.c), as the maintainer's
+# sketch has them (2026-10-08). Its lower edge, cut by the DS's screen, is
+# its upper edge turned over. Shown whenever the lower screen has it
+# (mission-panel), with the HUD and at a mission's start, before the game
+# draws the rest of its HUD; in a story's challenge too, whose lower screen
+# is a mission's.
 [field if mission-panel !dialog !mod-menu-overhaul !mission-panel-mod]
-shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
-shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
+shape lower 4 152 248 40 at mission-panel margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
+shape lower 4 152 248 4 at mission-panel margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
 [field if mission-panel !dialog mod-menu-overhaul !mission-panel-mod]
-shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
-shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
+shape lower 4 152 248 40 at mission-panel margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
+shape lower 4 152 248 4 at mission-panel margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65 push info-new|info-upper 0 20 12
 
 # The enemy's health first, above the map: at the top right, the map in the
-# same corner under it (as Kingdom Hearts II has them).
+# same corner under it (as Kingdom Hearts II has them). The pieces
+# `away-from-panel` make room for the mission's panel: those of a top or
+# bottom corner move by its height when it is put in their corner or meets
+# one of them (the countdown at 4:3 goes under it), and a panel in the middle
+# row goes up clear of those under it.
 [field if hud]
-shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
+shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667 away-from-panel
 
 # The map, as Kingdom Hearts II has it: a window of 104 x 64 in the middle of
 # its box (112,64-216,128; the game keeps the map scrolled to the player
@@ -80,8 +89,8 @@ shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
 # -- with the panel's black, stretched, half seen through behind it, 3 larger
 # on each side, both fading out at their edges.
 [field if mission-panel !dialog]
-shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4
-shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4 away-from-panel
+shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6 away-from-panel
 
 [field if info-upper]
 stop
@@ -106,17 +115,17 @@ shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale
 shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667 push info-new|info-upper 0 20 12
 [field if hud]
 # the countdown and the lock-on, at the top in the middle
-shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
+shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667 away-from-panel
 # the sigils and the death counter under the map
-shape upper 163 25 93 30 at top-right margin 0 47.333333 5 0 scale 0.666667
+shape upper 163 25 93 30 at top-right margin 0 47.333333 5 0 scale 0.666667 away-from-panel
 # the command deck (with the reaction command above it) at the bottom left
-shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333
+shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333 away-from-panel
 # the player's health and the allies' (their rows from y 84, from y 64 with
 # four members), at the bottom right
 [field if hud !party-4]
-shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667 away-from-panel
 [field if hud party-4]
-shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
+shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667 away-from-panel
 
 # ----------------------------------------------------------------------------
 # Sora's memories: the 3D on both screens, the lower screen showing a picture
@@ -200,26 +209,29 @@ shape upper 0 0 132 14 at top-left margin 0 0 0 0 scale 0.666667
 # question) in the middle over the 3D at the HUD's size (the DS's at the
 # default), the lower screen's
 # INFORMATION banner at the top left, the map at the top right and the
-# mission's panel at the bottom left, as the field's HUD has them (the
+# mission's panel at the bottom left (or where the player puts it: the
+# settings' Mission panel while paused), as the field's HUD has them (the
 # maintainer's choice from the pictures, 2026-10-14) -- but in an event's
 # pause (a cutscene's: "Continue", "Skip"), where the lower screen has none of
 # them (mission 77's cabin, the maintainer, 2026-10-15). The game darkens the
 # lower screen to half under its pause (each colour c - c x 8 / 16: the map's
 # white 31 to 16, its floor 29 to 15, the ground 4 to 2), so each piece's key
-# and see-through colours are the darkened ones too.
+# and see-through colours are the darkened ones too. The banner and the map
+# make room for the panel put in their corner; the menu does not (the middle
+# row's panel is under it).
 [pause]
 screens upper
 brightness upper
 hide3d hud
 shape upper 72 64 112 76 at centre scale 1
 [pause if !event !mod-menu-overhaul !information-mod]
-shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16
+shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16 away-from-panel
 [pause if !event mod-menu-overhaul !information-mod]
-shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 key 16 16 16
+shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.75 key 36 36 36 key 16 16 16 away-from-panel
 [pause if !event]
-shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4 away-from-panel
 [pause if !event !mission-panel-mod]
-shape lower 4 152 248 40 at bottom-left margin 5 0 0 5 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
+shape lower 4 152 248 40 at mission-panel margin 5 5 0 0 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
 [pause]
 stop
 

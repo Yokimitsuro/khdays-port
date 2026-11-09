@@ -263,8 +263,8 @@ struct Notification {
     }
     int pixels(const KhdaysUiElement *box, const unsigned *rgba, int w, int h, unsigned version)
     {
-        if (!allowed || !enabled() || !box || !rgba || w <= 0 || h <= 0 || w > 4096 || h > 512)
-            return 0;
+        if (!allowed || !enabled() || !box || !rgba || w <= 0 || h <= 0)
+            return 0; /* its text at any scale (the window's height over 192) */
         try {
             const int scale = khdays_ui_scale();
             if (text < 0 || w != text_w || h != text_h) {

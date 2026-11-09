@@ -259,6 +259,7 @@ void khdays_bindings_resolve(const KhdaysProfile *p, KhdaysDeviceState *s, Khday
                                    (p->enh.separate_lock_on ? KHDAYS_ENH_SEPARATE_LOCK_ON : 0) |
                                    (p->enh.dpad_command_menu ? KHDAYS_ENH_DPAD_COMMAND_MENU : 0) |
                                    (p->enh.analog_movement ? KHDAYS_ENH_ANALOG_MOVEMENT : 0) |
+                                   (p->enh.auto_lock ? KHDAYS_ENH_AUTO_LOCK : 0) |
                                    (p->enh.chase_free ? KHDAYS_ENH_CHASE_FREE : 0));
     out->camera_speed = (uint16_t)p->enh.camera_speed;
     out->run_threshold = (uint8_t)p->enh.run_threshold;

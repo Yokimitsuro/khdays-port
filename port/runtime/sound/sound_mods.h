@@ -20,6 +20,13 @@ int khdays_sound_mods_present(void);
 /* KHDAYS_TRACE_SOUND: each replacement as it starts and ends. */
 void khdays_sound_mods_trace(int on);
 
+/* A mod's sounds/switches.txt (its `text`): lines `<identifier or folder of the mod's sounds> <setting>`, the setting
+ * a key of host/app/hud_settings.h (e.g. kh2_corridors; '#' begins a comment), the mod's files there heard only while
+ * that setting is on -- the originals otherwise, from the next time each starts (as a model's bones.txt `switch`).
+ * The setting the first line naming `identifier` (e.g. seqarc/EV_DARK_APPEAR/se_ev_dark_loop) or a folder of it
+ * gives; -1 none, or a key that is no setting's (told). */
+int khdays_sound_mods_switch(const char *text, const char *identifier);
+
 /* The game's thread: a sequence (KHDAYS_SOUND_SEQUENCE: `number`) or a
  * sequence archive's entry (KHDAYS_SOUND_SEQUENCE_ARCHIVE_ENTRY: `number`,
  * `entry`) starts on ARM7 player `arm7_player`, prepared by the command

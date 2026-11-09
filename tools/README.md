@@ -41,3 +41,17 @@ pause, videos) from your own copies of the KINGDOM HEARTS HD collections;
 nothing of them is in the repository. The README's sections on each mod say
 which tool makes it and from which files. The installer runs them when you
 choose the HD pack.
+
+## The port's own mods
+
+`mods/` makes the mods that switch on features of the port's own (the walk,
+the KH2 prizes, the Menu Overhaul), with the readers they share. The
+installer runs them and hashes the folder (`installer/mod_inputs.txt`): a
+change there makes every player's copy remake those mods.
+
+## Research
+
+`research/` reads the games' files to study them, for the formats in
+`docs/FORMATS.md`; nothing the game or the installer uses. `kh2_ai.py` lists
+KINGDOM HEARTS II's AI scripts (`docs/FORMATS.md`, "KH2's objects and their
+AI"). Their tests are in `research/tests/`.

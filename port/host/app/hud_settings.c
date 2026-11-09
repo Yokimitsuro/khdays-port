@@ -14,6 +14,7 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "heart_points_sequence",
                                                                "kh2_prizes",
                                                                "kh2_models",
+                                                               "kh2_corridors",
                                                                "pause_target",
                                                                "information_hud",
                                                                "ui_padding",
@@ -21,7 +22,7 @@ const char *const khdays_hud_setting_keys[KHDAYS_OPT_COUNT] = {"hd_font",
                                                                "mission_panel_anchor",
                                                                "mission_panel_pause_anchor"};
 /* Unpublished tools retain JSON presentation; the normal profile publishes explicit defaults. */
-static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1},  {1}, {1},  {1}, {1},
+static SDL_AtomicInt live[KHDAYS_OPT_COUNT] = {{1}, {1}, {1}, {1}, {1}, {1},  {1},  {1}, {1}, {1},
                                                {1}, {1}, {1}, {1}, {1}, {-1}, {-1}, {0}, {0}};
 static SDL_AtomicInt generation;
 static SDL_AtomicInt character_shadows;
@@ -43,8 +44,9 @@ void khdays_hud_settings_default(int values[KHDAYS_OPT_COUNT])
     values[KHDAYS_OPT_FONT] = 1;
     values[KHDAYS_OPT_PRIZES] = 1;     /* made only with the HD menus' HD PACK: shown once made */
     values[KHDAYS_OPT_KH2_MODELS] = 1; /* the same */
+    values[KHDAYS_OPT_CORRIDORS] = 1;  /* the same */
     values[KHDAYS_OPT_MISSION_ANCHOR] = 1;
-    values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 8;
+    values[KHDAYS_OPT_MISSION_PAUSE_ANCHOR] = 7; /* the bottom left, as the one-screen pause has it */
 }
 void khdays_hud_settings_publish(const int values[KHDAYS_OPT_COUNT])
 {

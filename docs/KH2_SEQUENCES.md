@@ -1312,6 +1312,14 @@ Days's, with its HD pictures, and paired by `<world>_box_b.bones.txt`: its lid j
 for Days's light rays and `switch kh2_prizes`. The World That Never Was's chest's glowing lines, light KH2 adds
 over the model, are drawn blended by their own brightness (glTF has no added light).
 
+The tool also copies KH2's Dark Corridor -- `event/effect/tt_event_904.pax` and the pictures KH2 keeps resident,
+`effect/texcommon.dpd`, with their HD pages -- into the mod's `kh2fx/`, where the port plays it as KH2 does in place
+of Days's standing ovals (docs/RUNTIME_MAP.md, "The Dark Corridors"; the setting "KH2 Dark Corridors",
+`kh2_corridors`), and its sounds: from `se/se2984.win32.scd` (Twilight Town's scene 904, which plays them with
+the corridor; docs/FORMATS.md, "KH2's sound banks and its scenes' sounds") decoded into the mod's
+`sounds/seqarc/EV_DARK_APPEAR/` and `EV_DARK_DISAPPEAR/` in place of Days's oval's, `sounds/switches.txt`
+tying them to the same setting.
+
 A prize picture with no effect may have a model instead:
 
 ```text
@@ -1389,12 +1397,23 @@ The saved keys in `[enhancements]` are:
 | `heart_points_sequence` | off | Heart total, effects and chain counter |
 | `kh2_prizes` | on | KH2's prizes and chests, as the HD PACK makes them |
 | `kh2_models` | on | KH2's Roxas and keyblades, as the HD PACK makes them (docs/KH2_MODELS.md) |
+| `kh2_corridors` | on | KH2's Dark Corridor in place of Days's standing ovals, as the HD PACK makes it (docs/RUNTIME_MAP.md, "The Dark Corridors") |
 | `pause_target` | off | Mission target in ordinary pause menus |
 | `information_hud` | off | Configured HUD/control retention during upper INFORMATION |
 | `ui_padding` | off | Off removes the single-screen HD presentation inset |
 | `mission_panel_visibility` | 0 | 0: Always; 1: Pause only |
 | `mission_panel_anchor` | 1 | Gameplay anchor, 1..9 |
-| `mission_panel_pause_anchor` | 8 | Pause anchor, 1..9 |
+| `mission_panel_pause_anchor` | 7 | Pause anchor, 1..9 |
+
+The last three place the game's own mission panel on one screen too (`at
+mission-panel` in `port/ui/compositions/port_days.txt`, docs/COMPOSITIONS.md):
+the panel and its lower edge move together to the anchor, the margin from the
+edges they meet the top left's, the hearts counter under it goes up into the
+corner when the panel is not over it, and the pieces of the corner it is put in
+(the map, the enemy's health, the deck, the party; in the pause the INFORMATION
+banner and the map) make room for it. On two screens the game's panel stays on
+the lower screen. The pause's default is the bottom left, where the one-screen
+pause had it.
 
 The main HD graphics switch also gates gauges, portraits and labels. Turning it
 off releases their native tiles; turning it back on reuses the loaded resources.

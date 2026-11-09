@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <map>
 
 namespace fs = std::filesystem;
@@ -32,7 +33,66 @@ assets::ImportedModel import_clip_file(const fs::path& file) {
     return extension == ".fbx" ? assets::import_fbx(file) : assets::import_gltf(file);
 }
 
+std::string lowered(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool ends_clip_file(const std::string& word) {
+    const std::string w = lowered(word);
+    for (const std::string ending : {".gltf", ".glb", ".fbx"})
+        if (w.size() >= ending.size() && w.compare(w.size() - ending.size(), ending.size(), ending) == 0)
+            return true;
+    return false;
+}
+
+// `word value` as an option the port takes (blend <ms>, root keep|remove, time own|game, loop game|no|yes|<s>)
+bool action_option(const std::string& word, const std::string& value) {
+    const std::string v = lowered(value);
+    if (value.empty())
+        return false;
+    char* end = nullptr;
+    if (word == "blend") {
+        const long ms = std::strtol(value.c_str(), &end, 10);
+        return *end == '\0' && ms >= 0;
+    }
+    if (word == "root")
+        return v == "keep" || v == "remove";
+    if (word == "time")
+        return v == "own" || v == "game";
+    if (word == "loop") {
+        const float from = std::strtof(value.c_str(), &end);
+        return v == "game" || v == "no" || v == "yes" || (*end == '\0' && from >= 0.0f);
+    }
+    return false;
+}
+
 }  // namespace
+
+ActionLine split_action_line(const std::string& value) {
+    // its words, each with where it ends in the line
+    std::vector<std::pair<std::string, std::size_t>> words;
+    for (std::size_t at = 0; at < value.size();) {
+        const auto start = value.find_first_not_of(" \t", at);
+        if (start == std::string::npos)
+            break;
+        const auto end = std::min(value.find_first_of(" \t", start), value.size());
+        words.emplace_back(value.substr(start, end - start), end);
+        at = end;
+    }
+    ActionLine line;
+    if (words.empty())
+        return line;
+    const std::size_t first = value.find_first_not_of(" \t");
+    std::size_t clip_words = 1;
+    while (clip_words < words.size() && !ends_clip_file(words[clip_words - 1].first) &&
+           !action_option(words[clip_words].first, clip_words + 1 < words.size() ? words[clip_words + 1].first : ""))
+        ++clip_words;
+    line.clip = value.substr(first, words[clip_words - 1].second - first);
+    for (std::size_t i = clip_words; i < words.size(); ++i)
+        line.options.push_back(words[i].first);
+    return line;
+}
 
 std::pair<std::string, std::string> clip_reference(const std::string& clip) {
     // the '#' right after the file's extension, as the port reads it (port/runtime/characters/characters.c

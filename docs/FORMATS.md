@@ -222,6 +222,134 @@ needs is read.
   the page as four u16 (u, v, w, h) in 1/4096 of the page; then, a layer each, 8 bytes: RGBA (0x80 = 1) and the GS
   blend byte (0x44 mixed by alpha, 0x48 added).
 
+## KH2's effects
+
+Not the game's: KINGDOM HEARTS II's effects (PAX), as `assets/src/kh2_effect.cpp` reads and plays them for the
+Dark Corridor (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of the files and of the player's
+`KINGDOM HEARTS II FINAL MIX.exe`, whose loader and effect interpreter it follows. The prize effect above is the
+same layout's first effect, read only as far as its pictures and shapes.
+
+- **The file**: `PAX_`, at +0xC where its element table ends: a directory `{0x82, 0, 0, n}`, `n` entries of 32 bytes
+  (the elements placing an effect in a scene), then a list -- a count and offsets from the directory -- of effects.
+  An effect is a block `{0x96}` and five lists, each a count and offsets from the block: emitters, pictures, shapes,
+  models and vertex lists (`{u32 id, u32 model, u32 count, u16 vertex numbers}`). `effect/texcommon.dpd` is a bare
+  block of pictures alone: those KH2 keeps resident, which the effects' shapes may cut. KINGDOM HEARTS's `.dpx`
+  files and the effects inside Re:Chain of Memories' files are the directory alone, without the `PAX_` header; the
+  reader takes either.
+- **An emitter**: its offsets count from its +0x110: there its length (frames x 4096), at +0x114 a word whose bit 0
+  makes it repeat until told to stop, at +0x11c the list of its layers. A layer: +0x10 when it starts, +0x14 its life,
+  +0x18/+0x1c a loop's start and end (0x70000000: never; a layer that never starts is born by another), +0x20 where
+  its commands' cursors sit in a running layer, +0x24 its drawing order, +0x26 the command count, the commands from
+  +0x28: 16 bytes `{u32 code, u16 record size, u16 record count, u32 records, u32 slots}`. A command's records each
+  start with their frame (x 4096), the last followed by `0xfffff000`; its slots list where in a running layer's
+  memory its values are kept.
+- **The commands**: a code indexes the executable's table of 0x50-byte descriptors (at 0x140779a00), the first word
+  KH2's name for it, the others its functions: word 1 a step, 3 a draw (run every tick, drawn or not: some keep
+  their state there), 5 a hook on the instance, 7 the reset on a birth, 8 on a loop, 9 the release. The 130 codes
+  KH2's 3166 PAX use are in the table below ("KH2's effect commands"), with the few KH1's and Re:CoM's effects add
+  (KH2's executable still has them all); a command the reader does not know is refused with its code, as a
+  primitive kind it does not read. The names' middle letters are their authors'
+  (`Ke`, `Ryj`, `Sno`, `Ei`, `Vt`).
+- **The run**, at KH2's 60 ticks a second: a layer is born when its start comes; each tick every running layer's
+  commands without a draw step, then those with one step and draw, in the layers' order; a layer whose loop's end
+  comes goes back to its loop's start (the frames between run without their spawners); one whose life is over goes.
+  A repeating emitter runs until told to stop, then its layers stop looping and it ends when none is left -- KH2's
+  own opening, hold and closing.
+- **A model**: its header at +0x10: u8 flags (bit 0 clear: depth written), offsets of its primitives, vertices and
+  normals, the counts, at +0x16 its GS ALPHA byte and at +0x17 its FIX. Vertices are three s16; primitives come in
+  packets `{u8, u8 kind, s16 count, 4 bytes, TEX0}`, kinds 0-2 triangles and 4-7 quads (a quad a strip: 0-1-2,
+  1-3-2): RGBA per corner first, then the vertex numbers (+0xc a triangle's, +0x10 a quad's); 2, 6 and 7 are
+  textured, u16 UV pairs in 1/4096 of the page (+0x14 a triangle's, +0x18 a quad's); 1, 5 and 7 add a normal's
+  number per corner (+0x12, +0x18, +0x28: the scene's lighting, which the port does not draw). Their sizes are
+  0x14, 0x1c, 0x20, -, 0x18, 0x20, 0x28 and 0x30; kind 3 (0x28) is in none of KH2's files (two of Re:CoM's have
+  it; not read yet). A kind 0xff ends them. A textured corner's colour multiplies the picture (0x80 leaves it as it
+  is); an untextured one's is the colour drawn (0x80 half of full). Alpha 0x80 is a blend's 1 either way.
+- **A shape**: frames `{wait in 1/256 of a frame, a loop flag, TEX0}` of layers, each four corners in 12.4 fixed
+  point (x 1/16), its part of the page, its colour and its own GS ALPHA byte.
+- **Drawing**: the GS blend `(A - B) x C / 128 + D` by the ALPHA byte: 0x44 mixed by alpha, 0x48 added, 0x42
+  `Cd - Cs x As` (dark smoke), 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`. Drawn nearer only (`TEST 0x7000d`); a
+  `pppDrawMdl3` whose record has +0xd (and not +0xe) set writes the depth alone, no colour (`TEST 0x72001`: the
+  corridor's mask), +0xe drawn without the depth test. The layers in their order; a model's primitives in its own
+  order, or, when it does not write the depth (0x80), in 256 depth buckets far first (FUN_1404b6860,
+  FUN_1404b42b0: a primitive's bucket `(16770000 x corners - 16769999 x the sum of its corners' z / w) / (0x300 x
+  corners)`, 0xff past the last or with a corner behind the eye, not drawn with all behind), the model's order within
+  a bucket. Sorting them by their exact depth instead swaps nearly level layers back and forth (the worlds' titles
+  flickered).
+- **Pictures and pages**: a picture is `{u16 tbp, cbp, tbw, psm, x, y, w, h}`, its indices and palette as the prize
+  effect's (psm 0x13, 8 bits; 0x14, 4 bits, the low nibble first, 16 palette entries), or its colours themselves
+  (psm 0, PSMCT32: w x h RGBA; two of KH2's PAX have them); a draw names a page by its TEX0 (tbp, width, height,
+  format, palette): its view of the pictures placed on the pages from that tbp (128 x 64 for the indexed ones, 64 x
+  32 for the direct ones). The remaster's HD pictures are `remastered/<file>/-<n>.dds`, one a page, in the order
+  of the pictures' tbps.
+
+### KH2's effect commands
+
+Each command's slots are offsets in its object's memory (from the object's +0xa0); "a key" is a keyed record on
+its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executable, our own reading).
+
+| Codes | Commands | What they do |
+| --- | --- | --- |
+| 0x02-0x11 | `pppKeThRes`, `8`, `16`, `16x4`, `24`, `24x4`, `32`, `32x4`, `40`, `48`, `48x4` | At a birth: a lightning pool, one or four records of 3 to 48 points (48 bytes each, 96 more a record); a bolt and its branches take records from it |
+| 0x1b, 0x22 | `pppKeGrvTgt`, `pppKeGrvEff` | A pull: `GrvTgt` keeps a radius, a strength and where its object is; each tick within that radius of such a target (its key's layer and slot), `GrvEff` adds to its velocity the way toward it times (1 - distance / radius) times the strength |
+| 0x1c-0x1f, 0x24-0x27 | `pppAccele`, `AngAccele`, `SclAccele`, `ColAccele`, `Move`, `AngMove`, `SclMove`, `ColMove` | A value and its rate: a key adds to the rate, the rate adds to the value each tick |
+| 0x28-0x2b | `pppPoint`, `pppAngle`, `pppScale`, `pppColor` | A key adds its values (the colour's four shorts / 128 the bytes at +8) |
+| 0xd2-0xd7 | `pppMoveLoop`, `AngMoveLoop`, `SclMoveLoop`, `PointLoop`, `AngleLoop`, `ScaleLoop` | The same for a looping layer (a loop's fast-forward leaves the rate out; the first key taken off again) |
+| 0x33-0x35, 0x3f-0x46, 0x48-0x4e, 0x51, 0x52 | `pppRand...`, `pppSRand...` | A random draw times the key's base added to a target: both ways (base x draw - base), `Up` (0 to base), `Down` (-base to 0); floats drawn at the start and kept, ints (`IV`), four-short colours (`HCV`) and four-byte colours (`CV`, signed bytes added to the bytes) drawn on each key; `S` each component its own draw |
+| 0x2d | `pppVertexAttend` | A vertex of a list through the parent's matrix (where a `pppVertexApAt` child stays) |
+| 0x2f | `pppKeMvYpEff` | The angles that face its way (z about the way's x and y, x its rise) |
+| 0x30 | `pppKeDrct` | A direction set on its key |
+| 0x31 | `pppVtMime` | The object's vertices a blend of two models, t moving with its rate; drawn and spawned at in the model's place |
+| 0x54, 0x55 | `pppSMatrix`, `pppKeMatSN` | A shared matrix; a turn by how much angles changed since the last tick |
+| 0x57-0x5c, 0xd8, 0xe6-0xeb | `pppMatrixXYZ`, `XZY`, `YZX`, `YXZ`, `ZXY`, `ZYX`, `pppMatrixLoop`, `pppMatrixLoopXYZ`... | The object's matrix from place, angles and scale; the letters the order the turns apply (row vectors) |
+| 0x5d, 0x5e, 0x60, 0x63 | `pppMatrixLoc`, `pppMatrixScl`, `pppRyjMatrixNoRot`, `pppRyjMatrixWorldXYZ` | No turn; the scale on the diagonal; the view's turn undone (facing the camera); kept where the world was at the birth |
+| 0x69, 0x6a | `pppParMatrix`, `pppKeParMatR` | Placed through the parent's matrix; turned by its unit rows too |
+| 0x70-0x75, 0xd9 | `pppDrawMatrix`, `Front`, `NoRot`, `Wood`, `pppKeDMat`, `pppKeDMatFr`, `pppDrawMatrixLoop` | The matrix drawn with: through world, view and projection; facing the view; no view turn; upright; kept in a slot |
+| 0x78, 0x79, 0x7b | `pppRyjDrawMatrixWorld`, `Front`, `Wood` | The same at the world's place and size at the birth |
+| 0x7c, 0x7d | `pppKeZCrct`, `pppKeZCrctShp` | Depth order corrections (KH2's sorting alone) |
+| 0x7e, 0x80, 0x81 | `pppKeThTp`, `pppKeThSft`, `pppKeTh` | Lightning. `pppKeThTp` a point another layer's bolt grows toward (its place's x, y, z; w left 0, so a bolt ends once within its reach), its key the near radius (pulled harder inside), the reach, the pull's strength and a next point; `pppKeThSft` rates added each tick to a bolt's size, speed, reach, pull and colours. `pppKeTh` (FUN_1404be900) starts a bolt from a ThRes's free record at its object's place along its `pppKeDrct`'s way (through the object's matrix, made unit) toward the point (its key's layer and slot; -1 KH2's zero point), and each key sets its length, size, how wide its tail is, its core's part, brightness and its rate, how much of the last way is kept, speed, pull, the random turn's most (u16 x pi x pi / 180), the most branches and their mask, the blend, and four flags. Each tick (FUN_1404dd8e0) the bolt is walked again from its oldest point: each segment's way pulled toward the point, turned by a random angle about x, y or z, blended with what the point had; new points fade by the rate and may branch into the pool's spare records; once grown it lets its tail go. Drawn (FUN_1404dd100) as a ribbon facing the screen: a fan from the first point, ten-vertex strips between, a fan to the last; the core's colour in the middle, the edges' at the size and at the core's part of it, each with a rate a point; the size in KH2's screen pixels (512 x 416, focal length 256 / tan 0.75), given back in the projection's units here |
+| 0x83, 0x85-0x8b, 0xda, 0xdb | `pppDrawMdl`, `MdlTs`, `Mdl2`, `MdlSemi2`, `MdlTs2`, `Mdl3`, `MdlSemi3`, `MdlTs3`, `MdlLoop`, `MdlLoopZ` | A model through the object's matrix and colour; each its depth rules (8 written, 0x80 not, 4 two record bytes: the depth alone / always), the Ts and Loop ones their UV scroll (in texels: handed on x 65536 as an int and shifted by the page's size, 2^TW x 16, into the UVs' 1/4096 of the page; taken as whole pages it ran a page width too fast and the worlds' titles strobed), the Semi ones and LoopZ the record's blend |
+| 0x8d, 0x8e | `pppDrawShape`, `pppDrawShapeX` | A shape's frames through the matrix |
+| 0x91, 0xa0, 0xee | `pppKeMdlDtt`, `pppKeShpDtt`, `pppSnoMdlDttNorm` | The screen behind drawn again through a model or a sprite, moved by a strength (along the normals for the last): given as draws of the screen, the movement not worked out; the port does not draw them yet |
+| 0x98-0x9d | `pppKeShpTail`, `TailX`, `Tail2`, `Tail2X`, `Tail3`, `Tail3X` | Sprites along the object's last places (a ring of 31 or 28), spaced by a length shrinking with their size, coloured head to tail; the 3 ones each sprite's frame, size and turn from a 16-bit LCG |
+| 0xac, 0xae, 0xb1, 0xb2, 0xec | `pppPointAp`, `pppVertexAp`, `ApLc`, `ApAt`, `ApLcLoop` | Children born every wait: at its point; at a list's vertices through its matrix, as in the model, or tied to a vertex number |
+| 0xb4, 0xb5, 0xb7, 0xb8 | `pppKeBornRnd2`, `3`, `5`, `6` | Children born at a list's vertices, walked or picked by `rand()`, on a chance (2, 3) or every wait (5, 6): with their unit way out (sized: 2, 5), or facing out along it (6) |
+| 0xbc-0xc1, 0xdd, 0xdf-0xe1 | `pppKeLnsLpSft`, `LnsLp`, `LnsArnd`, `LnsClm`, `LnsCrn`, `LnsFls` and the T ones | A lens flare: a line from the source to the screen's middle and how bright, elements around the source, as columns along the line, a streak, a flash; the T ones keep their key's values (the maps' suns). LpT's test of how much of the source is seen is not made |
+| 0xc8 | `pppRyjDrawShipolyBone` | A weapon's swing trail from the game's two points (base, tip): a history bent into the model's quads by a natural cubic spline |
+| 0xc9, 0xcb, 0xd0, 0xe5 | `pppRyjMegaBirth`, `Prize`, `Model`, `ModelFilter` | Particle pools: sprites; prizes (a crowd at the game's points: each point's kind picks one of ten entries, a shape, colour and size, its alpha, size / 255 and frame in the point's bytes, the frame moved on); models; and models in a ball round the camera (a map's falling leaves or dust: born in the ball, brought back on its far side when they leave it, shown while the camera is within a distance of the effect, faded near the camera and at the ball's edge) |
+| 0xca | `pppRyjMngFlag` | The instance's bytes: its state for the game, frozen, its place following the camera |
+| 0xed | `pppSnoScaleAll` | Three sizes and one for all, each with rates; their products |
+| 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 at the game's matrices (KH2's list at 0x140b60270, the gummi ships' game's and Xemnas's: `EffectInstance::set_matrices`): 2 its model through each matrix and its shape at each one's place, 3 a row of its shape along each matrix's z, centred on its place; a matrix's last float 1.0 drawn plain, else its bytes an alpha, a frame (moved on), a size x 10 |
+| 0xf1 | `pppEiDrawShipoly` | A ribbon along the object's last places (two edges a place, or one and edges across the screen): width, drift and a pull that move, a natural cubic spline, thinner and faded to the tail, pieces along and across with UV ranges and scroll |
+
+The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`; and matrices (0x140b60270): `EffectInstance::set_matrices`.
+
+## KH2's sound banks and its scenes' sounds
+
+Not the game's: KINGDOM HEARTS II's PC sound banks (`se/se<bank>.win32.scd`), as `tools/mods/kh2_scd.py` reads them
+for the Dark Corridor's sounds (docs/RUNTIME_MAP.md, "The Dark Corridors") -- our own reading of the files, checked
+sample for sample against ffmpeg's decoding of the same recordings.
+
+- **The bank**: `SEDBSSCF`, a 0x30-byte header, then at 0x30 the tables' header: four u16 counts (the third the
+  recordings'), then u32 offsets (the second the recordings' table's). The table: a u32 offset a recording, 0 an
+  empty place.
+- **A recording**: `{u32 data size, channels, rate, codec, loop start, loop end, extra size, -}`, the codec's extra
+  header, then its data. Codec 12 is Microsoft ADPCM, its extra a WAVEFORMATEX (`wFormatTag` 2, the block's bytes,
+  `wSamplesPerBlock` 32, the seven predictor pairs); codec 6 is Ogg Vorbis. Rates are the files' own (47,995-48,005
+  in bank 2984).
+- **Microsoft ADPCM**, as Microsoft's description of the format gives it: a block holds per channel a predictor
+  number (u8), then per channel the step, sample 1 and sample 2 (s16 each); sample 2 then sample 1 are the first out;
+  then a nibble a sample, high nibble first, the channels interleaved. A sample is `(s1 c1 + s2 c2) / 256` -- the
+  division toward zero, as C's (ffmpeg's decoding agrees; rounding down is off by one at negative values) -- plus the
+  nibble (signed) times the step, held to 16 bits; the step becomes `max(16, step x adapt[nibble] / 256)`.
+- **A scene's sounds**: a KH2 event (an `.ard` area's entry of type 22) is records `{u16 size, u16 op}`, run by the
+  executable's event runner (its records' dispatch at `FUN_1402cb5d0`, a jump table at 0x1402cbc2c by `op - 2`). Op
+  0x2a names the scene's bank (an s16 at +6); op 0x24 loads a block of sub-records `{op, size}` (0x38 an object, 0x25
+  an animation, 0x26 a voice, 0x39 an effect slot and its file's name); op 0x9 runs an effect: +4 its frame, +0xa
+  its slot, +0xc the file's element, +0xe 4 bind, 0 start, 1 or 2 stop (`FUN_1402d9340` starts the element); op
+  0x2b a sound: +4 its slot, +6 0 start or 1 stop, +8 a u32 sound -- below 1001 the scene's bank's, its recording
+  `n - 1` -- and +0xc its frame (`FUN_1402d8be0` plays it). A PAX element's own sound (its +0x18, -1 none) plays
+  with it; the Dark Corridor's names none.
+
 ## KH2's objects (a chest, a prize box)
 
 Not the game's: KINGDOM HEARTS II's objects (`obj/<name>.mdlx` in the player's 1.5+2.5 copy), as
@@ -234,6 +362,58 @@ at +0x10). A group's flag 0x400000 is light KH2 adds over the model (The World T
 lines). A chest's rest pose has its lid open: its motion set (`obj/<name>.mset`, a BAR of motions, each a BAR
 holding the motion, type 9) has it closed in `00A`'s first frame; the lid is its last bone (`j3`), 100 degrees from
 closed when open.
+
+## KH2's objects and their AI
+
+Not the game's: how KINGDOM HEARTS II's objects (its enemies among them) are made and driven, from the player's
+1.5+2.5 copy and our reading of its executable (KH2FM.exe, the PC release); `tools/research/kh2_ai.py` reads the
+scripts. Nothing of it is used by the game yet.
+
+- **An object** is `obj/<name>.mdlx` (a BAR: its model, type 4; its textures, 7; its AI script, 3; a small entry, 23)
+  and `obj/<name>.mset` (its motions: BARs of type 17 holding each motion). The name's prefix says what it is: `M_`
+  an enemy, `B_` a boss, `N_` a person, `P_` the party, `F_` a thing, `W_` a weapon. The game's object table
+  (`00objentry.bin`) gives each object its id, kind (4 an enemy, 3 a boss, 0x0c a large boss, 0x15 a large enemy),
+  model and motion names, weight and shadow, as OpenKH's documentation lays it out.
+- **The battle tables** (`00battle.bin`, a BAR of tables; layouts as OpenKH's documentation gives them, sizes and
+  counts checked against the player's copy): `enmp`, 229 enemies of 92 bytes (id, level, 32 health values, a damage
+  cap and a minimum, seven weaknesses in percent: physical, fire, blizzard, thunder, dark, light, general; the
+  experience multiplier, the prize table and a bonus level); `atkp`, 2713 attacks of 48 bytes (power, element, the
+  reaction caused, knockback, the hit's sound, the interval between hits, ...), named by the motions' hit events;
+  `lvpm`, the multipliers by level; `przt`, 184 drop tables of 24 bytes. An object's script picks its `enmp` entry.
+- **A script** (BAR type 3): a name (16 bytes), three sizes in bytes (+0x10 its work area, shared by the object's
+  threads; +0x14 its frame area; +0x18 its value stack), then its triggers `{s32 key, s32 entry}` until (0, 0). Code
+  is 16-bit words counted from +0x10 (an entry is such a word's number). A word: its operation in bits 0-3, a
+  sub-kind in bits 4-5, an argument in bits 6-15.
+
+  | Op | What it does (FUN_14041b400) |
+  | --- | --- |
+  | 0 | Push: sub 0 a 32-bit integer, 1 a float (the next two words); 2 the address of, 3 the value at, a base + the next word (the argument the base: 0 the frame, 1 the work area, 2 the address in the frame's first word, 3 the script's own words) |
+  | 1 | Pop into a base + the next word |
+  | 2 | Copy the next word's bytes from a popped address to a base + the word after |
+  | 3 | Push the value at a popped address + the next word |
+  | 4 | Store a popped value at a popped address (an argument: copy that many bytes) |
+  | 5 | One value: sub 0 on integers (to float, negate, not, = 0, abs, < 0, <= 0, != 0, >= 0, > 0), 1 on floats |
+  | 6 | Two values: sub 0 integers (add, sub, mul, div, mod, and, or, xor, shift left and right, logical and, or), 1 floats (add, sub, mul, div, mod) |
+  | 7 | Jump by the next word (signed, from the instruction after): always, if zero, if not zero |
+  | 8 | Call by the next word; the argument the words its frame takes; 11 the same with a 32-bit distance |
+  | 9 | 0 yield (the thread waits for the next tick), 1 exit, 2 return, 3 drop, 5 duplicate, 6 sin, 7 cos, 8 degrees to radians, 9 back |
+  | 10 | Call into the game: the argument a table, the next word the entry |
+
+  The PC release keeps each value on the stack as 8 bytes, the value and a tag (`@INT`, `@FLT`, `@ADR`, `@???` for
+  not set), and adjusts a few constants of named scripts, by their place in the code, for its 60 frames a second.
+- **Threads and triggers**: an object with a script gets a thread (FUN_1403e1240): it runs trigger 0 at once with the
+  object's address, then trigger 1 as its own thread, resumed every tick (FUN_1403e1c80) until it exits; a script's
+  routines can be run as child threads. The game runs other triggers at events, each with its own arguments: 6 (to
+  every listening thread, FUN_1403f47b0), 10 (FUN_1403b3030), 11 (FUN_1403b5fa0), 13 and 14 (FUN_1403b7920,
+  FUN_1403b79d0), 15 (FUN_1403d5500), 16 and 17 (a motion's events, FUN_14040dd70), 19 to 27; enemies' scripts
+  have 0, 1, 6, 11, 13, 16 most.
+- **The game's calls**: tables of 16-byte entries `{function, u16 its arguments, 0x40000000 when it gives back a
+  value}` from a list of eleven at 0x140753490 (two filled in by the game: 9 by FUN_14026ace0); 105, 368, 98, 59, 35,
+  72, 37, 9, 41 and 60 entries. The arguments are popped (in order), the value pushed. Of KH2's 922 scripts the
+  enemies' (142) make 191 different calls, the bosses' (98) 263, all 570. Some read so far: 0:3 the tick's length,
+  0:16 / 0:17 / 0:18 random numbers (below n, times n, between two), 0:47 memory of n bytes, 0:6 a vector's length,
+  0:21 the turn between two ways on the ground; 1:8, 1:9 and 1:10 the object's state machine (a state set at once,
+  one queued, 16 at most, whether one is pending).
 
 ## Dream Drop Distance's rooms
 

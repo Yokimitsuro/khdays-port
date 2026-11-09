@@ -358,17 +358,42 @@ static u16 player_buttons(void)
     /* Lock-on on its own buttons: while the game's lock-on logic takes the buttons (it did last frame),
      * their presses become the DS's R presses for them; anywhere else they are the DS's R and L. */
     const int lock_on = (snapshot.enhancements & KHDAYS_ENH_SEPARATE_LOCK_ON) != 0;
+    const int auto_lock = (snapshot.enhancements & KHDAYS_ENH_AUTO_LOCK) != 0;
     /* (with the 3D on both screens it runs on every other frame: the frame before counts too) */
-    const int lock_field = lock_on && pad_samples > 0 && pad_samples - game->selection_frame <= 1u &&
+    const int lock_field = (lock_on || auto_lock) && pad_samples > 0 && pad_samples - game->selection_frame <= 1u &&
                            pad_samples - game->selection_live_frame <= 1u;
-    const uint32_t lock_actions = ((snapshot.actions & KHDAYS_ACTION_LOCK_ON) ? 1u << KHDAYS_LOCK_ON : 0) |
-                                  ((snapshot.actions & KHDAYS_ACTION_TARGET_NEXT) ? 1u << KHDAYS_LOCK_NEXT : 0) |
-                                  ((snapshot.actions & KHDAYS_ACTION_TARGET_PREV) ? 1u << KHDAYS_LOCK_PREV : 0);
+    const uint32_t lock_actions =
+        lock_on ? ((snapshot.actions & KHDAYS_ACTION_LOCK_ON) ? 1u << KHDAYS_LOCK_ON : 0) |
+                      ((snapshot.actions & KHDAYS_ACTION_TARGET_NEXT) ? 1u << KHDAYS_LOCK_NEXT : 0) |
+                      ((snapshot.actions & KHDAYS_ACTION_TARGET_PREV) ? 1u << KHDAYS_LOCK_PREV : 0)
+                : 0;
     /* An R press counts as a single one for the game once its counter has
      * passed 0x9000 (9 frames) since the last R (Ov022_ReadSelectionInput). */
     const int r_free = game->r_repeat >= 0x9000 && !game->r_pressed;
+    uint32_t auto_actions = 0;
+    {
+        /* Auto lock-on. The player letting go: the lock-on button's R that lets go (the sequencer's, last frame), or
+         * the player's own R or Select (Ov022_UpdateSelectionMarker) within the frames the game takes to act on it. */
+        static KhdaysLockAuto relock;
+        static u16 keys_before;
+        static uint32_t r_select_at;
+        const u16 keys = (u16)(buttons | script_keys), pressed = (u16)(keys & ~keys_before);
+        if ((pressed & (KHDAYS_KEY_R | KHDAYS_KEY_SELECT)) != 0) {
+            r_select_at = pad_samples;
+        }
+        keys_before = keys;
+        const int recent = r_select_at != 0 && pad_samples - r_select_at <= KHDAYS_LOCK_LET_GO_FRAMES;
+        if (auto_lock) {
+            auto_actions = khdays_lock_auto_frame(&relock, lock.let_go, recent, lock_field, game->lock_active,
+                                                  game->lock_candidate);
+        }
+        if (!auto_lock || (pressed & KHDAYS_KEY_SELECT) != 0) {
+            relock = (KhdaysLockAuto){0, 0, 0};
+            khdays_lock_sequencer_cancel(&lock, KHDAYS_LOCK_AUTO); /* off, or let go: none queued or under way */
+        }
+    }
     const u16 lock_buttons =
-        khdays_lock_sequencer_frame(&lock, lock_on ? lock_actions : 0, lock_field, game->lock_active,
+        khdays_lock_sequencer_frame(&lock, lock_actions | auto_actions, lock_field, game->lock_active,
                                     game->lockon_scheme, (u16)(buttons | script_keys), r_free);
     if (lock.let_go) {
         khdays_controls_lock_let_go();

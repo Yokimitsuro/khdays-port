@@ -364,6 +364,7 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_ENH_KH2_FIRST_PERSON_NOTE));
     add_switch(b, KHDAYS_SET_ENH_LOCK_ON, TXT_ENH_LOCK_ON, &e->separate_lock_on, built(KHDAYS_ENH_SEPARATE_LOCK_ON),
                khdays_text(TXT_ENH_LOCK_ON_NOTE));
+    add_switch(b, KHDAYS_SET_ENH_AUTO_LOCK, TXT_ENH_AUTO_LOCK, &e->auto_lock, 1, khdays_text(TXT_ENH_AUTO_LOCK_NOTE));
     add_switch(b, KHDAYS_SET_ENH_MENU, TXT_ENH_MENU, &e->dpad_command_menu, built(KHDAYS_ENH_DPAD_COMMAND_MENU),
                menu_note);
     add_switch(b, KHDAYS_SET_ENH_MOVEMENT, TXT_ENH_MOVEMENT, &e->analog_movement, built(KHDAYS_ENH_ANALOG_MOVEMENT),
@@ -402,6 +403,8 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_KH2_MODELS, TXT_HUD_KH2_MODELS, &e->hud[KHDAYS_OPT_KH2_MODELS], 1,
                khdays_text(TXT_HUD_KH2_MODELS_NOTE));
+    add_switch(b, KHDAYS_SET_HUD_CORRIDORS, TXT_HUD_CORRIDORS, &e->hud[KHDAYS_OPT_CORRIDORS], 1,
+               khdays_text(TXT_HUD_CORRIDORS_NOTE));
     add_switch(b, KHDAYS_SET_HUD_PAUSE_TARGET, TXT_HUD_PAUSE_TARGET, &e->hud[KHDAYS_OPT_PAUSE_TARGET], 1,
                khdays_text(TXT_HUD_REPLACEMENT_NOTE));
     add_switch(b, KHDAYS_SET_HUD_INFORMATION_HUD, TXT_HUD_INFORMATION_HUD, &e->hud[KHDAYS_OPT_INFORMATION_HUD], 1,
@@ -409,14 +412,17 @@ static void build_enhancements(Builder *b, KhdaysProfile *w)
     add_switch(b, KHDAYS_SET_HUD_UI_PADDING, TXT_HUD_UI_PADDING, &e->hud[KHDAYS_OPT_UI_PADDING], 1,
                khdays_text(TXT_HUD_UI_PADDING_NOTE));
     add(b, KHDAYS_ROW_HEADING, KHDAYS_SET_NONE, khdays_text(TXT_HUD_MISSION_LAYOUT));
-    add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY, &e->hud[KHDAYS_OPT_MISSION_VISIBILITY],
-               mission_visibility, 2);
-    add_choice(b, KHDAYS_SET_HUD_MISSION_ANCHOR, TXT_HUD_MISSION_ANCHOR, &e->hud[KHDAYS_OPT_MISSION_ANCHOR],
-               hud_anchors, 9)
-        ->values = hud_anchor_values;
-    add_choice(b, KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR, TXT_HUD_MISSION_PAUSE_ANCHOR,
-               &e->hud[KHDAYS_OPT_MISSION_PAUSE_ANCHOR], hud_anchors, 9)
-        ->values = hud_anchor_values;
+    KhdaysRow *r = add_choice(b, KHDAYS_SET_HUD_MISSION_VISIBILITY, TXT_HUD_MISSION_VISIBILITY,
+                              &e->hud[KHDAYS_OPT_MISSION_VISIBILITY], mission_visibility, 2);
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
+    r = add_choice(b, KHDAYS_SET_HUD_MISSION_ANCHOR, TXT_HUD_MISSION_ANCHOR, &e->hud[KHDAYS_OPT_MISSION_ANCHOR],
+                   hud_anchors, 9);
+    r->values = hud_anchor_values;
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
+    r = add_choice(b, KHDAYS_SET_HUD_MISSION_PAUSE_ANCHOR, TXT_HUD_MISSION_PAUSE_ANCHOR,
+                   &e->hud[KHDAYS_OPT_MISSION_PAUSE_ANCHOR], hud_anchors, 9);
+    r->values = hud_anchor_values;
+    r->note = khdays_text(TXT_HUD_MISSION_LAYOUT_NOTE);
 }
 
 static void build_sticks(Builder *b, KhdaysProfile *w)

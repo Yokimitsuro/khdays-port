@@ -95,7 +95,8 @@ KD_FN float kd_cubic(float d)
 }
 
 /* A replaced tile's colour under an output pixel `ru` x `rv` DS pixels wide at (u, v): the texels it
- * covers averaged, or, when it is smaller than a texel, a smooth Catmull-Rom blend of the 4 x 4 around.
+ * covers averaged, or, when it is smaller than a texel, a smooth Catmull-Rom blend of the 4 x 4 around
+ * (the texel under it, sharp, for a sheet at the DS's own size).
  * KD_HD | the colour, how much shows through in bits 24-30 (KD_SEE_THROUGH); 0 where clear. */
 KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv)
 {
@@ -119,6 +120,17 @@ KD_FN uint kd_hd_colour(uint id, uint tile, float u, float v, float ru, float rv
     k = (float)side / 8.0f; /* texels in a DS pixel */
     ox = (tile % columns) * side;
     oy = (tile / columns) * side;
+    if (texels < 1.0f && scale == 1u) {
+        /* a sheet at the DS's own size: its texels are DS pixels, drawn as the game's own are -- sharp, the
+         * texel under the pixel (a 1x sheet blended as an HD one came out blurred) */
+        const uint tx = (uint)kd_clampi((int)u, 0, 7), ty = (uint)kd_clampi((int)v, 0, 7);
+        uint texel = 0u; /* past the picture: clear */
+        if (ox + tx < width && oy + ty < height) {
+            texel = KD_HD_TEXEL(first + (oy + ty) * width + ox + tx);
+        }
+        seen = (uint)((1.0f - (float)(texel >> 24) / 255.0f) * 127.0f + 0.5f);
+        return seen >= 127u ? 0u : KD_HD | (seen << 24) | (texel & 0xffffffu);
+    }
     if (texels < 1.0f) {
         /* drawn larger than its texels: the 4 x 4 round the pixel's centre, those past the tile's edge
          * read at its edge (the tile beside it in the sheet is not the one beside it on the screen) */

@@ -241,12 +241,14 @@ class MakeTheMod(unittest.TestCase):
         with Image.open(fx / "prize_01_page0.png") as page:
             self.assertEqual(page.size, (256, 128))  # the HD page
         self.assertTrue((self.mod / "days-mods" / "kh2-prizes.txt").exists())
-        # the MP orb and the drive orb: no Days prize; the Coliseum's coin: its file not there; the crystals: no Re:CoM
-        self.assertEqual(len(left_out), 5)
+        # the MP orb and the drive orb: no Days prize; the Coliseum's coin: its file not there; the crystals: no Re:CoM;
+        # the Dark Corridor: its effect not there (tools/mods/tests/kh2_corridor_test.py makes it)
+        self.assertEqual(len(left_out), 6)
         self.assertTrue(any("MP orb" in line for line in left_out) and any("drive orb" in line for line in left_out))
         self.assertTrue(any(line.startswith("he_prize: KH2's obj/PRIZE_HE.mdlx is not there") for line in left_out))
         self.assertIn("ef_pp: Re:CoM's prize sheet is not there", left_out)
         self.assertIn("prize_08: Re:CoM's prize sheet is not there", left_out)
+        self.assertIn("the Dark Corridor: KH2's event/effect/tt_event_904.pax is not there", left_out)
 
     def test_the_original_pages_without_the_remaster(self):
         import kh2_prizes

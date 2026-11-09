@@ -603,6 +603,8 @@ enum class S {
     chars_skeleton_paired,
     chars_scale,
     chars_match_height,
+    chars_weapon_scale,
+    chars_weapon_scale_match,
     chars_weapon_bone,
     chars_weapon_bone_none,
     chars_weapon_turn,

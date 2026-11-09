@@ -236,6 +236,32 @@ static void own_skeleton_read(void)
     CHECK(idle != NULL && idle->blend_ms == KHDAYS_CHARACTER_BLEND_MS && idle->game_time == 0 &&
           idle->loop == KHDAYS_CHARACTER_LOOP_GAME);
     CHECK(khdays_characters_action(c, "b_ro_A004") == NULL);
+    CHECK(c->weapon_scale == 0.0f);
+    khdays_characters_free(&r);
+
+    /* clips' paths with spaces (as a player's files are named), their options after them; the weapons' size */
+    static const char spaced[] = "[character]\nformat = 1\nbase = xion\nname = Aqua\n"
+                                 "[model]\nfile = model/aqua.glb\nskeleton = own\nweapon_scale = 1.3\n"
+                                 "[actions]\nfallback = clips/aqua animations.glb#b_xo_A000_2\n"
+                                 "b_xo_A001 = clips/my run.FBX blend 120 root keep\n"
+                                 "b_xo_A002 = clips/all.glb#Take  001 loop no\n"
+                                 "b_xo_A003 = clips/aqua root motion.glb\n"
+                                 "b_xo_A004 = clips/jump time.gltf time game\n";
+    memset(&r, 0, sizeof(r));
+    memset(&reports, 0, sizeof(reports));
+    CHECK(read_text(&r, "m", "aqua", spaced, &reports) == 1);
+    CHECK(reports.count == 0);
+    c = &r.list[0];
+    CHECK(c->weapon_scale == 1.3f);
+    CHECK(strcmp(c->fallback, "clips/aqua animations.glb#b_xo_A000_2") == 0);
+    run = khdays_characters_action(c, "b_xo_A001");
+    CHECK(run != NULL && strcmp(run->clip, "clips/my run.FBX") == 0 && run->blend_ms == 120 && run->root_keep == 1);
+    const KhdaysCharacterAction *take = khdays_characters_action(c, "b_xo_A002");
+    CHECK(take != NULL && strcmp(take->clip, "clips/all.glb#Take  001") == 0 && take->loop == KHDAYS_CHARACTER_LOOP_NO);
+    const KhdaysCharacterAction *motion = khdays_characters_action(c, "b_xo_A003");
+    CHECK(motion != NULL && strcmp(motion->clip, "clips/aqua root motion.glb") == 0 && motion->root_keep == 0);
+    jump = khdays_characters_action(c, "b_xo_A004");
+    CHECK(jump != NULL && strcmp(jump->clip, "clips/jump time.gltf") == 0 && jump->game_time == 1);
     khdays_characters_free(&r);
 
     static const struct {
@@ -259,6 +285,9 @@ static void own_skeleton_read(void)
          "not blend <ms>", 8},
         {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = x.fbx root\n",
          "without its value", 8},
+        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\n[actions]\nb_ro_A000 = my x.fbx speed 2\n",
+         "not blend <ms>", 8},
+        {"[character]\nformat = 1\nbase = roxas\nname = A\n[model]\nfile = a.fbx\nweapon_scale = 0\n", "above 0", 7},
     };
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
         KhdaysCharacters b;

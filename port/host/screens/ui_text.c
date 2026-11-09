@@ -81,6 +81,22 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_HUD_PRIZES] = {"KH2 prizes and chests", "Prix et coffres de KH2", "Preise und Truhen aus KH2",
                         "Premi e forzieri di KH2", "Premios y cofres de KH2"},
     [TXT_HUD_KH2_MODELS] = {"KH2 models", "Modèles de KH2", "Modelle aus KH2", "Modelli di KH2", "Modelos de KH2"},
+    [TXT_HUD_CORRIDORS] = {"KH2 Dark Corridors", "Couloirs des Ténèbres de KH2", "Korridore der Finsternis aus KH2",
+                           "Corridoi Oscuri di KH2", "Pasillos Oscuros de KH2"},
+    [TXT_HUD_CORRIDORS_NOTE] =
+        {"The Organization's corridors as KH2 draws them -- its own effect and sounds, played as KH2 plays them -- "
+         "made by the HD PACK from your 1.5+2.5. Off shows Days' own. Applies from the next corridor.",
+         "Les couloirs de l'Organisation comme KH2 les dessine -- son propre effet et ses sons, joués comme KH2 les "
+         "joue -- créés par le HD PACK depuis votre 1.5+2.5. Désactivé, ceux de Days sont affichés. S’applique au "
+         "couloir suivant.",
+         "Die Korridore der Organisation, wie KH2 sie zeichnet -- sein eigener Effekt und seine Klänge, wie KH2 sie "
+         "abspielt -- vom HD PACK aus deiner 1.5+2.5 erstellt. Aus zeigt die von Days. Gilt ab dem nächsten Korridor.",
+         "I corridoi dell'Organizzazione come li disegna KH2 -- il suo effetto e i suoi suoni, riprodotti come li "
+         "riproduce KH2 -- creati dall'HD PACK dalla tua 1.5+2.5. Disattivato mostra quelli di Days. Vale dal "
+         "corridoio successivo.",
+         "Los pasillos de la Organización como los dibuja KH2 -- su propio efecto y sus sonidos, reproducidos como "
+         "los reproduce KH2 -- creados por el HD PACK desde tu 1.5+2.5. Desactivado muestra los de Days. Se aplica "
+         "desde el siguiente pasillo."},
     [TXT_HUD_KH2_MODELS_NOTE] =
         {"Roxas and his keyblades with KH2's models, motions and clothes, made by the HD PACK from your 1.5+2.5. Off "
          "shows Days' own. Changes apply at once.",
@@ -118,6 +134,17 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_HUD_MISSION_LAYOUT] = {"Mission panel placement", "Position du panneau de mission",
                                 "Position der Missionsanzeige", "Posizione pannello missione",
                                 "Posición del panel de misión"},
+    [TXT_HUD_MISSION_LAYOUT_NOTE] =
+        {"The mission panel on one screen, the game's or a mod's. With two screens the game's stays on the lower "
+         "screen. Changes apply at once.",
+         "Le panneau de mission sur un écran, celui du jeu ou d'un mod. Avec deux écrans, celui du jeu reste sur "
+         "l'écran inférieur. S'applique aussitôt.",
+         "Die Missionsanzeige auf einem Bildschirm, die des Spiels oder eines Mods. Mit zwei Bildschirmen bleibt "
+         "die des Spiels auf dem unteren. Gilt sofort.",
+         "Il pannello missione su uno schermo, quello del gioco o di una mod. Con due schermi quello del gioco "
+         "resta sullo schermo inferiore. Si applica subito.",
+         "El panel de misión en una pantalla, el del juego o el de un mod. Con dos pantallas el del juego se queda "
+         "en la pantalla inferior. Se aplica al momento."},
     [TXT_HUD_REPLACEMENT_NOTE] =
         {"Use an enabled replacement from the mod JSON. Off keeps the original. Changes apply without restarting; JSON files are never modified.",
          "Utilise un remplacement activé dans le JSON du mod. Désactivé conserve l’original. Aucun redémarrage ni modification du JSON.",
@@ -337,6 +364,13 @@ static const char *const texts[TXT_COUNT][5] = {
                               "Erfassen und Zielwechsel auf eigenen Tasten (das Erfassen des Spiels: zweimal R).",
                               "Punta e cambio bersaglio su tasti propri (la punta del gioco: R due volte).",
                               "Fijar y cambiar de objetivo con botones propios (el fijado del juego: R dos veces)."},
+    [TXT_ENH_AUTO_LOCK] = {"Auto lock-on", "Lock-on automatique", "Automatisches Erfassen", "Puntamento automatico",
+                           "Fijado automático"},
+    [TXT_ENH_AUTO_LOCK_NOTE] = {"When your target is defeated, lock on to the next enemy automatically.",
+                                "Quand votre cible est vaincue, verrouille automatiquement l'ennemi suivant.",
+                                "Ist dein Ziel besiegt, wird automatisch der nächste Gegner erfasst.",
+                                "Quando il bersaglio è sconfitto, punta automaticamente il nemico successivo.",
+                                "Al vencer a tu objetivo, fija automáticamente al siguiente enemigo."},
     [TXT_ENH_MENU] = {"Command menu on the D-pad", "Commandes sur la croix", "Befehlsmenü auf dem Steuerkreuz",
                       "Menu comandi sulla croce", "Menú de comandos en la cruceta"},
     /* %s: the game's words, "Config", "Command List" and "X Only". */
@@ -616,16 +650,17 @@ static const char *const texts[TXT_COUNT][5] = {
     [TXT_VIDEO_MOVIES_PC] = {"Full colour", "Couleurs complètes", "Volle Farben", "Colori pieni", "Color completo"},
     [TXT_VIDEO_MOVIES_DS] = {"As on the DS", "Comme sur DS", "Wie auf dem DS", "Come sul DS", "Como en la DS"},
     [TXT_VIDEO_PACE] = {"Picture pace", "Rythme de l'image", "Bildrate", "Ritmo dell'immagine", "Ritmo de imagen"},
-    [TXT_VIDEO_PACE_NOTE] = {"Smooth draws the 3D at the monitor's rate, up to a game frame behind; the DS shows 30 "
-                             "pictures a second.",
-                             "Fluide dessine la 3D à la fréquence de l'écran, jusqu'à une image du jeu de retard ; "
-                             "la DS affiche 30 images par seconde.",
-                             "Flüssig zeichnet das 3D mit der Bildrate des Monitors, bis zu ein Spielbild später; "
-                             "der DS zeigt 30 Bilder pro Sekunde.",
-                             "Fluido disegna il 3D alla frequenza dello schermo, fino a un fotogramma di gioco in "
-                             "ritardo; il DS mostra 30 immagini al secondo.",
-                             "Fluido dibuja la 3D al ritmo del monitor, hasta un fotograma del juego por detrás; "
-                             "la DS muestra 30 imágenes por segundo."},
+    [TXT_VIDEO_PACE_NOTE] =
+        {"Smooth draws the 3D at the monitor's rate, about a game frame behind; the DS shows 30 "
+         "pictures a second.",
+         "Fluide dessine la 3D à la fréquence de l'écran, avec environ une image du jeu de retard ; "
+         "la DS affiche 30 images par seconde.",
+         "Flüssig zeichnet das 3D mit der Bildrate des Monitors, etwa ein Spielbild später; "
+         "der DS zeigt 30 Bilder pro Sekunde.",
+         "Fluido disegna il 3D alla frequenza dello schermo, circa un fotogramma di gioco in "
+         "ritardo; il DS mostra 30 immagini al secondo.",
+         "Fluido dibuja la 3D al ritmo del monitor, un fotograma del juego por detrás más o menos; "
+         "la DS muestra 30 imágenes por segundo."},
     [TXT_VIDEO_PACE_SMOOTH] = {"Smooth", "Fluide", "Flüssig", "Fluido", "Fluido"},
     [TXT_VIDEO_PACE_DS] = {"As on the DS", "Comme sur DS", "Wie auf dem DS", "Come sul DS", "Como en la DS"},
     [TXT_VIDEO_PACE_WARNING] =

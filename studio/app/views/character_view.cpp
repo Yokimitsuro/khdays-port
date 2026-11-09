@@ -202,7 +202,7 @@ void show_form(const std::string& id) {
     v.framed_for = 0.0f;
     // shown at first: the first of the base's animations it gives a clip, else its clip for any other
     for (const auto& [game, value] : v.ini.entries(gives_section("actions") ? part("actions") : "actions")) {
-        const std::string clip = value.substr(0, value.find(' '));
+        const std::string clip = split_action_line(value).clip;
         if (game == "fallback") {
             if (v.shown_clip.empty())
                 v.shown_clip = clip;
@@ -859,6 +859,23 @@ void draw_model_tab(App& app) {
         v.ini.set(mp, "scale", text);
     }
     ImGui::EndDisabled();
+    // its hands' weapons' size: the game's, or as the character is to its base
+    const std::string weapons = model_value("weapon_scale");
+    float weapon_scale = weapons.empty() ? 1.0f : static_cast<float>(std::atof(weapons.c_str()));
+    ImGui::SetNextItemWidth(10 * ImGui::GetFontSize());
+    if (ImGui::InputFloat(tr(lang, S::chars_weapon_scale), &weapon_scale, 0.0f, 0.0f, "%.4g") && weapon_scale > 0.0f) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%g", static_cast<double>(weapon_scale));
+        v.ini.set(mp, "weapon_scale", text);
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!v.base_ok || v.model_height <= 0.0f || v.base_height <= 0.0f);
+    if (ImGui::Button(tr(lang, S::chars_weapon_scale_match))) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%.3g", static_cast<double>(v.model_height * scale / v.base_height));
+        v.ini.set(mp, "weapon_scale", text);
+    }
+    ImGui::EndDisabled();
     // the bone its weapon follows (own skeleton)
     if (own == 0 && v.have_model) {
         const std::string bone = model_value("weapon_bone");
@@ -938,19 +955,10 @@ struct Action {
 
 Action parse_action(const std::string& value) {
     Action a;
-    std::vector<std::string> words;
-    std::size_t at = 0;
-    while (at < value.size()) {
-        const auto start = value.find_first_not_of(' ', at);
-        if (start == std::string::npos)
-            break;
-        const auto end = value.find(' ', start);
-        words.push_back(value.substr(start, end == std::string::npos ? std::string::npos : end - start));
-        at = end == std::string::npos ? value.size() : end;
-    }
-    if (!words.empty())
-        a.clip = words[0];
-    for (std::size_t i = 1; i + 1 < words.size(); i += 2) {
+    const ActionLine line = split_action_line(value);
+    a.clip = line.clip;
+    const std::vector<std::string>& words = line.options;
+    for (std::size_t i = 0; i + 1 < words.size(); i += 2) {
         if (words[i] == "blend")
             a.blend = std::atoi(words[i + 1].c_str());
         else if (words[i] == "root")
@@ -1005,7 +1013,8 @@ void draw_animations_tab(App& app, const Mod& m) {
         const std::size_t before = clips.size();
         if (found->second.size() > 1)
             for (const auto& name : found->second)
-                if (!name.empty() && name.find_first_of(" \t") == std::string::npos)  // (a line's words: no spaces)
+                // (one the port reads back whole from a line: no space at its ends, nothing read as an option)
+                if (!name.empty() && split_action_line(file + "#" + name).clip == file + "#" + name)
                     clips.push_back(file + "#" + name);
         if (clips.size() == before)
             clips.push_back(file);
@@ -1223,8 +1232,16 @@ void draw_sounds(App& app) {
     const std::string base = shown_base();
     const std::string archive = character_voice_archive(base);
     const std::string prefix = archive.empty() ? std::string("seqarc/") : "seqarc/" + archive + "/";
-    if (!archive.empty())
-        ImGui::TextDisabled("%s", fmt(lang, S::chars_sounds_base, {base_display(lang, base), archive}).c_str());
+    if (!archive.empty()) {
+        // its Limit's first words: LMT_VO01/02_<the archive's three letters>_MULTI (Ov022_StepLocalActorCues)
+        const std::string letters = archive.rfind("PLY_", 0) == 0 ? archive.substr(4) : archive;
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", fmt(lang, S::chars_sounds_base,
+                                      {base_display(lang, base), archive, "LMT_VO01_" + letters + "_MULTI",
+                                       "LMT_VO02_" + letters + "_MULTI"})
+                                      .c_str());
+        ImGui::PopTextWrapPos();
+    }
     const std::string every = prefix + "*";
     if (!own_section(app, "sounds", {every, "none"}))
         return;

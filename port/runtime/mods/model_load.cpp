@@ -400,6 +400,69 @@ void correct_rest_pose(Model *model, const Loading &loading)
     }
 }
 
+// A mod's character's: its hands' weapons (their size, the base's hand nodes) and, with a paired skeleton, each paired
+// joint's travel and size (Joint::travels): a model bigger or smaller than its base, or shaped otherwise, rises and
+// falls with the game's hips at its own size, its feet kept on the ground, and holds its weapons in its own hands.
+void set_character_joints(Model *model, const Loading &loading)
+{
+    const KhdaysCharacter *character = loading.character;
+    if (character == nullptr)
+        return;
+    model->weapon_scale = character->weapon_scale > 0.0F ? character->weapon_scale : 1.0F;
+    model->weapon_node.assign(model->node_names.size(), 0);
+    for (int hand = 0; hand < 2; ++hand) {
+        const char *name = hand == 0 && character->base_weapon_node != nullptr
+                               ? character->base_weapon_node
+                               : khdays_character_base_hand(character->base, hand);
+        for (std::size_t g = 0; name != nullptr && g < model->node_names.size(); ++g)
+            if (model->node_names[g] == name)
+                model->weapon_node[g] = 1;
+    }
+    if (loading.own_skeleton)
+        return;
+    model->attached_on_joints = true;
+    const std::vector<Mat> &rest = loading.rest;
+    for (Joint &joint : model->joints) {
+        if (joint.node < 0)
+            continue;
+        int above = joint.parent;
+        while (above >= 0 && model->joints[static_cast<std::size_t>(above)].node < 0)
+            above = model->joints[static_cast<std::size_t>(above)].parent;
+        // from that joint (else the model's origin) and its node (else the game model's top node, its origin)
+        std::array<float, 3> own_from{0.0F, 0.0F, 0.0F}, game_from;
+        int top = joint.node;
+        while (model->node_parent[static_cast<std::size_t>(top)] >= 0 &&
+               model->node_parent[static_cast<std::size_t>(top)] != top)
+            top = model->node_parent[static_cast<std::size_t>(top)];
+        if (above >= 0) {
+            const Joint &from = model->joints[static_cast<std::size_t>(above)];
+            own_from = from.head;
+            game_from = translation(rest[static_cast<std::size_t>(from.node)]);
+        } else {
+            game_from = translation(rest[static_cast<std::size_t>(top)]);
+        }
+        const auto game_at = translation(rest[static_cast<std::size_t>(joint.node)]);
+        const float game_length =
+            length({game_at[0] - game_from[0], game_at[1] - game_from[1], game_at[2] - game_from[2]});
+        const float own_length =
+            length({joint.head[0] - own_from[0], joint.head[1] - own_from[1], joint.head[2] - own_from[2]});
+        joint.size = game_length > 1e-3F && own_length > 1e-3F ? own_length / game_length : 0.0F;
+        joint.travels = !joint.exact;
+        joint.travel_from = above >= 0 ? model->joints[static_cast<std::size_t>(above)].node : -1;
+    }
+    // a joint with no length to measure (a node at its parent's place, as a weapon's target at the model's origin):
+    // the model's size, the middle of its joints'
+    std::vector<float> sizes;
+    for (const Joint &joint : model->joints)
+        if (joint.node >= 0 && joint.size > 0.0F)
+            sizes.push_back(joint.size);
+    std::sort(sizes.begin(), sizes.end());
+    const float middle = sizes.empty() ? 1.0F : sizes[sizes.size() / 2];
+    for (Joint &joint : model->joints)
+        if (joint.size <= 0.0F)
+            joint.size = middle;
+}
+
 // Adds the two-bone limbs (`ik`): three paired joints, each below the one before.
 void add_limbs(Model *model, const Loading &loading)
 {
@@ -1072,6 +1135,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
             khdays::secondary::load_model_secondary(path, name, loading.mod, loading.placed, inverse_binds);
     }
     correct_rest_pose(model.get(), loading);
+    set_character_joints(model.get(), loading);
     add_limbs(model.get(), loading);
     carry_attachments(model.get(), loading);
     place_joints(model.get(), loading);

@@ -174,6 +174,21 @@ TEST(character_posed_by_its_own_clip) {
           std::make_pair(std::string("clips/run#2.GLB"), std::string("Run.001")));
     CHECK(clip_reference("clips/all.fbx#a#b") == std::make_pair(std::string("clips/all.fbx"), std::string("a#b")));
     CHECK(clip_reference("clips/run#2.gltf") == std::make_pair(std::string("clips/run#2.gltf"), std::string()));
+    // an [actions] line as the port reads it: a clip's path and name with spaces, its options after them
+    const auto split = [](const std::string& value) {
+        const ActionLine l = split_action_line(value);
+        std::string out = l.clip;
+        for (const auto& o : l.options)
+            out += "|" + o;
+        return out;
+    };
+    CHECK(split("clips/aqua animations.glb#b_xo_A000_2") == "clips/aqua animations.glb#b_xo_A000_2");
+    CHECK(split("  clips/my run.FBX blend 120 root keep") == "clips/my run.FBX|blend|120|root|keep");
+    CHECK(split("clips/all.glb#Take  001 loop no") == "clips/all.glb#Take  001|loop|no");
+    CHECK(split("clips/aqua root motion.glb") == "clips/aqua root motion.glb");
+    CHECK(split("clips/run.glb speed 2") == "clips/run.glb|speed|2");
+    CHECK(split("clips/jump time.gltf time game") == "clips/jump time.gltf|time|game");
+    CHECK(split("").empty());
     CharacterClip named;
     CHECK(load_character_clip(dir / "arm.gltf", model, &named, &why, "lift") && named.matched == 1);
     CHECK(!load_character_clip(dir / "arm.gltf", model, &named, &why, "run") && why.find("run") != std::string::npos);

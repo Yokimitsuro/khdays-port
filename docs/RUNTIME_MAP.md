@@ -398,9 +398,9 @@ The native build prints these to stderr when the variable is set:
   named once (section 10).
 - `KHDAYS_FRAME_LOG=1` -- a line per picture the window draws, in
   `saves/logs/frames-<date>-<time>.log`: the game's time (ms), the newest
-  logic frame, where the picture falls between the two latest (`alpha`), the
-  polygons placed between of all, `between`/`newest`/`cut`, the two logic
-  frames' VBlank times, and the camera's translation and turn between them
+  logic frame, where the picture falls between the two lists it is placed
+  between (`alpha`), the polygons placed between of all,
+  `between`/`newest`/`cut`, those two lists' times, and the camera's translation and turn between them
   (section 7, "The picture at the monitor's rate").
 - `KHDAYS_TRACE_UPDATES` -- each object update's change to the next.
 - `KHDAYS_TRACE_CAPTURE` -- each screen blend's frame as the window draws it:
@@ -626,7 +626,9 @@ For the picture (`port/runtime/display/display.c`, `port/host/render/gpu_present
   before them) are drawn at all.
 - `KHDAYS_SHOTS_HD=DIR` -- with a window, at the same frames, both screens as
   the window presents them, at the resolution they were drawn:
-  `DIR/frame_NNNNN_upper.png` and `_lower.png`.
+  `DIR/frame_NNNNN_upper.png` and `_lower.png`. `KHDAYS_SHOTS_BETWEEN=1`: also,
+  on one screen, five pictures between the frame and the one before at
+  `picture_pace = smooth` (`_one_<k>_a<alpha x 1000>.png`, section 7).
 - `KHDAYS_RECORD_FRAMES=DIR` -- (with `KHDAYS_SHOTS`, only the frames it
   lists) each frame drawn as the frame package the
   game thread hands the host (`port/runtime/display/frame_package.h`: the screens,
@@ -1715,9 +1717,17 @@ vertices -- in the field the median share is all of them) have their vertices
 placed between the older's and the newer's, in clip space, then the list is
 clipped and drawn as the game's. The newer list reaches the host in the
 package of the VBlank after the one that first shows it (median 20.6 ms
-after); the picture moves to it over one logic frame from that package's
-VBlank -- up to one logic frame behind the DS's pace's picture. Nothing is
-interpolated into a new scene or across a camera cut: a camera that turned
+after), and the window takes it at its next refresh. Until 2026-11-06 the
+picture moved to it over one logic frame from that package's VBlank, so it
+stood still for a refresh whenever a list reached the window later than the
+one before: at 165 Hz the window takes the game's 30 lists a second 5 and 6
+refreshes apart (30.3 and 36.4 ms), and the camera stuttered (427 stills of
+one or two refreshes in 157 s of the field, a tester's report at a high refresh
+rate). The picture now shows the game's time a steady while ago: a logic frame
+and the longest any of the last 32 lists took from being made to being taken
+(57 ms at 165 Hz, 6.5 more than before), between the two of the three kept
+lists about that time -- none still since. Nothing is interpolated into a new
+scene or across a camera cut (the lists before one are let go): a camera that turned
 more than the field camera can in a logic frame (0xa00, 14.06 degrees: the
 cap in section 3) or moved more than 1.0 in its translation (a bound the
 camera code does not give: the gap measured on the story walk, normal frames
@@ -1728,7 +1738,11 @@ is in flight, so a picture is drawn for the refresh that shows it.
 Measured on the maintainer's 165 Hz monitor (`KHDAYS_FRAME_LOG`, the play
 walk's field, 25 s): 165 pictures a second, none more than 1.5 times the
 period apart (8.9 ms the largest), each a new one save while the next logic
-frame was late (192 of 4,125 the newest list held).
+frame was late (192 of 4,125 the newest list held, before the steady delay).
+`KHDAYS_SHOTS_BETWEEN=1` (with `KHDAYS_SHOTS_HD`) shows the pictures it makes:
+after each frame asked, five pictures of the same two lists at 0, 0.25, 0.5,
+0.75 and 0.999 of the way. A Dark Corridor's (a mission's start, 2026-11-06)
+came out whole at each.
 
 ## 8. Files
 
@@ -5515,6 +5529,17 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   the base's hand, its trail with it), then `*_w_tg00` and `*_w_tg` until 2026-11-06: on a modder's Terra on Saix
   the claymore followed Saix's hand, so with the clips the character's own (idle, run) it hung away from the hand
   while the clips made from Saix's animations looked right. The port now takes the camp's names, both hands.
+- **A paired character of another size** (seen 2026-11-06: a tester's character scaled up on Xion floated; a test
+  copy of Xion's own model, 1.3 times her size, on the `mission` walk with jumps and a combo): Days's animations
+  move the hips by `Bip01`'s travel under the never-moved `xion_R`, and a paired bone not on its node's rest place
+  was carried rigidly from its parent, so the hips kept their height while the legs bent as the game's: in a
+  landing's crouch the feet hung above the shadow. The keyblade's frame, saved at the hand node's draw
+  (`Obj_CaptureSelectedJointMtx`), was the game's own node, so it hung at the smaller Xion's hand. Each paired bone
+  now also moves as far as its node travels beyond where the node above carries it, times its length against the
+  nodes', and the saved frames go where the model's bones carry those nodes, as the game moves them under the
+  bone's node; in the combo's finisher the keyblade still hung off the hand while a bone with no length to measure
+  (at its parent's place at rest) kept the game's size, until it took the model's (the middle of its bones'). At
+  the model's own size nothing changed (the same pictures).
 - **Xion's weapon models** are Roxas's: her overlays (ov044, ov063, ov082, ov099) open `ba/ch/ro/w_.p2` by its
   name in `Ov0NN_ReloadSceneResources` (her actor's container then, the one `Ov022_BuildActorSlot` builds her
   weapon from); her own `ba/ch/xo/w_.p2` holds only the swings' traces (`ro_w00_trace` ..., entries 40-66), read
@@ -5574,7 +5599,13 @@ Read in the decompilation and traced with the walk `mission` (`KHDAYS_WATCH` on 
   its +0xc (`PlayEntityVoice`'s switch on it picks Roxas, Sora, Riku, Xion, Mickey, Donald). Roxas's attack
   shouts: `seqarc/PLY_ROX/vo_rs02atNN` on a voices' player; his swings `seqarc/WEP_ROX26/se_rox_weap_swingNN`
   and run steps `seqarc/FIELD_ROX_FS_LAST/se_rox_fs_last_run01/02` are effects. The port is told the actor
-  around those two `Slot_Spawn`s, and a new character's `[sounds]` choose the entry's file then.
+  around those two `Slot_Spawn`s, and a new character's `[sounds]` choose the entry's file then. What it says
+  as its Limit begins comes a third way (seen 2026-11-06, a tester's Limit lines never heard; the stack at the
+  start of `seqarc/LMT_VO02_ROX_MULTI/vo_rs_lb02_multi`): `Ov022_StepLocalActorCues`, the local player's actor
+  in reaction 0x2e, `Slot_Spawn(actor +0x7a8, 0, ...)` -- after `seqarc/COMMON_SYS_BATTLE/se_limit_action`,
+  before the Limit's swings (`LMT_ROX/...`, through `PlayEntityVoice`). Its archives:
+  `LMT_VO01_<three letters>_MULTI`, `LMT_VO02_..._MULTI` for every base (Roxas's also 03 and 04; the
+  `_MULTI`-less ones are the story's), the letters its `PLY_` archive's. Joined the same way since.
 - **Its combos** (`ba/ch/<code>/ci.b.z`, unpacked by its name's `.z`; read 2026-10-28 from Roxas's): a word
   counting the keyblades (Roxas 18), then 0x34 bytes each -- the six pools' places from the file's start, their
   counts (u16 x3 a graph), each graph's four entry points into its first pool (s16 x4) -- then the pools, 8
@@ -5800,3 +5831,57 @@ pauses (0.2-1.2 s). The port adds nothing a frame of its own: the picture is pre
 the package arrives (one frame in flight). What waits is the screen's refresh after it, which the
 screen's lock (PLATFORM.md, "Threads, interrupts and time") keeps short and the same each time on a
 60 Hz screen.
+
+## 36. The Dark Corridors
+
+Traced 2026-11-07 (mission 6, day 13, started from the camp by a Lua mod's `mission.start(6)`; the play walk's input;
+`KHDAYS_TRACE_CORRIDORS=2`, `=3`):
+
+- **Days's standing oval** is a model: `mi/ob/06.z`'s `E000_xx_000` (13 nodes: `Box01`-`Box04`, the floor's
+  `Plane01`-`04`, `bilbord` with `S1`, `Plane02`, `s3`, `cs`), drawn as a field object through the 3D engine's Flush
+  at scale 1. Its file's joint clips are `E000_xx_000` (opening, 70 frames), `E010_xx_000` (holding, 60) and
+  `E020_xx_000` (closing, 61), with material and texture animations of the same names. In mission 6 it is first drawn
+  at the game's frame 1659 (E000), holds from 1727 (E010), closes from 1787 (E020) -- its `bilbord` parts fading from
+  that clip's 40th frame, nothing seen from its 53rd -- and is no longer drawn from 1847; Roxas and Vexen step out of
+  it meanwhile. `mi/ob/09.z` has the same model with `E010_xx_000` alone; `mi/ob/07.z`'s `E_100_xx_000` (the same
+  look, one clip of 167 frames) was not seen in play. `mi/ob/08.z`'s `E110_xx_000` (thorns, a whirlpool) is another
+  effect. The floor swirl (`mo/mo#45`, `E040_xx_000`) and the corridor home's floor hole (`mo/mo#46`) are others.
+- **Its size as seen**: its smoke lines' model reaches 7.556 above its floor, but its pictures fade out well inside
+  it: on the frames its darkness (each pixel's change from the frame before it showed) reaches 3.6-3.8 above its floor
+  at its middle and is 2.4 across, the screen's rows taken to the model's heights through the oval's own matrices.
+- **Its floor**: the oval stands sunk in the ground -- its floor at the world's -0.090, Vexen and Roxas beside it at
+  0.000 (every model's place, `=3`). Its flat floor pieces lie above its floor: `smog_c` at 0.039 and 0.083 (under
+  the ground there) and its floor shadow `smog_d` at 0.135, the one seen.
+- **KH2's corridor** is the first effect of KH2's `event/effect/tt_event_904.pax` (docs/FORMATS.md, "KH2's effects"):
+  one repeating emitter of 34 layers and 150 frames. Its oval -- a bowl behind a depth-only mask holed in its shape,
+  seen through the hole from its +z -- reaches 430 above its floor (its y 0, y down) and is 300 across; told to stop,
+  it closes in 92 ticks (KH2's 60 a second).
+- **The port** (`port/runtime/mods/kh2_corridors.cpp`, with the KH2 Prizes mod's `kh2fx/` files and the settings'
+  "KH2 Dark Corridors" on): the oval's draw is taken (`khdays_models_draw_begin`), its shapes left out
+  (`khdays_models_shape`, their matrix commands still run), and the corridor run 60 times a second of the game's
+  frames (two ticks a frame at 30) and drawn there: KH2's floor on Days's floor shadow (0.135 above the oval's floor;
+  on the oval's own, KH2's shadow -- discs and rings at its y 0 -- lay under the ground and was hidden), its top on
+  the oval's seen top ((3.7 - 0.135) / 430 of the oval's units a KH2 unit, then 2.5 across), its axes the oval's
+  turned half a turn about z (y up, its front on the oval's +z) and the oval turned about its up so that its front
+  looks at the camera (seen from the front, as KH2's are: the maintainer's choice), its triangles as effect polygons (docs/RENDERING.md, "KH2's effects") depth-tested against the
+  scene. It closes within the oval's closing clip, when the clip has as long left as its closing takes (92 ticks:
+  46 frames), so both end together; an oval that stops being drawn without one closes it where it was, its triangles
+  added as the 3D list closes (`khdays_g3d_set_swap_hook`). The pictures are its pages as textures, the remaster's HD
+  ones (`kh2fx/<file's stem>/-<n>.dds`) with HD graphics on. Each copy of a multiplayer game draws its own from its
+  own game; nothing is sent.
+- **Its sounds** (`KHDAYS_TRACE_SOUND=1`): Days's oval starts `seqarc/EV_DARK_APPEAR/se_ev_dark_appear` (2.5 s) and
+  `se_ev_dark_loop` (a 5.2 s loop) together as it opens, `seqarc/EV_DARK_DISAPPEAR/se_ev_dark_disappear` (3.2 s) as
+  it closes, and stops the loop 8 frames (60 a second) after that -- in mission 6 and the scenes that load
+  `mi/ob/06.z`; the play walk's arrival (the floor swirl) starts none of them. KH2's corridor effect names no sound
+  (its element's is -1): KH2's scenes play their own (docs/FORMATS.md, "KH2's sound banks and its scenes' sounds").
+  Twilight Town's event 904 (tt04, bank 2984) starts its sound 10 (10.4 s: it rises, holds about 7 s and fades) at
+  frame 1953 and the corridor at 1954, and its sounds 16 (6.4 s) and 17 (3.6 s, footsteps) at 2874, stopping the
+  corridor at 2892; di02's event 899 (a variant of the corridor, bank 3101) starts none at its corridors, and no
+  sound of the other banks goes with one (those the Organization's banks share are their attacks'). The KH2 Prizes
+  mod (`tools/mods/kh2_prizes.py`) plays KH2's sound 10 as the loop -- heard from the opening, stopped with the
+  loop -- leaves the appear silent and plays sound 16 as the disappear (on to its end), its `sounds/switches.txt`
+  tying the three to "KH2 Dark Corridors" (docs/SOUND.md, "Mods' sounds").
+- **Checked against a reference player** drawing the same effect with KH2's own pictures from the game's camera
+  (`=3` logs it) over the frame before the oval showed: the hole's inside within 1-2% (each region's mean colour),
+  once its bare-colour triangles took the GS's rule (the vertex colour itself without a picture: they had been twice
+  as bright).

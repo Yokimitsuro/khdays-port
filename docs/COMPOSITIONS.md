@@ -26,6 +26,19 @@ order while their conditions hold. Their lines:
 | `backdrop <file> [at <corner>] [fit]` | a picture of the mod's `layouts/` folder (PNG) behind everything, covering the picture (with `fit`, inside it: all of it shows at any aspect ratio), its aspect kept, held at the corner |
 | `preload <file>` | a picture named as a backdrop's is (and an animated one's atlas) read ahead on a thread of its own while its section holds, so showing it later holds nothing up |
 
+A shape `at mission-panel` is laid out as at the top left and moved, with the
+section's other shapes `at mission-panel` (the panel and its lower edge), to the
+place the player chose for the game's mission panel (Settings → Enhancements:
+Mission panel in gameplay, in the field; while paused, in the pause), the same
+margin from the edges it meets as from the top left's. Away from the counters'
+corner the hearts counter under it (`shape upper 0 0 108 86`, and the HUD's 3D
+there) goes up 24 into it; with Mission panel visibility "Pause only" the field
+leaves those shapes out. Its push holds only in the top row. A shape's effect
+`away-from-panel` makes room for it: the pieces of a top or bottom corner move
+by the panel's height and 2 (down at the top, up at the bottom, with its push)
+when it is put in their corner or meets one of them, and a panel in the middle
+row goes up, no higher than the top left's margin, clear of those under it.
+
 A length is in the picture's DS dots at the HUD's scale (its factor, 1 at the
 default HUD size); `fixed(N)` is one that does not follow it, `A+fixed(B)` both.
 

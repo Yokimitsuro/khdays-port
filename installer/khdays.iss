@@ -680,7 +680,10 @@ begin
       WizardForm.Refresh;
       Args := 'build-mods "' + ExpandConstant('{app}') + '" --menu-overhaul --walk --kh2-prizes --1525 "' + HdFolder(0) + '"';
       if RunHelperIn(ExpandConstant('{app}'), Args, Json) <> 0 then
-        SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK);
+        SuppressibleMsgBox(CustomMessage('ModsFailed') + #13#10#13#10 + JsonValue(Json, 'message'), mbError, MB_OK, IDOK)
+      else if JsonValue(Json, 'missing') <> '' then
+        { made but for one left out (the Menu Overhaul without the HD menus it is made from): said }
+        SuppressibleMsgBox(JsonValue(Json, 'message'), mbInformation, MB_OK, IDOK);
     end;
     { the starting settings, when the install has none yet (a player's own are kept on an update);
       if it does not run, the port writes its own defaults on first start, so no error is shown }

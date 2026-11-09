@@ -108,6 +108,9 @@ void khdays_composition_load(void);
 /* The player's HUD size ([video] hud_size: 1 to 8, 4 the default). */
 void khdays_composition_set_hud_size(int size);
 void khdays_composition_set_hud_options(unsigned options);
+/* The game's mission panel (`at mission-panel`): its place in play and in the pause, 1 to 9 (top left to bottom
+ * right, a row at a time), and whether it shows in the pause alone. */
+void khdays_composition_set_mission_panel(int field_anchor, int pause_anchor, int pause_only);
 /* The HUD's factor its size gives (1 at the default size 4). */
 float khdays_composition_hud_factor(void);
 int khdays_composition_columns(void);

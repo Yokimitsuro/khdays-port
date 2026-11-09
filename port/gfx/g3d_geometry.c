@@ -1106,6 +1106,17 @@ void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, 
     mod_polygon(v, n, attr, tex, 0, replacement, translucent_, sky, 0);
 }
 
+void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t replacement, uint32_t gs_alpha,
+                               uint32_t effect_flags)
+{
+    /* both sides, alpha 31 (the blend is the GS's, the vertices' alpha its source alpha), polygon ID 0; a 1024 x
+     * 1024 texture repeated as a mod model's when it has a picture */
+    const uint32_t tex = replacement >= 0 ? (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16) : 0u;
+    const int flags = KHDAYS_G3D_EFFECT | (int)(effect_flags & (KHDAYS_G3D_EFFECT_DEPTH_WRITE | KHDAYS_G3D_EFFECT_DEPTH_ONLY |
+                                                               KHDAYS_G3D_EFFECT_NO_DEPTH_TEST));
+    mod_polygon(v, n, 0xc0u | (31u << 16), tex, gs_alpha & 0xffu, replacement, 1, 0, flags);
+}
+
 void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *v)
 {
     /* both sides, opaque (alpha 31), polygon ID 0: never drawn */
@@ -1203,11 +1214,16 @@ static void into_drawing_order_with(List *l, Polygon **order_, int32_t *order_ca
     }
     first_translucent = n;
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
-        if (l->polys[i].translucent && !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER)))
+        if (l->polys[i].translucent &&
+            !(l->polys[i].flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_SHADOW_RECEIVER | KHDAYS_G3D_EFFECT)))
             order[n++] = l->polys[i];
     }
     if (!(l->swap_params & 1)) { /* auto-sort by Y */
         qsort(order + first_translucent, (size_t)(n - first_translucent), sizeof(order[0]), compare_translucent);
+    }
+    for (int i = 0; i < l->npolys && n < l->npolys; ++i) { /* KH2's effects: after the world, as sent */
+        if ((l->polys[i].flags & (KHDAYS_G3D_EFFECT | KHDAYS_G3D_MARKER)) == KHDAYS_G3D_EFFECT)
+            order[n++] = l->polys[i];
     }
     for (int i = 0; i < l->npolys && n < l->npolys; ++i) {
         if (l->polys[i].flags & KHDAYS_G3D_MARKER)
@@ -1353,8 +1369,17 @@ static List *free_list(void)
  * it goes into the next list at once, which comes to the same picture. */
 static uint32_t swaps;
 
+static KhdaysG3dSwapHook swap_hook;
+
+void khdays_g3d_set_swap_hook(KhdaysG3dSwapHook hook)
+{
+    swap_hook = hook;
+}
+
 static void swap_buffers(uint32_t params)
 {
+    if (swap_hook != NULL)
+        swap_hook(); /* its polygons into the list closing */
     List *l = building;
     ++swaps;
     l->swap_params = g.swap_params;

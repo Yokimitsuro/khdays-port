@@ -1,17 +1,21 @@
-"""KINGDOM HEARTS II's prizes and chests for Days's, from the player's own 1.5+2.5 copy: the effect file and pages
-of each prize KH2 has one for (docs/KH2_SEQUENCES.md, "Field prizes"; the reader: port/ui/prize_effects_model.h),
-each Days chest as the KH2 chest that looks like it, and Days's crystals as Re:Chain of Memories's.
+"""KINGDOM HEARTS II's prizes, chests and Dark Corridors for Days's, from the player's own 1.5+2.5 copy: the effect
+file and pages of each prize KH2 has one for (docs/KH2_SEQUENCES.md, "Field prizes"; the reader:
+port/ui/prize_effects_model.h), each Days chest as the KH2 chest that looks like it, Days's crystals as Re:Chain of
+Memories's, and KH2's Dark Corridor, which the port plays in place of Days's standing ovals
+(port/runtime/mods/kh2_corridors.h).
 
     python tools/mods/kh2_prizes.py --kh2 <kh2.hed_out> [--exe <khdays-native>] [--bbs2 <bbs_second.hed_out>]
                                     [--recom <Recom.hed_out>] [--mod "Days - KH2 Prizes"]
 
 --kh2 is KH2's entries as the installer extracts them: original/obj/PRIZE.mdlx and PRIZE_HE.mdlx (the Coliseum's
 coin) and their HD pages, remastered/obj/<file>/-0.dds, -1.dds (one a page, in the order of the pages' places);
-the chests' original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds. --exe makes the
-chests (through khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures, --recom gives
-the crystals Re:CoM's prize sheet (remastered/<its key>.dat/rec_prise_dpx1.dds). Writes
-mods/<mod>/graphics/mo/prize.pak.z/fx/, mods/<mod>/graphics/mo/mo#<entry>/mdl/ and the switch
-days-mods/kh2-prizes.txt; says what it made and what it left out.
+the chests' original/obj/<chest>.mdlx and .mset with their remastered/obj/<chest>.mdlx/-N.dds; the corridor's
+original/event/effect/tt_event_904.pax and original/effect/texcommon.dpd with their remastered/<entry>/-N.dds, and
+its sounds' bank, original/se/se2984.win32.scd.
+--exe makes the chests (through khdays-native --kh2-object), --bbs2 gives Neverland's its Birth by Sleep pictures,
+--recom gives the crystals Re:CoM's prize sheet (remastered/<its key>.dat/rec_prise_dpx1.dds). Writes
+mods/<mod>/graphics/mo/prize.pak.z/fx/, mods/<mod>/graphics/mo/mo#<entry>/mdl/, mods/<mod>/kh2fx/, mods/<mod>/sounds/
+and the switch days-mods/kh2-prizes.txt; says what it made and what it left out.
 """
 
 from __future__ import annotations
@@ -23,11 +27,13 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import kh2_pax  # noqa: E402
+import kh2_scd  # noqa: E402
 
 PRIZE = "obj/PRIZE.mdlx"
 # Days's prize pictures and the KH2 effect for each: its file, its animation's number and the layer that is the
@@ -69,6 +75,26 @@ RECOM_SHEET = "rec_prise_dpx1.dds"
 # Days's crystals (each fills its 16 x 32 picture) and Re:CoM's crystal coloured as each: its hue (None: grey) and
 # its saturation and brightness times
 GEMS = {"ef_pp": ("grey", None, 0.0, 1.9), "prize_08": ("blue", 0.667, 0.75, 1.6)}
+
+# KH2's Dark Corridor: the effect of KH2's scenes that show it (event/effect/tt_event_904.pax, its first
+# effect; the same in tt_event_608, tt_event_906, di_event_899, eh_event_116/301/506) and the pictures KH2 keeps
+# resident, which its shapes cut (effect/texcommon.dpd); each copied as it is with its HD pictures, one a page, into
+# kh2fx/<stem>.<extension> and kh2fx/<stem>/-<n>.dds, where port/runtime/mods/kh2_corridors.cpp reads them.
+CORRIDOR = {"event/effect/tt_event_904.pax": "tt_event_904", "effect/texcommon.dpd": "texcommon"}
+# Its sounds: KH2's scenes play them, not the effect (its element names none). Twilight Town's event 904, whose
+# sounds are in se/se2984.win32.scd (sound n its recording n - 1), starts sound 10 a frame before it starts the
+# corridor and sound 16 just before it stops it (docs/RUNTIME_MAP.md, "The Dark Corridors"). Days's oval starts
+# se_ev_dark_appear and se_ev_dark_loop together, starts se_ev_dark_disappear as it closes and stops the loop just
+# after: KH2's opening sound takes the loop's place (heard while the corridor is open, stopped with it), the appear
+# is silent (None), KH2's closing sound the disappear's. Written into mods/<mod>/sounds/, the port's mods' sounds,
+# heard while the settings' KH2 Dark Corridors switch is on (sounds/switches.txt).
+CORRIDOR_BANK = "se/se2984.win32.scd"
+CORRIDOR_SOUNDS = {
+    "seqarc/EV_DARK_APPEAR/se_ev_dark_appear": None,
+    "seqarc/EV_DARK_APPEAR/se_ev_dark_loop": 9,
+    "seqarc/EV_DARK_DISAPPEAR/se_ev_dark_disappear": 15,
+}
+CORRIDOR_SWITCH = "kh2_corridors"
 
 
 def effect_text(animation: kh2_pax.Animation, pages: dict[int, str], body: int, file: str = PRIZE) -> str:
@@ -252,6 +278,64 @@ def make_gems(recom: Path | None, fx: Path) -> tuple[list[str], list[str]]:
     return made, []
 
 
+def make_corridor(kh2: Path, mod: Path) -> tuple[list[str], list[str]]:
+    """KH2's Dark Corridor's files into mod/kh2fx/: what was made and what was left out."""
+    files = {}
+    for entry in CORRIDOR:
+        original = kh2 / "original" / entry
+        if not opened(original):
+            return [], [f"the Dark Corridor: KH2's {entry} is not there"]
+        files[entry] = original.read_bytes()
+    first = next(iter(CORRIDOR))
+    try:
+        kh2_pax.data_block(files[first])
+    except kh2_pax.PaxError as e:
+        return [], [f"the Dark Corridor: KH2's {first} is not an effect the port reads ({e})"]
+    if files["effect/texcommon.dpd"][:4] != (0x96).to_bytes(4, "little"):
+        return [], ["the Dark Corridor: KH2's effect/texcommon.dpd is not a 0x96 picture block"]
+    out = mod / "kh2fx"
+    out.mkdir(parents=True, exist_ok=True)
+    hd = 0
+    for entry, stem in CORRIDOR.items():
+        (out / (stem + Path(entry).suffix)).write_bytes(files[entry])
+        pages = sorted((kh2 / "remastered" / entry).glob("-*.dds"), key=lambda p: int(p.stem[1:]))
+        if pages:
+            (out / stem).mkdir(exist_ok=True)
+        for page in pages:
+            (out / stem / page.name).write_bytes(page.read_bytes())
+        hd += len(pages)
+    return [f"the Dark Corridor: KH2's, {hd} HD pages"], [] if hd else ["the Dark Corridor's HD pages: none there"]
+
+
+def make_corridor_sounds(kh2: Path, mod: Path) -> tuple[list[str], list[str]]:
+    """KH2's Dark Corridor's sounds in place of Days's oval's, into mod/sounds/ with the switch that ties them to
+    the settings' KH2 Dark Corridors: what was made and what was left out (Days's sounds kept)."""
+    bank = kh2 / "original" / CORRIDOR_BANK
+    if not opened(bank):
+        return [], [f"the Dark Corridor's sounds: KH2's {CORRIDOR_BANK} is not there"]
+    try:
+        recordings = kh2_scd.recordings(bank.read_bytes())
+        decoded = {}
+        for identifier, n in CORRIDOR_SOUNDS.items():
+            if n is not None:
+                recording = recordings[n] if n < len(recordings) else None
+                if recording is None:
+                    raise kh2_scd.ScdError(f"it has no recording {n}")
+                decoded[identifier] = (kh2_scd.decode(recording), recording.rate)
+    except kh2_scd.ScdError as e:
+        return [], [f"the Dark Corridor's sounds: KH2's {CORRIDOR_BANK} is not read ({e})"]
+    sounds = mod / "sounds"
+    rate = next(iter(decoded.values()))[1]
+    for identifier in CORRIDOR_SOUNDS:
+        samples, at = decoded.get(identifier, (np.zeros((1, 2), np.int16), rate))  # one silent frame
+        kh2_scd.write_wav(sounds / f"{identifier}.wav", samples, at)
+    folders = sorted({identifier.rsplit("/", 1)[0] for identifier in CORRIDOR_SOUNDS})
+    lines = ["# KINGDOM HEARTS II's Dark Corridor's sounds, heard while KH2 Dark Corridors is on (kh2_prizes.py)"]
+    lines += [f"{folder} {CORRIDOR_SWITCH}" for folder in folders]
+    (sounds / "switches.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return ["the Dark Corridor's sounds: KH2's, from Twilight Town's scene 904"], []
+
+
 def make(
     kh2: Path,
     mod: Path,
@@ -260,8 +344,8 @@ def make(
     run: Callable[[list[str]], str] = run_exe,
     recom: Path | None = None,
 ) -> list[str]:
-    """The effects (the crystals with `recom`; with `exe` the chests and prize boxes) into mod/; what was left out,
-    each with why."""
+    """The effects (the crystals with `recom`; with `exe` the chests and prize boxes) and the Dark Corridor into mod/;
+    what was left out, each with why."""
     left_out = []
     paxes: dict[str, kh2_pax.Pax | None] = {}
     fx = mod / "graphics" / "mo" / "prize.pak.z" / "fx"
@@ -303,6 +387,13 @@ def make(
     gems = make_gems(recom, fx)
     made += gems[0]
     left_out += gems[1]
+    corridor = make_corridor(kh2, mod)
+    made += corridor[0]
+    left_out += corridor[1]
+    if corridor[0]:  # its sounds with it
+        sounds = make_corridor_sounds(kh2, mod)
+        made += sounds[0]
+        left_out += sounds[1]
     if exe is not None:
         for part in (make_chests(kh2, mod, exe, bbs2, run), make_boxes(kh2, mod, exe, run)):
             made += part[0]

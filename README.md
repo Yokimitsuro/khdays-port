@@ -111,10 +111,10 @@ To build the port from source instead:
    The data goes to `data/extracted/<hash>/`, which is never committed.
 
 2. Build (Windows, Visual Studio 2026 with the C++ workload, CMake, Ninja,
-   and for the preparation Python's `pycparser`):
+   and for the preparation Python's `pycparser` 3 or newer):
 
    ```powershell
-   py -m pip install pycparser
+   py -m pip install "pycparser>=3"
    py .\port\build.py --config Release
    ```
 
@@ -251,6 +251,12 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Auto lock-on:** when the lock is lost without you letting go -- the
+  target defeated, or out of reach -- the game's lock-on is pressed again (R
+  twice) as soon as it has another target, so the next enemy is locked on to
+  by itself. Letting go yourself
+  (the lock-on button, R twice, Select) stays let go. As any R, it can reset
+  the camera. Off by default.
 - **Chase Camera: Free:** on the camp's Config page drawn on one screen,
   Chase Camera has a third value after the game's Auto and Manual. Free is
   the game's Manual, except that walking no longer pulls the camera's tilt
@@ -344,8 +350,8 @@ once:
 - **Picture pace**: smooth, the default -- the 3D drawn at your monitor's
   refresh rate (60, 120, 144, 165 Hz...), placed between the game's last two
   frames (the game itself runs at 30 frames a second, as on the DS), the
-  picture up to one game frame behind -- or as on the DS, a new picture each
-  game frame. Camera cuts and scene changes are not smoothed across. The 2D
+  picture a steady game frame and a half or so behind -- or as on the DS, a
+  new picture each game frame. Camera cuts and scene changes are not smoothed across. The 2D
   (HUD, menus, text) and the movies change when the game changes them.
 - **Show FPS**: a counter in the window's corner -- the pictures drawn a
   second.
@@ -379,7 +385,10 @@ backend = auto            # auto, direct3d12 or vulkan
 **The field on one screen.** With one screen (`[video] screens = one`, the
 default) the field's HUD is laid out for a PC screen, made of the game's own
 pieces: the mission's objective and gauge at the top left, its badges and
-chests counted at the right of the objective, the hearts counter under it;
+chests counted at the right of the objective, the hearts counter under it
+(Settings → Enhancements, Mission panel in gameplay and while paused, put the
+panel elsewhere, the hearts counter then in the corner; Mission panel
+visibility "Pause only" shows it in the pause alone);
 in the top right corner the map, drawn over the field as in Kingdom Hearts
 II, with the enemy's health over it; the command deck at the bottom left and
 the party at the bottom right. The panels' dark ground is half see-through,
@@ -640,7 +649,8 @@ and the original is drawn.
 writes, without starting the game, every texture (with each palette it is
 drawn with), every model as glTF with its skeleton, and every 2D tile sheet
 as an indexed PNG, under those names (default `saves/dump/graphics`). A
-dumped 2D tile sheet put back unchanged is drawn as the original.
+dumped 2D tile sheet put back unchanged is drawn as the original, and one at
+the original's size in true colour keeps its pixels sharp, as the game's.
 `khdays-native --kh2-object <mdlx> <out.gltf> [--hd <folder>] [--picture <n>
 <file>]... [--pose <mset> <motion>] [--turn <degrees>]` makes a KINGDOM HEARTS
 II object of the player's 1.5+2.5 copy into a glTF model with its skeleton,
