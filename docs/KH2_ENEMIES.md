@@ -266,7 +266,7 @@ enemigos"); what is built is under "Played" at the end of this section.
   | 1:107 | the actor's + 0x2a8 set |
   | 1:130 | two objects' places in KH2's list told apart (their + 4s' difference) |
   | 1:148 | the actor put at a point (`FUN_1403b64d0`: + 0x670, then `FUN_1403ccb90`) |
-  | 1:157 | an effect started by a four-letter name from the actor's effects' entries of type 0x16 (`FUN_1403db2f0`: `+ 0x928`'s, made an object of kind 0xb on the actor's + 0x80), on a target when given |
+  | 1:157 | an event sequence started by a name of up to four letters from the actor's entries of type 0x16 (`FUN_1403db2f0`: `+ 0x928`'s, made an object of kind 0xb on the actor's + 0x80), its camera's target when given ("Event sequences" below) |
   | 1:213 | its character's number (`FUN_1403b5b20`: + 8's record's + 0x4c, 00objentry.bin's: Sora 1, Roxas 14, Donald 2, Goofy 3; enemies 1000 and up) |
   | 1:220 | a step ahead with the room's collision, up to a length (`FUN_1403b9ac0`: its collision swept in 100s, `FUN_1403b6510` puts it where it stops) |
   | 1:225 | whether its class lets hits through now (+ 0x6c8 bit 1, then its class's virtual + 0xb8: the check KH2's hit makes, `FUN_140410d60`) |
@@ -357,9 +357,12 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   commands taken: the whole chain both ways -- the hold, its three steps' successes to `self_stun` and the blow (45 of
   Days's damage, the last hit's 15 x 3), and the misses to `rc_miss_stun` -- the prompt above the deck in the game's
   language ("Eludir", "¡Salta!", "Chapoteo").
+- **Its reaction command's cameras**: 1:157's event sequences ("00" as it takes the player, "10" to "30" as each
+  step begins) play their cameras ("Event sequences" below).
 - **Not yet**: its name on the enemy HUD (the stand-in's shows); Days's camera, close behind the player, inside its
-  body (6 m) while it holds the player; its leap's loop (motion 171, from frame 63) never ends without a hit (KH2's
-  way out not read); 0:32 and 1:157 (the routine's screen effect and named effects) not played.
+  body (6 m) outside the reaction command; its leap's loop (motion 171, from frame 63) never ends without a hit (KH2's
+  way out not read); 0:32 (the routine's screen effect) and the sequences' screen effects and vibration (commands
+  0x17, 0x18, 0x27) not played.
 
 ## A player in an enemy's hands
 
@@ -394,6 +397,52 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   Days's own model holds its last pose (Days has no such animation).
 - **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
   msg/<language>/sys.bar.
+
+## Event sequences
+
+An object's `.a.us` holds its event sequences as BAR entries of type 0x16 (OpenKH's "Animation Loader"), named by up to
+four letters (Cerberus's "00", "10", "20", "30"); 1:157 starts one by that name (`FUN_1403db2f0` packs the letters, the
+first in the low byte, as the entry's name lies). KH2 has one event player (`FUN_1402cc4b0`): a sequence started ends
+the one before. Of KH2's objects, 189 sequences, every one with a camera; 76 set their camera from the player's
+matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's -- neither. Our reading of KH2FM.exe:
+
+- **Commands**: a u16 size, a u16 number, then its own; size 0 ends them. Read before the sequence starts
+  (`FUN_1402cc180`): 0 its name at + 10 ("re_b_he020-00"), 0xf the start, 0x10 + 4 a number (`DAT_140b64fbc`), 8 its
+  length in frames at + 4, 0x13 a camera. On their frames (`FUN_1402cb5d0`, each with its frame at + 4): 6 a camera's
+  span (+ 4 the camera, + 6 its first frame, + 8 its last), 0x17 and 0x18 a screen effect started and ended
+  (`FUN_14015f1e0`'s centre at + 0xc and + 0xe halved), 0x27 a vibration (+ 0xe), 0x31 the camera set from the
+  player's matrix (+ 6 1, `FUN_1402d27a0`) or given back to the game (+ 6 0: Cerberus's "30" at its last frame), 0x51 a
+  call back to its object, 0x3c an effect element on its object (+ 6).
+- **A camera** (0x13, `FUN_1402d2620` keeps it by its number at + 4): eight channels, each a u16 first key and an s16
+  count at + 6 + 4n, the keys at + 0x28, 16 bytes each: a word (bits 29-31 the interpolation to the next key -- 0 held,
+  1 linear, 2 to 4 Hermite; bits 0-28 the time, signed, in 1/512 s), the value, its slope in and out (a second's
+  change). The channels: the eye's x, y, z, the place it looks at, the roll (degrees), the vertical field of view
+  (degrees: `FUN_14019dde0`'s last argument 1). Cerberus's four hold the same 74 keys a channel, each sequence's time 0
+  where its own step begins (keys before it are negative).
+- **Played** (`FUN_1402d37b0` each frame): the frame is the sequence's ticks over 2 (30 a second); the cut whose span
+  holds it (from its first frame to one past its last) shows its camera at the frame less its start, held at its
+  end. A channel (`FUN_1402d4580`, `FUN_1402d42a0`): the time in 1/512 s as a whole number; before the first key and
+  after the last, that key's value carried on by its slope (the line to the next key's for a linear one); at a key, its
+  value; between, the key's interpolation (Hermite with the first key's slope out and the second's in, in seconds). The
+  eye and the look-at turn to KH2's axes (y and z the other way), the roll to radians; then both go through the
+  sequence's matrix (`FUN_14013f900`) to `FUN_1401780d0`, KH2's camera set.
+- **Where**: the sequence's matrix is its object's + 0x60 (`FUN_1403ad2d0`), the identity (`FUN_140142280`) until the
+  call back (`FUN_1403ac630`, command 0x51 alone) copies the target's into it (`FUN_140406a90`: the target's + 0x808, or
+  its + 0x40 with its place followed when the sequence's byte + 9 is 2). Cerberus's sequences have no 0x51: KH2 plays
+  them in its arena's own place. Read as Cerberus's model's axes, the first shot is 10 m before its heads, 2 m up,
+  looking at its body with the player in its mouth between.
+- **The port** (`assets/src/kh2_event.cpp`, `runtime/kh2_enemies/shell.cpp`): Days's rooms are not KH2's arena, so the
+  sequence's place and turn are its target's as it starts (the call back's binding; the actor itself without a target),
+  its keys turned into Days's world as an actor's own axes are. It moves on with its enemy's KH2 ticks and ends at its
+  length or with its enemy. Its camera replaces the frame's (`runtime/camera/kh2_camera_hooks.c`, the end of each
+  camera frame and each commit, whichever camera the field has) for the player it is about -- the one the enemy holds,
+  or its attack last landed on -- with KH2's event cameras' near plane; the field of view the camera had goes back
+  after, and the KH2 camera takes up again as after Days's camera's frames. The roll is not drawn (Cerberus's are 0),
+  nor commands 0x17, 0x18 and 0x27, nor 0x31's camera from the player's matrix (told in the trace when a sequence
+  starts). Played with Cerberus (2026-11-09): the four shots in turn, the HD PACK's KH2 Roxas in its mouth, in the air
+  for "Jump!" and on its heads for the blow; a room smaller than KH2's arena leaves some shots outside its walls (KH2's
+  event cameras meet no collision). Days's own Roxas model plays none of KH2's motion: it stays at the hold's place,
+  Cerberus's middle, inside its body.
 
 ## Triggers
 

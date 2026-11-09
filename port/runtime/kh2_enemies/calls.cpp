@@ -523,9 +523,14 @@ void add_actor_fields(ai::Calls &calls)
         a[0] = ai::Value::of_int(is_player(object_of(m, a[0])) ? 1 : 0);
     });
     calls.set(1, 225, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 1:157 an effect started by a four-letter name from its effects' entries of type 0x16 (FUN_1403db2f0): only a
-    // reaction command starts one (Cerberus's "00", "10", "20" as each of its steps begins) -- not played yet
-    calls.set(1, 157, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:157 an event sequence started by a name of up to four letters from the actor's .a.us entries of type 0x16
+    // (FUN_1403db2f0), its camera placed from the third argument when given (FUN_1403ad270): a reaction command's
+    // (Cerberus's "00" as it takes the player, "10" to "30" as each step begins)
+    calls.set(1, 157, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x != nullptr && x->world != nullptr)
+            x->world->event(*x, name_at(m.memory(), a[1].bits), object_of(m, a[2]));
+    });
     // 1:133 / 1:134 the object's class's virtuals + 0x80 / + 0x88 (its native code): nothing here
     calls.set(1, 133, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 134, [](ai::Machine &, std::span<ai::Value>) {});

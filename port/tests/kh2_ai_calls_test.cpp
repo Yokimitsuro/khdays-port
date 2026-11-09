@@ -285,6 +285,13 @@ struct MadeUpWorld final : kh::World {
     {
         carrier = nullptr;
     }
+    std::string event_name; // the event sequence 1:157 started, and its target
+    kh::Object *event_target = nullptr;
+    void event(kh::Actor &, const std::string &name, kh::Object *target) override
+    {
+        event_name = name;
+        event_target = target;
+    }
 };
 
 // a call made as a script makes it: its handler with these arguments, args[0] given back
@@ -686,7 +693,7 @@ void test_player_calls()
 {
     Rig rig;
     kh::read_shapes(rig.calls, "1:29 4 1\n1:13 3 0\n1:238 1 1\n1:1 2 0\n1:148 2 0\n1:79 2 0\n1:18 6 0\n1:102 1 0\n"
-                               "1:112 3 0\n1:213 1 1\n1:74 1 0\n");
+                               "1:112 3 0\n1:213 1 1\n1:74 1 0\n1:157 3 0\n");
     MadeUpWorld world;
     // its main thread a yield over and over (word 0), a routine the same (word 3)
     const Words loop = misc(0) + Words{0x0007, 0xfffd} + misc(0) + Words{0x0007, 0xfffd};
@@ -732,6 +739,11 @@ void test_player_calls()
     // 1:13: on the player its own motion asked for (the world gives it back); on the actor played at once
     call(rig, actor, 1, 13, {him, i(0), f(0.0F)});
     CHECK(world.own_motion == 0);
+    // 1:157: the event sequence of that name started, its camera's target given (Cerberus's "10" on itself)
+    const std::uint32_t name = rig.memory.add(4, "an event's name");
+    rig.memory.write(name, "10", 3);
+    call(rig, actor, 1, 157, {self, adr(name), self});
+    CHECK(world.event_name == "10" && world.event_target == &actor);
 }
 
 int main()

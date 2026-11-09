@@ -255,6 +255,9 @@ public:
     // bone -- + 0x6a6 flags, its own place on it made 0, class 3); 1:102 taken off again (FUN_1403da250)
     virtual void carry(Actor & /*carried*/, Object & /*by*/, int /*bone*/, int /*flags*/) {}
     virtual void uncarry(Actor & /*carried*/) {}
+    // 1:157: the event sequence of that name in the actor's .a.us (its entries of type 0x16, FUN_1403db2f0), played by
+    // KH2's one event player (FUN_1402cc4b0, the one before ended), its camera placed from `target` (FUN_1403ad270)
+    virtual void event(Actor & /*actor*/, const std::string & /*name*/, Object * /*target*/) {}
 };
 
 // Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)

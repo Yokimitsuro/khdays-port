@@ -143,6 +143,8 @@ static struct {
     int fov_held; /* the FOV is this camera's; Days' goes back when the game's camera takes over */
     int written_eye[3];
     int tracing;
+    int event_fov[3]; /* the FOV's sine, cosine and near plane before a KH2 enemy's event camera took the frames */
+    int event_saved;
 } s = {.tracing = -1, .fade = 1.0f};
 
 static float from_fx(int value)
@@ -711,8 +713,50 @@ static void frame_publish(int camera, int eye)
     }
 }
 
+extern int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half); /* kh2_enemies/shell.cpp */
+
+/* A KH2 enemy's event camera (a reaction command's, runtime/kh2_enemies/shell.cpp) in place of the frame's, whichever
+ * camera the field has: its eye, look-at and vertical field of view written as the game's camera's, KH2's event
+ * cameras' own near plane; this camera's frames wait meanwhile (they come back as after Days' camera's), and the field
+ * of view the camera had goes back once it ends. 1: the frame is the event's. */
+static int event_frame(int *cam)
+{
+    float eye[3], at[3], half = 0.0f;
+    if (cam[WORD_STAGE] != 0 || !khdays_kh2_enemies_event_camera(eye, at, &half)) {
+        if (s.event_saved) {
+            cam[WORD_FOV_SIN] = s.event_fov[0];
+            cam[WORD_FOV_COS] = s.event_fov[1];
+            cam[WORD_NEAR] = s.event_fov[2];
+            s.event_saved = 0;
+        }
+        return 0;
+    }
+    if (!s.event_saved) {
+        s.event_fov[0] = cam[WORD_FOV_SIN];
+        s.event_fov[1] = cam[WORD_FOV_COS];
+        s.event_fov[2] = cam[WORD_NEAR];
+        s.event_saved = 1;
+    }
+    for (int k = 0; k < 3; ++k) {
+        cam[WORD_FOCUS + k] = (int)lroundf(at[k] * 4096.0f);
+        cam[WORD_EYE + k] = (int)lroundf(eye[k] * 4096.0f);
+    }
+    if (half > 0.0f) {
+        cam[WORD_FOV_SIN] = (int)lroundf(sinf(half) * 4096.0f);
+        cam[WORD_FOV_COS] = (int)lroundf(cosf(half) * 4096.0f);
+    }
+    cam[WORD_NEAR] = NEAR_PLANE;
+    s.want = WANT_NONE;
+    s.active = 0;
+    ++s.days_frames;
+    return 1;
+}
+
 void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye)
 {
+    if (event_frame(KHDAYS_W(camera))) {
+        return;
+    }
     if (frame_prepare(camera, player, behind_yaw, origin, eye)) {
         frame_collide(origin, eye);
         frame_settle(origin, eye);
@@ -729,6 +773,9 @@ void khdays_kh2_camera_commit(int camera)
 {
     const int *cam = KHDAYS_W(camera);
     const int player = QueryActiveStateOrDelegate();
+    if (event_frame(KHDAYS_W(camera))) {
+        return; /* the event's, whatever came before the commit */
+    }
     if (s.frame != 0u && khdays_input_game_frames() - s.frame <= (s.committed ? 0u : 1u)) {
         return;
     }

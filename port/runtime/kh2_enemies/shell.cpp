@@ -9,6 +9,7 @@
 
 #include "khdays/assets/kh2_ai.h"
 #include "khdays/assets/kh2_bar.h"
+#include "khdays/assets/kh2_event.h"
 #include "khdays/assets/kh2_motion.h"
 
 #include <algorithm>
@@ -21,6 +22,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 #include <sstream>
@@ -172,6 +174,9 @@ struct KindFiles final {
     std::map<int, int> sounds;
     kh2::EffectBlock common;
     std::vector<std::unique_ptr<khdays::kh2_fx::Pages>> fx_pages; // by effect block: each its own pictures
+    // its event sequences (its .a.us's entries of type 0x16: a reaction command's cameras), by their names' up to four
+    // letters as FUN_1403db2f0 packs them (the first in the low byte)
+    std::map<std::uint32_t, std::shared_ptr<const kh2::Event>> events;
 };
 
 // A PAX's elements (docs/FORMATS.md, "KH2's effects"): its 0x82 directory's 32-byte entries, each the offset of its
@@ -316,6 +321,31 @@ void read_effects(KindFiles &k, const fs::path &folder)
     }
 }
 
+// Its event sequences: every entry of type 0x16 in its .a.us, keyed by its name (docs/KH2_ENEMIES.md, "Event
+// sequences")
+void read_events(KindFiles &k, const fs::path &folder)
+{
+    const auto bar = read_file(folder / "kh2" / "obj" / (k.name + ".a.us"));
+    const auto u32 = [&](std::size_t o) {
+        return std::uint32_t(bar[o] | (bar[o + 1] << 8) | (bar[o + 2] << 16) | (std::uint32_t(bar[o + 3]) << 24));
+    };
+    if (bar.size() < 16 || std::memcmp(bar.data(), "BAR", 3) != 0)
+        return;
+    for (std::uint32_t i = 0; i < u32(4) && 16 + 16 * (i + 1) <= bar.size(); ++i) {
+        const std::size_t e = 16 + 16 * std::size_t(i);
+        const std::uint32_t at = u32(e + 8), size = u32(e + 12);
+        if (std::uint16_t(bar[e] | (bar[e + 1] << 8)) != 0x16 || size == 0 || std::size_t(at) + size > bar.size())
+            continue;
+        try {
+            k.events[u32(e + 4)] = std::make_shared<const kh2::Event>(kh2::read_event(bar.data() + at, size));
+        } catch (const std::exception &x) {
+            khdays_log("kh2 enemies: %s's event sequence %u cannot be played (%s)", k.name.c_str(), i, x.what());
+        }
+    }
+    if (!k.events.empty())
+        khdays_log("kh2 enemies: %s's %zu event sequences read", k.name.c_str(), k.events.size());
+}
+
 // A motion set as an actor's Motions: motion N is slot N (an enemy's mset maps them in order: OpenKH's MSET page)
 class SetMotions final : public Motions {
 public:
@@ -425,6 +455,7 @@ KindFiles *files_of(const std::string &name)
                 std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
             k->shapes = read_shapes(mdlx);
             read_effects(*k, u8(m.folder));
+            read_events(*k, u8(m.folder));
             read_sounds(*k, u8(m.folder));
             khdays_log("kh2 enemies: %s read (%zu motions' slots, %zu bones, %zu shapes)", name.c_str(),
                        k->set->slots(), k->skeleton->joints.size(), k->shapes.size());
@@ -458,6 +489,7 @@ struct Enemy final {
     float radius = 0.0F;    // its Days enemy's collision sphere's, last read (Days's units)
     int attack_motion = -1; // the motion its attacks' hits below were made in, and its time then
     float attack_time = 0.0F;
+    unsigned took = 0; // the player its attack last landed on (its trigger 15)
     std::map<std::size_t, std::set<unsigned>> struck; // by attack range: the players it hit (each once)
     std::set<std::size_t> windows_told;                // traced: the attack ranges of this motion told
     int slot = 0;                                     // its stand-in's attack slot its hits use
@@ -588,6 +620,17 @@ std::map<unsigned, Held> held; // by the Days player's object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
 std::map<unsigned, unsigned> player_of_node; // each player's model's scene node -> its object (the models' draws)
+
+// KH2's one event player (FUN_1402cc4b0; a sequence started ends the one before): the sequence, the enemy whose script
+// started it, the player whose camera it takes, its KH2 ticks since it started; the place (Days's) and the yaw (KH2's)
+// its camera is set from
+struct Playing final {
+    std::shared_ptr<const kh2::Event> event;
+    unsigned enemy = 0, player = 0, ticks = 0;
+    float base[3] = {};
+    float yaw = 0.0F;
+};
+std::optional<Playing> playing;
 
 // One of KH2's commands (03system.bin's "cmd", 0x30 bytes each: OpenKH's 03system page): what a reaction command
 // sends when taken (its argument), the one it follows (require: a range 26 of that number must be on), its name's text
@@ -733,6 +776,7 @@ public:
     void player_thread(Object &o, ai::Machine &m, std::uint32_t id) override;
     void carry(Actor &carried, Object &by, int bone, int flags) override;
     void uncarry(Actor &carried) override;
+    void event(Actor &a, const std::string &name, Object *target) override;
 };
 
 Field &the_field()
@@ -757,6 +801,8 @@ void forget(unsigned days)
     for (const auto &[object, h] : held)
         if (h.enemy == days)
             holding.push_back(object);
+    if (playing && playing->enemy == days)
+        playing.reset();
     for (const unsigned object : holding)
         let_go(object, "its enemy gone");
     Enemy &e = *it->second;
@@ -905,6 +951,7 @@ void landed(Enemy &e, unsigned object, int atkp)
     const auto it = players.find(object);
     if (it == players.end() || !it->second)
         return;
+    e.took = object;
     if (e.attack_record == 0)
         e.attack_record = mod().memory.add(0x100, a.kind() + "'s attack", true);
     mod().memory.set_u32(e.attack_record + 0x18, std::uint32_t(atkp));
@@ -1229,6 +1276,71 @@ void Field::uncarry(Actor &carried)
     it->second->carrier = 0;
 }
 
+// 1:157: the sequence of that name (FUN_1403db2f0: its letters packed as the entries' names are) in the enemy's
+// .a.us, played by the one event player. In KH2 its camera's keys are set from the event's own matrix (+ 0x60 of its
+// object, FUN_1403ad2d0), the identity until a command 0x51 calls back FUN_1403ac630, which copies the target's matrix
+// (+ 0x808, FUN_140406a90): Cerberus's have none, so KH2 plays them in its arena's own place. Days's rooms are not
+// that arena: the port sets them from the target's place and turn as the sequence starts -- the call back's binding
+// (the actor's own without a target).
+void Field::event(Actor &a, const std::string &name, Object *target)
+{
+    const auto it = by_actor.find(&a);
+    if (it == by_actor.end())
+        return;
+    Enemy &e = *it->second;
+    std::uint32_t key = 0;
+    for (std::size_t i = 0; i < name.size() && i < 4; ++i)
+        key |= std::uint32_t(std::uint8_t(name[i])) << (8 * i);
+    const auto found = e.kind->events.find(key);
+    if (found == e.kind->events.end()) {
+        khdays_log("kh2 enemies: %08x has no event sequence \"%s\" (its .a.us's entries of type 0x16)", e.days,
+                   name.c_str());
+        return;
+    }
+    Playing p;
+    p.event = found->second;
+    p.enemy = e.days;
+    p.player = e.took;
+    for (const auto &[object, h] : held)
+        if (h.enemy == e.days)
+            p.player = object;
+    const Object &from = target != nullptr ? *target : static_cast<const Object &>(a);
+    to_days(from.place(), p.base);
+    p.yaw = from.yaw();
+    if (tracing()) {
+        std::string unplayed;
+        for (const int c : p.event->commands)
+            if (c != 0 && c != 6 && c != 8 && c != 0xf && c != 0x10 && c != 0x13)
+                unplayed += " " + std::to_string(c);
+        khdays_log("kh2 enemies: %08x plays event sequence %s (\"%s\", %d frames) for player %08x%s%s", e.days,
+                   p.event->name.c_str(), name.c_str(), p.event->length, p.player,
+                   unplayed.empty() ? "" : "; commands not played:", unplayed.c_str());
+    }
+    playing = std::move(p);
+}
+
+// The event player's tick with its enemy's (KH2's 60 a second; its frames 30): over at its length
+void event_tick(const Enemy &e)
+{
+    if (!playing || playing->enemy != e.days)
+        return;
+    if (++playing->ticks >= 2u * unsigned(std::max(playing->event->length, 0))) {
+        if (tracing())
+            khdays_log("kh2 enemies: event sequence %s over", playing->event->name.c_str());
+        playing.reset();
+    }
+}
+
+// A point of an event's camera (KH2's axes from its base: the model's turned half round x) in Days's world: as an
+// actor's own axes on no bone (days_point)
+void event_point(const Playing &p, const std::array<float, 3> &k, float out[3])
+{
+    const Vec3 t = turned({k[0], 0.0F, -k[2]}, p.yaw);
+    out[0] = p.base[0] + t[0] / kKh2PerDays;
+    out[1] = p.base[1] - k[1] / kKh2PerDays;
+    out[2] = p.base[2] + t[2] / kKh2PerDays;
+}
+
 // A KH2 tick of a player its enemy holds: its motion on (its root's travel turned by its yaw, as Actor::step), held at
 // its end (the ended bit its script waits on) or looped; its ranges now (20 a reaction command offered when the one
 // it follows is on -- range 26's -- 27 not to be hit), its triggers passed (1 the enemy's effect, 8 its sound), its
@@ -1471,6 +1583,7 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         a.tick();
     Vec3 travel = a.step(1.0F);
     cues(e);
+    event_tick(e);
     motion_states(e);
     const bool no_gravity = (a.u32(field::kStatus) & kNoGravity) != 0;
     if (a.jump.on) {
@@ -2113,6 +2226,24 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         khdays_log("kh2 enemies: %08x hit (%d to %d), %s%s", days, hp_before, s.hp,
                    moves ? (motion == 10 ? "motion 10" : "motion 12") : "no reaction motion of its own",
                    e->paused ? ", its script waiting" : "");
+}
+
+// The camera of the event sequence playing, while it is this game's player's (runtime/camera/kh2_camera_hooks.c): its
+// eye and look-at in Days's world, half its vertical field of view (0: the camera's own kept); 0 when none shows
+extern "C" int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half)
+{
+    if (!playing || playing->player == 0 || playing->player != local_player)
+        return 0;
+    float within = 0.0F;
+    const kh2::EventCamera *cam = kh2::event_camera_at(*playing->event, float(playing->ticks) / 2.0F, within);
+    if (cam == nullptr)
+        return 0;
+    kh2::EventView view;
+    kh2::event_view(*cam, within, view);
+    event_point(*playing, view.eye, eye);
+    event_point(*playing, view.at, at);
+    *fov_half = view.fov * 0.5F;
+    return 1;
 }
 
 // A Days player's actor's tick begins (Ov022_ActorUpdate, prepare.py): whether a KH2 enemy holds it (its control
