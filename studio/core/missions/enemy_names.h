@@ -7,7 +7,5 @@ namespace studio {
 
 // "Shadow", "Darkside" ...; null for an id with no enemy.
 const char* enemy_name(int id);
-// How many ids the game's table has.
-int enemy_ids();
 
 }  // namespace studio
