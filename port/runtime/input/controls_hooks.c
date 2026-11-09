@@ -70,6 +70,7 @@ void khdays_controls_selection(int locked, int scheme, int held, int pressed, in
     static int last_flags = -1, last_active = -1, last_selected = -2;
     game.lock_active = locked != 0;
     game.lockon_scheme = scheme;
+    game.lock_candidate = selected >= 0;
     game.selection_frame = khdays_input_game_frames();
     game.r_repeat = repeat_any;
     game.r_pressed = (pressed & 0x100) != 0;

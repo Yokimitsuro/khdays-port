@@ -84,6 +84,7 @@ enum {
     KHDAYS_ENH_CHASE_FREE = 1 << 5,       /* Chase Camera's Free (runtime/menus/camp.h khdays_camp_chase_free) */
     KHDAYS_ENH_KH2_CAMERA = 1 << 6,       /* the field camera moves as KH2's (runtime/camera/kh2_camera.c) */
     KHDAYS_ENH_KH2_FIRST_PERSON = 1 << 7, /* with it, Select is KH2's first person view */
+    KHDAYS_ENH_AUTO_LOCK = 1 << 8,        /* a lock lost but by letting it go locks on again */
 };
 
 /* Everything the game needs to know about the player's input at one moment.

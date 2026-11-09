@@ -66,6 +66,7 @@ int khdays_lock_action_exists(int action, int lockon_scheme)
 {
     switch (action) {
     case KHDAYS_LOCK_ON:
+    case KHDAYS_LOCK_AUTO:
     case KHDAYS_LOCK_NEXT: return 1;
     case KHDAYS_LOCK_PREV: return lockon_scheme != 0; /* Type A has no previous */
     default: return 0;
@@ -84,10 +85,52 @@ void khdays_lock_sequencer_reset(KhdaysLockSequencer *s)
 static const Sequence *lock_sequence(int action)
 {
     switch (action) {
-    case KHDAYS_LOCK_ON: return &r_twice;
+    case KHDAYS_LOCK_ON:
+    case KHDAYS_LOCK_AUTO: return &r_twice;
     case KHDAYS_LOCK_NEXT: return &r_once;
     default: return &l_once;
     }
+}
+
+void khdays_lock_sequencer_cancel(KhdaysLockSequencer *s, int action)
+{
+    int n = 0;
+    if (s->action == action) {
+        s->action = -1;
+        s->step = 0;
+    }
+    for (int i = 0; i < s->queued; ++i) {
+        if (s->queue[i] != action) {
+            s->queue[n++] = s->queue[i];
+        }
+    }
+    s->queued = n;
+}
+
+uint32_t khdays_lock_auto_frame(KhdaysLockAuto *s, int let_go, int pressed, int field, int locked, int candidate)
+{
+    uint32_t out = 0;
+    if (!field) {
+        s->was_locked = s->let_go = s->pending = 0;
+        return 0;
+    }
+    if (locked && let_go) {
+        s->let_go = 1;
+    }
+    if (s->was_locked && !locked && !s->let_go && !let_go && !pressed) {
+        s->pending = 1;
+    }
+    if (locked || let_go || pressed) {
+        s->pending = 0; /* locked again, or let go by the player while waiting */
+    } else if (s->pending && candidate) {
+        out = 1u << KHDAYS_LOCK_AUTO;
+        s->pending = 0;
+    }
+    if (!locked) {
+        s->let_go = 0;
+    }
+    s->was_locked = locked;
+    return out;
 }
 
 uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, int field, int locked, int lockon_scheme,
@@ -116,7 +159,7 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
         /* The next one, when the game would take it: switching target needs
          * a target locked (the game does nothing with it otherwise), and R
          * must not come within the game's double-press window. */
-        while (s->queued > 0 && s->queue[0] != KHDAYS_LOCK_ON && !locked) {
+        while (s->queued > 0 && s->queue[0] != KHDAYS_LOCK_ON && (s->queue[0] == KHDAYS_LOCK_AUTO ? locked : !locked)) {
             for (int i = 1; i < s->queued; ++i) {
                 s->queue[i - 1] = s->queue[i];
             }
@@ -136,6 +179,12 @@ uint16_t khdays_lock_sequencer_frame(KhdaysLockSequencer *s, uint32_t actions, i
             s->queue[i - 1] = s->queue[i];
         }
         --s->queued;
+    }
+    if (s->action == KHDAYS_LOCK_AUTO && locked) {
+        /* the game locked on by itself meanwhile (an attack): the rest would let go */
+        s->action = -1;
+        s->step = 0;
+        return 0;
     }
     {
         const Sequence *seq = lock_sequence(s->action);

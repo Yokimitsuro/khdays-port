@@ -251,6 +251,12 @@ of the game:
   field -- menus, tutorials, the pause -- there is no lock-on, and these
   buttons are the DS's R (lock on, next target) and L (previous target), so
   they turn pages as R and L do there.
+- **Auto lock-on:** when the lock is lost without you letting go -- the
+  target defeated, or out of reach -- the game's lock-on is pressed again (R
+  twice) as soon as it has another target, so the next enemy is locked on to
+  by itself. Letting go yourself
+  (the lock-on button, R twice, Select) stays let go. As any R, it can reset
+  the camera. Off by default.
 - **Chase Camera: Free:** on the camp's Config page drawn on one screen,
   Chase Camera has a third value after the game's Auto and Manual. Free is
   the game's Manual, except that walking no longer pulls the camera's tilt
