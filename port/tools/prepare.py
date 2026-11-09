@@ -2,15 +2,23 @@
 """Prepare the pinned khdays-decomp for the native (x64) build: choose the files the DS build links,
 patch the few MSVC cannot take, generate what the DS linker provided, and rewrite the game's C with
 every pointer a 4-byte reference (docs/BUILD.md).
-Usage: python port/tools/prepare.py [--out build/port/gen-x64]
+Usage: python port/tools/prepare.py [--out build/port/gen-x64] [--force]
+A run stops at once when nothing it reads changed since the last one wrote --out (INPUT_TREES).
 """
 
 from __future__ import annotations
 
+import time
+
+STARTED = time.time_ns()  # before this script reads anything (record_run)
+
 import argparse
 import bisect
 import collections
+import json
+import os
 import re
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -5172,6 +5180,8 @@ DEFINITION_RE = re.compile(
     re.MULTILINE,
 )
 KEYWORDS = {"else", "goto", "case", "do", "break", "continue", "return", "struct"}
+# a brace, or where a comment, string or character literal may start: brace_depths jumps between them
+BRACE_OR_NOT_CODE = re.compile(r"[{}\"']|/\*|//")
 
 
 def brace_depths(text: str) -> list[tuple[int, int]]:
@@ -5182,6 +5192,10 @@ def brace_depths(text: str) -> list[tuple[int, int]]:
     i = 0
     n = len(text)
     while i < n:
+        start = BRACE_OR_NOT_CODE.search(text, i)
+        if start is None:
+            break
+        i = start.start()
         c = text[i]
         if c in "\"'":
             j = i + 1
@@ -5522,11 +5536,140 @@ def cmake_list(name: str, paths: list[str]) -> str:
     return f"set({name}\n" + "".join(f'    "{p}"\n' for p in paths) + ")\n"
 
 
+def check_port_calls(out: Path) -> None:
+    """The port's side calls the game's functions the host's way: none of those taking their arguments
+    in a block (references/emit.py; out/references_block_abi.txt)."""
+    block = set((out / "references_block_abi.txt").read_text(encoding="utf-8").split())
+    port_calls = []
+    for source in sorted(p for d in ("runtime", "host", "gfx", "sound") for p in (ROOT / "port" / d).rglob("*.c*")):
+        text = strip_comments(source.read_text(encoding="utf-8", errors="replace"))
+        port_calls += [f"{source.name}: {n}" for n in sorted(block) if re.search(rf"\b{re.escape(n)}\s*\(", text)]
+    if port_calls:
+        raise SystemExit(
+            "references: the port calls game functions that take their arguments in a block: " + ", ".join(port_calls)
+        )
+
+
+# What this script reads, so that a run whose inputs and outputs are all as the last run left them can
+# stop at once: these trees whole, and every header and Python file of the port (the port's own C it
+# reads only for check_port_calls, which runs every time). The C compiler that references/ preprocesses
+# with is not among them (nor is it in references/build.py's cache): after changing Visual Studio, delete
+# --out.
+INPUT_TREES = ("external/khdays-decomp", "port/tools", "port/abi", "port/compat", "port/hal")
+PORT_INPUT_SUFFIXES = frozenset({".h", ".py"})  # compared in lower case, as Windows matches `*.h`
+SKIPPED_DIRS = frozenset({"__pycache__", ".git"})
+COMPILER_ENVIRONMENT = ("KHDAYS_VCVARSALL", "CL", "_CL_")  # what reaches the preprocessor (port/build.py)
+INPUTS_FILE = "prepare_inputs.json"  # in --out: the last complete run's inputs and outputs
+OUTPUT_CACHE_DIR = "references"  # in --out: references/build.py's cache, which every run rewrites
+
+
+REPARSE = stat.FILE_ATTRIBUTE_REPARSE_POINT
+# The coarsest modification times kept (FAT's two seconds): an input stamped later than STARTED less
+# this may have changed after the run read it.
+TIMESTAMP_RESOLUTION_NS = 2_000_000_000
+
+
+class LinkedTree(Exception):
+    """A symbolic link or junction among the inputs: what it reaches is not followed, so no run is skipped."""
+
+
+def file_stamps(top: Path, suffixes: frozenset[str] | None = None, skip_top: frozenset[str] = frozenset()) -> dict:
+    """[size, modification time] of each file under top (of those suffixes), and [] for each directory, by
+    its path from top: the same stamps references/build.py keeps for its cache. skip_top: directories
+    directly in top left out. Raises LinkedTree at a link."""
+    stamps: dict[str, list[int]] = {}
+    prefix = len(str(top)) + 1
+    pending = [str(top)] if top.is_dir() else []
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                rel = entry.path[prefix:].replace("\\", "/")
+                if entry.name in SKIPPED_DIRS or rel in skip_top:
+                    continue
+                # a symbolic link or a junction (any reparse point: Python 3.11 has no is_junction)
+                if entry.is_symlink() or getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0) & REPARSE:
+                    raise LinkedTree(entry.path)
+                if entry.is_dir():
+                    stamps[rel + "/"] = []
+                    pending.append(entry.path)
+                elif suffixes is None or os.path.splitext(entry.name)[1].lower() in suffixes:
+                    st = entry.stat()
+                    stamps[rel] = [st.st_size, st.st_mtime_ns]
+    return stamps
+
+
+def prepare_inputs(out: Path, options: dict) -> dict | None:
+    """Everything a run's output depends on: its options and paths (sources.cmake names its files
+    absolutely), the tools' versions and environment, and the stamps of the files it reads; None when
+    those cannot be told (a link among them)."""
+    import pycparser
+
+    files: dict[str, list[int]] = {}
+    try:
+        for tree in INPUT_TREES:
+            files.update({f"{tree}/{rel}": stamp for rel, stamp in file_stamps(ROOT / tree).items()})
+        for rel, stamp in file_stamps(ROOT / "port", PORT_INPUT_SUFFIXES).items():
+            files.setdefault(f"port/{rel}", stamp)
+    except LinkedTree:
+        return None
+    return {
+        "root": str(ROOT),
+        "out": str(out),
+        "options": options,
+        "python": sys.version,
+        "pycparser": pycparser.__version__,
+        "environment": {name: os.environ.get(name) for name in COMPILER_ENVIRONMENT},
+        "files": files,
+    }
+
+
+def prepare_outputs(out: Path) -> dict | None:
+    """The stamps of what a run wrote into out (not the references cache, nor INPUTS_FILE); None when
+    they cannot be told (a link among them)."""
+    try:
+        stamps = file_stamps(out, skip_top=frozenset({OUTPUT_CACHE_DIR, INPUTS_FILE}))
+    except LinkedTree:
+        return None
+    return stamps
+
+
+def unchanged_since_last_run(out: Path, inputs: dict | None) -> bool:
+    if inputs is None:
+        return False
+    try:
+        last = json.loads((out / INPUTS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(last, dict) or last.get("inputs") != inputs:
+        return False
+    outputs = prepare_outputs(out)
+    return outputs is not None and last.get("outputs") == outputs
+
+
+def record_run(out: Path, inputs: dict | None) -> None:
+    """INPUTS_FILE for the next run, unless an input may have changed while this one read it (stamped
+    near or after STARTED, or since this run's first stamps): the next run then prepares everything."""
+    if inputs is None or prepare_inputs(out, inputs["options"]) != inputs:
+        return
+    if any(stamp and stamp[1] >= STARTED - TIMESTAMP_RESOLUTION_NS for stamp in inputs["files"].values()):
+        return
+    outputs = prepare_outputs(out)
+    if outputs is not None:
+        (out / INPUTS_FILE).write_text(json.dumps({"inputs": inputs, "outputs": outputs}), encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "build" / "port" / "gen-x64"))
+    ap.add_argument("--force", action="store_true", help="prepare everything even when nothing it reads changed")
     args = ap.parse_args()
     out = Path(args.out).resolve()  # sources.cmake names its files absolutely
+    inputs = prepare_inputs(out, {name: value for name, value in vars(args).items() if name != "force"})
+    if not args.force and unchanged_since_last_run(out, inputs):
+        check_port_calls(out)
+        print(f"nothing prepare.py reads changed since it last wrote {out} (--force prepares anyway)")
+        return 0
+    (out / INPUTS_FILE).unlink(missing_ok=True)  # a run that stops leaves none
     patched_dir = out / "patched"
     patched_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5669,12 +5812,15 @@ def main() -> int:
     # `return g();` passes none. Such a body forwards four.
     tail_report = []
     tail_targets: dict[str, str] = {}
+    by_stem: dict[str, str] = {}  # each file name's first source
+    for r in texts:
+        by_stem.setdefault(Path(r).stem, r)
     for line in (ROOT / "port" / "abi" / "tail_calls.txt").read_text(encoding="utf-8").splitlines():
         key = line.strip()
         if not key or key.startswith("#"):
             continue
         name = key_name.get(key)
-        rel = next((r for r in texts if Path(r).stem == name), None) if name else None
+        rel = by_stem.get(name) if name else None
         if rel is None:
             tail_report.append(f"{key} {name}: no source")
             continue
@@ -6146,17 +6292,7 @@ def main() -> int:
     dispatched_calls = {n: a for n, a in functions.items() if n.startswith("khdays_ovcall_")}
     dispatched_calls.update({n: absolute[n] for n in rom_run if n in absolute})
     rewritten, area = rewrite_game(out, c_sources, placed, functions, dispatched_calls)
-    # the port's side calls the game's functions the host's way: none of
-    # those taking their arguments in a block (references/emit.py)
-    block = set((out / "references_block_abi.txt").read_text(encoding="utf-8").split())
-    port_calls = []
-    for source in sorted(p for d in ("runtime", "host", "gfx", "sound") for p in (ROOT / "port" / d).rglob("*.c*")):
-        text = strip_comments(source.read_text(encoding="utf-8", errors="replace"))
-        port_calls += [f"{source.name}: {n}" for n in sorted(block) if re.search(rf"\b{re.escape(n)}\s*\(", text)]
-    if port_calls:
-        raise SystemExit(
-            "references: the port calls game functions that take their arguments in a block: " + ", ".join(port_calls)
-        )
+    check_port_calls(out)
     missing = [n for n in PORT_DS_SYMBOLS if n not in ds_data]
     if missing:
         raise SystemExit(f"references: the port reads {', '.join(missing)}, which the decomp places nowhere")
@@ -6178,6 +6314,7 @@ def main() -> int:
     target = out / "sources.cmake"
     if not target.exists() or target.read_text(encoding="utf-8") != cmake:
         target.write_text(cmake, encoding="utf-8")
+    record_run(out, inputs)
 
     print(
         f"{len(compiled)} sources ({patched} patched), "
