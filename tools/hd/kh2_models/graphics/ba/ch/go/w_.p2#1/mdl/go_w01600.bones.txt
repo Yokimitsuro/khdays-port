@@ -1,0 +1,4 @@
+# KH2's F_TT150: three bones, its vertices on 2, made at the origin standing up, its face turned 45 degrees to +x+z,
+# the wide end up. W_EX030 is made at the hand lying flat, its face down (-y), its centre 10.9 cm along bone 2's x.
+# Turned onto W_EX030's bone 2: the face along x (the centre 10.0 cm out), the wide end along -y (up, in the idle).
+held kh2_2 turn 135 0 90

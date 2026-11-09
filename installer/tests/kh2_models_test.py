@@ -124,6 +124,75 @@ class Models(unittest.TestCase):
             self.assertEqual((lexaeus / "def_h.p.z/mdl/lexaeus_h.mdlx").read_bytes(), b"N_CM020_BTL.mdlx")
             self.assertEqual((lexaeus / "def.p.z/mdl/lexaeus.mdlx").read_bytes(), b"N_CM020_BTL.mdlx")
             self.assertTrue((lexaeus / "def.p.z/mdl/lexaeus.motions.txt").is_file())
+            demyx = mod / "graphics/ba/ch/de"
+            self.assertEqual((demyx / "def_h.p.z/mdl/demyx_h.mdlx").read_bytes(), b"B_EX120_HB.mdlx")
+            self.assertEqual((demyx / "def.p.z/mdl/B_EX120_HB.mset").read_bytes(), b"B_EX120_HB.mset")
+            self.assertTrue((demyx / "def.p.z/mdl/demyx.secondary.txt").is_file())
+            xaldin = mod / "graphics/ba/ch/xa"
+            self.assertEqual((xaldin / "def_h.p.z/mdl/xaldin_h.mdlx").read_bytes(), b"B_EX130.mdlx")
+            self.assertEqual((xaldin / "def.p.z/mdl/xaldin.mdlx").read_bytes(), b"B_EX130.mdlx")
+            self.assertTrue((xaldin / "def.p.z/mdl/xaldin.motions.txt").is_file())
+            xigbar = mod / "graphics/ba/ch/xi"
+            self.assertEqual((xigbar / "def_h.p.z/mdl/xigbar_h.mdlx").read_bytes(), b"B_EX140.mdlx")
+            self.assertEqual((xigbar / "def.p.z/mdl/B_EX140.mset").read_bytes(), b"B_EX140.mset")
+            self.assertTrue((xigbar / "def.p.z/mdl/xigbar.motions.txt").is_file())
+            luxord = mod / "graphics/ba/ch/lu"
+            self.assertEqual((luxord / "def_h.p.z/mdl/luxord_h.mdlx").read_bytes(), b"B_EX150.mdlx")
+            self.assertEqual((luxord / "def.p.z/mdl/luxord.mdlx").read_bytes(), b"B_EX150.mdlx")
+            self.assertTrue((luxord / "def.p.z/mdl/luxord.bones.txt").is_file())
+            saix = mod / "graphics/ba/ch/sa"
+            self.assertEqual((saix / "def_h.p.z/mdl/saix_h.mdlx").read_bytes(), b"B_EX160.mdlx")
+            self.assertEqual((saix / "def.p.z/mdl/B_EX160.mset").read_bytes(), b"B_EX160.mset")
+            self.assertTrue((saix / "def.p.z/mdl/saix.secondary.txt").is_file())
+            xemnas = mod / "graphics/ba/ch/xe"
+            self.assertEqual((xemnas / "def_h.p.z/mdl/xemnas_h.mdlx").read_bytes(), b"B_EX170.mdlx")
+            self.assertEqual((xemnas / "def.p.z/mdl/B_EX170_LAST.mset").read_bytes(), b"B_EX170_LAST.mset")
+            self.assertTrue((xemnas / "def.p.z/mdl/xemnas.motions.txt").is_file())
+            # the boss Saix: his body with the player's cloth (through 016 for Mission Mode's A_016) and his claymores
+            boss = mod / "graphics/Ms"
+            self.assertEqual((boss / "53.p#0/mdl/016.mdlx").read_bytes(), b"B_EX160.mdlx")
+            self.assertEqual((boss / "53.p#0/mdl/B_EX160_2.mset").read_bytes(), b"B_EX160_2.mset")
+            self.assertTrue((boss / "53.p#0/mdl/016.secondary.txt").is_file())
+            self.assertTrue((boss / "53.p#1/mdl/A_016.secondary.txt").is_file())
+            self.assertTrue((boss / "53.p#1/mdl/A_016.motions.txt").is_file())
+            self.assertEqual((boss / "53.p#62/mdl/W01.mdlx").read_bytes(), b"B_EX160.mdlx")
+            self.assertTrue((boss / "53.p#63/mdl/A_W01.bones.txt").is_file())
+            self.assertFalse((boss / "53.p#60/mdl/W00.secondary.txt").exists())
+            # Riku: the coat Riku on the playable Riku's motions and weapon motions, the low poly model through riku_h
+            riku = mod / "graphics/ba/ch/ri"
+            self.assertEqual((riku / "def_h.p.z/mdl/riku_h.mdlx").read_bytes(), b"N_EX950.mdlx")
+            self.assertEqual((riku / "def_h.p.z/mdl/P_EH000.mset").read_bytes(), b"P_EH000.mset")
+            self.assertEqual((riku / "def.p.z/mdl/W_EH000.mdlx").read_bytes(), b"W_EH000.mdlx")
+            self.assertTrue((riku / "def.p.z/mdl/riku.bones.txt").is_file())
+            self.assertTrue((riku / "def.p.z/mdl/riku.secondary.txt").is_file())
+            self.assertEqual((riku / "w_.p2#1/mdl/ri_w01600.mdlx").read_bytes(), b"W_EH000.mdlx")
+            self.assertEqual((riku / "w_.p2#2/mdl/ri_w14600.mdlx").read_bytes(), b"W_EX010_20.mdlx")
+            self.assertTrue((riku / "w_.p2#2/mdl/ri_w14600.secondary.txt").is_file())
+            # Mickey: his own motions, both keyblades with the Kingdom Key's settings
+            mickey = mod / "graphics/ba/ch/mi"
+            self.assertEqual((mickey / "def.p.z/mdl/mickey.mdlx").read_bytes(), b"P_EX200.mdlx")
+            self.assertEqual((mickey / "def.p.z/mdl/W_EX200.mset").read_bytes(), b"W_EX200.mset")
+            self.assertEqual((mickey / "w_.p2#0/mdl/mi_w00600.mdlx").read_bytes(), b"W_EX200.mdlx")
+            self.assertEqual((mickey / "w_.p2#1/mdl/mi_w01600.mdlx").read_bytes(), b"W_EX010_30.mdlx")
+            self.assertTrue((mickey / "w_.p2#1/mdl/mi_w01600.secondary.txt").is_file())
+            # Donald: his own motions, his three staves posed by W_EX020.mset, do_w02600 with do_w00600's settings
+            donald = mod / "graphics/ba/ch/do"
+            self.assertEqual((donald / "def.p.z/mdl/donald.mdlx").read_bytes(), b"P_EX020.mdlx")
+            self.assertEqual((donald / "def.p.z/mdl/W_EX020.mset").read_bytes(), b"W_EX020.mset")
+            self.assertTrue((donald / "def.p.z/mdl/donald.secondary.txt").is_file())
+            self.assertEqual((donald / "w_.p2#0/mdl/do_w00600.mdlx").read_bytes(), b"W_EX020.mdlx")
+            self.assertEqual((donald / "w_.p2#1/mdl/do_w01600.mdlx").read_bytes(), b"F_TT160.mdlx")
+            self.assertEqual((donald / "w_.p2#2/mdl/do_w02600.mdlx").read_bytes(), b"W_EX020_B0.mdlx")
+            self.assertTrue((donald / "w_.p2#2/mdl/do_w02600.bones.txt").is_file())
+            # Goofy: his own motions, his three shields posed by W_EX030.mset, go_w02600 with go_w00600's settings
+            goofy = mod / "graphics/ba/ch/go"
+            self.assertEqual((goofy / "def.p.z/mdl/goofy.mdlx").read_bytes(), b"P_EX030.mdlx")
+            self.assertEqual((goofy / "def.p.z/mdl/W_EX030.mset").read_bytes(), b"W_EX030.mset")
+            self.assertTrue((goofy / "def.p.z/mdl/goofy.secondary.txt").is_file())
+            self.assertEqual((goofy / "w_.p2#0/mdl/go_w00600.mdlx").read_bytes(), b"W_EX030.mdlx")
+            self.assertEqual((goofy / "w_.p2#1/mdl/go_w01600.mdlx").read_bytes(), b"F_TT150.mdlx")
+            self.assertEqual((goofy / "w_.p2#2/mdl/go_w02600.mdlx").read_bytes(), b"W_EX030_B0.mdlx")
+            self.assertTrue((goofy / "w_.p2#2/mdl/go_w02600.bones.txt").is_file())
             # the cutscene Axels are not in the pack
             self.assertFalse((mod / "graphics/mi/ch/07.z").exists())
             self.assertFalse((mod / "graphics/mi/ch/50.z").exists())

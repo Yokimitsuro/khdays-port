@@ -1,0 +1,69 @@
+# Secondary motion of KH2's Goofy (P_EX030) drawn as Days' goofy: no coat or hood; his ears (62-64, 77-79) hang as
+# riku_h's drawstrings, and his hat (84-86) and the tuft on its top (59-60) sway as hair. Each chain starts with bones
+# on one point (61-62, 76-77, 82-84, 58-59), which give a control no length, so each group's controls are the chain's
+# bones from the first with a length or vertices, attached to the one before. Colliders fitted to his vertices. Bones
+# are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every line.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 1 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones), fitted to the vertices skinned to them ---
+collider pelvis   capsule 2 3 fit 0.85 tags body
+collider belly    capsule 3 9 fit 0.85 tags torso
+collider chest    capsule 9 10 fit 0.85 tags torso
+collider neck     capsule 45 48 fit 0.85 tags torso
+collider thigh_l  capsule 130 131 fit 0.9 tags legs
+collider calf_l   capsule 131 132 fit 0.9 tags legs
+collider foot_l   capsule 136 139 fit 0.9 tags legs
+collider thigh_r  capsule 143 144 fit 0.9 tags legs
+collider calf_r   capsule 144 145 fit 0.9 tags legs
+collider foot_r   capsule 149 152 fit 0.9 tags legs
+collider arm_l    capsule 17 18 fit 0.85 side motion tags arms
+collider forearm_l capsule 18 24 fit 0.85 side motion tags arms
+collider hand_l   sphere 26 fit 0.85 side rest tags hands left_hand
+collider arm_r    capsule 91 92 fit 0.85 side motion tags arms
+collider forearm_r capsule 92 98 fit 0.85 side motion tags arms
+collider hand_r   sphere 100 fit 0.85 side rest tags hands right_hand
+# the head: 50's vertices (142-161 cm, 8.2 to either side), its middle 6.8 cm up the bone and 4.4 back along its y
+collider head     sphere 50 offset 6.8 -4.4 0 radius 9 tags head
+
+# --- Ears: from the head's sides (61, 76) out to their tips, hung under gravity at load, as drawstrings ---
+group ear_l chain preset kh2_string
+  attach 61
+  chain 62 63 64
+  hang 0 -1 0
+  settle on steps 360
+  collide head torso arms
+  thickness 2
+  mode simulated
+end
+group ear_r chain preset kh2_string
+  attach 76
+  chain 77 78 79
+  hang 0 -1 0
+  settle on steps 360
+  collide head torso arms
+  thickness 2
+  mode simulated
+end
+
+# --- Hair-like: guided by his own motions where they key these bones, a little follow-through of their own. They
+# sit on the head, so they collide with nothing ---
+# the hat: its brim (84; 82 and 83 helpers on its point), its crown (85) and its folded top (86)
+group hat hair preset kh2_hair
+  attach 83
+  tuft 84 85 86
+  collide none
+end
+# the tuft on the hat's top (59 and 60; 58 a helper on 59's point)
+group tuft hair preset kh2_hair
+  attach 58
+  tuft 59 60
+  collide none
+end

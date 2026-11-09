@@ -1,0 +1,6 @@
+# KH2's Way to the Dawn (W_EH000) as Days' ri_w01600 (w_.p2 entry 1); Mission Mode's ri_w14600 (entry 2, KH2's
+# W_EX010_20) takes these settings. `held kh2_2`: Riku's body poses its bones from the root to the weapon itself
+# (kh2_2, the blade) with its `weapon_motions` (riku_h.motions.txt: W_EH000.mset, synced to P_EH000's slots), so
+# both play W_EH000.mset; W_EX010_20's bone 2 rests where W_EH000's does (one head and axes). kh2_3 to kh2_11 are
+# the keychain in both, carried by the blade and left to the cloth (ri_w01600.secondary.txt).
+held kh2_2

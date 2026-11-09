@@ -168,7 +168,11 @@ collider <name> capsule <bone> <end bone>|length <l> radius <r> [<end r>]
          [offset x y z] [end_offset x y z] [fit [<percentile>] [scale <s>]] [clear] [side rest|motion] [tags ...]
 ```
 
-A capsule runs from its bone's point (`offset`, bone-local) to its end bone's
+A collider on a bone the simulation moves (a hood's) follows that bone as simulated, not as
+animated: the last tick's rebuilt frame, kept on its group's reference bone and carried by that
+bone as posed now, so only the cloth's own swing is a tick behind (`Simulation::shapes`); until a
+tick has rebuilt it (at load, after a reset) it stands where the animation has the bone. Tag it
+apart from the bone's own group. A capsule runs from its bone's point (`offset`, bone-local) to its end bone's
 (`end_offset`), or `length` along the bone's x; two radii make it tapered. `fit`
 sizes it to the vertices skinned mostly to its bone beside its segment (that
 percentile of their distances, per half for the two radii; vertices past its ends
@@ -623,7 +627,7 @@ motion taken out, the actor placed on a path), and writes `report.txt` (clipping
 of the skinned simulated vertices beyond their rest overlap with the colliders
 their group uses, vertices under the room, coat strain, recoveries, rebases, cost
 percentiles, per-phase cost) and a contact sheet per scenario of the proxies
-(colliders, coarse faces, links, anchors). It reads motions.txt's `mset ... own`,
+(colliders, coarse faces, links, anchors). It reads motions.txt's `rotate_motions`, `mset ... own`,
 `motions` and `carry` lines as the port does; the scenarios name P_EX110's slots,
 so for a model that adds P_EX110.mset from a slot on, `--slot-offset <slot>` moves
 them there. `--reference`'s slots are seen by the controls' `slot` lines, and a
@@ -633,15 +637,45 @@ with `--reference roxas_bf_h.mdlx B_EX390.mset 0,1,4,5`.
 
 Options: `--out <dir>` (contact sheets and the report), `--scenario <name>` (idle, calm,
 idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall, spawn,
-teleport, cut, platform, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
+teleport, cut, platform, days, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
 at once, the benchmark; default 1), `--draw-hz <hz>` (default 60), `--repeat <n>` (draws
 each n times), `--reference <B.mdlx> <B.mset> <slot,...>`.
+
+**The game's own animations** (`--days`): the model is posed as the game poses it, by the
+port's `models.cpp` itself linked into the tool (`khdays_models_offline_pose`: one draw's pose
+up to the cloth, so bones.txt's pairs, `place`, `spine`, `ik`, `ds_pose`, twists and cuffs all
+apply; the game's side stubbed in `port/tools/replay_game_stubs.cpp`), and the cloth simulated
+on it. Give the model from its mod's folder (`<mods>/<mod>/graphics/<name>.mdlx`, where the port
+finds it) and the game model it replaces:
+
+```bash
+khdays-secondary-replay xaldin_h.mdlx xaldin_h.secondary.txt xaldin_h.motions.txt --days xa_def_h.nsbmd \
+    --days-anim b_xa_A000=xa_def_h.nsbca#0 --days-anim b_xa_A001=xa_def_h.nsbca#1 \
+    --days-scenario settle=b_xa_A000:2,b_xa_A001:3:5,b_xa_A000:4 --scenario days
+```
+
+`--days <BMD0>` the game model's bytes (its file's BMD0 block); `--days-anim
+<name>=<BCA0 file>#<index>` one of its animations by the name motions.txt knows it, played
+alone as the scenario `days:<name>` (two loops, 4 s at least, 30 frames a second);
+`--days-scenario <name>=<anim>:<seconds>[:<m/s>],...` several one after another, each crossed
+from the last by the scenarios' fade (two game animations: models.cpp plays both by their shares, the game's nodes
+mixed, as the game cross-fades), moving forward at that speed. `--scenario days` plays
+only these. Each game animation goes to models.cpp with its length in frames, which a `follow` section
+stretches onto (the boss Saix's `016_004`). An animation motions.txt gives a slot is posed by its KH2 motion there (models.cpp plays it), but
+the cloth's controls are not told the slot (`slot` lines do not apply): for such an animation the KH2 scenarios
+(`idle`) are the game's case. **Hair** (`--hair <group,...> [--hair-ignore <bones>]`): the report's `hair:` line
+for those groups' vertices, how many of their triangles' edges pass through the drawn body's
+triangles (the most in a frame, the frames with any, the hair and body bones crossing most:
+on thin cloth, a hood, a crossing is what shows), and their twitch, each vertex's
+frame-to-frame acceleration in the first group's reference bone's frame (cm; from the
+quarter second on). `--hair-ignore` bones' triangles are not the body (other hair, hidden
+weapons).
 
 Diagnostics, on stderr:
 
 | Variable | Effect |
 |---|---|
-| `KHDAYS_REPLAY_DEBUG=<strain>` | the worst links once strain passes it, and every leg in a coarse face with its side |
+| `KHDAYS_REPLAY_DEBUG=<strain>` | the worst links once strain passes it, and every leg in a coarse face with its side; each new deepest simulated vertex past its rest depth in a collider (the report's `worst penetration`), with its bone and the collider |
 | `KHDAYS_REPLAY_LEGS=1` | each frame's deepest leg in the coat (cm) |
 | `KHDAYS_REPLAY_DUMP=<frame>` | the coat's controls and targets in the hips' space (`KHDAYS_REPLAY_DUMP_WORLD`: in the world) |
 | `KHDAYS_REPLAY_REFDUMP=<frame>` | the bake's and the simulated coat there (`--reference`) |
@@ -655,6 +689,11 @@ Diagnostics, on stderr:
 | `KHDAYS_REPLAY_GROUP=<group>` | the group whose bones' turns the jitter measures (coat) |
 | `KHDAYS_REPLAY_TWIST=1` | their largest roll about their own length each frame |
 | `KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]` | the contact sheet's frames |
+| `KHDAYS_REPLAY_MODEL_DUMP=<frame>` | that frame's drawn model into `--out`: each vertex (m, its heaviest bone) and each bone's frame, to fit colliders to |
+| `KHDAYS_REPLAY_SPREAD=<cm>[,<bone>-<bone>...]` | each frame whose farthest drawn vertex from the root bone is past that, with its bone (a mesh stretched off the body); the bones listed left out (hidden weapons) |
+| `KHDAYS_REPLAY_DAYS_TRACE=1` | `--days`: each draw, the joint that moved most since the last |
+| `KHDAYS_REPLAY_DAYS_BONES=<bone>,...` | `--days`: each draw, those KH2 bones' places (cm, model space): feet off the ground (`lift`), a weapon bone against its hand |
+| (note) | `--days` runs give the cloth no KH2 slot, so `control` lines keyed by `slot` do not apply there (they do in game); the plain scenarios (`idle`, `run`, ...) give it |
 
 The test's real-model checks: `KHDAYS_SECONDARY_ASSETS` names the folder the HD pack
 installs `roxas_b_h` in (`mods/<Mod>/graphics/ba/ch/ro/def_hb.p.z/mdl`).

@@ -465,10 +465,13 @@ void pose_cuffs(const Model &m)
                     const Mat up_now = above != placed.end() ? above->second.first : mul(skin[u], up_rest);
                     const Mat up_moved = above != placed.end() ? above->second.second : up_now;
                     Mat frame = mul(up_now, mul(inverse(up_rest), rest));
+                    // a parent the motion flattens to nothing on an axis (B_EX150's walk: the left flaps' y and z
+                    // 0.00) gives no ratio there: the bone keeps the parent's (already in up_now); the ratio at most 2
+                    // (flat against flat mid-blend made it 10^4, a flap a kilometre long)
                     for (std::size_t a = 0; a < 3; ++a) {
                         const float has = length({moved[a * 4], moved[a * 4 + 1], moved[a * 4 + 2]}),
                                     under = length({up_moved[a * 4], up_moved[a * 4 + 1], up_moved[a * 4 + 2]});
-                        const float by = under > 1e-9F ? has / under : 1.0F;
+                        const float by = under > 1e-2F ? std::fmin(has / under, 2.0F) : 1.0F;
                         for (std::size_t e = 0; e < 3; ++e)
                             frame[a * 4 + e] *= by;
                     }

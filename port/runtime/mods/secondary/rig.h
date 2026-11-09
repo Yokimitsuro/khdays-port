@@ -104,6 +104,9 @@ struct Collider {
     float radius = 0.0F, end_radius = 0.0F;
     std::uint32_t tags = 0;
     bool rest_side = true; // contact keeps the rest side, else the side a control came from
+    // its bone's and end bone's index into Rig::bones_out when the simulation moves them (-1 not): it then follows
+    // that bone as simulated (the last tick's, on its group's reference bone now), not as animated
+    int sim = -1, end_sim = -1;
 };
 
 // A bone rebuilt from its particle: rotation swung from its reference onto the solved point, twist

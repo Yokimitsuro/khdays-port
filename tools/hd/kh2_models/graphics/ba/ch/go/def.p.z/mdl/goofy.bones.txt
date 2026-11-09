@@ -1,0 +1,48 @@
+# KH2 bones (kh2_<index>) to Days' Goofy nodes, one pair a line: <joint> <node>.
+# This model is KH2's Goofy (P_EX030), Days' only Goofy model (goofy, def.p.z: no def_h). KH2's is a fifth shorter (the
+# hat's top 182 cm against the game's 218, the head's pivot 143.6 against 170.1, the hips 77.5 against 90.0), not
+# scaled: the KH2 characters keep their sizes to each other. Unpaired KH2 bones (the belt, shorts, boots' tops, ears,
+# hat, face, fingers) follow their parents.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+kh2_0 Bip01
+
+pose_degrees 5
+
+# Hips and spine: the waist (3), the chest (9), the chest's top that carries the arms (10, as the game's neck node
+# carries its clavicles) and the head's pivot (50)
+kh2_2 Bip01_Pelvis
+kh2_3 Bip01_Spine
+kh2_9 Bip01_Spine1
+kh2_10 Bip01_Neck
+kh2_50 Bip01_Head
+
+# Legs (thigh, knee, foot): KH2's legs hang from the root (122-124), 130 the thigh, 131 the knee, 136 the foot on the
+# ankle (132; the boot's top, 133-134, rides it); the right leg is the left's +13
+kh2_130 Bip01_L_Thigh
+kh2_131 Bip01_L_Calf
+kh2_136 Bip01_L_Foot
+kh2_143 Bip01_R_Thigh
+kh2_144 Bip01_R_Calf
+kh2_149 Bip01_R_Foot
+
+# Arms (clavicle, shoulder, elbow, wrist): the forearm runs 18-19-22-24, the glove (26) on the wrist; the sleeve's
+# puff (20) rides the forearm; the right arm is the left's +74
+kh2_13 Bip01_L_Clavicle
+kh2_17 Bip01_L_UpperArm
+kh2_18 Bip01_L_Forearm
+kh2_26 Bip01_L_Hand
+kh2_87 Bip01_R_Clavicle
+kh2_91 Bip01_R_UpperArm
+kh2_92 Bip01_R_Forearm
+kh2_100 Bip01_R_Hand
+
+# Two-bone limbs. `exact` (the legs): the feet go where the game's are. KH2's ankle stands 7.7 cm over its sole, the
+# game's 11.3, so 3.7 down; nothing forward (not measured for him).
+ik kh2_130 kh2_131 kh2_136 exact 0 -3.7 0
+ik kh2_143 kh2_144 kh2_149 exact 0 -3.7 0
+ik kh2_17 kh2_18 kh2_26
+ik kh2_91 kh2_92 kh2_100
+
+align kh2_136 foot
+align kh2_149 foot

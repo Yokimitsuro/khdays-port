@@ -1,0 +1,77 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Xigbar (B_EX140) as Days' xigbar_h and xigbar, playing KH2's own motions for him (`own`: on his own
+# bones). Its slots: 0 idle (00A), 1 and 2 the walk (01A both: no run of its own), 10 the damage from the front (20A),
+# 11 from behind (22A); no jump, fall or landing (3 and 6-9 are empty, 4, 5, 20 and 21 hold 00A again).
+mset B_EX140.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# His motions stand him on the ceiling (KH2's fight has him there): upside down, his left side on -x, the ankles 220.2
+# cm up at rest's 14.8, his walk forward along +z as any other's. Turned half about his forward axis (z) at 117.5 cm,
+# (x, y, z) to (-x, 235 - y, z): on his feet, the soles on the floor. The root motion and the feet on the floor
+# (IKAdjust) turn with them.
+rotate_motions 0 0 180 117.5
+
+# His arrowguns (Days' xig_h_L, xig_h_R) carried by his KH2 hands as the game's hands carry them: in his fists in KH2
+# motions; sent off by the game, they leave with the game's (bones.txt hides his own)
+weapon xig_h_L hand 118
+weapon xig_h_R hand 191
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 120-141 193-214
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_xi_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_xi_A000
+# The run stays the game's; the port's walk (the stick pushed short of running) plays KH2's 01A at its own pace
+walk b_xi_A001 1 blend 8
+# Hit reactions: the game's from the front (A005, A006) play his front damage (20A), from behind (A007, A008) his back
+# damage (22A) (Ov022_TurnAwayFromDrift: A005/A006 in front, A007/A008 behind)
+b_xi_A005 10 finish blend 8
+b_xi_A006 10 finish blend 8
+b_xi_A007 11 finish blend 8
+b_xi_A008 11 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# jump (A002-A004), the ledge (A009-A011), the attacks (B000-B012, ba/ch/xi/am.p2), the guard and the other actions
+# (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L004)
+b_xi_A001 blend 8
+b_xi_A002 blend 8
+b_xi_A003 blend 8
+b_xi_A004 blend 8
+b_xi_A009 blend 8
+b_xi_A010 blend 8
+b_xi_A011 blend 8
+b_xi_B000 blend 8
+b_xi_B001 blend 8
+b_xi_B002 blend 8
+b_xi_B003 blend 8
+b_xi_B004 blend 8
+b_xi_B005 blend 8
+b_xi_B006 blend 8
+b_xi_B007 blend 8
+b_xi_B008 blend 8
+b_xi_B009 blend 8
+b_xi_B010 blend 8
+b_xi_B011 blend 8
+b_xi_B012 blend 8
+b_xi_Ca000 blend 8
+b_xi_Ca001 blend 8
+b_xi_Ca002 blend 8
+b_xi_Ca003 blend 8
+b_xi_Ca004 blend 8
+b_xi_Ca005 blend 8
+b_xi_Ca006 blend 8
+b_xi_Ca007 blend 8
+b_xi_Ca008 blend 8
+b_xi_D000 blend 8
+b_xi_D001 blend 8
+b_xi_D002 blend 8
+b_xi_D003 blend 8
+b_xi_L000 blend 8
+b_xi_L001 blend 8
+b_xi_L002 blend 8
+b_xi_L003 blend 8
+b_xi_L004 blend 8

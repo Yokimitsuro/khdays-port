@@ -230,6 +230,7 @@ void read_settings(Model *model, Loading &loading)
     loading.bones = read_bones(path);
     const BonesFile &bones = loading.bones;
     model->scale = bones.scale;
+    model->game_scale = bones.game_scale;
     model->cull = bones.cull;
     model->pose_degrees = bones.pose_degrees;
     model->held_name = bones.held;
@@ -237,9 +238,12 @@ void read_settings(Model *model, Loading &loading)
     model->held_own_turn = bones.held_own_turn;
     if (bones.held_own_turn)
         model->held_from_game = inverse(turn_of(bones.held_turn));
+    if (bones.held_onto)
+        model->held_onto = turn_of(bones.held_turn);
     model->cuff_settings = bones.cuff_settings;
     model->cuff_motion_flaps = bones.cuff_motion_flaps;
     model->setting = setting_named(name, bones.setting);
+    model->limit_lists = named_lists(name, game, bones.limit_shapes);
     model->kept_lists = kept_lists(name, loading.game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
     if (loading.character != nullptr && loading.character->model_scale > 0.0F) {
@@ -359,7 +363,13 @@ void correct_rest_pose(Model *model, const Loading &loading)
         }
         // `align`: an end (a hand, a foot) turned whole onto the game's at rest by its shape (the way above only
         // turns a bone toward its one paired child, never about itself; ends have none)
-        if (const auto al = bones.aligns.find(joint.name); al != bones.aligns.end()) {
+        // `align ... rest`: no correction at all, the joint at its own rest turn when the game's node is at its own, so
+        // its parents' turns at rest (a shin turned onto the game's) do not tilt it (a foot's sole stays as built)
+        if (const auto al = bones.aligns.find(joint.name); al != bones.aligns.end() && al->second == "rest") {
+            joint.correction = kIdentity;
+            khdays_log("models: %s: %s keeps its own rest turn on %s (align rest)", name.c_str(), joint.name.c_str(),
+                       game.object_names[static_cast<std::size_t>(joint.node)].c_str());
+        } else if (al != bones.aligns.end()) {
             std::vector<std::array<float, 3>> own, its;
             const Mat &wg = rest[static_cast<std::size_t>(joint.node)];
             for (const auto &mesh : mod.model.meshes)
@@ -524,8 +534,12 @@ void carry_attachments(Model *model, const Loading &loading)
                     model->node_local[g] = mul(inverse(rest[static_cast<std::size_t>(a)]), rest[g]);
                     break;
                 }
-    for (const Mat &w : rest)
-        model->node_rest_place.push_back(translation(w));
+    for (const Mat &w : rest) { // `game_scale`: the game's skeleton at rest that much larger about the origin
+        auto at = translation(w);
+        for (float &c : at)
+            c *= model->game_scale;
+        model->node_rest_place.push_back(at);
+    }
 }
 
 // `place`: joints on their game nodes' own places; the bone above each (when that joint's only paired
@@ -613,6 +627,7 @@ void add_spine(Model *model, const Loading &loading)
             ok = sp.pelvis >= 0 && sp.pelvis != sp.root &&
                  std::find(sp.chain.begin(), sp.chain.end(), sp.pelvis) == sp.chain.end();
         }
+        sp.onto = spine_line[3] == "onto";
         if (ok) {
             model->spine = std::move(sp);
         } else {
@@ -909,6 +924,28 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
                    model->meshes[static_cast<std::size_t>(at)].indices.size() / 3U);
         model->meshes[static_cast<std::size_t>(at)].indices.clear();
     }
+    for (const auto &[list, mode, what] : {std::tuple{&bones.limit_show_meshes, 1, "limit_show_mesh"},
+                                           std::tuple{&bones.limit_hide_meshes, -1, "limit_hide_mesh"}}) {
+        for (const int at : *list) {
+            if (at < 0 || static_cast<std::size_t>(at) >= model->meshes.size()) {
+                khdays_log("models: %s: %s %d: the file has %zu meshes (0 to %zu); it is left out", name.c_str(), what,
+                           at, model->meshes.size(), model->meshes.empty() ? 0U : model->meshes.size() - 1U);
+                continue;
+            }
+            model->meshes[static_cast<std::size_t>(at)].limit = static_cast<signed char>(mode);
+            model->limit_meshes = true;
+            khdays_log("models: %s: %s %d: %zu triangles %s", name.c_str(), what, at,
+                       model->meshes[static_cast<std::size_t>(at)].indices.size() / 3U,
+                       mode > 0 ? "drawn only in its limit animations" : "not drawn in its limit animations");
+        }
+    }
+    model->limit_animations = bones.limit_animations;
+    if (model->limit_meshes && model->limit_animations.empty() && bones.limit_shapes.empty())
+        khdays_log(
+            "models: %s: limit_show_mesh / limit_hide_mesh without `limit_animations <name|prefix*>...` or "
+            "`limit_shapes <name|prefix*>...`: write which of the game's animations or shapes are its limit; the "
+            "meshes stay as out of it",
+            name.c_str());
 // below over `fade` (a gradient into the coat's dark inside). A triangle all hidden is dropped; one in
 // the fade goes to a blended mesh of its own (the same picture), the rest kept as they were: the whole
 // body blended would be drawn translucent, its parts covering each other wrongly.

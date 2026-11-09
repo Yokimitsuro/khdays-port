@@ -1,0 +1,86 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is KH2's Donald (P_EX020), playing his own mset on his own bones; its slots are numbered as P_EX110's
+# and P_EH000's, so the lines are riku_h's.
+mset P_EX020.mset
+# off: the game places Donald and KH2's root motion is taken out of the bones (as KH2 does)
+root_motion off
+# The game's weapon (do_h_R) on KH2's right hand's end (131, the fingers' parent), where KH2 holds his staff: posed by
+# W_EX020.mset it stays 5.2-5.4 cm from his closed fingers in every motion measured, any other bone 7-77 cm. Turned
+# from 131's axes into the frame the game's weapon is made in (do_h_R's rest frame on the game's model)
+weapon do_h_R 131 rotate 180 0 0
+# What he holds plays W_EX020.mset's slots as he plays P_EX020's (on W_EX020's bones; bone 3 the staff). The
+# replaced weapons (`held`) are posed by it.
+weapon_motions W_EX020.mset W_EX020.mdlx 3
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 2 (the calm idle) turns
+# them at its first frame
+ds_pose 2 55-66 132-143
+
+b_do_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_do_A000
+# The game's landing animation (`air` lines' `land`)
+landing b_do_A004
+b_do_A001 8 blend 8
+b_do_A002 14 blend 8
+b_do_A003 14 blend 8
+b_do_A003@12 18 blend 8
+b_do_A004 22 finish 24 blend 8
+# Ledge: KH2's grab (30) holds its loop from tick 84, so the game's hang plays on there; the hand on the ledge
+# moved onto the game's (KH2 cm, the model's axes: x left, y up, z forward). Both hang by the left hand: the game's
+# at (12.1, 82.5, 35.5) in the root node's frame, KH2's (slot 30's loop, root motion out) at (2.2, 70.7, 80.6), so
+# KH2 hangs 45.1 cm too far forward, into the wall, and 11.8 cm too low. The climb (34, 104 ticks against the game's
+# 15 frames: `follow` ends it with the game's) glides from there to where the game's climb ends against its idle:
+# there the game's hips are 19.1 cm over its idle's (A000) and 4.7 further forward, KH2's 32.1 over its idle's
+# (slot 0) and 5.8 further forward.
+b_do_A009 30 blend 8 offset 9.9 11.8 -45.1
+b_do_A010 30 start_loop blend 8 offset 9.9 11.8 -45.1
+b_do_A011 34 follow blend 8 offset 9.9 11.8 -45.1 to -3.1 -13.0 -1.1
+# Damage, as riku_h's: KH2 returns to its calm idle after these, then readies (slot 24, A010) back into the battle
+# stance when the game goes back to its idle
+b_do_A008 50 finish 24 blend 8
+b_do_A005 42 finish 24 blend 8
+b_do_A007 54 finish 24 blend 8
+b_do_A006 46 finish 24 blend 8
+# Damage in the air: KH2's aerial damage loops (66 front, 74 back); landing straight out of it plays KH2's landing
+# (70, 78), then readies (24)
+air b_do_A005 66 land 70 finish 24 blend 8
+air b_do_A006 66 land 70 finish 24 blend 8
+air b_do_A007 74 land 78 finish 24 blend 8
+air b_do_A008 74 land 78 finish 24 blend 8
+
+# Every line above fades over 8 frames. The game's own animations (no KH2 motion for them: his attacks, guard,
+# magic and limit) fade into the idle over 8 frames when the game goes back to it
+b_do_A012 blend 8
+b_do_A013 blend 8
+b_do_B000 blend 8
+b_do_B001 blend 8
+b_do_B002 blend 8
+b_do_B003 blend 8
+b_do_B004 blend 8
+b_do_B005 blend 8
+b_do_B006 blend 8
+b_do_B007 blend 8
+b_do_Ca000 blend 8
+b_do_Ca001 blend 8
+b_do_Ca002 blend 8
+b_do_Ca003 blend 8
+b_do_Ca004 blend 8
+b_do_Ca005 blend 8
+b_do_Ca006 blend 8
+b_do_Ca007 blend 8
+b_do_Ca008 blend 8
+b_do_D000 blend 8
+b_do_D001 blend 8
+b_do_D002 blend 8
+b_do_D003 blend 8
+b_do_L000 blend 8
+b_do_L001 blend 8
+b_do_L002 blend 8
+b_do_L003 blend 8
+
+# The port's walk (the stick pushed short of running), where the game plays its run slowed: KH2's walk at its own
+# pace, crossing from and to the run over 6 frames
+walk b_do_A001 4 blend 6

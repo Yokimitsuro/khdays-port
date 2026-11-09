@@ -204,6 +204,10 @@ private:
     std::vector<Aabb> face_box_;
     // bone rebuilding
     std::vector<Frame> bone_out_;
+    // each rebuilt bone as the last reconstruct left it, on its group's reference bone, for the colliders on
+    // simulated bones (Collider::sim); false until a tick has rebuilt them (and after a reset)
+    std::vector<Frame> sim_relative_;
+    bool sim_relative_valid_ = false;
     std::vector<std::uint8_t> bone_done_;
     // a freely swinging bone (no swing limit): its last turn, and whether it has one since a start
     std::vector<Quat> swung_;

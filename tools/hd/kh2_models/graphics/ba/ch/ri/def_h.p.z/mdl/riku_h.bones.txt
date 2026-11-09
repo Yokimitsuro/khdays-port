@@ -1,0 +1,91 @@
+# KH2 bones (kh2_<index>) to Days' Riku nodes, one pair a line: <joint> <node>.
+# This model is KH2's coat Riku with the blindfold (N_EX950). Its rig is the coat Roxas's (N_EX830,
+# roxas_b_h.bones.txt) at Riku's size (hips 117.4 cm against 106.2), numbered as his through the head
+# (0-170), the right arm 11 further on (N_EX830's 224-280 are 235-291); the hair and the blindfold (171-226)
+# are its own and its sword is 293-305. Days' riku_h is Days' roxas_b_h's skeleton with a node at the back
+# of the head (Bip01_pt1) and his weapon's (ri_h_R). Size: KH2 centimetres imported as metres, no `scale`.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+# (KH2 motions are placed on the game's root node, riku_R, whatever this says).
+kh2_0 Bip01
+
+# Turn a joint at rest to Days' bone when they differ by more than this (default 20).
+pose_degrees 5
+
+# Hips and spine
+kh2_2 Bip01_Pelvis
+kh2_97 Bip01_Spine
+kh2_98 Bip01_Spine1
+kh2_166 Bip01_Neck
+kh2_169 Bip01_Head
+
+# Left leg (thigh, knee, foot)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+
+# Right leg
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Left arm (clavicle, shoulder, elbow, hand)
+kh2_107 Bip01_L_Clavicle
+kh2_111 Bip01_L_UpperArm
+kh2_112 Bip01_L_Forearm
+kh2_133 Bip01_L_Hand
+
+# Right arm
+kh2_235 Bip01_R_Clavicle
+kh2_239 Bip01_R_UpperArm
+kh2_240 Bip01_R_Forearm
+kh2_261 Bip01_R_Hand
+
+# Two-bone limbs, as roxas_b_h's. The feet's offset (cm, rest axes): KH2's ankle stands 17.1 cm over its sole,
+# the game's 10.2, so 6.9 up; 1.6 forward, roxas_b_h's (not measured for him).
+ik kh2_5 kh2_6 kh2_9 exact 0 6.9 1.6
+ik kh2_14 kh2_15 kh2_18 exact 0 6.9 1.6
+ik kh2_111 kh2_112 kh2_133
+ik kh2_239 kh2_240 kh2_261
+
+# The pelvis's vertices 15% thinner front to back (its local y points backward; roxas_b_h's 10% left them through
+# the coat) and the thighs' 10% (their y backward too), so the hips and thighs stay under the coat. The colliders
+# on them (secondary.txt) are sized on these thinner meshes.
+mesh_scale kh2_2 1 0.85 1
+mesh_scale kh2_5 1 0.9 1
+mesh_scale kh2_14 1 0.9 1
+
+# The pelvis under the coat not drawn, so it never comes through it (as e_rox_hb's, but the pelvis alone, not the
+# legs): what kh2_2 carries from below the coat's waist ring (its vertices at 110-116 cm, the coat's own) down to
+# where the thighs start (the hip joints at 96), then faded back in over 4 cm (the model's own cm at rest)
+hide kh2_2 from 109 to 96 fade 4
+
+align kh2_9 foot
+align kh2_18 foot
+align kh2_133 hand
+align kh2_261 hand
+
+# His sword (Way to the Dawn, on 293-305 by the root): meshes 4 and 5. The game draws its own weapon on ri_h_R,
+# put on his hand by motions.txt's `weapon` line.
+hide_mesh 4 5
+
+# The cuffs, as roxas_b_h's (the same sleeves; the right side 11 further on)
+twist kh2_114 kh2_133 kh2_112 kh2_113
+twist kh2_242 kh2_261 kh2_240 kh2_241
+swing kh2_116 kh2_133 kh2_113 0.7 kh2_123
+swing kh2_244 kh2_261 kh2_241 0.7 kh2_251
+cuff kh2_116 kh2_133 kh2_117 kh2_126 kh2_123 kh2_120
+cuff kh2_244 kh2_261 kh2_245 kh2_254 kh2_251 kh2_248
+cuff_fit 0.3 20 0.72 0.35 0.62 0.74 2
+cuff_thumb 0.5 28
+cuff_pose 110 2.86
+cuff_pose_bone kh2_115 -0.02 0.00 0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_118 -0.03 16.22 -0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_120 0.00 10.06 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_121 -0.00 -10.07 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_124 -0.02 -78.02 0.03 0.322 1.000 1.000
+cuff_pose_bone kh2_243 0.02 0.00 -0.00 0.669 1.000 1.000
+cuff_pose_bone kh2_246 0.03 16.22 0.01 1.258 1.000 1.000
+cuff_pose_bone kh2_248 -0.00 10.06 0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_249 0.00 -10.07 -0.01 1.000 1.000 1.000
+cuff_pose_bone kh2_252 0.02 -78.02 -0.03 0.322 1.000 1.000

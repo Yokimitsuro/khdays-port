@@ -1,0 +1,66 @@
+# Secondary motion of KH2's Donald (P_EX020) drawn as Days' donald: no coat; his hood (70-72) as riku_h's, and his
+# tail feathers (8-11), the feather on his forehead (88-89) and the belt's two side flaps (154, 157) as hair. Several
+# of these chains start with bones on one point (8-10, 70-71, 88-89), which give a control no length, so each group's
+# controls are the chain's bones from the first with a length or vertices, attached to the one before. Colliders
+# fitted to his vertices. Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every line.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 1 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones), fitted to the vertices skinned to them ---
+# his round bottom (2's vertices 18-43 cm up, 14.5 to either side): a sphere, clear of the tail behind it
+collider pelvis   sphere 2 offset 2.5 -2.5 0 radius 12.5 tags body
+collider belly    capsule 31 35 fit 0.85 tags torso
+collider chest    capsule 38 39 fit 0.85 tags torso
+collider thigh_l  capsule 13 14 fit 0.9 tags legs
+collider calf_l   capsule 14 17 fit 0.9 tags legs
+collider foot_l   capsule 17 20 fit 0.9 tags legs
+collider thigh_r  capsule 22 23 fit 0.9 tags legs
+collider calf_r   capsule 23 26 fit 0.9 tags legs
+collider foot_r   capsule 26 29 fit 0.9 tags legs
+collider arm_l    capsule 46 47 fit 0.85 side motion tags arms
+collider forearm_l capsule 47 50 fit 0.85 side motion tags arms
+collider arm_r    capsule 123 124 fit 0.85 side motion tags arms
+collider forearm_r capsule 124 127 fit 0.85 side motion tags arms
+# the head: 79's vertices (70-90 cm, 9.4 to either side), its middle 10 cm up the bone, clear of the hood under it
+collider head     sphere 79 offset 10 0 0 radius 9.5 tags head
+
+# --- The hood: across the back of his neck (60-62 cm), 71 its front ring, 72 behind (70 a helper on 71's point) ---
+group hood chain preset kh2_hood
+  attach 70
+  chain 71 72
+  settle on steps 240
+  mode simulated
+end
+
+# --- Hair-like: guided by his own motions where they key these bones, a little follow-through of their own ---
+# the tail feathers: 10 at the tail's end (8 and 9 helpers on its point), 11 their tip, turned up
+group tail hair preset kh2_hair
+  attach 9
+  tuft 10 11
+  collide legs
+end
+# the feather on his forehead (89; 88 a helper on its point)
+group feather hair preset kh2_hair
+  attach 88
+  tufts 89
+  collide none
+end
+# the belt's side flaps, one bone each, hanging from their helpers (153, 156) on the chest bone's place. They
+# collide with nothing: in KH2's run his feet come up through them (5.5 cm), which a 5 cm flap only shook against
+group flap_l hair preset kh2_hair
+  attach 153
+  tufts 154
+  collide none
+end
+group flap_r hair preset kh2_hair
+  attach 156
+  tufts 157
+  collide none
+end

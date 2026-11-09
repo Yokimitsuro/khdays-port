@@ -1,0 +1,4 @@
+# KH2's F_TT160: three bones, its vertices on 2, made in the frame W_EX020 is made in (bones 0-2 the same axes) at
+# another holder's hand (108 cm up), so posed as W_EX020 by the body's `weapon_motions`. Its roll in the hand is
+# W_EX020's posed bone 2's (not checked against how KH2 holds it).
+held kh2_2

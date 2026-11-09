@@ -23,6 +23,13 @@ BonesFile read_bones(const std::string &model_file)
             bones.scale = std::strtof(b.c_str(), nullptr);
             if (!(bones.scale > 0.0F))
                 bones.scale = 1.0F;
+        } else if (a == "game_scale") {
+            bones.game_scale = std::strtof(b.c_str(), nullptr);
+            if (!(bones.game_scale > 0.0F)) {
+                std::fprintf(stderr, "models: %s: write `game_scale <factor over 0>`; the line is ignored\n",
+                             path.c_str());
+                bones.game_scale = 1.0F;
+            }
         } else if (a == "keep") {
             for (std::string node = b; !node.empty(); node.clear(), words >> node)
                 bones.keep.push_back(node);
@@ -100,8 +107,15 @@ BonesFile read_bones(const std::string &model_file)
                 if (riding)
                     bones.places_riding[b] = ridden;
             }
-        } else if (a == "hide_mesh") {
-            // hide_mesh <index>...: whole meshes of the file not drawn (a weapon made into the hand's own mesh)
+        } else if (a == "limit_animations" || a == "limit_shapes") { // <name|prefix*>...
+            auto &to = a == "limit_animations" ? bones.limit_animations : bones.limit_shapes;
+            std::string w = b;
+            do
+                to.push_back(w);
+            while (words >> w);
+        } else if (a == "hide_mesh" || a == "limit_show_mesh" || a == "limit_hide_mesh") {
+            // hide_mesh <index>...: whole meshes of the file not drawn (a weapon made into the hand's own mesh);
+            // limit_show_mesh, limit_hide_mesh: drawn only while a `limit_animations` animation plays, or then not
             std::vector<int> meshes;
             bool ok = true;
             std::string w = b;
@@ -113,12 +127,15 @@ BonesFile read_bones(const std::string &model_file)
                     meshes.push_back(static_cast<int>(n));
             } while (ok && words >> w);
             if (ok) {
-                bones.hide_meshes.insert(bones.hide_meshes.end(), meshes.begin(), meshes.end());
+                auto &to = a == "hide_mesh"         ? bones.hide_meshes
+                           : a == "limit_show_mesh" ? bones.limit_show_meshes
+                                                    : bones.limit_hide_meshes;
+                to.insert(to.end(), meshes.begin(), meshes.end());
             } else {
                 std::fprintf(stderr,
-                             "models: %s: write `hide_mesh <index>...` (the file's meshes, whole numbers from 0); the "
-                             "line is ignored\n",
-                             path.c_str());
+                             "models: %s: write `%s <index>...` (the file's meshes, whole numbers from 0); the line is "
+                             "ignored\n",
+                             path.c_str(), a.c_str());
             }
         } else if (a == "hide") {
             HideLine h;
@@ -144,12 +161,21 @@ BonesFile read_bones(const std::string &model_file)
                              path.c_str());
             }
         } else if (a == "spine") {
-            std::string end, word, hips;
-            if (words >> end && (!(words >> word) || (word == "hips" && words >> hips))) {
-                bones.spine = {b, end, hips};
+            std::string end, word, hips, onto;
+            bool ok = static_cast<bool>(words >> end);
+            while (ok && words >> word) {
+                if (word == "hips" && hips.empty())
+                    ok = static_cast<bool>(words >> hips);
+                else if (word == "onto" && onto.empty())
+                    onto = word;
+                else
+                    ok = false;
+            }
+            if (ok) {
+                bones.spine = {b, end, hips, onto};
             } else {
                 std::fprintf(stderr,
-                             "models: %s: write `spine <base joint> <end joint> [hips <joint>]`; the line is "
+                             "models: %s: write `spine <base joint> <end joint> [hips <joint>] [onto]`; the line is "
                              "ignored\n",
                              path.c_str());
             }
@@ -272,15 +298,26 @@ BonesFile read_bones(const std::string &model_file)
             std::string how;
             // ... rest: made at the holding bone's rest, no motions; rest <x> <y> <z>: the turn into the game's weapon
             // frame given here (as a `weapon` line's), for what no `weapon` line holds (a cutscene's own object)
-            bones.held_rest = words >> how && how == "rest";
-            bones.held_own_turn = bones.held_rest && static_cast<bool>(words >> bones.held_turn[0] >>
-                                                                       bones.held_turn[1] >> bones.held_turn[2]);
+            // ... turn <x> <y> <z>: posed by the motions, its joint's rest frame turned so (degrees about its own x,
+            // y, z) into the weapon bone's, for a model made in other axes than the weapon the motions are for
+            const bool has_word = static_cast<bool>(words >> how);
+            bones.held_rest = has_word && how == "rest";
+            bones.held_onto = has_word && how == "turn";
+            const bool turn_given =
+                (bones.held_rest || bones.held_onto) &&
+                static_cast<bool>(words >> bones.held_turn[0] >> bones.held_turn[1] >> bones.held_turn[2]);
+            bones.held_own_turn = bones.held_rest && turn_given;
+            if (bones.held_onto && !turn_given) {
+                bones.held_onto = false;
+                std::fprintf(stderr, "models: %s: write `held %s turn <x> <y> <z>` (degrees); held without a turn\n",
+                             path.c_str(), b.c_str());
+            }
         } else if (a == "align") {
             std::string kind;
-            if (words >> kind && (kind == "foot" || kind == "hand")) {
+            if (words >> kind && (kind == "foot" || kind == "hand" || kind == "rest")) {
                 bones.aligns[b] = kind;
             } else {
-                std::fprintf(stderr, "models: %s: write `align <joint> foot|hand`; the line is ignored\n",
+                std::fprintf(stderr, "models: %s: write `align <joint> foot|hand|rest`; the line is ignored\n",
                              path.c_str());
             }
         } else {
@@ -334,6 +371,26 @@ std::set<std::uint32_t> kept_lists(const std::string &name, const khdays::assets
         }
         if (kept)
             lists.insert(mesh.list_offset);
+    }
+    return lists;
+}
+
+// bones.txt's `limit_shapes`: the game's shapes of those names (a prefix ending in *), by their lists' places. A shape
+// whose material is fully transparent is never sent (NNSi_G3dFuncSbc_MAT, _SHP), so one drawn shows the look.
+std::set<std::uint32_t> named_lists(const std::string &name, const khdays::assets::NeutralModel &game,
+                                    const std::vector<std::string> &wanted)
+{
+    std::set<std::uint32_t> lists;
+    for (const auto &want : wanted) {
+        const bool prefix = !want.empty() && want.back() == '*';
+        std::size_t found = 0;
+        for (const auto &mesh : game.meshes)
+            if (prefix ? mesh.name.compare(0, want.size() - 1, want, 0, want.size() - 1) == 0 : mesh.name == want) {
+                lists.insert(mesh.list_offset);
+                ++found;
+            }
+        khdays_log("models: %s: limit_shapes %s: %zu of the game's shapes%s", name.c_str(), want.c_str(), found,
+                   found == 0 ? "; check the name against the game's (--dump-graphics)" : "");
     }
     return lists;
 }

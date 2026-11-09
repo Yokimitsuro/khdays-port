@@ -710,6 +710,13 @@ void Cook::finish()
         s.reference = relative(rest[static_cast<std::size_t>(gr.reference_bone)], rest[static_cast<std::size_t>(b)]);
         rig.bones_out.push_back(s);
     }
+    // a collider on a simulated bone follows it as simulated
+    for (Collider &k : rig.colliders) {
+        if (k.bone >= 0)
+            k.sim = sim_index[static_cast<std::size_t>(k.bone)];
+        if (k.kind == ShapeKind::capsule && k.end_bone >= 0)
+            k.end_sim = sim_index[static_cast<std::size_t>(k.end_bone)];
+    }
     // anchors under a simulated bone ride it
     for (auto &p : rig.particles) {
         if (p.dynamic || p.carrier != -3)

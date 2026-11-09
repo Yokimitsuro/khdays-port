@@ -1,0 +1,83 @@
+# The game's animations played as KH2 motions: `<game animation> <mset slot>`, one a line.
+# The slot is the entry's number in the mset (0 first). Anything not listed keeps the game's animation.
+# KHDAYS_TRACE_MODELS=1 logs the names of the game's animations as they play.
+# This model is Demyx (B_EX120_HB) as Days' demyx_h and demyx, playing KH2's own motions for him (`own`: on his own
+# bones), from B_EX120_HB.mset (B_EX120.mset holds four motions only). Its slots: 0 idle (00A), 1 and 2 the walk (01A
+# both: no run of its own), 3 the jump (52A, not used), 4 the fall (53A), 5 the landing (54A), 10-21 as B_EX400's.
+mset B_EX120_HB.mset own
+# off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
+root_motion off
+# His sitar: the game draws it as an object of its own (ba/ch/de/w_.p2; its node is de_w00, or named for the model on
+# de_w01200, de_w02400, de_w07300 and de_w07320; the file's hit shapes and swing traces have none and are left alone).
+# Held on his left hand (133), which carries KH2's sitar (264, from the root) the most steadily of his bones: the game's
+# grip there in the game's own animations, KH2's in KH2 motions, turning from one to the other through a fade. On 264:
+# Days' sitar's width (de_w00's x) along 264's z, its length (y) along x, its thickness (z, the bowl's side -z) along y
+# (`rotate 0 -90 -90`); `offset`, cm in de_w00's axes: its origin (the grip, 61 cm up its 196) moved to KH2's (the
+# middle of its 205). Of the 24 axis-aligned turns this lays Days' vertices nearest the baked ones (14.0 cm mean,
+# against 18.0 mirrored across its width), unchecked in game
+weapon_model ba/ch/de/w_ de_w00,de_w01200,de_w02400,de_w07300,de_w07320 264 hand 133 rotate 0 -90 -90 offset -0.2 -34.6 2.3
+
+# The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
+ds_pose 0 135-156 233-254
+
+# KH2's battle idle (00A) for the game's idle. Every line crosses from what played before over 8 frames.
+b_de_A000 0 blend 8
+# The game's idle a `finish` plays out into
+idle b_de_A000
+# The game's landing animation: an `air` line's `land` slot plays while it does (out of the aerial damage)
+landing b_de_A004
+# The run stays the game's; the port's walk (the stick pushed short of running) plays KH2's 01A at its own pace
+walk b_de_A001 1 blend 8
+# The fall (53A) from the game's 12th frame in the air, from its loop (tick 12 of 36: before it, it comes out of
+# KH2's jump), as larxene_h's; the take-off and the rise stay the game's. The landing (54A), played out into the idle
+b_de_A003@12 4 start_loop blend 8
+b_de_A004 5 finish blend 8
+# Hit reactions (20A-23A: slots 10-13)
+b_de_A005 10 finish blend 8
+b_de_A006 11 finish blend 8
+b_de_A007 13 finish blend 8
+b_de_A008 12 finish blend 8
+# The aerial damage (30A, 31A; 32A, 33A)
+air b_de_A005 16 land 17 finish blend 8
+air b_de_A006 16 land 17 finish blend 8
+air b_de_A007 18 land 19 finish blend 8
+air b_de_A008 18 land 19 finish blend 8
+
+# The game's own animations (no slot): each fades into the idle over 8 frames rather than cutting to it. The run, the
+# take-off, the ledge (A009-A011), A012 and A013, the attacks (B000-B011, ba/ch/de/am.p2), the guard and the other
+# actions (Ca000-Ca008, ab.p2), the item and the magic (D000-D003), the limits (L000-L002)
+b_de_A001 blend 8
+b_de_A002 blend 8
+b_de_A009 blend 8
+b_de_A010 blend 8
+b_de_A011 blend 8
+b_de_A012 blend 8
+b_de_A013 blend 8
+b_de_B000 blend 8
+b_de_B001 blend 8
+b_de_B002 blend 8
+b_de_B003 blend 8
+b_de_B004 blend 8
+b_de_B005 blend 8
+b_de_B006 blend 8
+b_de_B007 blend 8
+b_de_B008 blend 8
+b_de_B009 blend 8
+b_de_B010 blend 8
+b_de_B011 blend 8
+b_de_Ca000 blend 8
+b_de_Ca001 blend 8
+b_de_Ca002 blend 8
+b_de_Ca003 blend 8
+b_de_Ca004 blend 8
+b_de_Ca005 blend 8
+b_de_Ca006 blend 8
+b_de_Ca007 blend 8
+b_de_Ca008 blend 8
+b_de_D000 blend 8
+b_de_D001 blend 8
+b_de_D002 blend 8
+b_de_D003 blend 8
+b_de_L000 blend 8
+b_de_L001 blend 8
+b_de_L002 blend 8

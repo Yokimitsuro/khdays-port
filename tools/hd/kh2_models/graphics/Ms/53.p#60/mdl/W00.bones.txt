@@ -1,0 +1,12 @@
+# The boss Saix's claymore (Ms/53.p's W00: the game's claymore object, Ov259_HelperInit; Mission Mode's A_W00 takes
+# these settings), drawn as his KH2 model's own claymore: B_EX160's meshes on its bone 379, the rest of him hidden.
+# The object is where the game puts it: on his hand's sa_h_R while he holds it (his body's bones.txt rides it on the
+# KH2 hand), flying on its own once thrown; scaled to nothing while the game shows the berserk one (W01) instead.
+
+# 379's own frame on the game's claymore, turned as the body's `weapon sa_h_R 379 rotate 0 90 0`: Days' claymore runs
+# along its z, KH2's along 379's x, the grips together (the root carries the blade from -37.9 cm, 379 from -38.6)
+held kh2_379 rest 0 90 0
+
+# Everything but the closed claymore: the body (0-9, 14, 15, 17, 18) and the berserk spikes (16). Shown: 10 the blade,
+# 11 by its head, 12 the ring of short spikes, 13 the inner ring.
+hide_mesh 0 1 2 3 4 5 6 7 8 9 14 15 16 17 18

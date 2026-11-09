@@ -620,7 +620,7 @@ its elbows and hands, so a hand the cutscene brings to the chest lands where the
 game's does; its legs keep `ik exact`. Placing its shoulders tore them from the
 chest (the clavicle swung out to the game's shoulder, the chest and hood stayed on
 KH2's torso). A bone with several paired children (the pelvis) is not stretched.
-`spine <base> <end> [hips <joint>]` makes the torso follow the game's: the base
+`spine <base> <end> [hips <joint>] [onto]` makes the torso follow the game's: the base
 goes where the game node of the chain's first paired joint carries it (the whole
 body with it), and the chain, as the game's turns pose it, is turned about the base
 onto the end's place and every bone lengthened or shortened alike to reach it: the
@@ -631,7 +631,21 @@ pelvis (that joint's nearest paired joint above) turned as the base's node, then
 swung and stretched so the joint is where the pelvis's own node carries it. The
 joints off the chain are posed again from their parents, so the shoulders and
 head keep the game's turn from wherever the bent spine puts them
-(`model_parts.h` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. Over the
+(`model_parts.h` `bend_spine`). e_rox_hb: `spine kh2_96 kh2_166 hips kh2_3`. With `onto` the end goes on the
+game node's own place (as `place`), so the chain takes the game's torso length, not the
+model's: for a model built otherwise than the game's (xaldin_h: hips to neck 76.1 cm to
+the game's 66.9), with its limbs `place`d. `hips` still swings the pelvis where its node
+carries the model's own hip joint: swung toward the node's own place of a larger game
+skeleton (`game_scale`) it squashed the pelvis under the coat's waist.
+
+`game_scale <k>` takes the game's skeleton k times larger about the actor's origin before
+the model is posed on it: each node's D(p) becomes O + k (D(p / k) - O), its turn kept, and
+the nodes' rest places are scaled at load, so `place`, `spine ... onto` and the `ik` limbs
+reach a skeleton of the model's size while the game's turns stay as they are. xaldin_h:
+1.041, the game's neck where his own stands; his legs' knees and ankles then land about
+on his own. `align <joint> rest` gives a joint no rest correction at all, so the turns its
+parents take at rest (a shin turned onto the game's) do not tilt it: a foot's sole stays as
+built (xaldin_h's toes stood 5.5-6.2 cm up in the game's idle). Over the
 161 cutscene animations its neck was 3.7 cm from the game's (p90 13.5, max 36) and
 its shoulders 4.9 (max 36); bent, the neck 0.0 (max 0.4), the shoulders 2.5 (max
 6), the chest 0.3; the spine 0.94-1.28 its length (1st-99th percentile, max 1.36). On the

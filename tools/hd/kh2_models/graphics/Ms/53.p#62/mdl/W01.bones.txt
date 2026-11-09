@@ -1,0 +1,9 @@
+# The boss Saix's berserk claymore (Ms/53.p's W01, the open one the game shows in berserk, Ov259_SwapShells; Mission
+# Mode's A_W01 takes these settings), drawn as his KH2 model's own claymore: B_EX160's meshes on its bone 379, the
+# rest of him hidden. Placed as W00 (W00.bones.txt): the two share one frame, their grips and blades the same.
+
+held kh2_379 rest 0 90 0
+
+# Everything but the open claymore: the body (0-9, 14, 15, 17, 18) and the ring of short spikes (12), which the long
+# spikes (16) take the place of (as W01's head takes W00's: assumed, not seen in KH2). Shown: 10, 11, 13 and 16.
+hide_mesh 0 1 2 3 4 5 6 7 8 9 12 14 15 17 18

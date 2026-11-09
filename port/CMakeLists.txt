@@ -990,11 +990,21 @@ target_include_directories(khdays-secondary-motion-test PRIVATE ../assets/includ
 target_compile_options(khdays-secondary-motion-test PRIVATE /W4 /std:c++20 /EHsc)
 add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
 # The offline replay, tuning and benchmark tool (tools/secondary_replay.cpp, docs/SECONDARY_MOTION.md).
+# With `--days`, the game's own animations posed onto the model by the port's models.cpp itself (bones.txt's pairs,
+# place, spine, ik, ds_pose, cuffs), the game's side of it stubbed (tools/replay_game_stubs.cpp).
 add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
     ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
-    ../assets/src/dds.cpp ../assets/src/image.cpp)
-target_include_directories(khdays-secondary-replay PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
-target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
+    ../assets/src/dds.cpp ../assets/src/image.cpp
+    runtime/mods/models.cpp runtime/mods/face.cpp runtime/mods/room_animation.cpp
+    runtime/mods/secondary/model_link.cpp runtime/mods/secondary/days_environment.cpp
+    ../assets/src/animation.cpp ../assets/src/mesh.cpp ../assets/src/gltf.cpp ../assets/src/fbx.cpp
+    ../assets/src/filesystem.cpp tools/replay_game_stubs.cpp)
+target_include_directories(khdays-secondary-replay PRIVATE ../assets/include ../sdk/include runtime/mods/secondary
+                           "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}" "${KHDAYS_GEN}")
+target_compile_options(khdays-secondary-replay PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
+    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)

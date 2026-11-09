@@ -1,0 +1,50 @@
+# KH2 bones (kh2_<index>) to Days' Mickey nodes, one pair a line: <joint> <node>.
+# This model is KH2's Mickey in his coat (P_EX200), Days' only Mickey model (mickey, def.p.z: no def_h). The two are
+# the same size (the head's pivot at 56.7 cm against the game's 56.5, the hips at 40.2 against 36.9), so no `scale`.
+# Unpaired KH2 bones (the coat, drawstrings, ears, snout, glove cuffs, fingers) follow their parents.
+
+# Root: follows the hips, so the body rises and drops with Days' animations
+kh2_0 Bip01
+
+pose_degrees 5
+
+# Hips and spine: the waist (78), chest (79), the chest's top that carries the arms (80, as the game's neck node
+# carries its clavicles) and the head's pivot (82, where the game's head is)
+kh2_2 Bip01_Pelvis
+kh2_78 Bip01_Spine
+kh2_79 Bip01_Spine1
+kh2_80 Bip01_Neck
+kh2_82 Bip01_Head
+
+# Legs (thigh, knee, ankle)
+kh2_5 Bip01_L_Thigh
+kh2_6 Bip01_L_Calf
+kh2_9 Bip01_L_Foot
+kh2_14 Bip01_R_Thigh
+kh2_15 Bip01_R_Calf
+kh2_18 Bip01_R_Foot
+
+# Arms (clavicle, shoulder, elbow, wrist): the glove (124, 168) and its fingers ride the wrist (119, 163); the right
+# arm is the left's +44
+kh2_113 Bip01_L_Clavicle
+kh2_117 Bip01_L_UpperArm
+kh2_118 Bip01_L_Forearm
+kh2_119 Bip01_L_Hand
+kh2_157 Bip01_R_Clavicle
+kh2_161 Bip01_R_UpperArm
+kh2_162 Bip01_R_Forearm
+kh2_163 Bip01_R_Hand
+
+# Tail: the game's two bones onto KH2's five (70-75, straight back from the hips): 71 and 73, the rest riding them
+kh2_71 Bip01_Tail
+kh2_73 Bip01_Tail1
+
+# Two-bone limbs. `exact` (the legs): the feet go where the game's are. KH2's ankle stands 14.4 cm over its sole,
+# the game's 12.3, so 2.1 up; nothing forward (not measured for him).
+ik kh2_5 kh2_6 kh2_9 exact 0 2.1 0
+ik kh2_14 kh2_15 kh2_18 exact 0 2.1 0
+ik kh2_117 kh2_118 kh2_119
+ik kh2_161 kh2_162 kh2_163
+
+align kh2_9 foot
+align kh2_18 foot

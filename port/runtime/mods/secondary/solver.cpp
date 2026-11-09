@@ -465,12 +465,21 @@ void Simulation::set_game_targets(const std::vector<Vec3> &from, const std::vect
 
 void Simulation::shapes(const std::vector<Frame> &pose, std::vector<Shape> &out) const
 {
+    // a bone the simulation moves: as the last tick rebuilt it, carried on its group's reference bone as posed now (its
+    // own swing a tick behind, the body's not); before a tick has, as animated
+    const auto frame_of = [&](int bone, int sim) {
+        if (sim < 0 || !sim_relative_valid_)
+            return pose[static_cast<std::size_t>(bone)];
+        const auto si = static_cast<std::size_t>(sim);
+        const int reference = rig_.groups[static_cast<std::size_t>(rig_.bones_out[si].group)].reference_bone;
+        return compose(pose[static_cast<std::size_t>(reference)], sim_relative_[si]);
+    };
     for (std::size_t c = 0; c < rig_.colliders.size(); ++c) {
         const Collider &k = rig_.colliders[c];
-        const Frame &f = pose[static_cast<std::size_t>(k.bone)];
+        const Frame f = frame_of(k.bone, k.sim);
         Shape s;
         s.a = apply(f, k.offset);
-        s.b = k.kind == ShapeKind::capsule ? apply(pose[static_cast<std::size_t>(k.end_bone)], k.end_offset) : s.a;
+        s.b = k.kind == ShapeKind::capsule ? apply(frame_of(k.end_bone, k.end_sim), k.end_offset) : s.a;
         const float scale = (std::fabs(f.s.x) + std::fabs(f.s.y) + std::fabs(f.s.z)) / 3.0F;
         s.ra = k.radius * scale;
         s.rb = k.end_radius * scale;
@@ -623,6 +632,7 @@ void Simulation::initialize(const std::vector<Frame> &pose, const TickSettings &
 {
     const auto t0 = Clock::now();
     std::fill(swung_valid_.begin(), swung_valid_.end(), std::uint8_t{0});
+    sim_relative_valid_ = false; // a reset: the colliders on simulated bones as animated until the next rebuild
     for (const int b : rig_.needed)
         sub1_[static_cast<std::size_t>(b)] = pose[static_cast<std::size_t>(b)];
     sub0_ = sub1_;
@@ -1705,11 +1715,15 @@ void Simulation::reconstruct(const std::vector<Frame> &pose, std::vector<Frame> 
         for (std::size_t i = 0; i < x_.size(); ++i)
             if (rig_.particles[i].dynamic)
                 x_[i] = apply(reference_bone_frame(i, pose), shown_[i]);
+    sim_relative_.resize(rig_.bones_out.size());
     for (std::size_t si = 0; si < rig_.bones_out.size(); ++si) {
         const auto b = static_cast<std::size_t>(rig_.bones_out[si].bone);
         out[b] = bone_frame(static_cast<int>(si), pose, true);
         written[b] = 1;
+        const int reference = rig_.groups[static_cast<std::size_t>(rig_.bones_out[si].group)].reference_bone;
+        sim_relative_[si] = relative(pose[static_cast<std::size_t>(reference)], out[b]);
     }
+    sim_relative_valid_ = true;
     for (const Carried &c : rig_.carried) {
         const auto by = static_cast<std::size_t>(rig_.bones_out[static_cast<std::size_t>(c.by)].bone);
         const auto b = static_cast<std::size_t>(c.bone);

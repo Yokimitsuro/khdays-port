@@ -1,0 +1,80 @@
+# Secondary motion of KH2's Mickey (P_EX200) drawn as Days' mickey: his coat and its drawstrings, as axel_h's (his
+# own mset keys them: guided by it in KH2 motions, simulated on the body under the game's own animations). Colliders
+# fitted to his vertices (he stands 40 cm at the hips). docs/SECONDARY_MOTION.md explains every line.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 1 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones), fitted to the vertices skinned to them ---
+collider pelvis   capsule 2 3 fit 0.85 tags body
+collider spine    capsule 77 79 fit 0.85 tags torso
+collider chest    capsule 79 80 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 12 fit 0.9 tags legs
+collider thigh_r  capsule 14 15 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 21 fit 0.9 tags legs
+# the upper arms carry no vertices of their own (the sleeve's rings are on 118 and its helper 150, 46-57 cm high):
+# their radius given, the sleeve's half height less a centimetre
+collider arm_l    capsule 117 118 radius 4.5 side motion tags arms
+collider forearm_l capsule 118 119 fit 0.85 side motion tags arms
+collider hand_l   sphere 124 fit 0.85 side rest tags hands left_hand
+collider arm_r    capsule 161 162 radius 4.5 side motion tags arms
+collider forearm_r capsule 162 163 fit 0.85 side motion tags arms
+collider hand_r   sphere 168 fit 0.85 side rest tags hands right_hand
+# the head: 82's vertices (57-89 cm, 16.7 to either side), its middle 16 cm up the bone
+collider head     sphere 82 offset 16 0 0 radius 15 tags head
+
+# --- The coat: eight strips from the hips (under 24) to the hem at his ankles, one connected surface. The front
+# forks under 58 (59 a helper) into two panels (63-65 and 67-69) with the slit between them ---
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 27 28
+  strip 30 31 32 33
+  strip 35 36 37 38
+  strip 40 41 42
+  strip 44 45 46 47
+  strip 49 50 51 52
+  strip 54 55 56
+  strip 58 63 64 65
+  strip 58 67 68 69
+  # the thighs carry the coat's shape, as axel_h's at his size (Axel's 34 cm at hips 2.4 times as high)
+  follow_bone 5 radius 14 weight 0.9 always 0.7
+  follow_bone 14 radius 14 weight 0.9 always 0.7
+  topology mesh
+  disconnect 63 67        # the front slit stays open
+  mode simulated
+end
+
+# --- Drawstrings: from the collar (100, 107) down his chest to their tassels (105, 112) ---
+group string_l chain preset kh2_string
+  attach 100
+  chain 103 104 105
+  settle on steps 360
+  mode simulated
+end
+group string_r chain preset kh2_string
+  attach 107
+  chain 110 111 112
+  settle on steps 360
+  mode simulated
+end
+
+# --- His own motions key the coat and strings: guided by them there, as axel_h's ---
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end

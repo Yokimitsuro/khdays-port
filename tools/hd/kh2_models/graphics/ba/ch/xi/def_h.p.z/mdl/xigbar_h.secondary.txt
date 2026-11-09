@@ -1,0 +1,167 @@
+# Secondary motion of KH2's Xigbar (B_EX140) drawn as Days' xigbar_h and xigbar: axel_h's coat on the same bones, his
+# drawstrings, hood and ponytail. Bones are KH2 bone numbers (kh2_<n>). docs/SECONDARY_MOTION.md explains every line.
+# His cuffs are not simulated.
+secondary_motion 1
+units cm
+include kh2_secondary_presets.txt
+
+# 60 Hz; 3 substeps of 2 passes, as roxas_bf_h
+simulation rate 60 substeps 3 iterations 2
+gravity 0 -9.81 0           # m/s^2, the world's y up
+environment on thickness 2 ground  # the room's floors alone
+teleport 150 100            # a jump of 1.5 m or 100 degrees in one tick rebases
+first_pose_iterations 30
+
+# --- Body colliders (KH2 bones): `fit` sizes itself to the vertices skinned to them. His body mesh is demyx_h's vertex
+# for vertex, so the fixed sizes are his (axel_h's); the pelvis and chest by his own bones' lengths. ---
+collider pelvis   capsule 2 length 25.7 fit 0.85 tags body
+collider spine    capsule 96 98 fit 0.85 tags torso
+# 21 of the 27.7 from 98 to the collar (99), as demyx_h's 18 of 23.2: at its full length its end reaches the hood
+collider chest    capsule 98 length 21 fit 0.85 tags torso
+collider thigh_l  capsule 5 6 offset 15.7 0 0 fit 0.9 tags legs
+collider calf_l   capsule 6 9 fit 0.9 tags legs
+collider foot_l   capsule 9 length 11.7 radius 3.5 2.7 tags legs
+collider thigh_r  capsule 14 15 offset 15.7 0 0 fit 0.9 tags legs
+collider calf_r   capsule 15 18 fit 0.9 tags legs
+collider foot_r   capsule 18 length 11.7 radius 3.5 2.7 tags legs
+collider heel_l   capsule 9 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider heel_r   capsule 18 length 10.7 radius 4.6 4.6 offset 0 3.55 0 tags legs
+collider arm_l    capsule 111 112 fit 0.85 side motion tags arms
+collider forearm_l capsule 112 113 fit 0.85 side motion tags arms
+collider hand_l   sphere 118 offset 8.2 0 0 radius 4.8 side rest tags hands left_hand
+# the thumb, its root to past its tip
+collider thumb_l  capsule 124 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands left_hand
+collider arm_r    capsule 184 185 fit 0.85 side motion tags arms
+collider forearm_r capsule 185 186 fit 0.85 side motion tags arms
+collider hand_r   sphere 191 offset 8.2 0 0 radius 4.8 side rest tags hands right_hand
+collider thumb_r  capsule 197 length 7 offset 1.4 0 0 fit 0.95 side rest tags hands right_hand
+# the head's vertices (his hair with them) stand -4.5 to 21.4 cm up the head bone (162), 11.6 behind to 14.6 in front;
+# the sphere on their middle
+collider head     sphere 162 offset 8.4 1.5 0 radius 13 tags head
+# the drawstrings' alone: over the chest's front, as demyx_h's (their roots 14.5 cm from 98-99's axis, his 13.8)
+collider chest_strings capsule 98 99 radius 16.3 tags strings
+# the ponytail's, alone: the coat's high collar behind his neck (98's vertices 24-34 cm up it reach 9.5 cm behind its
+# axis, 13.6 to each side), which the chest's capsule stops short of; the game's idle bows his head and lays the
+# ponytail's root on it
+collider collar_back capsule 98 98 offset 22 0 0 end_offset 33 -3 0 radius 9 side motion tags hair_neck
+# the ponytail's, alone: his shoulders, the clavicles (107-109, 180-182) and the pieces on them (108, 153, 155, 157 and
+# the right's), 9-12 cm round the bone (the back piece 14.7); the game's run leans him forward and lays it on them
+collider shoulder_l capsule 108 109 radius 12.5 side motion tags hair_neck
+collider shoulder_r capsule 181 182 radius 12.5 side motion tags hair_neck
+
+# --- The lower coat: eight strips from the waist, one connected surface (axel_h's, the same bones) ---
+# Each strip runs from just under the belt to the hem. 85 is shared: the front
+# forks under it into two panels (88-90 and 92-94) with the slit between them.
+group coat surface preset kh2_coat
+  attach 2
+  strip 26 29 30 31 32
+  strip 34 37 38 39 40
+  strip 42 45 46 47 48
+  strip 50 53 54 55 56
+  strip 58 61 62 63 64
+  strip 66 69 70 71 72
+  strip 74 77 78 79 80
+  strip 82 85 88 89 90
+  strip 85 92 93 94
+  # the thighs carry the coat's shape: each control's target rides them by how near it
+  # hangs to them at rest (up to 70%, none 34 cm away), so a wide stance spreads the coat
+  # in its target and contact only catches what is left; a thigh coming up into it (a
+  # crouch, a high step) carries the panels near it up to 90%. Not the shins: below the
+  # knee the coat falls straight down off it rather than tracing the calf back
+  follow_bone 5 radius 34 weight 0.9 always 0.7
+  follow_bone 14 radius 34 weight 0.9 always 0.7
+  topology mesh           # neighbours from the triangles skinned to them
+  disconnect 88 92        # the front slit stays open
+  # the back strips (26-32, 50-56, 74-80) ride the thighs less, the less the lower: the back hangs
+  bone 29 follow_bone_scale 0.6
+  bone 30 follow_bone_scale 0.4
+  bone 31 follow_bone_scale 0.3
+  bone 32 follow_bone_scale 0.2
+  bone 53 follow_bone_scale 0.6
+  bone 54 follow_bone_scale 0.4
+  bone 55 follow_bone_scale 0.3
+  bone 56 follow_bone_scale 0.2
+  bone 77 follow_bone_scale 0.6
+  bone 78 follow_bone_scale 0.4
+  bone 79 follow_bone_scale 0.3
+  bone 80 follow_bone_scale 0.2
+  mode simulated
+end
+
+# --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
+group string_l chain preset kh2_string
+  collide torso body strings
+  attach 99
+  chain 103 104 105 106
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+group string_r chain preset kh2_string
+  collide torso body strings
+  attach 99
+  chain 176 177 178 179
+  hang 0 -1 0.35
+  settle on steps 360
+  mode simulated
+end
+
+# --- Hood: one bone (101) hanging behind the neck; it swings and lies on the back as one piece ---
+group hood chain preset kh2_hood
+  # every collider but the ponytail's and the drawstrings' own
+  collide body torso legs arms hands head
+  attach 99
+  chain 101
+  settle on steps 240
+  mode simulated
+end
+
+# --- The ponytail (166-171, from its tie, 165, behind the head): as xaldin_h's braids, a drawstring (kh2_string)
+# against the head (its root 17.7 cm from the sphere's centre), his back, shoulders and collar. Not the hood (the user):
+# against capsules on the hood it fought the hood's own swing in the game's run. The tie (4 cm long, on the head) stays
+# as the head holds it: simulated, it dipped into the head ---
+group ponytail chain preset kh2_string
+  collide head torso hair_neck
+  # its vertices stand 2-6 cm round its bones (3.4 mostly)
+  thickness 3
+  # xaldin_h's: a third of the drawstrings' inertia and more damping, so a bob of the head does not throw it into his
+  # back; no swing limit (the drawstrings' 75 degrees threw his braids to the cone's far side in a run)
+  inertia 0.3
+  damping 4
+  swing_limit 180
+  attach 165
+  chain 166 167 168 169 170 171
+  # its shape at rest turned 35 degrees up, straight back from the tie: KH2's rest (35 below level) runs it through the
+  # hood, which sticks straight back at rest too (0.8 cm off its surface at most up to 30 degrees); at 35 it is 2.5 cm
+  # clear of it and 7.6 of the head, the least turn 1.2 clear (as xaldin_h's braids). Not hung under gravity at load
+  # (`settle`): that lays it back over the hood
+  hang 0 0 -1
+  mode simulated
+end
+
+# --- Animation controls ---
+# B_EX140's own motions carry its coat and drawstrings as KH2 animated them: there they guide the cloth, and the thighs
+# carry none of it. Not the hood: keyed too, the ponytail went through it more (the replay's KH2 idle: 42 edges a frame
+# at most in 75 frames, against 22 in 23). The game's own animations keep the cloth on the hips and thighs.
+control own_motions
+  animation *
+  slot 0-255
+  groups coat string_l string_r
+  mode guided
+  follow_frequency 6 hem 3
+  follow_damping 0.8
+  follow_bone_scale 0
+  blend 0.15 0.15
+end
+
+# His KH2 motions key the ponytail: there it follows them, as hair does (kh2_hair's pull), as xaldin_h's braids; the
+# game's own animations leave it simulated.
+control own_hair
+  animation *
+  slot 0-255
+  groups ponytail
+  mode guided
+  follow_frequency 6
+  follow_damping 0.7
+  blend 0.15 0.15
+end
