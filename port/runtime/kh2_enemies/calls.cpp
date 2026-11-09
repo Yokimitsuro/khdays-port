@@ -570,10 +570,11 @@ void add_actor_fields(ai::Calls &calls)
                              (x->u32(field::kStatus) & 0x40u) != 0);
         a[0] = ai::Value::of_int(off ? 1 : 0);
     });
-    // 1:150, 1:151 bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad (the Strafer's and the Magnum Loader's ways
-    // of attacking): set by KH2's native code where it places them, nothing of the scripts' -- 0 in Days's field
+    // 1:150, 1:151 bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad (FUN_14042d1e0, FUN_14042d230): its motion's
+    // ranges 16 to 19 on now, its triggers 9 to 12 passed this tick (field::kMotionMarks; the Strafer's and the Magnum
+    // Loader's ways of attacking)
     for (const std::uint32_t n : {150u, 151u}) {
-        const std::uint32_t at = n == 150u ? 0x2acu : 0x2adu;
+        const std::uint32_t at = n == 150u ? field::kMotionMarks : field::kMotionMarks + 1u;
         calls.set(1, n, [at](ai::Machine &m, std::span<ai::Value> a) {
             Object *x = object_of(m, a[0]);
             const int bit = std::int32_t(a[1].bits) - 1;
@@ -619,6 +620,17 @@ void add_motions(ai::Calls &calls)
             played = x->world->player_motion(*o, *x, std::int32_t(a[2].bits), a[3].f());
         }
         a[0] = ai::Value::of_int(played ? 1 : 0);
+    });
+    // 1:94 whether an object is there and in play (FUN_14042b0e0: FUN_1403ba720, none of + 0x120's 0x10080000):
+    // the Magnum Loader's thread on the player asks it of the loader; 1:101 whether the object an AI handle names
+    // plays another's motion (FUN_14042d360: + 0x18c bit 14), what that thread runs while
+    calls.set(1, 94, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = Object::at(m.memory(), a[0].bits);
+        a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kFlags) & 0x10080000u) == 0 ? 1 : 0);
+    });
+    calls.set(1, 101, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kStatus) & bit::kOtherMotion) != 0 ? 1 : 0);
     });
     // 1:13 a motion asked of the object's controller (FUN_1403c8310: its queue of four, taken at its next update):
     // played at once here; a player's own (Cerberus's 0, its idle, at the end of its reaction command) gives the
@@ -862,11 +874,17 @@ void add_moving(ai::Calls &calls)
     // 1:89 a move this tick: a direction made unit and a speed (FUN_1403b9a70: + 0xa58, + 0xa64, cleared after the
     // tick); 1:111 its steering, kept (FUN_1403b9da0: + 0x10, + 0x1c; Actor::steer)
     calls.set(1, 89, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
         if (n == 0.0F)
             return;
+        if (is_player(o)) { // one of Days's players: the world moves it
+            if (running(m)->world != nullptr)
+                running(m)->world->player_move(*o, {v.v[0] / n, v.v[1] / n, v.v[2] / n}, a[2].f());
+            return;
+        }
         x->move = {v.v[0] / n, v.v[1] / n, v.v[2] / n};
         x->move_speed = a[2].f();
     });

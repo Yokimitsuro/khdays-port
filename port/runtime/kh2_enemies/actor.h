@@ -29,6 +29,10 @@ constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
 constexpr std::uint32_t kMotionNow = 0x184; // the motion its controller plays (1:238: a reaction command's wait)
 constexpr std::uint32_t kStatus = 0x18c;    // bit 1 the motion ended (1:14), bit 9 held by a reaction (1:78, 2:5)
+// its motion controller's (+ 0x158) bytes + 0x154 and + 0x155: the "AI" ranges 16 to 19 on now, bits 0 to 3 (FUN_14040d810,
+// cleared each tick by FUN_14040e5c0; 1:150), and the triggers 9 to 12 its motion passed this tick, bits 0 to 3
+// (FUN_14040dd70, cleared each tick by FUN_1403c6740; 1:151: the Magnum Loader's charge waits for its 52A's frame 80)
+constexpr std::uint32_t kMotionMarks = 0x2ac;
 constexpr std::uint32_t kPlace = 0x670;     // vec4: 1:147
 constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's maker, FUN_1403a7a40), read by 1:309
 constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
@@ -48,6 +52,9 @@ constexpr std::uint32_t kSize = 0xe00;      // past every offset read so far
 namespace bit {
 constexpr std::uint32_t kMotionEnded = 1u << 1; // kStatus: the motion played to its end (1:14 waits on it)
 constexpr std::uint32_t kHeld = 1u << 9;        // kStatus: a reaction holds it (1:78: no moving)
+// kStatus: a player plays another object's motion (1:29: its enemy's set), which then offers that object's commands
+// (FUN_14040d810's range 20: the command's source + 0x2b0); 1:101 waits on it
+constexpr std::uint32_t kOtherMotion = 1u << 14;
 constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1403ba9a0, 1:60)
 constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
@@ -249,6 +256,9 @@ public:
     // 1:148 / 1:1, 1:4, 1:79 on a player: put at a place, turned to a yaw (KH2's)
     virtual void player_place(Object & /*player*/, const Vec3 & /*place*/) {}
     virtual void player_yaw(Object & /*player*/, float /*yaw*/) {}
+    // 1:89 on a player: this tick's move along a way (made one long) at a speed (FUN_1403b9a70: KH2's cm a tick; the
+    // Magnum Loader's Quick Blade dashes the player to it so)
+    virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:112 on a player: a script's routine as the player's thread (the one before ended)
     virtual void player_thread(Object & /*player*/, ai::Machine & /*machine*/, std::uint32_t /*thread*/) {}
     // 1:18: `carried` put on `by` (FUN_1403d9fe0: + 0x6a0 its carrier, + 0x6a4 the bone -- 0x4000 its place, not a

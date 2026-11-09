@@ -181,7 +181,10 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:63 | its motion at its end with no blend left (`FUN_1403c7e70` on + 0x158: the time + 0x44 against the motion's length, the blend + 0x48 run out) | as KH2 |
 | 1:100 | the speed a jump needs to rise a height: `sqrt(abs(2 h / 0.408163))` (`FUN_1403b73f0`) | as KH2 |
 | 1:156 | a jump of its own (`FUN_1403cbec0`): a vector -- its x, z the way (made one long, times its w), its y how high -- the ticks to its top (its pull + 0x10c `2 y / t^2`, its rise the pull times t), a value at + 0x108, a motion and its blend, and with the flag the two after it as 1:55's. It leaves the ground as class 9 (+ 0x648 2) at the motion's take-off; class 9's movement (`FUN_1403cbdd0`) keeps + 0x108 of its velocity an evaluation, steered or not (the Wight Knight's tear: up 5 m, then steered ahead at 100, or 250 when far, keeping 0.95: a lunge of some 15 m) | as KH2 (the jump's own pull and keep), from the call |
-| 1:150, 1:151 | bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad: set by the native code that places it (the Strafer's and the Magnum Loader's ways of attacking) | the bytes, 0 in Days's field |
+| 1:150, 1:151 | bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad (`FUN_14042d1e0`, `FUN_14042d230`): its motion controller's (+ 0x158) + 0x154, the ranges 16 to 19 on now (`FUN_14040d810`, cleared each tick by `FUN_14040e5c0`), and + 0x155, the triggers 9 to 12 its motion passed this tick (`FUN_14040dd70`, cleared each tick by `FUN_1403c6740`) -- the Strafer's ways of attacking; the Magnum Loader's charge waits for its 52A's frame 80, its thread on the player for his AB10's frames 12 and 42 | as KH2: an enemy's own motion's and a held player's |
+| 1:94 | an object there and in play (`FUN_14042b0e0`: `FUN_1403ba720`, none of + 0x120's 0x10080000) | as KH2 |
+| 1:101 | whether the object an AI handle names plays another's motion (`FUN_14042d360`: + 0x18c bit 14; `FUN_14040d810`'s range 20 then offers that other's command) | a player an enemy holds |
+| 1:89 | this tick's move along a way at a speed (`FUN_14042f8d0` -> `FUN_1403b9a70`) | as KH2; on a player an enemy holds, his (the Magnum Loader's Quick Blade dashes him to it) |
 | 2:45 | an object's entry number (its + 0x20 record's u16 at + 2): the Wight Knight asks it of a message's sender (492, 1149, 568) | 0: no KH2 object sends one |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
@@ -230,9 +233,11 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   23, the Hot Rod 25, the Armored Knight 12, the Creeper 2, the Dusk 3. **Not yet**: the Magnum Loader's and the
   Cannon Gun's shots -- their scripts run, but their attacks are effects that hit (KH2's shots are objects and
   effects with collision), which the port does not make yet. Since the research tool follows the routines a script
-  starts as threads (`1:112`, `2:20`; 2026-11-09), the Magnum Loader's threads make 3 calls the port does not answer
-  (1:13 answered since, 1:94, 1:101) and the Armored Knight's 14 (0:42, 0:44, 0:68, 1:94, 1:132, 1:149, 1:165, 1:191,
-  1:221, 1:238 answered since, 6:3, 6:5, 6:8): uncovered, their stand-ins play once the mod is made anew.
+  starts as threads (`1:112`, `2:20`; 2026-11-09), the Magnum Loader's threads make 3 calls more, all answered since
+  (1:13, 1:94, 1:101: its Quick Blade, below, "Reaction command zones"), and the Armored Knight's 14 (0:42, 0:44,
+  0:68, 1:132, 1:149, 1:165, 1:191, 1:221, 6:3, 6:5, 6:8 not yet; 1:94 and 1:238 answered since): uncovered, its
+  stand-in plays once the mod is made anew. The Magnum Loader's charge (52A) ran for ever before 1:151 was KH2's (it
+  waits for the motion's frame 80 to start counting).
 - **Next**: the white Magnum Loader `M_EX600_LC` (1:222 its object's number, 1:268 class 23, 1:269), the Graveyard
   `M_EX790` (1:53), the Mole Driller `M_EX700` (2:1), the Neoshadow `M_EX420` (1:13, 2:10 an object made, 2:17 a hit
   made); then the rest, 8 calls and more each, and the shots (2:10's objects, effects that hit).
@@ -411,6 +416,38 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   msg/<language>/sys.bar, field2d/<language>/zz0command.2dd and zz0field.2dd with their HD pictures,
   msg/us/fontinfo.bar with fontimage.bar's HD picture.
 
+## Reaction command zones
+
+Most enemies' reaction commands are not offered by a motion the player plays (Cerberus's range 20) but by the enemy
+itself: shapes of kind 5 in its `.mdlx` (`Collision`, above), each with its command at + 2, in a group its motions'
+ranges 4 turn on. Read against each script's message handler (trigger 11 compares the message with that command):
+the Magnum Loader's eight zones along its rush (group 5, on in 52A's frames 0 to 75, 4 m round points 3 to 22 m
+ahead: 309, Quick Blade), the Armored Knight's (group 4: 300, Rising Sun), the Soldier's (group 6: 34, Cyclone), the
+Dusk's (group 5: 69, Reversal).
+
+- **Offered** (`zone_offer` in `shell.cpp`): while this game's own player's place (+ 0x670) lies within a zone's radius
+  of its point (the test KH2's own uses of a zone make, `FUN_14054ae70`: the place's distance, `FUN_140140f50`, under
+  the shape's + 0x10). The general check was not found in KH2FM.exe (the collision passes, `FUN_1403beec0`, gather
+  shapes by kind, `FUN_14040b140`); the port takes the same test for every zone. The deepest zone's command shows (the
+  bar, and KH2's mark at the enemy's aim point), not while an enemy holds the player, nor again in the motion one was
+  taken in. The press sends the command's argument to the enemy (trigger 11, as a held player's).
+- **Only where the enemy's script plays it**: the Magnum Loader's and the Armored Knight's handlers make the player play
+  a motion of their set (1:29) and run a thread on him (1:112); the Soldier's and the Dusk's only keep a point for KH2's
+  player's own code, which plays Cyclone (the Soldier's AA00, AA01) and Reversal (the Dusk's "DUSK" entries) -- **not
+  read**. The port offers a zone's command only when its script makes a 1:29 call (`script_calls`: a code word whose
+  low four bits are 10, its table the top ten, its number the next word).
+- **The Magnum Loader's Quick Blade** (AB10, 112 ticks): its thread (routine 133) asks for the player's own idle at
+  once (1:13: KH2 queues it on his controller, `FUN_1403c8310`, taken once the motion of another's set gives him back:
+  the port keeps him while his motion has a range 2 later), turns him to the loader, and on his motion's triggers 9
+  (frame 12) and 10 (42) -- bits of his + 0x2ad, as an enemy's -- dashes him to it (1:89 on the player: (distance + 2
+  m) / 32 a tick, at least 10, slowing after 42) while it waits on his + 0x18c bit 14 (1:101: he plays another's
+  motion). His weapon's attacks (657 at 14, 656 at 69) are the blow on it; his motion's range 2 (blend to idle, from
+  107) gives him back. A blow on an enemy not hit yet takes the player's last Days hit on any KH2 enemy, else 1.
+- **Seen** (the Magnum Loader alone, Roxas still, the HD PACK; the press by a test switch, not kept): its charge offers
+  Quick Blade ("Estocada rápida"), the press dashes Roxas to it and strikes twice (2 and 4: no Days hit before), it
+  comes back into sight as its charge ends (1:19 at its start fades it out, 1:20 at its end in, as KH2's), and its
+  next charge offers it again.
+
 ## The reaction command's bar
 
 KH2 shows a reaction command as a bar over its command menu. The world's menus have their own (field2d/<language>/
@@ -582,9 +619,12 @@ ahead, every kind's aim point (0x307) above it (-50 the Rabid Dog, -80 the Soldi
 cylinder, 0x302 a sphere on a bone, 0x306 an attack's sphere, 5 a large box), a bone (+6; 0x4000 none), an offset x, y,
 z, then sizes (height, radius). The Soldier's body is group 0 (a cylinder 115 high, 90 round; spheres on bones 2, 28,
 31); its attacks are groups 1, 2, 3, 4 and 7 (spheres of radius 40 to 110 on bones 88, 63, 2); group 6 is five boxes
-700 by 300 round it (**not known**: likely the area its attacks are tried in). A motion's trigger 10 names the group an
-attack uses: the port tests the group's attack spheres (kind 0x306) on their bones, in the pose the motion has
-that tick, against Days's players' collision spheres. The record's other bytes are **not known**.
+700 round it: a reaction command's zones (kind 5, its command at + 2: 34, Cyclone; below, "Reaction command zones").
+A motion's range 10 names the group an attack uses: the port tests the group's attack spheres (kind 0x306) on their
+bones, in the pose the motion has that tick, against Days's players' collision spheres. Range 4 turns a group on for
+its time, range 5 off (`FUN_14040d810`: `FUN_1403f1fa0` and `FUN_1403f1f80` on + 0x5a0; OpenKH's ANB page names them),
+and a shape is looked for among the groups on (`FUN_1403b5650`, `FUN_1403b4f10`). The record's other bytes (+ 1, + 3,
++ 18) are **not known**.
 
 ## Effects
 

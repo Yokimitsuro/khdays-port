@@ -693,7 +693,7 @@ void test_player_calls()
 {
     Rig rig;
     kh::read_shapes(rig.calls, "1:29 4 1\n1:13 3 0\n1:238 1 1\n1:1 2 0\n1:148 2 0\n1:79 2 0\n1:18 6 0\n1:102 1 0\n"
-                               "1:112 3 0\n1:213 1 1\n1:74 1 0\n1:157 3 0\n");
+                               "1:112 3 0\n1:213 1 1\n1:74 1 0\n1:157 3 0\n1:94 1 1\n1:101 1 1\n");
     MadeUpWorld world;
     // its main thread a yield over and over (word 0), a routine the same (word 3)
     const Words loop = misc(0) + Words{0x0007, 0xfffd} + misc(0) + Words{0x0007, 0xfffd};
@@ -744,6 +744,15 @@ void test_player_calls()
     rig.memory.write(name, "10", 3);
     call(rig, actor, 1, 157, {self, adr(name), self});
     CHECK(world.event_name == "10" && world.event_target == &actor);
+    // 1:94: an object there and in play (none of + 0x120's 0x10080000); none at an address of no object
+    CHECK(call(rig, actor, 1, 94, {self}).i() == 1 && call(rig, actor, 1, 94, {i(0)}).i() == 0);
+    actor.set_bits(kh::field::kFlags, 0x80000u, true);
+    CHECK(call(rig, actor, 1, 94, {self}).i() == 0);
+    actor.set_bits(kh::field::kFlags, 0x80000u, false);
+    // 1:101: the player plays another's motion (+ 0x18c bit 14: the world's hold)
+    CHECK(call(rig, actor, 1, 101, {him}).i() == 0);
+    player.set_bits(kh::field::kStatus, kh::bit::kOtherMotion, true);
+    CHECK(call(rig, actor, 1, 101, {him}).i() == 1);
 }
 
 int main()
