@@ -390,21 +390,30 @@ void test_motions_and_moving()
     actor.step(5.0F);
     CHECK(actor.fade == 0.0F);
 
-    // a jump 100 up with its next motions (1:55's flag): up first, in the air (1:60), then landed
+    // a jump 100 up with its next motions (1:55's flag): up first, in the air (1:60), at its top in the ticks KH2's
+    // pull takes to fall 100 (sqrt(2 x 100 / 0.408163): 22.1), then down
     CHECK(call(rig, actor, 1, 60, {self}).i() == 0);
-    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, -100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(1)});
+    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, 100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(1)});
     CHECK(actor.motion.id == 7 && actor.motion.after == 8 && actor.motion.landing == 9);
     t = actor.step(1.0F);
     CHECK(t[1] < 0.0F && std::fabs(t[2] - 1.9F) < 1e-4F); // its speed along, slowed to 0.95 by its first evaluation
     CHECK(call(rig, actor, 1, 60, {self}).i() == 1);
     float top = t[1], y = t[1];
+    int top_at = 0;
     for (int k = 0; k < 40; ++k) {
         y += actor.step(1.0F)[1];
-        top = std::min(top, y);
+        if (y < top)
+            top = y, top_at = k + 2;
     }
-    CHECK(top < -95.0F && top > -105.0F); // the height asked
+    CHECK(std::fabs(top + 100.0F) < 0.5F && top_at >= 21 && top_at <= 23); // the height asked, at its time
+    CHECK(y > top + 50.0F);                                                  // falling again
     actor.land();
     CHECK(!actor.jump.on && call(rig, actor, 1, 60, {self}).i() == 0);
+    // a negative y does not rise: it drops as from that height (FUN_1403cbb00's time begun at its fall's ticks)
+    call(rig, actor, 1, 55, {self, adr(vec(rig.memory, 0.0F, -100.0F, 1.0F, 2.0F)), i(7), f(0.0F), i(0)});
+    t = actor.step(1.0F);
+    CHECK(t[1] > 9.0F); // sqrt(2 x 0.408163 x 100) a tick and more down
+    actor.land();
 
     // the way made one long, then times its w; a positive y rises as well (the Fiery Globe's hops: the way to the
     // player 230 off, 70 high, 7 a tick)
@@ -983,6 +992,107 @@ void test_shots()
     CHECK(read(copy)[1] == 2.0F && read(copy)[2] == 3.0F);
 }
 
+// The calls of the 1-2-call batch (2026-11-10): collision groups, a hit's record, a blow, a search's reset, a BGHIT,
+// the health record's least, the unit's arguments
+void test_near_batch()
+{
+    Rig rig;
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor actor(script({{1, 0}}, loop), rig.memory, rig.calls, "near");
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto i = ai::Value::of_int;
+    const auto f = ai::Value::of_float;
+    const auto adr = ai::Value::of_address;
+    // 1:52 / 1:53 / 1:54: the script's on word (+ 0x5a8) and off word (+ 0x5ac), both cleared
+    call(rig, actor, 1, 52, {self, i(3)});
+    call(rig, actor, 1, 53, {self, i(6)});
+    CHECK(actor.u32(0x5a8) == (1u << 3) && actor.u32(0x5ac) == (1u << 6));
+    call(rig, actor, 1, 54, {self, i(6)});
+    call(rig, actor, 1, 54, {self, i(3)});
+    CHECK(actor.u32(0x5a8) == 0 && actor.u32(0x5ac) == 0);
+    // 2:7, 2:92, 2:15 on a YS::DAMAGE: its reaction (+ 0x26), a finish (+ 0x27 10), its Flag's bit 0
+    const std::uint32_t hit = rig.memory.add(0x40, "a hit");
+    const std::uint8_t reaction = 7, first = 10;
+    rig.memory.write(hit + 0x26, &reaction, 1);
+    rig.memory.write(hit + 0x27, &first, 1);
+    CHECK(call(rig, actor, 2, 7, {adr(hit)}).bits == 7);
+    CHECK(call(rig, actor, 2, 92, {adr(hit)}).bits == 1);
+    call(rig, actor, 2, 15, {adr(hit)});
+    CHECK((rig.memory.u32(hit + 0x18) & 1u) != 0);
+    // 2:1: facing +z, a hit along -z comes from the front: it faces +z, thrown back along -z 20 fast, 15 up
+    const std::uint32_t blow = rig.memory.add(0x40, "a blow");
+    const float way[4] = {0.0F, 0.0F, -1.0F, 0.0F};
+    rig.memory.write(blow, way, sizeof way);
+    actor.set_yaw(0.0F);
+    call(rig, actor, 2, 1, {self, adr(blow), i(16), i(18), f(15.0F), f(20.0F)});
+    CHECK(actor.jump.on && std::fabs(actor.jump.along[2] + 20.0F) < 1e-4F && std::fabs(actor.jump.up + 15.0F) < 1e-4F);
+    CHECK(std::fabs(actor.yaw()) < 1e-4F && (rig.memory.u32(blow + 0x18) & 1u) != 0);
+    // from behind (along +x while it faces +x): its back to the hit, still facing +x
+    const float behind[4] = {1.0F, 0.0F, 0.0F, 0.0F};
+    rig.memory.write(blow, behind, sizeof behind);
+    actor.set_yaw(1.5707963F);
+    call(rig, actor, 2, 1, {self, adr(blow), i(16), i(18), f(15.0F), f(20.0F)});
+    CHECK(std::fabs(actor.yaw() - 1.5707963F) < 1e-4F && std::fabs(actor.jump.along[0] - 20.0F) < 1e-4F);
+    // 6:4: a search's count and its ring's next emptied, its looked-at count kept
+    const std::uint32_t search = rig.memory.add(0x40, "a search");
+    rig.memory.set_u32(search + 4, 0x1203);
+    rig.memory.set_u32(search + 8, 5);
+    call(rig, actor, 6, 4, {adr(search)});
+    CHECK(rig.memory.u32(search + 4) == 0x1200 && rig.memory.u32(search + 8) == 0);
+    // 6:53: a BGHIT's polygon -1 met nothing
+    const std::uint32_t bghit = rig.memory.add(0x20, "a bghit");
+    rig.memory.set_u32(bghit + 0x14, 0xffffffffu);
+    CHECK(call(rig, actor, 6, 53, {adr(bghit)}).bits == 0);
+    rig.memory.set_u32(bghit + 0x14, 3);
+    CHECK(call(rig, actor, 6, 53, {adr(bghit)}).bits == 1);
+    // 1:231 / 1:232 / 1:233: the least kept, the health set within it and the most
+    const std::uint32_t sheet = rig.memory.add(0x270, "a sheet");
+    rig.memory.set_u32(sheet, 100);
+    rig.memory.set_u32(sheet + 4, 200);
+    call(rig, actor, 1, 231, {adr(sheet), i(30), i(0)});
+    CHECK(call(rig, actor, 1, 232, {adr(sheet), i(0)}).bits == 30);
+    call(rig, actor, 1, 233, {adr(sheet), i(10), i(0)});
+    CHECK(rig.memory.u32(sheet) == 30);
+    call(rig, actor, 1, 233, {adr(sheet), i(500), i(0)});
+    CHECK(rig.memory.u32(sheet) == 200);
+    // 1:218 then 1:39: a unit argument; 1:180: the landing motion
+    call(rig, actor, 1, 218, {self, i(1), i(77)});
+    CHECK(call(rig, actor, 1, 39, {self, i(1)}).bits == 77);
+    call(rig, actor, 1, 180, {self, i(9)});
+    CHECK(actor.motion.landing == 9);
+}
+
+// A state's name shouted (1:90's, FUN_1403ca950): that state's shout routine (its record's + 0x14) runs at once,
+// whatever the state is now, and no state is entered
+void test_shout()
+{
+    Rig rig;
+    const Words name_a = text("a");
+    const unsigned at_a = unsigned(first(2));
+    Words start, main, rs;
+    std::uint32_t routine = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        Words reg = push_addr(1, 0x74) + push_addr(3, at_a) + push_int(100) + push_int(0);
+        for (int k = 0; k < 8; ++k)
+            reg = reg + push_int(k == 5 ? std::int32_t(routine) : 0); // + 0xa + 2 k: + 0x14 the shout routine
+        start = push_addr(1, 0x74) + sys(1, 5) + reg + sys(1, 6) + push_addr(1, 8) + push_addr(1, 0x74) + sys(1, 7) +
+                misc(1);
+        main = misc(0) + Words{0x0007, 0xfffd};
+        rs = push_int(7) + rec() + misc(1);
+        routine = std::uint32_t(first(2) + name_a.size() + start.size() + main.size());
+    }
+    kh::Actor actor(script({{0, name_a.size()}, {1, name_a.size() + start.size()}}, name_a + start + main + rs),
+                    rig.memory, rig.calls, "shouted");
+    std::vector<std::string> entered;
+    actor.states().entered = [&](const std::string &n) { entered.push_back(n); };
+    rig.memory.set_u32(actor.machine().work_area() + 0xc, actor.address());
+    actor.start();
+    actor.tick();
+    CHECK(actor.states().shout(actor, "a", 0x1234u));
+    CHECK(rig.recorded.size() == 1 && rig.recorded[0].i() == 7 && entered.empty());
+    CHECK(!actor.states().shout(actor, "b", 0x1234u));
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -997,6 +1107,8 @@ int main()
     test_aims();
     test_attacks();
     test_shots();
+    test_near_batch();
+    test_shout();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

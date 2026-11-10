@@ -33,6 +33,9 @@ constexpr std::uint32_t kStatus = 0x18c;    // bit 1 the motion ended (1:14), bi
 // cleared each tick by FUN_14040e5c0; 1:150), and the triggers 9 to 12 its motion passed this tick, bits 0 to 3
 // (FUN_14040dd70, cleared each tick by FUN_1403c6740; 1:151: the Magnum Loader's charge waits for its 52A's frame 80)
 constexpr std::uint32_t kMotionMarks = 0x2ac;
+// the script's collision groups (1:52 to 1:54; YS::COLLISION_FLAG): a word of groups turned on, the next of those
+// turned off (a pair for each 32), looked at before the motion's (+ 0x5a0, ranges 4 and 5; FUN_1403ba550)
+constexpr std::uint32_t kCollisionFlags = 0x5a8;
 constexpr std::uint32_t kPlace = 0x670;     // vec4: 1:147
 constexpr std::uint32_t kFlags6c8 = 0x6c8;  // bit 7 the player (KH2's player's maker, FUN_1403a7a40), read by 1:309
 constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1403da520): its states begin anyway
@@ -40,11 +43,12 @@ constexpr std::uint32_t kFacing = 0x680;    // vec4, its w the yaw: 1:79, 1:201
 constexpr std::uint32_t kYaw = 0x7a8;       // float: 1:4, 1:79
 constexpr std::uint32_t kFlags8c8 = 0x8c8;  // bit 6 set and cleared by 1:104, 1:105
 constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20, 1:28)
-constexpr std::uint32_t kParams = 0x9f4;    // its battle numbers, a word each (1:39)
+constexpr std::uint32_t kUnitArgs = 0x9f4;  // YS::OBJ's UnitArg: its spawn's values, a word each (1:39, 1:218)
 constexpr std::uint32_t kTravel = 0xa28;    // vec4: this tick's travel (FUN_1403b8ae3; 1:64)
 constexpr std::uint32_t kTravelBefore = 0xa38; // vec4: the tick's before (1:62)
 constexpr std::uint32_t kTarget = 0xbf8;       // its target slot (2:23)
 constexpr std::uint32_t kAttacker = 0xd38;  // the last to hit it (FUN_140410700), 2:88
+constexpr std::uint32_t kKarmaLimit = 0xd4c; // YS::ENEMY's KarmaLimit (2:76), after its Karma
 constexpr std::uint32_t kSize = 0xe00;      // past every offset read so far
 } // namespace field
 
@@ -71,6 +75,7 @@ struct StateEntry final {
     std::uint16_t on_leave = 0;  // +0xa: run at once when it is left (FUN_1403caec0)
     // + 0xa + 2 n: its routine for the game's event n (FUN_1403ca1d0): 1 the actor left the ground, 2 it landed
     std::uint16_t on_air = 0, on_land = 0; // + 0xc, + 0xe
+    std::uint16_t on_shout = 0;            // + 0x14 (event 5): run when its name is shouted (1:90; FUN_1403ca950)
     std::uint16_t on_enter = 0;  // +0x16: run at once after it is entered (FUN_1403cad00)
 };
 
@@ -94,6 +99,9 @@ public:
     // the game's event n told to the current state (FUN_1403ca1d0): its routine for it run at once, the actor's handle
     // given, unless the state has not begun (+ 300's bit 2): 1 off the ground, 2 landed
     void event(Actor &a, int n);
+    // a shout of a state's name heard (FUN_1403ca950): that state's shout routine (+ 0x14) run at once, given this
+    // machine's handle and the shouter's, whatever the state is now; whether it has one
+    bool shout(Actor &a, const std::string &name, std::uint32_t from);
     const StateEntry *current() const { return current_ ? &*current_ : nullptr; }
     std::uint32_t handle() const
     {
@@ -203,13 +211,21 @@ struct Playing final {
     int after = -1, landing = 5; // + 0x118 / + 0x11c: a jump's next motions (1:55's flag), -1 none
 };
 
-// A jump (1:55, 1:168; FUN_1403cbb00): the speed up (KH2's y points down: up is negative) and along the ground.
+// KH2's pull on a jump, centimetres a tick a tick (DAT_1405ce184)
+constexpr float kKh2Pull = 0.408163F;
+
+// A jump (1:55, 1:168, 1:156, a throw): its vertical speed (KH2's y points down: up is negative) and along the ground.
 struct Jump final {
     bool on = false;
     float up = 0.0F; // this tick's vertical speed, KH2's y (negative up)
     Vec3 along{};    // the speed along the ground a tick
-    // its pull a tick a tick: KH2's (FUN_1403cbb00's sqrt: 2 / 0.408163 is 2 g; DAT_1405ce184), or 1:156's own
-    float gravity = 1.0F / 0.408163F;
+    // its pull a tick a tick (1:156's own, a throw's KH2's)
+    float gravity = kKh2Pull;
+    // class 1's arc by its time (1:55, 1:168; FUN_1403cbb00, its movement FUN_1403cb360): `time` (+ 0xf0) on a tick a
+    // tick; before `apex` (+ 0xf4) its height eased up to `rise` (+ 0xfc: sin(sin(time / apex x pi/2) x pi/2) of it),
+    // then from `rise` + `base` (+ 0xf8) down under KH2's pull; `height` where it is, from where it began
+    bool arc = false;
+    float time = 0.0F, apex = 0.0F, rise = 0.0F, base = 0.0F, height = 0.0F;
     // its class's steering in the air (FUN_1403b7ad0's): the velocity kept an evaluation when steered (the rest the
     // steering's), and kept unsteered -- class 1's (1:55) 0.9 and 0.95 (DAT_1405aaa40, DAT_1405b1c74), class 9's
     // (1:156) its own value at + 0x108 for both (FUN_1403cbdd0)
@@ -341,6 +357,12 @@ public:
     {
         return {};
     }
+    // Whether the motion it plays has its take-off still ahead (a trigger 0 at or past its time): a jump then waits
+    // for it (FUN_14040dd70's event 0)
+    virtual bool takes_off_later(Actor &)
+    {
+        return false;
+    }
     // Whether the actor is on the screen (1:56: FUN_1403ba4a0 tests it against the camera's view, FUN_1403f3ed0)
     virtual bool on_screen(Actor &)
     {
@@ -354,11 +376,14 @@ public:
     }
     // The height of the ground under it, KH2's y (1:98, 1:99: FUN_1403b87e0's ray down)
     virtual float ground(Actor &a);
-    // A state every object enters, at once or each after a time at random below `delay` (1:90: FUN_1403cacd0's list,
-    // FUN_1403c9d40 sends it to every object)
+    // A state's name shouted to every object (1:90: FUN_1403cacd0's list, which FUN_1403c9d40 sends once a frame to
+    // every object, at once or each after a time at random below `delay`): each runs its own state of that name's
+    // shout routine (StateMachine::shout)
     virtual void broadcast(Actor &, const std::string & /*name*/, float /*delay*/) {}
     // Its health record (2:9's, at + 0x5c0) given its health now and at most
     virtual void health(Actor &) {}
+    // Its health made `hp` by its script (1:233, kept within its record's least and most)
+    virtual void set_health(Actor &, int /*hp*/) {}
 
     // One of Days's players in a script's hands (KH2's player is an actor as its enemies are; Days's are the shell's):
     // what the calls do to one goes to the world. 1:29: `player` plays motion `slot` of `by`'s set from `frame`
@@ -424,6 +449,9 @@ public:
     const Motions *motions = nullptr;
     Playing motion;
     Jump jump;
+    // a jump waiting for its motion's take-off (1:55, 1:168, 1:156 keep their class in + 0x648, which a motion's
+    // trigger 0 gives the actor: FUN_14040dd70's event 0): on the ground until then, the motion's root moving it
+    std::optional<Jump> take_off;
     // the move a script asks for this tick (1:89): a direction made unit and a speed (KH2's units a tick), cleared
     // after each tick as KH2 clears + 0xa48 .. + 0xa64 (FUN_1403b8e4d)
     Vec3 move{};
@@ -438,8 +466,8 @@ public:
     Vec3 velocity{};
     float move_clock = 0.0F;
     Vec3 steered{}; // the travel a tick of the last evaluation
-    // class 5 (1:58, FUN_140421ce0; its movement FUN_140421c80): along the ground at a velocity of its own, keeping
-    // `dash_keep` of it an evaluation (eased toward the steering when steered), until its class changes
+    // class 5, flying (1:58, trap_obj_fly: FUN_140421ce0; its movement FUN_140421c80): at a velocity of its own,
+    // keeping `dash_keep` of it an evaluation (eased toward the steering when steered), until its class changes
     bool dashing = false;
     float dash_keep = 0.0F;
     // the thread a script attached to it (1:112, FUN_1403d76d0: + 0xd48, the one before ended), in the machine that

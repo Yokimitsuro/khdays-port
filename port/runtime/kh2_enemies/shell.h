@@ -26,8 +26,11 @@ void khdays_kh2_enemies_area_left(void);
 void khdays_kh2_enemies_tick(void *actor, int delta);
 int khdays_kh2_enemies_held(void *actor);
 
-/* Ov107_AiState_ApplyHit (prepare.py's joins): the hit taken through its class's handler, its HP before it. */
+/* Ov107_AiState_ApplyHit (prepare.py's joins): the hit taken through its class's handler, its HP before it; and
+ * before that, the damage Days worked out for it (`amount`) kept from taking it under the least health its script
+ * set (1:231): the amount to take. */
 void khdays_kh2_enemies_hit(void *actor, int hp_before);
+int khdays_kh2_enemies_damage(void *actor, int amount);
 
 /* Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on it to land now as one hit (the last of
  * Cerberus's reaction command), its damage in `amount`; 0 none. */

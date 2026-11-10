@@ -2638,7 +2638,9 @@ HOOKS["ov107@020c5cfc"] = [
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(1); }\n"
         "    amount = Ov107_CalcHitDamage(obj, packet);\n"
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(0); }\n"
-        "    { extern int khdays_stop_store(void *enemy, int amount); amount = khdays_stop_store(obj, amount); }\n",
+        "    { extern int khdays_stop_store(void *enemy, int amount); amount = khdays_stop_store(obj, amount); }\n"
+        "    { extern int khdays_kh2_enemies_damage(void *enemy, int amount);\n"
+        "      amount = khdays_kh2_enemies_damage(obj, amount); }\n",
     ),
     (  # a KH2 enemy's shell (runtime/kh2_enemies/shell.h): KH2's reaction or its end, once its class took the hit
         "        if (obj->field_1d0(obj, source, packet) != 0) {\n",

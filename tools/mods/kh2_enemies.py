@@ -67,6 +67,15 @@ KINDS = {
     "M_EX760": "Armored Knight",
     "M_EX880": "Creeper",
     "M_EX990": "Dusk",
+    "M_EX110": "Silver Rock",
+    "M_EX520": "Hook Bat",
+    "M_EX540": "Aeroplane",
+    "M_EX630": "Luna Bandit",
+    "M_EX700": "Mole Driller",
+    "M_EX780": "Aerial Knocker",
+    "M_EX790": "Graveyard",
+    "M_EX930": "Dancer",
+    "M_EX960": "Sorcerer",
     "B_HE020": "Cerberus",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them

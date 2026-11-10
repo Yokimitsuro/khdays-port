@@ -92,6 +92,7 @@ bool StateMachine::find(Actor &a, const std::string &name, StateEntry &out) cons
         out.on_leave = u16(0xa);
         out.on_air = u16(0xc);
         out.on_land = u16(0xe);
+        out.on_shout = u16(0x14);
         out.on_enter = u16(0x16);
         return true;
     }
@@ -107,6 +108,16 @@ void StateMachine::event(Actor &a, int n)
         return;
     const ai::Value handle = ai::Value::of_address(handle_);
     a.machine().run_now(routine, {&handle, 1});
+}
+
+bool StateMachine::shout(Actor &a, const std::string &name, std::uint32_t from)
+{
+    StateEntry e;
+    if (table_ == 0 || !find(a, name, e) || e.on_shout == 0)
+        return false;
+    const ai::Value values[2] = {ai::Value::of_address(handle_), ai::Value::of_address(from)};
+    a.machine().run_now(e.on_shout, values);
+    return true;
 }
 
 // FUN_1403caec0: the current state's leave routine run at once, its thread ended
@@ -451,7 +462,18 @@ Vec3 Actor::step(float ticks)
     }
     for (int i = 0; i < 3; ++i)
         travel[i] += steered[std::size_t(i)] * ticks;
-    if (jump.on) {
+    if (jump.on && jump.arc) {
+        jump.time += ticks;
+        constexpr float kHalfPi = 1.5707963F;
+        const float h = jump.time >= jump.apex
+                            ? jump.rise + jump.base + kKh2Pull * (jump.time - jump.apex) * (jump.time - jump.apex) * 0.5F
+                            : std::sin(std::sin(jump.time / jump.apex * kHalfPi) * kHalfPi) * jump.rise + jump.base;
+        const float dy = h - jump.height;
+        jump.height = h;
+        travel[1] += dy;
+        jump.up = ticks > 0.0F ? dy / ticks : 0.0F;
+        set_bits(field::kFlags, bit::kInAir, true);
+    } else if (jump.on) {
         travel[1] += jump.up * ticks + 0.5F * jump.gravity * ticks * ticks;
         jump.up += jump.gravity * ticks;
         set_bits(field::kFlags, bit::kInAir, true);

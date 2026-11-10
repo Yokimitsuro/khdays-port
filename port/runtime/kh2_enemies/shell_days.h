@@ -22,6 +22,9 @@ typedef struct KhdaysKh2Shell {
 /* The Days enemy at `actor` (a DS address); 0 when it is not one in the game's memory. */
 int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out);
 
+/* Its HP made `hp` (kept between 1 and its most: Days's defeat comes through its hits), as KH2's script sets it. */
+void khdays_kh2_shell_set_hp(unsigned actor, int hp);
+
 /* Its model put at `place` (its collision sphere with it) and turned by `yaw` (radians, KH2's: atan2(x, z)); the
  * room's collision then keeps it out of the walls and on the ground (Ov107_AiState_ResolveContacts, later in the same
  * tick). */

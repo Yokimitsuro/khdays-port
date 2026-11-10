@@ -95,6 +95,16 @@ int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out)
     return 1;
 }
 
+void khdays_kh2_shell_set_hp(unsigned actor, int hp)
+{
+    if (actor == 0 || !khdays_game_ram(actor + ACTOR_HP)) {
+        return;
+    }
+    const int most = (short)rd16(actor + ACTOR_HP_MAX);
+    hp = hp > most ? most : hp;
+    *(unsigned short *)KHDAYS_W(actor + ACTOR_HP) = (unsigned short)(hp < 1 ? 1 : hp);
+}
+
 void khdays_kh2_shell_place(unsigned actor, const float place[3], float yaw)
 {
     const KhdaysRef v = scratch();

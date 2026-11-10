@@ -61,7 +61,7 @@ using namespace khdays::kh2_enemies;
 // character's size by x 0.01), and KH2's world's y points down: a Days place (x, y, z) is KH2's (100 x, -100 y, 100 z)
 constexpr float kKh2PerDays = 100.0F;
 constexpr float kPi = 3.14159265358979F;
-constexpr float kGravity = 1.0F / 0.408163F; // KH2's, a tick a tick (actor.cpp)
+constexpr float kGravity = kKh2Pull; // a fall's pull a tick a tick: class 1's past its top (FUN_1403cb360; actor.h)
 constexpr int kNoBone = 0x4000;
 // how long an enemy's end may take before its Days defeat goes on without it (a script that never fades out): ticks
 constexpr unsigned kLongestEnd = 60u * 10u;
@@ -118,7 +118,9 @@ struct Shape final {
     float height = 0.0F, radius = 0.0F;
 };
 
-std::vector<Shape> read_shapes(const std::vector<std::uint8_t> &mdlx)
+// `default_groups`, when given: the header's + 4, the groups on unless the motion or the script says (FUN_1403ba550's
+// last test; 1 in every one read: the body's group 0)
+std::vector<Shape> read_shapes(const std::vector<std::uint8_t> &mdlx, std::uint32_t *default_groups = nullptr)
 {
     std::vector<Shape> out;
     const auto u16 = [&](std::size_t o) { return std::uint16_t(mdlx[o] | (mdlx[o + 1] << 8)); };
@@ -132,6 +134,8 @@ std::vector<Shape> read_shapes(const std::vector<std::uint8_t> &mdlx)
         if (u16(e) != 0x17 || std::size_t(at) + size > mdlx.size() || size < 64)
             continue;
         const std::uint32_t count = u32(at);
+        if (default_groups != nullptr)
+            *default_groups = u32(at + 4);
         for (std::uint32_t k = 0; k < count && 64 + 20 * (k + 1) <= size; ++k) {
             const std::size_t r = at + 64 + 20 * k;
             Shape s;
@@ -170,6 +174,7 @@ struct KindFiles final {
     std::shared_ptr<const kh2::MotionSet> set;
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
     std::vector<Shape> shapes;
+    std::uint32_t default_groups = 1; // the groups on unless the motion or the script says (the shapes' header's + 4)
     // whether its script plays the player's motions itself (a 1:29 in its walked code, the mod's list says: the Magnum
     // Loader's Quick Blade, Cerberus's commands): its zones' commands offered; those KH2's player's own code plays (the
     // Soldier's Cyclone, the Dusk's Reversal) are not yet
@@ -461,7 +466,7 @@ KindFiles *files_of(const std::string &name)
             k->set = std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
             k->skeleton =
                 std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
-            k->shapes = read_shapes(mdlx);
+            k->shapes = read_shapes(mdlx, &k->default_groups);
             k->plays_player = kind->plays_player;
             read_effects(*k, u8(m.folder));
             read_events(*k, u8(m.folder));
@@ -532,7 +537,10 @@ struct Enemy final {
     bool placed = false; // its place given to Days (e.place) at least once
     float fall_from = 0.0F; // how high above the ground its fall began (KH2's cm)
     bool aloft = false;     // off the ground as KH2's ground class sees it: a jump, a fall past a step, a motion's air
-    std::string sent_state; // a state another enemy sent it (1:90), entered once `sent_after` ticks have gone
+    // a state's name shouted to it with a delay (1:90; + 0x4c0 .. + 0x4d0, the last one shouted), heard once
+    // `sent_after` ticks have gone: that state's shout routine run (StateMachine::shout)
+    std::string sent_state;
+    std::uint32_t sent_from = 0; // the shouter's handle
     float sent_after = 0.0F;
     float pure[16] = {};
     bool seen = false;
@@ -637,6 +645,15 @@ struct Held final {
     bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
 };
 std::map<unsigned, Held> held; // by the Days player's object
+// the states' names shouted this frame (1:90; FUN_1403cacd0's list at DAT_142a23d50), each with its shouter's handle and
+// its delay: sent to every enemy at the next frame's first tick (FUN_1403c9d40, once a frame)
+struct Shout final {
+    std::string name;
+    std::uint32_t from = 0;
+    float delay = 0.0F;
+};
+std::vector<Shout> shouts;
+unsigned shouts_frame = ~0u;
 // a thread a script started on a player before taking it in hand (Cerberus's 1:112 comes before its 1:29), by object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
@@ -759,6 +776,12 @@ public:
         a.memory().set_u32(record + 4, std::uint32_t(std::max(1, s.hp_max)));
     }
 
+    void set_health(Actor &a, int hp) override
+    {
+        if (const auto it = by_actor.find(&a); it != by_actor.end() && !it->second->dying)
+            khdays_kh2_shell_set_hp(it->second->days, hp);
+    }
+
     // 1:98, 1:99: the ground Days last found under it (its place's height when none yet)
     float ground(Actor &a) override
     {
@@ -768,21 +791,9 @@ public:
 
     // 1:90: a state every enemy of the field enters, at once or each after a time at random below `delay` (KH2's
     // chance, DAT_140783ca0 x 0x10dcd)
-    void broadcast(Actor &, const std::string &name, float delay) override
+    void broadcast(Actor &a, const std::string &name, float delay) override
     {
-        static std::uint32_t chance = 1;
-        for (auto &[actor, e] : by_actor) {
-            if (e->dying)
-                continue;
-            if (delay > 0.0F) {
-                chance *= 0x10dcdu;
-                e->sent_state = name;
-                e->sent_after = float(chance) * (1.0F / 4294967296.0F) * delay;
-            } else {
-                Actor &x = *e->actor;
-                x.states().enter(x, name);
-            }
-        }
+        shouts.push_back({name, a.states().handle(), delay});
     }
 
     // 1:87: the actor's element `number` started (FUN_1403b6670 -> FUN_1402c6b30 on its effects); the handle the
@@ -1050,8 +1061,7 @@ public:
         if (it == by_actor.end())
             return out;
         Enemy &e = *it->second;
-        std::set<int> on = groups_on(e);
-        on.insert(0); // the body's, always
+        const std::set<int> on = groups_on(e);
         KhdaysKh2Shell now{};
         to_days(a.place(), now.place);
         if (e.pose.empty())
@@ -1067,6 +1077,19 @@ public:
 
     // its model drawn by Days in the frame before or this one (whether Days leaves out what its camera does not see
     // is not known: a drawn enemy counts as seen)
+    bool takes_off_later(Actor &a) override
+    {
+        const auto it = by_actor.find(&a);
+        const kh2::MotionAttributes *attr =
+            it != by_actor.end() && a.motion.id >= 0 ? it->second->kind->set->attributes(std::size_t(a.motion.id))
+                                                     : nullptr;
+        if (attr != nullptr)
+            for (const auto &t : attr->triggers)
+                if (t.id == 0 && float(t.frame) >= a.motion.time)
+                    return true;
+        return false;
+    }
+
     bool on_screen(Actor &a) override
     {
         const auto it = by_actor.find(&a);
@@ -1967,26 +1990,45 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
     }
 }
 
-// KH2's reaction command zones: the shapes of kind 5 (their command at + 2) in the collision groups the motion's
-// ranges 4 turn on now (FUN_14040d810: range 4 FUN_1403f1fa0 on + 0x5a0, range 5 the group off), offering their
+// KH2's reaction command zones: the shapes of kind 5 (their command at + 2) in the collision groups on now (below:
+// the script's, the motion's ranges 4 and 5 (FUN_14040d810 on + 0x5a0), the shapes' default), offering their
 // command to this game's own player while his place (+ 0x670) lies within a zone's radius of its point (the test KH2's
 // own uses of a zone make, FUN_14054ae70: the place's distance, FUN_140140f50, under the shape's + 0x10). The Magnum
 // Loader's eight along its rush (52A, group 5: Quick Blade), the Armored Knight's; the Soldier's and the Dusk's not
 // (Kind::plays_player). Not while an enemy holds him, nor again in the motion one was taken in.
-// The collision groups the enemy's motion's ranges 4 turn on now, those of its ranges 5 off
+// The collision groups on now (YS::OBJ::is_enable_collision, FUN_1403ba550): one the script turned on or off (1:52,
+// 1:53: + 0x5a8) is so; else one the motion's ranges turn on (4) or off (5) now (+ 0x5a0); else the shapes' default
+// (their header's + 4, a bit a group)
 std::set<int> groups_on(const Enemy &e)
 {
-    std::set<int> groups;
+    std::set<int> motion_on, motion_off, groups;
     const Actor &a = *e.actor;
     const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
-    if (attr == nullptr)
-        return groups;
-    for (const auto &r : attr->ranges)
-        if (r.id == 4 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
-            groups.insert(std::int16_t(r.params[0]));
-    for (const auto &r : attr->ranges)
-        if (r.id == 5 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
-            groups.erase(std::int16_t(r.params[0]));
+    if (attr != nullptr)
+        for (const auto &r : attr->ranges)
+            if ((r.id == 4 || r.id == 5) && !r.params.empty() && a.motion.time >= float(r.start) &&
+                a.motion.time < float(r.end))
+                (r.id == 4 ? motion_on : motion_off).insert(std::int16_t(r.params[0]));
+    std::set<int> asked;
+    for (const Shape &s : e.kind->shapes)
+        asked.insert(s.group);
+    asked.insert(motion_on.begin(), motion_on.end());
+    for (const int g : asked) {
+        const std::uint32_t at = field::kCollisionFlags + (std::uint32_t(g) >> 5) * 4, bit = 1u << (g & 31);
+        bool on = false;
+        if ((a.u32(at) & bit) != 0)
+            on = true;
+        else if ((a.u32(at + 4) & bit) != 0)
+            on = false;
+        else if (motion_on.count(g) != 0)
+            on = true;
+        else if (motion_off.count(g) != 0)
+            on = false;
+        else
+            on = ((e.kind->default_groups >> (g & 31)) & 1u) != 0;
+        if (on)
+            groups.insert(g);
+    }
     return groups;
 }
 
@@ -2311,7 +2353,16 @@ void cues(Enemy &e)
     for (const auto &t : attr != nullptr ? attr->triggers : std::vector<kh2::MotionAttributes::Trigger>{}) {
         if (float(t.frame) <= from || float(t.frame) > a.motion.time)
             continue;
-        if (t.id == 1 && !t.params.empty()) {
+        if (t.id == 0 && a.take_off) { // the take-off: the jump asked begins (FUN_14040dd70's event 0, + 0x648)
+            a.jump = *a.take_off;
+            a.take_off.reset();
+            a.velocity = a.steered = a.jump.along;
+            a.move_clock = 0.0F;
+            a.set_bits(field::kFlags, bit::kInAir, true);
+            if (tracing())
+                khdays_log("kh2 enemies: %08x takes off (trigger 0) in motion %d at %d", e.days, a.motion.id,
+                           int(t.frame));
+        } else if (t.id == 1 && !t.params.empty()) {
             // its script told (FUN_14040dd70: trigger 16 with the actor, the element, the effect's handle -- the Hammer
             // Frame's shockwave attaches its attack to its element 8)
             const int number = std::int16_t(t.params[0]);
@@ -2401,7 +2452,8 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
                    e.reacting ? ", reacting" : "", double(s.above), double(a.jump.on ? a.jump.up : e.fall));
     }
     if (!e.sent_state.empty() && (e.sent_after -= 1.0F) <= 0.0F) {
-        a.states().enter(a, e.sent_state);
+        if (a.states().shout(a, e.sent_state, e.sent_from) && tracing())
+            khdays_log("kh2 enemies: %08x hears \"%s\" shouted", e.days, e.sent_state.c_str());
         e.sent_state.clear();
     }
     if (!e.paused)
@@ -2938,6 +2990,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     by_actor.clear();
     kind_of.clear();
     held.clear();
+    shouts.clear();
     waiting_threads.clear();
     player_of_node.clear();
     players.clear();
@@ -2950,12 +3003,44 @@ extern "C" int khdays_kh2_enemies_held(void *actor)
     return e != nullptr && !e->released;
 }
 
+// FUN_1403c9d40, once a frame: the states' names shouted sent to every enemy -- with a delay each its own time at
+// random below it (KH2's chance, DAT_140783ca0 x 0x10dcd), else its state of that name's shout routine run now
+void send_shouts()
+{
+    static std::uint32_t chance = 1;
+    const std::vector<Shout> sent = std::move(shouts);
+    shouts.clear();
+    for (const Shout &s : sent) {
+        std::vector<unsigned> listening; // by their Days enemy: a routine run may end one
+        for (const auto &[actor, e] : by_actor)
+            listening.push_back(e->days);
+        for (const unsigned days : listening) {
+            Enemy *e = find(days);
+            if (e == nullptr || e->dying)
+                continue;
+            if (s.delay > 0.0F) {
+                chance *= 0x10dcdu;
+                e->sent_state = s.name;
+                e->sent_from = s.from;
+                e->sent_after = float(chance) * (1.0F / 4294967296.0F) * s.delay;
+            } else if (e->actor->states().shout(*e->actor, s.name, s.from) && tracing()) {
+                khdays_log("kh2 enemies: %08x hears \"%s\" shouted", e->days, s.name.c_str());
+            }
+        }
+    }
+}
+
 extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
 {
     const unsigned days = unsigned(KHDAYS_REF(actor));
     const auto kind = kind_of.find(days);
     if (kind == kind_of.end())
         return;
+    if (const unsigned frame = khdays_link_frame(); frame != shouts_frame) {
+        shouts_frame = frame;
+        if (!shouts.empty())
+            send_shouts();
+    }
     KhdaysKh2Shell s;
     if (!khdays_kh2_shell_read(days, &s))
         return;
@@ -3100,14 +3185,25 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // the reaction: a small one, from the front or the back as the nearest player stands (KH2's motions 10 and 12,
     // DAMAGE_S_FRONT_HIGH and DAMAGE_S_BACK_HIGH)
     bool front = true;
-    if (Object *p = the_field().player(a)) {
-        const Vec3 to = p->place(), at = a.place(), f = facing_of(a.yaw());
+    Object *striker = the_field().player(a);
+    float way[4] = {};
+    if (striker != nullptr) {
+        const Vec3 to = striker->place(), at = a.place(), f = facing_of(a.yaw());
         front = (to[0] - at[0]) * f[0] + (to[2] - at[2]) * f[2] >= 0.0F;
+        const float dx = at[0] - to[0], dz = at[2] - to[2], flat = std::sqrt(dx * dx + dz * dz);
+        if (flat > 0.0F)
+            way[0] = dx / flat, way[2] = dz / flat;
     }
-    if (!days_hit) {
+    if (!days_hit)
         days_hit = std::make_unique<Object>(mod().memory, "a Days hit");
-        days_hit->set_u32(0x24, 2u << 16); // + 0x26: a small reaction
-    }
+    // the hit as KH2's YS::DAMAGE, at the offsets KH2FM.exe's calls read: its way (Dir, + 0) from the player who
+    // struck to the enemy along the ground (2:1), its attacker and target (+ 0x10, + 0x14), its Flag (+ 0x18) clear, a
+    // small reaction (Reaction, + 0x26: 2:7, 2:8), no first one (OrigReaction, + 0x27: none of Days's hits a finish)
+    mod().memory.write(days_hit->address(), way, sizeof way);
+    days_hit->set_u32(0x10, striker != nullptr ? striker->address() : 0u);
+    days_hit->set_u32(0x14, a.address());
+    days_hit->set_u32(0x18, 0);
+    days_hit->set_u32(0x24, 2u << 16);
     const int motion = front ? 10 : 12;
     // KH2's hit (FUN_140411060): the reaction applied -- its motion asked, the actor held while it plays
     // (FUN_1403d4650; a set without the motion, a boss's, plays nothing and goes on), the queue cleared -- and the
@@ -3118,6 +3214,7 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     a.states().clear(a);
     if (moves) {
         a.jump = {};
+        a.take_off.reset();
         a.play(motion, 2.0F, 0.0F);
         a.set_bits(field::kStatus, bit::kHeld, true);
         e->reacting = true;
@@ -3350,6 +3447,26 @@ extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int 
     const Command *c = local_taken >= 0 ? command(local_taken) : nullptr;
     *id = c != nullptr ? local_taken : 0;
     return c != nullptr ? put_name(c->text, out, room) : 0;
+}
+
+// Ov107_AiState_ApplyHit (prepare.py's join): a hit's damage kept from taking the enemy under the least health its
+// script set (1:231, YS::SHEET's MinHp: KH2's damage stops there -- the Phantom's)
+extern "C" int khdays_kh2_enemies_damage(void *actor, int amount)
+{
+    const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    if (e == nullptr || e->dying || amount <= 0)
+        return amount;
+    const std::uint32_t record = e->actor->u32(0x5c0);
+    KhdaysKh2Shell s;
+    if (record == 0 || !khdays_kh2_shell_read(e->days, &s))
+        return amount;
+    const int least = std::int32_t(mod().memory.u32(record + 8));
+    if (least <= 0)
+        return amount;
+    const int kept = std::max(0, std::min(amount, s.hp - least));
+    if (kept != amount && tracing())
+        khdays_log("kh2 enemies: %08x keeps %d health: %d of %d damage taken", e->days, least, kept, amount);
+    return kept;
 }
 
 // Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on the enemy to land now as one Days hit (its

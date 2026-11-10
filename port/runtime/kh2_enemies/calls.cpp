@@ -200,6 +200,8 @@ void add_math(ai::Calls &calls)
     });
     // 0:7 made unit in place, its length given back and kept as its w (FUN_14041cfa0 -> FUN_140142080: left as it is
     // when 0; + 0xc the length)
+    // 0:8 a vector printed (trap_vector_dump; FUN_14041d1a0 is empty in the PC's build): nothing
+    calls.set(0, 8, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 7, [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v;
         m.memory().read(a[0].bits, v.v, sizeof v.v);
@@ -300,6 +302,25 @@ void add_math(ai::Calls &calls)
     calls.set(1, 229, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits + 4u)));
     });
+    // 1:231 / 1:232 a record's third word, the health it does not go under (YS::SHEET's HP: Hp, MaxHp, MinHp;
+    // trap_sheet_set_min_hp, trap_sheet_min_hp: FUN_140431190, FUN_1404310b0) -- the shell keeps Days's hits above it;
+    // 1:233 its health set, kept between the two (trap_sheet_set_hp; FUN_140431140), and given to Days's enemy
+    calls.set(1, 231, [](ai::Machine &m, std::span<ai::Value> a) {
+        m.memory().set_u32(a[0].bits + 12u * a[2].bits + 8u, a[1].bits);
+    });
+    calls.set(1, 232, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 12u * a[1].bits + 8u)));
+    });
+    calls.set(1, 233, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t at = a[0].bits + 12u * a[2].bits;
+        const std::int32_t least = std::int32_t(m.memory().u32(at + 8)), most = std::int32_t(m.memory().u32(at + 4));
+        const std::int32_t hp = std::max(least, std::min(std::int32_t(a[1].bits), most));
+        m.memory().set_u32(at, std::uint32_t(hp));
+        const std::uint32_t owner = m.memory().u32(a[0].bits + 0x268);
+        Object *o = a[2].bits == 0 ? Object::at(m.memory(), owner) : nullptr;
+        if (Actor *x = o != nullptr ? o->actor() : nullptr; x != nullptr && x->world != nullptr)
+            x->world->set_health(*x, hp);
+    });
     calls.set(2, 25, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 0x18u)));
     });
@@ -327,8 +348,9 @@ void add_math(ai::Calls &calls)
 
 void add_states(ai::Calls &calls)
 {
-    // 1:90 a state every object enters, by its name, at once or each after a time at random below the value
-    // (FUN_1403cacd0 lists it, FUN_1403c9d40 sends it to every object): the world's
+    // 1:90 a state's name shouted to every object, at once or each after a time at random below the value
+    // (trap_obj_act_shout: FUN_1403cacd0 lists it, FUN_1403c9d40 sends the list to every object once a frame, each
+    // running its own state of that name's shout routine, FUN_1403ca950): the world's
     calls.set(1, 90, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         if (x->world != nullptr)
@@ -356,6 +378,8 @@ void add_states(ai::Calls &calls)
         else if (running(m)->world != nullptr)
             running(m)->world->player_thread(*on, m, t->id);
     });
+    // 1:214 the thread attached to the actor stopped (trap_obj_hook_stop; FUN_14042cab0 -> FUN_1403d76d0 with none)
+    calls.set(1, 214, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->attach_thread(m, 0); });
     // 1:5 a state table emptied: its 128 entries' ids 0 (FUN_1403ca790)
     calls.set(1, 5, [](ai::Machine &m, std::span<ai::Value> a) {
         for (std::uint32_t i = 0; i < 128; ++i)
@@ -459,11 +483,37 @@ void add_actor_fields(ai::Calls &calls)
                 v.v[i] = x->f(field::kPlace + 4 * i);
         a[0] = give_vec(m, "shared", v);
     });
-    // 1:39 its battle number n (FUN_1403b5df0: + 0x9f4 + 4 n); none of Days's: 0
+    // 1:39 its unit's argument n (trap_obj_unit_arg; FUN_1403b5df0: + 0x9f4 + 4 n): what the room's spawn gives each
+    // object, or 1:218 sets; Days's waves give none: 0
     calls.set(1, 39, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *x = object_of(m, a[0]);
-        a[0] = ai::Value::of_int(x ? std::int32_t(x->u32(field::kParams + 4 * (a[1].bits & 0xff))) : 0);
+        a[0] = ai::Value::of_int(x ? std::int32_t(x->u32(field::kUnitArgs + 4 * (a[1].bits & 0xff))) : 0);
     });
+    // 1:218 one set (trap_obj_set_unit_arg; FUN_14042db40 -> FUN_1403b65b0)
+    calls.set(1, 218, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]))
+            x->set_u32(field::kUnitArgs + 4 * a[1].bits, a[2].bits);
+    });
+    // 1:180 the motion its jump or fall lands in (trap_obj_set_land_motion; FUN_14042ce30: + 0x11c)
+    calls.set(1, 180, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->motion.landing = std::int32_t(a[1].bits);
+    });
+    // 1:59 whether it flies (trap_obj_is_fly; FUN_14042ef50: its class's flag bit 1 -- class 5, 1:58's
+    // trap_obj_fly -- or + 0x18c bit 6); 1:224 whether its class is one of the air's (trap_obj_is_action_air;
+    // FUN_14042d120: its flags' bits 0 or 1 -- off the ground, or flying)
+    calls.set(1, 59, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x->dashing || (x->u32(field::kStatus) & 0x40u) != 0 ? 1 : 0);
+    });
+    calls.set(1, 224, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x->dashing || (x->u32(field::kFlags) & bit::kInAir) != 0 ? 1 : 0);
+    });
+    // 1:36 a part of KH2's room hidden (trap_bg_hide; FUN_14042e690): Days's room is not KH2's -- nothing
+    calls.set(1, 36, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:203 a spawn unit of KH2's room let go on (trap_unit_enable; FUN_140431000: its flags' bit 0 cleared): Days's
+    // waves have no KH2 units -- nothing (the enemies a boss's unit would bring do not come)
+    calls.set(1, 203, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:64 this tick's travel (+ 0xa28), 1:62 the tick's before (+ 0xa38), each into the call's own vector
     // (FUN_14042f160, FUN_14042f060)
     const auto travel = [](std::uint32_t at, const char *call) {
@@ -486,6 +536,29 @@ void add_actor_fields(ai::Calls &calls)
         if (Object *x = object_of(m, a[0]))
             x->set_bits(field::kFlags8c8, 0x40u, false);
     });
+    // 1:52 / 1:53 / 1:54 a collision group turned on, off, or back to what the motion and the shapes say (FUN_14042edb0,
+    // FUN_14042ede0, FUN_14042ee10 on + 0x5a8: FUN_1403f1fa0 the on word's bit, FUN_1403f1f80 the off word's,
+    // FUN_1403f2000 both cleared)
+    const auto collision = [](int how) {
+        return [how](ai::Machine &m, std::span<ai::Value> a) {
+            Object *x = object_of(m, a[0]);
+            if (x == nullptr)
+                return;
+            const std::uint32_t group = a[1].bits, at = field::kCollisionFlags + (group >> 5) * 4;
+            const std::uint32_t bit = 1u << (group & 31);
+            if (how > 0) {
+                x->set_bits(at, bit, true);
+            } else if (how < 0) {
+                x->set_bits(at + 4, bit, true);
+            } else {
+                x->set_bits(at, bit, false);
+                x->set_bits(at + 4, bit, false);
+            }
+        };
+    };
+    calls.set(1, 52, collision(1));
+    calls.set(1, 53, collision(-1));
+    calls.set(1, 54, collision(0));
     // 1:309 + 0x6c8 bit 7 (FUN_14042b260)
     calls.set(1, 309, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *x = object_of(m, a[0]);
@@ -617,6 +690,36 @@ void add_actor_fields(ai::Calls &calls)
         const unsigned group = kind == 1 || kind == 12 ? 1u : kind;
         a[0] = ai::Value::of_int(group > 1 ? 1 : 0);
     });
+    // 2:7 a hit's reaction kind itself (YS::DAMAGE's Reaction, + 0x26; FUN_140431f10)
+    calls.set(2, 7, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint8_t kind = 0;
+        m.memory().read(a[0].bits + 0x26, &kind, 1);
+        a[0] = ai::Value::of_int(kind);
+    });
+    // 2:15 a hit's reaction to be carried out (trap_damage_exec_reaction; FUN_140432050: its Flag, + 0x18, bit 0) --
+    // 2:1 sets it too; the port plays a Days hit's reaction before trigger 6, so nothing waits on it
+    calls.set(2, 15, [](ai::Machine &m, std::span<ai::Value> a) {
+        m.memory().set_u32(a[0].bits + 0x18, m.memory().u32(a[0].bits + 0x18) | 1u);
+    });
+    // 2:92 whether a hit is a finishing one: its first reaction kind (OrigReaction, + 0x27) 6, 7, 10 or 11
+    // (FUN_1404321f0 -> FUN_1403cedc0). A Days hit names none: no
+    calls.set(2, 92, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint8_t kind = 0;
+        m.memory().read(a[0].bits + 0x27, &kind, 1);
+        a[0] = ai::Value::of_int((kind >= 6 && kind < 8) || (kind >= 10 && kind < 12) ? 1 : 0);
+    });
+    // 1:161 whether another object carries the actor (+ 0x6a0, YS::OBJ's Attach; FUN_14042b980 -> FUN_1403da520): none
+    // of Days's do
+    calls.set(1, 161, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *x = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(x != nullptr && x->u32(field::kCarrier) != 0 ? 1 : 0);
+    });
+    // 2:76 its karma's limit (YS::ENEMY's KarmaLimit, + 0xd4c; FUN_140431e30), kept: the port's revenge does not read
+    // it yet
+    calls.set(2, 76, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]))
+            x->set_u32(field::kKarmaLimit, a[1].bits);
+    });
     // the world's flags: 1:23 DAT_140717008 (the script tests 10), 1:24, 1:34 DAT_142a11478 (FUN_1403ac220), 1:301
     // FUN_1403bbea0, 1:171 / 1:206 DAT_142a11400's bits 2 / 7 -- KH2's field busy (an event, a pause), which Days's
     // field never is for its enemies: 0
@@ -626,6 +729,48 @@ void add_actor_fields(ai::Calls &calls)
 }
 
 // ------------------------------------------------------------------------------------------------- motions
+
+// Thrown (FUN_140409d30's class 4): along the ground (x, z made one long, times `speed`), `up` its first vertical
+// speed (KH2's y: negative up), no steering in the air, landing in the motion after the one playing (+ 0x114 the motion
+// at the throw; FUN_140422700). Its movement (FUN_140422780) adds KH2's pull (0.408163) to the speed each evaluation
+// after slowing the rise and the speed along by values the game sets running (DAT_142ae5760 + 0x20, + 0x18; its
+// fastest fall + 0x138), not read yet: the port pulls 1 / 0.408163 a tick a tick, a throw's height and length near
+// what those make (15 up rises 46 cm)
+// A jump just asked kept for its motion's take-off when the motion has one ahead (+ 0x648: the class its trigger 0
+// gives, FUN_14040dd70's event 0), the actor on the ground meanwhile, moving as it moved before the call; at once
+// otherwise
+void wait_for_take_off(Actor &x, const Vec3 &velocity, const Vec3 &steered)
+{
+    x.take_off.reset();
+    if (x.world == nullptr || !x.world->takes_off_later(x))
+        return;
+    x.take_off = x.jump;
+    x.jump = Jump{};
+    x.velocity = velocity;
+    x.steered = steered;
+    x.set_bits(field::kFlags, bit::kInAir, false);
+}
+
+void thrown(Actor &x, float way_x, float way_z, float speed, float up)
+{
+    way_x = std::isnan(way_x) ? 0.0F : way_x;
+    way_z = std::isnan(way_z) ? 0.0F : way_z;
+    speed = std::isnan(speed) ? 0.0F : speed;
+    const float flat = std::sqrt(way_x * way_x + way_z * way_z);
+    x.take_off.reset();
+    x.jump = Jump{};
+    x.jump.on = true;
+    x.jump.gravity = 1.0F / kKh2Pull;
+    x.jump.keep = x.jump.slow = 1.0F;
+    x.jump.up = std::isnan(up) ? 0.0F : up;
+    x.jump.along = flat > 0.0F ? Vec3{way_x / flat * speed, 0.0F, way_z / flat * speed} : Vec3{};
+    x.dashing = false;
+    x.velocity = x.steered = x.jump.along;
+    x.move_clock = 0.0F;
+    x.set_bits(field::kFlags, bit::kInAir, true);
+    x.motion.after = -1;
+    x.motion.landing = x.motion.id >= 0 ? x.motion.id + 1 : 5;
+}
 
 void add_motions(ai::Calls &calls)
 {
@@ -691,19 +836,30 @@ void add_motions(ai::Calls &calls)
     calls.set(1, 67, length);
     // 1:68 the same through its other virtual (FUN_1403c7950); -1 the motion playing
     calls.set(1, 68, length);
-    // 1:55, 1:168 a jump (FUN_1403cbb00, FUN_1404233f0): a vector -- its x, z the way (made one long, then times its
-    // w, the speed along: + 0xe0), its y the height it rises, either sign (negative: + 0xf0 the speed up
-    // sqrt(|2 y / 0.408163|), + 0xf8 y; positive: + 0xf4 the same speed, FUN_1403b73f0, + 0xfc -y) -- then a motion;
-    // the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing)
+    // 1:55, 1:168 a jump (method_obj_jump, trap_obj_flyjump; FUN_1403cbb00, FUN_1404233f0): a vector -- its x, z the
+    // way (made one long, then times its w, the speed along: + 0xe0), its y how it rises (a positive y: up that far, in
+    // the ticks KH2's pull takes to fall it, sqrt(2 y / 0.408163) -- + 0xf4 FUN_1403b73f0, 1:100's -- eased, + 0xfc
+    // -y; a negative y: no rise, its time begun at those ticks, + 0xf0, from + 0xf8 y, so down from where it is) --
+    // then a motion; the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing); its class (1) waits in
+    // + 0x648 for the motion's take-off (trigger 0, FUN_14040dd70's event 0). Class 1's movement (FUN_1403cb360) gives
+    // the height by the jump's time (Jump::arc)
     const auto jump = [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
+        const Vec3 velocity = x->velocity, steered = x->steered;
         x->jump.on = true;
         x->dashing = false;
         x->jump.gravity = Jump{}.gravity;
         x->jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
         x->jump.slow = Jump{}.slow;
-        x->jump.up = -std::sqrt(std::fabs(2.0F * v.v[1] / 0.408163F));
+        const float y = v.v[1], ticks = std::sqrt(std::fabs(2.0F * y / kKh2Pull));
+        x->jump.arc = true;
+        x->jump.up = 0.0F;
+        x->jump.height = 0.0F;
+        x->jump.time = y < 0.0F ? ticks : 0.0F;
+        x->jump.apex = y < 0.0F ? 0.0F : ticks;
+        x->jump.base = y < 0.0F ? y : 0.0F;
+        x->jump.rise = y < 0.0F ? 0.0F : -y;
         const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
         x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
         x->velocity = x->jump.along;
@@ -717,6 +873,7 @@ void add_motions(ai::Calls &calls)
             x->motion.after = std::int32_t(a[2].bits) + 1;
             x->motion.landing = std::int32_t(a[2].bits) + 2;
         }
+        wait_for_take_off(*x, velocity, steered);
     };
     calls.set(1, 55, jump);
     calls.set(1, 168, jump);
@@ -724,10 +881,12 @@ void add_motions(ai::Calls &calls)
     // ground (made one long, then times its w), its y how high it rises -- the ticks to its top (its pull + 0x10c
     // 2 y / t^2, its rise the pull times t), a value kept at + 0x108 (class 9's steering in the air keeps that much of
     // its velocity: FUN_1403cbdd0); then a motion (FUN_1403c86a0 on + 0x158) and, the flag set, the two after it as
-    // 1:55's. KH2 leaves the ground at the motion's take-off event (FUN_14040dd70, + 0x648 2: class 9); the port at once
+    // 1:55's. KH2 leaves the ground at the motion's take-off event (FUN_14040dd70, + 0x648 2: class 9), as the port does
+    // when the motion has one ahead (wait_for_take_off)
     calls.set(1, 156, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
+        const Vec3 velocity = x->velocity, steered = x->steered;
         const float t = a[2].f();
         const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
         x->jump.on = true;
@@ -748,31 +907,37 @@ void add_motions(ai::Calls &calls)
             x->motion.after = std::int32_t(a[4].bits) + 1;
             x->motion.landing = std::int32_t(a[4].bits) + 2;
         }
+        wait_for_take_off(*x, velocity, steered);
     });
     // 1:129 a throw of the actor's own (FUN_14042b550 -> FUN_1403d3e50): a vector (its NaNs made 0) -- its x, z the way
     // along the ground (made one long, then times its w), its y the speed up (+ 0x24 -y) -- and class 4, thrown
-    // (FUN_140409d30; the classes at 0x140750d30): no steering in the air (FUN_140422780 keeps the speed along), on the
-    // ground again the motion it was playing then, plus one (FUN_140422700: + 0x114 the motion at the throw) -- the
-    // Rapid Thruster's rise in motion 18, landing in 19. KH2's slowing of the rise and its fastest fall are values the
-    // game sets running (DAT_142ae5760 + 0x18 .. + 0x20, + 0x138): the port's pull is the jumps' own
+    // (FUN_140409d30; the classes at 0x140750d30; FUN_140422780 keeps the speed along): the Rapid Thruster's rise in
+    // motion 18, landing in 19
     calls.set(1, 129, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec v = read_vec(m, a[1].bits);
+        thrown(*self_of(m, a[0]), v.v[0], v.v[2], v.v[3], -v.v[1]);
+    });
+    // 2:1 a blow taken (trap_enemy_exec_damage_blow; FUN_140431b60 -> FUN_1403d3f50): from the front (the hit's way,
+    // YS::DAMAGE's Dir at + 0, against its facing, FUN_1403b56e0) it turns to face the hit and plays the first motion
+    // given, from behind it turns its back to it and plays the second (FUN_1403b6420, FUN_1403c86a0), then it is thrown
+    // as 1:129 throws (FUN_140409d30): along the way's ground part the last value fast, the one before up -- landing in
+    // the motion after; + 0x124 bit 17 a finishing hit's (2:92), the hit's Flag (+ 0x18) bit 0 set. The Mole Driller's
+    // (16 and 18, 15 up, 20 along)
+    calls.set(2, 1, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
-        Vec v = read_vec(m, a[1].bits);
-        for (float &c : v.v)
-            if (std::isnan(c))
-                c = 0.0F;
-        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
-        x->jump = Jump{};
-        x->jump.on = true;
-        x->jump.keep = x->jump.slow = 1.0F;
-        x->jump.up = -v.v[1];
-        x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
-        x->dashing = false;
-        x->velocity = x->steered = x->jump.along;
-        x->move_clock = 0.0F;
-        x->set_bits(field::kFlags, bit::kInAir, true);
-        x->motion.after = -1;
-        x->motion.landing = x->motion.id >= 0 ? x->motion.id + 1 : 5;
+        const std::uint32_t hit = a[1].bits;
+        const Vec way = read_vec(m, hit);
+        const Vec3 f = facing_of(x->yaw());
+        const bool front = way.v[0] * f[0] + way.v[1] * f[1] + way.v[2] * f[2] < 0.0F;
+        const float sign = front ? -1.0F : 1.0F;
+        if (way.v[0] != 0.0F || way.v[2] != 0.0F)
+            x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
+        x->play(std::int32_t(front ? a[2].bits : a[3].bits), 0.0F, 0.0F);
+        std::uint8_t first = 0;
+        m.memory().read(hit + 0x27, &first, 1);
+        x->set_bits(0x124, 1u << 17, (first >= 6 && first < 8) || (first >= 10 && first < 12));
+        thrown(*x, way.v[0], way.v[2], a[5].f(), -a[4].f());
+        m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
     });
     // 2:6 whether an object is in one of its reaction motions, 10 to 39 (FUN_140431d50 -> FUN_1403d4880: a motion
     // controller at + 0x158, + 0x180 less 10 under 30): Crimson Jazz asks it of itself before it acts
@@ -782,7 +947,8 @@ void add_motions(ai::Calls &calls)
         const bool reacting = x != nullptr && x->motions != nullptr && x->u32(field::kMotion) - 10u < 30u;
         a[0] = ai::Value::of_int(reacting ? 1 : 0);
     });
-    // 1:100 the speed a jump needs to rise `h` under KH2's pull: sqrt(|2 h / 0.408163|) (FUN_1403b73f0)
+    // 1:100 the ticks a jump takes to rise `h` (trap_obj_jump_height_to_uptime; FUN_1403b73f0): sqrt(|2 h / 0.408163|),
+    // KH2's pull's
     calls.set(1, 100, [](ai::Machine &, std::span<ai::Value> a) {
         a[0] = ai::Value::of_float(std::sqrt(std::fabs(2.0F * a[0].f() / 0.408163F)));
     });
@@ -821,7 +987,7 @@ void add_moving(ai::Calls &calls)
     // long at + 0x10, the speed at + 0x1c), the way's length given back; its first value the actor itself
     // 1:148 the actor put at a point (FUN_1403b64d0: + 0x670, its w 1); 1:220 a step ahead up to a length, the room's
     // collision stopping it (FUN_1403b9ac0: Days's collision puts it back out of the walls after)
-    calls.set(1, 148, [](ai::Machine &m, std::span<ai::Value> a) {
+    const auto put = [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v = read_vec(m, a[1].bits);
         for (float &c : v.v)
             if (std::isnan(c))
@@ -831,7 +997,10 @@ void add_moving(ai::Calls &calls)
             if (is_player(o) && running(m)->world != nullptr)
                 running(m)->world->player_place(*o, xyz(v));
         }
-    });
+    };
+    calls.set(1, 148, put);
+    // 1:153 the same, its place before too (trap_obj_reset_pos; FUN_14042b880 -> FUN_1403b6100): no travel between
+    calls.set(1, 153, put);
     calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec3 at = x->place(), f = facing_of(x->yaw());
@@ -846,7 +1015,7 @@ void add_moving(ai::Calls &calls)
         x->steer_speed = a[2].f();
         a[0] = ai::Value::of_float(n);
     });
-    // 1:58 along the ground at a velocity of its own (FUN_140421ce0: + 0x20 the vector made one long times its w,
+    // 1:58 flying (trap_obj_fly) at a velocity of its own (FUN_140421ce0: + 0x20 the vector made one long times its w,
     // + 0x108 the value, class 5), NaN components 0
     calls.set(1, 58, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -1019,6 +1188,49 @@ void add_search(ai::Calls &calls)
             mem.set_u32(s + o, 0);
         mem.write(s + 0x14, &far, 4);
         mem.write(s + 0x18, &half, 4);
+    });
+    // 6:4 a search's list emptied (Ts::TARGET_SEARCHER's Counter, + 8, and its ring's next, + 4's low byte;
+    // FUN_14053dd00)
+    calls.set(6, 4, [](ai::Machine &m, std::span<ai::Value> a) {
+        ai::Memory &mem = m.memory();
+        const std::uint32_t s = a[0].bits;
+        mem.set_u32(s + 8, 0);
+        mem.set_u32(s + 4, mem.u32(s + 4) & ~0xffu);
+    });
+    // 6:57 a target record's group (trap_target_get_group; FUN_14053e5b0: its + 4)
+    calls.set(6, 57, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(std::int32_t(m.memory().u32(a[0].bits + 4)));
+    });
+    // 2:4 the enemy after one, the first after none (trap_enemy_each; FUN_140431ce0 -> FUN_1403db9d0): KH2's actors
+    // of the field in the world's order, 0 past the last
+    calls.set(2, 4, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        std::uint32_t next = 0;
+        if (me->world != nullptr) {
+            const std::vector<Actor *> all = me->world->actors();
+            auto it = all.begin();
+            if (a[0].bits != 0) {
+                it = std::find_if(all.begin(), all.end(), [&](Actor *x) { return x->address() == a[0].bits; });
+                if (it != all.end())
+                    ++it;
+            }
+            if (it != all.end())
+                next = (*it)->address();
+        }
+        a[0] = ai::Value::of_address(next);
+    });
+    // 1:292 the actor whose unit argument n is a value, into an AI handle's + 4 (trap_obj_search_by_unit_arg;
+    // FUN_14042de70: the field's objects, FUN_1403bf4f0, by FUN_1403b5df0), 0 when none is
+    calls.set(1, 292, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        std::uint32_t found = 0;
+        if (me->world != nullptr)
+            for (Actor *x : me->world->actors())
+                if (x->u32(field::kUnitArgs + 4 * a[1].bits) == a[2].bits) {
+                    found = x->address();
+                    break;
+                }
+        m.memory().set_u32(a[0].bits + 4, found);
     });
     // 6:8 an object's aims (its shapes of kind 3 in its groups on) listed in a search, those it had left (FUN_14053e240
     // -> FUN_140540080): the Armored Knight lists its own
@@ -1302,19 +1514,31 @@ void add_shots(ai::Calls &calls)
         m.memory().write(a[1].bits, out.v, sizeof out.v);
         a[0] = ai::Value::of_int(met ? 1 : 0);
     });
-    // 6:51 whether a segment meets the room (FUN_14053eb70 -> FUN_14040c2b0: from, to, flags); its result record's
-    // layout is not read -- the point it meets is written at its start
+    // 6:51 whether a segment meets the room (FUN_14053eb70 -> FUN_14040c2b0: a YS::BGHIT, from, to, flags): the point
+    // it meets at the record's + 0 (CrossPos), its polygon at + 0x14 (-1 none; Days's rooms number none KH2 knows: 0),
+    // the object whose collision it is at + 0x18 (0: the room)
     calls.set(6, 51, [world](ai::Machine &m, std::span<ai::Value> a) {
         const Vec3 from = xyz(read_vec(m, a[1].bits)), to = xyz(read_vec(m, a[2].bits));
         Vec3 hit{};
         World *w = world(m);
         const bool met = w != nullptr && w->ray(*running(m), from, to, hit);
+        const std::uint32_t record = a[0].bits;
+        m.memory().set_u32(record + 0x14, met ? 0u : 0xffffffffu);
         if (met) {
             const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
-            m.memory().write(a[0].bits, p, sizeof p);
+            m.memory().write(record, p, sizeof p);
+            m.memory().set_u32(record + 0x18, 0);
+            m.memory().set_u32(record + 0x1c, 0);
         }
         a[0] = ai::Value::of_int(met ? 1 : 0);
     });
+    // 6:53 whether a BGHIT met something (its polygon, + 0x14, not -1; FUN_14053ecd0)
+    calls.set(6, 53, [](ai::Machine &m, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_int(m.memory().u32(a[0].bits + 0x14) != 0xffffffffu ? 1 : 0);
+    });
+    // 6:55 the kind of the polygon a BGHIT met (FUN_14053ed40 -> FUN_14040c380: its attributes' low four bits, the
+    // room's or an object's; dk::OctCollFile::getAttr): Days's rooms carry no KH2 attributes, 0 (M_EX540 asks for 1)
+    calls.set(6, 55, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:248 a point at random round another, between two distances along the ground (FUN_14042eb90 ->
     // FUN_1403f4080: a turn at random, a distance at random between them), put on the ground under it when one is
     // found within the two heights given (KH2's own search of its eight ways not read): the shared vector
