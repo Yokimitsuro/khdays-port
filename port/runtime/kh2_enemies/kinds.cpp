@@ -47,6 +47,7 @@ std::vector<Kind> read_kinds(const std::string &text)
         k.covered = cells[2] == "yes";
         k.calls = std::atoi(cells[3].c_str());
         k.missing = cells.size() > 4 ? cells[4] : "-";
+        k.plays_player = cells.size() > 5 && cells[5] == "player"; // (a list made before the column: none)
         out.push_back(std::move(k));
     }
     return out;

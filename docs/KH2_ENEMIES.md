@@ -443,8 +443,9 @@ Dusk's (group 5: 69, Reversal).
 - **Only where the enemy's script plays it**: the Magnum Loader's and the Armored Knight's handlers make the player play
   a motion of their set (1:29) and run a thread on him (1:112); the Soldier's and the Dusk's only keep a point for KH2's
   player's own code, which plays Cyclone (the Soldier's AA00, AA01) and Reversal (the Dusk's "DUSK" entries) -- **not
-  read**. The port offers a zone's command only when its script makes a 1:29 call (`script_calls`: a code word whose
-  low four bits are 10, its table the top ten, its number the next word).
+  read**. The port offers a zone's command only for a kind whose script makes a 1:29 call in its walked code: the mod
+  tool's list says so (kh2_enemies.txt's sixth column, "player"; a list made before it offers none). A scan of the
+  raw code words is not enough: a push's operand can read as a 1:29 (the Soldier's and the Dusk's do).
 - **The Magnum Loader's Quick Blade** (AB10, 112 ticks): its thread (routine 133) asks for the player's own idle at
   once (1:13: KH2 queues it on his controller, `FUN_1403c8310`, taken once the motion of another's set gives him back,
   below), turns him to the loader, and on his motion's triggers 9

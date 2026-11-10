@@ -189,15 +189,17 @@ void test_states()
 
 void test_kinds()
 {
-    const auto kinds = kh::read_kinds("# name\ttitle\tcovered\tcalls\tmissing\n"
-                                      "M_EX010\tSoldier\tyes\t62\t-\n"
+    const auto kinds = kh::read_kinds("# name\ttitle\tcovered\tcalls\tmissing\tplays the player\n"
+                                      "M_EX010\tSoldier\tyes\t62\t-\t-\n"
                                       "m_ex020\tShadow\tno\t71\t1:39 1:62\r\n"
+                                      "M_EX600\tMagnum Loader\tyes\t68\t-\tplayer\n"
                                       "broken line\n");
-    CHECK(kinds.size() == 2);
+    CHECK(kinds.size() == 3);
     const kh::Kind *s = kh::find_kind(kinds, "m_ex010");
-    CHECK(s != nullptr && s->covered && s->calls == 62 && s->title == "Soldier");
+    CHECK(s != nullptr && s->covered && s->calls == 62 && s->title == "Soldier" && !s->plays_player);
     const kh::Kind *sh = kh::find_kind(kinds, "M_EX020");
-    CHECK(sh != nullptr && !sh->covered && sh->missing == "1:39 1:62");
+    CHECK(sh != nullptr && !sh->covered && sh->missing == "1:39 1:62" && !sh->plays_player);
+    CHECK(kh::find_kind(kinds, "M_EX600") != nullptr && kh::find_kind(kinds, "M_EX600")->plays_player);
     CHECK(kh::find_kind(kinds, "M_EX999") == nullptr);
 }
 

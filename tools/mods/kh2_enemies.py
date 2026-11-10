@@ -98,10 +98,12 @@ def calls_in(bar: bytes) -> set[tuple[int, int]]:
 
 
 def kinds_line(name: str, title: str, calls: set[tuple[int, int]], handled: set[tuple[int, int]]) -> str:
-    """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones (tab-separated)."""
+    """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, and "player" when its
+    script plays the player's motions itself (1:29: its reaction commands the port can play) else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
-    return f"{name}\t{title}\t{'no' if missing or not calls else 'yes'}\t{len(calls)}\t{listed}"
+    plays = "player" if (1, 29) in calls else "-"
+    return f"{name}\t{title}\t{'no' if missing or not calls else 'yes'}\t{len(calls)}\t{listed}\t{plays}"
 
 
 def copy_pages(source: Path, to: Path) -> int:
@@ -226,7 +228,7 @@ def make(
         copy_pages(kh2 / "remastered" / "effect" / common.name, mod / "kh2" / "fx" / "texcommon")
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
-    listed = ["# name\ttitle\tcovered\tcalls\tmissing (kh2_enemies.py; the port's kh2_enemies.txt)"]
+    listed = ["# name\ttitle\tcovered\tcalls\tmissing\tplays the player (kh2_enemies.py; the port's kh2_enemies.txt)"]
     for name, title in KINDS.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         lacking = [s.name for s in sources if not s.is_file()]

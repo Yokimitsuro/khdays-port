@@ -169,9 +169,9 @@ struct KindFiles final {
     std::shared_ptr<const kh2::MotionSet> set;
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
     std::vector<Shape> shapes;
-    // whether its script plays the player's motions itself (1:29: the Magnum Loader's Quick Blade, Cerberus's commands):
-    // its zones' commands offered; those KH2's player's own code plays (the Soldier's Cyclone, the Dusk's Reversal: no
-    // 1:29 in their scripts) are not yet
+    // whether its script plays the player's motions itself (a 1:29 in its walked code, the mod's list says: the Magnum
+    // Loader's Quick Blade, Cerberus's commands): its zones' commands offered; those KH2's player's own code plays (the
+    // Soldier's Cyclone, the Dusk's Reversal) are not yet
     bool plays_player = false;
     // its effects (its .a.us's PAX): the effects, the elements by their number, the pages of its pictures and of KH2's
     // resident ones (effect/texcommon.dpd)
@@ -185,18 +185,6 @@ struct KindFiles final {
     // letters as FUN_1403db2f0 packs them (the first in the low byte)
     std::map<std::uint32_t, std::shared_ptr<const kh2::Event>> events;
 };
-
-// Whether a script calls the game's `kind`:`number` anywhere in its code: a call is a code word whose low four bits are
-// 10, its table the word's top ten bits, its number the next word (the machine's case 10)
-bool script_calls(const ai::Script &s, unsigned kind, unsigned number)
-{
-    for (std::size_t n = 0; n + 1 < s.words(); ++n) {
-        const std::uint16_t w = s.word(n);
-        if ((w & 0xfu) == 10u && unsigned(w >> 6) == kind && unsigned(s.word(n + 1)) == number)
-            return true;
-    }
-    return false;
-}
 
 // A PAX's elements (docs/FORMATS.md, "KH2's effects"): its 0x82 directory's 32-byte entries, each the offset of its
 // effect from the directory (+0), its emitter (+4) and its number (+8), the effects listed after them by offset; then
@@ -473,7 +461,7 @@ KindFiles *files_of(const std::string &name)
             k->skeleton =
                 std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
             k->shapes = read_shapes(mdlx);
-            k->plays_player = script_calls(*k->script, 1, 29);
+            k->plays_player = kind->plays_player;
             read_effects(*k, u8(m.folder));
             read_events(*k, u8(m.folder));
             read_sounds(*k, u8(m.folder));
@@ -1655,7 +1643,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
 // command to this game's own player while his place (+ 0x670) lies within a zone's radius of its point (the test KH2's
 // own uses of a zone make, FUN_14054ae70: the place's distance, FUN_140140f50, under the shape's + 0x10). The Magnum
 // Loader's eight along its rush (52A, group 5: Quick Blade), the Armored Knight's; the Soldier's and the Dusk's not
-// (KindFiles::plays_player). Not while an enemy holds him, nor again in the motion one was taken in.
+// (Kind::plays_player). Not while an enemy holds him, nor again in the motion one was taken in.
 // The collision groups the enemy's motion's ranges 4 turn on now, those of its ranges 5 off
 std::set<int> groups_on(const Enemy &e)
 {

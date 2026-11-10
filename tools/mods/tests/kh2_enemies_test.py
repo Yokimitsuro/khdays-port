@@ -116,8 +116,8 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "msg" / "us" / "fontinfo.bar").read_bytes(), b"widths")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "US_fontimage_bar0.png").read_bytes(), b"glyphs")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-")
-            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-")
+            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-")
+            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-")
             ours = [line for line in left if line.startswith(("M_EX010", "M_EX020"))]
             self.assertEqual(ours, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
             # the other kinds the mod holds, not in this made-up collection: each said
@@ -164,7 +164,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             mod = Path(d) / "mod"
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7"])
+            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-"])
             self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx, M_EX020.mset, M_EX020.a.us not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
@@ -172,7 +172,9 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertTrue(any("fontinfo" in line for line in left))
             # no port given: nothing covered
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod)
-            self.assertIn("M_EX010\tSoldier\tno\t2\t1:6 2:7", (mod / "kh2_enemies.txt").read_text(encoding="utf-8"))
+            self.assertIn("M_EX010\tSoldier\tno\t2\t1:6 2:7\t-", (mod / "kh2_enemies.txt").read_text(encoding="utf-8"))
+            # a script that plays the player's motions (1:29): "player"
+            self.assertTrue(kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)}).endswith("\tyes\t1\t-\tplayer"))
             self.assertTrue(any("coverage" in line for line in left))
 
 

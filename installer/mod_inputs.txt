@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools cb7f9b760e3c96bca8c58c9840a1cda2cd69350b0fb60351cab20519add82d98
+# tools e6a49abeebd919814d56ff3a04bf6e3ef100c03cc0129450b12e5ae3a5671d8e
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod

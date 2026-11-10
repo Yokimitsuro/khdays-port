@@ -14,6 +14,7 @@ struct Kind final {
     bool covered = false;
     int calls = 0;
     std::string missing; // the calls not handled, `kind:number` apart by spaces; "-" none
+    bool plays_player = false; // its script plays the player's motions itself (1:29): its zones' commands offered
 };
 
 std::vector<Kind> read_kinds(const std::string &text);
