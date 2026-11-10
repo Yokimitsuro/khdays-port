@@ -213,11 +213,18 @@ std::vector<fs::path> recorded_collections(const fs::path& root, const std::stri
     return out;
 }
 
+fs::path collection_root(const fs::path& folder) {
+    std::error_code ec;
+    if (!fs::is_directory(folder / "Image", ec) && fs::is_directory(folder / "Content" / "Image", ec))
+        return folder / "Content";
+    return folder;
+}
+
 fs::path collection_copy(const Settings& settings, const CollectionGameInfo& game) {
     std::error_code ec;
     const std::string& set = std::string(game.collection) == "2.8" ? settings.collection_28 : settings.collection_1525;
     if (!set.empty()) {
-        const fs::path folder = resolve(settings, set);
+        const fs::path folder = collection_root(resolve(settings, set));
         return fs::is_directory(folder, ec) ? folder : fs::path();
     }
     for (const auto& folder : recorded_collections(settings.root, game.collection))

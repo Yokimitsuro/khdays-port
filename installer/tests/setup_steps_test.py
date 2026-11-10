@@ -436,6 +436,36 @@ class CollectionCheck(unittest.TestCase):
             (movies / videos["movies"][0]).unlink()
             self.assertTrue(s.check_folder("1.5+2.5", folder, ("videos",)))
 
+    def test_the_xbox_apps_game_folder_is_taken_as_its_content(self):
+        """A player who chooses the Xbox app's game folder (C:\\XboxGames\\<game>) gets its Content, where its
+        archives and videos are (its videos under MSSTORE): the setup's page and build-hd see the same."""
+        from archive_test import TABLE, write_archive
+
+        import collection_archive as ca
+
+        videos = s.hd_inputs(("videos",))
+        with tempfile.TemporaryDirectory() as d:
+            game = Path(d) / "KINGDOM HEARTS -HD 1.5+2.5 ReMIX"
+            content = game / "Content"
+            (content / "Image").mkdir(parents=True)
+            write_archive(
+                content / "Image" / "Mare", {e: (b"x", "stored", []) for e in videos["Mare"]}, ca.Cipher(TABLE)
+            )
+            movies = content / "MSSTORE" / "Mare" / "MOVIE" / "Days" / "dt"
+            movies.mkdir(parents=True)
+            for name in videos["movies"]:
+                (movies / name).write_bytes(b"")
+            self.assertEqual(s.collection_path(str(game)), content)
+            self.assertEqual(s.collection_path(str(content)), content)
+            other = Path(d) / "somewhere"
+            self.assertEqual(s.collection_path(str(other)), other)  # nothing there: as given, said missing
+            result = Path(d) / "r.json"
+            code = s.main(["check-collection", "1.5+2.5", str(game), "--pieces", "videos", "--result", str(result)])
+            self.assertEqual(code, s.OK, result.read_text(encoding="utf-8"))
+            code = s.main(["check-collection", "1.5+2.5", str(game), "--pieces", "menus", "--result", str(result)])
+            self.assertEqual(code, s.REFUSED)
+            self.assertNotIn("Image/Mare.hed/.pkg", json.loads(result.read_text(encoding="utf-8"))["message"])
+
     def test_pieces_on_the_command_line(self):
         self.assertEqual(s.pieces_of("videos"), ("videos",))
         self.assertEqual(s.pieces_of("videos,menus"), ("menus", "videos"))

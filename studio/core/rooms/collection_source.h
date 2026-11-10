@@ -51,6 +51,10 @@ bool package_holds(const std::unordered_set<std::string>& keys, const std::strin
 std::vector<CollectionMap> maps_in_package(const CollectionGameInfo& game, const std::string& package,
                                            const std::unordered_set<std::string>& keys);
 
+// A collection's folder as a player gives it: the one holding its Image folder, or the Xbox app's game folder, whose
+// Content holds it (installer/xbox_library.py), taken as that Content.
+std::filesystem::path collection_root(const std::filesystem::path& folder);
+
 // The folder of the collection holding `game`: the studio's setting (collection_1525, collection_28), else the one the
 // install recorded (setup/state.json) with the game's executable there; empty when none is.
 std::filesystem::path collection_copy(const Settings& settings, const CollectionGameInfo& game);

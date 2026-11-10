@@ -778,6 +778,15 @@ MOVIES = "STEAM/Mare/MOVIE/Days/dt"
 LANGUAGE_FOLDERS = ("dt", "en")
 
 
+def collection_path(text: str) -> Path:
+    """A collection's folder as a player gives it: the one holding its `Image` folder, or the Xbox app's
+    game folder, whose `Content` holds it (xbox_library.py), taken as that `Content`."""
+    folder = Path(text)
+    if not (folder / "Image").is_dir() and (folder / "Content" / "Image").is_dir():
+        return folder / "Content"
+    return folder
+
+
 def archive_base(folder: Path, kind: str, archive: str) -> Path:
     """Where `archive` of collection `kind` is in `folder` (its .hed and .pkg beside this name): its
     language folder the one the collection has."""
@@ -978,7 +987,7 @@ def find_collections(args: argparse.Namespace) -> dict[str, Any]:
     "whether a folder holds what the chosen HD pieces read from that collection (exit 1 when not)",
     lambda p: (
         p.add_argument("kind", choices=sorted(COLLECTION_ARCHIVES)),
-        p.add_argument("folder", type=Path),
+        p.add_argument("folder", type=collection_path),
         p.add_argument("--pieces", type=pieces_of, default=PIECES, help="menus, videos or both (default: both)"),
     ),
 )
@@ -1009,8 +1018,10 @@ def _build_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path)
     p.add_argument("--menus", action="store_true", help="the HD menus and HUD (mods/HD PACK): both collections")
     p.add_argument("--videos", action="store_true", help="the theater's videos and subtitles: 1.5+2.5")
-    p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
-    p.add_argument("--28", dest="c28", type=Path, help="the KINGDOM HEARTS HD 2.8 Final Chapter Prologue folder")
+    p.add_argument("--1525", dest="c1525", type=collection_path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
+    p.add_argument(
+        "--28", dest="c28", type=collection_path, help="the KINGDOM HEARTS HD 2.8 Final Chapter Prologue folder"
+    )
 
 
 @command("build-hd", "the HD pieces made from the player's collections", _build_arguments)
@@ -1306,7 +1317,7 @@ def _mods_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--walk", action="store_true", help="the Walk (docs/WALK_MOD.md): the game's data")
     p.add_argument("--menu-overhaul", action="store_true", help="the Menu Overhaul: 1.5+2.5, the HD menus")
     p.add_argument("--kh2-prizes", action="store_true", help="KH2's prizes, chests and Dark Corridors: 1.5+2.5")
-    p.add_argument("--1525", dest="c1525", type=Path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
+    p.add_argument("--1525", dest="c1525", type=collection_path, help="the KINGDOM HEARTS HD 1.5+2.5 ReMIX folder")
 
 
 def unmerge_port_mods(install: Path) -> None:
@@ -1435,7 +1446,7 @@ def build_mods(args: argparse.Namespace) -> dict[str, Any]:
 def _mod_trace_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("install", type=Path, help="an install with the game's data, the HD menus and the port")
     p.add_argument("--src", type=Path, required=True, help="the collections' entries extracted (<name>.hed_out)")
-    p.add_argument("--1525", dest="c1525", type=Path, required=True)
+    p.add_argument("--1525", dest="c1525", type=collection_path, required=True)
     p.add_argument(
         "--fonts", type=Path, default=FONTS, help="KHGummi.otf and KHMenu.otf (pinned.json's fonts; the installer's)"
     )

@@ -98,3 +98,18 @@ TEST(a_packages_maps_found_by_each_games_pattern) {
     CHECK(names(bbs_maps) == std::vector<std::string>({"di/di03", "jb/jb20"}));
     CHECK(bbs_maps[1].paths == std::vector<std::string>({"arc/map/jb20.arc"}));
 }
+
+// The Xbox app's game folder, as a player chooses it, is taken as its Content, where the collection's Image is.
+TEST(the_xbox_apps_game_folder_is_taken_as_its_content) {
+    namespace fs = std::filesystem;
+    const fs::path game = fs::temp_directory_path() / "khdays_collection_root_test";
+    std::error_code ec;
+    fs::remove_all(game, ec);
+    fs::create_directories(game / "Content" / "Image", ec);
+    CHECK(collection_root(game) == game / "Content");
+    CHECK(collection_root(game / "Content") == game / "Content");
+    fs::create_directories(game / "Image", ec);  // its own Image: as given
+    CHECK(collection_root(game) == game);
+    CHECK(collection_root(game / "nothing") == game / "nothing");
+    fs::remove_all(game, ec);
+}

@@ -80,7 +80,9 @@ game libraries (each drive's `XboxGames`, or the folder its `.GamingRoot` names;
 `<library>/<game>/Content`), and each store's copy is read: Steam's keeps its language's archives in
 `Image/dt` and Days's videos in `STEAM/Mare/MOVIE/Days/dt`, the Epic Games Store's its archives in
 `Image/en` and the videos in `EPIC/Mare/MOVIE/Days/en`, the Xbox app's its videos under `MSSTORE`
-(any `*/Mare/MOVIE/Days/*` holding them is taken). (The page is a text
+(any `*/Mare/MOVIE/Days/*` holding them is taken). An Xbox app game's own folder, as a player
+browses to it (`C:\XboxGames\<game>`), is taken as its `Content`, where those are; the studio's
+collection settings take it the same way. (The page is a text
 page with its own Browse buttons, because Inno's folder page refuses an empty folder.) A tool that
 fails (a copy a mod changed may lack what it reads) leaves its screens with the DS's look and the
 others are made all the same: the installer says which, keeps what each said whole in

@@ -75,7 +75,7 @@ fs::path kh2_made_model(const fs::path& root, const std::string& map) {
 fs::path kh2_collection(const Settings& settings) {
     std::error_code ec;
     if (!settings.collection_1525.empty()) {
-        const fs::path set = resolve(settings, settings.collection_1525);
+        const fs::path set = collection_root(resolve(settings, settings.collection_1525));
         return fs::is_directory(set, ec) ? set : fs::path();
     }
     for (const auto& folder : recorded_collections(settings.root, "1.5+2.5")) {
