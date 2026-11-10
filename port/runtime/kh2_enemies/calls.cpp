@@ -678,9 +678,64 @@ void add_actor_fields(ai::Calls &calls)
             a[0] = ai::Value::of_int(bit >= 0 && bit < 8 && (byte & (1u << bit)) != 0 ? 1 : 0);
         });
     }
-    // 2:45 an object's entry number (its + 0x20 record's u16 at + 2; FUN_1404320a0): the Wight Knight asks it of a
-    // message's sender, which in Days's field is none of KH2's objects: 0
+    // 2:45 the number of a hit's attack (trap_damage_attack_param_id; FUN_1404320a0: YS::DAMAGE's AttackParam, + 0x20,
+    // its u16 at + 2): the Wight Knight asks it of its hits -- a Days hit names no KH2 attack: 0
     calls.set(2, 45, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:222 its object entry's number (trap_obj_get_entry_id; FUN_14042bb10 -> FUN_1403b5770: + 8's record, + 0)
+    calls.set(1, 222, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Object *x = object_of(m, a[0]);
+        const std::uint32_t record = x != nullptr ? x->u32(field::kEntry) : 0u;
+        a[0] = ai::Value::of_int(record != 0 ? std::int32_t(m.memory().u32(record)) : 0);
+    });
+    // 1:114 the object of an entry's number into an AI handle's + 4 (trap_obj_search_by_entry; FUN_14042ddb0 ->
+    // FUN_1403b4110: 0x236 the player, else the field's first object whose entry it is), 0 when none is
+    calls.set(1, 114, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        std::uint32_t found = 0;
+        if (me->world != nullptr && a[1].bits == 0x236u) {
+            if (Object *p = me->world->player(*me))
+                found = p->address();
+        } else if (me->world != nullptr) {
+            for (Actor *x : me->world->actors())
+                if (const std::uint32_t record = x->u32(field::kEntry);
+                    record != 0 && m.memory().u32(record) == a[1].bits) {
+                    found = x->address();
+                    break;
+                }
+        }
+        m.memory().set_u32(a[0].bits + 4, found);
+    });
+    // 1:155 health added to a bar of its record (trap_obj_add_hp: its object's add_hp, YS::BTLOBJ::_OVR_add_hp ->
+    // YS::SHEET::_add_hp: kept between the bar's least and most; the bar's health given back): the first bar's given to
+    // Days's enemy (at least 1)
+    calls.set(1, 155, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const std::uint32_t sheet = x->u32(0x5c0);
+        if (sheet == 0) {
+            a[0] = ai::Value::of_int(0);
+            return;
+        }
+        const std::uint32_t at = sheet + 12u * a[2].bits;
+        const std::int32_t least = std::int32_t(m.memory().u32(at + 8)), most = std::int32_t(m.memory().u32(at + 4));
+        const std::int32_t hp =
+            std::max(least, std::min(std::int32_t(m.memory().u32(at)) + std::int32_t(a[1].bits), most));
+        m.memory().set_u32(at, std::uint32_t(hp));
+        if (a[2].bits == 0 && x->world != nullptr)
+            x->world->set_health(*x, hp);
+        a[0] = ai::Value::of_int(hp);
+    });
+    // 1:194 / 1:195 parts of its model put in stealth and back (trap_obj_set_stealth, trap_obj_reset_stealth;
+    // FUN_14042cbd0, FUN_14042cc00 -> FUN_1401a8990, FUN_1401a85e0 on + 0x7b0's model): the Shadow Stalker's
+    calls.set(1, 194, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->stealth |= a[1].bits; });
+    calls.set(1, 195, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->stealth &= ~a[1].bits; });
+    // 1:125 its pictures' fade (trap_obj_tex_fade_start; FUN_1404305d0 -> FUN_1403b7810 on + 0xaa4, YS::OBJ's TexFade):
+    // from a value to another over a time (2 or less: 1), kept -- the port does not draw it yet
+    calls.set(1, 125, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const float from = a[1].f(), to = a[2].f(), time = a[3].f() <= 2.0F ? 1.0F : a[3].f();
+        x->set_f(0xaa4, from);
+        x->set_f(0xaa8, (to - from) / time);
+    });
     // 2:8 whether a hit's reaction kind (+ 0x26) is past 1 (FUN_140431f70, FUN_1403ce980: 1 and 12 are 1; 3, 6, 8,
     // 10, 13, 16, 18 are 3; 4, 7, 9, 11, 15, 17 are 4; the others themselves): trigger 6's hit, a Days hit a small
     // reaction (2)
@@ -1539,9 +1594,31 @@ void add_shots(ai::Calls &calls)
     // 6:55 the kind of the polygon a BGHIT met (FUN_14053ed40 -> FUN_14040c380: its attributes' low four bits, the
     // room's or an object's; dk::OctCollFile::getAttr): Days's rooms carry no KH2 attributes, 0 (M_EX540 asks for 1)
     calls.set(6, 55, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 1:248 a point at random round another, between two distances along the ground (FUN_14042eb90 ->
-    // FUN_1403f4080: a turn at random, a distance at random between them), put on the ground under it when one is
-    // found within the two heights given (KH2's own search of its eight ways not read): the shared vector
+    // 1:247 a point at random round another, between two distances, on the ground (trap_bg_get_random_pos;
+    // FUN_14042ead0 -> FUN_1403f3fa0: the distance at random, the way one of eight sectors in a running order --
+    // FUN_1403f3fa0's counter, its bits turned -- and at random within it, KH2's chance twice; FUN_1403f4180's search
+    // of the way not read: the way's room stops it, the ground under it found): the shared vector
+    calls.set(1, 247, [world](ai::Machine &m, std::span<ai::Value> a) {
+        static std::uint32_t sector = 0; // DAT_142ae5d78
+        const Vec3 at = xyz(read_vec(m, a[0].bits));
+        const float r = float(next_chance()) * 2.32830644e-10F * (a[2].f() - a[1].f()) + a[1].f();
+        const std::uint32_t turned = ((sector >> 2) & 1u) | (sector * 2u);
+        const float turn = (float(turned) + float(next_chance()) * 2.32830644e-10F) * 0.785398163F;
+        sector = (sector + 1u) & 7u;
+        Vec3 p = {at[0] + std::sin(turn) * r, at[1], at[2] + std::cos(turn) * r};
+        World *w = world(m);
+        Vec3 hit{};
+        if (w != nullptr && w->ray(*running(m), at, p, hit))
+            p = hit;
+        if (w != nullptr && w->ray(*running(m), {p[0], p[1] - 200.0F, p[2]}, {p[0], p[1] + 1000.0F, p[2]}, hit))
+            p = hit;
+        Vec v;
+        v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2], v.v[3] = 1.0F;
+        a[0] = give_vec(m, "shared", v);
+    });
+    // 1:248 a point at random round another, between two distances, in the air (trap_bg_get_random_pos_air;
+    // FUN_14042eb90 -> FUN_1403f4080: a turn at random, a distance at random between them), put on the ground under it
+    // when one is found within the two heights given (KH2's own search of its eight ways not read): the shared vector
     calls.set(1, 248, [world](ai::Machine &m, std::span<ai::Value> a) {
         const Vec3 at = xyz(read_vec(m, a[0].bits));
         const float turn = float(next_chance()) * 2.32830644e-10F * 2.0F * kPi;

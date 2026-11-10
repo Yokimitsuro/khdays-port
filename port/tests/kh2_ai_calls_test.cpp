@@ -1093,6 +1093,32 @@ void test_shout()
     CHECK(!actor.states().shout(actor, "b", 0x1234u));
 }
 
+// The first bosses' calls: health added within a bar's least and most (1:155), the object entry's number (1:222),
+// stealth set and reset (1:194, 1:195)
+void test_boss_batch()
+{
+    Rig rig;
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor actor(script({{1, 0}}, loop), rig.memory, rig.calls, "boss");
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto i = ai::Value::of_int;
+    const std::uint32_t sheet = rig.memory.add(0x270, "a sheet");
+    rig.memory.set_u32(sheet, 100);
+    rig.memory.set_u32(sheet + 4, 200);
+    rig.memory.set_u32(sheet + 8, 40);
+    actor.set_u32(0x5c0, sheet);
+    CHECK(call(rig, actor, 1, 155, {self, i(50), i(0), i(0)}).i() == 150);
+    CHECK(call(rig, actor, 1, 155, {self, i(-500), i(0), i(0)}).i() == 40); // its least
+    CHECK(call(rig, actor, 1, 155, {self, i(900), i(0), i(0)}).i() == 200); // its most
+    const std::uint32_t entry = rig.memory.add(96, "an entry");
+    rig.memory.set_u32(entry, 353);
+    actor.set_u32(0x8, entry);
+    CHECK(call(rig, actor, 1, 222, {self}).i() == 353);
+    call(rig, actor, 1, 194, {self, i(6)});
+    call(rig, actor, 1, 195, {self, i(2)});
+    CHECK(actor.stealth == 4u);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -1109,6 +1135,7 @@ int main()
     test_shots();
     test_near_batch();
     test_shout();
+    test_boss_batch();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

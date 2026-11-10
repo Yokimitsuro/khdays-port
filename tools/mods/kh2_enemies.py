@@ -77,6 +77,7 @@ KINDS = {
     "M_EX930": "Dancer",
     "M_EX960": "Sorcerer",
     "B_HE020": "Cerberus",
+    "B_BB100": "Thresholder",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -84,6 +85,7 @@ SHARED = (
     ("obj/P_EX100.mdlx", "the player's skeleton, which the enemies' motions for the player are made for"),
     ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows"),
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
+    ("00objentry.bin", "KH2's objects' entries: the numbers scripts find objects by (1:114, 1:222)"),
 )
 LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
 COMMAND_MENU = "zz0command.2dd"  # field2d/<language>/: KH2's general command menu (the reaction command's bar)

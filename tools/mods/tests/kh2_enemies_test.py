@@ -74,6 +74,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "original" / "obj" / "P_EX100.mdlx").write_bytes(b"the player")
             (kh2 / "original" / "03system.bin").write_bytes(b"commands")
             (kh2 / "original" / "00battle.bin").write_bytes(b"attacks")
+            (kh2 / "original" / "00objentry.bin").write_bytes(b"entries")
             (kh2 / "original" / "msg" / "us").mkdir(parents=True)
             (kh2 / "original" / "msg" / "us" / "sys.bar").write_bytes(b"names")
             # the general command menu and its HD picture in one language
@@ -108,6 +109,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "obj" / "P_EX100.mdlx").read_bytes(), b"the player")
             self.assertEqual((mod / "kh2" / "03system.bin").read_bytes(), b"commands")
             self.assertEqual((mod / "kh2" / "00battle.bin").read_bytes(), b"attacks")
+            self.assertEqual((mod / "kh2" / "00objentry.bin").read_bytes(), b"entries")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "sys.bar").read_bytes(), b"names")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "zz0command.2dd").read_bytes(), b"menu")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "US_zz0command_2dd0.png").read_bytes(), b"hd")

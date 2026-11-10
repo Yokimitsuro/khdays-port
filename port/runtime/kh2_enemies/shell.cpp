@@ -1214,6 +1214,15 @@ void forget(unsigned days)
 }
 
 // The kind's script on a new actor at the shell's place, facing the nearest player
+std::uint32_t entry_record(const std::string &name);
+
+// How much of its model is drawn: its fade (1:19, 1:20, 1:28), a quarter of it in stealth (1:194)
+float drawn_fade(const Enemy &e)
+{
+    const float fade = std::clamp(e.actor->fade, 0.0F, 1.0F);
+    return e.actor->stealth != 0 ? fade * 0.25F : fade;
+}
+
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
 {
     auto e = std::make_unique<Enemy>();
@@ -1227,6 +1236,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
     Actor &a = *e->actor;
     a.world = &the_field();
     a.motions = e->motions.get();
+    a.set_u32(field::kEntry, entry_record(k.name));
     a.set_place(to_kh2(s.place));
     std::copy(s.place, s.place + 3, e->home);
     Enemy *raw = e.get();
@@ -1449,6 +1459,40 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
                        double(nearest), double(reach), double(centre[0]), double(centre[1]), double(centre[2]),
                        double(s.place[0]), double(s.place[1]), double(s.place[2]), double(toward));
     }
+}
+
+// KH2's object entries (00objentry.bin: a u32 version and a u32 count, then 96-byte records -- + 0 the entry's
+// number, + 4 its kind, 4 an enemy and 3 a boss, + 8 its name; OpenKH's numbers), each kind's record put in the scripts'
+// memory once, at its actors' + 8 (YS::OBJ's Entry: 1:222 reads its number, 1:114 finds an actor by it); 0 when the
+// mod's kh2/00objentry.bin has none for it
+std::uint32_t entry_record(const std::string &name)
+{
+    static std::map<std::string, std::vector<std::uint8_t>> records;
+    static std::map<std::string, std::uint32_t> made;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        std::uint32_t count = 0;
+        if (file.size() >= 8)
+            std::memcpy(&count, file.data() + 4, 4);
+        for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= file.size(); ++i) {
+            const std::uint8_t *r = file.data() + 8 + 96 * std::size_t(i);
+            const char *n = reinterpret_cast<const char *>(r + 8);
+            records[std::string(n, strnlen(n, 32))] = std::vector<std::uint8_t>(r, r + 96);
+        }
+        if (records.empty())
+            khdays_log("kh2 enemies: no KH2 object entries (the mod's kh2/00objentry.bin): scripts finding objects by "
+                       "their entry find none");
+    }
+    if (const auto m = made.find(name); m != made.end())
+        return m->second;
+    const auto it = records.find(name);
+    if (it == records.end())
+        return made[name] = 0;
+    const std::uint32_t at = mod().memory.add(96, name + "'s object entry");
+    mod().memory.write(at, it->second.data(), 96);
+    return made[name] = at;
 }
 
 // ------------------------------------------------------------------------------------------------- the players in hand
@@ -2935,7 +2979,7 @@ void ghosts_close()
         float view[16];
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
-        const unsigned alpha = unsigned(std::lround(std::clamp(e.actor->fade, 0.0F, 1.0F) * 31.0F));
+        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * 31.0F));
         if (alpha == 0 || e.pose.empty())
             continue;
         std::vector<float> bones(e.pose.size() * 16);
@@ -3637,8 +3681,7 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
         khdays_ui_reaction_mark_draw(spot);
     }
     draw_effects(*e, view, pure);
-    const float fade = std::clamp(e->actor->fade, 0.0F, 1.0F);
-    const unsigned alpha = unsigned(std::lround(fade * 31.0F));
+    const unsigned alpha = unsigned(std::lround(drawn_fade(*e) * 31.0F));
     if (alpha == 0 || e->pose.empty())
         return 1; // gone: nothing of it, nor of its stand-in
     std::vector<float> bones(e->pose.size() * 16);

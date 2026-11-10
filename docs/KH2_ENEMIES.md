@@ -205,7 +205,11 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:221 | whether the player can take a command now (`FUN_1403b6950`, `FUN_1403ba070`: his state against the command's flags) | yes |
 | 1:165 | a reaction command offered KH2's player this tick (`FUN_140430010` -> `FUN_1403b2850` on his + 0xdd0): a slot, the command, its source | offered while renewed (Rising Sun's 427, each tick of its descent) |
 | 1:149, 0:44 | an effect of the actor's on another object, its handle (`FUN_14042d5c0` -> `FUN_1403b6670`); one stopped at once (`FUN_14041e190` -> `FUN_1402be8e0`) | as KH2 (on a held player, on his bones) |
-| 2:45 | an object's entry number (its + 0x20 record's u16 at + 2): the Wight Knight asks it of a message's sender (492, 1149, 568) | 0: no KH2 object sends one |
+| 2:45 | the number of a hit's attack (`trap_damage_attack_param_id`: `YS::DAMAGE`'s `AttackParam`, + 0x20, its u16 at + 2): the Wight Knight asks it of its hits (492, 1149, 568) | 0: a Days hit names no KH2 attack |
+| 1:222, 1:114 | its object entry's number (`trap_obj_get_entry_id`: + 8, `YS::OBJ`'s `Entry`, its record's + 0); the field's first object of an entry's number into an AI handle (`trap_obj_search_by_entry`, `FUN_1403b4110`: 0x236 the player) | as KH2: each kind's `00objentry.bin` record (96 bytes: + 0 its number, + 4 its kind -- 4 an enemy, 3 a boss --, + 8 its name, + 0x28 its motion set's) put at its actors' + 8 |
+| 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1) |
+| 1:125 | its pictures' fade (`trap_obj_tex_fade_start`, `FUN_1403b7810` on + 0xaa4, `YS::OBJ`'s `TexFade`) | kept, not drawn |
+| 1:194, 1:195 | parts of its model in stealth and back (`trap_obj_set_stealth`, `_reset_`: `kn::ModelObj::setStealth` on + 0x7b0's model, a bit a part group; KH2 draws them as a refraction) | the whole model drawn at a quarter of its fade while any part is |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
 | 1:209 | the class's virtual + 0xb0 unless + 0x9b8 bit 2 (`FUN_1403d3f10`) | nothing (native code) |
@@ -252,7 +256,8 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:160 | a target record made of an object (`FUN_1403bee60`) | as KH2 |
 | 1:141, 6:51 | the ground under a point (a cast down a depth, flags 4, `FUN_1403f3dd0`); whether a segment meets the room (`FUN_14040c2b0`) into a `YS::BGHIT`: the point it meets (`CrossPos`, + 0), its polygon (+ 0x14, -1 first and left so when it meets none), the object whose collision it met (+ 0x18, none for the room's) | Days's room collision (`Collision_CastRay`); the polygon 0 when met (Days's rooms number none KH2 knows) |
 | 6:53, 6:55 | whether a BGHIT met something (+ 0x14 not -1); the kind of its polygon (`FUN_14040c380`: its attributes' low four bits, `dk::OctCollFile::getAttr`) | as KH2; the kind 0 (Days's rooms carry no KH2 attributes: `M_EX540` asks for 1) |
-| 1:248 | a point at random round another, between two distances (`FUN_1403f4080`), on the ground | as KH2, but KH2's search of eight ways (`FUN_1403f44a0`) not read: one turn at random, the ground within the heights given |
+| 1:248 | a point at random round another, between two distances, in the air (`trap_bg_get_random_pos_air`, `FUN_1403f4080`) | as KH2, but KH2's search of eight ways (`FUN_1403f44a0`) not read: one turn at random, the ground within the heights given |
+| 1:247 | a point at random round another, between two distances, on the ground (`trap_bg_get_random_pos`, `FUN_1403f3fa0`: the distance at random, the way one of eight sectors of 45 degrees in a running order and at random within it) | as KH2, but `FUN_1403f4180`'s search not read: the way's room stops it, then the ground under it |
 | 6:9 | a point's distance to what a record names (`FUN_1403bdd90`: an attack's sphere, an actor's aim shape, `FUN_1403c99f0`) | to the attack's sphere, or the aim point (its shape's radius not taken off) |
 | 6:54 | a vector copied into one of its own | as KH2 |
 | 2:62 | its growth (`FUN_140437c30`): over n ticks (+ 0xd0) from a radius and a height (+ 0xd4, + 0xd8; 0 or less its own) to its size, eased by `sin(t / n x pi / 2)` (`FUN_140141ae0`); ended once grown | as KH2 |
@@ -478,6 +483,19 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   leave, 1 off the ground, 2 landed), runs at once unless it has not begun -- Cerberus's `jump` lands into
   `jump_land` that way, its loop (171) no longer waiting for a hit. The port runs it before trigger 13 or 14.
 
+### The next bosses (2026-11-10)
+
+With the calls above, three more of KH2's bosses' scripts are answered in full; what each needs of the field:
+
+- **Thresholder** `B_BB100` (a mod kind): played alone (level 99), it fights, shouts its Possessor's orders
+  (`atk_shout`, 1:90), whips (`atk_whipslam`), strikes Roxas and is defeated with its end. Its Possessor `B_BB130`
+  (whose script is answered too) has no motion set in its object entry (`00objentry.bin` + 0x28 empty) and is not a
+  kind yet: without it the Thresholder mostly calls for it, as KH2's would not.
+- **Shadow Stalker** `B_BB120`: not a kind. It begins by possessing the ballroom's window (`hyoui_window`): the
+  Beast's Castle ballroom's objects it takes (windows, chandelier) are KH2's room's, which Days's rooms do not have --
+  it waits there for ever.
+- **Hayabusa** `B_MU110`: Shan-Yu's falcon, found by its entry (1:114, 21): not a kind until Shan-Yu `B_MU100` is.
+
 ## A player in an enemy's hands
 
 KH2's player is an actor its enemies' scripts move and make play their motions; Days's players are Days's. When a
@@ -523,6 +541,7 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   enhancements) makes X so everywhere: no deck cursor, no lists from it (the deck then moves with "Command menu on the
   D-pad"), L with it still the shortcuts, Days's Talk and Examine on the bar still X's.
 - **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
+  00objentry.bin (the objects' entries: 1:114, 1:222),
   msg/<language>/sys.bar, field2d/<language>/zz0command.2dd and zz0field.2dd with their HD pictures,
   msg/us/fontinfo.bar with fontimage.bar's HD picture.
 

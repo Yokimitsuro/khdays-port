@@ -25,6 +25,7 @@ using Vec3 = std::array<float, 3>;
 // KH2's actor's offsets the port reads and writes (each named where a call or the game uses it)
 namespace field {
 constexpr std::uint32_t kSelf = 0x4;        // its own handle (what an AI handle's + 4 holds)
+constexpr std::uint32_t kEntry = 0x8;       // its object entry's record (YS::OBJ's Entry: + 0 its number; 1:222)
 constexpr std::uint32_t kFlags = 0x120;     // bit words: 1:65, 1:70, 1:71; bit 23 in the air (1:60)
 constexpr std::uint32_t kMotion = 0x180;    // the motion playing's number (1:15; the scripts wait on it)
 constexpr std::uint32_t kMotionNow = 0x184; // the motion its controller plays (1:238: a reaction command's wait)
@@ -477,6 +478,9 @@ public:
     void attach_thread(ai::Machine &m, std::uint32_t id);
     // its fading (+ 0xa08, FUN_1403b7810: a value and its change a tick; 1:19, 1:20, 1:28): 1 seen, 0 gone
     float fade = 1.0F, fade_step = 0.0F;
+    // its model's parts in stealth (1:194, 1:195: kn::ModelObj::setStealth, resetStealth on + 0x7b0's model, a bit a
+    // part group; KH2 draws them as a refraction): the port draws the whole model faint while any is
+    std::uint32_t stealth = 0;
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set
