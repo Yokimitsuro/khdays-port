@@ -198,7 +198,8 @@ void add_math(ai::Calls &calls)
         m.memory().read(a[0].bits, v.v, sizeof v.v);
         a[0] = ai::Value::of_float(std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]));
     });
-    // 0:7 made unit in place, its length given back (FUN_140142080: left as it is when 0)
+    // 0:7 made unit in place, its length given back and kept as its w (FUN_14041cfa0 -> FUN_140142080: left as it is
+    // when 0; + 0xc the length)
     calls.set(0, 7, [](ai::Machine &m, std::span<ai::Value> a) {
         Vec v;
         m.memory().read(a[0].bits, v.v, sizeof v.v);
@@ -207,8 +208,9 @@ void add_math(ai::Calls &calls)
             const float k = 1.0F / n;
             for (int i = 0; i < 3; ++i)
                 v.v[i] *= k;
-            m.memory().write(a[0].bits, v.v, 12);
         }
+        v.v[3] = n;
+        m.memory().write(a[0].bits, v.v, sizeof v.v);
         a[0] = ai::Value::of_float(n);
     });
     // 0:13 a vector turned about the up by an angle into the call's own vector (FUN_1403b7680: FUN_1403b6f20's
@@ -1131,6 +1133,226 @@ void add_attacks(ai::Calls &calls)
     });
 }
 
+// The scripts' shots: effects they move themselves, their attacks' state, the vectors they move them by
+void add_shots(ai::Calls &calls)
+{
+    const auto world = [](ai::Machine &m) { return running(m)->world; };
+    const auto unit = [](Vec v) {
+        const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+        if (n > 0.0F)
+            for (int i = 0; i < 3; ++i)
+                v.v[i] /= n;
+        return v;
+    };
+    // 0:26 nothing in the PC game (FUN_14041ca40 is empty)
+    calls.set(0, 26, [](ai::Machine &, std::span<ai::Value>) {});
+    // 0:43 an angle made one of (-pi, pi] (FUN_14041e5e0 -> FUN_1403b6f20; not finite: 0)
+    calls.set(0, 43, [](ai::Machine &, std::span<ai::Value> a) {
+        const float v = a[0].f();
+        a[0] = ai::Value::of_float(std::isfinite(v) ? wrapped(v) : 0.0F);
+    });
+    // 0:45 a point moved along a way (made one long) by a speed, a tick's worth (FUN_14041d2d0: x DAT_140717480)
+    calls.set(0, 45, [unit](ai::Machine &m, std::span<ai::Value> a) {
+        Vec p = read_vec(m, a[0].bits);
+        const Vec d = unit(read_vec(m, a[1].bits));
+        for (int i = 0; i < 3; ++i)
+            p.v[i] += d.v[i] * a[2].f() * m.tick_length;
+        m.memory().write(a[0].bits, p.v, sizeof p.v);
+    });
+    // 0:46 a way turned toward another by at most an angle a tick, made one long (FUN_14041d3d0 -> FUN_1403b7200)
+    calls.set(0, 46, [unit](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec from = unit(read_vec(m, a[0].bits)), to = unit(read_vec(m, a[1].bits));
+        const float cosine = std::clamp(from.v[0] * to.v[0] + from.v[1] * to.v[1] + from.v[2] * to.v[2], -1.0F, 1.0F);
+        const float angle = std::acos(cosine), step = a[2].f() * m.tick_length;
+        Vec out = to;
+        if (angle > step && angle > 1e-6F) {
+            const float f = step / angle, s = std::sin(angle);
+            const float w0 = std::sin((1.0F - f) * angle) / s, w1 = std::sin(f * angle) / s;
+            for (int i = 0; i < 3; ++i)
+                out.v[i] = from.v[i] * w0 + to.v[i] * w1;
+        }
+        out.v[3] = 1.0F;
+        m.memory().write(a[0].bits, out.v, sizeof out.v);
+    });
+    // 0:48 0:47's memory let go (FUN_14041e660 -> FUN_140152570)
+    calls.set(0, 48, [](ai::Machine &m, std::span<ai::Value> a) { m.memory().remove(a[0].bits); });
+    // 0:50 whether an effect still plays; 0:51 one ended at once; 0:52 ended over n ticks (0 or less at once); 0:53
+    // its place; 0:38 its place set; 0:41 its turn set from a way (FUN_1403b7710: about the x atan2(-y, along the
+    // ground), about the y atan2(x, z))
+    calls.set(0, 50, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w != nullptr && w->effect_alive(a[0].bits) ? 1 : 0);
+    });
+    calls.set(0, 51, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->stop_effect(a[0].bits);
+    });
+    calls.set(0, 52, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m)) {
+            if (a[1].f() > 0.0F)
+                w->effect_fade(a[0].bits, a[1].f());
+            else
+                w->stop_effect(a[0].bits);
+        }
+    });
+    calls.set(0, 53, [world](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v;
+        Vec3 at{};
+        if (World *w = world(m); w != nullptr && w->effect_where(a[0].bits, at))
+            v.v[0] = at[0], v.v[1] = at[1], v.v[2] = at[2];
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "0:53", v);
+    });
+    calls.set(0, 38, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->effect_move(a[0].bits, xyz(read_vec(m, a[1].bits)));
+    });
+    calls.set(0, 41, [world](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec d = read_vec(m, a[1].bits);
+        const float along = std::sqrt(d.v[0] * d.v[0] + d.v[2] * d.v[2]);
+        if (World *w = world(m))
+            w->effect_turn(a[0].bits, {std::atan2(-d.v[1], along), std::atan2(d.v[0], d.v[2]), 0.0F});
+    });
+    // 1:21 an effect on the actor, its handle (FUN_14042d440 -> FUN_1403b6630: FUN_1402c6b30, as 1:87)
+    calls.set(1, 21, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_address(
+            x != nullptr && x->world != nullptr
+                ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits), std::int32_t(a[3].bits))
+                : 0);
+    });
+    // 1:22 one at a place of the world, its handle (FUN_14042d4b0 -> FUN_1403b66c0: its place then the one given)
+    calls.set(1, 22, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_address(
+            x != nullptr && x->world != nullptr
+                ? x->world->effect_in_world(*x, std::int32_t(a[1].bits), xyz(read_vec(m, a[2].bits)))
+                : 0);
+    });
+    // 1:88 an object's aim point (FUN_14042f880: its record's point, the shared vector)
+    calls.set(1, 88, [world](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v;
+        Vec3 at{};
+        Object *o = object_of(m, a[0]);
+        if (World *w = world(m); w != nullptr && o != nullptr && w->aim_point(*o, at))
+            v.v[0] = at[0], v.v[1] = at[1], v.v[2] = at[2];
+        else if (o != nullptr) {
+            const Vec3 p = o->place();
+            v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2];
+        }
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "shared", v);
+    });
+    // 1:93 a member of the party: 0 KH2's player (DAT_142a105d0, 1:3's), n the n-th partner (FUN_1403c3270): Days's
+    // field has none
+    calls.set(1, 93, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        Object *p = a[0].bits == 0 && w != nullptr ? w->player(*running(m)) : nullptr;
+        a[0] = ai::Value::of_address(p != nullptr ? p->address() : 0);
+    });
+    // 1:160 a target record made of an object (FUN_140430470 -> FUN_1403bee60: the object, its group, none, -1)
+    calls.set(1, 160, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[1]);
+        const std::uint32_t record[4] = {o != nullptr ? o->address() : 0u, 0u, 0u, 0xffffffffu};
+        m.memory().write(a[0].bits, record, sizeof record);
+    });
+    // 2:14, 2:29, 2:39, 2:44, 2:43, 2:18, 2:19: an attack's state (World::attack_finished and on)
+    calls.set(2, 14, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w == nullptr || w->attack_finished(a[0].bits) ? 1 : 0);
+    });
+    calls.set(2, 29, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w == nullptr || w->attack_expired(a[0].bits) ? 1 : 0);
+    });
+    calls.set(2, 39, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w != nullptr && w->attack_landed(a[0].bits) ? 1 : 0);
+    });
+    calls.set(2, 44, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_address(w != nullptr ? w->attack_struck(a[0].bits) : 0);
+    });
+    calls.set(2, 43, [world](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v;
+        Vec3 way{};
+        if (World *w = world(m); w != nullptr && w->attack_way(a[0].bits, way))
+            v.v[0] = way[0], v.v[1] = way[1], v.v[2] = way[2];
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "2:43", v);
+    });
+    calls.set(2, 18, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w != nullptr && w->attack_can_hit(a[0].bits, object_of(m, a[1])) ? 1 : 0);
+    });
+    calls.set(2, 19, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_line(a[0].bits, xyz(read_vec(m, a[1].bits)), xyz(read_vec(m, a[2].bits)));
+    });
+    // 1:141 the ground under a point: a cast from it down a depth (FUN_14042e8b0 -> FUN_1403f3dd0, flags 4), the
+    // point it meets written (else the point itself), whether it meets one
+    calls.set(1, 141, [world](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec3 from = xyz(read_vec(m, a[0].bits));
+        Vec3 hit = from;
+        World *w = world(m);
+        const bool met = w != nullptr && w->ray(*running(m), from, {from[0], from[1] + a[2].f(), from[2]}, hit);
+        Vec out;
+        out.v[0] = met ? hit[0] : from[0], out.v[1] = met ? hit[1] : from[1], out.v[2] = met ? hit[2] : from[2];
+        out.v[3] = 1.0F;
+        m.memory().write(a[1].bits, out.v, sizeof out.v);
+        a[0] = ai::Value::of_int(met ? 1 : 0);
+    });
+    // 6:51 whether a segment meets the room (FUN_14053eb70 -> FUN_14040c2b0: from, to, flags); its result record's
+    // layout is not read -- the point it meets is written at its start
+    calls.set(6, 51, [world](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec3 from = xyz(read_vec(m, a[1].bits)), to = xyz(read_vec(m, a[2].bits));
+        Vec3 hit{};
+        World *w = world(m);
+        const bool met = w != nullptr && w->ray(*running(m), from, to, hit);
+        if (met) {
+            const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
+            m.memory().write(a[0].bits, p, sizeof p);
+        }
+        a[0] = ai::Value::of_int(met ? 1 : 0);
+    });
+    // 1:248 a point at random round another, between two distances along the ground (FUN_14042eb90 ->
+    // FUN_1403f4080: a turn at random, a distance at random between them), put on the ground under it when one is
+    // found within the two heights given (KH2's own search of its eight ways not read): the shared vector
+    calls.set(1, 248, [world](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec3 at = xyz(read_vec(m, a[0].bits));
+        const float turn = float(next_chance()) * 2.32830644e-10F * 2.0F * kPi;
+        const float r = (a[2].f() - a[1].f()) * float(next_chance()) * 2.32830644e-10F + a[1].f();
+        Vec3 p = {at[0] + std::sin(turn) * r, at[1], at[2] + std::cos(turn) * r};
+        Vec3 ground{};
+        World *w = world(m);
+        const float up = std::max(std::fabs(a[3].f()), std::fabs(a[4].f()));
+        if (w != nullptr && up > 0.0F && w->ray(*running(m), {p[0], p[1] - up, p[2]}, {p[0], p[1] + up, p[2]}, ground))
+            p = ground;
+        Vec v;
+        v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2], v.v[3] = 1.0F;
+        a[0] = give_vec(m, "shared", v);
+    });
+    // 6:9 a point's distance to what a target record names (FUN_14053e3e0 -> FUN_1403bdd90), a float
+    calls.set(6, 9, [world](ai::Machine &m, std::span<ai::Value> a) {
+        float d = 0.0F;
+        if (World *w = world(m))
+            w->record_distance(a[0].bits, xyz(read_vec(m, a[1].bits)), d);
+        a[0] = ai::Value::of_float(d);
+    });
+    // 2:38 a routine of the script run when the attack hits, with a value (FUN_140432560: + 0x98 the machine, + 0x9c
+    // the routine, + 0xa0 the value)
+    calls.set(2, 38, [world](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint32_t entry = a[1].bits;
+        if (a[1].tag == ai::Tag::Address && entry >= m.code())
+            entry = (entry - m.code()) / 2;
+        if (World *w = world(m))
+            w->attack_on_hit(a[0].bits, *running(m), entry, a[2].bits);
+    });
+    // 6:54 a vector copied into one of its own (FUN_14053ed00: DAT_1407883d8)
+    calls.set(6, 54,
+              [](ai::Machine &m, std::span<ai::Value> a) { a[0] = give_vec(m, "6:54", read_vec(m, a[0].bits)); });
+}
+
 void add_world(ai::Calls &calls)
 {
     // 1:3 the player's actor (FUN_1403b3e80, DAT_142a105d0): the Days player this actor goes for
@@ -1223,6 +1445,7 @@ void add_world(ai::Calls &calls)
     });
     add_search(calls);
     add_attacks(calls);
+    add_shots(calls);
     // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);

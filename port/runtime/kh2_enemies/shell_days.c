@@ -13,6 +13,7 @@ extern int Ov107_InvokeHitCallback(KhdaysRef victim, KhdaysRef a, KhdaysRef b, i
 extern KhdaysRef NNSi_FndAllocFromDefaultExpHeap(unsigned int size);
 extern int Session_GetLocalPlayerIndex(void);
 extern void Actor_SetVecAndSyncChild(KhdaysRef node, KhdaysRef pos);
+extern KhdaysRef Collision_CastRay(KhdaysRef world, KhdaysRef from, KhdaysRef way);
 
 #define ACTOR_SCENE 0x4u
 #define ACTOR_MODE 0x50u    /* 1: this game's own */
@@ -183,6 +184,36 @@ int khdays_kh2_shell_hit(unsigned actor, unsigned victim, int slot, const float 
         *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(push[i]);
     }
     return Ov107_InvokeHitCallback(victim, actor, actor, slot, v, 0) != 0;
+}
+
+#define SCENE_COLLISION 0x7cu /* a scene's room collision (the actor's + 0x4's) */
+#define HIT_SHARE 0xcu        /* a hit's distance along the way cast, a Q27 share of it */
+
+int khdays_kh2_shell_ray(unsigned actor, const float from[3], const float to[3], float hit[3])
+{
+    static KhdaysRef v;
+    if (v == 0) {
+        v = NNSi_FndAllocFromDefaultExpHeap(32);
+    }
+    const unsigned scene = rd32(actor + ACTOR_SCENE);
+    const unsigned world = scene != 0 ? rd32(scene + SCENE_COLLISION) : 0;
+    if (v == 0 || world == 0) {
+        return 0;
+    }
+    for (int i = 0; i < 3; ++i) {
+        *(int *)KHDAYS_W(v + 4u * (unsigned)i) = to_fx(from[i]);
+        *(int *)KHDAYS_W(v + 12u + 4u * (unsigned)i) = to_fx(to[i] - from[i]);
+    }
+    const KhdaysRef h = Collision_CastRay(world, v, v + 12u);
+    if (h == 0) {
+        return 0;
+    }
+    /* the hit record is the collision's own (not the game's heap): read where it lies, as the camera's casts do */
+    const double share = (double)*(const int *)KHDAYS_W(h + HIT_SHARE) / 134217728.0;
+    for (int i = 0; i < 3; ++i) {
+        hit[i] = from[i] + (float)((double)(to[i] - from[i]) * share);
+    }
+    return 1;
 }
 
 int khdays_kh2_shell_attack_slot(unsigned actor)

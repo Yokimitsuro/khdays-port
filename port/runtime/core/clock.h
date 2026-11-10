@@ -42,6 +42,7 @@ enum {
     KHDAYS_HOLD_SETTINGS = 1u << 0,
     KHDAYS_HOLD_MOVIE = 1u << 1,
     KHDAYS_HOLD_MOVIE_MENU = 1u << 2,
+    KHDAYS_HOLD_SHOT = 1u << 3, /* KHDAYS_SHOTS_HD's pictures read back and written: no frame of the game lost */
 };
 void khdays_clock_hold(unsigned reason, int on);
 

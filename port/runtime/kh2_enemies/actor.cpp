@@ -90,10 +90,23 @@ bool StateMachine::find(Actor &a, const std::string &name, StateEntry &out) cons
         out.flags = u16(6);
         out.routine = u16(8);
         out.on_leave = u16(0xa);
+        out.on_air = u16(0xc);
+        out.on_land = u16(0xe);
         out.on_enter = u16(0x16);
         return true;
     }
     return false;
+}
+
+void StateMachine::event(Actor &a, int n)
+{
+    if (!current_ || waiting_)
+        return;
+    const std::uint16_t routine = n == 1 ? current_->on_air : n == 2 ? current_->on_land : 0;
+    if (routine == 0)
+        return;
+    const ai::Value handle = ai::Value::of_address(handle_);
+    a.machine().run_now(routine, {&handle, 1});
 }
 
 // FUN_1403caec0: the current state's leave routine run at once, its thread ended

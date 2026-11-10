@@ -527,7 +527,21 @@ static SDL_FRect ds_columns(SDL_Texture *texture, int width)
 /* KHDAYS_SHOTS_HD: the screens of this frame, as presented, for each shot asked at it or before it not yet taken
  * (`first`: the frame's first picture); with KHDAYS_SHOTS_BETWEEN, the one-screen picture drawn again between it and
  * the next game frame too. */
+static void save_shots_now(const KhdaysFramePackage *p, int first);
+
+/* The game's time held while the pictures are read back and written (KHDAYS_HOLD_SHOT): a frame asked is never
+ * skipped by the game catching up after a slow write, so frames asked in a row make a smooth picture sequence. */
 static void save_shots(const KhdaysFramePackage *p, int first)
+{
+    if (shot_count == 0) {
+        return;
+    }
+    khdays_clock_hold(KHDAYS_HOLD_SHOT, 1);
+    save_shots_now(p, first);
+    khdays_clock_hold(KHDAYS_HOLD_SHOT, 0);
+}
+
+static void save_shots_now(const KhdaysFramePackage *p, int first)
 {
     for (int n = 0; one_drawn && n < shot_count; ++n) {
         int w = 0, h = 0;

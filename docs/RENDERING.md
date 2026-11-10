@@ -377,7 +377,9 @@ blends at the port's resolution").
 
 Testing knobs: `KHDAYS_SHOTS_HD=DIR` (the `KHDAYS_SHOTS` frames as presented,
 at the resolution drawn; each at the first frame presented from it on, named
-by that frame); `KHDAYS_GFX=reference` (the 2D engines' pictures);
+by that frame; the game's time held while they are read back and written,
+`KHDAYS_HOLD_SHOT`, so frames asked in a row are not skipped by the game
+catching up: every other frame makes a 30-a-second sequence); `KHDAYS_GFX=reference` (the 2D engines' pictures);
 `KHDAYS_GFX=check` (the port's way compared with the 2D engines at 1x, or the
 old way at N x, every 300 frames); `KHDAYS_PROFILE` (frames never drawn, and
 the time preparing the 3D took); `KHDAYS_PROFILE_GPU` (every 300 pictures, the

@@ -160,14 +160,15 @@ class Kh2AiTest(unittest.TestCase):
 
     def test_thread_routines(self):
         """Routines a script starts as threads: 1:112's second argument of three (Cerberus's on the player), 2:20's
-        second of two -- walked, listed and counted as its states' routines are."""
+        first of two (FUN_140432cd0: the routine, then its value) -- walked, listed and counted as its states'
+        routines are."""
         s0 = start(1)
         on_actor = push_int(0) + push_int(0) + push_int(0) + [10 | (1 << 6), 112]  # its routine set below
         own = push_int(0) + push_int(0) + [10 | (2 << 6), 20, 0x0049]  # then exit
         first = s0 + len(on_actor) + len(own)
         second = first + 3
         on_actor[3:6] = push_int(first)
-        own[3:6] = push_int(second)
+        own[0:3] = push_int(second)
         routines = [10 | (2 << 6), 7, 0x0089, 10 | (2 << 6), 8, 0x0089]  # each a call, then ret
         s = kh2_ai.read_script(script([(0, s0)], on_actor + own + routines))
         code = kh2_ai.walk(s)
@@ -177,6 +178,24 @@ class Kh2AiTest(unittest.TestCase):
         listed = kh2_ai.listing(s)
         self.assertIn("  2 thread routines", listed)
         self.assertIn(f"{first:#06x}:  thread routine", listed)
+
+    def test_thread_routine_through_a_parameter(self):
+        """A routine given to 2:20 through a routine's parameter (the Soldier's Cyclone: its message 34 passes 90 to a
+        routine that starts it): read from its caller's stack."""
+        s0 = start(1)
+        call_size, after = 2, 1  # the call, then exit
+        caller = push_int(0)  # the routine's number, set below
+        starter_at = s0 + len(caller) + call_size + after
+        caller += [8 | (4 << 6), starter_at - (s0 + len(caller) + 2), 0x0049]  # call the starter, then exit
+        # the starter: its parameter popped into fp+0, pushed again as 2:20's routine, then 0 its value
+        starter = [0x0001, 0x0000, 0x0030, 0x0000] + push_int(0) + [10 | (2 << 6), 20, 0x0089]
+        routine = starter_at + len(starter)
+        caller[0:3] = push_int(routine)
+        body = [10 | (2 << 6), 7, 0x0089]
+        s = kh2_ai.read_script(script([(0, s0)], caller + starter + body))
+        code = kh2_ai.walk(s)
+        self.assertEqual(kh2_ai.thread_routines(s, code), {routine})
+        self.assertEqual(code[routine].syscall, (2, 7), "walked")
 
     def test_coverage(self):
         data, _ = self.stateful()

@@ -946,6 +946,43 @@ void test_attacks()
     CHECK(world.ended == at);
 }
 
+// The shots' vector calls: an angle wrapped, a point moved along a way, a way turned toward another, a record made of
+// an object, a vector copied
+void test_shots()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "0:43 1 1\n0:45 3 0\n0:46 3 0\n1:160 2 0\n6:54 1 1\n");
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor actor(script({{1, 0}}, loop), rig.memory, rig.calls, "shooter");
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto adr = ai::Value::of_address;
+    const auto read = [&rig](std::uint32_t at) {
+        float v[4];
+        rig.memory.read(at, v, sizeof v);
+        return std::vector<float>(v, v + 4);
+    };
+    // 0:43: 4 made one of (-pi, pi]
+    CHECK(std::fabs(call(rig, actor, 0, 43, {f(4.0F)}).f() - (4.0F - 6.2831853F)) < 1e-5F);
+    // 0:45: from 0 along (3, 0, 4) (one long: 0.6, 0, 0.8) at 10 a tick
+    const std::uint32_t p = vec(rig.memory, 0.0F, 0.0F, 0.0F, 1.0F);
+    call(rig, actor, 0, 45, {adr(p), adr(vec(rig.memory, 3.0F, 0.0F, 4.0F)), f(10.0F)});
+    const float tick = actor.machine().tick_length;
+    CHECK(std::fabs(read(p)[0] - 6.0F * tick) < 1e-4F && std::fabs(read(p)[2] - 8.0F * tick) < 1e-4F);
+    // 0:46: +x turned toward +z by at most 0.5 a tick
+    const std::uint32_t w = vec(rig.memory, 1.0F, 0.0F, 0.0F, 1.0F);
+    call(rig, actor, 0, 46, {adr(w), adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), f(0.5F)});
+    const float turned = 0.5F * tick;
+    CHECK(std::fabs(read(w)[0] - std::cos(turned)) < 1e-4F && std::fabs(read(w)[2] - std::sin(turned)) < 1e-4F);
+    // 1:160: a record of the actor (the object, its group, none, -1)
+    const std::uint32_t record = rig.memory.add(16, "a record");
+    call(rig, actor, 1, 160, {adr(record), self});
+    CHECK(rig.memory.u32(record) == actor.address() && rig.memory.u32(record + 12) == 0xffffffffu);
+    // 6:54: a copy
+    const std::uint32_t copy = call(rig, actor, 6, 54, {adr(vec(rig.memory, 1.0F, 2.0F, 3.0F, 1.0F))}).bits;
+    CHECK(read(copy)[1] == 2.0F && read(copy)[2] == 3.0F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -959,6 +996,7 @@ int main()
     test_player_calls();
     test_aims();
     test_attacks();
+    test_shots();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

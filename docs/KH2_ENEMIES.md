@@ -135,7 +135,7 @@ scripts take as "nothing there", named in the table.
 | 0:3 | the tick's length (1.0 at 60 a second) | 1.0 |
 | 0:4, 0:5, 0:36 | a + b, a - b, a x f into the call's own vector, NaN components made 0 | as KH2 |
 | 0:13 | a vector turned about the up by an angle (`FUN_1403b7680`) | as KH2 |
-| 0:6, 0:7 | a vector's length; made unit in place, its length given back | as KH2 |
+| 0:6, 0:7 | a vector's length; made unit in place, its length given back and kept as its w (`FUN_14041cfa0`: + 0xc) | as KH2 |
 | 0:16, 0:17, 0:18 | random: below n, times f, between a and b (`x = x * 0x10dcd`, 32 bits) | as KH2 |
 | 0:47 | memory of n bytes (`FUN_140152430`: the game's allocator, `DAT_1409ba920`'s +8) | the scripts' memory |
 | 0:79 | memory given back four calls later (a ring of four, `FUN_1403f63a0`) | as KH2 |
@@ -227,6 +227,24 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 2:22 | whose effects its hits show (`FUN_140432a90`: + 0x28 an object's + 0x80) | nothing: Days's own show |
 | 2:37 | its team (`FUN_1403d2390`: + 0x38, 3 made 4; + 0x39 its targets, every team but it and 0) | kept (the port's attacks of an enemy hit Days's players, KH2's player's its enemies) |
 | 2:61 | the effect it follows (`FUN_140437a00`, + 0xc8): its place the effect's each tick, ended with it -- the Hammer Frame's shockwave on its element 8 | as KH2 |
+| 2:14, 2:29, 2:39, 2:44 | an attack ended (`FUN_1403d1f20`: + 8's bits 1, 3, 4 or 9), grown or its effect gone (+ 8 & 0x18), it hit (+ 8's bit 9), the object it hit (+ 0x90) | as KH2 (an attack ends when it hits) |
+| 2:18 | whether an attack can hit an object (`FUN_1403d2060`: its team's targets) | an enemy's: Days's players; KH2's player's: KH2 enemies |
+| 2:19 | an attack's place and the place before set at once (`FUN_140437a40`: a line swept) | as KH2 |
+| 2:43 | its way from its owner (`FUN_140437530`) | from its enemy's place |
+| 2:38 | a routine of the script run when it hits, with a value (+ 0x98 the machine, + 0x9c, + 0xa0) | as KH2 |
+| 0:26 | nothing (`FUN_14041ca40` is empty) | nothing |
+| 0:43 | an angle made one of (-pi, pi] | as KH2 |
+| 0:45, 0:46 | a point moved along a way at a speed a tick; a way turned toward another by at most an angle a tick (`FUN_1403b7200`) | as KH2 |
+| 0:48 | 0:47's memory let go | as KH2 |
+| 0:38, 0:41, 0:50, 0:51, 0:52, 0:53 | an effect's place set, its turn set from a way (`FUN_1403b7710`), whether it plays (+ 0x30), ended at once, ended over n ticks (`FUN_1402be630`), its place (`FUN_1402be970`) | as KH2, but 0:52 ends it after n ticks without KH2's fade |
+| 1:21, 1:22 | an effect on the actor, its handle (as 1:87); one at a place of the world (`FUN_1403b66c0`) | as KH2 |
+| 1:88 | an object's aim point (its record's point, `FUN_1403bdde0`) | a KH2 enemy's aim shape, a player's middle |
+| 1:93 | a member of the party: 0 KH2's player, n a partner | the player; no partners |
+| 1:160 | a target record made of an object (`FUN_1403bee60`) | as KH2 |
+| 1:141, 6:51 | the ground under a point (a cast down a depth, flags 4, `FUN_1403f3dd0`); whether a segment meets the room (`FUN_14040c2b0`) | Days's room collision (`Collision_CastRay`); 6:51's result record not read, the point written at its start |
+| 1:248 | a point at random round another, between two distances (`FUN_1403f4080`), on the ground | as KH2, but KH2's search of eight ways (`FUN_1403f44a0`) not read: one turn at random, the ground within the heights given |
+| 6:9 | a point's distance to what a record names (`FUN_1403bdd90`: an attack's sphere, an actor's aim shape, `FUN_1403c99f0`) | to the attack's sphere, or the aim point (its shape's radius not taken off) |
+| 6:54 | a vector copied into one of its own | as KH2 |
 | 2:62 | its growth (`FUN_140437c30`): over n ticks (+ 0xd0) from a radius and a height (+ 0xd4, + 0xd8; 0 or less its own) to its size, eased by `sin(t / n x pi / 2)` (`FUN_140141ae0`); ended once grown | as KH2 |
 | 1:87 | (its value) the effect's handle | the effect's own: what 2:61 follows |
 | 1:129 | a throw of its own (`FUN_14042b550` -> `FUN_1403d3e50`): a vector (its NaNs made 0) -- its x, z the way (made one long, times its w), its y the speed up (+ 0x24 -y) -- and class 4, thrown (`FUN_140409d30`; the classes at 0x140750d30), whose movement (`FUN_140422780`) keeps its speed along and lands with the motion it was playing plus one (`FUN_140422700`: + 0x114) -- the Rapid Thruster's rise in motion 18, landing in 19 | as KH2, but KH2's slowing of the rise and its fastest fall (values the game sets running, `DAT_142ae5760` + 0x18 to + 0x20, + 0x138): the jumps' pull |
@@ -284,6 +302,11 @@ show (`2:22`) is Days's.
   252 and strikes it five times. Before trigger 14 and range 30 without pull it stood for ever in its leap's loop.
   **Not yet seen**: the Neoshadow's strike state (2:10 for the player, 2:17 on itself), the Crimson Jazz and the Rapid
   Thruster in play.
+- **Hidden threads** (2026-11-10): with 2:20's routine read from its first argument and routines passed through
+  parameters followed, seven kinds' scripts make more calls -- the Soldier 71 (Cyclone), the Dusk 83 (Reversal),
+  Cerberus 106 (its fire), the Crimson Jazz 89, the Strafer 96, the Cannon Gun 93, the Assault Rider 73 -- all answered
+  now (the calls above from 2:14 on). Played: the Soldier's Cyclone ("Ciclón") and the Dusk's Reversal, offered by
+  their zones and taken (a test switch pressing).
 - **Next**, one or two calls each: the Graveyard `M_EX790` and its four variants (1:53), the Mole Driller `M_EX700`
   (2:1), `M_EX630` (1:53, 1:54), the Dancer `M_EX930` (1:161), `M_EX960` (2:76); then the rest, and the shots
   that are effects that hit (the Magnum Loader's, the Cannon Gun's).
@@ -411,8 +434,12 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
 - **Its reaction command's cameras**: 1:157's event sequences ("00" as it takes the player, "10" to "30" as each
   step begins) play their cameras ("Event sequences" below).
 - **Not yet**: its name on the enemy HUD (the stand-in's shows); Days's camera, close behind the player, inside its
-  body (6 m) outside the reaction command; its leap's loop (motion 171, from frame 63) never ends without a hit (KH2's
-  way out not read); 0:32 (the routine's screen effect) and the sequences' depth blur (command 0x18) not played.
+  body (6 m) outside the reaction command; 0:32 (the routine's screen effect) and the sequences' depth blur (command
+  0x18) not played.
+- **Its leap's end** (2026-11-10): KH2 tells the state machine as an actor lands (`FUN_1403b79d0` ->
+  `FUN_1403ca1d0(+ 0x390, 2)`): the current state's routine for that event, its record's + 0xe (+ 0xa + 2 n: n 0 its
+  leave, 1 off the ground, 2 landed), runs at once unless it has not begun -- Cerberus's `jump` lands into
+  `jump_land` that way, its loop (171) no longer waiting for a hit. The port runs it before trigger 13 or 14.
 
 ## A player in an enemy's hands
 
@@ -477,12 +504,29 @@ Dusk's (group 5: 69, Reversal).
   shapes by kind, `FUN_14040b140`); the port takes the same test for every zone. The deepest zone's command shows (the
   bar, and KH2's mark at the enemy's aim point), not while an enemy holds the player, nor again in the motion one was
   taken in. The press sends the command's argument to the enemy (trigger 11, as a held player's).
-- **Only where the enemy's script plays it**: the Magnum Loader's and the Armored Knight's handlers make the player play
-  a motion of their set (1:29) and run a thread on him (1:112); the Soldier's and the Dusk's only keep a point for KH2's
-  player's own code, which plays Cyclone (the Soldier's AA00, AA01) and Reversal (the Dusk's "DUSK" entries) -- **not
-  read**. The port offers a zone's command only for a kind whose script makes a 1:29 call in its walked code: the mod
-  tool's list says so (kh2_enemies.txt's sixth column, "player"; a list made before it offers none). A scan of the
-  raw code words is not enough: a push's operand can read as a 1:29 (the Soldier's and the Dusk's do).
+- **The command's record**: trigger 11's third value is the command's target record (the manager's + 0x10:
+  `FUN_1403bee60`'s -- the object, its group, none, -1), not the object: the Soldier's and the Dusk's routines take
+  the object from its first word (`1:94` on it, then its place); the port sends one (the enemy, group 0). With the
+  enemy's own address instead, the Dusk's Reversal turned the player round the world's origin -- not round it.
+- **Every command is its enemy's script's**: KH2's player takes a command (`FUN_1403b2340`, his command manager at
+  + 0xdd0: the press, `FUN_1403b22d0` -> `FUN_1403d7f30`, keeps it at the manager's + 8) and runs it
+  (`FUN_1403a8b10`: its few special `exec` kinds apart, its journal count, `rcct`, and its `Action` -- 1 the ground, 2 a
+  jump), then sends it to its target's script (`FUN_1403b5fa0`: trigger 11 with the player, the command and its
+  record). The Magnum Loader's and the Armored Knight's handlers make the player play a motion of their set (1:29)
+  and run a thread on him (1:112); the Soldier's and the Dusk's start a thread of their own (2:20) whose routine is
+  given through a routine's parameter (the Soldier's 34: 90 pushed, passed on, started) -- Cyclone (AA00 aside 3.6 m,
+  then AA01 the spin), Reversal (the Dusk's "DUSK" 241 or 242). The research and mod tools follow such routines from
+  their callers' stacks (`kh2_bdx.thread_routines`); they had read 2:20's routine from its second argument (it is
+  its first: `FUN_140432cd0`), which hid these threads and the ones of other kinds (the Cerberus's fire, the Cannon
+  Gun's, the Strafer's, the Crimson Jazz's, the Assault Rider's; "Coverage"). The port offers a zone's command only
+  for a kind whose script makes a 1:29 call in its walked code: the mod tool's list says so (kh2_enemies.txt's sixth
+  column, "player").
+- **A held player on the ground**: while his motion has no range 3, 24 or 30 (the air classes' pull off) KH2's
+  ground class moves him: the port takes only the way along the ground of 1:89's move and 1:111's steering, puts him
+  on the room's ground under him (Days's collision, `Collision_CastRay` on the enemy's scene's collision: + 0x4's
+  + 0x7c), stops him short of a wall he would walk into (a cast at his middle), and keeps him off a ledge more than a
+  step down (KH2's rooms wall their edges; Days's eh platform has none). Before, the Soldier's Cyclone sank him
+  (its way down to the Soldier) and then stepped him off the platform.
 - **The Magnum Loader's Quick Blade** (AB10, 112 ticks): its thread (routine 133) asks for the player's own idle at
   once (1:13: KH2 queues it on his controller, `FUN_1403c8310`, taken once the motion of another's set gives him back,
   below), turns him to the loader, and on his motion's triggers 9

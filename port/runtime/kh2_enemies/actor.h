@@ -69,6 +69,8 @@ struct StateEntry final {
                                  // held or off the ground (FUN_1403cad00, FUN_1403ca550)
     std::uint16_t routine = 0;   // +8: run as a child thread while it is the state
     std::uint16_t on_leave = 0;  // +0xa: run at once when it is left (FUN_1403caec0)
+    // + 0xa + 2 n: its routine for the game's event n (FUN_1403ca1d0): 1 the actor left the ground, 2 it landed
+    std::uint16_t on_air = 0, on_land = 0; // + 0xc, + 0xe
     std::uint16_t on_enter = 0;  // +0x16: run at once after it is entered (FUN_1403cad00)
 };
 
@@ -89,6 +91,9 @@ public:
         locked_ = false;
     } // the game's own entries ("dead") go in over a locked one
     void tick(Actor &a);                            // the current one ended: the next queued entered
+    // the game's event n told to the current state (FUN_1403ca1d0): its routine for it run at once, the actor's handle
+    // given, unless the state has not begun (+ 300's bit 2): 1 off the ground, 2 landed
+    void event(Actor &a, int n);
     const StateEntry *current() const { return current_ ? &*current_ : nullptr; }
     std::uint32_t handle() const
     {
@@ -249,6 +254,75 @@ public:
     virtual void attack_team(std::uint32_t /*at*/, int /*team*/) {}
     virtual void attack_strike(std::uint32_t /*at*/, Object * /*target*/) {}
     virtual void attack_end(std::uint32_t /*at*/) {}
+    // ... and what the scripts ask of one: ended (2:14: grown, its effect gone, or it hit), grown or its effect gone
+    // (2:29: + 8's 0x18), it hit (2:39: + 8's bit 9), the object it hit (2:44: + 0x90), its way from its owner (2:43,
+    // FUN_140437530), whether it can hit an object (2:18, FUN_1403d2060: its team's targets); its place and the place
+    // before set at once (2:19, FUN_140437a40: a line swept)
+    virtual bool attack_finished(std::uint32_t /*at*/)
+    {
+        return true;
+    }
+    virtual bool attack_expired(std::uint32_t /*at*/)
+    {
+        return true;
+    }
+    virtual bool attack_landed(std::uint32_t /*at*/)
+    {
+        return false;
+    }
+    virtual std::uint32_t attack_struck(std::uint32_t /*at*/)
+    {
+        return 0;
+    }
+    virtual bool attack_way(std::uint32_t /*at*/, Vec3 & /*out*/)
+    {
+        return false;
+    }
+    virtual bool attack_can_hit(std::uint32_t /*at*/, Object * /*target*/)
+    {
+        return false;
+    }
+    virtual void attack_line(std::uint32_t /*at*/, const Vec3 & /*now*/, const Vec3 & /*before*/) {}
+    // Effects the scripts move themselves (their shots): one of an actor's at a place of the world (1:22,
+    // FUN_1403b66c0), whether one still plays (0:50, FUN_1402be780: its instance at + 0x30), its place (0:53,
+    // FUN_1402be970), set (0:38), its turn set (0:41), ended over n ticks (0:52; 0:51 and 0:44 at once)
+    virtual std::uint32_t effect_in_world(Actor & /*a*/, int /*number*/, const Vec3 & /*place*/)
+    {
+        return 0;
+    }
+    virtual bool effect_alive(std::uint32_t /*handle*/)
+    {
+        return false;
+    }
+    virtual bool effect_where(std::uint32_t /*handle*/, Vec3 & /*out*/)
+    {
+        return false;
+    }
+    virtual void effect_move(std::uint32_t /*handle*/, const Vec3 & /*place*/) {}
+    virtual void effect_turn(std::uint32_t /*handle*/, const Vec3 & /*angles*/) {}
+    virtual void effect_fade(std::uint32_t /*handle*/, float /*ticks*/) {}
+    // A segment of KH2's world against the room's collision (Days's, under the actor): where it first meets it
+    // (FUN_14040c2b0's cast: 6:51, 1:141's ground under a point, 1:248's)
+    virtual bool ray(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
+    {
+        return false;
+    }
+    // A point's distance to what a target record names (6:9, FUN_1403bdd90: its shape -- an attack's sphere, an
+    // actor's aim shape -- FUN_1403c99f0)
+    virtual bool record_distance(std::uint32_t /*record*/, const Vec3 & /*point*/, float & /*out*/)
+    {
+        return false;
+    }
+    // An attack's routine run when it hits (2:38: + 0x98 the machine, + 0x9c the routine, + 0xa0 its value)
+    virtual void attack_on_hit(std::uint32_t /*at*/, Actor & /*by*/, std::uint32_t /*routine*/, std::uint32_t /*value*/)
+    {
+    }
+    // An object's aim point in the world (1:88: its record's point, FUN_1403b5cb0 -> FUN_1403bdde0): a KH2 enemy's
+    // aim shape, a player's middle
+    virtual bool aim_point(Object & /*o*/, Vec3 & /*out*/)
+    {
+        return false;
+    }
     // 1:165: a reaction command offered KH2's player this tick by `by`'s script (FUN_1403b2850 on his + 0xdd0), from
     // `source`: what a press sends it (trigger 11)
     virtual void offer(Actor & /*by*/, int /*command*/, Object * /*source*/) {}

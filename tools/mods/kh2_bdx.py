@@ -40,9 +40,10 @@ MISC = by_argument("yield exit ret drop - dup sin cos deg2rad rad2deg")
 STATE_CALL = (1, 6)  # registers a state (see state_routines)
 STATE_ARGS = 12
 STATE_ROUTINE_ARGS = (3, 10)
-# calls that start a routine of the script as a thread: (table, index) -> (arguments, the routine's among the pushes);
-# 1:112 on an actor (the routine its attached thread: Cerberus's on the player), 2:20 a thread of its own
-THREAD_CALLS = {(1, 112): (3, 1), (2, 20): (2, 1)}
+# calls that start a routine of the script as a thread: (table, index) -> (arguments, the routine's among the pushes,
+# the first pushed 0): 1:112 on an actor, its second (FUN_14042ca20: the actor, the routine, a value -- the routine its
+# attached thread: Cerberus's on the player), 2:20 a thread of its own, its first (FUN_140432cd0: the routine, a value)
+THREAD_CALLS = {(1, 112): (3, 1), (2, 20): (2, 0)}
 # the triggers the game raises itself (KH2FM.exe's callers of its trigger runner); the others an object's own
 TRIGGERS = {0: "start, run once with the object", 1: "main, the object's thread resumed each tick"}
 
@@ -210,11 +211,157 @@ def state_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
     return _pushed_routines(s, code, STATE_CALL, STATE_ARGS, STATE_ROUTINE_ARGS)
 
 
+def _leading_pops(s: Script, entry: int) -> list[int]:
+    """A routine's parameters: the frame offsets its first instructions pop into, in order (the first popped the value
+    pushed last)."""
+    offsets = []
+    pc = entry
+    while 0 <= pc and pc + 2 <= s.words:
+        w = s.word(pc)
+        if w & 0xF != 1 or (w >> 4) & 3 != 0 or (w >> 6) != 0:  # not a pop into the frame
+            break
+        offsets.append(s.word(pc + 1))
+        pc += 2
+    return offsets
+
+
+def _returns(s: Script, entry: int) -> int:
+    """Whether a routine gives a value back: the instruction before its first return a push (the scripts' compiler
+    leaves the value last on the stack)."""
+    pc, before = entry, None
+    while 0 <= pc < s.words:
+        ins = decode(s, pc)
+        if ins.bad:
+            return 0
+        if ins.text == "ret":
+            return 1 if before is not None and before.text.startswith("push") else 0
+        before = ins
+        pc += ins.size
+    return 0
+
+
+def _stack_before(s: Script, entry: int, site: int, shapes: dict[tuple[int, int], tuple[int, int]]) -> list | None:
+    """What a routine's stack holds just before the instruction at `site`, its code read in order from its entry (a
+    branch's both ways as one): ("int", n) an integer pushed, ("param", offset) a parameter's value, None anything
+    else; None when it cannot tell (a call into the game of an unknown shape, the stack run out)."""
+    params = _leading_pops(s, entry)
+    stack: list = []
+    frame: dict[int, object] = {o: ("param", o) for o in params}
+    pc = entry + 2 * len(params)
+    try:
+        while pc < site:
+            if not 0 <= pc < s.words:
+                return None
+            ins = decode(s, pc)
+            if ins.bad:
+                return None
+            w = s.word(pc)
+            op, sub, arg = w & 0xF, (w >> 4) & 3, w >> 6
+            if op == 0:  # a push: an integer, a frame's value, anything else
+                if ins.pushed is not None:
+                    stack.append(("int", ins.pushed))
+                elif sub == 3 and arg == 0:
+                    stack.append(frame.get(s.word(pc + 1)))
+                else:
+                    stack.append(None)
+            elif op == 1:  # a pop into a place
+                value = stack.pop()
+                if sub == 0 and arg == 0:
+                    frame[s.word(pc + 1)] = value
+            elif op == 2 or (op == 7 and arg != 0):  # a copy's address, a conditional jump's value
+                stack.pop()
+            elif op == 3:  # a load
+                stack[-1] = None
+            elif op == 4:  # a store: its address and its value
+                del stack[-2:]
+            elif op == 5:
+                stack[-1] = None
+            elif op == 6:
+                del stack[-2:]
+                stack.append(None)
+            elif op in (8, 11):  # a call: its parameters taken, its value given back
+                callee = ins.calls[0]
+                n = len(_leading_pops(s, callee))
+                if n > len(stack):
+                    return None
+                del stack[len(stack) - n :]
+                stack.extend([None] * _returns(s, callee))
+            elif op == 9:
+                if ins.text == "ret":
+                    stack = []
+                elif ins.text == "drop":
+                    stack.pop()
+                elif ins.text == "dup":
+                    stack.append(stack[-1])
+                elif ins.text in ("sin", "cos", "deg2rad", "rad2deg"):
+                    stack[-1] = None
+            elif op == 10:
+                shape = shapes.get(ins.syscall) if ins.syscall else None
+                if shape is None:
+                    return None
+                n, back = shape
+                if n > len(stack):
+                    return None
+                del stack[len(stack) - n :]
+                stack.extend([None] * back)
+            pc += ins.size
+    except IndexError:
+        return None
+    return stack
+
+
+def _routine_values(s: Script, code: dict[int, Instruction], entries: list[int], value, depth: int) -> set[int]:
+    """The integers a stack value can be: itself, or a parameter's at each place its routine is called from (the
+    callers' stacks there), a few calls up."""
+    if value is None or depth > 4:
+        return set()
+    if value[0] == "int":
+        return {value[1]}
+    _, offset, routine = value
+    params = _leading_pops(s, routine)
+    if offset not in params:
+        return set()
+    k = params.index(offset)  # the first popped is the last pushed
+    found: set[int] = set()
+    for pc, ins in code.items():
+        if routine not in ins.calls:
+            continue
+        caller = max((e for e in entries if e <= pc), default=None)
+        stack = _stack_before(s, caller, pc, SHAPES) if caller is not None else None
+        if stack is None or len(stack) < len(params):
+            continue
+        v = stack[len(stack) - 1 - k]
+        if v is not None and v[0] == "param":
+            v = ("param", v[1], caller)
+        found |= _routine_values(s, code, entries, v, depth + 1)
+    return found
+
+
+# the calls into the game's shapes ((table, index) -> (arguments, values back)) when a tool knows them (the mod tool's
+# kh2/calls.txt, KH2's executable): with them the walk reads a routine's stack past such calls
+SHAPES: dict[tuple[int, int], tuple[int, int]] = {}
+
+
 def thread_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
-    """The routines the reached code starts as threads (THREAD_CALLS): run by the game, not jumped or called to."""
+    """The routines the reached code starts as threads (THREAD_CALLS): run by the game, not jumped or called to. One
+    pushed right before the call is read from there; one given through a routine's parameter (the Soldier's Cyclone:
+    its message 34 passes 90 on to a routine that starts it with 2:20) from the callers' stacks."""
     found: set[int] = set()
     for call, (count, at) in THREAD_CALLS.items():
         found |= _pushed_routines(s, code, call, count, (at,))
+    entries = sorted({c for ins in code.values() for c in ins.calls} | {e for _, e in s.triggers})
+    for pc, ins in code.items():
+        if ins.syscall not in THREAD_CALLS:
+            continue
+        count, at = THREAD_CALLS[ins.syscall]
+        routine = max((e for e in entries if e <= pc), default=None)
+        stack = _stack_before(s, routine, pc, SHAPES) if routine is not None else None
+        if stack is None or len(stack) < count:
+            continue
+        value = stack[len(stack) - count + at]
+        if value is not None and value[0] == "param":
+            value = ("param", value[1], routine)
+        found |= {v for v in _routine_values(s, code, entries, value, 0) if 0 < v < s.words}
     return found
 
 
