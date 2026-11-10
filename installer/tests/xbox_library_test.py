@@ -88,8 +88,11 @@ class FindCollections(unittest.TestCase):
         s.check_folder = lambda kind, folder: ["Image/Mare.hed/.pkg"] if folder == epic else []
         self.assertEqual(s.find_collections(argparse.Namespace())["folder_1525"], str(xbox))
         s.check_folder = lambda kind, folder: ["Image/Mare.hed/.pkg"]
-        found = s.find_collections(argparse.Namespace())["collections"][0]
+        result = s.find_collections(argparse.Namespace())
+        found = result["collections"][0]
         self.assertEqual((found["folder"], found["valid"]), (str(epic), False))
+        # given to the HD page all the same: the player chooses nothing, the page's check says what is missing
+        self.assertEqual(result["folder_1525"], str(epic))
 
 
 if __name__ == "__main__":

@@ -976,9 +976,9 @@ def find_collections(args: argparse.Namespace) -> dict[str, Any]:
                 "missing": missing or [],
             }
         )
-    flat = {}  # the same, one field each, for the installer's script
-    for c, key in zip(found, ("1525", "28")):
-        flat[f"folder_{key}"] = c["folder"] if c["valid"] else None
+    # the same, one field each, for the installer's script: the folder found even when not whole, so the player
+    # has nothing to choose (the HD page's check then says what its chosen pieces lack, if anything)
+    flat = {f"folder_{key}": c["folder"] for c, key in zip(found, ("1525", "28"))}
     return {"steam": str(steam) if steam else None, "collections": found, **flat}
 
 
