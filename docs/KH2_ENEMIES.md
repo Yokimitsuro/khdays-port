@@ -21,8 +21,9 @@ read of KH2, what the port does with it, and what is not known yet.
   `kh2/se/<id>.wav` (below, "Sounds"), reads the shapes of KH2's calls from KH2's executable (`kh2/calls.txt`) and
   lists the kinds with whether the port answers every call their scripts make (`kh2_enemies.txt`: the Soldier
   `M_EX010`, the Shadow `M_EX020`, the Fiery Globe `M_AL020_FIRE`, the Icy Cube `M_AL020_ICEE`, the Rabid Dog
-  `M_EX510`, the Strafer `M_EX610`, the Wight Knight `M_EX200`, the Assault Rider `M_EX570`, the Nightwalker
-  `M_EX580`, the Magnum Loader `M_EX600`, the Hot Rod `M_EX640`, the Cannon Gun `M_EX650`, the Armored Knight
+  `M_EX510`, the Strafer `M_EX610`, the Crimson Jazz `M_EX130`, the Wight Knight `M_EX200`, the Neoshadow
+  `M_EX420`, the Hammer Frame `M_EX560`, the Assault Rider `M_EX570`, the Nightwalker `M_EX580`, the Magnum Loader
+  `M_EX600`, the Hot Rod `M_EX640`, the Cannon Gun `M_EX650`, the Rapid Thruster `M_EX660`, the Armored Knight
   `M_EX760`, the Creeper `M_EX880` and the Dusk `M_EX990`, all covered; "Coverage" below). Nothing of the games is
   in the repository or the installer.
 - **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
@@ -218,6 +219,32 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:211, 1:212 | bit n of + 0xd10 set, cleared | as KH2 |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
 | 2:21 | memory several objects share by a number (`FUN_1403f6df0`: n + 1 bytes, zeroed, the same for the same number) | as KH2 |
+| 2:10 | an attack of its own made (`FUN_140432250` -> `FUN_1404371b0`, YS::ATTACK_MAGIC, 0x138 bytes; `FUN_1403cf830`): for the object an AI handle names (its owner: the enemy, or KH2's player), an `atkp` entry (looked up with the sub-number, `FUN_1403eafc0`), a combo group (-1 a running number), the sub-number; its address back | as KH2 (below, "Attacks of their own") |
+| 2:11 | its size: a radius (+ 0x104) and a height (+ 0x108; 0 or less: the radius) (`FUN_140437c00`) | as KH2 |
+| 2:12 | its place (+ 0xe4; the one before kept at + 0xf4, swept between) (`FUN_140437a80`) | as KH2 |
+| 2:13 | ended (`FUN_1403d0eb0`: + 8's 0x800) | as KH2 |
+| 2:17 | a hit made with it on an object at once (`FUN_1404328e0` -> `FUN_1403d23c0`, the object's class's + 0xc0): the attack, the object, a byte at the hit's + 0x24 and a value -- the Neoshadow's strike, KH2's player's attack on itself | the attack and the object (a Days player: its hit; a KH2 enemy and KH2's player's attack: his blow) |
+| 2:22 | whose effects its hits show (`FUN_140432a90`: + 0x28 an object's + 0x80) | nothing: Days's own show |
+| 2:37 | its team (`FUN_1403d2390`: + 0x38, 3 made 4; + 0x39 its targets, every team but it and 0) | kept (the port's attacks of an enemy hit Days's players, KH2's player's its enemies) |
+| 2:61 | the effect it follows (`FUN_140437a00`, + 0xc8): its place the effect's each tick, ended with it -- the Hammer Frame's shockwave on its element 8 | as KH2 |
+| 2:62 | its growth (`FUN_140437c30`): over n ticks (+ 0xd0) from a radius and a height (+ 0xd4, + 0xd8; 0 or less its own) to its size, eased by `sin(t / n x pi / 2)` (`FUN_140141ae0`); ended once grown | as KH2 |
+| 1:87 | (its value) the effect's handle | the effect's own: what 2:61 follows |
+| 1:129 | a throw of its own (`FUN_14042b550` -> `FUN_1403d3e50`): a vector (its NaNs made 0) -- its x, z the way (made one long, times its w), its y the speed up (+ 0x24 -y) -- and class 4, thrown (`FUN_140409d30`; the classes at 0x140750d30), whose movement (`FUN_140422780`) keeps its speed along and lands with the motion it was playing plus one (`FUN_140422700`: + 0x114) -- the Rapid Thruster's rise in motion 18, landing in 19 | as KH2, but KH2's slowing of the rise and its fastest fall (values the game sets running, `DAT_142ae5760` + 0x18 to + 0x20, + 0x138): the jumps' pull |
+| 2:6 | an object in one of its reaction motions (`FUN_140431d50` -> `FUN_1403d4880`: a motion controller at + 0x158, + 0x180 from 10 to 39) -- Crimson Jazz asks it of itself before it acts | as KH2 |
+
+## Attacks of their own
+
+KH2's scripts make attacks that are objects of their own (`2:10`; YS::ATTACK_MAGIC, 0x138 bytes, its class's table at
+0x1405d7090): an owner, an `atkp` entry and a combo group, then a size (`2:11`), a place (`2:12`) or an effect to follow
+(`2:61`), a growth (`2:62`). Each tick (its class's + 0x18, `FUN_1404376b0`) one following an effect takes the
+effect's place (`FUN_1402be970`) and ends when the effect does; one growing eases its radius and height from where
+they began to its size over its ticks and ends when grown; then it is tested from its place before to its place now,
+in steps of its radius -- a sphere when its height is its radius, else a cylinder that high. The port keeps them by
+their address in the scripts' memory, its enemy's (the shell): an enemy's hits Days's players, each once (its `atkp`
+entry's hit, trigger 15 too); one KH2's player owns (the Neoshadow's strike: `2:10` for the player, `2:17` on itself)
+hits KH2 enemies as his blow (Days's damage his last hit's times the entry's power). An attack ends with `2:13`, its
+growth, its effect, or its enemy's defeat, and its memory is let go. Its team (`2:37`) is kept; whose effects its hits
+show (`2:22`) is Days's.
 
 ## Coverage
 
@@ -247,9 +274,19 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   (1:13, 1:94, 1:101: its Quick Blade, below, "Reaction command zones"), and the Armored Knight's 14, all answered
   since too (its Rising Sun). The Magnum Loader's charge (52A) ran for ever before 1:151 was KH2's (it waits for the
   motion's frame 80 to start counting).
-- **Next**: the white Magnum Loader `M_EX600_LC` (1:222 its object's number, 1:268 class 23, 1:269), the Graveyard
-  `M_EX790` (1:53), the Mole Driller `M_EX700` (2:1), the Neoshadow `M_EX420` (1:13, 2:10 an object made, 2:17 a hit
-  made); then the rest, 8 calls and more each, and the shots (2:10's objects, effects that hit).
+- **Covered, third batch**: the Crimson Jazz `M_EX130` (2:6), the Neoshadow `M_EX420` (`_NM`; 2:10, 2:17), the
+  Hammer Frame `M_EX560` (`_HB`, `_WI`; 2:10, 2:11, 2:22, 2:61, 2:62: its shockwave) and the Rapid Thruster
+  `M_EX660` (`_WI`; 1:129) -- with them 43 of KH2's objects' scripts are answered in full (the bosses' parts
+  `B_EX280`, `B_EX290`, `B_EX320` among them). Played (2026-11-10, alone, level 99): the Hammer Frame's shockwave
+  made each slam (2:10 on its element 8, grown from 150) and hit Roxas standing near; the Neoshadow leaps 1.8 m by its
+  motion alone (range 30), dives with its attack from frame 40 (hits Roxas) and lands on trigger 14 (204), claws,
+  zigzags and sinks into its shadow, and its zone offers 331 ("Danza del viento" in Spanish): Roxas plays its motion
+  252 and strikes it five times. Before trigger 14 and range 30 without pull it stood for ever in its leap's loop.
+  **Not yet seen**: the Neoshadow's strike state (2:10 for the player, 2:17 on itself), the Crimson Jazz and the Rapid
+  Thruster in play.
+- **Next**, one or two calls each: the Graveyard `M_EX790` and its four variants (1:53), the Mole Driller `M_EX700`
+  (2:1), `M_EX630` (1:53, 1:54), the Dancer `M_EX930` (1:161), `M_EX960` (2:76); then the rest, and the shots
+  that are effects that hit (the Magnum Loader's, the Cannon Gun's).
 
 `KHDAYS_TRACE_KH2_ENEMIES=1` says what each enemy does (its states, effects, sounds, hits, the stand-in's sounds
 kept quiet, each attack's window with its spheres and the nearest player, where it leaves and comes back); `=2`
@@ -611,10 +648,11 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
 | 0, 1 | start (once, with the object's address) and main (its own thread, every tick) |
 | 6 | **a hit taken** (`FUN_140410d60`: after the current state's hit routine, before the native reaction), its argument the hit; also sent to every one of 8 listening threads (`FUN_1403f47b0`). The enemies turn to their revenge mode on it ("Revenge" above) |
 | 11 | a message from another object: raised by the call `FUN_14042c0d0` (one script to another object: its sender, a number, a target) and two native callers |
-| 13, 14 | `FUN_1403b7920`, `FUN_1403b79d0`: no direct reference in the executable (called through something built at run time). 13 clears the actor's flag 0x4000000, leaves the current state, runs trigger 13, then the class's virtual + 0x28 and the object's + 0x50. The Shadow's 13 plays motion 4 (`FALL` in KH2's motion list) and sets 0x4000000 again: most likely the actor leaving the ground. **Not confirmed** |
+| 13, 14 | **leaving the ground, landing** (`FUN_1403b7920`, `FUN_1403b79d0`, reached through tables KH2 builds running): + 0x120's bit 26 (13) or 27 (14) cleared, the state machine told (`FUN_1403ca1d0` on + 0x390, 1 or 2), the trigger raised unless the bit is set again, then -- the bit still clear -- the class's virtual + 0x28 or + 0x30 (the landing: its motion) and the object's + 0x50 or + 0x58. A script sets the bit (`1:66`: 27) to keep its class from acting: the Neoshadow's 14 lands its leap (203: plays 204, `1:66`, `1:74`), the Shadow's 13 plays its fall (4). The port raises 13 when the ground drops away under it by more than a step (30 cm) and 14 when a jump, a fall from past a step or a motion in the air (range 30) meets the ground; the bit set again skips the landing motion |
 | 10 | `FUN_1403b3030` (a pointer in an `.rdata` table): **not known** |
 | 15 | **an attack of its own landed** (`FUN_1403d1730` -> the attacker's class virtual + 0xe0, `FUN_1403d5500`): the one hit and the attack, the attack read first (its + 0x18 its atkp entry, `2:25`); Cerberus's pinning bite begins its reaction command on it. The shell raises it as a KH2 attack's hit lands on a Days player |
-| 16, 17 | a motion's events (`FUN_14040dd70`) |
+| 16 | a motion's effect started (`FUN_14040dd70`: its trigger 1, `FUN_1402c6b30`): the actor, the element's number and the effect's handle -- a handler reads them as fp + 8, + 4 and + 0. The Hammer Frame's attaches its shockwave (2:10, 2:61) to its element 8 |
+| 17 | a motion's "game effect" (`FUN_14040dd70`: its trigger 7): the actor and the trigger's two values |
 | 19 | **a hit** (`FUN_140410700`, `FUN_140411060`): the attacker kept at the actor's + 0xd38 (what `2:88` gives back), trigger 19 run with the attack and the attacker, then the attack's reaction applied (`FUN_1403d4650`), the queue cleared and the reaction state the attack's data names entered by name |
 
 ## Motions and their events
@@ -735,6 +773,14 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   objects << 8 | its group, names the row: `khdays_enemies_slot_row`).
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
   fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
+- **Its height is KH2's**: between two steps Days lowers a stand-in that is off the ground by 0.148 units a frame
+  (seen: the place read back that much under the place given, the ground's distance + 0x13c measured from the place
+  given; not Days's pull, `Ov107_AiState_IntegrateVelocity`, whose + 0x60 0x40 made no difference). KH2 carries it up
+  and down itself, so the height given is kept when Days lowers it; Days lifting it (out of the ground) is kept. Before,
+  the Neoshadow's leap (203: up 1.8 m by its motion alone) came down by frame 33, before its dive's attack (frame 40).
+- **Motions in the air**: KH2's air classes add no pull while + 0x18c has 0x1000020 or bit 6 (`FUN_1403cb100`,
+  `FUN_1403cb500`): ranges 3, 24 and 30 (`FUN_14040d810`: 30 sets bit 24, which `1:60` counts as off the ground).
+  The port's pull leaves those motions alone; its jumps (1:55, 1:156) still follow their own arc in them.
 - **Leaving and coming back**: KH2's enemies enter `leave` when the player is far (their `mode_battle` measures it
   against their handle's + 0x3c on the screen, 12 or 18 m, or + 0x38 off it, 20 or 25 m; `1:56` says which): they
   fade out and wait for KH2's spawner to bring them back. Days's field has none, so once faded out the enemy comes

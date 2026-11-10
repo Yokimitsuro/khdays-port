@@ -497,6 +497,21 @@ void test_more_enemies_calls()
     CHECK(std::fabs(actor.step(1.0F)[2] - 5.0F) < 1e-3F);
     call(rig, actor, 1, 111, {self, adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), f(0.0F)});
     actor.land();
+    // 1:129: thrown up at 100 a tick (its y), nothing along (no x, z), in motion 7: no steering, landing in 8
+    kh::read_shapes(rig.calls, "1:129 2 0\n2:6 1 1\n");
+    actor.play(7, 0.0F, 0.0F, true);
+    call(rig, actor, 1, 129, {self, adr(vec(rig.memory, 0.0F, 100.0F, 0.0F, 10.0F))});
+    CHECK(actor.jump.on && actor.jump.up == -100.0F && actor.jump.along[0] == 0.0F && actor.jump.along[2] == 0.0F);
+    CHECK(actor.motion.after == -1 && actor.motion.landing == 8 && call(rig, actor, 1, 57, {self}).i() == 1);
+    CHECK(actor.step(1.0F)[1] < -95.0F); // up, less half a tick of the pull (KH2's y down)
+    actor.land();
+    // 2:6: a reaction motion is one of 10 to 39
+    CHECK(call(rig, actor, 2, 6, {self}).i() == 0);
+    actor.set_u32(kh::field::kMotion, 12);
+    CHECK(call(rig, actor, 2, 6, {self}).i() == 1);
+    actor.set_u32(kh::field::kMotion, 40);
+    CHECK(call(rig, actor, 2, 6, {self}).i() == 0);
+    actor.play(0, 0.0F, 0.0F, true);
     // 1:63: a motion of 30 ticks (APPEAR, played once) at its end, no blend left
     call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
     CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
@@ -847,6 +862,90 @@ void test_aims()
     CHECK(world.offered == 427 && world.source == &knight);
 }
 
+// The world's side of KH2's attacks of their own (2:10 and the calls on one): what each call told it
+struct AttackWorld final : kh::World {
+    std::uint32_t made = 0, ended = 0, followed_by = 0, effect = 0;
+    kh::Object *owner = nullptr, *struck = nullptr;
+    int atkp = 0, group = 0, sub = -1, team = -1;
+    float radius = 0.0F, height = 0.0F, ticks = 0.0F, from_radius = 0.0F, from_height = 0.0F;
+    kh::Vec3 place{};
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    void attack_made(std::uint32_t at, kh::Actor &, kh::Object *o, int a, int g, int s) override
+    {
+        made = at, owner = o, atkp = a, group = g, sub = s;
+    }
+    void attack_size(std::uint32_t, float r, float h) override
+    {
+        radius = r, height = h;
+    }
+    void attack_place(std::uint32_t, const kh::Vec3 &p) override
+    {
+        place = p;
+    }
+    void attack_grow(std::uint32_t, float n, float r, float h) override
+    {
+        ticks = n, from_radius = r, from_height = h;
+    }
+    void attack_follow(std::uint32_t at, std::uint32_t e) override
+    {
+        followed_by = at, effect = e;
+    }
+    void attack_team(std::uint32_t, int t) override
+    {
+        team = t;
+    }
+    void attack_strike(std::uint32_t, kh::Object *target) override
+    {
+        struck = target;
+    }
+    void attack_end(std::uint32_t at) override
+    {
+        ended = at;
+    }
+};
+
+void test_attacks()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "2:10 4 1\n2:11 3 0\n2:12 2 0\n2:13 1 0\n2:17 4 0\n2:22 2 0\n2:37 2 0\n2:61 2 0\n"
+                               "2:62 4 0\n");
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor frame(script({{1, 0}}, loop), rig.memory, rig.calls, "frame");
+    AttackWorld world;
+    frame.world = &world;
+    const ai::Value self = ai::Value::of_address(frame.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    // 2:10: the Hammer Frame's shockwave, its own (atkp 55, a running group, sub 0): an address of its own
+    const std::uint32_t at = call(rig, frame, 2, 10, {self, i(55), i(-1), i(0)}).bits;
+    CHECK(at != 0 && world.made == at && world.owner == &frame && world.atkp == 55 && world.group == -1 &&
+          world.sub == 0);
+    // 2:11: a cylinder 480 round, 60 high; then a sphere (no height: its radius)
+    call(rig, frame, 2, 11, {adr(at), f(480.0F), f(60.0F)});
+    CHECK(world.radius == 480.0F && world.height == 60.0F);
+    call(rig, frame, 2, 11, {adr(at), f(100.0F), f(0.0F)});
+    CHECK(world.radius == 100.0F && world.height == 100.0F);
+    // 2:12 its place; 2:61 the effect it follows; 2:62 grown over 30 ticks from 150; 2:37 its team
+    call(rig, frame, 2, 12, {adr(at), adr(vec(rig.memory, 10.0F, -20.0F, 30.0F))});
+    CHECK(world.place[0] == 10.0F && world.place[1] == -20.0F && world.place[2] == 30.0F);
+    call(rig, frame, 2, 61, {adr(at), adr(0x1234)});
+    CHECK(world.followed_by == at && world.effect == 0x1234);
+    call(rig, frame, 2, 62, {adr(at), i(30), f(150.0F), f(0.0F)});
+    CHECK(world.ticks == 30.0F && world.from_radius == 150.0F && world.from_height == 0.0F);
+    call(rig, frame, 2, 37, {adr(at), i(3)});
+    CHECK(world.team == 3);
+    call(rig, frame, 2, 22, {adr(at), self}); // its hits' effects: Days's own (nothing told)
+    // 2:17 a hit on an object at once (the Neoshadow's strike); 2:13 ended
+    call(rig, frame, 2, 17, {adr(at), self, i(0), i(0)});
+    CHECK(world.struck == &frame);
+    call(rig, frame, 2, 13, {adr(at)});
+    CHECK(world.ended == at);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -859,6 +958,7 @@ int main()
     test_boss_calls();
     test_player_calls();
     test_aims();
+    test_attacks();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

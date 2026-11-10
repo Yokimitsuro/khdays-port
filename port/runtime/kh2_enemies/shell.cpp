@@ -60,6 +60,7 @@ using namespace khdays::kh2_enemies;
 // KH2's units are centimetres, Days's about metres (docs/KH2_MODELS.md: a KH2 character comes out at a Days
 // character's size by x 0.01), and KH2's world's y points down: a Days place (x, y, z) is KH2's (100 x, -100 y, 100 z)
 constexpr float kKh2PerDays = 100.0F;
+constexpr float kPi = 3.14159265358979F;
 constexpr float kGravity = 1.0F / 0.408163F; // KH2's, a tick a tick (actor.cpp)
 constexpr int kNoBone = 0x4000;
 // how long an enemy's end may take before its Days defeat goes on without it (a script that never fades out): ticks
@@ -526,6 +527,7 @@ struct Enemy final {
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
     bool placed = false; // its place given to Days (e.place) at least once
     float fall_from = 0.0F; // how high above the ground its fall began (KH2's cm)
+    bool aloft = false;     // off the ground as KH2's ground class sees it: a jump, a fall past a step, a motion's air
     std::string sent_state; // a state another enemy sent it (1:90), entered once `sent_after` ticks have gone
     float sent_after = 0.0F;
     float pure[16] = {};
@@ -634,6 +636,23 @@ std::map<unsigned, Held> held; // by the Days player's object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
 unsigned local_takes = 0;      // the reaction commands this game's own player took (khdays_kh2_enemies_taken)
+// KH2's attacks of their own (2:10, YS::ATTACK_MAGIC), by their address in the scripts' memory: the enemy whose
+// script made one (its hits go through its shell), whether KH2's player owns it (its hits his blows), its atkp entry,
+// its size and growth, its place and the one before (swept between), the effect it follows, the players it hit
+struct AttackObject final {
+    unsigned enemy = 0;
+    bool players = false;
+    int atkp = 0, group = -1, sub = 0, team = -1;
+    float radius = 0.0F, height = 0.0F;
+    float grow_ticks = 0.0F, grow_for = 0.0F, grow_radius = 0.0F, grow_height = 0.0F;
+    Vec3 at{}, before{};
+    bool placed = false;
+    std::uint32_t effect = 0;
+    std::set<unsigned> struck;
+    bool ended = false;
+};
+std::map<std::uint32_t, AttackObject> attacks;
+
 // a reaction command an enemy's script offered this game's own player (1:165: renewed each tick it stands) and the
 // VBlank it last did
 struct ScriptOffer final {
@@ -690,10 +709,12 @@ unsigned days_object(const Object &o)
 }
 
 std::uint32_t cast(Enemy &e, int number, unsigned player = 0);
+kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Element &el);
 void sound(const Enemy &e, int id);
 
 void pose(Enemy &e);
 std::set<int> groups_on(const Enemy &e);
+void strike(AttackObject &o, Object &target);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 
 class Field final : public World {
@@ -758,9 +779,7 @@ public:
     std::uint32_t effect(Actor &a, int number, int, int) override
     {
         const auto it = by_actor.find(&a);
-        if (it != by_actor.end())
-            cast(*it->second, number);
-        return 0;
+        return it != by_actor.end() ? cast(*it->second, number) : 0u; // its handle: 2:61 follows it
     }
 
     std::uint32_t effect_on(Actor &a, int number, int, int, Object *target) override
@@ -771,6 +790,67 @@ public:
         const unsigned on = target != nullptr ? days_object(*target) : 0; // a player: on his bones while it holds him
         return cast(*it->second, number, on);
     }
+    void attack_made(std::uint32_t at, Actor &by, Object *owner, int atkp, int group, int sub) override
+    {
+        const auto it = by_actor.find(&by);
+        if (it == by_actor.end())
+            return;
+        AttackObject o;
+        o.enemy = it->second->days;
+        o.players = owner != nullptr && days_object(*owner) != 0;
+        o.atkp = atkp;
+        o.group = group;
+        o.sub = sub;
+        attacks[at] = o;
+        if (tracing())
+            khdays_log("kh2 enemies: %08x makes an attack (atkp %d, group %d)%s", o.enemy, atkp, group,
+                       o.players ? " of KH2's player" : "");
+    }
+    void attack_size(std::uint32_t at, float radius, float height) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end())
+            o->second.radius = radius, o->second.height = height;
+    }
+    void attack_place(std::uint32_t at, const Vec3 &place) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end()) {
+            o->second.before = o->second.placed ? o->second.at : place;
+            o->second.at = place;
+            o->second.placed = true;
+        }
+    }
+    void attack_grow(std::uint32_t at, float ticks, float radius, float height) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end()) {
+            o->second.grow_for = ticks;
+            o->second.grow_ticks = 0.0F;
+            o->second.grow_radius = radius > 0.0F ? radius : o->second.radius;
+            o->second.grow_height = height > 0.0F ? height : o->second.height;
+        }
+    }
+    void attack_follow(std::uint32_t at, std::uint32_t effect) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end())
+            o->second.effect = effect;
+    }
+    void attack_team(std::uint32_t at, int team) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end())
+            o->second.team = team;
+    }
+    void attack_strike(std::uint32_t at, Object *target) override
+    {
+        const auto o = attacks.find(at);
+        if (o == attacks.end() || target == nullptr)
+            return;
+        strike(o->second, *target);
+    }
+    void attack_end(std::uint32_t at) override
+    {
+        if (const auto o = attacks.find(at); o != attacks.end())
+            o->second.ended = true;
+    }
+
     void stop_effect(std::uint32_t handle) override
     {
         for (auto &[days, e] : enemies)
@@ -899,11 +979,24 @@ void ghosts_close();
 
 void let_go(unsigned object, const char *why);
 
+// An enemy's attacks of their own let go (its memory too): it is gone, or its field is
+void drop_attacks(unsigned days)
+{
+    for (auto a = attacks.begin(); a != attacks.end();)
+        if (days == 0 || a->second.enemy == days) {
+            mod().memory.remove(a->first);
+            a = attacks.erase(a);
+        } else {
+            ++a;
+        }
+}
+
 void forget(unsigned days)
 {
     auto it = enemies.find(days);
     if (it == enemies.end())
         return;
+    drop_attacks(days); // Days makes the next wave's enemy at its place
     std::vector<unsigned> holding;
     for (const auto &[object, h] : held)
         if (h.enemy == days)
@@ -1801,6 +1894,150 @@ std::uint32_t cast(Enemy &e, int number, unsigned player)
     return 0;
 }
 
+// KH2's ground class's events (FUN_1403b7920, FUN_1403b79d0, reached through tables KH2 builds running): trigger 13
+// as an actor leaves the ground, 14 as it lands -- the Shadow's 13 its fall, the Neoshadow's 14 its leap's landing
+// (203, then 204). + 0x120's bit 26 (13) or 27 (14) is cleared first; set again by the script (1:66 sets 27), its
+// class does not act: true then, no landing motion (the Neoshadow's 204 stands)
+bool ground_event(Enemy &e, int trigger)
+{
+    Actor &a = *e.actor;
+    const std::uint32_t keep = trigger == 13 ? 1u << 26 : 1u << 27;
+    a.set_bits(field::kFlags, keep, false);
+    if (e.dying)
+        return false;
+    const int before = a.motion.id;
+    const bool handled = a.event(trigger);
+    const bool kept = (a.u32(field::kFlags) & keep) != 0;
+    if (tracing() && handled)
+        khdays_log("kh2 enemies: %08x %s the ground (trigger %d) in motion %d%s", e.days,
+                   trigger == 13 ? "leaves" : "lands on", trigger, before, kept ? ", its class kept from acting" : "");
+    return kept;
+}
+
+// An effect's place in KH2's world now (FUN_1402be970: its instance's): its element's on the enemy's pose, the
+// enemy's place and yaw (the effects' space is KH2's model space, y down, the model's turn about the up its yaw)
+bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out)
+{
+    for (const auto &r : e.fx)
+        if (r.handle == handle && r.element != nullptr) {
+            // one on a held player's bones: where it was last drawn
+            const kh2::EffectMatrix m = r.player != 0 && r.placed ? r.last : element_world(e.pose, *r.element);
+            const Vec3 place = e.actor->place();
+            const Vec3 t = turned({m[12], 0.0F, m[14]}, e.actor->yaw());
+            out = {place[0] + t[0], place[1] + m[13], place[2] + t[2]};
+            return true;
+        }
+    return false;
+}
+
+// A hit made with an attack on an object at once (2:17): a Days player its enemy's hit (KH2's own attack landing on
+// him: trigger 15 too), a KH2 enemy KH2's player's blow when he owns it (the Neoshadow's strike: Days's damage the
+// player's last hit times the attack's power)
+void strike(AttackObject &o, Object &target)
+{
+    const auto owner = enemies.find(o.enemy);
+    if (owner == enemies.end())
+        return;
+    Enemy &e = *owner->second;
+    if (const unsigned player = days_object(target); player != 0) {
+        if (o.players || !o.struck.insert(player).second)
+            return;
+        const float push[3] = {0.0F, 0.0F, 0.0F};
+        if (khdays_kh2_shell_hit(e.days, player, e.slot, push))
+            landed(e, player, o.atkp);
+        return;
+    }
+    Actor *x = target.actor();
+    const auto it = x != nullptr ? by_actor.find(x) : by_actor.end();
+    if (!o.players || it == by_actor.end())
+        return;
+    Enemy &hit = *it->second;
+    const int power = attack_power(o.atkp);
+    const int base = hit.days_damage > 0 ? hit.days_damage : last_days_damage > 0 ? last_days_damage : 1;
+    hit.blow += power > 0 ? std::max(1, base * power / 100) : 0;
+    if (tracing())
+        khdays_log("kh2 enemies: KH2's player's attack (atkp %d, power %d) struck on %08x: %d damage", o.atkp, power,
+                   hit.days, hit.blow);
+}
+
+// An enemy's attacks of their own this tick (YS::ATTACK_MAGIC's virtual + 0x18, FUN_1404376b0): each following its
+// effect (gone with it), growing (gone grown), swept from its place before to its place now in steps of its radius
+// against Days's players -- a sphere when its height is its radius, else a cylinder that high from its place up -- each
+// player hit once; those ended let go
+void attack_objects(Enemy &e)
+{
+    std::vector<KhdaysKh2Player> list;
+    for (auto it = attacks.begin(); it != attacks.end();) {
+        AttackObject &o = it->second;
+        if (o.enemy != e.days) {
+            ++it;
+            continue;
+        }
+        if (o.effect != 0) {
+            Vec3 place;
+            if (!effect_place(e, o.effect, place))
+                o.ended = true;
+            else
+                the_field().attack_place(it->first, place);
+        }
+        float radius = o.radius, height = o.height;
+        if (o.grow_for > 0.0F) {
+            if ((o.grow_ticks += 1.0F) > o.grow_for)
+                o.ended = true;
+            const float f = std::sin(std::min(o.grow_ticks / o.grow_for, 1.0F) * kPi * 0.5F);
+            radius = o.grow_radius * (1.0F - f) + o.radius * f;
+            height = o.grow_height * (1.0F - f) + o.height * f;
+        }
+        if (o.ended || e.dying) {
+            mod().memory.remove(it->first);
+            it = attacks.erase(it);
+            continue;
+        }
+        const float step = std::min(radius, height);
+        if (o.placed && step > 0.0F && !o.players) {
+            if (list.empty()) {
+                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(e.days, nullptr, 0))));
+                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(e.days, list.data(), int(list.size())))));
+            }
+            const Vec3 way = {o.at[0] - o.before[0], o.at[1] - o.before[1], o.at[2] - o.before[2]};
+            const float length = std::sqrt(way[0] * way[0] + way[1] * way[1] + way[2] * way[2]);
+            const int steps = std::max(1, int(std::ceil(length / step)));
+            for (int k = steps; k >= 1; --k) {
+                const float f = float(k) / float(steps);
+                float c[3];
+                to_days({o.before[0] + way[0] * f, o.before[1] + way[1] * f, o.before[2] + way[2] * f}, c);
+                for (const KhdaysKh2Player &p : list) {
+                    if (o.struck.count(p.object) != 0)
+                        continue;
+                    if (const auto h = held.find(p.object); h != held.end() && h->second.unhittable)
+                        continue;
+                    const float r = radius / kKh2PerDays, up = (radius == height ? 0.0F : height / kKh2PerDays);
+                    // his body's middle line (feet a radius up to his top a radius down) against the sphere's centre or
+                    // the cylinder's axis
+                    const float low = p.place[1] + p.radius,
+                                high = std::max(low, p.place[1] + kPlayerHeight - p.radius);
+                    const float y = std::clamp(c[1] + up * 0.5F, low, high);
+                    const float dy =
+                        up > 0.0F ? std::max(0.0F, std::fabs(y - (c[1] + up * 0.5F)) - up * 0.5F) : y - c[1];
+                    const float dx = p.place[0] - c[0], dz = p.place[2] - c[2];
+                    if (std::sqrt(dx * dx + dz * dz + dy * dy) >= r + p.radius)
+                        continue;
+                    Object *who = nullptr;
+                    if (const auto pl = players.find(p.object); pl != players.end())
+                        who = pl->second.get();
+                    if (who != nullptr) {
+                        if (tracing())
+                            khdays_log("kh2 enemies: %08x's attack (atkp %d) hits %08x", e.days, o.atkp, p.object);
+                        strike(o, *who);
+                    }
+                }
+            }
+        }
+        o.before = o.at;
+        ++it;
+    }
+}
+
 // The current motion's single-frame triggers its time passed this tick (KH2's ANB triggers): 1 an effect, 8 a sound,
 // 9 to 12 bits 0 to 3 of + 0x2ad for this tick (FUN_14040dd70; its scripts read them the tick after: 1:151)
 void cues(Enemy &e)
@@ -1814,9 +2051,20 @@ void cues(Enemy &e)
     for (const auto &t : attr != nullptr ? attr->triggers : std::vector<kh2::MotionAttributes::Trigger>{}) {
         if (float(t.frame) <= from || float(t.frame) > a.motion.time)
             continue;
-        if (t.id == 1 && !t.params.empty())
-            cast(e, std::int16_t(t.params[0]));
-        else if (t.id >= 9 && t.id <= 12)
+        if (t.id == 1 && !t.params.empty()) {
+            // its script told (FUN_14040dd70: trigger 16 with the actor, the element, the effect's handle -- the Hammer
+            // Frame's shockwave attaches its attack to its element 8)
+            const int number = std::int16_t(t.params[0]);
+            const std::uint32_t handle = cast(e, number);
+            const ai::Value told[3] = {ai::Value::of_address(a.address()), ai::Value::of_int(number),
+                                       ai::Value::of_address(handle)};
+            a.event(16, told);
+        } else if (t.id == 7) { // a "game effect": trigger 17 with the actor and its two values (FUN_14040dd70)
+            const ai::Value told[3] = {ai::Value::of_address(a.address()),
+                                       ai::Value::of_int(t.params.size() > 0 ? std::int16_t(t.params[0]) : 0),
+                                       ai::Value::of_int(t.params.size() > 1 ? std::int16_t(t.params[1]) : 0)};
+            a.event(17, told);
+        } else if (t.id >= 9 && t.id <= 12)
             passed |= 1u << (t.id - 9);
         else if (const int id = trigger_sound(t); id > 0)
             sound(e, id);
@@ -1846,7 +2094,10 @@ constexpr std::pair<int, int> kStateRanges[] = {{0, 2},   {1, 3},   {2, 4},   {3
                                                  {12, 11}, {13, 15}, {14, 19}, {15, 16}, {21, 18}, {24, 6},
                                                  {27, 22}, {29, 23}, {30, 24}, {31, 25}, {32, 26}, {34, 27},
                                                  {38, 28}, {39, 29}, {40, 30}, {41, 31}};
-constexpr std::uint32_t kNoGravity = (1u << 5) | (1u << 6); // ranges 3 and 24
+// ranges 3, 24 and 30: the motion alone carries it up and down (the air classes' movement, FUN_1403cb100 and
+// FUN_1403cb500, adds no pull while + 0x18c has 0x1000020 or bit 6)
+constexpr std::uint32_t kMotionAir = 1u << 24; // range 30 (FUN_14040d810), 1:60's "off the ground" with bit 5
+constexpr std::uint32_t kNoGravity = (1u << 5) | (1u << 6) | kMotionAir;
 constexpr float kStep = 30.0F; // a fall from higher than this (KH2's cm) lands with the landing motion
 
 void motion_states(Enemy &e)
@@ -1901,14 +2152,29 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
     event_tick(e);
     motion_states(e);
     const bool no_gravity = (a.u32(field::kStatus) & kNoGravity) != 0;
+    // a motion in the air (its range 30: + 0x18c bit 24, 1:60's "off the ground"): the ground met again lands it
+    const bool motion_air = (a.u32(field::kStatus) & kMotionAir) != 0;
+    if (motion_air && e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays)
+        e.aloft = true; // carried off the ground by its motion
     if (a.jump.on) {
+        e.aloft = true;
         if (a.jump.up > 0.0F && e.floor_known && place[1] + travel[1] >= e.floor) {
             travel[1] = e.floor - place[1]; // on it, not through it
-            a.land();
+            e.aloft = false;
+            if (ground_event(e, 14)) { // its script kept its class from acting: no landing motion
+                a.jump = {};
+                a.set_bits(field::kFlags, bit::kInAir, false);
+            } else
+                a.land();
         }
     } else if (!no_gravity && e.floor_known && e.floor - place[1] > 0.01F * kKh2PerDays) {
-        if (e.fall == 0.0F)
+        if (e.fall == 0.0F) {
             e.fall_from = e.floor - place[1];
+            if (!e.aloft && e.fall_from > kStep) { // the ground gone from under it (a ledge): its script told
+                e.aloft = true;
+                ground_event(e, 13);
+            }
+        }
         e.fall += kGravity;
         travel[1] += std::min(e.fall, e.floor - place[1]);
         a.set_bits(field::kFlags, bit::kInAir, true);
@@ -1916,8 +2182,10 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         // on the ground again: a fall from higher than a step (Cerberus's leap, its motion's root up; a ledge) lands
         // as KH2's falling class does, with its landing motion (FUN_1403cb940: + 0x11c, 5 by default); a step's
         // gap (Days's ground found a few centimetres off) does not
-        if (e.fall_from > kStep)
+        const bool told = e.aloft && ground_event(e, 14);
+        if (e.fall_from > kStep && !told)
             a.touch_down();
+        e.aloft = false;
         e.fall = 0.0F;
         a.set_bits(field::kFlags, bit::kInAir, false);
     }
@@ -1929,6 +2197,11 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
                    double(e.floor_known ? e.floor - place[1] : 0.0F));
     if (!a.jump.on && e.floor_known && place[1] + travel[1] > e.floor)
         travel[1] = e.floor - place[1];
+    // a motion in the air brought down onto the ground (the Neoshadow's leap, 203): landed
+    if (e.aloft && motion_air && !a.jump.on && e.floor_known && place[1] + travel[1] >= e.floor - 0.01F) {
+        e.aloft = false;
+        ground_event(e, 14);
+    }
     for (int i = 0; i < 3; ++i)
         place[i] += travel[i];
     a.set_place(place);
@@ -2390,6 +2663,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     made_row.clear();
     row_kinds.clear();
     kh2_rows = false;
+    drop_attacks(0);
     enemies.clear();
     ghosts.clear();
     by_actor.clear();
@@ -2456,6 +2730,11 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     the_field().health(*e->actor);
     Vec3 place = to_kh2(s.place);
+    // KH2 carries it up and down itself (its jumps, falls, motions in the air): Days lowers a stand-in in the air
+    // between two steps (by 0.148 a frame, its own fall) and that is not KH2's -- the height it was given is kept then.
+    // Days lifting it (out of the ground) is kept; its ground's distance (`above`) is from the place it was given
+    if (e->placed && s.place[1] < e->place[1])
+        place[1] = to_kh2(e->place)[1];
     if (s.above != -1.0F) { // (-1: no ground under it; below 0: sunk into it)
         e->floor = place[1] + s.above * kKh2PerDays;
         e->floor_known = true;
@@ -2480,6 +2759,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             }
         pose(*e);
         attack(*e, s);
+        attack_objects(*e);
     }
     zone_offer(*e);
     take_command(*e);

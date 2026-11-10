@@ -233,6 +233,22 @@ public:
     }
     // 0:44: an effect stopped at once (FUN_1402be8e0 -> FUN_1402c2830), by its handle
     virtual void stop_effect(std::uint32_t /*handle*/) {}
+    // KH2's attacks of their own (YS::ATTACK_MAGIC, 0x138 bytes: 2:10 makes one, FUN_1404371b0), each at the address
+    // `at` of the scripts' memory the calls name it by: made by `by`'s script for `owner` (an enemy, or KH2's player:
+    // his blow then) with an atkp entry, a combo group and the entry's sub-number; its size (2:11: a radius and a
+    // height, a sphere when they match), its place (2:12), its growth (2:62: from a size over n ticks), the effect it
+    // follows (2:61), its team (2:37), made to hit an object at once (2:17), ended (2:13)
+    virtual void attack_made(std::uint32_t /*at*/, Actor & /*by*/, Object * /*owner*/, int /*atkp*/, int /*group*/,
+                             int /*sub*/)
+    {
+    }
+    virtual void attack_size(std::uint32_t /*at*/, float /*radius*/, float /*height*/) {}
+    virtual void attack_place(std::uint32_t /*at*/, const Vec3 & /*place*/) {}
+    virtual void attack_grow(std::uint32_t /*at*/, float /*ticks*/, float /*radius*/, float /*height*/) {}
+    virtual void attack_follow(std::uint32_t /*at*/, std::uint32_t /*effect*/) {}
+    virtual void attack_team(std::uint32_t /*at*/, int /*team*/) {}
+    virtual void attack_strike(std::uint32_t /*at*/, Object * /*target*/) {}
+    virtual void attack_end(std::uint32_t /*at*/) {}
     // 1:165: a reaction command offered KH2's player this tick by `by`'s script (FUN_1403b2850 on his + 0xdd0), from
     // `source`: what a press sends it (trigger 11)
     virtual void offer(Actor & /*by*/, int /*command*/, Object * /*source*/) {}

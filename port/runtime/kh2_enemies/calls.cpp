@@ -747,6 +747,39 @@ void add_motions(ai::Calls &calls)
             x->motion.landing = std::int32_t(a[4].bits) + 2;
         }
     });
+    // 1:129 a throw of the actor's own (FUN_14042b550 -> FUN_1403d3e50): a vector (its NaNs made 0) -- its x, z the way
+    // along the ground (made one long, then times its w), its y the speed up (+ 0x24 -y) -- and class 4, thrown
+    // (FUN_140409d30; the classes at 0x140750d30): no steering in the air (FUN_140422780 keeps the speed along), on the
+    // ground again the motion it was playing then, plus one (FUN_140422700: + 0x114 the motion at the throw) -- the
+    // Rapid Thruster's rise in motion 18, landing in 19. KH2's slowing of the rise and its fastest fall are values the
+    // game sets running (DAT_142ae5760 + 0x18 .. + 0x20, + 0x138): the port's pull is the jumps' own
+    calls.set(1, 129, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Vec v = read_vec(m, a[1].bits);
+        for (float &c : v.v)
+            if (std::isnan(c))
+                c = 0.0F;
+        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
+        x->jump = Jump{};
+        x->jump.on = true;
+        x->jump.keep = x->jump.slow = 1.0F;
+        x->jump.up = -v.v[1];
+        x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        x->dashing = false;
+        x->velocity = x->steered = x->jump.along;
+        x->move_clock = 0.0F;
+        x->set_bits(field::kFlags, bit::kInAir, true);
+        x->motion.after = -1;
+        x->motion.landing = x->motion.id >= 0 ? x->motion.id + 1 : 5;
+    });
+    // 2:6 whether an object is in one of its reaction motions, 10 to 39 (FUN_140431d50 -> FUN_1403d4880: a motion
+    // controller at + 0x158, + 0x180 less 10 under 30): Crimson Jazz asks it of itself before it acts
+    calls.set(2, 6, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        Actor *x = o != nullptr ? o->actor() : nullptr;
+        const bool reacting = x != nullptr && x->motions != nullptr && x->u32(field::kMotion) - 10u < 30u;
+        a[0] = ai::Value::of_int(reacting ? 1 : 0);
+    });
     // 1:100 the speed a jump needs to rise `h` under KH2's pull: sqrt(|2 h / 0.408163|) (FUN_1403b73f0)
     calls.set(1, 100, [](ai::Machine &, std::span<ai::Value> a) {
         a[0] = ai::Value::of_float(std::sqrt(std::fabs(2.0F * a[0].f() / 0.408163F)));
@@ -1040,6 +1073,64 @@ void add_search(ai::Calls &calls)
     });
 }
 
+// KH2's attacks of their own (YS::ATTACK_MAGIC; the world keeps them: World::attack_made): the calls that make, size,
+// place, grow, attach, hit with and end one
+void add_attacks(ai::Calls &calls)
+{
+    // 2:10 one made (FUN_140432250 -> FUN_1404371b0, FUN_1403cf830): for the object an AI handle names (its owner),
+    // an atkp entry (FUN_1403eafc0 looks it up with the sub-number), a combo group (-1 a running number), the
+    // sub-number; its address given back
+    calls.set(2, 10, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = running(m);
+        const std::uint32_t at = m.memory().add(0x138, x->name() + "'s attack (2:10)");
+        if (x->world != nullptr)
+            x->world->attack_made(at, *x, object_of(m, a[0]), std::int32_t(a[1].bits), std::int32_t(a[2].bits),
+                                  std::int32_t(a[3].bits));
+        a[0] = ai::Value::of_address(at);
+    });
+    const auto world = [](ai::Machine &m) { return running(m)->world; };
+    // 2:11 its size: a radius, a height (0 or less: the radius) (FUN_1404322f0 -> FUN_140437c00, + 0x104, + 0x108)
+    calls.set(2, 11, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_size(a[0].bits, a[1].f(), a[2].f() > 0.0F ? a[2].f() : a[1].f());
+    });
+    // 2:12 its place (FUN_140432330 -> FUN_140437a80: + 0xe4, the one before kept at + 0xf4 -- swept between)
+    calls.set(2, 12, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_place(a[0].bits, xyz(read_vec(m, a[1].bits)));
+    });
+    // 2:13 ended (FUN_1404323b0 -> FUN_1403d0eb0: + 8's 0x800)
+    calls.set(2, 13, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_end(a[0].bits);
+    });
+    // 2:17 a hit made with it on an object at once (FUN_1404328e0 -> FUN_1403d23c0, the object's class's + 0xc0): the
+    // Neoshadow's strike, KH2's player's attack on itself
+    calls.set(2, 17, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_strike(a[0].bits, object_of(m, a[1]));
+    });
+    // 2:22 whose effects its hits show (FUN_140432a90: + 0x28 an object's + 0x80): the port shows Days's
+    calls.set(2, 22, [](ai::Machine &, std::span<ai::Value>) {});
+    // 2:37 its team (FUN_140432540 -> FUN_1403d2390: + 0x38, 3 made 4; + 0x39 every team but it and 0 its targets)
+    calls.set(2, 37, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_team(a[0].bits, std::int32_t(a[1].bits));
+    });
+    // 2:61 the effect it follows (FUN_140432840 -> FUN_140437a00, + 0xc8: its place the effect's each tick, ended with
+    // it -- the Hammer Frame's shockwave on its effect 8)
+    calls.set(2, 61, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_follow(a[0].bits, a[1].bits);
+    });
+    // 2:62 its growth (FUN_140432890 -> FUN_140437c30: over n ticks, + 0xd0, from a radius and a height -- 0 or less
+    // its own -- + 0xd4, + 0xd8, to its size, eased by sin(t / n x pi / 2); ended once grown)
+    calls.set(2, 62, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->attack_grow(a[0].bits, float(std::int32_t(a[1].bits)), a[2].f(), a[3].f());
+    });
+}
+
 void add_world(ai::Calls &calls)
 {
     // 1:3 the player's actor (FUN_1403b3e80, DAT_142a105d0): the Days player this actor goes for
@@ -1131,6 +1222,7 @@ void add_world(ai::Calls &calls)
             running(m)->world->stop_effect(a[0].bits);
     });
     add_search(calls);
+    add_attacks(calls);
     // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
