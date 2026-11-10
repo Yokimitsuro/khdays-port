@@ -192,7 +192,7 @@ bool script_calls(const ai::Script &s, unsigned kind, unsigned number)
 {
     for (std::size_t n = 0; n + 1 < s.words(); ++n) {
         const std::uint16_t w = s.word(n);
-        if ((w & 0xfu) == 10u && (w >> 6) == kind && s.word(n + 1) == number)
+        if ((w & 0xfu) == 10u && unsigned(w >> 6) == kind && unsigned(s.word(n + 1)) == number)
             return true;
     }
     return false;
@@ -523,6 +523,7 @@ struct Enemy final {
         float age = 0.0F;
         bool sounded = false;
         unsigned player = 0; // cast by the motion of its set a player it holds plays (his object): on his bones
+        std::uint32_t handle = 0; // what the scripts know it by (1:149, 0:44)
         kh2::EffectMatrix last{}; // that one's place when last drawn, kept once he is let go
         bool placed = false;
     };
@@ -637,12 +638,22 @@ struct Held final {
     float cued = -1.0F;           // its triggers looked at up to this time
     bool idle = false;            // its motion blends back to the player's own idle (range 2): let go
     Vec3 move{};                  // a script's move of him this tick (1:89), KH2's cm
+    Vec3 steer{};                 // a script's steering of him, each tick till another (1:111), KH2's cm
+    bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
 };
 std::map<unsigned, Held> held; // by the Days player's object
 // a thread a script started on a player before taking it in hand (Cerberus's 1:112 comes before its 1:29), by object
 std::map<unsigned, std::pair<ai::Machine *, std::uint32_t>> waiting_threads;
 unsigned local_player = 0;     // this game's own player's object (khdays_kh2_enemies_holding sees it)
 unsigned local_takes = 0;      // the reaction commands this game's own player took (khdays_kh2_enemies_taken)
+// a reaction command an enemy's script offered this game's own player (1:165: renewed each tick it stands) and the
+// VBlank it last did
+struct ScriptOffer final {
+    unsigned enemy = 0;
+    int command = -1;
+    unsigned frame = 0;
+};
+ScriptOffer script_offer;
 int last_days_damage = 0;      // the last Days hit's damage on any KH2 enemy (a blow on one not hit yet)
 int local_taken = -1;          // the last of them
 std::map<unsigned, unsigned> player_of_node; // each player's model's scene node -> its object (the models' draws)
@@ -690,10 +701,11 @@ unsigned days_object(const Object &o)
     return 0;
 }
 
-void cast(Enemy &e, int number, unsigned player = 0);
+std::uint32_t cast(Enemy &e, int number, unsigned player = 0);
 void sound(const Enemy &e, int id);
 
 void pose(Enemy &e);
+std::set<int> groups_on(const Enemy &e);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 
 class Field final : public World {
@@ -763,6 +775,61 @@ public:
         return 0;
     }
 
+    std::uint32_t effect_on(Actor &a, int number, int, int, Object *target) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end())
+            return 0;
+        const unsigned on = target != nullptr ? days_object(*target) : 0; // a player: on his bones while it holds him
+        return cast(*it->second, number, on);
+    }
+    void stop_effect(std::uint32_t handle) override
+    {
+        for (auto &[days, e] : enemies)
+            for (auto r = e->fx.begin(); r != e->fx.end(); ++r)
+                if (r->handle == handle) {
+                    e->fx.erase(r);
+                    return;
+                }
+    }
+    void offer(Actor &by, int command, Object *source) override
+    {
+        Actor *from = source != nullptr && source->actor() != nullptr ? source->actor() : &by;
+        const auto it = by_actor.find(from);
+        if (it == by_actor.end() || command < 0)
+            return;
+        script_offer = {it->second->days, command, khdays_link_frame()};
+    }
+    std::vector<Actor *> actors() override
+    {
+        std::vector<Actor *> out;
+        for (auto &[days, e] : enemies)
+            if (!e->dying)
+                out.push_back(e->actor.get());
+        return out;
+    }
+    std::vector<ShapeAt> shapes(Actor &a, int kind) override
+    {
+        std::vector<ShapeAt> out;
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end())
+            return out;
+        Enemy &e = *it->second;
+        std::set<int> on = groups_on(e);
+        on.insert(0); // the body's, always
+        KhdaysKh2Shell now{};
+        to_days(a.place(), now.place);
+        if (e.pose.empty())
+            pose(e);
+        for (const Shape &sh : e.kind->shapes)
+            if ((sh.kind & 0xff) == kind && on.count(sh.group) != 0) {
+                float d[3];
+                days_point(e, now, sh.bone, sh.at, d);
+                out.push_back({sh.group, to_kh2(d)});
+            }
+        return out;
+    }
+
     // its model drawn by Days in the frame before or this one (whether Days leaves out what its camera does not see
     // is not known: a drawn enemy counts as seen)
     bool on_screen(Actor &a) override
@@ -814,6 +881,11 @@ public:
     {
         if (const auto h = held.find(days_object(o)); h != held.end())
             h->second.move = {way[0] * speed, way[1] * speed, way[2] * speed};
+    }
+    void player_steer(Object &o, const Vec3 &way, float speed) override
+    {
+        if (const auto h = held.find(days_object(o)); h != held.end())
+            h->second.steer = {way[0] * speed, way[1] * speed, way[2] * speed};
     }
     void player_yaw(Object &o, float yaw) override
     {
@@ -1225,8 +1297,8 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float frame)
 {
     const unsigned object = days_object(o);
     const auto it = by_actor.find(&by);
-    if (object == 0 || it == by_actor.end() || slot < 0)
-        return false;
+    if (object == 0 || it == by_actor.end() || slot < 0 || it->second->dying)
+        return false; // (a defeated enemy lets him go: its thread on him takes him no more)
     const kh2::MotionSet &set = *it->second->kind->set;
     const kh2::MotionSet::Variant *body = set.variant(std::size_t(slot), "0010"); // KH2's player's body
     for (const auto &v : set.variants(std::size_t(slot)))
@@ -1251,6 +1323,8 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float frame)
     h.enemy = it->second->days;
     h.slot = slot;
     h.body = body;
+    h.own_queued = false; // a new motion: what was asked of the one before is not of this one
+    h.steer = {};
     h.weapon = nullptr; // its weapon's ('0011' with data of its own: what it attacks with, its attributes)
     for (const auto &v : set.variants(std::size_t(slot)))
         if (h.weapon == nullptr && v.name == "0011" && v.own && (v.attributes || v.motion))
@@ -1276,17 +1350,15 @@ void Field::player_own_motion(Object &o, int id)
 {
     const unsigned object = days_object(o);
     // KH2 queues it on the player's controller (1:13, FUN_1403c8310), taken once the motion of another's set he plays
-    // gives him back: a motion blending back to his idle later (range 2) keeps him till then (the Magnum Loader's
-    // thread asks for 0 as soon as Quick Blade begins); otherwise (Cerberus's, at its end) he is let go now
-    if (const auto h = held.find(object); h != held.end() && !h->second.ended && h->second.body->attributes) {
-        for (const auto &r : h->second.body->attributes->ranges)
-            if (r.id == 2 && float(r.start) > h->second.time) {
-                if (tracing())
-                    khdays_log("kh2 enemies: player %08x's own motion %d queued till his motion blends back to idle "
-                               "(%d)",
-                               object, id, r.start);
-                return;
-            }
+    // gives him back: one still playing keeps him till it blends back to his idle (range 2) or ends (the Magnum
+    // Loader's thread asks for 0 as Quick Blade begins, the Armored Knight's as Rising Sun's AB52 does); one at its end
+    // (Cerberus's) lets him go now
+    if (const auto h = held.find(object); h != held.end() && !h->second.ended) {
+        h->second.own_queued = true;
+        if (tracing())
+            khdays_log("kh2 enemies: player %08x's own motion %d queued till his motion ends or blends back to idle",
+                       object, id);
+        return;
     }
     o.set_u32(field::kMotion, std::uint32_t(id));
     o.set_u32(field::kMotionNow, std::uint32_t(id));
@@ -1504,8 +1576,8 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         const Vec3 along = turned({model[0], 0.0F, model[2]}, h.yaw);
         h.place = {h.place[0] + along[0], h.place[1] - model[1], h.place[2] + along[2]};
     }
-    for (int i = 0; i < 3; ++i) // a script's move (1:89), this tick's
-        h.place[std::size_t(i)] += h.move[std::size_t(i)];
+    for (int i = 0; i < 3; ++i) // a script's move (1:89), this tick's, and its steering (1:111)
+        h.place[std::size_t(i)] += h.move[std::size_t(i)] + h.steer[std::size_t(i)];
     h.move = {};
     const auto in = [&h](const kh2::MotionAttributes::Range &r) {
         return h.time >= float(r.start) && h.time < float(r.end);
@@ -1523,7 +1595,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                 continue;
             if (r.id == 27)
                 h.unhittable = true;
-            if (r.id == 2) // the Magnum Loader's Quick Blade: the player back to his own from its frame 107
+            if (r.id == 2 && h.own_queued) // his own idle asked for: back to it (Quick Blade's frame 107)
                 h.idle = true;
             if (r.id == 20 && !r.params.empty()) {
                 const int id = std::int16_t(r.params[0]);
@@ -1569,6 +1641,8 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                            "hit's %d)",
                            object, e.days, atkp, power, e.blow, e.days_damage);
         }
+    if (h.own_queued && h.ended) // his own motion asked for: taken at this one's end (Rising Sun's AB52)
+        h.idle = true;
     h.cued = h.time;
     if (const auto o = players.find(object); o != players.end() && o->second) {
         o->second->set_place(h.place);
@@ -1582,6 +1656,23 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
 // own uses of a zone make, FUN_14054ae70: the place's distance, FUN_140140f50, under the shape's + 0x10). The Magnum
 // Loader's eight along its rush (52A, group 5: Quick Blade), the Armored Knight's; the Soldier's and the Dusk's not
 // (KindFiles::plays_player). Not while an enemy holds him, nor again in the motion one was taken in.
+// The collision groups the enemy's motion's ranges 4 turn on now, those of its ranges 5 off
+std::set<int> groups_on(const Enemy &e)
+{
+    std::set<int> groups;
+    const Actor &a = *e.actor;
+    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
+    if (attr == nullptr)
+        return groups;
+    for (const auto &r : attr->ranges)
+        if (r.id == 4 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
+            groups.insert(std::int16_t(r.params[0]));
+    for (const auto &r : attr->ranges)
+        if (r.id == 5 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
+            groups.erase(std::int16_t(r.params[0]));
+    return groups;
+}
+
 void zone_offer(Enemy &e)
 {
     e.zone = -1;
@@ -1592,16 +1683,7 @@ void zone_offer(Enemy &e)
     if (local_player == 0 || held.count(local_player) != 0 || e.dying || !e.kind->plays_player || p == players.end() ||
         !p->second || a.motion.id < 0 || a.motion.id == e.zone_taken_motion)
         return;
-    const kh2::MotionAttributes *attr = e.kind->set->attributes(std::size_t(a.motion.id));
-    if (attr == nullptr)
-        return;
-    std::set<int> groups;
-    for (const auto &r : attr->ranges)
-        if (r.id == 4 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
-            groups.insert(std::int16_t(r.params[0]));
-    for (const auto &r : attr->ranges)
-        if (r.id == 5 && !r.params.empty() && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
-            groups.erase(std::int16_t(r.params[0]));
+    const std::set<int> groups = groups_on(e);
     if (groups.empty())
         return;
     KhdaysKh2Shell now{};
@@ -1622,6 +1704,15 @@ void zone_offer(Enemy &e)
             e.zone_depth = depth;
         }
     }
+}
+
+// The command an enemy's script offers now (1:165 this frame or the one before), -1 none
+int script_offered()
+{
+    return script_offer.command >= 0 && khdays_link_frame() - script_offer.frame <= 2u &&
+                   enemies.count(script_offer.enemy) != 0
+               ? script_offer.command
+               : -1;
 }
 
 // The enemy whose zone offers this game's own player a command now, the deepest in; null none
@@ -1648,28 +1739,9 @@ void take_command(Enemy &e)
         pressed = std::uint16_t(buttons & ~was);
         was = buttons;
     }
-    for (auto &[object, h] : held) {
-        if (h.enemy != e.days || h.offered < 0 || object != local_player || (pressed & KHDAYS_KEY_X) == 0)
-            continue;
-        const int id = h.offered;
-        h.taken.insert(id);
-        h.offered = -1;
-        ++local_takes;
-        local_taken = id;
-        const Command *c = command(id);
-        const int number = c != nullptr ? c->argument : id;
-        const auto o = players.find(object);
-        const ai::Value values[3] = {ai::Value::of_address(o != players.end() && o->second ? o->second->address() : 0),
-                                     ai::Value::of_int(number), ai::Value::of_address(e.actor->address())};
-        e.actor->event(11, values);
-        if (tracing())
-            khdays_log("kh2 enemies: player %08x takes reaction command %d: message %d to %08x", object, id, number,
-                       e.days);
-    }
-    if (e.zone >= 0 && (pressed & KHDAYS_KEY_X) != 0 && held.count(local_player) == 0 && zone_offerer() == &e) {
-        const int id = e.zone;
-        e.zone = -1;
-        e.zone_taken_motion = e.actor->motion.id;
+    // a press takes one command: the one a held player's motion offers, else a script's, else a zone's
+    const auto send = [&e](int id, const char *how) {
+        pressed = std::uint16_t(pressed & ~KHDAYS_KEY_X);
         ++local_takes;
         local_taken = id;
         const Command *c = command(id);
@@ -1679,8 +1751,26 @@ void take_command(Enemy &e)
                                      ai::Value::of_int(number), ai::Value::of_address(e.actor->address())};
         e.actor->event(11, values);
         if (tracing())
-            khdays_log("kh2 enemies: player %08x takes reaction command %d from %08x's zone: message %d", local_player,
-                       id, e.days, number);
+            khdays_log("kh2 enemies: player %08x takes reaction command %d %s %08x: message %d", local_player, id, how,
+                       e.days, number);
+    };
+    for (auto &[object, h] : held) {
+        if (h.enemy != e.days || h.offered < 0 || object != local_player || (pressed & KHDAYS_KEY_X) == 0)
+            continue;
+        const int id = h.offered;
+        h.taken.insert(id);
+        h.offered = -1;
+        send(id, "offered by his motion in the hands of");
+    }
+    if (const int id = script_offered(); id >= 0 && (pressed & KHDAYS_KEY_X) != 0 && script_offer.enemy == e.days) {
+        script_offer.command = -1;
+        send(id, "offered by the script of");
+    }
+    if (e.zone >= 0 && (pressed & KHDAYS_KEY_X) != 0 && held.count(local_player) == 0 && zone_offerer() == &e) {
+        const int id = e.zone;
+        e.zone = -1;
+        e.zone_taken_motion = e.actor->motion.id;
+        send(id, "from the zone of");
     }
 }
 
@@ -1697,25 +1787,30 @@ void sound(const Enemy &e, int id)
 }
 
 // Element `number` of the kind's effects started on the enemy (`player`: cast by the motion of its set that player
-// plays in its hands, whose bones -- KH2's player's -- its element's are)
-void cast(Enemy &e, int number, unsigned player)
+// plays in its hands, whose bones -- KH2's player's -- its element's are); its handle, 0 none
+std::uint32_t cast(Enemy &e, int number, unsigned player)
 {
+    static std::uint32_t next_handle = 0;
     const KindFiles &k = *e.kind;
     const auto it = k.fx_elements.find(number);
     if (it == k.fx_elements.end() || it->second.effect >= k.fx.size())
-        return;
+        return 0;
     try {
         Enemy::Running r;
         r.fx = std::make_unique<kh2::EffectInstance>(k.fx[it->second.effect], it->second.emitter, e.fx_seed++);
         r.element = &it->second;
         r.player = player;
+        r.handle = ++next_handle != 0 ? next_handle : ++next_handle;
+        const std::uint32_t handle = r.handle;
         e.fx.push_back(std::move(r));
         if (tracing())
             khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days,
                        number, it->second.effect, it->second.emitter, it->second.bone, it->second.sound);
+        return handle;
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: %s's effect %d cannot be played (%s)", k.name.c_str(), number, x.what());
     }
+    return 0;
 }
 
 // The current motion's single-frame triggers its time passed this tick (KH2's ANB triggers): 1 an effect, 8 a sound,
@@ -2580,8 +2675,11 @@ extern "C" int khdays_kh2_enemies_offered(int *text)
     int id = -1;
     if (const auto h = held.find(local_player); h != held.end())
         id = h->second.offered;
-    else if (const Enemy *z = zone_offerer())
-        id = z->zone;
+    if (id < 0)
+        id = script_offered();
+    if (id < 0 && held.count(local_player) == 0)
+        if (const Enemy *z = zone_offerer())
+            id = z->zone;
     if (id < 0)
         return 0;
     if (text != nullptr) {
@@ -2864,7 +2962,7 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     if (const auto h = held.find(local_player); h != held.end() && h->second.enemy == e->days) {
         held_middle(h->second, at);
         marked = true;
-    } else if (zone_offerer() == e) {
+    } else if (zone_offerer() == e || (script_offered() >= 0 && script_offer.enemy == e->days)) {
         for (const Shape &sh : e->kind->shapes)
             if (sh.kind == 0x307) {
                 days_point(*e, s, sh.bone, sh.at, at);

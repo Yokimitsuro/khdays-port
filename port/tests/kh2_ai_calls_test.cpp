@@ -712,8 +712,9 @@ void test_player_calls()
     CHECK(kh::is_player(&player) && !kh::is_player(&actor));
     // 1:213: Days's players answer KH2's player's number, Sora's 1; others none
     CHECK(call(rig, actor, 1, 213, {him}).i() == 1 && call(rig, actor, 1, 213, {self}).i() == 0);
-    // 1:29: the player plays the actor's motion 252 from frame 0: the world's to play
-    CHECK(call(rig, actor, 1, 29, {self, him, i(252), f(0.0F)}).i() == 1 && world.motion == 252 && world.frame == 0.0F);
+    // 1:29: the player plays the actor's motion 252 from frame 0: the world's to play; the motion given back
+    CHECK(call(rig, actor, 1, 29, {self, him, i(252), f(0.0F)}).i() == 252 && world.motion == 252 &&
+          world.frame == 0.0F);
     // 1:238: the motion its controller plays (+ 0x184)
     player.set_u32(kh::field::kMotionNow, 253);
     CHECK(call(rig, actor, 1, 238, {him}).i() == 253);
@@ -755,6 +756,95 @@ void test_player_calls()
     CHECK(call(rig, actor, 1, 101, {him}).i() == 1);
 }
 
+// The Armored Knight's Rising Sun: KH2's search for an aim (6:3 made, 6:8 an object's listed, 6:5 the nearest found,
+// listed, the next nearest then none) over the world's actors' shapes of kind 3; 1:140 on what it finds; 1:191 the
+// player's aim record (empty); 1:165 a command offered; 0:42 the way along the ground, 0:68 a turn about the x
+struct AimWorld final : kh::World {
+    std::vector<kh::Actor *> all;
+    std::vector<std::pair<kh::Actor *, kh::Vec3>> aims; // each actor's one aim (group 0)
+    int offered = -1;
+    kh::Object *source = nullptr;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    std::vector<kh::Actor *> actors() override
+    {
+        return all;
+    }
+    std::vector<ShapeAt> shapes(kh::Actor &a, int kind) override
+    {
+        std::vector<ShapeAt> out;
+        for (const auto &[x, at] : aims)
+            if (x == &a && kind == 3)
+                out.push_back({0, at});
+        return out;
+    }
+    void offer(kh::Actor &, int command, kh::Object *from) override
+    {
+        offered = command;
+        source = from;
+    }
+};
+
+void test_aims()
+{
+    Rig rig;
+    kh::read_shapes(rig.calls, "0:42 1 1\n0:68 2 1\n6:3 2 0\n6:8 2 0\n6:5 7 0\n1:140 1 1\n1:191 1 1\n1:165 4 0\n"
+                               "1:221 3 1\n");
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor knight(script({{1, 0}}, loop), rig.memory, rig.calls, "knight");
+    kh::Actor near(script({{1, 0}}, loop), rig.memory, rig.calls, "near");
+    kh::Actor far(script({{1, 0}}, loop), rig.memory, rig.calls, "far");
+    AimWorld world;
+    knight.world = near.world = far.world = &world;
+    world.all = {&knight, &near, &far};
+    world.aims = {{&knight, {0.0F, -100.0F, 0.0F}}, {&near, {300.0F, -100.0F, 0.0F}}, {&far, {0.0F, -100.0F, 2000.0F}}};
+    const ai::Value self = ai::Value::of_address(knight.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    const auto read = [&rig](std::uint32_t at) {
+        float v[4];
+        rig.memory.read(at, v, sizeof v);
+        return std::vector<float>(v, v + 4);
+    };
+    // 0:42: atan2(x, z); 0:68: ahead (0, 0, 1) turned 90 degrees about the x points up (KH2's -y)
+    CHECK(std::fabs(call(rig, knight, 0, 42, {adr(vec(rig.memory, 1.0F, 0.0F, 1.0F))}).f() - 0.785398F) < 1e-5F);
+    const auto up = read(call(rig, knight, 0, 68, {adr(vec(rig.memory, 0.0F, 0.0F, 1.0F, 1.0F)), f(1.5707964F)}).bits);
+    CHECK(std::fabs(up[1] + 1.0F) < 1e-5F && std::fabs(up[2]) < 1e-5F && up[3] == 1.0F);
+    // 6:3: twenty aims, a reach of 0 to 1000, no cone; 3000 as the knight's script makes it
+    const std::uint32_t s = rig.memory.add(0x1c + 8 * 20, "a search");
+    call(rig, knight, 6, 3, {adr(s), i(20)});
+    float reach = 0.0F, cone = 0.0F;
+    rig.memory.read(s + 0x14, &reach, 4);
+    rig.memory.read(s + 0x18, &cone, 4);
+    CHECK(rig.memory.u32(s) == 20 && rig.memory.u32(s + 8) == 0 && reach == 1000.0F && cone > 3.14F);
+    reach = 3000.0F;
+    rig.memory.write(s + 0x14, &reach, 4);
+    // 6:8: the knight's own aim listed
+    call(rig, knight, 6, 8, {adr(s), self});
+    CHECK(rig.memory.u32(s + 8) == 1 && rig.memory.u32(s + 0x1c) == knight.address());
+    // 6:5 from 0 0 0 ahead: the nearest not listed (the knight's own passed over), then listed; then the farther; then none
+    const std::uint32_t found = rig.memory.add(16, "a record");
+    const auto search = [&] {
+        call(rig, knight, 6, 5,
+             {adr(s), adr(found), adr(vec(rig.memory, 0.0F, 0.0F, 0.0F)), adr(vec(rig.memory, 0.0F, 0.0F, 1.0F)), i(1),
+              i(0), i(1)});
+        return rig.memory.u32(found);
+    };
+    CHECK(search() == near.address() && rig.memory.u32(found + 12) == 0xffffffffu);
+    CHECK(call(rig, knight, 1, 140, {adr(found)}).i() == 1);
+    CHECK(search() == far.address() && rig.memory.u32(s + 8) == 3);
+    CHECK(search() == 0 && call(rig, knight, 1, 140, {adr(found)}).i() == 0);
+    // 1:191: an object's aim record, empty in Days's field; 1:221 yes; 1:165 the command offered, from the knight
+    const std::uint32_t aim = call(rig, knight, 1, 191, {self}).bits;
+    CHECK(aim != 0 && rig.memory.u32(aim + 12) == 0xffffffffu && call(rig, knight, 1, 140, {adr(aim)}).i() == 0);
+    CHECK(call(rig, knight, 1, 221, {self, i(427), self}).i() == 1);
+    call(rig, knight, 1, 165, {i(1), i(427), self, i(1)});
+    CHECK(world.offered == 427 && world.source == &knight);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -766,6 +856,7 @@ int main()
     test_batch_two();
     test_boss_calls();
     test_player_calls();
+    test_aims();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

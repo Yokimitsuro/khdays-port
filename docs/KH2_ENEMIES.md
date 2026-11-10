@@ -185,6 +185,16 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:94 | an object there and in play (`FUN_14042b0e0`: `FUN_1403ba720`, none of + 0x120's 0x10080000) | as KH2 |
 | 1:101 | whether the object an AI handle names plays another's motion (`FUN_14042d360`: + 0x18c bit 14; `FUN_14040d810`'s range 20 then offers that other's command) | a player an enemy holds |
 | 1:89 | this tick's move along a way at a speed (`FUN_14042f8d0` -> `FUN_1403b9a70`) | as KH2; on a player an enemy holds, his (the Magnum Loader's Quick Blade dashes him to it) |
+| 1:111 | steering along a way at a speed, each tick till another | as KH2; on a held player, his (the Armored Knight's Rising Sun flies him) |
+| 1:29 | (its value) the motion given (`FUN_1403c6cc0`), what the player's controller then plays (+ 0x184, 1:238): the Armored Knight's flight runs while the two are the same | the motion's number |
+| 0:42, 0:68 | the way a vector points along the ground, `atan2(x, z)` (`FUN_14041d250`); a vector turned about the x (`FUN_14041d100` -> `FUN_1403b75f0`, `FUN_1401411b0`'s turn: y cos - z sin, y sin + z cos) -- Rising Sun's launch, ahead turned up, then about the up (0:13) | as KH2 |
+| 6:3, 6:8, 6:5 | KH2's search for an aim (`FUN_14053fb60`, `FUN_140540080`, `FUN_14053fb80`): made (its capacity, a reach of 0 to 1000, no cone), an object's aims listed (its shapes of kind 3 in its groups on), the nearest (or farthest) of KH2's actors' aims from a point within the reach and the cone, passed over when listed and listed once found (FUN_1403bee60's record: the object, its group, none, -1) | as KH2, over the field's KH2 enemies (Days's own have no KH2 shapes) |
+| 1:140 | a record names something: its + 8 an object, or its + 0 an actor in play with a shape of kind 3 in its groups on (`FUN_1403bde30`) | as KH2 |
+| 1:131, 1:132 | a record copied into KH2's pool of records and given back (`FUN_1403bda80`, `FUN_140430420`) | the record itself; nothing |
+| 1:191 | the record at an object's + 0xdc8's + 4: the player's aim (his lock-on), which Rising Sun goes for when it names one | a record of the port's, empty: no lock of Days's is passed on |
+| 1:221 | whether the player can take a command now (`FUN_1403b6950`, `FUN_1403ba070`: his state against the command's flags) | yes |
+| 1:165 | a reaction command offered KH2's player this tick (`FUN_140430010` -> `FUN_1403b2850` on his + 0xdd0): a slot, the command, its source | offered while renewed (Rising Sun's 427, each tick of its descent) |
+| 1:149, 0:44 | an effect of the actor's on another object, its handle (`FUN_14042d5c0` -> `FUN_1403b6670`); one stopped at once (`FUN_14041e190` -> `FUN_1402be8e0`) | as KH2 (on a held player, on his bones) |
 | 2:45 | an object's entry number (its + 0x20 record's u16 at + 2): the Wight Knight asks it of a message's sender (492, 1149, 568) | 0: no KH2 object sends one |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
 | 1:74 | the actor's class made class 0 (`FUN_1403b4da0`: the old one's virtual + 0x10, the new one's + 8) and + 0xba8 cleared | + 0xba8 cleared: no native classes |
@@ -234,10 +244,9 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
   Cannon Gun's shots -- their scripts run, but their attacks are effects that hit (KH2's shots are objects and
   effects with collision), which the port does not make yet. Since the research tool follows the routines a script
   starts as threads (`1:112`, `2:20`; 2026-11-09), the Magnum Loader's threads make 3 calls more, all answered since
-  (1:13, 1:94, 1:101: its Quick Blade, below, "Reaction command zones"), and the Armored Knight's 14 (0:42, 0:44,
-  0:68, 1:132, 1:149, 1:165, 1:191, 1:221, 6:3, 6:5, 6:8 not yet; 1:94 and 1:238 answered since): uncovered, its
-  stand-in plays once the mod is made anew. The Magnum Loader's charge (52A) ran for ever before 1:151 was KH2's (it
-  waits for the motion's frame 80 to start counting).
+  (1:13, 1:94, 1:101: its Quick Blade, below, "Reaction command zones"), and the Armored Knight's 14, all answered
+  since too (its Rising Sun). The Magnum Loader's charge (52A) ran for ever before 1:151 was KH2's (it waits for the
+  motion's frame 80 to start counting).
 - **Next**: the white Magnum Loader `M_EX600_LC` (1:222 its object's number, 1:268 class 23, 1:269), the Graveyard
   `M_EX790` (1:53), the Mole Driller `M_EX700` (2:1), the Neoshadow `M_EX420` (1:13, 2:10 an object made, 2:17 a hit
   made); then the rest, 8 calls and more each, and the shots (2:10's objects, effects that hit).
@@ -437,8 +446,8 @@ Dusk's (group 5: 69, Reversal).
   read**. The port offers a zone's command only when its script makes a 1:29 call (`script_calls`: a code word whose
   low four bits are 10, its table the top ten, its number the next word).
 - **The Magnum Loader's Quick Blade** (AB10, 112 ticks): its thread (routine 133) asks for the player's own idle at
-  once (1:13: KH2 queues it on his controller, `FUN_1403c8310`, taken once the motion of another's set gives him back:
-  the port keeps him while his motion has a range 2 later), turns him to the loader, and on his motion's triggers 9
+  once (1:13: KH2 queues it on his controller, `FUN_1403c8310`, taken once the motion of another's set gives him back,
+  below), turns him to the loader, and on his motion's triggers 9
   (frame 12) and 10 (42) -- bits of his + 0x2ad, as an enemy's -- dashes him to it (1:89 on the player: (distance + 2
   m) / 32 a tick, at least 10, slowing after 42) while it waits on his + 0x18c bit 14 (1:101: he plays another's
   motion). His weapon's attacks (657 at 14, 656 at 69) are the blow on it; his motion's range 2 (blend to idle, from
@@ -447,6 +456,20 @@ Dusk's (group 5: 69, Reversal).
   Quick Blade ("Estocada rápida"), the press dashes Roxas to it and strikes twice (2 and 4: no Days hit before), it
   comes back into sight as its charge ends (1:19 at its start fades it out, 1:20 at its end in, as KH2's), and its
   next charge offers it again.
+- **The Armored Knight's Rising Sun** (300 from its zone in its spin and jump attacks, 51A and 52A; then 427, which
+  follows 300, offered by its script): its thread (routine 196) has the player play AB50 (from frame 8), finds what to
+  fly him at -- his aim if he has one (1:191, empty in Days), else the nearest aim within 30 m (6:3, 6:8 its own
+  passed over, 6:5), else the knight itself. AB50 throws him up (80 degrees, 0:68 then 0:13, by 1:89); AB51 dives him
+  at it (1:111: 45 degrees down flattening to 5, at 50 a tick, for 18 ticks, while 1:238 is what 1:29 gave); AB52
+  sends him up again (20 degrees rising to 80), his own idle asked for (1:13: taken at its end), 427 offered each tick
+  (1:165, up to five times: its count at the work area's + 0x94). A press starts routine 1749, which dives him again
+  (60, 70, 80 a tick, steeper each time). His weapon's attack in AB51 (644, power 1000) lands on the knight.
+- **The player's own motion asked for** (1:13 on a player an enemy holds): KH2 queues it, so a motion still playing keeps
+  him till it blends back to idle (range 2) or ends; one at its end lets him go at once (Cerberus's). A defeated enemy's
+  thread takes him no more.
+- **Seen** (the Armored Knight alone, Roxas attacking, the HD PACK; the presses by a test switch): Rising Sun from its
+  spin, then 427 four times more, each a flight and a blow of 490 (its last Days hit's 49 times 10), the knight
+  defeated in the fifth.
 
 ## The reaction command's bar
 

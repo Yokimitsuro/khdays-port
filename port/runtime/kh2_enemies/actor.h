@@ -225,6 +225,32 @@ public:
     {
         return 0;
     }
+    // 1:149: the same on `target` (FUN_1403b6670's last: the Armored Knight's element 17 on the player it launches), its
+    // handle for 0:44
+    virtual std::uint32_t effect_on(Actor &a, int number, int x, int y, Object * /*target*/)
+    {
+        return effect(a, number, x, y);
+    }
+    // 0:44: an effect stopped at once (FUN_1402be8e0 -> FUN_1402c2830), by its handle
+    virtual void stop_effect(std::uint32_t /*handle*/) {}
+    // 1:165: a reaction command offered KH2's player this tick by `by`'s script (FUN_1403b2850 on his + 0xdd0), from
+    // `source`: what a press sends it (trigger 11)
+    virtual void offer(Actor & /*by*/, int /*command*/, Object * /*source*/) {}
+    // KH2's actors of the field (6:5's search goes through them, FUN_1403bf4f0)
+    virtual std::vector<Actor *> actors()
+    {
+        return {};
+    }
+    // An actor's shapes of a kind in its collision groups on now (FUN_1403b4f10), each its group and its point in KH2's
+    // world (FUN_1403c9c00): 1:140, 6:5 and 6:8 look for kind 3, what is aimed at
+    struct ShapeAt final {
+        int group = 0;
+        Vec3 at{};
+    };
+    virtual std::vector<ShapeAt> shapes(Actor &, int /*kind*/)
+    {
+        return {};
+    }
     // Whether the actor is on the screen (1:56: FUN_1403ba4a0 tests it against the camera's view, FUN_1403f3ed0)
     virtual bool on_screen(Actor &)
     {
@@ -259,6 +285,8 @@ public:
     // 1:89 on a player: this tick's move along a way (made one long) at a speed (FUN_1403b9a70: KH2's cm a tick; the
     // Magnum Loader's Quick Blade dashes the player to it so)
     virtual void player_move(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
+    // 1:111 on a player: his steering along a way at a speed, each tick till another (the Armored Knight's Rising Sun)
+    virtual void player_steer(Object & /*player*/, const Vec3 & /*way*/, float /*speed*/) {}
     // 1:112 on a player: a script's routine as the player's thread (the one before ended)
     virtual void player_thread(Object & /*player*/, ai::Machine & /*machine*/, std::uint32_t /*thread*/) {}
     // 1:18: `carried` put on `by` (FUN_1403d9fe0: + 0x6a0 its carrier, + 0x6a4 the bone -- 0x4000 its place, not a

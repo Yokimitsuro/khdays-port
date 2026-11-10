@@ -219,6 +219,21 @@ void add_math(ai::Calls &calls)
         x.v[0] = t[0], x.v[1] = t[1], x.v[2] = t[2];
         a[0] = give_vec(m, "0:13", x);
     });
+    // 0:42 the way a vector points along the ground: atan2(x, z) (FUN_14041d250)
+    calls.set(0, 42, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec v = read_vec(m, a[0].bits);
+        a[0] = ai::Value::of_float(std::atan2(v.v[0], v.v[2]));
+    });
+    // 0:68 a vector turned about the x by an angle into the call's own vector (FUN_14041d100 -> FUN_1403b75f0: the
+    // angle made one of (-pi, pi], FUN_1401411b0's turn, the vector times it -- y cos - z sin, y sin + z cos: the
+    // Armored Knight's launch, ahead turned 80 degrees up, then about the up by 0:13)
+    calls.set(0, 68, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec x = read_vec(m, a[0].bits);
+        const float r = wrapped(a[1].f()), c = std::cos(r), s = std::sin(r), y = x.v[1], z = x.v[2];
+        x.v[1] = y * c - z * s;
+        x.v[2] = y * s + z * c;
+        a[0] = give_vec(m, "0:68", x);
+    });
     // 0:16 below n: x / ceil(2^32 / n) (FUN_14041dbf0)
     calls.set(0, 16, [](ai::Machine &, std::span<ai::Value> a) {
         const std::uint64_t n = a[0].bits;
@@ -501,8 +516,14 @@ void add_actor_fields(ai::Calls &calls)
     // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
     // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
     // the slot left empty; 1:162 the actor put on one of KH2's lists (FUN_1403bd410): nothing here
+    // ... or its + 0's an actor in play with a shape of kind 3 in its groups on (what 6:5 finds)
     calls.set(1, 140, [](ai::Machine &m, std::span<ai::Value> a) {
-        a[0] = ai::Value::of_int(Object::at(m.memory(), m.memory().u32(a[0].bits + 8)) != nullptr ? 1 : 0);
+        bool there = Object::at(m.memory(), m.memory().u32(a[0].bits + 8)) != nullptr;
+        if (Object *o = there ? nullptr : Object::at(m.memory(), m.memory().u32(a[0].bits)))
+            if (Actor *x = o->actor();
+                x != nullptr && x->world != nullptr && (x->u32(field::kFlags) & 0x10080000u) == 0)
+                there = !x->world->shapes(*x, 3).empty();
+        a[0] = ai::Value::of_int(there ? 1 : 0);
     });
     calls.set(1, 143, [](ai::Machine &m, std::span<ai::Value> a) { m.memory().set_u32(a[0].bits + 4, 0); });
     calls.set(1, 162, [](ai::Machine &, std::span<ai::Value>) {});
@@ -607,7 +628,8 @@ void add_actor_fields(ai::Calls &calls)
 void add_motions(ai::Calls &calls)
 {
     // 1:29 another object plays a motion of this one's set (FUN_1403c6cc0: its motion set made this one's, + 0x2b8,
-    // its motion number + 0x180), from a frame
+    // its motion number + 0x180), from a frame; the motion given back, what its controller then plays (+ 0x184, 1:238:
+    // the Armored Knight's flight runs while the two are the same)
     calls.set(1, 29, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         Object *o = object_of(m, a[1]);
@@ -619,7 +641,7 @@ void add_motions(ai::Calls &calls)
         } else if (is_player(o) && x->world != nullptr) { // one of Days's players: the shell plays it
             played = x->world->player_motion(*o, *x, std::int32_t(a[2].bits), a[3].f());
         }
-        a[0] = ai::Value::of_int(played ? 1 : 0);
+        a[0] = ai::Value::of_int(played ? std::int32_t(a[2].bits) : 0);
     });
     // 1:94 whether an object is there and in play (FUN_14042b0e0: FUN_1403ba720, none of + 0x120's 0x10080000):
     // the Magnum Loader's thread on the player asks it of the loader; 1:101 whether the object an AI handle names
@@ -889,9 +911,16 @@ void add_moving(ai::Calls &calls)
         x->move_speed = a[2].f();
     });
     calls.set(1, 111, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+        if (is_player(o)) { // one of Days's players: the world steers it (the Armored Knight's Rising Sun flies him)
+            if (running(m)->world != nullptr)
+                running(m)->world->player_steer(*o, n != 0.0F ? Vec3{v.v[0] / n, v.v[1] / n, v.v[2] / n} : Vec3{},
+                                                a[2].f());
+            return;
+        }
         x->steer = n != 0.0F ? Vec3{v.v[0] / n, v.v[1] / n, v.v[2] / n} : Vec3{v.v[0], v.v[1], v.v[2]};
         x->steer_speed = a[2].f();
     });
@@ -903,6 +932,113 @@ void add_moving(ai::Calls &calls)
 }
 
 // ------------------------------------------------------------------------------------------------- targets, effects
+
+// KH2's search for an aim (FUN_14053fb60 makes one, FUN_140540080 lists an object's aims in it, FUN_14053fb80 looks):
+// its capacity n (+ 0), a byte the list's next place (+ 4) and one the aims looked at (+ 5), the list's length (+ 8),
+// which actors (+ 0xc: 0 those of + 0x6c8 bit 4, 1 and 2 bit 2: KH2's enemies), the reach from (+ 0x10) to (+ 0x14),
+// a cone's half (+ 0x18: pi none), then n listed aims, an object and its group each (+ 0x1c, + 0x20); a record found is
+// KH2's (FUN_1403bee60: the object, its group, none, -1)
+constexpr std::uint32_t kSearchList = 0x1c;
+
+bool listed(ai::Memory &mem, std::uint32_t s, std::uint32_t object, int group)
+{
+    const std::int32_t n = std::int32_t(mem.u32(s + 8));
+    for (std::int32_t k = 0; k < n; ++k)
+        if (mem.u32(s + kSearchList + 8 * std::uint32_t(k)) == object &&
+            std::int32_t(mem.u32(s + kSearchList + 8 * std::uint32_t(k) + 4)) == group)
+            return true;
+    return false;
+}
+
+void list_aim(ai::Memory &mem, std::uint32_t s, std::uint32_t object, int group)
+{
+    const std::int32_t cap = std::int32_t(mem.u32(s));
+    if (cap <= 0 || listed(mem, s, object, group))
+        return;
+    std::uint32_t head = mem.u32(s + 4);
+    const std::uint32_t at = head & 0xffu;
+    mem.set_u32(s + kSearchList + 8 * at, object);
+    mem.set_u32(s + kSearchList + 8 * at + 4, std::uint32_t(group));
+    if (std::int32_t(mem.u32(s + 8)) < cap)
+        mem.set_u32(s + 8, mem.u32(s + 8) + 1);
+    head = (head & ~0xffu) | ((at + 1) % std::uint32_t(cap));
+    mem.set_u32(s + 4, head);
+}
+
+float f32_at(ai::Memory &mem, std::uint32_t at)
+{
+    float f = 0.0F;
+    mem.read(at, &f, 4);
+    return f;
+}
+
+void add_search(ai::Calls &calls)
+{
+    // 6:3 a search made: its capacity, nothing listed, its reach 0 to 1000, no cone (FUN_14053dce0 -> FUN_14053fb60)
+    calls.set(6, 3, [](ai::Machine &m, std::span<ai::Value> a) {
+        ai::Memory &mem = m.memory();
+        const std::uint32_t s = a[0].bits;
+        const float far = 1000.0F, half = kPi;
+        mem.set_u32(s, a[1].bits);
+        for (std::uint32_t o = 4; o <= 0x10; o += 4)
+            mem.set_u32(s + o, 0);
+        mem.write(s + 0x14, &far, 4);
+        mem.write(s + 0x18, &half, 4);
+    });
+    // 6:8 an object's aims (its shapes of kind 3 in its groups on) listed in a search, those it had left (FUN_14053e240
+    // -> FUN_140540080): the Armored Knight lists its own
+    calls.set(6, 8, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[1]);
+        Actor *x = o != nullptr ? o->actor() : nullptr;
+        if (x == nullptr || x->world == nullptr || (x->u32(field::kFlags) & 0x10080000u) != 0)
+            return;
+        for (const auto &sh : x->world->shapes(*x, 3))
+            list_aim(m.memory(), a[0].bits, x->address(), sh.group);
+    });
+    // 6:5 the nearest aim (or the farthest) of KH2's actors from a point within the search's reach and cone, into a
+    // record (FUN_14053dd20 -> FUN_14053fb80): along the ground only when asked; with the last flag those listed are
+    // passed over and the one found is listed
+    calls.set(6, 5, [](ai::Machine &m, std::span<ai::Value> a) {
+        ai::Memory &mem = m.memory();
+        const std::uint32_t s = a[0].bits, out = a[1].bits;
+        const Vec from = read_vec(m, a[2].bits), way = read_vec(m, a[3].bits);
+        const bool nearest = a[4].bits != 0, flat = a[5].bits != 0, keep = a[6].bits != 0;
+        mem.set_u32(out, 0);
+        mem.set_u32(out + 4, 0);
+        mem.set_u32(out + 8, 0);
+        mem.set_u32(out + 12, 0xffffffffu);
+        Actor *me = running(m);
+        if (me->world == nullptr)
+            return;
+        const float lo = f32_at(mem, s + 0x10), hi = f32_at(mem, s + 0x14), cone = f32_at(mem, s + 0x18);
+        float best = 0.0F;
+        Actor *found = nullptr;
+        int found_group = 0;
+        std::uint32_t looked = 0;
+        for (Actor *x : me->world->actors())
+            for (const auto &sh : me->world->shapes(*x, 3)) {
+                ++looked;
+                if (keep && listed(mem, s, x->address(), sh.group))
+                    continue;
+                Vec3 d = {sh.at[0] - from.v[0], flat ? 0.0F : sh.at[1] - from.v[1], sh.at[2] - from.v[2]};
+                const float dist = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (dist < lo || dist > hi)
+                    continue;
+                if (cone < kPi && std::fabs(wrapped(std::atan2(way.v[0], way.v[2]) - std::atan2(d[0], d[2]))) >= cone)
+                    continue;
+                const float score = nearest ? dist : -dist;
+                if (found == nullptr || score < best)
+                    found = x, found_group = sh.group, best = score;
+            }
+        mem.set_u32(s + 4, (mem.u32(s + 4) & ~0xff00u) | (std::min(looked, 0xffu) << 8));
+        if (found == nullptr)
+            return;
+        mem.set_u32(out, found->address());
+        mem.set_u32(out + 4, std::uint32_t(found_group));
+        if (keep)
+            list_aim(mem, s, found->address(), found_group);
+    });
+}
 
 void add_world(ai::Calls &calls)
 {
@@ -950,6 +1086,51 @@ void add_world(ai::Calls &calls)
         a[0] = give_vec(m, "shared", v);
     });
     calls.set(1, 131, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:132 a record given back to that pool (FUN_140430420): the port keeps none
+    calls.set(1, 132, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:191 the record at an object's + 0xdc8's + 4 (FUN_14042b9c0): the player's aim (his lock-on), which the Armored
+    // Knight's Rising Sun goes for when it names one -- empty in Days's field (no lock of Days's is passed on): a record
+    // of the port's for each object, made on first use
+    calls.set(1, 191, [](ai::Machine &m, std::span<ai::Value> a) {
+        static std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> records;
+        Object *o = object_of(m, a[0]);
+        if (o == nullptr) {
+            a[0] = ai::Value::of_address(0);
+            return;
+        }
+        auto &at = records[{&m.memory(), o->address()}];
+        if (at == 0) {
+            at = m.memory().add(16, o->name() + "'s aim record (+ 0xdc8's + 4)");
+            m.memory().set_u32(at + 12, 0xffffffffu); // FUN_1403bda50's empty record
+        }
+        a[0] = ai::Value::of_address(at);
+    });
+    // 1:221 whether the player can take a command now (FUN_14042bbf0 -> FUN_1403b6950, FUN_1403ba070: his state
+    // against the command's flags): yes -- Days's players take what is offered
+    calls.set(1, 221, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(1); });
+    // 1:165 a reaction command offered KH2's player this tick (FUN_140430010 -> FUN_1403b2850 on his + 0xdd0): its slot,
+    // the command, its source (an AI handle: the press goes to it), a value of its record
+    calls.set(1, 165, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = running(m);
+        if (x->world != nullptr)
+            x->world->offer(*x, std::int32_t(a[1].bits), object_of(m, a[2]));
+    });
+    // 1:149 an effect on the actor at another object (FUN_14042d5c0 -> FUN_1403b6670: its element's number, two values,
+    // the object it is on), its handle; 0:44 one stopped at once (FUN_14041e190 -> FUN_1402be8e0)
+    calls.set(1, 149, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Object *on = object_of(m, a[2]);
+        const std::uint32_t h =
+            x->world != nullptr
+                ? x->world->effect_on(*x, std::int32_t(a[1].bits), std::int32_t(a[3].bits), std::int32_t(a[4].bits), on)
+                : 0;
+        a[0] = ai::Value::of_address(h);
+    });
+    calls.set(0, 44, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (running(m)->world != nullptr && a[0].bits != 0)
+            running(m)->world->stop_effect(a[0].bits);
+    });
+    add_search(calls);
     // 1:87 an effect on the actor (FUN_1403b6670 -> FUN_1402c6b30 on + 0x80): its element's number, two values more
     calls.set(1, 87, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
