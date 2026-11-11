@@ -276,7 +276,9 @@ void test_room() {
     // the triangle, then the strip's first and last real triangles (two stitched ones left out): 3 of them
     expect(p.indices.size() == 9, "triangles " + std::to_string(p.indices.size() / 3));
     expect(p.positions.size() == 9 && std::fabs(p.positions[1][0] - 11) < 1e-4F, "placed: moved by the object");
-    expect(std::fabs(p.uvs[1][0] - 1) < 1e-4F, "uv as written");
+    expect(std::fabs(p.uvs[1][0] - 1) < 1e-4F, "u as written");
+    expect(std::fabs(p.uvs[1][1] - 1) < 1e-4F && std::fabs(p.uvs[2][1]) < 1e-4F,
+           "v from the picture's foot (the 3DS's): glTF's from the top, 1 - v");
     expect(p.colors[0] == std::array<std::uint8_t, 4>{0x40, 0x80, 0xFF, 0xFF},
            "colour doubled (0x80 is 1, brighter kept at 1), alpha as written");
     const auto& blended = scene.meshes[1].primitives[0];

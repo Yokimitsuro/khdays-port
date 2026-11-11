@@ -435,9 +435,11 @@ from the player's files; the header of a PMO as Birth by Sleep's public notes gi
   bytes at +0x1c, the first group's vertices then the second's (offsets from the PMO). A record, 24 bytes: u16 vertex
   count, u8 texture (in the PMO's list), u8 vertex size (20), u32 flags (the primitive in the top four bits: 3
   triangles, 4 a strip stitched by degenerate triangles), u16 at +0xa its drawing (0x20 blended, 0x40 added, 0x60
-  taken away), its colour at +0xc. A vertex: u16 u, v (0x800 is 1), its colour (R G B A: red, green and blue 0x80
-  is 1 and brighter above it, as the PSP's -- many rooms never pass 0x80, the sunny ones do; the alpha's 1 is 0xff),
-  position f32 x3 (32768 is 1). Read this way, every section of the rooms read holds its records' vertices exactly.
+  taken away), its colour at +0xc. A vertex: u16 u, v (0x800 is 1; v from the picture's foot, as the 3DS's textures
+  run, where glTF's runs from its top: 1 - v written; Birth by Sleep's version 3 counts from the top), its colour
+  (R G B A: red, green and blue 0x80 is 1 and brighter above it, as the PSP's -- many rooms never pass 0x80, the sunny
+  ones do; the alpha's 1 is 0xff), position f32 x3 (32768 is 1). Read this way, every section of the rooms read holds
+  its records' vertices exactly.
 - **BCD** ("@bcd", version 0x0a): its parts (u32 at +8, their offset at +0xc), 0x30 bytes each: a box (min, max),
   u16 vertex and face counts at +0x18 / +0x1a, the vertices' and faces' offsets at +0x1c / +0x20 (from the file),
   then a tree the game's look-ups use (16-byte nodes: a split, its axis, two offsets) and its u16 face lists. A
@@ -492,9 +494,9 @@ older version. Read from the player's files.
   model's scale. Read this way the forms of di03's 212 meshes (8-bit or float coordinates, colours 8888 or the
   mesh's, float positions) each give the size their header says.
 - **PMO's textures**: after a texture's name, two f32 at +0x10 / +0x14 of its 0x20 bytes, how far its texture
-  coordinates move each frame (di01: the sea's foam `lplm06009a` 0 / 0.002, `lp_di1mt05` 0.001 / 0.001, the clouds
-  `lp_sky2` 0.0002 / 0); the room's material scrolls by them each 60th of a second (not compared with the game's
-  speed). Nothing else in a room moves: no member of its archive holds an animation, and none of di01's 96 objects
+  coordinates move each frame (version 4's v turned with its v above; di01: the sea's foam `lplm06009a` 0 / 0.002,
+  `lp_di1mt05` 0.001 / 0.001, the clouds `lp_sky2` 0.0002 / 0); the room's material scrolls by them each 60th of a
+  second (not compared with the game's speed). Nothing else in a room moves: no member of its archive holds an animation, and none of di01's 96 objects
   has a mesh with weights.
 - **BCD** (version 2): as version 0x0a, a part 0x40 bytes, its counts at +0x24 / +0x26 and its vertices' and faces'
   offsets at +0x28 / +0x2c (jb_20a: 2,328 vertices ending where its 2,703 faces of 48 bytes start). A face's u32 at
@@ -561,7 +563,10 @@ all of it our own reading of the player's files.
   textures' names (32 bytes each), then the PS2's DMA and VIF stream. Each UNPACK V4-32 holds a header qword (u16 at
   +4 its vertex count), the GIF tag, then 64 bytes a vertex: u32 what it ends (0xffff nothing: a strip starts; 0x20
   an odd triangle; 0 an even one), position f32 x3 at +0x10, colour u32 x4 at +0x20 (0x80 is 1), s, t, q f32 at
-  +0x30 and its texture (u32, among the piece's) at +0x3c.
+  +0x30 (t from the picture's foot as its pictures are written: glTF's v is 1 - t / q) and its texture (u32, among the
+  piece's) at +0x3c. Measured on walls (faces standing up), going down the picture goes down the world in 82 to 100% of
+  them read so, against 0 to 18% read with t from the top; Dream Drop Distance's v the same, 73 to 93% (median 83% over
+  its 141 rooms with walls), where KH1's, KH2's and Birth by Sleep's rooms give 82 to 98% as they are.
 - **.mcd** ("@MCD", version 3): u16 its pieces' count at +8, then a grid of the room (an origin and a cell size, f32 x3
   each); the pieces 0x10 past the u32 at +0x4c, 0xc0 bytes each: u32 0, u32 1, u32 its number, u32 its mesh's offset
   (from the end of the pieces), its move, turn and scale (f32 x4 each), its matrix (f32 x16, by columns: its move in

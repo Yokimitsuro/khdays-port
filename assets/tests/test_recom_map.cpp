@@ -115,7 +115,7 @@ Bytes azf() {
         for (const std::uint32_t c : {0x40U, 0x80U, 0x80U, 0x80U})
             w.u32(c);
         w.f32(static_cast<float>(v));
-        w.f32(0.5F);
+        w.f32(0.25F);
         w.f32(1);
         w.u32(0);  // its texture
     }
@@ -149,6 +149,7 @@ void test_room() {
            "placed by its layout and turned upright");
     expect(p.colors[0] == std::array<std::uint8_t, 4>{0x80, 0xFF, 0xFF, 0xFF}, "colours doubled from the PS2's");
     expect(std::fabs(p.uvs[2][0] - 2) < 1e-4F, "s over q");
+    expect(std::fabs(p.uvs[2][1] - 0.75F) < 1e-4F, "t from the picture's foot: glTF's v is 1 - t");
     bool threw = false;
     try {
         const Bytes junk(16, 0);

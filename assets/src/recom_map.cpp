@@ -215,7 +215,9 @@ Room room_model(const std::uint8_t* data, std::size_t size, const std::string& n
                         std::min<std::uint32_t>(255, r.get<std::uint32_t>(q + 32 + 4 * i) * 2));
                 const float w = r.get<float>(q + 0x38);
                 const float div = w != 0 ? w : 1.0F;
-                pt.uv = {r.get<float>(q + 0x30) / div, r.get<float>(q + 0x34) / div};
+                // t from the picture's foot as the pictures are written: glTF's v from the top (on walls the
+                // picture's foot was up in 82 to 100% of faces, against 2 to 18% in KH1's, KH2's and BbS's rooms)
+                pt.uv = {r.get<float>(q + 0x30) / div, 1.0F - r.get<float>(q + 0x34) / div};
                 pt.texture = r.get<std::uint32_t>(q + 0x3c);
                 pt.kind = r.get<std::uint32_t>(q);
                 strip.push_back(pt);
