@@ -1247,6 +1247,8 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
         ImGui::Separator();
         if (ImGui::Selectable(tr(lang, S::mission_room_add)))
             room_adder_open("missions", e.world);
+        if (ImGui::Selectable(tr(lang, S::take_out_all)))
+            app.take_out_asked = true;  // every map ready, so that adding one is quick
         ImGui::EndCombo();
     }
     // a room just added for it: chosen
@@ -1410,6 +1412,8 @@ void draw_new_mission_form(App& app, const Mod& m) {
         ImGui::Separator();
         if (ImGui::Selectable(tr(lang, S::mission_room_add)))
             room_adder_open("missions-new", world);
+        if (ImGui::Selectable(tr(lang, S::take_out_all)))
+            app.take_out_asked = true;  // every map ready, so that adding one is quick
         ImGui::EndCombo();
     }
     {

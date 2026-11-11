@@ -807,6 +807,22 @@ enum class S {
     stats_defence,
     stats_unknown_8,
     stats_unknown_12,
+    collections_folder,
+    take_out_all,
+    take_out_title,
+    take_out_hint,
+    take_out_reading,
+    take_out_game,
+    take_out_game_none,
+    take_out_total,
+    take_out_no_room,
+    take_out_start,
+    take_out_stop,
+    take_out_running,
+    take_out_done,
+    take_out_not_made,
+    take_out_stopped,
+    take_out_count_again,
     count
 };
 

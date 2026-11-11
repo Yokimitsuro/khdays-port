@@ -150,6 +150,8 @@ Settings load_settings(const fs::path& root, std::string* note) {
                 read.collection_1525 = clean_path(value);
             else if (key == "collection_28")
                 read.collection_28 = clean_path(value);
+            else if (key == "collections")
+                read.collections = clean_path(value);
             else if (key == "cache_mb") {
                 int mb = 0;
                 const auto r = std::from_chars(value.data(), value.data() + value.size(), mb);
@@ -204,7 +206,8 @@ bool save_settings(const Settings& s, std::string* why) {
             << "browser = " << (s.browser_tree ? "tree" : "list") << "\n"
             << "theme = " << s.theme << "\n"
             << "collection_1525 = " << s.collection_1525 << "\n"
-            << "collection_28 = " << s.collection_28 << "\n";
+            << "collection_28 = " << s.collection_28 << "\n"
+            << "collections = " << s.collections << "\n";
         if (!out) {
             if (why != nullptr)
                 *why = "cannot write " + u8(tmp);

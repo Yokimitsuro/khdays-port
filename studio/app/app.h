@@ -117,10 +117,12 @@ struct App {
     std::vector<std::string> dialog_collections;      // the 1.5+2.5 collection's folder (KH1, KH2, Re:CoM rooms)
     std::vector<std::string> dialog_collections_28;   // the 2.8 collection's folder (Dream Drop Distance's rooms)
     std::vector<std::string> dialog_ports;            // the port's executable (the settings)
+    std::vector<std::string> dialog_maps_kept;        // where the collections' maps are kept (setting collections)
     std::vector<std::string> dialog_characters;       // a character's model, clips, picture or sound
 
     std::string status;
     bool missions_asked = false;  // the Missions window to open (main.cpp), asked by a game mission's view
+    bool take_out_asked = false;  // the Take out every map window to open (main.cpp), asked by Settings or a map list
 
     // What a person must see happened -- a save done or failed, work kept or
     // lost: shown over the window (main.cpp draw_notices) in green or red, a
@@ -254,6 +256,12 @@ void texture_export_to(App& app, const std::filesystem::path& file);
 void draw_candidate_controls(App& app, const Item& item);
 void draw_replacements(App& app, bool* open);
 void draw_settings(App& app, bool* open);
+// Every map of the collections taken out and made at once: where, how much space, its progress
+// (views/take_out_view.cpp).
+void draw_take_out_all(App& app, bool* open);
+// The folder the collections' maps are kept in (the setting collections): typed, or chosen in the system's dialog;
+// true when it changed (saved by the caller).
+bool collections_folder_field(App& app);
 void draw_themes(App& app, bool* open);  // the colour palette (theme.h)
 void stop_sounds();
 

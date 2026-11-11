@@ -1223,7 +1223,7 @@ void line_up(App& app) {
         assets::ImportedModel floors;
         std::string why;
         std::error_code ec;
-        const fs::path own = collection_made_collision(app.settings.root, *game, map);
+        const fs::path own = collection_made_collision(app.settings, *game, map);
         const bool own_floors = fs::is_regular_file(own, ec) && import_model(own, &floors, &why);
         a = kh2_alignment(game_points(), m.collision, own_floors ? floors : p.raw, game->units);
         if (a.verdict == RoomAlignment::kh2_units)
@@ -1294,12 +1294,12 @@ bool load_own_collision(App& app) {
     bool found = false;
     if (const CollectionGameInfo* game = source_game(p.r, &map)) {
         std::error_code ec;
-        file = collection_made_collision(app.settings.root, *game, map);
+        file = collection_made_collision(app.settings, *game, map);
         found = fs::is_regular_file(file, ec);
         if (!found)
             why = p.r.source + ": no floors and walls of its own";
     } else {
-        found = make_kh2_collision(app.settings.root, p.r.kh2, &file, &why);
+        found = make_kh2_collision(app.settings, p.r.kh2, &file, &why);
     }
     if (found && import_model(file, &p.raw_collision, &why)) {
         p.collision_source = file;
@@ -1339,7 +1339,7 @@ void kh2_take(App& app, const Item& item) {
         }
         kh2.out.clear();
         for (const auto& name : kh2.maps)
-            kh2.out[name] = kh2_map_taken_out(app.settings.root, name);
+            kh2.out[name] = kh2_map_taken_out(app.settings, name);
     }
     if (!made)
         return;
@@ -1388,10 +1388,22 @@ void kh2_start(App& app, const std::string& map, const std::string& world) {
         std::vector<std::string> found;
         std::string why;
         Kh2Made outcome;
-        const fs::path model = map.empty() ? fs::path() : kh2_made_model(settings.root, map);
-        const bool ok = map.empty() ? kh2_world_maps(settings, world, &found, &why)
-                                    : take_out_kh2_map(settings, map, &why) &&
-                                          make_kh2_room(kh2_folder(settings.root), map, model, &outcome, &why);
+        const fs::path model = map.empty() ? fs::path() : kh2_made_model(settings, map);
+        bool ok = false;
+        if (map.empty()) {
+            ok = kh2_world_maps(settings, world, &found, &why);
+        } else {
+            // the model made already when this studio made it (Take out every map)
+            CollectionMap one;
+            one.name = map;
+            CollectionMade made;
+            ok = collection_room(settings, *collection_game("kh2"), one, &made, &why);
+            outcome.triangles = made.triangles;
+            outcome.pictures = made.pictures;
+            outcome.pieces = made.pieces;
+            outcome.animations = made.animations;
+            outcome.report = made.report;
+        }
         std::lock_guard lock(kh2.mutex);
         kh2.failed = ok ? std::string() : why;
         if (map.empty()) {
@@ -1448,6 +1460,9 @@ void draw_kh2_picker(App& app) {
     ImGui::SameLine();
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         kh2_start(app, {}, kKh2Worlds[kh2.world]);
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::take_out_all)))
+        app.take_out_asked = true;
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::InputText(tr(lang, S::map_kh2_by_name), &kh2.typed);
     ImGui::SameLine();
@@ -1469,7 +1484,7 @@ void draw_kh2_picker(App& app) {
         auto radar = kh2.radars.find(name);
         if (radar == kh2.radars.end() && kh2.out[name]) {
             assets::DecodedTexture picture;
-            kh2_radar(app.settings.root, name, &picture);
+            kh2_radar(app.settings, name, &picture);
             radar = kh2.radars.emplace(name, std::move(picture)).first;
         }
         if (radar != kh2.radars.end() && !radar->second.rgba.empty()) {
@@ -1534,7 +1549,7 @@ void other_take(App& app, const Item& item) {
         for (const auto& mp : other.maps) {
             if (other.worlds.empty() || other.worlds.back() != mp.world)
                 other.worlds.push_back(mp.world);
-            other.out[mp.name] = collection_map_taken_out(app.settings.root, *game, mp);
+            other.out[mp.name] = collection_map_taken_out(app.settings, *game, mp);
         }
     }
     if (!made)
@@ -1583,13 +1598,13 @@ void other_start(App& app, const CollectionGameInfo* game, const CollectionMap* 
         std::vector<CollectionMap> found;
         std::string why;
         CollectionMade outcome;
-        const bool ok = make ? make_collection_room(settings, *game, chosen, &outcome, &why)
+        const bool ok = make ? collection_room(settings, *game, chosen, &outcome, &why)
                              : collection_maps(settings, *game, &found, &why);
         std::lock_guard lock(other.mutex);
         other.failed = ok ? std::string() : why;
         if (make) {
             other.done_source = std::string(game->code) + ":" + chosen.name;
-            other.model = collection_made_model(settings.root, *game, chosen.name);
+            other.model = collection_made_model(settings, *game, chosen.name);
             other.outcome = std::move(outcome);
             other.made = true;
         } else {
@@ -1635,6 +1650,9 @@ void draw_other_picker(App& app) {
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         other_start(app, game, nullptr);
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(tr(lang, S::take_out_all)))
+        app.take_out_asked = true;
     if (other.busy) {
         ImGui::TextDisabled("%s", other.working.empty() ? tr(lang, S::map_kh2_list)
                                                         : fmt(lang, S::map_kh2_working, {other.working}).c_str());

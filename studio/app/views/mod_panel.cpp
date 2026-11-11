@@ -464,6 +464,9 @@ void draw_settings(App& app, bool* open) {
     };
     collection_field(field_1525, &app.settings.collection_1525, S::collection_1525, "kh2", "1525");
     collection_field(field_28, &app.settings.collection_28, S::collection_28, "ddd", "28");
+    changed |= collections_folder_field(app);
+    if (ImGui::Button(tr(app.language, S::take_out_all)))
+        app.take_out_asked = true;
     if (ImGui::InputInt(tr(app.language, S::cache), &app.settings.cache_mb)) {
         if (app.settings.cache_mb < 1)
             app.settings.cache_mb = 1;

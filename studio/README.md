@@ -539,8 +539,8 @@ player's own KINGDOM HEARTS HD 1.5+2.5 ReMIX copy into a model to replace a
 room with: its background, skies and pieces (placed, moving as in KH2), its
 remastered pictures as PNG beside it, scrolling and changing textures; from
 `<folder>/original/map/<map>.map` and `<folder>/remastered/map/<map>.map/`
-as the collection's archives give them (`saves/collection/kh2` when not
-given). What it makes is Square Enix's work from the player's copy: theirs to
+as the collection's archives give them (the collections folder's `kh2`
+when not given). What it makes is Square Enix's work from the player's copy: theirs to
 play with, not to share. The window's Maps view does the same from the room's
 Replace panel ("A KH2 room": the world's maps of the copy with their radar
 pictures, or one by its name); the collection's folder is in the settings
@@ -548,6 +548,22 @@ pictures, or one by its name); the collection's folder is in the settings
 `--kh2-maps` lists the maps of the player's copy of the worlds Days shares (or
 one), each with the Days rooms made from it (`studio/data/kh2_rooms.txt`) and,
 once taken out, its pieces and moving textures.
+
+```powershell
+.\build\studio\release\khdays-studio.exe --collection-take-all ddd|kh1|kh2|recom|bbs|all [<folder>]
+.\build\studio\release\khdays-studio.exe --collection-space ddd|kh1|kh2|recom|bbs|all [<folder>]
+```
+
+takes out every map of a game of the player's collections (or of every game
+whose copy is found) and makes each into its model, so that using one later
+is quick: into `<folder>` for this run, else the collections' folder (the
+setting `collections`, `saves/collection` when empty). It first says how many
+maps the copy holds, how many are ready and about the space the rest take;
+at the end, the maps that could not be made. `--collection-space` says only
+that first part, nothing taken out. The window does the same from
+**Take out every map** (Settings, the map lists, a mission's room list), the
+folder asked there and the drive's free space shown. Taken out and made on
+Steam's copies, all five games take about 52 GB.
 
 ```powershell
 .\build\studio\release\khdays-studio.exe --check-missions

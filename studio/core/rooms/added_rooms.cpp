@@ -301,15 +301,15 @@ bool add_collection_room(const Settings& settings, const fs::path& nitrofs, cons
     if (!added_room_key(key))
         return fail_with(why, "a room's key is letters, digits, _ and -: " + key);
     CollectionMade made;
-    if (!make_collection_room(settings, game, map, &made, why))
+    if (!collection_room(settings, game, map, &made, why))  // as it is when this studio made it already
         return false;
     const std::string source = std::string(game.code) + ":" + map.name;
     lines->push_back(source + ": " + std::to_string(made.triangles) + " triangles, " + std::to_string(made.pictures) +
                      " pictures");
     if (collection_map_falling(game, map))
         lines->push_back(source + " is a stage the player falls through (Dive): it has no floor to walk on");
-    const fs::path model = collection_made_model(settings.root, game, map.name);
-    fs::path collision = made.collision ? collection_made_collision(settings.root, game, map.name) : fs::path();
+    const fs::path model = collection_made_model(settings, game, map.name);
+    fs::path collision = made.collision ? collection_made_collision(settings, game, map.name) : fs::path();
     // its lowest main floor at height 0, a floor under the origin (a mission's start = 0 0 0)
     RoomPlacement place;
     khdays::assets::ImportedModel floors;

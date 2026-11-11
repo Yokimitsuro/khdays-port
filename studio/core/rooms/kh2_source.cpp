@@ -64,12 +64,12 @@ bool write_collision(const std::vector<std::uint8_t>& data, const std::string& m
 
 }  // namespace
 
-fs::path kh2_folder(const fs::path& root) {
-    return root / "saves" / "collection" / "kh2";
+fs::path kh2_folder(const Settings& settings) {
+    return collections_folder(settings) / "kh2";
 }
 
-fs::path kh2_made_model(const fs::path& root, const std::string& map) {
-    return kh2_folder(root) / "made" / path_u8(map) / path_u8(map + ".gltf");
+fs::path kh2_made_model(const Settings& settings, const std::string& map) {
+    return kh2_folder(settings) / "made" / path_u8(map) / path_u8(map + ".gltf");
 }
 
 fs::path kh2_collection(const Settings& settings) {
@@ -152,14 +152,14 @@ bool kh2_world_maps(const Settings& settings, const std::string& world, std::vec
     return true;
 }
 
-bool kh2_map_taken_out(const fs::path& root, const std::string& map) {
+bool kh2_map_taken_out(const Settings& settings, const std::string& map) {
     std::error_code ec;
-    return fs::is_regular_file(original_map(kh2_folder(root), map), ec) &&
-           fs::is_directory(remastered_map(kh2_folder(root), map), ec);
+    return fs::is_regular_file(original_map(kh2_folder(settings), map), ec) &&
+           fs::is_directory(remastered_map(kh2_folder(settings), map), ec);
 }
 
 bool take_out_kh2_map(const Settings& settings, const std::string& map, std::string* why) {
-    if (kh2_map_taken_out(settings.root, map))
+    if (kh2_map_taken_out(settings, map))
         return true;
     fs::path collection;
     std::vector<fs::path> archives;
@@ -173,9 +173,9 @@ bool take_out_kh2_map(const Settings& settings, const std::string& map, std::str
     for (const auto& archive : archives) {
         std::vector<std::string> lines;
         const int status = run_collection_reader(
-            settings.root,
-            {u8(archive), u8(kh2_folder(settings.root)), u8(collection / kKh2Exe), "map/" + map + ".map"}, &lines, why);
-        if (status == 0 && kh2_map_taken_out(settings.root, map))
+            settings.root, {u8(archive), u8(kh2_folder(settings)), u8(collection / kKh2Exe), "map/" + map + ".map"},
+            &lines, why);
+        if (status == 0 && kh2_map_taken_out(settings, map))
             return true;
         if (status != 3) {  // 3: not in this archive, the next one asked
             if (why->empty())
@@ -187,13 +187,13 @@ bool take_out_kh2_map(const Settings& settings, const std::string& map, std::str
     return false;
 }
 
-bool make_kh2_collision(const fs::path& root, const std::string& map, fs::path* out, std::string* why) {
-    const auto data = read_all(original_map(kh2_folder(root), map));
+bool make_kh2_collision(const Settings& settings, const std::string& map, fs::path* out, std::string* why) {
+    const auto data = read_all(original_map(kh2_folder(settings), map));
     if (data.empty()) {
         *why = "no " + map + " taken out of the collection";
         return false;
     }
-    *out = kh2_made_model(root, map).parent_path() / path_u8(map + "_collision.gltf");
+    *out = kh2_made_model(settings, map).parent_path() / path_u8(map + "_collision.gltf");
     return write_collision(data, map, *out, why);
 }
 
@@ -286,8 +286,8 @@ const Kh2Pair* kh2_pair_of(const std::vector<Kh2Pair>& pairs, const std::string&
     return nullptr;
 }
 
-bool kh2_radar(const fs::path& root, const std::string& map, khdays::assets::DecodedTexture* out) {
-    const auto data = read_all(original_map(kh2_folder(root), map));
+bool kh2_radar(const Settings& settings, const std::string& map, khdays::assets::DecodedTexture* out) {
+    const auto data = read_all(original_map(kh2_folder(settings), map));
     if (data.empty())
         return false;
     try {

@@ -5,6 +5,11 @@
 #include "core/files/md5.h"
 #include "core/rooms/collection_source.h"
 
+#include <SDL3/SDL.h>
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -112,4 +117,58 @@ TEST(the_xbox_apps_game_folder_is_taken_as_its_content) {
     CHECK(collection_root(game) == game);
     CHECK(collection_root(game / "nothing") == game / "nothing");
     fs::remove_all(game, ec);
+}
+
+// Where the maps are kept: the setting `collections` against the port's folder, saves/collection when it is empty.
+TEST(the_collections_folder_is_the_setting_else_saves_collection) {
+    namespace fs = std::filesystem;
+    Settings s;
+    s.root = fs::path("port");
+    s.collections.clear();
+    CHECK(collections_folder(s) == fs::path("port") / "saves" / "collection");
+    s.collections = "elsewhere/maps";
+    const CollectionGameInfo& ddd = *collection_game("ddd");
+    CHECK(collection_folder(s, ddd) == fs::path("port") / "elsewhere" / "maps" / "ddd");
+    CHECK(collection_made_model(s, ddd, "tm_01") ==
+          fs::path("port") / "elsewhere" / "maps" / "ddd" / "made" / "tm_01" / "tm_01.gltf");
+    CHECK(space_text(std::uintmax_t{3} << 29) == "1.5 GB" && space_text(std::uintmax_t{5} << 20) == "5 MB");
+}
+
+// A map's model this build of the studio made is used as it is, what its making did read back from its record; one
+// made before the studio was written is made again.
+TEST(a_map_made_by_this_studio_is_used_as_it_is) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "khdays_collection_ready_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    Settings s;
+    s.root = dir;
+    s.collections = (dir / "maps").string();
+    const CollectionGameInfo& ddd = *collection_game("ddd");
+    CHECK(!collection_room_ready(s, ddd, "xx_01"));
+    const fs::path model = collection_made_model(s, ddd, "xx_01");
+    fs::create_directories(model.parent_path(), ec);
+    std::ofstream(model) << "{}";
+    std::ofstream(model.parent_path() / "xx_01.made.txt")
+        << "triangles = 12\npictures = 3\npieces = 0\nanimations = 0\ncollision = 1\nreport = one thing left out\n";
+    const char* base = SDL_GetBasePath();
+    const fs::path studio = fs::path(base != nullptr ? base : "") / "khdays-studio.exe";
+    if (!fs::is_regular_file(studio, ec)) {
+        CHECK(!collection_room_ready(s, ddd, "xx_01"));  // no studio to compare with: made again
+    } else {
+        CHECK(collection_room_ready(s, ddd, "xx_01"));
+        CollectionMap map;
+        map.name = "xx_01";
+        CollectionMade made;
+        std::string why;
+        // no copy of the game: only the record can give it
+        CHECK(collection_room(s, ddd, map, &made, &why));
+        CHECK(made.triangles == 12 && made.pictures == 3 && made.collision && made.report.size() == 1 &&
+              made.report[0] == "one thing left out");
+        // made before the studio was written: not ready
+        fs::last_write_time(model.parent_path() / "xx_01.made.txt", fs::last_write_time(studio) - std::chrono::hours(1),
+                            ec);
+        CHECK(!collection_room_ready(s, ddd, "xx_01"));
+    }
+    fs::remove_all(dir, ec);
 }

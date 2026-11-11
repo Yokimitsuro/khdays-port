@@ -1,6 +1,6 @@
 // KINGDOM HEARTS II FINAL MIX's rooms from the player's KINGDOM HEARTS HD 1.5+2.5 ReMIX copy, made into
 // glTF models to replace Days's rooms with: a map taken out of the collection's archives by the
-// installer's own reader (installer/collection_archive.py) into saves/collection/kh2 as
+// installer's own reader (installer/collection_archive.py) into the studio's collections folder's kh2 as
 // original/map/<map>.map and remastered/map/<map>.map/-N.dds, then its background, skies and moving
 // pieces made into a model, its HD pictures as PNG beside it. What is made holds Square Enix's work:
 // it stays the player's own.
@@ -33,8 +33,8 @@ struct Kh2Made {
     std::vector<std::string> report;  // what was left out or is not played
 };
 
-// Where maps taken out of the collection are kept: saves/collection/kh2 under the port's folder.
-std::filesystem::path kh2_folder(const std::filesystem::path& root);
+// Where maps taken out of the collection are kept: collections_folder()/kh2 (collection_source.h).
+std::filesystem::path kh2_folder(const Settings& settings);
 
 // The player's KINGDOM HEARTS HD 1.5+2.5 ReMIX folder: the studio's setting, else the one the install
 // made its HD pieces from (setup/state.json); empty when neither names a folder that is there.
@@ -50,22 +50,21 @@ bool kh2_world_maps(const Settings& settings, const std::string& world, std::vec
 bool take_out_kh2_map(const Settings& settings, const std::string& map, std::string* why);
 
 // Whether `map` is in kh2_folder() already.
-bool kh2_map_taken_out(const std::filesystem::path& root, const std::string& map);
+bool kh2_map_taken_out(const Settings& settings, const std::string& map);
 
 // The map's radar picture (its room seen from above), once it is taken out; false when it has none.
-bool kh2_radar(const std::filesystem::path& root, const std::string& map, khdays::assets::DecodedTexture* out);
+bool kh2_radar(const Settings& settings, const std::string& map, khdays::assets::DecodedTexture* out);
 
 // `out` (a .gltf) and its pictures made from map `map` (tt02) in `folder`; false with the reason.
 bool make_kh2_room(const std::filesystem::path& folder, const std::string& map, const std::filesystem::path& out,
                    Kh2Made* made, std::string* why);
 
 // Where the studio makes a map's model before a room change takes it: kh2_folder()/made/<map>/<map>.gltf.
-std::filesystem::path kh2_made_model(const std::filesystem::path& root, const std::string& map);
+std::filesystem::path kh2_made_model(const Settings& settings, const std::string& map);
 
 // The map's own floors and walls (its ID_ collision) as a glTF beside its model
 // (kh2_made_model()'s folder, <map>_collision.gltf), placed like it by a room change; false with the reason.
-bool make_kh2_collision(const std::filesystem::path& root, const std::string& map, std::filesystem::path* out,
-                        std::string* why);
+bool make_kh2_collision(const Settings& settings, const std::string& map, std::filesystem::path* out, std::string* why);
 
 // The KH2 map a Days room was made from (studio/data/kh2_rooms.txt:
 // `<world> <room> <map> [turn <degrees>] [move <x> <y> <z>] ; <evidence>`), and where Days put it when

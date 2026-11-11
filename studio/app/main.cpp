@@ -64,7 +64,8 @@ void draw_notices(App& app);  // below
 
 // The windows over the studio's page, open or not.
 struct Windows {
-    bool settings = false, themes = false, console = false, plugin = false, characters = false, missions = false;
+    bool settings = false, themes = false, console = false, plugin = false, characters = false, missions = false,
+         take_out = false;
 };
 
 void draw_frame(App& app, Windows& open) {
@@ -141,6 +142,13 @@ void draw_frame(App& app, Windows& open) {
     }
     if (open.missions)
         draw_mod_missions(app, &open.missions);
+    if (app.take_out_asked) {
+        open.take_out = true;
+        app.take_out_asked = false;
+        ImGui::SetNextWindowFocus();
+    }
+    if (open.take_out)
+        draw_take_out_all(app, &open.take_out);
 }
 
 // The results a person must see (App::tell), over the window: a success in

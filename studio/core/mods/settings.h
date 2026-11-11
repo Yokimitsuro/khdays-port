@@ -24,6 +24,8 @@ struct Settings {
     // KINGDOM HEARTS HD 2.8 Final Chapter Prologue's folder, Dream Drop Distance's rooms come from; empty: the one the
     // install recorded
     std::string collection_28;
+    // where the collections' maps are kept once taken out of them and made into models: <folder>/<game>
+    std::string collections = "saves/collection";
 };
 
 // The settings file of a port folder.

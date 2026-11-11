@@ -110,10 +110,10 @@ pieces from (`setup/state.json`) -- by the installer's own reader
 (`installer/collection_archive.py`, run with the install's Python,
 `setup/python`, or the system's in the repository's tree), asking kh2_first,
 kh2_fifth and kh2_sixth in the collection's language folder (`Image/dt`,
-Steam's; `Image/en`, the Epic Games Store's) into
-`saves/collection/kh2/original/map/<map>.map` and
-`remastered/map/<map>.map/-N.dds`; `--has` lists the maps a copy holds. The
-map is made into `saves/collection/kh2/made/<map>/<map>.gltf` (assets'
+Steam's; `Image/en`, the Epic Games Store's) into the collections' folder
+(`saves/collection` unless the setting `collections` names another), as
+`kh2/original/map/<map>.map` and `kh2/remastered/map/<map>.map/-N.dds`; `--has`
+lists the maps a copy holds. The map is made into `kh2/made/<map>/<map>.gltf` there (assets'
 `kh2_room`: its background, skies and placed pieces with their motion, its HD
 pictures as PNG, docs/RENDERING.md "Mods' graphics" for its extras), and the
 change names it (`kh2 <map>`). Its first place: where Days put the map when the
@@ -151,9 +151,10 @@ each file by the MD5 of its path, so each game's name pattern (KH2's `map/<w><nn
 `map/<w>/<w>_<nn>/bin/<w>_<nn>.pmp`, KH1's `<w>00_<nn>.bin`, Re:CoM's `MAP<mm>/<nnnn>/MP<mm><nnnn>.AZF`, Birth by
 Sleep's `arc/map/<w><nn>.arc`) is tried for
 every world code and number and asked for (a game's maps listed in about a second, no list of the games' files
-kept). A map is taken out by the installer's reader with the game's own executable into
-`saves/collection/<game>/original/` and `remastered/`, and made into `saves/collection/<game>/made/<map>/<map>.gltf`
-with its pictures, its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
+kept). A map is taken out by the installer's reader with the game's own executable into the collections' folder
+(the setting `collections`, `saves/collection` when empty), `<game>/original/` and `<game>/remastered/`, and made into
+`<game>/made/<map>/<map>.gltf` there with its pictures, what the making did kept beside it (`<map>.made.txt`: its
+triangles, pictures and pieces, whether it has its own collision, what was left out), its own floors and walls into `<map>_collision.gltf` beside it (Dream Drop Distance's from its
 `.bcd`, Birth by Sleep's from the `.bcd` in its archive, KINGDOM HEARTS FINAL MIX's from its `.bin`, Re:Chain of
 Memories' from its `.mcd`: docs/FORMATS.md, "Dream Drop Distance's rooms", "Birth by Sleep's rooms", "KINGDOM HEARTS
 FINAL MIX's rooms" and "Re:Chain of Memories' rooms"). KH2's and KINGDOM HEARTS
@@ -166,14 +167,35 @@ room's places -- its markers and its origin, where missions put the player -- st
 them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
 another game" lists a game's worlds and maps (taken out or not). A room with no collision of its own (a Dive
 stage) is given one made from its model (`own-collision` then says so). A room's sky is drawn only with **Its sky**
-ticked (from outside, a sky's dome hides the room); **Frame the room** puts the view back over its floors, and the
-picture's lower edge is dragged to make it taller (a double click: big or half).
+ticked, and then as the game draws it: about the viewer, out of reach (fifteen times the camera's distance from what
+it turns around, the room in front of it), never in its own place, where its dome (Dream Drop Distance's are a few
+metres about the origin: rg_06's 20 wide and 10 high) is a ball in the room; **Frame the room** puts the view back
+over its floors, and the picture's lower edge is dragged to make it taller (a double click: big or half).
+
+A map this build of the studio made already (its model and record written after the studio's executable was) is
+used as it is when a list's **Use** or a room added asks for it; one made by an earlier studio is made again (a later
+one may read the map better). **Take out every map** (Settings, the map lists, a mission's room list) takes out and
+makes every map of the games chosen at once: it asks where (the setting `collections`, its own folder chooser), says
+for each game how many maps its copy holds, how many are ready, the space its folder takes and about what the rest
+would add -- the space all of the game's maps took out of Steam's copy and made (2026-11-11: KINGDOM HEARTS FINAL MIX
+6.8 GB, KH2 18.1 GB, Re:CoM 4.0 GB, Dream Drop Distance 18.9 GB, Birth by Sleep 4.5 GB; all five about 52 GB) less
+what the folder holds already; a game's first maps are no measure of its others (twelve of Birth by Sleep's took 13 MB
+each, all of them 23) -- against the drive's free space, and takes the games chosen out on a thread of its own: a
+package's maps eight at a time in a run of the reader, then each made (the textures its model names taken out then),
+the maps that could not be made named at the end (KH1's Atlantica lm00_14 to 17: the copy holds no HD model of them;
+KH2's tr02 and tr07: its map reader reads past their end). **Stop** stops after the step under way; what was taken out
+stays.
 
 ```
 khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections (kh1, kh2,
                                                      recom, ddd, bbs)
 khdays-studio --collection-take ddd:eh_01            its files taken out
 khdays-studio --collection-room ddd:eh_01            made into a model (and its own collision)
+khdays-studio --collection-take-all ddd|all [<folder>]
+                                                     every map of a game (or of every game found) taken out
+                                                     and made, into <folder> for this run or the setting's;
+                                                     its space said first, the maps not made named at the end
+khdays-studio --collection-space ddd|all [<folder>]  what that would take, nothing taken out
 khdays-studio --render-model <model> <png> [<collision model>]
                                                      drawn as the previews draw it, from two sides (its sky
                                                      left out; framed by the collision's floors when given)

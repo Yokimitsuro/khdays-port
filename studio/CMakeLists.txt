@@ -215,6 +215,7 @@ add_executable(khdays-studio
     app/save_dialog.cpp
     app/views/sheet_view.cpp
     app/views/sound_view.cpp
+    app/views/take_out_view.cpp
     app/strings.cpp
     app/theme.cpp)
 target_link_libraries(khdays-studio PRIVATE khdays-studio-core khdays-studio-imgui)
