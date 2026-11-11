@@ -1,7 +1,8 @@
 // Every map of the collections taken out and made at once (core/rooms/collection_source.h, take_out_every_map), so
 // that using one later is quick: the window asks where they are kept (the setting collections), says for each game
 // how many maps its copy holds, how many are ready and about the space the rest take against the drive's free space,
-// and takes the games chosen out on a thread of its own, its progress shown and stopped when asked.
+// and takes the games chosen out (or one alone, its row's button) on a thread of its own, its progress shown and stopped
+// when asked. Asked from a game's map list, that game is the only one chosen.
 #include "../app.h"
 
 #include "core/files/paths.h"
@@ -12,6 +13,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -86,8 +88,8 @@ void count_plans(App& app) {
     });
 }
 
-// The games chosen taken out on the worker, one after the other; counted again once done.
-void start_taking_out(App& app) {
+// The games chosen taken out on the worker, one after the other (`only`: that game alone); counted again once done.
+void start_taking_out(App& app, const std::string& only) {
     if (t.busy)
         return;
     if (t.worker.joinable())
@@ -96,7 +98,7 @@ void start_taking_out(App& app) {
     {
         std::lock_guard lock(t.mutex);
         for (const auto& plan : t.plans)
-            if (!plan.maps.empty() && t.chosen[plan.game->code])
+            if (!plan.maps.empty() && (only.empty() ? t.chosen[plan.game->code] : only == plan.game->code))
                 chosen.push_back(plan);
         t.running = true;
         t.failed.clear();
@@ -146,7 +148,7 @@ void start_taking_out(App& app) {
         std::lock_guard lock(t.mutex);
         t.plans = std::move(plans);
         t.failed = std::move(failed);
-        t.ok = !stopped && t.failed.empty();
+        t.ok = t.failed.empty();  // stopped when asked is no failure
         t.outcome = stopped ? tr(lang, S::take_out_stopped)
                             : fmt(lang, S::take_out_done, {std::to_string(ready), u8(collections_folder(settings))});
         t.told = false;
@@ -169,6 +171,8 @@ bool collections_folder_field(App& app) {
     }
     ImGui::PushID("collections");
     ImGui::BeginDisabled(t.running);  // the maps under way go where the run began
+    // as wide as the settings' other folders, its name and button beside it in a wider window too
+    ImGui::SetNextItemWidth(std::min(ImGui::CalcItemWidth(), 18 * ImGui::GetFontSize()));
     changed |= ImGui::InputText(tr(app.language, S::collections_folder), &app.settings.collections);
     ImGui::SameLine();
     if (ImGui::SmallButton(tr(app.language, S::choose_folder))) {
@@ -189,14 +193,19 @@ bool collections_folder_field(App& app) {
     return changed;
 }
 
-void draw_take_out_all(App& app, bool* open) {
+namespace {
+
+// The window's insides (draw_take_out_all): where, each game in a row, the total against the free space, the buttons
+// or the progress, and what the last run did.
+void draw_take_out_body(App& app) {
     const auto lang = app.language;
-    ImGui::SetNextWindowSize(ImVec2(720, 0), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(tr(lang, S::take_out_title), open)) {
-        ImGui::End();
-        return;
-    }
     WrappedTexts wrapped;
+    // asked from a game's map list: that game alone chosen (not while a run goes on: what it takes out stays shown)
+    if (!app.take_out_game.empty() && !t.running) {
+        for (const auto& g : collection_games())
+            t.chosen[g.code] = app.take_out_game == g.code;
+    }
+    app.take_out_game.clear();
     ImGui::TextWrapped("%s", tr(lang, S::take_out_hint));
     // where: the setting, saved as it changes
     if (collections_folder_field(app)) {
@@ -209,32 +218,60 @@ void draw_take_out_all(App& app, bool* open) {
         count_plans(app);
     ImGui::Separator();
     bool start = false;
+    std::string only;  // a row's own button: that game alone
     std::unique_lock lock(t.mutex);
     if (t.counting) {
         ImGui::TextDisabled("%s", tr(lang, S::take_out_reading));
     } else {
         std::uintmax_t more = 0;
-        for (const auto& plan : t.plans) {
-            ImGui::PushID(plan.game->code);
-            if (plan.maps.empty()) {
-                bool none = false;
-                ImGui::BeginDisabled();
-                ImGui::Checkbox(fmt(lang, S::take_out_game_none, {plan.game->name, plan.why}).c_str(), &none);
-                ImGui::EndDisabled();
-            } else {
+        if (ImGui::BeginTable("##games", 6,
+                              ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+            ImGui::TableSetupColumn(tr(lang, S::take_out_col_game));
+            ImGui::TableSetupColumn(tr(lang, S::take_out_col_maps));
+            ImGui::TableSetupColumn(tr(lang, S::take_out_col_ready));
+            ImGui::TableSetupColumn(tr(lang, S::take_out_col_used));
+            ImGui::TableSetupColumn(tr(lang, S::take_out_col_more));
+            ImGui::TableSetupColumn("");
+            ImGui::TableHeadersRow();
+            for (const auto& plan : t.plans) {
+                ImGui::PushID(plan.game->code);
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (plan.maps.empty()) {  // no copy found: its why where the button would be
+                    bool none = false;
+                    ImGui::BeginDisabled();
+                    ImGui::Checkbox(plan.game->name, &none);
+                    ImGui::EndDisabled();
+                    for (int c = 0; c < 4; ++c)
+                        ImGui::TableNextColumn();
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled("%s", plan.why.c_str());
+                    ImGui::PopID();
+                    continue;
+                }
                 // chosen at first when its copy is found
                 const auto seen = t.chosen.emplace(plan.game->code, true).first;
                 ImGui::BeginDisabled(t.running);
-                ImGui::Checkbox(fmt(lang, S::take_out_game,
-                                    {plan.game->name, std::to_string(plan.maps.size()), std::to_string(plan.ready),
-                                     space_text(plan.used), space_text(plan.more)})
-                                    .c_str(),
-                                &seen->second);
+                ImGui::Checkbox(plan.game->name, &seen->second);
                 ImGui::EndDisabled();
                 if (seen->second)
                     more += plan.more;
+                ImGui::TableNextColumn();
+                ImGui::Text("%zu", plan.maps.size());
+                ImGui::TableNextColumn();
+                ImGui::Text("%zu", plan.ready);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(space_text(plan.used).c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(space_text(plan.more).c_str());
+                ImGui::TableNextColumn();
+                ImGui::BeginDisabled(t.busy || plan.ready >= plan.maps.size());
+                if (ImGui::SmallButton(tr(lang, S::take_out_only)))
+                    only = plan.game->code;
+                ImGui::EndDisabled();
+                ImGui::PopID();
             }
-            ImGui::PopID();
+            ImGui::EndTable();
         }
         const std::uintmax_t free = free_space(folder);
         ImGui::TextWrapped("%s", fmt(lang, S::take_out_total, {space_text(more), space_text(free)}).c_str());
@@ -279,8 +316,17 @@ void draw_take_out_all(App& app, bool* open) {
         t.told = true;
     }
     lock.unlock();
-    if (start)
-        start_taking_out(app);
+    if (start || !only.empty())
+        start_taking_out(app, only);
+}
+
+}  // namespace
+
+void draw_take_out_all(App& app, bool* open) {
+    const float em = ImGui::GetFontSize();
+    ImGui::SetNextWindowSize(ImVec2(62 * em, 30 * em), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(tr(app.language, S::take_out_title), open))
+        draw_take_out_body(app);
     ImGui::End();
 }
 

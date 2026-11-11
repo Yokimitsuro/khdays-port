@@ -183,8 +183,9 @@ what the folder holds already; a game's first maps are no measure of its others 
 each, all of them 23) -- against the drive's free space, and takes the games chosen out on a thread of its own: a
 package's maps eight at a time in a run of the reader, then each made (the textures its model names taken out then),
 the maps that could not be made named at the end (KH1's Atlantica lm00_14 to 17: the copy holds no HD model of them;
-KH2's tr02 and tr07: its map reader reads past their end). **Stop** stops after the step under way; what was taken out
-stays.
+KH2's tr02 and tr07: its map reader reads past their end). A game's row has its own **Take out only this one**, and a
+game's map list asks for that game alone (**Take out this game's maps**, the others not chosen). **Stop** stops after
+the step under way; what was taken out stays.
 
 ```
 khdays-studio --collection-rooms ddd [<world>]       the maps of a game in the player's collections (kh1, kh2,

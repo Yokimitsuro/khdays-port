@@ -123,6 +123,7 @@ struct App {
     std::string status;
     bool missions_asked = false;  // the Missions window to open (main.cpp), asked by a game mission's view
     bool take_out_asked = false;  // the Take out every map window to open (main.cpp), asked by Settings or a map list
+    std::string take_out_game;    // with take_out_asked from a game's map list: that game's code, the only one chosen
 
     // What a person must see happened -- a save done or failed, work kept or
     // lost: shown over the window (main.cpp draw_notices) in green or red, a

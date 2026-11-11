@@ -3,6 +3,7 @@
 #include "test.h"
 
 #include "core/files/md5.h"
+#include "core/files/paths.h"
 #include "core/rooms/collection_source.h"
 
 #include <SDL3/SDL.h>
@@ -170,5 +171,36 @@ TEST(a_map_made_by_this_studio_is_used_as_it_is) {
                             ec);
         CHECK(!collection_room_ready(s, ddd, "xx_01"));
     }
+    fs::remove_all(dir, ec);
+}
+
+// Without the installer's reader in the port's folder no map can be taken out: said once for the game, not for each.
+TEST(no_reader_is_said_once_for_the_game) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "khdays_collection_reader_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    const CollectionGameInfo& ddd = *collection_game("ddd");
+    fs::create_directories(dir / "copy", ec);
+    std::ofstream(dir / "copy" / path_u8(ddd.executable)) << "";
+    Settings s;
+    s.root = dir / "port";
+    s.collections = (dir / "maps").string();
+    s.collection_28 = (dir / "copy").string();
+    CollectionPlan plan;
+    plan.game = &ddd;
+    for (const char* name : {"xx_01", "xx_02", "xx_03"}) {
+        CollectionMap m;
+        m.world = "xx";
+        m.name = name;
+        m.package = "kh3d_third";
+        plan.maps.push_back(m);
+    }
+    std::size_t steps = 0;
+    std::vector<std::string> failed;
+    std::string why;
+    CHECK(!take_out_every_map(
+        s, plan, [&](const std::string&, std::size_t, std::size_t) { return ++steps > 0; }, &failed, &why));
+    CHECK(failed.empty() && steps == 0 && why.find("reader") != std::string::npos);
     fs::remove_all(dir, ec);
 }

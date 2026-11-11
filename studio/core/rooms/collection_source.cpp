@@ -933,6 +933,15 @@ CollectionPlan collection_plan(const Settings& settings, const CollectionGameInf
     return plan;
 }
 
+namespace {
+
+// The installer's reader of a collection's packages, in the port's folder.
+fs::path collection_reader(const fs::path& root) {
+    return root / "installer" / "collection_archive.py";
+}
+
+}  // namespace
+
 bool take_out_every_map(const Settings& settings, const CollectionPlan& plan, const CollectionStep& step,
                         std::vector<std::string>* failed, std::string* why) {
     const CollectionGameInfo& game = *plan.game;
@@ -947,6 +956,11 @@ bool take_out_every_map(const Settings& settings, const CollectionPlan& plan, co
     if (copy.empty() || !fs::is_regular_file(copy / path_u8(game.executable), ec)) {
         *why =
             std::string("no ") + game.executable + " in the collection's folder (its packages are read with its table)";
+        return false;
+    }
+    // without the reader, or Python, no map can be: said once, not for each
+    if (!fs::is_regular_file(collection_reader(settings.root), ec)) {
+        *why = "the installer's reader of the collection is not in " + u8(settings.root / "installer");
         return false;
     }
     // each package's maps not taken out yet, a few a run of the reader (one that fails leaves its maps to be taken out
@@ -977,7 +991,10 @@ bool take_out_every_map(const Settings& settings, const CollectionPlan& plan, co
                 args.insert(args.end(), maps[k]->paths.begin(), maps[k]->paths.end());
             std::vector<std::string> lines;
             std::string not_read;
-            (void)run_collection_reader(settings.root, args, &lines, &not_read);
+            if (run_collection_reader(settings.root, args, &lines, &not_read) < 0) {
+                *why = not_read;
+                return false;
+            }
         }
     }
     // each made, what its model names taken out then
@@ -999,7 +1016,7 @@ bool take_out_every_map(const Settings& settings, const CollectionPlan& plan, co
 int run_collection_reader(const fs::path& root, const std::vector<std::string>& args, std::vector<std::string>* lines,
                           std::string* why) {
     const fs::path own = root / "setup" / "python" / "python.exe";
-    const fs::path script = root / "installer" / "collection_archive.py";
+    const fs::path script = collection_reader(root);
     std::error_code ec;
     if (!fs::is_regular_file(script, ec)) {
         *why = "the installer's reader of the collection is not in " + u8(root / "installer");

@@ -812,8 +812,11 @@ enum class S {
     take_out_title,
     take_out_hint,
     take_out_reading,
-    take_out_game,
-    take_out_game_none,
+    take_out_col_game,
+    take_out_col_maps,
+    take_out_col_ready,
+    take_out_col_used,
+    take_out_col_more,
     take_out_total,
     take_out_no_room,
     take_out_start,
@@ -823,6 +826,8 @@ enum class S {
     take_out_not_made,
     take_out_stopped,
     take_out_count_again,
+    take_out_this_game,
+    take_out_only,
     count
 };
 

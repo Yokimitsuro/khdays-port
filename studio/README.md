@@ -561,8 +561,10 @@ setting `collections`, `saves/collection` when empty). It first says how many
 maps the copy holds, how many are ready and about the space the rest take;
 at the end, the maps that could not be made. `--collection-space` says only
 that first part, nothing taken out. The window does the same from
-**Take out every map** (Settings, the map lists, a mission's room list), the
-folder asked there and the drive's free space shown. Taken out and made on
+**Take out every map** (Settings, a mission's room list) or a game's map list
+(**Take out this game's maps**: that game alone chosen), the folder asked there
+and the drive's free space shown; each game's row takes that game alone out
+with **Take out only this one**. Taken out and made on
 Steam's copies, all five games take about 52 GB.
 
 ```powershell

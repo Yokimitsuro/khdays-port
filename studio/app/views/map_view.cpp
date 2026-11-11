@@ -1461,8 +1461,10 @@ void draw_kh2_picker(App& app) {
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         kh2_start(app, {}, kKh2Worlds[kh2.world]);
     ImGui::SameLine();
-    if (ImGui::Button(tr(lang, S::take_out_all)))
+    if (ImGui::Button(tr(lang, S::take_out_this_game))) {
         app.take_out_asked = true;
+        app.take_out_game = "kh2";
+    }
     ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
     ImGui::InputText(tr(lang, S::map_kh2_by_name), &kh2.typed);
     ImGui::SameLine();
@@ -1651,8 +1653,10 @@ void draw_other_picker(App& app) {
         other_start(app, game, nullptr);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button(tr(lang, S::take_out_all)))
+    if (ImGui::Button(tr(lang, S::take_out_this_game))) {
         app.take_out_asked = true;
+        app.take_out_game = game->code;
+    }
     if (other.busy) {
         ImGui::TextDisabled("%s", other.working.empty() ? tr(lang, S::map_kh2_list)
                                                         : fmt(lang, S::map_kh2_working, {other.working}).c_str());
