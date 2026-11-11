@@ -364,6 +364,15 @@ void draw_room(App& app, ImVec2 size) {
             }
         }
         if (s.mod_room) {
+            std::vector<std::array<float, 3>> sky_points;
+            for (const auto& mesh : s.mod_model.model.meshes)
+                for (const auto& v : mesh.vertices)
+                    if (mesh.sky && s.show_sky)
+                        sky_points.push_back(v.position);
+            const Sky sky(sky_points);
+            const auto eye_dir = orbit_eye_direction(s.yaw, s.pitch);
+            const std::array<float, 3> eye{s.target[0] + eye_dir[0] * s.distance, s.target[1] + eye_dir[1] * s.distance,
+                                           s.target[2] + eye_dir[2] * s.distance};
             for (const auto& mesh : s.mod_model.model.meshes) {
                 if (mesh.sky && !s.show_sky)
                     continue;  // from outside, its sky hides it
@@ -378,7 +387,7 @@ void draw_room(App& app, ImVec2 size) {
                 const float th = t != nullptr ? static_cast<float>(t->height) : 1.0f;
                 auto vertex = [&](const assets::NeutralVertex& v) {
                     PreviewVertex o;
-                    o.position = v.position;
+                    o.position = mesh.sky ? sky.at(v.position, eye, s.distance) : v.position;  // as the game draws it
                     o.normal = v.normal;
                     o.uv = {v.texcoord[0] / tw, v.texcoord[1] / th};
                     o.colour = {v.color[0] / 255.0f, v.color[1] / 255.0f, v.color[2] / 255.0f, v.color[3] / 255.0f};

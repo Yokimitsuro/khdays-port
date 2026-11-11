@@ -518,6 +518,26 @@ std::array<float, 3> orbit_eye_direction(float yaw, float pitch) {
     return {std::cos(p) * std::sin(y), std::sin(p), std::cos(p) * std::cos(y)};
 }
 
+Sky::Sky(const std::vector<std::array<float, 3>>& points) {
+    if (points.empty())
+        return;
+    std::array<float, 3> lo = points.front(), hi = points.front();
+    for (const auto& q : points)
+        for (std::size_t c = 0; c < 3; ++c)
+            lo[c] = std::min(lo[c], q[c]), hi[c] = std::max(hi[c], q[c]);
+    for (std::size_t c = 0; c < 3; ++c)
+        middle_[c] = (lo[c] + hi[c]) * 0.5f;
+    for (const auto& q : points)
+        radius_ = std::max(radius_, std::sqrt((q[0] - middle_[0]) * (q[0] - middle_[0]) +
+                                              (q[1] - middle_[1]) * (q[1] - middle_[1]) +
+                                              (q[2] - middle_[2]) * (q[2] - middle_[2])));
+}
+
+std::array<float, 3> Sky::at(const std::array<float, 3>& p, const std::array<float, 3>& eye, float distance) const {
+    const float k = radius_ > 0.0f ? distance * 15.0f / radius_ : 0.0f;
+    return {eye[0] + (p[0] - middle_[0]) * k, eye[1] + (p[1] - middle_[1]) * k, eye[2] + (p[2] - middle_[2]) * k};
+}
+
 void orbit_move(std::array<float, 3>& target, float yaw, float pitch, float distance, float view_height, bool hovered) {
     if (!hovered || view_height <= 0.0f)
         return;

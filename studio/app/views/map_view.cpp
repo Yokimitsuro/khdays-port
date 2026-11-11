@@ -625,6 +625,20 @@ void draw_room(App& app, ImVec2 size) {
                         mat_mul(on_node ? worlds[static_cast<std::size_t>(j.node)] : j.world, j.inverse_bind);
                 }
             }
+            // where a vertex is drawn as the room is placed (its sky put about the viewer below)
+            const auto drawn_at = [&](const assets::NeutralVertex& v) {
+                auto at = skinned(moved, v);
+                return moving ? placed_point(m.rep.r.place, unplaced_point(m.rep.placed_with, at)) : at;
+            };
+            std::vector<std::array<float, 3>> sky_points;
+            for (const auto& mesh : placed.model.meshes)
+                for (const auto& v : mesh.vertices)
+                    if (mesh.sky && m.show_sky)
+                        sky_points.push_back(drawn_at(v));
+            const Sky sky(sky_points);
+            const auto eye_dir = orbit_eye_direction(m.yaw, m.pitch);
+            const std::array<float, 3> eye{m.target[0] + eye_dir[0] * m.distance, m.target[1] + eye_dir[1] * m.distance,
+                                           m.target[2] + eye_dir[2] * m.distance};
             for (const auto& mesh : placed.model.meshes) {
                 if (mesh.sky && !m.show_sky)
                     continue;  // from outside, its sky hides it
@@ -647,10 +661,10 @@ void draw_room(App& app, ImVec2 size) {
                 const auto offset = khdays::room::scroll_offset(mesh.scroll, frames, tw, th);
                 auto vertex = [&](const assets::NeutralVertex& v) {
                     PreviewVertex o;
-                    o.position = skinned(moved, v);
+                    o.position = drawn_at(v);
+                    if (mesh.sky)
+                        o.position = sky.at(o.position, eye, m.distance);  // as the game draws it
                     o.normal = v.normal;
-                    if (moving)
-                        o.position = placed_point(m.rep.r.place, unplaced_point(m.rep.placed_with, o.position));
                     o.uv = {(v.texcoord[0] + offset[0]) / tw, (v.texcoord[1] + offset[1]) / th};
                     o.colour = {v.color[0] / 255.0f, v.color[1] / 255.0f, v.color[2] / 255.0f, v.color[3] / 255.0f};
                     return o;
