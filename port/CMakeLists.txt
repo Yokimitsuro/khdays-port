@@ -699,6 +699,7 @@ add_executable(khdays-native
     runtime/mods/model_kh2_motions.cpp  # ... a KH2 model's own motions
     runtime/mods/model_own_skeleton.cpp # ... a mod's character's own skeleton
     runtime/mods/model_hands.cpp        # ... a KH2 model's hands and cuffs
+    runtime/mods/model_stance.cpp       # ... its stance on the game's floor
     runtime/mods/room_animation.cpp     # a replaced room's own animation (its glTF's)
     runtime/mods/face.cpp               # a KH2 face's eyes and mouth (TEXA), as KH2 plays them
     runtime/mods/secondary/config.cpp   # mods' models' secondary motion (cloth, cords, hair): its file
@@ -995,7 +996,9 @@ add_test(NAME khdays-secondary-motion COMMAND khdays-secondary-motion-test)
 add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECONDARY_SOURCES}
     ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
     ../assets/src/dds.cpp ../assets/src/image.cpp
-    runtime/mods/models.cpp runtime/mods/face.cpp runtime/mods/room_animation.cpp
+    runtime/mods/models.cpp runtime/mods/model_load.cpp runtime/mods/model_bones.cpp runtime/mods/model_kh2_motions.cpp
+    runtime/mods/model_own_skeleton.cpp runtime/mods/model_hands.cpp runtime/mods/model_stance.cpp
+    runtime/mods/face.cpp runtime/mods/room_animation.cpp
     runtime/mods/secondary/model_link.cpp runtime/mods/secondary/days_environment.cpp
     ../assets/src/animation.cpp ../assets/src/mesh.cpp ../assets/src/gltf.cpp ../assets/src/fbx.cpp
     ../assets/src/filesystem.cpp tools/replay_game_stubs.cpp)

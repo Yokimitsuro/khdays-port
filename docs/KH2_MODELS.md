@@ -115,7 +115,7 @@ model's root space, KH2 centimetres, as `turn_of`: about x, then y, then z) abou
 the point `height` cm over the root, before anything else reads it (`ds_pose`'s
 slot poses, `carry`, the blend); the root motion taken out is turned with it
 (R T⁻¹ R⁻¹) and IKAdjust's world takes the turn as its first step, so the feet still
-find the game's floor (`models.cpp` `pose_on_model`, `taken_of`, `play_track`).
+find the game's floor (`model_kh2_motions.cpp` `pose_on_model`, `taken_of`, `play_track`).
 Xigbar's (B_EX140) stand him on the ceiling, as KH2's fight has him: `0 0 180
 117.5` maps (x, y, z) to (-x, 235 - y, z), his ankles from 220.2 cm to their rest
 14.8. Verified offline on his slots 0, 1, 10 and 11 (the root motion is a
@@ -376,7 +376,7 @@ root's space), to tell whether it needs one.
 `lift <cm>` holds the section's lowest foot `cap · tanh(h / cap)` over where its
 feet stand at the motion's first tick, `h` the height of its root motion then: a
 motion that flies floats about that many centimetres up while its root is up and
-lands as its root comes down (`models.cpp` `lift_by`, a vertical offset each draw,
+lands as its root comes down (`model_kh2_motions.cpp` `lift_by`, a vertical offset each draw,
 kept through a fade as `offset` is). The feet are the ends of bones.txt's `ik ...
 exact` legs, else the skeleton's own (its collision list's). The boss Saix's
 transformation (`016_004`, B_EX160's 81A, slot 232) flies him up: its root motion

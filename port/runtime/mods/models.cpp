@@ -369,7 +369,7 @@ void draw(Model &m)
     if (m.game_scale != 1.0F) {
         const float s = m.game_scale;
         const Mat o = node_move[static_cast<std::size_t>(first)];
-        for (Mat &dg : d)
+        for (Mat &dg : node_move)
             for (std::size_t c = 12; c < 15; ++c)
                 dg[c] = s * dg[c] + (1.0F - s) * o[c];
     }
@@ -477,7 +477,8 @@ void draw(Model &m)
                 if (joint.rides >= 0) {
                     const auto r = static_cast<std::size_t>(joint.rides);
                     const auto by = static_cast<std::size_t>(m.joints[r].node);
-                    const auto bone = point(joint_place[r], m.joints[r].head), node = point(node_move[by], m.node_rest_place[by]);
+                    const auto bone = point(joint_place[r], m.joints[r].head),
+                               node = point(node_move[by], m.node_rest_place[by]);
                     for (std::size_t c = 0; c < 3; ++c)
                         where[c] += bone[c] - node[c];
                 }
@@ -805,8 +806,8 @@ void draw(Model &m)
                 game[static_cast<std::size_t>(c * 4 + r)] = static_cast<float>(fx[c * 3 + r]) / 4096.0F;
         const auto j = line ? static_cast<std::size_t>(m.kh2_weapon[node]) : 0U;
         const Mat at = weapon_sized(
-            node, hand_held             ? carried(node, game)
-                  : !line               ? on_joint(node)
+            node, hand_held ? carried(node, game)
+                  : !line   ? on_joint(node)
                   : own_place(j, node)
                       ? hold(j, node)
                       : thrown(node, khdays::models::attached_frame(hold(j, node), game, weapon_share), game));

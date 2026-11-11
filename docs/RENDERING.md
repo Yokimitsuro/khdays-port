@@ -655,7 +655,7 @@ lowers the whole body in the game's own animations (along the root's up, after t
 spine and before the limbs reach) by the most any `exact` leg needs for its hip to stand
 from its foot, over the leg's length, as far as the game's thigh node from its foot over
 the game's leg: the height of moving the hip toward the foot by what it lacks (never
-raising it; `models.cpp` `lower_hips`), so a hanging leg is matched and one trailing
+raising it; `model_stance.cpp` `lower_hips`), so a hanging leg is matched and one trailing
 behind asks little. The feet stay on the game's, so the knees bend as the game's do.
 Solving for the drop that reaches the wanted distance instead dropped the body to the
 foot's height wherever no drop could reach it, and back: with the pelvis turned under

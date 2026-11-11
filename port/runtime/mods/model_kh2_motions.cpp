@@ -384,8 +384,10 @@ void load_kh2_motions(Model &model, const std::string &path)
             while (ok && words >> r) {
                 if (r == "rotate")
                     ok = static_cast<bool>(words >> by[0] >> by[1] >> by[2]);
+                else if (r == "thrown" && !thrown)
+                    thrown = true;
                 else
-                    ok = r == "thrown" && !thrown && (thrown = true);
+                    ok = false;
             }
             if (!ok) {
                 say("\"" + line +

@@ -247,7 +247,7 @@ void read_settings(Model *model, Loading &loading)
     model->cuff_settings = bones.cuff_settings;
     model->cuff_motion_flaps = bones.cuff_motion_flaps;
     model->setting = setting_named(name, bones.setting);
-    model->limit_lists = named_lists(name, game, bones.limit_shapes);
+    model->limit_lists = named_lists(name, loading.game, bones.limit_shapes);
     model->kept_lists = kept_lists(name, loading.game, bones.keep);
     // a mod's character's [model] scale over its bones file's, whatever its skeleton (as the studio shows it)
     if (loading.character != nullptr && loading.character->model_scale > 0.0F) {
@@ -605,7 +605,7 @@ void place_joints(Model *model, const Loading &loading)
         for (int up = static_cast<int>(j); up >= 0 && up != joint.mix_parent;
              up = model->joints[static_cast<std::size_t>(up)].parent)
             if (const int hand = model->joints[static_cast<std::size_t>(up)].rides;
-                hand >= 0 && !descends(joint.mix_parent, hand)) {
+                hand >= 0 && !descends(*model, joint.mix_parent, hand)) {
                 joint.mix_parent = hand;
                 break;
             }
@@ -816,6 +816,7 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
 {
     namespace assets = khdays::assets;
     const std::string &name = loading.name;
+    const BonesFile &bones = loading.bones;
     auto &mod = loading.mod;
     const std::map<std::uint32_t, int> &joint_of_palette = loading.joint_of_palette;
     using AlphaMode = assets::NeutralMesh::AlphaMode;
@@ -941,10 +942,6 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
         triangles += out.indices.size() / 3;
         model->meshes.push_back(std::move(out));
     }
-    return {vertices, triangles};
-}
-
-// `hide`: the vertices these joints carry most, between those heights at rest, not drawn, and faded back in
     // `hide_mesh`: the file's meshes by number (still its own order here), their triangles dropped and their vertices
     // kept, as `hide` leaves them
     for (const int at : bones.hide_meshes) {
@@ -979,6 +976,10 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             "`limit_shapes <name|prefix*>...`: write which of the game's animations or shapes are its limit; the "
             "meshes stay as out of it",
             name.c_str());
+    return {vertices, triangles};
+}
+
+// `hide`: the vertices these joints carry most, between those heights at rest, not drawn, and faded back in
 // below over `fade` (a gradient into the coat's dark inside). A triangle all hidden is dropped; one in
 // the fade goes to a blended mesh of its own (the same picture), the rest kept as they were: the whole
 // body blended would be drawn translucent, its parts covering each other wrongly.

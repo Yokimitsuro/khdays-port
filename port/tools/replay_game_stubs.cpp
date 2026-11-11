@@ -120,6 +120,36 @@ int khdays_origin_of_ram(u32, const char **, u32 *, u32 *)
     return 0;
 }
 
+// no rooms a mod adds, no characters, and no mods started for the cloth's prewarm: only the model given
+extern "C" int khdays_rooms_model(const char *, char *, int)
+{
+    return 0;
+}
+
+extern "C" const char *khdays_character_base_hand(int, int)
+{
+    return nullptr;
+}
+
+extern "C" int khdays_mods_started_count(void)
+{
+    return 0;
+}
+
+extern "C" const char *khdays_mods_started_path(int)
+{
+    return nullptr;
+}
+
+// no KH2 Dark Corridors offline: the replay draws no rooms' effects
+extern "C" int khdays_kh2_corridors_begin(const void *, const void *)
+{
+    return 0;
+}
+
+extern "C" void khdays_kh2_corridors_node(unsigned) {}
+extern "C" void khdays_kh2_corridors_shape(void) {}
+
 // --- the game's memory, clock and log: none of the game's own, one VBlank a draw, the log to stderr off ------------
 
 unsigned char *khdays_window = no_window;
