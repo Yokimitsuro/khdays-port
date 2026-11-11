@@ -70,8 +70,13 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "remastered" / "effect" / "texcommon.dpd").mkdir(parents=True)
             (kh2 / "remastered" / "effect" / "texcommon.dpd" / "-0.dds").write_bytes(b"resident page 0")
             (Path(d) / "kh2.exe").write_bytes(b"MZ")
-            # what the reaction commands read: the player's skeleton, the commands, their names in one language
+            # what the reaction commands read: the player's skeleton, his keyblade and its effects' HD page, the
+            # commands, their names in one language
             (kh2 / "original" / "obj" / "P_EX100.mdlx").write_bytes(b"the player")
+            (kh2 / "original" / "obj" / "W_EX010.mdlx").write_bytes(b"the keyblade")
+            (kh2 / "original" / "obj" / "W_EX010.a.us").write_bytes(b"its trail")
+            (kh2 / "remastered" / "obj" / "W_EX010.a.us").mkdir(parents=True)
+            (kh2 / "remastered" / "obj" / "W_EX010.a.us" / "-0.dds").write_bytes(b"trail's page 0")
             (kh2 / "original" / "03system.bin").write_bytes(b"commands")
             (kh2 / "original" / "00battle.bin").write_bytes(b"attacks")
             (kh2 / "original" / "00objentry.bin").write_bytes(b"entries")
@@ -107,6 +112,9 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "effect" / "texcommon.dpd").read_bytes(), b"resident")
             self.assertEqual((mod / "kh2" / "fx" / "texcommon" / "-0.dds").read_bytes(), b"resident page 0")
             self.assertEqual((mod / "kh2" / "obj" / "P_EX100.mdlx").read_bytes(), b"the player")
+            self.assertEqual((mod / "kh2" / "obj" / "W_EX010.mdlx").read_bytes(), b"the keyblade")
+            self.assertEqual((mod / "kh2" / "obj" / "W_EX010.a.us").read_bytes(), b"its trail")
+            self.assertEqual((mod / "kh2" / "fx" / "W_EX010" / "-0.dds").read_bytes(), b"trail's page 0")
             self.assertEqual((mod / "kh2" / "03system.bin").read_bytes(), b"commands")
             self.assertEqual((mod / "kh2" / "00battle.bin").read_bytes(), b"attacks")
             self.assertEqual((mod / "kh2" / "00objentry.bin").read_bytes(), b"entries")
@@ -131,11 +139,20 @@ class Kh2EnemiesTest(unittest.TestCase):
         # a motion whose trigger 8 plays (200, 21), an effect's element playing 105 (bank 0), another none (-1)
         attributes = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 30, 8, 4, 200, 21, 0, 0)
         mset = bar([(17, b"00A", bar([(9, b"00A", b"motion"), (0x10, b"00A", attributes)]))])
+        self.assertEqual(kh2_enemies.motion_sounds(mset), {200021})
+        # a slot of the player's motions (type 0x14): his body's part plays (200, 24), his weapon's the keyblade's (500,
+        # 49); a part of no size repeats another's
+        body = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 16, 8, 4, 200, 24, 0, 0)
+        weapon = struct.pack("<BBH", 0, 1, 0) + struct.pack("<HBB4h", 70, 8, 4, 500, 49, 0, 0)
+        parts = bar([(0x11, b"0010", bar([(9, b"AA01", b"motion"), (0x10, b"AA01", body)])),
+                     (0x11, b"0011", bar([(9, b"AA01", b"motion"), (0x10, b"AA01", weapon)])),
+                     (0x11, b"0012", b"")])
+        mset = bar([(17, b"00A", bar([(9, b"00A", b"motion"), (0x10, b"00A", attributes)])), (0x14, b"AA01", parts)])
         elements = [struct.pack("<HHI", 0, 0, 0x40000000).ljust(0x18, b"\0") + struct.pack("<i", 105)]
         elements.append(struct.pack("<HHI", 1, 1, 0x40000000).ljust(0x18, b"\0") + struct.pack("<i", -1))
         records = b"".join(e.ljust(0x50, b"\0") for e in elements)
         pax = b"PAX_" + struct.pack("<3I", 0, len(elements), 0x10 + len(records)) + records
-        self.assertEqual(kh2_enemies.motion_sounds(mset), {200021})
+        self.assertEqual(kh2_enemies.motion_sounds(mset), {200021, 200024, 500049})
         self.assertEqual(kh2_enemies.effect_sounds(bar([(0x12, b"m_ex", pax)])), {105})
         mono = kh2_scd_test.adpcm_format(1, 4, 8)
         recording = (1, 48000, 12, mono, kh2_scd_test.block([0], [16], [100], [50], [1, 2]))

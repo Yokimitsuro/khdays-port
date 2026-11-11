@@ -514,6 +514,10 @@ struct Kh2Actor {
     // a KH2 enemy's motion for KH2's player it plays while the enemy holds it (play_held), on KH2's player's bones
     std::unique_ptr<khdays::assets::kh2::MotionPlayer> held_player;
     const khdays::assets::kh2::MotionSkeleton *held_skeleton = nullptr;
+    // the held motion it last drew (HeldMotion::started) and the pose shown before it began (as `shown`): the new one
+    // blends from it while 1:29's blend runs
+    unsigned held_started = 0;
+    std::vector<Mat> held_blend_from;
     unsigned drawn_frame = 0;     // the game frame of its last draw (actor_of)
     std::uint64_t draws = 1;      // from 1: no animation's `seen` follows it, so a first draw is a start
     std::map<std::string, Kh2Animation> animations; // by game animation

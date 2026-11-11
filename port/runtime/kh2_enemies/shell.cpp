@@ -165,6 +165,13 @@ struct Element final {
     float start = 0.0F;
     int sound = 0;
     std::array<float, 3> place{}, turn{}, size{1.0F, 1.0F, 1.0F};
+    // its two points (flags 0x10000; KH2's ryj::PAX::MANAGER keeps them and get_obj_data sets them each tick, the
+    // swing trails' base and tip): + 0x40 and + 0x42 their bones, + 0x44 and + 0x48 how far along each bone's x in its
+    // lengths (YS::OBJ::get_bone_pos: the bone's length is its skeleton's scale w); + 0x4c set, the place (+ 0x1c) and
+    // the turn (+ 0x28) are offsets added on those bones
+    bool points = false, point_offsets = false;
+    std::array<int, 2> point_bone{};
+    std::array<float, 2> point_along{};
 };
 
 // An enemy kind's files, read once: its script (the .mdlx's AI, BAR entry 3), its motions and skeleton, its shapes.
@@ -242,6 +249,12 @@ std::map<int, Element> pax_elements(const std::vector<std::uint8_t> &pax)
             el.turn[std::size_t(k)] = f32(r + 0x28 + 4 * std::size_t(k));
             el.size[std::size_t(k)] = f32(r + 0x34 + 4 * std::size_t(k));
         }
+        if ((el.flags & 0x10000u) != 0) {
+            el.points = true;
+            el.point_bone = {int(u32(r + 0x40) & 0xffffu), int(u32(r + 0x40) >> 16)};
+            el.point_along = {f32(r + 0x44), f32(r + 0x48)};
+            el.point_offsets = (u32(r + 0x4c) & 0xffu) != 0;
+        }
         out[int(u32(r) >> 16)] = el;
     }
     if (records == 0)
@@ -262,15 +275,22 @@ int trigger_sound(const kh2::MotionAttributes::Trigger &t)
     return std::int16_t(t.params[0]) * 1000 + std::int16_t(t.params[1]);
 }
 
-// The kind's sounds (its motions' triggers 8, its elements'), each the mod's kh2/se/<id>.wav, decoded once
+// The kind's sounds (its motions' triggers 8 -- those it makes the player play too, his body's and his weapon's: the
+// keyblade's bank 500 -- and its elements'), each the mod's kh2/se/<id>.wav, decoded once
 void read_sounds(KindFiles &k, const fs::path &folder)
 {
     std::set<int> ids;
-    for (std::size_t slot = 0; slot < k.set->slots(); ++slot)
-        if (const kh2::MotionAttributes *attr = k.set->attributes(slot))
+    const auto add = [&ids](const kh2::MotionAttributes *attr) {
+        if (attr != nullptr)
             for (const auto &t : attr->triggers)
                 if (const int id = trigger_sound(t); id > 0)
                     ids.insert(id);
+    };
+    for (std::size_t slot = 0; slot < k.set->slots(); ++slot) {
+        add(k.set->attributes(slot));
+        for (const auto &v : k.set->variants(slot))
+            add(v.attributes.get());
+    }
     for (const auto &[number, el] : k.fx_elements)
         if (el.sound > 0)
             ids.insert(el.sound);
@@ -526,6 +546,10 @@ struct Enemy final {
         float age = 0.0F;
         bool sounded = false;
         unsigned player = 0; // cast by the motion of its set a player it holds plays (his object): on his bones
+        // on his weapon (the keyblade in his hand: its bones are its element's), and the files its element is of (none:
+        // the enemy's kind's; KH2's keyblade's, W_EX010.a.us, for its swing's trail, YS::WEAPON::locus)
+        bool on_weapon = false;
+        const KindFiles *files = nullptr;
         std::uint32_t handle = 0; // what the scripts know it by (1:149, 0:44)
         kh2::EffectMatrix last{}; // that one's place when last drawn, kept once he is let go
         bool placed = false;
@@ -653,8 +677,20 @@ struct Held final {
     Vec3 move{};                  // a script's move of him this tick (1:89), KH2's cm
     Vec3 steer{};                 // a script's steering of him, each tick till another (1:111), KH2's cm
     bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
+    // the blend 1:29 asked for (its fourth value: YS::MOTION::start_motion's blend, above 2 a blend): its ticks and
+    // those left, the motion held at its first frame meanwhile, its frame's triggers at the blend's end (add_time)
+    float blend = 0.0F, blend_left = 0.0F;
+    unsigned started = 0;      // which motion this is (a new one each 1:29): his model blends from the pose before
+    std::uint32_t trail = 0;   // his weapon's swing's trail running (its handle), 0 none
 };
 std::map<unsigned, Held> held; // by the Days player's object
+// each held player's weapon as his KH2 model drew it (held_weapon_drawn: its bones, KH2's cm in his motion's space, y
+// up) and the frame it did, by his object
+struct DrawnWeapon final {
+    std::vector<kh2::Mat4> bones;
+    unsigned frame = 0;
+};
+std::map<unsigned, DrawnWeapon> drawn_weapons;
 // the states' names shouted this frame (1:90; FUN_1403cacd0's list at DAT_142a23d50), each with its shouter's handle and
 // its delay: sent to every enemy at the next frame's first tick (FUN_1403c9d40, once a frame)
 struct Shout final {
@@ -744,7 +780,8 @@ unsigned days_object(const Object &o)
     return 0;
 }
 
-std::uint32_t cast(Enemy &e, int number, unsigned player = 0);
+std::uint32_t cast(Enemy &e, int number, unsigned player = 0, bool on_weapon = false,
+                   const KindFiles *files = nullptr);
 kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Element &el);
 void sound(const Enemy &e, int id);
 
@@ -1191,7 +1228,7 @@ public:
         return best;
     }
 
-    bool player_motion(Object &o, Actor &by, int slot, float frame) override;
+    bool player_motion(Object &o, Actor &by, int slot, float blend) override;
     void player_own_motion(Object &o, int id) override;
     void player_place(Object &o, const Vec3 &place) override
     {
@@ -1624,7 +1661,53 @@ const Command *command(int id)
 struct PlayerFiles final {
     std::shared_ptr<const kh2::MotionSkeleton> skeleton;
     std::vector<Shape> spheres;
+    // his keyblade (the mod's kh2/obj/W_EX010.mdlx and .a.us: the Kingdom Key): its skeleton, which the enemies' motions
+    // for his weapon ('0011') are made for, in its own axes on his bone `hand`; its effects (its swing's trail)
+    std::shared_ptr<const kh2::MotionSkeleton> weapon;
+    int hand = -1;
+    KindFiles weapon_fx;
 };
+
+// The bone KH2's player holds his weapon on: 00objentry.bin's P_EX100 record's + 7 (its weapon joint) names a
+// character of 03system.bin's "sklt" (a u32 kind, a u32 count, then 8 bytes each: a u32 character, u16 the primary
+// weapon's bone, u16 the second's: OpenKH's 03system page); his primary's bone (178), -1 when either file lacks it
+int player_hand_bone()
+{
+    const fs::path kh2 = u8(mod().folder) / "kh2";
+    const std::vector<std::uint8_t> entries = read_file(kh2 / "00objentry.bin");
+    std::uint32_t count = 0;
+    if (entries.size() >= 8)
+        std::memcpy(&count, entries.data() + 4, 4);
+    int character = -1;
+    for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= entries.size() && character < 0; ++i) {
+        const std::uint8_t *r = entries.data() + 8 + 96 * std::size_t(i);
+        const char *n = reinterpret_cast<const char *>(r + 8);
+        if (std::string(n, strnlen(n, 32)) == "P_EX100")
+            character = r[7];
+    }
+    if (character < 0)
+        return -1;
+    const std::vector<std::uint8_t> sys = read_file(kh2 / "03system.bin");
+    try {
+        for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size()))
+            if (e.name == "sklt" && e.size >= 8) {
+                std::uint32_t n = 0;
+                std::memcpy(&n, sys.data() + e.offset + 4, 4);
+                for (std::uint32_t i = 0; i < n && 8 + 8 * std::size_t(i + 1) <= e.size; ++i) {
+                    const std::uint8_t *s = sys.data() + e.offset + 8 + 8 * std::size_t(i);
+                    std::uint32_t who = 0;
+                    std::uint16_t bone = 0;
+                    std::memcpy(&who, s, 4);
+                    std::memcpy(&bone, s + 4, 2);
+                    if (int(who) == character)
+                        return bone != 0xffff ? int(bone) : -1;
+                }
+            }
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: the mod's kh2/03system.bin cannot be read (%s)", x.what());
+    }
+    return -1;
+}
 
 const PlayerFiles &player_files()
 {
@@ -1646,6 +1729,22 @@ const PlayerFiles &player_files()
         for (const Shape &s : read_shapes(mdlx))
             if (s.kind == 0x302 && s.bone != kNoBone)
                 files.spheres.push_back(s);
+        const std::vector<std::uint8_t> weapon = read_file(u8(mod().folder) / "kh2" / "obj" / "W_EX010.mdlx");
+        try {
+            if (!weapon.empty())
+                files.weapon =
+                    std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(weapon.data(), weapon.size()));
+        } catch (const std::exception &x) {
+            khdays_log("kh2 enemies: the mod's kh2/obj/W_EX010.mdlx cannot be read (%s)", x.what());
+        }
+        files.hand = player_hand_bone();
+        files.weapon_fx.name = "W_EX010";
+        if (files.weapon && files.skeleton && files.hand >= 0 && std::size_t(files.hand) < files.skeleton->joints.size())
+            read_effects(files.weapon_fx, u8(mod().folder));
+        else
+            khdays_log("kh2 enemies: no KH2 keyblade (the mod's kh2/obj/W_EX010.mdlx, its 00objentry.bin and "
+                       "03system.bin's weapon bone: %d): a held player's swings draw no trail",
+                       files.hand);
     }
     return files;
 }
@@ -1692,9 +1791,15 @@ void let_go(unsigned object, const char *why)
     const auto h = held.find(object);
     if (h == held.end())
         return;
-    for (auto &[days, e] : enemies)
+    for (auto &[days, e] : enemies) {
         if (e->carrier == object)
             e->carrier = 0;
+        // his weapon's swing ends with the motion (his own has no range 12): its trail closes (loop_end)
+        for (Enemy::Running &r : e->fx)
+            if (r.on_weapon && r.player == object && r.handle == h->second.trail)
+                r.fx->stop();
+    }
+    drawn_weapons.erase(object);
     if (const auto o = players.find(object); o != players.end() && o->second)
         o->second->set_bits(field::kStatus, bit::kOtherMotion, false);
     if (tracing())
@@ -1702,7 +1807,12 @@ void let_go(unsigned object, const char *why)
     held.erase(h);
 }
 
-bool Field::player_motion(Object &o, Actor &by, int slot, float frame)
+// 1:29 (YS::trap_obj_motion_capture -> YS::MOTION::capture -> _capture): the motion of the enemy's set for the player,
+// always from its first frame, `blend` its blend (YS::MOTION::start_motion(binarc, blend, 0); the PS3 build's): above
+// 2 the motion waits that many ticks while his pose blends into its first frame (start_blend; add_time then plays its
+// first frame's triggers, exec_trigger(start, -1)), else it starts at once with them (Rising Sun's 8: its AB50's twelve
+// lights on his limbs at frame 8 were never reached when 8 was read as the frame to start from)
+bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
 {
     const unsigned object = days_object(o);
     const auto it = by_actor.find(&by);
@@ -1738,20 +1848,23 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float frame)
     for (const auto &v : set.variants(std::size_t(slot)))
         if (h.weapon == nullptr && v.name == "0011" && v.own && (v.attributes || v.motion))
             h.weapon = &v;
-    h.time = std::clamp(frame, 0.0F, body->motion->length_ticks());
+    static unsigned motions_started = 0;
+    h.started = ++motions_started;
+    h.time = 0.0F;
+    h.blend = h.blend_left = blend > 2.0F ? blend : 0.0F;
     h.ended = false;
     h.offered = -1;
     h.taken.clear();
     h.struck.clear();
-    h.cued = h.time > 0.0F ? h.time : -1.0F;
+    h.cued = -1.0F; // its first frame's triggers too (exec_trigger(start, -1))
     o.set_u32(field::kMotion, std::uint32_t(slot));
     o.set_u32(field::kMotionNow, std::uint32_t(slot));
     o.set_bits(field::kStatus, bit::kMotionEnded, false);
     o.set_bits(field::kStatus, bit::kOtherMotion, true);
     if (tracing())
-        khdays_log("kh2 enemies: %08x %s player %08x: %s's motion %d (%s, %s) from %.1f, %.1f long", h.enemy,
+        khdays_log("kh2 enemies: %08x %s player %08x: %s's motion %d (%s, %s), blend %.1f, %.1f long", h.enemy,
                    fresh ? "takes" : "keeps", object, it->second->kind->name.c_str(), slot, set.name(std::size_t(slot)).c_str(),
-                   body->name.c_str(), double(frame), double(body->motion->length_ticks()));
+                   body->name.c_str(), double(blend), double(body->motion->length_ticks()));
     return true;
 }
 
@@ -1949,13 +2062,23 @@ void event_point(const Playing &p, const std::array<float, 3> &k, float out[3])
 // A KH2 tick of a player its enemy holds: its motion on (its root's travel turned by its yaw, as Actor::step), held at
 // its end (the ended bit its script waits on) or looped; its ranges now (20 a reaction command offered when the one
 // it follows is on -- range 26's -- 27 not to be hit), its triggers passed (1 the enemy's effect, 8 its sound), its
-// weapon's attacks.
+// weapon's attacks, sounds and swing's trail.
+void weapon_trail(Enemy &e, unsigned object, Held &h, bool swing);
 void hold_tick(Enemy &e, unsigned object, Held &h)
 {
     const kh2::Motion &m = *h.body->motion;
     const float length = m.length_ticks();
     const bool loops = m.loop_from() < m.end() && m.loop_ticks() < length;
     const Vec3 was = h.place; // where this tick's moves start: the room's walls stop them (below)
+    // 1:29's blend (YS::MOTION::add_time while + 0x34 is set): the blend's ticks go by with the motion at its first
+    // frame, no travel and no triggers; at its last tick that frame's triggers (exec_trigger(start, -1)), the motion on
+    // from the next
+    bool still = false;
+    if (h.blend_left > 0.0F) {
+        h.blend_left = std::max(0.0F, h.blend_left - 1.0F);
+        still = true;
+    }
+    const bool blending = h.blend_left > 0.0F;
     const float t0 = h.time;
     float t1 = t0 + 1.0F;
     const auto root = [&m](float at) {
@@ -1963,7 +2086,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         return Vec3{r[12], r[13], r[14]};
     };
     Vec3 model{};
-    if (!h.ended) {
+    if (!h.ended && !still) {
         const Vec3 a = root(t0), b = root(std::min(t1, length));
         for (int i = 0; i < 3; ++i)
             model[std::size_t(i)] = b[std::size_t(i)] - a[std::size_t(i)];
@@ -2076,7 +2199,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         }
         std::uint32_t passed = 0, ai_ranges = 0;
         for (const auto &tr : attr->triggers) {
-            if (float(tr.frame) <= h.cued || float(tr.frame) > h.time)
+            if (blending || float(tr.frame) <= h.cued || float(tr.frame) > h.time)
                 continue;
             if (tr.id == 1 && !tr.params.empty())
                 cast(e, std::int16_t(tr.params[0]), object);
@@ -2111,9 +2234,28 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                            "hit's %d)",
                            object, e.days, atkp, power, e.blow, e.days_damage);
         }
+    // his weapon's own triggers (8 its sounds: the keyblade's bank 500, Quick Blade's swish; 1 an effect of the enemy's
+    // on the keyblade, as YS::MOTION::_Capture gives both parts the capturer's PAX) and its swing (range 12, + 0x20 bit
+    // 11: its trail, YS::WEAPON::locus)
+    bool swing = false;
+    if (h.weapon != nullptr && h.weapon->attributes) {
+        for (const auto &tr : h.weapon->attributes->triggers) {
+            if (blending || float(tr.frame) <= h.cued || float(tr.frame) > h.time)
+                continue;
+            if (tr.id == 1 && !tr.params.empty())
+                cast(e, std::int16_t(tr.params[0]), object, true);
+            else if (const int id = trigger_sound(tr); id > 0)
+                sound(e, id);
+        }
+        for (const auto &r : h.weapon->attributes->ranges)
+            if (r.id == 12 && in(r))
+                swing = true;
+    }
+    weapon_trail(e, object, h, swing && !blending);
     if (h.own_queued && h.ended) // his own motion asked for: taken at this one's end (Rising Sun's AB52)
         h.idle = true;
-    h.cued = h.time;
+    if (!blending)
+        h.cued = h.time;
     if (const auto o = players.find(object); o != players.end() && o->second) {
         o->second->set_place(h.place);
         o->second->set_yaw(h.yaw);
@@ -2283,30 +2425,59 @@ void sound(const Enemy &e, int id)
 }
 
 // Element `number` of the kind's effects started on the enemy (`player`: cast by the motion of its set that player
-// plays in its hands, whose bones -- KH2's player's -- its element's are); its handle, 0 none
-std::uint32_t cast(Enemy &e, int number, unsigned player)
+// plays in its hands, whose bones -- KH2's player's, his weapon's when `on_weapon` -- its element's are; `files` the
+// effects it is of, null the kind's); its handle, 0 none
+std::uint32_t cast(Enemy &e, int number, unsigned player, bool on_weapon, const KindFiles *files)
 {
     static std::uint32_t next_handle = 0;
-    const KindFiles &k = *e.kind;
+    const KindFiles &k = files != nullptr ? *files : *e.kind;
     const auto it = k.fx_elements.find(number);
-    if (it == k.fx_elements.end() || it->second.effect >= k.fx.size())
+    if (it == k.fx_elements.end() || it->second.effect >= k.fx.size() || it->second.effect >= k.fx_pages.size())
         return 0;
     try {
         Enemy::Running r;
         r.fx = std::make_unique<kh2::EffectInstance>(k.fx[it->second.effect], it->second.emitter, e.fx_seed++);
         r.element = &it->second;
         r.player = player;
+        r.on_weapon = on_weapon;
+        r.files = files;
         r.handle = ++next_handle != 0 ? next_handle : ++next_handle;
         const std::uint32_t handle = r.handle;
         e.fx.push_back(std::move(r));
         if (tracing())
-            khdays_log("kh2 enemies: %08x casts element %d (effect %zu, emitter %zu, bone %d, sound %d)", e.days,
-                       number, it->second.effect, it->second.emitter, it->second.bone, it->second.sound);
+            khdays_log("kh2 enemies: %08x casts %s's element %d (effect %zu, emitter %zu, bone %d, sound %d%s)", e.days,
+                       k.name.c_str(), number, it->second.effect, it->second.emitter, it->second.bone,
+                       it->second.sound, on_weapon ? ", on the player's weapon" : player != 0 ? ", on the player" : "");
         return handle;
     } catch (const std::exception &x) {
         khdays_log("kh2 enemies: %s's effect %d cannot be played (%s)", k.name.c_str(), number, x.what());
     }
     return 0;
+}
+
+// The element of KH2's keyblade's effects YS::WEAPON::locus starts: its swing's trail (W_EX010.a.us's 10: the swing
+// trail's command 0xc8 between its two points, 0.65 and 3.7 times its bone 2's length out along the blade)
+constexpr int kSwingTrail = 10;
+
+// A held player's weapon's swing (YS::WEAPON::locus, each tick of his weapon): its trail started while his weapon's
+// motion swings (its range 12) and none runs, closed (ryj::EFFECT::loop_end: its layers end their loops) once it stops
+// swinging; one that has ended forgotten
+void weapon_trail(Enemy &e, unsigned object, Held &h, bool swing)
+{
+    if (h.trail == 0) {
+        if (swing)
+            h.trail = cast(e, kSwingTrail, object, true, &player_files().weapon_fx);
+        return;
+    }
+    const auto r = std::find_if(e.fx.begin(), e.fx.end(), [&h](const Enemy::Running &x) { return x.handle == h.trail; });
+    if (r != e.fx.end() && !r->fx->done()) {
+        if (!swing) {
+            r->fx->stop();
+            h.trail = 0;
+        }
+    } else {
+        h.trail = 0;
+    }
 }
 
 // KH2's ground class's events (FUN_1403b7920, FUN_1403b79d0, reached through tables KH2 builds running): trigger 13
@@ -2800,9 +2971,6 @@ kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Elemen
     return out;
 }
 
-// An element a held player's motion cast, in its enemy's effects' space: on KH2's player's bone (P_EX100's skeleton) in
-// the pose his motion has now, his model placed and turned where he stands from the enemy (both in KH2's world, y
-// down; a model's y up, its turn Actor's). False without KH2's player's skeleton.
 // A held player's pose now: his motion's (P_EX100's skeleton), empty without it
 std::vector<kh2::Mat4> held_pose(const Held &h)
 {
@@ -2815,22 +2983,85 @@ std::vector<kh2::Mat4> held_pose(const Held &h)
     return pose_at(*player, *h.body->motion, h.time);
 }
 
-bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMatrix &out)
+// A held player's weapon now, in his model's space (KH2's cm, y up, his root's travel taken out): the bones his KH2
+// model drew it with this frame or the last (held_weapon_drawn: its weapon's in its own hand), else KH2's keyblade's
+// bones (W_EX010's skeleton) in his weapon's motion's pose ('0011', in the keyblade's own axes: its grip barely moves)
+// on his hand's bone (00objentry.bin and 03system.bin's sklt: P_EX100's 178), as KH2 attaches its weapon object; empty
+// without the keyblade's files or a weapon motion
+std::vector<kh2::Mat4> held_weapon_pose(const Held &h, unsigned object)
 {
-    const std::vector<kh2::Mat4> pose = held_pose(h);
-    if (pose.empty())
-        return false;
-    const kh2::EffectMatrix own = element_world(pose, el);
-    // his effects' axes (his model's, y down) to the enemy's, a point at a time: the map is affine
+    if (const auto d = drawn_weapons.find(object);
+        d != drawn_weapons.end() && !d->second.bones.empty() && khdays_link_frame() - d->second.frame <= 2u)
+        return d->second.bones;
+    const PlayerFiles &files = player_files();
+    if (!files.weapon || files.hand < 0 || h.weapon == nullptr || !h.weapon->motion)
+        return {};
+    const std::vector<kh2::Mat4> body = held_pose(h);
+    if (std::size_t(files.hand) >= body.size())
+        return {};
+    static std::unique_ptr<kh2::MotionPlayer> player;
+    if (!player)
+        player = std::make_unique<kh2::MotionPlayer>(*files.weapon);
+    std::vector<kh2::Mat4> out;
+    try {
+        out = pose_at(*player, *h.weapon->motion, h.time);
+    } catch (const std::exception &x) { // a weapon motion made for another skeleton
+        if (tracing())
+            khdays_log("kh2 enemies: the held player's weapon motion cannot be played on W_EX010 (%s)", x.what());
+        return {};
+    }
+    const kh2::Mat4 &hand = body[std::size_t(files.hand)];
+    for (kh2::Mat4 &bone : out) { // the hand's frame, then the bone's in it (row vectors: the bone's, then the hand's)
+        float on[16];
+        row_matrix_mul(bone.data(), hand.data(), on);
+        std::copy(on, on + 16, bone.begin());
+    }
+    return out;
+}
+
+// An element's two points (Element::points: a swing trail's base and tip) in its model's effects' space (KH2's axes, y
+// down, cm, as element_world's): each on its bone in `pose` (KH2's model space, y up), its `along` times the bone's
+// length (its skeleton's scale w) out along the bone's x (YS::OBJ::get_bone_pos), with its offset turned by the bone when
+// the element has them (+ 0x4c; ryj::PAX::MANAGER::get_obj_data); none when a bone is not the pose's
+std::vector<kh2::EffectPoint> element_points(const std::vector<kh2::Mat4> &pose, const kh2::MotionSkeleton &skeleton,
+                                             const Element &el)
+{
+    std::vector<kh2::EffectPoint> out;
+    for (int i = 0; i < 2; ++i) {
+        const int b = el.point_bone[std::size_t(i)];
+        if (b < 0 || std::size_t(b) >= pose.size() || std::size_t(b) >= skeleton.joints.size())
+            return {};
+        const kh2::Mat4 &m = pose[std::size_t(b)]; // column-major: its x axis m[0..2], its place m[12..14]
+        const float along = el.point_along[std::size_t(i)] * skeleton.joints[std::size_t(b)].scale[3];
+        const std::array<float, 3> &offset = i == 0 ? el.place : el.turn;
+        kh2::EffectPoint p;
+        for (int k = 0; k < 3; ++k) {
+            float v = m[std::size_t(k)] * along + m[std::size_t(12 + k)];
+            if (el.point_offsets)
+                v += m[std::size_t(k)] * offset[0] + m[std::size_t(4 + k)] * offset[1] + m[std::size_t(8 + k)] * offset[2];
+            p.place[std::size_t(k)] = k == 1 ? -v : v; // y up -> KH2's y down
+        }
+        out.push_back(p);
+    }
+    return out;
+}
+
+// A held player's model's effects' space (his model's axes, y down, cm; his feet at 0) to his enemy's: his model placed
+// and turned where he stands from the enemy (both in KH2's world, y down; a model's y up, its turn Actor's), half a
+// turn more about the up as his model is drawn (the enemy's motions for him are made in the enemy's frame: play_held
+// turns them so; without it his effects stood mirrored on him, his keyblade's trail at his other hand). An affine map,
+// row vectors (a point times it)
+void held_map(const Enemy &e, const Held &h, float map[16])
+{
     const Vec3 at = e.actor->place();
     const float yaw = e.actor->yaw();
     const auto to_enemy = [&](const Vec3 &r) {
-        const Vec3 t = turned({r[0], 0.0F, r[2]}, h.yaw);
+        const Vec3 t = turned({-r[0], 0.0F, -r[2]}, h.yaw);
         const Vec3 d = {h.place[0] + t[0] - at[0], h.place[1] + r[1] - at[1], h.place[2] + t[2] - at[2]};
         const Vec3 m = turned({d[0], 0.0F, d[2]}, -yaw);
         return Vec3{m[0], d[1], m[2]};
     };
-    float map[16] = {};
+    std::fill(map, map + 16, 0.0F);
     const Vec3 origin = to_enemy({0.0F, 0.0F, 0.0F});
     for (int r = 0; r < 3; ++r) {
         Vec3 unit{};
@@ -2842,7 +3073,31 @@ bool held_world(const Enemy &e, const Held &h, const Element &el, kh2::EffectMat
     for (int c = 0; c < 3; ++c)
         map[12 + c] = origin[std::size_t(c)];
     map[15] = 1.0F;
+}
+
+// An element a held player's motion cast, in its enemy's effects' space: on KH2's player's bone (P_EX100's skeleton) in
+// the pose his motion has now -- his weapon's (KH2's keyblade's) for one on his weapon -- and its two points when it
+// has them (`points`, left as they are otherwise). False without KH2's player's skeleton (or the keyblade's).
+bool held_world(const Enemy &e, const Held &h, const Enemy::Running &r, kh2::EffectMatrix &out,
+                std::vector<kh2::EffectPoint> *points)
+{
+    const std::vector<kh2::Mat4> pose = r.on_weapon ? held_weapon_pose(h, r.player) : held_pose(h);
+    if (pose.empty())
+        return false;
+    float map[16];
+    held_map(e, h, map);
+    const kh2::EffectMatrix own = element_world(pose, *r.element);
     row_matrix_mul(own.data(), map, out.data());
+    const kh2::MotionSkeleton *skeleton = r.on_weapon ? player_files().weapon.get() : player_skeleton();
+    if (points != nullptr && r.element->points && skeleton != nullptr) {
+        *points = element_points(pose, *skeleton, *r.element);
+        for (kh2::EffectPoint &p : *points) {
+            const std::array<float, 3> was = p.place;
+            for (int c = 0; c < 3; ++c)
+                p.place[std::size_t(c)] =
+                    was[0] * map[c] + was[1] * map[4 + c] + was[2] * map[8 + c] + map[12 + c];
+        }
+    }
     return true;
 }
 
@@ -2881,7 +3136,7 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
 {
     const float across = std::sqrt(view[12] * view[12] + view[14] * view[14]);
     e.pan = across > 1e-6F && std::isfinite(across) ? std::clamp(view[12] / across, -1.0F, 1.0F) : 0.0F;
-    if (e.fx.empty() || e.kind->fx_pages.empty())
+    if (e.fx.empty())
         return;
     const unsigned now = khdays_link_frame();
     const unsigned per_frame = unsigned(std::max(1L, std::lround(khdays_link_frame_seconds() * 60.0)));
@@ -2891,9 +3146,11 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
     const kh2::EffectCamera cam = effect_camera(view, projection, units);
     kh2::EffectCamera placed = cam;
     for (Enemy::Running &r : e.fx) {
+        // its two points (a swing trail's base and tip), where its element has them: on its bones now
+        std::vector<kh2::EffectPoint> points;
         if (r.player != 0) {
             if (const auto h = held.find(r.player);
-                h != held.end() && h->second.enemy == e.days && held_world(e, h->second, *r.element, r.last))
+                h != held.end() && h->second.enemy == e.days && held_world(e, h->second, r, r.last, &points))
                 r.placed = true;
             if (!r.placed) { // no KH2 player's skeleton: at the enemy's root
                 Element at = *r.element;
@@ -2914,7 +3171,11 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             placed.world = element_world(e.pose, at);
         } else {
             placed.world = element_world(e.pose, *r.element);
+            if (r.element->points && e.kind->skeleton) // the Magnum Loader's blades', the Neoshadow's claws' trails
+                points = element_points(e.pose, *e.kind->skeleton, *r.element);
         }
+        if (!points.empty())
+            r.fx->set_points(std::move(points));
         for (unsigned t = 0; t < ticks; ++t) {
             const bool last = t + 1 == ticks;
             if (last)
@@ -2927,8 +3188,9 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             r.fx->tick(placed, last ? &r.draws : nullptr);
             r.age += 1.0F;
         }
-        if (r.element->effect < e.kind->fx_pages.size())
-            khdays::kh2_fx::submit(r.draws, units, *e.kind->fx_pages[r.element->effect]);
+        const KindFiles &files = r.files != nullptr ? *r.files : *e.kind;
+        if (r.element->effect < files.fx_pages.size())
+            khdays::kh2_fx::submit(r.draws, units, *files.fx_pages[r.element->effect]);
     }
     for (std::size_t i = e.fx.size(); i-- > 0;)
         if (e.fx[i].fx->done() || (e.fx[i].end_age >= 0.0F && e.fx[i].age >= e.fx[i].end_age))
@@ -3927,6 +4189,20 @@ bool khdays::kh2_enemies::held_motion(unsigned node, HeldMotion &out)
     out.motion = h->second.body->motion.get();
     out.weapon = h->second.weapon != nullptr ? h->second.weapon->motion.get() : nullptr;
     out.ticks = h->second.time;
+    out.started = h->second.started;
+    out.share = h->second.blend > 0.0F ? 1.0F - h->second.blend_left / h->second.blend : 1.0F;
     out.skeleton = player_skeleton();
     return out.skeleton != nullptr;
+}
+
+void khdays::kh2_enemies::held_weapon_drawn(unsigned node, const float *bones, std::size_t count)
+{
+    const auto p = player_of_node.find(node);
+    if (p == player_of_node.end() || held.count(p->second) == 0)
+        return;
+    DrawnWeapon &d = drawn_weapons[p->second];
+    d.bones.resize(count);
+    for (std::size_t b = 0; b < count; ++b)
+        std::copy(bones + 16 * b, bones + 16 * (b + 1), d.bones[b].begin());
+    d.frame = khdays_link_frame();
 }

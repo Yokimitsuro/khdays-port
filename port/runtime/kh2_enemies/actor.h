@@ -393,9 +393,9 @@ public:
     virtual void set_health(Actor &, int /*hp*/) {}
 
     // One of Days's players in a script's hands (KH2's player is an actor as its enemies are; Days's are the shell's):
-    // what the calls do to one goes to the world. 1:29: `player` plays motion `slot` of `by`'s set from `frame`
-    // (FUN_1403c6cc0: the set made the player's, + 0x2b8): false when the world cannot
-    virtual bool player_motion(Object & /*player*/, Actor & /*by*/, int /*slot*/, float /*frame*/)
+    // what the calls do to one goes to the world. 1:29: `player` plays motion `slot` of `by`'s set from its first frame
+    // over `blend` (FUN_1403c6cc0: the set made the player's, + 0x2b8): false when the world cannot
+    virtual bool player_motion(Object & /*player*/, Actor & /*by*/, int /*slot*/, float /*blend*/)
     {
         return false;
     }

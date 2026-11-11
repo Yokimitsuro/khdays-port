@@ -876,8 +876,9 @@ void thrown(Actor &x, float way_x, float way_z, float speed, float up)
 void add_motions(ai::Calls &calls)
 {
     // 1:29 another object plays a motion of this one's set (FUN_1403c6cc0: its motion set made this one's, + 0x2b8,
-    // its motion number + 0x180), from a frame; the motion given back, what its controller then plays (+ 0x184, 1:238:
-    // the Armored Knight's flight runs while the two are the same)
+    // its motion number + 0x180), from its first frame over a blend (FUN_1403c65e0 starts it with the call's value as
+    // the blend and 0 as the frame, as the PS3 build's YS::MOTION::_capture does); the motion given back, what its
+    // controller then plays (+ 0x184, 1:238: the Armored Knight's flight runs while the two are the same)
     calls.set(1, 29, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         Object *o = object_of(m, a[1]);
@@ -885,7 +886,7 @@ void add_motions(ai::Calls &calls)
         bool played = other != nullptr;
         if (other != nullptr) {
             other->motions = x->motions;
-            other->play(std::int32_t(a[2].bits), 0.0F, a[3].f());
+            other->play(std::int32_t(a[2].bits), a[3].f(), 0.0F);
         } else if (is_player(o) && x->world != nullptr) { // one of Days's players: the shell plays it
             played = x->world->player_motion(*o, *x, std::int32_t(a[2].bits), a[3].f());
         }

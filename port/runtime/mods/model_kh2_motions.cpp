@@ -836,6 +836,8 @@ bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
     if (drawn_object == nullptr || !m.kh2_own_skeleton ||
         !khdays::kh2_enemies::held_motion(KHDAYS_REF(drawn_object) - 0x24U, held))
         return false;
+    std::vector<kh2::Mat4> joints; // the motion's pose on this model's KH2 bones, and its root's travel taken out
+    Mat taken = kIdentity;
     try {
         if (m.kh2_held_source != held.skeleton || !m.kh2_held_retarget) {
             const std::size_t bones = m.kh2_own_skeleton->joints.size();
@@ -861,9 +863,8 @@ bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
         }
         const float ticks = std::fmin(held.ticks, held.motion->length_ticks());
         actor.held_player->evaluate(*held.motion, ticks, kIdentity, nullptr);
-        std::vector<kh2::Mat4> joints;
         m.kh2_held_retarget->apply(actor.held_player->joints(), joints);
-        Mat taken = inverse(held.motion->root_motion(ticks));
+        taken = inverse(held.motion->root_motion(ticks));
         Mat half = kIdentity; // half a turn about the up: into the enemy's frame
         half[0] = half[10] = -1.0F;
         taken = mul(half, taken);
@@ -881,6 +882,80 @@ bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
     } catch (const std::exception &e) {
         say_bad_motion(m, "a KH2 enemy's motion for the player", -1, e.what());
         return false;
+    }
+    // what he holds turns in his hand as KH2's keyblade does in the enemy's motion: its weapon part ('0011', made for
+    // W_EX010's bones, KH2's weapon motions being synced to the body's) played on `weapon_motions`' bones at the body's
+    // time; the game's hold of it none (its share 0, as the body's)
+    if (m.weapon_motions && m.weapon_skeleton && held.weapon != nullptr) {
+        auto &player = actor.weapon_players[-1]; // the held motion's (the slots are the model's own msets')
+        if (!player)
+            player = std::make_unique<kh2::MotionPlayer>(*m.weapon_skeleton);
+        try {
+            player->evaluate(*held.weapon, std::fmin(held.ticks, held.weapon->length_ticks()), kIdentity, nullptr);
+            std::vector<Mat> bones;
+            for (const auto &g : player->joints())
+                bones.push_back(in_metres(g));
+            if (bones.size() >= m.weapon_rest.size()) {
+                bones.resize(m.weapon_rest.size());
+                kh2_weapon_pose = std::move(bones);
+                kh2_weapon_share = 0.0F;
+            }
+        } catch (const std::exception &e) { // held as the line holds it
+            say_bad_motion(m, "a KH2 enemy's motion for the player's weapon", -1, e.what());
+        }
+    }
+    // the keyblade's bones as they are drawn (a KH2 weapon model `held` on the `weapon` line's joint -- the right
+    // hand's -- each bone the joint's frame times its pose: models.cpp's hold and held_weapon), in the held motion's
+    // space (KH2's cm, half a turn back about the up), for his weapon's effects (its swing's trail) to follow them
+    std::size_t line = m.kh2_weapon.size();
+    for (std::size_t g = 0; g < m.kh2_weapon.size(); ++g)
+        if (m.kh2_weapon[g] >= 0 && (line == m.kh2_weapon.size() ||
+                                     (g < m.node_names.size() && !m.node_names[g].empty() && m.node_names[g].back() == 'R')))
+            line = g;
+    if (line < m.kh2_weapon.size() && static_cast<std::size_t>(m.kh2_weapon[line]) < m.kh2_bone.size() &&
+        m.weapon_motions && kh2_weapon_pose.size() == m.weapon_rest.size() && !kh2_weapon_pose.empty()) {
+        const int bone = m.kh2_bone[static_cast<std::size_t>(m.kh2_weapon[line])];
+        if (bone >= 0 && static_cast<std::size_t>(bone) < joints.size()) {
+            Mat w = mul(taken, joints[static_cast<std::size_t>(bone)]);
+            w[12] *= 0.01F;
+            w[13] *= 0.01F;
+            w[14] *= 0.01F;
+            Mat unscale = kIdentity; // the game's weapon keeps its size on a scaled model's joint
+            unscale[0] = unscale[5] = unscale[10] = m.scale > 0.0F ? 1.0F / m.scale : 1.0F;
+            Mat back = kIdentity; // half a turn back about the up, metres to cm
+            back[0] = back[10] = -100.0F;
+            back[5] = 100.0F;
+            std::vector<float> bones;
+            for (const Mat &p : kh2_weapon_pose) {
+                Mat b = mul(back, mul(w, mul(unscale, p)));
+                for (std::size_t c = 0; c < 12; ++c) // its turn unscaled: the axes stay unit
+                    if (c % 4 != 3)
+                        b[c] *= 0.01F;
+                bones.insert(bones.end(), b.begin(), b.end());
+            }
+            khdays::kh2_enemies::held_weapon_drawn(KHDAYS_REF(drawn_object) - 0x24U, bones.data(),
+                                                   kh2_weapon_pose.size());
+        }
+    }
+    // 1:29's blend (YS::MOTION::start_blend): a new motion's first frame blended from the pose shown before it began,
+    // that pose's share falling to none over the blend (the Armored Knight's Rising Sun: 8 ticks into AB50, then AB51)
+    if (held.started != actor.held_started) {
+        actor.held_started = held.started;
+        actor.held_blend_from = actor.shown;
+    }
+    if (held.share < 1.0F && actor.held_blend_from.size() == skin.size() && m.kh2_rest.size() == skin.size())
+        for (std::size_t j = 0; j < skin.size(); ++j) {
+            const Mat both[2] = {mul(base, actor.held_blend_from[j]), mul(skin[j], m.kh2_rest[j])};
+            const float share[2] = {1.0F - held.share, held.share};
+            skin[j] = mul(khdays::models::blend_frames(both, share, 2), m.joints[j].inverse_bind);
+        }
+    // the pose shown, relative to the model's root (as play_kh2 keeps it): the next held motion's blend, and the idle's
+    // fade once he is let go, start from it
+    if (m.kh2_rest.size() == skin.size()) {
+        const Mat from_root = inverse(base);
+        actor.shown.resize(skin.size());
+        for (std::size_t j = 0; j < skin.size(); ++j)
+            actor.shown[j] = mul(from_root, mul(skin[j], m.kh2_rest[j]));
     }
     kh2_game_share = 0.0F;
     kh2_pose_cut = true;

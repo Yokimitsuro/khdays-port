@@ -16,7 +16,9 @@ mods/<mod>/kh2_enemies.txt, mods/<mod>/kh2/calls.txt, mods/<mod>/kh2/obj/ (each 
 where the port's model reader looks), mods/<mod>/kh2/effect/texcommon.dpd, the effects' HD pages in
 mods/<mod>/kh2/fx/<name>/ and kh2/fx/texcommon/, and the sounds the kinds play in mods/<mod>/kh2/se/<id>.wav (KH2's
 sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's player's skeleton
-(original/obj/P_EX100.mdlx, the bones the motions they make the player play are made for), KH2's commands
+(original/obj/P_EX100.mdlx, the bones the motions they make the player play are made for), his keyblade
+(original/obj/W_EX010.mdlx, the bones his weapon's motions are made for, and W_EX010.a.us, its swing's trail, with
+its HD pages in mods/<mod>/kh2/fx/W_EX010/), KH2's commands and the bone a player holds his weapon on
 (original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
 (original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command menu, whose
 bar the reaction commands show (original/field2d/<language>/zz0command.2dd and its HD picture
@@ -85,7 +87,9 @@ FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
 # KH2's files the reaction commands read (under original/), each with what it is for
 SHARED = (
     ("obj/P_EX100.mdlx", "the player's skeleton, which the enemies' motions for the player are made for"),
-    ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows"),
+    ("obj/W_EX010.mdlx", "the player's keyblade's skeleton, which the enemies' motions for his weapon are made for"),
+    ("obj/W_EX010.a.us", "the player's keyblade's effects: its swing's trail in a reaction command"),
+    ("03system.bin", "KH2's commands: what a reaction command sends and the one it follows; the weapons' bones"),
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
     ("00objentry.bin", "KH2's objects' entries: the numbers scripts find objects by (1:114, 1:222)"),
 )
@@ -151,10 +155,20 @@ def bar_entries(data: bytes, base: int = 0) -> list[tuple[int, int, int]]:
 def motion_sounds(mset: bytes) -> set[int]:
     """The sounds a motion set's triggers 8 play (bank x 1000 + number). Each motion a BAR; its attributes (type
     0x10): u8 ranges, u8 triggers, u16 the triggers' offset; a range u16 start, u16 end, u8 id, u8 n, n u16; a
-    trigger u16 frame, u8 id, u8 n, n u16 (as assets/src/kh2_motion.cpp reads them)."""
+    trigger u16 frame, u8 id, u8 n, n u16 (as assets/src/kh2_motion.cpp reads them). A slot of type 0x14 holds the
+    motions the set's object makes another play (1:29: the player's in a reaction command), each part a motion BAR of
+    its own ('0010' his body, '0011' his weapon: the keyblade's bank 500)."""
     out = set()
-    for _, at, size in bar_entries(mset):
-        for kind, a, s in bar_entries(mset, at) if size else []:
+    motions = []
+    for kind, at, size in bar_entries(mset):
+        if not size:
+            continue
+        if (kind & 0xFF) == 0x14:
+            motions += [a for _, a, s in bar_entries(mset, at) if s]
+        else:
+            motions.append(at)
+    for at in motions:
+        for kind, a, s in bar_entries(mset, at):
             end = a + s
             if kind != 0x10 or s < 4 or end > len(mset):
                 continue
@@ -281,6 +295,8 @@ def make(
             shutil.copy2(source, mod / "kh2" / part)
         else:
             left_out.append(f"{part} ({what}): not there; the reaction commands go without it")
+    if not copy_pages(kh2 / "remastered" / "obj" / "W_EX010.a.us", mod / "kh2" / "fx" / "W_EX010"):
+        left_out.append("the keyblade's effects' HD pictures (remastered/obj/W_EX010.a.us): its trail in its PS2 pictures")
     names = 0
     for language in LANGUAGES:
         source = kh2 / "original" / "msg" / language / "sys.bar"

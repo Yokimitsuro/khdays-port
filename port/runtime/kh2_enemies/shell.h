@@ -78,6 +78,8 @@ int khdays_kh2_enemies_screen_trail(float out[4]);
 #ifdef __cplusplus
 }
 
+#include <cstddef>
+
 namespace khdays::assets::kh2 {
 class Motion;
 struct MotionSkeleton;
@@ -86,14 +88,22 @@ struct MotionSkeleton;
 namespace khdays::kh2_enemies {
 // A KH2 enemy's motion one of Days's players plays while the enemy holds it (its reaction command), for the player's
 // KH2 model (runtime/mods): the motion made for KH2's player's bones (`skeleton`, P_EX100's), its weapon's, its time
-// (KH2's ticks); its root's travel is in the player's place
+// (KH2's ticks); its root's travel is in the player's place. `started` tells one motion from the next (each 1:29 a new
+// number), and `share` is how much of the pose is this motion's while 1:29's blend runs (from the pose before; 1 none)
 struct HeldMotion final {
     const khdays::assets::kh2::Motion *motion = nullptr, *weapon = nullptr;
     const khdays::assets::kh2::MotionSkeleton *skeleton = nullptr;
     float ticks = 0.0F;
+    unsigned started = 0;
+    float share = 1.0F;
 };
 // The player whose model's scene node is `node` (a DS address): its motion now, false when no KH2 enemy holds it
 bool held_motion(unsigned node, HeldMotion &out);
+// The weapon of the player whose model's scene node is `node` as his KH2 model draws it while an enemy holds him: its
+// `count` bones (W_EX010's, 16 floats each, column-major) in his motion's space (KH2's cm, y up, his root's travel taken
+// out), this frame. His weapon's effects (its swing's trail) follow them; without them KH2's own keyblade on his hand's
+// bone (W_EX010 on P_EX100's 178)
+void held_weapon_drawn(unsigned node, const float *bones, std::size_t count);
 } // namespace khdays::kh2_enemies
 #endif
 

@@ -325,7 +325,7 @@ its frame. The handlers named are KINGDOM HEARTS II FINAL MIX's (the PC executab
 | 0xef, 0xf0, 0xf2 | `pppRyjMegaBirthUserCtrl`, `2`, `3` | Sprites at the game's points (frame, turn, size and alpha in each point's bytes); 2 and 3 at the game's matrices (KH2's list at 0x140b60270, the gummi ships' game's and Xemnas's: `EffectInstance::set_matrices`): 2 its model through each matrix and its shape at each one's place, 3 a row of its shape along each matrix's z, centred on its place; a matrix's last float 1.0 drawn plain, else its bytes an alpha, a frame (moved on), a size x 10 |
 | 0xf1 | `pppEiDrawShipoly` | A ribbon along the object's last places (two edges a place, or one and edges across the screen): width, drift and a pull that move, a natural cubic spline, thinner and faded to the tail, pieces along and across with UV ranges and scroll |
 
-The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`; and matrices (0x140b60270): `EffectInstance::set_matrices`.
+The game gives some effects points (KH2's list at 0x140b60268): `EffectInstance::set_points`; and matrices (0x140b60270): `EffectInstance::set_matrices`. Each effect keeps its own (the PS3 build's `ryj::EFFECT::set_reference_pos`, put in the list by `pppSetReferencePos` before it is moved on and drawn); an object's element whose flags have 0x10000 gives its effect two, on two of the object's bones (docs/KH2_ENEMIES.md, "Effects": a weapon's base and tip).
 
 ## KH2's sound banks and its scenes' sounds
 

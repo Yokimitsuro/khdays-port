@@ -523,12 +523,35 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   puts its actor where the script and the motion have it (its place, + 0x48c and its node; its facing, the node's +
   0x80: Days's model looks along (sin, 0, cos) of it, as KH2's yaw).
 - **The motion**: its '0010' variant's time on (1 tick a frame), its root's travel turned by the yaw moving the player
-  (as an enemy's), held at its end (the ended bit `1:14` waits on). Its ranges: 20 a reaction command offered (when
-  the command it follows, `require`, is a range 26's), 27 not to be hit (the enemies' attacks pass it). Its triggers:
-  1 the enemy's effect on the player's own bones (its element's bone is KH2's player's: P_EX100's skeleton in the pose
-  the motion has then, placed and turned where the player stands from the enemy), 8 the enemy's sound. Its weapon's
-  ('0011' with data of its own) attack ranges: the player's blow on the enemy, Days's damage the player's last hit on it
-  times the attack's power over 100 (00battle.bin's atkp; Stop's way into Days's hit, `khdays_kh2_enemies_blow`).
+  (as an enemy's), held at its end (the ended bit `1:14` waits on). It always starts at its first frame: 1:29's
+  fourth value is its **blend**, not a frame (the PS3 build's `YS::trap_obj_motion_capture` -> `YS::MOTION::capture` ->
+  `_capture`, which starts it with `start_motion(binarc, blend, 0)`; the PC's `FUN_1403c65e0` the same). Above 2 ticks
+  the motion waits at its first frame for the blend (`add_time` counts the blend's ticks, then plays the first frame's
+  triggers, `exec_trigger(start, -1)`, and goes on), the pose blending from the one before; else it starts at once
+  with its first frame's triggers. The Armored Knight's Rising Sun gives 8 (AB50, AB51 again): read as a frame to
+  start from, AB50's twelve lights on the player's limbs (elements 5 to 16, at its frame 8) never played. Its ranges:
+  20 a reaction command offered (when the command it follows, `require`, is a range 26's), 27 not to be hit (the
+  enemies' attacks pass it). Its triggers: 1 the enemy's effect on the player's own bones (its element's bone is KH2's
+  player's: P_EX100's skeleton in the pose the motion has then, placed and turned where the player stands from the
+  enemy, half a turn more about the up as his model is drawn: the motions for him are made in the enemy's frame, so
+  without it his effects stood mirrored on him), 8 the enemy's sound (the mod holds these too: its tool now reads the
+  sounds of the player's parts). Its weapon's ('0011' with data of its own) attack ranges: the player's blow on the
+  enemy, Days's damage the player's last hit on it times the attack's power over 100 (00battle.bin's atkp; Stop's way
+  into Days's hit, `khdays_kh2_enemies_blow`).
+- **His weapon**: KH2 hangs the player's keyblade (an object of its own, `YS::WEAPON`) on his bone the object entries
+  name (00objentry.bin's P_EX100 record's + 7, a character of 03system.bin's `sklt`: P_EX100's primary weapon bone,
+  178); the '0011' part is the keyblade's motion in its own axes on that bone (W_EX010's bone 2 within 4 cm of Sora's
+  hand in every frame of Quick Blade). The part's triggers play as the body's (8 its sounds: the keyblade's bank 500,
+  W_EX010.a.us's; 1 an effect of the enemy's on the keyblade, `YS::MOTION::_Capture` giving both parts the capturer's
+  PAX). Its range 12 is the **swing** (OpenKH's "weapon swing", the motion's + 0x20 bit 11): each tick of his weapon,
+  `YS::WEAPON::locus` starts element 10 of the keyblade's own effects while it swings and none runs
+  (`start_effect_bind(10, 1, 0, 0)`), and closes it (`ryj::EFFECT::loop_end`) once it stops: its swing's trail
+  (W_EX010.a.us: the swing trail's command 0xc8 between the element's two points, below). The port draws it on the
+  keyblade the player's KH2 model draws (its `weapon` line's joint times the weapon's pose: models.cpp's `held`
+  weapons, `held_weapon_drawn`), else KH2's own on P_EX100's 178. Played on the Soldier's Cyclone (AA01, frames 7 to
+  31), Cerberus's last blow (AM03, 10 to 26), Quick Blade (AB10, 67 to 83) and the Neoshadow's Wind Dance (AA90, 0 to
+  113); the mod's tool copies obj/W_EX010.mdlx and .a.us with its HD page (mods/<mod>/kh2/fx/W_EX010/). The player's
+  KH2 model plays the part on its own keyblade (`weapon_motions`' bones), as it does the body.
 - **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
   the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
   Days's); `1:213` 1.
@@ -556,7 +579,8 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   setting "Reaction button for reaction commands only" (the profile's `reaction_button_only`, off; Settings, the
   enhancements) makes X so everywhere: no deck cursor, no lists from it (the deck then moves with "Command menu on the
   D-pad"), L with it still the shortcuts, Days's Talk and Examine on the bar still X's.
-- **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, 03system.bin, 00battle.bin,
+- **The mod's files** (the mod tool copies them from the player's KH2): obj/P_EX100.mdlx, obj/W_EX010.mdlx and
+  .a.us (the keyblade), 03system.bin, 00battle.bin,
   00objentry.bin (the objects' entries: 1:114, 1:222),
   msg/<language>/sys.bar, field2d/<language>/zz0command.2dd and zz0field.2dd with their HD pictures,
   msg/us/fontinfo.bar with fontimage.bar's HD picture.
@@ -788,6 +812,14 @@ the claw `201` frames 58-70 `(5, 1)`, its long form `202` `(1313, 1)`, the kick 
 slots in order (an enemy's set): the Soldier's appearing is `44` (`80A`), its idle `0`, walk `1`, run `2`, fall `4`,
 landing `5`, its damage `10`-`21`, its own from `200`.
 
+When single-frame triggers play (the PS3 build's `YS::ANMATR::each_trigger` and `exec_trigger`): those whose frame lies
+after the time before and up to the time now; a motion started (`YS::MOTION::start_motion`) plays its first frame's at
+once (`exec_trigger(start, -1)`: with a "to" below 0, the frame equal to "from"), or, started over a blend (above 2
+ticks: `start_blend`), at the blend's end, the motion having stood at its first frame while the blend's ticks went by
+(`add_time`: + 0x30 counts the blend until + 0x34, then from + 0x38). A held player's motion follows this (above).
+**Not done**: an enemy's own motions (`Actor::play`) still move on while they blend, and play from -1 the triggers up
+to their time, whatever frame they start at.
+
 ## Collision
 
 An object's `.mdlx` holds its collision shapes in its BAR entry of type 0x17: a 64-byte header (its count first) and
@@ -824,11 +856,14 @@ Soldier's 9 over 4 effects, the Shadow's 3 over 3). What a motion's trigger 1 an
 | + 0x14 | when its sound starts, its effect's ticks (`FUN_1402c58f0`) |
 | + 0x18 | its sound: KH2's id, played above 0 at the effect's place and moved with it (`FUN_1401de150`) |
 | + 0x1c, + 0x28, + 0x34 | its place, turn (radians) and size: KH2's axes (y down), centimetres |
+| + 0x40 .. + 0x4c | with flags 0x10000, its **two points** (a swing trail's base and tip): u16 + 0x40 and + 0x42 their bones, f32 + 0x44 and + 0x48 how far out along each bone's x in that bone's lengths (`YS::OBJ::get_bone_pos`: the bone's matrix times (along x length, 0, 0); the length is the skeleton's scale w); + 0x4c set, the place (+ 0x1c) and the turn (+ 0x28) are offsets on those bones. `ryj::PAX::MANAGER` keeps them (`set_reference_pos`, 2 points) and `get_obj_data` sets them each tick; `pppRyjDrawShipolyBone` (0xc8) reads them. The keyblade's trail (W_EX010's element 10): bone 2 at -0.65 and -3.7 of its 21.1 cm, 14 and 78 cm out along the blade (its mesh runs to -78 on bone 2's x, its chain to +56). Enemies' own too: the Magnum Loader's elements 6, 7 and 15, the Neoshadow's 3, 4, 12 and 13, the Dusk's 8 to 11 |
 
 The port runs each element started on the enemy (`runtime/mods/kh2_fx_draw.h`, the Dark Corridor's way: the effect
 in KH2's axes and centimetres, its view the enemy's) at its size, turn (x, then y, then z: the order **not known**,
 the Soldier's and the Shadow's turn about one axis only) and place, on its bone in the pose of the tick it is drawn
-at; its sound starts when its time comes. Their pictures are read between their texels whatever Days's texture
+at; its sound starts when its time comes; its two points, when it has them, on their bones each frame
+(`EffectInstance::set_points`): before, an element with them drew no swing trail at all (the Magnum Loader's blades',
+the Neoshadow's claws'). Their pictures are read between their texels whatever Days's texture
 setting: KH2 does not draw its effects with nearest texels, and the DS look's made a spark a block of pixels. **Not
 known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1, 2, 4), and the two values `1:87` passes on.
 
