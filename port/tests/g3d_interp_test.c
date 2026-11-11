@@ -1,6 +1,7 @@
 /* A picture between two 3D lists (khdays_g3d_interpolate): a model drawn twice is matched to its nearest
  * drawing whatever their order, a selection marker and a polygon that jumped are where the newer list has
- * them, the texture coordinates are the newer's, and a polygon that moved a little is placed between.
+ * them, the texture coordinates are the newer's, a polygon that moved a little is placed between, and a KH2 effect's
+ * piece with its identity is found by it (one without is where the newer list has it).
  *   ctest --test-dir build/port/obj-x64 -R khdays-g3d-interp --output-on-failure */
 #include "../gfx/g3d_interp.h"
 
@@ -132,6 +133,26 @@ int main(void)
     CHECK(near(x_of(&work, &newer, 4, &s), 0.8));  /* the jump not drawn between */
     CHECK(work.jumped == 1);
     CHECK(near(x_of(&work, &newer, 5, &s), 0.05)); /* the room between, its wall's far place not a jump */
+    khdays_g3d_list_free(&out);
+
+    /* KH2 effect pieces: two with their identity (KHDAYS_G3D_KEYED_EFFECT), the newer list sending them the other
+     * way round, one born in it; one without an identity (drawn where the newer list has it) */
+    memset(&out, 0, sizeof(out));
+    begin(&older);
+    begin(&newer);
+    square(&older, -0.4, 0, 0, 11, KHDAYS_G3D_KEYED_EFFECT, KHDAYS_G3D_EFFECT);
+    square(&older, 0.4, 0, 0, 12, KHDAYS_G3D_KEYED_EFFECT, KHDAYS_G3D_EFFECT);
+    square(&older, 0.0, 0, 0, 13, 0, KHDAYS_G3D_EFFECT);
+    square(&newer, 0.42, 0, 0, 12, KHDAYS_G3D_KEYED_EFFECT, KHDAYS_G3D_EFFECT);
+    square(&newer, -0.38, 0, 0, 11, KHDAYS_G3D_KEYED_EFFECT, KHDAYS_G3D_EFFECT);
+    square(&newer, 0.6, 0, 0, 14, KHDAYS_G3D_KEYED_EFFECT, KHDAYS_G3D_EFFECT);
+    square(&newer, 0.1, 0, 0, 13, 0, KHDAYS_G3D_EFFECT);
+    CHECK(khdays_g3d_interpolate(&work, &older.list, &newer.list, 0.5f, &out));
+    CHECK(near(x_of(&work, &newer, 0, &s), 0.41)); /* between itself, found by its identity */
+    CHECK(near(x_of(&work, &newer, 1, &s), -0.39));
+    CHECK(near(x_of(&work, &newer, 2, &s), 0.6)); /* born: where it is */
+    CHECK(near(x_of(&work, &newer, 3, &s), 0.1)); /* no identity: where it is */
+    CHECK(work.effects == 1);
     khdays_g3d_list_free(&out);
     khdays_g3d_interp_free(&work);
     if (failures == 0) {

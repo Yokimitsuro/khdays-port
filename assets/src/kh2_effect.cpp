@@ -608,6 +608,7 @@ struct FilterPool {
 
 struct Obj {
     const EffectLayer *layer = nullptr;
+    std::uint64_t serial = 0; // its identity among all objects ever born (its draws' keys)
     std::int32_t age = 0;
     bool skip = true, restart = false, gone = false;
     std::vector<std::uint8_t> mem;     // its memory from +0xa0
@@ -804,6 +805,8 @@ struct EffectInstance::State {
     std::shared_ptr<Obj> birth(const EffectLayer &L)
     {
         auto o = std::make_shared<Obj>();
+        static std::uint64_t born = 0;
+        o->serial = ++born;
         o->layer = &L;
         o->mem.assign(0x200, 0);
         o->cursor.assign(L.commands.size(), 0);
@@ -2393,9 +2396,11 @@ struct EffectInstance::State {
             flags = writes ? 0x2c : 0x24;
         else
             flags |= ((k.b(8) & 1) ? 0x80u : 0u) | (writes ? 8u : 0u);
-        for (const auto &p : pool.particles) {
+        for (std::size_t at = 0; at < pool.particles.size(); ++at) {
+            const auto &p = pool.particles[at];
             if (p.life == 0)
                 continue;
+            const std::size_t before = out->size();
             // FUN_1404be590: its rows (or none), turned, sized, then through the view as its kind says
             M4 m = identity();
             if (k.b(0x105) != 0)
@@ -2439,6 +2444,8 @@ struct EffectInstance::State {
             colour[3] = float(std::clamp(a, 0, 0x7f));
             draw_model_with(o.morphed ? &o.morph : nullptr, model, draw_m, colour, flags, k.b(0xc), k.b(0x10a), 0,
                             p.u, p.v, *out);
+            for (std::size_t i = before; i < out->size(); ++i)
+                (*out)[i].key = at + 1; // its particle (EffectInstance::tick makes the whole key)
         }
     }
 
@@ -4968,9 +4975,11 @@ struct EffectInstance::State {
                 if (!d.triangles.empty())
                     out.push_back(d);
                 d.triangles.clear();
+                d.triangle_keys.clear();
                 d.tex0 = p->tex0;
                 tex = p->tex0;
             }
+            const auto primitive = std::uint32_t(p - model.primitives.data());
             const float du = scroll_part(su, unsigned(p->tex0 >> 26) & 0xf),
                         dv = scroll_part(sv, unsigned(p->tex0 >> 30) & 0xf);
             const auto corner = [&](int q) {
@@ -4984,9 +4993,12 @@ struct EffectInstance::State {
             if (p->corners == 4) {
                 for (const int q : {0, 1, 2, 1, 3, 2})
                     d.triangles.push_back(corner(q));
+                d.triangle_keys.push_back(primitive * 2);
+                d.triangle_keys.push_back(primitive * 2 + 1);
             } else {
                 for (const int q : {0, 1, 2})
                     d.triangles.push_back(corner(q));
+                d.triangle_keys.push_back(primitive * 2);
             }
         }
         if (!d.triangles.empty())
@@ -5070,10 +5082,12 @@ struct EffectInstance::State {
             const auto &shape = block->shapes.at(std::size_t(k.s32(4)));
             const std::uint8_t *col = o.at(c.slots[1] + 8, 4);
             const M4 slot = slot_matrix(k);
-            for (const auto &slot_p : o.pool) {
+            for (std::size_t at = 0; at < o.pool.size(); ++at) {
+                const auto &slot_p = o.pool[at];
                 if (!slot_p || slot_p->life == 0)
                     continue;
                 const Particle &p = *slot_p;
+                const std::size_t before = out->size();
                 M4 to_view;
                 switch (k.b(0xcc)) {
                 case 0: to_view = mul(mul(o.local, slot), view); break;
@@ -5098,6 +5112,8 @@ struct EffectInstance::State {
                     tint[std::size_t(j)] = float(std::clamp(col[j] + p.jitter[std::size_t(j)], 0, 255)) / 128.0F;
                 tint[3] = std::clamp(float(col[3] + p.jitter[3]) - p.fade, 0.0F, 127.0F) / 128.0F;
                 draw_shape(shape, p.frame, mul(bill, proj), tint, *out);
+                for (std::size_t i = before; i < out->size(); ++i)
+                    (*out)[i].key = at + 1; // its particle (EffectInstance::tick makes the whole key)
             }
             break;
         }
@@ -5147,7 +5163,20 @@ struct EffectInstance::State {
                 const Key k = (words(c.code) & W1) ? advance(o, ci) : key(o, ci);
                 if (words(c.code) & W1)
                     step(o, c, k);
+                const std::size_t before = draws != nullptr ? draws->size() : 0;
                 draw(o, c, k, draws);
+                if (draws != nullptr) {
+                    std::map<std::uint64_t, std::uint32_t> nth; // by particle (0: none)
+                    for (std::size_t i = before; i < draws->size(); ++i) {
+                        EffectDraw &d = (*draws)[i];
+                        const std::uint64_t piece = d.key;
+                        std::uint64_t h = o.serial * 0x9E3779B97F4A7C15ull;
+                        h ^= (std::uint64_t(ci) + 1) * 0xC2B2AE3D27D4EB4Full;
+                        h ^= piece * 0x165667B19E3779F9ull;
+                        h ^= (std::uint64_t(nth[piece]++) + 1) * 0x27D4EB2F165667C5ull;
+                        d.key = (h ^ (h >> 29)) | 1u; // (never 0)
+                    }
+                }
             }
         }
         for (const auto &po : objs) {

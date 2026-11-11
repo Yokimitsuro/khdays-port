@@ -287,6 +287,11 @@ void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, 
  * alpha 0..1, s and t as a mod model's (a 1024 x 1024 texture repeated). */
 void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t replacement, uint32_t gs_alpha,
                                uint32_t effect_flags);
+/* The identity of the next KH2 effect triangle sent (its draw's key, kh2::EffectDraw::key, and its place in it), kept
+ * for that one triangle: the pictures between two game frames find it in the older list (g3d_interp.h) and place it
+ * between, as a model's polygons; a triangle with none (key 0) is drawn where the newer list has it. */
+void khdays_g3d_set_effect_key(uint64_t key, uint32_t index);
+#define KHDAYS_G3D_KEYED_EFFECT 0x80000000u /* a KhdaysG3dPreInfo's ordinal: an effect triangle's with its identity */
 
 /* A triangle of a mod model's closed clip volume (runtime/mods/secondary model_link.h clip_volumes), both sides,
  * first in the drawing order: not drawn; a polygon not of such a model (not KHDAYS_G3D_CLIP_OWNER) is left out

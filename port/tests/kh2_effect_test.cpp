@@ -102,11 +102,14 @@ void test_run()
     expect(near(t[0].x, -2) && near(t[0].y, -12) && near(t[0].w, 1), "placed by its matrix");
     expect(near(t[0].r, 1) && near(t[0].a, 1), "coloured by pppColor at 1");
     expect(draws[0].alpha == 0x48 && !draws[0].depth_write, "the model's blend, no depth written (flag bit 0)");
+    const std::uint64_t key = draws[0].key; // its identity from tick to tick (pictures drawn between ticks)
+    expect(key != 0, "a draw's key");
     draws.clear();
     fx.tick(cam, &draws);
     draws.clear();
     fx.tick(cam, &draws); // frame 2: the colour's second key halves the alpha
     expect(!draws.empty() && near(draws[0].triangles[0].a, 0.5F), "a keyed record on its frame");
+    expect(!draws.empty() && draws[0].key == key, "the object's draw keeps its key from tick to tick");
     expect(fx.objects() == 0, "the layer gone after its life");
     for (int k = 0; k < 40 && !fx.done(); ++k)
         fx.tick(cam, nullptr);
@@ -354,6 +357,8 @@ void test_primitive_order()
         const auto v = first_corner(fx, draws);
         expect(draws.size() == 1 && draws[0].triangles.size() == 6, "both triangles in one draw");
         expect(near(v.z, by_depth ? 1.0F : 0.0F), by_depth ? "the far one first by depth" : "the model's own order");
+        expect(draws[0].triangle_keys == (by_depth ? std::vector<std::uint32_t>{2, 0} : std::vector<std::uint32_t>{0, 2}),
+               "each triangle keyed by its primitive, whatever the order");
     }
 }
 

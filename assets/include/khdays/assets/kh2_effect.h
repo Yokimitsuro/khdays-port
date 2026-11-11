@@ -120,6 +120,12 @@ struct EffectDraw final {
     // corner's u, v its own place on the screen (0..1); the port's renderer cannot draw these yet
     bool screen = false;
     std::vector<EffectVertex> triangles;
+    // Its identity from one tick to the next, for pictures drawn between two ticks (0: none; EffectInstance::tick
+    // sets it): its object's, its command's, the particle's it is of and its place among that particle's draws. And
+    // each triangle's own place in it (a model's primitive: a depth sort reorders them from tick to tick); empty:
+    // their order.
+    std::uint64_t key = 0;
+    std::vector<std::uint32_t> triangle_keys;
 };
 
 // A point the game gives an effect (KINGDOM HEARTS II's list at 0x140b60268, as many as at 0x140b60264): its place

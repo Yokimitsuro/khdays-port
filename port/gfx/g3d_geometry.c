@@ -128,6 +128,8 @@ static struct {
     int hud;                   /* the polygons sent now are the HUD's */
     int marker;                /* selection art in the 3D layer, after the world's polygons */
     int clip_owner;            /* mod polygons sent are a clip volume's owner's (khdays_g3d_set_clip_owner) */
+    uint64_t effect_key;       /* the next KH2 effect triangle's identity, 0 none (khdays_g3d_set_effect_key) */
+    uint32_t effect_index;
     uintptr_t draw;            /* the model draw the polygons come from (khdays_g3d_draw_begin) */
     uint32_t occurrence, draw_ordinal;
     /* the polygons outside model draws, numbered per material (stream_key):
@@ -633,6 +635,11 @@ static const KhdaysG3dPreInfo *record_pre(const void *vertices, int n, const Pol
     if (info->draw != 0) {
         info->occurrence = g.occurrence;
         info->ordinal = g.draw_ordinal++;
+    } else if ((what->flags & KHDAYS_G3D_EFFECT) && g.effect_key != 0) {
+        /* a KH2 effect triangle with its identity: found again in the next list by it, whatever was born or ended
+         * meanwhile */
+        info->occurrence = (uint32_t)(g.effect_key ^ (g.effect_key >> 32));
+        info->ordinal = KHDAYS_G3D_KEYED_EFFECT | (g.effect_index & ~KHDAYS_G3D_KEYED_EFFECT);
     } else {
         /* outside model draws: its material for `occurrence`, its place among
          * that material's (an effect whose count changes moves only its own) */
@@ -1117,6 +1124,13 @@ void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t repl
     const int flags = KHDAYS_G3D_EFFECT | (int)(effect_flags & (KHDAYS_G3D_EFFECT_DEPTH_WRITE | KHDAYS_G3D_EFFECT_DEPTH_ONLY |
                                                                KHDAYS_G3D_EFFECT_NO_DEPTH_TEST));
     mod_polygon(v, n, 0xc0u | (31u << 16), tex, gs_alpha & 0xffu, replacement, 1, 0, flags);
+    g.effect_key = 0; /* (one triangle's) */
+}
+
+void khdays_g3d_set_effect_key(uint64_t key, uint32_t index)
+{
+    g.effect_key = key;
+    g.effect_index = index;
 }
 
 void khdays_g3d_clip_polygon(const KhdaysG3dClipVertex *v)

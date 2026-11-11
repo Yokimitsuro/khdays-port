@@ -285,6 +285,7 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
     work->matched = 0;
     work->jumped = 0;
     work->jumped_mod = 0;
+    work->effects = 0;
     memset(work->jumped_in, 0, sizeof(work->jumped_in));
     work->polygons = newer->npre;
     if (older == NULL || t >= 1.0 || older->npre == 0) {
@@ -313,7 +314,9 @@ int khdays_g3d_interpolate(KhdaysG3dInterp *work, const KhdaysG3dList *older, co
         const int32_t g = work->group_of[i];
         int32_t j;
         const KhdaysG3dPolygon *q;
-        if (p->flags & (KHDAYS_G3D_MARKER | KHDAYS_G3D_EFFECT)) {
+        if ((p->flags & KHDAYS_G3D_MARKER) ||
+            ((p->flags & KHDAYS_G3D_EFFECT) && !(key.ordinal & KHDAYS_G3D_KEYED_EFFECT))) {
+            ++work->effects;
             continue; /* a selection marker (it moves from target to target) or a KH2 effect's triangle (as many as
                        * its tick has): where the newer list puts it */
         }

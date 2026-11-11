@@ -105,6 +105,9 @@ void submit(const std::vector<kh2::EffectDraw> &draws, float units, Pages &pages
                 o.s = e.u * 16384.0F; // the page as a mod model's 1024 x 1024 texture
                 o.t = e.v * 16384.0F;
             }
+            // its identity from tick to tick: the pictures between two game frames place it between
+            const std::size_t n = t / 3;
+            khdays_g3d_set_effect_key(d.key, std::uint32_t(n < d.triangle_keys.size() ? d.triangle_keys[n] : n));
             khdays_g3d_effect_polygon(tri, 3, id, d.alpha, flags);
         }
     }

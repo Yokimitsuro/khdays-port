@@ -849,7 +849,9 @@ static void log_picture(const char *what, double alpha)
             frame_log = fopen(path, "w");
             if (frame_log != NULL) {
                 fprintf(frame_log, "# ms (the game's time), logic frame, alpha, polygons placed between / all, what, "
-                                   "the two lists' times, the camera's step, the newer list's flushes, a cut\n");
+                                   "the two lists' times, the camera's step, the newer list's flushes, a cut, the "
+                                   "polygons drawn where the newer list has them: the KH2 effects' and markers', "
+                                   "those moved too far\n");
             }
         }
     }
@@ -862,7 +864,8 @@ static void log_picture(const char *what, double alpha)
             camera_step(&logic_list[a], &logic_list[b], &step);
         }
         fprintf(frame_log,
-                "%.3f %u %.3f %d/%d %s %.3f %.3f moved %.4f turned %.3f pivot %.3f drift %.4f depth %.3f %d %d\n",
+                "%.3f %u %.3f %d/%d %s %.3f %.3f moved %.4f turned %.3f pivot %.3f drift %.4f depth %.3f %d %d "
+                "effects %d jumped %d\n",
                 (double)khdays_clock_cycles() * 1000.0 / KHDAYS_CLOCK_HZ, logic_serial, alpha, interp.matched,
                 interp.polygons, what, (double)logic_time[a] * 1000.0 / KHDAYS_CLOCK_HZ,
                 (double)logic_time[b] * 1000.0 / KHDAYS_CLOCK_HZ, step.moved,
@@ -870,7 +873,7 @@ static void log_picture(const char *what, double alpha)
                      : step.cosine < -1.0 ? -1.0
                                           : step.cosine) *
                     180.0 / 3.14159265358979,
-                step.pivot, step.drift, step.depth, logic_list[b].flushes, logic_cut);
+                step.pivot, step.drift, step.depth, logic_list[b].flushes, logic_cut, interp.effects, interp.jumped);
     }
 }
 
@@ -905,7 +908,9 @@ static void note_logic_frame(const KhdaysFramePackage *p)
     /* a cut (the game's, the camera's, or the 3D on the other screen: the 3D on both screens, one VBlank the
      * upper's, the next the lower's): nothing between it and the lists before, which are let go -- drawn after it,
      * they would show what the screens had before it, their textures perhaps gone */
-    logic_cut = at > 0 && (p->list3d_cut || p->upper != logic_upper[at - 1] || logic_time[at] <= logic_time[at - 1] ||
+    /* (two lists of one time: the clock held while a shot was written, KHDAYS_SHOTS_HD -- not a cut then) */
+    logic_cut = at > 0 && (p->list3d_cut || p->upper != logic_upper[at - 1] || logic_time[at] < logic_time[at - 1] ||
+                           (logic_time[at] == logic_time[at - 1] && shot_count == 0) ||
                            camera_cut(&logic_list[at - 1], &logic_list[at]));
     if (logic_cut) {
         const KhdaysG3dList kept = logic_list[0];
@@ -1009,10 +1014,12 @@ static const KhdaysG3dList *picture_list(const KhdaysFramePackage *p, double *al
     now = khdays_clock_cycles();
     delay = picture_delay();
     at_time = forced ? logic_time[logic_count - 2] : now > delay ? now - delay : 0;
-    if (at_time >= logic_time[logic_count - 1]) {
+    /* (KHDAYS_SHOTS_BETWEEN: the two latest, whatever their times -- the clock held while a shot is written can
+       give both the same time, and the pictures between were all the newest's) */
+    if (!forced && at_time >= logic_time[logic_count - 1]) {
         return NULL; /* the newest reached */
     }
-    for (a = logic_count - 2; a > 0 && at_time < logic_time[a]; --a) {
+    for (a = logic_count - 2; !forced && a > 0 && at_time < logic_time[a]; --a) {
     }
     logic_pair = a;
     *alpha = at_time <= logic_time[a] ? 0.0

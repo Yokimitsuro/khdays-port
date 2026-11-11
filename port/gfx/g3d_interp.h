@@ -26,6 +26,8 @@ typedef struct KhdaysG3dInterp {
                                    the view (its drawing's place, or its first vertex): drawn where the newer
                                    list has them */
     int32_t jumped_mod;        /* of those, a mod's model's */
+    int32_t effects; /* of the newer's, the KH2 effects' triangles without an identity and the markers: drawn
+                         where it has them (a keyed effect triangle is found as a model's polygon is) */
     struct {                   /* the draws they came from (the first few): resource, occurrence, how many */
         uint64_t draw;
         uint32_t occurrence;

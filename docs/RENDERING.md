@@ -449,9 +449,18 @@ itself (0x80 half of full, as the GS draws with textures off). Its alpha is the 
 `gpu_native3d.c` draws them into the colour target alone, the blend by the card's (0x44 mixed, 0x48 added, 0x42
 `Cd - Cs x As` reversed subtraction, 0x46 `Cd x (1 - As)`, 0x88 `Cs x As`; another byte as 0x44, said once), the
 stencil untouched; `raster3d.hlsl` the same formula per pixel (`g3d_polygon.hlsli` `gs_blend`). `gpu3d.c`, as for
-mods' models, leaves them out. Between two of the game's lists (`g3d_interp.c`) they are where the newer list has them, and they are keyed as loose polygons even in a
-model's draw (a KH2 enemy's effects come in its model's): the model's polygons keep their places in the draw whatever
-the effects' count -- a model's triangle taken for another as an effect grew broke Cerberus into pieces as it landed.
+mods' models, leaves them out. They are never part of a model's draw (a KH2 enemy's effects come in its model's): the
+model's polygons keep their places in the draw whatever the effects' count -- a model's triangle taken for another as
+an effect grew broke Cerberus into pieces as it landed. Between two of the game's lists (`g3d_interp.c`) each is found
+by its own identity (`khdays_g3d_set_effect_key`, kept in its pre-info: `KHDAYS_G3D_KEYED_EFFECT` in the ordinal, the
+key folded into the occurrence): the effect player's draw key (`kh2::EffectDraw::key`: its object's serial, its
+command, the particle's pool slot, its place among that particle's draws) and the triangle's place in the draw (a
+model's primitive: a depth sort reorders them). One found in the older list is placed between as a model's polygon is
+(unless it moved more than an eighth of the view); one born since, or one sent without an identity, is where the newer
+list has it. Until 2026-11-11 none was found: every KH2 effect moved at the game's 30 frames a second while the rest
+of the field moved at the screen's rate -- in a fight with the Sorcerer's cubes (effects all) about 690 of its 5,430
+polygons a picture (the presenter's frame log, `KHDAYS_FRAME_LOG`, gives each picture's count: `effects`), then
+about 1.
 
 A KH2 enemy's screen trail (an event sequence's command 0x17, docs/KH2_ENEMIES.md "Event sequences") comes in the
 frame package's `trail` (its alpha, its quad's width and height over the view's, its turn). `gpu_raster3d.c` lays it

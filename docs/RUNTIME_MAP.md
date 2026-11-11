@@ -401,7 +401,9 @@ The native build prints these to stderr when the variable is set:
   logic frame, where the picture falls between the two lists it is placed
   between (`alpha`), the polygons placed between of all,
   `between`/`newest`/`cut`, those two lists' times, and the camera's translation and turn between them
-  (section 7, "The picture at the monitor's rate").
+  (section 7, "The picture at the monitor's rate"), the newer list's flushes, whether it was a cut, then the
+  polygons drawn where the newer list has them: `effects` (KH2 effects' without an identity, the markers) and
+  `jumped` (moved more than an eighth of the view).
 - `KHDAYS_TRACE_UPDATES` -- each object update's change to the next.
 - `KHDAYS_TRACE_CAPTURE` -- each screen blend's frame as the window draws it:
   the bank shown from its copy, or at the DS's size and why, and the capture
