@@ -2,6 +2,7 @@
 // when it is given one.
 #include "app.h"
 #include "cli.h"
+#include "scripted_input.h"
 #include "views/console.h"
 #include "theme.h"
 
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 
 namespace studio {
 namespace {
@@ -195,6 +197,12 @@ void draw_notices(App& app) {
 }
 
 int run_window(App& app) {
+    // the mouse and keys from a script's file (scripted_input.h): the window opened without taking the focus
+    std::unique_ptr<ScriptedInput> script;
+    if (const char* file = SDL_getenv("KHDAYS_STUDIO_INPUT"); file != nullptr && *file != 0) {
+        script = std::make_unique<ScriptedInput>(file);
+        SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+    }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         std::fprintf(stderr, "khdays-studio: SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -270,6 +278,12 @@ int run_window(App& app) {
 
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
+        if (script != nullptr && !script->step()) {  // quit, as by the window's close button
+            if (new_missions_unsaved() || characters_unsaved())
+                app.quit_asked = true;
+            else
+                done = true;
+        }
         ImGui::NewFrame();
         draw_frame(app, open);
         done = draw_unsaved_quit(app) || done;

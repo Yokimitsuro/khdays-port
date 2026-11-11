@@ -200,6 +200,7 @@ add_executable(khdays-studio
     app/gpu_images.cpp
     app/views/image_view.cpp
     app/main.cpp
+    app/scripted_input.cpp
     app/views/map_view.cpp
     app/views/mission_view.cpp
     app/views/mission_map.cpp

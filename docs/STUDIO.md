@@ -452,3 +452,13 @@ its `StoreGlobalArrayEntry` calls), and `studio/tools/enemy_names.py` writes
 `core/missions/enemy_names.cpp` (each enemy id's overlay's name, its variant
 number left out). Both are committed; a table the decompilation does not have is
 left out.
+
+## Driving the window from a script
+
+What only the window shows (a window's layout, its buttons' effect) is checked by driving it: with the environment
+variable `KHDAYS_STUDIO_INPUT` naming a file, the studio reads the lines appended to it, one a frame, as a person's
+mouse and keys (`studio/app/scripted_input.h`: `move X Y`, `click X Y`, `wheel N`, `key NAME`, `text WORDS`,
+`wait FRAMES`, `quit`; X and Y in the window's pixels), after the backend's own events so that the person's mouse
+does not move it. The window opens without taking the focus. A script appends steps, captures that window alone
+(Windows: `PrintWindow` with its client area and full content) and appends more; `--port <folder>` keeps its
+settings (`saves/studio.ini`) and anything taken out in a folder of its own.
