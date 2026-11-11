@@ -27,6 +27,7 @@ KhdaysRef Collision_RunRayCast(KhdaysRef world, KhdaysRef params);
 void Vec3ScaleAddQ27(s32 distance, KhdaysRef direction, KhdaysRef origin, KhdaysRef out);
 int khdays_controls_walk_share(unsigned node);
 int khdays_overlay_loaded(int id);
+const void *khdays_character_drawn_object(void);
 void khdays_walk_model_draw(unsigned model_resource);
 void khdays_walk_model_draw_end(void);
 }
@@ -184,6 +185,21 @@ int khdays_controls_walk_share(unsigned)
 }
 
 void khdays_walk_model_draw(unsigned) {}
+
+const KhdaysShadowOutcome *khdays_shadow_outcome(uintptr_t)
+{
+    return nullptr;
+}
+
+unsigned khdays_shadow_lists_finished(void)
+{
+    return 0;
+}
+
+const void *khdays_character_drawn_object(void)
+{
+    return nullptr; // no game object: `upright` leaves the model as posed
+}
 void khdays_walk_model_draw_end(void) {}
 
 KhdaysRef GetTrackEntryBase(int)

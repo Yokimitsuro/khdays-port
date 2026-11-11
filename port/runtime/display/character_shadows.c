@@ -12,6 +12,8 @@ typedef struct Binding {
 static Binding *bindings;
 static int binding_count, binding_capacity;
 static int object_depth, *shadow_object, object_capacity; /* by depth: whether that object is a flat shadow */
+static const void **drawn_objects; /* by depth: each object Obj_RenderModel draws, innermost last */
+static int drawn_capacity;
 
 /* Room for `need` entries of `size` bytes in a stack grown as the draws nest deeper; 0 out of memory. */
 static int stack_room(void **stack, int *capacity, int need, size_t size)
@@ -173,10 +175,19 @@ void khdays_character_object_begin(const void *object)
         if (walked % 2 == 0 && (slow = reference_at(KHDAYS_W(slow), 0)) == parent)
             break;
     }
-    if (stack_room((void **)&shadow_object, &object_capacity, object_depth + 1, sizeof(*shadow_object)))
+    if (stack_room((void **)&shadow_object, &object_capacity, object_depth + 1, sizeof(*shadow_object)) &&
+        stack_room((void **)&drawn_objects, &drawn_capacity, object_depth + 1, sizeof(*drawn_objects))) {
         shadow_object[object_depth] = is_shadow;
+        drawn_objects[object_depth] = object;
+    }
     ++object_depth;
     khdays_shadow_capture_begin(owner, on);
+}
+
+/* The object Obj_RenderModel is drawing now (its `self`), NULL outside one: what a mod's model finds its actor by */
+const void *khdays_character_drawn_object(void)
+{
+    return object_depth > 0 && object_depth <= drawn_capacity ? drawn_objects[object_depth - 1] : NULL;
 }
 
 void khdays_character_object_end(void)

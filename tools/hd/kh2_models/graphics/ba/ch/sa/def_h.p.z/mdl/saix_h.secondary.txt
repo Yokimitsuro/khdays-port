@@ -117,8 +117,8 @@ group hood chain preset kh2_hood
 end
 
 # --- Hair, from the head's end (170): single-bone spikes, the fringe's two-bone ones, and five long strands down his
-# back (177-180, 214-217, 219-222, 273-276, 278-281). The two manes by his face (223-252, 282-311) stay as the head
-# holds them, as does the jaw (182) ---
+# back (177-180, 214-217, 219-222, 273-276, 278-281). The two manes by his face (223-252, 282-311) are their own group
+# below; the jaw (182) stays as the head holds it ---
 group hair hair preset kh2_hair
   attach 170
   collide scalp
@@ -132,6 +132,23 @@ group hair hair preset kh2_hair
   tuft 266 267
   tuft 273 274 275 276
   tuft 278 279 280 281
+end
+
+# --- The two long locks by his face, drawstrings as xaldin_h's braids (user): each mane's long run from the head
+# (223, 225, 235, 238: 10.6, 14.7, 12 and 5 cm, down to his chest; 282, 284, 294, 297 the other), its zero-length
+# helpers between carried, its spikes (226-232, 241-252; 285-291, 300-311) carried by the bones they branch from.
+# Against his scalp and chest, with xaldin_h's braids' inertia, damping and swing ---
+group locks chain preset kh2_string
+  collide scalp torso
+  thickness 1.5
+  inertia 0.3
+  damping 4
+  swing_limit 180
+  attach 170
+  chain 223 225 235 238
+  chain 282 284 294 297
+  settle on steps 360
+  mode simulated
 end
 
 # --- Animation controls ---
@@ -148,11 +165,50 @@ control own_motions
   blend 0.15 0.15
 end
 
-# The game's own animations (no KH2 motion for them): the coat feels 0.6 of the body's acceleration and follows its
-# leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
+# His KH2 motions key his locks: there they follow them, as xaldin_h's braids follow his hover. The game's own
+# animations leave them simulated
+control own_locks
+  animation *
+  slot 0-511
+  groups locks
+  mode guided
+  follow_frequency 6
+  follow_damping 0.7
+  blend 0.15 0.15
+end
+
+# The boss's knock-down (016_005, out of berserk): flung back, his legs straight out in front. The thighs carry the
+# coat three times as much and it follows its shape at 8 Hz: legs through it in 26 frames of 241 (96 before). They
+# still come out past its front for that while, about 22 cm: no setting tried covers legs held straight out
+control knock_down
+  animation 016_005
+  groups coat
+  follow_bone_scale 3
+  inertia 0.6
+  follow_frequency 8 hem 4
+  priority 2
+  blend 0.15 0.15
+end
+
+# The boss's attacks (016_008-022: his combo, the throw and the landing after it, the lunge, charge and slam) fling the
+# coat off his legs (the replay: legs through it up to 22 cm, its controls 100 cm a frame p99): there it feels a third
+# of the body's acceleration and follows its shape at 10 Hz (legs through it: 017 none, 020 3.5 cm in 2 frames, 021 8,
+# 019 15; stronger, 0.15 and 14 Hz, was worse). The fades between his deep and standing attacks still leak (020 into
+# 009: 21 cm for a few frames)
+control slam_moves
+  animation 016_008 016_009 016_010 016_011 016_012 016_013 016_014 016_015 016_016 016_017 016_018 016_019 016_020 016_021 016_022
+  groups coat
+  inertia 0.3
+  follow_frequency 10 hem 4
+  priority 1
+  blend 0.15 0.15
+end
+
+# The game's own animations (no KH2 motion for them; the boss's 016_* too, which share this file): the coat feels 0.6 of
+# the body's acceleration and follows its leg-carried shape at 8 Hz. With full inertia the spins and strides flung it (the pass: legs out of it in the spin
 # B002, hem bones swept 25 cm a frame by the calves in the run)
 control days_moves
-  animation b_sa_A001 b_sa_A009 b_sa_A010 b_sa_A011 b_sa_A012 b_sa_A013 b_sa_B000 b_sa_B001 b_sa_B002 b_sa_B003 b_sa_B004 b_sa_B005 b_sa_B006 b_sa_B007 b_sa_Ca000 b_sa_Ca001 b_sa_Ca002 b_sa_Ca003 b_sa_Ca004 b_sa_Ca005 b_sa_Ca006 b_sa_Ca007 b_sa_Ca008 b_sa_D000 b_sa_D001 b_sa_D002 b_sa_D003 b_sa_L000 b_sa_L001 b_sa_L002 b_sa_L003
+  animation b_sa_A001 b_sa_A009 b_sa_A010 b_sa_A011 b_sa_A012 b_sa_A013 b_sa_B000 b_sa_B001 b_sa_B002 b_sa_B003 b_sa_B004 b_sa_B005 b_sa_B006 b_sa_B007 b_sa_Ca000 b_sa_Ca001 b_sa_Ca002 b_sa_Ca003 b_sa_Ca004 b_sa_Ca005 b_sa_Ca006 b_sa_Ca007 b_sa_Ca008 b_sa_D000 b_sa_D001 b_sa_D002 b_sa_D003 b_sa_L000 b_sa_L001 b_sa_L002 b_sa_L003 016_003 016_005 016_006 016_007 016_008 016_009 016_010 016_011 016_012 016_013 016_014 016_015 016_016 016_017 016_018 016_019 016_020 016_021 016_022 016_023 016_024 016_025 016_026
   groups coat
   inertia 0.6
   follow_frequency 8 hem 3

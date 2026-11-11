@@ -36,6 +36,12 @@ BonesFile read_bones(const std::string &model_file)
             else
                 std::fprintf(stderr, "models: %s: write `ik_side kh2_hip` or `ik_side game`; the line is ignored\n",
                              path.c_str());
+        } else if (a == "upright") { // upright on|off (a line needs two words)
+            if (b == "on" || b == "off")
+                bones.upright = b == "on";
+            else
+                std::fprintf(stderr, "models: %s: write `upright on` or `upright off`; the line is ignored\n",
+                             path.c_str());
         } else if (a == "lower_hips") {
             bones.lower_hips = std::strtof(b.c_str(), nullptr);
             if (!(bones.lower_hips > 0.0F && bones.lower_hips <= 2.0F)) {
@@ -472,9 +478,10 @@ std::size_t hand_pose_index(const std::string &name)
                              : kHandPoses;
 }
 
-// The rules as each joint's turn per game animation (Model::ds_turns): later lines win for a bone, and an
-// animation's own lines over the default's
-void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
+// The rules as each joint's turn per game animation (into `out`): later lines win for a bone, and an animation's own
+// lines over the default's
+void resolve_ds_scope(Model &model, const std::vector<DsPoseRule> &rules,
+                      std::map<std::string, std::vector<std::pair<std::size_t, Mat>>> &out, std::set<std::string> &told,
                       const std::function<void(const std::string &)> &say)
 {
     namespace kh2 = khdays::assets::kh2;
@@ -512,9 +519,8 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
         }
         return &out;
     };
-    std::set<std::string> told;
     for (const auto &[a, bones] : scopes) {
-        auto &turns = model.ds_turns[a];
+        auto &turns = out[a];
         for (const auto &[b, i] : bones) {
             const DsPoseRule &rule = rules[i];
             const std::string bone = "ds_pose: bone " + std::to_string(b);
@@ -562,6 +568,23 @@ void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
             turns.emplace_back(j, mul(frame, mul(turn, inverse(frame))));
         }
     }
+}
+
+// Model::ds_turns from the lines without `limit`, and Model::ds_turns_limit from all of them, the `limit` ones last
+void resolve_ds_poses(Model &model, const std::vector<DsPoseRule> &rules,
+                      const std::function<void(const std::string &)> &say)
+{
+    std::vector<DsPoseRule> plain, in_limit;
+    for (const DsPoseRule &r : rules)
+        (r.limit ? in_limit : plain).push_back(r);
+    model.ds_turns.clear();
+    model.ds_turns_limit.clear();
+    std::set<std::string> told;
+    resolve_ds_scope(model, plain, model.ds_turns, told, say);
+    if (in_limit.empty())
+        return;
+    plain.insert(plain.end(), in_limit.begin(), in_limit.end());
+    resolve_ds_scope(model, plain, model.ds_turns_limit, told, say);
 }
 
 void resolve_hands(Model &model, const std::vector<HandRule> &rules, const std::vector<HandPoseRule> &poses,

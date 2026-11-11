@@ -270,6 +270,49 @@ while paused), the weapon's motion pose with it. Not where the new animation car
 animations, frames or timing. `cut_blend_except <animation>...` leaves cuts into those animations cuts (the game
 set one back included, and their `air` and `land` slots); a cut out of them still fades: the boss Riku's damage cuts
 in, and fades out of the damage, its landing or the recovery after them into whatever his AI plays next (user).
+The boss Saix fades every cut the same way (8 frames, no exceptions yet: which of his poses are damage is not read).
+
+**`plant_feet <animation>...`.** In those game animations the game's skeleton (every node but the first, the actor's
+origin) is lowered until the lower of the `exact` legs' feet stands as high over the origin as at rest, by those
+animations' share of the game's pose; never raised. The boss Saix's 016_018-020, 023, 025 and 026 keep the pelvis at
+his berserk idle's height and draw the feet up to half his hip height, so his body hung over raised feet; lowered,
+the `exact` legs crouch onto feet on the floor (offline, 016_026: the lower foot 12-16 cm where it rose to 54, his ankle
+standing at 15.8; the hips 73-106 cm where they stayed at 115-123).
+
+**`hip_motion <gain> <animation>...`.** In those game animations, where the hips (the `exact` legs' hip nodes) stand
+lower over the actor's origin than at rest, every node but the first and the `exact` feet is lowered so the dip is
+`gain` times as deep, saturating at a deep crouch's (0.45 of the hips' rest height, `D tanh(gain dip / D)`): the legs
+bend further where the animation bends them and its standing frames stay as they are; none as both feet leave the
+floor. The gain is the playing animations' by their shares of the game's pose; the drop is eased over about 0.1 s
+(the feet leaving the floor took it away within a few frames and flung the coat). The boss Saix's attacks take 3
+(`Ov259_SetPose` plays pose p as `016_<p>`: combo 009-011, shoot 012, taunt 013, dash 008, lunge 016 then 021, charge
+017, the slam 018, its charge 019 and 020 by turns, its end 022, and 014; offline 020's hips 67-108 cm where they held
+at 104-124, 012 to 94 from 109; the peaks unchanged); his real crouches and the hop back 015 (his wait and the lunge's
+restart, 126-132 cm: no dips to deepen) are left as they are. The slam's animations flung the coat off his legs before
+(019, 021: 20 cm through it): `slam_moves` in his cloth file calms it in all his attacks, 008-022 (inertia 0.3, 10 Hz);
+the fades between a deep one and a standing one still leak for a few frames (020 into 009: 21 cm offline). His
+knock-down out of berserk (`Ov259_DownEntry`: 005, then 022) throws him back with his legs straight out in front, past
+the coat's front: `knock_down` there (the thighs carry the coat three times as much, 8 Hz) shortens it from 96 frames
+of 241 to 26, about 22 cm deep however set. What ends his berserk (decomp, `Ov259_AiEnterFinisher`, `Ov259_OnHit`,
+`Ov259_AiDispatchAction`): entering it fills a gauge with a fifth of his remaining health; berserk, he takes a third of
+each hit's damage, from his health and the gauge alike; the gauge spent, he is knocked down (sub-state 15, as his
+health spent is sub-state 3), which clears the berserk flag. 015 is also
+the landing after his throw (`Ov259_ShootEntry` plays 012 and arms 015 after it). When the game hides a model by scaling
+it to nothing (draw() skips it), its stored joints are dropped, so what reads its nodes back (the boss's claymore on
+`sa_h_R`, `NNS_G3dGetResultMtx`) gets the game's own place, not where it was last drawn.
+
+**`upright on`** (bones.txt, the boss Saix). Verified in the decomp: `Ov259_WatchSlot` turns his actor's rotation (+0xa0)
+by the shortest turn from up to the floor's normal under him (+0x124, written by `Ov107_AiState_ResolveContacts`' and
+`Ov107_AiState_IntegrateVelocity`'s rays), and `Obj_RenderModel` draws his body (actor +0x38c, its +0x84 the actor,
+`Ov259_Construct`) with it as the base's rotation, so on a ramp his whole model leaned with it (the boss Riku's
+`Ov260_WatchSlot` turns by his heading alone). With `upright` the mod's model takes that turn back out of the game's
+nodes about his place (`stand_upright`: the actor is found through `khdays_character_drawn_object`, the body
+`Obj_RenderModel` draws), and while his floor bit (+0x17a bit 0) is set, each `exact` foot is raised to where the
+floor's plane through his place lies under it, the body lowered by the most a foot goes down so the legs' IK bends onto
+the slope, a foot near its standing height turned with the floor; eased over a few frames, since the normal changes at
+once from one triangle to the next (`feet_on_floor`). The game's actor keeps its tilt: his hit shapes (`Ov259_Update`
+copies +0xa0 into them), the slam's box (+0x124) and effects anchored on him are the game's. Not in KH2 motions'
+feet (B_EX160 has no feet for KH2's IKAdjust) and unchecked in game.
 
 **`after <slot>...`** on a section (or an `air` line's `land`): once its motion ends while the game still plays the
 animation, those slots play in turn from their starts, cut together, the last one looping. Unlike `finish`, which
@@ -772,7 +815,14 @@ the game's own animation poses it. `ds_pose` lines in `motions.txt` turn them:
 ds_pose 2 135-156 252-273                  # as mset slot 2 (frame 0) turns them
 ds_pose 30@12 141-156 for b_ro_A005         # another slot's frame for one animation
 ds_pose rotate 0 0 20 252-257 for b_ro_e000  # or degrees about each bone's own axes
+ds_pose 256 171-175 183-212 limit            # only while the limit look is drawn
 ```
+
+`limit` lines apply only while the model's limit look is drawn (`limit_animations` / `limit_shapes`, as the meshes
+switch), over the other lines; out of it they are left out. The boss Saix's berserk hair: in B_EX160_2's berserk idle
+(slot 256) his spikes stand turned 35-90 degrees from his calm idle's, nothing lengthened (measured with the replay's
+bones), so `ds_pose 256 171-175 183-212 253-271 limit` gives the game's own animations that shape in berserk, all but
+his five long back strands and the two locks by his face (strings, user).
 
 Each bone takes its turn from its parent as the slot's pose (through the bone
 map) has it against rest, about its head; the game animation with the most
@@ -1219,7 +1269,7 @@ models drawn while it is off. A new model's settings carry the same line.
 | `xigbar` | `ba/ch/xi/def.p.z/mdl` | B_EX140 | as `xigbar_h`, whose settings it takes |
 | `luxord_h` | `ba/ch/lu/def_h.p.z/mdl` | B_EX150 | B_EX150.mset, Marluxia's slots: idle 0, walk 1 (no run of its own), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on slot 5 (his 31A and 33A run 80 ticks with no loop). Skeleton and legs `demyx_h`'s (B_EX120_HB), so his pairs, feet (ankle 14.9 over its sole, the game's 11.6) and colliders; arm, cuff and hand `xaldin_h`'s numbering on the left (right +71), so its cuff lines (his cuff as wide as Marluxia's). No hair bones. His five giant cards (236-245, meshes 4-8) hidden; Days' card (`lu_w00a`, the `a` models of `w_.p2`; at rest on `Bip01_R_Hand`'s axes, 8.2 cm along the fingers) carried by his right hand in the game's own animations; in KH2 motions on his hand at its own grip (`weapon_model ... 204 hand 204 rotate -41 -33 13 offset 6.7 1.5 -4.5`: the least turn from Days' grip pointing its face, its -z, at his eyes in his KH2 idle; Days' grip faced it into his palm, and the game's own grip spun it in his idle-walk blends); the `b` models' fan left to the game |
 | `luxord` | `ba/ch/lu/def.p.z/mdl` | B_EX150 | as `luxord_h`, whose settings it takes |
-| `saix_h` | `ba/ch/sa/def_h.p.z/mdl` | B_EX160 | B_EX160.mset, Marluxia's slots: idle 0, walk 1 (no run of its own: the game's run stays; his berserk run is B_EX160_2's, unused), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19. Skeleton `luxord_h`'s to the collar, his right arm +213, so `luxord_h`'s cuffs renumbered; jaw 182. His claymore's bone 379 placed on Days' `sa_h_R` riding his right hand, Days' claymore drawn on it (`weapon sa_h_R 379 rotate 0 90 0`: Days' length along its z, KH2's along x, the grips together); KH2's two claymores (meshes 10-13, 16) hidden. Both faces in one file: the berserk face (7, on the jaw) and its yellow-eyed eye piece (5) drawn only in his limit, the normal ones (4, 6) the rest of the time (`limit_animations b_sa_L*`, `limit_show_mesh`, `limit_hide_mesh`); his rise (the game's `b_sa_A003` before its 12th frame) from 03A's loop (`start_loop always`: straight after his take-off on the same slot, `start_loop` alone carried the take-off's time on). Hair: 30 `kh2_hair` tufts, his long back strands among them; the two manes by his face held by the head. His KH2 motions hold 379 turned 179 degrees (about the blade) from where the game's animations hold `sa_h_R` in his hand, the same in every slot measured, so the claymore flipped between them: `weapon sa_h_R 379 rotate 138.4 -87.4 10.9` is the turn that holds it in KH2 motions as the game's do (the placed joint's correction takes the line's turn out again in the game's animations, so only KH2's change). His five long strands hang at rest straight down from the head, and the game's animations tip the head 17 degrees further forward on the chest than KH2's idle, so the hair they are guided to ran through his chest: `ds_pose 0 176-180 213-222 272-281` turns them as his idle does (the replay's crossings of the chest's mesh down by four fifths in the game's run) |
+| `saix_h` | `ba/ch/sa/def_h.p.z/mdl` | B_EX160 | B_EX160.mset, Marluxia's slots: idle 0, walk 1 (no run of its own: the game's run stays; his berserk run is B_EX160_2's, unused), jump 3, fall 4, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19. Skeleton `luxord_h`'s to the collar, his right arm +213, so `luxord_h`'s cuffs renumbered; jaw 182. His claymore's bone 379 placed on Days' `sa_h_R` riding his right hand, Days' claymore drawn on it (`weapon sa_h_R 379 rotate 0 90 0`: Days' length along its z, KH2's along x, the grips together); KH2's two claymores (meshes 10-13, 16) hidden. Both faces in one file: the berserk face (7, on the jaw) and its yellow-eyed eye piece (5) drawn only in his limit, the normal ones (4, 6) the rest of the time (`limit_animations b_sa_L*`, `limit_show_mesh`, `limit_hide_mesh`); his rise (the game's `b_sa_A003` before its 12th frame) from 03A's loop (`start_loop always`: straight after his take-off on the same slot, `start_loop` alone carried the take-off's time on). Hair: 30 `kh2_hair` tufts, his long back strands among them; the two manes by his face simulated as xaldin_h's braids (`locks`: each mane's long run 223, 225, 235, 238 and 282, 284, 294, 297 a drawstring chain, its spikes carried; KH2 motions guide them), and left out of the berserk hair (user). In the game's spins they swing hard (the replay's twitch up to 30-45 cm a frame in 016_012/015, guided or not). His KH2 motions hold 379 turned 179 degrees (about the blade) from where the game's animations hold `sa_h_R` in his hand, the same in every slot measured, so the claymore flipped between them: `weapon sa_h_R 379 rotate 138.4 -87.4 10.9` is the turn that holds it in KH2 motions as the game's do (the placed joint's correction takes the line's turn out again in the game's animations, so only KH2's change). His five long strands hang at rest straight down from the head, and the game's animations tip the head 17 degrees further forward on the chest than KH2's idle, so the hair they are guided to ran through his chest: `ds_pose 0 176-180 213-222 272-281` turns them as his idle does (the replay's crossings of the chest's mesh down by four fifths in the game's run) |
 | `saix` | `ba/ch/sa/def.p.z/mdl` | B_EX160 | as `saix_h`, whose settings it takes |
 | `xemnas_h` | `ba/ch/xe/def_h.p.z/mdl` | B_EX170 | B_EX170.mset: idle 0, walk 1 (no run of its own), no jump (slot 3 empty), the fall 4 from the game's 12th frame in the air, landing 5, damage 10-13, the aerial damage 16 and 18 landing on 17 and 19; B_EX170_LAST.mset after its 256 slots (`motions ... at 256 own`: B_EX170_LAST.mdlx's 320 bones are B_EX170's, bone for bone), its 00M for the game's `b_xe_Ca000`, its 01M (408) for `b_xe_Ca001` from its loop point, its end (`start_loop`: it does not loop, so the last frame holds), `offset 0 0 337.6`: its bones travel only two thirds of its root motion (688.4 of 1026.0 cm at tick 60), so taking the root motion out left him behind his place. Legs and coat as B_EX110's; arms, cuffs and hands `xaldin_h`'s +15 (right +138), so its cuffs; hood 116; the hair down his back (101-114) hangs from the collar. No weapon in the file; Days' (`xe_h_L`, `xe_h_R`, on the game's hands) carried by his hands with `weapon ... hand`. Hair: three `kh2_hair` groups, the top and fringe on the head's end, the side locks on the neck's end, the back hair's six strands on its base |
 | `xemnas` | `ba/ch/xe/def.p.z/mdl` | B_EX170 | as `xemnas_h`, whose settings it takes |
@@ -1250,7 +1300,7 @@ models drawn while it is off. A new model's settings carry the same line.
 | `ro_w00600` | `mi/ob/B7.z/mdl` | W_EX010 | `held kh2_2 rest 180 90 0`, `ro_w00600`'s chain |
 | `ro_w13600` | `mi/ob/B0.z/mdl` | W_EX010_10 | the same |
 | `ro_w14600` | `mi/ob/B1.z/mdl` | W_EX010_20 | the same |
-| `016` | `Ms/53.p#0/mdl` | B_EX160 | the boss Saix's body (his skeleton is `saix_h`'s node for node, its root `016`): `saix_h`'s settings (his bones with `lower_hips`, 379 on `sa_h_R` riding the right hand, `weapon sa_h_R 379 rotate 138.4 -87.4 10.9`, the strands' `ds_pose`; that turn measured on B_EX160's slots `saix_h` plays, not on the boss's own), and his cloth; his claymore meshes hidden; the berserk face by `limit_shapes head_02*`. B_EX160.mset with B_EX160_2.mset at 256: `016_000` 00A (0), `016_002` the berserk idle (256), `016_001` the berserk run (257, `follow`: its stride on the game's 18 frames), `016_004` 81A (232, `follow lift 8`); the rest Days' own, fading into the two idles. The game's claymore object (`Ov259_HelperUpdate`) reads `sa_h_R` back while held (`NNS_G3dGetResultMtx`, `Obj_RenderModel`), so it sits in the KH2 hand (offline: 10.7-11.1 cm from the hand bone in Days' animations) and goes where KH2 keys 379 in his motions: 81A sends it up to 157 cm off the hand |
+| `016` | `Ms/53.p#0/mdl` | B_EX160 | the boss Saix's body (his skeleton is `saix_h`'s node for node, its root `016`): `saix_h`'s settings (his bones with `lower_hips`, 379 on `sa_h_R` riding the right hand, `weapon sa_h_R 379 rotate 138.4 -87.4 10.9`, the strands' `ds_pose`; that turn measured on B_EX160's slots `saix_h` plays, not on the boss's own), and his cloth; his claymore meshes hidden; the berserk face by `limit_shapes head_02*`, and his berserk idle's hair in the game's animations while it shows (`ds_pose 256 ... limit`, the back strands left out); every cut faded over 8 frames (`cut_blend`); `plant_feet` in 016_018-020, 023, 025, 026; `hip_motion 2.5` in his standing attacks; drawn `upright` on slopes, his feet put on the floor. B_EX160.mset with B_EX160_2.mset at 256: `016_000` 00A (0), `016_002` the berserk idle (256), `016_001` the berserk run (257, `follow`: its stride on the game's 18 frames), `016_004` 81A (232, `follow lift 8`); the rest Days' own, fading into the two idles. The game's claymore object (`Ov259_HelperUpdate`) reads `sa_h_R` back while held (`NNS_G3dGetResultMtx`, `Obj_RenderModel`), so it sits in the KH2 hand (offline: 10.7-11.1 cm from the hand bone in Days' animations) and goes where KH2 keys 379 in his motions: 81A sends it up to 157 cm off the hand |
 | `A_016` | `Ms/53.p#1/mdl` | B_EX160 | Mission Mode's body: `016`'s settings (`saix_h`'s cloth through them) |
 | `W00` | `Ms/53.p#60/mdl` | B_EX160 | his claymore object's normal model, as B_EX160's claymore meshes 10-13 (the rest hidden): `held kh2_379 rest 0 90 0` (W00 and W01 share one frame, the blade along z from -37.9 cm; 379's along x from -38.6) |
 | `W01` | `Ms/53.p#62/mdl` | B_EX160 | the berserk one: 10, 11, 13 and the long spikes 16 for the short ones 12 (assumed from their shapes) |

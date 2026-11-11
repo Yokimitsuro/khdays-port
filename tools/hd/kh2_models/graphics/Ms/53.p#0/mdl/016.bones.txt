@@ -121,3 +121,7 @@ cuff_pose_bone kh2_337 0.02 -78.02 -0.03 0.322 1.000 1.000
 # In the game's own animations the body lowered until each leg reaches as the game's does for its length, as saix_h's,
 # so the knees bend as the game's (the legs alone straightened where the game's bent)
 lower_hips 1
+
+# Ov259_WatchSlot tilts him with the floor's normal under him: drawn upright instead (his yaw kept, the game's hit
+# shapes still tilted), his `exact` feet put on the floor's slope by the legs' IK while he touches it
+upright on

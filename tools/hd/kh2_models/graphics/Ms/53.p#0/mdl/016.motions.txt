@@ -19,6 +19,24 @@ ds_pose 0 135-156 348-369
 # His five long strands (176-180, 213-222, 272-281) turned as slot 0 turns them, as saix_h's: at rest they hang
 # straight down, and the game's animations tip his head forward enough that the hair ran through his chest
 ds_pose 0 176-180 213-222 272-281
+# In his berserk look (the game's head_02 shapes, `limit_shapes`) the rest of his hair, all but those five strands and
+# the two locks by his face (strings in secondary.txt, user), takes his berserk idle's shape (B_EX160_2's 10A, slot 256):
+# its spikes turned 35-90 degrees from his calm idle's, nothing lengthened (measured with the replay's bones)
+ds_pose 256 171-175 183-212 253-271 limit
+
+# ov259 cuts from one animation into the next: every change faded from the pose last shown over 8 of the game's
+# frames, as the boss Riku's. Only what is drawn changes: the game's animations, frames and timing are its own
+cut_blend 8
+
+# These keep his pelvis at his berserk idle's height and draw his feet up to half his hip height (016_026 most):
+# the game's skeleton lowered until his lower foot stands at its rest height, so he crouches onto the floor
+plant_feet 016_018 016_019 016_020 016_023 016_025 016_026
+# His attacks (ov259's poses, the animation `016_<pose>`: combo 009-011, shoot 012, taunt 013, dash 008, lunge 016 and
+# 021, charge 017, the slam 018, its charge 019 and 020 by turns, its end 022; 014 too) mostly keep his hips near
+# standing height (020: 104-124 cm for two thirds of it, feet down): there the dips of his pelvis below it are 3 times as
+# deep, his standing height unchanged, so his body rises and sinks with them (after `plant_feet` puts raised feet down).
+# Not his real crouches (005-007) nor the hop back (015, his wait and the lunge's restart: no dips to deepen)
+hip_motion 3 016_008 016_009 016_010 016_011 016_012 016_013 016_014 016_016 016_017 016_018 016_019 016_020 016_021 016_022
 
 # His idle (016_000): KH2's battle idle, B_EX160's 00A. Every line crosses from what played before over 8 frames.
 016_000 0 blend 8

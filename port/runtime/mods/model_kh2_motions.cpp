@@ -262,6 +262,20 @@ void load_kh2_motions(Model &model, const std::string &path)
                 model.kh2_air_floor = b == "on";
             else
                 say("\"" + line + "\": write `air_floor on` or `air_floor off`; the line is ignored");
+        } else if (a == "hip_motion") { // hip_motion <gain> <animation>...: the hips' dips deepened in those
+            float gain = 0.0F;
+            std::vector<std::string> names;
+            for (std::string w; words >> w;)
+                names.push_back(w);
+            if (number(b, gain) && gain >= 1.0F && gain <= 4.0F && !names.empty())
+                for (const std::string &name : names)
+                    model.hip_gain[name] = gain;
+            else
+                say("\"" + line + "\": write `hip_motion <gain, 1 to 4> <game animation>...`; the line is ignored");
+        } else if (a == "plant_feet") { // plant_feet <animation>...: the game's raised feet put down
+            model.plant_feet.insert(b);
+            for (std::string w; words >> w;)
+                model.plant_feet.insert(w);
         } else if (a == "cut_blend_except") { // cut_blend_except <animation>...: no fade into these
             model.kh2_cut_except.insert(b);
             for (std::string w; words >> w;)
@@ -552,7 +566,7 @@ void load_kh2_motions(Model &model, const std::string &path)
                     sides[1] = static_cast<int>(pose);
             } while (words >> name);
         } else if (a == "ds_pose") {
-            // ds_pose <slot>[@<frame>] | rotate <x> <y> <z>, then bones (`135-156`), then [for <animation>...]
+            // ds_pose <slot>[@<frame>] | rotate <x> <y> <z>, then bones (`135-156`), [limit], [for <animation>...]
             DsPoseRule rule;
             bool ok = true;
             if (b == "rotate") {
@@ -571,6 +585,8 @@ void load_kh2_motions(Model &model, const std::string &path)
                     rule.animations.push_back(w);
                 else if (w == "for")
                     names = true;
+                else if (w == "limit")
+                    rule.limit = true;
                 else if (span(w, from, to))
                     for (int x = from; x <= to; ++x)
                         rule.bones.push_back(x);
@@ -579,8 +595,8 @@ void load_kh2_motions(Model &model, const std::string &path)
             }
             if (!ok || rule.bones.empty() || (names && rule.animations.empty())) {
                 say("\"" + line +
-                    "\": write `ds_pose <mset slot>[@<frame>] <bones> [for <game animation>...]` or `ds_pose "
-                    "rotate <x> <y> <z> <bones> [for ...]`; the line is ignored");
+                    "\": write `ds_pose <mset slot>[@<frame>] <bones> [limit] [for <game animation>...]` or "
+                    "`ds_pose rotate <x> <y> <z> <bones> [limit] [for ...]`; the line is ignored");
                 continue;
             }
             ds_rules.push_back(std::move(rule));

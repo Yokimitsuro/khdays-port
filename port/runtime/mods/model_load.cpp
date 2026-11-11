@@ -232,6 +232,7 @@ void read_settings(Model *model, Loading &loading)
     model->scale = bones.scale;
     model->game_scale = bones.game_scale;
     model->lower_hips = bones.lower_hips;
+    model->upright = bones.upright;
     model->ik_side_from_hip = bones.ik_side_from_hip;
     model->cull = bones.cull;
     model->pose_degrees = bones.pose_degrees;

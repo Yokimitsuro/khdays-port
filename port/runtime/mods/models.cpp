@@ -327,13 +327,23 @@ void draw(Model &m)
         if (node_sent[g] && first < 0)
             first = static_cast<int>(g);
     }
-    if (first < 0)
+    // a draw that poses nothing leaves no joints of its own for what the game attaches (result_matrix): the game's own
+    // result matrices answer, so a weapon reading the hand goes where the game puts it, not where it was last drawn
+    const auto skipped = [&] {
+        if (drawn_object != nullptr)
+            node_results.erase(drawn_object);
+    };
+    if (first < 0) {
+        skipped();
         return;
+    }
     // a model the game hides by scaling it to nothing (the boss Saix's claymore not shown, Ov259_SwapShells): nothing
     {
         const Mat &at = node_matrix[static_cast<std::size_t>(first)];
-        if (length({at[0], at[1], at[2]}) + length({at[4], at[5], at[6]}) + length({at[8], at[9], at[10]}) < 1e-6F)
+        if (length({at[0], at[1], at[2]}) + length({at[4], at[5], at[6]}) + length({at[8], at[9], at[10]}) < 1e-6F) {
+            skipped();
             return;
+        }
     }
     std::vector<char> done(nodes, 0);
     for (std::size_t pass = 0; pass <= nodes; ++pass) {
@@ -363,6 +373,14 @@ void draw(Model &m)
             for (std::size_t c = 12; c < 15; ++c)
                 dg[c] = s * dg[c] + (1.0F - s) * o[c];
     }
+    if (m.upright)
+        stand_upright(m, static_cast<std::size_t>(first));
+    if (!m.plant_feet.empty())
+        plant_feet(m, static_cast<std::size_t>(first));
+    if (!m.hip_gain.empty())
+        hip_motion(m, static_cast<std::size_t>(first));
+    if (m.upright)
+        feet_on_floor(m, static_cast<std::size_t>(first));
     const Mat &root = node_move[static_cast<std::size_t>(first)];
     // the session log's diagnosis: how many of its nodes a draw sends (the first draws, by
     // frame: several in one frame are draws of parts), and at two moments each node's
@@ -424,9 +442,10 @@ void draw(Model &m)
     const Mat scaled_root = mul(root, scale);
 
     // each joint, parents first; `ds_pose` turns by the game's animation with the most weight that plays no
-    // KH2 motion (its own lines, else the default's)
+    // KH2 motion (its own lines, else the default's); in the limit look, its own set (`ds_pose ... limit`)
     std::vector<const Mat *> ds_turn(m.joints.size(), nullptr);
-    if (!m.ds_turns.empty()) {
+    const auto &ds_turns = !m.ds_turns_limit.empty() && limit_plays(m) ? m.ds_turns_limit : m.ds_turns;
+    if (!ds_turns.empty()) {
         const Playing *game_anim = nullptr;
         for (const Playing &p : playing) {
             const auto s = m.kh2_sections.find(p.name);
@@ -435,10 +454,10 @@ void draw(Model &m)
             if (!kh2 && (game_anim == nullptr || p.ratio > game_anim->ratio))
                 game_anim = &p;
         }
-        auto turns = game_anim != nullptr ? m.ds_turns.find(game_anim->name) : m.ds_turns.end();
-        if (turns == m.ds_turns.end())
-            turns = m.ds_turns.find("");
-        if (turns != m.ds_turns.end())
+        auto turns = game_anim != nullptr ? ds_turns.find(game_anim->name) : ds_turns.end();
+        if (turns == ds_turns.end())
+            turns = ds_turns.find("");
+        if (turns != ds_turns.end())
             for (const auto &[j, turn] : turns->second)
                 ds_turn[j] = &turn;
     }
