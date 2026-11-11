@@ -1001,9 +1001,7 @@ add_executable(khdays-secondary-replay tools/secondary_replay.cpp ${KHDAYS_SECON
     ../assets/src/filesystem.cpp tools/replay_game_stubs.cpp)
 target_include_directories(khdays-secondary-replay PRIVATE ../assets/include ../sdk/include runtime/mods/secondary
                            "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}" "${KHDAYS_GEN}")
-target_compile_options(khdays-secondary-replay PRIVATE
-    $<$<COMPILE_LANGUAGE:C>:/W4 /std:c17>
-    $<$<COMPILE_LANGUAGE:CXX>:/W4 /std:c++20 /EHsc>)
+target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)

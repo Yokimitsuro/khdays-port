@@ -661,6 +661,96 @@ void authored_and_release()
     CHECK(jump < 0.08F);
 }
 
+// A control's time window: one starting later than its animation eases in over its blend; one starting with it is
+// not eased again each time a looping animation starts over (the coat fell back to the plain cloth every loop)
+void control_window()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    const std::string text = skirt_config(s, "") +
+                             "control late\n  animation *\n  time 0.5 end\n  blend 0.25 0\n  groups skirt\n"
+                             "  mode guided\nend\n"
+                             "control whole\n  animation *\n  time 0 end\n  loop on\n  blend 0.25 0\n  groups skirt\n"
+                             "  mode guided\nend\n";
+    auto rig = cooked(text, s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    Actor a(rig, 5);
+    std::vector<Frame> pose = pose_of(s.sk, {});
+    ActorInput in;
+    in.pose = &pose;
+    float before = -1.0F, ramp = -1.0F, after = -1.0F, looped = 2.0F;
+    for (int f = 0; f <= 120; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        in.seconds = t;
+        // `late` on a 2 s animation; `whole` on one looping every 0.5 s
+        in.animations = {{"long", -1, -1.0F, t, 2.0F, 1.0F}, {"short", -1, -1.0F, std::fmod(t, 0.5F), 0.5F, 0.0F}};
+        a.update(in);
+        CHECK(a.control_weights().size() == 2);
+        if (a.control_weights().size() != 2)
+            return;
+        before = f == 27 ? a.control_weights()[0] : before;
+        ramp = f == 36 ? a.control_weights()[0] : ramp;
+        after = f == 60 ? a.control_weights()[0] : after;
+    }
+    CHECK(before == 0.0F);             // 0.45 s: before its window
+    CHECK(ramp > 0.2F && ramp < 0.6F); // 0.6 s: easing in (0.4)
+    CHECK(after > 0.99F);              // 1 s: whole
+    Actor b(rig, 5);
+    for (int f = 0; f <= 120; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        in.seconds = t;
+        in.animations = {{"short", -1, -1.0F, std::fmod(t, 0.5F), 0.5F, 1.0F}};
+        b.update(in);
+        if (f >= 20)
+            looped = std::fmin(looped, b.control_weights()[1]);
+    }
+    CHECK(looped > 0.99F); // its easing once, not at each of the loop's starts (0.5, 1, 1.5 s)
+}
+
+// A collider on a bone the simulation moves (rig.cpp: Collider::sim) follows that bone as simulated, not as animated:
+// as the last draw rebuilt it on its group's reference bone, carried by that bone as posed now (Simulation::shapes)
+void collider_on_simulated_bone()
+{
+    const Skirt s = make_skirt(6, 3);
+    Diagnostics d;
+    auto rig = cooked(skirt_config(s, "collider tip capsule s0_2 length 0.2 radius 0.02 tags tip\n"), s.sk, s.mesh, d);
+    CHECK(rig != nullptr);
+    if (!rig)
+        return;
+    CHECK(rig->colliders.size() == 1 && rig->colliders[0].sim >= 0 &&
+          rig->colliders[0].end_sim == rig->colliders[0].sim); // `length`: its end on the same bone
+    Actor a(rig, 3);
+    std::vector<Frame> pose, out;
+    std::vector<std::uint8_t> written;
+    ActorInput in;
+    in.pose = &pose;
+    const auto tip = static_cast<std::size_t>(s.bone(0, 2));
+    float off_simulated = 0.0F, off_animated = 0.0F;
+    Frame on_hips; // the tip as the last draw rebuilt it, on the hips
+    for (int f = 0; f < 90; ++f) {
+        const float t = static_cast<float>(f) / 60.0F;
+        pose = pose_of(s.sk, {std::sin(t * 3.0F) * 0.4F, 0.0F, 0.0F}); // swung sideways: the strips lag
+        in.seconds = t;
+        a.update(in);
+        out = pose;
+        written.assign(pose.size(), 0);
+        a.output(pose, out, written);
+        if (f >= 30) {
+            const Vec3 at = a.simulation().colliders()[0].a;
+            off_simulated = maxf(off_simulated, length(at - apply(compose(pose[1], on_hips), {})));
+            off_animated = maxf(off_animated, length(at - apply(pose[tip], {})));
+        }
+        on_hips = relative(pose[1], out[tip]);
+    }
+    if (off_simulated >= 0.001F || off_animated <= 0.05F)
+        std::fprintf(stderr, "collider on a simulated bone: %.1f cm from it as simulated, %.1f as animated\n",
+                     static_cast<double>(off_simulated * 100.0F), static_cast<double>(off_animated * 100.0F));
+    CHECK(off_simulated < 0.001F); // the drawn bone's
+    CHECK(off_animated > 0.05F);   // not where the animation puts it
+}
+
 // A guided coat whose animation stretches its bones (KH2's battle coats scale theirs several times
 // over): the links, strain limits and tethers take the animation's lengths, so it is followed
 void guided_stretch()
@@ -1752,54 +1842,6 @@ void n_ex830()
 
 } // namespace
 
-// `lean`: the reference shape turned about the reference bone's head toward the turn `lean_bone` gives it (as at rest
-// against it); a control's `lean 1` with the spine turned 30 degrees on the hips turns the targets by 30 degrees
-void lean_toward_spine()
-{
-    Skirt s = make_skirt(6, 3);
-    s.sk.names.push_back("spine");
-    s.sk.parent.push_back(1);
-    s.sk.rest.push_back(s.sk.rest[1]);
-    s.sk.rest.back()[13] = 1.3F;
-    const auto spine = static_cast<std::size_t>(s.sk.rest.size() - 1);
-    Diagnostics d;
-    const std::string lean_control = "control lean\n  animation *\n  groups skirt\n  lean 1\nend\n";
-    auto leaning = cooked(skirt_config(s, "", "  lean_bone spine\n") + lean_control, s.sk, s.mesh, d);
-    auto plain = cooked(skirt_config(s, "", "  lean_bone spine\n"), s.sk, s.mesh, d);
-    CHECK(leaning != nullptr && plain != nullptr);
-    if (!leaning || !plain)
-        return;
-    std::vector<Frame> pose = pose_of(s.sk, {0.0F, 0.0F, 0.0F});
-    const Quat turn = axis_angle({0, 0, 1}, 30.0F * kPi / 180.0F);
-    pose[spine].q = normalized(turn * pose[spine].q);
-    Actor a(leaning, 5), b(plain, 5);
-    ActorInput in;
-    in.pose = &pose;
-    for (int f = 0; f < 3; ++f) {
-        in.seconds = static_cast<float>(f) / 60.0F;
-        in.animations = {{"idle", -1, -1.0F, static_cast<float>(in.seconds), 0.0F, 1.0F}};
-        a.update(in);
-        b.update(in);
-    }
-    const Vec3 hips = pose[1].t;
-    float worst = 0.0F, moved = 0.0F;
-    for (std::size_t i = 0; i < a.simulation().targets().size(); ++i) {
-        if (!leaning->particles[i].dynamic)
-            continue;
-        const Vec3 want = hips + rotate(turn, b.simulation().targets()[i] - hips);
-        worst = maxf(worst, length(a.simulation().targets()[i] - want));
-        moved = maxf(moved, length(a.simulation().targets()[i] - b.simulation().targets()[i]));
-    }
-    CHECK(worst < 1e-3F);
-    CHECK(moved > 0.05F);
-    Diagnostics bad;
-    CHECK(cooked(skirt_config(s, "", "  lean_bone hips\n"), s.sk, s.mesh, bad) == nullptr);
-    CHECK(has_text(bad, "is its reference bone"));
-    bad.clear();
-    CHECK(cooked(skirt_config(s, "", "  lean_bone spine rotate 1 2\n"), s.sk, s.mesh, bad) == nullptr);
-    CHECK(has_text(bad, "write `lean_bone <bone> [rotate <x> <y> <z>]`"));
-}
-
 int main()
 {
     configuration();
@@ -1813,7 +1855,8 @@ int main()
     free_chain_upside_down();
     floor_over_body();
     control_slots();
-    lean_toward_spine();
+    control_window();
+    collider_on_simulated_bone();
     authored_and_release();
     guided_stretch();
     cutscene_sim_shell();

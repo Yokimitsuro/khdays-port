@@ -113,6 +113,26 @@ inline Mat attached_frame(const Mat &at, const Mat &game, float share)
     return frame_of(q, scale, at[12], at[13], at[14]);
 }
 
+// A weapon the game holds at `grip` and puts at `game`, which a drawn hand standing `shift` from the game's holds at
+// `rigid`: rigid while the game keeps it within 0.6 `reach`es of the grip; from there to 1.5, eased, more and more at
+// the game's place moved by `shift` and turned as the game turns it, so one the game throws does not swing round as the
+// hand turns. `share`: how far it is let go (0..1).
+inline Mat let_go(const Mat &rigid, const Mat &game, const Mat &grip, const std::array<float, 3> &shift, float reach,
+                  float *share = nullptr)
+{
+    float away = 0.0F;
+    for (std::size_t c = 12; c < 15; ++c)
+        away += (game[c] - grip[c]) * (game[c] - grip[c]);
+    const float t = std::fmin(1.0F, std::fmax(0.0F, (std::sqrt(away) - 0.6F * reach) / std::fmax(0.9F * reach, 1e-6F)));
+    const float loose = t * t * (3.0F - 2.0F * t);
+    if (share != nullptr)
+        *share = loose;
+    Mat out = attached_frame(rigid, game, loose);
+    for (std::size_t c = 0; c < 3; ++c)
+        out[12 + c] = rigid[12 + c] + (game[12 + c] + shift[c] - rigid[12 + c]) * loose;
+    return out;
+}
+
 // A joint's frames of `n` poses mixed by their weights (normalized here), as KH2's kn::blend (PS3 0xF659C) for two: its
 // x and y axes (made unit) each the weighted sum, made unit; z = x cross y, y = z cross x; its place and its axes'
 // scales their weighted mean. Axes that cancel (turns 180 degrees apart) take the heaviest pose's turn.

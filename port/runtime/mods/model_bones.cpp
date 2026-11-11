@@ -349,8 +349,8 @@ int setting_named(const std::string &name, const std::string &key)
 {
     if (key.empty())
         return -1;
-    for (int s = 0; s < KHDAYS_OPT_COUNT; ++s)
-        if (key == khdays_hud_setting_keys[s])
+    for (int s = 0; s < KHDAYS_OPT_COUNT; ++s) // (offline tools stand in for the table with no names)
+        if (khdays_hud_setting_keys[s] != nullptr && key == khdays_hud_setting_keys[s])
             return s;
     std::fprintf(
         stderr,

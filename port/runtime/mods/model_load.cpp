@@ -572,13 +572,13 @@ void place_joints(Model *model, const Loading &loading)
         model->joints[j].place_offset = {by[0] * 0.01F, by[1] * 0.01F, by[2] * 0.01F};
     }
     for (std::size_t c = 0; c < model->joints.size(); ++c) {
-        if (!model->joints[c].placed || bones.places_riding.contains(model->joints[c].name))
+        if (!model->joints[c].placed || model->joints[c].rides >= 0)
             continue;
         const int p = paired_above(*model, static_cast<int>(c));
         int children = 0;
         for (std::size_t o = 0; o < model->joints.size(); ++o)
             if (model->joints[o].node >= 0 && paired_above(*model, static_cast<int>(o)) == p &&
-                !bones.places_riding.contains(model->joints[o].name))
+                model->joints[o].rides < 0)
                 ++children;
         if (p < 0 || children != 1)
             continue; // a bone with several paired children (the pelvis) is left; its mesh takes up the difference

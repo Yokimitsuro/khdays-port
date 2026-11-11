@@ -257,8 +257,11 @@ void load_kh2_motions(Model &model, const std::string &path)
                 entry.land.push_back(land);
         } else if (a == "ik_adjust") {
             model.kh2_ik_adjust = b != "off";
-        } else if (a == "air_floor") { // air_floor on: `air` lines by the game's floor contact (an ov107 enemy's)
-            model.kh2_air_floor = b == "on";
+        } else if (a == "air_floor") { // air_floor on|off: `air` lines by the game's floor contact (an ov107 enemy's)
+            if (b == "on" || b == "off")
+                model.kh2_air_floor = b == "on";
+            else
+                say("\"" + line + "\": write `air_floor on` or `air_floor off`; the line is ignored");
         } else if (a == "cut_blend_except") { // cut_blend_except <animation>...: no fade into these
             model.kh2_cut_except.insert(b);
             for (std::string w; words >> w;)
@@ -329,7 +332,7 @@ void load_kh2_motions(Model &model, const std::string &path)
                 hand = -2.0F;
             } else if (ok && bone == "hand") {
                 std::string h;
-                ok = static_cast<bool>(words >> h) && number(h, hand);
+                ok = static_cast<bool>(words >> h) && number(h, hand) && hand >= 0.0F;
             } else if (ok) {
                 ok = number(bone, n);
             }
@@ -337,7 +340,7 @@ void load_kh2_motions(Model &model, const std::string &path)
             while (ok && words >> w) {
                 if (w == "hand") {
                     std::string h;
-                    ok = static_cast<bool>(words >> h) && number(h, hand);
+                    ok = static_cast<bool>(words >> h) && number(h, hand) && hand >= 0.0F;
                     continue;
                 }
                 auto &into = w == "rotate" ? by : offset;
@@ -976,6 +979,13 @@ void load_kh2_motions(Model &model, const std::string &path)
                     " holds no motion it plays; name another in motions.txt; left out");
                 return true;
             });
+            std::erase_if(s.after, [&](std::size_t slot) {
+                if (model.kh2_motions->motion(slot) != nullptr)
+                    return false;
+                say(name + ": `after` slot " + std::to_string(slot) +
+                    " holds no motion it plays; name another in motions.txt; left out");
+                return true;
+            });
             if (s.finish && model.kh2_idle.empty())
                 say(name +
                     ": `finish` with no `idle` line (the game's idles it plays out into): it never plays out; add one");
@@ -1002,8 +1012,16 @@ void load_kh2_motions(Model &model, const std::string &path)
                 " holds no motion it plays; name another; landing keeps the landing's");
             air.land.clear();
         }
-        if (!air.land.empty())
+        if (!air.land.empty()) {
             std::erase_if(air.land.front().then, [&](std::size_t slot) { return !plays(slot); });
+            std::erase_if(air.land.front().after, [&](std::size_t slot) {
+                if (plays(slot))
+                    return false;
+                say("air " + it->first + ": its `after` slot " + std::to_string(slot) +
+                    " holds no motion it plays; name another; left out");
+                return true;
+            });
+        }
         if (!air.land.empty() && model.kh2_landing.empty() && !model.kh2_air_floor)
             say("air " + it->first +
                 ": `land` with no `landing` line (the game's landing animation): never played; add one");
@@ -1055,15 +1073,15 @@ bool play_track(const Model &m, Kh2Track &track, std::size_t slot, const khdays:
 // (B_EX160's 81A, its root 344 cm up) floats about `cap` off the ground until its root comes down, and lands with it.
 // Its feet's own rise does not say it (81A's dip to the ground mid-flight). The feet are the ends of bones.txt's
 // `exact` legs, else the KH2 skeleton's own (its collision list's: B_EX160 has none).
-float lift_by(Model &m, const Kh2Section &section, const khdays::assets::kh2::Motion &motion, float ticks,
-              const std::vector<khdays::assets::kh2::Mat4> &joints, const Mat &taken)
+float lift_by(Model &m, const Kh2Section &section, std::size_t piece, const khdays::assets::kh2::Motion &motion,
+              float ticks, const std::vector<khdays::assets::kh2::Mat4> &joints, const Mat &taken)
 {
-    std::vector<int> feet;
+    std::vector<int> feet; // the model's own bones: the pose is on them whichever skeleton the motion plays on
     for (const Limb &limb : m.limbs)
         if (limb.exact && limb.joints[2] >= 0 && static_cast<std::size_t>(limb.joints[2]) < m.kh2_bone.size())
             feet.push_back(m.kh2_bone[static_cast<std::size_t>(limb.joints[2])]);
-    if (feet.empty())
-        for (const auto &foot : skeleton_of(m, section.slot).feet)
+    if (feet.empty() && m.kh2_own_skeleton)
+        for (const auto &foot : m.kh2_own_skeleton->feet)
             feet.push_back(foot.bone);
     const auto lowest = [&](const std::vector<khdays::assets::kh2::Mat4> &pose, const Mat &out) {
         float y = INFINITY;
@@ -1072,14 +1090,15 @@ float lift_by(Model &m, const Kh2Section &section, const khdays::assets::kh2::Mo
                 y = std::fmin(y, mul(section.turn, mul(out, pose[static_cast<std::size_t>(b)]))[13]);
         return y;
     };
-    auto ground = m.lift_ground.find(section.slot);
+    const std::pair<std::size_t, const void *> key{piece, &section};
+    auto ground = m.lift_ground.find(key);
     if (ground == m.lift_ground.end()) {
         float first = INFINITY;
         try {
-            khdays::assets::kh2::MotionPlayer player(skeleton_of(m, section.slot));
+            khdays::assets::kh2::MotionPlayer player(skeleton_of(m, piece));
             player.evaluate(motion, 0.0F, kIdentity, nullptr);
             std::vector<khdays::assets::kh2::Mat4> pose;
-            pose_on_model(m, section.slot, player.joints(), pose);
+            pose_on_model(m, piece, player.joints(), pose);
             first = lowest(pose, taken_of(m, motion, 0.0F));
         } catch (const std::exception &) {
             first = INFINITY; // said by play_track when it plays
@@ -1087,8 +1106,8 @@ float lift_by(Model &m, const Kh2Section &section, const khdays::assets::kh2::Mo
         if (!std::isfinite(first))
             khdays_log("models: %s: `lift` on slot %zu: no feet to measure (an `ik ... exact` leg in bones.txt); the "
                        "motion rises as authored",
-                       m.name.c_str(), section.slot);
-        ground = m.lift_ground.emplace(section.slot, first).first;
+                       m.name.c_str(), piece);
+        ground = m.lift_ground.emplace(key, first).first;
     }
     const float rise = lowest(joints, taken) - ground->second;
     if (!std::isfinite(rise))
@@ -1147,7 +1166,7 @@ void play_kh2(Model &m, const Mat &base)
         cut_now = cut_now || (p.ratio >= 0.999F && (was == actor.frames.end() || set_back.contains(p.name)));
     }
     if (actor.draws <= 2)
-        cut_now = false; // nothing shown before
+        cut_now = false; // the actor's first draw (its count starts at 1): nothing shown before
     actor.frames.clear();
     for (const Playing &p : playing)
         actor.frames[p.name] = p.frame;
@@ -1160,10 +1179,10 @@ void play_kh2(Model &m, const Mat &base)
                    m.name.c_str(), game_state->state);
     }
     bool in_air = game_state != nullptr && game_state->state == kAirDamageState;
-    // `air_floor`: the boss Riku (ov260, an ov107 enemy: its object at the render object's user pointer,
-    // NNSG3dRenderObj +0x2c, as Ov260_ArmModelCallback sets it) off the floor for two draws in a row:
-    // Ov107_AiState_IntegrateVelocity sets +0x17a bit 0 when its floor ray hits, every tick (Ov107_RollTransformHistory
-    // clears it first); back on it after two
+    // `air_floor`: the boss Riku (ov260, an ov107 enemy) off the floor for two draws in a row, back on it after two.
+    // Verified in the decomp: Ov260_ArmModelCallback puts the object at the render object's user pointer
+    // (NNSG3dRenderObj +0x2c); Ov107_AiState_IntegrateVelocity sets its +0x17a bit 0 when Collision_CastRay finds the
+    // floor, after Ov107_RollTransformHistory clears it
     bool floor_known = false;
     if (m.kh2_air_floor && drawn_object != nullptr) {
         const u32 object = KHDAYS_REF(drawn_object);
@@ -1187,8 +1206,10 @@ void play_kh2(Model &m, const Mat &base)
         if (!m.said_states) {
             m.said_states = true;
             khdays_log("models: %s: `air_floor`: %s", m.name.c_str(),
-                       floor_known ? "the game's floor contact reaches its draws: its `air` lines play"
-                                   : "no game object at its render object's user pointer: its `air` lines do not play");
+                       floor_known
+                           ? "the game's floor contact reaches its draws: its `air` lines play"
+                           : "no game object at its render object's user pointer, so its `air` lines do not play: "
+                             "`air_floor` is for the ov107 enemies (the boss Riku); remove it for this model");
         }
     }
     const bool landed_out = game_state != nullptr && khdays::kh2_moves::landed_out_of_air(
@@ -1527,7 +1548,7 @@ void play_kh2(Model &m, const Mat &base)
         for (std::size_t i = 0; i < 3; ++i)
             a.shown_offset[i] = section.offset[i] + (section.offset_to[i] - section.offset[i]) * along;
         if (section.lift >= 0.0F) // `lift`: its rise off the ground held under about that much
-            a.shown_offset[1] += lift_by(m, section, *motion, ticks, track.joints, taken);
+            a.shown_offset[1] += lift_by(m, section, piece, *motion, ticks, track.joints, taken);
         a.shown_turn = section.turn;
         // KHDAYS_SECONDARY_TRACE: on a section's first draw, where the joints the game drives are in its pose and in
         // the motion's (cm, the model's root space), to tell which way each lies (`rotate`)
@@ -1872,6 +1893,8 @@ void play_kh2(Model &m, const Mat &base)
                 s /= kh2;
             w.rel = khdays::models::blend_frames(rels.data(), shares.data(), rels.size());
             w.rel_valid = true;
+        } else if (!poses.empty()) {
+            w.rel_valid = false; // motions playing that do not reach its bones: none, not an earlier draw's
         }
     }
     // each joint's frames mixed (turns the shorter way round), the game's own pose at its share, on its parent's mixed

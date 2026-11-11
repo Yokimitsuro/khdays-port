@@ -1342,15 +1342,7 @@ int khdays_g3d_base(float base[16])
 {
     if (!base_flushed)
         return 0;
-    /* the GE's MTX_MULT_4x3 of rotation rows and translation, then MTX_SCALE:
-     * a vertex scaled, turned, moved; columns as khdays_g3d_camera's */
-    memset(base, 0, 16 * sizeof(float));
-    for (int c = 0; c < 3; ++c)
-        for (int r = 0; r < 3; ++r)
-            base[c * 4 + r] = (float)flushed_base[c * 3 + r] / 4096.0f * ((float)flushed_base[12 + c] / 4096.0f);
-    for (int r = 0; r < 3; ++r)
-        base[12 + r] = (float)flushed_base[9 + r] / 4096.0f;
-    base[15] = 1.0f;
+    khdays_g3d_base_matrix(flushed_base, base);
     return base_flushed;
 }
 

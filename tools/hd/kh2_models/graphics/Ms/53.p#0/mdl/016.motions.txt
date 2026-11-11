@@ -8,12 +8,17 @@ mset B_EX160.mset own
 motions B_EX160_2.mset at 256 own
 # off: the game places him and KH2's root motion is taken out of the bones (as KH2 does).
 root_motion off
-# What the game holds at sa_h_R (his claymore object, while he holds it), on his claymore's bone (379), as saix_h's:
-# Days' claymore runs along its z, KH2's along 379's x, the grips together (W00/W01 measured: -37.9 cm, 379's -38.6).
-weapon sa_h_R 379 rotate 0 90 0
+# What the game holds at sa_h_R (his claymore object, while he holds it), on his claymore's bone (379), as saix_h's
+# (W00/W01's grip measured -37.9 cm, 379's -38.6): KH2's motions hold 379 turned 179 degrees about the blade from the
+# game's, so this turn holds it in KH2 motions as the game's animations do (saix_h's, the user's; the boss's own
+# slots not measured apart)
+weapon sa_h_R 379 rotate 138.4 -87.4 10.9
 
 # The game's own animations (no KH2 motion for them) have no fingers: these turn as slot 0 turns them at its first frame.
 ds_pose 0 135-156 348-369
+# His five long strands (176-180, 213-222, 272-281) turned as slot 0 turns them, as saix_h's: at rest they hang
+# straight down, and the game's animations tip his head forward enough that the hair ran through his chest
+ds_pose 0 176-180 213-222 272-281
 
 # His idle (016_000): KH2's battle idle, B_EX160's 00A. Every line crosses from what played before over 8 frames.
 016_000 0 blend 8

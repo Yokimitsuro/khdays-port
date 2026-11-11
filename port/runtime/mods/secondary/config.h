@@ -52,8 +52,6 @@ enum class Param : int {
     game_shape,         // 0..1: its target taken that far from the replaced game model's own surface (its coat)
     cutscene_sim,       // 0 or 1: simulated about the game model's coat (its target there), never inside the shell
                         // those targets make; only its group's colliders touch it (no room, not itself)
-    lean,               // 0..1: of the way its reference shape turns from its reference bone's turn to the turn its
-                        // group's `lean_bone` would give that bone (the bone turned as at rest against the other)
     count
 };
 constexpr int kParamCount = static_cast<int>(Param::count);
@@ -161,14 +159,9 @@ struct GroupConfig {
     // at the top and bottom, closed across any slit; that far inside the drawn controls, outside when negative) not
     // drawn
     bool clip_world = false;
-    float clip_inset = 0.0F;              // metres
-    std::vector<BoneRef> attach;          // body bones the group hangs from (its reference frame first)
-    std::vector<FollowBone> follow_bones; // body bones its reference shape partly rides
-    // `lean_bone <bone> [rotate <x> <y> <z>]`: what `lean` turns the reference shape toward; the reference bone's turn
-    // against it at rest, turned by those degrees about its own axes (x, then y, then z)
-    BoneRef lean_bone;
-    bool lean_given = false;
-    Vec3 lean_turn{};
+    float clip_inset = 0.0F;                  // metres
+    std::vector<BoneRef> attach;              // body bones the group hangs from (its reference frame first)
+    std::vector<FollowBone> follow_bones;     // body bones its reference shape partly rides
     std::vector<std::vector<BoneRef>> strips; // surfaces: control sequences anchor-to-hem; chains: chains
     bool mesh_topology = false;               // surfaces: neighbours from the triangles skinned to them
     std::vector<std::pair<BoneRef, BoneRef>> connect, disconnect;

@@ -37,24 +37,39 @@ namespace {
 std::string model_file, model_name;
 unsigned model_offset = 0;
 std::vector<unsigned char> model_bmd0;
-std::filesystem::path mods_root;
+std::filesystem::path own_mod;
 u32 vblanks = 0;
+double per_draw = 1.0, carried = 0.0; // VBlanks a draw (60 / the draw rate)
 unsigned char no_window[16];
 } // namespace
 
 void replay_game_set_model(const std::string &file, unsigned offset, const std::string &name,
-                           std::vector<unsigned char> bmd0, const std::filesystem::path &mods)
+                           std::vector<unsigned char> bmd0, const std::filesystem::path &mod)
 {
     model_file = file;
     model_offset = offset;
     model_name = name;
     model_bmd0 = std::move(bmd0);
-    mods_root = mods;
+    own_mod = mod;
 }
 
 void replay_game_tick()
 {
-    ++vblanks;
+    carried += per_draw;
+    const auto whole = static_cast<u32>(carried);
+    vblanks += whole;
+    carried -= whole;
+}
+
+void replay_game_set_draw_hz(float hz)
+{
+    per_draw = hz > 0.0F ? 60.0 / hz : 1.0;
+    carried = 0.0;
+}
+
+void replay_game_gap()
+{
+    vblanks += 600U;
 }
 
 // --- the game model and the mods' files ---------------------------------------------------------------------------
@@ -81,14 +96,19 @@ int khdays_names_animation(const char *, u32, char *, int)
     return 0;
 }
 
+// The model's own mod first, so its files are the ones read; then the others beside it
 int khdays_mods_find(const char *relative, char *path, int size)
 {
     std::error_code e;
-    for (const auto &mod : std::filesystem::directory_iterator(mods_root, e)) {
-        const std::filesystem::path p = mod.path() / relative;
+    std::vector<std::filesystem::path> mods{own_mod};
+    for (const auto &mod : std::filesystem::directory_iterator(own_mod.parent_path(), e))
+        if (mod.path() != own_mod)
+            mods.push_back(mod.path());
+    for (const auto &mod : mods) {
+        const std::filesystem::path p = mod / relative;
         if (std::filesystem::is_regular_file(p, e)) {
-            std::snprintf(path, static_cast<std::size_t>(size), "%s", p.string().c_str());
-            return 1;
+            const int n = std::snprintf(path, static_cast<std::size_t>(size), "%s", p.string().c_str());
+            return n > 0 && n < size ? 1 : 0; // a path too long for the game's buffer: not found, as the port's
         }
     }
     return 0;
@@ -128,9 +148,11 @@ int khdays_link_paused(void)
     return 0;
 }
 
+// KHDAYS_REPLAY_LOG=1 also lets models.cpp's own traces through (KHDAYS_TRACE_MODELS and the like)
 int khdays_log_on(void)
 {
-    return 0;
+    static const bool on = std::getenv("KHDAYS_REPLAY_LOG") != nullptr;
+    return on ? 1 : 0;
 }
 
 // KHDAYS_REPLAY_LOG=1: the session log's lines on stderr (models.cpp's traces among them)
@@ -181,10 +203,12 @@ void Vec3ScaleAddQ27(s32, KhdaysRef, KhdaysRef, KhdaysRef) {}
 void khdays_g3d_draw_begin(const void *) {}
 void khdays_g3d_draw_end(void) {}
 
+// A camera at the world's origin (the world is model space): what models.cpp's `hand` posing needs to run
 int khdays_g3d_camera(float camera[16])
 {
     std::memset(camera, 0, sizeof(float) * 16);
-    return 0;
+    camera[0] = camera[5] = camera[10] = camera[15] = 1.0F;
+    return 1;
 }
 
 int khdays_g3d_base(float base[16])

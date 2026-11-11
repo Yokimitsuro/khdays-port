@@ -1,4 +1,4 @@
-"""KH2's models over Days' Roxas: the models, motions and HD pictures from the player's own copy of KINGDOM
+"""KH2's models over Days' characters: the models, motions and HD pictures from the player's own copy of KINGDOM
 HEARTS HD 1.5+2.5 ReMIX, with the port's settings for them (bone mappings, motions, cloth) from kh2_models/
 beside this tool. Nothing of KH2 is in the repository; each file is copied as the collection holds it.
 docs/KH2_MODELS.md, "In the HD pack".

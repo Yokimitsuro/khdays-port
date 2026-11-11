@@ -179,7 +179,7 @@ struct ModelSecondary {
     ConfigWatch watch; // its configuration's files, read again when one changes
     u32 checked = 0, swept = 0, reported = 0;
     bool debug = false, profile = false, trace = false;
-    bool said_placement = false, said_base = false, said_camera = false, said_shared = false;
+    bool said_placement = false, said_base = false, said_camera = false, said_shared = false, said_object = false;
     struct ActorState {
         std::unique_ptr<Actor> actor;
         u32 seen = 0;
@@ -1260,13 +1260,8 @@ bool live_base_world(const Mat4 &start, Mat4 &out)
         return false;
     std::int32_t w[15];
     std::memcpy(w, KHDAYS_W(kBase), sizeof(w));
-    Mat4 m = kIdentity4; // as khdays_g3d_base: turned rows times the scale, then moved
-    for (int c = 0; c < 3; ++c) {
-        for (int r = 0; r < 3; ++r)
-            m[static_cast<std::size_t>(c * 4 + r)] =
-                static_cast<float>(w[c * 3 + r]) / 4096.0F * (static_cast<float>(w[12 + c]) / 4096.0F);
-        m[static_cast<std::size_t>(12 + c)] = static_cast<float>(w[9 + c]) / 4096.0F;
-    }
+    Mat4 m;
+    khdays_g3d_base_matrix(w, m.data()); // as khdays_g3d_base reads a flushed one
     if (!fx_close(m, start))
         return false;
     out = m;
@@ -1335,10 +1330,10 @@ void apply_model_secondary(ModelSecondary &m, const DrawInput &in, std::vector<M
         verified = true;
         start_world = true;
         placed_by = "its model object";
-        if (!m.said_placement)
+        if (!m.said_object)
             say(m.name + ": placed in the world by its model object's base transform, the camera in the projection "
                          "(camera-independent)");
-        m.said_placement = true;
+        m.said_object = true;
     } else if (!(in.base_kind == 1 && in.has_camera && fx_close(mul(in.camera, in.base), in.start)) &&
                !(in.base_kind == 2 && fx_close(kIdentity4, in.start)) && shared) {
         // drawn from a matrix not its own place (a weapon at the hand): this frame's view as another model found it

@@ -445,6 +445,8 @@ void pose_cuffs(const Model &m)
     const float dt = static_cast<float>(gap) / 60.0F;
     static std::vector<HandVec> points;
     static std::vector<Mat> posed;
+    static std::vector<std::pair<Mat, Mat>> flap_frame; // by joint, a flap's bone: its frame now, and the motion's
+    static std::vector<char> flap_placed;
     for (std::size_t c = 0; c < m.cuffs.size(); ++c) {
         const Model::Cuff &cuff = m.cuffs[c];
         CuffMotion &motion = actor.cuff_motions[c];
@@ -453,17 +455,18 @@ void pose_cuffs(const Model &m)
         // walk 0.7), each axis as the motion scales it against its parent, so a shortened bone brings its children in
         if (!m.cuff_motion_flaps)
             for (const auto &flap : cuff.flap_joints) {
-                std::map<std::size_t, std::pair<Mat, Mat>> placed; // a bone: its frame now, and the motion's
-                for (const std::size_t j : flap) {                 // parents first
+                flap_frame.resize(m.joints.size());
+                flap_placed.assign(m.joints.size(), 0);
+                for (const std::size_t j : flap) { // parents first
                     const int up = m.joints[j].parent;
                     if (up < 0)
                         continue;
                     const auto u = static_cast<std::size_t>(up);
                     const Mat rest = inverse(m.joints[j].inverse_bind), up_rest = inverse(m.joints[u].inverse_bind);
                     const Mat moved = mul(skin[j], rest); // as the motion poses it
-                    const auto above = placed.find(u);
-                    const Mat up_now = above != placed.end() ? above->second.first : mul(skin[u], up_rest);
-                    const Mat up_moved = above != placed.end() ? above->second.second : up_now;
+                    const bool above = flap_placed[u] != 0;
+                    const Mat up_now = above ? flap_frame[u].first : mul(skin[u], up_rest);
+                    const Mat up_moved = above ? flap_frame[u].second : up_now;
                     Mat frame = mul(up_now, mul(inverse(up_rest), rest));
                     // a parent the motion flattens to nothing on an axis (B_EX150's walk: the left flaps' y and z
                     // 0.00) gives no ratio there: the bone keeps the parent's (already in up_now); the ratio at most 2
@@ -475,7 +478,8 @@ void pose_cuffs(const Model &m)
                         for (std::size_t e = 0; e < 3; ++e)
                             frame[a * 4 + e] *= by;
                     }
-                    placed[j] = {frame, moved};
+                    flap_frame[j] = {frame, moved};
+                    flap_placed[j] = 1;
                     skin[j] = mul(frame, m.joints[j].inverse_bind);
                 }
             }

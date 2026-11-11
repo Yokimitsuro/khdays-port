@@ -808,6 +808,8 @@ bool crosses(Vec3 p, Vec3 q, Vec3 a, Vec3 b, Vec3 c)
 struct TwitchState {
     std::vector<Vec3> x1, x2;
     std::vector<float> values;
+    float to_60hz = 1.0F; // (draw rate / 60)^2: a second difference read as at 60 draws a second
+    int settle = 15;      // draws in the first quarter second, left out
 };
 
 // `--hair`, one frame of the drawn model: the hair's edges through the body's triangles (a grid of 4 cm cells finds
@@ -864,11 +866,11 @@ void measure_hair(const Run &run, const std::vector<Frame> &bones, const std::ve
     std::vector<Vec3> x(run.hair.list.size());
     for (std::size_t i = 0; i < x.size(); ++i)
         x[i] = apply_inverse(r, verts[run.hair.list[i]]);
-    if (st.x2.size() == x.size() && frame >= 15) { // the first quarter second: the cloth settling onto its pose
+    if (st.x2.size() == x.size() && frame >= st.settle) { // the first quarter second: the cloth settling onto its pose
         float worst = 0.0F;
         int bone = -1;
         for (std::size_t i = 0; i < x.size(); ++i) {
-            const float a = length(x[i] - st.x1[i] * 2.0F + st.x2[i]) * 100.0F;
+            const float a = length(x[i] - st.x1[i] * 2.0F + st.x2[i]) * 100.0F * st.to_60hz;
             if (a > worst) {
                 worst = a;
                 bone = run.model.dominant[run.hair.list[i]];
@@ -890,6 +892,9 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
 {
     const Rig &rig = *run.rig;
     const std::size_t nb = rig.skeleton.names.size();
+    // the game's clock at this draw rate, after a gap: models.cpp's actors start afresh, as the cloth's do
+    replay_game_set_draw_hz(draw_hz);
+    replay_game_gap();
     std::vector<std::unique_ptr<Actor>> list;
     for (int a = 0; a < actors; ++a)
         list.push_back(std::make_unique<Actor>(run.rig, 1234U + static_cast<std::uint32_t>(a)));
@@ -901,6 +906,8 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
     std::vector<std::uint8_t> written(nb);
     std::vector<Vec3> verts;
     TwitchState twitch_state;
+    twitch_state.to_60hz = (draw_hz / 60.0F) * (draw_hz / 60.0F);
+    twitch_state.settle = static_cast<int>(std::lround(draw_hz * 0.25F));
     // KHDAYS_REPLAY_SHEET=<frame>,<step>[,<columns>,<size>]: its frames, and fewer bigger pictures
     int sheet_cols = 10, cell = 1;
     if (const char *e = std::getenv("KHDAYS_REPLAY_SHEET"); e != nullptr) {
@@ -1073,7 +1080,13 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
         if (const char *dump = std::getenv("KHDAYS_REPLAY_MODEL_DUMP"); dump != nullptr && std::atoi(dump) == f) {
             std::string file_name = "dump_" + sc.name + "_" + std::to_string(f) + ".txt";
             std::replace(file_name.begin(), file_name.end(), ':', '_');
-            if (FILE *d = std::fopen((folder / file_name).string().c_str(), "w"); d != nullptr) {
+            FILE *d = nullptr;
+            if (fopen_s(&d, (folder / file_name).string().c_str(), "w") != 0 || d == nullptr) {
+                std::fprintf(stderr,
+                             "KHDAYS_REPLAY_MODEL_DUMP: cannot write %s; check --out is a folder you can "
+                             "write to\n",
+                             (folder / file_name).string().c_str());
+            } else {
                 for (std::size_t v = 0; v < verts.size(); ++v)
                     std::fprintf(d, "v %.5f %.5f %.5f %d\n", static_cast<double>(verts[v].x),
                                  static_cast<double>(verts[v].y), static_cast<double>(verts[v].z),
@@ -1371,7 +1384,8 @@ Metrics play(Run &run, const Scenario &sc, int actors, float draw_hz, int repeat
                 const float deeper = pen - std::fmax(0.0F, run.model.rest_depth[v * nc + ci]);
                 // KHDAYS_REPLAY_DEBUG: each new deepest vertex past its rest depth, its bone and collider
                 static float pen_worst = 0.0F;
-                if (deeper > pen_worst && std::getenv("KHDAYS_REPLAY_DEBUG") != nullptr && (pen_worst = deeper) > 0.0F)
+                static const bool debug = std::getenv("KHDAYS_REPLAY_DEBUG") != nullptr;
+                if (debug && deeper > pen_worst && (pen_worst = deeper) > 0.0F)
                     std::fprintf(stderr, "penetration: f%d vertex %zu bone %s collider %s %.2f cm\n", f, v,
                                  rig.skeleton.names[static_cast<std::size_t>(run.model.dominant[v])].c_str(),
                                  rig.colliders[ci].name.c_str(), static_cast<double>(deeper * 100.0F));
@@ -1777,7 +1791,7 @@ int main(int argc, char **argv)
     std::filesystem::path days_bmd;
     std::vector<std::string> days_anim_specs, days_scenario_specs;
     std::string hair_groups, hair_ignore;
-    std::filesystem::path out = ".";
+    std::filesystem::path out = std::filesystem::temp_directory_path() / "khdays-secondary-replay";
     std::string which = "all";
     int actors = 1, repeat = 1;
     float hz = 60.0F;
@@ -1820,6 +1834,11 @@ int main(int argc, char **argv)
             return 2;
         }
     }
+    if (days_bmd.empty() && (!days_anim_specs.empty() || !days_scenario_specs.empty())) {
+        std::fprintf(stderr, "--days-anim and --days-scenario play the game's animations: give the game model with "
+                             "--days game.nsbmd too\n");
+        return 2;
+    }
     try {
         std::filesystem::create_directories(out);
         Run run;
@@ -1848,9 +1867,9 @@ int main(int argc, char **argv)
             const auto graphics = std::find(parts.begin(), parts.end(), std::filesystem::path("graphics"));
             if (graphics == parts.end() || graphics - parts.begin() < 2)
                 throw std::runtime_error("--days: give the model from its mod's folder (<mods>/<mod>/graphics/...)");
-            std::filesystem::path mods;
-            for (auto p = parts.begin(); p != graphics - 1; ++p)
-                mods /= *p;
+            std::filesystem::path mod; // <mods>/<mod>
+            for (auto p = parts.begin(); p != graphics; ++p)
+                mod /= *p;
             std::string name;
             for (auto p = graphics + 1; p != parts.end(); ++p)
                 name += (name.empty() ? "" : "/") + p->generic_string();
@@ -1861,7 +1880,7 @@ int main(int argc, char **argv)
             run.days.file = name.substr(0, mdl);
             const auto bmd = read_file(days_bmd);
             run.days.game = khdays::assets::decode_model_geometry(bmd.data(), bmd.size(), 0);
-            replay_game_set_model(run.days.file, 0, name, bmd, mods);
+            replay_game_set_model(run.days.file, 0, name, bmd, mod);
             for (const std::string &spec : days_anim_specs) {
                 const auto eq = spec.find('='), hash = spec.rfind('#');
                 if (eq == std::string::npos || hash == std::string::npos || hash < eq)
@@ -1931,6 +1950,12 @@ int main(int argc, char **argv)
             for (const auto &c : run.rig->carried)
                 if (hair_bone[static_cast<std::size_t>(run.rig->bones_out[static_cast<std::size_t>(c.by)].bone)])
                     hair_bone[static_cast<std::size_t>(c.bone)] = 1;
+            std::istringstream named(hair_groups);
+            for (std::string g; std::getline(named, g, ',');)
+                if (std::none_of(run.rig->groups.begin(), run.rig->groups.end(),
+                                 [&](const auto &group) { return group.name == g; }))
+                    throw std::runtime_error("--hair: no group " + g + " in " + std::string(argv[2]) +
+                                             "; name its `group` lines' names");
             std::istringstream spans(hair_ignore);
             for (std::string w; std::getline(spans, w, ',');) {
                 int from = 0, to = 0;
@@ -1973,8 +1998,13 @@ int main(int argc, char **argv)
                          run.hair.edges.size(), run.hair.body.size());
         }
         FILE *report = nullptr;
-        if (fopen_s(&report, (out / "report.txt").string().c_str(), "w") != 0 || report == nullptr)
+        if (fopen_s(&report, (out / "report.txt").string().c_str(), "w") != 0 || report == nullptr) {
+            std::fprintf(stderr, "cannot write %s: the report goes to the console; check --out\n",
+                         (out / "report.txt").string().c_str());
             report = stdout;
+        } else {
+            std::fprintf(stderr, "writing to %s\n", out.string().c_str());
+        }
         std::fprintf(report, "%s\ncook and prepare: %.1f ms\n", run.rig->summary.c_str(), cook_ms);
         std::fprintf(report, "settings: %.0f Hz, %d substeps, %d iterations; draws at %.0f Hz x%d; %d actor(s)\n",
                      static_cast<double>(run.rig->config.rate), run.rig->config.substeps, run.rig->config.iterations,

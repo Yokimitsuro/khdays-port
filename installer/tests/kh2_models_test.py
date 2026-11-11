@@ -35,6 +35,18 @@ def collection(root: Path, without: str = "") -> tuple[Path, Path, Path]:
     return first, fifth, sixth
 
 
+def settings_of(folder: str, model: str) -> dict[str, Path]:
+    """A model's settings files as make() gives them: its own, then each taken along its SAME_SETTINGS chain."""
+    found = {p.name: p for p in (models.SETTINGS / folder).glob(f"{model}.*.txt")}
+    taken = models.SAME_SETTINGS.get((folder, model))
+    while taken is not None:
+        from_folder, from_model = taken
+        for source in sorted((models.SETTINGS / from_folder).glob(f"{from_model}.*.txt")):
+            found.setdefault(model + source.name[len(from_model) :], source)
+        taken = models.SAME_SETTINGS.get(taken)
+    return found
+
+
 class Models(unittest.TestCase):
     def test_made_from_the_collection(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -66,18 +78,16 @@ class Models(unittest.TestCase):
     def test_each_settings_file_is_provided(self):
         for folder, model, _, files in models.MODELS:
             place = models.SETTINGS / folder
+            settings = settings_of(folder, model)
             # its own bones.txt, or one through the models whose settings it takes (as make() follows them)
-            chain, taken = [(folder, model)], models.SAME_SETTINGS.get((folder, model))
-            while taken is not None:
-                chain.append(taken)
-                taken = models.SAME_SETTINGS.get(taken)
-            self.assertTrue(any((models.SETTINGS / f / f"{m}.bones.txt").is_file() for f, m in chain), model)
+            self.assertIn(f"{model}.bones.txt", settings, model)
             provided = set(files) | {f"{model}.mdlx"}
-            for settings in place.glob("*.txt"):
-                for line in NAMES_A_FILE.findall(settings.read_text(encoding="utf-8")):
+            # every file its settings name, inherited ones too, is copied beside it
+            for name_in_mod, source in settings.items():
+                for line in NAMES_A_FILE.findall(source.read_text(encoding="utf-8")):
                     for name in filter(None, line):
                         known = name in provided or name == models.PRESETS.name or (place / name).is_file()
-                        self.assertTrue(known, f"{settings.name}: {name}")
+                        self.assertTrue(known, f"{folder}/{name_in_mod} (from {source}): {name}")
 
     def test_same_settings(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -85,12 +95,10 @@ class Models(unittest.TestCase):
             first, fifth, sixth = collection(root)
             mod = root / "mod"
             models.make(first, fifth, sixth, mod)
-            for (folder, model), (from_folder, from_model) in models.SAME_SETTINGS.items():
-                for source in (models.SETTINGS / from_folder).glob(f"{from_model}.*.txt"):
-                    name = model + source.name[len(from_model) :]
-                    own = models.SETTINGS / folder / name
-                    expected = own if own.is_file() else source
-                    self.assertEqual((mod / folder / name).read_bytes(), expected.read_bytes())
+            # each settings file the nearest model of its chain has, all the way along
+            for folder, model in models.SAME_SETTINGS:
+                for name, source in settings_of(folder, model).items():
+                    self.assertEqual((mod / folder / name).read_bytes(), source.read_bytes(), f"{folder}/{name}")
             # the dual wield's keyblades ride its weapon bones; a low poly body plays as its high poly one
             left = mod / "graphics/ba/ch/r2/w_.p2#0/mdl"
             self.assertIn("held kh2_2 rest", (left / "ro_w13600.bones.txt").read_text(encoding="utf-8"))
@@ -167,7 +175,7 @@ class Models(unittest.TestCase):
             self.assertTrue((boss / "54.p#1/mdl/A_B13_01body.motions.txt").is_file())
             self.assertEqual((boss / "54.p#33/mdl/A_B13_02w.mdlx").read_bytes(), b"W_EX010_20.mdlx")
             self.assertTrue((boss / "54.p#32/mdl/B13_02w.secondary.txt").is_file())
-            self.assertIn("body", (boss / "54.p#33/mdl/A_B13_02w.bones.txt").read_text())
+            self.assertIn("held kh2_2 body", (boss / "54.p#33/mdl/A_B13_02w.bones.txt").read_text(encoding="utf-8"))
             # Riku: the coat Riku on the playable Riku's motions and weapon motions, the low poly model through riku_h
             riku = mod / "graphics/ba/ch/ri"
             self.assertEqual((riku / "def_h.p.z/mdl/riku_h.mdlx").read_bytes(), b"N_EX950.mdlx")

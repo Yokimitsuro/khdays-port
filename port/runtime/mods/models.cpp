@@ -279,7 +279,7 @@ void play_face(Model &m)
 // `held <joint> rest`: a weapon made at rest where the bone holding it is at rest (B_EX390's baked keyblade bones and
 // W_EX010's bone 2), so it moves as that bone has moved from rest. `root` is the game's weapon frame, the `weapon`
 // line's turn on the bone; the joint, those above it and those under it not on a node of the game's are carried.
-void hold_on_bone(Model &m, const Mat &root)
+void hold_on_bone(Model &m, const Mat &root, const HoldingBone &holding_bone)
 {
     const auto held =
         std::find_if(m.joints.begin(), m.joints.end(), [&](const Joint &j) { return j.name == m.held_name; });
@@ -517,13 +517,13 @@ void draw(Model &m)
     // bones.txt's `held`: a weapon's bones from its root to the weapon itself where the body holding it puts them
     // (its `weapon_motions` pose, from the frame the game draws the weapon at), the bones under them carried
     // (a chain, for the cloth); a body unseen for a second leaves the model as the game's nodes place it
-    const u32 held_now = khdays_events_vblank_count();
-    const bool on_bone =
-        !m.held_name.empty() && m.held_rest && (m.held_own_turn || held_now - holding_bone.vblank < 60U);
+    const Holder *held_by = m.held_name.empty() ? nullptr : holder_for(m); // its body's hold
+    const bool on_bone = !m.held_name.empty() && m.held_rest && (m.held_own_turn || held_by != nullptr);
     if (on_bone) {
-        hold_on_bone(m, root);
-    } else if (!m.held_name.empty() && !m.held_rest && !held_weapon.pose.empty() &&
-               held_now - held_weapon.vblank < 60U) {
+        static const HoldingBone none;
+        hold_on_bone(m, root, held_by != nullptr ? held_by->bone : none);
+    } else if (held_by != nullptr && !m.held_rest && !held_by->weapon.pose.empty()) {
+        const HeldWeapon &held_weapon = held_by->weapon;
         if (m.held_bone.size() != m.joints.size()) { // the held joint and those above it, by their KH2 bones
             m.held_bone.assign(m.joints.size(), -1);
             for (std::size_t j = 0; j < m.joints.size(); ++j)
@@ -650,7 +650,9 @@ void draw(Model &m)
     const float weapon_share = m.weapon_motions && !kh2_weapon_pose.empty() ? kh2_weapon_share : kh2_game_share;
     const auto hold = [&](std::size_t j, std::size_t g) {
         const Mat turn = g < m.kh2_weapon_turn.size() ? m.kh2_weapon_turn[g] : kIdentity;
-        holding_bone = {inverse(turn), inverse(m.joints[j].inverse_bind), khdays_events_vblank_count()};
+        Holder &holder = holder_of(m);
+        HeldWeapon &held_weapon = holder.weapon;
+        holder.bone = {inverse(turn), inverse(m.joints[j].inverse_bind), khdays_events_vblank_count()};
         if (!m.weapon_motions || static_cast<std::size_t>(m.weapon_blade) >= weapon_pose.size())
             return mul(joint_frame(j), turn);
         const auto b = static_cast<std::size_t>(m.weapon_blade);
@@ -658,7 +660,7 @@ void draw(Model &m)
         held_weapon.pose = weapon_pose;
         held_weapon.from_game = inverse(weapon);
         held_weapon.frame = mul(joint_frame(j), weapon);
-        held_weapon.blade = mul(held_weapon.frame, mul(held_weapon.from_game, weapon_pose[b]));
+        held_weapon.blade = mul(joint_frame(j), weapon_pose[b]); // frame x from_game x pose, the turns cancelled
         held_weapon.vblank = khdays_events_vblank_count();
         return held_weapon.frame;
     };
@@ -668,24 +670,40 @@ void draw(Model &m)
         return !m.weapon_motions && m.joints[j].placed && m.joints[j].node == static_cast<int>(g);
     };
     // `weapon_model`: where the bone is now for the game's weapon object, which may be drawn before or after the body
-    if (!m.weapon_models.empty())
-        weapon_model_holds.clear();
+    // this body's holds, one a line in its order, updated in place (their names copied into the same strings); any of
+    // a body unseen for a second dropped, another's kept
+    const auto mine = [&](const WeaponModelHold &h) { return h.owner == &m; };
+    if (!m.weapon_models.empty()) {
+        const u32 now = khdays_events_vblank_count();
+        std::erase_if(weapon_model_holds,
+                      [&](const WeaponModelHold &h) { return h.owner != &m && now - h.vblank >= 60U; });
+        if (static_cast<std::size_t>(std::count_if(weapon_model_holds.begin(), weapon_model_holds.end(), mine)) !=
+            m.weapon_models.size()) {
+            std::erase_if(weapon_model_holds, mine);
+            weapon_model_holds.resize(weapon_model_holds.size() + m.weapon_models.size());
+            for (auto h = weapon_model_holds.end() - static_cast<std::ptrdiff_t>(m.weapon_models.size());
+                 h != weapon_model_holds.end(); ++h)
+                h->owner = &m;
+        }
+    }
+    auto next_hold = weapon_model_holds.begin();
     for (const WeaponModelLine &w : m.weapon_models) {
-        WeaponModelHold held;
+        next_hold = std::find_if(next_hold, weapon_model_holds.end(), mine);
+        WeaponModelHold &held = *next_hold++;
         held.file = w.file;
         held.node = w.node;
+        held.vblank = khdays_events_vblank_count();
+        held.on_weapon = w.on_weapon;
+        held.carry = false;
+        held.grip_valid = false;
         if (w.on_weapon) {
-            held.on_weapon = true;
             held.grip = w.turn;
-            held.vblank = khdays_events_vblank_count();
-            weapon_model_holds.push_back(std::move(held));
             continue;
         }
         held.hand = joint_frame(static_cast<std::size_t>(w.hand));
         held.grip = mul(w.rel, w.turn);
         held.grip_valid = w.joint >= 0 && w.rel_valid;
         held.kh2_share = std::clamp(1.0F - kh2_game_share, 0.0F, 1.0F);
-        held.vblank = khdays_events_vblank_count();
         const auto j = static_cast<std::size_t>(w.hand);
         const int node = m.joints[j].node;
         held.carry = w.hand_up >= 0 && node >= 0 && static_cast<std::size_t>(node) < node_matrix.size() &&
@@ -694,10 +712,8 @@ void draw(Model &m)
         if (held.carry) {
             held.game_hand = node_matrix[static_cast<std::size_t>(node)];
             held.hand_node = mul(joint_frame(j), m.joints[j].to_node);
-            const Mat up = joint_frame(static_cast<std::size_t>(w.hand_up));
-            held.reach = length({held.hand[12] - up[12], held.hand[13] - up[13], held.hand[14] - up[14]});
+            held.reach = distance(held.hand, joint_frame(static_cast<std::size_t>(w.hand_up)));
         }
-        weapon_model_holds.push_back(std::move(held));
     }
     // `weapon <node> hand <bone>`: the game's frame for what it attaches there, carried by the KH2 hand as the game's
     // hand node carries it, so it stays in the fist in KH2 motions; one the game sends away from its hand (a throw)
@@ -708,21 +724,9 @@ void draw(Model &m)
         const auto up = static_cast<std::size_t>(m.kh2_weapon_hand_up[g]);
         const Mat &game_hand = node_matrix[static_cast<std::size_t>(m.joints[j].node)];
         const Mat hand = mul(joint_frame(j), m.joints[j].to_node); // the game's hand node where the KH2 hand is
-        const Mat rigid = mul(hand, mul(inverse(game_hand), game));
         const Mat forearm = joint_frame(up), kh2_hand = joint_frame(j);
-        float reach = 0.0F, away = 0.0F;
-        for (std::size_t c = 12; c < 15; ++c) {
-            reach += (kh2_hand[c] - forearm[c]) * (kh2_hand[c] - forearm[c]);
-            away += (game[c] - game_hand[c]) * (game[c] - game_hand[c]);
-        }
-        reach = std::sqrt(reach);
-        away = std::sqrt(away);
-        const float t = std::clamp((away - 0.6F * reach) / std::fmax(0.9F * reach, 1e-6F), 0.0F, 1.0F);
-        const float loose = t * t * (3.0F - 2.0F * t);
-        Mat out = khdays::models::attached_frame(rigid, game, loose);
-        for (std::size_t c = 12; c < 15; ++c)
-            out[c] = rigid[c] + (game[c] + hand[c] - game_hand[c] - rigid[c]) * loose;
-        return out;
+        return khdays::models::let_go(mul(hand, mul(inverse(game_hand), game)), game, game_hand, apart(hand, game_hand),
+                                      distance(kh2_hand, forearm));
     };
     // `weapon ... thrown`: held at the line's frame while the game keeps the weapon in its grip; the further the game
     // sends it from there (from 0.6 to 1.5 forearms, as `hand`), the more it goes where the game puts it, moved by how
@@ -736,22 +740,9 @@ void draw(Model &m)
         if (hand_node >= node_matrix.size())
             return at;
         const Mat &game_hand = node_matrix[hand_node];
-        const Mat grip = mul(game_hand, m.kh2_weapon_thrown_grip[g]);
         const Mat hand = mul(joint_frame(j), m.joints[j].to_node), forearm = joint_frame(up);
-        float reach = 0.0F, away = 0.0F;
-        for (std::size_t c = 12; c < 15; ++c) {
-            reach += (hand[c] - forearm[c]) * (hand[c] - forearm[c]);
-            away += (game[c] - grip[c]) * (game[c] - grip[c]);
-        }
-        const float t = std::clamp(
-            (std::sqrt(away) - 0.6F * std::sqrt(reach)) / std::fmax(0.9F * std::sqrt(reach), 1e-6F), 0.0F, 1.0F);
-        const float loose = t * t * (3.0F - 2.0F * t);
-        if (!(loose > 0.0F))
-            return at;
-        Mat out = khdays::models::attached_frame(at, game, loose);
-        for (std::size_t c = 12; c < 15; ++c)
-            out[c] = at[c] + (game[c] + hand[c] - game_hand[c] - at[c]) * loose;
-        return out;
+        return khdays::models::let_go(at, game, mul(game_hand, m.kh2_weapon_thrown_grip[g]), apart(hand, game_hand),
+                                      distance(hand, forearm));
     };
     const auto is_carried = [&](std::size_t g) {
         return g < m.kh2_weapon_hand.size() && m.kh2_weapon_hand[g] >= 0 &&
@@ -1151,10 +1142,10 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
         const WeaponModelHold &hold = weapon_model_holds[h];
         if (khdays_events_vblank_count() - hold.vblank >= 60U || std::strstr(file, hold.file.c_str()) == nullptr)
             continue;
-        // its node of the line's name, from the model's node dictionary (NNSG3dResMdl: numNode at +0x17, the
-        // NNSG3dResDict of its nodes at +0x40, after the 0x2c bytes of its info at +0x14; read from Zexion's books:
-        // its entries' header at +6, their names at the header's +2, 16 bytes each): the file's other models (pages,
-        // effects, swing traces) have none and are left alone
+        // its node of the line's name, from the model's node dictionary: NNSG3dResMdl's nodeInfo at +0x40, an
+        // NNSG3dResDict (numEntry at +1, ofsEntry at +6), its entries' header's ofsName at +2, names 16 bytes each
+        // (the SDK's layout, include/nnsys/g3d.h; checked on Zexion's books). The file's other models (pages,
+        // effects, swing traces) have no such node and are left alone
         int index = -1;
         const u32 mdl = KHDAYS_REF(resource), dict = mdl + 0x40U;
         if (khdays_game_ram(mdl) && khdays_game_ram(dict + 8U)) {
@@ -1285,33 +1276,37 @@ extern "C" void khdays_models_node(unsigned node, int sent)
     node_sent[node] = 1;
 }
 
-// A `weapon_model` weapon's node of the line's name, as the game has just placed it (NNSi_G3dFuncSbc_NODEDESC, after the
-// joint is sent and before the node's matrix is stored for what hangs from it): both grips are read on the body's hand
-// as drawn (the same space, the current matrix: what khdays_models_node reads), the game's from that matrix and KH2's
-// from the bone on the hand in the KH2 motions, and the node loaded on the hand by the two mixed by KH2's share, so a
-// fade turns it once from one grip to the other; its own scale kept. On a paired hand the game's place is first
-// carried by the drawn hand as the game's hand node carries it (its arms reach elsewhere), as `weapon ... hand`.
+// MTX_MODE 2 (the position and vector matrices), MTX_LOAD_4x4: the DS's rows are these columns
+void load_position(const Mat &m)
+{
+    const uint32_t mode = 2;
+    khdays_g3d_command(0x10, &mode);
+    uint32_t words[16];
+    for (std::size_t i = 0; i < 16; ++i)
+        words[i] = static_cast<uint32_t>(static_cast<int32_t>(std::lround(m[i] * 4096.0F)));
+    khdays_g3d_command(0x16, words);
+}
+
+// A `weapon_model` weapon's node as the game has just placed it (NNSi_G3dFuncSbc_NODEDESC, before its matrix is stored
+// for what hangs from it): the game's grip (that matrix) and KH2's (the bone on the hand in the KH2 motions), both on the
+// body's hand as drawn, mixed by KH2's share so a fade turns it once from one to the other; its own scale kept. A paired
+// hand first carries the game's place as the game's hand node carries it, as `weapon ... hand`.
 void place_weapon_model(const WeaponModelHold &hold)
 {
     if (hold.on_weapon) { // the KH2 weapon's bone as the body last drew it, the line's turn on it
-        if (khdays_events_vblank_count() - held_weapon.vblank >= 60U)
+        const Holder *body = holder_of_body(hold.owner);
+        if (body == nullptr)
             return;
         float pos[16], vecm[16], proj[16];
         khdays_g3d_matrices(pos, vecm, proj);
-        Mat out = mul(held_weapon.blade, hold.grip);
+        Mat out = mul(body->weapon.blade, hold.grip);
         for (std::size_t c = 0; c < 3; ++c) { // the node's own scale kept, the frame's taken out
             const float own = length({pos[c * 4], pos[c * 4 + 1], pos[c * 4 + 2]});
             const float has = length({out[c * 4], out[c * 4 + 1], out[c * 4 + 2]});
             for (std::size_t e = 0; e < 3; ++e)
                 out[c * 4 + e] *= has > 1e-9F ? own / has : 1.0F;
         }
-        const uint32_t mode = 2; // MTX_MODE 2, MTX_LOAD_4x4 (as below)
-        khdays_g3d_command(0x10, &mode);
-        uint32_t words[16];
-        for (int i = 0; i < 16; ++i)
-            words[i] =
-                static_cast<uint32_t>(static_cast<int32_t>(std::lround(out[static_cast<std::size_t>(i)] * 4096.0F)));
-        khdays_g3d_command(0x16, words);
+        load_position(out);
         return;
     }
     const float share = hold.kh2_share;
@@ -1322,25 +1317,11 @@ void place_weapon_model(const WeaponModelHold &hold)
     khdays_g3d_matrices(pos, vecm, proj);
     Mat game;
     std::copy(pos, pos + 16, game.begin());
-    const auto load = [](const Mat &m) {
-        // MTX_MODE 2 (the position and vector matrices), MTX_LOAD_4x4: the DS's rows are these columns
-        const uint32_t mode = 2;
-        khdays_g3d_command(0x10, &mode);
-        uint32_t words[16];
-        for (int i = 0; i < 16; ++i)
-            words[i] =
-                static_cast<uint32_t>(static_cast<int32_t>(std::lround(m[static_cast<std::size_t>(i)] * 4096.0F)));
-        khdays_g3d_command(0x16, words);
-    };
-    if (hold.carry) {
-        // rigid on the hand while it is near the game's hand; from 0.6 to 1.5 reaches away, only moved by how far the
-        // hands stand apart (so one the game sends off does not swing round as the hand turns)
+    if (hold.carry) { // carried by the drawn hand as `weapon ... hand` (let_go)
         const Mat &game_hand = hold.game_hand, &hand_node = hold.hand_node;
-        const Mat rigid = mul(hand_node, mul(inverse(game_hand), game));
-        const float away = length({game[12] - game_hand[12], game[13] - game_hand[13], game[14] - game_hand[14]});
-        const float reach = hold.reach;
-        const float t = std::clamp((away - 0.6F * reach) / std::fmax(0.9F * reach, 1e-6F), 0.0F, 1.0F);
-        const float loose = t * t * (3.0F - 2.0F * t);
+        float loose = 0.0F;
+        const Mat carried = khdays::models::let_go(mul(hand_node, mul(inverse(game_hand), game)), game, game_hand,
+                                                   apart(hand_node, game_hand), hold.reach, &loose);
         // KHDAYS_TRACE_MODELS: now and then, how far the game holds it from its hand, how much the carry lets it go,
         // and how many vblanks old the body's hand is (drawn after the weapon in a frame: one)
         if (tracing()) {
@@ -1350,16 +1331,14 @@ void place_weapon_model(const WeaponModelHold &hold)
                 told = now;
                 khdays_log("models: weapon_model %s: %.1f cm from the game's hand (reach %.1f), let go %.2f, hand %u "
                            "vblanks old, KH2 share %.2f",
-                           hold.node.c_str(), static_cast<double>(away * 100.0F), static_cast<double>(reach * 100.0F),
-                           static_cast<double>(loose), now - hold.vblank, static_cast<double>(hold.kh2_share));
+                           hold.node.c_str(), static_cast<double>(distance(game, game_hand) * 100.0F),
+                           static_cast<double>(hold.reach * 100.0F), static_cast<double>(loose), now - hold.vblank,
+                           static_cast<double>(hold.kh2_share));
             }
         }
-        Mat carried = khdays::models::attached_frame(rigid, game, loose);
-        for (std::size_t c = 12; c < 15; ++c)
-            carried[c] = rigid[c] + (game[c] + hand_node[c] - game_hand[c] - rigid[c]) * loose;
         game = carried;
         if (!kh2) {
-            load(game);
+            load_position(game);
             return;
         }
     }
@@ -1385,13 +1364,13 @@ void place_weapon_model(const WeaponModelHold &hold)
     for (std::size_t c = 0; c < 3; ++c)
         for (std::size_t e = 0; e < 3; ++e)
             out[c * 4 + e] *= own[c];
-    load(out);
+    load_position(out);
 }
 
 extern "C" void khdays_models_node_placed(unsigned node, int sent)
 {
     for (const auto &[index, hold] : weapon_model_nodes)
-        if (sent && static_cast<int>(node) == index && hold < weapon_model_holds.size()) {
+        if (depth == 1 && sent && static_cast<int>(node) == index && hold < weapon_model_holds.size()) {
             place_weapon_model(weapon_model_holds[hold]);
             return;
         }
@@ -1588,13 +1567,10 @@ extern "C" void khdays_models_draw_end(void)
     corridor_drawn = false;
 }
 
-// khdays-secondary-replay's `--days` (port/tools/secondary_replay.cpp): one draw of the mod's model for the game model
-// at `file`@`offset`, as khdays_models_draw_begin finds and loads it, its nodes at `nodes` (the game's world matrices,
-// model space) and the game playing `animations` (each its name, frame, share of the game's cross-fade and length in
-// frames, which a `follow` section stretches onto), posed by
-// draw() up to the cloth: each joint's frame (model space, unscaled) and its KH2 bone (-1 none), and per animation the
-// KH2 slot and section it plays (-1 none), as the cloth is given them in game. False: no mod model for it, or not that
-// many nodes.
+// khdays-secondary-replay's `--days`: one draw of the mod's model for the game model at `file`@`offset`, its nodes at
+// `nodes` (the game's world matrices) and the game playing `animations` (name, frame, share, length in frames), posed by
+// draw() up to the cloth: each joint's frame (model space, unscaled), its KH2 bone (-1 none), and per animation the KH2
+// slot and section it plays (-1 none). False: no mod model for it, or not that many nodes.
 bool khdays_models_offline_pose(const char *file, unsigned offset, const std::vector<std::array<float, 16>> &nodes,
                                 const std::vector<std::tuple<std::string, float, float, float>> &animations,
                                 std::vector<std::array<float, 16>> &joints, std::vector<int> &kh2_bones,

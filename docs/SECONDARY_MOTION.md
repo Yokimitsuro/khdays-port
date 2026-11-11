@@ -104,7 +104,6 @@ profile off
 | `connect <a> <b>` / `disconnect <a> <b>` | a link added, or a mesh link cut (a slit, a seam) |
 | `exclude <bone>...` | left out of its strips |
 | `follow_bone <bone> radius <r> [weight <w>] [always <a>]` | its reference shape also rides a body bone near it (below) |
-| `lean_bone <bone> [rotate <x> <y> <z>]` | what `lean` turns its reference shape toward: the reference bone as that bone carries it, at their rest turn, turned by those degrees about the reference bone's own axes (x, then y, then z) (below) |
 | `offset <bone> <x y z>` | a control's point, bone-local |
 | `bone <bone> <setting> <value> [hem <value>]` | one control's own setting; `bone <bone> mode <mode>` |
 | `hang <x y z>` | chains: hung straight that way (model space at rest) before settling |
@@ -153,7 +152,6 @@ to 8; default 1, linear).
 | `no_sim` | 0..1 | 0 | not simulated: each substep on its target (its reference bones, the legs' `follow_bone` carry, the drape round the body) instead of where its motion would take it, that far of the way (`no_sim` alone is 1); contact with the body still keeps it out of the legs (from the last substep, so it keeps its side), the room does not touch it |
 | `game_shape` | 0..1 | 0 | its target taken that far onto its place on the replaced game model's coat, and at 1 kept there after the links and contact, unsmoothed (below) |
 | `cutscene_sim` | 0 or 1 | 0 | simulated about its place on the game model's coat, never inside the shell those places make (below); alone on a line: 1 |
-| `lean` | 0..1 | 0 | of the way its reference shape, and the colliders on its reference bone, turn about that bone's head toward its group's `lean_bone`'s carry (below); none without a `lean_bone` |
 | `rotate_only` | 0 or 1 | 0 | a rebuilt bone only turns toward its point; its head stays where its simulated parent carries it or the animation has it (1: no stretch) |
 | `wind_drag` | 1/s | 1 | how quickly it takes up the air's velocity |
 
@@ -185,19 +183,6 @@ rest is left out of it, with a warning naming both and the depth. `side rest` (t
 default) keeps what it touches on the side it has at rest, `side motion` on the
 side it came from (below, "How contact keeps the legs out"). Tags (default `body`)
 are what groups' `collide` lines name.
-
-**Lean** (`lean_bone`, `lean`): a coat hangs from the hips (its first `attach`), so an animation
-that tips the hips against the spine tips its shape with them. With `lean`, usually set by a
-control, its reference shape turns about the hips' head that share of the way to the turn the
-`lean_bone` gives the hips (as at rest against it, plus the line's `rotate`), and so do the
-colliders on the hips (the group's mean `lean`, the most of any leaning group on that bone),
-or the coat would rest on them where it was. Its anchors, smoothing space and the other
-colliders stay (`Simulation::lean_of`, `reference_point`, `reference_frame`, `shapes`).
-Tried on riku_h's glides (`lean_bone 97 rotate 0 0 -20`, `lean 0.4` in the hover: the back rows
-23-36 to 21-30 cm behind the spine line; more, or any in the forward glide, let the thighs and
-seat through, since only the hips' colliders lean), then replaced by turning the pelvis itself
-(KH2_MODELS.md, `ds_pose rotate` on a paired bone), which moves the body, its colliders and the
-coat together; no shipped file uses it now.
 
 **The game model's coat** (`game_shape`, `cutscene_sim`, `set_game_mesh` in
 `model_link.cpp`). Only a group that sets one of them, or that an animation control
@@ -697,7 +682,8 @@ reference model with this model's bone count drives all of them (else bones 0-94
 the dual wield Roxas (B_EX390 on its own motions) is checked against its own bake
 with `--reference roxas_bf_h.mdlx B_EX390.mset 0,1,4,5`.
 
-Options: `--out <dir>` (contact sheets and the report), `--scenario <name>` (idle, calm,
+Options: `--out <dir>` (contact sheets and the report; default `khdays-secondary-replay` in the
+system's temporary folder), `--scenario <name>` (idle, calm,
 idle_loop, calm_loop, run, circle, attack, jump, guard, air_front, air_back, wall, spawn,
 teleport, cut, platform, days, all; default all), `--slot-offset <n>`, `--actors <n>` (simulate n
 at once, the benchmark; default 1), `--draw-hz <hz>` (default 60), `--repeat <n>` (draws
@@ -705,10 +691,11 @@ each n times), `--reference <B.mdlx> <B.mset> <slot,...>`.
 
 **The game's own animations** (`--days`): the model is posed as the game poses it, by the
 port's `models.cpp` itself linked into the tool (`khdays_models_offline_pose`: one draw's pose
-up to the cloth, so bones.txt's pairs, `place`, `spine`, `ik`, `ds_pose`, twists and cuffs all
-apply; the game's side stubbed in `port/tools/replay_game_stubs.cpp`), and the cloth simulated
-on it. Give the model from its mod's folder (`<mods>/<mod>/graphics/<name>.mdlx`, where the port
-finds it) and the game model it replaces:
+up to the cloth, so bones.txt's pairs, `place`, `spine`, `ik`, `ds_pose`, twists, `hand` lines
+and cuffs all apply; the game's side stubbed in `port/tools/replay_game_stubs.cpp`, its camera
+at the origin), and the cloth simulated on it. Give the model from its mod's folder
+(`<mods>/<mod>/graphics/<name>.mdlx`, where the port finds it; that mod's files are read first,
+then the other mods' beside it) and the game model it replaces:
 
 ```bash
 khdays-secondary-replay xaldin_h.mdlx xaldin_h.secondary.txt xaldin_h.motions.txt --days xa_def_h.nsbmd \

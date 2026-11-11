@@ -151,12 +151,11 @@ struct Twist {
     std::vector<std::size_t> turned;
 };
 
-// motions.txt's `weapon_model <the game's weapon file> <node[,node...]> [<KH2 bone>] hand <KH2 bone> [rotate x y z]
-// [offset x y z]`: a weapon the game draws as an object of its own. In KH2 motions it goes where the bone is (its joint;
-// -1: no bone, carried by the hand alone), turned and moved by the line (its own axes, metres); on a paired hand the
-// game's place is carried by the drawn hand as the game's hand node carries it (the paired joint above it the reach's
-// yardstick, -1 none). `rel`: the bone's frame on the hand as the KH2 motions alone pose them (play_kh2: each pose's,
-// mixed by their own shares; kept while none plays).
+// motions.txt's `weapon_model <file> <node[,node...]> [<KH2 bone>] hand <KH2 bone>|weapon [rotate] [offset]`: a weapon
+// the game draws as an object of its own, in KH2 motions where the bone is (its joint; -1: the hand alone), turned and
+// moved by the line (metres); a paired hand carries the game's place as its node does (`hand_up` the reach's
+// yardstick, -1 none). `rel`: the bone's frame on the hand as the KH2 motions alone pose them (play_kh2, mixed by their
+// shares; kept while none plays).
 struct WeaponModelLine {
     std::string file, node;
     int joint = -1, hand = -1, hand_up = -1;
@@ -447,7 +446,8 @@ struct Model {
     bool limit_meshes = false;                 // some mesh is drawn by whether a limit animation plays (Mesh::limit)
     std::vector<std::string> limit_animations; // bones.txt's `limit_animations`: names, or prefixes ending in *
     std::set<std::uint32_t> limit_lists;       // `limit_shapes`: the game's shapes that count (their lists' places)
-    std::map<std::size_t, float> lift_ground;  // `lift`: by slot, the feet's lowest at the motion's first tick (cm)
+    // `lift`: by the motion's slot and its section, the feet's lowest at the motion's first tick (cm)
+    std::map<std::pair<std::size_t, const void *>, float> lift_ground;
     // motions.txt's `rotate_motions`: every KH2 motion's pose turned by this (KH2 cm, the model's root space) before
     // anything else reads it; the root motion turned with it
     Mat kh2_motion_turn = kIdentity;
@@ -800,7 +800,6 @@ struct HeldWeapon {
     Mat blade = kIdentity; // the `weapon_motions` bone as the held weapon is drawn: frame x from_game x its pose
     u32 vblank = 0;
 };
-inline HeldWeapon held_weapon;
 // the last bone a `weapon` line held something on (`held <joint> rest`): the turn from it to the game's weapon frame,
 // its rest (metres) and the vblank of that body's draw
 struct HoldingBone {
@@ -808,9 +807,70 @@ struct HoldingBone {
     Mat rest = kIdentity;
     u32 vblank = 0;
 };
-// `weapon_model`: the last body's hand and KH2 grip for it (the nodes' space), its KH2 motions' share of the pose then
+// Each body's last hold (its `weapon` line this draw): what its `held` weapon models and `weapon_model ... weapon` lines
+// ride, so two bodies drawn in one frame (the player Riku and the boss) each keep their own
+struct Holder {
+    const Model *body = nullptr;
+    HeldWeapon weapon;
+    HoldingBone bone;
+    u32 vblank = 0;
+};
+inline std::vector<Holder> holders;
+
+// A game model's file from a model's name, `<file>/mdl/<model>` (`Ms/54.p#32`, `ba/ch/ri/w_.p2#2`)
+inline std::string game_file_of(const std::string &name)
+{
+    return name.substr(0, name.find("/mdl/"));
+}
+
+// The body's record, made on its first hold; those of bodies unseen for a second dropped
+inline Holder &holder_of(const Model &body)
+{
+    const u32 now = khdays_events_vblank_count();
+    std::erase_if(holders, [&](const Holder &h) { return h.body != &body && now - h.vblank >= 60U; });
+    for (Holder &h : holders)
+        if (h.body == &body) {
+            h.vblank = now;
+            return h;
+        }
+    holders.push_back({&body, {}, {}, now});
+    return holders.back();
+}
+
+inline const Holder *holder_of_body(const void *body)
+{
+    for (const Holder &h : holders)
+        if (h.body == body && khdays_events_vblank_count() - h.vblank < 60U)
+            return &h;
+    return nullptr;
+}
+
+// The body a `held` weapon model goes with: one of the same game file (`Ms/54.p#32`'s sword with `Ms/54.p#0`), else of
+// the same folder (`ba/ch/ri/w_.p2`'s keyblade with `ba/ch/ri/def_h.p.z`), else the body held last, as the game draws
+// a weapon after its holder
+inline const Holder *holder_for(const Model &weapon)
+{
+    const std::string file = game_file_of(weapon.name);
+    const std::string archive = file.substr(0, file.find('#')), folder = file.substr(0, file.rfind('/') + 1);
+    const Holder *same_archive = nullptr, *same_folder = nullptr, *last = nullptr;
+    const u32 now = khdays_events_vblank_count();
+    for (const Holder &h : holders) {
+        if (now - h.vblank >= 60U)
+            continue;
+        const std::string other = game_file_of(h.body->name);
+        if (other.substr(0, other.find('#')) == archive)
+            same_archive = &h;
+        else if (!folder.empty() && other.rfind(folder, 0) == 0)
+            same_folder = &h;
+        if (last == nullptr || now - h.vblank < now - last->vblank)
+            last = &h;
+    }
+    return same_archive != nullptr ? same_archive : same_folder != nullptr ? same_folder : last;
+}
+// `weapon_model`: a body's hand and KH2 grip for it (the nodes' space), its KH2 motions' share of the pose then
 // and the file and node it names; and whether the model being drawn is such a weapon, and its node of that name
 struct WeaponModelHold {
+    const void *owner = nullptr; // the body (its Model) whose draw made it
     std::string file, node;
     Mat hand = kIdentity; // the hand's frame (the nodes' space, the body's mixed pose)
     Mat grip = kIdentity; // KH2's: the bone on the hand as the KH2 motions pose it, the line's turn and offset on it
@@ -822,12 +882,11 @@ struct WeaponModelHold {
     bool carry = false;
     Mat game_hand = kIdentity, hand_node = kIdentity;
     float reach = 0.0F;
-    bool on_weapon = false; // `weapon_model ... weapon`: the node on held_weapon.blade times `grip`
+    bool on_weapon = false; // `weapon_model ... weapon`: the node on its body's HeldWeapon::blade times `grip`
 };
-std::vector<WeaponModelHold> weapon_model_holds; // the last such body's, one a `weapon_model` line
+inline std::vector<WeaponModelHold> weapon_model_holds; // each such body's, one a `weapon_model` line
 // the weapon model being drawn: each of its nodes a line names, and that line's hold
-std::vector<std::pair<int, std::size_t>> weapon_model_nodes;
-inline HoldingBone holding_bone;
+inline std::vector<std::pair<int, std::size_t>> weapon_model_nodes;
 // this draw: each game animation's KH2 slot and its section's first frame, `air` and `land` ones included
 inline std::map<std::string, std::pair<std::size_t, float>> kh2_played;
 
@@ -1073,6 +1132,17 @@ inline float length(const std::array<float, 3> &v)
     return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 }
 
+// From frame b's place to frame a's, and how far that is
+std::array<float, 3> apart(const Mat &a, const Mat &b)
+{
+    return {a[12] - b[12], a[13] - b[13], a[14] - b[14]};
+}
+
+float distance(const Mat &a, const Mat &b)
+{
+    return length(apart(a, b));
+}
+
 // The shortest turn taking direction `from` to direction `to`, and its angle
 // in degrees.
 inline Mat arc(std::array<float, 3> from, std::array<float, 3> to, float &degrees)
@@ -1233,11 +1303,6 @@ template <typename Visit> void each_linked(KhdaysRef first, u32 next, u32 size, 
     }
 }
 
-// An `ik` limb (bones.txt) bent so its end joint reaches as the game's nodes reach: their way from the
-// upper node scaled to the model's limb, bent in the plane the game's middle node bends in -- the
-// law of cosines about an up vector, as KH2's Motion::calcIKJoint (0xf56a0) bends its chains. The
-// upper and lower joints are swung to it, keeping the twist their nodes give them; the joints below
-// them are placed again (`pose`).
 // bones.txt's `lower_hips`: every joint moved down (the root's up) by the most any `exact` leg needs for its hip to
 // stand from its foot, over the leg's length, as far as the game's thigh from its foot over the game's leg (none raises
 // it). A KH2 leg shorter than the game's, or hips set higher, straightened where the game's knee bent
@@ -1290,6 +1355,11 @@ void lower_hips(const Model &m, const Mat &root)
             x[12 + c] -= up[c] * drop;
 }
 
+// An `ik` limb (bones.txt) bent so its end joint reaches as the game's nodes reach: their way from the
+// upper node scaled to the model's limb, bent in the plane the game's middle node bends in -- the
+// law of cosines about an up vector, as KH2's Motion::calcIKJoint (0xf56a0) bends its chains. The
+// upper and lower joints are swung to it, keeping the twist their nodes give them; the joints below
+// them are placed again (`pose`).
 template <typename Pose> void reach(const Model &m, const Limb &limb_line, const Pose &pose)
 {
     using V = std::array<float, 3>;

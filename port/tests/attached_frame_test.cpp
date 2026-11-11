@@ -1,6 +1,11 @@
 // A weapon on a mod's KH2 model (runtime/mods/attached_frame.h): the KH2 joint's frame in a KH2 motion, the game's
-// turn at the joint's place in the game's own animation, halfway between them across a fade, the shorter way.
+// turn at the joint's place in the game's own animation, halfway between them across a fade, the shorter way; a
+// thrown weapon let go of the hand; and a base transform's words read as the game's (gfx/g3d.h).
 #include "../runtime/mods/attached_frame.h"
+
+extern "C" {
+#include "../gfx/g3d.h"
+}
 
 #include <cmath>
 #include <cstdio>
@@ -75,7 +80,30 @@ int main()
     const float more_first[2] = {2.0F, 1.0F}, half_each[2] = {1.0F, 1.0F};
     check(near(angle_of(blend_frames(opposite, more_first, 2)), 0.0F), "a lean still mixes across 180 degrees");
     const Mat cancelled = blend_frames(opposite, half_each, 2);
-    check(near(std::hypot(cancelled[0], cancelled[1]), 1.0F), "axes that cancel take a pose's turn, whole");
+    check(near(std::hypot(cancelled[0], cancelled[1]), 1.0F) && near(angle_of(cancelled), 0.0F),
+          "axes that cancel take the heaviest (here the first) pose's turn, whole");
+
+    // a thrown weapon: rigid on the drawn hand near the game's grip, the game's (moved by the hands' gap) far from it
+    using khdays::models::let_go;
+    const Mat grip = about_z(0.0F, 1.0F, 0, 0, 0), rigid = about_z(20.0F, 1.0F, 0.1F, 0, 0);
+    const std::array<float, 3> shift{0.0F, 0.5F, 0.0F};
+    float share = -1.0F;
+    const Mat held = let_go(rigid, about_z(80.0F, 1.0F, 0.5F, 0, 0), grip, shift, 1.0F, &share);
+    check(held == rigid && share == 0.0F, "within 0.6 reaches of the grip it stays on the hand");
+    const Mat thrown = let_go(rigid, about_z(80.0F, 1.0F, 2.0F, 0, 0), grip, shift, 1.0F, &share);
+    check(share == 1.0F && near(angle_of(thrown), 80.0F), "past 1.5 reaches the game's turn");
+    check(near(thrown[12], 2.0F) && near(thrown[13], 0.5F), "at the game's place moved by the hands' gap");
+    const Mat halfway = let_go(rigid, about_z(80.0F, 1.0F, 1.05F, 0, 0), grip, shift, 1.0F, &share);
+    check(near(share, 0.5F) && near(angle_of(halfway), 50.0F), "eased between: halfway at 1.05 reaches");
+    check(near(halfway[12], 0.575F) && near(halfway[13], 0.25F), "its place halfway too");
+
+    // a base transform's words (fx32): rotation rows, translation, scale; turned rows times the scale, then moved
+    const std::int32_t words[15] = {0, 4096, 0, -4096, 0, 0, 0, 0, 4096, 4096, -8192, 2048, 8192, 4096, 4096};
+    float base[16];
+    khdays_g3d_base_matrix(words, base);
+    check(near(base[1], 2.0F) && near(base[4], -1.0F) && near(base[10], 1.0F), "the rotation times each axis' scale");
+    check(near(base[12], 1.0F) && near(base[13], -2.0F) && near(base[14], 0.5F) && base[15] == 1.0F,
+          "moved by the translation");
     if (failures == 0)
         std::printf("attached_frame: all checks passed\n");
     return failures == 0 ? 0 : 1;
