@@ -2632,7 +2632,25 @@ HOOKS["ov022@0209045c"] = [
         "data_ov022_020b2a5c[pCtx->nSlot == 15 ? 12 : pCtx->nSlot]",
     ),
 ]
+HOOKS["ov107@020c518c"] = [
+    (  # Ov107_AiState_HitShapeOverlap: no contact (no push, no touch) with a KH2 enemy its script keeps from touching
+        # objects (YS::OBJ's FLAG_NOHIT_OBJ, 1:70: the Mole Driller under the ground; runtime/kh2_enemies/shell.h)
+        "    if (self->field_54 == 0 && other->field_54 == 0) {\n        return 0;\n    }\n",
+        "    if (self->field_54 == 0 && other->field_54 == 0) {\n        return 0;\n    }\n"
+        "    {\n"
+        "        extern int khdays_kh2_enemies_no_contact(void *actor);\n"
+        "        if (khdays_kh2_enemies_no_contact(self) || khdays_kh2_enemies_no_contact(other))\n"
+        "            return 0;\n"
+        "    }\n",
+    ),
+]
 HOOKS["ov107@020c5cfc"] = [
+    (  # Ov107_AiState_ApplyHit: no hit on a KH2 enemy its script keeps from being hit (YS::OBJ's FLAG_NOHIT_ATTACK,
+        # 1:70: the Mole Driller under the ground), as an enemy whose + 0x1ac bit 0 is set
+        "    if (obj->field_1ac & 1) return 0;\n",
+        "    if (obj->field_1ac & 1) return 0;\n"
+        "    { extern int khdays_kh2_enemies_untouched(void *enemy); if (khdays_kh2_enemies_untouched(obj)) return 0; }\n",
+    ),
     (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out
         "    amount = Ov107_CalcHitDamage(obj, packet);\n",
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(1); }\n"
@@ -2661,10 +2679,13 @@ HOOKS["ov107@020c6980"] = [
         "             khdays_kh2_enemies_held(self)) &&\n",
     ),
     (  # a KH2 enemy's shell (runtime/kh2_enemies/shell.h): its KH2 actor ticked first, its place moved before the
-        # room's collision resolves it (below); never one of the updates skipped by distance (KH2's run every tick)
+        # room's collision resolves it (below); never one of the updates skipped by distance (KH2's run every tick).
+        # No enemy's are (khdays_enemy_far_updates, runtime/battle/enemy_updates.h): the DS's saving of its time
+        # moved the far ones by jumps, which the PC's smoothed pictures showed as stutters
         "int khdays_stop_held(void *enemy);\n",
         "int khdays_stop_held(void *enemy);\n"
-        "void khdays_kh2_enemies_tick(void *enemy, int delta);\nint khdays_kh2_enemies_held(void *enemy);\n",
+        "void khdays_kh2_enemies_tick(void *enemy, int delta);\nint khdays_kh2_enemies_held(void *enemy);\n"
+        "int khdays_enemy_far_updates(void);\n",
     ),
     (
         "    struct ThreadState *thread;\n\n",
@@ -2672,11 +2693,13 @@ HOOKS["ov107@020c6980"] = [
     ),
     (
         "        if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
-        "        if (self->field_004 != 0 && !khdays_kh2_enemies_held(self) && (self->field_1c4 & 0xf) == 0 &&\n",
+        "        if (khdays_enemy_far_updates() && self->field_004 != 0 && !khdays_kh2_enemies_held(self) &&\n"
+        "            (self->field_1c4 & 0xf) == 0 &&\n",
     ),
     (
         "    } else if (self->field_004 != 0 && (self->field_1c4 & 0xf) == 0 &&\n",
-        "    } else if (self->field_004 != 0 && !khdays_kh2_enemies_held(self) && (self->field_1c4 & 0xf) == 0 &&\n",
+        "    } else if (khdays_enemy_far_updates() && self->field_004 != 0 && !khdays_kh2_enemies_held(self) &&\n"
+        "               (self->field_1c4 & 0xf) == 0 &&\n",
     ),
     (
         "            } else if ((self->field_1c4 & 2) == 0) {\n",

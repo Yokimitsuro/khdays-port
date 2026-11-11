@@ -3512,6 +3512,20 @@ extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int 
     return c != nullptr ? put_name(c->text, out, room) : 0;
 }
 
+// Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): its script's FLAG_NOHIT_ATTACK and
+// FLAG_NOHIT_OBJ (+ 0x120 bits 3 and 1): no hit lands, nothing touches it (the Mole Driller under the ground)
+extern "C" int khdays_kh2_enemies_untouched(void *actor)
+{
+    const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    return e != nullptr && !e->dying && (e->actor->u32(field::kFlags) & bit::kNoHitAttack) != 0;
+}
+
+extern "C" int khdays_kh2_enemies_no_contact(void *actor)
+{
+    const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    return e != nullptr && !e->dying && (e->actor->u32(field::kFlags) & bit::kNoHitObject) != 0;
+}
+
 // Ov107_AiState_ApplyHit (prepare.py's join): a hit's damage kept from taking the enemy under the least health its
 // script set (1:231, YS::SHEET's MinHp: KH2's damage stops there -- the Phantom's)
 extern "C" int khdays_kh2_enemies_damage(void *actor, int amount)

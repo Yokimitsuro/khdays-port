@@ -5155,6 +5155,13 @@ the port restores it (`runtime/battle/`).
   path for 120 ticks (`KHDAYS_TEST_HOLD=120`): it stood, but bodies touching it still pushed it a little
   (`Ov107_AiState_ResolveContacts`: 0.6 units over the four seconds, Roxas attacking it), its action changed with
   the hit it took (2 to 5) and the hits during the hold lowered its health (67 to 58).
+- **Far enemies' ticks skipped** (`Ov107_ProcessObjectTick`'s first part, read in the decompilation): an enemy past
+  30 units of its nearest player (`Ov107_FindNearestObject`) is updated one frame in four, past 20 or unseen
+  (`+0x60` bit 0 clear) one in three, flagged `+0x60` 0x80 or past 10 one in two -- the frames by its number
+  (`+0x2`) against the actor manager's count (`+0x44`); with the field byte 0x0204c240's bit 2 clear, one behind the
+  view (`Ov107_IsBehindView`) one in three. The frames it waited (`+0x30c`, back to 1 once updated) multiply its
+  next `delta`: its time is kept, its motion goes by jumps. The port skips none (`runtime/battle/enemy_updates.h`,
+  `KHDAYS_DS_ENEMY_UPDATES=1` the DS's way): the jumps showed as stutters in the PC's smoothed pictures.
 - **A hit on an enemy** (`Ov107_AiState_ApplyHit`): dropped during a hit's grace (`+0x2e4`), with `+0x1ac` bit 0 or
   status 0x10; its damage from `Ov107_CalcHitDamage`, the enemy's own handler (`+0x1d0`) lowering its health
   (`+0x21a`, most `+0x218`). A hit may give a status by its flags (`+2`'s byte, mask 0x88c): 1 burning (time

@@ -32,6 +32,12 @@ int khdays_kh2_enemies_held(void *actor);
 void khdays_kh2_enemies_hit(void *actor, int hp_before);
 int khdays_kh2_enemies_damage(void *actor, int amount);
 
+/* Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): whether a KH2 enemy's script keeps it
+ * from being hit (YS::OBJ's FLAG_NOHIT_ATTACK) and from touching objects -- no push, no touch (FLAG_NOHIT_OBJ): the Mole
+ * Driller under the ground (1:70 its flags 1 and 3, 1:71 back). 0 for any other object. */
+int khdays_kh2_enemies_untouched(void *actor);
+int khdays_kh2_enemies_no_contact(void *actor);
+
 /* Ov107_ProcessObjectTick (prepare.py's join): a KH2 player's blow on it to land now as one hit (the last of
  * Cerberus's reaction command), its damage in `amount`; 0 none. */
 int khdays_kh2_enemies_blow(void *actor, int *amount);

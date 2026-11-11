@@ -615,6 +615,7 @@ add_executable(khdays-native
     runtime/scripts/time_link.c        # ... music, the room's seed and the shares, the game's side
     runtime/scripts/enemies_link.c     # ... the field's enemies, the game's side
     runtime/scripts/enemy_names.c
+    runtime/battle/enemy_updates.c     # the enemies' updates, every frame
     runtime/battle/stop_data.c         # the Stop magic: its data file
     runtime/battle/stop_hold.c         # ... the enemies it holds and the damage they keep
     runtime/battle/stop_magic.c        # ... and its records, words and hold in the game

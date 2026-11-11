@@ -61,6 +61,8 @@ constexpr std::uint32_t kHeld = 1u << 9;        // kStatus: a reaction holds it 
 // (FUN_14040d810's range 20: the command's source + 0x2b0); 1:101 waits on it
 constexpr std::uint32_t kOtherMotion = 1u << 14;
 constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1403ba9a0, 1:60)
+// kFlags: YS::OBJ's Flag (1:70 sets one, 1:71 clears it; the PS3 build's names): no touching objects, no being hit
+constexpr std::uint32_t kNoHitObject = 1u << 1, kNoHitAttack = 1u << 3;
 constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
 } // namespace bit
