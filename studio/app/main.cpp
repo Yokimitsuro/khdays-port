@@ -9,6 +9,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdlgpu3.h"
 
 #include <SDL3/SDL.h>
@@ -168,6 +169,8 @@ void draw_notices(App& app) {
     ImGui::Begin("##notices", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove);
+    // over every window, the one focused after it appeared too, without taking the keys from it
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     for (std::size_t i = 0; i < app.notices.size();) {
         const App::Notice& n = app.notices[i];
         ImGui::PushID(static_cast<int>(i));
