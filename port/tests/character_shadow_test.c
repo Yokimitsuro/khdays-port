@@ -196,10 +196,52 @@ static void many(int native)
     CHECK(replaced == CASTERS);
 }
 
+/* The game's flat shadow drawn at its caster's height in the air (ov107's when its floor ray finds no plain floor):
+ * the floor beneath, within 4 units, takes the shadow; none further down */
+static void sprite_over_floor(float floor_y, int expected)
+{
+    const float floor[9] = {-.9f, floor_y, -.9f, .9f, floor_y, -.9f, 0, floor_y, .9f};
+    const float pose[9] = {-.2f, .2f, -.2f, .2f, .3f, -.2f, 0, .5f, .2f};
+    const float flat[9] = {-.7f, .05f, -.7f, .7f, .05f, -.7f, 0, .05f, .7f};
+    khdays_g3d_reset();
+    khdays_g3d_frame_camera(projection, camera);
+    khdays_shadow_capture_begin(9, 1);
+    triangle(floor, 0xc0u | (31u << 16) | (2u << 24), 0);
+    khdays_shadow_capture_end();
+    khdays_shadow_capture_begin(1, 1);
+    triangle(pose, 0xc0u | (31u << 16) | (1u << 24), 0);
+    khdays_shadow_sprite_begin();
+    triangle(flat, 0xc0u | (12u << 16) | (1u << 24), 0);
+    khdays_shadow_volume_end();
+    khdays_shadow_capture_end();
+    uint32_t zero = 0;
+    khdays_g3d_command(0x50, &zero);
+    khdays_g3d_vblank();
+    const KhdaysG3dList *list = khdays_g3d_shown();
+    int receivers = 0, replaced = 0;
+    for (int i = 0; i < list->npre; ++i) {
+        const KhdaysG3dPolygon *p = &list->pre[i];
+        replaced += !!(p->flags & KHDAYS_G3D_SHADOW_REPLACED);
+        if (!(p->flags & KHDAYS_G3D_SHADOW_RECEIVER))
+            continue;
+        ++receivers;
+        for (int k = 0; k < p->count; ++k) { /* on the floor: its world y (y - z, as triangle() sends it) */
+            KhdaysG3dClipVertex v;
+            memcpy(&v, &list->pre_verts[p->first + k], sizeof(v));
+            const float world_z = v.y + v.z * (4096.0f / (2 * 819.0f)), world_y = 2 * v.y - world_z;
+            CHECK(fabsf(world_y - floor_y) < .01f);
+        }
+    }
+    CHECK((receivers > 0) == expected);
+    CHECK((replaced > 0) == expected);
+}
+
 int main(void)
 {
     many(0);
     many(1);
+    sprite_over_floor(-.9f, 1); /* 0.95 under the shadow, past its band (0.7): the floor beneath takes it */
+    sprite_over_floor(0.0f, 1); /* in its band, as before */
     for (int native = 0; native <= 1; ++native) {
         run(0, native, 1, 1);
         run(1, native, 1, 1);
