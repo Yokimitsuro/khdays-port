@@ -121,21 +121,26 @@ bool StateMachine::shout(Actor &a, const std::string &name, std::uint32_t from)
 }
 
 // FUN_1403caec0: the current state's leave routine run at once, its thread ended
+// FUN_1403caec0: the state's leave routine (+ 0xa) run, whether its routine still runs or has ended (KH2 keeps the
+// routine's thread at + 0x120 until it leaves; the machine's tick leaves a state whose routine ended so,
+// FUN_1403ca550), and its routine stopped. The state is let go first: a leave routine entering another does not leave
+// this one again.
 void StateMachine::leave(Actor &a)
 {
     if (!current_)
         return;
     ai::Machine &m = a.machine();
     const ai::Value handle = ai::Value::of_address(handle_);
-    if (find_thread(m.main_thread(), thread_id_) != nullptr) {
-        if (current_->on_leave != 0)
-            m.run_now(current_->on_leave, {&handle, 1});
-        m.stop(find_thread(m.main_thread(), thread_id_));
-    }
+    const std::uint16_t on_leave = current_->on_leave;
+    ai::Thread *routine = find_thread(m.main_thread(), thread_id_);
     current_.reset();
     thread_id_ = 0;
     locked_ = false;
     waiting_ = false;
+    if (on_leave != 0)
+        m.run_now(on_leave, {&handle, 1});
+    if (routine != nullptr)
+        m.stop(routine);
 }
 
 // FUN_1403ca550: a state whose flag bit 0 is clear begins only once the actor is not held by a reaction (+ 0x18c bit
@@ -185,6 +190,16 @@ bool StateMachine::enter(Actor &a, const std::string &name)
     return true;
 }
 
+bool StateMachine::enter_over(Actor &a, const std::string &name)
+{
+    StateEntry e;
+    if (locked_ || !find(a, name, e) || (current_ && current_->priority > e.priority))
+        return false;
+    queued_.clear();
+    go(a, e);
+    return true;
+}
+
 bool StateMachine::queue(Actor &a, const std::string &name)
 {
     StateEntry e;
@@ -212,13 +227,12 @@ void StateMachine::clear(Actor &a)
 void StateMachine::tick(Actor &a)
 {
     if (current_) {
+        // its routine ended: the state left as KH2 leaves it then (FUN_1403ca550 -> FUN_1403caec0), its leave routine
+        // run -- the Sorcerer's cubes clear their "busy" so after a shield (until 2026-11-11 the port skipped it, and
+        // they never took another order)
         ai::Thread *t = find_thread(a.machine().main_thread(), thread_id_);
-        if (t == nullptr || t->status == ai::Status::Done || t->status == ai::Status::Stopped) {
-            current_.reset();
-            thread_id_ = 0;
-            locked_ = false;
-            waiting_ = false;
-        }
+        if (t == nullptr || t->status == ai::Status::Done || t->status == ai::Status::Stopped)
+            leave(a);
     }
     if (current_ && waiting_)
         wait_or_begin(a);

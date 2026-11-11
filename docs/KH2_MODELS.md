@@ -95,6 +95,11 @@ order (entries 8-15 and 16-23 of each 32 swapped); `kn::clt2vram` is the PS3's
 equivalent. PS2 alpha (0x80 = opaque) is doubled. The whole TW x TH texture is
 kept, texture coordinates over it as stored.
 
+An entry 0x07 may hold several containers: u32 0xFFFFFFFF, u32 their count, then each one's u32 offset from the
+entry (the Thresholder's `B_BB100`: two containers of the same layout, two pictures each, its HD pictures -0 to -3
+numbered through both). The port reads the first, the set the model is drawn with at first (`kh2_map.cpp`,
+`first_container`); until 2026-11-11 such a model could not be read and its stand-in was drawn.
+
 ## Motions (.mset)
 
 A KH2 model plays KH2's own motions in place of the game's animations, chosen

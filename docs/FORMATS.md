@@ -418,11 +418,14 @@ scripts. Nothing of it is used by the game yet.
   have 0, 1, 6, 11, 13, 16 most.
 - **States**: most of a script's behaviour is its states. Call 1:6 registers one in a table of up to 128 entries of
   32 bytes (FUN_1403ca0e0): its id (an address in the script), flags (two halves), the code word where its routine
-  starts, a priority and further values (the 11th argument sometimes a second routine). The object's state machine,
+  starts, a priority and further values: the routines the machine runs for the state's events (+ 0xa + 2 n: n 0 its
+  leave, 1 the ground left, 2 the ground met, 5 its name shouted -- 1:90 --, 6 its entry; FUN_1403ca1d0,
+  FUN_1403ca950), 0 none. The object's state machine,
   at its + 0x390, enters a state at once (1:8) or queues it in a ring of 16 (1:9); entering one (FUN_1403cad00) leaves
   the current and runs the state's routine as a child thread of the object's script (FUN_1403e1970). No jump or call
-  of the script leads to those routines: a reading of the code must start from them too (`tools/research/kh2_ai.py`
-  does). A state's id is the address of a name in the script's code, and states are found by name
+  of the script leads to those routines: a reading of the code must start from all of them too
+  (`tools/research/kh2_ai.py` does; until 2026-11-11 it walked the routine and the entry's only, and the calls of the
+  others went uncounted: 0:60 in the Rapid Thruster's and the Armored Knight's, 1:167 in the Dancer's). A state's id is the address of a name in the script's code, and states are found by name
   (FUN_1403ca700), so the game asks for them by name as well: `dead` at the defeat, `leave`, a hit's reaction
   state (docs/KH2_ENEMIES.md, "States"); a hit also runs trigger 19 with the attack and the attacker.
 - **Addresses**: the scripts' addresses are 32-bit, turned into the game's pointers by FUN_1404ad270 (as on the PS2,

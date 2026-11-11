@@ -501,8 +501,21 @@ std::optional<int> Group::scroll_index() const {
     return (uv_option >> 2U) & 15U;
 }
 
-TextureContainer read_textures(const std::uint8_t* data, const std::size_t size, const std::size_t at) {
+// A texture entry that holds several containers (u32 0xFFFFFFFF, u32 their count, then each one's offset from the
+// entry: the Thresholder's B_BB100, two sets of pictures for the same places) is read as its first, the set its model
+// is drawn with at first; one container is read where it is.
+namespace {
+std::size_t first_container(const Bytes& b, const std::size_t at) {
+    if (b.u32(at) == 0xFFFFFFFFU && b.u32(at + 4) != 0U) {
+        return at + b.u32(at + 8);
+    }
+    return at;
+}
+}  // namespace
+
+TextureContainer read_textures(const std::uint8_t* data, const std::size_t size, const std::size_t entry) {
     const Bytes b(data, size);
+    const std::size_t at = first_container(b, entry);
     TextureContainer c;
     const std::uint32_t colors = b.u32(at + 4);
     const std::uint32_t count = b.u32(at + 12);
@@ -683,7 +696,7 @@ struct TexturePictures::Memory final {
 };
 
 TexturePictures::TexturePictures(const std::uint8_t* data, const std::size_t size, const std::size_t at)
-    : data_(data), size_(size), at_(at) {}
+    : data_(data), size_(size), at_(first_container(Bytes(data, size), at)) {}
 
 TexturePictures::~TexturePictures() = default;
 

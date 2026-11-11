@@ -110,6 +110,7 @@ struct MotionAttributes final {
 class MotionSet final {
 public:
     MotionSet(const std::uint8_t* data, std::size_t size);
+    MotionSet() = default;  // none: an object with no motion set of its own (the Thresholder's Possessor)
     std::size_t slots() const {
         return motions_.size();
     }

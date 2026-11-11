@@ -78,6 +78,8 @@ KINDS = {
     "M_EX960": "Sorcerer",
     "B_HE020": "Cerberus",
     "B_BB100": "Thresholder",
+    "B_BB130": "Possessor",
+    "M_EX870": "Sorcerer's cubes",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -184,7 +186,8 @@ def effect_sounds(a_us: bytes) -> set[int]:
 
 def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
     """Each sound in `ids` into to/<id>.wav, its first track's recording at the sound's volume, from its bank: bank 0
-    KH2's common one, the others the kind's own (its .a.us's remastered se/obj/se<bank>); what was left out."""
+    KH2's common one, the others the kind's own (its .a.us's remastered se/obj/se<bank>), else another object's that
+    carries it (the Sorcerer's cubes play bank 272, which the Sorcerer's .a.us carries); what was left out."""
     left_out = []
     banks: dict[int, tuple[list, list] | str] = {}
     for sound_id in sorted(ids):
@@ -194,6 +197,8 @@ def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
             if bank == 0
             else kh2 / "remastered" / "obj" / f"{name}.a.us" / "se" / "obj" / f"se{bank}"
         )
+        if bank != 0 and not path.is_file():
+            path = next(iter(sorted((kh2 / "remastered" / "obj").glob(f"*.a.us/se/obj/se{bank}"))), path)
         if bank not in banks:
             try:
                 data = path.read_bytes()
@@ -246,16 +251,24 @@ def make(
     listed = ["# name\ttitle\tcovered\tcalls\tmissing\tplays the player (kh2_enemies.py; the port's kh2_enemies.txt)"]
     for name, title in KINDS.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
-        lacking = [s.name for s in sources if not s.is_file()]
-        if lacking:
-            left_out.append(f"{name} ({title}): KH2's {', '.join(lacking)} not there")
+        if not sources[0].is_file():
+            left_out.append(f"{name} ({title}): KH2's {sources[0].name} not there")
+            continue
+        # an object with no model and no motion set of its own (its entry names none: the Thresholder's
+        # Possessor) has its .mdlx alone, its script and its shapes; its effects when it has them
+        model = any(kind == 4 for kind, _, _ in bar_entries(sources[0].read_bytes()))
+        if model and not sources[1].is_file():
+            left_out.append(f"{name} ({title}): KH2's {sources[1].name} not there")
             continue
         for s in sources:
-            shutil.copy2(s, obj / s.name)
-        if not copy_pages(kh2 / "remastered" / "obj" / f"{name}.mdlx", obj / name):
+            if s.is_file():
+                shutil.copy2(s, obj / s.name)
+        if model and not copy_pages(kh2 / "remastered" / "obj" / f"{name}.mdlx", obj / name):
             left_out.append(f"{name} ({title}): its model's HD pictures (its own PS2 pictures used)")
         copy_pages(kh2 / "remastered" / "obj" / f"{name}.a.us", mod / "kh2" / "fx" / name)
-        sounds = motion_sounds(sources[1].read_bytes()) | effect_sounds(sources[2].read_bytes())
+        sounds = (motion_sounds(sources[1].read_bytes()) if sources[1].is_file() else set()) | (
+            effect_sounds(sources[2].read_bytes()) if sources[2].is_file() else set()
+        )
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         calls = calls_in(sources[0].read_bytes())
         listed.append(kinds_line(name, title, calls, handled))

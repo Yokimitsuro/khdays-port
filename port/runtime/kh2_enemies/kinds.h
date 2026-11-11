@@ -20,7 +20,8 @@ struct Kind final {
 std::vector<Kind> read_kinds(const std::string &text);
 // A kind by name, case aside; null when the list has none.
 const Kind *find_kind(const std::vector<Kind> &kinds, const std::string &name);
-// The list in `folder` (kh2_enemies.txt), each kind kept only when its files are there (kh2/obj/<name>.mdlx, .mset);
+// The list in `folder` (kh2_enemies.txt), each kind kept only when its object is there (kh2/obj/<name>.mdlx; its .mset
+// when it has motions);
 // `why` told once for each one left out and for a missing list.
 std::vector<Kind> load_kinds(const std::string &folder, const std::function<void(const std::string &)> &why);
 

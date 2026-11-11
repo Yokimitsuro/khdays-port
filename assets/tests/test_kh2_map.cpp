@@ -648,6 +648,18 @@ void test_map() {
     expect(f[1].kind == kh2::TextureFrame::Kind::Base && f[1].min_length == 20 && f[1].max_length == 30, "frame 1");
     expect(f[2].kind == kh2::TextureFrame::Kind::Jump && f[2].jump == -2, "frame 2");
     expect(textures.hd_pictures == std::vector<int>{0, 2} && a.hd_sheet == 1 && textures.hd_count == 3, "HD numbering");
+    {
+        // an entry of several containers (0xFFFFFFFF, their count, their offsets: the Thresholder's): its first read
+        const Bytes one = texture_container(true);
+        Bytes several(16, 0);
+        const std::uint32_t head[4] = {0xFFFFFFFFU, 2U, 16U, 16U + std::uint32_t(one.size())};
+        std::memcpy(several.data(), head, sizeof head);
+        several.insert(several.end(), one.begin(), one.end());
+        several.insert(several.end(), one.begin(), one.end());
+        const auto first = kh2::read_textures(several.data(), several.size(), 0);
+        expect(first.textures.size() == 2 && first.textures[0].width == 256 && first.scrolls.size() == 1,
+               "several containers: the first");
+    }
 
     const auto background = kh2::read_model(file.data(), file.size(), e[0].offset);
     expect(background.kind == 2 && background.groups.size() == 2, "map model groups");

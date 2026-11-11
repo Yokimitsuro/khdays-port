@@ -331,6 +331,8 @@ Machine::~Machine()
 {
     if (main_)
         drop_thread(*main_);
+    for (auto &t : loose_)
+        drop_thread(*t);
     memory_.remove(work_);
     memory_.remove(code_);
 }
@@ -405,6 +407,28 @@ Thread *Machine::start_routine(Thread *parent, std::uint32_t entry, std::span<co
     Thread *raw = t.get();
     parent->children.push_back(std::move(t));
     return raw;
+}
+
+Thread *Machine::start_loose(std::uint32_t entry, std::span<const Value> args)
+{
+    if (entry >= script_->words())
+        return nullptr;
+    loose_.push_back(make_thread(entry, args));
+    return loose_.back().get();
+}
+
+void Machine::tick_loose()
+{
+    for (std::size_t i = 0; i < loose_.size(); ++i) // (one started now runs in the same pass)
+        tick_tree(*loose_[i]);
+    for (auto &t : loose_)
+        sweep(*t);
+    std::erase_if(loose_, [this](std::unique_ptr<Thread> &t) {
+        const bool over = (t->status == Status::Done || t->status == Status::Stopped) && t->children.empty();
+        if (over)
+            drop_thread(*t);
+        return over;
+    });
 }
 
 void Machine::stop(Thread *thread)

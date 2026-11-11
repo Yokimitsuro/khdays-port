@@ -177,6 +177,12 @@ public:
     // Every thread once: the main thread, then each child after its parent; ended ones dropped.
     void tick();
     Thread *main_thread() const { return main_.get(); }
+    // A routine on a loose thread (2:20, FUN_1403c5ec0: a machine of its own on the script and its work area, put in
+    // the game's list of them, FUN_1403c4e90), which tick() does not run: tick_loose() runs each once (its children
+    // after it), the ended ones dropped -- the field runs them all apart from their objects' ticks.
+    Thread *start_loose(std::uint32_t entry, std::span<const Value> args = {});
+    void tick_loose();
+    bool has_loose() const { return !loose_.empty(); }
 
     std::uint64_t budget = 100000; // instructions a thread may run without yielding before it is stopped
     float tick_length = 1.0F;      // KH2's 0:3; below 2.0 the PC's 60-frames constant patches apply
@@ -196,6 +202,7 @@ private:
     void *user_;
     std::uint32_t code_ = 0, work_ = 0;
     std::unique_ptr<Thread> main_;
+    std::vector<std::unique_ptr<Thread>> loose_;
     Thread *current_ = nullptr;
     std::uint32_t next_id_ = 1;
     std::set<std::string> told_;

@@ -158,6 +158,19 @@ class Kh2AiTest(unittest.TestCase):
         self.assertEqual(code[routine_at].syscall, (2, 7), "the state's routine is walked")
         self.assertIn(f"{routine_at:#06x}:  state routine", kh2_ai.listing(s))
 
+    def test_state_event_routines(self):
+        # a state whose routine is none but whose shout routine (its 10th argument, + 0x14: 1:90) makes call 2:9
+        s0 = start(1)
+        before = [0x0020, 0x10, 0x0020, 0x20] + push_int(100) + push_int(0)
+        tail = [10 | (1 << 6), 6, 0x0049]  # syscall 1:6, exit
+        shout_at = s0 + len(before) + 8 * 3 + len(tail)
+        after = [w for k in range(8) for w in push_int(shout_at if k == 5 else 0)]
+        code = before + after + tail + [10 | (2 << 6), 9, 0x0089]  # the shout routine: syscall 2:9, ret
+        s = kh2_ai.read_script(script([(0, s0)], code))
+        walked = kh2_ai.walk(s)
+        self.assertEqual(kh2_ai.state_routines(s, walked), {shout_at})
+        self.assertEqual(walked[shout_at].syscall, (2, 9), "the shout routine is walked")
+
     def test_thread_routines(self):
         """Routines a script starts as threads: 1:112's second argument of three (Cerberus's on the player), 2:20's
         first of two (FUN_140432cd0: the routine, then its value) -- walked, listed and counted as its states'

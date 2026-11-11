@@ -77,8 +77,9 @@ std::vector<Kind> load_kinds(const std::string &folder, const std::function<void
     std::error_code ec;
     for (auto &k : read_kinds(text.str())) {
         const fs::path obj = base / "kh2" / "obj";
-        if (!fs::is_regular_file(obj / (k.name + ".mdlx"), ec) || !fs::is_regular_file(obj / (k.name + ".mset"), ec)) {
-            why("kh2 enemies: " + k.name + "'s files are missing; left out");
+        // its .mdlx (its script, its shapes); its .mset when it has motions of its own (the Possessor has none)
+        if (!fs::is_regular_file(obj / (k.name + ".mdlx"), ec)) {
+            why("kh2 enemies: " + k.name + "'s .mdlx is missing; left out");
             continue;
         }
         kept.push_back(std::move(k));

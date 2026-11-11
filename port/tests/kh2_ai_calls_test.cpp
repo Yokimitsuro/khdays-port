@@ -91,7 +91,8 @@ struct Rig {
         kh::add_all(calls);
         // the shapes the test's calls use, as KH2's tables give them
         kh::read_shapes(calls, "0:3 0 1\n0:4 2 1\n0:5 2 1\n0:6 1 1\n0:7 1 1\n0:16 1 1\n0:17 1 1\n0:18 2 1\n0:36 2 1\n"
-                               "1:5 1 0\n1:6 12 0\n1:7 2 0\n1:8 2 0\n1:9 2 0\n1:10 1 1\n1:127 1 0\n# a comment\n"
+                               "1:5 1 0\n1:6 12 0\n1:7 2 0\n1:8 2 0\n1:9 2 0\n1:10 1 1\n1:127 1 0\n1:167 2 0\n"
+                               "# a comment\n"
                                "1:3 0 1\n1:11 3 0\n1:12 3 0\n1:14 1 1\n1:19 2 0\n1:20 2 0\n1:28 1 0\n1:55 5 0\n"
                                "1:60 1 1\n1:61 4 0\n1:67 2 1\n1:79 2 0\n1:80 3 1\n1:120 1 1\n1:121 3 0\n2:23 1 1\n");
         calls.set_shape(0, kRecord, 1, false);
@@ -185,6 +186,76 @@ void test_states()
         CHECK(r[2].i() == 1 && r[3].i() == 2);
         CHECK(r[4].i() == 0);
     }
+}
+
+// A state entered by its priority (1:167, FUN_1403caa90): over a current state of a lower one, not over a higher one
+void test_priority()
+{
+    Rig rig;
+    const Words name_a = text("a"), name_b = text("b");
+    const Words names = name_a + name_b;
+    const unsigned at_a = unsigned(first(2)), at_b = at_a + unsigned(name_a.size());
+    const auto reg = [&](unsigned name_at, std::uint32_t flags, std::uint32_t routine) {
+        Words w = push_addr(1, 0x74) + push_addr(3, name_at) + push_int(std::int32_t(flags)) + push_int(std::int32_t(routine));
+        for (int i = 0; i < 8; ++i)
+            w = w + push_int(0);
+        return w + sys(1, 6);
+    };
+    const Words forever = misc(0) + Words{0x0007, 0xfffd};
+    Words start, main;
+    std::uint32_t routine = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        start = push_addr(1, 0x74) + sys(1, 5) + reg(at_a, 100, routine) + reg(at_b, 200, routine) +
+                push_addr(1, 8) + push_addr(1, 0x74) + sys(1, 7) + misc(1);
+        main = push_addr(1, 8) + push_addr(3, at_a) + sys(1, 8) + misc(0) + push_addr(1, 8) + push_addr(3, at_b) +
+               sys(1, 167) + misc(0) + push_addr(1, 8) + push_addr(3, at_a) + sys(1, 167) + forever;
+        routine = std::uint32_t(first(2) + names.size() + start.size() + main.size());
+    }
+    kh::Actor actor(script({{0, names.size()}, {1, names.size() + start.size()}}, names + start + main + forever),
+                    rig.memory, rig.calls, "prioritised");
+    std::vector<std::string> entered;
+    actor.states().entered = [&](const std::string &n) { entered.push_back(n); };
+    rig.memory.set_u32(actor.machine().work_area() + 0xc, actor.address());
+    actor.start();
+    for (int i = 0; i < 5; ++i)
+        actor.tick();
+    CHECK(entered.size() == 2 && entered[0] == "a" && entered[1] == "b");
+    CHECK(actor.states().current() != nullptr && actor.states().current()->name == "b");
+}
+
+// A state whose routine ends by itself is left as KH2 leaves it (FUN_1403ca550 -> FUN_1403caec0): its leave routine
+// (+ 0xa) runs once
+void test_leave_after_end()
+{
+    Rig rig;
+    const Words name_a = text("a");
+    const unsigned at_a = unsigned(first(2));
+    const Words forever = misc(0) + Words{0x0007, 0xfffd};
+    Words start, main, routine, leave;
+    std::uint32_t routine_at = 0, leave_at = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        Words reg = push_addr(1, 0x74) + push_addr(3, at_a) + push_int(100) + push_int(std::int32_t(routine_at));
+        for (int k = 0; k < 8; ++k)
+            reg = reg + push_int(k == 0 ? std::int32_t(leave_at) : 0); // + 0xa: its leave routine
+        start = push_addr(1, 0x74) + sys(1, 5) + reg + sys(1, 6) + push_addr(1, 8) + push_addr(1, 0x74) + sys(1, 7) +
+                misc(1);
+        main = push_addr(1, 8) + push_addr(3, at_a) + sys(1, 8) + forever;
+        routine = push_int(1) + rec() + misc(1); // records 1, ends
+        leave = push_int(9) + rec() + misc(1);   // records 9
+        routine_at = std::uint32_t(first(2) + name_a.size() + start.size() + main.size());
+        leave_at = routine_at + std::uint32_t(routine.size());
+    }
+    kh::Actor actor(script({{0, name_a.size()}, {1, name_a.size() + start.size()}}, name_a + start + main + routine + leave),
+                    rig.memory, rig.calls, "leaving");
+    rig.memory.set_u32(actor.machine().work_area() + 0xc, actor.address());
+    actor.start();
+    for (int i = 0; i < 4; ++i)
+        actor.tick();
+    std::vector<int> got;
+    for (const ai::Value &v : rig.recorded)
+        got.push_back(v.i());
+    CHECK((got == std::vector<int>{1, 9}));
+    CHECK(actor.states().current() == nullptr);
 }
 
 void test_kinds()
@@ -1119,6 +1190,54 @@ void test_boss_batch()
     CHECK(actor.stealth == 4u);
 }
 
+// An object made by its entry's number (1:0: the field makes it, its address given back as an AI handle's object)
+// and the dead mark (1:328: + 0x9b8 bit 2 set, the field told once)
+struct MakingWorld final : kh::World {
+    std::uint32_t asked = 0, made = 0;
+    int marks = 0;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    std::uint32_t appear(kh::Actor &, std::uint32_t entry) override
+    {
+        asked = entry;
+        return made;
+    }
+    void dead_mark(kh::Actor &) override
+    {
+        ++marks;
+    }
+};
+
+void test_making()
+{
+    Rig rig;
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor maker(script({{1, 0}}, loop), rig.memory, rig.calls, "cubes");
+    kh::Actor other(script({{1, 0}}, loop), rig.memory, rig.calls, "sorcerer");
+    MakingWorld world;
+    maker.world = &world;
+    world.made = other.address();
+    const ai::Value self = ai::Value::of_address(maker.address());
+    const ai::Value got = call(rig, maker, 1, 0, {ai::Value::of_int(315)});
+    CHECK(world.asked == 315u && got.bits == other.address());
+    world.made = 0;
+    CHECK(call(rig, maker, 1, 0, {ai::Value::of_int(999)}).bits == 0u);
+    call(rig, maker, 1, 328, {self});
+    call(rig, maker, 1, 328, {self});
+    CHECK(world.marks == 1 && (maker.u32(0x9b8) & 4u) != 0);
+    // 2:21: one block for one number, its first byte 1 to the later askers (the cubes' "made already"), a new one
+    // once the field is left
+    const std::uint32_t first = call(rig, maker, 2, 21, {ai::Value::of_int(44), ai::Value::of_int(12)}).bits;
+    CHECK(first != 0 && rig.memory.u32(first) == 0u);
+    CHECK(call(rig, other, 2, 21, {ai::Value::of_int(44), ai::Value::of_int(12)}).bits == first);
+    CHECK((rig.memory.u32(first) & 0xffu) == 1u);
+    kh::forget_teamwork();
+    const std::uint32_t again = call(rig, other, 2, 21, {ai::Value::of_int(44), ai::Value::of_int(12)}).bits;
+    CHECK(again != first && rig.memory.u32(again) == 0u);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -1136,6 +1255,9 @@ int main()
     test_near_batch();
     test_shout();
     test_boss_batch();
+    test_making();
+    test_priority();
+    test_leave_after_end();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

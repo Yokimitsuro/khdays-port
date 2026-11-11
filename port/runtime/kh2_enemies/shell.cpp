@@ -454,6 +454,7 @@ KindFiles *files_of(const std::string &name)
         try {
             const fs::path obj = u8(m.folder) / "kh2" / "obj";
             const auto mdlx = read_file(obj / (kind->name + ".mdlx"));
+            // (none for an object with no motion set of its own, the Thresholder's Possessor: its entry names none)
             const auto mset = read_file(obj / (kind->name + ".mset"));
             const auto scripts = ai::scripts_in(mdlx.data(), mdlx.size());
             if (scripts.empty())
@@ -463,9 +464,13 @@ KindFiles *files_of(const std::string &name)
             const std::u8string p8 = (obj / (kind->name + ".mdlx")).u8string();
             k->mdlx.assign(p8.begin(), p8.end());
             k->script = std::make_shared<const ai::Script>(scripts.front().second);
-            k->set = std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
-            k->skeleton =
-                std::make_shared<const kh2::MotionSkeleton>(kh2::read_motion_skeleton(mdlx.data(), mdlx.size()));
+            k->set = mset.empty() ? std::make_shared<const kh2::MotionSet>()
+                                  : std::make_shared<const kh2::MotionSet>(mset.data(), mset.size());
+            // (no bones for an object with no model of its own: the Possessor, drawn by its effects alone)
+            const auto bar = kh2::bar_entries(mdlx.data(), mdlx.size());
+            const bool model = std::any_of(bar.begin(), bar.end(), [](const kh2::BarEntry &e) { return e.type == 4; });
+            k->skeleton = std::make_shared<const kh2::MotionSkeleton>(
+                model ? kh2::read_motion_skeleton(mdlx.data(), mdlx.size()) : kh2::MotionSkeleton{});
             k->shapes = read_shapes(mdlx, &k->default_groups);
             k->plays_player = kind->plays_player;
             read_effects(*k, u8(m.folder));
@@ -494,6 +499,10 @@ struct Enemy final {
     bool paused = false;         // its script waits while it plays (a kind with no reaction state of its own)
     bool dying = false, released = false;
     bool down = false; // released and no longer standing: made again if its Days enemy is set going once more
+    bool dead_marked = false; // counted as defeated by its own script (1:328): its Days defeat without "dead"
+    // the place (KH2's) the shell gave its actor last: another script putting it elsewhere (1:148 on its handle, the
+    // cubes' on the Sorcerer they made) is seen by it
+    Vec3 given{};
     unsigned end_ticks = 0;
     float fall = 0.0F;      // its fall's speed off the ground (KH2's units a tick)
     // the ground under it, KH2's y (down), from the last frame Days found one: a jump or a fall stops there (Days's
@@ -564,6 +573,7 @@ struct Enemy final {
 };
 
 std::map<unsigned, std::string> kind_of;            // a Days enemy made from a KH2 row -> its KH2 kind
+std::set<unsigned> appeared;                        // those a script made (1:0): their kind theirs till they go
 std::map<unsigned, int> made_row;                   // every Days enemy made in this area -> its row
 std::map<int, std::string> row_kinds;               // the rows' KH2 enemies ("" none), asked once a row
 bool kh2_rows = false;                              // whether this area made any actor for a KH2 row
@@ -744,9 +754,62 @@ bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out);
 constexpr float kPlayerMiddle = 0.725F; // a player's middle over his feet (Days's units): half kPlayerHeight
 void strike(AttackObject &o, Object &target);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
+Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s);
+std::string entry_name(std::uint32_t number);
 
 class Field final : public World {
 public:
+    // 1:0: an object of the mod's kinds made by its entry's number, as a Days enemy of its maker's class made where
+    // its maker stands (khdays_enemies_make: Days's own making -- hit, locked on, defeated, counted as Days's are),
+    // the kind's script set going on it at once; its maker's script then puts it where it wants it (the cubes, the
+    // Sorcerer where they are: 1:148, 1:79). An entry the mod has no kind for, or one whose script the port does not
+    // answer, makes nothing (0), as KH2 makes nothing of an entry it cannot load
+    std::uint32_t appear(Actor &by, std::uint32_t entry) override
+    {
+        const auto maker = by_actor.find(&by);
+        const std::string name = entry_name(entry);
+        KindFiles *k = name.empty() || maker == by_actor.end() ? nullptr : files_of(name);
+        KhdaysKh2Shell s;
+        if (k == nullptr || !khdays_kh2_shell_read(maker->second->days, &s)) {
+            khdays_log("kh2 enemies: %s makes object %u (%s): not one of the mod's kinds, nothing made", by.kind().c_str(),
+                       unsigned(entry), name.empty() ? "no entry" : name.c_str());
+            return 0;
+        }
+        const char *why = nullptr;
+        const unsigned days = khdays_enemies_make(s.kind, s.place, 0, 1.0, 1.0, &why);
+        if (days == 0) {
+            khdays_log("kh2 enemies: %s makes a %s: Days makes no enemy of class 0x%02x (%s)", by.kind().c_str(),
+                       name.c_str(), unsigned(s.kind), why != nullptr ? why : "?");
+            return 0;
+        }
+        kind_of[days] = name; // (its making named its maker's row's kind: Ov002_CreateActorFromMarker's join)
+        appeared.insert(days);
+        KhdaysKh2Shell made = s;
+        if (khdays_kh2_shell_read(days, &made))
+            std::copy(s.place, s.place + 3, made.place);
+        Enemy *e = start(days, *k, made);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x (%s) makes %08x, a %s (entry %u)", maker->second->days, by.kind().c_str(),
+                       days, name.c_str(), unsigned(entry));
+        return e->actor->address();
+    }
+
+    // 1:328: its Days enemy defeated as a player's hit of all its health defeats it (its prizes, its wave's count;
+    // seat 0's player its author), its script left to end it as it does (no "dead" entered: the cubes fade out)
+    void dead_mark(Actor &a) override
+    {
+        const auto it = by_actor.find(&a);
+        KhdaysKh2Shell s;
+        if (it == by_actor.end() || it->second->dying || !khdays_kh2_shell_read(it->second->days, &s))
+            return;
+        Enemy &e = *it->second;
+        e.dead_marked = true;
+        const int took = khdays_enemies_hit(e.days, khdays_link_seat_actor(0), 0, std::max(1, s.hp), s.place, 0, 0, 1);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x marks itself dead (1:328): %s", e.days,
+                       took ? "its Days enemy defeated" : "Days took no hit");
+    }
+
     // 1:83: a point on one of its bones in the pose it has now (0x4000 the actor itself, in its own axes), KH2's world
     bool bone_point(Actor &a, int bone, const Vec3 &local, Vec3 &out) override
     {
@@ -1493,6 +1556,29 @@ std::uint32_t entry_record(const std::string &name)
     const std::uint32_t at = mod().memory.add(96, name + "'s object entry");
     mod().memory.write(at, it->second.data(), 96);
     return made[name] = at;
+}
+
+// The name of KH2's object entry `number` (00objentry.bin's + 0, its name at + 8); "" none
+std::string entry_name(std::uint32_t number)
+{
+    static std::map<std::uint32_t, std::string> names;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        std::uint32_t count = 0;
+        if (file.size() >= 8)
+            std::memcpy(&count, file.data() + 4, 4);
+        for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= file.size(); ++i) {
+            const std::uint8_t *r = file.data() + 8 + 96 * std::size_t(i);
+            std::uint32_t id = 0;
+            std::memcpy(&id, r, 4);
+            const char *n = reinterpret_cast<const char *>(r + 8);
+            names.emplace(id, std::string(n, strnlen(n, 32)));
+        }
+    }
+    const auto it = names.find(number);
+    return it != names.end() ? it->second : std::string();
 }
 
 // ------------------------------------------------------------------------------------------------- the players in hand
@@ -2500,8 +2586,11 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
             khdays_log("kh2 enemies: %08x hears \"%s\" shouted", e.days, e.sent_state.c_str());
         e.sent_state.clear();
     }
+    a.set_place(place); // Days's, its collision's push taken
     if (!e.paused)
         a.tick();
+    if (const Vec3 now = a.place(); now != place)
+        place = now; // its script put it elsewhere (1:148, 1:153, 1:220)
     Vec3 travel = a.step(1.0F);
     cues(e);
     event_tick(e);
@@ -3038,7 +3127,10 @@ extern "C" void khdays_kh2_enemies_made(int row, void *actor)
 
 extern "C" void khdays_kh2_enemies_gone(void *actor)
 {
-    forget(unsigned(KHDAYS_REF(actor)));
+    const unsigned days = unsigned(KHDAYS_REF(actor));
+    forget(days);
+    if (appeared.erase(days) != 0)
+        kind_of.erase(days); // a script's (1:0): its Days enemy another's once reused
 }
 
 extern "C" void khdays_kh2_enemies_area_left(void)
@@ -3052,6 +3144,8 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     ghosts.clear();
     by_actor.clear();
     kind_of.clear();
+    appeared.clear();
+    forget_teamwork();
     held.clear();
     shouts.clear();
     waiting_threads.clear();
@@ -3093,15 +3187,39 @@ void send_shouts()
     }
 }
 
+// The field's loose threads (2:20's), each once: KH2 runs them in a list of their own, apart from their objects'
+// ticks (FUN_1403c5ec0). Not those of an enemy the Stop magic holds, nor of one whose end is over
+void tick_loose()
+{
+    std::vector<const Actor *> actors;
+    for (const auto &[a, e] : by_actor)
+        if (e->actor->machine().has_loose())
+            actors.push_back(a);
+    for (const Actor *a : actors) {
+        const auto it = by_actor.find(a); // (a thread run may have ended another)
+        if (it != by_actor.end() && !it->second->released && !khdays_stop_held(KHDAYS_W(it->second->days)))
+            it->second->actor->machine().tick_loose();
+    }
+}
+
 extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
 {
     const unsigned days = unsigned(KHDAYS_REF(actor));
     const auto kind = kind_of.find(days);
     if (kind == kind_of.end())
         return;
+    // the frame before's KH2 ticks, each as KH2 orders its frame: its objects (each enemy's own ticks, done), its
+    // loose threads, then the shouts told (once a frame here: after the first) -- the Sorcerer's turn-giving thread
+    // moves the turn its shout gave on before its cubes hear the order, as KH2's must
     if (const unsigned frame = khdays_link_frame(); frame != shouts_frame) {
         shouts_frame = frame;
-        if (!shouts.empty())
+        const int steps = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
+        for (int t = 0; t < steps; ++t) {
+            tick_loose();
+            if (t == 0 && !shouts.empty())
+                send_shouts();
+        }
+        if (steps == 0 && !shouts.empty())
             send_shouts();
     }
     KhdaysKh2Shell s;
@@ -3147,6 +3265,13 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     the_field().health(*e->actor);
     Vec3 place = to_kh2(s.place);
+    // another script put it elsewhere since the last frame (1:148 on its handle: the cubes put the Sorcerer they
+    // made where they are): that place, not Days's
+    if (e->placed) {
+        const Vec3 now = e->actor->place();
+        if (std::fabs(now[0] - e->given[0]) + std::fabs(now[1] - e->given[1]) + std::fabs(now[2] - e->given[2]) > 0.01F)
+            place = now;
+    }
     // KH2 carries it up and down itself (its jumps, falls, motions in the air): Days lowers a stand-in in the air
     // between two steps (by 0.148 a frame, its own fall) and that is not KH2's -- the height it was given is kept then.
     // Days lifting it (out of the ground) is kept; its ground's distance (`above`) is from the place it was given
@@ -3210,6 +3335,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     }
     to_days(place, e->place);
     e->placed = true;
+    e->given = e->actor->place();
     e->radius = s.radius;
     khdays_kh2_shell_place(days, e->place, e->actor->yaw());
 }
@@ -3230,6 +3356,8 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         e->reacting = false;
         e->paused = false;
         a.set_bits(field::kStatus, bit::kHeld, false);
+        if (e->dead_marked) // its script ends it (1:328: the cubes fade out, then their end)
+            return;
         a.states().unlock();
         if (!a.states().enter(a, "dead"))
             e->released = true;

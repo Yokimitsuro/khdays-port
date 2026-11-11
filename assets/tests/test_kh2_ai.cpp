@@ -193,6 +193,13 @@ void test_threads()
     expect(rig.count == 7, "the child ended and was dropped");
     expect(m.main_thread()->children.empty(), "no child left");
 
+    // a loose thread (2:20's): not run by tick(), run by tick_loose(), dropped once ended
+    expect(m.start_loose(child_at) != nullptr && m.has_loose(), "a loose thread");
+    m.tick();
+    expect(rig.count == 8, "tick() runs main alone");
+    m.tick_loose();
+    expect(rig.count == 9 && !m.has_loose(), "tick_loose() runs it; ended, it is dropped");
+
     // a thread ended by a call of its own runs on to its yield, then no more (KH2: FUN_1403e1910 only lists it)
     Rig own;
     const Words ends = sys(0, kEndSelf) + sys(0, kCount) + misc(0) + sys(0, kCount) + misc(1);

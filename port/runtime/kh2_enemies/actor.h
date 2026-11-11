@@ -43,7 +43,7 @@ constexpr std::uint32_t kCarrier = 0x6a0;   // another object carrying it (FUN_1
 constexpr std::uint32_t kFacing = 0x680;    // vec4, its w the yaw: 1:79, 1:201
 constexpr std::uint32_t kYaw = 0x7a8;       // float: 1:4, 1:79
 constexpr std::uint32_t kFlags8c8 = 0x8c8;  // bit 6 set and cleared by 1:104, 1:105
-constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20, 1:28)
+constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20, 1:28); bit 2 the dead mark (1:328)
 constexpr std::uint32_t kUnitArgs = 0x9f4;  // YS::OBJ's UnitArg: its spawn's values, a word each (1:39, 1:218)
 constexpr std::uint32_t kTravel = 0xa28;    // vec4: this tick's travel (FUN_1403b8ae3; 1:64)
 constexpr std::uint32_t kTravelBefore = 0xa38; // vec4: the tick's before (1:62)
@@ -65,6 +65,7 @@ constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1
 constexpr std::uint32_t kNoHitObject = 1u << 1, kNoHitAttack = 1u << 3;
 constexpr std::uint32_t kPlayer = 1u << 7;       // kFlags6c8: the player (1:309: the enemies' scripts answer it)
 constexpr std::uint32_t kFadeHeld = 1u << 4;    // kFade: 1:28 ended its fading
+constexpr std::uint32_t kDeadMark = 1u << 2;    // kFade: counted as defeated (1:328, FUN_1403d4a40)
 } // namespace bit
 
 // One state of the table a script fills (1:5, 1:6; FUN_1403ca0e0): 32 bytes in the script's own memory.
@@ -91,6 +92,9 @@ class StateMachine final {
 public:
     void set_table(std::uint32_t table, std::uint32_t handle) { table_ = table, handle_ = handle; }
     bool enter(Actor &a, const std::string &name);  // 1:8: at once, the queue emptied (not while locked)
+    // 1:167: as 1:8 when its priority (+ 4) is at least the current state's (FUN_1403caa90: + 0x128, which entering
+    // sets, FUN_1403cad00; 0 with none)
+    bool enter_over(Actor &a, const std::string &name);
     bool queue(Actor &a, const std::string &name);  // 1:9: after the current one (15 at most, KH2's ring)
     bool pending() const;                           // 1:10: one running or queued
     void clear(Actor &a);                           // 1:127: the current left, the queue emptied
@@ -414,6 +418,14 @@ public:
     // 1:157: the event sequence of that name in the actor's .a.us (its entries of type 0x16, FUN_1403db2f0), played by
     // KH2's one event player (FUN_1402cc4b0, the one before ended), its camera placed from `target` (FUN_1403ad270)
     virtual void event(Actor & /*actor*/, const std::string & /*name*/, Object * /*target*/) {}
+    // 1:0: an object made by its entry's number (00objentry.bin's + 0) and set going, its script started; its address
+    // (an AI handle's + 4 names it), 0 when none can be made
+    virtual std::uint32_t appear(Actor & /*by*/, std::uint32_t /*entry*/)
+    {
+        return 0;
+    }
+    // 1:328: the actor counted as defeated by what made it (its wave), its script going on (FUN_1403d4a40)
+    virtual void dead_mark(Actor & /*a*/) {}
 };
 
 // Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)

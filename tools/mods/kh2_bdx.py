@@ -39,7 +39,9 @@ BINARY = {
 MISC = by_argument("yield exit ret drop - dup sin cos deg2rad rad2deg")
 STATE_CALL = (1, 6)  # registers a state (see state_routines)
 STATE_ARGS = 12
-STATE_ROUTINE_ARGS = (3, 10)
+# its routine (+ 8, the 4th) and the routines the game runs for its events (+ 0xa + 2 n, the 5th on: n 0 its leave,
+# 1 off the ground, 2 landed, 5 its name shouted -- 1:90, + 0x14 --, 6 entered, + 0x16; FUN_1403ca1d0, FUN_1403ca950)
+STATE_ROUTINE_ARGS = tuple(range(3, 12))
 # calls that start a routine of the script as a thread: (table, index) -> (arguments, the routine's among the pushes,
 # the first pushed 0): 1:112 on an actor, its second (FUN_14042ca20: the actor, the routine, a value -- the routine its
 # attached thread: Cerberus's on the player), 2:20 a thread of its own, its first (FUN_140432cd0: the routine, a value)
@@ -206,8 +208,10 @@ def _pushed_routines(s: Script, code: dict[int, Instruction], call: tuple[int, i
 
 def state_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
     """The routines the reached code registers as states: call 1:6 takes 12 arguments, pushed just before it, its 4th
-    (and sometimes its 11th) the code word where the state's routine starts. The game enters a state by running that
-    routine as a child thread (FUN_1403cad00), so no jump or call of the script leads there."""
+    the code word where the state's routine starts, its 5th to 12th those of the routines the game runs on the state's
+    events (its leave, the ground left and met, its name shouted, its entry: 0 none). The game enters a state by
+    running its routine as a child thread (FUN_1403cad00) and the others as it tells the state of an event, so no jump
+    or call of the script leads there."""
     return _pushed_routines(s, code, STATE_CALL, STATE_ARGS, STATE_ROUTINE_ARGS)
 
 

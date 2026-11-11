@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <sstream>
 
 namespace khdays::kh2_enemies {
@@ -128,11 +129,23 @@ Object *target_in(ai::Machine &m, std::uint32_t slot)
     return a->world->player(*a);
 }
 
+// 2:21's blocks by their memory and number
+std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> &teamwork()
+{
+    static std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> blocks;
+    return blocks;
+}
+
 } // namespace
 
 void seed_chance(std::uint32_t seed)
 {
     chance_state = seed != 0 ? seed : 1;
+}
+
+void forget_teamwork()
+{
+    teamwork().clear();
 }
 
 int read_shapes(ai::Calls &calls, const std::string &text)
@@ -333,13 +346,17 @@ void add_math(ai::Calls &calls)
         std::memcpy(&bits, &ratio, 4);
         a[0] = ai::Value{bits, ai::Tag::Int};
     });
-    // 2:21 memory several objects share by a number (FUN_1403f6df0: n + 1 bytes, zeroed, the same for the same
-    // number)
+    // 2:21 memory several objects share by a number (trap_teamwork_alloc, FUN_1403f6df0: n + 1 bytes, zeroed, made by
+    // the first to ask; to each later one the same, its first byte made 1 -- the Sorcerer's cubes start their shots'
+    // turn-giving thread once so, the first to ask; without it each started its own and none had a turn to shoot)
     calls.set(2, 21, [](ai::Machine &m, std::span<ai::Value> a) {
-        static std::map<std::pair<const ai::Memory *, std::uint32_t>, std::uint32_t> shared;
-        std::uint32_t &at = shared[{&m.memory(), a[0].bits}];
-        if (at == 0)
+        std::uint32_t &at = teamwork()[{&m.memory(), a[0].bits}];
+        if (at == 0) {
             at = m.memory().add(a[1].bits + 1, "2:21's shared memory");
+        } else {
+            const std::uint8_t made = 1;
+            m.memory().write(at, &made, 1);
+        }
         a[0] = ai::Value::of_address(at);
     });
 }
@@ -427,6 +444,15 @@ void add_states(ai::Calls &calls)
         if (Actor *x = self_of(m, a[0]))
             x->states().queue(*x, name_at(m.memory(), a[1].bits));
     });
+    // 1:167 entered as 1:8 when its priority is at least the current state's (trap_obj_act_start_pri, FUN_14042c7d0 ->
+    // FUN_1403caa90): the Dancer's
+    calls.set(1, 167, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]))
+            x->states().enter_over(*x, name_at(m.memory(), a[1].bits));
+    });
+    // 0:60 an assertion (trap_assert, FUN_14041e710: empty in the PC's build): the Rapid Thruster's and the Armored
+    // Knight's events' routines make it
+    calls.set(0, 60, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(1, 10, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         a[0] = ai::Value::of_int(x != nullptr && x->states().pending() ? 1 : 0);
@@ -681,6 +707,26 @@ void add_actor_fields(ai::Calls &calls)
     // 2:45 the number of a hit's attack (trap_damage_attack_param_id; FUN_1404320a0: YS::DAMAGE's AttackParam, + 0x20,
     // its u16 at + 2): the Wight Knight asks it of its hits -- a Days hit names no KH2 attack: 0
     calls.set(2, 45, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:0 an object made by its entry's number (trap_sysobj_appear; FUN_14042b130 -> FUN_1403df930: at the world's
+    // origin facing pi (DAT_140623df0, DAT_140623b78), its class by its entry's kind, its script started), its AI
+    // handle given back, 0 none: the Sorcerer's cubes make the Sorcerer (315) so, then put it where they are (1:148,
+    // 1:79). The field makes it (World::appear)
+    calls.set(1, 0, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        const std::uint32_t made = me->world != nullptr ? me->world->appear(*me, a[0].bits) : 0u;
+        a[0] = ai::Value::of_address(made);
+    });
+    // 1:328 the object counted as defeated, once (trap_obj_dead_mark; FUN_14042dd50 -> FUN_1403d4a40: unless + 0x9b8
+    // bit 2 is set, its group told (+ 0x9e8, FUN_1403fed10), the bit set): the Sorcerer's cubes mark themselves so in
+    // their "leave" (far from the player), then fade out. Its script goes on; the field counts it (World::dead_mark)
+    calls.set(1, 328, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if ((x->u32(field::kFade) & bit::kDeadMark) != 0)
+            return;
+        x->set_bits(field::kFade, bit::kDeadMark, true);
+        if (x->world != nullptr)
+            x->world->dead_mark(*x);
+    });
     // 1:222 its object entry's number (trap_obj_get_entry_id; FUN_14042bb10 -> FUN_1403b5770: + 8's record, + 0)
     calls.set(1, 222, [](ai::Machine &m, std::span<ai::Value> a) {
         const Object *x = object_of(m, a[0]);
@@ -1805,13 +1851,16 @@ void add_world(ai::Calls &calls)
         if (x->world != nullptr)
             x->world->health(*x);
     });
-    // 2:20 a routine of the script started as a thread of its own (FUN_1403c5ec0), with one value; a handle back
+    // 2:20 a routine of the script started as a thread of its own, with one value; a handle back
+    // (trap_magic_start_thread, FUN_1403c5ec0: a machine of its own on the script, FUN_1403e1970, in the game's list
+    // of them, FUN_1403c4e90 -- run apart from its object's ticks: the shell runs every field's loose threads, then
+    // tells the shouts; the Sorcerer's turn-giving thread moves its turn on so before its cubes hear the order)
     calls.set(2, 20, [](ai::Machine &m, std::span<ai::Value> a) {
         std::uint32_t entry = a[0].bits;
         if (a[0].tag == ai::Tag::Address && entry >= m.code())
             entry = (entry - m.code()) / 2;
         const ai::Value arg = a[1];
-        m.start_routine(nullptr, entry, {&arg, 1});
+        m.start_loose(entry, {&arg, 1});
         static std::map<const ai::Memory *, std::uint32_t> handles;
         auto &h = handles[&m.memory()];
         if (h == 0)

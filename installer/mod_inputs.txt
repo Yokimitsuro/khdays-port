@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 87aec07c12f4d7a280ff5b2c69460202204e44b7dfc3af711716137ea9eac1ca
+# tools 1189dc9f456e518b14df5cd195ce24171d219ee8e7ec669da9179faa73d6639d
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -48,6 +48,8 @@ kh2_fifth menu/us/camp.2ld
 kh2_fifth obj/B_BB100.a.us
 kh2_fifth obj/B_BB100.mdlx
 kh2_fifth obj/B_BB100.mset
+kh2_fifth obj/B_BB130.a.us
+kh2_fifth obj/B_BB130.mdlx
 kh2_fifth obj/B_HE020.a.us
 kh2_fifth obj/B_HE020.mdlx
 kh2_fifth obj/B_HE020.mset
@@ -133,6 +135,9 @@ kh2_fifth obj/M_EX780.mset
 kh2_fifth obj/M_EX790.a.us
 kh2_fifth obj/M_EX790.mdlx
 kh2_fifth obj/M_EX790.mset
+kh2_fifth obj/M_EX870.a.us
+kh2_fifth obj/M_EX870.mdlx
+kh2_fifth obj/M_EX870.mset
 kh2_fifth obj/M_EX880.a.us
 kh2_fifth obj/M_EX880.mdlx
 kh2_fifth obj/M_EX880.mset

@@ -25,7 +25,10 @@ read of KH2, what the port does with it, and what is not known yet.
   `M_EX420`, the Hammer Frame `M_EX560`, the Assault Rider `M_EX570`, the Nightwalker `M_EX580`, the Magnum Loader
   `M_EX600`, the Hot Rod `M_EX640`, the Cannon Gun `M_EX650`, the Rapid Thruster `M_EX660`, the Armored Knight
   `M_EX760`, the Creeper `M_EX880` and the Dusk `M_EX990`, all covered; "Coverage" below). Nothing of the games is
-  in the repository or the installer.
+  in the repository or the installer. An object with no model of its own (its `.mdlx` holds no BAR entry 4: the
+  Thresholder's Possessor `B_BB130`, drawn by its effects alone) needs its `.mdlx` only, its `.mset` and `.a.us` taken
+  when it has them; a sound whose bank the kind's own `.a.us` lacks is taken from another object's that carries it
+  (the Sorcerer's cubes `M_EX870` play bank 272, the Sorcerer's `.a.us`'s).
 - **No setting**: a mission that places a KH2 enemy gets KH2's enemy, as its author wrote it. Only a player without
   the mod (or with one that does not cover the kind) gets the class written after the name in its place; without a
   class the mission is left out for that player.
@@ -96,7 +99,10 @@ script's code, and a state is found by its name (`FUN_1403ca700` compares the st
 name too. The Soldier registers 27 at its start with `1:6` (`appear`, `mode_battle`, `btl_attack`, `atk_craw`,
 `atk_kick`, `atk_jump`, `move_roll`, `move_back`, `move_step`, `move_target`, `freeze`, `revenge`, `dead`, `leave`,
 `event`, `idle`, `footwork` ...): each name, flags, the routine run as a child thread while it is the state (+8), a
-routine run at once when it is left (+0xa, `FUN_1403caec0`), one run at once once it is entered (+0x16,
+routine run at once when it is left (+0xa, `FUN_1403caec0`: also when its routine ends by itself -- the state
+machine's tick, `FUN_1403ca550`, runs the routine's thread and leaves the state once it is over; until 2026-11-11 the
+port left such a state without it, and the Sorcerer's cubes, whose shield's leave routine clears their "busy", never
+took another order), one run at once once it is entered (+0x16,
 `FUN_1403cad00`), a routine run when the actor is hit while it is the state (+0x10, `FUN_1403ca470`), a priority
 (+4: 100 the modes and moves, 200 the attacks, 300 `revenge`, `dead`, `leave`, `event`). Flag 2 of the high half locks
 a state while it runs (`1:8` and `1:9` refused). A state without flag 1 of the high half begins only once the actor is
@@ -179,7 +185,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 2:8 | whether a hit's reaction kind (+ 0x26, `FUN_1403ce980`'s groups) is past 1: trigger 6's hit, which the Strafer and the cubes turn to their revenge on | as KH2: Days's hits are small reactions (2) |
 | 1:128, 1:133, 1:134 | the object's class's virtuals + 0x20, + 0x80, + 0x88 (its native code) | nothing |
 | 2:9 | the actor's + 0x5c0 made from a number (`FUN_140411350`) | nothing |
-| 2:20 | a routine of the script started as a thread of its own (`FUN_1403c5ec0`) | as KH2 |
+| 2:20 | a routine of the script started as a thread of its own (`trap_magic_start_thread`, `FUN_1403c5ec0`: a machine of its own on the script, `FUN_1403e1970`, put in the game's list of them, `FUN_1403c4e90`; run apart from its object's ticks) | a loose thread of its object's machine (`Machine::start_loose`); the shell runs the field's loose threads once a KH2 tick after the enemies' own ticks, the frame's shouts told after the first (the Sorcerer's turn-giving thread moves the turn its order gave on before its cubes hear it). Until 2026-11-11 they ran inside their object's tick, before its state's routine: the turn never came in time |
 
 The calls the other enemies need (US2, "Coverage" below), read the same way:
 
@@ -208,6 +214,10 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 2:45 | the number of a hit's attack (`trap_damage_attack_param_id`: `YS::DAMAGE`'s `AttackParam`, + 0x20, its u16 at + 2): the Wight Knight asks it of its hits (492, 1149, 568) | 0: a Days hit names no KH2 attack |
 | 1:222, 1:114 | its object entry's number (`trap_obj_get_entry_id`: + 8, `YS::OBJ`'s `Entry`, its record's + 0); the field's first object of an entry's number into an AI handle (`trap_obj_search_by_entry`, `FUN_1403b4110`: 0x236 the player) | as KH2: each kind's `00objentry.bin` record (96 bytes: + 0 its number, + 4 its kind -- 4 an enemy, 3 a boss --, + 8 its name, + 0x28 its motion set's) put at its actors' + 8 |
 | 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1) |
+| 1:167 | a state entered as 1:8 does when its priority (its record's + 4) is at least the current state's (`trap_obj_act_start_pri`: `FUN_1403caa90`; + 0x128 the current one's, which entering sets -- `FUN_1403cad00` --, 0 none): the Dancer's | as KH2 |
+| 0:60 | an assertion (`trap_assert`: `FUN_14041e710`, empty in the PC's build): in the Rapid Thruster's and the Armored Knight's states' event routines | nothing, as KH2 |
+| 1:0 | an object made by its entry's number (`trap_sysobj_appear`: `FUN_14042b130` -> `FUN_1403df930`, its class by its entry's kind, at the world's origin facing pi -- `DAT_140623df0`, `DAT_140623b78` --, its script started), its AI handle given back: the Sorcerer's cubes `M_EX870` make the Sorcerer (315: their entry's + 0x50 names it) and put it where they stand (1:148, 1:79) | a Days enemy of the maker's class made where the maker stands (`khdays_enemies_make`), the entry's kind's script set going on it at once; nothing (0) for an entry the mod has no kind for |
+| 1:328 | the object counted as defeated, once (`trap_obj_dead_mark`: `FUN_1403d4a40`: unless + 0x9b8 bit 2, its group told -- + 0x9e8, `FUN_1403fed10` -- and the bit set): the cubes in their `leave` (far from the player: counted for their wave, then faded out) | its Days enemy defeated by a hit of all its health (seat 0's player its author: its prizes, its wave's count), no "dead" entered: its script ends it |
 | 1:125 | its pictures' fade (`trap_obj_tex_fade_start`, `FUN_1403b7810` on + 0xaa4, `YS::OBJ`'s `TexFade`) | kept, not drawn |
 | 1:194, 1:195 | parts of its model in stealth and back (`trap_obj_set_stealth`, `_reset_`: `kn::ModelObj::setStealth` on + 0x7b0's model, a bit a part group; KH2 draws them as a refraction) | the whole model drawn at a quarter of its fade while any part is |
 | 1:24 | `DAT_140717009`, the byte after 1:23's (tested against 9) | 0, as 1:23 |
@@ -223,7 +233,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:58 | flying (`trap_obj_fly`) at a velocity of its own (`FUN_140421ce0`: + 0x20 the vector made one long times its w, + 0x108 a value, class 5, whose movement `FUN_140421c80` keeps + 0x108 of it an evaluation, eased toward the steering) | as KH2 (class 5 ends with 1:74 or a jump) |
 | 1:66, 1:69, 1:84, 1:97, 1:179 | + 0x120's 0x8000000 set; the float at + 0x19c; the object at + 0x5c0 (2:9's); where + 0x128 lies; + 0x118 (its fall's motion) set | as KH2 |
 | 1:83 | a point given on a bone (0x4000 the actor itself, in its own axes) in the world (`FUN_1403b50f0`: the bone's matrix, the point through it) | the pose the enemy has now |
-| 1:90 | a state's name shouted (`trap_obj_act_shout`): `FUN_1403cacd0` lists it with the shouter, `FUN_1403c9d40` sends the list to every object once a frame -- with a delay each its own time at random below it (+ 0x4c0 .. + 0x4d0, KH2's chance), else at once -- and each runs its own state of that name's shout routine (the state record's + 0x14, event 5; `FUN_1403ca950` through `FUN_1403e2000`), given its own handle and the shouter's; no state is entered | every KH2 enemy of the field, at the next frame's first tick. Until 2026-11-10 the port entered the state at once: the Silver Rock, whose `rc_address_shift_appear` shouts its own name, entered it again and again within one tick and the game stood still |
+| 1:90 | a state's name shouted (`trap_obj_act_shout`): `FUN_1403cacd0` lists it with the shouter, `FUN_1403c9d40` sends the list to every object once a frame -- with a delay each its own time at random below it (+ 0x4c0 .. + 0x4d0, KH2's chance), else at once -- and each runs its own state of that name's shout routine (the state record's + 0x14, event 5; `FUN_1403ca950` through `FUN_1403e2000`), given its own handle and the shouter's; no state is entered | every KH2 enemy of the field, at the next frame's first tick, once the field's loose threads ran (2:20). Until 2026-11-10 the port entered the state at once: the Silver Rock, whose `rc_address_shift_appear` shouts its own name, entered it again and again within one tick and the game stood still |
 | 1:98, 1:99 | its place on the ground under it (`FUN_1403b87e0`'s ray down); how far above it it is (negative up, 0 on it or below) | the ground Days last found under it |
 | 1:112 | a routine of the script as the actor's attached thread (`FUN_1403e1970`, `FUN_1403d76d0`: + 0xd48, the one before ended), the actor its first value | as KH2 |
 | 1:140 | whether a target record's object (its + 8) is there (`FUN_1403bde30`; its other test, the player's lock, not read) | its + 8 only |
@@ -231,7 +241,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:162 | the actor put on one of KH2's lists (`FUN_1403bd410` -> `FUN_14040c9d0`) | nothing |
 | 1:211, 1:212 | bit n of + 0xd10 set, cleared | as KH2 |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
-| 2:21 | memory several objects share by a number (`FUN_1403f6df0`: n + 1 bytes, zeroed, the same for the same number) | as KH2 |
+| 2:21 | memory several objects share by a number (`trap_teamwork_alloc`, `FUN_1403f6df0`: n + 1 bytes, zeroed, made by the first to ask; to each later one the same, its first byte made 1 -- "made already"; all let go with the field, `FUN_1403f6ea0`) | as KH2. Until 2026-11-11 the first byte was left 0: each of the Sorcerer's cubes took itself for the first, started its own turn-giving thread and cleared the turns, and none ever shot |
 | 2:10 | an attack of its own made (`FUN_140432250` -> `FUN_1404371b0`, YS::ATTACK_MAGIC, 0x138 bytes; `FUN_1403cf830`): for the object an AI handle names (its owner: the enemy, or KH2's player), an `atkp` entry (looked up with the sub-number, `FUN_1403eafc0`), a combo group (-1 a running number), the sub-number; its address back | as KH2 (below, "Attacks of their own") |
 | 2:11 | its size: a radius (+ 0x104) and a height (+ 0x108; 0 or less: the radius) (`FUN_140437c00`) | as KH2 |
 | 2:12 | its place (+ 0xe4; the one before kept at + 0xf4, swept between) (`FUN_140437a80`) | as KH2 |
@@ -345,12 +355,18 @@ show (`2:22`) is Days's.
   its revenge throws it (2:1). Three things of KH2's came out of them: a jump waits for its motion's take-off and
   rises in KH2's time (1:55, above: the Mole Driller's drill landed before it struck), a state's name shouted runs
   each object's shout routine once a frame (1:90: the Silver Rock's stood the game still), and the collision groups
-  the script turns on and off. **Not yet**: the Sorcerer attacks through its cubes (`M_EX870`, objects of their own
-  that need 1:0, KH2's objects made by their entry, and 1:328): alone it moves and shouts, but nothing strikes.
+  the script turns on and off.
+- **The Sorcerer** (2026-11-11) is placed as its cubes `M_EX870` (KH2's spawn places the cubes: their entry's + 0x50
+  names the Sorcerer, 315), which make it (1:0) and put it where they stand. It moves and shouts its orders
+  (`atk_shout_shield`, `atk_shout_shot`: one turn added to the memory they share, 2:21, then the order shouted, 1:90);
+  a cube that hears an order and is not busy takes the turn (`funnel_shield`'s and `funnel_shot`'s shout routines)
+  and shields or shoots: its shield's blow (motion 201) and its volley (motion 202, groups 4 to 11) struck Roxas 14
+  times in 70 seconds (level 99, the coliseum `he00` as an added room). Three things of KH2's made it: the shared
+  memory's "made already" byte (2:21), the turn-giving thread run apart from its object (2:20) before the shouts are
+  told, and a state left when its routine ends running its leave routine (the cubes' "busy" cleared).
 - **Next**, one or two calls each: `M_EX730` (1:113, the player's stick in KH2's world), `M_EX660_WI_RAW`,
   `M_EX760_NM_RAW`, `M_EX770_TR_RAW` (1:274, an event's time left), `M_EX760_RAW` (1:305, 1:306, the camera's eye and
-  point), `M_EX550` (1:227, 2:85: a hit's element), `M_EX690` (1:222, an object's entry), `M_EX850` (1:73), the cubes
-  `M_EX870` (1:0, 1:328), `B_EX310` (1:17), `B_EX380`, `B_TR020` (1:114, 1:262); then the bosses (`B_*`: 96 scripts,
+  point), `M_EX550` (1:227, 2:85: a hit's element), `M_EX690` (1:222, an object's entry), `M_EX850` (1:73), `B_EX310` (1:17), `B_EX380`, `B_TR020` (1:114, 1:262); then the bosses (`B_*`: 96 scripts,
   most of them 5 to 60 calls away) and the shots that are effects that hit (the Magnum Loader's, the Cannon Gun's).
 
 `KHDAYS_TRACE_KH2_ENEMIES=1` says what each enemy does (its states, effects, sounds, hits, the stand-in's sounds
@@ -882,6 +898,14 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   took any of the class's actors, and a defeated Rabid Dog's served the Strafer's row. The join takes only an actor
   made for a row with the same KH2 enemy as the slot's (the slot's owner tag, its spawner's place among the field's
   objects << 8 | its group, names the row: `khdays_enemies_slot_row`).
+- **Made by another's script** (1:0): a Days enemy of its maker's class made at once where its maker stands
+  (`khdays_enemies_make`, as the mods' interface makes one; its making through `Ov002_CreateActorFromMarker` names its
+  maker's row, the kind its script asked for put in its place), its KH2 actor started in the same call; its kind
+  dropped when its Days enemy is retired (a later wave may reuse the actor). **Counted by its own script** (1:328):
+  defeated by Days as a hit of all its health defeats it, its KH2 end its script's own.
+- **Put by a script** (1:148, 1:153, 1:220): the place its script gives it in a tick is kept (until 2026-11-11 the
+  place Days had was written over it), and the place another's script gives it between two frames (the cubes put the
+  Sorcerer they made where they stand) is taken at the next frame's start, not Days's.
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
   fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
 - **Its height is KH2's**: between two steps Days lowers a stand-in that is off the ground by 0.148 units a frame

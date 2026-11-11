@@ -157,6 +157,27 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual(len(left), 2)
             self.assertTrue(any("200022" in line and "no recording" in line for line in left), left)
             self.assertTrue(any("7001" in line and "se7" in line for line in left), left)
+            # a bank its own .a.us lacks, another object's carries (the cubes' 272, the Sorcerer's)
+            left = kh2_enemies.make_sounds(kh2, "M_EX870", {200021}, to)
+            self.assertEqual(left, [])
+
+    def test_no_model(self):
+        # an object with no model and no motions of its own (the Possessor): its .mdlx and effects alone
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
+            kh2 = Path(d) / "kh2.hed_out"
+            obj = kh2 / "original" / "obj"
+            obj.mkdir(parents=True)
+            (obj / "B_BB130.mdlx").write_bytes(bar([(3, b"b_bb", script(syscall(1, 6) + [0x0049]))]))
+            (obj / "B_BB130.a.us").write_bytes(b"effects")
+            (Path(d) / "kh2.exe").write_bytes(b"MZ")
+            mod = Path(d) / "mod"
+            left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
+            self.assertTrue((mod / "kh2" / "obj" / "B_BB130.mdlx").is_file())
+            self.assertTrue((mod / "kh2" / "obj" / "B_BB130.a.us").is_file())
+            self.assertFalse((mod / "kh2" / "obj" / "B_BB130.mset").exists())
+            self.assertFalse(any(line.startswith("B_BB130") for line in left), left)
+            kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
+            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-", kinds)
 
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
@@ -167,7 +188,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
             self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-"])
-            self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx, M_EX020.mset, M_EX020.a.us not there", left)
+            self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
             self.assertTrue(any("zz0field" in line for line in left))
