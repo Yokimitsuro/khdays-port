@@ -1313,6 +1313,18 @@ int khdays_g3d_camera(float camera[16])
     return 1;
 }
 
+int khdays_g3d_list_camera(float camera[16])
+{
+    if (building->flushes == 0)
+        return 0;
+    memset(camera, 0, 16 * sizeof(float));
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 3; ++r)
+            camera[c * 4 + r] = (float)building->camera[c * 3 + r] / 4096.0f;
+    camera[15] = 1.0f;
+    return 1;
+}
+
 static int32_t flushed_base[15];
 static int base_flushed;
 

@@ -151,6 +151,10 @@ void khdays_g3d_draw_end(void);
  * float matrix like khdays_g3d_matrices'; 0 before the first flush. */
 int khdays_g3d_camera(float camera[16]);
 
+/* The camera of the list being built's first flush (the frame's field camera: the enemies' own flushes after it fold
+ * it into the projection and leave the identity there), as khdays_g3d_camera's; 0 before it. */
+int khdays_g3d_list_camera(float camera[16]);
+
 /* NNS_G3dGlbFlush and NNS_G3dGlbFlushP (prepare.py HOOKS): the base transform
  * the flush sends (NNSG3dGlb +0x94: rotation 3x3, translation, scale, fx32).
  * Flush multiplies it onto the camera in the position matrix; FlushP folds

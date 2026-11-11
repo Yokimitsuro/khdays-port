@@ -2858,13 +2858,32 @@ struct DrawSpace final {
     int flush = 0; // khdays_g3d_base's
 };
 
+// The field's camera for a draw: the latest flush's, unless that one does not turn -- Days's enemies are drawn after a
+// flush that folds the camera into the projection and leaves a camera of no turn, only moved back (traced: the Mole
+// Driller's every draw) -- then the frame's own, its list's first flush's. With the identity the effects' view was the world:
+// their sprites facing the screen (pppRyjMegaBirth's, pppDrawMatrixFront's) stood fixed in the world, edge on (the Mole
+// Driller's dust stood up)
+bool field_camera(float camera[16])
+{
+    if (khdays_g3d_camera(camera) == 0)
+        return false;
+    bool identity = true; // its turn the identity (a screen layer's: moved back 100 or 1024, not turned)
+    for (int r = 0; r < 3 && identity; ++r)
+        for (int c = 0; c < 3 && identity; ++c)
+            identity = std::fabs(camera[r * 4 + c] - (r == c ? 1.0F : 0.0F)) < 1e-4F;
+    float list[16];
+    if (identity && khdays_g3d_list_camera(list) != 0)
+        std::copy(list, list + 16, camera);
+    return true;
+}
+
 DrawSpace draw_space()
 {
     DrawSpace d;
     float vector[16];
     khdays_g3d_matrices(d.position, vector, d.projection);
     d.flush = khdays_g3d_base(d.base);
-    d.has_camera = khdays_g3d_camera(d.camera) != 0;
+    d.has_camera = field_camera(d.camera);
     return d;
 }
 
@@ -2951,7 +2970,7 @@ std::map<unsigned, unsigned> shell_draws;
 void ghosts_close()
 {
     float camera[16];
-    if (ghosts.empty() || !khdays_g3d_camera(camera))
+    if (ghosts.empty() || !field_camera(camera))
         return;
     const unsigned now = khdays_link_frame();
     const unsigned per_frame = unsigned(std::max(1L, std::lround(khdays_link_frame_seconds() * 60.0)));

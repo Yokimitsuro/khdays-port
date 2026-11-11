@@ -816,6 +816,13 @@ at; its sound starts when its time comes. Their pictures are read between their 
 setting: KH2 does not draw its effects with nearest texels, and the DS look's made a spark a block of pixels. **Not
 known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1, 2, 4), and the two values `1:87` passes on.
 
+The effects' view is the field's camera, which Days's enemies' draw does not leave behind: it folds the camera into
+the projection and flushes a camera that does not turn (moved back 100 or 1024, a screen layer's). Taking that one, an
+effect's view was the world: what KH2 draws facing the screen (`pppRyjMegaBirth`'s particles, `pppDrawMatrixFront`)
+stood fixed in the world -- the Mole Driller's dust, a swirl facing the camera, stood up edge on beside it (2026-11-11).
+The port takes the frame's own camera then, its list's first flush's (`khdays_g3d_list_camera`); the whole of a
+draw (its view times its projection) is the same either way.
+
 ## Sounds
 
 An `.a.us` holds a PS2 wave bank (`wave`, `WD`), a small `se20` entry `ORIGIN` naming its bank (`0xc8` = 200 for the
