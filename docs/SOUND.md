@@ -154,7 +154,11 @@ wanted, and what is wanted now goes before those. It plays at its own rate
 (below). A file above 48,000 Hz (the PC's usual rate) is brought down to it as
 it is decoded, through a low-pass filter (a sinc of 16 zero crossings each side
 under a Blackman window), so that what it holds above half that rate does not
-fold back as noise. The original goes on unheard (what the game reads back stays
+fold back as noise -- unless it is above it by less than 1%: what it holds past
+24 kHz is then a few hundred hertz at most, and the filter (some 30 ms a second
+of stereo) would be spent for nothing. KH2's recordings come at such rates
+(48008, 47996 ...): a mission with seven KH2 enemies stood still two seconds at
+its start while their sounds were brought down. The original goes on unheard (what the game reads back stays
 the original's):
 
 - a sequence or entry from when its ARM7 player starts, under that player's
