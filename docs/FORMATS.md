@@ -555,7 +555,8 @@ all of it our own reading of the player's files.
   the `.RTM`'s, `<name>_tm2.dds`), `.mcd` (its floors and walls, below), `.ALF`, `.AFF`. 627
   rooms in 18 groups (MAP00 to MAP30).
 - **.VTM, .RTM**: 32-byte entries, as many as the first one's offset says: u32 the picture's offset, its name
-  (`gai_a_00.tm2`, 24 bytes), u32; each picture a TIM2.
+  (`gai_a_00.tm2`, 24 bytes), u32; each picture a TIM2. In 14 of the 627 rooms (MP020201, MP040401, MP300001...) the
+  name comes first: its 16 bytes (`al01_zka08.tm2`), the offset at +0x10, two words 0, the picture's size at +0x1c.
 - **.AZF**: an offset table (its first offset its length; 0 none). Entry 0 the layout: u16 its places' count, then from
   +0x20 a place each 64 bytes: u32 the piece (an entry of the table), s16 its parent (-1 none), u16, s16 x3 its turn
   in tenths of a degree, u16, f32 x4 its move, f32 x4 its scale. The other entries pieces: u32 x8 (the fourth its
