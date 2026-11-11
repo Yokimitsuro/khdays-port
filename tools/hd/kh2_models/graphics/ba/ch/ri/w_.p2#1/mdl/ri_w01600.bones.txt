@@ -3,4 +3,6 @@
 # (kh2_2, the blade) with its `weapon_motions` (riku_h.motions.txt: W_EH000.mset, synced to P_EH000's slots), so
 # both play W_EH000.mset; W_EX010_20's bone 2 rests where W_EH000's does (one head and axes). kh2_3 to kh2_11 are
 # the keychain in both, carried by the blade and left to the cloth (ri_w01600.secondary.txt).
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 held kh2_2

@@ -3,6 +3,8 @@
 # numbered as N_CM000_BTL's; his book is 93-113 (from the root, over his head at rest); spine, collar, hood and
 # drawstrings are N_CM000_BTL's +21; his arms, cuffs and fingers B_EX390's, left +4, right +33. Unpaired KH2 bones
 # follow their parents. No `scale`: his legs are 4% shorter than the game's, his arms 15% shorter.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, zexion_R, whatever this says).

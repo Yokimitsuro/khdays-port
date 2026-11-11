@@ -2,6 +2,8 @@
 # This model is KH2's Mickey in his coat (P_EX200), Days' only Mickey model (mickey, def.p.z: no def_h). The two are
 # the same size (the head's pivot at 56.7 cm against the game's 56.5, the hips at 40.2 against 36.9), so no `scale`.
 # Unpaired KH2 bones (the coat, drawstrings, ears, snout, glove cuffs, fingers) follow their parents.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 kh2_0 Bip01

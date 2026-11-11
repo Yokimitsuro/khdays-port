@@ -4,6 +4,8 @@
 # bones (coat, sleeves, twists, fingers, hood, hair) follow their parents. These pairs pose the model for Days
 # animations without a KH2 motion; a mapped KH2 motion poses every bone itself. No `scale`: his legs are 2% shorter
 # than the game's and his arms 2% longer, and his shoulders stand 7 cm higher.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, marluxia_R, whatever this says).

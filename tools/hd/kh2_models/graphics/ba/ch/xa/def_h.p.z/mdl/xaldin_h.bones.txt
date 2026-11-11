@@ -5,6 +5,8 @@
 # 135-156), the right +141 from the left; neck 166, head 169, hair under 170 (the back piece 172-175, its three braids
 # under 176, twelve braids from 170). His six lances are 306-317, from the root. Unpaired KH2 bones follow their
 # parents. No `scale`: his skeleton is put on the game's below (`spine ... onto`, `place`), his mesh at its own size.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, xaldin_R, whatever this says).

@@ -2,6 +2,8 @@
 # This model is KH2's Donald (P_EX020), Days' only Donald model (donald, def.p.z: no def_h). KH2's is the shorter (the
 # hat's top 98 cm against the game's 105; the head's pivot 69.6 against 74.4, the hips 32.5 against 28.7), not scaled.
 # Unpaired KH2 bones (the tail, hood, hat, beak, belt, fingers) follow their parents.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 kh2_0 Bip01

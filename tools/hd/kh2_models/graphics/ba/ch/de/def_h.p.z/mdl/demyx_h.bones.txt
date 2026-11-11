@@ -5,6 +5,8 @@
 # fingers 135-156; neck 166, head 169, hair under 170; right arm +98 from the left. His sitar is 263-264, from the root.
 # Unpaired KH2 bones follow their parents. No `scale`: his legs are 3% shorter than the game's, his arms 6% longer, and
 # his shoulders stand 8 cm higher.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, demyx_R, whatever this says).

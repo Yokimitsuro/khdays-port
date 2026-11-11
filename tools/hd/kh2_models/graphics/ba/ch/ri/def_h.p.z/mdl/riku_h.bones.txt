@@ -4,6 +4,8 @@
 # (0-170), the right arm 11 further on (N_EX830's 224-280 are 235-291); the hair and the blindfold (171-226)
 # are its own and its sword is 293-305. Days' riku_h is Days' roxas_b_h's skeleton with a node at the back
 # of the head (Bip01_pt1) and his weapon's (ri_h_R). Size: KH2 centimetres imported as metres, no `scale`.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 # (KH2 motions are placed on the game's root node, riku_R, whatever this says).

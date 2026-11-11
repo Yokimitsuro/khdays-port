@@ -3,6 +3,8 @@
 # hat's top 182 cm against the game's 218, the head's pivot 143.6 against 170.1, the hips 77.5 against 90.0), not
 # scaled: the KH2 characters keep their sizes to each other. Unpaired KH2 bones (the belt, shorts, boots' tops, ears,
 # hat, face, fingers) follow their parents.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 
 # Root: follows the hips, so the body rises and drops with Days' animations
 kh2_0 Bip01

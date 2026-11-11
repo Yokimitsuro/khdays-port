@@ -1,3 +1,5 @@
 # KH2's W_EX020 (Donald's staff): four bones, the staff's 744 vertices on 3. Posed by the body's `weapon_motions`
 # (W_EX020.mset) on the hand's bone (131), as KH2 holds it.
+# Drawn while Settings, Enhancements, KH2 models is on (hud_settings.h).
+switch kh2_models
 held kh2_3
