@@ -1793,13 +1793,21 @@ void draw_replace(App& app, const Item& item) {
     same_line_if_room(button_width(tr(lang, S::map_kh2_source)));
     if (ImGui::Button(tr(lang, S::map_kh2_source)))
         kh2.shown = !kh2.shown;
-    if (kh2.shown)
+    // each list in its own ids: both show buttons of the same words (its rooms, take out this game's maps), and two
+    // buttons of one id answer neither click but the first's
+    if (kh2.shown) {
+        ImGui::PushID("kh2");
         draw_kh2_picker(app);
+        ImGui::PopID();
+    }
     same_line_if_room(button_width(tr(lang, S::map_other_source)));
     if (ImGui::Button(tr(lang, S::map_other_source)))
         other.shown = !other.shown;
-    if (other.shown)
+    if (other.shown) {
+        ImGui::PushID("other");
         draw_other_picker(app);
+        ImGui::PopID();
+    }
     if (mod == nullptr) {
         ImGui::TextColored(warn, "%s", tr(lang, S::choose_mod_first));
         return;
