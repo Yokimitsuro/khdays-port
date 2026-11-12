@@ -393,6 +393,13 @@ std::uint32_t vec(ai::Memory &m, float x, float y, float z, float w = 0.0F)
     return at;
 }
 
+float f32(ai::Memory &m, std::uint32_t at)
+{
+    float f = 0.0F;
+    m.read(at, &f, sizeof f);
+    return f;
+}
+
 // `n` of KH2's ticks of an actor's motion, its script left out: each begins (a motion started in the one before moves
 // on from this one: Actor::begin_tick), then steps; the travel they made
 kh::Vec3 ticks(kh::Actor &actor, int n)
@@ -485,9 +492,9 @@ void test_motions_and_moving()
     float at[4] = {};
     rig.memory.read(call(rig, actor, 1, 120, {slot}).bits, at, sizeof at);
     CHECK(at[0] == 100.0F);
-    call(rig, actor, 1, 121, {slot, self, i(2)}); // itself
+    call(rig, actor, 1, 121, {slot, self, i(2)}); // the player too (KH2's DAT_142a105d0)
     rig.memory.read(call(rig, actor, 1, 120, {slot}).bits, at, sizeof at);
-    CHECK(at[0] == 0.0F);
+    CHECK(at[0] == 100.0F);
 
     // fading: gone over 10 ticks (1:19), held at once by 1:28 (1:20 then does nothing)
     call(rig, actor, 1, 19, {self, f(10.0F)});
@@ -777,6 +784,24 @@ void test_batch_two()
         if (c->id == first && c->status != ai::Status::Stopped)
             first_ended = false;
     CHECK(first_ended);
+
+    // 0:9: the routine (word 3) beside the main thread, tagged 2; again with tag 2, the one before ends; tag 0 kept
+    call(rig, actor, 0, 9, {i(2), i(3), i(0), self});
+    call(rig, actor, 0, 9, {i(2), i(3), i(0), self});
+    call(rig, actor, 0, 9, {i(0), i(3), i(0), self});
+    int tagged = 0, stopped = 0, untagged = 0;
+    for (const auto &c : actor.machine().main_thread()->children) {
+        if (c->tag == 2u)
+            ++tagged, stopped += c->status == ai::Status::Stopped ? 1 : 0;
+        else if (c->tag == 0u && c->id != first && c->id != actor.side_thread)
+            ++untagged;
+    }
+    CHECK(tagged == 2 && stopped == 1 && untagged == 1);
+    // 10:19: + 0x126 bit 0 (a limit's); 4:21: no KH2 mission bar
+    CHECK(call(rig, actor, 10, 19, {self}).i() == 0);
+    actor.set_u32(0x124, 1u << 16);
+    CHECK(call(rig, actor, 10, 19, {self}).i() == 1);
+    CHECK(call(rig, actor, 4, 21, {}).i() == 0);
 }
 
 // The first boss's calls (Cerberus): its health's record (2:9, read by 1:84, 1:228, 1:229), a record's + 0x18, + 0x2a8,
@@ -1292,6 +1317,23 @@ struct FriendsWorld final : kh::World {
     {
         left = &a;
     }
+    int stop = -1, ended = -1;
+    kh::Object *stop_but = nullptr, *stop_nor = nullptr;
+    void stop_all(int s, kh::Object *but, kh::Object *nor) override
+    {
+        stop = s, stop_but = but, stop_nor = nor;
+    }
+    void stop_end_all(int s) override
+    {
+        ended = s;
+    }
+    std::vector<std::uint32_t> vacuums;
+    void vacuum(std::uint32_t record, bool alive) override
+    {
+        std::erase(vacuums, record);
+        if (alive)
+            vacuums.push_back(record);
+    }
 };
 
 // The Hydra's and its friends' calls: Phil found by his entry among the objects that are no enemies (1:114, 1:323),
@@ -1335,6 +1377,33 @@ void test_hydra_friends()
     CHECK(h != nullptr && h->with.size() == 2 && h->with[0].name == "N_HE020_BTL" && h->with[1].name == "F_HE030_L");
     CHECK(h->with[0].x > 746.7F && h->with[0].y == -500.0F && h->with[0].z < -849.7F && h->with[0].yaw < -3.09F);
     CHECK(kh::find_kind(kinds, "B_HE110")->with.empty());
+    // 6:16: a target record emptied; 6:46 / 6:47: Demyx's stop 14 on all but him and Phil here, then off
+    const std::uint32_t target = rig.memory.add(16, "a target");
+    rig.memory.set_u32(target, 5);
+    rig.memory.set_u32(target + 12, 3);
+    call(rig, phil, 6, 16, {ai::Value::of_address(target)});
+    CHECK(rig.memory.u32(target) == 0u && rig.memory.u32(target + 12) == 0xffffffffu);
+    call(rig, hydra, 6, 46, {ai::Value::of_address(hydra.address()), ai::Value::of_int(14), ai::Value::of_float(0.0F),
+                             ai::Value::of_address(phil.address())});
+    CHECK(world.stop == 14 && world.stop_but == &hydra && world.stop_nor == &phil);
+    call(rig, hydra, 6, 47, {ai::Value::of_int(14)});
+    CHECK(world.ended == 14);
+    // 2:77 to 2:80: a water clone's vacuum of 20 at a point, letting the player (kind 0) be, moved, let go
+    const std::uint32_t point = vec(rig.memory, 100.0F, 0.0F, 300.0F, 1.0F);
+    const std::uint32_t v = call(rig, phil, 2, 77, {ai::Value::of_address(point), ai::Value::of_float(20.0F)}).bits;
+    CHECK(v != 0 && world.vacuums == std::vector<std::uint32_t>{v});
+    CHECK(f32(rig.memory, v + 8) == 300.0F && f32(rig.memory, v + 0x18) == 20.0F && f32(rig.memory, v + 0x20) == 20.0F);
+    CHECK(f32(rig.memory, v + 0x28) == 100.0F && f32(rig.memory, v + 0x2c) == 0.01F);
+    call(rig, phil, 2, 79, {ai::Value::of_address(v), ai::Value::of_int(0)});
+    CHECK(rig.memory.u32(v + 0x10) == 1u);
+    call(rig, phil, 2, 80, {ai::Value::of_address(v), ai::Value::of_address(vec(rig.memory, 7.0F, 0.0F, 9.0F))});
+    CHECK(f32(rig.memory, v) == 7.0F && f32(rig.memory, v + 8) == 9.0F);
+    call(rig, phil, 2, 78, {ai::Value::of_address(v)});
+    CHECK(world.vacuums.empty());
+    // 1:210: the object whose entry's + 0x4c is 4002 (Demyx, found by his clones)
+    rig.memory.set_u32(entry + 0x4c, 4002);
+    call(rig, hydra, 1, 210, {ai::Value::of_address(handle), ai::Value::of_int(4002)});
+    CHECK(rig.memory.u32(handle + 4) == phil.address());
 }
 
 // The second bosses' world: what their effects' looks, voices and attacks' floor asked of it

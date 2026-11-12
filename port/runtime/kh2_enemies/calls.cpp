@@ -104,8 +104,11 @@ Vec3 xyz(const Vec &v)
     return {v.v[0], v.v[1], v.v[2]};
 }
 
-// A target slot (actor + 0xbf8; FUN_1403be2b0 fills one): how its target is chosen (2 the owner itself, else the
-// player), its owner, 16 bytes in the scripts' memory
+// A target slot (actor + 0xbf8; FUN_1403be2b0 fills one): how its target is chosen, its owner, 16 bytes in the
+// scripts' memory. KH2's modes: 2 the player (DAT_142a105d0, what 1:114 finds for 0x236); 0 and 1 the player's lock
+// or a friend's target, else the player; 3 to 6 searches from the owner (FUN_1403be7f0, FUN_1403bea30,
+// FUN_1403be4b0), not read: the player for each -- an enemy's target is Days's player. (Mode 2 was read as the owner
+// itself: Demyx, whose target is 2, then stood at no distance from it and never summoned his water clones.)
 constexpr std::uint32_t kSlotMode = 0, kSlotOwner = 4, kSlotSet = 8;
 
 std::uint32_t slot_of(Actor &a)
@@ -124,7 +127,7 @@ Object *target_in(ai::Machine &m, std::uint32_t slot)
         return nullptr;
     Object *o = Object::at(mem, owner);
     Actor *a = o != nullptr ? o->actor() : nullptr;
-    if (mode == 2 || a == nullptr || a->world == nullptr)
+    if (a == nullptr || a->world == nullptr)
         return o;
     return a->world->player(*a);
 }
@@ -1983,7 +1986,7 @@ void add_world(ai::Calls &calls)
         }
         a[0] = ai::Value::of_address(who);
     });
-    // 2:23 the actor's target slot (+ 0xbf8), made "itself" (2) while it is empty (FUN_1404319d0)
+    // 2:23 the actor's target slot (+ 0xbf8), made the player's (2) while it is empty (FUN_1404319d0)
     calls.set(2, 23, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const std::uint32_t slot = slot_of(*x);
@@ -1994,7 +1997,7 @@ void add_world(ai::Calls &calls)
         }
         a[0] = ai::Value::of_address(slot);
     });
-    // 1:121 a slot's target chosen for an owner by a mode (FUN_1403be2b0: 2 the owner itself, else the player)
+    // 1:121 a slot's target chosen for an owner by a mode (FUN_1403be2b0: the player; target_in above)
     calls.set(1, 121, [](ai::Machine &m, std::span<ai::Value> a) {
         Object *owner = object_of(m, a[1]);
         m.memory().set_u32(a[0].bits + kSlotMode, a[2].bits);
@@ -2135,6 +2138,118 @@ void add_world(ai::Calls &calls)
             h = m.memory().add(16, "2:20's threads");
         a[0] = ai::Value::of_address(h);
     });
+    // 0:9 a routine of the script started as a thread beside the one running, with one value; a handle back
+    // (trap_thread_start, FUN_14041da20 -> FUN_1403e1e30: a machine of its own on the script, in the list of threads
+    // of the one running's parent -- the main's own when the main runs -- which FUN_1403e1c80 runs after it; tagged
+    // with the first value, + 0x3c, those of its list with that tag ended first, FUN_1403e1f00; the third value at
+    // + 0x40): Xemnas's
+    calls.set(0, 9, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint32_t entry = a[1].bits;
+        if (a[1].tag == ai::Tag::Address && entry >= m.code())
+            entry = (entry - m.code()) / 2;
+        ai::Thread *running = m.current();
+        ai::Thread *parent = running != nullptr ? running->parent : nullptr;
+        if (running != nullptr && parent == nullptr && running != m.main_thread())
+            parent = running; // a loose thread's (2:20: a machine of its own): its own list
+        const std::uint32_t tag = a[0].bits;
+        if (ai::Thread *list = parent != nullptr ? parent : m.main_thread(); list != nullptr && tag != 0)
+            for (const auto &c : list->children)
+                if ((c->tag & tag) == tag)
+                    m.stop(c.get());
+        const ai::Value arg = a[3];
+        if (ai::Thread *t = m.start_routine(parent, entry, {&arg, 1}))
+            t->tag = tag;
+        static std::map<const ai::Memory *, std::uint32_t> handles;
+        auto &h = handles[&m.memory()];
+        if (h == 0)
+            h = m.memory().add(16, "0:9's threads");
+        a[0] = ai::Value::of_address(h);
+    });
+    // 10:19 whether the object is a limit's (trap_sysobj_is_limit, FUN_140536890: + 0x126 bit 0): none of Days's
+    calls.set(10, 19, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr && ((o->u32(0x124) >> 16) & 1u) != 0 ? 1 : 0);
+    });
+    // 6:16 a target record emptied (Ts::trap_target_clear, FUN_14053e540 -> FUN_1403bda50: none, 0, none, -1)
+    calls.set(6, 16, [](ai::Machine &m, std::span<ai::Value> a) {
+        m.memory().set_u32(a[0].bits, 0);
+        m.memory().set_u32(a[0].bits + 4, 0);
+        m.memory().set_u32(a[0].bits + 8, 0);
+        m.memory().set_u32(a[0].bits + 12, 0xffffffffu);
+    });
+    // 6:46 a stop put on every object of the field but two (Ts::trap_obj_rc_stop_all, FUN_14053ea60: each object's
+    // stop record, + 0x64c, given the number and a value, FUN_14040a920 -- four slots of a number and a value, their
+    // kinds' flags gathered at + 0, FUN_1403eed10's table, not read); 6:47 that number taken off every object
+    // (trap_obj_stop_end_all, FUN_14053eb10 -> FUN_14040a770): the field holds them (World::stop_all) -- Demyx's 14
+    calls.set(6, 46, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        if (me->world != nullptr)
+            me->world->stop_all(std::int32_t(a[1].bits), object_of(m, a[0]), object_of(m, a[3]));
+    });
+    calls.set(6, 47, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        if (me->world != nullptr)
+            me->world->stop_end_all(std::int32_t(a[0].bits));
+    });
+    // 2:77 a vacuum made at a point with a strength, its handle back (trap_vacuum_create, FUN_140433200 ->
+    // FUN_1403f8f20, in the game's list of them: 0x34 bytes -- + 0 the point, + 0x10 the kinds of object it lets be, a
+    // bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least, + 0x20 its most, the three the
+    // strength, + 0x24 its turning speed 0, + 0x28 its near range 100, + 0x2c its rate 0.01); the field pulls by it
+    // (World::vacuum): Demyx's water clones' (20)
+    calls.set(2, 77, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec at;
+        m.memory().read(a[0].bits, at.v, sizeof at.v);
+        for (float &f : at.v)
+            if (std::isnan(f))
+                f = 0.0F;
+        const std::uint32_t v = m.memory().add(0x34, "a vacuum");
+        m.memory().write(v, at.v, sizeof at.v);
+        const float strength = a[1].f(), near = 100.0F, rate = 0.01F;
+        for (const std::uint32_t off : {0x18u, 0x1cu, 0x20u})
+            m.memory().write(v + off, &strength, 4);
+        m.memory().write(v + 0x28, &near, 4);
+        m.memory().write(v + 0x2c, &rate, 4);
+        if (Actor *me = running(m); me->world != nullptr)
+            me->world->vacuum(v, true);
+        a[0] = ai::Value::of_address(v);
+    });
+    // 2:78 a vacuum let go (trap_vacuum_destroy, FUN_1404332c0); 2:79 a kind of object it lets be (+ 0x10's bit); 2:80
+    // its point (+ 0, NaN made 0)
+    calls.set(2, 78, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (a[0].bits == 0)
+            return;
+        if (Actor *me = running(m); me->world != nullptr)
+            me->world->vacuum(a[0].bits, false);
+        m.memory().remove(a[0].bits);
+    });
+    calls.set(2, 79, [](ai::Machine &m, std::span<ai::Value> a) {
+        m.memory().set_u32(a[0].bits + 0x10, m.memory().u32(a[0].bits + 0x10) | (1u << (a[1].bits & 31u)));
+    });
+    calls.set(2, 80, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec at;
+        m.memory().read(a[1].bits, at.v, sizeof at.v);
+        for (float &f : at.v)
+            if (std::isnan(f))
+                f = 0.0F;
+        m.memory().write(a[0].bits, at.v, sizeof at.v);
+    });
+    // 1:210 the first object of the field whose entry's + 0x4c is a number, into an AI handle's + 4
+    // (trap_obj_search_by_part, FUN_14042de30 -> FUN_1403b4180): Demyx's water clones find him so (4002)
+    calls.set(1, 210, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        std::uint32_t found = 0;
+        if (me->world != nullptr)
+            for (Actor *x : me->world->objects())
+                if (const std::uint32_t record = x->u32(field::kEntry);
+                    record != 0 && (m.memory().u32(record + 0x4c) & 0xffffu) == (a[1].bits & 0xffffu)) {
+                    found = x->address();
+                    break;
+                }
+        m.memory().set_u32(a[0].bits + 4, found);
+    });
+    // 4:21 whether a mission's KH2 bar is up (trap_mission_is_activate2d, FUN_140433530 -> FUN_1403fb840): Days's
+    // mission shows its own -- 0 (Demyx's)
+    calls.set(4, 21, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
     // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)
     calls.set(1, 262, [](ai::Machine &m, std::span<ai::Value> a) {

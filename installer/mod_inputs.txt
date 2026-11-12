@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 5d5ad5afad44c8c139eccf64cb1395ee92a147057c05eb1b9305dd71d9caee71
+# tools fc304c83032f13245ea30144536da422fc4c7b40db43f442a4d838b8903d4713
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -70,9 +70,15 @@ kh2_fifth obj/B_BB110.mdlx
 kh2_fifth obj/B_BB110.mset
 kh2_fifth obj/B_BB130.a.us
 kh2_fifth obj/B_BB130.mdlx
+kh2_fifth obj/B_EX120.a.us
+kh2_fifth obj/B_EX120.mdlx
+kh2_fifth obj/B_EX120.mset
 kh2_fifth obj/B_EX130.a.us
 kh2_fifth obj/B_EX130.mdlx
 kh2_fifth obj/B_EX130.mset
+kh2_fifth obj/B_EX170.a.us
+kh2_fifth obj/B_EX170.mdlx
+kh2_fifth obj/B_EX170.mset
 kh2_fifth obj/B_HE020.a.us
 kh2_fifth obj/B_HE020.mdlx
 kh2_fifth obj/B_HE020.mset
@@ -184,6 +190,9 @@ kh2_fifth obj/M_EX870.mset
 kh2_fifth obj/M_EX880.a.us
 kh2_fifth obj/M_EX880.mdlx
 kh2_fifth obj/M_EX880.mset
+kh2_fifth obj/M_EX880_DANCER.a.us
+kh2_fifth obj/M_EX880_DANCER.mdlx
+kh2_fifth obj/M_EX880_DANCER.mset
 kh2_fifth obj/M_EX930.a.us
 kh2_fifth obj/M_EX930.mdlx
 kh2_fifth obj/M_EX930.mset
@@ -470,6 +479,8 @@ kh2_sixth se/se2984.win32.scd
 kh2_sixth voice/us/battle/barrel_boss.win32.scd
 kh2_sixth voice/us/battle/he_hades.win32.scd
 kh2_sixth voice/us/battle/lock_boss.win32.scd
+kh2_sixth voice/us/battle/n_dancer.win32.scd
 kh2_sixth voice/us/battle/n_dragoon.win32.scd
+kh2_sixth voice/us/battle/n_xemnas.win32.scd
 kh2_sixth voice/us/battle/scar.win32.scd
 kh2_sixth voice/us/battle/shock_boss.win32.scd

@@ -171,7 +171,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:89, 1:111 | 1:89 a move this tick: a direction made unit and a speed (+ 0xa58 / + 0xa64, cleared after each tick by `FUN_1403b8e4d`); 1:111 the steering, kept (`FUN_1403b9da0`: + 0x10 made unit, + 0x1c its speed), which the class's movement makes the velocity (+ 0x20) of every two ticks (every tick past 100): on the ground the steering itself (`FUN_140422350`), in the air approached (`FUN_1403b7ad0`). Speeds are centimetres a 60th of a second | as KH2 |
 | 1:147, 1:201 | its place (+ 0x670) and its facing as a direction | as KH2 |
 | 1:62, 1:64 | the travel of the tick before (+ 0xa38) and of this one (+ 0xa28) | as KH2 |
-| 2:23, 1:121, 1:120, 1:131 | its target slot (+ 0xbf8): made "itself" (2) while empty; a target chosen for an owner by a mode (`FUN_1403be2b0`: 2 the owner, else the player); the target's place; the slot as KH2's pool keeps it | the nearest player |
+| 2:23, 1:121, 1:120, 1:131 | its target slot (+ 0xbf8): made the player's (2) while empty (`FUN_1404319d0`); a target chosen for an owner by a mode (`FUN_1403be2b0`: 2 the player, `DAT_142a105d0` -- what 1:114 finds for 0x236 --; 0 and 1 the player's lock or a friend's target, else the player; 3 to 6 searches from the owner); the target's place; the slot as KH2's pool keeps it | the nearest player for every mode (the owner's searches not read; mode 2 had been read as the owner itself: Demyx, his target 2, stood at no distance from it and never summoned his water clones) |
 | 2:88 | the last to hit it (+ 0xd38), the player's actor when none | the player nearest at the hit |
 | 1:87 | an effect on the actor (`FUN_1403b6670` -> `FUN_1402c6b30` on + 0x80): the element of that number in its effects, and two values passed on to the effect (**not known**) | that element started: the "dead" state's `1:87(2, 1, 0)` the Soldier's element 2 and the Shadow's (its dying smoke and sound), the leaving's `(1, 1, 0)` element 1 |
 | 1:57 | bit 0 of the actor's class's byte + 0x0c (the class at + 0x0c; KH2's classes at 0x140750d30, 16 bytes each: class 1 off the ground -- a jump, `FUN_140409ad0`, or a fall, `FUN_14053b920` -- has it, class 0 on the ground, the landing's `FUN_1403cb940`, not): the scripts wait for it after a jump and act on it in the air (US1 read it as the class's own, always 0: a jump's wait never ended) | whether it is off the ground |
@@ -253,6 +253,13 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:41 | a signal to KH2's area (`trap_signal_call`, `FUN_14042ec90`: the area's signals its spawns and scripts wait on) | nothing: Days's rooms have none (Phil's urn) |
 | 1:200 | its collision with the room's kind (`trap_obj_set_bg_collision_type`: + 0x740 bits 3 to 6) | kept there; Days's collision is its own (Phil's urn) |
 | 1:17 | it made to leave at once (`trap_obj_leave_force`: its class's + 0x38) | an ally goes ("Allies", below); an enemy's Days enemy stays, its script going on |
+| 0:9 | a routine started as a thread beside the one running, with a value (`trap_thread_start`, `FUN_14041da20` -> `FUN_1403e1e30`: in the list of the running thread's parent -- the main's own when the main runs; a loose thread's own --, run after it, `FUN_1403e1c80`; tagged with the first value at + 0x3c, its list's threads of that tag ended first, `FUN_1403e1f00`) | as KH2: a child thread of that parent, tagged (`Thread::tag`); a handle back (Xemnas's) |
+| 10:19 | whether the object is a limit's (`trap_sysobj_is_limit`, `FUN_140536890`: + 0x126 bit 0) | as KH2: none of Days's is |
+| 4:21 | whether a mission's KH2 bar is up (`trap_mission_is_activate2d`) | 0: Days's mission shows its own (Demyx's) |
+| 6:16 | a target record emptied (`Ts::trap_target_clear`, `FUN_1403bda50`: none, 0, none, -1) | as KH2 |
+| 6:46, 6:47 | a stop put on every object of the field but two (`Ts::trap_obj_rc_stop_all`, `FUN_14053ea60`: each object's stop record at + 0x64c given the stop's number and a value, `FUN_14040a920` -- four slots of a number and a value, their kinds' flags gathered at + 0, from a table, `FUN_1403eed10`, not read); that stop taken off every object (`trap_obj_stop_end_all`, `FUN_14040a770`) | the KH2 enemies and allies but those two held whole, script and motions, while a stop is on them (as Days's Stop holds them; the stop kinds' own flags not read): Demyx's 14 |
+| 2:77, 2:78, 2:79, 2:80 | a vacuum made at a point with a strength, its handle back (`trap_vacuum_create`, `FUN_1403f8f20`: 0x34 bytes in the game's list, `DAT_142ae7dc0` -- + 0 the point, + 0x10 the kinds of object it lets be, a bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least and + 0x20 its most, the three the strength, + 0x24 its turning, 0, + 0x28 its near range, 100, + 0x2c its rate, 0.01); one let go; a kind it lets be; its point (NaN made 0). Each object's move adds their pull (`FUN_1403b8ca2` -> `FUN_1403f9130`): none on one of no weight (its entry's + 0x50), + 0x120 bit 2 or + 0x18c bit 25 set; each vacuum not letting its kind be (its entry's + 4, 0 for the player) and within reach pulls it along the ground toward its point at weight / 100 x the speed, kept between the least and the most, times (distance - near range) x rate kept between -1 and 1 | as KH2 on the KH2 enemies and allies (`vacuum_pull` in `shell.cpp`); a vacuum's turning not applied (none of the port's kinds turns one), nor any pull on Days's players: Demyx's water clones' let the player be and pull Demyx (weight 500) and each other (10) |
+| 1:210 | the first object of the field whose entry's + 0x4c is a number, into an AI handle's + 4 (`trap_obj_search_by_part`, `FUN_1403b4180`) | as KH2 (allies too): Demyx's water clones find him so (4002) |
 | 2:51 | a reaction command put on an attack (`trap_attack_set_rc`, `FUN_140437b70`: + 0x114 the object, + 0x118 the owner, + 0x11c the command, + 0x120 its reach, + 0x124 its height -- the reach when not above 0; the PS3 build's `ATTACK_MAGIC::set_reaction_command`, 4 bytes lower) | kept as KH2 keeps them, and offered as KH2's `RC_SEARCHER::check_magic` offers it (the PS3 build's): each tick a magic attack with a command meets the player's collision with one of its reach and height at its place, the command goes to the attack's owner (`TARGET::set_attack`) -- the Hydra's Urninator, 420, on Phil's urn |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
 | 2:21 | memory several objects share by a number (`trap_teamwork_alloc`, `FUN_1403f6df0`: n + 1 bytes, zeroed, made by the first to ask; to each later one the same, its first byte made 1 -- "made already"; all let go with the field, `FUN_1403f6ea0`) | as KH2. Until 2026-11-11 the first byte was left 0: each of the Sorcerer's cubes took itself for the first, started its own turn-giving thread and cleared the turns, and none ever shot |
@@ -630,6 +637,30 @@ carries (2:51, above).
   yet** (the walks' inputs do not take Roxas to the heads): the heads defeated and made again, Phil One-Two, Pegasus
   Run, Urninator, Megara and the third round. Megara's cheering prizes (6:1) are not made, and Days's camera, close
   behind its player, shows little of a body this large.
+
+### Xemnas and Demyx (2026-11-12)
+
+**Xemnas** `B_EX170` (speaking from KH2's `n_xemnas` battle bank) and **Demyx** `B_EX120` (`n_dancer`), their scripts
+answered in full by the calls above (0:9, 10:19, 4:21, 6:16, 6:46, 6:47; and 1:32, 1:33, 1:48, 1:170, 4:0, 4:1).
+
+- **Xemnas, seen** (a recorded walk, Roxas attacking): he warps near the player (`warp_target_near`) and casts his
+  dark attack (`atk_dark`), then asks whether it caught the player (`check_atk_dark_hit`: his work's + 0xfc, which his
+  trigger 16 sets as his motion starts its element 26 -- the routine at word 0x4d2 asks 2:23 and 1:101 of the one the
+  effect is on). It never does in the port, so he goes on so for ever and never reaches the rest of his fight
+  (`rc_invitation_to_dark`, `atk_shield`, `atk_counter`, `atk_combo`): **not known yet** why the check fails.
+- **Demyx, seen** (recorded walks, Roxas near him and then keeping away): he speaks, hops (`move_hop`, `atk_hop`, the
+  splash where he lands: an attack of 90 by 500 growing over 15 ticks, 2:62), strikes with his sitar (`atk_brush`),
+  rushes (`atk_rush`), dances (`atk_dance`), rains (`idle_rain`) and plays his final notes (`atk_final`); Roxas's
+  blows take him down. His target is the player (1:121, mode 2: read as himself before, he stood at no distance from
+  it and never chose his far moves, `move_target`, `atk_rush`). An attack sized with a height of 0 is a sphere (his
+  notes, 150 by 0, never hit before).
+- **His water clones** (`M_EX880_DANCER`, a mod kind: `00objentry.bin` 1184, made by 1:0): `move_target` makes them
+  near the player (up to three, his work's + 0x6c) only while his round is the hard one (his block's + 0x18 1; his
+  mission's thread makes it 2), and his notes' thread makes one where a note lands (2:39, half the time). Their fight
+  is KH2's mission ("Dance, water, dance!": the clones defeated counted on KH2's mission bar, 4:21 and the kind 4
+  calls), which Days's mission does not show: **not seen yet** in the port -- in the walks his round stayed the other
+  one. Each clone finds Demyx by his entry (1:210, 4002) and makes a vacuum where it stands (2:77, 20, letting the
+  player be) that pulls Demyx and the other clones (2:77, above).
 
 ## A player in an enemy's hands
 

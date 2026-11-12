@@ -563,6 +563,7 @@ struct Enemy final {
     unsigned anchor = 0;
     unsigned ally_frame = 0; // the frame an ally was last moved on in
     bool started = true;     // its script set going (one another's script made: at its first tick)
+    std::set<int> stops;     // KH2's stops put on it (6:46, Demyx's): held, script and motions, while any is
     // a large enemy (its object entry's kind 0xc: the Hydra): its Days enemy's sphere the reach of its body (footprint),
     // its radius now
     bool large = false;
@@ -707,6 +708,8 @@ unsigned allies_made = 0;
 constexpr unsigned kAllyIds = 0xa1100000u; // allies' own numbers (the traces'): no Days actor's, out of its memory
 // accompanied: the Days enemies (and their kinds) whose companions were made, once each
 std::set<std::pair<unsigned, std::string>> accompanied;
+// KH2's vacuums the scripts made (2:77: their records in the scripts' memory), in the order made
+std::vector<std::uint32_t> vacuums;
 
 // The Days enemy whose shell answers an enemy's questions of Days's field (its room's collision, its players): its
 // own; an ally's battle's
@@ -1460,6 +1463,31 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: %08x made to leave (1:17)%s", it->second->days,
                        it->second->anchor != 0 ? ": it goes" : ": its Days enemy stays");
+    }
+    // 6:46, 6:47: every KH2 object of the field but those two held while the stop is on it (KH2's stop record's
+    // kinds' flags are not read: held whole, as Days's Stop holds them)
+    void stop_all(int stop, Object *but, Object *nor) override
+    {
+        for (auto *list : {&enemies, &allies})
+            for (auto &[days, e] : *list)
+                if (e->actor.get() != but && e->actor.get() != nor)
+                    e->stops.insert(stop);
+        if (tracing())
+            khdays_log("kh2 enemies: stop %d put on the field's KH2 objects", stop);
+    }
+    void vacuum(std::uint32_t record, bool alive) override
+    {
+        std::erase(vacuums, record);
+        if (alive)
+            vacuums.push_back(record);
+    }
+    void stop_end_all(int stop) override
+    {
+        for (auto *list : {&enemies, &allies})
+            for (auto &[days, e] : *list)
+                e->stops.erase(stop);
+        if (tracing())
+            khdays_log("kh2 enemies: stop %d taken off", stop);
     }
     std::vector<Actor *> objects() override
     {
@@ -3212,7 +3240,8 @@ void attack_objects(Enemy &e)
                 mod().memory.write(it->first + 0xb4, met, sizeof met);
             }
         }
-        const float step = std::min(radius, height);
+        // (a height of 0 a sphere: 2:11 sizes Demyx's notes 150 by 0)
+        const float step = height > 0.0F ? std::min(radius, height) : radius;
         if (o.placed && step > 0.0F && !o.players) {
             if (list.empty()) {
                 list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
@@ -3380,6 +3409,49 @@ void motion_states(Enemy &e)
     a.set_u32(field::kMotionMarks, (a.u32(field::kMotionMarks) & ~0xffu) | ai_ranges);
 }
 
+// The vacuums' pull on an object this tick (KH2's cm), as FUN_1403f9130 sums it for each object's move: none on one
+// of no weight (its entry's + 0x50: the Hydra's 0), + 0x120 bit 2 or + 0x18c bit 25 set (FUN_1403ba7d0; its last
+// test, FUN_1403da520, not read); each vacuum that does not let its kind be (+ 0x10's bit of its entry's kind, 0 for
+// the player) and whose reach (+ 0x14, 0 none) it is within pulls it along the ground toward its point at weight /
+// 100 x its speed, kept between its least and its most, times (distance - its near range) x its rate kept between -1
+// and 1 -- toward it from beyond 2 m, away within 1 m with the near range of 100 and the rate of 0.01. A vacuum's
+// turning (+ 0x24) is not applied: none the port's kinds make turns. Demyx's water clones' pull Demyx (500) and each
+// other (10), not the player (their kind 0 let be). Days's players are pulled by none here
+Vec3 vacuum_pull(Enemy &e, const Vec3 &place)
+{
+    Vec3 pull{};
+    const Actor &a = *e.actor;
+    const std::uint32_t entry = a.u32(field::kEntry);
+    if (vacuums.empty() || entry == 0)
+        return pull;
+    const auto f32 = [](std::uint32_t at) {
+        const std::uint32_t bits = mod().memory.u32(at);
+        float f = 0.0F;
+        std::memcpy(&f, &bits, sizeof(f));
+        return f;
+    };
+    const float weight = f32(entry + 0x50);
+    if (weight == 0.0F || (a.u32(field::kFlags) & 4u) != 0 || ((a.u32(field::kStatus) >> 25) & 1u) != 0)
+        return pull;
+    const unsigned kind = ((a.u32(field::kFlags6c8) >> 7) & 1u) != 0 ? 0u : (mod().memory.u32(entry + 4) & 0xffu);
+    for (const std::uint32_t v : vacuums) {
+        if ((mod().memory.u32(v + 0x10) & (1u << (kind & 31u))) != 0)
+            continue;
+        const float dx = f32(v) - place[0], dz = f32(v + 8) - place[2];
+        const float distance = std::sqrt(dx * dx + dz * dz), reach = f32(v + 0x14);
+        if (reach != 0.0F && distance >= reach)
+            continue;
+        const float speed = weight / 100.0F * f32(v + 0x18), least = f32(v + 0x1c);
+        const float s = least > speed ? least : std::min(f32(v + 0x20), speed);
+        const float rate = std::clamp((distance - f32(v + 0x28)) * f32(v + 0x2c), -1.0F, 1.0F);
+        if (distance > 0.0F) {
+            pull[0] += dx / distance * s * rate;
+            pull[2] += dz / distance * s * rate;
+        }
+    }
+    return pull;
+}
+
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
 {
     Actor &a = *e.actor;
@@ -3411,6 +3483,9 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
                    e.ticks_traced, a.motion.id, double(a.motion.blend), double(a.motion.time));
     const bool blending = a.motion.blend > 0.0F;
     Vec3 travel = a.step(1.0F);
+    const Vec3 pulled = vacuum_pull(e, place); // (KH2's update adds it to the motion's travel, FUN_1403b8ca2)
+    travel[0] += pulled[0];
+    travel[2] += pulled[2];
     if (trace_level() >= 2 && blending && a.motion.blend <= 0.0F)
         khdays_log("kh2 enemies: %08x tick %u: motion %d blended in, on from %.1f", e.days, e.ticks_traced,
                    a.motion.id, double(a.motion.time));
@@ -4099,6 +4174,7 @@ void allies_close()
                                : now >= e.ally_frame ? (now - e.ally_frame) * per_frame
                                                      : per_frame;
         e.ally_frame = now;
+        const unsigned run = e.stops.empty() ? ticks : 0u; // held by a KH2 stop (6:46): drawn as it stands
         // what the shell knows of it: its place, the ground under it (its battle's room, from 2 m above it)
         KhdaysKh2Shell s{};
         std::copy(e.place, e.place + 3, s.place);
@@ -4116,7 +4192,7 @@ void allies_close()
             e.floor = place[1] + s.above * kKh2PerDays;
             e.floor_known = true;
         }
-        for (unsigned t = 0; t < ticks; ++t) {
+        for (unsigned t = 0; t < run; ++t) {
             one_tick(e, s, place);
             if (e.carrier != 0)
                 if (const auto h = held.find(e.carrier); h != held.end()) { // on the player carrying it (1:18)
@@ -4194,6 +4270,9 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     allies.clear();
     allies_made = 0;
     accompanied.clear();
+    for (const std::uint32_t v : vacuums)
+        mod().memory.remove(v);
+    vacuums.clear();
     by_actor.clear();
     kind_of.clear();
     appeared.clear();
@@ -4300,7 +4379,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         }
         e = start(days, *k, s);
     }
-    if (e->released || khdays_stop_held(actor))
+    if (e->released || khdays_stop_held(actor) || !e->stops.empty())
         return;
     // two of KH2's ticks to one of Days's field steps (0x1000 a 30th of a second)
     static bool told_step = false;

@@ -146,6 +146,7 @@ struct Thread final {
     Thread *parent = nullptr;
     std::vector<std::unique_ptr<Thread>> children;
     std::uint32_t id = 0;
+    std::uint32_t tag = 0; // what 0:9 started it with (+ 0x3c): a later one of the same tag ends it
 };
 
 // One object's script running: its work area, its main thread and their children.

@@ -484,6 +484,12 @@ public:
     virtual void event(Actor & /*actor*/, const std::string & /*name*/, Object * /*target*/) {}
     // 1:17: it made to leave the field at once (its class's leave)
     virtual void leave(Actor & /*actor*/) {}
+    // 6:46: a stop (its number) put on every object of the field but two (none when null); 6:47: that stop taken off
+    // every object
+    virtual void stop_all(int /*stop*/, Object * /*but*/, Object * /*nor*/) {}
+    virtual void stop_end_all(int /*stop*/) {}
+    // 2:77, 2:78: a vacuum's record (2:77's, in the scripts' memory) made, let go: the field pulls its objects by it
+    virtual void vacuum(std::uint32_t /*record*/, bool /*alive*/) {}
     // 1:0: an object made by its entry's number (00objentry.bin's + 0) and set going, its script started; its address
     // (an AI handle's + 4 names it), 0 when none can be made
     virtual std::uint32_t appear(Actor & /*by*/, std::uint32_t /*entry*/)
