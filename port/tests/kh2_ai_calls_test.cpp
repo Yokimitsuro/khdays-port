@@ -5,6 +5,7 @@
 #include "../runtime/kh2_enemies/actor.h"
 #include "../runtime/kh2_enemies/calls.h"
 #include "../runtime/kh2_enemies/kinds.h"
+#include "../runtime/kh2_enemies/lights.h"
 
 #include <cmath>
 #include <cstdio>
@@ -1469,6 +1470,130 @@ void test_second_bosses()
     CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
 }
 
+// KH2's lights (lights.h), as FUN_1403f7040 composes them: Xaldin's (kind 0, flag 1, 80 80 80 over 60 ticks) darkens
+// the room by steps, held at full, faded out and gone; a kind 0 light without flag 1 leaves the room as it is; a kind
+// 1 light tints the objects; two lights compound. And the calls 1:181 to 1:184 reach the world with their values, and
+// 1:193 (the camera put at its place at once); its model's parts hidden and shown (1:108, 1:109); an attack's point
+// on the room (2:42); the field's force leave (1:204 to 1:206), an entry's count (1:323), an attack's reaction command
+// (2:51).
+struct LightsWorld final : kh::World {
+    kh::Lights lights;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    std::uint32_t light_create(int kind) override
+    {
+        return lights.create(kind);
+    }
+    void light_flag(std::uint32_t h, int bit) override
+    {
+        lights.set_flag(h, bit);
+    }
+    void light_colour(std::uint32_t h, int r, int g, int b, float ticks) override
+    {
+        lights.set_colour(h, r, g, b, ticks);
+    }
+    void light_fade_out(std::uint32_t h, float ticks) override
+    {
+        lights.fade_out(h, ticks);
+    }
+    int warps = 0; // 1:193's
+    void camera_warp() override
+    {
+        ++warps;
+    }
+};
+
+void test_lights()
+{
+    using Bytes = std::array<std::uint8_t, 3>;
+    kh::Lights l;
+    const std::uint32_t xaldin = l.create(0);
+    CHECK(xaldin != 0 && l.size() == 1);
+    l.tick();
+    CHECK(!l.colours().any); // neutral at full strength, its flag not set
+    l.set_flag(xaldin, 1);
+    l.set_colour(xaldin, 80, 80, 80, 60.0F);
+    for (int t = 0; t < 30; ++t)
+        l.tick();
+    // half way: 128 x (128 + trunc(-48 x 0.5)) >> 7 = 104 (the steps' float sum may fall just short of 0.5: 103)
+    CHECK(l.colours().any && (l.colours().room[0] == 104 || l.colours().room[0] == 103));
+    CHECK(l.colours().objects == (Bytes{128, 128, 128}));
+    for (int t = 0; t < 40; ++t)
+        l.tick();
+    CHECK(l.colours().room == (Bytes{80, 80, 80}));
+    l.fade_out(xaldin, 30.0F);
+    for (int t = 0; t < 29; ++t)
+        l.tick();
+    CHECK(l.size() == 1 && l.colours().room[0] > 80 && l.colours().room[0] < 128);
+    for (int t = 0; t < 3; ++t)
+        l.tick();
+    CHECK(l.size() == 0 && !l.colours().any);
+
+    const std::uint32_t plain = l.create(0), objects = l.create(1), red = l.create(0);
+    l.set_colour(plain, 0, 0, 0, 1.0F); // no flag 1: not the room's
+    l.set_colour(objects, 0, 64, 128, 1.0F);
+    l.set_flag(red, 1);
+    l.set_colour(red, 96, 48, 48, 2.0F); // the Groundshaker's
+    l.tick();
+    CHECK(l.colours().room == (Bytes{96, 48, 48}));
+    CHECK(l.colours().objects == (Bytes{0, 64, 128}));
+    const std::uint32_t half = l.create(0);
+    l.set_flag(half, 1);
+    l.set_colour(half, 64, 64, 64, 1.0F);
+    l.tick();
+    CHECK(l.colours().room == (Bytes{48, 24, 24})); // 96 x 64 >> 7, 48 x 64 >> 7
+    l.clear();
+    CHECK(l.size() == 0 && !l.colours().any);
+
+    Rig rig;
+    LightsWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "xaldin");
+    actor.world = &world;
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const ai::Value h = call(rig, actor, 1, 181, {i(0)});
+    CHECK(h.bits != 0 && h.tag == ai::Tag::Address);
+    call(rig, actor, 1, 182, {h, i(1)});
+    call(rig, actor, 1, 183, {h, i(80), i(80), i(80), f(1.0F)});
+    world.lights.tick();
+    CHECK(world.lights.colours().room == (Bytes{80, 80, 80}));
+    call(rig, actor, 1, 184, {h, f(1.0F)});
+    world.lights.tick();
+    CHECK(world.lights.size() == 0);
+    call(rig, actor, 1, 183, {ai::Value::of_address(0), i(0), i(0), i(0), f(1.0F)}); // no light: nothing
+    call(rig, actor, 1, 193, {});
+    CHECK(world.warps == 1);
+
+    // 1:109 / 1:108 a part of its model hidden and shown again, -1 every part; 2:42 an attack's + 0xb4
+    const ai::Value self = ai::Value::of_address(actor.address());
+    call(rig, actor, 1, 109, {self, i(2)});
+    call(rig, actor, 1, 109, {self, i(5)});
+    CHECK(actor.hidden_parts == ((1u << 2) | (1u << 5)));
+    call(rig, actor, 1, 108, {self, i(2)});
+    CHECK(actor.hidden_parts == (1u << 5));
+    call(rig, actor, 1, 109, {self, i(-1)});
+    CHECK(actor.hidden_parts == ~0u);
+    call(rig, actor, 1, 108, {self, i(-1)});
+    CHECK(actor.hidden_parts == 0u);
+    CHECK(call(rig, actor, 2, 42, {ai::Value::of_address(0x1000)}).bits == 0x10b4u);
+
+    // 1:204 / 1:205 / 1:206 the field's force leave; 1:323 none of an entry here; 2:51 a reaction command kept on an
+    // attack (its + 0x11c, + 0x120, + 0x124 the first value for a second of 0)
+    CHECK(call(rig, actor, 1, 206, {}).i() == 0);
+    call(rig, actor, 1, 204, {});
+    CHECK(world.force_leave && call(rig, actor, 1, 206, {}).i() == 1);
+    call(rig, actor, 1, 205, {});
+    CHECK(!world.force_leave && call(rig, actor, 1, 206, {}).i() == 0);
+    CHECK(call(rig, actor, 1, 323, {i(119)}).i() == 0);
+    const std::uint32_t attack = rig.memory.add(0x138, "an attack");
+    call(rig, actor, 2, 51, {ai::Value::of_address(attack), ai::Value::of_address(0), i(420), f(1000.0F), f(0.0F)});
+    float kept[2] = {};
+    rig.memory.read(attack + 0x120, kept, sizeof kept);
+    CHECK(rig.memory.u32(attack + 0x11c) == 420u && kept[0] == 1000.0F && kept[1] == 1000.0F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -1490,6 +1615,7 @@ int main()
     test_priority();
     test_leave_after_end();
     test_second_bosses();
+    test_lights();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

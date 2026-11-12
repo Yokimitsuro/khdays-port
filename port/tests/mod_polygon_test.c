@@ -176,6 +176,52 @@ static int depths(const KhdaysG3dList *l, int n, float *nearest, float *farthest
     return 1;
 }
 
+/* A tint (khdays_g3d_set_tint: KH2's lights) multiplies the colours of the game's polygons and the mods' drawn while
+ * it is on, held to 63, never the HUD's nor KH2's effects'; reset leaves none. */
+static void tinted(void)
+{
+    const KhdaysG3dClipVertex v[3] = {at(-5, -5, 10), at(5, -5, 10), at(0, 5, 10)}; /* 31 each */
+    const uint32_t swap = 0, colour = 31u | 31u << 5 | 31u << 10;
+    khdays_g3d_reset();
+    khdays_g3d_set_tint(0.5f, 1.0f, 3.0f);
+    khdays_g3d_mod_polygon(v, 3, BOTH_SIDES, 0, -1, 0, 0);
+    khdays_g3d_command(0x20, &colour); /* a game polygon's colour: 31 (63 in 6 bits) */
+    native_triangle(31, 1);
+    khdays_g3d_set_hud(1);
+    khdays_g3d_mod_polygon(v, 3, BOTH_SIDES, 0, -1, 0, 0);
+    khdays_g3d_set_hud(0);
+    khdays_g3d_effect_polygon(v, 3, -1, 0x44, 0);
+    khdays_g3d_set_tint(1.0f, 1.0f, 1.0f);
+    khdays_g3d_mod_polygon(v, 3, BOTH_SIDES, 0, -1, 0, 0);
+    khdays_g3d_command(0x50, &swap);
+    khdays_g3d_vblank();
+    const KhdaysG3dList *l = khdays_g3d_shown();
+    CHECK(l->npolys == 5);
+    int tinted_mods = 0, plain = 0, games = 0;
+    for (int i = 0; i < l->npolys; ++i) {
+        const KhdaysG3dPolygon *p = &l->polys[i];
+        const KhdaysG3dVertex *o = &l->verts[p->first];
+        if (!(p->flags & KHDAYS_G3D_MOD)) {
+            ++games; /* 63 x 0.5 rounded; 63 x 3 held to 63 */
+            CHECK(o->r == 32.0f && o->g == 63.0f && o->b == 63.0f);
+        } else if (o->r > 15.4f && o->r < 15.6f) {
+            ++tinted_mods;
+            CHECK(!(p->flags & (KHDAYS_G3D_HUD | KHDAYS_G3D_EFFECT)) && o->g == 31.0f && o->b == 63.0f);
+        } else {
+            ++plain; /* the HUD's, the effect's and the one drawn after the tint ended */
+            CHECK(o->r == 31.0f && o->g == 31.0f && o->b == 31.0f);
+        }
+    }
+    CHECK(games == 1 && tinted_mods == 1 && plain == 3);
+    khdays_g3d_set_tint(0.0f, 0.0f, 0.0f);
+    khdays_g3d_reset();
+    khdays_g3d_mod_polygon(v, 3, BOTH_SIDES, 0, -1, 0, 0);
+    khdays_g3d_command(0x50, &swap);
+    khdays_g3d_vblank();
+    l = khdays_g3d_shown();
+    CHECK(l->npolys == 1 && l->verts[l->polys[0].first].r == 31.0f);
+}
+
 int main(void)
 {
     khdays_g3d_reset();
@@ -241,6 +287,7 @@ int main(void)
     sequence_hud_bounds();
     effect_keys();
     banked_pltt();
+    tinted();
     if (failures != 0) {
         fprintf(stderr, "%d checks failed\n", failures);
         return 1;

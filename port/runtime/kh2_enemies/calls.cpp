@@ -644,6 +644,10 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 212, [](ai::Machine &m, std::span<ai::Value> a) {
         self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
     });
+    // 1:324 the same bit cleared (trap_obj_pattern_reset, FUN_14042bab0): the Hydra's
+    calls.set(1, 324, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->set_bits(0xd10, 1u << (a[1].bits & 31u), false);
+    });
     // 1:140 whether a target record's object (its + 8) is there (FUN_1403bde30; its other test, the player's lock,
     // not here); 1:143 an actor found by its placing record's number (FUN_1403b41e0, 0x70 for 0): none of Days's,
     // the slot left empty; 1:162 the actor put on one of KH2's lists (FUN_1403bd410): nothing here
@@ -803,6 +807,20 @@ void add_actor_fields(ai::Calls &calls)
     // 1:194 / 1:195 parts of its model put in stealth and back (trap_obj_set_stealth, trap_obj_reset_stealth;
     // FUN_14042cbd0, FUN_14042cc00 -> FUN_1401a8990, FUN_1401a85e0 on + 0x7b0's model): the Shadow Stalker's
     calls.set(1, 194, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->stealth |= a[1].bits; });
+    // 1:108 / 1:109 a part of its model shown and hidden (trap_obj_show_part, trap_obj_hide_part: FUN_1403cd810 ->
+    // FUN_1401a8a90 and FUN_1403cc9b0 -> FUN_1401a7cf0 on + 0x7b0's model; the PS3 build's kn::ModelSKL::showPart sets
+    // bits 0-1 of each subpart's flag to 1 whose part, its attribute word's bits 6-10, is the one named, -1 every one,
+    // hidePart clears them): the Prison Keeper's faces, the Hydra's heads
+    const auto parts = [](bool hide) {
+        return [hide](ai::Machine &m, std::span<ai::Value> a) {
+            Actor *x = self_of(m, a[0]);
+            const std::int32_t part = a[1].i();
+            const std::uint32_t mask = part == -1 ? ~0u : part >= 0 && part < 32 ? 1u << part : 0u;
+            x->hidden_parts = hide ? x->hidden_parts | mask : x->hidden_parts & ~mask;
+        };
+    };
+    calls.set(1, 108, parts(false));
+    calls.set(1, 109, parts(true));
     calls.set(1, 195, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->stealth &= ~a[1].bits; });
     // 1:125 its pictures' fade (trap_obj_tex_fade_start; FUN_1404305d0 -> FUN_1403b7810 on + 0xaa4, YS::OBJ's TexFade):
     // from a value to another over a time (2 or less: 1), kept -- the port does not draw it yet
@@ -855,8 +873,53 @@ void add_actor_fields(ai::Calls &calls)
     // FUN_1403bbea0, 1:171 / 1:206 DAT_142a11400's bits 2 / 7 -- KH2's field busy (an event, a pause), which Days's
     // field never is for its enemies: 0
     // 1:24 DAT_140717009, the byte after 1:23's (the Wight Knight tests 9) -- the same
-    for (const unsigned n : {23u, 24u, 34u, 301u, 171u, 206u})
+    for (const unsigned n : {23u, 24u, 34u, 301u, 171u})
         calls.set(1, n, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:204 / 1:205 / 1:206 the field's "force leave" set, cleared, read (trap_status_force_leave_start, _end,
+    // trap_status_is_force_leave: FUN_140430860, FUN_140430870, DAT_142a11400 bit 7)
+    calls.set(1, 204, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->force_leave = true;
+    });
+    calls.set(1, 205, [](ai::Machine &m, std::span<ai::Value>) {
+        if (World *w = running(m)->world)
+            w->force_leave = false;
+    });
+    calls.set(1, 206, [](ai::Machine &m, std::span<ai::Value> a) {
+        const World *w = running(m)->world;
+        a[0] = ai::Value::of_int(w != nullptr && w->force_leave ? 1 : 0);
+    });
+    // 1:323 how many of the field's objects are of an entry's number (trap_obj_count_entry, FUN_1403b3e20: its objects'
+    // list, each one's + 8 record's + 0): Oogie Boogie counts his Heartless so
+    calls.set(1, 323, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = running(m);
+        std::int32_t count = 0;
+        if (me->world != nullptr) {
+            for (Actor *x : me->world->actors())
+                if (const std::uint32_t record = x->u32(field::kEntry);
+                    record != 0 && m.memory().u32(record) == a[0].bits)
+                    ++count;
+            if (a[0].bits == 0x236u && me->world->player(*me) != nullptr)
+                ++count; // the player's entry (1:114's)
+        }
+        a[0] = ai::Value::of_int(count);
+    });
+    // 1:145 the zone of the room an object stands in (trap_obj_touch_zone, FUN_14042b6f0: + 0xcf4, KH2's area's event
+    // zones -- Oogie Boogie's 122 to 124, the platforms the player is on): Days's rooms have none, 0
+    calls.set(1, 145, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 0:24 a value printed for KH2's debugging (trap_stputi, FUN_14041ca20: empty in the game)
+    calls.set(0, 24, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:37 a part of KH2's map shown (trap_bg_show, FUN_14042e6a0: DAT_140abcbd8's bit, the map's and its effects'
+    // parts): the room is Days's, which has no such parts -- nothing (the Hydra's)
+    calls.set(1, 37, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:335 / 1:336 its bones' occluders off and on (trap_obj_disable_occ_bone, _enable_: dk::ObjOcc's records at
+    // + 0x9c0 of that bone, + 0x10 bit 1 -- KH2's occlusion culling, which hides what a big body covers): the port
+    // culls nothing so -- nothing (the Hydra's)
+    calls.set(1, 335, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 336, [](ai::Machine &, std::span<ai::Value>) {});
+    // 6:1 a prize made at a point (Ts::trap_prize_appear, FUN_14053dba0 -> FUN_1403dc170: its kind's prizes, as many
+    // as the party's needs make): Days gives its stand-in's own -- nothing (the Hydra's heads)
+    calls.set(6, 1, [](ai::Machine &, std::span<ai::Value>) {});
 }
 
 // ------------------------------------------------------------------------------------------------- motions
@@ -1733,6 +1796,25 @@ void add_shots(ai::Calls &calls)
         World *w = world(m);
         a[0] = ai::Value::of_int(w != nullptr && w->attack_on_floor(a[0].bits) ? 1 : 0);
     });
+    // 2:42 where it met the room (trap_attack_hit_bg_pos, FUN_140432650: its + 0xb4's address, a point the world writes
+    // when it meets the floor): the Prison Keeper's shots
+    calls.set(2, 42, [](ai::Machine &, std::span<ai::Value> a) {
+        a[0] = ai::Value::of_address(a[0].bits != 0 ? a[0].bits + 0xb4 : 0);
+    });
+    // 2:51 a reaction command put on one of its attacks (trap_attack_set_rc, FUN_140432790 -> FUN_140437b70): + 0x114
+    // the object it is of, + 0x118 the attack's owner, + 0x11c the command, + 0x120 and + 0x124 two values (the second,
+    // 0 or less, the first): kept as KH2 keeps them; what offers it is not read yet (the Hydra's Urninator, 420)
+    calls.set(2, 51, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t at = a[0].bits;
+        if (at == 0)
+            return;
+        Object *of = object_of(m, a[1]);
+        m.memory().set_u32(at + 0x114, of != nullptr ? of->address() : 0u);
+        m.memory().set_u32(at + 0x118, running(m)->address());
+        m.memory().set_u32(at + 0x11c, a[2].bits);
+        m.memory().set_u32(at + 0x120, a[3].bits);
+        m.memory().set_u32(at + 0x124, a[4].f() <= 0.0F ? a[3].bits : a[4].bits);
+    });
     calls.set(2, 44, [world](ai::Machine &m, std::span<ai::Value> a) {
         World *w = world(m);
         a[0] = ai::Value::of_address(w != nullptr ? w->attack_struck(a[0].bits) : 0);
@@ -2074,6 +2156,31 @@ void add_world(ai::Calls &calls)
     calls.set(1, 295, [](ai::Machine &m, std::span<ai::Value>) {
         if (running(m)->world != nullptr)
             running(m)->world->camera_home();
+    });
+    // 1:193 the camera put at its place at once (trap_camera_warp, FUN_140430b40 -> FUN_140165bc0: ObjCamera::setWarp,
+    // its + 0x38 set: the next update takes no easing). Xaldin's Jump warps it as his reaction command begins
+    calls.set(1, 193, [](ai::Machine &m, std::span<ai::Value>) {
+        if (running(m)->world != nullptr)
+            running(m)->world->camera_warp();
+    });
+    // KH2's lights (lights.h): 1:181 one made of a kind (FUN_140430950 -> FUN_1403f6f80), its record's address back;
+    // 1:182 a flag set (FUN_140430980: bit n of its + 0x10); 1:183 its colour, bytes, and the ticks it fades in over
+    // (FUN_1404309c0 -> FUN_1403f76e0); 1:184 faded out over ticks (FUN_140430a20 -> FUN_1403f76a0)
+    calls.set(1, 181, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_address(w != nullptr ? w->light_create(a[0].i()) : 0);
+    });
+    calls.set(1, 182, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
+            w->light_flag(a[0].bits, a[1].i());
+    });
+    calls.set(1, 183, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
+            w->light_colour(a[0].bits, a[1].i() & 0xff, a[2].i() & 0xff, a[3].i() & 0xff, a[4].f());
+    });
+    calls.set(1, 184, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
+            w->light_fade_out(a[0].bits, a[1].f());
     });
 }
 

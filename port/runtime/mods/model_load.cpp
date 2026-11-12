@@ -838,6 +838,7 @@ std::pair<std::size_t, std::size_t> add_meshes(Model *model, Loading &loading)
             }
         }
         out.double_sided = model->cull == 1 ? false : model->cull == 2 ? true : in.double_sided;
+        out.kh2_part = in.kh2_part;
         if (const Made *t = texture_for(in.texture_name, in.alpha_mode, in.alpha_cutoff)) {
             out.replacement = t->replacement;
             out.tex_w = static_cast<float>(t->w);

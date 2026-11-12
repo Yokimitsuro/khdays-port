@@ -163,7 +163,7 @@ Bytes model(bool weighted) {
     w.b.insert(w.b.end(), codes.b.begin(), codes.b.end());
     w.u32(6U << 28U);  // ret
     w.zeros(12);
-    w.set_u32(subpart, 2);  // attribute: translucent
+    w.set_u32(subpart, 2U | (3U << 6U));  // attribute: translucent, of part 3
     w.set_u32(subpart + 4, 0);
     w.set_u32(subpart + 0x10, static_cast<std::uint32_t>(chain - h));
     return w.b;
@@ -431,6 +431,7 @@ void test_model() {
     const auto& mesh = m.model.meshes[0];
     expect(mesh.texture_name == "tex0" && mesh.alpha_mode == khdays::assets::NeutralMesh::AlphaMode::blend,
            "its texture, translucent");
+    expect(mesh.kh2_part == 3, "its part (the attribute's bits 6-10: kn::ModelSKL's showPart and hidePart)");
     const auto& v = mesh.vertices;
     // 10 x on bone 0; 10 x on bone 1 turned to y, 100 up; 0.25 of (0 20 0) on bone 0 with 0.75 of (4 0 0) on bone 1
     expect(near(v[0].position[0], 0.1F) && near(v[0].position[1], 0.0F), "a vertex on bone 0");

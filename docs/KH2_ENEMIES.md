@@ -179,7 +179,8 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
 | 1:39, 1:218 | its unit's argument n (`trap_obj_unit_arg`: `YS::OBJ`'s `UnitArg`, + 0x9f4 + 4 n, what the room's spawn gives each object; the Shadow tests 99); one set (`trap_obj_set_unit_arg`) | Days's waves give none: 0, then what 1:218 set |
 | 1:104, 1:105, 1:309 | + 0x8c8 bit 6 set and cleared; + 0x6c8 bit 7 of an actor: the player (set by its maker, `FUN_1403a7a40`) | as KH2; Days's players have the bit |
-| 1:23, 1:34, 1:301, 1:171, 1:206 | KH2's field busy: `DAT_140717008` (tested == 10), `DAT_142a11478`, `FUN_1403bbea0`, `DAT_142a11400`'s bits 2 and 7 | 0: Days's field is never busy for its enemies |
+| 1:23, 1:34, 1:301, 1:171 | KH2's field busy: `DAT_140717008` (tested == 10), `DAT_142a11478`, `FUN_1403bbea0`, `DAT_142a11400`'s bit 2 | 0: Days's field is never busy for its enemies |
+| 1:204, 1:205, 1:206 | the field's "force leave" set, cleared, read (`trap_status_force_leave_start`, `_end`, `trap_status_is_force_leave`: `DAT_142a11400` bit 7) | as KH2, the world's, cleared with the area (Oogie Boogie's) |
 | 1:119 | a way toward a point at a height (`FUN_1403b7f10`): 1 or 2 a jump on the way, 3 none | 0: Days's rooms have no KH2 paths; the room's collision keeps the actor out of the walls |
 | 1:92 | a point of the ground ahead (a ray, then `FUN_1403dc170` with a number) | nothing |
 | 2:8 | whether a hit's reaction kind (+ 0x26, `FUN_1403ce980`'s groups) is past 1: trigger 6's hit, which the Strafer and the cubes turn to their revenge on | as KH2: Days's hits are small reactions (2) |
@@ -239,7 +240,14 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:140 | whether a target record's object (its + 8) is there (`FUN_1403bde30`; its other test, the player's lock, not read) | its + 8 only |
 | 1:143 | an actor found by its placing record's number (`FUN_1403b41e0`, 0x70 for 0) | none: the slot left empty |
 | 1:162 | the actor put on one of KH2's lists (`FUN_1403bd410` -> `FUN_14040c9d0`) | nothing |
-| 1:211, 1:212 | bit n of + 0xd10 set, cleared | as KH2 |
+| 1:211, 1:212, 1:324 | bit n of + 0xd10 set, cleared (`trap_obj_pattern_enable`, `_disable`), cleared (`trap_obj_pattern_reset`, `FUN_14042bab0`) | as KH2 |
+| 1:323 | how many of the field's objects are of an entry's number (`trap_obj_count_entry`, `FUN_1403b3e20`) | the KH2 enemies of that entry, and the player for 0x236 (Oogie Boogie counts his Heartless) |
+| 1:145 | the room's zone an object stands in (`trap_obj_touch_zone`: + 0xcf4, KH2's area's event zones) | 0: Days's rooms have none (Oogie Boogie's platforms, 122 to 124, are never told) |
+| 0:24 | a value printed (`trap_stputi`: empty in the game) | nothing |
+| 1:37 | a part of KH2's map shown (`trap_bg_show`: `DAT_140abcbd8`'s bit, the map's and its effects' parts) | nothing: the room is Days's (the Hydra's) |
+| 1:335, 1:336 | its bones' occluders off, on (`trap_obj_disable_occ_bone`, `_enable_`: `dk::ObjOcc`'s records at + 0x9c0, + 0x10 bit 1 -- KH2's occlusion culling) | nothing: the port culls nothing so (the Hydra's) |
+| 6:1 | a prize made at a point (`Ts::trap_prize_appear`, `FUN_1403dc170`) | nothing: Days gives the stand-in's (the Hydra's heads) |
+| 2:51 | a reaction command put on an attack (`trap_attack_set_rc`, `FUN_140437b70`: + 0x114 the object, + 0x118 the owner, + 0x11c the command, + 0x120 and + 0x124 two values) | kept as KH2 keeps them; what offers it is not read yet (the Hydra's Urninator, 420) |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
 | 2:21 | memory several objects share by a number (`trap_teamwork_alloc`, `FUN_1403f6df0`: n + 1 bytes, zeroed, made by the first to ask; to each later one the same, its first byte made 1 -- "made already"; all let go with the field, `FUN_1403f6ea0`) | as KH2. Until 2026-11-11 the first byte was left 0: each of the Sorcerer's cubes took itself for the first, started its own turn-giving thread and cleared the turns, and none ever shot |
 | 2:10 | an attack of its own made (`FUN_140432250` -> `FUN_1404371b0`, YS::ATTACK_MAGIC, 0x138 bytes; `FUN_1403cf830`): for the object an AI handle names (its owner: the enemy, or KH2's player), an `atkp` entry (looked up with the sub-number, `FUN_1403eafc0`), a combo group (-1 a running number), the sub-number; its address back | as KH2 (below, "Attacks of their own") |
@@ -300,6 +308,10 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:319, 6:2 | whether an object is Sora (`trap_sysobj_is_sora`: + 0x6cb bit 0); the player's form (`trap_player_get_form`: KH2's player's + 0xde0, 0 his own) | Days's players are KH2's player Sora to the scripts, in his own form |
 | 10:31, 1:122 | whether the object is a summon (+ 0x6c8 bit 22); its state printed (`trap_obj_dump`, empty in the game) | none is a summon; nothing |
 | 1:207, 1:295 | KH2's reaction camera on an object (`trap_camera_watch`, `FUN_140430b80`: a target record of the object's actor, `FUN_1403bee60`, to `FUN_140176310` -- the PS3 build's `TARGET::set_obj` and `dk::ReactionCamera::create`, the camera's mode 3); the camera back home (`trap_camera_reset`: `ObjCamera::setHome`). `ReactionCamera::update` holds only while the player cannot act (`YS::OBJ::can_control`) and the target stands (`TARGET::is_exist`): KH2's target camera on the target's point (`TargetCamera::updateTargetCamera`), else the camera's mode returns | while a KH2 enemy holds this game's player and the watched object stands, KH2's target camera on its aim point in place of the field's camera, whichever it is (`runtime/camera/kh2_camera_hooks.c` `reaction_frame`, as the event sequences' camera: `kh2_camera_lock` and its springs, from where the camera was); not its eye's collision nor the stick. Dark Thorn's reaction command |
+| 1:193 | the camera put at its place at once (`trap_camera_warp`, `FUN_140430b40` -> `FUN_140165bc0`: `ObjCamera::setWarp`, its + 0x38 set: the next update takes no easing) | KH2's camera's next settle goes straight to its targets (`kh2_camera_hooks.c`: the field's and the reaction camera's `snap`); Days's own camera has no easing to skip. Xaldin's Jump |
+| 1:108, 1:109 | a part of its model shown, hidden (`trap_obj_show_part`, `_hide_part`: `FUN_1403cd810` -> `FUN_1401a8a90`, `FUN_1403cc9b0` -> `FUN_1401a7cf0` on + 0x7b0's model; the PS3 build's `kn::ModelSKL::showPart` sets bits 0-1 of the flag of each subpart whose part -- its attribute word's bits 6-10 -- is the one named, -1 every one, to 1, `hidePart` clears them; a subpart is drawn while they are 1) | the model's subparts of that part left out of its draw (`NeutralMesh::kh2_part`, `khdays_models_draw_posed`'s hidden parts): the Prison Keeper's faces (parts 1-5), the Hydra's heads (1-7, hurt 11-17); every part shown at first |
+| 2:42 | where one of its attacks met the room (`trap_attack_hit_bg_pos`, `FUN_140432650`: the attack's + 0xb4) | the point 2:41's ray met the floor at, written there: the Prison Keeper's shots |
+| 1:181 to 1:184 | KH2's lights (`trap_light_create`, `_set_flag`, `_set_color`, `_fadeout`): below, "Lights" | as KH2 (`lights.h`), the room's and the models' colours tinted |
 
 ## Attacks of their own
 
@@ -553,6 +565,31 @@ them on): `Ov107_AiState_ApplyHit` names four by the statuses they give -- bit 7
 are KH2's fire (1), blizzard (2) and thunder (3); Aero, which KH2 has no element for, and his attacks (0x4000) are
 physical. Dark Thorn's reaction command watches it with KH2's reaction camera (1:207), as Cerberus's plays its event
 sequences' cameras.
+
+### Xaldin (2026-11-12)
+
+**Xaldin** `B_EX130` (a mod kind, speaking from KH2's `n_dragoon` battle bank) with KH2's lights (above, "Lights":
+`atk_final`, his last attack, darkens the room) and 1:193 (his Jump puts the camera at its place). His states:
+`btl_normal`, `btl_hard`, `btl_super_hard` by his work's + 0x18, their `rvg_*` after a hit (`revenge`), `atk_final`
+from those (half the time in `revenge`). His reaction commands: **Learn** (649) offered by his zone (his shapes'
+command): its message adds one to his count of Jumps (his teamwork record's + 4, up to 9: `2:21`) and starts his
+effects 8 and 9 on the player; **Jump** (647) offered by his script's thread (1:165) while the count is above 0: the
+player leaps at him (`B_EX130.mset`'s 252, 254, 253 on the player, `1:29`), the camera put at its place, his blows
+150 of power (atkp 581, below "Health": one and a half of Roxas's blows). Seen in a recorded walk: Learn, Jump and
+its strike four times, his health 2,520 (60 blows of 42) down by 63 each. A walk's input script presses the reaction
+button too (`khdays_input_script_buttons`).
+
+### The Prison Keeper (2026-11-12)
+
+**The Prison Keeper** `B_NM100` with **Lock**, **Shock** and **Barrel** as it fights with them (`N_NM050_BTL_2`,
+`N_NM060_BTL_2`, `N_NM070_BTL_2`: `00objentry.bin` 992 to 994, which its `battle_start` finds by 1:114 and makes by
+1:0 -- mod kinds of their own, their scripts answered in full). It swallows them (`suck_in`, `suck_in_all`) and spits
+them out (`spit_out`), its face the part of the one inside (1:108, 1:109: `btl_lock`, `btl_shock`, `btl_barrel`,
+`btl_final`), and makes them speak (1:262 on their handles: 10 to 12, which only their battle banks `lock_boss`,
+`shock_boss` and `barrel_boss` hold). Its health stops at a least (below, "Health": 80%, 60%, 40%, then none); a hit
+there (trigger 6) spits the one inside out and lowers it. Seen in a recorded walk: `suck_in`, Lock inside (`btl_lock`,
+`rvg_lock`, `atk_swing`) down to 80%, `spit_out`, Barrel swallowed (`btl_barrel`, `atk_bite_s`), Shock's `atk_rise`
+and `atk_darkfire` in another; one face drawn at a time.
 
 ## A player in an enemy's hands
 
@@ -987,6 +1024,30 @@ party's, by `00objentry.bin`'s + 0x4c): the mod's tool names each kind's bank (`
 `kh2/voice/<kind>/<number>.ogg` as they are, their volumes in `volumes.txt`; the shell hears one at a time per
 enemy, at its volume, among the effects (`khdays_sound_shot_play`, `_heard`, `_end`). Hades's line 13 is his end's.
 
+## Lights
+
+KH2's bosses darken the field for an attack with lights their scripts make (`YS::LIGHT`; the PS3 build's
+`trap_light_*`). A light (`FUN_1403f6f80`: 40-byte records at 0x142ae76c0, a list from 0x142ae76a8, new ones at its end)
+has a kind, flags (+ 0x10), a colour (+ 0x14, bytes, 128 as the field is) and a strength (+ 8, 1 at its making) with
+its step (+ 0xc). 1:183 sets the colour and runs the strength from 0 to 1 over the ticks given (`FUN_1403b7810`: 2 or
+fewer one); 1:184 runs it to 0 (`FUN_1403f76a0`). Each frame (`FUN_1403f7040`) a light's strength takes its step
+(`FUN_1403b77c0`, held at 0 and 1), a light at none leaves the list (`FUN_1403f7580`), and the colours are composed,
+each channel 128 times each light's 128 + (its colour - 128) x its strength (truncated), over 128, kept a byte:
+
+- **kind 0 with flag 1** (`+ 0x10` bit 1): the room's -- `FUN_1401626f0` multiplies the map's colour and its fog's by it
+  over 128 (black hides the map, `FUN_1401625f0`);
+- **kind 1**: the objects' -- the area's object light (`FUN_14016f920`).
+
+The bosses' (all kind 0, flag 1): Xaldin 80 80 80 (`atk_final`, 60 ticks in, 30 out), Axel, Xigbar, Saix and Demyx's
+second 80, Demyx's first 48, the Lingering Will and B_EX400 64, the Groundshaker 96 48 48 (red); the Illuminator
+16 16 16 and a kind 1 of 0 0 0, the field gone dark. The port keeps the list as KH2 (`runtime/kh2_enemies/lights.cpp`,
+a KH2 tick at a time with the scripts) and tints the polygons (`khdays_g3d_set_tint`: the game's vertices' colours and
+the mods' polygons', not the HUD's nor KH2's effects'): a mission world's room (Days's or a mod's, `mi/wd/wd_*`) by
+the room's colour, the other models by the objects' (`runtime/mods/models.cpp`). Seen: Xaldin's room at 0.57 to 0.6
+of its brightness while Roxas and Xaldin stay as they were. KH2 hides the map at black; here it is drawn black. The
+fog is Days's own, not tinted. A light ends with the area, and when no KH2 enemy is left to fade it (KH2 keeps one
+till its script fades it).
+
 ## Names
 
 A KH2 enemy's name is its journal's: KH2's journal (`menu/<language>/jiminy.bar`, OpenKH's jiminy page) lists its
@@ -1029,8 +1090,26 @@ share), Hades of the cups at level 99 had 32,040 health against Roxas's 15 to 74
 The shell keeps that health (64 bits); Days's HP fields (signed 16 bits) show its share, up to 32,767, at least 1
 while any is left, so the bar and Days's defeat follow it. A Days hit takes its damage after the element's rate and
 the script's least (1:231); Days's fields lose what the share does, and the reaction follows the health's loss (a
-small hit may leave the share as it was). Its script's record (2:9's, `hp_rate`) holds the health itself. An enemy
-that leaves and comes back keeps it.
+small hit may leave the share as it was). An enemy that leaves and comes back keeps it.
+
+Its script's record (2:9's, `hp_rate`: 1:228, 1:229, 1:230; the least 1:231, 1:232; 1:233) holds KH2's own numbers: its
+battle entry's health (1,500 for Hades of the cups; the entries' level is 0, KH2's area gives it, so its level's
+multiplier is left out) and its health's share of it -- full until Days's first hit, which measures the health. The
+scripts take shares of it from their start (the Prison Keeper's leasts, 80% then 60%, 40% and none, worked out of
+1:229 as its battle begins): a record in Days's stand-in's HP until the first hit and in the health after it had left
+the Prison Keeper's least at 80% of the stand-in's 2,136, over its whole health of 1,200, and its least stepping
+compared with values of the old measure, so it never stepped. A least (1:231) and a health set (1:233) are shares of
+the record turned to the health (one set before the first hit starts the health at that share). A Days hit the least
+keeps from taking any is a hit all the same (KH2's `YS::SHEET` MinHp): its reaction and trigger 6, on which the Prison
+Keeper spits its captive out and lowers its least.
+
+A KH2 player's blow (a reaction command's strike: Xaldin's Jump, Cerberus's finish) is its attack's power over 100
+blows (`atkp`'s power: 100 a plain hit; Jump's 581, 150, one and a half). It lands as a hit whose amount is those blows
+in the area's measured blow, in the measure Days's fields show (Days's class takes the packet's amount off them too: a
+blow worked out the old way -- the player's last Days hit times the power -- had taken a Days Fire of 902 for 1,353
+and ended Xaldin with half his health left). One that lands before any Days hit measured a blow waits: once the first
+Days hit measures it, the enemy's health starts that much lower (a first measure taken from the strike itself had made
+the blow 1 and Xaldin 60 health).
 
 ## Days's side: the shell
 

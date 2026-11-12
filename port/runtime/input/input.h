@@ -58,6 +58,10 @@ u16 khdays_input_keyinput(void);
  * bit 15 (0 open); 0x2c00 with nothing held. */
 u16 khdays_input_xy(void);
 
+/* The buttons an input script (regression walks: KHDAYS_INPUT) holds now, DS buttons: what the port's own presses
+ * read besides the player's (a KH2 enemy's reaction command, runtime/kh2_enemies). */
+u16 khdays_input_script_buttons(void);
+
 /* The stylus position on the lower screen, in pixels; 0 when not touching. */
 int khdays_input_touch(int *x, int *y);
 

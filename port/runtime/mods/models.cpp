@@ -9,6 +9,7 @@
 #include "kh2_corridors.h"
 
 extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj); // runtime/kh2_enemies
+extern "C" int khdays_kh2_enemies_light(float room[3], float objects[3]);                   // runtime/kh2_enemies
 
 namespace khdays::model_parts {
 
@@ -22,6 +23,7 @@ bool kh2_enemy_drawn = false;
 // centimetres; null for every other draw.
 const std::vector<khdays::assets::kh2::Mat4> *posed_now = nullptr;
 const float *posed_projection = nullptr; // its projection, when given (else the draw's now)
+std::uint32_t posed_hidden = 0;         // its parts hidden (bit n part n; KH2's hidePart)
 
 // Each joint of a KH2 model (the importer names them kh2_<bone>) on its bone's matrix in `posed_now`, in metres, on
 // the draw's base
@@ -752,6 +754,8 @@ void draw(Model &m)
     for (const Mesh &mesh : m.meshes) {
         if (mesh.shadow_sprite && khdays_shadow_has_sprite())
             continue;
+        if (posed_now != nullptr && mesh.kh2_part >= 0 && (posed_hidden >> mesh.kh2_part & 1u) != 0)
+            continue; // a part its script hides (1:109)
         // its picture now, and how far its texture has scrolled
         const Mesh::Picture picture = picture_now(mesh, m.frames);
         const float tex_w = picture.w, tex_h = picture.h;
@@ -927,6 +931,19 @@ using namespace khdays::model_parts;
 extern "C" void khdays_walk_model_draw(unsigned model_resource); /* runtime/input/walk.h */
 extern "C" void khdays_walk_model_draw_end(void);
 
+// KH2's lights a boss's script has on (runtime/kh2_enemies/shell.h khdays_kh2_enemies_light), for the draw begun: a
+// mission world's room takes the room's colour, the other models the objects', KH2's corridors none (their colours an
+// effect's)
+namespace {
+bool lit = false;
+float light_room[3], light_objects[3];
+
+void light_tint(const float rgb[3])
+{
+    khdays_g3d_set_tint(rgb[0], rgb[1], rgb[2]);
+}
+} // namespace
+
 extern "C" void khdays_models_draw_begin(const void *resource, const void *render_obj)
 {
     if (render_obj != nullptr)
@@ -935,6 +952,9 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
         forget_gone(khdays_events_vblank_count());
         begun_object = render_obj;
         khdays_g3d_draw_begin(resource); /* the polygons' key */
+        lit = khdays_kh2_enemies_light(light_room, light_objects) != 0;
+        if (lit)
+            light_tint(light_objects);
         if (resource != nullptr) {
             khdays_walk_model_draw(KHDAYS_REF(resource)); /* the Walk mod: the player's weapon to the hand */
         }
@@ -956,6 +976,8 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     }
     corridor_drawn = khdays_kh2_corridors_begin(resource, render_obj) != 0;
     if (corridor_drawn) {
+        if (lit)
+            khdays_g3d_set_tint(1.0F, 1.0F, 1.0F);
         return; /* KH2's corridor drawn in its place, with or without HD graphics */
     }
     kh2_enemy_drawn = khdays_kh2_enemies_draw_begin(resource, render_obj) != 0;
@@ -967,6 +989,8 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
     if (!khdays_origin_of_ram(KHDAYS_REF(resource), &file, &offset, &run)) { // its DS address
         return;
     }
+    if (lit && std::strstr(file, "mi/wd/wd_") != nullptr)
+        light_tint(light_room);
     // HD off: only a mission world's rooms and the mods' characters (their own folders, ba/ch/c<number>/)
     if (!hd && std::strstr(file, "mi/wd/wd_") == nullptr && std::strncmp(file, "ba/ch/c", 7) != 0) {
         return;
@@ -1012,6 +1036,8 @@ extern "C" void khdays_models_draw_begin(const void *resource, const void *rende
         it = models.emplace(key, std::move(loaded)).first;
     }
     active = it->second.get();
+    if (lit && active != nullptr && active->room)
+        light_tint(light_room);
     if (active != nullptr && !hd && !active->room && !active->character) {
         active = nullptr;
     }
@@ -1255,6 +1281,10 @@ extern "C" void khdays_models_draw_end(void)
         node_results.erase(begun_object); /* drawn as the game's: what is attached to it reads the game's nodes */
     }
     khdays_g3d_draw_end();
+    if (lit) {
+        khdays_g3d_set_tint(1.0F, 1.0F, 1.0F);
+        lit = false;
+    }
     active = nullptr;
     corridor_drawn = false;
     kh2_enemy_drawn = false;
@@ -1293,16 +1323,18 @@ extern "C" int khdays_models_placed_bounds(const char *path, float low[3], float
 }
 
 extern "C" int khdays_models_draw_posed(const char *path, const float place[16], const float *projection,
-                                        unsigned int attr, const float *bones, size_t count)
+                                        unsigned int attr, const float *bones, size_t count, unsigned int hidden_parts)
 {
     std::vector<khdays::assets::kh2::Mat4> pose(count);
     for (std::size_t b = 0; b < count; ++b)
         std::copy(bones + 16 * b, bones + 16 * (b + 1), pose[b].begin());
     posed_now = &pose;
     posed_projection = projection;
+    posed_hidden = hidden_parts;
     const int drawn = khdays_models_draw_placed(path, place, attr);
     posed_now = nullptr;
     posed_projection = nullptr;
+    posed_hidden = 0;
     return drawn;
 }
 

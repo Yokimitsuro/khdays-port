@@ -82,6 +82,16 @@ int khdays_kh2_enemies_event_camera(float eye[3], float at[3], float *fov_half);
  * its quad's width and height over the view's, its turn in radians; 0 when none. */
 int khdays_kh2_enemies_screen_trail(float out[4]);
 
+/* KH2's lights a KH2 enemy's script has on (a boss darkening the field: Xaldin, Demyx, the Groundshaker's red): what
+ * the room's colours (runtime/mods/models.cpp, a mission world's room) and the other models' are multiplied by, 1 each
+ * as they are (up to 2); 0 when no light changes either. A light ends with the area, or when no KH2 enemy is left to
+ * fade it. */
+int khdays_kh2_enemies_light(float room[3], float objects[3]);
+
+/* Whether a KH2 enemy's script asked KH2's camera to its place at once (1:193, ObjCamera::setWarp: Xaldin's Jump)
+ * since the last asking: runtime/camera/kh2_camera_hooks.c's next settle takes no easing. 1 once. */
+int khdays_kh2_enemies_camera_warp(void);
+
 #ifdef __cplusplus
 }
 

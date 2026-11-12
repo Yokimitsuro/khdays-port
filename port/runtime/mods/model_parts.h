@@ -168,6 +168,7 @@ struct Mesh {
     std::size_t frames_loop_from = 0;
     // 0, or the sky layer it is (1 is painted first), drawn around the camera behind everything
     int sky = 0;
+    int kh2_part = -1; // a KH2 model's subpart's part (NeutralMesh::kh2_part), -1 none
 };
 
 // A mod's character with a skeleton of its own (runtime/characters): each node's translation, rotation (x y z w)

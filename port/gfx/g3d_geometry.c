@@ -128,6 +128,8 @@ static struct {
     int hud;                   /* the polygons sent now are the HUD's */
     int marker;                /* selection art in the 3D layer, after the world's polygons */
     int clip_owner;            /* mod polygons sent are a clip volume's owner's (khdays_g3d_set_clip_owner) */
+    int tinted;                /* the polygons' colours multiplied by `tint` (khdays_g3d_set_tint) */
+    float tint[3];
     uint64_t effect_key;       /* the next KH2 effect triangle's identity, 0 none (khdays_g3d_set_effect_key) */
     uint32_t effect_index;
     uintptr_t draw;            /* the model draw the polygons come from (khdays_g3d_draw_begin) */
@@ -753,6 +755,21 @@ static void finish_polygon(List *out, int32_t ds[2], const Clip *v, int n, const
 
 static float polygon_fade = 1.0f;
 
+void khdays_g3d_set_tint(float r, float g_, float b)
+{
+    g.tinted = r != 1.0f || g_ != 1.0f || b != 1.0f;
+    g.tint[0] = r;
+    g.tint[1] = g_;
+    g.tint[2] = b;
+}
+
+/* A colour of 6 bits times the tint's channel, held to 63 */
+static int tint6(int c, float k)
+{
+    const int t = (int)((float)c * k + 0.5f);
+    return t < 0 ? 0 : t > 63 ? 63 : t;
+}
+
 void khdays_g3d_set_fade(float fade)
 {
     polygon_fade = fade;
@@ -820,6 +837,11 @@ static void vertex(int32_t x, int32_t y, int32_t z)
     c.r = expand5(g.color[0]);
     c.g = expand5(g.color[1]);
     c.b = expand5(g.color[2]);
+    if (g.tinted && !g.hud) {
+        c.r = tint6(c.r, g.tint[0]);
+        c.g = tint6(c.g, g.tint[1]);
+        c.b = tint6(c.b, g.tint[2]);
+    }
     c.s = (int16_t)g.s;
     c.t = (int16_t)g.t;
     c.unused = 0;
@@ -1112,6 +1134,17 @@ static void mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent_, int sky)
 {
+    if (g.tinted && !g.hud && n >= 3 && n <= 4) {
+        KhdaysG3dClipVertex t[4];
+        for (int i = 0; i < n; ++i) {
+            t[i] = v[i];
+            t[i].r = t[i].r * g.tint[0] > 63.0f ? 63.0f : t[i].r * g.tint[0];
+            t[i].g = t[i].g * g.tint[1] > 63.0f ? 63.0f : t[i].g * g.tint[1];
+            t[i].b = t[i].b * g.tint[2] > 63.0f ? 63.0f : t[i].b * g.tint[2];
+        }
+        mod_polygon(t, n, attr, tex, 0, replacement, translucent_, sky, 0);
+        return;
+    }
     mod_polygon(v, n, attr, tex, 0, replacement, translucent_, sky, 0);
 }
 

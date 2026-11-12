@@ -235,6 +235,11 @@ void khdays_g3d_set_hud(int on);
 /* What the polygons drawn from now on are faded by, 0..1 (1: as they are; a polygon faded out is not drawn). */
 void khdays_g3d_set_fade(float fade);
 
+/* What the colours of the game's and the mods' polygons drawn from now on are multiplied by, a channel each (1 as they
+ * are; held to the brightest): KH2's lights a boss's script has on (runtime/kh2_enemies/shell.h). Never the HUD's
+ * polygons nor KH2's effects' (their colours their own). Back to 1 with khdays_g3d_reset. */
+void khdays_g3d_set_tint(float r, float g, float b);
+
 /* Selection-marker draws only. Does not change HUD placement or the ordering of the 2D layers. */
 void khdays_g3d_set_marker(int on);
 

@@ -94,6 +94,11 @@ KINDS = {
     "B_BB110": "Dark Thorn",
     "B_LK110": "Scar",
     "B_LK110_PHANTOM": "Scar's Ghost",
+    "B_EX130": "Xaldin",
+    "B_NM100": "Prison Keeper",
+    "N_NM050_BTL_2": "Lock (in the Prison Keeper)",
+    "N_NM060_BTL_2": "Shock (in the Prison Keeper)",
+    "N_NM070_BTL_2": "Barrel (in the Prison Keeper)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -101,6 +106,10 @@ KINDS = {
 VOICES = {
     "B_HE030_CLSM": "he_hades",
     "B_LK110": "scar",
+    "B_EX130": "n_dragoon",
+    "N_NM050_BTL_2": "lock_boss",
+    "N_NM060_BTL_2": "shock_boss",
+    "N_NM070_BTL_2": "barrel_boss",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for

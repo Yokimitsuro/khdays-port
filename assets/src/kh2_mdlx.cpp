@@ -402,6 +402,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
             mesh.texture_name = textured ? "tex" + std::to_string(group.texture) : std::string{};
             mesh.material_name = mesh.name;
             mesh.double_sided = two_sided;
+            mesh.kh2_part = static_cast<int>((group.attribute >> 6) & 0x1FU);
             // bit 1: translucent; otherwise drawn where the texture is opaque enough
             mesh.alpha_mode =
                 (group.attribute & 2U) != 0 ? NeutralMesh::AlphaMode::blend : NeutralMesh::AlphaMode::mask;

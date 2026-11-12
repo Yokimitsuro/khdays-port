@@ -479,6 +479,11 @@ u16 khdays_input_xy(void)
     return xy_word(pressed());
 }
 
+u16 khdays_input_script_buttons(void)
+{
+    return script_keys;
+}
+
 int khdays_input_touch(int *x, int *y)
 {
     if (khdays_movie_hd_running()) {

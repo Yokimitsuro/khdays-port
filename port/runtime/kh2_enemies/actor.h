@@ -269,6 +269,9 @@ struct Jump final {
 class World {
 public:
     virtual ~World() = default;
+    // KH2's field's "force leave" (DAT_142a11400 bit 7: 1:204 sets it, 1:205 clears it, 1:206 reads it -- Oogie
+    // Boogie's script, while his Heartless are to leave); false at an area's start
+    bool force_leave = false;
     // The object the actor goes for (1:3 the player's actor, FUN_1403b3e80; 1:121's choice): one of Days's players
     // as KH2 sees it, null when none stands.
     virtual Object *player(Actor &a) = 0;
@@ -362,6 +365,17 @@ public:
     // camera on it); 1:295: the camera back home (ObjCamera::setHome)
     virtual void camera_watch(Object & /*o*/) {}
     virtual void camera_home() {}
+    // 1:193: the camera to its place at once, not eased there (trap_camera_warp: ObjCamera::setWarp)
+    virtual void camera_warp() {}
+    // KH2's lights (lights.h): 1:181 one made of a kind, its handle (0 none); 1:182 a flag of it set; 1:183 its colour
+    // faded in over ticks; 1:184 it faded out over ticks
+    virtual std::uint32_t light_create(int /*kind*/)
+    {
+        return 0;
+    }
+    virtual void light_flag(std::uint32_t /*handle*/, int /*bit*/) {}
+    virtual void light_colour(std::uint32_t /*handle*/, int /*r*/, int /*g*/, int /*b*/, float /*ticks*/) {}
+    virtual void light_fade_out(std::uint32_t /*handle*/, float /*ticks*/) {}
     // 1:262: a line of the actor's voice (YS::OBJ's voice -> YS::STDOBJ::_OVR_voice -> YS::VOICE::request: the sound
     // `id` of its voice bank, one at a time, a new one taking the place of one asked with no higher a priority)
     virtual void voice(Actor &, int /*id*/, int /*priority*/) {}
@@ -549,6 +563,9 @@ public:
     // its model's parts in stealth (1:194, 1:195: kn::ModelObj::setStealth, resetStealth on + 0x7b0's model, a bit a
     // part group; KH2 draws them as a refraction): the port draws the whole model faint while any is
     std::uint32_t stealth = 0;
+    // its model's parts hidden (1:109 hides one, 1:108 shows it: kn::ModelSKL::hidePart and showPart on + 0x7b0's
+    // model, each subpart of that part -- its attribute word's bits 6-10 -- drawn or not; -1 every part): bit n part n
+    std::uint32_t hidden_parts = 0;
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set

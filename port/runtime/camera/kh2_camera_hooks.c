@@ -386,6 +386,8 @@ static int same_place(Kh2CameraVec player)
            dx * dx + dz * dz <= WARP_DISTANCE * WARP_DISTANCE;
 }
 
+extern int khdays_kh2_enemies_camera_warp(void); /* kh2_enemies/shell.cpp: a KH2 enemy's 1:193 */
+
 /* The wanted eye, and where to cast from; 0 when the camera stays the game's. */
 static int frame_prepare(int camera, int player, int behind_yaw, int origin, int eye)
 {
@@ -504,7 +506,7 @@ static int frame_prepare(int camera, int player, int behind_yaw, int origin, int
     } else {
         kh2_camera_follow(&s.camera, in);
     }
-    if (warp) {
+    if (warp || khdays_kh2_enemies_camera_warp()) { /* (a KH2 enemy's 1:193: ObjCamera::setWarp) */
         s.camera.snap = 1;
     }
     write_vec(KHDAYS_W(origin), s.camera.pivot);
@@ -794,6 +796,9 @@ static int reaction_frame(int *cam)
             reaction.on = 1;
         }
         kh2_camera_lock(&reaction.camera, &in, aim);
+        if (khdays_kh2_enemies_camera_warp()) {
+            reaction.camera.snap = 1; /* a KH2 enemy's 1:193 (ObjCamera::setWarp) */
+        }
         kh2_camera_settle(&reaction.camera, in.ticks);
         reaction.frame = frame;
     }

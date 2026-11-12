@@ -5,6 +5,7 @@
 #include "actor.h"
 #include "calls.h"
 #include "kinds.h"
+#include "lights.h"
 #include "shell_days.h"
 
 #include "khdays/assets/kh2_ai.h"
@@ -625,6 +626,12 @@ struct Enemy final {
     double health_share = 0.0;
     std::int64_t health = -1, health_most = 0;
     int shown_most = 0;
+    // its scripts' measure of it (2:9's record: KH2's own numbers, its battle entry's health -- 1:229, 1:231's least,
+    // 1:233 are in it, and the scripts keep shares of it from their start), 0 none; and the share 1:233 set before
+    // Days's first hit gave its health
+    std::int64_t record_most = 0;
+    double start_share = 1.0;
+    bool held_at_least = false; // the last Days hit's damage kept off by its least health (1:231): a hit all the same
     std::int64_t health_taken = 0; // the last Days hit's damage on its health (khdays_kh2_enemies_damage), until told
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
@@ -658,6 +665,8 @@ struct Enemy final {
     int days_damage = 0; // the last Days hit's damage on it: a KH2 player's blow is worked out from it
     int blow = 0;        // a KH2 player's blow on it to land (its Days damage), 0 none
     bool blow_landing = false; // that blow's hit going through Days now
+    double blow_blows = 0.0;   // that blow in KH2's plain hits (its attacks' power over 100)
+    double pending_blows = 0.0; // KH2 player's blows that landed before the area's first Days hit measured a blow
 };
 
 std::map<unsigned, std::string> kind_of;            // a Days enemy made from a KH2 row -> its KH2 kind
@@ -719,6 +728,8 @@ std::unique_ptr<Object> days_hit;
 // the object KH2's reaction camera watches (1:207, dk::ReactionCamera's target), 0 none: the camera's while a KH2 enemy
 // holds this game's player (khdays_kh2_enemies_reaction_camera)
 std::uint32_t watched = 0;
+bool camera_warped = false; // 1:193 asked the camera to its place at once
+Lights lights; // KH2's lights the scripts make (1:181), the area's
 
 // Days's hit kinds (the packet's high flags, a bit a kind: Ov022_SendSweepHit's 1 << the attack's kind) as KH2's
 // elements (atkp's + 9: 0 physical, 1 fire, 2 blizzard, 3 thunder). Ov107_AiState_ApplyHit names four by the statuses
@@ -1014,6 +1025,14 @@ public:
         if (it == by_actor.end() || record == 0)
             return;
         const Enemy &e = *it->second;
+        if (e.record_most > 0) { // KH2's numbers: its health's share of its entry's (full until Days's first hit)
+            const double share = e.health >= 0 ? double(e.health) / double(std::max<std::int64_t>(1, e.health_most))
+                                               : e.start_share;
+            const std::int64_t now = e.health == 0 ? 0 : std::max<std::int64_t>(1, std::llround(share * double(e.record_most)));
+            a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(now, 0x7fffffff)));
+            a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.record_most, 0x7fffffff)));
+            return;
+        }
         if (e.health >= 0) {
             a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(e.health, 0xffffffff)));
             a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.health_most, 0xffffffff)));
@@ -1038,6 +1057,7 @@ public:
         if (own <= 0 || soldier <= 0)
             return;
         e.health_share = double(own) / double(soldier);
+        e.record_most = own;
         if (tracing())
             khdays_log("kh2 enemies: %08x's battle entry %d: %d health, %.2f KH2 Soldiers", e.days, entry, own,
                        e.health_share);
@@ -1049,6 +1069,16 @@ public:
         if (it == by_actor.end() || it->second->dying)
             return;
         Enemy &e = *it->second;
+        if (e.record_most > 0) { // in the record's measure: that share of its health (before Days's first hit, kept)
+            const double share = std::clamp(double(hp) / double(e.record_most), 0.0, 1.0);
+            if (e.health < 0) {
+                e.start_share = share;
+                return;
+            }
+            e.health = std::clamp<std::int64_t>(std::llround(share * double(e.health_most)), 1, e.health_most);
+            show_health(e);
+            return;
+        }
         if (e.health >= 0) { // in its own health's measure, kept between 1 and its most (Days's defeat by its hits)
             e.health = std::clamp<std::int64_t>(hp, 1, e.health_most);
             show_health(e);
@@ -1272,6 +1302,35 @@ public:
     void camera_home() override
     {
         watched = 0;
+    }
+    void camera_warp() override
+    {
+        camera_warped = true;
+        if (tracing())
+            khdays_log("kh2 enemies: the camera is put at its place at once");
+    }
+    std::uint32_t light_create(int kind) override
+    {
+        const std::uint32_t h = lights.create(kind);
+        if (tracing())
+            khdays_log("kh2 enemies: light %u made, kind %d", h, kind);
+        return h;
+    }
+    void light_flag(std::uint32_t handle, int bit) override
+    {
+        lights.set_flag(handle, bit);
+    }
+    void light_colour(std::uint32_t handle, int r, int g, int b, float ticks) override
+    {
+        lights.set_colour(handle, r, g, b, ticks);
+        if (tracing())
+            khdays_log("kh2 enemies: light %u to %d %d %d over %.0f ticks", handle, r, g, b, double(ticks));
+    }
+    void light_fade_out(std::uint32_t handle, float ticks) override
+    {
+        lights.fade_out(handle, ticks);
+        if (tracing())
+            khdays_log("kh2 enemies: light %u fades out over %.0f ticks", handle, double(ticks));
     }
     bool attack_on_floor(std::uint32_t at) override
     {
@@ -2569,6 +2628,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             const int power = attack_power(atkp);
             const int base = e.days_damage > 0 ? e.days_damage : last_days_damage > 0 ? last_days_damage : 1;
             e.blow += power > 0 ? std::max(1, base * power / 100) : 0;
+            e.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
             if (tracing())
                 khdays_log("kh2 enemies: player %08x's weapon strikes %08x (atkp %d, power %d): %d damage (its last Days "
                            "hit's %d)",
@@ -2706,7 +2766,8 @@ void take_command(Enemy &e)
     if (const std::uint32_t now = khdays_input_game_frames(); now != frame) {
         frame = now;
         const KhdaysInputSnapshot *s = khdays_input_snapshot();
-        const std::uint16_t buttons = s != nullptr ? s->ds_buttons : 0;
+        // the player's, and an input script's (a walk takes a command as a player does)
+        const std::uint16_t buttons = std::uint16_t((s != nullptr ? s->ds_buttons : 0) | khdays_input_script_buttons());
         pressed = std::uint16_t(buttons & ~was);
         was = buttons;
     }
@@ -2890,6 +2951,7 @@ void strike(AttackObject &o, Object &target)
     const int power = attack_power(o.atkp);
     const int base = hit.days_damage > 0 ? hit.days_damage : last_days_damage > 0 ? last_days_damage : 1;
     hit.blow += power > 0 ? std::max(1, base * power / 100) : 0;
+    hit.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
     if (tracing())
         khdays_log("kh2 enemies: KH2's player's attack (atkp %d, power %d) struck on %08x: %d damage", o.atkp, power,
                    hit.days, hit.blow);
@@ -2944,6 +3006,11 @@ void attack_objects(Enemy &e)
             to_days(o.at, from);
             to_days({o.at[0], o.at[1] + reach, o.at[2]}, to);
             o.on_floor = khdays_kh2_shell_ray(e.days, from, to, hit) != 0;
+            if (o.on_floor) { // where (2:42: + 0xb4)
+                const Vec3 at = to_kh2(hit);
+                const float met[4] = {at[0], at[1], at[2], 1.0F};
+                mod().memory.write(it->first + 0xb4, met, sizeof met);
+            }
         }
         const float step = std::min(radius, height);
         if (o.placed && step > 0.0F && !o.players) {
@@ -3776,7 +3843,7 @@ void ghosts_close()
         for (std::size_t b = 0; b < e.pose.size(); ++b)
             std::copy(e.pose[b].begin(), e.pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
         khdays_models_draw_posed(e.kind->mdlx.c_str(), view, e.pure, (alpha << 16) | (1u << 24), bones.data(),
-                                 e.pose.size());
+                                 e.pose.size(), e.actor->hidden_parts);
     }
     for (auto it = ghosts.begin(); it != ghosts.end();) {
         if ((*it)->released && (*it)->fx.empty()) {
@@ -3836,6 +3903,9 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     players.clear();
     days_hit.reset();
     watched = 0;
+    camera_warped = false;
+    lights.clear();
+    the_field().force_leave = false;
 }
 
 extern "C" int khdays_kh2_enemies_held(void *actor)
@@ -3902,6 +3972,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             tick_loose();
             if (t == 0 && !shouts.empty())
                 send_shouts();
+            lights.tick();
         }
         if (steps == 0 && !shouts.empty())
             send_shouts();
@@ -4038,13 +4109,16 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         KindFiles *k = e->kind;
         const std::int64_t health = e->health, health_most = e->health_most; // kept: its Days fields show its share
         const int shown_most = e->shown_most;
-        const double health_share = e->health_share;
+        const double health_share = e->health_share, start_share = e->start_share;
+        const std::int64_t record_most = e->record_most;
         forget(days);
         e = start(days, *k, back);
         e->health_share = health_share;
         e->health = health;
         e->health_most = health_most;
         e->shown_most = shown_most;
+        e->record_most = record_most;
+        e->start_share = start_share;
         place = to_kh2(back.place);
         if (tracing())
             khdays_log("kh2 enemies: %08x comes back at %.2f %.2f %.2f", days, double(back.place[0]),
@@ -4068,11 +4142,16 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // move), else on Days's HP
     const std::int64_t damage = e->health >= 0 ? e->health_taken : std::int64_t(hp_before - s.hp);
     e->health_taken = 0;
-    if (damage <= 0)
-        return;
-    if (!e->blow_landing) // a Days hit's (a blow's own is not one)
-        e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
+    const bool blow = e->blow_landing; // a KH2 player's blow's hit, not a Days hit
     e->blow_landing = false;
+    // a hit its least health kept from taking any (KH2's YS::SHEET MinHp) is a hit all the same: its reaction and its
+    // trigger 6 (the Prison Keeper's spits a captive out and lowers its least on it)
+    const bool at_least = e->held_at_least;
+    e->held_at_least = false;
+    if (damage <= 0 && !at_least)
+        return;
+    if (!blow && damage > 0)
+        e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     Actor &a = *e->actor;
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
         e->dying = true;
@@ -4209,6 +4288,29 @@ extern "C" int khdays_kh2_enemies_screen_trail(float out[4])
     out[2] = playing->trail->size[1];
     out[3] = playing->trail->angle;
     return 1;
+}
+
+extern "C" int khdays_kh2_enemies_camera_warp(void)
+{
+    const bool warped = camera_warped;
+    camera_warped = false;
+    return warped ? 1 : 0;
+}
+
+extern "C" int khdays_kh2_enemies_light(float room[3], float objects[3])
+{
+    if (lights.size() == 0)
+        return 0;
+    if (enemies.empty() && ghosts.empty()) {
+        lights.clear(); // KH2 keeps a light till its script fades it; none here is left to
+        return 0;
+    }
+    const Lights::Colours &c = lights.colours();
+    for (std::size_t i = 0; i < 3; ++i) {
+        room[i] = float(c.room[i]) / 128.0F;
+        objects[i] = float(c.objects[i]) / 128.0F;
+    }
+    return c.any ? 1 : 0;
 }
 
 // A Days player's actor's tick begins (Ov022_ActorUpdate, prepare.py): whether a KH2 enemy holds it (its control
@@ -4446,6 +4548,20 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
     if (e == nullptr || e->dying || amount <= 0)
         return amount;
     e->hit_kinds = unsigned(kinds);
+    // a KH2 player's blow (a reaction command's strike) on one with a health of its own: its power in the area's
+    // measured blows -- before any Days hit measured one, kept for its health once it is measured
+    if (e->blow_landing && e->health_share > 0.0) {
+        const double blows = e->blow_blows;
+        e->blow_blows = 0.0;
+        if (reference_blow <= 0) {
+            e->pending_blows += blows;
+            if (tracing())
+                khdays_log("kh2 enemies: %08x takes %.2f of KH2's blows before a Days hit measured one: kept", e->days,
+                           blows);
+            return 0;
+        }
+        amount = int(std::clamp(std::round(blows * double(reference_blow)), 1.0, 2147483647.0));
+    }
     // its health in Days's damage at the first hit on it: kSoldierBlows x its share of KH2's Soldier blows of the area's
     // first hit's size -- as many of Roxas's blows as Sora's it stands in KH2 (Hades of the cups: 60), whatever Roxas's
     // level and gear
@@ -4454,7 +4570,11 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
             reference_blow = amount;
         e->health_most =
             std::max<std::int64_t>(1, std::llround(kSoldierBlows * e->health_share * double(reference_blow)));
-        e->health = e->health_most;
+        e->health = std::clamp<std::int64_t>(std::llround(e->start_share * double(e->health_most)), 1, e->health_most);
+        if (e->pending_blows > 0.0) { // KH2's blows that landed before
+            e->health = std::max<std::int64_t>(1, e->health - std::llround(e->pending_blows * double(reference_blow)));
+            e->pending_blows = 0.0;
+        }
         e->shown_most = int(std::min<std::int64_t>(e->health_most, kDaysShownMost));
         show_health(*e);
         if (tracing())
@@ -4481,14 +4601,19 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
     KhdaysKh2Shell s;
     if (!khdays_kh2_shell_read(e->days, &s))
         return amount;
-    const int least = record != 0 ? std::int32_t(mod().memory.u32(record + 8)) : 0;
+    int least = record != 0 ? std::int32_t(mod().memory.u32(record + 8)) : 0;
+    if (least > 0 && e->record_most > 0 && e->health >= 0) // the record's measure to its health's
+        least = int(std::min<std::int64_t>(
+            0x7fffffff, (std::int64_t(least) * e->health_most + e->record_most - 1) / e->record_most));
     if (e->health >= 0) {
         // its own health takes the damage (Days's damage is in its stand-in's measure, as its health is); Days's
         // fields lose what their share does
-        const std::int64_t kept =
-            least > 0 ? std::clamp<std::int64_t>(amount, 0, e->health - least) : std::int64_t(amount);
+        const std::int64_t kept = least > 0
+                                      ? std::clamp<std::int64_t>(amount, 0, std::max<std::int64_t>(0, e->health - least))
+                                      : std::int64_t(amount);
         e->health = std::max<std::int64_t>(0, e->health - kept);
         e->health_taken = kept;
+        e->held_at_least = kept < amount;
         const int shown = shown_health(*e), taken = std::max(0, s.hp - shown);
         if (trace_level() >= 2 || (kept != amount && tracing()))
             khdays_log("kh2 enemies: %08x takes %lld of %d damage: %lld of %lld health left, %d of %d shown", e->days,
@@ -4512,6 +4637,14 @@ extern "C" int khdays_kh2_enemies_blow(void *actor, int *amount)
     if (e == nullptr || e->blow <= 0 || e->dying)
         return 0;
     *amount = e->blow;
+    // one with a health of its own: its power in the area's measured blows (khdays_kh2_enemies_damage takes it so), in
+    // the measure Days's fields show -- Days's class takes the packet's amount off them too -- and 1 before a Days hit
+    // measured a blow
+    if (e->health_share > 0.0) {
+        const double health = reference_blow > 0 ? e->blow_blows * double(reference_blow) : 1.0;
+        const double shown = e->health_most > 0 ? health * double(e->shown_most) / double(e->health_most) : health;
+        *amount = int(std::clamp(std::ceil(shown), 1.0, 2147483647.0));
+    }
     e->blow = 0;
     e->blow_landing = true;
     return 1;
@@ -4679,7 +4812,7 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     for (std::size_t b = 0; b < e->pose.size(); ++b)
         std::copy(e->pose[b].begin(), e->pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
     const int drawn = khdays_models_draw_posed(e->kind->mdlx.c_str(), place, nullptr, (alpha << 16) | (1u << 24),
-                                               bones.data(), e->pose.size());
+                                               bones.data(), e->pose.size(), e->actor->hidden_parts);
     if (!drawn && !e->told_draw) {
         e->told_draw = true;
         khdays_log("kh2 enemies: %s's model cannot be drawn (the message above says why)", e->kind->name.c_str());

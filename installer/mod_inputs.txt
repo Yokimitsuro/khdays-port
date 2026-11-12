@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 9aa0f71be17597c03fb79192f2ff46214a0423e6f50e4406336258ccb080b0a8
+# tools 602e85b37ec1023bf3b4a5b9437a59666fc22362721f4b1035648164227b5634
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -70,6 +70,9 @@ kh2_fifth obj/B_BB110.mdlx
 kh2_fifth obj/B_BB110.mset
 kh2_fifth obj/B_BB130.a.us
 kh2_fifth obj/B_BB130.mdlx
+kh2_fifth obj/B_EX130.a.us
+kh2_fifth obj/B_EX130.mdlx
+kh2_fifth obj/B_EX130.mset
 kh2_fifth obj/B_HE020.a.us
 kh2_fifth obj/B_HE020.mdlx
 kh2_fifth obj/B_HE020.mset
@@ -81,6 +84,9 @@ kh2_fifth obj/B_LK110.mdlx
 kh2_fifth obj/B_LK110.mset
 kh2_fifth obj/B_LK110_PHANTOM.a.us
 kh2_fifth obj/B_LK110_PHANTOM.mdlx
+kh2_fifth obj/B_NM100.a.us
+kh2_fifth obj/B_NM100.mdlx
+kh2_fifth obj/B_NM100.mset
 kh2_fifth obj/F_EX030.mdlx
 kh2_fifth obj/F_EX030.mset
 kh2_fifth obj/F_EX040.mset
@@ -208,8 +214,21 @@ kh2_first obj/PRIZE_BOX_YELLOW.mdlx
 kh2_first obj/W_EX010.a.us
 kh2_first obj/W_EX010.mdlx
 kh2_first se/se000.win32.scd
+kh2_sixth obj/N_NM050_BTL_2.a.us
+kh2_sixth obj/N_NM050_BTL_2.mdlx
+kh2_sixth obj/N_NM050_BTL_2.mset
+kh2_sixth obj/N_NM060_BTL_2.a.us
+kh2_sixth obj/N_NM060_BTL_2.mdlx
+kh2_sixth obj/N_NM060_BTL_2.mset
+kh2_sixth obj/N_NM070_BTL_2.a.us
+kh2_sixth obj/N_NM070_BTL_2.mdlx
+kh2_sixth obj/N_NM070_BTL_2.mset
 kh2_sixth obj/PRIZE_HE.mdlx
 kh2_sixth obj/P_EX100.mdlx
 kh2_sixth se/se2984.win32.scd
+kh2_sixth voice/us/battle/barrel_boss.win32.scd
 kh2_sixth voice/us/battle/he_hades.win32.scd
+kh2_sixth voice/us/battle/lock_boss.win32.scd
+kh2_sixth voice/us/battle/n_dragoon.win32.scd
 kh2_sixth voice/us/battle/scar.win32.scd
+kh2_sixth voice/us/battle/shock_boss.win32.scd

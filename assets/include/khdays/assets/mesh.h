@@ -70,6 +70,9 @@ struct NeutralMesh final {
     bool texture_frames_loop = true;
     std::size_t texture_frames_loop_from = 0;
     bool sky = false;
+    // A KH2 object model's subpart's part (its attribute word's bits 6-10, kn::ModelSKL's showPart and hidePart
+    // name them), -1 for any other mesh
+    int kh2_part = -1;
     std::vector<NeutralVertex> vertices;
     std::vector<std::uint32_t> indices;  // 3 per triangle
 };
