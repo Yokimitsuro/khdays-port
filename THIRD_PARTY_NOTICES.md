@@ -188,8 +188,11 @@ License: **MIT**, copyright (c) 2014-2026 Omar Cornut.
 Font: Roboto Medium, by Christian Robertson (Google), `misc/fonts/Roboto-Medium.ttf` (162,588 bytes)
 of the same Dear ImGui archive as above.
 
-Usage: embedded unmodified, as bytes generated at configure time (`port/CMakeLists.txt`), in
-`khdays-native.exe`, for the port's settings menu.
+Usage: embedded unmodified, as bytes generated at configure time, in two programs:
+
+- `khdays-native.exe` (`port/CMakeLists.txt`), for the port's settings menu;
+- `khdays-studio.exe` (`studio/CMakeLists.txt`), merged into ImGui's default font for the letters that
+  font lacks (French's œ and Œ, the curly quotes, the dashes, …).
 
 License: **Apache License 2.0** (<https://www.apache.org/licenses/LICENSE-2.0>), as Dear ImGui's
 `docs/FONTS.md` records it.
