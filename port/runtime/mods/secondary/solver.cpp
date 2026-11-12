@@ -1736,31 +1736,29 @@ void Simulation::reconstruct(const std::vector<Frame> &pose, std::vector<Frame> 
 
 namespace {
 
-// the reference of the particles of the groups `which` takes: where `sim` has them, and their bones'
-// frames as rebuilt there, in each reference bone's space
-void keep_reference(Rig &rig, Simulation &sim, const std::vector<Frame> &pose, const std::vector<std::uint8_t> &which)
+// the reference of the particles of the groups `which` takes: at `at` (one a particle), and their bones' frames
+// `out` (the skeleton's), in each reference bone's space
+void keep_reference(Rig &rig, const std::vector<Vec3> &at, const std::vector<Frame> &out,
+                    const std::vector<Frame> &pose, const std::vector<std::uint8_t> &which)
 {
-    std::vector<Frame> out(pose.size());
-    std::vector<std::uint8_t> written(pose.size(), 0);
-    sim.reconstruct(pose, out, written);
     for (std::size_t i = 0; i < rig.particles.size(); ++i) {
         Particle &p = rig.particles[i];
         if (!p.dynamic || !which[static_cast<std::size_t>(p.group)])
             continue;
         const GroupRig &g = rig.groups[static_cast<std::size_t>(p.group)];
-        p.reference = apply_inverse(pose[static_cast<std::size_t>(g.reference_bone)], sim.positions()[i]);
+        p.reference = apply_inverse(pose[static_cast<std::size_t>(g.reference_bone)], at[i]);
         if (p.blend >= 0) {
             ReferenceBlend &b = rig.blends[static_cast<std::size_t>(p.blend)];
             for (int k = 0; k < b.count; ++k) {
                 const auto j = static_cast<std::size_t>(k);
                 const Frame &f = pose[static_cast<std::size_t>(b.bone[j])];
-                b.point[j] = apply_inverse(f, sim.positions()[i]);
+                b.point[j] = apply_inverse(f, at[i]);
                 b.frame[j] = relative(f, out[static_cast<std::size_t>(p.bone)]);
                 if (k > 0) { // its distance from the ridden bone, from where it now hangs
                     const Vec3 end = apply(f, b.end[j]), ab = end - f.t;
                     const float ll = dot(ab, ab);
-                    const float t = ll > 0.0F ? clampf(dot(sim.positions()[i] - f.t, ab) / ll, 0.0F, 1.0F) : 0.0F;
-                    b.gap[j] = length(sim.positions()[i] - (f.t + ab * t));
+                    const float t = ll > 0.0F ? clampf(dot(at[i] - f.t, ab) / ll, 0.0F, 1.0F) : 0.0F;
+                    b.gap[j] = length(at[i] - (f.t + ab * t));
                 }
             }
         }
@@ -1773,9 +1771,73 @@ void keep_reference(Rig &rig, Simulation &sim, const std::vector<Frame> &pose, c
     }
 }
 
+// ... where `sim` has them, their bones rebuilt there
+void keep_reference(Rig &rig, Simulation &sim, const std::vector<Frame> &pose, const std::vector<std::uint8_t> &which)
+{
+    std::vector<Frame> out(pose.size());
+    std::vector<std::uint8_t> written(pose.size(), 0);
+    sim.reconstruct(pose, out, written);
+    keep_reference(rig, sim.positions(), out, pose, which);
+}
+
+// the groups' hung settle as `ticks` at most, stopped once no control of theirs moves 0.05 mm a tick for 10 ticks
+void hang(Simulation &sim, const Rig &rig, const std::vector<Frame> &pose, const TickSettings &s,
+          const std::vector<std::uint8_t> &which, int ticks)
+{
+    std::vector<Vec3> last = sim.positions();
+    int still = 0;
+    for (int k = 0; k < ticks && still < 10; ++k) {
+        sim.tick(pose, pose, s);
+        float most = 0.0F;
+        for (std::size_t i = 0; i < rig.particles.size(); ++i)
+            if (rig.particles[i].dynamic && which[static_cast<std::size_t>(rig.particles[i].group)])
+                most = maxf(most, length(sim.positions()[i] - last[i]));
+        last = sim.positions();
+        still = most < 5e-5F ? still + 1 : 0;
+    }
+}
+
 } // namespace
 
-void prepare_references(Rig &rig, Diagnostics *diagnostics)
+std::vector<Frame> rest_shape(const Rig &rig, const std::vector<Frame> &pose)
+{
+    const std::size_t n = pose.size();
+    std::vector<Quat> turn(n);
+    std::vector<std::uint8_t> turned(n, 0), done(n, 0);
+    for (const GroupRig &g : rig.groups)
+        for (const auto &[b, q] : g.rest) {
+            turn[static_cast<std::size_t>(b)] = q;
+            turned[static_cast<std::size_t>(b)] = 1;
+        }
+    std::vector<Frame> out(pose);
+    std::vector<std::uint8_t> moved(n, 0); // itself or a bone above it turned
+    // parents before children whatever the skeleton's order: each bone after the chain above it
+    std::vector<int> chain;
+    for (std::size_t b = 0; b < n; ++b) {
+        chain.clear();
+        for (int up = static_cast<int>(b); up >= 0 && !done[static_cast<std::size_t>(up)];
+             up = rig.skeleton.parent[static_cast<std::size_t>(up)])
+            chain.push_back(up);
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            const auto k = static_cast<std::size_t>(*it);
+            const int parent = rig.skeleton.parent[k];
+            done[k] = 1;
+            if (parent < 0)
+                continue;
+            const auto pk = static_cast<std::size_t>(parent);
+            moved[k] = turned[k] || moved[pk];
+            if (!moved[k])
+                continue;
+            Frame local = relative(pose[pk], pose[k]);
+            if (turned[k])
+                local.q = turn[k];
+            out[k] = compose(out[pk], local);
+        }
+    }
+    return out;
+}
+
+void prepare_references(Rig &rig, Diagnostics *diagnostics, bool until_still)
 {
     std::vector<Frame> pose(rig.skeleton.rest.size());
     for (std::size_t b = 0; b < pose.size(); ++b)
@@ -1829,20 +1891,35 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
                  text});
         }
     }
-    const std::vector<std::uint8_t> all(rig.groups.size(), 1);
-    // every group's rest shape out of the body: contact relaxation, its links held
-    {
+    // the groups with `rest` lines: their shape as written (khdays-secondary-rest hung and fitted it already)
+    std::vector<std::uint8_t> written(rig.groups.size(), 0), open(rig.groups.size(), 0);
+    bool any_written = false, any_open = false;
+    for (std::size_t g = 0; g < rig.groups.size(); ++g) {
+        written[g] = rig.groups[g].rest.empty() ? 0 : 1;
+        open[g] = 1 - written[g];
+        any_written = any_written || written[g];
+        any_open = any_open || open[g];
+    }
+    if (any_written) {
+        const std::vector<Frame> shape = rest_shape(rig, pose);
+        std::vector<Vec3> at(rig.particles.size());
+        for (std::size_t i = 0; i < rig.particles.size(); ++i)
+            at[i] = apply(shape[static_cast<std::size_t>(rig.particles[i].bone)], rig.particles[i].offset);
+        keep_reference(rig, at, shape, pose, written);
+    }
+    // the others' rest shape out of the body: contact relaxation, its links held
+    if (any_open) {
         Simulation sim(rig);
         for (auto &d : sim.drives())
             d.guide = d.authority = 0.0F;
         sim.initialize(pose, s, 80);
-        keep_reference(rig, sim, pose, all);
+        keep_reference(rig, sim, pose, open);
     }
     // the groups that hang, hung
     std::vector<std::uint8_t> settle(rig.groups.size(), 0);
     int steps = 0;
     for (std::size_t g = 0; g < rig.groups.size(); ++g)
-        if (rig.groups[g].settle) {
+        if (rig.groups[g].settle && open[g]) {
             settle[g] = 1;
             steps = std::max(steps, rig.groups[g].settle_steps);
         }
@@ -1863,8 +1940,11 @@ void prepare_references(Rig &rig, Diagnostics *diagnostics)
             }
         }
         sim.initialize(pose, s, 0);
-        for (int k = 0; k < steps; ++k)
-            sim.tick(pose, pose, s);
+        if (until_still)
+            hang(sim, rig, pose, s, settle, steps);
+        else
+            for (int k = 0; k < steps; ++k)
+                sim.tick(pose, pose, s);
         keep_reference(rig, sim, pose, settle);
     }
     // what is still inside a collider it collides with is left out of it

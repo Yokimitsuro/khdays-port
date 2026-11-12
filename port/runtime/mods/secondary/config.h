@@ -168,10 +168,13 @@ struct GroupConfig {
     std::vector<BoneRef> exclude;
     std::vector<std::pair<BoneRef, Vec3>> offsets; // explicit control points, bone-local, metres
     std::vector<BoneOverride> overrides;
-    bool settle = false;               // prepare a settled reference shape under gravity at load
-    Vec3 hang{0.0F, -1.0F, 0.0F};      // startup hanging direction, model space at rest
-    bool hang_given = false;           // chains: hang straight that way before settling
-    int settle_steps = 240;            // at the simulation rate
+    bool settle = false;          // prepare a settled reference shape under gravity at load
+    Vec3 hang{0.0F, -1.0F, 0.0F}; // startup hanging direction, model space at rest
+    bool hang_given = false;      // chains: hang straight that way before settling
+    int settle_steps = 240;       // at the simulation rate
+    // `rest <bone> <x> <y> <z>`: the bone's turn on its parent in the group's reference shape, degrees about x, then
+    // y, then z of the parent's axes (khdays-secondary-rest writes them); a group with any is not prepared at load
+    std::vector<std::pair<BoneRef, Vec3>> rest;
     bool twist_from_neighbours = true; // surfaces: a control's twist from its row neighbours
     Wind wind;
     int line = 0;

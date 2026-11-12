@@ -42,6 +42,10 @@ group ear_l chain preset kh2_string
   collide head torso arms
   thickness 2
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 62 -40.28 86.35 -51.45
+  rest 63 0.16 -6.27 -5.36
+  rest 64 0.97 -8.61 -8.49
 end
 group ear_r chain preset kh2_string
   attach 76
@@ -51,6 +55,10 @@ group ear_r chain preset kh2_string
   collide head torso arms
   thickness 2
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 77 40.28 -86.35 -51.45
+  rest 78 -0.16 6.27 -5.36
+  rest 79 -0.97 8.61 -8.49
 end
 
 # --- Hair-like: guided by his own motions where they key these bones, a little follow-through of their own. They
@@ -60,10 +68,17 @@ group hat hair preset kh2_hair
   attach 83
   tuft 84 85 86
   collide none
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 84 0.00 0.00 0.00
+  rest 85 0.00 0.00 0.00
+  rest 86 0.00 0.00 0.00
 end
 # the tuft on the hat's top (59 and 60; 58 a helper on 59's point)
 group tuft hair preset kh2_hair
   attach 58
   tuft 59 60
   collide none
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 59 0.00 0.00 0.00
+  rest 60 0.00 0.00 0.00
 end

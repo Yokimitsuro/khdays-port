@@ -120,7 +120,7 @@ int khdays_origin_of_ram(u32, const char **, u32 *, u32 *)
     return 0;
 }
 
-// no rooms a mod adds, no characters, and no mods started for the cloth's prewarm: only the model given
+// no rooms a mod adds, no characters and no mods started: only the model given
 extern "C" int khdays_rooms_model(const char *, char *, int)
 {
     return 0;

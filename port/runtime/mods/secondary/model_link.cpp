@@ -7,7 +7,6 @@
 #include "actor.h"
 #include "days_environment.h"
 
-#include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/model_import.h"
 
 extern "C" {
@@ -16,7 +15,6 @@ extern "C" {
 #include "../../core/window.h" // KHDAYS_W, khdays_game_ram
 #include "../../core/session_log.h"
 #include "../../scripts/game_link.h" // the game's frame count and rate
-#include "../list.h"                 // the mods on as the game started
 }
 
 #include <algorithm>
@@ -26,12 +24,8 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <condition_variable>
 #include <map>
-#include <mutex>
-#include <set>
 #include <system_error>
-#include <thread>
 
 namespace khdays::secondary {
 
@@ -243,130 +237,8 @@ void ModelSecondaryDeleter::operator()(ModelSecondary *m) const
 
 namespace {
 
-// Rigs cooked and prepared ahead on a thread of their own (prewarm), by their .secondary.txt: a model loaded
-// later (a cutscene's, mid-scene) takes its rig from here instead of stalling the game ~0.1-0.25 s to cook it
-struct Prepared {
-    std::shared_ptr<const Rig> rig;
-    Diagnostics diagnostics;
-    ConfigWatch watch;
-    std::size_t bones = 0, vertices = 0; // the model it was cooked against
-};
-std::mutex prepared_lock;
-std::condition_variable prepared_done;
-std::map<std::string, Prepared> prepared;
-std::set<std::string> preparing;
-
-// a file's key there: its full path, normalised (the game names its files with mixed slashes)
-std::string prepared_key(const std::filesystem::path &file)
-{
-    std::error_code ec;
-    std::filesystem::path full = std::filesystem::weakly_canonical(file, ec);
-    if (ec)
-        full = file.lexically_normal();
-    full.make_preferred();
-    const auto f8 = full.u8string();
-    return {f8.begin(), f8.end()};
-}
-
-struct Prewarm {
-    std::thread worker;
-    ~Prewarm()
-    {
-        if (worker.joinable())
-            worker.join();
-    }
-} prewarm;
-
-// Every model with secondary motion of the mods on (mods/<Mod>/graphics/.../<name>.secondary.txt beside <name>.mdlx),
-// but `skip` (cooked already), cooked and prepared on a thread of its own
-void prewarm_model_secondary(const std::string &skip)
-{
-    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> work; // .secondary.txt, .mdlx
-    std::error_code ec;
-    for (int m = 0; m < khdays_mods_started_count(); ++m) {
-        const char *mod = khdays_mods_started_path(m);
-        if (mod == nullptr)
-            continue;
-        const auto graphics = u8(mod) / "graphics";
-        if (!std::filesystem::is_directory(graphics, ec))
-            continue;
-        for (std::filesystem::recursive_directory_iterator it(graphics, ec), end; !ec && it != end; it.increment(ec)) {
-            const auto &e = *it;
-            const std::u8string fname = e.path().filename().u8string(); // any name a mod's file may have
-            const std::u8string tail = u8".secondary.txt";
-            if (fname.size() <= tail.size() || fname.compare(fname.size() - tail.size(), tail.size(), tail) != 0)
-                continue;
-            const auto model = e.path().parent_path() / (fname.substr(0, fname.size() - tail.size()) + u8".mdlx");
-            const std::string key = prepared_key(e.path());
-            if (key == prepared_key(u8(skip)) || !std::filesystem::exists(model, ec))
-                continue;
-            work.emplace_back(e.path(), model);
-            std::lock_guard<std::mutex> lock(prepared_lock);
-            preparing.insert(key);
-        }
-    }
-    if (work.empty())
-        return;
-    prewarm.worker = std::thread([work] {
-        for (const auto &[file, model] : work) {
-            const std::string key = prepared_key(file);
-            Prepared p;
-            try {
-                const auto imported = assets::kh2::import_mdlx(model);
-                SkeletonDesc skeleton;
-                MeshDesc mesh;
-                describe(imported, skeleton, mesh);
-                p.bones = skeleton.names.size();
-                p.vertices = mesh.vertices.size();
-                const Config config = read_config(file, p.diagnostics);
-                if (!has_errors(p.diagnostics)) {
-                    auto cooked = std::make_shared<Rig>(cook(config, skeleton, mesh, p.diagnostics));
-                    if (!has_errors(p.diagnostics)) {
-                        prepare_references(*cooked, &p.diagnostics);
-                        p.rig = std::move(cooked);
-                    }
-                }
-                p.watch.record(config.files);
-            } catch (...) {
-                p.rig.reset(); // cooked again when loaded, which reports why
-            }
-            std::lock_guard<std::mutex> lock(prepared_lock);
-            if (p.rig)
-                prepared[key] = std::move(p);
-            preparing.erase(key);
-            prepared_done.notify_all();
-        }
-    });
-}
-
-// The rig prepared ahead for this model's file, when its files are as they were then (waits while it is being
-// prepared); null to cook it here
-std::shared_ptr<const Rig> take_prepared(ModelSecondary &m)
-{
-    const std::string key = prepared_key(u8(m.file));
-    std::unique_lock<std::mutex> lock(prepared_lock);
-    prepared_done.wait(lock, [&] { return preparing.count(key) == 0; });
-    const auto it = prepared.find(key);
-    if (it == prepared.end())
-        return nullptr;
-    const Prepared &p = it->second;
-    if (p.bones != m.skeleton.names.size() || p.vertices != m.mesh.vertices.size() || p.watch.changed())
-        return nullptr;
-    for (const auto &x : p.diagnostics)
-        say(m.name + ": " + format(x));
-    m.watch = p.watch;
-    return p.rig;
-}
-
 std::shared_ptr<const Rig> cook_file(ModelSecondary &m)
 {
-    if (auto ready = take_prepared(m)) {
-        say(m.name + ": " + ready->summary + " (prepared ahead)");
-        m.debug = ready->config.debug || flag("KHDAYS_SECONDARY_DEBUG");
-        m.profile = ready->config.profile || flag("KHDAYS_SECONDARY_PROFILE");
-        m.trace = flag("KHDAYS_SECONDARY_TRACE");
-        return ready;
-    }
     Diagnostics d;
     const Config config = read_config(u8(m.file), d);
     std::shared_ptr<Rig> rig;
@@ -1159,13 +1031,6 @@ ModelSecondaryPtr load_model_secondary(const std::string &model_file, const std:
     if (m->rig)
         khdays_log("secondary: %s: cooked and prepared in %.1f ms", name.c_str(),
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-    // the first model with secondary motion: every other one prepared ahead, so a model loaded mid-scene does
-    // not stall the game to cook it
-    static bool prewarmed = false;
-    if (!prewarmed && !flag("KHDAYS_SECONDARY_NO_PREWARM")) {
-        prewarmed = true;
-        prewarm_model_secondary(m->file);
-    }
     const std::size_t n = m->skeleton.names.size();
     m->pose.assign(n, {});
     m->out.assign(n, {});

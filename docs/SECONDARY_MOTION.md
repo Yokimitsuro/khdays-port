@@ -36,7 +36,6 @@ are fixed.
 | `KHDAYS_SECONDARY_PROFILE=1` | every ten seconds, each actor's cost (p50/p95/p99 per update, per-phase per tick, startup, rebases, restarts, recoveries, room triangles) in the session log; or `profile on` |
 | `KHDAYS_SECONDARY_TRACE=1` | every draw: the game's animations (frame, length, weight), how far the hips, the most-moved body bone and the most-moved cloth control moved since the last draw (cm), in the session log, with each one's slot, a pose cut and a fresh start marked, how it found its place in the world (`placed by ...`) and where it is (`at`, metres); a KH2 model's `kh2 trace` line beside it: the game's state, each animation's weight as the game gave it, the key, slot, time and weight each played, the idle fade and `finish` tail; with `weapon_motions`, `hand trace` (the weapon's joint, the frame written and the game's own, moved and turned since the last draw, in the root's space); a `held` weapon's `held trace` (its start against the frame written, its nodes from the first); for a jump at a loop or a cut |
 | `KHDAYS_SECONDARY_OFF=1` | no model loads its secondary motion |
-| `KHDAYS_SECONDARY_NO_PREWARM=1` | rigs are cooked as their models load, not ahead on a thread of their own once the first loads (`model_link.cpp` prewarm_model_secondary: a later load takes its rig from there when its files are unchanged) |
 
 ## The model it works on
 
@@ -106,8 +105,9 @@ profile off
 | `follow_bone <bone> radius <r> [weight <w>] [always <a>]` | its reference shape also rides a body bone near it (below) |
 | `offset <bone> <x y z>` | a control's point, bone-local |
 | `bone <bone> <setting> <value> [hem <value>]` | one control's own setting; `bone <bone> mode <mode>` |
-| `hang <x y z>` | chains: hung straight that way (model space at rest) before settling |
-| `settle on [steps <n>]` | its reference shape hung under gravity against the colliders at load |
+| `hang <x y z>` | chains: hung straight that way (model space at rest) before settling (not with `rest`) |
+| `settle on [steps <n>]` | it hangs at each start (below); without `rest` lines, its reference shape is also hung under gravity against the colliders at load, until still (at most `n` steps) |
+| `rest <bone> <x y z>` | its reference shape as written: the bone's turn on its parent, degrees about x, then y, then z of the parent's axes ("Rest shape" below) |
 | `twist neighbours|reference` | surfaces: a control's twist from its row (default) or its reference |
 | `collide <tag>...` | the collider tags it collides with (no `collide` line: every collider; a bare `collide` or `collide none`: none) |
 | `self_collision <name>` | groups with one name collide with each other and themselves |
@@ -588,6 +588,45 @@ plaza's flares stopped with it. F12's lines name the room and group taken.
 4. Tune: presets first, then `hem` values, `follow_bone`, `bone` overrides,
    animation controls for moves that need them.
 5. In the game, `KHDAYS_SECONDARY_DEBUG=1` and edit the file while it runs.
+6. Write its rest shape ("Rest shape" below) once the groups and colliders are
+   done, and again whenever they change.
+
+## Rest shape
+
+A group's reference shape (what `follow_frequency` pulls toward, what swing and
+twist limits measure from) is not KH2's modelled shape: the cloth is pushed out of
+the colliders it collides with (contact relaxation, its links held) and the
+`settle on` groups (drawstrings, hoods) are hung under gravity against them, so
+the pull does not hold a hood up against gravity. Simulated at load, that took
+90-210 ms a model, and the prewarm thread that hid it queued every model of the
+mods behind one another: the first NPC in a field waited ~9.5 s (2026-11-12).
+
+It is computed once instead and written in the file: `rest <bone> <x y z>` per
+simulated bone, its turn on its parent (degrees about x, then y, then z of the
+parent's axes, `rest_turn`). A group with any `rest` line takes its shape from them
+at load (`rest_shape`: the rest skeleton with those turns, the bones below carried
+along) and is neither relaxed nor hung; `prepare_references` takes 0.1 ms. A group
+without them is prepared as before, its hang stopped once no control moves 0.05 mm
+a tick for 10 ticks (`settle` steps the most). `settle on` still hangs the group
+in its first pose at each start ("Time").
+
+`khdays-secondary-rest <model.mdlx> <model.secondary.txt> [--write <file>]` writes
+them: it prepares the shape as the load did (every `settle` step), turns each bone
+onto it, parents first, then turns any bone whose control lands inside a collider
+about its head until it is out (1 mm clear: the hang's links stretch a few mm, a
+turn keeps the bone's length), rounds to two decimals and checks the shape the
+lines give. It prints each group's distance from the hung shape and how deep it is
+in a collider. `--write` replaces the groups' `rest` lines in that file. For the HD
+pack, `tools/hd/kh2_cloth_rest.py` runs it on every installed model, writes the
+file in `tools/hd/kh2_models/` each takes and installs it again; a file models share
+is written from its own model and checked against the others (within 0.5 degrees;
+keyblades whose keychain hangs otherwise have files of their own). Rerun it after
+changing a group, its colliders or the model.
+
+2026-11-12, every HD pack model: no control inside a collider; the shape within
+1.9 cm of the hung one (drawstrings 1.0-1.1 cm, turned out of the chest), Xaldin's
+braids 4.3 cm at the tips (hung, they lay pressed into a collider on stretched
+links).
 
 ## N_EX830 (the coat Roxas)
 
@@ -756,7 +795,8 @@ Measured 2026-10-29 with the replay tool (Release, MSVC 19.44 /O2), AMD Ryzen 7
 7800X3D (8 cores, 4.2 GHz), 64 GB; N_EX830 fully enabled: 7 groups (coat,
 drawstrings, cuffs, hood, hair), 90 controls, 41 anchors, 266 links, 64 coarse
 faces, 16 colliders, room contact, self-contact, wind off; 3 substeps x 2
-iterations at 60 Hz. Cook and settle at load: 170 ms.
+iterations at 60 Hz. Cook and settle at load: 170 ms (2026-11-12, with `rest`
+lines: 1-2 ms).
 
 "Legs in coat" is how far any leg collider's core reaches into or through a
 coarse coat face (the coat's actual drawn geometry: its vertices sit on the

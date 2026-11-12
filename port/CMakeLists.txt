@@ -1006,6 +1006,12 @@ target_include_directories(khdays-secondary-replay PRIVATE ../assets/include ../
                            "${stb_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${ufbx_SOURCE_DIR}" "${KHDAYS_GEN}")
 target_compile_options(khdays-secondary-replay PRIVATE /W4 /std:c++20 /EHsc)
 target_link_libraries(khdays-secondary-replay PRIVATE khdays-ufbx)
+# A model's cloth reference shape computed once and written as `rest` lines (docs/SECONDARY_MOTION.md, "Rest shape").
+add_executable(khdays-secondary-rest tools/secondary_rest.cpp ${KHDAYS_SECONDARY_SOURCES}
+    ../assets/src/kh2_mdlx.cpp ../assets/src/kh2_map.cpp ../assets/src/kh2_bar.cpp ../assets/src/kh2_motion.cpp
+    ../assets/src/dds.cpp ../assets/src/image.cpp)
+target_include_directories(khdays-secondary-rest PRIVATE ../assets/include runtime/mods/secondary "${stb_SOURCE_DIR}")
+target_compile_options(khdays-secondary-rest PRIVATE /W4 /std:c++20 /EHsc)
 # The theater's music schedules (host/movies/music_schedule.c): cues, ramps, loops.
 add_executable(khdays-music-schedule-test tests/music_schedule_test.c host/movies/music_schedule.c)
 target_compile_options(khdays-music-schedule-test PRIVATE /W4 /std:c17)

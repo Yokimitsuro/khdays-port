@@ -82,6 +82,50 @@ group coat surface preset kh2_coat
   bone 79 follow_bone_scale 0.3
   bone 80 follow_bone_scale 0.2
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 -0.01 -4.68 0.34
+  rest 34 0.15 -5.16 -3.29
+  rest 42 -0.03 1.25 -2.81
+  rest 50 0.02 -0.94 -1.93
+  rest 58 -0.13 -4.83 3.06
+  rest 66 0.03 1.28 2.93
+  rest 74 0.00 -0.23 1.95
+  rest 82 0.00 -0.04 -0.23
+  rest 29 0.00 6.03 0.02
+  rest 37 0.05 2.66 2.25
+  rest 45 0.04 -6.42 -0.74
+  rest 53 -0.05 5.51 -1.02
+  rest 61 -0.03 2.18 -1.48
+  rest 69 -0.05 -6.50 0.93
+  rest 77 0.05 4.78 1.17
+  rest 85 0.00 -5.70 -0.05
+  rest 30 -0.01 2.44 -0.62
+  rest 38 -0.02 4.13 1.48
+  rest 46 0.31 8.79 4.45
+  rest 54 -0.28 -4.96 3.39
+  rest 62 -0.07 4.22 -2.09
+  rest 70 -0.52 8.90 -4.85
+  rest 78 0.15 -5.13 -3.61
+  rest 31 0.00 -2.07 -0.01
+  rest 39 0.18 -3.07 -1.32
+  rest 47 0.30 -2.32 -1.53
+  rest 55 0.09 0.24 -0.36
+  rest 63 -0.04 -3.13 1.27
+  rest 71 -0.04 -2.33 1.56
+  rest 79 0.01 0.55 0.31
+  rest 32 -0.01 -2.36 0.30
+  rest 40 -0.14 1.84 0.04
+  rest 48 0.06 -0.20 0.30
+  rest 56 -0.11 0.26 -0.25
+  rest 64 0.10 1.87 0.04
+  rest 72 0.15 -0.25 -0.24
+  rest 80 0.10 0.26 0.27
+  rest 88 0.10 6.54 1.70
+  rest 92 0.01 6.73 0.16
+  rest 89 -0.05 3.60 -1.84
+  rest 93 0.01 3.57 0.35
+  rest 90 0.73 -9.09 0.12
+  rest 94 -0.79 -9.49 0.04
 end
 
 # --- Drawstrings: chains from the collar (99), hung at load: they stick straight forward at rest ---
@@ -95,6 +139,11 @@ group string_l chain preset kh2_string
   damping 3.5
   max_speed 5
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 103 -10.28 -26.70 46.29
+  rest 104 2.55 2.19 27.18
+  rest 105 0.25 -0.91 3.31
+  rest 106 0.43 5.64 9.24
 end
 group string_r chain preset kh2_string
   collide torso body arms strings
@@ -106,6 +155,11 @@ group string_r chain preset kh2_string
   damping 3.5
   max_speed 5
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 316 10.27 26.66 46.31
+  rest 317 -2.50 -2.22 27.18
+  rest 318 -0.25 0.91 3.31
+  rest 319 -0.43 -5.64 9.25
 end
 
 # --- Hood: one bone (101) hanging behind the neck; it swings and lies on the back as one piece ---
@@ -114,6 +168,8 @@ group hood chain preset kh2_hood
   chain 101
   settle on steps 240
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 0.00 75.58 0.00
 end
 
 # --- Hair, from the head's end (170): single-bone spikes, the fringe's two-bone ones, and five long strands down his
@@ -132,6 +188,56 @@ group hair hair preset kh2_hair
   tuft 266 267
   tuft 273 274 275 276
   tuft 278 279 280 281
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 172 0.00 0.00 0.00
+  rest 175 0.00 0.00 0.00
+  rest 177 0.00 0.00 0.00
+  rest 184 0.00 0.00 0.00
+  rest 186 0.00 0.00 0.00
+  rest 188 0.00 0.00 0.00
+  rest 191 0.00 0.00 0.00
+  rest 193 0.00 0.00 0.00
+  rest 195 0.00 0.00 0.00
+  rest 197 0.00 0.00 0.00
+  rest 199 0.00 0.00 0.00
+  rest 201 0.00 0.00 0.00
+  rest 203 0.00 0.00 0.00
+  rest 205 0.00 0.00 0.00
+  rest 207 0.00 0.00 0.00
+  rest 210 0.00 0.00 0.00
+  rest 212 0.00 0.00 0.00
+  rest 214 0.00 0.00 0.00
+  rest 219 0.00 0.00 0.00
+  rest 254 0.00 0.00 0.00
+  rest 256 0.00 0.00 0.00
+  rest 258 0.00 0.00 0.00
+  rest 260 0.00 0.00 0.00
+  rest 262 0.00 0.00 0.00
+  rest 264 0.00 0.00 0.00
+  rest 266 0.00 0.00 0.00
+  rest 269 0.00 0.00 0.00
+  rest 271 0.00 0.00 0.00
+  rest 273 0.00 0.00 0.00
+  rest 278 0.00 0.00 0.00
+  rest 173 0.00 0.00 7.78
+  rest 178 0.00 0.00 0.00
+  rest 189 -9.26 -5.25 -29.32
+  rest 208 2.13 0.00 0.00
+  rest 215 -0.19 0.00 0.00
+  rest 220 -0.17 0.00 0.00
+  rest 267 -0.31 0.00 0.00
+  rest 274 0.01 0.00 0.00
+  rest 279 -0.02 0.00 0.00
+  rest 179 0.00 0.00 0.00
+  rest 216 0.00 0.00 0.00
+  rest 221 0.00 0.00 0.00
+  rest 275 0.00 0.00 0.00
+  rest 280 0.00 0.00 0.00
+  rest 180 0.00 0.00 0.00
+  rest 217 0.00 0.00 0.00
+  rest 222 0.00 0.00 0.00
+  rest 276 0.00 0.00 0.00
+  rest 281 -70.00 0.00 0.00
 end
 
 # --- The two long locks by his face, drawstrings as xaldin_h's braids (user): each mane's long run from the head
@@ -149,6 +255,15 @@ group locks chain preset kh2_string
   chain 282 284 294 297
   settle on steps 360
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 223 -66.66 -23.91 165.38
+  rest 282 66.67 23.91 165.39
+  rest 225 -1.59 1.56 15.92
+  rest 284 1.58 -1.55 15.92
+  rest 235 0.55 -6.43 11.90
+  rest 294 -0.55 6.43 11.90
+  rest 238 -83.28 -2.73 -157.31
+  rest 297 83.99 2.39 -157.30
 end
 
 # --- Animation controls ---

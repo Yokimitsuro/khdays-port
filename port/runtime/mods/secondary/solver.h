@@ -214,10 +214,15 @@ private:
     std::vector<std::uint8_t> swung_valid_;
 };
 
-// The reference shapes made ready, once a model: every group's rest shape pushed out of the colliders
-// it collides with (its links kept); the groups that ask (`settle on`) then hung under gravity at the
-// rest pose against them, their follow off, until they stand. Controls still inside a collider after
-// that are left out of it, each named in `out`.
-void prepare_references(Rig &rig, Diagnostics *out = nullptr);
+// The reference shapes made ready, once a model: a group with `rest` lines takes its shape from them
+// (rest_shape); every other group's rest shape is pushed out of the colliders it collides with (its links
+// kept), and those that ask (`settle on`) hung under gravity at the rest pose against them, their follow
+// off, until still (`until_still`, else every step asked). Controls still inside a collider after that are
+// left out of it, each named in `out`.
+void prepare_references(Rig &rig, Diagnostics *out = nullptr, bool until_still = true);
+
+// The skeleton at rest (`pose`, the rest frames) with the groups' `rest` turns in place of their bones' own,
+// the bones below carried along
+std::vector<Frame> rest_shape(const Rig &rig, const std::vector<Frame> &pose);
 
 } // namespace khdays::secondary

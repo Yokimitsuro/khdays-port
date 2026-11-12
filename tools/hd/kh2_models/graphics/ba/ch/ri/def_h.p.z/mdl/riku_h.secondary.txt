@@ -80,6 +80,50 @@ group coat surface preset kh2_coat
   bone 79 follow_bone_scale 0.3
   bone 80 follow_bone_scale 0.2
   mode simulated          # P_EH000's motions carry no coat tracks
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 26 -0.03 -5.23 0.60
+  rest 34 0.15 -5.48 -3.18
+  rest 42 0.03 -4.96 -0.80
+  rest 50 0.01 -3.58 -0.33
+  rest 58 -0.11 -5.06 2.47
+  rest 66 -0.02 -5.16 0.38
+  rest 74 0.00 -3.23 0.17
+  rest 82 0.13 -11.31 -1.32
+  rest 29 -0.12 12.78 -1.05
+  rest 37 0.11 4.50 2.77
+  rest 45 -0.13 5.59 -2.73
+  rest 53 -0.26 10.05 -2.94
+  rest 61 -0.06 3.74 -1.83
+  rest 69 0.16 5.88 3.17
+  rest 77 0.25 9.27 3.08
+  rest 85 0.30 19.57 1.75
+  rest 30 -0.05 -10.48 0.39
+  rest 38 -0.30 2.70 1.72
+  rest 46 0.13 1.46 4.03
+  rest 54 -0.23 -9.30 6.20
+  rest 62 0.03 3.14 -2.07
+  rest 70 0.28 1.27 -4.02
+  rest 78 0.73 -8.85 -6.14
+  rest 31 0.00 -0.86 0.03
+  rest 39 -0.16 -1.97 -2.53
+  rest 47 0.19 -0.51 -0.84
+  rest 55 -0.37 0.17 -0.18
+  rest 63 -0.07 -2.16 2.64
+  rest 71 0.23 -0.38 0.87
+  rest 79 0.06 0.20 0.16
+  rest 32 0.00 0.00 0.03
+  rest 40 0.22 0.45 0.64
+  rest 48 -0.30 -0.57 0.06
+  rest 56 0.08 0.29 -0.26
+  rest 64 -0.48 0.52 -0.69
+  rest 72 0.05 -0.59 -0.10
+  rest 80 -0.28 0.23 0.26
+  rest 88 -0.32 -14.62 2.46
+  rest 92 0.30 -15.21 -2.27
+  rest 89 -0.77 9.24 -4.39
+  rest 93 0.36 11.06 3.82
+  rest 90 0.20 -3.79 1.07
+  rest 94 -0.51 -5.49 -1.49
 end
 
 # --- Drawstrings: chains from the chest helpers (102, 230), hung at load ---
@@ -93,6 +137,11 @@ group string_l chain preset kh2_string
   damping 3.5
   max_speed 5
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 103 -11.55 -30.84 42.46
+  rest 104 3.62 2.93 30.17
+  rest 105 1.14 5.97 15.04
+  rest 106 0.12 2.10 5.31
 end
 group string_r chain preset kh2_string
   collide torso body arms
@@ -104,6 +153,11 @@ group string_r chain preset kh2_string
   damping 3.5
   max_speed 5
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 231 11.54 30.80 42.49
+  rest 232 -3.56 -3.00 30.10
+  rest 233 -1.16 -5.89 15.24
+  rest 234 -0.12 -2.11 5.03
 end
 
 # --- The blindfold's tails, knotted at the back of his head on its left: 209 (a helper at the knot) carries 210 and
@@ -116,6 +170,9 @@ group blindfold_upper chain preset kh2_string
   collide head torso arms
   thickness 2
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 210 -0.03 2.58 10.23
+  rest 211 -0.56 11.84 1.68
 end
 group blindfold_lower chain preset kh2_string
   attach 170
@@ -124,6 +181,8 @@ group blindfold_lower chain preset kh2_string
   collide head torso arms
   thickness 2
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 213 -0.21 -2.75 -3.62
 end
 
 # --- Hood: one bone (101) hanging behind the neck, as roxas_b_h's ---
@@ -132,6 +191,8 @@ group hood chain preset kh2_hood
   chain 101
   settle on steps 240
   mode simulated
+  # rest shape: hung against the colliders by khdays-secondary-rest (rerun it after changing the group or its colliders)
+  rest 101 0.00 83.23 0.00
 end
 
 # --- Sleeve cuffs: fitted round the hands by bones.txt's `cuff`, not simulated ---
