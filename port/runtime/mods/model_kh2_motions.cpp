@@ -938,7 +938,8 @@ bool play_held(Model &m, Kh2Actor &actor, const Mat &base)
         }
     }
     // 1:29's blend (YS::MOTION::start_blend): a new motion's first frame blended from the pose shown before it began,
-    // that pose's share falling to none over the blend (the Armored Knight's Rising Sun: 8 ticks into AB50, then AB51)
+    // that pose's share what the ticks' blends left of it (each count/length of the way, the count from 2 up to the
+    // blend: MOTION::calc), none at the blend's end (the Armored Knight's Rising Sun: 8 into AB50, then AB51)
     if (held.started != actor.held_started) {
         actor.held_started = held.started;
         actor.held_blend_from = actor.shown;

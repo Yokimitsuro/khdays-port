@@ -159,7 +159,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:80 | turn toward a direction by a step at most (the step x 2.0, `DAT_1405b18ec`; 0 the actor's + 0x134): 1 while it turns, 0 once it faces it (`FUN_1403b9f70`) | as KH2 |
 | 1:5, 1:6, 1:7 | a state table cleared, a state registered, the table and handle given to the state machine (+ 0x390) | as KH2 |
 | 1:8, 1:9, 1:10, 1:127 | enter a state, queue one (15 at most), whether one is queued or running, clear the queue | as KH2 |
-| 1:11, 1:61 | play motion `id` blended over `blend` frames, 1:61 from a frame (`FUN_1403c86a0` on the motion controller at + 0x158) | the motion from the mod's .mset |
+| 1:11, 1:61 | play motion `id` blended over `blend` frames, 1:61 from a frame (`FUN_1403c86a0` on the motion controller at + 0x158): above 2 the motion stands at that frame while the blend runs ("When single-frame triggers play", below) | the motion from the mod's .mset, blended as KH2 |
 | 1:12 | the same, left as it is when it already plays (`FUN_1403c6dc0`): the scripts call it every tick while they walk | as KH2 |
 | 1:14, 1:15 | + 0x18c bit 1, the motion played to its end; + 0x180, the number of the motion playing: the scripts wait on both | as KH2 |
 | 1:67, 1:68 | a motion's length in ticks (the motion controller's virtuals + 8 and + 0x30; -1 the one playing) | as KH2 |
@@ -815,10 +815,16 @@ landing `5`, its damage `10`-`21`, its own from `200`.
 When single-frame triggers play (the PS3 build's `YS::ANMATR::each_trigger` and `exec_trigger`): those whose frame lies
 after the time before and up to the time now; a motion started (`YS::MOTION::start_motion`) plays its first frame's at
 once (`exec_trigger(start, -1)`: with a "to" below 0, the frame equal to "from"), or, started over a blend (above 2
-ticks: `start_blend`), at the blend's end, the motion having stood at its first frame while the blend's ticks went by
-(`add_time`: + 0x30 counts the blend until + 0x34, then from + 0x38). A held player's motion follows this (above).
-**Not done**: an enemy's own motions (`Actor::play`) still move on while they blend, and play from -1 the triggers up
-to their time, whatever frame they start at.
+ticks: `start_blend`), at the blend's end, the motion having stood at its first frame while the blend's ticks went by.
+On the PC (`FUN_1403c8a40`, `start_blend` `FUN_1403c87c0`, `add_time` `FUN_1403c6740`, on the motion controller at
+actor + 0x158): a blend above 2 (`DAT_140623b18`) once a pose has been shown (+ 0x168 bit 0) sets its length (+ 0x48),
+the frame it stands at (+ 0x4c) and its count, from 2 (+ 0x44); each tick `add_time` adds a tick to the count, and once
+the count reaches the length it clears the blend, goes on from the start frame by what the count went past and plays
+that frame's triggers, then those up to the time now. Meanwhile the pose is the one shown the tick before taken count /
+length of the way to the start frame (`MOTION::exec` and `calc`), and the root does not travel. KH2 moves its motions on
+before its objects' scripts run, so a motion a script starts stands at its start frame in that tick (`Actor::begin_tick`).
+An enemy's own motions (`Actor::play`, `Actor::step`, the shell's `cues` and `pose`) and a held player's (above) play
+so; 1:63 is not at its end while a blend runs.
 
 ## Collision
 

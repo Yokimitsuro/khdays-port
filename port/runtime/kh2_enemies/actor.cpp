@@ -384,7 +384,10 @@ Actor *Actor::of_handle(ai::Machine &m, std::uint32_t handle)
     return o != nullptr ? o->actor() : nullptr;
 }
 
-// FUN_1403c86a0: the motion set going from `start`, blended over `blend` from the pose before; the ended bit cleared
+// FUN_1403c86a0 (YS::MOTION::start_motion): the motion set going from `start`; a blend above 2 ticks
+// (DAT_140623b18), once a pose has been shown (+ 0x168 bit 0, the first pose made sets it), blends into its start
+// frame from the pose shown (start_blend, FUN_1403c87c0: the count from 2); else its start frame's triggers play at
+// once (exec_trigger(start, -1)). The ended bit cleared.
 bool Actor::play(int id, float blend, float start, bool restart)
 {
     if (motions == nullptr || !motions->has(id))
@@ -392,11 +395,22 @@ bool Actor::play(int id, float blend, float start, bool restart)
     const bool loops = motions->loop_from(id) < motions->length(id);
     if (!restart && motion.id == id && (loops || !motion.ended))
         return true; // still playing (a loop plays on past its end)
-    motion.from_id = motion.id;
-    motion.from_time = motion.time;
+    constexpr float kBlendFrom = 2.0F; // the least blend there is, and the count's first value
+    const bool shown = motion.id >= 0;
     motion.id = id;
     motion.time = std::clamp(start, 0.0F, motions->length(id));
-    motion.blend = motion.blend_left = motion.from_id >= 0 ? std::max(0.0F, blend) : 0.0F;
+    if (shown && blend > kBlendFrom) {
+        motion.blend = blend;
+        motion.blend_count = kBlendFrom;
+        motion.blend_keep = 1.0F - kBlendFrom / blend; // this tick's pose: count/length toward the start frame
+    } else {
+        motion.blend = motion.blend_count = motion.blend_keep = 0.0F;
+    }
+    motion.fresh = true;
+    motion.cued = motion.time;
+    motion.cue_start = true;
+    motion.looped = false;
+    ++motion.started;
     motion.ended = false;
     set_bits(field::kStatus, bit::kMotionEnded, false);
     set_u32(field::kMotion, std::uint32_t(id));
@@ -413,25 +427,41 @@ Vec3 Actor::step(float ticks)
         const int id = motion.id;
         const float length = motions->length(id), loop = motions->loop_from(id);
         const float t0 = motion.time;
-        float t1 = t0 + ticks;
-        Vec3 model = minus(motions->root(id, std::min(t1, length)), motions->root(id, t0));
-        if (t1 >= length) {
-            if (!motion.ended) {
-                motion.ended = true;
-                set_bits(field::kStatus, bit::kMotionEnded, true);
-            }
-            if (loop < length && length > 0.0F) { // a loop: on from its loop point
-                const float over = std::fmod(t1 - length, length - loop);
-                const Vec3 more = minus(motions->root(id, loop + over), motions->root(id, loop));
-                for (int i = 0; i < 3; ++i)
-                    model[i] += more[i];
-                t1 = loop + over;
+        Vec3 model{}; // no travel while it stands or blends (get_trans_direct gives none during a blend)
+        if (motion.fresh) {
+            // started this tick: at its start frame till the next
+        } else if (motion.blend > 0.0F) {
+            motion.blend_count += ticks;
+            if (motion.blend_count < motion.blend) {
+                motion.blend_keep *= 1.0F - motion.blend_count / motion.blend;
             } else {
-                t1 = length;
+                // the blend over: on from its start by what the count went past its length (add_time: no end looked
+                // at that tick)
+                motion.time = std::min(t0 + motion.blend_count - motion.blend, length);
+                motion.blend = motion.blend_count = motion.blend_keep = 0.0F;
+                model = minus(motions->root(id, motion.time), motions->root(id, t0));
             }
+        } else {
+            float t1 = t0 + ticks;
+            model = minus(motions->root(id, std::min(t1, length)), motions->root(id, t0));
+            if (t1 >= length) {
+                if (!motion.ended) {
+                    motion.ended = true;
+                    set_bits(field::kStatus, bit::kMotionEnded, true);
+                }
+                if (loop < length && length > 0.0F) { // a loop: on from its loop point
+                    const float over = std::fmod(t1 - length, length - loop);
+                    const Vec3 more = minus(motions->root(id, loop + over), motions->root(id, loop));
+                    for (int i = 0; i < 3; ++i)
+                        model[i] += more[i];
+                    t1 = loop + over;
+                    motion.looped = true;
+                } else {
+                    t1 = length;
+                }
+            }
+            motion.time = t1;
         }
-        motion.time = t1;
-        motion.blend_left = std::max(0.0F, motion.blend_left - ticks);
         const Vec3 along = turned({model[0], 0.0F, model[2]}, yaw());
         travel = {along[0], -model[1], along[2]};
         if (jump.on && motion.after >= 0 && jump.up >= 0.0F && motion.id != motion.after) {

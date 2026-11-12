@@ -1059,7 +1059,7 @@ void add_motions(ai::Calls &calls)
     calls.set(1, 63, [](ai::Machine &m, std::span<ai::Value> a) {
         const Actor *x = self_of(m, a[0]);
         const bool at_end = x->motions != nullptr && x->motion.id >= 0 && x->motions->has(x->motion.id) &&
-                            x->motion.blend_left <= 0.0F && x->motion.time >= x->motions->length(x->motion.id);
+                            x->motion.blend <= 0.0F && x->motion.time >= x->motions->length(x->motion.id);
         a[0] = ai::Value::of_int(at_end ? 1 : 0);
     });
     // 1:19, 1:20 a fade to gone / to seen over a time, unless held (FUN_1403b7810 on + 0xa08: a time of 2 or less is

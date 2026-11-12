@@ -206,14 +206,30 @@ public:
     virtual Vec3 root(int id, float ticks) const = 0; // the root's travel from the motion's start (model space, cm)
 };
 
-// The motion an actor plays (its motion controller, actor + 0x158; FUN_1403c86a0 plays one): its number, its time,
-// the blend from the motion before (KH2's frames as the script gives them, read as ticks).
+// The motion an actor plays (its motion controller, actor + 0x158, the PS3 build's YS::MOTION; FUN_1403c86a0 plays
+// one): its number and its time (KH2's frames as the script gives them, read as ticks).
+//
+// A motion started over a blend above 2 ticks, with a pose shown before (start_motion -> start_blend, FUN_1403c87c0)
+// stands at its start frame while the blend runs: the controller's time (+ 0x44, YS::MOTION::Time) counts the blend
+// from 2, a tick a tick (add_time), up to its length (+ 0x48, BlendTime); each tick's pose is the one shown the tick
+// before taken count/length of the way to the motion's start frame (MOTION::exec keeps the pose shown and the start
+// frame's, Context1 and Context2; MOTION::calc blends them by Time / BlendTime). At the blend's end the motion goes on
+// from its start (+ 0x4c, BlendStart) by what the count went past the length, and plays its start frame's triggers.
 struct Playing final {
     int id = -1;
     float time = 0.0F;
-    float blend = 0.0F, blend_left = 0.0F; // the blend's length and what is left of it
-    int from_id = -1;                      // the motion blended from, at its time then
-    float from_time = 0.0F;
+    // the blend: its length (0 none, or over), its count (from 2), how much of the pose shown at the motion's start is
+    // left in the pose now (the ticks' blends one after another: each count/length toward a start frame that stands)
+    float blend = 0.0F, blend_count = 0.0F, blend_keep = 0.0F;
+    // KH2 moves its motions on (add_time) before its objects' scripts run, so one started in a tick stands at its
+    // start frame that tick: the port's script runs first, and step leaves a motion started this tick where it is
+    bool fresh = false;
+    // its triggers played up to `cued` (KH2's window: those after it, up to the time now); `cue_start` the start
+    // frame's own still to play (exec_trigger(start, -1): the frame equal to the start); `looped` this tick's step
+    // went round its loop (those up to its end, then those after its loop point: add_time's two calls)
+    float cued = 0.0F;
+    bool cue_start = false, looped = false;
+    unsigned started = 0; // a new number each motion started: the pose shown then is the blend's from
     bool ended = false;
     int after = -1, landing = 5; // + 0x118 / + 0x11c: a jump's next motions (1:55's flag), -1 none
 };
@@ -500,9 +516,11 @@ public:
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set
     // has it (none: the call does nothing, as KH2's controller does for an empty slot).
     bool play(int id, float blend, float start, bool restart = true);
-    // The motion and the jump moved on by `ticks`: the ended bit set at a motion's end, a loop taken; the travel this
-    // made in KH2's world (the root's travel turned by the yaw, the script's move, the jump) given back. The shell
-    // puts it into Days's place and gives the place back (set_place).
+    // A tick begins (before its script runs): a motion started in the tick before moves on in this one's step.
+    void begin_tick() { motion.fresh = false; }
+    // The motion and the jump moved on by `ticks`: the ended bit set at a motion's end, a loop taken, a blend counted;
+    // the travel this made in KH2's world (the root's travel turned by the yaw, the script's move, the jump) given
+    // back. The shell puts it into Days's place and gives the place back (set_place).
     Vec3 step(float ticks);
     // The shell found it on the ground while it jumps: the jump over, its landing motion (+ 0x11c) played.
     void land();

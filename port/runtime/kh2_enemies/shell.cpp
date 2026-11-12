@@ -513,8 +513,11 @@ struct Enemy final {
     KindFiles *kind = nullptr;
     std::unique_ptr<SetMotions> motions;
     std::unique_ptr<Actor> actor;
-    std::unique_ptr<kh2::MotionPlayer> player, from_player;
+    std::unique_ptr<kh2::MotionPlayer> player;
     std::vector<kh2::Mat4> pose; // this frame's, its bones' model-space matrices (KH2's cm)
+    // the pose shown when its motion started (a.motion.started then): a blend goes from it (MOTION::exec's Context1)
+    std::vector<kh2::Mat4> blend_from;
+    unsigned posed_started = 0;
     bool reacting = false;       // a Days hit's reaction playing (held: + 0x18c bit 9)
     bool paused = false;         // its script waits while it plays (a kind with no reaction state of its own)
     bool dying = false, released = false;
@@ -562,8 +565,6 @@ struct Enemy final {
     float pan = 0.0F; // where it was last drawn, left (-1) to right (1) of the camera: its sounds' pan
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
-    int cue_motion = -1; // the motion its triggers were last looked at in, and its time then
-    float cue_time = 0.0F;
     // where it was last drawn (Days's place) and the projection then, for its end once its Days enemy is gone
     float place[3] = {};
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
@@ -677,9 +678,11 @@ struct Held final {
     Vec3 move{};                  // a script's move of him this tick (1:89), KH2's cm
     Vec3 steer{};                 // a script's steering of him, each tick till another (1:111), KH2's cm
     bool own_queued = false;      // his own motion asked for (1:13): taken once this one ends or blends to idle
-    // the blend 1:29 asked for (its fourth value: YS::MOTION::start_motion's blend, above 2 a blend): its ticks and
-    // those left, the motion held at its first frame meanwhile, its frame's triggers at the blend's end (add_time)
-    float blend = 0.0F, blend_left = 0.0F;
+    // the blend 1:29 asked for (its fourth value: YS::MOTION::start_motion's blend, above 2 a blend), counted as an
+    // enemy's motion's is (Playing, actor.h): its length (0 none or over), its count from 2, the pose before's share
+    // left; `fresh` the motion started this tick (it stands at its first frame till the next)
+    float blend = 0.0F, blend_count = 0.0F, blend_keep = 0.0F;
+    bool fresh = false;
     unsigned started = 0;      // which motion this is (a new one each 1:29): his model blends from the pose before
     std::uint32_t trail = 0;   // his weapon's swing's trail running (its handle), 0 none
 };
@@ -1331,7 +1334,6 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
     e->motions = std::make_unique<SetMotions>(k.set);
     e->actor = std::make_unique<Actor>(k.script, mod().memory, mod().calls, k.name);
     e->player = std::make_unique<kh2::MotionPlayer>(*k.skeleton);
-    e->from_player = std::make_unique<kh2::MotionPlayer>(*k.skeleton);
     e->slot = khdays_kh2_shell_attack_slot(days);
     Actor &a = *e->actor;
     a.world = &the_field();
@@ -1381,7 +1383,6 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
     return raw;
 }
 
-// The pose now: the motion at its time, blended from the one before over its blend
 void row_matrix_mul(const float a[16], const float b[16], float out[16]);
 void inverse_affine(const float m[16], float out[16]);
 
@@ -1404,23 +1405,27 @@ std::vector<kh2::Mat4> pose_at(kh2::MotionPlayer &player, const kh2::Motion &mot
     return out;
 }
 
+// The pose now, once a tick (MOTION::calc): the motion at its time; while a blend runs (the motion standing at its
+// start frame), the pose shown when it started taken each tick's blend toward that frame -- blend_keep of it left
 void pose(Enemy &e)
 {
     const Actor &a = *e.actor;
+    if (a.motion.started != e.posed_started) {
+        e.posed_started = a.motion.started;
+        e.blend_from = e.pose; // the pose shown the tick before (Context1)
+    }
     const kh2::Motion *now = a.motion.id >= 0 ? e.kind->set->motion(std::size_t(a.motion.id)) : nullptr;
     if (now == nullptr) {
         e.pose.clear();
         return;
     }
     e.pose = pose_at(*e.player, *now, a.motion.time);
-    const kh2::Motion *from = a.motion.from_id >= 0 ? e.kind->set->motion(std::size_t(a.motion.from_id)) : nullptr;
-    if (from == nullptr || a.motion.blend <= 0.0F || a.motion.blend_left <= 0.0F)
+    if (a.motion.blend <= 0.0F || e.blend_from.size() != e.pose.size())
         return;
-    const auto old = pose_at(*e.from_player, *from, a.motion.from_time);
-    const float w = a.motion.blend_left / a.motion.blend; // the old pose's share
-    for (std::size_t j = 0; j < e.pose.size() && j < old.size(); ++j)
+    const float w = a.motion.blend_keep; // the pose before's share
+    for (std::size_t j = 0; j < e.pose.size(); ++j)
         for (std::size_t c = 0; c < 16; ++c)
-            e.pose[j][c] = e.pose[j][c] * (1.0F - w) + old[j][c] * w;
+            e.pose[j][c] = e.pose[j][c] * (1.0F - w) + e.blend_from[j][c] * w;
 }
 
 // A point on a bone of the pose (KH2's model space, cm, y up) in Days's world. A shape on no bone is in the actor's
@@ -1809,9 +1814,9 @@ void let_go(unsigned object, const char *why)
 
 // 1:29 (YS::trap_obj_motion_capture -> YS::MOTION::capture -> _capture): the motion of the enemy's set for the player,
 // always from its first frame, `blend` its blend (YS::MOTION::start_motion(binarc, blend, 0); the PS3 build's): above
-// 2 the motion waits that many ticks while his pose blends into its first frame (start_blend; add_time then plays its
-// first frame's triggers, exec_trigger(start, -1)), else it starts at once with them (Rising Sun's 8: its AB50's twelve
-// lights on his limbs at frame 8 were never reached when 8 was read as the frame to start from)
+// 2 the motion stands while the blend counts from 2 up to it and his pose blends into its first frame (start_blend;
+// add_time then plays its first frame's triggers, exec_trigger(start, -1)), else it starts with them (Rising Sun's 8:
+// its AB50's twelve lights on his limbs at frame 8 were never reached when 8 was read as the frame to start from)
 bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
 {
     const unsigned object = days_object(o);
@@ -1828,9 +1833,9 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
             khdays_log("kh2 enemies: %08x's slot %d has no motion for a player", it->second->days, slot);
         return false;
     }
-    const bool fresh = held.count(object) == 0;
+    const bool taken_now = held.count(object) == 0;
     Held &h = held[object];
-    if (fresh) {
+    if (taken_now) {
         h.place = o.place();
         h.yaw = o.yaw();
         if (const auto w = waiting_threads.find(object); w != waiting_threads.end()) {
@@ -1851,7 +1856,10 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
     static unsigned motions_started = 0;
     h.started = ++motions_started;
     h.time = 0.0F;
-    h.blend = h.blend_left = blend > 2.0F ? blend : 0.0F;
+    h.blend = blend > 2.0F ? blend : 0.0F;
+    h.blend_count = h.blend > 0.0F ? 2.0F : 0.0F;
+    h.blend_keep = h.blend > 0.0F ? 1.0F - 2.0F / h.blend : 0.0F;
+    h.fresh = true;
     h.ended = false;
     h.offered = -1;
     h.taken.clear();
@@ -1863,7 +1871,8 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
     o.set_bits(field::kStatus, bit::kOtherMotion, true);
     if (tracing())
         khdays_log("kh2 enemies: %08x %s player %08x: %s's motion %d (%s, %s), blend %.1f, %.1f long", h.enemy,
-                   fresh ? "takes" : "keeps", object, it->second->kind->name.c_str(), slot, set.name(std::size_t(slot)).c_str(),
+                   taken_now ? "takes" : "keeps", object, it->second->kind->name.c_str(), slot,
+                   set.name(std::size_t(slot)).c_str(),
                    body->name.c_str(), double(blend), double(body->motion->length_ticks()));
     return true;
 }
@@ -2070,17 +2079,27 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
     const float length = m.length_ticks();
     const bool loops = m.loop_from() < m.end() && m.loop_ticks() < length;
     const Vec3 was = h.place; // where this tick's moves start: the room's walls stop them (below)
-    // 1:29's blend (YS::MOTION::add_time while + 0x34 is set): the blend's ticks go by with the motion at its first
-    // frame, no travel and no triggers; at its last tick that frame's triggers (exec_trigger(start, -1)), the motion on
-    // from the next
+    // 1:29's motion as YS::MOTION plays it (Playing, actor.h): at its first frame the tick it started; over a blend,
+    // the count on a tick a tick (add_time while + 0x34 is set) with the motion standing, no travel and no triggers,
+    // then on from its first frame by what the count went past, that frame's triggers played (exec_trigger(start, -1))
     bool still = false;
-    if (h.blend_left > 0.0F) {
-        h.blend_left = std::max(0.0F, h.blend_left - 1.0F);
+    float by = 1.0F;
+    if (h.fresh) {
+        h.fresh = false;
         still = true;
+    } else if (h.blend > 0.0F) {
+        h.blend_count += 1.0F;
+        if (h.blend_count < h.blend) {
+            h.blend_keep *= 1.0F - h.blend_count / h.blend;
+            still = true;
+        } else {
+            by = h.blend_count - h.blend;
+            h.blend = h.blend_count = h.blend_keep = 0.0F;
+        }
     }
-    const bool blending = h.blend_left > 0.0F;
+    const bool blending = h.blend > 0.0F;
     const float t0 = h.time;
-    float t1 = t0 + 1.0F;
+    float t1 = t0 + by;
     const auto root = [&m](float at) {
         const kh2::Mat4 r = m.root_motion(at);
         return Vec3{r[12], r[13], r[14]};
@@ -2641,18 +2660,28 @@ void attack_objects(Enemy &e)
     }
 }
 
-// The current motion's single-frame triggers its time passed this tick (KH2's ANB triggers): 1 an effect, 8 a sound,
-// 9 to 12 bits 0 to 3 of + 0x2ad for this tick (FUN_14040dd70; its scripts read them the tick after: 1:151)
-void cues(Enemy &e)
+// The current motion's single-frame triggers its time passed (KH2's ANB triggers, YS::ANMATR::exec_trigger from
+// add_time and start_motion): those after the time they were played up to, to the time now -- the start frame's own
+// too when it began (exec_trigger(start, -1)), none while a blend runs, round a loop those up to its end and then
+// those after its loop point. 1 an effect, 8 a sound, 9 to 12 bits 0 to 3 of + 0x2ad for this tick (FUN_14040dd70; its
+// scripts read them the tick after: 1:151). `again`: a motion started after this tick's (its start frame's, as KH2
+// plays them when it starts), its bits added to the tick's.
+void cues(Enemy &e, bool again = false)
 {
     Actor &a = *e.actor;
-    const float from = a.motion.id == e.cue_motion && a.motion.time >= e.cue_time ? e.cue_time : -1.0F;
-    e.cue_motion = a.motion.id;
-    e.cue_time = a.motion.time;
-    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
+    // (a trigger's script event may start another motion: the windows are this one's, as they stood)
+    const khdays::kh2_enemies::Playing m = a.motion;
+    const kh2::MotionAttributes *attr =
+        m.id >= 0 && m.blend <= 0.0F ? e.kind->set->attributes(std::size_t(m.id)) : nullptr;
+    const float length = m.id >= 0 && a.motions != nullptr ? a.motions->length(m.id) : 0.0F;
+    const float loop = m.id >= 0 && a.motions != nullptr ? a.motions->loop_from(m.id) : 0.0F;
+    const auto in = [&](float f) {
+        const bool after = m.cue_start ? f >= m.cued : f > m.cued;
+        return m.looped ? (after && f <= length) || (f > loop && f <= m.time) : after && f <= m.time;
+    };
     std::uint32_t passed = 0;
     for (const auto &t : attr != nullptr ? attr->triggers : std::vector<kh2::MotionAttributes::Trigger>{}) {
-        if (float(t.frame) <= from || float(t.frame) > a.motion.time)
+        if (!in(float(t.frame)))
             continue;
         if (t.id == 0 && a.take_off) { // the take-off: the jump asked begins (FUN_14040dd70's event 0, + 0x648)
             a.jump = *a.take_off;
@@ -2681,7 +2710,12 @@ void cues(Enemy &e)
         else if (const int id = trigger_sound(t); id > 0)
             sound(e, id);
     }
-    a.set_u32(field::kMotionMarks, (a.u32(field::kMotionMarks) & ~0xff00u) | (passed << 8));
+    if (m.blend <= 0.0F && a.motion.started == m.started) {
+        a.motion.cued = m.time;
+        a.motion.cue_start = a.motion.looped = false;
+    }
+    const std::uint32_t marks = a.u32(field::kMotionMarks);
+    a.set_u32(field::kMotionMarks, again ? marks | (passed << 8) : (marks & ~0xff00u) | (passed << 8));
 }
 
 // Where each of a script's threads stands (its next code word), its children after it
@@ -2745,6 +2779,7 @@ void motion_states(Enemy &e)
 void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
 {
     Actor &a = *e.actor;
+    a.begin_tick();
     if (trace_level() >= 2 && ++e.ticks_traced % 60 == 0 && a.machine().main_thread() != nullptr) {
         std::string at;
         threads_of(*a.machine().main_thread(), at);
@@ -2758,11 +2793,19 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         e.sent_state.clear();
     }
     a.set_place(place); // Days's, its collision's push taken
+    const unsigned started = a.motion.started;
     if (!e.paused)
         a.tick();
     if (const Vec3 now = a.place(); now != place)
         place = now; // its script put it elsewhere (1:148, 1:153, 1:220)
+    if (trace_level() >= 2 && a.motion.started != started && a.motion.blend > 0.0F)
+        khdays_log("kh2 enemies: %08x tick %u: motion %d over a blend of %.1f, standing at %.1f", e.days,
+                   e.ticks_traced, a.motion.id, double(a.motion.blend), double(a.motion.time));
+    const bool blending = a.motion.blend > 0.0F;
     Vec3 travel = a.step(1.0F);
+    if (trace_level() >= 2 && blending && a.motion.blend <= 0.0F)
+        khdays_log("kh2 enemies: %08x tick %u: motion %d blended in, on from %.1f", e.days, e.ticks_traced,
+                   a.motion.id, double(a.motion.time));
     cues(e);
     event_tick(e);
     motion_states(e);
@@ -2827,6 +2870,7 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
             a.play(0, 8.0F, 0.0F); // its script picks its motion again otherwise
         e.paused = false;
     }
+    cues(e, true); // a motion started since (its landing): its start frame's triggers, as it starts
     if (e.dying && !e.released) {
         ++e.end_ticks;
         const bool faded = (a.u32(field::kFade) & bit::kFadeHeld) != 0 && a.fade <= 0.0F;
@@ -3333,6 +3377,7 @@ void ghosts_close()
         e.ghost_frame = now;
         for (unsigned t = 0; t < ticks && !e.released; ++t) {
             Actor &a = *e.actor;
+            a.begin_tick();
             a.tick();
             Vec3 at = to_kh2(e.place);
             const Vec3 travel = a.step(1.0F);
@@ -4190,7 +4235,7 @@ bool khdays::kh2_enemies::held_motion(unsigned node, HeldMotion &out)
     out.weapon = h->second.weapon != nullptr ? h->second.weapon->motion.get() : nullptr;
     out.ticks = h->second.time;
     out.started = h->second.started;
-    out.share = h->second.blend > 0.0F ? 1.0F - h->second.blend_left / h->second.blend : 1.0F;
+    out.share = h->second.blend > 0.0F ? 1.0F - h->second.blend_keep : 1.0F;
     out.skeleton = player_skeleton();
     return out.skeleton != nullptr;
 }

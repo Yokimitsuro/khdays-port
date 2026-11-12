@@ -390,6 +390,20 @@ std::uint32_t vec(ai::Memory &m, float x, float y, float z, float w = 0.0F)
     return at;
 }
 
+// `n` of KH2's ticks of an actor's motion, its script left out: each begins (a motion started in the one before moves
+// on from this one: Actor::begin_tick), then steps; the travel they made
+kh::Vec3 ticks(kh::Actor &actor, int n)
+{
+    kh::Vec3 sum{};
+    for (int k = 0; k < n; ++k) {
+        actor.begin_tick();
+        const kh::Vec3 t = actor.step(1.0F);
+        for (std::size_t c = 0; c < 3; ++c)
+            sum[c] += t[c];
+    }
+    return sum;
+}
+
 void test_motions_and_moving()
 {
     Rig rig;
@@ -403,12 +417,13 @@ void test_motions_and_moving()
     const auto i = ai::Value::of_int;
     const auto adr = ai::Value::of_address;
 
-    // APPEAR (44) to its end: the ended bit only then (1:14)
+    // APPEAR (44) to its end: the ended bit only then (1:14); started in a tick, it stands at its start frame in that one
     call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
-    for (int t = 0; t < 29; ++t)
-        actor.step(1.0F);
-    CHECK(call(rig, actor, 1, 14, {self}).i() == 0);
     actor.step(1.0F);
+    CHECK(actor.motion.time == 0.0F);
+    ticks(actor, 29);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 0);
+    ticks(actor, 1);
     CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
     CHECK(actor.motion.time == 30.0F);
     CHECK(call(rig, actor, 1, 15, {self}).i() == 44); // the motion playing's number, which the scripts wait on
@@ -420,12 +435,33 @@ void test_motions_and_moving()
     call(rig, actor, 1, 61, {self, i(0), f(10.0F), f(0.0F)});
     CHECK(actor.motion.time == 10.0F && call(rig, actor, 1, 14, {self}).i() == 0);
     call(rig, actor, 1, 79, {self, adr(vec(rig.memory, 1.0F, 0.0F, 0.0F))});
+    actor.begin_tick();
     kh::Vec3 t = actor.step(10.0F);
     CHECK(std::fabs(t[0] - 10.0F) < 1e-3F && std::fabs(t[2]) < 1e-3F);
     t = actor.step(55.0F); // 20 -> 75: 40 to its end, then 15 from its loop point
     CHECK(std::fabs(t[0] - 55.0F) < 1e-3F && std::fabs(actor.motion.time - 15.0F) < 1e-3F);
     call(rig, actor, 1, 12, {self, i(0), f(0.0F)}); // already playing: left as it is
     CHECK(std::fabs(actor.motion.time - 15.0F) < 1e-3F);
+
+    // over a blend of 5 (above 2, a pose shown before: YS::MOTION::start_blend) from frame 20: the motion stands there,
+    // no travel, while the count runs from 2 a tick to 5, the pose before's share each tick's blend of what was left
+    // (count / 5 of the way: 1 - 2/5, then x (1 - 3/5), x (1 - 4/5)); at 5 the blend is over and the motion goes on
+    // from frame 20 by what the count went past (none); 1:63 never at an end meanwhile
+    call(rig, actor, 1, 61, {self, i(0), f(20.0F), f(5.0F)});
+    CHECK(actor.motion.blend == 5.0F && std::fabs(actor.motion.blend_keep - 0.6F) < 1e-5F);
+    t = ticks(actor, 2);
+    CHECK(t[0] == 0.0F && t[2] == 0.0F && actor.motion.time == 20.0F);
+    CHECK(std::fabs(actor.motion.blend_keep - 0.6F * 0.4F * 0.2F) < 1e-5F);
+    CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
+    t = ticks(actor, 1);
+    CHECK(actor.motion.blend == 0.0F && actor.motion.time == 20.0F && t[0] == 0.0F);
+    t = ticks(actor, 1);
+    CHECK(actor.motion.time == 21.0F && std::fabs(t[0] - 1.0F) < 1e-3F);
+    // a blend of 2 or less: none, the motion from its start at once
+    call(rig, actor, 1, 61, {self, i(0), f(10.0F), f(2.0F)});
+    CHECK(actor.motion.blend == 0.0F);
+    ticks(actor, 1);
+    CHECK(actor.motion.time == 11.0F);
 
     // 1:80 toward yaw 0 by 2 x 0.25 a call: three steps, then there
     const std::uint32_t ahead = vec(rig.memory, 0.0F, 0.0F, 1.0F);
@@ -595,8 +631,7 @@ void test_more_enemies_calls()
     // 1:63: a motion of 30 ticks (APPEAR, played once) at its end, no blend left
     call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
     CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
-    for (int k = 0; k < 40; ++k)
-        actor.step(1.0F);
+    ticks(actor, 40);
     CHECK(call(rig, actor, 1, 63, {self}).i() == 1);
     // 1:150 / 1:151: bit n - 1 of the bytes + 0x2ac / + 0x2ad
     CHECK(call(rig, actor, 1, 150, {self, i(1)}).i() == 0);
