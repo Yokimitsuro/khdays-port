@@ -659,6 +659,12 @@ void test_map() {
         const auto first = kh2::read_textures(several.data(), several.size(), 0);
         expect(first.textures.size() == 2 && first.textures[0].width == 256 && first.scrolls.size() == 1,
                "several containers: the first");
+        // each of them listed (Hades's two sets: the HD pictures of his PAX come after both sets'), one alone itself
+        expect(kh2::texture_containers(several.data(), several.size(), 0) ==
+                   std::vector<std::size_t>{16U, 16U + one.size()},
+               "several containers: each one's place");
+        expect(kh2::texture_containers(one.data(), one.size(), 0) == std::vector<std::size_t>{0U},
+               "one container: its own place");
     }
 
     const auto background = kh2::read_model(file.data(), file.size(), e[0].offset);

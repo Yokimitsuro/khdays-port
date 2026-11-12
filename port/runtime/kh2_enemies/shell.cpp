@@ -10,6 +10,7 @@
 #include "khdays/assets/kh2_ai.h"
 #include "khdays/assets/kh2_bar.h"
 #include "khdays/assets/kh2_event.h"
+#include "khdays/assets/kh2_mdlx.h"
 #include "khdays/assets/kh2_motion.h"
 
 #include <algorithm>
@@ -203,6 +204,9 @@ struct KindFiles final {
     // its event sequences (its .a.us's entries of type 0x16: a reaction command's cameras), by their names' up to four
     // letters as FUN_1403db2f0 packs them (the first in the low byte)
     std::map<std::uint32_t, std::shared_ptr<const kh2::Event>> events;
+    // its model's own effects (the .mdlx's PAX, BAR entry 0x12: Hades's hair's flame), which KH2 starts as the model is
+    // made (model_effects); none without
+    std::unique_ptr<KindFiles> model_fx;
 };
 
 // A PAX's elements (docs/FORMATS.md, "KH2's effects"): its 0x82 directory's 32-byte entries, each the offset of its
@@ -360,6 +364,39 @@ void read_effects(KindFiles &k, const fs::path &folder)
     }
 }
 
+// Its model's own effects (the .mdlx's PAX: BAR entry 0x12, Hades's "hade", his hair's flame) read as its .a.us's,
+// their HD pictures in the model's own folder after its textures' (a model file's pictures run through its entries
+// in BAR order: its texture container's, then its PAX's)
+void read_model_effects(KindFiles &k, const fs::path &folder)
+{
+    const std::vector<std::uint8_t> mdlx = read_file(folder / "kh2" / "obj" / (k.name + ".mdlx"));
+    const std::vector<std::uint8_t> pax = bar_entry(mdlx, 0x12);
+    if (pax.empty())
+        return;
+    auto own = std::make_unique<KindFiles>();
+    own->name = k.name;
+    try {
+        int first = kh2::mdlx_texture_pictures(mdlx.data(), mdlx.size());
+        for (auto &b : kh2::read_effect(pax.data(), pax.size()))
+            own->fx.push_back(std::make_shared<const kh2::EffectBlock>(std::move(b)));
+        own->fx_elements = pax_elements(pax);
+        own->common = k.common;
+        for (std::size_t b = 0; b < own->fx.size(); ++b) {
+            auto pages =
+                std::make_unique<khdays::kh2_fx::Pages>("kh2/obj/" + k.name + ".mdlx#" + std::to_string(b));
+            first += pages->add({own->fx[b].get()}, "kh2/obj/" + k.name, first);
+            pages->add({&own->common}, "kh2/fx/texcommon");
+            pages->tracing = tracing();
+            own->fx_pages.push_back(std::move(pages));
+        }
+        khdays_log("kh2 enemies: %s's model's own effects read (%zu effects, %zu elements)", k.name.c_str(),
+                   own->fx.size(), own->fx_elements.size());
+        k.model_fx = std::move(own);
+    } catch (const std::exception &e) {
+        khdays_log("kh2 enemies: %s's model's own effects cannot be played (%s)", k.name.c_str(), e.what());
+    }
+}
+
 // Its event sequences: every entry of type 0x16 in its .a.us, keyed by its name (docs/KH2_ENEMIES.md, "Event
 // sequences")
 void read_events(KindFiles &k, const fs::path &folder)
@@ -503,6 +540,7 @@ KindFiles *files_of(const std::string &name)
             k->shapes = read_shapes(mdlx, &k->default_groups);
             k->plays_player = kind->plays_player;
             read_effects(*k, u8(m.folder));
+            read_model_effects(*k, u8(m.folder));
             read_events(*k, u8(m.folder));
             read_sounds(*k, u8(m.folder));
             khdays_log("kh2 enemies: %s read (%zu motions' slots, %zu bones, %zu shapes)", name.c_str(),
@@ -1389,6 +1427,36 @@ float drawn_fade(const Enemy &e)
     return e.actor->stealth != 0 ? fade * 0.25F : fade;
 }
 
+// How many of its PAX's elements, from the first, KH2 starts on an object's model as it is made
+// (YS::OBJDATA::start_model_effect, the PC's FUN_1403e6470, each as 1:87 starts one: FUN_1402c6b30): by its object
+// entry's + 0x4c (`record`, the copy at its actor's + 8) -- 0x3f8 and 0x138a element 0 (Hades's hair's flame, at the
+// top of his head's bone 103), 0x1395 0 to 2, 0x13a2 0 to 8 (Scar's ghosts), 0x13ca 0 to 13 -- else by its number (+ 0): 0x888,
+// 0x88a to 0x88c and 0x97c element 0, 0x889 0 to 3; none for any other
+int model_effects(std::uint32_t record)
+{
+    if (record == 0)
+        return 0;
+    std::uint16_t key = 0;
+    mod().memory.read(record + 0x4c, &key, 2);
+    switch (key) {
+    case 0x3f8:
+    case 0x138a:
+        return 1;
+    case 0x1395:
+        return 3;
+    case 0x13a2:
+        return 9;
+    case 0x13ca:
+        return 14;
+    default:
+        break;
+    }
+    const std::uint32_t number = mod().memory.u32(record);
+    if (number == 0x888 || (number >= 0x88a && number <= 0x88c) || number == 0x97c)
+        return 1;
+    return number == 0x889 ? 4 : 0;
+}
+
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
 {
     auto e = std::make_unique<Enemy>();
@@ -1441,8 +1509,14 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
                        double(body), double(was_radius), double(was_centre));
     }
     a.start();
+    // the effects its model starts as it is made (YS::OBJDATA::start_model_effect, FUN_1403e6470): Hades's hair's
+    // flame, Scar's ghosts' own
+    const int own = k.model_fx ? model_effects(a.u32(field::kEntry)) : 0;
+    for (int n = 0; n < own; ++n)
+        cast(*raw, n, 0, false, k.model_fx.get());
     if (tracing())
-        khdays_log("kh2 enemies: %08x set going as %s, attack slot %d", days, k.name.c_str(), raw->slot);
+        khdays_log("kh2 enemies: %08x set going as %s, attack slot %d, %d effects of its model", days, k.name.c_str(),
+                   raw->slot, own);
     return raw;
 }
 
@@ -3166,12 +3240,14 @@ kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Elemen
     for (int k = 0; k < 3; ++k)
         m[std::size_t(12 + k)] += el.place[std::size_t(k)];
     if (el.bone >= 0 && el.bone < kNoBone && std::size_t(el.bone) < pose.size()) {
+        // the bone's own axes as they are, the space's y down: KH2 (FUN_1401a7af0) turns only the bone matrix's
+        // columns -- its y and z by -1 into its world; here its y, the effects' space being the model's with y turned
+        // (effect_camera) --, never the bone's frame, in which the element's place and turn are made. Turning the
+        // frame too put Hades's flame's layers (8 to 12 along the bone's -y: back over his swept hair) at his forehead
         std::array<float, 16> bone;
         std::copy(pose[std::size_t(el.bone)].begin(), pose[std::size_t(el.bone)].end(), bone.begin());
-        static constexpr float flip[3] = {1.0F, -1.0F, 1.0F}; // y down <-> y up
         for (int r = 0; r < 4; ++r)
-            for (int c = 0; c < 3; ++c)
-                bone[std::size_t(r * 4 + c)] *= (r < 3 ? flip[r] : 1.0F) * flip[c];
+            bone[std::size_t(r * 4 + 1)] = -bone[std::size_t(r * 4 + 1)];
         std::array<float, 16> t;
         row_matrix_mul(m.data(), bone.data(), t.data());
         m = t;

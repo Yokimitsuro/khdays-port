@@ -971,6 +971,8 @@ int khdays_sound_bridge_start(void)
             wav_pc = output_pc;
             wav_rate = output_rate;
             wav_header();
+            /* the game's frame it begins at (the line's own): its time is the game's from here, held with it */
+            khdays_log("sound: the output recorded to %s from here, %u Hz", path, (unsigned)wav_rate);
         }
     }
     if (!driver->start(&hw, &host, now)) {

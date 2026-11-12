@@ -5102,9 +5102,15 @@ struct EffectInstance::State {
                 bill[4] = -s * sh;
                 bill[5] = cs * sh;
                 auto pos = transformed({p.pos[0], p.pos[1], p.pos[2], 1}, to_view);
-                if (k.b(0xe)) // a view-space offset (toward the camera)
-                    for (int j = 0; j < 3; ++j)
-                        pos[std::size_t(j)] += k.f32(0x10 + 4 * std::size_t(j));
+                // a view-space offset: its z toward the camera. KH2's PC build, in the rooms that take it as a depth
+                // bias (FUN_1404bbdb0's mode 1), raises the GS depth by it -- larger is nearer --, so a positive z
+                // comes nearer: Hades's hair's 30 keeps his flame's sprites in front of his hair's mesh. Here the
+                // view's z runs away from the camera.
+                if (k.b(0xe)) {
+                    pos[0] += k.f32(0x10);
+                    pos[1] += k.f32(0x14);
+                    pos[2] -= k.f32(0x18);
+                }
                 for (int j = 0; j < 4; ++j)
                     bill[std::size_t(12 + j)] = pos[std::size_t(j)];
                 std::array<float, 4> tint{};

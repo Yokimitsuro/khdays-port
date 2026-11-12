@@ -513,6 +513,19 @@ std::size_t first_container(const Bytes& b, const std::size_t at) {
 }
 }  // namespace
 
+std::vector<std::size_t> texture_containers(const std::uint8_t* data, const std::size_t size, const std::size_t entry) {
+    const Bytes b(data, size);
+    if (b.u32(entry) != 0xFFFFFFFFU) {
+        return {entry};
+    }
+    std::vector<std::size_t> out;
+    const std::uint32_t count = b.u32(entry + 4);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        out.push_back(entry + b.u32(entry + 8 + 4 * static_cast<std::size_t>(i)));
+    }
+    return out;
+}
+
 TextureContainer read_textures(const std::uint8_t* data, const std::size_t size, const std::size_t entry) {
     const Bytes b(data, size);
     const std::size_t at = first_container(b, entry);

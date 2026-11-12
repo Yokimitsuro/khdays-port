@@ -106,6 +106,11 @@ struct TextureContainer final {
 
 TextureContainer read_textures(const std::uint8_t* data, std::size_t size, std::size_t at);
 
+// Where each container of the texture entry at `entry` starts: the entry itself, or, for one that holds several
+// (u32 0xFFFFFFFF, u32 their count, then each one's offset from the entry: Hades's B_HE030_CLSM, the Thresholder's
+// B_BB100), each of them in order. Throws std::runtime_error when the list runs past the file.
+std::vector<std::size_t> texture_containers(const std::uint8_t* data, std::size_t size, std::size_t entry);
+
 // A container's pictures in a model of the GS's memory, uploaded once as its packets send them, on first need. The
 // data must outlive this. Both throw std::runtime_error naming what they cannot decode.
 class TexturePictures final {

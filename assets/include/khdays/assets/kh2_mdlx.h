@@ -21,4 +21,10 @@ ImportedModel import_mdlx(const std::uint8_t* data, std::size_t size, const std:
 // The joint name given to bone `bone`.
 std::string mdlx_joint_name(int bone);
 
+// How many of a model file's HD pictures (-N.dds) its texture containers take (BAR entries of type 7, in their
+// order, each container of an entry that holds several: each GS picture, then a sprite sheet per texture animation):
+// the file's other pictures -- its PAX's (entry 0x12, Hades's hair's flame: -10 and -11 after his two sets' ten) --
+// are numbered from there. Throws std::runtime_error naming what it cannot read.
+int mdlx_texture_pictures(const std::uint8_t* data, std::size_t size);
+
 }  // namespace khdays::assets::kh2

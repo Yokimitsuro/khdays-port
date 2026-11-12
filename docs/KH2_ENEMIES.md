@@ -888,7 +888,28 @@ then the shapes' default -- the header's + 4, a bit a group (1, the body's group
 
 An object's effects are its `.a.us`'s PAX (its BAR entry 0x12; docs/FORMATS.md, "KH2's effects"). Its 0x82
 directory's 32-byte entries are `{u32 its effect's offset from the directory, u32 its emitter, u32 its number}` (the
-Soldier's 9 over 4 effects, the Shadow's 3 over 3). What a motion's trigger 1 and the script's `1:87` start is an
+Soldier's 9 over 4 effects, the Shadow's 3 over 3).
+
+**Its model's own** (the PS3 build's `YS::OBJDATA::start_model_effect`, the PC's `FUN_1403e6470`): a model file
+(`.mdlx`) may hold a PAX of its own (its BAR entry 0x12: Hades's `hade`, Scar's ghosts' `scar`). As the model is made
+KH2 starts that PAX's first elements, each as `1:87` starts one (`FUN_1402c6b30`), by its object entry's + 0x4c --
+0x3f8 and 0x138a element 0, 0x1395 elements 0 to 2, 0x13a2 0 to 8, 0x13ca 0 to 13 -- else by its number: 0x888,
+0x88a to 0x88c and 0x97c element 0, 0x889 0 to 3. Hades (0x138a) wears his hair's blue flame so (no script of his
+starts it; the `.a.us`'s element 0 is another, a bright orb), Scar's ghosts (0x13a2) their nine. Its HD pictures are
+in the model's own folder after its textures' (a file's pictures run through its entries in BAR order:
+`mdlx_texture_pictures`), each container of a texture entry that holds several counted (Hades's `tim_` holds two
+sets of five: his flame's pictures are `-10` and `-11`). The shell reads it (`read_model_effects`) and starts them as
+it makes the enemy (`model_effects`).
+
+Hades's flame is ten particle spawners (`0xc9`) on his head's bone 103, at its top (the element's place 24 along
+the bone), each sprite moved 30 toward the camera in view space (the key's + 0xe, + 0x10 to + 0x18): KH2's PC build,
+in the rooms that take that offset as a depth bias, raises the sprite's GS depth by it (larger is nearer), so the
+flame shows in front of his hair's mesh. Pushed away instead (the port's first reading), it hid behind his head.
+Its ten layers stand 8 to 12 along the bone's -y, back over his swept hair: an element on a bone is placed in the
+bone's own frame, which KH2 never turns (`FUN_1401a7af0` turns the bone matrix's columns alone, its y and z by -1
+into its world); turning the frame's y too (the port's first reading) put them at his forehead.
+
+What a motion's trigger 1 and the script's `1:87` start is an
 **element**: the PAX's records before the directory (0x50 bytes each from + 0x10, their count at + 8; the Soldier's
 11, the Shadow's 3), as `FUN_1402c6b30` reads them:
 

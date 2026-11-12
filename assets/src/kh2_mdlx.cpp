@@ -208,6 +208,18 @@ std::string mdlx_joint_name(const int bone) {
     return "kh2_" + std::to_string(bone);
 }
 
+int mdlx_texture_pictures(const std::uint8_t* data, const std::size_t size) {
+    int count = 0;
+    for (const BarEntry& e : bar_entries(data, size)) {
+        if (e.type == 7) {
+            for (const std::size_t at : texture_containers(data, size, e.offset)) {
+                count += read_textures(data, size, at).hd_count;
+            }
+        }
+    }
+    return count;
+}
+
 ImportedModel import_mdlx(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
