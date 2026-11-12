@@ -277,6 +277,23 @@ typedef struct KhdaysG3dClipVertex {
 void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, uint32_t tex, int32_t replacement,
                             int translucent, int sky);
 
+/* How far past the view's sides a piece or a polygon of a mod's model must lie, wholly, to be left
+ * out (khdays_g3d_mod_cull_sides): this many times the view's half-width and half-height, so that a
+ * picture between two of the game's steps (g3d_interp.h), the camera turning, finds everything it
+ * shows. */
+#define KHDAYS_G3D_CULL_MARGIN 2.0f
+
+/* Whether a mod's polygons can be left out of what is being drawn (in a model draw: not otherwise,
+ * where a polygon's place is its material's count) and, if so, the view's sides they must lie wholly
+ * past, in clip space: x > *kx * w or x < -*kx * w, y > *ky * w or y < -*ky * w
+ * (KHDAYS_G3D_CULL_MARGIN times the sides finish_mod_polygon clips at). */
+int khdays_g3d_mod_cull_sides(float *kx, float *ky);
+
+/* `polygons` polygons of a mod's, of attributes `attr`, left out of the model draw: counted as made
+ * without making them, so that each later polygon of the draw keeps its place (the pictures between
+ * steps pair polygons by it). */
+void khdays_g3d_mod_skip(uint32_t attr, uint32_t polygons);
+
 /* A KH2 effect's triangle or quad (KHDAYS_G3D_EFFECT): `gs_alpha` the GS ALPHA byte it blends with, `effect_flags`
  * its KHDAYS_G3D_EFFECT_* depth rules, `replacement` its picture (runtime/mods/textures.h, -1 for none: its vertex
  * colours alone). Its vertices' colours are factors x 63 (the GS's 0x80, 1, is 63; up to twice that), their

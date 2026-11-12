@@ -1106,6 +1106,24 @@ void khdays_g3d_mod_polygon(const KhdaysG3dClipVertex *v, int n, uint32_t attr, 
     mod_polygon(v, n, attr, tex, 0, replacement, translucent_, sky, 0);
 }
 
+int khdays_g3d_mod_cull_sides(float *kx, float *ky)
+{
+    if (g.draw == 0) {
+        return 0; /* outside a model draw a polygon's place is its material's count (stream_ordinal) */
+    }
+    /* the sides finish_mod_polygon clips at (x by the widened view), each this many times as far */
+    *kx = KHDAYS_G3D_CULL_MARGIN * (float)g.widen / WIDEN_ONE;
+    *ky = KHDAYS_G3D_CULL_MARGIN;
+    return 1;
+}
+
+void khdays_g3d_mod_skip(uint32_t attr, uint32_t polygons)
+{
+    if (g.draw != 0 && faded(&attr)) {
+        g.draw_ordinal += polygons; /* as mod_polygon would have recorded them */
+    }
+}
+
 void khdays_g3d_effect_polygon(const KhdaysG3dClipVertex *v, int n, int32_t replacement, uint32_t gs_alpha,
                                uint32_t effect_flags)
 {

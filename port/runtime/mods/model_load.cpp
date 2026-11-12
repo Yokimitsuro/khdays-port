@@ -946,6 +946,45 @@ void hide_vertices(Model *model, const Loading &loading)
     }
 }
 
+// Each mesh's box, for leaving it out of a draw where the view does not reach it: a mesh whose vertices all
+// follow one joint (or none: the model's first node), as a room's pieces do, gets the box round its vertices
+// there and the count of its triangles drawn; one that bends between joints, or a sky, is always drawn.
+void box_meshes(Model &model)
+{
+    for (Mesh &mesh : model.meshes) {
+        mesh.boxed = mesh.sky == 0 && !mesh.vertices.empty();
+        bool first = true;
+        for (const auto &v : mesh.vertices) {
+            // the joint draw() places it with: the one its weights name, else none
+            std::uint32_t joint = Mesh::kNoJoint;
+            bool one = true, weighed = false;
+            for (std::size_t w = 0; w < 4; ++w) {
+                if (v.weights[w] <= 0.0F)
+                    continue;
+                const std::uint32_t j = v.joints[w] < model.joints.size() ? v.joints[w] : Mesh::kNoJoint;
+                one = one && (!weighed || j == joint);
+                joint = j;
+                weighed = true;
+            }
+            if (!one || (!first && joint != mesh.box_joint)) {
+                mesh.boxed = false;
+                break;
+            }
+            for (std::size_t c = 0; c < 3; ++c) {
+                mesh.box_low[c] = first ? v.position[c] : std::fmin(mesh.box_low[c], v.position[c]);
+                mesh.box_high[c] = first ? v.position[c] : std::fmax(mesh.box_high[c], v.position[c]);
+            }
+            mesh.box_joint = joint;
+            first = false;
+        }
+        mesh.drawn_triangles = 0;
+        for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+            uint32_t attr = 0;
+            mesh.drawn_triangles += triangle_attr(mesh, t, 0, attr) ? 1U : 0U;
+        }
+    }
+}
+
 // Numbers the sky layers in KH2's painting order: opaque and cut-out meshes first, then blended ones.
 void order_sky_layers(Model &model)
 {
@@ -1151,6 +1190,7 @@ std::unique_ptr<Model> load(const std::string &name, const std::string &path, co
     set_rest_size(*model);
     resolve_cuffs(*model, loading.bones.cuffs, loading.bones.cuff_pose, name);
     load_kh2_motions(*model, path);
+    box_meshes(*model); // last: the meshes as they are drawn
     return model;
 }
 

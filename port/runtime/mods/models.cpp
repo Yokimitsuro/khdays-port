@@ -163,6 +163,13 @@ bool triangle_attr(const Mesh &mesh, std::size_t t, uint32_t attr, uint32_t &out
     return alpha > 0.0F;
 }
 
+// The view's sides a point in clip space lies past, a bit each: x past kx * w or -kx * w, y past ky * w or -ky * w
+// (khdays_g3d_mod_cull_sides). A piece or triangle whose corners all lie past one side is not seen.
+unsigned past_sides(float x, float y, float w, float kx, float ky)
+{
+    return (x > kx * w ? 1u : 0u) | (x < -kx * w ? 2u : 0u) | (y > ky * w ? 4u : 0u) | (y < -ky * w ? 8u : 0u);
+}
+
 // The face's frame (face.h), once a game frame: each block's slot held by what comes first -- its character's text typing
 // (`face talk`), the game's pattern animation (`face ds`) unless what it would cover is `face closed`, its speaker's last
 // portrait (`face portrait`), the KH2 motion's ranges (id 23) --, the motion's triggers passed (4 a default, 5 the file's
@@ -714,6 +721,10 @@ void draw(Model &m)
     // further keeps its alpha.
     const uint32_t tex = (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16); // 1024x1024, repeated
     const uint32_t game_alpha = (material.attr >> 16) & 31u;
+    // what lies wholly past a side of the view is left out: whole meshes by their boxes, then triangles
+    float side_x = 0.0F, side_y = 0.0F;
+    const bool cull = khdays_g3d_mod_cull_sides(&side_x, &side_y) != 0;
+    std::size_t left_out = 0;
     for (const Mesh &mesh : m.meshes) {
         if (mesh.shadow_sprite && khdays_shadow_has_sprite())
             continue;
@@ -724,7 +735,27 @@ void draw(Model &m)
         uint32_t attr = (material.attr & ~0xc0u) | (mesh.double_sided ? 0xc0u : 0x80u);
         if (!picture.translucent && game_alpha >= 30u)
             attr = (attr & ~(31u << 16)) | (31u << 16);
+        // a piece wholly past a side of the view: left out before any of its vertices is placed (a big room's
+        // pieces behind and beside the camera)
+        if (cull && mesh.boxed) {
+            const Mat &s = mesh.box_joint < skin.size() ? skin[mesh.box_joint] : unskinned;
+            unsigned past = 0xfu;
+            for (std::size_t c = 0; c < 8 && past != 0; ++c) {
+                const auto p = point(s, {(c & 1) != 0 ? mesh.box_high[0] : mesh.box_low[0],
+                                         (c & 2) != 0 ? mesh.box_high[1] : mesh.box_low[1],
+                                         (c & 4) != 0 ? mesh.box_high[2] : mesh.box_low[2]});
+                past &= past_sides(proj[0] * p[0] + proj[4] * p[1] + proj[8] * p[2] + proj[12],
+                                   proj[1] * p[0] + proj[5] * p[1] + proj[9] * p[2] + proj[13],
+                                   proj[3] * p[0] + proj[7] * p[1] + proj[11] * p[2] + proj[15], side_x, side_y);
+            }
+            if (past != 0) {
+                khdays_g3d_mod_skip(attr, mesh.drawn_triangles);
+                ++left_out;
+                continue;
+            }
+        }
         clip.resize(mesh.vertices.size());
+        clip_past.resize(mesh.vertices.size());
         for (std::size_t i = 0; i < mesh.vertices.size(); ++i) {
             const auto &v = mesh.vertices[i];
             std::array<float, 3> p{0, 0, 0}, nrm{0, 0, 0};
@@ -756,6 +787,7 @@ void draw(Model &m)
             o.y = proj[1] * p[0] + proj[5] * p[1] + proj[9] * p[2] + proj[13];
             o.z = proj[2] * p[0] + proj[6] * p[1] + proj[10] * p[2] + proj[14];
             o.w = proj[3] * p[0] + proj[7] * p[1] + proj[11] * p[2] + proj[15];
+            clip_past[i] = cull ? static_cast<unsigned char>(past_sides(o.x, o.y, o.w, side_x, side_y)) : 0;
             const float ln = length(nrm);
             float rgb[3];
             if (ln > 1e-6F) {
@@ -802,15 +834,31 @@ void draw(Model &m)
                 }()
                     .c_str());
         }
+        // each triangle, but one wholly past a side of the view (its corners all past the same one): counted, not made
+        std::uint32_t past_view = 0;
         for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+            uint32_t tri_attr;
+            if (!triangle_attr(mesh, t, attr, tri_attr))
+                continue;
+            if ((clip_past[mesh.indices[t]] & clip_past[mesh.indices[t + 1]] & clip_past[mesh.indices[t + 2]]) != 0) {
+                ++past_view;
+                continue;
+            }
+            if (past_view != 0) {
+                khdays_g3d_mod_skip(tri_attr, past_view);
+                past_view = 0;
+            }
             const KhdaysG3dClipVertex tri[3] = {clip[mesh.indices[t]], clip[mesh.indices[t + 1]],
                                                 clip[mesh.indices[t + 2]]};
-            uint32_t tri_attr;
-            if (triangle_attr(mesh, t, attr, tri_attr))
-                khdays_g3d_mod_polygon(tri, 3, tri_attr, tex, picture.replacement,
-                                       picture.translucent || mesh.vertex_alpha == VertexAlpha::blended, mesh.sky);
+            khdays_g3d_mod_polygon(tri, 3, tri_attr, tex, picture.replacement,
+                                   picture.translucent || mesh.vertex_alpha == VertexAlpha::blended, mesh.sky);
         }
+        if (past_view != 0)
+            khdays_g3d_mod_skip(attr, past_view);
     }
+    if (trace != 0 && khdays_log_on() && (m.draws == 120 || m.draws == 600))
+        khdays_log("models: %s draw %d: %zu of its %zu meshes past the view, left out", m.name.c_str(), m.draws,
+                   left_out, m.meshes.size());
     khdays_g3d_set_clip_owner(0);
 }
 

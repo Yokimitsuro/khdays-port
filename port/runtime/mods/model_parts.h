@@ -168,6 +168,14 @@ struct Mesh {
     std::size_t frames_loop_from = 0;
     // 0, or the sky layer it is (1 is painted first), drawn around the camera behind everything
     int sky = 0;
+    // for leaving it out where the view does not reach it (box_meshes): whether all its vertices follow one
+    // joint (`box_joint`, kNoJoint the model's first node), the box round them there, and how many of its
+    // triangles are drawn (triangle_attr)
+    static constexpr std::uint32_t kNoJoint = 0xffffffffU;
+    bool boxed = false;
+    std::uint32_t box_joint = kNoJoint;
+    std::array<float, 3> box_low{0.0F, 0.0F, 0.0F}, box_high{0.0F, 0.0F, 0.0F};
+    std::uint32_t drawn_triangles = 0;
 };
 
 // A mod's character with a skeleton of its own (runtime/characters): each node's translation, rotation (x y z w)
@@ -735,6 +743,7 @@ inline std::vector<Mat> node_move, joint_place,
 inline u32 drawn_animation; // the render object's joint animation (an NNSG3dAnmObj), 0 none
 inline u32 next_animation;  // the one khdays_models_draw_animation gave, for the draw that follows
 inline std::vector<KhdaysG3dClipVertex> clip;
+inline std::vector<unsigned char> clip_past; // each of `clip`'s vertices: the view's sides it lies past (past_sides)
 inline std::vector<std::array<khdays::secondary::Vec3, 3>> clip_triangles; // `clip_world`'s volumes this draw
 
 // The game's joint animation `anm` (an NNSG3dAnmObj: its frame in 20.12 at +0, its NNSG3dResJntAnm at +8, whose

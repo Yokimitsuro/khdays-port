@@ -170,6 +170,25 @@ a second under Roxas moving smoothly (seen 2026-11-04 at 165 Hz, the play walk:
 322 polygons a picture left out where any were, 0.08% of all after).
 `tests/g3d_interp_test.c` checks each.
 
+A mod's model leaves out what lies wholly past a side of the view, twice as far
+out as the sides it is clipped at (`KHDAYS_G3D_CULL_MARGIN`), so that a picture
+between two lists still finds what the camera turns to: first each mesh whose
+vertices all follow one joint (a room's pieces), by the box round its vertices
+kept at loading (`model_load.cpp` `box_meshes`), before any of its vertices is
+placed; then each triangle whose three corners lie past the same side. A polygon
+left out still takes its place in the draw (`khdays_g3d_mod_skip`), so the later
+ones keep their keys, and a drawing's place counts a mod's polygons only within
+those sides, the same with or without what was left out. It happens only in a
+model draw (outside one a polygon's place is its material's count). Nothing the
+game reads comes of it: the box test and the counts of polygons and vertices are
+its own polygons' alone, so in multiplayer each machine leaves out what its own
+camera does not see and the game runs the same. Seen 2026-11-12 with a map of
+260,000 triangles in 393 meshes (a glTF in place of Twilight Town's room 0, the
+play walk, in a window): the game's thread ran 720 ms a second at 28 frames a
+second, 510 with the meshes left out (200-238 of them), 340 at 56-60 with the
+triangles too; the step pictures' map was the same as without (only Roxas, his
+arrival at another pace in the slow run, differed).
+
 The graphics card draws the lists (`host/render/gpu_raster3d.c`); the software
 rasterizer (`port/gpu/gpu3d.c`, GBATEK's "DS 3D Video") draws them as the
 reference, close to the hardware where GBATEK leaves the arithmetic open (the
