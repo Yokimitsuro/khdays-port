@@ -25,6 +25,10 @@ int khdays_kh2_shell_read(unsigned actor, KhdaysKh2Shell *out);
 /* Its HP made `hp` (kept between 1 and its most: Days's defeat comes through its hits), as KH2's script sets it. */
 void khdays_kh2_shell_set_hp(unsigned actor, int hp);
 
+/* Its most HP made `most` (at least 1) and its HP `hp` (kept between 1 and it): the share of its KH2 health the shell
+ * keeps shown in Days's own fields (signed 16 bits each: their HUD bar and their hits). */
+void khdays_kh2_shell_set_health(unsigned actor, int hp, int most);
+
 /* Its model put at `place` (its collision sphere with it) and turned by `yaw` (radians, KH2's: atan2(x, z)); the
  * room's collision then keeps it out of the walls and on the ground (Ov107_AiState_ResolveContacts, later in the same
  * tick). */

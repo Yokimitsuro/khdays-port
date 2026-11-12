@@ -35,8 +35,8 @@ read of KH2, what the port does with it, and what is not known yet.
 - **In a mission** (`missions.txt`, docs/STUDIO.md): `wave <n> = kh2:M_EX010/4x3 at <x> <y> <z>` puts three KH2
   Soldiers in Days Soldiers' places (class 4 standing in); `kh2:M_EX020/0x2` two KH2 Shadows in Days Shadows'. Without
   a class (`kh2:M_EX010x3`) the stand-in is Days's Soldier, and the mission needs KH2's enemies: it is left out without
-  them. The stand-in's class counts for the mission's goals (`target = <class>`, its hearts), its HP, level, drops and
-  rewards.
+  them. The stand-in's class counts for the mission's goals (`target = <class>`, its hearts), its level, drops and
+  rewards; its HP is the KH2 enemy's own in Days's scale ("Health" below).
 - **What plays**: KH2's own script drives each one -- appearing with its effect, closing in, its claw, kick and jump
   attacks, rolls, steps back, turning to face its target -- with its KH2 model (HD pictures), motions and effects; its
   attacks hit Days's players as Days's enemies' do (their damage the stand-in's attack power); Days's hits make it
@@ -461,9 +461,9 @@ enemigos"); what is built is under "Played" at the end of this section.
 1. **Size**: its stand-in's collision sphere (a Days class's, under a metre) is far smaller than its body. The shell
    would give the Days enemy KH2's body cylinder for its radius, so Roxas cannot walk into it and Days's hits land
    on its body, not only near its centre.
-2. **Health and its bar**: the stand-in's HP as now (the mission's class, its level), shown on the KH2-style enemy
-   HUD (`port/ui/kh2_enemy_hud`) with Cerberus's name (KH2's journal's: "Names" below); KH2's several bars only when
-   its `enmp` entry is found.
+2. **Health and its bar**: its KH2 health in Days's scale ("Health" below), shown on the KH2-style enemy HUD
+   (`port/ui/kh2_enemy_hud`) with Cerberus's name (KH2's journal's: "Names" below); KH2's several bars only when its
+   `enmp` entry is found.
 3. **Reaction commands**: as KH2 plays them (below, "A player in an enemy's hands"). Roxas's KH2 model (the HD
    PACK's) plays Cerberus's motions for KH2's player: Roxas's KH2 bones are Sora's, renumbered.
 4. **Lock-on**: Days locks on one enemy; its mark at the middle head's aim point (group 10), not at its feet.
@@ -1007,6 +1007,30 @@ targeted enemy's above its bar. A join gives a class whose every row in the miss
 enemy's name in its place (`khdays_kh2_enemies_label`, `khdays_missions_kh2_enemy_of_class`): Hades in a Days
 Soldier's place is labelled Hades. A class shared by a Days enemy of its own, or by two KH2 enemies, keeps Days's
 name.
+
+## Health
+
+KH2 gives an enemy the health of its battle entry (`00battle.bin`'s `enmp`, OpenKH's 00battle page: 92-byte records,
++ 0 the number, + 4 32 health values, the first its own) times its level's (`LVPM`: (health x the level's + 99) /
+100, 20 at level 1 to 181 at 99); its script names the entry with `2:9` (the Soldier's 33, 100 health; Hades's 19,
+1000, or 199, 1500 in the cups). KH2's damage (`YS::SHEET::calc_damage`, the PS3 build's): the attacker's strength
+(or magic) less the defender's defence, kept between two bounds, times the attack's power, the element's and the
+general rates, over 1,000,000, rounded up; then the game level's, the combo's and the element's adjustments.
+
+**In Days** a KH2 enemy stands as many of Roxas's blows as Sora's in KH2. Its entry's health over KH2's Soldier's
+(`World::battle_entry`, once, as `2:9` names it; KH2's level multiplier is the same for both, so their share leaves
+it out) times the Soldier's blows (`kSoldierBlows`, 4: a tuning value -- KH2's own tables leave the Soldier's to
+Sora's keyblade and abilities, 2 to 90 at level 99 by his strength alone) gives its blows: Hades of the cups 60, the
+Soldier 4. A blow is the area's first Days hit on a KH2 enemy (its damage before KH2's element rate), so its health
+follows Roxas's level and gear: at that first hit on it its health becomes its blows times that blow. Until then
+Days's own HP stands (the bar full). Measured against Days's Soldier instead (its HP at the mission's level times the
+share), Hades of the cups at level 99 had 32,040 health against Roxas's 15 to 74 a hit: hundreds of blows.
+
+The shell keeps that health (64 bits); Days's HP fields (signed 16 bits) show its share, up to 32,767, at least 1
+while any is left, so the bar and Days's defeat follow it. A Days hit takes its damage after the element's rate and
+the script's least (1:231); Days's fields lose what the share does, and the reaction follows the health's loss (a
+small hit may leave the share as it was). Its script's record (2:9's, `hp_rate`) holds the health itself. An enemy
+that leaves and comes back keeps it.
 
 ## Days's side: the shell
 

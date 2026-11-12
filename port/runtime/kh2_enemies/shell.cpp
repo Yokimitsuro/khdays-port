@@ -619,6 +619,13 @@ struct Enemy final {
     // + 0xc): one at a time, a new one taking its place when asked with a priority as high or higher
     int voice_shot = 0, voice_priority = 0;
     unsigned hit_kinds = 0; // the last Days hit's kinds (its packet's high flags): its element (2:85) is of them
+    // its battle entry's health over KH2's Soldier's (2:9; 0 none: Days's own HP stands), and from Days's first hit on
+    // a KH2 enemy its health in Days's damage (kSoldierBlows x that share blows of that hit's size) and the most of it;
+    // -1 until then (Days's own HP stands). Days's fields show its share (shown_health), up to shown_most
+    double health_share = 0.0;
+    std::int64_t health = -1, health_most = 0;
+    int shown_most = 0;
+    std::int64_t health_taken = 0; // the last Days hit's damage on its health (khdays_kh2_enemies_damage), until told
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
     // where it was last drawn (Days's place) and the projection then, for its end once its Days enemy is gone
@@ -872,6 +879,61 @@ void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &a
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s);
 std::string entry_name(std::uint32_t number);
 
+// ------------------------------------------------------------------------------------------------- its health
+
+// KH2's Soldier's battle entry (M_EX010's script names 33 to 2:9): the measure a KH2 enemy's health is taken in
+constexpr int kSoldierEntry = 33;
+// How many of the player's blows KH2's Soldier stands, as it falls to Sora's with the keyblades of its level: a tuning
+// value (KH2's own tables leave it to his keyblade and his abilities: from 2 to 90 at level 99 by his strength alone)
+constexpr double kSoldierBlows = 4.0;
+// Days's HP fields are signed 16 bits: the most of a KH2 enemy's health's share they show
+constexpr int kDaysShownMost = 32767;
+// The size of a Days blow on a KH2 enemy: the first hit's damage in the area (Days's, before KH2's element rate), the
+// measure of every KH2 enemy's health there; 0 until then
+int reference_blow = 0;
+
+// A battle entry's health (00battle.bin's enmp, OpenKH's 00battle page: a u32 count at + 4, then 92-byte records, + 0
+// the entry's number, + 4 its 32 health values, the first its own -- KH2 times it by LVPM's for the level, which the
+// share between two entries leaves out); 0 when the mod's file has no such entry
+int battle_health(int entry)
+{
+    static std::map<int, int> healths;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> file =
+            read_file(fs::path(std::u8string(mod().folder.begin(), mod().folder.end())) / "kh2" / "00battle.bin");
+        try {
+            for (const kh2::BarEntry &e : kh2::bar_entries(file.data(), file.size())) {
+                if (e.name != "enmp" || e.size < 8)
+                    continue;
+                std::uint32_t count = 0;
+                std::memcpy(&count, file.data() + e.offset + 4, 4);
+                for (std::uint32_t i = 0; i < count && 8 + 92 * std::size_t(i + 1) <= e.size; ++i) {
+                    const std::uint8_t *r = file.data() + e.offset + 8 + 92 * std::size_t(i);
+                    healths.emplace(int(r[0] | (r[1] << 8)), int(r[4] | (r[5] << 8)));
+                }
+            }
+        } catch (const std::exception &) {
+        }
+    }
+    const auto it = healths.find(entry);
+    return it != healths.end() ? it->second : 0;
+}
+
+// The share of its health Days's fields show: up to shown_most, at least 1 while it has any (Days defeats it at 0)
+int shown_health(const Enemy &e)
+{
+    if (e.health <= 0 || e.health_most <= 0)
+        return 0;
+    return int(std::max<std::int64_t>(1, (e.health * e.shown_most + e.health_most - 1) / e.health_most));
+}
+
+void show_health(const Enemy &e)
+{
+    khdays_kh2_shell_set_health(e.days, shown_health(e), e.shown_most);
+}
+
 class Field final : public World {
 public:
     // 1:0: an object of the mod's kinds made by its entry's number, as a Days enemy of its maker's class made where
@@ -942,22 +1004,57 @@ public:
         return true;
     }
 
-    // 2:9: its health record given Days's health of it (now, at most), as KH2's record of it holds its own
+    // 2:9: its health record given its health (now, at most), as KH2's record of it holds its own: its KH2 health in
+    // Days's scale once its battle entry is known (battle_entry), else Days's HP of it
     void health(Actor &a) override
     {
         const auto it = by_actor.find(&a);
         const std::uint32_t record = a.u32(0x5c0);
         KhdaysKh2Shell s;
-        if (it == by_actor.end() || record == 0 || !khdays_kh2_shell_read(it->second->days, &s))
+        if (it == by_actor.end() || record == 0)
+            return;
+        const Enemy &e = *it->second;
+        if (e.health >= 0) {
+            a.memory().set_u32(record, std::uint32_t(std::min<std::int64_t>(e.health, 0xffffffff)));
+            a.memory().set_u32(record + 4, std::uint32_t(std::min<std::int64_t>(e.health_most, 0xffffffff)));
+            return;
+        }
+        if (!khdays_kh2_shell_read(e.days, &s))
             return;
         a.memory().set_u32(record, std::uint32_t(std::max(0, s.hp)));
         a.memory().set_u32(record + 4, std::uint32_t(std::max(1, s.hp_max)));
     }
 
+    // 2:9's battle entry: its health KH2's over KH2's Soldier's (the entries' first health values: KH2's level
+    // multiplier is the same for both; Hades of the cups' 1500 over 100: fifteen Soldiers), kept for Days's first hit
+    // on it (khdays_kh2_enemies_damage), which gives its health in Days's damage. Once
+    void battle_entry(Actor &a, int entry) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end() || it->second->health_share > 0.0)
+            return;
+        Enemy &e = *it->second;
+        const int own = battle_health(entry), soldier = battle_health(kSoldierEntry);
+        if (own <= 0 || soldier <= 0)
+            return;
+        e.health_share = double(own) / double(soldier);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x's battle entry %d: %d health, %.2f KH2 Soldiers", e.days, entry, own,
+                       e.health_share);
+    }
+
     void set_health(Actor &a, int hp) override
     {
-        if (const auto it = by_actor.find(&a); it != by_actor.end() && !it->second->dying)
-            khdays_kh2_shell_set_hp(it->second->days, hp);
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end() || it->second->dying)
+            return;
+        Enemy &e = *it->second;
+        if (e.health >= 0) { // in its own health's measure, kept between 1 and its most (Days's defeat by its hits)
+            e.health = std::clamp<std::int64_t>(hp, 1, e.health_most);
+            show_health(e);
+            return;
+        }
+        khdays_kh2_shell_set_hp(e.days, hp);
     }
 
     // 1:98, 1:99: the ground Days last found under it (its place's height when none yet)
@@ -3720,6 +3817,7 @@ extern "C" void khdays_kh2_enemies_gone(void *actor)
 
 extern "C" void khdays_kh2_enemies_area_left(void)
 {
+    reference_blow = 0; // the next area's first hit measures its KH2 enemies anew
     khdays_sound_shots_stop();
     made_row.clear();
     row_kinds.clear();
@@ -3938,8 +4036,15 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             }
         }
         KindFiles *k = e->kind;
+        const std::int64_t health = e->health, health_most = e->health_most; // kept: its Days fields show its share
+        const int shown_most = e->shown_most;
+        const double health_share = e->health_share;
         forget(days);
         e = start(days, *k, back);
+        e->health_share = health_share;
+        e->health = health;
+        e->health_most = health_most;
+        e->shown_most = shown_most;
         place = to_kh2(back.place);
         if (tracing())
             khdays_log("kh2 enemies: %08x comes back at %.2f %.2f %.2f", days, double(back.place[0]),
@@ -3957,10 +4062,16 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     const unsigned days = unsigned(KHDAYS_REF(actor));
     Enemy *e = find(days);
     KhdaysKh2Shell s;
-    if (e == nullptr || e->dying || !khdays_kh2_shell_read(days, &s) || s.hp >= hp_before)
+    if (e == nullptr || e->dying || !khdays_kh2_shell_read(days, &s))
         return;
-    if (!e->blow_landing)
-        e->days_damage = last_days_damage = hp_before - s.hp; // a Days hit's (a blow's own is not one)
+    // the hit's damage: on its own health when it has one (Days's fields show a share of it, which a small hit may not
+    // move), else on Days's HP
+    const std::int64_t damage = e->health >= 0 ? e->health_taken : std::int64_t(hp_before - s.hp);
+    e->health_taken = 0;
+    if (damage <= 0)
+        return;
+    if (!e->blow_landing) // a Days hit's (a blow's own is not one)
+        e->days_damage = last_days_damage = int(std::min<std::int64_t>(damage, 0x7fffffff));
     e->blow_landing = false;
     Actor &a = *e->actor;
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
@@ -4335,6 +4446,22 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
     if (e == nullptr || e->dying || amount <= 0)
         return amount;
     e->hit_kinds = unsigned(kinds);
+    // its health in Days's damage at the first hit on it: kSoldierBlows x its share of KH2's Soldier blows of the area's
+    // first hit's size -- as many of Roxas's blows as Sora's it stands in KH2 (Hades of the cups: 60), whatever Roxas's
+    // level and gear
+    if (e->health < 0 && e->health_share > 0.0) {
+        if (reference_blow <= 0)
+            reference_blow = amount;
+        e->health_most =
+            std::max<std::int64_t>(1, std::llround(kSoldierBlows * e->health_share * double(reference_blow)));
+        e->health = e->health_most;
+        e->shown_most = int(std::min<std::int64_t>(e->health_most, kDaysShownMost));
+        show_health(*e);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x's health %lld: %.0f blows of %d (%.2f KH2 Soldiers of %.0f), shown as %d",
+                       e->days, static_cast<long long>(e->health_most), kSoldierBlows * e->health_share,
+                       reference_blow, e->health_share, kSoldierBlows, e->shown_most);
+    }
     // its share of that element (1:311: the Volcanic Lord takes no fire)
     const int element = kh2_element_of(unsigned(kinds));
     if (trace_level() >= 2)
@@ -4352,9 +4479,23 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
     }
     const std::uint32_t record = e->actor->u32(0x5c0);
     KhdaysKh2Shell s;
-    if (record == 0 || !khdays_kh2_shell_read(e->days, &s))
+    if (!khdays_kh2_shell_read(e->days, &s))
         return amount;
-    const int least = std::int32_t(mod().memory.u32(record + 8));
+    const int least = record != 0 ? std::int32_t(mod().memory.u32(record + 8)) : 0;
+    if (e->health >= 0) {
+        // its own health takes the damage (Days's damage is in its stand-in's measure, as its health is); Days's
+        // fields lose what their share does
+        const std::int64_t kept =
+            least > 0 ? std::clamp<std::int64_t>(amount, 0, e->health - least) : std::int64_t(amount);
+        e->health = std::max<std::int64_t>(0, e->health - kept);
+        e->health_taken = kept;
+        const int shown = shown_health(*e), taken = std::max(0, s.hp - shown);
+        if (trace_level() >= 2 || (kept != amount && tracing()))
+            khdays_log("kh2 enemies: %08x takes %lld of %d damage: %lld of %lld health left, %d of %d shown", e->days,
+                       static_cast<long long>(kept), amount, static_cast<long long>(e->health),
+                       static_cast<long long>(e->health_most), shown, e->shown_most);
+        return taken;
+    }
     if (least <= 0)
         return amount;
     const int kept = std::max(0, std::min(amount, s.hp - least));

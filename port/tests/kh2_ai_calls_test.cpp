@@ -1315,6 +1315,16 @@ struct SecondBossesWorld final : kh::World {
     {
         watched = 0;
     }
+    int entry = -1;      // 2:9's battle entry
+    int health_told = 0; // how many times its health record was asked for
+    void battle_entry(kh::Actor &, int e) override
+    {
+        entry = e;
+    }
+    void health(kh::Actor &) override
+    {
+        ++health_told;
+    }
 };
 
 // Hades's, the Volcanic and Blizzard Lords' and Dark Thorn's calls: vectors between and turned about an axis, effects'
@@ -1349,6 +1359,10 @@ void test_second_bosses()
         call(rig, actor, 0, 83, {adr(vec(rig.memory, 0, 1, 0)), adr(vec(rig.memory, 1, 0, 0)), f(1.5707963F)}).bits, v,
         sizeof v);
     CHECK(std::fabs(v[1]) < 1e-5F && std::fabs(v[2] - 1.0F) < 1e-5F);
+
+    // 2:9: its health's record made, its battle entry (Hades of the cups' 199) told to the world, then its health
+    call(rig, actor, 2, 9, {self, i(199), i(0)});
+    CHECK(actor.u32(0x5c0) != 0 && world.entry == 199 && world.health_told == 1);
 
     // an effect's size and colour (0:39, 0:67); its turn (0:40) and whether it lives (0:49) go as 0:41 and 0:50's
     call(rig, actor, 0, 39, {adr(77), adr(vec(rig.memory, 0.8F, 0.9F, 1.0F))});

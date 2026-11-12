@@ -430,6 +430,9 @@ public:
     virtual void broadcast(Actor &, const std::string & /*name*/, float /*delay*/) {}
     // Its health record (2:9's, at + 0x5c0) given its health now and at most
     virtual void health(Actor &) {}
+    // The battle entry its script names for it (2:9's second value: 00battle.bin's enmp): its KH2 health, which the
+    // shell gives it in Days's scale
+    virtual void battle_entry(Actor &, int /*entry*/) {}
     // Its health made `hp` by its script (1:233, kept within its record's least and most)
     virtual void set_health(Actor &, int /*hp*/) {}
 

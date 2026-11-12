@@ -1991,7 +1991,8 @@ void add_world(ai::Calls &calls)
     calls.set(1, 278, [](ai::Machine &, std::span<ai::Value>) {});
     // 2:9 its health's record made from a battle entry (FUN_140411350 -> FUN_1403c0280: + 0x5c0; 12 bytes a value,
     // the first its health now and at most -- what 1:84, 1:228 and 1:229 read, the scripts' "hp_rate"; + 0x268 the
-    // actor): Days's health in it, kept by the shell each frame (World::health)
+    // actor): its health -- its battle entry's (the second value: 00battle.bin's enmp, the Soldier's 33, Hades's 19 or
+    // 199) in Days's scale (World::battle_entry) -- in it, kept by the shell each frame (World::health)
     calls.set(2, 9, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         if (x->u32(0x5c0) == 0) {
@@ -1999,8 +2000,10 @@ void add_world(ai::Calls &calls)
             m.memory().set_u32(record + 0x268, x->address());
             x->set_u32(0x5c0, record);
         }
-        if (x->world != nullptr)
+        if (x->world != nullptr) {
+            x->world->battle_entry(*x, a[1].i());
             x->world->health(*x);
+        }
     });
     // 2:20 a routine of the script started as a thread of its own, with one value; a handle back
     // (trap_magic_start_thread, FUN_1403c5ec0: a machine of its own on the script, FUN_1403e1970, in the game's list
