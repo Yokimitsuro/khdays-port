@@ -490,6 +490,11 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   last frame sets none -- a landing's range 9 "to its end" held the Fiery Globe for ever): `1:60`'s "off the ground"
   is bits 5 and 24 (`FUN_1403ba9a0`), which its leap's motion 171 sets from frame 92 on; ranges 3 and 24 are "no
   gravity"; bit 9 (range 9, a jump's start and its landing) is what `2:5` and `1:78` wait on.
+- **Ledges**: on the ground of its own (no jump, no motion in the air, not falling), its way along the ground
+  (its motion's root, its steering, a hit's slide) does not take it off a ledge -- the ground more than a step
+  below, or none within 10 m, under where it goes: it stops there as at a wall, its slide and steering ended.
+  KH2's rooms wall their edges; Days's arenas and the rooms made from KH2's maps leave some open (the coliseum's:
+  Hades slid off by a hit's slide and could not climb back). A held player is kept off them the same way.
 - **A fall's landing**: a fall from higher than a step (30 cm: its leap, a ledge) ending on the ground plays its
   landing motion (`FUN_1403cb940`: + 0x11c, 5 `LAND`), as KH2's falling class does; that ends the leap's loop. A
   smaller one -- Days's ground found a few centimetres off -- lands without it (with it, every enemy kept landing).

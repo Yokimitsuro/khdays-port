@@ -3100,6 +3100,28 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         e.aloft = false;
         ground_event(e, 14);
     }
+    // on the ground of its own (no jump, no motion in the air, not falling), its way along the ground does not take it
+    // off a ledge (the ground more than a step below, or none): KH2's rooms wall their edges, Days's arenas and
+    // rooms made from KH2's maps leave some open (the coliseum's ring: Hades slid off it by a hit's slide and could
+    // not climb back), so it stops there as at a wall, its slide and its steering with it -- as a held player does
+    const bool grounded = !a.jump.on && !motion_air && !e.aloft && !no_gravity && e.fall == 0.0F && e.floor_known &&
+                          e.floor - place[1] <= 0.01F * kKh2PerDays;
+    if (grounded && travel[0] * travel[0] + travel[2] * travel[2] > 0.0F) {
+        const Vec3 to_place = {place[0] + travel[0], place[1], place[2] + travel[2]};
+        float from[3], to[3], hit[3];
+        to_days({to_place[0], to_place[1] - kGroundSearchUp, to_place[2]}, from);
+        to_days({to_place[0], to_place[1] + kGroundSearchDown, to_place[2]}, to);
+        const bool ground = khdays_kh2_shell_ray(e.days, from, to, hit) != 0;
+        const float drop = ground ? to_kh2(hit)[1] - place[1] : kGroundSearchDown;
+        if (drop > kStep) {
+            if (trace_level() >= 2)
+                khdays_log("kh2 enemies: %08x kept off a ledge (%s %.1f below)", e.days,
+                           ground ? "the ground" : "no ground within", double(drop));
+            travel[0] = travel[2] = 0.0F;
+            a.slide_speed = 0.0F;
+            a.steer_speed = 0.0F;
+        }
+    }
     for (int i = 0; i < 3; ++i)
         place[i] += travel[i];
     a.set_place(place);
