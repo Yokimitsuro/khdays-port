@@ -753,12 +753,12 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
         ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.4f, 1), "%s", s.error.c_str());
         return false;
     }
-    // what to add, then click the floor
+    // what to add, then click the floor; a row that wraps where the window ends (French's words are longer)
     ImGui::TextUnformatted(tr(lang, S::mmap_add));
     const S adds[] = {S::mmap_start,  S::mmap_spawner, S::mmap_chest,
                       S::mmap_emblem, S::mmap_collect, S::mmap_reach};  // in MissionSpot::Kind's order
     for (int i = 0; i < static_cast<int>(std::size(adds)); ++i) {
-        ImGui::SameLine();
+        same_line_if_room(button_width(tr(lang, adds[i])));
         const bool on = s.placing == i;
         if (on)
             ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -767,18 +767,18 @@ bool draw_mission_map(App& app, const Mod& m, const std::string& key, const Miss
         if (on)
             ImGui::PopStyleColor();
     }
-    ImGui::SameLine();
+    same_line_if_room(check_width(tr(lang, S::mmap_show_room)));
     ImGui::Checkbox(tr(lang, S::mmap_show_room), &s.show_room);
-    ImGui::SameLine();
+    same_line_if_room(check_width(tr(lang, S::mmap_show_floor)));
     ImGui::Checkbox(tr(lang, S::mmap_show_floor), &s.show_floor);
     s.has_sky = false;
     for (const auto& mesh : s.mod_model.model.meshes)
         s.has_sky = s.has_sky || (s.mod_room && mesh.sky);
     if (s.has_sky) {
-        ImGui::SameLine();
+        same_line_if_room(check_width(tr(lang, S::map_sky)));
         ImGui::Checkbox(tr(lang, S::map_sky), &s.show_sky);
     }
-    ImGui::SameLine();
+    same_line_if_room(button_width(tr(lang, S::map_frame)));
     if (ImGui::Button(tr(lang, S::map_frame)))
         look_at_floor();
     // saving: all at once, when it reads and builds

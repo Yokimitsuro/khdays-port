@@ -1056,7 +1056,13 @@ void draw_mission_kind(Language lang, ModMission& e) {
                        S::mission_kind_emblems, S::mission_kind_reach};
     const int count = static_cast<int>(std::size(kinds));
     const int shown = e.kind >= 0 && e.kind < count ? e.kind : KHDAYS_MISSION_WAVES;
-    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    // the longest kind whole, unless the window is narrower (its label beside it)
+    std::vector<std::string> names;
+    for (const S k : kinds)
+        names.push_back(tr(lang, k));
+    const float room = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemInnerSpacing.x -
+                       ImGui::CalcTextSize(tr(lang, S::mission_kind), nullptr, true).x;
+    ImGui::SetNextItemWidth(std::max(16 * ImGui::GetFontSize(), std::min(combo_width(names), room)));
     if (ImGui::BeginCombo(tr(lang, S::mission_kind), tr(lang, kinds[shown]))) {
         for (int k = 0; k < count; ++k)
             if (ImGui::Selectable(tr(lang, kinds[k]), shown == k)) {
@@ -1170,6 +1176,17 @@ std::string mod_world_label(const AddedWorld& w) {
     return (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
 }
 
+// Every world a mission's world list offers, as the list shows them: the game's and the mod's own.
+std::vector<std::string> world_labels(Language language, const std::vector<AddedWorld>& mod_worlds) {
+    std::vector<std::string> labels;
+    for (const auto& w : world_codes())
+        if (w != "hb" && w != "pi")
+            labels.push_back(world_label(language, w));
+    for (const AddedWorld& w : mod_worlds)
+        labels.push_back(mod_world_label(w));
+    return labels;
+}
+
 // What a mission's world offers to play in: the rooms of the game world it is played in, the rooms the mod adds to
 // it, and the mod's own worlds; read again for another world and when the room list opens (a room just added).
 struct RoomChoices {
@@ -1209,7 +1226,7 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
     for (const AddedWorld& w : choices.worlds)
         if (w.key == e.world)
             shown = mod_world_label(w);
-    ImGui::SetNextItemWidth(18 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(combo_width(world_labels(lang, choices.worlds)));  // the longest name whole
     if (ImGui::BeginCombo(tr(lang, S::mission_world), shown.c_str())) {
         std::string chosen = e.world;
         for (const auto& w : world_codes())
@@ -1225,7 +1242,8 @@ void draw_room_choice(App& app, const Mod& m, ModMission& e) {
         }
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
+    same_line_if_room(14 * ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x +
+                      ImGui::CalcTextSize(tr(lang, S::mission_room), nullptr, true).x);
     const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
     const std::string room = e.room_key.empty() ? std::to_string(e.room) : e.room_key + added;
     ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
@@ -1340,6 +1358,7 @@ struct NewMissionForm {
     int room = 0, rooms = 0;
     std::string room_key;            // a room the mod adds, else empty: `room` the world's
     std::vector<std::string> added;  // the rooms the mod adds to `world`
+    std::vector<AddedWorld> worlds;  // the mod's own worlds (rooms/worlds.txt)
     std::string rooms_for;
     std::vector<int> templates;  // the game's mission files
     int template_file = 0;       // 0: none, the mission made from its map
@@ -1367,6 +1386,7 @@ void draw_new_mission_form(App& app, const Mod& m) {
                 form.added.push_back(r.key);
         if (std::find(form.added.begin(), form.added.end(), form.room_key) == form.added.end())
             form.room_key.clear();
+        form.worlds = read_added_worlds(m.dir, &notes);
         form.rooms_for = world;
     }
     const int rooms = form.rooms;
@@ -1376,27 +1396,34 @@ void draw_new_mission_form(App& app, const Mod& m) {
     ImGui::TextDisabled("%s", tr(lang, S::mw_new_key));
     ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
     ImGui::InputText("##newmissionkey", &key);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
-    if (ImGui::BeginCombo(tr(lang, S::mw_new_world), world_label(lang, world).c_str())) {
+    // the world list as wide as its longest name, on the next line when the window has no room for it
+    const float world_width = combo_width(world_labels(lang, form.worlds));
+    same_line_if_room(world_width + ImGui::GetStyle().ItemInnerSpacing.x +
+                      ImGui::CalcTextSize(tr(lang, S::mw_new_world), nullptr, true).x);
+    std::string shown = world_label(lang, world);
+    for (const AddedWorld& w : form.worlds)
+        if (w.key == world)
+            shown = mod_world_label(w);
+    ImGui::SetNextItemWidth(world_width);
+    if (ImGui::BeginCombo(tr(lang, S::mw_new_world), shown.c_str())) {
+        if (ImGui::IsWindowAppearing()) {  // a world the mod added since: listed
+            std::vector<std::string> notes;
+            form.worlds = read_added_worlds(m.dir, &notes);
+        }
         for (const auto& w : world_codes())
             if (w != "hb" && w != "pi" && ImGui::Selectable(world_label(lang, w).c_str(), world == w))
                 world = w;
         // the mod's own worlds (rooms/worlds.txt), played in a game world's
-        std::vector<std::string> notes;
-        for (const auto& w : read_added_worlds(m.dir, &notes)) {
-            const auto named = w.names.find("");
-            const std::string label =
-                (named != w.names.end() ? named->second : w.key) + "  (" + w.key + ", " + w.like + ")";
-            if (ImGui::Selectable(label.c_str(), world == w.key))
+        for (const AddedWorld& w : form.worlds)
+            if (ImGui::Selectable(mod_world_label(w).c_str(), world == w.key))
                 world = w.key;
-        }
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
     // its room: the world's own, one the mod adds to it, or one added now (another game's map or the modder's model)
     room = std::clamp(room, 0, std::max(0, rooms - 1));
     const std::string added = std::string("  ") + tr(lang, S::mission_room_added);
+    same_line_if_room(14 * ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x +
+                      ImGui::CalcTextSize(tr(lang, S::mw_new_room), nullptr, true).x);
     ImGui::SetNextItemWidth(14 * ImGui::GetFontSize());
     if (ImGui::BeginCombo(tr(lang, S::mw_new_room),
                           form.room_key.empty() ? std::to_string(room).c_str() : (form.room_key + added).c_str())) {
@@ -1621,7 +1648,10 @@ void draw_new_missions(App& app) {
     const std::string listed = e.category >= 0 && e.category < static_cast<int>(codes.size())
                                    ? world_name(lang, codes[static_cast<std::size_t>(e.category)])
                                    : std::to_string(e.category);
-    ImGui::SetNextItemWidth(16 * ImGui::GetFontSize());
+    std::vector<std::string> category_names;
+    for (const auto& code : codes)
+        category_names.push_back(world_name(lang, code));
+    ImGui::SetNextItemWidth(combo_width(category_names));  // the longest name whole
     if (ImGui::BeginCombo(tr(lang, S::mission_category), listed.c_str())) {
         for (std::size_t c = 0; c < codes.size(); ++c)
             if (ImGui::Selectable(world_name(lang, codes[c]).c_str(), e.category == static_cast<int>(c)))
