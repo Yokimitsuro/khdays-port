@@ -409,6 +409,12 @@ public:
     {
         return {};
     }
+    // and the objects that are no enemies with them (the Hydra's Phil, Pegasus, Megara): what a search by entry or by
+    // unit argument finds (1:114, 1:292, 1:323)
+    virtual std::vector<Actor *> objects()
+    {
+        return actors();
+    }
     // An actor's shapes of a kind in its collision groups on now (FUN_1403b4f10), each its group and its point in KH2's
     // world (FUN_1403c9c00): 1:140, 6:5 and 6:8 look for kind 3, what is aimed at
     struct ShapeAt final {
@@ -476,6 +482,8 @@ public:
     // 1:157: the event sequence of that name in the actor's .a.us (its entries of type 0x16, FUN_1403db2f0), played by
     // KH2's one event player (FUN_1402cc4b0, the one before ended), its camera placed from `target` (FUN_1403ad270)
     virtual void event(Actor & /*actor*/, const std::string & /*name*/, Object * /*target*/) {}
+    // 1:17: it made to leave the field at once (its class's leave)
+    virtual void leave(Actor & /*actor*/) {}
     // 1:0: an object made by its entry's number (00objentry.bin's + 0) and set going, its script started; its address
     // (an AI handle's + 4 names it), 0 when none can be made
     virtual std::uint32_t appear(Actor & /*by*/, std::uint32_t /*entry*/)

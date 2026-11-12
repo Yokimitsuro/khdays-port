@@ -759,7 +759,8 @@ COLLECTION_ARCHIVES = {
         "kh2_first": "Image/dt/kh2_first",
         "kh2_fifth": "Image/dt/kh2_fifth",
         "kh2_sixth": "Image/dt/kh2_sixth",
-        # (the port's own mods': mod_inputs.txt)
+        # (the port's own mods': mod_inputs.txt -- kh2_fourth holds KH2's areas, ard/us)
+        "kh2_fourth": "Image/dt/kh2_fourth",
         "bbs_first": "Image/dt/bbs_first",
         "bbs_second": "Image/dt/bbs_second",
         "Recom": "Image/dt/Recom",
@@ -1189,6 +1190,7 @@ HD_ORIGINALS = "hd-originals"  # (under setup/) the HD menus' pieces the port's 
 # where each archive's entries are extracted for the mods' tools (KH2's two archives into one folder)
 MOD_SOURCES = {
     "kh2_first": "kh2",
+    "kh2_fourth": "kh2",
     "kh2_fifth": "kh2",
     "kh2_sixth": "kh2",
     "bbs_first": "bbs_first",

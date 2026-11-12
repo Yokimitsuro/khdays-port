@@ -776,7 +776,7 @@ void add_actor_fields(ai::Calls &calls)
             if (Object *p = me->world->player(*me))
                 found = p->address();
         } else if (me->world != nullptr) {
-            for (Actor *x : me->world->actors())
+            for (Actor *x : me->world->objects())
                 if (const std::uint32_t record = x->u32(field::kEntry);
                     record != 0 && m.memory().u32(record) == a[1].bits) {
                     found = x->address();
@@ -895,7 +895,7 @@ void add_actor_fields(ai::Calls &calls)
         Actor *me = running(m);
         std::int32_t count = 0;
         if (me->world != nullptr) {
-            for (Actor *x : me->world->actors())
+            for (Actor *x : me->world->objects())
                 if (const std::uint32_t record = x->u32(field::kEntry);
                     record != 0 && m.memory().u32(record) == a[0].bits)
                     ++count;
@@ -920,6 +920,38 @@ void add_actor_fields(ai::Calls &calls)
     // 6:1 a prize made at a point (Ts::trap_prize_appear, FUN_14053dba0 -> FUN_1403dc170: its kind's prizes, as many
     // as the party's needs make): Days gives its stand-in's own -- nothing (the Hydra's heads)
     calls.set(6, 1, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:32 a message window opened (trap_message_open, FUN_14042e5c0: a message object, FUN_1403bb270, of a text and
+    // its speaker, its handle given back), 1:48 whether it is over (method_message_is_end, FUN_14042e640: its + 0xa0
+    // 3), 1:33 closed (trap_message_close, FUN_14042e670: its class's + 0x38): Days shows no KH2 message window -- a
+    // handle of none, over at once, nothing closed (Phil's talk)
+    calls.set(1, 32, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_address(0); });
+    calls.set(1, 48, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(1); });
+    calls.set(1, 33, [](ai::Machine &, std::span<ai::Value>) {});
+    // 4:0, 4:1 around a talk's message (Phil's): KH2FM.exe's table has no routine at them (the PS3 build's are unnamed)
+    // -- nothing. 4:4 the mission's information shown (trap_mission_information, FUN_1404334b0: when a mission runs,
+    // FUN_14017b710): Days's mission shows its own -- nothing
+    calls.set(4, 0, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(4, 1, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(4, 4, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:170 its spawn unit's group (trap_obj_unit_group, FUN_14042dac0: + 0x9e8's record's + 8's u16 at + 2): Days's
+    // waves give none -- 0
+    calls.set(1, 170, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:41 a signal to KH2's area (trap_signal_call, FUN_14042ec90: DAT_142a112b8's signals, which its spawns and
+    // scripts wait on): Days's rooms have none -- nothing (Phil's urn)
+    calls.set(1, 41, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:200 its collision with the room's kind (trap_obj_set_bg_collision_type, FUN_14042da80: + 0x740 bits 3 to 6):
+    // kept there as KH2 keeps it; Days's collision is its own (Phil's urn)
+    calls.set(1, 200, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->set_u32(0x740, (x->u32(0x740) & ~0x78u) | ((a[1].bits & 0xfu) << 3));
+    });
+    // 1:17 it made to leave at once (trap_obj_leave_force, FUN_14042c870: its class's + 0x38 on it): the field lets it
+    // go (World::leave: an ally goes; an enemy's Days enemy stays, its script going on)
+    calls.set(1, 17, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x->world != nullptr)
+            x->world->leave(*x);
+    });
 }
 
 // ------------------------------------------------------------------------------------------------- motions
@@ -1512,7 +1544,7 @@ void add_search(ai::Calls &calls)
         Actor *me = running(m);
         std::uint32_t found = 0;
         if (me->world != nullptr)
-            for (Actor *x : me->world->actors())
+            for (Actor *x : me->world->objects())
                 if (x->u32(field::kUnitArgs + 4 * a[1].bits) == a[2].bits) {
                     found = x->address();
                     break;

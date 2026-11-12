@@ -557,7 +557,16 @@ KindFiles *files_of(const std::string &name)
 // ------------------------------------------------------------------------------------------------- the enemies
 
 struct Enemy final {
-    unsigned days = 0; // the Days enemy (a DS address)
+    unsigned days = 0; // the Days enemy (a DS address); an ally's own number (allies, below)
+    // an ally's: the Days enemy whose battle it came with -- the room's collision and the players it finds are that
+    // one's, and it goes with it; 0 an enemy's
+    unsigned anchor = 0;
+    unsigned ally_frame = 0; // the frame an ally was last moved on in
+    bool started = true;     // its script set going (one another's script made: at its first tick)
+    // a large enemy (its object entry's kind 0xc: the Hydra): its Days enemy's sphere the reach of its body (footprint),
+    // its radius now
+    bool large = false;
+    float body = 0.0F;
     KindFiles *kind = nullptr;
     std::unique_ptr<SetMotions> motions;
     std::unique_ptr<Actor> actor;
@@ -688,6 +697,23 @@ const std::string &row_kind(int row)
 }
 std::map<unsigned, std::unique_ptr<Enemy>> enemies; // those set going, by their Days actor
 std::map<const Actor *, Enemy *> by_actor;
+// KH2's objects that are no enemies (their object entry's kind neither a boss's 3, an enemy's 4 nor a large enemy's
+// 0xc: the Hydra's Megara, Phil and Pegasus, 9; Phil's urn, a gimmick, 0x17): no Days enemy stands in for them --
+// nothing of Days's hits them, locks on them or counts them; the shell moves them on and draws them itself as the 3D
+// list closes (allies_close), on the ground of their battle's Days enemy's room (Enemy::anchor), and they go with it.
+// Made by a script (1:0: the Hydra makes Megara) or with their boss, where KH2's area places them (Kind::with)
+std::map<unsigned, std::unique_ptr<Enemy>> allies;
+unsigned allies_made = 0;
+constexpr unsigned kAllyIds = 0xa1100000u; // allies' own numbers (the traces'): no Days actor's, out of its memory
+// accompanied: the Days enemies (and their kinds) whose companions were made, once each
+std::set<std::pair<unsigned, std::string>> accompanied;
+
+// The Days enemy whose shell answers an enemy's questions of Days's field (its room's collision, its players): its
+// own; an ally's battle's
+unsigned shell_of(const Enemy &e)
+{
+    return e.anchor != 0 ? e.anchor : e.days;
+}
 
 // KHDAYS_TRACE_KH2_ENEMIES=3: every call an enemy makes, but those made every tick, with its arguments and the
 // state it is in once the call is over
@@ -887,8 +913,10 @@ bool effect_place(const Enemy &e, std::uint32_t handle, Vec3 &out);
 constexpr float kPlayerMiddle = 0.725F; // a player's middle over his feet (Days's units): half kPlayerHeight
 void strike(AttackObject &o, Object &target);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
-Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s);
+Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = false);
+Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false);
 std::string entry_name(std::uint32_t number);
+bool enemy_entry(const std::string &name);
 
 // ------------------------------------------------------------------------------------------------- its health
 
@@ -957,6 +985,13 @@ public:
         const auto maker = by_actor.find(&by);
         const std::string name = entry_name(entry);
         KindFiles *k = name.empty() || maker == by_actor.end() ? nullptr : files_of(name);
+        if (k != nullptr && !enemy_entry(name)) { // no enemy: an ally of its maker's battle, where its maker stands
+            Enemy *e = start_ally(*k, by.place(), by.yaw(), shell_of(*maker->second), true);
+            if (tracing())
+                khdays_log("kh2 enemies: %08x (%s) makes %08x, a %s (entry %u)", maker->second->days,
+                           by.kind().c_str(), e->days, name.c_str(), unsigned(entry));
+            return e->actor->address();
+        }
         KhdaysKh2Shell s;
         if (k == nullptr || !khdays_kh2_shell_read(maker->second->days, &s)) {
             khdays_log("kh2 enemies: %s makes object %u (%s): not one of the mod's kinds, nothing made", by.kind().c_str(),
@@ -975,7 +1010,7 @@ public:
         KhdaysKh2Shell made = s;
         if (khdays_kh2_shell_read(days, &made))
             std::copy(s.place, s.place + 3, made.place);
-        Enemy *e = start(days, *k, made);
+        Enemy *e = start(days, *k, made, true);
         if (tracing())
             khdays_log("kh2 enemies: %08x (%s) makes %08x, a %s (entry %u)", maker->second->days, by.kind().c_str(),
                        days, name.c_str(), unsigned(entry));
@@ -1345,7 +1380,7 @@ public:
         float f[3], t[3], h[3];
         to_days(from, f);
         to_days(to, t);
-        if (!khdays_kh2_shell_ray(it->second->days, f, t, h))
+        if (!khdays_kh2_shell_ray(shell_of(*it->second), f, t, h))
             return false;
         hit = to_kh2(h);
         return true;
@@ -1414,6 +1449,25 @@ public:
                 out.push_back(e->actor.get());
         return out;
     }
+    // 1:17: an ally goes (allies_close lets it go); an enemy's Days enemy stays, its script going on
+    void leave(Actor &a) override
+    {
+        const auto it = by_actor.find(&a);
+        if (it == by_actor.end())
+            return;
+        if (it->second->anchor != 0)
+            it->second->released = true;
+        if (tracing())
+            khdays_log("kh2 enemies: %08x made to leave (1:17)%s", it->second->days,
+                       it->second->anchor != 0 ? ": it goes" : ": its Days enemy stays");
+    }
+    std::vector<Actor *> objects() override
+    {
+        std::vector<Actor *> out = actors();
+        for (auto &[id, e] : allies)
+            out.push_back(e->actor.get());
+        return out;
+    }
     std::vector<ShapeAt> shapes(Actor &a, int kind) override
     {
         std::vector<ShapeAt> out;
@@ -1463,8 +1517,8 @@ public:
         if (it == by_actor.end())
             return nullptr;
         std::vector<KhdaysKh2Player> list(
-            std::size_t(std::max(0, khdays_kh2_shell_players(it->second->days, nullptr, 0))));
-        const int n = khdays_kh2_shell_players(it->second->days, list.data(), int(list.size()));
+            std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(*it->second), nullptr, 0))));
+        const int n = khdays_kh2_shell_players(shell_of(*it->second), list.data(), int(list.size()));
         const Vec3 at = a.place();
         Object *best = nullptr;
         float best_d = 0.0F;
@@ -1526,6 +1580,7 @@ Field &the_field()
 // reuses it for the next wave -- moved on and drawn where it was as the 3D list closes, until it has faded out
 std::vector<std::unique_ptr<Enemy>> ghosts;
 void ghosts_close();
+void allies_close();
 
 void let_go(unsigned object, const char *why);
 
@@ -1613,7 +1668,7 @@ int model_effects(std::uint32_t record)
     return number == 0x889 ? 4 : 0;
 }
 
-Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
+Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
 {
     auto e = std::make_unique<Enemy>();
     e->days = days;
@@ -1664,7 +1719,14 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
             khdays_log("kh2 enemies: %08x's body %.2f round (its stand-in's %.2f, its centre %.2f up)", days,
                        double(body), double(was_radius), double(was_centre));
     }
-    a.start();
+    if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0)
+        raw->large = (mod().memory.u32(entry + 4) & 0xffu) == 0xcu;
+    // its script set going: at once, or -- made by another's script (1:0) -- at its first tick, as KH2's object's
+    // script first runs as the object is updated (FUN_1403e1240 makes its machine and runs nothing; FUN_1403e1c80 runs
+    // it), after its maker has given it what it gives it (1:218: the Hydra's heads their necks, 11 to 13)
+    raw->started = !made;
+    if (!made)
+        a.start();
     // the effects its model starts as it is made (YS::OBJDATA::start_model_effect, FUN_1403e6470): Hades's hair's
     // flame, Scar's ghosts' own
     const int own = k.model_fx ? model_effects(a.u32(field::kEntry)) : 0;
@@ -1673,6 +1735,71 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s)
     if (tracing())
         khdays_log("kh2 enemies: %08x set going as %s, attack slot %d, %d effects of its model", days, k.name.c_str(),
                    raw->slot, own);
+    // the objects KH2's area places with it that are no enemies (Kind::with: the Hydra's Phil, Pegasus and Phil's urn),
+    // allies of its battle: where KH2 places them from it, turned as the way from it to its player is turned here
+    // (its facing, set above) from KH2's; once a Days enemy and kind (it comes back after KH2's "leave" as itself)
+    if (const Kind *kind = find_kind(mod().kinds, k.name);
+        kind != nullptr && !kind->with.empty() && accompanied.insert({days, k.name}).second) {
+        const float turn = a.yaw(), c = std::cos(turn), sn = std::sin(turn);
+        const Vec3 at = a.place();
+        for (const Companion &with : kind->with) {
+            KindFiles *f = enemy_entry(with.name) ? nullptr : files_of(with.name);
+            if (f == nullptr) {
+                khdays_log("kh2 enemies: %s's %s not made (not one of the mod's kinds, or an enemy)", k.name.c_str(),
+                           with.name.c_str());
+                continue;
+            }
+            const Vec3 to = {at[0] + with.x * c + with.z * sn, at[1] + with.y, at[2] - with.x * sn + with.z * c};
+            start_ally(*f, to, with.yaw + turn, days);
+        }
+    }
+    return raw;
+}
+
+// An ally (allies, above) of kind `k` made at `place` (KH2's world) turned by `yaw`, in the battle of the Days enemy
+// `anchor`: its script set going at once, its model's own effects started as an enemy's
+Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made)
+{
+    auto e = std::make_unique<Enemy>();
+    e->days = kAllyIds + ++allies_made;
+    e->anchor = anchor;
+    e->kind = &k;
+    e->motions = std::make_unique<SetMotions>(k.set);
+    e->actor = std::make_unique<Actor>(k.script, mod().memory, mod().calls, k.name);
+    e->player = std::make_unique<kh2::MotionPlayer>(*k.skeleton);
+    Actor &a = *e->actor;
+    a.world = &the_field();
+    a.motions = e->motions.get();
+    a.set_u32(field::kEntry, entry_record(k.name));
+    a.set_place(place);
+    a.set_yaw(yaw);
+    to_days(place, e->place);
+    std::copy(e->place, e->place + 3, e->home);
+    e->placed = true;
+    e->given = place;
+    Enemy *raw = e.get();
+    by_actor[&a] = raw;
+    allies[raw->days] = std::move(e);
+    static bool hooked = false;
+    if (!hooked) {
+        khdays_g3d_add_swap_hook(allies_close);
+        hooked = true;
+    }
+    if (tracing()) {
+        const unsigned id = raw->days;
+        a.states().entered = [id, raw](const std::string &name) {
+            raw->state = name;
+            khdays_log("kh2 enemies: %08x enters %s", id, name.c_str());
+        };
+        khdays_log("kh2 enemies: %08x made, a %s with %08x's battle (not an enemy) at %.0f %.0f %.0f (KH2's cm)", id,
+                   k.name.c_str(), anchor, double(place[0]), double(place[1]), double(place[2]));
+    }
+    raw->started = !made; // (as an enemy a script makes: start)
+    if (!made)
+        a.start();
+    const int own = k.model_fx ? model_effects(a.u32(field::kEntry)) : 0;
+    for (int n = 0; n < own; ++n)
+        cast(*raw, n, 0, false, k.model_fx.get());
     return raw;
 }
 
@@ -1781,8 +1908,8 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
     const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
     if (attr == nullptr || e.pose.empty() || e.dying)
         return;
-    std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(e.days, nullptr, 0))));
-    const int n = khdays_kh2_shell_players(e.days, list.data(), int(list.size()));
+    std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
+    const int n = khdays_kh2_shell_players(shell_of(e), list.data(), int(list.size()));
     for (std::size_t r = 0; r < attr->ranges.size(); ++r) {
         const auto &range = attr->ranges[r];
         if ((range.id != 10 && range.id != 33) || range.params.size() < 2 || a.motion.time < float(range.start) ||
@@ -1914,6 +2041,18 @@ std::string entry_name(std::uint32_t number)
     }
     const auto it = names.find(number);
     return it != names.end() ? it->second : std::string();
+}
+
+// Whether the object entry of `name` is an enemy's (its + 4, its kind: 3 a boss, 4 an enemy, 0xc a large one -- the
+// Hydra) -- a Days enemy stands in for it -- or not (9 a friend in battle, 0x17 a gimmick: an ally, allies above); an
+// enemy's when the mod has no entry for it, as every kind was before
+bool enemy_entry(const std::string &name)
+{
+    const std::uint32_t at = entry_record(name);
+    if (at == 0)
+        return true;
+    const unsigned kind = mod().memory.u32(at + 4) & 0xffu;
+    return kind == 3 || kind == 4 || kind == 0xc;
 }
 
 // The motion set the first object entry of the model `name` names (00objentry.bin's + 0x28, as the mod's tool copies
@@ -2523,7 +2662,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         float from[3], to[3], hit[3];
         to_days({was[0], middle, was[2]}, from);
         to_days({was[0] + dx / went * reach, middle, was[2] + dz / went * reach}, to);
-        if (khdays_kh2_shell_ray(e.days, from, to, hit)) {
+        if (khdays_kh2_shell_ray(shell_of(e), from, to, hit)) {
             const Vec3 at = to_kh2(hit);
             const float d =
                 std::max(0.0F, std::sqrt((at[0] - was[0]) * (at[0] - was[0]) + (at[2] - was[2]) * (at[2] - was[2])) -
@@ -2542,7 +2681,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         float from[3], to[3], hit[3];
         to_days({h.place[0], h.place[1] - kGroundSearchUp, h.place[2]}, from);
         to_days({h.place[0], h.place[1] + kGroundSearchDown, h.place[2]}, to);
-        if (khdays_kh2_shell_ray(e.days, from, to, hit)) {
+        if (khdays_kh2_shell_ray(shell_of(e), from, to, hit)) {
             const float ground = to_kh2(hit)[1];
             if (ground - was[1] > kStep) {
                 if (trace_level() >= 2)
@@ -2704,6 +2843,34 @@ std::set<int> groups_on(const Enemy &e)
     return groups;
 }
 
+// A large enemy's body as a Days enemy's one sphere holds it (Enemy::large): how far along the ground from its place its
+// body's shapes (kind 1, in its groups on, in its pose now) reach at a player's height -- KH2 keeps its player's body
+// (P_EX100's kind 1: a cylinder 85 high, 35 round) off each sphere it meets, so a sphere counts by its widest within
+// that height over the ground; 0 none does. KH2's Hydra is many spheres on its legs, chest and necks: its largest
+// alone (or one of a group off) left Roxas under it, all of them (the necks above him) kept him off its own reaction
+// commands' zones
+float footprint(Enemy &e, const KhdaysKh2Shell &s)
+{
+    constexpr float kPlayerBody = 85.0F / kKh2PerDays; // KH2's player's body's height (Days's units)
+    const std::set<int> on = groups_on(e);
+    if (e.pose.empty())
+        pose(e);
+    float reach = 0.0F;
+    for (const Shape &sh : e.kind->shapes) {
+        if (sh.kind != 0x0001 || on.count(sh.group) == 0)
+            continue;
+        float d[3];
+        days_point(e, s, sh.bone, sh.at, d);
+        const float r = sh.radius / kKh2PerDays, low = s.place[1], high = s.place[1] + kPlayerBody;
+        const float off = d[1] < low ? low - d[1] : d[1] > high ? d[1] - high : 0.0F;
+        if (off >= r)
+            continue;
+        const float dx = d[0] - s.place[0], dz = d[2] - s.place[2];
+        reach = std::max(reach, std::sqrt(dx * dx + dz * dz) + std::sqrt(r * r - off * off));
+    }
+    return reach;
+}
+
 void zone_offer(Enemy &e)
 {
     e.zone = -1;
@@ -2733,6 +2900,39 @@ void zone_offer(Enemy &e)
         if (depth < 1.0F && (e.zone < 0 || depth < e.zone_depth)) {
             e.zone = sh.command;
             e.zone_depth = depth;
+        }
+    }
+}
+
+// KH2's attacks that carry a reaction command (2:51: the Hydra's Urninator on the urn Phil hands the player): offered
+// while this game's own player stands within its reach of the attack, its owner the one a press sends it to -- the PS3
+// build's YS::RC_SEARCHER::check_magic: each magic attack with a command (ATTACK::EachMagic, its + 0x118: + 0x11c
+// here), a collision of its two sizes (+ 0x11c, + 0x120: + 0x120, + 0x124 here) at its place met by the player's,
+// TARGET::set_attack to its owner. As a script's offer (1:165), this tick
+void attack_offers(Enemy &e)
+{
+    const auto p = players.find(local_player);
+    if (local_player == 0 || held.count(local_player) != 0 || p == players.end() || !p->second)
+        return;
+    const Vec3 me = p->second->place();
+    const auto f32 = [](std::uint32_t at) {
+        const std::uint32_t bits = mod().memory.u32(at);
+        float f = 0.0F;
+        std::memcpy(&f, &bits, sizeof(f));
+        return f;
+    };
+    for (const auto &[at, o] : attacks) {
+        if (o.enemy != e.days || o.ended || !o.placed)
+            continue;
+        const int command = std::int32_t(mod().memory.u32(at + 0x11c));
+        if (command <= 0)
+            continue;
+        const float reach = f32(at + 0x120), height = f32(at + 0x124);
+        const float dx = me[0] - o.at[0], dz = me[2] - o.at[2];
+        if (dx * dx + dz * dz <= reach * reach && std::fabs(me[1] - o.at[1]) <= std::max(reach, height)) {
+            if (tracing() && script_offer.command != command)
+                khdays_log("kh2 enemies: %08x's attack %08x offers command %d", e.days, at, command);
+            script_offer = {e.days, command, khdays_link_frame()};
         }
     }
 }
@@ -3005,7 +3205,7 @@ void attack_objects(Enemy &e)
             float from[3], to[3], hit[3];
             to_days(o.at, from);
             to_days({o.at[0], o.at[1] + reach, o.at[2]}, to);
-            o.on_floor = khdays_kh2_shell_ray(e.days, from, to, hit) != 0;
+            o.on_floor = khdays_kh2_shell_ray(shell_of(e), from, to, hit) != 0;
             if (o.on_floor) { // where (2:42: + 0xb4)
                 const Vec3 at = to_kh2(hit);
                 const float met[4] = {at[0], at[1], at[2], 1.0F};
@@ -3015,8 +3215,8 @@ void attack_objects(Enemy &e)
         const float step = std::min(radius, height);
         if (o.placed && step > 0.0F && !o.players) {
             if (list.empty()) {
-                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(e.days, nullptr, 0))));
-                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(e.days, list.data(), int(list.size())))));
+                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
+                list.resize(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), list.data(), int(list.size())))));
             }
             const Vec3 way = {o.at[0] - o.before[0], o.at[1] - o.before[1], o.at[2] - o.before[2]};
             const float length = std::sqrt(way[0] * way[0] + way[1] * way[1] + way[2] * way[2]);
@@ -3198,6 +3398,10 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
     }
     a.set_place(place); // Days's, its collision's push taken
     const unsigned started = a.motion.started;
+    if (!e.started) { // made by another's script: its first tick (start)
+        e.started = true;
+        a.start();
+    }
     if (!e.paused)
         a.tick();
     if (const Vec3 now = a.place(); now != place)
@@ -3275,7 +3479,7 @@ void one_tick(Enemy &e, const KhdaysKh2Shell &s, Vec3 &place)
         float from[3], to[3], hit[3];
         to_days({to_place[0], to_place[1] - kGroundSearchUp, to_place[2]}, from);
         to_days({to_place[0], to_place[1] + kGroundSearchDown, to_place[2]}, to);
-        const bool ground = khdays_kh2_shell_ray(e.days, from, to, hit) != 0;
+        const bool ground = khdays_kh2_shell_ray(shell_of(e), from, to, hit) != 0;
         const float drop = ground ? to_kh2(hit)[1] - place[1] : kGroundSearchDown;
         if (drop > kStep) {
             if (trace_level() >= 2)
@@ -3857,6 +4061,101 @@ void ghosts_close()
     }
 }
 
+// The allies moved on (KH2's 60 ticks a second, as the frames went) and drawn, in their battle's Days enemy's
+// projection, as the 3D list closes; those whose battle is over (its Days enemy gone and its end played) go
+void allies_close()
+{
+    for (auto it = allies.begin(); it != allies.end();) {
+        Enemy &e = *it->second;
+        const bool battle = enemies.count(e.anchor) != 0 ||
+                            std::any_of(ghosts.begin(), ghosts.end(), [&](const auto &g) { return g->days == e.anchor; });
+        if (battle && !e.released) {
+            ++it;
+            continue;
+        }
+        if (tracing())
+            khdays_log("kh2 enemies: %08x (%s) goes with its battle", e.days, e.kind->name.c_str());
+        drop_attacks(e.days);
+        std::vector<unsigned> holding;
+        for (const auto &[object, h] : held)
+            if (h.enemy == e.days)
+                holding.push_back(object);
+        for (const unsigned object : holding)
+            let_go(object, "its ally gone");
+        for (const std::uint32_t record : {e.attack_record, e.command_record})
+            if (record != 0)
+                mod().memory.remove(record);
+        by_actor.erase(e.actor.get());
+        it = allies.erase(it);
+    }
+    float camera[16];
+    if (allies.empty() || !field_camera(camera))
+        return;
+    const unsigned now = khdays_link_frame();
+    const unsigned per_frame = unsigned(std::max(1L, std::lround(khdays_link_frame_seconds() * 60.0)));
+    for (auto &[id, g] : allies) {
+        Enemy &e = *g;
+        const unsigned ticks = e.ally_frame == 0     ? per_frame
+                               : now >= e.ally_frame ? (now - e.ally_frame) * per_frame
+                                                     : per_frame;
+        e.ally_frame = now;
+        // what the shell knows of it: its place, the ground under it (its battle's room, from 2 m above it)
+        KhdaysKh2Shell s{};
+        std::copy(e.place, e.place + 3, s.place);
+        s.above = -1.0F;
+        s.standing = s.own = 1;
+        s.hp = s.hp_max = 1;
+        s.kind = -1;
+        const float from[3] = {e.place[0], e.place[1] + 2.0F, e.place[2]};
+        const float to[3] = {e.place[0], e.place[1] - kGroundSearchDown / kKh2PerDays, e.place[2]};
+        float hit[3];
+        if (khdays_kh2_shell_ray(e.anchor, from, to, hit))
+            s.above = e.place[1] - hit[1];
+        Vec3 place = e.actor->place(); // its own: nothing of Days's moves it
+        if (s.above != -1.0F) {
+            e.floor = place[1] + s.above * kKh2PerDays;
+            e.floor_known = true;
+        }
+        for (unsigned t = 0; t < ticks; ++t) {
+            one_tick(e, s, place);
+            if (e.carrier != 0)
+                if (const auto h = held.find(e.carrier); h != held.end()) { // on the player carrying it (1:18)
+                    place = h->second.place;
+                    e.actor->set_place(place);
+                    if ((e.carry_flags & 2) == 0)
+                        e.actor->set_yaw(h->second.yaw);
+                }
+            pose(e);
+        }
+        to_days(place, e.place);
+        e.given = e.actor->place();
+        const auto battle = enemies.find(e.anchor);
+        if (battle != enemies.end() && battle->second->seen)
+            std::copy(battle->second->pure, battle->second->pure + 16, e.pure);
+        if (e.pure[15] == 0.0F && e.pure[11] == 0.0F)
+            continue; // (no projection known yet: its battle's enemy not drawn)
+        e.seen = true;
+        e.drawn_frame = now;
+        const float c = std::cos(e.actor->yaw()), sn = std::sin(e.actor->yaw());
+        const float mine[16] = {c, 0, -sn, 0, 0, 1, 0, 0, sn, 0, c, 0, e.place[0], e.place[1], e.place[2], 1};
+        float view[16];
+        row_matrix_mul(mine, camera, view);
+        draw_effects(e, view, e.pure);
+        const unsigned alpha = unsigned(std::lround(drawn_fade(e) * 31.0F));
+        if (alpha == 0 || e.pose.empty())
+            continue;
+        std::vector<float> bones(e.pose.size() * 16);
+        for (std::size_t b = 0; b < e.pose.size(); ++b)
+            std::copy(e.pose[b].begin(), e.pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
+        if (!khdays_models_draw_posed(e.kind->mdlx.c_str(), view, e.pure, (alpha << 16) | (1u << 24), bones.data(),
+                                      e.pose.size(), e.actor->hidden_parts) &&
+            !e.told_draw) {
+            e.told_draw = true;
+            khdays_log("kh2 enemies: %s's model cannot be drawn (the message above says why)", e.kind->name.c_str());
+        }
+    }
+}
+
 } // namespace
 
 extern "C" void khdays_kh2_enemies_made(int row, void *actor)
@@ -3892,6 +4191,9 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     drop_attacks(0);
     enemies.clear();
     ghosts.clear();
+    allies.clear();
+    allies_made = 0;
+    accompanied.clear();
     by_actor.clear();
     kind_of.clear();
     appeared.clear();
@@ -4083,6 +4385,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         pose(*e);
         attack(*e, s);
         attack_objects(*e);
+        attack_offers(*e);
     }
     zone_offer(*e);
     take_command(*e);
@@ -4128,6 +4431,17 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     e->placed = true;
     e->given = e->actor->place();
     e->radius = s.radius;
+    if (e->large) {
+        KhdaysKh2Shell now = s;
+        std::copy(e->place, e->place + 3, now.place);
+        const float body = footprint(*e, now);
+        if (body > 0.0F && std::fabs(body - e->body) > 0.05F) {
+            khdays_kh2_shell_size(days, body, body, nullptr, nullptr);
+            if (tracing() && std::fabs(body - e->body) > 0.5F)
+                khdays_log("kh2 enemies: %08x's body reaches %.2f (its sphere's radius)", days, double(body));
+            e->body = body;
+        }
+    }
     khdays_kh2_shell_place(days, e->place, e->actor->yaw());
 }
 

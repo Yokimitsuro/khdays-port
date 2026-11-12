@@ -1276,6 +1276,67 @@ void test_making()
     CHECK(again != first && rig.memory.u32(again) == 0u);
 }
 
+// The Hydra's world: its friends found among the field's objects (no enemies: World::objects), one made to leave
+struct FriendsWorld final : kh::World {
+    std::vector<kh::Actor *> friends;
+    kh::Actor *left = nullptr;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    std::vector<kh::Actor *> objects() override
+    {
+        return friends;
+    }
+    void leave(kh::Actor &a) override
+    {
+        left = &a;
+    }
+};
+
+// The Hydra's and its friends' calls: Phil found by his entry among the objects that are no enemies (1:114, 1:323),
+// his talk's message window (1:32, 1:48, 1:33; 4:0, 4:1, 4:4 nothing), his unit's group (1:170), the urn's collision
+// kind with the room (1:200), a signal (1:41), one made to leave (1:17); the kinds' list's companions
+void test_hydra_friends()
+{
+    Rig rig;
+    const Words loop = misc(0) + Words{0x0007, 0xfffd};
+    kh::Actor hydra(script({{1, 0}}, loop), rig.memory, rig.calls, "hydra");
+    kh::Actor phil(script({{1, 0}}, loop), rig.memory, rig.calls, "phil");
+    FriendsWorld world;
+    hydra.world = phil.world = &world;
+    world.friends = {&phil};
+    const std::uint32_t entry = rig.memory.add(96, "Phil's entry");
+    rig.memory.set_u32(entry, 364);
+    phil.set_u32(kh::field::kEntry, entry);
+    const std::uint32_t handle = rig.memory.add(16, "a handle");
+    call(rig, hydra, 1, 114, {ai::Value::of_address(handle), ai::Value::of_int(364)});
+    CHECK(rig.memory.u32(handle + 4) == phil.address());
+    CHECK(call(rig, hydra, 1, 323, {ai::Value::of_int(364)}).i() == 1);
+    CHECK(world.actors().empty()); // (no enemy: 6:5's search does not see him)
+    CHECK(call(rig, phil, 1, 32, {ai::Value::of_int(48), ai::Value::of_int(0)}).bits == 0u);
+    CHECK(call(rig, phil, 1, 48, {ai::Value::of_address(0)}).i() == 1);
+    call(rig, phil, 1, 33, {ai::Value::of_address(0)});
+    call(rig, phil, 4, 0, {ai::Value::of_address(phil.address())});
+    call(rig, phil, 4, 1, {ai::Value::of_address(phil.address())});
+    call(rig, phil, 4, 4, {ai::Value::of_int(1)});
+    CHECK(call(rig, phil, 1, 170, {ai::Value::of_address(phil.address())}).i() == 0);
+    const ai::Value self = ai::Value::of_address(phil.address());
+    phil.set_u32(0x740, 0xffffffffu);
+    call(rig, phil, 1, 200, {self, ai::Value::of_int(2)});
+    CHECK(phil.u32(0x740) == ((0xffffffffu & ~0x78u) | (2u << 3)));
+    call(rig, phil, 1, 41, {ai::Value::of_int(5), ai::Value::of_int(1)});
+    call(rig, phil, 1, 17, {self});
+    CHECK(world.left == &phil);
+    const auto kinds = kh::read_kinds("B_HE100\tHydra\tyes\t119\t-\tplayer\t11652\t"
+                                      "N_HE020_BTL 746.8 -500.0 -849.8 -3.092;f_he030_l 787.1 -500 -1002.8 0.05\n"
+                                      "B_HE110\tHydra's head\tyes\t74\t-\tplayer\t-\t-\n");
+    const kh::Kind *h = kh::find_kind(kinds, "B_HE100");
+    CHECK(h != nullptr && h->with.size() == 2 && h->with[0].name == "N_HE020_BTL" && h->with[1].name == "F_HE030_L");
+    CHECK(h->with[0].x > 746.7F && h->with[0].y == -500.0F && h->with[0].z < -849.7F && h->with[0].yaw < -3.09F);
+    CHECK(kh::find_kind(kinds, "B_HE110")->with.empty());
+}
+
 // The second bosses' world: what their effects' looks, voices and attacks' floor asked of it
 struct SecondBossesWorld final : kh::World {
     std::uint32_t scaled = 0, coloured = 0;
@@ -1616,6 +1677,7 @@ int main()
     test_leave_after_end();
     test_second_bosses();
     test_lights();
+    test_hydra_friends();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

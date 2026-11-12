@@ -36,6 +36,7 @@ Says what it made and what it left out.
 from __future__ import annotations
 
 import argparse
+import math
 import shutil
 import struct
 import subprocess
@@ -99,6 +100,12 @@ KINDS = {
     "N_NM050_BTL_2": "Lock (in the Prison Keeper)",
     "N_NM060_BTL_2": "Shock (in the Prison Keeper)",
     "N_NM070_BTL_2": "Barrel (in the Prison Keeper)",
+    "B_HE100": "Hydra",
+    "B_HE110": "Hydra's head",
+    "N_HE020_BTL": "Phil (with the Hydra)",
+    "N_HE030_BTL": "Megara (with the Hydra)",
+    "N_HE040_BTL": "Pegasus (with the Hydra)",
+    "F_HE030_L": "Urn (Phil's, with the Hydra)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -131,6 +138,12 @@ COMMON_BANK = "se/se000.win32.scd"  # KH2's bank 0 (a sound id below 1000): the 
 PAX_ENTRY = 0x12  # an .a.us's PAX
 ELEMENT = 0x50  # a PAX's elements, from its + 0x10 (their count at + 8): each one's sound at + 0x18 (none: 0 or -1)
 SOUND_TRIGGER = 8  # a motion's single-frame trigger: a sound, (bank, number, ...)
+AREAS = "ard/us"  # original/<AREAS>/*.ard: KH2's areas, whose spawns place a boss's companions
+SPAWN_ENTRY = 0xC  # an .ard's spawn file (OpenKH's ARD page, "Spawn Point")
+PLACED_SETS = (1, 2)  # the spawn sets KH2 places as its area loads (type 5: those its scripts make, 1:0)
+PARTY = (0, 1)  # object entries' kinds of the player and his party (PLAYER, FRIEND_1, FRIEND_2)
+BOSSES = (3, 0xC)  # object entries' kinds of a boss and a large enemy (the Hydra)
+ENEMIES = (3, 4, 0xC)  # and of an enemy: the port makes each a Days enemy
 
 
 def run_exe(line: list[str]) -> str:
@@ -148,16 +161,127 @@ def calls_in(bar: bytes) -> set[tuple[int, int]]:
 
 
 def kinds_line(
-    name: str, title: str, calls: set[tuple[int, int]], handled: set[tuple[int, int]], journal: int | None = None
+    name: str,
+    title: str,
+    calls: set[tuple[int, int]],
+    handled: set[tuple[int, int]],
+    journal: int | None = None,
+    with_it: list[tuple[str, float, float, float, float]] | None = None,
 ) -> str:
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
-    script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", and its name's
-    text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-" (tab-separated)."""
+    script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
+    text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-", and the objects KH2 places with it
+    (companions: "name x y z yaw" each, apart by ";") else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
     named = str(journal) if journal is not None else "-"
-    return f"{name}\t{title}\t{'no' if missing or not calls else 'yes'}\t{len(calls)}\t{listed}\t{plays}\t{named}"
+    placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" for n, x, y, z, yaw in with_it or []) or "-"
+    covered = "no" if missing or not calls else "yes"
+    return f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}"
+
+
+def entry_kinds(objentry: bytes) -> dict[int, tuple[str, int]]:
+    """00objentry.bin's entries by number: (model name, kind) -- + 0 the number, + 4 the kind (0 the player, 1 his
+    party, 3 a boss, 4 an enemy, 9 a friend in battle, 0xc a large enemy, 0x17 a gimmick; OpenKH's 00objentry page
+    names some), + 8 the model's name."""
+    out = {}
+    count = struct.unpack_from("<I", objentry, 4)[0] if len(objentry) >= 8 else 0
+    for i in range(count):
+        at = 8 + 96 * i
+        if at + 96 > len(objentry):
+            break
+        name = objentry[at + 8 : at + 0x28].split(b"\0")[0].decode("latin-1")
+        out[struct.unpack_from("<I", objentry, at)[0]] = (name, objentry[at + 4])
+    return out
+
+
+def spawn_sets(ard: bytes) -> list[tuple[str, list[tuple[int, list[tuple[int, float, float, float, float]]]]]]:
+    """An area's spawn files (its .ard's BAR entries of type 0xc; OpenKH's ARD page, "Spawn Point": a u32 type, 2, and
+    a u32 count of sets) as (the entry's name, its sets), each set (its type, its objects): a 0x2c-byte descriptor --
+    + 0 its type, + 4 its objects' count, + 6 its event activators', + 8 its walk paths', + 0xa its return
+    parameters', + 0xc its signals' -- then its objects (0x40 bytes each: + 0 the object entry's number, + 4 its place
+    x, y, z, KH2's, + 0x10 its rotation x, y, z), its activators (0x40 each), its walk paths (8 bytes, + 2 their
+    points' count, then the points, 12 bytes each), its return parameters (0x10 each) and its signals (8 each). Each
+    object as (number, x, y, z, its turn about y); a set running past its entry ends that entry's list."""
+    out = []
+    if ard[:4] != kh2_bdx.BAR:
+        return out
+    for k in range(struct.unpack_from("<I", ard, 4)[0]):
+        if 16 + 16 * (k + 1) > len(ard):
+            break
+        kind, _, name, at, size = struct.unpack_from("<HH4sII", ard, 16 + 16 * k)
+        if kind != SPAWN_ENTRY or size < 8 or at + size > len(ard):
+            continue
+        spawn = ard[at : at + size]
+        sets = []
+        p = 8
+        for _ in range(struct.unpack_from("<I", spawn, 4)[0]):
+            if p + 0x2C > len(spawn):
+                break
+            set_type = spawn[p]
+            objects, activators, paths, returns = struct.unpack_from("<4h", spawn, p + 4)
+            signals = struct.unpack_from("<I", spawn, p + 0xC)[0]
+            p += 0x2C
+            if p + 0x40 * (objects + activators) > len(spawn):
+                break
+            placed = []
+            for k in range(objects):
+                number, x, y, z, _, yaw, _ = struct.unpack_from("<I6f", spawn, p + 0x40 * k)
+                placed.append((number, x, y, z, yaw))
+            p += 0x40 * (objects + activators)
+            for _ in range(paths):
+                if p + 8 > len(spawn):
+                    break
+                p += 8 + 12 * struct.unpack_from("<H", spawn, p + 2)[0]
+            p += 0x10 * returns + 8 * signals
+            sets.append((set_type, placed))
+        out.append((name.rstrip(b"\0").decode("latin-1"), sets))
+    return out
+
+
+def companions(
+    ards: list[bytes], entries: dict[int, tuple[str, int]], name: str, kinds: set[str]
+) -> list[tuple[str, float, float, float, float]]:
+    """The objects KH2 places with a boss (its entry's kind 3 or 0xc) as its battle begins that are no enemies -- the
+    Hydra's Phil, Pegasus and Phil's urn: its area's battle spawn ("b_..") whose set holds it and the player (its
+    fight's own), the other objects of that spawn's sets KH2 places as the area loads (types 1 and 2; type 5 holds
+    those its scripts make, 1:0) but the player and his party, enemies and bosses (a mission's author places those:
+    the Volcanic Lord's Blizzard Lord) and those the mod has no kind of; each as (name, x, y, z, yaw) in its own frame:
+    from it, turned so that the way from it to the player is + z (the port turns them to where its player stands).
+    The first such spawn of the areas as given; none when none holds it, or for an enemy."""
+    if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+        return []
+    for ard in ards:
+        for entry, sets in spawn_sets(ard):
+            if not entry.startswith("b"):
+                continue
+            placed = [s for s in sets if s[0] in PLACED_SETS]
+            own = next(
+                (
+                    objects
+                    for _, objects in placed
+                    if any(entries.get(o[0], ("", -1))[0] == name for o in objects)
+                    and any(entries.get(o[0], ("", -1))[1] == 0 for o in objects)
+                ),
+                None,
+            )
+            if own is None:
+                continue
+            me = next(o for o in own if entries.get(o[0], ("", -1))[0] == name)
+            player = next(o for o in own if entries.get(o[0], ("", -1))[1] == 0)
+            turn = math.atan2(player[1] - me[1], player[3] - me[3])
+            c, s = math.cos(turn), math.sin(turn)
+            out = []
+            for _, objects in placed:
+                for o in objects:
+                    other, kind = entries.get(o[0], ("", -1))
+                    if o is me or kind in PARTY or kind in ENEMIES or other not in kinds:
+                        continue
+                    dx, dy, dz = o[1] - me[1], o[2] - me[2], o[3] - me[3]
+                    out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn))
+            return out
+    return []
 
 
 def journal_titles(jiminy: bytes, objentry: bytes) -> dict[str, int]:
@@ -386,11 +510,15 @@ def make(
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = [
-        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name (kh2_enemies.py; the port's "
-        "kh2_enemies.txt)"
+        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it (kh2_enemies.py; "
+        "the port's kh2_enemies.txt)"
     ]
     entries_file = kh2 / "original" / "00objentry.bin"
     entries = entries_file.read_bytes() if entries_file.is_file() else b""
+    numbered = entry_kinds(entries)
+    areas = [a.read_bytes() for a in sorted((kh2 / "original" / AREAS).glob("*.ard"))]
+    if not areas:
+        left_out.append(f"original/{AREAS}/*.ard (KH2's areas): not there; no boss brings what KH2 places with it")
     jiminy_file = kh2 / "original" / "menu" / "us" / JOURNAL
     titles = journal_titles(jiminy_file.read_bytes(), entries) if jiminy_file.is_file() else {}
     if not jiminy_file.is_file():
@@ -419,7 +547,8 @@ def make(
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
-        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name)))
+        with_it = companions(areas, numbered, name, set(KINDS))
+        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     for part, what in SHARED:

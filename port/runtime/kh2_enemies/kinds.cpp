@@ -50,6 +50,16 @@ std::vector<Kind> read_kinds(const std::string &text)
         k.plays_player = cells.size() > 5 && cells[5] == "player"; // (a list made before the column: none)
         if (cells.size() > 6 && !cells[6].empty() && cells[6] != "-")
             k.journal = std::atoi(cells[6].c_str());
+        if (cells.size() > 7 && cells[7] != "-") {
+            std::istringstream placed(cells[7]);
+            std::string one;
+            while (std::getline(placed, one, ';')) {
+                std::istringstream words(one);
+                Companion c;
+                if (words >> c.name >> c.x >> c.y >> c.z >> c.yaw)
+                    k.with.push_back(Companion{upper(c.name), c.x, c.y, c.z, c.yaw});
+            }
+        }
         out.push_back(std::move(k));
     }
     return out;

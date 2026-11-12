@@ -217,7 +217,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1) |
 | 1:167 | a state entered as 1:8 does when its priority (its record's + 4) is at least the current state's (`trap_obj_act_start_pri`: `FUN_1403caa90`; + 0x128 the current one's, which entering sets -- `FUN_1403cad00` --, 0 none): the Dancer's | as KH2 |
 | 0:60 | an assertion (`trap_assert`: `FUN_14041e710`, empty in the PC's build): in the Rapid Thruster's and the Armored Knight's states' event routines | nothing, as KH2 |
-| 1:0 | an object made by its entry's number (`trap_sysobj_appear`: `FUN_14042b130` -> `FUN_1403df930`, its class by its entry's kind, at the world's origin facing pi -- `DAT_140623df0`, `DAT_140623b78` --, its script started), its AI handle given back: the Sorcerer's cubes `M_EX870` make the Sorcerer (315: their entry's + 0x50 names it) and put it where they stand (1:148, 1:79) | a Days enemy of the maker's class made where the maker stands (`khdays_enemies_make`), the entry's kind's script set going on it at once; nothing (0) for an entry the mod has no kind for |
+| 1:0 | an object made by its entry's number (`trap_sysobj_appear`: `FUN_14042b130` -> `FUN_1403df930`, its class by its entry's kind, at the world's origin facing pi -- `DAT_140623df0`, `DAT_140623b78` --, its script started), its AI handle given back: the Sorcerer's cubes `M_EX870` make the Sorcerer (315: their entry's + 0x50 names it) and put it where they stand (1:148, 1:79) | an enemy's entry (kinds 3, 4, 0xc): a Days enemy of the maker's class made where the maker stands (`khdays_enemies_make`); another's: an ally there ("Allies"); its kind's script set going at its first tick, as KH2's (`FUN_1403e1240` runs nothing: what its maker gives it next, 1:218, is there as it starts -- the Hydra's heads' necks); nothing (0) for an entry the mod has no kind for |
 | 1:328 | the object counted as defeated, once (`trap_obj_dead_mark`: `FUN_1403d4a40`: unless + 0x9b8 bit 2, its group told -- + 0x9e8, `FUN_1403fed10` -- and the bit set): the cubes in their `leave` (far from the player: counted for their wave, then faded out) | its Days enemy defeated by a hit of all its health (seat 0's player its author: its prizes, its wave's count), no "dead" entered: its script ends it |
 | 1:125 | its pictures' fade (`trap_obj_tex_fade_start`, `FUN_1403b7810` on + 0xaa4, `YS::OBJ`'s `TexFade`) | kept, not drawn |
 | 1:194, 1:195 | parts of its model in stealth and back (`trap_obj_set_stealth`, `_reset_`: `kn::ModelObj::setStealth` on + 0x7b0's model, a bit a part group; KH2 draws them as a refraction) | the whole model drawn at a quarter of its fade while any part is |
@@ -246,8 +246,14 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 0:24 | a value printed (`trap_stputi`: empty in the game) | nothing |
 | 1:37 | a part of KH2's map shown (`trap_bg_show`: `DAT_140abcbd8`'s bit, the map's and its effects' parts) | nothing: the room is Days's (the Hydra's) |
 | 1:335, 1:336 | its bones' occluders off, on (`trap_obj_disable_occ_bone`, `_enable_`: `dk::ObjOcc`'s records at + 0x9c0, + 0x10 bit 1 -- KH2's occlusion culling) | nothing: the port culls nothing so (the Hydra's) |
-| 6:1 | a prize made at a point (`Ts::trap_prize_appear`, `FUN_1403dc170`) | nothing: Days gives the stand-in's (the Hydra's heads) |
-| 2:51 | a reaction command put on an attack (`trap_attack_set_rc`, `FUN_140437b70`: + 0x114 the object, + 0x118 the owner, + 0x11c the command, + 0x120 and + 0x124 two values) | kept as KH2 keeps them; what offers it is not read yet (the Hydra's Urninator, 420) |
+| 6:1 | a prize made at a point (`Ts::trap_prize_appear`, `FUN_1403dc170`) | nothing: Days gives the stand-in's (the Hydra's heads); Megara's cheering prizes are not made (Days has no prize a script makes at a point yet) |
+| 1:32, 1:48, 1:33 | a message window opened (`trap_message_open`, `FUN_14042e5c0`: a message object, `FUN_1403bb270`, its handle back), whether it is over (`method_message_is_end`: its + 0xa0 3), closed (`trap_message_close`) | no KH2 message window in Days: a handle of none, over at once, nothing closed (Phil's talk) |
+| 4:0, 4:1, 4:4 | around a talk's message (KH2FM.exe's table has no routine at 4:0 and 4:1; the PS3 build's are unnamed); the mission's information shown (`trap_mission_information`, `FUN_1404334b0`) | nothing: Days's mission shows its own |
+| 1:170 | its spawn unit's group (`trap_obj_unit_group`: + 0x9e8's record's + 8's u16 at + 2) | 0: Days's waves give none |
+| 1:41 | a signal to KH2's area (`trap_signal_call`, `FUN_14042ec90`: the area's signals its spawns and scripts wait on) | nothing: Days's rooms have none (Phil's urn) |
+| 1:200 | its collision with the room's kind (`trap_obj_set_bg_collision_type`: + 0x740 bits 3 to 6) | kept there; Days's collision is its own (Phil's urn) |
+| 1:17 | it made to leave at once (`trap_obj_leave_force`: its class's + 0x38) | an ally goes ("Allies", below); an enemy's Days enemy stays, its script going on |
+| 2:51 | a reaction command put on an attack (`trap_attack_set_rc`, `FUN_140437b70`: + 0x114 the object, + 0x118 the owner, + 0x11c the command, + 0x120 its reach, + 0x124 its height -- the reach when not above 0; the PS3 build's `ATTACK_MAGIC::set_reaction_command`, 4 bytes lower) | kept as KH2 keeps them, and offered as KH2's `RC_SEARCHER::check_magic` offers it (the PS3 build's): each tick a magic attack with a command meets the player's collision with one of its reach and height at its place, the command goes to the attack's owner (`TARGET::set_attack`) -- the Hydra's Urninator, 420, on Phil's urn |
 | 1:230 | a table's record of 12 bytes: its first word over its second (`FUN_1404310f0`) | as KH2 |
 | 2:21 | memory several objects share by a number (`trap_teamwork_alloc`, `FUN_1403f6df0`: n + 1 bytes, zeroed, made by the first to ask; to each later one the same, its first byte made 1 -- "made already"; all let go with the field, `FUN_1403f6ea0`) | as KH2. Until 2026-11-11 the first byte was left 0: each of the Sorcerer's cubes took itself for the first, started its own turn-giving thread and cleared the turns, and none ever shot |
 | 2:10 | an attack of its own made (`FUN_140432250` -> `FUN_1404371b0`, YS::ATTACK_MAGIC, 0x138 bytes; `FUN_1403cf830`): for the object an AI handle names (its owner: the enemy, or KH2's player), an `atkp` entry (looked up with the sub-number, `FUN_1403eafc0`), a combo group (-1 a running number), the sub-number; its address back | as KH2 (below, "Attacks of their own") |
@@ -591,6 +597,40 @@ there (trigger 6) spits the one inside out and lowers it. Seen in a recorded wal
 `rvg_lock`, `atk_swing`) down to 80%, `spit_out`, Barrel swallowed (`btl_barrel`, `atk_bite_s`), Shock's `atk_rise`
 and `atk_darkfire` in another; one face drawn at a time.
 
+### The Hydra (2026-11-12)
+
+**The Hydra** `B_HE100` (`00objentry.bin` 352, a large enemy: kind 0xc) and its heads `B_HE110` (922, made by its
+script), with Phil `N_HE020_BTL`, Pegasus `N_HE040_BTL` and Phil's urn `F_HE030_L`, which KH2's `he18` places with it,
+and Megara `N_HE030_BTL`, whom it makes in its third round -- allies (below, "Allies"). Its rounds are its work's
++ 0x11e8: 1 (`level1`: `atk_tail`, `atk_hellfire`, `call_dark_zako`), 2 once a neck is cut (`guillotine`, `call_neck`:
+three heads come up out of the ground, the Hydra lies down, `down_wait`), 3 once its heads are reborn
+(`all_neck_reborn`). Its health stops at a least (1:231, "Health": 80% of 1050 at first); a hit there sends it to
+`guillotine_chance`, which offers **Vanquish** (238) from its zone 9 (6.65 m ahead, 6 m round): taken, the player
+plays its motions 252 and 253 (`AM60`, `AM61`, its event sequence "90"), a neck is cut and a head made where it was.
+The heads keep their necks alive in a teamwork record the Hydra shares (2:21 22, + 4, + 8, + 0xc), each by the unit
+argument the Hydra gives it as it makes it (1:218: 11 to 13); `down_wait` counts the necks dead and makes their heads
+again a while after (its + 0x11ec of them, 60 or 120 ticks). Its other commands: **Attack** (342) from zones on its
+seven heads' bones (20 to 26, turned on one after another by its motion 61A), **Pegasus Run** (335, zones 8, 18,
+27 to 31, by its motion 57A: Pegasus `rc_pegasus_attack`), **Phil One-Two** (346, zone 19, 1 m ahead and 3 m round, on
+60 ticks into `down_wait`: Phil and the urn put on the player, 1:18), and **Urninator** (420) on the attack the urn
+carries (2:51, above).
+
+- **Its heads' script starts after its maker's**: a head registers its neck as its script starts (trigger 0: the
+  unit argument 11, 12 or 13), which the Hydra gives it only after making it. KH2's object's machine runs nothing as
+  it is made (`FUN_1403e1240`); its script first runs as the object is updated (`FUN_1403e1c80`). The port started
+  a made object's script within 1:0 -- the heads read 0, the necks stayed dead and the Hydra made a head every 19
+  seconds; an object a script makes (an enemy or an ally) now starts at its first tick.
+- **Its body**: many spheres (kind 1) on its legs, chest and necks; the largest of them (5 m, group 19, on only while
+  it lies down) made its Days sphere first, and Roxas stood under it with the camera in its body. A large enemy's
+  Days sphere is now how far its body's spheres reach along the ground at a player's height (KH2's player's body: a
+  cylinder 85 high), in its pose each frame (`footprint` in `shell.cpp`).
+- **Seen** (a recorded walk, Roxas attacking, the HD PACK): its tail, its fire and its dark minions; down to 80% and
+  held there; Vanquish taken at `guillotine_chance`, its event sequence, a neck cut, three heads up (`atk_appear`,
+  `atk_bite`, `searching`, `move`), the Hydra in `down_wait`; Phil, Pegasus and the urn standing by. **Not seen
+  yet** (the walks' inputs do not take Roxas to the heads): the heads defeated and made again, Phil One-Two, Pegasus
+  Run, Urninator, Megara and the third round. Megara's cheering prizes (6:1) are not made, and Days's camera, close
+  behind its player, shows little of a body this large.
+
 ## A player in an enemy's hands
 
 KH2's player is an actor its enemies' scripts move and make play their motions; Days's players are Days's. When a
@@ -666,6 +706,33 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   00objentry.bin (the objects' entries: 1:114, 1:222),
   msg/<language>/sys.bar, field2d/<language>/zz0command.2dd and zz0field.2dd with their HD pictures,
   msg/us/fontinfo.bar with fontimage.bar's HD picture.
+
+## Allies: KH2's objects that are no enemies
+
+Some bosses fight with KH2 objects that are no enemies of the player: the Hydra's Megara, Phil and Pegasus (their
+object entries' kind, `00objentry.bin` + 4, is 9, a friend in battle) and the urn Phil hands the player (0x17, a
+gimmick). An enemy is an entry of kind 3 (a boss), 4 (an enemy) or 0xc (a large enemy: the Hydra and its heads); every
+kind the mod held before is one of those.
+
+- **Where they come from**: a script makes one (1:0: the Hydra makes Megara once its heads are reborn, its work's
+  + 0x11e8 3), or KH2's area places it with its boss. An area (`ard/us/<area>.ard`, OpenKH's ARD page) holds spawn
+  files (BAR entries of type 0xc, "Spawn Point"): sets of objects, each set a 0x2c-byte descriptor (+ 0 its type,
+  + 4 its objects' count, + 6 its event activators', + 8 its walk paths', + 0xa its return parameters', + 0xc its
+  signals'), its objects (0x40 bytes: + 0 the entry's number, + 4 the place, + 0x10 the rotation), then the rest. A
+  battle's spawn (`b_..`) holds the boss and the player in one set; KH2 places the sets of types 1 and 2 as the area
+  loads, those of type 5 being what its scripts make (`he18`'s `b_40`: the Hydra, the player and his party, Phil and
+  Pegasus in a set of type 2; Phil's urn in another; a head and Megara in one of type 5 -- the Hydra makes both; the
+  other type 5 sets, `M_EX800_RAW`, `B_EX350`, are such too). The mod's tool reads them for each boss (kinds 3 and
+  0xc) and lists the others that are no enemies, from the boss, turned so the way from it to the player is + z
+  (`kh2_enemies.txt`'s eighth column); the port makes them as the boss is set going, turned to where its player stands
+  (`shell.cpp`, `start`).
+- **What they are in Days**: no Days enemy stands in for them -- nothing of Days's hits them, locks on them, counts
+  them or shows their health. The shell runs their scripts at KH2's 60 ticks a second, moves them by their motions and
+  their scripts, keeps them on the room's ground (the ground under them, from their battle's Days enemy's room),
+  plays their effects and sounds, and draws them as the 3D list closes (`allies_close`, as an enemy's end once its
+  Days enemy is gone). Their scripts' calls on Days's field (its players, its ground) are answered as their battle's
+  enemy's (`Enemy::anchor`). Searches by entry find them (1:114, 1:292, 1:323: `World::objects`); 6:5's search for
+  aims does not. They go with their battle (its enemy gone and its end over) or when made to leave (1:17).
 
 ## Reaction command zones
 

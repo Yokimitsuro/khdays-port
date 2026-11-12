@@ -3,6 +3,7 @@ its motions and effects files, its HD pages, the calls' shapes given in place of
 handled calls given in place of khdays-native's: the mod's files, its list of kinds and which are covered; the sounds
 its motions and effects play, decoded from made-up banks."""
 
+import math
 import struct
 import sys
 import tempfile
@@ -131,13 +132,15 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "msg" / "us" / "fontinfo.bar").read_bytes(), b"widths")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "US_fontimage_bar0.png").read_bytes(), b"glyphs")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-\t-")
-            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-\t-")
+            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-\t-\t-")
+            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-\t-\t-")
             ours = [line for line in left if line.startswith(("M_EX010", "M_EX020"))]
             self.assertEqual(ours, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
             # the other kinds the mod holds, not in this made-up collection: each said
             others = [n for n in kh2_enemies.KINDS if n not in ("M_EX010", "M_EX020")]
-            self.assertEqual(len(left), 1 + len(others))
+            # and KH2's areas (no boss's companions without them)
+            self.assertTrue(any(line.startswith("original/ard/us/*.ard") for line in left))
+            self.assertEqual(len(left), 2 + len(others))
             self.assertTrue(all(any(line.startswith(n) and "not there" in line for line in left) for n in others))
 
     def test_the_sounds(self):
@@ -233,7 +236,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertFalse((mod / "kh2" / "obj" / "B_BB130.mset").exists())
             self.assertFalse(any(line.startswith("B_BB130") for line in left), left)
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-", kinds)
+            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-\t-", kinds)
 
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
@@ -243,7 +246,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             mod = Path(d) / "mod"
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-\t-"])
+            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-\t-\t-"])
             self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
@@ -253,7 +256,8 @@ class Kh2EnemiesTest(unittest.TestCase):
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod)
             self.assertIn("M_EX010\tSoldier\tno\t2\t1:6 2:7\t-", (mod / "kh2_enemies.txt").read_text(encoding="utf-8"))
             # a script that plays the player's motions (1:29): "player"
-            self.assertTrue(kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)}).endswith("\tyes\t1\t-\tplayer\t-"))
+            line = kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)})
+            self.assertTrue(line.endswith("\tyes\t1\t-\tplayer\t-\t-"))
             self.assertTrue(any("coverage" in line for line in left))
 
     def test_journal_names(self):
@@ -282,7 +286,47 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertIsNone(kh2_enemies.journal_title(titles, "B_LK110"))
         self.assertEqual(kh2_enemies.journal_titles(b"", objentry), {})
         # its line's last column: the title's number, "-" none
-        self.assertTrue(kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932"))
+        self.assertTrue(kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932\t-"))
+
+    def test_companions(self):
+        # 00objentry.bin: the Hydra (a large enemy, 0xc), the player (0), Phil and Megara (friends, 9), a Soldier (4)
+        def entry(number: int, kind: int, model: bytes) -> bytes:
+            return struct.pack("<IBBBB", number, kind, 0, 0, 0) + model.ljust(32, b"\0")
+
+        records = [entry(352, 0xC, b"B_HE100"), entry(566, 0, b"PLAYER"), entry(364, 9, b"N_HE020_BTL"),
+                   entry(365, 9, b"N_HE030_BTL"), entry(301, 4, b"M_EX010")]
+        objentry = struct.pack("<II", 3, len(records)) + b"".join(r.ljust(96, b"\0") for r in records)
+        entries = kh2_enemies.entry_kinds(objentry)
+        self.assertEqual(entries[352], ("B_HE100", 0xC))
+
+        # a spawn file (OpenKH's ARD page): set 0 of type 2 with the Hydra, the player, Phil and a Soldier, a walk path
+        # of one point and a signal; set 1 of type 5 (its scripts' to make) with Megara
+        def placed(number: int, x: float, y: float, z: float, yaw: float) -> bytes:
+            return struct.pack("<I6f", number, x, y, z, 0.0, yaw, 0.0).ljust(0x40, b"\0")
+
+        def descriptor(kind: int, objects: int, paths: int, signals: int) -> bytes:
+            return struct.pack("<BBh4hI", kind, 0, 1, objects, 0, paths, 0, signals).ljust(0x2C, b"\0")
+
+        first = descriptor(2, 4, 1, 1) + placed(352, 0, 0, 0, 0) + placed(566, 0, 0, -1000, 3.14)
+        first += placed(364, 100, -500, 300, 0.5) + placed(301, 50, 0, 50, 0)
+        first += struct.pack("<hhBBh", 0, 1, 0, 0, 0) + struct.pack("<3f", 1, 2, 3) + bytes(8)
+        second = descriptor(5, 1, 0, 0) + placed(365, 10, 0, 10, 0)
+        spawn = struct.pack("<II", 2, 2) + first + second
+        ard = bar([(0x0D, b"btl\0", bytes(4)), (0x0C, b"b_40", spawn)])
+        self.assertEqual([(n, [k for k, _ in s]) for n, s in kh2_enemies.spawn_sets(ard)], [("b_40", [2, 5])])
+        kinds = {"B_HE100", "N_HE020_BTL", "N_HE030_BTL", "M_EX010"}
+        # Phil alone (the Soldier an enemy, Megara her script's), turned so that the player is + z: half a turn
+        ((name, x, y, z, yaw),) = kh2_enemies.companions([ard], entries, "B_HE100", kinds)
+        self.assertEqual(name, "N_HE020_BTL")
+        self.assertAlmostEqual(x, -100.0, places=3)
+        self.assertEqual(y, -500.0)
+        self.assertAlmostEqual(z, -300.0, places=3)
+        self.assertAlmostEqual(yaw, 0.5 - math.pi, places=3)
+        # an enemy brings none; nor a boss the mod has no companion kind for
+        self.assertEqual(kh2_enemies.companions([ard], entries, "M_EX010", kinds), [])
+        self.assertEqual(kh2_enemies.companions([ard], entries, "B_HE100", {"B_HE100"}), [])
+        line = kh2_enemies.kinds_line("B_HE100", "Hydra", {(1, 6)}, {(1, 6)}, None, [(name, x, y, z, yaw)])
+        self.assertTrue(line.endswith("\t-\tN_HE020_BTL -100.0 -500.0 -300.0 -2.642"), line)
 
 
 if __name__ == "__main__":
