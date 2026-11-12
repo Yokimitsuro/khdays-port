@@ -162,20 +162,25 @@ void draw_choice(App& app) {
         for (const auto& mp : maps)
             if (mp.world == world)
                 in_world.push_back(&mp);
-        ImGui::SetNextItemWidth(8 * em);
+        // each world by its name, its code after it
+        std::vector<std::string> labels;
+        for (const auto& w : worlds)
+            labels.push_back(collection_world_label(game->game, w));
+        ImGui::SetNextItemWidth(combo_width(labels));
         // an ID of its own: the Days world the room is added to below is labelled "World" too, and two combos
         // of one ID open together, the two lists in one popup
         const std::string world_label = std::string(tr(lang, S::map_other_world)) + "##collection_world";
-        if (ImGui::BeginCombo(world_label.c_str(), world.c_str())) {
+        if (ImGui::BeginCombo(world_label.c_str(), labels[static_cast<std::size_t>(adder.world_shown)].c_str())) {
             for (std::size_t w = 0; w < worlds.size(); ++w)
-                if (ImGui::Selectable(worlds[w].c_str(), static_cast<int>(w) == adder.world_shown)) {
+                if (ImGui::Selectable(labels[w].c_str(), static_cast<int>(w) == adder.world_shown)) {
                     adder.world_shown = static_cast<int>(w);
                     adder.map_shown = 0;
                 }
             ImGui::EndCombo();
         }
         adder.map_shown = std::clamp(adder.map_shown, 0, static_cast<int>(in_world.size()) - 1);
-        ImGui::SameLine();
+        same_line_if_room(12 * em + ImGui::GetStyle().ItemInnerSpacing.x +
+                          ImGui::CalcTextSize(tr(lang, S::adder_map), nullptr, true).x);
         ImGui::SetNextItemWidth(12 * em);
         const CollectionMap* chosen = in_world[static_cast<std::size_t>(adder.map_shown)];
         if (ImGui::BeginCombo(tr(lang, S::adder_map), chosen->name.c_str())) {

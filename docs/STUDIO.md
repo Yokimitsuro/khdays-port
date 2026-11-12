@@ -165,7 +165,9 @@ centimetres at 0.01, Re:CoM's and Dream Drop Distance's metres at 1), its lowest
 holding a quarter of the floor area the most held one does) at the room's ground, then moved across until most of the
 room's places -- its markers and its origin, where missions put the player -- stand on its floors (eh_01: 5 of 5). Its own floors and walls are chosen for its collision when it has
 them. A stage the player falls through (Dive) is listed as such: it has no floor. The map view's "A room from
-another game" lists a game's worlds and maps (taken out or not). A room with no collision of its own (a Dive
+another game" lists a game's worlds and maps (taken out or not). A world is listed by the name its game gives it,
+its code after it ("Twilight Town (tt)", "Castle Oblivion (MAP13)": `collection_world_name()`), in those lists, a
+room's adding and the command line's. A room with no collision of its own (a Dive
 stage) is given one made from its model (`own-collision` then says so). A room's sky is drawn only with **Its sky**
 ticked, and then as the game draws it: about the viewer, out of reach (fifteen times the camera's distance from what
 it turns around, the room in front of it), never in its own place, where its dome (Dream Drop Distance's are a few

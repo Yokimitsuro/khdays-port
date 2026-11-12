@@ -279,6 +279,8 @@ void same_line_if_room(float width);
 // The width of a button, and of a checkbox or radio button, with `label`.
 float button_width(const char* label);
 float check_width(const char* label);
+// The width of a combo whose closed box shows the longest of `labels` whole (its arrow beside it).
+float combo_width(const std::vector<std::string>& labels);
 
 // Texts from here to the end of the scope wrap at the window's right edge, never cut there (a child window keeps
 // its own: each takes one of these).

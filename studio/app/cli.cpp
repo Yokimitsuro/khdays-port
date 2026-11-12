@@ -383,7 +383,7 @@ int collection_rooms(const fs::path& root, const std::vector<std::string>& args)
     const Settings settings = load_settings(root, &note);
     const CollectionGameInfo* game = collection_game(args[1]);
     if (game == nullptr) {
-        std::fprintf(stderr, "khdays-studio: no game %s (kh1, kh2, recom, ddd)\n", args[1].c_str());
+        std::fprintf(stderr, "khdays-studio: no game %s (kh1, kh2, recom, ddd, bbs)\n", args[1].c_str());
         return 2;
     }
     std::vector<CollectionMap> maps;
@@ -401,7 +401,7 @@ int collection_rooms(const fs::path& root, const std::vector<std::string>& args)
             std::size_t in_world = 0;
             for (const auto& n : maps)
                 in_world += n.world == world ? 1 : 0;
-            std::printf("%s: %zu maps\n", world.c_str(), in_world);
+            std::printf("%s: %zu maps\n", collection_world_label(game->game, world).c_str(), in_world);
         }
         std::printf("  %s:%s  %s, %zu files%s%s\n", game->code, m.name.c_str(), m.package.c_str(), m.paths.size(),
                     collection_map_taken_out(settings, *game, m) ? ", taken out" : "",
@@ -580,7 +580,7 @@ int kh2_maps(const fs::path& root, const std::vector<std::string>& args) {
             std::fprintf(stderr, "khdays-studio: %s\n", why.c_str());
             return 1;
         }
-        std::printf("%s: %zu maps\n", world.c_str(), maps.size());
+        std::printf("%s: %zu maps\n", collection_world_label(CollectionGame::kh2, world).c_str(), maps.size());
         for (const auto& map : maps) {
             std::string rooms;
             for (const auto& pair : pairs) {

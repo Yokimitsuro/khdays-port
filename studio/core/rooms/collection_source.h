@@ -39,6 +39,12 @@ struct CollectionGameInfo {
 const std::vector<CollectionGameInfo>& collection_games();
 const CollectionGameInfo* collection_game(const std::string& code);
 
+// A world of `game` (its code: KH1's, KH2's, Birth by Sleep's and Dream Drop Distance's two letters, Re:Chain of
+// Memories' MAP<nn>) by the name its game gives it, empty when the table has none; and as the studio lists it, that
+// name with its code after it, else the code alone.
+std::string collection_world_name(CollectionGame game, const std::string& world);
+std::string collection_world_label(CollectionGame game, const std::string& world);
+
 // A map of a game in the copy: its world, its name, the package holding it and its files' paths (its model first).
 struct CollectionMap {
     std::string world, name, package;

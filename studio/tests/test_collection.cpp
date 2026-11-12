@@ -74,6 +74,20 @@ TEST(the_five_games_and_their_collections) {
     CHECK(collection_map_falling(*ddd, dive) && !collection_map_falling(*ddd, walked));
 }
 
+TEST(a_games_worlds_listed_by_their_names) {
+    CHECK(collection_world_name(CollectionGame::kh2, "tt") == "Twilight Town");
+    CHECK(collection_world_name(CollectionGame::kh1, "tw") == "Traverse Town");
+    CHECK(collection_world_name(CollectionGame::recom, "MAP13") == "Castle Oblivion");
+    // one code, each game's own world
+    CHECK(collection_world_name(CollectionGame::kh2, "dc") == "Disney Castle");
+    CHECK(collection_world_name(CollectionGame::bbs, "dc") == "Disney Town");
+    CHECK(collection_world_label(CollectionGame::ddd, "tl") == "The Grid (tl)");
+    CHECK(collection_world_label(CollectionGame::ddd, "nd") == "La Cit\xC3\xA9 des Cloches (nd)");
+    // one the table does not name: its code alone
+    CHECK(collection_world_name(CollectionGame::kh2, "zz").empty());
+    CHECK(collection_world_label(CollectionGame::kh2, "zz") == "zz");
+}
+
 TEST(a_packages_maps_found_by_each_games_pattern) {
     // KH1: <w>00_<nn>.bin with its .img; a .bin alone; another file that is no map
     const auto kh1 = package_keys(index_of({"tw00_02.bin", "tw00_02.img", "tw.wdt", "al00_09.bin", "dc01.ard"}));

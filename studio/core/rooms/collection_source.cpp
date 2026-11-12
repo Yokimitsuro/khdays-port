@@ -141,6 +141,105 @@ const CollectionGameInfo* collection_game(const std::string& code) {
     return nullptr;
 }
 
+std::string collection_world_name(CollectionGame game, const std::string& world) {
+    struct Named {
+        CollectionGame game;
+        const char* code;
+        const char* name;
+    };
+    using G = CollectionGame;
+    static const Named names[] = {
+        {G::kh1, "al", "Agrabah"},
+        {G::kh1, "aw", "Wonderland"},
+        {G::kh1, "dc", "Disney Castle"},
+        {G::kh1, "dh", "Dive to the Heart"},
+        {G::kh1, "di", "Destiny Islands"},
+        {G::kh1, "ew", "End of the World"},
+        {G::kh1, "he", "Olympus Coliseum"},
+        {G::kh1, "lm", "Atlantica"},
+        {G::kh1, "nm", "Halloween Town"},
+        {G::kh1, "pc", "Hollow Bastion"},
+        {G::kh1, "pi", "Monstro"},
+        {G::kh1, "po", "100 Acre Wood"},
+        {G::kh1, "pp", "Neverland"},
+        {G::kh1, "tw", "Traverse Town"},
+        {G::kh1, "tz", "Deep Jungle"},
+        {G::recom, "MAP00", "Castle Oblivion Hallways & Castle Oblivion Boss Arenas"},
+        {G::recom, "MAP01", "Traverse Town"},
+        {G::recom, "MAP02", "Agrabah"},
+        {G::recom, "MAP03", "Olympus Coliseum"},
+        {G::recom, "MAP04", "Wonderland"},
+        {G::recom, "MAP05", "Monstro"},
+        {G::recom, "MAP06", "Halloween Town"},
+        {G::recom, "MAP07", "Atlantica"},
+        {G::recom, "MAP08", "Neverland"},
+        {G::recom, "MAP09", "Hollow Bastion"},
+        {G::recom, "MAP10", "100 Acre Wood"},
+        {G::recom, "MAP11", "Twilight Town"},
+        {G::recom, "MAP12", "Destiny Islands"},
+        {G::recom, "MAP13", "Castle Oblivion"},
+        {G::recom, "MAP20", "Battle Arenas & Boss Arenas"},
+        {G::recom, "MAP21", "Test Rooms"},
+        {G::recom, "MAP22", "Test Rooms"},
+        {G::recom, "MAP30", "Test Rooms"},
+        {G::kh2, "al", "Agrabah"},
+        {G::kh2, "bb", "Beast's Castle"},
+        {G::kh2, "ca", "Port Royal"},
+        {G::kh2, "dc", "Disney Castle"},
+        {G::kh2, "di", "Destiny Islands"},
+        {G::kh2, "eh", "The World That Never Was"},
+        {G::kh2, "es", "Realm of Darkness"},
+        {G::kh2, "hb", "Radiant Garden"},
+        {G::kh2, "he", "Olympus Coliseum"},
+        {G::kh2, "lk", "The Pride Lands"},
+        {G::kh2, "lm", "Atlantica"},
+        {G::kh2, "mu", "The Land of Dragons"},
+        {G::kh2, "nm", "Halloween Town"},
+        {G::kh2, "po", "100 Acre Wood"},
+        {G::kh2, "tr", "Space Paranoids"},
+        {G::kh2, "tt", "Twilight Town"},
+        {G::kh2, "wi", "Timeless River"},
+        {G::kh2, "wm", "World Map"},
+        {G::bbs, "bd", "Command Board"},
+        {G::bbs, "cd", "Castle of Dreams"},
+        {G::bbs, "dc", "Disney Town"},
+        {G::bbs, "di", "Destiny Islands"},
+        {G::bbs, "dp", "Land of Departure"},
+        {G::bbs, "he", "Olympus Coliseum"},
+        {G::bbs, "jb", "Realm of Darkness"},
+        {G::bbs, "kg", "Keyblade Graveyard"},
+        {G::bbs, "ls", "Deep Space"},
+        {G::bbs, "pp", "Neverland"},
+        {G::bbs, "rg", "Radiant Garden"},
+        {G::bbs, "sb", "Enchanted Dominion"},
+        {G::bbs, "sw", "Dwarf Woodlands"},
+        {G::bbs, "vs", "Mirage Arena"},
+        {G::bbs, "wm", "World Map"},
+        {G::bbs, "yt", "Mysterious Tower"},
+        {G::ddd, "de", "Flick Rush"},
+        {G::ddd, "di", "Destiny Islands"},
+        {G::ddd, "eh", "The World That Never Was"},
+        {G::ddd, "fa", "Symphony of Sorcery"},
+        {G::ddd, "nd", "La Cité des Cloches"},
+        {G::ddd, "pi", "Prankster's Paradise"},
+        {G::ddd, "rg", "Radiant Garden"},
+        {G::ddd, "tl", "The Grid"},
+        {G::ddd, "tm", "Country of the Musketeers"},
+        {G::ddd, "tw", "Traverse Town"},
+        {G::ddd, "wm", "World Map"},
+        {G::ddd, "yt", "Mysterious Tower"},
+    };
+    for (const auto& n : names)
+        if (n.game == game && world == n.code)
+            return n.name;
+    return {};
+}
+
+std::string collection_world_label(CollectionGame game, const std::string& world) {
+    const std::string name = collection_world_name(game, world);
+    return name.empty() ? world : name + " (" + world + ")";
+}
+
 std::unordered_set<std::string> package_keys(const std::vector<std::uint8_t>& hed) {
     std::unordered_set<std::string> keys;
     for (std::size_t at = 0; at + 32 <= hed.size(); at += 32)

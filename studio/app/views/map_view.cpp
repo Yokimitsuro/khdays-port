@@ -1454,13 +1454,22 @@ void draw_kh2_picker(App& app) {
         }
     }
     ImGui::BeginDisabled(kh2.busy);
-    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
-    if (ImGui::Combo(tr(lang, S::map_kh2_world), &kh2.world, kKh2Worlds, kKh2WorldCount))
+    static const std::vector<std::string> kh2_labels = [] {
+        std::vector<std::string> out;
+        for (const char* w : kKh2Worlds)
+            out.push_back(collection_world_label(CollectionGame::kh2, w));
+        return out;
+    }();
+    std::vector<const char*> kh2_worlds;
+    for (const auto& w : kh2_labels)
+        kh2_worlds.push_back(w.c_str());
+    ImGui::SetNextItemWidth(combo_width(kh2_labels));
+    if (ImGui::Combo(tr(lang, S::map_kh2_world), &kh2.world, kh2_worlds.data(), kKh2WorldCount))
         kh2.maps.clear();
-    ImGui::SameLine();
+    same_line_if_room(button_width(tr(lang, S::map_kh2_list)));
     if (ImGui::Button(tr(lang, S::map_kh2_list)))
         kh2_start(app, {}, kKh2Worlds[kh2.world]);
-    ImGui::SameLine();
+    same_line_if_room(button_width(tr(lang, S::take_out_this_game)));
     if (ImGui::Button(tr(lang, S::take_out_this_game))) {
         app.take_out_asked = true;
         app.take_out_game = "kh2";
@@ -1670,10 +1679,14 @@ void draw_other_picker(App& app) {
         ImGui::Unindent();
         return;
     }
-    std::vector<const char*> worlds;
+    // each world by its name, its code after it
+    std::vector<std::string> labels;
     for (const auto& w : other.worlds)
+        labels.push_back(collection_world_label(game->game, w));
+    std::vector<const char*> worlds;
+    for (const auto& w : labels)
         worlds.push_back(w.c_str());
-    ImGui::SetNextItemWidth(6 * ImGui::GetFontSize());
+    ImGui::SetNextItemWidth(combo_width(labels));
     ImGui::Combo(tr(lang, S::map_other_world), &other.world, worlds.data(), static_cast<int>(worlds.size()));
     const std::string& world = other.worlds[static_cast<std::size_t>(other.world)];
     for (const auto& mp : other.maps) {

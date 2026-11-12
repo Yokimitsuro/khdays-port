@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
+
 #include "core/files/file_write.h"
 #include "core/files/paths.h"
 
@@ -33,6 +35,13 @@ float button_width(const char* label) {
 
 float check_width(const char* label) {
     return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(label, nullptr, true).x;
+}
+
+float combo_width(const std::vector<std::string>& labels) {
+    float widest = 0.0f;
+    for (const auto& l : labels)
+        widest = std::max(widest, ImGui::CalcTextSize(l.c_str()).x);
+    return widest + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::GetFrameHeight();
 }
 
 void App::start_catalog() {
