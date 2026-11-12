@@ -1327,6 +1327,17 @@ struct FriendsWorld final : kh::World {
     {
         ended = s;
     }
+    std::vector<std::pair<int, int>> sent;
+    void signal(int id, int argument) override
+    {
+        sent.emplace_back(id, argument);
+    }
+    std::vector<std::pair<unsigned, int>> asked;
+    int mission(unsigned number, int value) override
+    {
+        asked.emplace_back(number, value);
+        return number == 21 ? 1 : number == 29 ? 7 : 0;
+    }
     std::vector<std::uint32_t> vacuums;
     void vacuum(std::uint32_t record, bool alive) override
     {
@@ -1368,15 +1379,22 @@ void test_hydra_friends()
     call(rig, phil, 1, 200, {self, ai::Value::of_int(2)});
     CHECK(phil.u32(0x740) == ((0xffffffffu & ~0x78u) | (2u << 3)));
     call(rig, phil, 1, 41, {ai::Value::of_int(5), ai::Value::of_int(1)});
+    CHECK((world.sent == std::vector<std::pair<int, int>>{{5, 1}})); // a signal to the field (trigger 10)
+    // the field's mission: one less, whether its bar is up, its count
+    call(rig, phil, 4, 20, {ai::Value::of_int(0)});
+    CHECK(call(rig, phil, 4, 21, {}).i() == 1 && call(rig, phil, 4, 29, {}).i() == 7);
+    CHECK(!world.asked.empty() && world.asked.front().first == 20u);
     call(rig, phil, 1, 17, {self});
     CHECK(world.left == &phil);
     const auto kinds = kh::read_kinds("B_HE100\tHydra\tyes\t119\t-\tplayer\t11652\t"
                                       "N_HE020_BTL 746.8 -500.0 -849.8 -3.092;f_he030_l 787.1 -500 -1002.8 0.05\n"
-                                      "B_HE110\tHydra's head\tyes\t74\t-\tplayer\t-\t-\n");
+                                      "B_HE110\tHydra's head\tyes\t74\t-\tplayer\t-\t-\n"
+                                      "B_EX120\tDemyx\tyes\t146\t-\tplayer\t-\t-\tHE17_MS105\n");
     const kh::Kind *h = kh::find_kind(kinds, "B_HE100");
     CHECK(h != nullptr && h->with.size() == 2 && h->with[0].name == "N_HE020_BTL" && h->with[1].name == "F_HE030_L");
     CHECK(h->with[0].x > 746.7F && h->with[0].y == -500.0F && h->with[0].z < -849.7F && h->with[0].yaw < -3.09F);
-    CHECK(kh::find_kind(kinds, "B_HE110")->with.empty());
+    CHECK(kh::find_kind(kinds, "B_HE110")->with.empty() && kh::find_kind(kinds, "B_HE110")->mission.empty());
+    CHECK(kh::find_kind(kinds, "B_EX120")->mission == "HE17_MS105");
     // 6:16: a target record emptied; 6:46 / 6:47: Demyx's stop 14 on all but him and Phil here, then off
     const std::uint32_t target = rig.memory.add(16, "a target");
     rig.memory.set_u32(target, 5);

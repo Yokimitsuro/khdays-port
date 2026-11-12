@@ -939,9 +939,12 @@ void add_actor_fields(ai::Calls &calls)
     // 1:170 its spawn unit's group (trap_obj_unit_group, FUN_14042dac0: + 0x9e8's record's + 8's u16 at + 2): Days's
     // waves give none -- 0
     calls.set(1, 170, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 1:41 a signal to KH2's area (trap_signal_call, FUN_14042ec90: DAT_142a112b8's signals, which its spawns and
-    // scripts wait on): Days's rooms have none -- nothing (Phil's urn)
-    calls.set(1, 41, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:41 a signal sent (trap_signal_call, FUN_14042ec90: the reserved ones of that id let go, the signal queued,
+    // the PS3 build's YS::SIGNAL::Call): every script of the field and its mission told (trigger 10; World::signal)
+    calls.set(1, 41, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *me = running(m); me->world != nullptr)
+            me->world->signal(a[0].i(), a[1].i());
+    });
     // 1:200 its collision with the room's kind (trap_obj_set_bg_collision_type, FUN_14042da80: + 0x740 bits 3 to 6):
     // kept there as KH2 keeps it; Days's collision is its own (Phil's urn)
     calls.set(1, 200, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -2249,7 +2252,14 @@ void add_world(ai::Calls &calls)
     });
     // 4:21 whether a mission's KH2 bar is up (trap_mission_is_activate2d, FUN_140433530 -> FUN_1403fb840): Days's
     // mission shows its own -- 0 (Demyx's)
-    calls.set(4, 21, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // the field's KH2 mission (World::mission): 4:3 complete, 4:5 its count set, 4:6 one more, 4:11 failed, 4:14 its
+    // bar shown, 4:15 hidden, 4:16 its boss dead, 4:20 one less, 4:21 whether its bar is up, 4:22 left, 4:29 its count,
+    // 4:41 so many more, 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT, MISSION2D)
+    for (const unsigned n : {3u, 5u, 6u, 11u, 14u, 15u, 16u, 20u, 21u, 22u, 29u, 41u, 54u, 55u})
+        calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
+            Actor *me = running(m);
+            a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i()) : 0);
+        });
     // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
     // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)
     calls.set(1, 262, [](ai::Machine &m, std::span<ai::Value> a) {

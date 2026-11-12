@@ -250,12 +250,12 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:32, 1:48, 1:33 | a message window opened (`trap_message_open`, `FUN_14042e5c0`: a message object, `FUN_1403bb270`, its handle back), whether it is over (`method_message_is_end`: its + 0xa0 3), closed (`trap_message_close`) | no KH2 message window in Days: a handle of none, over at once, nothing closed (Phil's talk) |
 | 4:0, 4:1, 4:4 | around a talk's message (KH2FM.exe's table has no routine at 4:0 and 4:1; the PS3 build's are unnamed); the mission's information shown (`trap_mission_information`, `FUN_1404334b0`) | nothing: Days's mission shows its own |
 | 1:170 | its spawn unit's group (`trap_obj_unit_group`: + 0x9e8's record's + 8's u16 at + 2) | 0: Days's waves give none |
-| 1:41 | a signal to KH2's area (`trap_signal_call`, `FUN_14042ec90`: the area's signals its spawns and scripts wait on) | nothing: Days's rooms have none (Phil's urn) |
+| 1:41 | a signal sent (`trap_signal_call`, `FUN_14042ec90`: the reserved ones of that id let go, the signal queued; the PS3 build's `YS::SIGNAL::Call`) | every script of the field and its mission told at the next frame (trigger 10: the id, its argument; "KH2's missions", below) |
 | 1:200 | its collision with the room's kind (`trap_obj_set_bg_collision_type`: + 0x740 bits 3 to 6) | kept there; Days's collision is its own (Phil's urn) |
 | 1:17 | it made to leave at once (`trap_obj_leave_force`: its class's + 0x38) | an ally goes ("Allies", below); an enemy's Days enemy stays, its script going on |
 | 0:9 | a routine started as a thread beside the one running, with a value (`trap_thread_start`, `FUN_14041da20` -> `FUN_1403e1e30`: in the list of the running thread's parent -- the main's own when the main runs; a loose thread's own --, run after it, `FUN_1403e1c80`; tagged with the first value at + 0x3c, its list's threads of that tag ended first, `FUN_1403e1f00`) | as KH2: a child thread of that parent, tagged (`Thread::tag`); a handle back (Xemnas's) |
 | 10:19 | whether the object is a limit's (`trap_sysobj_is_limit`, `FUN_140536890`: + 0x126 bit 0) | as KH2: none of Days's is |
-| 4:21 | whether a mission's KH2 bar is up (`trap_mission_is_activate2d`) | 0: Days's mission shows its own (Demyx's) |
+| 4:3, 4:5, 4:6, 4:11, 4:14, 4:15, 4:16, 4:20, 4:21, 4:22, 4:29, 4:41, 4:54, 4:55 | the field's mission: completed, its count set, one more, failed, its bar shown, hidden, its boss dead, one less, whether its bar is up, left, its count, so many more, locked, whether it is (`YS::MISSION`, `MISSION_COUNT`, `MISSION2D`) | the boss's KH2 mission ("KH2's missions", below) |
 | 6:16 | a target record emptied (`Ts::trap_target_clear`, `FUN_1403bda50`: none, 0, none, -1) | as KH2 |
 | 6:46, 6:47 | a stop put on every object of the field but two (`Ts::trap_obj_rc_stop_all`, `FUN_14053ea60`: each object's stop record at + 0x64c given the stop's number and a value, `FUN_14040a920` -- four slots of a number and a value, their kinds' flags gathered at + 0, from a table, `FUN_1403eed10`, not read); that stop taken off every object (`trap_obj_stop_end_all`, `FUN_14040a770`) | the KH2 enemies and allies but those two held whole, script and motions, while a stop is on them (as Days's Stop holds them; the stop kinds' own flags not read): Demyx's 14 |
 | 2:77, 2:78, 2:79, 2:80 | a vacuum made at a point with a strength, its handle back (`trap_vacuum_create`, `FUN_1403f8f20`: 0x34 bytes in the game's list, `DAT_142ae7dc0` -- + 0 the point, + 0x10 the kinds of object it lets be, a bit a kind, + 0x14 its reach, 0 none, + 0x18 its speed, + 0x1c its least and + 0x20 its most, the three the strength, + 0x24 its turning, 0, + 0x28 its near range, 100, + 0x2c its rate, 0.01); one let go; a kind it lets be; its point (NaN made 0). Each object's move adds their pull (`FUN_1403b8ca2` -> `FUN_1403f9130`): none on one of no weight (its entry's + 0x50), + 0x120 bit 2 or + 0x18c bit 25 set; each vacuum not letting its kind be (its entry's + 4, 0 for the player) and within reach pulls it along the ground toward its point at weight / 100 x the speed, kept between the least and the most, times (distance - near range) x rate kept between -1 and 1 | as KH2 on the KH2 enemies and allies (`vacuum_pull` in `shell.cpp`); a vacuum's turning not applied (none of the port's kinds turns one), nor any pull on Days's players: Demyx's water clones' let the player be and pull Demyx (weight 500) and each other (10) |
@@ -657,9 +657,8 @@ answered in full by the calls above (0:9, 10:19, 4:21, 6:16, 6:46, 6:47; and 1:3
 - **His water clones** (`M_EX880_DANCER`, a mod kind: `00objentry.bin` 1184, made by 1:0): `move_target` makes them
   near the player (up to three, his work's + 0x6c) only while his round is the hard one (his block's + 0x18 1; his
   mission's thread makes it 2), and his notes' thread makes one where a note lands (2:39, half the time). Their fight
-  is KH2's mission ("Dance, water, dance!": the clones defeated counted on KH2's mission bar, 4:21 and the kind 4
-  calls), which Days's mission does not show: **not seen yet** in the port -- in the walks his round stayed the other
-  one. Each clone finds Demyx by his entry (1:210, 4002) and makes a vacuum where it stands (2:77, 20, letting the
+  is KH2's mission ("KH2's missions" above: `HE17_MS105`, ten clones in 60 seconds), which the port runs now: seen,
+  Demyx's hard round, his clones made and defeated, counted, the time up and his `atk_final_failed`. Each clone finds Demyx by his entry (1:210, 4002) and makes a vacuum where it stands (2:77, 20, letting the
   player be) that pulls Demyx and the other clones (2:77, above).
 
 ## A player in an enemy's hands
@@ -764,6 +763,37 @@ kind the mod held before is one of those.
   Days enemy is gone). Their scripts' calls on Days's field (its players, its ground) are answered as their battle's
   enemy's (`Enemy::anchor`). Searches by entry find them (1:114, 1:292, 1:323: `World::objects`); 6:5's search for
   aims does not. They go with their battle (its enemy gone and its end over) or when made to leave (1:17).
+
+## KH2's missions and signals
+
+A KH2 boss's battle runs with a mission its area names: the area's battle program that places the boss's spawn
+names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, the mission's id, then its name; Demyx's
+`he17`: 75, `HE17_MS105`). The mod's tool finds it for each boss and copies `msn/us/<name>.bar` (the ninth column of
+`kh2_enemies.txt`); the port runs it as its boss is set going (`start_mission` in `shell.cpp`), one at a time.
+
+- **The file** (OpenKH's MSN page): a BAR; its entry of type 2 a 0x1c-byte header (its id, its flags: a boss's battle,
+  no leaving, no prizes ...; texts, sounds) then operations {s16 code, s16 count, count u32 parameters} till 0 -- 1 to 3
+  the cameras of its start, its end and its failure, 4 a timer and 5 a counter {initial, most, least, the entry of the
+  sequence it shows, -, its place on the screen, its kind}, a timer counting down when its initial is not below its
+  most; its script (type 3: `ms_boss` for most bosses, its own for Demyx's); its event sequences (type 0x16), a PAX
+  and its pieces (IMGD and SEQD: `ti_e` the timer's, `ct_h` the counter's). `HE17_MS105`: a timer of 60 seconds and a
+  count of 10, down to 0.
+- **Signals**: the PS3 build's `YS::SIGNAL::Call(id, argument)` queues one; every object's script (trigger 10,
+  `YS::OBJ::_OVR_signal_callback`) and the mission's hear it. An enemy's end sends 75 with its serial
+  (`YS::ZAKO::_OVR__dead`: entries of kind 4); the mission's count reaching its most sends 123, reaching 0 14
+  (`MISSION_COUNT::set`); its time up 74 (`dk::timerTask`). The mission's script counts its count down on 75 (4:20),
+  locks itself completed on 14 and failed on 74 (4:54), then ends so (4:3, 4:11; its boss dead 4:16, left 4:22).
+  Demyx counts the clones on 75 too, while the mission's bar is up (4:21). The port queues signals and tells every
+  KH2 enemy, ally and the mission at the next frame; an enemy's end (its health out, an entry of kind 4) sends 75.
+- **The port's mission**: its script's main thread (trigger 3) runs at KH2's 60 ticks a second, its timer counts
+  while its bar is up, its count as `MISSION_COUNT::set` keeps it; its bar is up from its start (as KH2's after its
+  start camera; whether trigger 2 is its start or its end is not known: the port runs it as it ends), its cameras and
+  event sequences are not played, and its end changes nothing of Days's mission (a failure does not fail it).
+  **Not shown yet**: its timer and its counter on the screen (its own pieces, `ti_e` and `ct_h`).
+- **Seen** (Demyx, `HE17_MS105`, a recorded walk, Roxas keeping away and striking): the mission set going (a count
+  of 10, 60 seconds), Demyx in his hard round (`btl_hard`) making his water clones (`move_target`: `appear_mission`,
+  `idle_mission`, `atk_water`, `atk_move`), Roxas defeating eight (each 75: the count 10 down to 2), the time up (74),
+  the mission failed and Demyx's `atk_final_failed`.
 
 ## Reaction command zones
 

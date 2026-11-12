@@ -60,6 +60,8 @@ std::vector<Kind> read_kinds(const std::string &text)
                     k.with.push_back(Companion{upper(c.name), c.x, c.y, c.z, c.yaw});
             }
         }
+        if (cells.size() > 8 && !cells[8].empty() && cells[8] != "-")
+            k.mission = cells[8];
         out.push_back(std::move(k));
     }
     return out;

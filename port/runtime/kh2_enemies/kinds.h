@@ -1,7 +1,8 @@
 // The KINGDOM HEARTS II enemy kinds the player's mod holds (contracts: "Days - KH2 Enemies", kh2_enemies.txt): one a
 // line, tab-separated -- name, title, covered (yes / no), how many calls its script makes, the missing ones, "player"
 // when its script plays the player's motions, its name's text in KH2's journal messages ("-" none), the objects KH2
-// places with it ("name x y z yaw" each, apart by ";"; "-" none).
+// places with it ("name x y z yaw" each, apart by ";"; "-" none), the mission KH2's area runs with its battle (its msn
+// file's name, kh2/msn/<name>.bar; "-" none).
 #pragma once
 
 #include <functional>
@@ -26,6 +27,7 @@ struct Kind final {
     bool plays_player = false; // its script plays the player's motions itself (1:29): its zones' commands offered
     int journal = -1;          // its name's text in KH2's journal messages (kh2/msg/<language>/jm.bar); -1 none
     std::vector<Companion> with; // the objects KH2 places with it
+    std::string mission;         // the mission KH2 runs with its battle (Demyx's HE17_MS105); "" none
 };
 
 std::vector<Kind> read_kinds(const std::string &text);

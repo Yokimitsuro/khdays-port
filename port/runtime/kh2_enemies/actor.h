@@ -488,6 +488,14 @@ public:
     // every object
     virtual void stop_all(int /*stop*/, Object * /*but*/, Object * /*nor*/) {}
     virtual void stop_end_all(int /*stop*/) {}
+    // 1:41 and the game's own (an enemy's end: 75): a signal to every script of the field and its mission, their
+    // trigger 10 (id, argument), as KH2's YS::SIGNAL::Call queues it
+    virtual void signal(int /*id*/, int /*argument*/) {}
+    // a call of kind 4 on the field's KH2 mission (its count, its bar, its end): what it gives back
+    virtual int mission(unsigned /*number*/, int /*value*/)
+    {
+        return 0;
+    }
     // 2:77, 2:78: a vacuum's record (2:77's, in the scripts' memory) made, let go: the field pulls its objects by it
     virtual void vacuum(std::uint32_t /*record*/, bool /*alive*/) {}
     // 1:0: an object made by its entry's number (00objentry.bin's + 0) and set going, its script started; its address

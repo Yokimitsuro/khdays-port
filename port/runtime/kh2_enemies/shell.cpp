@@ -711,6 +711,28 @@ std::set<std::pair<unsigned, std::string>> accompanied;
 // KH2's vacuums the scripts made (2:77: their records in the scripts' memory), in the order made
 std::vector<std::uint32_t> vacuums;
 
+// KH2's signals sent (1:41; an enemy's end, 75; the mission's count and timer), told to every script at the next
+// frame (YS::SIGNAL::Call queues them, YS::SIGNAL::Exec tells them): their trigger 10 with the id and its argument
+std::vector<std::pair<int, int>> signals;
+
+// The mission KH2's area runs with a boss's battle (its msn file, OpenKH's MSN page: a BAR -- its entry of type 2 a
+// 0x1c-byte header then operations {s16 code, s16 count, count u32 parameters} till 0, 4 its timer and 5 its counter
+// {initial, most, least, its sequence's entry, -, place, kind}; its script, type 3, its triggers 10 the signals, 3
+// its main, 2 run as it ends): Demyx's HE17_MS105, ten water clones in 60 seconds. One at a time: the first boss's
+struct Kh2Mission final {
+    std::string name;
+    std::unique_ptr<Actor> actor;
+    std::shared_ptr<const ai::Script> script;
+    bool counter = false, timer = false, down = false;
+    int count = 0, count_most = 0, count_least = 0;
+    float time = 0.0F, time_most = 0.0F, time_least = 0.0F; // its timer in seconds
+    bool shown = true;   // its bar up (4:14 / 4:15; 4:21): up from its start, as KH2's after its start camera
+    bool locked = false; // 4:54 / 4:55
+    bool over = false;   // completed, failed, its boss dead or left (4:3, 4:11, 4:16, 4:22)
+    std::string end;
+};
+std::unique_ptr<Kh2Mission> kh2_mission;
+
 // The Days enemy whose shell answers an enemy's questions of Days's field (its room's collision, its players): its
 // own; an ally's battle's
 unsigned shell_of(const Enemy &e)
@@ -918,6 +940,7 @@ void strike(AttackObject &o, Object &target);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = false);
 Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false);
+void start_mission(const std::string &name);
 std::string entry_name(std::uint32_t number);
 bool enemy_entry(const std::string &name);
 
@@ -1475,6 +1498,63 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: stop %d put on the field's KH2 objects", stop);
     }
+    void signal(int id, int argument) override
+    {
+        signals.emplace_back(id, argument);
+        if (tracing())
+            khdays_log("kh2 enemies: signal %d (%d) sent", id, argument);
+    }
+    // MISSION_COUNT::set (the PS3 build's): kept between 0 and its most; reaching its most from below sends 123,
+    // reaching 0 from above 14 (the mission's script completes on it)
+    void set_count(Kh2Mission &m, int n)
+    {
+        const int was = m.count;
+        if (n >= m.count_most) {
+            if (was < m.count_most)
+                signal(123, 0);
+            n = m.count_most;
+        } else if (n <= 0) {
+            if (was > 0)
+                signal(14, 0);
+            n = 0;
+        }
+        m.count = n;
+        khdays_log("kh2 enemies: mission %s's count %d", m.name.c_str(), n);
+    }
+    int mission(unsigned number, int value) override
+    {
+        if (!kh2_mission)
+            return 0;
+        Kh2Mission &m = *kh2_mission;
+        const auto end = [&](const char *how) {
+            if (m.over)
+                return;
+            m.over = true;
+            m.shown = false;
+            m.end = how;
+            khdays_log("kh2 enemies: mission %s %s", m.name.c_str(), how);
+            const ai::Value none{};
+            m.actor->machine().raise(2, {&none, 0});
+        };
+        switch (number) {
+        case 3: end("completed"); break;
+        case 11: end("failed"); break;
+        case 16: end("over: its boss defeated"); break;
+        case 22: end("left"); break;
+        case 5: set_count(m, value); break;
+        case 6: set_count(m, m.count + 1); break;
+        case 20: set_count(m, m.count - 1); break;
+        case 41: set_count(m, m.count + value); break;
+        case 29: return m.count;
+        case 14: m.shown = !m.over; break;
+        case 15: m.shown = false; break;
+        case 21: return m.shown && !m.over ? 1 : 0;
+        case 54: m.locked = true; break;
+        case 55: return m.locked ? 1 : 0;
+        default: break;
+        }
+        return 0;
+    }
     void vacuum(std::uint32_t record, bool alive) override
     {
         std::erase(vacuums, record);
@@ -1781,7 +1861,62 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
             start_ally(*f, to, with.yaw + turn, days);
         }
     }
+    if (const Kind *kind = find_kind(mod().kinds, k.name); kind != nullptr && !kind->mission.empty() && !kh2_mission)
+        start_mission(kind->mission);
     return raw;
+}
+
+// The boss's KH2 mission (Kh2Mission, above) read from the mod (kh2/msn/<name>.bar) and set going: its timer and
+// counter from its header, its script's main thread (trigger 3); none when it cannot be read
+void start_mission(const std::string &name)
+{
+    const std::vector<std::uint8_t> bar = read_file(u8(mod().folder) / "kh2" / "msn" / (name + ".bar"));
+    const auto scripts = ai::scripts_in(bar.data(), bar.size());
+    if (bar.empty() || scripts.empty()) {
+        khdays_log("kh2 enemies: mission %s not read (the mod's kh2/msn/%s.bar, its script): none runs", name.c_str(),
+                   name.c_str());
+        return;
+    }
+    auto m = std::make_unique<Kh2Mission>();
+    m->name = name;
+    const auto s32 = [&](std::size_t o) {
+        std::int32_t v = 0;
+        if (o + 4 <= bar.size())
+            std::memcpy(&v, bar.data() + o, 4);
+        return v;
+    };
+    for (const kh2::BarEntry &e : kh2::bar_entries(bar.data(), bar.size())) {
+        if ((e.type & 0xffffu) != 2 || e.size < 0x1c)
+            continue;
+        std::size_t at = e.offset + 0x1c;
+        while (at + 4 <= e.offset + e.size) {
+            const int code = std::int16_t(bar[at] | (bar[at + 1] << 8)), count = std::int16_t(bar[at + 2] | (bar[at + 3] << 8));
+            if (code == 0 || count < 0)
+                break;
+            if ((code == 4 || code == 5) && count >= 3) {
+                const std::int32_t initial = s32(at + 4), most = s32(at + 8), least = s32(at + 12);
+                if (code == 4) {
+                    m->timer = true;
+                    m->down = initial >= most;
+                    m->time = float(initial), m->time_most = float(most), m->time_least = float(least);
+                } else {
+                    m->counter = true;
+                    m->count = initial, m->count_most = most, m->count_least = least;
+                }
+            }
+            at += 4 + 4 * std::size_t(count);
+        }
+        break;
+    }
+    m->script = std::make_shared<const ai::Script>(scripts.front().second);
+    m->actor = std::make_unique<Actor>(m->script, mod().memory, mod().calls, "mission " + name);
+    m->actor->world = &the_field();
+    Kh2Mission &mm = *m;
+    kh2_mission = std::move(m);
+    mm.actor->machine().start_main(3);
+    khdays_log("kh2 enemies: mission %s set going%s%s", name.c_str(),
+               mm.counter ? (" (a count of " + std::to_string(mm.count) + ")").c_str() : "",
+               mm.timer ? (" (a timer of " + std::to_string(int(mm.time)) + " s)").c_str() : "");
 }
 
 // An ally (allies, above) of kind `k` made at `place` (KH2's world) turned by `yaw`, in the battle of the Days enemy
@@ -4273,6 +4408,8 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     for (const std::uint32_t v : vacuums)
         mod().memory.remove(v);
     vacuums.clear();
+    signals.clear();
+    kh2_mission.reset();
     by_actor.clear();
     kind_of.clear();
     appeared.clear();
@@ -4349,11 +4486,33 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     if (const unsigned frame = khdays_link_frame(); frame != shouts_frame) {
         shouts_frame = frame;
         const int steps = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
+        if (!signals.empty()) { // told to every script, then the mission's
+            const std::vector<std::pair<int, int>> sent = std::move(signals);
+            signals.clear();
+            for (const auto &[id, argument] : sent) {
+                const ai::Value args[2] = {ai::Value::of_int(id), ai::Value::of_int(argument)};
+                for (auto *list : {&enemies, &allies})
+                    for (auto &[d, x] : *list)
+                        if (!x->released)
+                            x->actor->machine().raise(10, args);
+                if (kh2_mission)
+                    kh2_mission->actor->machine().raise(10, args);
+            }
+        }
         for (int t = 0; t < steps; ++t) {
             tick_loose();
             if (t == 0 && !shouts.empty())
                 send_shouts();
             lights.tick();
+            if (kh2_mission && !kh2_mission->over) { // its script, its timer (KH2's 60 ticks a second)
+                Kh2Mission &m = *kh2_mission;
+                m.actor->machine().tick();
+                if (m.timer && m.shown && m.down && m.time > 0.0F) {
+                    m.time = std::max(0.0F, m.time - 1.0F / 60.0F);
+                    if (m.time <= 0.0F) // its time up: dk::timerTask's signal 74 (the mission fails on it)
+                        the_field().signal(74, 0);
+                }
+            }
         }
         if (steps == 0 && !shouts.empty())
             send_shouts();
@@ -4548,6 +4707,10 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     Actor &a = *e->actor;
     if (s.hp <= 0) { // its end: the script's "dead" (its effect, its fade); Days's defeat once it is over
         e->dying = true;
+        // an enemy's (its entry's kind 4: the PS3 build's YS::ZAKO::_OVR__dead) tells the field: signal 75 with its
+        // serial (the water clones' end counted by Demyx and his mission)
+        if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0 && (mod().memory.u32(entry + 4) & 0xffu) == 4u)
+            the_field().signal(75, int(e->days & 0x7fffffffu));
         e->reacting = false;
         e->paused = false;
         a.set_bits(field::kStatus, bit::kHeld, false);

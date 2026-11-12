@@ -147,6 +147,9 @@ AREAS = "ard/us"  # original/<AREAS>/*.ard: KH2's areas, whose spawns place a bo
 SPAWN_ENTRY = 0xC  # an .ard's spawn file (OpenKH's ARD page, "Spawn Point")
 PLACED_SETS = (1, 2)  # the spawn sets KH2 places as its area loads (type 5: those its scripts make, 1:0)
 PARTY = (0, 1)  # object entries' kinds of the player and his party (PLAYER, FRIEND_1, FRIEND_2)
+SCRIPT_ENTRY = 0xD  # an .ard's scripts (map, btl, evt)
+SPAWN_OP, MISSION_OP = 0x0, 0x15  # their operations: a spawn file placed, a mission run (OpenKH's ARD page)
+MISSIONS = "msn/us"  # original/<MISSIONS>/<name>.bar: KH2's missions (OpenKH's MSN page)
 BOSSES = (3, 0xC)  # object entries' kinds of a boss and a large enemy (the Hydra)
 ENEMIES = (3, 4, 0xC)  # and of an enemy: the port makes each a Days enemy
 
@@ -172,18 +175,20 @@ def kinds_line(
     handled: set[tuple[int, int]],
     journal: int | None = None,
     with_it: list[tuple[str, float, float, float, float]] | None = None,
+    mission: str | None = None,
 ) -> str:
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
     script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
     text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-", and the objects KH2 places with it
-    (companions: "name x y z yaw" each, apart by ";") else "-" (tab-separated)."""
+    (companions: "name x y z yaw" each, apart by ";") else "-", and the mission KH2's area runs with its battle (its
+    msn file's name: kh2/msn/<name>.bar) else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
     named = str(journal) if journal is not None else "-"
     placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" for n, x, y, z, yaw in with_it or []) or "-"
     covered = "no" if missing or not calls else "yes"
-    return f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}"
+    return f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}\t{mission or '-'}"
 
 
 def entry_kinds(objentry: bytes) -> dict[int, tuple[str, int]]:
@@ -287,6 +292,58 @@ def companions(
                     out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn))
             return out
     return []
+
+
+def area_programs(ard: bytes) -> list[list[tuple[int, bytes]]]:
+    """An area's scripts' programs (its .ard's BAR entries of type 0xd -- map, btl, evt; OpenKH's ARD page, "Script":
+    programs {s16 id, s16 length, then operations {s16 code, s16 count, count u32 parameters}}), each its operations
+    as (code, parameters)."""
+    out = []
+    if ard[:4] != kh2_bdx.BAR:
+        return out
+    for k in range(struct.unpack_from("<I", ard, 4)[0]):
+        if 16 + 16 * (k + 1) > len(ard):
+            break
+        kind, _, _, at, size = struct.unpack_from("<HH4sII", ard, 16 + 16 * k)
+        if kind != SCRIPT_ENTRY or at + size > len(ard):
+            continue
+        p = at
+        while p + 4 <= at + size:
+            length = struct.unpack_from("<h", ard, p + 2)[0]
+            if length <= 4 or p + length > at + size:
+                break
+            ops, q = [], p + 4
+            while q + 4 <= p + length:
+                code, count = struct.unpack_from("<hh", ard, q)
+                ops.append((code, ard[q + 4 : q + 4 + 4 * count]))
+                q += 4 + 4 * count
+            out.append(ops)
+            p += length
+    return out
+
+
+def mission_of(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str) -> str | None:
+    """The mission KH2 runs with a boss's battle: in the first area whose battle spawn holds it, the program that
+    places that spawn (operation 0, its name) and names a mission (operation 0x15: a u32, the mission's id, then its
+    msn file's name); none for an enemy, or when no program does (Demyx's he17: HE17_MS105)."""
+    if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+        return None
+    for ard in ards:
+        for entry, sets in spawn_sets(ard):
+            if not entry.startswith("b") or not any(
+                entries.get(o[0], ("", -1))[0] == name
+                for kind, objects in sets
+                if kind in PLACED_SETS
+                for o in objects
+            ):
+                continue
+            for ops in area_programs(ard):
+                spawns = {params[:4].split(b"\0")[0] for code, params in ops if code == SPAWN_OP}
+                missions = [params[4:].split(b"\0")[0] for code, params in ops if code == MISSION_OP]
+                if entry.encode("latin-1") in spawns and missions and missions[0]:
+                    return missions[0].decode("latin-1")
+            return None
+    return None
 
 
 def journal_titles(jiminy: bytes, objentry: bytes) -> dict[str, int]:
@@ -515,8 +572,8 @@ def make(
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = [
-        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it (kh2_enemies.py; "
-        "the port's kh2_enemies.txt)"
+        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission "
+        "(kh2_enemies.py; the port's kh2_enemies.txt)"
     ]
     entries_file = kh2 / "original" / "00objentry.bin"
     entries = entries_file.read_bytes() if entries_file.is_file() else b""
@@ -553,7 +610,17 @@ def make(
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
         with_it = companions(areas, numbered, name, set(KINDS))
-        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it))
+        mission = mission_of(areas, numbered, name)
+        if mission is not None:
+            source = kh2 / "original" / MISSIONS / f"{mission}.bar"
+            if source.is_file():
+                (mod / "kh2" / "msn").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, mod / "kh2" / "msn" / source.name)
+                copy_pages(kh2 / "remastered" / MISSIONS / source.name, mod / "kh2" / "msn" / mission)
+            else:
+                left_out.append(f"{name} ({title}): its mission {source.name} not there")
+                mission = None
+        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it, mission))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     for part, what in SHARED:
