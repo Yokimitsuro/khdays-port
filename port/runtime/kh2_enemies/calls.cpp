@@ -359,6 +359,36 @@ void add_math(ai::Calls &calls)
         }
         a[0] = ai::Value::of_address(at);
     });
+    // 0:78 between two vectors (trap_vector_inter, FUN_14041d490 -> FUN_140140230): the first times 1 - t and the
+    // second times t, all four parts
+    calls.set(0, 78, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec from = read_vec(m, a[0].bits), to = read_vec(m, a[1].bits);
+        const float t = a[2].f();
+        Vec v;
+        for (int i = 0; i < 4; ++i)
+            v.v[i] = from.v[i] * (1.0F - t) + to.v[i] * t;
+        a[0] = give_vec(m, "0:78", v);
+    });
+    // 0:83 a vector turned about an axis by an angle (trap_vector_rot, FUN_14041d650 -> FUN_1403b7560: the axis made
+    // one long, FUN_1403b6fb0's turn -- cos + k k (1 - cos) + [k] sin -- the vector times it); w kept
+    calls.set(0, 83, [](ai::Machine &m, std::span<ai::Value> a) {
+        Vec v = read_vec(m, a[0].bits);
+        const Vec k = read_vec(m, a[1].bits);
+        const float n = std::sqrt(k.v[0] * k.v[0] + k.v[1] * k.v[1] + k.v[2] * k.v[2]);
+        if (n > 0.0F) {
+            const float x = k.v[0] / n, y = k.v[1] / n, z = k.v[2] / n;
+            const float r = wrapped(a[2].f()), c = std::cos(r), s = std::sin(r);
+            const float dot = (v.v[0] * x + v.v[1] * y + v.v[2] * z) * (1.0F - c);
+            const float cross[3] = {y * v.v[2] - z * v.v[1], z * v.v[0] - x * v.v[2], x * v.v[1] - y * v.v[0]};
+            const float axis[3] = {x, y, z};
+            float out[3];
+            for (int i = 0; i < 3; ++i)
+                out[i] = v.v[i] * c + cross[i] * s + axis[i] * dot;
+            for (int i = 0; i < 3; ++i)
+                v.v[i] = out[i];
+        }
+        a[0] = give_vec(m, "0:83", v);
+    });
 }
 
 // ------------------------------------------------------------------------------------------------- states
@@ -945,29 +975,32 @@ void add_motions(ai::Calls &calls)
     // then a motion; the flag sets the two after it (+ 0x118 its fall, + 0x11c its landing); its class (1) waits in
     // + 0x648 for the motion's take-off (trigger 0, FUN_14040dd70's event 0). Class 1's movement (FUN_1403cb360) gives
     // the height by the jump's time (Jump::arc)
-    const auto jump = [](ai::Machine &m, std::span<ai::Value> a) {
+    const auto begin_jump = [](Actor &x, const Vec &v) {
+        x.jump.on = true;
+        x.dashing = false;
+        x.jump.gravity = Jump{}.gravity;
+        x.jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
+        x.jump.slow = Jump{}.slow;
+        const float y = v.v[1], ticks = std::sqrt(std::fabs(2.0F * y / kKh2Pull));
+        x.jump.arc = true;
+        x.jump.up = 0.0F;
+        x.jump.height = 0.0F;
+        x.jump.time = y < 0.0F ? ticks : 0.0F;
+        x.jump.apex = y < 0.0F ? 0.0F : ticks;
+        x.jump.base = y < 0.0F ? y : 0.0F;
+        x.jump.rise = y < 0.0F ? 0.0F : -y;
+        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
+        x.jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
+        x.velocity = x.jump.along;
+        x.move_clock = 0.0F;
+        x.steered = x.jump.along;
+        x.set_bits(field::kFlags, bit::kInAir, true);
+    };
+    const auto jump = [begin_jump](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec v = read_vec(m, a[1].bits);
         const Vec3 velocity = x->velocity, steered = x->steered;
-        x->jump.on = true;
-        x->dashing = false;
-        x->jump.gravity = Jump{}.gravity;
-        x->jump.keep = Jump{}.keep; // class 1's steering in the air (FUN_1403cb360)
-        x->jump.slow = Jump{}.slow;
-        const float y = v.v[1], ticks = std::sqrt(std::fabs(2.0F * y / kKh2Pull));
-        x->jump.arc = true;
-        x->jump.up = 0.0F;
-        x->jump.height = 0.0F;
-        x->jump.time = y < 0.0F ? ticks : 0.0F;
-        x->jump.apex = y < 0.0F ? 0.0F : ticks;
-        x->jump.base = y < 0.0F ? y : 0.0F;
-        x->jump.rise = y < 0.0F ? 0.0F : -y;
-        const float flat = std::sqrt(v.v[0] * v.v[0] + v.v[2] * v.v[2]);
-        x->jump.along = flat > 0.0F ? Vec3{v.v[0] / flat * v.v[3], 0.0F, v.v[2] / flat * v.v[3]} : Vec3{};
-        x->velocity = x->jump.along;
-        x->move_clock = 0.0F;
-        x->steered = x->jump.along;
-        x->set_bits(field::kFlags, bit::kInAir, true);
+        begin_jump(*x, v);
         x->play(std::int32_t(a[2].bits), a[3].f(), 0.0F);
         x->motion.after = -1;
         x->motion.landing = 5;
@@ -979,6 +1012,14 @@ void add_motions(ai::Calls &calls)
     };
     calls.set(1, 55, jump);
     calls.set(1, 168, jump);
+    // 1:227 a jump at once (trap_obj_jump_direct, FUN_14042cd40: its class's (+ 0xc) virtual + 0x18, the PS3 build's
+    // YS::ACTION::jump -- YS::OBJ::prepare_jump with the vector as 1:55's, then change_action(1)): class 1 on the
+    // spot, its motion as it is, no take-off waited for
+    calls.set(1, 227, [begin_jump](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->take_off.reset();
+        begin_jump(*x, read_vec(m, a[1].bits));
+    });
     // 1:156 a jump of the actor's own (FUN_14042ce60 -> FUN_1403cbec0): a vector -- its x, z the way along the
     // ground (made one long, then times its w), its y how high it rises -- the ticks to its top (its pull + 0x10c
     // 2 y / t^2, its rise the pull times t), a value kept at + 0x108 (class 9's steering in the air keeps that much of
@@ -1040,6 +1081,80 @@ void add_motions(ai::Calls &calls)
         x->set_bits(0x124, 1u << 17, (first >= 6 && first < 8) || (first >= 10 && first < 12));
         thrown(*x, way.v[0], way.v[2], a[5].f(), -a[4].f());
         m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+    });
+    // 2:3 a hit's slide (trap_enemy_exec_damage_hitback, FUN_140431c90 -> FUN_1403d4120 -> FUN_1403d4960): unless its
+    // + 0x120 bit 7 holds it, the hit's way (Dir, + 0; turned back for a speed below 0) made one long, its speed a
+    // tenth of the one given (its health record's + 0x1c8 added: none in Days's field), slid along as KH2's actor's
+    // update does (Actor::step); the hit's Flag bit 0 set. 2:87 a large hit (trap_enemy_exec_damage_large,
+    // FUN_1403d4140): from the front (the way against its facing) it faces the hit and plays motion 23, from behind it
+    // turns its back to it and plays 24 (DAMAGE_L_FRONT, DAMAGE_L_BACK), its idle asked after (FUN_1403c8310: the port's
+    // actor takes it at the motion's end); then the slide. The Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's
+    // (2:87, 0) slide by none.
+    const auto slide = [](Actor &x, ai::Machine &m, std::uint32_t hit, float speed) {
+        if ((x.u32(field::kFlags) & (1u << 7)) == 0) {
+            Vec way = read_vec(m, hit);
+            if (speed < 0.0F) {
+                speed = -speed;
+                for (float &f : way.v)
+                    f = -f;
+            }
+            const float n = std::sqrt(way.v[0] * way.v[0] + way.v[1] * way.v[1] + way.v[2] * way.v[2]);
+            x.slide = n > 0.0F ? Vec3{way.v[0] / n, way.v[1] / n, way.v[2] / n} : Vec3{};
+            x.slide_speed = speed * 0.1F;
+        }
+        m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+    };
+    calls.set(2, 3, [slide](ai::Machine &m, std::span<ai::Value> a) {
+        slide(*self_of(m, a[0]), m, a[1].bits, a[2].f());
+    });
+    calls.set(2, 87, [slide](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const Vec way = read_vec(m, a[1].bits);
+        const Vec3 f = facing_of(x->yaw());
+        const bool front = way.v[0] * f[0] + way.v[1] * f[1] + way.v[2] * f[2] < 0.0F;
+        const float sign = front ? -1.0F : 1.0F;
+        if (way.v[0] != 0.0F || way.v[2] != 0.0F)
+            x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
+        x->play(front ? 23 : 24, 0.0F, 0.0F);
+        x->motion.queued = 0;
+        slide(*x, m, a[1].bits, a[2].f());
+    });
+    // 2:64 a hit's first reaction (trap_damage_orig_reaction, FUN_140431f40: YS::DAMAGE's OrigReaction, + 0x27);
+    // 2:91 a reaction kind's kind (trap_damage_get_reaction_type, FUN_1404321d0 -> FUN_1403ce980, of the value given:
+    // 1 and 12 are 1; 3, 6, 8, 10, 13, 16, 18 are 3; 4, 7, 9, 11, 15, 17 are 4; the others themselves)
+    calls.set(2, 64, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint8_t first = 0;
+        m.memory().read(a[0].bits + 0x27, &first, 1);
+        a[0] = ai::Value::of_int(first);
+    });
+    calls.set(2, 91, [](ai::Machine &, std::span<ai::Value> a) {
+        const int k = std::int32_t(a[0].bits);
+        int kind = k;
+        if (k == 1 || k == 12)
+            kind = 1;
+        else if (k == 3 || k == 6 || k == 8 || k == 10 || k == 13 || k == 16 || k == 18)
+            kind = 3;
+        else if (k == 4 || k == 7 || k == 9 || k == 11 || k == 15 || k == 17)
+            kind = 4;
+        a[0] = ai::Value::of_int(kind);
+    });
+    // 2:85 a hit's element (trap_damage_element, FUN_140432170: its attack's record, + 0x20, its byte + 9 -- atkp's
+    // element: 0 physical, 1 fire, 2 blizzard, 3 thunder ...): the Volcanic Lord slides and changes state on Blizzard
+    calls.set(2, 85, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t record = m.memory().u32(a[0].bits + 0x20);
+        std::uint8_t element = 0;
+        if (record != 0)
+            m.memory().read(record + 9, &element, 1);
+        a[0] = ai::Value::of_int(element);
+    });
+    // 1:311 its rate for an element (trap_sheet_set_element_rate, FUN_140431200 -> FUN_1403c2650: + 0x1a8 + element
+    // its sheet's weakness to it times the rate, in percent): the share of Days's hits of that element it takes (the
+    // Volcanic Lord's fire 0)
+    calls.set(1, 311, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const std::uint32_t element = a[1].bits;
+        if (element < x->element_rate.size())
+            x->element_rate[element] = std::max(0, std::int32_t(a[2].bits));
     });
     // 2:6 whether an object is in one of its reaction motions, 10 to 39 (FUN_140431d50 -> FUN_1403d4880: a motion
     // controller at + 0x158, + 0x180 less 10 under 30): Crimson Jazz asks it of itself before it acts
@@ -1103,6 +1218,13 @@ void add_moving(ai::Calls &calls)
     calls.set(1, 148, put);
     // 1:153 the same, its place before too (trap_obj_reset_pos; FUN_14042b880 -> FUN_1403b6100): no travel between
     calls.set(1, 153, put);
+    // 1:217 the same, + 0x9b8 bit 12 set after (trap_obj_set_pos_trans, FUN_14042b900 -> FUN_1403b6510: 1:148's put
+    // marked moved at once -- Scar's leaps across the rock)
+    calls.set(1, 217, [put](ai::Machine &m, std::span<ai::Value> a) {
+        put(m, a);
+        if (Object *o = object_of(m, a[0]))
+            o->set_bits(field::kFade, 1u << 12, true);
+    });
     calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         const Vec3 at = x->place(), f = facing_of(x->yaw());
@@ -1527,6 +1649,29 @@ void add_shots(ai::Calls &calls)
         if (World *w = world(m))
             w->effect_turn(a[0].bits, {std::atan2(-d.v[1], along), std::atan2(d.v[0], d.v[2]), 0.0F});
     });
+    // 0:40 its turn set itself (trap_effect_set_rot, FUN_14041e080: + 0x10 of its transform, FUN_1402be1b0: angles
+    // about x, y and z -- the Blizzard Lord's ice spikes each a turn at random); 0:39 its size (trap_effect_set_scale,
+    // FUN_14041e000: + 0x20); 0:67 its colour (trap_effect_set_color, FUN_14041e520: + 0x30, 1 each as it is -- Dark
+    // Thorn's fades out by its alpha)
+    calls.set(0, 40, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->effect_turn(a[0].bits, xyz(read_vec(m, a[1].bits)));
+    });
+    calls.set(0, 39, [world](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = world(m))
+            w->effect_scale(a[0].bits, xyz(read_vec(m, a[1].bits)));
+    });
+    calls.set(0, 67, [world](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec c = read_vec(m, a[1].bits);
+        if (World *w = world(m))
+            w->effect_colour(a[0].bits, {c.v[0], c.v[1], c.v[2], c.v[3]});
+    });
+    // 0:49 whether an effect is still alive (trap_effect_is_alive, FUN_14041e1f0 -> FUN_1402be790: its + 0xe bit 0,
+    // its end, clear) -- 0:50 asks whether its instance is there (+ 0x30); both are whether it still plays here
+    calls.set(0, 49, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w != nullptr && w->effect_alive(a[0].bits) ? 1 : 0);
+    });
     // 1:21 an effect on the actor, its handle (FUN_14042d440 -> FUN_1403b6630: FUN_1402c6b30, as 1:87)
     calls.set(1, 21, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -1582,6 +1727,11 @@ void add_shots(ai::Calls &calls)
     calls.set(2, 39, [world](ai::Machine &m, std::span<ai::Value> a) {
         World *w = world(m);
         a[0] = ai::Value::of_int(w != nullptr && w->attack_landed(a[0].bits) ? 1 : 0);
+    });
+    // 2:41 whether it met the floor (trap_attack_is_hit_floor, FUN_140432620: + 8 bit 4): Hades's fire shots end on it
+    calls.set(2, 41, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        a[0] = ai::Value::of_int(w != nullptr && w->attack_on_floor(a[0].bits) ? 1 : 0);
     });
     calls.set(2, 44, [world](ai::Machine &m, std::span<ai::Value> a) {
         World *w = world(m);
@@ -1867,6 +2017,60 @@ void add_world(ai::Calls &calls)
         if (h == 0)
             h = m.memory().add(16, "2:20's threads");
         a[0] = ai::Value::of_address(h);
+    });
+    // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
+    // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)
+    calls.set(1, 262, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x->world != nullptr)
+            x->world->voice(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits));
+    });
+    // 6:24 what the room's collision pushed it by this tick (trap_obj_get_bg_press, FUN_14053e080: + 0xa78, which
+    // KH2's actor's update writes, FUN_1403b9420; the shell writes Days's push there): the Volcanic Lord's charge ends
+    // on a wall so
+    calls.set(6, 24, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Vec v;
+        for (int i = 0; i < 4; ++i)
+            v.v[i] = x->f(field::kPressed + 4 * std::uint32_t(i));
+        a[0] = give_vec(m, "6:24", v);
+    });
+    // 10:31 whether the object is a summon (trap_sysobj_is_summon, FUN_140536c30: + 0x6c8 bit 22): none in Days's field
+    calls.set(10, 31, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr && (o->u32(field::kFlags6c8) & (1u << 22)) != 0 ? 1 : 0);
+    });
+    // 1:270, 1:271 an effect its motions' triggers start kept from starting, let start again
+    // (trap_obj_motion_disable_anmatr_effect, _enable_: FUN_1403c7280, FUN_1403c72c0 on its motion controller's list of
+    // 16 at + 0x1b8, which FUN_14040dd70 asks, FUN_1403c7db0, before a trigger 1's element starts): Scar's
+    calls.set(1, 270, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->muted_effects.insert(std::int32_t(a[1].bits));
+    });
+    calls.set(1, 271, [](ai::Machine &m, std::span<ai::Value> a) {
+        self_of(m, a[0])->muted_effects.erase(std::int32_t(a[1].bits));
+    });
+    // 1:319 whether an object is Sora (trap_sysobj_is_sora, FUN_14042b2a0: + 0x6cb bit 0): Days's players stand in for
+    // KH2's player, so they are; 6:2 the player's form (trap_player_get_form: KH2's player's + 0xde0, 0 his own): his own
+    // in Days's field
+    calls.set(1, 319, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        a[0] = ai::Value::of_int(o != nullptr && (is_player(o) || (o->u32(field::kFlags6c8) & (1u << 24)) != 0) ? 1 : 0);
+    });
+    calls.set(6, 2, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:122 its state printed for KH2's debugging (trap_obj_dump, FUN_140430540: empty in the game)
+    calls.set(1, 122, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:207 KH2's reaction camera on an object (trap_camera_watch, FUN_140430b80: a target record of the object's actor,
+    // FUN_1403bee60, to FUN_140176310 -- the PS3 build's TARGET::set_obj, then dk::ReactionCamera::create: the camera's
+    // mode 3, the target kept); 1:295 the camera back home (trap_camera_reset, FUN_140430b60 -> FUN_140165a40:
+    // ObjCamera::setHome). Dark Thorn's reaction command watches it so
+    calls.set(1, 207, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (running(m)->world != nullptr && o != nullptr)
+            running(m)->world->camera_watch(*o);
+    });
+    calls.set(1, 295, [](ai::Machine &m, std::span<ai::Value>) {
+        if (running(m)->world != nullptr)
+            running(m)->world->camera_home();
     });
 }
 

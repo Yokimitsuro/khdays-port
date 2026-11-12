@@ -17,6 +17,12 @@ int khdays_sound_shot_file(const char *path);
  * `file` is no file's. */
 int khdays_sound_shot_start(int file, float volume, float pan);
 
+/* The same, a number back for the one sound (0 none): whether it is still heard, and it ended at once (a KH2 enemy's
+ * voice line, which the next of a priority as high takes the place of). */
+int khdays_sound_shot_play(int file, float volume, float pan);
+int khdays_sound_shot_heard(int id);
+void khdays_sound_shot_end(int id);
+
 /* Every sound heard stopped (an area left). */
 void khdays_sound_shots_stop(void);
 

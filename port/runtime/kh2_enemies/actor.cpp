@@ -410,6 +410,7 @@ bool Actor::play(int id, float blend, float start, bool restart)
     motion.cued = motion.time;
     motion.cue_start = true;
     motion.looped = false;
+    motion.queued = -1;
     ++motion.started;
     motion.ended = false;
     set_bits(field::kStatus, bit::kMotionEnded, false);
@@ -428,6 +429,10 @@ Vec3 Actor::step(float ticks)
         const float length = motions->length(id), loop = motions->loop_from(id);
         const float t0 = motion.time;
         Vec3 model{}; // no travel while it stands or blends (get_trans_direct gives none during a blend)
+        // the ended bit is this tick's (add_time clears + 0x34 bit 1 first, then sets it when the time reaches the
+        // motion's end: each tick one stands at its end, a loop's tick it goes round -- Scar counts the player's
+        // pinned motion's rounds so)
+        bool at_end = false;
         if (motion.fresh) {
             // started this tick: at its start frame till the next
         } else if (motion.blend > 0.0F) {
@@ -445,10 +450,8 @@ Vec3 Actor::step(float ticks)
             float t1 = t0 + ticks;
             model = minus(motions->root(id, std::min(t1, length)), motions->root(id, t0));
             if (t1 >= length) {
-                if (!motion.ended) {
-                    motion.ended = true;
-                    set_bits(field::kStatus, bit::kMotionEnded, true);
-                }
+                motion.ended = true;
+                at_end = true;
                 if (loop < length && length > 0.0F) { // a loop: on from its loop point
                     const float over = std::fmod(t1 - length, length - loop);
                     const Vec3 more = minus(motions->root(id, loop + over), motions->root(id, loop));
@@ -462,6 +465,7 @@ Vec3 Actor::step(float ticks)
             }
             motion.time = t1;
         }
+        set_bits(field::kStatus, bit::kMotionEnded, at_end);
         const Vec3 along = turned({model[0], 0.0F, model[2]}, yaw());
         travel = {along[0], -model[1], along[2]};
         if (jump.on && motion.after >= 0 && jump.up >= 0.0F && motion.id != motion.after) {
@@ -474,6 +478,16 @@ Vec3 Actor::step(float ticks)
         travel[i] += move[i] * move_speed * ticks;
     move = {};
     move_speed = 0.0F;
+    // a hit's slide (FUN_1403d4570): over below 1, else its way times its speed, the speed 0.9 of itself a tick
+    if (slide_speed > 0.0F) {
+        if (slide_speed < 1.0F) {
+            slide_speed = 0.0F;
+        } else {
+            for (int i = 0; i < 3; ++i)
+                travel[i] += slide[std::size_t(i)] * slide_speed * ticks;
+            slide_speed *= std::pow(0.9F, ticks);
+        }
+    }
     // its class's movement, evaluated for two ticks at a time (every tick when steered past 100), its travel a tick
     // kept between evaluations: on the ground the steering, in the air the velocity steered or slowed (the jump's arc
     // its height)

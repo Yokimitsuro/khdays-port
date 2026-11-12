@@ -345,6 +345,12 @@ sample for sample against ffmpeg's decoding of the same recordings.
   header, then its data. Codec 12 is Microsoft ADPCM, its extra a WAVEFORMATEX (`wFormatTag` 2, the block's bytes,
   `wSamplesPerBlock` 32, the seven predictor pairs); codec 6 is Ogg Vorbis. Rates are the files' own (47,995-48,005
   in bank 2984).
+- **Ogg Vorbis** (the battle voices' banks, `voice/us/battle/<name>.win32.scd`: Hades's `he_hades` 22 recordings, all
+  of them): the extra is a 0x20-byte header -- u16 its pages' kind, u8 a byte, ..., + 0x10 u32 a seek table's size,
+  + 0x14 u32 the header pages' size -- then the seek table, then the stream's header pages (its identification,
+  comment and setup: `OggS`, `\x01vorbis`), each byte XORed with the header's byte when the kind is 0x2002 (every one
+  read; the byte differs from recording to recording); the data is the stream's audio pages as they are. The two
+  together are an Ogg file (`tools/mods/kh2_scd.py` `vorbis`, written as it is for the port's Ogg reader).
 - **Microsoft ADPCM**, as Microsoft's description of the format gives it: a block holds per channel a predictor
   number (u8), then per channel the step, sample 1 and sample 2 (s16 each); sample 2 then sample 1 are the first out;
   then a nibble a sample, high nibble first, the channels interleaved. A sample is `(s1 c1 + s2 c2) / 256` -- the

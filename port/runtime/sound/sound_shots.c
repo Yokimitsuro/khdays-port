@@ -18,6 +18,7 @@ typedef struct Voice {
     const KhdaysReplacement *sound;
     double position; /* in the file's frames */
     float left, right;
+    int id; /* what khdays_sound_shot_play gave back */
 } Voice;
 
 static SRWLOCK lock = SRWLOCK_INIT;
@@ -26,6 +27,7 @@ static int file_count, file_room;
 static Voice *voices;
 static int voice_count, voice_room;
 static volatile LONG heard; /* voice_count, read without the lock */
+static int next_id;
 
 int khdays_sound_shot_file(const char *path)
 {
@@ -74,6 +76,11 @@ int khdays_sound_shot_file(const char *path)
 
 int khdays_sound_shot_start(int file, float volume, float pan)
 {
+    return khdays_sound_shot_play(file, volume, pan) != 0;
+}
+
+int khdays_sound_shot_play(int file, float volume, float pan)
+{
     int started = 0;
     if (pan < -1.0f)
         pan = -1.0f;
@@ -95,12 +102,37 @@ int khdays_sound_shot_start(int file, float volume, float pan)
             v->position = 0.0;
             v->left = volume * (pan > 0.0f ? 1.0f - pan : 1.0f);
             v->right = volume * (pan < 0.0f ? 1.0f + pan : 1.0f);
-            started = 1;
+            if (++next_id <= 0)
+                next_id = 1;
+            v->id = next_id;
+            started = next_id;
         }
     }
     InterlockedExchange(&heard, voice_count);
     ReleaseSRWLockExclusive(&lock);
     return started;
+}
+
+int khdays_sound_shot_heard(int id)
+{
+    int found = 0;
+    AcquireSRWLockShared(&lock);
+    for (int i = 0; i < voice_count && !found; ++i)
+        found = voices[i].id == id && voices[i].position < (double)voices[i].sound->frames;
+    ReleaseSRWLockShared(&lock);
+    return found;
+}
+
+void khdays_sound_shot_end(int id)
+{
+    AcquireSRWLockExclusive(&lock);
+    for (int i = 0; i < voice_count; ++i)
+        if (voices[i].id == id) {
+            voices[i] = voices[--voice_count];
+            break;
+        }
+    InterlockedExchange(&heard, voice_count);
+    ReleaseSRWLockExclusive(&lock);
 }
 
 void khdays_sound_shots_stop(void)

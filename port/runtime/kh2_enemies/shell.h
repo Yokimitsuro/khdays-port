@@ -27,10 +27,11 @@ void khdays_kh2_enemies_tick(void *actor, int delta);
 int khdays_kh2_enemies_held(void *actor);
 
 /* Ov107_AiState_ApplyHit (prepare.py's joins): the hit taken through its class's handler, its HP before it; and
- * before that, the damage Days worked out for it (`amount`) kept from taking it under the least health its script
- * set (1:231): the amount to take. */
+ * before that, the damage Days worked out for it (`amount`), its kinds (the hit packet's high flags: Days's elements, a
+ * bit each) kept for the hit and its element's share taken (1:311), kept from taking it under the least health its
+ * script set (1:231): the amount to take. */
 void khdays_kh2_enemies_hit(void *actor, int hp_before);
-int khdays_kh2_enemies_damage(void *actor, int amount);
+int khdays_kh2_enemies_damage(void *actor, int amount, int kinds);
 
 /* Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): whether a KH2 enemy's script keeps it
  * from being hit (YS::OBJ's FLAG_NOHIT_ATTACK) and from touching objects -- no push, no touch (FLAG_NOHIT_OBJ): the Mole

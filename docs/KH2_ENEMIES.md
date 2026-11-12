@@ -161,7 +161,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 1:8, 1:9, 1:10, 1:127 | enter a state, queue one (15 at most), whether one is queued or running, clear the queue | as KH2 |
 | 1:11, 1:61 | play motion `id` blended over `blend` frames, 1:61 from a frame (`FUN_1403c86a0` on the motion controller at + 0x158): above 2 the motion stands at that frame while the blend runs ("When single-frame triggers play", below) | the motion from the mod's .mset, blended as KH2 |
 | 1:12 | the same, left as it is when it already plays (`FUN_1403c6dc0`): the scripts call it every tick while they walk | as KH2 |
-| 1:14, 1:15 | + 0x18c bit 1, the motion played to its end; + 0x180, the number of the motion playing: the scripts wait on both | as KH2 |
+| 1:14, 1:15 | + 0x18c bit 1, the motion played to its end; + 0x180, the number of the motion playing: the scripts wait on both. The bit is a tick's: `add_time` (`FUN_1403c6740`) clears its controller's + 0x34 bit 1 first, then sets it when the time reaches the end -- each tick a motion stands at its end, the one tick a loop goes round (Scar counts three rounds of the player pinned under him before he throws him) | as KH2, for an enemy's motions and a held player's |
 | 1:67, 1:68 | a motion's length in ticks (the motion controller's virtuals + 8 and + 0x30; -1 the one playing) | as KH2 |
 | 1:55, 1:168 | a jump (`method_obj_jump`, `trap_obj_flyjump`; `FUN_1403cbb00`, `FUN_1404233f0`): a vector -- its x, z the way (made one long, then times its w, the speed along), its y how it rises -- then a motion; a flag sets the motions after it (+ 0x118 its fall, + 0x11c its landing, 5 `LAND` by default). A positive y rises that far in the ticks KH2's pull takes to fall it (+ 0xf4 `sqrt(2 y / 0.408163)`, 1:100's), eased (`sin(sin(t / top x pi/2) x pi/2)` of it, + 0xfc), then falls under the pull (0.408163 cm a tick a tick, some 14.7 m/s2); a negative y does not rise: its time begins at those ticks (+ 0xf0) from y (+ 0xf8), so it drops. KH2 leaves the ground at the motion's take-off event (`FUN_14040dd70` event 0: + 0x648 1 makes it class 1); in the air class 1's movement (`FUN_1403cb360`) gives the height by the jump's time and keeps 0.9 of its velocity an evaluation when steered, 0.95 unsteered | as KH2, from the motion's trigger 0 when it has one ahead, else from the call. Until 2026-11-10 the port read `sqrt(2 y / 0.408163)` as the speed up, under a pull of 1 / 0.408163: its jumps rose as high in 2.45 times less time, and the Mole Driller's drill (201: off at 14, striking from 39 to 44) landed before it struck |
 | 1:19, 1:20, 1:28 | its fading (+ 0xa08 and its change a tick, `FUN_1403b7810`; a time of 2 or less is 1): from 1 to 0, from 0 to 1; 1:28 to 0 at once and held (+ 0x9b8 bit 4) | drawn as the model's alpha |
@@ -286,6 +286,20 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:231, 1:232, 1:233 | its health record's third word, the least it goes to (`YS::SHEET`'s 32 `HP` of `{Hp, MaxHp, MinHp}`; `trap_sheet_set_min_hp`, `trap_sheet_min_hp`); its health set within the two (`trap_sheet_set_hp`) | as KH2 on the record; Days's damage kept above the least (`khdays_kh2_enemies_damage`, a join in `Ov107_AiState_ApplyHit`: the Phantom's), the health set given to Days's enemy (at least 1: Days's defeat comes through its hits) |
 | 0:8, 1:36, 1:203 | a vector printed (empty in the PC's build); a part of KH2's room hidden (`trap_bg_hide`); a spawn unit of the room let go on (`trap_unit_enable`) | nothing: Days's room and waves are not KH2's (the enemies a boss's unit would bring do not come) |
 | 2:6 | an object in one of its reaction motions (`FUN_140431d50` -> `FUN_1403d4880`: a motion controller at + 0x158, + 0x180 from 10 to 39) -- Crimson Jazz asks it of itself before it acts | as KH2 |
+| 0:78, 0:83 | between two vectors, the first times 1 - t and the second times t (`trap_vector_inter`, `FUN_140140230`); a vector turned about an axis made one long by an angle (`trap_vector_rot`, `FUN_1403b7560`, its turn `FUN_1403b6fb0`: `cos + k k (1 - cos) + [k] sin`) | as KH2 |
+| 0:39, 0:40, 0:67, 0:49 | an effect's size, its turn and its colour set (`trap_effect_set_scale`, `_rot`, `_color`: + 0x20, + 0x10 and + 0x30 of its transform, 1 each as it is); whether it is still alive (`trap_effect_is_alive`: its + 0xe bit 0 clear; 0:50 asks whether its instance is there) | its element's size the one given, its draws' colours times the colour (the Blizzard Lord's ice spikes at random sizes and turns, Dark Thorn's fading by its alpha); 0:49 whether it still plays, as 0:50 |
+| 1:262 | a line of its voice (`trap_obj_voice` -> the object's virtual + 0xa0, `YS::STDOBJ::_OVR_voice` -> `YS::VOICE::request`): the sound of that number in its voice bank, one at a time, a new one taking the place of one asked with no higher a priority (`exec`: the one before ended) | the mod's `kh2/voice/<kind>/<number>.wav` (below, "Voices"), heard where the enemy was last drawn; Hades's 13 |
+| 2:3, 2:87 | a hit's slide (`trap_enemy_exec_damage_hitback`, `FUN_1403d4960`): unless the actor stands firm, the hit's way made one long (turned back for a speed below 0) at a tenth of the speed given (its health record's + 0x1c8 added) a tick, 0.9 of itself each tick after, over below 1 or on a wall (`FUN_1403d4570`, `FUN_1403b9420`); a large hit (`trap_enemy_exec_damage_large`, `FUN_1403d4140`): from the front it faces the hit and plays 23, from behind it turns its back to it and plays 24, its idle asked after (`FUN_1403c8310`'s queue), then the slide | as KH2, its standing firm only + 0x120 bit 7 (the PC's `FUN_1403ba190` reads two flags of the native class's more); the health record's + 0x1c8 is none in Days's field. The bosses read slide by none: the Volcanic Lord's Blizzard reaction (2:3, 0) and Hades's (2:87, 0) |
+| 2:64, 2:91, 2:85 | a hit's first reaction (`trap_damage_orig_reaction`, + 0x27); a reaction kind's kind (`trap_damage_get_reaction_type`, `FUN_1403ce980` of the value given: 1 and 12 are 1, 3 6 8 10 13 16 18 are 3, 4 7 9 11 15 17 are 4, the others themselves); its element (`trap_damage_element`: its attack's record, + 0x20, its byte + 9 -- atkp's element, 0 physical, 1 fire, 2 blizzard, 3 thunder) | as KH2 on the Days hit: its element from the hit's kinds (Days's packet's high flags: Fire, Blizzard, Thunder), below ("The second bosses") |
+| 1:311 | its rate for an element (`trap_sheet_set_element_rate`, `FUN_1403c2650`: its sheet's + 0x1a8 + element, the weakness times the rate, in percent, rounded up) | the share of Days's damage of that element it takes (`khdays_kh2_enemies_damage`): the Volcanic Lord takes no fire |
+| 1:227 | a jump at once (`trap_obj_jump_direct`: its class's virtual + 0x18, the PS3 build's `YS::ACTION::jump` -- `YS::OBJ::prepare_jump` with the vector as 1:55's, then `change_action(1)`) | as KH2: class 1 on the spot, its motion as it is, no take-off waited for |
+| 6:24 | what the room's collision pushed it by this tick (`trap_obj_get_bg_press`: + 0xa78, which the actor's update writes, `FUN_1403b9420`) | Days's collision's push along the ground a tick (the place Days put it less the one the shell gave it), written at + 0xa78 each frame; it ends a slide and a steering too |
+| 2:41 | whether an attack of its own met the floor (`trap_attack_is_hit_floor`: + 8 bit 4) | a ray from its middle down by its size meets Days's room (Hades's fire shots) |
+| 1:217 | put at a point as 1:148, its + 0x9b8 bit 12 set after (`trap_obj_set_pos_trans`, `FUN_1403b6510`) | as KH2 (the bit is not read by the port) |
+| 1:270, 1:271 | an element its motions' triggers start kept from starting, let start again (`trap_obj_motion_disable_anmatr_effect`, `_enable_`: a list of 16 at the motion controller's + 0x1b8, which `FUN_14040dd70` asks before a trigger 1 starts its element, `FUN_1403c7db0`) | as KH2, a list with no bound (Scar's) |
+| 1:319, 6:2 | whether an object is Sora (`trap_sysobj_is_sora`: + 0x6cb bit 0); the player's form (`trap_player_get_form`: KH2's player's + 0xde0, 0 his own) | Days's players are KH2's player Sora to the scripts, in his own form |
+| 10:31, 1:122 | whether the object is a summon (+ 0x6c8 bit 22); its state printed (`trap_obj_dump`, empty in the game) | none is a summon; nothing |
+| 1:207, 1:295 | KH2's reaction camera on an object (`trap_camera_watch`, `FUN_140430b80`: a target record of the object's actor, `FUN_1403bee60`, to `FUN_140176310` -- the PS3 build's `TARGET::set_obj` and `dk::ReactionCamera::create`, the camera's mode 3); the camera back home (`trap_camera_reset`: `ObjCamera::setHome`). `ReactionCamera::update` holds only while the player cannot act (`YS::OBJ::can_control`) and the target stands (`TARGET::is_exist`): KH2's target camera on the target's point (`TargetCamera::updateTargetCamera`), else the camera's mode returns | while a KH2 enemy holds this game's player and the watched object stands, KH2's target camera on its aim point in place of the field's camera, whichever it is (`runtime/camera/kh2_camera_hooks.c` `reaction_frame`, as the event sequences' camera: `kh2_camera_lock` and its springs, from where the camera was); not its eye's collision nor the stick. Dark Thorn's reaction command |
 
 ## Attacks of their own
 
@@ -512,6 +526,28 @@ With the calls above, three more of KH2's bosses' scripts are answered in full; 
   it waits there for ever.
 - **Hayabusa** `B_MU110`: Shan-Yu's falcon, found by its entry (1:114, 21): not a kind until Shan-Yu `B_MU100` is.
 
+### The second bosses (2026-11-12)
+
+Kinds made by the mod's tool, their scripts answered in full by the calls above (0:39, 0:40, 0:49, 0:67, 0:78, 0:83,
+1:122, 1:207, 1:227, 1:262, 1:295, 1:311, 2:3, 2:41, 2:64, 2:85, 2:87, 2:91, 6:24, 10:31):
+
+- **Hades** of the Coliseum's cups, `B_HE030_CLSM` (`00objentry.bin` 0x90e): its object entry names `B_HE030.mset`, the
+  motion set the story's Hades moves by -- the mod's tool copies the motion set an entry names and the shell reads it
+  so (`motion_set_of`, `motion_set_name`). It speaks (1:262) from KH2's `he_hades` battle bank.
+- **Volcanic Lord** `B_AL100_FIRE` and **Blizzard Lord** `B_AL100_ICE`, with their lava (`B_AL110`) and ice spikes
+  (`B_AL120`), which their scripts make (1:0). The Volcanic Lord takes no fire (1:311) and answers a Blizzard hit with
+  its own reaction (2:85 2: a slide of none, 2:3, and its state); the Blizzard Lord the other way round.
+- **Dark Thorn** `B_BB110`.
+- **Scar** `B_LK110` (1:217, 1:270, 1:271 too), speaking from KH2's `scar` battle bank, and his ghosts
+  `B_LK110_PHANTOM` (`00objentry.bin` 0x833: they move by `B_LK110.mset` too).
+
+A Days hit's element is read from its kinds, the hit packet's high flags (a join in `Ov107_AiState_ApplyHit` passes
+them on): `Ov107_AiState_ApplyHit` names four by the statuses they give -- bit 7 burning (Fire; Roxas's Fire seen
+`08 00 80 00`, docs/RUNTIME_MAP.md), bit 3 frozen (Blizzard), bit 11 jolted (Thunder), bit 2 tossed (Aero) -- which
+are KH2's fire (1), blizzard (2) and thunder (3); Aero, which KH2 has no element for, and his attacks (0x4000) are
+physical. Dark Thorn's reaction command watches it with KH2's reaction camera (1:207), as Cerberus's plays its event
+sequences' cameras.
+
 ## A player in an enemy's hands
 
 KH2's player is an actor its enemies' scripts move and make play their motions; Days's players are Days's. When a
@@ -553,8 +589,11 @@ script makes one of them play a motion of its set (`1:29`, Cerberus's reaction c
   113); the mod's tool copies obj/W_EX010.mdlx and .a.us with its HD page (mods/<mod>/kh2/fx/W_EX010/). The player's
   KH2 model plays the part on its own keyblade (`weapon_motions`' bones), as it does the body.
 - **The script's calls on it**: `1:148`, `1:1`, `1:4`, `1:79` put and turn it; `1:112` its thread (kept from before
-  the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing); `1:74` nothing (its class is
-  Days's); `1:213` 1.
+  the hold begins); `1:18` / `1:102` an enemy carried by it (at its place and facing; put on him before the hold
+  begins too, Scar's). A carry with its flag bit 0 ends by itself, as KH2's actor's update ends it (`FUN_1403b4a12`):
+  its carrier gone or its + 0x18c bit 15 clear -- the carrier's motion's range 13 -- so Scar comes off the player he
+  pins as he throws him (his 254), and his catch, waiting on `1:161`, goes on; `1:74` nothing (its class is Days's);
+  `1:213` 1.
 - **The command**: offered, it shows above the command deck (below, "The reaction command's bar") and KH2's mark on
   the player in the enemy's hands (below, "The reaction command's mark"); the pad's top button (KH2's triangle, the DS
   X) takes it: the command's argument sent to the enemy as a message (trigger 11).
@@ -908,6 +947,18 @@ banks").
   se000's has five recordings: likely a choice; the port plays the first), the tracks' own commands (a pitch range,
   1.06 and 0.944, in most of the Soldier's), how KH2 makes a sound quieter far away, and the sounds 0-3 of the
   Soldier's and the Shadow's banks (no motion or element of theirs names them).
+
+### Voices
+
+A boss speaks with 1:262 (`trap_obj_voice`): its object's voice (`YS::VOICE`, the PS3 build's) takes the number and a
+priority (`request`: kept when nothing waits or plays, else when the priority is as high or higher), then plays that
+sound of its bank (`exec` -> `VOICE_EE::play` -> `SOUND::createVsbVoice(bank, number, ...)`) where the object stands,
+the one before ended. The PC's battle banks are `original/voice/us/battle/<name>.win32.scd` (`he_hades`, 32 sounds
+of 22 recordings, each Ogg Vorbis: docs/FORMATS.md "KH2's sound banks"), each sound at a volume of its own (0.47 to
+0.77 in Hades's). **Not read**: how KH2 gives an object its bank (its area's loading; `YS::VOICE::ReadEntryId` is the
+party's, by `00objentry.bin`'s + 0x4c): the mod's tool names each kind's bank (`VOICES`) and writes its sounds as
+`kh2/voice/<kind>/<number>.ogg` as they are, their volumes in `volumes.txt`; the shell hears one at a time per
+enemy, at its volume, among the effects (`khdays_sound_shot_play`, `_heard`, `_end`). Hades's line 13 is his end's.
 
 ## Days's side: the shell
 

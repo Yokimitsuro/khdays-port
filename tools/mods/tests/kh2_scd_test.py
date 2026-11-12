@@ -152,6 +152,22 @@ class Bank(unittest.TestCase):
         pcm = kh2_scd.recordings(made_up_bank([(1, 48000, 12, b"\x01\x00" + bytes(48), b"")]))[0]
         with self.assertRaises(kh2_scd.ScdError):
             kh2_scd.decode(pcm)  # a WAVEFORMATEX that is not ADPCM's
+        with self.assertRaises(kh2_scd.ScdError):
+            kh2_scd.vorbis(pcm)  # not Ogg Vorbis
+        with self.assertRaises(kh2_scd.ScdError):
+            kh2_scd.vorbis(vorbis)  # no header
+
+    def test_vorbis_as_ogg(self):
+        # its header pages XORed with 0x5a (kind 0x2002) after a seek table of 8 bytes; its data's pages as they are
+        pages = b"OggS header pages"
+        extra = struct.pack("<HB", 0x2002, 0x5A).ljust(0x10, b"\0") + struct.pack("<II", 8, len(pages))
+        extra = extra.ljust(0x20, b"\0") + bytes(8) + bytes(b ^ 0x5A for b in pages)
+        recording = kh2_scd.recordings(made_up_bank([(1, 48000, 6, extra, b"OggS audio")]))[0]
+        self.assertEqual(kh2_scd.vorbis(recording), b"OggS header pagesOggS audio")
+        # any other kind: its pages as they are
+        plain = struct.pack("<H", 0) + extra[2:0x28] + pages
+        recording = kh2_scd.recordings(made_up_bank([(1, 48000, 6, plain, b"OggS audio")]))[0]
+        self.assertEqual(kh2_scd.vorbis(recording), b"OggS header pagesOggS audio")
 
 
 if __name__ == "__main__":

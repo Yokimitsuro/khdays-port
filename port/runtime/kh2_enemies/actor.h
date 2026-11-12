@@ -47,6 +47,9 @@ constexpr std::uint32_t kFade = 0x9b8;      // bit 4: the fade held (1:19, 1:20,
 constexpr std::uint32_t kUnitArgs = 0x9f4;  // YS::OBJ's UnitArg: its spawn's values, a word each (1:39, 1:218)
 constexpr std::uint32_t kTravel = 0xa28;    // vec4: this tick's travel (FUN_1403b8ae3; 1:64)
 constexpr std::uint32_t kTravelBefore = 0xa38; // vec4: the tick's before (1:62)
+// vec4: what the room's collision pushed it off its way this tick (FUN_1403b9420: the place it was put at less the one
+// asked, a tick's worth); 6:24 gives it, its steering stops on it (FUN_140421450)
+constexpr std::uint32_t kPressed = 0xa78;
 constexpr std::uint32_t kTarget = 0xbf8;       // its target slot (2:23)
 constexpr std::uint32_t kAttacker = 0xd38;  // the last to hit it (FUN_140410700), 2:88
 constexpr std::uint32_t kKarmaLimit = 0xd4c; // YS::ENEMY's KarmaLimit (2:76), after its Karma
@@ -60,6 +63,9 @@ constexpr std::uint32_t kHeld = 1u << 9;        // kStatus: a reaction holds it 
 // kStatus: a player plays another object's motion (1:29: its enemy's set), which then offers that object's commands
 // (FUN_14040d810's range 20: the command's source + 0x2b0); 1:101 waits on it
 constexpr std::uint32_t kOtherMotion = 1u << 14;
+// kStatus: its motion's range 13 on (FUN_14040d810): what it carries with a carry's flag bit 0 stays on it while it is
+// (the actor's update, FUN_1403b4a12: Scar on the player he pins)
+constexpr std::uint32_t kKeepsCarried = 1u << 15;
 constexpr std::uint32_t kInAir = 1u << 23;      // kFlags: off the ground (FUN_1403ba9a0, 1:60)
 // kFlags: YS::OBJ's Flag (1:70 sets one, 1:71 clears it; the PS3 build's names): no touching objects, no being hit
 constexpr std::uint32_t kNoHitObject = 1u << 1, kNoHitAttack = 1u << 3;
@@ -230,6 +236,9 @@ struct Playing final {
     float cued = 0.0F;
     bool cue_start = false, looped = false;
     unsigned started = 0; // a new number each motion started: the pose shown then is the blend's from
+    // a motion asked to follow this one (FUN_1403c8310's queue at + 0x50 .. + 0x58: 2:87's idle), -1 none: taken when
+    // this one blends back (its range 2) or ends; a motion started empties the queue (FUN_1403c86a0's + 0x50)
+    int queued = -1;
     bool ended = false;
     int after = -1, landing = 5; // + 0x118 / + 0x11c: a jump's next motions (1:55's flag), -1 none
 };
@@ -309,6 +318,11 @@ public:
     {
         return false;
     }
+    // ... whether it met the room's floor (2:41: + 8 bit 4)
+    virtual bool attack_on_floor(std::uint32_t /*at*/)
+    {
+        return false;
+    }
     virtual std::uint32_t attack_struck(std::uint32_t /*at*/)
     {
         return 0;
@@ -340,6 +354,17 @@ public:
     virtual void effect_move(std::uint32_t /*handle*/, const Vec3 & /*place*/) {}
     virtual void effect_turn(std::uint32_t /*handle*/, const Vec3 & /*angles*/) {}
     virtual void effect_fade(std::uint32_t /*handle*/, float /*ticks*/) {}
+    // ... its size (0:39: the effect's scale, + 0x20 of its transform, FUN_1402bea80) and its colour (0:67: + 0x30,
+    // FUN_1402be1e0; 1 each as it is, the scripts fade one out by its alpha), set
+    virtual void effect_scale(std::uint32_t /*handle*/, const Vec3 & /*scale*/) {}
+    virtual void effect_colour(std::uint32_t /*handle*/, const std::array<float, 4> & /*colour*/) {}
+    // 1:207: KH2's reaction camera made to watch `o` (dk::ReactionCamera: while a KH2 enemy holds the player, the target
+    // camera on it); 1:295: the camera back home (ObjCamera::setHome)
+    virtual void camera_watch(Object & /*o*/) {}
+    virtual void camera_home() {}
+    // 1:262: a line of the actor's voice (YS::OBJ's voice -> YS::STDOBJ::_OVR_voice -> YS::VOICE::request: the sound
+    // `id` of its voice bank, one at a time, a new one taking the place of one asked with no higher a priority)
+    virtual void voice(Actor &, int /*id*/, int /*priority*/) {}
     // A segment of KH2's world against the room's collision (Days's, under the actor): where it first meets it
     // (FUN_14040c2b0's cast: 6:51, 1:141's ground under a point, 1:248's)
     virtual bool ray(Actor & /*a*/, const Vec3 & /*from*/, const Vec3 & /*to*/, Vec3 & /*hit*/)
@@ -501,6 +526,16 @@ public:
     // keeping `dash_keep` of it an evaluation (eased toward the steering when steered), until its class changes
     bool dashing = false;
     float dash_keep = 0.0F;
+    // a hit's slide (2:3, 2:87: FUN_1403d4960 -- + 0xd24 its way, made one long, + 0xd30 its speed a tick, a tenth of
+    // what the script gives; FUN_1403d4570 each tick): the way times the speed, the speed then 0.9 of itself, over
+    // once below 1 (KH2's cm) or when a wall stops it (FUN_1403b9420)
+    Vec3 slide{};
+    float slide_speed = 0.0F;
+    // its sheet's rates by KH2's elements (1:311, FUN_1403c2650: + 0x1a8 + element, its weakness times a rate, in
+    // percent): the share of a Days hit of that element it takes; 100 each at first
+    std::array<int, 8> element_rate{100, 100, 100, 100, 100, 100, 100, 100};
+    // the elements its motions' triggers 1 are kept from starting (1:270, 1:271: its motion controller's + 0x1b8)
+    std::set<int> muted_effects;
     // the thread a script attached to it (1:112, FUN_1403d76d0: + 0xd48, the one before ended), in the machine that
     // made it
     ai::Machine *side_machine = nullptr;

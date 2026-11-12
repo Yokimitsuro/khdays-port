@@ -1273,6 +1273,186 @@ void test_making()
     CHECK(again != first && rig.memory.u32(again) == 0u);
 }
 
+// The second bosses' world: what their effects' looks, voices and attacks' floor asked of it
+struct SecondBossesWorld final : kh::World {
+    std::uint32_t scaled = 0, coloured = 0;
+    kh::Vec3 scale{};
+    std::array<float, 4> colour{};
+    int voice_id = -1, voice_priority = -1;
+    std::uint32_t floor_asked = 0;
+    std::uint32_t watched = 0; // 1:207's object, 0 once 1:295 sent the camera home
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    void effect_scale(std::uint32_t handle, const kh::Vec3 &s) override
+    {
+        scaled = handle;
+        scale = s;
+    }
+    void effect_colour(std::uint32_t handle, const std::array<float, 4> &c) override
+    {
+        coloured = handle;
+        colour = c;
+    }
+    void voice(kh::Actor &, int id, int priority) override
+    {
+        voice_id = id;
+        voice_priority = priority;
+    }
+    bool attack_on_floor(std::uint32_t at) override
+    {
+        floor_asked = at;
+        return true;
+    }
+    void camera_watch(kh::Object &o) override
+    {
+        watched = o.address();
+    }
+    void camera_home() override
+    {
+        watched = 0;
+    }
+};
+
+// Hades's, the Volcanic and Blizzard Lords' and Dark Thorn's calls: vectors between and turned about an axis, effects'
+// size and colour, voices, a hit's slide (2:3), a large hit (2:87), the hit's first reaction, its kind, its element,
+// the element's rate, a jump at once, the room's push, the attack's floor
+void test_second_bosses()
+{
+    Rig rig;
+    MadeUpMotions motions;
+    SecondBossesWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "hades");
+    actor.motions = &motions;
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    float v[4] = {};
+
+    // 0:78: (2, 4, 6, 8) a quarter of the way to (6, 0, 2, 0)
+    rig.memory.read(call(rig, actor, 0, 78, {adr(vec(rig.memory, 2, 4, 6, 8)), adr(vec(rig.memory, 6, 0, 2, 0)), f(0.25F)})
+                        .bits,
+                    v, sizeof v);
+    CHECK(std::fabs(v[0] - 3.0F) < 1e-5F && std::fabs(v[1] - 3.0F) < 1e-5F && std::fabs(v[2] - 5.0F) < 1e-5F &&
+          std::fabs(v[3] - 6.0F) < 1e-5F);
+    // 0:83: x turned a quarter about the up (an axis not one long) is -z; about x, y is z
+    rig.memory.read(
+        call(rig, actor, 0, 83, {adr(vec(rig.memory, 1, 0, 0, 1)), adr(vec(rig.memory, 0, 3, 0)), f(1.5707963F)}).bits,
+        v, sizeof v);
+    CHECK(std::fabs(v[0]) < 1e-5F && std::fabs(v[1]) < 1e-5F && std::fabs(v[2] + 1.0F) < 1e-5F && v[3] == 1.0F);
+    rig.memory.read(
+        call(rig, actor, 0, 83, {adr(vec(rig.memory, 0, 1, 0)), adr(vec(rig.memory, 1, 0, 0)), f(1.5707963F)}).bits, v,
+        sizeof v);
+    CHECK(std::fabs(v[1]) < 1e-5F && std::fabs(v[2] - 1.0F) < 1e-5F);
+
+    // an effect's size and colour (0:39, 0:67); its turn (0:40) and whether it lives (0:49) go as 0:41 and 0:50's
+    call(rig, actor, 0, 39, {adr(77), adr(vec(rig.memory, 0.8F, 0.9F, 1.0F))});
+    CHECK(world.scaled == 77u && world.scale[1] == 0.9F);
+    call(rig, actor, 0, 67, {adr(78), adr(vec(rig.memory, 1, 1, 1, 0.25F))});
+    CHECK(world.coloured == 78u && world.colour[3] == 0.25F);
+    CHECK(call(rig, actor, 0, 49, {adr(78)}).i() == 0); // no effect plays in this world
+
+    // 1:262: Hades's line 13 at priority 1
+    call(rig, actor, 1, 262, {self, i(13), i(1)});
+    CHECK(world.voice_id == 13 && world.voice_priority == 1);
+
+    // a hit (YS::DAMAGE): its way +x, its first reaction 7, its attack's record with element 2 (blizzard)
+    const std::uint32_t hit = rig.memory.add(0x30, "a test's hit");
+    const std::uint32_t params = rig.memory.add(48, "a test's attack");
+    const float way[4] = {1.0F, 0.0F, 0.0F, 0.0F};
+    rig.memory.write(hit, way, sizeof way);
+    const std::uint8_t first = 7, element = 2;
+    rig.memory.write(hit + 0x27, &first, 1);
+    rig.memory.write(params + 9, &element, 1);
+    rig.memory.set_u32(hit + 0x20, params);
+    CHECK(call(rig, actor, 2, 64, {adr(hit)}).i() == 7);
+    CHECK(call(rig, actor, 2, 85, {adr(hit)}).i() == 2);
+    CHECK(call(rig, actor, 2, 91, {i(12)}).i() == 1 && call(rig, actor, 2, 91, {i(16)}).i() == 3 &&
+          call(rig, actor, 2, 91, {i(17)}).i() == 4 && call(rig, actor, 2, 91, {i(2)}).i() == 2);
+
+    // 2:3: a slide along the hit's way at a tenth of 50 a tick, 0.9 of itself each tick after; the hit's Flag bit 0
+    call(rig, actor, 2, 3, {self, adr(hit), f(50.0F)});
+    CHECK((rig.memory.u32(hit + 0x18) & 1u) != 0 && std::fabs(actor.slide_speed - 5.0F) < 1e-5F);
+    actor.play(0, 0.0F, 0.0F);
+    actor.begin_tick();
+    actor.step(1.0F);
+    actor.begin_tick();
+    kh::Vec3 t = actor.step(1.0F);
+    CHECK(std::fabs(t[0] - 4.5F) < 1e-4F); // the second tick's 4.5 along x (motion 0's root goes along z)
+    // ... below 1 it is over
+    actor.slide_speed = 0.99F;
+    actor.begin_tick();
+    t = actor.step(1.0F);
+    CHECK(t[0] == 0.0F && actor.slide_speed == 0.0F);
+    // a speed below 0: the way turned back
+    call(rig, actor, 2, 3, {self, adr(hit), f(-20.0F)});
+    CHECK(actor.slide[0] == -1.0F && std::fabs(actor.slide_speed - 2.0F) < 1e-5F);
+    actor.slide_speed = 0.0F;
+
+    // 2:87 from the front (the hit's way against its facing: it faces +z, struck going -z) faces the hit, its idle
+    // asked after the reaction
+    actor.set_yaw(0.0F);
+    const float back[4] = {0.0F, 0.0F, -1.0F, 0.0F};
+    rig.memory.write(hit, back, sizeof back);
+    call(rig, actor, 2, 87, {self, adr(hit), f(0.0F)});
+    CHECK(std::fabs(actor.yaw()) < 1e-5F && actor.slide_speed == 0.0F);
+
+    // 1:311: no fire (1) taken
+    call(rig, actor, 1, 311, {self, i(1), i(0)});
+    CHECK(actor.element_rate[1] == 0 && actor.element_rate[2] == 100);
+
+    // 1:227: class 1 at once, 100 up, its motion as it was
+    const int playing = actor.motion.id;
+    call(rig, actor, 1, 227, {self, adr(vec(rig.memory, 0.0F, 100.0F, 1.0F, 3.0F))});
+    CHECK(actor.jump.on && actor.jump.arc && actor.jump.rise == -100.0F && !actor.take_off &&
+          actor.motion.id == playing && std::fabs(actor.jump.along[2] - 3.0F) < 1e-5F);
+    actor.jump = {};
+
+    // 6:24: the room's push (+ 0xa78); 10:31: not a summon; 2:41 asks the world
+    actor.set_f(kh::field::kPressed, 2.5F);
+    rig.memory.read(call(rig, actor, 6, 24, {self}).bits, v, sizeof v);
+    CHECK(v[0] == 2.5F);
+    CHECK(call(rig, actor, 10, 31, {self}).i() == 0);
+    CHECK(call(rig, actor, 2, 41, {adr(1234)}).i() == 1 && world.floor_asked == 1234u);
+    call(rig, actor, 1, 122, {self});
+    // 1:207 the reaction camera on itself (its AI handle's object), 1:295 home
+    call(rig, actor, 1, 207, {self});
+    CHECK(world.watched == actor.address());
+    call(rig, actor, 1, 295, {});
+    CHECK(world.watched == 0u);
+
+    // Scar's: 1:217 puts it as 1:148 does, + 0x9b8 bit 12 set; 1:270 keeps element 5 of its motions from starting,
+    // 1:271 lets it again; 1:319 a player is Sora, it is not; 6:2 the player's own form
+    call(rig, actor, 1, 217, {self, adr(vec(rig.memory, 10.0F, 0.0F, 20.0F))});
+    CHECK(actor.place()[0] == 10.0F && actor.place()[2] == 20.0F && (actor.u32(0x9b8) & 0x1000u) != 0);
+    call(rig, actor, 1, 270, {self, i(5)});
+    CHECK(actor.muted_effects.count(5) == 1);
+    call(rig, actor, 1, 271, {self, i(5)});
+    CHECK(actor.muted_effects.empty());
+    kh::Object player(rig.memory, "a player");
+    player.set_bits(kh::field::kFlags6c8, kh::bit::kPlayer, true);
+    CHECK(call(rig, actor, 1, 319, {adr(player.address())}).i() == 1 && call(rig, actor, 1, 319, {self}).i() == 0);
+    CHECK(call(rig, actor, 6, 2, {}).i() == 0);
+
+    // the ended bit (1:14) is a tick's (add_time's + 0x34 bit 1): a loop's round sets it for that tick alone (Scar
+    // counts the rounds of the player pinned under him), a motion standing at its end keeps it
+    actor.play(0, 0.0F, 0.0F); // 60 long, round from 0
+    ticks(actor, 59);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 0);
+    ticks(actor, 1);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
+    ticks(actor, 1);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 0);
+    actor.play(44, 0.0F, 0.0F); // 30 long, once
+    ticks(actor, 30);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
+    ticks(actor, 1);
+    CHECK(call(rig, actor, 1, 14, {self}).i() == 1);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -1293,6 +1473,7 @@ int main()
     test_making();
     test_priority();
     test_leave_after_end();
+    test_second_bosses();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

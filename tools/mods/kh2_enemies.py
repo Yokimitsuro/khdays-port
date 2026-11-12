@@ -7,7 +7,9 @@ list of kinds with which of them the port covers (every call its script makes an
     python tools/mods/kh2_enemies.py --kh2 <kh2.hed_out> --kh2-exe <KINGDOM HEARTS II FINAL MIX.exe>
                                      [--exe <khdays-native>] [--mod "Days - KH2 Enemies"]
 
---kh2 is KH2's entries as the installer extracts them: original/obj/<name>.mdlx, .mset and .a.us, the HD pages
+--kh2 is KH2's entries as the installer extracts them: original/obj/<name>.mdlx, .mset (the one its object entry in
+original/00objentry.bin names: Hades of the Coliseum's cups moves by B_HE030.mset) and .a.us, a boss's battle voice bank
+original/voice/us/battle/<bank>.win32.scd (its sounds to mods/<mod>/kh2/voice/<name>/<number>.wav), the HD pages
 remastered/obj/<name>.mdlx/-N.dds (its model's) and remastered/obj/<name>.a.us/-N.dds (its effects'), and KH2's
 resident effect pictures original/effect/texcommon.dpd with remastered/effect/texcommon.dpd/-N.dds; the sounds' banks
 are each kind's own (remastered/obj/<name>.a.us/se/obj/se<bank>) and KH2's common one (original/se/se000.win32.scd).
@@ -82,8 +84,23 @@ KINDS = {
     "B_BB100": "Thresholder",
     "B_BB130": "Possessor",
     "M_EX870": "Sorcerer's cubes",
+    "B_HE030_CLSM": "Hades",
+    "B_AL100_FIRE": "Volcanic Lord",
+    "B_AL100_ICE": "Blizzard Lord",
+    "B_AL110": "Volcanic Lord's lava",
+    "B_AL120": "Blizzard Lord's ice spikes",
+    "B_BB110": "Dark Thorn",
+    "B_LK110": "Scar",
+    "B_LK110_PHANTOM": "Scar's Ghost",
 }
-FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them
+# The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
+# its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
+# bank's name (Hades of the Coliseum's cups speaks as B_HE030's Hades, he_hades).
+VOICES = {
+    "B_HE030_CLSM": "he_hades",
+    "B_LK110": "scar",
+}
+FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
 SHARED = (
     ("obj/P_EX100.mdlx", "the player's skeleton, which the enemies' motions for the player are made for"),
@@ -239,6 +256,56 @@ def make_sounds(kh2: Path, name: str, ids: set[int], to: Path) -> list[str]:
     return left_out
 
 
+def motion_set_of(objentry: bytes, name: str) -> str:
+    """The motion set a kind's object entry names (00objentry.bin: a u32 count at 4, then 96-byte records from 8, the
+    model's name at + 8 and the motion set's at + 0x28, 32 bytes each; OpenKH's 00objentry page): Hades of the
+    Coliseum's cups (B_HE030_CLSM) moves by B_HE030.mset. <name>.mset when no entry of that model names one."""
+    count = struct.unpack_from("<I", objentry, 4)[0] if len(objentry) >= 8 else 0
+    for i in range(count):
+        at = 8 + 96 * i
+        if at + 96 > len(objentry):
+            break
+        model = objentry[at + 8 : at + 0x28].split(b"\0")[0].decode("latin-1")
+        motions = objentry[at + 0x28 : at + 0x48].split(b"\0")[0].decode("latin-1")
+        if model == name and motions:
+            return motions
+    return f"{name}.mset"
+
+
+def make_voices(kh2: Path, name: str, bank: str | None, to: Path) -> list[str]:
+    """The kind's voice bank's sounds (VOICES) by number, as 1:262 names them: its first track's recording -- Ogg
+    Vorbis (the battle banks') into to/<number>.ogg as it is, its sound's volume in to/volumes.txt ("<number>
+    <volume>" a line), Microsoft ADPCM into to/<number>.wav at the volume; what was left out."""
+    if bank is None:
+        return []
+    path = kh2 / "original" / "voice" / "us" / "battle" / f"{bank}.win32.scd"
+    try:
+        data = path.read_bytes()
+        sounds, recordings = kh2_scd.sounds(data), kh2_scd.recordings(data)
+    except (OSError, kh2_scd.ScdError) as e:
+        return [f"{name}'s voice: {path.name} is not read ({e})"]
+    to.mkdir(parents=True, exist_ok=True)
+    left_out, volumes = [], []
+    for number, sound in enumerate(sounds):
+        recording = recordings[sound.recordings[0]] if sound is not None and sound.recordings else None
+        if recording is None:
+            continue
+        try:
+            if recording.codec == kh2_scd.VORBIS:
+                (to / f"{number}.ogg").write_bytes(kh2_scd.vorbis(recording))
+                volumes.append(f"{number} {sound.volume:.6g}")
+                continue
+            samples = kh2_scd.decode(recording).astype(np.float64) * sound.volume
+        except kh2_scd.ScdError as e:
+            left_out.append(f"{name}'s voice {number}: {e}")
+            continue
+        scaled = np.clip(np.rint(samples), -32768, 32767).astype(np.int16)
+        kh2_scd.write_wav(to / f"{number}.wav", scaled, recording.rate)
+    if volumes:
+        (to / "volumes.txt").write_text("\n".join(volumes) + "\n", encoding="utf-8", newline="\n")
+    return left_out
+
+
 def make(
     kh2: Path, kh2_exe: Path, mod: Path, exe: Path | None = None, run: Callable[[list[str]], str] = run_exe
 ) -> list[str]:
@@ -263,8 +330,11 @@ def make(
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = ["# name\ttitle\tcovered\tcalls\tmissing\tplays the player (kh2_enemies.py; the port's kh2_enemies.txt)"]
+    entries_file = kh2 / "original" / "00objentry.bin"
+    entries = entries_file.read_bytes() if entries_file.is_file() else b""
     for name, title in KINDS.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
+        sources[1] = sources[1].with_name(motion_set_of(entries, name))
         if not sources[0].is_file():
             left_out.append(f"{name} ({title}): KH2's {sources[0].name} not there")
             continue
@@ -284,6 +354,7 @@ def make(
             effect_sounds(sources[2].read_bytes()) if sources[2].is_file() else set()
         )
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
+        left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
         listed.append(kinds_line(name, title, calls, handled))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)

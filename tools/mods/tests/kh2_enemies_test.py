@@ -178,6 +178,40 @@ class Kh2EnemiesTest(unittest.TestCase):
             left = kh2_enemies.make_sounds(kh2, "M_EX870", {200021}, to)
             self.assertEqual(left, [])
 
+    def test_entries_motions_and_voices(self):
+        # 00objentry.bin: Hades of the Coliseum's cups moves by B_HE030.mset; a model no entry names, its own
+        def entry(number: int, model: bytes, motions: bytes) -> bytes:
+            return struct.pack("<IBBBB", number, 3, 0, 0, 0) + model.ljust(32, b"\0") + motions.ljust(32, b"\0")
+
+        records = [entry(0x15E, b"B_HE030", b"B_HE030.mset"), entry(0x90E, b"B_HE030_CLSM", b"B_HE030.mset")]
+        objentry = struct.pack("<II", 3, len(records)) + b"".join(r.ljust(96, b"\0") for r in records)
+        self.assertEqual(kh2_enemies.motion_set_of(objentry, "B_HE030_CLSM"), "B_HE030.mset")
+        self.assertEqual(kh2_enemies.motion_set_of(objentry, "M_EX010"), "M_EX010.mset")
+        self.assertEqual(kh2_enemies.motion_set_of(b"", "M_EX010"), "M_EX010.mset")
+        # its voice bank's sounds by number (an empty place left out); no bank, nothing; a bank not there said
+        mono = kh2_scd_test.adpcm_format(1, 4, 8)
+        recording = (1, 48000, 12, mono, kh2_scd_test.block([0], [16], [100], [50], [1, 2]))
+        with tempfile.TemporaryDirectory() as d:
+            kh2 = Path(d) / "kh2.hed_out"
+            bank = kh2 / "original" / "voice" / "us" / "battle" / "he_hades.win32.scd"
+            bank.parent.mkdir(parents=True)
+            pages = b"OggS header"
+            extra = struct.pack("<HB", 0x2002, 7).ljust(0x10, b"\0") + struct.pack("<II", 0, len(pages))
+            ogg = (1, 48000, 6, extra.ljust(0x20, b"\0") + bytes(b ^ 7 for b in pages), b"OggS audio")
+            bank.write_bytes(
+                kh2_scd_test.made_up_sounds_bank([None, (1.0, [(0, 0)]), (0.5, [(0, 1)])], [recording, ogg])
+            )
+            to = Path(d) / "voice" / "B_HE030_CLSM"
+            self.assertEqual(kh2_enemies.make_voices(kh2, "B_HE030_CLSM", "he_hades", to), [])
+            self.assertTrue((to / "1.wav").is_file())
+            self.assertFalse((to / "0.wav").exists())
+            # the battle banks' Ogg Vorbis as it is, its volume beside it
+            self.assertEqual((to / "2.ogg").read_bytes(), b"OggS headerOggS audio")
+            self.assertEqual((to / "volumes.txt").read_text(encoding="utf-8"), "2 0.5\n")
+            self.assertEqual(kh2_enemies.make_voices(kh2, "M_EX010", None, Path(d) / "none"), [])
+            left = kh2_enemies.make_voices(kh2, "B_EX130", "n_dragoon", Path(d) / "x")
+            self.assertTrue(len(left) == 1 and "n_dragoon.win32.scd" in left[0], left)
+
     def test_no_model(self):
         # an object with no model and no motions of its own (the Possessor): its .mdlx and effects alone
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):

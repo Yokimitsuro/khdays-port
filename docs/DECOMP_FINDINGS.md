@@ -311,6 +311,25 @@ Taken up (for the record of what the old names were):
   (+ 0x4d6, + 0x4d8) are the received copies of the chosen + 0x4d0 and + 0x4d2. `Ov002_DrawPanelRowText`'s
   `nField0024` walk reads the panel's two command words at + 0x28 (`Ov002_PanelSelectSource`'s `aWords`).
 
+- A hit's elements (2026-11-12, KH2's bosses' elements for Days's hits, `docs/KH2_ENEMIES.md` "The second
+  bosses"):
+  - `HitPacket.flagsHi` (`Ov107_AiState_ApplyHit`, ov107@020c5cfc) and `HitEvent.flagsHi`
+    (`Ov107_CalcHitDamage`, ov107@020c89e8) are the hit's elements, a bit each: `Ov107_AiState_ApplyHit`'s status
+    table (`masks {7, 3, 11, 2}` -> `values {1, 2, 4, 8}`, tested with `flagsHi & 0x88c`) gives bit 7 burning (Fire),
+    bit 3 frozen (Blizzard), bit 11 jolted (Thunder), bit 2 tossed (Aero). Seen on hits (`docs/RUNTIME_MAP.md`,
+    "A hit on an enemy"): Roxas's keyblade strike `04 00 00 40` (`flagsHi` 0x4000, bit 14), Fire `08 00 80 00`
+    (`flagsLo` 8, `flagsHi` 0x80). `Ov022_SendSweepHit` (ov022@020a1330) fills it as `1 << pSpec->nKind` (its
+    `nKindMask`), so `HitSpec.nKind` is the attack's element; the ice enemies' hits on the player carry Blizzard's
+    (`packet.flagsHi = 8`: `Ov139_RushTick` ov139@020ce2d8, `Ov204_BounceTick` ov204@020d1f14).
+  - `flagsLo` bit 3 (8) is a magic's: `Ov107_CalcHitDamage`'s "multiplier 3" spares only a magic of the element
+    that gave the status -- a frozen enemy (`field_1c4` 2) any hit but Blizzard magic (`flagsLo` 8 with `flagsHi`
+    8), a tossed one (`field_1c4` 8) any but Aero magic (`flagsLo` 8 with `flagsHi` 4).
+  - The enemy's `field_1c4` is its statuses (1 burning, 2 frozen, 4 jolted, 8 tossed: `Ov107_AiState_ApplyHit`
+    sets the timers `field_2e0` 0xc000, 0x5000, 0xf000, 0x6000), `field_1c5` the ones pending until they hold,
+    `field_1b0` its immunities by element bit, `field_1b4[4]` its resistance to each status (fx32, taken off the
+    hit's chance `HitPacket.field_1c`); `HitTable.field_34[14]` its resistances by element bit (the comment's
+    "one per bit of the hit's high flags").
+
 ### 1.5 What agrees with the ROM only in the DS's frame or names
 
 Locals that were one buffer only in the DS's frame, taken up by the decomp

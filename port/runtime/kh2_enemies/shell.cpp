@@ -192,6 +192,12 @@ struct KindFiles final {
     std::map<int, Element> fx_elements;
     // the sounds it plays (its motions' triggers 8, its elements'): KH2's sound id -> the mod's kh2/se/<id>.wav
     std::map<int, int> sounds;
+    // its voice's lines (1:262: its voice bank's sounds by number) -> the mod's kh2/voice/<name>/<number>.ogg (the
+    // battle banks' Ogg Vorbis as it is) or .wav, each read when first asked (-1: none), and their volumes (the bank's
+    // sounds', kh2/voice/<name>/volumes.txt: "<number> <volume>" a line; 1 when not given)
+    std::map<int, int> voices;
+    std::map<int, float> voice_volumes;
+    bool voice_volumes_read = false;
     kh2::EffectBlock common;
     std::vector<std::unique_ptr<khdays::kh2_fx::Pages>> fx_pages; // by effect block: each its own pictures
     // its event sequences (its .a.us's entries of type 0x16: a reaction command's cameras), by their names' up to four
@@ -457,6 +463,8 @@ Mod &mod()
     return m;
 }
 
+std::string motion_set_name(const std::string &name);
+
 KindFiles *files_of(const std::string &name)
 {
     Mod &m = mod();
@@ -474,8 +482,9 @@ KindFiles *files_of(const std::string &name)
         try {
             const fs::path obj = u8(m.folder) / "kh2" / "obj";
             const auto mdlx = read_file(obj / (kind->name + ".mdlx"));
-            // (none for an object with no motion set of its own, the Thresholder's Possessor: its entry names none)
-            const auto mset = read_file(obj / (kind->name + ".mset"));
+            // the motion set its object entry names (Hades of the Coliseum's cups moves by B_HE030.mset); none for an
+            // object with no motion set of its own (the Thresholder's Possessor: its entry names none)
+            const auto mset = read_file(obj / motion_set_name(kind->name));
             const auto scripts = ai::scripts_in(mdlx.data(), mdlx.size());
             if (scripts.empty())
                 throw std::runtime_error("its .mdlx holds no script");
@@ -559,10 +568,19 @@ struct Enemy final {
         // one its script placed in the world (1:22, 0:38: a shot), at a place of KH2's world, turned (0:41) when set
         bool in_world = false, turned = false;
         Vec3 at{}, turn{};
+        // its size and colour set by its script (0:39, 0:67), when set: the element's size given way to, its draws'
+        // colours times it (1 each as they are)
+        bool scaled = false, coloured = false;
+        Vec3 scale{};
+        std::array<float, 4> colour{1.0F, 1.0F, 1.0F, 1.0F};
         float end_age = -1.0F; // ended once this old (0:52), -1 when not
     };
     std::vector<Running> fx;
     float pan = 0.0F; // where it was last drawn, left (-1) to right (1) of the camera: its sounds' pan
+    // its voice line heard (khdays_sound_shot_play's number, 0 none) and the priority it was asked with (YS::VOICE's
+    // + 0xc): one at a time, a new one taking its place when asked with a priority as high or higher
+    int voice_shot = 0, voice_priority = 0;
+    unsigned hit_kinds = 0; // the last Days hit's kinds (its packet's high flags): its element (2:85) is of them
     unsigned fx_frame = 0;
     std::uint32_t fx_seed = 1;
     // where it was last drawn (Days's place) and the projection then, for its end once its Days enemy is gone
@@ -653,6 +671,24 @@ std::map<unsigned, std::unique_ptr<Object>> players; // each of Days's players a
 // A Days hit as KH2's scripts read it, trigger 6's argument: + 0x26 its reaction's kind, 2 a small one (2:8 asks
 // whether it is past 1, FUN_1403ce980; the Strafer's and the cubes' revenge turn on it)
 std::unique_ptr<Object> days_hit;
+// the object KH2's reaction camera watches (1:207, dk::ReactionCamera's target), 0 none: the camera's while a KH2 enemy
+// holds this game's player (khdays_kh2_enemies_reaction_camera)
+std::uint32_t watched = 0;
+
+// Days's hit kinds (the packet's high flags, a bit a kind: Ov022_SendSweepHit's 1 << the attack's kind) as KH2's
+// elements (atkp's + 9: 0 physical, 1 fire, 2 blizzard, 3 thunder). Ov107_AiState_ApplyHit names four by the statuses
+// they give: bit 7 burning (Fire: Roxas's Fire seen `08 00 80 00`), bit 3 frozen (Blizzard), bit 11 jolted (Thunder),
+// bit 2 tossed (Aero: no element of KH2's, physical); his attack's 0x4000 and the rest physical
+int kh2_element_of(unsigned kinds)
+{
+    if ((kinds & 0x80u) != 0)
+        return 1;
+    if ((kinds & 0x8u) != 0)
+        return 2;
+    if ((kinds & 0x800u) != 0)
+        return 3;
+    return 0;
+}
 
 // A Days player a KH2 enemy's script has taken in hand (KH2's player is an actor its enemies' scripts move and make
 // play their motions, 1:29; Days's are Days's): from the first motion of the enemy's set it plays until the script
@@ -723,6 +759,7 @@ struct AttackObject final {
     bool ended = false;    // ended by its script (2:13): let go
     bool expired = false;  // grown, or its effect gone: no more hits, its state still asked (2:14, 2:29)
     bool landed = false;   // it hit (2:39)
+    bool on_floor = false; // it met the room's floor (2:41: + 8 bit 4)
     std::uint32_t hit = 0; // the object it hit last (2:44)
     std::uint32_t on_hit = 0, on_hit_value = 0; // its script's routine run when it hits (2:38), 0 none
 };
@@ -1079,6 +1116,32 @@ public:
     {
         if (Enemy::Running *r = running_effect(handle))
             r->end_age = r->age + ticks;
+    }
+    void effect_scale(std::uint32_t handle, const Vec3 &scale) override
+    {
+        if (Enemy::Running *r = running_effect(handle))
+            r->scaled = true, r->scale = scale;
+    }
+    void effect_colour(std::uint32_t handle, const std::array<float, 4> &colour) override
+    {
+        if (Enemy::Running *r = running_effect(handle))
+            r->coloured = true, r->colour = colour;
+    }
+    void voice(Actor &a, int id, int priority) override;
+    void camera_watch(Object &o) override
+    {
+        watched = o.address();
+        if (tracing())
+            khdays_log("kh2 enemies: the reaction camera watches %08x", watched);
+    }
+    void camera_home() override
+    {
+        watched = 0;
+    }
+    bool attack_on_floor(std::uint32_t at) override
+    {
+        const auto o = attacks.find(at);
+        return o != attacks.end() && o->second.on_floor;
     }
     bool ray(Actor &a, const Vec3 &from, const Vec3 &to, Vec3 &hit) override
     {
@@ -1623,6 +1686,30 @@ std::string entry_name(std::uint32_t number)
     return it != names.end() ? it->second : std::string();
 }
 
+// The motion set the first object entry of the model `name` names (00objentry.bin's + 0x28, as the mod's tool copies
+// it: tools/mods/kh2_enemies.py's motion_set_of), `name`.mset when none does
+std::string motion_set_name(const std::string &name)
+{
+    static std::map<std::string, std::string> sets;
+    static bool read = false;
+    if (!read) {
+        read = true;
+        const std::vector<std::uint8_t> file = read_file(u8(mod().folder) / "kh2" / "00objentry.bin");
+        std::uint32_t count = 0;
+        if (file.size() >= 8)
+            std::memcpy(&count, file.data() + 4, 4);
+        for (std::uint32_t i = 0; i < count && 8 + 96 * std::size_t(i + 1) <= file.size(); ++i) {
+            const std::uint8_t *r = file.data() + 8 + 96 * std::size_t(i);
+            const char *n = reinterpret_cast<const char *>(r + 8), *m = reinterpret_cast<const char *>(r + 0x28);
+            const std::string set(m, strnlen(m, 32));
+            if (!set.empty())
+                sets.emplace(std::string(n, strnlen(n, 32)), set);
+        }
+    }
+    const auto it = sets.find(name);
+    return it != sets.end() ? it->second : name + ".mset";
+}
+
 // ------------------------------------------------------------------------------------------------- the players in hand
 
 const Command *command(int id)
@@ -1805,8 +1892,10 @@ void let_go(unsigned object, const char *why)
                 r.fx->stop();
     }
     drawn_weapons.erase(object);
-    if (const auto o = players.find(object); o != players.end() && o->second)
+    if (const auto o = players.find(object); o != players.end() && o->second) {
         o->second->set_bits(field::kStatus, bit::kOtherMotion, false);
+        o->second->set_bits(field::kStatus, bit::kKeepsCarried, false);
+    }
     if (tracing())
         khdays_log("kh2 enemies: player %08x let go (%s)", object, why);
     held.erase(h);
@@ -1877,6 +1966,52 @@ bool Field::player_motion(Object &o, Actor &by, int slot, float blend)
     return true;
 }
 
+// 1:262 (YS::VOICE::request, then exec): its voice bank's sound `id` heard where it was last drawn, the one before
+// ended, unless that one still plays and was asked with a higher priority
+void Field::voice(Actor &a, int id, int priority)
+{
+    const auto it = by_actor.find(&a);
+    if (it == by_actor.end())
+        return;
+    Enemy &e = *it->second;
+    if (e.voice_shot != 0 && khdays_sound_shot_heard(e.voice_shot) && priority < e.voice_priority)
+        return;
+    KindFiles &k = *e.kind;
+    const fs::path folder = u8(mod().folder) / "kh2" / "voice" / k.name;
+    if (!k.voice_volumes_read) {
+        k.voice_volumes_read = true;
+        std::ifstream in(folder / "volumes.txt");
+        int number = 0;
+        float volume = 1.0F;
+        while (in >> number >> volume)
+            k.voice_volumes[number] = volume;
+    }
+    auto file = k.voices.find(id);
+    if (file == k.voices.end()) {
+        int made = -1;
+        for (const char *kind : {".ogg", ".wav"}) {
+            const fs::path p = folder / (std::to_string(id) + kind);
+            std::error_code ec;
+            if (made < 0 && fs::is_regular_file(p, ec)) {
+                const std::u8string p8 = p.u8string();
+                made = khdays_sound_shot_file(std::string(p8.begin(), p8.end()).c_str());
+            }
+        }
+        file = k.voices.emplace(id, made).first;
+    }
+    const auto volume = k.voice_volumes.find(id);
+    if (e.voice_shot != 0)
+        khdays_sound_shot_end(e.voice_shot);
+    e.voice_shot = file->second >= 0 ? khdays_sound_shot_play(file->second,
+                                                              volume != k.voice_volumes.end() ? volume->second : 1.0F,
+                                                              e.pan)
+                                     : 0;
+    e.voice_priority = priority;
+    if (tracing())
+        khdays_log("kh2 enemies: %08x's voice %d (priority %d)%s", e.days, id, priority,
+                   e.voice_shot != 0 ? "" : " (not heard: the mod has no kh2/voice file)");
+}
+
 void Field::player_own_motion(Object &o, int id)
 {
     const unsigned object = days_object(o);
@@ -1934,7 +2069,9 @@ void Field::carry(Actor &carried, Object &by, int bone, int flags)
     const unsigned object = days_object(by);
     if (it == by_actor.end())
         return;
-    if (object == 0 || held.count(object) == 0) {
+    // (a player before his enemy takes him in hand too: Scar is put on the player he pins, then plays its motion on
+    // him; it is drawn on him while he is held)
+    if (object == 0) {
         khdays_log("kh2 enemies: %08x is put on %s, which the port does not carry yet: it stays where it is",
                    it->second->days, by.name().c_str());
         return;
@@ -2083,6 +2220,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
     // the count on a tick a tick (add_time while + 0x34 is set) with the motion standing, no travel and no triggers,
     // then on from its first frame by what the count went past, that frame's triggers played (exec_trigger(start, -1))
     bool still = false;
+    bool round = false; // its loop went round this tick: the ended bit's tick (add_time's + 0x34 bit 1)
     float by = 1.0F;
     if (h.fresh) {
         h.fresh = false;
@@ -2117,6 +2255,7 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
                 for (int i = 0; i < 3; ++i)
                     model[std::size_t(i)] += d[std::size_t(i)] - c[std::size_t(i)];
                 t1 = loop + over;
+                round = true;
             } else {
                 t1 = length;
                 h.ended = true;
@@ -2128,6 +2267,11 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
         const Vec3 along = turned({model[0], 0.0F, model[2]}, h.yaw);
         h.place = {h.place[0] + along[0], h.place[1] - model[1], h.place[2] + along[2]};
     }
+    // a loop's ended bit is the tick it goes round (Scar counts three rounds of the player pinned under him, 253,
+    // before he throws him); one played to its end keeps it
+    if (loops && !h.ended)
+        if (const auto o = players.find(object); o != players.end() && o->second)
+            o->second->set_bits(field::kStatus, bit::kMotionEnded, round);
     // in the air while his motion has a range 3, 24 or 30 (no pull: the air classes' movement adds none, FUN_1403cb100);
     // else KH2's ground class moves him: along the ground only (1:89's and 1:111's way flattened), on it (Days's room
     // collision under him) -- the Soldier's Cyclone swings him round it, its way down to the Soldier too
@@ -2227,14 +2371,20 @@ void hold_tick(Enemy &e, unsigned object, Held &h)
             else if (const int id = trigger_sound(tr); id > 0)
                 sound(e, id);
         }
-        for (const auto &r : attr->ranges)
+        bool keeps = false; // his range 13 (+ 0x18c bit 15): what is put on him with a carry's flag bit 0 stays
+        for (const auto &r : attr->ranges) {
             if (r.id >= 16 && r.id <= 19 && in(r))
                 ai_ranges |= 1u << (r.id - 16);
+            if (r.id == 13 && in(r))
+                keeps = true;
+        }
         // his + 0x2ac and + 0x2ad as an enemy's (1:150, 1:151: the Magnum Loader's thread steps on his AB10's triggers
         // 9 and 10, frames 12 and 42)
-        if (const auto o = players.find(object); o != players.end() && o->second)
+        if (const auto o = players.find(object); o != players.end() && o->second) {
             o->second->set_u32(field::kMotionMarks,
                                (o->second->u32(field::kMotionMarks) & ~0xffffu) | ai_ranges | (passed << 8));
+            o->second->set_bits(field::kStatus, bit::kKeepsCarried, keeps);
+        }
     }
     if (h.weapon != nullptr && h.weapon->attributes)
         for (std::size_t r = 0; r < h.weapon->attributes->ranges.size(); ++r) {
@@ -2615,6 +2765,15 @@ void attack_objects(Enemy &e)
             ++it;
             continue;
         }
+        // the room's floor met (2:41, + 8 bit 4: Hades's fire shots end on it): a ray from its middle down by its size
+        // (KH2's y down) strikes the ground
+        if (o.placed && !o.on_floor) {
+            const float reach = std::max(std::max(radius, height * 0.5F), 1.0F);
+            float from[3], to[3], hit[3];
+            to_days(o.at, from);
+            to_days({o.at[0], o.at[1] + reach, o.at[2]}, to);
+            o.on_floor = khdays_kh2_shell_ray(e.days, from, to, hit) != 0;
+        }
         const float step = std::min(radius, height);
         if (o.placed && step > 0.0F && !o.players) {
             if (list.empty()) {
@@ -2692,6 +2851,8 @@ void cues(Enemy &e, bool again = false)
             if (tracing())
                 khdays_log("kh2 enemies: %08x takes off (trigger 0) in motion %d at %d", e.days, a.motion.id,
                            int(t.frame));
+        } else if (t.id == 1 && !t.params.empty() && a.muted_effects.count(std::int16_t(t.params[0])) != 0) {
+            // kept from starting by its script (1:270; FUN_1403c7db0's list): nothing
         } else if (t.id == 1 && !t.params.empty()) {
             // its script told (FUN_14040dd70: trigger 16 with the actor, the element, the effect's handle -- the Hammer
             // Frame's shockwave attaches its attack to its element 8)
@@ -2765,6 +2926,11 @@ void motion_states(Enemy &e)
     if (e.reacting)
         on |= bit::kHeld;
     a.set_u32(field::kStatus, (a.u32(field::kStatus) & ~all) | on);
+    // a motion asked to follow (2:87's idle): taken as this one blends back (range 2, bit 4) or once it has ended
+    if (a.motion.queued >= 0 && ((on & (1u << 4)) != 0 || a.motion.ended)) {
+        const int next = a.motion.queued;
+        a.play(next, 0.0F, 0.0F);
+    }
     // its ranges 16 to 19 ("AI" ranges: special movement, its combos): bits 0 to 3 of + 0x2ac (FUN_14040d810; 1:150)
     std::uint32_t ai_ranges = 0;
     if (const kh2::MotionAttributes *attr = a.motion.id >= 0 && (!a.motion.ended || loops)
@@ -3212,7 +3378,13 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             at.place = {t[0], r.at[1] - from[1], t[2]};
             if (r.turned)
                 at.turn = {r.turn[0], r.turn[1] - yaw, r.turn[2]};
+            if (r.scaled)
+                at.size = r.scale;
             placed.world = element_world(e.pose, at);
+        } else if (r.scaled) { // its script's size (0:39)
+            Element sized = *r.element;
+            sized.size = r.scale;
+            placed.world = element_world(e.pose, sized);
         } else {
             placed.world = element_world(e.pose, *r.element);
             if (r.element->points && e.kind->skeleton) // the Magnum Loader's blades', the Neoshadow's claws' trails
@@ -3232,6 +3404,14 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             r.fx->tick(placed, last ? &r.draws : nullptr);
             r.age += 1.0F;
         }
+        if (r.coloured && ticks > 0) // its script's colour (0:67): each corner's times it, once a tick's draws
+            for (kh2::EffectDraw &d : r.draws)
+                for (kh2::EffectVertex &v : d.triangles) {
+                    v.r *= r.colour[0];
+                    v.g *= r.colour[1];
+                    v.b *= r.colour[2];
+                    v.a *= r.colour[3];
+                }
         const KindFiles &files = r.files != nullptr ? *r.files : *e.kind;
         if (r.element->effect < files.fx_pages.size())
             khdays::kh2_fx::submit(r.draws, units, *files.fx_pages[r.element->effect]);
@@ -3459,6 +3639,7 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     player_of_node.clear();
     players.clear();
     days_hit.reset();
+    watched = 0;
 }
 
 extern "C" int khdays_kh2_enemies_held(void *actor)
@@ -3561,15 +3742,26 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     const int ticks = delta > 0 ? std::max(1, int(std::lround(2.0 * double(delta) / 4096.0))) : 0;
     // run into a wall: Days's collision moved it off the place it was given (by 1 cm or more). KH2 stops its
     // steering then (FUN_140421450: its wall's push at + 0xa78, + 0x1c 0): a lunge runs until a wall stops it.
+    // The push a tick along the ground is its + 0xa78 (KH2's actor's update writes it, FUN_1403b9420; 6:24 reads it), and
+    // a wall ends a hit's slide too (FUN_1403b9420 clears + 0xd24 .. + 0xd30).
+    Vec3 pressed{};
     if (e->placed) {
         const float dx = s.place[0] - e->place[0], dz = s.place[2] - e->place[2];
-        if (dx * dx + dz * dz >= 0.01F * 0.01F && e->actor->steer_speed > 0.0F) {
-            e->actor->steer_speed = 0.0F;
-            if (trace_level() >= 2)
-                khdays_log("kh2 enemies: %08x pushed %.2f off its place: its steering stops", days,
-                           double(std::sqrt(dx * dx + dz * dz)));
+        if (dx * dx + dz * dz >= 0.01F * 0.01F) {
+            const Vec3 now = to_kh2(s.place), was = to_kh2(e->place);
+            const float per = ticks > 0 ? 1.0F / float(ticks) : 1.0F;
+            pressed = {(now[0] - was[0]) * per, 0.0F, (now[2] - was[2]) * per};
+            e->actor->slide_speed = 0.0F;
+            if (e->actor->steer_speed > 0.0F) {
+                e->actor->steer_speed = 0.0F;
+                if (trace_level() >= 2)
+                    khdays_log("kh2 enemies: %08x pushed %.2f off its place: its steering stops", days,
+                               double(std::sqrt(dx * dx + dz * dz)));
+            }
         }
     }
+    for (std::uint32_t i = 0; i < 3; ++i)
+        e->actor->set_f(field::kPressed + 4 * i, pressed[i]);
     the_field().health(*e->actor);
     Vec3 place = to_kh2(s.place);
     // another script put it elsewhere since the last frame (1:148 on its handle: the cubes put the Sorcerer they
@@ -3598,6 +3790,21 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             if (h->second.enemy == days && h->second.idle)
                 let_go(h->first, "its motion back to its own idle (range 2)");
             h = next;
+        }
+        // a carry with its flag bit 0 ends as KH2's actor's update ends it (FUN_1403b4a12): its carrier gone or no
+        // longer holding it (its + 0x18c bit 15, its motion's range 13) -- Scar, put on the player he pins, comes off
+        // as he throws him; 1:161 then says so and his catch goes on
+        if (e->actor->u32(field::kCarrier) != 0 && (e->carry_flags & 1) != 0) {
+            const auto p = players.find(e->carrier);
+            const bool keeps = e->carrier != 0 && held.count(e->carrier) != 0 && p != players.end() && p->second &&
+                               (p->second->u32(field::kStatus) & bit::kKeepsCarried) != 0;
+            if (!keeps) {
+                if (tracing())
+                    khdays_log("kh2 enemies: %08x comes off player %08x (its carry's flag bit 0, his range 13 over)",
+                               e->days, e->carrier);
+                e->actor->set_u32(field::kCarrier, 0);
+                e->carrier = 0;
+            }
         }
         if (e->carrier != 0)
             if (const auto h = held.find(e->carrier); h != held.end()) { // on the player carrying it
@@ -3702,6 +3909,13 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     days_hit->set_u32(0x14, a.address());
     days_hit->set_u32(0x18, 0);
     days_hit->set_u32(0x24, 2u << 16);
+    // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
+    static std::uint32_t params = 0;
+    if (params == 0)
+        params = mod().memory.add(48, "a Days hit's attack parameters");
+    const std::uint8_t element = std::uint8_t(kh2_element_of(e->hit_kinds));
+    mod().memory.write(params + 9, &element, 1);
+    days_hit->set_u32(0x20, params);
     const int motion = front ? 10 : 12;
     // KH2's hit (FUN_140411060): the reaction applied -- its motion asked, the actor held while it plays
     // (FUN_1403d4650; a set without the motion, a boss's, plays nothing and goes on), the queue cleared -- and the
@@ -3729,6 +3943,23 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
         khdays_log("kh2 enemies: %08x hit (%d to %d), %s%s", days, hp_before, s.hp,
                    moves ? (motion == 10 ? "motion 10" : "motion 12") : "no reaction motion of its own",
                    e->paused ? ", its script waiting" : "");
+}
+
+// KH2's reaction camera (runtime/camera/kh2_camera_hooks.c): while a KH2 enemy holds this game's player (YS::OBJ::
+// can_control off) and the object its script watches (1:207) stands (TARGET::is_exist), his place and that object's
+// aim point (TARGET::get_camera_pos), Days's world; 0 otherwise (dk::ReactionCamera::update returns the camera's mode)
+extern "C" int khdays_kh2_enemies_reaction_camera(float player[3], float target[3])
+{
+    if (watched == 0 || local_player == 0)
+        return 0;
+    const auto h = held.find(local_player);
+    Object *o = Object::at(mod().memory, watched);
+    Vec3 aim{};
+    if (h == held.end() || o == nullptr || !the_field().aim_point(*o, aim))
+        return 0;
+    to_days(h->second.place, player);
+    to_days(aim, target);
+    return 1;
 }
 
 // The camera of the event sequence playing, while it is this game's player's (runtime/camera/kh2_camera_hooks.c): its
@@ -3963,11 +4194,27 @@ extern "C" int khdays_kh2_enemies_no_contact(void *actor)
 
 // Ov107_AiState_ApplyHit (prepare.py's join): a hit's damage kept from taking the enemy under the least health its
 // script set (1:231, YS::SHEET's MinHp: KH2's damage stops there -- the Phantom's)
-extern "C" int khdays_kh2_enemies_damage(void *actor, int amount)
+extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
 {
-    const Enemy *e = find(unsigned(KHDAYS_REF(actor)));
+    Enemy *e = find(unsigned(KHDAYS_REF(actor)));
     if (e == nullptr || e->dying || amount <= 0)
         return amount;
+    e->hit_kinds = unsigned(kinds);
+    // its share of that element (1:311: the Volcanic Lord takes no fire)
+    const int element = kh2_element_of(unsigned(kinds));
+    if (trace_level() >= 2)
+        khdays_log("kh2 enemies: %08x struck for %d, Days's kinds %#x (KH2's element %d)", e->days, amount,
+                   unsigned(kinds), element);
+    const int rate = e->actor->element_rate[std::size_t(element)];
+    if (rate != 100) {
+        const int shared = int((std::int64_t(amount) * rate + 99) / 100);
+        if (tracing())
+            khdays_log("kh2 enemies: %08x takes %d of %d (element %d at %d%%; Days's kinds %#x)", e->days, shared,
+                       amount, element, rate, unsigned(kinds));
+        amount = shared;
+        if (amount <= 0)
+            return 0;
+    }
     const std::uint32_t record = e->actor->u32(0x5c0);
     KhdaysKh2Shell s;
     if (record == 0 || !khdays_kh2_shell_read(e->days, &s))

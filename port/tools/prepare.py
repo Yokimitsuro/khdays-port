@@ -2651,14 +2651,15 @@ HOOKS["ov107@020c5cfc"] = [
         "    if (obj->field_1ac & 1) return 0;\n"
         "    { extern int khdays_kh2_enemies_untouched(void *enemy); if (khdays_kh2_enemies_untouched(obj)) return 0; }\n",
     ),
-    (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out
+    (  # Ov107_AiState_ApplyHit: an enemy's hit, its damage worked out (a KH2 enemy's: its kinds, the packet's high
+        # flags -- Days's element bits -- go with it)
         "    amount = Ov107_CalcHitDamage(obj, packet);\n",
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(1); }\n"
         "    amount = Ov107_CalcHitDamage(obj, packet);\n"
         "    { extern void khdays_stop_measure(int on); khdays_stop_measure(0); }\n"
         "    { extern int khdays_stop_store(void *enemy, int amount); amount = khdays_stop_store(obj, amount); }\n"
-        "    { extern int khdays_kh2_enemies_damage(void *enemy, int amount);\n"
-        "      amount = khdays_kh2_enemies_damage(obj, amount); }\n",
+        "    { extern int khdays_kh2_enemies_damage(void *enemy, int amount, int kinds);\n"
+        "      amount = khdays_kh2_enemies_damage(obj, amount, (int)packet->flagsHi); }\n",
     ),
     (  # a KH2 enemy's shell (runtime/kh2_enemies/shell.h): KH2's reaction or its end, once its class took the hit
         "        if (obj->field_1d0(obj, source, packet) != 0) {\n",

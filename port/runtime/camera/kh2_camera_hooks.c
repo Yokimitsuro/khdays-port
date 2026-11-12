@@ -752,9 +752,62 @@ static int event_frame(int *cam)
     return 1;
 }
 
+extern int khdays_kh2_enemies_reaction_camera(float player[3], float target[3]); /* kh2_enemies/shell.cpp */
+
+/* KH2's reaction camera (dk::ReactionCamera, which a KH2 enemy's 1:207 makes: Dark Thorn's reaction command) in place
+ * of the frame's, whichever camera the field has, while that enemy holds this game's player and the object it watches
+ * stands (ReactionCamera::update: YS::OBJ::can_control off and TARGET::is_exist, else the camera's mode returns): KH2's
+ * target camera on the object's point (TargetCamera::updateTargetCamera: kh2_camera_lock, then the springs), taken up
+ * from where the camera was. Its eye's collision (TargetCamera::checkEyeCollision) is not cast, and the stick does not
+ * turn it (TargetCamera::control). Once a game frame: a frame and a commit of the same frame write the same. 1: the
+ * frame is the reaction camera's. */
+static struct {
+    Kh2Camera camera;
+    int on;
+    u32 frame;
+} reaction;
+
+static int reaction_frame(int *cam)
+{
+    float player[3], target[3];
+    const u32 frame = khdays_input_game_frames();
+    if (cam[WORD_STAGE] != 0 || !khdays_kh2_enemies_reaction_camera(player, target)) {
+        reaction.on = 0;
+        return 0;
+    }
+    if (!reaction.on || reaction.frame != frame) {
+        Kh2CameraInput in;
+        Kh2CameraVec aim;
+        memset(&in, 0, sizeof(in));
+        in.player.x = player[0] * KH2_UNITS_A_DAYS_UNIT;
+        in.player.y = player[1] * KH2_UNITS_A_DAYS_UNIT;
+        in.player.z = player[2] * KH2_UNITS_A_DAYS_UNIT;
+        in.ticks = (float)ticks_a_frame();
+        aim.x = target[0] * KH2_UNITS_A_DAYS_UNIT;
+        aim.y = target[1] * KH2_UNITS_A_DAYS_UNIT;
+        aim.z = target[2] * KH2_UNITS_A_DAYS_UNIT;
+        if (!reaction.on) {
+            const Kh2CameraVec at = read_vec(cam + WORD_FOCUS), eye = read_vec(cam + WORD_EYE);
+            const float dx = eye.x - at.x, dz = eye.z - at.z;
+            kh2_camera_start(&reaction.camera, at, eye, atan2f(dx, dz),
+                             atan2f((float)cam[WORD_FOV_SIN], (float)cam[WORD_FOV_COS]), sqrtf(dx * dx + dz * dz));
+            reaction.on = 1;
+        }
+        kh2_camera_lock(&reaction.camera, &in, aim);
+        kh2_camera_settle(&reaction.camera, in.ticks);
+        reaction.frame = frame;
+    }
+    write_vec(cam + WORD_FOCUS, reaction.camera.at);
+    write_vec(cam + WORD_EYE, reaction.camera.eye);
+    s.want = WANT_NONE;
+    s.active = 0;
+    ++s.days_frames;
+    return 1;
+}
+
 void khdays_kh2_camera_frame(int camera, int player, int behind_yaw, int origin, int eye)
 {
-    if (event_frame(KHDAYS_W(camera))) {
+    if (event_frame(KHDAYS_W(camera)) || reaction_frame(KHDAYS_W(camera))) {
         return;
     }
     if (frame_prepare(camera, player, behind_yaw, origin, eye)) {
@@ -773,8 +826,8 @@ void khdays_kh2_camera_commit(int camera)
 {
     const int *cam = KHDAYS_W(camera);
     const int player = QueryActiveStateOrDelegate();
-    if (event_frame(KHDAYS_W(camera))) {
-        return; /* the event's, whatever came before the commit */
+    if (event_frame(KHDAYS_W(camera)) || reaction_frame(KHDAYS_W(camera))) {
+        return; /* the event's or the reaction camera's, whatever came before the commit */
     }
     if (s.frame != 0u && khdays_input_game_frames() - s.frame <= (s.committed ? 0u : 1u)) {
         return;

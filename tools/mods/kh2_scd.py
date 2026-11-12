@@ -13,7 +13,10 @@ import numpy as np
 
 MAGIC = b"SEDBSSCF"
 TABLES = 0x30  # the tables' header: u16 counts (-, -, recordings, -), then u32 offsets (-, recordings, ...)
-MS_ADPCM = 12  # a recording's codec: Microsoft ADPCM (its WAVEFORMATEX in the extra); 6 is Ogg Vorbis
+MS_ADPCM = 12  # a recording's codec: Microsoft ADPCM (its WAVEFORMATEX in the extra)
+VORBIS = 6  # Ogg Vorbis: its stream's header pages in the extra, after a header and a seek table (vorbis())
+VORBIS_HEADER = 0x20  # u16 the header pages' kind (0x2002: XORed), u8 their byte, ..., + 0x10 u32 seek table, u32 pages
+VORBIS_XOR = 0x2002
 RECORDING_HEADER = 0x20  # u32 data size, channels, rate, codec, loop start, loop end, extra size, -
 WAVE_FORMAT_ADPCM = 2
 # how each nibble scales the step (Microsoft's ADPCM description)
@@ -161,6 +164,27 @@ def decode(recording: Recording) -> np.ndarray:
         step = np.maximum((ADAPT[u] * step) // 256, 16)
         out[:, t + 2] = v
     return out.reshape(blocks * per, ch).astype(np.int16)
+
+
+def vorbis(recording: Recording) -> bytes:
+    """An Ogg Vorbis recording as an Ogg file: its extra's header pages (after the extra's 0x20-byte header and its
+    seek table, + 0x10 and + 0x14 their sizes; each byte XORed with the header's byte 2 when its first u16 is 0x2002),
+    then its data's pages as they are -- the KH2 battle voices' banks (voice/us/battle/*.win32.scd)."""
+    if recording.codec != VORBIS:
+        raise ScdError(f"recording {recording.number}: codec {recording.codec} is not Ogg Vorbis")
+    extra = recording.extra
+    if len(extra) < VORBIS_HEADER:
+        raise ScdError(f"recording {recording.number}: its Vorbis header is cut short")
+    kind, key = struct.unpack_from("<HB", extra, 0)
+    seek, pages = struct.unpack_from("<II", extra, 0x10)
+    if VORBIS_HEADER + seek + pages > len(extra):
+        raise ScdError(f"recording {recording.number}: its Vorbis header pages lie past its extra")
+    head = extra[VORBIS_HEADER + seek : VORBIS_HEADER + seek + pages]
+    if kind == VORBIS_XOR:
+        head = bytes(b ^ key for b in head)
+    if head[:4] != b"OggS" or recording.data[:4] != b"OggS":
+        raise ScdError(f"recording {recording.number}: not Ogg pages")
+    return head + recording.data
 
 
 def write_wav(path: Path, samples: np.ndarray, rate: int) -> None:
