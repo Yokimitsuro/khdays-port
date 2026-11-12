@@ -55,6 +55,12 @@ unsigned khdays_kh2_enemies_lock_point(unsigned actor, unsigned point);
  * is drawn in its place now and 1 is returned (the shell's own shapes left out). */
 int khdays_kh2_enemies_draw_begin(const void *resource, const void *render_obj);
 
+/* Ov002_BuildPanelLabels (prepare.py's join): the field's label of enemy class `enemy_class` (one for each class the
+ * mission has; the targeted enemy's shown) -- KH2's name in the game's language when every row of the class in the
+ * mission stands in for one KH2 enemy: its UTF-16 letters into `out` (at most `room`, then a 0), how many; 0 for any
+ * other class (Days's own name drawn). */
+int khdays_kh2_enemies_label(int enemy_class, unsigned short *out, int room);
+
 /* Whether the KH2 enemy kind `name` can be made now: the mod there, the kind covered (the missions' check for a
  * `kh2:<name>` with no stand-in, registry.h khdays_missions_set_kh2_ready). */
 int khdays_kh2_enemies_ready(const char *name);

@@ -82,6 +82,10 @@ class Kh2EnemiesTest(unittest.TestCase):
             (kh2 / "original" / "00objentry.bin").write_bytes(b"entries")
             (kh2 / "original" / "msg" / "us").mkdir(parents=True)
             (kh2 / "original" / "msg" / "us" / "sys.bar").write_bytes(b"names")
+            # the journal (no character of a kind here) and its messages
+            (kh2 / "original" / "msg" / "us" / "jm.bar").write_bytes(b"journal names")
+            (kh2 / "original" / "menu" / "us").mkdir(parents=True)
+            (kh2 / "original" / "menu" / "us" / "jiminy.bar").write_bytes(b"journal")
             # the general command menu and its HD picture in one language
             (kh2 / "original" / "field2d" / "us").mkdir(parents=True)
             (kh2 / "original" / "field2d" / "us" / "zz0command.2dd").write_bytes(b"menu")
@@ -119,6 +123,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "00battle.bin").read_bytes(), b"attacks")
             self.assertEqual((mod / "kh2" / "00objentry.bin").read_bytes(), b"entries")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "sys.bar").read_bytes(), b"names")
+            self.assertEqual((mod / "kh2" / "msg" / "us" / "jm.bar").read_bytes(), b"journal names")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "zz0command.2dd").read_bytes(), b"menu")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "US_zz0command_2dd0.png").read_bytes(), b"hd")
             self.assertEqual((mod / "kh2" / "field2d" / "us" / "zz0field.2dd").read_bytes(), b"marks")
@@ -126,8 +131,8 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "msg" / "us" / "fontinfo.bar").read_bytes(), b"widths")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "US_fontimage_bar0.png").read_bytes(), b"glyphs")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-")
-            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-")
+            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-\t-")
+            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-\t-")
             ours = [line for line in left if line.startswith(("M_EX010", "M_EX020"))]
             self.assertEqual(ours, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
             # the other kinds the mod holds, not in this made-up collection: each said
@@ -228,7 +233,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertFalse((mod / "kh2" / "obj" / "B_BB130.mset").exists())
             self.assertFalse(any(line.startswith("B_BB130") for line in left), left)
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-", kinds)
+            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-", kinds)
 
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
@@ -238,7 +243,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             mod = Path(d) / "mod"
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-"])
+            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-\t-"])
             self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
@@ -248,8 +253,36 @@ class Kh2EnemiesTest(unittest.TestCase):
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod)
             self.assertIn("M_EX010\tSoldier\tno\t2\t1:6 2:7\t-", (mod / "kh2_enemies.txt").read_text(encoding="utf-8"))
             # a script that plays the player's motions (1:29): "player"
-            self.assertTrue(kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)}).endswith("\tyes\t1\t-\tplayer"))
+            self.assertTrue(kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)}).endswith("\tyes\t1\t-\tplayer\t-"))
             self.assertTrue(any("coverage" in line for line in left))
+
+    def test_journal_names(self):
+        # 00objentry.bin's numbers and models; jiminy.bar's JMCH: 36-byte records, + 6 the title, + 0xc the object
+        def entry(number: int, model: bytes) -> bytes:
+            return struct.pack("<IBBBB", number, 3, 0, 0, 0) + model.ljust(32, b"\0")
+
+        records = [entry(301, b"M_EX010"), entry(2273, b"B_HE030_GM"), entry(2265, b"B_AL100_FIRE_GM"),
+                   entry(119, b"M_EX200_NM")]
+        objentry = struct.pack("<II", 3, len(records)) + b"".join(r.ljust(96, b"\0") for r in records)
+
+        def character(title: int, number: int) -> bytes:
+            return bytes(4) + struct.pack("<HHHHH", 0, title, 0, 0, number).ljust(32, b"\0")
+
+        people = [character(11932, 301), character(11648, 2273), character(12022, 2265), character(1, 301),
+                  character(11984, 119)]
+        jmch = b"JMCH" + struct.pack("<III", 1, len(people), 0) + b"".join(people)
+        jiminy = bar([(0, b"char", b"JMWO" + bytes(12)), (0, b"char", jmch)])
+        titles = kh2_enemies.journal_titles(jiminy, objentry)
+        # each model's first; its own, its journal's (_GM), its family's, one named on from it
+        self.assertEqual(titles["M_EX010"], 11932)
+        self.assertEqual(kh2_enemies.journal_title(titles, "M_EX010"), 11932)
+        self.assertEqual(kh2_enemies.journal_title(titles, "B_AL100_FIRE"), 12022)
+        self.assertEqual(kh2_enemies.journal_title(titles, "B_HE030_CLSM"), 11648)
+        self.assertEqual(kh2_enemies.journal_title(titles, "M_EX200"), 11984)
+        self.assertIsNone(kh2_enemies.journal_title(titles, "B_LK110"))
+        self.assertEqual(kh2_enemies.journal_titles(b"", objentry), {})
+        # its line's last column: the title's number, "-" none
+        self.assertTrue(kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932"))
 
 
 if __name__ == "__main__":

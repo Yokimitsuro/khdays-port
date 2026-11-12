@@ -59,6 +59,26 @@ extern "C" int khdays_missions_kh2_row(const KhdaysMission *m, int row, char *na
     return 1;
 }
 
+extern "C" int khdays_missions_kh2_class(const KhdaysMission *m, int enemy_class, char *name, size_t size)
+{
+    studio::MissionPlan plan;
+    std::string reason;
+    if (!studio::plan_of(*m, &plan, &reason))
+        return 0;
+    std::string kind;
+    for (const studio::EnemyRow &r : studio::enemy_rows(plan)) {
+        if (r.enemy_class != enemy_class)
+            continue;
+        if (r.kh2.empty() || (!kind.empty() && r.kh2 != kind))
+            return 0; // a Days enemy of the class, or two KH2 kinds in it: the class's own name
+        kind = r.kh2;
+    }
+    if (kind.empty())
+        return 0;
+    std::snprintf(name, size, "%s", kind.c_str());
+    return 1;
+}
+
 extern "C" int khdays_missions_build(const KhdaysMission *m, unsigned char **out, size_t *size, char *why,
                                      size_t why_size)
 {

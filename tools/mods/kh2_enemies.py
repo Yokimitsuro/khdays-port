@@ -21,8 +21,10 @@ sound id: bank x 1000 + its number). For the enemies' reaction commands, KH2's p
 (original/obj/P_EX100.mdlx, the bones the motions they make the player play are made for), his keyblade
 (original/obj/W_EX010.mdlx, the bones his weapon's motions are made for, and W_EX010.a.us, its swing's trail, with
 its HD pages in mods/<mod>/kh2/fx/W_EX010/), KH2's commands and the bone a player holds his weapon on
-(original/03system.bin), its attacks' power (original/00battle.bin) and the commands' names
-(original/msg/<language>/sys.bar) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command menu, whose
+(original/03system.bin), its attacks' power (original/00battle.bin), the commands' names
+(original/msg/<language>/sys.bar) and the journal's (msg/<language>/jm.bar: each kind's name, its title's number in
+original/menu/us/jiminy.bar put in its line) go to mods/<mod>/kh2/ as KH2 lays them out, and KH2's general command
+menu, whose
 bar the reaction commands show (original/field2d/<language>/zz0command.2dd and its HD picture
 remastered/field2d/<language>/zz0command.2dd/<LANGUAGE>_zz0command_2dd0.png) and the marks over its targets
 (zz0field.2dd and its first HD picture: a reaction command's mark over the enemy) to mods/<mod>/kh2/field2d/<language>/,
@@ -110,7 +112,8 @@ SHARED = (
     ("00battle.bin", "KH2's attacks' power: the player's blows in a reaction command"),
     ("00objentry.bin", "KH2's objects' entries: the numbers scripts find objects by (1:114, 1:222)"),
 )
-LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/sys.bar: the commands' names
+LANGUAGES = ("us", "fr", "gr", "it", "sp")  # msg/<language>/: sys.bar the commands' names, jm.bar the enemies'
+JOURNAL = "jiminy.bar"  # menu/us/: KH2's journal, its characters' titles by object (the enemies' names: jm.bar's)
 COMMAND_MENU = "zz0command.2dd"  # field2d/<language>/: KH2's general command menu (the reaction command's bar)
 FIELD_MARKS = "zz0field.2dd"  # field2d/<language>/: KH2's marks over its targets ("fiel": a reaction command's)
 # msg/us/: KH2's "sys" font, the bar's names' (its glyphs' widths; its HD picture under the remastered fontimage.bar)
@@ -135,13 +138,57 @@ def calls_in(bar: bytes) -> set[tuple[int, int]]:
     return {i.syscall for _, s in kh2_bdx.scripts_in(bar) for i in kh2_bdx.walk(s).values() if i.syscall is not None}
 
 
-def kinds_line(name: str, title: str, calls: set[tuple[int, int]], handled: set[tuple[int, int]]) -> str:
-    """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, and "player" when its
-    script plays the player's motions itself (1:29: its reaction commands the port can play) else "-" (tab-separated)."""
+def kinds_line(
+    name: str, title: str, calls: set[tuple[int, int]], handled: set[tuple[int, int]], journal: int | None = None
+) -> str:
+    """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
+    script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", and its name's
+    text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
-    return f"{name}\t{title}\t{'no' if missing or not calls else 'yes'}\t{len(calls)}\t{listed}\t{plays}"
+    named = str(journal) if journal is not None else "-"
+    return f"{name}\t{title}\t{'no' if missing or not calls else 'yes'}\t{len(calls)}\t{listed}\t{plays}\t{named}"
+
+
+def journal_titles(jiminy: bytes, objentry: bytes) -> dict[str, int]:
+    """KH2's journal's characters -- its Heartless, Nobodies and bosses among them -- by their object's model name:
+    each one's title text (menu/<language>/jiminy.bar's JMCH, OpenKH's jiminy page: a 16-byte header, its count at
+    + 8, then 36-byte records, + 6 the title, + 0xc the object's number; 00objentry.bin gives the number's model, a u32
+    count at 4, then 96-byte records from 8, the number at + 0, the model's name at + 8). The first of a model's."""
+    models = {}
+    count = struct.unpack_from("<I", objentry, 4)[0] if len(objentry) >= 8 else 0
+    for i in range(count):
+        at = 8 + 96 * i
+        if at + 96 > len(objentry):
+            break
+        models.setdefault(struct.unpack_from("<H", objentry, at)[0], objentry[at + 8 : at + 0x28].split(b"\0")[0])
+    out: dict[str, int] = {}
+    for _, at, size in bar_entries(jiminy):
+        if size < 16 or jiminy[at : at + 4] != b"JMCH":
+            continue
+        records = struct.unpack_from("<I", jiminy, at + 8)[0]
+        for k in range(records):
+            r = at + 16 + 36 * k
+            if r + 36 > at + size:
+                break
+            title, number = struct.unpack_from("<H", jiminy, r + 6)[0], struct.unpack_from("<H", jiminy, r + 0xC)[0]
+            model = models.get(number)
+            if model:
+                out.setdefault(model.decode("latin-1").upper(), title)
+    return out
+
+
+def journal_title(titles: dict[str, int], name: str) -> int | None:
+    """A kind's title in the journal: its own model's, else its journal's (_GM: the Volcanic Lord's B_AL100_FIRE is
+    the journal's B_AL100_FIRE_GM), else its family's -- the model's first two parts (Hades of the cups' B_HE030_CLSM
+    is the journal's B_HE030_GM) --, else the journal's first model named on from it (the Wight Knight's M_EX200 is
+    the journal's M_EX200_NM); none when the journal has none."""
+    family = "_".join(name.upper().split("_")[:2])
+    for candidate in (name.upper(), f"{name.upper()}_GM", f"{family}_GM", family):
+        if candidate in titles:
+            return titles[candidate]
+    return next((title for model, title in titles.items() if model.startswith(f"{name.upper()}_")), None)
 
 
 def copy_pages(source: Path, to: Path) -> int:
@@ -329,9 +376,16 @@ def make(
         copy_pages(kh2 / "remastered" / "effect" / common.name, mod / "kh2" / "fx" / "texcommon")
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
-    listed = ["# name\ttitle\tcovered\tcalls\tmissing\tplays the player (kh2_enemies.py; the port's kh2_enemies.txt)"]
+    listed = [
+        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name (kh2_enemies.py; the port's "
+        "kh2_enemies.txt)"
+    ]
     entries_file = kh2 / "original" / "00objentry.bin"
     entries = entries_file.read_bytes() if entries_file.is_file() else b""
+    jiminy_file = kh2 / "original" / "menu" / "us" / JOURNAL
+    titles = journal_titles(jiminy_file.read_bytes(), entries) if jiminy_file.is_file() else {}
+    if not jiminy_file.is_file():
+        left_out.append(f"menu/us/{JOURNAL} (the enemies' names): not there; their stand-ins' names show")
     for name, title in KINDS.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         sources[1] = sources[1].with_name(motion_set_of(entries, name))
@@ -356,7 +410,7 @@ def make(
         left_out += make_sounds(kh2, name, sounds, mod / "kh2" / "se")
         left_out += make_voices(kh2, name, VOICES.get(name), mod / "kh2" / "voice" / name)
         calls = calls_in(sources[0].read_bytes())
-        listed.append(kinds_line(name, title, calls, handled))
+        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name)))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     for part, what in SHARED:
@@ -368,15 +422,19 @@ def make(
             left_out.append(f"{part} ({what}): not there; the reaction commands go without it")
     if not copy_pages(kh2 / "remastered" / "obj" / "W_EX010.a.us", mod / "kh2" / "fx" / "W_EX010"):
         left_out.append("the keyblade's effects' HD pictures (remastered/obj/W_EX010.a.us): its trail in its PS2 pictures")
-    names = 0
+    names = journals = 0
     for language in LANGUAGES:
-        source = kh2 / "original" / "msg" / language / "sys.bar"
-        if source.is_file():
-            (mod / "kh2" / "msg" / language).mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, mod / "kh2" / "msg" / language / "sys.bar")
-            names += 1
+        for file in ("sys.bar", "jm.bar"):
+            source = kh2 / "original" / "msg" / language / file
+            if source.is_file():
+                (mod / "kh2" / "msg" / language).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, mod / "kh2" / "msg" / language / file)
+                names += file == "sys.bar"
+                journals += file == "jm.bar"
     if names == 0:
         left_out.append("msg/<language>/sys.bar (the commands' names): not there; a reaction command shows its button")
+    if journals == 0:
+        left_out.append("msg/<language>/jm.bar (the enemies' names): not there; their stand-ins' names show")
     menus = marks = 0
     for language in LANGUAGES:
         for name in (COMMAND_MENU, FIELD_MARKS):

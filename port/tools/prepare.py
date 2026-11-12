@@ -3437,6 +3437,24 @@ HOOKS["ov002@02069724"] = [
         "                khdays_characters_review_seat(nCount, i);\n",
     ),
 ]
+# ... the field's enemy labels (one for each enemy class the mission has, drawn as the field begins, the targeted
+# enemy's shown): a class whose every row stands in for one KINGDOM HEARTS II enemy is labelled with its KH2 name in
+# the game's language (runtime/kh2_enemies/shell.h khdays_kh2_enemies_label), written where the game's would be read
+HOOKS["ov002@02055984"] = [
+    (  # Ov002_BuildPanelLabels
+        "void Ov002_BuildPanelLabels(void)\n{\n",
+        "extern int khdays_kh2_enemies_label(int enemy_class, unsigned short *out, int room);\n"
+        "void Ov002_BuildPanelLabels(void)\n{\n"
+        "    int khdays_label[32]; /* a KH2 enemy's name, UTF-16, 0-ended */\n",
+    ),
+    (
+        "        if (pRec != 0) {\n",
+        "        if (khdays_kh2_enemies_label(nId, (unsigned short *)khdays_label, 63) > 0) {\n"
+        "            pRec = khdays_label;\n"
+        "        }\n"
+        "        if (pRec != 0) {\n",
+    ),
+]
 HOOKS["ov003@0204d98c"] = [
     (  # Ov003_SceneInit
         "int Ov003_SceneInit(int param_1) {\n",

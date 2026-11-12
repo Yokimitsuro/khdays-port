@@ -462,7 +462,8 @@ enemigos"); what is built is under "Played" at the end of this section.
    would give the Days enemy KH2's body cylinder for its radius, so Roxas cannot walk into it and Days's hits land
    on its body, not only near its centre.
 2. **Health and its bar**: the stand-in's HP as now (the mission's class, its level), shown on the KH2-style enemy
-   HUD (`port/ui/kh2_enemy_hud`) with Cerberus's name; KH2's several bars only when its `enmp` entry is found.
+   HUD (`port/ui/kh2_enemy_hud`) with Cerberus's name (KH2's journal's: "Names" below); KH2's several bars only when
+   its `enmp` entry is found.
 3. **Reaction commands**: as KH2 plays them (below, "A player in an enemy's hands"). Roxas's KH2 model (the HD
    PACK's) plays Cerberus's motions for KH2's player: Roxas's KH2 bones are Sora's, renumbered.
 4. **Lock-on**: Days locks on one enemy; its mark at the middle head's aim point (group 10), not at its feet.
@@ -510,9 +511,9 @@ with `battle_start` and its leap, leaves it at Roxas's first hit and fights -- `
   language ("Eludir", "¡Salta!", "Chapoteo").
 - **Its reaction command's cameras**: 1:157's event sequences ("00" as it takes the player, "10" to "30" as each
   step begins) play their cameras ("Event sequences" below).
-- **Not yet**: its name on the enemy HUD (the stand-in's shows); Days's camera, close behind the player, inside its
-  body (6 m) outside the reaction command; 0:32 (the routine's screen effect) and the sequences' depth blur (command
-  0x18) not played.
+- **Its name on the enemy HUD** (2026-11-12): KH2's own, in the game's language -- see "Names" below.
+- **Not yet**: Days's camera, close behind the player, inside its body (6 m) outside the reaction command; 0:32 (the
+  routine's screen effect) and the sequences' depth blur (command 0x18) not played.
 - **Its leap's end** (2026-11-10): KH2 tells the state machine as an actor lands (`FUN_1403b79d0` ->
   `FUN_1403ca1d0(+ 0x390, 2)`): the current state's routine for that event, its record's + 0xe (+ 0xa + 2 n: n 0 its
   leave, 1 off the ground, 2 landed), runs at once unless it has not begun -- Cerberus's `jump` lands into
@@ -985,6 +986,27 @@ of 22 recordings, each Ogg Vorbis: docs/FORMATS.md "KH2's sound banks"), each so
 party's, by `00objentry.bin`'s + 0x4c): the mod's tool names each kind's bank (`VOICES`) and writes its sounds as
 `kh2/voice/<kind>/<number>.ogg` as they are, their volumes in `volumes.txt`; the shell hears one at a time per
 enemy, at its volume, among the effects (`khdays_sound_shot_play`, `_heard`, `_end`). Hades's line 13 is his end's.
+
+## Names
+
+A KH2 enemy's name is its journal's: KH2's journal (`menu/<language>/jiminy.bar`, OpenKH's jiminy page) lists its
+characters -- its Heartless, Nobodies and bosses among them -- in `JMCH` records of 36 bytes, each with a title text
+(+ 6) and an object (+ 0xc, `00objentry.bin`'s number), the title one of `msg/<language>/jm.bar`'s messages (KH2's
+text, as the reaction commands' names: `kh2_text`). The mod's tool finds each kind's title in the English journal --
+its own model's (`M_EX010`), else its journal's (`B_AL100_FIRE` is the journal's `B_AL100_FIRE_GM`), else its
+family's (`B_HE030_CLSM` is `B_HE030_GM`), else the first model named on from it (`M_EX200` is `M_EX200_NM`) -- puts
+the number in its line of `kh2_enemies.txt` (its seventh column; "-" none: the Volcanic Lord's lava, the Sorcerer's
+cubes) and copies each language's `jm.bar` to `kh2/msg/<language>/`. The port reads the message in the game's
+language (English us, French fr, German gr, Italian it, Spanish sp): Hades is Hadès in French, Ade in Italian; the
+Soldier Soldado, Soldat, Klappersoldat, Soldato; the Volcanic Lord Jefe volcánico, Poussah Volcano, Vulkanlord, Lord
+Vulcano.
+
+**Days's enemy labels** (`Ov002_BuildPanelLabels`, found by the stack under its glyphs): as the field begins Days
+draws a label for each enemy class the mission has (`UI/btl/&/enemy.s`'s text of the class's number), and shows the
+targeted enemy's above its bar. A join gives a class whose every row in the mission stands in for one KH2 enemy that
+enemy's name in its place (`khdays_kh2_enemies_label`, `khdays_missions_kh2_enemy_of_class`): Hades in a Days
+Soldier's place is labelled Hades. A class shared by a Days enemy of its own, or by two KH2 enemies, keeps Days's
+name.
 
 ## Days's side: the shell
 

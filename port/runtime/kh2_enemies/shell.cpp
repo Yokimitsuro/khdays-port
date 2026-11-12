@@ -4217,22 +4217,24 @@ static std::u16string kh2_text(const std::uint8_t *b, std::size_t n)
     return out;
 }
 
-// A command's name (its text's number, 03system.bin's; its top bit cleared it is sys.bar's message) in the game's
-// language, from the mod's kh2/msg/<language>/sys.bar; empty when there is none
-static std::u16string command_name(int text)
+// A message of KH2's (its number) in the game's language, from the mod's kh2/msg/<language>/<file>'s BAR entry
+// `entry` (each: u32, u32 its count, then {u32 number, u32 offset}); empty when there is none
+static std::u16string kh2_message(const char *file, const char *entry, std::uint32_t id)
 {
     static const char *const folders[] = {"us", "us", "fr", "gr", "it", "sp"}; // the game's 1 English .. 5 Spanish
-    static std::map<int, std::vector<std::uint8_t>> read; // each language's sys.bar
+    static std::map<std::pair<std::string, int>, std::vector<std::uint8_t>> read; // each file's, each language's
     const int language = khdays_link_language();
     const int l = language >= 1 && language <= 5 ? language : 1;
-    auto it = read.find(l);
+    auto it = read.find({file, l});
     if (it == read.end())
-        it = read.emplace(l, read_file(fs::path(std::u8string(mod().folder.begin(), mod().folder.end())) / "kh2" / "msg" / folders[l] / "sys.bar")).first;
+        it = read.emplace(std::make_pair(std::string(file), l),
+                          read_file(fs::path(std::u8string(mod().folder.begin(), mod().folder.end())) / "kh2" / "msg" /
+                                    folders[l] / file))
+                 .first;
     const std::vector<std::uint8_t> &bar = it->second;
-    const std::uint32_t id = std::uint32_t(text) & 0x7fffu;
     try {
         for (const kh2::BarEntry &e : kh2::bar_entries(bar.data(), bar.size())) {
-            if (e.name != "sys" || e.size < 8)
+            if (e.name != entry || e.size < 8)
                 continue;
             std::uint32_t count = 0;
             std::memcpy(&count, bar.data() + e.offset + 4, 4);
@@ -4247,6 +4249,21 @@ static std::u16string command_name(int text)
     } catch (const std::exception &) {
     }
     return {};
+}
+
+// A command's name (its text's number, 03system.bin's; its top bit cleared it is sys.bar's message) in the game's
+// language; empty when there is none
+static std::u16string command_name(int text)
+{
+    return kh2_message("sys.bar", "sys", std::uint32_t(text) & 0x7fffu);
+}
+
+// A KH2 enemy's name in the game's language: its kind's title in KH2's journal (jm.bar's message, the number the mod's
+// list gives it from menu/us/jiminy.bar); empty when its list gives none
+static std::u16string enemy_name(const std::string &kind)
+{
+    const Kind *k = find_kind(mod().kinds, kind);
+    return k != nullptr && k->journal >= 0 ? kh2_message("jm.bar", "jm", std::uint32_t(k->journal)) : std::u16string{};
 }
 
 namespace {
@@ -4274,6 +4291,26 @@ extern "C" int khdays_kh2_enemies_taken_name(unsigned short *out, int room, int 
     const Command *c = local_taken >= 0 ? command(local_taken) : nullptr;
     *id = c != nullptr ? local_taken : 0;
     return c != nullptr ? put_name(c->text, out, room) : 0;
+}
+
+// Ov002_BuildPanelLabels (prepare.py's join): the field's enemy labels -- one for each enemy class the mission has,
+// drawn as the field begins, the targeted enemy's shown -- with KH2's name for a class whose every row in the mission
+// stands in for one KH2 enemy: its UTF-16 letters into `out` (at most `room`, then a 0), how many; 0 for any other
+// class (Days's name drawn)
+extern "C" int khdays_kh2_enemies_label(int enemy_class, unsigned short *out, int room)
+{
+    char kind[128];
+    if (out == nullptr || room <= 0 || mod().folder.empty() ||
+        !khdays_missions_kh2_enemy_of_class(enemy_class, kind, int(sizeof(kind))))
+        return 0;
+    const std::u16string name = enemy_name(kind);
+    const int n = std::min(int(name.size()), room);
+    for (int i = 0; i < n; ++i)
+        out[i] = static_cast<unsigned short>(name[std::size_t(i)]);
+    out[n] = 0;
+    if (tracing())
+        khdays_log("kh2 enemies: the enemy label of class %d is %s's KH2 name (%d letters)", enemy_class, kind, n);
+    return n;
 }
 
 // Ov107_AiState_ApplyHit and Ov107_AiState_HitShapeOverlap (prepare.py's joins): its script's FLAG_NOHIT_ATTACK and

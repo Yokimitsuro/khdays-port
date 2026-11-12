@@ -260,17 +260,19 @@ void test_leave_after_end()
 
 void test_kinds()
 {
-    const auto kinds = kh::read_kinds("# name\ttitle\tcovered\tcalls\tmissing\tplays the player\n"
-                                      "M_EX010\tSoldier\tyes\t62\t-\t-\n"
+    const auto kinds = kh::read_kinds("# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\n"
+                                      "M_EX010\tSoldier\tyes\t62\t-\t-\t11932\n"
                                       "m_ex020\tShadow\tno\t71\t1:39 1:62\r\n"
-                                      "M_EX600\tMagnum Loader\tyes\t68\t-\tplayer\n"
+                                      "M_EX600\tMagnum Loader\tyes\t68\t-\tplayer\t-\n"
                                       "broken line\n");
     CHECK(kinds.size() == 3);
     const kh::Kind *s = kh::find_kind(kinds, "m_ex010");
     CHECK(s != nullptr && s->covered && s->calls == 62 && s->title == "Soldier" && !s->plays_player);
+    CHECK(s->journal == 11932); // its name in KH2's journal messages
     const kh::Kind *sh = kh::find_kind(kinds, "M_EX020");
-    CHECK(sh != nullptr && !sh->covered && sh->missing == "1:39 1:62" && !sh->plays_player);
+    CHECK(sh != nullptr && !sh->covered && sh->missing == "1:39 1:62" && !sh->plays_player && sh->journal == -1);
     CHECK(kh::find_kind(kinds, "M_EX600") != nullptr && kh::find_kind(kinds, "M_EX600")->plays_player);
+    CHECK(kh::find_kind(kinds, "M_EX600")->journal == -1);
     CHECK(kh::find_kind(kinds, "M_EX999") == nullptr);
 }
 

@@ -1850,6 +1850,14 @@ pictures go to VRAM when loaded (`UI/btl/&/bl000.NCGR.z` through
 `Ov002_UploadFileToSubBg1Char`). A screen already built keeps its language
 until the game builds it again.
 
+**The enemy labels** (seen 2026-11-12 by the native stack under the glyphs of "Soldado"):
+`Ov002_BuildPanelLabels` draws, as the field begins (`Ov002_OpenPanelScreen`, from
+`Ov002_CreateAndRestoreHud`), a label for each of up to four enemy classes the mission has --
+`enemy.s`'s text of the class's number (the Soldier's 4), 0x53 and 0x54 swapped for 0x75 and
+0x76 under two mode bits -- into cells of one text surface; `Ov002_ShowEntryLabel` shows the
+targeted enemy's cell above its bar. A mod's KH2 enemy labels its stand-in's class with its own
+name (docs/KH2_ENEMIES.md, "Names").
+
 **The message databases are kept.** `MsgDb_LoadDb(id, mode)` keeps up to 0x21
 databases in the table at `data_0204c238` (0x14 bytes each: two packs, the
 records and their count, a reference count at +0xe, a mode at +0x10), each

@@ -46,5 +46,8 @@ int khdays_missions_playing(void);
 /* The KH2 enemy the mission being played puts in its enemy table's row `row` (a mod's mission's `kh2:<name>`), into
  * `name`: 0 for none (a Days class's row, or a game's mission). runtime/kh2_enemies/shell.h. */
 int khdays_missions_kh2_enemy(int row, char *name, int size);
+/* The KH2 enemy every row of Days's class `enemy_class` in the mission being played stands in for (its enemies' HUD
+ * name), into `name`: 0 when the class has a Days enemy of its own there, two KH2 enemies, or none. */
+int khdays_missions_kh2_enemy_of_class(int enemy_class, char *name, int size);
 
 #endif

@@ -612,6 +612,12 @@ int khdays_missions_kh2_enemy(int row, char *name, int size)
     return m != NULL && size > 0 && khdays_missions_kh2_row(m, row, name, (size_t)size);
 }
 
+int khdays_missions_kh2_enemy_of_class(int enemy_class, char *name, int size)
+{
+    const KhdaysMission *m = playing();
+    return m != NULL && size > 0 && khdays_missions_kh2_class(m, enemy_class, name, (size_t)size);
+}
+
 /* ---- The save part ------------------------------------------------------------------------------- */
 
 static void part_path(int file, char *path, size_t size)
