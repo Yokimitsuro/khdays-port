@@ -252,6 +252,10 @@ room...**, asks the world (the game's, or one the mod adds) and the room's key, 
     khdays-studio --add-room <Mod> <world> <key> <model> | <game>:<map> [<collision model> | own-collision]
     khdays-studio --remove-room <Mod> <world> <key>
 
+A room added from a collection's map keeps where it came from in its folder's `room.txt` (`source kh2:bb05`, its
+`scale`, `turn` and `move`): KINGDOM HEARTS II's bosses bound to their rooms fight only in a room made from their own
+map (docs/KH2_ENEMIES.md, "Bosses bound to their rooms"), and the missions check says when one is put elsewhere.
+
 **Worlds a mod adds** (`rooms/worlds.txt`, `core/rooms/added_rooms.h`). A world Days does not have is listed in
 Mission Mode under its own name, after the game's worlds (L and R reach it), its missions played in its rooms: its
 rooms are added (`--add-room <Mod> <its key> ...`, their folders `rooms/<its key>/<room>/`) to the game world it names

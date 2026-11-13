@@ -3,7 +3,8 @@
 // when its script plays the player's motions, its name's text in KH2's journal messages ("-" none), the objects KH2
 // places with it ("name x y z yaw" each, apart by ";"; "-" none), the mission KH2's area runs with its battle (its msn
 // file's name, kh2/msn/<name>.bar; "-" none), the walk paths of its battle ("number x y z x y z ..." each, apart by ";";
-// "-" none).
+// "-" none), the KH2 map it is bound to ("-" none: made in any room), its room's objects there ("name x y z yaw argument"
+// each, KH2's world, apart by ";"; "-" none) and the first argument its KH2 battle spawn gives it (0 none).
 #pragma once
 
 #include <functional>
@@ -17,6 +18,7 @@ namespace khdays::kh2_enemies {
 struct Companion final {
     std::string name;
     float x = 0.0F, y = 0.0F, z = 0.0F, yaw = 0.0F;
+    int argument = 0; // its spawn's first argument (YS::OBJ's UnitArg[1], 1:39(self, 1)): a room object's own
 };
 
 // A walk path of a boss's battle (its area's spawn set's: Shenzi's, Banzai's and Ed's round the graveyard): its number
@@ -37,6 +39,14 @@ struct Kind final {
     std::vector<Companion> with; // the objects KH2 places with it
     std::string mission;         // the mission KH2 runs with its battle (Demyx's HE17_MS105); "" none
     std::vector<WalkPath> paths;  // the walk paths of its battle (1:177, 5:14)
+    // the KH2 map it is bound to (its battle's area: bb05), "" none: made only in a room made from that map, its room's
+    // objects (KH2's field objects its script finds by number: the ballroom's pillars) where KH2 places them there,
+    // KH2's world (y down), not from the boss as companions are
+    std::string home;
+    std::vector<Companion> room;
+    // the first argument its KH2 battle spawn gives it (YS::OBJ's UnitArg[1], 1:39(self, 1)): Oogie Boogie fights only at
+    // 1, idles at 0; 0 for an enemy
+    int unit_arg = 0;
 };
 
 std::vector<Kind> read_kinds(const std::string &text);

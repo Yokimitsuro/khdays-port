@@ -21,6 +21,8 @@ extern "C" {
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
+#include <sstream>
 
 namespace studio {
 
@@ -32,6 +34,52 @@ bool fail_with(std::string* why, const std::string& reason) {
     if (why != nullptr)
         *why = reason;
     return false;
+}
+
+// The KH2 enemies bound to their own KH2 map (docs/KH2_ENEMIES.md, "Bosses bound to their rooms"): each kind's home
+// map, the eleventh column of the list in the mods beside this one (kh2_enemies.txt, tools/mods/kh2_enemies.py).
+std::map<std::string, std::string> kh2_homes(const fs::path& mod_dir) {
+    std::map<std::string, std::string> homes;
+    std::error_code ec;
+    for (const auto& other : fs::directory_iterator(mod_dir.parent_path(), ec)) {
+        std::ifstream in(other.path() / "kh2_enemies.txt", std::ios::binary);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (line.empty() || line[0] == '#')
+                continue;
+            std::vector<std::string> cells;
+            std::string cell;
+            std::istringstream row(line);
+            while (std::getline(row, cell, '\t'))
+                cells.push_back(cell);
+            if (cells.size() > 10 && cells[10] != "-" && !cells[10].empty())
+                homes[cells[0]] = cells[10];
+        }
+    }
+    return homes;
+}
+
+// The map a mission's room was made from, as the port reads it (missions.c, khdays_missions_room_source): a room the
+// mod adds, its room.txt's "source"; a game room, its change's "kh2"/"source"; empty for none.
+std::string room_source(const fs::path& mod_dir, const std::string& world, int room, const std::string& room_key) {
+    const fs::path file = room_key.empty() ? mod_dir / "studio" / "rooms" / path_u8(world) / (std::to_string(room) + ".txt")
+                                           : mod_dir / "rooms" / path_u8(world) / path_u8(room_key) / "room.txt";
+    std::ifstream in(file, std::ios::binary);
+    std::string word, value;
+    while (in >> word) {
+        std::getline(in, value);
+        const auto first = value.find_first_not_of(" \t");
+        value = first == std::string::npos ? std::string() : value.substr(first);
+        while (!value.empty() && (value.back() == '\r' || value.back() == ' '))
+            value.pop_back();
+        if (word == "source")
+            return value;
+        if (word == "kh2")
+            return "kh2:" + value;
+    }
+    return {};
 }
 
 std::string read_text(const fs::path& file) {
@@ -655,9 +703,33 @@ bool check_mod_missions(const fs::path& nitrofs, const fs::path& mod_dir, std::v
         lines->push_back("problem: " + p);
         ok = false;
     }
+    const std::map<std::string, std::string> homes = kh2_homes(mod_dir);
+    const auto lower = [](std::string s) {
+        for (char& c : s)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
     for (const ModMission& m : missions) {
         std::string about =
             m.key + ": " + m.world + " room " + (m.room_key.empty() ? std::to_string(m.room) : m.room_key);
+        // a KH2 boss bound to its own map (its room's pieces) in a room made from another, or from none: the port
+        // makes its stand-in there instead
+        std::set<std::string> told;
+        std::string spots_why;
+        for (const MissionSpot& s : mod_mission_spots(mod_dir, m.key, &spots_why))
+            for (const std::string& kh2 : s.kh2) {
+                const auto home = homes.find(kh2);
+                if (kh2.empty() || home == homes.end() || !told.insert(kh2).second)
+                    continue;
+                const std::string source = room_source(mod_dir, m.world, m.room, m.room_key);
+                if (lower(source) != "kh2:" + lower(home->second)) {
+                    lines->push_back("problem: " + m.key + ": kh2:" + kh2 + " fights only in a room made from KH2's " +
+                                     home->second + " (--add-room <Mod> <world> <key> kh2:" + home->second +
+                                     "); this room is " + (source.empty() ? "made from no KH2 map" : source) +
+                                     ": its stand-in plays there");
+                    ok = false;
+                }
+            }
         std::error_code ec;
         World w;
         std::string world_why;

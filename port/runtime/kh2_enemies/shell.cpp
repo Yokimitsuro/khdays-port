@@ -18,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -666,8 +667,10 @@ struct Enemy final {
     unsigned drawn_frame = ~0u; // the frame its KH2 model was last drawn in: once a frame, whatever matched it
     unsigned ticks_traced = 0;  // KHDAYS_TRACE_KH2_ENEMIES=2: its ticks, its threads told once a second
     std::string state;          // the state it last entered (traced)
-    // the Days player carrying it (1:18: Cerberus on the player in its reaction command), 0 none, and how
+    // the Days player carrying it (1:18: Cerberus on the player in its reaction command), 0 none, or the KH2 enemy or
+    // room object (its handle: Oogie Boogie on his tower, F_NM080), 0 none, and how
     unsigned carrier = 0;
+    unsigned carried_by = 0;
     int carry_bone = 0, carry_flags = 0;
     std::uint32_t attack_record = 0; // trigger 15's attack (its + 0x18 the atkp entry), made on its first hit
     std::uint32_t command_record = 0; // the target record a command taken is sent with (trigger 11's third)
@@ -844,6 +847,15 @@ struct Held final {
     std::uint32_t trail = 0;   // his weapon's swing's trail running (its handle), 0 none
 };
 std::map<unsigned, Held> held; // by the Days player's object
+
+// a KH2 enemy or room object by its handle (its Days actor; kAllyIds and on for those not enemies); null gone
+Enemy *enemy_or_ally(unsigned days)
+{
+    if (const auto e = enemies.find(days); e != enemies.end())
+        return e->second.get();
+    const auto a = allies.find(days);
+    return a != allies.end() ? a->second.get() : nullptr;
+}
 // each held player's weapon as his KH2 model drew it (held_weapon_drawn: its bones, KH2's cm in his motion's space, y
 // up) and the frame it did, by his object
 struct DrawnWeapon final {
@@ -957,7 +969,53 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = f
 int attack_power(int atkp);
 int attack_team(int atkp);
 void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp);
-Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false);
+Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false, int argument = 0);
+
+// A kind bound to its KH2 map (Kind::home) is made only in a room made from that map: whether the playing mission's
+// room is one (khdays_missions_room_source: an added room's room.txt, a replaced room's change), its placement into
+// `place` (the studio's: scale, the turns about x, y, z in degrees, the move); a kind bound to none, always (`place`
+// left as it is). Told once a kind and room when not.
+bool in_home(const Kind &kind, float place[7])
+{
+    if (kind.home.empty())
+        return true;
+    float at[7] = {1, 0, 0, 0, 0, 0, 0};
+    char *source = khdays_missions_room_source(at);
+    const bool known = source != nullptr;
+    std::string want = "kh2:" + kind.home, have = known ? source : "";
+    std::free(source);
+    std::transform(want.begin(), want.end(), want.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    std::transform(have.begin(), have.end(), have.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    if (known && have == want) {
+        std::copy(at, at + 7, place);
+        return true;
+    }
+    static std::set<std::string> told;
+    if (told.insert(kind.name + "|" + have).second)
+        khdays_log("kh2 enemies: %s fights in its own room, KH2's %s, and this room is %s: its stand-in plays",
+                   kind.name.c_str(), kind.home.c_str(), known ? have.c_str() : "not made from a KH2 map");
+    return false;
+}
+
+// A point of a KH2 map's area (KH2's world, cm, y down: its spawns' places) in the field as the shell keeps it
+// (to_kh2 of Days's place): the map's model axes (x, -y, -z), then the room's placement -- scale, the turns about x,
+// y and z, the move (Days's units; the studio's placement_matrix) -- then to_kh2. A way (`way` true) is turned alone.
+Vec3 map_point(const float place[7], const Vec3 &w, bool way = false)
+{
+    float p[3] = {w[0], -w[1], -w[2]};
+    if (!way)
+        for (float &v : p)
+            v *= place[0];
+    const float k = kPi / 180.0F;
+    const float ax = place[1] * k, ay = place[2] * k, az = place[3] * k;
+    float q[3] = {p[0], std::cos(ax) * p[1] - std::sin(ax) * p[2], std::sin(ax) * p[1] + std::cos(ax) * p[2]};
+    p[0] = std::cos(ay) * q[0] + std::sin(ay) * q[2], p[1] = q[1], p[2] = -std::sin(ay) * q[0] + std::cos(ay) * q[2];
+    q[0] = std::cos(az) * p[0] - std::sin(az) * p[1], q[1] = std::sin(az) * p[0] + std::cos(az) * p[1], q[2] = p[2];
+    if (way)
+        return {q[0], -q[1], q[2]};
+    const float d[3] = {q[0] + place[4], q[1] + place[5], q[2] + place[6]};
+    return to_kh2(d);
+}
 void start_mission(const std::string &name);
 std::string entry_name(std::uint32_t number);
 bool enemy_entry(const std::string &name);
@@ -1908,6 +1966,10 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
     // its script set going: at once, or -- made by another's script (1:0) -- at its first tick, as KH2's object's
     // script first runs as the object is updated (FUN_1403e1240 makes its machine and runs nothing; FUN_1403e1c80 runs
     // it), after its maker has given it what it gives it (1:218: the Hydra's heads their necks, 11 to 13)
+    // the first argument its KH2 battle spawn gives it (YS::OBJ's UnitArg[1], 1:39(self, 1)): Oogie Boogie's 1, without
+    // which his script only idles; one another's script makes gets its maker's (1:218) instead
+    if (const Kind *kind = find_kind(mod().kinds, k.name); kind != nullptr && !made)
+        a.set_u32(field::kUnitArgs + 4, std::uint32_t(kind->unit_arg));
     raw->started = !made;
     if (!made)
         a.start();
@@ -1935,6 +1997,28 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
             }
             const Vec3 to = {at[0] + with.x * c + with.z * sn, at[1] + with.y, at[2] - with.x * sn + with.z * c};
             start_ally(*f, to, with.yaw + turn, days);
+        }
+    }
+    // its room's objects (Kind::room: the ballroom's pillars and floor, Shadow Stalker's) where KH2 places them on its
+    // map, the room made from it placing them as it places the map (map_point); once a Days enemy and kind
+    float place[7] = {1, 0, 0, 0, 0, 0, 0};
+    if (const Kind *kind = find_kind(mod().kinds, k.name); kind != nullptr && !kind->room.empty() &&
+                                                          in_home(*kind, place) &&
+                                                          accompanied.insert({days, k.name + "#room"}).second) {
+        for (const Companion &piece : kind->room) {
+            KindFiles *f = files_of(piece.name);
+            if (f == nullptr) {
+                khdays_log("kh2 enemies: %s's room object %s not made (not one of the mod's covered kinds)",
+                           k.name.c_str(), piece.name.c_str());
+                continue;
+            }
+            const Vec3 at = map_point(place, {piece.x, piece.y, piece.z});
+            const Vec3 way = map_point(place, {std::sin(piece.yaw), 0.0F, std::cos(piece.yaw)}, true);
+            Enemy *made_piece = start_ally(*f, at, std::atan2(way[0], way[2]), days, false, piece.argument);
+            if (tracing())
+                khdays_log("kh2 enemies: %08x's room object %s (%08x) at %.0f %.0f %.0f (KH2's %.0f %.0f %.0f)", days,
+                           piece.name.c_str(), made_piece->days, double(at[0]), double(at[1]), double(at[2]),
+                           double(piece.x), double(piece.y), double(piece.z));
         }
     }
     if (const Kind *kind = find_kind(mod().kinds, k.name); kind != nullptr && !kind->mission.empty() && !kh2_mission)
@@ -2014,7 +2098,7 @@ void start_mission(const std::string &name)
 
 // An ally (allies, above) of kind `k` made at `place` (KH2's world) turned by `yaw`, in the battle of the Days enemy
 // `anchor`: its script set going at once, its model's own effects started as an enemy's
-Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made)
+Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made, int argument)
 {
     auto e = std::make_unique<Enemy>();
     e->days = kAllyIds + ++allies_made;
@@ -2050,6 +2134,8 @@ Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, b
         khdays_log("kh2 enemies: %08x made, a %s with %08x's battle (not an enemy) at %.0f %.0f %.0f (KH2's cm)", id,
                    k.name.c_str(), anchor, double(place[0]), double(place[1]), double(place[2]));
     }
+    // its spawn's first argument (YS::OBJ's UnitArg[1], which 1:39(self, 1) gives its script): a room object's own
+    a.set_u32(field::kUnitArgs + 4, std::uint32_t(argument));
     raw->started = !made; // (as an enemy a script makes: start)
     if (!made)
         a.start();
@@ -2783,16 +2869,29 @@ void Field::carry(Actor &carried, Object &by, int bone, int flags)
     const unsigned object = days_object(by);
     if (it == by_actor.end())
         return;
-    // (a player before his enemy takes him in hand too: Scar is put on the player he pins, then plays its motion on
-    // him; it is drawn on him while he is held)
-    if (object == 0) {
-        khdays_log("kh2 enemies: %08x is put on %s, which the port does not carry yet: it stays where it is",
-                   it->second->days, by.name().c_str());
-        return;
-    }
-    it->second->carrier = object;
     it->second->carry_bone = bone;
     it->second->carry_flags = flags;
+    // a KH2 enemy or room object: it goes where that one is (at its bone), its floor there (Days's rooms hold no KH2
+    // object's own collision)
+    if (object == 0) {
+        Actor *x = by.actor();
+        const auto c = x != nullptr ? by_actor.find(x) : by_actor.end();
+        if (c == by_actor.end()) {
+            khdays_log("kh2 enemies: %08x is put on %s, which the port does not carry: it stays where it is",
+                       it->second->days, by.name().c_str());
+            return;
+        }
+        it->second->carrier = 0;
+        it->second->carried_by = c->second->days;
+        if (tracing())
+            khdays_log("kh2 enemies: %08x carried by %08x, a %s (bone %#x, flags %#x)", it->second->days,
+                       c->second->days, c->second->kind->name.c_str(), bone, flags);
+        return;
+    }
+    // (a player before his enemy takes him in hand too: Scar is put on the player he pins, then plays its motion on
+    // him; it is drawn on him while he is held)
+    it->second->carrier = object;
+    it->second->carried_by = 0;
     if (tracing())
         khdays_log("kh2 enemies: %08x carried by player %08x (bone %#x, flags %#x)", it->second->days, object, bone,
                    flags);
@@ -2801,11 +2900,45 @@ void Field::carry(Actor &carried, Object &by, int bone, int flags)
 void Field::uncarry(Actor &carried)
 {
     const auto it = by_actor.find(&carried);
-    if (it == by_actor.end() || it->second->carrier == 0)
+    if (it == by_actor.end() || (it->second->carrier == 0 && it->second->carried_by == 0))
         return;
     if (tracing())
-        khdays_log("kh2 enemies: %08x taken off player %08x", it->second->days, it->second->carrier);
+        khdays_log("kh2 enemies: %08x taken off %08x", it->second->days,
+                   it->second->carrier != 0 ? it->second->carrier : it->second->carried_by);
     it->second->carrier = 0;
+    it->second->carried_by = 0;
+}
+
+// It put where what carries it is (1:18): the Days player holding it, or the KH2 object carrying it at its bone
+// (0x4000 its place), its floor that one's height; facing its way unless the carry's flag bit 1 keeps its own
+void put_on_carrier(Enemy &e, Vec3 &place)
+{
+    Vec3 at{};
+    float yaw = 0.0F;
+    if (e.carrier != 0) {
+        const auto h = held.find(e.carrier);
+        if (h == held.end())
+            return;
+        at = h->second.place;
+        yaw = h->second.yaw;
+    } else if (e.carried_by != 0) {
+        Enemy *c = enemy_or_ally(e.carried_by);
+        if (c == nullptr || !c->actor)
+            return;
+        at = c->actor->place();
+        if (e.carry_bone != 0x4000)
+            if (Vec3 on{}; the_field().bone_point(*c->actor, e.carry_bone, {0.0F, 0.0F, 0.0F}, on))
+                at = on;
+        yaw = c->actor->yaw();
+        e.floor = at[1];
+        e.floor_known = true;
+    } else {
+        return;
+    }
+    place = at;
+    e.actor->set_place(place);
+    if ((e.carry_flags & 2) == 0)
+        e.actor->set_yaw(yaw);
 }
 
 // 1:157: the sequence of that name (FUN_1403db2f0: its letters packed as the entries' names are) in the enemy's
@@ -3697,15 +3830,17 @@ void motion_states(Enemy &e)
     for (const auto &[id, b] : kStateRanges)
         all |= 1u << b;
     // while the motion plays (a loop always does): one played to its end (held on its last frame) sets none -- a landing's
-    // range 9 to its end ("65535") would hold it for ever after
+    // range 9 to its end ("65535") would hold it for ever after -- but range 13, read on its frame as KH2 reads them all:
+    // what is put on it stays (F_NM080, Oogie Boogie's tower, holds its motion 0, range 13 over all of it)
     const bool loops = a.motion.id >= 0 && a.motions != nullptr && a.motions->has(a.motion.id) &&
                        a.motions->loop_from(a.motion.id) < a.motions->length(a.motion.id);
-    if (const kh2::MotionAttributes *attr = a.motion.id >= 0 && (!a.motion.ended || loops)
-                                                ? e.kind->set->attributes(std::size_t(a.motion.id))
-                                                : nullptr)
+    const bool on_motion = !a.motion.ended || loops;
+    if (const kh2::MotionAttributes *attr =
+            a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr)
         for (const auto &r : attr->ranges)
             for (const auto &[id, b] : kStateRanges)
-                if (int(r.id) == id && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
+                if (int(r.id) == id && (on_motion || id == 13) && a.motion.time >= float(r.start) &&
+                    a.motion.time < float(r.end))
                     on |= 1u << b;
     if (e.reacting)
         on |= bit::kHeld;
@@ -4509,15 +4644,10 @@ void allies_close()
             e.floor = place[1] + s.above * kKh2PerDays;
             e.floor_known = true;
         }
+        put_on_carrier(e, place);
         for (unsigned t = 0; t < run; ++t) {
             one_tick(e, s, place);
-            if (e.carrier != 0)
-                if (const auto h = held.find(e.carrier); h != held.end()) { // on the player carrying it (1:18)
-                    place = h->second.place;
-                    e.actor->set_place(place);
-                    if ((e.carry_flags & 2) == 0)
-                        e.actor->set_yaw(h->second.yaw);
-                }
+            put_on_carrier(e, place); // on what carries it (1:18)
             pose(e);
         }
         to_days(place, e.place);
@@ -4635,11 +4765,15 @@ void send_shouts()
     const std::vector<Shout> sent = std::move(shouts);
     shouts.clear();
     for (const Shout &s : sent) {
-        std::vector<unsigned> listening; // by their Days enemy: a routine run may end one
+        std::vector<unsigned> listening; // by their Days enemy (an ally's own number): a routine run may end one
         for (const auto &[actor, e] : by_actor)
             listening.push_back(e->days);
         for (const unsigned days : listening) {
             Enemy *e = find(days);
+            if (e == nullptr) { // an ally: a boss's room objects hear it too (Shadow Stalker's floor, its swallow)
+                const auto ally = allies.find(days);
+                e = ally != allies.end() ? ally->second.get() : nullptr;
+            }
             if (e == nullptr || e->dying)
                 continue;
             if (s.delay > 0.0F) {
@@ -4734,6 +4868,11 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
     if (e == nullptr) {
         if (!s.standing || !s.own)
             return;
+        float place[7];
+        if (const Kind *bound = find_kind(mod().kinds, kind->second); bound != nullptr && !in_home(*bound, place)) {
+            kind_of.erase(kind); // its stand-in plays, for good
+            return;
+        }
         KindFiles *k = files_of(kind->second);
         if (k == nullptr) {
             kind_of.erase(kind); // its stand-in plays, for good
@@ -4790,6 +4929,7 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         e->floor = place[1] + s.above * kKh2PerDays;
         e->floor_known = true;
     }
+    put_on_carrier(*e, place); // (its floor what carries it, not Days's ground under it)
     for (int t = 0; t < ticks; ++t) {
         one_tick(*e, s, place);
         for (auto &[object, h] : held)
@@ -4805,24 +4945,27 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         // longer holding it (its + 0x18c bit 15, its motion's range 13) -- Scar, put on the player he pins, comes off
         // as he throws him; 1:161 then says so and his catch goes on
         if (e->actor->u32(field::kCarrier) != 0 && (e->carry_flags & 1) != 0) {
-            const auto p = players.find(e->carrier);
-            const bool keeps = e->carrier != 0 && held.count(e->carrier) != 0 && p != players.end() && p->second &&
-                               (p->second->u32(field::kStatus) & bit::kKeepsCarried) != 0;
+            bool keeps = false;
+            if (e->carried_by != 0) { // a KH2 object: there, not dying, its own range 13 on -- or no motion of its
+                // own yet: one made with the battle, where KH2's has stood since its area was loaded, its motion on
+                const Enemy *c = enemy_or_ally(e->carried_by);
+                keeps = c != nullptr && !c->dying &&
+                        (c->actor->motion.id < 0 || (c->actor->u32(field::kStatus) & bit::kKeepsCarried) != 0);
+            } else {
+                const auto p = players.find(e->carrier);
+                keeps = e->carrier != 0 && held.count(e->carrier) != 0 && p != players.end() && p->second &&
+                        (p->second->u32(field::kStatus) & bit::kKeepsCarried) != 0;
+            }
             if (!keeps) {
                 if (tracing())
-                    khdays_log("kh2 enemies: %08x comes off player %08x (its carry's flag bit 0, his range 13 over)",
-                               e->days, e->carrier);
+                    khdays_log("kh2 enemies: %08x comes off %08x (its carry's flag bit 0, its carrier's range 13 over)",
+                               e->days, e->carried_by != 0 ? e->carried_by : e->carrier);
                 e->actor->set_u32(field::kCarrier, 0);
                 e->carrier = 0;
+                e->carried_by = 0;
             }
         }
-        if (e->carrier != 0)
-            if (const auto h = held.find(e->carrier); h != held.end()) { // on the player carrying it
-                place = h->second.place;
-                e->actor->set_place(place);
-                if ((e->carry_flags & 2) == 0)
-                    e->actor->set_yaw(h->second.yaw);
-            }
+        put_on_carrier(*e, place); // on what carries it
         pose(*e);
         attack(*e, s);
         attack_objects(*e);

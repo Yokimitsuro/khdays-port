@@ -541,6 +541,12 @@ Vec3 Actor::step(float ticks)
         set_f(field::kTravelBefore + 4 * i, f(field::kTravel + 4 * i));
     for (std::uint32_t i = 0; i < 3; ++i)
         set_f(field::kTravel + 4 * i, ticks > 0.0F ? travel[i] / ticks : 0.0F);
+    for (PartColour &c : part_colours)
+        if (c.step != 0.0F) {
+            c.strength = std::clamp(c.strength + c.step * ticks, 0.0F, 1.0F);
+            if (c.strength <= 0.0F || c.strength >= 1.0F)
+                c.step = 0.0F;
+        }
     if (fade_step != 0.0F) {
         fade = std::clamp(fade + fade_step * ticks, 0.0F, 1.0F);
         if (fade <= 0.0F || fade >= 1.0F)

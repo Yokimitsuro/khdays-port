@@ -24,6 +24,7 @@
 #include "../scripts/manifest.h"
 #include "../scripts/mods_log.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -616,6 +617,90 @@ int khdays_missions_kh2_enemy_of_class(int enemy_class, char *name, int size)
 {
     const KhdaysMission *m = playing();
     return m != NULL && size > 0 && khdays_missions_kh2_class(m, enemy_class, name, (size_t)size);
+}
+
+/* A text as printf makes it, as long as it is (to free); NULL out of memory. */
+static char *printed(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    const int n = vsnprintf(NULL, 0, format, args);
+    va_end(args);
+    char *s = n >= 0 ? malloc((size_t)n + 1) : NULL;
+    if (s != NULL) {
+        va_start(args, format);
+        vsnprintf(s, (size_t)n + 1, format, args);
+        va_end(args);
+    }
+    return s;
+}
+
+/* A room's source file (room.txt, a change): the map it names ("source <game>:<map>", or "kh2 <map>" a replaced
+ * room's KH2 map; to free, NULL none) and its placement into `place` (scale, turn, move). */
+static char *read_room_source(const char *path, float place[7])
+{
+    char *text = path != NULL ? khdays_folders_read(path, NULL) : NULL;
+    if (text == NULL) {
+        return NULL;
+    }
+    char *source = NULL;
+    place[0] = 1.0f;
+    for (int k = 1; k < 7; ++k) {
+        place[k] = 0.0f;
+    }
+    for (char *line = text; line != NULL && *line != '\0';) {
+        char *end = strchr(line, '\n');
+        if (end != NULL) {
+            *end = '\0';
+        }
+        const char *word = line + strspn(line, " \t");
+        const size_t word_length = strcspn(word, " \t\r");
+        const char *value = word + word_length + strspn(word + word_length, " \t");
+        const int value_length = (int)strcspn(value, " \t\r");
+#define IS(name) (word_length == sizeof(name) - 1 && strncmp(word, name, word_length) == 0)
+        float a = 0, b = 0, c = 0;
+        if ((IS("source") || IS("kh2")) && value_length > 0) {
+            free(source);
+            source = printed(IS("kh2") ? "kh2:%.*s" : "%.*s", value_length, value);
+        } else if (IS("scale")) {
+            place[0] = (float)atof(value);
+        } else if ((IS("turn") || IS("move")) && sscanf(value, "%f %f %f", &a, &b, &c) == 3) {
+            float *to = place + (IS("turn") ? 1 : 4);
+            to[0] = a, to[1] = b, to[2] = c;
+        }
+#undef IS
+        line = end != NULL ? end + 1 : NULL;
+    }
+    free(text);
+    return source;
+}
+
+char *khdays_missions_room_source(float place[7])
+{
+    const KhdaysMission *m = playing();
+    if (m == NULL) {
+        return NULL;
+    }
+    if (m->room_key != NULL) { /* a room the mission's mod adds */
+        char *path = printed("%s/%s/rooms/%s/%s/room.txt", MODS, registry.mods[m->mod].folder, m->world, m->room_key);
+        char *source = read_room_source(path, place);
+        free(path);
+        return source;
+    }
+    /* a game room a mod replaces: the mission's own mod's change first, then the other mods' */
+    for (int k = -1; k < registry.mod_count; ++k) {
+        const int i = k < 0 ? m->mod : k;
+        if (k >= 0 && i == m->mod) {
+            continue;
+        }
+        char *path = printed("%s/%s/studio/rooms/%s/%d.txt", MODS, registry.mods[i].folder, m->world, m->room);
+        char *source = read_room_source(path, place);
+        free(path);
+        if (source != NULL) {
+            return source;
+        }
+    }
+    return NULL;
 }
 
 /* ---- The save part ------------------------------------------------------------------------------- */

@@ -353,11 +353,19 @@ def thread_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
     found: set[int] = set()
     for call, (count, at) in THREAD_CALLS.items():
         found |= _pushed_routines(s, code, call, count, (at,))
+        found |= {v for v in argument_values(s, code, call, count, at) if 0 < v < s.words}
+    return found
+
+
+def argument_values(s: Script, code: dict[int, Instruction], call: tuple[int, int], count: int, at: int) -> set[int]:
+    """The integers a call into the game's argument `at` (of its `count`, counted from the first pushed) can be at each
+    place the reached code makes it: pushed there, or a routine's parameter its callers give (their stacks there, a
+    few calls up)."""
+    found: set[int] = set()
     entries = sorted({c for ins in code.values() for c in ins.calls} | {e for _, e in s.triggers})
     for pc, ins in code.items():
-        if ins.syscall not in THREAD_CALLS:
+        if ins.syscall != call:
             continue
-        count, at = THREAD_CALLS[ins.syscall]
         routine = max((e for e in entries if e <= pc), default=None)
         stack = _stack_before(s, routine, pc, SHAPES) if routine is not None else None
         if stack is None or len(stack) < count:
@@ -365,7 +373,7 @@ def thread_routines(s: Script, code: dict[int, Instruction]) -> set[int]:
         value = stack[len(stack) - count + at]
         if value is not None and value[0] == "param":
             value = ("param", value[1], routine)
-        found |= {v for v in _routine_values(s, code, entries, value, 0) if 0 < v < s.words}
+        found |= _routine_values(s, code, entries, value, 0)
     return found
 
 

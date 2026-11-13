@@ -925,6 +925,41 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 108, parts(false));
     calls.set(1, 109, parts(true));
     calls.set(1, 195, [](ai::Machine &m, std::span<ai::Value> a) { self_of(m, a[0])->stealth &= ~a[1].bits; });
+    // 1:185 a colour put on parts of its model, faded in over ticks (trap_obj_set_parts_color, FUN_14042cb40 ->
+    // FUN_1403cd670: the entry of that part mask among its eight at + 0xac4, or a free one; its RGBA bytes, its strength
+    // run from none to full, FUN_1403b7810); 1:186 faded out from where it is (trap_obj_reset_parts_color,
+    // FUN_1403cd4c0). Actor::part_colours: Oogie Boogie's machinery's
+    const auto colour_of = [](Actor &x, std::uint32_t mask) -> Actor::PartColour & {
+        for (Actor::PartColour &c : x.part_colours)
+            if (c.mask == mask)
+                return c;
+        Actor::PartColour made;
+        made.mask = mask;
+        x.part_colours.push_back(made);
+        return x.part_colours.back();
+    };
+    const auto run = [](Actor::PartColour &c, float from, float to, float ticks) {
+        if (ticks <= 2.0F)
+            ticks = 1.0F;
+        c.strength = from;
+        c.step = (to - from) / ticks;
+    };
+    calls.set(1, 185, [colour_of, run](ai::Machine &m, std::span<ai::Value> a) {
+        Actor::PartColour &c = colour_of(*self_of(m, a[0]), a[1].bits);
+        for (int k = 0; k < 4; ++k)
+            c.rgba[k] = std::uint8_t(a[2].bits >> (8 * k));
+        run(c, 0.0F, 1.0F, a[3].f());
+    });
+    calls.set(1, 186, [colour_of, run](ai::Machine &m, std::span<ai::Value> a) {
+        Actor::PartColour &c = colour_of(*self_of(m, a[0]), a[1].bits);
+        run(c, c.strength, 0.0F, a[2].f());
+    });
+    // 2:36 nothing in the PC game (trap_enemy_add_damage, FUN_140431d90 is empty). 1:158 and 1:159 the room's belt
+    // conveyor and its pictures' scroll speed (trap_bg_set_belt_conveyor, trap_bg_set_uvscroll_speed: a task of the
+    // map's, FUN_1401506b0): the room is a Days room drawn from the map's model, its scrolls its own -- not driven
+    calls.set(2, 36, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 158, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 159, [](ai::Machine &, std::span<ai::Value>) {});
     // 1:125 its pictures' fade (trap_obj_tex_fade_start; FUN_1404305d0 -> FUN_1403b7810 on + 0xaa4, YS::OBJ's TexFade):
     // from a value to another over a time (2 or less: 1), kept -- the port does not draw it yet
     calls.set(1, 125, [](ai::Machine &m, std::span<ai::Value> a) {

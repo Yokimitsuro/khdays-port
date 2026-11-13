@@ -78,6 +78,24 @@ std::vector<Kind> read_kinds(const std::string &text)
                     k.paths.push_back(std::move(w));
             }
         }
+        if (cells.size() > 10 && !cells[10].empty() && cells[10] != "-")
+            k.home = cells[10];
+        if (cells.size() > 11 && cells[11] != "-") {
+            std::istringstream placed(cells[11]);
+            std::string one;
+            while (std::getline(placed, one, ';')) {
+                std::istringstream words(one);
+                Companion c;
+                if (!(words >> c.name >> c.x >> c.y >> c.z >> c.yaw))
+                    continue;
+                if (!(words >> c.argument)) // (a list made before the argument: none)
+                    c.argument = 0;
+                c.name = upper(c.name);
+                k.room.push_back(std::move(c));
+            }
+        }
+        if (cells.size() > 12 && !cells[12].empty() && cells[12] != "-")
+            k.unit_arg = std::atoi(cells[12].c_str());
         out.push_back(std::move(k));
     }
     return out;

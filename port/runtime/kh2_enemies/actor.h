@@ -605,7 +605,24 @@ public:
     // its model's parts KH2's own rules fade out, drawn as hidden (bit n part n): a pirate's out of the moonlight,
     // parts 10 to 19 (YS::OBJ::exec_pirate at Place 0: PARTS_COLOR of 0xffc00 faded to none, of 0x3ff00000 drawn; 1:40)
     std::uint32_t faded_parts = 0;
-    std::uint32_t drawn_hidden() const { return hidden_parts | faded_parts; }
+    // its parts' colours (1:185 set, faded in over ticks; 1:186 faded out: KH2 keeps eight, + 0xac4, a part mask, its
+    // RGBA bytes -- 128 as it is -- and a strength run as the fade is, FUN_1403b7810): the port draws no part's tint,
+    // only a part whose colour's alpha times its strength falls below half as hidden (coloured_out)
+    struct PartColour final {
+        std::uint32_t mask = 0;
+        std::uint8_t rgba[4] = {128, 128, 128, 128};
+        float strength = 0.0F, step = 0.0F;
+    };
+    std::vector<PartColour> part_colours;
+    std::uint32_t coloured_out() const
+    {
+        std::uint32_t out = 0;
+        for (const PartColour &c : part_colours)
+            if (float(c.rgba[3]) * c.strength + 128.0F * (1.0F - c.strength) < 64.0F)
+                out |= c.mask;
+        return out;
+    }
+    std::uint32_t drawn_hidden() const { return hidden_parts | faded_parts | coloured_out(); }
     std::vector<Vec3> path;        // the walk path it is on (1:177; KH2's follower at + 0x630), KH2's world; 5:14
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 

@@ -284,6 +284,21 @@ void test_kinds()
     CHECK(shenzi != nullptr && shenzi->mission == "LK02_MS102" && shenzi->paths.size() == 2);
     CHECK(shenzi->paths[0].number == 133 && shenzi->paths[0].points == (std::vector<float>{1, 2, 3, 4, 5, 6}));
     CHECK(shenzi->paths[1].number == 7 && shenzi->paths[1].points == (std::vector<float>{10, 20, 30}));
+    // bound to its KH2 map (the 11th column) with its room's objects there (the 12th, KH2's world)
+    const auto stalker = kh::read_kinds("B_BB120\tShadow Stalker\tyes\t80\t-\t-\t12032\t-\t-\t-\tbb05\t"
+                                        "F_BB060 0 0 0 0;f_bb080 0 -0 -800 -3.142\n"
+                                        "M_EX010\tSoldier\tyes\t62\t-\t-\t11932\t-\t-\t-\t-\t-\n");
+    const kh::Kind *ss = kh::find_kind(stalker, "B_BB120");
+    CHECK(ss != nullptr && ss->home == "bb05" && ss->room.size() == 2 && ss->room[1].name == "F_BB080" &&
+          ss->room[1].z == -800.0F && std::fabs(ss->room[1].yaw + 3.142F) < 1e-4F);
+    CHECK(kh::find_kind(stalker, "M_EX010")->home.empty() && kh::find_kind(stalker, "M_EX010")->room.empty());
+    CHECK(ss->room[0].argument == 0 && ss->unit_arg == 0); // (a list made before the arguments: none)
+    // the room objects' arguments (each one's 6th value) and the boss's own (the 13th column: Oogie Boogie's 1)
+    const auto oogie = kh::read_kinds("B_NM000\tOogie Boogie\tyes\t90\t-\t-\t-\t-\t-\t-\tnm09\t"
+                                      "F_NM010 1 2 3 0 7;F_NM020 0 0 0 0\t1\n");
+    const kh::Kind *og = kh::find_kind(oogie, "B_NM000");
+    CHECK(og != nullptr && og->unit_arg == 1 && og->room.size() == 2 && og->room[0].argument == 7 &&
+          og->room[1].argument == 0);
 }
 
 } // namespace

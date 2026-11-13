@@ -118,6 +118,8 @@ KINDS = {
     "B_LK100_00": "Shenzi",
     "B_LK100_10": "Banzai",
     "B_LK100_20": "Ed",
+    "B_BB120": "Shadow Stalker",
+    "B_NM000": "Oogie Boogie",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -134,6 +136,7 @@ VOICES = {
     "B_CA010": "barbossa",
     "B_EX110": "n_axel",
     "B_LK100_20": "ed",
+    "B_NM000": "boogie",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -175,6 +178,67 @@ def run_exe(line: list[str]) -> str:
     return done.stdout
 
 
+def searched_numbers(bar: bytes) -> set[int]:
+    """The object entries' numbers a BAR's scripts find objects by (a number pushed just before 1:114,
+    trap_obj_search_by_entry), but the player's (0x236): Shadow Stalker's pillars and floor, Oogie Boogie's machinery."""
+    out = set()
+    for _, s in kh2_bdx.scripts_in(bar):
+        code = kh2_bdx.walk(s)
+        order = sorted(code)
+        for before, at in zip(order, order[1:]):
+            pushed = code[before].pushed
+            if code[at].syscall == (1, 114) and pushed is not None and pushed != 0x236 and before + code[before].size == at:
+                out.add(pushed)
+    return out
+
+
+def made_numbers(bar: bytes) -> set[int]:
+    """The object entries' numbers a BAR's scripts make objects by (1:0, trap_sysobj_appear, its one argument): pushed
+    right before it, or given to a routine that passes it on (kh2_bdx.argument_values: Oogie Boogie's gift boxes, 956
+    and 957, through one of his)."""
+    out = set()
+    for _, s in kh2_bdx.scripts_in(bar):
+        out |= kh2_bdx.argument_values(s, kh2_bdx.walk(s), (1, 0), 1, 0)
+    return out
+
+
+def room_objects(
+    named_ards: list[tuple[str, bytes]], entries: dict[int, tuple[str, int]], name: str, searched: set[int]
+) -> tuple[str | None, list[tuple[str, float, float, float, float, int]]]:
+    """A boss bound to its room: the area of its battle (the first whose battle spawn, "b_..", places it), when its
+    script finds one of the room's own objects by number (searched_numbers: KH2's field objects, named F_, but those
+    the mod lists as kinds of their own, which a mission's author places) that a spawn of that area places as it loads
+    (its map's "m_.." ones too: the ballroom's pillars); and the room's objects then: those, and every field object of
+    an enemy's kind the area's spawns place (the room's battle pieces, which the boss reaches by a shouted state:
+    Shadow Stalker's chandelier, F_BB050, "down_shock_hyoui"), each once, as (name, x, y, z, yaw, its argument): KH2's
+    own place on the area's map, in KH2's world axes, and its spawn's first argument (spawn_sets). None and none when
+    its script finds no such object there (a boss that fights anywhere)."""
+    if not searched or next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+        return None, []
+    for area, ard in named_ards:
+        arguments: dict[tuple[str, int, int], int] = {}
+        sets_of = spawn_sets(ard, arguments=arguments)
+        if not any(
+            entry.startswith("b")
+            and any(entries.get(o[0], ("", -1))[0] == name for kind, objects in sets if kind in PLACED_SETS for o in objects)
+            for entry, sets in sets_of
+        ):
+            continue
+        out, seen = [], set()
+        for entry, sets in sets_of:
+            for place, (kind, objects) in enumerate(sets):
+                if kind not in PLACED_SETS:
+                    continue
+                for k, o in enumerate(objects):
+                    other, its_kind = entries.get(o[0], ("", -1))
+                    found = o[0] in searched or its_kind in ENEMIES
+                    if found and o[0] not in seen and other.startswith("F_") and other not in KINDS:
+                        seen.add(o[0])
+                        out.append((other, o[1], o[2], o[3], o[4], arguments.get((entry, place, k), 0)))
+        return (area, out) if searched & seen else (None, [])
+    return None, []
+
+
 def calls_in(bar: bytes) -> set[tuple[int, int]]:
     """Every call a BAR's scripts make, their state routines walked."""
     return {i.syscall for _, s in kh2_bdx.scripts_in(bar) for i in kh2_bdx.walk(s).values() if i.syscall is not None}
@@ -189,13 +253,19 @@ def kinds_line(
     with_it: list[tuple[str, float, float, float, float]] | None = None,
     mission: str | None = None,
     paths: list[tuple[int, list[tuple[float, float, float]]]] | None = None,
+    home: str | None = None,
+    room: list[tuple[str, float, float, float, float, int]] | None = None,
+    argument: int = 0,
 ) -> str:
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
     script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
     text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-", and the objects KH2 places with it
     (companions: "name x y z yaw" each, apart by ";") else "-", and the mission KH2's area runs with its battle (its
-    msn file's name: kh2/msn/<name>.bar) else "-", and the walk paths of its battle (walk_paths: "number x y z x y z
-    ..." each, apart by ";") else "-" (tab-separated)."""
+    msn file's name: kh2/msn/<name>.bar) else "-", the walk paths of its battle (walk_paths: "number x y z x y z
+    ..." each, apart by ";") else "-", the KH2 map it is bound to (room_objects: its battle's area, bb05) else "-" --
+    the port makes it only in a room made from that map -- its room's objects there ("name x y z yaw argument" each,
+    KH2's world, apart by ";") else "-", and the first argument its KH2 battle spawn gives it (unit_argument; 0 none)
+    (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
@@ -203,9 +273,10 @@ def kinds_line(
     placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" for n, x, y, z, yaw in with_it or []) or "-"
     covered = "no" if missing or not calls else "yes"
     ways = ";".join(f"{n} " + " ".join(f"{x:.1f} {y:.1f} {z:.1f}" for x, y, z in points) for n, points in paths or [])
+    pieces = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f} {arg}" for n, x, y, z, yaw, arg in room or []) or "-"
     return (
         f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}\t{mission or '-'}"
-        f"\t{ways or '-'}"
+        f"\t{ways or '-'}\t{home or '-'}\t{pieces}\t{argument}"
     )
 
 
@@ -225,7 +296,9 @@ def entry_kinds(objentry: bytes) -> dict[int, tuple[str, int]]:
 
 
 def spawn_sets(
-    ard: bytes, walks: dict[tuple[str, int], list[tuple[int, list[tuple[float, float, float]]]]] | None = None
+    ard: bytes,
+    walks: dict[tuple[str, int], list[tuple[int, list[tuple[float, float, float]]]]] | None = None,
+    arguments: dict[tuple[str, int, int], int] | None = None,
 ) -> list[tuple[str, list[tuple[int, list[tuple[int, float, float, float, float]]]]]]:
     """An area's spawn files (its .ard's BAR entries of type 0xc; OpenKH's ARD page, "Spawn Point": a u32 type, 2, and
     a u32 count of sets) as (the entry's name, its sets), each set (its type, its objects): a 0x2c-byte descriptor --
@@ -235,7 +308,10 @@ def spawn_sets(
     points' count, then the points, 12 bytes each), its return parameters (0x10 each) and its signals (8 each). Each
     object as (number, x, y, z, its turn about y); a set running past its entry ends that entry's list. `walks`, when
     given, gets each set's walk paths by (its entry's name, its set's place): (+ 0 its number, its points as x, y, z)
-    each -- what KH2's 1:177 puts an object of the set on (FUN_1403ff460 finds one by its number, any for -1)."""
+    each -- what KH2's 1:177 puts an object of the set on (FUN_1403ff460 finds one by its number, any for -1).
+    `arguments`, when given, gets each object's first argument by (its entry's name, its set's place, its place in the
+    set): its record's u32 at + 0x20 (+ 0x1c a u16, + 0x1e its serial), YS::OBJ's UnitArg[1], which 1:39 gives its
+    script (Oogie Boogie fights only at 1, the hyenas are told apart by theirs)."""
     out = []
     if ard[:4] != kh2_bdx.BAR:
         return out
@@ -262,6 +338,8 @@ def spawn_sets(
             for k in range(objects):
                 number, x, y, z, _, yaw, _ = struct.unpack_from("<I6f", spawn, p + 0x40 * k)
                 placed.append((number, x, y, z, yaw))
+                if arguments is not None:
+                    arguments[(entry, place, k)] = struct.unpack_from("<i", spawn, p + 0x40 * k + 0x20)[0]
             p += 0x40 * (objects + activators)
             ways = []
             for _ in range(paths):
@@ -342,6 +420,24 @@ def battle_of(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str,
             turn = math.atan2(player[1] - me[1], player[3] - me[3])
             return placed, walks.get((entry, place), []), me, turn
     return None
+
+
+def unit_argument(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str) -> int:
+    """The first argument KH2's battle spawn gives a boss (spawn_sets' `arguments`, YS::OBJ's UnitArg[1], 1:39): its
+    record in the first battle spawn ("b_..") of the areas that places it; 0 for none (an enemy, or a boss no battle
+    spawn places), as Days's waves give."""
+    if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+        return 0
+    for ard in ards:
+        arguments: dict[tuple[str, int, int], int] = {}
+        for entry, sets in spawn_sets(ard, arguments=arguments):
+            if not entry.startswith("b"):
+                continue
+            for place, (kind, objects) in enumerate(sets):
+                for k, o in enumerate(objects):
+                    if kind in PLACED_SETS and entries.get(o[0], ("", -1))[0] == name:
+                        return arguments.get((entry, place, k), 0)
+    return 0
 
 
 def walk_paths(
@@ -639,20 +735,38 @@ def make(
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = [
-        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission\twalk paths "
-        "(kh2_enemies.py; the port's kh2_enemies.txt)"
+        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission\twalk paths"
+        "\thome map\troom objects\tunit argument (kh2_enemies.py; the port's kh2_enemies.txt)"
     ]
     entries_file = kh2 / "original" / "00objentry.bin"
     entries = entries_file.read_bytes() if entries_file.is_file() else b""
     numbered = entry_kinds(entries)
-    areas = [a.read_bytes() for a in sorted((kh2 / "original" / AREAS).glob("*.ard"))]
+    named_areas = [(a.stem, a.read_bytes()) for a in sorted((kh2 / "original" / AREAS).glob("*.ard"))]
+    areas = [ard for _, ard in named_areas]
     if not areas:
         left_out.append(f"original/{AREAS}/*.ard (KH2's areas): not there; no boss brings what KH2 places with it")
     jiminy_file = kh2 / "original" / "menu" / "us" / JOURNAL
     titles = journal_titles(jiminy_file.read_bytes(), entries) if jiminy_file.is_file() else {}
     if not jiminy_file.is_file():
         left_out.append(f"menu/us/{JOURNAL} (the enemies' names): not there; their stand-ins' names show")
+    homes: dict[str, str] = {}
+    rooms: dict[str, list[tuple[str, float, float, float, float, int]]] = {}
+    making = dict(KINDS)
     for name, title in KINDS.items():
+        script = kh2 / "original" / "obj" / f"{name}.mdlx"
+        if not script.is_file():
+            continue
+        area, pieces = room_objects(named_areas, numbered, name, searched_numbers(script.read_bytes()))
+        if area is None:
+            continue
+        homes[name], rooms[name] = area, pieces
+        # its room's objects, and the field objects its script makes (1:0: Oogie Boogie's gift boxes), bound as it is
+        made = [numbered[n][0] for n in sorted(made_numbers(script.read_bytes())) if n in numbered]
+        for piece in [p for p, *_ in pieces] + [m for m in made if m.startswith("F_") and m not in KINDS]:
+            if piece not in making:
+                making[piece] = f"{piece} ({title}'s room)"
+                homes[piece] = area
+    for name, title in making.items():
         sources = [kh2 / "original" / "obj" / f"{name}{ext}" for ext in FILES]
         sources[1] = sources[1].with_name(motion_set_of(entries, name))
         if not sources[0].is_file():
@@ -690,7 +804,12 @@ def make(
                 left_out.append(f"{name} ({title}): its mission {source.name} not there")
                 mission = None
         ways = walk_paths(areas, numbered, name)
-        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it, mission, ways))
+        listed.append(
+            kinds_line(
+                name, title, calls, handled, journal_title(titles, name), with_it, mission, ways, homes.get(name),
+                rooms.get(name), unit_argument(areas, numbered, name),
+            )
+        )
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     for part, what in SHARED:

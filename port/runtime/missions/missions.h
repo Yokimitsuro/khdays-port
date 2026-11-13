@@ -50,4 +50,12 @@ int khdays_missions_kh2_enemy(int row, char *name, int size);
  * name), into `name`: 0 when the class has a Days enemy of its own there, two KH2 enemies, or none. */
 int khdays_missions_kh2_enemy_of_class(int enemy_class, char *name, int size);
 
+/* The playing mission's room as a collection's map (a KH2 boss bound to its room is made only there): the map it was
+ * made from ("kh2:bb05", to free; a room the mission's mod adds: rooms/<world>/<key>/room.txt, the studio's
+ * --add-room; a game room a mod replaces: studio/rooms/<world>/<room>.txt, its change -- "kh2 <map>" or "source
+ * <game>:<map>") and how its model was placed into `place` (scale, the turns about x, y and z in degrees, the move: the
+ * studio's placement, p' = move + Rz Ry Rx scale p on the map's model axes); NULL when no mission plays or its room
+ * was made from none. */
+char *khdays_missions_room_source(float place[7]);
+
 #endif

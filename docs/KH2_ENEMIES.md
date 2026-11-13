@@ -732,8 +732,8 @@ counter's digit (4:48); their mission `LK02_MS102`.
   gives the object's own place (KH2 leaves its argument as it was).
 - **Their script** runs to the path's points (5:14) while + 0x128 of its work is 1 (set as it begins and after a
   hit's revenge). 4:48 sets digit n of a counter of their
-  mission (its count + (digit - (count / 10^n) % 10) x 10^n); they set it by their unit's argument (1:39), which
-  Days's waves leave 0, so it is not reached.
+  mission (its count + (digit - (count / 10^n) % 10) x 10^n); they set it by their unit's argument (1:39), 0 in
+  their first battle (`lk02`, theirs in the port; "Bosses bound to their rooms"), so it is not reached.
 - **Seen** (the three in the coliseum, Roxas standing, then chasing): each runs off to its path's points
   (`escape_run`) -- the graveyard's path lies past the coliseum's floor, so they stop at its edge (kept off the
   ledge) -- and waits there (`idle_wait`: until the player comes within 8 m). **Not yet seen**: their attacks; no
@@ -744,22 +744,51 @@ counter's digit (4:48); their mission `LK02_MS102`.
 
 ### Bosses bound to their rooms
 
-Three bosses whose scripts the port answers are not offered, as their fights are their rooms' pieces or flights:
+Some bosses fight with their rooms' pieces: their scripts find objects by number (1:114, `trap_obj_search_by_entry`)
+that their battle's area places as it loads. The port makes such a boss **only in a room made from its own KH2 map**,
+where those pieces are; anywhere else the Days enemy its wave names stands in for it (the log says so once, and the
+studio's mission check reports it: `kh2:<name> fights only in a room made from KH2's <map>`).
 
-- **Shadow Stalker** `B_BB120` possesses the ballroom's pillars and windows (`F_BB060`, a ring of nineteen pillars
-  whose bones and spheres are each a part, groups 1 to 6 the six it takes, 8 to 13 their reaction commands) and its
-  floor (`F_BB080`), objects of an enemy's kind KH2's `bb05` places (`m_51`, `b_40`) and his script finds by number
-  (1:114). Without them he flies toward a pillar that is not there and waits for its answer for ever. Each pillar is
-  struck where it stands, while Days's enemies are struck as one body each.
-- **Oogie Boogie** `B_NM000` fights from his manor's machinery: five objects his script finds by number (`F_NM080`,
-  `F_NM090`, `F_NM100`, `F_NM110`, `F_NM140`: his platform, its gift boxes and levers), which Days's arenas do not
-  have.
-- **Jafar** `B_AL020` (6:62, 6:63, 2:70, 0:31, 0:88 above) is a giant in his lava, fought from the air: KH2's `al05`
-  sets Sora on the carpet (`P_EX100_AL_CARPET`) 35 m above him, beside the carpet's object (`N_AL010_BTL`, which his
-  script finds by number and holds in its idle class, 6:62), and his blows and the spots he is struck on are at that
-  height. Played (a recorded walk): his body is 12 m round, he spins his blows (`atk_spin_blow`) and asks for his
-  junk (`F_AL170`, 1:0), and Roxas, on the ground at his feet, neither strikes him nor is struck. Days's players do
-  not fly.
+- **Which**: the mod tool binds a boss to the area of its first battle ("b_..") when its script finds one of that
+  area's field objects (F_, but those the mod lists as kinds of their own) -- the kinds list's eleventh column, its
+  home map, and its twelfth, its room's objects: those it finds and every field object of an enemy's kind the area's
+  spawns place, each "name x y z yaw argument" at KH2's place on the map. The field objects its script makes by
+  number (1:0: Oogie Boogie's gift boxes, F_NM100 and F_NM110) join the mod's kinds, bound to the same map.
+  **Shadow Stalker** `B_BB120` and **Dark Thorn** `B_BB110` are bound to the ballroom (`bb05`: the pillars F_BB060,
+  the floor F_BB080, the chandelier F_BB050, Dark Thorn's F_BB130), **Oogie Boogie** `B_NM000` to his manor (`nm09`:
+  his booth F_NM080, its lift F_NM090, the conveyors F_NM140).
+- **The room made from the map**: the studio's `--add-room` from KINGDOM HEARTS II's collection writes the added room's
+  `room.txt` (`source kh2:<map>`, its `scale`, `turn` and `move`); the port reads it (`khdays_missions_room_source`:
+  the mission's mod's room first, then the other mods'), takes a boss in that room as at home, and places its room's
+  objects as the room places the map (its model axes x, -y, -z, then move + Rz Ry Rx scale). A room the studio made
+  from a model has no `room.txt`.
+- **The room's objects** are made with the boss as allies of its battle (KH2's objects that are no enemies, below):
+  drawn, their scripts run, the boss's shouts reach them (1:90 to every actor), the pillars and the chandelier take
+  his possession; they are not struck (Days's hits find enemies only).
+- **Unit arguments**: an area's spawn record holds its object's arguments (+ 0x20, YS::OBJ's `UnitArg[1]`, which
+  1:39(self, 1) gives its script). The kinds list's thirteenth column is a boss's own, from its first battle; each
+  room object carries its own. Oogie Boogie fights only with 1 (his start sets him to idle for ever otherwise); the
+  chandelier has 1; the hyenas' first battle (`lk02`) gives 0, their second (`lk05`) 3, 2 and 1.
+- **Carried by an object** (1:18 on a KH2 object, not only a player): Oogie Boogie is put on his booth (F_NM080, its
+  place, flag bit 0) and goes where it is, its floor his (Days's rooms hold no KH2 object's own collision). With flag
+  bit 0 the carry lasts while the carrier's range 13 is on: read on a motion held at its end too, as KH2 reads ranges
+  on the motion's frame (the booth holds its motion 0, range 13 over all of it), and kept while the carrier plays no
+  motion yet (one made with the battle, where KH2's had stood since its area was loaded).
+- **Seen, Shadow Stalker** (KH2's ballroom, Roxas chasing what he locks on): his whole round -- the floor's swallow
+  (`hyoui_floor`, the floor's `atk_swallow`), the chandelier (`hyoui_chandelier`, its `down_shock_hyoui` and
+  `atk_fire`), the windows (`hyoui_window`) and the pillars' claws (`hyoui_pole`, `atk_craw`) -- and Roxas's blows
+  (`revenge`). The pieces he possesses are not struck: each possession ends as its time runs out (`hyoui_end`).
+- **Seen, Oogie Boogie** (KH2's manor): on his booth he throws gift boxes (`atk_present_box`: F_NM100 made, falling
+  to the conveyors), rolls dice (`atk_dice`) and swings his arm (`atk_arm`); Roxas's blows put him in his revenge.
+  **Not played**: KH2's map moves what lies on its conveyors (1:158, its belt conveyor, a task of the map's), which a
+  Days room drawn from the map's model does not run -- the gift boxes stay where they fall -- and the booth's glass is
+  its own collision, so Roxas reaches him inside it.
+- **Jafar** `B_AL020` (6:62, 6:63, 2:70, 0:31, 0:88 above) is not offered: a giant in his lava, fought from the air.
+  KH2's `al05` sets Sora on the carpet (`P_EX100_AL_CARPET`) 35 m above him, beside the carpet's object
+  (`N_AL010_BTL`, which his script finds by number and holds in its idle class, 6:62), and his blows and the spots he
+  is struck on are at that height. Played (a recorded walk): his body is 12 m round, he spins his blows
+  (`atk_spin_blow`) and asks for his junk (`F_AL170`, 1:0), and Roxas, on the ground at his feet, neither strikes him
+  nor is struck. Days's players do not fly.
 
 ## A player in an enemy's hands
 

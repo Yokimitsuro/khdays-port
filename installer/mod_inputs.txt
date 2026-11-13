@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools 6f4733f3a3d2062e3088eb0554bef3583e21cfe0331541e69906f3968cbe3232
+# tools 2f71467d7e51492b289ede517af312a460423a6399dace5c5a5c8ce911e30906
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -51,6 +51,7 @@ kh2_fifth msg/gr/jm.bar
 kh2_fifth msg/it/jm.bar
 kh2_fifth msg/us/jm.bar
 kh2_fifth msn/us/AL03_MS103.bar
+kh2_fifth msn/us/BB05_MS104A.bar
 kh2_fifth msn/us/BB05_MS104B.bar
 kh2_fifth msn/us/BB11_MS102.bar
 kh2_fifth msn/us/BB15_MS203.bar
@@ -61,6 +62,7 @@ kh2_fifth msn/us/HE18_MS108.bar
 kh2_fifth msn/us/LK02_MS102.bar
 kh2_fifth msn/us/LK14_MS103.bar
 kh2_fifth msn/us/NM03_MS103.bar
+kh2_fifth msn/us/NM09_MS104.bar
 kh2_fifth obj/B_AL100_FIRE.a.us
 kh2_fifth obj/B_AL100_FIRE.mdlx
 kh2_fifth obj/B_AL100_FIRE.mset
@@ -79,6 +81,9 @@ kh2_fifth obj/B_BB100.mset
 kh2_fifth obj/B_BB110.a.us
 kh2_fifth obj/B_BB110.mdlx
 kh2_fifth obj/B_BB110.mset
+kh2_fifth obj/B_BB120.a.us
+kh2_fifth obj/B_BB120.mdlx
+kh2_fifth obj/B_BB120.mset
 kh2_fifth obj/B_BB130.a.us
 kh2_fifth obj/B_BB130.mdlx
 kh2_fifth obj/B_CA000.a.us
@@ -132,9 +137,24 @@ kh2_fifth obj/B_LK110.mdlx
 kh2_fifth obj/B_LK110.mset
 kh2_fifth obj/B_LK110_PHANTOM.a.us
 kh2_fifth obj/B_LK110_PHANTOM.mdlx
+kh2_fifth obj/B_NM000.a.us
+kh2_fifth obj/B_NM000.mdlx
+kh2_fifth obj/B_NM000.mset
 kh2_fifth obj/B_NM100.a.us
 kh2_fifth obj/B_NM100.mdlx
 kh2_fifth obj/B_NM100.mset
+kh2_fifth obj/F_BB050.a.us
+kh2_fifth obj/F_BB050.mdlx
+kh2_fifth obj/F_BB050.mset
+kh2_fifth obj/F_BB060.a.us
+kh2_fifth obj/F_BB060.mdlx
+kh2_fifth obj/F_BB060.mset
+kh2_fifth obj/F_BB080.a.us
+kh2_fifth obj/F_BB080.mdlx
+kh2_fifth obj/F_BB080.mset
+kh2_fifth obj/F_BB130.a.us
+kh2_fifth obj/F_BB130.mdlx
+kh2_fifth obj/F_BB130.mset
 kh2_fifth obj/F_EX030.mdlx
 kh2_fifth obj/F_EX030.mset
 kh2_fifth obj/F_EX040.mset
@@ -148,6 +168,19 @@ kh2_fifth obj/F_EX040_TT.mset
 kh2_fifth obj/F_HE030_L.a.us
 kh2_fifth obj/F_HE030_L.mdlx
 kh2_fifth obj/F_HE030_L.mset
+kh2_fifth obj/F_NM080.a.us
+kh2_fifth obj/F_NM080.mdlx
+kh2_fifth obj/F_NM080.mset
+kh2_fifth obj/F_NM090.a.us
+kh2_fifth obj/F_NM090.mdlx
+kh2_fifth obj/F_NM090.mset
+kh2_fifth obj/F_NM100.a.us
+kh2_fifth obj/F_NM100.mdlx
+kh2_fifth obj/F_NM100.mset
+kh2_fifth obj/F_NM110.a.us
+kh2_fifth obj/F_NM110.mdlx
+kh2_fifth obj/F_NM110.mset
+kh2_fifth obj/F_NM140.mdlx
 kh2_fifth obj/M_AL020_FIRE.a.us
 kh2_fifth obj/M_AL020_FIRE.mdlx
 kh2_fifth obj/M_AL020_FIRE.mset
@@ -515,6 +548,7 @@ kh2_sixth se/se000.win32.scd
 kh2_sixth se/se2984.win32.scd
 kh2_sixth voice/us/battle/barbossa.win32.scd
 kh2_sixth voice/us/battle/barrel_boss.win32.scd
+kh2_sixth voice/us/battle/boogie.win32.scd
 kh2_sixth voice/us/battle/ed.win32.scd
 kh2_sixth voice/us/battle/he_hades.win32.scd
 kh2_sixth voice/us/battle/lock_boss.win32.scd

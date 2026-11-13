@@ -35,6 +35,26 @@ fs::path worlds_file(const fs::path& mod_dir) {
     return mod_dir / "rooms" / "worlds.txt";
 }
 
+// rooms/<world>/<key>/room.txt: the map an added room was made from ("source <game>:<map>") and how its model was
+// placed (scale, turn in degrees, move: the placement matrix's), the words of a replaced room's change; the port
+// reads them to put a KH2 boss's room objects where KH2 has them on its own map. A room of the modder's own model has
+// none (an old one removed).
+bool write_room_source(const fs::path& folder, const std::string& source, const RoomPlacement& place,
+                       std::string* why) {
+    std::error_code ec;
+    if (source.empty()) {
+        fs::remove(folder / "room.txt", ec);
+        return true;
+    }
+    std::ofstream f(folder / "room.txt", std::ios::binary | std::ios::trunc);
+    f << "# where this room was made from and how its model was placed (khdays-studio --add-room)\n";
+    f << "source " << source << "\n";
+    f << "scale " << place.scale << "\n";
+    f << "turn " << place.turn[0] << " " << place.turn[1] << " " << place.turn[2] << "\n";
+    f << "move " << place.move[0] << " " << place.move[1] << " " << place.move[2] << "\n";
+    return f ? true : fail_with(why, u8(folder / "room.txt") + ": could not be written");
+}
+
 std::string trimmed(const std::string& s) {
     const auto first = s.find_first_not_of(" \t");
     return first == std::string::npos ? std::string() : s.substr(first, s.find_last_not_of(" \t") - first + 1);
@@ -323,7 +343,8 @@ bool add_collection_room(const Settings& settings, const fs::path& nitrofs, cons
     }
     if (!collision_model.empty())
         collision = collision_model;
-    return add_room(nitrofs, mod_dir, world, key, model, place, collision, lines, why);
+    return add_room(nitrofs, mod_dir, world, key, model, place, collision, lines, why) &&
+           write_room_source(added_room_folder(mod_dir, world, key), source, place, why);
 }
 
 bool add_model_room(const fs::path& nitrofs, const fs::path& mod_dir, const std::string& world, const std::string& key,
@@ -337,7 +358,8 @@ bool add_model_room(const fs::path& nitrofs, const fs::path& mod_dir, const std:
         lines->push_back(std::string("its lowest main floor at 0: ") +
                          (on ? "a floor under the origin" : "no floor found under the origin (move it in its change)"));
     }
-    return add_room(nitrofs, mod_dir, world, key, model, place, collision_model, lines, why);
+    return add_room(nitrofs, mod_dir, world, key, model, place, collision_model, lines, why) &&
+           write_room_source(added_room_folder(mod_dir, world, key), "", place, why);
 }
 
 bool remove_added_room(const fs::path& mod_dir, const std::string& world, const std::string& key, std::string* why) {
