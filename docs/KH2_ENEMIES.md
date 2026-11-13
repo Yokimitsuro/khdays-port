@@ -665,6 +665,16 @@ answered in full by the calls above (0:9, 10:19, 4:21, 6:16, 6:46, 6:47; and 1:3
   only their stand-ins' shadows seen. Played now; their bodies drawn as KH2's subparts say -- translucent, two of
   them additive (drawn as light) -- their water's textures scrolling (their UVSC speeds): seen, see-through water
   figures dancing with Demyx's sitar.
+- **Wild Dance** (397, a clone's; then 504, its finish): its zone (group 8, 2.5 m round it) is on in its motion 202
+  from frame 35 (range 4), and its state 0x1369 offers it each tick (1:165). Its message handler has the player play
+  its slot 252 (AD20: the clone carried in his hand, its 1:18) and the clone its 241 (its swing, `atkp` 1326 and 1327,
+  the player's team: above); the player's motion offers 504 again (Cerberus's way); at the third press its slot 253
+  (AD21) and the clone's 242 (1328, 1329), `rc_dance_finish`. Seen (a recorded walk's press, by chance at frame 6347):
+  397 from a clone's zone, 504 twice, the finish, its swings striking Demyx and the clones round it.
+- **Dance Counter** (502, Demyx's own): his zone (group 3, 1.5 m round a point 1.65 m from him) and his message
+  handler (6:46's stop, the player attached, 1:29 his slot 253) are there, but in this Demyx (`B_EX120`, the Olympus
+  cups') nothing turns the zone's group on (no range 4 in his motions, no 1:52 in his script) and his set has no slot
+  253 (212 slots): only Hollow Bastion's (`B_EX120_HB`) offers it. Not offered, as in KH2.
 
 ## A player in an enemy's hands
 
@@ -1261,7 +1271,17 @@ in the area's measured blow, in the measure Days's fields show (Days's class tak
 blow worked out the old way -- the player's last Days hit times the power -- had taken a Days Fire of 902 for 1,353
 and ended Xaldin with half his health left). One that lands before any Days hit measured a blow waits: once the first
 Days hit measures it, the enemy's health starts that much lower (a first measure taken from the strike itself had made
-the blow 1 and Xaldin 60 health).
+the blow 1 and Xaldin 60 health) -- unless they are enough to end it in KH2's own measure (its health in KH2's Soldier
+blows, as much as is left of it): then it falls at once, the hit its whole Days health (Demyx's water clones, a
+quarter of a blow, to the first swing of Wild Dance).
+
+An attack of the **player's team** (its `atkp`'s + 8, `YS::ATTACKPARAM`'s Team, 1): KH2's `YS::ATTACK` constructor
+makes the player its owner whoever made it, its team his (`set_team`: 3 counts as 4) and its hit teams every other
+(`HitTeam` all bits but its own and 0); a team of 0 takes its owner's (`YS::OBJ`'s Team, + 0x3b0). The port's: a
+motion's attack (its ranges 10 and 33) whose `atkp` is of team 1 strikes the other KH2 enemies its spheres reach -- a
+body as a player's, its Days sphere's radius round from its feet to KH2's player's height -- each once a range, as a
+blow of the player's, and no player (`strike_enemies` in `shell.cpp`). Demyx's water clone swung in Wild Dance (its
+motions 241 and 242: `atkp` 1326 to 1329) so strikes Demyx and the other clones.
 
 ## Days's side: the shell
 

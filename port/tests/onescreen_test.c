@@ -1513,6 +1513,38 @@ static void test_under_top_image(void)
     khdays_composition_for(&s, 342, &comp);
     khdays_onescreen_images(p, &s, &comp);
     CHECK(image_shapes(&comp) == 0);
+    /* a counter under the target's name and health at the right, its image grown past that piece's bottom (as a run
+     * had it): by its bottom corner it is left out, by its middle placed with the piece holding it */
+    put_float(record, KE_X, 159);
+    put_float(record, KE_Y, 17);
+    put_float(record, KE_W, 87);
+    put_float(record, KE_H, 41);
+    record[KE_SLOT] = KES_DIRECT | KES_PICTURE | KES_FINE | KES_HUD | 3;
+    khdays_composition_for(&s, 342, &comp);
+    khdays_onescreen_images(p, &s, &comp);
+    CHECK(image_shapes(&comp) == 0);
+    record[KE_SLOT] |= KES_BY_MIDDLE;
+    khdays_composition_for(&s, 342, &comp);
+    float right_x = 0, right_y = 0, right_scale = 0;
+    for (int i = 0; i < comp.shape_count; ++i) {
+        const uint32_t *w = comp.shapes[i].words;
+        if (!(w[KO_FLAGS] & (KOF_IMAGE | KOF_3D | KOF_LOWER)) && word_float(w, KO_SRC_X) == 163 &&
+            word_float(w, KO_SRC_Y) == 25) {
+            right_x = word_float(w, KO_DST_X1);
+            right_y = word_float(w, KO_DST_Y1);
+            right_scale = word_float(w, KO_SCALE_X);
+        }
+    }
+    CHECK(right_scale > 0);
+    khdays_onescreen_images(p, &s, &comp);
+    CHECK(image_shapes(&comp) == 1);
+    for (int i = 0; i < comp.shape_count; ++i) {
+        const uint32_t *w = comp.shapes[i].words;
+        if (w[KO_FLAGS] & KOF_IMAGE) {
+            CHECK(fabsf(word_float(w, KO_DST_X1) - (right_x + (159 - 163) * right_scale)) < 0.001f);
+            CHECK(fabsf(word_float(w, KO_DST_Y1) - (right_y + (17 - 25) * right_scale)) < 0.001f);
+        }
+    }
     free(p);
 }
 

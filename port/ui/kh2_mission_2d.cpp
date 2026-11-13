@@ -548,11 +548,12 @@ void emit(Piece &p)
         auto &layer = quads[std::size_t(s.layer)];
         layer.insert(layer.end(), f.quads.begin(), f.quads.end());
     }
-    // its box under Days's pieces at the top of its column's side, placed with the one there on one screen; the large
+    // its box under Days's pieces at the top of its column's side, placed on one screen with the one holding its middle
+    // (its image grows to all it drew: its bottom corner, the usual anchor, may pass that piece's edge); the large
     // figures in the middle of the screen, placed with the countdown above them
-    constexpr std::uint32_t kBox = KES_DIRECT | KES_PICTURE | KES_FINE | KES_HUD | 3u;
-    emit_layer(p, 0, quads[0], kColumnTops[column_of(p.kh2)] - p.top * kDot, kBox);
-    emit_layer(p, 1, quads[1], 0.0F, kBox | KES_UNDER_TOP);
+    constexpr std::uint32_t kImage = KES_DIRECT | KES_PICTURE | KES_FINE | KES_HUD | 3u;
+    emit_layer(p, 0, quads[0], kColumnTops[column_of(p.kh2)] - p.top * kDot, kImage | KES_BY_MIDDLE);
+    emit_layer(p, 1, quads[1], 0.0F, kImage | KES_UNDER_TOP);
 }
 } // namespace
 

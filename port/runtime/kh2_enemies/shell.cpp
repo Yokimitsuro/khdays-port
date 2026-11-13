@@ -594,7 +594,7 @@ struct Enemy final {
     int attack_motion = -1; // the motion its attacks' hits below were made in, and its time then
     float attack_time = 0.0F;
     unsigned took = 0; // the player its attack last landed on (its trigger 15)
-    std::map<std::size_t, std::set<unsigned>> struck; // by attack range: the players it hit (each once)
+    std::map<std::size_t, std::set<unsigned>> struck; // by attack range: the players (or enemies) it hit, each once
     std::set<std::size_t> windows_told;                // traced: the attack ranges of this motion told
     int slot = 0;                                     // its stand-in's attack slot its hits use
     bool told_draw = false;
@@ -949,6 +949,9 @@ constexpr float kPlayerMiddle = 0.725F; // a player's middle over his feet (Days
 void strike(AttackObject &o, Object &target);
 void days_point(const Enemy &e, const KhdaysKh2Shell &s, int bone, const Vec3 &at, float out[3]);
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made = false);
+int attack_power(int atkp);
+int attack_team(int atkp);
+void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp);
 Enemy *start_ally(KindFiles &k, const Vec3 &place, float yaw, unsigned anchor, bool made = false);
 void start_mission(const std::string &name);
 std::string entry_name(std::uint32_t number);
@@ -1796,6 +1799,11 @@ int model_effects(std::uint32_t record)
 
 Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
 {
+    // a Days enemy set going again before the shell let its last go (its slot reused: Demyx's next water clone made
+    // where a clone Wild Dance ended stood): that one let go first, as Days's own retiring would (its actor's entry
+    // gone with it, not left to a freed enemy)
+    if (enemies.count(days) != 0)
+        forget(days);
     auto e = std::make_unique<Enemy>();
     e->days = days;
     e->kind = &k;
@@ -2114,6 +2122,13 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
             a.motion.time >= float(range.end))
             continue;
         const int group = std::int16_t(range.params[1]);
+        // an attack of the player's team (its atkp's team 1: YS::ATTACK's constructor makes the player its owner, and
+        // it strikes every team but his): the enemies it reaches, as his blow -- Demyx's water clone swung in Wild
+        // Dance (atkp 1326 to 1328)
+        if (const int atkp = std::int16_t(range.params[0]); attack_team(atkp) == 1) {
+            strike_enemies(e, s, r, group, atkp);
+            continue;
+        }
         float nearest = -1.0F, reach = 0.0F, centre[3] = {}, toward = 0.0F;
         int spheres = 0;
         for (const Shape &sh : e.kind->shapes) {
@@ -2413,11 +2428,15 @@ const kh2::MotionSkeleton *player_skeleton()
     return player_files().skeleton.get();
 }
 
-// An attack's power in KH2's battle table (00battle.bin's atkp, 48 bytes each: + 2 its number, + 6 its power, OpenKH's
-// 00battle page; its first entry of that number), 0 when the mod has no kh2/00battle.bin or no such attack
-int attack_power(int atkp)
+// An attack in KH2's battle table (00battle.bin's atkp, 48 bytes each, the PS3 build's YS::ATTACKPARAM: + 2 its
+// number, + 6 its power, + 8 its team; OpenKH's 00battle page; its first entry of that number): its power and team, 0
+// when the mod has no kh2/00battle.bin or no such attack
+struct AttackParam final {
+    int power = 0, team = 0;
+};
+const AttackParam &attack_param(int atkp)
 {
-    static std::map<int, int> power;
+    static std::map<int, AttackParam> power;
     static bool read = false;
     if (!read) {
         read = true;
@@ -2431,7 +2450,7 @@ int attack_power(int atkp)
                         std::uint16_t number = 0, value = 0;
                         std::memcpy(&number, battle.data() + e.offset + 8 + 48 * i + 2, 2);
                         std::memcpy(&value, battle.data() + e.offset + 8 + 48 * i + 6, 2);
-                        power.emplace(number, value);
+                        power.emplace(number, AttackParam{value, battle[e.offset + 8 + 48 * i + 8]});
                     }
                 }
         } catch (const std::exception &x) {
@@ -2441,8 +2460,55 @@ int attack_power(int atkp)
             khdays_log("kh2 enemies: no KH2 attacks (the mod's kh2/00battle.bin): a player's blows in a reaction "
                        "command deal nothing");
     }
+    static const AttackParam none;
     const auto it = power.find(atkp);
-    return it != power.end() ? it->second : 0;
+    return it != power.end() ? it->second : none;
+}
+
+int attack_power(int atkp)
+{
+    return attack_param(atkp).power;
+}
+
+int attack_team(int atkp)
+{
+    return attack_param(atkp).team;
+}
+
+// A motion's attack of the player's team (attack, above): each of its group's spheres strikes the other KH2 enemies
+// it reaches, each once a range -- a body as a player's (its Days sphere's radius round, from its feet to KH2's player's
+// height) -- a blow of the player's on each: Days's damage, its last Days hit's (else any KH2 enemy's, else 1) times
+// the attack's power over 100, as his weapon's (held_tick)
+void strike_enemies(Enemy &e, const KhdaysKh2Shell &s, std::size_t r, int group, int atkp)
+{
+    const int power = attack_power(atkp);
+    for (const Shape &sh : e.kind->shapes) {
+        if (sh.group != group || (sh.kind & 0xff) != 6)
+            continue;
+        float c[3];
+        days_point(e, s, sh.bone, sh.at, c);
+        const float radius = sh.radius / kKh2PerDays;
+        for (auto &[days, other] : enemies) {
+            Enemy &t = *other;
+            if (&t == &e || t.released || t.dying || !t.started || e.struck[r].count(days) != 0)
+                continue;
+            KhdaysKh2Shell ts;
+            if (!khdays_kh2_shell_read(days, &ts) || !ts.standing)
+                continue;
+            const float low = ts.place[1] + ts.radius, high = std::max(low, ts.place[1] + kPlayerHeight - ts.radius);
+            const float d[3] = {ts.place[0] - c[0], std::clamp(c[1], low, high) - c[1], ts.place[2] - c[2]};
+            if (std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) >= radius + ts.radius)
+                continue;
+            e.struck[r].insert(days);
+            const int base = t.days_damage > 0 ? t.days_damage : last_days_damage > 0 ? last_days_damage : 1;
+            t.blow += power > 0 ? std::max(1, base * power / 100) : 0;
+            t.blow_blows += power > 0 ? double(power) / 100.0 : 0.0;
+            if (tracing())
+                khdays_log("kh2 enemies: %08x's motion %d at %.1f (atkp %d, the player's team, power %d) strikes %08x: "
+                           "%d damage",
+                           e.days, e.actor->motion.id, double(e.actor->motion.time), atkp, power, days, t.blow);
+        }
+    }
 }
 
 void let_go(unsigned object, const char *why)
@@ -5167,6 +5233,17 @@ extern "C" int khdays_kh2_enemies_damage(void *actor, int amount, int kinds)
         e->blow_blows = 0.0;
         if (reference_blow <= 0) {
             e->pending_blows += blows;
+            // enough of them to end it in KH2's own measure (its health in KH2's Soldier blows, as much as is left of
+            // it): its end, the Days hit its whole Days health -- Demyx's water clones (a quarter of a blow) fall to the
+            // first swing of Wild Dance, as in KH2, whether Roxas struck anything before or not
+            if (KhdaysKh2Shell s; e->pending_blows >= kSoldierBlows * e->health_share * e->start_share &&
+                                  khdays_kh2_shell_read(e->days, &s) && s.hp > 0) {
+                if (tracing())
+                    khdays_log("kh2 enemies: %08x takes %.2f of KH2's blows before a Days hit measured one: its "
+                               "health's %.2f, its end",
+                               e->days, e->pending_blows, kSoldierBlows * e->health_share * e->start_share);
+                return s.hp;
+            }
             if (tracing())
                 khdays_log("kh2 enemies: %08x takes %.2f of KH2's blows before a Days hit measured one: kept", e->days,
                            blows);
@@ -5256,6 +5333,11 @@ extern "C" int khdays_kh2_enemies_blow(void *actor, int *amount)
         const double health = reference_blow > 0 ? e->blow_blows * double(reference_blow) : 1.0;
         const double shown = e->health_most > 0 ? health * double(e->shown_most) / double(e->health_most) : health;
         *amount = int(std::clamp(std::ceil(shown), 1.0, 2147483647.0));
+        // before then, blows enough to end it in KH2's own measure (khdays_kh2_enemies_damage): its whole Days health
+        if (KhdaysKh2Shell s; reference_blow <= 0 &&
+                              e->pending_blows + e->blow_blows >= kSoldierBlows * e->health_share * e->start_share &&
+                              khdays_kh2_shell_read(e->days, &s) && s.hp > 0)
+            *amount = s.hp;
     }
     e->blow = 0;
     e->blow_landing = true;
