@@ -838,6 +838,7 @@ enum class S {
     room_music_removed,
     room_music_failed,
     room_music_button,
+    mmap_turn_hint,
     count
 };
 

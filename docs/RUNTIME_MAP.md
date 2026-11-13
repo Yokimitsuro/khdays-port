@@ -4406,7 +4406,13 @@ khdays-studio (`--check-missions`, `--mission-commands`).
   `Ov002_ResolveNamedPlacement`); `Ov002_WriteSessionMarker` files it for the player, a point spread
   by player (`Ov002_ScatterPlaceByIndex`) unless state flag 0x20e7. Mission 0010's first area puts
   slots 0-3 near (0, 0.049, 0) facing -90 degrees in room 0 of `tt`; the play walk's player was traced
-  there at (0.00, 0.01, 0.00).
+  there at (0.00, 0.01, 0.00). **Which way a heading faces**: 0 degrees along -z, -90 along +x -- the
+  way `(-sin h, -cos h)` on the floor (seen 2026-11-13, a mod's new mission in `eh` room 2, its Shadow at
+  (4, -3) and two chests at (-2.5, +-1.2): with the start facing -90 the camera behind Roxas looked along
+  +x, the Shadow far ahead and the chests near; facing 0, along -z, the Shadow ahead on the right and the
+  chests on the left). A marker's facing (65536ths of a turn) goes into the same field
+  (`Ov002_ResolveNamedPlacement`'s owner word), and a chest's heading (its `trbox` row, degrees) turns the
+  same way: with 90 and -90 its long sides faced +-x. A spawner (2.32) has no facing.
 - **The groups' tables while the field runs** (`StoreGlobalArrayEntry`'s callers): 0 the main
   program's `data_02042640`; 2 and 4 ov002's (`data_ov002_0207f134`, `0207f484`); 3 ov012's five
   (the scenes played in a mission); n + 5 the table of panel n (`Ov002_SwitchPanelOverlay`, rows

@@ -773,9 +773,11 @@ void draw_room(App& app, ImVec2 size) {
                 list->AddLine(ImVec2(x, y), ImVec2(tx, ty), colour, 2.0f);
                 list->AddCircle(ImVec2(tx, ty), 3.0f, colour, 0, 1.5f);
             }
+            // the way it faces, as the game turns a facing: 0 along -z, 0xc000 (-90 degrees) along +x (a marker's
+            // facing goes into the field a mission's start heading does, Ov002_WriteSessionMarker; seen in the game)
             const float turn = static_cast<float>(mk.extra) / 65536.0f * 6.2831853f;
             float fx, fy;
-            if (project({q[0] + std::sin(turn), q[1], q[2] + std::cos(turn)}, &fx, &fy)) {
+            if (project({q[0] - std::sin(turn), q[1], q[2] - std::cos(turn)}, &fx, &fy)) {
                 list->AddLine(ImVec2(x, y), ImVec2(fx, fy), (colour & 0x00ffffffu) | 0xdc000000u, 2.0f);
             }
             const bool picked = static_cast<int>(k) == m.picked_marker;

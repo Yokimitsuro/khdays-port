@@ -3621,6 +3621,12 @@ constexpr Row rows[] =
           "Musik...",
           "Musica...",
           "Música..."}},
+        {S::mmap_turn_hint,
+         {"Drag the arrow's tip to turn it (Shift: in steps of 15 degrees)",
+          "Faites glisser la pointe de la flèche pour le tourner (Maj : par pas de 15 degrés)",
+          "Die Pfeilspitze ziehen, um es zu drehen (Umschalt: in Schritten von 15 Grad)",
+          "Trascina la punta della freccia per girarlo (Maiusc: a passi di 15 gradi)",
+          "Arrastra la punta de la flecha para girarlo (Mayús: de 15 en 15 grados)"}},
 };
 static_assert(sizeof(rows) / sizeof(rows[0]) == static_cast<std::size_t>(S::count), "one row per word");
 constexpr bool rows_in_order() {

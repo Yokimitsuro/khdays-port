@@ -363,11 +363,16 @@ the choice is saved with the places (first, so the mission is built on the room
 shown) or with **Save to the mod**. It shows the mission's room as
 the game has it -- its models and, over them, its floor -- or as the mod replaces
 it (the mod's world file and its model of the room), or the mod's added room
-(its model and floors), with the players' start (its
-facing drawn), each spawner (its wave and how many enemies), each chest, each
+(its model and floors), with the players' start and each chest (an arrow the way
+it faces), each spawner (its wave and how many enemies), each
 emblem, each Organization emblem and the place to reach (its radius drawn) on it.
-A place is dragged over the floor (it stands on the floor under the
-pointer, the collision's grounds); one is added by choosing what (**Players'
+A heading turns the game's way: 0 degrees faces -z, -90 +x (seen in the game:
+a start facing 0 had Roxas look along -z, -90 along +x; a chest's heading is the
+same turn). The game gives spawners no facing (2.32 has none: its enemies turn
+to the player themselves) and the emblems none. A place is dragged over the
+floor (it stands on the floor under the pointer, the collision's grounds; a
+click without a drag only chooses it); an arrow's tip is dragged round its place
+to turn it (Shift: in steps of 15 degrees); one is added by choosing what (**Players'
 start**, **Enemies**, **Chest**, **Emblem**, **Organization emblem**, **Place to
 reach**) and clicking the floor; the one
 clicked is changed beside the picture: where it is, onto the floor, its facing, a
