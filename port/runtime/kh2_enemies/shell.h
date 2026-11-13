@@ -127,11 +127,13 @@ void held_weapon_drawn(unsigned node, const float *bones, std::size_t count);
 // A timer or counter of the field's KH2 mission (its header's operation 4 or 5: the PS3 build's MISSION2D::TABLE,
 // {its start, its most, its warning, index << 24 | align << 16 | its picture's BAR entry + 1}) as KH2 keeps it
 struct MissionPiece final {
-    int kind = 0;           // 4 a timer (dk::Timer, dk::TIMER), 5 a counter (MISSION_COUNT, dk::COUNTER)
+    int kind = 0;           // 4 a timer (dk::Timer, dk::TIMER), 5 a counter (MISSION_COUNT, dk::COUNTER), 6 a gauge
+                            // (MISSION_GAUGE, dk::MISSION_GAUGE)
     int index = 0;          // its number among its kind (4:5's first argument)
     int entry = -1;         // its picture's BAR entry (an IMGD; its sequence the next entry), -1 none shown
     int align = 0;          // KH2's INFO_BASE::ALIGN: 0 left, 1 right, 2 the middle
-    int value = 0;          // a timer's time (KH2's frames, 60 a second), a counter's count
+    int value = 0;          // a timer's time (KH2's frames, 60 a second), a counter's count, a gauge's level
+    float level = 0.0F;     // a gauge's level (MISSION_GAUGE's + 0x2c, a float)
     int most = 0;           // a counter's most; a timer's end (its frames: counting down, its start's; up, its most's)
     int warning = 0;        // its warning (MISSION2D's: seconds for a timer)
     bool with_most = false; // a counter shown "count / most" (its most's bit 30: MISSION_COUNT's type 1)

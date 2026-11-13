@@ -2,13 +2,15 @@
 // the KH2 mission a KH2 boss's battle runs (runtime/kh2_enemies: its file the KH2 enemies' mod's kh2/msn/<name>.bar),
 // drawn from the mission's own sequences (each IMGD's next entry, a SEQD: Demyx's "ti_e" and "ct_h") and its HD
 // pictures (kh2/msn/<name>/<LANGUAGE>_<name>_bar<N>.png, the Nth IMGD's: KH2 PC's, laid out as its sequences have
-// them; without one the IMGD's own, laid out otherwise) as KH2's dk::TIMER and dk::COUNTER build them (the PS3
-// build's, read): sprites of the sequence's clips -- the base (3
+// them; without one the IMGD's own, laid out otherwise) as KH2's dk::TIMER, dk::COUNTER and dk::MISSION_GAUGE build
+// them (the PS3 build's, read): sprites of the sequence's clips -- the base (3
 // coming, then 4; 5 leaving), its second piece (9, then 10; 11 leaving), the digits (12-21 by digit; 22 a counter's dim
 // leading zero; 23 and 24 the timer's separators, a counter's slash; 24-33 and 34 its most's digits) -- each child
 // placed at its base's active point plus its offset and faded with the base's active alpha. The timer shows minutes,
 // seconds and hundredths (dk::Clock::vCountToHMSMS) and counts its last three seconds in large figures (clips 31, 30,
-// 29, then 28 at 0, in the middle of the screen). The pieces stand in the columns the mission names as KH2's INFO_BASE
+// 29, then 28 at 0, in the middle of the screen). A gauge (Saïx's berserk) fills its bar by its level over its most:
+// 12 its full part scaled across by it, 13 its empty part by what is left, 14 its tip moved that share of the bar's
+// length (14's ex) along. The pieces stand in the columns the mission names as KH2's INFO_BASE
 // stacks them (each below the open ones before it by its base's height), half a DS dot a KH2 dot, under Days's own
 // pieces at the top of that side; drawn on the CPU into HUD images.
 #include "kh2_mission_2d.h"
@@ -50,7 +52,7 @@ constexpr float kDot = 0.5F; // a KH2 dot in DS pixels: KH2's 512-dot screen the
 // KH2's INFO_BASE columns, ALIGN 0 left, 1 right, 2 the middle: a piece's x its column's clip's active point (a timer's
 // 26, 27, 25; a counter's 36, 37, 35), its y below the open pieces before it in its column. KH2 moves its side columns
 // 85 dots out on a wide screen; the port's layout moves a piece on a side out as far as its screen widens
-constexpr int kTimerColumns[3] = {26, 27, 25}, kCounterColumns[3] = {36, 37, 35};
+constexpr int kTimerColumns[3] = {26, 27, 25}, kCounterColumns[3] = {36, 37, 35}, kGaugeColumns[3] = {16, 17, 15};
 // Where a column's first piece starts, DS pixels down Days's upper screen: below Days's own pieces at its top, the rows
 // above it as KH2's INFORMATION window is above its pieces -- the hearts and the clock at the left (to 37), the
 // target's name and health at the right (to 24), the countdown and lock-on in the middle (to 20; ui/compositions/
@@ -78,7 +80,9 @@ struct Sprite final {
     float x = 0, y = 0;   // a base's place (setPos), KH2's dots
     float ox = 0, oy = 0; // its offset (setOffsetPos)
     bool alive = false;
-    int layer = 0; // its image: 0 the piece's box, 1 the timer's large countdown
+    int layer = 0;        // its image: 0 the piece's box, 1 the timer's large countdown
+    float scale_x = 1.0F; // its sequence's scale across (YI::SEQUENCE::SetScaleX: a gauge's parts)
+    float age = 0.0F;     // KH2 ticks since it was made (YI::SPRITE's time: its parts' pictures' scroll)
 };
 
 // A layer's image: its place (DS pixels), only grown as its pictures reach further (each image of a new size is
@@ -114,7 +118,9 @@ struct Piece final {
     kh2e::MissionPiece kh2;
     std::shared_ptr<const Pictures> pictures; // none: not shown
     std::vector<Sprite> sprites;
-    std::vector<int> digits, most_digits; // a timer's: minutes, seconds, hundredths (tens first); a counter's ones first
+    std::vector<int> digits, most_digits; // a timer's: minutes, seconds, hundredths (tens first); a counter's ones first;
+                                          // a gauge's full part, empty part and tip
+    float shown_level = -1.0F;            // the gauge's level drawn (dk::MISSION_GAUGE's + 0xaa0)
     int shown = std::numeric_limits<int>::min(), shown_most = std::numeric_limits<int>::min();
     unsigned countdown = 0; // the timer's large figures made (dk::TIMER's flag bits: 3, 2, 1, 0)
     bool closing = false;
@@ -220,17 +226,40 @@ void open_counter(Piece &p)
                     .x);
 }
 
+// dk::MISSION_GAUGE::create: its base (3, then 4), its second (9, then 10), its full part (12), its empty part (13)
+// and its tip (14), placed in its column (16, 17, 15 by its side)
+void open_gauge(Piece &p)
+{
+    const Pictures &pc = *p.pictures;
+    p.sprites.clear();
+    p.digits.clear();
+    make(p, 3, -1, 0, 0);
+    p.sprites[0].next = 4;
+    make(p, 9, 0, 0, 0);
+    p.sprites[1].next = 10;
+    for (const int clip : {12, 13, 14})
+        p.digits.push_back(int(make(p, clip, 0, 0, 0)));
+    p.shown_level = -1.0F;
+    p.x = float(seq::evaluate_sequence(pc.sequence, kGaugeColumns[column_of(p.kh2)], 0)
+                    .active.value_or(seq::SequenceActive{})
+                    .x);
+}
+
 void open(Piece &p)
 {
-    // its top standing: its base's (4), its second's (10) and a digit's (12) at the base's active point
+    // its top standing: its base's (4), its second's (10, its last frame: a gauge's opens with a flash far above it)
+    // and a digit's or its bar's (12) at the base's active point
     const seq::SequenceData &d = p.pictures->sequence;
     const auto base = seq::evaluate_sequence(d, 4, 0);
     const seq::SequenceActive a = base.active.value_or(seq::SequenceActive{});
     seq::SequencePose at;
     at.x = float(a.x);
     at.y = float(a.y);
+    at.scroll_time = 0; // (a gauge's bar scrolls its picture: its first frame's)
+    at.image_size = {float(p.pictures->logical[0]), float(p.pictures->logical[1])};
     p.top = std::numeric_limits<float>::max();
-    for (const auto &f : {base, seq::evaluate_sequence(d, 10, 0, at), seq::evaluate_sequence(d, 12, 0, at)})
+    const float second_last = std::max(0.0F, float(seq::sequence_frame_count(d, 10)) - 1.0F);
+    for (const auto &f : {base, seq::evaluate_sequence(d, 10, second_last, at), seq::evaluate_sequence(d, 12, 0, at)})
         for (const seq::SequenceQuad &q : f.quads)
             for (const seq::SequenceVertex &v : q.vertices)
                 p.top = std::min(p.top, v.y);
@@ -241,6 +270,8 @@ void open(Piece &p)
     p.closing = false;
     if (p.kh2.kind == 4)
         open_timer(p);
+    else if (p.kh2.kind == 6)
+        open_gauge(p);
     else
         open_counter(p);
 }
@@ -321,6 +352,19 @@ void counter_update(Piece &p)
     }
 }
 
+// dk::MISSION_GAUGE::update and updateGauge: when its level changes, its full part scaled across by its level over
+// its most, its empty part by the rest, its tip moved that share of the bar's length (its clip's ex) along
+void gauge_update(Piece &p)
+{
+    if (p.kh2.level == p.shown_level || p.digits.size() < 3)
+        return;
+    p.shown_level = p.kh2.level;
+    const float share = p.kh2.most > 0 ? p.kh2.level / float(p.kh2.most) : 0.0F;
+    p.sprites[std::size_t(p.digits[0])].scale_x = share;
+    p.sprites[std::size_t(p.digits[1])].scale_x = 1.0F - share;
+    p.sprites[std::size_t(p.digits[2])].ox = float(int(share * float(ex(*p.pictures, 14))));
+}
+
 // dk::Sprite::update, a KH2 tick: its clip a frame on; at its end the next, or gone; gone with its base
 void tick(Piece &p)
 {
@@ -334,6 +378,7 @@ void tick(Piece &p)
             continue;
         }
         s.player.advance(d, 1.0F);
+        s.age += 1.0F;
         if (!s.player.playing()) {
             if (s.next >= 0) {
                 const int next = s.next;
@@ -408,7 +453,7 @@ void load(const kh2e::MissionView &v)
     for (const kh2e::MissionPiece &k : v.pieces) {
         Piece p;
         p.kh2 = k;
-        if ((k.kind == 4 || k.kind == 5) && k.entry >= 0 && std::size_t(k.entry) + 1 < entries.size()) {
+        if ((k.kind == 4 || k.kind == 5 || k.kind == 6) && k.entry >= 0 && std::size_t(k.entry) + 1 < entries.size()) {
             auto &found = loaded[k.entry];
             try {
                 if (!found) {
@@ -431,8 +476,9 @@ void load(const kh2e::MissionView &v)
                     pc->sequence = seq::read_sequence(bytes.data() + sequence.offset, sequence.size);
                     found = std::move(pc);
                 }
-                // the clips its code plays (a timer's to its large 3, 31; a counter's to its columns', 37)
-                const int last = k.kind == 4 ? 31 : 37;
+                // the clips its code plays (a timer's to its large 3, 31; a counter's to its columns', 37; a gauge's
+                // to its columns', 17)
+                const int last = k.kind == 4 ? 31 : k.kind == 6 ? 17 : 37;
                 if (found->sequence.clips.size() <= std::size_t(last))
                     throw std::runtime_error("entry " + std::to_string(k.entry + 1) + "'s sequence has " +
                                              std::to_string(found->sequence.clips.size()) + " clips, " +
@@ -440,7 +486,7 @@ void load(const kh2e::MissionView &v)
                 p.pictures = found;
             } catch (const std::exception &e) {
                 khdays_log("kh2 mission pieces: %s's %s: %s; not shown", file.c_str(),
-                           k.kind == 4 ? "timer" : "counter", e.what());
+                           k.kind == 4 ? "timer" : k.kind == 6 ? "gauge" : "counter", e.what());
             }
         }
         pieces.push_back(std::move(p));
@@ -544,6 +590,9 @@ void emit(Piece &p)
             pose.x = s.x + s.ox;
             pose.y = s.y + s.oy;
         }
+        pose.scale_x = s.scale_x;
+        pose.scroll_time = s.age;
+        pose.image_size = {float(pc.logical[0]), float(pc.logical[1])};
         const auto f = seq::evaluate_sequence(pc.sequence, std::size_t(s.clip), s.player.frame(), pose);
         auto &layer = quads[std::size_t(s.layer)];
         layer.insert(layer.end(), f.quads.begin(), f.quads.end());
@@ -588,6 +637,8 @@ extern "C" void khdays_ui_kh2_mission_2d_frame(unsigned)
             if (alive(p) && !p.closing) {
                 if (p.kh2.kind == 4)
                     timer_update(p);
+                else if (p.kh2.kind == 6)
+                    gauge_update(p);
                 else
                     counter_update(p);
             }

@@ -134,10 +134,18 @@ void draw_sequence(std::span<const assets::kh2::SequenceQuad> quads, const asset
                 const auto &v = q.vertices;
                 Color src{255, 255, 255, 255};
                 if (q.textured) {
-                    const float u = (v[0].u + (v[1].u - v[0].u) * s + (v[2].u - v[0].u) * t) * float(atlas.width) /
-                                    float(logical_width);
-                    const float vv = (v[0].v + (v[1].v - v[0].v) * s + (v[2].v - v[0].v) * t) * float(atlas.height) /
-                                     float(logical_height);
+                    float lu = v[0].u + (v[1].u - v[0].u) * s + (v[2].u - v[0].u) * t;
+                    float lv = v[0].v + (v[1].v - v[0].v) * s + (v[2].v - v[0].v) * t;
+                    if (q.wrap) { // a scrolling part: its picture repeating within its own rectangle
+                        const auto within = [](float c, float lo, float hi) {
+                            const float span = hi - lo;
+                            return span > 0 ? lo + (c - lo) - span * std::floor((c - lo) / span) : c;
+                        };
+                        lu = within(lu, q.wrap_rect[0], q.wrap_rect[2]);
+                        lv = within(lv, q.wrap_rect[1], q.wrap_rect[3]);
+                    }
+                    const float u = lu * float(atlas.width) / float(logical_width);
+                    const float vv = lv * float(atlas.height) / float(logical_height);
                     src = sample(atlas, u, vv, q.linear_filter);
                 }
                 for (std::size_t c = 0; c < 4; ++c) {

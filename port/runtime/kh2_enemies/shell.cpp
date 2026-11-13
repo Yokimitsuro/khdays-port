@@ -428,31 +428,68 @@ void read_events(KindFiles &k, const fs::path &folder)
 class SetMotions final : public Motions {
 public:
     explicit SetMotions(std::shared_ptr<const kh2::MotionSet> set) : set_(std::move(set)) {}
+    // motion `id`: the hooked slot's entry of that number when it has one (YS::MOTION::get_motion: the hook's set
+    // first, MOTIONSET::get_motion), else the set's own
+    const kh2::Motion *motion(int id) const
+    {
+        if (const kh2::MotionSet::Variant *v = hooked_variant(id); v != nullptr)
+            return v->motion.get();
+        return id >= 0 ? set_->motion(std::size_t(id)) : nullptr;
+    }
+    const kh2::MotionAttributes *attributes(int id) const
+    {
+        if (const kh2::MotionSet::Variant *v = hooked_variant(id); v != nullptr)
+            return v->attributes.get();
+        return id >= 0 ? set_->attributes(std::size_t(id)) : nullptr;
+    }
     bool has(int id) const override
     {
-        return id >= 0 && set_->motion(std::size_t(id)) != nullptr;
+        return motion(id) != nullptr;
     }
     float length(int id) const override
     {
-        return has(id) ? set_->motion(std::size_t(id))->length_ticks() : 0.0F;
+        return has(id) ? motion(id)->length_ticks() : 0.0F;
     }
     float loop_from(int id) const override
     {
         if (!has(id))
             return 0.0F;
-        const kh2::Motion *m = set_->motion(std::size_t(id));
+        const kh2::Motion *m = motion(id);
         return m->loop_from() < m->end() ? m->loop_ticks() : m->length_ticks();
     }
     Vec3 root(int id, float ticks) const override
     {
         if (!has(id))
             return {};
-        const kh2::Mat4 r = set_->motion(std::size_t(id))->root_motion(ticks);
+        const kh2::Mat4 r = motion(id)->root_motion(ticks);
         return {r[12], r[13], r[14]};
+    }
+    bool hook(int id) const override
+    {
+        if (id < 0 || set_->variants(std::size_t(id)).empty())
+            return false;
+        hook_ = id;
+        return true;
+    }
+    void unhook() const override
+    {
+        hook_ = -1;
+    }
+    bool hooked() const override
+    {
+        return hook_ >= 0;
     }
 
 private:
+    const kh2::MotionSet::Variant *hooked_variant(int id) const
+    {
+        if (hook_ < 0 || id < 0)
+            return nullptr;
+        const auto &entries = set_->variants(std::size_t(hook_));
+        return std::size_t(id) < entries.size() && entries[std::size_t(id)].motion ? &entries[std::size_t(id)] : nullptr;
+    }
     std::shared_ptr<const kh2::MotionSet> set_;
+    mutable int hook_ = -1; // the hooked slot (1:75), -1 none
 };
 
 struct Mod final {
@@ -671,6 +708,7 @@ struct Enemy final {
     // room object (its handle: Oogie Boogie on his tower, F_NM080), 0 none, and how
     unsigned carrier = 0;
     unsigned carried_by = 0;
+    bool on_floor_first = false; // set going by a wave: put on its floor at its first tick
     int carry_bone = 0, carry_flags = 0;
     std::uint32_t attack_record = 0; // trigger 15's attack (its + 0x18 the atkp entry), made on its first hit
     std::uint32_t command_record = 0; // the target record a command taken is sent with (trigger 11's third)
@@ -793,6 +831,10 @@ std::map<unsigned, std::unique_ptr<Object>> players; // each of Days's players a
 // A Days hit as KH2's scripts read it, trigger 6's argument: + 0x26 its reaction's kind, 2 a small one (2:8 asks
 // whether it is past 1, FUN_1403ce980; the Strafer's and the cubes' revenge turn on it)
 std::unique_ptr<Object> days_hit;
+// a Days hit's attack as KH2's hit gives it (FUN_140411060's third: its + 0xc the attacker's handle), and the Days
+// player who struck with it (its owner: 2:24)
+std::unique_ptr<Object> days_attack;
+std::uint32_t days_attack_owner = 0;
 // the object KH2's reaction camera watches (1:207, dk::ReactionCamera's target), 0 none: the camera's while a KH2 enemy
 // holds this game's player (khdays_kh2_enemies_reaction_camera)
 std::uint32_t watched = 0;
@@ -881,6 +923,7 @@ unsigned local_takes = 0;      // the reaction commands this game's own player t
 // its size and growth, its place and the one before (swept between), the effect it follows, the players it hit
 struct AttackObject final {
     unsigned enemy = 0;
+    std::uint32_t owner = 0; // the object owning it (+ 0x10: what 2:10 was given; 2:24)
     bool players = false;
     int atkp = 0, group = -1, sub = 0, team = -1;
     float radius = 0.0F, height = 0.0F;
@@ -1293,6 +1336,7 @@ public:
             return;
         AttackObject o;
         o.enemy = it->second->days;
+        o.owner = owner != nullptr ? owner->address() : 0u;
         o.players = owner != nullptr && days_object(*owner) != 0;
         o.atkp = atkp;
         o.group = group;
@@ -1639,6 +1683,62 @@ public:
         c->value = n;
         khdays_log("kh2 enemies: mission %s's count %d", m.name.c_str(), n);
     }
+    // YS::MISSION_GAUGE::set (the PS3 build's): gauge `index` kept between 0 and its most; reaching 0 from above
+    // sends 136, its most from below 137, with its index, while its pieces are up
+    void set_gauge(Kh2Mission &m, int index, float level)
+    {
+        MissionPiece *g = mission_piece(m, 6, index);
+        if (g == nullptr)
+            return;
+        const float was = g->level, most = float(g->most);
+        if (level <= 0.0F) {
+            if (was > 0.0F && m.shown)
+                signal(136, index);
+            level = 0.0F;
+        } else if (level >= most) {
+            if (was < most && m.shown)
+                signal(137, index);
+            level = most;
+        }
+        g->level = level;
+        g->value = int(level);
+        if (trace_level() >= 2)
+            khdays_log("kh2 enemies: mission %s's gauge %d at %.2f", m.name.c_str(), index, double(level));
+    }
+    float mission_gauge(unsigned number, int index, float value) override
+    {
+        if (!kh2_mission)
+            return 0.0F;
+        Kh2Mission &m = *kh2_mission;
+        const MissionPiece *g = mission_piece(m, 6, index);
+        if (g == nullptr)
+            return 0.0F;
+        if (number == 12) // GetGaugeRatio
+            return g->most != 0 ? g->level / float(g->most) : 0.0F;
+        if (number == 8) { // SetGauge
+            set_gauge(m, index, value);
+            return 0.0F;
+        }
+        // AddGauge: KH2 PC at 60 frames a second (its tick's length under 2, the port's 1) halves some missions' steps
+        // (FUN_140433750): PO01_MS501's, TT12_WORK_BOX's and HB32_FM_VEX's; TR07_MS203's rises and TR04_MS104's falls;
+        // then EH15_MS104's (Saïx's data battle) of -5 and above
+        const auto in = [&](const char *name) { return m.name.find(name) != std::string::npos; };
+        if (in("PO01_MS501") || in("TT12_WORK_BOX") || in("HB32_FM_VEX"))
+            value *= 0.5F;
+        if (in(value >= 0.0F ? "TR07_MS203" : "TR04_MS104"))
+            value *= 0.5F;
+        if (in("EH15_MS104") && value >= -5.0F)
+            value *= 0.5F;
+        set_gauge(m, index, g->level + value);
+        return 0.0F;
+    }
+    Object *attack_owner(std::uint32_t at) override
+    {
+        if (days_attack && at == days_attack->address())
+            return days_attack_owner != 0 ? Object::at(mod().memory, days_attack_owner) : nullptr;
+        const auto it = attacks.find(at);
+        return it != attacks.end() && it->second.owner != 0 ? Object::at(mod().memory, it->second.owner) : nullptr;
+    }
     int mission(unsigned number, int first, int second) override
     {
         if (!kh2_mission)
@@ -1725,7 +1825,7 @@ public:
     {
         const auto it = by_actor.find(&a);
         const kh2::MotionAttributes *attr =
-            it != by_actor.end() && a.motion.id >= 0 ? it->second->kind->set->attributes(std::size_t(a.motion.id))
+            it != by_actor.end() && a.motion.id >= 0 ? it->second->motions->attributes(a.motion.id)
                                                      : nullptr;
         if (attr != nullptr)
             for (const auto &t : attr->triggers)
@@ -1917,6 +2017,7 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
     a.motions = e->motions.get();
     a.set_u32(field::kEntry, entry_record(k.name));
     a.set_place(to_kh2(s.place));
+    e->on_floor_first = !made; // (set going by a wave: on its floor at its first tick)
     std::copy(s.place, s.place + 3, e->home);
     Enemy *raw = e.get();
     by_actor[&a] = raw;
@@ -2054,7 +2155,7 @@ void start_mission(const std::string &name)
             const int code = std::int16_t(bar[at] | (bar[at + 1] << 8)), count = std::int16_t(bar[at + 2] | (bar[at + 3] << 8));
             if (code == 0 || count < 0)
                 break;
-            if ((code == 4 || code == 5) && count >= 3) {
+            if ((code == 4 || code == 5 || code == 6) && count >= 3) {
                 // MISSION2D::TABLE: its start, most and warning, then (YS::MISSION::init_mission2d) a byte its index,
                 // one its place's side, a u16 its picture's entry + 1 (0 none), as the PS3 build reads them
                 MissionPiece p;
@@ -2071,10 +2172,11 @@ void start_mission(const std::string &name)
                     p.down = start > 0;
                     p.value = p.down ? start * 60 : 0;
                     p.most = (p.down ? start : most) * 60;
-                } else { // MISSION_COUNT::set_param: its count its start; its most's bit 30 shows "count / most"
+                } else { // MISSION2D::set_param: its count its start; its most's bit 30 shows "count / most"
                     p.with_most = (std::uint32_t(most) & 0x40000000u) != 0;
                     p.most = int(std::uint32_t(most) & ~0x40000000u);
                     p.value = start;
+                    p.level = float(start); // a gauge's (MISSION_GAUGE::activate: its start as a float)
                 }
                 m->pieces.push_back(p);
             }
@@ -2091,8 +2193,9 @@ void start_mission(const std::string &name)
     mm.actor->machine().start_main(3);
     std::string pieces;
     for (const MissionPiece &p : mm.pieces)
-        pieces += p.kind == 4 ? " (a timer of " + std::to_string(p.most / 60) + " s)"
-                              : " (a count of " + std::to_string(p.value) + ")";
+        pieces += p.kind == 4   ? " (a timer of " + std::to_string(p.most / 60) + " s)"
+                  : p.kind == 6 ? " (a gauge at " + std::to_string(p.value) + " of " + std::to_string(p.most) + ")"
+                                : " (a count of " + std::to_string(p.value) + ")";
     khdays_log("kh2 enemies: mission %s set going%s", name.c_str(), pieces.c_str());
 }
 
@@ -2176,7 +2279,7 @@ void pose(Enemy &e)
         e.posed_started = a.motion.started;
         e.blend_from = e.pose; // the pose shown the tick before (Context1)
     }
-    const kh2::Motion *now = a.motion.id >= 0 ? e.kind->set->motion(std::size_t(a.motion.id)) : nullptr;
+    const kh2::Motion *now = a.motion.id >= 0 ? e.motions->motion(a.motion.id) : nullptr;
     if (now == nullptr) {
         e.pose.clear();
         return;
@@ -2247,7 +2350,7 @@ void attack(Enemy &e, const KhdaysKh2Shell &s)
     }
     e.attack_motion = a.motion.id;
     e.attack_time = a.motion.time;
-    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
+    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
     if (attr == nullptr || e.pose.empty() || e.dying)
         return;
     std::vector<KhdaysKh2Player> list(std::size_t(std::max(0, khdays_kh2_shell_players(shell_of(e), nullptr, 0))));
@@ -3292,7 +3395,7 @@ std::set<int> groups_on(const Enemy &e)
 {
     std::set<int> motion_on, motion_off, groups;
     const Actor &a = *e.actor;
-    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr;
+    const kh2::MotionAttributes *attr = a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr;
     if (attr != nullptr)
         for (const auto &r : attr->ranges)
             if ((r.id == 4 || r.id == 5) && !r.params.empty() && a.motion.time >= float(r.start) &&
@@ -3748,7 +3851,7 @@ void cues(Enemy &e, bool again = false)
     // (a trigger's script event may start another motion: the windows are this one's, as they stood)
     const khdays::kh2_enemies::Playing m = a.motion;
     const kh2::MotionAttributes *attr =
-        m.id >= 0 && m.blend <= 0.0F ? e.kind->set->attributes(std::size_t(m.id)) : nullptr;
+        m.id >= 0 && m.blend <= 0.0F ? e.motions->attributes(m.id) : nullptr;
     const float length = m.id >= 0 && a.motions != nullptr ? a.motions->length(m.id) : 0.0F;
     const float loop = m.id >= 0 && a.motions != nullptr ? a.motions->loop_from(m.id) : 0.0F;
     const auto in = [&](float f) {
@@ -3836,7 +3939,7 @@ void motion_states(Enemy &e)
                        a.motions->loop_from(a.motion.id) < a.motions->length(a.motion.id);
     const bool on_motion = !a.motion.ended || loops;
     if (const kh2::MotionAttributes *attr =
-            a.motion.id >= 0 ? e.kind->set->attributes(std::size_t(a.motion.id)) : nullptr)
+            a.motion.id >= 0 ? e.motions->attributes(a.motion.id) : nullptr)
         for (const auto &r : attr->ranges)
             for (const auto &[id, b] : kStateRanges)
                 if (int(r.id) == id && (on_motion || id == 13) && a.motion.time >= float(r.start) &&
@@ -3853,7 +3956,7 @@ void motion_states(Enemy &e)
     // its ranges 16 to 19 ("AI" ranges: special movement, its combos): bits 0 to 3 of + 0x2ac (FUN_14040d810; 1:150)
     std::uint32_t ai_ranges = 0;
     if (const kh2::MotionAttributes *attr = a.motion.id >= 0 && (!a.motion.ended || loops)
-                                                ? e.kind->set->attributes(std::size_t(a.motion.id))
+                                                ? e.motions->attributes(a.motion.id)
                                                 : nullptr)
         for (const auto &r : attr->ranges)
             if (r.id >= 16 && r.id <= 19 && a.motion.time >= float(r.start) && a.motion.time < float(r.end))
@@ -4745,6 +4848,8 @@ extern "C" void khdays_kh2_enemies_area_left(void)
     player_of_node.clear();
     players.clear();
     days_hit.reset();
+    days_attack.reset();
+    days_attack_owner = 0;
     watched = 0;
     camera_warped = false;
     lights.clear();
@@ -4929,6 +5034,20 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
         e->floor = place[1] + s.above * kKh2PerDays;
         e->floor_known = true;
     }
+    // set going by a wave: on its floor, as KH2's area spawns put their objects on their points on the floor --
+    // Days's stand-in is set going above its own (half a metre: `above`), and the fall would play the landing's motion
+    // in the place of its first (Demyx's data battle opens with 209, whose frame 132 calls his water clones)
+    // (Days sets its stand-in going sunk into its ground -- `above` below 0, the floor read then half a metre up --
+    // and lifts it out at its next frame: the first frame it stands out of it)
+    if (e->on_floor_first && e->floor_known && s.above >= 0.0F) {
+        if (place[1] < e->floor) {
+            if (tracing())
+                khdays_log("kh2 enemies: %08x set going %.1f cm above its floor: put on it", days,
+                           double(e->floor - place[1]));
+            place[1] = e->floor;
+        }
+        e->on_floor_first = false;
+    }
     put_on_carrier(*e, place); // (its floor what carries it, not Days's ground under it)
     for (int t = 0; t < ticks; ++t) {
         one_tick(*e, s, place);
@@ -5071,12 +5190,6 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     }
     if (Object *p = the_field().player(a))
         a.set_u32(field::kAttacker, p->address()); // the last to hit it (2:88): the nearest player
-    const StateEntry *now = a.states().current();
-    if (now != nullptr && (now->flags & 2) != 0) {
-        if (tracing())
-            khdays_log("kh2 enemies: %08x hit (%d to %d) in a locked state", days, hp_before, s.hp);
-        return; // a locked state (its leaving, an event) plays on
-    }
     // the reaction: a small one, from the front or the back as the nearest player stands (KH2's motions 10 and 12,
     // DAMAGE_S_FRONT_HIGH and DAMAGE_S_BACK_HIGH)
     bool front = true;
@@ -5110,6 +5223,25 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     const std::uint8_t element = std::uint8_t(kh2_element_of(e->hit_kinds));
     mod().memory.write(params + 9, &element, 1);
     days_hit->set_u32(0x20, params);
+    // KH2's hit's script side (FUN_140411060), before its reaction: the state's hit routine (event 7: its handle, the
+    // damage, the attack) and trigger 19 (the damage, the attack) -- Saïx's data battle asks the attack's owner; the
+    // Volcanic and Blizzard Lords and Shan-Yu answer trigger 19
+    if (!days_attack)
+        days_attack = std::make_unique<Object>(mod().memory, "a Days hit's attack");
+    days_attack->set_u32(0xc, striker != nullptr ? striker->address() : 0u);
+    days_attack_owner = striker != nullptr ? striker->address() : 0u;
+    {
+        const ai::Value hit_values[2] = {ai::Value::of_address(days_hit->address()),
+                                         ai::Value::of_address(days_attack->address())};
+        a.states().event(a, 7, hit_values);
+        a.event(19, hit_values);
+    }
+    const StateEntry *now = a.states().current();
+    if (now != nullptr && (now->flags & 2) != 0) {
+        if (tracing())
+            khdays_log("kh2 enemies: %08x hit (%d to %d) in a locked state", days, hp_before, s.hp);
+        return; // a locked state (its leaving, an event) plays on
+    }
     const int motion = front ? 10 : 12;
     // KH2's hit (FUN_140411060): the reaction applied -- its motion asked, the actor held while it plays
     // (FUN_1403d4650; a set without the motion, a boss's, plays nothing and goes on), the queue cleared -- and the
@@ -5132,6 +5264,7 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     // enemies turn to their revenge mode on it when the player struck them (1:309 of 2:88's), which begins once the
     // reaction is over (the state waits while the actor is held)
     const ai::Value packet = ai::Value::of_address(days_hit->address());
+    a.states().event(a, 3, {&packet, 1}); // the state's own routine for it first (FUN_1403ca470)
     a.event(6, {&packet, 1});
     if (tracing())
         khdays_log("kh2 enemies: %08x hit (%d to %d), %s%s", days, hp_before, s.hp,

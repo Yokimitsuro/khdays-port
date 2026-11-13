@@ -73,6 +73,10 @@ struct SequencePose final {
     // of `widen_from` moved `widen` further before its transform, and its turned height times `stretch_y` about
     // its animation's place.
     float widen = 0, widen_from = 0, stretch_y = 1;
+    // The sprite's time (frames since it was made: YI::SPRITE's + 0x48) and its image's size, for its parts that scroll
+    // their pictures; below 0 none given, and a scrolling part is refused.
+    float scroll_time = -1;
+    std::array<float, 2> image_size{};
 };
 
 struct SequenceVertex final {
@@ -86,6 +90,10 @@ struct SequenceQuad final {
     std::uint32_t depth = 0;
     bool depth_test = false, depth_write = false, color_write = true;
     bool textured = true, linear_filter = true;
+    // A scrolling part's picture repeats within its own rectangle (u0, v0, u1, v1: the GS's REGION_REPEAT), its UVs
+    // moved along it
+    bool wrap = false;
+    std::array<float, 4> wrap_rect{};
 };
 
 struct SequenceActive final {

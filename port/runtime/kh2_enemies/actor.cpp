@@ -92,22 +92,29 @@ bool StateMachine::find(Actor &a, const std::string &name, StateEntry &out) cons
         out.on_leave = u16(0xa);
         out.on_air = u16(0xc);
         out.on_land = u16(0xe);
+        out.on_struck = u16(0x10);
         out.on_shout = u16(0x14);
         out.on_enter = u16(0x16);
+        out.on_hit = u16(0x18);
         return true;
     }
     return false;
 }
 
-void StateMachine::event(Actor &a, int n)
+void StateMachine::event(Actor &a, int n, std::span<const ai::Value> more)
 {
     if (!current_ || waiting_)
         return;
-    const std::uint16_t routine = n == 1 ? current_->on_air : n == 2 ? current_->on_land : 0;
+    const std::uint16_t routine = n == 1   ? current_->on_air
+                                  : n == 2 ? current_->on_land
+                                  : n == 3 ? current_->on_struck
+                                  : n == 7 ? current_->on_hit
+                                           : 0;
     if (routine == 0)
         return;
-    const ai::Value handle = ai::Value::of_address(handle_);
-    a.machine().run_now(routine, {&handle, 1});
+    std::vector<ai::Value> values{ai::Value::of_address(handle_)};
+    values.insert(values.end(), more.begin(), more.end());
+    a.machine().run_now(routine, values);
 }
 
 bool StateMachine::shout(Actor &a, const std::string &name, std::uint32_t from)

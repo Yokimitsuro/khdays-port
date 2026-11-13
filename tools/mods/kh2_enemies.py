@@ -120,6 +120,14 @@ KINDS = {
     "B_LK100_20": "Ed",
     "B_BB120": "Shadow Stalker",
     "B_NM000": "Oogie Boogie",
+    # FINAL MIX's data battles (their Limit Cut objects, _LV99)
+    "B_EX110_LV99": "Axel (Data)",
+    "B_EX130_LV99": "Xaldin (Data)",
+    "B_EX170_LV99": "Xemnas (Data)",
+    "B_EX120_HB_LV99": "Demyx (Data)",
+    "M_EX880_DANCER_LV99": "Water clone (Data Demyx's)",
+    "B_EX160_LV99": "Saïx (Data)",
+    "B_EX220_LV99": "Saïx's claymore (Data)",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -137,6 +145,11 @@ VOICES = {
     "B_EX110": "n_axel",
     "B_LK100_20": "ed",
     "B_NM000": "boogie",
+    "B_EX110_LV99": "n_axel",
+    "B_EX130_LV99": "n_dragoon",
+    "B_EX170_LV99": "n_xemnas",
+    "B_EX120_HB_LV99": "n_dancer_hb",
+    "B_EX160_LV99": "n_berserker",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -166,6 +179,11 @@ SCRIPT_ENTRY = 0xD  # an .ard's scripts (map, btl, evt)
 SPAWN_OP, MISSION_OP = 0x0, 0x15  # their operations: a spawn file placed, a mission run (OpenKH's ARD page)
 MISSIONS = "msn/us"  # original/<MISSIONS>/<name>.bar: KH2's missions (OpenKH's MSN page)
 BOSSES = (3, 0xC)  # object entries' kinds of a boss and a large enemy (the Hydra)
+# Bosses bound to their KH2 rooms (room_objects: Shadow Stalker, Dark Thorn, Oogie Boogie) left out for now (the
+# maintainer, 2026-11-13): a room made from their own map still lacks what KH2's does for them (its conveyors, its
+# objects' own collision). True makes them, their room's objects and what their scripts make, as the port can play
+# them (docs/KH2_ENEMIES.md, "Bosses bound to their rooms").
+ROOM_BOSSES = False
 ENEMIES = (3, 4, 0xC)  # and of an enemy: the port makes each a Days enemy
 
 
@@ -758,6 +776,10 @@ def make(
             continue
         area, pieces = room_objects(named_areas, numbered, name, searched_numbers(script.read_bytes()))
         if area is None:
+            continue
+        if not ROOM_BOSSES:
+            del making[name]
+            left_out.append(f"{name} ({title}): fights with its KH2 room's pieces ({area}): left out for now")
             continue
         homes[name], rooms[name] = area, pieces
         # its room's objects, and the field objects its script makes (1:0: Oogie Boogie's gift boxes), bound as it is

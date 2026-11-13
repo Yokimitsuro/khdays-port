@@ -368,9 +368,24 @@ SequenceFrame evaluate_sequence(const SequenceData& data, std::size_t clip, floa
         for (std::size_t g = sprite.first; g < std::size_t(sprite.first) + sprite.count; ++g) {
             const auto& group = data.groups[g];
             const auto& part = data.parts[group.part];
-            if (part.palette != 0 || part.scroll[0] != 0 || part.scroll[1] != 0)
-                fail("palette selection and scrolling are not implemented");
+            if (part.palette != 0)
+                fail("palette selection is not implemented");
+            // a part that scrolls its picture (YI::SPRITE::_Draw): its UVs moved by its scroll times the sprite's time
+            // times the image's size (in 16ths of a pixel, truncated), the picture repeating within the part's own
+            // rectangle (the GS's REGION_REPEAT)
+            const bool scrolls = part.scroll[0] != 0 || part.scroll[1] != 0;
+            if (scrolls && pose.scroll_time < 0)
+                fail("a scrolling part needs the sprite's time");
+            float du = 0, dv = 0;
+            if (scrolls) {
+                du = float(truncate(double(part.scroll[0]) * pose.scroll_time * pose.image_size[0] * 16)) / 16;
+                dv = float(truncate(double(part.scroll[1]) * pose.scroll_time * pose.image_size[1] * 16)) / 16;
+            }
             SequenceQuad q;
+            if (scrolls) {
+                q.wrap = true;
+                q.wrap_rect = {float(part.uv[0]), float(part.uv[1]), float(part.uv[2]) + 1, float(part.uv[3]) + 1};
+            }
             q.blend = a.blend;
             q.linear_filter = !bit(a, 2);
             const auto tint = color(a, t, pose, false);
@@ -380,7 +395,7 @@ SequenceFrame evaluate_sequence(const SequenceData& data, std::size_t clip, floa
                     edge += pose.widen;
                 const auto p = point(m, edge, float(group.rect[(v & 2) ? 3 : 1]));
                 q.vertices[v] = {pose.x + float(m.x) + p[0] + 0.5f, pose.y + float(m.y) + p[1] * pose.stretch_y + 0.5f,
-                                 float(part.uv[(v & 1) ? 2 : 0]) + 0.5f, float(part.uv[(v & 2) ? 3 : 1]) + 0.5f,
+                                 float(part.uv[(v & 1) ? 2 : 0]) + 0.5f + du, float(part.uv[(v & 2) ? 3 : 1]) + 0.5f + dv,
                                  multiply(part.colors[v], tint, pose.alpha)};
             }
             out.quads.push_back(q);

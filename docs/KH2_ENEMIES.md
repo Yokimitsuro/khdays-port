@@ -127,7 +127,10 @@ the last to hit it, set only by the player's maker (`FUN_1403a7a40`): struck by 
 moves: the Rabid Dog's `rvg_short` (`move_counter`, then `atk_rush`) or `rvg_long` (`atk_dive`) by the player's
 distance against its handle's + 0x34 (450). `revenge` itself picks `rst_normal`, `rst_hard` or `rst_super_hard` by
 its handle's + 0x18; the Rabid Dog registers none of them, and KH2's lookup (`FUN_1403ca700`) then enters nothing.
-The port does the same: Days's hit enters `revenge`, then raises trigger 6; Days's players carry the player's bit.
+The port does the same: Days's hit runs the state's hit routine (+ 0x18, `FUN_1403caba0`: the state's handle, the
+hit's damage and its attack) and trigger 19 (the damage and the attack) -- the attack a Days hit's, its + 0xc and its
+owner (2:24) the player who struck -- then enters `revenge`, then runs the state's + 0x10 routine (`FUN_1403ca470`:
+the handle and the damage) and raises trigger 6; Days's players carry the player's bit.
 
 ## The Soldier's and the Shadow's calls
 
@@ -742,7 +745,43 @@ counter's digit (4:48); their mission `LK02_MS102`.
   script asks 1:126, a motion kept in step with another's (`trap_obj_motion_sync`: `FUN_1403c8e90` chains one motion
   controller after another's, + 0xd8 and + 0xe0), which the port does not play.
 
+### The data battles (2026-11-13)
+
+KINGDOM HEARTS II FINAL MIX's data battles are their bosses' Limit Cut objects (`_LV99`), each with its own script and
+battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (their missions `EH15_MS104`, `TT20_MS603_RE`
+...). The mod makes those whose calls the port answers:
+
+| Kind | Name | Voice | Its battle |
+| --- | --- | --- | --- |
+| `B_EX110_LV99` | Axel (Data) | `n_axel` | moves (`move_various`, `move_target`), slashes, bursts, his assault |
+| `B_EX130_LV99` | Xaldin (Data) | `n_dragoon` | his flight (`fly_walk`), lances (`atk_brush`), aero, wind; its mission `BB15_MS203_RE` |
+| `B_EX170_LV99` | Xemnas (Data) | `n_xemnas` | his normal mode: shield and counter (`move_shield`, `atk_counter`), combos, warps; his hard and super hard modes as his health falls (`mode_check`) |
+| `B_EX120_HB_LV99`, `M_EX880_DANCER_LV99` | Demyx (Data), his water clones | `n_dancer_hb` | `HB04_MS403`: ten clones in 60 seconds (his unit argument 1), his final attack when time is up |
+| `B_EX160_LV99`, `B_EX220_LV99` | Saïx (Data), his claymore | `n_berserker` | `EH15_MS104`: his berserk gauge filling (4:9), at its most (137) his berserk (`change_berserk`: 1:75 his slot 161), its claymores (1:73) |
+
+- **Set going on its floor**: KH2's spawns put their objects on their points on the floor; Days sets a wave's
+  stand-in going sunk into its ground and lifts it out at its next frame, so a KH2 enemy began half a metre above its
+  floor and fell, its landing's motion (5) taking its first's place. Data Demyx opens with `atk_final`'s 209, whose
+  frame 132 (trigger 9, 1:151) calls his clones: he stood for the whole mission. The port now puts a wave's KH2 enemy
+  on its floor the first frame Days stands it out of its ground.
+- **1:75 / 1:76 / 1:77**: `YS::MOTION::hook` -- a slot of the motion set of type 0x14 (Saïx's 161: 234 entries, his
+  berserk motions by number) looked in first for each motion (`get_motion`: the hook's entry when it has one, else the
+  set's own), `unhook`, `is_hook`. Saïx hooks it as a motion ends and starts another at once.
+- **1:73** hovering (`trap_obj_hover`): class 6, `ACTION_HOVER`, whose movement is `ACTION_FLY`'s (1:58's). **1:91** an
+  object's stars (`trap_obj_star`, + 0xd70; the PS3 build's `PARTY::star`): the claymore's wielder's dizziness -- Days's
+  players have none. **1:348** a sheet's hitback addition (+ 0x1c8), which its object's slides add to their speed (2:3).
+  **2:24** an attack's owner (+ 0x10): what 2:10 was given, a Days hit's the player who struck.
+- **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
+  `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
+  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Roxas (`B_EX390`: his data
+  battle is `eh21`'s `b_80`).
+
 ### Bosses bound to their rooms
+
+**Left out for now** (the maintainer, 2026-11-13): the mod tool makes none of these bosses (`ROOM_BOSSES` in
+`tools/mods/kh2_enemies.py`, False; its log names each one left out), since a room made from their own map still lacks
+what KH2's does for them (its conveyors, its objects' own collision). The port keeps all it does for them, below,
+for when they come back.
 
 Some bosses fight with their rooms' pieces: their scripts find objects by number (1:114, `trap_obj_search_by_entry`)
 that their battle's area places as it loads. The port makes such a boss **only in a room made from its own KH2 map**,
@@ -922,6 +961,20 @@ names it too (operation 0x15 of the `.ard`'s script, OpenKH's ARD page: a u32, t
   locks itself completed on 14 and failed on 74 (4:54), then ends so (4:3, 4:11; its boss dead 4:16, left 4:22).
   Demyx counts the clones on 75 too, while the mission's bar is up (4:21). The port queues signals and tells every
   KH2 enemy, ally and the mission at the next frame; an enemy's end (its health out, an entry of kind 4) sends 75.
+- **Gauges** (op 6; Saïx's berserk, `EH15_MS104`: start 100, most 100, warning 50; Luxord's two): `YS::MISSION_GAUGE`
+  holds a float level (+ 0x2c), its start as it is made (`activate`); `4:8` sets it, `4:9` adds to it, a float then the
+  gauge's index (`SetGauge`, `AddGauge`), `4:12` gives its level over its most (`GetGaugeRatio`). `MISSION_GAUGE::set`
+  keeps it between 0 and its most: reaching 0 from above sends 136, its most from below 137, with its index, while
+  the pieces are up. KH2 PC at 60 frames a second (its tick under 2, as the port's) halves some missions' steps
+  (`FUN_140433750`: `PO01_MS501`, `TT12_WORK_BOX`, `HB32_FM_VEX`; `TR07_MS203` rising, `TR04_MS104` falling; then
+  `EH15_MS104`'s of -5 and above), and so does the port. Drawn as `dk::MISSION_GAUGE` builds it (the PS3 build's
+  `create` and `updateGauge`, read): its base (3, then 4), its second (9, then 10: Saïx's claymore), its full part
+  (12) scaled across by its level over its most, its empty part (13) by the rest, its tip (14) moved that share of the
+  bar's length (14's `ex`) along; its column's clip 16, 17 or 15 by its side. Its bar's parts scroll their picture
+  (a SEQD part's scroll: `YI::SPRITE::_Draw` moves its UVs by the scroll times the sprite's time -- the frames since it
+  was made -- times the image's size, in 16ths of a pixel, the picture repeating within the part's own rectangle, the
+  GS's `REGION_REPEAT`); the port's CPU drawing does the same. Its top standing is its second's last frame's (Saïx's
+  opens with a flash far above it).
 - **The port's mission**: its script's main thread (trigger 3) runs at KH2's 60 ticks a second, its timer counts
   while its bar is up, its count as `MISSION_COUNT::set` keeps it; its bar is up from its start (as KH2's after its
   start camera; whether trigger 2 is its start or its end is not known: the port runs it as it ends), its cameras and
@@ -1151,7 +1204,7 @@ matrix (command 0x31), 4 call back their object (0x51), the others -- Cerberus's
 | 15 | **an attack of its own landed** (`FUN_1403d1730` -> the attacker's class virtual + 0xe0, `FUN_1403d5500`): the one hit and the attack, the attack read first (its + 0x18 its atkp entry, `2:25`); Cerberus's pinning bite begins its reaction command on it. The shell raises it as a KH2 attack's hit lands on a Days player |
 | 16 | a motion's effect started (`FUN_14040dd70`: its trigger 1, `FUN_1402c6b30`): the actor, the element's number and the effect's handle -- a handler reads them as fp + 8, + 4 and + 0. The Hammer Frame's attaches its shockwave (2:10, 2:61) to its element 8 |
 | 17 | a motion's "game effect" (`FUN_14040dd70`: its trigger 7): the actor and the trigger's two values |
-| 19 | **a hit** (`FUN_140410700`, `FUN_140411060`): the attacker kept at the actor's + 0xd38 (what `2:88` gives back), trigger 19 run with the attack and the attacker, then the attack's reaction applied (`FUN_1403d4650`), the queue cleared and the reaction state the attack's data names entered by name |
+| 19 | **a hit** (`FUN_140410700`, `FUN_140411060`): the attacker kept at the actor's + 0xd38 (what `2:88` gives back), the state's hit routine (+ 0x18, `FUN_1403caba0`) and trigger 19 run with the damage and the attack, then the attack's reaction applied (`FUN_1403d4650`), the queue cleared and the reaction state the attack's data names entered by name. The port raises both on Days's hits (the Volcanic and Blizzard Lords and Shan-Yu answer 19; Saïx's data battle's hit routine asks the attack's owner) |
 
 ## Motions and their events
 

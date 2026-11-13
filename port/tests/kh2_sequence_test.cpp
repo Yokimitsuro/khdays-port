@@ -154,7 +154,17 @@ void parser_and_player()
     data.parts[0].uv = {2, 0, 2, 4};
     expect(evaluate_sequence(data, 0, 0).quads.size() == 1, "mirrored geometry/constant UV rejected");
     data.parts[0].scroll[0] = 1;
-    rejects([&] { evaluate_sequence(data, 0, 0); }, "unsupported scroll silently rendered");
+    rejects([&] { evaluate_sequence(data, 0, 0); }, "a scroll without the sprite's time rendered");
+    // given the sprite's time and its image's size (YI::SPRITE::_Draw): its UVs moved by scroll x time x size in 16ths
+    // of a pixel, truncated, its picture repeating within its own rectangle
+    kh2::SequencePose timed;
+    timed.scroll_time = 10;
+    timed.image_size = {64, 32};
+    data.parts[0].scroll = {0.01f, -0.5f};
+    const auto moved = evaluate_sequence(data, 0, 0, timed).quads.at(0);
+    expect(moved.wrap && moved.wrap_rect == (std::array<float, 4>{2, 0, 3, 5}) &&
+               near(moved.vertices[0].u, 2.5f + 102.0f / 16) && near(moved.vertices[0].v, 0.5f - 160.0f),
+           "a scrolling part's picture moved by its time and repeated within its rectangle");
     data = Fixture{}.read();
     data.animations[0].x = {std::numeric_limits<int>::max() - 127, std::numeric_limits<int>::max() - 127};
     data.animations[0].flags &= ~(1u << 14);
@@ -207,6 +217,16 @@ void rendering()
     std::vector<std::uint32_t> surface(4);
     render::draw_sequence(std::span(&q, 1), atlas, 2, 2, surface, 2, 2);
     expect((surface[0] & 255) == 200 && (surface[2] & 255) == 20, "replacement resolution mapping");
+    // a scrolling part's quad: its UVs past its rectangle sample within it (rows 2-3 brought back to rows 0-1)
+    q = quad();
+    for (auto &v : q.vertices)
+        v.v += 4;
+    q.wrap = true;
+    q.wrap_rect = {0, 0, 4, 2};
+    surface.assign(4, 0);
+    render::draw_sequence(std::span(&q, 1), atlas, 4, 4, surface, 2, 2);
+    expect((surface[0] & 255) == 200 && (surface[2] & 255) == 200, "a scrolling part's picture repeats within its rectangle");
+    q = quad();
     atlas.width = 1;
     atlas.height = 1;
     atlas.rgba = {100, 0, 0, 128};

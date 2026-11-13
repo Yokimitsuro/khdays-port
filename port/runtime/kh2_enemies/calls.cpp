@@ -674,6 +674,28 @@ void add_actor_fields(ai::Calls &calls)
     calls.set(1, 84, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_address(self_of(m, a[0])->u32(0x5c0));
     });
+    // 1:348 a sheet's hitback addition (trap_sheet_set_hitback_addition, FUN_140431260: its + 0x1c8), which its
+    // object's hits' slides add to their speed (FUN_1403d4960; 2:3): Saïx's claymore's 200 on its owner's sheet while
+    // it is wielded. A Days player has none (1:84 gives 0): nothing then
+    calls.set(1, 348, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (a[0].bits != 0)
+            m.memory().set_u32(a[0].bits + 0x1c8, a[1].bits);
+    });
+    // 1:75 a slot of its motion set hooked (trap_obj_motion_hook, FUN_14042f460 -> FUN_1403c7c10: the slot's data at
+    // the motion controller's + 0x160 when there is one), 1:76 none (FUN_1403c8f10), 1:77 whether one is (+ 0x160 not
+    // 0): Motions::hook
+    calls.set(1, 75, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]); x->motions != nullptr)
+            x->motions->hook(std::int32_t(a[1].bits));
+    });
+    calls.set(1, 76, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]); x->motions != nullptr)
+            x->motions->unhook();
+    });
+    calls.set(1, 77, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x->motions != nullptr && x->motions->hooked() ? 1 : 0);
+    });
     calls.set(1, 97, [](ai::Machine &m, std::span<ai::Value> a) {
         a[0] = ai::Value::of_address(self_of(m, a[0])->address() + 0x128);
     });
@@ -1320,7 +1342,7 @@ void add_motions(ai::Calls &calls)
     });
     // 2:3 a hit's slide (trap_enemy_exec_damage_hitback, FUN_140431c90 -> FUN_1403d4120 -> FUN_1403d4960): unless its
     // + 0x120 bit 7 holds it, the hit's way (Dir, + 0; turned back for a speed below 0) made one long, its speed a
-    // tenth of the one given (its health record's + 0x1c8 added: none in Days's field), slid along as KH2's actor's
+    // tenth of the one given (its sheet's hitback addition added: + 0x1c8, 1:348), slid along as KH2's actor's
     // update does (Actor::step); the hit's Flag bit 0 set. 2:87 a large hit (trap_enemy_exec_damage_large,
     // FUN_1403d4140): from the front (the way against its facing) it faces the hit and plays motion 23, from behind it
     // turns its back to it and plays 24 (DAMAGE_L_FRONT, DAMAGE_L_BACK), its idle asked after (FUN_1403c8310: the port's
@@ -1336,6 +1358,12 @@ void add_motions(ai::Calls &calls)
             }
             const float n = std::sqrt(way.v[0] * way.v[0] + way.v[1] * way.v[1] + way.v[2] * way.v[2]);
             x.slide = n > 0.0F ? Vec3{way.v[0] / n, way.v[1] / n, way.v[2] / n} : Vec3{};
+            if (const std::uint32_t sheet = x.u32(0x5c0); sheet != 0) { // its sheet's hitback addition (1:348)
+                const std::uint32_t bits = m.memory().u32(sheet + 0x1c8);
+                float more = 0.0F;
+                std::memcpy(&more, &bits, 4);
+                speed += more;
+            }
             x.slide_speed = speed * 0.1F;
         }
         m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
@@ -1533,8 +1561,10 @@ void add_moving(ai::Calls &calls)
         a[0] = ai::Value::of_float(n);
     });
     // 1:58 flying (trap_obj_fly) at a velocity of its own (FUN_140421ce0: + 0x20 the vector made one long times its w,
-    // + 0x108 the value, class 5), NaN components 0
-    calls.set(1, 58, [](ai::Machine &m, std::span<ai::Value> a) {
+    // + 0x108 the value, class 5), NaN components 0. 1:73 hovering (trap_obj_hover, FUN_14042d010 -> FUN_140422950:
+    // the same, class 6 -- YS::ACTION_HOVER moves by ACTION_FLY's calc_movement, its other virtuals ACTION's as
+    // FLY's are): Saïx's claymore
+    const auto fly = [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         Vec v = read_vec(m, a[1].bits);
         for (float &c : v.v)
@@ -1547,6 +1577,15 @@ void add_moving(ai::Calls &calls)
         x->dash_keep = a[2].f();
         x->dashing = true;
         x->jump.on = false;
+    };
+    calls.set(1, 58, fly);
+    calls.set(1, 73, fly);
+    // 1:91 an object's stars (trap_obj_star, FUN_14042f9c0 -> FUN_1403d7e40: its + 0xd70; the PS3 build's
+    // YS::PARTY::star, a party member's dizziness): Saïx's claymore leaves its wielder 30 so. A Days player has none
+    calls.set(1, 91, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        if (o != nullptr && !is_player(o))
+            o->set_u32(0xd70, a[1].bits);
     });
     // 1:83 a point given on a bone (0x4000 the actor itself) in the world (FUN_1403b50f0 the bone's matrix, then the
     // point through it; NaN components 0): the shared vector
@@ -2073,6 +2112,12 @@ void add_shots(ai::Calls &calls)
         m.memory().set_u32(at + 0x120, a[3].bits);
         m.memory().set_u32(at + 0x124, a[4].f() <= 0.0F ? a[3].bits : a[4].bits);
     });
+    // 2:24 an attack's owner (trap_attack_get_owner, FUN_140432ad0: its + 0x10's handle)
+    calls.set(2, 24, [world](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = world(m);
+        Object *owner = w != nullptr ? w->attack_owner(a[0].bits) : nullptr;
+        a[0] = ai::Value::of_address(owner != nullptr ? owner->address() : 0);
+    });
     calls.set(2, 44, [world](ai::Machine &m, std::span<ai::Value> a) {
         World *w = world(m);
         a[0] = ai::Value::of_address(w != nullptr ? w->attack_struck(a[0].bits) : 0);
@@ -2481,6 +2526,18 @@ void add_world(ai::Calls &calls)
             const int second = a.size() > 1 ? a[1].i() : 0;
             a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i(), second) : 0);
         });
+    // 4:8 a gauge's level set, 4:9 so much added (a float, the gauge's index), 4:12 its level over its most
+    // (trap_mission_set_gauge, _add_gauge, _get_gauge_ratio: FUN_140433740, FUN_140433750, FUN_140433770): World::
+    // mission_gauge
+    for (const unsigned n : {8u, 9u})
+        calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
+            if (World *w = running(m)->world)
+                w->mission_gauge(n, a[1].i(), a[0].f());
+        });
+    calls.set(4, 12, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        a[0] = ai::Value::of_float(w != nullptr ? w->mission_gauge(12, a[0].i(), 0.0F) : 0.0F);
+    });
     // 4:48 a digit of a counter set (trap_mission_set_count_figure_num, FUN_140433710: its place n -- 0 the ones --,
     // the digit, the counter's index; its count + (digit - (count / 10^n) % 10) x 10^n): as 4:29 then 4:5 (the
     // hyenas' counter, by their unit's argument, which Days's waves leave 0: not reached there)

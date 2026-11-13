@@ -85,8 +85,14 @@ struct StateEntry final {
     std::uint16_t on_leave = 0;  // +0xa: run at once when it is left (FUN_1403caec0)
     // + 0xa + 2 n: its routine for the game's event n (FUN_1403ca1d0): 1 the actor left the ground, 2 it landed
     std::uint16_t on_air = 0, on_land = 0; // + 0xc, + 0xe
+    // + 0x10 (event 3): run when the actor is struck (FUN_1403ca470, from FUN_140410d60 before trigger 6), given its
+    // handle and the hit's damage
+    std::uint16_t on_struck = 0;
     std::uint16_t on_shout = 0;            // + 0x14 (event 5): run when its name is shouted (1:90; FUN_1403ca950)
     std::uint16_t on_enter = 0;  // +0x16: run at once after it is entered (FUN_1403cad00)
+    // + 0x18 (event 7): run when the actor is hit (FUN_1403caba0, from KH2's hit FUN_140411060), given its handle,
+    // the hit's damage and its attack (Saïx's asks the attack's owner, 2:24)
+    std::uint16_t on_hit = 0;
 };
 
 class Actor;
@@ -110,8 +116,9 @@ public:
     } // the game's own entries ("dead") go in over a locked one
     void tick(Actor &a);                            // the current one ended: the next queued entered
     // the game's event n told to the current state (FUN_1403ca1d0): its routine for it run at once, the actor's handle
-    // given, unless the state has not begun (+ 300's bit 2): 1 off the ground, 2 landed
-    void event(Actor &a, int n);
+    // given (then `more`), unless the state has not begun (+ 300's bit 2): 1 off the ground, 2 landed, 3 struck (the
+    // damage after the handle: FUN_1403ca470), 7 hit (the damage and the attack: FUN_1403caba0)
+    void event(Actor &a, int n, std::span<const ai::Value> more = {});
     // a shout of a state's name heard (FUN_1403ca950): that state's shout routine (+ 0x14) run at once, given this
     // machine's handle and the shouter's, whatever the state is now; whether it has one
     bool shout(Actor &a, const std::string &name, std::uint32_t from);
@@ -210,6 +217,19 @@ public:
     virtual float length(int id) const = 0;           // ticks (60 a second)
     virtual float loop_from(int id) const = 0;        // ticks; at or past the length: it holds at its end
     virtual Vec3 root(int id, float ticks) const = 0; // the root's travel from the motion's start (model space, cm)
+    // 1:75: a slot of the set made its motions' first place to look (YS::MOTION::hook: a slot of type 0x14 whose
+    // entries stand for the set's own by number, the set's own where one has none -- Saïx's berserk, his slot 161);
+    // whether the set has such a slot there. 1:76 none again (unhook), 1:77 whether one is (is_hook). The actor's
+    // motion controller's state, kept by its set as the actor sees it (const: the actor's motions are)
+    virtual bool hook(int /*id*/) const
+    {
+        return false;
+    }
+    virtual void unhook() const {}
+    virtual bool hooked() const
+    {
+        return false;
+    }
 };
 
 // The motion an actor plays (its motion controller, actor + 0x158, the PS3 build's YS::MOTION; FUN_1403c86a0 plays
@@ -519,6 +539,17 @@ public:
     virtual float system_value(std::uint32_t /*offset*/, float fallback)
     {
         return fallback;
+    }
+    // the field's mission's gauge `index` (YS::MISSION's SetGauge, AddGauge, GetGaugeRatio): 8 set to `value`, 9
+    // `value` added, 12 its level over its most given back
+    virtual float mission_gauge(unsigned /*number*/, int /*index*/, float /*value*/)
+    {
+        return 0.0F;
+    }
+    // 2:24: the object that owns an attack (its + 0x10: what 2:10 was given), null none
+    virtual Object *attack_owner(std::uint32_t /*at*/)
+    {
+        return nullptr;
     }
 };
 

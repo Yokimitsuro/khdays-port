@@ -1976,6 +1976,150 @@ void test_port_royal()
     CHECK(world.counts[0] == 1734);
 }
 
+// A state's hit routine (+ 0x18, event 7: FUN_1403caba0 from KH2's hit): run at once with the state's handle, the
+// hit's damage and its attack -- the routine pops the attack first (Saïx's then asks its owner, 2:24) and records it
+void test_hit_event()
+{
+    Rig rig;
+    const Words name_a = text("a");
+    const unsigned at_a = unsigned(first(2));
+    const Words forever = misc(0) + Words{0x0007, 0xfffd};
+    Words start, main, hit;
+    std::uint32_t hit_at = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        Words reg = push_addr(1, 0x74) + push_addr(3, at_a) + push_int(100) + push_int(0);
+        for (int k = 0; k < 8; ++k)
+            reg = reg + push_int(k == 7 ? std::int32_t(hit_at) : 0); // + 0x18: its hit routine
+        start = push_addr(1, 0x74) + sys(1, 5) + reg + sys(1, 6) + push_addr(1, 8) + push_addr(1, 0x74) + sys(1, 7) +
+                misc(1);
+        main = push_addr(1, 8) + push_addr(3, at_a) + sys(1, 8) + forever;
+        // pop fp+4 (the attack), fp+8 (the damage), fp+0 (the handle); record the attack, then the damage
+        hit = Words{0x0001, 4, 0x0001, 8, 0x0001, 0} + Words{0x0030, 4} + rec() + Words{0x0030, 8} + rec() + misc(1);
+        hit_at = std::uint32_t(first(2) + name_a.size() + start.size() + main.size());
+    }
+    kh::Actor actor(script({{0, name_a.size()}, {1, name_a.size() + start.size()}}, name_a + start + main + hit),
+                    rig.memory, rig.calls, "struck");
+    rig.memory.set_u32(actor.machine().work_area() + 0xc, actor.address());
+    actor.start();
+    actor.tick();
+    CHECK(actor.states().current() != nullptr && actor.states().current()->on_hit == hit_at);
+    const ai::Value values[2] = {ai::Value::of_address(0x1111), ai::Value::of_address(0x2222)};
+    actor.states().event(actor, 7, values);
+    CHECK(rig.recorded.size() == 2 && rig.recorded[0].bits == 0x2222 && rig.recorded[1].bits == 0x1111);
+}
+
+// A made-up hooked set: 1:75 on slot 161 makes motion 0 the hook's (30 ticks), 1:76 the set's own again (60)
+struct HookMotions final : kh::Motions {
+    mutable int hook_ = -1;
+    bool has(int id) const override
+    {
+        return id == 0 || id == 161;
+    }
+    float length(int id) const override
+    {
+        return id == 0 && hook_ == 161 ? 30.0F : 60.0F;
+    }
+    float loop_from(int id) const override
+    {
+        return length(id);
+    }
+    kh::Vec3 root(int, float) const override
+    {
+        return {};
+    }
+    bool hook(int id) const override
+    {
+        if (id != 161)
+            return false;
+        hook_ = id;
+        return true;
+    }
+    void unhook() const override
+    {
+        hook_ = -1;
+    }
+    bool hooked() const override
+    {
+        return hook_ >= 0;
+    }
+};
+
+// A made-up field for Saïx's data battle: its mission's gauge (4:8, 4:9, 4:12) and an attack's owner (2:24)
+struct SaixWorld final : kh::World {
+    std::vector<std::tuple<unsigned, int, float>> gauge_calls;
+    float ratio = 0.25F;
+    kh::Object *owner = nullptr;
+    std::uint32_t asked_attack = 0;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    float mission_gauge(unsigned number, int index, float value) override
+    {
+        gauge_calls.emplace_back(number, index, value);
+        return number == 12 ? ratio : 0.0F;
+    }
+    kh::Object *attack_owner(std::uint32_t at) override
+    {
+        asked_attack = at;
+        return owner;
+    }
+};
+
+void test_data_saix()
+{
+    Rig rig;
+    HookMotions motions;
+    SaixWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "saix");
+    actor.motions = &motions;
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+
+    // 1:75 / 1:77 / 1:76: the berserk slot hooked, asked, let go; a slot that is none hooks nothing
+    CHECK(call(rig, actor, 1, 77, {self}).i() == 0);
+    call(rig, actor, 1, 75, {self, i(5)});
+    CHECK(call(rig, actor, 1, 77, {self}).i() == 0);
+    call(rig, actor, 1, 75, {self, i(161)});
+    CHECK(call(rig, actor, 1, 77, {self}).i() == 1 && motions.length(0) == 30.0F);
+    call(rig, actor, 1, 76, {self});
+    CHECK(call(rig, actor, 1, 77, {self}).i() == 0 && motions.length(0) == 60.0F);
+
+    // 4:8 / 4:9: a value then the gauge's index; 4:12 the gauge's index, its ratio back
+    call(rig, actor, 4, 8, {f(0.0F), i(0)});
+    call(rig, actor, 4, 9, {f(2.5F), i(1)});
+    CHECK(call(rig, actor, 4, 12, {i(0)}).f() == 0.25F);
+    CHECK(world.gauge_calls.size() == 3 && world.gauge_calls[0] == std::make_tuple(8u, 0, 0.0F) &&
+          world.gauge_calls[1] == std::make_tuple(9u, 1, 2.5F) && std::get<0>(world.gauge_calls[2]) == 12u &&
+          std::get<1>(world.gauge_calls[2]) == 0);
+
+    // 2:24: an attack's owner, its handle; none 0
+    kh::Object claymore(rig.memory, "claymore");
+    world.owner = &claymore;
+    CHECK(call(rig, actor, 2, 24, {adr(0x1234)}).bits == claymore.address() && world.asked_attack == 0x1234);
+    world.owner = nullptr;
+    CHECK(call(rig, actor, 2, 24, {adr(0x1234)}).bits == 0);
+
+    // 1:348: a sheet's hitback addition, which 2:3's slide adds to its speed before its tenth; a sheet of none (a
+    // Days player's) is left alone
+    call(rig, actor, 2, 9, {self, i(0), i(0)});
+    const std::uint32_t sheet = actor.u32(0x5c0);
+    CHECK(sheet != 0);
+    call(rig, actor, 1, 348, {adr(sheet), f(200.0F)});
+    float added = 0.0F;
+    rig.memory.read(sheet + 0x1c8, &added, 4);
+    CHECK(added == 200.0F);
+    call(rig, actor, 1, 348, {adr(0), f(200.0F)});
+    const std::uint32_t hit = rig.memory.add(0x30, "a test's hit");
+    const float way[4] = {0.0F, 0.0F, -1.0F, 0.0F};
+    rig.memory.write(hit, way, sizeof way);
+    call(rig, actor, 2, 3, {self, adr(hit), f(100.0F)});
+    CHECK(std::fabs(actor.slide_speed - 30.0F) < 1e-4F);
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -2000,6 +2144,8 @@ int main()
     test_lights();
     test_hydra_friends();
     test_port_royal();
+    test_data_saix();
+    test_hit_event();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;
