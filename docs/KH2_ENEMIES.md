@@ -175,7 +175,7 @@ pointers the PC keeps as 32-bit handles (`YS::DAMAGE`) are the same.
 | 2:88 | the last to hit it (+ 0xd38), the player's actor when none | the player nearest at the hit |
 | 1:87 | an effect on the actor (`FUN_1403b6670` -> `FUN_1402c6b30` on + 0x80): the element of that number in its effects, and two values passed on to the effect (**not known**) | that element started: the "dead" state's `1:87(2, 1, 0)` the Soldier's element 2 and the Shadow's (its dying smoke and sound), the leaving's `(1, 1, 0)` element 1 |
 | 1:57 | bit 0 of the actor's class's byte + 0x0c (the class at + 0x0c; KH2's classes at 0x140750d30, 16 bytes each: class 1 off the ground -- a jump, `FUN_140409ad0`, or a fall, `FUN_14053b920` -- has it, class 0 on the ground, the landing's `FUN_1403cb940`, not): the scripts wait for it after a jump and act on it in the air (US1 read it as the class's own, always 0: a jump's wait never ended) | whether it is off the ground |
-| 1:124, 1:56 | its entry's flag; whether it is on the screen (`FUN_1403ba4a0`: with + 0x9b8 bit 10, `FUN_1403f3ed0` tests it against the camera's view; 0 without the bit): the enemies leave once the player is farther than a distance, the shorter off the screen | 0; whether Days drew its model this frame or the one before |
+| 1:124, 1:56 | its entry's flag; whether it is culled, off the screen (`method_obj_is_culling` in the PS3 build; `FUN_1403ba4a0`: with + 0x9b8 bit 10, `FUN_1403f3ed0` tests it against the camera's view; 0 without the bit): the enemies leave once the player is farther than a distance, the shorter off the screen | 0; whether Days drew its model neither this frame nor the one before (until 2026-11-13 the port answered the other way round: its enemies left at the shorter distance on the screen) |
 | 1:110 | its battle record's byte + 0x1c (`FUN_1403b50d0`), -1 without one | -1 |
 | 1:39, 1:218 | its unit's argument n (`trap_obj_unit_arg`: `YS::OBJ`'s `UnitArg`, + 0x9f4 + 4 n, what the room's spawn gives each object; the Shadow tests 99); one set (`trap_obj_set_unit_arg`) | Days's waves give none: 0, then what 1:218 set |
 | 1:104, 1:105, 1:309 | + 0x8c8 bit 6 set and cleared; + 0x6c8 bit 7 of an actor: the player (set by its maker, `FUN_1403a7a40`) | as KH2; Days's players have the bit |
@@ -356,7 +356,7 @@ show (`2:22`) is Days's.
   `1:309`, `2:8`'s hit; above, "Revenge"), a state waiting for the reaction to end and a state's routine running on
   after it leaves its own state ("States"), a shape on no bone in the actor's axes ("Collision"), `1:55`'s way made
   one long and either sign of its height rising, `1:156`'s own steering (class 9), the steering stopped by a wall,
-  `1:56` on the screen, and an enemy that leaves coming back.
+  `1:56` off the screen, and an enemy that leaves coming back.
 - **Covered, second batch**: the Assault Rider `M_EX570`, the Nightwalker `M_EX580`, the Magnum Loader `M_EX600`,
   the Hot Rod `M_EX640` (`_HB`, `_WI`), the Cannon Gun `M_EX650` (`_TR`), the Armored Knight `M_EX760` (`_NM`), the
   Creeper `M_EX880` and the Dusk `M_EX990` (the calls above from `0:0` on). Played (2026-11-08, level 99, 200
@@ -433,7 +433,7 @@ enemigos"); what is built is under "Played" at the end of this section.
   | Call | Read (KH2FM.exe) |
   | --- | --- |
   | 0:1 | nothing (`FUN_14041ca00`, empty in the PC game) |
-  | 0:32 | an effect of the screen or of time for n frames (`FUN_140156c90` on `FUN_140156dc0`'s manager: + 0x100, + 0x104, + 0x108; KH2's hit starts it for 10 frames when the player's 200-kind attacker hits) -- **what it shows is not known** |
+  | 0:32 | the screen back from white over n frames (`func_screen_whitein` in the PS3 build; `FUN_140156c90` on `FUN_140156dc0`'s fader: + 0x100, + 0x104, + 0x108; KH2's hit starts it for 10 frames when the player's 200-kind attacker hits) -- not shown: Days's screen fades are its own |
   | 1:107 | the actor's + 0x2a8 set |
   | 1:130 | two objects' places in KH2's list told apart (their + 4s' difference) |
   | 1:148 | the actor put at a point (`FUN_1403b64d0`: + 0x670, then `FUN_1403ccb90`) |
@@ -675,6 +675,64 @@ answered in full by the calls above (0:9, 10:19, 4:21, 6:16, 6:46, 6:47; and 1:3
   handler (6:46's stop, the player attached, 1:29 his slot 253) are there, but in this Demyx (`B_EX120`, the Olympus
   cups') nothing turns the zone's group on (no range 4 in his motions, no 1:52 in his script) and his set has no slot
   253 (212 slots): only Hollow Bastion's (`B_EX120_HB`) offers it. Not offered, as in KH2.
+
+### Port Royal and Axel (2026-11-13)
+
+The **Undead Pirates** A, B and C `B_CA020`, `B_CA030`, `B_CA040`, **Captain Barbossa** `B_CA010` (speaking from
+`barbossa`), the **Illuminator** `B_CA000`, **Axel** `B_EX110` (`n_axel`: 12 of the 19 lines his script plays are
+recorded there, his battle's; `n_axel_tt04` holds others, the prologue's), their scripts answered in full by the
+calls above (Jafar's among them, below) (1:40, 2:2, 2:86, 0:82, 0:91, 1:250, 1:347, 1:251, 1:257 to 1:260, 0:31, 0:88,
+2:70, 6:45, 6:62, 6:63, 1:85, 1:86, 1:164).
+
+- **The moonlight**: a pirate (its entry's + 0x48 bit 5) is in its *shade* -- its cursed form, which Days's hits do
+  not hurt: the Undead Pirates' hit routine takes only its revenge then, and sets its element 6's rate to 0 -- while
+  its `OBJ::PIRATE` Place is 1. KH2 makes it at 1 and its move on the ground (`OBJ::move_at_bg`, the PS3 build) sets
+  it from the floor's polygon: 0 on one marked 1, 1 on one marked 0. Days's rooms have no such floors, so the port's
+  pirates stand out of it: `1:40` is 0, they take hits, and their model's parts 10 to 19 are left undrawn, the rest
+  shown, as `OBJ::exec_pirate` fades them at Place 0 (`PARTS_COLOR` of 0xffc00 to none, of 0x3ff00000 drawn).
+- **Their hits**: `2:2` is KH2's small hit (`FUN_1403d4260`): on the ground motion 10 from the front, 12 from behind
+  (11 and 13 for a hit of another kind, the other of the pair when the set lacks one), slid by the hit's push back;
+  in the air turned to it and 14 or 15. `2:86`, the push back, is KH2's battle constants' (03system.bin's `pref`
+  BAR, its `sstm`: + 0x30, 200) unless the attack has its own (`atkp` + 0xc, 0x7fff none: Days's hits have none).
+- **Seen** (the three together, Roxas attacking where he stands): they appear, dash (`atk_dash`), slash three times
+  (`atk_thrice`, `atk_might`), throw bombs (`atk_bomb`), stab (`atk_knife`) and shoot (`atk_shoot_normal`), and offer
+  their reaction command (361, "Fancy Dodge"'s state `rc_fancy_dodge`); Roxas's blows take them down one by one and
+  the mission is cleared. Undead Pirate C circled for ever before (`1:56` was answered the other way round): it
+  circles while it is off the screen and shoots once it is seen.
+- **Barbossa and the Illuminator** (KH2's `ca10`, the Illuminator behind the player): they share memory 29 (2:21;
+  its + 4 "the dark", + 8 set by the first to make it), and while the Illuminator stands its lights turn the objects
+  black (a kind 1 light to 0 0 0 over 40 ticks) and Barbossa fights in the dark (`btl_dark`: back off, roll, wait);
+  his mission `CA10_MS107` runs with him. The Illuminator's end clears the dark (its `dead`: + 4 0, then Barbossa's
+  `hless_dead`), after which Barbossa fights in the light and calls Illuminators again (`hless_call`, after eight of
+  his attacks). **Not yet seen**: in two recorded runs (Roxas striking where he stands, then chasing what he locks
+  on) neither was struck -- the Illuminator wanders (`footwork`: + 8 still set) and Barbossa keeps away -- so the
+  turn of the fight is not seen yet.
+- **Axel, seen** (Roxas chasing what he locks on): he moves about (`move_various`, `move_target`), slashes
+  (`atk_slice`) and bursts (`atk_burst`, `atk_burst_fast`), and Roxas's blows put him in his revenge
+  (`mode_revenge_boss`, `rvg_normal`); his combos, 30 a hit, took Roxas down to his last hit points, then (after an
+  Elixir) to none: game over 72 seconds into the fight. His reaction commands' event sequences are read ("00", "10":
+  1:164).
+- **Not shown**: the screen's fades (0:31 to white, 0:32 and 0:88 back), a model's texture animations (1:85, 1:86) and
+  a light's fog (1:257 to 1:260) -- Days's screen, the port's KH2 models and Days's field have none of them yet.
+
+### Bosses bound to their rooms
+
+Three bosses whose scripts the port answers are not offered, as their fights are their rooms' pieces or flights:
+
+- **Shadow Stalker** `B_BB120` possesses the ballroom's pillars and windows (`F_BB060`, a ring of nineteen pillars
+  whose bones and spheres are each a part, groups 1 to 6 the six it takes, 8 to 13 their reaction commands) and its
+  floor (`F_BB080`), objects of an enemy's kind KH2's `bb05` places (`m_51`, `b_40`) and his script finds by number
+  (1:114). Without them he flies toward a pillar that is not there and waits for its answer for ever. Each pillar is
+  struck where it stands, while Days's enemies are struck as one body each.
+- **Oogie Boogie** `B_NM000` fights from his manor's machinery: five objects his script finds by number (`F_NM080`,
+  `F_NM090`, `F_NM100`, `F_NM110`, `F_NM140`: his platform, its gift boxes and levers), which Days's arenas do not
+  have.
+- **Jafar** `B_AL020` (6:62, 6:63, 2:70, 0:31, 0:88 above) is a giant in his lava, fought from the air: KH2's `al05`
+  sets Sora on the carpet (`P_EX100_AL_CARPET`) 35 m above him, beside the carpet's object (`N_AL010_BTL`, which his
+  script finds by number and holds in its idle class, 6:62), and his blows and the spots he is struck on are at that
+  height. Played (a recorded walk): his body is 12 m round, he spins his blows (`atk_spin_blow`) and asks for his
+  junk (`F_AL170`, 1:0), and Roxas, on the ground at his feet, neither strikes him nor is struck. Days's players do
+  not fly.
 
 ## A player in an enemy's hands
 
@@ -1332,7 +1390,7 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   `FUN_1403cb500`): ranges 3, 24 and 30 (`FUN_14040d810`: 30 sets bit 24, which `1:60` counts as off the ground).
   The port's pull leaves those motions alone; its jumps (1:55, 1:156) still follow their own arc in them.
 - **Leaving and coming back**: KH2's enemies enter `leave` when the player is far (their `mode_battle` measures it
-  against their handle's + 0x3c on the screen, 12 or 18 m, or + 0x38 off it, 20 or 25 m; `1:56` says which): they
+  against their handle's + 0x38 on the screen, 20 or 25 m, or + 0x3c off it, 12 or 18 m; `1:56` says which): they
   fade out and wait for KH2's spawner to bring them back. Days's field has none, so once faded out the enemy comes
   back where its wave placed it, its script anew, its Days HP as it was (a Wight Knight's lunge can end 12 m past
   the player).

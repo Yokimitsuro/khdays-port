@@ -927,6 +927,7 @@ struct Command final {
     int argument = 0, require = 0, text = 0;
 };
 const Command *command(int id);
+const std::vector<std::uint8_t> &system_constants();
 
 // The Days player's object a script's player object stands for, 0 none
 unsigned days_object(const Object &o)
@@ -1070,6 +1071,16 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: %08x marks itself dead (1:328): %s", e.days,
                        took ? "its Days enemy defeated" : "Days took no hit");
+    }
+
+    float system_value(std::uint32_t offset, float fallback) override
+    {
+        const std::vector<std::uint8_t> &values = system_constants();
+        if (std::size_t(offset) + 4 > values.size())
+            return fallback;
+        float v = 0.0F;
+        std::memcpy(&v, values.data() + offset, 4);
+        return v;
     }
 
     // 1:83: a point on one of its bones in the pose it has now (0x4000 the actor itself, in its own axes), KH2's world
@@ -1405,6 +1416,12 @@ public:
         lights.fade_out(handle, ticks);
         if (tracing())
             khdays_log("kh2 enemies: light %u fades out over %.0f ticks", handle, double(ticks));
+    }
+    void light_fade_in(std::uint32_t handle, float ticks) override
+    {
+        lights.fade_in(handle, ticks);
+        if (tracing())
+            khdays_log("kh2 enemies: light %u fades in over %.0f ticks", handle, double(ticks));
     }
     bool attack_on_floor(std::uint32_t at) override
     {
@@ -1853,8 +1870,13 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
             khdays_log("kh2 enemies: %08x's body %.2f round (its stand-in's %.2f, its centre %.2f up)", days,
                        double(body), double(was_radius), double(was_centre));
     }
-    if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0)
+    if (const std::uint32_t entry = a.u32(field::kEntry); entry != 0) {
         raw->large = (mod().memory.u32(entry + 4) & 0xffu) == 0xcu;
+        // a pirate (its entry's + 0x48 bit 5) out of the moonlight, as every Days floor is (1:40): its parts 10 to 19
+        // faded out, as YS::OBJ::exec_pirate leaves them at Place 0
+        if ((mod().memory.u32(entry + 0x48) & 0x20u) != 0)
+            a.faded_parts = 0xffc00u;
+    }
     // its script set going: at once, or -- made by another's script (1:0) -- at its first tick, as KH2's object's
     // script first runs as the object is updated (FUN_1403e1240 makes its machine and runs nothing; FUN_1403e1c80 runs
     // it), after its maker has given it what it gives it (1:218: the Hydra's heads their necks, 11 to 13)
@@ -2327,6 +2349,37 @@ const Command *command(int id)
     }
     const auto it = table.find(id);
     return it != table.end() ? &it->second : nullptr;
+}
+
+// KH2's battle constants (World::system_value): 03system.bin's "pref" entry is a BAR of its own whose "sstm" record
+// holds them from its + 4's offset on (FUN_1403e9360 keeps that place: + 0x30 a hit's push back, 200); empty when the
+// mod's file lacks them
+const std::vector<std::uint8_t> &system_constants()
+{
+    static std::vector<std::uint8_t> values;
+    static bool read = false;
+    if (read)
+        return values;
+    read = true;
+    const std::vector<std::uint8_t> sys = read_file(u8(mod().folder) / "kh2" / "03system.bin");
+    try {
+        for (const kh2::BarEntry &e : kh2::bar_entries(sys.data(), sys.size())) {
+            if (e.name != "pref")
+                continue;
+            const std::uint8_t *pref = sys.data() + e.offset;
+            for (const kh2::BarEntry &s : kh2::bar_entries(pref, e.size)) {
+                if (s.name != "sstm" || s.size < 8)
+                    continue;
+                std::int32_t from = 0;
+                std::memcpy(&from, pref + s.offset + 4, 4);
+                if (from >= 0 && std::size_t(from) < s.size)
+                    values.assign(pref + s.offset + from, pref + s.offset + s.size);
+            }
+        }
+    } catch (const std::exception &x) {
+        khdays_log("kh2 enemies: the mod's kh2/03system.bin cannot be read (%s)", x.what());
+    }
+    return values;
 }
 
 // KH2's player's files (the mod's kh2/obj/P_EX100.mdlx, Sora's): his skeleton, which the enemies' motions for the
@@ -4358,7 +4411,7 @@ void ghosts_close()
         for (std::size_t b = 0; b < e.pose.size(); ++b)
             std::copy(e.pose[b].begin(), e.pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
         khdays_models_draw_posed(e.kind->mdlx.c_str(), view, e.pure, (alpha << 16) | (1u << 24), bones.data(),
-                                 e.pose.size(), e.actor->hidden_parts);
+                                 e.pose.size(), e.actor->drawn_hidden());
     }
     for (auto it = ghosts.begin(); it != ghosts.end();) {
         if ((*it)->released && (*it)->fx.empty()) {
@@ -4460,7 +4513,7 @@ void allies_close()
         for (std::size_t b = 0; b < e.pose.size(); ++b)
             std::copy(e.pose[b].begin(), e.pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
         if (!khdays_models_draw_posed(e.kind->mdlx.c_str(), view, e.pure, (alpha << 16) | (1u << 24), bones.data(),
-                                      e.pose.size(), e.actor->hidden_parts) &&
+                                      e.pose.size(), e.actor->drawn_hidden()) &&
             !e.told_draw) {
             e.told_draw = true;
             khdays_log("kh2 enemies: %s's model cannot be drawn (the message above says why)", e.kind->name.c_str());
@@ -4876,9 +4929,13 @@ extern "C" void khdays_kh2_enemies_hit(void *actor, int hp_before)
     days_hit->set_u32(0x18, 0);
     days_hit->set_u32(0x24, 2u << 16);
     // its attack's parameters (+ 0x20, an atkp record of 48 bytes): its element (+ 9, 2:85) the Days hit's
+    // and no push back of its own (+ 0xc, 0x7fff: 2:86 gives KH2's battle constants' then)
     static std::uint32_t params = 0;
-    if (params == 0)
+    if (params == 0) {
         params = mod().memory.add(48, "a Days hit's attack parameters");
+        const std::uint8_t none[2] = {0xff, 0x7f};
+        mod().memory.write(params + 0xc, none, 2);
+    }
     const std::uint8_t element = std::uint8_t(kh2_element_of(e->hit_kinds));
     mod().memory.write(params + 9, &element, 1);
     days_hit->set_u32(0x20, params);
@@ -5506,7 +5563,7 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     for (std::size_t b = 0; b < e->pose.size(); ++b)
         std::copy(e->pose[b].begin(), e->pose[b].end(), bones.begin() + std::ptrdiff_t(16 * b));
     const int drawn = khdays_models_draw_posed(e->kind->mdlx.c_str(), place, nullptr, (alpha << 16) | (1u << 24),
-                                               bones.data(), e->pose.size(), e->actor->hidden_parts);
+                                               bones.data(), e->pose.size(), e->actor->drawn_hidden());
     if (!drawn && !e->told_draw) {
         e->told_draw = true;
         khdays_log("kh2 enemies: %s's model cannot be drawn (the message above says why)", e->kind->name.c_str());

@@ -29,6 +29,8 @@ public:
     void set_colour(std::uint32_t handle, int r, int g, int b, float ticks);
     // Its strength run from what it has to nothing over `ticks`: it leaves the list then
     void fade_out(std::uint32_t handle, float ticks);
+    // Its strength run from nothing to full over `ticks` (1:251), its colour kept
+    void fade_in(std::uint32_t handle, float ticks);
     // A KH2 tick (a 60th of a second): each light's strength stepped (one at none leaves), the colours composed
     void tick();
     const Colours &colours() const

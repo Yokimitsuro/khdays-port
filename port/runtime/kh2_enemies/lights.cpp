@@ -69,6 +69,12 @@ void Lights::fade_out(std::uint32_t handle, float ticks)
         run(l->strength, l->step, l->strength, 0.0F, ticks);
 }
 
+void Lights::fade_in(std::uint32_t handle, float ticks)
+{
+    if (Light *l = find(handle))
+        run(l->strength, l->step, 0.0F, 1.0F, ticks);
+}
+
 void Lights::tick()
 {
     Colours c;

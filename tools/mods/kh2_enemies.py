@@ -109,6 +109,12 @@ KINDS = {
     "B_EX170": "Xemnas",
     "B_EX120": "Demyx",
     "M_EX880_DANCER": "Water clone (Demyx's)",
+    "B_CA020": "Undead Pirate A",
+    "B_CA030": "Undead Pirate B",
+    "B_CA040": "Undead Pirate C",
+    "B_CA010": "Captain Barbossa",
+    "B_CA000": "Illuminator",
+    "B_EX110": "Axel",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -122,6 +128,8 @@ VOICES = {
     "N_NM070_BTL_2": "barrel_boss",
     "B_EX170": "n_xemnas",
     "B_EX120": "n_dancer",
+    "B_CA010": "barbossa",
+    "B_EX110": "n_axel",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for

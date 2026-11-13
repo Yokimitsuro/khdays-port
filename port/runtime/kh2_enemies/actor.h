@@ -368,7 +368,7 @@ public:
     // 1:193: the camera to its place at once, not eased there (trap_camera_warp: ObjCamera::setWarp)
     virtual void camera_warp() {}
     // KH2's lights (lights.h): 1:181 one made of a kind, its handle (0 none); 1:182 a flag of it set; 1:183 its colour
-    // faded in over ticks; 1:184 it faded out over ticks
+    // faded in over ticks; 1:184 it faded out over ticks; 1:251 it faded in over ticks, its colour kept
     virtual std::uint32_t light_create(int /*kind*/)
     {
         return 0;
@@ -376,6 +376,7 @@ public:
     virtual void light_flag(std::uint32_t /*handle*/, int /*bit*/) {}
     virtual void light_colour(std::uint32_t /*handle*/, int /*r*/, int /*g*/, int /*b*/, float /*ticks*/) {}
     virtual void light_fade_out(std::uint32_t /*handle*/, float /*ticks*/) {}
+    virtual void light_fade_in(std::uint32_t /*handle*/, float /*ticks*/) {}
     // 1:262: a line of the actor's voice (YS::OBJ's voice -> YS::STDOBJ::_OVR_voice -> YS::VOICE::request: the sound
     // `id` of its voice bank, one at a time, a new one taking the place of one asked with no higher a priority)
     virtual void voice(Actor &, int /*id*/, int /*priority*/) {}
@@ -507,6 +508,12 @@ public:
     }
     // 1:328: the actor counted as defeated by what made it (its wave), its script going on (FUN_1403d4a40)
     virtual void dead_mark(Actor & /*a*/) {}
+    // a float of KH2's battle constants (03system.bin's "pref" BAR, its "sstm": from its record's + 4 on; 2:86 reads
+    // + 0x30 and + 0x34), `fallback` when the mod has none
+    virtual float system_value(std::uint32_t /*offset*/, float fallback)
+    {
+        return fallback;
+    }
 };
 
 // Whether an object is one of Days's players as the scripts see them (no actor of the port's: + 0x6c8 bit 7)
@@ -589,6 +596,10 @@ public:
     // its model's parts hidden (1:109 hides one, 1:108 shows it: kn::ModelSKL::hidePart and showPart on + 0x7b0's
     // model, each subpart of that part -- its attribute word's bits 6-10 -- drawn or not; -1 every part): bit n part n
     std::uint32_t hidden_parts = 0;
+    // its model's parts KH2's own rules fade out, drawn as hidden (bit n part n): a pirate's out of the moonlight,
+    // parts 10 to 19 (YS::OBJ::exec_pirate at Place 0: PARTS_COLOR of 0xffc00 faded to none, of 0x3ff00000 drawn; 1:40)
+    std::uint32_t faded_parts = 0;
+    std::uint32_t drawn_hidden() const { return hidden_parts | faded_parts; }
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set

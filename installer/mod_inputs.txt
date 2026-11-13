@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools f78eeaa066c93121dc69179d9e883d65989f4890aa64c380cd35aef7d4f1a5bd
+# tools c6357e3028a82821372ba9e0b6afc68c60f947617442858d4246cc0e96eab13c
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -54,6 +54,7 @@ kh2_fifth msn/us/AL03_MS103.bar
 kh2_fifth msn/us/BB05_MS104B.bar
 kh2_fifth msn/us/BB11_MS102.bar
 kh2_fifth msn/us/BB15_MS203.bar
+kh2_fifth msn/us/CA10_MS107.bar
 kh2_fifth msn/us/HE07_MS103.bar
 kh2_fifth msn/us/HE17_MS105.bar
 kh2_fifth msn/us/HE18_MS108.bar
@@ -79,6 +80,24 @@ kh2_fifth obj/B_BB110.mdlx
 kh2_fifth obj/B_BB110.mset
 kh2_fifth obj/B_BB130.a.us
 kh2_fifth obj/B_BB130.mdlx
+kh2_fifth obj/B_CA000.a.us
+kh2_fifth obj/B_CA000.mdlx
+kh2_fifth obj/B_CA000.mset
+kh2_fifth obj/B_CA010.a.us
+kh2_fifth obj/B_CA010.mdlx
+kh2_fifth obj/B_CA010.mset
+kh2_fifth obj/B_CA020.a.us
+kh2_fifth obj/B_CA020.mdlx
+kh2_fifth obj/B_CA020.mset
+kh2_fifth obj/B_CA030.a.us
+kh2_fifth obj/B_CA030.mdlx
+kh2_fifth obj/B_CA030.mset
+kh2_fifth obj/B_CA040.a.us
+kh2_fifth obj/B_CA040.mdlx
+kh2_fifth obj/B_CA040.mset
+kh2_fifth obj/B_EX110.a.us
+kh2_fifth obj/B_EX110.mdlx
+kh2_fifth obj/B_EX110.mset
 kh2_fifth obj/B_EX120.a.us
 kh2_fifth obj/B_EX120.mdlx
 kh2_fifth obj/B_EX120.mset
@@ -484,10 +503,13 @@ kh2_sixth obj/N_NM070_BTL_2.mdlx
 kh2_sixth obj/N_NM070_BTL_2.mset
 kh2_sixth obj/PRIZE_HE.mdlx
 kh2_sixth obj/P_EX100.mdlx
+kh2_sixth se/se000.win32.scd
 kh2_sixth se/se2984.win32.scd
+kh2_sixth voice/us/battle/barbossa.win32.scd
 kh2_sixth voice/us/battle/barrel_boss.win32.scd
 kh2_sixth voice/us/battle/he_hades.win32.scd
 kh2_sixth voice/us/battle/lock_boss.win32.scd
+kh2_sixth voice/us/battle/n_axel.win32.scd
 kh2_sixth voice/us/battle/n_dancer.win32.scd
 kh2_sixth voice/us/battle/n_dragoon.win32.scd
 kh2_sixth voice/us/battle/n_xemnas.win32.scd

@@ -1745,6 +1745,179 @@ void test_lights()
     CHECK(rig.memory.u32(attack + 0x11c) == 420u && kept[0] == 1000.0F && kept[1] == 1000.0F);
 }
 
+// The Undead Pirates', Barbossa's, the Illuminator's, Jafar's and Axel's calls: a pirate's motions (10, 12, 13 and
+// 15 of KH2's hits'), a world with KH2's battle constants, a screen and a room
+struct PirateMotions final : kh::Motions {
+    bool has(int id) const override
+    {
+        return id == 0 || id == 10 || id == 12 || id == 13 || id == 15;
+    }
+    float length(int) const override
+    {
+        return 30.0F;
+    }
+    float loop_from(int id) const override
+    {
+        return id == 0 ? 0.0F : 30.0F;
+    }
+    kh::Vec3 root(int, float) const override
+    {
+        return {};
+    }
+};
+
+struct PortRoyalWorld final : kh::World {
+    kh::Lights lights;
+    bool seen = true;        // on the screen (1:56)
+    bool wall = false;       // the room's collision between two points (1:347)
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    float system_value(std::uint32_t offset, float fallback) override
+    {
+        return offset == 0x30 ? 200.0F : offset == 0x34 ? 150.0F : fallback;
+    }
+    std::uint32_t light_create(int kind) override
+    {
+        return lights.create(kind);
+    }
+    void light_flag(std::uint32_t h, int bit) override
+    {
+        lights.set_flag(h, bit);
+    }
+    void light_colour(std::uint32_t h, int r, int g, int b, float ticks) override
+    {
+        lights.set_colour(h, r, g, b, ticks);
+    }
+    void light_fade_in(std::uint32_t h, float ticks) override
+    {
+        lights.fade_in(h, ticks);
+    }
+    bool on_screen(kh::Actor &) override
+    {
+        return seen;
+    }
+    bool aim_point(kh::Object &o, kh::Vec3 &out) override
+    {
+        out = o.place();
+        return true;
+    }
+    bool ray(kh::Actor &, const kh::Vec3 &, const kh::Vec3 &to, kh::Vec3 &hit) override
+    {
+        hit = to;
+        return wall;
+    }
+};
+
+void test_port_royal()
+{
+    Rig rig;
+    PirateMotions motions;
+    PortRoyalWorld world;
+    kh::Actor actor(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "pirate");
+    actor.motions = &motions;
+    actor.world = &world;
+    const ai::Value self = ai::Value::of_address(actor.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    float v[4] = {};
+
+    // 0:82: x times y is z, w 0; a NaN made 0 where it is
+    const std::uint32_t x = vec(rig.memory, 1, 0, 0, std::nanf(""));
+    rig.memory.read(call(rig, actor, 0, 82, {adr(x), adr(vec(rig.memory, 0, 1, 0))}).bits, v, sizeof v);
+    CHECK(v[0] == 0.0F && v[1] == 0.0F && v[2] == 1.0F && v[3] == 0.0F);
+    rig.memory.read(x, v, sizeof v);
+    CHECK(v[3] == 0.0F);
+    // 0:91: each made one long first: (2, 0, 0) against (1, 1, 0) is cos 45
+    CHECK(std::fabs(call(rig, actor, 0, 91, {adr(vec(rig.memory, 2, 0, 0)), adr(vec(rig.memory, 1, 1, 0))}).f() -
+                    0.70710678F) < 1e-5F);
+
+    // 1:40: no pirate is in its shade on Days's floors
+    CHECK(call(rig, actor, 1, 40, {self}).i() == 0);
+    // 1:56: culled when off the screen
+    CHECK(call(rig, actor, 1, 56, {self}).i() == 0);
+    world.seen = false;
+    CHECK(call(rig, actor, 1, 56, {self}).i() == 1);
+
+    // a hit from the front (it faces +z, struck going -z), of kind 0, its attack with no push back of its own
+    const std::uint32_t hit = rig.memory.add(0x30, "a test's hit");
+    const std::uint32_t params = rig.memory.add(48, "a test's attack");
+    rig.memory.set_u32(hit + 0x20, params);
+    const std::uint8_t none[2] = {0xff, 0x7f};
+    rig.memory.write(params + 0xc, none, 2);
+    const float front[4] = {0.0F, 0.0F, -1.0F, 0.0F}, behind[4] = {0.0F, 0.0F, 1.0F, 0.0F};
+    rig.memory.write(hit, front, sizeof front);
+    actor.set_yaw(0.0F);
+    // 2:2 on the ground: 10 from the front, slid by a tenth, the hit's Flag bit 0
+    call(rig, actor, 2, 2, {self, adr(hit), f(100.0F)});
+    CHECK(actor.motion.id == 10 && std::fabs(actor.slide_speed - 10.0F) < 1e-5F &&
+          (rig.memory.u32(hit + 0x18) & 1u) != 0);
+    // ... of kind 1 from behind: 13; from the front: 11, which it lacks -- 10
+    const std::uint8_t kind = 1;
+    rig.memory.write(hit + 0x24, &kind, 1);
+    rig.memory.write(hit, behind, sizeof behind);
+    call(rig, actor, 2, 2, {self, adr(hit), f(0.0F)});
+    CHECK(actor.motion.id == 13);
+    rig.memory.write(hit, front, sizeof front);
+    actor.play(0, 0.0F, 0.0F);
+    call(rig, actor, 2, 2, {self, adr(hit), f(0.0F)});
+    CHECK(actor.motion.id == 10);
+    // ... in the air: turned to face it, 14 asked, 15 played (14 it lacks), no slide
+    actor.slide_speed = 0.0F;
+    actor.set_yaw(1.0F);
+    actor.set_bits(kh::field::kFlags, kh::bit::kInAir, true);
+    call(rig, actor, 2, 2, {self, adr(hit), f(100.0F)});
+    CHECK(actor.motion.id == 15 && std::fabs(actor.yaw()) < 1e-5F && actor.slide_speed == 0.0F);
+    actor.set_bits(kh::field::kFlags, kh::bit::kInAir, false);
+
+    // 2:86: KH2's battle constants' + 0x30 for a first reaction of 0, + 0x34 for one of kind 3 (8); its attack's own
+    // when it has one; half for a reaction of 12
+    CHECK(call(rig, actor, 2, 86, {adr(hit)}).f() == 200.0F);
+    const std::uint8_t eight = 8;
+    rig.memory.write(hit + 0x27, &eight, 1);
+    CHECK(call(rig, actor, 2, 86, {adr(hit)}).f() == 150.0F);
+    const std::uint8_t own[2] = {80, 0}, twelve = 12;
+    rig.memory.write(params + 0xc, own, 2);
+    CHECK(call(rig, actor, 2, 86, {adr(hit)}).f() == 80.0F);
+    rig.memory.write(hit + 0x26, &twelve, 1);
+    CHECK(call(rig, actor, 2, 86, {adr(hit)}).f() == 40.0F);
+
+    // 2:70: the part struck (+ 0x25); 6:63: a motion of 10 to 39 is a hit's
+    const std::uint8_t part = 3;
+    rig.memory.write(hit + 0x25, &part, 1);
+    CHECK(call(rig, actor, 2, 70, {adr(hit)}).i() == 3);
+    actor.set_u32(kh::field::kMotion, 12);
+    CHECK(call(rig, actor, 6, 63, {self}).i() == 1);
+    actor.set_u32(kh::field::kMotion, 40);
+    CHECK(call(rig, actor, 6, 63, {self}).i() == 0);
+    actor.set_u32(kh::field::kMotion, 9);
+    CHECK(call(rig, actor, 6, 63, {self}).i() == 0);
+    // 6:45: its shadow's bit (+ 0x124 bit 9)
+    call(rig, actor, 6, 45, {self});
+    CHECK((actor.u32(0x124) & 0x200u) != 0);
+
+    // 1:347: a clear line between it and another, then a wall
+    kh::Object other(rig.memory, "another");
+    other.set_place({500.0F, 0.0F, 0.0F});
+    CHECK(call(rig, actor, 1, 347, {self, adr(other.address())}).i() == 1);
+    world.wall = true;
+    CHECK(call(rig, actor, 1, 347, {self, adr(other.address())}).i() == 0);
+
+    // 1:251: a room's light faded in over 2 ticks or fewer at once, its colour kept
+    using Bytes = std::array<std::uint8_t, 3>;
+    const ai::Value h = call(rig, actor, 1, 181, {i(0)});
+    call(rig, actor, 1, 182, {h, i(1)});
+    call(rig, actor, 1, 183, {h, i(40), i(40), i(40), f(1.0F)});
+    world.lights.tick();
+    CHECK(world.lights.colours().room == (Bytes{40, 40, 40}));
+    call(rig, actor, 1, 251, {h, f(1.0F)});
+    world.lights.tick();
+    CHECK(world.lights.colours().room == (Bytes{40, 40, 40}));
+    call(rig, actor, 1, 257, {h, f(100.0F)}); // its fog: kept by nothing
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -1768,6 +1941,7 @@ int main()
     test_second_bosses();
     test_lights();
     test_hydra_friends();
+    test_port_royal();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

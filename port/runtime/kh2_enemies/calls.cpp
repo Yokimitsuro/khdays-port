@@ -300,9 +300,13 @@ void add_math(ai::Calls &calls)
         if (m.memory().report)
             m.memory().report("its script prints \"" + name_at(m.memory(), a[0].bits) + "\"");
     });
-    // 0:32 an effect of the screen or of time for n frames (FUN_14041ddb0 -> FUN_140156c90 on FUN_140156dc0's
-    // manager; KH2's hit starts it for 10 frames): what it shows is not known -- nothing here
+    // 0:31 the screen faded to white over n frames, 0:32 back from white (func_screen_whiteout, _whitein in the PS3
+    // build: FUN_14041dd70, FUN_14041ddb0 -> FUN_140156ce0, FUN_140156c90 on FUN_140156dc0's fader, white), 0:88 back
+    // from black (trap_screen_fadein, FUN_14041de70; KH2's hit asks 0:32 for 10 frames): Days's screen fades are its
+    // own, so none is shown (Jafar's whiteout)
+    calls.set(0, 31, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 32, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(0, 88, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 85, [](ai::Machine &, std::span<ai::Value>) {});
     // 0:15 a bit of KH2's story (FUN_14039a980: DAT_1409ab540's bits, 0xffff none): none of them in Days's field
     calls.set(0, 15, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
@@ -391,6 +395,42 @@ void add_math(ai::Calls &calls)
                 v.v[i] = out[i];
         }
         a[0] = give_vec(m, "0:83", v);
+    });
+    // 0:82 two vectors' outer product, the first's times the second's (trap_vector_outer_product, FUN_14041d570 ->
+    // FUN_140142120; w 0) and 0:91 their inner product once each is made one long (trap_vector_inner_prodcut,
+    // FUN_14041d8b0: FUN_140142080 on copies, FUN_140140200 of x, y, z): the NaNs of both made 0 where they are first,
+    // as KH2 does. Barbossa's and the Illuminator's aims
+    const auto fixed = [](ai::Machine &m, std::uint32_t at) {
+        Vec v = read_vec(m, at);
+        bool any = false;
+        for (float &f : v.v)
+            if (std::isnan(f)) {
+                f = 0.0F;
+                any = true;
+            }
+        if (any)
+            m.memory().write(at, v.v, sizeof v.v);
+        return v;
+    };
+    calls.set(0, 82, [fixed](ai::Machine &m, std::span<ai::Value> a) {
+        const Vec y = fixed(m, a[1].bits), x = fixed(m, a[0].bits);
+        Vec v;
+        v.v[0] = x.v[1] * y.v[2] - x.v[2] * y.v[1];
+        v.v[1] = x.v[2] * y.v[0] - x.v[0] * y.v[2];
+        v.v[2] = x.v[0] * y.v[1] - x.v[1] * y.v[0];
+        v.v[3] = 0.0F;
+        a[0] = give_vec(m, "0:82", v);
+    });
+    calls.set(0, 91, [fixed](ai::Machine &m, std::span<ai::Value> a) {
+        const auto unit = [](Vec v) {
+            const float n = std::sqrt(v.v[0] * v.v[0] + v.v[1] * v.v[1] + v.v[2] * v.v[2]);
+            if (n != 0.0F)
+                for (int i = 0; i < 3; ++i)
+                    v.v[i] /= n;
+            return v;
+        };
+        const Vec x = unit(fixed(m, a[0].bits)), y = unit(fixed(m, a[1].bits));
+        a[0] = ai::Value::of_float(x.v[0] * y.v[0] + x.v[1] * y.v[1] + x.v[2] * y.v[2]);
     });
 }
 
@@ -713,13 +753,73 @@ void add_actor_fields(ai::Calls &calls)
     // 1:124 its entry's flag (FUN_1403ba700); 1:56 FUN_1403ba4a0's value; 1:110 its battle record's byte + 0x1c
     // (FUN_1403b50d0: -1 without one): none of these is Days's, so the plain answers -- 0, and -1 for no record
     calls.set(1, 124, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
-    // 1:56 whether it is on the screen (the enemies leave sooner off it: their "leave" distance off the screen is the
-    // shorter): the world's answer
+    // 1:56 whether it is culled, off the screen (method_obj_is_culling in the PS3 build, FUN_14042ee40 ->
+    // FUN_1403ba4a0: with + 0x9b8 bit 10 its box against the view, YS::BG::IsCulling; 0 without the bit): the world's
+    // answer, not drawn this frame nor the one before. The enemies leave sooner off the screen (their "leave" distance
+    // there the shorter); Undead Pirate C circles until it is seen, then shoots
     calls.set(1, 56, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
-        a[0] = ai::Value::of_int(x != nullptr && x->world != nullptr && x->world->on_screen(*x) ? 1 : 0);
+        a[0] = ai::Value::of_int(x != nullptr && x->world != nullptr && !x->world->on_screen(*x) ? 1 : 0);
     });
     calls.set(1, 110, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(-1); });
+    // 1:40 whether it is a pirate in its shade (trap_obj_is_pirate_shade, FUN_14042bd60 -> FUN_1403baa90; the PS3
+    // build's YS::OBJ::is_pirate_shade): its entry's + 0x48 bit 5 (a pirate's) and its OBJ::PIRATE Place 1. KH2 makes
+    // a pirate at Place 1, and its move on the ground (OBJ::move_at_bg) sets Place from the floor's polygon -- 0 on one
+    // marked 1, 1 on one marked 0: Port Royal's moonlight. Days's rooms have no such floors; the port's pirates stand
+    // out of it, at Place 0, in no shade: they take hits (the Undead Pirates take none in it, their element 6 rate 0)
+    // and show their parts of that (Actor::faded_parts)
+    calls.set(1, 40, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
+    // 1:347 whether a line between two objects is clear (trap_obj_can_see, FUN_14042c330: each one's aim point, 1:88's
+    // FUN_1403b5cb0, then FUN_1403f3c20 -- the room's collision cast from the first's to the second's, FUN_14040c2b0 --
+    // seen when it meets none): the room's, Days's (World::ray). Barbossa's aim
+    calls.set(1, 347, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        Object *from = object_of(m, a[0]), *to = object_of(m, a[1]);
+        Vec3 p, q, hit;
+        const bool seen = w != nullptr && from != nullptr && to != nullptr && w->aim_point(*from, p) &&
+                          w->aim_point(*to, q) && !w->ray(*running(m), p, q, hit);
+        a[0] = ai::Value::of_int(seen ? 1 : 0);
+    });
+    // 1:250 the player's lock-on reach times a rate (trap_status_set_lockon_ratio, FUN_1404308d0: DAT_142a1141c and
+    // the battle constants' + 0x50 times it, KH2's own lock-on): Days's lock-on is its own, so nothing
+    calls.set(1, 250, [](ai::Machine &, std::span<ai::Value>) {});
+    // 6:63 whether its motion is one of its hits' (trap_obj_is_damage_motion, FUN_14053ee50 -> FUN_1403d4880: a motion
+    // set, and its motion's number, + 0x180, from 10 to 39). Jafar's and Axel's
+    calls.set(6, 63, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Object *x = object_of(m, a[0]);
+        const std::uint32_t motion = x != nullptr ? x->u32(field::kMotion) : 0u;
+        a[0] = ai::Value::of_int(x != nullptr && motion - 10u < 30u ? 1 : 0);
+    });
+    // 2:70 the part a hit struck (trap_damage_parts, FUN_140432100: YS::DAMAGE's byte + 0x25): Days's hits strike no
+    // part, 0
+    calls.set(2, 70, [](ai::Machine &m, std::span<ai::Value> a) {
+        std::uint8_t part = 0;
+        m.memory().read(a[0].bits + 0x25, &part, 1);
+        a[0] = ai::Value::of_int(part);
+    });
+    // 6:62 Jafar's carpet's idle (trap_obj_carpet_obj_idle, FUN_14053ee20: its class made 0x13, FUN_1403b4da0); that
+    // class's native movement is not read: the port's actor moves as class 0 then, by its motions and steering. 6:45
+    // its shadow hidden (trap_obj_hide_shadow, FUN_14053e960: + 0x124 bit 9): KH2's shadow is not drawn for the port's
+    // enemies, the bit only kept
+    calls.set(6, 62, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (!is_player(object_of(m, a[0])))
+            self_of(m, a[0])->dashing = false;
+    });
+    calls.set(6, 45, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Object *x = object_of(m, a[0]))
+            x->set_bits(0x124, 1u << 9, true);
+    });
+    // 1:85 / 1:86 a texture animation of its model started and stopped by number (trap_obj_texanm_start, _stop:
+    // FUN_1403cd8a0, FUN_1403cd8b0 on + 0x7b0's model, kn::ModelObj's texture animations of that number): the port draws
+    // no KH2 enemy's texture animations, so nothing. 1:164 an event sequence of a name, as 1:157 starts one but with no
+    // object for its camera (trap_obj_camera_start_global, FUN_14042e0d0 -> FUN_1403db2f0 with none): Axel's
+    calls.set(1, 85, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 86, [](ai::Machine &, std::span<ai::Value>) {});
+    calls.set(1, 164, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        if (x != nullptr && x->world != nullptr)
+            x->world->event(*x, name_at(m.memory(), a[1].bits), nullptr);
+    });
     // 1:60 off the ground or held (FUN_14042efc0: FUN_1403ba9a0's class bit 0, + 0x18c & 0x1000020, + 0x120 bit 23;
     // then + 0x18c bit 6)
     calls.set(1, 60, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -1219,6 +1319,63 @@ void add_motions(ai::Calls &calls)
         x->play(front ? 23 : 24, 0.0F, 0.0F);
         x->motion.queued = 0;
         slide(*x, m, a[1].bits, a[2].f());
+    });
+    // 2:2 a small hit (trap_enemy_exec_damage_small, FUN_140431c40 -> FUN_1403d4260): off the ground (FUN_1403ba9a0,
+    // 1:60's test) it turns as 2:87 does and plays 14 from the front, 15 from behind (FUN_1403d3840; the table at
+    // 0x1405c63f8), its idle after -- its air class's push (FUN_1403d4800) the port's classes do not have; on the
+    // ground it plays, unturned, 10 from the front and 12 from behind, 11 and 13 for a hit whose kind (+ 0x24) is not
+    // 0 nor 2 to 5 (FUN_1403d43b0; the table at 0x14074c390), its idle after, then slides as 2:3 does. The other of a
+    // pair when its set lacks the one asked; the hit's Flag bit 0 set. The Undead Pirates' hits
+    calls.set(2, 2, [slide](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const std::uint32_t hit = a[1].bits;
+        const Vec way = read_vec(m, hit);
+        const Vec3 f = facing_of(x->yaw());
+        const bool front = way.v[0] * f[0] + way.v[1] * f[1] + way.v[2] * f[2] < 0.0F;
+        const auto own = [x](int motion) {
+            return x->motions != nullptr && !x->motions->has(motion) ? motion ^ 1 : motion;
+        };
+        const bool air = (x->u32(field::kStatus) & 0x1000020u) != 0 || (x->u32(field::kFlags) & bit::kInAir) != 0;
+        if (air) {
+            const float sign = front ? -1.0F : 1.0F;
+            if (way.v[0] != 0.0F || way.v[2] != 0.0F)
+                x->set_yaw(std::atan2(way.v[0] * sign, way.v[2] * sign));
+            x->play(own(front ? 14 : 15), 0.0F, 0.0F);
+            x->motion.queued = 0;
+            m.memory().set_u32(hit + 0x18, m.memory().u32(hit + 0x18) | 1u);
+            return;
+        }
+        std::uint8_t kind = 0;
+        m.memory().read(hit + 0x24, &kind, 1);
+        const bool first = kind == 0 || (kind >= 2 && kind <= 5);
+        x->play(own((front ? 10 : 12) + (first ? 0 : 1)), 0.0F, 0.0F);
+        x->motion.queued = 0;
+        slide(*x, m, hit, a[2].f());
+    });
+    // 2:86 a hit's push back (trap_damage_get_hitback, FUN_1404321a0 -> FUN_1403ceab0; YS::DAMAGE::get_hitback in the
+    // PS3 build): by its first reaction's kind (+ 0x27, as 2:91 sorts it) KH2's battle constants' (03system.bin's
+    // pref "sstm", World::system_value) + 0x30 -- + 0x34 for kind 3 -- then its attack's own (atkp's + 0xc, a short)
+    // unless that is 0x7fff; half that for a reaction (+ 0x26) of 12 or 13. Kinds 4 and 5 (a blow's and a pull's
+    // length) are none of the port's hits: their first reaction is 0. The Undead Pirates slide by it (2:3)
+    calls.set(2, 86, [](ai::Machine &m, std::span<ai::Value> a) {
+        const std::uint32_t hit = a[0].bits;
+        std::uint8_t first = 0, reaction = 0;
+        m.memory().read(hit + 0x27, &first, 1);
+        m.memory().read(hit + 0x26, &reaction, 1);
+        const bool third = first == 3 || first == 6 || first == 8 || first == 10 || first == 13 || first == 16 ||
+                           first == 18;
+        World *w = running(m)->world;
+        float back = w != nullptr ? w->system_value(third ? 0x34u : 0x30u, 200.0F) : 200.0F;
+        if (const std::uint32_t record = m.memory().u32(hit + 0x20); record != 0) {
+            std::uint8_t two[2] = {};
+            m.memory().read(record + 0xc, two, 2);
+            const std::int16_t own = std::int16_t(two[0] | (two[1] << 8));
+            if (own != 0x7fff)
+                back = float(own);
+        }
+        if (reaction == 12 || reaction == 13)
+            back *= 0.5F;
+        a[0] = ai::Value::of_float(back);
     });
     // 2:64 a hit's first reaction (trap_damage_orig_reaction, FUN_140431f40: YS::DAMAGE's OrigReaction, + 0x27);
     // 2:91 a reaction kind's kind (trap_damage_get_reaction_type, FUN_1404321d0 -> FUN_1403ce980, of the value given:
@@ -2340,6 +2497,16 @@ void add_world(ai::Calls &calls)
         if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
             w->light_fade_out(a[0].bits, a[1].f());
     });
+    // 1:251 faded in over ticks (trap_light_fadein, FUN_140430b10 -> FUN_1403f7680: its strength run from none to full,
+    // FUN_1403b7810), its colour kept. 1:257 to 1:260 its fog's near, far, least and most (trap_light_set_fog_near ...
+    // _max: its record's + 0x18 to + 0x24), which a room's light gives the map (FUN_1401626f0): Days's field draws no
+    // KH2 fog, so they are kept by nothing. The Illuminator's dark
+    calls.set(1, 251, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (World *w = running(m)->world; w != nullptr && a[0].bits != 0)
+            w->light_fade_in(a[0].bits, a[1].f());
+    });
+    for (const unsigned n : {257u, 258u, 259u, 260u})
+        calls.set(1, n, [](ai::Machine &, std::span<ai::Value>) {});
 }
 
 } // namespace khdays::kh2_enemies
