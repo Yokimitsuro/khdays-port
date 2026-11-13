@@ -2216,6 +2216,15 @@ void test_data_roxas()
     call(rig, roxas, 0, 51, {adr(0x5c)});
     CHECK(world.loop_ended == std::vector<std::uint32_t>({0x5a, 0x5b}));
     CHECK(world.killed == std::vector<std::uint32_t>({0x5c}));
+    // 1:220: a step ahead stops half a metre short of the wall at z 100 (2.5 m asked: 0.5 m taken); one that meets
+    // none is taken whole
+    roxas.set_yaw(0.0F);
+    roxas.set_place({0.0F, 0.0F, 0.0F});
+    call(rig, roxas, 1, 220, {self, f(250.0F), i(0)});
+    CHECK(std::fabs(roxas.place()[2] - 50.0F) < 1e-3F && std::fabs(roxas.place()[0]) < 1e-3F);
+    roxas.set_place({0.0F, 0.0F, -300.0F});
+    call(rig, roxas, 1, 220, {self, f(100.0F), i(0)});
+    CHECK(std::fabs(roxas.place()[2] + 200.0F) < 1e-3F);
 }
 
 int main()

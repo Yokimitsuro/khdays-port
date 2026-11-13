@@ -1314,7 +1314,10 @@ in KH2's axes and centimetres, its view the enemy's) at its size, turn (x, then 
 the Soldier's and the Shadow's turn about one axis only) and place, on its bone in the pose of the tick it is drawn
 at; its sound starts when its time comes; its two points, when it has them, on their bones each frame
 (`EffectInstance::set_points`): before, an element with them drew no swing trail at all (the Magnum Loader's blades',
-the Neoshadow's claws'). Their pictures are read between their texels whatever Days's texture
+the Neoshadow's claws'). KH2 gives the trail a new pair each tick (60 a second) and Days draws once every two of them:
+the tick between two draws takes its pair on the way from the last draw's to the new one (the base along the line,
+the tip turned round between the two ways, as a blade swings). Until 2026-11-13 both ticks took the draw's pair, each
+stood twice in the trail's history and its curve went in steps (Data Roxas's keyblades). Their pictures are read between their texels whatever Days's texture
 setting: KH2 does not draw its effects with nearest texels, and the DS look's made a spark a block of pixels. **Not
 known**: + 8 and + 0xc (the Soldier's elements 3, 4 and 7: 1 and 1, 2, 4), and the two values `1:87` passes on.
 
@@ -1500,7 +1503,10 @@ The port (`port/runtime/kh2_enemies/shell.h`) makes it a KH2 enemy's shell:
   defeated by Days as a hit of all its health defeats it, its KH2 end its script's own.
 - **Put by a script** (1:148, 1:153, 1:220): the place its script gives it in a tick is kept (until 2026-11-11 the
   place Days had was written over it), and the place another's script gives it between two frames (the cubes put the
-  Sorcerer they made where they stand) is taken at the next frame's start, not Days's.
+  Sorcerer they made where they stand) is taken at the next frame's start, not Days's. 1:220's step stops at the
+  room's walls as KH2's sweep does: a cast a metre up along it, the actor kept half a metre short of what it meets.
+  Until 2026-11-13 it stepped the whole length: Days's collision pushes back only one standing in a wall, so a step
+  through one (Roxas's 2.5 m before his hold) left it outside.
 - **Jumps and falls** end on the ground Days last found under it (+ 0x13c, + 0x140): Days's collision lets a fast
   fall through the floor (the Wight Knight's 5 m leap fell on under the room, its script waiting on the ground).
 - **Its height is KH2's**: between two steps Days lowers a stand-in that is off the ground by 0.148 units a frame

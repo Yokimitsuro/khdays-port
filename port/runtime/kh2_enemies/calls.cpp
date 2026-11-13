@@ -1554,10 +1554,26 @@ void add_moving(ai::Calls &calls)
         if (Object *o = object_of(m, a[0]))
             o->set_bits(field::kFade, 1u << 12, true);
     });
+    // KH2 sweeps its collision along the step and stops it at a wall; the port casts at its middle (a metre up) and
+    // keeps it its body's half metre short of what it meets: Days's collision pushes back only one standing in a wall,
+    // so a step through one left it outside (Roxas's 2.5 m before his hold, 1:18, out of Days's arena)
     calls.set(1, 220, [](ai::Machine &m, std::span<ai::Value> a) {
+        constexpr float kMiddle = 100.0F, kKeptOff = 50.0F; // KH2's cm (y down)
         Actor *x = self_of(m, a[0]);
         const Vec3 at = x->place(), f = facing_of(x->yaw());
-        x->set_place({at[0] + f[0] * a[1].f(), at[1], at[2] + f[2] * a[1].f()});
+        float length = a[1].f();
+        if (!(length > 0.0F))
+            return;
+        if (World *w = running(m)->world) {
+            Vec3 hit{};
+            const Vec3 from = {at[0], at[1] - kMiddle, at[2]};
+            const Vec3 to = {from[0] + f[0] * (length + kKeptOff), from[1], from[2] + f[2] * (length + kKeptOff)};
+            if (w->ray(*x, from, to, hit)) {
+                const float d = std::sqrt((hit[0] - at[0]) * (hit[0] - at[0]) + (hit[2] - at[2]) * (hit[2] - at[2]));
+                length = std::min(length, std::max(0.0F, d - kKeptOff));
+            }
+        }
+        x->set_place({at[0] + f[0] * length, at[1], at[2] + f[2] * length});
     });
     calls.set(1, 2, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);

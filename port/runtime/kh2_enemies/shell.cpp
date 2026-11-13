@@ -661,6 +661,9 @@ struct Enemy final {
         Vec3 scale{};
         std::array<float, 4> colour{1.0F, 1.0F, 1.0F, 1.0F};
         float end_age = -1.0F; // ended once this old (0:52), -1 when not
+        // its two points when last drawn (a swing trail's base and tip): the ticks between two draws take theirs
+        // between those and the new ones, as KH2's bones give a new pair each tick
+        std::vector<kh2::EffectPoint> points_before;
     };
     std::vector<Running> fx;
     float pan = 0.0F; // where it was last drawn, left (-1) to right (1) of the camera: its sounds' pan
@@ -4482,6 +4485,41 @@ void held_middle(const Held &h, float out[3])
     out[2] += t[2] / kKh2PerDays;
 }
 
+// Points a part of the way (0 to 1) from one draw's to the next: a pair (a swing trail's base and tip) the base along
+// the line and the tip from it turned on the way round between the two (its length along between), as a blade swings;
+// others along the line
+std::vector<kh2::EffectPoint> points_between(const std::vector<kh2::EffectPoint> &from,
+                                             const std::vector<kh2::EffectPoint> &to, float part)
+{
+    std::vector<kh2::EffectPoint> out = to;
+    for (std::size_t i = 0; i < out.size(); ++i)
+        for (int j = 0; j < 3; ++j)
+            out[i].place[std::size_t(j)] = from[i].place[std::size_t(j)] +
+                                           (to[i].place[std::size_t(j)] - from[i].place[std::size_t(j)]) * part;
+    if (out.size() < 2)
+        return out;
+    Vec3 a{}, b{};
+    for (int j = 0; j < 3; ++j) {
+        a[std::size_t(j)] = from[1].place[std::size_t(j)] - from[0].place[std::size_t(j)];
+        b[std::size_t(j)] = to[1].place[std::size_t(j)] - to[0].place[std::size_t(j)];
+    }
+    const float la = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    const float lb = std::sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+    if (la <= 0.0F || lb <= 0.0F)
+        return out;
+    const float cosine = std::clamp((a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (la * lb), -1.0F, 1.0F);
+    const float angle = std::acos(cosine), sine = std::sin(angle);
+    if (sine < 1e-4F) // the same way (or turned right round: the line)
+        return out;
+    const float wa = std::sin((1.0F - part) * angle) / sine, wb = std::sin(part * angle) / sine;
+    const float length = la + (lb - la) * part;
+    for (int j = 0; j < 3; ++j)
+        out[1].place[std::size_t(j)] =
+            out[0].place[std::size_t(j)] +
+            (a[std::size_t(j)] / la * wa + b[std::size_t(j)] / lb * wb) * length;
+    return out;
+}
+
 // Its effects moved on by KH2's ticks since its last draw (the game's frames, 60 a second: the corridor's way), each
 // at its element's place, its sound started when its time comes; the last tick's drawn at the camera now; those over
 // let go. Where it is drawn gives its sounds' pan.
@@ -4533,10 +4571,18 @@ void draw_effects(Enemy &e, const float view[16], const float projection[16])
             if (r.element->points && e.kind->skeleton) // the Magnum Loader's blades', the Neoshadow's claws' trails
                 points = element_points(e.pose, *e.kind->skeleton, *r.element);
         }
-        if (!points.empty())
-            r.fx->set_points(std::move(points));
+        // KH2 moves its bones every tick and a swing's trail takes a pair of points each tick: Days draws once in
+        // `ticks` of them, so the ticks between take theirs on the way from the last draw's to these (else each pair
+        // stood `ticks` times in the trail's history and its curve went in steps)
+        std::vector<kh2::EffectPoint> before;
+        if (!points.empty()) {
+            before = r.points_before.size() == points.size() ? r.points_before : points;
+            r.points_before = points;
+        }
         for (unsigned t = 0; t < ticks; ++t) {
             const bool last = t + 1 == ticks;
+            if (!points.empty())
+                r.fx->set_points(last ? points : points_between(before, points, float(t + 1) / float(ticks)));
             if (last)
                 r.draws.clear();
             if (!r.sounded && r.age >= r.element->start) {
