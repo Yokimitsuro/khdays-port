@@ -128,6 +128,12 @@ KINDS = {
     "M_EX880_DANCER_LV99": "Water clone (Data Demyx's)",
     "B_EX160_LV99": "Saïx (Data)",
     "B_EX220_LV99": "Saïx's claymore (Data)",
+    # his FINAL MIX fight and his data battle are one object (eh21's b_40 and b_80, the latter at battle level 99)
+    "B_EX390": "Roxas",
+    "W_EX010_ROXAS_LIGHT": "Roxas's keyblade (light)",
+    "W_EX010_ROXAS_DARK": "Roxas's keyblade (dark)",
+    # her Absent Silhouette and her data battle (hb33's b_83 and b_81, battle level 32 and 99)
+    "B_EX400": "Larxene",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -150,6 +156,8 @@ VOICES = {
     "B_EX170_LV99": "n_xemnas",
     "B_EX120_HB_LV99": "n_dancer_hb",
     "B_EX160_LV99": "n_berserker",
+    "B_EX390": "n_roxas",
+    "B_EX400": "n_larxene",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -555,13 +563,19 @@ def journal_titles(jiminy: bytes, objentry: bytes) -> dict[str, int]:
     return out
 
 
+# Kinds the journal names only by another of the same character's objects: FINAL MIX's hooded Roxas (B_EX390) has no
+# entry of his own, the Roxas of the prologue (P_EX110) has
+JOURNAL_ALIASES = {"B_EX390": "P_EX110"}
+
+
 def journal_title(titles: dict[str, int], name: str) -> int | None:
     """A kind's title in the journal: its own model's, else its journal's (_GM: the Volcanic Lord's B_AL100_FIRE is
     the journal's B_AL100_FIRE_GM), else its family's -- the model's first two parts (Hades of the cups' B_HE030_CLSM
     is the journal's B_HE030_GM) --, else the journal's first model named on from it (the Wight Knight's M_EX200 is
-    the journal's M_EX200_NM); none when the journal has none."""
+    the journal's M_EX200_NM), else its character's other object's (JOURNAL_ALIASES); none when the journal has none."""
     family = "_".join(name.upper().split("_")[:2])
-    for candidate in (name.upper(), f"{name.upper()}_GM", f"{family}_GM", family):
+    alias = JOURNAL_ALIASES.get(name.upper(), "")
+    for candidate in (name.upper(), f"{name.upper()}_GM", f"{family}_GM", family, alias):
         if candidate in titles:
             return titles[candidate]
     return next((title for model, title in titles.items() if model.startswith(f"{name.upper()}_")), None)

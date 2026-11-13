@@ -5,10 +5,14 @@
 // bounds are printed instead: what the port's fitting of an effect to a model is measured on; with --vertices every
 // corner of each draw follows its line. --survey plays every emitter of every block of the files given for that many
 // frames (a repeating one stopped half way; the game's points a weapon swung round) and prints a line for each:
-// played (its most objects, the triangles drawn, any not-a-number corner) or refused and why.
+// played (its most objects, the triangles drawn, any not-a-number corner) or refused and why. --pages lists each
+// block's pictures and writes each of its pages as a TGA named with the HD picture the port draws in its place (the
+// block's own pages in order, numbered on from the last block's; a .dpd -- texcommon.dpd -- read as one bare block):
+// an HD picture told apart from the wrong one.
 //
 //   khdays-kh2-effect-dump [--extent | --vertices] <file.pax> <block> <emitter> <frame> [stop frame]
 //   khdays-kh2-effect-dump --survey <frames> <file.pax>...
+//   khdays-kh2-effect-dump --pages <file.pax | file.dpd> <folder>
 #include "khdays/assets/kh2_effect.h"
 
 #include <algorithm>
@@ -17,6 +21,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -118,12 +123,73 @@ int survey(int frames, int count, char **files)
     return 0;
 }
 
+// --pages: each block's pictures and its pages as the port numbers their HD pictures (its distinct picture pages in
+// order, numbered on from the last block's: runtime/kh2_enemies/shell.cpp), each page written to `folder` as
+// <block>_<tbp>_<hd number>.tga
+int pages(const char *file, const std::string &folder)
+{
+    std::ifstream in(file, std::ios::binary);
+    const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string named = file;
+    const auto blocks = named.size() > 4 && named.substr(named.size() - 4) == ".dpd"
+                            ? std::vector<EffectBlock>{read_effect_block(bytes.data(), bytes.size(), 0)}
+                            : read_effect(bytes.data(), bytes.size());
+    int first = 0;
+    for (std::size_t b = 0; b < blocks.size(); ++b) {
+        std::vector<const EffectPicture *> all;
+        std::map<std::uint16_t, const EffectPicture *> by_page;
+        for (const auto &pic : blocks[b].pictures) {
+            all.push_back(&pic);
+            by_page.emplace(pic.tbp, &pic);
+            std::printf("block %zu picture tbp %04x cbp %04x psm %02x tbw %u at %u,%u size %u x %u\n", b,
+                        unsigned(pic.tbp), unsigned(pic.cbp), unsigned(pic.psm), unsigned(pic.tbw), unsigned(pic.x),
+                        unsigned(pic.y), unsigned(pic.w), unsigned(pic.h));
+        }
+        for (const auto &[tbp, pic] : by_page) {
+            const bool direct = pic->psm == 0;
+            // the page's view: a page (128 x 64, a direct one's 64 x 32), or its picture's when larger
+            const auto log2_up = [](unsigned v) {
+                std::uint64_t l = 0;
+                while ((1u << l) < v)
+                    ++l;
+                return l;
+            };
+            const std::uint64_t tw = std::max<std::uint64_t>(direct ? 6 : 7, log2_up(unsigned(pic->x + pic->w))),
+                                th = std::max<std::uint64_t>(direct ? 5 : 6, log2_up(unsigned(pic->y + pic->h)));
+            const std::uint64_t tex0 = std::uint64_t(tbp) | std::uint64_t(pic->tbw) << 14 | std::uint64_t(pic->psm) << 20 |
+                                       tw << 26 | th << 30 | std::uint64_t(pic->cbp) << 37;
+            const EffectPage page = effect_page(all, tex0);
+            const std::string name = folder + "/" + std::to_string(b) + "_" + std::to_string(tbp) + "_hd" +
+                                     std::to_string(first) + ".tga";
+            std::printf("block %zu page %04x cbp %04x %d x %d: HD -%d.dds -> %s\n", b, unsigned(tbp), unsigned(pic->cbp),
+                        page.width, page.height, first, name.c_str());
+            ++first;
+            std::ofstream out(name, std::ios::binary);
+            std::uint8_t header[18] = {};
+            header[2] = 2; // uncompressed true colour
+            header[12] = std::uint8_t(page.width), header[13] = std::uint8_t(page.width >> 8);
+            header[14] = std::uint8_t(page.height), header[15] = std::uint8_t(page.height >> 8);
+            header[16] = 32;
+            header[17] = 0x28; // top-left origin, 8 alpha bits
+            out.write(reinterpret_cast<const char *>(header), sizeof(header));
+            for (std::size_t i = 0; i + 3 < page.rgba.size(); i += 4) {
+                const char bgra[4] = {char(page.rgba[i + 2]), char(page.rgba[i + 1]), char(page.rgba[i]),
+                                      char(page.rgba[i + 3])};
+                out.write(bgra, 4);
+            }
+        }
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
 {
     if (argc > 3 && std::string(argv[1]) == "--survey")
         return survey(std::atoi(argv[2]), argc - 3, argv + 3);
+    if (argc > 3 && std::string(argv[1]) == "--pages")
+        return pages(argv[2], argv[3]);
     const bool extent = argc > 1 && std::string(argv[1]) == "--extent";
     if (extent) {
         --argc;
@@ -137,7 +203,8 @@ int main(int argc, char **argv)
     if (argc < 5) {
         std::fprintf(stderr,
                      "usage: khdays-kh2-effect-dump [--extent | --vertices] <file.pax> <block> <emitter> <frame> [stop "
-                     "frame]\n");
+                     "frame]\n       khdays-kh2-effect-dump --survey <frames> <file.pax>...\n"
+                     "       khdays-kh2-effect-dump --pages <file.pax | file.dpd> <folder>\n");
         return 2;
     }
     try {

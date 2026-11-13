@@ -79,6 +79,13 @@ Actor *running(ai::Machine &m)
     return static_cast<Actor *>(m.user());
 }
 
+// The segments BGHITs were cast along (6:51), by their records: 6:52 casts beside them for the surface's normal
+std::map<std::uint32_t, std::pair<Vec3, Vec3>> &bghit_segments()
+{
+    static std::map<std::uint32_t, std::pair<Vec3, Vec3>> segments;
+    return segments;
+}
+
 // The object a call's first argument names: some calls take the object itself (1:11, 1:14, 1:15 ...), most the AI
 // handle whose + 4 is the object (1:7, 1:8 ...); the script's own actor when neither.
 Object *object_of(ai::Machine &m, const ai::Value &arg)
@@ -292,8 +299,7 @@ void add_math(ai::Calls &calls)
         }
     });
     // 0:0, 0:2 nothing in the PC game (FUN_14041c9f0, FUN_14041ca10: empty; a debugging print once): 0:2's text
-    // told where the memory tells its misses (the shell's trace: "avoid start", "high_attack_min" ...); 0:85 an
-    // effect's handle let go (FUN_14041e1c0 -> FUN_1402be8f0): the port's effects end of their own
+    // told where the memory tells its misses (the shell's trace: "avoid start", "high_attack_min" ...)
     calls.set(0, 0, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 1, [](ai::Machine &, std::span<ai::Value>) {}); // FUN_14041ca00: empty too
     calls.set(0, 2, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -307,7 +313,6 @@ void add_math(ai::Calls &calls)
     calls.set(0, 31, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 32, [](ai::Machine &, std::span<ai::Value>) {});
     calls.set(0, 88, [](ai::Machine &, std::span<ai::Value>) {});
-    calls.set(0, 85, [](ai::Machine &, std::span<ai::Value>) {});
     // 0:15 a bit of KH2's story (FUN_14039a980: DAT_1409ab540's bits, 0xffff none): none of them in Days's field
     calls.set(0, 15, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 0:23 a value without its sign (FUN_14041ca90; given back marked a whole number, as KH2 marks it)
@@ -1157,6 +1162,7 @@ void thrown(Actor &x, float way_x, float way_z, float speed, float up)
     x.velocity = x.steered = x.jump.along;
     x.move_clock = 0.0F;
     x.set_bits(field::kFlags, bit::kInAir, true);
+    x.jump.blow = true;
     x.motion.after = -1;
     x.motion.landing = x.motion.id >= 0 ? x.motion.id + 1 : 5;
 }
@@ -1490,13 +1496,15 @@ void add_motions(ai::Calls &calls)
     calls.set(1, 100, [](ai::Machine &, std::span<ai::Value> a) {
         a[0] = ai::Value::of_float(std::sqrt(std::fabs(2.0F * a[0].f() / 0.408163F)));
     });
-    // 1:63 whether its motion has reached its end with no blend left (FUN_14042f120 -> FUN_1403c7e70 on + 0x158:
-    // its time + 0x44 against its motion's length, its blend + 0x48 run out)
+    // 1:63 whether its motion has reached its loop with no blend left (trap_obj_is_motion_in_loop, FUN_14042f120 ->
+    // FUN_1403c7e70 on + 0x158: its time + 0x44 against its motion's loop point, its blend + 0x48 run out) -- a motion
+    // that does not loop its end. Data Roxas's slide waits for its 162's loop (frame 6 of 8); read as its end, a loop
+    // never reached it
     calls.set(1, 63, [](ai::Machine &m, std::span<ai::Value> a) {
         const Actor *x = self_of(m, a[0]);
-        const bool at_end = x->motions != nullptr && x->motion.id >= 0 && x->motions->has(x->motion.id) &&
-                            x->motion.blend <= 0.0F && x->motion.time >= x->motions->length(x->motion.id);
-        a[0] = ai::Value::of_int(at_end ? 1 : 0);
+        const bool in_loop = x->motions != nullptr && x->motion.id >= 0 && x->motions->has(x->motion.id) &&
+                             x->motion.blend <= 0.0F && x->motion.time >= x->motions->loop_from(x->motion.id);
+        a[0] = ai::Value::of_int(in_loop ? 1 : 0);
     });
     // 1:19, 1:20 a fade to gone / to seen over a time, unless held (FUN_1403b7810 on + 0xa08: a time of 2 or less is
     // 1); 1:28 gone in a tick and held (+ 0x9b8 bit 4)
@@ -2040,6 +2048,65 @@ void add_shots(ai::Calls &calls)
                 ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits), std::int32_t(a[3].bits))
                 : 0);
     });
+    // 2:57 a limit's effect on an object (trap_limit_effect_start, FUN_140432fb0 -> FUN_1403d9b60: FUN_1402c6b30 on the
+    // object's + 0x18, its element and value, 1, 30000), its handle: as 1:21 on that object when it is a KH2 one, else
+    // none (Data Roxas's shots ask it of the object a thread was given, else 1:21 on himself)
+    calls.set(2, 57, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        Actor *x = o != nullptr ? o->actor() : nullptr;
+        a[0] = ai::Value::of_address(x != nullptr && x->world != nullptr
+                                         ? x->world->effect(*x, std::int32_t(a[1].bits), std::int32_t(a[2].bits), 1)
+                                         : 0);
+    });
+    // 10:52 whether it plays a reflecting motion (trap_btlobj_is_reflect_motion, FUN_1405370d0 -> FUN_1403d48d0: a
+    // motion controller, its motion 140 to 150; the PS3 build's BTLOBJ::is_reflect_motion)
+    calls.set(10, 52, [](ai::Machine &m, std::span<ai::Value> a) {
+        const Actor *x = self_of(m, a[0]);
+        a[0] = ai::Value::of_int(x->motions != nullptr && x->motion.id >= 140 && x->motion.id <= 150 ? 1 : 0);
+    });
+    // 6:69 the others of its part hidden (Ts::trap_larxene_dead, FUN_14053f180: every object whose entry's part number,
+    // + 0x4c, is its own but itself, YS::OBJ's VTABLE hide): their models not drawn
+    calls.set(6, 69, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *me = self_of(m, a[0]);
+        const std::uint32_t mine = me->u32(field::kEntry);
+        if (me->world == nullptr || mine == 0)
+            return;
+        const std::uint32_t part = m.memory().u32(mine + 0x4c) & 0xffffu;
+        for (Actor *x : me->world->objects())
+            if (const std::uint32_t record = x->u32(field::kEntry);
+                x != me && record != 0 && (m.memory().u32(record + 0x4c) & 0xffffu) == part)
+                x->hidden_parts = ~0u;
+    });
+    // 10:22 whether an object is blown away (kn::trap_sysobj_is_blow, FUN_140536970: there, its class's + 0xc bit 6 --
+    // KH2's blow class, 1:129's and 2:1's): a KH2 one in such a throw; a Days player never (Days's hits are Days's)
+    calls.set(10, 22, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        const Actor *x = o != nullptr ? o->actor() : nullptr;
+        a[0] = ai::Value::of_int(x != nullptr && x->jump.on && x->jump.blow ? 1 : 0);
+    });
+    // 1:169 an effect let go of its object (trap_obj_effect_unbind, FUN_14042d650: the object's bound effect of that
+    // handle, + 0x98's list, its flag cleared and its binding gone): World::effect_unbind. Roxas's keyblades leave their
+    // trails where they were
+    calls.set(1, 169, [](ai::Machine &m, std::span<ai::Value> a) {
+        if (Actor *x = self_of(m, a[0]); x->world != nullptr)
+            x->world->effect_unbind(a[1].bits);
+    });
+    // 8:2 an object turned about all three axes (ryj::trap_obj_set_xyzrot, FUN_140537e70 -> FUN_1403b65f0: the turns,
+    // NaNs 0, at + 0x680, their y its facing's w, + 0x9b8 bit 3): Roxas's keyblades
+    calls.set(8, 2, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        Vec v = read_vec(m, a[1].bits);
+        for (float &c : v.v)
+            if (std::isnan(c))
+                c = 0.0F;
+        x->set_yaw(v.v[1]);
+        for (std::uint32_t i = 0; i < 4; ++i)
+            x->set_f(field::kFacing + 4 * i, v.v[i]);
+        x->set_f(field::kFacing + 12, v.v[1]);
+        x->set_bits(0x9b8, 8u, true);
+        x->turned_all = true;
+        x->turn_all = {v.v[0], v.v[1], v.v[2]};
+    });
     // 1:22 one at a place of the world, its handle (FUN_14042d4b0 -> FUN_1403b66c0: its place then the one given)
     calls.set(1, 22, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
@@ -2160,6 +2227,7 @@ void add_shots(ai::Calls &calls)
         World *w = world(m);
         const bool met = w != nullptr && w->ray(*running(m), from, to, hit);
         const std::uint32_t record = a[0].bits;
+        bghit_segments()[record] = {from, to}; // (6:52's)
         m.memory().set_u32(record + 0x14, met ? 0u : 0xffffffffu);
         if (met) {
             const float p[4] = {hit[0], hit[1], hit[2], 1.0F};
@@ -2168,6 +2236,55 @@ void add_shots(ai::Calls &calls)
             m.memory().set_u32(record + 0x1c, 0);
         }
         a[0] = ai::Value::of_int(met ? 1 : 0);
+    });
+    // 6:52 the normal of the polygon a BGHIT met (trap_bghit_get_normal, FUN_14053ec80 -> FUN_14040c3c0: the room's or
+    // an object's polygon's): Days's rooms give the port no polygon, so two more segments beside the first, a few
+    // centimetres apart across its way, meet the same surface and the three points give it, turned against the way
+    // (the way back when they miss). Data Roxas reads it of what his shots meet
+    calls.set(6, 52, [world](ai::Machine &m, std::span<ai::Value> a) {
+        Vec out;
+        World *w = world(m);
+        const auto seg = bghit_segments().find(a[0].bits);
+        if (w != nullptr && seg != bghit_segments().end()) {
+            const Vec3 from = seg->second.first, to = seg->second.second;
+            Vec3 way = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
+            const float n = std::sqrt(way[0] * way[0] + way[1] * way[1] + way[2] * way[2]);
+            if (n > 0.0F) {
+                for (float &c : way)
+                    c /= n;
+                // two ways across it
+                const Vec3 up = std::fabs(way[1]) < 0.9F ? Vec3{0.0F, 1.0F, 0.0F} : Vec3{1.0F, 0.0F, 0.0F};
+                const auto cross = [](const Vec3 &p, const Vec3 &q) {
+                    return Vec3{p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]};
+                };
+                const auto unit = [](Vec3 v) {
+                    const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                    if (l > 0.0F)
+                        for (float &c : v)
+                            c /= l;
+                    return v;
+                };
+                const Vec3 across = unit(cross(way, up)), other = unit(cross(way, across));
+                Vec3 p0{}, p1{}, p2{};
+                const auto cast = [&](const Vec3 &side, Vec3 &hit) {
+                    constexpr float kApart = 5.0F; // cm
+                    const Vec3 f = {from[0] + side[0] * kApart, from[1] + side[1] * kApart, from[2] + side[2] * kApart};
+                    const Vec3 t = {to[0] + side[0] * kApart, to[1] + side[1] * kApart, to[2] + side[2] * kApart};
+                    return w->ray(*running(m), f, t, hit);
+                };
+                Vec3 normal = {-way[0], -way[1], -way[2]};
+                if (cast({0.0F, 0.0F, 0.0F}, p0) && cast(across, p1) && cast(other, p2)) {
+                    const Vec3 got = unit(cross({p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]},
+                                                {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]}));
+                    if (got[0] != 0.0F || got[1] != 0.0F || got[2] != 0.0F) {
+                        const bool facing = got[0] * way[0] + got[1] * way[1] + got[2] * way[2] < 0.0F;
+                        normal = facing ? got : Vec3{-got[0], -got[1], -got[2]};
+                    }
+                }
+                out.v[0] = normal[0], out.v[1] = normal[1], out.v[2] = normal[2];
+            }
+        }
+        a[0] = give_vec(m, "6:52", out);
     });
     // 6:53 whether a BGHIT met something (its polygon, + 0x14, not -1; FUN_14053ecd0)
     calls.set(6, 53, [](ai::Machine &m, std::span<ai::Value> a) {
@@ -2322,10 +2439,16 @@ void add_world(ai::Calls &calls)
                 : 0;
         a[0] = ai::Value::of_address(h);
     });
-    calls.set(0, 44, [](ai::Machine &m, std::span<ai::Value> a) {
+    // 0:44 an effect's loops closed (trap_effect_loop_end), 0:85 the same and the effect freed once it has ended
+    // (trap_effect_loop_end_kill; FUN_14041e1c0 -> FUN_1402be8f0): it ends once its objects have. Data Roxas closes
+    // the 13 glows 1:87 put on him as he rolls or waits for his duel this way; never closed, each roll left them going
+    // and the screen went white
+    const auto loop_end = [](ai::Machine &m, std::span<ai::Value> a) {
         if (running(m)->world != nullptr && a[0].bits != 0)
-            running(m)->world->stop_effect(a[0].bits);
-    });
+            running(m)->world->effect_loop_end(a[0].bits);
+    };
+    calls.set(0, 44, loop_end);
+    calls.set(0, 85, loop_end);
     add_search(calls);
     add_attacks(calls);
     add_shots(calls);
@@ -2378,6 +2501,18 @@ void add_world(ai::Calls &calls)
     // the first its health now and at most -- what 1:84, 1:228 and 1:229 read, the scripts' "hp_rate"; + 0x268 the
     // actor): its health -- its battle entry's (the second value: 00battle.bin's enmp, the Soldier's 33, Hades's 19 or
     // 199) in Days's scale (World::battle_entry) -- in it, kept by the shell each frame (World::health)
+    // 2:95 a sheet of its own made anew from a battle entry (trap_btlobj_dup_sheet, FUN_140431aa0 -> FUN_1404112b0:
+    // the old one let go, FUN_1403c06b0's new one at + 0x5c0, its + 0x268 the actor): Larxene's 216 as she begins
+    calls.set(2, 95, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        const std::uint32_t record = m.memory().add(0x270, x->name() + "'s health");
+        m.memory().set_u32(record + 0x268, x->address());
+        x->set_u32(0x5c0, record);
+        if (x->world != nullptr) {
+            x->world->battle_entry(*x, a[1].i());
+            x->world->health(*x);
+        }
+    });
     calls.set(2, 9, [](ai::Machine &m, std::span<ai::Value> a) {
         Actor *x = self_of(m, a[0]);
         if (x->u32(0x5c0) == 0) {
@@ -2603,6 +2738,13 @@ void add_world(ai::Calls &calls)
             running(m)->world->camera_watch(*o);
     });
     calls.set(1, 295, [](ai::Machine &m, std::span<ai::Value>) {
+        if (running(m)->world != nullptr)
+            running(m)->world->camera_home();
+    });
+    // 1:223 the camera given back (trap_camera_cancel, FUN_140430be0: KH2's camera mode back to 4, the field's, its
+    // value kept at DAT_140b64fa0 -- not read further): the reaction camera let go, as 1:295. Data Roxas cancels it
+    // as the player's motion 246 ends his reaction command
+    calls.set(1, 223, [](ai::Machine &m, std::span<ai::Value>) {
         if (running(m)->world != nullptr)
             running(m)->world->camera_home();
     });

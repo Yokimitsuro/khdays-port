@@ -273,6 +273,7 @@ struct Jump final {
     Vec3 along{};    // the speed along the ground a tick
     // its pull a tick a tick (1:156's own, a throw's KH2's)
     float gravity = kKh2Pull;
+    bool blow = false; // a blow's (1:129, 2:1: KH2's blow class, its flags' bit 6 -- what 10:22 asks)
     // class 1's arc by its time (1:55, 1:168; FUN_1403cbb00, its movement FUN_1403cb360): `time` (+ 0xf0) on a tick a
     // tick; before `apex` (+ 0xf4) its height eased up to `rise` (+ 0xfc: sin(sin(time / apex x pi/2) x pi/2) of it),
     // then from `rise` + `base` (+ 0xf8) down under KH2's pull; `height` where it is, from where it began
@@ -307,8 +308,12 @@ public:
     {
         return effect(a, number, x, y);
     }
-    // 0:44: an effect stopped at once (FUN_1402be8e0 -> FUN_1402c2830), by its handle
+    // 0:51 (trap_effect_kill): an effect ended at once, by its handle
     virtual void stop_effect(std::uint32_t /*handle*/) {}
+    // 0:44 and 0:85 (trap_effect_loop_end, trap_effect_loop_end_kill: FUN_1402be8e0, FUN_1402be8f0, the PS3 build's
+    // ryj::EFFECT::loop_end and loop_end_kill, both pppLoopEnd; the kill's flag 1 frees it once it has ended): an
+    // effect's loops closed, by its handle -- it ends once its objects have (the port lets every ended effect go)
+    virtual void effect_loop_end(std::uint32_t /*handle*/) {}
     // KH2's attacks of their own (YS::ATTACK_MAGIC, 0x138 bytes: 2:10 makes one, FUN_1404371b0), each at the address
     // `at` of the scripts' memory the calls name it by: made by `by`'s script for `owner` (an enemy, or KH2's player:
     // his blow then) with an atkp entry, a combo group and the entry's sub-number; its size (2:11: a radius and a
@@ -546,6 +551,8 @@ public:
     {
         return 0.0F;
     }
+    // 1:169: an effect let go of the object it follows (its bound flag cleared, FUN_1402be1c0): it stays where it is
+    virtual void effect_unbind(std::uint32_t /*handle*/) {}
     // 2:24: the object that owns an attack (its + 0x10: what 2:10 was given), null none
     virtual Object *attack_owner(std::uint32_t /*at*/)
     {
@@ -655,6 +662,10 @@ public:
     }
     std::uint32_t drawn_hidden() const { return hidden_parts | faded_parts | coloured_out(); }
     std::vector<Vec3> path;        // the walk path it is on (1:177; KH2's follower at + 0x630), KH2's world; 5:14
+    // turned about all three axes (8:2: + 0x680 the turns, + 0x9b8 bit 3), x then y then z as an effect's element is,
+    // KH2's world; its model drawn so (Roxas's keyblades spinning), else by its yaw alone
+    bool turned_all = false;
+    Vec3 turn_all{};
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set

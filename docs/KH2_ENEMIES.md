@@ -198,7 +198,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 0:21 | how far one vector's way along the ground is turned from another's: `atan2(x, z)` of each, the difference into (-pi, pi] (`FUN_14041d1b0`, `FUN_1403b6f20`: pi and 2 pi at 0x140623b78, 0x140623ba4) | as KH2 |
 | 0:35 | a vector scaled where it lies, its four components (`FUN_14013fcc0`) | as KH2 |
 | 2:67 | KH2's next running number (`FUN_1403cf490`: `DAT_142a24afc`, 0 at the start, 0x100 again past 0x10000000) | as KH2 |
-| 1:63 | its motion at its end with no blend left (`FUN_1403c7e70` on + 0x158: the time + 0x44 against the motion's length, the blend + 0x48 run out) | as KH2 |
+| 1:63 | its motion in its loop with no blend left (`trap_obj_is_motion_in_loop`, `FUN_1403c7e70` on + 0x158: the time + 0x44 against the motion's loop point, the blend + 0x48 run out) -- one that does not loop at its end. Until 2026-11-13 the port read it as the end: a script waiting for a loop (Data Roxas's slide, its 162 looping from frame 6 of 8) waited for ever | as KH2 |
 | 1:100 | the ticks a jump takes to rise a height (`trap_obj_jump_height_to_uptime`, `FUN_1403b73f0`): `sqrt(abs(2 h / 0.408163))`, the time KH2's pull (0.408163 cm a tick a tick, `DAT_1405ce184`) takes to fall it | as KH2 |
 | 1:156 | a jump of its own (`FUN_1403cbec0`): a vector -- its x, z the way (made one long, times its w), its y how high -- the ticks to its top (its pull + 0x10c `2 y / t^2`, its rise the pull times t), a value at + 0x108, a motion and its blend, and with the flag the two after it as 1:55's. It leaves the ground as class 9 (+ 0x648 2) at the motion's take-off; class 9's movement (`FUN_1403cbdd0`) keeps + 0x108 of its velocity an evaluation, steered or not (the Wight Knight's tear: up 5 m, then steered ahead at 100, or 250 when far, keeping 0.95: a lunge of some 15 m) | as KH2 (the jump's own pull and keep), from the motion's trigger 0 as 1:55's |
 | 1:150, 1:151 | bit n - 1 of the actor's bytes + 0x2ac and + 0x2ad (`FUN_14042d1e0`, `FUN_14042d230`): its motion controller's (+ 0x158) + 0x154, the ranges 16 to 19 on now (`FUN_14040d810`, cleared each tick by `FUN_14040e5c0`), and + 0x155, the triggers 9 to 12 its motion passed this tick (`FUN_14040dd70`, cleared each tick by `FUN_1403c6740`) -- the Strafer's ways of attacking; the Magnum Loader's charge waits for its 52A's frame 80, its thread on the player for his AB10's frames 12 and 42 | as KH2: an enemy's own motion's and a held player's |
@@ -214,7 +214,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 1:191 | the record at an object's + 0xdc8's + 4: the player's aim (his lock-on), which Rising Sun goes for when it names one | a record of the port's, empty: no lock of Days's is passed on |
 | 1:221 | whether the player can take a command now (`FUN_1403b6950`, `FUN_1403ba070`: his state against the command's flags) | yes |
 | 1:165 | a reaction command offered KH2's player this tick (`FUN_140430010` -> `FUN_1403b2850` on his + 0xdd0): a slot, the command, its source | offered while renewed (Rising Sun's 427, each tick of its descent) |
-| 1:149, 0:44 | an effect of the actor's on another object, its handle (`FUN_14042d5c0` -> `FUN_1403b6670`); one stopped at once (`FUN_14041e190` -> `FUN_1402be8e0`) | as KH2 (on a held player, on his bones) |
+| 1:149, 0:44 | an effect of the actor's on another object, its handle (`FUN_14042d5c0` -> `FUN_1403b6670`); an effect's loops closed (`trap_effect_loop_end`, `FUN_14041e190` -> `FUN_1402be8e0`: `ryj::EFFECT::loop_end`), so it ends once its objects have | as KH2 (on a held player, on his bones) |
 | 2:45 | the number of a hit's attack (`trap_damage_attack_param_id`: `YS::DAMAGE`'s `AttackParam`, + 0x20, its u16 at + 2): the Wight Knight asks it of its hits (492, 1149, 568) | 0: a Days hit names no KH2 attack |
 | 1:222, 1:114 | its object entry's number (`trap_obj_get_entry_id`: + 8, `YS::OBJ`'s `Entry`, its record's + 0); the field's first object of an entry's number into an AI handle (`trap_obj_search_by_entry`, `FUN_1403b4110`: 0x236 the player) | as KH2: each kind's `00objentry.bin` record (96 bytes: + 0 its number, + 4 its kind -- 4 an enemy, 3 a boss --, + 8 its name, + 0x28 its motion set's) put at its actors' + 8 |
 | 1:155 | health added to a bar (`trap_obj_add_hp`: its object's `add_hp`, `YS::BTLOBJ::_OVR_add_hp` -> `YS::SHEET::_add_hp`: kept between the bar's least and most, the bar's health given back) | as KH2; the first bar's given to Days's enemy (at least 1) |
@@ -231,7 +231,7 @@ The calls the other enemies need (US2, "Coverage" below), read the same way:
 | 0:0, 0:2 | nothing in the PC game (`FUN_14041c9f0`, `FUN_14041ca10` are empty: debugging prints once) | nothing; 0:2's text in the trace (`KHDAYS_TRACE_KH2_ENEMIES`: "avoid start", "high_attack_min") |
 | 0:15 | a bit of KH2's story (`FUN_14039a980`: `DAT_1409ab540`'s bits, 0xffff none) | 0: none in Days's field |
 | 0:23 | a value without its sign (`FUN_14041ca90`), marked a whole number | as KH2 |
-| 0:85 | an effect's handle let go (`FUN_14041e1c0` -> `FUN_1402be8f0`) | nothing: the port's effects end of their own |
+| 0:85 | an effect's loops closed and the effect freed once it has ended (`trap_effect_loop_end_kill`, `FUN_14041e1c0` -> `FUN_1402be8f0`: `ryj::EFFECT::loop_end_kill`) | as 0:44 (Data Roxas closes the glows `1:87` put on him as he rolls or waits for his duel: left going, every roll added to them and the screen went white) |
 | 1:2 | steered toward a point along the ground at a speed (`FUN_1403b9c60`: + 0x10, + 0x1c), the way's length back; its first value the actor itself | as KH2 |
 | 1:29 | another object plays a motion of this one's set from a frame (`FUN_1403c6cc0`: its set made this one's, + 0x2b8; + 0x180) -- the Magnum Loader's rider, on its message 309 | as KH2, on another of the port's actors |
 | 1:58 | flying (`trap_obj_fly`) at a velocity of its own (`FUN_140421ce0`: + 0x20 the vector made one long times its w, + 0x108 a value, class 5, whose movement `FUN_140421c80` keeps + 0x108 of it an evaluation, eased toward the steering) | as KH2 (class 5 ends with 1:74 or a jump) |
@@ -771,10 +771,23 @@ battle entry, fought in the areas `eh10` to `eh20`, `tt20`, `bb15`, `hb04` (thei
   object's stars (`trap_obj_star`, + 0xd70; the PS3 build's `PARTY::star`): the claymore's wielder's dizziness -- Days's
   players have none. **1:348** a sheet's hitback addition (+ 0x1c8), which its object's slides add to their speed (2:3).
   **2:24** an attack's owner (+ 0x10): what 2:10 was given, a Days hit's the player who struck.
+- **Roxas** `B_EX390` (`n_roxas`): his FINAL MIX fight and his data battle are one object and one script, `eh21`'s
+  `b_40` and `b_80` -- the data battle's program sets its battle level to 99 (the ARD's operation 0x1e, `BattleLevel`;
+  0x1d is `Recov`), which no script of these reads (1:361 unasked): in the port the mission's own level makes the
+  difference. His keyblades are objects his script makes (1:0: `W_EX010_ROXAS_LIGHT`, `_DARK`, kinds of their own),
+  turned about all three axes (8:2) and leaving their trails where they were (1:169). His calls: 1:223 the camera given
+  back (the reaction camera, as 1:295), 2:57 a limit's effect on an object (1:21's on it), 6:52 a BGHIT's polygon's
+  normal (Days's rooms give no polygon: two more segments beside the first give it), 10:52 a reflecting motion
+  (140 to 150). The journal names him by the prologue's Roxas (`P_EX110`). **Seen**: his slides, spins, shield,
+  duel and charge, revenge on Roxas's blows.
+- **Larxene** `B_EX400` (`n_larxene`): her Absent Silhouette and her data battle, `hb33`'s `b_83` and `b_81` (battle
+  level 32 and 99). 2:95 a sheet of her own (battle entry 216), 6:69 the others of her part number hidden as she ends,
+  10:22 whether an object is blown away (KH2's blow class: 1:129, 2:1). **Seen**: her clones (`bunshin`), her claws and
+  steps. Her journal names no object of hers: her stand-in's name shows.
 - **Not yet**: Luxord (`B_EX150_LV99`: 13 calls; his games turn the player into a die or a card, `6:27`-`6:30`,
   `1:242`, a top command of his own, `1:237`), Xigbar (`B_EX140_LV99`: 22; his sniper scope's camera and pictures,
-  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Roxas (`B_EX390`: his data
-  battle is `eh21`'s `b_80`).
+  `1:281`-`1:316`), Xemnas's final form (`B_EX170_LAST_LV99`: 31; his lasers, `8:3`-`8:7`), Zexion (`B_EX370`: 22), the
+  Lingering Will (`B_EX420`: 10).
 
 ### Bosses bound to their rooms
 
@@ -1235,7 +1248,7 @@ that frame's triggers, then those up to the time now. Meanwhile the pose is the 
 length of the way to the start frame (`MOTION::exec` and `calc`), and the root does not travel. KH2 moves its motions on
 before its objects' scripts run, so a motion a script starts stands at its start frame in that tick (`Actor::begin_tick`).
 An enemy's own motions (`Actor::play`, `Actor::step`, the shell's `cues` and `pose`) and a held player's (above) play
-so; 1:63 is not at its end while a blend runs.
+so; 1:63 is not in its loop while a blend runs.
 
 ## Collision
 

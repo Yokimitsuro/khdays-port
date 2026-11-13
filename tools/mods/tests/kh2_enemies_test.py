@@ -266,14 +266,14 @@ class Kh2EnemiesTest(unittest.TestCase):
             return struct.pack("<IBBBB", number, 3, 0, 0, 0) + model.ljust(32, b"\0")
 
         records = [entry(301, b"M_EX010"), entry(2273, b"B_HE030_GM"), entry(2265, b"B_AL100_FIRE_GM"),
-                   entry(119, b"M_EX200_NM")]
+                   entry(119, b"M_EX200_NM"), entry(95, b"P_EX110")]
         objentry = struct.pack("<II", 3, len(records)) + b"".join(r.ljust(96, b"\0") for r in records)
 
         def character(title: int, number: int) -> bytes:
             return bytes(4) + struct.pack("<HHHHH", 0, title, 0, 0, number).ljust(32, b"\0")
 
         people = [character(11932, 301), character(11648, 2273), character(12022, 2265), character(1, 301),
-                  character(11984, 119)]
+                  character(11984, 119), character(11700, 95)]
         jmch = b"JMCH" + struct.pack("<III", 1, len(people), 0) + b"".join(people)
         jiminy = bar([(0, b"char", b"JMWO" + bytes(12)), (0, b"char", jmch)])
         titles = kh2_enemies.journal_titles(jiminy, objentry)
@@ -284,6 +284,9 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertEqual(kh2_enemies.journal_title(titles, "B_HE030_CLSM"), 11648)
         self.assertEqual(kh2_enemies.journal_title(titles, "M_EX200"), 11984)
         self.assertIsNone(kh2_enemies.journal_title(titles, "B_LK110"))
+        # one with no entry of its own named by its character's other object (FINAL MIX's hooded Roxas by the
+        # prologue's)
+        self.assertEqual(kh2_enemies.journal_title(titles, "B_EX390"), 11700)
         self.assertEqual(kh2_enemies.journal_titles(b"", objentry), {})
         # its line's last column: the title's number, "-" none
         self.assertTrue(

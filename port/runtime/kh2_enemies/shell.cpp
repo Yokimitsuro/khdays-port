@@ -1441,17 +1441,19 @@ public:
         }
     }
 
+    // An effect by its handle, an enemy's or a script-made object's (Roxas's keyblades')
     Enemy::Running *running_effect(std::uint32_t handle, Enemy **of = nullptr)
     {
         if (handle == 0)
             return nullptr;
-        for (auto &[days, e] : enemies)
-            for (Enemy::Running &r : e->fx)
-                if (r.handle == handle) {
-                    if (of != nullptr)
-                        *of = e.get();
-                    return &r;
-                }
+        for (auto *list : {&enemies, &allies})
+            for (auto &[days, e] : *list)
+                for (Enemy::Running &r : e->fx)
+                    if (r.handle == handle) {
+                        if (of != nullptr)
+                            *of = e.get();
+                        return &r;
+                    }
         return nullptr;
     }
     std::uint32_t effect_in_world(Actor &a, int number, const Vec3 &place) override
@@ -1479,6 +1481,18 @@ public:
             return true;
         }
         return effect_place(*e, handle, out);
+    }
+    void effect_unbind(std::uint32_t handle) override
+    {
+        Enemy *e = nullptr;
+        Enemy::Running *r = running_effect(handle, &e);
+        Vec3 at{};
+        if (r == nullptr || r->in_world || !effect_where(handle, at))
+            return;
+        r->in_world = true;
+        r->at = at;
+        r->turned = true;
+        r->turn = {0.0F, e->actor->yaw(), 0.0F}; // (facing the world's way it faced as it was let go)
     }
     void effect_move(std::uint32_t handle, const Vec3 &place) override
     {
@@ -1610,12 +1624,18 @@ public:
 
     void stop_effect(std::uint32_t handle) override
     {
-        for (auto &[days, e] : enemies)
-            for (auto r = e->fx.begin(); r != e->fx.end(); ++r)
-                if (r->handle == handle) {
-                    e->fx.erase(r);
-                    return;
-                }
+        for (auto *list : {&enemies, &allies})
+            for (auto &[days, e] : *list)
+                for (auto r = e->fx.begin(); r != e->fx.end(); ++r)
+                    if (r->handle == handle) {
+                        e->fx.erase(r);
+                        return;
+                    }
+    }
+    void effect_loop_end(std::uint32_t handle) override
+    {
+        if (Enemy::Running *r = running_effect(handle))
+            r->fx->stop();
     }
     void offer(Actor &by, int command, Object *source) override
     {
@@ -4235,6 +4255,33 @@ kh2::EffectCamera effect_camera(const float view_in[16], const float projection[
     return cam;
 }
 
+// A KH2 model to the world, in the draw's way (row vectors, Days's axes, y up): its axes turned by its yaw, or by its
+// turns about all three (8:2) -- x, then y, then z, as an element's (element_world), KH2's y down making the x and z
+// turns the other way round in Days's axes -- at `place` (Days's units)
+void model_matrix(const Actor &a, const float place[3], float out[16])
+{
+    std::array<float, 16> m{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const Vec3 turns = a.turned_all ? Vec3{-a.turn_all[0], a.yaw(), -a.turn_all[2]} : Vec3{0.0F, a.yaw(), 0.0F};
+    for (int axis = 0; axis < 3; ++axis) {
+        const float angle = turns[std::size_t(axis)];
+        if (angle == 0.0F)
+            continue;
+        const float c = std::cos(angle), n = std::sin(angle);
+        std::array<float, 16> r{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const int i = (axis + 1) % 3, j = (axis + 2) % 3;
+        r[std::size_t(i * 4 + i)] = c;
+        r[std::size_t(i * 4 + j)] = n;
+        r[std::size_t(j * 4 + i)] = -n;
+        r[std::size_t(j * 4 + j)] = c;
+        std::array<float, 16> t{};
+        row_matrix_mul(m.data(), r.data(), t.data());
+        m = t;
+    }
+    for (int k = 0; k < 3; ++k)
+        m[std::size_t(12 + k)] = place[k];
+    std::copy(m.begin(), m.end(), out);
+}
+
 // An element's place in its model's effects' space (KH2's axes, y down, cm; the model's root at 0, turned as it is):
 // its size, its turn (x, then y, then z), its place, then the bone it follows (`pose`'s, KH2's model space y up)
 kh2::EffectMatrix element_world(const std::vector<kh2::Mat4> &pose, const Element &el)
@@ -4665,8 +4712,8 @@ void ghosts_close()
             if (((a.u32(field::kFade) & bit::kFadeHeld) != 0 && a.fade <= 0.0F) || e.end_ticks >= kLongestEnd)
                 e.released = true;
         }
-        const float c = std::cos(e.actor->yaw()), sn = std::sin(e.actor->yaw());
-        const float mine[16] = {c, 0, -sn, 0, 0, 1, 0, 0, sn, 0, c, 0, e.place[0], e.place[1], e.place[2], 1};
+        float mine[16];
+        model_matrix(*e.actor, e.place, mine);
         float view[16];
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
@@ -4762,8 +4809,8 @@ void allies_close()
             continue; // (no projection known yet: its battle's enemy not drawn)
         e.seen = true;
         e.drawn_frame = now;
-        const float c = std::cos(e.actor->yaw()), sn = std::sin(e.actor->yaw());
-        const float mine[16] = {c, 0, -sn, 0, 0, 1, 0, 0, sn, 0, c, 0, e.place[0], e.place[1], e.place[2], 1};
+        float mine[16];
+        model_matrix(*e.actor, e.place, mine);
         float view[16];
         row_matrix_mul(mine, camera, view);
         draw_effects(e, view, e.pure);
@@ -5826,8 +5873,8 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
     if (e->pose.empty())
         pose(*e);
     // its model to the world (row vectors: its axes turned by its yaw, at its place), in the draw's way
-    const float c = std::cos(e->actor->yaw()), sn = std::sin(e->actor->yaw());
-    const float mine[16] = {c, 0, -sn, 0, 0, 1, 0, 0, sn, 0, c, 0, s.place[0], s.place[1], s.place[2], 1};
+    float mine[16];
+    model_matrix(*e->actor, s.place, mine);
     float place[16], view[16], pure[16];
     spaces_for(d, way, mine, place, view, pure);
     std::copy(pure, pure + 16, e->pure);
@@ -5848,8 +5895,12 @@ extern "C" int khdays_kh2_enemies_draw_begin(const void *resource, const void *r
             }
     }
     if (marked) {
-        const float dx = at[0] - s.place[0], dy = at[1] - s.place[1], dz = at[2] - s.place[2];
-        const float q[4] = {c * dx - sn * dz, dy, sn * dx + c * dz, 1.0F};
+        // (the point in its model's axes: the world offset turned back, times the model's turn's transpose)
+        const float off[3] = {at[0] - s.place[0], at[1] - s.place[1], at[2] - s.place[2]};
+        float q[4] = {0.0F, 0.0F, 0.0F, 1.0F};
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k)
+                q[j] += off[k] * mine[j * 4 + k];
         float v[4] = {}, spot[4] = {};
         for (int col = 0; col < 4; ++col)
             for (int k = 0; k < 4; ++k)

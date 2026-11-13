@@ -491,6 +491,8 @@ void test_motions_and_moving()
     CHECK(actor.motion.blend == 0.0F && actor.motion.time == 20.0F && t[0] == 0.0F);
     t = ticks(actor, 1);
     CHECK(actor.motion.time == 21.0F && std::fabs(t[0] - 1.0F) < 1e-3F);
+    // 1:63 in its loop once the blend is over: motion 0 loops from its start (trap_obj_is_motion_in_loop)
+    CHECK(call(rig, actor, 1, 63, {self}).i() == 1);
     // a blend of 2 or less: none, the motion from its start at once
     call(rig, actor, 1, 61, {self, i(0), f(10.0F), f(2.0F)});
     CHECK(actor.motion.blend == 0.0F);
@@ -662,7 +664,7 @@ void test_more_enemies_calls()
     actor.set_u32(kh::field::kMotion, 40);
     CHECK(call(rig, actor, 2, 6, {self}).i() == 0);
     actor.play(0, 0.0F, 0.0F, true);
-    // 1:63: a motion of 30 ticks (APPEAR, played once) at its end, no blend left
+    // 1:63: a motion of 30 ticks (APPEAR, played once, its loop point its end) at its end, no blend left
     call(rig, actor, 1, 11, {self, i(44), f(0.0F)});
     CHECK(call(rig, actor, 1, 63, {self}).i() == 0);
     ticks(actor, 40);
@@ -2120,6 +2122,102 @@ void test_data_saix()
     CHECK(std::fabs(actor.slide_speed - 30.0F) < 1e-4F);
 }
 
+// A made-up field for Data Roxas and Larxene: a wall across z 100 (facing -z), its objects, its camera given back
+struct RoxasWorld final : kh::World {
+    std::vector<kh::Actor *> all;
+    bool home = false;
+    kh::Object *player(kh::Actor &) override
+    {
+        return nullptr;
+    }
+    bool ray(kh::Actor &, const kh::Vec3 &from, const kh::Vec3 &to, kh::Vec3 &hit) override
+    {
+        if ((from[2] - 100.0F) * (to[2] - 100.0F) > 0.0F || from[2] == to[2])
+            return false;
+        const float s = (100.0F - from[2]) / (to[2] - from[2]);
+        hit = {from[0] + (to[0] - from[0]) * s, from[1] + (to[1] - from[1]) * s, 100.0F};
+        return true;
+    }
+    std::vector<kh::Actor *> actors() override
+    {
+        return all;
+    }
+    void camera_home() override
+    {
+        home = true;
+    }
+    std::vector<std::uint32_t> loop_ended, killed;
+    void effect_loop_end(std::uint32_t handle) override
+    {
+        loop_ended.push_back(handle);
+    }
+    void stop_effect(std::uint32_t handle) override
+    {
+        killed.push_back(handle);
+    }
+};
+
+void test_data_roxas()
+{
+    Rig rig;
+    RoxasWorld world;
+    PirateMotions motions;
+    kh::Actor roxas(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "roxas");
+    kh::Actor twin(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "twin");
+    kh::Actor other(script({{0, 0}}, misc(1)), rig.memory, rig.calls, "other");
+    for (kh::Actor *x : {&roxas, &twin, &other}) {
+        x->world = &world;
+        x->motions = &motions;
+        world.all.push_back(x);
+    }
+    const ai::Value self = ai::Value::of_address(roxas.address());
+    const auto f = ai::Value::of_float;
+    const auto i = ai::Value::of_int;
+    const auto adr = ai::Value::of_address;
+    float v[4] = {};
+
+    // 1:223: the camera given back
+    call(rig, roxas, 1, 223, {i(1)});
+    CHECK(world.home);
+    // 6:51 then 6:52: a segment through the wall meets it at z 100; its normal faces back along the way (-z)
+    const std::uint32_t hit = rig.memory.add(0x40, "a test's BGHIT");
+    CHECK(call(rig, roxas, 6, 51, {adr(hit), adr(vec(rig.memory, 10, 0, 0)), adr(vec(rig.memory, 10, 0, 200))}).i() ==
+          1);
+    rig.memory.read(call(rig, roxas, 6, 52, {adr(hit)}).bits, v, sizeof v);
+    CHECK(std::fabs(v[0]) < 1e-4F && std::fabs(v[1]) < 1e-4F && std::fabs(v[2] + 1.0F) < 1e-4F);
+    // 10:52: motions 140 to 150 reflect
+    roxas.motion.id = 145;
+    CHECK(call(rig, roxas, 10, 52, {self}).i() == 1);
+    roxas.motion.id = 151;
+    CHECK(call(rig, roxas, 10, 52, {self}).i() == 0);
+    // 10:22: blown away while a blow's throw (1:129) carries it, not before
+    CHECK(call(rig, roxas, 10, 22, {self}).i() == 0);
+    call(rig, roxas, 1, 129, {self, adr(vec(rig.memory, 0, 0, 1)), f(10.0F), f(-5.0F)});
+    CHECK(roxas.jump.on && call(rig, roxas, 10, 22, {self}).i() == 1);
+    // 2:95: a sheet of its own made anew
+    call(rig, roxas, 2, 9, {self, i(1), i(0)});
+    const std::uint32_t first = roxas.u32(0x5c0);
+    call(rig, roxas, 2, 95, {self, i(216)});
+    CHECK(roxas.u32(0x5c0) != 0 && roxas.u32(0x5c0) != first && rig.memory.u32(roxas.u32(0x5c0) + 0x268) == roxas.address());
+    // 6:69: the others of its part number hidden, not itself nor one of another part
+    const std::uint32_t entry_a = rig.memory.add(0x60, "an entry"), entry_b = rig.memory.add(0x60, "another entry");
+    rig.memory.set_u32(entry_a + 0x4c, 7);
+    rig.memory.set_u32(entry_b + 0x4c, 8);
+    roxas.set_u32(kh::field::kEntry, entry_a);
+    twin.set_u32(kh::field::kEntry, entry_a);
+    other.set_u32(kh::field::kEntry, entry_b);
+    call(rig, roxas, 6, 69, {self});
+    CHECK(roxas.hidden_parts == 0 && twin.hidden_parts == ~0u && other.hidden_parts == 0);
+    // 0:44 and 0:85 close an effect's loops (it ends once its objects have: his duel's glows), 0:51 ends one at once;
+    // a handle of 0 is none
+    call(rig, roxas, 0, 85, {adr(0x5a)});
+    call(rig, roxas, 0, 44, {adr(0x5b)});
+    call(rig, roxas, 0, 85, {adr(0)});
+    call(rig, roxas, 0, 51, {adr(0x5c)});
+    CHECK(world.loop_ended == std::vector<std::uint32_t>({0x5a, 0x5b}));
+    CHECK(world.killed == std::vector<std::uint32_t>({0x5c}));
+}
+
 int main()
 {
     test_vectors_and_chance();
@@ -2146,6 +2244,7 @@ int main()
     test_port_royal();
     test_data_saix();
     test_hit_event();
+    test_data_roxas();
     if (failures == 0)
         std::printf("kh2 ai calls: all checks passed\n");
     return failures == 0 ? 0 : 1;

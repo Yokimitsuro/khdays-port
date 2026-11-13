@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools e52c2d42703580da922d12f27ef5b5deed8ef8438a2096732dccee6c2da485b4
+# tools 15254346141159f3621838d653747468b899a7dfe9f403ec24a81bd9eb7d8edd
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -107,7 +107,9 @@ kh2_fifth msn/us/BB15_MS203.bar
 kh2_fifth msn/us/BB15_MS203_RE.bar
 kh2_fifth msn/us/CA10_MS107.bar
 kh2_fifth msn/us/EH15_MS104.bar
+kh2_fifth msn/us/EH21_MS101.bar
 kh2_fifth msn/us/HB04_MS403.bar
+kh2_fifth msn/us/HB33_FM_LAR.bar
 kh2_fifth msn/us/HE07_MS103.bar
 kh2_fifth msn/us/HE17_MS105.bar
 kh2_fifth msn/us/HE18_MS108.bar
@@ -176,6 +178,12 @@ kh2_fifth obj/B_EX170_LV99.mdlx
 kh2_fifth obj/B_EX220.mset
 kh2_fifth obj/B_EX220_LV99.a.us
 kh2_fifth obj/B_EX220_LV99.mdlx
+kh2_fifth obj/B_EX390.a.us
+kh2_fifth obj/B_EX390.mdlx
+kh2_fifth obj/B_EX390.mset
+kh2_fifth obj/B_EX400.a.us
+kh2_fifth obj/B_EX400.mdlx
+kh2_fifth obj/B_EX400.mset
 kh2_fifth obj/B_HE020.a.us
 kh2_fifth obj/B_HE020.mdlx
 kh2_fifth obj/B_HE020.mset
@@ -595,6 +603,12 @@ kh2_sixth obj/N_NM070_BTL_2.mdlx
 kh2_sixth obj/N_NM070_BTL_2.mset
 kh2_sixth obj/PRIZE_HE.mdlx
 kh2_sixth obj/P_EX100.mdlx
+kh2_sixth obj/W_EX010_ROXAS_DARK.a.us
+kh2_sixth obj/W_EX010_ROXAS_DARK.mdlx
+kh2_sixth obj/W_EX010_ROXAS_DARK.mset
+kh2_sixth obj/W_EX010_ROXAS_LIGHT.a.us
+kh2_sixth obj/W_EX010_ROXAS_LIGHT.mdlx
+kh2_sixth obj/W_EX010_ROXAS_LIGHT.mset
 kh2_sixth se/se000.win32.scd
 kh2_sixth se/se2984.win32.scd
 kh2_sixth voice/us/battle/barbossa.win32.scd
@@ -607,6 +621,8 @@ kh2_sixth voice/us/battle/n_berserker.win32.scd
 kh2_sixth voice/us/battle/n_dancer.win32.scd
 kh2_sixth voice/us/battle/n_dancer_hb.win32.scd
 kh2_sixth voice/us/battle/n_dragoon.win32.scd
+kh2_sixth voice/us/battle/n_larxene.win32.scd
+kh2_sixth voice/us/battle/n_roxas.win32.scd
 kh2_sixth voice/us/battle/n_xemnas.win32.scd
 kh2_sixth voice/us/battle/scar.win32.scd
 kh2_sixth voice/us/battle/shock_boss.win32.scd
