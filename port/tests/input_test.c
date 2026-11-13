@@ -827,6 +827,16 @@ static int click_at(float x, float y, Uint8 button)
     return handle(&e);
 }
 
+/* The mouse's wheel turned `steps` (down when negative). */
+static void wheel(float steps)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_EVENT_MOUSE_WHEEL;
+    e.wheel.y = steps;
+    handle(&e);
+}
+
 /* A click in the middle of something the last drawing placed. */
 static int click(int what, int index)
 {
@@ -940,6 +950,7 @@ static void test_settings_model(void)
         {KHDAYS_SET_SCALING, KHDAYS_ROW_CHOICE, 0, 1, 0},
         {KHDAYS_SET_TEXTURES, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_HD_GRAPHICS, KHDAYS_ROW_SWITCH, 0, 1, 0},
+        {KHDAYS_SET_CULLING, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_DUMP_GRAPHICS, KHDAYS_ROW_SWITCH, 0, 1, 0},
         {KHDAYS_SET_MOVIES, KHDAYS_ROW_CHOICE, 0, KHDAYS_MOVIES_COUNT - 1, 0},
         {KHDAYS_SET_SUBTITLES, KHDAYS_ROW_SWITCH, 0, 1, 0},
@@ -1686,6 +1697,9 @@ static void test_settings_mouse(void)
     click_at(r.x + r.w * 0.1f, r.y + r.h / 2, SDL_BUTTON_LEFT);
     click_at(r.x + r.w * 0.1f, r.y + r.h / 2, SDL_BUTTON_LEFT);
     CHECK(w->video.hud_size == p.video.hud_size - 1);
+    /* a row below the window's edge comes into sight with the wheel */
+    for (int turn = 0; turn < fps && !khdays_settings_place(KHDAYS_PLACE_ROW, fps, &r); ++turn)
+        wheel(-1.0f);
     click(KHDAYS_PLACE_ROW, fps);
     CHECK(w->video.show_fps == !p.video.show_fps);
     /* a binding's cell: the keyboard's first input of D-pad Up */

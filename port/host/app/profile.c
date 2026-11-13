@@ -264,6 +264,7 @@ void khdays_video_default(KhdaysVideo *v)
     v->show_fps = 0;
     v->backend = KHDAYS_BACKEND_AUTO;
     v->hd_graphics = 1;
+    v->culling = 1;
     v->dump_graphics = 0;
     v->one_screen = 1; /* the maintainer's choice */
     v->two_screens = KHDAYS_TWO_STACKED;
@@ -1094,6 +1095,7 @@ static void read_video(Reader *r, const char *key, const char *value, const char
         } switches[] = {
             {"texture_smoothing", offsetof(KhdaysVideo, texture_smoothing)},
             {"hd_graphics", offsetof(KhdaysVideo, hd_graphics)},
+            {"culling", offsetof(KhdaysVideo, culling)},
             {"dump_graphics", offsetof(KhdaysVideo, dump_graphics)},
         };
         for (size_t i = 0; i < sizeof(switches) / sizeof(switches[0]); ++i) {
@@ -1594,6 +1596,9 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             "# scaling: sharp (the DS's pixels) or smooth\n"
             "scaling = %s\n"
             "texture_smoothing = %s\nhd_graphics = %s\n"
+            "# culling: on or off -- what of a mod's models lies wholly past the view is left out before it\n"
+            "# is drawn (a big room mod runs faster); off draws all of it\n"
+            "culling = %s\n"
             "dump_graphics = %s\n"
             "# movies: hd (the HD collection's videos where data/cutscenes/cinematics has them,\n"
             "#         else pc), pc (full colour) or ds (the DS's 15-bit colour, dithered)\n"
@@ -1612,7 +1617,7 @@ int khdays_profile_save(const KhdaysProfile *p, const char *path, KhdaysNotice n
             v->two_screens == KHDAYS_TWO_SIDE_BY_SIDE ? "side-by-side" : "stacked", v->hud_size,
             aspects[v->aspect >= 0 && v->aspect < KHDAYS_ASPECT_COUNT ? v->aspect : 0],
             v->smooth_scaling ? "smooth" : "sharp", v->texture_smoothing ? "on" : "off", v->hd_graphics ? "on" : "off",
-            v->dump_graphics ? "on" : "off",
+            v->culling ? "on" : "off", v->dump_graphics ? "on" : "off",
             v->movies == KHDAYS_MOVIES_DS   ? "ds"
             : v->movies == KHDAYS_MOVIES_PC ? "pc"
                                             : "hd",

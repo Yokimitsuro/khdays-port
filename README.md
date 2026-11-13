@@ -375,6 +375,7 @@ two_screens = stacked     # with two screens: stacked (the DS's) or side-by-side
 scaling = sharp           # sharp (the DS's) or smooth
 texture_smoothing = off   # off (the DS's) or on
 hd_graphics = on          # the mods' replacements
+culling = on              # a mod's models skip what is out of view (big maps faster); off draws all
 dump_graphics = off       # write what is drawn to saves/dump/graphics
 movies = hd               # hd (your HD videos, the rest pc), pc (full colour) or ds (the DS's)
 picture_pace = smooth     # smooth (the monitor's rate) or ds

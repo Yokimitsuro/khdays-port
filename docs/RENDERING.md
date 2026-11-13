@@ -182,7 +182,9 @@ those sides, the same with or without what was left out. It happens only in a
 model draw (outside one a polygon's place is its material's count). Nothing the
 game reads comes of it: the box test and the counts of polygons and vertices are
 its own polygons' alone, so in multiplayer each machine leaves out what its own
-camera does not see and the game runs the same. Seen 2026-11-12 with a map of
+camera does not see and the game runs the same. `[video] culling = off` (the
+settings' Graphics, "Skip what's out of view"; `KHDAYS_HOST_NO_CULLING`) draws
+every piece, at once, for comparing. Seen 2026-11-12 with a map of
 260,000 triangles in 393 meshes (a glTF in place of Twilight Town's room 0, the
 play walk, in a window): the game's thread ran 720 ms a second at 28 frames a
 second, 510 with the meshes left out (200-238 of them), 340 at 56-60 with the

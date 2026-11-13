@@ -8,6 +8,10 @@
 
 #include "kh2_corridors.h"
 
+extern "C" {
+#include "../../host/app/host.h" // [video] culling (KHDAYS_HOST_NO_CULLING)
+}
+
 namespace khdays::model_parts {
 
 // The draw is one of Days's ovals drawn as KH2's corridor (kh2_corridors.h): its shapes left out.
@@ -721,9 +725,11 @@ void draw(Model &m)
     // further keeps its alpha.
     const uint32_t tex = (7u << 26) | (7u << 23) | (7u << 20) | (1u << 17) | (1u << 16); // 1024x1024, repeated
     const uint32_t game_alpha = (material.attr >> 16) & 31u;
-    // what lies wholly past a side of the view is left out: whole meshes by their boxes, then triangles
+    // what lies wholly past a side of the view is left out (unless [video] culling is off): whole meshes by their
+    // boxes, then triangles
     float side_x = 0.0F, side_y = 0.0F;
-    const bool cull = khdays_g3d_mod_cull_sides(&side_x, &side_y) != 0;
+    const bool cull = (khdays_host_graphics_flags() & KHDAYS_HOST_NO_CULLING) == 0 &&
+                      khdays_g3d_mod_cull_sides(&side_x, &side_y) != 0;
     std::size_t left_out = 0;
     for (const Mesh &mesh : m.meshes) {
         if (mesh.shadow_sprite && khdays_shadow_has_sprite())

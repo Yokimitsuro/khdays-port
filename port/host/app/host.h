@@ -50,6 +50,7 @@ int khdays_host_frame_scale(void);
 #define KHDAYS_HOST_MOVIES_DS 0x4   /* [video] movies = ds: the DS's own pictures */
 #define KHDAYS_HOST_MOVIES_HD 0x8   /* [video] movies = hd: the player's HD videos */
 #define KHDAYS_HOST_ONE_SCREEN 0x10 /* [video] screens = one */
+#define KHDAYS_HOST_NO_CULLING 0x20 /* [video] culling = off: a mod's models drawn whole */
 int khdays_host_graphics_flags(void);
 
 /* The package the game thread fills next (NULL without a window). It belongs

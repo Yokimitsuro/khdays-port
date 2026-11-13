@@ -485,6 +485,8 @@ static void build_video(Builder *b, KhdaysProfile *w)
                         TXT_VIDEO_TEXTURES_NOTE);
     /* HD graphics and dumping work with either renderer */
     add_switch(b, KHDAYS_SET_HD_GRAPHICS, TXT_VIDEO_HD, &v->hd_graphics, 0, NULL);
+    /* read by the game thread at each mod model's draw (runtime/mods/models.cpp): takes at once */
+    add_switch(b, KHDAYS_SET_CULLING, TXT_VIDEO_CULLING, &v->culling, 1, khdays_text(TXT_VIDEO_CULLING_NOTE));
     /* the dump is read at each frame (textures.c, tiles2d.c, sheet_colours.c): a 3D texture
      * already shown is written when its room or screen is loaded again */
     add_switch(b, KHDAYS_SET_DUMP_GRAPHICS, TXT_VIDEO_DUMP, &v->dump_graphics, 1, khdays_text(TXT_VIDEO_DUMP_NOTE));
