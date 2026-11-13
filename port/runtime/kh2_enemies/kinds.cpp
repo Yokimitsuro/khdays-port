@@ -62,6 +62,22 @@ std::vector<Kind> read_kinds(const std::string &text)
         }
         if (cells.size() > 8 && !cells[8].empty() && cells[8] != "-")
             k.mission = cells[8];
+        if (cells.size() > 9 && cells[9] != "-") {
+            std::istringstream ways(cells[9]);
+            std::string one;
+            while (std::getline(ways, one, ';')) {
+                std::istringstream words(one);
+                WalkPath w;
+                if (!(words >> w.number))
+                    continue;
+                float v = 0.0F;
+                while (words >> v)
+                    w.points.push_back(v);
+                w.points.resize(w.points.size() / 3 * 3);
+                if (!w.points.empty())
+                    k.paths.push_back(std::move(w));
+            }
+        }
         out.push_back(std::move(k));
     }
     return out;

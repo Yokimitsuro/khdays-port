@@ -132,8 +132,8 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertEqual((mod / "kh2" / "msg" / "us" / "fontinfo.bar").read_bytes(), b"widths")
             self.assertEqual((mod / "kh2" / "msg" / "us" / "US_fontimage_bar0.png").read_bytes(), b"glyphs")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-\t-\t-\t-")
-            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-\t-\t-\t-")
+            self.assertEqual(kinds[1], "M_EX010\tSoldier\tyes\t2\t-\t-\t-\t-\t-\t-")
+            self.assertEqual(kinds[2], "M_EX020\tShadow\tyes\t2\t-\t-\t-\t-\t-\t-")
             ours = [line for line in left if line.startswith(("M_EX010", "M_EX020"))]
             self.assertEqual(ours, ["M_EX020 (Shadow): its model's HD pictures (its own PS2 pictures used)"])
             # the other kinds the mod holds, not in this made-up collection: each said
@@ -236,7 +236,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertFalse((mod / "kh2" / "obj" / "B_BB130.mset").exists())
             self.assertFalse(any(line.startswith("B_BB130") for line in left), left)
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-\t-\t-", kinds)
+            self.assertIn("B_BB130\tPossessor\tyes\t1\t-\t-\t-\t-\t-\t-", kinds)
 
     def test_missing_and_uncovered(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(kh2_bdx, "exe_calls", return_value=[]):
@@ -246,7 +246,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             mod = Path(d) / "mod"
             left = kh2_enemies.make(kh2, Path(d) / "kh2.exe", mod, Path(d) / "x.exe", lambda line: "1:6\n")
             kinds = (mod / "kh2_enemies.txt").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-\t-\t-\t-"])
+            self.assertEqual(kinds[1:], ["M_EX010\tSoldier\tno\t2\t2:7\t-\t-\t-\t-\t-"])
             self.assertIn("M_EX020 (Shadow): KH2's M_EX020.mdlx not there", left)
             self.assertTrue(any("texcommon" in line for line in left))
             self.assertTrue(any("zz0command" in line for line in left))
@@ -257,7 +257,7 @@ class Kh2EnemiesTest(unittest.TestCase):
             self.assertIn("M_EX010\tSoldier\tno\t2\t1:6 2:7\t-", (mod / "kh2_enemies.txt").read_text(encoding="utf-8"))
             # a script that plays the player's motions (1:29): "player"
             line = kh2_enemies.kinds_line("B_HE020", "Cerberus", {(1, 29)}, {(1, 29)})
-            self.assertTrue(line.endswith("\tyes\t1\t-\tplayer\t-\t-\t-"))
+            self.assertTrue(line.endswith("\tyes\t1\t-\tplayer\t-\t-\t-\t-"))
             self.assertTrue(any("coverage" in line for line in left))
 
     def test_journal_names(self):
@@ -286,7 +286,9 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertIsNone(kh2_enemies.journal_title(titles, "B_LK110"))
         self.assertEqual(kh2_enemies.journal_titles(b"", objentry), {})
         # its line's last column: the title's number, "-" none
-        self.assertTrue(kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932\t-\t-"))
+        self.assertTrue(
+            kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932\t-\t-\t-")
+        )
 
     def test_mission_pages(self):
         # a mission's HD pictures (one for each of its IMGDs) beside its file, its other pages not
@@ -334,6 +336,16 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertEqual(y, -500.0)
         self.assertAlmostEqual(z, -300.0, places=3)
         self.assertAlmostEqual(yaw, 0.5 - math.pi, places=3)
+        # its battle set's walk path (number 0, its point (1, 2, 3)) in the same frame: half a turn round the Hydra
+        ((number, points),) = kh2_enemies.walk_paths([ard], entries, "B_HE100")
+        self.assertEqual(number, 0)
+        ((px, py, pz),) = points
+        self.assertAlmostEqual(px, -1.0, places=3)
+        self.assertEqual(py, 2.0)
+        self.assertAlmostEqual(pz, -3.0, places=3)
+        self.assertEqual(kh2_enemies.walk_paths([ard], entries, "M_EX010"), [])
+        line = kh2_enemies.kinds_line("B_HE100", "Hydra", {(1, 6)}, {(1, 6)}, paths=[(0, points)])
+        self.assertTrue(line.endswith("\t-\t0 -1.0 2.0 -3.0"))
         # an enemy brings none; nor a boss the mod has no companion kind for
         self.assertEqual(kh2_enemies.companions([ard], entries, "M_EX010", kinds), [])
         self.assertEqual(kh2_enemies.companions([ard], entries, "B_HE100", {"B_HE100"}), [])
@@ -346,7 +358,7 @@ class Kh2EnemiesTest(unittest.TestCase):
         self.assertIsNone(kh2_enemies.mission_of([ard], entries, "B_HE100"))
         self.assertIsNone(kh2_enemies.mission_of([with_btl], entries, "M_EX010"))
         line = kh2_enemies.kinds_line("B_HE100", "Hydra", {(1, 6)}, {(1, 6)}, None, [(name, x, y, z, yaw)])
-        self.assertTrue(line.endswith("\t-\tN_HE020_BTL -100.0 -500.0 -300.0 -2.642\t-"), line)
+        self.assertTrue(line.endswith("\t-\tN_HE020_BTL -100.0 -500.0 -300.0 -2.642\t-\t-"), line)
 
 
 if __name__ == "__main__":

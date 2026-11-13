@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -276,6 +277,13 @@ void test_kinds()
     CHECK(kh::find_kind(kinds, "M_EX600") != nullptr && kh::find_kind(kinds, "M_EX600")->plays_player);
     CHECK(kh::find_kind(kinds, "M_EX600")->journal == -1);
     CHECK(kh::find_kind(kinds, "M_EX999") == nullptr);
+    // the walk paths of its battle (the 10th column): a number then its points, apart by ";", a stray coordinate left out
+    const auto hyenas = kh::read_kinds("B_LK100_00\tShenzi\tyes\t87\t-\t-\t11762\t-\tLK02_MS102\t"
+                                       "133 1 2 3 4 5 6;7 10 20 30 40\n");
+    const kh::Kind *shenzi = kh::find_kind(hyenas, "B_LK100_00");
+    CHECK(shenzi != nullptr && shenzi->mission == "LK02_MS102" && shenzi->paths.size() == 2);
+    CHECK(shenzi->paths[0].number == 133 && shenzi->paths[0].points == (std::vector<float>{1, 2, 3, 4, 5, 6}));
+    CHECK(shenzi->paths[1].number == 7 && shenzi->paths[1].points == (std::vector<float>{10, 20, 30}));
 }
 
 } // namespace
@@ -1808,6 +1816,24 @@ struct PortRoyalWorld final : kh::World {
         hit = to;
         return wall;
     }
+    // the hyenas' walk path (1:177) and their mission's counters (4:29, 4:5)
+    std::vector<kh::Vec3> way{{100.0F, 0.0F, 0.0F}, {0.0F, 0.0F, 100.0F}, {-100.0F, 0.0F, 0.0F}};
+    int asked_way = -2;
+    bool walk_path(kh::Actor &, int number, std::vector<kh::Vec3> &out) override
+    {
+        asked_way = number;
+        out = way;
+        return !way.empty();
+    }
+    std::map<int, int> counts;
+    int mission(unsigned number, int first, int second) override
+    {
+        if (number == 29)
+            return counts[first];
+        if (number == 5)
+            counts[first] = second;
+        return 0;
+    }
 };
 
 void test_port_royal()
@@ -1916,6 +1942,23 @@ void test_port_royal()
     world.lights.tick();
     CHECK(world.lights.colours().room == (Bytes{40, 40, 40}));
     call(rig, actor, 1, 257, {h, f(100.0F)}); // its fog: kept by nothing
+
+    // 1:177: the first walk path (-1) taken; 5:14 its points, n wrapping round either way, w 1
+    CHECK(call(rig, actor, 1, 177, {self, i(-1)}).i() == 1 && world.asked_way == -1 && actor.path.size() == 3);
+    rig.memory.read(call(rig, actor, 5, 14, {self, i(4)}).bits, v, sizeof v);
+    CHECK(v[0] == 0.0F && v[2] == 100.0F && v[3] == 1.0F);
+    rig.memory.read(call(rig, actor, 5, 14, {self, i(-1)}).bits, v, sizeof v);
+    CHECK(v[0] == -100.0F && v[2] == 0.0F);
+    // ... none: 0, and 5:14 its own place
+    world.way.clear();
+    actor.set_place({7.0F, 0.0F, 9.0F});
+    CHECK(call(rig, actor, 1, 177, {self, i(133)}).i() == 0 && world.asked_way == 133 && actor.path.empty());
+    rig.memory.read(call(rig, actor, 5, 14, {self, i(0)}).bits, v, sizeof v);
+    CHECK(v[0] == 7.0F && v[2] == 9.0F);
+    // 4:48: the hundreds of counter 0's 1234 made 7
+    world.counts[0] = 1234;
+    call(rig, actor, 4, 48, {i(2), i(7), i(0)});
+    CHECK(world.counts[0] == 1734);
 }
 
 int main()

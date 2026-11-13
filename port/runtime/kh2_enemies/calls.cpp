@@ -1615,6 +1615,34 @@ void add_moving(ai::Calls &calls)
     calls.set(1, 119, [](ai::Machine &, std::span<ai::Value> a) { a[0] = ai::Value::of_int(0); });
     // 1:92 a point of the ground ahead (FUN_1403b6170: a ray, then FUN_1403dc170 with the number): nothing of Days's
     calls.set(1, 92, [](ai::Machine &, std::span<ai::Value>) {});
+    // 1:177 a walk path of its battle by number, -1 the first (trap_obj_set_path, FUN_14042d8e0 -> FUN_1403b9de0:
+    // its unit's paths, + 0x9e8, FUN_1403ff460; a path follower made at + 0x630), 1 when it has it, 0 when not: the
+    // kind's paths (the mod's list: its battle set's in KH2's area, placed as its companions, World::walk_path); KH2's
+    // player's own paths, none here. 5:14 its path's point n, n past the last wrapping round (Ti::trap_get_path_point_pos,
+    // FUN_140557dc0 -> FUN_140550240: n mod the count; w 1); without a path KH2 gives back nothing of its own, the
+    // port its place. Shenzi, Banzai and Ed run round theirs
+    calls.set(1, 177, [](ai::Machine &m, std::span<ai::Value> a) {
+        Actor *x = self_of(m, a[0]);
+        x->path.clear();
+        const bool found = !is_player(object_of(m, a[0])) && x->world != nullptr &&
+                           x->world->walk_path(*x, std::int32_t(a[1].bits), x->path);
+        a[0] = ai::Value::of_int(found ? 1 : 0);
+    });
+    calls.set(5, 14, [](ai::Machine &m, std::span<ai::Value> a) {
+        Object *o = object_of(m, a[0]);
+        const Actor *x = o != nullptr ? o->actor() : nullptr;
+        Vec v;
+        if (x != nullptr && !x->path.empty()) {
+            const std::int64_t n = std::int64_t(x->path.size());
+            const Vec3 &p = x->path[std::size_t(((std::int64_t(std::int32_t(a[1].bits)) % n) + n) % n)];
+            v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2];
+        } else if (o != nullptr) {
+            const Vec3 p = o->place();
+            v.v[0] = p[0], v.v[1] = p[1], v.v[2] = p[2];
+        }
+        v.v[3] = 1.0F;
+        a[0] = give_vec(m, "5:14", v);
+    });
 }
 
 // ------------------------------------------------------------------------------------------------- targets, effects
@@ -2418,6 +2446,20 @@ void add_world(ai::Calls &calls)
             const int second = a.size() > 1 ? a[1].i() : 0;
             a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i(), second) : 0);
         });
+    // 4:48 a digit of a counter set (trap_mission_set_count_figure_num, FUN_140433710: its place n -- 0 the ones --,
+    // the digit, the counter's index; its count + (digit - (count / 10^n) % 10) x 10^n): as 4:29 then 4:5 (the
+    // hyenas' counter, by their unit's argument, which Days's waves leave 0: not reached there)
+    calls.set(4, 48, [](ai::Machine &m, std::span<ai::Value> a) {
+        World *w = running(m)->world;
+        if (w == nullptr)
+            return;
+        const int place = a[0].i(), digit = a[1].i(), index = a[2].i();
+        std::int64_t power = 1;
+        for (int k = 0; k < place; ++k)
+            power *= 10;
+        const std::int64_t count = w->mission(29, index, 0);
+        w->mission(5, index, int(count + (digit - (count / power) % 10) * power));
+    });
     // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
     // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)
     calls.set(1, 262, [](ai::Machine &m, std::span<ai::Value> a) {

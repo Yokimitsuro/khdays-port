@@ -715,6 +715,33 @@ calls above (Jafar's among them, below) (1:40, 2:2, 2:86, 0:82, 0:91, 1:250, 1:3
 - **Not shown**: the screen's fades (0:31 to white, 0:32 and 0:88 back), a model's texture animations (1:85, 1:86) and
   a light's fog (1:257 to 1:260) -- Days's screen, the port's KH2 models and Days's field have none of them yet.
 
+### Shenzi, Banzai and Ed (2026-11-13)
+
+**Shenzi** `B_LK100_00`, **Banzai** `B_LK100_10` and **Ed** `B_LK100_20` (Ed speaking from `ed`, the line his script
+plays, 8, among its nine), one script for the three, answered in full with their walk paths (1:177, 5:14) and a
+counter's digit (4:48); their mission `LK02_MS102`.
+
+- **Walk paths**: an area's spawn set carries walk paths (8 bytes, a u16 its number and a u16 its points' count, then
+  the points, 12 bytes each; "Spawns" above). 1:177 puts an object on one of its set's by number, -1 the first
+  (`trap_obj_set_path`: its unit's paths, + 0x9e8, `FUN_1403ff460`; a follower made at + 0x630) and says whether it
+  had one; 5:14 gives its point n, n wrapping round the count (`Ti::trap_get_path_point_pos`, `FUN_140550240`; w 1).
+  The mod tool writes a boss's (its kinds list's tenth column: "number x y z ..." each, apart by ";") from the first
+  battle whose own set has some -- the hyenas' second fight, `lk05`'s `b_60`, 33 points round the graveyard, the
+  player in another of its sets -- in the boss's own frame as its companions; the port places them from where the
+  boss was set going, turned as it then faced its player (`World::walk_path`). Without a path 1:177 is 0, and 5:14
+  gives the object's own place (KH2 leaves its argument as it was).
+- **Their script** runs to the path's points (5:14) while + 0x128 of its work is 1 (set as it begins and after a
+  hit's revenge). 4:48 sets digit n of a counter of their
+  mission (its count + (digit - (count / 10^n) % 10) x 10^n); they set it by their unit's argument (1:39), which
+  Days's waves leave 0, so it is not reached.
+- **Seen** (the three in the coliseum, Roxas standing, then chasing): each runs off to its path's points
+  (`escape_run`) -- the graveyard's path lies past the coliseum's floor, so they stop at its edge (kept off the
+  ledge) -- and waits there (`idle_wait`: until the player comes within 8 m). **Not yet seen**: their attacks; no
+  recorded run went near them. A room as large as KH2's graveyard keeps their path on its floor.
+- **Simba** (`N_LK020_BTL`, a friend in battle KH2 places with them in `lk02`) is not one of the mod's kinds yet: his
+  script asks 1:126, a motion kept in step with another's (`trap_obj_motion_sync`: `FUN_1403c8e90` chains one motion
+  controller after another's, + 0xd8 and + 0xe0), which the port does not play.
+
 ### Bosses bound to their rooms
 
 Three bosses whose scripts the port answers are not offered, as their fights are their rooms' pieces or flights:

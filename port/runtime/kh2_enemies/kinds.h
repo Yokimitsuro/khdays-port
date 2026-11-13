@@ -2,7 +2,8 @@
 // line, tab-separated -- name, title, covered (yes / no), how many calls its script makes, the missing ones, "player"
 // when its script plays the player's motions, its name's text in KH2's journal messages ("-" none), the objects KH2
 // places with it ("name x y z yaw" each, apart by ";"; "-" none), the mission KH2's area runs with its battle (its msn
-// file's name, kh2/msn/<name>.bar; "-" none).
+// file's name, kh2/msn/<name>.bar; "-" none), the walk paths of its battle ("number x y z x y z ..." each, apart by ";";
+// "-" none).
 #pragma once
 
 #include <functional>
@@ -18,6 +19,13 @@ struct Companion final {
     float x = 0.0F, y = 0.0F, z = 0.0F, yaw = 0.0F;
 };
 
+// A walk path of a boss's battle (its area's spawn set's: Shenzi's, Banzai's and Ed's round the graveyard): its number
+// and its points, in KH2's cm in the boss's own frame as a companion's place
+struct WalkPath final {
+    int number = 0;
+    std::vector<float> points; // x, y, z each
+};
+
 struct Kind final {
     std::string name;    // its object's file name: M_EX010
     std::string title;   // shown to authors: Soldier
@@ -28,6 +36,7 @@ struct Kind final {
     int journal = -1;          // its name's text in KH2's journal messages (kh2/msg/<language>/jm.bar); -1 none
     std::vector<Companion> with; // the objects KH2 places with it
     std::string mission;         // the mission KH2 runs with its battle (Demyx's HE17_MS105); "" none
+    std::vector<WalkPath> paths;  // the walk paths of its battle (1:177, 5:14)
 };
 
 std::vector<Kind> read_kinds(const std::string &text);

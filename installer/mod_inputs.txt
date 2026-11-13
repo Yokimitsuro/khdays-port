@@ -1,6 +1,6 @@
 # The collection files the port's own mods' tools read (installer/setup_steps.py trace-mod-inputs):
 # '<archive> <entry>' (its data and remastered assets).
-# tools c6357e3028a82821372ba9e0b6afc68c60f947617442858d4246cc0e96eab13c
+# tools 6f4733f3a3d2062e3088eb0554bef3583e21cfe0331541e69906f3968cbe3232
 Mare data/DaysTheater.chp
 Mare fr/ctd/ct00100.ctd
 Mare fr/font/menufont.cod
@@ -58,6 +58,7 @@ kh2_fifth msn/us/CA10_MS107.bar
 kh2_fifth msn/us/HE07_MS103.bar
 kh2_fifth msn/us/HE17_MS105.bar
 kh2_fifth msn/us/HE18_MS108.bar
+kh2_fifth msn/us/LK02_MS102.bar
 kh2_fifth msn/us/LK14_MS103.bar
 kh2_fifth msn/us/NM03_MS103.bar
 kh2_fifth obj/B_AL100_FIRE.a.us
@@ -119,6 +120,13 @@ kh2_fifth obj/B_HE100.mset
 kh2_fifth obj/B_HE110.a.us
 kh2_fifth obj/B_HE110.mdlx
 kh2_fifth obj/B_HE110.mset
+kh2_fifth obj/B_LK100.mset
+kh2_fifth obj/B_LK100_00.a.us
+kh2_fifth obj/B_LK100_00.mdlx
+kh2_fifth obj/B_LK100_10.a.us
+kh2_fifth obj/B_LK100_10.mdlx
+kh2_fifth obj/B_LK100_20.a.us
+kh2_fifth obj/B_LK100_20.mdlx
 kh2_fifth obj/B_LK110.a.us
 kh2_fifth obj/B_LK110.mdlx
 kh2_fifth obj/B_LK110.mset
@@ -507,6 +515,7 @@ kh2_sixth se/se000.win32.scd
 kh2_sixth se/se2984.win32.scd
 kh2_sixth voice/us/battle/barbossa.win32.scd
 kh2_sixth voice/us/battle/barrel_boss.win32.scd
+kh2_sixth voice/us/battle/ed.win32.scd
 kh2_sixth voice/us/battle/he_hades.win32.scd
 kh2_sixth voice/us/battle/lock_boss.win32.scd
 kh2_sixth voice/us/battle/n_axel.win32.scd

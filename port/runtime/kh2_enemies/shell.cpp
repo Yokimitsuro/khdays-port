@@ -648,6 +648,10 @@ struct Enemy final {
     // where it was last drawn (Days's place) and the projection then, for its end once its Days enemy is gone
     float place[3] = {};
     float home[3] = {}; // where its wave placed it (Days's place): it comes back there after KH2's "leave"
+    // its battle's frame, KH2's world, as it was set going: its place and its facing (the way to its player) -- where
+    // its kind's companions and walk paths are placed from
+    Vec3 battle_at{};
+    float battle_turn = 0.0F;
     bool placed = false; // its place given to Days (e.place) at least once
     float fall_from = 0.0F; // how high above the ground its fall began (KH2's cm)
     bool aloft = false;     // off the ground as KH2's ground class sees it: a jump, a fall past a step, a motion's air
@@ -1071,6 +1075,28 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: %08x marks itself dead (1:328): %s", e.days,
                        took ? "its Days enemy defeated" : "Days took no hit");
+    }
+
+    // 1:177: its kind's walk path of that number (-1 the first), from where its battle began, turned as it then faced
+    // (its companions' frame: + z the way to its player)
+    bool walk_path(Actor &a, int number, std::vector<Vec3> &out) override
+    {
+        const auto it = by_actor.find(&a);
+        const Kind *kind = it != by_actor.end() ? find_kind(mod().kinds, it->second->kind->name) : nullptr;
+        if (kind == nullptr)
+            return false;
+        for (const WalkPath &w : kind->paths) {
+            if (number >= 0 && w.number != number)
+                continue;
+            const Enemy &e = *it->second;
+            const float c = std::cos(e.battle_turn), s = std::sin(e.battle_turn);
+            for (std::size_t i = 0; i + 2 < w.points.size(); i += 3) {
+                const float x = w.points[i], y = w.points[i + 1], z = w.points[i + 2];
+                out.push_back({e.battle_at[0] + x * c + z * s, e.battle_at[1] + y, e.battle_at[2] - x * s + z * c});
+            }
+            return !out.empty();
+        }
+        return false;
     }
 
     float system_value(std::uint32_t offset, float fallback) override
@@ -1842,6 +1868,8 @@ Enemy *start(unsigned days, KindFiles &k, const KhdaysKh2Shell &s, bool made)
         if (to[0] != at[0] || to[2] != at[2])
             a.set_yaw(std::atan2(to[0] - at[0], to[2] - at[2]));
     }
+    raw->battle_at = a.place();
+    raw->battle_turn = a.yaw();
     if (tracing())
         a.states().entered = [days, raw](const std::string &name) {
             raw->state = name;

@@ -115,6 +115,9 @@ KINDS = {
     "B_CA010": "Captain Barbossa",
     "B_CA000": "Illuminator",
     "B_EX110": "Axel",
+    "B_LK100_00": "Shenzi",
+    "B_LK100_10": "Banzai",
+    "B_LK100_20": "Ed",
 }
 # The battle voice bank each kind speaks from (original/voice/us/battle/<bank>.win32.scd; 1:262 plays a sound of it by
 # its number). KH2 gives an object its bank through its area's loading, which is not read: each is named here by the
@@ -130,6 +133,7 @@ VOICES = {
     "B_EX120": "n_dancer",
     "B_CA010": "barbossa",
     "B_EX110": "n_axel",
+    "B_LK100_20": "ed",
 }
 FILES = (".mdlx", ".mset", ".a.us")  # each kind's, as obj/ holds them (its .mset the one its object entry names)
 # KH2's files the reaction commands read (under original/), each with what it is for
@@ -184,19 +188,25 @@ def kinds_line(
     journal: int | None = None,
     with_it: list[tuple[str, float, float, float, float]] | None = None,
     mission: str | None = None,
+    paths: list[tuple[int, list[tuple[float, float, float]]]] | None = None,
 ) -> str:
     """A kind's line of kh2_enemies.txt: name, title, covered, how many calls, the missing ones, "player" when its
     script plays the player's motions itself (1:29: its reaction commands the port can play) else "-", its name's
     text in KH2's journal messages (msg/<language>/jm.bar; journal_title) else "-", and the objects KH2 places with it
     (companions: "name x y z yaw" each, apart by ";") else "-", and the mission KH2's area runs with its battle (its
-    msn file's name: kh2/msn/<name>.bar) else "-" (tab-separated)."""
+    msn file's name: kh2/msn/<name>.bar) else "-", and the walk paths of its battle (walk_paths: "number x y z x y z
+    ..." each, apart by ";") else "-" (tab-separated)."""
     missing = sorted(calls - handled)
     listed = " ".join(f"{k}:{n}" for k, n in missing) or "-"
     plays = "player" if (1, 29) in calls else "-"
     named = str(journal) if journal is not None else "-"
     placed = ";".join(f"{n} {x:.1f} {y:.1f} {z:.1f} {yaw:.3f}" for n, x, y, z, yaw in with_it or []) or "-"
     covered = "no" if missing or not calls else "yes"
-    return f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}\t{mission or '-'}"
+    ways = ";".join(f"{n} " + " ".join(f"{x:.1f} {y:.1f} {z:.1f}" for x, y, z in points) for n, points in paths or [])
+    return (
+        f"{name}\t{title}\t{covered}\t{len(calls)}\t{listed}\t{plays}\t{named}\t{placed}\t{mission or '-'}"
+        f"\t{ways or '-'}"
+    )
 
 
 def entry_kinds(objentry: bytes) -> dict[int, tuple[str, int]]:
@@ -214,14 +224,18 @@ def entry_kinds(objentry: bytes) -> dict[int, tuple[str, int]]:
     return out
 
 
-def spawn_sets(ard: bytes) -> list[tuple[str, list[tuple[int, list[tuple[int, float, float, float, float]]]]]]:
+def spawn_sets(
+    ard: bytes, walks: dict[tuple[str, int], list[tuple[int, list[tuple[float, float, float]]]]] | None = None
+) -> list[tuple[str, list[tuple[int, list[tuple[int, float, float, float, float]]]]]]:
     """An area's spawn files (its .ard's BAR entries of type 0xc; OpenKH's ARD page, "Spawn Point": a u32 type, 2, and
     a u32 count of sets) as (the entry's name, its sets), each set (its type, its objects): a 0x2c-byte descriptor --
     + 0 its type, + 4 its objects' count, + 6 its event activators', + 8 its walk paths', + 0xa its return
     parameters', + 0xc its signals' -- then its objects (0x40 bytes each: + 0 the object entry's number, + 4 its place
     x, y, z, KH2's, + 0x10 its rotation x, y, z), its activators (0x40 each), its walk paths (8 bytes, + 2 their
     points' count, then the points, 12 bytes each), its return parameters (0x10 each) and its signals (8 each). Each
-    object as (number, x, y, z, its turn about y); a set running past its entry ends that entry's list."""
+    object as (number, x, y, z, its turn about y); a set running past its entry ends that entry's list. `walks`, when
+    given, gets each set's walk paths by (its entry's name, its set's place): (+ 0 its number, its points as x, y, z)
+    each -- what KH2's 1:177 puts an object of the set on (FUN_1403ff460 finds one by its number, any for -1)."""
     out = []
     if ard[:4] != kh2_bdx.BAR:
         return out
@@ -233,8 +247,9 @@ def spawn_sets(ard: bytes) -> list[tuple[str, list[tuple[int, list[tuple[int, fl
             continue
         spawn = ard[at : at + size]
         sets = []
+        entry = name.rstrip(b"\0").decode("latin-1")
         p = 8
-        for _ in range(struct.unpack_from("<I", spawn, 4)[0]):
+        for place in range(struct.unpack_from("<I", spawn, 4)[0]):
             if p + 0x2C > len(spawn):
                 break
             set_type = spawn[p]
@@ -248,13 +263,19 @@ def spawn_sets(ard: bytes) -> list[tuple[str, list[tuple[int, list[tuple[int, fl
                 number, x, y, z, _, yaw, _ = struct.unpack_from("<I6f", spawn, p + 0x40 * k)
                 placed.append((number, x, y, z, yaw))
             p += 0x40 * (objects + activators)
+            ways = []
             for _ in range(paths):
                 if p + 8 > len(spawn):
                     break
-                p += 8 + 12 * struct.unpack_from("<H", spawn, p + 2)[0]
+                number, count = struct.unpack_from("<hH", spawn, p)
+                if p + 8 + 12 * count <= len(spawn):
+                    ways.append((number, [struct.unpack_from("<3f", spawn, p + 8 + 12 * i) for i in range(count)]))
+                p += 8 + 12 * count
+            if walks is not None and ways:
+                walks[(entry, place)] = ways
             p += 0x10 * returns + 8 * signals
             sets.append((set_type, placed))
-        out.append((name.rstrip(b"\0").decode("latin-1"), sets))
+        out.append((entry, sets))
     return out
 
 
@@ -268,38 +289,76 @@ def companions(
     the Volcanic Lord's Blizzard Lord) and those the mod has no kind of; each as (name, x, y, z, yaw) in its own frame:
     from it, turned so that the way from it to the player is + z (the port turns them to where its player stands).
     The first such spawn of the areas as given; none when none holds it, or for an enemy."""
-    if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+    found = battle_of(ards, entries, name)
+    if found is None:
         return []
+    placed, _, me, turn = found
+    c, s = math.cos(turn), math.sin(turn)
+    out = []
+    for _, objects in placed:
+        for o in objects:
+            other, kind = entries.get(o[0], ("", -1))
+            if o is me or kind in PARTY or kind in ENEMIES or other not in kinds:
+                continue
+            dx, dy, dz = o[1] - me[1], o[2] - me[2], o[3] - me[3]
+            out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn))
+    return out
+
+
+def battle_of(ards: list[bytes], entries: dict[int, tuple[str, int]], name: str, walking: bool = False):
+    """A boss's battle in its area's spawns (companions, walk_paths): the first battle spawn ("b_..") whose set of
+    those KH2 places as the area loads holds it and the player -- that spawn's placed sets, its own set's walk paths,
+    its own record (number, x, y, z, yaw) and the turn that makes the way from it to the player + z; None when none
+    does, or for an enemy (its entry's kind neither 3 nor 0xc). `walking`: the first whose own set has walk paths, the
+    player in any of the spawn's placed sets (the hyenas' second fight, lk05's b_60, keeps him in another)."""
+    if next((kind for n, kind in entries.values() if n == name), -1) not in BOSSES:
+        return None
     for ard in ards:
-        for entry, sets in spawn_sets(ard):
+        walks: dict[tuple[str, int], list[tuple[int, list[tuple[float, float, float]]]]] = {}
+        for entry, sets in spawn_sets(ard, walks):
             if not entry.startswith("b"):
                 continue
             placed = [s for s in sets if s[0] in PLACED_SETS]
+            players = [o for _, objects in placed for o in objects if entries.get(o[0], ("", -1))[1] == 0]
             own = next(
                 (
-                    objects
-                    for _, objects in placed
-                    if any(entries.get(o[0], ("", -1))[0] == name for o in objects)
-                    and any(entries.get(o[0], ("", -1))[1] == 0 for o in objects)
+                    (place, objects)
+                    for place, (kind, objects) in enumerate(sets)
+                    if kind in PLACED_SETS
+                    and any(entries.get(o[0], ("", -1))[0] == name for o in objects)
+                    and (
+                        walks.get((entry, place)) and players
+                        if walking
+                        else any(entries.get(o[0], ("", -1))[1] == 0 for o in objects)
+                    )
                 ),
                 None,
             )
             if own is None:
                 continue
-            me = next(o for o in own if entries.get(o[0], ("", -1))[0] == name)
-            player = next(o for o in own if entries.get(o[0], ("", -1))[1] == 0)
+            place, objects = own
+            me = next(o for o in objects if entries.get(o[0], ("", -1))[0] == name)
+            player = next((o for o in objects if entries.get(o[0], ("", -1))[1] == 0), players[0] if players else me)
             turn = math.atan2(player[1] - me[1], player[3] - me[3])
-            c, s = math.cos(turn), math.sin(turn)
-            out = []
-            for _, objects in placed:
-                for o in objects:
-                    other, kind = entries.get(o[0], ("", -1))
-                    if o is me or kind in PARTY or kind in ENEMIES or other not in kinds:
-                        continue
-                    dx, dy, dz = o[1] - me[1], o[2] - me[2], o[3] - me[3]
-                    out.append((other, dx * c - dz * s, dy, dx * s + dz * c, o[4] - turn))
-            return out
-    return []
+            return placed, walks.get((entry, place), []), me, turn
+    return None
+
+
+def walk_paths(
+    ards: list[bytes], entries: dict[int, tuple[str, int]], name: str
+) -> list[tuple[int, list[tuple[float, float, float]]]]:
+    """The walk paths of a boss's battle set (battle_of), each (its number, its points) in the boss's own frame as
+    companions gives its objects: from it, turned so that the way from it to the player is + z. Shenzi, Banzai and Ed
+    run along theirs (1:177, 5:14)."""
+    found = battle_of(ards, entries, name, walking=True)
+    if found is None:
+        return []
+    _, ways, me, turn = found
+    c, s = math.cos(turn), math.sin(turn)
+    return [
+        (number, [((x - me[1]) * c - (z - me[3]) * s, y - me[2], (x - me[1]) * s + (z - me[3]) * c) for x, y, z in points])
+        for number, points in ways
+    ]
 
 
 def area_programs(ard: bytes) -> list[list[tuple[int, bytes]]]:
@@ -580,7 +639,7 @@ def make(
     else:
         left_out.append("KH2's resident effect pictures (effect/texcommon.dpd): effects cutting them drawn without")
     listed = [
-        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission "
+        "# name\ttitle\tcovered\tcalls\tmissing\tplays the player\tjournal name\tplaced with it\tmission\twalk paths "
         "(kh2_enemies.py; the port's kh2_enemies.txt)"
     ]
     entries_file = kh2 / "original" / "00objentry.bin"
@@ -630,7 +689,8 @@ def make(
             else:
                 left_out.append(f"{name} ({title}): its mission {source.name} not there")
                 mission = None
-        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it, mission))
+        ways = walk_paths(areas, numbered, name)
+        listed.append(kinds_line(name, title, calls, handled, journal_title(titles, name), with_it, mission, ways))
         print(f"kh2 enemies: made {name} ({title}), {len(calls)} calls, {len(sounds)} sounds", file=sys.stderr)
     (mod / "kh2_enemies.txt").write_text("\n".join(listed) + "\n", encoding="utf-8", newline="\n")
     for part, what in SHARED:

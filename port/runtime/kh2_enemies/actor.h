@@ -508,6 +508,12 @@ public:
     }
     // 1:328: the actor counted as defeated by what made it (its wave), its script going on (FUN_1403d4a40)
     virtual void dead_mark(Actor & /*a*/) {}
+    // 1:177: the walk path of number `number` (-1 the first) of the actor's battle, its points in KH2's world into
+    // `out`; whether it has one
+    virtual bool walk_path(Actor & /*a*/, int /*number*/, std::vector<Vec3> & /*out*/)
+    {
+        return false;
+    }
     // a float of KH2's battle constants (03system.bin's "pref" BAR, its "sstm": from its record's + 4 on; 2:86 reads
     // + 0x30 and + 0x34), `fallback` when the mod has none
     virtual float system_value(std::uint32_t /*offset*/, float fallback)
@@ -600,6 +606,7 @@ public:
     // parts 10 to 19 (YS::OBJ::exec_pirate at Place 0: PARTS_COLOR of 0xffc00 faded to none, of 0x3ff00000 drawn; 1:40)
     std::uint32_t faded_parts = 0;
     std::uint32_t drawn_hidden() const { return hidden_parts | faded_parts; }
+    std::vector<Vec3> path;        // the walk path it is on (1:177; KH2's follower at + 0x630), KH2's world; 5:14
     std::uint32_t target_slot = 0; // its slot's address in the scripts' memory (2:23), made on first use
 
     // A motion played (FUN_1403c86a0): `restart` false leaves one already playing as it is (1:12). Whether the set
