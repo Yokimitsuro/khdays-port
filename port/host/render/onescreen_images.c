@@ -132,6 +132,10 @@ void khdays_onescreen_images(const KhdaysFramePackage *p, const KhdaysSituation 
             }
             float anchor_x = (x + w < 256 ? x + w : 256) - 2;
             float anchor_y = (y + h < 192 ? y + h : 192) - 2;
+            if (r[KE_SLOT] & KES_UNDER_TOP) { /* the shape at the top of its screen above its middle places it */
+                anchor_x = x + w / 2;
+                anchor_y = 0;
+            }
             const unsigned *map = p->minimap_images[0].words;
             const int minimap = map[KSI_ANCHORED] && map[KSI_OUTPUT] == r[KE_IMAGE];
             if (minimap) {

@@ -40,12 +40,20 @@ struct MotionSkeleton final {
 // The skeleton of an .mdlx's model (BAR entry 0x04, its collision 0x17).
 MotionSkeleton read_motion_skeleton(const std::uint8_t* data, std::size_t size);
 
-// One motion (kn::MotionPrototype0RAW), its bytes kept as the file has them.
+// One motion, its bytes kept as the file has them: interpolated (kn::MotionPrototype0RAW, its header's type 0) or
+// baked (kn::MotionRAW, type 1: Demyx's water clones'), each of its frames every model joint's matrix in the model's
+// space -- a header of 0x60 bytes (+ 0x10 its joints, + 0x24 its frames, + 0x28 where the matrices start, + 0x2c its
+// root's matrices, a frame's each, 0 none; + 0x30 its bounds; + 0x50 its start, + 0x54 its end, + 0x58 its frames a
+// second, + 0x5c where it loops), then a frame's joints' 4 x 4 floats after another's.
 class Motion final {
 public:
     // The motion at `at` (after the 0x90 bytes the game keeps for itself). Throws std::runtime_error when its
     // tables do not fit the file, so that a bad file fails at load.
     Motion(const std::uint8_t* data, std::size_t size, std::size_t at);
+
+    bool raw() const {
+        return raw_;
+    }
 
     int model_joints() const {
         return model_num_;
@@ -74,8 +82,14 @@ public:
     }
 
     // MotionPrototype0::getPosition: the root motion at `ticks` (0 = the motion's
-    // start); identity when the motion has none (PositionInfo not_unit 0).
+    // start); identity when the motion has none (PositionInfo not_unit 0). A baked
+    // one's (MotionRAW::getPosition): its frame's root matrix, identity with none.
     Mat4 root_motion(float ticks) const;
+
+    // A baked motion's frame at `ticks` (MotionRAW::calc: ticks times its frames a second over 60, rounded, kept
+    // within its frames) and that frame's matrix of `joint`
+    int raw_frame(float ticks) const;
+    Mat4 raw_matrix(int frame, int joint) const;
 
 private:
     friend class MotionPlayer;
@@ -83,6 +97,9 @@ private:
     int model_num_ = 0;
     int calc_num_ = 0;
     float start_ = 0.0F, end_ = 0.0F, fps_ = 30.0F, ret_ = 0.0F;
+    bool raw_ = false;
+    int raw_frames_ = 0;
+    std::size_t raw_matrices_ = 0, raw_root_ = 0;
 };
 
 // A motion's attributes (inner BAR entry 0x10, KH2's YS::ANMATR): ranges of frames and triggers on one, each an id

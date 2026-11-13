@@ -638,6 +638,67 @@ void test_bad_tables() {
 
 }  // namespace
 
+// A baked motion (MotionRAW, its header's type 1: Demyx's water clones'): two joints, three frames at 30 a second,
+// joint 1 moved 10 * the frame along x, its root moved 100 * the frame; its frame the ticks' nearest, kept within
+// its frames; a header that names more matrices than the file holds leaves the slot empty
+Bytes raw_body(int frames, bool with_root, std::uint32_t matrices_at = 0x60) {
+    Writer w;
+    w.u32(1);
+    w.zeros(0x0C);
+    w.u32(2);  // + 0x10 its joints
+    w.zeros(0x0C);
+    w.u32(static_cast<std::uint32_t>((frames - 1) * 2));  // + 0x20 its length in ticks
+    w.u32(static_cast<std::uint32_t>(frames));            // + 0x24
+    w.u32(matrices_at);                                   // + 0x28
+    w.u32(with_root ? 0x60U + 2U * 64U * static_cast<std::uint32_t>(frames) : 0U);  // + 0x2c
+    w.zeros(0x20);                                        // + 0x30 its bounds
+    w.f32(0.0F);                                          // + 0x50 its start
+    w.f32(static_cast<float>(frames - 1));                // + 0x54 its end
+    w.f32(30.0F);                                         // + 0x58
+    w.f32(0.0F);                                          // + 0x5c
+    const auto matrix = [&w](float x) {
+        for (int i = 0; i < 16; ++i) {
+            w.f32(i == 12 ? x : (i % 5 == 0 ? 1.0F : 0.0F));
+        }
+    };
+    for (int f = 0; f < frames; ++f) {
+        matrix(0.0F);
+        matrix(10.0F * static_cast<float>(f));
+    }
+    if (with_root) {
+        for (int f = 0; f < frames; ++f) {
+            matrix(100.0F * static_cast<float>(f));
+        }
+    }
+    return w.b;
+}
+
+void test_raw() {
+    const Bytes model = two_bones();
+    const Bytes set = in_set(raw_body(3, true));
+    const kh2::MotionSet motions(set.data(), set.size());
+    const kh2::Motion* m = motions.motion(0);
+    expect(m != nullptr && m->raw(), "a baked motion to play");
+    expect(near(m->length_ticks(), 4.0F) && near(m->fps(), 30.0F), "a baked motion's length and frame rate");
+    kh2::MotionPlayer player(kh2::read_motion_skeleton(model.data(), model.size()));
+    for (const auto& [ticks, x] : std::vector<std::pair<float, float>>{{0.0F, 0.0F}, {0.9F, 0.0F}, {1.0F, 10.0F},
+                                                                       {2.0F, 10.0F}, {3.0F, 20.0F}, {99.0F, 20.0F},
+                                                                       {-5.0F, 0.0F}}) {
+        player.evaluate(*m, ticks, kUnit4, nullptr);
+        expect(player.joints().size() == 2 && near(joint(player, 1)[12], x) && near(joint(player, 0)[12], 0.0F),
+               "a baked motion's frame at " + std::to_string(ticks) + " ticks");
+    }
+    expect(near(m->root_motion(3.0F)[12], 200.0F) && near(m->root_motion(1.0F)[15], 1.0F), "a baked motion's root");
+    const Bytes rootless = in_set(raw_body(3, false));
+    const kh2::MotionSet plain(rootless.data(), rootless.size());
+    expect(plain.motion(0) != nullptr && near(plain.motion(0)->root_motion(2.0F)[12], 0.0F) &&
+               near(plain.motion(0)->root_motion(2.0F)[0], 1.0F),
+           "a baked motion without a root: none");
+    const Bytes short_of = in_set(raw_body(3, false, 0x200));
+    const kh2::MotionSet broken(short_of.data(), short_of.size());
+    expect(broken.motion(0) == nullptr, "a baked motion naming matrices past its end: none");
+}
+
 int main() {
     try {
         test_curves();
@@ -653,6 +714,7 @@ int main() {
         test_expressions();
         test_more_joints_than_the_skeleton();
         test_bad_tables();
+        test_raw();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;

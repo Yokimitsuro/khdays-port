@@ -12,6 +12,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace ai = khdays::assets::kh2::ai;
@@ -1332,10 +1333,10 @@ struct FriendsWorld final : kh::World {
     {
         sent.emplace_back(id, argument);
     }
-    std::vector<std::pair<unsigned, int>> asked;
-    int mission(unsigned number, int value) override
+    std::vector<std::tuple<unsigned, int, int>> asked;
+    int mission(unsigned number, int first, int second) override
     {
-        asked.emplace_back(number, value);
+        asked.emplace_back(number, first, second);
         return number == 21 ? 1 : number == 29 ? 7 : 0;
     }
     std::vector<std::uint32_t> vacuums;
@@ -1382,8 +1383,10 @@ void test_hydra_friends()
     CHECK((world.sent == std::vector<std::pair<int, int>>{{5, 1}})); // a signal to the field (trigger 10)
     // the field's mission: one less, whether its bar is up, its count
     call(rig, phil, 4, 20, {ai::Value::of_int(0)});
-    CHECK(call(rig, phil, 4, 21, {}).i() == 1 && call(rig, phil, 4, 29, {}).i() == 7);
-    CHECK(!world.asked.empty() && world.asked.front().first == 20u);
+    CHECK(call(rig, phil, 4, 21, {}).i() == 1 && call(rig, phil, 4, 29, {ai::Value::of_int(1)}).i() == 7);
+    call(rig, phil, 4, 41, {ai::Value::of_int(1), ai::Value::of_int(3)}); // counter 1, three more
+    CHECK((world.asked.size() == 4u && world.asked.front() == std::tuple{20u, 0, 0}));
+    CHECK((world.asked[2] == std::tuple{29u, 1, 0} && world.asked[3] == std::tuple{41u, 1, 3}));
     call(rig, phil, 1, 17, {self});
     CHECK(world.left == &phil);
     const auto kinds = kh::read_kinds("B_HE100\tHydra\tyes\t119\t-\tplayer\t11652\t"

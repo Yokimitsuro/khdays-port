@@ -2250,15 +2250,16 @@ void add_world(ai::Calls &calls)
                 }
         m.memory().set_u32(a[0].bits + 4, found);
     });
-    // 4:21 whether a mission's KH2 bar is up (trap_mission_is_activate2d, FUN_140433530 -> FUN_1403fb840): Days's
-    // mission shows its own -- 0 (Demyx's)
-    // the field's KH2 mission (World::mission): 4:3 complete, 4:5 its count set, 4:6 one more, 4:11 failed, 4:14 its
-    // bar shown, 4:15 hidden, 4:16 its boss dead, 4:20 one less, 4:21 whether its bar is up, 4:22 left, 4:29 its count,
-    // 4:41 so many more, 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT, MISSION2D)
+    // the field's KH2 mission (World::mission): 4:3 complete, 4:5 a counter's count set (its index, the count), 4:6
+    // one more (its index), 4:11 failed, 4:14 its pieces shown, 4:15 hidden, 4:16 its boss dead, 4:20 one less (its
+    // index), 4:21 whether its pieces are up, 4:22 left, 4:29 a counter's count (its index), 4:41 so many more (its
+    // index, how many), 4:54 locked, 4:55 whether it is (YS::MISSION, MISSION_COUNT, MISSION2D; the PS3 build's names
+    // trap_mission_set_count ...)
     for (const unsigned n : {3u, 5u, 6u, 11u, 14u, 15u, 16u, 20u, 21u, 22u, 29u, 41u, 54u, 55u})
         calls.set(4, n, [n](ai::Machine &m, std::span<ai::Value> a) {
             Actor *me = running(m);
-            a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i()) : 0);
+            const int second = a.size() > 1 ? a[1].i() : 0;
+            a[0] = ai::Value::of_int(me->world != nullptr ? me->world->mission(n, a[0].i(), second) : 0);
         });
     // 1:262 a line of its voice (trap_obj_voice, FUN_14042bde0: the object's virtual + 0xa0, YS::STDOBJ's voice ->
     // YS::VOICE::request): its number in the object's voice bank and a priority (Hades's 13, 1)

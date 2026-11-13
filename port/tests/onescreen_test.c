@@ -1462,6 +1462,60 @@ static void test_native_hud_fade(void)
     use_image_colours = 0;
 }
 
+/* A KH2 mission's piece (ui/kh2_mission_2d.cpp) below the countdown strip at the top in the middle: placed as that
+ * strip is, further down, though its own place lies under it */
+static void test_under_top_image(void)
+{
+    KhdaysFramePackage *p = calloc(1, sizeof(*p));
+    uint32_t record[KE_WORDS] = {0};
+    CHECK(p != NULL);
+    if (!p)
+        return;
+    record[KE_SLOT] = KES_DIRECT | KES_PICTURE | KES_FINE | KES_HUD | KES_UNDER_TOP | 3;
+    record[KE_IMAGE] = 9;
+    put_float(record, KE_X, 108);
+    put_float(record, KE_Y, 20);
+    put_float(record, KE_W, 40);
+    put_float(record, KE_H, 12);
+    record[KE_IW] = 160;
+    record[KE_IH] = 48;
+    p->elements[0].records = record;
+    p->elements[0].count = 1;
+    mods_file = KHDAYS_PORT_COMPOSITIONS_FILE;
+    khdays_composition_load();
+    khdays_composition_set_hud_size(4);
+    KhdaysComposition comp;
+    KhdaysSituation s = {KHDAYS_SIT_FIELD, 1u << KHDAYS_ST_HUD};
+    khdays_composition_for(&s, 342, &comp);
+    float strip_x = 0, strip_y = 0, strip_scale = 0;
+    for (int i = 0; i < comp.shape_count; ++i) {
+        const uint32_t *w = comp.shapes[i].words;
+        if (!(w[KO_FLAGS] & (KOF_IMAGE | KOF_3D | KOF_LOWER)) && word_float(w, KO_SRC_X) == 93 &&
+            word_float(w, KO_SRC_Y) == 0) {
+            strip_x = word_float(w, KO_DST_X1);
+            strip_y = word_float(w, KO_DST_Y1);
+            strip_scale = word_float(w, KO_SCALE_X);
+        }
+    }
+    CHECK(strip_scale > 0);
+    khdays_onescreen_images(p, &s, &comp);
+    CHECK(image_shapes(&comp) == 1);
+    for (int i = 0; i < comp.shape_count; ++i) {
+        const uint32_t *w = comp.shapes[i].words;
+        if (!(w[KO_FLAGS] & KOF_IMAGE))
+            continue;
+        CHECK(word_float(w, KO_DST_X1) == strip_x + (108 - 93) * strip_scale);
+        CHECK(word_float(w, KO_DST_Y1) == strip_y + 20 * strip_scale);
+        CHECK(fabsf(word_float(w, KO_DST_X2) - word_float(w, KO_DST_X1) - 40 * strip_scale) < 0.001f);
+    }
+    /* without the flag its own place (under the strip, inside no piece of the top) leaves it out */
+    record[KE_SLOT] &= ~KES_UNDER_TOP;
+    khdays_composition_for(&s, 342, &comp);
+    khdays_onescreen_images(p, &s, &comp);
+    CHECK(image_shapes(&comp) == 0);
+    free(p);
+}
+
 static void test_hud_image_layers(void)
 {
     KhdaysFramePackage *p = calloc(1, sizeof(*p));
@@ -2037,6 +2091,7 @@ int main(void)
     test_minimap_image();
     test_weighted_image();
     test_hud_image_layers();
+    test_under_top_image();
     test_split();
     test_split_under_3d();
     test_swap_skips();

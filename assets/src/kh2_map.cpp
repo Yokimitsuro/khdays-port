@@ -1,5 +1,7 @@
 #include "khdays/assets/kh2_map.h"
 
+#include "ps2_gs.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -585,44 +587,20 @@ TextureContainer read_textures(const std::uint8_t* data, const std::size_t size,
 namespace {
 
 // The GS's local memory (4 MB of 32-bit words) as a container's pictures fill
-// it. PSMCT32 pages are 64 x 32 pixels of 32 blocks of 8 x 8; PSMT8 pages 128
-// x 64 of 16 x 16 blocks numbered the same, each block the same 256 bytes as
-// a PSMCT32 block. Buffer widths (BW) count 64 pixels.
+// it (ps2_gs.h: where each pixel is), its addresses wrapped at its end.
 class GsMemory final {
 public:
     GsMemory() : bytes_(4U * 1024U * 1024U, 0) {}
 
     std::uint8_t* ct32(const unsigned x, const unsigned y, const unsigned bp, const unsigned bw) {
-        const unsigned page = (y / 32U) * bw + x / 64U;
-        return word(bp, page, kBlocks[(y % 32U) / 8U][(x % 64U) / 8U], kColumns[y % 8U][x % 8U]);
+        return bytes_.data() + (ps2::ct32_word(x, y, bp, bw) & 0xFFFFFU) * 4U;
     }
 
     std::uint8_t* t8(const unsigned x, const unsigned y, const unsigned bp, const unsigned bw) {
-        const unsigned page = (y / 64U) * (bw / 2U) + x / 128U;
-        // within a 16 x 16 block: which 32-bit word of the block's 8 x 8, and which of its bytes
-        const unsigned bx = x % 16U, by = y % 16U;
-        const unsigned swap = ((by + 2U) >> 2U & 1U) * 4U;
-        const unsigned wy = ((by & ~3U) >> 1U) + (by & 1U);
-        const unsigned wx = (bx + swap) & 7U;
-        const unsigned byte = (by >> 1U & 1U) + (bx >> 2U & 2U);
-        return word(bp, page, kBlocks[(y % 64U) / 16U][(x % 128U) / 16U], kColumns[wy & 7U][wx]) + byte;
+        return bytes_.data() + (ps2::t8_byte(x, y, bp, bw) & 0x3FFFFFU);
     }
 
 private:
-    static constexpr unsigned kBlocks[4][8] = {{0, 1, 4, 5, 16, 17, 20, 21},
-                                               {2, 3, 6, 7, 18, 19, 22, 23},
-                                               {8, 9, 12, 13, 24, 25, 28, 29},
-                                               {10, 11, 14, 15, 26, 27, 30, 31}};
-    static constexpr unsigned kColumns[8][8] = {{0, 1, 4, 5, 8, 9, 12, 13},       {2, 3, 6, 7, 10, 11, 14, 15},
-                                                {16, 17, 20, 21, 24, 25, 28, 29}, {18, 19, 22, 23, 26, 27, 30, 31},
-                                                {32, 33, 36, 37, 40, 41, 44, 45}, {34, 35, 38, 39, 42, 43, 46, 47},
-                                                {48, 49, 52, 53, 56, 57, 60, 61}, {50, 51, 54, 55, 58, 59, 62, 63}};
-
-    std::uint8_t* word(const unsigned bp, const unsigned page, const unsigned block, const unsigned column) {
-        const std::size_t w = (static_cast<std::size_t>(bp) * 64U + page * 2048U + block * 64U + column) & 0xFFFFFU;
-        return bytes_.data() + w * 4U;
-    }
-
     std::vector<std::uint8_t> bytes_;
 };
 

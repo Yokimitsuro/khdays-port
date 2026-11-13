@@ -6,6 +6,8 @@
 #include <optional>
 #include <vector>
 
+#include "khdays/assets/texture.h"
+
 namespace khdays::assets::kh2 {
 
 // PC SEQD 0x150/0x160. Offsets and execution follow YI::SPRITE/SEQUENCE in the
@@ -54,6 +56,12 @@ struct SequenceData final {
 
 SequenceData read_sequence(const std::uint8_t* data, std::size_t size);
 std::array<int, 2> read_sequence_image_size(const std::uint8_t* data, std::size_t size);
+
+// An IMGD's picture as RGBA (OpenKH's IMGD page; a KH2 mission file's pieces, "ti_e" and "ct_h"): 8-bit pixels
+// (format 0x13 at 0x26) with 256 colours in the PS2's CSM1 order (entries 8-15 and 16-23 of each 32 swapped), their
+// alpha 0x80 opaque; the pixels in rows, or, with bit 2 of the flags at 0x3c, as the GS's memory holds them: sent as
+// a 32-bit picture of half the width and height, read back as an 8-bit one (its buffer width the header's, at 0x24).
+DecodedTexture read_sequence_image(const std::uint8_t* data, std::size_t size);
 
 struct SequencePose final {
     float x = 0, y = 0;

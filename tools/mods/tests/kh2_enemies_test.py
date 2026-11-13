@@ -288,6 +288,18 @@ class Kh2EnemiesTest(unittest.TestCase):
         # its line's last column: the title's number, "-" none
         self.assertTrue(kh2_enemies.kinds_line("M_EX010", "Soldier", {(1, 6)}, {(1, 6)}, 11932).endswith("\t-\t11932\t-\t-"))
 
+    def test_mission_pages(self):
+        # a mission's HD pictures (one for each of its IMGDs) beside its file, its other pages not
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "remastered" / "msn" / "us" / "HE17_MS105.bar"
+            source.mkdir(parents=True)
+            for name in ("US_HE17_MS105_bar0.png", "US_HE17_MS105_bar1.png", "-0.dds"):
+                (source / name).write_bytes(name.encode())
+            to = Path(folder) / "mod" / "kh2" / "msn" / "HE17_MS105"
+            self.assertEqual(kh2_enemies.copy_pages(source, to, "*_bar*.png"), 2)
+            self.assertEqual(sorted(p.name for p in to.iterdir()), ["US_HE17_MS105_bar0.png", "US_HE17_MS105_bar1.png"])
+            self.assertEqual(kh2_enemies.copy_pages(source / "none", to, "*_bar*.png"), 0)
+
     def test_companions(self):
         # 00objentry.bin: the Hydra (a large enemy, 0xc), the player (0), Phil and Megara (friends, 9), a Soldier (4)
         def entry(number: int, kind: int, model: bytes) -> bytes:

@@ -24,6 +24,7 @@
 #include "../../ui/kh2_party_hud.h"
 #include "../../ui/kh2_hud_labels.h"
 #include "../../ui/kh2_enemy_hud.h"
+#include "../../ui/kh2_mission_2d.h"
 #include "../../ui/kh2_reticles.h"
 #include "../../ui/heart_points.h"
 #include "../../ui/prize_effects.h"
@@ -1574,6 +1575,7 @@ void khdays_display_vblank(u32 frame)
     khdays_minimap_frame(frame);
     khdays_reticles_frame(frame);
     khdays_ui_kh2_enemy_frame(frame);
+    khdays_ui_kh2_mission_2d_frame(frame);
     khdays_ui_kh2_party_frame(frame);
     khdays_ui_kh2_labels_frame(frame);
     khdays_ui_kh2_portrait_frame(frame);

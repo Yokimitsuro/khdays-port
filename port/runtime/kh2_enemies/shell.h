@@ -96,6 +96,8 @@ int khdays_kh2_enemies_camera_warp(void);
 }
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace khdays::assets::kh2 {
 class Motion;
@@ -121,6 +123,30 @@ bool held_motion(unsigned node, HeldMotion &out);
 // out), this frame. His weapon's effects (its swing's trail) follow them; without them KH2's own keyblade on his hand's
 // bone (W_EX010 on P_EX100's 178)
 void held_weapon_drawn(unsigned node, const float *bones, std::size_t count);
+
+// A timer or counter of the field's KH2 mission (its header's operation 4 or 5: the PS3 build's MISSION2D::TABLE,
+// {its start, its most, its warning, index << 24 | align << 16 | its picture's BAR entry + 1}) as KH2 keeps it
+struct MissionPiece final {
+    int kind = 0;           // 4 a timer (dk::Timer, dk::TIMER), 5 a counter (MISSION_COUNT, dk::COUNTER)
+    int index = 0;          // its number among its kind (4:5's first argument)
+    int entry = -1;         // its picture's BAR entry (an IMGD; its sequence the next entry), -1 none shown
+    int align = 0;          // KH2's INFO_BASE::ALIGN: 0 left, 1 right, 2 the middle
+    int value = 0;          // a timer's time (KH2's frames, 60 a second), a counter's count
+    int most = 0;           // a counter's most; a timer's end (its frames: counting down, its start's; up, its most's)
+    int warning = 0;        // its warning (MISSION2D's: seconds for a timer)
+    bool with_most = false; // a counter shown "count / most" (its most's bit 30: MISSION_COUNT's type 1)
+    bool down = false;      // a timer counting down (its start above 0)
+};
+// The field's KH2 mission as its pieces show it (ui/kh2_mission_2d.cpp): its file (the mod's kh2/msn/<name>.bar), a
+// number another for each mission set going, the KH2 ticks it has run (60 a second), whether its pieces are up (4:14,
+// 4:15; down at its end), its timers and counters in its header's order. False without one
+struct MissionView final {
+    std::string file;
+    unsigned serial = 0, ticks = 0;
+    bool shown = false;
+    std::vector<MissionPiece> pieces;
+};
+bool mission_view(MissionView &out);
 } // namespace khdays::kh2_enemies
 #endif
 

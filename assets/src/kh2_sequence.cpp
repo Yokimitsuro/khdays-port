@@ -1,5 +1,7 @@
 #include "khdays/assets/kh2_sequence.h"
 
+#include "ps2_gs.h"
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -270,6 +272,55 @@ std::array<int, 2> read_sequence_image_size(const std::uint8_t* data, std::size_
     if (w == 0 || h == 0)
         fail("empty image dimensions");
     return {w, h};
+}
+
+DecodedTexture read_sequence_image(const std::uint8_t* data, std::size_t size) {
+    const Bytes b(data, size);
+    const auto [w, h] = read_sequence_image_size(data, size);
+    const std::size_t pixels_at = b.u32(8), pixels_size = b.u32(12), colours_at = b.u32(16),
+                      colours_size = b.u32(20);
+    const unsigned buffer_width = b.u16(0x24), format = b.u16(0x26), flags = b.u32(0x3c);
+    if (format != 0x13)
+        fail("only 8-bit IMGD pictures (format 0x13, as KH2's mission files have them) are read");
+    if (colours_size < 256 * 4 || pixels_size < std::size_t(w) * std::size_t(h))
+        fail("IMGD picture shorter than its size");
+    b.range(pixels_at, pixels_size);
+    b.range(colours_at, 256 * 4);
+    std::array<std::array<std::uint8_t, 4>, 256> palette{};
+    for (unsigned k = 0; k < 256; ++k) {
+        const unsigned at = (k & ~0x18u) | ((k & 8u) << 1) | ((k & 16u) >> 1);  // CSM1
+        for (unsigned c = 0; c < 4; ++c)
+            palette[k][c] = data[colours_at + at * 4 + c];
+        palette[k][3] = std::uint8_t(std::min(255, palette[k][3] * 2));
+    }
+    // its pixels' indices in rows: as they are, or read back from the GS's memory they were sent to as 32-bit
+    std::vector<std::uint8_t> index(data + pixels_at, data + pixels_at + std::size_t(w) * std::size_t(h));
+    if (flags & 4u) {
+        if (w % 2 != 0 || h % 2 != 0 || buffer_width == 0)
+            fail("swizzled IMGD picture of odd size or no buffer width");
+        const unsigned sent_w = unsigned(w) / 2, sent_h = unsigned(h) / 2, sent_bw = std::max(1u, buffer_width / 2);
+        std::vector<std::uint8_t> memory;
+        for (unsigned y = 0; y < sent_h; ++y)
+            for (unsigned x = 0; x < sent_w; ++x) {
+                const std::size_t at = ps2::ct32_word(x, y, 0, sent_bw) * 4;
+                if (memory.size() < at + 4)
+                    memory.resize(at + 4);
+                std::copy_n(data + pixels_at + (std::size_t(y) * sent_w + x) * 4, 4, memory.data() + at);
+            }
+        for (unsigned y = 0; y < unsigned(h); ++y)
+            for (unsigned x = 0; x < unsigned(w); ++x) {
+                const std::size_t at = ps2::t8_byte(x, y, 0, buffer_width);
+                index[std::size_t(y) * unsigned(w) + x] = at < memory.size() ? memory[at] : 0;
+            }
+    }
+    DecodedTexture out;
+    out.format_name = "kh2 imgd psmt8";
+    out.width = w;
+    out.height = h;
+    out.rgba.reserve(index.size() * 4);
+    for (const std::uint8_t i : index)
+        out.rgba.insert(out.rgba.end(), palette[i].begin(), palette[i].end());
+    return out;
 }
 
 int sequence_frame_count(const SequenceData& data, std::size_t clip) {

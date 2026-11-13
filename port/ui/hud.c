@@ -5,6 +5,7 @@
 #include "hud.h"
 #include "kh2_hp_hud.h"
 #include "kh2_enemy_hud.h"
+#include "kh2_mission_2d.h"
 #include "kh2_portrait_hud.h"
 #include "kh2_party_hud.h"
 #include "kh2_hud_labels.h"
@@ -593,6 +594,7 @@ static void emit(void)
 {
     khdays_minimap_emit();
     khdays_ui_kh2_enemy_emit();
+    khdays_ui_kh2_mission_2d_emit(); /* the port's: a KH2 boss's mission's timer and counters */
     khdays_ui_kh2_hp_prepare();
     khdays_ui_kh2_party_prepare();
     khdays_ui_kh2_labels_prepare();

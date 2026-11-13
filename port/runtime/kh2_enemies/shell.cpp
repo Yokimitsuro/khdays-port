@@ -716,22 +716,32 @@ std::vector<std::uint32_t> vacuums;
 std::vector<std::pair<int, int>> signals;
 
 // The mission KH2's area runs with a boss's battle (its msn file, OpenKH's MSN page: a BAR -- its entry of type 2 a
-// 0x1c-byte header then operations {s16 code, s16 count, count u32 parameters} till 0, 4 its timer and 5 its counter
-// {initial, most, least, its sequence's entry, -, place, kind}; its script, type 3, its triggers 10 the signals, 3
-// its main, 2 run as it ends): Demyx's HE17_MS105, ten water clones in 60 seconds. One at a time: the first boss's
+// 0x1c-byte header then operations {s16 code, s16 count, count u32 parameters} till 0; 4 a timer and 5 a counter
+// (MissionPiece, shell.h); its script, type 3, its triggers 10 the signals, 3 its main, 2 run as it ends):
+// Demyx's HE17_MS105, ten water clones in 60 seconds. One at a time: the first boss's
 struct Kh2Mission final {
-    std::string name;
+    std::string name, file;
     std::unique_ptr<Actor> actor;
     std::shared_ptr<const ai::Script> script;
-    bool counter = false, timer = false, down = false;
-    int count = 0, count_most = 0, count_least = 0;
-    float time = 0.0F, time_most = 0.0F, time_least = 0.0F; // its timer in seconds
-    bool shown = true;   // its bar up (4:14 / 4:15; 4:21): up from its start, as KH2's after its start camera
+    std::vector<MissionPiece> pieces; // its timers and counters, in its header's order
+    unsigned ticks = 0;  // KH2 ticks it has run (its pieces' animations)
+    bool time_up = false; // its timer's end told (74)
+    bool shown = true;   // its pieces up (4:14 / 4:15; 4:21): up from its start, as KH2's after its start camera
     bool locked = false; // 4:54 / 4:55
     bool over = false;   // completed, failed, its boss dead or left (4:3, 4:11, 4:16, 4:22)
     std::string end;
 };
 std::unique_ptr<Kh2Mission> kh2_mission;
+unsigned kh2_mission_serial = 0;
+
+// The mission's piece of `kind` (4 a timer, 5 a counter) and number `index`, null when it has none
+MissionPiece *mission_piece(Kh2Mission &m, int kind, int index)
+{
+    for (MissionPiece &p : m.pieces)
+        if (p.kind == kind && p.index == index)
+            return &p;
+    return nullptr;
+}
 
 // The Days enemy whose shell answers an enemy's questions of Days's field (its room's collision, its players): its
 // own; an ally's battle's
@@ -1504,28 +1514,36 @@ public:
         if (tracing())
             khdays_log("kh2 enemies: signal %d (%d) sent", id, argument);
     }
-    // MISSION_COUNT::set (the PS3 build's): kept between 0 and its most; reaching its most from below sends 123,
-    // reaching 0 from above 14 (the mission's script completes on it)
-    void set_count(Kh2Mission &m, int n)
+    // MISSION_COUNT::set (the PS3 build's): counter `index` kept between 0 and its most; reaching its most from below
+    // sends 123, reaching 0 from above 14, with its index, while its pieces are up (the mission's script completes on
+    // 14)
+    void set_count(Kh2Mission &m, int index, int n)
     {
-        const int was = m.count;
-        if (n >= m.count_most) {
-            if (was < m.count_most)
-                signal(123, 0);
-            n = m.count_most;
+        MissionPiece *c = mission_piece(m, 5, index);
+        if (c == nullptr)
+            return;
+        const int was = c->value;
+        if (n >= c->most) {
+            if (was < c->most && m.shown)
+                signal(123, index);
+            n = c->most;
         } else if (n <= 0) {
-            if (was > 0)
-                signal(14, 0);
+            if (was > 0 && m.shown)
+                signal(14, index);
             n = 0;
         }
-        m.count = n;
+        c->value = n;
         khdays_log("kh2 enemies: mission %s's count %d", m.name.c_str(), n);
     }
-    int mission(unsigned number, int value) override
+    int mission(unsigned number, int first, int second) override
     {
         if (!kh2_mission)
             return 0;
         Kh2Mission &m = *kh2_mission;
+        const auto count = [&](int index) {
+            const MissionPiece *c = mission_piece(m, 5, index);
+            return c != nullptr ? c->value : 0;
+        };
         const auto end = [&](const char *how) {
             if (m.over)
                 return;
@@ -1541,11 +1559,11 @@ public:
         case 11: end("failed"); break;
         case 16: end("over: its boss defeated"); break;
         case 22: end("left"); break;
-        case 5: set_count(m, value); break;
-        case 6: set_count(m, m.count + 1); break;
-        case 20: set_count(m, m.count - 1); break;
-        case 41: set_count(m, m.count + value); break;
-        case 29: return m.count;
+        case 5: set_count(m, first, second); break;
+        case 6: set_count(m, first, count(first) + 1); break;
+        case 20: set_count(m, first, count(first) - 1); break;
+        case 41: set_count(m, first, count(first) + second); break;
+        case 29: return count(first);
         case 14: m.shown = !m.over; break;
         case 15: m.shown = false; break;
         case 21: return m.shown && !m.over ? 1 : 0;
@@ -1879,6 +1897,7 @@ void start_mission(const std::string &name)
     }
     auto m = std::make_unique<Kh2Mission>();
     m->name = name;
+    m->file = (u8(mod().folder) / "kh2" / "msn" / (name + ".bar")).string();
     const auto s32 = [&](std::size_t o) {
         std::int32_t v = 0;
         if (o + 4 <= bar.size())
@@ -1894,15 +1913,28 @@ void start_mission(const std::string &name)
             if (code == 0 || count < 0)
                 break;
             if ((code == 4 || code == 5) && count >= 3) {
-                const std::int32_t initial = s32(at + 4), most = s32(at + 8), least = s32(at + 12);
-                if (code == 4) {
-                    m->timer = true;
-                    m->down = initial >= most;
-                    m->time = float(initial), m->time_most = float(most), m->time_least = float(least);
-                } else {
-                    m->counter = true;
-                    m->count = initial, m->count_most = most, m->count_least = least;
+                // MISSION2D::TABLE: its start, most and warning, then (YS::MISSION::init_mission2d) a byte its index,
+                // one its place's side, a u16 its picture's entry + 1 (0 none), as the PS3 build reads them
+                MissionPiece p;
+                p.kind = code;
+                const std::int32_t start = s32(at + 4), most = s32(at + 8);
+                p.warning = s32(at + 12);
+                if (count >= 4) {
+                    const std::uint32_t picture = std::uint32_t(s32(at + 16));
+                    p.index = int(picture >> 24);
+                    p.align = int(picture >> 16 & 0xffu);
+                    p.entry = int(picture & 0xffffu) - 1;
                 }
+                if (code == 4) { // dk::Timer: down from its start (setCountDown), else up to its most (setCountUp)
+                    p.down = start > 0;
+                    p.value = p.down ? start * 60 : 0;
+                    p.most = (p.down ? start : most) * 60;
+                } else { // MISSION_COUNT::set_param: its count its start; its most's bit 30 shows "count / most"
+                    p.with_most = (std::uint32_t(most) & 0x40000000u) != 0;
+                    p.most = int(std::uint32_t(most) & ~0x40000000u);
+                    p.value = start;
+                }
+                m->pieces.push_back(p);
             }
             at += 4 + 4 * std::size_t(count);
         }
@@ -1913,10 +1945,13 @@ void start_mission(const std::string &name)
     m->actor->world = &the_field();
     Kh2Mission &mm = *m;
     kh2_mission = std::move(m);
+    ++kh2_mission_serial;
     mm.actor->machine().start_main(3);
-    khdays_log("kh2 enemies: mission %s set going%s%s", name.c_str(),
-               mm.counter ? (" (a count of " + std::to_string(mm.count) + ")").c_str() : "",
-               mm.timer ? (" (a timer of " + std::to_string(int(mm.time)) + " s)").c_str() : "");
+    std::string pieces;
+    for (const MissionPiece &p : mm.pieces)
+        pieces += p.kind == 4 ? " (a timer of " + std::to_string(p.most / 60) + " s)"
+                              : " (a count of " + std::to_string(p.value) + ")";
+    khdays_log("kh2 enemies: mission %s set going%s", name.c_str(), pieces.c_str());
 }
 
 // An ally (allies, above) of kind `k` made at `place` (KH2's world) turned by `yaw`, in the battle of the Days enemy
@@ -4369,6 +4404,19 @@ void allies_close()
 
 } // namespace
 
+bool khdays::kh2_enemies::mission_view(MissionView &out)
+{
+    if (!kh2_mission)
+        return false;
+    const Kh2Mission &m = *kh2_mission;
+    out.file = m.file;
+    out.serial = kh2_mission_serial;
+    out.ticks = m.ticks;
+    out.shown = m.shown && !m.over;
+    out.pieces = m.pieces;
+    return true;
+}
+
 extern "C" void khdays_kh2_enemies_made(int row, void *actor)
 {
     const unsigned days = unsigned(KHDAYS_REF(actor));
@@ -4504,13 +4552,21 @@ extern "C" void khdays_kh2_enemies_tick(void *actor, int delta)
             if (t == 0 && !shouts.empty())
                 send_shouts();
             lights.tick();
-            if (kh2_mission && !kh2_mission->over) { // its script, its timer (KH2's 60 ticks a second)
+            if (kh2_mission) { // its script, its timer (KH2's 60 ticks a second); its pieces' time
                 Kh2Mission &m = *kh2_mission;
-                m.actor->machine().tick();
-                if (m.timer && m.shown && m.down && m.time > 0.0F) {
-                    m.time = std::max(0.0F, m.time - 1.0F / 60.0F);
-                    if (m.time <= 0.0F) // its time up: dk::timerTask's signal 74 (the mission fails on it)
-                        the_field().signal(74, 0);
+                ++m.ticks;
+                if (!m.over) {
+                    m.actor->machine().tick();
+                    // dk::timerTask: down to 0, or up to its most, while its pieces are up; its end tells the field
+                    // 74 (the mission fails on it)
+                    for (MissionPiece &p : m.pieces)
+                        if (p.kind == 4 && m.shown && !m.time_up) {
+                            p.value = p.down ? std::max(0, p.value - 1) : std::min(p.value + 1, std::max(p.most, 1));
+                            if (p.down ? p.value == 0 : p.most > 0 && p.value >= p.most) {
+                                m.time_up = true;
+                                the_field().signal(74, 0);
+                            }
+                        }
                 }
             }
         }

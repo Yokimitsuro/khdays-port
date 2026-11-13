@@ -20,6 +20,8 @@
 #define KES_HUD 0x80u     /* independent field HUD image: follows the one-screen situation's HUD visibility */
 #define KES_NATIVE_FADE 0x100u  /* follow the native layer's fade without requiring the field HUD */
 #define KES_PAUSE_LAYOUT 0x200u /* independently positioned pause pieces, centered on one screen */
+#define KES_UNDER_TOP 0x400u    /* on one screen, placed as the piece at the top of its screen above it (its
+                                  * middle's column) is, below it: KH2's mission pieces under the countdown */
 
 #define KE_X 1     /* float bits: its left edge, DS pixels (fractions allowed) */
 #define KE_Y 2     /* its top */

@@ -45,7 +45,10 @@ is its parent's x T x Rz x Ry x Rx x S.
 **Attribute** (`kn::ModelSKLRAWAttribute`, LE bit order on the PC): bit 0 draw
 alpha phase, 1 translucent, 2 multi, 6-10 part, 11-15 mesh, 16-20 priority,
 21 alphaEx, 22-26 UV scroll, 27 additive, 28 subtractive, 29 specular, 30 no
-light. Translucent subparts are drawn blended, the others alpha-tested.
+light. Translucent subparts are drawn blended, the others alpha-tested. An additive subpart (27: Demyx's water
+clones' bodies) is drawn blended with each texel's alpha its brightness times its own (the port draws no additive
+blending: as the rooms' lights); a scrolling one (22-26: the texture's UVSC chunk of that index less one, 0 none; its
+speed a whole texture's fraction a game frame, 2^31 a whole) scrolls by it.
 
 **Packets.** A subpart's DMA chain: ref tags of 4 quadwords bring a bone's
 matrix (the tag's address is the bone; its UNPACK's address the VU slot), other
@@ -797,8 +800,8 @@ judged the result in game.
 
 **The format** (`kn::MotionPrototype0RAW`, all offsets from the header after the
 0x90 bytes the game keeps): u32 type +0 (`kn::motionSetup` 0xf8e8c: 0
-`MotionPrototype0`, 1 `MotionRAW`, every bone's matrix baked per frame, not
-played; a weapon's motions carry 1 at +4, not their type), u16 model joints +0x10, u16 joints with the helpers
+`MotionPrototype0`, 1 `MotionRAW`, every bone's matrix baked per frame: played,
+below; a weapon's motions carry 1 at +4, not their type), u16 model joints +0x10, u16 joints with the helpers
 +0x12, then table offsets and counts: helpers' hierarchy +0x18 (kn::ModelHRC,
 0x40 each: u16 id, s16 parent +4, scale with the bone's length in w +0x10,
 rotation +0x20, translation +0x30), flags +0x1C (u32 per joint in the order
@@ -867,6 +870,14 @@ by `Vec3ScaleAddQ27` as the game finds it.
 `ik_adjust off` in `motions.txt` turns it off. Not done: KH2's per-motion IK
 flag (the motion object's bit 0) and what it does with a hit beyond the foot
 (`check_ik`: a script callback); the hips are not lowered on a slope.
+
+**Baked motions** (`kn::MotionRAW`, header type 1: Demyx's water clones' `M_EX880_DANCER.mset`, its every slot
+one): a 0x60-byte header -- u32 joints + 0x10, u32 its length in ticks + 0x20, u32 frames + 0x24, u32 where its
+matrices start + 0x28, u32 where its root's are + 0x2c (a frame's each; 0 none), its bounds + 0x30, f32 start + 0x50,
+end + 0x54, frames a second + 0x58, where it loops + 0x5c -- then each frame's every joint's matrix (4 x 4 floats, in
+the model's space, the joints' gmatrix as they are). `MotionRAW::calc` (0x1032e8) takes the frame `(int)(ticks *
+fps / 60 + 0.5)` within its frames and copies its matrices to the model's joints (no IKAdjust); `getPosition`
+(0x103568) its root's, or none.
 
 ## Faces (texture animation)
 
@@ -1016,5 +1027,5 @@ A new file a setting names is added to `SOURCES` and `MODELS` in the tool
 
 - 4-bit textures (PSMT4) and other formats: reported and drawn white.
 - Region clamp is drawn as repeat (the renderer repeats mods' textures).
-- Normals, UV scroll and the chained shadow model are not read; of entry 0x17
-  only the feet (types 10 and 11).
+- Normals and the chained shadow model are not read; of entry 0x17 only the feet
+  (types 10 and 11).

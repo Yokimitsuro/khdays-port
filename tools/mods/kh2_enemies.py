@@ -386,12 +386,12 @@ def journal_title(titles: dict[str, int], name: str) -> int | None:
     return next((title for model, title in titles.items() if model.startswith(f"{name.upper()}_")), None)
 
 
-def copy_pages(source: Path, to: Path) -> int:
-    """An entry's HD pages (-N.dds) into `to`: how many."""
+def copy_pages(source: Path, to: Path, pattern: str = "-*.dds") -> int:
+    """An entry's HD pages (-N.dds; a mission's <LANGUAGE>_<name>_barN.png) into `to`: how many."""
     if not source.is_dir():
         return 0
     to.mkdir(parents=True, exist_ok=True)
-    pages = sorted(source.glob("-*.dds"))
+    pages = sorted(source.glob(pattern))
     for page in pages:
         shutil.copy2(page, to / page.name)
     return len(pages)
@@ -616,7 +616,9 @@ def make(
             if source.is_file():
                 (mod / "kh2" / "msn").mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, mod / "kh2" / "msn" / source.name)
-                copy_pages(kh2 / "remastered" / MISSIONS / source.name, mod / "kh2" / "msn" / mission)
+                # its pieces' HD pictures, one for each of its IMGDs in their order (US_<name>_bar0.png ...): KH2 PC
+                # draws the pieces' sequences with them, its PS2 pictures laid out otherwise
+                copy_pages(kh2 / "remastered" / MISSIONS / source.name, mod / "kh2" / "msn" / mission, "*_bar*.png")
             else:
                 left_out.append(f"{name} ({title}): its mission {source.name} not there")
                 mission = None

@@ -491,8 +491,9 @@ public:
     // 1:41 and the game's own (an enemy's end: 75): a signal to every script of the field and its mission, their
     // trigger 10 (id, argument), as KH2's YS::SIGNAL::Call queues it
     virtual void signal(int /*id*/, int /*argument*/) {}
-    // a call of kind 4 on the field's KH2 mission (its count, its bar, its end): what it gives back
-    virtual int mission(unsigned /*number*/, int /*value*/)
+    // a call of kind 4 on the field's KH2 mission (its counts, its bar, its end), its arguments (the counter's index
+    // first, 4:5's and 4:41's value second): what it gives back
+    virtual int mission(unsigned /*number*/, int /*first*/, int /*second*/)
     {
         return 0;
     }

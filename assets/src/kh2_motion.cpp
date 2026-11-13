@@ -471,9 +471,34 @@ Motion::Motion(const std::uint8_t* data, const std::size_t size, const std::size
     const Reader b(data, size);
     (void)b.at(at, kHeaderSize);
     // its type, the header's first word (kn::motionSetup 0xf8e8c): 0 MotionPrototype0, 1 MotionRAW
+    if (b.u32(at) == 1) {
+        // kn::MotionRAW (calc 0x1032e8, getPosition 0x103568, getLoopTop 0x103618): its frames' joints' matrices
+        bytes_.assign(data + at, data + size);
+        const Reader m(bytes_.data(), bytes_.size());
+        raw_ = true;
+        model_num_ = calc_num_ = static_cast<int>(m.u32(0x10));
+        raw_frames_ = static_cast<int>(m.u32(0x24));
+        raw_matrices_ = m.u32(0x28);
+        raw_root_ = m.u32(0x2C);
+        start_ = m.f32(0x50);
+        end_ = m.f32(0x54);
+        fps_ = m.f32(0x58);
+        ret_ = m.f32(0x5C);
+        if (model_num_ <= 0 || raw_frames_ <= 0 || !(fps_ > 0.0F)) {
+            throw std::runtime_error(
+                "KH2 motion: a baked motion with no joints, frames or frame rate; the file is damaged: extract it "
+                "again from your game");
+        }
+        (void)m.at(raw_matrices_,
+                   static_cast<std::size_t>(model_num_) * static_cast<std::size_t>(raw_frames_) * sizeof(Mat4));
+        if (raw_root_ != 0) {
+            (void)m.at(raw_root_, static_cast<std::size_t>(raw_frames_) * sizeof(Mat4));
+        }
+        return;
+    }
     if (b.u32(at) != 0) {
         throw std::runtime_error("KH2 motion: type " + std::to_string(b.u32(at)) +
-                                 " (only interpolated motions, MotionPrototype0, are played)");
+                                 " (only interpolated motions, MotionPrototype0, and baked ones, MotionRAW, are played)");
     }
     bytes_.assign(data + at, data + size);
     const Reader m(bytes_.data(), bytes_.size());
@@ -694,7 +719,34 @@ void limit(const Reader& m, std::size_t l, const Vec4& base, Vec4& value) {
 
 }  // namespace
 
+int Motion::raw_frame(const float ticks) const {
+    // MotionRAW::calc: (int)(ticks * fps * (1/60) + 0.5), at least 0, below its frames
+    const float f = ticks * fps_ * 0.016666668F + 0.5F;
+    const int frame = std::isfinite(f) ? static_cast<int>(std::clamp(f, 0.0F, static_cast<float>(raw_frames_))) : 0;
+    return std::clamp(frame, 0, raw_frames_ - 1);
+}
+
+Mat4 Motion::raw_matrix(const int frame, const int joint) const {
+    const Reader m(bytes_.data(), bytes_.size());
+    const std::size_t at = raw_matrices_ + (static_cast<std::size_t>(model_num_) * static_cast<std::size_t>(frame) +
+                                            static_cast<std::size_t>(joint)) *
+                                               sizeof(Mat4);
+    Mat4 out{};
+    std::memcpy(out.data(), m.at(at, sizeof(Mat4)), sizeof(Mat4));
+    return out;
+}
+
 Mat4 Motion::root_motion(const float ticks) const {
+    if (raw_) { // MotionRAW::getPosition: its frame's root matrix, identity with none
+        if (raw_root_ == 0) {
+            return kUnit;
+        }
+        const Reader m(bytes_.data(), bytes_.size());
+        Mat4 out{};
+        std::memcpy(out.data(), m.at(raw_root_ + static_cast<std::size_t>(raw_frame(ticks)) * sizeof(Mat4), sizeof(Mat4)),
+                    sizeof(Mat4));
+        return out;
+    }
     // MotionPrototype0::getPosition (0x1028c0): scale, rotation, translation and
     // nine F-curves (-1 none) over them; T * Rz * Ry * Rx * S.
     const Reader m(bytes_.data(), bytes_.size());
@@ -1215,6 +1267,17 @@ float MotionPlayer::expression(const Motion& motion, const int node, const int d
 }
 
 void MotionPlayer::evaluate(const Motion& motion, const float ticks, const Mat4& world, const GroundRay* ground) {
+    if (motion.raw()) {  // MotionRAW::calc: its frame's matrices, each model joint's as it is (no IKAdjust)
+        current_ = &motion;
+        const int frame = motion.raw_frame(ticks);
+        const auto model = std::min(static_cast<std::size_t>(motion.model_joints()), skeleton_.joints.size());
+        all_gmatrix_.resize(model);
+        for (std::size_t j = 0; j < model; ++j) {
+            all_gmatrix_[j] = motion.raw_matrix(frame, static_cast<int>(j));
+        }
+        gmatrix_ = all_gmatrix_;
+        return;
+    }
     // MotionPrototype0::calc (0x101e28)
     if (current_ != &motion) {
         constants(motion);

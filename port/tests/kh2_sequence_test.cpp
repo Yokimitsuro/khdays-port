@@ -3,6 +3,7 @@
 #include "../ui/kh2_hp_gauge.h"
 #include "../ui/kh2_hp_config.h"
 #include "khdays/assets/kh2_bar.h"
+#include "../../assets/src/ps2_gs.h"
 
 #include <algorithm>
 #include <bit>
@@ -10,6 +11,8 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace {
 namespace kh2 = khdays::assets::kh2;
@@ -227,6 +230,64 @@ void rendering()
     surface.assign(4, 0);
     render::draw_sequence(commands, atlas, 1, 1, surface, 2, 2);
     expect(surface[0] == 0 && (surface[1] & 255) == 100, "depth-only mask and depth comparison");
+}
+
+// An IMGD made up as KH2's mission files hold one: 8-bit, its colours in CSM1 order, its pixels as rows or as the
+// GS's memory has them (sent as a 32-bit picture of half its size)
+std::vector<std::uint8_t> imgd(int w, int h, bool swizzled)
+{
+    std::vector<std::uint8_t> out(0x40 + std::size_t(w * h) + 1024);
+    const auto put16 = [&](std::size_t at, unsigned v) { out[at] = std::uint8_t(v), out[at + 1] = std::uint8_t(v >> 8); };
+    const auto put32 = [&](std::size_t at, unsigned v) { put16(at, v & 0xffff), put16(at + 2, v >> 16); };
+    put32(0, 0x44474d49), put32(4, 0x100), put32(8, 0x40), put32(12, unsigned(w * h));
+    put32(16, 0x40 + unsigned(w * h)), put32(20, 1024), put16(0x1c, unsigned(w)), put16(0x1e, unsigned(h));
+    put16(0x24, unsigned(w / 64)), put16(0x26, 0x13), put32(0x3c, swizzled ? 7 : 3);
+    for (unsigned k = 0; k < 256; ++k) { // colour k: red k, alpha 0x80; kept at its CSM1 place
+        const unsigned at = (k & ~0x18u) | ((k & 8u) << 1) | ((k & 16u) >> 1);
+        out[0x40 + std::size_t(w * h) + at * 4] = std::uint8_t(k);
+        out[0x40 + std::size_t(w * h) + at * 4 + 3] = 0x80;
+    }
+    const auto index = [&](unsigned x, unsigned y) { return std::uint8_t((x * 7 + y * 3) & 255); };
+    if (!swizzled) {
+        for (unsigned y = 0; y < unsigned(h); ++y)
+            for (unsigned x = 0; x < unsigned(w); ++x)
+                out[0x40 + y * unsigned(w) + x] = index(x, y);
+        return out;
+    }
+    std::vector<std::uint8_t> memory(std::size_t(w * h) * 4);
+    for (unsigned y = 0; y < unsigned(h); ++y)
+        for (unsigned x = 0; x < unsigned(w); ++x)
+            memory.at(khdays::assets::ps2::t8_byte(x, y, 0, unsigned(w / 64))) = index(x, y);
+    for (unsigned y = 0; y < unsigned(h / 2); ++y)
+        for (unsigned x = 0; x < unsigned(w / 2); ++x)
+            for (unsigned b = 0; b < 4; ++b)
+                out[0x40 + (y * unsigned(w / 2) + x) * 4 + b] =
+                    memory.at(khdays::assets::ps2::ct32_word(x, y, 0, unsigned(w / 128)) * 4 + b);
+    return out;
+}
+
+void imgd_pictures()
+{
+    for (const bool swizzled : {false, true})
+        for (const auto &[w, h] : {std::pair{128, 64}, std::pair{256, 256}, std::pair{128, 128}}) {
+            const auto bytes = imgd(w, h, swizzled);
+            const auto picture = kh2::read_sequence_image(bytes.data(), bytes.size());
+            expect(picture.width == w && picture.height == h && picture.rgba.size() == std::size_t(w * h) * 4,
+                   "IMGD picture size");
+            bool same = true;
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    const std::size_t at = (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4;
+                    same = same && picture.rgba[at] == ((x * 7 + y * 3) & 255) && picture.rgba[at + 3] == 255;
+                }
+            expect(same, swizzled ? "swizzled IMGD pixels or colours" : "IMGD pixels or colours");
+        }
+    auto bytes = imgd(128, 64, false);
+    bytes[0x26] = 0x14;
+    rejects([&] { kh2::read_sequence_image(bytes.data(), bytes.size()); }, "4-bit IMGD read as 8-bit");
+    bytes = imgd(128, 64, false);
+    bytes.resize(0x80);
+    rejects([&] { kh2::read_sequence_image(bytes.data(), bytes.size()); }, "truncated IMGD read");
 }
 
 void hp_mapping()
@@ -484,6 +545,7 @@ int main(int argc, char **argv)
     try {
         parser_and_player();
         rendering();
+        imgd_pictures();
         hp_mapping();
         party_mask_edges();
         if (argc >= 3) {

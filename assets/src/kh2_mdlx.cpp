@@ -383,10 +383,41 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         }
     }
 
+    // An additive subpart's picture (its attribute's bit 27, kn::ModelSKLRAWAttribute's: added over what is behind it
+    // -- Demyx's water clones' bodies): its texture with each texel's alpha its brightness times its own, drawn
+    // blended, so that its black adds nothing and its colours show as light (as kh2_room.cpp draws a room's light);
+    // its key, the texture's own when the texture is missing
+    const auto light_texture = [&result](int texture) {
+        const std::string key = "tex" + std::to_string(texture), light = key + "_light";
+        for (const auto& [k, picture] : result.textures) {
+            if (k == light) {
+                return light;
+            }
+        }
+        for (const auto& [k, picture] : result.textures) {
+            if (k != key) {
+                continue;
+            }
+            DecodedTexture glow = picture;
+            glow.name = light;
+            for (std::size_t i = 0; i + 3 < glow.rgba.size(); i += 4) {
+                const unsigned bright = std::max({glow.rgba[i], glow.rgba[i + 1], glow.rgba[i + 2]});
+                glow.rgba[i + 3] = static_cast<std::uint8_t>((bright * glow.rgba[i + 3] + 127U) / 255U);
+            }
+            result.textures.emplace_back(light, std::move(glow));
+            return light;
+        }
+        return key;
+    };
+
     // a mesh per subpart, and per face kind: one-sided, and seen from both sides
     for (std::size_t g = 0; g < model.groups.size(); ++g) {
         const Group& group = model.groups[g];
         const bool textured = group.texture >= 0 && static_cast<std::size_t>(group.texture) < container.textures.size();
+        const bool additive = textured && ((group.attribute >> 27U) & 1U) != 0;
+        const std::string texture_key = !textured   ? std::string{}
+                                        : additive ? light_texture(group.texture)
+                                                   : "tex" + std::to_string(group.texture);
         std::array<float, 2> texels{1.0F, 1.0F};
         const GsTexture* hd_region = nullptr;
         if (textured) {
@@ -396,16 +427,34 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                       big.used ? big.height : static_cast<float>(t.height)};
             hd_region = big.used ? &t : nullptr;
         }
+        // its UV scroll (bits 22-26: the texture's UVSC chunk of that index less one, 0 none): a whole texture's
+        // fraction a game frame (2^31 a whole), as the region's its texels a game frame
+        std::array<float, 2> scroll{0.0F, 0.0F};
+        if (const unsigned field = (group.attribute >> 22U) & 0x1FU; textured && field != 0) {
+            const GsTexture& t = container.textures[static_cast<std::size_t>(group.texture)];
+            const auto s = std::find_if(container.scrolls.begin(), container.scrolls.end(),
+                                        [field](const UvScroll& u) { return u.index == field - 1U; });
+            if (s == container.scrolls.end()) {
+                result.notes.push_back("subpart " + std::to_string(g) + "'s scroll " + std::to_string(field - 1) +
+                                       " has no speed, left still");
+            } else if (t.region_width > 0 && t.region_height > 0) {
+                constexpr float kWhole = 2147483648.0F;
+                scroll = {s->u / kWhole * static_cast<float>(t.width) / static_cast<float>(t.region_width) * texels[0],
+                          s->v / kWhole * static_cast<float>(t.height) / static_cast<float>(t.region_height) *
+                              texels[1]};
+            }
+        }
         for (const bool two_sided : {false, true}) {
             NeutralMesh mesh;
             mesh.name = name + "_" + std::to_string(g) + (two_sided ? "_both" : "");
-            mesh.texture_name = textured ? "tex" + std::to_string(group.texture) : std::string{};
+            mesh.texture_name = texture_key;
             mesh.material_name = mesh.name;
             mesh.double_sided = two_sided;
             mesh.kh2_part = static_cast<int>((group.attribute >> 6) & 0x1FU);
-            // bit 1: translucent; otherwise drawn where the texture is opaque enough
-            mesh.alpha_mode =
-                (group.attribute & 2U) != 0 ? NeutralMesh::AlphaMode::blend : NeutralMesh::AlphaMode::mask;
+            // bit 1: translucent, and an additive one; otherwise drawn where the texture is opaque enough
+            mesh.alpha_mode = (group.attribute & 2U) != 0 || additive ? NeutralMesh::AlphaMode::blend
+                                                                      : NeutralMesh::AlphaMode::mask;
+            mesh.scroll = scroll;
             for (const Triangle& t : group.triangles) {
                 if (t.two_sided != two_sided) {
                     continue;
